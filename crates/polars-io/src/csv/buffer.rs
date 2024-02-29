@@ -232,6 +232,56 @@ impl ParsedBuffer for Utf8Field {
 }
 
 #[cfg(not(feature = "dtype-categorical"))]
+pub(crate) struct EnumField {
+    phantom: std::marker::PhantomData<u8>,
+}
+
+#[cfg(feature = "dtype-categorical")]
+pub(crate) struct EnumField {
+    escape_scratch: Vec<u8>,
+    quote_char: u8,
+    builder: EnumChunkedBuilder,
+}
+
+#[cfg(feature = "dtype-categorical")]
+impl EnumField {
+    fn new(name: &str, capacity: usize, quote_char: Option<u8>, rev_map: Arc<RevMapping>) -> Self {
+        Self {
+            escape_scratch: vec![],
+            quote_char: quote_char.unwrap_or(b'"'),
+            builder: EnumChunkedBuilder::new(name, capacity, rev_map),
+        }
+    }
+
+    #[inline]
+    fn parse_bytes(
+        &mut self,
+        bytes: &[u8],
+        ignore_errors: bool,
+        needs_escaping: bool,
+        _missing_is_null: bool,
+        _time_unit: Option<TimeUnit>,
+    ) -> PolarsResult<()> {
+        if bytes.is_empty() {
+            self.builder.append_null();
+            return Ok(());
+        }
+
+        if !validate_utf8(bytes) && !ignore_errors {
+            polars_bail!(ComputeError: "invalid utf-8 sequence");
+        }
+
+        let s = bytes_to_utf8(
+            bytes,
+            &mut self.escape_scratch,
+            self.quote_char,
+            needs_escaping,
+        )?;
+        self.builder.append_value(s, ignore_errors)
+    }
+}
+
+#[cfg(not(feature = "dtype-categorical"))]
 pub(crate) struct CategoricalField {
     phantom: std::marker::PhantomData<u8>,
 }
@@ -275,39 +325,45 @@ impl CategoricalField {
         }
 
         if validate_utf8(bytes) {
-            if needs_escaping {
-                polars_ensure!(bytes.len() > 1, ComputeError: "invalid csv file\n\nField `{}` is not properly escaped.", std::str::from_utf8(bytes).map_err(to_compute_err)?);
-                self.escape_scratch.clear();
-                self.escape_scratch.reserve(bytes.len());
-                // SAFETY:
-                // we just allocated enough capacity and data_len is correct.
-                unsafe {
-                    let n_written = escape_field(
-                        bytes,
-                        self.quote_char,
-                        self.escape_scratch.spare_capacity_mut(),
-                    );
-                    self.escape_scratch.set_len(n_written);
-                }
-
-                // SAFETY:
-                // just did utf8 check
-                let key = unsafe { std::str::from_utf8_unchecked(&self.escape_scratch) };
-                self.builder.append_value(key);
-            } else {
-                // SAFETY:
-                // just did utf8 check
-                unsafe {
-                    self.builder
-                        .append_value(std::str::from_utf8_unchecked(bytes))
-                }
-            }
+            let s = bytes_to_utf8(
+                bytes,
+                &mut self.escape_scratch,
+                self.quote_char,
+                needs_escaping,
+            )?;
+            self.builder.append_value(s);
         } else if ignore_errors {
             self.builder.append_null()
         } else {
             polars_bail!(ComputeError: "invalid utf-8 sequence");
         }
         Ok(())
+    }
+}
+
+fn bytes_to_utf8<'a>(
+    bytes: &'a [u8],
+    scratch: &'a mut Vec<u8>,
+    quote_char: u8,
+    needs_escaping: bool,
+) -> PolarsResult<&'a str> {
+    if needs_escaping {
+        polars_ensure!(bytes.len() > 1, ComputeError: "invalid csv file\n\nField `{}` is not properly escaped.", std::str::from_utf8(bytes).map_err(to_compute_err)?);
+        scratch.clear();
+        scratch.reserve(bytes.len());
+        // SAFETY:
+        // we just allocated enough capacity and data_len is correct.
+        unsafe {
+            let n_written = escape_field(bytes, quote_char, scratch.spare_capacity_mut());
+            scratch.set_len(n_written);
+        }
+        // SAFETY:
+        // just did utf8 check
+        Ok(unsafe { std::str::from_utf8_unchecked(scratch) })
+    } else {
+        // SAFETY:
+        // just did utf8 check
+        Ok(unsafe { std::str::from_utf8_unchecked(bytes) })
     }
 }
 
@@ -514,6 +570,13 @@ pub(crate) fn init_buffers(
                 DataType::Categorical(_, ordering) => Buffer::Categorical(CategoricalField::new(
                     name, capacity, quote_char, *ordering,
                 )),
+                #[cfg(feature = "dtype-categorical")]
+                DataType::Enum(rev_map,_) => {
+                    polars_ensure!(rev_map.is_some(), ComputeError: "Categories must be present for Enum when reading in CSV");
+                    let rev_map = rev_map.clone().unwrap();
+                    Buffer::Enum(EnumField::new(name,capacity,quote_char,rev_map.clone()))
+                }
+
                 // TODO (ENUM) support writing to Enum
                 dt => polars_bail!(
                     ComputeError: "unsupported data type when reading CSV: {} when reading CSV", dt,
@@ -553,6 +616,8 @@ pub(crate) enum Buffer {
     Date(DatetimeField<Int32Type>),
     #[allow(dead_code)]
     Categorical(CategoricalField),
+    #[allow(dead_code)]
+    Enum(EnumField),
 }
 
 impl Buffer {
@@ -607,6 +672,17 @@ impl Buffer {
                     panic!("activate 'dtype-categorical' feature")
                 }
             },
+            #[allow(unused_variables)]
+            Buffer::Enum(buf) => {
+                #[cfg(feature = "dtype-categorical")]
+                {
+                    buf.builder.finish().into_series()
+                }
+                #[cfg(not(feature = "dtype-categorical"))]
+                {
+                    panic!("activate 'dtype-categorical' feature")
+                }
+            },
         };
         Ok(s)
     }
@@ -650,6 +726,17 @@ impl Buffer {
                     panic!("activate 'dtype-categorical' feature")
                 }
             },
+            #[allow(unused_variables)]
+            Buffer::Enum(v) => {
+                #[cfg(feature = "dtype-categorical")]
+                {
+                    v.builder.append_null()
+                }
+                #[cfg(not(feature = "dtype-categorical"))]
+                {
+                    panic!("activate 'dtype-categorical' feature")
+                }
+            },
         };
     }
 
@@ -679,6 +766,20 @@ impl Buffer {
                 #[cfg(feature = "dtype-categorical")]
                 {
                     DataType::Categorical(None, Default::default())
+                }
+
+                #[cfg(not(feature = "dtype-categorical"))]
+                {
+                    panic!("activate 'dtype-categorical' feature")
+                }
+            },
+            Buffer::Enum(v) => {
+                #[cfg(feature = "dtype-categorical")]
+                {
+                    DataType::Categorical(
+                        Some(v.builder.rev_map.clone()),
+                        CategoricalOrdering::Physical,
+                    )
                 }
 
                 #[cfg(not(feature = "dtype-categorical"))]
@@ -821,6 +922,18 @@ impl Buffer {
             ),
             #[allow(unused_variables)]
             Categorical(buf) => {
+                #[cfg(feature = "dtype-categorical")]
+                {
+                    buf.parse_bytes(bytes, ignore_errors, needs_escaping, missing_is_null, None)
+                }
+
+                #[cfg(not(feature = "dtype-categorical"))]
+                {
+                    panic!("activate 'dtype-categorical' feature")
+                }
+            },
+            #[allow(unused_variables)]
+            Enum(buf) => {
                 #[cfg(feature = "dtype-categorical")]
                 {
                     buf.parse_bytes(bytes, ignore_errors, needs_escaping, missing_is_null, None)

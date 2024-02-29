@@ -383,6 +383,92 @@ impl CategoricalChunked {
     }
 }
 
+pub struct EnumChunkedBuilder {
+    name: String,
+    pub rev_map: Arc<RevMapping>,
+    local_mapping: PlHashMap<KeyWrapper, ()>,
+    physicals: UInt32Vec,
+}
+
+impl EnumChunkedBuilder {
+    pub fn new(name: &str, capacity: usize, rev_map: Arc<RevMapping>) -> Self {
+        // Build the lookup table without references
+
+        let mut local_mapping = PlHashMap::with_capacity_and_hasher(
+            rev_map.get_categories().len(),
+            StringCache::get_hash_builder(),
+        );
+
+        for (idx, cat) in rev_map.get_categories().values_iter().enumerate_idx() {
+            let h = local_mapping.hasher().hash_one(cat);
+            // SAFETY
+            // We know the capacity in advance and the categories are unique
+            unsafe {
+                #[allow(clippy::unnecessary_cast)]
+                local_mapping
+                    .raw_table_mut()
+                    .insert_no_grow(h, (KeyWrapper(idx as u32), ()))
+            };
+        }
+
+        Self {
+            physicals: UInt32Vec::with_capacity(capacity),
+            name: name.to_string(),
+            rev_map,
+            local_mapping,
+        }
+    }
+
+    #[inline]
+    pub fn append_value(&mut self, s: &str, ignore_errors: bool) -> PolarsResult<()> {
+        let h = self.local_mapping.hasher().hash_one(s);
+
+        // SAFETY: index in hashmap are within bounds of categories
+        let bucket = unsafe {
+            self.local_mapping.raw_table().get(h, |(k, _)| {
+                self.rev_map.get_categories().value_unchecked(k.0 as usize) == s
+            })
+        };
+
+        match (bucket, ignore_errors) {
+            (None, false) => {
+                polars_bail!(
+                    not_in_enum,
+                    value = s,
+                    categories = self.rev_map.get_categories()
+                )
+            },
+            (None, true) => {
+                self.append_null();
+                Ok(())
+            },
+            (Some(phys), _) => {
+                self.physicals.push(Some(phys.0 .0));
+                Ok(())
+            },
+        }
+    }
+
+    #[inline]
+    pub fn append_null(&mut self) {
+        self.physicals.push_null()
+    }
+
+    pub fn finish(self) -> CategoricalChunked {
+        // SAFETY
+        // Physicals are in bounds
+        let ca = UInt32Chunked::with_chunk(&self.name, self.physicals.into());
+        unsafe {
+            CategoricalChunked::from_cats_and_rev_map_unchecked(
+                ca,
+                self.rev_map.clone(),
+                true,
+                CategoricalOrdering::Physical,
+            )
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::prelude::*;

@@ -1960,3 +1960,27 @@ def test_read_csv_single_column(columns: list[str] | str) -> None:
     df = pl.read_csv(f, columns=columns)
     expected = pl.DataFrame({"b": [2, 5]})
     assert_frame_equal(df, expected)
+
+
+def test_read_enum() -> None:
+    csv = textwrap.dedent(
+        """\
+        b
+        foo
+        bar
+        baz
+        foo
+        bar
+        foo
+        """
+    )
+    f = io.StringIO(csv)
+    df = pl.read_csv(f, schema={"b": pl.Enum(["foo", "bar", "baz"])})
+
+    df_string = df.select(pl.col("b").cast(pl.String))
+    expected_utf8 = pl.DataFrame({"b": ["foo", "bar", "baz", "foo", "bar", "foo"]})
+    assert_frame_equal(df_string, expected_utf8)
+
+    df_phys = df.select(pl.col("b").cast(pl.UInt32))
+    expected_phys = pl.DataFrame({"b": [0, 1, 2, 0, 1, 0]}, schema={"b": pl.UInt32})
+    assert_frame_equal(df_phys, expected_phys)
