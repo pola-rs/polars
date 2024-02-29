@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from polars._utils._wrap import wrap_s
 from polars._utils.deprecation import deprecate_function
 from polars._utils.unstable import unstable
+from polars._utils.wrap import wrap_s
 from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:

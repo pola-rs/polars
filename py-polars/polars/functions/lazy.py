@@ -5,18 +5,18 @@ from typing import TYPE_CHECKING, Any, Callable, Iterable, Sequence, overload
 
 import polars._reexport as pl
 import polars.functions as F
-from polars._utils._async import _AioDataFrameResult, _GeventDataFrameResult
-from polars._utils._parse_expr_input import (
-    parse_as_expression,
-    parse_as_list_of_expressions,
-)
-from polars._utils._wrap import wrap_df, wrap_expr
+from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
 from polars._utils.deprecation import (
     deprecate_parameter_as_positional,
     deprecate_renamed_function,
     issue_deprecation_warning,
 )
+from polars._utils.parse_expr_input import (
+    parse_as_expression,
+    parse_as_list_of_expressions,
+)
 from polars._utils.unstable import issue_unstable_warning, unstable
+from polars._utils.wrap import wrap_df, wrap_expr
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Datetime, Int64, UInt32
 
 with contextlib.suppress(ImportError):  # Module not available when building docs

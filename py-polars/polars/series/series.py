@@ -22,7 +22,7 @@ from typing import (
 
 import polars._reexport as pl
 from polars import functions as F
-from polars._utils._construction import (
+from polars._utils.construction import (
     arrow_to_pyseries,
     dataframe_to_pyseries,
     iterable_to_pyseries,
@@ -32,7 +32,6 @@ from polars._utils._construction import (
     sequence_to_pyseries,
     series_to_pyseries,
 )
-from polars._utils._wrap import wrap_df
 from polars._utils.convert import (
     date_to_int,
     datetime_to_int,
@@ -57,6 +56,7 @@ from polars._utils.various import (
     sphinx_accessor,
     warn_null_comparison,
 )
+from polars._utils.wrap import wrap_df
 from polars.datatypes import (
     Array,
     Boolean,

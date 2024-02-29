@@ -5,13 +5,13 @@ from datetime import date, datetime, time, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 
 import polars._reexport as pl
-from polars._utils._wrap import wrap_expr
 from polars._utils.convert import (
     date_to_int,
     datetime_to_int,
     time_to_int,
     timedelta_to_int,
 )
+from polars._utils.wrap import wrap_expr
 from polars.datatypes import Date, Datetime, Duration, Time
 from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np

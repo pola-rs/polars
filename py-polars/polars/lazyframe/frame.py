@@ -24,12 +24,7 @@ from typing import (
 
 import polars._reexport as pl
 from polars import functions as F
-from polars._utils._async import _AioDataFrameResult, _GeventDataFrameResult
-from polars._utils._parse_expr_input import (
-    parse_as_expression,
-    parse_as_list_of_expressions,
-)
-from polars._utils._wrap import wrap_df, wrap_expr
+from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
 from polars._utils.convert import negate_duration_string, parse_as_duration_string
 from polars._utils.deprecation import (
     deprecate_function,
@@ -38,6 +33,10 @@ from polars._utils.deprecation import (
     deprecate_renamed_parameter,
     deprecate_saturating,
     issue_deprecation_warning,
+)
+from polars._utils.parse_expr_input import (
+    parse_as_expression,
+    parse_as_list_of_expressions,
 )
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
@@ -49,6 +48,7 @@ from polars._utils.various import (
     normalize_filepath,
     parse_percentiles,
 )
+from polars._utils.wrap import wrap_df, wrap_expr
 from polars.convert import from_dict
 from polars.datatypes import (
     DTYPE_TEMPORAL_UNITS,

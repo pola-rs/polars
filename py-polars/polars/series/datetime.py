@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from polars._utils._wrap import wrap_s
 from polars._utils.convert import to_py_date, to_py_datetime
 from polars._utils.deprecation import deprecate_function, deprecate_renamed_function
 from polars._utils.unstable import unstable
+from polars._utils.wrap import wrap_s
 from polars.datatypes import Date, Datetime, Duration
 from polars.series.utils import expr_dispatch
 

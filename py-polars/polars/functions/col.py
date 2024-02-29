@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 from typing import TYPE_CHECKING, Any, Iterable, Protocol, cast
 
-from polars._utils._wrap import wrap_expr
+from polars._utils.wrap import wrap_expr
 from polars.datatypes import is_polars_dtype
 
 plr: Any = None

@@ -5,8 +5,6 @@ from typing import TYPE_CHECKING
 
 import polars._reexport as pl
 from polars import functions as F
-from polars._utils._parse_expr_input import parse_as_expression
-from polars._utils._wrap import wrap_expr
 from polars._utils.convert import parse_as_duration_string
 from polars._utils.deprecation import (
     deprecate_function,
@@ -15,7 +13,9 @@ from polars._utils.deprecation import (
     issue_deprecation_warning,
     rename_use_earliest_to_ambiguous,
 )
+from polars._utils.parse_expr_input import parse_as_expression
 from polars._utils.unstable import unstable
+from polars._utils.wrap import wrap_expr
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Int32
 
 if TYPE_CHECKING:
