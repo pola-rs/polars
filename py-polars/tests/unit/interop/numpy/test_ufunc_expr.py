@@ -1,8 +1,16 @@
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import Any, Callable, cast
 
 import numpy as np
+import pytest
+
+try:
+    import numba
+except ImportError:
+    # Numba can take a while to support new Python versions, so we don't want a
+    # hard dependency on it.
+    numba = None
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
@@ -130,3 +138,29 @@ def test_ufunc_multiple_expressions() -> None:
 def test_grouped_ufunc() -> None:
     df = pl.DataFrame({"id": ["a", "a", "b", "b"], "values": [0.1, 0.1, -0.1, -0.1]})
     df.group_by("id").agg(pl.col("values").log1p().sum().pipe(np.expm1))
+
+
+@pytest.mark.skipif(numba is None, reason="Numba is not available")
+def test_generalized_ufunc() -> None:
+    assert numba is not None  # to pacify type checkers
+
+    @numba.guvectorize([(numba.int64[:], numba.int64[:])], "(n)->()")
+    def my_custom_sum(arr, result):
+        total = 0
+        for value in arr:
+            total += value
+        result[0] = total
+
+    # Make type checkers happy:
+    custom_sum = cast(Callable[[object], object], my_custom_sum)
+
+    # Demonstrate NumPy as the canonical expected behavior:
+    assert custom_sum(np.array([10, 2, 3], dtype=np.int64)) == 15
+
+    # Direct call of the gufunc:
+    df = pl.DataFrame({"values": [10, 2, 3]})
+    assert custom_sum(df.get_column("values")) == 15
+
+    # Indirect call of the gufunc:
+    indirect = df.select(pl.col("values").map_batches(custom_sum))
+    assert_frame_equal(indirect, pl.DataFrame({"values": 15}))

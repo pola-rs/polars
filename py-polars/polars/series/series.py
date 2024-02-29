@@ -1464,6 +1464,25 @@ class Series:
                 else dtype_char_minimum
             )
 
+            # Figure out the size of the output. We don't support the full
+            # signature options yet, in particular NEP 20, so this will get
+            # things wrong in some cases. The default is the length of the
+            # Series.
+            #
+            # Documentation of the signature syntax is found in NEPs 5 and 20
+            # in the NumPy docs, and perhaps additional ones
+            # (https://numpy.org/neps/).
+            output_length = s.len()
+            result_is_series = True
+            if ufunc.signature:
+                # Non-generalized ufuncs won't have signature set, so it's
+                # going to be the length of the input. If it is set we need to
+                # parse it.
+                result_signature = ufunc.signature.split("->", 1)[-1].strip()
+                if result_signature == "()":
+                    output_length = 1
+                    result_is_series = False
+
             f = get_ffi_func("apply_ufunc_<>", numpy_char_code_to_dtype(dtype_char), s)
 
             if f is None:
@@ -1473,13 +1492,23 @@ class Series:
                 )
                 raise NotImplementedError(msg)
 
-            series = f(lambda out: ufunc(*args, out=out, dtype=dtype_char, **kwargs))
-            return (
-                self._from_pyseries(series)
-                .to_frame()
-                .select(F.when(validity_mask).then(F.col(self.name)))
-                .to_series(0)
+            series = f(
+                lambda out: ufunc(*args, out=out, dtype=dtype_char, **kwargs),
+                output_length,
             )
+            if result_is_series:
+                return (
+                    self._from_pyseries(series)
+                    .to_frame()
+                    .select(F.when(validity_mask).then(F.col(self.name)))
+                    .to_series(0)
+                )
+            else:
+                getter = get_ffi_func(
+                    "get_<>", numpy_char_code_to_dtype(dtype_char), series
+                )
+                assert getter is not None
+                return getter(0)
         else:
             msg = (
                 "only `__call__` is implemented for numpy ufuncs on a Series, got "

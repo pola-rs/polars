@@ -66,12 +66,12 @@ macro_rules! impl_ufuncs {
             // the out array is allocated in this method, send to Python and once the ufunc is applied
             // ownership is taken by Rust again to prevent memory leak.
             // if the ufunc fails, we first must take ownership back.
-            fn $name(&self, lambda: &PyAny) -> PyResult<PySeries> {
+            fn $name(&self, lambda: &PyAny, output_size: usize) -> PyResult<PySeries> {
                 // numpy array object, and a *mut ptr
                 Python::with_gil(|py| {
-                    let size = self.len();
-                    let (out_array, av) =
-                        unsafe { aligned_array::<<$type as PolarsNumericType>::Native>(py, size) };
+                    let (out_array, av) = unsafe {
+                        aligned_array::<<$type as PolarsNumericType>::Native>(py, output_size)
+                    };
 
                     debug_assert_eq!(get_refcnt(out_array), 1);
                     // inserting it in a tuple increase the reference count by 1.
