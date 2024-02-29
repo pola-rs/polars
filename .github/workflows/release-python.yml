@@ -135,6 +135,7 @@ jobs:
         env:
           IS_LTS_CPU: ${{ matrix.package == 'polars-lts-cpu' }}
           IS_MACOS: ${{ matrix.os == 'macos-latest' }}
+        # IMPORTANT: All features enabled here should also be included in py-polars/polars/_cpu_check.py
         run: |
           if [[ "$IS_LTS_CPU" = true ]]; then
             FEATURES=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt
