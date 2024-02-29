@@ -168,7 +168,7 @@ where
     CompareString: Fn(&StringChunked, &'a StringChunked) -> BooleanChunked,
 {
     if lhs.is_enum() {
-        let rhs_cat = rhs.cast(lhs.dtype())?;
+        let rhs_cat = rhs.clone().into_series().strict_cast(lhs.dtype())?;
         cat_compare_function(lhs, rhs_cat.categorical().unwrap())
     } else if rhs.len() == 1 {
         match rhs.get(0) {
@@ -198,7 +198,7 @@ where
     CompareString: Fn(&StringChunked, &'a StringChunked) -> BooleanChunked,
 {
     if lhs.is_enum() {
-        let rhs_cat = rhs.cast(lhs.dtype())?;
+        let rhs_cat = rhs.clone().into_series().strict_cast(lhs.dtype())?;
         cat_compare_function(lhs, rhs_cat.categorical().unwrap())
     } else if rhs.len() == 1 {
         match rhs.get(0) {
