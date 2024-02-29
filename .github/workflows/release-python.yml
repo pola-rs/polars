@@ -184,6 +184,13 @@ jobs:
             --out dist
           manylinux: ${{ matrix.architecture == 'aarch64' && '2_24' || 'auto' }}
 
+      - name: Test wheel
+        # Only test on x86-64 for now as this matches the runner architecture
+        if: matrix.architecture == 'x86-64'
+        run: |
+          pip install --force-reinstall --verbose dist/*.whl
+          python -c 'import polars'
+
       - name: Upload wheel
         uses: actions/upload-artifact@v4
         with:
