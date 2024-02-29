@@ -24,6 +24,31 @@ from typing import (
 
 import polars._reexport as pl
 from polars import functions as F
+from polars._utils._async import _AioDataFrameResult, _GeventDataFrameResult
+from polars._utils._parse_expr_input import (
+    parse_as_expression,
+    parse_as_list_of_expressions,
+)
+from polars._utils._wrap import wrap_df, wrap_expr
+from polars._utils.convert import negate_duration_string, parse_as_duration_string
+from polars._utils.deprecation import (
+    deprecate_function,
+    deprecate_parameter_as_positional,
+    deprecate_renamed_function,
+    deprecate_renamed_parameter,
+    deprecate_saturating,
+    issue_deprecation_warning,
+)
+from polars._utils.unstable import issue_unstable_warning, unstable
+from polars._utils.various import (
+    _in_notebook,
+    _prepare_row_index_args,
+    _process_null_values,
+    is_bool_sequence,
+    is_sequence,
+    normalize_filepath,
+    parse_percentiles,
+)
 from polars.convert import from_dict
 from polars.datatypes import (
     DTYPE_TEMPORAL_UNITS,
@@ -62,31 +87,6 @@ from polars.lazyframe.group_by import LazyGroupBy
 from polars.lazyframe.in_process import InProcessQuery
 from polars.selectors import _expand_selectors, by_dtype, expand_selector
 from polars.slice import LazyPolarsSlice
-from polars.utils._async import _AioDataFrameResult, _GeventDataFrameResult
-from polars.utils._parse_expr_input import (
-    parse_as_expression,
-    parse_as_list_of_expressions,
-)
-from polars.utils._wrap import wrap_df, wrap_expr
-from polars.utils.convert import negate_duration_string, parse_as_duration_string
-from polars.utils.deprecation import (
-    deprecate_function,
-    deprecate_parameter_as_positional,
-    deprecate_renamed_function,
-    deprecate_renamed_parameter,
-    deprecate_saturating,
-    issue_deprecation_warning,
-)
-from polars.utils.unstable import issue_unstable_warning, unstable
-from polars.utils.various import (
-    _in_notebook,
-    _prepare_row_index_args,
-    _process_null_values,
-    is_bool_sequence,
-    is_sequence,
-    normalize_filepath,
-    parse_percentiles,
-)
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyLazyFrame

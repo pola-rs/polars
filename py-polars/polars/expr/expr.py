@@ -25,6 +25,29 @@ from typing import (
 
 import polars._reexport as pl
 from polars import functions as F
+from polars._utils._parse_expr_input import (
+    parse_as_expression,
+    parse_as_list_of_expressions,
+    parse_predicates_constraints_as_expression,
+)
+from polars._utils.convert import negate_duration_string, parse_as_duration_string
+from polars._utils.deprecation import (
+    deprecate_function,
+    deprecate_nonkeyword_arguments,
+    deprecate_renamed_function,
+    deprecate_renamed_parameter,
+    deprecate_saturating,
+    issue_deprecation_warning,
+)
+from polars._utils.unstable import issue_unstable_warning, unstable
+from polars._utils.various import (
+    BUILDING_SPHINX_DOCS,
+    find_stacklevel,
+    no_default,
+    normalize_filepath,
+    sphinx_accessor,
+    warn_null_comparison,
+)
 from polars.datatypes import (
     Int64,
     is_polars_dtype,
@@ -43,29 +66,6 @@ from polars.expr.name import ExprNameNameSpace
 from polars.expr.string import ExprStringNameSpace
 from polars.expr.struct import ExprStructNameSpace
 from polars.meta import thread_pool_size
-from polars.utils._parse_expr_input import (
-    parse_as_expression,
-    parse_as_list_of_expressions,
-    parse_predicates_constraints_as_expression,
-)
-from polars.utils.convert import negate_duration_string, parse_as_duration_string
-from polars.utils.deprecation import (
-    deprecate_function,
-    deprecate_nonkeyword_arguments,
-    deprecate_renamed_function,
-    deprecate_renamed_parameter,
-    deprecate_saturating,
-    issue_deprecation_warning,
-)
-from polars.utils.unstable import issue_unstable_warning, unstable
-from polars.utils.various import (
-    BUILDING_SPHINX_DOCS,
-    find_stacklevel,
-    no_default,
-    normalize_filepath,
-    sphinx_accessor,
-    warn_null_comparison,
-)
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import arg_where as py_arg_where
@@ -78,6 +78,9 @@ if TYPE_CHECKING:
     from io import IOBase
 
     from polars import DataFrame, LazyFrame, Series
+    from polars._utils.various import (
+        NoDefault,
+    )
     from polars.type_aliases import (
         ClosedInterval,
         FillNullStrategy,
@@ -93,9 +96,6 @@ if TYPE_CHECKING:
         SearchSortedSide,
         TemporalLiteral,
         WindowMappingStrategy,
-    )
-    from polars.utils.various import (
-        NoDefault,
     )
 
     if sys.version_info >= (3, 11):
@@ -4358,7 +4358,7 @@ class Expr:
             )
 
         # input x: Series of type list containing the group values
-        from polars.utils.udfs import warn_on_inefficient_map
+        from polars._utils.udfs import warn_on_inefficient_map
 
         root_names = self.meta.root_names()
         if len(root_names) > 0:

@@ -31,6 +31,43 @@ from typing import (
 
 import polars._reexport as pl
 from polars import functions as F
+from polars._utils._construction import (
+    arrow_to_pydf,
+    dict_to_pydf,
+    frame_to_pydf,
+    iterable_to_pydf,
+    numpy_to_idxs,
+    numpy_to_pydf,
+    pandas_to_pydf,
+    sequence_to_pydf,
+    series_to_pydf,
+)
+from polars._utils._parse_expr_input import parse_as_expression
+from polars._utils._wrap import wrap_expr, wrap_ldf, wrap_s
+from polars._utils.convert import parse_as_duration_string
+from polars._utils.deprecation import (
+    deprecate_function,
+    deprecate_nonkeyword_arguments,
+    deprecate_parameter_as_positional,
+    deprecate_renamed_function,
+    deprecate_renamed_parameter,
+    deprecate_saturating,
+    issue_deprecation_warning,
+)
+from polars._utils.unstable import issue_unstable_warning, unstable
+from polars._utils.various import (
+    _prepare_row_index_args,
+    _process_null_values,
+    handle_projection_columns,
+    is_bool_sequence,
+    is_int_sequence,
+    is_str_sequence,
+    normalize_filepath,
+    parse_version,
+    range_to_slice,
+    scale_bytes,
+    warn_null_comparison,
+)
 from polars.dataframe._html import NotebookFormatter
 from polars.dataframe.group_by import DynamicGroupBy, GroupBy, RollingGroupBy
 from polars.datatypes import (
@@ -76,43 +113,6 @@ from polars.io.spreadsheet._write_utils import (
 from polars.selectors import _expand_selector_dicts, _expand_selectors
 from polars.slice import PolarsSlice
 from polars.type_aliases import DbWriteMode
-from polars.utils._construction import (
-    arrow_to_pydf,
-    dict_to_pydf,
-    frame_to_pydf,
-    iterable_to_pydf,
-    numpy_to_idxs,
-    numpy_to_pydf,
-    pandas_to_pydf,
-    sequence_to_pydf,
-    series_to_pydf,
-)
-from polars.utils._parse_expr_input import parse_as_expression
-from polars.utils._wrap import wrap_expr, wrap_ldf, wrap_s
-from polars.utils.convert import parse_as_duration_string
-from polars.utils.deprecation import (
-    deprecate_function,
-    deprecate_nonkeyword_arguments,
-    deprecate_parameter_as_positional,
-    deprecate_renamed_function,
-    deprecate_renamed_parameter,
-    deprecate_saturating,
-    issue_deprecation_warning,
-)
-from polars.utils.unstable import issue_unstable_warning, unstable
-from polars.utils.various import (
-    _prepare_row_index_args,
-    _process_null_values,
-    handle_projection_columns,
-    is_bool_sequence,
-    is_int_sequence,
-    is_str_sequence,
-    normalize_filepath,
-    parse_version,
-    range_to_slice,
-    scale_bytes,
-    warn_null_comparison,
-)
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyDataFrame

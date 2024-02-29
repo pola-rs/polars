@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 import polars as pl
-from polars.utils.unstable import issue_unstable_warning, unstable
+from polars._utils.unstable import issue_unstable_warning, unstable
 
 
 def test_issue_unstable_warning(monkeypatch: pytest.MonkeyPatch) -> None:

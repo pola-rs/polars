@@ -21,8 +21,8 @@ from functools import partial, singledispatch
 from typing import TYPE_CHECKING, Any, Callable
 
 import polars._reexport as pl
+from polars._utils.convert import to_py_date, to_py_datetime
 from polars.dependencies import pyiceberg
-from polars.utils.convert import to_py_date, to_py_datetime
 
 if TYPE_CHECKING:
     from datetime import date, datetime

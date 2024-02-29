@@ -71,13 +71,13 @@ def _scan_pyarrow_dataset_impl(
     _filter = None
 
     if predicate:
-        from polars.datatypes import Date, Datetime, Duration
-        from polars.utils.convert import (
+        from polars._utils.convert import (
             to_py_date,
             to_py_datetime,
             to_py_time,
             to_py_timedelta,
         )
+        from polars.datatypes import Date, Datetime, Duration
 
         _filter = eval(
             predicate,

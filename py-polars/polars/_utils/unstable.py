@@ -6,8 +6,8 @@ import warnings
 from functools import wraps
 from typing import TYPE_CHECKING, Callable, TypeVar
 
+from polars._utils.various import find_stacklevel
 from polars.exceptions import UnstableWarning
-from polars.utils.various import find_stacklevel
 
 if TYPE_CHECKING:
     import sys

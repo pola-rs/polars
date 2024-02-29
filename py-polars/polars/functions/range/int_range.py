@@ -4,9 +4,9 @@ import contextlib
 from typing import TYPE_CHECKING, overload
 
 from polars import functions as F
+from polars._utils._parse_expr_input import parse_as_expression
+from polars._utils._wrap import wrap_expr, wrap_s
 from polars.datatypes import Int64
-from polars.utils._parse_expr_input import parse_as_expression
-from polars.utils._wrap import wrap_expr, wrap_s
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr

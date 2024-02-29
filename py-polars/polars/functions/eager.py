@@ -7,10 +7,10 @@ from typing import TYPE_CHECKING, Iterable, List, Sequence, cast, get_args
 
 import polars._reexport as pl
 from polars import functions as F
+from polars._utils._wrap import wrap_df, wrap_expr, wrap_ldf, wrap_s
+from polars._utils.various import ordered_unique
 from polars.exceptions import InvalidOperationError
 from polars.type_aliases import ConcatMethod, FrameType
-from polars.utils._wrap import wrap_df, wrap_expr, wrap_ldf, wrap_s
-from polars.utils.various import ordered_unique
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr

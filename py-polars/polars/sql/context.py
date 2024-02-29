@@ -3,12 +3,12 @@ from __future__ import annotations
 import contextlib
 from typing import TYPE_CHECKING, Collection, Generic, Mapping, overload
 
+from polars._utils._wrap import wrap_ldf
+from polars._utils.unstable import issue_unstable_warning
+from polars._utils.various import _get_stack_locals
 from polars.dataframe import DataFrame
 from polars.lazyframe import LazyFrame
 from polars.type_aliases import FrameType
-from polars.utils._wrap import wrap_ldf
-from polars.utils.unstable import issue_unstable_warning
-from polars.utils.various import _get_stack_locals
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PySQLContext

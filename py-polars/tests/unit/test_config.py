@@ -8,8 +8,8 @@ import pytest
 
 import polars as pl
 import polars.polars as plr
+from polars._utils.unstable import issue_unstable_warning
 from polars.config import _POLARS_CFG_ENV_VARS
-from polars.utils.unstable import issue_unstable_warning
 
 
 @pytest.fixture(autouse=True)

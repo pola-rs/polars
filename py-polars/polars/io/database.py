@@ -6,9 +6,9 @@ from importlib import import_module
 from inspect import Parameter, signature
 from typing import TYPE_CHECKING, Any, Iterable, Literal, Sequence, TypedDict, overload
 
+from polars._utils.deprecation import issue_deprecation_warning
 from polars.convert import from_arrow
 from polars.exceptions import InvalidOperationError, UnsuitableSQLError
-from polars.utils.deprecation import issue_deprecation_warning
 
 if TYPE_CHECKING:
     from types import TracebackType

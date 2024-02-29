@@ -8,8 +8,8 @@ from typing import Any
 import pytest
 
 import polars as pl
+from polars._utils._wrap import wrap_s
 from polars.polars import PySeries
-from polars.utils._wrap import wrap_s
 
 
 @pytest.mark.parametrize(

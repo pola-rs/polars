@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from polars.utils._polars_version import get_polars_version
+from polars._utils._polars_version import get_polars_version
 
 try:
     from polars.polars import __build__
