@@ -70,7 +70,7 @@ where
         })
     } else {
         if arr.null_count() > 0 {
-            panic!("'Expr.rolling_*(..., by=...)' not yet supported for series with null values, consider using 'DataFrame.rolling' or 'Expr.rolling'")
+            polars_bail!(InvalidOperation: "'Expr.rolling_*(..., by=...)' not yet supported for series with null values, consider using 'DataFrame.rolling' or 'Expr.rolling'")
         }
         let values = arr.values().as_slice();
         let duration = options.window_size;
