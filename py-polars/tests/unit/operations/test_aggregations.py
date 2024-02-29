@@ -398,3 +398,28 @@ def test_agg_filter_over_empty_df_13610() -> None:
     out = df.group_by("a").agg(pl.col("b").filter(pl.col("b").shift()))
     expected = pl.DataFrame(schema={"a": pl.Int64, "b": pl.List(pl.Boolean)})
     assert_frame_equal(out, expected)
+
+
+@pytest.mark.slow()
+def test_agg_empty_sum_after_filter_14734() -> None:
+    f = (
+        pl.DataFrame({"a": [1, 2], "b": [1, 2]})
+        .lazy()
+        .group_by("a")
+        .agg(pl.col("b").filter(pl.lit(False)).sum())
+        .collect
+    )
+
+    last = f()
+
+    # We need both possible output orders, which should happen within
+    # 1000 iterations (during testing it usually happens within 10).
+    limit = 1000
+    i = 0
+    while (curr := f()).equals(last):
+        i += 1
+        assert i != limit
+
+    expect = pl.Series("b", [0, 0]).to_frame()
+    assert_frame_equal(expect, last.select("b"))
+    assert_frame_equal(expect, curr.select("b"))
