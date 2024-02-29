@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 try:
-    import numba
+    import numba  # type: ignore[import-untyped]
 except ImportError:
     # Numba can take a while to support new Python versions, so we don't want a
     # hard dependency on it.
@@ -144,8 +144,8 @@ def test_grouped_ufunc() -> None:
 def test_generalized_ufunc() -> None:
     assert numba is not None  # to pacify type checkers
 
-    @numba.guvectorize([(numba.int64[:], numba.int64[:])], "(n)->()")
-    def my_custom_sum(arr, result):
+    @numba.guvectorize([(numba.int64[:], numba.int64[:])], "(n)->()")  # type: ignore[misc]
+    def my_custom_sum(arr, result) -> None:  # type: ignore[no-untyped-def]
         total = 0
         for value in arr:
             total += value
