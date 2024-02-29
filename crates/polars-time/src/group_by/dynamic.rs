@@ -90,7 +90,7 @@ const LB_NAME: &str = "_lower_boundary";
 const UP_NAME: &str = "_upper_boundary";
 
 pub trait PolarsTemporalGroupby {
-    fn group_by_rolling(
+    fn rolling(
         &self,
         group_by: Vec<Series>,
         options: &RollingGroupOptions,
@@ -104,12 +104,12 @@ pub trait PolarsTemporalGroupby {
 }
 
 impl PolarsTemporalGroupby for DataFrame {
-    fn group_by_rolling(
+    fn rolling(
         &self,
         group_by: Vec<Series>,
         options: &RollingGroupOptions,
     ) -> PolarsResult<(Series, Vec<Series>, GroupsProxy)> {
-        Wrap(self).group_by_rolling(group_by, options)
+        Wrap(self).rolling(group_by, options)
     }
 
     fn group_by_dynamic(
@@ -122,7 +122,7 @@ impl PolarsTemporalGroupby for DataFrame {
 }
 
 impl Wrap<&DataFrame> {
-    fn group_by_rolling(
+    fn rolling(
         &self,
         group_by: Vec<Series>,
         options: &RollingGroupOptions,
@@ -136,11 +136,11 @@ impl Wrap<&DataFrame> {
         if group_by.is_empty() {
             // If by is given, the column must be sorted in the 'by' arg, which we can not check now
             // this will be checked when the groups are materialized.
-            ensure_sorted_arg(&time, "group_by_rolling")?;
+            ensure_sorted_arg(&time, "rolling")?;
         }
         let time_type = time.dtype();
 
-        polars_ensure!(time.null_count() == 0, ComputeError: "null values in dynamic group_by not supported, fill nulls.");
+        polars_ensure!(time.null_count() == 0, ComputeError: "null values in `rolling` not supported, fill nulls.");
 
         use DataType::*;
         let (dt, tu, tz): (Series, TimeUnit, Option<TimeZone>) = match time_type {
@@ -153,7 +153,7 @@ impl Wrap<&DataFrame> {
             UInt32 | UInt64 | Int32 => {
                 let time_type_dt = Datetime(TimeUnit::Nanoseconds, None);
                 let dt = time.cast(&Int64).unwrap().cast(&time_type_dt).unwrap();
-                let (out, by, gt) = self.impl_group_by_rolling(
+                let (out, by, gt) = self.impl_rolling(
                     dt,
                     group_by,
                     options,
@@ -167,7 +167,7 @@ impl Wrap<&DataFrame> {
             Int64 => {
                 let time_type = Datetime(TimeUnit::Nanoseconds, None);
                 let dt = time.cast(&time_type).unwrap();
-                let (out, by, gt) = self.impl_group_by_rolling(
+                let (out, by, gt) = self.impl_rolling(
                     dt,
                     group_by,
                     options,
@@ -180,21 +180,16 @@ impl Wrap<&DataFrame> {
             },
             dt => polars_bail!(
                 ComputeError:
-                "expected any of the following dtypes: {{ Date, Datetime, Int32, Int64 }}, got {}",
+                "expected any of the following dtypes: {{ Date, Datetime, Int32, Int64, UInt32, UInt64 }}, got {}",
                 dt
             ),
         };
         match tz {
             #[cfg(feature = "timezones")]
-            Some(tz) => self.impl_group_by_rolling(
-                dt,
-                group_by,
-                options,
-                tu,
-                tz.parse::<Tz>().ok(),
-                time_type,
-            ),
-            _ => self.impl_group_by_rolling(dt, group_by, options, tu, None, time_type),
+            Some(tz) => {
+                self.impl_rolling(dt, group_by, options, tu, tz.parse::<Tz>().ok(), time_type)
+            },
+            _ => self.impl_rolling(dt, group_by, options, tu, None, time_type),
         }
     }
 
@@ -531,7 +526,7 @@ impl Wrap<&DataFrame> {
     }
 
     /// Returns: time_keys, keys, groupsproxy
-    fn impl_group_by_rolling(
+    fn impl_rolling(
         &self,
         dt: Series,
         by: Vec<Series>,
@@ -712,7 +707,7 @@ mod test {
             let df = DataFrame::new(vec![date, a.clone()])?;
 
             let (_, _, groups) = df
-                .group_by_rolling(
+                .rolling(
                     vec![],
                     &RollingGroupOptions {
                         index_column: "dt".into(),
@@ -760,7 +755,7 @@ mod test {
         let df = DataFrame::new(vec![date, a.clone()])?;
 
         let (_, _, groups) = df
-            .group_by_rolling(
+            .rolling(
                 vec![],
                 &RollingGroupOptions {
                     index_column: "dt".into(),
