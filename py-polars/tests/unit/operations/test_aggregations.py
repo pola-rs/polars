@@ -400,6 +400,7 @@ def test_agg_filter_over_empty_df_13610() -> None:
     assert_frame_equal(out, expected)
 
 
+@pytest.mark.slow()
 def test_agg_empty_sum_after_filter_14734() -> None:
     f = (
         pl.DataFrame({"a": [1, 2], "b": [1, 2]})
