@@ -25,7 +25,7 @@ where
             .map(|iter| {
                 // create hashes and keys
                 iter.into_iter()
-                    .map(|val| (build_hasher.hash_one(&val.to_total_ord()), val))
+                    .map(|val| (build_hasher.hash_one(val.to_total_ord()), val))
                     .collect_trusted::<Vec<_>>()
             })
             .collect()
