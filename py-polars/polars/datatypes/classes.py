@@ -92,9 +92,6 @@ class DataType(metaclass=DataTypeClass):
 
     __slots__ = ()
 
-    def __reduce__(self) -> Any:
-        return (_custom_reconstruct, (type(self), object, None), self.__dict__)
-
     def _string_repr(self) -> str:
         return _dtype_str_repr(self)
 
@@ -219,19 +216,6 @@ class DataType(metaclass=DataTypeClass):
     def is_nested(cls) -> bool:
         """Check whether the data type is a nested type."""
         return issubclass(cls, NestedType)
-
-
-def _custom_reconstruct(
-    cls: type[Any], base: type[Any], state: Any
-) -> PolarsDataType | type:
-    """Helper function for unpickling DataType objects."""
-    if state:
-        obj = base.__new__(cls, state)
-        if base.__init__ != object.__init__:
-            base.__init__(obj, state)
-    else:
-        obj = object.__new__(cls)
-    return obj
 
 
 class DataTypeGroup(frozenset):  # type: ignore[type-arg]
