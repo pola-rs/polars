@@ -205,6 +205,7 @@ def read_cpu_flags() -> dict[str, bool]:
         "sse4.1": bool(cpuid1.ecx & (1 << 19)),
         "sse4.2": bool(cpuid1.ecx & (1 << 20)),
         "popcnt": bool(cpuid1.ecx & (1 << 23)),
+        "pclmulqdq": bool(cpuid1.ecx & (1 << 1)),
         "avx": bool(cpuid1.ecx & (1 << 28)),
         "bmi1": bool(cpuid7.ebx & (1 << 3)),
         "bmi2": bool(cpuid7.ebx & (1 << 8)),
