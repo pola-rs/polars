@@ -9,9 +9,6 @@ use polars_time::dst_offset as dst_offset_fn;
 use serde::{Deserialize, Serialize};
 
 use super::*;
-use crate::dsl::function_expr::TemporalFunction::{
-    MonthEnd, MonthStart, QuarterEnd, QuarterStart, YearEnd, YearStart,
-};
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]

@@ -6,9 +6,6 @@ use polars_core::chunked_array::ops::arity::try_binary_elementwise;
 use polars_time::prelude::*;
 
 use super::*;
-use crate::dsl::function_expr::TemporalFunction::{
-    MonthEnd, MonthStart, QuarterEnd, QuarterStart, YearEnd, YearStart,
-};
 use crate::{map, map_as_slice};
 
 impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
