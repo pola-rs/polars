@@ -31,7 +31,7 @@ if TYPE_CHECKING:
 
     from polars.type_aliases import JoinStrategy, UniqueKeepStrategy
 else:
-    from polars.utils.convert import string_to_zoneinfo as ZoneInfo
+    from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
 
 def test_version() -> None:

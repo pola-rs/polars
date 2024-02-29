@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
     from polars.type_aliases import TemporalLiteral, TimeUnit
 else:
-    from polars.utils.convert import string_to_zoneinfo as ZoneInfo
+    from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
 
 @pytest.fixture()
