@@ -94,7 +94,7 @@ expression in batches. Whereas for other operations this would not be allowed, t
 # expression_lib/__init__.py
 import polars as pl
 from polars.type_aliases import IntoExpr
-from polars._utils.udfs import _get_shared_lib_location
+from polars.utils.udfs import _get_shared_lib_location
 
 from expression_lib.utils import parse_into_expr
 
