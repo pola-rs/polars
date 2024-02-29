@@ -606,7 +606,11 @@ impl BatchedParquetReader {
 
     pub async fn next_batches(&mut self, n: usize) -> PolarsResult<Option<Vec<DataFrame>>> {
         if self.limit == 0 && self.has_returned {
-            return Ok(None);
+            return if self.chunks_fifo.is_empty() {
+                Ok(None)
+            } else {
+                Ok(Some(self.chunks_fifo.drain(..n).collect()))
+            };
         }
 
         let mut skipped_all_rgs = false;

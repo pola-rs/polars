@@ -230,10 +230,8 @@ impl ParquetSource {
         }
         Ok(source)
     }
-}
 
-impl Source for ParquetSource {
-    fn get_batches(&mut self, _context: &PExecutionContext) -> PolarsResult<SourceResult> {
+    fn prefetch_files(&mut self) -> PolarsResult<()> {
         // We already start downloading the next file, we can only do that if we don't have a limit.
         // In the case of a limit we first must update the row count with the batch results.
         //
@@ -269,6 +267,13 @@ impl Source for ParquetSource {
                 }
             }
         }
+        Ok(())
+    }
+}
+
+impl Source for ParquetSource {
+    fn get_batches(&mut self, _context: &PExecutionContext) -> PolarsResult<SourceResult> {
+        self.prefetch_files()?;
 
         let Some(mut reader) = self.batched_readers.pop_front() else {
             // If there was no new reader, we depleted all of them and are finished.
