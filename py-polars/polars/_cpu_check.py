@@ -122,10 +122,6 @@ class CPUID_struct(ctypes.Structure):
 
 class CPUID:
     def __init__(self) -> None:
-        if _POLARS_ARCH != "x86-64":
-            msg = "CPUID is only available for x86"
-            raise SystemError(msg)
-
         if _IS_WINDOWS:
             if _IS_64BIT:
                 # VirtualAlloc seems to fail under some weird
@@ -188,10 +184,6 @@ class CPUID:
 
 
 def _read_cpu_flags() -> dict[str, bool]:
-    # Right now we only enable extra feature flags for x86.
-    if _POLARS_ARCH != "x86-64":
-        return {}
-
     # CPU flags from https://en.wikipedia.org/wiki/CPUID
     cpuid = CPUID()
     cpuid1 = cpuid(1, 0)
@@ -228,7 +220,7 @@ def check_cpu_flags() -> None:
     missing_features = []
     for f in expected_cpu_flags:
         if f not in supported_cpu_flags:
-            msg = f'unknown feature flag "{f}"'
+            msg = f"unknown feature flag: {f!r}"
             raise RuntimeError(msg)
 
         if not supported_cpu_flags[f]:
