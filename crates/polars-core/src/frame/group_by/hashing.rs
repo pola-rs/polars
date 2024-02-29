@@ -223,7 +223,7 @@ where
                                 RawEntryMut::Vacant(entry) => {
                                     let tuples = unitvec![idx];
                                     entry.insert_with_hasher(hash, k, (idx, tuples), |k| {
-                                        hasher.hash_one(k)
+                                        hasher.hash_one(*k)
                                     });
                                 },
                                 RawEntryMut::Occupied(mut entry) => {
@@ -288,7 +288,7 @@ where
                                 RawEntryMut::Vacant(entry) => {
                                     let tuples = unitvec![idx];
                                     entry.insert_with_hasher(hash, k, (idx, tuples), |k| {
-                                        hasher.hash_one(k)
+                                        hasher.hash_one(*k)
                                     });
                                 },
                                 RawEntryMut::Occupied(mut entry) => {

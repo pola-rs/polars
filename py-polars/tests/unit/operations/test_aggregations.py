@@ -423,3 +423,19 @@ def test_agg_empty_sum_after_filter_14734() -> None:
     expect = pl.Series("b", [0, 0]).to_frame()
     assert_frame_equal(expect, last.select("b"))
     assert_frame_equal(expect, curr.select("b"))
+
+
+@pytest.mark.slow()
+def test_grouping_hash_14749() -> None:
+    n_groups = 251
+    rows_per_group = 4
+    assert (
+        pl.DataFrame(
+            {
+                "grp": np.repeat(np.arange(n_groups), rows_per_group),
+                "x": np.tile(np.arange(rows_per_group), n_groups),
+            }
+        )
+        .select(pl.col("x").max().over("grp"))["x"]
+        .value_counts()
+    ) == {"x": [3], "count": [1004]}
