@@ -231,3 +231,27 @@ def test_expression_json_13991() -> None:
 
     round_tripped = pl.Expr.deserialize(io.StringIO(json))
     assert round_tripped.meta == expr
+
+
+def test_serde_data_type_class() -> None:
+    dtype = pl.Datetime
+    serialized = pickle.dumps(dtype)
+    deserialized = pickle.loads(serialized)
+    assert deserialized == dtype
+    assert isinstance(deserialized, type)
+
+
+def test_serde_data_type_instantiated() -> None:
+    dtype = pl.Int8()
+    serialized = pickle.dumps(dtype)
+    deserialized = pickle.loads(serialized)
+    assert deserialized == dtype
+    assert isinstance(deserialized, pl.DataType)
+
+
+def test_serde_data_type_instantiated_with_attributes() -> None:
+    dtype = pl.Enum(["a", "b"])
+    serialized = pickle.dumps(dtype)
+    deserialized = pickle.loads(serialized)
+    assert deserialized == dtype
+    assert isinstance(deserialized, pl.DataType)
