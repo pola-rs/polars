@@ -1928,7 +1928,7 @@ class DateTimeNameSpace:
 
     def quarter_start(self) -> Series:
         """
-        Roll backward to the first day of the month.
+        Roll backward to the first day of the quarter.
 
         Returns
         -------
@@ -1938,7 +1938,7 @@ class DateTimeNameSpace:
         Notes
         -----
         If you're coming from pandas, you can think of this as a vectorised version
-        of `pandas.tseries.offsets.MonthBegin().rollback(datetime)`.
+        of `pandas.tseries.offsets.QuarterBegin().rollback(datetime)`.
 
         Examples
         --------
@@ -1946,20 +1946,20 @@ class DateTimeNameSpace:
         >>> s = pl.datetime_range(
         ...     datetime(2000, 1, 2, 2), datetime(2000, 4, 2, 2), "1mo", eager=True
         ... ).alias("datetime")
-        >>> s.dt.month_start()
+        >>> s.dt.quarter_start()
         shape: (4,)
         Series: 'datetime' [datetime[μs]]
         [
                 2000-01-01 02:00:00
-                2000-02-01 02:00:00
-                2000-03-01 02:00:00
+                2000-01-01 02:00:00
+                2000-01-01 02:00:00
                 2000-04-01 02:00:00
         ]
         """
 
     def quarter_end(self) -> Series:
         """
-        Roll forward to the last day of the month.
+        Roll forward to the last day of the quarter.
 
         Returns
         -------
@@ -1969,7 +1969,7 @@ class DateTimeNameSpace:
         Notes
         -----
         If you're coming from pandas, you can think of this as a vectorised version
-        of `pandas.tseries.offsets.MonthEnd().rollforward(datetime)`.
+        of `pandas.tseries.offsets.QuarterEnd().rollforward(datetime)`.
 
         Examples
         --------
@@ -1977,20 +1977,20 @@ class DateTimeNameSpace:
         >>> s = pl.datetime_range(
         ...     datetime(2000, 1, 2, 2), datetime(2000, 4, 2, 2), "1mo", eager=True
         ... ).alias("datetime")
-        >>> s.dt.month_end()
+        >>> s.dt.quarter_end()
         shape: (4,)
         Series: 'datetime' [datetime[μs]]
         [
                 2000-01-31 02:00:00
-                2000-02-29 02:00:00
-                2000-03-31 02:00:00
+                2000-01-31 02:00:00
+                2000-01-31 02:00:00
                 2000-04-30 02:00:00
         ]
         """
 
     def year_start(self) -> Series:
         """
-        Roll backward to the first day of the month.
+        Roll backward to the first day of the year.
 
         Returns
         -------
@@ -2000,28 +2000,28 @@ class DateTimeNameSpace:
         Notes
         -----
         If you're coming from pandas, you can think of this as a vectorised version
-        of `pandas.tseries.offsets.MonthBegin().rollback(datetime)`.
+        of `pandas.tseries.offsets.YearBegin().rollback(datetime)`.
 
         Examples
         --------
         >>> from datetime import datetime
         >>> s = pl.datetime_range(
-        ...     datetime(2000, 1, 2, 2), datetime(2000, 4, 2, 2), "1mo", eager=True
+        ...     datetime(2000, 1, 2, 2), datetime(2003, 4, 2, 2), "1y", eager=True
         ... ).alias("datetime")
-        >>> s.dt.month_start()
+        >>> s.dt.year_start()
         shape: (4,)
         Series: 'datetime' [datetime[μs]]
         [
                 2000-01-01 02:00:00
-                2000-02-01 02:00:00
-                2000-03-01 02:00:00
-                2000-04-01 02:00:00
+                2001-01-01 02:00:00
+                2002-01-01 02:00:00
+                2003-01-01 02:00:00
         ]
         """
 
     def year_end(self) -> Series:
         """
-        Roll forward to the last day of the month.
+        Roll forward to the last day of the year.
 
         Returns
         -------
@@ -2031,22 +2031,22 @@ class DateTimeNameSpace:
         Notes
         -----
         If you're coming from pandas, you can think of this as a vectorised version
-        of `pandas.tseries.offsets.MonthEnd().rollforward(datetime)`.
+        of `pandas.tseries.offsets.YearEnd().rollforward(datetime)`.
 
         Examples
         --------
         >>> from datetime import datetime
         >>> s = pl.datetime_range(
-        ...     datetime(2000, 1, 2, 2), datetime(2000, 4, 2, 2), "1mo", eager=True
+        ...     datetime(2000, 1, 2, 2), datetime(2003, 4, 2, 2), "1y", eager=True
         ... ).alias("datetime")
-        >>> s.dt.month_end()
+        >>> s.dt.year_end()
         shape: (4,)
         Series: 'datetime' [datetime[μs]]
         [
                 2000-01-31 02:00:00
-                2000-02-29 02:00:00
-                2000-03-31 02:00:00
-                2000-04-30 02:00:00
+                2001-01-31 02:00:00
+                2002-01-31 02:00:00
+                2003-01-31 02:00:00
         ]
         """
 
