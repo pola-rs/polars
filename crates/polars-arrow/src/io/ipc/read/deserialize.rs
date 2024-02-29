@@ -263,6 +263,7 @@ pub fn skip(
     field_nodes: &mut VecDeque<Node>,
     data_type: &ArrowDataType,
     buffers: &mut VecDeque<IpcBuffer>,
+    variadic_buffer_counts: &mut VecDeque<usize>,
 ) -> PolarsResult<()> {
     use PhysicalType::*;
     match data_type.to_physical_type() {
@@ -272,13 +273,15 @@ pub fn skip(
         LargeBinary | Binary => skip_binary(field_nodes, buffers),
         LargeUtf8 | Utf8 => skip_utf8(field_nodes, buffers),
         FixedSizeBinary => skip_fixed_size_binary(field_nodes, buffers),
-        List => skip_list::<i32>(field_nodes, data_type, buffers),
-        LargeList => skip_list::<i64>(field_nodes, data_type, buffers),
-        FixedSizeList => skip_fixed_size_list(field_nodes, data_type, buffers),
-        Struct => skip_struct(field_nodes, data_type, buffers),
+        List => skip_list::<i32>(field_nodes, data_type, buffers, variadic_buffer_counts),
+        LargeList => skip_list::<i64>(field_nodes, data_type, buffers, variadic_buffer_counts),
+        FixedSizeList => {
+            skip_fixed_size_list(field_nodes, data_type, buffers, variadic_buffer_counts)
+        },
+        Struct => skip_struct(field_nodes, data_type, buffers, variadic_buffer_counts),
         Dictionary(_) => skip_dictionary(field_nodes, buffers),
-        Union => skip_union(field_nodes, data_type, buffers),
-        Map => skip_map(field_nodes, data_type, buffers),
-        BinaryView | Utf8View => todo!(),
+        Union => skip_union(field_nodes, data_type, buffers, variadic_buffer_counts),
+        Map => skip_map(field_nodes, data_type, buffers, variadic_buffer_counts),
+        BinaryView | Utf8View => skip_binview(field_nodes, buffers, variadic_buffer_counts),
     }
 }
