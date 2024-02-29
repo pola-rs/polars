@@ -341,6 +341,7 @@ impl CategoricalField {
     }
 }
 
+#[cfg(feature = "dtype-categorical")]
 fn bytes_to_utf8<'a>(
     bytes: &'a [u8],
     scratch: &'a mut Vec<u8>,
@@ -773,6 +774,7 @@ impl Buffer {
                     panic!("activate 'dtype-categorical' feature")
                 }
             },
+            #[allow(unused_variables)]
             Buffer::Enum(v) => {
                 #[cfg(feature = "dtype-categorical")]
                 {
