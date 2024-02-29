@@ -187,7 +187,7 @@ class CPUID:
             self.win.VirtualFree(self.addr, 0, _MEM_RELEASE)
 
 
-def read_cpu_flags() -> dict[str, bool]:
+def _read_cpu_flags() -> dict[str, bool]:
     # Right now we only enable extra feature flags for x86.
     if _POLARS_ARCH != "x86-64":
         return {}
@@ -223,7 +223,7 @@ def check_cpu_flags() -> None:
         return
 
     expected_cpu_flags = [f.lstrip("+") for f in _POLARS_FEATURE_FLAGS.split(",")]
-    supported_cpu_flags = read_cpu_flags()
+    supported_cpu_flags = _read_cpu_flags()
 
     missing_features = []
     for f in expected_cpu_flags:
