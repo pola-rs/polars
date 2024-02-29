@@ -6498,7 +6498,7 @@ class DataFrame:
         >>> df.select(pl.col("foo") * 2 + pl.col("bar"))  # doctest: +IGNORE_RESULT
         """
         # TODO: Enable warning for inefficient map
-        # from polars.utils.udfs import warn_on_inefficient_map
+        # from polars._utils.udfs import warn_on_inefficient_map
         # warn_on_inefficient_map(function, columns=self.columns, map_target="frame)
 
         out, is_df = self._df.map_rows(function, return_dtype, inference_size)
