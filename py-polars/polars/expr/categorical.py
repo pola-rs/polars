@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from polars.utils._wrap import wrap_expr
-from polars.utils.deprecation import deprecate_function
+from polars._utils._wrap import wrap_expr
+from polars._utils.deprecation import deprecate_function
 
 if TYPE_CHECKING:
     from polars import Expr

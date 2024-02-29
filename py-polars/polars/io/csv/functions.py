@@ -4,12 +4,12 @@ from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any, Callable, Mapping, Sequence
 
 import polars._reexport as pl
+from polars._utils.deprecation import deprecate_renamed_parameter
+from polars._utils.various import handle_projection_columns, normalize_filepath
 from polars.datatypes import N_INFER_DEFAULT, String
 from polars.io._utils import _prepare_file_arg
 from polars.io.csv._utils import _check_arg_is_1byte, _update_columns
 from polars.io.csv.batched_reader import BatchedCsvReader
-from polars.utils.deprecation import deprecate_renamed_parameter
-from polars.utils.various import handle_projection_columns, normalize_filepath
 
 if TYPE_CHECKING:
     from polars import DataFrame, LazyFrame

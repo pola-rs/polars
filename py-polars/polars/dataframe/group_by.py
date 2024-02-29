@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Callable, Iterable, Iterator
 
 from polars import functions as F
-from polars.utils.convert import parse_as_duration_string
-from polars.utils.deprecation import (
+from polars._utils.convert import parse_as_duration_string
+from polars._utils.deprecation import (
     deprecate_renamed_function,
     issue_deprecation_warning,
 )

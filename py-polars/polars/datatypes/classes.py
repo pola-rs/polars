@@ -171,7 +171,7 @@ class DataType(metaclass=DataTypeClass):
         >>> pl.List.is_not(pl.List(pl.Int32))  # doctest: +SKIP
         True
         """
-        from polars.utils.deprecation import issue_deprecation_warning
+        from polars._utils.deprecation import issue_deprecation_warning
 
         issue_deprecation_warning(
             "`DataType.is_not` is deprecated and will be removed in the next breaking release."
@@ -398,7 +398,7 @@ class Decimal(NumericType):
     ):
         # Issuing the warning on `__init__` does not trigger when the class is used
         # without being instantiated, but it's better than nothing
-        from polars.utils.unstable import issue_unstable_warning
+        from polars._utils.unstable import issue_unstable_warning
 
         issue_unstable_warning(
             "The Decimal data type is considered unstable."
@@ -504,7 +504,7 @@ class Datetime(TemporalType):
         self, time_unit: TimeUnit = "us", time_zone: str | timezone | None = None
     ):
         if time_unit is None:
-            from polars.utils.deprecation import issue_deprecation_warning
+            from polars._utils.deprecation import issue_deprecation_warning
 
             issue_deprecation_warning(
                 "Passing `time_unit=None` to the Datetime constructor is deprecated."
@@ -650,7 +650,7 @@ class Enum(DataType):
     def __init__(self, categories: Series | Iterable[str]):
         # Issuing the warning on `__init__` does not trigger when the class is used
         # without being instantiated, but it's better than nothing
-        from polars.utils.unstable import issue_unstable_warning
+        from polars._utils.unstable import issue_unstable_warning
 
         issue_unstable_warning(
             "The Enum data type is considered unstable."

@@ -5,7 +5,7 @@ import warnings
 from functools import wraps
 from typing import TYPE_CHECKING, Callable, Sequence, TypeVar
 
-from polars.utils.various import find_stacklevel
+from polars._utils.various import find_stacklevel
 
 if TYPE_CHECKING:
     import sys

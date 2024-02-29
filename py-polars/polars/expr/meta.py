@@ -4,13 +4,13 @@ from io import BytesIO, StringIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, overload
 
-from polars.exceptions import ComputeError
-from polars.utils._wrap import wrap_expr
-from polars.utils.deprecation import (
+from polars._utils._wrap import wrap_expr
+from polars._utils.deprecation import (
     deprecate_nonkeyword_arguments,
     deprecate_renamed_function,
 )
-from polars.utils.various import normalize_filepath
+from polars._utils.various import normalize_filepath
+from polars.exceptions import ComputeError
 
 if TYPE_CHECKING:
     from io import IOBase

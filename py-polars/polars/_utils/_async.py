@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Awaitable, Generator, Generic, TypeVar
 
+from polars._utils._wrap import wrap_df
 from polars.dependencies import _GEVENT_AVAILABLE
-from polars.utils._wrap import wrap_df
 
 if TYPE_CHECKING:
     from asyncio.futures import Future

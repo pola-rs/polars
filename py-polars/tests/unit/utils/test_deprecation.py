@@ -5,7 +5,7 @@ from typing import Any
 
 import pytest
 
-from polars.utils.deprecation import (
+from polars._utils.deprecation import (
     deprecate_function,
     deprecate_nonkeyword_arguments,
     deprecate_renamed_function,

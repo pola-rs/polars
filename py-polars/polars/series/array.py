@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Callable, Sequence
 
 from polars import functions as F
+from polars._utils._wrap import wrap_s
 from polars.series.utils import expr_dispatch
-from polars.utils._wrap import wrap_s
 
 if TYPE_CHECKING:
     from datetime import date, datetime, time
