@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from polars import DataFrame, Expr, LazyFrame, Series
 
 __all__ = [
+    "get_shared_lib_location",
     "register_expr_namespace",
     "register_dataframe_namespace",
     "register_lazyframe_namespace",
