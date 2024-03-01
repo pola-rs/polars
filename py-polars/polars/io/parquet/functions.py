@@ -121,6 +121,20 @@ def read_parquet(
         data will be stored continuously in memory. Set `rechunk=False` if you are
         benchmarking the parquet-reader as `rechunk` can be an expensive operation
         that should not contribute to the timings.
+
+    Examples
+    --------
+    >>> pl.read_parquet('ballondor.parquet')
+    shape: (3, 3)
+    ┌──────┬─────────┬──────────┐
+    │ yr   ┆ name    ┆ country  │
+    │ ---  ┆ ---     ┆ ---      │
+    │ i64  ┆ str     ┆ str      │
+    ╞══════╪═════════╪══════════╡
+    │ 1999 ┆ Rivaldo ┆ Brazil   │
+    │ 2000 ┆ Figo    ┆ Portugal │
+    │ 2001 ┆ Owen    ┆ England  │
+    └──────┴─────────┴──────────┘
     """
     # Dispatch to pyarrow if requested
     if use_pyarrow:
@@ -220,7 +234,7 @@ def scan_parquet(
     *,
     n_rows: int | None = None,
     row_index_name: str | None = None,
-    row_index_offset: int = 0,
+row_index_offset: int = 0,
     parallel: ParallelStrategy = "auto",
     use_statistics: bool = True,
     hive_partitioning: bool = True,
