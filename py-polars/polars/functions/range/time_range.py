@@ -29,8 +29,7 @@ def time_range(
     *,
     closed: ClosedInterval = ...,
     eager: Literal[False] = ...,
-) -> Expr:
-    ...
+) -> Expr: ...
 
 
 @overload
@@ -41,8 +40,7 @@ def time_range(
     *,
     closed: ClosedInterval = ...,
     eager: Literal[True],
-) -> Series:
-    ...
+) -> Series: ...
 
 
 @overload
@@ -53,8 +51,7 @@ def time_range(
     *,
     closed: ClosedInterval = ...,
     eager: bool,
-) -> Series | Expr:
-    ...
+) -> Series | Expr: ...
 
 
 def time_range(
@@ -166,8 +163,7 @@ def time_ranges(
     *,
     closed: ClosedInterval = ...,
     eager: Literal[False] = ...,
-) -> Expr:
-    ...
+) -> Expr: ...
 
 
 @overload
@@ -178,8 +174,7 @@ def time_ranges(
     *,
     closed: ClosedInterval = ...,
     eager: Literal[True],
-) -> Series:
-    ...
+) -> Series: ...
 
 
 @overload
@@ -190,8 +185,7 @@ def time_ranges(
     *,
     closed: ClosedInterval = ...,
     eager: bool,
-) -> Series | Expr:
-    ...
+) -> Series | Expr: ...
 
 
 def time_ranges(

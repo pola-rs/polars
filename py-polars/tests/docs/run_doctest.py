@@ -26,6 +26,7 @@ Notes
   all outputs, set `IGNORE_RESULT_ALL=True` below. Do note that this does mean no output
   is being checked anymore.
 """
+
 from __future__ import annotations
 
 import doctest

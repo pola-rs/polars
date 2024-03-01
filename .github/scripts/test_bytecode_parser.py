@@ -12,6 +12,7 @@ Usage:
 
 Running it without `PYTHONPATH` set will result in the test failing.
 """
+
 import datetime as dt  # noqa: F401
 import subprocess
 from datetime import datetime  # noqa: F401

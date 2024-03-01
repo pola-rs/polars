@@ -633,8 +633,7 @@ def from_pandas(
     rechunk: bool = ...,
     nan_to_null: bool = ...,
     include_index: bool = ...,
-) -> DataFrame:
-    ...
+) -> DataFrame: ...
 
 
 @overload
@@ -645,8 +644,7 @@ def from_pandas(
     rechunk: bool = ...,
     nan_to_null: bool = ...,
     include_index: bool = ...,
-) -> Series:
-    ...
+) -> Series: ...
 
 
 def from_pandas(

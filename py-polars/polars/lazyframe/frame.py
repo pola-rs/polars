@@ -800,12 +800,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 """
 
     @overload
-    def serialize(self, file: None = ...) -> str:
-        ...
+    def serialize(self, file: None = ...) -> str: ...
 
     @overload
-    def serialize(self, file: IOBase | str | Path) -> None:
-        ...
+    def serialize(self, file: IOBase | str | Path) -> None: ...
 
     def serialize(self, file: IOBase | str | Path | None = None) -> str | None:
         """
@@ -1786,8 +1784,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         streaming: bool = False,
         background: Literal[True],
         _eager: bool = False,
-    ) -> InProcessQuery:
-        ...
+    ) -> InProcessQuery: ...
 
     @overload
     def collect(
@@ -1804,8 +1801,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         streaming: bool = False,
         background: Literal[False] = False,
         _eager: bool = False,
-    ) -> DataFrame:
-        ...
+    ) -> DataFrame: ...
 
     def collect(
         self,
@@ -1952,8 +1948,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
         streaming: bool = True,
-    ) -> _GeventDataFrameResult[DataFrame]:
-        ...
+    ) -> _GeventDataFrameResult[DataFrame]: ...
 
     @overload
     def collect_async(
@@ -1969,8 +1964,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
         streaming: bool = True,
-    ) -> Awaitable[DataFrame]:
-        ...
+    ) -> Awaitable[DataFrame]: ...
 
     def collect_async(
         self,

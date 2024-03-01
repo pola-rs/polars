@@ -30,8 +30,7 @@ def datetime_range(
     time_unit: TimeUnit | None = ...,
     time_zone: str | None = ...,
     eager: Literal[False] = ...,
-) -> Expr:
-    ...
+) -> Expr: ...
 
 
 @overload
@@ -44,8 +43,7 @@ def datetime_range(
     time_unit: TimeUnit | None = ...,
     time_zone: str | None = ...,
     eager: Literal[True],
-) -> Series:
-    ...
+) -> Series: ...
 
 
 @overload
@@ -58,8 +56,7 @@ def datetime_range(
     time_unit: TimeUnit | None = ...,
     time_zone: str | None = ...,
     eager: bool,
-) -> Series | Expr:
-    ...
+) -> Series | Expr: ...
 
 
 def datetime_range(
@@ -206,8 +203,7 @@ def datetime_ranges(
     time_unit: TimeUnit | None = ...,
     time_zone: str | None = ...,
     eager: Literal[False] = ...,
-) -> Expr:
-    ...
+) -> Expr: ...
 
 
 @overload
@@ -220,8 +216,7 @@ def datetime_ranges(
     time_unit: TimeUnit | None = ...,
     time_zone: str | None = ...,
     eager: Literal[True],
-) -> Series:
-    ...
+) -> Series: ...
 
 
 @overload
@@ -234,8 +229,7 @@ def datetime_ranges(
     time_unit: TimeUnit | None = ...,
     time_zone: str | None = ...,
     eager: bool,
-) -> Series | Expr:
-    ...
+) -> Series | Expr: ...
 
 
 def datetime_ranges(

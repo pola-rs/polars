@@ -73,11 +73,9 @@ class Column(Protocol):
         self,
         name: str | PolarsDataType | Iterable[str] | Iterable[PolarsDataType],
         *more_names: str | PolarsDataType,
-    ) -> Expr:
-        ...
+    ) -> Expr: ...
 
-    def __getattr__(self, name: str) -> Expr:
-        ...
+    def __getattr__(self, name: str) -> Expr: ...
 
 
 # handle attribute lookup on the metaclass (we use the factory uninstantiated)

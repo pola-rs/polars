@@ -3,6 +3,7 @@ Module for testing `.str.strptime` of the string namespace.
 
 This method gets its own module due to its complexity.
 """
+
 from __future__ import annotations
 
 import contextlib

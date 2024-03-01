@@ -1,4 +1,5 @@
 """Utilities related to user defined functions (such as those passed to `apply`)."""
+
 from __future__ import annotations
 
 import datetime

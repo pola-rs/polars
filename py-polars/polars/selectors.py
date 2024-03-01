@@ -50,8 +50,7 @@ def is_selector(obj: _selector_proxy_) -> Literal[True]:  # type: ignore[overloa
 
 
 @overload
-def is_selector(obj: Any) -> Literal[False]:
-    ...
+def is_selector(obj: Any) -> Literal[False]: ...
 
 
 def is_selector(obj: Any) -> bool:

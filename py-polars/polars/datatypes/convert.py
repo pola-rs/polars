@@ -370,15 +370,13 @@ def dtype_to_py_type(dtype: PolarsDataType) -> PythonDataType:
 @overload
 def py_type_to_dtype(
     data_type: Any, *, raise_unmatched: Literal[True] = ...
-) -> PolarsDataType:
-    ...
+) -> PolarsDataType: ...
 
 
 @overload
 def py_type_to_dtype(
     data_type: Any, *, raise_unmatched: Literal[False]
-) -> PolarsDataType | None:
-    ...
+) -> PolarsDataType | None: ...
 
 
 def py_type_to_dtype(

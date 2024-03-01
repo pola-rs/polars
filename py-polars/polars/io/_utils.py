@@ -38,8 +38,7 @@ def _prepare_file_arg(
     use_pyarrow: bool = ...,
     raise_if_empty: bool = ...,
     storage_options: dict[str, Any] | None = ...,
-) -> ContextManager[str | BytesIO]:
-    ...
+) -> ContextManager[str | BytesIO]: ...
 
 
 @overload
@@ -50,8 +49,7 @@ def _prepare_file_arg(
     use_pyarrow: bool = ...,
     raise_if_empty: bool = ...,
     storage_options: dict[str, Any] | None = ...,
-) -> ContextManager[str | BytesIO]:
-    ...
+) -> ContextManager[str | BytesIO]: ...
 
 
 @overload
@@ -62,8 +60,7 @@ def _prepare_file_arg(
     use_pyarrow: bool = ...,
     raise_if_empty: bool = ...,
     storage_options: dict[str, Any] | None = ...,
-) -> ContextManager[str | list[str] | BytesIO | list[BytesIO]]:
-    ...
+) -> ContextManager[str | list[str] | BytesIO | list[BytesIO]]: ...
 
 
 def _prepare_file_arg(
