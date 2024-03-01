@@ -250,7 +250,7 @@ def scan_parquet(
     *,
     n_rows: int | None = None,
     row_index_name: str | None = None,
-row_index_offset: int = 0,
+    row_index_offset: int = 0,
     parallel: ParallelStrategy = "auto",
     use_statistics: bool = True,
     hive_partitioning: bool = True,
