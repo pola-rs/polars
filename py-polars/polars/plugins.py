@@ -12,6 +12,9 @@ def get_shared_lib_location(package_init_path: str) -> str:
     """
     Get location of Shared Object file.
 
+    See the `user guide <https://docs.pola.rs/user-guide/expressions/plugins/>`_
+    for more information about plugins.
+
     .. warning::
         This functionality is considered **unstable**. It may be changed
         at any point without it being considered a breaking change.
