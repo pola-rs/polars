@@ -1706,8 +1706,7 @@ def collect_all_async(
     comm_subplan_elim: bool = True,
     comm_subexpr_elim: bool = True,
     streaming: bool = True,
-) -> _GeventDataFrameResult[list[DataFrame]]:
-    ...
+) -> _GeventDataFrameResult[list[DataFrame]]: ...
 
 
 @overload
@@ -1724,8 +1723,7 @@ def collect_all_async(
     comm_subplan_elim: bool = True,
     comm_subexpr_elim: bool = True,
     streaming: bool = False,
-) -> Awaitable[list[DataFrame]]:
-    ...
+) -> Awaitable[list[DataFrame]]: ...
 
 
 @unstable()
@@ -1881,18 +1879,15 @@ def select(*exprs: IntoExpr | Iterable[IntoExpr], **named_exprs: IntoExpr) -> Da
 
 
 @overload
-def arg_where(condition: Expr | Series, *, eager: Literal[False] = ...) -> Expr:
-    ...
+def arg_where(condition: Expr | Series, *, eager: Literal[False] = ...) -> Expr: ...
 
 
 @overload
-def arg_where(condition: Expr | Series, *, eager: Literal[True]) -> Series:
-    ...
+def arg_where(condition: Expr | Series, *, eager: Literal[True]) -> Series: ...
 
 
 @overload
-def arg_where(condition: Expr | Series, *, eager: bool) -> Expr | Series:
-    ...
+def arg_where(condition: Expr | Series, *, eager: bool) -> Expr | Series: ...
 
 
 def arg_where(condition: Expr | Series, *, eager: bool = False) -> Expr | Series:
@@ -1990,15 +1985,13 @@ def coalesce(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Exp
 
 
 @overload
-def from_epoch(column: str | Expr, time_unit: EpochTimeUnit = ...) -> Expr:
-    ...
+def from_epoch(column: str | Expr, time_unit: EpochTimeUnit = ...) -> Expr: ...
 
 
 @overload
 def from_epoch(
     column: Series | Sequence[int], time_unit: EpochTimeUnit = ...
-) -> Series:
-    ...
+) -> Series: ...
 
 
 def from_epoch(
@@ -2159,8 +2152,7 @@ def sql_expr(sql: str) -> Expr:  # type: ignore[overload-overlap]
 
 
 @overload
-def sql_expr(sql: Sequence[str]) -> list[Expr]:
-    ...
+def sql_expr(sql: Sequence[str]) -> list[Expr]: ...
 
 
 def sql_expr(sql: str | Sequence[str]) -> Expr | list[Expr]:

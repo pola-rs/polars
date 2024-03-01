@@ -37,8 +37,7 @@ def test_unstable_decorator(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("POLARS_WARN_UNSTABLE", "1")
 
     @unstable()
-    def hello() -> None:
-        ...
+    def hello() -> None: ...
 
     msg = "`hello` is considered unstable."
     with pytest.warns(pl.UnstableWarning, match=msg):
@@ -47,8 +46,7 @@ def test_unstable_decorator(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_unstable_decorator_setting_disabled(recwarn: pytest.WarningsRecorder) -> None:
     @unstable()
-    def hello() -> None:
-        ...
+    def hello() -> None: ...
 
     hello()
     assert len(recwarn) == 0

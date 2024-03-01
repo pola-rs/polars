@@ -427,8 +427,7 @@ def read_database(
     batch_size: int | None = ...,
     schema_overrides: SchemaDict | None = ...,
     **kwargs: Any,
-) -> DataFrame:
-    ...
+) -> DataFrame: ...
 
 
 @overload
@@ -440,8 +439,7 @@ def read_database(
     batch_size: int | None = ...,
     schema_overrides: SchemaDict | None = ...,
     **kwargs: Any,
-) -> Iterable[DataFrame]:
-    ...
+) -> Iterable[DataFrame]: ...
 
 
 def read_database(  # noqa: D417

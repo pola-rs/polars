@@ -107,12 +107,10 @@ class ExprMetaNameSpace:
         return self._pyexpr.meta_is_regex_projection()
 
     @overload
-    def output_name(self, *, raise_if_undetermined: Literal[True] = True) -> str:
-        ...
+    def output_name(self, *, raise_if_undetermined: Literal[True] = True) -> str: ...
 
     @overload
-    def output_name(self, *, raise_if_undetermined: Literal[False]) -> str | None:
-        ...
+    def output_name(self, *, raise_if_undetermined: Literal[False]) -> str | None: ...
 
     def output_name(self, *, raise_if_undetermined: bool = True) -> str | None:
         """
@@ -221,12 +219,10 @@ class ExprMetaNameSpace:
         return wrap_expr(self._pyexpr._meta_selector_and(other._pyexpr))
 
     @overload
-    def serialize(self, file: None = ...) -> str:
-        ...
+    def serialize(self, file: None = ...) -> str: ...
 
     @overload
-    def serialize(self, file: IOBase | str | Path) -> None:
-        ...
+    def serialize(self, file: IOBase | str | Path) -> None: ...
 
     def serialize(self, file: IOBase | str | Path | None = None) -> str | None:
         """
@@ -275,12 +271,10 @@ class ExprMetaNameSpace:
         return None
 
     @overload
-    def write_json(self, file: None = ...) -> str:
-        ...
+    def write_json(self, file: None = ...) -> str: ...
 
     @overload
-    def write_json(self, file: IOBase | str | Path) -> None:
-        ...
+    def write_json(self, file: IOBase | str | Path) -> None: ...
 
     @deprecate_renamed_function("Expr.meta.serialize", version="0.20.11")
     def write_json(self, file: IOBase | str | Path | None = None) -> str | None:
@@ -293,12 +287,10 @@ class ExprMetaNameSpace:
         return self.serialize(file)
 
     @overload
-    def tree_format(self, *, return_as_string: Literal[False]) -> None:
-        ...
+    def tree_format(self, *, return_as_string: Literal[False]) -> None: ...
 
     @overload
-    def tree_format(self, *, return_as_string: Literal[True]) -> str:
-        ...
+    def tree_format(self, *, return_as_string: Literal[True]) -> str: ...
 
     @deprecate_nonkeyword_arguments(version="0.19.3")
     def tree_format(self, return_as_string: bool = False) -> str | None:  # noqa: FBT001

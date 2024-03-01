@@ -85,8 +85,7 @@ def deprecate_parameter_as_positional(
     Use as follows::
 
         @deprecate_parameter_as_positional("column", version="0.20.4")
-        def myfunc(new_name):
-            ...
+        def myfunc(new_name): ...
     """
 
     def decorate(function: Callable[P, T]) -> Callable[P, T]:
@@ -123,8 +122,7 @@ def deprecate_renamed_parameter(
     Use as follows::
 
         @deprecate_renamed_parameter("old_name", "new_name", version="0.20.4")
-        def myfunc(new_name):
-            ...
+        def myfunc(new_name): ...
     """
 
     def decorate(function: Callable[P, T]) -> Callable[P, T]:

@@ -3,6 +3,7 @@ Utility functions.
 
 Functions that are part of the public API are re-exported here.
 """
+
 from polars._utils.convert import (
     date_to_int,
     datetime_to_int,

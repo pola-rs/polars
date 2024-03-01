@@ -5,6 +5,7 @@ Tests in this module will be run in the CI using a release build of Polars.
 
 To run these tests: pytest -m benchmark
 """
+
 import time
 from pathlib import Path
 from typing import cast

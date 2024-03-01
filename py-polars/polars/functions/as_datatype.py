@@ -363,8 +363,7 @@ def struct(
     schema: SchemaDict | None = ...,
     eager: Literal[False] = ...,
     **named_exprs: IntoExpr,
-) -> Expr:
-    ...
+) -> Expr: ...
 
 
 @overload
@@ -373,8 +372,7 @@ def struct(
     schema: SchemaDict | None = ...,
     eager: Literal[True],
     **named_exprs: IntoExpr,
-) -> Series:
-    ...
+) -> Series: ...
 
 
 @overload
@@ -383,8 +381,7 @@ def struct(
     schema: SchemaDict | None = ...,
     eager: bool,
     **named_exprs: IntoExpr,
-) -> Expr | Series:
-    ...
+) -> Expr | Series: ...
 
 
 def struct(

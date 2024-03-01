@@ -3,6 +3,7 @@ Module containing the `len` function.
 
 Keep this function in its own module to avoid conflicts with Python's built-in `len`.
 """
+
 from __future__ import annotations
 
 import contextlib

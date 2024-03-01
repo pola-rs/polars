@@ -34,13 +34,11 @@ EPOCH_UTC = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
 
 @overload
-def parse_as_duration_string(td: None) -> None:
-    ...
+def parse_as_duration_string(td: None) -> None: ...
 
 
 @overload
-def parse_as_duration_string(td: timedelta | str) -> str:
-    ...
+def parse_as_duration_string(td: timedelta | str) -> str: ...
 
 
 def parse_as_duration_string(td: timedelta | str | None) -> str | None:
