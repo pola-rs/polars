@@ -243,6 +243,7 @@ def test_month_start_datetime(
     result = ser.dt.month_start().item()
     assert result == expected.replace(tzinfo=tzinfo)
 
+
 @pytest.mark.parametrize(
     ("dt", "expected"),
     [
@@ -271,6 +272,7 @@ def test_quarter_start_datetime(
     result = ser.dt.quarter_start().item()
     assert result == expected.replace(tzinfo=tzinfo)
 
+
 @pytest.mark.parametrize(
     ("dt", "expected"),
     [
@@ -298,6 +300,7 @@ def test_year_start_datetime(
     ser = pl.Series([dt]).dt.replace_time_zone(time_zone).dt.cast_time_unit(time_unit)
     result = ser.dt.year_start().item()
     assert result == expected.replace(tzinfo=tzinfo)
+
 
 @pytest.mark.parametrize(
     ("dt", "expected"),
@@ -370,6 +373,7 @@ def test_month_end_datetime(
     result = ser.dt.month_end().item()
     assert result == expected.replace(tzinfo=tzinfo)
 
+
 @pytest.mark.parametrize(
     ("dt", "expected"),
     [
@@ -402,6 +406,7 @@ def test_quarter_end_datetime(
     result = ser.dt.quarter_end().item()
     assert result == expected.replace(tzinfo=tzinfo)
 
+
 @pytest.mark.parametrize(
     ("dt", "expected"),
     [
@@ -432,6 +437,7 @@ def test_year_end_datetime(
     ser = pl.Series([dt]).dt.replace_time_zone(time_zone).dt.cast_time_unit(time_unit)
     result = ser.dt.year_end().item()
     assert result == expected.replace(tzinfo=tzinfo)
+
 
 @pytest.mark.parametrize(
     ("dt", "expected"),
