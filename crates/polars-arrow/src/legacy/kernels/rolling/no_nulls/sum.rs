@@ -73,7 +73,14 @@ pub fn rolling_sum<T>(
     _params: DynArgs,
 ) -> PolarsResult<ArrayRef>
 where
-    T: NativeType + std::iter::Sum + NumCast + Mul<Output = T> + AddAssign + SubAssign + IsFloat,
+    T: NativeType
+        + std::iter::Sum
+        + NumCast
+        + Mul<Output = T>
+        + AddAssign
+        + SubAssign
+        + IsFloat
+        + Num,
 {
     match (center, weights) {
         (true, None) => rolling_apply_agg_window::<SumWindow<_>, _, _>(

@@ -3,12 +3,11 @@ mod min_max;
 mod quantile;
 mod sum;
 mod variance;
-
 use std::fmt::Debug;
 
 pub use mean::*;
 pub use min_max::*;
-use num_traits::{Float, NumCast};
+use num_traits::{Float, Num, NumCast};
 pub use quantile::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -42,40 +41,36 @@ pub(super) fn rolling_apply_agg_window<'a, Agg, T, Fo>(
 where
     Fo: Fn(Idx, WindowSize, Len) -> (Start, End),
     Agg: RollingAggWindowNoNulls<'a, T>,
-    T: Debug + NativeType,
+    T: Debug + NativeType + Num,
 {
     let len = values.len();
     let (start, end) = det_offsets_fn(0, window_size, len);
     let mut agg_window = Agg::new(values, start, end, params);
-    let mut validity = create_validity(min_periods, len, window_size, &det_offsets_fn)
-        .unwrap_or_else(|| {
-            let mut validity = MutableBitmap::with_capacity(len);
-            validity.extend_constant(len, true);
-            validity
-        });
+    if let Some(validity) = create_validity(min_periods, len, window_size, &det_offsets_fn) {
+        if validity.iter().all(|x| !x) {
+            // all null!
+            return Ok(Box::new(PrimitiveArray::new(
+                T::PRIMITIVE.into(),
+                vec![T::zero(); len].into(),
+                Some(vec![false; len].into()),
+            )));
+        }
+    }
 
     let out = (0..len)
         .map(|idx| {
             let (start, end) = det_offsets_fn(idx, window_size, len);
-            // SAFETY:
-            // we are in bounds
-            let agg = unsafe { agg_window.update(start, end) };
-            match agg {
-                Some(val) => val,
-                None => {
-                    // safety: we are in bounds
-                    unsafe { validity.set_unchecked(idx, false) };
-                    T::default()
-                },
+            if end - start < min_periods {
+                None
+            } else {
+                // SAFETY:
+                // we are in bounds
+                unsafe { agg_window.update(start, end) }
             }
         })
         .collect_trusted::<Vec<_>>();
-
-    Ok(Box::new(PrimitiveArray::new(
-        T::PRIMITIVE.into(),
-        out.into(),
-        Some(validity.into()),
-    )))
+    let arr = PrimitiveArray::from(out);
+    Ok(Box::new(arr))
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Hash)]

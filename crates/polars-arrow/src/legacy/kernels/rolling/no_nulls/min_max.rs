@@ -241,7 +241,7 @@ macro_rules! rolling_minmax_func {
             _params: DynArgs,
         ) -> PolarsResult<ArrayRef>
         where
-            T: NativeType + PartialOrd + IsFloat + Bounded + NumCast + Mul<Output = T>,
+            T: NativeType + PartialOrd + IsFloat + Bounded + NumCast + Mul<Output = T> + Num,
         {
             let offset_fn = match center {
                 true => det_offsets_center,
