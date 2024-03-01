@@ -790,19 +790,50 @@ def test_upsample_time_zones(
                 }
             ),
         ),
-        (
-            "1i",
-            "1h",
-            "forward",
-            None,
-        ),
     ],
 )
+@pytest.mark.parametrize("dtype", [pl.Int32, pl.Int64])
 def test_upsample_index(
     every: str,
     offset: str,
     fill: FillNullStrategy | None,
-    expected: pl.DataFrame | None,
+    expected: pl.DataFrame,
+    dtype: pl.datatypes.DataTypeClass,
+) -> None:
+    df = (
+        pl.DataFrame(
+            {
+                "index": [1, 2, 4] + [5, 7],
+                "groups": ["a"] * 3 + ["b"] * 2,
+            }
+        )
+        .set_sorted("index")
+        .with_columns(pl.col("index").cast(dtype))
+    )
+    expected = expected.with_columns(pl.col("index").cast(dtype))
+    result = (
+        df.upsample(time_column="index", by="groups", every=every, offset=offset)
+        .fill_null(strategy=fill)
+        .sort(["groups", "index"])
+    )
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    ("every", "offset", "fill"),
+    [
+        (
+            "1i",
+            "1h",  # invalid duration type
+            "forward",
+        ),
+    ],
+)
+def test_upsample_index_invalid(
+    df: pl.DataFrame,
+    every: str,
+    offset: str,
+    fill: FillNullStrategy | None,
 ) -> None:
     df = pl.DataFrame(
         {
@@ -810,22 +841,8 @@ def test_upsample_index(
             "groups": ["a"] * 3 + ["b"] * 2,
         }
     ).set_sorted("index")
-
-    if expected is not None:
-        for dtype in [pl.Int32, pl.Int64]:
-            _df = df.with_columns(pl.col("index").cast(dtype))
-            _expected = expected.with_columns(pl.col("index").cast(dtype))
-            result = (
-                _df.upsample(
-                    time_column="index", by="groups", every=every, offset=offset
-                )
-                .fill_null(strategy=fill)
-                .sort(["groups", "index"])
-            )
-            assert_frame_equal(result, _expected)
-    else:
-        with pytest.raises(ComputeError):
-            df.upsample(time_column="index", every=every, offset=offset)
+    with pytest.raises(ComputeError):
+        df.upsample(time_column="index", every=every, offset=offset)
 
 
 def test_microseconds_accuracy() -> None:
