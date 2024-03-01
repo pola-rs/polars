@@ -33,10 +33,15 @@ if TYPE_CHECKING:
 
 
 class _ArrowDriverProperties_(TypedDict):
-    fetch_all: str  # name of the method that fetches all arrow data
-    fetch_batches: str | None  # name of the method that fetches arrow data in batches
-    exact_batch_size: bool | None  # whether indicated batch size is respected exactly
-    repeat_batch_calls: bool  # repeat batch calls (if False, batch call is generator)
+    # name of the method that fetches all arrow data; tuple form
+    # calls the fetch_all method with the give chunk size
+    fetch_all: str | tuple[str, int]
+    # name of the method that fetches arrow data in batches
+    fetch_batches: str | None
+    # indicate whether the given batch size is respected exactly
+    exact_batch_size: bool | None
+    # repeat batch calls (if False, the batch call is a generator)
+    repeat_batch_calls: bool
 
 
 _ARROW_DRIVER_REGISTRY_: dict[str, _ArrowDriverProperties_] = {
@@ -62,6 +67,12 @@ _ARROW_DRIVER_REGISTRY_: dict[str, _ArrowDriverProperties_] = {
         "fetch_all": "fetch_arrow_table",
         "fetch_batches": "fetch_record_batch",
         "exact_batch_size": True,
+        "repeat_batch_calls": False,
+    },
+    "kuzu": {
+        "fetch_all": ("get_as_arrow", 10_000),
+        "fetch_batches": None,
+        "exact_batch_size": None,
         "repeat_batch_calls": False,
     },
     "snowflake": {
@@ -153,7 +164,7 @@ class ConnectionExecutor:
     ) -> None:
         # if we created it and are finished with it, we can
         # close the cursor (but NOT the connection)
-        if self.can_close_cursor:
+        if self.can_close_cursor and hasattr(self.cursor, "close"):
             self.cursor.close()
 
     def __repr__(self) -> str:
@@ -170,7 +181,11 @@ class ConnectionExecutor:
         fetch_batches = driver_properties["fetch_batches"]
         if not iter_batches or fetch_batches is None:
             fetch_method = driver_properties["fetch_all"]
-            yield getattr(self.result, fetch_method)()
+            if not isinstance(fetch_method, tuple):
+                yield getattr(self.result, fetch_method)()
+            else:
+                fetch_method, sz = fetch_method
+                yield getattr(self.result, fetch_method)(sz)
         else:
             size = batch_size if driver_properties["exact_batch_size"] else None
             repeat_batch_calls = driver_properties["repeat_batch_calls"]

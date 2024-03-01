@@ -116,10 +116,10 @@ class MockConnection:
             test_data=test_data,
         )
 
-    def close(self) -> None:  # noqa: D102
+    def close(self) -> None:
         pass
 
-    def cursor(self) -> Any:  # noqa: D102
+    def cursor(self) -> Any:
         return self._cursor
 
 
@@ -143,10 +143,10 @@ class MockCursor:
             return self.resultset
         super().__getattr__(item)  # type: ignore[misc]
 
-    def close(self) -> Any:  # noqa: D102
+    def close(self) -> Any:
         pass
 
-    def execute(self, query: str) -> Any:  # noqa: D102
+    def execute(self, query: str) -> Any:
         return self
 
 
@@ -161,7 +161,7 @@ class MockResultSet:
         self.batched = batched
         self.n_calls = 1
 
-    def __call__(self, *args: Any, **kwargs: Any) -> Any:  # noqa: D102
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
         if self.repeat_batched_calls:
             res = self.test_data[: None if self.n_calls else 0]
             self.n_calls -= 1
@@ -632,3 +632,52 @@ def test_read_database_cx_credentials(uri: str) -> None:
     # can reasonably mitigate the issue.
     with pytest.raises(BaseException, match=r"fakedb://\*\*\*:\*\*\*@\w+"):
         pl.read_database_uri("SELECT * FROM data", uri=uri)
+
+
+@pytest.mark.write_disk()
+def test_read_kuzu_graph_database(tmp_path: Path, io_files_path: Path) -> None:
+    # validate reading from a kuzu graph database
+    import kuzu
+
+    tmp_path.mkdir(exist_ok=True)
+    if (kuzu_test_db := (tmp_path / "kuzu_test.db")).exists():
+        kuzu_test_db.unlink()
+
+    db = kuzu.Database(str(kuzu_test_db))
+    conn = kuzu.Connection(db)
+    conn.execute("CREATE NODE TABLE User(name STRING, age INT64, PRIMARY KEY (name))")
+    conn.execute("CREATE REL TABLE Follows(FROM User TO User, since INT64)")
+
+    users = io_files_path / "graph-data" / "user.csv"
+    follows = io_files_path / "graph-data" / "follows.csv"
+    conn.execute(f'COPY User FROM "{users}"')
+    conn.execute(f'COPY Follows FROM "{follows}"')
+
+    df1 = pl.read_database(
+        query="MATCH (u:User) RETURN u.name, u.age",
+        connection=conn,
+    )
+    assert_frame_equal(
+        df1,
+        pl.DataFrame(
+            {
+                "u.name": ["Adam", "Karissa", "Zhang", "Noura"],
+                "u.age": [30, 40, 50, 25],
+            }
+        ),
+    )
+
+    df2 = pl.read_database(
+        query="MATCH (a:User)-[f:Follows]->(b:User) RETURN a.name, f.since, b.name",
+        connection=conn,
+    )
+    assert_frame_equal(
+        df2,
+        pl.DataFrame(
+            {
+                "a.name": ["Adam", "Adam", "Karissa", "Zhang"],
+                "f.since": [2020, 2020, 2021, 2022],
+                "b.name": ["Karissa", "Zhang", "Zhang", "Noura"],
+            }
+        ),
+    )
