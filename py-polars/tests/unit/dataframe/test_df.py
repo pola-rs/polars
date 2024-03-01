@@ -16,6 +16,7 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
+from polars._utils.construction import iterable_to_pydf
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, INTEGER_DTYPES
 from polars.exceptions import ComputeError, TimeZoneAwareConstructorWarning
 from polars.testing import (
@@ -24,14 +25,13 @@ from polars.testing import (
     assert_series_equal,
 )
 from polars.testing.parametric import columns
-from polars.utils._construction import iterable_to_pydf
 
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
 
     from polars.type_aliases import JoinStrategy, UniqueKeepStrategy
 else:
-    from polars.utils.convert import string_to_zoneinfo as ZoneInfo
+    from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
 
 def test_version() -> None:

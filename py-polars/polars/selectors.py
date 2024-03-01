@@ -7,6 +7,9 @@ from operator import or_
 from typing import TYPE_CHECKING, Any, Collection, Literal, Mapping, overload
 
 from polars import functions as F
+from polars._utils.deprecation import deprecate_nonkeyword_arguments
+from polars._utils.parse_expr_input import _parse_inputs_as_iterable
+from polars._utils.various import is_column
 from polars.datatypes import (
     FLOAT_DTYPES,
     INTEGER_DTYPES,
@@ -27,9 +30,6 @@ from polars.datatypes import (
     is_polars_dtype,
 )
 from polars.expr import Expr
-from polars.utils._parse_expr_input import _parse_inputs_as_iterable
-from polars.utils.deprecation import deprecate_nonkeyword_arguments
-from polars.utils.various import is_column
 
 if TYPE_CHECKING:
     import sys

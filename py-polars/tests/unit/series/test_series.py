@@ -11,6 +11,7 @@ import pytest
 
 import polars
 import polars as pl
+from polars._utils.construction import iterable_to_pyseries
 from polars.datatypes import (
     Date,
     Datetime,
@@ -29,14 +30,13 @@ from polars.datatypes import (
 )
 from polars.exceptions import ComputeError, PolarsInefficientMapWarning, ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
-from polars.utils._construction import iterable_to_pyseries
 
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
 
     from polars.type_aliases import EpochTimeUnit, PolarsDataType, TimeUnit
 else:
-    from polars.utils.convert import string_to_zoneinfo as ZoneInfo
+    from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
 
 def test_cum_agg() -> None:

@@ -9,6 +9,8 @@ from typing import IO, TYPE_CHECKING, Any, Callable, NoReturn, Sequence, overloa
 
 import polars._reexport as pl
 from polars import functions as F
+from polars._utils.deprecation import deprecate_renamed_parameter
+from polars._utils.various import normalize_filepath
 from polars.datatypes import (
     FLOAT_DTYPES,
     NUMERIC_DTYPES,
@@ -22,8 +24,6 @@ from polars.dependencies import import_optional
 from polars.exceptions import NoDataError, ParameterCollisionError
 from polars.io._utils import PortableTemporaryFile, _looks_like_url, _process_file_url
 from polars.io.csv.functions import read_csv
-from polars.utils.deprecation import deprecate_renamed_parameter
-from polars.utils.various import normalize_filepath
 
 if TYPE_CHECKING:
     from typing import Literal

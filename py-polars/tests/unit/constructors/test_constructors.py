@@ -13,11 +13,11 @@ import pytest
 from pydantic import BaseModel, Field, TypeAdapter
 
 import polars as pl
+from polars._utils.construction import type_hints
 from polars.datatypes import PolarsDataType, numpy_char_code_to_dtype
 from polars.dependencies import dataclasses, pydantic
 from polars.exceptions import TimeZoneAwareConstructorWarning
 from polars.testing import assert_frame_equal, assert_series_equal
-from polars.utils._construction import type_hints
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 
     from polars.datatypes import PolarsDataType
 else:
-    from polars.utils.convert import string_to_zoneinfo as ZoneInfo
+    from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
 
 # -----------------------------------------------------------------------------------
@@ -1461,7 +1461,7 @@ def test_nested_schema_construction2() -> None:
 
 
 def test_arrow_to_pyseries_with_one_chunk_does_not_copy_data() -> None:
-    from polars.utils._construction import arrow_to_pyseries
+    from polars._utils.construction import arrow_to_pyseries
 
     original_array = pa.chunked_array([[1, 2, 3]], type=pa.int64())
     pyseries = arrow_to_pyseries("", original_array)

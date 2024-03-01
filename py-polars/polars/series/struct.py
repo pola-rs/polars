@@ -3,9 +3,9 @@ from __future__ import annotations
 from collections import OrderedDict
 from typing import TYPE_CHECKING, Sequence
 
+from polars._utils.various import BUILDING_SPHINX_DOCS, sphinx_accessor
+from polars._utils.wrap import wrap_df
 from polars.series.utils import expr_dispatch
-from polars.utils._wrap import wrap_df
-from polars.utils.various import BUILDING_SPHINX_DOCS, sphinx_accessor
 
 if TYPE_CHECKING:
     from polars import DataFrame, DataType, Series

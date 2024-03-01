@@ -14,9 +14,9 @@ import pytest
 import zstandard
 
 import polars as pl
+from polars._utils.various import normalize_filepath
 from polars.exceptions import ComputeError, NoDataError
 from polars.testing import assert_frame_equal, assert_series_equal
-from polars.utils.various import normalize_filepath
 
 if TYPE_CHECKING:
     from pathlib import Path

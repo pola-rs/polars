@@ -6,11 +6,11 @@ from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any
 
 import polars._reexport as pl
+from polars._utils.deprecation import deprecate_renamed_parameter
+from polars._utils.various import is_int_sequence, normalize_filepath
 from polars.convert import from_arrow
 from polars.dependencies import _PYARROW_AVAILABLE
 from polars.io._utils import _prepare_file_arg
-from polars.utils.deprecation import deprecate_renamed_parameter
-from polars.utils.various import is_int_sequence, normalize_filepath
 
 with contextlib.suppress(ImportError):
     from polars.polars import read_parquet_schema as _read_parquet_schema

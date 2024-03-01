@@ -23,6 +23,14 @@ from typing import (
 
 import polars._reexport as pl
 from polars import functions as F
+from polars._utils.various import (
+    _is_generator,
+    arrlen,
+    find_stacklevel,
+    parse_version,
+    range_to_series,
+)
+from polars._utils.wrap import wrap_df, wrap_s
 from polars.datatypes import (
     INTEGER_DTYPES,
     N_INFER_DEFAULT,
@@ -70,14 +78,6 @@ from polars.exceptions import (
     TimeZoneAwareConstructorWarning,
 )
 from polars.meta import get_index_type, thread_pool_size
-from polars.utils._wrap import wrap_df, wrap_s
-from polars.utils.various import (
-    _is_generator,
-    arrlen,
-    find_stacklevel,
-    parse_version,
-    range_to_series,
-)
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyDataFrame, PySeries

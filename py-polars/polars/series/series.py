@@ -22,6 +22,41 @@ from typing import (
 
 import polars._reexport as pl
 from polars import functions as F
+from polars._utils.construction import (
+    arrow_to_pyseries,
+    dataframe_to_pyseries,
+    iterable_to_pyseries,
+    numpy_to_idxs,
+    numpy_to_pyseries,
+    pandas_to_pyseries,
+    sequence_to_pyseries,
+    series_to_pyseries,
+)
+from polars._utils.convert import (
+    date_to_int,
+    datetime_to_int,
+    time_to_int,
+    timedelta_to_int,
+)
+from polars._utils.deprecation import (
+    deprecate_function,
+    deprecate_nonkeyword_arguments,
+    deprecate_renamed_function,
+    deprecate_renamed_parameter,
+    issue_deprecation_warning,
+)
+from polars._utils.unstable import unstable
+from polars._utils.various import (
+    BUILDING_SPHINX_DOCS,
+    _is_generator,
+    no_default,
+    parse_version,
+    range_to_slice,
+    scale_bytes,
+    sphinx_accessor,
+    warn_null_comparison,
+)
+from polars._utils.wrap import wrap_df
 from polars.datatypes import (
     Array,
     Boolean,
@@ -74,41 +109,6 @@ from polars.series.string import StringNameSpace
 from polars.series.struct import StructNameSpace
 from polars.series.utils import expr_dispatch, get_ffi_func
 from polars.slice import PolarsSlice
-from polars.utils._construction import (
-    arrow_to_pyseries,
-    dataframe_to_pyseries,
-    iterable_to_pyseries,
-    numpy_to_idxs,
-    numpy_to_pyseries,
-    pandas_to_pyseries,
-    sequence_to_pyseries,
-    series_to_pyseries,
-)
-from polars.utils._wrap import wrap_df
-from polars.utils.convert import (
-    date_to_int,
-    datetime_to_int,
-    time_to_int,
-    timedelta_to_int,
-)
-from polars.utils.deprecation import (
-    deprecate_function,
-    deprecate_nonkeyword_arguments,
-    deprecate_renamed_function,
-    deprecate_renamed_parameter,
-    issue_deprecation_warning,
-)
-from polars.utils.unstable import unstable
-from polars.utils.various import (
-    BUILDING_SPHINX_DOCS,
-    _is_generator,
-    no_default,
-    parse_version,
-    range_to_slice,
-    scale_bytes,
-    sphinx_accessor,
-    warn_null_comparison,
-)
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyDataFrame, PySeries
@@ -119,6 +119,9 @@ if TYPE_CHECKING:
     from hvplot.plotting.core import hvPlotTabularPolars
 
     from polars import DataFrame, DataType, Expr
+    from polars._utils.various import (
+        NoDefault,
+    )
     from polars.series._numpy import SeriesView
     from polars.type_aliases import (
         BufferInfo,
@@ -139,9 +142,6 @@ if TYPE_CHECKING:
         SeriesBuffers,
         SizeUnit,
         TemporalLiteral,
-    )
-    from polars.utils.various import (
-        NoDefault,
     )
 
     if sys.version_info >= (3, 11):
@@ -5289,7 +5289,7 @@ class Series:
         -------
         Series
         """
-        from polars.utils.udfs import warn_on_inefficient_map
+        from polars._utils.udfs import warn_on_inefficient_map
 
         if return_dtype is None:
             pl_return_dtype = None

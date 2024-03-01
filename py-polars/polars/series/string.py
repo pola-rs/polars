@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from polars.datatypes.constants import N_INFER_DEFAULT
-from polars.series.utils import expr_dispatch
-from polars.utils.deprecation import (
+from polars._utils.deprecation import (
     deprecate_renamed_function,
     deprecate_renamed_parameter,
 )
+from polars.datatypes.constants import N_INFER_DEFAULT
+from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
     from polars import Expr, Series

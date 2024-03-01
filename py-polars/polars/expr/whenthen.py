@@ -3,12 +3,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Iterable
 
 import polars.functions as F
-from polars.expr.expr import Expr
-from polars.utils._parse_expr_input import (
+from polars._utils.parse_expr_input import (
     parse_as_expression,
     parse_when_inputs,
 )
-from polars.utils._wrap import wrap_expr
+from polars._utils.wrap import wrap_expr
+from polars.expr.expr import Expr
 
 if TYPE_CHECKING:
     from polars.polars import PyExpr

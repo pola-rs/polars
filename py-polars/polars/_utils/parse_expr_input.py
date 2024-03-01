@@ -5,8 +5,8 @@ from typing import TYPE_CHECKING, Any, Iterable
 
 import polars._reexport as pl
 from polars import functions as F
+from polars._utils.deprecation import issue_deprecation_warning
 from polars.exceptions import ComputeError
-from polars.utils.deprecation import issue_deprecation_warning
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
