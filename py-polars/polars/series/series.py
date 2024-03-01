@@ -119,6 +119,7 @@ if TYPE_CHECKING:
     from hvplot.plotting.core import hvPlotTabularPolars
 
     from polars import DataFrame, DataType, Expr
+    from polars.array_interface.protocol import ArrayInterface
     from polars.series._numpy import SeriesView
     from polars.type_aliases import (
         BufferInfo,
@@ -610,6 +611,28 @@ class Series:
         (3,)
         """
         return (self._s.len(),)
+
+    @property
+    def __array_interface__(self) -> ArrayInterface:
+        """
+        Interface to the underlying data buffers of this Series.
+
+        Returns
+        -------
+        dict
+
+        Notes
+        -----
+        Details on the NumPy array interface protocol:
+        https://numpy.org/doc/stable/reference/arrays.interface.html
+
+        Examples
+        --------
+        ...
+        """
+        from polars.array_interface.array_interface import series_array_interface
+
+        return series_array_interface(self)
 
     def __bool__(self) -> NoReturn:
         msg = (
