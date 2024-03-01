@@ -58,26 +58,26 @@ build-release: .venv  ## Compile and install a faster Python Polars binary with 
 
 .PHONY: build-native
 build-native: .venv  ## Same as build, except with native CPU optimizations turned on
-	@unset CONDA_PREFIX \
-	&& $(VENV_BIN)/maturin develop -m py-polars/Cargo.toml -- -C target-cpu=native \
+	@unset CONDA_PREFIX && RUSTFLAGS='-C target-cpu=native' \
+	$(VENV_BIN)/maturin develop -m py-polars/Cargo.toml \
 	$(FILTER_PIP_WARNINGS)
 
 .PHONY: build-debug-opt-native
 build-debug-opt-native: .venv  ## Same as build-debug-opt, except with native CPU optimizations turned on
-	@unset CONDA_PREFIX \
-	&& $(VENV_BIN)/maturin develop -m py-polars/Cargo.toml --profile opt-dev -- -C target-cpu=native \
+	@unset CONDA_PREFIX && RUSTFLAGS='-C target-cpu=native' \
+	$(VENV_BIN)/maturin develop -m py-polars/Cargo.toml --profile opt-dev \
 	$(FILTER_PIP_WARNINGS)
 
 .PHONY: build-opt-native
 build-opt-native: .venv  ## Same as build-opt, except with native CPU optimizations turned on
-	@unset CONDA_PREFIX \
-	&& $(VENV_BIN)/maturin develop -m py-polars/Cargo.toml --profile debug-release -- -C target-cpu=native \
+	@unset CONDA_PREFIX && RUSTFLAGS='-C target-cpu=native' \
+	$(VENV_BIN)/maturin develop -m py-polars/Cargo.toml --profile debug-release \
 	$(FILTER_PIP_WARNINGS)
 
 .PHONY: build-release-native
 build-release-native: .venv  ## Same as build-release, except with native CPU optimizations turned on
-	@unset CONDA_PREFIX \
-	&& $(VENV_BIN)/maturin develop -m py-polars/Cargo.toml --release -- -C target-cpu=native \
+	@unset CONDA_PREFIX && RUSTFLAGS='-C target-cpu=native' \
+	$(VENV_BIN)/maturin develop -m py-polars/Cargo.toml --release \
 	$(FILTER_PIP_WARNINGS)
 
 
