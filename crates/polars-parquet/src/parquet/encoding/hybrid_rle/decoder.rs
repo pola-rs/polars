@@ -1,3 +1,5 @@
+use polars_utils::slice::GetSaferUnchecked;
+
 use super::super::{ceil8, uleb128};
 use super::HybridEncoded;
 use crate::parquet::error::Error;
@@ -39,7 +41,7 @@ impl<'a> Iterator for Decoder<'a> {
             Ok((indicator, consumed)) => (indicator, consumed),
             Err(e) => return Some(Err(e)),
         };
-        self.values = &self.values[consumed..];
+        self.values = unsafe { self.values.get_unchecked_release(consumed..) };
         if self.values.is_empty() {
             return None;
         };

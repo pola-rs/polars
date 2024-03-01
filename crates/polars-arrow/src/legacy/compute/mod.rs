@@ -3,13 +3,9 @@ use crate::compute::utils::combine_validities_and;
 use crate::datatypes::ArrowDataType;
 use crate::types::NativeType;
 
-pub mod arithmetics;
-pub mod bitwise;
-#[cfg(feature = "compute_cast")]
-pub mod cast;
 #[cfg(feature = "dtype-decimal")]
 pub mod decimal;
-pub mod take;
+// pub mod take;
 pub mod tile;
 
 #[inline]

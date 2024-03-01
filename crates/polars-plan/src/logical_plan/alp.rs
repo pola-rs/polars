@@ -1,16 +1,12 @@
 use std::borrow::Cow;
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use polars_core::prelude::*;
-use polars_utils::arena::{Arena, Node};
+use polars_utils::idx_vec::UnitVec;
+use polars_utils::unitvec;
 
 use super::projection_expr::*;
-use crate::logical_plan::functions::FunctionNode;
-use crate::logical_plan::schema::FileInfo;
-use crate::logical_plan::FileScan;
 use crate::prelude::*;
-use crate::utils::PushNode;
 
 /// [`ALogicalPlan`] is a representation of [`LogicalPlan`] with [`Node`]s which are allocated in an [`Arena`]
 #[derive(Clone, Debug)]
@@ -98,7 +94,6 @@ pub enum ALogicalPlan {
         inputs: Vec<Node>,
         options: UnionOptions,
     },
-    #[cfg(feature = "horizontal_concat")]
     HConcat {
         inputs: Vec<Node>,
         schema: SchemaRef,
@@ -157,7 +152,6 @@ impl ALogicalPlan {
             Distinct { .. } => "distinct",
             MapFunction { .. } => "map_function",
             Union { .. } => "union",
-            #[cfg(feature = "horizontal_concat")]
             HConcat { .. } => "hconcat",
             ExtContext { .. } => "ext_context",
             Sink { payload, .. } => match payload {
@@ -176,7 +170,6 @@ impl ALogicalPlan {
             #[cfg(feature = "python")]
             PythonScan { options, .. } => options.output_schema.as_ref().unwrap_or(&options.schema),
             Union { inputs, .. } => return arena.get(inputs[0]).schema(arena),
-            #[cfg(feature = "horizontal_concat")]
             HConcat { schema, .. } => schema,
             Cache { input, .. } => return arena.get(*input).schema(arena),
             Sort { input, .. } => return arena.get(*input).schema(arena),
@@ -232,7 +225,6 @@ impl ALogicalPlan {
                 inputs,
                 options: *options,
             },
-            #[cfg(feature = "horizontal_concat")]
             HConcat {
                 schema, options, ..
             } => HConcat {
@@ -398,7 +390,6 @@ impl ALogicalPlan {
             },
             #[cfg(feature = "python")]
             PythonScan { .. } => {},
-            #[cfg(feature = "horizontal_concat")]
             HConcat { .. } => {},
             ExtContext { .. } | Sink { .. } => {},
         }
@@ -426,7 +417,6 @@ impl ALogicalPlan {
                 }
                 return;
             },
-            #[cfg(feature = "horizontal_concat")]
             HConcat { inputs, .. } => {
                 for node in inputs {
                     container.push_node(*node);
@@ -480,9 +470,9 @@ impl ALogicalPlan {
         feature = "fused"
     ))]
     pub(crate) fn get_input(&self) -> Option<Node> {
-        let mut inputs = [None, None];
+        let mut inputs: UnitVec<Node> = unitvec!();
         self.copy_inputs(&mut inputs);
-        inputs[0]
+        inputs.first().copied()
     }
 }
 

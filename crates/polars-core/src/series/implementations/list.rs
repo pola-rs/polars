@@ -1,20 +1,8 @@
-use std::any::Any;
-use std::borrow::Cow;
-
-#[cfg(feature = "group_by_list")]
-use ahash::RandomState;
-
 use super::*;
 use crate::chunked_array::comparison::*;
-use crate::chunked_array::ops::compare_inner::{IntoTotalEqInner, TotalEqInner};
-use crate::chunked_array::ops::explode::ExplodeByOffsets;
-use crate::chunked_array::{AsSinglePtr, Settings};
 #[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::*;
 use crate::prelude::*;
-use crate::series::implementations::SeriesWrap;
-#[cfg(feature = "chunked_ids")]
-use crate::series::IsSorted;
 
 impl private::PrivateSeries for SeriesWrap<ListChunked> {
     fn compute_len(&mut self) {
@@ -117,16 +105,6 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
         ChunkFilter::filter(&self.0, filter).map(|ca| ca.into_series())
     }
 
-    #[cfg(feature = "chunked_ids")]
-    unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Series {
-        self.0.take_chunked_unchecked(by, sorted).into_series()
-    }
-
-    #[cfg(feature = "chunked_ids")]
-    unsafe fn _take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Series {
-        self.0.take_opt_chunked_unchecked(by).into_series()
-    }
-
     fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
         Ok(self.0.take(indices)?.into_series())
     }
@@ -188,7 +166,7 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
         }
         let main_thread = POOL.current_thread_index().is_none();
         let groups = self.group_tuples(main_thread, false);
-        // safety:
+        // SAFETY:
         // groups are in bounds
         Ok(unsafe { self.0.clone().into_series().agg_first(&groups?) })
     }

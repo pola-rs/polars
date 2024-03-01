@@ -41,7 +41,7 @@ impl LogicalType for DurationChunked {
                     .into_series())
             },
             (Duration(TimeUnit::Microseconds), Duration(TimeUnit::Milliseconds)) => {
-                Ok((self.0.as_ref() / 1_000i64)
+                Ok((self.0.as_ref().wrapping_trunc_div_scalar(1_000i64))
                     .into_duration(TimeUnit::Milliseconds)
                     .into_series())
             },
@@ -51,12 +51,12 @@ impl LogicalType for DurationChunked {
                     .into_series())
             },
             (Duration(TimeUnit::Nanoseconds), Duration(TimeUnit::Milliseconds)) => {
-                Ok((self.0.as_ref() / 1_000_000i64)
+                Ok((self.0.as_ref().wrapping_trunc_div_scalar(1_000_000i64))
                     .into_duration(TimeUnit::Milliseconds)
                     .into_series())
             },
             (Duration(TimeUnit::Nanoseconds), Duration(TimeUnit::Microseconds)) => {
-                Ok((self.0.as_ref() / 1_000i64)
+                Ok((self.0.as_ref().wrapping_trunc_div_scalar(1_000i64))
                     .into_duration(TimeUnit::Microseconds)
                     .into_series())
             },

@@ -82,7 +82,7 @@ pub trait ExprEvalExtension: IntoExpr + Sized {
                     .map(|len| {
                         let s = s.slice(0, len);
                         if (len - s.null_count()) >= min_periods {
-                            let df = DataFrame::new_no_checks(vec![s]);
+                            let df = s.into_frame();
                             let out = phys_expr.evaluate(&df, &state)?;
                             finish(out)
                         } else {
@@ -91,7 +91,7 @@ pub trait ExprEvalExtension: IntoExpr + Sized {
                     })
                     .collect::<PolarsResult<Vec<_>>>()?
             } else {
-                let mut df_container = DataFrame::new_no_checks(vec![]);
+                let mut df_container = DataFrame::empty();
                 (1..s.len() + 1)
                     .map(|len| {
                         let s = s.slice(0, len);

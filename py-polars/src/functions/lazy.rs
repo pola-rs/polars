@@ -1,5 +1,4 @@
 use polars::lazy::dsl;
-use polars::lazy::dsl::Expr;
 use polars::prelude::*;
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
@@ -8,7 +7,7 @@ use pyo3::types::{PyBool, PyBytes, PyFloat, PyInt, PyString};
 use crate::conversion::{get_lf, Wrap};
 use crate::expr::ToExprs;
 use crate::map::lazy::binary_lambda;
-use crate::prelude::{vec_extract_wrapped, DataType, DatetimeArgs, DurationArgs, ObjectValue};
+use crate::prelude::{vec_extract_wrapped, ObjectValue};
 use crate::{map, PyDataFrame, PyExpr, PyLazyFrame, PyPolarsErr, PySeries};
 
 macro_rules! set_unwrapped_or_0 {
@@ -177,14 +176,14 @@ pub fn concat_list(s: Vec<PyExpr>) -> PyResult<PyExpr> {
 }
 
 #[pyfunction]
-pub fn concat_str(s: Vec<PyExpr>, separator: &str) -> PyExpr {
+pub fn concat_str(s: Vec<PyExpr>, separator: &str, ignore_nulls: bool) -> PyExpr {
     let s = s.into_iter().map(|e| e.inner).collect::<Vec<_>>();
-    dsl::concat_str(s, separator).into()
+    dsl::concat_str(s, separator, ignore_nulls).into()
 }
 
 #[pyfunction]
-pub fn count() -> PyExpr {
-    dsl::count().into()
+pub fn len() -> PyExpr {
+    dsl::len().into()
 }
 
 #[pyfunction]
@@ -405,7 +404,7 @@ pub fn lit(value: &PyAny, allow_object: bool) -> PyResult<PyExpr> {
         Ok(dsl::lit(value.as_bytes()).into())
     } else if allow_object {
         let s = Python::with_gil(|py| {
-            PySeries::new_object("", vec![ObjectValue::from(value.into_py(py))], false).series
+            PySeries::new_object(py, "", vec![ObjectValue::from(value.into_py(py))], false).series
         });
         Ok(dsl::lit(s).into())
     } else {
@@ -452,7 +451,7 @@ pub fn repeat(value: PyExpr, n: PyExpr, dtype: Option<Wrap<DataType>>) -> PyResu
     }
 
     if let Expr::Literal(lv) = &value {
-        let av = lv.to_anyvalue().unwrap();
+        let av = lv.to_any_value().unwrap();
         // Integer inputs that fit in Int32 are parsed as such
         if let DataType::Int64 = av.dtype() {
             let int_value = av.try_extract::<i64>().unwrap();

@@ -1,7 +1,3 @@
-use arrow::array::{
-    Array, MutableArray, MutableFixedSizeListArray, MutablePrimitiveArray, PrimitiveArray,
-    PushUnchecked,
-};
 use arrow::types::NativeType;
 use polars_utils::unwrap::UnwrapUncheckedRelease;
 use smartstring::alias::String as SmartString;
@@ -16,7 +12,8 @@ pub(crate) struct FixedSizeListNumericBuilder<T: NativeType> {
 }
 
 impl<T: NativeType> FixedSizeListNumericBuilder<T> {
-    /// SAFETY
+    /// # Safety
+    ///
     /// The caller must ensure that the physical numerical type match logical type.
     pub(crate) unsafe fn new(
         name: &str,
@@ -124,7 +121,12 @@ impl FixedSizeListBuilder for AnonymousOwnedFixedSizeListBuilder {
 
     fn finish(&mut self) -> ArrayChunked {
         let arr = std::mem::take(&mut self.inner)
-            .finish(self.inner_dtype.as_ref().map(|dt| dt.to_arrow()).as_ref())
+            .finish(
+                self.inner_dtype
+                    .as_ref()
+                    .map(|dt| dt.to_arrow(true))
+                    .as_ref(),
+            )
             .unwrap();
         ChunkedArray::with_chunk(self.name.as_str(), arr)
     }

@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 use std::ops::Deref;
 
-use polars_core::frame::group_by::GroupsProxy;
 use polars_core::prelude::*;
 use polars_core::utils::NoNull;
 use polars_plan::dsl::consts::LITERAL_NAME;
@@ -89,7 +88,7 @@ impl PhysicalExpr for LiteralExpr {
             Date(v) => Int32Chunked::full(LITERAL_NAME, *v, 1)
                 .into_date()
                 .into_series(),
-            #[cfg(feature = "dtype-datetime")]
+            #[cfg(feature = "dtype-time")]
             Time(v) => Int64Chunked::full(LITERAL_NAME, *v, 1)
                 .into_time()
                 .into_series(),

@@ -25,7 +25,10 @@ use num_traits::{Num, NumCast};
 
 use crate::config::*;
 use crate::prelude::*;
-const LIMIT: usize = 25;
+
+// Note: see https://github.com/pola-rs/polars/pull/13699 for the rationale
+// behind choosing 10 as the default value for default number of rows displayed
+const LIMIT: usize = 10;
 
 #[derive(Copy, Clone)]
 #[repr(u8)]
@@ -130,19 +133,18 @@ macro_rules! format_array {
             };
             Ok(())
         };
-        if (limit == 0 && $a.len() > 0) || ($a.len() > limit + 1) {
-            if limit > 0 {
-                for i in 0..std::cmp::max((limit / 2), 1) {
-                    let v = $a.get_any_value(i).unwrap();
-                    write_fn(v, $f)?;
-                }
+        if $a.len() > limit {
+            let half = limit / 2;
+            let rest = limit % 2;
+
+            for i in 0..(half + rest) {
+                let v = $a.get_any_value(i).unwrap();
+                write_fn(v, $f)?;
             }
             write!($f, "\t…\n")?;
-            if limit > 1 {
-                for i in ($a.len() - (limit + 1) / 2)..$a.len() {
-                    let v = $a.get_any_value(i).unwrap();
-                    write_fn(v, $f)?;
-                }
+            for i in ($a.len() - half)..$a.len() {
+                let v = $a.get_any_value(i).unwrap();
+                write_fn(v, $f)?;
             }
         } else {
             for i in 0..$a.len() {
@@ -163,7 +165,7 @@ fn format_object_array(
     array_type: &str,
 ) -> fmt::Result {
     match object.dtype() {
-        DataType::Object(inner_type, None) => {
+        DataType::Object(inner_type, _) => {
             let limit = std::cmp::min(LIMIT, object.len());
             write!(
                 f,
@@ -333,22 +335,20 @@ impl Debug for Series {
                 format_array!(f, self.list().unwrap(), &dt, self.name(), "Series")
             },
             #[cfg(feature = "object")]
-            DataType::Object(_, None) => format_object_array(f, self, self.name(), "Series"),
+            DataType::Object(_, _) => format_object_array(f, self, self.name(), "Series"),
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(rev_map, _) => {
-                if let Some(rev_map) = rev_map {
-                    if rev_map.is_enum() {
-                        return format_array!(
-                            f,
-                            self.categorical().unwrap(),
-                            "enum",
-                            self.name(),
-                            "Series"
-                        );
-                    }
-                }
+            DataType::Categorical(_, _) => {
                 format_array!(f, self.categorical().unwrap(), "cat", self.name(), "Series")
             },
+
+            #[cfg(feature = "dtype-categorical")]
+            DataType::Enum(_, _) => format_array!(
+                f,
+                self.categorical().unwrap(),
+                "enum",
+                self.name(),
+                "Series"
+            ),
             #[cfg(feature = "dtype-struct")]
             dt @ DataType::Struct(_) => format_array!(
                 f,
@@ -362,6 +362,15 @@ impl Debug for Series {
             },
             DataType::Binary => {
                 format_array!(f, self.binary().unwrap(), "binary", self.name(), "Series")
+            },
+            DataType::BinaryOffset => {
+                format_array!(
+                    f,
+                    self.binary_offset().unwrap(),
+                    "binary[offset]",
+                    self.name(),
+                    "Series"
+                )
             },
             dt => panic!("{dt:?} not impl"),
         }
@@ -488,6 +497,14 @@ fn fmt_df_shape((shape0, shape1): &(usize, usize)) -> String {
     )
 }
 
+fn get_str_width() -> usize {
+    std::env::var(FMT_STR_LEN)
+        .as_deref()
+        .unwrap_or("")
+        .parse()
+        .unwrap_or(32)
+}
+
 impl Display for DataFrame {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
@@ -497,11 +514,7 @@ impl Display for DataFrame {
                 self.columns.iter().all(|s| s.len() == height),
                 "The column lengths in the DataFrame are not equal."
             );
-            let str_truncate = std::env::var(FMT_STR_LEN)
-                .as_deref()
-                .unwrap_or("")
-                .parse()
-                .unwrap_or(32);
+            let str_truncate = get_str_width();
 
             let max_n_cols = std::env::var(FMT_MAX_COLS)
                 .as_deref()
@@ -513,7 +526,7 @@ impl Display for DataFrame {
                 .as_deref()
                 .unwrap_or("")
                 .parse()
-                .map_or(8, |n: i64| if n < 0 { height } else { n as usize });
+                .map_or(LIMIT, |n: i64| if n < 0 { height } else { n as usize });
 
             let (n_first, n_last) = if self.width() > max_n_cols {
                 ((max_n_cols + 1) / 2, max_n_cols / 2)
@@ -575,11 +588,15 @@ impl Display for DataFrame {
             let mut max_elem_lengths: Vec<usize> = vec![0; n_tbl_cols];
 
             if max_n_rows > 0 {
-                if height > max_n_rows + 1 {
-                    // Truncate the table if we have more rows than the configured maximum
-                    // number of rows plus the single row which would contain "…".
+                if height > max_n_rows {
+                    // Truncate the table if we have more rows than the
+                    // configured maximum number of rows
                     let mut rows = Vec::with_capacity(std::cmp::max(max_n_rows, 2));
-                    for i in 0..std::cmp::max(max_n_rows / 2, 1) {
+
+                    let half = max_n_rows / 2;
+                    let rest = max_n_rows % 2;
+
+                    for i in 0..(half + rest) {
                         let row = self
                             .columns
                             .iter()
@@ -593,23 +610,16 @@ impl Display for DataFrame {
                     }
                     let dots = rows[0].iter().map(|_| "…".to_string()).collect();
                     rows.push(dots);
-                    if max_n_rows > 1 {
-                        for i in (height - (max_n_rows + 1) / 2)..height {
-                            let row = self
-                                .columns
-                                .iter()
-                                .map(|s| s.str_value(i).unwrap())
-                                .collect();
+                    for i in (height - half)..height {
+                        let row = self
+                            .columns
+                            .iter()
+                            .map(|s| s.str_value(i).unwrap())
+                            .collect();
 
-                            let row_strings = prepare_row(
-                                row,
-                                n_first,
-                                n_last,
-                                str_truncate,
-                                &mut max_elem_lengths,
-                            );
-                            rows.push(row_strings);
-                        }
+                        let row_strings =
+                            prepare_row(row, n_first, n_last, str_truncate, &mut max_elem_lengths);
+                        rows.push(row_strings);
                     }
                     table.add_rows(rows);
                 } else {
@@ -954,15 +964,34 @@ fn format_duration(f: &mut Formatter, v: i64, sizes: &[i64], names: &[&str]) -> 
     Ok(())
 }
 
+fn format_blob(f: &mut Formatter<'_>, bytes: &[u8]) -> fmt::Result {
+    let width = get_str_width() * 2;
+    write!(f, "b\"")?;
+
+    for b in bytes.iter().take(width) {
+        if b.is_ascii_alphanumeric() || b.is_ascii_punctuation() {
+            write!(f, "{}", *b as char)?;
+        } else {
+            write!(f, "\\x{:02x}", b)?;
+        }
+    }
+    if bytes.len() > width {
+        write!(f, "\"...")?;
+    } else {
+        write!(f, "\"")?;
+    }
+    Ok(())
+}
+
 impl Display for AnyValue<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let width = 0;
         match self {
             AnyValue::Null => write!(f, "null"),
-            AnyValue::UInt8(v) => write!(f, "{v}"),
-            AnyValue::UInt16(v) => write!(f, "{v}"),
-            AnyValue::UInt32(v) => write!(f, "{v}"),
-            AnyValue::UInt64(v) => write!(f, "{v}"),
+            AnyValue::UInt8(v) => fmt_integer(f, width, *v),
+            AnyValue::UInt16(v) => fmt_integer(f, width, *v),
+            AnyValue::UInt32(v) => fmt_integer(f, width, *v),
+            AnyValue::UInt64(v) => fmt_integer(f, width, *v),
             AnyValue::Int8(v) => fmt_integer(f, width, *v),
             AnyValue::Int16(v) => fmt_integer(f, width, *v),
             AnyValue::Int32(v) => fmt_integer(f, width, *v),
@@ -972,7 +1001,8 @@ impl Display for AnyValue<'_> {
             AnyValue::Boolean(v) => write!(f, "{}", *v),
             AnyValue::String(v) => write!(f, "{}", format_args!("\"{v}\"")),
             AnyValue::StringOwned(v) => write!(f, "{}", format_args!("\"{v}\"")),
-            AnyValue::Binary(_) | AnyValue::BinaryOwned(_) => write!(f, "[binary data]"),
+            AnyValue::Binary(d) => format_blob(f, d),
+            AnyValue::BinaryOwned(d) => format_blob(f, d),
             #[cfg(feature = "dtype-date")]
             AnyValue::Date(v) => write!(f, "{}", date32_to_date(*v)),
             #[cfg(feature = "dtype-datetime")]
@@ -1001,7 +1031,7 @@ impl Display for AnyValue<'_> {
                 write!(f, "{nt}")
             },
             #[cfg(feature = "dtype-categorical")]
-            AnyValue::Categorical(_, _, _) => {
+            AnyValue::Categorical(_, _, _) | AnyValue::Enum(_, _, _) => {
                 let s = self.get_str().unwrap();
                 write!(f, "\"{s}\"")
             },
@@ -1125,125 +1155,15 @@ impl Series {
     }
 }
 
+#[inline]
 #[cfg(feature = "dtype-decimal")]
-mod decimal {
-    use std::fmt::Formatter;
-    use std::{fmt, ptr, str};
+pub fn fmt_decimal(f: &mut Formatter<'_>, v: i128, scale: usize) -> fmt::Result {
+    use arrow::legacy::compute::decimal::format_decimal;
 
-    use crate::fmt::{fmt_float_string, get_trim_decimal_zeros};
-
-    const BUF_LEN: usize = 48;
-
-    #[derive(Clone, Copy)]
-    pub struct FormatBuffer {
-        data: [u8; BUF_LEN],
-        len: usize,
-    }
-
-    impl FormatBuffer {
-        #[inline]
-        pub const fn new() -> Self {
-            Self {
-                data: [0; BUF_LEN],
-                len: 0,
-            }
-        }
-
-        #[inline]
-        pub fn as_str(&self) -> &str {
-            unsafe { str::from_utf8_unchecked(&self.data[..self.len]) }
-        }
-    }
-
-    const POW10: [i128; 38] = [
-        1,
-        10,
-        100,
-        1000,
-        10000,
-        100000,
-        1000000,
-        10000000,
-        100000000,
-        1000000000,
-        10000000000,
-        100000000000,
-        1000000000000,
-        10000000000000,
-        100000000000000,
-        1000000000000000,
-        10000000000000000,
-        100000000000000000,
-        1000000000000000000,
-        10000000000000000000,
-        100000000000000000000,
-        1000000000000000000000,
-        10000000000000000000000,
-        100000000000000000000000,
-        1000000000000000000000000,
-        10000000000000000000000000,
-        100000000000000000000000000,
-        1000000000000000000000000000,
-        10000000000000000000000000000,
-        100000000000000000000000000000,
-        1000000000000000000000000000000,
-        10000000000000000000000000000000,
-        100000000000000000000000000000000,
-        1000000000000000000000000000000000,
-        10000000000000000000000000000000000,
-        100000000000000000000000000000000000,
-        1000000000000000000000000000000000000,
-        10000000000000000000000000000000000000,
-    ];
-
-    pub fn format_decimal(v: i128, scale: usize, trim_zeros: bool) -> FormatBuffer {
-        const ZEROS: [u8; BUF_LEN] = [b'0'; BUF_LEN];
-
-        let mut buf = FormatBuffer::new();
-        let factor = POW10[scale]; //10_i128.pow(scale as _);
-        let (div, rem) = (v / factor, v.abs() % factor);
-
-        unsafe {
-            let mut ptr = buf.data.as_mut_ptr();
-            if div == 0 && v < 0 {
-                *ptr = b'-';
-                ptr = ptr.add(1);
-                buf.len = 1;
-            }
-            let n_whole = itoap::write_to_ptr(ptr, div);
-            buf.len += n_whole;
-            if rem != 0 {
-                ptr = ptr.add(n_whole);
-                *ptr = b'.';
-                ptr = ptr.add(1);
-                let mut frac_buf = [0_u8; BUF_LEN];
-                let n_frac = itoap::write_to_ptr(frac_buf.as_mut_ptr(), rem);
-                ptr::copy_nonoverlapping(ZEROS.as_ptr(), ptr, scale - n_frac);
-                ptr = ptr.add(scale - n_frac);
-                ptr::copy_nonoverlapping(frac_buf.as_mut_ptr(), ptr, n_frac);
-                buf.len += 1 + scale;
-                if trim_zeros {
-                    ptr = ptr.add(n_frac - 1);
-                    while *ptr == b'0' {
-                        ptr = ptr.sub(1);
-                        buf.len -= 1;
-                    }
-                }
-            }
-        }
-
-        buf
-    }
-
-    #[inline]
-    pub fn fmt_decimal(f: &mut Formatter<'_>, v: i128, scale: usize) -> fmt::Result {
-        let trim_zeros = get_trim_decimal_zeros();
-        f.write_str(fmt_float_string(format_decimal(v, scale, trim_zeros).as_str()).as_str())
-    }
+    let trim_zeros = get_trim_decimal_zeros();
+    let repr = format_decimal(v, scale, trim_zeros);
+    f.write_str(fmt_float_string(repr.as_str()).as_str())
 }
-
-#[cfg(feature = "dtype-decimal")]
-pub use decimal::fmt_decimal;
 
 #[cfg(all(
     test,

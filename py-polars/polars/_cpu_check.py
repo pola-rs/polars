@@ -122,9 +122,6 @@ class CPUID_struct(ctypes.Structure):
 
 class CPUID:
     def __init__(self) -> None:
-        if _POLARS_ARCH != "x86-64":
-            raise SystemError("CPUID is only available for x86")
-
         if _IS_WINDOWS:
             if _IS_64BIT:
                 # VirtualAlloc seems to fail under some weird
@@ -156,7 +153,8 @@ class CPUID:
                 None, size, _MEM_COMMIT | _MEM_RESERVE, _PAGE_EXECUTE_READWRITE
             )
             if not self.addr:
-                raise MemoryError("could not allocate memory for CPUID check")
+                msg = "could not allocate memory for CPUID check"
+                raise MemoryError(msg)
             ctypes.memmove(self.addr, code, size)
         else:
             import mmap  # Only import if necessary.
@@ -185,11 +183,7 @@ class CPUID:
             self.win.VirtualFree(self.addr, 0, _MEM_RELEASE)
 
 
-def read_cpu_flags() -> dict[str, bool]:
-    # Right now we only enable extra feature flags for x86.
-    if _POLARS_ARCH != "x86-64":
-        return {}
-
+def _read_cpu_flags() -> dict[str, bool]:
     # CPU flags from https://en.wikipedia.org/wiki/CPUID
     cpuid = CPUID()
     cpuid1 = cpuid(1, 0)
@@ -203,6 +197,7 @@ def read_cpu_flags() -> dict[str, bool]:
         "sse4.1": bool(cpuid1.ecx & (1 << 19)),
         "sse4.2": bool(cpuid1.ecx & (1 << 20)),
         "popcnt": bool(cpuid1.ecx & (1 << 23)),
+        "pclmulqdq": bool(cpuid1.ecx & (1 << 1)),
         "avx": bool(cpuid1.ecx & (1 << 28)),
         "bmi1": bool(cpuid7.ebx & (1 << 3)),
         "bmi2": bool(cpuid7.ebx & (1 << 8)),
@@ -220,12 +215,13 @@ def check_cpu_flags() -> None:
         return
 
     expected_cpu_flags = [f.lstrip("+") for f in _POLARS_FEATURE_FLAGS.split(",")]
-    supported_cpu_flags = read_cpu_flags()
+    supported_cpu_flags = _read_cpu_flags()
 
     missing_features = []
     for f in expected_cpu_flags:
         if f not in supported_cpu_flags:
-            raise RuntimeError(f'unknown feature flag "{f}"')
+            msg = f"unknown feature flag: {f!r}"
+            raise RuntimeError(msg)
 
         if not supported_cpu_flags[f]:
             missing_features.append(f)

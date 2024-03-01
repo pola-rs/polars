@@ -1,5 +1,5 @@
 use crate::array::{ArrayRef, ListArray};
-use crate::legacy::compute::take::take_unchecked;
+use crate::compute::take::take_unchecked;
 use crate::legacy::prelude::*;
 use crate::legacy::trusted_len::TrustedLenPush;
 use crate::legacy::utils::CustomIterTools;
@@ -68,7 +68,7 @@ fn sublist_get_indexes(arr: &ListArray<i64>, index: i64) -> IdxArr {
 pub fn sublist_get(arr: &ListArray<i64>, index: i64) -> ArrayRef {
     let take_by = sublist_get_indexes(arr, index);
     let values = arr.values();
-    // Safety:
+    // SAFETY:
     // the indices we generate are in bounds
     unsafe { take_unchecked(&**values, &take_by) }
 }
@@ -77,7 +77,7 @@ pub fn sublist_get(arr: &ListArray<i64>, index: i64) -> ArrayRef {
 pub fn array_to_unit_list(array: ArrayRef) -> ListArray<i64> {
     let len = array.len();
     let mut offsets = Vec::with_capacity(len + 1);
-    // Safety: we allocated enough
+    // SAFETY: we allocated enough
     unsafe {
         offsets.push_unchecked(0i64);
 
@@ -86,7 +86,7 @@ pub fn array_to_unit_list(array: ArrayRef) -> ListArray<i64> {
         }
     };
 
-    // Safety:
+    // SAFETY:
     // offsets are monotonically increasing
     unsafe {
         let offsets: OffsetsBuffer<i64> = Offsets::new_unchecked(offsets).into();

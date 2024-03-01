@@ -36,6 +36,7 @@ ethnum = { workspace = true }
 atoi_simd = { workspace = true, optional = true }
 fast-float = { workspace = true, optional = true }
 itoa = { workspace = true, optional = true }
+itoap = { workspace = true, optional = true }
 ryu = { workspace = true, optional = true }
 
 regex = { workspace = true, optional = true }
@@ -44,7 +45,7 @@ streaming-iterator = { workspace = true }
 
 indexmap = { workspace = true, optional = true }
 
-arrow-format = { version = "0.8", optional = true, features = ["ipc"] }
+arrow-format = { workspace = true, optional = true, features = ["ipc"] }
 
 hex = { workspace = true, optional = true }
 
@@ -62,7 +63,7 @@ async-stream = { version = "0.3.2", optional = true }
 avro-schema = { workspace = true, optional = true }
 
 # for division/remainder optimization at runtime
-strength_reduce = { version = "0.2", optional = true }
+strength_reduce = { workspace = true, optional = true }
 
 # For instruction multiversioning
 multiversion = { workspace = true, optional = true }
@@ -77,7 +78,6 @@ arrow-data = { workspace = true, optional = true }
 arrow-schema = { workspace = true, optional = true }
 
 [dev-dependencies]
-apache-avro = { version = "0.16", features = ["snappy"] }
 criterion = "0.5"
 crossbeam-channel = { workspace = true }
 doc-comment = "0.3"
@@ -121,7 +121,7 @@ arrow_rs = ["arrow-buffer", "arrow-schema", "arrow-data", "arrow-array"]
 io_ipc = ["arrow-format", "polars-error/arrow-format"]
 io_ipc_write_async = ["io_ipc", "futures"]
 io_ipc_read_async = ["io_ipc", "futures", "async-stream"]
-io_ipc_compression = ["lz4", "zstd"]
+io_ipc_compression = ["lz4", "zstd", "io_ipc"]
 io_flight = ["io_ipc", "arrow-format/flight-data"]
 
 io_avro = ["avro-schema", "polars-error/avro-schema"]
@@ -139,8 +139,6 @@ compute_boolean = []
 compute_boolean_kleene = []
 compute_cast = ["compute_take", "ryu", "atoi_simd", "itoa", "fast-float"]
 compute_comparison = ["compute_take", "compute_boolean"]
-compute_concatenate = []
-compute_filter = []
 compute_hash = ["multiversion"]
 compute_if_then_else = []
 compute_take = []
@@ -153,8 +151,6 @@ compute = [
   "compute_boolean_kleene",
   "compute_cast",
   "compute_comparison",
-  "compute_concatenate",
-  "compute_filter",
   "compute_hash",
   "compute_if_then_else",
   "compute_take",
@@ -165,7 +161,7 @@ simd = []
 # polars-arrow
 timezones = []
 dtype-array = []
-dtype-decimal = ["atoi"]
+dtype-decimal = ["atoi", "itoap"]
 bigidx = []
 nightly = []
 performant = []

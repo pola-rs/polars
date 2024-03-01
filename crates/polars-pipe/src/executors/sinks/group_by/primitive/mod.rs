@@ -168,7 +168,7 @@ where
                         if agg_map.is_empty() {
                             return None;
                         }
-                        // safety:
+                        // SAFETY:
                         // we will not alias.
                         let ptr = aggregators as *mut AggregateFunction;
                         let agg_fns =
@@ -209,7 +209,7 @@ where
                         cols.push(key_builder.finish().into_series());
                         cols.extend(buffers.into_iter().map(|buf| buf.into_series()));
                         physical_agg_to_logical(&mut cols, &self.output_schema);
-                        Some(DataFrame::new_no_checks(cols))
+                        Some(unsafe { DataFrame::new_no_checks(cols) })
                     })
                     .collect::<Vec<_>>();
             Ok(dfs)
@@ -327,7 +327,7 @@ where
                 processed += 1;
             } else {
                 // set this row to true: e.g. processed ooc
-                // safety: we correctly set the length with `reset_ooc_filter_rows`
+                // SAFETY: we correctly set the length with `reset_ooc_filter_rows`
                 unsafe {
                     self.ooc_state.set_row_as_ooc(iteration_idx);
                 }

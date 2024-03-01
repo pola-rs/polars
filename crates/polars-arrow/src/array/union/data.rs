@@ -25,7 +25,7 @@ impl Arrow2Arrow for UnionArray {
                 ),
         };
 
-        // Safety: Array is valid
+        // SAFETY: Array is valid
         unsafe { builder.build_unchecked() }
     }
 

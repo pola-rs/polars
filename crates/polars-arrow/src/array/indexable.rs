@@ -22,6 +22,7 @@ pub trait Indexable {
     fn value_at(&self, index: usize) -> Self::Value<'_>;
 
     /// Returns the element at index `i`.
+    ///
     /// # Safety
     /// Assumes that the `i < self.len`.
     #[inline]

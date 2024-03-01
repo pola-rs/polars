@@ -3,7 +3,7 @@ use futures::future::ready;
 use futures::{StreamExt, TryStreamExt};
 use object_store::path::Path;
 use polars_core::error::to_compute_err;
-use polars_core::prelude::{polars_ensure, polars_err, PolarsError, PolarsResult};
+use polars_core::prelude::{polars_ensure, polars_err};
 use regex::Regex;
 use url::Url;
 

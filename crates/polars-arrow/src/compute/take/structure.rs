@@ -15,53 +15,20 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use polars_error::PolarsResult;
+use crate::array::{Array, StructArray};
+use crate::compute::utils::combine_validities_and;
+use crate::datatypes::IdxArr;
 
-use super::Index;
-use crate::array::{Array, PrimitiveArray, StructArray};
-use crate::bitmap::{Bitmap, MutableBitmap};
-
-#[inline]
-fn take_validity<I: Index>(
-    validity: Option<&Bitmap>,
-    indices: &PrimitiveArray<I>,
-) -> PolarsResult<Option<Bitmap>> {
-    let indices_validity = indices.validity();
-    match (validity, indices_validity) {
-        (None, _) => Ok(indices_validity.cloned()),
-        (Some(validity), None) => {
-            let iter = indices.values().iter().map(|index| {
-                let index = index.to_usize();
-                validity.get_bit(index)
-            });
-            Ok(MutableBitmap::from_trusted_len_iter(iter).into())
-        },
-        (Some(validity), _) => {
-            let iter = indices.iter().map(|x| match x {
-                Some(index) => {
-                    let index = index.to_usize();
-                    validity.get_bit(index)
-                },
-                None => false,
-            });
-            Ok(MutableBitmap::from_trusted_len_iter(iter).into())
-        },
-    }
-}
-
-pub fn take<I: Index>(
-    array: &StructArray,
-    indices: &PrimitiveArray<I>,
-) -> PolarsResult<StructArray> {
+pub(super) unsafe fn take_unchecked(array: &StructArray, indices: &IdxArr) -> StructArray {
     let values: Vec<Box<dyn Array>> = array
         .values()
         .iter()
-        .map(|a| super::take(a.as_ref(), indices))
-        .collect::<PolarsResult<_>>()?;
-    let validity = take_validity(array.validity(), indices)?;
-    Ok(StructArray::new(
-        array.data_type().clone(),
-        values,
-        validity,
-    ))
+        .map(|a| super::take_unchecked(a.as_ref(), indices))
+        .collect();
+
+    let validity = array
+        .validity()
+        .map(|b| super::bitmap::take_bitmap_unchecked(b, indices.values()));
+    let validity = combine_validities_and(validity.as_ref(), indices.validity());
+    StructArray::new(array.data_type().clone(), values, validity)
 }

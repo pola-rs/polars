@@ -4,7 +4,6 @@
 //! [parquet2]: https://crates.io/crates/parquet2
 use std::io::{self};
 use std::pin::Pin;
-use std::sync::Arc;
 use std::task::Poll;
 
 use bytes::Bytes;
@@ -12,8 +11,8 @@ use futures::executor::block_on;
 use futures::future::BoxFuture;
 use futures::{AsyncRead, AsyncSeek, Future, TryFutureExt};
 use object_store::path::Path;
-use object_store::{MultipartId, ObjectStore};
-use polars_error::{to_compute_err, PolarsError, PolarsResult};
+use object_store::MultipartId;
+use polars_error::to_compute_err;
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 
 use super::*;
@@ -226,7 +225,6 @@ impl Drop for CloudWriter {
 #[cfg(feature = "csv")]
 #[cfg(test)]
 mod tests {
-    use object_store::ObjectStore;
     use polars_core::df;
     use polars_core::prelude::{DataFrame, NamedFrom};
 

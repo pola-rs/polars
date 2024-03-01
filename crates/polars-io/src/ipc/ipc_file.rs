@@ -33,7 +33,6 @@
 //! assert!(df.equals(&df_read));
 //! ```
 use std::io::{Read, Seek};
-use std::sync::Arc;
 
 use arrow::datatypes::ArrowSchemaRef;
 use arrow::io::ipc::read;
@@ -44,7 +43,7 @@ use super::{finish_reader, ArrowReader};
 use crate::mmap::MmapBytesReader;
 use crate::predicates::PhysicalIoExpr;
 use crate::prelude::*;
-use crate::RowCount;
+use crate::RowIndex;
 
 /// Read Arrows IPC format into a DataFrame
 ///
@@ -71,7 +70,7 @@ pub struct IpcReader<R: MmapBytesReader> {
     pub(super) n_rows: Option<usize>,
     pub(super) projection: Option<Vec<usize>>,
     pub(crate) columns: Option<Vec<String>>,
-    pub(super) row_count: Option<RowCount>,
+    pub(super) row_index: Option<RowIndex>,
     memmap: bool,
     metadata: Option<read::FileMetadata>,
     schema: Option<ArrowSchemaRef>,
@@ -127,9 +126,9 @@ impl<R: MmapBytesReader> IpcReader<R> {
         self
     }
 
-    /// Add a `row_count` column.
-    pub fn with_row_count(mut self, row_count: Option<RowCount>) -> Self {
-        self.row_count = row_count;
+    /// Add a row index column.
+    pub fn with_row_index(mut self, row_index: Option<RowIndex>) -> Self {
+        self.row_index = row_index;
         self
     }
 
@@ -173,7 +172,7 @@ impl<R: MmapBytesReader> IpcReader<R> {
 
         let reader = read::FileReader::new(self.reader, metadata, self.projection, self.n_rows);
 
-        finish_reader(reader, rechunk, None, predicate, &schema, self.row_count)
+        finish_reader(reader, rechunk, None, predicate, &schema, self.row_index)
     }
 }
 
@@ -194,7 +193,7 @@ impl<R: MmapBytesReader> SerReader<R> for IpcReader<R> {
             n_rows: None,
             columns: None,
             projection: None,
-            row_count: None,
+            row_index: None,
             memmap: true,
             metadata: None,
             schema: None,
@@ -230,6 +229,6 @@ impl<R: MmapBytesReader> SerReader<R> for IpcReader<R> {
 
         let ipc_reader =
             read::FileReader::new(self.reader, metadata.clone(), self.projection, self.n_rows);
-        finish_reader(ipc_reader, rechunk, None, None, &schema, self.row_count)
+        finish_reader(ipc_reader, rechunk, None, None, &schema, self.row_index)
     }
 }

@@ -4,6 +4,7 @@ import datetime as dt
 import json
 import re
 from datetime import datetime
+from functools import partial
 from typing import Any, Callable
 
 import numpy
@@ -11,10 +12,10 @@ import numpy as np  # noqa: F401
 import pytest
 
 import polars as pl
+from polars._utils.udfs import _NUMPY_FUNCTIONS, BytecodeParser
+from polars._utils.various import in_terminal_that_supports_colour
 from polars.exceptions import PolarsInefficientMapWarning
 from polars.testing import assert_frame_equal, assert_series_equal
-from polars.utils.udfs import _NUMPY_FUNCTIONS, BytecodeParser
-from polars.utils.various import in_terminal_that_supports_colour
 
 MY_CONSTANT = 3
 MY_DICT = {0: "a", 1: "b", 2: "c", 3: "d", 4: "e"}
@@ -66,6 +67,11 @@ TEST_CASES = [
         "a",
         "lambda x: (float(x) * int(x)) // 2",
         '(pl.col("a").cast(pl.Float64) * pl.col("a").cast(pl.Int64)) // 2',
+    ),
+    (
+        "a",
+        "lambda x: 1 / (1 + np.exp(-x))",
+        '1 / (1 + (-pl.col("a")).exp())',
     ),
     # ---------------------------------------------
     # numpy
@@ -127,13 +133,28 @@ TEST_CASES = [
         '(pl.col("a") > 1) & ((pl.col("a") != 2) | ((pl.col("a") % 2) == 0)) & (pl.col("a") < 3)',
     ),
     # ---------------------------------------------
-    # string expr: case/cast ops
+    # string exprs
     # ---------------------------------------------
     ("b", "lambda x: str(x).title()", 'pl.col("b").cast(pl.String).str.to_titlecase()'),
     (
         "b",
         'lambda x: x.lower() + ":" + x.upper() + ":" + x.title()',
         '(((pl.col("b").str.to_lowercase() + \':\') + pl.col("b").str.to_uppercase()) + \':\') + pl.col("b").str.to_titlecase()',
+    ),
+    (
+        "b",
+        "lambda x: x.strip().startswith('#')",
+        """pl.col("b").str.strip_chars().str.starts_with('#')""",
+    ),
+    (
+        "b",
+        """lambda x: x.rstrip().endswith(('!','#','?','"'))""",
+        """pl.col("b").str.strip_chars_end().str.contains(r'(!|\\#|\\?|")$')""",
+    ),
+    (
+        "b",
+        """lambda x: x.lstrip().startswith(('!','#','?',"'"))""",
+        """pl.col("b").str.strip_chars_start().str.contains(r"^(!|\\#|\\?|')")""",
     ),
     # ---------------------------------------------
     # json expr: load/extract
@@ -162,17 +183,30 @@ TEST_CASES = [
         'pl.col("d").str.to_datetime(format="%Y-%m-%d")',
     ),
     # ---------------------------------------------
+    # temporal attributes/methods
+    # ---------------------------------------------
+    (
+        "f",
+        "lambda x: x.isoweekday()",
+        'pl.col("f").dt.weekday()',
+    ),
+    (
+        "f",
+        "lambda x: x.hour + x.minute + x.second",
+        '(pl.col("f").dt.hour() + pl.col("f").dt.minute()) + pl.col("f").dt.second()',
+    ),
+    # ---------------------------------------------
     # Bitwise shifts
     # ---------------------------------------------
     (
         "a",
         "lambda x: (3 << (32-x)) & 3",
-        '(3*2**(32 - pl.col("a"))).cast(pl.Int64) & 3',
+        '(3 * 2**(32 - pl.col("a"))).cast(pl.Int64) & 3',
     ),
     (
         "a",
         "lambda x: (x << 32) & 3",
-        '(pl.col("a")*2**32).cast(pl.Int64) & 3',
+        '(pl.col("a") * 2**32).cast(pl.Int64) & 3',
     ),
     (
         "a",
@@ -221,6 +255,7 @@ def test_parse_invalid_function(func: str) -> None:
     ("col", "func", "expr_repr"),
     TEST_CASES,
 )
+@pytest.mark.filterwarnings("ignore:invalid value encountered:RuntimeWarning")
 def test_parse_apply_functions(col: str, func: str, expr_repr: str) -> None:
     with pytest.warns(
         PolarsInefficientMapWarning,
@@ -237,6 +272,11 @@ def test_parse_apply_functions(col: str, func: str, expr_repr: str) -> None:
                 "c": ['{"a": 1}', '{"b": 2}', '{"c": 3}'],
                 "d": ["2020-01-01", "2020-01-02", "2020-01-03"],
                 "e": [1.5, 2.4, 3.1],
+                "f": [
+                    datetime(1999, 12, 31),
+                    datetime(2024, 5, 6),
+                    datetime(2077, 10, 20),
+                ],
             }
         )
         result_frame = df.select(
@@ -245,11 +285,16 @@ def test_parse_apply_functions(col: str, func: str, expr_repr: str) -> None:
         )
         expected_frame = df.select(
             x=pl.col(col),
-            y=pl.col(col).apply(eval(func)),
+            y=pl.col(col).map_elements(eval(func)),
         )
-        assert_frame_equal(result_frame, expected_frame)
+        assert_frame_equal(
+            result_frame,
+            expected_frame,
+            check_dtype=(".dt." not in suggested_expression),
+        )
 
 
+@pytest.mark.filterwarnings("ignore:invalid value encountered:RuntimeWarning")
 def test_parse_apply_raw_functions() -> None:
     lf = pl.LazyFrame({"a": [1.1, 2.0, 3.4]})
 
@@ -328,7 +373,7 @@ def test_parse_apply_miscellaneous() -> None:
     ):
         pl_series = pl.Series("srs", [0, 1, 2, 3, 4])
         assert_series_equal(
-            pl_series.apply(lambda x: numpy.cos(3) + x - abs(-1)),
+            pl_series.map_elements(lambda x: numpy.cos(3) + x - abs(-1)),
             numpy.cos(3) + pl_series - 1,
         )
 
@@ -373,7 +418,7 @@ def test_parse_apply_series(
         suggested_expression = parser.to_expression(s.name)
         assert suggested_expression == expr_repr
 
-        expected_series = s.apply(func)
+        expected_series = s.map_elements(func)
         result_series = eval(suggested_expression)
         assert_series_equal(expected_series, result_series)
 
@@ -401,3 +446,22 @@ def test_expr_exact_warning_message() -> None:
         df.select(pl.col("a").map_elements(lambda x: x + 1))
 
     assert len(warnings) == 1
+
+
+def test_omit_implicit_bool() -> None:
+    parser = BytecodeParser(
+        function=lambda x: x and x and x.date(),
+        map_target="expr",
+    )
+    suggested_expression = parser.to_expression("d")
+    assert suggested_expression == 'pl.col("d").dt.date()'
+
+
+def test_partial_functions_13523() -> None:
+    def plus(value, amount: int):  # type: ignore[no-untyped-def]
+        return value + amount
+
+    data = {"a": [1, 2], "b": [3, 4]}
+    df = pl.DataFrame(data)
+    # should not warn
+    _ = df["a"].map_elements(partial(plus, amount=1))

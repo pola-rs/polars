@@ -67,7 +67,7 @@ pub fn py_series_to_rust_series(series: &PyAny) -> PyResult<Series> {
 pub fn rust_series_to_py_series(series: &Series) -> PyResult<PyObject> {
     // ensure we have a single chunk
     let series = series.rechunk();
-    let array = series.to_arrow(0);
+    let array = series.to_arrow(0, false);
 
     Python::with_gil(|py| {
         // import pyarrow

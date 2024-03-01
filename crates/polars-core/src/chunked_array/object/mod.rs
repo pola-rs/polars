@@ -4,6 +4,7 @@ use std::hash::Hash;
 
 use arrow::bitmap::utils::{BitmapIter, ZipValidity};
 use arrow::bitmap::Bitmap;
+use polars_utils::total_ord::TotalHash;
 
 use crate::prelude::*;
 
@@ -36,7 +37,7 @@ pub trait PolarsObjectSafe: Any + Debug + Send + Sync + Display {
 
 /// Values need to implement this so that they can be stored into a Series and DataFrame
 pub trait PolarsObject:
-    Any + Debug + Clone + Send + Sync + Default + Display + Hash + PartialEq + Eq + TotalEq
+    Any + Debug + Clone + Send + Sync + Default + Display + Hash + TotalHash + PartialEq + Eq + TotalEq
 {
     /// This should be used as type information. Consider this a part of the type system.
     fn type_name() -> &'static str;
@@ -119,15 +120,6 @@ where
     #[inline]
     pub unsafe fn is_null_unchecked(&self, i: usize) -> bool {
         !self.is_valid_unchecked(i)
-    }
-
-    #[inline]
-    pub(crate) unsafe fn get_unchecked(&self, item: usize) -> Option<&T> {
-        if self.is_null_unchecked(item) {
-            None
-        } else {
-            Some(self.value_unchecked(item))
-        }
     }
 
     /// Returns this array with a new validity.
@@ -217,11 +209,19 @@ where
     ///
     /// No bounds checks
     pub unsafe fn get_object_unchecked(&self, index: usize) -> Option<&dyn PolarsObjectSafe> {
-        let chunks = self.downcast_chunks();
         let (chunk_idx, idx) = self.index_to_chunked_index(index);
-        let arr = chunks.get_unchecked(chunk_idx);
-        if arr.is_valid_unchecked(idx) {
-            Some(arr.value(idx))
+        self.get_object_chunked_unchecked(chunk_idx, idx)
+    }
+
+    pub(crate) unsafe fn get_object_chunked_unchecked(
+        &self,
+        chunk: usize,
+        index: usize,
+    ) -> Option<&dyn PolarsObjectSafe> {
+        let chunks = self.downcast_chunks();
+        let arr = chunks.get_unchecked(chunk);
+        if arr.is_valid_unchecked(index) {
+            Some(arr.value(index))
         } else {
             None
         }

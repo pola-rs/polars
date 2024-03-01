@@ -2,12 +2,16 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from datetime import datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
+import polars.selectors as cs
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from polars.type_aliases import PolarsDataType
 
 
 def test_group_by() -> None:
@@ -49,6 +53,188 @@ def test_group_by() -> None:
     assert result.columns == ["b", "a"]
 
 
+@pytest.mark.parametrize(
+    ("input", "expected", "input_dtype", "output_dtype"),
+    [
+        ([1, 2, 3, 4], [2, 4], pl.UInt8, pl.Float64),
+        ([1, 2, 3, 4], [2, 4], pl.Int8, pl.Float64),
+        ([1, 2, 3, 4], [2, 4], pl.UInt16, pl.Float64),
+        ([1, 2, 3, 4], [2, 4], pl.Int16, pl.Float64),
+        ([1, 2, 3, 4], [2, 4], pl.UInt32, pl.Float64),
+        ([1, 2, 3, 4], [2, 4], pl.Int32, pl.Float64),
+        ([1, 2, 3, 4], [2, 4], pl.UInt64, pl.Float64),
+        ([1, 2, 3, 4], [2, 4], pl.Float32, pl.Float32),
+        ([1, 2, 3, 4], [2, 4], pl.Float64, pl.Float64),
+        ([False, True, True, True], [2 / 3, 1], pl.Boolean, pl.Float64),
+        (
+            [
+                datetime(2023, 1, 1),
+                datetime(2023, 1, 2),
+                datetime(2023, 1, 3),
+                datetime(2023, 1, 4),
+            ],
+            [datetime(2023, 1, 2), datetime(2023, 1, 4)],
+            pl.Datetime("ms"),
+            pl.Datetime("ms"),
+        ),
+        (
+            [
+                datetime(2023, 1, 1),
+                datetime(2023, 1, 2),
+                datetime(2023, 1, 3),
+                datetime(2023, 1, 4),
+            ],
+            [datetime(2023, 1, 2), datetime(2023, 1, 4)],
+            pl.Datetime("us"),
+            pl.Datetime("us"),
+        ),
+        (
+            [
+                datetime(2023, 1, 1),
+                datetime(2023, 1, 2),
+                datetime(2023, 1, 3),
+                datetime(2023, 1, 4),
+            ],
+            [datetime(2023, 1, 2), datetime(2023, 1, 4)],
+            pl.Datetime("ns"),
+            pl.Datetime("ns"),
+        ),
+        (
+            [timedelta(1), timedelta(2), timedelta(3), timedelta(4)],
+            [timedelta(2), timedelta(4)],
+            pl.Duration("ms"),
+            pl.Duration("ms"),
+        ),
+        (
+            [timedelta(1), timedelta(2), timedelta(3), timedelta(4)],
+            [timedelta(2), timedelta(4)],
+            pl.Duration("us"),
+            pl.Duration("us"),
+        ),
+        (
+            [timedelta(1), timedelta(2), timedelta(3), timedelta(4)],
+            [timedelta(2), timedelta(4)],
+            pl.Duration("ns"),
+            pl.Duration("ns"),
+        ),
+    ],
+)
+def test_group_by_mean_by_dtype(
+    input: list[Any],
+    expected: list[Any],
+    input_dtype: PolarsDataType,
+    output_dtype: PolarsDataType,
+) -> None:
+    # groups are defined by first 3 values, then last value
+    name = str(input_dtype)
+    key = ["a", "a", "a", "b"]
+    df = pl.DataFrame(
+        {
+            "key": key,
+            name: pl.Series(input, dtype=input_dtype),
+        }
+    )
+    result = df.group_by("key", maintain_order=True).mean()
+    df_expected = pl.DataFrame(
+        {
+            "key": ["a", "b"],
+            name: pl.Series(expected, dtype=output_dtype),
+        }
+    )
+    assert_frame_equal(result, df_expected)
+
+
+@pytest.mark.parametrize(
+    ("input", "expected", "input_dtype", "output_dtype"),
+    [
+        ([1, 2, 4, 5], [2, 5], pl.UInt8, pl.Float64),
+        ([1, 2, 4, 5], [2, 5], pl.Int8, pl.Float64),
+        ([1, 2, 4, 5], [2, 5], pl.UInt16, pl.Float64),
+        ([1, 2, 4, 5], [2, 5], pl.Int16, pl.Float64),
+        ([1, 2, 4, 5], [2, 5], pl.UInt32, pl.Float64),
+        ([1, 2, 4, 5], [2, 5], pl.Int32, pl.Float64),
+        ([1, 2, 4, 5], [2, 5], pl.UInt64, pl.Float64),
+        ([1, 2, 4, 5], [2, 5], pl.Float32, pl.Float32),
+        ([1, 2, 4, 5], [2, 5], pl.Float64, pl.Float64),
+        ([False, True, True, True], [1, 1], pl.Boolean, pl.Float64),
+        (
+            [
+                datetime(2023, 1, 1),
+                datetime(2023, 1, 2),
+                datetime(2023, 1, 4),
+                datetime(2023, 1, 5),
+            ],
+            [datetime(2023, 1, 2), datetime(2023, 1, 5)],
+            pl.Datetime("ms"),
+            pl.Datetime("ms"),
+        ),
+        (
+            [
+                datetime(2023, 1, 1),
+                datetime(2023, 1, 2),
+                datetime(2023, 1, 4),
+                datetime(2023, 1, 5),
+            ],
+            [datetime(2023, 1, 2), datetime(2023, 1, 5)],
+            pl.Datetime("us"),
+            pl.Datetime("us"),
+        ),
+        (
+            [
+                datetime(2023, 1, 1),
+                datetime(2023, 1, 2),
+                datetime(2023, 1, 4),
+                datetime(2023, 1, 5),
+            ],
+            [datetime(2023, 1, 2), datetime(2023, 1, 5)],
+            pl.Datetime("ns"),
+            pl.Datetime("ns"),
+        ),
+        (
+            [timedelta(1), timedelta(2), timedelta(4), timedelta(5)],
+            [timedelta(2), timedelta(5)],
+            pl.Duration("ms"),
+            pl.Duration("ms"),
+        ),
+        (
+            [timedelta(1), timedelta(2), timedelta(4), timedelta(5)],
+            [timedelta(2), timedelta(5)],
+            pl.Duration("us"),
+            pl.Duration("us"),
+        ),
+        (
+            [timedelta(1), timedelta(2), timedelta(4), timedelta(5)],
+            [timedelta(2), timedelta(5)],
+            pl.Duration("ns"),
+            pl.Duration("ns"),
+        ),
+    ],
+)
+def test_group_by_median_by_dtype(
+    input: list[Any],
+    expected: list[Any],
+    input_dtype: PolarsDataType,
+    output_dtype: PolarsDataType,
+) -> None:
+    # groups are defined by first 3 values, then last value
+    name = str(input_dtype)
+    key = ["a", "a", "a", "b"]
+    df = pl.DataFrame(
+        {
+            "key": key,
+            name: pl.Series(input, dtype=input_dtype),
+        }
+    )
+    result = df.group_by("key", maintain_order=True).median()
+    df_expected = pl.DataFrame(
+        {
+            "key": ["a", "b"],
+            name: pl.Series(expected, dtype=output_dtype),
+        }
+    )
+    assert_frame_equal(result, df_expected)
+
+
 @pytest.fixture()
 def df() -> pl.DataFrame:
     return pl.DataFrame(
@@ -64,7 +250,7 @@ def df() -> pl.DataFrame:
     ("method", "expected"),
     [
         ("all", [("a", [1, 2], [None, 1]), ("b", [3, 4, 5], [None, 1, None])]),
-        ("count", [("a", 2), ("b", 3)]),
+        ("len", [("a", 2), ("b", 3)]),
         ("first", [("a", 1, None), ("b", 3, None)]),
         ("last", [("a", 2, 1), ("b", 5, None)]),
         ("max", [("a", 2, 1), ("b", 5, 1)]),
@@ -142,7 +328,9 @@ def test_group_by_iteration() -> None:
         [("b", 2, 5), ("b", 4, 3), ("b", 5, 2)],
         [("c", 6, 1)],
     ]
-    for i, (group, data) in enumerate(df.group_by("foo", maintain_order=True)):
+    with pytest.deprecated_call():
+        gb_iter = enumerate(df.group_by("foo", maintain_order=True))
+    for i, (group, data) in gb_iter:
         assert group == expected_names[i]
         assert data.rows() == expected_rows[i]
 
@@ -154,12 +342,24 @@ def test_group_by_iteration() -> None:
     result2 = list(df.group_by(["foo", pl.col("bar") * pl.col("baz")]))
     assert len(result2) == 5
 
-    # Single column, alias in group_by
+    # Single expression, alias in group_by
     df = pl.DataFrame({"foo": [1, 2, 3, 4, 5, 6]})
     gb = df.group_by((pl.col("foo") // 2).alias("bar"), maintain_order=True)
     result3 = [(group, df.rows()) for group, df in gb]
-    expected3 = [(0, [(1,)]), (1, [(2,), (3,)]), (2, [(4,), (5,)]), (3, [(6,)])]
+    expected3 = [
+        ((0,), [(1,)]),
+        ((1,), [(2,), (3,)]),
+        ((2,), [(4,), (5,)]),
+        ((3,), [(6,)]),
+    ]
     assert result3 == expected3
+
+
+def test_group_by_iteration_selector() -> None:
+    df = pl.DataFrame({"a": ["one", "two", "one", "two"], "b": [1, 2, 3, 4]})
+    result = dict(df.group_by(cs.string()))
+    result_first = result[("one",)]
+    assert result_first.to_dict(as_series=False) == {"a": ["one", "one"], "b": [1, 3]}
 
 
 @pytest.mark.parametrize("input", [[pl.col("b").sum()], pl.col("b").sum()])
@@ -277,17 +477,17 @@ def test_arg_sort_sort_by_groups_update__4360() -> None:
 
 
 def test_unique_order() -> None:
-    df = pl.DataFrame({"a": [1, 2, 1]}).with_row_count()
+    df = pl.DataFrame({"a": [1, 2, 1]}).with_row_index()
     assert df.unique(keep="last", subset="a", maintain_order=True).to_dict(
         as_series=False
     ) == {
-        "row_nr": [1, 2],
+        "index": [1, 2],
         "a": [2, 1],
     }
     assert df.unique(keep="first", subset="a", maintain_order=True).to_dict(
         as_series=False
     ) == {
-        "row_nr": [0, 1],
+        "index": [0, 1],
         "a": [1, 2],
     }
 
@@ -448,19 +648,19 @@ def test_overflow_mean_partitioned_group_by_5194(dtype: pl.PolarsDataType) -> No
     assert result.to_dict(as_series=False) == expected
 
 
+# https://github.com/pola-rs/polars/issues/7181
 def test_group_by_multiple_column_reference() -> None:
-    # Issue #7181
     df = pl.DataFrame(
         {
             "gr": ["a", "b", "a", "b", "a", "b"],
             "val": [1, 20, 100, 2000, 10000, 200000],
         }
     )
-    res = df.group_by("gr").agg(
+    result = df.group_by("gr").agg(
         pl.col("val") + pl.col("val").shift().fill_null(0),
     )
 
-    assert res.sort("gr").to_dict(as_series=False) == {
+    assert result.sort("gr").to_dict(as_series=False) == {
         "gr": ["a", "b"],
         "val": [[1, 101, 10100], [20, 2020, 202000]],
     }
@@ -563,7 +763,7 @@ def test_perfect_hash_table_null_values() -> None:
 def test_group_by_partitioned_ending_cast(monkeypatch: Any) -> None:
     monkeypatch.setenv("POLARS_FORCE_PARTITION", "1")
     df = pl.DataFrame({"a": [1] * 5, "b": [1] * 5})
-    out = df.group_by(["a", "b"]).agg(pl.count().cast(pl.Int64).alias("num"))
+    out = df.group_by(["a", "b"]).agg(pl.len().cast(pl.Int64).alias("num"))
     expected = pl.DataFrame({"a": [1], "b": [1], "num": [5]})
     assert_frame_equal(out, expected)
 
@@ -631,22 +831,6 @@ def test_group_by_rolling_deprecated() -> None:
     assert_frame_equal(result_lazy, expected, check_row_order=False)
 
 
-def test_group_by_multiple_keys_one_literal() -> None:
-    df = pl.DataFrame({"a": [1, 1, 2], "b": [4, 5, 6]})
-
-    expected = {"a": [1, 2], "literal": [1, 1], "b": [5, 6]}
-    for streaming in [True, False]:
-        assert (
-            df.lazy()
-            .group_by("a", pl.lit(1))
-            .agg(pl.col("b").max())
-            .sort(["a", "b"])
-            .collect(streaming=streaming)
-            .to_dict(as_series=False)
-            == expected
-        )
-
-
 def test_group_by_list_scalar_11749() -> None:
     df = pl.DataFrame(
         {
@@ -690,8 +874,8 @@ def test_group_by_with_expr_as_key() -> None:
 
 def test_lazy_group_by_reuse_11767() -> None:
     lgb = pl.select(x=1).lazy().group_by("x")
-    a = lgb.count()
-    b = lgb.count()
+    a = lgb.len()
+    b = lgb.len()
     assert_frame_equal(a, b)
 
 
@@ -727,3 +911,41 @@ def test_group_by_apply_first_input_is_literal() -> None:
         "g": [1, 2],
         "x": [[2.0, 4.0], [8.0, 16.0, 32.0]],
     }
+
+
+def test_group_by_all_12869() -> None:
+    df = pl.DataFrame({"a": [1]})
+    result = next(iter(df.group_by(pl.all())))[1]
+    assert_frame_equal(df, result)
+
+
+def test_group_by_named() -> None:
+    df = pl.DataFrame({"a": [1, 1, 2, 2, 3, 3], "b": range(6)})
+    result = df.group_by(z=pl.col("a") * 2, maintain_order=True).agg(pl.col("b").min())
+    expected = df.group_by((pl.col("a") * 2).alias("z"), maintain_order=True).agg(
+        pl.col("b").min()
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_group_by_deprecated_by_arg() -> None:
+    df = pl.DataFrame({"a": [1, 1, 2, 2, 3, 3], "b": range(6)})
+    with pytest.deprecated_call():
+        result = df.group_by(by=(pl.col("a") * 2), maintain_order=True).agg(
+            pl.col("b").min()
+        )
+    expected = df.group_by((pl.col("a") * 2), maintain_order=True).agg(
+        pl.col("b").min()
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_group_by_with_null() -> None:
+    df = pl.DataFrame(
+        {"a": [None, None, None, None], "b": [1, 1, 2, 2], "c": ["x", "y", "z", "u"]}
+    )
+    expected = pl.DataFrame(
+        {"a": [None, None], "b": [1, 2], "c": [["x", "y"], ["z", "u"]]}
+    )
+    output = df.group_by(["a", "b"], maintain_order=True).agg(pl.col("c"))
+    assert_frame_equal(expected, output)

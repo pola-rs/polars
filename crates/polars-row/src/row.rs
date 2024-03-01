@@ -1,4 +1,5 @@
-use arrow::array::BinaryArray;
+use arrow::array::{BinaryArray, BinaryViewArray};
+use arrow::compute::cast::binary_to_binview;
 use arrow::datatypes::ArrowDataType;
 use arrow::ffi::mmap;
 use arrow::offset::{Offsets, OffsetsBuffer};
@@ -32,10 +33,10 @@ fn checks(offsets: &[usize]) {
 unsafe fn rows_to_array(buf: Vec<u8>, offsets: Vec<usize>) -> BinaryArray<i64> {
     checks(&offsets);
 
-    // Safety: we checked overflow
-    let offsets = std::mem::transmute::<Vec<usize>, Vec<i64>>(offsets);
+    // SAFETY: we checked overflow
+    let offsets = bytemuck::cast_vec::<usize, i64>(offsets);
 
-    // Safety: monotonically increasing
+    // SAFETY: monotonically increasing
     let offsets = Offsets::new_unchecked(offsets);
 
     BinaryArray::new(ArrowDataType::LargeBinary, offsets.into(), buf.into(), None)
@@ -59,14 +60,14 @@ impl RowsEncoded {
     /// Borrows the buffers and returns a [`BinaryArray`].
     ///
     /// # Safety
-    /// The lifetime of that `BinaryArray` is tight to the lifetime of
+    /// The lifetime of that `BinaryArray` is tied to the lifetime of
     /// `Self`. The caller must ensure that both stay alive for the same time.
     pub unsafe fn borrow_array(&self) -> BinaryArray<i64> {
         checks(&self.offsets);
 
         unsafe {
             let (_, values, _) = mmap::slice(&self.values).into_inner();
-            let offsets = std::mem::transmute::<&[usize], &[i64]>(self.offsets.as_slice());
+            let offsets = bytemuck::cast_slice::<usize, i64>(self.offsets.as_slice());
             let (_, offsets, _) = mmap::slice(offsets).into_inner();
             let offsets = OffsetsBuffer::new_unchecked(offsets);
 
@@ -74,8 +75,14 @@ impl RowsEncoded {
         }
     }
 
+    /// This conversion is free.
     pub fn into_array(self) -> BinaryArray<i64> {
         unsafe { rows_to_array(self.values, self.offsets) }
+    }
+
+    /// This does allocate views.
+    pub fn into_binview(self) -> BinaryViewArray {
+        binary_to_binview(&self.into_array())
     }
 
     #[cfg(test)]

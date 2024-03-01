@@ -71,7 +71,7 @@ impl LiteralValue {
         }
     }
 
-    pub fn to_anyvalue(&self) -> Option<AnyValue> {
+    pub fn to_any_value(&self) -> Option<AnyValue> {
         use LiteralValue::*;
         let av = match self {
             Null => AnyValue::Null,
@@ -125,11 +125,11 @@ impl LiteralValue {
             LiteralValue::String(_) => DataType::String,
             LiteralValue::Binary(_) => DataType::Binary,
             LiteralValue::Range { data_type, .. } => data_type.clone(),
-            #[cfg(all(feature = "temporal", feature = "dtype-date"))]
+            #[cfg(feature = "dtype-date")]
             LiteralValue::Date(_) => DataType::Date,
-            #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
+            #[cfg(feature = "dtype-datetime")]
             LiteralValue::DateTime(_, tu, tz) => DataType::Datetime(*tu, tz.clone()),
-            #[cfg(all(feature = "temporal", feature = "dtype-duration"))]
+            #[cfg(feature = "dtype-duration")]
             LiteralValue::Duration(_, tu) => DataType::Duration(*tu),
             LiteralValue::Series(s) => s.dtype().clone(),
             LiteralValue::Null => DataType::Null,
@@ -190,18 +190,18 @@ impl TryFrom<AnyValue<'_>> for LiteralValue {
             AnyValue::Int64(i) => Ok(Self::Int64(i)),
             AnyValue::Float32(f) => Ok(Self::Float32(f)),
             AnyValue::Float64(f) => Ok(Self::Float64(f)),
-            #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
+            #[cfg(feature = "dtype-date")]
             AnyValue::Date(v) => Ok(LiteralValue::Date(v)),
-            #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
+            #[cfg(feature = "dtype-datetime")]
             AnyValue::Datetime(value, tu, tz) => Ok(LiteralValue::DateTime(value, tu, tz.clone())),
-            #[cfg(all(feature = "temporal", feature = "dtype-duration"))]
+            #[cfg(feature = "dtype-duration")]
             AnyValue::Duration(value, tu) => Ok(LiteralValue::Duration(value, tu)),
-            #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
+            #[cfg(feature = "dtype-time")]
             AnyValue::Time(v) => Ok(LiteralValue::Time(v)),
             AnyValue::List(l) => Ok(Self::Series(SpecialEq::new(l))),
             AnyValue::StringOwned(o) => Ok(Self::String(o.into())),
             #[cfg(feature = "dtype-categorical")]
-            AnyValue::Categorical(c, rev_mapping, arr) => {
+            AnyValue::Categorical(c, rev_mapping, arr) | AnyValue::Enum(c, rev_mapping, arr) => {
                 if arr.is_null() {
                     Ok(Self::String(rev_mapping.get(c).to_string()))
                 } else {
@@ -255,7 +255,7 @@ impl Literal for Null {
     }
 }
 
-#[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
+#[cfg(feature = "dtype-datetime")]
 impl Literal for NaiveDateTime {
     fn lit(self) -> Expr {
         if in_nanoseconds_window(&self) {
@@ -274,7 +274,7 @@ impl Literal for NaiveDateTime {
     }
 }
 
-#[cfg(all(feature = "temporal", feature = "dtype-duration"))]
+#[cfg(feature = "dtype-duration")]
 impl Literal for ChronoDuration {
     fn lit(self) -> Expr {
         if let Some(value) = self.num_nanoseconds() {
@@ -288,7 +288,7 @@ impl Literal for ChronoDuration {
     }
 }
 
-#[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
+#[cfg(feature = "dtype-datetime")]
 impl Literal for NaiveDate {
     fn lit(self) -> Expr {
         self.and_hms_opt(0, 0, 0).unwrap().lit()
@@ -336,7 +336,7 @@ impl Hash for LiteralValue {
                 data_type.hash(state)
             },
             _ => {
-                if let Some(v) = self.to_anyvalue() {
+                if let Some(v) = self.to_any_value() {
                     v.hash_impl(state, true)
                 }
             },

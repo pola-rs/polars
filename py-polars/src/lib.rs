@@ -37,6 +37,7 @@ mod py_modules;
 mod series;
 #[cfg(feature = "sql")]
 mod sql;
+mod to_numpy;
 mod utils;
 
 #[cfg(all(target_family = "unix", not(use_mimalloc)))]
@@ -53,8 +54,8 @@ use crate::conversion::Wrap;
 use crate::dataframe::PyDataFrame;
 use crate::error::{
     CategoricalRemappingWarning, ColumnNotFoundError, ComputeError, DuplicateError,
-    InvalidOperationError, NoDataError, OutOfBoundsError, PyPolarsErr, SchemaError,
-    SchemaFieldNotFoundError, StructFieldNotFoundError,
+    InvalidOperationError, NoDataError, OutOfBoundsError, PolarsBaseError, PolarsBaseWarning,
+    PyPolarsErr, SchemaError, SchemaFieldNotFoundError, StructFieldNotFoundError,
 };
 use crate::expr::PyExpr;
 use crate::functions::PyStringCacheHolder;
@@ -96,6 +97,8 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::concat_df_horizontal))
         .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::eager_int_range))
+        .unwrap();
 
     // Functions - range
     m.add_wrapped(wrap_pyfunction!(functions::int_range))
@@ -126,6 +129,8 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::sum_horizontal))
         .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::mean_horizontal))
+        .unwrap();
 
     // Functions - lazy
     m.add_wrapped(wrap_pyfunction!(functions::arg_sort_by))
@@ -148,7 +153,7 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::concat_str))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::count)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::len)).unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::cov)).unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::cum_fold))
         .unwrap();
@@ -201,11 +206,9 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
 
     // Functions - meta
-    m.add_wrapped(wrap_pyfunction!(functions::get_polars_version))
-        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::get_index_type))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::threadpool_size))
+    m.add_wrapped(wrap_pyfunction!(functions::thread_pool_size))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::enable_string_cache))
         .unwrap();
@@ -247,7 +250,9 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(functions::set_random_seed))
         .unwrap();
 
-    // Exceptions
+    // Exceptions - Errors
+    m.add("PolarsError", py.get_type::<PolarsBaseError>())
+        .unwrap();
     m.add("ColumnNotFoundError", py.get_type::<ColumnNotFoundError>())
         .unwrap();
     m.add("ComputeError", py.get_type::<ComputeError>())
@@ -260,11 +265,6 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     )
     .unwrap();
     m.add("NoDataError", py.get_type::<NoDataError>()).unwrap();
-    m.add(
-        "CategoricalRemappingWarning",
-        py.get_type::<CategoricalRemappingWarning>(),
-    )
-    .unwrap();
     m.add("OutOfBoundsError", py.get_type::<OutOfBoundsError>())
         .unwrap();
     m.add("PolarsPanicError", py.get_type::<PanicException>())
@@ -288,10 +288,20 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     )
     .unwrap();
 
+    // Exceptions - Warnings
+    m.add("PolarsWarning", py.get_type::<PolarsBaseWarning>())
+        .unwrap();
+    m.add(
+        "CategoricalRemappingWarning",
+        py.get_type::<CategoricalRemappingWarning>(),
+    )
+    .unwrap();
+
     // Build info
+    m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     #[cfg(feature = "build_info")]
     m.add(
-        "_build_info_",
+        "__build__",
         pyo3_built!(py, build, "build", "time", "deps", "features", "host", "target", "git"),
     )?;
 

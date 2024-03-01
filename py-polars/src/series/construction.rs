@@ -4,6 +4,7 @@ use polars::export::arrow::array::Array;
 use polars::export::arrow::types::NativeType;
 use polars_core::prelude::*;
 use polars_core::utils::CustomIterTools;
+use polars_rs::export::arrow::bitmap::MutableBitmap;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
@@ -183,7 +184,7 @@ init_method_opt!(new_opt_f64, Float64Type, f64);
 )]
 impl PySeries {
     #[staticmethod]
-    fn new_from_anyvalues(
+    fn new_from_any_values(
         name: &str,
         val: Vec<Wrap<AnyValue<'_>>>,
         strict: bool,
@@ -195,7 +196,7 @@ impl PySeries {
     }
 
     #[staticmethod]
-    fn new_from_anyvalues_and_dtype(
+    fn new_from_any_values_and_dtype(
         name: &str,
         val: Vec<Wrap<AnyValue<'_>>>,
         dtype: Wrap<DataType>,
@@ -223,11 +224,23 @@ impl PySeries {
     }
 
     #[staticmethod]
-    pub fn new_object(name: &str, val: Vec<ObjectValue>, _strict: bool) -> Self {
+    pub fn new_object(py: Python, name: &str, val: Vec<ObjectValue>, _strict: bool) -> Self {
         #[cfg(feature = "object")]
         {
+            let mut validity = MutableBitmap::with_capacity(val.len());
+            val.iter().for_each(|v| {
+                if v.inner.is_none(py) {
+                    // SAFETY: we can ensure that validity has correct capacity.
+                    unsafe { validity.push_unchecked(false) };
+                } else {
+                    // SAFETY: we can ensure that validity has correct capacity.
+                    unsafe { validity.push_unchecked(true) };
+                }
+            });
             // Object builder must be registered. This is done on import.
-            let s = ObjectChunked::<ObjectValue>::new_from_vec(name, val).into_series();
+            let s =
+                ObjectChunked::<ObjectValue>::new_from_vec_and_validity(name, val, validity.into())
+                    .into_series();
             s.into()
         }
         #[cfg(not(feature = "object"))]

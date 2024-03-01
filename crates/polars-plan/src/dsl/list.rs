@@ -5,7 +5,6 @@ use polars_core::prelude::*;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
 
-use crate::dsl::function_expr::FunctionExpr;
 use crate::prelude::function_expr::ListFunction;
 use crate::prelude::*;
 
@@ -107,6 +106,21 @@ impl ListNameSpace {
             .map_private(FunctionExpr::ListExpr(ListFunction::Mean))
     }
 
+    pub fn median(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::ListExpr(ListFunction::Median))
+    }
+
+    pub fn std(self, ddof: u8) -> Expr {
+        self.0
+            .map_private(FunctionExpr::ListExpr(ListFunction::Std(ddof)))
+    }
+
+    pub fn var(self, ddof: u8) -> Expr {
+        self.0
+            .map_private(FunctionExpr::ListExpr(ListFunction::Var(ddof)))
+    }
+
     /// Sort every sublist.
     pub fn sort(self, options: SortOptions) -> Expr {
         self.0
@@ -131,6 +145,11 @@ impl ListNameSpace {
             .map_private(FunctionExpr::ListExpr(ListFunction::Unique(true)))
     }
 
+    pub fn n_unique(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::ListExpr(ListFunction::NUnique))
+    }
+
     /// Get items in every sublist by index.
     pub fn get(self, index: Expr) -> Expr {
         self.0.map_many_private(
@@ -147,10 +166,20 @@ impl ListNameSpace {
     /// - `null_on_oob`: Return a null when an index is out of bounds.
     /// This behavior is more expensive than defaulting to returning an `Error`.
     #[cfg(feature = "list_gather")]
-    pub fn take(self, index: Expr, null_on_oob: bool) -> Expr {
+    pub fn gather(self, index: Expr, null_on_oob: bool) -> Expr {
         self.0.map_many_private(
             FunctionExpr::ListExpr(ListFunction::Gather(null_on_oob)),
             &[index],
+            false,
+            false,
+        )
+    }
+
+    #[cfg(feature = "list_gather")]
+    pub fn gather_every(self, n: Expr, offset: Expr) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::ListExpr(ListFunction::GatherEvery),
+            &[n, offset],
             false,
             false,
         )
@@ -169,9 +198,9 @@ impl ListNameSpace {
     /// Join all string items in a sublist and place a separator between them.
     /// # Error
     /// This errors if inner type of list `!= DataType::String`.
-    pub fn join(self, separator: Expr) -> Expr {
+    pub fn join(self, separator: Expr, ignore_nulls: bool) -> Expr {
         self.0.map_many_private(
-            FunctionExpr::ListExpr(ListFunction::Join),
+            FunctionExpr::ListExpr(ListFunction::Join(ignore_nulls)),
             &[separator],
             false,
             false,

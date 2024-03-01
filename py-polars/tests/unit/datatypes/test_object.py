@@ -1,3 +1,4 @@
+from pathlib import Path
 from uuid import uuid4
 
 import numpy as np
@@ -35,6 +36,37 @@ def test_object_in_struct() -> None:
     assert (arr == np_a).sum() == 3
     arr = out["foo"][1]["B"]
     assert (arr == np_b).sum() == 3
+
+
+def test_nullable_object_13538() -> None:
+    df = pl.DataFrame(
+        data=[
+            ({"a": 1},),
+            ({"b": 3},),
+            (None,),
+        ],
+        schema=[
+            ("blob", pl.Object),
+        ],
+        orient="row",
+    )
+
+    df = df.select(
+        is_null=pl.col("blob").is_null(), is_not_null=pl.col("blob").is_not_null()
+    )
+    assert df.to_dict(as_series=False) == {
+        "is_null": [False, False, True],
+        "is_not_null": [True, True, False],
+    }
+
+    df = pl.DataFrame({"col": pl.Series([0, 1, 2, None], dtype=pl.Object)})
+    df = df.select(
+        is_null=pl.col("col").is_null(), is_not_null=pl.col("col").is_not_null()
+    )
+    assert df.to_dict(as_series=False) == {
+        "is_null": [False, False, False, True],
+        "is_not_null": [True, True, True, False],
+    }
 
 
 def test_empty_sort() -> None:
@@ -100,3 +132,31 @@ def test_object_apply_to_struct() -> None:
     s = pl.Series([0, 1, 2], dtype=pl.Object)
     out = s.map_elements(lambda x: {"a": str(x), "b": x})
     assert out.dtype == pl.Struct([pl.Field("a", pl.String), pl.Field("b", pl.Int64)])
+
+
+def test_null_obj_str_13512() -> None:
+    df1 = pl.DataFrame(
+        {
+            "key": [1],
+        }
+    )
+    df2 = pl.DataFrame({"key": [2], "a": pl.Series([1], dtype=pl.Object)})
+
+    out = df1.join(df2, on="key", how="left")
+    s = str(out)
+    assert s == (
+        "shape: (1, 2)\n"
+        "┌─────┬────────┐\n"
+        "│ key ┆ a      │\n"
+        "│ --- ┆ ---    │\n"
+        "│ i64 ┆ object │\n"
+        "╞═════╪════════╡\n"
+        "│ 1   ┆ null   │\n"
+        "└─────┴────────┘"
+    )
+
+
+def test_format_object_series_14267() -> None:
+    s = pl.Series([Path(), Path("abc")])
+    expected = "shape: (2,)\n" "Series: '' [o][object]\n" "[\n" "\t.\n" "\tabc\n" "]"
+    assert str(s) == expected

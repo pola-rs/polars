@@ -6,9 +6,9 @@ from importlib import import_module
 from inspect import Parameter, signature
 from typing import TYPE_CHECKING, Any, Iterable, Literal, Sequence, TypedDict, overload
 
+from polars._utils.deprecation import issue_deprecation_warning
 from polars.convert import from_arrow
 from polars.exceptions import InvalidOperationError, UnsuitableSQLError
-from polars.utils.deprecation import issue_deprecation_warning
 
 if TYPE_CHECKING:
     from types import TracebackType
@@ -151,7 +151,7 @@ class ConnectionExecutor:
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
     ) -> None:
-        # iif we created it and are finished with it, we can
+        # if we created it and are finished with it, we can
         # close the cursor (but NOT the connection)
         if self.can_close_cursor:
             self.cursor.close()
@@ -206,9 +206,8 @@ class ConnectionExecutor:
             # can execute directly (given cursor, sqlalchemy connection, etc)
             return conn  # type: ignore[return-value]
 
-        raise TypeError(
-            f"Unrecognised connection {conn!r}; unable to find 'execute' method"
-        )
+        msg = f"Unrecognised connection {conn!r}; unable to find 'execute' method"
+        raise TypeError(msg)
 
     @staticmethod
     def _fetchall_rows(result: Cursor) -> Iterable[Sequence[Any]]:
@@ -280,21 +279,30 @@ class ConnectionExecutor:
         from polars import DataFrame
 
         if hasattr(self.result, "fetchall"):
-            description = (
-                self.result.cursor.description
-                if self.driver_name == "sqlalchemy"
-                else self.result.description
-            )
-            column_names = [desc[0] for desc in description]
+            if self.driver_name == "sqlalchemy":
+                if hasattr(self.result, "cursor"):
+                    cursor_desc = {d[0]: d[1] for d in self.result.cursor.description}
+                elif hasattr(self.result, "_metadata"):
+                    cursor_desc = {k: None for k in self.result._metadata.keys}
+                else:
+                    msg = f"Unable to determine metadata from query result; {self.result!r}"
+                    raise ValueError(msg)
+            else:
+                cursor_desc = {d[0]: d[1] for d in self.result.description}
+
+            # TODO: refine types based on the cursor description's type_code,
+            #  if/where available? (for now, we just read the column names)
+            result_columns = list(cursor_desc)
+
             frames = (
                 DataFrame(
                     data=rows,
-                    schema=column_names,
+                    schema=result_columns,
                     schema_overrides=schema_overrides,
                     orient="row",
                 )
                 for rows in (
-                    self._fetchmany_rows(self.result, batch_size)
+                    list(self._fetchmany_rows(self.result, batch_size))
                     if iter_batches
                     else [self._fetchall_rows(self.result)]  # type: ignore[list-item]
                 )
@@ -313,25 +321,39 @@ class ConnectionExecutor:
         if select_queries_only and isinstance(query, str):
             q = re.search(r"\w{3,}", re.sub(r"/\*(.|[\r\n])*?\*/", "", query))
             if (query_type := "" if not q else q.group(0)) in _INVALID_QUERY_TYPES:
-                raise UnsuitableSQLError(
-                    f"{query_type} statements are not valid 'read' queries"
-                )
+                msg = f"{query_type} statements are not valid 'read' queries"
+                raise UnsuitableSQLError(msg)
 
         options = options or {}
         cursor_execute = self.cursor.execute
 
-        if self.driver_name == "sqlalchemy" and isinstance(query, str):
-            params = options.get("parameters")
-            if isinstance(params, Sequence) and hasattr(self.cursor, "exec_driver_sql"):
-                cursor_execute = self.cursor.exec_driver_sql
-                if isinstance(params, list) and not all(
-                    isinstance(p, (dict, tuple)) for p in params
-                ):
-                    options["parameters"] = tuple(params)
-            else:
-                from sqlalchemy.sql import text
+        if self.driver_name == "sqlalchemy":
+            from sqlalchemy.orm import Session
 
-                query = text(query)  # type: ignore[assignment]
+            param_key = "parameters"
+            if (
+                isinstance(self.cursor, Session)
+                and "parameters" in options
+                and "params" not in options
+            ):
+                options = options.copy()
+                options["params"] = options.pop("parameters")
+                param_key = "params"
+
+            if isinstance(query, str):
+                params = options.get(param_key)
+                if isinstance(params, Sequence) and hasattr(
+                    self.cursor, "exec_driver_sql"
+                ):
+                    cursor_execute = self.cursor.exec_driver_sql
+                    if isinstance(params, list) and not all(
+                        isinstance(p, (dict, tuple)) for p in params
+                    ):
+                        options[param_key] = tuple(params)
+                else:
+                    from sqlalchemy.sql import text
+
+                    query = text(query)  # type: ignore[assignment]
 
         # note: some cursor execute methods (eg: sqlite3) only take positional
         # params, hence the slightly convoluted resolution of the 'options' dict
@@ -370,11 +392,13 @@ class ConnectionExecutor:
         fall back to initialising with row-level data if no other option.
         """
         if self.result is None:
-            raise RuntimeError("Cannot return a frame before executing a query")
+            msg = "Cannot return a frame before executing a query"
+            raise RuntimeError(msg)
         elif iter_batches and not batch_size:
-            raise ValueError(
+            msg = (
                 "Cannot set `iter_batches` without also setting a non-zero `batch_size`"
             )
+            raise ValueError(msg)
 
         for frame_init in (
             self._from_arrow,  # init from arrow-native data (where support exists)
@@ -388,9 +412,10 @@ class ConnectionExecutor:
             if frame is not None:
                 return frame
 
-        raise NotImplementedError(
+        msg = (
             f"Currently no support for {self.driver_name!r} connection {self.cursor!r}"
         )
+        raise NotImplementedError(msg)
 
 
 @overload
@@ -402,8 +427,7 @@ def read_database(
     batch_size: int | None = ...,
     schema_overrides: SchemaDict | None = ...,
     **kwargs: Any,
-) -> DataFrame:
-    ...
+) -> DataFrame: ...
 
 
 @overload
@@ -415,8 +439,7 @@ def read_database(
     batch_size: int | None = ...,
     schema_overrides: SchemaDict | None = ...,
     **kwargs: Any,
-) -> Iterable[DataFrame]:
-    ...
+) -> Iterable[DataFrame]: ...
 
 
 def read_database(  # noqa: D417
@@ -439,9 +462,10 @@ def read_database(  # noqa: D417
         be a suitable "Selectable", otherwise it is expected to be a string).
     connection
         An instantiated connection (or cursor/client object) that the query can be
-        executed against. Can also pass a valid ODBC connection string, starting with
-        "Driver=", in which case the `arrow-odbc` package will be used to establish
-        the connection and return Arrow-native data to Polars.
+        executed against. Can also pass a valid ODBC connection string, identified as
+        such if it contains the string "Driver=", in which case the `arrow-odbc`
+        package will be used to establish the connection and return Arrow-native data
+        to Polars.
     iter_batches
         Return an iterator of DataFrames, where each DataFrame represents a batch of
         data returned by the query; this can be useful for processing large resultsets
@@ -488,7 +512,8 @@ def read_database(  # noqa: D417
       `connectorx` will optimise translation of the result set into Arrow format
       in Rust, whereas these libraries will return row-wise data to Python *before*
       we can load into Arrow. Note that you can easily determine the connection's
-      URI from a SQLAlchemy engine object by calling `str(conn.engine.url)`.
+      URI from a SQLAlchemy engine object by calling
+      `conn.engine.url.render_as_string(hide_password=False)`.
 
     * If polars has to create a cursor from your connection in order to execute the
       query then that cursor will be automatically closed when the query completes;
@@ -537,18 +562,18 @@ def read_database(  # noqa: D417
     ...     batch_size=1000,
     ... ):
     ...     do_something(df)  # doctest: +SKIP
-
     """  # noqa: W505
     if isinstance(connection, str):
         # check for odbc connection string
-        if re.sub(r"\s", "", connection[:20]).lower().startswith("driver="):
+        if re.search(r"\bdriver\s*=\s*{[^}]+?}", connection, re.IGNORECASE):
             try:
                 import arrow_odbc  # noqa: F401
             except ModuleNotFoundError:
-                raise ModuleNotFoundError(
+                msg = (
                     "use of an ODBC connection string requires the `arrow-odbc` package"
                     "\n\nPlease run: pip install arrow-odbc"
-                ) from None
+                )
+                raise ModuleNotFoundError(msg) from None
 
             connection = ODBCCursorProxy(connection)
         else:
@@ -558,13 +583,11 @@ def read_database(  # noqa: D417
                 version="0.19.0",
             )
             if iter_batches or batch_size:
-                raise InvalidOperationError(
-                    "Batch parameters are not supported for `read_database_uri`"
-                )
+                msg = "Batch parameters are not supported for `read_database_uri`"
+                raise InvalidOperationError(msg)
             if not isinstance(query, (list, str)):
-                raise TypeError(
-                    f"`read_database_uri` expects one or more string queries; found {type(query)}"
-                )
+                msg = f"`read_database_uri` expects one or more string queries; found {type(query)}"
+                raise TypeError(msg)
             return read_database_uri(
                 query,
                 uri=connection,
@@ -575,9 +598,8 @@ def read_database(  # noqa: D417
     # note: can remove this check (and **kwargs) once we drop the
     # pass-through deprecation support for read_database_uri
     if kwargs:
-        raise ValueError(
-            f"`read_database` **kwargs only exist for passthrough to `read_database_uri`: found {kwargs!r}"
-        )
+        msg = f"`read_database` **kwargs only exist for passthrough to `read_database_uri`: found {kwargs!r}"
+        raise ValueError(msg)
 
     # return frame from arbitrary connections using the executor abstraction
     with ConnectionExecutor(connection) as cx:
@@ -615,6 +637,10 @@ def read_database_uri(
 
         * "postgresql://user:pass@server:port/database"
         * "snowflake://user:pass@account/database/schema?warehouse=warehouse&role=role"
+
+        The caller is responsible for escaping any special characters in the string,
+        which will be passed "as-is" to the underlying engine (this is most often
+        required when coming across special characters in the password).
     partition_on
         The column on which to partition the result (connectorx).
     partition_range
@@ -651,6 +677,15 @@ def read_database_uri(
 
     For `adbc` you will need to have installed `pyarrow` and the ADBC driver associated
     with the backend you are connecting to, eg: `adbc-driver-postgresql`.
+
+    If your password contains special characters, you will need to escape them.
+    This will usually require the use of a URL-escaping function, for example:
+
+    >>> from urllib.parse import quote, quote_plus
+    >>> quote_plus("pass word?")
+    'pass+word%3F'
+    >>> quote("pass word?")
+    'pass%20word%3F'
 
     See Also
     --------
@@ -694,12 +729,10 @@ def read_database_uri(
     ...     "snowflake://user:pass@company-org/testdb/public?warehouse=test&role=myrole",
     ...     engine="adbc",
     ... )  # doctest: +SKIP
-
     """
     if not isinstance(uri, str):
-        raise TypeError(
-            f"expected connection to be a URI string; found {type(uri).__name__!r}"
-        )
+        msg = f"expected connection to be a URI string; found {type(uri).__name__!r}"
+        raise TypeError(msg)
     elif engine is None:
         engine = "connectorx"
 
@@ -715,12 +748,12 @@ def read_database_uri(
         )
     elif engine == "adbc":
         if not isinstance(query, str):
-            raise ValueError("only a single SQL query string is accepted for adbc")
+            msg = "only a single SQL query string is accepted for adbc"
+            raise ValueError(msg)
         return _read_sql_adbc(query, uri, schema_overrides)
     else:
-        raise ValueError(
-            f"engine must be one of {{'connectorx', 'adbc'}}, got {engine!r}"
-        )
+        msg = f"engine must be one of {{'connectorx', 'adbc'}}, got {engine!r}"
+        raise ValueError(msg)
 
 
 def _read_sql_connectorx(
@@ -735,9 +768,8 @@ def _read_sql_connectorx(
     try:
         import connectorx as cx
     except ModuleNotFoundError:
-        raise ModuleNotFoundError(
-            "connectorx is not installed" "\n\nPlease run: pip install connectorx"
-        ) from None
+        msg = "connectorx is not installed" "\n\nPlease run: pip install connectorx"
+        raise ModuleNotFoundError(msg) from None
 
     try:
         tbl = cx.read_sql(
@@ -779,10 +811,11 @@ def _open_adbc_connection(connection_uri: str) -> Any:
         import_module(module_name)
         adbc_driver = sys.modules[module_name]
     except ImportError:
-        raise ModuleNotFoundError(
+        msg = (
             f"ADBC {driver_name} driver not detected"
             f"\n\nIf ADBC supports this database, please run: pip install adbc-driver-{driver_name} pyarrow"
-        ) from None
+        )
+        raise ModuleNotFoundError(msg) from None
 
     # some backends require the driver name to be stripped from the URI
     if driver_name in ("sqlite", "snowflake"):

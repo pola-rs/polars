@@ -1,9 +1,6 @@
 //! Traits for miscellaneous operations on ChunkedArray
-use arrow::legacy::prelude::QuantileInterpolOptions;
 use arrow::offset::OffsetsBuffer;
 
-#[cfg(feature = "object")]
-use crate::datatypes::ObjectType;
 use crate::prelude::*;
 
 pub(crate) mod aggregate;
@@ -35,7 +32,6 @@ pub(crate) mod rolling_window;
 mod set;
 mod shift;
 pub mod sort;
-pub(crate) mod take;
 mod tile;
 #[cfg(feature = "algorithm_group_by")]
 pub(crate) mod unique;
@@ -263,6 +259,10 @@ pub trait ChunkAgg<T> {
         None
     }
 
+    fn min_max(&self) -> Option<(T, T)> {
+        Some((self.min()?, self.max()?))
+    }
+
     /// Returns the mean value in the array.
     /// Returns `None` if the array is empty or only contains null values.
     fn mean(&self) -> Option<f64> {
@@ -407,7 +407,8 @@ pub trait ChunkSort<T: PolarsDataType> {
 
 pub type FillNullLimit = Option<IdxSize>;
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Hash)]
+#[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
 pub enum FillNullStrategy {
     /// previous value in array
     Backward(FillNullLimit),
@@ -521,6 +522,14 @@ impl ChunkExpandAtIndex<StringType> for StringChunked {
 
 impl ChunkExpandAtIndex<BinaryType> for BinaryChunked {
     fn new_from_index(&self, index: usize, length: usize) -> BinaryChunked {
+        let mut out = impl_chunk_expand!(self, length, index);
+        out.set_sorted_flag(IsSorted::Ascending);
+        out
+    }
+}
+
+impl ChunkExpandAtIndex<BinaryOffsetType> for BinaryOffsetChunked {
+    fn new_from_index(&self, index: usize, length: usize) -> BinaryOffsetChunked {
         let mut out = impl_chunk_expand!(self, length, index);
         out.set_sorted_flag(IsSorted::Ascending);
         out

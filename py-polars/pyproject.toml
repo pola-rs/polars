@@ -45,6 +45,7 @@ connectorx = ["connectorx >= 0.3.2"]
 deltalake = ["deltalake >= 0.14.0"]
 fsspec = ["fsspec"]
 gevent = ["gevent"]
+plot = ["hvplot >= 0.9.1"]
 matplotlib = ["matplotlib"]
 numpy = ["numpy >= 1.16.0"]
 openpyxl = ["openpyxl >= 3.0.0"]
@@ -58,7 +59,7 @@ timezone = ["backports.zoneinfo; python_version < '3.9'", "tzdata; platform_syst
 xlsx2csv = ["xlsx2csv >= 0.8.0"]
 xlsxwriter = ["xlsxwriter"]
 all = [
-  "polars[pyarrow,pandas,numpy,fsspec,connectorx,xlsx2csv,deltalake,timezone,matplotlib,pydantic,pyiceberg,sqlalchemy,xlsxwriter,adbc,cloudpickle,gevent]",
+  "polars[pyarrow,pandas,numpy,fsspec,plot,connectorx,xlsx2csv,deltalake,timezone,pydantic,pyiceberg,sqlalchemy,xlsxwriter,adbc,cloudpickle,gevent]",
 ]
 
 [tool.maturin]
@@ -88,6 +89,7 @@ module = [
   "ezodf.*",
   "fsspec.*",
   "gevent",
+  "hvplot.*",
   "matplotlib.*",
   "moto.server",
   "openpyxl",
@@ -106,7 +108,6 @@ ignore_missing_imports = true
 module = [
   "IPython.*",
   "matplotlib.*",
-  "dataframe_api_compat.*",
 ]
 follow_imports = "skip"
 
@@ -123,6 +124,7 @@ warn_return_any = false
 line-length = 88
 fix = true
 
+[tool.ruff.lint]
 select = [
   "E", # pycodestyle
   "W", # pycodestyle
@@ -131,7 +133,6 @@ select = [
   "C4", # flake8-comprehensions
   "D", # flake8-docstrings
   "D213", # Augment NumPy docstring convention: Multi-line docstring summary should start at the second line
-  "D413", # Augment NumPy docstring convention: Missing blank line after last section
   "D417", # Augment NumPy docstring convention: Missing argument descriptions
   "I", # isort
   "SIM", # flake8-simplify
@@ -145,6 +146,7 @@ select = [
   "PIE", # flake8-pie
   "TD", # flake8-todos
   "TRY", # tryceratops
+  "EM", # flake8-errmsg
   "FBT001", # flake8-boolean-trap
 ]
 
@@ -176,23 +178,23 @@ ignore = [
   "W191",
 ]
 
-[tool.ruff.format]
-docstring-code-format = true
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["D100", "D103", "B018", "FBT001"]
 
-[tool.ruff.pycodestyle]
+[tool.ruff.lint.pycodestyle]
 max-doc-length = 88
 
 [tool.ruff.lint.pydocstyle]
 convention = "numpy"
 
-[tool.ruff.flake8-tidy-imports]
+[tool.ruff.lint.flake8-tidy-imports]
 ban-relative-imports = "all"
 
-[tool.ruff.flake8-type-checking]
+[tool.ruff.lint.flake8-type-checking]
 strict = true
 
-[tool.ruff.per-file-ignores]
-"tests/**/*.py" = ["D100", "D103", "B018", "FBT001"]
+[tool.ruff.format]
+docstring-code-format = true
 
 [tool.pytest.ini_options]
 addopts = [
@@ -221,6 +223,9 @@ filterwarnings = [
   "ignore:datetime.datetime.utcnow\\(\\) is deprecated.*:DeprecationWarning",
   # Introspection under PyCharm IDE can generate this in Python 3.12
   "ignore:.*co_lnotab is deprecated, use co_lines.*:DeprecationWarning",
+  # TODO: Excel tests lead to unclosed file warnings
+  # https://github.com/pola-rs/polars/issues/14466
+  "ignore:unclosed file.*:ResourceWarning",
 ]
 xfail_strict = true
 

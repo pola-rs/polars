@@ -1,17 +1,16 @@
 from __future__ import annotations
 
-import os
 from collections import OrderedDict
 from typing import TYPE_CHECKING, Sequence
 
+from polars._utils.various import BUILDING_SPHINX_DOCS, sphinx_accessor
+from polars._utils.wrap import wrap_df
 from polars.series.utils import expr_dispatch
-from polars.utils._wrap import wrap_df
-from polars.utils.various import sphinx_accessor
 
 if TYPE_CHECKING:
     from polars import DataFrame, DataType, Series
     from polars.polars import PySeries
-elif os.getenv("BUILDING_SPHINX_DOCS"):
+elif BUILDING_SPHINX_DOCS:
     property = sphinx_accessor
 
 
@@ -30,7 +29,8 @@ class StructNameSpace:
         elif isinstance(item, str):
             return self.field(item)
         else:
-            raise TypeError(f"expected type 'int | str', got {type(item).__name__!r}")
+            msg = f"expected type 'int | str', got {type(item).__name__!r}"
+            raise TypeError(msg)
 
     def _ipython_key_completions_(self) -> list[str]:
         return self.fields
@@ -50,7 +50,6 @@ class StructNameSpace:
         ----------
         name
             Name of the field
-
         """
 
     def rename_fields(self, names: Sequence[str]) -> Series:
@@ -61,7 +60,6 @@ class StructNameSpace:
         ----------
         names
             New names in the order of the struct's fields
-
         """
 
     @property
@@ -88,7 +86,6 @@ class StructNameSpace:
         │ 1   ┆ 2   │
         │ 3   ┆ 4   │
         └─────┴─────┘
-
         """
         return wrap_df(self._s.struct_unnest())
 
@@ -106,5 +103,4 @@ class StructNameSpace:
             "{"a":[1,2],"b"…
             "{"a":[9,1,3],"…
         ]
-
         """

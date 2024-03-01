@@ -54,15 +54,17 @@ mod inner {
 
         #[inline]
         fn next(&mut self) -> Option<(&'a [u8], bool)> {
-            if self.v.is_empty() || self.finished {
+            if self.finished {
                 return None;
+            } else if self.v.is_empty() {
+                return self.finish(false);
             }
 
             let mut needs_escaping = false;
             // There can be strings with separators:
             // "Street, City",
 
-            // Safety:
+            // SAFETY:
             // we have checked bounds
             let pos = if self.quoting && unsafe { *self.v.get_unchecked(0) } == self.quote_char {
                 needs_escaping = true;
@@ -88,7 +90,7 @@ mod inner {
 
                     if !in_field && self.eof_oel(c) {
                         if c == self.eol_char {
-                            // safety
+                            // SAFETY:
                             // we are in bounds
                             return unsafe {
                                 self.finish_eol(needs_escaping, current_idx as usize)
@@ -109,7 +111,7 @@ mod inner {
                 match self.v.iter().position(|&c| self.eof_oel(c)) {
                     None => return self.finish(needs_escaping),
                     Some(idx) => unsafe {
-                        // Safety:
+                        // SAFETY:
                         // idx was just found
                         if *self.v.get_unchecked(idx) == self.eol_char {
                             return self.finish_eol(needs_escaping, idx);
@@ -122,7 +124,7 @@ mod inner {
 
             unsafe {
                 debug_assert!(pos <= self.v.len());
-                // safety
+                // SAFETY:
                 // we are in bounds
                 let ret = Some((self.v.get_unchecked(..pos), needs_escaping));
                 self.v = self.v.get_unchecked(pos + 1..);
@@ -214,15 +216,17 @@ mod inner {
 
         #[inline]
         fn next(&mut self) -> Option<(&'a [u8], bool)> {
-            if self.v.is_empty() || self.finished {
+            if self.finished {
                 return None;
+            } else if self.v.is_empty() {
+                return self.finish(false);
             }
 
             let mut needs_escaping = false;
             // There can be strings with separators:
             // "Street, City",
 
-            // Safety:
+            // SAFETY:
             // we have checked bounds
             let pos = if self.quoting && unsafe { *self.v.get_unchecked(0) } == self.quote_char {
                 needs_escaping = true;
@@ -248,7 +252,7 @@ mod inner {
 
                     if !in_field && self.eof_oel(c) {
                         if c == self.eol_char {
-                            // safety
+                            // SAFETY:
                             // we are in bounds
                             return unsafe {
                                 self.finish_eol(needs_escaping, current_idx as usize)
@@ -314,7 +318,7 @@ mod inner {
 
             unsafe {
                 debug_assert!(pos <= self.v.len());
-                // safety
+                // SAFETY:
                 // we are in bounds
                 let ret = Some((self.v.get_unchecked(..pos), needs_escaping));
                 self.v = self.v.get_unchecked(pos + 1..);

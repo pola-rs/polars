@@ -12,7 +12,7 @@
 
 use std::mem::MaybeUninit;
 
-use arrow::array::BinaryArray;
+use arrow::array::{BinaryArray, BinaryViewArray, MutableBinaryViewArray};
 use arrow::datatypes::ArrowDataType;
 use arrow::offset::Offsets;
 use polars_utils::slice::{GetSaferUnchecked, Slice2Uninit};
@@ -239,6 +239,7 @@ pub(super) unsafe fn decode_binary(rows: &mut [&[u8]], field: &SortField) -> Bin
             continuation_token,
             field.descending,
         );
+        let values_offset = values.len();
 
         let mut to_read = str_len;
         // we start at one, as we skip the validity byte
@@ -258,7 +259,10 @@ pub(super) unsafe fn decode_binary(rows: &mut [&[u8]], field: &SortField) -> Bin
         offsets.push(values.len() as i64);
 
         if field.descending {
-            values.iter_mut().for_each(|o| *o = !*o)
+            values
+                .get_unchecked_release_mut(values_offset..)
+                .iter_mut()
+                .for_each(|o| *o = !*o)
         }
     }
 
@@ -268,4 +272,55 @@ pub(super) unsafe fn decode_binary(rows: &mut [&[u8]], field: &SortField) -> Bin
         values.into(),
         validity,
     )
+}
+
+pub(super) unsafe fn decode_binview(rows: &mut [&[u8]], field: &SortField) -> BinaryViewArray {
+    let (non_empty_sentinel, continuation_token) = if field.descending {
+        (!NON_EMPTY_SENTINEL, !BLOCK_CONTINUATION_TOKEN)
+    } else {
+        (NON_EMPTY_SENTINEL, BLOCK_CONTINUATION_TOKEN)
+    };
+
+    let null_sentinel = get_null_sentinel(field);
+    let validity = if has_nulls(rows, null_sentinel) {
+        Some(decode_nulls(rows, null_sentinel))
+    } else {
+        None
+    };
+
+    let mut mutable = MutableBinaryViewArray::with_capacity(rows.len());
+
+    let mut scratch = vec![];
+    for row in rows {
+        scratch.set_len(0);
+        let str_len = decoded_len(
+            row,
+            non_empty_sentinel,
+            continuation_token,
+            field.descending,
+        );
+        let mut to_read = str_len;
+        // we start at one, as we skip the validity byte
+        let mut offset = 1;
+
+        while to_read >= BLOCK_SIZE {
+            to_read -= BLOCK_SIZE;
+            scratch.extend_from_slice(row.get_unchecked_release(offset..offset + BLOCK_SIZE));
+            offset += BLOCK_SIZE + 1;
+        }
+
+        if to_read != 0 {
+            scratch.extend_from_slice(row.get_unchecked_release(offset..offset + to_read));
+            offset += BLOCK_SIZE + 1;
+        }
+        *row = row.get_unchecked(offset..);
+
+        if field.descending {
+            scratch.iter_mut().for_each(|o| *o = !*o)
+        }
+        mutable.push_value_ignore_validity(&scratch);
+    }
+
+    let out: BinaryViewArray = mutable.into();
+    out.with_validity(validity)
 }

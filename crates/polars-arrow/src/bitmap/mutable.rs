@@ -1,5 +1,4 @@
 use std::hint::unreachable_unchecked;
-use std::iter::FromIterator;
 use std::sync::Arc;
 
 use polars_error::{polars_bail, PolarsResult};
@@ -8,7 +7,7 @@ use super::utils::{
     count_zeros, fmt, get_bit, set, set_bit, BitChunk, BitChunksExactMut, BitmapIter,
 };
 use super::Bitmap;
-use crate::bitmap::utils::{merge_reversed, set_bit_unchecked};
+use crate::bitmap::utils::{get_bit_unchecked, merge_reversed, set_bit_unchecked};
 use crate::trusted_len::TrustedLen;
 
 /// A container of booleans. [`MutableBitmap`] is semantically equivalent
@@ -115,7 +114,7 @@ impl MutableBitmap {
         if self.length % 8 == 0 {
             self.buffer.push(0);
         }
-        let byte = self.buffer.as_mut_slice().last_mut().unwrap();
+        let byte = unsafe { self.buffer.as_mut_slice().last_mut().unwrap_unchecked() };
         *byte = set(*byte, self.length % 8, value);
         self.length += 1;
     }
@@ -129,7 +128,7 @@ impl MutableBitmap {
         }
 
         self.length -= 1;
-        let value = self.get(self.length);
+        let value = unsafe { self.get_unchecked(self.length) };
         if self.length % 8 == 0 {
             self.buffer.pop();
         }
@@ -142,6 +141,15 @@ impl MutableBitmap {
     #[inline]
     pub fn get(&self, index: usize) -> bool {
         get_bit(&self.buffer, index)
+    }
+
+    /// Returns whether the position `index` is set.
+    ///
+    /// # Safety
+    /// The caller must ensure `index < self.len()`.
+    #[inline]
+    pub unsafe fn get_unchecked(&self, index: usize) -> bool {
+        get_bit_unchecked(&self.buffer, index)
     }
 
     /// Sets the position `index` to `value`
@@ -212,6 +220,7 @@ impl MutableBitmap {
     }
 
     /// Pushes a new bit to the [`MutableBitmap`]
+    ///
     /// # Safety
     /// The caller must ensure that the [`MutableBitmap`] has sufficient capacity.
     #[inline]
@@ -309,6 +318,7 @@ impl MutableBitmap {
     }
 
     /// Sets the position `index` to `value`
+    ///
     /// # Safety
     /// Caller must ensure that `index < self.len()`
     #[inline]
@@ -325,6 +335,10 @@ impl MutableBitmap {
     pub(crate) fn bitchunks_exact_mut<T: BitChunk>(&mut self) -> BitChunksExactMut<T> {
         BitChunksExactMut::new(&mut self.buffer, self.length)
     }
+
+    pub fn freeze(self) -> Bitmap {
+        self.into()
+    }
 }
 
 impl From<MutableBitmap> for Bitmap {
@@ -339,14 +353,13 @@ impl From<MutableBitmap> for Option<Bitmap> {
     fn from(buffer: MutableBitmap) -> Self {
         let unset_bits = buffer.unset_bits();
         if unset_bits > 0 {
-            // safety:
-            // invariants of the `MutableBitmap` equal that of `Bitmap`
+            // SAFETY: invariants of the `MutableBitmap` equal that of `Bitmap`.
             let bitmap = unsafe {
                 Bitmap::from_inner_unchecked(
                     Arc::new(buffer.buffer.into()),
                     0,
                     buffer.length,
-                    unset_bits,
+                    Some(unset_bits),
                 )
             };
             Some(bitmap)
@@ -512,11 +525,12 @@ impl MutableBitmap {
     /// Extends `self` from a [`TrustedLen`] iterator.
     #[inline]
     pub fn extend_from_trusted_len_iter<I: TrustedLen<Item = bool>>(&mut self, iterator: I) {
-        // safety: I: TrustedLen
+        // SAFETY: I: TrustedLen
         unsafe { self.extend_from_trusted_len_iter_unchecked(iterator) }
     }
 
     /// Extends `self` from an iterator of trusted len.
+    ///
     /// # Safety
     /// The caller must guarantee that the iterator has a trusted len.
     #[inline]
@@ -565,6 +579,7 @@ impl MutableBitmap {
     }
 
     /// Creates a new [`MutableBitmap`] from an iterator of booleans.
+    ///
     /// # Safety
     /// The iterator must report an accurate length.
     #[inline]
@@ -585,7 +600,7 @@ impl MutableBitmap {
     where
         I: TrustedLen<Item = bool>,
     {
-        // Safety: Iterator is `TrustedLen`
+        // SAFETY: Iterator is `TrustedLen`
         unsafe { Self::from_trusted_len_iter_unchecked(iterator) }
     }
 
@@ -598,6 +613,7 @@ impl MutableBitmap {
     }
 
     /// Creates a new [`MutableBitmap`] from an falible iterator of booleans.
+    ///
     /// # Safety
     /// The caller must guarantee that the iterator is `TrustedLen`.
     pub unsafe fn try_from_trusted_len_iter_unchecked<E, I>(
@@ -685,6 +701,7 @@ impl MutableBitmap {
     /// # Implementation
     /// When both [`MutableBitmap`]'s length and `offset` are both multiples of 8,
     /// this function performs a memcopy. Else, it first aligns bit by bit and then performs a memcopy.
+    ///
     /// # Safety
     /// Caller must ensure `offset + length <= slice.len() * 8`
     #[inline]
@@ -717,7 +734,7 @@ impl MutableBitmap {
     #[inline]
     pub fn extend_from_slice(&mut self, slice: &[u8], offset: usize, length: usize) {
         assert!(offset + length <= slice.len() * 8);
-        // safety: invariant is asserted
+        // SAFETY: invariant is asserted
         unsafe { self.extend_from_slice_unchecked(slice, offset, length) }
     }
 
@@ -725,7 +742,7 @@ impl MutableBitmap {
     #[inline]
     pub fn extend_from_bitmap(&mut self, bitmap: &Bitmap) {
         let (slice, offset, length) = bitmap.as_slice();
-        // safety: bitmap.as_slice adheres to the invariant
+        // SAFETY: bitmap.as_slice adheres to the invariant
         unsafe {
             self.extend_from_slice_unchecked(slice, offset, length);
         }

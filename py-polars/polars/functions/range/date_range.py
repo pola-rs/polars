@@ -5,13 +5,13 @@ from datetime import datetime
 from typing import TYPE_CHECKING, overload
 
 from polars import functions as F
-from polars.functions.range._utils import parse_interval_argument
-from polars.utils._parse_expr_input import parse_as_expression
-from polars.utils._wrap import wrap_expr
-from polars.utils.deprecation import (
+from polars._utils.deprecation import (
     deprecate_saturating,
     issue_deprecation_warning,
 )
+from polars._utils.parse_expr_input import parse_as_expression
+from polars._utils.wrap import wrap_expr
+from polars.functions.range._utils import parse_interval_argument
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -34,8 +34,7 @@ def date_range(
     time_unit: TimeUnit | None = ...,
     time_zone: str | None = ...,
     eager: Literal[False] = ...,
-) -> Expr:
-    ...
+) -> Expr: ...
 
 
 @overload
@@ -48,8 +47,7 @@ def date_range(
     time_unit: TimeUnit | None = ...,
     time_zone: str | None = ...,
     eager: Literal[True],
-) -> Series:
-    ...
+) -> Series: ...
 
 
 @overload
@@ -62,8 +60,7 @@ def date_range(
     time_unit: TimeUnit | None = ...,
     time_zone: str | None = ...,
     eager: bool,
-) -> Series | Expr:
-    ...
+) -> Series | Expr: ...
 
 
 def date_range(
@@ -141,7 +138,9 @@ def date_range(
     Using Polars duration string to specify the interval:
 
     >>> from datetime import date
-    >>> pl.date_range(date(2022, 1, 1), date(2022, 3, 1), "1mo", eager=True)
+    >>> pl.date_range(date(2022, 1, 1), date(2022, 3, 1), "1mo", eager=True).alias(
+    ...     "date"
+    ... )
     shape: (3,)
     Series: 'date' [date]
     [
@@ -158,7 +157,7 @@ def date_range(
     ...     date(1985, 1, 10),
     ...     timedelta(days=2),
     ...     eager=True,
-    ... )
+    ... ).alias("date")
     shape: (5,)
     Series: 'date' [date]
     [
@@ -168,7 +167,6 @@ def date_range(
         1985-01-07
         1985-01-09
     ]
-
     """
     interval = deprecate_saturating(interval)
 
@@ -200,8 +198,7 @@ def date_ranges(
     time_unit: TimeUnit | None = ...,
     time_zone: str | None = ...,
     eager: Literal[False] = ...,
-) -> Expr:
-    ...
+) -> Expr: ...
 
 
 @overload
@@ -214,8 +211,7 @@ def date_ranges(
     time_unit: TimeUnit | None = ...,
     time_zone: str | None = ...,
     eager: Literal[True],
-) -> Series:
-    ...
+) -> Series: ...
 
 
 @overload
@@ -228,8 +224,7 @@ def date_ranges(
     time_unit: TimeUnit | None = ...,
     time_zone: str | None = ...,
     eager: bool,
-) -> Series | Expr:
-    ...
+) -> Series | Expr: ...
 
 
 def date_ranges(
@@ -303,17 +298,17 @@ def date_ranges(
     ...         "end": date(2022, 1, 3),
     ...     }
     ... )
-    >>> df.with_columns(pl.date_ranges("start", "end"))
+    >>> with pl.Config(fmt_str_lengths=50):
+    ...     df.with_columns(date_range=pl.date_ranges("start", "end"))
     shape: (2, 3)
-    ┌────────────┬────────────┬───────────────────────────────────┐
-    │ start      ┆ end        ┆ date_range                        │
-    │ ---        ┆ ---        ┆ ---                               │
-    │ date       ┆ date       ┆ list[date]                        │
-    ╞════════════╪════════════╪═══════════════════════════════════╡
-    │ 2022-01-01 ┆ 2022-01-03 ┆ [2022-01-01, 2022-01-02, 2022-01… │
-    │ 2022-01-02 ┆ 2022-01-03 ┆ [2022-01-02, 2022-01-03]          │
-    └────────────┴────────────┴───────────────────────────────────┘
-
+    ┌────────────┬────────────┬──────────────────────────────────────┐
+    │ start      ┆ end        ┆ date_range                           │
+    │ ---        ┆ ---        ┆ ---                                  │
+    │ date       ┆ date       ┆ list[date]                           │
+    ╞════════════╪════════════╪══════════════════════════════════════╡
+    │ 2022-01-01 ┆ 2022-01-03 ┆ [2022-01-01, 2022-01-02, 2022-01-03] │
+    │ 2022-01-02 ┆ 2022-01-03 ┆ [2022-01-02, 2022-01-03]             │
+    └────────────┴────────────┴──────────────────────────────────────┘
     """
     interval = deprecate_saturating(interval)
     interval = parse_interval_argument(interval)

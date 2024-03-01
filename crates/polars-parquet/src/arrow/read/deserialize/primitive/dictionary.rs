@@ -6,7 +6,7 @@ use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;
 use polars_error::PolarsResult;
 
-use super::super::dictionary::{nested_next_dict, *};
+use super::super::dictionary::*;
 use super::super::nested_utils::{InitNested, NestedState};
 use super::super::utils::MaybeNext;
 use super::super::PagesIter;

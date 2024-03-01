@@ -23,13 +23,13 @@ def test_projection_on_semi_join_4789() -> None:
 def test_melt_projection_pd_block_4997() -> None:
     assert (
         pl.DataFrame({"col1": ["a"], "col2": ["b"]})
-        .with_row_count()
+        .with_row_index()
         .lazy()
-        .melt(id_vars="row_nr")
-        .group_by("row_nr")
+        .melt(id_vars="index")
+        .group_by("index")
         .agg(pl.col("variable").alias("result"))
         .collect()
-    ).to_dict(as_series=False) == {"row_nr": [0], "result": [["col1", "col2"]]}
+    ).to_dict(as_series=False) == {"index": [0], "result": [["col1", "col2"]]}
 
 
 def test_double_projection_pushdown() -> None:
@@ -275,18 +275,22 @@ def test_merge_sorted_projection_pd() -> None:
 
 
 def test_distinct_projection_pd_7578() -> None:
-    df = pl.DataFrame(
+    lf = pl.LazyFrame(
         {
             "foo": ["0", "1", "2", "1", "2"],
             "bar": ["a", "a", "a", "b", "b"],
         }
     )
 
-    q = df.lazy().unique().group_by("bar").agg(pl.count())
-    assert q.collect().sort("bar").to_dict(as_series=False) == {
-        "bar": ["a", "b"],
-        "count": [3, 2],
-    }
+    result = lf.unique().group_by("bar").agg(pl.len())
+    expected = pl.LazyFrame(
+        {
+            "bar": ["a", "b"],
+            "len": [3, 2],
+        },
+        schema_overrides={"len": pl.UInt32},
+    )
+    assert_frame_equal(result, expected, check_row_order=False)
 
 
 def test_join_suffix_collision_9562() -> None:
@@ -351,7 +355,7 @@ def test_projection_rename_10595() -> None:
 
 
 def test_projection_count_11841() -> None:
-    pl.LazyFrame({"x": 1}).select(records=pl.count()).select(
+    pl.LazyFrame({"x": 1}).select(records=pl.len()).select(
         pl.lit(1).alias("x"), pl.all()
     ).collect()
 
@@ -368,3 +372,39 @@ def test_schema_outer_join_projection_pd_13287() -> None:
     ).with_columns(
         pl.col("a").fill_null(pl.col("c")),
     ).select("a").collect().to_dict(as_series=False) == {"a": [2, 3, 1, 1]}
+
+
+def test_projection_pushdown_outer_join_duplicates() -> None:
+    df1 = pl.DataFrame({"a": [1, 2, 3], "b": [10, 20, 30]}).lazy()
+    df2 = pl.DataFrame({"a": [1, 2, 3], "b": [10, 20, 30]}).lazy()
+    assert (
+        df1.join(df2, on="a", how="outer").with_columns(c=0).select("a", "c").collect()
+    ).to_dict(as_series=False) == {"a": [1, 2, 3], "c": [0, 0, 0]}
+
+
+def test_rolling_key_projected_13617() -> None:
+    df = pl.DataFrame({"idx": [1, 2], "value": ["a", "b"]}).set_sorted("idx")
+    ldf = df.lazy().select(pl.col("value").rolling("idx", period="1i"))
+    plan = ldf.explain(projection_pushdown=True)
+    assert r'DF ["idx", "value"]; PROJECT 2/2 COLUMNS' in plan
+    out = ldf.collect(projection_pushdown=True)
+    assert out.to_dict(as_series=False) == {"value": [["a"], ["b"]]}
+
+
+def test_projection_drop_with_series_lit_14382() -> None:
+    df = pl.DataFrame({"b": [1, 6, 8, 7]})
+    df2 = pl.DataFrame({"a": [1, 2, 4, 4], "b": [True, True, True, False]})
+
+    q = (
+        df2.lazy()
+        .select(
+            *["a", "b"], pl.lit("b").alias("b_name"), df.get_column("b").alias("b_old")
+        )
+        .filter(pl.col("b").not_())
+        .drop("b")
+    )
+    assert q.collect().to_dict(as_series=False) == {
+        "a": [4],
+        "b_name": ["b"],
+        "b_old": [7],
+    }

@@ -1,20 +1,17 @@
 //! Implementations of the ChunkApply Trait.
 use std::borrow::Cow;
-use std::convert::TryFrom;
 
-use arrow::array::{BooleanArray, PrimitiveArray};
 use arrow::bitmap::utils::{get_bit_unchecked, set_bit_unchecked};
 use arrow::legacy::bitmap::unary_mut;
 
 use crate::prelude::*;
 use crate::series::IsSorted;
-use crate::utils::CustomIterTools;
 
 impl<T> ChunkedArray<T>
 where
     T: PolarsDataType,
 {
-    // Applies a function to all elements , regardless of whether they
+    // Applies a function to all elements, regardless of whether they
     // are null or not, after which the null mask is copied from the
     // original array.
     pub fn apply_values_generic<'a, U, K, F>(&'a self, mut op: F) -> ChunkedArray<U>
@@ -68,13 +65,13 @@ where
                 let out: U::Array = arr
                     .values_iter()
                     .map(&mut op)
-                    .collect_arr_with_dtype(dtype.to_arrow());
+                    .collect_arr_with_dtype(dtype.to_arrow(true));
                 out.with_validity_typed(arr.validity().cloned())
             } else {
                 let out: U::Array = arr
                     .iter()
                     .map(|opt| opt.map(&mut op))
-                    .collect_arr_with_dtype(dtype.to_arrow());
+                    .collect_arr_with_dtype(dtype.to_arrow(true));
                 out.with_validity_typed(arr.validity().cloned())
             }
         });
@@ -159,7 +156,7 @@ where
         drop(arr);
 
         let compute_immutable = |arr: &PrimitiveArray<S::Native>| {
-            arrow::compute::arity::unary(arr, f, S::get_dtype().to_arrow())
+            arrow::compute::arity::unary(arr, f, S::get_dtype().to_arrow(true))
         };
 
         if owned_arr.values().is_sliced() {
@@ -214,7 +211,7 @@ impl<T: PolarsNumericType> ChunkedArray<T> {
     where
         F: Fn(T::Native) -> T::Native + Copy,
     {
-        // safety, we do no t change the lengths
+        // SAFETY, we do no t change the lengths
         unsafe {
             self.downcast_iter_mut()
                 .for_each(|arr| arrow::compute::arity_assign::unary(arr, f))
@@ -281,7 +278,7 @@ where
         let mut idx = 0;
         self.downcast_iter().for_each(|arr| {
             arr.into_iter().for_each(|opt_val| {
-                // Safety:
+                // SAFETY:
                 // length asserted above
                 let item = unsafe { slice.get_unchecked_mut(idx) };
                 *item = f(opt_val.copied(), item);
@@ -371,7 +368,7 @@ impl<'a> ChunkApply<'a, bool> for BooleanChunked {
         let mut idx = 0;
         self.downcast_iter().for_each(|arr| {
             arr.into_iter().for_each(|opt_val| {
-                // Safety:
+                // SAFETY:
                 // length asserted above
                 let item = unsafe { slice.get_unchecked_mut(idx) };
                 *item = f(opt_val, item);
@@ -386,11 +383,9 @@ impl StringChunked {
     where
         F: FnMut(&'a str) -> &'a str,
     {
-        use arrow::legacy::array::utf8::Utf8FromIter;
         let chunks = self.downcast_iter().map(|arr| {
             let iter = arr.values_iter().map(&mut f);
-            let value_size = (arr.get_values_size() as f64 * 1.3) as usize;
-            let new = Utf8Array::<i64>::from_values_iter(iter, arr.len(), value_size);
+            let new = Utf8ViewArray::arr_from_iter(iter);
             new.with_validity(arr.validity().cloned())
         });
         StringChunked::from_chunk_iter(self.name(), chunks)
@@ -417,11 +412,9 @@ impl BinaryChunked {
     where
         F: FnMut(&'a [u8]) -> &'a [u8],
     {
-        use arrow::legacy::array::utf8::BinaryFromIter;
         let chunks = self.downcast_iter().map(|arr| {
             let iter = arr.values_iter().map(&mut f);
-            let value_size = (arr.get_values_size() as f64 * 1.3) as usize;
-            let new = BinaryArray::<i64>::from_values_iter(iter, arr.len(), value_size);
+            let new = BinaryViewArray::arr_from_iter(iter);
             new.with_validity(arr.validity().cloned())
         });
         BinaryChunked::from_chunk_iter(self.name(), chunks)
@@ -461,7 +454,7 @@ impl<'a> ChunkApply<'a, &'a str> for StringChunked {
         let mut idx = 0;
         self.downcast_iter().for_each(|arr| {
             arr.into_iter().for_each(|opt_val| {
-                // Safety:
+                // SAFETY:
                 // length asserted above
                 let item = unsafe { slice.get_unchecked_mut(idx) };
                 *item = f(opt_val, item);
@@ -504,7 +497,7 @@ impl<'a> ChunkApply<'a, &'a [u8]> for BinaryChunked {
         let mut idx = 0;
         self.downcast_iter().for_each(|arr| {
             arr.into_iter().for_each(|opt_val| {
-                // Safety:
+                // SAFETY:
                 // length asserted above
                 let item = unsafe { slice.get_unchecked_mut(idx) };
                 *item = f(opt_val, item);
@@ -548,12 +541,12 @@ where
     }
 }
 
-impl ChunkApplyKernel<LargeStringArray> for StringChunked {
-    fn apply_kernel(&self, f: &dyn Fn(&LargeStringArray) -> ArrayRef) -> Self {
+impl ChunkApplyKernel<Utf8ViewArray> for StringChunked {
+    fn apply_kernel(&self, f: &dyn Fn(&Utf8ViewArray) -> ArrayRef) -> Self {
         self.apply_kernel_cast(&f)
     }
 
-    fn apply_kernel_cast<S>(&self, f: &dyn Fn(&LargeStringArray) -> ArrayRef) -> ChunkedArray<S>
+    fn apply_kernel_cast<S>(&self, f: &dyn Fn(&Utf8ViewArray) -> ArrayRef) -> ChunkedArray<S>
     where
         S: PolarsDataType,
     {
@@ -562,12 +555,12 @@ impl ChunkApplyKernel<LargeStringArray> for StringChunked {
     }
 }
 
-impl ChunkApplyKernel<LargeBinaryArray> for BinaryChunked {
-    fn apply_kernel(&self, f: &dyn Fn(&LargeBinaryArray) -> ArrayRef) -> Self {
+impl ChunkApplyKernel<BinaryViewArray> for BinaryChunked {
+    fn apply_kernel(&self, f: &dyn Fn(&BinaryViewArray) -> ArrayRef) -> Self {
         self.apply_kernel_cast(&f)
     }
 
-    fn apply_kernel_cast<S>(&self, f: &dyn Fn(&LargeBinaryArray) -> ArrayRef) -> ChunkedArray<S>
+    fn apply_kernel_cast<S>(&self, f: &dyn Fn(&BinaryViewArray) -> ArrayRef) -> ChunkedArray<S>
     where
         S: PolarsDataType,
     {
@@ -667,7 +660,7 @@ impl<'a> ChunkApply<'a, Series> for ListChunked {
             arr.iter().for_each(|opt_val| {
                 let opt_val = opt_val.map(|arrayref| Series::try_from(("", arrayref)).unwrap());
 
-                // Safety:
+                // SAFETY:
                 // length asserted above
                 let item = unsafe { slice.get_unchecked_mut(idx) };
                 *item = f(opt_val, item);
@@ -717,7 +710,7 @@ where
         let mut idx = 0;
         self.downcast_iter().for_each(|arr| {
             arr.into_iter().for_each(|opt_val| {
-                // Safety:
+                // SAFETY:
                 // length asserted above
                 let item = unsafe { slice.get_unchecked_mut(idx) };
                 *item = f(opt_val, item);

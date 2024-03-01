@@ -1,7 +1,7 @@
 #[cfg(feature = "cross_join")]
 mod cross;
 mod generic_build;
-mod inner_left;
+mod generic_probe_inner_left;
 
 #[cfg(feature = "cross_join")]
 pub(crate) use cross::*;

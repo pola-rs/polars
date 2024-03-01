@@ -1,19 +1,17 @@
 from __future__ import annotations
 
+from collections import Counter
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    from pathlib import Path
-
-
-from collections import Counter
 
 import numpy as np
 import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 pytestmark = pytest.mark.xdist_group("streaming")
 
@@ -77,7 +75,9 @@ def test_streaming_sort_multiple_columns_logical_types() -> None:
 
 @pytest.mark.write_disk()
 @pytest.mark.slow()
-def test_ooc_sort(monkeypatch: Any) -> None:
+def test_ooc_sort(tmp_path: Path, monkeypatch: Any) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    monkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
     monkeypatch.setenv("POLARS_FORCE_OOC", "1")
 
     s = pl.arange(0, 100_000, eager=True).rename("idx")
@@ -93,9 +93,11 @@ def test_ooc_sort(monkeypatch: Any) -> None:
 
 
 @pytest.mark.write_disk()
-def test_streaming_sort(monkeypatch: Any, capfd: Any) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+def test_streaming_sort(tmp_path: Path, monkeypatch: Any, capfd: Any) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    monkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
     monkeypatch.setenv("POLARS_FORCE_OOC", "1")
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
     # this creates a lot of duplicate partitions and triggers: #7568
     assert (
         pl.Series(np.random.randint(0, 100, 100))
@@ -110,11 +112,13 @@ def test_streaming_sort(monkeypatch: Any, capfd: Any) -> None:
 
 
 @pytest.mark.write_disk()
-def test_out_of_core_sort_9503(monkeypatch: Any) -> None:
+def test_out_of_core_sort_9503(tmp_path: Path, monkeypatch: Any) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    monkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
     monkeypatch.setenv("POLARS_FORCE_OOC", "1")
     np.random.seed(0)
 
-    num_rows = 1_00_000
+    num_rows = 100_000
     num_columns = 2
     num_tables = 10
 
@@ -164,15 +168,13 @@ def test_out_of_core_sort_9503(monkeypatch: Any) -> None:
     }
 
 
-@pytest.mark.skip(
-    reason="This test is unreliable - it fails intermittently in our CI"
-    " with 'OSError: No such file or directory (os error 2)'."
-)
 @pytest.mark.write_disk()
 @pytest.mark.slow()
 def test_streaming_sort_multiple_columns(
-    str_ints_df: pl.DataFrame, monkeypatch: Any, capfd: Any
+    str_ints_df: pl.DataFrame, tmp_path: Path, monkeypatch: Any, capfd: Any
 ) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    monkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
     monkeypatch.setenv("POLARS_FORCE_OOC", "1")
     monkeypatch.setenv("POLARS_VERBOSE", "1")
     df = str_ints_df
@@ -232,3 +234,15 @@ def test_streaming_sort_fixed_reverse() -> None:
     assert_df_sorted_by(
         df, q.collect(streaming=False), ["a", "b"], descending=descending
     )
+
+
+def test_reverse_variable_sort_13573() -> None:
+    df = pl.DataFrame(
+        {
+            "a": ["one", "two", "three"],
+            "b": ["four", "five", "six"],
+        }
+    ).lazy()
+    assert df.sort("a", "b", descending=[True, False]).collect(streaming=True).to_dict(
+        as_series=False
+    ) == {"a": ["two", "three", "one"], "b": ["five", "six", "four"]}

@@ -18,15 +18,28 @@ pub(crate) struct RollingExpr {
 
 impl PhysicalExpr for RollingExpr {
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
+        let groups_key = format!("{:?}", &self.options);
+
         let groups_map = state.group_tuples.read().unwrap();
         // Groups must be set by expression runner.
-        let groups = groups_map
-            .get(self.options.index_column.as_str())
-            .expect("impl error");
+        let groups = groups_map.get(&groups_key);
+
+        // There can be multiple rolling expressions in a single expr.
+        // E.g. `min().rolling() + max().rolling()`
+        // So if we hit that we will compute them here.
+        let groups = match groups {
+            Some(groups) => Cow::Borrowed(groups),
+            None => {
+                // We cannot cache those as mutexes under rayon can deadlock.
+                // TODO! precompute all groups up front.
+                let (_time_key, _keys, groups) = df.group_by_rolling(vec![], &self.options)?;
+                Cow::Owned(groups)
+            },
+        };
 
         let mut out = self
             .phys_function
-            .evaluate_on_groups(df, groups, state)?
+            .evaluate_on_groups(df, &groups, state)?
             .finalize();
         polars_ensure!(out.len() == groups.len(), agg_len = out.len(), groups.len());
         if let Some(name) = &self.out_name {

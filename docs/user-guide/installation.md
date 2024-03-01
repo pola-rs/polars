@@ -55,6 +55,7 @@ pip install 'polars[numpy,fsspec]'
 | connectorx | Support for reading from SQL databases                                                                                                |
 | xlsx2csv   | Support for reading from Excel files                                                                                                  |
 | deltalake  | Support for reading from Delta Lake Tables                                                                                            |
+| plot       | Support for plotting Dataframes                                                                                                       |
 | timezone   | Timezone support, only needed if 1. you are on Python < 3.9 and/or 2. you are on Windows, otherwise no dependencies will be installed |
 
 ### Rust
@@ -81,7 +82,7 @@ The opt-in features are:
     - `dtype-categorical`
     - `dtype-struct`
 - `lazy` - Lazy API
-    - `lazy_regex` - Use regexes in [column selection](crate::lazy::dsl::col)
+    - `regex` - Use regexes in [column selection](crate::lazy::dsl::col)
     - `dot_diagram` - Create dot diagrams from lazy logical plans.
 - `sql` - Pass SQL queries to polars.
 - `streaming` - Be able to process datasets that are larger than RAM.
@@ -122,12 +123,11 @@ The opt-in features are:
     - `rows` - Create `DataFrame` from rows and extract rows from `DataFrames`.
     And activates `pivot` and `transpose` operations
     - `join_asof` - Join ASOF, to join on nearest keys instead of exact equality match.
-    - `cross_join` - Create the cartesian product of two DataFrames.
+    - `cross_join` - Create the Cartesian product of two DataFrames.
     - `semi_anti_join` - SEMI and ANTI joins.
     - `group_by_list` - Allow group by operation on keys of type List.
     - `row_hash` - Utility to hash DataFrame rows to UInt64Chunked
     - `diagonal_concat` - Concat diagonally thereby combining different schemas.
-    - `horizontal_concat` - Concat horizontally and extend with null values if lengths don't match
     - `dataframe_arithmetic` - Arithmetic on (Dataframe and DataFrames) and (DataFrame on Series)
     - `partition_by` - Split into multiple DataFrames partitioned by groups.
 - `Series`/`Expression` operations:

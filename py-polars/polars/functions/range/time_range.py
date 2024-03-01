@@ -5,10 +5,10 @@ from datetime import time
 from typing import TYPE_CHECKING, overload
 
 from polars import functions as F
+from polars._utils.deprecation import deprecate_saturating
+from polars._utils.parse_expr_input import parse_as_expression
+from polars._utils.wrap import wrap_expr
 from polars.functions.range._utils import parse_interval_argument
-from polars.utils._parse_expr_input import parse_as_expression
-from polars.utils._wrap import wrap_expr
-from polars.utils.deprecation import deprecate_saturating
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -29,8 +29,7 @@ def time_range(
     *,
     closed: ClosedInterval = ...,
     eager: Literal[False] = ...,
-) -> Expr:
-    ...
+) -> Expr: ...
 
 
 @overload
@@ -41,8 +40,7 @@ def time_range(
     *,
     closed: ClosedInterval = ...,
     eager: Literal[True],
-) -> Series:
-    ...
+) -> Series: ...
 
 
 @overload
@@ -53,8 +51,7 @@ def time_range(
     *,
     closed: ClosedInterval = ...,
     eager: bool,
-) -> Series | Expr:
-    ...
+) -> Series | Expr: ...
 
 
 def time_range(
@@ -124,7 +121,7 @@ def time_range(
     ...     start=time(14, 0),
     ...     interval=timedelta(hours=3, minutes=15),
     ...     eager=True,
-    ... )
+    ... ).alias("time")
     shape: (4,)
     Series: 'time' [time]
     [
@@ -133,14 +130,14 @@ def time_range(
         20:30:00
         23:45:00
     ]
-
     """
     interval = deprecate_saturating(interval)
 
     interval = parse_interval_argument(interval)
     for unit in ("y", "mo", "w", "d"):
         if unit in interval:
-            raise ValueError(f"invalid interval unit for time_range: found {unit!r}")
+            msg = f"invalid interval unit for time_range: found {unit!r}"
+            raise ValueError(msg)
 
     if start is None:
         start = time(0, 0, 0)
@@ -166,8 +163,7 @@ def time_ranges(
     *,
     closed: ClosedInterval = ...,
     eager: Literal[False] = ...,
-) -> Expr:
-    ...
+) -> Expr: ...
 
 
 @overload
@@ -178,8 +174,7 @@ def time_ranges(
     *,
     closed: ClosedInterval = ...,
     eager: Literal[True],
-) -> Series:
-    ...
+) -> Series: ...
 
 
 @overload
@@ -190,8 +185,7 @@ def time_ranges(
     *,
     closed: ClosedInterval = ...,
     eager: bool,
-) -> Series | Expr:
-    ...
+) -> Series | Expr: ...
 
 
 def time_ranges(
@@ -263,7 +257,7 @@ def time_ranges(
     ...         "end": time(11, 0),
     ...     }
     ... )
-    >>> df.with_columns(pl.time_ranges("start", "end"))
+    >>> df.with_columns(time_range=pl.time_ranges("start", "end"))
     shape: (2, 3)
     ┌──────────┬──────────┬────────────────────────────────┐
     │ start    ┆ end      ┆ time_range                     │
@@ -273,13 +267,13 @@ def time_ranges(
     │ 09:00:00 ┆ 11:00:00 ┆ [09:00:00, 10:00:00, 11:00:00] │
     │ 10:00:00 ┆ 11:00:00 ┆ [10:00:00, 11:00:00]           │
     └──────────┴──────────┴────────────────────────────────┘
-
     """
     interval = deprecate_saturating(interval)
     interval = parse_interval_argument(interval)
     for unit in ("y", "mo", "w", "d"):
         if unit in interval:
-            raise ValueError(f"invalid interval unit for time_range: found {unit!r}")
+            msg = f"invalid interval unit for time_range: found {unit!r}"
+            raise ValueError(msg)
 
     if start is None:
         start = time(0, 0, 0)

@@ -2,7 +2,6 @@ use std::fs;
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use crossbeam_channel::{bounded, Sender};
@@ -37,13 +36,10 @@ fn get_lockfile_path(dir: &Path) -> PathBuf {
 }
 
 fn get_spill_dir(operation_name: &'static str) -> PolarsResult<PathBuf> {
-    let uuid = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
+    let id = uuid::Uuid::new_v4();
 
     let mut dir = std::path::PathBuf::from(get_base_temp_dir());
-    dir.push(&format!("polars/{operation_name}/{uuid}"));
+    dir.push(&format!("polars/{operation_name}/{id}"));
 
     if !dir.exists() {
         fs::create_dir_all(&dir).map_err(|err| {
@@ -59,6 +55,19 @@ fn get_spill_dir(operation_name: &'static str) -> PolarsResult<PathBuf> {
     }
 
     Ok(dir)
+}
+
+fn clean_after_delay(time: Option<SystemTime>, secs: u64, path: &Path) {
+    if let Some(time) = time {
+        let modified_since = SystemTime::now().duration_since(time).unwrap().as_secs();
+        if modified_since > secs {
+            // This can be fallible if another thread removes this.
+            // That is fine.
+            let _ = std::fs::remove_dir_all(path);
+        }
+    } else {
+        polars_warn!("could not modified time on this platform")
+    }
 }
 
 /// Starts a new thread that will clean up operations of directories that don't
@@ -81,20 +90,21 @@ fn gc_thread(operation_name: &'static str) {
 
                 if let Ok(lockfile) = File::open(lockfile_path) {
                     // lockfile can be read
-                    if let Ok(time) = lockfile.metadata().unwrap().modified() {
-                        let modified_since =
-                            SystemTime::now().duration_since(time).unwrap().as_secs();
-                        // the lockfile can still exist if a process was canceled
+                    if let Ok(md) = lockfile.metadata() {
+                        let time = md.modified().ok();
+                        // The lockfile can still exist if a process was canceled
                         // so we also check the modified date
-                        // we don't expect queries that run a month
-                        if modified_since > (SECONDS_IN_DAY as u64 * 30) {
-                            std::fs::remove_dir_all(path).unwrap()
-                        }
-                    } else {
-                        eprintln!("could not modified time on this platform")
+                        // we don't expect queries that run a month.
+                        clean_after_delay(time, SECONDS_IN_DAY as u64 * 30, &path);
                     }
                 } else {
-                    std::fs::remove_dir_all(path).unwrap()
+                    // If path already removed, we simply continue.
+                    if let Ok(md) = path.metadata() {
+                        let time = md.modified().ok();
+                        // Wait 15 seconds to ensure we don't remove before lockfile is created
+                        // in a `collect_all` contention case
+                        clean_after_delay(time, 15, &path);
+                    }
                 }
             }
         }
@@ -152,7 +162,7 @@ impl IOThread {
                         path.push(format!("{count}.ipc"));
 
                         let file = File::create(path).unwrap();
-                        let writer = IpcWriter::new(file);
+                        let writer = IpcWriter::new(file).with_pl_flavor(true);
                         let mut writer = writer.batched(&schema).unwrap();
                         writer.write_batch(&df).unwrap();
                         writer.finish().unwrap();
@@ -163,7 +173,7 @@ impl IOThread {
                     path.push(format!("{count}.ipc"));
 
                     let file = File::create(path).unwrap();
-                    let writer = IpcWriter::new(file);
+                    let writer = IpcWriter::new(file).with_pl_flavor(true);
                     let mut writer = writer.batched(&schema).unwrap();
 
                     for df in iter {
@@ -199,7 +209,7 @@ impl IOThread {
             path.push(format!("_{count}.ipc"));
 
             let file = File::create(path).unwrap();
-            let mut writer = IpcWriter::new(file);
+            let mut writer = IpcWriter::new(file).with_pl_flavor(true);
             writer.finish(&mut df).unwrap();
         } else {
             let iter = Box::new(std::iter::once(df));
@@ -227,7 +237,7 @@ impl IOThread {
         // duplicates
         path.push(format!("_{count}.ipc"));
         let file = File::create(path).unwrap();
-        let writer = IpcWriter::new(file);
+        let writer = IpcWriter::new(file).with_pl_flavor(true);
         let mut writer = writer.batched(&self.schema).unwrap();
         writer.write_batch(&df).unwrap();
         writer.finish().unwrap();
@@ -262,10 +272,11 @@ struct LockFile {
 
 impl LockFile {
     fn new(path: PathBuf) -> PolarsResult<Self> {
-        if File::create(&path).is_ok() {
-            Ok(Self { path })
-        } else {
-            polars_bail!(ComputeError: "could not create lockfile")
+        match File::create(&path) {
+            Ok(_) => Ok(Self { path }),
+            Err(e) => {
+                polars_bail!(ComputeError: "could not create lockfile: {e}")
+            },
         }
     }
 }

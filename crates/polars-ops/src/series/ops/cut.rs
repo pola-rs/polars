@@ -1,6 +1,3 @@
-use std::cmp::PartialOrd;
-use std::iter::once;
-
 use polars_core::prelude::*;
 
 fn map_cats(
@@ -49,11 +46,13 @@ fn map_cats(
         let outvals = vec![brk_vals.finish().into_series(), bld.finish().into_series()];
         Ok(StructChunked::new(&out_name, &outvals)?.into_series())
     } else {
-        bld.drain_iter(s_iter.map(|opt| {
-            opt.filter(|x| !x.is_nan())
-                .map(|x| unsafe { *cl.get_unchecked(sorted_breaks.partition_point(|v| op(&x, v))) })
-        }));
-        Ok(bld.finish().into_series())
+        Ok(bld
+            .drain_iter_and_finish(s_iter.map(|opt| {
+                opt.filter(|x| !x.is_nan()).map(|x| unsafe {
+                    *cl.get_unchecked(sorted_breaks.partition_point(|v| op(&x, v)))
+                })
+            }))
+            .into_series())
     }
 }
 
@@ -80,8 +79,8 @@ pub fn cut(
             polars_ensure!(ll.len() == sorted_breaks.len() + 1, ShapeMismatch: "Provide nbreaks + 1 labels");
             ll
         },
-        None => (once(&f64::NEG_INFINITY).chain(sorted_breaks.iter()))
-            .zip(sorted_breaks.iter().chain(once(&f64::INFINITY)))
+        None => (std::iter::once(&f64::NEG_INFINITY).chain(sorted_breaks.iter()))
+            .zip(sorted_breaks.iter().chain(std::iter::once(&f64::INFINITY)))
             .map(|v| {
                 if left_closed {
                     format!("[{}, {})", v.0, v.1)
@@ -104,8 +103,14 @@ pub fn qcut(
     include_breaks: bool,
 ) -> PolarsResult<Series> {
     let s = s.cast(&DataType::Float64)?;
-    let s2 = s.sort(false);
+    let s2 = s.sort(false, false);
     let ca = s2.f64()?;
+
+    if ca.null_count() == ca.len() {
+        // If we only have nulls we don't have any breakpoints.
+        return cut(&s, vec![], labels, left_closed, include_breaks);
+    }
+
     let f = |&p| {
         ca.quantile(p, QuantileInterpolOptions::Linear)
             .unwrap()

@@ -32,7 +32,7 @@ impl<'a> Iterator for MapValuesIter<'a> {
         }
         let old = self.index;
         self.index += 1;
-        // Safety:
+        // SAFETY:
         // self.end is maximized by the length of the array
         Some(unsafe { self.array.value_unchecked(old) })
     }
@@ -52,7 +52,7 @@ impl<'a> DoubleEndedIterator for MapValuesIter<'a> {
             None
         } else {
             self.end -= 1;
-            // Safety:
+            // SAFETY:
             // self.end is maximized by the length of the array
             Some(unsafe { self.array.value_unchecked(self.end) })
         }

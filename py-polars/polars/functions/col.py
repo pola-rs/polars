@@ -3,8 +3,8 @@ from __future__ import annotations
 import contextlib
 from typing import TYPE_CHECKING, Any, Iterable, Protocol, cast
 
+from polars._utils.wrap import wrap_expr
 from polars.datatypes import is_polars_dtype
-from polars.utils._wrap import wrap_expr
 
 plr: Any = None
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -32,10 +32,11 @@ def _create_col(
             dtypes.extend(more_names)
             return wrap_expr(plr.dtype_cols(dtypes))
         else:
-            raise TypeError(
+            msg = (
                 "invalid input for `col`"
                 f"\n\nExpected `str` or `DataType`, got {type(name).__name__!r}."
             )
+            raise TypeError(msg)
 
     if isinstance(name, str):
         return wrap_expr(plr.col(name))
@@ -52,16 +53,18 @@ def _create_col(
         elif is_polars_dtype(item):
             return wrap_expr(plr.dtype_cols(names))
         else:
-            raise TypeError(
+            msg = (
                 "invalid input for `col`"
                 "\n\nExpected iterable of type `str` or `DataType`,"
                 f" got iterable of type {type(item).__name__!r}."
             )
+            raise TypeError(msg)
     else:
-        raise TypeError(
+        msg = (
             "invalid input for `col`"
             f"\n\nExpected `str` or `DataType`, got {type(name).__name__!r}."
         )
+        raise TypeError(msg)
 
 
 # appease lint by casting `col` with a protocol that conforms to the factory interface
@@ -70,11 +73,9 @@ class Column(Protocol):
         self,
         name: str | PolarsDataType | Iterable[str] | Iterable[PolarsDataType],
         *more_names: str | PolarsDataType,
-    ) -> Expr:
-        ...
+    ) -> Expr: ...
 
-    def __getattr__(self, name: str) -> Expr:
-        ...
+    def __getattr__(self, name: str) -> Expr: ...
 
 
 # handle attribute lookup on the metaclass (we use the factory uninstantiated)
@@ -139,7 +140,6 @@ class ColumnFactory(metaclass=ColumnFactoryMeta):
     │ 1   ┆ 3   ┆ 4   │
     │ 2   ┆ 4   ┆ 6   │
     └─────┴─────┴─────┘
-
     """
 
     def __new__(  # type: ignore[misc]
@@ -282,7 +282,6 @@ class ColumnFactory(metaclass=ColumnFactoryMeta):
         │ 1   ┆ 11        ┆ 2   │
         │ 2   ┆ 22        ┆ 1   │
         └─────┴───────────┴─────┘
-
         """
         return _create_col(name, *more_names)
 
@@ -325,7 +324,6 @@ class ColumnFactory(metaclass=ColumnFactoryMeta):
         │ 4   │
         │ 6   │
         └─────┘
-
         """
         return getattr(type(self), name)
 

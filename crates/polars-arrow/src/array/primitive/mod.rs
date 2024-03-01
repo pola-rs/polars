@@ -93,6 +93,20 @@ impl<T: NativeType> PrimitiveArray<T> {
         })
     }
 
+    /// # Safety
+    /// Doesn't check invariants
+    pub unsafe fn new_unchecked(
+        data_type: ArrowDataType,
+        values: Buffer<T>,
+        validity: Option<Bitmap>,
+    ) -> Self {
+        Self {
+            data_type,
+            values,
+            validity,
+        }
+    }
+
     /// Returns a new [`PrimitiveArray`] with a different logical type.
     ///
     /// This function is useful to assign a different [`ArrowDataType`] to the array.
@@ -194,6 +208,7 @@ impl<T: NativeType> PrimitiveArray<T> {
 
     /// Returns the value at index `i`.
     /// The value on null slots is undetermined (it can be anything).
+    ///
     /// # Safety
     /// Caller must be sure that `i < self.len()`
     #[inline]
@@ -229,6 +244,7 @@ impl<T: NativeType> PrimitiveArray<T> {
     /// Slices this [`PrimitiveArray`] by an offset and length.
     /// # Implementation
     /// This operation is `O(1)`.
+    ///
     /// # Safety
     /// The caller must ensure that `offset + length <= self.len()`.
     #[inline]
@@ -327,7 +343,7 @@ impl<T: NativeType> PrimitiveArray<T> {
     /// This function returns a [`MutablePrimitiveArray`] (via [`std::sync::Arc::get_mut`]) iff both values
     /// and validity have not been cloned / are unique references to their underlying vectors.
     ///
-    /// This function is primarily used to re-use memory regions.
+    /// This function is primarily used to reuse memory regions.
     #[must_use]
     pub fn into_mut(self) -> Either<Self, MutablePrimitiveArray<T>> {
         use Either::*;
@@ -406,6 +422,7 @@ impl<T: NativeType> PrimitiveArray<T> {
     }
 
     /// Creates a new [`PrimitiveArray`] from an iterator over values
+    ///
     /// # Safety
     /// The iterator must be [`TrustedLen`](https://doc.rust-lang.org/std/iter/trait.TrustedLen.html).
     /// I.e. that `size_hint().1` correctly reports its length.
@@ -419,6 +436,7 @@ impl<T: NativeType> PrimitiveArray<T> {
     }
 
     /// Creates a [`PrimitiveArray`] from an iterator of optional values.
+    ///
     /// # Safety
     /// The iterator must be [`TrustedLen`](https://doc.rust-lang.org/std/iter/trait.TrustedLen.html).
     /// I.e. that `size_hint().1` correctly reports its length.
@@ -433,6 +451,37 @@ impl<T: NativeType> PrimitiveArray<T> {
     /// * The `data_type`'s [`PhysicalType`] is not equal to [`PhysicalType::Primitive`].
     pub fn new(data_type: ArrowDataType, values: Buffer<T>, validity: Option<Bitmap>) -> Self {
         Self::try_new(data_type, values, validity).unwrap()
+    }
+
+    /// Transmute this PrimitiveArray into another PrimitiveArray.
+    ///
+    /// T and U must have the same size and alignment.
+    pub fn transmute<U: NativeType>(self) -> PrimitiveArray<U> {
+        let PrimitiveArray {
+            values, validity, ..
+        } = self;
+
+        // SAFETY: this is fine, we checked size and alignment, and NativeType
+        // is always Pod.
+        assert_eq!(std::mem::size_of::<T>(), std::mem::size_of::<U>());
+        assert_eq!(std::mem::align_of::<T>(), std::mem::align_of::<U>());
+        let new_values = unsafe { std::mem::transmute::<Buffer<T>, Buffer<U>>(values) };
+        PrimitiveArray::new(U::PRIMITIVE.into(), new_values, validity)
+    }
+
+    /// Fills this entire array with the given value, leaving the validity mask intact.
+    ///
+    /// Reuses the memory of the PrimitiveArray if possible.
+    pub fn fill_with(mut self, value: T) -> Self {
+        if let Some(values) = self.get_mut_values() {
+            for x in values.iter_mut() {
+                *x = value;
+            }
+            self
+        } else {
+            let values = vec![value; self.len()];
+            Self::new(T::PRIMITIVE.into(), values.into(), self.validity)
+        }
     }
 }
 

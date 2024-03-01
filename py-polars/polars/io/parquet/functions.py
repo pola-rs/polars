@@ -6,10 +6,11 @@ from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any
 
 import polars._reexport as pl
+from polars._utils.deprecation import deprecate_renamed_parameter
+from polars._utils.various import is_int_sequence, normalize_filepath
 from polars.convert import from_arrow
 from polars.dependencies import _PYARROW_AVAILABLE
 from polars.io._utils import _prepare_file_arg
-from polars.utils.various import is_int_sequence, normalize_filepath
 
 with contextlib.suppress(ImportError):
     from polars.polars import read_parquet_schema as _read_parquet_schema
@@ -19,13 +20,15 @@ if TYPE_CHECKING:
     from polars.type_aliases import ParallelStrategy
 
 
+@deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
+@deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
 def read_parquet(
     source: str | Path | list[str] | list[Path] | IO[bytes] | bytes,
     *,
     columns: list[int] | list[str] | None = None,
     n_rows: int | None = None,
-    row_count_name: str | None = None,
-    row_count_offset: int = 0,
+    row_index_name: str | None = None,
+    row_index_offset: int = 0,
     parallel: ParallelStrategy = "auto",
     use_statistics: bool = True,
     hive_partitioning: bool = True,
@@ -43,7 +46,9 @@ def read_parquet(
     Parameters
     ----------
     source
-        Path to a file, or a file-like object. If the path is a directory, files in that
+        Path to a file, or a file-like object (by file-like object, we refer to objects
+        that have a `read()` method, such as a file handler (e.g. via builtin `open`
+        function) or `BytesIO`). If the path is a directory, files in that
         directory will all be read.
     columns
         Columns to select. Accepts a list of column indices (starting at zero) or a list
@@ -51,11 +56,12 @@ def read_parquet(
     n_rows
         Stop reading from parquet file after reading `n_rows`.
         Only valid when `use_pyarrow=False`.
-    row_count_name
-        If not None, this will insert a row count column with give name into the
-        DataFrame.
-    row_count_offset
-        Offset to start the row_count column (only use if the name is set).
+    row_index_name
+        Insert a row index column with the given name into the DataFrame as the first
+        column. If set to `None` (default), no row index column is created.
+    row_index_offset
+        Start the row index at this offset. Cannot be negative.
+        Only used if `row_index_name` is set.
     parallel : {'auto', 'columns', 'row_groups', 'none'}
         This determines the direction of parallelism. 'auto' will try to determine the
         optimal direction.
@@ -119,11 +125,13 @@ def read_parquet(
     # Dispatch to pyarrow if requested
     if use_pyarrow:
         if not _PYARROW_AVAILABLE:
-            raise ModuleNotFoundError(
+            msg = (
                 "'pyarrow' is required when using `read_parquet(..., use_pyarrow=True)`"
             )
+            raise ModuleNotFoundError(msg)
         if n_rows is not None:
-            raise ValueError("`n_rows` cannot be used with `use_pyarrow=True`")
+            msg = "`n_rows` cannot be used with `use_pyarrow=True`"
+            raise ValueError(msg)
 
         import pyarrow as pa
         import pyarrow.parquet
@@ -152,8 +160,8 @@ def read_parquet(
                 columns=columns,
                 n_rows=n_rows,
                 parallel=parallel,
-                row_count_name=row_count_name,
-                row_count_offset=row_count_offset,
+                row_index_name=row_index_name,
+                row_index_offset=row_index_offset,
                 low_memory=low_memory,
                 use_statistics=use_statistics,
                 rechunk=rechunk,
@@ -163,8 +171,8 @@ def read_parquet(
     lf = scan_parquet(
         source,  # type: ignore[arg-type]
         n_rows=n_rows,
-        row_count_name=row_count_name,
-        row_count_offset=row_count_offset,
+        row_index_name=row_index_name,
+        row_index_offset=row_index_offset,
         parallel=parallel,
         use_statistics=use_statistics,
         hive_partitioning=hive_partitioning,
@@ -198,7 +206,6 @@ def read_parquet_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, Dat
     -------
     dict
         Dictionary mapping column names to datatypes
-
     """
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source)
@@ -206,16 +213,18 @@ def read_parquet_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, Dat
     return _read_parquet_schema(source)
 
 
+@deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
+@deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
 def scan_parquet(
     source: str | Path | list[str] | list[Path],
     *,
     n_rows: int | None = None,
-    row_count_name: str | None = None,
-    row_count_offset: int = 0,
+    row_index_name: str | None = None,
+    row_index_offset: int = 0,
     parallel: ParallelStrategy = "auto",
     use_statistics: bool = True,
     hive_partitioning: bool = True,
-    rechunk: bool = True,
+    rechunk: bool = False,
     low_memory: bool = False,
     cache: bool = True,
     storage_options: dict[str, Any] | None = None,
@@ -234,11 +243,11 @@ def scan_parquet(
         If a single path is given, it can be a globbing pattern.
     n_rows
         Stop reading from parquet file after reading `n_rows`.
-    row_count_name
-        If not None, this will insert a row count column with the given name into the
+    row_index_name
+        If not None, this will insert a row index column with the given name into the
         DataFrame
-    row_count_offset
-        Offset to start the row_count column (only used if the name is set)
+    row_index_offset
+        Offset to start the row index column (only used if the name is set)
     parallel : {'auto', 'columns', 'row_groups', 'none'}
         This determines the direction of parallelism. 'auto' will try to determine the
         optimal direction.
@@ -293,7 +302,6 @@ def scan_parquet(
     ...     "aws_region": "us-east-1",
     ... }
     >>> pl.scan_parquet(source, storage_options=storage_options)  # doctest: +SKIP
-
     """
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source)
@@ -306,8 +314,8 @@ def scan_parquet(
         cache=cache,
         parallel=parallel,
         rechunk=rechunk,
-        row_count_name=row_count_name,
-        row_count_offset=row_count_offset,
+        row_index_name=row_index_name,
+        row_index_offset=row_index_offset,
         storage_options=storage_options,
         low_memory=low_memory,
         use_statistics=use_statistics,

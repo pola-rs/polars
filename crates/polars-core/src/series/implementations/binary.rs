@@ -1,18 +1,8 @@
-use std::borrow::Cow;
-
-use ahash::RandomState;
-
-use super::{private, IntoSeries, SeriesTrait, *};
+use super::*;
 use crate::chunked_array::comparison::*;
-use crate::chunked_array::ops::compare_inner::{
-    IntoTotalEqInner, IntoTotalOrdInner, TotalEqInner, TotalOrdInner,
-};
-use crate::chunked_array::ops::explode::ExplodeByOffsets;
-use crate::chunked_array::AsSinglePtr;
 #[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::*;
 use crate::prelude::*;
-use crate::series::implementations::SeriesWrap;
 
 impl private::PrivateSeries for SeriesWrap<BinaryChunked> {
     fn compute_len(&mut self) {
@@ -62,6 +52,16 @@ impl private::PrivateSeries for SeriesWrap<BinaryChunked> {
     #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
         self.0.agg_list(groups)
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    unsafe fn agg_min(&self, groups: &GroupsProxy) -> Series {
+        self.0.agg_min(groups)
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    unsafe fn agg_max(&self, groups: &GroupsProxy) -> Series {
+        self.0.agg_max(groups)
     }
 
     fn subtract(&self, rhs: &Series) -> PolarsResult<Series> {
@@ -130,16 +130,6 @@ impl SeriesTrait for SeriesWrap<BinaryChunked> {
 
     fn filter(&self, filter: &BooleanChunked) -> PolarsResult<Series> {
         ChunkFilter::filter(&self.0, filter).map(|ca| ca.into_series())
-    }
-
-    #[cfg(feature = "chunked_ids")]
-    unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Series {
-        self.0.take_chunked_unchecked(by, sorted).into_series()
-    }
-
-    #[cfg(feature = "chunked_ids")]
-    unsafe fn _take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Series {
-        self.0.take_opt_chunked_unchecked(by).into_series()
     }
 
     fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
@@ -242,5 +232,8 @@ impl SeriesTrait for SeriesWrap<BinaryChunked> {
     }
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
+    }
+    fn as_any(&self) -> &dyn Any {
+        &self.0
     }
 }

@@ -1,6 +1,6 @@
 use std::io::Cursor;
 
-use polars::io::RowCount;
+use polars::io::RowIndex;
 
 use super::*;
 
@@ -184,8 +184,8 @@ fn test_projection() -> PolarsResult<()> {
 fn test_missing_data() {
     // missing data should not lead to parser error.
     let csv = r#"column_1,column_2,column_3
-        1,2,3
-        1,,3
+1,2,3
+1,,3
 "#;
 
     let file = Cursor::new(csv);
@@ -948,9 +948,9 @@ foo,bar
 }
 
 #[test]
-fn test_with_row_count() -> PolarsResult<()> {
+fn test_with_row_index() -> PolarsResult<()> {
     let df = CsvReader::from_path(FOODS_CSV)?
-        .with_row_count(Some(RowCount {
+        .with_row_index(Some(RowIndex {
             name: "rc".into(),
             offset: 0,
         }))
@@ -961,7 +961,7 @@ fn test_with_row_count() -> PolarsResult<()> {
         (0 as IdxSize..27).collect::<Vec<_>>()
     );
     let df = CsvReader::from_path(FOODS_CSV)?
-        .with_row_count(Some(RowCount {
+        .with_row_index(Some(RowIndex {
             name: "rc_2".into(),
             offset: 10,
         }))
@@ -982,7 +982,7 @@ fn test_empty_string_cols() -> PolarsResult<()> {
     let s = df.column("column_1")?;
     let ca = s.str()?;
     assert_eq!(
-        ca.into_iter().collect::<Vec<_>>(),
+        ca.iter().collect::<Vec<_>>(),
         &[None, Some("abc"), None, Some("xyz")]
     );
 
@@ -994,6 +994,50 @@ fn test_empty_string_cols() -> PolarsResult<()> {
         "column_2" => [None, Some(333i64), Some(666), Some(999)]
     ]?;
     assert!(df.equals_missing(&expected));
+    Ok(())
+}
+
+#[test]
+fn test_empty_col_names() -> PolarsResult<()> {
+    let csv = "a,b,c\n1,2,3";
+    let file = Cursor::new(csv);
+    let df = CsvReader::new(file).finish()?;
+    let expected = df![
+        "a" => [1i64],
+        "b" => [2i64],
+        "c" => [3i64]
+    ]?;
+    assert!(df.equals(&expected));
+
+    let csv = "a,,c\n1,2,3";
+    let file = Cursor::new(csv);
+    let df = CsvReader::new(file).finish()?;
+    let expected = df![
+        "a" => [1i64],
+        "" => [2i64],
+        "c" => [3i64]
+    ]?;
+    assert!(df.equals(&expected));
+
+    let csv = "a,b,\n1,2,3";
+    let file = Cursor::new(csv);
+    let df = CsvReader::new(file).finish()?;
+    let expected = df![
+        "a" => [1i64],
+        "b" => [2i64],
+        "" => [3i64]
+    ]?;
+    assert!(df.equals(&expected));
+
+    let csv = "a,b,,\n1,2,3";
+    let file = Cursor::new(csv);
+    let df_result = CsvReader::new(file).finish()?;
+    assert_eq!(df_result.shape(), (1, 4));
+
+    let csv = "a,b\n1,2,3";
+    let file = Cursor::new(csv);
+    let df_result = CsvReader::new(file).finish();
+    assert!(df_result.is_err());
     Ok(())
 }
 
@@ -1076,7 +1120,7 @@ fn test_try_parse_dates() -> PolarsResult<()> {
 1742-03-21
 1743-06-16
 1730-07-22
-''
+
 1739-03-16
 ";
     let file = Cursor::new(csv);
@@ -1084,21 +1128,6 @@ fn test_try_parse_dates() -> PolarsResult<()> {
     let out = CsvReader::new(file).with_try_parse_dates(true).finish()?;
     assert_eq!(out.dtypes(), &[DataType::Date]);
     assert_eq!(out.column("date")?.null_count(), 1);
-    Ok(())
-}
-
-#[test]
-fn test_whitespace_skipping() -> PolarsResult<()> {
-    let csv = "a,b
-  12,   1435";
-    let file = Cursor::new(csv);
-    let out = CsvReader::new(file).finish()?;
-    let expected = df![
-        "a" => [12i64],
-        "b" => [1435i64],
-    ]?;
-    assert!(out.equals(&expected));
-
     Ok(())
 }
 
@@ -1127,6 +1156,6 @@ fn test_leading_whitespace_with_quote() -> PolarsResult<()> {
     let col_1 = df.column("ABC").unwrap();
     let col_2 = df.column("DEF").unwrap();
     assert_eq!(col_1.get(0)?, AnyValue::Float64(24.5));
-    assert_eq!(col_2.get(0)?, AnyValue::Float64(4.1));
+    assert_eq!(col_2.get(0)?, AnyValue::String("  4.1"));
     Ok(())
 }

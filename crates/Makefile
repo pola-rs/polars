@@ -14,11 +14,11 @@ check:  ## Run cargo check with all features
 
 .PHONY: clippy
 clippy:  ## Run clippy with all features
-	cargo clippy -p polars --all-features
+	cargo clippy -p polars --all-features -- -W clippy::dbg_macro
 
 .PHONY: clippy-default
 clippy-default:  ## Run clippy with default features
-	cargo clippy -p polars
+	cargo clippy -p polars -- -W clippy::dbg_macro
 
 .PHONY: pre-commit
 pre-commit: fmt clippy clippy-default  ## Run autoformatting and linting
@@ -103,6 +103,7 @@ publish:  ## Publish Polars crates
 	cargo publish --allow-dirty -p polars-error
 	cargo publish --allow-dirty -p polars-utils
 	cargo publish --allow-dirty -p polars-arrow
+	cargo publish --allow-dirty -p polars-compute
 	cargo publish --allow-dirty -p polars-row
 	cargo publish --allow-dirty -p polars-json
 	cargo publish --allow-dirty -p polars-core
@@ -114,7 +115,6 @@ publish:  ## Publish Polars crates
 	cargo publish --allow-dirty -p polars-plan
 	cargo publish --allow-dirty -p polars-pipe
 	cargo publish --allow-dirty -p polars-lazy
-	cargo publish --allow-dirty -p polars-algo
 	cargo publish --allow-dirty -p polars-sql
 	cargo publish --allow-dirty -p polars
 

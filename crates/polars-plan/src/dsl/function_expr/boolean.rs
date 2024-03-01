@@ -1,5 +1,3 @@
-use std::ops::Not;
-
 use super::*;
 #[cfg(feature = "is_in")]
 use crate::wrap;
@@ -28,16 +26,33 @@ pub enum BooleanFunction {
     IsUnique,
     #[cfg(feature = "is_unique")]
     IsDuplicated,
+    #[cfg(feature = "is_between")]
+    IsBetween {
+        closed: ClosedInterval,
+    },
     #[cfg(feature = "is_in")]
     IsIn,
     AllHorizontal,
     AnyHorizontal,
+    // Also bitwise negate
     Not,
 }
 
 impl BooleanFunction {
     pub(super) fn get_field(&self, mapper: FieldsMapper) -> PolarsResult<Field> {
-        mapper.with_dtype(DataType::Boolean)
+        match self {
+            BooleanFunction::Not => {
+                mapper.try_map_dtype(|dtype| {
+                    match dtype {
+                        DataType::Boolean => Ok(DataType::Boolean),
+                        dt if dt.is_integer() => Ok(dt.clone()),
+                        dt => polars_bail!(InvalidOperation: "dtype {:?} not supported in 'not' operation", dt) 
+                    }
+                })
+
+            },
+            _ => mapper.with_dtype(DataType::Boolean),
+        }
     }
 }
 
@@ -61,6 +76,8 @@ impl Display for BooleanFunction {
             IsUnique => "is_unique",
             #[cfg(feature = "is_unique")]
             IsDuplicated => "is_duplicated",
+            #[cfg(feature = "is_between")]
+            IsBetween { .. } => "is_between",
             #[cfg(feature = "is_in")]
             IsIn => "is_in",
             AnyHorizontal => "any_horizontal",
@@ -91,6 +108,8 @@ impl From<BooleanFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             IsUnique => map!(is_unique),
             #[cfg(feature = "is_unique")]
             IsDuplicated => map!(is_duplicated),
+            #[cfg(feature = "is_between")]
+            IsBetween { closed } => map_as_slice!(is_between, closed),
             #[cfg(feature = "is_in")]
             IsIn => wrap!(is_in),
             AllHorizontal => map_as_slice!(all_horizontal),
@@ -168,6 +187,14 @@ fn is_duplicated(s: &Series) -> PolarsResult<Series> {
     polars_ops::prelude::is_duplicated(s).map(|ca| ca.into_series())
 }
 
+#[cfg(feature = "is_between")]
+fn is_between(s: &[Series], closed: ClosedInterval) -> PolarsResult<Series> {
+    let ser = &s[0];
+    let lower = &s[1];
+    let upper = &s[2];
+    polars_ops::prelude::is_between(ser, lower, upper, closed).map(|ca| ca.into_series())
+}
+
 #[cfg(feature = "is_in")]
 fn is_in(s: &mut [Series]) -> PolarsResult<Option<Series>> {
     let left = &s[0];
@@ -184,5 +211,5 @@ fn all_horizontal(s: &[Series]) -> PolarsResult<Series> {
 }
 
 fn not(s: &Series) -> PolarsResult<Series> {
-    Ok(s.bool()?.not().into_series())
+    polars_ops::series::negate_bitwise(s)
 }

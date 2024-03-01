@@ -29,8 +29,9 @@ categories:
     labels: enhancement
   - title: 🐞 Bug fixes
     labels: fix
+  - title: 📖 Documentation
+    labels: documentation
+  - title: 📦 Build system
+    labels: build
   - title: 🛠️ Other improvements
-    labels:
-      - build
-      - documentation
-      - internal
+    labels: internal

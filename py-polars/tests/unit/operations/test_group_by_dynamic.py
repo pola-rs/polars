@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -10,15 +9,12 @@ import pytest
 import polars as pl
 from polars.testing import assert_frame_equal
 
-if sys.version_info >= (3, 9):
-    from zoneinfo import ZoneInfo
-else:
-    # Import from submodule due to typing issue with backports.zoneinfo package:
-    # https://github.com/pganssle/zoneinfo/issues/125
-    from backports.zoneinfo._zoneinfo import ZoneInfo
-
 if TYPE_CHECKING:
+    from zoneinfo import ZoneInfo
+
     from polars.type_aliases import Label, StartBy
+else:
+    from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
 
 @pytest.mark.parametrize(
@@ -113,7 +109,7 @@ def test_group_by_dynamic_startby_5599(tzinfo: ZoneInfo | None) -> None:
         include_boundaries=True,
         label="datapoint",
         start_by="datapoint",
-    ).agg(pl.count()).to_dict(as_series=False) == {
+    ).agg(pl.len()).to_dict(as_series=False) == {
         "_lower_boundary": [
             datetime(2022, 12, 16, 0, 0, tzinfo=tzinfo),
             datetime(2022, 12, 16, 0, 31, tzinfo=tzinfo),
@@ -138,7 +134,7 @@ def test_group_by_dynamic_startby_5599(tzinfo: ZoneInfo | None) -> None:
             datetime(2022, 12, 16, 2, 30, tzinfo=tzinfo),
             datetime(2022, 12, 16, 3, 0, tzinfo=tzinfo),
         ],
-        "count": [2, 1, 1, 1, 1, 1],
+        "len": [2, 1, 1, 1, 1, 1],
     }
 
     # start by monday
@@ -156,7 +152,7 @@ def test_group_by_dynamic_startby_5599(tzinfo: ZoneInfo | None) -> None:
         include_boundaries=True,
         start_by="monday",
         label="datapoint",
-    ).agg([pl.count(), pl.col("day").first().alias("data_day")])
+    ).agg([pl.len(), pl.col("day").first().alias("data_day")])
     assert result.to_dict(as_series=False) == {
         "_lower_boundary": [
             datetime(2022, 1, 3, 0, 0, tzinfo=tzinfo),
@@ -170,7 +166,7 @@ def test_group_by_dynamic_startby_5599(tzinfo: ZoneInfo | None) -> None:
             datetime(2022, 1, 3, 0, 0, tzinfo=tzinfo),
             datetime(2022, 1, 10, 0, 0, tzinfo=tzinfo),
         ],
-        "count": [6, 5],
+        "len": [6, 5],
         "data_day": [1, 1],
     }
     # start by saturday
@@ -181,7 +177,7 @@ def test_group_by_dynamic_startby_5599(tzinfo: ZoneInfo | None) -> None:
         include_boundaries=True,
         start_by="saturday",
         label="datapoint",
-    ).agg([pl.count(), pl.col("day").first().alias("data_day")])
+    ).agg([pl.len(), pl.col("day").first().alias("data_day")])
     assert result.to_dict(as_series=False) == {
         "_lower_boundary": [
             datetime(2022, 1, 1, 0, 0, tzinfo=tzinfo),
@@ -195,7 +191,7 @@ def test_group_by_dynamic_startby_5599(tzinfo: ZoneInfo | None) -> None:
             datetime(2022, 1, 1, 0, 0, tzinfo=tzinfo),
             datetime(2022, 1, 8, 0, 0, tzinfo=tzinfo),
         ],
-        "count": [6, 6],
+        "len": [6, 6],
         "data_day": [6, 6],
     }
 

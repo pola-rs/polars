@@ -1,6 +1,3 @@
-use std::sync::Arc;
-
-use polars_core::frame::group_by::{GroupsIndicator, GroupsProxy};
 use polars_core::prelude::*;
 use polars_core::POOL;
 use polars_utils::idx_vec::IdxVec;
@@ -191,7 +188,7 @@ impl PhysicalExpr for SortByExpr {
                     .map(|e| {
                         e.evaluate(df, state).map(|s| match s.dtype() {
                             #[cfg(feature = "dtype-categorical")]
-                            DataType::Categorical(_, _) => s,
+                            DataType::Categorical(_, _) | DataType::Enum(_, _) => s,
                             _ => s.to_physical_repr().into_owned(),
                         })
                     })
@@ -239,7 +236,7 @@ impl PhysicalExpr for SortByExpr {
                 let s = s.flat_naive();
                 match s.dtype() {
                     #[cfg(feature = "dtype-categorical")]
-                    DataType::Categorical(_, _) => s.into_owned(),
+                    DataType::Categorical(_, _) | DataType::Enum(_, _) => s.into_owned(),
                     _ => s.to_physical_repr().into_owned(),
                 }
             })

@@ -30,6 +30,7 @@ impl ListChunked {
     }
 
     /// Set the logical type of the [`ListChunked`].
+    ///
     /// # Safety
     /// The caller must ensure that the logical type given fits the physical type of the array.
     pub unsafe fn to_logical(&mut self, inner_dtype: DataType) {
@@ -41,15 +42,15 @@ impl ListChunked {
     /// Get the inner values as [`Series`], ignoring the list offsets.
     pub fn get_inner(&self) -> Series {
         let ca = self.rechunk();
-        let inner_dtype = self.inner_dtype().to_arrow();
         let arr = ca.downcast_iter().next().unwrap();
+        // SAFETY:
+        // Inner dtype is passed correctly
         unsafe {
-            Series::_try_from_arrow_unchecked(
+            Series::from_chunks_and_dtype_unchecked(
                 self.name(),
-                vec![(*arr.values()).clone()],
-                &inner_dtype,
+                vec![arr.values().clone()],
+                &ca.inner_dtype(),
             )
-            .unwrap()
         }
     }
 
@@ -60,16 +61,16 @@ impl ListChunked {
     ) -> PolarsResult<ListChunked> {
         // generated Series will have wrong length otherwise.
         let ca = self.rechunk();
-        let inner_dtype = self.inner_dtype().to_arrow();
         let arr = ca.downcast_iter().next().unwrap();
 
+        // SAFETY:
+        // Inner dtype is passed correctly
         let elements = unsafe {
-            Series::_try_from_arrow_unchecked(
+            Series::from_chunks_and_dtype_unchecked(
                 self.name(),
-                vec![(*arr.values()).clone()],
-                &inner_dtype,
+                vec![arr.values().clone()],
+                &ca.inner_dtype(),
             )
-            .unwrap()
         };
 
         let expected_len = elements.len();
@@ -89,7 +90,7 @@ impl ListChunked {
             arr.validity().cloned(),
         );
 
-        // safety: arr's inner dtype is derived from out dtype.
+        // SAFETY: arr's inner dtype is derived from out dtype.
         Ok(unsafe {
             ListChunked::from_chunks_and_dtype_unchecked(
                 ca.name(),

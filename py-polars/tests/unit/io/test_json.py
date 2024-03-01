@@ -284,10 +284,10 @@ def test_write_json_duration() -> None:
             )
         }
     )
-    assert (
-        df.write_json(row_oriented=True)
-        == '[{"a":"P1DT5362.939S"},{"a":"P1DT5362.890S"},{"a":"PT6020.836S"}]'
-    )
+
+    # we don't guarantee a format, just round-circling
+    value = str(df.write_json(row_oriented=True))
+    assert value == """[{"a":"PT91762.939S"},{"a":"PT91762.89S"},{"a":"PT6020.836S"}]"""
 
 
 @pytest.mark.parametrize(

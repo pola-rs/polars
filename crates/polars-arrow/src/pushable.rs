@@ -1,4 +1,4 @@
-use crate::array::MutablePrimitiveArray;
+use crate::array::{MutableBinaryViewArray, MutablePrimitiveArray, ViewType};
 use crate::bitmap::MutableBitmap;
 use crate::offset::{Offset, Offsets};
 use crate::types::NativeType;
@@ -15,6 +15,7 @@ pub trait Pushable<T>: Sized + Default {
     fn len(&self) -> usize;
     fn push_null(&mut self);
     fn extend_constant(&mut self, additional: usize, value: T);
+    fn extend_null_constant(&mut self, additional: usize);
 }
 
 impl Pushable<bool> for MutableBitmap {
@@ -40,6 +41,11 @@ impl Pushable<bool> for MutableBitmap {
     #[inline]
     fn extend_constant(&mut self, additional: usize, value: bool) {
         self.extend_constant(additional, value)
+    }
+
+    #[inline]
+    fn extend_null_constant(&mut self, additional: usize) {
+        self.extend_constant(additional, false)
     }
 }
 
@@ -67,6 +73,11 @@ impl<T: Copy + Default> Pushable<T> for Vec<T> {
     fn extend_constant(&mut self, additional: usize, value: T) {
         self.resize(self.len() + additional, value);
     }
+
+    #[inline]
+    fn extend_null_constant(&mut self, additional: usize) {
+        self.extend_constant(additional, T::default())
+    }
 }
 impl<O: Offset> Pushable<usize> for Offsets<O> {
     fn reserve(&mut self, additional: usize) {
@@ -89,6 +100,11 @@ impl<O: Offset> Pushable<usize> for Offsets<O> {
 
     #[inline]
     fn extend_constant(&mut self, additional: usize, _: usize) {
+        self.extend_constant(additional)
+    }
+
+    #[inline]
+    fn extend_null_constant(&mut self, additional: usize) {
         self.extend_constant(additional)
     }
 }
@@ -117,5 +133,54 @@ impl<T: NativeType> Pushable<Option<T>> for MutablePrimitiveArray<T> {
     #[inline]
     fn extend_constant(&mut self, additional: usize, value: Option<T>) {
         MutablePrimitiveArray::extend_constant(self, additional, value)
+    }
+
+    #[inline]
+    fn extend_null_constant(&mut self, additional: usize) {
+        MutablePrimitiveArray::extend_constant(self, additional, None)
+    }
+}
+
+impl<T: ViewType + ?Sized> Pushable<&T> for MutableBinaryViewArray<T> {
+    #[inline]
+    fn reserve(&mut self, additional: usize) {
+        MutableBinaryViewArray::reserve(self, additional)
+    }
+
+    #[inline]
+    fn push(&mut self, value: &T) {
+        MutableBinaryViewArray::push_value(self, value)
+    }
+
+    #[inline]
+    fn len(&self) -> usize {
+        MutableBinaryViewArray::len(self)
+    }
+
+    fn push_null(&mut self) {
+        MutableBinaryViewArray::push_null(self)
+    }
+
+    fn extend_constant(&mut self, additional: usize, value: &T) {
+        // First push a value to get the View
+        MutableBinaryViewArray::push_value(self, value);
+
+        // And then use that new view to extend
+        let views = self.views_mut();
+        let view = *views.last().unwrap();
+
+        let remaining = additional - 1;
+        for _ in 0..remaining {
+            views.push(view);
+        }
+
+        if let Some(bitmap) = self.validity() {
+            bitmap.extend_constant(remaining, true)
+        }
+    }
+
+    #[inline]
+    fn extend_null_constant(&mut self, additional: usize) {
+        self.extend_null(additional);
     }
 }

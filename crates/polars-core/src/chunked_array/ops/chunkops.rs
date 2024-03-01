@@ -1,5 +1,3 @@
-#[cfg(feature = "object")]
-use arrow::array::Array;
 use arrow::legacy::kernels::concatenate::concatenate_owned_unchecked;
 use polars_error::constants::LENGTH_LIMIT_MSG;
 
@@ -37,7 +35,7 @@ pub(crate) fn slice(
 
         debug_assert!(remaining_offset + take_len <= chunk.len());
         unsafe {
-            // Safety:
+            // SAFETY:
             // this function ensures the slices are in bounds
             new_chunks.push(chunk.sliced_unchecked(remaining_offset, take_len));
         }
@@ -60,10 +58,22 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         self.length as usize
     }
 
-    /// Count the null values.
+    /// Return the number of null values in the ChunkedArray.
     #[inline]
     pub fn null_count(&self) -> usize {
         self.null_count as usize
+    }
+
+    /// Set the null count directly.
+    ///
+    /// This can be useful after mutably adjusting the validity of the
+    /// underlying arrays.
+    ///
+    /// # Safety
+    /// The new null count must match the total null count of the underlying
+    /// arrays.
+    pub unsafe fn set_null_count(&mut self, null_count: IdxSize) {
+        self.null_count = null_count;
     }
 
     /// Check if ChunkedArray is empty.
@@ -86,10 +96,6 @@ impl<T: PolarsDataType> ChunkedArray<T> {
             .iter()
             .map(|arr| arr.null_count())
             .sum::<usize>() as IdxSize;
-
-        if self.length <= 1 {
-            self.set_sorted_flag(IsSorted::Ascending)
-        }
     }
 
     pub fn rechunk(&self) -> Self {
@@ -171,6 +177,23 @@ impl<T: PolarsDataType> ChunkedArray<T> {
             None => std::cmp::min(10, self.len()),
         };
         self.slice(-(len as i64), len)
+    }
+
+    /// Remove empty chunks.
+    pub fn prune_empty_chunks(&mut self) {
+        let mut count = 0u32;
+        unsafe {
+            self.chunks_mut().retain(|arr| {
+                count += 1;
+                // Always keep at least one chunk
+                if count == 1 {
+                    true
+                } else {
+                    // Remove the empty chunks
+                    arr.len() > 0
+                }
+            })
+        }
     }
 }
 

@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 
 use polars_core::schema::SchemaRef;
+use polars_utils::unitvec;
 
 use super::*;
 use crate::prelude::*;
@@ -30,7 +31,7 @@ impl ALogicalPlanNode {
     where
         F: FnMut(ALogicalPlanNode) -> T,
     {
-        // safety: we drop this context before arena is out of scope
+        // SAFETY: we drop this context before arena is out of scope
         unsafe { op(Self::new(node, arena)) }
     }
 
@@ -98,10 +99,10 @@ impl TreeWalker for ALogicalPlanNode {
         &'a self,
         op: &mut dyn FnMut(&Self) -> PolarsResult<VisitRecursion>,
     ) -> PolarsResult<VisitRecursion> {
-        let mut scratch = vec![];
+        let mut scratch = unitvec![];
 
         self.to_alp().copy_inputs(&mut scratch);
-        for node in scratch {
+        for &node in scratch.as_slice() {
             let lp_node = ALogicalPlanNode {
                 node,
                 arena: self.arena,

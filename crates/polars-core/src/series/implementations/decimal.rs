@@ -1,4 +1,4 @@
-use super::{private, IntoSeries, SeriesTrait, SeriesWrap, *};
+use super::*;
 use crate::prelude::*;
 
 unsafe impl IntoSeries for DecimalChunked {
@@ -138,7 +138,8 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
 
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {
         polars_ensure!(self.0.dtype() == other.dtype(), extend);
-        self.0.extend(other.as_ref().as_ref());
+        let other = other.decimal()?;
+        self.0.extend(&other.0);
         Ok(())
     }
 
@@ -148,18 +149,6 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
             .filter(filter)?
             .into_decimal_unchecked(self.0.precision(), self.0.scale())
             .into_series())
-    }
-
-    #[cfg(feature = "chunked_ids")]
-    unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Series {
-        let ca = self.0.deref().take_chunked_unchecked(by, sorted);
-        ca.into_decimal_unchecked(self.0.precision(), self.0.scale())
-            .into_series()
-    }
-
-    #[cfg(feature = "chunked_ids")]
-    unsafe fn _take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Series {
-        self.apply_physical(|ca| ca.take_opt_chunked_unchecked(by))
     }
 
     fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
@@ -267,5 +256,8 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
             let max = ca.max();
             Int128Chunked::from_slice_options(self.name(), &[max])
         }))
+    }
+    fn as_any(&self) -> &dyn Any {
+        &self.0
     }
 }

@@ -92,5 +92,3 @@ temporarily set options for the duration of the function call:
     @pl.Config(set_ascii_tables=True)
     def write_ascii_frame_to_stdout(df: pl.DataFrame) -> None:
         sys.stdout.write(str(df))
-
-"""

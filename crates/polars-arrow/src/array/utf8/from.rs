@@ -1,5 +1,3 @@
-use std::iter::FromIterator;
-
 use super::{MutableUtf8Array, Utf8Array};
 use crate::offset::Offset;
 

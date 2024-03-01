@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "0.20.3-rc.2"
+version = "0.20.13"
 edition = "2021"
 
 [lib]
@@ -11,7 +11,7 @@ crate-type = ["cdylib"]
 polars-core = { workspace = true, features = ["python"] }
 polars-error = { workspace = true }
 polars-lazy = { workspace = true, features = ["python"] }
-polars-ops = { workspace = true, features = ["convert_index"] }
+polars-ops = { workspace = true }
 polars-parquet = { workspace = true, optional = true }
 polars-plan = { workspace = true }
 polars-utils = { workspace = true }
@@ -22,6 +22,7 @@ either = { workspace = true }
 itoa = { workspace = true }
 libc = "0.2"
 ndarray = { workspace = true }
+num-traits = { workspace = true }
 numpy = { version = "0.20", default-features = false }
 once_cell = { workspace = true }
 pyo3 = { workspace = true, features = ["abi3-py38", "extension-module", "multiple-pymethods"] }
@@ -50,14 +51,15 @@ features = [
   "dynamic_group_by",
   "ewma",
   "fmt",
-  "horizontal_concat",
   "interpolate",
   "is_first_distinct",
   "is_last_distinct",
   "is_unique",
+  "is_between",
   "lazy",
   "list_eval",
   "list_to_struct",
+  "array_to_struct",
   "log",
   "mode",
   "moment",
@@ -122,7 +124,7 @@ streaming = ["polars/streaming"]
 meta = ["polars/meta"]
 search_sorted = ["polars/search_sorted"]
 decompress = ["polars/decompress-fast"]
-lazy_regex = ["polars/lazy_regex"]
+regex = ["polars/regex"]
 csv = ["polars/csv"]
 object = ["polars/object"]
 extract_jsonpath = ["polars/extract_jsonpath"]
@@ -137,6 +139,7 @@ cse = ["polars/cse"]
 merge_sorted = ["polars/merge_sorted"]
 list_gather = ["polars/list_gather"]
 list_count = ["polars/list_count"]
+array_count = ["polars/array_count", "polars/dtype-array"]
 binary_encoding = ["polars/binary_encoding"]
 list_sets = ["polars-lazy/list_sets"]
 list_any_all = ["polars/list_any_all"]
@@ -163,6 +166,7 @@ dtypes = [
 
 operations = [
   "array_any_all",
+  "array_count",
   "is_in",
   "repeat_by",
   "trigonometry",
@@ -215,7 +219,7 @@ all = [
   "dtypes",
   "meta",
   "decompress",
-  "lazy_regex",
+  "regex",
   "build_info",
   "sql",
   "binary_encoding",

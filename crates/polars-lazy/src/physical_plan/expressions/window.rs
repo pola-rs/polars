@@ -1,16 +1,12 @@
 use std::fmt::Write;
-use std::sync::Arc;
 
 use arrow::array::PrimitiveArray;
 use polars_core::export::arrow::bitmap::Bitmap;
-use polars_core::frame::group_by::{GroupBy, GroupsProxy};
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::_split_offsets;
 use polars_core::{downcast_as_macro_arg_physical, POOL};
-use polars_ops::frame::join::{
-    default_join_ids, private_left_join_multiple_keys, ChunkJoinOptIds, JoinValidation,
-};
+use polars_ops::frame::join::{default_join_ids, private_left_join_multiple_keys, ChunkJoinOptIds};
 use polars_ops::frame::SeriesJoin;
 use polars_utils::format_smartstring;
 use polars_utils::sort::perfect_sort;
@@ -18,7 +14,6 @@ use polars_utils::sync::SyncPtr;
 use rayon::prelude::*;
 
 use super::*;
-use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 
 pub struct WindowExpr {
@@ -114,12 +109,12 @@ impl WindowExpr {
             take_idx = original_idx;
         }
         cache_gb(gb, state, cache_key);
-        // Safety:
+        // SAFETY:
         // we only have unique indices ranging from 0..len
         unsafe { perfect_sort(&POOL, &idx_mapping, &mut take_idx) };
         let idx = IdxCa::from_vec("", take_idx);
 
-        // Safety:
+        // SAFETY:
         // groups should always be in bounds.
         unsafe { Ok(flattened.take_unchecked(&idx)) }
     }
@@ -567,8 +562,8 @@ impl PhysicalExpr for WindowExpr {
                                     .unwrap()
                                     .1
                             } else {
-                                let df_right = DataFrame::new_no_checks(keys);
-                                let df_left = DataFrame::new_no_checks(group_by_columns);
+                                let df_right = unsafe { DataFrame::new_no_checks(keys) };
+                                let df_left = unsafe { DataFrame::new_no_checks(group_by_columns) };
                                 private_left_join_multiple_keys(
                                     &df_left, &df_right, None, None, true,
                                 )
@@ -629,21 +624,16 @@ impl PhysicalExpr for WindowExpr {
 }
 
 fn materialize_column(join_opt_ids: &ChunkJoinOptIds, out_column: &Series) -> Series {
-    #[cfg(feature = "chunked_ids")]
     {
         use arrow::Either;
+        use polars_ops::chunked_array::TakeChunked;
 
         match join_opt_ids {
             Either::Left(ids) => unsafe {
                 out_column.take_unchecked(&ids.iter().copied().collect_ca(""))
             },
-            Either::Right(ids) => unsafe { out_column._take_opt_chunked_unchecked(ids) },
+            Either::Right(ids) => unsafe { out_column.take_opt_chunked_unchecked(ids) },
         }
-    }
-
-    #[cfg(not(feature = "chunked_ids"))]
-    unsafe {
-        out_column.take_unchecked(&join_opt_ids.iter().copied().collect_ca(""))
     }
 }
 
@@ -685,23 +675,9 @@ where
     T: PolarsNumericType,
     ChunkedArray<T>: IntoSeries,
 {
-    let mut idx_mapping = Vec::with_capacity(len);
-    let mut iter = 0..len as IdxSize;
-    match groups {
-        GroupsProxy::Idx(groups) => {
-            for g in groups.all() {
-                idx_mapping.extend((&mut iter).take(g.len()).zip(g.iter().copied()));
-            }
-        },
-        GroupsProxy::Slice { groups, .. } => {
-            for &[first, len] in groups {
-                idx_mapping.extend((&mut iter).take(len as usize).zip(first..first + len));
-            }
-        },
-    }
     let mut values = Vec::with_capacity(len);
     let ptr: *mut T::Native = values.as_mut_ptr();
-    // safety:
+    // SAFETY:
     // we will write from different threads but we will never alias.
     let sync_ptr_values = unsafe { SyncPtr::new(ptr) };
 
@@ -743,7 +719,7 @@ where
             },
         }
 
-        // safety: we have written all slots
+        // SAFETY: we have written all slots
         unsafe { values.set_len(len) }
         Some(ChunkedArray::new_vec(ca.name(), values).into_series())
     } else {
@@ -765,7 +741,7 @@ where
                 let values_ptr = sync_ptr_values.get();
                 let validity_ptr = sync_ptr_validity.get();
 
-                ca.into_iter().zip(groups.iter()).for_each(|(opt_v, g)| {
+                ca.iter().zip(groups.iter()).for_each(|(opt_v, g)| {
                     for idx in g.as_slice() {
                         let idx = *idx as usize;
                         debug_assert!(idx < len);
@@ -793,7 +769,7 @@ where
                     let values_ptr = sync_ptr_values.get();
                     let validity_ptr = sync_ptr_validity.get();
 
-                    for (opt_v, [start, g_len]) in ca.into_iter().zip(groups.iter()) {
+                    for (opt_v, [start, g_len]) in ca.iter().zip(groups.iter()) {
                         let start = *start as usize;
                         let end = start + *g_len as usize;
                         for idx in start..end {
@@ -815,12 +791,12 @@ where
                 })
             },
         }
-        // safety: we have written all slots
+        // SAFETY: we have written all slots
         unsafe { values.set_len(len) }
         unsafe { validity.set_len(len) }
         let validity = Bitmap::from(validity);
         let arr = PrimitiveArray::new(
-            T::get_dtype().to_physical().to_arrow(),
+            T::get_dtype().to_physical().to_arrow(true),
             values.into(),
             Some(validity),
         );

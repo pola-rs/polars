@@ -52,7 +52,7 @@ use arrow::legacy::prelude::*;
 use bitflags::bitflags;
 
 use crate::series::IsSorted;
-use crate::utils::{first_non_null, last_non_null, CustomIterTools};
+use crate::utils::{first_non_null, last_non_null};
 
 #[cfg(not(feature = "dtype-categorical"))]
 pub struct RevMapping {}
@@ -96,12 +96,12 @@ pub type ChunkIdIter<'a> = std::iter::Map<std::slice::Iter<'a, ArrayRef>, fn(&Ar
 /// # use polars_core::prelude::*;
 ///
 /// fn iter_forward(ca: &Float32Chunked) {
-///     ca.into_iter()
+///     ca.iter()
 ///         .for_each(|opt_v| println!("{:?}", opt_v))
 /// }
 ///
 /// fn iter_backward(ca: &Float32Chunked) {
-///     ca.into_iter()
+///     ca.iter()
 ///         .rev()
 ///         .for_each(|opt_v| println!("{:?}", opt_v))
 /// }
@@ -211,6 +211,13 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         self.bit_settings.set_sorted_flag(sorted)
     }
 
+    /// Set the 'sorted' bit meta info.
+    pub fn with_sorted_flag(&self, sorted: IsSorted) -> Self {
+        let mut out = self.clone();
+        out.bit_settings.set_sorted_flag(sorted);
+        out
+    }
+
     /// Get the index of the first non null value in this [`ChunkedArray`].
     pub fn first_non_null(&self) -> Option<usize> {
         if self.is_empty() {
@@ -296,7 +303,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
             series.dtype(),
             self.dtype(),
         );
-        // Safety
+        // SAFETY:
         // dtype will be correct.
         Ok(unsafe { self.unpack_series_matching_physical_type(series) })
     }
@@ -574,7 +581,7 @@ where
     /// Contiguous mutable slice
     pub(crate) fn cont_slice_mut(&mut self) -> Option<&mut [T::Native]> {
         if self.chunks.len() == 1 && self.chunks[0].null_count() == 0 {
-            // Safety, we will not swap the PrimitiveArray.
+            // SAFETY, we will not swap the PrimitiveArray.
             let arr = unsafe { self.downcast_iter_mut().next().unwrap() };
             arr.get_mut_values()
         } else {
@@ -649,7 +656,7 @@ impl ValueSize for StringChunked {
     }
 }
 
-impl ValueSize for BinaryChunked {
+impl ValueSize for BinaryOffsetChunked {
     fn get_values_size(&self) -> usize {
         self.chunks
             .iter()
@@ -661,7 +668,7 @@ pub(crate) fn to_primitive<T: PolarsNumericType>(
     values: Vec<T::Native>,
     validity: Option<Bitmap>,
 ) -> PrimitiveArray<T::Native> {
-    PrimitiveArray::new(T::get_dtype().to_arrow(), values.into(), validity)
+    PrimitiveArray::new(T::get_dtype().to_arrow(true), values.into(), validity)
 }
 
 pub(crate) fn to_array<T: PolarsNumericType>(
@@ -759,10 +766,7 @@ pub(crate) mod test {
     where
         T: PolarsNumericType,
     {
-        assert_eq!(
-            ca.into_iter().map(|opt| opt.unwrap()).collect::<Vec<_>>(),
-            eq
-        )
+        assert_eq!(ca.iter().map(|opt| opt.unwrap()).collect::<Vec<_>>(), eq)
     }
 
     #[test]
@@ -847,7 +851,7 @@ pub(crate) mod test {
     #[test]
     #[ignore]
     fn test_shrink_to_fit() {
-        let mut builder = StringChunkedBuilder::new("foo", 2048, 100 * 2048);
+        let mut builder = StringChunkedBuilder::new("foo", 2048);
         builder.append_value("foo");
         let mut arr = builder.finish();
         let before = arr

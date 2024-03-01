@@ -4,7 +4,6 @@ use polars_utils::iter::EnumerateIdxTrait;
 use super::*;
 #[cfg(feature = "dtype-struct")]
 use crate::utils::_split_offsets;
-use crate::POOL;
 
 pub(crate) fn args_validate<T: PolarsDataType>(
     ca: &ChunkedArray<T>,
@@ -69,39 +68,37 @@ pub fn _get_rows_encoded_compat_array(by: &Series) -> PolarsResult<ArrayRef> {
 
     let out = match by.dtype() {
         #[cfg(feature = "dtype-categorical")]
-        DataType::Categorical(_, _) => {
+        DataType::Categorical(_, _) | DataType::Enum(_, _) => {
             let ca = by.categorical().unwrap();
             if ca.uses_lexical_ordering() {
-                by.to_arrow(0)
+                by.to_arrow(0, true)
             } else {
                 ca.physical().chunks[0].clone()
             }
         },
-        _ => by.to_arrow(0),
+        _ => by.to_arrow(0, true),
     };
     Ok(out)
 }
 
 #[cfg(feature = "dtype-struct")]
-pub(crate) fn encode_rows_vertical(by: &[Series]) -> PolarsResult<BinaryChunked> {
+pub(crate) fn encode_rows_vertical(by: &[Series]) -> PolarsResult<BinaryOffsetChunked> {
     let n_threads = POOL.current_num_threads();
     let len = by[0].len();
     let splits = _split_offsets(len, n_threads);
     let descending = vec![false; by.len()];
 
-    let chunks: PolarsResult<Vec<_>> = splits
-        .into_par_iter()
-        .map(|(offset, len)| {
-            let sliced = by
-                .iter()
-                .map(|s| s.slice(offset as i64, len))
-                .collect::<Vec<_>>();
-            let rows = _get_rows_encoded(&sliced, &descending, false)?;
-            Ok(rows.into_array())
-        })
-        .collect();
+    let chunks = splits.into_par_iter().map(|(offset, len)| {
+        let sliced = by
+            .iter()
+            .map(|s| s.slice(offset as i64, len))
+            .collect::<Vec<_>>();
+        let rows = _get_rows_encoded(&sliced, &descending, false)?;
+        Ok(rows.into_array())
+    });
+    let chunks = POOL.install(|| chunks.collect::<PolarsResult<Vec<_>>>());
 
-    Ok(BinaryChunked::from_chunk_iter("", chunks?))
+    Ok(BinaryOffsetChunked::from_chunk_iter("", chunks?))
 }
 
 pub fn _get_rows_encoded(
@@ -142,9 +139,9 @@ pub fn _get_rows_encoded_ca(
     by: &[Series],
     descending: &[bool],
     nulls_last: bool,
-) -> PolarsResult<BinaryChunked> {
+) -> PolarsResult<BinaryOffsetChunked> {
     _get_rows_encoded(by, descending, nulls_last)
-        .map(|rows| BinaryChunked::with_chunk(name, rows.into_array()))
+        .map(|rows| BinaryOffsetChunked::with_chunk(name, rows.into_array()))
 }
 
 pub(crate) fn argsort_multiple_row_fmt(

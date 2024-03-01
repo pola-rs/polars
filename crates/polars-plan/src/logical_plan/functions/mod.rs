@@ -1,16 +1,15 @@
+mod count;
 #[cfg(feature = "merge_sorted")]
 mod merge_sorted;
 #[cfg(feature = "python")]
 mod python_udf;
 mod rename;
-
 use std::borrow::Cow;
 use std::fmt::{Debug, Display, Formatter};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use polars_core::prelude::*;
-#[cfg(feature = "dtype-categorical")]
-use polars_core::StringCacheHolder;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use smartstring::alias::String as SmartString;
@@ -47,6 +46,11 @@ pub enum FunctionNode {
         // used for formatting
         #[cfg_attr(feature = "serde", serde(skip))]
         fmt_str: &'static str,
+    },
+    Count {
+        paths: Arc<[PathBuf]>,
+        scan_type: FileScan,
+        alias: Option<Arc<str>>,
     },
     #[cfg_attr(feature = "serde", serde(skip))]
     Pipeline {
@@ -88,7 +92,7 @@ pub enum FunctionNode {
         args: Arc<MeltArgs>,
         schema: SchemaRef,
     },
-    RowCount {
+    RowIndex {
         name: Arc<str>,
         schema: SchemaRef,
         offset: Option<IdxSize>,
@@ -111,6 +115,7 @@ impl PartialEq for FunctionNode {
             ) => l == r && dl == dr,
             (DropNulls { subset: l }, DropNulls { subset: r }) => l == r,
             (Rechunk, Rechunk) => true,
+            (Count { paths: paths_l, .. }, Count { paths: paths_r, .. }) => paths_l == paths_r,
             (
                 Rename {
                     existing: existing_l,
@@ -125,7 +130,7 @@ impl PartialEq for FunctionNode {
             ) => existing_l == existing_r && new_l == new_r,
             (Explode { columns: l, .. }, Explode { columns: r, .. }) => l == r,
             (Melt { args: l, .. }, Melt { args: r, .. }) => l == r,
-            (RowCount { name: l, .. }, RowCount { name: r, .. }) => l == r,
+            (RowIndex { name: l, .. }, RowIndex { name: r, .. }) => l == r,
             _ => false,
         }
     }
@@ -141,6 +146,7 @@ impl FunctionNode {
             MergeSorted { .. } => false,
             DropNulls { .. }
             | FastProjection { .. }
+            | Count { .. }
             | Unnest { .. }
             | Rename { .. }
             | Explode { .. } => true,
@@ -148,7 +154,7 @@ impl FunctionNode {
             Opaque { streamable, .. } => *streamable,
             #[cfg(feature = "python")]
             OpaquePython { streamable, .. } => *streamable,
-            RowCount { .. } => false,
+            RowIndex { .. } => false,
         }
     }
 
@@ -193,6 +199,13 @@ impl FunctionNode {
                 Ok(Cow::Owned(Arc::new(schema)))
             },
             DropNulls { .. } => Ok(Cow::Borrowed(input_schema)),
+            Count { alias, .. } => {
+                let mut schema: Schema = Schema::with_capacity(1);
+                let name =
+                    SmartString::from(alias.as_ref().map(|alias| alias.as_ref()).unwrap_or("len"));
+                schema.insert_at_index(0, name, IDX_DTYPE)?;
+                Ok(Cow::Owned(Arc::new(schema)))
+            },
             Rechunk => Ok(Cow::Borrowed(input_schema)),
             Unnest { columns: _columns } => {
                 #[cfg(feature = "dtype-struct")]
@@ -233,7 +246,7 @@ impl FunctionNode {
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => Ok(Cow::Borrowed(input_schema)),
             Rename { existing, new, .. } => rename::rename_schema(input_schema, existing, new),
-            Explode { schema, .. } | RowCount { schema, .. } | Melt { schema, .. } => {
+            Explode { schema, .. } | RowIndex { schema, .. } | Melt { schema, .. } => {
                 Ok(Cow::Owned(schema.clone()))
             },
         }
@@ -254,7 +267,7 @@ impl FunctionNode {
             | Melt { .. } => true,
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => true,
-            RowCount { .. } => false,
+            RowIndex { .. } | Count { .. } => false,
             Pipeline { .. } => unimplemented!(),
         }
     }
@@ -268,13 +281,14 @@ impl FunctionNode {
             FastProjection { .. }
             | DropNulls { .. }
             | Rechunk
+            | Count { .. }
             | Unnest { .. }
             | Rename { .. }
             | Explode { .. }
             | Melt { .. } => true,
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => true,
-            RowCount { .. } => true,
+            RowIndex { .. } => true,
             Pipeline { .. } => unimplemented!(),
         }
     }
@@ -312,6 +326,9 @@ impl FunctionNode {
                 }
             },
             DropNulls { subset } => df.drop_nulls(Some(subset.as_ref())),
+            Count {
+                paths, scan_type, ..
+            } => count::count_rows(paths, scan_type),
             Rechunk => {
                 df.as_single_chunk_par();
                 Ok(df)
@@ -347,7 +364,7 @@ impl FunctionNode {
                 let args = (**args).clone();
                 df.melt2(args)
             },
-            RowCount { name, offset, .. } => df.with_row_count(name.as_ref(), *offset),
+            RowIndex { name, offset, .. } => df.with_row_index(name.as_ref(), *offset),
         }
     }
 }
@@ -376,6 +393,7 @@ impl Display for FunctionNode {
                 fmt_column_delimited(f, subset, "[", "]")
             },
             Rechunk => write!(f, "RECHUNK"),
+            Count { .. } => write!(f, "FAST COUNT(*)"),
             Unnest { columns } => {
                 write!(f, "UNNEST by:")?;
                 let columns = columns.as_ref();
@@ -396,7 +414,7 @@ impl Display for FunctionNode {
             Rename { .. } => write!(f, "RENAME"),
             Explode { .. } => write!(f, "EXPLODE"),
             Melt { .. } => write!(f, "MELT"),
-            RowCount { .. } => write!(f, "WITH ROW COUNT"),
+            RowIndex { .. } => write!(f, "WITH ROW INDEX"),
         }
     }
 }

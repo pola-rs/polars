@@ -50,8 +50,8 @@ def test_replace_str_to_str_default_null(str_mapping: dict[str | None, str]) -> 
 def test_replace_str_to_str_default_other(str_mapping: dict[str | None, str]) -> None:
     df = pl.DataFrame({"country_code": ["FR", None, "ES", "DE"]})
 
-    result = df.with_row_count().select(
-        replaced=pl.col("country_code").replace(str_mapping, default=pl.col("row_nr"))
+    result = df.with_row_index().select(
+        replaced=pl.col("country_code").replace(str_mapping, default=pl.col("index"))
     )
     expected = pl.DataFrame({"replaced": ["France", "Not specified", "2", "Germany"]})
     assert_frame_equal(result, expected)
@@ -447,6 +447,21 @@ def test_replace_fast_path_one_to_one() -> None:
     assert_frame_equal(result, expected)
 
 
+def test_replace_fast_path_one_null_to_one() -> None:
+    # https://github.com/pola-rs/polars/issues/13391
+    lf = pl.LazyFrame({"a": [1, None]})
+    result = lf.select(pl.col("a").replace(None, 100))
+    expected = pl.LazyFrame({"a": [1, 100]})
+    assert_frame_equal(result, expected)
+
+
+def test_replace_fast_path_many_with_null_to_one() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, None]})
+    result = lf.select(pl.col("a").replace([1, None], 100))
+    expected = pl.LazyFrame({"a": [100, 2, 100]})
+    assert_frame_equal(result, expected)
+
+
 def test_replace_fast_path_many_to_one() -> None:
     lf = pl.LazyFrame({"a": [1, 2, 2, 3]})
     result = lf.select(pl.col("a").replace([2, 3], 100))
@@ -466,6 +481,30 @@ def test_replace_fast_path_many_to_one_null() -> None:
     result = lf.select(pl.col("a").replace([2, 3], None, default=-1))
     expected = pl.LazyFrame({"a": [-1, None, None, None]}, schema={"a": pl.Int32})
     assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [
+        ([2, 2], 100),
+        ([2, 2], [100, 200]),
+        ([2, 2], [100, 100]),
+    ],
+)
+def test_replace_duplicates_old(old: list[int], new: int | list[int]) -> None:
+    s = pl.Series([1, 2, 3, 2, 3])
+    with pytest.raises(
+        pl.ComputeError,
+        match="`old` input for `replace` must not contain duplicates",
+    ):
+        s.replace(old, new)
+
+
+def test_replace_duplicates_new() -> None:
+    s = pl.Series([1, 2, 3, 2, 3])
+    result = s.replace([1, 2], [100, 100])
+    expected = s = pl.Series([100, 100, 3, 100, 3])
+    assert_series_equal(result, expected)
 
 
 def test_map_dict_deprecated() -> None:

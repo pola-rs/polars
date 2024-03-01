@@ -26,23 +26,25 @@ impl CategoricalChunked {
                 .map(|(idx, _v)| idx)
                 .collect_ca_trusted(self.name());
 
-            // safety:
+            // SAFETY:
             // we only reordered the indexes so we are still in bounds
             return unsafe {
                 CategoricalChunked::from_cats_and_rev_map_unchecked(
                     cats,
                     self.get_rev_map().clone(),
+                    self.is_enum(),
                     self.get_ordering(),
                 )
             };
         }
         let cats = self.physical().sort_with(options);
-        // safety:
+        // SAFETY:
         // we only reordered the indexes so we are still in bounds
         unsafe {
             CategoricalChunked::from_cats_and_rev_map_unchecked(
                 cats,
                 self.get_rev_map().clone(),
+                self.is_enum(),
                 self.get_ordering(),
             )
         }

@@ -5,11 +5,7 @@ use ahash::RandomState;
 
 use crate::chunked_array::object::PolarsObjectSafe;
 use crate::chunked_array::ops::compare_inner::{IntoTotalEqInner, TotalEqInner};
-#[cfg(feature = "chunked_ids")]
-use crate::chunked_array::ops::take::TakeChunked;
 use crate::chunked_array::Settings;
-#[cfg(feature = "algorithm_group_by")]
-use crate::frame::group_by::{GroupsProxy, IntoGroupsProxy};
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 use crate::series::private::{PrivateSeries, PrivateSeriesNumeric};
@@ -125,16 +121,6 @@ where
         ChunkFilter::filter(&self.0, filter).map(|ca| ca.into_series())
     }
 
-    #[cfg(feature = "chunked_ids")]
-    unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Series {
-        self.0.take_chunked_unchecked(by, sorted).into_series()
-    }
-
-    #[cfg(feature = "chunked_ids")]
-    unsafe fn _take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Series {
-        self.0.take_opt_chunked_unchecked(by).into_series()
-    }
-
     fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
         Ok(self.0.take(indices)?.into_series())
     }
@@ -176,6 +162,9 @@ where
 
     fn get(&self, index: usize) -> PolarsResult<AnyValue> {
         ObjectChunked::get_any_value(&self.0, index)
+    }
+    unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
+        ObjectChunked::get_any_value_unchecked(&self.0, index)
     }
     fn null_count(&self) -> usize {
         ObjectChunked::null_count(&self.0)
@@ -219,6 +208,14 @@ where
 
     fn get_object(&self, index: usize) -> Option<&dyn PolarsObjectSafe> {
         ObjectChunked::<T>::get_object(&self.0, index)
+    }
+
+    unsafe fn get_object_chunked_unchecked(
+        &self,
+        chunk: usize,
+        index: usize,
+    ) -> Option<&dyn PolarsObjectSafe> {
+        ObjectChunked::<T>::get_object_chunked_unchecked(&self.0, chunk, index)
     }
 
     fn as_any(&self) -> &dyn Any {

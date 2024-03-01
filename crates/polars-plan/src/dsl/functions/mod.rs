@@ -26,10 +26,6 @@ pub use correlation::*;
 pub use horizontal::*;
 #[cfg(any(feature = "range", feature = "arg_where"))]
 pub use index::*;
-#[cfg(feature = "temporal")]
-use polars_core::export::arrow::temporal_conversions::{MICROSECONDS, MILLISECONDS, NANOSECONDS};
-#[cfg(feature = "temporal")]
-use polars_core::utils::arrow::temporal_conversions::SECONDS_IN_DAY;
 #[cfg(feature = "dtype-struct")]
 use polars_core::utils::get_supertype;
 #[cfg(all(feature = "range", feature = "temporal"))]

@@ -73,10 +73,6 @@ pub(crate) use correlation::CorrelationMethod;
 pub(crate) use fused::FusedOperator;
 pub(super) use list::ListFunction;
 use polars_core::prelude::*;
-#[cfg(feature = "cutqcut")]
-use polars_ops::prelude::{cut, qcut};
-#[cfg(feature = "rle")]
-use polars_ops::prelude::{rle, rle_id};
 #[cfg(feature = "random")]
 pub(crate) use random::RandomMethod;
 use schema::FieldsMapper;
@@ -123,6 +119,7 @@ pub enum FunctionExpr {
     Boolean(BooleanFunction),
     #[cfg(feature = "abs")]
     Abs,
+    Negate,
     #[cfg(feature = "hist")]
     Hist {
         bin_count: Option<usize>,
@@ -150,6 +147,7 @@ pub enum FunctionExpr {
     FillNull {
         super_type: DataType,
     },
+    FillNullWithStrategy(FillNullStrategy),
     #[cfg(feature = "rolling_window")]
     RollingExpr(RollingFunction),
     ShiftAndFill,
@@ -301,9 +299,10 @@ pub enum FunctionExpr {
     ForwardFill {
         limit: FillNullLimit,
     },
-    SumHorizontal,
     MaxHorizontal,
     MinHorizontal,
+    SumHorizontal,
+    MeanHorizontal,
     #[cfg(feature = "ewma")]
     EwmMean {
         options: EWMOptions,
@@ -320,6 +319,13 @@ pub enum FunctionExpr {
     Replace {
         return_dtype: Option<DataType>,
     },
+    GatherEvery {
+        n: usize,
+        offset: usize,
+    },
+    #[cfg(feature = "reinterpret")]
+    Reinterpret(bool),
+    ExtendConstant,
 }
 
 impl Hash for FunctionExpr {
@@ -370,12 +376,13 @@ impl Hash for FunctionExpr {
                 lib.hash(state);
                 symbol.hash(state);
             },
-            SumHorizontal | MaxHorizontal | MinHorizontal | DropNans | DropNulls | Reverse
-            | ArgUnique | Shift | ShiftAndFill => {},
+            MaxHorizontal | MinHorizontal | SumHorizontal | MeanHorizontal | DropNans
+            | DropNulls | Reverse | ArgUnique | Shift | ShiftAndFill => {},
             #[cfg(feature = "mode")]
             Mode => {},
             #[cfg(feature = "abs")]
             Abs => {},
+            Negate => {},
             NullCount => {},
             #[cfg(feature = "date_offset")]
             DateOffset => {},
@@ -521,6 +528,11 @@ impl Hash for FunctionExpr {
             },
             #[cfg(feature = "replace")]
             Replace { return_dtype } => return_dtype.hash(state),
+            FillNullWithStrategy(strategy) => strategy.hash(state),
+            GatherEvery { n, offset } => (n, offset).hash(state),
+            #[cfg(feature = "reinterpret")]
+            Reinterpret(signed) => signed.hash(state),
+            ExtendConstant => {},
         }
     }
 }
@@ -547,6 +559,7 @@ impl Display for FunctionExpr {
             Boolean(func) => return write!(f, "{func}"),
             #[cfg(feature = "abs")]
             Abs => "abs",
+            Negate => "negate",
             NullCount => "null_count",
             Pow(func) => return write!(f, "{func}"),
             #[cfg(feature = "row_hash")]
@@ -676,9 +689,10 @@ impl Display for FunctionExpr {
             FfiPlugin { lib, symbol, .. } => return write!(f, "{lib}:{symbol}"),
             BackwardFill { .. } => "backward_fill",
             ForwardFill { .. } => "forward_fill",
-            SumHorizontal => "sum_horizontal",
             MaxHorizontal => "max_horizontal",
             MinHorizontal => "min_horizontal",
+            SumHorizontal => "sum_horizontal",
+            MeanHorizontal => "mean_horizontal",
             #[cfg(feature = "ewma")]
             EwmMean { .. } => "ewm_mean",
             #[cfg(feature = "ewma")]
@@ -689,6 +703,11 @@ impl Display for FunctionExpr {
             Hist { .. } => "hist",
             #[cfg(feature = "replace")]
             Replace { .. } => "replace",
+            FillNullWithStrategy(_) => "fill_null_with_strategy",
+            GatherEvery { .. } => "gather_every",
+            #[cfg(feature = "reinterpret")]
+            Reinterpret(_) => "reinterpret",
+            ExtendConstant => "extend_constant",
         };
         write!(f, "{s}")
     }
@@ -790,6 +809,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             Boolean(func) => func.into(),
             #[cfg(feature = "abs")]
             Abs => map!(abs::abs),
+            Negate => map!(dispatch::negate),
             NullCount => {
                 let f = |s: &mut [Series]| {
                     let s = &s[0];
@@ -1027,9 +1047,10 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             },
             BackwardFill { limit } => map!(dispatch::backward_fill, limit),
             ForwardFill { limit } => map!(dispatch::forward_fill, limit),
-            SumHorizontal => wrap!(dispatch::sum_horizontal),
             MaxHorizontal => wrap!(dispatch::max_horizontal),
             MinHorizontal => wrap!(dispatch::min_horizontal),
+            SumHorizontal => wrap!(dispatch::sum_horizontal),
+            MeanHorizontal => wrap!(dispatch::mean_horizontal),
             #[cfg(feature = "ewma")]
             EwmMean { options } => map!(ewm::ewm_mean, options),
             #[cfg(feature = "ewma")]
@@ -1040,6 +1061,11 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             Replace { return_dtype } => {
                 map_as_slice!(dispatch::replace, return_dtype.clone())
             },
+            FillNullWithStrategy(strategy) => map!(dispatch::fill_null_with_strategy, strategy),
+            GatherEvery { n, offset } => map!(dispatch::gather_every, n, offset),
+            #[cfg(feature = "reinterpret")]
+            Reinterpret(signed) => map!(dispatch::reinterpret, signed),
+            ExtendConstant => map_as_slice!(dispatch::extend_constant),
         }
     }
 }

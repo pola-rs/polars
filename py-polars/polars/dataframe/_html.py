@@ -1,4 +1,5 @@
 """Module for formatting output data in HTML."""
+
 from __future__ import annotations
 
 import os
@@ -58,15 +59,16 @@ class HTMLFormatter:
         self.elements: list[str] = []
         self.max_cols = max_cols
         self.max_rows = max_rows
-        self.series = from_series
+        self.from_series = from_series
         self.row_idx: Iterable[int]
         self.col_idx: Iterable[int]
 
         if max_rows < df.height:
+            half, rest = divmod(max_rows, 2)
             self.row_idx = [
-                *list(range(max_rows // 2)),
+                *list(range(half + rest)),
                 -1,
-                *list(range(df.height - max_rows // 2, df.height)),
+                *list(range(df.height - half, df.height)),
             ]
         else:
             self.row_idx = range(df.height)
@@ -132,7 +134,7 @@ class HTMLFormatter:
         ):
             # format frame/series shape with '_' thousand-separators
             s = self.df.shape
-            shape = f"({s[0]:_},)" if self.series else f"({s[0]:_}, {s[1]:_})"
+            shape = f"({s[0]:_},)" if self.from_series else f"({s[0]:_}, {s[1]:_})"
 
             self.elements.append(f"<small>shape: {shape}</small>")
 
@@ -153,7 +155,6 @@ class NotebookFormatter(HTMLFormatter):
     Class for formatting output data in HTML for display in Jupyter Notebooks.
 
     This class is intended for functionality specific to DataFrame._repr_html_().
-
     """
 
     def write_style(self) -> None:

@@ -1,7 +1,6 @@
 use std::mem::ManuallyDrop;
 use std::ops::Deref;
 
-use arrow::legacy::utils::CustomIterTools;
 use polars_utils::idx_vec::IdxVec;
 use polars_utils::sync::SyncPtr;
 use rayon::iter::plumbing::UnindexedConsumer;
@@ -500,7 +499,7 @@ impl GroupsProxy {
     }
 
     pub fn slice(&self, offset: i64, len: usize) -> SlicedGroups {
-        // Safety:
+        // SAFETY:
         // we create new `Vec`s from the sliced groups. But we wrap them in ManuallyDrop
         // so that we never call drop on them.
         // These groups lifetimes are bounded to the `self`. This must remain valid

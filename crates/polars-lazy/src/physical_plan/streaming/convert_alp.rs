@@ -1,4 +1,3 @@
-use polars_core::error::PolarsResult;
 use polars_core::prelude::*;
 use polars_pipe::pipeline::swap_join_order;
 use polars_plan::prelude::*;

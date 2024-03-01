@@ -14,7 +14,7 @@ def test_shuffle_group_by_reseed() -> None:
         shuffled = df.group_by("group", maintain_order=True).agg(
             pl.col("l").shuffle(seed)
         )
-        num_unique = shuffled.group_by("l").agg(pl.lit(0)).select(pl.count())
+        num_unique = shuffled.group_by("l").agg(pl.lit(0)).select(pl.len())
         return int(num_unique[0, 0])
 
     assert unique_shuffle_groups(50, None) > 1  # Astronomically unlikely.
@@ -50,6 +50,7 @@ def test_sample_expr() -> None:
 def test_sample_df() -> None:
     df = pl.DataFrame({"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]})
 
+    assert df.sample().shape == (1, 3)
     assert df.sample(n=2, seed=0).shape == (2, 3)
     assert df.sample(fraction=0.4, seed=0).shape == (1, 3)
     assert df.sample(n=pl.Series([2]), seed=0).shape == (2, 3)
@@ -59,6 +60,8 @@ def test_sample_df() -> None:
         1,
         1,
     )
+    with pytest.raises(ValueError, match="cannot specify both `n` and `fraction`"):
+        df.sample(n=2, fraction=0.4)
 
 
 def test_sample_n_expr() -> None:

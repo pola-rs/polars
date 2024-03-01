@@ -39,6 +39,12 @@ pub enum PhysicalType {
     Map,
     /// A dictionary encoded array by `IntegerType`.
     Dictionary(IntegerType),
+    /// A binary type that inlines small values
+    /// and can intern bytes.
+    BinaryView,
+    /// A string type that inlines small values
+    /// and can intern strings.
+    Utf8View,
 }
 
 impl PhysicalType {

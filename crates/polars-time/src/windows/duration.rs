@@ -1,4 +1,5 @@
 use std::cmp::Ordering;
+use std::fmt::{Display, Formatter};
 use std::ops::Mul;
 
 #[cfg(feature = "timezones")]
@@ -50,6 +51,40 @@ impl PartialOrd<Self> for Duration {
 impl Ord for Duration {
     fn cmp(&self, other: &Self) -> Ordering {
         self.duration_ns().cmp(&other.duration_ns())
+    }
+}
+
+impl Display for Duration {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        if self.is_zero() {
+            return write!(f, "0s");
+        }
+        if self.negative {
+            write!(f, "-")?
+        }
+        if self.months > 0 {
+            write!(f, "{}m", self.months)?
+        }
+        if self.weeks > 0 {
+            write!(f, "{}w", self.weeks)?
+        }
+        if self.days > 0 {
+            write!(f, "{}d", self.days)?
+        }
+        if self.nsecs > 0 {
+            let secs = self.nsecs / 1_000_000;
+            if secs * 1_000_000 == self.nsecs {
+                write!(f, "{}s", secs)?
+            } else {
+                let us = self.nsecs / 1_000;
+                if us * 1_000 == self.nsecs {
+                    write!(f, "{}us", us)?
+                } else {
+                    write!(f, "{}ns", self.nsecs)?
+                }
+            }
+        }
+        Ok(())
     }
 }
 

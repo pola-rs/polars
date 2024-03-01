@@ -2,7 +2,6 @@ use std::fmt::Display;
 use std::ops::BitAnd;
 
 use super::*;
-use crate::dsl::selector::Selector;
 use crate::logical_plan::projection::is_regex_projection;
 use crate::logical_plan::tree_format::TreeFmtVisitor;
 use crate::logical_plan::visitor::{AexprNode, TreeWalker};
@@ -137,7 +136,7 @@ impl MetaNameSpace {
     pub fn into_tree_formatter(self) -> PolarsResult<impl Display> {
         let mut arena = Default::default();
         let node = to_aexpr(self.0, &mut arena);
-        let mut visitor = TreeFmtVisitor::new();
+        let mut visitor = TreeFmtVisitor::default();
         AexprNode::with_context(node, &mut arena, |ae_node| ae_node.visit(&mut visitor))?;
         Ok(visitor)
     }

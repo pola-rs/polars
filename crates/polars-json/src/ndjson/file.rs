@@ -41,7 +41,7 @@ fn read_rows<R: BufRead>(reader: &mut R, rows: &mut [String], limit: usize) -> P
 ///
 /// This iterator is used to read chunks of an NDJSON in batches.
 /// This iterator is guaranteed to yield at least one row.
-/// # Implementantion
+/// # Implementation
 /// Advancing this iterator is IO-bounded, but does require parsing each byte to find end of lines.
 /// # Error
 /// Advancing this iterator errors iff the reader errors.

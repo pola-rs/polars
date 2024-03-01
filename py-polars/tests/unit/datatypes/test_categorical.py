@@ -124,7 +124,7 @@ def test_unset_sorted_on_append() -> None:
         ]
     ).sort("key")
     df = pl.concat([df1, df2], rechunk=False)
-    assert df.group_by("key").count()["count"].to_list() == [4, 4]
+    assert df.group_by("key").len()["len"].to_list() == [4, 4]
 
 
 @pytest.mark.parametrize(
@@ -574,9 +574,9 @@ def test_nested_categorical_aggregation_7848() -> None:
             "letter": ["a", "b", "c", "d", "e", "f", "g"],
         }
     ).with_columns([pl.col("letter").cast(pl.Categorical)]).group_by(
-        maintain_order=True, by=["group"]
+        "group", maintain_order=True
     ).all().with_columns(pl.col("letter").list.len().alias("c_group")).group_by(
-        by=["c_group"], maintain_order=True
+        ["c_group"], maintain_order=True
     ).agg(pl.col("letter")).to_dict(as_series=False) == {
         "c_group": [2, 3],
         "letter": [[["a", "b"], ["f", "g"]], [["c", "d", "e"]]],
@@ -800,3 +800,15 @@ def test_sort_categorical_retain_none(
                 "foo",
                 "ham",
             ]
+
+
+def test_cast_from_cat_to_numeric() -> None:
+    cat_series = pl.Series(
+        "cat_series",
+        ["0.69845702", "0.69317475", "2.43642724", "-0.95303469", "0.60684237"],
+    ).cast(pl.Categorical)
+    maximum = cat_series.cast(pl.Float32).max()
+    assert abs(maximum - 2.43642724) < 1e-6  # type: ignore[operator]
+
+    s = pl.Series(["1", "2", "3"], dtype=pl.Categorical)
+    assert s.cast(pl.UInt8).sum() == 6

@@ -1,11 +1,11 @@
 use std::ops::{BitAnd, BitOr, BitXor, Not};
 
 use arrow::compute;
+use arrow::compute::bitwise;
 use arrow::compute::utils::combine_validities_and;
-use arrow::legacy::compute::bitwise;
 
-use super::arithmetic::arithmetic_helper;
 use super::*;
+use crate::chunked_array::arity::apply_binary_kernel_broadcast;
 
 impl<T> BitAnd for &ChunkedArray<T>
 where
@@ -15,7 +15,13 @@ where
     type Output = ChunkedArray<T>;
 
     fn bitand(self, rhs: Self) -> Self::Output {
-        arithmetic_helper(self, rhs, bitwise::bitand, |a, b| a.bitand(b))
+        apply_binary_kernel_broadcast(
+            self,
+            rhs,
+            bitwise::and,
+            |l, r| bitwise::and_scalar(r, &l),
+            |l, r| bitwise::and_scalar(l, &r),
+        )
     }
 }
 
@@ -27,7 +33,13 @@ where
     type Output = ChunkedArray<T>;
 
     fn bitor(self, rhs: Self) -> Self::Output {
-        arithmetic_helper(self, rhs, bitwise::bitor, |a, b| a.bitor(b))
+        apply_binary_kernel_broadcast(
+            self,
+            rhs,
+            bitwise::or,
+            |l, r| bitwise::or_scalar(r, &l),
+            |l, r| bitwise::or_scalar(l, &r),
+        )
     }
 }
 
@@ -39,7 +51,13 @@ where
     type Output = ChunkedArray<T>;
 
     fn bitxor(self, rhs: Self) -> Self::Output {
-        arithmetic_helper(self, rhs, bitwise::bitxor, |a, b| a.bitxor(b))
+        apply_binary_kernel_broadcast(
+            self,
+            rhs,
+            bitwise::xor,
+            |l, r| bitwise::xor_scalar(r, &l),
+            |l, r| bitwise::xor_scalar(l, &r),
+        )
     }
 }
 

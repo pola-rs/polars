@@ -1,5 +1,5 @@
 use polars_core::prelude::*;
-use polars_io::RowCount;
+use polars_io::RowIndex;
 
 use crate::prelude::*;
 
@@ -9,7 +9,7 @@ pub struct ScanArgsAnonymous {
     pub schema: Option<SchemaRef>,
     pub skip_rows: Option<usize>,
     pub n_rows: Option<usize>,
-    pub row_count: Option<RowCount>,
+    pub row_index: Option<RowIndex>,
     pub name: &'static str,
 }
 
@@ -20,7 +20,7 @@ impl Default for ScanArgsAnonymous {
             skip_rows: None,
             n_rows: None,
             schema: None,
-            row_count: None,
+            row_index: None,
             name: "ANONYMOUS SCAN",
         }
     }
@@ -41,8 +41,8 @@ impl LazyFrame {
         .build()
         .into();
 
-        if let Some(rc) = args.row_count {
-            lf = lf.with_row_count(&rc.name, Some(rc.offset))
+        if let Some(rc) = args.row_index {
+            lf = lf.with_row_index(&rc.name, Some(rc.offset))
         };
 
         Ok(lf)

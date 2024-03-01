@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -9,21 +9,19 @@ import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from polars.type_aliases import ClosedInterval
+    from polars.type_aliases import ClosedInterval, PolarsIntegerType
 
 
-def test_rolling_group_by_overlapping_groups() -> None:
+@pytest.mark.parametrize("dtype", [pl.UInt32, pl.UInt64, pl.Int32, pl.Int64])
+def test_rolling_group_by_overlapping_groups(dtype: PolarsIntegerType) -> None:
     # this first aggregates overlapping groups so they cannot be naively flattened
     df = pl.DataFrame({"a": [41, 60, 37, 51, 52, 39, 40]})
 
     assert_series_equal(
         (
-            df.with_row_count()
-            .with_columns(pl.col("row_nr").cast(pl.Int32))
-            .rolling(
-                index_column="row_nr",
-                period="5i",
-            )
+            df.with_row_index()
+            .with_columns(pl.col("index").cast(dtype))
+            .rolling(index_column="index", period="5i")
             .agg(
                 # trigger the apply on the expression engine
                 pl.col("a").map_elements(lambda x: x).sum()
@@ -34,12 +32,17 @@ def test_rolling_group_by_overlapping_groups() -> None:
 
 
 @pytest.mark.parametrize("input", [[pl.col("b").sum()], pl.col("b").sum()])
-def test_rolling_agg_input_types(input: Any) -> None:
-    df = pl.LazyFrame({"index_column": [0, 1, 2, 3], "b": [1, 3, 1, 2]}).set_sorted(
-        "index_column"
-    )
+@pytest.mark.parametrize("dtype", [pl.UInt32, pl.UInt64, pl.Int32, pl.Int64])
+def test_rolling_agg_input_types(input: Any, dtype: PolarsIntegerType) -> None:
+    df = pl.LazyFrame(
+        {"index_column": [0, 1, 2, 3], "b": [1, 3, 1, 2]},
+        schema_overrides={"index_column": dtype},
+    ).set_sorted("index_column")
     result = df.rolling(index_column="index_column", period="2i").agg(input)
-    expected = pl.LazyFrame({"index_column": [0, 1, 2, 3], "b": [1, 4, 4, 3]})
+    expected = pl.LazyFrame(
+        {"index_column": [0, 1, 2, 3], "b": [1, 4, 4, 3]},
+        schema_overrides={"index_column": dtype},
+    )
     assert_frame_equal(result, expected)
 
 
@@ -60,19 +63,17 @@ def test_rolling_negative_offset_3914() -> None:
             ),
         }
     )
-    assert df.rolling(index_column="datetime", period="2d", offset="-4d").agg(
-        pl.count().alias("count")
-    )["count"].to_list() == [0, 0, 1, 2, 2]
-
-    df = pl.DataFrame(
-        {
-            "ints": range(20),
-        }
+    result = df.rolling(index_column="datetime", period="2d", offset="-4d").agg(
+        pl.len()
     )
+    assert result["len"].to_list() == [0, 0, 1, 2, 2]
 
-    assert df.rolling(index_column="ints", period="2i", offset="-5i").agg(
-        [pl.col("ints").alias("matches")]
-    )["matches"].to_list() == [
+    df = pl.DataFrame({"ints": range(20)})
+
+    result = df.rolling(index_column="ints", period="2i", offset="-5i").agg(
+        pl.col("ints").alias("matches")
+    )
+    expected = [
         [],
         [],
         [],
@@ -94,6 +95,7 @@ def test_rolling_negative_offset_3914() -> None:
         [14, 15],
         [15, 16],
     ]
+    assert result["matches"].to_list() == expected
 
 
 @pytest.mark.parametrize("time_zone", [None, "US/Central"])
@@ -256,3 +258,36 @@ def test_rolling_duplicates_11281() -> None:
     result = df.rolling("ts", period="1d", closed="left").agg(pl.col("val"))
     expected = df.with_columns(val=pl.Series([[], [1], [1], [1], [2, 2, 2], [3]]))
     assert_frame_equal(result, expected)
+
+
+def test_multiple_rolling_in_single_expression() -> None:
+    df = pl.DataFrame(
+        {
+            "timestamp": pl.datetime_range(
+                datetime(2024, 1, 12),
+                datetime(2024, 1, 12, 0, 0, 0, 150_000),
+                "10ms",
+                eager=True,
+                closed="left",
+            ),
+            "price": [0] * 15,
+        }
+    )
+
+    front_count = (
+        pl.col("price")
+        .count()
+        .rolling("timestamp", period=timedelta(milliseconds=100))
+        .cast(pl.Int64)
+    )
+    back_count = (
+        pl.col("price")
+        .count()
+        .rolling("timestamp", period=timedelta(milliseconds=200))
+        .cast(pl.Int64)
+    )
+    assert df.with_columns(
+        back_count.alias("back"),
+        front_count.alias("front"),
+        (back_count - front_count).alias("back - front"),
+    )["back - front"].to_list() == [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5]

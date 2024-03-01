@@ -7,6 +7,8 @@ mod parquet;
 mod reproject;
 mod union;
 
+use std::sync::atomic::{AtomicU32, Ordering};
+
 #[cfg(feature = "csv")]
 pub(crate) use csv::CsvSource;
 pub(crate) use frame::*;
@@ -18,3 +20,9 @@ pub(crate) use union::*;
 
 #[cfg(feature = "csv")]
 use super::*;
+
+static CHUNK_INDEX: AtomicU32 = AtomicU32::new(0);
+
+pub(super) fn get_source_index(add: u32) -> u32 {
+    CHUNK_INDEX.fetch_add(add, Ordering::Relaxed)
+}

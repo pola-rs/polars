@@ -1,4 +1,4 @@
-use arrow::array::{Array, BinaryArray, PrimitiveArray, Utf8Array};
+use arrow::array::{Array, BinaryViewArray, PrimitiveArray, Utf8ViewArray};
 use arrow::types::NativeType;
 use polars_utils::min_max::MinMax;
 
@@ -56,7 +56,7 @@ impl<T: NativeType + MinMax + super::NotSimdPrimitive> MinMaxKernel for [T] {
     }
 }
 
-impl MinMaxKernel for BinaryArray<i64> {
+impl MinMaxKernel for BinaryViewArray {
     type Scalar<'a> = &'a [u8];
 
     fn min_ignore_nan_kernel(&self) -> Option<Self::Scalar<'_>> {
@@ -86,12 +86,12 @@ impl MinMaxKernel for BinaryArray<i64> {
     }
 }
 
-impl MinMaxKernel for Utf8Array<i64> {
+impl MinMaxKernel for Utf8ViewArray {
     type Scalar<'a> = &'a str;
 
     #[inline(always)]
     fn min_ignore_nan_kernel(&self) -> Option<Self::Scalar<'_>> {
-        self.to_binary().min_ignore_nan_kernel().map(|s| unsafe {
+        self.to_binview().min_ignore_nan_kernel().map(|s| unsafe {
             // SAFETY: the lifetime is the same, and it is valid UTF-8.
             #[allow(clippy::transmute_bytes_to_str)]
             std::mem::transmute::<&[u8], &str>(s)
@@ -100,7 +100,7 @@ impl MinMaxKernel for Utf8Array<i64> {
 
     #[inline(always)]
     fn max_ignore_nan_kernel(&self) -> Option<Self::Scalar<'_>> {
-        self.to_binary().max_ignore_nan_kernel().map(|s| unsafe {
+        self.to_binview().max_ignore_nan_kernel().map(|s| unsafe {
             // SAFETY: the lifetime is the same, and it is valid UTF-8.
             #[allow(clippy::transmute_bytes_to_str)]
             std::mem::transmute::<&[u8], &str>(s)

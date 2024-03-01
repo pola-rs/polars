@@ -1,7 +1,5 @@
 use std::borrow::Cow;
-use std::sync::Arc;
 
-use polars_core::frame::group_by::GroupsProxy;
 use polars_core::prelude::*;
 use polars_plan::constants::CSE_REPLACED;
 
@@ -77,7 +75,7 @@ impl ColumnExpr {
             // in release we fallback to linear search
             #[allow(unreachable_code)]
             {
-                df.column(&self.name).map(|s| s.clone())
+                df.column(&self.name).cloned()
             }
         } else {
             Ok(out.clone())
@@ -100,7 +98,7 @@ impl ColumnExpr {
         }
         // in release we fallback to linear search
         #[allow(unreachable_code)]
-        df.column(&self.name).map(|s| s.clone())
+        df.column(&self.name).cloned()
     }
 
     fn process_from_state_schema(

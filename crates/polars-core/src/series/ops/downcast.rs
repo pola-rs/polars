@@ -4,8 +4,16 @@ use crate::series::implementations::null::NullChunked;
 macro_rules! unpack_chunked {
     ($series:expr, $expected:pat => $ca:ty, $name:expr) => {
         match $series.dtype() {
-            $expected => unsafe {
-                Ok(&*($series.as_ref() as *const dyn SeriesTrait as *const $ca))
+            $expected => {
+                // Check downcast in debug compiles
+                #[cfg(debug_assertions)]
+                {
+                    Ok($series.as_ref().as_any().downcast_ref::<$ca>().unwrap())
+                }
+                #[cfg(not(debug_assertions))]
+                unsafe {
+                    Ok(&*($series.as_ref() as *const dyn SeriesTrait as *const $ca))
+                }
             },
             dt => polars_bail!(
                 SchemaMismatch: "invalid series dtype: expected `{}`, got `{}`", $name, dt,
@@ -94,6 +102,11 @@ impl Series {
         unpack_chunked!(self, DataType::Binary => BinaryChunked, "Binary")
     }
 
+    /// Unpack to [`ChunkedArray`] of dtype `[DataType::Binary]`
+    pub fn binary_offset(&self) -> PolarsResult<&BinaryOffsetChunked> {
+        unpack_chunked!(self, DataType::BinaryOffset => BinaryOffsetChunked, "BinaryOffset")
+    }
+
     /// Unpack to [`ChunkedArray`] of dtype `[DataType::Time]`
     #[cfg(feature = "dtype-time")]
     pub fn time(&self) -> PolarsResult<&TimeChunked> {
@@ -138,7 +151,7 @@ impl Series {
     /// Unpack to [`ChunkedArray`] of dtype `[DataType::Categorical]`
     #[cfg(feature = "dtype-categorical")]
     pub fn categorical(&self) -> PolarsResult<&CategoricalChunked> {
-        unpack_chunked!(self, DataType::Categorical(_,_) => CategoricalChunked, "Categorical")
+        unpack_chunked!(self, DataType::Categorical(_, _) | DataType::Enum(_, _) => CategoricalChunked, "Enum | Categorical")
     }
 
     /// Unpack to [`ChunkedArray`] of dtype `[DataType::Struct]`

@@ -4,12 +4,11 @@ use std::borrow::Cow;
 
 use polars_core::prelude::*;
 use polars_core::utils::get_supertype;
+use polars_utils::idx_vec::UnitVec;
+use polars_utils::unitvec;
 
 use super::*;
-use crate::dsl::function_expr::FunctionExpr;
 use crate::logical_plan::optimizer::type_coercion::binary::process_binary;
-use crate::logical_plan::Context;
-use crate::utils::is_scan;
 
 pub struct TypeCoercionRule {}
 
@@ -196,7 +195,7 @@ fn modify_supertype(
 
             // cast literal to right type if they fit in the range
             (Literal(value), _) => {
-                if let Some(lit_val) = value.to_anyvalue() {
+                if let Some(lit_val) = value.to_any_value() {
                     if type_right.value_within_range(lit_val) {
                         st = type_right.clone();
                     }
@@ -204,7 +203,7 @@ fn modify_supertype(
             },
             // cast literal to left type
             (_, Literal(value)) => {
-                if let Some(lit_val) = value.to_anyvalue() {
+                if let Some(lit_val) = value.to_any_value() {
                     if type_left.value_within_range(lit_val) {
                         st = type_left.clone();
                     }
@@ -218,17 +217,24 @@ fn modify_supertype(
         match (type_left, type_right, left, right) {
             // if the we compare a categorical to a literal string we want to cast the literal to categorical
             #[cfg(feature = "dtype-categorical")]
-            (Categorical(opt_rev_map, ordering), String, _, AExpr::Literal(_))
-            | (String, Categorical(opt_rev_map, ordering), AExpr::Literal(_), _) => {
-                st = enum_or_default_categorical(opt_rev_map, *ordering);
+            (Categorical(_, ordering), String, _, AExpr::Literal(_))
+            | (String, Categorical(_, ordering), AExpr::Literal(_), _) => {
+                st = Categorical(None, *ordering)
             },
+            #[cfg(feature = "dtype-categorical")]
+            (dt @ Enum(_, _), String, _, AExpr::Literal(_))
+            | (String, dt @ Enum(_, _), AExpr::Literal(_), _) => st = dt.clone(),
             // when then expression literals can have a different list type.
             // so we cast the literal to the other hand side.
             (List(inner), List(other), _, AExpr::Literal(_))
             | (List(other), List(inner), AExpr::Literal(_), _)
                 if inner != other =>
             {
-                st = DataType::List(inner.clone())
+                st = match &**inner {
+                    #[cfg(feature = "dtype-categorical")]
+                    Categorical(_, ordering) => List(Box::new(Categorical(None, *ordering))),
+                    _ => List(inner.clone()),
+                };
             },
             // do nothing
             _ => {},
@@ -237,13 +243,13 @@ fn modify_supertype(
     st
 }
 
-fn get_input(lp_arena: &Arena<ALogicalPlan>, lp_node: Node) -> [Option<Node>; 2] {
+fn get_input(lp_arena: &Arena<ALogicalPlan>, lp_node: Node) -> UnitVec<Node> {
     let plan = lp_arena.get(lp_node);
-    let mut inputs = [None, None];
+    let mut inputs: UnitVec<Node> = unitvec!();
 
     // Used to get the schema of the input.
     if is_scan(plan) {
-        inputs[0] = Some(lp_node);
+        inputs.push(lp_node);
     } else {
         plan.copy_inputs(&mut inputs);
     };
@@ -251,10 +257,13 @@ fn get_input(lp_arena: &Arena<ALogicalPlan>, lp_node: Node) -> [Option<Node>; 2]
 }
 
 fn get_schema(lp_arena: &Arena<ALogicalPlan>, lp_node: Node) -> Cow<'_, SchemaRef> {
-    match get_input(lp_arena, lp_node) {
-        [Some(input), _] => lp_arena.get(input).schema(lp_arena),
-        // files don't have an input, so we must take their schema
-        [None, _] => Cow::Borrowed(lp_arena.get(lp_node).scan_schema()),
+    let inputs = get_input(lp_arena, lp_node);
+    if inputs.is_empty() {
+        // Files don't have an input, so we must take their schema.
+        Cow::Borrowed(lp_arena.get(lp_node).scan_schema())
+    } else {
+        let input = inputs[0];
+        lp_arena.get(input).schema(lp_arena)
     }
 }
 
@@ -357,7 +366,13 @@ impl OptimizationRule for TypeCoercionRule {
                         strict: false,
                     },
                     #[cfg(feature = "dtype-categorical")]
-                    (DataType::Categorical(_, _), DataType::String) => return Ok(None),
+                    (DataType::Categorical(_, _) | DataType::Enum(_, _), DataType::String) => {
+                        return Ok(None)
+                    },
+                    #[cfg(feature = "dtype-categorical")]
+                    (DataType::String, DataType::Categorical(_, _) | DataType::Enum(_, _)) => {
+                        return Ok(None)
+                    },
                     #[cfg(feature = "dtype-decimal")]
                     (DataType::Decimal(_, _), _) | (_, DataType::Decimal(_, _)) => {
                         polars_bail!(InvalidOperation: "`is_in` cannot check for {:?} values in {:?} data", &type_other, &type_left)
@@ -379,6 +394,17 @@ impl OptimizationRule for TypeCoercionRule {
                         }
                     },
                     (_, DataType::List(other_inner)) => {
+                        if other_inner.as_ref() == &type_left
+                            || (type_left == DataType::Null)
+                            || (other_inner.as_ref() == &DataType::Null)
+                            || (other_inner.as_ref().is_numeric() && type_left.is_numeric())
+                        {
+                            return Ok(None);
+                        }
+                        polars_bail!(InvalidOperation: "`is_in` cannot check for {:?} values in {:?} data", &type_left, &type_other)
+                    },
+                    #[cfg(feature = "dtype-array")]
+                    (_, DataType::Array(other_inner, _)) => {
                         if other_inner.as_ref() == &type_left
                             || (type_left == DataType::Null)
                             || (other_inner.as_ref() == &DataType::Null)

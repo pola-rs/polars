@@ -11,8 +11,9 @@ The following methods are available under the `Series.dt` attribute.
 
     Series.dt.base_utc_offset
     Series.dt.cast_time_unit
-    Series.dt.replace_time_zone
+    Series.dt.century
     Series.dt.combine
+    Series.dt.convert_time_zone
     Series.dt.date
     Series.dt.datetime
     Series.dt.day
@@ -28,19 +29,21 @@ The following methods are available under the `Series.dt` attribute.
     Series.dt.median
     Series.dt.microsecond
     Series.dt.microseconds
+    Series.dt.millennium
     Series.dt.millisecond
     Series.dt.milliseconds
     Series.dt.min
     Series.dt.minute
     Series.dt.minutes
     Series.dt.month
-    Series.dt.month_start
     Series.dt.month_end
+    Series.dt.month_start
     Series.dt.nanosecond
     Series.dt.nanoseconds
     Series.dt.offset_by
     Series.dt.ordinal_day
     Series.dt.quarter
+    Series.dt.replace_time_zone
     Series.dt.round
     Series.dt.second
     Series.dt.seconds
@@ -59,5 +62,4 @@ The following methods are available under the `Series.dt` attribute.
     Series.dt.week
     Series.dt.weekday
     Series.dt.with_time_unit
-    Series.dt.convert_time_zone
     Series.dt.year

@@ -20,6 +20,7 @@ use crate::parquet::statistics::{
 use crate::parquet::types::int96_to_i64_ns;
 
 mod binary;
+mod binview;
 mod boolean;
 mod dictionary;
 mod fixlen;
@@ -196,6 +197,12 @@ fn make_mutable(data_type: &ArrowDataType, capacity: usize) -> PolarsResult<Box<
         PhysicalType::Null => {
             Box::new(MutableNullArray::new(ArrowDataType::Null, 0)) as Box<dyn MutableArray>
         },
+        PhysicalType::BinaryView => {
+            Box::new(MutableBinaryViewArray::<[u8]>::with_capacity(capacity))
+                as Box<dyn MutableArray>
+        },
+        PhysicalType::Utf8View => Box::new(MutableBinaryViewArray::<str>::with_capacity(capacity))
+            as Box<dyn MutableArray>,
         other => {
             polars_bail!(
                 nyi = "deserializing parquet stats from {other:?} is still not implemented"
@@ -535,7 +542,10 @@ fn push(
         LargeBinary => binary::push::<i64>(from, min, max),
         Utf8 => utf8::push::<i32>(from, min, max),
         LargeUtf8 => utf8::push::<i64>(from, min, max),
+        BinaryView => binview::push::<[u8]>(from, min, max),
+        Utf8View => binview::push::<str>(from, min, max),
         FixedSizeBinary(_) => fixlen::push(from, min, max),
+
         Null => null::push(min, max),
         other => todo!("{:?}", other),
     }

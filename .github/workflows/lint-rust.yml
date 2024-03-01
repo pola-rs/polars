@@ -44,7 +44,7 @@ jobs:
           save-if: ${{ github.ref_name == 'main' }}
 
       - name: Run cargo clippy with all features enabled
-        run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+        run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings -D clippy::dbg_macro
 
   # Default feature set should compile on the stable toolchain
   clippy-stable:
@@ -64,7 +64,7 @@ jobs:
           save-if: ${{ github.ref_name == 'main' }}
 
       - name: Run cargo clippy
-        run: cargo clippy --all-targets --locked -- -D warnings
+        run: cargo clippy --all-targets --locked -- -D warnings -D clippy::dbg_macro
 
   rustfmt:
     if: github.ref_name != 'main'

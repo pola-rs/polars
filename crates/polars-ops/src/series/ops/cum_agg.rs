@@ -1,7 +1,6 @@
-use std::iter::FromIterator;
 use std::ops::{Add, AddAssign, Mul};
 
-use num_traits::Bounded;
+use num_traits::{Bounded, One, Zero};
 use polars_core::prelude::*;
 use polars_core::utils::{CustomIterTools, NoNull};
 use polars_core::with_match_physical_numeric_polars_type;
@@ -36,37 +35,29 @@ where
     }
 }
 
-fn det_sum<T>(state: &mut Option<T>, v: Option<T>) -> Option<Option<T>>
+fn det_sum<T>(state: &mut T, v: Option<T>) -> Option<Option<T>>
 where
     T: Copy + PartialOrd + AddAssign + Add<Output = T>,
 {
-    match (*state, v) {
-        (Some(state_inner), Some(v)) => {
-            *state = Some(state_inner + v);
-            Some(*state)
+    match v {
+        Some(v) => {
+            *state += v;
+            Some(Some(*state))
         },
-        (None, Some(v)) => {
-            *state = Some(v);
-            Some(*state)
-        },
-        (_, None) => Some(None),
+        None => Some(None),
     }
 }
 
-fn det_prod<T>(state: &mut Option<T>, v: Option<T>) -> Option<Option<T>>
+fn det_prod<T>(state: &mut T, v: Option<T>) -> Option<Option<T>>
 where
     T: Copy + PartialOrd + Mul<Output = T>,
 {
-    match (*state, v) {
-        (Some(state_inner), Some(v)) => {
-            *state = Some(state_inner * v);
-            Some(*state)
+    match v {
+        Some(v) => {
+            *state = *state * v;
+            Some(Some(*state))
         },
-        (None, Some(v)) => {
-            *state = Some(v);
-            Some(*state)
-        },
-        (_, None) => Some(None),
+        None => Some(None),
     }
 }
 
@@ -78,8 +69,8 @@ where
     let init = Bounded::min_value();
 
     let out: ChunkedArray<T> = match reverse {
-        false => ca.into_iter().scan(init, det_max).collect_trusted(),
-        true => ca.into_iter().rev().scan(init, det_max).collect_reversed(),
+        false => ca.iter().scan(init, det_max).collect_trusted(),
+        true => ca.iter().rev().scan(init, det_max).collect_reversed(),
     };
     out.with_name(ca.name())
 }
@@ -91,8 +82,8 @@ where
 {
     let init = Bounded::max_value();
     let out: ChunkedArray<T> = match reverse {
-        false => ca.into_iter().scan(init, det_min).collect_trusted(),
-        true => ca.into_iter().rev().scan(init, det_min).collect_reversed(),
+        false => ca.iter().scan(init, det_min).collect_trusted(),
+        true => ca.iter().rev().scan(init, det_min).collect_reversed(),
     };
     out.with_name(ca.name())
 }
@@ -102,10 +93,10 @@ where
     T: PolarsNumericType,
     ChunkedArray<T>: FromIterator<Option<T::Native>>,
 {
-    let init = None;
+    let init = T::Native::zero();
     let out: ChunkedArray<T> = match reverse {
-        false => ca.into_iter().scan(init, det_sum).collect_trusted(),
-        true => ca.into_iter().rev().scan(init, det_sum).collect_reversed(),
+        false => ca.iter().scan(init, det_sum).collect_trusted(),
+        true => ca.iter().rev().scan(init, det_sum).collect_reversed(),
     };
     out.with_name(ca.name())
 }
@@ -115,10 +106,10 @@ where
     T: PolarsNumericType,
     ChunkedArray<T>: FromIterator<Option<T::Native>>,
 {
-    let init = None;
+    let init = T::Native::one();
     let out: ChunkedArray<T> = match reverse {
-        false => ca.into_iter().scan(init, det_prod).collect_trusted(),
-        true => ca.into_iter().rev().scan(init, det_prod).collect_reversed(),
+        false => ca.iter().scan(init, det_prod).collect_trusted(),
+        true => ca.iter().rev().scan(init, det_prod).collect_reversed(),
     };
     out.with_name(ca.name())
 }
@@ -216,15 +207,44 @@ pub fn cum_max(s: &Series, reverse: bool) -> PolarsResult<Series> {
 }
 
 pub fn cum_count(s: &Series, reverse: bool) -> PolarsResult<Series> {
-    if reverse {
-        let ca: NoNull<UInt32Chunked> = (0u32..s.len() as u32).rev().collect();
-        let mut ca = ca.into_inner();
-        ca.rename(s.name());
-        Ok(ca.into_series())
-    } else {
-        let ca: NoNull<UInt32Chunked> = (0u32..s.len() as u32).collect();
-        let mut ca = ca.into_inner();
-        ca.rename(s.name());
-        Ok(ca.into_series())
+    // Fast paths for no nulls
+    if s.null_count() == 0 {
+        let out = cum_count_no_nulls(s.name(), s.len(), reverse);
+        return Ok(out);
     }
+
+    let ca = s.is_not_null();
+    let out: IdxCa = if reverse {
+        let mut count = (s.len() - s.null_count()) as IdxSize;
+        let mut prev = false;
+        ca.apply_values_generic(|v: bool| {
+            if prev {
+                count -= 1;
+            }
+            prev = v;
+            count
+        })
+    } else {
+        let mut count = 0 as IdxSize;
+        ca.apply_values_generic(|v: bool| {
+            if v {
+                count += 1;
+            }
+            count
+        })
+    };
+    Ok(out.into())
+}
+
+fn cum_count_no_nulls(name: &str, len: usize, reverse: bool) -> Series {
+    let start = 1 as IdxSize;
+    let end = len as IdxSize + 1;
+    let ca: NoNull<IdxCa> = if reverse {
+        (start..end).rev().collect()
+    } else {
+        (start..end).collect()
+    };
+    let mut ca = ca.into_inner();
+    ca.rename(name);
+    ca.into_series()
 }

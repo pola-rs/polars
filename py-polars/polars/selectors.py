@@ -7,6 +7,9 @@ from operator import or_
 from typing import TYPE_CHECKING, Any, Collection, Literal, Mapping, overload
 
 from polars import functions as F
+from polars._utils.deprecation import deprecate_nonkeyword_arguments
+from polars._utils.parse_expr_input import _parse_inputs_as_iterable
+from polars._utils.various import is_column
 from polars.datatypes import (
     FLOAT_DTYPES,
     INTEGER_DTYPES,
@@ -27,8 +30,6 @@ from polars.datatypes import (
     is_polars_dtype,
 )
 from polars.expr import Expr
-from polars.utils.deprecation import deprecate_nonkeyword_arguments
-from polars.utils.various import is_column
 
 if TYPE_CHECKING:
     import sys
@@ -49,8 +50,7 @@ def is_selector(obj: _selector_proxy_) -> Literal[True]:  # type: ignore[overloa
 
 
 @overload
-def is_selector(obj: Any) -> Literal[False]:
-    ...
+def is_selector(obj: Any) -> Literal[False]: ...
 
 
 def is_selector(obj: Any) -> bool:
@@ -115,7 +115,6 @@ def expand_selector(
     ... }
     >>> cs.expand_selector(schema, cs.float())
     ('colx', 'coly')
-
     """
     if isinstance(target, Mapping):
         from polars.dataframe import DataFrame
@@ -125,9 +124,7 @@ def expand_selector(
     return tuple(target.select(selector).columns)
 
 
-def _expand_selectors(
-    frame: DataFrame | LazyFrame, items: Any, *more_items: Any
-) -> list[Any]:
+def _expand_selectors(frame: DataFrame | LazyFrame, *items: Any) -> list[Any]:
     """
     Internal function that expands any selectors to column names in the given input.
 
@@ -149,17 +146,11 @@ def _expand_selectors(
     ['colx', 'coly', 'colz']
     >>> _expand_selectors(df, cs.string(), cs.float())
     ['colw', 'colx', 'colz']
-
     """
+    items_iter = _parse_inputs_as_iterable(items)
+
     expanded: list[Any] = []
-    for item in (
-        *(
-            items
-            if isinstance(items, Collection) and not isinstance(items, str)
-            else [items]
-        ),
-        *more_items,
-    ):
+    for item in items_iter:
         if is_selector(item):
             selector_cols = expand_selector(frame, item)
             expanded.extend(selector_cols)
@@ -225,10 +216,8 @@ def _combine_as_selector(
         elif is_column(item):
             names.append(item.meta.output_name())  # type: ignore[union-attr]
         else:
-            raise TypeError(
-                "invalid input for `exclude`"
-                f"\n\nExpected one or more `str`, `DataType` or selector; found {item!r} instead."
-            )
+            msg = f"expected one or more `str`, `DataType` or selector; found {item!r} instead."
+            raise TypeError(msg)
 
     selected = []
     if names:
@@ -252,6 +241,7 @@ def _combine_as_selector(
 class _selector_proxy_(Expr):
     """Base column selector expression/proxy."""
 
+    __slots__ = ("_attrs", "_repr_override")
     _attrs: dict[str, Any]
     _repr_override: str
 
@@ -426,7 +416,6 @@ def all() -> SelectorType:
     │ 1999-12-31 │
     │ 2024-01-01 │
     └────────────┘
-
     """
     return _selector_proxy_(F.all(), name="all")
 
@@ -446,13 +435,13 @@ def binary() -> SelectorType:
     >>> df = pl.DataFrame({"a": [b"hello"], "b": ["world"], "c": [b"!"], "d": [":)"]})
     >>> df
     shape: (1, 4)
-    ┌───────────────┬───────┬───────────────┬─────┐
-    │ a             ┆ b     ┆ c             ┆ d   │
-    │ ---           ┆ ---   ┆ ---           ┆ --- │
-    │ binary        ┆ str   ┆ binary        ┆ str │
-    ╞═══════════════╪═══════╪═══════════════╪═════╡
-    │ [binary data] ┆ world ┆ [binary data] ┆ :)  │
-    └───────────────┴───────┴───────────────┴─────┘
+    ┌──────────┬───────┬────────┬─────┐
+    │ a        ┆ b     ┆ c      ┆ d   │
+    │ ---      ┆ ---   ┆ ---    ┆ --- │
+    │ binary   ┆ str   ┆ binary ┆ str │
+    ╞══════════╪═══════╪════════╪═════╡
+    │ b"hello" ┆ world ┆ b"!"   ┆ :)  │
+    └──────────┴───────┴────────┴─────┘
 
     Select binary columns and export as a dict:
 
@@ -463,7 +452,6 @@ def binary() -> SelectorType:
 
     >>> df.select(~cs.binary()).to_dict(as_series=False)
     {'b': ['world'], 'd': [':)']}
-
     """
     return _selector_proxy_(F.col(Binary), name="binary")
 
@@ -522,7 +510,6 @@ def boolean() -> SelectorType:
     │ 3   │
     │ 4   │
     └─────┘
-
     """
     return _selector_proxy_(F.col(Boolean), name="boolean")
 
@@ -589,7 +576,6 @@ def by_dtype(
     │ bar   ┆ 5000555  │
     │ foo   ┆ -3265500 │
     └───────┴──────────┘
-
     """
     all_dtypes: list[PolarsDataType] = []
     for tp in dtypes:
@@ -598,13 +584,15 @@ def by_dtype(
         elif isinstance(tp, Collection):
             for t in tp:
                 if not is_polars_dtype(t):
-                    raise TypeError(f"invalid dtype: {t!r}")
+                    msg = f"invalid dtype: {t!r}"
+                    raise TypeError(msg)
                 all_dtypes.append(t)
         else:
-            raise TypeError(f"invalid dtype: {tp!r}")
+            msg = f"invalid dtype: {tp!r}"
+            raise TypeError(msg)
 
     return _selector_proxy_(
-        F.col(*all_dtypes), name="by_dtype", parameters={"dtypes": all_dtypes}
+        F.col(all_dtypes), name="by_dtype", parameters={"dtypes": all_dtypes}
     )
 
 
@@ -658,7 +646,6 @@ def by_name(*names: str | Collection[str]) -> SelectorType:
     │ 2.0 ┆ false │
     │ 5.5 ┆ true  │
     └─────┴───────┘
-
     """
     all_names = []
     for nm in names:
@@ -667,13 +654,14 @@ def by_name(*names: str | Collection[str]) -> SelectorType:
         elif isinstance(nm, Collection):
             for n in nm:
                 if not isinstance(n, str):
-                    raise TypeError(f"invalid name: {n!r}")
+                    msg = f"invalid name: {n!r}"
+                    raise TypeError(msg)
                 all_names.append(n)
         else:
             TypeError(f"Invalid name: {nm!r}")
 
     return _selector_proxy_(
-        F.col(*all_names), name="by_name", parameters={"*names": all_names}
+        F.col(all_names), name="by_name", parameters={"*names": all_names}
     )
 
 
@@ -723,7 +711,6 @@ def categorical() -> SelectorType:
     │ 123 ┆ 2.0 │
     │ 456 ┆ 5.5 │
     └─────┴─────┘
-
     """
     return _selector_proxy_(F.col(Categorical), name="categorical")
 
@@ -793,7 +780,6 @@ def contains(substring: str | Collection[str]) -> SelectorType:
     │ x   ┆ false │
     │ y   ┆ true  │
     └─────┴───────┘
-
     """
     escaped_substring = _re_string(substring)
     raw_params = f"^.*{escaped_substring}.*$"
@@ -853,7 +839,6 @@ def date() -> SelectorType:
     │ 2001-05-07 10:25:00 ┆ 00:00:00 │
     │ 2031-12-31 00:30:00 ┆ 23:59:59 │
     └─────────────────────┴──────────┘
-
     """
     return _selector_proxy_(F.col(Date), name="date")
 
@@ -989,7 +974,6 @@ def datetime(
     │ 1999-12-31 │
     │ 2010-07-05 │
     └────────────┘
-
     """  # noqa: W505
     if time_unit is None:
         time_unit = ["ms", "us", "ns"]
@@ -1060,7 +1044,6 @@ def decimal() -> SelectorType:
     │ x   │
     │ y   │
     └─────┘
-
     """
     # TODO: allow explicit selection by scale/precision?
     return _selector_proxy_(F.col(Decimal), name="decimal")
@@ -1163,7 +1146,6 @@ def duration(
     │ 2022-01-31 │
     │ 2025-07-05 │
     └────────────┘
-
     """
     if time_unit is None:
         time_unit = ["ms", "us", "ns"]
@@ -1243,7 +1225,6 @@ def ends_with(*suffix: str) -> SelectorType:
     │ x   ┆ 123 ┆ false │
     │ y   ┆ 456 ┆ true  │
     └─────┴─────┴───────┘
-
     """
     escaped_suffix = _re_string(suffix)
     raw_params = f"^.*{escaped_suffix}$"
@@ -1318,7 +1299,6 @@ def exclude(
     │ 2.5  │
     │ 1.5  │
     └──────┘
-
     """
     return ~_combine_as_selector(columns, *more_columns)
 
@@ -1369,7 +1349,6 @@ def first() -> SelectorType:
     │ 123 ┆ 2.0 ┆ 0   │
     │ 456 ┆ 5.5 ┆ 1   │
     └─────┴─────┴─────┘
-
     """
     return _selector_proxy_(F.first(), name="first")
 
@@ -1423,7 +1402,6 @@ def float() -> SelectorType:
     │ x   ┆ 123 │
     │ y   ┆ 456 │
     └─────┴─────┘
-
     """
     return _selector_proxy_(F.col(FLOAT_DTYPES), name="float")
 
@@ -1477,7 +1455,6 @@ def integer() -> SelectorType:
     │ x   ┆ 2.0 │
     │ y   ┆ 5.5 │
     └─────┴─────┘
-
     """
     return _selector_proxy_(F.col(INTEGER_DTYPES), name="integer")
 
@@ -1543,7 +1520,6 @@ def signed_integer() -> SelectorType:
     │ -123 ┆ 3456 ┆ 7654 │
     │ -456 ┆ 6789 ┆ 4321 │
     └──────┴──────┴──────┘
-
     """
     return _selector_proxy_(F.col(SIGNED_INTEGER_DTYPES), name="signed_integer")
 
@@ -1611,7 +1587,6 @@ def unsigned_integer() -> SelectorType:
     │ -123 ┆ 3456 ┆ 7654 │
     │ -456 ┆ 6789 ┆ 4321 │
     └──────┴──────┴──────┘
-
     """
     return _selector_proxy_(F.col(UNSIGNED_INTEGER_DTYPES), name="unsigned_integer")
 
@@ -1662,7 +1637,6 @@ def last() -> SelectorType:
     │ x   ┆ 123 ┆ 2.0 │
     │ y   ┆ 456 ┆ 5.5 │
     └─────┴─────┴─────┘
-
     """
     return _selector_proxy_(F.last(), name="last")
 
@@ -1720,7 +1694,6 @@ def matches(pattern: str) -> SelectorType:
     │ x   ┆ 0   │
     │ y   ┆ 1   │
     └─────┴─────┘
-
     """
     if pattern == ".*":
         return all()
@@ -1791,7 +1764,6 @@ def numeric() -> SelectorType:
     │ x   │
     │ y   │
     └─────┘
-
     """
     return _selector_proxy_(F.col(NUMERIC_DTYPES), name="numeric")
 
@@ -1848,7 +1820,6 @@ def object() -> SelectorType:
             "28c65415-8b7d-4857-a4ce-300dca14b12b",
         ],
     }
-
     """  # noqa: W505
     return _selector_proxy_(F.col(Object), name="object")
 
@@ -1918,7 +1889,6 @@ def starts_with(*prefix: str) -> SelectorType:
     │ 1.0 ┆ 7   │
     │ 2.0 ┆ 8   │
     └─────┴─────┘
-
     """
     escaped_prefix = _re_string(prefix)
     raw_params = f"^{escaped_prefix}.*$"
@@ -1983,7 +1953,6 @@ def string(include_categorical: bool = False) -> SelectorType:  # noqa: FBT001
     │ xx  ┆ b   ┆ -2  ┆ -2.0 │
     │ yy  ┆ b   ┆ 6   ┆ 7.0  │
     └─────┴─────┴─────┴──────┘
-
     """
     string_dtypes: list[PolarsDataType] = [String]
     if include_categorical:
@@ -2058,7 +2027,6 @@ def temporal() -> SelectorType:
     │ 1.2345 │
     │ 2.3456 │
     └────────┘
-
     """
     return _selector_proxy_(F.col(TEMPORAL_DTYPES), name="temporal")
 
@@ -2111,7 +2079,6 @@ def time() -> SelectorType:
     │ 2001-05-07 10:25:00 ┆ 1999-12-31 │
     │ 2031-12-31 00:30:00 ┆ 2024-08-09 │
     └─────────────────────┴────────────┘
-
     """
     return _selector_proxy_(F.col(Time), name="time")
 

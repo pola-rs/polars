@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::collections::VecDeque;
+use std::collections::{BTreeSet, VecDeque};
 use std::fmt::{Debug, Formatter};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
@@ -18,6 +18,44 @@ use crate::operators::{
     SinkResult, Source, SourceResult,
 };
 use crate::pipeline::morsels_per_sink;
+
+pub(super) struct SinkNode {
+    pub sinks: Vec<Box<dyn Sink>>,
+    /// when that hits 0, the sink will finalize
+    pub shared_count: Rc<RefCell<u32>>,
+    initial_shared_count: u32,
+    /// - offset in the operators vec
+    ///   at that point the sink should be called.
+    ///   the pipeline will first call the operators on that point and then
+    ///   push the result in the sink.
+    pub operator_end: usize,
+    pub node: Node,
+}
+
+impl SinkNode {
+    pub fn new(
+        sink: Box<dyn Sink>,
+        shared_count: Rc<RefCell<u32>>,
+        operator_end: usize,
+        node: Node,
+    ) -> Self {
+        let n_threads = morsels_per_sink();
+        let sinks = (0..n_threads).map(|i| sink.split(i)).collect();
+        let initial_shared_count = *shared_count.borrow();
+        SinkNode {
+            sinks,
+            initial_shared_count,
+            shared_count,
+            operator_end,
+            node,
+        }
+    }
+
+    // Only the first node of a shared sink should recurse. The others should return.
+    fn allow_recursion(&self) -> bool {
+        self.initial_shared_count == *self.shared_count.borrow()
+    }
+}
 
 /// A pipeline consists of:
 ///
@@ -69,8 +107,7 @@ pub struct PipeLine {
     /// - shared_count
     ///     when that hits 0, the sink will finalize
     /// - node of the sink
-    #[allow(clippy::type_complexity)]
-    sinks: Vec<(usize, Rc<RefCell<u32>>, Vec<Box<dyn Sink>>)>,
+    sinks: Vec<SinkNode>,
     /// are used to identify the sink shared with other pipeline branches
     sink_nodes: Vec<Node>,
     /// Other branch of the pipeline/tree that must be executed
@@ -86,12 +123,11 @@ pub struct PipeLine {
 
 impl PipeLine {
     #[allow(clippy::type_complexity)]
-    pub fn new(
+    pub(super) fn new(
         sources: Vec<Box<dyn Source>>,
         operators: Vec<Box<dyn Operator>>,
         operator_nodes: Vec<Node>,
-        // (offset, node (for identification), sink, shared_counter)
-        sink_and_nodes: Vec<(usize, Node, Box<dyn Sink>, Rc<RefCell<u32>>)>,
+        sinks: Vec<SinkNode>,
         operator_offset: usize,
         verbose: bool,
     ) -> PipeLine {
@@ -100,19 +136,8 @@ impl PipeLine {
         // we only do that in the sinks itself.
         let n_threads = morsels_per_sink();
 
+        let sink_nodes = sinks.iter().map(|s| s.node).collect();
         // We split so that every thread gets an operator
-        let sink_nodes = sink_and_nodes.iter().map(|(_, node, _, _)| *node).collect();
-        let sinks = sink_and_nodes
-            .into_iter()
-            .map(|(offset, _, sink, shared_count)| {
-                (
-                    offset,
-                    shared_count,
-                    (0..n_threads).map(|i| sink.split(i)).collect(),
-                )
-            })
-            .collect();
-
         // every index maps to a chain of operators than can be pushed as a pipeline for one thread
         let operators = (0..n_threads)
             .map(|i| operators.iter().map(|op| op.split(i)).collect())
@@ -142,11 +167,11 @@ impl PipeLine {
             sources,
             operators,
             vec![],
-            vec![(
-                operators_len,
-                Node::default(),
+            vec![SinkNode::new(
                 sink,
                 Rc::new(RefCell::new(1)),
+                operators_len,
+                Node::default(),
             )],
             0,
             verbose,
@@ -283,9 +308,12 @@ impl PipeLine {
         sink: &mut Box<dyn Sink>,
     ) -> PolarsResult<SinkResult> {
         debug_assert!(!operators.is_empty());
+
+        // Stack based operator execution.
         let mut in_process = vec![];
         let operator_offset = 0usize;
         in_process.push((operator_offset, chunk));
+        let mut needs_flush = BTreeSet::new();
 
         while let Some((op_i, chunk)) = in_process.pop() {
             match operators.get_mut(op_i) {
@@ -296,16 +324,20 @@ impl PipeLine {
                 },
                 Some(op) => {
                     match op.execute(ec, &chunk)? {
-                        OperatorResult::Finished(chunk) => in_process.push((op_i + 1, chunk)),
+                        OperatorResult::Finished(chunk) => {
+                            if op.must_flush() {
+                                let _ = needs_flush.insert(op_i);
+                            }
+                            in_process.push((op_i + 1, chunk))
+                        },
                         OperatorResult::HaveMoreOutPut(output_chunk) => {
-                            // first on the stack the next operator call
+                            // Push the next operator call with the same chunk on the stack
                             in_process.push((op_i, chunk));
 
-                            // but first push the output in the next operator
-                            // is a join can produce many rows, we want the filter to
-                            // be executed in between.
-                            // or sink into a slice so that we get sink::finished
-                            // before we grow the stack with ever more coming chunks
+                            // But first push the output in the next operator
+                            // If a join can produce many rows, we want the filter to
+                            // be executed in between, or sink into a slice so that we get
+                            // sink::finished before we grow the stack with ever more coming chunks
                             in_process.push((op_i + 1, output_chunk));
                         },
                         OperatorResult::NeedsNewData => {
@@ -315,6 +347,78 @@ impl PipeLine {
                 },
             }
         }
+
+        // Stack based flushing + operator execution.
+        if !needs_flush.is_empty() {
+            drop(in_process);
+            let mut in_process = vec![];
+
+            for op_i in needs_flush.into_iter() {
+                // Push all operators that need flushing on the stack.
+                // The `None` indicates that we have no `chunk` input, so we `flush`.
+                // `Some(chunk)` is the pushing branch
+                in_process.push((op_i, None));
+
+                // Next we immediately pop and determine the order of execution below.
+                // This is to ensure that all operators below upper operators are completely
+                // flushed when the `flush` is called in higher operators. As operators can `flush`
+                // multiple times.
+                while let Some((op_i, chunk)) = in_process.pop() {
+                    match chunk {
+                        // The branch for flushing.
+                        None => {
+                            let op = operators.get_mut(op_i).unwrap();
+                            match op.flush()? {
+                                OperatorResult::Finished(chunk) => {
+                                    // Push the chunk in the next operator.
+                                    in_process.push((op_i + 1, Some(chunk)))
+                                },
+                                OperatorResult::HaveMoreOutPut(chunk) => {
+                                    // Ensure it is flushed again
+                                    in_process.push((op_i, None));
+                                    // Push the chunk in the next operator.
+                                    in_process.push((op_i + 1, Some(chunk)))
+                                },
+                                _ => unreachable!(),
+                            }
+                        },
+                        // The branch for pushing data in the operators.
+                        // This is the same as the default stack exectuor, except now it pushes
+                        // `Some(chunk)` instead of `chunk`.
+                        Some(chunk) => {
+                            match operators.get_mut(op_i) {
+                                None => {
+                                    if let SinkResult::Finished = sink.sink(ec, chunk)? {
+                                        return Ok(SinkResult::Finished);
+                                    }
+                                },
+                                Some(op) => {
+                                    match op.execute(ec, &chunk)? {
+                                        OperatorResult::Finished(chunk) => {
+                                            in_process.push((op_i + 1, Some(chunk)))
+                                        },
+                                        OperatorResult::HaveMoreOutPut(output_chunk) => {
+                                            // Push the next operator call with the same chunk on the stack
+                                            in_process.push((op_i, Some(chunk)));
+
+                                            // But first push the output in the next operator
+                                            // If a join can produce many rows, we want the filter to
+                                            // be executed in between, or sink into a slice so that we get
+                                            // sink::finished before we grow the stack with ever more coming chunks
+                                            in_process.push((op_i + 1, Some(output_chunk)));
+                                        },
+                                        OperatorResult::NeedsNewData => {
+                                            // Done, take another chunk from the stack
+                                        },
+                                    }
+                                },
+                            }
+                        },
+                    }
+                }
+            }
+        }
+
         Ok(SinkResult::CanHaveMoreInput)
     }
 
@@ -345,9 +449,7 @@ impl PipeLine {
         // we don't want to run the rest of the pipelines and we finalize early
         let mut sink_finished = false;
 
-        for (i, (operator_end, shared_count, mut sink)) in
-            std::mem::take(&mut self.sinks).into_iter().enumerate()
-        {
+        for (i, mut sink) in std::mem::take(&mut self.sinks).into_iter().enumerate() {
             for src in &mut std::mem::take(&mut self.sources) {
                 let mut next_batches = src.get_batches(ec)?;
 
@@ -357,10 +459,10 @@ impl PipeLine {
 
                     let (sink_result, next_batches2) = self.par_process_chunks(
                         chunks,
-                        &mut sink,
+                        &mut sink.sinks,
                         ec,
                         operator_start,
-                        operator_end,
+                        sink.operator_end,
                         src,
                     )?;
                     next_batches = next_batches2;
@@ -374,31 +476,65 @@ impl PipeLine {
 
             // Before we reduce we also check if we should continue.
             ec.execution_state.should_stop()?;
+            let allow_recursion = sink.allow_recursion();
 
             // The sinks have taken all chunks thread locally, now we reduce them into a single
             // result sink.
             let mut reduced_sink = POOL
                 .install(|| {
-                    sink.into_par_iter().reduce_with(|mut a, mut b| {
+                    sink.sinks.into_par_iter().reduce_with(|mut a, mut b| {
                         a.combine(&mut *b);
                         a
                     })
                 })
                 .unwrap();
-            operator_start = operator_end;
+            operator_start = sink.operator_end;
 
             let mut shared_sink_count = {
-                let mut shared_sink_count = shared_count.borrow_mut();
+                let mut shared_sink_count = sink.shared_count.borrow_mut();
                 *shared_sink_count -= 1;
                 *shared_sink_count
             };
 
-            while shared_sink_count > 0 && !sink_finished {
-                let mut pipeline = pipeline_q.borrow_mut().pop_front().unwrap();
-                let (count, mut sink) =
-                    pipeline.run_pipeline_no_finalize(ec, pipeline_q.clone())?;
-                reduced_sink.combine(sink.as_mut());
-                shared_sink_count = count;
+            // Prevent very deep recursion. Only the outer callee can pop and run.
+            if allow_recursion {
+                while shared_sink_count > 0 && !sink_finished {
+                    let mut pipeline = pipeline_q.borrow_mut().pop_front().unwrap();
+                    let (count, mut sink) =
+                        pipeline.run_pipeline_no_finalize(ec, pipeline_q.clone())?;
+                    // This branch is hit when we have a Union of joins.
+                    // The build side must be converted into an operator and replaced in the next pipeline.
+
+                    // Check either:
+                    // 1. There can be a union source that sinks into a single join:
+                    //      scan_parquet(*) -> join B
+                    // 2. There can be a union of joins
+                    //      C - JOIN A, B
+                    //      concat (A, B, C)
+                    //
+                    // So to ensure that we don't finalize we check
+                    // - They are not both join builds
+                    // - If they are both join builds, check they are note the same build, otherwise
+                    //   we must call the `combine` branch.
+                    if sink.is_join_build()
+                        && (!reduced_sink.is_join_build() || (sink.node() != reduced_sink.node()))
+                    {
+                        let FinalizedSink::Operator(op) = sink.finalize(ec)? else {
+                            unreachable!()
+                        };
+                        let mut q = pipeline_q.borrow_mut();
+                        let Some(node) = pipeline.sink_nodes.pop() else {
+                            unreachable!()
+                        };
+
+                        for probe_side in q.iter_mut() {
+                            let _ = probe_side.replace_operator(op.as_ref(), node);
+                        }
+                    } else {
+                        reduced_sink.combine(sink.as_mut());
+                        shared_sink_count = count;
+                    }
+                }
             }
 
             if i != last_i {
@@ -491,18 +627,18 @@ impl Debug for PipeLine {
         let mut fmt = String::new();
         let mut start = 0usize;
         fmt.push_str(self.sources[0].fmt());
-        for (offset_end, _, sink) in &self.sinks {
+        for sink in &self.sinks {
             fmt.push_str(" -> ");
             // take operators of a single thread
             let ops = &self.operators[0];
             // slice the pipeline
-            let ops = &ops[start..*offset_end];
+            let ops = &ops[start..sink.operator_end];
             for op in ops {
                 fmt.push_str(op.fmt());
                 fmt.push_str(" -> ")
             }
-            start = *offset_end;
-            fmt.push_str(sink[0].fmt())
+            start = sink.operator_end;
+            fmt.push_str(sink.sinks[0].fmt())
         }
         write!(f, "{fmt}")
     }

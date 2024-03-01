@@ -1,4 +1,6 @@
-use crate::array::{ArrayRef, BinaryArray, FixedSizeListArray, ListArray, Utf8Array};
+use crate::array::{
+    ArrayRef, BinaryArray, BinaryViewArray, FixedSizeListArray, ListArray, Utf8Array, Utf8ViewArray,
+};
 use crate::datatypes::ArrowDataType;
 use crate::offset::Offset;
 
@@ -73,6 +75,16 @@ impl ValueSize for ArrayRef {
                 .downcast_ref::<BinaryArray<i64>>()
                 .unwrap()
                 .get_values_size(),
+            ArrowDataType::Utf8View => self
+                .as_any()
+                .downcast_ref::<Utf8ViewArray>()
+                .unwrap()
+                .total_bytes_len(),
+            ArrowDataType::BinaryView => self
+                .as_any()
+                .downcast_ref::<BinaryViewArray>()
+                .unwrap()
+                .total_bytes_len(),
             _ => unimplemented!(),
         }
     }

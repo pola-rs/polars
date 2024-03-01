@@ -6,7 +6,8 @@ use std::ops::{Deref, DerefMut};
 
 use arrow::bitmap::bitmask::BitMask;
 use arrow::bitmap::Bitmap;
-pub use arrow::legacy::utils::{TrustMyLength, *};
+pub use arrow::legacy::utils::*;
+pub use arrow::trusted_len::TrustMyLength;
 use flatten::*;
 use num_traits::{One, Zero};
 use rayon::prelude::*;
@@ -132,7 +133,11 @@ pub fn split_series(s: &Series, n: usize) -> PolarsResult<Vec<Series>> {
     split_array!(s, n, i64)
 }
 
-pub fn split_df_as_ref(df: &DataFrame, n: usize) -> PolarsResult<Vec<DataFrame>> {
+pub fn split_df_as_ref(
+    df: &DataFrame,
+    n: usize,
+    extend_sub_chunks: bool,
+) -> PolarsResult<Vec<DataFrame>> {
     let total_len = df.height();
     let chunk_size = std::cmp::max(total_len / n, 1);
 
@@ -154,7 +159,7 @@ pub fn split_df_as_ref(df: &DataFrame, n: usize) -> PolarsResult<Vec<DataFrame>>
             chunk_size
         };
         let df = df.slice((i * chunk_size) as i64, len);
-        if df.n_chunks() > 1 {
+        if extend_sub_chunks && df.n_chunks() > 1 {
             // we add every chunk as separate dataframe. This make sure that every partition
             // deals with it.
             out.extend(flatten_df_iter(&df))
@@ -174,7 +179,7 @@ pub fn split_df(df: &mut DataFrame, n: usize) -> PolarsResult<Vec<DataFrame>> {
     }
     // make sure that chunks are aligned.
     df.align_chunks();
-    split_df_as_ref(df, n)
+    split_df_as_ref(df, n, true)
 }
 
 pub fn slice_slice<T>(vals: &[T], offset: i64, len: usize) -> &[T] {
@@ -279,7 +284,7 @@ macro_rules! match_arrow_data_type_apply_macro_ca {
             DataType::Int64 => $macro!($self.i64().unwrap() $(, $opt_args)*),
             DataType::Float32 => $macro!($self.f32().unwrap() $(, $opt_args)*),
             DataType::Float64 => $macro!($self.f64().unwrap() $(, $opt_args)*),
-            _ => unimplemented!(),
+            dt => panic!("not implemented for dtype {:?}", dt),
         }
     }};
 }
@@ -301,7 +306,7 @@ macro_rules! with_match_physical_numeric_type {(
         UInt64 => __with_ty__! { u64 },
         Float32 => __with_ty__! { f32 },
         Float64 => __with_ty__! { f64 },
-        _ => unimplemented!()
+        dt => panic!("not implemented for dtype {:?}", dt),
     }
 })}
 
@@ -320,7 +325,7 @@ macro_rules! with_match_physical_integer_type {(
         UInt16 => __with_ty__! { u16 },
         UInt32 => __with_ty__! { u32 },
         UInt64 => __with_ty__! { u64 },
-        _ => unimplemented!()
+        dt => panic!("not implemented for dtype {:?}", dt),
     }
 })}
 
@@ -333,7 +338,7 @@ macro_rules! with_match_physical_float_polars_type {(
     match $key_type {
         Float32 => __with_ty__! { Float32Type },
         Float64 => __with_ty__! { Float64Type },
-        _ => unimplemented!()
+        dt => panic!("not implemented for dtype {:?}", dt),
     }
 })}
 
@@ -358,7 +363,7 @@ macro_rules! with_match_physical_numeric_polars_type {(
         UInt64 => __with_ty__! { UInt64Type },
         Float32 => __with_ty__! { Float32Type },
         Float64 => __with_ty__! { Float64Type },
-        _ => unimplemented!()
+        dt => panic!("not implemented for dtype {:?}", dt),
     }
 })}
 
@@ -382,7 +387,7 @@ macro_rules! with_match_physical_integer_polars_type {(
         UInt16 => __with_ty__! { UInt16Type },
         UInt32 => __with_ty__! { UInt32Type },
         UInt64 => __with_ty__! { UInt64Type },
-        _ => unimplemented!()
+        dt => panic!("not implemented for dtype {:?}", dt),
     }
 })}
 
@@ -513,7 +518,7 @@ macro_rules! apply_method_physical_integer {
             DataType::Int16 => $self.i16().unwrap().$method($($args),*),
             DataType::Int32 => $self.i32().unwrap().$method($($args),*),
             DataType::Int64 => $self.i64().unwrap().$method($($args),*),
-            _ => unimplemented!(),
+            dt => panic!("not implemented for dtype {:?}", dt),
         }
     }
 }
@@ -546,6 +551,21 @@ pub fn get_time_units(tu_l: &TimeUnit, tu_r: &TimeUnit) -> TimeUnit {
         (_, Milliseconds) => Milliseconds,
         _ => *tu_l,
     }
+}
+
+pub fn accumulate_dataframes_vertical_unchecked_optional<I>(dfs: I) -> Option<DataFrame>
+where
+    I: IntoIterator<Item = DataFrame>,
+{
+    let mut iter = dfs.into_iter();
+    let additional = iter.size_hint().0;
+    let mut acc_df = iter.next()?;
+    acc_df.reserve_chunks(additional);
+
+    for df in iter {
+        acc_df.vstack_mut_unchecked(&df);
+    }
+    Some(acc_df)
 }
 
 /// This takes ownership of the DataFrame so that drop is called earlier.

@@ -25,7 +25,7 @@ pub(super) fn encode_plain(
     buffer: &mut Vec<u8>,
 ) -> PolarsResult<()> {
     if is_optional {
-        let iter = array.iter().flatten().take(
+        let iter = array.non_null_values_iter().take(
             array
                 .validity()
                 .as_ref()

@@ -30,6 +30,26 @@ where
         }
     }
 
+    pub fn new_with_values_type(
+        name: &str,
+        capacity: usize,
+        values_capacity: usize,
+        values_type: DataType,
+        logical_type: DataType,
+    ) -> Self {
+        let values = MutablePrimitiveArray::<T::Native>::with_capacity_from(
+            values_capacity,
+            values_type.to_arrow(true),
+        );
+        let builder = LargePrimitiveBuilder::<T::Native>::new_with_capacity(values, capacity);
+        let field = Field::new(name, DataType::List(Box::new(logical_type)));
+        Self {
+            builder,
+            field,
+            fast_explode: true,
+        }
+    }
+
     #[inline]
     pub fn append_slice(&mut self, items: &[T::Native]) {
         let values = self.builder.mut_values();
@@ -58,7 +78,7 @@ where
         if iter.size_hint().0 == 0 {
             self.fast_explode = false;
         }
-        // Safety
+        // SAFETY:
         // trusted len, trust the type system
         unsafe { values.extend_trusted_len_values_unchecked(iter) };
         self.builder.try_push_valid().unwrap();
@@ -72,7 +92,7 @@ where
         if iter.size_hint().0 == 0 {
             self.fast_explode = false;
         }
-        // Safety
+        // SAFETY:
         // trusted len, trust the type system
         unsafe { values.extend_trusted_len_unchecked(iter) };
         self.builder.try_push_valid().unwrap();
@@ -102,7 +122,7 @@ where
             if !arr.has_validity() {
                 values.extend_from_slice(arr.values().as_slice())
             } else {
-                // Safety:
+                // SAFETY:
                 // Arrow arrays are trusted length iterators.
                 unsafe { values.extend_trusted_len_unchecked(arr.into_iter()) }
             }

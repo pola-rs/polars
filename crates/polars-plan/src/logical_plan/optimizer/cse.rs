@@ -3,6 +3,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use polars_core::prelude::*;
+use polars_utils::idx_vec::UnitVec;
+use polars_utils::unitvec;
 
 use crate::prelude::*;
 
@@ -73,9 +75,9 @@ pub(super) fn collect_trails(
         },
         lp => {
             // other nodes have only a single input
-            let nodes = &mut [None];
-            lp.copy_inputs(nodes);
-            if let Some(input) = nodes[0] {
+            let mut nodes: UnitVec<Node> = unitvec![];
+            lp.copy_inputs(&mut nodes);
+            if let Some(input) = nodes.pop() {
                 collect_trails(input, lp_arena, trails, id, collect)?
             }
         },
@@ -263,7 +265,7 @@ pub(crate) fn elim_cmn_subplans(
     }
     let trails = trails.into_values().collect::<Vec<_>>();
 
-    // search from the leafs upwards and find the longest shared subplans
+    // search from the leaf nodes upwards and find the longest shared subplans
     let mut trail_ends = vec![];
     // if i matches j
     // we don't need to search with j as they are equal

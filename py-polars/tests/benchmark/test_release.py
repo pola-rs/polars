@@ -5,6 +5,7 @@ Tests in this module will be run in the CI using a release build of Polars.
 
 To run these tests: pytest -m benchmark
 """
+
 import time
 from pathlib import Path
 from typing import cast
@@ -101,7 +102,7 @@ def test_windows_not_cached() -> None:
         )
         .lazy()
         .filter(
-            (pl.col("key").cum_count().over("key") == 0)
+            (pl.col("key").cum_count().over("key") == 1)
             | (pl.col("val").shift(1).over("key").is_not_null())
             | (pl.col("val") != pl.col("val").shift(1).over("key"))
         )
@@ -155,7 +156,7 @@ def test_max_statistic_parquet_writer() -> None:
     n = 150_000
 
     # int64 is important to hit the page size
-    df = pl.int_range(0, n, eager=True, dtype=pl.Int64).to_frame()
+    df = pl.int_range(0, n, eager=True, dtype=pl.Int64).alias("int").to_frame()
     f = "/tmp/tmp.parquet"
     df.write_parquet(f, statistics=True, use_pyarrow=False, row_group_size=n)
     result = pl.scan_parquet(f).filter(pl.col("int") > n - 3).collect()

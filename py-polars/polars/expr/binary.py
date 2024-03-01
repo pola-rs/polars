@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from polars.utils._parse_expr_input import parse_as_expression
-from polars.utils._wrap import wrap_expr
+from polars._utils.parse_expr_input import parse_as_expression
+from polars._utils.wrap import wrap_expr
 
 if TYPE_CHECKING:
     from polars import Expr
@@ -162,8 +162,8 @@ class ExprBinaryNameSpace:
         return wrap_expr(self._pyexpr.bin_starts_with(prefix))
 
     def decode(self, encoding: TransferEncoding, *, strict: bool = True) -> Expr:
-        """
-        Decode a value using the provided encoding.
+        r"""
+        Decode values using the provided encoding.
 
         Parameters
         ----------
@@ -173,15 +173,40 @@ class ExprBinaryNameSpace:
             Raise an error if the underlying value cannot be decoded,
             otherwise mask out with a null value.
 
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`String`.
+
+        Examples
+        --------
+        >>> colors = pl.DataFrame(
+        ...     {
+        ...         "name": ["black", "yellow", "blue"],
+        ...         "code": [b"\x00\x00\x00", b"\xff\xff\x00", b"\x00\x00\xff"],
+        ...     }
+        ... )
+        >>> colors.with_columns(
+        ...     pl.col("code").bin.encode("hex").alias("encoded"),
+        ... )
+        shape: (3, 3)
+        ┌────────┬─────────────────┬─────────┐
+        │ name   ┆ code            ┆ encoded │
+        │ ---    ┆ ---             ┆ ---     │
+        │ str    ┆ binary          ┆ str     │
+        ╞════════╪═════════════════╪═════════╡
+        │ black  ┆ b"\x00\x00\x00" ┆ 000000  │
+        │ yellow ┆ b"\xff\xff\x00" ┆ ffff00  │
+        │ blue   ┆ b"\x00\x00\xff" ┆ 0000ff  │
+        └────────┴─────────────────┴─────────┘
         """
         if encoding == "hex":
             return wrap_expr(self._pyexpr.bin_hex_decode(strict))
         elif encoding == "base64":
             return wrap_expr(self._pyexpr.bin_base64_decode(strict))
         else:
-            raise ValueError(
-                f"`encoding` must be one of {{'hex', 'base64'}}, got {encoding!r}"
-            )
+            msg = f"`encoding` must be one of {{'hex', 'base64'}}, got {encoding!r}"
+            raise ValueError(msg)
 
     def encode(self, encoding: TransferEncoding) -> Expr:
         r"""
@@ -195,37 +220,34 @@ class ExprBinaryNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`String` with values encoded using provided
-            encoding.
+            Expression of data type :class:`String`.
 
         Examples
         --------
         >>> colors = pl.DataFrame(
         ...     {
-        ...         "name": ["black", "yellow", "blue"],
+        ...         "color": ["black", "yellow", "blue"],
         ...         "code": [b"\x00\x00\x00", b"\xff\xff\x00", b"\x00\x00\xff"],
         ...     }
         ... )
         >>> colors.with_columns(
-        ...     pl.col("code").bin.encode("hex").alias("code_encoded_hex"),
+        ...     pl.col("code").bin.encode("hex").alias("encoded"),
         ... )
         shape: (3, 3)
-        ┌────────┬───────────────┬──────────────────┐
-        │ name   ┆ code          ┆ code_encoded_hex │
-        │ ---    ┆ ---           ┆ ---              │
-        │ str    ┆ binary        ┆ str              │
-        ╞════════╪═══════════════╪══════════════════╡
-        │ black  ┆ [binary data] ┆ 000000           │
-        │ yellow ┆ [binary data] ┆ ffff00           │
-        │ blue   ┆ [binary data] ┆ 0000ff           │
-        └────────┴───────────────┴──────────────────┘
-
+        ┌────────┬─────────────────┬─────────┐
+        │ color  ┆ code            ┆ encoded │
+        │ ---    ┆ ---             ┆ ---     │
+        │ str    ┆ binary          ┆ str     │
+        ╞════════╪═════════════════╪═════════╡
+        │ black  ┆ b"\x00\x00\x00" ┆ 000000  │
+        │ yellow ┆ b"\xff\xff\x00" ┆ ffff00  │
+        │ blue   ┆ b"\x00\x00\xff" ┆ 0000ff  │
+        └────────┴─────────────────┴─────────┘
         """
         if encoding == "hex":
             return wrap_expr(self._pyexpr.bin_hex_encode())
         elif encoding == "base64":
             return wrap_expr(self._pyexpr.bin_base64_encode())
         else:
-            raise ValueError(
-                f"`encoding` must be one of {{'hex', 'base64'}}, got {encoding!r}"
-            )
+            msg = f"`encoding` must be one of {{'hex', 'base64'}}, got {encoding!r}"
+            raise ValueError(msg)

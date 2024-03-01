@@ -19,7 +19,7 @@ def test_pickle() -> None:
 
 
 def test_pickle_expr() -> None:
-    for e in [pl.all(), pl.count()]:
+    for e in [pl.all(), pl.len(), pl.duration(weeks=10, days=20, hours=3)]:
         f = io.BytesIO()
         pickle.dump(e, f)
 

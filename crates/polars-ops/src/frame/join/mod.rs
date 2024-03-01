@@ -9,14 +9,13 @@ mod hash_join;
 #[cfg(feature = "merge_sorted")]
 mod merge_sorted;
 
-#[cfg(feature = "chunked_ids")]
 use std::borrow::Cow;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
 
 use ahash::RandomState;
 pub use args::*;
-use arrow::legacy::trusted_len::TrustedLen;
+use arrow::trusted_len::TrustedLen;
 #[cfg(feature = "asof_join")]
 pub use asof::{AsOfOptions, AsofJoin, AsofJoinBy, AsofStrategy};
 #[cfg(feature = "dtype-categorical")]
@@ -34,7 +33,9 @@ pub use merge_sorted::_merge_sorted_dfs;
 use polars_core::hashing::{_df_rows_to_hashes_threaded_vertical, _HASHMAP_INIT_SIZE};
 use polars_core::prelude::*;
 pub(super) use polars_core::series::IsSorted;
-use polars_core::utils::{_to_physical_and_bit_repr, slice_offsets, slice_slice};
+#[allow(unused_imports)]
+use polars_core::utils::slice_slice;
+use polars_core::utils::{_to_physical_and_bit_repr, slice_offsets};
 use polars_core::POOL;
 use polars_utils::hashing::BytesHash;
 use rayon::prelude::*;
@@ -273,8 +274,8 @@ pub trait DataFrameJoinOps: IntoDf {
         // Multiple keys.
         match args.how {
             JoinType::Inner => {
-                let left = DataFrame::new_no_checks(selected_left_physical);
-                let right = DataFrame::new_no_checks(selected_right_physical);
+                let left = unsafe { DataFrame::new_no_checks(selected_left_physical) };
+                let right = unsafe { DataFrame::new_no_checks(selected_right_physical) };
                 let (mut left, mut right, swap) = det_hash_prone_order!(left, right);
                 let (join_idx_left, join_idx_right) =
                     _inner_join_multiple_keys(&mut left, &mut right, swap, args.join_nulls);
@@ -287,7 +288,7 @@ pub trait DataFrameJoinOps: IntoDf {
                 }
 
                 let (df_left, df_right) = POOL.join(
-                    // safety: join indices are known to be in bounds
+                    // SAFETY: join indices are known to be in bounds
                     || unsafe { left_df._create_left_df_from_slice(join_idx_left, false, !swap) },
                     || unsafe {
                         // remove join columns
@@ -298,8 +299,8 @@ pub trait DataFrameJoinOps: IntoDf {
                 _finish_join(df_left, df_right, args.suffix.as_deref())
             },
             JoinType::Left => {
-                let mut left = DataFrame::new_no_checks(selected_left_physical);
-                let mut right = DataFrame::new_no_checks(selected_right_physical);
+                let mut left = unsafe { DataFrame::new_no_checks(selected_left_physical) };
+                let mut right = unsafe { DataFrame::new_no_checks(selected_right_physical) };
 
                 if let Some((offset, len)) = args.slice {
                     left = left.slice(offset, len);
@@ -309,10 +310,10 @@ pub trait DataFrameJoinOps: IntoDf {
                 left_df._finish_left_join(ids, &remove_selected(other, &selected_right), args)
             },
             JoinType::Outer { .. } => {
-                let left = DataFrame::new_no_checks(selected_left_physical);
-                let right = DataFrame::new_no_checks(selected_right_physical);
+                let df_left = unsafe { DataFrame::new_no_checks(selected_left_physical) };
+                let df_right = unsafe { DataFrame::new_no_checks(selected_right_physical) };
 
-                let (mut left, mut right, swap) = det_hash_prone_order!(left, right);
+                let (mut left, mut right, swap) = det_hash_prone_order!(df_left, df_right);
                 let (mut join_idx_l, mut join_idx_r) =
                     _outer_join_multiple_keys(&mut left, &mut right, swap, args.join_nulls);
 
@@ -342,6 +343,7 @@ pub trait DataFrameJoinOps: IntoDf {
                         &names_left,
                         &names_right,
                         args.suffix.as_deref(),
+                        left_df,
                     ))
                 } else {
                     out
@@ -353,15 +355,15 @@ pub trait DataFrameJoinOps: IntoDf {
             ),
             #[cfg(feature = "semi_anti_join")]
             JoinType::Anti | JoinType::Semi => {
-                let mut left = DataFrame::new_no_checks(selected_left_physical);
-                let mut right = DataFrame::new_no_checks(selected_right_physical);
+                let mut left = unsafe { DataFrame::new_no_checks(selected_left_physical) };
+                let mut right = unsafe { DataFrame::new_no_checks(selected_right_physical) };
 
                 let idx = if matches!(args.how, JoinType::Anti) {
                     _left_anti_multiple_keys(&mut left, &mut right, args.join_nulls)
                 } else {
                     _left_semi_multiple_keys(&mut left, &mut right, args.join_nulls)
                 };
-                // Safety:
+                // SAFETY:
                 // indices are in bounds
                 Ok(unsafe { left_df._finish_anti_semi_join(&idx, args.slice) })
             },
@@ -496,7 +498,7 @@ trait DataFrameJoinOpsPrivate: IntoDf {
         }
 
         let (df_left, df_right) = POOL.join(
-            // safety: join indices are known to be in bounds
+            // SAFETY: join indices are known to be in bounds
             || unsafe { left_df._create_left_df_from_slice(join_tuples_left, false, sorted) },
             || unsafe {
                 other

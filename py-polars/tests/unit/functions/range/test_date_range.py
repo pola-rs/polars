@@ -158,29 +158,29 @@ def test_date_range_end_of_month_5441(
     start = date(2020, 1, 31)
     stop = date(2020, 3, 31)
     result = pl.date_range(start, stop, interval="1mo", closed=closed, eager=True)
-    expected = pl.Series("date", expected_values)
+    expected = pl.Series("literal", expected_values)
     assert_series_equal(result, expected)
 
 
 def test_date_range_name() -> None:
-    expected_name = "date"
     result_eager = pl.date_range(date(2020, 1, 1), date(2020, 1, 3), eager=True)
-    assert result_eager.name == expected_name
+    assert result_eager.name == "literal"
 
+    start = pl.Series("left", [date(2020, 1, 1)])
     result_lazy = pl.select(
-        pl.date_range(date(2020, 1, 1), date(2020, 1, 3), eager=False)
+        pl.date_range(start, date(2020, 1, 3), eager=False)
     ).to_series()
-    assert result_lazy.name == expected_name
+    assert result_lazy.name == "left"
 
 
 def test_date_ranges_eager() -> None:
-    start = pl.Series([date(2022, 1, 1), date(2022, 1, 2)])
-    end = pl.Series([date(2022, 1, 4), date(2022, 1, 3)])
+    start = pl.Series("start", [date(2022, 1, 1), date(2022, 1, 2)])
+    end = pl.Series("end", [date(2022, 1, 4), date(2022, 1, 3)])
 
     result = pl.date_ranges(start, end, eager=True)
 
     expected = pl.Series(
-        "date_range",
+        "start",
         [
             [date(2022, 1, 1), date(2022, 1, 2), date(2022, 1, 3), date(2022, 1, 4)],
             [date(2022, 1, 2), date(2022, 1, 3)],
@@ -190,12 +190,14 @@ def test_date_ranges_eager() -> None:
 
 
 def test_date_range_eager() -> None:
-    start = pl.Series([date(2022, 1, 1)])
-    end = pl.Series([date(2022, 1, 3)])
+    start = pl.Series("start", [date(2022, 1, 1)])
+    end = pl.Series("end", [date(2022, 1, 3)])
 
     result = pl.date_range(start, end, eager=True)
 
-    expected = pl.Series("date", [date(2022, 1, 1), date(2022, 1, 2), date(2022, 1, 3)])
+    expected = pl.Series(
+        "start", [date(2022, 1, 1), date(2022, 1, 2), date(2022, 1, 3)]
+    )
     assert_series_equal(result, expected)
 
 
@@ -340,14 +342,14 @@ def test_date_range_input_shape_multiple_values() -> None:
 
 def test_date_range_start_later_than_end() -> None:
     result = pl.date_range(date(2000, 3, 20), date(2000, 3, 5), eager=True)
-    expected = pl.Series("date", dtype=pl.Date)
+    expected = pl.Series("literal", dtype=pl.Date)
     assert_series_equal(result, expected)
 
 
 def test_date_range_24h_interval_results_in_datetime() -> None:
     with pytest.deprecated_call():
         result = pl.LazyFrame().select(
-            pl.date_range(date(2022, 1, 1), date(2022, 1, 3), interval="24h")
+            date=pl.date_range(date(2022, 1, 1), date(2022, 1, 3), interval="24h")
         )
 
     assert result.schema == {"date": pl.Datetime}

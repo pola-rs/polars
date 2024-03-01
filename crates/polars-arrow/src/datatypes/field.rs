@@ -11,7 +11,7 @@ use super::{ArrowDataType, Metadata};
 ///
 /// Almost all IO in this crate uses [`Field`] to represent logical information about the data
 /// to be serialized.
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Field {
     /// Its name

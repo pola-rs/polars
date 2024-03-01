@@ -7,6 +7,7 @@ if _HYPOTHESIS_AVAILABLE:
     from polars.testing.parametric.profiles import load_profile, set_profile
     from polars.testing.parametric.strategies import (
         all_strategies,
+        create_array_strategy,
         create_list_strategy,
         nested_strategies,
         scalar_strategies,
@@ -14,15 +15,15 @@ if _HYPOTHESIS_AVAILABLE:
 else:
 
     def __getattr__(*args: Any, **kwargs: Any) -> Any:
-        raise ModuleNotFoundError(
-            f"polars.testing.parametric.{args[0]} requires the 'hypothesis' module"
-        ) from None
+        msg = f"polars.testing.parametric.{args[0]} requires the 'hypothesis' module"
+        raise ModuleNotFoundError(msg) from None
 
 
 __all__ = [
     "all_strategies",
     "column",
     "columns",
+    "create_array_strategy",
     "create_list_strategy",
     "dataframes",
     "load_profile",

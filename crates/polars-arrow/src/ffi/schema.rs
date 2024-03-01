@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::convert::TryInto;
 use std::ffi::{CStr, CString};
 use std::ptr;
 
@@ -271,6 +270,8 @@ unsafe fn to_data_type(schema: &ArrowSchema) -> PolarsResult<ArrowDataType> {
         "tDn" => ArrowDataType::Duration(TimeUnit::Nanosecond),
         "tiM" => ArrowDataType::Interval(IntervalUnit::YearMonth),
         "tiD" => ArrowDataType::Interval(IntervalUnit::DayTime),
+        "vu" => ArrowDataType::Utf8View,
+        "vz" => ArrowDataType::BinaryView,
         "+l" => {
             let child = schema.child(0);
             ArrowDataType::List(Box::new(to_field(child)?))
@@ -453,6 +454,8 @@ fn to_format(data_type: &ArrowDataType) -> String {
                 tz.as_ref().map(|x| x.as_ref()).unwrap_or("")
             )
         },
+        ArrowDataType::Utf8View => "vu".to_string(),
+        ArrowDataType::BinaryView => "vz".to_string(),
         ArrowDataType::Decimal(precision, scale) => format!("d:{precision},{scale}"),
         ArrowDataType::Decimal256(precision, scale) => format!("d:{precision},{scale},256"),
         ArrowDataType::List(_) => "+l".to_string(),

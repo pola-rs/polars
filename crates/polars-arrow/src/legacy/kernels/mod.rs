@@ -7,7 +7,10 @@ pub mod agg_mean;
 pub mod atan2;
 pub mod concatenate;
 pub mod ewm;
+#[cfg(feature = "compute_take")]
+pub mod fixed_size_list;
 pub mod float;
+#[cfg(feature = "compute_take")]
 pub mod list;
 pub mod list_bytes_iter;
 pub mod pow;

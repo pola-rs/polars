@@ -1,5 +1,4 @@
 use std::cmp::min;
-use std::convert::TryInto;
 use std::io::{Read, Seek, SeekFrom};
 
 use parquet_format_safe::thrift::protocol::TCompactInputProtocol;

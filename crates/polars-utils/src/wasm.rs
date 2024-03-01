@@ -37,4 +37,12 @@ impl Pool {
     {
         rayon::spawn(func);
     }
+
+    pub fn scope<'scope, OP, R>(&self, op: OP) -> R
+    where
+        OP: FnOnce(&rayon::Scope<'scope>) -> R + Send,
+        R: Send,
+    {
+        rayon::scope(op)
+    }
 }

@@ -1,5 +1,4 @@
 use std::collections::VecDeque;
-use std::convert::TryInto;
 use std::io::{Read, Seek, SeekFrom};
 
 use polars_error::{polars_bail, polars_err, PolarsResult};
@@ -45,6 +44,23 @@ fn read_swapped<T: NativeType, R: Read + Seek>(
     Ok(())
 }
 
+fn read_uncompressed_bytes<R: Read + Seek>(
+    reader: &mut R,
+    buffer_length: usize,
+    is_little_endian: bool,
+) -> PolarsResult<Vec<u8>> {
+    if is_native_little_endian() == is_little_endian {
+        let mut buffer = Vec::with_capacity(buffer_length);
+        let _ = reader
+            .take(buffer_length as u64)
+            .read_to_end(&mut buffer)
+            .unwrap();
+        Ok(buffer)
+    } else {
+        unreachable!()
+    }
+}
+
 fn read_uncompressed_buffer<T: NativeType, R: Read + Seek>(
     reader: &mut R,
     buffer_length: usize,
@@ -80,20 +96,20 @@ fn read_uncompressed_buffer<T: NativeType, R: Read + Seek>(
 fn read_compressed_buffer<T: NativeType, R: Read + Seek>(
     reader: &mut R,
     buffer_length: usize,
-    length: usize,
+    output_length: Option<usize>,
     is_little_endian: bool,
     compression: Compression,
     scratch: &mut Vec<u8>,
 ) -> PolarsResult<Vec<T>> {
+    if output_length == Some(0) {
+        return Ok(vec![]);
+    }
+
     if is_little_endian != is_native_little_endian() {
         polars_bail!(ComputeError:
             "Reading compressed and big endian IPC".to_string(),
         )
     }
-
-    // it is undefined behavior to call read_exact on un-initialized, https://doc.rust-lang.org/std/io/trait.Read.html#tymethod.read
-    // see also https://github.com/MaikKlein/ash/issues/354#issue-781730580
-    let mut buffer = vec![T::default(); length];
 
     // decompress first
     scratch.clear();
@@ -102,6 +118,13 @@ fn read_compressed_buffer<T: NativeType, R: Read + Seek>(
         .by_ref()
         .take(buffer_length as u64)
         .read_to_end(scratch)?;
+
+    let length = output_length
+        .unwrap_or_else(|| i64::from_le_bytes(scratch[..8].try_into().unwrap()) as usize);
+
+    // It is undefined behavior to call read_exact on un-initialized, https://doc.rust-lang.org/std/io/trait.Read.html#tymethod.read
+    // see also https://github.com/MaikKlein/ash/issues/354#issue-781730580
+    let mut buffer = vec![T::default(); length];
 
     let out_slice = bytemuck::cast_slice_mut(&mut buffer);
 
@@ -118,6 +141,61 @@ fn read_compressed_buffer<T: NativeType, R: Read + Seek>(
         },
     }
     Ok(buffer)
+}
+
+fn read_compressed_bytes<R: Read + Seek>(
+    reader: &mut R,
+    buffer_length: usize,
+    is_little_endian: bool,
+    compression: Compression,
+    scratch: &mut Vec<u8>,
+) -> PolarsResult<Vec<u8>> {
+    read_compressed_buffer::<u8, _>(
+        reader,
+        buffer_length,
+        None,
+        is_little_endian,
+        compression,
+        scratch,
+    )
+}
+
+pub fn read_bytes<R: Read + Seek>(
+    buf: &mut VecDeque<IpcBuffer>,
+    reader: &mut R,
+    block_offset: u64,
+    is_little_endian: bool,
+    compression: Option<Compression>,
+    scratch: &mut Vec<u8>,
+) -> PolarsResult<Buffer<u8>> {
+    let buf = buf
+        .pop_front()
+        .ok_or_else(|| polars_err!(oos = OutOfSpecKind::ExpectedBuffer))?;
+
+    let offset: u64 = buf
+        .offset()
+        .try_into()
+        .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?;
+
+    let buffer_length: usize = buf
+        .length()
+        .try_into()
+        .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?;
+
+    reader.seek(SeekFrom::Start(block_offset + offset))?;
+
+    if let Some(compression) = compression {
+        Ok(read_compressed_bytes(
+            reader,
+            buffer_length,
+            is_little_endian,
+            compression,
+            scratch,
+        )?
+        .into())
+    } else {
+        Ok(read_uncompressed_bytes(reader, buffer_length, is_little_endian)?.into())
+    }
 }
 
 pub fn read_buffer<T: NativeType, R: Read + Seek>(
@@ -149,7 +227,7 @@ pub fn read_buffer<T: NativeType, R: Read + Seek>(
         Ok(read_compressed_buffer(
             reader,
             buffer_length,
-            length,
+            Some(length),
             is_little_endian,
             compression,
             scratch,

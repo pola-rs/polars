@@ -1,5 +1,4 @@
 use polars_core::utils::{accumulate_dataframes_vertical, split_df};
-use polars_core::POOL;
 use rayon::prelude::*;
 
 use super::*;
@@ -149,7 +148,7 @@ fn estimate_unique_count(keys: &[Series], mut sample_size: usize) -> PolarsResul
             .iter()
             .map(|s| s.slice(offset, sample_size))
             .collect::<Vec<_>>();
-        let df = DataFrame::new_no_checks(keys);
+        let df = unsafe { DataFrame::new_no_checks(keys) };
         let names = df.get_column_names();
         let gb = df.group_by(names).unwrap();
         Ok(finish(gb.get_groups()))
@@ -187,7 +186,9 @@ fn can_run_partitioned(
 
         let (unique_estimate, sampled_method) = match (keys.len(), keys[0].dtype()) {
             #[cfg(feature = "dtype-categorical")]
-            (1, DataType::Categorical(Some(rev_map), _)) => (rev_map.len(), "known"),
+            (1, DataType::Categorical(Some(rev_map), _) | DataType::Enum(Some(rev_map), _)) => {
+                (rev_map.len(), "known")
+            },
             _ => {
                 // sqrt(N) is a good sample size as it remains low on large numbers
                 // it is better than taking a fraction as it saturates

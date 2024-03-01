@@ -31,7 +31,6 @@ pub(crate) use column::*;
 pub(crate) use count::*;
 pub(crate) use filter::*;
 pub(crate) use literal::*;
-use polars_core::frame::group_by::GroupsProxy;
 use polars_core::prelude::*;
 use polars_io::predicates::PhysicalIoExpr;
 #[cfg(feature = "dynamic_group_by")]
@@ -133,6 +132,14 @@ pub struct AggregationContext<'a> {
 }
 
 impl<'a> AggregationContext<'a> {
+    pub(crate) fn dtype(&self) -> DataType {
+        match &self.state {
+            AggState::Literal(s) => s.dtype().clone(),
+            AggState::AggregatedList(s) => s.list().unwrap().inner_dtype(),
+            AggState::AggregatedScalar(s) => s.dtype().clone(),
+            AggState::NotAggregated(s) => s.dtype().clone(),
+        }
+    }
     pub(crate) fn groups(&mut self) -> &Cow<'a, GroupsProxy> {
         match self.update_groups {
             UpdateGroups::No => {},
@@ -335,7 +342,7 @@ impl<'a> AggregationContext<'a> {
             AggState::NotAggregated(s) => {
                 // We should not aggregate literals!!
                 if self.state.safe_to_agg(&self.groups) {
-                    // safety:
+                    // SAFETY:
                     // groups are in bounds
                     let agg = unsafe { s.agg_list(&self.groups) };
                     self.update_groups = UpdateGroups::WithGroupsLen;
@@ -437,7 +444,7 @@ impl<'a> AggregationContext<'a> {
                     }
                 }
 
-                // safety:
+                // SAFETY:
                 // groups are in bounds
                 let out = unsafe { s.agg_list(&self.groups) };
                 self.state = AggState::AggregatedList(out.clone());

@@ -8,6 +8,7 @@ import pytest
 
 import polars as pl
 import polars.polars as plr
+from polars._utils.unstable import issue_unstable_warning
 from polars.config import _POLARS_CFG_ENV_VARS
 
 
@@ -84,30 +85,6 @@ def test_hide_header_elements() -> None:
         "│ 3   ┆ 6   ┆ 9   │\n"
         "└─────┴─────┴─────┘"
     )
-
-
-def test_html_tables() -> None:
-    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6], "c": [7, 8, 9]})
-
-    # default: header contains names/dtypes
-    header = "<thead><tr><th>a</th><th>b</th><th>c</th></tr><tr><td>i64</td><td>i64</td><td>i64</td></tr></thead>"
-    assert header in df._repr_html_()
-
-    # validate that relevant config options are respected
-    with pl.Config(tbl_hide_column_names=True):
-        header = "<thead><tr><td>i64</td><td>i64</td><td>i64</td></tr></thead>"
-        assert header in df._repr_html_()
-
-    with pl.Config(tbl_hide_column_data_types=True):
-        header = "<thead><tr><th>a</th><th>b</th><th>c</th></tr></thead>"
-        assert header in df._repr_html_()
-
-    with pl.Config(
-        tbl_hide_column_data_types=True,
-        tbl_hide_column_names=True,
-    ):
-        header = "<thead></thead>"
-        assert header in df._repr_html_()
 
 
 def test_set_tbl_cols() -> None:
@@ -195,7 +172,7 @@ def test_set_tbl_rows() -> None:
         "╞═════╪═════╪═════╡\n"
         "│ 1   ┆ 5   ┆ 9   │\n"
         "│ 2   ┆ 6   ┆ 10  │\n"
-        "│ 3   ┆ 7   ┆ 11  │\n"
+        "│ …   ┆ …   ┆ …   │\n"
         "│ 4   ┆ 8   ┆ 12  │\n"
         "└─────┴─────┴─────┘"
     )
@@ -204,8 +181,8 @@ def test_set_tbl_rows() -> None:
         "Series: 'ser' [i64]\n"
         "[\n"
         "\t1\n"
+        "\t2\n"
         "\t…\n"
-        "\t4\n"
         "\t5\n"
         "]"
     )
@@ -230,7 +207,7 @@ def test_set_tbl_rows() -> None:
         "[\n"
         "\t1\n"
         "\t2\n"
-        "\t3\n"
+        "\t…\n"
         "\t4\n"
         "\t5\n"
         "]"
@@ -253,8 +230,8 @@ def test_set_tbl_rows() -> None:
         "│ i64 ┆ i64 ┆ i64 │\n"
         "╞═════╪═════╪═════╡\n"
         "│ 1   ┆ 6   ┆ 11  │\n"
+        "│ 2   ┆ 7   ┆ 12  │\n"
         "│ …   ┆ …   ┆ …   │\n"
-        "│ 4   ┆ 9   ┆ 14  │\n"
         "│ 5   ┆ 10  ┆ 15  │\n"
         "└─────┴─────┴─────┘"
     )
@@ -453,7 +430,11 @@ def test_shape_format_for_big_numbers() -> None:
         "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
         "│ 4       ┆ 1004    │\n"
         "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 5       ┆ 1005    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
         "│ …       ┆ …       │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 996     ┆ 1996    │\n"
         "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
         "│ 997     ┆ 1997    │\n"
         "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
@@ -480,7 +461,11 @@ def test_shape_format_for_big_numbers() -> None:
         "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
         "│ 4       ┆ 1004    │\n"
         "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 5       ┆ 1005    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
         "│ …       ┆ …       │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 996     ┆ 1996    │\n"
         "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
         "│ 997     ┆ 1997    │\n"
         "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
@@ -773,6 +758,21 @@ def test_set_fmt_str_lengths_invalid_length() -> None:
             cfg.set_fmt_str_lengths(-2)
 
 
+def test_warn_unstable(recwarn: pytest.WarningsRecorder) -> None:
+    issue_unstable_warning()
+    assert len(recwarn) == 0
+
+    pl.Config().warn_unstable(True)
+
+    issue_unstable_warning()
+    assert len(recwarn) == 1
+
+    pl.Config().warn_unstable(False)
+
+    issue_unstable_warning()
+    assert len(recwarn) == 1
+
+
 @pytest.mark.parametrize(
     ("environment_variable", "config_setting", "value", "expected"),
     [
@@ -834,6 +834,7 @@ def test_set_fmt_str_lengths_invalid_length() -> None:
         ("POLARS_STREAMING_CHUNK_SIZE", "set_streaming_chunk_size", 100, "100"),
         ("POLARS_TABLE_WIDTH", "set_tbl_width_chars", 80, "80"),
         ("POLARS_VERBOSE", "set_verbose", True, "1"),
+        ("POLARS_WARN_UNSTABLE", "warn_unstable", True, "1"),
     ],
 )
 def test_unset_config_env_vars(

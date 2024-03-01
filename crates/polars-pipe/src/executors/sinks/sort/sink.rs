@@ -108,7 +108,7 @@ impl SortSink {
             // expensive
             let df = accumulate_dataframes_vertical_unchecked(self.chunks.drain(..));
             if df.height() > 0 {
-                // safety: we just asserted height > 0
+                // SAFETY: we just asserted height > 0
                 let sample = unsafe {
                     let s = &df.get_columns()[self.sort_idx];
                     s.to_physical_repr().get_unchecked(0).into_static().unwrap()
@@ -173,7 +173,7 @@ impl Sink for SortSink {
             let lock = self.io_thread.read().unwrap();
             let io_thread = lock.as_ref().unwrap();
 
-            let dist = Series::from_any_values("", &self.dist_sample, false).unwrap();
+            let dist = Series::from_any_values("", &self.dist_sample, true).unwrap();
             let dist = dist.sort_with(SortOptions {
                 descending: self.sort_args.descending[0],
                 nulls_last: self.sort_args.nulls_last,

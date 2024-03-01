@@ -1,4 +1,4 @@
-use arrow::array::{Array, PrimitiveArray, ValueSize};
+use arrow::array::{Array, PrimitiveArray};
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::arrow::bitmap::MutableBitmap;
@@ -100,7 +100,7 @@ where
         let mut ca = self.rechunk();
         drop(self);
 
-        // safety:
+        // SAFETY:
         // we will not modify the length
         // and we unset the sorted flag.
         ca.set_sorted_flag(IsSorted::Not);
@@ -113,18 +113,23 @@ where
 
                 // reborrow because the bck does not allow it
                 let current_values = unsafe { &mut *std::slice::from_raw_parts_mut(ptr, len) };
-                // Safety:
+                // SAFETY:
                 // we checked bounds
                 unsafe { scatter_impl(current_values, values, arr, idx, len) };
             },
             None => {
                 let mut new_values = arr.values().as_slice().to_vec();
-                // Safety:
+                // SAFETY:
                 // we checked bounds
                 unsafe { scatter_impl(&mut new_values, values, arr, idx, len) };
                 arr.set_values(new_values.into());
             },
         };
+
+        // The null count may have changed - make sure to update the ChunkedArray
+        let new_null_count = arr.null_count();
+        unsafe { ca.set_null_count(new_null_count.try_into().unwrap()) };
+
         Ok(ca.into_series())
     }
 }
@@ -137,8 +142,7 @@ impl<'a> ChunkedSet<&'a str> for &'a StringChunked {
         check_bounds(idx, self.len() as IdxSize)?;
         check_sorted(idx)?;
         let mut ca_iter = self.into_iter().enumerate();
-        let mut builder =
-            StringChunkedBuilder::new(self.name(), self.len(), self.get_values_size());
+        let mut builder = StringChunkedBuilder::new(self.name(), self.len());
 
         for (current_idx, current_value) in idx.iter().zip(values) {
             for (cnt_idx, opt_val_self) in &mut ca_iter {

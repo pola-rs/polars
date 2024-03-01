@@ -16,9 +16,9 @@ if TYPE_CHECKING:
 def read_json(
     source: str | Path | IOBase | bytes,
     *,
-    infer_schema_length: int | None = N_INFER_DEFAULT,
     schema: SchemaDefinition | None = None,
     schema_overrides: SchemaDefinition | None = None,
+    infer_schema_length: int | None = N_INFER_DEFAULT,
 ) -> DataFrame:
     """
     Read into a DataFrame from a JSON file.
@@ -29,8 +29,6 @@ def read_json(
         Path to a file or a file-like object (by file-like object, we refer to objects
         that have a `read()` method, such as a file handler (e.g. via builtin `open`
         function) or `BytesIO`).
-    infer_schema_length
-        Infer the schema from the first `infer_schema_length` rows.
     schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
         The DataFrame schema may be declared in several ways:
 
@@ -44,16 +42,17 @@ def read_json(
     schema_overrides : dict, default None
         Support type specification or override of one or more columns; note that
         any dtypes inferred from the schema param will be overridden.
-        underlying data, the names given here will overwrite them.
+    infer_schema_length
+        The maximum number of rows to scan for schema inference.
+        If set to `None`, the full data may be scanned *(this is slow)*.
 
     See Also
     --------
     read_ndjson
-
     """
     return pl.DataFrame._read_json(
         source,
-        infer_schema_length=infer_schema_length,
         schema=schema,
         schema_overrides=schema_overrides,
+        infer_schema_length=infer_schema_length,
     )

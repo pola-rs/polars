@@ -1,4 +1,5 @@
 use std::io::Cursor;
+use std::num::NonZeroUsize;
 
 use super::*;
 
@@ -21,7 +22,7 @@ fn read_json() {
     let df = JsonReader::new(file)
         .infer_schema_len(Some(3))
         .with_json_format(JsonFormat::JsonLines)
-        .with_batch_size(3)
+        .with_batch_size(NonZeroUsize::new(3).unwrap())
         .finish()
         .unwrap();
     assert_eq!("a", df.get_columns()[0].name());
@@ -49,7 +50,7 @@ fn read_json_with_whitespace() {
     let df = JsonReader::new(file)
         .infer_schema_len(Some(3))
         .with_json_format(JsonFormat::JsonLines)
-        .with_batch_size(3)
+        .with_batch_size(NonZeroUsize::new(3).unwrap())
         .finish()
         .unwrap();
     assert_eq!("a", df.get_columns()[0].name());
@@ -103,7 +104,7 @@ fn read_unordered_json() {
     let df = JsonReader::new(file)
         .infer_schema_len(Some(3))
         .with_json_format(JsonFormat::JsonLines)
-        .with_batch_size(3)
+        .with_batch_size(NonZeroUsize::new(3).unwrap())
         .finish()
         .unwrap();
     assert_eq!("a", df.get_columns()[0].name());

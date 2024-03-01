@@ -1,6 +1,7 @@
 mod aggregation;
 mod arithmetic;
 mod buffers;
+mod c_interface;
 mod comparison;
 mod construction;
 mod export;
@@ -11,7 +12,7 @@ use std::io::Cursor;
 
 use polars_core::series::IsSorted;
 use polars_core::utils::flatten::flatten_series;
-use polars_core::with_match_physical_numeric_polars_type;
+use polars_core::{with_match_physical_numeric_polars_type, with_match_physical_numeric_type};
 use pyo3::exceptions::{PyIndexError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
@@ -49,7 +50,7 @@ pub(crate) trait ToSeries {
 
 impl ToSeries for Vec<PySeries> {
     fn to_series(self) -> Vec<Series> {
-        // Safety
+        // SAFETY:
         // repr is transparent
         unsafe { std::mem::transmute(self) }
     }
@@ -61,7 +62,7 @@ pub(crate) trait ToPySeries {
 
 impl ToPySeries for Vec<Series> {
     fn to_pyseries(self) -> Vec<PySeries> {
-        // Safety
+        // SAFETY:
         // repr is transparent
         unsafe { std::mem::transmute(self) }
     }
@@ -128,7 +129,9 @@ impl PySeries {
 
     fn get_fmt(&self, index: usize, str_lengths: usize) -> String {
         let val = format!("{}", self.series.get(index).unwrap());
-        if let DataType::String | DataType::Categorical(_, _) = self.series.dtype() {
+        if let DataType::String | DataType::Categorical(_, _) | DataType::Enum(_, _) =
+            self.series.dtype()
+        {
             let v_trunc = &val[..val
                 .char_indices()
                 .take(str_lengths)
@@ -282,8 +285,8 @@ impl PySeries {
         }
     }
 
-    fn sort(&mut self, descending: bool) -> Self {
-        self.series.sort(descending).into()
+    fn sort(&mut self, descending: bool, nulls_last: bool) -> Self {
+        self.series.sort(descending, nulls_last).into()
     }
 
     fn take_with_series(&self, indices: &PySeries) -> PyResult<Self> {
@@ -379,13 +382,15 @@ impl PySeries {
                     | DataType::Date
                     | DataType::Duration(_)
                     | DataType::Categorical(_, _)
+                    | DataType::Enum(_, _)
                     | DataType::Binary
                     | DataType::Array(_, _)
                     | DataType::Time
             ) || !skip_nulls
             {
                 let mut avs = Vec::with_capacity(self.series.len());
-                let iter = self.series.iter().map(|av| match (skip_nulls, av) {
+                let s = self.series.rechunk();
+                let iter = s.iter().map(|av| match (skip_nulls, av) {
                     (true, AnyValue::Null) => AnyValue::Null,
                     (_, av) => {
                         let input = Wrap(av);
@@ -602,6 +607,7 @@ impl PySeries {
         // IPC only support DataFrames so we need to convert it
         let mut df = self.series.clone().into_frame();
         IpcStreamWriter::new(&mut buf)
+            .with_pl_flavor(true)
             .finish(&mut df)
             .expect("ipc writer");
         Ok(PyBytes::new(py, &buf).to_object(py))
@@ -698,6 +704,11 @@ impl PySeries {
     fn slice(&self, offset: i64, length: Option<usize>) -> Self {
         let length = length.unwrap_or_else(|| self.series.len());
         self.series.slice(offset, length).into()
+    }
+
+    pub fn not_(&self) -> PyResult<Self> {
+        let out = polars_ops::series::negate_bitwise(&self.series).map_err(PyPolarsErr::from)?;
+        Ok(out.into())
     }
 }
 

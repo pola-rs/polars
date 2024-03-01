@@ -295,3 +295,102 @@ def test_cat_is_in_with_lit_str_non_existent(dtype: pl.DataType) -> None:
     expected = pl.Series([False, False, False, None])
 
     assert_series_equal(s.is_in(lit), expected)
+
+
+@StringCache()
+@pytest.mark.parametrize("dtype", [pl.Categorical, pl.Enum(["a", "b", "c"])])
+def test_cat_is_in_with_lit_str_cache_setup(dtype: pl.DataType) -> None:
+    # init the global cache
+    _ = pl.Series(["c", "b", "a"], dtype=dtype)
+
+    assert_series_equal(pl.Series(["a"], dtype=dtype).is_in(["a"]), pl.Series([True]))
+    assert_series_equal(pl.Series(["b"], dtype=dtype).is_in(["b"]), pl.Series([True]))
+    assert_series_equal(pl.Series(["c"], dtype=dtype).is_in(["c"]), pl.Series([True]))
+
+
+def test_is_in_with_wildcard_13809() -> None:
+    out = pl.DataFrame({"A": ["B"]}).select(pl.all().is_in(["C"]))
+    expected = pl.DataFrame({"A": [False]})
+    assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize("dtype", [pl.Categorical, pl.Enum(["a", "b", "c", "d"])])
+def test_cat_is_in_from_str(dtype: pl.DataType) -> None:
+    s = pl.Series(["c", "c", "b"], dtype=dtype)
+
+    # test local
+    assert_series_equal(
+        pl.Series(["a", "d", "e", "b"]).is_in(s),
+        pl.Series([False, False, False, True]),
+    )
+
+
+@pytest.mark.parametrize("dtype", [pl.Categorical, pl.Enum(["a", "b", "c", "d"])])
+def test_cat_list_is_in_from_cat(dtype: pl.DataType) -> None:
+    df = pl.DataFrame(
+        [
+            (["a", "b"], "c"),
+            (["a", "b"], "a"),
+            (["a", None], None),
+            (["a", "c"], None),
+            (["a"], "d"),
+        ],
+        schema={"li": pl.List(dtype), "x": dtype},
+    )
+    res = df.select(pl.col("li").list.contains(pl.col("x")))
+    expected_df = pl.DataFrame({"li": [False, True, True, False, False]})
+    assert_frame_equal(res, expected_df)
+
+
+@pytest.mark.parametrize(
+    ("val", "expected"),
+    [
+        ("b", [True, False, False, None, True]),
+        (None, [False, False, True, None, False]),
+        ("e", [False, False, False, None, False]),
+    ],
+)
+def test_cat_list_is_in_from_cat_single(val: str | None, expected: list[bool]) -> None:
+    df = pl.Series(
+        "li",
+        [["a", "b"], ["a", "c"], ["a", None], None, ["b"]],
+        dtype=pl.List(pl.Categorical),
+    ).to_frame()
+    res = df.select(pl.col("li").list.contains(pl.lit(val, dtype=pl.Categorical)))
+    expected_df = pl.DataFrame({"li": expected})
+    assert_frame_equal(res, expected_df)
+
+
+def test_cat_list_is_in_from_str() -> None:
+    df = pl.DataFrame(
+        [
+            (["a", "b"], "c"),
+            (["a", "b"], "a"),
+            (["a", None], None),
+            (["a", "c"], None),
+            (["a"], "d"),
+        ],
+        schema={"li": pl.List(pl.Categorical), "x": pl.String},
+    )
+    res = df.select(pl.col("li").list.contains(pl.col("x")))
+    expected_df = pl.DataFrame({"li": [False, True, True, False, False]})
+    assert_frame_equal(res, expected_df)
+
+
+@pytest.mark.parametrize(
+    ("val", "expected"),
+    [
+        ("b", [True, False, False, None, True]),
+        (None, [False, False, True, None, False]),
+        ("e", [False, False, False, None, False]),
+    ],
+)
+def test_cat_list_is_in_from_single_str(val: str | None, expected: list[bool]) -> None:
+    df = pl.Series(
+        "li",
+        [["a", "b"], ["a", "c"], ["a", None], None, ["b"]],
+        dtype=pl.List(pl.Categorical),
+    ).to_frame()
+    res = df.select(pl.col("li").list.contains(pl.lit(val, dtype=pl.String)))
+    expected_df = pl.DataFrame({"li": expected})
+    assert_frame_equal(res, expected_df)

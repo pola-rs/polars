@@ -11,7 +11,6 @@ use polars_core::utils::arrow::compute::aggregate::sum_primitive;
 use polars_utils::unwrap::UnwrapUncheckedRelease;
 
 use super::*;
-use crate::operators::{ArrowDataType, IdxSize};
 
 pub struct MeanAgg<K: NumericNative> {
     sum: Option<K>,
@@ -78,8 +77,8 @@ where
             let arr = values.chunks().get_unchecked(0);
             arr.sliced_unchecked(offset as usize, length as usize)
         };
-        let dtype = K::PolarsType::get_dtype().to_arrow();
-        let arr = arrow::legacy::compute::cast::cast(arr.as_ref(), &dtype).unwrap();
+        let dtype = K::PolarsType::get_dtype().to_arrow(true);
+        let arr = arrow::compute::cast::cast_unchecked(arr.as_ref(), &dtype).unwrap();
         let arr = unsafe {
             arr.as_any()
                 .downcast_ref::<PrimitiveArray<K>>()

@@ -1,6 +1,5 @@
 # --8<-- [start:setup]
 import polars as pl
-from datetime import date
 
 # --8<-- [end:setup]
 
@@ -25,11 +24,11 @@ q = (
     dataset.lazy()
     .group_by("first_name")
     .agg(
-        pl.count(),
+        pl.len(),
         pl.col("gender"),
         pl.first("last_name"),
     )
-    .sort("count", descending=True)
+    .sort("len", descending=True)
     .limit(5)
 )
 
@@ -72,8 +71,11 @@ print(df)
 
 
 # --8<-- [start:filter]
-def compute_age() -> pl.Expr:
-    return date(2021, 1, 1).year - pl.col("birthday").dt.year()
+from datetime import date
+
+
+def compute_age():
+    return date.today().year - pl.col("birthday").dt.year()
 
 
 def avg_birthday(gender: str) -> pl.Expr:

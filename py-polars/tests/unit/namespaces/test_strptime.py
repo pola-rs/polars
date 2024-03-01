@@ -3,6 +3,7 @@ Module for testing `.str.strptime` of the string namespace.
 
 This method gets its own module due to its complexity.
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -20,7 +21,7 @@ if TYPE_CHECKING:
 
     from polars.type_aliases import PolarsTemporalType, TimeUnit
 else:
-    from polars.utils.convert import get_zoneinfo as ZoneInfo
+    from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
 
 def test_str_strptime() -> None:
@@ -505,8 +506,8 @@ def test_to_datetime_tz_aware_strptime(ts: str, fmt: str, expected: datetime) ->
 def test_crossing_dst(format: str) -> None:
     ts = ["2021-03-27T23:59:59+01:00", "2021-03-28T23:59:59+02:00"]
     result = pl.Series(ts).str.to_datetime(format)
-    assert result[0] == datetime(2021, 3, 27, 22, 59, 59, tzinfo=ZoneInfo(key="UTC"))
-    assert result[1] == datetime(2021, 3, 28, 21, 59, 59, tzinfo=ZoneInfo(key="UTC"))
+    assert result[0] == datetime(2021, 3, 27, 22, 59, 59, tzinfo=ZoneInfo("UTC"))
+    assert result[1] == datetime(2021, 3, 28, 21, 59, 59, tzinfo=ZoneInfo("UTC"))
 
 
 @pytest.mark.parametrize("format", ["%+", "%Y-%m-%dT%H:%M:%S%z"])
@@ -675,3 +676,14 @@ def test_strptime_use_earliest(exact: bool) -> None:
             pl.Datetime("us", "Europe/London"),
             exact=exact,
         ).item()
+
+
+@pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
+def test_to_datetime_out_of_range_13401(time_unit: TimeUnit) -> None:
+    s = pl.Series(["2020-January-01 12:34:66"])
+    with pytest.raises(pl.ComputeError, match="conversion .* failed"):
+        s.str.to_datetime("%Y-%B-%d %H:%M:%S", time_unit=time_unit)
+    assert (
+        s.str.to_datetime("%Y-%B-%d %H:%M:%S", strict=False, time_unit=time_unit).item()
+        is None
+    )

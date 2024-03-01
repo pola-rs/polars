@@ -16,6 +16,7 @@ This namespace comes available by calling `LazyFrame.group_by(..)`.
     LazyGroupBy.first
     LazyGroupBy.head
     LazyGroupBy.last
+    LazyGroupBy.len
     LazyGroupBy.map_groups
     LazyGroupBy.max
     LazyGroupBy.mean

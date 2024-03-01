@@ -1,26 +1,56 @@
+from __future__ import annotations
+
 import operator
-from typing import Callable
+import re
+from datetime import date
+from textwrap import dedent
+from typing import Any, Callable
 
 import pytest
 
 import polars as pl
 from polars import StringCache
-from polars.testing import assert_series_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 def test_enum_creation() -> None:
-    s = pl.Series([None, "a", "b"], dtype=pl.Enum(categories=["a", "b"]))
+    dtype = pl.Enum(["a", "b"])
+    s = pl.Series([None, "a", "b"], dtype=dtype)
     assert s.null_count() == 1
     assert s.len() == 3
-    assert s.dtype == pl.Enum(categories=["a", "b"])
+    assert s.dtype == dtype
+
+    # from iterables
+    e = pl.Enum(f"x{i}" for i in range(5))
+    assert e.categories.to_list() == ["x0", "x1", "x2", "x3", "x4"]
+
+    e = pl.Enum("abcde")
+    assert e.categories.to_list() == ["a", "b", "c", "d", "e"]
+
+
+@pytest.mark.parametrize("categories", [[], pl.Series("foo", dtype=pl.Int16), None])
+def test_enum_init_empty(categories: pl.Series | list[str] | None) -> None:
+    dtype = pl.Enum(categories)  # type: ignore[arg-type]
+    expected = pl.Series("category", dtype=pl.String)
+    assert_series_equal(dtype.categories, expected)
 
 
 def test_enum_non_existent() -> None:
     with pytest.raises(
         pl.ComputeError,
-        match=("value 'c' is not present in Enum"),
+        match=re.escape(
+            "conversion from `str` to `enum` failed in column '' for 1 out of 4 values: [\"c\"]"
+        ),
     ):
         pl.Series([None, "a", "b", "c"], dtype=pl.Enum(categories=["a", "b"]))
+
+
+def test_enum_non_existent_non_strict() -> None:
+    s = pl.Series(
+        [None, "a", "b", "c"], dtype=pl.Enum(categories=["a", "b"]), strict=False
+    )
+    expected = pl.Series([None, "a", "b", None], dtype=pl.Enum(categories=["a", "b"]))
+    assert_series_equal(s, expected)
 
 
 def test_enum_from_schema_argument() -> None:
@@ -28,6 +58,14 @@ def test_enum_from_schema_argument() -> None:
         {"col1": ["a", "b", "c"]}, schema={"col1": pl.Enum(["a", "b", "c"])}
     )
     assert df.get_column("col1").dtype == pl.Enum
+    assert dedent(
+        """
+        │ col1 │
+        │ ---  │
+        │ enum │
+        ╞══════╡
+        """
+    ) in str(df)
 
 
 def test_equality_of_two_separately_constructed_enums() -> None:
@@ -41,6 +79,24 @@ def test_nested_enum_creation() -> None:
     s = pl.Series([[None, "a"], ["b", "c"]], dtype=dtype)
     assert s.len() == 2
     assert s.dtype == dtype
+
+
+def test_nested_enum_concat() -> None:
+    dtype = pl.List(pl.Enum(["a", "b", "c", "d"]))
+    s1 = pl.Series([[None, "a"], ["b", "c"]], dtype=dtype)
+    s2 = pl.Series([["c", "d"], ["a", None]], dtype=dtype)
+    expected = pl.Series(
+        [
+            [None, "a"],
+            ["b", "c"],
+            ["c", "d"],
+            ["a", None],
+        ],
+        dtype=dtype,
+    )
+
+    assert_series_equal(pl.concat((s1, s2)), expected)
+    assert_series_equal(s1.extend(s2), expected)
 
 
 def test_casting_to_an_enum_from_utf() -> None:
@@ -135,7 +191,7 @@ def test_append_to_an_enum() -> None:
 def test_append_to_an_enum_with_new_category() -> None:
     with pytest.raises(
         pl.ComputeError,
-        match=("enum is not compatible with other categorical / enum"),
+        match=("can not merge incompatible Enum types"),
     ):
         pl.Series([None, "a", "b", "c"], dtype=pl.Enum(["a", "b", "c"])).append(
             pl.Series(["d", "a", "b", "c"], dtype=pl.Enum(["a", "b", "c", "d"]))
@@ -152,7 +208,8 @@ def test_extend_to_an_enum() -> None:
 
 def test_series_init_uninstantiated_enum() -> None:
     with pytest.raises(
-        TypeError, match="Enum types must be instantiated with a list of categories"
+        pl.ComputeError,
+        match="can not cast / initialize Enum without categories present",
     ):
         pl.Series(["a", "b", "a"], dtype=pl.Enum)
 
@@ -259,7 +316,10 @@ def test_compare_enum_str_single_raise(
     s2 = "NOTEXIST"
 
     with pytest.raises(
-        pl.ComputeError, match="value 'NOTEXIST' is not present in Enum"
+        pl.ComputeError,
+        match=re.escape(
+            "conversion from `str` to `enum` failed in column '' for 1 out of 1 values: [\"NOTEXIST\"]"
+        ),
     ):
         op(s, s2)  # type: ignore[arg-type]
 
@@ -272,7 +332,8 @@ def test_compare_enum_str_raise() -> None:
     for s_compare in [s2, s_broadcast]:
         for op in [operator.le, operator.gt, operator.ge, operator.lt]:
             with pytest.raises(
-                pl.ComputeError, match="value 'd' is not present in Enum"
+                pl.ComputeError,
+                match="conversion from `str` to `enum` failed in column",
             ):
                 op(s, s_compare)
 
@@ -294,3 +355,84 @@ def test_different_enum_comparison_order() -> None:
             match="can only compare categoricals of the same type",
         ):
             df_enum.filter(op(pl.col("a_cat"), pl.col("b_cat")))
+
+
+@pytest.mark.parametrize("categories", [[None], ["x", "y", None]])
+def test_enum_categories_null(categories: list[str | None]) -> None:
+    with pytest.raises(TypeError, match="Enum categories must not contain null values"):
+        pl.Enum(categories)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("categories", "type"), [([date.today()], "Date"), ([-10, 10], "Int64")]
+)
+def test_valid_enum_category_types(categories: Any, type: str) -> None:
+    with pytest.raises(
+        TypeError, match=f"Enum categories must be strings; found data of type {type}"
+    ):
+        pl.Enum(categories)
+
+
+def test_enum_categories_unique() -> None:
+    with pytest.raises(ValueError, match="must be unique; found duplicate 'a'"):
+        pl.Enum(["a", "a", "b", "b", "b", "c"])
+
+
+def test_enum_categories_series_input() -> None:
+    categories = pl.Series("a", ["a", "b", "c"])
+    dtype = pl.Enum(categories)
+    assert_series_equal(dtype.categories, categories.alias("category"))
+
+
+def test_enum_categories_series_zero_copy() -> None:
+    categories = pl.Series(["a", "b"])
+    dtype = pl.Enum(categories)
+
+    s = pl.Series([None, "a", "b"], dtype=dtype)
+    result_dtype = s.dtype
+
+    assert result_dtype == dtype
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [pl.UInt8, pl.UInt16, pl.UInt32, pl.UInt64, pl.Int8, pl.Int16, pl.Int32, pl.Int64],
+)
+def test_enum_cast_from_other_integer_dtype(dtype: pl.DataType) -> None:
+    enum_dtype = pl.Enum(["a", "b", "c", "d"])
+    series = pl.Series([1, 2, 3, 3, 2, 1], dtype=dtype)
+    series.cast(enum_dtype)
+
+
+def test_enum_cast_from_other_integer_dtype_oob() -> None:
+    enum_dtype = pl.Enum(["a", "b", "c", "d"])
+    series = pl.Series([-1, 2, 3, 3, 2, 1], dtype=pl.Int8)
+    with pytest.raises(
+        pl.ComputeError, match="conversion from `i8` to `u32` failed in column"
+    ):
+        series.cast(enum_dtype)
+
+    series = pl.Series([2**34, 2, 3, 3, 2, 1], dtype=pl.UInt64)
+    with pytest.raises(
+        pl.ComputeError, match="conversion from `u64` to `u32` failed in column"
+    ):
+        series.cast(enum_dtype)
+
+
+def test_enum_creating_col_expr() -> None:
+    df = pl.DataFrame(
+        {
+            "col1": ["a", "b", "c"],
+            "col2": ["d", "e", "f"],
+            "col3": ["g", "h", "i"],
+        },
+        schema={
+            "col1": pl.Enum(["a", "b", "c"]),
+            "col2": pl.Categorical(),
+            "col3": pl.Enum(["g", "h", "i"]),
+        },
+    )
+
+    out = df.select(pl.col(pl.Enum))
+    expected = df.select("col1", "col3")
+    assert_frame_equal(out, expected)

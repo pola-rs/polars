@@ -53,6 +53,7 @@ impl Sink for OrderedSink {
             )));
         }
         self.sort();
+
         let chunks = std::mem::take(&mut self.chunks);
         Ok(FinalizedSink::Finished(chunks_to_df_unchecked(chunks)))
     }

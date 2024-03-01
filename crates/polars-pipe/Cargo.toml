@@ -12,13 +12,14 @@ description = "Lazy query engine for the Polars DataFrame library"
 arrow = { workspace = true }
 futures = { workspace = true, optional = true }
 polars-compute = { workspace = true }
-polars-core = { workspace = true, features = ["lazy", "zip_with", "random", "rows", "chunked_ids"] }
+polars-core = { workspace = true, features = ["lazy", "zip_with", "random", "rows"] }
 polars-io = { workspace = true, features = ["ipc"] }
-polars-ops = { workspace = true, features = ["search_sorted"] }
+polars-ops = { workspace = true, features = ["search_sorted", "chunked_ids"] }
 polars-plan = { workspace = true }
 polars-row = { workspace = true }
 polars-utils = { workspace = true, features = ["sysinfo"] }
 tokio = { workspace = true, optional = true }
+uuid = { workspace = true }
 
 crossbeam-channel = { workspace = true }
 crossbeam-queue = { workspace = true }
@@ -37,7 +38,7 @@ cloud = ["async", "polars-io/cloud", "polars-plan/cloud", "tokio", "futures"]
 parquet = ["polars-plan/parquet", "polars-io/parquet", "polars-io/async"]
 ipc = ["polars-plan/ipc", "polars-io/ipc"]
 json = ["polars-plan/json", "polars-io/json"]
-async = ["polars-plan/async", "polars-io/async"]
+async = ["polars-plan/async", "polars-io/async", "futures"]
 nightly = ["polars-core/nightly", "polars-utils/nightly", "hashbrown/nightly"]
 cross_join = ["polars-ops/cross_join"]
 dtype-u8 = ["polars-core/dtype-u8"]
@@ -48,4 +49,3 @@ dtype-decimal = ["polars-core/dtype-decimal"]
 dtype-array = ["polars-core/dtype-array"]
 dtype-categorical = ["polars-core/dtype-categorical"]
 trigger_ooc = []
-test = ["polars-core/chunked_ids"]

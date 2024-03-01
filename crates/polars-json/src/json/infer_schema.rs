@@ -2,7 +2,6 @@ use std::borrow::Borrow;
 
 use arrow::datatypes::{ArrowDataType, Field};
 use indexmap::map::Entry;
-use indexmap::IndexMap;
 use simd_json::borrowed::Object;
 use simd_json::{BorrowedValue, StaticNode};
 
@@ -91,7 +90,7 @@ pub(crate) fn coerce_data_type<A: Borrow<ArrowDataType>>(datatypes: &[A]) -> Arr
         });
         // group fields by unique
         let fields = fields.iter().fold(
-            IndexMap::<&str, PlHashSet<&ArrowDataType>, ahash::RandomState>::default(),
+            PlIndexMap::<&str, PlHashSet<&ArrowDataType>>::default(),
             |mut acc, field| {
                 match acc.entry(field.name.as_str()) {
                     Entry::Occupied(mut v) => {
@@ -132,7 +131,13 @@ pub(crate) fn coerce_data_type<A: Borrow<ArrowDataType>>(datatypes: &[A]) -> Arr
             true,
         )));
     } else if datatypes.len() > 2 {
-        return LargeUtf8;
+        return datatypes
+            .iter()
+            .map(|dt| dt.borrow().clone())
+            .reduce(|a, b| coerce_data_type(&[a, b]))
+            .unwrap()
+            .borrow()
+            .clone();
     }
     let (lhs, rhs) = (datatypes[0].borrow(), datatypes[1].borrow());
 
@@ -142,7 +147,7 @@ pub(crate) fn coerce_data_type<A: Borrow<ArrowDataType>>(datatypes: &[A]) -> Arr
             let inner = coerce_data_type(&[lhs.data_type(), rhs.data_type()]);
             LargeList(Box::new(Field::new(ITEM_NAME, inner, true)))
         },
-        (scalar, List(list)) => {
+        (scalar, LargeList(list)) => {
             let inner = coerce_data_type(&[scalar, list.data_type()]);
             LargeList(Box::new(Field::new(ITEM_NAME, inner, true)))
         },
@@ -154,6 +159,8 @@ pub(crate) fn coerce_data_type<A: Borrow<ArrowDataType>>(datatypes: &[A]) -> Arr
         (Int64, Float64) => Float64,
         (Int64, Boolean) => Int64,
         (Boolean, Int64) => Int64,
+        (Null, rhs) => rhs.clone(),
+        (lhs, Null) => lhs.clone(),
         (_, _) => LargeUtf8,
     };
 }

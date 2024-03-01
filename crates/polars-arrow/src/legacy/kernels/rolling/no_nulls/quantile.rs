@@ -1,5 +1,3 @@
-use std::fmt::Debug;
-
 use num_traits::ToPrimitive;
 use polars_error::polars_ensure;
 use polars_utils::slice::GetSaferUnchecked;
@@ -66,11 +64,11 @@ impl<
 
                 let top_idx = ((length_f - 1.0) * self.prob).ceil() as usize;
                 return if top_idx == idx {
-                    // safety
+                    // SAFETY:
                     // we are in bounds
                     Some(unsafe { *vals.get_unchecked_release(idx) })
                 } else {
-                    // safety
+                    // SAFETY:
                     // we are in bounds
                     let (mid, mid_plus_1) = unsafe {
                         (
@@ -93,7 +91,7 @@ impl<
             },
         };
 
-        // safety
+        // SAFETY:
         // we are in bounds
         Some(unsafe { *vals.get_unchecked_release(idx) })
     }
@@ -261,7 +259,6 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::legacy::kernels::rolling::no_nulls::{rolling_max, rolling_min};
 
     #[test]
     fn test_rolling_median() {

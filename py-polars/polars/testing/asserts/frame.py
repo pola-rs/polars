@@ -84,8 +84,9 @@ def assert_frame_equal(
     Traceback (most recent call last):
     ...
     AssertionError: values for column 'a' are different
-
     """
+    __tracebackhide__ = True
+
     lazy = _assert_correct_input_type(left, right)
     objects = "LazyFrames" if lazy else "DataFrames"
 
@@ -133,6 +134,8 @@ def assert_frame_equal(
 def _assert_correct_input_type(
     left: DataFrame | LazyFrame, right: DataFrame | LazyFrame
 ) -> bool:
+    __tracebackhide__ = True
+
     if isinstance(left, DataFrame) and isinstance(right, DataFrame):
         return False
     elif isinstance(left, LazyFrame) and isinstance(right, LazyFrame):
@@ -154,6 +157,8 @@ def _assert_frame_schema_equal(
     check_column_order: bool,
     objects: str,
 ) -> None:
+    __tracebackhide__ = True
+
     left_schema, right_schema = left.schema, right.schema
 
     # Fast path for equal frames
@@ -253,8 +258,9 @@ def assert_frame_not_equal(
     Traceback (most recent call last):
     ...
     AssertionError: frames are equal
-
     """
+    __tracebackhide__ = True
+
     try:
         assert_frame_equal(
             left=left,

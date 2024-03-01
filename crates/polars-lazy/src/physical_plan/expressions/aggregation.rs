@@ -1,12 +1,9 @@
 use std::borrow::Cow;
-use std::sync::Arc;
 
 use arrow::array::*;
 use arrow::compute::concatenate::concatenate;
-use arrow::legacy::prelude::QuantileInterpolOptions;
 use arrow::legacy::utils::CustomIterTools;
 use arrow::offset::Offsets;
-use polars_core::frame::group_by::{GroupByMethod, GroupsProxy};
 use polars_core::prelude::*;
 use polars_core::utils::NoNull;
 #[cfg(feature = "dtype-struct")]
@@ -15,7 +12,6 @@ use polars_core::POOL;
 use polars_ops::prelude::nan_propagating_aggregate;
 
 use crate::physical_plan::state::ExecutionState;
-use crate::physical_plan::PartitionedAggregation;
 use crate::prelude::AggState::{AggregatedList, AggregatedScalar};
 use crate::prelude::*;
 
@@ -64,7 +60,7 @@ impl PhysicalExpr for AggregationExpr {
             }
         }
 
-        // Safety:
+        // SAFETY:
         // groups must always be in bounds.
         let out = unsafe {
             match self.agg_type {
@@ -335,7 +331,7 @@ impl PartitionedAggregation for AggregationExpr {
         let expr = self.input.as_partitioned_aggregator().unwrap();
         let series = expr.evaluate_partitioned(df, groups, state)?;
 
-        // Safety:
+        // SAFETY:
         // groups are in bounds
         unsafe {
             match self.agg_type {
@@ -476,7 +472,7 @@ impl PartitionedAggregation for AggregationExpr {
                     GroupsProxy::Idx(groups) => {
                         for (_, idx) in groups {
                             let ca = unsafe {
-                                // Safety
+                                // SAFETY:
                                 // The indexes of the group_by operation are never out of bounds
                                 ca.take_unchecked(idx)
                             };
@@ -586,7 +582,7 @@ impl PhysicalExpr for AggQuantileExpr {
 
         let quantile = self.get_quantile(df, state)?;
 
-        // safety:
+        // SAFETY:
         // groups are in bounds
         let mut agg = unsafe {
             ac.flat_naive()

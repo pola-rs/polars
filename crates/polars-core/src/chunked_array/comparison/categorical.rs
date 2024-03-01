@@ -44,12 +44,12 @@ where
     let rev_map_r = rhs.get_rev_map();
     polars_ensure!(rev_map_l.same_src(rev_map_r), ComputeError: "can only compare categoricals of the same type with the same categories");
 
-    if rev_map_l.is_enum() || !lhs.uses_lexical_ordering() {
+    if lhs.is_enum() || !lhs.uses_lexical_ordering() {
         Ok(compare_function(lhs.physical(), rhs.physical()))
     } else {
         match (lhs.len(), rhs.len()) {
             (lhs_len, 1) => {
-                // Safety: physical is in range of revmap
+                // SAFETY: physical is in range of revmap
                 let v = unsafe {
                     rhs.physical()
                         .get(0)
@@ -65,7 +65,7 @@ where
                     .collect_ca_trusted(lhs.name()))
             },
             (1, rhs_len) => {
-                // Safety: physical is in range of revmap
+                // SAFETY: physical is in range of revmap
                 let v = unsafe {
                     lhs.physical()
                         .get(0)
@@ -167,9 +167,8 @@ where
     CompareCat: Fn(&CategoricalChunked, &CategoricalChunked) -> PolarsResult<BooleanChunked>,
     CompareString: Fn(&StringChunked, &'a StringChunked) -> BooleanChunked,
 {
-    let rev_map = lhs.get_rev_map();
-    if rev_map.is_enum() {
-        let rhs_cat = rhs.cast(lhs.dtype())?;
+    if lhs.is_enum() {
+        let rhs_cat = rhs.clone().into_series().strict_cast(lhs.dtype())?;
         cat_compare_function(lhs, rhs_cat.categorical().unwrap())
     } else if rhs.len() == 1 {
         match rhs.get(0) {
@@ -193,14 +192,13 @@ fn cat_str_compare_helper<'a, CompareCat, ComparePhys, CompareStringSingle, Comp
     str_compare_function: CompareString,
 ) -> PolarsResult<BooleanChunked>
 where
-    CompareStringSingle: Fn(&Utf8Array<i64>, &str) -> Bitmap,
+    CompareStringSingle: Fn(&Utf8ViewArray, &str) -> Bitmap,
     ComparePhys: Fn(&UInt32Chunked, u32) -> BooleanChunked,
     CompareCat: Fn(&CategoricalChunked, &CategoricalChunked) -> PolarsResult<BooleanChunked>,
     CompareString: Fn(&StringChunked, &'a StringChunked) -> BooleanChunked,
 {
-    let rev_map = lhs.get_rev_map();
-    if rev_map.is_enum() {
-        let rhs_cat = rhs.cast(lhs.dtype())?;
+    if lhs.is_enum() {
+        let rhs_cat = rhs.clone().into_series().strict_cast(lhs.dtype())?;
         cat_compare_function(lhs, rhs_cat.categorical().unwrap())
     } else if rhs.len() == 1 {
         match rhs.get(0) {
@@ -273,7 +271,7 @@ impl ChunkCompare<&StringChunked> for CategoricalChunked {
             rhs,
             |s1, s2| CategoricalChunked::gt(s1, s2),
             UInt32Chunked::gt,
-            Utf8Array::tot_gt_kernel_broadcast,
+            Utf8ViewArray::tot_gt_kernel_broadcast,
             StringChunked::gt,
         )
     }
@@ -284,7 +282,7 @@ impl ChunkCompare<&StringChunked> for CategoricalChunked {
             rhs,
             |s1, s2| CategoricalChunked::gt_eq(s1, s2),
             UInt32Chunked::gt_eq,
-            Utf8Array::tot_ge_kernel_broadcast,
+            Utf8ViewArray::tot_ge_kernel_broadcast,
             StringChunked::gt_eq,
         )
     }
@@ -295,7 +293,7 @@ impl ChunkCompare<&StringChunked> for CategoricalChunked {
             rhs,
             |s1, s2| CategoricalChunked::lt(s1, s2),
             UInt32Chunked::lt,
-            Utf8Array::tot_lt_kernel_broadcast,
+            Utf8ViewArray::tot_lt_kernel_broadcast,
             StringChunked::lt,
         )
     }
@@ -306,7 +304,7 @@ impl ChunkCompare<&StringChunked> for CategoricalChunked {
             rhs,
             |s1, s2| CategoricalChunked::lt_eq(s1, s2),
             UInt32Chunked::lt_eq,
-            Utf8Array::tot_le_kernel_broadcast,
+            Utf8ViewArray::tot_le_kernel_broadcast,
             StringChunked::lt_eq,
         )
     }
@@ -324,7 +322,7 @@ where
 {
     let rev_map = lhs.get_rev_map();
     let idx = rev_map.find(rhs);
-    if rev_map.is_enum() {
+    if lhs.is_enum() {
         let Some(idx) = idx else {
             polars_bail!(
                 not_in_enum,
@@ -348,11 +346,11 @@ fn cat_single_str_compare_helper<'a, ComparePhys, CompareStringSingle>(
     str_single_compare_function: CompareStringSingle,
 ) -> PolarsResult<BooleanChunked>
 where
-    CompareStringSingle: Fn(&Utf8Array<i64>, &str) -> Bitmap,
+    CompareStringSingle: Fn(&Utf8ViewArray, &str) -> Bitmap,
     ComparePhys: Fn(&UInt32Chunked, u32) -> BooleanChunked,
 {
     let rev_map = lhs.get_rev_map();
-    if rev_map.is_enum() {
+    if lhs.is_enum() {
         match rev_map.find(rhs) {
             None => {
                 polars_bail!(
@@ -369,7 +367,7 @@ where
 
         Ok(
             BooleanChunked::from_iter_trusted_length(lhs.physical().into_iter().map(|opt_idx| {
-                // Safety: indexing into bitmap with same length as original array
+                // SAFETY: indexing into bitmap with same length as original array
                 opt_idx.map(|idx| unsafe { bitmap.get_bit_unchecked(idx as usize) })
             }))
             .with_name(lhs.name()),
@@ -421,7 +419,7 @@ impl ChunkCompare<&str> for CategoricalChunked {
             self,
             rhs,
             UInt32Chunked::gt,
-            Utf8Array::tot_gt_kernel_broadcast,
+            Utf8ViewArray::tot_gt_kernel_broadcast,
         )
     }
 
@@ -430,7 +428,7 @@ impl ChunkCompare<&str> for CategoricalChunked {
             self,
             rhs,
             UInt32Chunked::gt_eq,
-            Utf8Array::tot_ge_kernel_broadcast,
+            Utf8ViewArray::tot_ge_kernel_broadcast,
         )
     }
 
@@ -439,7 +437,7 @@ impl ChunkCompare<&str> for CategoricalChunked {
             self,
             rhs,
             UInt32Chunked::lt,
-            Utf8Array::tot_lt_kernel_broadcast,
+            Utf8ViewArray::tot_lt_kernel_broadcast,
         )
     }
 
@@ -448,7 +446,7 @@ impl ChunkCompare<&str> for CategoricalChunked {
             self,
             rhs,
             UInt32Chunked::lt_eq,
-            Utf8Array::tot_le_kernel_broadcast,
+            Utf8ViewArray::tot_le_kernel_broadcast,
         )
     }
 }

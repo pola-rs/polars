@@ -57,7 +57,7 @@ jobs:
           ref: ${{ github.event.client_payload.sha }}
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
@@ -82,12 +82,10 @@ jobs:
 
       - name: Install Polars
         working-directory: py-polars
-        run: |
-          source activate
-          maturin develop
+        run: maturin develop
 
       - name: Set up Graphviz
-        uses: ts-graphviz/setup-graphviz@v1
+        uses: ts-graphviz/setup-graphviz@v2
 
       - name: Build documentation
         env:

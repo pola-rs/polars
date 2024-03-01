@@ -6,7 +6,6 @@ use polars_core::prelude::*;
 use serde::{Deserialize, Serialize};
 
 pub use super::expr_dyn_fn::*;
-use crate::dsl::function_expr::FunctionExpr;
 use crate::prelude::*;
 
 #[derive(PartialEq, Clone)]
@@ -135,8 +134,7 @@ pub enum Expr {
     Exclude(Box<Expr>, Vec<Excluded>),
     /// Set root name as Alias
     KeepName(Box<Expr>),
-    /// Special case that does not need columns
-    Count,
+    Len,
     /// Take the nth column in the `DataFrame`
     Nth(i64),
     // skipped fields must be last otherwise serde fails in pickle
@@ -223,7 +221,7 @@ impl Hash for Expr {
                 options.hash(state);
             },
             // already hashed by discriminant
-            Expr::Wildcard | Expr::Count => {},
+            Expr::Wildcard | Expr::Len => {},
             #[allow(unreachable_code)]
             _ => {
                 // the panic checks if we hit this

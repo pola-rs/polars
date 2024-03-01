@@ -12,7 +12,7 @@ unsafe impl ToFfi for MapArray {
     fn buffers(&self) -> Vec<Option<*const u8>> {
         vec![
             self.validity.as_ref().map(|x| x.as_ptr()),
-            Some(self.offsets.buffer().as_ptr().cast::<u8>()),
+            Some(self.offsets.buffer().storage_ptr().cast::<u8>()),
         ]
     }
 

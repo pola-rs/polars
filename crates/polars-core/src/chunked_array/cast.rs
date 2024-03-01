@@ -1,10 +1,7 @@
 //! Implementations of the ChunkCast Trait.
-use std::convert::TryFrom;
 
 use arrow::compute::cast::CastOptions;
 
-#[cfg(feature = "dtype-categorical")]
-use crate::chunked_array::categorical::CategoricalChunkedBuilder;
 #[cfg(feature = "timezones")]
 use crate::chunked_array::temporal::validate_time_zone;
 #[cfg(feature = "dtype-datetime")]
@@ -25,7 +22,7 @@ pub(crate) fn cast_chunks(
         }
     };
 
-    let arrow_dtype = dtype.to_arrow();
+    let arrow_dtype = dtype.to_arrow(true);
     chunks
         .iter()
         .map(|arr| arrow::compute::cast::cast(arr.as_ref(), &arrow_dtype, options))
@@ -91,7 +88,7 @@ where
 {
     fn cast_impl(&self, data_type: &DataType, checked: bool) -> PolarsResult<Series> {
         if self.dtype() == data_type {
-            // safety: chunks are correct dtype
+            // SAFETY: chunks are correct dtype
             let mut out = unsafe {
                 Series::from_chunks_and_dtype_unchecked(self.name(), self.chunks.clone(), data_type)
             };
@@ -100,37 +97,58 @@ where
         }
         match data_type {
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(rev_map, ordering) => {
+            DataType::Categorical(_, ordering) => {
                 polars_ensure!(
                     self.dtype() == &DataType::UInt32,
                     ComputeError: "cannot cast numeric types to 'Categorical'"
                 );
-                // SAFETY
+                // SAFETY:
                 // we are guarded by the type system
                 let ca = unsafe { &*(self as *const ChunkedArray<T> as *const UInt32Chunked) };
-                if let Some(rev_map) = rev_map {
-                    if let RevMapping::Enum(categories, _) = &**rev_map {
-                        // Check if indices are in bounds
-                        if let Some(m) = ca.max() {
-                            if m >= categories.len() as u32 {
-                                polars_bail!(OutOfBounds: "index {} is bigger than the number of categories {}",m,categories.len());
-                            }
-                        }
-
-                        // SAFETY indices are in bound
-                        unsafe {
-                            return Ok(CategoricalChunked::from_cats_and_rev_map_unchecked(
-                                ca.clone(),
-                                rev_map.clone(),
-                                *ordering,
-                            )
-                            .into_series());
-                        }
-                    }
-                }
 
                 CategoricalChunked::from_global_indices(ca.clone(), *ordering)
                     .map(|ca| ca.into_series())
+            },
+            #[cfg(feature = "dtype-categorical")]
+            DataType::Enum(rev_map, ordering) => {
+                let ca = match self.dtype() {
+                    DataType::UInt32 => {
+                        // SAFETY: we are guarded by the type system
+                        unsafe { &*(self as *const ChunkedArray<T> as *const UInt32Chunked) }
+                            .clone()
+                    },
+                    dt if dt.is_integer() => self
+                        .cast(self.dtype())?
+                        .strict_cast(&DataType::UInt32)?
+                        .u32()?
+                        .clone(),
+                    _ => {
+                        polars_bail!(ComputeError: "cannot cast non integer types to 'Enum'")
+                    },
+                };
+                let Some(rev_map) = rev_map else {
+                    polars_bail!(ComputeError: "cannot cast to Enum without categories");
+                };
+                let categories = rev_map.get_categories();
+                // Check if indices are in bounds
+                if let Some(m) = ca.max() {
+                    if m >= categories.len() as u32 {
+                        polars_bail!(OutOfBounds: "index {} is bigger than the number of categories {}",m,categories.len());
+                    }
+                }
+                // SAFETY:
+                // we are guarded by the type system
+                let ca = unsafe { &*(self as *const ChunkedArray<T> as *const UInt32Chunked) };
+                // SAFETY: indices are in bound
+                unsafe {
+                    Ok(CategoricalChunked::from_cats_and_rev_map_unchecked(
+                        ca.clone(),
+                        rev_map.clone(),
+                        true,
+                        *ordering,
+                    )
+                    .into_series())
+                }
             },
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => cast_single_to_struct(self.name(), &self.chunks, fields),
@@ -171,15 +189,17 @@ where
     unsafe fn cast_unchecked(&self, data_type: &DataType) -> PolarsResult<Series> {
         match data_type {
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(Some(rev_map), ordering) => {
+            DataType::Categorical(Some(rev_map), ordering)
+            | DataType::Enum(Some(rev_map), ordering) => {
                 if self.dtype() == &DataType::UInt32 {
-                    // safety:
+                    // SAFETY:
                     // we are guarded by the type system.
                     let ca = unsafe { &*(self as *const ChunkedArray<T> as *const UInt32Chunked) };
                     Ok(unsafe {
                         CategoricalChunked::from_cats_and_rev_map_unchecked(
                             ca.clone(),
                             rev_map.clone(),
+                            matches!(data_type, DataType::Enum(_, _)),
                             *ordering,
                         )
                     }
@@ -199,28 +219,29 @@ impl ChunkCast for StringChunked {
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(rev_map, ordering) => match rev_map {
                 None => {
-                    // Safety: length is correct
+                    // SAFETY: length is correct
                     let iter =
                         unsafe { self.downcast_iter().flatten().trust_my_length(self.len()) };
-                    let mut builder =
+                    let builder =
                         CategoricalChunkedBuilder::new(self.name(), self.len(), *ordering);
-                    builder.drain_iter(iter);
-                    let ca = builder.finish();
+                    let ca = builder.drain_iter_and_finish(iter);
                     Ok(ca.into_series())
                 },
-                Some(rev_map) => {
-                    polars_ensure!(rev_map.is_enum(), InvalidOperation: "casting to a non-enum variant with rev map is not supported for the user");
-                    CategoricalChunked::from_string_to_enum(
-                        self,
-                        rev_map.get_categories(),
-                        *ordering,
-                    )
+                Some(_) => {
+                    polars_bail!(InvalidOperation: "casting to a categorical with rev map is not allowed");
+                },
+            },
+            #[cfg(feature = "dtype-categorical")]
+            DataType::Enum(rev_map, ordering) => {
+                let Some(rev_map) = rev_map else {
+                    polars_bail!(ComputeError: "can not cast / initialize Enum without categories present")
+                };
+                CategoricalChunked::from_string_to_enum(self, rev_map.get_categories(), *ordering)
                     .map(|ca| {
                         let mut s = ca.into_series();
                         s.rename(self.name());
                         s
                     })
-                },
             },
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => cast_single_to_struct(self.name(), &self.chunks, fields),
@@ -228,7 +249,11 @@ impl ChunkCast for StringChunked {
             DataType::Decimal(precision, scale) => match (precision, scale) {
                 (precision, Some(scale)) => {
                     let chunks = self.downcast_iter().map(|arr| {
-                        arrow::legacy::compute::cast::cast_utf8_to_decimal(arr, *precision, *scale)
+                        arrow::compute::cast::binview_to_decimal(
+                            &arr.to_binview(),
+                            *precision,
+                            *scale,
+                        )
                     });
                     Ok(Int128Chunked::from_chunk_iter(self.name(), chunks)
                         .into_decimal_unchecked(*precision, *scale)
@@ -275,24 +300,13 @@ impl ChunkCast for StringChunked {
     }
 }
 
-unsafe fn binary_to_utf8_unchecked(from: &BinaryArray<i64>) -> Utf8Array<i64> {
-    let values = from.values().clone();
-    let offsets = from.offsets().clone();
-    Utf8Array::<i64>::new_unchecked(
-        ArrowDataType::LargeUtf8,
-        offsets,
-        values,
-        from.validity().cloned(),
-    )
-}
-
 impl BinaryChunked {
     /// # Safety
     /// String is not validated
     pub unsafe fn to_string(&self) -> StringChunked {
         let chunks = self
             .downcast_iter()
-            .map(|arr| Box::new(binary_to_utf8_unchecked(arr)) as ArrayRef)
+            .map(|arr| arr.to_utf8view_unchecked().boxed())
             .collect();
         let field = Arc::new(Field::new(self.name(), DataType::String));
         StringChunked::from_chunks_and_metadata(chunks, field, self.bit_settings, true, true)
@@ -303,12 +317,7 @@ impl StringChunked {
     pub fn as_binary(&self) -> BinaryChunked {
         let chunks = self
             .downcast_iter()
-            .map(|arr| {
-                Box::new(arrow::compute::cast::utf8_to_binary(
-                    arr,
-                    ArrowDataType::LargeBinary,
-                )) as ArrayRef
-            })
+            .map(|arr| arr.to_binview().boxed())
             .collect();
         let field = Arc::new(Field::new(self.name(), DataType::Binary));
         unsafe {
@@ -334,24 +343,23 @@ impl ChunkCast for BinaryChunked {
     }
 }
 
-fn boolean_to_string(ca: &BooleanChunked) -> StringChunked {
-    ca.into_iter()
-        .map(|opt_b| match opt_b {
-            Some(true) => Some("true"),
-            Some(false) => Some("false"),
-            None => None,
-        })
-        .collect()
+impl ChunkCast for BinaryOffsetChunked {
+    fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
+        match data_type {
+            #[cfg(feature = "dtype-struct")]
+            DataType::Struct(fields) => cast_single_to_struct(self.name(), &self.chunks, fields),
+            _ => cast_impl(self.name(), &self.chunks, data_type),
+        }
+    }
+
+    unsafe fn cast_unchecked(&self, data_type: &DataType) -> PolarsResult<Series> {
+        self.cast(data_type)
+    }
 }
 
 impl ChunkCast for BooleanChunked {
     fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
         match data_type {
-            DataType::String => {
-                let mut ca = boolean_to_string(self);
-                ca.rename(self.name());
-                Ok(ca.into_series())
-            },
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => cast_single_to_struct(self.name(), &self.chunks, fields),
             _ => cast_impl(self.name(), &self.chunks, data_type),
@@ -372,15 +380,15 @@ impl ChunkCast for ListChunked {
             List(child_type) => {
                 match (self.inner_dtype(), &**child_type) {
                     #[cfg(feature = "dtype-categorical")]
-                    (dt, Categorical(None, _))
-                        if !matches!(dt, Categorical(_, _) | String | Null) =>
+                    (dt, Categorical(None, _) | Enum(_, _))
+                        if !matches!(dt, Categorical(_, _) | Enum(_, _) | String | Null) =>
                     {
                         polars_bail!(ComputeError: "cannot cast List inner type: '{:?}' to Categorical", dt)
                     },
                     _ => {
                         // ensure the inner logical type bubbles up
                         let (arr, child_type) = cast_list(self, child_type)?;
-                        // Safety: we just casted so the dtype matches.
+                        // SAFETY: we just casted so the dtype matches.
                         // we must take this path to correct for physical types.
                         unsafe {
                             Ok(Series::from_chunks_and_dtype_unchecked(
@@ -397,7 +405,7 @@ impl ChunkCast for ListChunked {
                 let physical_type = data_type.to_physical();
                 // cast to the physical type to avoid logical chunks.
                 let chunks = cast_chunks(self.chunks(), &physical_type, true)?;
-                // Safety: we just casted so the dtype matches.
+                // SAFETY: we just casted so the dtype matches.
                 // we must take this path to correct for physical types.
                 unsafe {
                     Ok(Series::from_chunks_and_dtype_unchecked(
@@ -436,13 +444,13 @@ impl ChunkCast for ArrayChunked {
             Array(child_type, width) => {
                 match (self.inner_dtype(), &**child_type) {
                     #[cfg(feature = "dtype-categorical")]
-                    (dt, Categorical(None, _)) if !matches!(dt, String) => {
-                        polars_bail!(ComputeError: "cannot cast fixed-size-list inner type: '{:?}' to Categorical", dt)
+                    (dt, Categorical(None, _) | Enum(_, _)) if !matches!(dt, String) => {
+                        polars_bail!(ComputeError: "cannot cast fixed-size-list inner type: '{:?}' to dtype: {:?}", dt, child_type)
                     },
                     _ => {
                         // ensure the inner logical type bubbles up
                         let (arr, child_type) = cast_fixed_size_list(self, child_type)?;
-                        // Safety: we just casted so the dtype matches.
+                        // SAFETY: we just casted so the dtype matches.
                         // we must take this path to correct for physical types.
                         unsafe {
                             Ok(Series::from_chunks_and_dtype_unchecked(
@@ -458,7 +466,7 @@ impl ChunkCast for ArrayChunked {
                 let physical_type = data_type.to_physical();
                 // cast to the physical type to avoid logical chunks.
                 let chunks = cast_chunks(self.chunks(), &physical_type, true)?;
-                // Safety: we just casted so the dtype matches.
+                // SAFETY: we just casted so the dtype matches.
                 // we must take this path to correct for physical types.
                 unsafe {
                     Ok(Series::from_chunks_and_dtype_unchecked(
@@ -484,7 +492,7 @@ fn cast_list(ca: &ListChunked, child_type: &DataType) -> PolarsResult<(ArrayRef,
     // TODO!: consider a version that works on chunks and merges the data-types and arrays.
     let ca = ca.rechunk();
     let arr = ca.downcast_iter().next().unwrap();
-    // safety: inner dtype is passed correctly
+    // SAFETY: inner dtype is passed correctly
     let s = unsafe {
         Series::from_chunks_and_dtype_unchecked("", vec![arr.values().clone()], &ca.inner_dtype())
     };
@@ -502,14 +510,14 @@ fn cast_list(ca: &ListChunked, child_type: &DataType) -> PolarsResult<(ArrayRef,
         new_values,
         arr.validity().cloned(),
     );
-    Ok((Box::new(new_arr), inner_dtype))
+    Ok((new_arr.boxed(), inner_dtype))
 }
 
 unsafe fn cast_list_unchecked(ca: &ListChunked, child_type: &DataType) -> PolarsResult<Series> {
     // TODO! add chunked, but this must correct for list offsets.
     let ca = ca.rechunk();
     let arr = ca.downcast_iter().next().unwrap();
-    // safety: inner dtype is passed correctly
+    // SAFETY: inner dtype is passed correctly
     let s = unsafe {
         Series::from_chunks_and_dtype_unchecked("", vec![arr.values().clone()], &ca.inner_dtype())
     };
@@ -540,7 +548,7 @@ fn cast_fixed_size_list(
 ) -> PolarsResult<(ArrayRef, DataType)> {
     let ca = ca.rechunk();
     let arr = ca.downcast_iter().next().unwrap();
-    // safety: inner dtype is passed correctly
+    // SAFETY: inner dtype is passed correctly
     let s = unsafe {
         Series::from_chunks_and_dtype_unchecked("", vec![arr.values().clone()], &ca.inner_dtype())
     };

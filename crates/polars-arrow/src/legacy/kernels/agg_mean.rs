@@ -87,7 +87,7 @@ where
     let sum = chunks.by_ref().zip(validity_masks.by_ref()).fold(
         Simd::<f64, LANES>::splat(0.0),
         |acc, (chunk, validity_chunk)| {
-            // safety: exact size chunks
+            // SAFETY: exact size chunks
             let chunk: [T; LANES] = unsafe { chunk.try_into().unwrap_unchecked() };
             let chunk = Simd::from(chunk).cast_custom::<f64>();
 

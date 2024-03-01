@@ -36,7 +36,12 @@ fn scatter(mut s: Series, idx: &Series, values: &Series) -> PolarsResult<Series>
 
     let idx = idx.values().as_slice();
 
-    let values = values.to_physical_repr().cast(&s.dtype().to_physical())?;
+    let mut values = values.to_physical_repr().cast(&s.dtype().to_physical())?;
+
+    // Broadcast values input
+    if values.len() == 1 && idx.len() > 1 {
+        values = values.new_from_index(0, idx.len());
+    }
 
     // do not shadow, otherwise s is not dropped immediately
     // and we want to have mutable access

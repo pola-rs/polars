@@ -6,8 +6,6 @@ from polars.datatypes import (
     FLOAT_DTYPES,
     Array,
     Categorical,
-    Decimal,
-    Float64,
     List,
     String,
     Struct,
@@ -84,8 +82,9 @@ def assert_series_equal(
     AssertionError: Series are different (value mismatch)
     [left]:  [1, 2, 3]
     [right]: [1, 5, 3]
-
     """
+    __tracebackhide__ = True
+
     if not (isinstance(left, Series) and isinstance(right, Series)):  # type: ignore[redundant-expr]
         raise_assertion_error(
             "inputs",
@@ -122,6 +121,8 @@ def _assert_series_values_equal(
     atol: float,
     categorical_as_str: bool,
 ) -> None:
+    __tracebackhide__ = True
+
     """Assert that the values in both Series are equal."""
     # Handle categoricals
     if categorical_as_str:
@@ -129,14 +130,6 @@ def _assert_series_values_equal(
             left = left.cast(String)
         if right.dtype == Categorical:
             right = right.cast(String)
-
-    # Handle decimals
-    # TODO: Delete this branch when Decimal equality is implemented
-    # https://github.com/pola-rs/polars/issues/12118
-    if left.dtype == Decimal:
-        left = left.cast(Float64)
-    if right.dtype == Decimal:
-        right = right.cast(Float64)
 
     # Determine unequal elements
     try:
@@ -202,6 +195,8 @@ def _assert_series_nested_values_equal(
     atol: float,
     categorical_as_str: bool,
 ) -> None:
+    __tracebackhide__ = True
+
     # compare nested lists element-wise
     if _comparing_lists(left.dtype, right.dtype):
         for s1, s2 in zip(left, right):
@@ -232,6 +227,7 @@ def _assert_series_nested_values_equal(
 
 
 def _assert_series_null_values_match(left: Series, right: Series) -> None:
+    __tracebackhide__ = True
     null_value_mismatch = left.is_null() != right.is_null()
     if null_value_mismatch.any():
         raise_assertion_error(
@@ -240,6 +236,7 @@ def _assert_series_null_values_match(left: Series, right: Series) -> None:
 
 
 def _assert_series_nan_values_match(left: Series, right: Series) -> None:
+    __tracebackhide__ = True
     if not _comparing_floats(left.dtype, right.dtype):
         return
     nan_value_mismatch = left.is_nan() != right.is_nan()
@@ -281,6 +278,8 @@ def _assert_series_values_within_tolerance(
     rtol: float,
     atol: float,
 ) -> None:
+    __tracebackhide__ = True
+
     left_unequal, right_unequal = left.filter(unequal), right.filter(unequal)
 
     difference = (left_unequal - right_unequal).abs()
@@ -349,8 +348,9 @@ def assert_series_not_equal(
     Traceback (most recent call last):
     ...
     AssertionError: Series are equal
-
     """
+    __tracebackhide__ = True
+
     try:
         assert_series_equal(
             left=left,

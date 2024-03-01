@@ -26,7 +26,7 @@ fn test_join_suffix_and_drop() -> PolarsResult<()> {
         .right_on([col("id")])
         .suffix("_sire")
         .finish()
-        .drop_columns(["sireid"])
+        .drop(["sireid"])
         .collect()?;
 
     assert_eq!(out.shape(), (1, 3));
@@ -65,7 +65,7 @@ fn test_cross_join_pd() -> PolarsResult<()> {
 }
 
 #[test]
-fn test_row_count_pd() -> PolarsResult<()> {
+fn test_row_number_pd() -> PolarsResult<()> {
     let df = df![
         "x" => [1, 2, 3],
         "y" => [3, 2, 1],
@@ -73,12 +73,12 @@ fn test_row_count_pd() -> PolarsResult<()> {
 
     let df = df
         .lazy()
-        .with_row_count("row_count", None)
-        .select([col("row_count"), col("x") * lit(3i32)])
+        .with_row_index("index", None)
+        .select([col("index"), col("x") * lit(3i32)])
         .collect()?;
 
     let expected = df![
-        "row_count" => [0 as IdxSize, 1, 2],
+        "index" => [0 as IdxSize, 1, 2],
         "x" => [3i32, 6, 9]
     ]?;
 
@@ -123,7 +123,7 @@ fn concat_str_regex_expansion() -> PolarsResult<()> {
     ]?
     .lazy();
     let out = df
-        .select([concat_str([col(r"^b_a_\d$")], ";").alias("concatenated")])
+        .select([concat_str([col(r"^b_a_\d$")], ";", false).alias("concatenated")])
         .collect()?;
     let s = out.column("concatenated")?;
     assert_eq!(s, &Series::new("concatenated", ["a--;;", ";b--;", ";;c--"]));

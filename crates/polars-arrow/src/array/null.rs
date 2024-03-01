@@ -62,6 +62,7 @@ impl NullArray {
     }
 
     /// Returns a slice of the [`NullArray`].
+    ///
     /// # Safety
     /// The caller must ensure that `offset + length < self.len()`.
     pub unsafe fn slice_unchecked(&mut self, _offset: usize, length: usize) {
@@ -187,7 +188,7 @@ mod arrow {
         pub fn to_data(&self) -> ArrayData {
             let builder = ArrayDataBuilder::new(arrow_schema::DataType::Null).len(self.len());
 
-            // Safety: safe by construction
+            // SAFETY: safe by construction
             unsafe { builder.build_unchecked() }
         }
 

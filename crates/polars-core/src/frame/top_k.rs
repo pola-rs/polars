@@ -1,12 +1,9 @@
 use std::cmp::Ordering;
 
-use polars_error::PolarsResult;
 use polars_utils::iter::EnumerateIdxTrait;
 use polars_utils::IdxSize;
 use smartstring::alias::String as SmartString;
 
-use crate::datatypes::IdxCa;
-use crate::frame::DataFrame;
 use crate::prelude::sort::_broadcast_descending;
 use crate::prelude::sort::arg_sort_multiple::_get_rows_encoded;
 use crate::prelude::*;

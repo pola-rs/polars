@@ -1,7 +1,6 @@
 // --8<-- [start:setup]
 use chrono::prelude::*;
 use polars::io::prelude::*;
-use polars::lazy::dsl::GetOutput;
 use polars::prelude::*;
 // --8<-- [end:setup]
 
@@ -140,7 +139,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ..Default::default()
             },
         )
-        .agg([count()])
+        .agg([len()])
         .collect()?;
     println!("{}", &out);
     // --8<-- [end:group_by_dyn2]

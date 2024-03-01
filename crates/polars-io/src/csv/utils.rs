@@ -3,12 +3,13 @@ use std::borrow::Cow;
 use std::io::Read;
 use std::mem::MaybeUninit;
 
-use polars_core::datatypes::PlHashSet;
+use polars_core::config::verbose;
 use polars_core::prelude::*;
 #[cfg(feature = "polars-time")]
 use polars_time::chunkedarray::string::infer as date_infer;
 #[cfg(feature = "polars-time")]
 use polars_time::prelude::string::Pattern;
+use polars_utils::slice::GetSaferUnchecked;
 
 #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
 use crate::csv::parser::next_line_position_naive;
@@ -23,7 +24,7 @@ use crate::utils::{BOOLEAN_RE, FLOAT_RE, INTEGER_RE};
 pub(crate) fn get_file_chunks(
     bytes: &[u8],
     n_chunks: usize,
-    expected_fields: usize,
+    expected_fields: Option<usize>,
     separator: u8,
     quote_char: Option<u8>,
     eol_char: u8,
@@ -41,7 +42,7 @@ pub(crate) fn get_file_chunks(
 
         let end_pos = match next_line_position(
             &bytes[search_pos..],
-            Some(expected_fields),
+            expected_fields,
             separator,
             quote_char,
             eol_char,
@@ -150,6 +151,7 @@ pub fn infer_file_schema_inner(
     try_parse_dates: bool,
     recursion_count: u8,
     raise_if_empty: bool,
+    n_threads: &mut Option<usize>,
 ) -> PolarsResult<(Schema, usize, usize)> {
     // keep track so that we can determine the amount of bytes read
     let start_ptr = reader_bytes.as_ptr() as usize;
@@ -222,16 +224,10 @@ pub fn infer_file_schema_inner(
             }
             final_headers
         } else {
-            let mut column_names: Vec<String> = byterecord
+            byterecord
                 .enumerate()
                 .map(|(i, _s)| format!("column_{}", i + 1))
-                .collect();
-            // needed because SplitLines does not return the \n char, so SplitFields does not catch
-            // the latest value if ending with a separator.
-            if header_line.ends_with(&[separator]) {
-                column_names.push(format!("column_{}", column_names.len() + 1))
-            }
-            column_names
+                .collect::<Vec<String>>()
         }
     } else if has_header && !bytes.is_empty() && recursion_count == 0 {
         // there was no new line char. So we copy the whole buf and add one
@@ -255,6 +251,7 @@ pub fn infer_file_schema_inner(
             try_parse_dates,
             recursion_count + 1,
             raise_if_empty,
+            n_threads,
         );
     } else if !raise_if_empty {
         return Ok((Schema::new(), 0, 0));
@@ -323,7 +320,7 @@ pub fn infer_file_schema_inner(
         for i in 0..header_length {
             if let Some((slice, needs_escaping)) = record.next() {
                 if slice.is_empty() {
-                    nulls[i] = true;
+                    unsafe { *nulls.get_unchecked_release_mut(i) = true };
                 } else {
                     let slice_escaped = if needs_escaping && (slice.len() >= 2) {
                         &slice[1..(slice.len() - 1)]
@@ -331,32 +328,57 @@ pub fn infer_file_schema_inner(
                         slice
                     };
                     let s = parse_bytes_with_encoding(slice_escaped, encoding)?;
-                    match &null_values {
-                        None => {
-                            column_types[i].insert(infer_field_schema(&s, try_parse_dates));
-                        },
+                    let dtype = match &null_values {
+                        None => Some(infer_field_schema(&s, try_parse_dates)),
                         Some(NullValues::AllColumns(names)) => {
                             if !names.iter().any(|nv| nv == s.as_ref()) {
-                                column_types[i].insert(infer_field_schema(&s, try_parse_dates));
+                                Some(infer_field_schema(&s, try_parse_dates))
+                            } else {
+                                None
                             }
                         },
                         Some(NullValues::AllColumnsSingle(name)) => {
                             if s.as_ref() != name {
-                                column_types[i].insert(infer_field_schema(&s, try_parse_dates));
+                                Some(infer_field_schema(&s, try_parse_dates))
+                            } else {
+                                None
                             }
                         },
                         Some(NullValues::Named(names)) => {
-                            let current_name = &headers[i];
+                            // SAFETY:
+                            // we iterate over headers length.
+                            let current_name = unsafe { headers.get_unchecked_release(i) };
                             let null_name = &names.iter().find(|name| &name.0 == current_name);
 
                             if let Some(null_name) = null_name {
                                 if null_name.1 != s.as_ref() {
-                                    column_types[i].insert(infer_field_schema(&s, try_parse_dates));
+                                    Some(infer_field_schema(&s, try_parse_dates))
+                                } else {
+                                    None
                                 }
                             } else {
-                                column_types[i].insert(infer_field_schema(&s, try_parse_dates));
+                                Some(infer_field_schema(&s, try_parse_dates))
                             }
                         },
+                    };
+                    if let Some(dtype) = dtype {
+                        if matches!(&dtype, DataType::String)
+                            && needs_escaping
+                            && n_threads.unwrap_or(2) > 1
+                        {
+                            // The parser will chunk the file.
+                            // However this will be increasingly unlikely to be correct if there are many
+                            // new line characters in an escaped field. So we set a (somewhat arbitrary)
+                            // upper bound to the number of escaped lines we accept.
+                            // On the chunking side we also have logic to make this more robust.
+                            if slice.iter().filter(|b| **b == eol_char).count() > 8 {
+                                if verbose() {
+                                    eprintln!("falling back to single core reading because of many escaped new line chars.")
+                                }
+                                *n_threads = Some(1);
+                            }
+                        }
+                        unsafe { column_types.get_unchecked_release_mut(i).insert(dtype) };
                     }
                 }
             }
@@ -398,21 +420,6 @@ pub fn infer_file_schema_inner(
                 {
                     // we have an integer and double, fall down to double
                     fields.push(Field::new(field_name, DataType::Float64));
-                }
-                // prefer a datelike parse above a no parse so choose the date type
-                else if possibilities.contains(&DataType::String)
-                    && possibilities.contains(&DataType::Date)
-                {
-                    fields.push(Field::new(field_name, DataType::Date));
-                }
-                // prefer a datelike parse above a no parse so choose the date type
-                else if possibilities.contains(&DataType::String)
-                    && possibilities.contains(&DataType::Datetime(TimeUnit::Microseconds, None))
-                {
-                    fields.push(Field::new(
-                        field_name,
-                        DataType::Datetime(TimeUnit::Microseconds, None),
-                    ));
                 } else {
                     // default to String for conflicting datatypes (e.g bool and int)
                     fields.push(Field::new(field_name, DataType::String));
@@ -447,6 +454,7 @@ pub fn infer_file_schema_inner(
             try_parse_dates,
             recursion_count + 1,
             raise_if_empty,
+            n_threads,
         );
     }
 
@@ -479,6 +487,7 @@ pub fn infer_file_schema(
     null_values: Option<&NullValues>,
     try_parse_dates: bool,
     raise_if_empty: bool,
+    n_threads: &mut Option<usize>,
 ) -> PolarsResult<(Schema, usize, usize)> {
     infer_file_schema_inner(
         reader_bytes,
@@ -495,6 +504,7 @@ pub fn infer_file_schema(
         try_parse_dates,
         0,
         raise_if_empty,
+        n_threads,
     )
 }
 
@@ -673,7 +683,11 @@ mod test {
         let s = std::fs::read_to_string(path).unwrap();
         let bytes = s.as_bytes();
         // can be within -1 / +1 bounds.
-        assert!((get_file_chunks(bytes, 10, 4, b',', None, b'\n').len() as i32 - 10).abs() <= 1);
-        assert!((get_file_chunks(bytes, 8, 4, b',', None, b'\n').len() as i32 - 8).abs() <= 1);
+        assert!(
+            (get_file_chunks(bytes, 10, Some(4), b',', None, b'\n').len() as i32 - 10).abs() <= 1
+        );
+        assert!(
+            (get_file_chunks(bytes, 8, Some(4), b',', None, b'\n').len() as i32 - 8).abs() <= 1
+        );
     }
 }

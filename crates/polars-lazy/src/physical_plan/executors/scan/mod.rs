@@ -40,7 +40,7 @@ fn prepare_scan_args(
     predicate: Option<Arc<dyn PhysicalExpr>>,
     with_columns: &mut Option<Arc<Vec<String>>>,
     schema: &mut SchemaRef,
-    has_row_count: bool,
+    has_row_index: bool,
     hive_partitions: Option<&[Series]>,
 ) -> (Projection, Predicate) {
     let with_columns = mem::take(with_columns);
@@ -50,7 +50,7 @@ fn prepare_scan_args(
         with_columns.as_deref().map(|cols| cols.deref()),
         &schema,
         hive_partitions,
-        has_row_count,
+        has_row_index,
     );
 
     let predicate = predicate.map(phys_expr_to_io_expr);

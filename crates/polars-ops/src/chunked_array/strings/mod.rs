@@ -12,8 +12,6 @@ mod json_path;
 mod namespace;
 #[cfg(feature = "string_pad")]
 mod pad;
-#[cfg(feature = "strings")]
-mod replace;
 #[cfg(feature = "string_reverse")]
 mod reverse;
 #[cfg(feature = "strings")]

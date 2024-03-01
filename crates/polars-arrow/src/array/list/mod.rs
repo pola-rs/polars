@@ -114,6 +114,7 @@ impl<O: Offset> ListArray<O> {
     }
 
     /// Slices this [`ListArray`].
+    ///
     /// # Safety
     /// The caller must ensure that `offset + length < self.len()`.
     pub unsafe fn slice_unchecked(&mut self, offset: usize, length: usize) {
@@ -144,20 +145,21 @@ impl<O: Offset> ListArray<O> {
     #[inline]
     pub fn value(&self, i: usize) -> Box<dyn Array> {
         assert!(i < self.len());
-        // Safety: invariant of this function
+        // SAFETY: invariant of this function
         unsafe { self.value_unchecked(i) }
     }
 
     /// Returns the element at index `i` as &str
+    ///
     /// # Safety
     /// Assumes that the `i < self.len`.
     #[inline]
     pub unsafe fn value_unchecked(&self, i: usize) -> Box<dyn Array> {
-        // safety: the invariant of the function
+        // SAFETY: the invariant of the function
         let (start, end) = self.offsets.start_end_unchecked(i);
         let length = end - start;
 
-        // safety: the invariant of the struct
+        // SAFETY: the invariant of the struct
         self.values.sliced_unchecked(start, length)
     }
 

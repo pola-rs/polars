@@ -167,7 +167,7 @@ fn test_literal_window_fn() -> PolarsResult<()> {
 
     let out = df
         .lazy()
-        .select([repeat(1, count())
+        .select([repeat(1, len())
             .cum_sum(false)
             .over_with_options([col("chars")], WindowMapping::Join)
             .alias("foo")])

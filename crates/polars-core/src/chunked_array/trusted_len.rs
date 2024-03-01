@@ -4,7 +4,7 @@ use arrow::legacy::trusted_len::{FromIteratorReversed, TrustedLenPush};
 
 use crate::chunked_array::upstream_traits::PolarsAsRef;
 use crate::prelude::*;
-use crate::utils::{CustomIterTools, FromTrustedLenIterator, NoNull};
+use crate::utils::{FromTrustedLenIterator, NoNull};
 
 impl<T> FromTrustedLenIterator<Option<T::Native>> for ChunkedArray<T>
 where
@@ -17,7 +17,7 @@ where
         // SAFETY: iter is TrustedLen.
         let iter = iter.into_iter();
         let arr = unsafe {
-            PrimitiveArray::from_trusted_len_iter_unchecked(iter).to(T::get_dtype().to_arrow())
+            PrimitiveArray::from_trusted_len_iter_unchecked(iter).to(T::get_dtype().to_arrow(true))
         };
         arr.into()
     }
@@ -37,7 +37,7 @@ where
         // SAFETY: iter is TrustedLen.
         let iter = iter.into_iter();
         let values = unsafe { Vec::from_trusted_len_iter_unchecked(iter) }.into();
-        let arr = PrimitiveArray::new(T::get_dtype().to_arrow(), values, None);
+        let arr = PrimitiveArray::new(T::get_dtype().to_arrow(true), values, None);
         NoNull::new(arr.into())
     }
 }
@@ -161,6 +161,27 @@ where
     }
 }
 
+impl<Ptr> FromTrustedLenIterator<Ptr> for BinaryOffsetChunked
+where
+    Ptr: PolarsAsRef<[u8]>,
+{
+    fn from_iter_trusted_length<I: IntoIterator<Item = Ptr>>(iter: I) -> Self {
+        let arr = BinaryArray::from_iter_values(iter.into_iter());
+        ChunkedArray::with_chunk("", arr)
+    }
+}
+
+impl<Ptr> FromTrustedLenIterator<Option<Ptr>> for BinaryOffsetChunked
+where
+    Ptr: AsRef<[u8]>,
+{
+    fn from_iter_trusted_length<I: IntoIterator<Item = Option<Ptr>>>(iter: I) -> Self {
+        let iter = iter.into_iter();
+        let arr = BinaryArray::from_iter(iter);
+        ChunkedArray::with_chunk("", arr)
+    }
+}
+
 #[cfg(feature = "object")]
 impl<T: PolarsObject> FromTrustedLenIterator<Option<T>> for ObjectChunked<T> {
     fn from_iter_trusted_length<I: IntoIterator<Item = Option<T>>>(iter: I) -> Self {
@@ -172,7 +193,6 @@ impl<T: PolarsObject> FromTrustedLenIterator<Option<T>> for ObjectChunked<T> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::utils::CustomIterTools;
 
     #[test]
     fn test_reverse_collect() {

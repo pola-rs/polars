@@ -21,7 +21,7 @@ use crate::array::{Array, BinaryArray, PrimitiveArray};
 use crate::offset::Offset;
 
 /// `take` implementation for utf8 arrays
-pub fn take<O: Offset, I: Index>(
+pub unsafe fn take_unchecked<O: Offset, I: Index>(
     values: &BinaryArray<O>,
     indices: &PrimitiveArray<I>,
 ) -> BinaryArray<O> {
@@ -31,11 +31,11 @@ pub fn take<O: Offset, I: Index>(
 
     let (offsets, values, validity) = match (values_has_validity, indices_has_validity) {
         (false, false) => {
-            take_no_validity::<O, I>(values.offsets(), values.values(), indices.values())
+            take_no_validity_unchecked::<O, I>(values.offsets(), values.values(), indices.values())
         },
         (true, false) => take_values_validity(values, indices.values()),
         (false, true) => take_indices_validity(values.offsets(), values.values(), indices),
         (true, true) => take_values_indices_validity(values, indices),
     };
-    BinaryArray::<O>::new(data_type, offsets, values, validity)
+    BinaryArray::<O>::new_unchecked(data_type, offsets, values, validity)
 }

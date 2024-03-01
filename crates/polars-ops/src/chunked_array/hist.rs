@@ -1,16 +1,10 @@
 use std::fmt::Write;
 
-use arrow::legacy::index::IdxSize;
 use num_traits::ToPrimitive;
-use polars_core::datatypes::PolarsNumericType;
-use polars_core::prelude::{
-    ChunkCast, ChunkSort, ChunkedArray, DataType, StringChunkedBuilder, StructChunked, UInt32Type,
-    *,
-};
+use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
-use polars_error::PolarsResult;
 use polars_utils::float::IsFloat;
-use polars_utils::total_ord::TotalOrdWrap;
+use polars_utils::total_ord::ToTotalOrd;
 
 fn compute_hist<T>(
     ca: &ChunkedArray<T>,
@@ -26,7 +20,7 @@ where
     let (breaks, count) = if let Some(bins) = bins {
         let mut breaks = Vec::with_capacity(bins.len() + 1);
         breaks.extend_from_slice(bins);
-        breaks.sort_unstable_by_key(|k| TotalOrdWrap(*k));
+        breaks.sort_unstable_by_key(|k| k.to_total_ord());
         breaks.push(f64::INFINITY);
 
         let sorted = ca.sort(false);
@@ -66,6 +60,10 @@ where
         while count.len() < breaks.len() {
             count.push(0)
         }
+        (breaks, count)
+    } else if ca.null_count() == ca.len() {
+        let breaks: Vec<f64> = vec![f64::INFINITY];
+        let count: Vec<IdxSize> = vec![0];
         (breaks, count)
     } else {
         let min = ChunkAgg::min(ca).unwrap().to_f64().unwrap();
@@ -120,7 +118,7 @@ where
     if include_category {
         // Use AnyValue for formatting.
         let mut lower = AnyValue::Float64(f64::NEG_INFINITY);
-        let mut categories = StringChunkedBuilder::new("category", breaks.len(), breaks.len() * 20);
+        let mut categories = StringChunkedBuilder::new("category", breaks.len());
 
         let mut buf = String::new();
         for br in &breaks {

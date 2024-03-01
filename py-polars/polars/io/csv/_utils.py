@@ -13,15 +13,17 @@ def _check_arg_is_1byte(
         arg_byte_length = len(arg.encode("utf-8"))
         if can_be_empty:
             if arg_byte_length > 1:
-                raise ValueError(
+                msg = (
                     f'{arg_name}="{arg}" should be a single byte character or empty,'
                     f" but is {arg_byte_length} bytes long"
                 )
+                raise ValueError(msg)
         elif arg_byte_length != 1:
-            raise ValueError(
+            msg = (
                 f'{arg_name}="{arg}" should be a single byte character, but is'
                 f" {arg_byte_length} bytes long"
             )
+            raise ValueError(msg)
 
 
 def _update_columns(df: DataFrame, new_columns: Sequence[str]) -> DataFrame:

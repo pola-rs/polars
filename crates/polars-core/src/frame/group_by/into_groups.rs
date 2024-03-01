@@ -2,6 +2,7 @@
 use arrow::legacy::kernels::list_bytes_iter::numeric_list_bytes_iter;
 use arrow::legacy::kernels::sort_partition::{create_clean_partitions, partition_to_groups};
 use arrow::legacy::prelude::*;
+use polars_utils::total_ord::{ToTotalOrd, TotalHash};
 
 use super::*;
 use crate::config::verbose;
@@ -25,9 +26,9 @@ fn group_multithreaded<T: PolarsDataType>(ca: &ChunkedArray<T>) -> bool {
 
 fn num_groups_proxy<T>(ca: &ChunkedArray<T>, multithreaded: bool, sorted: bool) -> GroupsProxy
 where
-    T: PolarsIntegerType,
-    T::Native: Hash + Eq + Send + DirtyHash,
-    Option<T::Native>: DirtyHash,
+    T: PolarsNumericType,
+    T::Native: TotalHash + TotalEq + DirtyHash + ToTotalOrd,
+    <T::Native as ToTotalOrd>::TotalOrdItem: Send + Sync + Copy + Hash + Eq + DirtyHash,
 {
     if multithreaded && group_multithreaded(ca) {
         let n_partitions = _set_partition_size();
@@ -49,7 +50,7 @@ where
     } else if !ca.has_validity() {
         group_by(ca.into_no_null_iter(), sorted)
     } else {
-        group_by(ca.into_iter(), sorted)
+        group_by(ca.iter(), sorted)
     }
 }
 
@@ -93,35 +94,31 @@ where
             let n_parts = parts.len();
 
             let first_ptr = &values[0] as *const T::Native as usize;
-            let groups = POOL
-                .install(|| {
-                    parts.par_iter().enumerate().map(|(i, part)| {
-                        // we go via usize as *const is not send
-                        let first_ptr = first_ptr as *const T::Native;
+            let groups = parts.par_iter().enumerate().map(|(i, part)| {
+                // we go via usize as *const is not send
+                let first_ptr = first_ptr as *const T::Native;
 
-                        let part_first_ptr = &part[0] as *const T::Native;
-                        let mut offset =
-                            unsafe { part_first_ptr.offset_from(first_ptr) } as IdxSize;
+                let part_first_ptr = &part[0] as *const T::Native;
+                let mut offset = unsafe { part_first_ptr.offset_from(first_ptr) } as IdxSize;
 
-                        // nulls first: only add the nulls at the first partition
-                        if nulls_first && i == 0 {
-                            partition_to_groups(part, null_count as IdxSize, true, offset)
-                        }
-                        // nulls last: only compute at the last partition
-                        else if !nulls_first && i == n_parts - 1 {
-                            partition_to_groups(part, null_count as IdxSize, false, offset)
-                        }
-                        // other partitions
-                        else {
-                            if nulls_first {
-                                offset += null_count as IdxSize;
-                            };
+                // nulls first: only add the nulls at the first partition
+                if nulls_first && i == 0 {
+                    partition_to_groups(part, null_count as IdxSize, true, offset)
+                }
+                // nulls last: only compute at the last partition
+                else if !nulls_first && i == n_parts - 1 {
+                    partition_to_groups(part, null_count as IdxSize, false, offset)
+                }
+                // other partitions
+                else {
+                    if nulls_first {
+                        offset += null_count as IdxSize;
+                    };
 
-                            partition_to_groups(part, 0, false, offset)
-                        }
-                    })
-                })
-                .collect::<Vec<_>>();
+                    partition_to_groups(part, 0, false, offset)
+                }
+            });
+            let groups = POOL.install(|| groups.collect::<Vec<_>>());
             flatten_par(&groups)
         } else {
             partition_to_groups(values, null_count as IdxSize, nulls_first, 0)
@@ -167,13 +164,27 @@ where
                 };
                 num_groups_proxy(ca, multithreaded, sorted)
             },
-            DataType::Int64 | DataType::Float64 => {
+            DataType::Int64 => {
                 let ca = self.bit_repr_large();
                 num_groups_proxy(&ca, multithreaded, sorted)
             },
-            DataType::Int32 | DataType::Float32 => {
+            DataType::Int32 => {
                 let ca = self.bit_repr_small();
                 num_groups_proxy(&ca, multithreaded, sorted)
+            },
+            DataType::Float64 => {
+                // convince the compiler that we are this type.
+                let ca: &Float64Chunked = unsafe {
+                    &*(self as *const ChunkedArray<T> as *const ChunkedArray<Float64Type>)
+                };
+                num_groups_proxy(ca, multithreaded, sorted)
+            },
+            DataType::Float32 => {
+                // convince the compiler that we are this type.
+                let ca: &Float32Chunked = unsafe {
+                    &*(self as *const ChunkedArray<T> as *const ChunkedArray<Float32Type>)
+                };
+                num_groups_proxy(ca, multithreaded, sorted)
             },
             #[cfg(all(feature = "performant", feature = "dtype-i8", feature = "dtype-u8"))]
             DataType::Int8 => {
@@ -239,6 +250,20 @@ impl IntoGroupsProxy for StringChunked {
     }
 }
 
+fn fill_bytes_hashes(ca: &BinaryChunked, null_h: u64, hb: RandomState) -> Vec<BytesHash> {
+    let mut byte_hashes = Vec::with_capacity(ca.len());
+    for arr in ca.downcast_iter() {
+        for opt_b in arr {
+            let hash = match opt_b {
+                Some(s) => hb.hash_one(s),
+                None => null_h,
+            };
+            byte_hashes.push(BytesHash::new(opt_b, hash))
+        }
+    }
+    byte_hashes
+}
+
 impl IntoGroupsProxy for BinaryChunked {
     #[allow(clippy::needless_lifetimes)]
     fn group_tuples<'a>(&'a self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
@@ -255,37 +280,78 @@ impl IntoGroupsProxy for BinaryChunked {
                     .into_par_iter()
                     .map(|(offset, len)| {
                         let ca = self.slice(offset as i64, len);
-                        ca.into_iter()
-                            .map(|opt_b| {
-                                let hash = match opt_b {
-                                    Some(s) => hb.hash_one(s),
-                                    None => null_h,
-                                };
-                                // Safety:
-                                // the underlying data is tied to self
-                                unsafe {
-                                    std::mem::transmute::<BytesHash<'_>, BytesHash<'a>>(
-                                        BytesHash::new(opt_b, hash),
-                                    )
-                                }
-                            })
-                            .collect_trusted::<Vec<_>>()
+                        let byte_hashes = fill_bytes_hashes(&ca, null_h, hb.clone());
+
+                        // SAFETY:
+                        // the underlying data is tied to self
+                        unsafe {
+                            std::mem::transmute::<Vec<BytesHash<'_>>, Vec<BytesHash<'a>>>(
+                                byte_hashes,
+                            )
+                        }
                     })
                     .collect::<Vec<_>>()
             });
             let byte_hashes = byte_hashes.iter().collect::<Vec<_>>();
             group_by_threaded_slice(byte_hashes, n_partitions, sorted)
         } else {
-            let byte_hashes = self
-                .into_iter()
-                .map(|opt_b| {
-                    let hash = match opt_b {
-                        Some(s) => hb.hash_one(s),
-                        None => null_h,
-                    };
-                    BytesHash::new(opt_b, hash)
-                })
-                .collect_trusted::<Vec<_>>();
+            let byte_hashes = fill_bytes_hashes(self, null_h, hb.clone());
+            group_by(byte_hashes.iter(), sorted)
+        };
+        Ok(out)
+    }
+}
+
+fn fill_bytes_offset_hashes(
+    ca: &BinaryOffsetChunked,
+    null_h: u64,
+    hb: RandomState,
+) -> Vec<BytesHash> {
+    let mut byte_hashes = Vec::with_capacity(ca.len());
+    for arr in ca.downcast_iter() {
+        for opt_b in arr {
+            let hash = match opt_b {
+                Some(s) => hb.hash_one(s),
+                None => null_h,
+            };
+            byte_hashes.push(BytesHash::new(opt_b, hash))
+        }
+    }
+    byte_hashes
+}
+
+impl IntoGroupsProxy for BinaryOffsetChunked {
+    #[allow(clippy::needless_lifetimes)]
+    fn group_tuples<'a>(&'a self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
+        let hb = RandomState::default();
+        let null_h = get_null_hash_value(&hb);
+
+        let out = if multithreaded {
+            let n_partitions = _set_partition_size();
+
+            let split = _split_offsets(self.len(), n_partitions);
+
+            let byte_hashes = POOL.install(|| {
+                split
+                    .into_par_iter()
+                    .map(|(offset, len)| {
+                        let ca = self.slice(offset as i64, len);
+                        let byte_hashes = fill_bytes_offset_hashes(&ca, null_h, hb.clone());
+
+                        // SAFETY:
+                        // the underlying data is tied to self
+                        unsafe {
+                            std::mem::transmute::<Vec<BytesHash<'_>>, Vec<BytesHash<'a>>>(
+                                byte_hashes,
+                            )
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            });
+            let byte_hashes = byte_hashes.iter().collect::<Vec<_>>();
+            group_by_threaded_slice(byte_hashes, n_partitions, sorted)
+        } else {
+            let byte_hashes = fill_bytes_offset_hashes(self, null_h, hb.clone());
             group_by(byte_hashes.iter(), sorted)
         };
         Ok(out)
@@ -316,7 +382,7 @@ impl IntoGroupsProxy for ListChunked {
                             None => null_h,
                         };
 
-                        // Safety:
+                        // SAFETY:
                         // the underlying data is tied to self
                         unsafe {
                             std::mem::transmute::<BytesHash<'_>, BytesHash<'a>>(BytesHash::new(

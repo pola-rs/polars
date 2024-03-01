@@ -14,6 +14,7 @@ from typing import (
     Sequence,
     Tuple,
     Type,
+    TypedDict,
     TypeVar,
     Union,
 )
@@ -22,6 +23,7 @@ if TYPE_CHECKING:
     import sys
 
     from sqlalchemy import Engine
+    from sqlalchemy.orm import Session
 
     from polars import DataFrame, Expr, LazyFrame, Series
     from polars.datatypes import DataType, DataTypeClass, IntegerType, TemporalType
@@ -100,7 +102,7 @@ ParquetCompression: TypeAlias = Literal[
     "lz4", "uncompressed", "snappy", "gzip", "lzo", "brotli", "zstd"
 ]
 PivotAgg: TypeAlias = Literal[
-    "first", "sum", "max", "min", "mean", "median", "last", "count"
+    "min", "max", "first", "last", "sum", "mean", "median", "len"
 ]
 RankMethod: TypeAlias = Literal["average", "min", "max", "dense", "ordinal", "random"]
 SizeUnit: TypeAlias = Literal[
@@ -207,6 +209,20 @@ ParametricProfileNames: TypeAlias = Literal["fast", "balanced", "expensive"]
 # typevars for core polars types
 PolarsType = TypeVar("PolarsType", "DataFrame", "LazyFrame", "Series", "Expr")
 FrameType = TypeVar("FrameType", "DataFrame", "LazyFrame")
+BufferInfo: TypeAlias = Tuple[int, int, int]
+
+# type alias for supported spreadsheet engines
+ExcelSpreadsheetEngine: TypeAlias = Literal[
+    "xlsx2csv", "openpyxl", "calamine", "pyxlsb"
+]
+
+
+class SeriesBuffers(TypedDict):
+    """Underlying buffers of a Series."""
+
+    values: Series
+    validity: Series | None
+    offsets: Series | None
 
 
 # minimal protocol definitions that can reasonably represent
@@ -235,4 +251,4 @@ class Cursor(BasicCursor):  # noqa: D101
         """Fetch results in batches."""
 
 
-ConnectionOrCursor = Union[BasicConnection, BasicCursor, Cursor, "Engine"]
+ConnectionOrCursor = Union[BasicConnection, BasicCursor, Cursor, "Engine", "Session"]

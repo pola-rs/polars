@@ -1,12 +1,7 @@
-use std::borrow::Cow;
-use std::ops::{Deref, DerefMut};
+use std::ops::DerefMut;
 
-use ahash::RandomState;
-
-use super::{private, IntoSeries, SeriesTrait, SeriesWrap, *};
+use super::*;
 use crate::chunked_array::comparison::*;
-use crate::chunked_array::ops::explode::ExplodeByOffsets;
-use crate::chunked_array::AsSinglePtr;
 #[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::*;
 use crate::prelude::*;
@@ -242,6 +237,14 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
         self.0.median()
     }
 
+    fn std(&self, ddof: u8) -> Option<f64> {
+        self.0.std(ddof)
+    }
+
+    fn var(&self, ddof: u8) -> Option<f64> {
+        self.0.var(ddof)
+    }
+
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
         polars_ensure!(self.0.dtype() == other.dtype(), append);
         let other = other.to_physical_repr().into_owned();
@@ -260,18 +263,6 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
         self.0
             .filter(filter)
             .map(|ca| ca.into_duration(self.0.time_unit()).into_series())
-    }
-
-    #[cfg(feature = "chunked_ids")]
-    unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Series {
-        let ca = self.0.deref().take_chunked_unchecked(by, sorted);
-        ca.into_duration(self.0.time_unit()).into_series()
-    }
-
-    #[cfg(feature = "chunked_ids")]
-    unsafe fn _take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Series {
-        let ca = self.0.deref().take_opt_chunked_unchecked(by);
-        ca.into_duration(self.0.time_unit()).into_series()
     }
 
     fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
@@ -419,19 +410,14 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
     fn var_as_series(&self, ddof: u8) -> PolarsResult<Series> {
         Ok(self
             .0
+            .cast_time_unit(TimeUnit::Milliseconds)
             .var_as_series(ddof)
             .cast(&self.dtype().to_physical())
             .unwrap()
-            .into_duration(self.0.time_unit()))
+            .into_duration(TimeUnit::Milliseconds))
     }
     fn median_as_series(&self) -> PolarsResult<Series> {
-        Ok(self
-            .0
-            .median_as_series()
-            .cast(&self.dtype().to_physical())
-            .unwrap()
-            .cast(self.dtype())
-            .unwrap())
+        Series::new(self.name(), &[self.median().map(|v| v as i64)]).cast(self.dtype())
     }
     fn quantile_as_series(
         &self,
@@ -447,5 +433,8 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
 
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
+    }
+    fn as_any(&self) -> &dyn Any {
+        &self.0
     }
 }

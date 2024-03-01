@@ -26,6 +26,7 @@ pub(crate) unsafe trait ToFfi {
 /// [C data interface](https://arrow.apache.org/docs/format/CDataInterface.html) (FFI).
 pub(crate) trait FromFfi<T: ffi::ArrowArrayRef>: Sized {
     /// Convert itself from FFI.
+    ///
     /// # Safety
     /// This function is intrinsically `unsafe` as it requires the FFI to be made according
     /// to the [C data interface](https://arrow.apache.org/docs/format/CDataInterface.html)
@@ -70,6 +71,8 @@ pub fn offset_buffers_children_dictionary(array: &dyn Array) -> BuffersChildren 
         Struct => ffi_dyn!(array, StructArray),
         Union => ffi_dyn!(array, UnionArray),
         Map => ffi_dyn!(array, MapArray),
+        BinaryView => ffi_dyn!(array, BinaryViewArray),
+        Utf8View => ffi_dyn!(array, Utf8ViewArray),
         Dictionary(key_type) => {
             match_integer_type!(key_type, |$T| {
                 let array = array.as_any().downcast_ref::<DictionaryArray<$T>>().unwrap();

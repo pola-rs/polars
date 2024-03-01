@@ -1,6 +1,6 @@
 use std::any::Any;
 
-use arrow::array::{ArrayRef, BinaryArray};
+use arrow::array::BinaryArray;
 use polars_core::prelude::sort::_broadcast_descending;
 use polars_core::prelude::sort::arg_sort_multiple::_get_rows_encoded_compat_array;
 use polars_core::prelude::*;
@@ -32,7 +32,7 @@ fn sort_column_can_be_decoded(schema: &Schema, sort_idx: &[usize]) -> bool {
     !sort_idx.iter().any(|i| {
         matches!(
             schema.get_at_index(*i).unwrap().1,
-            DataType::Categorical(_, _)
+            DataType::Categorical(_, _) | DataType::Enum(_, _)
         )
     })
 }
@@ -76,13 +76,12 @@ fn finalize_dataframe(
         // in the `DataFrame`.
         if can_decode {
             let sort_dtypes = sort_dtypes.expect("should be set if 'can_decode'");
-            // let sort_dtypes = sort_by_idx(sort_dtypes, sort_idx);
 
-            let encoded = encoded.binary().unwrap();
+            let encoded = encoded.binary_offset().unwrap();
             assert_eq!(encoded.chunks().len(), 1);
             let arr = encoded.downcast_iter().next().unwrap();
 
-            // safety
+            // SAFETY:
             // temporary extend lifetime
             // this is safe as the lifetime in rows stays bound to this scope
             let arrays = {
@@ -164,7 +163,7 @@ impl SortSinkMultiple {
             }
             sort_dtypes = Some(dtypes.into());
         }
-        schema.with_column(POLARS_SORT_COLUMN.into(), DataType::Binary);
+        schema.with_column(POLARS_SORT_COLUMN.into(), DataType::BinaryOffset);
         let sort_fields = get_sort_fields(&sort_idx, &sort_args);
 
         // don't set descending and nulls last as this
@@ -226,12 +225,12 @@ impl SortSinkMultiple {
             Series::from_chunks_and_dtype_unchecked(
                 POLARS_SORT_COLUMN,
                 vec![Box::new(rows_encoded.into_array())],
-                &DataType::Binary,
+                &DataType::BinaryOffset,
             )
         };
 
         debug_assert_eq!(column.chunks().len(), 1);
-        // Safety: length is correct
+        // SAFETY: length is correct
         unsafe { chunk.data.with_column_unchecked(column) };
         Ok(())
     }
@@ -271,7 +270,7 @@ impl Sink for SortSinkMultiple {
 
         let sort_dtypes = self.sort_dtypes.take().map(|arr| {
             arr.iter()
-                .map(|dt| dt.to_physical().to_arrow())
+                .map(|dt| dt.to_physical().to_arrow(true))
                 .collect::<Vec<_>>()
         });
 

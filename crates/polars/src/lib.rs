@@ -57,7 +57,7 @@
 //! * [Performance](#performance-and-string-data)
 //!     - [Custom allocator](#custom-allocator)
 //! * [Config](#config-with-env-vars)
-//! * [User Guide](#user-guide)
+//! * [User guide](#user-guide)
 //!
 //! ## Cookbooks
 //! See examples in the cookbooks:
@@ -147,9 +147,7 @@
 //! (Note that within an expression there may be more parallelization going on).
 //!
 //! Understanding polars expressions is most important when starting with the polars library. Read more
-//! about them in the [User Guide](https://docs.pola.rs/user-guide/concepts/expressions).
-//! Though the examples given there are in python. The expressions API is almost identical and the
-//! the read should certainly be valuable to rust users as well.
+//! about them in the [user guide](https://docs.pola.rs/user-guide/concepts/expressions).
 //!
 //! ### Eager
 //! Read more in the pages of the following data structures /traits.
@@ -180,7 +178,7 @@
 //!
 //! * `performant` - Longer compile times more fast paths.
 //! * `lazy` - Lazy API
-//!     - `lazy_regex` - Use regexes in [column selection]
+//!     - `regex` - Use regexes in [column selection]
 //!     - `dot_diagram` - Create dot diagrams from lazy logical plans.
 //! * `sql` - Pass SQL queries to polars.
 //! * `streaming` - Be able to process datasets that are larger than RAM.
@@ -225,12 +223,11 @@
 //!     - `rows` - Create [`DataFrame`] from rows and extract rows from [`DataFrame`]s.
 //!                And activates `pivot` and `transpose` operations
 //!     - `asof_join` - Join ASOF, to join on nearest keys instead of exact equality match.
-//!     - `cross_join` - Create the cartesian product of two [`DataFrame`]s.
+//!     - `cross_join` - Create the Cartesian product of two [`DataFrame`]s.
 //!     - `semi_anti_join` - SEMI and ANTI joins.
 //!     - `group_by_list` - Allow group_by operation on keys of type List.
 //!     - `row_hash` - Utility to hash [`DataFrame`] rows to [`UInt64Chunked`]
 //!     - `diagonal_concat` - Concat diagonally thereby combining different schemas.
-//!     - `horizontal_concat` - Concat horizontally and extend with null values if lengths don't match
 //!     - `dataframe_arithmetic` - Arithmetic on ([`Dataframe`] and [`DataFrame`]s) and ([`DataFrame`] on [`Series`])
 //!     - `partition_by` - Split into multiple [`DataFrame`]s partitioned by groups.
 //! * [`Series`]/[`Expr`] operations:
@@ -240,6 +237,7 @@
 //!     - `repeat_by` - [Repeat element in an Array N times, where N is given by another array.
 //!     - `is_first_distinct` - Check if element is first unique value.
 //!     - `is_last_distinct` - Check if element is last unique value.
+//!     - `is_between` - Check if this expression is between the given lower and upper bounds.
 //!     - `checked_arithmetic` - checked arithmetic/ returning [`None`] on invalid operations.
 //!     - `dot_product` - Dot/inner product on [`Series`] and [`Expr`].
 //!     - `concat_str` - Concat string data in linear time.
@@ -406,8 +404,9 @@
 //! * `POLARS_PANIC_ON_ERR` -> panic instead of returning an Error.
 //! * `POLARS_NO_CHUNKED_JOIN` -> force rechunk before joins.
 //!
-//! ## User Guide
-//! If you want to read more, [check the User Guide](https://docs.pola.rs/).
+//! ## User guide
+//!
+//! If you want to read more, check the [user guide](https://docs.pola.rs/).
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
 #![allow(ambiguous_glob_reexports)]
 pub mod docs;

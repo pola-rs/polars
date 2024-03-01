@@ -10,6 +10,7 @@ The following methods are available under the `Series.struct` attribute.
    :template: autosummary/accessor_method.rst
 
     Series.struct.field
+    Series.struct.json_encode
     Series.struct.rename_fields
     Series.struct.unnest
 
@@ -18,5 +19,4 @@ The following methods are available under the `Series.struct` attribute.
    :template: autosummary/accessor_attribute.rst
 
     Series.struct.fields
-    Series.struct.json_encode
     Series.struct.schema

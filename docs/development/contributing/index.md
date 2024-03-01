@@ -46,6 +46,7 @@ Polars development flow relies on both Rust and Python, which means setting up y
 If you run into problems, please contact us on [Discord](https://discord.gg/4UfP5cfBE7).
 
 _Note that if you are a Windows user, the steps below might not work as expected; try developing using [WSL](https://learn.microsoft.com/en-us/windows/wsl/install)._
+_Under native Windows, you may have to manually copy the contents of `toolchain.toml` to `py-polars/toolchain.toml`, as Git for Windows may not correctly handle symbolic links._
 
 Start by [forking](https://docs.github.com/en/get-started/quickstart/fork-a-repo) the Polars repository, then clone your forked repository using `git`:
 
@@ -127,7 +128,7 @@ When you have resolved your issue, [open a pull request](https://docs.github.com
 Please adhere to the following guidelines:
 
 - Start your pull request title with a [conventional commit](https://www.conventionalcommits.org/) tag. This helps us add your contribution to the right section of the changelog. We use the [Angular convention](https://github.com/angular/angular/blob/22b96b9/CONTRIBUTING.md#type). Scope can be `rust` and/or `python`, depending on your contribution.
-- Use a descriptive title. This text will end up in the [changelog](https://github.com/pola-rs/polars/releases).
+- Use a descriptive title starting with an uppercase letter. This text will end up in the [changelog](https://github.com/pola-rs/polars/releases).
 - In the pull request description, [link](https://docs.github.com/en/issues/tracking-your-work-with-issues/linking-a-pull-request-to-an-issue) to the issue you were working on.
 - Add any relevant information to the description that you think may help the maintainers review your code.
 - Make sure your branch is [rebased](https://docs.github.com/en/get-started/using-git/about-git-rebase) against the latest version of the `main` branch.
@@ -149,9 +150,9 @@ The user guide is maintained in the `docs/user-guide` folder. Before creating a 
 
 #### Building and serving the user guide
 
-The user guide is built using [MkDocs](https://www.mkdocs.org/). You install the dependencies for building the user guide by running `make requirements` in the root of the repo.
+The user guide is built using [MkDocs](https://www.mkdocs.org/). You install the dependencies for building the user guide by running `make build` in the root of the repo.
 
-Run `mkdocs serve` to build and serve the user guide, so you can view it locally and see updates as you make changes.
+Activate the virtual environment and run `mkdocs serve` to build and serve the user guide, so you can view it locally and see updates as you make changes.
 
 #### Creating a new user guide page
 
@@ -226,7 +227,7 @@ From the `py-polars` directory, run `make fmt` to make sure your additions pass 
 
 Polars uses Sphinx to build the API reference.
 This means docstrings in general should follow the [reST](https://www.sphinx-doc.org/en/master/usage/restructuredtext/basics.html) format.
-If you want to build the API reference locally, go to the `py-polars/docs` directory and run `make html SPHINXOPTS=-W`.
+If you want to build the API reference locally, go to the `py-polars/docs` directory and run `make html`.
 The resulting HTML files will be in `py-polars/docs/build/html`.
 
 New additions to the API should be added manually to the API reference by adding an entry to the correct `.rst` file in the `py-polars/docs/source/reference` directory.

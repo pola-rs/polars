@@ -1,3 +1,5 @@
+use std::num::NonZeroUsize;
+
 use polars_core::POOL;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -30,7 +32,7 @@ pub struct CsvWriter<W: Write> {
     options: write_impl::SerializeOptions,
     header: bool,
     bom: bool,
-    batch_size: usize,
+    batch_size: NonZeroUsize,
     n_threads: usize,
 }
 
@@ -50,7 +52,7 @@ where
             options,
             header: true,
             bom: false,
-            batch_size: 1024,
+            batch_size: NonZeroUsize::new(1024).unwrap(),
             n_threads: POOL.current_num_threads(),
         }
     }
@@ -66,7 +68,7 @@ where
         write_impl::write(
             &mut self.buffer,
             df,
-            self.batch_size,
+            self.batch_size.into(),
             &self.options,
             self.n_threads,
         )
@@ -96,7 +98,7 @@ where
     }
 
     /// Set the batch size to use while writing the CSV.
-    pub fn with_batch_size(mut self, batch_size: usize) -> Self {
+    pub fn with_batch_size(mut self, batch_size: NonZeroUsize) -> Self {
         self.batch_size = batch_size;
         self
     }
@@ -163,13 +165,14 @@ where
         self
     }
 
-    pub fn batched(self, _schema: &Schema) -> PolarsResult<BatchedWriter<W>> {
+    pub fn batched(self, schema: &Schema) -> PolarsResult<BatchedWriter<W>> {
         let expects_bom = self.bom;
         let expects_header = self.header;
         Ok(BatchedWriter {
             writer: self,
             has_written_bom: !expects_bom,
             has_written_header: !expects_header,
+            schema: schema.clone(),
         })
     }
 }
@@ -178,6 +181,7 @@ pub struct BatchedWriter<W: Write> {
     writer: CsvWriter<W>,
     has_written_bom: bool,
     has_written_header: bool,
+    schema: Schema,
 }
 
 impl<W: Write> BatchedWriter<W> {
@@ -200,10 +204,26 @@ impl<W: Write> BatchedWriter<W> {
         write_impl::write(
             &mut self.writer.buffer,
             df,
-            self.writer.batch_size,
+            self.writer.batch_size.into(),
             &self.writer.options,
             self.writer.n_threads,
         )?;
+        Ok(())
+    }
+
+    /// Writes the header of the csv file if not done already. Returns the total size of the file.
+    pub fn finish(&mut self) -> PolarsResult<()> {
+        if !self.has_written_bom {
+            self.has_written_bom = true;
+            write_impl::write_bom(&mut self.writer.buffer)?;
+        }
+
+        if !self.has_written_header {
+            self.has_written_header = true;
+            let names = self.schema.get_names();
+            write_impl::write_header(&mut self.writer.buffer, &names, &self.writer.options)?;
+        };
+
         Ok(())
     }
 }

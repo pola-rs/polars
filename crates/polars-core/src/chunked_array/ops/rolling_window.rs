@@ -30,7 +30,6 @@ impl Default for RollingOptionsFixedWindow {
 mod inner_mod {
     use std::ops::SubAssign;
 
-    use arrow::array::{Array, PrimitiveArray};
     use arrow::bitmap::MutableBitmap;
     use arrow::legacy::bit_util::unset_bit_raw;
     use arrow::legacy::trusted_len::TrustedLenPush;
@@ -107,11 +106,17 @@ mod inner_mod {
                     if size < options.min_periods {
                         builder.append_null();
                     } else {
-                        // safety:
+                        // SAFETY:
                         // we are in bounds
                         let arr_window = unsafe { arr.slice_typed_unchecked(start, size) };
 
-                        // Safety.
+                        // ensure we still meet window size criteria after removing null values
+                        if size - arr_window.null_count() < options.min_periods {
+                            builder.append_null();
+                            continue;
+                        }
+
+                        // SAFETY.
                         // ptr is not dropped as we are in scope
                         // We are also the only owner of the contents of the Arc
                         // we do this to reduce heap allocs.
@@ -155,11 +160,17 @@ mod inner_mod {
                     if size < options.min_periods {
                         builder.append_null();
                     } else {
-                        // safety:
+                        // SAFETY:
                         // we are in bounds
                         let arr_window = unsafe { arr.slice_typed_unchecked(start, size) };
 
-                        // Safety.
+                        // ensure we still meet window size criteria after removing null values
+                        if size - arr_window.null_count() < options.min_periods {
+                            builder.append_null();
+                            continue;
+                        }
+
+                        // SAFETY.
                         // ptr is not dropped as we are in scope
                         // We are also the only owner of the contents of the Arc
                         // we do this to reduce heap allocs.
@@ -242,7 +253,7 @@ mod inner_mod {
                 }
             }
             let arr = PrimitiveArray::new(
-                T::get_dtype().to_arrow(),
+                T::get_dtype().to_arrow(true),
                 values.into(),
                 Some(validity.into()),
             );

@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 
 import pytest
 from sqlalchemy import Integer, MetaData, Table, create_engine, func, select
+from sqlalchemy.orm import sessionmaker
 from sqlalchemy.sql.expression import cast as alchemy_cast
 
 import polars as pl
@@ -353,8 +354,13 @@ def test_read_database_alchemy_selectable(tmp_path: Path) -> None:
     # setup underlying test data
     tmp_path.mkdir(exist_ok=True)
     create_temp_sqlite_db(test_db := str(tmp_path / "test.db"))
-    conn = create_engine(f"sqlite:///{test_db}")
-    t = Table("test_data", MetaData(), autoload_with=conn)
+
+    # various flavours of alchemy connection
+    alchemy_engine = create_engine(f"sqlite:///{test_db}")
+    alchemy_session: ConnectionOrCursor = sessionmaker(bind=alchemy_engine)()
+    alchemy_conn: ConnectionOrCursor = alchemy_engine.connect()
+
+    t = Table("test_data", MetaData(), autoload_with=alchemy_engine)
 
     # establish sqlalchemy "selectable" and validate usage
     selectable_query = select(
@@ -363,21 +369,23 @@ def test_read_database_alchemy_selectable(tmp_path: Path) -> None:
         t.c.value,
     ).where(t.c.value < 0)
 
-    assert_frame_equal(
-        pl.read_database(selectable_query, connection=conn.connect()),
-        pl.DataFrame({"year": [2021], "name": ["other"], "value": [-99.5]}),
-    )
+    for conn in (alchemy_session, alchemy_engine, alchemy_conn):
+        assert_frame_equal(
+            pl.read_database(selectable_query, connection=conn),
+            pl.DataFrame({"year": [2021], "name": ["other"], "value": [-99.5]}),
+        )
 
 
 def test_read_database_parameterised(tmp_path: Path) -> None:
     # setup underlying test data
     tmp_path.mkdir(exist_ok=True)
     create_temp_sqlite_db(test_db := str(tmp_path / "test.db"))
+    alchemy_engine = create_engine(f"sqlite:///{test_db}")
 
     # raw cursor "execute" only takes positional params, alchemy cursor takes kwargs
     raw_conn: ConnectionOrCursor = sqlite3.connect(test_db)
-    alchemy_conn: ConnectionOrCursor = create_engine(f"sqlite:///{test_db}").connect()
-    test_conns = (alchemy_conn, raw_conn)
+    alchemy_conn: ConnectionOrCursor = alchemy_engine.connect()
+    alchemy_session: ConnectionOrCursor = sessionmaker(bind=alchemy_engine)()
 
     # establish parameterised queries and validate usage
     query = """
@@ -390,7 +398,10 @@ def test_read_database_parameterised(tmp_path: Path) -> None:
         ("?", (0,)),
         ("?", [0]),
     ):
-        for conn in test_conns:
+        for conn in (alchemy_session, alchemy_engine, alchemy_conn, raw_conn):
+            if alchemy_session is conn and param == "?":
+                continue  # alchemy session.execute() doesn't support positional params
+
             assert_frame_equal(
                 pl.read_database(
                     query.format(n=param),

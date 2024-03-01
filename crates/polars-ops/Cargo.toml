@@ -27,7 +27,6 @@ either = { workspace = true }
 hashbrown = { workspace = true }
 hex = { workspace = true, optional = true }
 indexmap = { workspace = true }
-jsonpath_lib = { version = "0.3", optional = true, git = "https://github.com/ritchie46/jsonpath", branch = "improve_compiled" }
 memchr = { workspace = true }
 num-traits = { workspace = true }
 rand = { workspace = true, optional = true, features = ["small_rng", "std"] }
@@ -39,6 +38,11 @@ serde_json = { workspace = true, optional = true }
 smartstring = { workspace = true }
 unicode-reverse = { workspace = true, optional = true }
 
+[dependencies.jsonpath_lib]
+package = "jsonpath_lib_polars_vendor"
+optional = true
+version = "0.0.1"
+
 [dev-dependencies]
 rand = { workspace = true, features = ["small_rng"] }
 
@@ -46,7 +50,7 @@ rand = { workspace = true, features = ["small_rng"] }
 version_check = { workspace = true }
 
 [features]
-simd = ["argminmax/nightly_simd"]
+simd = []
 nightly = ["polars-utils/nightly"]
 dtype-categorical = ["polars-core/dtype-categorical"]
 dtype-date = ["polars-core/dtype-date", "polars-core/temporal"]
@@ -69,6 +73,7 @@ is_first_distinct = []
 is_last_distinct = []
 is_unique = []
 unique_counts = []
+is_between = []
 approx_unique = []
 fused = []
 cutqcut = ["dtype-categorical", "dtype-struct"]
@@ -86,6 +91,7 @@ string_encoding = ["base64", "hex"]
 to_dummies = []
 interpolate = []
 list_to_struct = ["polars-core/dtype-struct"]
+array_to_struct = ["polars-core/dtype-array", "polars-core/dtype-struct"]
 list_count = []
 diff = []
 pct_change = ["diff"]
@@ -96,6 +102,7 @@ string_to_integer = ["polars-core/strings"]
 extract_jsonpath = ["serde_json", "jsonpath_lib", "polars-json"]
 log = []
 hash = []
+reinterpret = ["polars-core/reinterpret"]
 group_by_list = ["polars-core/group_by_list"]
 rolling_window = ["polars-core/rolling_window"]
 moment = []
@@ -105,10 +112,11 @@ merge_sorted = []
 top_k = []
 pivot = ["polars-core/reinterpret"]
 cross_join = []
-chunked_ids = ["polars-core/chunked_ids"]
+chunked_ids = []
 asof_join = ["polars-core/asof_join"]
 semi_anti_join = []
 array_any_all = ["dtype-array"]
+array_count = ["dtype-array"]
 list_gather = []
 list_sets = []
 list_any_all = []
@@ -117,7 +125,6 @@ list_sample = []
 extract_groups = ["dtype-struct", "polars-core/regex"]
 is_in = ["polars-core/reinterpret"]
 hist = ["dtype-categorical", "dtype-struct"]
-convert_index = []
 repeat_by = []
 peaks = []
 cum_agg = []

@@ -1,5 +1,4 @@
 use arrow::legacy::utils::CustomIterTools;
-use polars_core::frame::group_by::IntoGroupsProxy;
 use polars_core::prelude::*;
 use polars_core::{with_match_physical_integer_polars_type, POOL};
 
@@ -14,7 +13,7 @@ where
     let groups = ca.group_tuples(parallel, false).unwrap();
     let idx = mode_indices(groups);
 
-    // Safety:
+    // SAFETY:
     // group indices are in bounds
     Ok(unsafe { ca.take_unchecked(idx.as_slice()) })
 }

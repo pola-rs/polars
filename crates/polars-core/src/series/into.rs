@@ -4,7 +4,8 @@
     feature = "dtype-duration",
     feature = "dtype-time"
 ))]
-use arrow::legacy::compute::cast::cast;
+use arrow::compute::cast::cast_default as cast;
+use arrow::compute::cast::cast_unchecked;
 
 use crate::prelude::*;
 
@@ -18,11 +19,11 @@ impl Series {
     /// Convert a chunk in the Series to the correct Arrow type.
     /// This conversion is needed because polars doesn't use a
     /// 1 on 1 mapping for logical/ categoricals, etc.
-    pub fn to_arrow(&self, chunk_idx: usize) -> ArrayRef {
+    pub fn to_arrow(&self, chunk_idx: usize, pl_flavor: bool) -> ArrayRef {
         match self.dtype() {
             // make sure that we recursively apply all logical types.
             #[cfg(feature = "dtype-struct")]
-            DataType::Struct(_) => self.struct_().unwrap().to_arrow(chunk_idx),
+            DataType::Struct(_) => self.struct_().unwrap().to_arrow(chunk_idx, pl_flavor),
             // special list branch to
             // make sure that we recursively apply all logical types.
             DataType::List(inner) => {
@@ -44,10 +45,10 @@ impl Series {
                         .unwrap()
                     };
 
-                    s.to_arrow(0)
+                    s.to_arrow(0, pl_flavor)
                 };
 
-                let data_type = ListArray::<i64>::default_datatype(inner.to_arrow());
+                let data_type = ListArray::<i64>::default_datatype(inner.to_arrow(pl_flavor));
                 let arr = ListArray::<i64>::new(
                     data_type,
                     arr.offsets().clone(),
@@ -57,7 +58,7 @@ impl Series {
                 Box::new(arr)
             },
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(_, ordering) => {
+            dt @ (DataType::Categorical(_, ordering) | DataType::Enum(_, ordering)) => {
                 let ca = self.categorical().unwrap();
                 let arr = ca.physical().chunks()[chunk_idx].clone();
                 // SAFETY: categoricals are always u32's.
@@ -68,25 +69,37 @@ impl Series {
                     CategoricalChunked::from_cats_and_rev_map_unchecked(
                         cats,
                         ca.get_rev_map().clone(),
+                        matches!(dt, DataType::Enum(_, _)),
                         *ordering,
                     )
                 };
 
-                let arr: DictionaryArray<u32> = (&new).into();
-                Box::new(arr) as ArrayRef
+                new.to_arrow(pl_flavor, false)
             },
             #[cfg(feature = "dtype-date")]
-            DataType::Date => cast(&*self.chunks()[chunk_idx], &DataType::Date.to_arrow()).unwrap(),
+            DataType::Date => cast(
+                &*self.chunks()[chunk_idx],
+                &DataType::Date.to_arrow(pl_flavor),
+            )
+            .unwrap(),
             #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime(_, _) => {
-                cast(&*self.chunks()[chunk_idx], &self.dtype().to_arrow()).unwrap()
-            },
+            DataType::Datetime(_, _) => cast(
+                &*self.chunks()[chunk_idx],
+                &self.dtype().to_arrow(pl_flavor),
+            )
+            .unwrap(),
             #[cfg(feature = "dtype-duration")]
-            DataType::Duration(_) => {
-                cast(&*self.chunks()[chunk_idx], &self.dtype().to_arrow()).unwrap()
-            },
+            DataType::Duration(_) => cast(
+                &*self.chunks()[chunk_idx],
+                &self.dtype().to_arrow(pl_flavor),
+            )
+            .unwrap(),
             #[cfg(feature = "dtype-time")]
-            DataType::Time => cast(&*self.chunks()[chunk_idx], &DataType::Time.to_arrow()).unwrap(),
+            DataType::Time => cast(
+                &*self.chunks()[chunk_idx],
+                &DataType::Time.to_arrow(pl_flavor),
+            )
+            .unwrap(),
             #[cfg(feature = "object")]
             DataType::Object(_, None) => {
                 use crate::chunked_array::object::builder::object_series_to_arrow_array;
@@ -101,6 +114,22 @@ impl Series {
                     let len = self.chunks()[chunk_idx].len();
                     let s = self.slice(offset, len);
                     object_series_to_arrow_array(&s)
+                }
+            },
+            DataType::String => {
+                if pl_flavor {
+                    self.array_ref(chunk_idx).clone()
+                } else {
+                    let arr = self.array_ref(chunk_idx);
+                    cast_unchecked(arr.as_ref(), &ArrowDataType::LargeUtf8).unwrap()
+                }
+            },
+            DataType::Binary => {
+                if pl_flavor {
+                    self.array_ref(chunk_idx).clone()
+                } else {
+                    let arr = self.array_ref(chunk_idx);
+                    cast_unchecked(arr.as_ref(), &ArrowDataType::LargeBinary).unwrap()
                 }
             },
             _ => self.array_ref(chunk_idx).clone(),

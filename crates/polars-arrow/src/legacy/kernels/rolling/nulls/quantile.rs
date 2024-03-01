@@ -155,7 +155,6 @@ mod test {
     use super::*;
     use crate::buffer::Buffer;
     use crate::datatypes::ArrowDataType;
-    use crate::legacy::kernels::rolling::nulls::{rolling_max, rolling_min};
 
     #[test]
     fn test_rolling_median_nulls() {

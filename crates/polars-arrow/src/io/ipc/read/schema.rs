@@ -277,6 +277,8 @@ fn get_data_type(
         LargeBinary(_) => (ArrowDataType::LargeBinary, IpcField::default()),
         Utf8(_) => (ArrowDataType::Utf8, IpcField::default()),
         LargeUtf8(_) => (ArrowDataType::LargeUtf8, IpcField::default()),
+        BinaryView(_) => (ArrowDataType::BinaryView, IpcField::default()),
+        Utf8View(_) => (ArrowDataType::Utf8View, IpcField::default()),
         FixedSizeBinary(fixed) => (
             ArrowDataType::FixedSizeBinary(
                 fixed
@@ -349,6 +351,8 @@ fn get_data_type(
         Struct(_) => deserialize_struct(field)?,
         Union(union_) => deserialize_union(union_, field)?,
         Map(map) => deserialize_map(map, field)?,
+        RunEndEncoded(_) => todo!(),
+        LargeListView(_) | ListView(_) => todo!(),
     })
 }
 

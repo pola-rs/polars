@@ -32,7 +32,6 @@ def _scan_pyarrow_dataset(
         different than polars does.
     batch_size
         The maximum row count for scanned pyarrow record batches.
-
     """
     func = partial(_scan_pyarrow_dataset_impl, ds, batch_size=batch_size)
     return pl.LazyFrame._scan_python_function(
@@ -66,20 +65,19 @@ def _scan_pyarrow_dataset_impl(
     Returns
     -------
     DataFrame
-
     """
     from polars import from_arrow
 
     _filter = None
 
     if predicate:
-        from polars.datatypes import Date, Datetime, Duration
-        from polars.utils.convert import (
-            _to_python_date,
-            _to_python_datetime,
-            _to_python_time,
-            _to_python_timedelta,
+        from polars._utils.convert import (
+            to_py_date,
+            to_py_datetime,
+            to_py_time,
+            to_py_timedelta,
         )
+        from polars.datatypes import Date, Datetime, Duration
 
         _filter = eval(
             predicate,
@@ -88,10 +86,10 @@ def _scan_pyarrow_dataset_impl(
                 "Date": Date,
                 "Datetime": Datetime,
                 "Duration": Duration,
-                "_to_python_date": _to_python_date,
-                "_to_python_datetime": _to_python_datetime,
-                "_to_python_time": _to_python_time,
-                "_to_python_timedelta": _to_python_timedelta,
+                "to_py_date": to_py_date,
+                "to_py_datetime": to_py_datetime,
+                "to_py_time": to_py_time,
+                "to_py_timedelta": to_py_timedelta,
             },
         )
 

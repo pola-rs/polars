@@ -1,6 +1,3 @@
-use std::sync::Arc;
-
-use polars_core::frame::group_by::GroupsProxy;
 use polars_core::prelude::*;
 use polars_core::POOL;
 #[cfg(feature = "round_series")]
@@ -389,15 +386,15 @@ mod stats {
             {
                 match (fld_l.data_type(), fld_r.data_type()) {
                     #[cfg(feature = "dtype-categorical")]
-                    (DataType::String, DataType::Categorical(_, _)) => {},
+                    (DataType::String, DataType::Categorical(_, _) | DataType::Enum(_, _)) => {},
                     #[cfg(feature = "dtype-categorical")]
-                    (DataType::Categorical(_, _), DataType::String) => {},
+                    (DataType::Categorical(_, _) | DataType::Enum(_, _), DataType::String) => {},
                     (l, r) if l != r => panic!("implementation error: {l:?}, {r:?}"),
                     _ => {},
                 }
             }
 
-            let dummy = DataFrame::new_no_checks(vec![]);
+            let dummy = DataFrame::empty();
             let state = ExecutionState::new();
 
             let out = match (self.left.is_literal(), self.right.is_literal()) {

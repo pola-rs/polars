@@ -7,14 +7,12 @@ mod single_keys_outer;
 #[cfg(feature = "semi_anti_join")]
 mod single_keys_semi_anti;
 pub(super) mod sort_merge;
-
 use arrow::array::ArrayRef;
 pub use multiple_keys::private_left_join_multiple_keys;
 pub(super) use multiple_keys::*;
-#[cfg(any(feature = "chunked_ids", feature = "semi_anti_join"))]
-use polars_core::utils::slice_slice;
-use polars_core::utils::{_set_partition_size, slice_offsets, split_ca};
+use polars_core::utils::{_set_partition_size, split_ca};
 use polars_core::POOL;
+use polars_utils::index::ChunkId;
 pub(super) use single_keys::*;
 #[cfg(feature = "asof_join")]
 pub(super) use single_keys_dispatch::prepare_bytes;
@@ -27,6 +25,8 @@ use single_keys_semi_anti::*;
 pub use sort_merge::*;
 
 pub use super::*;
+#[cfg(feature = "chunked_ids")]
+use crate::chunked_array::gather::chunked::DfTake;
 
 pub fn default_join_ids() -> ChunkJoinOptIds {
     #[cfg(feature = "chunked_ids")]
@@ -53,8 +53,6 @@ macro_rules! det_hash_prone_order {
 #[cfg(feature = "performant")]
 use arrow::legacy::conversion::primitive_to_vec;
 pub(super) use det_hash_prone_order;
-
-use crate::frame::join::general::coalesce_outer_join;
 
 pub trait JoinDispatch: IntoDf {
     /// # Safety
@@ -233,7 +231,7 @@ pub trait JoinDispatch: IntoDf {
         _check_categorical_src(s_left.dtype(), s_right.dtype())?;
 
         let idx = s_left.hash_join_semi_anti(s_right, anti);
-        // Safety:
+        // SAFETY:
         // indices are in bounds
         Ok(unsafe { ca_self._finish_anti_semi_join(&idx, slice) })
     }
@@ -244,7 +242,7 @@ pub trait JoinDispatch: IntoDf {
         s_right: &Series,
         args: JoinArgs,
     ) -> PolarsResult<DataFrame> {
-        let ca_self = self.to_df();
+        let df_self = self.to_df();
         #[cfg(feature = "dtype-categorical")]
         _check_categorical_src(s_left.dtype(), s_right.dtype())?;
 
@@ -262,7 +260,7 @@ pub trait JoinDispatch: IntoDf {
 
         // Take the left and right dataframes by join tuples
         let (df_left, df_right) = POOL.join(
-            || unsafe { ca_self.take_unchecked(&idx_ca_l) },
+            || unsafe { df_self.take_unchecked(&idx_ca_l) },
             || unsafe { other.take_unchecked(&idx_ca_r) },
         );
 
@@ -276,6 +274,7 @@ pub trait JoinDispatch: IntoDf {
                 &[s_left.name()],
                 &[s_right.name()],
                 args.suffix.as_deref(),
+                df_self,
             ))
         } else {
             out

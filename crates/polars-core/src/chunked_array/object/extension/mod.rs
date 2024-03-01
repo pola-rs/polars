@@ -4,7 +4,7 @@ pub(crate) mod polars_extension;
 
 use std::mem;
 
-use arrow::array::{Array, FixedSizeBinaryArray};
+use arrow::array::FixedSizeBinaryArray;
 use arrow::bitmap::MutableBitmap;
 use arrow::buffer::Buffer;
 use polars_extension::PolarsExtension;
@@ -76,7 +76,7 @@ pub(crate) fn create_extension<I: Iterator<Item = Option<T>> + TrustedLen, T: Si
             Some(t) => {
                 unsafe {
                     buf.extend_from_slice(any_as_u8_slice(&t));
-                    // Safety: we allocated upfront
+                    // SAFETY: we allocated upfront
                     validity.push_unchecked(true)
                 }
                 mem::forget(t);
@@ -85,7 +85,7 @@ pub(crate) fn create_extension<I: Iterator<Item = Option<T>> + TrustedLen, T: Si
                 null_count += 1;
                 unsafe {
                     buf.extend_from_slice(any_as_u8_slice(&T::default()));
-                    // Safety: we allocated upfront
+                    // SAFETY: we allocated upfront
                     validity.push_unchecked(false)
                 }
             },
@@ -101,7 +101,7 @@ pub(crate) fn create_extension<I: Iterator<Item = Option<T>> + TrustedLen, T: Si
     // ptr to start of T, not to start of padding
     let ptr = buf.as_slice().as_ptr();
 
-    // Safety:
+    // SAFETY:
     // ptr and t are correct
     let drop_fn = unsafe { create_drop::<T>(ptr, n_t_vals) };
     let et = Box::new(ExtensionSentinel {
@@ -125,7 +125,7 @@ pub(crate) fn create_extension<I: Iterator<Item = Option<T>> + TrustedLen, T: Si
 
     let array = FixedSizeBinaryArray::new(extension_type, buf, validity);
 
-    // Safety:
+    // SAFETY:
     // we just heap allocated the ExtensionSentinel, so its alive.
     unsafe { PolarsExtension::new(array) }
 }
@@ -133,8 +133,10 @@ pub(crate) fn create_extension<I: Iterator<Item = Option<T>> + TrustedLen, T: Si
 #[cfg(test)]
 mod test {
     use std::fmt::{Display, Formatter};
+    use std::hash::{Hash, Hasher};
 
-    use polars_utils::idxvec;
+    use polars_utils::total_ord::TotalHash;
+    use polars_utils::unitvec;
 
     use super::*;
 
@@ -148,6 +150,15 @@ mod test {
     impl TotalEq for Foo {
         fn tot_eq(&self, other: &Self) -> bool {
             self == other
+        }
+    }
+
+    impl TotalHash for Foo {
+        fn tot_hash<H>(&self, state: &mut H)
+        where
+            H: Hasher,
+        {
+            self.hash(state);
         }
     }
 
@@ -200,7 +211,7 @@ mod test {
         let ca = ObjectChunked::new("", values);
 
         let groups =
-            GroupsProxy::Idx(vec![(0, idxvec![0, 1]), (2, idxvec![2]), (3, idxvec![3])].into());
+            GroupsProxy::Idx(vec![(0, unitvec![0, 1]), (2, unitvec![2]), (3, unitvec![3])].into());
         let out = unsafe { ca.agg_list(&groups) };
         assert!(matches!(out.dtype(), DataType::List(_)));
         assert_eq!(out.len(), groups.len());
@@ -223,7 +234,7 @@ mod test {
         let values = &[Some(foo1.clone()), None, Some(foo2.clone()), None];
         let ca = ObjectChunked::new("", values);
 
-        let groups = vec![(0, idxvec![0, 1]), (2, idxvec![2]), (3, idxvec![3])].into();
+        let groups = vec![(0, unitvec![0, 1]), (2, unitvec![2]), (3, unitvec![3])].into();
         let out = unsafe { ca.agg_list(&GroupsProxy::Idx(groups)) };
         let a = out.explode().unwrap();
 

@@ -2,20 +2,16 @@ mod hash;
 mod schema;
 
 use std::hash::{Hash, Hasher};
-use std::sync::Arc;
 
-use arrow::legacy::prelude::QuantileInterpolOptions;
-use polars_core::frame::group_by::GroupByMethod;
 use polars_core::prelude::*;
 use polars_core::utils::{get_time_units, try_get_supertype};
 use polars_utils::arena::{Arena, Node};
 use strum_macros::IntoStaticStr;
 
-use crate::dsl::function_expr::FunctionExpr;
 #[cfg(feature = "cse")]
 use crate::logical_plan::visitor::AexprNode;
 use crate::logical_plan::Context;
-use crate::prelude::consts::COUNT;
+use crate::prelude::consts::LEN;
 use crate::prelude::*;
 
 #[derive(Clone, Debug, IntoStaticStr)]
@@ -188,7 +184,7 @@ pub enum AExpr {
         offset: Node,
         length: Node,
     },
-    Count,
+    Len,
     Nth(i64),
 }
 
@@ -196,7 +192,7 @@ impl AExpr {
     #[cfg(feature = "cse")]
     pub(crate) fn is_equal(l: Node, r: Node, arena: &Arena<AExpr>) -> bool {
         let arena = arena as *const Arena<AExpr> as *mut Arena<AExpr>;
-        // safety: we can pass a *mut pointer
+        // SAFETY: we can pass a *mut pointer
         // the equality operation will not access mutable
         unsafe {
             let ae_node_l = AexprNode::from_raw(l, arena);
@@ -224,7 +220,7 @@ impl AExpr {
             | SortBy { .. }
             | Agg { .. }
             | Window { .. }
-            | Count
+            | Len
             | Slice { .. }
             | Gather { .. }
             | Nth(_)
@@ -255,38 +251,38 @@ impl AExpr {
     }
 
     /// Push nodes at this level to a pre-allocated stack
-    pub(crate) fn nodes(&self, container: &mut Vec<Node>) {
+    pub(crate) fn nodes<C: PushNode>(&self, container: &mut C) {
         use AExpr::*;
 
         match self {
-            Nth(_) | Column(_) | Literal(_) | Wildcard | Count => {},
-            Alias(e, _) => container.push(*e),
+            Nth(_) | Column(_) | Literal(_) | Wildcard | Len => {},
+            Alias(e, _) => container.push_node(*e),
             BinaryExpr { left, op: _, right } => {
                 // reverse order so that left is popped first
-                container.push(*right);
-                container.push(*left);
+                container.push_node(*right);
+                container.push_node(*left);
             },
-            Cast { expr, .. } => container.push(*expr),
-            Sort { expr, .. } => container.push(*expr),
+            Cast { expr, .. } => container.push_node(*expr),
+            Sort { expr, .. } => container.push_node(*expr),
             Gather { expr, idx, .. } => {
-                container.push(*idx);
+                container.push_node(*idx);
                 // latest, so that it is popped first
-                container.push(*expr);
+                container.push_node(*expr);
             },
             SortBy { expr, by, .. } => {
                 for node in by {
-                    container.push(*node)
+                    container.push_node(*node)
                 }
                 // latest, so that it is popped first
-                container.push(*expr);
+                container.push_node(*expr);
             },
             Filter { input, by } => {
-                container.push(*by);
+                container.push_node(*by);
                 // latest, so that it is popped first
-                container.push(*input);
+                container.push_node(*input);
             },
             Agg(agg_e) => match agg_e.get_input() {
-                NodeInputs::Single(node) => container.push(node),
+                NodeInputs::Single(node) => container.push_node(node),
                 NodeInputs::Many(nodes) => container.extend_from_slice(&nodes),
                 NodeInputs::Leaf => {},
             },
@@ -295,10 +291,10 @@ impl AExpr {
                 falsy,
                 predicate,
             } => {
-                container.push(*predicate);
-                container.push(*falsy);
+                container.push_node(*predicate);
+                container.push_node(*falsy);
                 // latest, so that it is popped first
-                container.push(*truthy);
+                container.push_node(*truthy);
             },
             AnonymousFunction { input, .. } | Function { input, .. } =>
             // we iterate in reverse order, so that the lhs is popped first and will be found
@@ -308,29 +304,29 @@ impl AExpr {
                     .iter()
                     .rev()
                     .copied()
-                    .for_each(|node| container.push(node))
+                    .for_each(|node| container.push_node(node))
             },
-            Explode(e) => container.push(*e),
+            Explode(e) => container.push_node(*e),
             Window {
                 function,
                 partition_by,
                 options: _,
             } => {
                 for e in partition_by.iter().rev() {
-                    container.push(*e);
+                    container.push_node(*e);
                 }
                 // latest so that it is popped first
-                container.push(*function);
+                container.push_node(*function);
             },
             Slice {
                 input,
                 offset,
                 length,
             } => {
-                container.push(*length);
-                container.push(*offset);
+                container.push_node(*length);
+                container.push_node(*offset);
                 // latest so that it is popped first
-                container.push(*input);
+                container.push_node(*input);
             },
         }
     }
@@ -338,7 +334,7 @@ impl AExpr {
     pub(crate) fn replace_inputs(mut self, inputs: &[Node]) -> Self {
         use AExpr::*;
         let input = match &mut self {
-            Column(_) | Literal(_) | Wildcard | Count | Nth(_) => return self,
+            Column(_) | Literal(_) | Wildcard | Len | Nth(_) => return self,
             Alias(input, _) => input,
             Cast { expr, .. } => expr,
             Explode(input) => input,
@@ -420,7 +416,7 @@ impl AExpr {
     pub(crate) fn is_leaf(&self) -> bool {
         matches!(
             self,
-            AExpr::Column(_) | AExpr::Literal(_) | AExpr::Count | AExpr::Nth(_)
+            AExpr::Column(_) | AExpr::Literal(_) | AExpr::Len | AExpr::Nth(_)
         )
     }
 }

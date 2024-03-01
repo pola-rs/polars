@@ -97,10 +97,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use std::iter::FromIterator;
-
     use super::*;
-    use crate::array::UInt32Array;
 
     #[test]
     fn test_set_mask() {

@@ -50,7 +50,7 @@ where
     ChunkedArray<T>: IntoSeries,
 {
     fn subtract(lhs: &ChunkedArray<T>, rhs: &Series) -> PolarsResult<Series> {
-        // Safety:
+        // SAFETY:
         // There will be UB if a ChunkedArray is alive with the wrong datatype.
         // we now only create the potentially wrong dtype for a short time.
         // Note that the physical type correctness is checked!
@@ -60,28 +60,28 @@ where
         Ok(out.into_series())
     }
     fn add_to(lhs: &ChunkedArray<T>, rhs: &Series) -> PolarsResult<Series> {
-        // Safety:
+        // SAFETY:
         // see subtract
         let rhs = unsafe { lhs.unpack_series_matching_physical_type(rhs) };
         let out = lhs + rhs;
         Ok(out.into_series())
     }
     fn multiply(lhs: &ChunkedArray<T>, rhs: &Series) -> PolarsResult<Series> {
-        // Safety:
+        // SAFETY:
         // see subtract
         let rhs = unsafe { lhs.unpack_series_matching_physical_type(rhs) };
         let out = lhs * rhs;
         Ok(out.into_series())
     }
     fn divide(lhs: &ChunkedArray<T>, rhs: &Series) -> PolarsResult<Series> {
-        // Safety:
+        // SAFETY:
         // see subtract
         let rhs = unsafe { lhs.unpack_series_matching_physical_type(rhs) };
         let out = lhs / rhs;
         Ok(out.into_series())
     }
     fn remainder(lhs: &ChunkedArray<T>, rhs: &Series) -> PolarsResult<Series> {
-        // Safety:
+        // SAFETY:
         // see subtract
         let rhs = unsafe { lhs.unpack_series_matching_physical_type(rhs) };
         let out = lhs % rhs;
@@ -154,7 +154,7 @@ pub mod checked {
         ChunkedArray<T>: IntoSeries,
     {
         fn checked_div(lhs: &ChunkedArray<T>, rhs: &Series) -> PolarsResult<Series> {
-            // Safety:
+            // SAFETY:
             // There will be UB if a ChunkedArray is alive with the wrong datatype.
             // we now only create the potentially wrong dtype for a short time.
             // Note that the physical type correctness is checked!
@@ -173,7 +173,7 @@ pub mod checked {
 
     impl NumOpsDispatchCheckedInner for Float32Type {
         fn checked_div(lhs: &Float32Chunked, rhs: &Series) -> PolarsResult<Series> {
-            // Safety:
+            // SAFETY:
             // see check_div for chunkedarray<T>
             let rhs = unsafe { lhs.unpack_series_matching_physical_type(rhs) };
 
@@ -194,7 +194,7 @@ pub mod checked {
 
     impl NumOpsDispatchCheckedInner for Float64Type {
         fn checked_div(lhs: &Float64Chunked, rhs: &Series) -> PolarsResult<Series> {
-            // Safety:
+            // SAFETY:
             // see check_div
             let rhs = unsafe { lhs.unpack_series_matching_physical_type(rhs) };
 
@@ -394,16 +394,16 @@ pub fn _struct_arithmetic<F: FnMut(&Series, &Series) -> Series>(
     match (s_fields.len(), rhs_fields.len()) {
         (_, 1) => {
             let rhs = &rhs.fields()[0];
-            s.apply_fields(|s| func(s, rhs)).into_series()
+            s._apply_fields(|s| func(s, rhs)).into_series()
         },
         (1, _) => {
             let s = &s.fields()[0];
-            rhs.apply_fields(|rhs| func(s, rhs)).into_series()
+            rhs._apply_fields(|rhs| func(s, rhs)).into_series()
         },
         _ => {
             let mut rhs_iter = rhs.fields().iter();
 
-            s.apply_fields(|s| match rhs_iter.next() {
+            s._apply_fields(|s| match rhs_iter.next() {
                 Some(rhs) => func(s, rhs),
                 None => s.clone(),
             })
@@ -622,6 +622,22 @@ where
     }
 }
 
+// TODO: remove this, temporary band-aid.
+impl Series {
+    pub fn wrapping_trunc_div_scalar<T: Num + NumCast>(&self, rhs: T) -> Self {
+        let s = self.to_physical_repr();
+        macro_rules! div {
+            ($ca:expr) => {{
+                let rhs = NumCast::from(rhs).unwrap();
+                $ca.wrapping_trunc_div_scalar(rhs).into_series()
+            }};
+        }
+
+        let out = downcast_as_macro_arg_physical!(s, div);
+        finish_cast(self, out)
+    }
+}
+
 impl<T> Mul<T> for &Series
 where
     T: Num + NumCast,
@@ -692,21 +708,21 @@ where
     #[must_use]
     pub fn lhs_sub<N: Num + NumCast>(&self, lhs: N) -> Self {
         let lhs: T::Native = NumCast::from(lhs).expect("could not cast");
-        self.apply_values(|v| lhs - v)
+        ArithmeticChunked::wrapping_sub_scalar_lhs(lhs, self)
     }
 
     /// Apply lhs / self
     #[must_use]
     pub fn lhs_div<N: Num + NumCast>(&self, lhs: N) -> Self {
         let lhs: T::Native = NumCast::from(lhs).expect("could not cast");
-        self.apply_values(|v| lhs / v)
+        ArithmeticChunked::legacy_div_scalar_lhs(lhs, self)
     }
 
     /// Apply lhs % self
     #[must_use]
     pub fn lhs_rem<N: Num + NumCast>(&self, lhs: N) -> Self {
         let lhs: T::Native = NumCast::from(lhs).expect("could not cast");
-        self.apply_values(|v| lhs % v)
+        ArithmeticChunked::wrapping_mod_scalar_lhs(lhs, self)
     }
 }
 

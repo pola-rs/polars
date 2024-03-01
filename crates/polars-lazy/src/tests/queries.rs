@@ -1,10 +1,7 @@
-use polars_core::frame::explode::MeltArgs;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
 
 use super::*;
-#[cfg(feature = "range")]
-use crate::dsl::arg_sort_by;
 
 #[test]
 fn test_lazy_with_column() {
@@ -173,6 +170,23 @@ fn test_shift_and_fill() -> PolarsResult<()> {
 
     let out = out.column("a")?;
     assert_eq!(Vec::from(out.i32()?), &[Some(2), Some(3), Some(5)]);
+    Ok(())
+}
+
+#[test]
+fn test_shift_and_fill_non_numeric() -> PolarsResult<()> {
+    let out = df![
+        "bool" => [true, false, true],
+    ]?
+    .lazy()
+    .select([col("bool").shift_and_fill(1, true)])
+    .collect()?;
+
+    let out = out.column("bool")?;
+    assert_eq!(
+        Vec::from(out.bool()?),
+        &[Some(true), Some(true), Some(false)]
+    );
     Ok(())
 }
 
@@ -1790,7 +1804,7 @@ fn test_partitioned_gb_count() -> PolarsResult<()> {
     .group_by([col("col")])
     .agg([
         // we make sure to alias with a different name
-        count().alias("counted"),
+        len().alias("counted"),
         col("col").count().alias("count2"),
     ])
     .collect()?;

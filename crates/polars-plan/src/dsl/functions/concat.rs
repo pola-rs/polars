@@ -2,13 +2,17 @@ use super::*;
 
 #[cfg(all(feature = "concat_str", feature = "strings"))]
 /// Horizontally concat string columns in linear time
-pub fn concat_str<E: AsRef<[Expr]>>(s: E, separator: &str) -> Expr {
+pub fn concat_str<E: AsRef<[Expr]>>(s: E, separator: &str, ignore_nulls: bool) -> Expr {
     let input = s.as_ref().to_vec();
     let separator = separator.to_string();
 
     Expr::Function {
         input,
-        function: StringFunction::ConcatHorizontal(separator).into(),
+        function: StringFunction::ConcatHorizontal {
+            delimiter: separator,
+            ignore_nulls,
+        }
+        .into(),
         options: FunctionOptions {
             collect_groups: ApplyOptions::ElementWise,
             input_wildcard_expansion: true,
@@ -45,7 +49,7 @@ pub fn format_str<E: AsRef<[Expr]>>(format: &str, args: E) -> PolarsResult<Expr>
         }
     }
 
-    Ok(concat_str(exprs, ""))
+    Ok(concat_str(exprs, "", false))
 }
 
 /// Concat lists entries.
