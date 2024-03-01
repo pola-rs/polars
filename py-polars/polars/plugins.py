@@ -27,7 +27,7 @@ def get_shared_lib_location(package_init_path: str) -> str:
         The location of the Shared Object file.
     """
     directory = Path(package_init_path).parent
-    return str(directory / next(filter(_is_shared_lib, directory.iterdir())))
+    return str(next(path for path in directory.iterdir() if _is_shared_lib(path)))
 
 
 def _is_shared_lib(file: Path) -> bool:
