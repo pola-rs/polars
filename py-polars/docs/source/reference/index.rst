@@ -22,3 +22,4 @@ methods. All classes and functions exposed in ``polars.*`` namespace are public.
    testing
    sql
    metadata
+   plugins
