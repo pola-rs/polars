@@ -1,6 +1,7 @@
 //! Contains operators to filter arrays such as [`filter`].
 mod boolean;
 mod primitive;
+mod scalar;
 
 use arrow::array::growable::make_growable;
 use arrow::array::*;
@@ -50,7 +51,8 @@ pub fn filter(array: &dyn Array, mask: &BooleanArray) -> PolarsResult<Box<dyn Ar
     match array.data_type().to_physical_type() {
         Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
             let array = array.as_any().downcast_ref().unwrap();
-            Ok(Box::new(filter_primitive::<$T>(array, mask.values())))
+            // Ok(Box::new(filter_primitive::<$T>(array, mask.values())))
+            Ok(Box::new(scalar::filter_primitive_scalar::<$T>(array, mask.values())))
         }),
         Boolean => {
             let array = array.as_any().downcast_ref::<BooleanArray>().unwrap();
