@@ -103,6 +103,7 @@ impl StreamingVstacker {
     }
 }
 
+#[cfg(any(feature = "parquet", feature = "ipc", feature = "csv"))]
 impl Default for StreamingVstacker {
     /// 4 MB was chosen based on some empirical experiments that showed it to
     /// be decently faster than lower or higher values, and it's small enough
