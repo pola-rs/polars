@@ -478,6 +478,9 @@ class GroupBy:
         """
         Return the number of rows in each group.
 
+        .. deprecated:: 0.20.5
+            This method has been renamed to :func:`GroupBy.len`.
+
         Rows containing null values count towards the total.
 
         Examples

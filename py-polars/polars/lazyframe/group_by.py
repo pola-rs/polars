@@ -365,6 +365,9 @@ class LazyGroupBy:
         """
         Return the number of rows in each group.
 
+        .. deprecated:: 0.20.5
+            This method has been renamed to :func:`LazyGroupBy.len`.
+
         Rows containing null values count towards the total.
 
         Examples
