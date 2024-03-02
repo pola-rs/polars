@@ -46,7 +46,7 @@ impl<'a> PartialEq for BytesHash<'a> {
     }
 }
 
-#[inline]
+#[inline(always)]
 pub fn hash_to_partition(h: u64, n_partitions: usize) -> usize {
     // Assuming h is a 64-bit random number, we note that
     // h / 2^64 is almost a uniform random number in [0, 1), and thus
