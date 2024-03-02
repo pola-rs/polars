@@ -247,9 +247,11 @@ fn get_encodings(schema: &ArrowSchema) -> Vec<Vec<Encoding>> {
 /// Declare encodings
 fn encoding_map(data_type: &ArrowDataType) -> Encoding {
     match data_type.to_physical_type() {
-        PhysicalType::Dictionary(_) | PhysicalType::LargeBinary | PhysicalType::LargeUtf8 => {
-            Encoding::RleDictionary
-        },
+        PhysicalType::Dictionary(_)
+        | PhysicalType::LargeBinary
+        | PhysicalType::LargeUtf8
+        | PhysicalType::Utf8View
+        | PhysicalType::BinaryView => Encoding::RleDictionary,
         PhysicalType::Primitive(dt) => {
             use arrow::types::PrimitiveType::*;
             match dt {
