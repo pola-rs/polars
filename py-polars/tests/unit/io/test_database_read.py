@@ -643,7 +643,11 @@ def test_read_kuzu_graph_database(tmp_path: Path, io_files_path: Path) -> None:
     if (kuzu_test_db := (tmp_path / "kuzu_test.db")).exists():
         kuzu_test_db.unlink()
 
-    db = kuzu.Database(str(kuzu_test_db))
+    test_db = str(kuzu_test_db)
+    if sys.platform == "win32":
+        test_db = test_db.replace("\\", "/")
+
+    db = kuzu.Database(test_db)
     conn = kuzu.Connection(db)
     conn.execute("CREATE NODE TABLE User(name STRING, age INT64, PRIMARY KEY (name))")
     conn.execute("CREATE REL TABLE Follows(FROM User TO User, since INT64)")

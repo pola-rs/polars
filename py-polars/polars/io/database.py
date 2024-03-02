@@ -34,7 +34,7 @@ if TYPE_CHECKING:
 
 class _ArrowDriverProperties_(TypedDict):
     # name of the method that fetches all arrow data; tuple form
-    # calls the fetch_all method with the give chunk size
+    # calls the fetch_all method with the given chunk size (int)
     fetch_all: str | tuple[str, int]
     # name of the method that fetches arrow data in batches
     fetch_batches: str | None
@@ -70,6 +70,7 @@ _ARROW_DRIVER_REGISTRY_: dict[str, _ArrowDriverProperties_] = {
         "repeat_batch_calls": False,
     },
     "kuzu": {
+        # 'get_as_arrow' currently takes a mandatory chunk size
         "fetch_all": ("get_as_arrow", 10_000),
         "fetch_batches": None,
         "exact_batch_size": None,
@@ -180,12 +181,11 @@ class ConnectionExecutor:
         """Yield Arrow data in batches, or as a single 'fetchall' batch."""
         fetch_batches = driver_properties["fetch_batches"]
         if not iter_batches or fetch_batches is None:
-            fetch_method = driver_properties["fetch_all"]
-            if not isinstance(fetch_method, tuple):
-                yield getattr(self.result, fetch_method)()
-            else:
-                fetch_method, sz = fetch_method
-                yield getattr(self.result, fetch_method)(sz)
+            fetch_method, sz = driver_properties["fetch_all"], []
+            if isinstance(fetch_method, tuple):
+                fetch_method, chunk_size = fetch_method
+                sz = [chunk_size]
+            yield getattr(self.result, fetch_method)(*sz)
         else:
             size = batch_size if driver_properties["exact_batch_size"] else None
             repeat_batch_calls = driver_properties["repeat_batch_calls"]
