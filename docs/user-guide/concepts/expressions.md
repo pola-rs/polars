@@ -22,9 +22,9 @@ Polars performs these core data transformations very quickly by:
 - automatic parallelization of expressions on many columns
 
 An expression is a tree of operations that describe how to construct one or more
-Series. As the output is one or more Series, it is straightforward to
+Series. As the outputs are Series, it is straightforward to
 apply a sequence of expressions (similar to method chaining in pandas) each of which
-transforms the output Series from the previous step.
+transforms the output from the previous step.
 
 If this seems abstract and confusing - don't worry! People quickly develop an intuition for expressions
 just by looking at a few examples. We'll do that next!
