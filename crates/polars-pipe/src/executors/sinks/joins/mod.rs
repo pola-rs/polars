@@ -2,6 +2,7 @@
 mod cross;
 mod generic_build;
 mod generic_probe_inner_left;
+mod row_values;
 
 use std::hash::{BuildHasherDefault, Hash, Hasher};
 

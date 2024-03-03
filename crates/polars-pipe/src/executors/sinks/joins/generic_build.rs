@@ -296,8 +296,6 @@ impl Sink for GenericBuild {
                 let join_columns_right = self.join_columns_right.clone();
 
                 // take the buffers, this saves one allocation
-                let mut join_series = std::mem::take(&mut self.join_columns);
-                join_series.clear();
                 let mut hashes = std::mem::take(&mut self.hashes);
                 hashes.clear();
 
@@ -310,7 +308,6 @@ impl Sink for GenericBuild {
                     join_columns_left,
                     join_columns_right,
                     self.swapped,
-                    join_series,
                     hashes,
                     context,
                     self.join_type.clone(),

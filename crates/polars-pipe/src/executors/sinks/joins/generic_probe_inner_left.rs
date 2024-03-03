@@ -1,19 +1,18 @@
 use std::borrow::Cow;
 
 use arrow::array::{Array, BinaryArray};
-use arrow::compute::utils::combine_validities_and;
 use polars_core::export::ahash::RandomState;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_ops::chunked_array::DfTake;
 use polars_ops::frame::join::_finish_join;
 use polars_ops::prelude::JoinType;
-use polars_row::RowsEncoded;
 use polars_utils::index::ChunkId;
 use polars_utils::nulls::IsNull;
 use smartstring::alias::String as SmartString;
 
 use crate::executors::sinks::joins::generic_build::*;
+use crate::executors::sinks::joins::row_values::RowValues;
 use crate::executors::sinks::joins::{PartitionedMap, ToRow};
 use crate::executors::sinks::utils::hash_rows;
 use crate::expressions::PhysicalPipedExpr;
@@ -38,14 +37,9 @@ pub struct GenericJoinProbe {
     // stores the key and the chunk_idx, df_idx of the left table
     hash_tables: Arc<PartitionedMap>,
 
-    // the columns that will be joined on
-    join_columns_right: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
-
-    // amortize allocations
-    current_rows: RowsEncoded,
-    join_columns: Vec<ArrayRef>,
-    // in inner join these are the left table
-    // in left join there are the right table
+    // Amortize allocations
+    // In inner join these are the left table.
+    // In left join there are the right table.
     join_tuples_a: Vec<ChunkId>,
     join_tuples_a_left_join: Vec<Option<ChunkId>>,
     // in inner join these are the right table
@@ -54,13 +48,11 @@ pub struct GenericJoinProbe {
     hashes: Vec<u64>,
     // the join order is swapped to ensure we hash the smaller table
     swapped_or_left: bool,
-    // location of join columns.
-    // these column locations need to be dropped from the rhs
-    join_column_idx: Option<Vec<usize>>,
     // cached output names
     output_names: Option<Vec<SmartString>>,
     how: JoinType,
     join_nulls: bool,
+    row_values: RowValues,
 }
 
 impl GenericJoinProbe {
@@ -74,7 +66,6 @@ impl GenericJoinProbe {
         join_columns_left: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
         join_columns_right: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
         swapped_or_left: bool,
-        join_columns: Vec<ArrayRef>,
         // Re-use the hashes allocation of the build side.
         amortized_hashes: Vec<u64>,
         context: &PExecutionContext,
@@ -106,66 +97,16 @@ impl GenericJoinProbe {
             suffix,
             hb,
             hash_tables,
-            join_columns_right,
-            join_columns,
             join_tuples_a: vec![],
             join_tuples_a_left_join: vec![],
             join_tuples_b: vec![],
             hashes: amortized_hashes,
             swapped_or_left,
-            current_rows: Default::default(),
-            join_column_idx: None,
             output_names: None,
             how,
             join_nulls,
+            row_values: RowValues::new(join_columns_right),
         }
-    }
-    fn set_join_series(
-        &mut self,
-        context: &PExecutionContext,
-        chunk: &DataChunk,
-    ) -> PolarsResult<BinaryArray<i64>> {
-        debug_assert!(self.join_columns.is_empty());
-
-        let determine_idx = !self.swapped_or_left && self.join_column_idx.is_none();
-        let mut names = vec![];
-
-        for phys_e in self.join_columns_right.iter() {
-            let s = phys_e.evaluate(chunk, context.execution_state.as_any())?;
-            let s = s.to_physical_repr().rechunk();
-            if determine_idx {
-                names.push(s.name().to_string());
-            }
-            self.join_columns.push(s.array_ref(0).clone());
-        }
-
-        // we determine the indices of the columns that have to be removed
-        // if swapped the join column is already removed from the `build_df` as that will
-        // be the rhs one.
-        if !self.swapped_or_left && self.join_column_idx.is_none() {
-            let mut idx = names
-                .iter()
-                .filter_map(|name| chunk.data.get_column_index(name))
-                .collect::<Vec<_>>();
-            // ensure that it is sorted so that we can later remove columns in
-            // a predictable order
-            idx.sort_unstable();
-            self.join_column_idx = Some(idx);
-        }
-        polars_row::convert_columns_amortized_no_order(&self.join_columns, &mut self.current_rows);
-
-        // SAFETY: we keep rows-encode alive
-        let array = unsafe { self.current_rows.borrow_array() };
-        Ok(if self.join_nulls {
-            array
-        } else {
-            let validity = self
-                .join_columns
-                .iter()
-                .map(|arr| arr.validity().cloned())
-                .fold(None, |l, r| combine_validities_and(l.as_ref(), r.as_ref()));
-            array.with_validity_typed(validity)
-        })
     }
 
     fn finish_join(
@@ -248,7 +189,9 @@ impl GenericJoinProbe {
         self.join_tuples_a_left_join.clear();
         self.join_tuples_b.clear();
         let mut hashes = std::mem::take(&mut self.hashes);
-        let rows = self.set_join_series(context, chunk)?;
+        let rows = self
+            .row_values
+            .get_values(context, chunk, self.join_nulls)?;
         hash_rows(&rows, &mut hashes, &self.hb);
 
         if self.join_nulls || rows.null_count() == 0 {
@@ -273,8 +216,8 @@ impl GenericJoinProbe {
 
         let out = self.finish_join(left_df, right_df)?;
 
-        // clear memory
-        self.join_columns.clear();
+        // Clear memory.
+        self.row_values.clear();
         self.hashes.clear();
 
         Ok(OperatorResult::Finished(chunk.with_data(out)))
@@ -311,7 +254,9 @@ impl GenericJoinProbe {
         self.join_tuples_a.clear();
         self.join_tuples_b.clear();
         let mut hashes = std::mem::take(&mut self.hashes);
-        let rows = self.set_join_series(context, chunk)?;
+        let rows = self
+            .row_values
+            .get_values(context, chunk, self.join_nulls)?;
         hash_rows(&rows, &mut hashes, &self.hb);
 
         if self.join_nulls || rows.null_count() == 0 {
@@ -333,7 +278,7 @@ impl GenericJoinProbe {
         };
         let right_df = unsafe {
             let mut df = Cow::Borrowed(&chunk.data);
-            if let Some(ids) = &self.join_column_idx {
+            if let Some(ids) = &self.row_values.join_column_idx {
                 let mut tmp = df.into_owned();
                 let cols = tmp.get_columns_mut();
                 // we go from higher idx to lower so that lower indices remain untouched
@@ -353,8 +298,8 @@ impl GenericJoinProbe {
         };
         let out = self.finish_join(a, b)?;
 
-        // clear memory
-        self.join_columns.clear();
+        // Clear memory.
+        self.row_values.clear();
         self.hashes.clear();
 
         Ok(OperatorResult::Finished(chunk.with_data(out)))
