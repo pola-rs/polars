@@ -19,7 +19,8 @@ use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkRe
 pub(super) type ChunkIdx = IdxSize;
 pub(super) type DfIdx = IdxSize;
 
-pub struct GenericBuild {
+
+pub struct GenericBuild<K: ExtraPayload> {
     chunks: Vec<DataChunk>,
     // the join columns are all tightly packed
     // the values of a join column(s) can be found
@@ -33,7 +34,7 @@ pub struct GenericBuild {
     hb: RandomState,
     // partitioned tables that will be used for probing
     // stores the key and the chunk_idx, df_idx of the left table
-    hash_tables: PartitionedMap,
+    hash_tables: PartitionedMap<K>,
 
     // the columns that will be joined on
     join_columns_left: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
@@ -49,7 +50,7 @@ pub struct GenericBuild {
     node: Node,
 }
 
-impl GenericBuild {
+impl<K: ExtraPayload> GenericBuild<K> {
     pub(crate) fn new(
         suffix: Arc<str>,
         join_type: JoinType,
@@ -95,8 +96,9 @@ pub(super) fn compare_fn(
     // as that has no indirection
     key_hash == h && {
         // we get the appropriate values from the join columns and compare it with the current row
-        let chunk_idx = key.chunk_idx as usize;
-        let df_idx = key.df_idx as usize;
+        let (chunk_idx, df_idx) = key.idx.extract();
+        let chunk_idx = chunk_idx as usize;
+        let df_idx = df_idx as usize;
 
         // get the right columns from the linearly packed buffer
         let other_row = unsafe {
@@ -108,7 +110,7 @@ pub(super) fn compare_fn(
     }
 }
 
-impl GenericBuild {
+impl<K: ExtraPayload> GenericBuild<K> {
     fn is_empty(&self) -> bool {
         match self.chunks.len() {
             0 => true,
@@ -139,7 +141,7 @@ impl GenericBuild {
     }
 }
 
-impl Sink for GenericBuild {
+impl<K: ExtraPayload> Sink for GenericBuild<K> {
     fn node(&self) -> Node {
         self.node
     }
@@ -179,10 +181,10 @@ impl Sink for GenericBuild {
             match entry {
                 RawEntryMut::Vacant(entry) => {
                     let key = Key::new(*h, current_chunk_offset, current_df_idx);
-                    entry.insert(key, unitvec![payload]);
+                    entry.insert(key, (unitvec![payload], Default::default()));
                 },
                 RawEntryMut::Occupied(mut entry) => {
-                    entry.get_mut().push(payload);
+                    entry.get_mut().0.push(payload);
                 },
             };
 
@@ -223,8 +225,10 @@ impl Sink for GenericBuild {
             .zip(other.hash_tables.inner())
             .for_each(|(ht, other_ht)| {
                 for (k, val) in other_ht.iter() {
+                    let val = &val.0;
+                    let (chunk_idx, df_idx) = k.idx.extract();
                     // use the indexes to materialize the row
-                    let other_row = unsafe { other.get_row(k.chunk_idx, k.df_idx) };
+                    let other_row = unsafe { other.get_row(chunk_idx, df_idx) };
 
                     let h = k.hash;
                     let entry = ht.raw_entry_mut().from_hash(h, |key| {
@@ -245,14 +249,14 @@ impl Sink for GenericBuild {
                                 });
                                 payload.extend(iter);
                             }
-                            entry.insert(key, payload);
+                            entry.insert(key, (payload, Default::default()));
                         },
                         RawEntryMut::Occupied(mut entry) => {
                             let iter = val.iter().map(|chunk_id| {
                                 let (chunk_idx, val_idx) = chunk_id.extract();
                                 ChunkId::store(chunk_idx + chunks_offset, val_idx)
                             });
-                            entry.get_mut().extend(iter);
+                            entry.get_mut().0.extend(iter);
                         },
                     }
                 }

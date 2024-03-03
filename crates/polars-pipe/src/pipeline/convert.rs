@@ -273,7 +273,7 @@ where
                         (join_columns_left, join_columns_right)
                     };
 
-                    Box::new(GenericBuild::new(
+                    Box::new(GenericBuild::<()>::new(
                         Arc::from(options.args.suffix()),
                         join_type.clone(),
                         swapped,

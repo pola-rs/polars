@@ -13,56 +13,56 @@ use smartstring::alias::String as SmartString;
 
 use crate::executors::sinks::joins::generic_build::*;
 use crate::executors::sinks::joins::row_values::RowValues;
-use crate::executors::sinks::joins::{PartitionedMap, ToRow};
+use crate::executors::sinks::joins::{ExtraPayload, PartitionedMap, ToRow};
 use crate::executors::sinks::utils::hash_rows;
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{DataChunk, Operator, OperatorResult, PExecutionContext};
 
 #[derive(Clone)]
-pub struct GenericJoinProbe {
-    // all chunks are stacked into a single dataframe
-    // the dataframe is not rechunked.
+pub struct GenericJoinProbe<K: ExtraPayload> {
+    /// All chunks are stacked into a single dataframe
+    /// the dataframe is not rechunked.
     df_a: Arc<DataFrame>,
-    // the join columns are all tightly packed
-    // the values of a join column(s) can be found
-    // by:
-    // first get the offset of the chunks and multiply that with the number of join
-    // columns
-    //      * chunk_offset = (idx * n_join_keys)
-    //      * end = (offset + n_join_keys)
+    /// The join columns are all tightly packed
+    /// the values of a join column(s) can be found
+    /// by:
+    /// first get the offset of the chunks and multiply that with the number of join
+    /// columns
+    ///      * chunk_offset = (idx * n_join_keys)
+    ///      * end = (offset + n_join_keys)
     materialized_join_cols: Arc<Vec<BinaryArray<i64>>>,
     suffix: Arc<str>,
     hb: RandomState,
-    // partitioned tables that will be used for probing
-    // stores the key and the chunk_idx, df_idx of the left table
-    hash_tables: Arc<PartitionedMap>,
+    /// partitioned tables that will be used for probing
+    /// stores the key and the chunk_idx, df_idx of the left table
+    hash_tables: Arc<PartitionedMap<K>>,
 
-    // Amortize allocations
-    // In inner join these are the left table.
-    // In left join there are the right table.
+    /// Amortize allocations
+    /// In inner join these are the left table.
+    /// In left join there are the right table.
     join_tuples_a: Vec<ChunkId>,
     join_tuples_a_left_join: Vec<Option<ChunkId>>,
-    // in inner join these are the right table
-    // in left join there are the left table
+    /// in inner join these are the right table
+    /// in left join there are the left table
     join_tuples_b: Vec<DfIdx>,
     hashes: Vec<u64>,
-    // the join order is swapped to ensure we hash the smaller table
+    /// the join order is swapped to ensure we hash the smaller table
     swapped_or_left: bool,
-    // cached output names
+    /// cached output names
     output_names: Option<Vec<SmartString>>,
     how: JoinType,
     join_nulls: bool,
     row_values: RowValues,
 }
 
-impl GenericJoinProbe {
+impl<K: ExtraPayload> GenericJoinProbe<K> {
     #[allow(clippy::too_many_arguments)]
     pub(super) fn new(
         mut df_a: DataFrame,
         materialized_join_cols: Arc<Vec<BinaryArray<i64>>>,
         suffix: Arc<str>,
         hb: RandomState,
-        hash_tables: Arc<PartitionedMap>,
+        hash_tables: Arc<PartitionedMap<K>>,
         join_columns_left: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
         join_columns_right: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
         swapped_or_left: bool,
@@ -164,6 +164,7 @@ impl GenericJoinProbe {
 
             match entry {
                 Some(indexes_right) => {
+                    let indexes_right = &indexes_right.0;
                     self.join_tuples_a_left_join
                         .extend(indexes_right.iter().copied().map(Some));
                     self.join_tuples_b
@@ -239,6 +240,7 @@ impl GenericJoinProbe {
                 .map(|key_val| key_val.1);
 
             if let Some(indexes_left) = entry {
+                let indexes_left = &indexes_left.0;
                 self.join_tuples_a.extend_from_slice(indexes_left);
                 self.join_tuples_b
                     .extend(std::iter::repeat(df_idx_right).take(indexes_left.len()));
@@ -306,7 +308,7 @@ impl GenericJoinProbe {
     }
 }
 
-impl Operator for GenericJoinProbe {
+impl<K: ExtraPayload> Operator for GenericJoinProbe<K> {
     fn execute(
         &mut self,
         context: &PExecutionContext,

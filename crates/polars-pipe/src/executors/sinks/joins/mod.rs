@@ -3,8 +3,10 @@ mod cross;
 mod generic_build;
 mod generic_probe_inner_left;
 mod row_values;
+mod generic_probe_outer;
 
 use std::hash::{BuildHasherDefault, Hash, Hasher};
+use std::sync::atomic::AtomicBool;
 
 #[cfg(feature = "cross_join")]
 pub(crate) use cross::*;
@@ -15,6 +17,7 @@ use polars_ops::prelude::JoinType;
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::index::ChunkId;
 use polars_utils::partitioned::PartitionedHashMap;
+use crate::executors::sinks::joins::generic_build::ChunkIdx;
 
 trait ToRow {
     fn get_row(&self) -> &[u8];
@@ -34,21 +37,24 @@ impl ToRow for Option<&[u8]> {
     }
 }
 
+
 // This is the hash and the Index offset in the chunks and the index offset in the dataframe
 #[derive(Copy, Clone, Debug)]
+#[repr(C)]
 pub(super) struct Key {
     pub(super) hash: u64,
-    chunk_idx: IdxSize,
-    df_idx: IdxSize,
+    /// We use the MSB as tracker for outer join matches
+    /// So the 25th bit of the chunk_idx will be used for that.
+    idx: ChunkId
 }
 
 impl Key {
     #[inline]
     fn new(hash: u64, chunk_idx: IdxSize, df_idx: IdxSize) -> Self {
+        let idx = ChunkId::store(chunk_idx, df_idx);
         Key {
             hash,
-            chunk_idx,
-            df_idx,
+            idx
         }
     }
 }
@@ -60,4 +66,47 @@ impl Hash for Key {
     }
 }
 
-type PartitionedMap = PartitionedHashMap<Key, UnitVec<ChunkId>, BuildHasherDefault<IdHasher>>;
+pub(crate) trait ExtraPayload: Clone + Sync + Send + Default + 'static {
+
+    /// Tracker used in the outer join.
+    fn get_tracker(self) -> AtomicBool {
+        panic!()
+    }
+}
+impl ExtraPayload for () {}
+
+#[repr(transparent)]
+struct Tracker {
+    inner: AtomicBool
+}
+
+impl Default for Tracker {
+    #[inline]
+    fn default() -> Self {
+        Self {
+            inner: Default::default()
+        }
+    }
+}
+
+// Needed for the trait resolving. We should never hit this.
+impl Clone for Tracker {
+    fn clone(&self) -> Self {
+        panic!()
+    }
+}
+
+impl ExtraPayload for Tracker {
+    #[inline(always)]
+    fn get_tracker(self) -> AtomicBool {
+        self.inner
+    }
+}
+
+#[derive(Clone)]
+struct Payload {
+    idx: UnitVec<ChunkId>,
+
+}
+
+type PartitionedMap<V> = PartitionedHashMap<Key, (UnitVec<ChunkId>, V), BuildHasherDefault<IdHasher>>;

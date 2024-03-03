@@ -12,18 +12,28 @@ impl<K, V, S> PartitionedHashMap<K, V, S> {
         Self { inner }
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn raw_entry_mut(&mut self, h: u64) -> RawEntryBuilderMut<'_, K, V, S> {
-        let partition = hash_to_partition(h, self.inner.len());
-        let current_table = unsafe { self.inner.get_unchecked_release_mut(partition) };
-        current_table.raw_entry_mut()
+        self.raw_entry_and_partition_mut(h).0
+    }
+
+    #[inline(always)]
+    pub fn raw_entry(&self, h: u64) -> RawEntryBuilder<'_, K, V, S> {
+        self.raw_entry_and_partition(h).0
     }
 
     #[inline]
-    pub fn raw_entry(&self, h: u64) -> RawEntryBuilder<'_, K, V, S> {
+    pub fn raw_entry_and_partition(&self, h: u64) -> (RawEntryBuilder<'_, K, V, S>, usize) {
         let partition = hash_to_partition(h, self.inner.len());
         let current_table = unsafe { self.inner.get_unchecked_release(partition) };
-        current_table.raw_entry()
+        (current_table.raw_entry(), partition)
+    }
+
+    #[inline]
+    pub fn raw_entry_and_partition_mut(&mut self, h: u64) -> (RawEntryBuilderMut<'_, K, V, S>, usize) {
+        let partition = hash_to_partition(h, self.inner.len());
+        let current_table = unsafe { self.inner.get_unchecked_release_mut(partition) };
+        (current_table.raw_entry_mut(), partition)
     }
 
     pub fn inner(&self) -> &[HashMap<K, V, S>] {

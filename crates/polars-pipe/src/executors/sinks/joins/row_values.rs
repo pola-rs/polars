@@ -38,6 +38,8 @@ impl RowValues {
         chunk: &DataChunk,
         join_nulls: bool,
     ) -> PolarsResult<BinaryArray<i64>> {
+        // Memory should already be cleared on previous iteration.
+        debug_assert!(self.join_columns_material.is_empty());
         let determine_idx = self.join_column_idx.is_none();
         let mut names = vec![];
 
