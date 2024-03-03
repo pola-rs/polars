@@ -256,7 +256,7 @@ fn test_newline_in_custom_quote_char() {
 
 #[test]
 fn test_escape_2() {
-    // this is is harder than it looks.
+    // this is harder than it looks.
     // Fields:
     // * hello
     // * ","
