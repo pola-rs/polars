@@ -132,7 +132,11 @@ static PERMIT_STORE: std::sync::OnceLock<tokio::sync::RwLock<SemaphoreTuner>> =
 fn get_semaphore() -> &'static (Semaphore, u32) {
     CONCURRENCY_BUDGET.get_or_init(|| {
         let permits = std::env::var("POLARS_CONCURRENCY_BUDGET")
-            .map(|s| s.parse::<usize>().expect("integer"))
+            .map(|s| {
+                let budget = s.parse::<usize>().expect("integer");
+                FINISHED_TUNING.store(true, Ordering::Relaxed);
+                budget
+            })
             .unwrap_or_else(|_| std::cmp::max(POOL.current_num_threads(), MAX_BUDGET_PER_REQUEST));
         (Semaphore::new(permits), permits as u32)
     })
@@ -163,7 +167,9 @@ where
     let duration = now.elapsed().as_millis() as u64;
     let permit_store = PERMIT_STORE.get_or_init(|| tokio::sync::RwLock::new(SemaphoreTuner::new()));
 
-    let tuner = permit_store.read().await;
+    let Ok(tuner) = permit_store.try_read() else {
+        return res;
+    };
     // Keep track of download speed
     tuner.add_stats(res.size(), duration);
 
@@ -184,6 +190,7 @@ where
     };
     let finished = tuner.tune(semaphore);
     if finished {
+        drop(_permit_acq);
         // Undo the last step
         let undo = semaphore.acquire().await.unwrap();
         std::mem::forget(undo)
