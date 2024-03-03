@@ -12,10 +12,10 @@ import numpy as np  # noqa: F401
 import pytest
 
 import polars as pl
+from polars._utils.udfs import _NUMPY_FUNCTIONS, BytecodeParser
+from polars._utils.various import in_terminal_that_supports_colour
 from polars.exceptions import PolarsInefficientMapWarning
 from polars.testing import assert_frame_equal, assert_series_equal
-from polars.utils.udfs import _NUMPY_FUNCTIONS, BytecodeParser
-from polars.utils.various import in_terminal_that_supports_colour
 
 MY_CONSTANT = 3
 MY_DICT = {0: "a", 1: "b", 2: "c", 3: "d", 4: "e"}

@@ -435,6 +435,7 @@ impl ToPyObject for Wrap<TimeUnit> {
 impl<'s> FromPyObject<'s> for Wrap<Row<'s>> {
     fn extract(ob: &'s PyAny) -> PyResult<Self> {
         let vals = ob.extract::<Vec<Wrap<AnyValue<'s>>>>()?;
+        // SAFETY. Wrap is repr transparent.
         let vals: Vec<AnyValue> = unsafe { std::mem::transmute(vals) };
         Ok(Wrap(Row(vals)))
     }

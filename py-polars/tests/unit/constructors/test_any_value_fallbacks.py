@@ -8,13 +8,15 @@ from typing import Any
 import pytest
 
 import polars as pl
+from polars._utils.wrap import wrap_s
 from polars.polars import PySeries
-from polars.utils._wrap import wrap_s
 
 
 @pytest.mark.parametrize(
     ("dtype", "values"),
     [
+        (pl.Int64, [-1, 0, 100_000, None]),
+        (pl.Float64, [-1.5, 0.0, 10.0, None]),
         (pl.Boolean, [True, False, None]),
         (pl.Binary, [b"123", b"xyz", None]),
         (pl.String, ["123", "xyz", None]),
@@ -32,6 +34,8 @@ def test_fallback_with_dtype_strict(
 @pytest.mark.parametrize(
     ("dtype", "values"),
     [
+        (pl.Int64, [1.0, 2.0]),
+        (pl.Float64, [1, 2]),
         (pl.Boolean, [0, 1]),
         (pl.Binary, ["123", "xyz"]),
         (pl.String, [b"123", b"xyz"]),
@@ -41,16 +45,26 @@ def test_fallback_with_dtype_strict_failure(
     dtype: pl.PolarsDataType, values: list[Any]
 ) -> None:
     with pytest.raises(pl.SchemaError, match="unexpected value"):
-        PySeries.new_from_any_values_and_dtype("", values, pl.Boolean, strict=True)
+        PySeries.new_from_any_values_and_dtype("", values, dtype, strict=True)
 
 
 @pytest.mark.parametrize(
     ("dtype", "values", "expected"),
     [
         (
+            pl.Int64,
+            [False, True, 0, -1, 0.0, 2.5, date(1970, 1, 2), "5", "xyz"],
+            [0, 1, 0, -1, 0, 2, 1, 5, None],
+        ),
+        (
+            pl.Float64,
+            [False, True, 0, -1, 0.0, 2.5, date(1970, 1, 2), "5", "xyz"],
+            [0.0, 1.0, 0.0, -1.0, 0.0, 2.5, 1.0, 5.0, None],
+        ),
+        (
             pl.Boolean,
-            [False, True, 0, 1, 0.0, 2.5, date(1970, 1, 1)],
-            [False, True, False, True, False, True, None],
+            [False, True, 0, -1, 0.0, 2.5, date(1970, 1, 1), "true"],
+            [False, True, False, True, False, True, None, None],
         ),
         (
             pl.Binary,

@@ -1,4 +1,5 @@
 """Run all Python code snippets."""
+
 import os
 import runpy
 from pathlib import Path

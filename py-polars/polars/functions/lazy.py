@@ -5,19 +5,19 @@ from typing import TYPE_CHECKING, Any, Callable, Iterable, Sequence, overload
 
 import polars._reexport as pl
 import polars.functions as F
-from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Datetime, Int64, UInt32
-from polars.utils._async import _AioDataFrameResult, _GeventDataFrameResult
-from polars.utils._parse_expr_input import (
-    parse_as_expression,
-    parse_as_list_of_expressions,
-)
-from polars.utils._wrap import wrap_df, wrap_expr
-from polars.utils.deprecation import (
+from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
+from polars._utils.deprecation import (
     deprecate_parameter_as_positional,
     deprecate_renamed_function,
     issue_deprecation_warning,
 )
-from polars.utils.unstable import issue_unstable_warning, unstable
+from polars._utils.parse_expr_input import (
+    parse_as_expression,
+    parse_as_list_of_expressions,
+)
+from polars._utils.unstable import issue_unstable_warning, unstable
+from polars._utils.wrap import wrap_df, wrap_expr
+from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Datetime, Int64, UInt32
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -1706,8 +1706,7 @@ def collect_all_async(
     comm_subplan_elim: bool = True,
     comm_subexpr_elim: bool = True,
     streaming: bool = True,
-) -> _GeventDataFrameResult[list[DataFrame]]:
-    ...
+) -> _GeventDataFrameResult[list[DataFrame]]: ...
 
 
 @overload
@@ -1724,8 +1723,7 @@ def collect_all_async(
     comm_subplan_elim: bool = True,
     comm_subexpr_elim: bool = True,
     streaming: bool = False,
-) -> Awaitable[list[DataFrame]]:
-    ...
+) -> Awaitable[list[DataFrame]]: ...
 
 
 @unstable()
@@ -1881,18 +1879,15 @@ def select(*exprs: IntoExpr | Iterable[IntoExpr], **named_exprs: IntoExpr) -> Da
 
 
 @overload
-def arg_where(condition: Expr | Series, *, eager: Literal[False] = ...) -> Expr:
-    ...
+def arg_where(condition: Expr | Series, *, eager: Literal[False] = ...) -> Expr: ...
 
 
 @overload
-def arg_where(condition: Expr | Series, *, eager: Literal[True]) -> Series:
-    ...
+def arg_where(condition: Expr | Series, *, eager: Literal[True]) -> Series: ...
 
 
 @overload
-def arg_where(condition: Expr | Series, *, eager: bool) -> Expr | Series:
-    ...
+def arg_where(condition: Expr | Series, *, eager: bool) -> Expr | Series: ...
 
 
 def arg_where(condition: Expr | Series, *, eager: bool = False) -> Expr | Series:
@@ -1990,15 +1985,13 @@ def coalesce(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Exp
 
 
 @overload
-def from_epoch(column: str | Expr, time_unit: EpochTimeUnit = ...) -> Expr:
-    ...
+def from_epoch(column: str | Expr, time_unit: EpochTimeUnit = ...) -> Expr: ...
 
 
 @overload
 def from_epoch(
     column: Series | Sequence[int], time_unit: EpochTimeUnit = ...
-) -> Series:
-    ...
+) -> Series: ...
 
 
 def from_epoch(
@@ -2159,8 +2152,7 @@ def sql_expr(sql: str) -> Expr:  # type: ignore[overload-overlap]
 
 
 @overload
-def sql_expr(sql: Sequence[str]) -> list[Expr]:
-    ...
+def sql_expr(sql: Sequence[str]) -> list[Expr]: ...
 
 
 def sql_expr(sql: str | Sequence[str]) -> Expr | list[Expr]:

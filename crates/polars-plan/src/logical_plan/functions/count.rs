@@ -1,4 +1,4 @@
-#[cfg(feature = "parquet")]
+#[cfg(feature = "ipc")]
 use arrow::io::ipc::read::get_row_count as count_rows_ipc;
 #[cfg(feature = "parquet")]
 use polars_io::cloud::CloudOptions;

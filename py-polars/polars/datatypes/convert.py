@@ -370,15 +370,13 @@ def dtype_to_py_type(dtype: PolarsDataType) -> PythonDataType:
 @overload
 def py_type_to_dtype(
     data_type: Any, *, raise_unmatched: Literal[True] = ...
-) -> PolarsDataType:
-    ...
+) -> PolarsDataType: ...
 
 
 @overload
 def py_type_to_dtype(
     data_type: Any, *, raise_unmatched: Literal[False]
-) -> PolarsDataType | None:
-    ...
+) -> PolarsDataType | None: ...
 
 
 def py_type_to_dtype(
@@ -485,7 +483,7 @@ def numpy_char_code_to_dtype(dtype_char: str) -> PolarsDataType:
 def maybe_cast(el: Any, dtype: PolarsDataType) -> Any:
     """Try casting a value to a value that is valid for the given Polars dtype."""
     # cast el if it doesn't match
-    from polars.utils.convert import (
+    from polars._utils.convert import (
         datetime_to_int,
         timedelta_to_int,
     )

@@ -16,6 +16,7 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
+from polars._utils.construction import iterable_to_pydf
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, INTEGER_DTYPES
 from polars.exceptions import ComputeError, TimeZoneAwareConstructorWarning
 from polars.testing import (
@@ -24,14 +25,13 @@ from polars.testing import (
     assert_series_equal,
 )
 from polars.testing.parametric import columns
-from polars.utils._construction import iterable_to_pydf
 
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
 
     from polars.type_aliases import JoinStrategy, UniqueKeepStrategy
 else:
-    from polars.utils.convert import string_to_zoneinfo as ZoneInfo
+    from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
 
 def test_version() -> None:
@@ -1458,7 +1458,7 @@ def test_reproducible_hash_with_seeds() -> None:
     if platform.mac_ver()[-1] != "arm64":
         expected = pl.Series(
             "s",
-            [15801072432137883943, 6344663067812082469, 9604537446374444741],
+            [13736875168471412002, 6161148964772490034, 9489472896993257669],
             dtype=pl.UInt64,
         )
         result = df.hash_rows(*seeds)

@@ -3,8 +3,8 @@ from __future__ import annotations
 import contextlib
 from typing import TYPE_CHECKING, Any, Iterable, Protocol, cast
 
+from polars._utils.wrap import wrap_expr
 from polars.datatypes import is_polars_dtype
-from polars.utils._wrap import wrap_expr
 
 plr: Any = None
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -73,11 +73,9 @@ class Column(Protocol):
         self,
         name: str | PolarsDataType | Iterable[str] | Iterable[PolarsDataType],
         *more_names: str | PolarsDataType,
-    ) -> Expr:
-        ...
+    ) -> Expr: ...
 
-    def __getattr__(self, name: str) -> Expr:
-        ...
+    def __getattr__(self, name: str) -> Expr: ...
 
 
 # handle attribute lookup on the metaclass (we use the factory uninstantiated)

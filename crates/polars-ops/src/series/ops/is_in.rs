@@ -1,7 +1,5 @@
 use std::hash::Hash;
 
-#[cfg(feature = "dtype-categorical")]
-use polars_core::apply_amortized_generic_list_or_array;
 use polars_core::prelude::*;
 use polars_core::utils::{try_get_supertype, CustomIterTools};
 use polars_core::with_match_physical_numeric_polars_type;
@@ -154,47 +152,57 @@ where
 }
 
 #[cfg(feature = "dtype-categorical")]
-fn is_in_string_inner_categorical(
+fn is_in_string_list_categorical(
     ca_in: &StringChunked,
     other: &Series,
     rev_map: &Arc<RevMapping>,
 ) -> PolarsResult<BooleanChunked> {
-    let opt_val = ca_in.get(0);
-    match opt_val {
-        None => {
-            let out =
-                apply_amortized_generic_list_or_array!(other, apply_amortized_generic, |opt_s| {
-                    opt_s.map(|s| Some(s.as_ref().null_count() > 0) == Some(true))
-                });
-            Ok(out.with_name(ca_in.name()))
-        },
-        Some(value) => {
-            match rev_map.find(value) {
-                // all false
-                None => Ok(BooleanChunked::full(ca_in.name(), false, other.len())),
-                Some(idx) => {
-                    let out = apply_amortized_generic_list_or_array!(
-                        other,
-                        apply_amortized_generic,
-                        |opt_s| {
-                            Some(
-                                opt_s.map(|s| {
-                                    let s = s.as_ref().to_physical_repr();
-                                    let ca = s.as_ref().u32().unwrap();
-                                    if ca.null_count() == 0 {
-                                        ca.into_no_null_iter().any(|a| a == idx)
-                                    } else {
-                                        ca.iter().any(|a| a == Some(idx))
-                                    }
-                                }) == Some(true),
-                            )
-                        }
-                    );
-                    Ok(out.with_name(ca_in.name()))
-                },
-            }
-        },
-    }
+    let mut ca = if ca_in.len() == 1 && other.len() != 1 {
+        let opt_val = ca_in.get(0);
+        match opt_val.map(|val| rev_map.find(val)) {
+            None => other.list()?.apply_amortized_generic(|opt_s| {
+                {
+                    opt_s.map(|s| s.as_ref().null_count() > 0)
+                }
+            }),
+            Some(None) => other
+                .list()?
+                .apply_amortized_generic(|opt_s| opt_s.map(|_| false)),
+            Some(Some(idx)) => other.list()?.apply_amortized_generic(|opt_s| {
+                opt_s.map(|s| {
+                    let s = s.as_ref().to_physical_repr();
+                    let ca = s.as_ref().u32().unwrap();
+                    if ca.null_count() == 0 {
+                        ca.into_no_null_iter().any(|a| a == idx)
+                    } else {
+                        ca.iter().any(|a| a == Some(idx))
+                    }
+                })
+            }),
+        }
+    } else {
+        polars_ensure!(ca_in.len() == other.len(), ComputeError: "shapes don't match: expected {} elements in 'is_in' comparison, got {}", ca_in.len(), other.len());
+        // SAFETY: unstable series never lives longer than the iterator.
+        unsafe {
+            ca_in
+                .iter()
+                .zip(other.list()?.amortized_iter())
+                .map(|(opt_val, series)| match (opt_val, series) {
+                    (opt_val, Some(series)) => match opt_val.map(|val| rev_map.find(val)) {
+                        None => Some(series.as_ref().null_count() > 0),
+                        Some(None) => Some(false),
+                        Some(Some(idx)) => {
+                            let ca = series.as_ref().categorical().unwrap();
+                            Some(ca.physical().iter().any(|el| el == Some(idx)))
+                        },
+                    },
+                    _ => None,
+                })
+                .collect()
+        }
+    };
+    ca.rename(ca_in.name());
+    Ok(ca)
 }
 
 fn is_in_string(ca_in: &StringChunked, other: &Series) -> PolarsResult<BooleanChunked> {
@@ -205,18 +213,7 @@ fn is_in_string(ca_in: &StringChunked, other: &Series) -> PolarsResult<BooleanCh
         {
             match &**dt {
                 DataType::Enum(Some(rev_map), _) | DataType::Categorical(Some(rev_map), _) => {
-                    is_in_string_inner_categorical(ca_in, other, rev_map)
-                },
-                _ => unreachable!(),
-            }
-        },
-        #[cfg(all(feature = "dtype-categorical", feature = "dtype-array"))]
-        DataType::Array(dt, _)
-            if matches!(&**dt, DataType::Categorical(_, _) | DataType::Enum(_, _)) =>
-        {
-            match &**dt {
-                DataType::Enum(Some(rev_map), _) | DataType::Categorical(Some(rev_map), _) => {
-                    is_in_string_inner_categorical(ca_in, other, rev_map)
+                    is_in_string_list_categorical(ca_in, other, rev_map)
                 },
                 _ => unreachable!(),
             }
@@ -630,8 +627,68 @@ fn is_in_cat(ca_in: &CategoricalChunked, other: &Series) -> PolarsResult<Boolean
                 .with_name(ca_in.name()))
         },
 
+        DataType::List(dt)
+            if matches!(&**dt, DataType::Categorical(_, _) | DataType::Enum(_, _)) =>
+        {
+            is_in_cat_list(ca_in, other)
+        },
+
         _ => polars_bail!(opq = is_in, ca_in.dtype(), other.dtype()),
     }
+}
+
+#[cfg(feature = "dtype-categorical")]
+fn is_in_cat_list(ca_in: &CategoricalChunked, other: &Series) -> PolarsResult<BooleanChunked> {
+    let list_chunked = other.list()?;
+
+    let mut ca: BooleanChunked = if ca_in.len() == 1 && other.len() != 1 {
+        let (DataType::Categorical(Some(rev_map), _) | DataType::Enum(Some(rev_map), _)) =
+            list_chunked.inner_dtype()
+        else {
+            unreachable!();
+        };
+
+        let idx = ca_in.physical().get(0);
+        let new_phys = idx
+            .map(|idx| ca_in.get_rev_map().get(idx))
+            .map(|s| rev_map.find(s));
+
+        match new_phys {
+            None => list_chunked
+                .apply_amortized_generic(|opt_s| opt_s.map(|s| s.as_ref().null_count() > 0)),
+            Some(None) => list_chunked.apply_amortized_generic(|opt_s| opt_s.map(|_| false)),
+            Some(Some(idx)) => list_chunked.apply_amortized_generic(|opt_s| {
+                opt_s.map(|s| {
+                    let ca = s.as_ref().categorical().unwrap();
+                    ca.physical().iter().any(|a| a == Some(idx))
+                })
+            }),
+        }
+    } else {
+        polars_ensure!(ca_in.len() == other.len(), ComputeError: "shapes don't match: expected {} elements in 'is_in' comparison, got {}", ca_in.len(), other.len());
+        let list_chunked_inner = list_chunked.get_inner();
+        let inner_cat = list_chunked_inner.categorical()?;
+        // Make physicals compatible of ca_in with those of the list
+        let (_, ca_in) = make_categoricals_compatible(inner_cat, ca_in)?;
+
+        // SAFETY: unstable series never lives longer than the iterator.
+        unsafe {
+            ca_in
+                .physical()
+                .iter()
+                .zip(list_chunked.amortized_iter())
+                .map(|(value, series)| match (value, series) {
+                    (val, Some(series)) => {
+                        let ca = series.as_ref().categorical().unwrap();
+                        Some(ca.physical().iter().any(|a| a == val))
+                    },
+                    _ => None,
+                })
+                .collect_trusted()
+        }
+    };
+    ca.rename(ca_in.name());
+    Ok(ca)
 }
 
 pub fn is_in(s: &Series, other: &Series) -> PolarsResult<BooleanChunked> {

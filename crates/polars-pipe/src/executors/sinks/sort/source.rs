@@ -5,6 +5,7 @@ use polars_core::utils::{accumulate_dataframes_vertical_unchecked, split_df};
 use polars_core::POOL;
 use rayon::prelude::*;
 
+use crate::executors::sinks::io::IOThread;
 use crate::executors::sinks::sort::ooc::read_df;
 use crate::executors::sinks::sort::sink::sort_accumulated;
 use crate::executors::sources::get_source_index;
@@ -18,6 +19,7 @@ pub struct SortSource {
     chunk_offset: IdxSize,
     slice: Option<(i64, usize)>,
     finished: bool,
+    io_thread: IOThread,
 }
 
 impl SortSource {
@@ -27,6 +29,7 @@ impl SortSource {
         descending: bool,
         slice: Option<(i64, usize)>,
         verbose: bool,
+        io_thread: IOThread,
     ) -> Self {
         if verbose {
             eprintln!("started sort source phase");
@@ -45,6 +48,7 @@ impl SortSource {
             chunk_offset: get_source_index(1) as IdxSize,
             slice,
             finished: false,
+            io_thread,
         }
     }
     fn finish_batch(&mut self, dfs: Vec<DataFrame>) -> Vec<DataChunk> {
@@ -71,7 +75,7 @@ impl Source for SortSource {
         match self.files.next() {
             None => Ok(SourceResult::Finished),
             Some((_, path)) => {
-                let files = std::fs::read_dir(path)?.collect::<std::io::Result<Vec<_>>>()?;
+                let files = std::fs::read_dir(&path)?.collect::<std::io::Result<Vec<_>>>()?;
 
                 // read the files in a single partition in parallel
                 let dfs = POOL.install(|| {
@@ -81,9 +85,8 @@ impl Source for SortSource {
                         .collect::<PolarsResult<Vec<DataFrame>>>()
                 })?;
                 let df = accumulate_dataframes_vertical_unchecked(dfs);
-                // sort a single partition
+                // Sort a single partition
                 // We always need to sort again!
-                // We cannot trust
                 let current_slice = self.slice;
                 let mut df = match &mut self.slice {
                     None => sort_accumulated(df, self.sort_idx, self.descending, None),
@@ -106,6 +109,7 @@ impl Source for SortSource {
                         out
                     },
                 }?;
+                self.io_thread.clean(path);
 
                 // convert to chunks
                 let dfs = split_df(&mut df, self.n_threads)?;

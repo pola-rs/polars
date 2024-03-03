@@ -38,7 +38,7 @@ impl SchemaDescriptor {
         }
     }
 
-    /// The [`ColumnDescriptor`] (leafs) of this schema.
+    /// The [`ColumnDescriptor`] (leaves) of this schema.
     ///
     /// Note that, for nested fields, this may contain more entries than the number of fields
     /// in the file - e.g. a struct field may have two columns.

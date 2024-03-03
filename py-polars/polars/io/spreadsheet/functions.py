@@ -9,6 +9,8 @@ from typing import IO, TYPE_CHECKING, Any, Callable, NoReturn, Sequence, overloa
 
 import polars._reexport as pl
 from polars import functions as F
+from polars._utils.deprecation import deprecate_renamed_parameter
+from polars._utils.various import normalize_filepath
 from polars.datatypes import (
     FLOAT_DTYPES,
     NUMERIC_DTYPES,
@@ -22,8 +24,6 @@ from polars.dependencies import import_optional
 from polars.exceptions import NoDataError, ParameterCollisionError
 from polars.io._utils import PortableTemporaryFile, _looks_like_url, _process_file_url
 from polars.io.csv.functions import read_csv
-from polars.utils.deprecation import deprecate_renamed_parameter
-from polars.utils.various import normalize_filepath
 
 if TYPE_CHECKING:
     from typing import Literal
@@ -42,8 +42,7 @@ def read_excel(
     read_options: dict[str, Any] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     raise_if_empty: bool = ...,
-) -> pl.DataFrame:
-    ...
+) -> pl.DataFrame: ...
 
 
 @overload
@@ -57,8 +56,7 @@ def read_excel(
     read_options: dict[str, Any] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     raise_if_empty: bool = ...,
-) -> pl.DataFrame:
-    ...
+) -> pl.DataFrame: ...
 
 
 @overload
@@ -72,8 +70,7 @@ def read_excel(
     read_options: dict[str, Any] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     raise_if_empty: bool = ...,
-) -> NoReturn:
-    ...
+) -> NoReturn: ...
 
 
 # note: 'ignore' required as mypy thinks that the return value for
@@ -89,8 +86,7 @@ def read_excel(
     read_options: dict[str, Any] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     raise_if_empty: bool = ...,
-) -> dict[str, pl.DataFrame]:
-    ...
+) -> dict[str, pl.DataFrame]: ...
 
 
 @overload
@@ -104,8 +100,7 @@ def read_excel(
     read_options: dict[str, Any] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     raise_if_empty: bool = ...,
-) -> pl.DataFrame:
-    ...
+) -> pl.DataFrame: ...
 
 
 @overload
@@ -119,8 +114,7 @@ def read_excel(
     read_options: dict[str, Any] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     raise_if_empty: bool = ...,
-) -> dict[str, pl.DataFrame]:
-    ...
+) -> dict[str, pl.DataFrame]: ...
 
 
 @deprecate_renamed_parameter("xlsx2csv_options", "engine_options", version="0.20.6")
@@ -276,8 +270,7 @@ def read_ods(
     sheet_name: str,
     schema_overrides: SchemaDict | None = None,
     raise_if_empty: bool = ...,
-) -> pl.DataFrame:
-    ...
+) -> pl.DataFrame: ...
 
 
 @overload
@@ -288,8 +281,7 @@ def read_ods(
     sheet_name: None = ...,
     schema_overrides: SchemaDict | None = None,
     raise_if_empty: bool = ...,
-) -> pl.DataFrame:
-    ...
+) -> pl.DataFrame: ...
 
 
 @overload
@@ -300,8 +292,7 @@ def read_ods(
     sheet_name: str,
     schema_overrides: SchemaDict | None = None,
     raise_if_empty: bool = ...,
-) -> NoReturn:
-    ...
+) -> NoReturn: ...
 
 
 @overload  # type: ignore[overload-overlap]
@@ -312,8 +303,7 @@ def read_ods(
     sheet_name: None = ...,
     schema_overrides: SchemaDict | None = None,
     raise_if_empty: bool = ...,
-) -> dict[str, pl.DataFrame]:
-    ...
+) -> dict[str, pl.DataFrame]: ...
 
 
 @overload
@@ -324,8 +314,7 @@ def read_ods(
     sheet_name: None = ...,
     schema_overrides: SchemaDict | None = None,
     raise_if_empty: bool = ...,
-) -> pl.DataFrame:
-    ...
+) -> pl.DataFrame: ...
 
 
 @overload
@@ -336,8 +325,7 @@ def read_ods(
     sheet_name: list[str] | tuple[str],
     schema_overrides: SchemaDict | None = None,
     raise_if_empty: bool = ...,
-) -> dict[str, pl.DataFrame]:
-    ...
+) -> dict[str, pl.DataFrame]: ...
 
 
 def read_ods(

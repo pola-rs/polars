@@ -5,13 +5,13 @@ from datetime import datetime
 from typing import TYPE_CHECKING, overload
 
 from polars import functions as F
-from polars.functions.range._utils import parse_interval_argument
-from polars.utils._parse_expr_input import parse_as_expression
-from polars.utils._wrap import wrap_expr
-from polars.utils.deprecation import (
+from polars._utils.deprecation import (
     deprecate_saturating,
     issue_deprecation_warning,
 )
+from polars._utils.parse_expr_input import parse_as_expression
+from polars._utils.wrap import wrap_expr
+from polars.functions.range._utils import parse_interval_argument
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -34,8 +34,7 @@ def date_range(
     time_unit: TimeUnit | None = ...,
     time_zone: str | None = ...,
     eager: Literal[False] = ...,
-) -> Expr:
-    ...
+) -> Expr: ...
 
 
 @overload
@@ -48,8 +47,7 @@ def date_range(
     time_unit: TimeUnit | None = ...,
     time_zone: str | None = ...,
     eager: Literal[True],
-) -> Series:
-    ...
+) -> Series: ...
 
 
 @overload
@@ -62,8 +60,7 @@ def date_range(
     time_unit: TimeUnit | None = ...,
     time_zone: str | None = ...,
     eager: bool,
-) -> Series | Expr:
-    ...
+) -> Series | Expr: ...
 
 
 def date_range(
@@ -201,8 +198,7 @@ def date_ranges(
     time_unit: TimeUnit | None = ...,
     time_zone: str | None = ...,
     eager: Literal[False] = ...,
-) -> Expr:
-    ...
+) -> Expr: ...
 
 
 @overload
@@ -215,8 +211,7 @@ def date_ranges(
     time_unit: TimeUnit | None = ...,
     time_zone: str | None = ...,
     eager: Literal[True],
-) -> Series:
-    ...
+) -> Series: ...
 
 
 @overload
@@ -229,8 +224,7 @@ def date_ranges(
     time_unit: TimeUnit | None = ...,
     time_zone: str | None = ...,
     eager: bool,
-) -> Series | Expr:
-    ...
+) -> Series | Expr: ...
 
 
 def date_ranges(

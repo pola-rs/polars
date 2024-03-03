@@ -24,6 +24,31 @@ from typing import (
 
 import polars._reexport as pl
 from polars import functions as F
+from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
+from polars._utils.convert import negate_duration_string, parse_as_duration_string
+from polars._utils.deprecation import (
+    deprecate_function,
+    deprecate_parameter_as_positional,
+    deprecate_renamed_function,
+    deprecate_renamed_parameter,
+    deprecate_saturating,
+    issue_deprecation_warning,
+)
+from polars._utils.parse_expr_input import (
+    parse_as_expression,
+    parse_as_list_of_expressions,
+)
+from polars._utils.unstable import issue_unstable_warning, unstable
+from polars._utils.various import (
+    _in_notebook,
+    _prepare_row_index_args,
+    _process_null_values,
+    is_bool_sequence,
+    is_sequence,
+    normalize_filepath,
+    parse_percentiles,
+)
+from polars._utils.wrap import wrap_df, wrap_expr
 from polars.convert import from_dict
 from polars.datatypes import (
     DTYPE_TEMPORAL_UNITS,
@@ -62,31 +87,6 @@ from polars.lazyframe.group_by import LazyGroupBy
 from polars.lazyframe.in_process import InProcessQuery
 from polars.selectors import _expand_selectors, by_dtype, expand_selector
 from polars.slice import LazyPolarsSlice
-from polars.utils._async import _AioDataFrameResult, _GeventDataFrameResult
-from polars.utils._parse_expr_input import (
-    parse_as_expression,
-    parse_as_list_of_expressions,
-)
-from polars.utils._wrap import wrap_df, wrap_expr
-from polars.utils.convert import negate_duration_string, parse_as_duration_string
-from polars.utils.deprecation import (
-    deprecate_function,
-    deprecate_parameter_as_positional,
-    deprecate_renamed_function,
-    deprecate_renamed_parameter,
-    deprecate_saturating,
-    issue_deprecation_warning,
-)
-from polars.utils.unstable import issue_unstable_warning, unstable
-from polars.utils.various import (
-    _in_notebook,
-    _prepare_row_index_args,
-    _process_null_values,
-    is_bool_sequence,
-    is_sequence,
-    normalize_filepath,
-    parse_percentiles,
-)
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyLazyFrame
@@ -800,12 +800,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 """
 
     @overload
-    def serialize(self, file: None = ...) -> str:
-        ...
+    def serialize(self, file: None = ...) -> str: ...
 
     @overload
-    def serialize(self, file: IOBase | str | Path) -> None:
-        ...
+    def serialize(self, file: IOBase | str | Path) -> None: ...
 
     def serialize(self, file: IOBase | str | Path | None = None) -> str | None:
         """
@@ -1786,8 +1784,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         streaming: bool = False,
         background: Literal[True],
         _eager: bool = False,
-    ) -> InProcessQuery:
-        ...
+    ) -> InProcessQuery: ...
 
     @overload
     def collect(
@@ -1804,8 +1801,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         streaming: bool = False,
         background: Literal[False] = False,
         _eager: bool = False,
-    ) -> DataFrame:
-        ...
+    ) -> DataFrame: ...
 
     def collect(
         self,
@@ -1952,8 +1948,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
         streaming: bool = True,
-    ) -> _GeventDataFrameResult[DataFrame]:
-        ...
+    ) -> _GeventDataFrameResult[DataFrame]: ...
 
     @overload
     def collect_async(
@@ -1969,8 +1964,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
         streaming: bool = True,
-    ) -> Awaitable[DataFrame]:
-        ...
+    ) -> Awaitable[DataFrame]: ...
 
     def collect_async(
         self,

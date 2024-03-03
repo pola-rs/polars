@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import operator
+import re
 from datetime import date
 from textwrap import dedent
 from typing import Any, Callable
@@ -37,9 +38,19 @@ def test_enum_init_empty(categories: pl.Series | list[str] | None) -> None:
 def test_enum_non_existent() -> None:
     with pytest.raises(
         pl.ComputeError,
-        match=("value 'c' is not present in Enum"),
+        match=re.escape(
+            "conversion from `str` to `enum` failed in column '' for 1 out of 4 values: [\"c\"]"
+        ),
     ):
         pl.Series([None, "a", "b", "c"], dtype=pl.Enum(categories=["a", "b"]))
+
+
+def test_enum_non_existent_non_strict() -> None:
+    s = pl.Series(
+        [None, "a", "b", "c"], dtype=pl.Enum(categories=["a", "b"]), strict=False
+    )
+    expected = pl.Series([None, "a", "b", None], dtype=pl.Enum(categories=["a", "b"]))
+    assert_series_equal(s, expected)
 
 
 def test_enum_from_schema_argument() -> None:
@@ -305,7 +316,10 @@ def test_compare_enum_str_single_raise(
     s2 = "NOTEXIST"
 
     with pytest.raises(
-        pl.ComputeError, match="value 'NOTEXIST' is not present in Enum"
+        pl.ComputeError,
+        match=re.escape(
+            "conversion from `str` to `enum` failed in column '' for 1 out of 1 values: [\"NOTEXIST\"]"
+        ),
     ):
         op(s, s2)  # type: ignore[arg-type]
 
@@ -318,7 +332,8 @@ def test_compare_enum_str_raise() -> None:
     for s_compare in [s2, s_broadcast]:
         for op in [operator.le, operator.gt, operator.ge, operator.lt]:
             with pytest.raises(
-                pl.ComputeError, match="value 'd' is not present in Enum"
+                pl.ComputeError,
+                match="conversion from `str` to `enum` failed in column",
             ):
                 op(s, s_compare)
 

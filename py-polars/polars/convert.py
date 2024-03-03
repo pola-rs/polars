@@ -7,12 +7,12 @@ from typing import TYPE_CHECKING, Any, Iterable, Mapping, Sequence, overload
 
 import polars._reexport as pl
 from polars import functions as F
+from polars._utils.various import _cast_repr_strings_with_schema
 from polars.datatypes import N_INFER_DEFAULT, Categorical, List, Object, String, Struct
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.exceptions import NoDataError
 from polars.io import read_csv
-from polars.utils.various import _cast_repr_strings_with_schema
 
 if TYPE_CHECKING:
     from polars import DataFrame, Series
@@ -633,8 +633,7 @@ def from_pandas(
     rechunk: bool = ...,
     nan_to_null: bool = ...,
     include_index: bool = ...,
-) -> DataFrame:
-    ...
+) -> DataFrame: ...
 
 
 @overload
@@ -645,8 +644,7 @@ def from_pandas(
     rechunk: bool = ...,
     nan_to_null: bool = ...,
     include_index: bool = ...,
-) -> Series:
-    ...
+) -> Series: ...
 
 
 def from_pandas(

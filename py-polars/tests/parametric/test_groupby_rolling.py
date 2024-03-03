@@ -8,10 +8,10 @@ import hypothesis.strategies as st
 from hypothesis import assume, given
 
 import polars as pl
+from polars._utils.convert import parse_as_duration_string
 from polars.testing import assert_frame_equal
 from polars.testing.parametric.primitives import column, dataframes
 from polars.testing.parametric.strategies import strategy_closed, strategy_time_unit
-from polars.utils.convert import parse_as_duration_string
 
 if TYPE_CHECKING:
     from polars.type_aliases import ClosedInterval, TimeUnit

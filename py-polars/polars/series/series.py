@@ -22,6 +22,41 @@ from typing import (
 
 import polars._reexport as pl
 from polars import functions as F
+from polars._utils.construction import (
+    arrow_to_pyseries,
+    dataframe_to_pyseries,
+    iterable_to_pyseries,
+    numpy_to_idxs,
+    numpy_to_pyseries,
+    pandas_to_pyseries,
+    sequence_to_pyseries,
+    series_to_pyseries,
+)
+from polars._utils.convert import (
+    date_to_int,
+    datetime_to_int,
+    time_to_int,
+    timedelta_to_int,
+)
+from polars._utils.deprecation import (
+    deprecate_function,
+    deprecate_nonkeyword_arguments,
+    deprecate_renamed_function,
+    deprecate_renamed_parameter,
+    issue_deprecation_warning,
+)
+from polars._utils.unstable import unstable
+from polars._utils.various import (
+    BUILDING_SPHINX_DOCS,
+    _is_generator,
+    no_default,
+    parse_version,
+    range_to_slice,
+    scale_bytes,
+    sphinx_accessor,
+    warn_null_comparison,
+)
+from polars._utils.wrap import wrap_df
 from polars.datatypes import (
     Array,
     Boolean,
@@ -74,41 +109,6 @@ from polars.series.string import StringNameSpace
 from polars.series.struct import StructNameSpace
 from polars.series.utils import expr_dispatch, get_ffi_func
 from polars.slice import PolarsSlice
-from polars.utils._construction import (
-    arrow_to_pyseries,
-    dataframe_to_pyseries,
-    iterable_to_pyseries,
-    numpy_to_idxs,
-    numpy_to_pyseries,
-    pandas_to_pyseries,
-    sequence_to_pyseries,
-    series_to_pyseries,
-)
-from polars.utils._wrap import wrap_df
-from polars.utils.convert import (
-    date_to_int,
-    datetime_to_int,
-    time_to_int,
-    timedelta_to_int,
-)
-from polars.utils.deprecation import (
-    deprecate_function,
-    deprecate_nonkeyword_arguments,
-    deprecate_renamed_function,
-    deprecate_renamed_parameter,
-    issue_deprecation_warning,
-)
-from polars.utils.unstable import unstable
-from polars.utils.various import (
-    BUILDING_SPHINX_DOCS,
-    _is_generator,
-    no_default,
-    parse_version,
-    range_to_slice,
-    scale_bytes,
-    sphinx_accessor,
-    warn_null_comparison,
-)
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyDataFrame, PySeries
@@ -119,6 +119,9 @@ if TYPE_CHECKING:
     from hvplot.plotting.core import hvPlotTabularPolars
 
     from polars import DataFrame, DataType, Expr
+    from polars._utils.various import (
+        NoDefault,
+    )
     from polars.series._numpy import SeriesView
     from polars.type_aliases import (
         BufferInfo,
@@ -139,9 +142,6 @@ if TYPE_CHECKING:
         SeriesBuffers,
         SizeUnit,
         TemporalLiteral,
-    )
-    from polars.utils.various import (
-        NoDefault,
     )
 
     if sys.version_info >= (3, 11):
@@ -746,8 +746,7 @@ class Series:
         ...
 
     @overload
-    def __eq__(self, other: Any) -> Series:
-        ...
+    def __eq__(self, other: Any) -> Series: ...
 
     def __eq__(self, other: Any) -> Series | Expr:
         warn_null_comparison(other)
@@ -760,8 +759,7 @@ class Series:
         ...
 
     @overload
-    def __ne__(self, other: Any) -> Series:
-        ...
+    def __ne__(self, other: Any) -> Series: ...
 
     def __ne__(self, other: Any) -> Series | Expr:
         warn_null_comparison(other)
@@ -774,8 +772,7 @@ class Series:
         ...
 
     @overload
-    def __gt__(self, other: Any) -> Series:
-        ...
+    def __gt__(self, other: Any) -> Series: ...
 
     def __gt__(self, other: Any) -> Series | Expr:
         warn_null_comparison(other)
@@ -788,8 +785,7 @@ class Series:
         ...
 
     @overload
-    def __lt__(self, other: Any) -> Series:
-        ...
+    def __lt__(self, other: Any) -> Series: ...
 
     def __lt__(self, other: Any) -> Series | Expr:
         warn_null_comparison(other)
@@ -802,8 +798,7 @@ class Series:
         ...
 
     @overload
-    def __ge__(self, other: Any) -> Series:
-        ...
+    def __ge__(self, other: Any) -> Series: ...
 
     def __ge__(self, other: Any) -> Series | Expr:
         warn_null_comparison(other)
@@ -816,8 +811,7 @@ class Series:
         ...
 
     @overload
-    def __le__(self, other: Any) -> Series:
-        ...
+    def __le__(self, other: Any) -> Series: ...
 
     def __le__(self, other: Any) -> Series | Expr:
         warn_null_comparison(other)
@@ -830,8 +824,7 @@ class Series:
         ...
 
     @overload
-    def le(self, other: Any) -> Series:
-        ...
+    def le(self, other: Any) -> Series: ...
 
     def le(self, other: Any) -> Series | Expr:
         """Method equivalent of operator expression `series <= other`."""
@@ -842,8 +835,7 @@ class Series:
         ...
 
     @overload
-    def lt(self, other: Any) -> Series:
-        ...
+    def lt(self, other: Any) -> Series: ...
 
     def lt(self, other: Any) -> Series | Expr:
         """Method equivalent of operator expression `series < other`."""
@@ -854,8 +846,7 @@ class Series:
         ...
 
     @overload
-    def eq(self, other: Any) -> Series:
-        ...
+    def eq(self, other: Any) -> Series: ...
 
     def eq(self, other: Any) -> Series | Expr:
         """Method equivalent of operator expression `series == other`."""
@@ -866,8 +857,7 @@ class Series:
         ...
 
     @overload
-    def eq_missing(self, other: Any) -> Series:
-        ...
+    def eq_missing(self, other: Any) -> Series: ...
 
     def eq_missing(self, other: Any) -> Series | Expr:
         """
@@ -915,8 +905,7 @@ class Series:
         ...
 
     @overload
-    def ne(self, other: Any) -> Series:
-        ...
+    def ne(self, other: Any) -> Series: ...
 
     def ne(self, other: Any) -> Series | Expr:
         """Method equivalent of operator expression `series != other`."""
@@ -927,8 +916,7 @@ class Series:
         ...
 
     @overload
-    def ne_missing(self, other: Any) -> Series:
-        ...
+    def ne_missing(self, other: Any) -> Series: ...
 
     def ne_missing(self, other: Any) -> Series | Expr:
         """
@@ -976,8 +964,7 @@ class Series:
         ...
 
     @overload
-    def ge(self, other: Any) -> Series:
-        ...
+    def ge(self, other: Any) -> Series: ...
 
     def ge(self, other: Any) -> Series | Expr:
         """Method equivalent of operator expression `series >= other`."""
@@ -988,8 +975,7 @@ class Series:
         ...
 
     @overload
-    def gt(self, other: Any) -> Series:
-        ...
+    def gt(self, other: Any) -> Series: ...
 
     def gt(self, other: Any) -> Series | Expr:
         """Method equivalent of operator expression `series > other`."""
@@ -1043,8 +1029,7 @@ class Series:
         ...
 
     @overload
-    def __add__(self, other: Any) -> Self:
-        ...
+    def __add__(self, other: Any) -> Self: ...
 
     def __add__(self, other: Any) -> Self | DataFrame | Expr:
         if isinstance(other, str):
@@ -1060,8 +1045,7 @@ class Series:
         ...
 
     @overload
-    def __sub__(self, other: Any) -> Self:
-        ...
+    def __sub__(self, other: Any) -> Self: ...
 
     def __sub__(self, other: Any) -> Self | Expr:
         if isinstance(other, pl.Expr):
@@ -1073,8 +1057,7 @@ class Series:
         ...
 
     @overload
-    def __truediv__(self, other: Any) -> Series:
-        ...
+    def __truediv__(self, other: Any) -> Series: ...
 
     def __truediv__(self, other: Any) -> Series | Expr:
         if isinstance(other, pl.Expr):
@@ -1094,8 +1077,7 @@ class Series:
         ...
 
     @overload
-    def __floordiv__(self, other: Any) -> Series:
-        ...
+    def __floordiv__(self, other: Any) -> Series: ...
 
     def __floordiv__(self, other: Any) -> Series | Expr:
         if isinstance(other, pl.Expr):
@@ -1120,8 +1102,7 @@ class Series:
         ...
 
     @overload
-    def __mul__(self, other: Any) -> Series:
-        ...
+    def __mul__(self, other: Any) -> Series: ...
 
     def __mul__(self, other: Any) -> Series | DataFrame | Expr:
         if isinstance(other, pl.Expr):
@@ -1139,8 +1120,7 @@ class Series:
         ...
 
     @overload
-    def __mod__(self, other: Any) -> Series:
-        ...
+    def __mod__(self, other: Any) -> Series: ...
 
     def __mod__(self, other: Any) -> Series | Expr:
         if isinstance(other, pl.Expr):
@@ -1304,15 +1284,13 @@ class Series:
         return self._from_pyseries(self._s.take_with_series(s._s))
 
     @overload
-    def __getitem__(self, item: int) -> Any:
-        ...
+    def __getitem__(self, item: int) -> Any: ...
 
     @overload
     def __getitem__(
         self,
         item: Series | range | slice | np.ndarray[Any, Any] | list[int],
-    ) -> Series:
-        ...
+    ) -> Series: ...
 
     def __getitem__(
         self,
@@ -1607,12 +1585,10 @@ class Series:
         """
 
     @overload
-    def any(self, *, ignore_nulls: Literal[True] = ...) -> bool:
-        ...
+    def any(self, *, ignore_nulls: Literal[True] = ...) -> bool: ...
 
     @overload
-    def any(self, *, ignore_nulls: bool) -> bool | None:
-        ...
+    def any(self, *, ignore_nulls: bool) -> bool | None: ...
 
     @deprecate_renamed_parameter("drop_nulls", "ignore_nulls", version="0.19.0")
     def any(self, *, ignore_nulls: bool = True) -> bool | None:
@@ -1652,12 +1628,10 @@ class Series:
         return self._s.any(ignore_nulls=ignore_nulls)
 
     @overload
-    def all(self, *, ignore_nulls: Literal[True] = ...) -> bool:
-        ...
+    def all(self, *, ignore_nulls: Literal[True] = ...) -> bool: ...
 
     @overload
-    def all(self, *, ignore_nulls: bool) -> bool | None:
-        ...
+    def all(self, *, ignore_nulls: bool) -> bool | None: ...
 
     @deprecate_renamed_parameter("drop_nulls", "ignore_nulls", version="0.19.0")
     def all(self, *, ignore_nulls: bool = True) -> bool | None:
@@ -2172,8 +2146,7 @@ class Series:
         left_closed: bool = ...,
         include_breaks: bool = ...,
         as_series: Literal[True] = ...,
-    ) -> Series:
-        ...
+    ) -> Series: ...
 
     @overload
     def cut(
@@ -2186,8 +2159,7 @@ class Series:
         left_closed: bool = ...,
         include_breaks: bool = ...,
         as_series: Literal[False],
-    ) -> DataFrame:
-        ...
+    ) -> DataFrame: ...
 
     @overload
     def cut(
@@ -2200,8 +2172,7 @@ class Series:
         left_closed: bool = ...,
         include_breaks: bool = ...,
         as_series: bool,
-    ) -> Series | DataFrame:
-        ...
+    ) -> Series | DataFrame: ...
 
     @deprecate_nonkeyword_arguments(["self", "breaks"], version="0.19.0")
     @deprecate_renamed_parameter("series", "as_series", version="0.19.0")
@@ -2370,8 +2341,7 @@ class Series:
         break_point_label: str = ...,
         category_label: str = ...,
         as_series: Literal[True] = ...,
-    ) -> Series:
-        ...
+    ) -> Series: ...
 
     @overload
     def qcut(
@@ -2385,8 +2355,7 @@ class Series:
         break_point_label: str = ...,
         category_label: str = ...,
         as_series: Literal[False],
-    ) -> DataFrame:
-        ...
+    ) -> DataFrame: ...
 
     @overload
     def qcut(
@@ -2400,8 +2369,7 @@ class Series:
         break_point_label: str = ...,
         category_label: str = ...,
         as_series: bool,
-    ) -> Series | DataFrame:
-        ...
+    ) -> Series | DataFrame: ...
 
     @unstable()
     def qcut(
@@ -3549,16 +3517,16 @@ class Series:
         return self._s.arg_max()
 
     @overload
-    def search_sorted(self, element: int | float, side: SearchSortedSide = ...) -> int:
-        ...
+    def search_sorted(
+        self, element: int | float, side: SearchSortedSide = ...
+    ) -> int: ...
 
     @overload
     def search_sorted(
         self,
         element: Series | np.ndarray[Any, Any] | list[int] | list[float],
         side: SearchSortedSide = ...,
-    ) -> Series:
-        ...
+    ) -> Series: ...
 
     def search_sorted(
         self,
@@ -5289,7 +5257,7 @@ class Series:
         -------
         Series
         """
-        from polars.utils.udfs import warn_on_inefficient_map
+        from polars._utils.udfs import warn_on_inefficient_map
 
         if return_dtype is None:
             pl_return_dtype = None

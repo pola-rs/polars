@@ -51,7 +51,10 @@ pub fn _use_rolling_kernels(groups: &GroupsSlice, chunks: &[ArrayRef]) -> bool {
             let [first_offset, first_len] = groups[0];
             let second_offset = groups[1][0];
 
-            second_offset < (first_offset + first_len) && chunks.len() == 1
+            second_offset >= first_offset // Prevent false positive from regular group-by that has out of order slices.
+                                          // Rolling group-by is expected to have monotonically increasing slices.
+                && second_offset < (first_offset + first_len)
+                && chunks.len() == 1
         },
     }
 }

@@ -1,4 +1,5 @@
 """Module for formatting output data in HTML."""
+
 from __future__ import annotations
 
 import os

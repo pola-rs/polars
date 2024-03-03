@@ -4,7 +4,9 @@ pub mod arena;
 pub mod atomic;
 pub mod cache;
 pub mod cell;
+pub mod clmul;
 pub mod contention_pool;
+pub mod cpuid;
 mod error;
 pub mod floor_divmod;
 pub mod functions;
@@ -40,5 +42,6 @@ pub mod index;
 pub mod io;
 pub mod nulls;
 pub mod ord;
+pub mod partitioned;
 
 pub use io::open_file;

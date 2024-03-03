@@ -284,9 +284,9 @@ pub(crate) fn aexpr_assign_renamed_leaf(
     current: &str,
     new_name: &str,
 ) -> Node {
-    let leafs = aexpr_to_column_nodes_iter(node, arena);
+    let leaf_nodes = aexpr_to_column_nodes_iter(node, arena);
 
-    for node in leafs {
+    for node in leaf_nodes {
         match arena.get(node) {
             AExpr::Column(name) if &**name == current => {
                 return arena.add(AExpr::Column(Arc::from(new_name)))

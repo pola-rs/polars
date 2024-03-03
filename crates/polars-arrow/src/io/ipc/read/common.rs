@@ -149,7 +149,12 @@ pub fn read_record_batch<R: Read + Seek>(
                     scratch,
                 )?)),
                 ProjectionResult::NotSelected((field, _)) => {
-                    skip(&mut field_nodes, &field.data_type, &mut buffers)?;
+                    skip(
+                        &mut field_nodes,
+                        &field.data_type,
+                        &mut buffers,
+                        &mut variadic_buffer_counts,
+                    )?;
                     Ok(None)
                 },
             })

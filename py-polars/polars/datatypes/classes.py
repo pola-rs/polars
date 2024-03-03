@@ -92,9 +92,6 @@ class DataType(metaclass=DataTypeClass):
 
     __slots__ = ()
 
-    def __reduce__(self) -> Any:
-        return (_custom_reconstruct, (type(self), object, None), self.__dict__)
-
     def _string_repr(self) -> str:
         return _dtype_str_repr(self)
 
@@ -171,7 +168,7 @@ class DataType(metaclass=DataTypeClass):
         >>> pl.List.is_not(pl.List(pl.Int32))  # doctest: +SKIP
         True
         """
-        from polars.utils.deprecation import issue_deprecation_warning
+        from polars._utils.deprecation import issue_deprecation_warning
 
         issue_deprecation_warning(
             "`DataType.is_not` is deprecated and will be removed in the next breaking release."
@@ -219,19 +216,6 @@ class DataType(metaclass=DataTypeClass):
     def is_nested(cls) -> bool:
         """Check whether the data type is a nested type."""
         return issubclass(cls, NestedType)
-
-
-def _custom_reconstruct(
-    cls: type[Any], base: type[Any], state: Any
-) -> PolarsDataType | type:
-    """Helper function for unpickling DataType objects."""
-    if state:
-        obj = base.__new__(cls, state)
-        if base.__init__ != object.__init__:
-            base.__init__(obj, state)
-    else:
-        obj = object.__new__(cls)
-    return obj
 
 
 class DataTypeGroup(frozenset):  # type: ignore[type-arg]
@@ -398,7 +382,7 @@ class Decimal(NumericType):
     ):
         # Issuing the warning on `__init__` does not trigger when the class is used
         # without being instantiated, but it's better than nothing
-        from polars.utils.unstable import issue_unstable_warning
+        from polars._utils.unstable import issue_unstable_warning
 
         issue_unstable_warning(
             "The Decimal data type is considered unstable."
@@ -504,7 +488,7 @@ class Datetime(TemporalType):
         self, time_unit: TimeUnit = "us", time_zone: str | timezone | None = None
     ):
         if time_unit is None:
-            from polars.utils.deprecation import issue_deprecation_warning
+            from polars._utils.deprecation import issue_deprecation_warning
 
             issue_deprecation_warning(
                 "Passing `time_unit=None` to the Datetime constructor is deprecated."
@@ -650,7 +634,7 @@ class Enum(DataType):
     def __init__(self, categories: Series | Iterable[str]):
         # Issuing the warning on `__init__` does not trigger when the class is used
         # without being instantiated, but it's better than nothing
-        from polars.utils.unstable import issue_unstable_warning
+        from polars._utils.unstable import issue_unstable_warning
 
         issue_unstable_warning(
             "The Enum data type is considered unstable."

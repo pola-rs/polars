@@ -6,9 +6,9 @@ from importlib import import_module
 from inspect import Parameter, signature
 from typing import TYPE_CHECKING, Any, Iterable, Literal, Sequence, TypedDict, overload
 
+from polars._utils.deprecation import issue_deprecation_warning
 from polars.convert import from_arrow
 from polars.exceptions import InvalidOperationError, UnsuitableSQLError
-from polars.utils.deprecation import issue_deprecation_warning
 
 if TYPE_CHECKING:
     from types import TracebackType
@@ -33,10 +33,15 @@ if TYPE_CHECKING:
 
 
 class _ArrowDriverProperties_(TypedDict):
-    fetch_all: str  # name of the method that fetches all arrow data
-    fetch_batches: str | None  # name of the method that fetches arrow data in batches
-    exact_batch_size: bool | None  # whether indicated batch size is respected exactly
-    repeat_batch_calls: bool  # repeat batch calls (if False, batch call is generator)
+    # name of the method that fetches all arrow data; tuple form
+    # calls the fetch_all method with the given chunk size (int)
+    fetch_all: str | tuple[str, int]
+    # name of the method that fetches arrow data in batches
+    fetch_batches: str | None
+    # indicate whether the given batch size is respected exactly
+    exact_batch_size: bool | None
+    # repeat batch calls (if False, the batch call is a generator)
+    repeat_batch_calls: bool
 
 
 _ARROW_DRIVER_REGISTRY_: dict[str, _ArrowDriverProperties_] = {
@@ -62,6 +67,13 @@ _ARROW_DRIVER_REGISTRY_: dict[str, _ArrowDriverProperties_] = {
         "fetch_all": "fetch_arrow_table",
         "fetch_batches": "fetch_record_batch",
         "exact_batch_size": True,
+        "repeat_batch_calls": False,
+    },
+    "kuzu": {
+        # 'get_as_arrow' currently takes a mandatory chunk size
+        "fetch_all": ("get_as_arrow", 10_000),
+        "fetch_batches": None,
+        "exact_batch_size": None,
         "repeat_batch_calls": False,
     },
     "snowflake": {
@@ -153,7 +165,7 @@ class ConnectionExecutor:
     ) -> None:
         # if we created it and are finished with it, we can
         # close the cursor (but NOT the connection)
-        if self.can_close_cursor:
+        if self.can_close_cursor and hasattr(self.cursor, "close"):
             self.cursor.close()
 
     def __repr__(self) -> str:
@@ -169,8 +181,11 @@ class ConnectionExecutor:
         """Yield Arrow data in batches, or as a single 'fetchall' batch."""
         fetch_batches = driver_properties["fetch_batches"]
         if not iter_batches or fetch_batches is None:
-            fetch_method = driver_properties["fetch_all"]
-            yield getattr(self.result, fetch_method)()
+            fetch_method, sz = driver_properties["fetch_all"], []
+            if isinstance(fetch_method, tuple):
+                fetch_method, chunk_size = fetch_method
+                sz = [chunk_size]
+            yield getattr(self.result, fetch_method)(*sz)
         else:
             size = batch_size if driver_properties["exact_batch_size"] else None
             repeat_batch_calls = driver_properties["repeat_batch_calls"]
@@ -427,8 +442,7 @@ def read_database(
     batch_size: int | None = ...,
     schema_overrides: SchemaDict | None = ...,
     **kwargs: Any,
-) -> DataFrame:
-    ...
+) -> DataFrame: ...
 
 
 @overload
@@ -440,8 +454,7 @@ def read_database(
     batch_size: int | None = ...,
     schema_overrides: SchemaDict | None = ...,
     **kwargs: Any,
-) -> Iterable[DataFrame]:
-    ...
+) -> Iterable[DataFrame]: ...
 
 
 def read_database(  # noqa: D417
