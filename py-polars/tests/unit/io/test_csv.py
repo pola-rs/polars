@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import gzip
 import io
+import re
 import sys
 import textwrap
 import zlib
@@ -1960,3 +1961,58 @@ def test_read_csv_single_column(columns: list[str] | str) -> None:
     df = pl.read_csv(f, columns=columns)
     expected = pl.DataFrame({"b": [2, 5]})
     assert_frame_equal(df, expected)
+
+
+def test_read_csv_array_explicit_schema() -> None:
+    csv = textwrap.dedent(
+        """\
+        x,y,z,f
+        0.1,0.5,0.9,0.1
+        0.2,,1.0,0.2
+        0.3,0.7,1.1,0.3
+        0.4,0.8,1.2,0.4
+        """
+    )
+    f = io.StringIO(csv)
+    df = pl.read_csv(f, schema={"x": pl.Array(pl.Float32, 3), "f": pl.Float32})
+
+    expected = pl.DataFrame(
+        [
+            pl.Series(
+                "x",
+                [[0.1, 0.5, 0.9], [0.2, None, 1.0], [0.3, 0.7, 1.1], [0.4, 0.8, 1.2]],
+                pl.Array(pl.Float32, 3),
+            ),
+            pl.Series("f", [0.1, 0.2, 0.3, 0.4], pl.Float32),
+        ]
+    )
+    assert_frame_equal(df, expected)
+
+
+def test_read_csv_array_inferred_schema() -> None:
+    csv = textwrap.dedent(
+        """\
+        x,y,z,f
+        0.1,0.5,0.9,0.1
+        0.2,,1.0,0.2
+        0.3,0.7,1.1,0.3
+        0.4,0.8,1.2,0.4
+        """
+    )
+    f = io.StringIO(csv)
+    with pytest.raises(
+        pl.ComputeError,
+        match=re.escape(
+            "unsupported data type array[f32, 3] while reading CSV; Array dtypes are only supported with explicit schema."
+        ),
+    ):
+        pl.read_csv(f, dtypes={"x": pl.Array(pl.Float32, 3), "f": pl.Float32})
+
+    f.seek(0)
+    with pytest.raises(
+        pl.ComputeError,
+        match=re.escape(
+            "unsupported data type array[f32, 3] while reading CSV; Array dtypes are only supported with explicit schema."
+        ),
+    ):
+        pl.read_csv(f, dtypes=[pl.Array(pl.Float32, 3), pl.Float32])

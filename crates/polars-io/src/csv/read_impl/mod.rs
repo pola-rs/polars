@@ -178,6 +178,22 @@ impl<'a> CoreReader<'a> {
             Some(schema) => schema,
             None => {
                 {
+                    #[cfg(feature = "dtype-array")]
+                    {
+                        // check if any array dtypes are present. these are currently unsupported.
+                        if let Some(dtype) = dtype_overwrite
+                            .into_iter()
+                            .flatten()
+                            .chain(schema_overwrite.iter().flat_map(|s| s.iter_dtypes()))
+                            .find(|&v| matches!(v, DataType::Array(_, _)))
+                        {
+                            polars_bail!(
+                                ComputeError: "unsupported data type {} while reading CSV; \
+                                Array dtypes are only supported with explicit schema.", dtype
+                            );
+                        }
+                    }
+
                     // We keep track of the inferred schema bool
                     // In case the file is compressed this schema inference is wrong and has to be done
                     // again after decompression.

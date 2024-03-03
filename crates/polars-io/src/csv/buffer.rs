@@ -1,4 +1,6 @@
 use arrow::array::MutableBinaryViewArray;
+#[cfg(feature = "dtype-array")]
+use polars_core::chunked_array::builder::fixed_size_list::get_fixed_size_list_builder;
 use polars_core::prelude::*;
 use polars_error::to_compute_err;
 #[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
@@ -472,6 +474,80 @@ where
     }
 }
 
+#[cfg(feature = "dtype-array")]
+pub(crate) struct ArrayField {
+    name: String,
+    inner_dtype: DataType,
+    width: usize,
+    capacity: usize,
+    inner_buffer: Box<Buffer>,
+}
+
+#[cfg(feature = "dtype-array")]
+impl ArrayField {
+    pub(crate) fn new(
+        name: &str,
+        inner_dtype: DataType,
+        width: usize,
+        capacity: usize,
+        quote_char: Option<u8>,
+        encoding: CsvEncoding,
+    ) -> PolarsResult<Self> {
+        let inner_buffer = Box::new(init_buffer(
+            name,
+            &inner_dtype,
+            capacity
+                .checked_mul(width)
+                .expect("overflow in capacity*width"),
+            quote_char,
+            encoding,
+        )?);
+
+        Ok(Self {
+            name: name.to_owned(),
+            inner_dtype,
+            width,
+            capacity,
+            inner_buffer,
+        })
+    }
+
+    pub(crate) fn append_null(&mut self, valid: bool) {
+        self.inner_buffer.add_null(valid);
+    }
+
+    pub(crate) fn parse_bytes(
+        &mut self,
+        bytes: &[u8],
+        ignore_errors: bool,
+        needs_escaping: bool,
+        missing_is_null: bool,
+    ) -> PolarsResult<()> {
+        self.inner_buffer
+            .add(bytes, ignore_errors, needs_escaping, missing_is_null)
+    }
+
+    pub(crate) fn into_series(self) -> PolarsResult<Series> {
+        // process inner buffer.
+        let inner_series = self.inner_buffer.into_series()?.rechunk();
+
+        // checks to ensure arr is of the correct size and dtype
+        debug_assert_eq!(inner_series.chunks().len(), 1);
+        debug_assert_eq!(&self.inner_dtype, inner_series.dtype());
+        let arr = inner_series.chunks()[0].as_ref();
+        debug_assert_eq!(arr.len() % self.width, 0);
+
+        let mut builder =
+            get_fixed_size_list_builder(&self.inner_dtype, self.capacity, self.width, &self.name)?;
+        for i in 0..(inner_series.len() / self.width) {
+            // SAFETY: arr is of the correct dtype and length
+            unsafe { builder.push_unchecked(arr, i) }
+        }
+
+        Ok(builder.finish().into_series())
+    }
+}
+
 pub(crate) fn init_buffers(
     projection: &[usize],
     capacity: usize,
@@ -483,45 +559,61 @@ pub(crate) fn init_buffers(
         .iter()
         .map(|&i| {
             let (name, dtype) = schema.get_at_index(i).unwrap();
-            let builder = match dtype {
-                &DataType::Boolean => Buffer::Boolean(BooleanChunkedBuilder::new(name, capacity)),
-                #[cfg(feature = "dtype-i8")]
-                &DataType::Int8 => Buffer::Int8(PrimitiveChunkedBuilder::new(name, capacity)),
-                #[cfg(feature = "dtype-i16")]
-                &DataType::Int16 => Buffer::Int16(PrimitiveChunkedBuilder::new(name, capacity)),
-                &DataType::Int32 => Buffer::Int32(PrimitiveChunkedBuilder::new(name, capacity)),
-                &DataType::Int64 => Buffer::Int64(PrimitiveChunkedBuilder::new(name, capacity)),
-                #[cfg(feature = "dtype-u8")]
-                &DataType::UInt8 => Buffer::UInt8(PrimitiveChunkedBuilder::new(name, capacity)),
-                #[cfg(feature = "dtype-u16")]
-                &DataType::UInt16 => Buffer::UInt16(PrimitiveChunkedBuilder::new(name, capacity)),
-                &DataType::UInt32 => Buffer::UInt32(PrimitiveChunkedBuilder::new(name, capacity)),
-                &DataType::UInt64 => Buffer::UInt64(PrimitiveChunkedBuilder::new(name, capacity)),
-                &DataType::Float32 => Buffer::Float32(PrimitiveChunkedBuilder::new(name, capacity)),
-                &DataType::Float64 => Buffer::Float64(PrimitiveChunkedBuilder::new(name, capacity)),
-                &DataType::String => {
-                    Buffer::Utf8(Utf8Field::new(name, capacity, quote_char, encoding))
-                },
-                #[cfg(feature = "dtype-datetime")]
-                DataType::Datetime(time_unit, time_zone) => Buffer::Datetime {
-                    buf: DatetimeField::new(name, capacity),
-                    time_unit: *time_unit,
-                    time_zone: time_zone.clone(),
-                },
-                #[cfg(feature = "dtype-date")]
-                &DataType::Date => Buffer::Date(DatetimeField::new(name, capacity)),
-                #[cfg(feature = "dtype-categorical")]
-                DataType::Categorical(_, ordering) => Buffer::Categorical(CategoricalField::new(
-                    name, capacity, quote_char, *ordering,
-                )),
-                // TODO (ENUM) support writing to Enum
-                dt => polars_bail!(
-                    ComputeError: "unsupported data type when reading CSV: {} when reading CSV", dt,
-                ),
-            };
-            Ok(builder)
+            init_buffer(name, dtype, capacity, quote_char, encoding)
         })
         .collect()
+}
+
+pub(crate) fn init_buffer(
+    name: &str,
+    dtype: &DataType,
+    capacity: usize,
+    quote_char: Option<u8>,
+    encoding: CsvEncoding,
+) -> PolarsResult<Buffer> {
+    Ok(match dtype {
+        &DataType::Boolean => Buffer::Boolean(BooleanChunkedBuilder::new(name, capacity)),
+        #[cfg(feature = "dtype-i8")]
+        &DataType::Int8 => Buffer::Int8(PrimitiveChunkedBuilder::new(name, capacity)),
+        #[cfg(feature = "dtype-i16")]
+        &DataType::Int16 => Buffer::Int16(PrimitiveChunkedBuilder::new(name, capacity)),
+        &DataType::Int32 => Buffer::Int32(PrimitiveChunkedBuilder::new(name, capacity)),
+        &DataType::Int64 => Buffer::Int64(PrimitiveChunkedBuilder::new(name, capacity)),
+        #[cfg(feature = "dtype-u8")]
+        &DataType::UInt8 => Buffer::UInt8(PrimitiveChunkedBuilder::new(name, capacity)),
+        #[cfg(feature = "dtype-u16")]
+        &DataType::UInt16 => Buffer::UInt16(PrimitiveChunkedBuilder::new(name, capacity)),
+        &DataType::UInt32 => Buffer::UInt32(PrimitiveChunkedBuilder::new(name, capacity)),
+        &DataType::UInt64 => Buffer::UInt64(PrimitiveChunkedBuilder::new(name, capacity)),
+        &DataType::Float32 => Buffer::Float32(PrimitiveChunkedBuilder::new(name, capacity)),
+        &DataType::Float64 => Buffer::Float64(PrimitiveChunkedBuilder::new(name, capacity)),
+        &DataType::String => Buffer::Utf8(Utf8Field::new(name, capacity, quote_char, encoding)),
+        #[cfg(feature = "dtype-datetime")]
+        DataType::Datetime(time_unit, time_zone) => Buffer::Datetime {
+            buf: DatetimeField::new(name, capacity),
+            time_unit: *time_unit,
+            time_zone: time_zone.clone(),
+        },
+        #[cfg(feature = "dtype-date")]
+        &DataType::Date => Buffer::Date(DatetimeField::new(name, capacity)),
+        #[cfg(feature = "dtype-categorical")]
+        DataType::Categorical(_, ordering) => {
+            Buffer::Categorical(CategoricalField::new(name, capacity, quote_char, *ordering))
+        },
+        #[cfg(feature = "dtype-array")]
+        &DataType::Array(ref inner_dtype, width) => Buffer::Array(ArrayField::new(
+            name,
+            *inner_dtype.clone(),
+            width,
+            capacity,
+            quote_char,
+            encoding,
+        )?),
+        // TODO (ENUM) support writing to Enum
+        dt => polars_bail!(
+            ComputeError: "unsupported data type when reading CSV: {} when reading CSV", dt,
+        ),
+    })
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -553,6 +645,8 @@ pub(crate) enum Buffer {
     Date(DatetimeField<Int32Type>),
     #[allow(dead_code)]
     Categorical(CategoricalField),
+    #[cfg(feature = "dtype-array")]
+    Array(ArrayField),
 }
 
 impl Buffer {
@@ -607,8 +701,24 @@ impl Buffer {
                     panic!("activate 'dtype-categorical' feature")
                 }
             },
+            #[cfg(feature = "dtype-array")]
+            Buffer::Array(v) => v.into_series()?,
         };
         Ok(s)
+    }
+
+    pub(crate) fn process_fields(
+        &mut self,
+        f: &mut dyn FnMut(&mut Buffer) -> PolarsResult<()>,
+    ) -> PolarsResult<()> {
+        #[cfg(feature = "dtype-array")]
+        if let Buffer::Array(v) = self {
+            for _ in 0..v.width {
+                f(self)?;
+            }
+            return Ok(());
+        }
+        f(self)
     }
 
     pub(crate) fn add_null(&mut self, valid: bool) {
@@ -650,6 +760,8 @@ impl Buffer {
                     panic!("activate 'dtype-categorical' feature")
                 }
             },
+            #[cfg(feature = "dtype-array")]
+            Buffer::Array(v) => v.append_null(valid),
         };
     }
 
@@ -686,6 +798,8 @@ impl Buffer {
                     panic!("activate 'dtype-categorical' feature")
                 }
             },
+            #[cfg(feature = "dtype-array")]
+            Buffer::Array(v) => DataType::Array(Box::new(v.inner_dtype.clone()), v.width),
         }
     }
 
@@ -831,6 +945,8 @@ impl Buffer {
                     panic!("activate 'dtype-categorical' feature")
                 }
             },
+            #[cfg(feature = "dtype-array")]
+            Array(buf) => buf.parse_bytes(bytes, ignore_errors, needs_escaping, missing_is_null),
         }
     }
 }
