@@ -21,7 +21,10 @@ Polars performs these core data transformations very quickly by:
 - automatic query optimization on each expression
 - automatic parallelization of expressions on many columns
 
-Polars expressions are a mapping from a dataframe to a series (or mathematically `Fn(DataFrame) -> Series`). As expressions have a `Series` as output then it is straightforward to do a sequence of expressions (similar to method chaining in pandas) which just keep transforming the output `Series` from the previous step.
+An expression is a tree of operations that describe how to construct one or more
+Series. As the output is one or more Series, it is straightforward to
+apply a sequence of expressions (similar to method chaining in pandas) each of which
+transforms the output Series from the previous step.
 
 If this seems abstract and confusing - don't worry! People quickly develop an intuition for expressions
 just by looking at a few examples. We'll do that next!
