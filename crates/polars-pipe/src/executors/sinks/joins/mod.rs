@@ -69,7 +69,7 @@ impl Hash for Key {
 pub(crate) trait ExtraPayload: Clone + Sync + Send + Default + 'static {
 
     /// Tracker used in the outer join.
-    fn get_tracker(self) -> AtomicBool {
+    fn get_tracker(&self) -> &AtomicBool {
         panic!()
     }
 }
@@ -98,8 +98,8 @@ impl Clone for Tracker {
 
 impl ExtraPayload for Tracker {
     #[inline(always)]
-    fn get_tracker(self) -> AtomicBool {
-        self.inner
+    fn get_tracker(&self) -> &AtomicBool {
+        &self.inner
     }
 }
 

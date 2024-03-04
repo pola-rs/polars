@@ -1,6 +1,7 @@
 use std::borrow::Cow;
+use std::sync::atomic::Ordering;
 
-use arrow::array::{Array, BinaryArray};
+use arrow::array::{Array, BinaryArray, MutablePrimitiveArray};
 use polars_core::export::ahash::RandomState;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
@@ -13,6 +14,7 @@ use polars_utils::slice::GetSaferUnchecked;
 use smartstring::alias::String as SmartString;
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use hashbrown::hash_map::RawEntryMut;
+use crate::executors::sinks::ExtraPayload;
 
 use crate::executors::sinks::joins::generic_build::*;
 use crate::executors::sinks::joins::{Key, PartitionedMap};
@@ -22,7 +24,7 @@ use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{DataChunk, Operator, OperatorResult, PExecutionContext};
 
 #[derive(Clone)]
-pub struct GenericOuterJoinProbe {
+pub struct GenericOuterJoinProbe<K: ExtraPayload> {
     /// all chunks are stacked into a single dataframe
     /// the dataframe is not rechunked.
     df_a: Arc<DataFrame>,
@@ -38,7 +40,7 @@ pub struct GenericOuterJoinProbe {
     hb: RandomState,
     /// partitioned tables that will be used for probing.
     /// stores the key and the chunk_idx, df_idx of the left table.
-    hash_tables: Arc<PartitionedMap>,
+    hash_tables: Arc<PartitionedMap<K>>,
     /// Bits that indicate if a key has found a match. This keeps track of which values to flush.
     /// Rows that don't find a match need to be appended to the output table.
     /// The chunks are equal to the partitioned hashtable. Every bit is an entry in that table.
@@ -50,7 +52,7 @@ pub struct GenericOuterJoinProbe {
     join_tuples_a: Vec<ChunkId>,
     // in inner join these are the right table
     // in left join there are the left table
-    join_tuples_b: Vec<DfIdx>,
+    join_tuples_b: MutablePrimitiveArray<IdxSize>,
     hashes: Vec<u64>,
     // the join order is swapped to ensure we hash the smaller table
     swapped_or_left: bool,
@@ -64,14 +66,14 @@ pub struct GenericOuterJoinProbe {
 }
 
 
-impl GenericOuterJoinProbe {
+impl<K: ExtraPayload> GenericOuterJoinProbe<K> {
     #[allow(clippy::too_many_arguments)]
     pub(super) fn new(
         mut df_a: DataFrame,
         materialized_join_cols: Arc<Vec<BinaryArray<i64>>>,
         suffix: Arc<str>,
         hb: RandomState,
-        hash_tables: Arc<PartitionedMap>,
+        hash_tables: Arc<PartitionedMap<K>>,
         join_columns_left: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
         join_columns_right: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
         swapped_or_left: bool,
@@ -109,7 +111,7 @@ impl GenericOuterJoinProbe {
             hash_tables,
             found_match_tracker,
             join_tuples_a: vec![],
-            join_tuples_b: vec![],
+            join_tuples_b: MutablePrimitiveArray::new(),
             hashes: amortized_hashes,
             swapped_or_left,
             join_column_idx: None,
@@ -153,65 +155,25 @@ impl GenericOuterJoinProbe {
     where
         I: Iterator<Item = (usize, (&'b u64, &'b [u8]))> + 'b,
     {
-        #[inline]
-        pub(super) fn compare_fn(
-            key: &Key,
-            h: u64,
-            join_columns_all_chunks: &[BinaryArray<i64>],
-            current_row: &[u8],
-        ) -> bool {
-            let key_hash = key.hash;
-
-            // we check the hash first
-            // as that has no indirection
-            key_hash == h && {
-                // we get the appropriate values from the join columns and compare it with the current row
-                let (chunk_idx, df_idx) = key.idx.extract();
-
-                // unset the tracker bit
-                let chunk_idx= chunk_idx & !(1 << TRACKER_BIT as IdxSize);
-                let chunk_idx = chunk_idx as usize;
-
-                let df_idx = df_idx as usize;
-
-                // get the right columns from the linearly packed buffer
-                let other_row = unsafe {
-                    join_columns_all_chunks
-                        .get_unchecked_release(chunk_idx)
-                        .value_unchecked(df_idx)
-                };
-                current_row == other_row
-            }
-        }
 
         for (i, (h, row)) in iter {
             let df_idx_right = i as IdxSize;
 
-            let (entry_builder, partition) = self.hash_tables
-                .raw_entry_and_partition_mut(*h);
-
-            let entry = entry_builder
+            let entry = self.hash_tables.raw_entry(*h)
                 .from_hash(*h, |key| {
                     compare_fn(key, *h, &self.materialized_join_cols, row)
-                });
+                })
+                .map(|key_val| key_val.1);
 
+            if let Some((indexes_left, tracker)) = entry {
+                // compiles to normal store: https://rust.godbolt.org/z/331hMo339
+                tracker.get_tracker().store(true, Ordering::Relaxed);
 
-            match entry {
-                RawEntryMut::Occupied(mut entry) => {
-                    let key = entry.key_mut();
-                    let idx = key.idx.inner_mut();
-                    // Set the tracker bit.
-                    *idx |= (1 << TRACKER_BIT);
-
-                    todo!()
-                    // self.join_tuples_a.extend_from_slice(indexes_left);
-                    // self.join_tuples_b
-                    //     .extend(std::iter::repeat(df_idx_right).take(indexes_left.len()));
-                },
-                RawEntryMut::Vacant(_) => {
-                    todo!()
-                }
-
+                self.join_tuples_a.extend_from_slice(indexes_left);
+                self.join_tuples_b.extend_constant(indexes_left.len(), Some(df_idx_right));
+            } else {
+                self.join_tuples_a.push(ChunkId::null());
+                self.join_tuples_b.push_value(df_idx_right);
             }
         }
     }
@@ -240,41 +202,42 @@ impl GenericOuterJoinProbe {
         }
         self.hashes = hashes;
 
-        let left_df = unsafe {
-            self.df_a
-                ._take_chunked_unchecked_seq(&self.join_tuples_a, IsSorted::Not)
-        };
-        let right_df = unsafe {
-            let mut df = Cow::Borrowed(&chunk.data);
-            if let Some(ids) = &self.join_column_idx {
-                let mut tmp = df.into_owned();
-                let cols = tmp.get_columns_mut();
-                // we go from higher idx to lower so that lower indices remain untouched
-                // by our mutation
-                for idx in ids.iter().rev() {
-                    let _ = cols.remove(*idx);
-                }
-                df = Cow::Owned(tmp);
-            }
-            df._take_unchecked_slice(&self.join_tuples_b, false)
-        };
-
-        let (a, b) = if self.swapped_or_left {
-            (right_df, left_df)
-        } else {
-            (left_df, right_df)
-        };
-        let out = self.finish_join(a, b)?;
-
-        // Clear memory.
-        self.row_values.clear();
-        self.hashes.clear();
-
-        Ok(OperatorResult::Finished(chunk.with_data(out)))
+        todo!()
+        // let left_df = unsafe {
+        //     self.df_a
+        //         ._take_chunked_unchecked_seq(&self.join_tuples_a, IsSorted::Not)
+        // };
+        // let right_df = unsafe {
+        //     let mut df = Cow::Borrowed(&chunk.data);
+        //     if let Some(ids) = &self.join_column_idx {
+        //         let mut tmp = df.into_owned();
+        //         let cols = tmp.get_columns_mut();
+        //         // we go from higher idx to lower so that lower indices remain untouched
+        //         // by our mutation
+        //         for idx in ids.iter().rev() {
+        //             let _ = cols.remove(*idx);
+        //         }
+        //         df = Cow::Owned(tmp);
+        //     }
+        //     df._take_unchecked_slice(&self.join_tuples_b, false)
+        // };
+        //
+        // let (a, b) = if self.swapped_or_left {
+        //     (right_df, left_df)
+        // } else {
+        //     (left_df, right_df)
+        // };
+        // let out = self.finish_join(a, b)?;
+        //
+        // // Clear memory.
+        // self.row_values.clear();
+        // self.hashes.clear();
+        //
+        // Ok(OperatorResult::Finished(chunk.with_data(out)))
     }
 }
 
-impl Operator for GenericOuterJoinProbe {
+impl<K: ExtraPayload> Operator for GenericOuterJoinProbe<K> {
     fn execute(
         &mut self,
         context: &PExecutionContext,

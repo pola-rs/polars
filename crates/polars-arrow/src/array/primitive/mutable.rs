@@ -127,16 +127,21 @@ impl<T: NativeType> MutablePrimitiveArray<T> {
         }
     }
 
+    #[inline]
+    pub fn push_value(&mut self, value: T) {
+        self.values.push(value);
+        match &mut self.validity {
+            Some(validity) => validity.push(true),
+            None => {},
+        }
+    }
+
     /// Adds a new value to the array.
     #[inline]
     pub fn push(&mut self, value: Option<T>) {
         match value {
             Some(value) => {
-                self.values.push(value);
-                match &mut self.validity {
-                    Some(validity) => validity.push(true),
-                    None => {},
-                }
+                self.push_value(value)
             },
             None => {
                 self.values.push(T::default());
@@ -287,6 +292,11 @@ impl<T: NativeType> MutablePrimitiveArray<T> {
 
     pub fn freeze(self) -> PrimitiveArray<T> {
         self.into()
+    }
+
+    pub fn clear(&mut self) {
+        self.values.clear();
+        self.validity = None;
     }
 }
 

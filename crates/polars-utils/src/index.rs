@@ -126,6 +126,18 @@ pub struct ChunkId<const CHUNK_BITS: u64 = DEFAULT_CHUNK_BITS> {
 
 impl<const CHUNK_BITS: u64> ChunkId<CHUNK_BITS> {
     #[inline(always)]
+    pub const fn null() -> Self {
+        Self {
+            swizzled: u64::MAX
+        }
+    }
+
+    #[inline(always)]
+    pub fn is_null(&self) -> bool {
+        self.swizzled == u64::MAX
+    }
+
+    #[inline(always)]
     #[allow(clippy::unnecessary_cast)]
     pub fn store(chunk: IdxSize, row: IdxSize) -> Self {
         debug_assert!(chunk < !(u64::MAX << CHUNK_BITS) as IdxSize);
