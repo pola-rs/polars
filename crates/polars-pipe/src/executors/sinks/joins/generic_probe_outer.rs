@@ -56,9 +56,6 @@ pub struct GenericOuterJoinProbe<K: ExtraPayload> {
     hashes: Vec<u64>,
     // the join order is swapped to ensure we hash the smaller table
     swapped_or_left: bool,
-    // location of join columns.
-    // these column locations need to be dropped from the rhs
-    join_column_idx: Option<Vec<usize>>,
     // cached output names
     output_names: Option<Vec<SmartString>>,
     join_nulls: bool,
@@ -114,7 +111,6 @@ impl<K: ExtraPayload> GenericOuterJoinProbe<K> {
             join_tuples_b: MutablePrimitiveArray::new(),
             hashes: amortized_hashes,
             swapped_or_left,
-            join_column_idx: None,
             output_names: None,
             join_nulls,
             row_values: RowValues::new(join_columns_right)
@@ -202,38 +198,32 @@ impl<K: ExtraPayload> GenericOuterJoinProbe<K> {
         }
         self.hashes = hashes;
 
-        todo!()
-        // let left_df = unsafe {
-        //     self.df_a
-        //         ._take_chunked_unchecked_seq(&self.join_tuples_a, IsSorted::Not)
-        // };
-        // let right_df = unsafe {
-        //     let mut df = Cow::Borrowed(&chunk.data);
-        //     if let Some(ids) = &self.join_column_idx {
-        //         let mut tmp = df.into_owned();
-        //         let cols = tmp.get_columns_mut();
-        //         // we go from higher idx to lower so that lower indices remain untouched
-        //         // by our mutation
-        //         for idx in ids.iter().rev() {
-        //             let _ = cols.remove(*idx);
-        //         }
-        //         df = Cow::Owned(tmp);
-        //     }
-        //     df._take_unchecked_slice(&self.join_tuples_b, false)
-        // };
-        //
-        // let (a, b) = if self.swapped_or_left {
-        //     (right_df, left_df)
-        // } else {
-        //     (left_df, right_df)
-        // };
-        // let out = self.finish_join(a, b)?;
-        //
-        // // Clear memory.
-        // self.row_values.clear();
-        // self.hashes.clear();
-        //
-        // Ok(OperatorResult::Finished(chunk.with_data(out)))
+        let left_df = unsafe {
+            self.df_a
+                ._take_chunked_unchecked_seq(&self.join_tuples_a, IsSorted::Not)
+        };
+        let right_df = unsafe {
+            self.join_tuples_b.with_freeze(|idx| {
+                let idx = IdxCa::from(idx.clone());
+                let out = chunk.data.take_unchecked_impl(&idx, false);
+                // Drop so that the freeze context can go back to mutable array.
+                drop(idx);
+                out
+            })
+        };
+
+        let (a, b) = if self.swapped_or_left {
+            (right_df, left_df)
+        } else {
+            (left_df, right_df)
+        };
+        let out = self.finish_join(a, b)?;
+
+        // Clear memory.
+        self.row_values.clear();
+        self.hashes.clear();
+
+        Ok(OperatorResult::Finished(chunk.with_data(out)))
     }
 }
 
