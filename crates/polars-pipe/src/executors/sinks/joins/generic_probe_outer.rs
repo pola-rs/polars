@@ -113,7 +113,7 @@ impl<K: ExtraPayload> GenericOuterJoinProbe<K> {
             swapped_or_left,
             output_names: None,
             join_nulls,
-            row_values: RowValues::new(join_columns_right)
+            row_values: RowValues::new(join_columns_right, false)
         }
     }
 

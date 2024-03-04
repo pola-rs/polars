@@ -16,15 +16,18 @@ pub(super) struct RowValues {
     // Location of join columns.
     // These column locations need to be dropped from the rhs
     pub join_column_idx: Option<Vec<usize>>,
+    det_join_idx: bool
 }
 
 impl RowValues {
-    pub(super) fn new(join_column_eval: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>) -> Self {
+    pub(super) fn new(join_column_eval: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>, det_join_idx: bool) -> Self {
         Self {
             current_rows: Default::default(),
             join_column_eval,
             join_column_idx: None,
             join_columns_material: vec![],
+            det_join_idx
+
         }
     }
 
@@ -40,7 +43,7 @@ impl RowValues {
     ) -> PolarsResult<BinaryArray<i64>> {
         // Memory should already be cleared on previous iteration.
         debug_assert!(self.join_columns_material.is_empty());
-        let determine_idx = self.join_column_idx.is_none();
+        let determine_idx = self.det_join_idx && self.join_column_idx.is_none();
         let mut names = vec![];
 
         for phys_e in self.join_column_eval.iter() {

@@ -41,7 +41,6 @@ pub struct GenericJoinProbe<K: ExtraPayload> {
     /// In inner join these are the left table.
     /// In left join there are the right table.
     join_tuples_a: Vec<ChunkId>,
-    join_tuples_a_left_join: Vec<Option<ChunkId>>,
     /// in inner join these are the right table
     /// in left join there are the left table
     join_tuples_b: Vec<DfIdx>,
@@ -98,14 +97,13 @@ impl<K: ExtraPayload> GenericJoinProbe<K> {
             hb,
             hash_tables,
             join_tuples_a: vec![],
-            join_tuples_a_left_join: vec![],
             join_tuples_b: vec![],
             hashes: amortized_hashes,
             swapped_or_left,
             output_names: None,
             how,
             join_nulls,
-            row_values: RowValues::new(join_columns_right),
+            row_values: RowValues::new(join_columns_right, !swapped_or_left),
         }
     }
 
@@ -165,14 +163,13 @@ impl<K: ExtraPayload> GenericJoinProbe<K> {
             match entry {
                 Some(indexes_right) => {
                     let indexes_right = &indexes_right.0;
-                    self.join_tuples_a_left_join
-                        .extend(indexes_right.iter().copied().map(Some));
+                    self.join_tuples_a.extend_from_slice(indexes_right);
                     self.join_tuples_b
                         .extend(std::iter::repeat(df_idx_left).take(indexes_right.len()));
                 },
                 None => {
                     self.join_tuples_b.push(df_idx_left);
-                    self.join_tuples_a_left_join.push(None);
+                    self.join_tuples_a.push(ChunkId::null());
                 },
             }
         }
@@ -187,7 +184,7 @@ impl<K: ExtraPayload> GenericJoinProbe<K> {
         // and streams the left table through. This allows us to maintain
         // the left table order
 
-        self.join_tuples_a_left_join.clear();
+        self.join_tuples_a.clear();
         self.join_tuples_b.clear();
         let mut hashes = std::mem::take(&mut self.hashes);
         let rows = self
@@ -213,7 +210,7 @@ impl<K: ExtraPayload> GenericJoinProbe<K> {
                 ._take_unchecked_slice_sorted(&self.join_tuples_b, false, IsSorted::Ascending)
         };
         let right_df =
-            unsafe { right_df._take_opt_chunked_unchecked_seq(&self.join_tuples_a_left_join) };
+            unsafe { right_df._take_opt_chunked_unchecked_seq(&self.join_tuples_a) };
 
         let out = self.finish_join(left_df, right_df)?;
 

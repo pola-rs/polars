@@ -24,7 +24,7 @@ pub trait DfTake: IntoDf {
     ///
     /// # Safety
     /// Does not do any bound checks.
-    unsafe fn _take_opt_chunked_unchecked_seq(&self, idx: &[Option<ChunkId>]) -> DataFrame {
+    unsafe fn _take_opt_chunked_unchecked_seq(&self, idx: &[ChunkId]) -> DataFrame {
         let cols = self
             .to_df()
             ._apply_columns(&|s| s.take_opt_chunked_unchecked(idx));
@@ -44,7 +44,9 @@ pub trait DfTake: IntoDf {
 
     /// # Safety
     /// Doesn't perform any bound checks
-    unsafe fn _take_opt_chunked_unchecked(&self, idx: &[Option<ChunkId>]) -> DataFrame {
+    ///
+    /// Check for null state in `ChunkId`.
+    unsafe fn _take_opt_chunked_unchecked(&self, idx: &[ChunkId]) -> DataFrame {
         let cols = self
             .to_df()
             ._apply_columns_par(&|s| s.take_opt_chunked_unchecked(idx));
@@ -63,7 +65,7 @@ pub trait TakeChunked {
 
     /// # Safety
     /// This function doesn't do any bound checks.
-    unsafe fn take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Self;
+    unsafe fn take_opt_chunked_unchecked(&self, by: &[ChunkId]) -> Self;
 }
 
 impl TakeChunked for Series {
@@ -119,7 +121,8 @@ impl TakeChunked for Series {
         unsafe { out.cast_unchecked(self.dtype()).unwrap() }
     }
 
-    unsafe fn take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Self {
+    /// Take function that checks of null state in `ChunkIdx`.
+    unsafe fn take_opt_chunked_unchecked(&self, by: &[ChunkId]) -> Self {
         let phys = self.to_physical_repr();
         use DataType::*;
         let out = match phys.dtype() {
@@ -204,7 +207,8 @@ where
         out
     }
 
-    unsafe fn take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Self {
+    // Take function that checks of null state in `ChunkIdx`.
+    unsafe fn take_opt_chunked_unchecked(&self, by: &[ChunkId]) -> Self {
         let arrow_dtype = self.dtype().to_arrow(true);
 
         if let Some(iter) = self.downcast_slices() {
@@ -212,11 +216,13 @@ where
             let arr = by
                 .iter()
                 .map(|chunk_id| {
-                    chunk_id.map(|chunk_id| {
+                    if chunk_id.is_null() {
+                        None
+                    } else {
                         let (chunk_idx, array_idx) = chunk_id.extract();
                         let vals = *targets.get_unchecked_release(chunk_idx as usize);
-                        vals.get_unchecked_release(array_idx as usize).clone()
-                    })
+                        Some(vals.get_unchecked_release(array_idx as usize).clone())
+                    }
                 })
                 .collect_arr_trusted_with_dtype(arrow_dtype);
 
@@ -226,11 +232,13 @@ where
             let arr = by
                 .iter()
                 .map(|chunk_id| {
-                    chunk_id.and_then(|chunk_id| {
+                    if chunk_id.is_null() {
+                        None
+                    } else {
                         let (chunk_idx, array_idx) = chunk_id.extract();
                         let vals = *targets.get_unchecked_release(chunk_idx as usize);
                         vals.get_unchecked(array_idx as usize)
-                    })
+                    }
                 })
                 .collect_arr_trusted_with_dtype(arrow_dtype);
 
