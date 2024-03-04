@@ -9682,6 +9682,7 @@ class DataFrame:
         *,
         separator: str = "_",
         drop_first: bool = False,
+        keep_columns: bool = False,
     ) -> DataFrame:
         """
         Convert categorical variables into dummy/indicator variables.
@@ -9695,6 +9696,8 @@ class DataFrame:
             Separator/delimiter used when generating column names.
         drop_first
             Remove the first category from the variables being encoded.
+        keep_columns
+            Retain columns used to generated dummy columns.
 
         Examples
         --------
@@ -9727,6 +9730,17 @@ class DataFrame:
         │ 1     ┆ 1     ┆ 1     │
         └───────┴───────┴───────┘
 
+        >>> df.to_dummies(keep_columns=True)
+        shape: (2, 9)
+        ┌─────┬───────┬───────┬─────┬───┬───────┬─────┬───────┬───────┐
+        │ foo ┆ foo_1 ┆ foo_2 ┆ bar ┆ … ┆ bar_4 ┆ ham ┆ ham_a ┆ ham_b │
+        │ --- ┆ ---   ┆ ---   ┆ --- ┆   ┆ ---   ┆ --- ┆ ---   ┆ ---   │
+        │ i64 ┆ u8    ┆ u8    ┆ i64 ┆   ┆ u8    ┆ str ┆ u8    ┆ u8    │
+        ╞═════╪═══════╪═══════╪═════╪═══╪═══════╪═════╪═══════╪═══════╡
+        │ 1   ┆ 1     ┆ 0     ┆ 3   ┆ … ┆ 0     ┆ a   ┆ 1     ┆ 0     │
+        │ 2   ┆ 0     ┆ 1     ┆ 4   ┆ … ┆ 1     ┆ b   ┆ 0     ┆ 1     │
+        └─────┴───────┴───────┴─────┴───┴───────┴─────┴───────┴───────┘
+
         >>> import polars.selectors as cs
         >>> df.to_dummies(cs.integer(), separator=":")
         shape: (2, 5)
@@ -9752,7 +9766,9 @@ class DataFrame:
         """
         if columns is not None:
             columns = _expand_selectors(self, columns)
-        return self._from_pydf(self._df.to_dummies(columns, separator, drop_first))
+        return self._from_pydf(
+            self._df.to_dummies(columns, separator, drop_first, keep_columns)
+        )
 
     def unique(
         self,

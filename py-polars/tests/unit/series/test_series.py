@@ -1357,6 +1357,16 @@ def test_to_dummies_drop_first() -> None:
     assert_frame_equal(result, expected)
 
 
+def test_to_dummies_keep_column() -> None:
+    s = pl.Series("a", [1, 2, 3])
+    result = s.to_dummies(keep_column=True)
+    expected = pl.DataFrame(
+        {"a": [1, 2, 3], "a_1": [1, 0, 0], "a_2": [0, 1, 0], "a_3": [0, 0, 1]},
+        schema={"a": pl.Int64, "a_1": pl.UInt8, "a_2": pl.UInt8, "a_3": pl.UInt8},
+    )
+    assert_frame_equal(result, expected)
+
+
 def test_to_dummies_null_clash_19096() -> None:
     with pytest.raises(
         DuplicateError, match="column with name '_null' has more than one occurrence"

@@ -806,6 +806,25 @@ def test_to_dummies_drop_first() -> None:
     ]
 
 
+def test_to_dummies_keep_columns() -> None:
+    df = pl.DataFrame({"A": ["a", "b", "c"], "B": [1, 3, 5]})
+    dummies = df.to_dummies(keep_columns=True)
+
+    expected = pl.DataFrame(
+        {
+            "A": ["a", "b", "c"],
+            "A_a": pl.Series([1, 0, 0], dtype=pl.UInt8),
+            "A_b": pl.Series([0, 1, 0], dtype=pl.UInt8),
+            "A_c": pl.Series([0, 0, 1], dtype=pl.UInt8),
+            "B": [1, 3, 5],
+            "B_1": pl.Series([1, 0, 0], dtype=pl.UInt8),
+            "B_3": pl.Series([0, 1, 0], dtype=pl.UInt8),
+            "B_5": pl.Series([0, 0, 1], dtype=pl.UInt8),
+        }
+    )
+    assert_frame_equal(dummies, expected)
+
+
 def test_to_pandas(df: pl.DataFrame) -> None:
     # pyarrow cannot deal with unsigned dictionary integer yet.
     # pyarrow cannot convert a time64 w/ non-zero nanoseconds

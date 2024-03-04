@@ -336,15 +336,16 @@ impl PySeries {
         Ok(s.into())
     }
 
-    #[pyo3(signature = (separator, drop_first=false))]
+    #[pyo3(signature = (separator, drop_first=false, keep_column=false))]
     fn to_dummies(
         &self,
         py: Python,
         separator: Option<&str>,
         drop_first: bool,
+        keep_column: bool,
     ) -> PyResult<PyDataFrame> {
         let df = py
-            .allow_threads(|| self.series.to_dummies(separator, drop_first))
+            .allow_threads(|| self.series.to_dummies(separator, drop_first, keep_column))
             .map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }
