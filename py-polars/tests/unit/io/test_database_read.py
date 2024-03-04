@@ -9,17 +9,19 @@ from pathlib import Path
 from types import GeneratorType
 from typing import TYPE_CHECKING, Any, NamedTuple
 
-import polars as pl
 import pytest
-from polars.exceptions import UnsuitableSQLError
-from polars.io.database import _ARROW_DRIVER_REGISTRY_
-from polars.testing import assert_frame_equal
 from sqlalchemy import Integer, MetaData, Table, create_engine, func, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.sql.expression import cast as alchemy_cast
 
+import polars as pl
+from polars.exceptions import UnsuitableSQLError
+from polars.io.database import _ARROW_DRIVER_REGISTRY_
+from polars.testing import assert_frame_equal
+
 if TYPE_CHECKING:
     import pyarrow as pa
+
     from polars.type_aliases import (
         ConnectionOrCursor,
         DbReadEngine,
