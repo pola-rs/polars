@@ -34,7 +34,7 @@ def adbc_sqlite_connect(*args: Any, **kwargs: Any) -> Any:
     with suppress(ModuleNotFoundError):  # not available on 3.8/windows
         from adbc_driver_sqlite.dbapi import connect
 
-        args = [str(a) if isinstance(a, Path) else a for a in args]
+        args = tuple(str(a) if isinstance(a, Path) else a for a in args)
         return connect(*args, **kwargs)
 
 
@@ -373,8 +373,6 @@ def test_read_database_alchemy_selectable(tmp_sqlite_db: Path) -> None:
 
 
 def test_read_database_parameterised(tmp_sqlite_db: Path) -> None:
-    supports_adbc_sqlite = sys.version_info >= (3, 9) and sys.platform != "win32"
-
     # raw cursor "execute" only takes positional params, alchemy cursor takes kwargs
     alchemy_engine = create_engine(f"sqlite:///{tmp_sqlite_db}")
     alchemy_conn: ConnectionOrCursor = alchemy_engine.connect()
@@ -407,30 +405,58 @@ def test_read_database_parameterised(tmp_sqlite_db: Path) -> None:
                 ),
             )
 
-        # test URI read method (adbc only; no connectorx support for execute_options)
-        if supports_adbc_sqlite:
-            uri = alchemy_engine.url.render_as_string(hide_password=False)
-            assert_frame_equal(
-                expected_frame,
-                pl.read_database_uri(
-                    query.format(n=param),
-                    uri=uri,
-                    engine="adbc",
-                    execute_options={"parameters": param_value},
-                ),
-            )
 
-    if supports_adbc_sqlite:
-        with pytest.raises(
-            ValueError,
-            match="connectorx.*does not support.*execute_options",
-        ):
+@pytest.mark.parametrize(
+    ("param", "param_value"),
+    [
+        (":n", {"n": 0}),
+        ("?", (0,)),
+        ("?", [0]),
+    ],
+)
+@pytest.mark.skipif(
+    sys.version_info < (3, 9) or sys.platform == "win32",
+    reason="adbc_driver_sqlite not available on py3.8/windows",
+)
+def test_read_database_parameterised_uri(
+    param: str, param_value: Any, tmp_sqlite_db: Path
+) -> None:
+    alchemy_engine = create_engine(f"sqlite:///{tmp_sqlite_db}")
+    uri = alchemy_engine.url.render_as_string(hide_password=False)
+    query = """
+        SELECT CAST(STRFTIME('%Y',"date") AS INT) as "year", name, value
+        FROM test_data
+        WHERE value < {n}
+    """
+    expected_frame = pl.DataFrame({"year": [2021], "name": ["other"], "value": [-99.5]})
+
+    for param, param_value in (
+        (":n", {"n": 0}),
+        ("?", (0,)),
+        ("?", [0]),
+    ):
+        # test URI read method (adbc only)
+        assert_frame_equal(
+            expected_frame,
             pl.read_database_uri(
-                query.format(n=":n"),
+                query.format(n=param),
                 uri=uri,
-                engine="connectorx",
-                execute_options={"parameters": (":n", {"n": 0})},
-            )
+                engine="adbc",
+                execute_options={"parameters": param_value},
+            ),
+        )
+
+    #  no connectorx support for execute_options
+    with pytest.raises(
+        ValueError,
+        match="connectorx.*does not support.*execute_options",
+    ):
+        pl.read_database_uri(
+            query.format(n=":n"),
+            uri=uri,
+            engine="connectorx",
+            execute_options={"parameters": (":n", {"n": 0})},
+        )
 
 
 @pytest.mark.parametrize(
