@@ -60,6 +60,7 @@ pub struct GenericOuterJoinProbe<K: ExtraPayload> {
     output_names: Option<Vec<SmartString>>,
     join_nulls: bool,
     row_values: RowValues,
+    thread_no: usize
 }
 
 
@@ -114,6 +115,7 @@ impl<K: ExtraPayload> GenericOuterJoinProbe<K> {
             output_names: None,
             join_nulls,
             row_values: RowValues::new(join_columns_right, false)
+            thread_no: 0
         }
     }
 
@@ -225,6 +227,19 @@ impl<K: ExtraPayload> GenericOuterJoinProbe<K> {
 
         Ok(OperatorResult::Finished(chunk.with_data(out)))
     }
+
+    fn execute_flush(&mut self) -> PolarsResult<OperatorResult> {
+        let ht = self.hash_tables.inner();
+        let n = ht.len();
+
+        ht.iter().enumerate().filter_map(|(i, ht)|{
+            if i % n == self.thread_no {
+
+            } else {
+                None
+            }
+        })
+    }
 }
 
 impl<K: ExtraPayload> Operator for GenericOuterJoinProbe<K> {
@@ -236,8 +251,13 @@ impl<K: ExtraPayload> Operator for GenericOuterJoinProbe<K> {
         self.execute_outer(context, chunk)
     }
 
-    fn split(&self, _thread_no: usize) -> Box<dyn Operator> {
-        let new = self.clone();
+    fn flush(&mut self) -> PolarsResult<OperatorResult> {
+        self.execute_flush()
+    }
+
+    fn split(&self, thread_no: usize) -> Box<dyn Operator> {
+        let mut new = self.clone();
+        new.thread_no = thread_no;
         Box::new(new)
     }
     fn fmt(&self) -> &str {
