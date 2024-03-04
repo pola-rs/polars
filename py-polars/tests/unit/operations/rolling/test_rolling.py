@@ -388,7 +388,7 @@ def test_rolling_slice_pushdown() -> None:
         df.sort("a")
         .rolling(
             "a",
-            by="b",
+            group_by="b",
             period="2i",
         )
         .agg([(pl.col("c") - pl.col("c").shift(fill_value=0)).sum().alias("c")])
@@ -498,7 +498,7 @@ def test_rolling_iter() -> None:
     # With 'by' argument
     result2 = [
         (name, data.shape)
-        for name, data in df.rolling(index_column="date", period="2d", by="a")
+        for name, data in df.rolling(index_column="date", period="2d", group_by="a")
     ]
     expected2 = [
         ((1, date(2020, 1, 1)), (1, 3)),

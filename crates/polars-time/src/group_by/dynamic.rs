@@ -92,13 +92,13 @@ const UP_NAME: &str = "_upper_boundary";
 pub trait PolarsTemporalGroupby {
     fn group_by_rolling(
         &self,
-        by: Vec<Series>,
+        group_by: Vec<Series>,
         options: &RollingGroupOptions,
     ) -> PolarsResult<(Series, Vec<Series>, GroupsProxy)>;
 
     fn group_by_dynamic(
         &self,
-        by: Vec<Series>,
+        group_by: Vec<Series>,
         options: &DynamicGroupOptions,
     ) -> PolarsResult<(Series, Vec<Series>, GroupsProxy)>;
 }
@@ -106,25 +106,25 @@ pub trait PolarsTemporalGroupby {
 impl PolarsTemporalGroupby for DataFrame {
     fn group_by_rolling(
         &self,
-        by: Vec<Series>,
+        group_by: Vec<Series>,
         options: &RollingGroupOptions,
     ) -> PolarsResult<(Series, Vec<Series>, GroupsProxy)> {
-        Wrap(self).group_by_rolling(by, options)
+        Wrap(self).group_by_rolling(group_by, options)
     }
 
     fn group_by_dynamic(
         &self,
-        by: Vec<Series>,
+        group_by: Vec<Series>,
         options: &DynamicGroupOptions,
     ) -> PolarsResult<(Series, Vec<Series>, GroupsProxy)> {
-        Wrap(self).group_by_dynamic(by, options)
+        Wrap(self).group_by_dynamic(group_by, options)
     }
 }
 
 impl Wrap<&DataFrame> {
     fn group_by_rolling(
         &self,
-        by: Vec<Series>,
+        group_by: Vec<Series>,
         options: &RollingGroupOptions,
     ) -> PolarsResult<(Series, Vec<Series>, GroupsProxy)> {
         polars_ensure!(
@@ -133,7 +133,7 @@ impl Wrap<&DataFrame> {
                         "rolling window period should be strictly positive",
         );
         let time = self.0.column(&options.index_column)?.clone();
-        if by.is_empty() {
+        if group_by.is_empty() {
             // If by is given, the column must be sorted in the 'by' arg, which we can not check now
             // this will be checked when the groups are materialized.
             ensure_sorted_arg(&time, "group_by_rolling")?;
@@ -155,7 +155,7 @@ impl Wrap<&DataFrame> {
                 let dt = time.cast(&Int64).unwrap().cast(&time_type_dt).unwrap();
                 let (out, by, gt) = self.impl_group_by_rolling(
                     dt,
-                    by,
+                    group_by,
                     options,
                     TimeUnit::Nanoseconds,
                     None,
@@ -169,7 +169,7 @@ impl Wrap<&DataFrame> {
                 let dt = time.cast(&time_type).unwrap();
                 let (out, by, gt) = self.impl_group_by_rolling(
                     dt,
-                    by,
+                    group_by,
                     options,
                     TimeUnit::Nanoseconds,
                     None,
@@ -186,17 +186,22 @@ impl Wrap<&DataFrame> {
         };
         match tz {
             #[cfg(feature = "timezones")]
-            Some(tz) => {
-                self.impl_group_by_rolling(dt, by, options, tu, tz.parse::<Tz>().ok(), time_type)
-            },
-            _ => self.impl_group_by_rolling(dt, by, options, tu, None, time_type),
+            Some(tz) => self.impl_group_by_rolling(
+                dt,
+                group_by,
+                options,
+                tu,
+                tz.parse::<Tz>().ok(),
+                time_type,
+            ),
+            _ => self.impl_group_by_rolling(dt, group_by, options, tu, None, time_type),
         }
     }
 
     /// Returns: time_keys, keys, groupsproxy.
     fn group_by_dynamic(
         &self,
-        by: Vec<Series>,
+        group_by: Vec<Series>,
         options: &DynamicGroupOptions,
     ) -> PolarsResult<(Series, Vec<Series>, GroupsProxy)> {
         if options.offset.parsed_int || options.every.parsed_int || options.period.parsed_int {
@@ -209,7 +214,7 @@ impl Wrap<&DataFrame> {
         }
 
         let time = self.0.column(&options.index_column)?.rechunk();
-        if by.is_empty() {
+        if group_by.is_empty() {
             // If by is given, the column must be sorted in the 'by' arg, which we can not check now
             // this will be checked when the groups are materialized.
             ensure_sorted_arg(&time, "group_by_dynamic")?;
@@ -228,8 +233,13 @@ impl Wrap<&DataFrame> {
             Int32 => {
                 let time_type = Datetime(TimeUnit::Nanoseconds, None);
                 let dt = time.cast(&Int64).unwrap().cast(&time_type).unwrap();
-                let (out, mut keys, gt) =
-                    self.impl_group_by_dynamic(dt, by, options, TimeUnit::Nanoseconds, &time_type)?;
+                let (out, mut keys, gt) = self.impl_group_by_dynamic(
+                    dt,
+                    group_by,
+                    options,
+                    TimeUnit::Nanoseconds,
+                    &time_type,
+                )?;
                 let out = out.cast(&Int64).unwrap().cast(&Int32).unwrap();
                 for k in &mut keys {
                     if k.name() == UP_NAME || k.name() == LB_NAME {
@@ -241,8 +251,13 @@ impl Wrap<&DataFrame> {
             Int64 => {
                 let time_type = Datetime(TimeUnit::Nanoseconds, None);
                 let dt = time.cast(&time_type).unwrap();
-                let (out, mut keys, gt) =
-                    self.impl_group_by_dynamic(dt, by, options, TimeUnit::Nanoseconds, &time_type)?;
+                let (out, mut keys, gt) = self.impl_group_by_dynamic(
+                    dt,
+                    group_by,
+                    options,
+                    TimeUnit::Nanoseconds,
+                    &time_type,
+                )?;
                 let out = out.cast(&Int64).unwrap();
                 for k in &mut keys {
                     if k.name() == UP_NAME || k.name() == LB_NAME {
@@ -257,7 +272,7 @@ impl Wrap<&DataFrame> {
                 dt
             ),
         };
-        self.impl_group_by_dynamic(dt, by, options, tu, time_type)
+        self.impl_group_by_dynamic(dt, group_by, options, tu, time_type)
     }
 
     fn impl_group_by_dynamic(
