@@ -127,9 +127,7 @@ pub struct ChunkId<const CHUNK_BITS: u64 = DEFAULT_CHUNK_BITS> {
 impl<const CHUNK_BITS: u64> ChunkId<CHUNK_BITS> {
     #[inline(always)]
     pub const fn null() -> Self {
-        Self {
-            swizzled: u64::MAX
-        }
+        Self { swizzled: u64::MAX }
     }
 
     #[inline(always)]

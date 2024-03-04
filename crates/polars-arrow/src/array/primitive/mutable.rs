@@ -140,9 +140,7 @@ impl<T: NativeType> MutablePrimitiveArray<T> {
     #[inline]
     pub fn push(&mut self, value: Option<T>) {
         match value {
-            Some(value) => {
-                self.push_value(value)
-            },
+            Some(value) => self.push_value(value),
             None => {
                 self.values.push(T::default());
                 match &mut self.validity {

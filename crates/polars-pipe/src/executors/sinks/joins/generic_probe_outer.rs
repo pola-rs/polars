@@ -2,6 +2,8 @@ use std::borrow::Cow;
 use std::sync::atomic::Ordering;
 
 use arrow::array::{Array, BinaryArray, MutablePrimitiveArray};
+use arrow::bitmap::{Bitmap, MutableBitmap};
+use hashbrown::hash_map::RawEntryMut;
 use polars_core::export::ahash::RandomState;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
@@ -10,16 +12,15 @@ use polars_ops::frame::join::_finish_join;
 use polars_ops::prelude::JoinType;
 use polars_row::RowsEncoded;
 use polars_utils::index::ChunkId;
+use polars_utils::nulls::IsNull;
 use polars_utils::slice::GetSaferUnchecked;
 use smartstring::alias::String as SmartString;
-use arrow::bitmap::{Bitmap, MutableBitmap};
-use hashbrown::hash_map::RawEntryMut;
-use crate::executors::sinks::ExtraPayload;
 
 use crate::executors::sinks::joins::generic_build::*;
-use crate::executors::sinks::joins::{Key, PartitionedMap};
 use crate::executors::sinks::joins::row_values::RowValues;
+use crate::executors::sinks::joins::{Key, PartitionedMap};
 use crate::executors::sinks::utils::hash_rows;
+use crate::executors::sinks::ExtraPayload;
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{DataChunk, Operator, OperatorResult, PExecutionContext};
 
@@ -28,6 +29,8 @@ pub struct GenericOuterJoinProbe<K: ExtraPayload> {
     /// all chunks are stacked into a single dataframe
     /// the dataframe is not rechunked.
     df_a: Arc<DataFrame>,
+    // Dummy needed for the the flush phase.
+    df_b_dummy: Option<DataFrame>,
     /// The join columns are all tightly packed
     /// the values of a join column(s) can be found
     /// by:
@@ -55,14 +58,13 @@ pub struct GenericOuterJoinProbe<K: ExtraPayload> {
     join_tuples_b: MutablePrimitiveArray<IdxSize>,
     hashes: Vec<u64>,
     // the join order is swapped to ensure we hash the smaller table
-    swapped_or_left: bool,
+    swapped: bool,
     // cached output names
     output_names: Option<Vec<SmartString>>,
     join_nulls: bool,
     row_values: RowValues,
-    thread_no: usize
+    thread_no: usize,
 }
-
 
 impl<K: ExtraPayload> GenericOuterJoinProbe<K> {
     #[allow(clippy::too_many_arguments)]
@@ -99,10 +101,15 @@ impl<K: ExtraPayload> GenericOuterJoinProbe<K> {
             df_a = df_a.drop_many(&names);
         }
 
-        let found_match_tracker = hash_tables.inner().iter().map(|v| MutableBitmap::from_len_zeroed(v.len())).collect();
+        let found_match_tracker = hash_tables
+            .inner()
+            .iter()
+            .map(|v| MutableBitmap::from_len_zeroed(v.len()))
+            .collect();
 
         GenericOuterJoinProbe {
             df_a: Arc::new(df_a),
+            df_b_dummy: None,
             materialized_join_cols,
             suffix,
             hb,
@@ -111,19 +118,20 @@ impl<K: ExtraPayload> GenericOuterJoinProbe<K> {
             join_tuples_a: vec![],
             join_tuples_b: MutablePrimitiveArray::new(),
             hashes: amortized_hashes,
-            swapped_or_left,
+            swapped: swapped_or_left,
             output_names: None,
             join_nulls,
-            row_values: RowValues::new(join_columns_right, false)
-            thread_no: 0
+            row_values: RowValues::new(join_columns_right, false),
+            thread_no: 0,
         }
     }
 
-    fn finish_join(
-        &mut self,
-        mut left_df: DataFrame,
-        right_df: DataFrame,
-    ) -> PolarsResult<DataFrame> {
+    fn finish_join(&mut self, left_df: DataFrame, right_df: DataFrame) -> PolarsResult<DataFrame> {
+        let (mut left_df, right_df) = if self.swapped {
+            (right_df, left_df)
+        } else {
+            (left_df, right_df)
+        };
         Ok(match &self.output_names {
             None => {
                 let out = _finish_join(left_df, right_df, Some(self.suffix.as_ref()))?;
@@ -153,11 +161,12 @@ impl<K: ExtraPayload> GenericOuterJoinProbe<K> {
     where
         I: Iterator<Item = (usize, (&'b u64, &'b [u8]))> + 'b,
     {
-
         for (i, (h, row)) in iter {
             let df_idx_right = i as IdxSize;
 
-            let entry = self.hash_tables.raw_entry(*h)
+            let entry = self
+                .hash_tables
+                .raw_entry(*h)
                 .from_hash(*h, |key| {
                     compare_fn(key, *h, &self.materialized_join_cols, row)
                 })
@@ -168,7 +177,8 @@ impl<K: ExtraPayload> GenericOuterJoinProbe<K> {
                 tracker.get_tracker().store(true, Ordering::Relaxed);
 
                 self.join_tuples_a.extend_from_slice(indexes_left);
-                self.join_tuples_b.extend_constant(indexes_left.len(), Some(df_idx_right));
+                self.join_tuples_b
+                    .extend_constant(indexes_left.len(), Some(df_idx_right));
             } else {
                 self.join_tuples_a.push(ChunkId::null());
                 self.join_tuples_b.push_value(df_idx_right);
@@ -183,8 +193,15 @@ impl<K: ExtraPayload> GenericOuterJoinProbe<K> {
     ) -> PolarsResult<OperatorResult> {
         self.join_tuples_a.clear();
         self.join_tuples_b.clear();
+
+        if self.df_b_dummy.is_none() {
+            self.df_b_dummy = Some(chunk.data.clear())
+        }
+
         let mut hashes = std::mem::take(&mut self.hashes);
-        let rows = self.row_values.get_values(context, chunk, self.join_nulls)?;
+        let rows = self
+            .row_values
+            .get_values(context, chunk, self.join_nulls)?;
         hash_rows(&rows, &mut hashes, &self.hb);
 
         if self.join_nulls || rows.null_count() == 0 {
@@ -213,32 +230,47 @@ impl<K: ExtraPayload> GenericOuterJoinProbe<K> {
                 out
             })
         };
-
-        let (a, b) = if self.swapped_or_left {
-            (right_df, left_df)
-        } else {
-            (left_df, right_df)
-        };
-        let out = self.finish_join(a, b)?;
-
-        // Clear memory.
-        self.row_values.clear();
-        self.hashes.clear();
-
+        let out = self.finish_join(left_df, right_df)?;
         Ok(OperatorResult::Finished(chunk.with_data(out)))
     }
 
     fn execute_flush(&mut self) -> PolarsResult<OperatorResult> {
         let ht = self.hash_tables.inner();
         let n = ht.len();
+        self.join_tuples_a.clear();
 
-        ht.iter().enumerate().filter_map(|(i, ht)|{
+        ht.iter().enumerate().for_each(|(i, ht)| {
             if i % n == self.thread_no {
+                ht.iter().for_each(|(_k, (idx_left, tracker))| {
+                    let found_match = tracker.get_tracker().load(Ordering::Relaxed);
 
-            } else {
-                None
+                    if !found_match {
+                        self.join_tuples_a.extend_from_slice(idx_left);
+                    }
+                })
             }
-        })
+        });
+
+        let left_df = unsafe {
+            self.df_a
+                ._take_chunked_unchecked_seq(&self.join_tuples_a, IsSorted::Not)
+        };
+
+        let size = left_df.height();
+        let right_df = self.df_b_dummy.as_ref().unwrap();
+
+        let right_df = unsafe {
+            DataFrame::new_no_checks(
+                right_df
+                    .get_columns()
+                    .iter()
+                    .map(|s| Series::full_null(s.name(), size, s.dtype()))
+                    .collect(),
+            )
+        };
+
+        let out = self.finish_join(left_df, right_df)?;
+        Ok(OperatorResult::Finished(DataChunk::new(0, out)))
     }
 }
 

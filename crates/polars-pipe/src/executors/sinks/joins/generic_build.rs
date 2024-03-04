@@ -19,7 +19,6 @@ use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkRe
 pub(super) type ChunkIdx = IdxSize;
 pub(super) type DfIdx = IdxSize;
 
-
 pub struct GenericBuild<K: ExtraPayload> {
     chunks: Vec<DataChunk>,
     // the join columns are all tightly packed

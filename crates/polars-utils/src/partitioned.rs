@@ -30,7 +30,10 @@ impl<K, V, S> PartitionedHashMap<K, V, S> {
     }
 
     #[inline]
-    pub fn raw_entry_and_partition_mut(&mut self, h: u64) -> (RawEntryBuilderMut<'_, K, V, S>, usize) {
+    pub fn raw_entry_and_partition_mut(
+        &mut self,
+        h: u64,
+    ) -> (RawEntryBuilderMut<'_, K, V, S>, usize) {
         let partition = hash_to_partition(h, self.inner.len());
         let current_table = unsafe { self.inner.get_unchecked_release_mut(partition) };
         (current_table.raw_entry_mut(), partition)
