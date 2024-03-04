@@ -315,7 +315,6 @@ def test_read_database(
     expected_dates: list[date | str],
     schema_overrides: SchemaDict | None,
     batch_size: int | None,
-    tmp_path: Path,
     tmp_sqlite_db: Path,
 ) -> None:
     if read_method == "read_database_uri":
@@ -349,7 +348,7 @@ def test_read_database(
     assert df["date"].to_list() == expected_dates
 
 
-def test_read_database_alchemy_selectable(tmp_path: Path, tmp_sqlite_db: Path) -> None:
+def test_read_database_alchemy_selectable(tmp_sqlite_db: Path) -> None:
     # various flavours of alchemy connection
     alchemy_engine = create_engine(f"sqlite:///{tmp_sqlite_db}")
     alchemy_session: ConnectionOrCursor = sessionmaker(bind=alchemy_engine)()
@@ -371,7 +370,7 @@ def test_read_database_alchemy_selectable(tmp_path: Path, tmp_sqlite_db: Path) -
         )
 
 
-def test_read_database_parameterised(tmp_path: Path, tmp_sqlite_db: Path) -> None:
+def test_read_database_parameterised(tmp_sqlite_db: Path) -> None:
     supports_adbc_sqlite = sys.version_info >= (3, 9) and sys.platform != "win32"
 
     # raw cursor "execute" only takes positional params, alchemy cursor takes kwargs
@@ -618,7 +617,6 @@ def test_read_database_exceptions(
     engine: DbReadEngine | None,
     execute_options: dict[str, Any] | None,
     kwargs: dict[str, Any] | None,
-    tmp_path: Path,
 ) -> None:
     if read_method == "read_database_uri":
         conn = f"{protocol}://test" if isinstance(protocol, str) else protocol
