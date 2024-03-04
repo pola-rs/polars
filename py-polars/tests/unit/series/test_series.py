@@ -1542,6 +1542,16 @@ def test_to_dummies() -> None:
     assert_frame_equal(result, expected)
 
 
+def test_to_dummies_keep_column() -> None:
+    s = pl.Series("a", [1, 2, 3])
+    result = s.to_dummies(keep_column=True)
+    expected = pl.DataFrame(
+        {"a": [1, 2, 3], "a_1": [1, 0, 0], "a_2": [0, 1, 0], "a_3": [0, 0, 1]},
+        schema={"a": pl.Int64, "a_1": pl.UInt8, "a_2": pl.UInt8, "a_3": pl.UInt8},
+    )
+    assert_frame_equal(result, expected)
+
+
 def test_chunk_lengths() -> None:
     s = pl.Series("a", [1, 2, 2, 3])
     # this is a Series with one chunk, of length 4
