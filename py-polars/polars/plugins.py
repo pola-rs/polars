@@ -1,33 +1,39 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
-from polars._utils.unstable import unstable
 from polars._utils.parse_expr_input import parse_as_list_of_expressions
+from polars._utils.unstable import unstable
 from polars._utils.wrap import wrap_expr
+
+if TYPE_CHECKING:
+    from polars import Expr
+    from polars.type_aliases import IntoExpr
 
 __all__ = ["register_plugin"]
 
 
-def _get_shared_lib_location(package_init_path: str) -> str:
+def _get_shared_lib_location(package_init_path: str | Path) -> str:
     """Get location of dynamic library file."""
     if Path(package_init_path).is_file():
         package_dir = Path(package_init_path).parent
     else:
         package_dir = Path(package_init_path)
     for path in package_dir.iterdir():
-        if _is_shared_lib(path) and path.name.startswith(package_dir.name):
+        if _is_shared_lib(path):
             return str(path)
-    raise ValueError(f"No shared library found in {package_dir}")
+    msg = f"No shared library found in {package_dir}"
+    raise FileNotFoundError(msg)
 
 
 def _is_shared_lib(file: Path) -> bool:
     return file.name.endswith((".so", ".dll", ".pyd"))
 
+
 @unstable()
 def register_plugin(
-    args: IntoExpr | list[IntoExpr],
-    *,
+    *args: IntoExpr | list[IntoExpr],
     plugin_location: str | Path,
     symbol: str,
     kwargs: dict[Any, Any] | None = None,
@@ -37,7 +43,7 @@ def register_plugin(
     cast_to_supertypes: bool = False,
     pass_name_to_apply: bool = False,
     changes_length: bool = False,
-) -> pl.Expr:
+) -> Expr:
     """
     Register a shared library as a plugin.
 
@@ -83,14 +89,18 @@ def register_plugin(
         will ensure the name is set. This is an extra heap allocation per group.
     changes_length
         For example a `unique` or a `slice`
-    
+
     Returns
     -------
     pl.Expr
     """
     if not args:
-        raise ValueError("`args` must be non-empty")
-    args = parse_as_list_of_expressions(args)
+        msg = "`args` must be non-empty"
+        raise TypeError(msg)
+    pyexprs = parse_as_list_of_expressions(*args)
+    if not pyexprs:
+        msg = "`args` must be non-empty"
+        raise TypeError(msg)
     if kwargs is None:
         serialized_kwargs = b""
     else:
@@ -98,14 +108,14 @@ def register_plugin(
 
         # Choose the highest protocol supported by https://docs.rs/serde-pickle/latest/serde_pickle/
         serialized_kwargs = pickle.dumps(kwargs, protocol=5)
-    
+
     lib_location = _get_shared_lib_location(plugin_location)
-    
+
     return wrap_expr(
-        args[0].register_plugin(
+        pyexprs[0].register_plugin(
             lib_location,
             symbol,
-            args[1:],
+            pyexprs[1:],
             serialized_kwargs,
             is_elementwise,
             input_wildcard_expansion,
