@@ -2,6 +2,7 @@ use polars_core::utils::flatten::flatten_par;
 use polars_utils::hashing::{hash_to_partition, DirtyHash};
 use polars_utils::nulls::IsNull;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
+use polars_utils::IsNullIdx;
 
 use super::*;
 
@@ -13,11 +14,14 @@ unsafe fn apply_mapping(idx: Vec<IdxSize>, chunk_mapping: &[ChunkId]) -> Vec<Chu
 }
 
 #[cfg(feature = "chunked_ids")]
-unsafe fn apply_opt_mapping(idx: Vec<Option<IdxSize>>, chunk_mapping: &[ChunkId]) -> Vec<ChunkId> {
+unsafe fn apply_opt_mapping(idx: Vec<NullableIdxSize>, chunk_mapping: &[ChunkId]) -> Vec<ChunkId> {
     idx.iter()
-        .map(|opt_idx| match opt_idx {
-            None => ChunkId::null(),
-            Some(idx) => *chunk_mapping.get_unchecked(*idx as usize),
+        .map(|opt_idx| {
+            if opt_idx.is_null_idx() {
+                ChunkId::null()
+            } else {
+                *chunk_mapping.get_unchecked(*opt_idx as usize)
+            }
         })
         .collect()
 }
@@ -25,7 +29,7 @@ unsafe fn apply_opt_mapping(idx: Vec<Option<IdxSize>>, chunk_mapping: &[ChunkId]
 #[cfg(feature = "chunked_ids")]
 pub(super) fn finish_left_join_mappings(
     result_idx_left: Vec<IdxSize>,
-    result_idx_right: Vec<Option<IdxSize>>,
+    result_idx_right: Vec<NullableIdxSize>,
     chunk_mapping_left: Option<&[ChunkId]>,
     chunk_mapping_right: Option<&[ChunkId]>,
 ) -> LeftJoinIds {
@@ -46,7 +50,7 @@ pub(super) fn finish_left_join_mappings(
 #[cfg(not(feature = "chunked_ids"))]
 pub(super) fn finish_left_join_mappings(
     _result_idx_left: Vec<IdxSize>,
-    _result_idx_right: Vec<Option<IdxSize>>,
+    _result_idx_right: Vec<NullableIdxSize>,
     _chunk_mapping_left: Option<&[ChunkId]>,
     _chunk_mapping_right: Option<&[ChunkId]>,
 ) -> LeftJoinIds {
@@ -163,12 +167,12 @@ where
                         // left and right matches
                         Some(indexes_b) => {
                             result_idx_left.extend(std::iter::repeat(idx_a).take(indexes_b.len()));
-                            result_idx_right.extend(indexes_b.iter().copied().map(Some))
+                            result_idx_right.extend_from_slice(indexes_b);
                         },
                         // only left values, right = null
                         None => {
                             result_idx_left.push(idx_a);
-                            result_idx_right.push(None);
+                            result_idx_right.push(NullableIdxSize::null());
                         },
                     }
                 });

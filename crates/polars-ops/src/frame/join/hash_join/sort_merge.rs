@@ -4,6 +4,8 @@ use arrow::legacy::kernels::sorted_join;
 use polars_core::utils::_split_offsets;
 #[cfg(feature = "performant")]
 use polars_core::utils::flatten::flatten_par;
+#[cfg(feature = "performant")]
+use polars_utils::IsNullIdx;
 
 use super::*;
 
@@ -11,7 +13,7 @@ use super::*;
 fn par_sorted_merge_left_impl<T>(
     s_left: &ChunkedArray<T>,
     s_right: &ChunkedArray<T>,
-) -> (Vec<IdxSize>, Vec<Option<IdxSize>>)
+) -> (Vec<IdxSize>, Vec<NullableIdxSize>)
 where
     T: PolarsNumericType,
 {
@@ -39,7 +41,7 @@ where
 pub(super) fn par_sorted_merge_left(
     s_left: &Series,
     s_right: &Series,
-) -> (Vec<IdxSize>, Vec<Option<IdxSize>>) {
+) -> (Vec<IdxSize>, Vec<NullableIdxSize>) {
     // Don't use bit_repr here. It messes up sortedness.
     debug_assert_eq!(s_left.dtype(), s_right.dtype());
     let s_left = s_left.to_physical_repr();
@@ -153,7 +155,7 @@ pub(super) fn par_sorted_merge_inner_no_nulls(
 }
 
 #[cfg(feature = "performant")]
-fn to_left_join_ids(left_idx: Vec<IdxSize>, right_idx: Vec<Option<IdxSize>>) -> LeftJoinIds {
+fn to_left_join_ids(left_idx: Vec<IdxSize>, right_idx: Vec<NullableIdxSize>) -> LeftJoinIds {
     #[cfg(feature = "chunked_ids")]
     {
         (Either::Left(left_idx), Either::Left(right_idx))
@@ -332,8 +334,9 @@ pub(super) fn sort_or_hash_left(
 
             POOL.install(|| {
                 right.par_iter_mut().for_each(|opt_idx| {
-                    *opt_idx =
-                        opt_idx.map(|idx| unsafe { *reverse_idx_map.get_unchecked(idx as usize) });
+                    if !opt_idx.is_null_idx() {
+                        *opt_idx = unsafe { *reverse_idx_map.get_unchecked(*opt_idx as usize) };
+                    }
                 });
             });
 

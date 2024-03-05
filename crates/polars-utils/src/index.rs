@@ -13,14 +13,14 @@ pub type IdxSize = u64;
 pub type NullableIdxSize = IdxSize;
 
 pub trait IsNullIdx {
-    fn is_null(&self) -> bool;
+    fn is_null_idx(&self) -> bool;
 
     fn null() -> Self;
 }
 
 impl IsNullIdx for IdxSize {
     #[inline(always)]
-    fn is_null(&self) -> bool {
+    fn is_null_idx(&self) -> bool {
         *self == IdxSize::MAX
     }
 
