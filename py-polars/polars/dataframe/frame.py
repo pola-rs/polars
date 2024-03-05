@@ -348,7 +348,7 @@ class DataFrame:
     False
     """
 
-    __slots__ = ("_df",)
+    __slots__ = ("_df", "__weakref__")
     _df: PyDataFrame
     _accessors: ClassVar[set[str]] = {"plot"}
 
