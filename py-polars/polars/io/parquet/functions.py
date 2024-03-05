@@ -223,7 +223,7 @@ def read_parquet_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, Dat
 
     Examples
     --------
-    >>> pl.read_parquet("ballondor.parquet")   # doctest: +SKIP
+    >>> pl.read_parquet("ballondor.parquet")  # doctest: +SKIP
     shape: (3, 3)
     ┌──────┬─────────┬──────────┐
     │ yr   ┆ name    ┆ country  │
