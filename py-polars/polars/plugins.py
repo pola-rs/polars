@@ -77,14 +77,11 @@ def register_plugin(
 
     Returns
     -------
-    Expr
+    polars.Expr
     """
-    if not inputs:
-        msg = "`args` must be non-empty"
-        raise TypeError(msg)
     pyexprs = parse_as_list_of_expressions(*inputs)
     if not pyexprs:
-        msg = "`args` must be non-empty"
+        msg = "`inputs` must be non-empty"
         raise TypeError(msg)
     if kwargs is None:
         serialized_kwargs = b""
