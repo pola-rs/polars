@@ -1,12 +1,12 @@
 use std::ops::BitOr;
 
 use polars_error::polars_err;
+use polars_utils::IdxSize;
 
 use crate::array::*;
 use crate::datatypes::ArrowDataType;
 use crate::legacy::array::default_arrays::FromData;
 use crate::legacy::error::PolarsResult;
-use crate::legacy::index::IdxSize;
 use crate::legacy::kernels::BinaryMaskedSliceIterator;
 use crate::legacy::trusted_len::TrustedLenPush;
 use crate::types::NativeType;

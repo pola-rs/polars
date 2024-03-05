@@ -321,12 +321,13 @@ pub fn _left_join_multiple_keys(
                             Some((_, indexes_b)) => {
                                 result_idx_left
                                     .extend(std::iter::repeat(idx_a).take(indexes_b.len()));
-                                result_idx_right.extend(indexes_b.iter().copied().map(Some))
+                                let indexes_b = bytemuck::cast_slice(indexes_b);
+                                result_idx_right.extend_from_slice(indexes_b);
                             },
                             // only left values, right = null
                             None => {
                                 result_idx_left.push(idx_a);
-                                result_idx_right.push(None);
+                                result_idx_right.push(NullableIdxSize::null());
                             },
                         }
                         idx_a += 1;
