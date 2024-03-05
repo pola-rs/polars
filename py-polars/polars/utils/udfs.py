@@ -11,7 +11,10 @@ __all__ = ["_get_shared_lib_location"]
 def _get_shared_lib_location(main_file: Any) -> str:
     issue_deprecation_warning(
         "polars.utils will be made private in a future release. Please use "
-        "`from polars.plugins import get_shared_lib_location` instead.",
+        "`from polars.plugins import register_plugin` instead. "
+        "Note that its interface has changed - check the user guide "
+        "(https://docs.pola.rs/user-guide/expressions/plugins) "
+        "for the currently-recommended way to register a plugin.",
         version="0.20.14",
     )
     directory = os.path.dirname(main_file)  # noqa: PTH120

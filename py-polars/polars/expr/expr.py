@@ -9638,7 +9638,7 @@ class Expr:
         changes_length: bool = False,
     ) -> Self:
         """
-        Register a shared library as a plugin.
+        Register a dynamic library as a plugin.
 
         .. warning::
             This is highly unsafe as this will call the C function

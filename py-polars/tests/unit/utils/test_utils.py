@@ -14,6 +14,7 @@ from polars._utils.convert import (
     time_to_int,
     timedelta_to_int,
 )
+from polars._utils.udfs import get_dynamic_lib_location
 from polars._utils.various import (
     _in_notebook,
     is_bool_sequence,
@@ -26,6 +27,8 @@ from polars._utils.various import (
 from polars.io._utils import _looks_like_url
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from zoneinfo import ZoneInfo
 
     from polars.type_aliases import TimeUnit
@@ -310,3 +313,24 @@ def test_is_str_sequence_check(
 )
 def test_looks_like_url(url: str, result: bool) -> None:
     assert _looks_like_url(url) == result
+
+
+def test_get_dynamic_lib_location(tmpdir: Path) -> None:
+    (tmpdir / "lib1.so").write_text("", encoding="utf-8")
+    (tmpdir / "__init__.py").write_text("", encoding="utf-8")
+    result = get_dynamic_lib_location(tmpdir)
+    assert result == str(tmpdir / "lib1.so")
+    result = get_dynamic_lib_location(tmpdir / "__init__.py")
+    assert result == str(tmpdir / "lib1.so")
+    result = get_dynamic_lib_location(str(tmpdir))
+    assert result == str(tmpdir / "lib1.so")
+    result = get_dynamic_lib_location(str(tmpdir / "__init__.py"))
+    assert result == str(tmpdir / "lib1.so")
+
+
+def test_get_dynamic_lib_location_raises(tmpdir: Path) -> None:
+    (tmpdir / "__init__.py").write_text("", encoding="utf-8")
+    with pytest.raises(FileNotFoundError, match="no dynamic library found"):
+        get_dynamic_lib_location(tmpdir)
+    with pytest.raises(FileNotFoundError, match="no dynamic library found"):
+        get_dynamic_lib_location(tmpdir / "__init__.py")
