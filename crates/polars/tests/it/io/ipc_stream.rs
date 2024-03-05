@@ -42,7 +42,7 @@ mod test {
             .finish()
             .unwrap();
         assert_eq!(df_read.shape(), (3, 2));
-        df_read.equals(&expected);
+        assert!(df_read.equals(&expected));
     }
 
     #[test]
@@ -60,7 +60,7 @@ mod test {
             .with_columns(Some(vec!["c".to_string(), "b".to_string()]))
             .finish()
             .unwrap();
-        df_read.equals(&expected);
+        assert!(df_read.equals(&expected));
 
         let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
         let mut df = df![
@@ -90,7 +90,7 @@ mod test {
             ]))
             .finish()
             .unwrap();
-        df_read.equals(&expected);
+        assert!(df_read.equals(&expected));
     }
 
     #[test]
