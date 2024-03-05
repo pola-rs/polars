@@ -1,4 +1,5 @@
 use arrow::bitmap::bitmask::BitMask;
+use arrow::bitmap::Bitmap;
 use arrow::compute::take::take_unchecked;
 use polars_error::{polars_bail, polars_ensure};
 use polars_utils::index::check_bounds;
@@ -273,5 +274,17 @@ impl ChunkTakeUnchecked<IdxCa> for BinaryChunked {
 impl ChunkTakeUnchecked<IdxCa> for StringChunked {
     unsafe fn take_unchecked(&self, indices: &IdxCa) -> Self {
         self.as_binary().take_unchecked(indices).to_string()
+    }
+}
+
+impl IdxCa {
+    pub fn with_nullable_idx<T, F: FnOnce(&IdxCa) -> T>(idx: &[NullableIdxSize], f: F) -> T {
+        let validity: Bitmap = idx.iter().map(|idx| !idx.is_null_idx()).collect_trusted();
+        let idx = bytemuck::cast_slice::<_, IdxSize>(idx);
+        let arr = unsafe { arrow::ffi::mmap::slice(idx) };
+        let arr = arr.with_validity_typed(Some(validity));
+        let ca = IdxCa::with_chunk("", arr);
+
+        f(&ca)
     }
 }

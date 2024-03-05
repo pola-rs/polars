@@ -39,5 +39,5 @@ pub mod nulls;
 pub mod ord;
 pub mod partitioned;
 
-pub use index::{IdxSize, IsNullIdx, NullableIdxSize};
+pub use index::{IdxSize, NullableIdxSize};
 pub use io::open_file;

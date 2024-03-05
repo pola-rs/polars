@@ -110,7 +110,7 @@ pub trait JoinDispatch: IntoDf {
 
         let materialize_right = || {
             let right_idx = &*right_idx;
-            unsafe { other.take_unchecked(&right_idx.iter().copied().collect_ca("")) }
+            unsafe { IdxCa::with_nullable_idx(right_idx, |idx| other.take_unchecked(idx)) }
         };
         let (df_left, df_right) = POOL.join(materialize_left, materialize_right);
 
@@ -150,7 +150,7 @@ pub trait JoinDispatch: IntoDf {
                 if let Some((offset, len)) = args.slice {
                     right_idx = slice_slice(right_idx, offset, len);
                 }
-                other.take_unchecked(&right_idx.iter().copied().collect_ca(""))
+                IdxCa::with_nullable_idx(right_idx, |idx| other.take_unchecked(idx))
             },
             ChunkJoinOptIds::Right(right_idx) => unsafe {
                 let mut right_idx = &*right_idx;

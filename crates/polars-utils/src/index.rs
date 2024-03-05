@@ -10,23 +10,62 @@ pub type IdxSize = u32;
 #[cfg(feature = "bigidx")]
 pub type IdxSize = u64;
 
-pub type NullableIdxSize = IdxSize;
-
-pub trait IsNullIdx {
-    fn is_null(&self) -> bool;
-
-    fn null() -> Self;
+#[derive(Clone, Copy)]
+#[repr(transparent)]
+pub struct NullableIdxSize {
+    pub inner: IdxSize,
 }
 
-impl IsNullIdx for IdxSize {
+impl PartialEq<Self> for NullableIdxSize {
+    fn eq(&self, other: &Self) -> bool {
+        self.inner == other.inner
+    }
+}
+
+impl Eq for NullableIdxSize {}
+
+unsafe impl bytemuck::Zeroable for NullableIdxSize {}
+unsafe impl bytemuck::AnyBitPattern for NullableIdxSize {}
+unsafe impl bytemuck::NoUninit for NullableIdxSize {}
+
+impl Debug for NullableIdxSize {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self.inner)
+    }
+}
+
+impl NullableIdxSize {
     #[inline(always)]
-    fn is_null(&self) -> bool {
-        *self == IdxSize::MAX
+    pub fn is_null_idx(&self) -> bool {
+        self.inner == IdxSize::MAX
     }
 
     #[inline(always)]
-    fn null() -> Self {
-        IdxSize::MAX
+    pub const fn null() -> Self {
+        Self {
+            inner: IdxSize::MAX,
+        }
+    }
+
+    #[inline(always)]
+    pub fn idx(&self) -> IdxSize {
+        self.inner
+    }
+
+    #[inline(always)]
+    pub fn to_opt(&self) -> Option<IdxSize> {
+        if self.is_null_idx() {
+            None
+        } else {
+            Some(self.idx())
+        }
+    }
+}
+
+impl From<IdxSize> for NullableIdxSize {
+    #[inline(always)]
+    fn from(value: IdxSize) -> Self {
+        Self { inner: value }
     }
 }
 

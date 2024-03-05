@@ -630,7 +630,7 @@ fn materialize_column(join_opt_ids: &ChunkJoinOptIds, out_column: &Series) -> Se
 
         match join_opt_ids {
             Either::Left(ids) => unsafe {
-                out_column.take_unchecked(&ids.iter().copied().collect_ca(""))
+                IdxCa::with_nullable_idx(ids, |idx| out_column.take_unchecked(idx))
             },
             Either::Right(ids) => unsafe { out_column.take_opt_chunked_unchecked(ids) },
         }
