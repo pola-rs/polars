@@ -78,7 +78,7 @@ impl Default for Tracker {
     #[inline]
     fn default() -> Self {
         Self {
-            inner: AtomicBool::new(false)
+            inner: AtomicBool::new(false),
         }
     }
 }

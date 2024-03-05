@@ -1,38 +1,21 @@
-use std::collections::BTreeSet;
 use super::*;
 
 /// Take data chunks from the sources and pushes them into the operators + sink. Every operator
 /// works thread local.
 /// The caller passes an `operator_start`/`operator_end` to indicate which part of the pipeline
 /// branch should be executed.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn par_process_chunks(
     chunks: Vec<DataChunk>,
-    sink: &mut [Box<dyn Sink>],
+    sink: ThreadedSinkMut,
     ec: &PExecutionContext,
-    operators: &mut [Vec<Box<dyn Operator>>],
+    operators: &mut [ThreadedOperator],
     operator_start: usize,
     operator_end: usize,
     src: &mut Box<dyn Source>,
+    must_flush: &AtomicBool,
 ) -> PolarsResult<(Option<SinkResult>, SourceResult)> {
     debug_assert!(chunks.len() <= sink.len());
-
-    fn run_operator_pipe(
-        operator_start: usize,
-        operator_end: usize,
-        chunk: DataChunk,
-        sink: &mut Box<dyn Sink>,
-        operator_pipe: &mut [Box<dyn Operator>],
-        ec: &PExecutionContext,
-    ) -> PolarsResult<SinkResult> {
-        // truncate the operators that should run into the current sink.
-        let operator_pipe = &mut operator_pipe[operator_start..operator_end];
-
-        if operator_pipe.is_empty() {
-            sink.sink(ec, chunk)
-        } else {
-            push_operators(chunk, ec, operator_pipe, sink)
-        }
-    }
     let sink_results = Arc::new(Mutex::new(None));
     let mut next_batches: Option<PolarsResult<SourceResult>> = None;
     let next_batches_ptr = &mut next_batches as *mut Option<PolarsResult<SourceResult>>;
@@ -56,15 +39,16 @@ pub(super) fn par_process_chunks(
             .zip(operators.iter_mut())
         {
             let sink_results = sink_results.clone();
+            // Truncate the operators that should run into the current sink.
+            let operator_pipe = &mut operator_pipe[operator_start..operator_end];
+
             s.spawn(move |_| {
-                let out = run_operator_pipe(
-                    operator_start,
-                    operator_end,
-                    chunk,
-                    sink,
-                    operator_pipe,
-                    ec,
-                );
+                let out = if operator_pipe.is_empty() {
+                    sink.sink(ec, chunk)
+                } else {
+                    push_operators_single_thread(chunk, ec, operator_pipe, sink, must_flush)
+                };
+
                 match out {
                     Ok(SinkResult::Finished) | Err(_) => {
                         let mut lock = sink_results.lock().unwrap();
@@ -92,16 +76,16 @@ pub(super) fn par_process_chunks(
         .map(|sink_result| (sink_result, next_batches))
 }
 
-
 /// This thread local logic that pushed a data chunk into the operators + sink
 /// It can be that a single operator needs to be called multiple times, this is for instance the
 /// case with joins that produce many tuples, that's why we keep a stack of `in_process`
 /// operators.
-pub(super) fn push_operators(
+pub(super) fn push_operators_single_thread(
     chunk: DataChunk,
     ec: &PExecutionContext,
-    operators: &mut [Box<dyn Operator>],
+    operators: ThreadedOperatorMut,
     sink: &mut Box<dyn Sink>,
+    must_flush: &AtomicBool,
 ) -> PolarsResult<SinkResult> {
     debug_assert!(!operators.is_empty());
 
@@ -109,7 +93,6 @@ pub(super) fn push_operators(
     let mut in_process = vec![];
     let operator_offset = 0usize;
     in_process.push((operator_offset, chunk));
-    let mut needs_flush = BTreeSet::new();
 
     while let Some((op_i, chunk)) = in_process.pop() {
         match operators.get_mut(op_i) {
@@ -121,9 +104,7 @@ pub(super) fn push_operators(
             Some(op) => {
                 match op.execute(ec, &chunk)? {
                     OperatorResult::Finished(chunk) => {
-                        if op.must_flush() {
-                            let _ = needs_flush.insert(op_i);
-                        }
+                        must_flush.store(op.must_flush(), Ordering::Relaxed);
                         in_process.push((op_i + 1, chunk))
                     },
                     OperatorResult::HaveMoreOutPut(output_chunk) => {
@@ -147,19 +128,49 @@ pub(super) fn push_operators(
     Ok(SinkResult::CanHaveMoreInput)
 }
 
+/// Similar to `par_process_chunks`.
+/// The caller passes an `operator_start`/`operator_end` to indicate which part of the pipeline
+/// branch should be executed.
+pub(super) fn par_flush(
+    sink: ThreadedSinkMut,
+    ec: &PExecutionContext,
+    operators: &mut [ThreadedOperator],
+    operator_start: usize,
+    operator_end: usize,
+) {
+    // 1. We will iterate the chunks/sinks/operators
+    // where every iteration belongs to a single thread
+    // 2. Then we will truncate the pipeline by `start`/`end`
+    // so that the pipeline represents pipeline that belongs to this sink
+    // 3. Then we push the data
+    // # Threading
+    // Within a rayon scope
+    // we spawn the jobs. They don't have to finish in any specific order,
+    // this makes it more lightweight than `par_iter`
+
+    // borrow as ref and move into the closure
+    POOL.scope(|s| {
+        for (sink, operator_pipe) in sink.iter_mut().zip(operators.iter_mut()) {
+            // Truncate the operators that should run into the current sink.
+            let operator_pipe = &mut operator_pipe[operator_start..operator_end];
+
+            s.spawn(move |_| {
+                flush_operators(ec, operator_pipe, sink).unwrap();
+            })
+        }
+    });
+}
+
 pub(super) fn flush_operators(
     ec: &PExecutionContext,
     operators: &mut [Box<dyn Operator>],
     sink: &mut Box<dyn Sink>,
 ) -> PolarsResult<SinkResult> {
-
-    let needs_flush = operators.iter().enumerate().filter_map(|(i, op)| {
-        if op.must_flush() {
-            Some(i)
-        } else {
-            None
-        }
-    }).collect::<Vec<_>>();
+    let needs_flush = operators
+        .iter()
+        .enumerate()
+        .filter_map(|(i, op)| if op.must_flush() { Some(i) } else { None })
+        .collect::<Vec<_>>();
 
     // Stack based flushing + operator execution.
     if !needs_flush.is_empty() {

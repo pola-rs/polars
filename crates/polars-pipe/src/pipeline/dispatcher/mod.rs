@@ -1,7 +1,8 @@
 use std::cell::RefCell;
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::VecDeque;
 use std::fmt::{Debug, Formatter};
 use std::rc::Rc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use polars_core::error::PolarsResult;
@@ -17,9 +18,16 @@ use crate::operators::{
     DataChunk, FinalizedSink, Operator, OperatorResult, PExecutionContext, SExecutionContext, Sink,
     SinkResult, Source, SourceResult,
 };
-use crate::pipeline::dispatcher::drive_operator::{par_process_chunks, push_operators};
+use crate::pipeline::dispatcher::drive_operator::{par_flush, par_process_chunks};
 use crate::pipeline::morsels_per_sink;
 mod drive_operator;
+
+type PhysOperator = Box<dyn Operator>;
+type PhysSink = Box<dyn Sink>;
+/// A physical operator/sink per thread.
+type ThreadedOperator = Vec<PhysOperator>;
+type ThreadedOperatorMut<'a> = &'a mut [PhysOperator];
+type ThreadedSinkMut<'a> = &'a mut [PhysSink];
 
 pub(super) struct SinkNode {
     pub sinks: Vec<Box<dyn Sink>>,
@@ -99,7 +107,7 @@ pub struct PipeLine {
     sources: Vec<Box<dyn Source>>,
     /// All the operators of this pipeline. Some may be placeholders that will be replaced during
     /// execution
-    operators: Vec<Vec<Box<dyn Operator>>>,
+    operators: Vec<ThreadedOperator>,
     /// The nodes of operators. These are used to identify operators between pipelines
     operator_nodes: Vec<Node>,
     /// - offset in the operators vec
@@ -127,7 +135,7 @@ impl PipeLine {
     #[allow(clippy::type_complexity)]
     pub(super) fn new(
         sources: Vec<Box<dyn Source>>,
-        operators: Vec<Box<dyn Operator>>,
+        operators: Vec<PhysOperator>,
         operator_nodes: Vec<Node>,
         sinks: Vec<SinkNode>,
         operator_offset: usize,
@@ -231,6 +239,7 @@ impl PipeLine {
             for src in &mut std::mem::take(&mut self.sources) {
                 let mut next_batches = src.get_batches(ec)?;
 
+                let must_flush: AtomicBool = AtomicBool::new(false);
                 while let SourceResult::GotMoreData(chunks) = next_batches {
                     // Every batches iteration we check if we must continue.
                     ec.execution_state.should_stop()?;
@@ -243,6 +252,7 @@ impl PipeLine {
                         operator_start,
                         sink.operator_end,
                         src,
+                        &must_flush,
                     )?;
                     next_batches = next_batches2;
 
@@ -251,9 +261,15 @@ impl PipeLine {
                         break;
                     }
                 }
-                // if !sink_finished {
-                //     todo!()
-                // }
+                if !sink_finished && must_flush.load(Ordering::Relaxed) {
+                    par_flush(
+                        &mut sink.sinks,
+                        ec,
+                        &mut self.operators,
+                        operator_start,
+                        sink.operator_end,
+                    );
+                }
             }
 
             // Before we reduce we also check if we should continue.
