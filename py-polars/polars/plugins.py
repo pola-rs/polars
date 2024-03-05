@@ -92,7 +92,7 @@ def register_plugin(
 
     Returns
     -------
-    pl.Expr
+    Expr
     """
     if not args:
         msg = "`args` must be non-empty"
