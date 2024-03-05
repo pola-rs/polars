@@ -11,6 +11,8 @@ use arrow::with_match_primitive_type_full;
 use polars_error::PolarsResult;
 
 pub fn filter(array: &dyn Array, mask: &BooleanArray) -> PolarsResult<Box<dyn Array>> {
+    assert_eq!(array.len(), mask.len());
+
     // Treat null mask values as false.
     if let Some(validities) = mask.validity() {
         let values = mask.values();
@@ -19,13 +21,12 @@ pub fn filter(array: &dyn Array, mask: &BooleanArray) -> PolarsResult<Box<dyn Ar
         return filter(array, &mask);
     }
 
+    // Fast-path: completely empty or completely full mask.
     let false_count = mask.values().unset_bits();
     if false_count == mask.len() {
-        assert_eq!(array.len(), mask.len());
         return Ok(new_empty_array(array.data_type().clone()));
     }
     if false_count == 0 {
-        assert_eq!(array.len(), mask.len());
         return Ok(array.to_boxed());
     }
 
