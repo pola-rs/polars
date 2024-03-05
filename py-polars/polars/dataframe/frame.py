@@ -8969,7 +8969,7 @@ class DataFrame:
         drop_first
             Remove the first category from the variables being encoded.
         keep_columns
-            Retain column used to generated dummy columns.
+            Retain columns used to generated dummy columns.
 
         Examples
         --------
