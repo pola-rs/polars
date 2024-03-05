@@ -37,7 +37,7 @@ pub fn join<T: PartialOrd + Copy + Debug>(
                     // matching join key
                     if val_l == val_r {
                         out_lhs.push(left_idx + left_offset);
-                        out_rhs.push(right_idx);
+                        out_rhs.push(right_idx.into());
                         let current_idx = right_idx;
 
                         loop {
@@ -52,7 +52,7 @@ pub fn join<T: PartialOrd + Copy + Debug>(
                                 Some(&val_r) => {
                                     if val_l == val_r {
                                         out_lhs.push(left_idx + left_offset);
-                                        out_rhs.push(right_idx);
+                                        out_rhs.push(right_idx.into());
                                     } else {
                                         // reset right index because the next lhs value can be the same
                                         right_idx = current_idx;

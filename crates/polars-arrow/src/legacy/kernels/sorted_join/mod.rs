@@ -3,7 +3,7 @@ pub mod left;
 
 use std::fmt::Debug;
 
-use polars_utils::{IdxSize, IsNullIdx, NullableIdxSize};
+use polars_utils::{IdxSize, NullableIdxSize};
 
 type JoinOptIds = Vec<NullableIdxSize>;
 type JoinIds = Vec<IdxSize>;

@@ -4,8 +4,6 @@ use arrow::legacy::kernels::sorted_join;
 use polars_core::utils::_split_offsets;
 #[cfg(feature = "performant")]
 use polars_core::utils::flatten::flatten_par;
-#[cfg(feature = "performant")]
-use polars_utils::IsNullIdx;
 
 use super::*;
 
@@ -335,7 +333,9 @@ pub(super) fn sort_or_hash_left(
             POOL.install(|| {
                 right.par_iter_mut().for_each(|opt_idx| {
                     if !opt_idx.is_null_idx() {
-                        *opt_idx = unsafe { *reverse_idx_map.get_unchecked(*opt_idx as usize) };
+                        *opt_idx =
+                            unsafe { *reverse_idx_map.get_unchecked(opt_idx.idx() as usize) }
+                                .into();
                     }
                 });
             });

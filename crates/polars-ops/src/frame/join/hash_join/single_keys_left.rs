@@ -2,7 +2,6 @@ use polars_core::utils::flatten::flatten_par;
 use polars_utils::hashing::{hash_to_partition, DirtyHash};
 use polars_utils::nulls::IsNull;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
-use polars_utils::IsNullIdx;
 
 use super::*;
 
@@ -20,7 +19,7 @@ unsafe fn apply_opt_mapping(idx: Vec<NullableIdxSize>, chunk_mapping: &[ChunkId]
             if opt_idx.is_null_idx() {
                 ChunkId::null()
             } else {
-                *chunk_mapping.get_unchecked(*opt_idx as usize)
+                *chunk_mapping.get_unchecked(opt_idx.idx() as usize)
             }
         })
         .collect()
@@ -167,7 +166,7 @@ where
                         // left and right matches
                         Some(indexes_b) => {
                             result_idx_left.extend(std::iter::repeat(idx_a).take(indexes_b.len()));
-                            result_idx_right.extend_from_slice(indexes_b);
+                            result_idx_right.extend_from_slice(bytemuck::cast_slice(indexes_b));
                         },
                         // only left values, right = null
                         None => {

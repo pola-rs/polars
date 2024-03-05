@@ -4,7 +4,7 @@ use polars_core::hashing::{populate_multiple_key_hashmap, IdBuildHasher, IdxHash
 use polars_core::utils::split_df;
 use polars_utils::hashing::hash_to_partition;
 use polars_utils::idx_vec::IdxVec;
-use polars_utils::{unitvec, IsNullIdx};
+use polars_utils::unitvec;
 
 use super::*;
 
@@ -321,6 +321,7 @@ pub fn _left_join_multiple_keys(
                             Some((_, indexes_b)) => {
                                 result_idx_left
                                     .extend(std::iter::repeat(idx_a).take(indexes_b.len()));
+                                let indexes_b = bytemuck::cast_slice(indexes_b);
                                 result_idx_right.extend_from_slice(indexes_b);
                             },
                             // only left values, right = null
