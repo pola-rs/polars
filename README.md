@@ -15,7 +15,7 @@
   </a>
   <a href="https://rpolars.r-universe.dev">
     <img src="https://rpolars.r-universe.dev/badges/polars" alt="R-universe Latest Release"/>
-  </a> 
+  </a>
   <a href="https://doi.org/10.5281/zenodo.7697217">
     <img src="https://zenodo.org/badge/DOI/10.5281/zenodo.7697217.svg" alt="DOI Latest Release"/>
   </a>
