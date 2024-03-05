@@ -17,7 +17,7 @@ def test_streaming_outer_joins() -> None:
     dfa = pl.DataFrame(
         {
             "a": np.random.randint(0, 40, n),
-            "b": np.arange(0, n),
+            "idx": np.arange(0, n),
         }
     )
 
@@ -25,7 +25,7 @@ def test_streaming_outer_joins() -> None:
     dfb = pl.DataFrame(
         {
             "a": np.random.randint(0, 40, n),
-            "b": np.arange(0, n),
+            "idx": np.arange(0, n),
         }
     )
 
@@ -34,7 +34,7 @@ def test_streaming_outer_joins() -> None:
         "outer_coalesce",
     ]
     for how in join_strategies:
-        q = dfa.lazy().join(dfb.lazy(), on="a", how=how).sort(["a", "b"])
+        q = dfa.lazy().join(dfb.lazy(), on="a", how=how).sort(["idx"])
         a = q.collect(streaming=True)
         b = q.collect(streaming=False)
         assert_frame_equal(a, b)
