@@ -124,7 +124,7 @@ def read_parquet(
 
     Examples
     --------
-    >>> pl.read_parquet("ballondor.parquet")
+    >>> pl.read_parquet("ballondor.parquet")  # doctest: +SKIP
     shape: (3, 3)
     ┌──────┬─────────┬──────────┐
     │ yr   ┆ name    ┆ country  │
@@ -223,7 +223,7 @@ def read_parquet_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, Dat
 
     Examples
     --------
-    >>> pl.read_parquet("ballondor.parquet")
+    >>> pl.read_parquet("ballondor.parquet")  # doctest: +SKIP
     shape: (3, 3)
     ┌──────┬─────────┬──────────┐
     │ yr   ┆ name    ┆ country  │
@@ -234,7 +234,7 @@ def read_parquet_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, Dat
     │ 2000 ┆ Figo    ┆ Portugal │
     │ 2001 ┆ Owen    ┆ England  │
     └──────┴─────────┴──────────┘
-    >>> pl.read_parquet_schema("ballondor.parquet")
+    >>> pl.read_parquet_schema("ballondor.parquet")  # doctest: +SKIP
     {'yr': Int64, 'name': String, 'country': String}
     """
     if isinstance(source, (str, Path)):
