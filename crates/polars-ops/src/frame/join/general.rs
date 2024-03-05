@@ -1,6 +1,3 @@
-#[cfg(feature = "chunked_ids")]
-use polars_utils::index::ChunkId;
-
 use super::*;
 use crate::series::coalesce_series;
 

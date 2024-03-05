@@ -7,7 +7,6 @@ use polars_core::series::IsSorted;
 use polars_ops::chunked_array::DfTake;
 use polars_ops::frame::join::_finish_join;
 use polars_ops::prelude::JoinType;
-use polars_utils::index::ChunkId;
 use polars_utils::nulls::IsNull;
 use smartstring::alias::String as SmartString;
 

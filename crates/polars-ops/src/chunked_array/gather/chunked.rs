@@ -2,7 +2,6 @@ use polars_core::prelude::gather::_update_gather_sorted_flag;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::with_match_physical_numeric_polars_type;
-use polars_utils::index::ChunkId;
 use polars_utils::slice::GetSaferUnchecked;
 
 use crate::frame::IntoDf;
@@ -24,7 +23,7 @@ pub trait DfTake: IntoDf {
     ///
     /// # Safety
     /// Does not do any bound checks.
-    unsafe fn _take_opt_chunked_unchecked_seq(&self, idx: &[ChunkId]) -> DataFrame {
+    unsafe fn _take_opt_chunked_unchecked_seq(&self, idx: &[NullableChunkId]) -> DataFrame {
         let cols = self
             .to_df()
             ._apply_columns(&|s| s.take_opt_chunked_unchecked(idx));
@@ -122,7 +121,7 @@ impl TakeChunked for Series {
     }
 
     /// Take function that checks of null state in `ChunkIdx`.
-    unsafe fn take_opt_chunked_unchecked(&self, by: &[ChunkId]) -> Self {
+    unsafe fn take_opt_chunked_unchecked(&self, by: &[NullableChunkId]) -> Self {
         let phys = self.to_physical_repr();
         use DataType::*;
         let out = match phys.dtype() {
@@ -216,7 +215,7 @@ where
     }
 
     // Take function that checks of null state in `ChunkIdx`.
-    unsafe fn take_opt_chunked_unchecked(&self, by: &[ChunkId]) -> Self {
+    unsafe fn take_opt_chunked_unchecked(&self, by: &[NullableChunkId]) -> Self {
         let arrow_dtype = self.dtype().to_arrow(true);
 
         if let Some(iter) = self.downcast_slices() {
@@ -272,7 +271,7 @@ unsafe fn take_unchecked_object(s: &Series, by: &[ChunkId], _sorted: IsSorted) -
 }
 
 #[cfg(feature = "object")]
-unsafe fn take_opt_unchecked_object(s: &Series, by: &[ChunkId]) -> Series {
+unsafe fn take_opt_unchecked_object(s: &Series, by: &[NullableChunkId]) -> Series {
     let DataType::Object(_, reg) = s.dtype() else {
         unreachable!()
     };
