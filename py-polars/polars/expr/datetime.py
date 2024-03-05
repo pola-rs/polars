@@ -1656,7 +1656,7 @@ class ExprDateTimeNameSpace:
         │ 2020-07-01 01:00:00 BST     ┆ 2020-07-01 01:00:00 CEST       │
         └─────────────────────────────┴────────────────────────────────┘
 
-        You can use `use_earliest` to deal with ambiguous datetimes:
+        You can use `ambiguous` to deal with ambiguous datetimes:
 
         >>> dates = [
         ...     "2018-10-28 01:30",

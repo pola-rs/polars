@@ -250,8 +250,8 @@ def test_compare_frame_equal_nested_nans() -> None:
             {
                 "id": 2,
                 "struct": [
-                    {"x": "text", "y": [nan, 1], "z": ["!"]},
-                    {"x": "text", "y": [nan, 1], "z": ["?"]},
+                    {"x": "text", "y": [nan, 1.0], "z": ["!"]},
+                    {"x": "text", "y": [nan, 1.0], "z": ["?"]},
                 ],
             },
         ]
