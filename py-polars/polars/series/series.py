@@ -237,7 +237,6 @@ class Series:
     ]
     """
 
-    __slots__ = ("_s",)
     _s: PySeries
     _accessors: ClassVar[set[str]] = {
         "arr",
