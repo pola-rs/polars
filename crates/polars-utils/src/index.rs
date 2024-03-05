@@ -16,6 +16,14 @@ pub struct NullableIdxSize {
     pub inner: IdxSize,
 }
 
+impl PartialEq<Self> for NullableIdxSize {
+    fn eq(&self, other: &Self) -> bool {
+        self.inner == other.inner
+    }
+}
+
+impl Eq for NullableIdxSize {}
+
 unsafe impl bytemuck::Zeroable for NullableIdxSize {}
 unsafe impl bytemuck::AnyBitPattern for NullableIdxSize {}
 unsafe impl bytemuck::NoUninit for NullableIdxSize {}

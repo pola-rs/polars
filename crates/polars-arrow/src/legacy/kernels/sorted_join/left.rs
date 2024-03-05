@@ -98,13 +98,13 @@ mod test {
         let (l_idx, r_idx) = join(lhs, rhs, 0);
         let out_left = &[0, 1, 1, 2, 2, 3, 4, 5];
         let out_right = &[
-            0,
-            1,
-            2,
-            1,
-            2,
+            0.into(),
+            1.into(),
+            2.into(),
+            1.into(),
+            2.into(),
             NullableIdxSize::null(),
-            3,
+            3.into(),
             NullableIdxSize::null(),
         ];
         assert_eq!(&l_idx, out_left);
@@ -128,20 +128,20 @@ mod test {
         assert_eq!(
             &r_idx,
             &[
-                0,
-                1,
-                0,
-                1,
-                2,
-                3,
-                4,
+                0.into(),
+                1.into(),
+                0.into(),
+                1.into(),
+                2.into(),
+                3.into(),
+                4.into(),
                 NullableIdxSize::null(),
-                5,
-                6,
-                5,
-                6,
-                5,
-                6,
+                5.into(),
+                6.into(),
+                5.into(),
+                6.into(),
+                5.into(),
+                6.into(),
                 NullableIdxSize::null(),
             ]
         );
@@ -155,14 +155,14 @@ mod test {
             &[
                 NullableIdxSize::null(),
                 NullableIdxSize::null(),
-                1,
-                2,
-                2,
-                2,
-                2,
-                3,
-                4,
-                4
+                1.into(),
+                2.into(),
+                2.into(),
+                2.into(),
+                2.into(),
+                3.into(),
+                4.into(),
+                4.into()
             ]
         );
         let lhs = &[0, 1, 2, 2, 3, 4, 4, 6, 6, 7];
@@ -177,12 +177,12 @@ mod test {
                 NullableIdxSize::null(),
                 NullableIdxSize::null(),
                 NullableIdxSize::null(),
-                0,
-                1,
-                2,
-                0,
-                1,
-                2,
+                0.into(),
+                1.into(),
+                2.into(),
+                0.into(),
+                1.into(),
+                2.into(),
                 NullableIdxSize::null(),
                 NullableIdxSize::null(),
                 NullableIdxSize::null(),
