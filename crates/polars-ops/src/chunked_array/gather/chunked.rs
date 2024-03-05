@@ -185,6 +185,10 @@ where
         let mut out = if let Some(iter) = self.downcast_slices() {
             let targets = iter.collect::<Vec<_>>();
             let iter = by.iter().map(|chunk_id| {
+                debug_assert!(
+                    !chunk_id.is_null(),
+                    "null chunks should not hit this branch"
+                );
                 let (chunk_idx, array_idx) = chunk_id.extract();
                 let vals = targets.get_unchecked_release(chunk_idx as usize);
                 vals.get_unchecked_release(array_idx as usize).clone()
@@ -195,6 +199,10 @@ where
         } else {
             let targets = self.downcast_iter().collect::<Vec<_>>();
             let iter = by.iter().map(|chunk_id| {
+                debug_assert!(
+                    !chunk_id.is_null(),
+                    "null chunks should not hit this branch"
+                );
                 let (chunk_idx, array_idx) = chunk_id.extract();
                 let vals = targets.get_unchecked_release(chunk_idx as usize);
                 vals.get_unchecked(array_idx as usize)

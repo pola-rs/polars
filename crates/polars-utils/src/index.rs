@@ -1,3 +1,5 @@
+use std::fmt::{Debug, Formatter};
+
 use polars_error::{polars_bail, polars_ensure, PolarsResult};
 
 use crate::nulls::IsNull;
@@ -118,10 +120,21 @@ impl_to_idx!(i64, i64);
 // Leaves 2^40 (~1T) rows per chunk
 const DEFAULT_CHUNK_BITS: u64 = 24;
 
-#[derive(Clone, Copy, Debug)]
-#[repr(C)]
+#[derive(Clone, Copy)]
+#[repr(transparent)]
 pub struct ChunkId<const CHUNK_BITS: u64 = DEFAULT_CHUNK_BITS> {
     swizzled: u64,
+}
+
+impl Debug for ChunkId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        if self.is_null() {
+            write!(f, "NULL")
+        } else {
+            let (chunk, row) = self.extract();
+            write!(f, "({chunk}, {row})")
+        }
+    }
 }
 
 impl<const CHUNK_BITS: u64> ChunkId<CHUNK_BITS> {

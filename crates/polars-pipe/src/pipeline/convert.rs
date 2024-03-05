@@ -251,7 +251,7 @@ where
                     Box::new(CrossJoin::new(options.args.suffix().into(), swapped, node))
                         as Box<dyn SinkTrait>
                 },
-                join_type @ JoinType::Inner | join_type @ JoinType::Left => {
+                jt => {
                     let input_schema_left = lp_arena.get(*input_left).schema(lp_arena);
                     let join_columns_left = Arc::new(exprs_to_physical(
                         left_on,
@@ -267,23 +267,59 @@ where
                         Some(input_schema_right.as_ref()),
                     )?);
 
-                    let (join_columns_left, join_columns_right) = if swapped {
-                        (join_columns_right, join_columns_left)
-                    } else {
-                        (join_columns_left, join_columns_right)
+                    let swap_eval = || {
+                        if swapped {
+                            (join_columns_right.clone(), join_columns_left.clone())
+                        } else {
+                            (join_columns_left.clone(), join_columns_right.clone())
+                        }
                     };
 
-                    Box::new(GenericBuild::<()>::new(
-                        Arc::from(options.args.suffix()),
-                        join_type.clone(),
-                        swapped,
-                        join_columns_left,
-                        join_columns_right,
-                        options.args.join_nulls,
-                        node,
-                    )) as Box<dyn SinkTrait>
+                    match jt {
+                        join_type @ JoinType::Inner | join_type @ JoinType::Left => {
+                            let (join_columns_left, join_columns_right) = swap_eval();
+
+                            Box::new(GenericBuild::<()>::new(
+                                Arc::from(options.args.suffix()),
+                                join_type.clone(),
+                                swapped,
+                                join_columns_left,
+                                join_columns_right,
+                                options.args.join_nulls,
+                                node,
+                                // We don't need the key names for these joins.
+                                vec![].into(),
+                                vec![].into(),
+                            )) as Box<dyn SinkTrait>
+                        },
+                        JoinType::Outer { .. } => {
+                            // First get the names before we (potentially) swap.
+                            let key_names_left = join_columns_left
+                                .iter()
+                                .map(|e| e.field(&input_schema_left).unwrap().name)
+                                .collect();
+                            let key_names_right = join_columns_left
+                                .iter()
+                                .map(|e| e.field(&input_schema_left).unwrap().name)
+                                .collect();
+                            // Swap.
+                            let (join_columns_left, join_columns_right) = swap_eval();
+
+                            Box::new(GenericBuild::<Tracker>::new(
+                                Arc::from(options.args.suffix()),
+                                jt.clone(),
+                                swapped,
+                                join_columns_left,
+                                join_columns_right,
+                                options.args.join_nulls,
+                                node,
+                                key_names_left,
+                                key_names_right,
+                            )) as Box<dyn SinkTrait>
+                        },
+                        _ => unimplemented!(),
+                    }
                 },
-                _ => unimplemented!(),
             }
         },
         Slice { input, offset, len } => {

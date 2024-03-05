@@ -1707,6 +1707,8 @@ impl DataFrame {
         self.take_unchecked_impl(idx, true)
     }
 
+    /// # Safety
+    /// The indices must be in-bounds.
     pub unsafe fn take_unchecked_impl(&self, idx: &IdxCa, allow_threads: bool) -> Self {
         let cols = if allow_threads {
             POOL.install(|| self._apply_columns_par(&|s| s.take_unchecked(idx)))

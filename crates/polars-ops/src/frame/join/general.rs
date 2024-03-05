@@ -43,7 +43,7 @@ pub fn _finish_join(
     Ok(df_left)
 }
 
-pub(super) fn coalesce_outer_join(
+pub fn _coalesce_outer_join(
     mut df: DataFrame,
     keys_left: &[&str],
     keys_right: &[&str],

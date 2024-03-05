@@ -1,24 +1,18 @@
-use std::borrow::Cow;
 use std::sync::atomic::Ordering;
 
 use arrow::array::{Array, BinaryArray, MutablePrimitiveArray};
-use arrow::bitmap::{Bitmap, MutableBitmap};
-use hashbrown::hash_map::RawEntryMut;
 use polars_core::export::ahash::RandomState;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_ops::chunked_array::DfTake;
 use polars_ops::frame::join::_finish_join;
-use polars_ops::prelude::JoinType;
-use polars_row::RowsEncoded;
+use polars_ops::prelude::_coalesce_outer_join;
 use polars_utils::index::ChunkId;
-use polars_utils::nulls::IsNull;
-use polars_utils::slice::GetSaferUnchecked;
 use smartstring::alias::String as SmartString;
 
 use crate::executors::sinks::joins::generic_build::*;
 use crate::executors::sinks::joins::row_values::RowValues;
-use crate::executors::sinks::joins::{Key, PartitionedMap};
+use crate::executors::sinks::joins::PartitionedMap;
 use crate::executors::sinks::utils::hash_rows;
 use crate::executors::sinks::ExtraPayload;
 use crate::expressions::PhysicalPipedExpr;
@@ -38,16 +32,12 @@ pub struct GenericOuterJoinProbe<K: ExtraPayload> {
     /// columns
     ///      * chunk_offset = (idx * n_join_keys)
     ///      * end = (offset + n_join_keys)
-    materialized_join_cols: Arc<Vec<BinaryArray<i64>>>,
+    materialized_join_cols: Arc<[BinaryArray<i64>]>,
     suffix: Arc<str>,
     hb: RandomState,
     /// partitioned tables that will be used for probing.
     /// stores the key and the chunk_idx, df_idx of the left table.
     hash_tables: Arc<PartitionedMap<K>>,
-    /// Bits that indicate if a key has found a match. This keeps track of which values to flush.
-    /// Rows that don't find a match need to be appended to the output table.
-    /// The chunks are equal to the partitioned hashtable. Every bit is an entry in that table.
-    found_match_tracker: Vec<MutableBitmap>,
 
     // amortize allocations
     // in inner join these are the left table
@@ -62,51 +52,30 @@ pub struct GenericOuterJoinProbe<K: ExtraPayload> {
     // cached output names
     output_names: Option<Vec<SmartString>>,
     join_nulls: bool,
-    row_values: RowValues,
+    coalesce: bool,
     thread_no: usize,
+    row_values: RowValues,
+    key_names_left: Arc<[SmartString]>,
+    key_names_right: Arc<[SmartString]>,
 }
 
 impl<K: ExtraPayload> GenericOuterJoinProbe<K> {
     #[allow(clippy::too_many_arguments)]
     pub(super) fn new(
-        mut df_a: DataFrame,
-        materialized_join_cols: Arc<Vec<BinaryArray<i64>>>,
+        df_a: DataFrame,
+        materialized_join_cols: Arc<[BinaryArray<i64>]>,
         suffix: Arc<str>,
         hb: RandomState,
         hash_tables: Arc<PartitionedMap<K>>,
-        join_columns_left: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
         join_columns_right: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
-        swapped_or_left: bool,
+        swapped: bool,
         // Re-use the hashes allocation of the build side.
         amortized_hashes: Vec<u64>,
-        context: &PExecutionContext,
         join_nulls: bool,
+        coalesce: bool,
+        key_names_left: Arc<[SmartString]>,
+        key_names_right: Arc<[SmartString]>,
     ) -> Self {
-        if swapped_or_left {
-            let tmp = DataChunk {
-                data: df_a.slice(0, 1),
-                chunk_index: 0,
-            };
-            // remove duplicate_names caused by joining
-            // on the same column
-            let names = join_columns_left
-                .iter()
-                .flat_map(|phys_e| {
-                    phys_e
-                        .evaluate(&tmp, context.execution_state.as_any())
-                        .ok()
-                        .map(|s| s.name().to_string())
-                })
-                .collect::<Vec<_>>();
-            df_a = df_a.drop_many(&names);
-        }
-
-        let found_match_tracker = hash_tables
-            .inner()
-            .iter()
-            .map(|v| MutableBitmap::from_len_zeroed(v.len()))
-            .collect();
-
         GenericOuterJoinProbe {
             df_a: Arc::new(df_a),
             df_b_dummy: None,
@@ -114,47 +83,92 @@ impl<K: ExtraPayload> GenericOuterJoinProbe<K> {
             suffix,
             hb,
             hash_tables,
-            found_match_tracker,
             join_tuples_a: vec![],
             join_tuples_b: MutablePrimitiveArray::new(),
             hashes: amortized_hashes,
-            swapped: swapped_or_left,
+            swapped,
             output_names: None,
             join_nulls,
-            row_values: RowValues::new(join_columns_right, false),
+            coalesce,
             thread_no: 0,
+            row_values: RowValues::new(join_columns_right, false),
+            key_names_left,
+            key_names_right,
         }
     }
 
     fn finish_join(&mut self, left_df: DataFrame, right_df: DataFrame) -> PolarsResult<DataFrame> {
-        let (mut left_df, right_df) = if self.swapped {
-            (right_df, left_df)
+        fn inner(
+            left_df: DataFrame,
+            right_df: DataFrame,
+            suffix: &str,
+            swapped: bool,
+            output_names: &mut Option<Vec<SmartString>>,
+        ) -> PolarsResult<DataFrame> {
+            let (mut left_df, right_df) = if swapped {
+                (right_df, left_df)
+            } else {
+                (left_df, right_df)
+            };
+            Ok(match output_names {
+                None => {
+                    let out = _finish_join(left_df, right_df, Some(suffix))?;
+                    *output_names = Some(out.get_column_names_owned());
+                    out
+                },
+                Some(names) => unsafe {
+                    // SAFETY:
+                    // if we have duplicate names, we overwrite
+                    // them in the next snippet
+                    left_df
+                        .get_columns_mut()
+                        .extend_from_slice(right_df.get_columns());
+                    left_df
+                        .get_columns_mut()
+                        .iter_mut()
+                        .zip(names)
+                        .for_each(|(s, name)| {
+                            s.rename(name);
+                        });
+                    left_df
+                },
+            })
+        }
+
+        if self.coalesce {
+            let out = inner(
+                left_df.clone(),
+                right_df,
+                self.suffix.as_ref(),
+                self.swapped,
+                &mut self.output_names,
+            )?;
+            let l = self
+                .key_names_left
+                .iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>();
+            let r = self
+                .key_names_right
+                .iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>();
+            Ok(_coalesce_outer_join(
+                out,
+                &l,
+                &r,
+                Some(self.suffix.as_ref()),
+                &left_df,
+            ))
         } else {
-            (left_df, right_df)
-        };
-        Ok(match &self.output_names {
-            None => {
-                let out = _finish_join(left_df, right_df, Some(self.suffix.as_ref()))?;
-                self.output_names = Some(out.get_column_names_owned());
-                out
-            },
-            Some(names) => unsafe {
-                // SAFETY:
-                // if we have duplicate names, we overwrite
-                // them in the next snippet
-                left_df
-                    .get_columns_mut()
-                    .extend_from_slice(right_df.get_columns());
-                left_df
-                    .get_columns_mut()
-                    .iter_mut()
-                    .zip(names)
-                    .for_each(|(s, name)| {
-                        s.rename(name);
-                    });
-                left_df
-            },
-        })
+            inner(
+                left_df.clone(),
+                right_df,
+                self.suffix.as_ref(),
+                self.swapped,
+                &mut self.output_names,
+            )
+        }
     }
 
     fn match_outer<'b, I>(&mut self, iter: I)
@@ -219,7 +233,7 @@ impl<K: ExtraPayload> GenericOuterJoinProbe<K> {
 
         let left_df = unsafe {
             self.df_a
-                ._take_chunked_unchecked_seq(&self.join_tuples_a, IsSorted::Not)
+                ._take_opt_chunked_unchecked_seq(&self.join_tuples_a)
         };
         let right_df = unsafe {
             self.join_tuples_b.with_freeze(|idx| {
@@ -285,6 +299,10 @@ impl<K: ExtraPayload> Operator for GenericOuterJoinProbe<K> {
 
     fn flush(&mut self) -> PolarsResult<OperatorResult> {
         self.execute_flush()
+    }
+
+    fn must_flush(&self) -> bool {
+        true
     }
 
     fn split(&self, thread_no: usize) -> Box<dyn Operator> {

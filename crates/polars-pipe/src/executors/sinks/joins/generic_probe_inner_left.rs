@@ -30,7 +30,7 @@ pub struct GenericJoinProbe<K: ExtraPayload> {
     /// columns
     ///      * chunk_offset = (idx * n_join_keys)
     ///      * end = (offset + n_join_keys)
-    materialized_join_cols: Arc<Vec<BinaryArray<i64>>>,
+    materialized_join_cols: Arc<[BinaryArray<i64>]>,
     suffix: Arc<str>,
     hb: RandomState,
     /// partitioned tables that will be used for probing
@@ -58,7 +58,7 @@ impl<K: ExtraPayload> GenericJoinProbe<K> {
     #[allow(clippy::too_many_arguments)]
     pub(super) fn new(
         mut df_a: DataFrame,
-        materialized_join_cols: Arc<Vec<BinaryArray<i64>>>,
+        materialized_join_cols: Arc<[BinaryArray<i64>]>,
         suffix: Arc<str>,
         hb: RandomState,
         hash_tables: Arc<PartitionedMap<K>>,

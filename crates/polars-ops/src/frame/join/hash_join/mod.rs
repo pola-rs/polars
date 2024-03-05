@@ -269,7 +269,7 @@ pub trait JoinDispatch: IntoDf {
         };
         let out = _finish_join(df_left, df_right, args.suffix.as_deref());
         if coalesce {
-            Ok(coalesce_outer_join(
+            Ok(_coalesce_outer_join(
                 out?,
                 &[s_left.name()],
                 &[s_right.name()],

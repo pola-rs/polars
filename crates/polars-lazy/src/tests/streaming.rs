@@ -388,3 +388,29 @@ fn test_sort_maintain_order_streaming() -> PolarsResult<()> {
     ]?));
     Ok(())
 }
+
+#[test]
+fn test_streaming_outer_join() -> PolarsResult<()> {
+    let lf_left = df![
+         "a"=> [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
+        "b"=> [0, 0, 0, 3, 0, 1, 3, 3, 3, 1, 4, 4, 2, 1, 1, 3, 1, 4, 2, 2],
+    ]?
+    .lazy();
+
+    let lf_right = df![
+           "a"=> [10, 18, 13, 9, 1, 13, 14, 12, 15, 11],
+    "b"=> [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+       ]?
+    .lazy();
+
+    let q = lf_left
+        .outer_join(lf_right, col("a"), col("a"))
+        .sort_by_exprs([all()], [false], false, false);
+
+    // Toggle so that the join order is swapped.
+    for toggle in [true, false] {
+        assert_streaming_with_default(q.clone().with_streaming(toggle), true, false);
+    }
+
+    Ok(())
+}

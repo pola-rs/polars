@@ -8,9 +8,11 @@ use polars_core::utils::{_set_partition_size, accumulate_dataframes_vertical_unc
 use polars_utils::arena::Node;
 use polars_utils::slice::GetSaferUnchecked;
 use polars_utils::unitvec;
+use smartstring::alias::String as SmartString;
 
 use super::*;
 use crate::executors::sinks::joins::generic_probe_inner_left::GenericJoinProbe;
+use crate::executors::sinks::joins::generic_probe_outer::GenericOuterJoinProbe;
 use crate::executors::sinks::utils::{hash_rows, load_vec};
 use crate::executors::sinks::HASHMAP_INIT_SIZE;
 use crate::expressions::PhysicalPipedExpr;
@@ -47,9 +49,12 @@ pub struct GenericBuild<K: ExtraPayload> {
     swapped: bool,
     join_nulls: bool,
     node: Node,
+    key_names_left: Arc<[SmartString]>,
+    key_names_right: Arc<[SmartString]>,
 }
 
 impl<K: ExtraPayload> GenericBuild<K> {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         suffix: Arc<str>,
         join_type: JoinType,
@@ -58,6 +63,8 @@ impl<K: ExtraPayload> GenericBuild<K> {
         join_columns_right: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
         join_nulls: bool,
         node: Node,
+        key_names_left: Arc<[SmartString]>,
+        key_names_right: Arc<[SmartString]>,
     ) -> Self {
         let hb: RandomState = Default::default();
         let partitions = _set_partition_size();
@@ -78,6 +85,8 @@ impl<K: ExtraPayload> GenericBuild<K> {
             hashes: vec![],
             join_nulls,
             node,
+            key_names_left,
+            key_names_right,
         }
     }
 }
@@ -271,37 +280,40 @@ impl<K: ExtraPayload> Sink for GenericBuild<K> {
             self.join_columns_right.clone(),
             self.join_nulls,
             self.node,
+            self.key_names_left.clone(),
+            self.key_names_right.clone(),
         );
         new.hb = self.hb.clone();
         Box::new(new)
     }
 
     fn finalize(&mut self, context: &PExecutionContext) -> PolarsResult<FinalizedSink> {
+        let chunks_len = self.chunks.len();
+        let left_df = accumulate_dataframes_vertical_unchecked(
+            std::mem::take(&mut self.chunks)
+                .into_iter()
+                .map(|chunk| chunk.data),
+        );
+        if left_df.height() > 0 {
+            assert_eq!(left_df.n_chunks(), chunks_len);
+        }
+        // Reallocate to Arc<[]> to get rid of double indirection as this is accessed on every
+        // hastable cmp.
+        let materialized_join_cols = Arc::from(std::mem::take(&mut self.materialized_join_cols));
+        let suffix = self.suffix.clone();
+        let hb = self.hb.clone();
+        let hash_tables = Arc::new(PartitionedHashMap::new(std::mem::take(
+            self.hash_tables.inner_mut(),
+        )));
+        let join_columns_left = self.join_columns_left.clone();
+        let join_columns_right = self.join_columns_right.clone();
+
+        // take the buffers, this saves one allocation
+        let mut hashes = std::mem::take(&mut self.hashes);
+        hashes.clear();
+
         match self.join_type {
             JoinType::Inner | JoinType::Left => {
-                let chunks_len = self.chunks.len();
-                let left_df = accumulate_dataframes_vertical_unchecked(
-                    std::mem::take(&mut self.chunks)
-                        .into_iter()
-                        .map(|chunk| chunk.data),
-                );
-                if left_df.height() > 0 {
-                    assert_eq!(left_df.n_chunks(), chunks_len);
-                }
-                let materialized_join_cols =
-                    Arc::new(std::mem::take(&mut self.materialized_join_cols));
-                let suffix = self.suffix.clone();
-                let hb = self.hb.clone();
-                let hash_tables = Arc::new(PartitionedHashMap::new(std::mem::take(
-                    self.hash_tables.inner_mut(),
-                )));
-                let join_columns_left = self.join_columns_left.clone();
-                let join_columns_right = self.join_columns_right.clone();
-
-                // take the buffers, this saves one allocation
-                let mut hashes = std::mem::take(&mut self.hashes);
-                hashes.clear();
-
                 let probe_operator = GenericJoinProbe::new(
                     left_df,
                     materialized_join_cols,
@@ -318,6 +330,24 @@ impl<K: ExtraPayload> Sink for GenericBuild<K> {
                 );
                 Ok(FinalizedSink::Operator(Box::new(probe_operator)))
             },
+            JoinType::Outer { coalesce } => {
+                let probe_operator = GenericOuterJoinProbe::new(
+                    left_df,
+                    materialized_join_cols,
+                    suffix,
+                    hb,
+                    hash_tables,
+                    join_columns_left,
+                    self.swapped,
+                    hashes,
+                    self.join_nulls,
+                    coalesce,
+                    self.key_names_left.clone(),
+                    self.key_names_right.clone(),
+                );
+                Ok(FinalizedSink::Operator(Box::new(probe_operator)))
+            },
+
             _ => unimplemented!(),
         }
     }

@@ -18,8 +18,6 @@ use polars_utils::idx_vec::UnitVec;
 use polars_utils::index::ChunkId;
 use polars_utils::partitioned::PartitionedHashMap;
 
-use crate::executors::sinks::joins::generic_build::ChunkIdx;
-
 trait ToRow {
     fn get_row(&self) -> &[u8];
 }
@@ -72,7 +70,7 @@ pub(crate) trait ExtraPayload: Clone + Sync + Send + Default + 'static {
 impl ExtraPayload for () {}
 
 #[repr(transparent)]
-struct Tracker {
+pub(crate) struct Tracker {
     inner: AtomicBool,
 }
 
@@ -97,11 +95,6 @@ impl ExtraPayload for Tracker {
     fn get_tracker(&self) -> &AtomicBool {
         &self.inner
     }
-}
-
-#[derive(Clone)]
-struct Payload {
-    idx: UnitVec<ChunkId>,
 }
 
 type PartitionedMap<V> =
