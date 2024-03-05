@@ -4,7 +4,31 @@ use polars_error::{polars_bail, polars_ensure, PolarsResult};
 
 use crate::nulls::IsNull;
 use crate::slice::GetSaferUnchecked;
-use crate::IdxSize;
+
+#[cfg(not(feature = "bigidx"))]
+pub type IdxSize = u32;
+#[cfg(feature = "bigidx")]
+pub type IdxSize = u64;
+
+pub type NullableIdxSize = IdxSize;
+
+pub trait IsNullIdx {
+    fn is_null(&self) -> bool;
+
+    fn null() -> Self;
+}
+
+impl IsNullIdx for IdxSize {
+    #[inline(always)]
+    fn is_null(&self) -> bool {
+        *self == IdxSize::MAX
+    }
+
+    #[inline(always)]
+    fn null() -> Self {
+        IdxSize::MAX
+    }
+}
 
 pub trait Bounded {
     fn len(&self) -> usize;
@@ -125,6 +149,8 @@ const DEFAULT_CHUNK_BITS: u64 = 24;
 pub struct ChunkId<const CHUNK_BITS: u64 = DEFAULT_CHUNK_BITS> {
     swizzled: u64,
 }
+
+pub type NullableChunkId = ChunkId;
 
 impl Debug for ChunkId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {

@@ -7,7 +7,6 @@ use polars_core::series::IsSorted;
 use polars_ops::chunked_array::DfTake;
 use polars_ops::frame::join::_finish_join;
 use polars_ops::prelude::_coalesce_outer_join;
-use polars_utils::index::ChunkId;
 use smartstring::alias::String as SmartString;
 
 use crate::executors::sinks::joins::generic_build::*;
@@ -42,7 +41,7 @@ pub struct GenericOuterJoinProbe<K: ExtraPayload> {
     // amortize allocations
     // in inner join these are the left table
     // in left join there are the right table
-    join_tuples_a: Vec<ChunkId>,
+    join_tuples_a: Vec<NullableChunkId>,
     // in inner join these are the right table
     // in left join there are the left table
     join_tuples_b: MutablePrimitiveArray<IdxSize>,
@@ -256,7 +255,7 @@ impl<K: ExtraPayload> GenericOuterJoinProbe<K> {
         ht.iter().enumerate().for_each(|(i, ht)| {
             if i % n == self.thread_no {
                 ht.iter().for_each(|(_k, (idx_left, tracker))| {
-                    let found_match = tracker.get_tracker().swap(true, Ordering::Relaxed);
+                    let found_match = tracker.get_tracker().load(Ordering::Relaxed);
 
                     if !found_match {
                         self.join_tuples_a.extend_from_slice(idx_left);

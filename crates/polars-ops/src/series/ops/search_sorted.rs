@@ -2,7 +2,6 @@ use std::cmp::Ordering;
 use std::fmt::Debug;
 
 use arrow::array::Array;
-use arrow::legacy::prelude::*;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
 use polars_utils::total_ord::{TotalEq, TotalOrd};
