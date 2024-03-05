@@ -272,20 +272,21 @@ unsafe fn take_unchecked_object(s: &Series, by: &[ChunkId], _sorted: IsSorted) -
 }
 
 #[cfg(feature = "object")]
-unsafe fn take_opt_unchecked_object(s: &Series, by: &[Option<ChunkId>]) -> Series {
+unsafe fn take_opt_unchecked_object(s: &Series, by: &[ChunkId]) -> Series {
     let DataType::Object(_, reg) = s.dtype() else {
         unreachable!()
     };
     let reg = reg.as_ref().unwrap();
     let mut builder = (*reg.builder_constructor)(s.name(), by.len());
 
-    by.iter().for_each(|chunk_id| match chunk_id {
-        None => builder.append_null(),
-        Some(chunk_id) => {
+    by.iter().for_each(|chunk_id| {
+        if chunk_id.is_null() {
+            builder.append_null()
+        } else {
             let (chunk_idx, array_idx) = chunk_id.extract();
             let object = s.get_object_chunked_unchecked(chunk_idx as usize, array_idx as usize);
             builder.append_option(object.map(|v| v.as_any()))
-        },
+        }
     });
     builder.to_series()
 }

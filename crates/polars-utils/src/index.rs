@@ -182,7 +182,7 @@ mod test {
         let chunk = 213908;
         let row = 813457;
 
-        let ci = ChunkId::store(chunk, row);
+        let ci: ChunkId = ChunkId::store(chunk, row);
         let (c, r) = ci.extract();
 
         assert_eq!(c, chunk);
