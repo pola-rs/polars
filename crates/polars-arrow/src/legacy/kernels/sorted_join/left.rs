@@ -98,14 +98,14 @@ mod test {
         let (l_idx, r_idx) = join(lhs, rhs, 0);
         let out_left = &[0, 1, 1, 2, 2, 3, 4, 5];
         let out_right = &[
-            Some(0),
-            Some(1),
-            Some(2),
-            Some(1),
-            Some(2),
-            None,
-            Some(3),
-            None,
+            0,
+            1,
+            2,
+            1,
+            2,
+            NullableIdxSize::null(),
+            3,
+            NullableIdxSize::null(),
         ];
         assert_eq!(&l_idx, out_left);
         assert_eq!(&r_idx, out_right);
@@ -128,21 +128,21 @@ mod test {
         assert_eq!(
             &r_idx,
             &[
-                Some(0),
-                Some(1),
-                Some(0),
-                Some(1),
-                Some(2),
-                Some(3),
-                Some(4),
-                None,
-                Some(5),
-                Some(6),
-                Some(5),
-                Some(6),
-                Some(5),
-                Some(6),
-                None
+                0,
+                1,
+                0,
+                1,
+                2,
+                3,
+                4,
+                NullableIdxSize::null(),
+                5,
+                6,
+                5,
+                6,
+                5,
+                6,
+                NullableIdxSize::null(),
             ]
         );
 
@@ -153,16 +153,16 @@ mod test {
         assert_eq!(
             &r_idx,
             &[
-                None,
-                None,
-                Some(1),
-                Some(2),
-                Some(2),
-                Some(2),
-                Some(2),
-                Some(3),
-                Some(4),
-                Some(4)
+                NullableIdxSize::null(),
+                NullableIdxSize::null(),
+                1,
+                2,
+                2,
+                2,
+                2,
+                3,
+                4,
+                4
             ]
         );
         let lhs = &[0, 1, 2, 2, 3, 4, 4, 6, 6, 7];
@@ -172,20 +172,20 @@ mod test {
         assert_eq!(
             &r_idx,
             &[
-                None,
-                None,
-                None,
-                None,
-                None,
-                Some(0),
-                Some(1),
-                Some(2),
-                Some(0),
-                Some(1),
-                Some(2),
-                None,
-                None,
-                None
+                NullableIdxSize::null(),
+                NullableIdxSize::null(),
+                NullableIdxSize::null(),
+                NullableIdxSize::null(),
+                NullableIdxSize::null(),
+                0,
+                1,
+                2,
+                0,
+                1,
+                2,
+                NullableIdxSize::null(),
+                NullableIdxSize::null(),
+                NullableIdxSize::null(),
             ]
         )
     }
