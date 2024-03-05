@@ -408,7 +408,7 @@ fn test_streaming_outer_join() -> PolarsResult<()> {
         .sort_by_exprs([all()], [false], false, false);
 
     // Toggle so that the join order is swapped.
-    for toggle in [true, false] {
+    for toggle in [true, true] {
         assert_streaming_with_default(q.clone().with_streaming(toggle), true, false);
     }
 

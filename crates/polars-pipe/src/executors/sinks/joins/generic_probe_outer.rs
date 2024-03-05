@@ -188,7 +188,7 @@ impl<K: ExtraPayload> GenericOuterJoinProbe<K> {
 
             if let Some((indexes_left, tracker)) = entry {
                 // compiles to normal store: https://rust.godbolt.org/z/331hMo339
-                tracker.get_tracker().store(true, Ordering::Relaxed);
+                tracker.get_tracker().store(true, Ordering::SeqCst);
 
                 self.join_tuples_a.extend_from_slice(indexes_left);
                 self.join_tuples_b
@@ -205,6 +205,7 @@ impl<K: ExtraPayload> GenericOuterJoinProbe<K> {
         context: &PExecutionContext,
         chunk: &DataChunk,
     ) -> PolarsResult<OperatorResult> {
+        println!("exectue_{}", self.thread_no);
         self.join_tuples_a.clear();
         self.join_tuples_b.clear();
 
@@ -252,13 +253,15 @@ impl<K: ExtraPayload> GenericOuterJoinProbe<K> {
         let ht = self.hash_tables.inner();
         let n = ht.len();
         self.join_tuples_a.clear();
+        println!("flush_{}", self.thread_no);
 
         ht.iter().enumerate().for_each(|(i, ht)| {
             if i % n == self.thread_no {
-                ht.iter().for_each(|(_k, (idx_left, tracker))| {
-                    let found_match = tracker.get_tracker().load(Ordering::Relaxed);
+                ht.iter().for_each(|(k, (idx_left, tracker))| {
+                    let found_match = tracker.get_tracker().swap(true, Ordering::SeqCst);
 
                     if !found_match {
+                        dbg!(k.idx);
                         self.join_tuples_a.extend_from_slice(idx_left);
                     }
                 })
@@ -269,6 +272,7 @@ impl<K: ExtraPayload> GenericOuterJoinProbe<K> {
             self.df_a
                 ._take_chunked_unchecked_seq(&self.join_tuples_a, IsSorted::Not)
         };
+        dbg!(&left_df);
 
         let size = left_df.height();
         let right_df = self.df_b_dummy.as_ref().unwrap();
