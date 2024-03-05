@@ -256,6 +256,7 @@ impl PartitionGroupByExec {
             &mut vec![],
             false,
             false,
+            true,
         )
         .unwrap();
 

@@ -13,12 +13,12 @@ unsafe fn apply_mapping(idx: Vec<IdxSize>, chunk_mapping: &[ChunkId]) -> Vec<Chu
 }
 
 #[cfg(feature = "chunked_ids")]
-unsafe fn apply_opt_mapping(
-    idx: Vec<Option<IdxSize>>,
-    chunk_mapping: &[ChunkId],
-) -> Vec<Option<ChunkId>> {
+unsafe fn apply_opt_mapping(idx: Vec<Option<IdxSize>>, chunk_mapping: &[ChunkId]) -> Vec<ChunkId> {
     idx.iter()
-        .map(|opt_idx| opt_idx.map(|idx| *chunk_mapping.get_unchecked(idx as usize)))
+        .map(|opt_idx| match opt_idx {
+            None => ChunkId::null(),
+            Some(idx) => *chunk_mapping.get_unchecked(*idx as usize),
+        })
         .collect()
 }
 

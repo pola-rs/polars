@@ -127,17 +127,20 @@ impl<T: NativeType> MutablePrimitiveArray<T> {
         }
     }
 
+    #[inline]
+    pub fn push_value(&mut self, value: T) {
+        self.values.push(value);
+        match &mut self.validity {
+            Some(validity) => validity.push(true),
+            None => {},
+        }
+    }
+
     /// Adds a new value to the array.
     #[inline]
     pub fn push(&mut self, value: Option<T>) {
         match value {
-            Some(value) => {
-                self.values.push(value);
-                match &mut self.validity {
-                    Some(validity) => validity.push(true),
-                    None => {},
-                }
-            },
+            Some(value) => self.push_value(value),
             None => {
                 self.values.push(T::default());
                 match &mut self.validity {
@@ -287,6 +290,24 @@ impl<T: NativeType> MutablePrimitiveArray<T> {
 
     pub fn freeze(self) -> PrimitiveArray<T> {
         self.into()
+    }
+
+    /// Clears the array, removing all values.
+    ///
+    /// Note that this method has no effect on the allocated capacity
+    /// of the array.
+    pub fn clear(&mut self) {
+        self.values.clear();
+        self.validity = None;
+    }
+
+    /// Apply a function that temporarily freezes this `MutableArray` into a `PrimitiveArray`.
+    pub fn with_freeze<K, F: FnOnce(&PrimitiveArray<T>) -> K>(&mut self, f: F) -> K {
+        let mutable = std::mem::take(self);
+        let arr = mutable.freeze();
+        let out = f(&arr);
+        *self = arr.into_mut().right().unwrap();
+        out
     }
 }
 
