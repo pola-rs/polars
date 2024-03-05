@@ -298,7 +298,7 @@ impl<K: ExtraPayload> Sink for GenericBuild<K> {
             assert_eq!(left_df.n_chunks(), chunks_len);
         }
         // Reallocate to Arc<[]> to get rid of double indirection as this is accessed on every
-        // hastable cmp.
+        // hashtable cmp.
         let materialized_join_cols = Arc::from(std::mem::take(&mut self.materialized_join_cols));
         let suffix = self.suffix.clone();
         let hb = self.hb.clone();
