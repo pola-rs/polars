@@ -91,7 +91,7 @@ pub unsafe fn filter_scalar_values<T: Pod>(values: &[T], mask: &Bitmap, mut out:
         unsafe {
             // SAFETY: we will only write at most m_popcnt + 1 to out, which
             // is allowed.
-            
+
             // Fast-path: completely full mask.
             if m == u64::MAX {
                 core::ptr::copy_nonoverlapping(value_chunk.as_ptr(), out, 64);
