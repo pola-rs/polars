@@ -730,3 +730,22 @@ def test_parquet_rle_null_binary_read_14638() -> None:
     assert "RLE_DICTIONARY" in pq.read_metadata(f).row_group(0).column(0).encodings
     f.seek(0)
     assert_frame_equal(df, pl.read_parquet(f))
+
+
+def test_parquet_string_rle_encoding() -> None:
+    n = 3
+    data = {
+        "id": ["abcdefgh"] * n,
+    }
+
+    df = pl.DataFrame(data)
+    f = io.BytesIO()
+    df.write_parquet(f, use_pyarrow=False)
+    f.seek(0)
+
+    assert (
+        "RLE_DICTIONARY"
+        in pq.ParquetFile(f).metadata.to_dict()["row_groups"][0]["columns"][0][
+            "encodings"
+        ]
+    )

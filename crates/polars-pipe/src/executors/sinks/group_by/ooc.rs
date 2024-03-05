@@ -8,8 +8,8 @@ use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, Source
 use crate::pipeline::{morsels_per_sink, PipeLine};
 
 pub(super) struct GroupBySource {
-    // holding this keeps the lockfile in place
-    _io_thread: IOThread,
+    // Holding this keeps the lockfile in place
+    io_thread: IOThread,
     already_finished: Option<DataFrame>,
     partitions: std::fs::ReadDir,
     group_by_sink: Box<dyn Sink>,
@@ -34,7 +34,7 @@ impl GroupBySource {
         }
 
         Ok(Self {
-            _io_thread: io_thread,
+            io_thread,
             already_finished: Some(already_finished),
             partitions,
             group_by_sink,
@@ -85,7 +85,7 @@ impl Source for GroupBySource {
                 let mut pipe =
                     PipeLine::new_simple(sources, vec![], self.group_by_sink.split(0), verbose());
 
-                match pipe.run_pipeline(context, Default::default())?.unwrap() {
+                let out = match pipe.run_pipeline(context, Default::default())?.unwrap() {
                     FinalizedSink::Finished(mut df) => {
                         if let Some(slice) = &mut self.slice {
                             let height = df.height();
@@ -118,7 +118,12 @@ impl Source for GroupBySource {
                     // recursively out of core path
                     FinalizedSink::Source(mut src) => src.get_batches(context),
                     _ => unreachable!(),
+                };
+                for path in files {
+                    self.io_thread.clean(path)
                 }
+
+                out
             },
         }
     }

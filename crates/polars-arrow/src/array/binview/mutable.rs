@@ -8,7 +8,7 @@ use polars_utils::slice::GetSaferUnchecked;
 use crate::array::binview::iterator::MutableBinaryViewValueIter;
 use crate::array::binview::view::validate_utf8_only;
 use crate::array::binview::{BinaryViewArrayGeneric, ViewType};
-use crate::array::{Array, MutableArray, View};
+use crate::array::{Array, MutableArray, TryExtend, TryPush, View};
 use crate::bitmap::MutableBitmap;
 use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
@@ -328,6 +328,12 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
         self.into()
     }
 
+    #[inline]
+    pub fn value(&self, i: usize) -> &T {
+        assert!(i < self.len());
+        unsafe { self.value_unchecked(i) }
+    }
+
     /// Returns the element at index `i`
     ///
     /// # Safety
@@ -442,5 +448,23 @@ impl<T: ViewType + ?Sized> MutableArray for MutableBinaryViewArray<T> {
 
     fn shrink_to_fit(&mut self) {
         self.views.shrink_to_fit()
+    }
+}
+
+impl<T: ViewType + ?Sized, P: AsRef<T>> TryExtend<Option<P>> for MutableBinaryViewArray<T> {
+    /// This is infallible and is implemented for consistency with all other types
+    #[inline]
+    fn try_extend<I: IntoIterator<Item = Option<P>>>(&mut self, iter: I) -> PolarsResult<()> {
+        self.extend(iter.into_iter());
+        Ok(())
+    }
+}
+
+impl<T: ViewType + ?Sized, P: AsRef<T>> TryPush<Option<P>> for MutableBinaryViewArray<T> {
+    /// This is infallible and is implemented for consistency with all other types
+    #[inline(always)]
+    fn try_push(&mut self, item: Option<P>) -> PolarsResult<()> {
+        self.push(item.as_ref().map(|p| p.as_ref()));
+        Ok(())
     }
 }

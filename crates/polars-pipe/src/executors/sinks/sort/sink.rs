@@ -170,8 +170,8 @@ impl Sink for SortSink {
         if self.ooc {
             // spill everything
             self.dump(true).unwrap();
-            let lock = self.io_thread.read().unwrap();
-            let io_thread = lock.as_ref().unwrap();
+            let mut lock = self.io_thread.write().unwrap();
+            let io_thread = lock.take().unwrap();
 
             let dist = Series::from_any_values("", &self.dist_sample, true).unwrap();
             let dist = dist.sort_with(SortOptions {
@@ -181,7 +181,7 @@ impl Sink for SortSink {
                 maintain_order: self.sort_args.maintain_order,
             });
 
-            block_thread_until_io_thread_done(io_thread);
+            block_thread_until_io_thread_done(&io_thread);
 
             sort_ooc(
                 io_thread,

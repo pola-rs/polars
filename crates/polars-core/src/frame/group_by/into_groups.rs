@@ -13,7 +13,7 @@ use crate::utils::flatten::flatten_par;
 pub trait IntoGroupsProxy {
     /// Create the tuples need for a group_by operation.
     ///     * The first value in the tuple is the first index of the group.
-    ///     * The second value in the tuple is are the indexes of the groups including the first value.
+    ///     * The second value in the tuple is the indexes of the groups including the first value.
     fn group_tuples(&self, _multithreaded: bool, _sorted: bool) -> PolarsResult<GroupsProxy> {
         unimplemented!()
     }

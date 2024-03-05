@@ -228,17 +228,11 @@ class SeriesBuffers(TypedDict):
 # minimal protocol definitions that can reasonably represent
 # an executable connection, cursor, or equivalent object
 class BasicConnection(Protocol):  # noqa: D101
-    def close(self) -> None:
-        """Close the connection."""
-
     def cursor(self, *args: Any, **kwargs: Any) -> Any:
         """Return a cursor object."""
 
 
 class BasicCursor(Protocol):  # noqa: D101
-    def close(self) -> None:
-        """Close the cursor."""
-
     def execute(self, *args: Any, **kwargs: Any) -> Any:
         """Execute a query."""
 

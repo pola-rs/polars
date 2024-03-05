@@ -42,5 +42,6 @@ pub mod index;
 pub mod io;
 pub mod nulls;
 pub mod ord;
+pub mod partitioned;
 
 pub use io::open_file;
