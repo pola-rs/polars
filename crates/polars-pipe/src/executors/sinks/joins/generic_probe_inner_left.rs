@@ -9,14 +9,12 @@ use polars_ops::chunked_array::DfTake;
 use polars_ops::frame::join::_finish_join;
 use polars_ops::prelude::JoinType;
 use polars_row::RowsEncoded;
-use polars_utils::hashing::hash_to_partition;
-use polars_utils::idx_vec::UnitVec;
 use polars_utils::index::ChunkId;
 use polars_utils::nulls::IsNull;
-use polars_utils::slice::GetSaferUnchecked;
 use smartstring::alias::String as SmartString;
 
 use crate::executors::sinks::joins::generic_build::*;
+use crate::executors::sinks::joins::{PartitionedMap, ToRow};
 use crate::executors::sinks::utils::hash_rows;
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{DataChunk, Operator, OperatorResult, PExecutionContext};
@@ -38,7 +36,7 @@ pub struct GenericJoinProbe {
     hb: RandomState,
     // partitioned tables that will be used for probing
     // stores the key and the chunk_idx, df_idx of the left table
-    hash_tables: Arc<Vec<PlIdHashMap<Key, UnitVec<ChunkId>>>>,
+    hash_tables: Arc<PartitionedMap>,
 
     // the columns that will be joined on
     join_columns_right: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
@@ -65,22 +63,6 @@ pub struct GenericJoinProbe {
     join_nulls: bool,
 }
 
-trait ToRow {
-    fn get_row(&self) -> &[u8];
-}
-
-impl ToRow for &[u8] {
-    fn get_row(&self) -> &[u8] {
-        self
-    }
-}
-
-impl ToRow for Option<&[u8]> {
-    fn get_row(&self) -> &[u8] {
-        self.unwrap()
-    }
-}
-
 impl GenericJoinProbe {
     #[allow(clippy::too_many_arguments)]
     pub(super) fn new(
@@ -88,12 +70,13 @@ impl GenericJoinProbe {
         materialized_join_cols: Arc<Vec<BinaryArray<i64>>>,
         suffix: Arc<str>,
         hb: RandomState,
-        hash_tables: Arc<Vec<PlIdHashMap<Key, UnitVec<ChunkId>>>>,
+        hash_tables: Arc<PartitionedMap>,
         join_columns_left: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
         join_columns_right: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
         swapped_or_left: bool,
         join_columns: Vec<ArrayRef>,
-        hashes: Vec<u64>,
+        // Re-use the hashes allocation of the build side.
+        amortized_hashes: Vec<u64>,
         context: &PExecutionContext,
         how: JoinType,
         join_nulls: bool,
@@ -128,7 +111,7 @@ impl GenericJoinProbe {
             join_tuples_a: vec![],
             join_tuples_a_left_join: vec![],
             join_tuples_b: vec![],
-            hashes,
+            hashes: amortized_hashes,
             swapped_or_left,
             current_rows: Default::default(),
             join_column_idx: None,
@@ -226,16 +209,12 @@ impl GenericJoinProbe {
         for (i, (h, row)) in iter {
             let df_idx_left = i as IdxSize;
 
-            // get the hashtable belonging by this hash partition
-            let partition = hash_to_partition(*h, self.hash_tables.len());
-            let current_table = unsafe { self.hash_tables.get_unchecked_release(partition) };
-
             let entry = if row.is_null() {
                 None
             } else {
                 let row = row.get_row();
-                current_table
-                    .raw_entry()
+                self.hash_tables
+                    .raw_entry(*h)
                     .from_hash(*h, |key| {
                         compare_fn(key, *h, &self.materialized_join_cols, row)
                     })
@@ -307,12 +286,10 @@ impl GenericJoinProbe {
     {
         for (i, (h, row)) in iter {
             let df_idx_right = i as IdxSize;
-            // get the hashtable belonging by this hash partition
-            let partition = hash_to_partition(*h, self.hash_tables.len());
-            let current_table = unsafe { self.hash_tables.get_unchecked_release(partition) };
 
-            let entry = current_table
-                .raw_entry()
+            let entry = self
+                .hash_tables
+                .raw_entry(*h)
                 .from_hash(*h, |key| {
                     compare_fn(key, *h, &self.materialized_join_cols, row)
                 })
