@@ -978,12 +978,12 @@ def warn_on_inefficient_map(
             )
 
 
-def get_dynamic_lib_location(package_init_path: str | Path) -> str:
+def get_dynamic_lib_location(plugin_location: str | Path) -> str:
     """Get location of dynamic library file."""
-    if Path(package_init_path).is_file():
-        package_dir = Path(package_init_path).parent
+    if Path(plugin_location).is_file():
+        package_dir = Path(plugin_location).parent
     else:
-        package_dir = Path(package_init_path)
+        package_dir = Path(plugin_location)
     for path in package_dir.iterdir():
         if _is_shared_lib(path):
             return str(path)
