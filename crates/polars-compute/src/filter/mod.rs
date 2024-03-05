@@ -56,12 +56,7 @@ pub fn filter(array: &dyn Array, mask: &BooleanArray) -> PolarsResult<Box<dyn Ar
             let array = array.as_any().downcast_ref::<BooleanArray>().unwrap();
             let (values, validity) =
                 filter_bitmap_and_validity(array.values(), array.validity(), mask.values());
-            Ok(BooleanArray::new(
-                array.data_type().clone(),
-                values.freeze(),
-                validity.map(|v| v.freeze()),
-            )
-            .boxed())
+            Ok(BooleanArray::new(array.data_type().clone(), values, validity).boxed())
         },
         BinaryView => {
             let array = array.as_any().downcast_ref::<BinaryViewArray>().unwrap();

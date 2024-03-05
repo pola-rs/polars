@@ -3,10 +3,11 @@ from __future__ import annotations
 import contextlib
 import math
 import operator
-import os
 import warnings
 from datetime import timedelta
 from functools import reduce
+from io import BytesIO, StringIO
+from pathlib import Path
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -24,6 +25,29 @@ from typing import (
 
 import polars._reexport as pl
 from polars import functions as F
+from polars._utils.convert import negate_duration_string, parse_as_duration_string
+from polars._utils.deprecation import (
+    deprecate_function,
+    deprecate_nonkeyword_arguments,
+    deprecate_renamed_function,
+    deprecate_renamed_parameter,
+    deprecate_saturating,
+    issue_deprecation_warning,
+)
+from polars._utils.parse_expr_input import (
+    parse_as_expression,
+    parse_as_list_of_expressions,
+    parse_predicates_constraints_as_expression,
+)
+from polars._utils.unstable import issue_unstable_warning, unstable
+from polars._utils.various import (
+    BUILDING_SPHINX_DOCS,
+    find_stacklevel,
+    no_default,
+    normalize_filepath,
+    sphinx_accessor,
+    warn_null_comparison,
+)
 from polars.datatypes import (
     Int64,
     is_polars_dtype,
@@ -42,27 +66,6 @@ from polars.expr.name import ExprNameNameSpace
 from polars.expr.string import ExprStringNameSpace
 from polars.expr.struct import ExprStructNameSpace
 from polars.meta import thread_pool_size
-from polars.utils._parse_expr_input import (
-    parse_as_expression,
-    parse_as_list_of_expressions,
-    parse_predicates_constraints_as_expression,
-)
-from polars.utils.convert import _negate_duration, _timedelta_to_pl_duration
-from polars.utils.deprecation import (
-    deprecate_function,
-    deprecate_nonkeyword_arguments,
-    deprecate_renamed_function,
-    deprecate_renamed_parameter,
-    deprecate_saturating,
-    issue_deprecation_warning,
-)
-from polars.utils.unstable import issue_unstable_warning, unstable
-from polars.utils.various import (
-    find_stacklevel,
-    no_default,
-    sphinx_accessor,
-    warn_null_comparison,
-)
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import arg_where as py_arg_where
@@ -72,8 +75,12 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     import sys
+    from io import IOBase
 
     from polars import DataFrame, LazyFrame, Series
+    from polars._utils.various import (
+        NoDefault,
+    )
     from polars.type_aliases import (
         ClosedInterval,
         FillNullStrategy,
@@ -90,9 +97,6 @@ if TYPE_CHECKING:
         TemporalLiteral,
         WindowMappingStrategy,
     )
-    from polars.utils.various import (
-        NoDefault,
-    )
 
     if sys.version_info >= (3, 11):
         from typing import Concatenate, ParamSpec, Self
@@ -102,14 +106,15 @@ if TYPE_CHECKING:
     T = TypeVar("T")
     P = ParamSpec("P")
 
-elif os.getenv("BUILDING_SPHINX_DOCS"):
+elif BUILDING_SPHINX_DOCS:
     property = sphinx_accessor
 
 
 class Expr:
     """Expressions that can be used in various contexts."""
 
-    _pyexpr: PyExpr = None
+    __slots__ = ("_pyexpr",)
+    _pyexpr: PyExpr
     _accessors: ClassVar[set[str]] = {
         "arr",
         "cat",
@@ -329,17 +334,36 @@ class Expr:
         return root_expr.map_batches(function, is_elementwise=True).meta.undo_aliases()
 
     @classmethod
-    def from_json(cls, value: str) -> Self:
+    def deserialize(cls, source: str | Path | IOBase) -> Self:
         """
-        Read an expression from a JSON encoded string to construct an Expression.
+        Read an expression from a JSON file.
 
         Parameters
         ----------
-        value
-            JSON encoded string value
+        source
+            Path to a file or a file-like object (by file-like object, we refer to
+            objects that have a `read()` method, such as a file handler (e.g.
+            via builtin `open` function) or `BytesIO`).
+
+        See Also
+        --------
+        Expr.meta.serialize
+
+        Examples
+        --------
+        >>> from io import StringIO
+        >>> expr = pl.col("foo").sum().over("bar")
+        >>> json = expr.meta.serialize()
+        >>> pl.Expr.deserialize(StringIO(json))  # doctest: +ELLIPSIS
+        <Expr ['col("foo").sum().over([col("ba…'] at ...>
         """
+        if isinstance(source, StringIO):
+            source = BytesIO(source.getvalue().encode())
+        elif isinstance(source, (str, Path)):
+            source = normalize_filepath(source)
+
         expr = cls.__new__(cls)
-        expr._pyexpr = PyExpr.meta_read_json(value)
+        expr._pyexpr = PyExpr.deserialize(source)
         return expr
 
     def to_physical(self) -> Self:
@@ -3299,7 +3323,7 @@ class Expr:
         check_sorted: bool = True,
     ) -> Self:
         """
-        Create rolling groups based on a time, Int32, or Int64 column.
+        Create rolling groups based on a temporal or integer column.
 
         If you have a time series `<t_0, t_1, ..., t_n>`, then by default the
         windows created will be
@@ -3339,11 +3363,6 @@ class Expr:
         not be 24 hours, due to daylight savings). Similarly for "calendar week",
         "calendar month", "calendar quarter", and "calendar year".
 
-        In case of a rolling operation on an integer column, the windows are defined by:
-
-        - "1i"      # length 1
-        - "10i"     # length 10
-
         Parameters
         ----------
         index_column
@@ -3351,8 +3370,8 @@ class Expr:
             Often of type Date/Datetime.
             This column must be sorted in ascending order.
             In case of a rolling group by on indices, dtype needs to be one of
-            {Int32, Int64}. Note that Int32 gets temporarily cast to Int64, so if
-            performance matters use an Int64 column.
+            {UInt32, UInt64, Int32, Int64}. Note that the first three get temporarily
+            cast to Int64, so if performance matters use an Int64 column.
         period
             length of the window - must be non-negative
         offset
@@ -3401,10 +3420,10 @@ class Expr:
         period = deprecate_saturating(period)
         offset = deprecate_saturating(offset)
         if offset is None:
-            offset = _negate_duration(_timedelta_to_pl_duration(period))
+            offset = negate_duration_string(parse_as_duration_string(period))
 
-        period = _timedelta_to_pl_duration(period)
-        offset = _timedelta_to_pl_duration(offset)
+        period = parse_as_duration_string(period)
+        offset = parse_as_duration_string(offset)
 
         return self._from_pyexpr(
             self._pyexpr.rolling(index_column, period, offset, closed, check_sorted)
@@ -4339,7 +4358,7 @@ class Expr:
             )
 
         # input x: Series of type list containing the group values
-        from polars.utils.udfs import warn_on_inefficient_map
+        from polars._utils.udfs import warn_on_inefficient_map
 
         root_names = self.meta.root_names()
         if len(root_names) > 0:
@@ -5716,16 +5735,13 @@ class Expr:
         If `by` has not been specified (the default), the window at a given row will
         include the row itself, and the `window_size - 1` elements before it.
 
-        If you pass a `by` column `<t_0, t_1, ..., t_n>`, then `closed="left"`
-        means the windows will be:
+        If you pass a `by` column `<t_0, t_1, ..., t_n>`, then `closed="right"`
+        (the default) means the windows will be:
 
-            - [t_0 - window_size, t_0)
-            - [t_1 - window_size, t_1)
+            - (t_0 - window_size, t_0]
+            - (t_1 - window_size, t_1]
             - ...
-            - [t_n - window_size, t_n)
-
-        With `closed="right"`, the left endpoint is not included and the right
-        endpoint is included.
+            - (t_n - window_size, t_n]
 
         Parameters
         ----------
@@ -5931,16 +5947,13 @@ class Expr:
         If `by` has not been specified (the default), the window at a given row will
         include the row itself, and the `window_size - 1` elements before it.
 
-        If you pass a `by` column `<t_0, t_1, ..., t_n>`, then `closed="left"`
-        means the windows will be:
+        If you pass a `by` column `<t_0, t_1, ..., t_n>`, then `closed="right"`
+        (the default) means the windows will be:
 
-            - [t_0 - window_size, t_0)
-            - [t_1 - window_size, t_1)
+            - (t_0 - window_size, t_0]
+            - (t_1 - window_size, t_1]
             - ...
-            - [t_n - window_size, t_n)
-
-        With `closed="right"`, the left endpoint is not included and the right
-        endpoint is included.
+            - (t_n - window_size, t_n]
 
         Parameters
         ----------
@@ -6171,16 +6184,13 @@ class Expr:
         If `by` has not been specified (the default), the window at a given row will
         include the row itself, and the `window_size - 1` elements before it.
 
-        If you pass a `by` column `<t_0, t_1, ..., t_n>`, then `closed="left"`
-        means the windows will be:
+        If you pass a `by` column `<t_0, t_1, ..., t_n>`, then `closed="right"`
+        (the default) means the windows will be:
 
-            - [t_0 - window_size, t_0)
-            - [t_1 - window_size, t_1)
+            - (t_0 - window_size, t_0]
+            - (t_1 - window_size, t_1]
             - ...
-            - [t_n - window_size, t_n)
-
-        With `closed="right"`, the left endpoint is not included and the right
-        endpoint is included.
+            - (t_n - window_size, t_n]
 
         Parameters
         ----------
@@ -6421,16 +6431,13 @@ class Expr:
         If `by` has not been specified (the default), the window at a given row will
         include the row itself, and the `window_size - 1` elements before it.
 
-        If you pass a `by` column `<t_0, t_1, ..., t_n>`, then `closed="left"`
-        means the windows will be:
+        If you pass a `by` column `<t_0, t_1, ..., t_n>`, then `closed="right"`
+        (the default) means the windows will be:
 
-            - [t_0 - window_size, t_0)
-            - [t_1 - window_size, t_1)
+            - (t_0 - window_size, t_0]
+            - (t_1 - window_size, t_1]
             - ...
-            - [t_n - window_size, t_n)
-
-        With `closed="right"`, the left endpoint is not included and the right
-        endpoint is included.
+            - (t_n - window_size, t_n]
 
         Parameters
         ----------
@@ -6666,8 +6673,6 @@ class Expr:
             - ...
             - [t_n - window_size, t_n)
 
-        With `closed="right"`, the left endpoint is not included and the right
-        endpoint is included.
 
         Parameters
         ----------
@@ -6908,16 +6913,13 @@ class Expr:
         If `by` has not been specified (the default), the window at a given row will
         include the row itself, and the `window_size - 1` elements before it.
 
-        If you pass a `by` column `<t_0, t_1, ..., t_n>`, then `closed="left"`
-        means the windows will be:
+        If you pass a `by` column `<t_0, t_1, ..., t_n>`, then `closed="right"`
+        (the default) means the windows will be:
 
-            - [t_0 - window_size, t_0)
-            - [t_1 - window_size, t_1)
+            - (t_0 - window_size, t_0]
+            - (t_1 - window_size, t_1]
             - ...
-            - [t_n - window_size, t_n)
-
-        With `closed="right"`, the left endpoint is not included and the right
-        endpoint is included.
+            - (t_n - window_size, t_n]
 
         Parameters
         ----------
@@ -7165,8 +7167,6 @@ class Expr:
             - ...
             - [t_n - window_size, t_n)
 
-        With `closed="right"`, the left endpoint is not included and the right
-        endpoint is included.
 
         Parameters
         ----------
@@ -7319,16 +7319,13 @@ class Expr:
         If `by` has not been specified (the default), the window at a given row will
         include the row itself, and the `window_size - 1` elements before it.
 
-        If you pass a `by` column `<t_0, t_1, ..., t_n>`, then `closed="left"`
-        means the windows will be:
+        If you pass a `by` column `<t_0, t_1, ..., t_n>`, then `closed="right"`
+        (the default) means the windows will be:
 
-            - [t_0 - window_size, t_0)
-            - [t_1 - window_size, t_1)
+            - (t_0 - window_size, t_0]
+            - (t_1 - window_size, t_1]
             - ...
-            - [t_n - window_size, t_n)
-
-        With `closed="right"`, the left endpoint is not included and the right
-        endpoint is included.
+            - (t_n - window_size, t_n]
 
         Parameters
         ----------
@@ -8558,7 +8555,7 @@ class Expr:
         *,
         adjust: bool = True,
         min_periods: int = 1,
-        ignore_nulls: bool = True,
+        ignore_nulls: bool | None = None,
     ) -> Self:
         r"""
         Exponentially-weighted moving average.
@@ -8587,7 +8584,7 @@ class Expr:
             Divide by decaying adjustment factor in beginning periods to account for
             imbalance in relative weightings
 
-                - When `adjust=True` the EW function is calculated
+                - When `adjust=True` (the default) the EW function is calculated
                   using weights :math:`w_i = (1 - \alpha)^i`
                 - When `adjust=False` the EW function is calculated
                   recursively by
@@ -8601,7 +8598,7 @@ class Expr:
         ignore_nulls
             Ignore missing values when calculating weights.
 
-                - When `ignore_nulls=False` (default), weights are based on absolute
+                - When `ignore_nulls=False`, weights are based on absolute
                   positions.
                   For example, the weights of :math:`x_0` and :math:`x_2` used in
                   calculating the final weighted average of
@@ -8609,7 +8606,7 @@ class Expr:
                   :math:`(1-\alpha)^2` and :math:`1` if `adjust=True`, and
                   :math:`(1-\alpha)^2` and :math:`\alpha` if `adjust=False`.
 
-                - When `ignore_nulls=True`, weights are based
+                - When `ignore_nulls=True` (current default), weights are based
                   on relative positions. For example, the weights of
                   :math:`x_0` and :math:`x_2` used in calculating the final weighted
                   average of [:math:`x_0`, None, :math:`x_2`] are
@@ -8619,7 +8616,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 2, 3]})
-        >>> df.select(pl.col("a").ewm_mean(com=1))
+        >>> df.select(pl.col("a").ewm_mean(com=1, ignore_nulls=False))
         shape: (3, 1)
         ┌──────────┐
         │ a        │
@@ -8631,6 +8628,16 @@ class Expr:
         │ 2.428571 │
         └──────────┘
         """
+        if ignore_nulls is None:
+            issue_deprecation_warning(
+                "The default value for `ignore_nulls` for `ewm` methods"
+                " will change from True to False in the next breaking release."
+                " Explicitly set `ignore_nulls=True` to keep the existing behavior"
+                " and silence this warning.",
+                version="0.20.11",
+            )
+            ignore_nulls = True
+
         alpha = _prepare_alpha(com, span, half_life, alpha)
         return self._from_pyexpr(
             self._pyexpr.ewm_mean(alpha, adjust, min_periods, ignore_nulls)
@@ -8647,7 +8654,7 @@ class Expr:
         adjust: bool = True,
         bias: bool = False,
         min_periods: int = 1,
-        ignore_nulls: bool = True,
+        ignore_nulls: bool | None = None,
     ) -> Self:
         r"""
         Exponentially-weighted moving standard deviation.
@@ -8676,7 +8683,7 @@ class Expr:
             Divide by decaying adjustment factor in beginning periods to account for
             imbalance in relative weightings
 
-                - When `adjust=True` the EW function is calculated
+                - When `adjust=True` (the default) the EW function is calculated
                   using weights :math:`w_i = (1 - \alpha)^i`
                 - When `adjust=False` the EW function is calculated
                   recursively by
@@ -8693,7 +8700,7 @@ class Expr:
         ignore_nulls
             Ignore missing values when calculating weights.
 
-                - When `ignore_nulls=False` (default), weights are based on absolute
+                - When `ignore_nulls=False`, weights are based on absolute
                   positions.
                   For example, the weights of :math:`x_0` and :math:`x_2` used in
                   calculating the final weighted average of
@@ -8701,7 +8708,7 @@ class Expr:
                   :math:`(1-\alpha)^2` and :math:`1` if `adjust=True`, and
                   :math:`(1-\alpha)^2` and :math:`\alpha` if `adjust=False`.
 
-                - When `ignore_nulls=True`, weights are based
+                - When `ignore_nulls=True` (current default), weights are based
                   on relative positions. For example, the weights of
                   :math:`x_0` and :math:`x_2` used in calculating the final weighted
                   average of [:math:`x_0`, None, :math:`x_2`] are
@@ -8711,7 +8718,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 2, 3]})
-        >>> df.select(pl.col("a").ewm_std(com=1))
+        >>> df.select(pl.col("a").ewm_std(com=1, ignore_nulls=False))
         shape: (3, 1)
         ┌──────────┐
         │ a        │
@@ -8723,6 +8730,16 @@ class Expr:
         │ 0.963624 │
         └──────────┘
         """
+        if ignore_nulls is None:
+            issue_deprecation_warning(
+                "The default value for `ignore_nulls` for `ewm` methods"
+                " will change from True to False in the next breaking release."
+                " Explicitly set `ignore_nulls=True` to keep the existing behavior"
+                " and silence this warning.",
+                version="0.20.11",
+            )
+            ignore_nulls = True
+
         alpha = _prepare_alpha(com, span, half_life, alpha)
         return self._from_pyexpr(
             self._pyexpr.ewm_std(alpha, adjust, bias, min_periods, ignore_nulls)
@@ -8739,7 +8756,7 @@ class Expr:
         adjust: bool = True,
         bias: bool = False,
         min_periods: int = 1,
-        ignore_nulls: bool = True,
+        ignore_nulls: bool | None = None,
     ) -> Self:
         r"""
         Exponentially-weighted moving variance.
@@ -8768,7 +8785,7 @@ class Expr:
             Divide by decaying adjustment factor in beginning periods to account for
             imbalance in relative weightings
 
-                - When `adjust=True` the EW function is calculated
+                - When `adjust=True` (the default) the EW function is calculated
                   using weights :math:`w_i = (1 - \alpha)^i`
                 - When `adjust=False` the EW function is calculated
                   recursively by
@@ -8785,7 +8802,7 @@ class Expr:
         ignore_nulls
             Ignore missing values when calculating weights.
 
-                - When `ignore_nulls=False` (default), weights are based on absolute
+                - When `ignore_nulls=False`, weights are based on absolute
                   positions.
                   For example, the weights of :math:`x_0` and :math:`x_2` used in
                   calculating the final weighted average of
@@ -8793,7 +8810,7 @@ class Expr:
                   :math:`(1-\alpha)^2` and :math:`1` if `adjust=True`, and
                   :math:`(1-\alpha)^2` and :math:`\alpha` if `adjust=False`.
 
-                - When `ignore_nulls=True`, weights are based
+                - When `ignore_nulls=True` (current default), weights are based
                   on relative positions. For example, the weights of
                   :math:`x_0` and :math:`x_2` used in calculating the final weighted
                   average of [:math:`x_0`, None, :math:`x_2`] are
@@ -8803,7 +8820,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 2, 3]})
-        >>> df.select(pl.col("a").ewm_var(com=1))
+        >>> df.select(pl.col("a").ewm_var(com=1, ignore_nulls=False))
         shape: (3, 1)
         ┌──────────┐
         │ a        │
@@ -8815,6 +8832,16 @@ class Expr:
         │ 0.928571 │
         └──────────┘
         """
+        if ignore_nulls is None:
+            issue_deprecation_warning(
+                "The default value for `ignore_nulls` for `ewm` methods"
+                " will change from True to False in the next breaking release."
+                " Explicitly set `ignore_nulls=True` to keep the existing behavior"
+                " and silence this warning.",
+                version="0.20.11",
+            )
+            ignore_nulls = True
+
         alpha = _prepare_alpha(com, span, half_life, alpha)
         return self._from_pyexpr(
             self._pyexpr.ewm_var(alpha, adjust, bias, min_periods, ignore_nulls)
@@ -9846,6 +9873,29 @@ class Expr:
         """
         return self.replace(mapping, default=default, return_dtype=return_dtype)
 
+    @classmethod
+    def from_json(cls, value: str) -> Self:
+        """
+        Read an expression from a JSON encoded string to construct an Expression.
+
+        .. deprecated:: 0.20.11
+            This method has been renamed to :meth:`deserialize`.
+            Note that the new method operates on file-like inputs rather than strings.
+            Enclose your input in `io.StringIO` to keep the same behavior.
+
+        Parameters
+        ----------
+        value
+            JSON encoded string value
+        """
+        issue_deprecation_warning(
+            "`Expr.from_json` is deprecated. It has been renamed to `Expr.deserialize`."
+            " Note that the new method operates on file-like inputs rather than strings."
+            " Enclose your input in `io.StringIO` to keep the same behavior.",
+            version="0.20.11",
+        )
+        return cls.deserialize(StringIO(value))
+
     @property
     def bin(self) -> ExprBinaryNameSpace:
         """
@@ -10036,7 +10086,7 @@ def _prepare_rolling_window_args(
             min_periods = window_size
         window_size = f"{window_size}i"
     elif isinstance(window_size, timedelta):
-        window_size = _timedelta_to_pl_duration(window_size)
+        window_size = parse_as_duration_string(window_size)
     if min_periods is None:
         min_periods = 1
     return window_size, min_periods

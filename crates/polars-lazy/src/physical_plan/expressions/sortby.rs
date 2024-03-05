@@ -1,6 +1,3 @@
-use std::sync::Arc;
-
-use polars_core::frame::group_by::{GroupsIndicator, GroupsProxy};
 use polars_core::prelude::*;
 use polars_core::POOL;
 use polars_utils::idx_vec::IdxVec;

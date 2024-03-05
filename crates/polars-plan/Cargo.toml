@@ -54,7 +54,7 @@ serde = [
 ]
 streaming = []
 parquet = ["polars-io/parquet", "polars-parquet"]
-async = ["polars-io/async"]
+async = ["polars-io/async", "futures"]
 cloud = ["async", "polars-io/cloud"]
 ipc = ["polars-io/ipc"]
 json = ["polars-io/json", "polars-json"]

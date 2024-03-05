@@ -1,4 +1,4 @@
-use arrow::array::{Array, ArrayRef, PrimitiveArray};
+use arrow::array::{Array, PrimitiveArray};
 use polars_compute::min_max::MinMaxKernel;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;

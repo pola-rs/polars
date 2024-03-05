@@ -3,7 +3,6 @@ use std::ops::Neg;
 use polars::lazy::dsl;
 use polars::prelude::*;
 use polars::series::ops::NullBehavior;
-use polars_core::prelude::QuantileInterpolOptions;
 use polars_core::series::IsSorted;
 use pyo3::class::basic::CompareOp;
 use pyo3::prelude::*;

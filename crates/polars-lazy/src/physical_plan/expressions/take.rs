@@ -1,8 +1,5 @@
-use std::sync::Arc;
-
 use arrow::legacy::utils::CustomIterTools;
 use polars_core::chunked_array::builder::get_list_builder;
-use polars_core::frame::group_by::GroupsProxy;
 use polars_core::prelude::*;
 use polars_core::utils::NoNull;
 use polars_ops::prelude::{convert_to_unsigned_index, is_positive_idx_uncertain};

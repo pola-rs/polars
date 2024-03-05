@@ -1,16 +1,11 @@
 use std::any::Any;
-use std::hash::{Hash, Hasher};
-use std::sync::Arc;
 
-use arrow::array::{ArrayRef, BinaryArray};
+use arrow::array::BinaryArray;
 use hashbrown::hash_map::RawEntryMut;
-use polars_core::error::PolarsResult;
 use polars_core::export::ahash::RandomState;
 use polars_core::prelude::*;
 use polars_core::utils::{_set_partition_size, accumulate_dataframes_vertical_unchecked};
-use polars_utils::hashing::hash_to_partition;
-use polars_utils::idx_vec::UnitVec;
-use polars_utils::index::ChunkId;
+use polars_utils::arena::Node;
 use polars_utils::slice::GetSaferUnchecked;
 use polars_utils::unitvec;
 
@@ -23,32 +18,6 @@ use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkRe
 
 pub(super) type ChunkIdx = IdxSize;
 pub(super) type DfIdx = IdxSize;
-
-// This is the hash and the Index offset in the chunks and the index offset in the dataframe
-#[derive(Copy, Clone, Debug)]
-pub(super) struct Key {
-    pub(super) hash: u64,
-    chunk_idx: IdxSize,
-    df_idx: IdxSize,
-}
-
-impl Key {
-    #[inline]
-    fn new(hash: u64, chunk_idx: IdxSize, df_idx: IdxSize) -> Self {
-        Key {
-            hash,
-            chunk_idx,
-            df_idx,
-        }
-    }
-}
-
-impl Hash for Key {
-    #[inline]
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        state.write_u64(self.hash)
-    }
-}
 
 pub struct GenericBuild {
     chunks: Vec<DataChunk>,
@@ -64,7 +33,7 @@ pub struct GenericBuild {
     hb: RandomState,
     // partitioned tables that will be used for probing
     // stores the key and the chunk_idx, df_idx of the left table
-    hash_tables: Vec<PlIdHashMap<Key, UnitVec<ChunkId>>>,
+    hash_tables: PartitionedMap,
 
     // the columns that will be joined on
     join_columns_left: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
@@ -77,6 +46,7 @@ pub struct GenericBuild {
     // the join order is swapped to ensure we hash the smaller table
     swapped: bool,
     join_nulls: bool,
+    node: Node,
 }
 
 impl GenericBuild {
@@ -87,10 +57,13 @@ impl GenericBuild {
         join_columns_left: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
         join_columns_right: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
         join_nulls: bool,
+        node: Node,
     ) -> Self {
         let hb: RandomState = Default::default();
         let partitions = _set_partition_size();
-        let hash_tables = load_vec(partitions, || PlIdHashMap::with_capacity(HASHMAP_INIT_SIZE));
+        let hash_tables = PartitionedHashMap::new(load_vec(partitions, || {
+            PlIdHashMap::with_capacity(HASHMAP_INIT_SIZE)
+        }));
         GenericBuild {
             chunks: vec![],
             join_type,
@@ -104,6 +77,7 @@ impl GenericBuild {
             hash_tables,
             hashes: vec![],
             join_nulls,
+            node,
         }
     }
 }
@@ -166,6 +140,13 @@ impl GenericBuild {
 }
 
 impl Sink for GenericBuild {
+    fn node(&self) -> Node {
+        self.node
+    }
+    fn is_join_build(&self) -> bool {
+        true
+    }
+
     fn sink(&mut self, context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult> {
         // we do some juggling here so that we don't
         // end up with empty chunks
@@ -190,11 +171,7 @@ impl Sink for GenericBuild {
         // row offset in the chunk belonging to the hash
         let mut current_df_idx = 0 as IdxSize;
         for (row, h) in rows.values_iter().zip(&self.hashes) {
-            // get the hashtable belonging to this hash partition
-            let partition = hash_to_partition(*h, self.hash_tables.len());
-            let current_table = unsafe { self.hash_tables.get_unchecked_release_mut(partition) };
-
-            let entry = current_table.raw_entry_mut().from_hash(*h, |key| {
+            let entry = self.hash_tables.raw_entry_mut(*h).from_hash(*h, |key| {
                 compare_fn(key, *h, &self.materialized_join_cols, row)
             });
 
@@ -241,8 +218,9 @@ impl Sink for GenericBuild {
         // we combine the other hashtable with ours, but we must offset the chunk_idx
         // values by the number of chunks we already got.
         self.hash_tables
+            .inner_mut()
             .iter_mut()
-            .zip(&other.hash_tables)
+            .zip(other.hash_tables.inner())
             .for_each(|(ht, other_ht)| {
                 for (k, val) in other_ht.iter() {
                     // use the indexes to materialize the row
@@ -289,6 +267,7 @@ impl Sink for GenericBuild {
             self.join_columns_left.clone(),
             self.join_columns_right.clone(),
             self.join_nulls,
+            self.node,
         );
         new.hb = self.hb.clone();
         Box::new(new)
@@ -310,7 +289,9 @@ impl Sink for GenericBuild {
                     Arc::new(std::mem::take(&mut self.materialized_join_cols));
                 let suffix = self.suffix.clone();
                 let hb = self.hb.clone();
-                let hash_tables = Arc::new(std::mem::take(&mut self.hash_tables));
+                let hash_tables = Arc::new(PartitionedHashMap::new(std::mem::take(
+                    self.hash_tables.inner_mut(),
+                )));
                 let join_columns_left = self.join_columns_left.clone();
                 let join_columns_right = self.join_columns_right.clone();
 

@@ -1,19 +1,19 @@
+use std::borrow::Cow;
 use std::io::Write;
 
-use arrow::array::{Array, ArrayRef};
+use arrow::array::Array;
 use arrow::chunk::Chunk;
-use arrow::datatypes::{ArrowDataType, PhysicalType};
+use arrow::datatypes::PhysicalType;
 use polars_core::prelude::*;
-use polars_core::utils::{accumulate_dataframes_vertical_unchecked, split_df};
+use polars_core::utils::{accumulate_dataframes_vertical_unchecked, split_df_as_ref};
 use polars_core::POOL;
 use polars_parquet::read::ParquetError;
-use polars_parquet::write::{self, DynIter, DynStreamingIterator, Encoding, FileWriter, *};
+use polars_parquet::write::{self, *};
 use rayon::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use write::{
-    BrotliLevel as BrotliLevelParquet, CompressionOptions, GzipLevel as GzipLevelParquet,
-    ZstdLevel as ZstdLevelParquet,
+    BrotliLevel as BrotliLevelParquet, GzipLevel as GzipLevelParquet, ZstdLevel as ZstdLevelParquet,
 };
 
 #[derive(Debug, Eq, PartialEq, Hash, Clone, Copy)]
@@ -192,11 +192,26 @@ where
         df.align_chunks();
 
         let n_splits = df.height() / self.row_group_size.unwrap_or(512 * 512);
-        if n_splits > 0 {
-            *df = accumulate_dataframes_vertical_unchecked(split_df(df, n_splits)?);
-        }
+        let chunked_df = if n_splits > 0 {
+            Cow::Owned(accumulate_dataframes_vertical_unchecked(
+                split_df_as_ref(df, n_splits, false)?
+                    .into_iter()
+                    .map(|mut df| {
+                        // If the chunks are small enough, writing many small chunks
+                        // leads to slow writing performance, so in that case we
+                        // merge them.
+                        let n_chunks = df.n_chunks();
+                        if n_chunks > 1 && (df.estimated_size() / n_chunks < 128 * 1024) {
+                            df.as_single_chunk_par();
+                        }
+                        df
+                    }),
+            ))
+        } else {
+            Cow::Borrowed(df)
+        };
         let mut batched = self.batched(&df.schema())?;
-        batched.write_batch(df)?;
+        batched.write_batch(&chunked_df)?;
         batched.finish()
     }
 }
@@ -232,9 +247,11 @@ fn get_encodings(schema: &ArrowSchema) -> Vec<Vec<Encoding>> {
 /// Declare encodings
 fn encoding_map(data_type: &ArrowDataType) -> Encoding {
     match data_type.to_physical_type() {
-        PhysicalType::Dictionary(_) | PhysicalType::LargeBinary | PhysicalType::LargeUtf8 => {
-            Encoding::RleDictionary
-        },
+        PhysicalType::Dictionary(_)
+        | PhysicalType::LargeBinary
+        | PhysicalType::LargeUtf8
+        | PhysicalType::Utf8View
+        | PhysicalType::BinaryView => Encoding::RleDictionary,
         PhysicalType::Primitive(dt) => {
             use arrow::types::PrimitiveType::*;
             match dt {

@@ -316,7 +316,7 @@ pub(super) fn check_expand_literals(
             .collect::<PolarsResult<_>>()?
     }
 
-    let df = DataFrame::new_no_checks(selected_columns);
+    let df = unsafe { DataFrame::new_no_checks(selected_columns) };
 
     // a literal could be projected to a zero length dataframe.
     // This prevents a panic.

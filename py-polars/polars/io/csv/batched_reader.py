@@ -1,23 +1,24 @@
 from __future__ import annotations
 
 import contextlib
-from pathlib import Path
 from typing import TYPE_CHECKING, Sequence
 
-from polars.datatypes import N_INFER_DEFAULT, py_type_to_dtype
-from polars.io.csv._utils import _update_columns
-from polars.utils._wrap import wrap_df
-from polars.utils.various import (
+from polars._utils.various import (
     _prepare_row_index_args,
     _process_null_values,
     handle_projection_columns,
     normalize_filepath,
 )
+from polars._utils.wrap import wrap_df
+from polars.datatypes import N_INFER_DEFAULT, py_type_to_dtype
+from polars.io.csv._utils import _update_columns
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyBatchedCsv
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from polars import DataFrame
     from polars.type_aliases import CsvEncoding, PolarsDataType, SchemaDict
 
@@ -56,9 +57,7 @@ class BatchedCsvReader:
         raise_if_empty: bool = True,
         truncate_ragged_lines: bool = False,
     ):
-        path: str | None
-        if isinstance(source, (str, Path)):
-            path = normalize_filepath(source)
+        path = normalize_filepath(source)
 
         dtype_list: Sequence[tuple[str, PolarsDataType]] | None = None
         dtype_slice: Sequence[PolarsDataType] | None = None

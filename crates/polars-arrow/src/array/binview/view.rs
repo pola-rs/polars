@@ -193,25 +193,51 @@ pub(super) fn validate_utf8_view(views: &[View], buffers: &[Buffer<u8>]) -> Pola
 /// The views and buffers must uphold the invariants of BinaryView otherwise we will go OOB.
 pub(super) unsafe fn validate_utf8_only(
     views: &[View],
-    buffers: &[Buffer<u8>],
+    buffers_to_check: &[Buffer<u8>],
+    all_buffers: &[Buffer<u8>],
 ) -> PolarsResult<()> {
-    for view in views {
-        let len = view.length;
-        if len <= 12 {
+    // If we have no buffers, we don't have to branch.
+    if all_buffers.is_empty() {
+        for view in views {
+            let len = view.length;
             validate_utf8(
                 view.to_le_bytes()
                     .get_unchecked_release(4..4 + len as usize),
             )?;
-        } else {
-            let buffer_idx = view.buffer_idx;
-            let offset = view.offset;
-            let data = buffers.get_unchecked_release(buffer_idx as usize);
+        }
+        return Ok(());
+    }
 
-            let start = offset as usize;
-            let end = start + len as usize;
-            let b = &data.as_slice().get_unchecked_release(start..end);
-            validate_utf8(b)?;
-        };
+    // Fast path if all buffers are ascii
+    if buffers_to_check.iter().all(|buf| buf.is_ascii()) {
+        for view in views {
+            let len = view.length;
+            if len <= 12 {
+                validate_utf8(
+                    view.to_le_bytes()
+                        .get_unchecked_release(4..4 + len as usize),
+                )?;
+            }
+        }
+    } else {
+        for view in views {
+            let len = view.length;
+            if len <= 12 {
+                validate_utf8(
+                    view.to_le_bytes()
+                        .get_unchecked_release(4..4 + len as usize),
+                )?;
+            } else {
+                let buffer_idx = view.buffer_idx;
+                let offset = view.offset;
+                let data = all_buffers.get_unchecked_release(buffer_idx as usize);
+
+                let start = offset as usize;
+                let end = start + len as usize;
+                let b = &data.as_slice().get_unchecked_release(start..end);
+                validate_utf8(b)?;
+            };
+        }
     }
 
     Ok(())

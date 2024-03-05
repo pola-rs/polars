@@ -1,7 +1,6 @@
 #[cfg(feature = "csv")]
 use std::io::{Read, Seek};
 
-use polars_core::frame::explode::MeltArgs;
 use polars_core::prelude::*;
 #[cfg(feature = "parquet")]
 use polars_io::cloud::CloudOptions;
@@ -31,9 +30,7 @@ use polars_io::{
 
 use super::builder_functions::*;
 use crate::dsl::functions::horizontal::all_horizontal;
-use crate::logical_plan::functions::FunctionNode;
 use crate::logical_plan::projection::{is_regex_projection, rewrite_projections};
-use crate::logical_plan::schema::{det_join_schema, FileInfo};
 #[cfg(feature = "python")]
 use crate::prelude::python_udf::PythonFunction;
 use crate::prelude::*;
@@ -434,7 +431,7 @@ impl LogicalPlanBuilder {
 
         if columns.is_empty() {
             self.map(
-                |_| Ok(DataFrame::new_no_checks(vec![])),
+                |_| Ok(DataFrame::empty()),
                 AllowedOptimizations::default(),
                 Some(Arc::new(|_: &Schema| Ok(Arc::new(Schema::default())))),
                 "EMPTY PROJECTION",
@@ -459,7 +456,7 @@ impl LogicalPlanBuilder {
 
         if exprs.is_empty() {
             self.map(
-                |_| Ok(DataFrame::new_no_checks(vec![])),
+                |_| Ok(DataFrame::empty()),
                 AllowedOptimizations::default(),
                 Some(Arc::new(|_: &Schema| Ok(Arc::new(Schema::default())))),
                 "EMPTY PROJECTION",

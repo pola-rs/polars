@@ -1,12 +1,9 @@
 use std::borrow::Cow;
-use std::sync::Arc;
 
 use arrow::array::*;
 use arrow::compute::concatenate::concatenate;
-use arrow::legacy::prelude::QuantileInterpolOptions;
 use arrow::legacy::utils::CustomIterTools;
 use arrow::offset::Offsets;
-use polars_core::frame::group_by::{GroupByMethod, GroupsProxy};
 use polars_core::prelude::*;
 use polars_core::utils::NoNull;
 #[cfg(feature = "dtype-struct")]
@@ -15,7 +12,6 @@ use polars_core::POOL;
 use polars_ops::prelude::nan_propagating_aggregate;
 
 use crate::physical_plan::state::ExecutionState;
-use crate::physical_plan::PartitionedAggregation;
 use crate::prelude::AggState::{AggregatedList, AggregatedScalar};
 use crate::prelude::*;
 

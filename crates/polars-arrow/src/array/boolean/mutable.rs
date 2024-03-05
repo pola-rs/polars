@@ -1,4 +1,3 @@
-use std::iter::FromIterator;
 use std::sync::Arc;
 
 use polars_error::{polars_bail, PolarsResult};
@@ -142,6 +141,7 @@ impl MutableBooleanArray {
 
     /// Extends the [`MutableBooleanArray`] from an iterator of values of trusted len.
     /// This differs from `extend_trusted_len_unchecked`, which accepts in iterator of optional values.
+    ///
     /// # Safety
     /// The iterator must be trusted len.
     #[inline]
@@ -172,6 +172,7 @@ impl MutableBooleanArray {
     }
 
     /// Extends the [`MutableBooleanArray`] from an iterator of trusted len.
+    ///
     /// # Safety
     /// The iterator must be trusted len.
     #[inline]
@@ -255,6 +256,7 @@ impl MutableBooleanArray {
     /// Creates a new [`MutableBooleanArray`] from an [`TrustedLen`] of `bool`.
     /// Use this over [`BooleanArray::from_trusted_len_iter`] when the iterator is trusted len
     /// but this crate does not mark it as such.
+    ///
     /// # Safety
     /// The iterator must be [`TrustedLen`](https://doc.rust-lang.org/std/iter/trait.TrustedLen.html).
     /// I.e. that `size_hint().1` correctly reports its length.
@@ -276,6 +278,7 @@ impl MutableBooleanArray {
     /// Creates a [`BooleanArray`] from an iterator of trusted length.
     /// Use this over [`BooleanArray::from_trusted_len_iter`] when the iterator is trusted len
     /// but this crate does not mark it as such.
+    ///
     /// # Safety
     /// The iterator must be [`TrustedLen`](https://doc.rust-lang.org/std/iter/trait.TrustedLen.html).
     /// I.e. that `size_hint().1` correctly reports its length.
@@ -302,6 +305,7 @@ impl MutableBooleanArray {
     }
 
     /// Creates a [`BooleanArray`] from an falible iterator of trusted length.
+    ///
     /// # Safety
     /// The iterator must be [`TrustedLen`](https://doc.rust-lang.org/std/iter/trait.TrustedLen.html).
     /// I.e. that `size_hint().1` correctly reports its length.

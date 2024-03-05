@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Callable, Iterable, Iterator
 
 from polars import functions as F
-from polars.utils.convert import _timedelta_to_pl_duration
-from polars.utils.deprecation import (
+from polars._utils.convert import parse_as_duration_string
+from polars._utils.deprecation import (
     deprecate_renamed_function,
     issue_deprecation_warning,
 )
@@ -478,6 +478,9 @@ class GroupBy:
         """
         Return the number of rows in each group.
 
+        .. deprecated:: 0.20.5
+            This method has been renamed to :func:`GroupBy.len`.
+
         Rows containing null values count towards the total.
 
         Examples
@@ -792,8 +795,8 @@ class RollingGroupBy:
         by: IntoExpr | Iterable[IntoExpr] | None,
         check_sorted: bool,
     ):
-        period = _timedelta_to_pl_duration(period)
-        offset = _timedelta_to_pl_duration(offset)
+        period = parse_as_duration_string(period)
+        offset = parse_as_duration_string(offset)
 
         self.df = df
         self.time_column = index_column
@@ -969,9 +972,9 @@ class DynamicGroupBy:
         start_by: StartBy,
         check_sorted: bool,
     ):
-        every = _timedelta_to_pl_duration(every)
-        period = _timedelta_to_pl_duration(period)
-        offset = _timedelta_to_pl_duration(offset)
+        every = parse_as_duration_string(every)
+        period = parse_as_duration_string(period)
+        offset = parse_as_duration_string(offset)
 
         self.df = df
         self.time_column = index_column

@@ -16,7 +16,6 @@ pub mod unstable;
 use std::borrow::Cow;
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
-use std::sync::Arc;
 
 use ahash::RandomState;
 use arrow::compute::aggregate::estimated_bytes_size;
@@ -221,7 +220,8 @@ impl Series {
     }
 
     pub fn into_frame(self) -> DataFrame {
-        DataFrame::new_no_checks(vec![self])
+        // SAFETY: A single-column dataframe cannot have length mismatches or duplicate names
+        unsafe { DataFrame::new_no_checks(vec![self]) }
     }
 
     /// Rename series.
@@ -908,8 +908,6 @@ where
 
 #[cfg(test)]
 mod test {
-    use std::convert::TryFrom;
-
     use crate::prelude::*;
     use crate::series::*;
 

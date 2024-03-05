@@ -16,7 +16,6 @@ use polars_io::RowIndex;
 use semi_anti_join::process_semi_anti_join;
 
 use crate::logical_plan::Context;
-use crate::prelude::iterator::ArenaExprIter;
 use crate::prelude::optimizer::projection_pushdown::generic::process_generic;
 use crate::prelude::optimizer::projection_pushdown::group_by::process_group_by;
 use crate::prelude::optimizer::projection_pushdown::hconcat::process_hconcat;
@@ -26,8 +25,7 @@ use crate::prelude::optimizer::projection_pushdown::projection::process_projecti
 use crate::prelude::optimizer::projection_pushdown::rename::process_rename;
 use crate::prelude::*;
 use crate::utils::{
-    aexpr_assign_renamed_leaf, aexpr_to_column_nodes, aexpr_to_leaf_names, check_input_node,
-    expr_is_projected_upstream,
+    aexpr_assign_renamed_leaf, aexpr_to_leaf_names, check_input_node, expr_is_projected_upstream,
 };
 
 fn init_vec() -> Vec<Node> {
@@ -151,11 +149,15 @@ fn update_scan_schema(
     Ok(new_schema)
 }
 
-pub struct ProjectionPushDown {}
+pub struct ProjectionPushDown {
+    pub is_count_star: bool,
+}
 
 impl ProjectionPushDown {
     pub(super) fn new() -> Self {
-        Self {}
+        Self {
+            is_count_star: false,
+        }
     }
 
     /// Projection will be done at this node, but we continue optimization

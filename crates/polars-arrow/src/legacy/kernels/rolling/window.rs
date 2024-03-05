@@ -24,6 +24,7 @@ impl<'a, T: NativeType> SortedBuf<'a, T> {
     }
 
     /// Update the window position by setting the `start` index and the `end` index.
+    ///
     /// # Safety
     /// The caller must ensure that `start` and `end` are within bounds of `self.slice`
     ///
@@ -120,6 +121,7 @@ impl<'a, T: NativeType> SortedBufNulls<'a, T> {
     }
 
     /// Update the window position by setting the `start` index and the `end` index.
+    ///
     /// # Safety
     /// The caller must ensure that `start` and `end` are within bounds of `self.slice`
     ///

@@ -1,6 +1,5 @@
 use std::fmt::Debug;
 
-use arrow::array::Array;
 use arrow::legacy::bit_util::round_upto_multiple_of_64;
 use num_traits::{FromPrimitive, ToPrimitive};
 use polars_utils::idx_vec::IdxVec;
@@ -198,7 +197,7 @@ impl CategoricalChunked {
 
         let mut out = match &**rev_map {
             RevMapping::Local(cached, _) => {
-                if self.can_fast_unique() {
+                if self._can_fast_unique() {
                     if verbose() {
                         eprintln!("grouping categoricals, run perfect hash function");
                     }

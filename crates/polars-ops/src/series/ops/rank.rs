@@ -1,11 +1,7 @@
 use arrow::array::BooleanArray;
 use arrow::compute::concatenate::concatenate_validities;
 use polars_core::prelude::*;
-#[cfg(feature = "random")]
-use rand::prelude::SliceRandom;
 use rand::prelude::*;
-#[cfg(feature = "random")]
-use rand::{rngs::SmallRng, SeedableRng};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 

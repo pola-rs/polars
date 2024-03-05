@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Callable, TypeVar
 from warnings import warn
 
 import polars._reexport as pl
-from polars.utils.various import find_stacklevel
+from polars._utils.various import find_stacklevel
 
 if TYPE_CHECKING:
     from polars import DataFrame, Expr, LazyFrame, Series
@@ -43,14 +43,13 @@ class NameSpace:
             return self._ns
 
         ns_instance = self._ns(instance)  # type: ignore[call-arg]
-        setattr(instance, self._accessor, ns_instance)
         return ns_instance
 
 
 def _create_namespace(
     name: str, cls: type[Expr | DataFrame | LazyFrame | Series]
 ) -> Callable[[type[NS]], type[NS]]:
-    """Register custom namespace against the underlying polars class."""
+    """Register custom namespace against the underlying Polars class."""
 
     def namespace(ns_class: type[NS]) -> type[NS]:
         if name in _reserved_namespaces:
@@ -72,7 +71,7 @@ def _create_namespace(
 
 def register_expr_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     """
-    Decorator for registering custom functionality with a polars Expr.
+    Decorator for registering custom functionality with a Polars Expr.
 
     Parameters
     ----------
@@ -125,7 +124,7 @@ def register_expr_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
 
 def register_dataframe_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     """
-    Decorator for registering custom functionality with a polars DataFrame.
+    Decorator for registering custom functionality with a Polars DataFrame.
 
     Parameters
     ----------
@@ -223,7 +222,7 @@ def register_dataframe_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
 
 def register_lazyframe_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     """
-    Decorator for registering custom functionality with a polars LazyFrame.
+    Decorator for registering custom functionality with a Polars LazyFrame.
 
     Parameters
     ----------

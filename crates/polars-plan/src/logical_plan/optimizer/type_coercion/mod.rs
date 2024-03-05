@@ -8,10 +8,7 @@ use polars_utils::idx_vec::UnitVec;
 use polars_utils::unitvec;
 
 use super::*;
-use crate::dsl::function_expr::FunctionExpr;
 use crate::logical_plan::optimizer::type_coercion::binary::process_binary;
-use crate::logical_plan::Context;
-use crate::utils::is_scan;
 
 pub struct TypeCoercionRule {}
 
@@ -370,6 +367,10 @@ impl OptimizationRule for TypeCoercionRule {
                     },
                     #[cfg(feature = "dtype-categorical")]
                     (DataType::Categorical(_, _) | DataType::Enum(_, _), DataType::String) => {
+                        return Ok(None)
+                    },
+                    #[cfg(feature = "dtype-categorical")]
+                    (DataType::String, DataType::Categorical(_, _) | DataType::Enum(_, _)) => {
                         return Ok(None)
                     },
                     #[cfg(feature = "dtype-decimal")]

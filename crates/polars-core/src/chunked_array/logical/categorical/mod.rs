@@ -105,7 +105,7 @@ impl CategoricalChunked {
                 self.get_ordering(),
             )
         };
-        out.set_fast_unique(self.can_fast_unique());
+        out.set_fast_unique(self._can_fast_unique());
 
         out
     }
@@ -274,7 +274,9 @@ impl CategoricalChunked {
         }
     }
 
-    pub(crate) fn can_fast_unique(&self) -> bool {
+    /// True if all categories are represented in this array. When this is the case, the unique
+    /// values of the array are the categories.
+    pub fn _can_fast_unique(&self) -> bool {
         self.bit_settings.contains(BitSettings::ORIGINAL)
             && self.physical.chunks.len() == 1
             && self.null_count() == 0
@@ -448,8 +450,6 @@ impl<'a> ExactSizeIterator for CatIter<'a> {}
 
 #[cfg(test)]
 mod test {
-    use std::convert::TryFrom;
-
     use super::*;
     use crate::{disable_string_cache, enable_string_cache, SINGLE_LOCK};
 

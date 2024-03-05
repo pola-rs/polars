@@ -24,7 +24,6 @@ use object_store::ObjectStore;
 use object_store::{BackoffConfig, RetryConfig};
 #[cfg(feature = "aws")]
 use once_cell::sync::Lazy;
-use polars_core::error::{PolarsError, PolarsResult};
 use polars_error::*;
 #[cfg(feature = "aws")]
 use polars_utils::cache::FastFixedCache;
@@ -172,9 +171,9 @@ pub(super) fn get_client_options() -> ClientOptions {
         // We set request timeout super high as the timeout isn't reset at ACK,
         // but starts from the moment we start downloading a body.
         // https://docs.rs/reqwest/latest/reqwest/struct.ClientBuilder.html#method.timeout
-        .with_timeout(std::time::Duration::from_secs(60 * 5))
-        // Concurrency can increase connection latency, so also set high.
-        .with_connect_timeout(std::time::Duration::from_secs(30))
+        .with_timeout_disabled()
+        // Concurrency can increase connection latency, so set to None, similar to default.
+        .with_connect_timeout_disabled()
         .with_allow_http(true)
 }
 

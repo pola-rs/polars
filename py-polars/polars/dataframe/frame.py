@@ -1,4 +1,5 @@
 """Module containing logic related to eager DataFrames."""
+
 from __future__ import annotations
 
 import contextlib
@@ -13,7 +14,6 @@ from typing import (
     IO,
     TYPE_CHECKING,
     Any,
-    BinaryIO,
     Callable,
     ClassVar,
     Collection,
@@ -32,6 +32,43 @@ from typing import (
 
 import polars._reexport as pl
 from polars import functions as F
+from polars._utils.construction import (
+    arrow_to_pydf,
+    dict_to_pydf,
+    frame_to_pydf,
+    iterable_to_pydf,
+    numpy_to_idxs,
+    numpy_to_pydf,
+    pandas_to_pydf,
+    sequence_to_pydf,
+    series_to_pydf,
+)
+from polars._utils.convert import parse_as_duration_string
+from polars._utils.deprecation import (
+    deprecate_function,
+    deprecate_nonkeyword_arguments,
+    deprecate_parameter_as_positional,
+    deprecate_renamed_function,
+    deprecate_renamed_parameter,
+    deprecate_saturating,
+    issue_deprecation_warning,
+)
+from polars._utils.parse_expr_input import parse_as_expression
+from polars._utils.unstable import issue_unstable_warning, unstable
+from polars._utils.various import (
+    _prepare_row_index_args,
+    _process_null_values,
+    handle_projection_columns,
+    is_bool_sequence,
+    is_int_sequence,
+    is_str_sequence,
+    normalize_filepath,
+    parse_version,
+    range_to_slice,
+    scale_bytes,
+    warn_null_comparison,
+)
+from polars._utils.wrap import wrap_expr, wrap_ldf, wrap_s
 from polars.dataframe._html import NotebookFormatter
 from polars.dataframe.group_by import DynamicGroupBy, GroupBy, RollingGroupBy
 from polars.datatypes import (
@@ -77,43 +114,6 @@ from polars.io.spreadsheet._write_utils import (
 from polars.selectors import _expand_selector_dicts, _expand_selectors
 from polars.slice import PolarsSlice
 from polars.type_aliases import DbWriteMode
-from polars.utils._construction import (
-    arrow_to_pydf,
-    dict_to_pydf,
-    frame_to_pydf,
-    iterable_to_pydf,
-    numpy_to_idxs,
-    numpy_to_pydf,
-    pandas_to_pydf,
-    sequence_to_pydf,
-    series_to_pydf,
-)
-from polars.utils._parse_expr_input import parse_as_expression
-from polars.utils._wrap import wrap_expr, wrap_ldf, wrap_s
-from polars.utils.convert import _timedelta_to_pl_duration
-from polars.utils.deprecation import (
-    deprecate_function,
-    deprecate_nonkeyword_arguments,
-    deprecate_parameter_as_positional,
-    deprecate_renamed_function,
-    deprecate_renamed_parameter,
-    deprecate_saturating,
-    issue_deprecation_warning,
-)
-from polars.utils.unstable import issue_unstable_warning, unstable
-from polars.utils.various import (
-    _prepare_row_index_args,
-    _process_null_values,
-    handle_projection_columns,
-    is_bool_sequence,
-    is_int_sequence,
-    is_str_sequence,
-    normalize_filepath,
-    parse_version,
-    range_to_slice,
-    scale_bytes,
-    warn_null_comparison,
-)
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyDataFrame
@@ -225,9 +225,11 @@ class DataFrame:
         Whether to interpret two-dimensional data as columns or as rows. If None,
         the orientation is inferred by matching the columns and data dimensions. If
         this does not yield conclusive results, column orientation is used.
-    infer_schema_length : int, default None
-        Maximum number of rows to read for schema inference; only applies if the input
-        data is a sequence or generator of rows; other input is read as-is.
+    infer_schema_length : int or None
+        The maximum number of rows to scan for schema inference.
+        If set to `None`, the full data may be scanned *(this is slow)*.
+        This parameter only applies if the input data is a sequence or generator of
+        rows; other input is read as-is.
     nan_to_null : bool, default False
         If the data comes from one or more numpy arrays, can optionally convert input
         data np.nan values to null instead. This is a no-op for all other input data.
@@ -346,6 +348,8 @@ class DataFrame:
     False
     """
 
+    __slots__ = ("_df",)
+    _df: PyDataFrame
     _accessors: ClassVar[set[str]] = {"plot"}
 
     def __init__(
@@ -478,29 +482,9 @@ class DataFrame:
         """
         Construct a DataFrame from a sequence of sequences.
 
-        Parameters
-        ----------
-        data : Sequence of sequences
-            Two-dimensional data represented as a sequence of sequences.
-        schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
-            The DataFrame schema may be declared in several ways:
-
-            * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
-            * As a list of column names; in this case types are automatically inferred.
-            * As a list of (name,type) pairs; this is equivalent to the dictionary form.
-
-            If you supply a list of column names that does not match the names in the
-            underlying data, the names given here will overwrite them. The number
-            of names given in the schema should match the underlying data dimensions.
-        schema_overrides : dict, default None
-            Support type specification or override of one or more columns; note that
-            any dtypes inferred from the columns param will be overridden.
-        orient : {'col', 'row'}, default None
-            Whether to interpret two-dimensional data as columns or as rows. If None,
-            the orientation is inferred by matching the columns and data dimensions. If
-            this does not yield conclusive results, column orientation is used.
-        infer_schema_length
-            How many rows to scan to determine the column type.
+        See Also
+        --------
+        polars.io.from_records
         """
         return cls._from_pydf(
             sequence_to_pydf(
@@ -555,7 +539,7 @@ class DataFrame:
     @classmethod
     def _from_arrow(
         cls,
-        data: pa.Table,
+        data: pa.Table | pa.RecordBatch,
         schema: SchemaDefinition | None = None,
         *,
         schema_overrides: SchemaDict | None = None,
@@ -569,8 +553,8 @@ class DataFrame:
 
         Parameters
         ----------
-        data : arrow table, array, or sequence of sequences
-            Data representing an Arrow Table or Array.
+        data : arrow Table, RecordBatch, or sequence of sequences
+            Data representing an Arrow Table or RecordBatch.
         schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
             The DataFrame schema may be declared in several ways:
 
@@ -866,7 +850,7 @@ class DataFrame:
     @classmethod
     def _read_avro(
         cls,
-        source: str | Path | BinaryIO | bytes,
+        source: str | Path | IO[bytes] | bytes,
         *,
         columns: Sequence[int] | Sequence[str] | None = None,
         n_rows: int | None = None,
@@ -1030,9 +1014,9 @@ class DataFrame:
         cls,
         source: str | Path | IOBase | bytes,
         *,
-        infer_schema_length: int | None = N_INFER_DEFAULT,
         schema: SchemaDefinition | None = None,
         schema_overrides: SchemaDefinition | None = None,
+        infer_schema_length: int | None = N_INFER_DEFAULT,
     ) -> Self:
         """
         Read into a DataFrame from a JSON file.
@@ -1555,8 +1539,7 @@ class DataFrame:
         return self._from_pydf(self._df.take_with_series(s._s))
 
     @overload
-    def __getitem__(self, item: str) -> Series:
-        ...
+    def __getitem__(self, item: str) -> Series: ...
 
     @overload
     def __getitem__(
@@ -1568,16 +1551,13 @@ class DataFrame:
             | tuple[int, MultiColSelector]
             | tuple[MultiRowSelector, MultiColSelector]
         ),
-    ) -> Self:
-        ...
+    ) -> Self: ...
 
     @overload
-    def __getitem__(self, item: tuple[int, int | str]) -> Any:
-        ...
+    def __getitem__(self, item: tuple[int, int | str]) -> Any: ...
 
     @overload
-    def __getitem__(self, item: tuple[MultiRowSelector, int | str]) -> Series:
-        ...
+    def __getitem__(self, item: tuple[MultiRowSelector, int | str]) -> Series: ...
 
     def __getitem__(
         self,
@@ -1825,7 +1805,7 @@ class DataFrame:
     def _ipython_key_completions_(self) -> list[str]:
         return self.columns
 
-    def _repr_html_(self, **kwargs: Any) -> str:
+    def _repr_html_(self, *, _from_series: bool = False) -> str:
         """
         Format output data in HTML for display in Jupyter Notebooks.
 
@@ -1837,18 +1817,18 @@ class DataFrame:
         """
         max_cols = int(os.environ.get("POLARS_FMT_MAX_COLS", default=75))
         if max_cols < 0:
-            max_cols = self.shape[1]
-        max_rows = int(os.environ.get("POLARS_FMT_MAX_ROWS", default=25))
-        if max_rows < 0:
-            max_rows = self.shape[0]
+            max_cols = self.width
 
-        from_series = kwargs.get("from_series", False)
+        max_rows = int(os.environ.get("POLARS_FMT_MAX_ROWS", default=10))
+        if max_rows < 0:
+            max_rows = self.height
+
         return "".join(
             NotebookFormatter(
                 self,
                 max_cols=max_cols,
                 max_rows=max_rows,
-                from_series=from_series,
+                from_series=_from_series,
             ).render()
         )
 
@@ -1935,19 +1915,16 @@ class DataFrame:
         return pa.Table.from_batches(record_batches)
 
     @overload
-    def to_dict(self, as_series: Literal[True] = ...) -> dict[str, Series]:
-        ...
+    def to_dict(self, as_series: Literal[True] = ...) -> dict[str, Series]: ...
 
     @overload
-    def to_dict(self, as_series: Literal[False]) -> dict[str, list[Any]]:
-        ...
+    def to_dict(self, as_series: Literal[False]) -> dict[str, list[Any]]: ...
 
     @overload
     def to_dict(
         self,
         as_series: bool,  # noqa: FBT001
-    ) -> dict[str, Series] | dict[str, list[Any]]:
-        ...
+    ) -> dict[str, Series] | dict[str, list[Any]]: ...
 
     @deprecate_nonkeyword_arguments(version="0.19.13")
     def to_dict(
@@ -2066,6 +2043,8 @@ class DataFrame:
         structured: bool = False,  # noqa: FBT001
         *,
         order: IndexOrder = "fortran",
+        allow_copy: bool = True,
+        writable: bool = False,
         use_pyarrow: bool = True,
     ) -> np.ndarray[Any, Any]:
         """
@@ -2087,16 +2066,18 @@ class DataFrame:
             one-dimensional array. Note that this option only takes effect if
             `structured` is set to `False` and the DataFrame dtypes allow for a
             global dtype for all columns.
+        allow_copy
+            Allow memory to be copied to perform the conversion. If set to `False`,
+            causes conversions that are not zero-copy to fail.
+        writable
+            Ensure the resulting array is writable. This will force a copy of the data
+            if the array was created without copy, as the underlying Arrow data is
+            immutable.
         use_pyarrow
             Use `pyarrow.Array.to_numpy
             <https://arrow.apache.org/docs/python/generated/pyarrow.Array.html#pyarrow.Array.to_numpy>`_
 
             function for the conversion to numpy if necessary.
-
-        Notes
-        -----
-        If you're attempting to convert String or Decimal to an array, you'll need to
-        install `pyarrow`.
 
         Examples
         --------
@@ -2130,7 +2111,15 @@ class DataFrame:
         rec.array([(1, 6.5, 'a'), (2, 7. , 'b'), (3, 8.5, 'c')],
                   dtype=[('foo', 'u1'), ('bar', '<f4'), ('ham', '<U1')])
         """
+
+        def raise_on_copy(msg: str) -> None:
+            if not allow_copy and not self.is_empty():
+                msg = f"copy not allowed: {msg}"
+                raise RuntimeError(msg)
+
         if structured:
+            raise_on_copy("cannot create structured array without copying data")
+
             arrays = []
             struct_dtype = []
             for s in self.iter_columns():
@@ -2148,7 +2137,14 @@ class DataFrame:
         if order == "fortran":
             array = self._df.to_numpy_view()
             if array is not None:
+                if writable and not array.flags.writeable:
+                    raise_on_copy("cannot create writable array without copying data")
+                    array = array.copy()
                 return array
+
+        raise_on_copy(
+            "only numeric data without nulls in Fortran-like order can be converted without copy"
+        )
 
         out = self._df.to_numpy(order)
         if out is None:
@@ -2423,8 +2419,7 @@ class DataFrame:
         *,
         pretty: bool = ...,
         row_oriented: bool = ...,
-    ) -> str:
-        ...
+    ) -> str: ...
 
     @overload
     def write_json(
@@ -2433,8 +2428,7 @@ class DataFrame:
         *,
         pretty: bool = ...,
         row_oriented: bool = ...,
-    ) -> None:
-        ...
+    ) -> None: ...
 
     def write_json(
         self,
@@ -2449,7 +2443,7 @@ class DataFrame:
         Parameters
         ----------
         file
-            File path or writeable file-like object to which the result will be written.
+            File path or writable file-like object to which the result will be written.
             If set to `None` (default), the output is returned as a string instead.
         pretty
             Pretty serialize json.
@@ -2491,12 +2485,10 @@ class DataFrame:
         return None
 
     @overload
-    def write_ndjson(self, file: None = None) -> str:
-        ...
+    def write_ndjson(self, file: None = None) -> str: ...
 
     @overload
-    def write_ndjson(self, file: IOBase | str | Path) -> None:
-        ...
+    def write_ndjson(self, file: IOBase | str | Path) -> None: ...
 
     def write_ndjson(self, file: IOBase | str | Path | None = None) -> str | None:
         r"""
@@ -2505,7 +2497,7 @@ class DataFrame:
         Parameters
         ----------
         file
-            File path or writeable file-like object to which the result will be written.
+            File path or writable file-like object to which the result will be written.
             If set to `None` (default), the output is returned as a string instead.
 
         Examples
@@ -2553,13 +2545,12 @@ class DataFrame:
         float_precision: int | None = ...,
         null_value: str | None = ...,
         quote_style: CsvQuoteStyle | None = ...,
-    ) -> str:
-        ...
+    ) -> str: ...
 
     @overload
     def write_csv(
         self,
-        file: BytesIO | TextIOWrapper | str | Path,
+        file: str | Path | IO[str] | IO[bytes],
         *,
         include_bom: bool = ...,
         include_header: bool = ...,
@@ -2573,14 +2564,13 @@ class DataFrame:
         float_precision: int | None = ...,
         null_value: str | None = ...,
         quote_style: CsvQuoteStyle | None = ...,
-    ) -> None:
-        ...
+    ) -> None: ...
 
     @deprecate_renamed_parameter("quote", "quote_char", version="0.19.8")
     @deprecate_renamed_parameter("has_header", "include_header", version="0.19.13")
     def write_csv(
         self,
-        file: BytesIO | TextIOWrapper | str | Path | None = None,
+        file: str | Path | IO[str] | IO[bytes] | None = None,
         *,
         include_bom: bool = False,
         include_header: bool = True,
@@ -2601,7 +2591,7 @@ class DataFrame:
         Parameters
         ----------
         file
-            File path or writeable file-like object to which the result will be written.
+            File path or writable file-like object to which the result will be written.
             If set to `None` (default), the output is returned as a string instead.
         include_bom
             Whether to include UTF-8 BOM in the CSV output.
@@ -2702,7 +2692,7 @@ class DataFrame:
 
     def write_avro(
         self,
-        file: BinaryIO | BytesIO | str | Path,
+        file: str | Path | IO[bytes],
         compression: AvroCompression = "uncompressed",
         name: str = "",
     ) -> None:
@@ -2712,7 +2702,7 @@ class DataFrame:
         Parameters
         ----------
         file
-            File path or writeable file-like object to which the data will be written.
+            File path or writable file-like object to which the data will be written.
         compression : {'uncompressed', 'snappy', 'deflate'}
             Compression method. Defaults to "uncompressed".
         name
@@ -2744,7 +2734,7 @@ class DataFrame:
     @deprecate_renamed_parameter("has_header", "include_header", version="0.19.13")
     def write_excel(
         self,
-        workbook: Workbook | BytesIO | Path | str | None = None,
+        workbook: Workbook | IO[bytes] | Path | str | None = None,
         worksheet: str | None = None,
         *,
         position: tuple[int, int] | str = "A1",
@@ -3252,22 +3242,20 @@ class DataFrame:
         compression: IpcCompression = "uncompressed",
         *,
         future: bool = False,
-    ) -> BytesIO:
-        ...
+    ) -> BytesIO: ...
 
     @overload
     def write_ipc(
         self,
-        file: BinaryIO | BytesIO | str | Path,
+        file: str | Path | IO[bytes],
         compression: IpcCompression = "uncompressed",
         *,
         future: bool = False,
-    ) -> None:
-        ...
+    ) -> None: ...
 
     def write_ipc(
         self,
-        file: BinaryIO | BytesIO | str | Path | None,
+        file: str | Path | IO[bytes] | None,
         compression: IpcCompression = "uncompressed",
         *,
         future: bool = False,
@@ -3280,7 +3268,7 @@ class DataFrame:
         Parameters
         ----------
         file
-            Path or writeable file-like object to which the IPC data will be
+            Path or writable file-like object to which the IPC data will be
             written. If set to `None`, the output is returned as a BytesIO object.
         compression : {'uncompressed', 'lz4', 'zstd'}
             Compression method. Defaults to "uncompressed".
@@ -3328,20 +3316,18 @@ class DataFrame:
         self,
         file: None,
         compression: IpcCompression = "uncompressed",
-    ) -> BytesIO:
-        ...
+    ) -> BytesIO: ...
 
     @overload
     def write_ipc_stream(
         self,
-        file: BinaryIO | BytesIO | str | Path,
+        file: str | Path | IO[bytes],
         compression: IpcCompression = "uncompressed",
-    ) -> None:
-        ...
+    ) -> None: ...
 
     def write_ipc_stream(
         self,
-        file: BinaryIO | BytesIO | str | Path | None,
+        file: str | Path | IO[bytes] | None,
         compression: IpcCompression = "uncompressed",
     ) -> BytesIO | None:
         """
@@ -3352,7 +3338,7 @@ class DataFrame:
         Parameters
         ----------
         file
-            Path or writeable file-like object to which the IPC record batch data will
+            Path or writable file-like object to which the IPC record batch data will
             be written. If set to `None`, the output is returned as a BytesIO object.
         compression : {'uncompressed', 'lz4', 'zstd'}
             Compression method. Defaults to "uncompressed".
@@ -3401,7 +3387,7 @@ class DataFrame:
         Parameters
         ----------
         file
-            File path or writeable file-like object to which the result will be written.
+            File path or writable file-like object to which the result will be written.
         compression : {'lz4', 'uncompressed', 'snappy', 'gzip', 'lzo', 'brotli', 'zstd'}
             Choose "zstd" for good compression performance.
             Choose "lz4" for fast compression/decompression.
@@ -3683,8 +3669,7 @@ class DataFrame:
         overwrite_schema: bool = ...,
         storage_options: dict[str, str] | None = ...,
         delta_write_options: dict[str, Any] | None = ...,
-    ) -> None:
-        ...
+    ) -> None: ...
 
     @overload
     def write_delta(
@@ -3695,8 +3680,7 @@ class DataFrame:
         overwrite_schema: bool = ...,
         storage_options: dict[str, str] | None = ...,
         delta_merge_options: dict[str, Any],
-    ) -> deltalake.table.TableMerger:
-        ...
+    ) -> deltalake.table.TableMerger: ...
 
     def write_delta(
         self,
@@ -4274,8 +4258,7 @@ class DataFrame:
         max_items_per_column: int = ...,
         max_colname_length: int = ...,
         return_as_string: Literal[False] = ...,
-    ) -> None:
-        ...
+    ) -> None: ...
 
     @overload
     def glimpse(
@@ -4284,8 +4267,7 @@ class DataFrame:
         max_items_per_column: int = ...,
         max_colname_length: int = ...,
         return_as_string: Literal[True],
-    ) -> str:
-        ...
+    ) -> str: ...
 
     @overload
     def glimpse(
@@ -4294,8 +4276,7 @@ class DataFrame:
         max_items_per_column: int = ...,
         max_colname_length: int = ...,
         return_as_string: bool,
-    ) -> str | None:
-        ...
+    ) -> str | None: ...
 
     def glimpse(
         self,
@@ -4455,10 +4436,11 @@ class DataFrame:
 
         Customize which percentiles are displayed, applying linear interpolation:
 
-        >>> df.describe(
-        ...     percentiles=[0.1, 0.3, 0.5, 0.7, 0.9],
-        ...     interpolation="linear",
-        ... )
+        >>> with pl.Config(tbl_rows=12):
+        ...     df.describe(
+        ...         percentiles=[0.1, 0.3, 0.5, 0.7, 0.9],
+        ...         interpolation="linear",
+        ...     )
         shape: (11, 7)
         ┌────────────┬──────────┬──────────┬──────────┬──────┬────────────┬──────────┐
         │ statistic  ┆ float    ┆ int      ┆ bool     ┆ str  ┆ date       ┆ time     │
@@ -5493,7 +5475,7 @@ class DataFrame:
         check_sorted: bool = True,
     ) -> RollingGroupBy:
         """
-        Create rolling groups based on a time, Int32, or Int64 column.
+        Create rolling groups based on a temporal or integer column.
 
         Different from a `group_by_dynamic` the windows are now determined by the
         individual values and are not of constant intervals. For constant intervals use
@@ -5537,11 +5519,6 @@ class DataFrame:
         not be 24 hours, due to daylight savings). Similarly for "calendar week",
         "calendar month", "calendar quarter", and "calendar year".
 
-        In case of a rolling operation on an integer column, the windows are defined by:
-
-        - **"1i"      # length 1**
-        - **"10i"     # length 10**
-
         Parameters
         ----------
         index_column
@@ -5551,8 +5528,8 @@ class DataFrame:
             then it must be sorted in ascending order within each group).
 
             In case of a rolling operation on indices, dtype needs to be one of
-            {Int32, Int64}. Note that Int32 gets temporarily cast to Int64, so if
-            performance matters use an Int64 column.
+            {UInt32, UInt64, Int32, Int64}. Note that the first three get temporarily
+            cast to Int64, so if performance matters use an Int64 column.
         period
             length of the window - must be non-negative
         offset
@@ -6063,8 +6040,8 @@ class DataFrame:
         if offset is None:
             offset = "0ns"
 
-        every = _timedelta_to_pl_duration(every)
-        offset = _timedelta_to_pl_duration(offset)
+        every = parse_as_duration_string(every)
+        offset = parse_as_duration_string(offset)
 
         return self._from_pydf(
             self._df.upsample(by, time_column, every, offset, maintain_order)
@@ -6271,7 +6248,7 @@ class DataFrame:
             * *outer_coalesce*
                  Same as 'outer', but coalesces the key columns
             * *cross*
-                 Returns the cartisian product of rows from both tables
+                 Returns the Cartesian product of rows from both tables
             * *semi*
                  Filter rows that have a match in the right table.
             * *anti*
@@ -6500,7 +6477,7 @@ class DataFrame:
         >>> df.select(pl.col("foo") * 2 + pl.col("bar"))  # doctest: +IGNORE_RESULT
         """
         # TODO: Enable warning for inefficient map
-        # from polars.utils.udfs import warn_on_inefficient_map
+        # from polars._utils.udfs import warn_on_inefficient_map
         # warn_on_inefficient_map(function, columns=self.columns, map_target="frame)
 
         out, is_df = self._df.map_rows(function, return_dtype, inference_size)
@@ -7293,6 +7270,8 @@ class DataFrame:
         ----------
         values
             The column(s) whose values will become the values of the output `DataFrame`.
+            If None, all columns not specified in the index and columns arguments will
+            be used.
         index
             The column(s) whose values will become the index of the output `DataFrame`.
         columns
@@ -7439,9 +7418,10 @@ class DataFrame:
         To emulate e.g. `aggregate_function=pl.element().mean()`, replace `.first()`
         with `.mean()` above.
         """  # noqa: W505
-        values = _expand_selectors(self, values)
         index = _expand_selectors(self, index)
         columns = _expand_selectors(self, columns)
+        if values is not None:
+            values = _expand_selectors(self, values)
 
         if isinstance(aggregate_function, str):
             if aggregate_function == "first":
@@ -7477,9 +7457,9 @@ class DataFrame:
 
         return self._from_pydf(
             self._df.pivot_expr(
-                values,
                 index,
                 columns,
+                values,
                 maintain_order,
                 sort_columns,
                 aggregate_expr,
@@ -7727,8 +7707,7 @@ class DataFrame:
         maintain_order: bool = ...,
         include_key: bool = ...,
         as_dict: Literal[False] = ...,
-    ) -> list[Self]:
-        ...
+    ) -> list[Self]: ...
 
     @overload
     def partition_by(
@@ -7738,8 +7717,7 @@ class DataFrame:
         maintain_order: bool = ...,
         include_key: bool = ...,
         as_dict: Literal[True],
-    ) -> dict[Any, Self]:
-        ...
+    ) -> dict[Any, Self]: ...
 
     def partition_by(
         self,
@@ -8406,12 +8384,10 @@ class DataFrame:
         return self.lazy().with_columns_seq(*exprs, **named_exprs).collect(_eager=True)
 
     @overload
-    def n_chunks(self, strategy: Literal["first"] = ...) -> int:
-        ...
+    def n_chunks(self, strategy: Literal["first"] = ...) -> int: ...
 
     @overload
-    def n_chunks(self, strategy: Literal["all"]) -> list[int]:
-        ...
+    def n_chunks(self, strategy: Literal["all"]) -> list[int]: ...
 
     def n_chunks(self, strategy: str = "first") -> int | list[int]:
         """
@@ -8450,16 +8426,13 @@ class DataFrame:
             raise ValueError(msg)
 
     @overload
-    def max(self, axis: Literal[0] = ...) -> Self:
-        ...
+    def max(self, axis: Literal[0] = ...) -> Self: ...
 
     @overload
-    def max(self, axis: Literal[1]) -> Series:
-        ...
+    def max(self, axis: Literal[1]) -> Series: ...
 
     @overload
-    def max(self, axis: int = 0) -> Self | Series:
-        ...
+    def max(self, axis: int = 0) -> Self | Series: ...
 
     def max(self, axis: int | None = None) -> Self | Series:
         """
@@ -8539,16 +8512,13 @@ class DataFrame:
         return self.select(max=F.max_horizontal(F.all())).to_series()
 
     @overload
-    def min(self, axis: Literal[0] | None = ...) -> Self:
-        ...
+    def min(self, axis: Literal[0] | None = ...) -> Self: ...
 
     @overload
-    def min(self, axis: Literal[1]) -> Series:
-        ...
+    def min(self, axis: Literal[1]) -> Series: ...
 
     @overload
-    def min(self, axis: int) -> Self | Series:
-        ...
+    def min(self, axis: int) -> Self | Series: ...
 
     def min(self, axis: int | None = None) -> Self | Series:
         """
@@ -8633,8 +8603,7 @@ class DataFrame:
         *,
         axis: Literal[0] = ...,
         null_strategy: NullStrategy = "ignore",
-    ) -> Self:
-        ...
+    ) -> Self: ...
 
     @overload
     def sum(
@@ -8642,8 +8611,7 @@ class DataFrame:
         *,
         axis: Literal[1],
         null_strategy: NullStrategy = "ignore",
-    ) -> Series:
-        ...
+    ) -> Series: ...
 
     @overload
     def sum(
@@ -8651,8 +8619,7 @@ class DataFrame:
         *,
         axis: int,
         null_strategy: NullStrategy = "ignore",
-    ) -> Self | Series:
-        ...
+    ) -> Self | Series: ...
 
     def sum(
         self,
@@ -8760,8 +8727,7 @@ class DataFrame:
         *,
         axis: Literal[0] = ...,
         null_strategy: NullStrategy = "ignore",
-    ) -> Self:
-        ...
+    ) -> Self: ...
 
     @overload
     def mean(
@@ -8769,8 +8735,7 @@ class DataFrame:
         *,
         axis: Literal[1],
         null_strategy: NullStrategy = "ignore",
-    ) -> Series:
-        ...
+    ) -> Series: ...
 
     @overload
     def mean(
@@ -8778,8 +8743,7 @@ class DataFrame:
         *,
         axis: int,
         null_strategy: NullStrategy = "ignore",
-    ) -> Self | Series:
-        ...
+    ) -> Self | Series: ...
 
     def mean(
         self,
@@ -9288,9 +9252,15 @@ class DataFrame:
         df = self.lazy().select(expr.n_unique()).collect(_eager=True)
         return 0 if df.is_empty() else df.row(0)[0]
 
+    @deprecate_function(
+        "Use `select(pl.all().approx_n_unique())` instead.", version="0.20.11"
+    )
     def approx_n_unique(self) -> DataFrame:
         """
         Approximate count of unique values.
+
+        .. deprecated:: 0.20.11
+            Use `select(pl.all().approx_n_unique())` instead.
 
         This is done using the HyperLogLog++ algorithm for cardinality estimation.
 
@@ -9302,7 +9272,7 @@ class DataFrame:
         ...         "b": [1, 2, 1, 1],
         ...     }
         ... )
-        >>> df.approx_n_unique()
+        >>> df.approx_n_unique()  # doctest: +SKIP
         shape: (1, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -9520,8 +9490,7 @@ class DataFrame:
         *,
         by_predicate: Expr | None = ...,
         named: Literal[False] = ...,
-    ) -> tuple[Any, ...]:
-        ...
+    ) -> tuple[Any, ...]: ...
 
     @overload
     def row(
@@ -9530,8 +9499,7 @@ class DataFrame:
         *,
         by_predicate: Expr | None = ...,
         named: Literal[True],
-    ) -> dict[str, Any]:
-        ...
+    ) -> dict[str, Any]: ...
 
     def row(
         self,
@@ -9640,12 +9608,10 @@ class DataFrame:
             raise ValueError(msg)
 
     @overload
-    def rows(self, *, named: Literal[False] = ...) -> list[tuple[Any, ...]]:
-        ...
+    def rows(self, *, named: Literal[False] = ...) -> list[tuple[Any, ...]]: ...
 
     @overload
-    def rows(self, *, named: Literal[True]) -> list[dict[str, Any]]:
-        ...
+    def rows(self, *, named: Literal[True]) -> list[dict[str, Any]]: ...
 
     def rows(
         self, *, named: bool = False
@@ -9881,14 +9847,12 @@ class DataFrame:
     @overload
     def iter_rows(
         self, *, named: Literal[False] = ..., buffer_size: int = ...
-    ) -> Iterator[tuple[Any, ...]]:
-        ...
+    ) -> Iterator[tuple[Any, ...]]: ...
 
     @overload
     def iter_rows(
         self, *, named: Literal[True], buffer_size: int = ...
-    ) -> Iterator[dict[str, Any]]:
-        ...
+    ) -> Iterator[dict[str, Any]]: ...
 
     def iter_rows(
         self, *, named: bool = False, buffer_size: int = 512

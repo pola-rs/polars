@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 
 import pytest
 from sqlalchemy import Integer, MetaData, Table, create_engine, func, select
+from sqlalchemy.orm import sessionmaker
 from sqlalchemy.sql.expression import cast as alchemy_cast
 
 import polars as pl
@@ -115,10 +116,10 @@ class MockConnection:
             test_data=test_data,
         )
 
-    def close(self) -> None:  # noqa: D102
+    def close(self) -> None:
         pass
 
-    def cursor(self) -> Any:  # noqa: D102
+    def cursor(self) -> Any:
         return self._cursor
 
 
@@ -142,10 +143,10 @@ class MockCursor:
             return self.resultset
         super().__getattr__(item)  # type: ignore[misc]
 
-    def close(self) -> Any:  # noqa: D102
+    def close(self) -> Any:
         pass
 
-    def execute(self, query: str) -> Any:  # noqa: D102
+    def execute(self, query: str) -> Any:
         return self
 
 
@@ -160,7 +161,7 @@ class MockResultSet:
         self.batched = batched
         self.n_calls = 1
 
-    def __call__(self, *args: Any, **kwargs: Any) -> Any:  # noqa: D102
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
         if self.repeat_batched_calls:
             res = self.test_data[: None if self.n_calls else 0]
             self.n_calls -= 1
@@ -353,8 +354,13 @@ def test_read_database_alchemy_selectable(tmp_path: Path) -> None:
     # setup underlying test data
     tmp_path.mkdir(exist_ok=True)
     create_temp_sqlite_db(test_db := str(tmp_path / "test.db"))
-    conn = create_engine(f"sqlite:///{test_db}")
-    t = Table("test_data", MetaData(), autoload_with=conn)
+
+    # various flavours of alchemy connection
+    alchemy_engine = create_engine(f"sqlite:///{test_db}")
+    alchemy_session: ConnectionOrCursor = sessionmaker(bind=alchemy_engine)()
+    alchemy_conn: ConnectionOrCursor = alchemy_engine.connect()
+
+    t = Table("test_data", MetaData(), autoload_with=alchemy_engine)
 
     # establish sqlalchemy "selectable" and validate usage
     selectable_query = select(
@@ -363,21 +369,23 @@ def test_read_database_alchemy_selectable(tmp_path: Path) -> None:
         t.c.value,
     ).where(t.c.value < 0)
 
-    assert_frame_equal(
-        pl.read_database(selectable_query, connection=conn.connect()),
-        pl.DataFrame({"year": [2021], "name": ["other"], "value": [-99.5]}),
-    )
+    for conn in (alchemy_session, alchemy_engine, alchemy_conn):
+        assert_frame_equal(
+            pl.read_database(selectable_query, connection=conn),
+            pl.DataFrame({"year": [2021], "name": ["other"], "value": [-99.5]}),
+        )
 
 
 def test_read_database_parameterised(tmp_path: Path) -> None:
     # setup underlying test data
     tmp_path.mkdir(exist_ok=True)
     create_temp_sqlite_db(test_db := str(tmp_path / "test.db"))
+    alchemy_engine = create_engine(f"sqlite:///{test_db}")
 
     # raw cursor "execute" only takes positional params, alchemy cursor takes kwargs
     raw_conn: ConnectionOrCursor = sqlite3.connect(test_db)
-    alchemy_conn: ConnectionOrCursor = create_engine(f"sqlite:///{test_db}").connect()
-    test_conns = (alchemy_conn, raw_conn)
+    alchemy_conn: ConnectionOrCursor = alchemy_engine.connect()
+    alchemy_session: ConnectionOrCursor = sessionmaker(bind=alchemy_engine)()
 
     # establish parameterised queries and validate usage
     query = """
@@ -390,7 +398,10 @@ def test_read_database_parameterised(tmp_path: Path) -> None:
         ("?", (0,)),
         ("?", [0]),
     ):
-        for conn in test_conns:
+        for conn in (alchemy_session, alchemy_engine, alchemy_conn, raw_conn):
+            if alchemy_session is conn and param == "?":
+                continue  # alchemy session.execute() doesn't support positional params
+
             assert_frame_equal(
                 pl.read_database(
                     query.format(n=param),
@@ -621,3 +632,55 @@ def test_read_database_cx_credentials(uri: str) -> None:
     # can reasonably mitigate the issue.
     with pytest.raises(BaseException, match=r"fakedb://\*\*\*:\*\*\*@\w+"):
         pl.read_database_uri("SELECT * FROM data", uri=uri)
+
+
+@pytest.mark.write_disk()
+def test_read_kuzu_graph_database(tmp_path: Path, io_files_path: Path) -> None:
+    # validate reading from a kuzu graph database
+    import kuzu
+
+    tmp_path.mkdir(exist_ok=True)
+    if (kuzu_test_db := (tmp_path / "kuzu_test.db")).exists():
+        kuzu_test_db.unlink()
+
+    test_db = str(kuzu_test_db).replace("\\", "/")
+
+    db = kuzu.Database(test_db)
+    conn = kuzu.Connection(db)
+    conn.execute("CREATE NODE TABLE User(name STRING, age INT64, PRIMARY KEY (name))")
+    conn.execute("CREATE REL TABLE Follows(FROM User TO User, since INT64)")
+
+    users = str(io_files_path / "graph-data" / "user.csv").replace("\\", "/")
+    follows = str(io_files_path / "graph-data" / "follows.csv").replace("\\", "/")
+
+    conn.execute(f'COPY User FROM "{users}"')
+    conn.execute(f'COPY Follows FROM "{follows}"')
+
+    df1 = pl.read_database(
+        query="MATCH (u:User) RETURN u.name, u.age",
+        connection=conn,
+    )
+    assert_frame_equal(
+        df1,
+        pl.DataFrame(
+            {
+                "u.name": ["Adam", "Karissa", "Zhang", "Noura"],
+                "u.age": [30, 40, 50, 25],
+            }
+        ),
+    )
+
+    df2 = pl.read_database(
+        query="MATCH (a:User)-[f:Follows]->(b:User) RETURN a.name, f.since, b.name",
+        connection=conn,
+    )
+    assert_frame_equal(
+        df2,
+        pl.DataFrame(
+            {
+                "a.name": ["Adam", "Adam", "Karissa", "Zhang"],
+                "f.since": [2020, 2020, 2021, 2022],
+                "b.name": ["Karissa", "Zhang", "Zhang", "Noura"],
+            }
+        ),
+    )

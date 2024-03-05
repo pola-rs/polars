@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     import sys
 
     from sqlalchemy import Engine
+    from sqlalchemy.orm import Session
 
     from polars import DataFrame, Expr, LazyFrame, Series
     from polars.datatypes import DataType, DataTypeClass, IntegerType, TemporalType
@@ -227,17 +228,11 @@ class SeriesBuffers(TypedDict):
 # minimal protocol definitions that can reasonably represent
 # an executable connection, cursor, or equivalent object
 class BasicConnection(Protocol):  # noqa: D101
-    def close(self) -> None:
-        """Close the connection."""
-
     def cursor(self, *args: Any, **kwargs: Any) -> Any:
         """Return a cursor object."""
 
 
 class BasicCursor(Protocol):  # noqa: D101
-    def close(self) -> None:
-        """Close the cursor."""
-
     def execute(self, *args: Any, **kwargs: Any) -> Any:
         """Execute a query."""
 
@@ -250,4 +245,4 @@ class Cursor(BasicCursor):  # noqa: D101
         """Fetch results in batches."""
 
 
-ConnectionOrCursor = Union[BasicConnection, BasicCursor, Cursor, "Engine"]
+ConnectionOrCursor = Union[BasicConnection, BasicCursor, Cursor, "Engine", "Session"]

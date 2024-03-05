@@ -1,4 +1,3 @@
-use arrow::array::DictionaryArray;
 use arrow::compute::cast::{cast, utf8view_to_utf8, CastOptions};
 use arrow::datatypes::IntegerType;
 

@@ -1,4 +1,3 @@
-use std::iter::FromIterator;
 use std::ops::Deref;
 use std::sync::Arc;
 use std::usize;
@@ -120,6 +119,7 @@ impl<T> Buffer<T> {
     }
 
     /// Returns the byte slice stored in this buffer
+    ///
     /// # Safety
     /// `index` must be smaller than `len`
     #[inline]
@@ -159,6 +159,7 @@ impl<T> Buffer<T> {
 
     /// Returns a new [`Buffer`] that is a slice of this buffer starting at `offset`.
     /// Doing so allows the same memory region to be shared between buffers.
+    ///
     /// # Safety
     /// The caller must ensure `offset + length <= self.len()`
     #[inline]
@@ -169,6 +170,7 @@ impl<T> Buffer<T> {
     }
 
     /// Slices this buffer starting at `offset`.
+    ///
     /// # Safety
     /// The caller must ensure `offset + length <= self.len()`
     #[inline]

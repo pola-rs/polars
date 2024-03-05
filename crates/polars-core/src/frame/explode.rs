@@ -275,7 +275,7 @@ impl DataFrame {
                 out.push(variable_col);
                 out.push(value_col);
 
-                return Ok(DataFrame::new_no_checks(out));
+                return Ok(unsafe { DataFrame::new_no_checks(out) });
             }
 
             let id_vars_set = PlHashSet::from_iter(id_vars.iter().map(|s| s.as_str()));
@@ -354,7 +354,6 @@ impl DataFrame {
 
 #[cfg(test)]
 mod test {
-    use crate::frame::explode::MeltArgs;
     use crate::prelude::*;
 
     #[test]

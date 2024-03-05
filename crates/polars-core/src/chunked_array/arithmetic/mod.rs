@@ -5,7 +5,6 @@ mod numeric;
 
 use std::ops::{Add, Div, Mul, Rem, Sub};
 
-use arrow::array::PrimitiveArray;
 use arrow::compute::utils::combine_validities_and;
 use num_traits::{Num, NumCast, ToPrimitive};
 pub use numeric::ArithmeticChunked;

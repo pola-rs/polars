@@ -2,8 +2,6 @@
 # We're not pinning package dependencies, because our tests need to pass with the
 # latest version of the packages.
 
---prefer-binary
-
 # -----
 # BUILD
 # -----
@@ -30,6 +28,7 @@ adbc_driver_sqlite; python_version >= '3.9' and platform_system != 'Windows'
 # TODO: Remove version constraint for connectorx when Python 3.12 is supported:
 # https://github.com/sfu-db/connector-x/issues/527
 connectorx; python_version <= '3.11'
+kuzu
 # Cloud
 cloudpickle
 fsspec

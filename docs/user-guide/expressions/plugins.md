@@ -37,7 +37,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 polars = { version = "*" }
-pyo3 = { version = "*", features = ["extension-module"] }
+pyo3 = { version = "*", features = ["extension-module", "abi-py38"] }
 pyo3-polars = { version = "*", features = ["derive"] }
 serde = { version = "*", features = ["derive"] }
 ```
@@ -96,20 +96,44 @@ import polars as pl
 from polars.type_aliases import IntoExpr
 from polars.utils.udfs import _get_shared_lib_location
 
+from expression_lib.utils import parse_into_expr
+
 # Boilerplate needed to inform Polars of the location of binary wheel.
 lib = _get_shared_lib_location(__file__)
 
-@pl.api.register_expr_namespace("language")
-class Language:
-    def __init__(self, expr: pl.Expr):
-        self._expr = expr
+def pig_latinnify(expr: IntoExpr, capitalize: bool = False) -> pl.Expr:
+    expr = parse_into_expr(expr)
+    return expr.register_plugin(
+        lib=lib,
+        symbol="pig_latinnify",
+        is_elementwise=True,
+    )
+```
 
-    def pig_latinnify(self) -> pl.Expr:
-        return self._expr._register_plugin(
-            lib=lib,
-            symbol="pig_latinnify",
-            is_elementwise=True,
-        )
+```python
+# expression_lib/utils.py
+import polars as pl
+
+from polars.type_aliases import IntoExpr, PolarsDataType
+
+
+def parse_into_expr(
+    expr: IntoExpr,
+    *,
+    str_as_lit: bool = False,
+    list_as_lit: bool = True,
+    dtype: PolarsDataType | None = None,
+) -> pl.Expr:
+    """Parse a single input into an expression."""
+    if isinstance(expr, pl.Expr):
+        pass
+    elif isinstance(expr, str) and not str_as_lit:
+        expr = pl.col(expr)
+    elif isinstance(expr, list) and not list_as_lit:
+        expr = pl.lit(pl.Series(expr), dtype=dtype)
+    else:
+        expr = pl.lit(expr, dtype=dtype)
+    return expr
 ```
 
 We can then compile this library in our environment by installing `maturin` and running `maturin develop --release`.
@@ -118,15 +142,19 @@ And that's it. Our expression is ready to use!
 
 ```python
 import polars as pl
-from expression_lib import Language
+from expression_lib import pig_latinnify
 
 df = pl.DataFrame(
     {
         "convert": ["pig", "latin", "is", "silly"],
     }
 )
+out = df.with_columns(pig_latin=pig_latinnify("convert"))
+```
 
+Alternatively, you can [register a custom namespace](https://docs.pola.rs/py-polars/html/reference/api/polars.api.register_expr_namespace.html#polars.api.register_expr_namespace), which enables you to write:
 
+```python
 out = df.with_columns(
     pig_latin=pl.col("convert").language.pig_latinnify(),
 )
@@ -173,33 +201,29 @@ fn append_kwargs(input: &[Series], kwargs: MyKwargs) -> PolarsResult<Series> {
 On the Python side the kwargs can be passed when we register the plugin.
 
 ```python
-@pl.api.register_expr_namespace("my_expr")
-class MyCustomExpr:
-    def __init__(self, expr: pl.Expr):
-        self._expr = expr
-
-    def append_args(
-            self,
-            float_arg: float,
-            integer_arg: int,
-            string_arg: str,
-            boolean_arg: bool,
-    ) -> pl.Expr:
-        """
-        This example shows how arguments other than `Series` can be used.
-        """
-        return self._expr._register_plugin(
-            lib=lib,
-            args=[],
-            kwargs={
-                "float_arg": float_arg,
-                "integer_arg": integer_arg,
-                "string_arg": string_arg,
-                "boolean_arg": boolean_arg,
-            },
-            symbol="append_kwargs",
-            is_elementwise=True,
-        )
+def append_args(
+    expr: IntoExpr,
+    float_arg: float,
+    integer_arg: int,
+    string_arg: str,
+    boolean_arg: bool,
+) -> pl.Expr:
+    """
+    This example shows how arguments other than `Series` can be used.
+    """
+    expr = parse_into_expr(expr)
+    return expr.register_plugin(
+        lib=lib,
+        args=[],
+        kwargs={
+            "float_arg": float_arg,
+            "integer_arg": integer_arg,
+            "string_arg": string_arg,
+            "boolean_arg": boolean_arg,
+        },
+        symbol="append_kwargs",
+        is_elementwise=True,
+    )
 ```
 
 ## Output data types
@@ -242,14 +266,24 @@ fn haversine(inputs: &[Series]) -> PolarsResult<Series> {
 }
 ```
 
-That's all you need to know to get started. Take a look at this [repo](https://github.com/pola-rs/pyo3-polars/tree/main/example/derive_expression) to see how this all fits together.
+That's all you need to know to get started. Take a look at [this repo](https://github.com/pola-rs/pyo3-polars/tree/main/example/derive_expression) to see how this all fits together, and at [this tutorial](https://marcogorelli.github.io/polars-plugins-tutorial/)
+to gain a more thorough understanding.
 
 ## Community plugins
 
-Here is a curated (non-exhaustive) list of community implemented plugins.
+Here is a curated (non-exhaustive) list of community-implemented plugins.
 
 - [polars-xdt](https://github.com/pola-rs/polars-xdt) Polars plugin with extra datetime-related functionality
   which isn't quite in-scope for the main library
 - [polars-distance](https://github.com/ion-elgreco/polars-distance) Polars plugin for pairwise distance functions
 - [polars-ds](https://github.com/abstractqqq/polars_ds_extension) Polars extension aiming to simplify common numerical/string data analysis procedures
 - [polars-hash](https://github.com/ion-elgreco/polars-hash) Stable non-cryptographic and cryptographic hashing functions for Polars
+- [polars-reverse-geocode](https://github.com/MarcoGorelli/polars-reverse-geocode) Offline reverse geocoder for finding the closest city
+  to a given (latitude, longitude) pair
+
+## Other material
+
+- [Ritchie Vink - Keynote on Polars Plugins](https://youtu.be/jKW-CBV7NUM)
+- [Polars plugins tutorial](https://marcogorelli.github.io/polars-plugins-tutorial/) Learn how to write a plugin by
+  going through some very simple and minimal examples
+- [cookiecutter-polars-plugin](https://github.com/MarcoGorelli/cookiecutter-polars-plugins) Project template for Polars Plugins

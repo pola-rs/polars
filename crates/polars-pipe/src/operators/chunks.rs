@@ -44,7 +44,7 @@ pub(crate) fn chunks_to_df_unchecked(chunks: Vec<DataChunk>) -> DataFrame {
 ///
 /// Changing the `DataFrame` into contiguous chunks is the caller's
 /// responsibility.
-#[cfg(feature = "parquet")]
+#[cfg(any(feature = "parquet", feature = "ipc", feature = "csv"))]
 #[derive(Clone)]
 pub(crate) struct StreamingVstacker {
     current_dataframe: Option<DataFrame>,
@@ -52,7 +52,7 @@ pub(crate) struct StreamingVstacker {
     output_chunk_size: usize,
 }
 
-#[cfg(feature = "parquet")]
+#[cfg(any(feature = "parquet", feature = "ipc", feature = "csv"))]
 impl StreamingVstacker {
     /// Create a new instance.
     pub fn new(output_chunk_size: usize) -> Self {
@@ -103,7 +103,7 @@ impl StreamingVstacker {
     }
 }
 
-#[cfg(feature = "parquet")]
+#[cfg(any(feature = "parquet", feature = "ipc", feature = "csv"))]
 impl Default for StreamingVstacker {
     /// 4 MB was chosen based on some empirical experiments that showed it to
     /// be decently faster than lower or higher values, and it's small enough
@@ -114,7 +114,7 @@ impl Default for StreamingVstacker {
 }
 
 #[cfg(test)]
-#[cfg(feature = "parquet")]
+#[cfg(any(feature = "parquet", feature = "ipc", feature = "csv"))]
 mod test {
     use super::*;
 

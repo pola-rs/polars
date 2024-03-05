@@ -11,7 +11,6 @@ use utils::*;
 
 use super::*;
 use crate::dsl::function_expr::FunctionExpr;
-use crate::logical_plan::optimizer;
 use crate::prelude::optimizer::predicate_pushdown::group_by::process_group_by;
 use crate::prelude::optimizer::predicate_pushdown::join::process_join;
 use crate::prelude::optimizer::predicate_pushdown::rename::process_rename;
@@ -404,24 +403,15 @@ impl<'a> PredicatePushDown<'a> {
                 input,
                 options
             } => {
-
-                if matches!(options.keep_strategy, UniqueKeepStrategy::Any | UniqueKeepStrategy::None) {
-                    // currently the distinct operation only keeps the first occurrences.
-                    // this may have influence on the pushed down predicates. If the pushed down predicates
-                    // contain a binary expression (thus depending on values in multiple columns)
-                    // the final result may differ if it is pushed down.
-
-                    let mut root_count = 0;
-
-                    // if this condition is called more than once, its a binary or ternary operation.
-                    let condition = |_| {
-                        if root_count == 0 {
-                            root_count += 1;
-                            false
-                        } else {
-                            true
-                        }
+                if let Some(ref subset) = options.subset {
+                    // Predicates on the subset can pass.
+                    let subset = subset.clone();
+                    let mut names_set = PlHashSet::<&str>::with_capacity(subset.len());
+                    for name in subset.iter() {
+                        names_set.insert(name.as_str());
                     };
+
+                    let condition = |name: Arc<str>| !names_set.contains(name.as_ref());
                     let local_predicates =
                         transfer_to_local_by_name(expr_arena, &mut acc_predicates, condition);
 

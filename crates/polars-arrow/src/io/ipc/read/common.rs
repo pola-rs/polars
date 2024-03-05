@@ -2,7 +2,6 @@ use std::collections::VecDeque;
 use std::io::{Read, Seek};
 
 use ahash::AHashMap;
-use arrow_format;
 use polars_error::{polars_bail, polars_err, PolarsResult};
 
 use super::deserialize::{read, skip};
@@ -150,7 +149,12 @@ pub fn read_record_batch<R: Read + Seek>(
                     scratch,
                 )?)),
                 ProjectionResult::NotSelected((field, _)) => {
-                    skip(&mut field_nodes, &field.data_type, &mut buffers)?;
+                    skip(
+                        &mut field_nodes,
+                        &field.data_type,
+                        &mut buffers,
+                        &mut variadic_buffer_counts,
+                    )?;
                     Ok(None)
                 },
             })

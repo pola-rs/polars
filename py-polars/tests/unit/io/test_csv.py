@@ -14,9 +14,9 @@ import pytest
 import zstandard
 
 import polars as pl
+from polars._utils.various import normalize_filepath
 from polars.exceptions import ComputeError, NoDataError
 from polars.testing import assert_frame_equal, assert_series_equal
-from polars.utils.various import normalize_filepath
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -1476,6 +1476,11 @@ def test_batched_csv_reader_no_batches(foods_file_path: Path) -> None:
     assert batches is None
 
 
+def test_read_csv_batched_invalid_source() -> None:
+    with pytest.raises(TypeError):
+        pl.read_csv_batched(source=5)  # type: ignore[arg-type]
+
+
 def test_csv_single_categorical_null() -> None:
     f = io.BytesIO()
     pl.DataFrame(
@@ -1671,7 +1676,7 @@ def test_write_csv_stdout_stderr(capsys: pytest.CaptureFixture[str]) -> None:
     )
 
     # pytest hijacks sys.stdout and changes its type, which causes mypy failure
-    df.write_csv(sys.stdout)  # type: ignore[call-overload]
+    df.write_csv(sys.stdout)
     captured = capsys.readouterr()
     assert captured.out == (
         "numbers,strings,dates\n"
@@ -1680,7 +1685,7 @@ def test_write_csv_stdout_stderr(capsys: pytest.CaptureFixture[str]) -> None:
         "3,stdout,2023-01-03\n"
     )
 
-    df.write_csv(sys.stderr)  # type: ignore[call-overload]
+    df.write_csv(sys.stderr)
     captured = capsys.readouterr()
     assert captured.err == (
         "numbers,strings,dates\n"
@@ -1820,7 +1825,7 @@ def test_provide_schema() -> None:
     }
 
 
-def test_custom_writeable_object() -> None:
+def test_custom_writable_object() -> None:
     df = pl.DataFrame({"a": [10, 20, 30], "b": ["x", "y", "z"]})
 
     class CustomBuffer:

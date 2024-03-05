@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use polars_error::{polars_bail, PolarsResult};
 
-use super::{FixedSizeBinaryArray, FixedSizeBinaryValues};
+use super::FixedSizeBinaryArray;
 use crate::array::physical_binary::extend_validity;
 use crate::array::{Array, MutableArray, TryExtendFromSelf};
 use crate::bitmap::MutableBitmap;
@@ -200,6 +200,7 @@ impl MutableFixedSizeBinaryArray {
     }
 
     /// Returns the element at index `i` as `&[u8]`
+    ///
     /// # Safety
     /// Assumes that the `i < self.len`.
     #[inline]
@@ -286,18 +287,6 @@ impl MutableArray for MutableFixedSizeBinaryArray {
 
     fn shrink_to_fit(&mut self) {
         self.shrink_to_fit()
-    }
-}
-
-impl FixedSizeBinaryValues for MutableFixedSizeBinaryArray {
-    #[inline]
-    fn values(&self) -> &[u8] {
-        &self.values
-    }
-
-    #[inline]
-    fn size(&self) -> usize {
-        self.size
     }
 }
 

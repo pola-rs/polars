@@ -30,6 +30,7 @@ impl ListChunked {
     }
 
     /// Set the logical type of the [`ListChunked`].
+    ///
     /// # Safety
     /// The caller must ensure that the logical type given fits the physical type of the array.
     pub unsafe fn to_logical(&mut self, inner_dtype: DataType) {

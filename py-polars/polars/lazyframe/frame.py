@@ -24,6 +24,31 @@ from typing import (
 
 import polars._reexport as pl
 from polars import functions as F
+from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
+from polars._utils.convert import negate_duration_string, parse_as_duration_string
+from polars._utils.deprecation import (
+    deprecate_function,
+    deprecate_parameter_as_positional,
+    deprecate_renamed_function,
+    deprecate_renamed_parameter,
+    deprecate_saturating,
+    issue_deprecation_warning,
+)
+from polars._utils.parse_expr_input import (
+    parse_as_expression,
+    parse_as_list_of_expressions,
+)
+from polars._utils.unstable import issue_unstable_warning, unstable
+from polars._utils.various import (
+    _in_notebook,
+    _prepare_row_index_args,
+    _process_null_values,
+    is_bool_sequence,
+    is_sequence,
+    normalize_filepath,
+    parse_percentiles,
+)
+from polars._utils.wrap import wrap_df, wrap_expr
 from polars.convert import from_dict
 from polars.datatypes import (
     DTYPE_TEMPORAL_UNITS,
@@ -62,31 +87,6 @@ from polars.lazyframe.group_by import LazyGroupBy
 from polars.lazyframe.in_process import InProcessQuery
 from polars.selectors import _expand_selectors, by_dtype, expand_selector
 from polars.slice import LazyPolarsSlice
-from polars.utils._async import _AioDataFrameResult, _GeventDataFrameResult
-from polars.utils._parse_expr_input import (
-    parse_as_expression,
-    parse_as_list_of_expressions,
-)
-from polars.utils._wrap import wrap_df, wrap_expr
-from polars.utils.convert import _negate_duration, _timedelta_to_pl_duration
-from polars.utils.deprecation import (
-    deprecate_function,
-    deprecate_parameter_as_positional,
-    deprecate_renamed_function,
-    deprecate_renamed_parameter,
-    deprecate_saturating,
-    issue_deprecation_warning,
-)
-from polars.utils.unstable import issue_unstable_warning, unstable
-from polars.utils.various import (
-    _in_notebook,
-    _prepare_row_index_args,
-    _process_null_values,
-    is_bool_sequence,
-    is_sequence,
-    normalize_filepath,
-    parse_percentiles,
-)
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyLazyFrame
@@ -170,9 +170,11 @@ class LazyFrame:
         Whether to interpret two-dimensional data as columns or as rows. If None,
         the orientation is inferred by matching the columns and data dimensions. If
         this does not yield conclusive results, column orientation is used.
-    infer_schema_length : int, default None
-        Maximum number of rows to read for schema inference; only applies if the input
-        data is a sequence or generator of rows; other input is read as-is.
+    infer_schema_length : int or None
+        The maximum number of rows to scan for schema inference.
+        If set to `None`, the full data may be scanned *(this is slow)*.
+        This parameter only applies if the input data is a sequence or generator of
+        rows; other input is read as-is.
     nan_to_null : bool, default False
         If the data comes from one or more numpy arrays, can optionally convert input
         data np.nan values to null instead. This is a no-op for all other input data.
@@ -284,6 +286,7 @@ class LazyFrame:
     └─────┴─────┴─────┘
     """
 
+    __slots__ = ("_ldf",)
     _ldf: PyLazyFrame
     _accessors: ClassVar[set[str]] = set()
 
@@ -534,7 +537,7 @@ class LazyFrame:
         cls,
         source: str | Path | list[str] | list[Path],
         *,
-        infer_schema_length: int | None = None,
+        infer_schema_length: int | None = N_INFER_DEFAULT,
         schema: SchemaDefinition | None = None,
         batch_size: int | None = None,
         n_rows: int | None = None,
@@ -797,12 +800,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 """
 
     @overload
-    def serialize(self, file: None = ...) -> str:
-        ...
+    def serialize(self, file: None = ...) -> str: ...
 
     @overload
-    def serialize(self, file: IOBase | str | Path) -> None:
-        ...
+    def serialize(self, file: IOBase | str | Path) -> None: ...
 
     def serialize(self, file: IOBase | str | Path | None = None) -> str | None:
         """
@@ -999,10 +1000,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Customize which percentiles are displayed, applying linear interpolation:
 
-        >>> lf.describe(
-        ...     percentiles=[0.1, 0.3, 0.5, 0.7, 0.9],
-        ...     interpolation="linear",
-        ... )
+        >>> with pl.Config(tbl_rows=12):
+        ...     lf.describe(
+        ...         percentiles=[0.1, 0.3, 0.5, 0.7, 0.9],
+        ...         interpolation="linear",
+        ...     )
         shape: (11, 7)
         ┌────────────┬──────────┬──────────┬──────────┬──────┬────────────┬──────────┐
         │ statistic  ┆ float    ┆ int      ┆ bool     ┆ str  ┆ date       ┆ time     │
@@ -1782,8 +1784,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         streaming: bool = False,
         background: Literal[True],
         _eager: bool = False,
-    ) -> InProcessQuery:
-        ...
+    ) -> InProcessQuery: ...
 
     @overload
     def collect(
@@ -1800,8 +1801,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         streaming: bool = False,
         background: Literal[False] = False,
         _eager: bool = False,
-    ) -> DataFrame:
-        ...
+    ) -> DataFrame: ...
 
     def collect(
         self,
@@ -1948,8 +1948,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
         streaming: bool = True,
-    ) -> _GeventDataFrameResult[DataFrame]:
-        ...
+    ) -> _GeventDataFrameResult[DataFrame]: ...
 
     @overload
     def collect_async(
@@ -1965,8 +1964,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
         streaming: bool = True,
-    ) -> Awaitable[DataFrame]:
-        ...
+    ) -> Awaitable[DataFrame]: ...
 
     def collect_async(
         self,
@@ -3231,7 +3229,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         check_sorted: bool = True,
     ) -> LazyGroupBy:
         """
-        Create rolling groups based on a time, Int32, or Int64 column.
+        Create rolling groups based on a temporal or integer column.
 
         Different from a `dynamic_group_by` the windows are now determined by the
         individual values and are not of constant intervals. For constant intervals
@@ -3275,11 +3273,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         not be 24 hours, due to daylight savings). Similarly for "calendar week",
         "calendar month", "calendar quarter", and "calendar year".
 
-        In case of a rolling operation on an integer column, the windows are defined by:
-
-        - "1i"      # length 1
-        - "10i"     # length 10
-
         Parameters
         ----------
         index_column
@@ -3289,8 +3282,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             then it must be sorted in ascending order within each group).
 
             In case of a rolling group by on indices, dtype needs to be one of
-            {Int32, Int64}. Note that Int32 gets temporarily cast to Int64, so if
-            performance matters use an Int64 column.
+            {UInt32, UInt64, Int32, Int64}. Note that the first three get temporarily
+            cast to Int64, so if performance matters use an Int64 column.
         period
             length of the window - must be non-negative
         offset
@@ -3358,11 +3351,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         offset = deprecate_saturating(offset)
         index_column = parse_as_expression(index_column)
         if offset is None:
-            offset = _negate_duration(_timedelta_to_pl_duration(period))
+            offset = negate_duration_string(parse_as_duration_string(period))
 
         pyexprs_by = parse_as_list_of_expressions(by) if by is not None else []
-        period = _timedelta_to_pl_duration(period)
-        offset = _timedelta_to_pl_duration(offset)
+        period = parse_as_duration_string(period)
+        offset = parse_as_duration_string(offset)
 
         lgb = self._ldf.rolling(
             index_column, period, offset, closed, pyexprs_by, check_sorted
@@ -3704,14 +3697,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         index_column = parse_as_expression(index_column)
         if offset is None:
-            offset = _negate_duration(_timedelta_to_pl_duration(every))
+            offset = negate_duration_string(parse_as_duration_string(every))
 
         if period is None:
             period = every
 
-        period = _timedelta_to_pl_duration(period)
-        offset = _timedelta_to_pl_duration(offset)
-        every = _timedelta_to_pl_duration(every)
+        period = parse_as_duration_string(period)
+        offset = parse_as_duration_string(offset)
+        every = parse_as_duration_string(every)
 
         pyexprs_by = parse_as_list_of_expressions(by) if by is not None else []
         lgb = self._ldf.group_by_dynamic(
@@ -3888,7 +3881,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if isinstance(tolerance, str):
             tolerance_str = tolerance
         elif isinstance(tolerance, timedelta):
-            tolerance_str = _timedelta_to_pl_duration(tolerance)
+            tolerance_str = parse_as_duration_string(tolerance)
         else:
             tolerance_num = tolerance
 
@@ -3950,7 +3943,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             * *outer_coalesce*
                  Same as 'outer', but coalesces the key columns
             * *cross*
-                 Returns the cartisian product of rows from both tables
+                 Returns the Cartesian product of rows from both tables
             * *semi*
                  Filter rows that have a match in the right table.
             * *anti*
@@ -4811,9 +4804,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return self.slice(0, 1)
 
+    @deprecate_function(
+        "Use `select(pl.all().approx_n_unique())` instead.", version="0.20.11"
+    )
     def approx_n_unique(self) -> Self:
         """
         Approximate count of unique values.
+
+        .. deprecated:: 0.20.11
+            Use `select(pl.all().approx_n_unique())` instead.
 
         This is done using the HyperLogLog++ algorithm for cardinality estimation.
 
@@ -4825,7 +4824,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "b": [1, 2, 1, 1],
         ...     }
         ... )
-        >>> lf.approx_n_unique().collect()
+        >>> lf.approx_n_unique().collect()  # doctest: +SKIP
         shape: (1, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │

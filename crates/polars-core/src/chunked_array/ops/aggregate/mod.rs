@@ -522,7 +522,7 @@ impl CategoricalChunked {
         }
         if self.uses_lexical_ordering() {
             // Fast path where all categories are used
-            if self.can_fast_unique() {
+            if self._can_fast_unique() {
                 self.get_rev_map().get_categories().min_ignore_nan_kernel()
             } else {
                 let rev_map = self.get_rev_map();
@@ -550,7 +550,7 @@ impl CategoricalChunked {
         }
         if self.uses_lexical_ordering() {
             // Fast path where all categories are used
-            if self.can_fast_unique() {
+            if self._can_fast_unique() {
                 self.get_rev_map().get_categories().max_ignore_nan_kernel()
             } else {
                 let rev_map = self.get_rev_map();
@@ -650,8 +650,6 @@ impl<T: PolarsObject> ChunkAggSeries for ObjectChunked<T> {}
 
 #[cfg(test)]
 mod test {
-    use arrow::legacy::prelude::QuantileInterpolOptions;
-
     use crate::prelude::*;
 
     #[test]

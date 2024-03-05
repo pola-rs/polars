@@ -3,8 +3,7 @@ use polars_utils::vec::CapacityByFactor;
 use super::*;
 use crate::constants::CSE_REPLACED;
 use crate::logical_plan::projection_expr::ProjectionExprs;
-use crate::logical_plan::visitor::{RewriteRecursion, VisitRecursion};
-use crate::prelude::visitor::{ALogicalPlanNode, AexprNode, RewritingVisitor, TreeWalker, Visitor};
+use crate::prelude::visitor::AexprNode;
 
 // We use hashes to get an Identifier
 // but this is very hard to debug, so we also have a version that

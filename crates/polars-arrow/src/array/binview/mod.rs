@@ -178,6 +178,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     }
 
     /// Create a new BinaryViewArray but initialize a statistics compute.
+    ///
     /// # Safety
     /// The caller must ensure the invariants
     pub unsafe fn new_unchecked_unknown_md(
@@ -267,6 +268,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     }
 
     /// Returns the element at index `i`
+    ///
     /// # Safety
     /// Assumes that the `i < self.len`.
     #[inline]
@@ -422,7 +424,7 @@ impl BinaryViewArray {
     /// Validate the underlying bytes on UTF-8.
     pub fn validate_utf8(&self) -> PolarsResult<()> {
         // SAFETY: views are correct
-        unsafe { validate_utf8_only(&self.views, &self.buffers) }
+        unsafe { validate_utf8_only(&self.views, &self.buffers, &self.buffers) }
     }
 
     /// Convert [`BinaryViewArray`] to [`Utf8ViewArray`].

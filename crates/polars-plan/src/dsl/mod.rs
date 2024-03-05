@@ -8,6 +8,8 @@ use std::any::Any;
 
 #[cfg(feature = "dtype-categorical")]
 pub use cat::*;
+#[cfg(feature = "rolling_window")]
+pub(crate) use polars_time::prelude::*;
 mod arithmetic;
 mod arity;
 #[cfg(feature = "dtype-array")]
@@ -59,8 +61,6 @@ use polars_core::prelude::*;
 use polars_core::series::ops::NullBehavior;
 use polars_core::series::IsSorted;
 use polars_core::utils::try_get_supertype;
-#[cfg(feature = "rolling_window")]
-use polars_time::prelude::SeriesOpsTime;
 pub(crate) use selector::Selector;
 #[cfg(feature = "dtype-struct")]
 pub use struct_::*;
@@ -69,9 +69,6 @@ pub use udf::UserDefinedFunction;
 use crate::constants::MAP_LIST_NAME;
 pub use crate::logical_plan::lit;
 use crate::prelude::*;
-use crate::utils::has_expr;
-#[cfg(feature = "is_in")]
-use crate::utils::has_leaf_literal;
 
 impl Expr {
     /// Modify the Options passed to the `Function` node.

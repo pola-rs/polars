@@ -4,9 +4,9 @@ import contextlib
 from typing import TYPE_CHECKING, overload
 
 from polars import functions as F
+from polars._utils.parse_expr_input import parse_as_expression
+from polars._utils.wrap import wrap_expr, wrap_s
 from polars.datatypes import Int64
-from polars.utils._parse_expr_input import parse_as_expression
-from polars.utils._wrap import wrap_expr, wrap_s
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -26,8 +26,7 @@ def arange(
     *,
     dtype: PolarsIntegerType = ...,
     eager: Literal[False] = ...,
-) -> Expr:
-    ...
+) -> Expr: ...
 
 
 @overload
@@ -38,8 +37,7 @@ def arange(
     *,
     dtype: PolarsIntegerType = ...,
     eager: Literal[True],
-) -> Series:
-    ...
+) -> Series: ...
 
 
 @overload
@@ -50,8 +48,7 @@ def arange(
     *,
     dtype: PolarsIntegerType = ...,
     eager: bool,
-) -> Expr | Series:
-    ...
+) -> Expr | Series: ...
 
 
 def arange(
@@ -113,8 +110,7 @@ def int_range(
     *,
     dtype: PolarsIntegerType = ...,
     eager: Literal[False] = ...,
-) -> Expr:
-    ...
+) -> Expr: ...
 
 
 @overload
@@ -125,8 +121,7 @@ def int_range(
     *,
     dtype: PolarsIntegerType = ...,
     eager: Literal[True],
-) -> Series:
-    ...
+) -> Series: ...
 
 
 @overload
@@ -137,8 +132,7 @@ def int_range(
     *,
     dtype: PolarsIntegerType = ...,
     eager: bool,
-) -> Expr | Series:
-    ...
+) -> Expr | Series: ...
 
 
 def int_range(
@@ -241,8 +235,7 @@ def int_ranges(
     *,
     dtype: PolarsIntegerType = ...,
     eager: Literal[False] = ...,
-) -> Expr:
-    ...
+) -> Expr: ...
 
 
 @overload
@@ -253,8 +246,7 @@ def int_ranges(
     *,
     dtype: PolarsIntegerType = ...,
     eager: Literal[True],
-) -> Series:
-    ...
+) -> Series: ...
 
 
 @overload
@@ -265,8 +257,7 @@ def int_ranges(
     *,
     dtype: PolarsIntegerType = ...,
     eager: bool,
-) -> Expr | Series:
-    ...
+) -> Expr | Series: ...
 
 
 def int_ranges(

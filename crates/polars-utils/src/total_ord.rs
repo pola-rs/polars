@@ -3,6 +3,9 @@ use std::hash::{Hash, Hasher};
 
 use bytemuck::TransparentWrapper;
 
+use crate::hashing::{BytesHash, DirtyHash};
+use crate::nulls::IsNull;
+
 /// Converts an f32 into a canonical form, where -0 == 0 and all NaNs map to
 /// the same value.
 pub fn canonical_f32(x: f32) -> f32 {
@@ -32,7 +35,7 @@ pub fn canonical_f64(x: f64) -> f64 {
 pub trait TotalEq {
     fn tot_eq(&self, other: &Self) -> bool;
 
-    #[inline(always)]
+    #[inline]
     fn tot_ne(&self, other: &Self) -> bool {
         !(self.tot_eq(other))
     }
@@ -43,22 +46,22 @@ pub trait TotalEq {
 pub trait TotalOrd: TotalEq {
     fn tot_cmp(&self, other: &Self) -> Ordering;
 
-    #[inline(always)]
+    #[inline]
     fn tot_lt(&self, other: &Self) -> bool {
         self.tot_cmp(other) == Ordering::Less
     }
 
-    #[inline(always)]
+    #[inline]
     fn tot_gt(&self, other: &Self) -> bool {
         self.tot_cmp(other) == Ordering::Greater
     }
 
-    #[inline(always)]
+    #[inline]
     fn tot_le(&self, other: &Self) -> bool {
         self.tot_cmp(other) != Ordering::Greater
     }
 
-    #[inline(always)]
+    #[inline]
     fn tot_ge(&self, other: &Self) -> bool {
         self.tot_cmp(other) != Ordering::Less
     }
@@ -87,46 +90,46 @@ pub struct TotalOrdWrap<T>(pub T);
 unsafe impl<T> TransparentWrapper<T> for TotalOrdWrap<T> {}
 
 impl<T: TotalOrd> PartialOrd for TotalOrdWrap<T> {
-    #[inline(always)]
+    #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 
-    #[inline(always)]
+    #[inline]
     fn lt(&self, other: &Self) -> bool {
         self.0.tot_lt(&other.0)
     }
 
-    #[inline(always)]
+    #[inline]
     fn le(&self, other: &Self) -> bool {
         self.0.tot_le(&other.0)
     }
 
-    #[inline(always)]
+    #[inline]
     fn gt(&self, other: &Self) -> bool {
         self.0.tot_gt(&other.0)
     }
 
-    #[inline(always)]
+    #[inline]
     fn ge(&self, other: &Self) -> bool {
         self.0.tot_ge(&other.0)
     }
 }
 
 impl<T: TotalOrd> Ord for TotalOrdWrap<T> {
-    #[inline(always)]
+    #[inline]
     fn cmp(&self, other: &Self) -> Ordering {
         self.0.tot_cmp(&other.0)
     }
 }
 
 impl<T: TotalEq> PartialEq for TotalOrdWrap<T> {
-    #[inline(always)]
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
         self.0.tot_eq(&other.0)
     }
 
-    #[inline(always)]
+    #[inline]
     #[allow(clippy::partialeq_ne_impl)]
     fn ne(&self, other: &Self) -> bool {
         self.0.tot_ne(&other.0)
@@ -136,12 +139,14 @@ impl<T: TotalEq> PartialEq for TotalOrdWrap<T> {
 impl<T: TotalEq> Eq for TotalOrdWrap<T> {}
 
 impl<T: TotalHash> Hash for TotalOrdWrap<T> {
+    #[inline]
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.0.tot_hash(state);
     }
 }
 
 impl<T: Clone> Clone for TotalOrdWrap<T> {
+    #[inline]
     fn clone(&self) -> Self {
         Self(self.0.clone())
     }
@@ -149,48 +154,85 @@ impl<T: Clone> Clone for TotalOrdWrap<T> {
 
 impl<T: Copy> Copy for TotalOrdWrap<T> {}
 
+impl<T: IsNull> IsNull for TotalOrdWrap<T> {
+    const HAS_NULLS: bool = T::HAS_NULLS;
+    type Inner = T::Inner;
+
+    #[inline]
+    fn is_null(&self) -> bool {
+        self.0.is_null()
+    }
+
+    #[inline]
+    fn unwrap_inner(self) -> Self::Inner {
+        self.0.unwrap_inner()
+    }
+}
+
+impl DirtyHash for f32 {
+    #[inline]
+    fn dirty_hash(&self) -> u64 {
+        canonical_f32(*self).to_bits().dirty_hash()
+    }
+}
+
+impl DirtyHash for f64 {
+    #[inline]
+    fn dirty_hash(&self) -> u64 {
+        canonical_f64(*self).to_bits().dirty_hash()
+    }
+}
+
+impl<T: DirtyHash> DirtyHash for TotalOrdWrap<T> {
+    #[inline]
+    fn dirty_hash(&self) -> u64 {
+        self.0.dirty_hash()
+    }
+}
+
 macro_rules! impl_trivial_total {
     ($T: ty) => {
         impl TotalEq for $T {
-            #[inline(always)]
+            #[inline]
             fn tot_eq(&self, other: &Self) -> bool {
                 self == other
             }
 
-            #[inline(always)]
+            #[inline]
             fn tot_ne(&self, other: &Self) -> bool {
                 self != other
             }
         }
 
         impl TotalOrd for $T {
-            #[inline(always)]
+            #[inline]
             fn tot_cmp(&self, other: &Self) -> Ordering {
                 self.cmp(other)
             }
 
-            #[inline(always)]
+            #[inline]
             fn tot_lt(&self, other: &Self) -> bool {
                 self < other
             }
 
-            #[inline(always)]
+            #[inline]
             fn tot_gt(&self, other: &Self) -> bool {
                 self > other
             }
 
-            #[inline(always)]
+            #[inline]
             fn tot_le(&self, other: &Self) -> bool {
                 self <= other
             }
 
-            #[inline(always)]
+            #[inline]
             fn tot_ge(&self, other: &Self) -> bool {
                 self >= other
             }
         }
 
         impl TotalHash for $T {
+            #[inline]
             fn tot_hash<H>(&self, state: &mut H)
             where
                 H: Hasher,
@@ -224,7 +266,7 @@ impl_trivial_total!(String);
 macro_rules! impl_float_eq_ord {
     ($T:ty) => {
         impl TotalEq for $T {
-            #[inline(always)]
+            #[inline]
             fn tot_eq(&self, other: &Self) -> bool {
                 if self.is_nan() {
                     other.is_nan()
@@ -235,7 +277,7 @@ macro_rules! impl_float_eq_ord {
         }
 
         impl TotalOrd for $T {
-            #[inline(always)]
+            #[inline]
             fn tot_cmp(&self, other: &Self) -> Ordering {
                 if self.tot_lt(other) {
                     Ordering::Less
@@ -246,22 +288,22 @@ macro_rules! impl_float_eq_ord {
                 }
             }
 
-            #[inline(always)]
+            #[inline]
             fn tot_lt(&self, other: &Self) -> bool {
                 !self.tot_ge(other)
             }
 
-            #[inline(always)]
+            #[inline]
             fn tot_gt(&self, other: &Self) -> bool {
                 other.tot_lt(self)
             }
 
-            #[inline(always)]
+            #[inline]
             fn tot_le(&self, other: &Self) -> bool {
                 other.tot_ge(self)
             }
 
-            #[inline(always)]
+            #[inline]
             fn tot_ge(&self, other: &Self) -> bool {
                 // We consider all NaNs equal, and NaN is the largest possible
                 // value. Thus if self is NaN we always return true. Otherwise
@@ -278,6 +320,7 @@ impl_float_eq_ord!(f32);
 impl_float_eq_ord!(f64);
 
 impl TotalHash for f32 {
+    #[inline]
     fn tot_hash<H>(&self, state: &mut H)
     where
         H: Hasher,
@@ -287,6 +330,7 @@ impl TotalHash for f32 {
 }
 
 impl TotalHash for f64 {
+    #[inline]
     fn tot_hash<H>(&self, state: &mut H)
     where
         H: Hasher,
@@ -297,7 +341,7 @@ impl TotalHash for f64 {
 
 // Blanket implementations.
 impl<T: TotalEq> TotalEq for Option<T> {
-    #[inline(always)]
+    #[inline]
     fn tot_eq(&self, other: &Self) -> bool {
         match (self, other) {
             (None, None) => true,
@@ -306,7 +350,7 @@ impl<T: TotalEq> TotalEq for Option<T> {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn tot_ne(&self, other: &Self) -> bool {
         match (self, other) {
             (None, None) => false,
@@ -317,7 +361,7 @@ impl<T: TotalEq> TotalEq for Option<T> {
 }
 
 impl<T: TotalOrd> TotalOrd for Option<T> {
-    #[inline(always)]
+    #[inline]
     fn tot_cmp(&self, other: &Self) -> Ordering {
         match (self, other) {
             (None, None) => Ordering::Equal,
@@ -327,7 +371,7 @@ impl<T: TotalOrd> TotalOrd for Option<T> {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn tot_lt(&self, other: &Self) -> bool {
         match (self, other) {
             (None, Some(_)) => true,
@@ -336,12 +380,12 @@ impl<T: TotalOrd> TotalOrd for Option<T> {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn tot_gt(&self, other: &Self) -> bool {
         other.tot_lt(self)
     }
 
-    #[inline(always)]
+    #[inline]
     fn tot_le(&self, other: &Self) -> bool {
         match (self, other) {
             (Some(_), None) => false,
@@ -350,7 +394,7 @@ impl<T: TotalOrd> TotalOrd for Option<T> {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn tot_ge(&self, other: &Self) -> bool {
         other.tot_le(self)
     }
@@ -369,18 +413,19 @@ impl<T: TotalHash> TotalHash for Option<T> {
 }
 
 impl<T: TotalEq + ?Sized> TotalEq for &T {
-    #[inline(always)]
+    #[inline]
     fn tot_eq(&self, other: &Self) -> bool {
         (*self).tot_eq(*other)
     }
 
-    #[inline(always)]
+    #[inline]
     fn tot_ne(&self, other: &Self) -> bool {
         (*self).tot_ne(*other)
     }
 }
 
 impl<T: TotalHash + ?Sized> TotalHash for &T {
+    #[inline]
     fn tot_hash<H>(&self, state: &mut H)
     where
         H: Hasher,
@@ -400,5 +445,161 @@ impl<T: TotalOrd, U: TotalOrd> TotalOrd for (T, U) {
         self.0
             .tot_cmp(&other.0)
             .then_with(|| self.1.tot_cmp(&other.1))
+    }
+}
+
+impl<'a> TotalHash for BytesHash<'a> {
+    #[inline]
+    fn tot_hash<H>(&self, state: &mut H)
+    where
+        H: Hasher,
+    {
+        self.hash(state)
+    }
+}
+
+impl<'a> TotalEq for BytesHash<'a> {
+    #[inline]
+    fn tot_eq(&self, other: &Self) -> bool {
+        self == other
+    }
+}
+
+/// This elides creating a [`TotalOrdWrap`] for types that don't need it.
+pub trait ToTotalOrd {
+    type TotalOrdItem;
+    type SourceItem;
+
+    fn to_total_ord(&self) -> Self::TotalOrdItem;
+
+    fn peel_total_ord(ord_item: Self::TotalOrdItem) -> Self::SourceItem;
+}
+
+macro_rules! impl_to_total_ord_identity {
+    ($T: ty) => {
+        impl ToTotalOrd for $T {
+            type TotalOrdItem = $T;
+            type SourceItem = $T;
+
+            #[inline]
+            fn to_total_ord(&self) -> Self::TotalOrdItem {
+                self.clone()
+            }
+
+            #[inline]
+            fn peel_total_ord(ord_item: Self::TotalOrdItem) -> Self::SourceItem {
+                ord_item
+            }
+        }
+    };
+}
+
+impl_to_total_ord_identity!(bool);
+impl_to_total_ord_identity!(u8);
+impl_to_total_ord_identity!(u16);
+impl_to_total_ord_identity!(u32);
+impl_to_total_ord_identity!(u64);
+impl_to_total_ord_identity!(u128);
+impl_to_total_ord_identity!(usize);
+impl_to_total_ord_identity!(i8);
+impl_to_total_ord_identity!(i16);
+impl_to_total_ord_identity!(i32);
+impl_to_total_ord_identity!(i64);
+impl_to_total_ord_identity!(i128);
+impl_to_total_ord_identity!(isize);
+impl_to_total_ord_identity!(char);
+impl_to_total_ord_identity!(String);
+
+macro_rules! impl_to_total_ord_lifetimed_ref_identity {
+    ($T: ty) => {
+        impl<'a> ToTotalOrd for &'a $T {
+            type TotalOrdItem = &'a $T;
+            type SourceItem = &'a $T;
+
+            #[inline]
+            fn to_total_ord(&self) -> Self::TotalOrdItem {
+                *self
+            }
+
+            #[inline]
+            fn peel_total_ord(ord_item: Self::TotalOrdItem) -> Self::SourceItem {
+                ord_item
+            }
+        }
+    };
+}
+
+impl_to_total_ord_lifetimed_ref_identity!(str);
+impl_to_total_ord_lifetimed_ref_identity!([u8]);
+
+macro_rules! impl_to_total_ord_wrapped {
+    ($T: ty) => {
+        impl ToTotalOrd for $T {
+            type TotalOrdItem = TotalOrdWrap<$T>;
+            type SourceItem = $T;
+
+            #[inline]
+            fn to_total_ord(&self) -> Self::TotalOrdItem {
+                TotalOrdWrap(self.clone())
+            }
+
+            #[inline]
+            fn peel_total_ord(ord_item: Self::TotalOrdItem) -> Self::SourceItem {
+                ord_item.0
+            }
+        }
+    };
+}
+
+impl_to_total_ord_wrapped!(f32);
+impl_to_total_ord_wrapped!(f64);
+
+/// This is safe without needing to map the option value to TotalOrdWrap, since
+/// for example:
+/// `TotalOrdWrap<Option<T>>` implements `Eq + Hash`, iff:
+/// `Option<T>` implements `TotalEq + TotalHash`, iff:
+/// `T` implements `TotalEq + TotalHash`
+impl<T: Copy> ToTotalOrd for Option<T> {
+    type TotalOrdItem = TotalOrdWrap<Option<T>>;
+    type SourceItem = Option<T>;
+
+    #[inline]
+    fn to_total_ord(&self) -> Self::TotalOrdItem {
+        TotalOrdWrap(*self)
+    }
+
+    #[inline]
+    fn peel_total_ord(ord_item: Self::TotalOrdItem) -> Self::SourceItem {
+        ord_item.0
+    }
+}
+
+impl<T: ToTotalOrd> ToTotalOrd for &T {
+    type TotalOrdItem = T::TotalOrdItem;
+    type SourceItem = T::SourceItem;
+
+    #[inline]
+    fn to_total_ord(&self) -> Self::TotalOrdItem {
+        (*self).to_total_ord()
+    }
+
+    #[inline]
+    fn peel_total_ord(ord_item: Self::TotalOrdItem) -> Self::SourceItem {
+        T::peel_total_ord(ord_item)
+    }
+}
+
+impl<'a> ToTotalOrd for BytesHash<'a> {
+    type TotalOrdItem = BytesHash<'a>;
+    type SourceItem = BytesHash<'a>;
+
+    #[inline]
+    fn to_total_ord(&self) -> Self::TotalOrdItem {
+        *self
+    }
+
+    #[inline]
+    fn peel_total_ord(ord_item: Self::TotalOrdItem) -> Self::SourceItem {
+        ord_item
     }
 }

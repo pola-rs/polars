@@ -45,7 +45,7 @@ pub(crate) fn reproject_chunk(
     } else {
         let columns = chunk.data.get_columns();
         let cols = positions.iter().map(|i| columns[*i].clone()).collect();
-        DataFrame::new_no_checks(cols)
+        unsafe { DataFrame::new_no_checks(cols) }
     };
     *chunk = chunk.with_data(out);
     Ok(())

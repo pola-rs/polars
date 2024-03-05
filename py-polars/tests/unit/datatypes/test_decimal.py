@@ -315,6 +315,13 @@ def test_decimal_aggregations() -> None:
     }
 
 
+def test_decimal_df_vertical_sum() -> None:
+    df = pl.DataFrame({"a": [D("1.1"), D("2.2")]})
+    expected = pl.DataFrame({"a": [D("3.3")]})
+
+    assert_frame_equal(df.sum(), expected)
+
+
 def test_decimal_in_filter() -> None:
     df = pl.DataFrame(
         {

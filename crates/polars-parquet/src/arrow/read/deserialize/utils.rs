@@ -227,7 +227,7 @@ impl<'a> PageValidity<'a> for OptionalPageValidity<'a> {
     }
 }
 
-fn reserve_pushable_and_validity<'a, T: Default, P: Pushable<T>>(
+fn reserve_pushable_and_validity<'a, T, P: Pushable<T>>(
     validity: &mut MutableBitmap,
     page_validity: &'a mut dyn PageValidity,
     limit: Option<usize>,
@@ -263,7 +263,7 @@ fn reserve_pushable_and_validity<'a, T: Default, P: Pushable<T>>(
 }
 
 /// Extends a [`Pushable`] from an iterator of non-null values and an hybrid-rle decoder
-pub(super) fn extend_from_decoder<T: Default, P: Pushable<T>, I: Iterator<Item = T>>(
+pub(super) fn extend_from_decoder<T, P: Pushable<T>, I: Iterator<Item = T>>(
     validity: &mut MutableBitmap,
     page_validity: &mut dyn PageValidity,
     limit: Option<usize>,
@@ -300,7 +300,7 @@ pub(super) fn extend_from_decoder<T: Default, P: Pushable<T>, I: Iterator<Item =
                         pushable.push(v)
                     }
                 } else {
-                    pushable.extend_constant(length, T::default());
+                    pushable.extend_null_constant(length);
                 }
             },
             FilteredHybridEncoded::Skipped(valids) => for _ in values_iter.by_ref().take(valids) {},

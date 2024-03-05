@@ -5,8 +5,8 @@ import re
 
 from hypothesis import settings
 
+from polars._utils.deprecation import deprecate_nonkeyword_arguments
 from polars.type_aliases import ParametricProfileNames
-from polars.utils.deprecation import deprecate_nonkeyword_arguments
 
 
 @deprecate_nonkeyword_arguments(allowed_args=["profile"], version="0.19.3")

@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from polars.series.utils import expr_dispatch
-from polars.utils.deprecation import (
+from polars._utils.deprecation import (
     deprecate_renamed_function,
     deprecate_renamed_parameter,
 )
+from polars.datatypes.constants import N_INFER_DEFAULT
+from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
     from polars import Expr, Series
@@ -634,8 +635,8 @@ class StringNameSpace:
         """
 
     def decode(self, encoding: TransferEncoding, *, strict: bool = True) -> Series:
-        """
-        Decode a value using the provided encoding.
+        r"""
+        Decode values using the provided encoding.
 
         Parameters
         ----------
@@ -644,6 +645,23 @@ class StringNameSpace:
         strict
             Raise an error if the underlying value cannot be decoded,
             otherwise mask out with a null value.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`Binary`.
+
+        Examples
+        --------
+        >>> s = pl.Series("color", ["000000", "ffff00", "0000ff"])
+        >>> s.str.decode("hex")
+        shape: (3,)
+        Series: 'color' [binary]
+        [
+                b"\x00\x00\x00"
+                b"\xff\xff\x00"
+                b"\x00\x00\xff"
+        ]
         """
 
     def encode(self, encoding: TransferEncoding) -> Series:
@@ -674,7 +692,9 @@ class StringNameSpace:
         """
 
     def json_decode(
-        self, dtype: PolarsDataType | None = None, infer_schema_length: int | None = 100
+        self,
+        dtype: PolarsDataType | None = None,
+        infer_schema_length: int | None = N_INFER_DEFAULT,
     ) -> Series:
         """
         Parse string values as JSON.
@@ -687,8 +707,8 @@ class StringNameSpace:
             The dtype to cast the extracted value to. If None, the dtype will be
             inferred from the JSON value.
         infer_schema_length
-            How many rows to parse to determine the schema.
-            If `None` all rows are used.
+            The maximum number of rows to scan for schema inference.
+            If set to `None`, the full data may be scanned *(this is slow)*.
 
         See Also
         --------
@@ -1846,7 +1866,9 @@ class StringNameSpace:
 
     @deprecate_renamed_function("json_decode", version="0.19.15")
     def json_extract(
-        self, dtype: PolarsDataType | None = None, infer_schema_length: int | None = 100
+        self,
+        dtype: PolarsDataType | None = None,
+        infer_schema_length: int | None = N_INFER_DEFAULT,
     ) -> Series:
         """
         Parse string values as JSON.
@@ -1860,8 +1882,8 @@ class StringNameSpace:
             The dtype to cast the extracted value to. If None, the dtype will be
             inferred from the JSON value.
         infer_schema_length
-            How many rows to parse to determine the schema.
-            If `None` all rows are used.
+            The maximum number of rows to scan for schema inference.
+            If set to `None`, the full data may be scanned *(this is slow)*.
         """
         return self.json_decode(dtype, infer_schema_length)
 

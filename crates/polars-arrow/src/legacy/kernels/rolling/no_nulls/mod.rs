@@ -19,13 +19,13 @@ use super::*;
 use crate::array::PrimitiveArray;
 use crate::datatypes::ArrowDataType;
 use crate::legacy::error::{polars_bail, PolarsResult};
-use crate::legacy::utils::CustomIterTools;
 use crate::types::NativeType;
 
 pub trait RollingAggWindowNoNulls<'a, T: NativeType> {
     fn new(slice: &'a [T], start: usize, end: usize, params: DynArgs) -> Self;
 
     /// Update and recompute the window
+    ///
     /// # Safety
     /// `start` and `end` must be within the windows bounds
     unsafe fn update(&mut self, start: usize, end: usize) -> T;

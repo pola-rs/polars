@@ -1,14 +1,10 @@
 //! Implementations of upstream traits for [`ChunkedArray<T>`]
 use std::borrow::{Borrow, Cow};
 use std::collections::LinkedList;
-use std::iter::FromIterator;
 use std::marker::PhantomData;
-use std::sync::Arc;
 
-use arrow::array::{BooleanArray, PrimitiveArray};
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_utils::sync::SyncPtr;
-use rayon::iter::{FromParallelIterator, IntoParallelIterator};
 use rayon::prelude::*;
 
 use crate::chunked_array::builder::{
@@ -22,7 +18,7 @@ use crate::chunked_array::object::builder::get_object_type;
 use crate::chunked_array::object::ObjectArray;
 use crate::prelude::*;
 use crate::utils::flatten::flatten_par;
-use crate::utils::{get_iter_capacity, CustomIterTools, NoNull};
+use crate::utils::{get_iter_capacity, NoNull};
 
 impl<T: PolarsDataType> Default for ChunkedArray<T> {
     fn default() -> Self {

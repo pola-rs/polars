@@ -1,7 +1,5 @@
 use std::collections::BTreeSet;
 
-use polars_utils::arena::{Arena, Node};
-
 use super::*;
 
 #[derive(Default)]

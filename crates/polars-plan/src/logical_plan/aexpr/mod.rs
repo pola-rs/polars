@@ -2,16 +2,12 @@ mod hash;
 mod schema;
 
 use std::hash::{Hash, Hasher};
-use std::sync::Arc;
 
-use arrow::legacy::prelude::QuantileInterpolOptions;
-use polars_core::frame::group_by::GroupByMethod;
 use polars_core::prelude::*;
 use polars_core::utils::{get_time_units, try_get_supertype};
 use polars_utils::arena::{Arena, Node};
 use strum_macros::IntoStaticStr;
 
-use crate::dsl::function_expr::FunctionExpr;
 #[cfg(feature = "cse")]
 use crate::logical_plan::visitor::AexprNode;
 use crate::logical_plan::Context;

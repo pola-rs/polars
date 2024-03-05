@@ -12,7 +12,6 @@ use arrow::legacy::kernels::rolling::no_nulls::{
     MaxWindow, MeanWindow, MinWindow, QuantileWindow, RollingAggWindowNoNulls, SumWindow, VarWindow,
 };
 use arrow::legacy::kernels::rolling::nulls::RollingAggWindowNulls;
-use arrow::legacy::kernels::rolling::{RollingQuantileParams, RollingVarParams};
 use arrow::legacy::kernels::take_agg::*;
 use arrow::legacy::prelude::QuantileInterpolOptions;
 use arrow::legacy::trusted_len::TrustedLenPush;
@@ -52,7 +51,10 @@ pub fn _use_rolling_kernels(groups: &GroupsSlice, chunks: &[ArrayRef]) -> bool {
             let [first_offset, first_len] = groups[0];
             let second_offset = groups[1][0];
 
-            second_offset < (first_offset + first_len) && chunks.len() == 1
+            second_offset >= first_offset // Prevent false positive from regular group-by that has out of order slices.
+                                          // Rolling group-by is expected to have monotonically increasing slices.
+                && second_offset < (first_offset + first_len)
+                && chunks.len() == 1
         },
     }
 }

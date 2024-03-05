@@ -1,5 +1,3 @@
-use std::fmt::Debug;
-
 use num_traits::ToPrimitive;
 use polars_error::polars_ensure;
 use polars_utils::slice::GetSaferUnchecked;
@@ -261,7 +259,6 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::legacy::kernels::rolling::no_nulls::{rolling_max, rolling_min};
 
     #[test]
     fn test_rolling_median() {

@@ -1,16 +1,8 @@
 from __future__ import annotations
 
-import sys
 from datetime import date, datetime, timedelta, timezone
 from itertools import permutations
-from typing import Any, cast
-
-if sys.version_info >= (3, 9):
-    from zoneinfo import ZoneInfo
-else:
-    # Import from submodule due to typing issue with backports.zoneinfo package:
-    # https://github.com/pganssle/zoneinfo/issues/125
-    from backports.zoneinfo._zoneinfo import ZoneInfo
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import pytest
@@ -25,6 +17,11 @@ from polars.datatypes import (
     TEMPORAL_DTYPES,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from zoneinfo import ZoneInfo
+else:
+    from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
 
 def test_arg_true() -> None:
@@ -430,34 +427,6 @@ def test_logical_boolean() -> None:
         df.select([(pl.col("a") > pl.col("b")) or (pl.col("b") > pl.col("b"))])
 
 
-# https://github.com/pola-rs/polars/issues/4951
-def test_ewm_with_multiple_chunks() -> None:
-    df0 = pl.DataFrame(
-        data=[
-            ("w", 6.0, 1.0),
-            ("x", 5.0, 2.0),
-            ("y", 4.0, 3.0),
-            ("z", 3.0, 4.0),
-        ],
-        schema=["a", "b", "c"],
-    ).with_columns(
-        [
-            pl.col(pl.Float64).log().diff().name.prefix("ld_"),
-        ]
-    )
-    assert df0.n_chunks() == 1
-
-    # NOTE: We aren't testing whether `select` creates two chunks;
-    # we just need two chunks to properly test `ewm_mean`
-    df1 = df0.select(["ld_b", "ld_c"])
-    assert df1.n_chunks() == 2
-
-    ewm_std = df1.with_columns(
-        pl.all().ewm_std(com=20).name.prefix("ewm_"),
-    )
-    assert ewm_std.null_count().sum_horizontal()[0] == 4
-
-
 def test_lit_dtypes() -> None:
     def lit_series(value: Any, dtype: pl.PolarsDataType | None) -> pl.Series:
         return pl.select(pl.lit(value, dtype=dtype)).to_series()
@@ -477,7 +446,7 @@ def test_lit_dtypes() -> None:
             "dtm_aware_0": lit_series(d, pl.Datetime("us", "Asia/Kathmandu")),
             "dtm_aware_1": lit_series(d_tz, pl.Datetime("us")),
             "dtm_aware_2": lit_series(d_tz, None),
-            "dtm_aware_3": lit_series(d, pl.Datetime(None, "Asia/Kathmandu")),
+            "dtm_aware_3": lit_series(d, pl.Datetime(time_zone="Asia/Kathmandu")),
             "dur_ms": lit_series(td, pl.Duration("ms")),
             "dur_us": lit_series(td, pl.Duration("us")),
             "dur_ns": lit_series(td, pl.Duration("ns")),

@@ -1,20 +1,8 @@
-use std::any::Any;
-use std::borrow::Cow;
-
-#[cfg(feature = "group_by_list")]
-use ahash::RandomState;
-
 use super::*;
 use crate::chunked_array::comparison::*;
-use crate::chunked_array::ops::compare_inner::{IntoTotalEqInner, TotalEqInner};
-use crate::chunked_array::ops::explode::ExplodeByOffsets;
-use crate::chunked_array::{AsSinglePtr, Settings};
 #[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::*;
 use crate::prelude::*;
-use crate::series::implementations::SeriesWrap;
-#[cfg(feature = "chunked_ids")]
-use crate::series::IsSorted;
 
 impl private::PrivateSeries for SeriesWrap<ListChunked> {
     fn compute_len(&mut self) {

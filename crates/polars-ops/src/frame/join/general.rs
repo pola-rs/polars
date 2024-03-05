@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 #[cfg(feature = "chunked_ids")]
 use polars_utils::index::ChunkId;
 

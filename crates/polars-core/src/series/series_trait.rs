@@ -1,9 +1,6 @@
 use std::any::Any;
 use std::borrow::Cow;
-#[cfg(feature = "temporal")]
-use std::sync::Arc;
 
-use arrow::legacy::prelude::QuantileInterpolOptions;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -46,8 +43,6 @@ pub(crate) mod private {
     use super::*;
     use crate::chunked_array::ops::compare_inner::{TotalEqInner, TotalOrdInner};
     use crate::chunked_array::Settings;
-    #[cfg(feature = "algorithm_group_by")]
-    use crate::frame::group_by::GroupsProxy;
 
     pub trait PrivateSeriesNumeric {
         fn bit_repr_is_large(&self) -> bool {
@@ -212,6 +207,7 @@ pub trait SeriesTrait:
     fn chunks(&self) -> &Vec<ArrayRef>;
 
     /// Underlying chunks.
+    ///
     /// # Safety
     /// The caller must ensure the length and the data types of `ArrayRef` does not change.
     unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef>;
@@ -459,6 +455,7 @@ pub trait SeriesTrait:
 
     #[cfg(feature = "object")]
     /// Get the value at this index as a downcastable Any trait ref.
+    ///
     /// # Safety
     /// This function doesn't do any bound checks.
     unsafe fn get_object_chunked_unchecked(

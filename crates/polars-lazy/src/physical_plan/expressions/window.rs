@@ -1,16 +1,12 @@
 use std::fmt::Write;
-use std::sync::Arc;
 
 use arrow::array::PrimitiveArray;
 use polars_core::export::arrow::bitmap::Bitmap;
-use polars_core::frame::group_by::{GroupBy, GroupsProxy};
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::_split_offsets;
 use polars_core::{downcast_as_macro_arg_physical, POOL};
-use polars_ops::frame::join::{
-    default_join_ids, private_left_join_multiple_keys, ChunkJoinOptIds, JoinValidation,
-};
+use polars_ops::frame::join::{default_join_ids, private_left_join_multiple_keys, ChunkJoinOptIds};
 use polars_ops::frame::SeriesJoin;
 use polars_utils::format_smartstring;
 use polars_utils::sort::perfect_sort;
@@ -18,7 +14,6 @@ use polars_utils::sync::SyncPtr;
 use rayon::prelude::*;
 
 use super::*;
-use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 
 pub struct WindowExpr {
@@ -567,8 +562,8 @@ impl PhysicalExpr for WindowExpr {
                                     .unwrap()
                                     .1
                             } else {
-                                let df_right = DataFrame::new_no_checks(keys);
-                                let df_left = DataFrame::new_no_checks(group_by_columns);
+                                let df_right = unsafe { DataFrame::new_no_checks(keys) };
+                                let df_left = unsafe { DataFrame::new_no_checks(group_by_columns) };
                                 private_left_join_multiple_keys(
                                     &df_left, &df_right, None, None, true,
                                 )

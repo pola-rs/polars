@@ -31,11 +31,11 @@ impl PhysicalAggExpr for PivotExpr {
     }
 }
 
-pub fn pivot<I0, S0, I1, S1, I2, S2>(
+pub fn pivot<I0, I1, I2, S0, S1, S2>(
     df: &DataFrame,
-    values: I0,
-    index: I1,
-    columns: I2,
+    index: I0,
+    columns: I1,
+    values: Option<I2>,
     sort_columns: bool,
     agg_expr: Option<Expr>,
     // used as separator/delimiter in generated column names.
@@ -43,10 +43,10 @@ pub fn pivot<I0, S0, I1, S1, I2, S2>(
 ) -> PolarsResult<DataFrame>
 where
     I0: IntoIterator<Item = S0>,
-    S0: AsRef<str>,
     I1: IntoIterator<Item = S1>,
-    S1: AsRef<str>,
     I2: IntoIterator<Item = S2>,
+    S0: AsRef<str>,
+    S1: AsRef<str>,
     S2: AsRef<str>,
 {
     // make sure that the root column is replaced
@@ -56,20 +56,20 @@ where
     });
     polars_ops::pivot::pivot(
         df,
-        values,
         index,
         columns,
+        values,
         sort_columns,
         agg_expr,
         separator,
     )
 }
 
-pub fn pivot_stable<I0, S0, I1, S1, I2, S2>(
+pub fn pivot_stable<I0, I1, I2, S0, S1, S2>(
     df: &DataFrame,
-    values: I0,
-    index: I1,
-    columns: I2,
+    index: I0,
+    columns: I1,
+    values: Option<I2>,
     sort_columns: bool,
     agg_expr: Option<Expr>,
     // used as separator/delimiter in generated column names.
@@ -77,10 +77,10 @@ pub fn pivot_stable<I0, S0, I1, S1, I2, S2>(
 ) -> PolarsResult<DataFrame>
 where
     I0: IntoIterator<Item = S0>,
-    S0: AsRef<str>,
     I1: IntoIterator<Item = S1>,
-    S1: AsRef<str>,
     I2: IntoIterator<Item = S2>,
+    S0: AsRef<str>,
+    S1: AsRef<str>,
     S2: AsRef<str>,
 {
     // make sure that the root column is replaced
@@ -90,9 +90,9 @@ where
     });
     polars_ops::pivot::pivot_stable(
         df,
-        values,
         index,
         columns,
+        values,
         sort_columns,
         agg_expr,
         separator,

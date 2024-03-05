@@ -4,7 +4,9 @@ use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use crossbeam_queue::SegQueue;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
-use polars_core::utils::accumulate_dataframes_vertical_unchecked;
+use polars_core::utils::{
+    accumulate_dataframes_vertical_unchecked, accumulate_dataframes_vertical_unchecked_optional,
+};
 use polars_core::POOL;
 use polars_io::ipc::IpcReader;
 use polars_io::SerReader;
@@ -54,7 +56,8 @@ impl PartitionSpillBuf {
             // so we pop no more than the current size.
             let pop_max = len;
             let iter = (0..pop_max).flat_map(|_| self.chunks.pop());
-            Some(accumulate_dataframes_vertical_unchecked(iter))
+            // Due to race conditions, the chunks can already be popped, so we use optional.
+            accumulate_dataframes_vertical_unchecked_optional(iter)
         } else {
             None
         }
@@ -102,7 +105,7 @@ impl PartitionSpiller {
 }
 
 pub(super) fn sort_ooc(
-    io_thread: &IOThread,
+    io_thread: IOThread,
     // these partitions are the samples
     // these are not yet assigned to a buckets
     samples: Series,
@@ -144,10 +147,11 @@ pub(super) fn sort_ooc(
                     io_thread.dump_partition_local(part, df)
                 }
             }
+            io_thread.clean(path);
             PolarsResult::Ok(())
         })
     })?;
-    partitions_spiller.spill_all(io_thread);
+    partitions_spiller.spill_all(&io_thread);
     if verbose {
         eprintln!("finished partitioning sort files");
     }
@@ -169,7 +173,7 @@ pub(super) fn sort_ooc(
         })
         .collect::<std::io::Result<Vec<_>>>()?;
 
-    let source = SortSource::new(files, idx, descending, slice, verbose);
+    let source = SortSource::new(files, idx, descending, slice, verbose, io_thread);
     Ok(FinalizedSink::Source(Box::new(source)))
 }
 

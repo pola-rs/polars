@@ -87,9 +87,7 @@ jobs:
         env:
           RUSTFLAGS: -C embed-bitcode -D warnings
         working-directory: py-polars
-        run: |
-          source activate
-          maturin develop --release -- -C codegen-units=8 -C lto=thin -C target-cpu=native
+        run: maturin develop --release -- -C codegen-units=8 -C lto=thin -C target-cpu=native
 
       - name: Run H2O AI database benchmark - on strings
         working-directory: py-polars/tests/benchmark

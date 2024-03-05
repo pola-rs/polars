@@ -82,27 +82,23 @@ fn restore_logical_type(s: &Series, logical_type: &DataType) -> Series {
 /// # Note
 /// Polars'/arrow memory is not ideal for transposing operations like pivots.
 /// If you have a relatively large table, consider using a group_by over a pivot.
-pub fn pivot<I0, S0, I1, S1, I2, S2>(
+pub fn pivot<I0, I1, I2, S0, S1, S2>(
     pivot_df: &DataFrame,
-    values: I0,
-    index: I1,
-    columns: I2,
+    index: I0,
+    columns: I1,
+    values: Option<I2>,
     sort_columns: bool,
     agg_fn: Option<PivotAgg>,
     separator: Option<&str>,
 ) -> PolarsResult<DataFrame>
 where
     I0: IntoIterator<Item = S0>,
-    S0: AsRef<str>,
     I1: IntoIterator<Item = S1>,
-    S1: AsRef<str>,
     I2: IntoIterator<Item = S2>,
+    S0: AsRef<str>,
+    S1: AsRef<str>,
     S2: AsRef<str>,
 {
-    let values = values
-        .into_iter()
-        .map(|s| s.as_ref().to_string())
-        .collect::<Vec<_>>();
     let index = index
         .into_iter()
         .map(|s| s.as_ref().to_string())
@@ -111,11 +107,12 @@ where
         .into_iter()
         .map(|s| s.as_ref().to_string())
         .collect::<Vec<_>>();
+    let values = get_values_columns(pivot_df, &index, &columns, values);
     pivot_impl(
         pivot_df,
-        &values,
         &index,
         &columns,
+        &values,
         agg_fn,
         sort_columns,
         false,
@@ -128,27 +125,23 @@ where
 /// # Note
 /// Polars'/arrow memory is not ideal for transposing operations like pivots.
 /// If you have a relatively large table, consider using a group_by over a pivot.
-pub fn pivot_stable<I0, S0, I1, S1, I2, S2>(
+pub fn pivot_stable<I0, I1, I2, S0, S1, S2>(
     pivot_df: &DataFrame,
-    values: I0,
-    index: I1,
-    columns: I2,
+    index: I0,
+    columns: I1,
+    values: Option<I2>,
     sort_columns: bool,
     agg_fn: Option<PivotAgg>,
     separator: Option<&str>,
 ) -> PolarsResult<DataFrame>
 where
     I0: IntoIterator<Item = S0>,
-    S0: AsRef<str>,
     I1: IntoIterator<Item = S1>,
-    S1: AsRef<str>,
     I2: IntoIterator<Item = S2>,
+    S0: AsRef<str>,
+    S1: AsRef<str>,
     S2: AsRef<str>,
 {
-    let values = values
-        .into_iter()
-        .map(|s| s.as_ref().to_string())
-        .collect::<Vec<_>>();
     let index = index
         .into_iter()
         .map(|s| s.as_ref().to_string())
@@ -157,12 +150,12 @@ where
         .into_iter()
         .map(|s| s.as_ref().to_string())
         .collect::<Vec<_>>();
-
+    let values = get_values_columns(pivot_df, &index, &columns, values);
     pivot_impl(
         pivot_df,
-        &values,
         &index,
         &columns,
+        &values,
         agg_fn,
         sort_columns,
         true,
@@ -170,16 +163,41 @@ where
     )
 }
 
+/// Determine `values` columns, which is optional in `pivot` calls.
+///
+/// If not specified (i.e. is `None`), use all remaining columns in the
+/// `DataFrame` after `index` and `columns` have been excluded.
+fn get_values_columns<I, S>(
+    df: &DataFrame,
+    index: &[String],
+    columns: &[String],
+    values: Option<I>,
+) -> Vec<String>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    match values {
+        Some(v) => v.into_iter().map(|s| s.as_ref().to_string()).collect(),
+        None => df
+            .get_column_names()
+            .into_iter()
+            .map(|c| c.to_string())
+            .filter(|c| !(index.contains(c) | columns.contains(c)))
+            .collect(),
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn pivot_impl(
     pivot_df: &DataFrame,
-    // these columns will be aggregated in the nested group_by
-    values: &[String],
     // keys of the first group_by operation
     index: &[String],
     // these columns will be used for a nested group_by
     // the rows of this nested group_by will be pivoted as header column values
     columns: &[String],
+    // these columns will be aggregated in the nested group_by
+    values: &[String],
     // aggregation function
     agg_fn: Option<PivotAgg>,
     sort_columns: bool,
@@ -206,9 +224,9 @@ fn pivot_impl(
         let pivot_df = unsafe { binding.with_column_unchecked(columns_struct) };
         pivot_impl_single_column(
             pivot_df,
+            index,
             &column,
             values,
-            index,
             agg_fn,
             sort_columns,
             separator,
@@ -216,9 +234,9 @@ fn pivot_impl(
     } else {
         pivot_impl_single_column(
             pivot_df,
+            index,
             unsafe { columns.get_unchecked(0) },
             values,
-            index,
             agg_fn,
             sort_columns,
             separator,
@@ -228,9 +246,9 @@ fn pivot_impl(
 
 fn pivot_impl_single_column(
     pivot_df: &DataFrame,
+    index: &[String],
     column: &str,
     values: &[String],
-    index: &[String],
     agg_fn: Option<PivotAgg>,
     sort_columns: bool,
     separator: Option<&str>,
@@ -274,7 +292,7 @@ fn pivot_impl_single_column(
                             let name = expr.root_name()?;
                             let mut value_col = value_col.clone();
                             value_col.rename(name);
-                            let tmp_df = DataFrame::new_no_checks(vec![value_col]);
+                            let tmp_df = value_col.into_frame();
                             let mut aggregated = expr.evaluate(&tmp_df, &groups)?;
                             aggregated.rename(value_col_name);
                             aggregated
@@ -341,5 +359,7 @@ fn pivot_impl_single_column(
         Ok(())
     });
     out?;
-    DataFrame::new_no_length_checks(final_cols)
+
+    // SAFETY: length has already been checked.
+    unsafe { DataFrame::new_no_length_checks(final_cols) }
 }

@@ -3,12 +3,12 @@ use polars_error::to_compute_err;
 use rand::distributions::Bernoulli;
 use rand::prelude::*;
 use rand::seq::index::IndexVec;
-use rand_distr::{Distribution, Normal, Standard, StandardNormal, Uniform};
+use rand_distr::{Normal, Standard, StandardNormal, Uniform};
 
 use crate::prelude::DataType::Float64;
 use crate::prelude::*;
 use crate::random::get_global_random_u64;
-use crate::utils::{CustomIterTools, NoNull};
+use crate::utils::NoNull;
 
 fn create_rand_index_with_replacement(n: usize, len: usize, seed: Option<u64>) -> IdxCa {
     if len == 0 {
@@ -194,7 +194,7 @@ impl DataFrame {
             Some(n) => self.sample_n_literal(n as usize, with_replacement, shuffle, seed),
             None => {
                 let new_cols = self.columns.iter().map(Series::clear).collect_trusted();
-                Ok(DataFrame::new_no_checks(new_cols))
+                Ok(unsafe { DataFrame::new_no_checks(new_cols) })
             },
         }
     }
@@ -239,7 +239,7 @@ impl DataFrame {
             },
             None => {
                 let new_cols = self.columns.iter().map(Series::clear).collect_trusted();
-                Ok(DataFrame::new_no_checks(new_cols))
+                Ok(unsafe { DataFrame::new_no_checks(new_cols) })
             },
         }
     }

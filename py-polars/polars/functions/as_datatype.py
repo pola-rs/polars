@@ -4,13 +4,13 @@ import contextlib
 from typing import TYPE_CHECKING, Iterable, overload
 
 from polars import functions as F
-from polars.datatypes import Date, Struct, Time
-from polars.utils._parse_expr_input import (
+from polars._utils.deprecation import rename_use_earliest_to_ambiguous
+from polars._utils.parse_expr_input import (
     parse_as_expression,
     parse_as_list_of_expressions,
 )
-from polars.utils._wrap import wrap_expr
-from polars.utils.deprecation import rename_use_earliest_to_ambiguous
+from polars._utils.wrap import wrap_expr
+from polars.datatypes import Date, Struct, Time
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -363,8 +363,7 @@ def struct(
     schema: SchemaDict | None = ...,
     eager: Literal[False] = ...,
     **named_exprs: IntoExpr,
-) -> Expr:
-    ...
+) -> Expr: ...
 
 
 @overload
@@ -373,8 +372,7 @@ def struct(
     schema: SchemaDict | None = ...,
     eager: Literal[True],
     **named_exprs: IntoExpr,
-) -> Series:
-    ...
+) -> Series: ...
 
 
 @overload
@@ -383,8 +381,7 @@ def struct(
     schema: SchemaDict | None = ...,
     eager: bool,
     **named_exprs: IntoExpr,
-) -> Expr | Series:
-    ...
+) -> Expr | Series: ...
 
 
 def struct(

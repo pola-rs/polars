@@ -1,11 +1,7 @@
 use arrow::array::{MutablePrimitiveArray, PrimitiveArray};
-use hashbrown::hash_map::RawEntryMut;
 use hashbrown::HashMap;
-use polars_core::hashing::{
-    populate_multiple_key_hashmap, IdBuildHasher, IdxHash, _HASHMAP_INIT_SIZE,
-};
-use polars_core::utils::{_set_partition_size, split_df};
-use polars_core::POOL;
+use polars_core::hashing::{populate_multiple_key_hashmap, IdBuildHasher, IdxHash};
+use polars_core::utils::split_df;
 use polars_utils::hashing::hash_to_partition;
 use polars_utils::idx_vec::IdxVec;
 use polars_utils::unitvec;
@@ -88,40 +84,39 @@ fn create_build_table_outer(
     // We will create a hashtable in every thread.
     // We use the hash to partition the keys to the matching hashtable.
     // Every thread traverses all keys/hashes and ignores the ones that doesn't fall in that partition.
-    POOL.install(|| {
-        (0..n_partitions).into_par_iter().map(|part_no| {
-            let mut hash_tbl: HashMap<IdxHash, (bool, IdxVec), IdBuildHasher> =
-                HashMap::with_capacity_and_hasher(_HASHMAP_INIT_SIZE, Default::default());
+    let par_iter = (0..n_partitions).into_par_iter().map(|part_no| {
+        let mut hash_tbl: HashMap<IdxHash, (bool, IdxVec), IdBuildHasher> =
+            HashMap::with_capacity_and_hasher(_HASHMAP_INIT_SIZE, Default::default());
 
-            let mut offset = 0;
-            for hashes in hashes {
-                for hashes in hashes.data_views() {
-                    let len = hashes.len();
-                    let mut idx = 0;
-                    hashes.iter().for_each(|h| {
-                        // partition hashes by thread no.
-                        // So only a part of the hashes go to this hashmap
-                        if part_no == hash_to_partition(*h, n_partitions) {
-                            let idx = idx + offset;
-                            populate_multiple_key_hashmap(
-                                &mut hash_tbl,
-                                idx,
-                                *h,
-                                keys,
-                                || (false, unitvec![idx]),
-                                |v| v.1.push(idx),
-                            )
-                        }
-                        idx += 1;
-                    });
+        let mut offset = 0;
+        for hashes in hashes {
+            for hashes in hashes.data_views() {
+                let len = hashes.len();
+                let mut idx = 0;
+                hashes.iter().for_each(|h| {
+                    // partition hashes by thread no.
+                    // So only a part of the hashes go to this hashmap
+                    if part_no == hash_to_partition(*h, n_partitions) {
+                        let idx = idx + offset;
+                        populate_multiple_key_hashmap(
+                            &mut hash_tbl,
+                            idx,
+                            *h,
+                            keys,
+                            || (false, unitvec![idx]),
+                            |v| v.1.push(idx),
+                        )
+                    }
+                    idx += 1;
+                });
 
-                    offset += len as IdxSize;
-                }
+                offset += len as IdxSize;
             }
-            hash_tbl
-        })
-    })
-    .collect()
+        }
+        hash_tbl
+    });
+
+    POOL.install(|| par_iter.collect())
 }
 
 /// Probe the build table and add tuples to the results (inner join)
@@ -251,8 +246,8 @@ pub fn private_left_join_multiple_keys(
     chunk_mapping_right: Option<&[ChunkId]>,
     join_nulls: bool,
 ) -> LeftJoinIds {
-    let mut a = DataFrame::new_no_checks(_to_physical_and_bit_repr(a.get_columns()));
-    let mut b = DataFrame::new_no_checks(_to_physical_and_bit_repr(b.get_columns()));
+    let mut a = unsafe { DataFrame::new_no_checks(_to_physical_and_bit_repr(a.get_columns())) };
+    let mut b = unsafe { DataFrame::new_no_checks(_to_physical_and_bit_repr(b.get_columns())) };
     _left_join_multiple_keys(
         &mut a,
         &mut b,
@@ -360,40 +355,32 @@ pub(crate) fn create_build_table_semi_anti(
     // We will create a hashtable in every thread.
     // We use the hash to partition the keys to the matching hashtable.
     // Every thread traverses all keys/hashes and ignores the ones that doesn't fall in that partition.
-    POOL.install(|| {
-        (0..n_partitions).into_par_iter().map(|part_no| {
-            let mut hash_tbl: HashMap<IdxHash, (), IdBuildHasher> =
-                HashMap::with_capacity_and_hasher(_HASHMAP_INIT_SIZE, Default::default());
+    let par_iter = (0..n_partitions).into_par_iter().map(|part_no| {
+        let mut hash_tbl: HashMap<IdxHash, (), IdBuildHasher> =
+            HashMap::with_capacity_and_hasher(_HASHMAP_INIT_SIZE, Default::default());
 
-            let mut offset = 0;
-            for hashes in hashes {
-                for hashes in hashes.data_views() {
-                    let len = hashes.len();
-                    let mut idx = 0;
-                    hashes.iter().for_each(|h| {
-                        // partition hashes by thread no.
-                        // So only a part of the hashes go to this hashmap
-                        if part_no == hash_to_partition(*h, n_partitions) {
-                            let idx = idx + offset;
-                            populate_multiple_key_hashmap(
-                                &mut hash_tbl,
-                                idx,
-                                *h,
-                                keys,
-                                || (),
-                                |_| (),
-                            )
-                        }
-                        idx += 1;
-                    });
+        let mut offset = 0;
+        for hashes in hashes {
+            for hashes in hashes.data_views() {
+                let len = hashes.len();
+                let mut idx = 0;
+                hashes.iter().for_each(|h| {
+                    // partition hashes by thread no.
+                    // So only a part of the hashes go to this hashmap
+                    if part_no == hash_to_partition(*h, n_partitions) {
+                        let idx = idx + offset;
+                        populate_multiple_key_hashmap(&mut hash_tbl, idx, *h, keys, || (), |_| ())
+                    }
+                    idx += 1;
+                });
 
-                    offset += len as IdxSize;
-                }
+                offset += len as IdxSize;
             }
-            hash_tbl
-        })
-    })
-    .collect()
+        }
+        hash_tbl
+    });
+
+    POOL.install(|| par_iter.collect())
 }
 
 #[cfg(feature = "semi_anti_join")]
@@ -423,46 +410,43 @@ pub(crate) fn semi_anti_join_multiple_keys_impl<'a>(
 
     // next we probe the other relation
     // code duplication is because we want to only do the swap check once
-    POOL.install(move || {
-        probe_hashes
-            .into_par_iter()
-            .zip(offsets)
-            .flat_map(move |(probe_hashes, offset)| {
-                // local reference
-                let hash_tbls = &hash_tbls;
-                let mut results =
-                    Vec::with_capacity(probe_hashes.len() / POOL.current_num_threads());
-                let local_offset = offset;
+    probe_hashes
+        .into_par_iter()
+        .zip(offsets)
+        .flat_map(move |(probe_hashes, offset)| {
+            // local reference
+            let hash_tbls = &hash_tbls;
+            let mut results = Vec::with_capacity(probe_hashes.len() / POOL.current_num_threads());
+            let local_offset = offset;
 
-                let mut idx_a = local_offset as IdxSize;
-                for probe_hashes in probe_hashes.data_views() {
-                    for &h in probe_hashes {
-                        // probe table that contains the hashed value
-                        let current_probe_table =
-                            unsafe { hash_tbls.get_unchecked(hash_to_partition(h, n_tables)) };
+            let mut idx_a = local_offset as IdxSize;
+            for probe_hashes in probe_hashes.data_views() {
+                for &h in probe_hashes {
+                    // probe table that contains the hashed value
+                    let current_probe_table =
+                        unsafe { hash_tbls.get_unchecked(hash_to_partition(h, n_tables)) };
 
-                        let entry = current_probe_table.raw_entry().from_hash(h, |idx_hash| {
-                            let idx_b = idx_hash.idx;
-                            // SAFETY:
-                            // indices in a join operation are always in bounds.
-                            unsafe {
-                                compare_df_rows2(a, b, idx_a as usize, idx_b as usize, join_nulls)
-                            }
-                        });
-
-                        match entry {
-                            // left and right matches
-                            Some((_, _)) => results.push((idx_a, true)),
-                            // only left values, right = null
-                            None => results.push((idx_a, false)),
+                    let entry = current_probe_table.raw_entry().from_hash(h, |idx_hash| {
+                        let idx_b = idx_hash.idx;
+                        // SAFETY:
+                        // indices in a join operation are always in bounds.
+                        unsafe {
+                            compare_df_rows2(a, b, idx_a as usize, idx_b as usize, join_nulls)
                         }
-                        idx_a += 1;
-                    }
-                }
+                    });
 
-                results
-            })
-    })
+                    match entry {
+                        // left and right matches
+                        Some((_, _)) => results.push((idx_a, true)),
+                        // only left values, right = null
+                        None => results.push((idx_a, false)),
+                    }
+                    idx_a += 1;
+                }
+            }
+
+            results
+        })
 }
 
 #[cfg(feature = "semi_anti_join")]
@@ -471,10 +455,10 @@ pub fn _left_anti_multiple_keys(
     b: &mut DataFrame,
     join_nulls: bool,
 ) -> Vec<IdxSize> {
-    semi_anti_join_multiple_keys_impl(a, b, join_nulls)
+    let par_iter = semi_anti_join_multiple_keys_impl(a, b, join_nulls)
         .filter(|tpls| !tpls.1)
-        .map(|tpls| tpls.0)
-        .collect()
+        .map(|tpls| tpls.0);
+    POOL.install(|| par_iter.collect())
 }
 
 #[cfg(feature = "semi_anti_join")]
@@ -483,10 +467,10 @@ pub fn _left_semi_multiple_keys(
     b: &mut DataFrame,
     join_nulls: bool,
 ) -> Vec<IdxSize> {
-    semi_anti_join_multiple_keys_impl(a, b, join_nulls)
+    let par_iter = semi_anti_join_multiple_keys_impl(a, b, join_nulls)
         .filter(|tpls| tpls.1)
-        .map(|tpls| tpls.0)
-        .collect()
+        .map(|tpls| tpls.0);
+    POOL.install(|| par_iter.collect())
 }
 
 /// Probe the build table and add tuples to the results (inner join)

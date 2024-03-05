@@ -1,6 +1,6 @@
 use arrow::array::{PrimitiveArray as PArr, StaticArray};
 use arrow::compute::utils::{combine_validities_and, combine_validities_and3};
-use polars_utils::signed_divmod::SignedDivMod;
+use polars_utils::floor_divmod::FloorDivMod;
 use strength_reduce::*;
 
 use super::PrimitiveArithmeticKernelImpl;
@@ -35,7 +35,8 @@ macro_rules! impl_signed_arith_kernel {
                     other.take_validity().as_ref(), // compute combination twice.
                     Some(&mask),
                 );
-                let ret = prim_binary_values(lhs, other, |lhs, rhs| lhs.wrapping_div_mod(rhs).0);
+                let ret =
+                    prim_binary_values(lhs, other, |lhs, rhs| lhs.wrapping_floor_div_mod(rhs).0);
                 ret.with_validity(valid)
             }
 
@@ -63,7 +64,8 @@ macro_rules! impl_signed_arith_kernel {
                     other.take_validity().as_ref(), // compute combination twice.
                     Some(&mask),
                 );
-                let ret = prim_binary_values(lhs, other, |lhs, rhs| lhs.wrapping_div_mod(rhs).1);
+                let ret =
+                    prim_binary_values(lhs, other, |lhs, rhs| lhs.wrapping_floor_div_mod(rhs).1);
                 ret.with_validity(valid)
             }
 
@@ -133,7 +135,7 @@ macro_rules! impl_signed_arith_kernel {
 
                 let mask = rhs.tot_ne_kernel_broadcast(&0);
                 let valid = combine_validities_and(rhs.validity(), Some(&mask));
-                let ret = prim_unary_values(rhs, |x| lhs.wrapping_div_mod(x).0);
+                let ret = prim_unary_values(rhs, |x| lhs.wrapping_floor_div_mod(x).0);
                 ret.with_validity(valid)
             }
 
@@ -205,7 +207,7 @@ macro_rules! impl_signed_arith_kernel {
 
                 let mask = rhs.tot_ne_kernel_broadcast(&0);
                 let valid = combine_validities_and(rhs.validity(), Some(&mask));
-                let ret = prim_unary_values(rhs, |x| lhs.wrapping_div_mod(x).1);
+                let ret = prim_unary_values(rhs, |x| lhs.wrapping_floor_div_mod(x).1);
                 ret.with_validity(valid)
             }
 

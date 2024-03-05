@@ -1,8 +1,6 @@
 use std::borrow::Cow;
 use std::collections::VecDeque;
-use std::convert::TryFrom;
 use std::ops::{Deref, Range};
-use std::sync::Arc;
 
 use arrow::array::new_empty_array;
 use arrow::datatypes::ArrowSchemaRef;
@@ -111,7 +109,10 @@ pub(super) fn array_iter_to_series(
 /// Materializes hive partitions.
 /// We have a special num_rows arg, as df can be empty when a projection contains
 /// only hive partition columns.
-/// Safety: num_rows equals the height of the df when the df height is non-zero.
+///
+/// # Safety
+///
+/// num_rows equals the height of the df when the df height is non-zero.
 pub(crate) fn materialize_hive_partitions(
     df: &mut DataFrame,
     hive_partition_columns: Option<&[Series]>,
@@ -245,7 +246,7 @@ fn rg_to_dfs_optionally_par_over_columns(
 
         *remaining_rows -= projection_height;
 
-        let mut df = DataFrame::new_no_checks(columns);
+        let mut df = unsafe { DataFrame::new_no_checks(columns) };
         if let Some(rc) = &row_index {
             df.with_row_index_mut(&rc.name, Some(*previous_row_count + rc.offset));
         }
@@ -332,7 +333,7 @@ fn rg_to_dfs_par_over_rg(
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
 
-                let mut df = DataFrame::new_no_checks(columns);
+                let mut df = unsafe { DataFrame::new_no_checks(columns) };
 
                 if let Some(rc) = &row_index {
                     df.with_row_index_mut(&rc.name, Some(row_count_start as IdxSize + rc.offset));
@@ -547,16 +548,25 @@ impl BatchedParquetReader {
         chunk_size: usize,
         use_statistics: bool,
         hive_partition_columns: Option<Vec<Series>>,
+        mut parallel: ParallelStrategy,
     ) -> PolarsResult<Self> {
         let n_row_groups = metadata.row_groups.len();
         let projection = projection.unwrap_or_else(|| (0usize..schema.len()).collect::<Vec<_>>());
 
-        let parallel =
-            if n_row_groups > projection.len() || n_row_groups > POOL.current_num_threads() {
-                ParallelStrategy::RowGroups
-            } else {
-                ParallelStrategy::Columns
-            };
+        parallel = match parallel {
+            ParallelStrategy::Auto => {
+                if n_row_groups > projection.len() || n_row_groups > POOL.current_num_threads() {
+                    ParallelStrategy::RowGroups
+                } else {
+                    ParallelStrategy::Columns
+                }
+            },
+            _ => parallel,
+        };
+
+        if let (ParallelStrategy::Columns, true) = (parallel, projection.len() == 1) {
+            parallel = ParallelStrategy::None;
+        }
 
         Ok(BatchedParquetReader {
             row_group_fetcher,
@@ -596,7 +606,11 @@ impl BatchedParquetReader {
 
     pub async fn next_batches(&mut self, n: usize) -> PolarsResult<Option<Vec<DataFrame>>> {
         if self.limit == 0 && self.has_returned {
-            return Ok(None);
+            return if self.chunks_fifo.is_empty() {
+                Ok(None)
+            } else {
+                Ok(Some(self.chunks_fifo.drain(..n).collect()))
+            };
         }
 
         let mut skipped_all_rgs = false;

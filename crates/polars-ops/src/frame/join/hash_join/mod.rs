@@ -10,9 +10,7 @@ pub(super) mod sort_merge;
 use arrow::array::ArrayRef;
 pub use multiple_keys::private_left_join_multiple_keys;
 pub(super) use multiple_keys::*;
-#[cfg(any(feature = "chunked_ids", feature = "semi_anti_join"))]
-use polars_core::utils::slice_slice;
-use polars_core::utils::{_set_partition_size, slice_offsets, split_ca};
+use polars_core::utils::{_set_partition_size, split_ca};
 use polars_core::POOL;
 use polars_utils::index::ChunkId;
 pub(super) use single_keys::*;
@@ -55,8 +53,6 @@ macro_rules! det_hash_prone_order {
 #[cfg(feature = "performant")]
 use arrow::legacy::conversion::primitive_to_vec;
 pub(super) use det_hash_prone_order;
-
-use crate::frame::join::general::coalesce_outer_join;
 
 pub trait JoinDispatch: IntoDf {
     /// # Safety

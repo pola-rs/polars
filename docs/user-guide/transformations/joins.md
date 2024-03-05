@@ -2,7 +2,7 @@
 
 ## Join strategies
 
-Polars supports the following join strategies by specifying the `strategy` argument:
+Polars supports the following join strategies by specifying the `how` argument:
 
 | Strategy | Description                                                                                                                                                                                                |
 | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -10,7 +10,6 @@ Polars supports the following join strategies by specifying the `strategy` argum
 | `left`   | Returns all rows in the left dataframe, whether or not a match in the right-frame is found. Non-matching rows have their right columns null-filled.                                                        |
 | `outer`  | Returns all rows from both the left and right dataframe. If no match is found in one frame, columns from the other frame are null-filled.                                                                  |
 | `cross`  | Returns the Cartesian product of all rows from the left frame with all rows from the right frame. Duplicates rows are retained; the table length of `A` cross-joined with `B` is always `len(A) × len(B)`. |
-| `asof`   | A left-join in which the match is performed on the _nearest_ key rather than on equal keys.                                                                                                                |
 | `semi`   | Returns all rows from the left frame in which the join key is also present in the right frame.                                                                                                             |
 | `anti`   | Returns all rows from the left frame in which the join key is _not_ present in the right frame.                                                                                                            |
 
@@ -65,7 +64,7 @@ The `outer` join produces a `DataFrame` that contains all the rows from both `Da
 
 ### Cross join
 
-A `cross` join is a cartesian product of the two `DataFrames`. This means that every row in the left `DataFrame` is joined with every row in the right `DataFrame`. The `cross` join is useful for creating a `DataFrame` with all possible combinations of the columns in two `DataFrames`. Let's take for example the following two `DataFrames`.
+A `cross` join is a Cartesian product of the two `DataFrames`. This means that every row in the left `DataFrame` is joined with every row in the right `DataFrame`. The `cross` join is useful for creating a `DataFrame` with all possible combinations of the columns in two `DataFrames`. Let's take for example the following two `DataFrames`.
 
 {{code_block('user-guide/transformations/joins','df3',['DataFrame'])}}
 
@@ -139,10 +138,10 @@ Continuing this example, an alternative question might be: which of the cars hav
 --8<-- "python/user-guide/transformations/joins.py:anti"
 ```
 
-### Asof join
+## Asof join
 
 An `asof` join is like a left join except that we match on nearest key rather than equal keys.
-In Polars we can do an asof join with the `join` method and specifying `strategy="asof"`. However, for more flexibility we can use the `join_asof` method.
+In Polars we can do an asof join with the `join_asof` method.
 
 Consider the following scenario: a stock market broker has a `DataFrame` called `df_trades` showing transactions it has made for different stocks.
 
