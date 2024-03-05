@@ -18,7 +18,7 @@ __all__ = ["register_plugin"]
 
 @unstable()
 def register_plugin(
-    *args: IntoExpr | list[IntoExpr],
+    *inputs: IntoExpr | list[IntoExpr],
     plugin_location: str | Path,
     symbol: str,
     kwargs: dict[Any, Any] | None = None,
@@ -48,7 +48,7 @@ def register_plugin(
 
     Parameters
     ----------
-    args
+    inputs
         Arguments passed to this function. These get passed to the ``inputs``
         argument on the Rust side, and have to be of type Expression (or be
         convertible to expressions).
@@ -79,10 +79,10 @@ def register_plugin(
     -------
     Expr
     """
-    if not args:
+    if not inputs:
         msg = "`args` must be non-empty"
         raise TypeError(msg)
-    pyexprs = parse_as_list_of_expressions(*args)
+    pyexprs = parse_as_list_of_expressions(*inputs)
     if not pyexprs:
         msg = "`args` must be non-empty"
         raise TypeError(msg)
