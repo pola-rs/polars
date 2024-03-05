@@ -1,5 +1,5 @@
 use arrow::bitmap::Bitmap;
-use bytemuck::{cast_vec, cast_slice, Pod};
+use bytemuck::{cast_slice, cast_vec, Pod};
 
 use super::boolean::filter_boolean_kernel;
 
@@ -9,7 +9,7 @@ pub fn filter_values<T: Pod>(values: &[T], mask: &Bitmap) -> Vec<T> {
         (2, 2) => cast_vec(filter_values_u16(cast_slice(values), mask)),
         (4, 4) => cast_vec(filter_values_u32(cast_slice(values), mask)),
         (8, 8) => cast_vec(filter_values_u64(cast_slice(values), mask)),
-        _ => filter_values_generic(values, mask)
+        _ => filter_values_generic(values, mask),
     }
 }
 

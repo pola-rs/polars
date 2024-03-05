@@ -56,7 +56,7 @@ pub fn filter(array: &dyn Array, mask: &BooleanArray) -> PolarsResult<Box<dyn Ar
                     array.data_type().clone(),
                     views.into(),
                     array.data_buffers().clone(),
-                    validity.map(|v| v),
+                    validity,
                     Some(array.total_buffer_len()),
                 )
             }
