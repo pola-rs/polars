@@ -16,6 +16,7 @@ impl CsvExec {
             .file_options
             .with_columns
             .take()
+            // Interpret selecting no columns as selecting all columns.
             .filter(|columns| !columns.is_empty())
             .map(Arc::unwrap_or_clone);
 
