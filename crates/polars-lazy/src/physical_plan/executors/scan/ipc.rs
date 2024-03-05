@@ -1,5 +1,10 @@
 use std::path::PathBuf;
 
+use polars_core::config::env_force_async;
+use polars_io::cloud::build_object_store;
+use polars_io::is_cloud_url;
+use polars_io::pl_async::get_runtime;
+
 use super::*;
 
 pub struct IpcExec {
@@ -12,7 +17,37 @@ pub struct IpcExec {
 
 impl IpcExec {
     fn read(&mut self, verbose: bool) -> PolarsResult<DataFrame> {
-        let file = std::fs::File::open(&self.path)?;
+        if is_cloud_url(&self.path) || env_force_async() {
+            #[cfg(not(feature = "cloud"))]
+            {
+                panic!("activate cloud feature")
+            }
+
+            #[cfg(feature = "cloud")]
+            {
+                // TODO: This will block the current thread until the data has been
+                // loaded. No other (compute) work can be done on this thread.
+                //
+                // What is our work scheduling strategy? From what I have heard, we do
+                // not intend to make the entire library `async`. However, what do we do
+                // instead?
+                return get_runtime().block_on(async move {
+                    let (location, store) =
+                        build_object_store(self.path.to_str().unwrap(), None).await?;
+                    debug_assert!(
+                        location.expansion.is_none(),
+                        "path wildcards should have been expanded"
+                    );
+                    read_ipc_async(&store, location.prefix.as_str(), IpcReadOptions::default()
+                        .column_names(self.file_options.with_columns.as_deref().cloned())
+                        .row_index(self.file_options.row_index.clone())
+                        .row_limit(self.file_options.n_rows),
+                    )
+                        .await
+                });
+            }
+        }
+
         let (projection, predicate) = prepare_scan_args(
             self.predicate.clone(),
             &mut self.file_options.with_columns,
@@ -20,6 +55,8 @@ impl IpcExec {
             self.file_options.row_index.is_some(),
             None,
         );
+
+        let file = std::fs::File::open(&self.path)?;
         IpcReader::new(file)
             .with_n_rows(self.file_options.n_rows)
             .with_row_index(std::mem::take(&mut self.file_options.row_index))
