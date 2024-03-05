@@ -70,6 +70,7 @@ jobs:
         run: >
           cargo test --all-features
           -p polars-arrow
+          -p polars-compute
           -p polars-core
           -p polars-io
           -p polars-lazy

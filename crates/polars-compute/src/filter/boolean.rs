@@ -12,13 +12,13 @@ fn pext64_polyfill(mut v: u64, mut m: u64, m_popcnt: u32) -> u64 {
         // unrolls the loop, this makes bit << i much faster.
         let mut out = 0;
         for i in 0..4 {
-            let bit = (v >> m.trailing_zeros()) & 1;
-            out |= bit << i;
-            m &= m.wrapping_sub(1); // Clear least significant bit.
-
             if m == 0 {
                 break;
             };
+
+            let bit = (v >> m.trailing_zeros()) & 1;
+            out |= bit << i;
+            m &= m.wrapping_sub(1); // Clear least significant bit.
         }
         return out;
     }
