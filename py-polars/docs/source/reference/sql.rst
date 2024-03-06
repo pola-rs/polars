@@ -1,6 +1,6 @@
-===
-SQL
-===
+=============
+SQL Interface
+=============
 .. currentmodule:: polars
 
 .. py:class:: SQLContext
