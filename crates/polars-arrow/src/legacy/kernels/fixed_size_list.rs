@@ -1,3 +1,5 @@
+use polars_utils::IdxSize;
+
 use crate::array::{ArrayRef, FixedSizeListArray, PrimitiveArray};
 use crate::compute::take::take_unchecked;
 use crate::legacy::prelude::*;

@@ -1,16 +1,14 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterable
 
 import polars.polars as plr
-from pathlib import Path
 from polars._utils.parse_expr_input import parse_as_list_of_expressions
 from polars._utils.unstable import unstable
 from polars._utils.wrap import wrap_expr
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from polars import Expr
     from polars.type_aliases import IntoExpr
 
@@ -51,7 +49,8 @@ def register_plugin(
     Parameters
     ----------
     plugin_location
-        Path to package where plugin is located.
+        Path to package where plugin is located. This should either be the
+        directory containing the plugin module, or a path to the dynamic library file.
     function_name
         Rust function to load.
     inputs
@@ -109,16 +108,18 @@ def register_plugin(
         )
     )
 
+
 def _get_dynamic_lib_location(plugin_location: str | Path) -> str:
     """Get location of dynamic library file."""
     if Path(plugin_location).is_file():
-        package_dir = Path(plugin_location).parent
-    else:
-        package_dir = Path(plugin_location)
-    for path in package_dir.iterdir():
+        return str(plugin_location)
+    if not Path(plugin_location).is_dir():
+        msg = f"expected file or directory, got {plugin_location!r}"
+        raise TypeError(msg)
+    for path in Path(plugin_location).iterdir():
         if _is_shared_lib(path):
             return str(path)
-    msg = f"no dynamic library found in {package_dir}"
+    msg = f"no dynamic library found in {plugin_location}"
     raise FileNotFoundError(msg)
 
 

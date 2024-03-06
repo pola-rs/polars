@@ -237,8 +237,7 @@ class Series:
     ]
     """
 
-    __slots__ = ("_s",)
-    _s: PySeries
+    _s: PySeries = None
     _accessors: ClassVar[set[str]] = {
         "arr",
         "cat",

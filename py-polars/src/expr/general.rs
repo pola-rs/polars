@@ -863,6 +863,54 @@ impl PyExpr {
             .into()
     }
 
+    #[cfg(feature = "ffi_plugin")]
+    fn register_plugin(
+        &self,
+        lib: &str,
+        symbol: &str,
+        args: Vec<PyExpr>,
+        kwargs: Vec<u8>,
+        is_elementwise: bool,
+        input_wildcard_expansion: bool,
+        returns_scalar: bool,
+        cast_to_supertypes: bool,
+        pass_name_to_apply: bool,
+        changes_length: bool,
+    ) -> PyResult<Self> {
+        use polars_plan::prelude::*;
+        let inner = self.inner.clone();
+
+        let collect_groups = if is_elementwise {
+            ApplyOptions::ElementWise
+        } else {
+            ApplyOptions::GroupWise
+        };
+        let mut input = Vec::with_capacity(args.len() + 1);
+        input.push(inner);
+        for a in args {
+            input.push(a.inner)
+        }
+
+        Ok(Expr::Function {
+            input,
+            function: FunctionExpr::FfiPlugin {
+                lib: Arc::from(lib),
+                symbol: Arc::from(symbol),
+                kwargs: Arc::from(kwargs),
+            },
+            options: FunctionOptions {
+                collect_groups,
+                input_wildcard_expansion,
+                returns_scalar,
+                cast_to_supertypes,
+                pass_name_to_apply,
+                changes_length,
+                ..Default::default()
+            },
+        }
+        .into())
+    }
+
     #[cfg(feature = "hist")]
     #[pyo3(signature = (bins, bin_count, include_category, include_breakpoint))]
     fn hist(

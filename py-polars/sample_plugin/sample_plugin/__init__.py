@@ -1,14 +1,13 @@
 from __future__ import annotations
-import polars as pl
 
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import polars as pl
 from polars.plugins import register_plugin
 from polars.utils.udfs import _get_shared_lib_location
 
 if TYPE_CHECKING:
-    import polars as pl
     from polars.type_aliases import IntoExpr
 
 
@@ -20,6 +19,7 @@ def pig_latinnify(expr: IntoExpr) -> pl.Expr:
         inputs=expr,
         is_elementwise=True,
     )
+
 
 def pig_latinnify_deprecated(expr: str) -> pl.Expr:
     """Pig-latinnify expression."""

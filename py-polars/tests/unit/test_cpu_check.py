@@ -41,8 +41,11 @@ def test_check_cpu_flags_missing_features(monkeypatch: pytest.MonkeyPatch) -> No
 def test_check_cpu_flags_unknown_flag(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    feature_flags = "+sse3,+ssse3,+HelloWorld!"
-    monkeypatch.setattr(_cpu_check, "_POLARS_FEATURE_FLAGS", feature_flags)
+    real_cpu_flags = {"sse3": True, "ssse3": False}
+    mock_read_cpu_flags = Mock(return_value=real_cpu_flags)
+    monkeypatch.setattr(_cpu_check, "_read_cpu_flags", mock_read_cpu_flags)
+    unknown_feature_flags = "+sse3,+ssse3,+HelloWorld!"
+    monkeypatch.setattr(_cpu_check, "_POLARS_FEATURE_FLAGS", unknown_feature_flags)
     with pytest.raises(RuntimeError, match="unknown feature flag: 'HelloWorld!'"):
         check_cpu_flags()
 

@@ -1,5 +1,6 @@
-import polars as pl
 import pytest
+
+import polars as pl
 from polars.testing import assert_frame_equal
 from sample_plugin import pig_latinnify, pig_latinnify_deprecated
 
@@ -19,6 +20,7 @@ def test_pig_latinnify() -> None:
         }
     )
     assert_frame_equal(result, expected)
+
 
 def test_pig_latinnify_deprecated() -> None:
     """test_pig_latinnify."""
