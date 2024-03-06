@@ -322,6 +322,14 @@ def test_decimal_df_vertical_sum() -> None:
     assert_frame_equal(df.sum(), expected)
 
 
+def test_decimal_df_vertical_agg() -> None:
+    df = pl.DataFrame({"a": [D("1.0"), D("2.0"), D("3.0")]})
+    expected_min = pl.DataFrame({"a": [D("1.0")]})
+    expected_max = pl.DataFrame({"a": [D("3.0")]})
+    assert_frame_equal(df.min(), expected_min)
+    assert_frame_equal(df.max(), expected_max)
+
+
 def test_decimal_in_filter() -> None:
     df = pl.DataFrame(
         {
