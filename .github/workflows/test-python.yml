@@ -83,7 +83,7 @@ jobs:
 
       - name: Register and run a plugin
         if: github.ref_name != 'main' && matrix.python-version == '3.11' && matrix.os == 'ubuntu-latest'
-        working-directory: py-polars/sample_plugin
+        working-directory: sample_plugin
         run: |
           maturin develop
           pytest
