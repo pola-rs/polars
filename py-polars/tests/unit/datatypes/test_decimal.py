@@ -336,6 +336,33 @@ def test_decimal_in_filter() -> None:
     }
 
 
+def test_decimal_sort() -> None:
+    df = pl.DataFrame(
+        {
+            "foo": [1, 2, 3],
+            "bar": [D("3.4"), D("2.1"), D("4.5")],
+            "baz": [1, 1, 2],
+        }
+    )
+    assert df.sort("bar").to_dict(as_series=False) == {
+        "foo": [2, 1, 3],
+        "bar": [D("2.1"), D("3.4"), D("4.5")],
+        "baz": [1, 1, 2],
+    }
+    assert df.sort(["foo", "bar"]).to_dict(as_series=False) == {
+        "foo": [1, 2, 3],
+        "bar": [D("3.4"), D("2.1"), D("4.5")],
+        "baz": [1, 1, 2],
+    }
+
+    assert df.select([pl.col("foo").sort_by("bar", descending=True).alias("s1")])[
+        "s1"
+    ].to_list() == [3, 1, 2]
+    assert df.select([pl.col("foo").sort_by(["baz", "bar"]).alias("s2")])[
+        "s2"
+    ].to_list() == [2, 1, 3]
+
+
 def test_decimal_write_parquet_12375() -> None:
     f = io.BytesIO()
     df = pl.DataFrame(
