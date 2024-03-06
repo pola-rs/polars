@@ -2,8 +2,8 @@
 mod test {
     use std::io::Cursor;
 
-    use polars_core::df;
     use polars_core::prelude::*;
+    use polars_core::{assert_df_eq, df};
     use polars_io::ipc::*;
     use polars_io::{SerReader, SerWriter};
 
@@ -19,14 +19,6 @@ mod test {
         buf.set_position(0);
 
         buf
-    }
-
-    macro_rules! assert_df_eq {
-        ($a:expr, $b:expr) => {
-            let a: &polars_core::frame::DataFrame = &$a;
-            let b: &polars_core::frame::DataFrame = &$b;
-            assert!(a.equals(b), "expected {:?}\nto equal {:?}", a, b);
-        };
     }
 
     #[test]
