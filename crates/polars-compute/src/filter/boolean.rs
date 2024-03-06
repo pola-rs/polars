@@ -1,7 +1,6 @@
+use arrow::bitmap::Bitmap;
 use polars_utils::clmul::prefix_xorsum;
 use polars_utils::slice::load_padded_le_u64;
-
-use super::*;
 
 const U56_MAX: u64 = (1 << 56) - 1;
 
@@ -260,7 +259,7 @@ unsafe fn filter_boolean_kernel_pext<const HAS_NATIVE_PEXT: bool, F: Fn(u64, u64
     }
 }
 
-pub(super) fn filter_bitmap_and_validity(
+pub fn filter_bitmap_and_validity(
     values: &Bitmap,
     validity: Option<&Bitmap>,
     mask: &Bitmap,

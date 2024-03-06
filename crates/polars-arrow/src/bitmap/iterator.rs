@@ -292,7 +292,7 @@ impl<'a> FastU64BitmapIter<'a> {
             if self.bits_left >= 64 {
                 mask = u64::MAX;
                 self.bits_left -= 64;
-                self.bytes = unsafe { self.bytes.get_unchecked(8..) };
+                self.bytes = self.bytes.get(8..).unwrap_or(&[]);
             } else {
                 mask = (1 << self.bits_left) - 1;
                 self.bits_left = 0;
