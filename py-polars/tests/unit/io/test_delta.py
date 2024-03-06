@@ -375,18 +375,19 @@ def test_write_delta_with_schema_10540(tmp_path: Path) -> None:
 def test_write_delta_with_tz_in_df(expr: pl.Expr, tmp_path: Path) -> None:
     df = pl.select(expr)
 
-    pa_schema = pa.schema([("datetime", pa.timestamp("us"))])
+    expected_dtype = pl.Datetime("us", "UTC")
+    expected = pl.select(expr.cast(expected_dtype))
 
     df.write_delta(tmp_path, mode="append")
     # write second time because delta-rs also casts timestamp with tz to timestamp no tz
     df.write_delta(tmp_path, mode="append")
 
+    # Check schema of DeltaTable object
     tbl = DeltaTable(tmp_path)
-    assert pa_schema == tbl.schema().to_pyarrow()
+    assert tbl.schema().to_pyarrow() == expected.to_arrow().schema
 
+    # Check result
     result = pl.read_delta(str(tmp_path), version=0)
-
-    expected = df.cast(pl.Datetime)
     assert_frame_equal(result, expected)
 
 
