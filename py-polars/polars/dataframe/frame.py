@@ -3665,7 +3665,7 @@ class DataFrame:
         target: str | Path | deltalake.DeltaTable,
         *,
         mode: Literal["error", "append", "overwrite", "ignore"] = ...,
-        overwrite_schema: bool = ...,
+        overwrite_schema: bool | None = ...,
         storage_options: dict[str, str] | None = ...,
         delta_write_options: dict[str, Any] | None = ...,
     ) -> None: ...
@@ -3676,7 +3676,7 @@ class DataFrame:
         target: str | Path | deltalake.DeltaTable,
         *,
         mode: Literal["merge"],
-        overwrite_schema: bool = ...,
+        overwrite_schema: bool | None = ...,
         storage_options: dict[str, str] | None = ...,
         delta_merge_options: dict[str, Any],
     ) -> deltalake.table.TableMerger: ...
@@ -3686,7 +3686,7 @@ class DataFrame:
         target: str | Path | deltalake.DeltaTable,
         *,
         mode: Literal["error", "append", "overwrite", "ignore", "merge"] = "error",
-        overwrite_schema: bool = False,
+        overwrite_schema: bool | None = None,
         storage_options: dict[str, str] | None = None,
         delta_write_options: dict[str, Any] | None = None,
         delta_merge_options: dict[str, Any] | None = None,
@@ -3709,6 +3709,10 @@ class DataFrame:
               with the existing data.
         overwrite_schema
             If True, allows updating the schema of the table.
+
+            .. deprecated:: 0.20.14
+                Use the parameter `delta_write_options` instead and pass
+                `{"schema_mode": "overwrite"}`.
         storage_options
             Extra options for the storage backends supported by `deltalake`.
             For cloud storages, this may include configurations for authentication etc.
@@ -3764,12 +3768,14 @@ class DataFrame:
         >>> df.write_delta(table_path, mode="append")  # doctest: +SKIP
 
         Overwrite a Delta Lake table as a new version.
-        If the schemas of the new and old data are the same, setting
-        `overwrite_schema` is not required.
+        If the schemas of the new and old data are the same, specifying the
+        `schema_mode` is not required.
 
         >>> existing_table_path = "/path/to/delta-table/"
         >>> df.write_delta(
-        ...     existing_table_path, mode="overwrite", overwrite_schema=True
+        ...     existing_table_path,
+        ...     mode="overwrite",
+        ...     delta_write_options={"schema_mode": "overwrite"},
         ... )  # doctest: +SKIP
 
         Write a DataFrame as a Delta Lake table to a cloud object store like S3.
@@ -3799,9 +3805,6 @@ class DataFrame:
         For all `TableMerger` methods, check the deltalake docs
         `here <https://delta-io.github.io/delta-rs/api/delta_table/delta_table_merger/>`__.
 
-        Schema evolution is not yet supported in by the `deltalake` package, therefore
-        `overwrite_schema` will not have any effect on a merge operation.
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "foo": [1, 2, 3, 4, 5],
@@ -3825,6 +3828,13 @@ class DataFrame:
         ...     .execute()
         ... )  # doctest: +SKIP
         """
+        if overwrite_schema is not None:
+            issue_deprecation_warning(
+                "The parameter `overwrite_schema` for `write_delta` is deprecated."
+                ' Use the parameter `delta_write_options` instead and pass `{"schema_mode": "overwrite"}`.',
+                version="0.20.14",
+            )
+
         from polars.io.delta import (
             _check_for_unsupported_types,
             _check_if_delta_available,
@@ -3857,13 +3867,15 @@ class DataFrame:
             if delta_write_options is None:
                 delta_write_options = {}
 
+            if overwrite_schema:
+                delta_write_options["schema_mode"] = "overwrite"
+
             schema = delta_write_options.pop("schema", None)
             write_deltalake(
                 table_or_uri=target,
                 data=data,
                 schema=schema,
                 mode=mode,
-                overwrite_schema=overwrite_schema,
                 storage_options=storage_options,
                 large_dtypes=True,
                 **delta_write_options,
