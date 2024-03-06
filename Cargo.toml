@@ -5,7 +5,7 @@ members = [
   "docs/src/rust",
   # "examples/*",
   "py-polars",
-  "py-polars/sample_plugin"
+  "py-polars/sample_plugin",
 ]
 default-members = [
   "crates/*",
