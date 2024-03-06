@@ -321,7 +321,8 @@ unsafe fn take_opt_unchecked_object(s: &Series, by: &[NullableChunkId]) -> Serie
 
 #[allow(clippy::unnecessary_cast)]
 #[inline(always)]
-fn rewrite_view(mut view: View, chunk_idx: u32) -> View {
+fn rewrite_view(mut view: View, chunk_idx: IdxSize) -> View {
+    let chunk_idx = chunk_idx as u32;
     let offset = [0, chunk_idx][(view.length > INLINE_VIEW_SIZE) as usize];
     view.buffer_idx += offset;
     view
@@ -353,7 +354,7 @@ unsafe fn take_unchecked_binview(
                 let target = *views.get_unchecked_release(chunk_idx as usize);
                 let view = *target.get_unchecked_release(array_idx);
 
-                rewrite_view(view, chunk_idx as u32)
+                rewrite_view(view, chunk_idx)
             })
             .collect::<Vec<_>>();
 
@@ -375,7 +376,7 @@ unsafe fn take_unchecked_binview(
             } else {
                 let target = *views.get_unchecked_release(chunk_idx as usize);
                 let view = *target.get_unchecked_release(array_idx);
-                let view = rewrite_view(view, chunk_idx as u32);
+                let view = rewrite_view(view, chunk_idx);
                 mut_views.push_unchecked(view);
                 validity.push_unchecked(true)
             }
@@ -426,7 +427,7 @@ unsafe fn take_unchecked_binview_opt(ca: &BinaryChunked, by: &[NullableChunkId])
 
                 let target = *views.get_unchecked_release(chunk_idx as usize);
                 let view = *target.get_unchecked_release(array_idx);
-                let view = rewrite_view(view, chunk_idx as u32);
+                let view = rewrite_view(view, chunk_idx);
 
                 mut_views.push_unchecked(view);
                 validity.push_unchecked(true)
@@ -449,7 +450,7 @@ unsafe fn take_unchecked_binview_opt(ca: &BinaryChunked, by: &[NullableChunkId])
                 } else {
                     let target = *views.get_unchecked_release(chunk_idx as usize);
                     let view = *target.get_unchecked_release(array_idx);
-                    let view = rewrite_view(view, chunk_idx as u32);
+                    let view = rewrite_view(view, chunk_idx);
                     mut_views.push_unchecked(view);
                     validity.push_unchecked(true);
                 }
