@@ -92,16 +92,20 @@ expression in batches. Whereas for other operations this would not be allowed, t
 
 ```python
 # expression_lib/__init__.py
+from pathlib import Path
+from typing import TYPE_CHECKING
+
 import polars as pl
-from polars.type_aliases import IntoExpr
 from polars.plugins import register_plugin
+from polars.type_aliases import IntoExpr
 
 
-def pig_latinnify(expr: IntoExpr, capitalize: bool = False) -> pl.Expr:
+def pig_latinnify(expr: IntoExpr) -> pl.Expr:
+    """Pig-latinnify expression."""
     return register_plugin(
-        expr,
-        plugin_location=plugin_location,
-        symbol="pig_latinnify",
+        plugin_location=Path(__file__).parent,
+        function_name="pig_latinnify",
+        inputs=expr,
         is_elementwise=True,
     )
 ```
@@ -182,16 +186,16 @@ def append_args(
     This example shows how arguments other than `Series` can be used.
     """
     return register_plugin(
-        expr,
-        plugin_location=plugin_location,
+        plugin_location=Path(__file__).parent,
+        function_name="append_kwargs",
+        inputs=expr,
+        is_elementwise=True,
         kwargs={
             "float_arg": float_arg,
             "integer_arg": integer_arg,
             "string_arg": string_arg,
             "boolean_arg": boolean_arg,
         },
-        symbol="append_kwargs",
-        is_elementwise=True,
     )
 ```
 
