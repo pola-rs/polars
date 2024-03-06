@@ -173,11 +173,11 @@ pub trait JoinDispatch: IntoDf {
         args: JoinArgs,
         verbose: bool,
     ) -> PolarsResult<DataFrame> {
-        let ca_self = self.to_df();
+        let df_self = self.to_df();
         #[cfg(feature = "dtype-categorical")]
         _check_categorical_src(s_left.dtype(), s_right.dtype())?;
 
-        let mut left = ca_self.clone();
+        let mut left = df_self.clone();
         let mut s_left = s_left.clone();
         // Eagerly limit left if possible.
         if let Some((offset, len)) = args.slice {
@@ -188,16 +188,19 @@ pub trait JoinDispatch: IntoDf {
         }
 
         // Ensure that the chunks are aligned otherwise we go OOB.
-        let mut right = other.clone();
+        let mut right = Cow::Borrowed(other);
         let mut s_right = s_right.clone();
         if left.should_rechunk() {
             left.as_single_chunk_par();
             s_left = s_left.rechunk();
         }
         if right.should_rechunk() {
-            right.as_single_chunk_par();
+            let mut other = other.clone();
+            other.as_single_chunk_par();
+            right = Cow::Owned(other);
             s_right = s_right.rechunk();
         }
+
         let ids = sort_or_hash_left(&s_left, &s_right, verbose, args.validation, args.join_nulls)?;
         left._finish_left_join(ids, &right.drop(s_right.name()).unwrap(), args)
     }

@@ -1,3 +1,6 @@
+use std::borrow::Cow;
+use std::fmt::Debug;
+
 use polars_core::prelude::gather::_update_gather_sorted_flag;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
@@ -67,9 +70,24 @@ pub trait TakeChunked {
     unsafe fn take_opt_chunked_unchecked(&self, by: &[ChunkId]) -> Self;
 }
 
+fn prepare_series(s: &Series) -> Cow<Series> {
+    let phys = if s.dtype().is_nested() {
+        Cow::Borrowed(s)
+    } else {
+        s.to_physical_repr()
+    };
+    // If this is hit the cast rechunked the data and the gather will OOB
+    assert_eq!(
+        phys.chunks().len(),
+        s.chunks().len(),
+        "implementation error"
+    );
+    phys
+}
+
 impl TakeChunked for Series {
     unsafe fn take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Self {
-        let phys = self.to_physical_repr();
+        let phys = prepare_series(self);
         use DataType::*;
         let out = match phys.dtype() {
             dt if dt.is_numeric() => {
@@ -122,7 +140,7 @@ impl TakeChunked for Series {
 
     /// Take function that checks of null state in `ChunkIdx`.
     unsafe fn take_opt_chunked_unchecked(&self, by: &[NullableChunkId]) -> Self {
-        let phys = self.to_physical_repr();
+        let phys = prepare_series(self);
         use DataType::*;
         let out = match phys.dtype() {
             dt if dt.is_numeric() => {
@@ -177,6 +195,7 @@ impl TakeChunked for Series {
 impl<T> TakeChunked for ChunkedArray<T>
 where
     T: PolarsDataType,
+    T::Array: Debug,
 {
     unsafe fn take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Self {
         let arrow_dtype = self.dtype().to_arrow(true);
