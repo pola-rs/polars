@@ -237,7 +237,7 @@ class Series:
     ]
     """
 
-    _s: PySeries
+    _s: PySeries = None
     _accessors: ClassVar[set[str]] = {
         "arr",
         "cat",
