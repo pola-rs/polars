@@ -52,8 +52,8 @@ def register_plugin(
     Parameters
     ----------
     plugin_location
-        Path to package where plugin is located. This should either be the
-        directory containing the plugin module, or a path to the dynamic library file.
+        Path to package where plugin is located. This should either be the dynamic
+        library file, or the directory containing it.
     function_name
         Rust function to load.
     inputs
