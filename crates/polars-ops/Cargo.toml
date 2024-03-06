@@ -17,7 +17,7 @@ polars-utils = { workspace = true }
 
 ahash = { workspace = true }
 aho-corasick = { workspace = true, optional = true }
-argminmax = { version = "0.6.1", default-features = false, features = ["float"] }
+argminmax = { version = "0.6.2", default-features = false, features = ["float"] }
 arrow = { workspace = true }
 base64 = { workspace = true, optional = true }
 bytemuck = { workspace = true }
