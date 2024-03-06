@@ -85,6 +85,7 @@ jobs:
         if: github.ref_name != 'main' && matrix.python-version == '3.11' && matrix.os == 'ubuntu-latest'
         working-directory: sample_plugin
         run: |
+          . py-polars/.venv/bin/activate
           maturin develop
           pytest
 
