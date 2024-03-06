@@ -3,7 +3,7 @@ Python API reference
 ====================
 
 This page gives a high-level overview of all public Polars objects, functions and
-methods. All classes and functions exposed in ``polars.*`` namespace are public.
+methods. All classes and functions exposed in the ``polars.*`` namespace are public.
 
 
 .. grid::

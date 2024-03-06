@@ -3,6 +3,14 @@ Input/output
 ============
 .. currentmodule:: polars
 
+Avro
+~~~~
+.. autosummary::
+   :toctree: api/
+
+   read_avro
+   DataFrame.write_avro
+
 CSV
 ~~~
 .. autosummary::
@@ -14,8 +22,44 @@ CSV
    DataFrame.write_csv
    LazyFrame.sink_csv
 
-Feather/ IPC
-~~~~~~~~~~~~
+.. currentmodule:: polars.io.csv.batched_reader
+
+.. autosummary::
+   :toctree: api/
+
+    BatchedCsvReader.next_batches
+
+.. currentmodule:: polars
+
+Database
+~~~~~~~~
+.. autosummary::
+   :toctree: api/
+
+   read_database
+   read_database_uri
+   DataFrame.write_database
+
+Delta Lake
+~~~~~~~~~~
+.. autosummary::
+   :toctree: api/
+
+   scan_delta
+   read_delta
+   DataFrame.write_delta
+
+Excel / ODS
+~~~~~~~~~~~
+.. autosummary::
+   :toctree: api/
+
+   read_excel
+   read_ods
+   DataFrame.write_excel
+
+Feather / IPC
+~~~~~~~~~~~~~
 .. autosummary::
    :toctree: api/
 
@@ -27,25 +71,12 @@ Feather/ IPC
    DataFrame.write_ipc_stream
    LazyFrame.sink_ipc
 
-Parquet
+Iceberg
 ~~~~~~~
 .. autosummary::
    :toctree: api/
 
-   read_parquet
-   scan_parquet
-   read_parquet_schema
-   DataFrame.write_parquet
-   LazyFrame.sink_parquet
-
-Database
-~~~~~~~~
-.. autosummary::
-   :toctree: api/
-
-   read_database
-   read_database_uri
-   DataFrame.write_database
+   scan_iceberg
 
 JSON
 ~~~~
@@ -59,56 +90,22 @@ JSON
    DataFrame.write_ndjson
    LazyFrame.sink_ndjson
 
-AVRO
-~~~~
+Parquet
+~~~~~~~
 .. autosummary::
    :toctree: api/
 
-   read_avro
-   DataFrame.write_avro
+   read_parquet
+   scan_parquet
+   read_parquet_schema
+   DataFrame.write_parquet
+   LazyFrame.sink_parquet
 
-Spreadsheet
-~~~~~~~~~~~
-.. autosummary::
-   :toctree: api/
-
-   read_excel
-   read_ods
-   DataFrame.write_excel
-
-Apache Iceberg
-~~~~~~~~~~~~~~
-.. autosummary::
-   :toctree: api/
-
-   scan_iceberg
-
-Delta Lake
-~~~~~~~~~~
-.. autosummary::
-   :toctree: api/
-
-   scan_delta
-   read_delta
-   DataFrame.write_delta
-
-Datasets
-~~~~~~~~
+PyArrow Datasets
+~~~~~~~~~~~~~~~~
 Connect to pyarrow datasets.
 
 .. autosummary::
    :toctree: api/
 
    scan_pyarrow_dataset
-
-
-BatchedCsvReader
-~~~~~~~~~~~~~~~~
-This reader comes available by calling `pl.read_csv_batched`.
-
-.. currentmodule:: polars.io.csv.batched_reader
-
-.. autosummary::
-   :toctree: api/
-
-    BatchedCsvReader.next_batches
