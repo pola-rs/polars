@@ -81,6 +81,13 @@ jobs:
           python tests/docs/run_doctest.py
           pytest tests/docs/test_user_guide.py -m docs
 
+      - name: Register and run a plugin
+        if: github.ref_name != 'main' && matrix.python-version == '3.11' && matrix.os == 'ubuntu-latest'
+        working-directory: py-polars/sample_plugin
+        run: |
+          maturin develop
+          pytest
+
       - name: Run tests and report coverage
         if: github.ref_name != 'main'
         env:

@@ -9623,6 +9623,9 @@ class Expr:
         """
         return self.shift(n, fill_value=fill_value)
 
+    @deprecate_function(
+        "Use `polars.plugins.register_plugin` instead.", version="0.20.15"
+    )
     def register_plugin(
         self,
         *,
@@ -9650,6 +9653,10 @@ class Expr:
         .. note::
             This functionality is unstable and may change without it
             being considered breaking.
+
+        .. deprecated:: 0.20.15
+
+            Use :func:`polars.plugins.register_plugin` instead.
 
         Parameters
         ----------

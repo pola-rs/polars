@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Iterable
 
+import polars.polars as plr
+from pathlib import Path
 from polars._utils.parse_expr_input import parse_as_list_of_expressions
-from polars._utils.udfs import get_dynamic_lib_location
 from polars._utils.unstable import unstable
 from polars._utils.wrap import wrap_expr
 
@@ -18,10 +19,11 @@ __all__ = ["register_plugin"]
 
 @unstable()
 def register_plugin(
-    *inputs: IntoExpr | list[IntoExpr],
     plugin_location: str | Path,
-    symbol: str,
-    kwargs: dict[Any, Any] | None = None,
+    function_name: str,
+    inputs: IntoExpr | Iterable[IntoExpr],
+    kwargs: dict[str, Any] | None = None,
+    *,
     is_elementwise: bool = False,
     input_wildcard_expansion: bool = False,
     returns_scalar: bool = False,
@@ -33,30 +35,29 @@ def register_plugin(
     Register a dynamic library as a plugin.
 
     .. warning::
+        This functionality is unstable and may change without it
+        being considered breaking.
+
+    .. warning::
         This is highly unsafe as this will call the C function
         loaded by `lib::symbol`.
 
         The parameters you give dictate how polars will deal
         with the function. Make sure they are correct!
 
-    .. note::
-        This functionality is unstable and may change without it
-        being considered breaking.
-
     See the `user guide <https://docs.pola.rs/user-guide/expressions/plugins/>`_
     for more information about plugins.
 
     Parameters
     ----------
+    plugin_location
+        Path to package where plugin is located.
+    function_name
+        Rust function to load.
     inputs
         Arguments passed to this function. These get passed to the ``inputs``
         argument on the Rust side, and have to be of type Expression (or be
         convertible to expressions).
-    plugin_location
-        Path to package where plugin is located. This can either be the
-        ``__init__.py`` file or the directory containing the ``__init__.py`` file.
-    symbol
-        Function to load.
     kwargs
         Non-expression arguments. They must be JSON serializable.
     is_elementwise
@@ -79,7 +80,7 @@ def register_plugin(
     -------
     polars.Expr
     """
-    pyexprs = parse_as_list_of_expressions(*inputs)
+    pyexprs = parse_as_list_of_expressions(inputs)
     if not pyexprs:
         msg = "`inputs` must be non-empty"
         raise TypeError(msg)
@@ -91,13 +92,13 @@ def register_plugin(
         # Choose the highest protocol supported by https://docs.rs/serde-pickle/latest/serde_pickle/
         serialized_kwargs = pickle.dumps(kwargs, protocol=5)
 
-    lib_location = get_dynamic_lib_location(plugin_location)
+    lib_location = _get_dynamic_lib_location(plugin_location)
 
     return wrap_expr(
-        pyexprs[0].register_plugin(
+        plr.register_plugin(
             lib_location,
-            symbol,
-            pyexprs[1:],
+            function_name,
+            pyexprs,
             serialized_kwargs,
             is_elementwise,
             input_wildcard_expansion,
@@ -107,3 +108,19 @@ def register_plugin(
             changes_length,
         )
     )
+
+def _get_dynamic_lib_location(plugin_location: str | Path) -> str:
+    """Get location of dynamic library file."""
+    if Path(plugin_location).is_file():
+        package_dir = Path(plugin_location).parent
+    else:
+        package_dir = Path(plugin_location)
+    for path in package_dir.iterdir():
+        if _is_shared_lib(path):
+            return str(path)
+    msg = f"no dynamic library found in {package_dir}"
+    raise FileNotFoundError(msg)
+
+
+def _is_shared_lib(file: Path) -> bool:
+    return file.name.endswith((".so", ".dll", ".pyd"))

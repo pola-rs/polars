@@ -978,21 +978,4 @@ def warn_on_inefficient_map(
             )
 
 
-def get_dynamic_lib_location(plugin_location: str | Path) -> str:
-    """Get location of dynamic library file."""
-    if Path(plugin_location).is_file():
-        package_dir = Path(plugin_location).parent
-    else:
-        package_dir = Path(plugin_location)
-    for path in package_dir.iterdir():
-        if _is_shared_lib(path):
-            return str(path)
-    msg = f"no dynamic library found in {package_dir}"
-    raise FileNotFoundError(msg)
-
-
-def _is_shared_lib(file: Path) -> bool:
-    return file.name.endswith((".so", ".dll", ".pyd"))
-
-
-__all__ = ["BytecodeParser", "warn_on_inefficient_map", "get_dynamic_lib_location"]
+__all__ = ["BytecodeParser", "warn_on_inefficient_map"]
