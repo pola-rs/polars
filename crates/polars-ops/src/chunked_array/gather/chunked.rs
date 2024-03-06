@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::fmt::Debug;
 
-use arrow::array::{Array, BinaryViewArray, View};
+use arrow::array::{Array, BinaryViewArray, View, INLINE_VIEW_SIZE};
 use arrow::bitmap::MutableBitmap;
 use arrow::buffer::Buffer;
 use arrow::legacy::trusted_len::TrustedLenPush;
@@ -320,6 +320,14 @@ unsafe fn take_opt_unchecked_object(s: &Series, by: &[NullableChunkId]) -> Serie
 }
 
 #[allow(clippy::unnecessary_cast)]
+#[inline(always)]
+fn rewrite_view(mut view: View, chunk_idx: u32) -> View {
+    let offset = [0, chunk_idx][(view.length > INLINE_VIEW_SIZE) as usize];
+    view.buffer_idx += offset;
+    view
+}
+
+#[allow(clippy::unnecessary_cast)]
 unsafe fn take_unchecked_binview(
     ca: &BinaryChunked,
     by: &[ChunkId],
@@ -343,14 +351,9 @@ unsafe fn take_unchecked_binview(
                 let array_idx = array_idx as usize;
 
                 let target = *views.get_unchecked_release(chunk_idx as usize);
-                let mut view = *target.get_unchecked_release(array_idx);
+                let view = *target.get_unchecked_release(array_idx);
 
-                #[allow(clippy::unnecessary_cast)]
-                {
-                    view.buffer_idx += chunk_idx as u32;
-                }
-
-                view
+                rewrite_view(view, chunk_idx as u32)
             })
             .collect::<Vec<_>>();
 
@@ -371,11 +374,8 @@ unsafe fn take_unchecked_binview(
                 validity.push_unchecked(false)
             } else {
                 let target = *views.get_unchecked_release(chunk_idx as usize);
-                let mut view = *target.get_unchecked_release(array_idx);
-                #[allow(clippy::unnecessary_cast)]
-                {
-                    view.buffer_idx += chunk_idx as u32;
-                }
+                let view = *target.get_unchecked_release(array_idx);
+                let view = rewrite_view(view, chunk_idx as u32);
                 mut_views.push_unchecked(view);
                 validity.push_unchecked(true)
             }
@@ -425,12 +425,8 @@ unsafe fn take_unchecked_binview_opt(ca: &BinaryChunked, by: &[NullableChunkId])
                 let array_idx = array_idx as usize;
 
                 let target = *views.get_unchecked_release(chunk_idx as usize);
-                let mut view = *target.get_unchecked_release(array_idx);
-
-                #[allow(clippy::unnecessary_cast)]
-                {
-                    view.buffer_idx += chunk_idx as u32;
-                }
+                let view = *target.get_unchecked_release(array_idx);
+                let view = rewrite_view(view, chunk_idx as u32);
 
                 mut_views.push_unchecked(view);
                 validity.push_unchecked(true)
@@ -452,11 +448,8 @@ unsafe fn take_unchecked_binview_opt(ca: &BinaryChunked, by: &[NullableChunkId])
                     validity.push_unchecked(false)
                 } else {
                     let target = *views.get_unchecked_release(chunk_idx as usize);
-                    let mut view = *target.get_unchecked_release(array_idx);
-                    #[allow(clippy::unnecessary_cast)]
-                    {
-                        view.buffer_idx += chunk_idx as u32;
-                    }
+                    let view = *target.get_unchecked_release(array_idx);
+                    let view = rewrite_view(view, chunk_idx as u32);
                     mut_views.push_unchecked(view);
                     validity.push_unchecked(true);
                 }
