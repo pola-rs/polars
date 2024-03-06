@@ -2,6 +2,7 @@ use std::io::{Seek, SeekFrom};
 
 use polars::prelude::*;
 
+#[test]
 fn test_cast_join_14872() {
     let df1 = df![
         "ints" => [1]
