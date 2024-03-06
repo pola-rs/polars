@@ -36,8 +36,8 @@ def register_plugin(
     Register a dynamic library as a plugin.
 
     .. warning::
-        This functionality is unstable and may change without it
-        being considered breaking.
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
 
     .. warning::
         This is highly unsafe as this will call the C function
