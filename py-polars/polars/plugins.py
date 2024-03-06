@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterable
 
-import polars.polars as plr
 from polars._utils.parse_expr_input import parse_as_list_of_expressions
 from polars._utils.unstable import unstable
 from polars._utils.wrap import wrap_expr
@@ -11,6 +11,9 @@ from polars._utils.wrap import wrap_expr
 if TYPE_CHECKING:
     from polars import Expr
     from polars.type_aliases import IntoExpr
+
+with contextlib.suppress(ImportError):  # Module not available when building docs
+    import polars.polars as plr
 
 __all__ = ["register_plugin"]
 
