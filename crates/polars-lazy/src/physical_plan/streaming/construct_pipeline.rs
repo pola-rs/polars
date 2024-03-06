@@ -1,7 +1,6 @@
 use std::any::Any;
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::Arc;
 
 use polars_core::config::verbose;
 use polars_core::prelude::*;
@@ -10,7 +9,6 @@ use polars_pipe::expressions::PhysicalPipedExpr;
 use polars_pipe::operators::chunks::DataChunk;
 use polars_pipe::pipeline::{create_pipeline, get_dummy_operator, get_operator, PipeLine};
 use polars_pipe::SExecutionContext;
-use polars_utils::IdxSize;
 
 use crate::physical_plan::planner::{create_physical_expr, ExpressionConversionState};
 use crate::physical_plan::state::ExecutionState;

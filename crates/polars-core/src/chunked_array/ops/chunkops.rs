@@ -1,5 +1,3 @@
-#[cfg(feature = "object")]
-use arrow::array::Array;
 use arrow::legacy::kernels::concatenate::concatenate_owned_unchecked;
 use polars_error::constants::LENGTH_LIMIT_MSG;
 
@@ -92,7 +90,10 @@ impl<T: PolarsDataType> ChunkedArray<T> {
                 _ => chunks.iter().fold(0, |acc, arr| acc + arr.len()),
             }
         }
-        self.length = IdxSize::try_from(inner(&self.chunks)).expect(LENGTH_LIMIT_MSG);
+        let len = inner(&self.chunks);
+        // Length limit is `IdxSize::MAX - 1`. We use `IdxSize::MAX` to indicate `NULL` in indexing.
+        assert!(len < IdxSize::MAX as usize, "{}", LENGTH_LIMIT_MSG);
+        self.length = len as IdxSize;
         self.null_count = self
             .chunks
             .iter()

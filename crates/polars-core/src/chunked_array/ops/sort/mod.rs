@@ -7,10 +7,8 @@ mod categorical;
 use std::cmp::Ordering;
 
 pub(crate) use arg_sort_multiple::argsort_multiple_row_fmt;
-use arrow::array::ValueSize;
 use arrow::bitmap::MutableBitmap;
 use arrow::buffer::Buffer;
-use arrow::legacy::prelude::FromData;
 use arrow::legacy::trusted_len::TrustedLenPush;
 use rayon::prelude::*;
 pub use slice::*;
@@ -21,7 +19,7 @@ use crate::prelude::sort::arg_sort_multiple::_get_rows_encoded_ca;
 use crate::prelude::sort::arg_sort_multiple::{arg_sort_multiple_impl, args_validate};
 use crate::prelude::*;
 use crate::series::IsSorted;
-use crate::utils::{CustomIterTools, NoNull};
+use crate::utils::NoNull;
 use crate::POOL;
 
 pub(crate) fn sort_by_branch<T, C>(slice: &mut [T], descending: bool, cmp: C, parallel: bool)
@@ -631,6 +629,9 @@ pub(crate) fn convert_sort_column_multi_sort(s: &Series) -> PolarsResult<Series>
                 .collect::<PolarsResult<Vec<_>>>()?;
             return StructChunked::new(ca.name(), &new_fields).map(|ca| ca.into_series());
         },
+        // we could fallback to default branch, but decimal is not numeric dtype for now, so explicit here
+        #[cfg(feature = "dtype-decimal")]
+        Decimal(_, _) => s.clone(),
         _ => {
             let phys = s.to_physical_repr().into_owned();
             polars_ensure!(

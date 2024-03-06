@@ -1,7 +1,6 @@
 use arrow::legacy::time_zone::Tz;
 use arrow::legacy::utils::CustomIterTools;
 use polars_core::export::rayon::prelude::*;
-use polars_core::frame::group_by::GroupsProxy;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::ensure_sorted_arg;
@@ -151,18 +150,18 @@ impl Wrap<&DataFrame> {
                 TimeUnit::Milliseconds,
                 None,
             ),
-            Int32 => {
-                let time_type = Datetime(TimeUnit::Nanoseconds, None);
-                let dt = time.cast(&Int64).unwrap().cast(&time_type).unwrap();
+            UInt32 | UInt64 | Int32 => {
+                let time_type_dt = Datetime(TimeUnit::Nanoseconds, None);
+                let dt = time.cast(&Int64).unwrap().cast(&time_type_dt).unwrap();
                 let (out, by, gt) = self.impl_group_by_rolling(
                     dt,
                     by,
                     options,
                     TimeUnit::Nanoseconds,
                     None,
-                    &time_type,
+                    &time_type_dt,
                 )?;
-                let out = out.cast(&Int64).unwrap().cast(&Int32).unwrap();
+                let out = out.cast(&Int64).unwrap().cast(time_type).unwrap();
                 return Ok((out, by, gt));
             },
             Int64 => {

@@ -1,6 +1,5 @@
 //! DataFrame module.
 use std::borrow::Cow;
-use std::iter::{FromIterator, Iterator};
 use std::{mem, ops};
 
 use ahash::AHashSet;
@@ -28,8 +27,6 @@ pub use chunks::*;
 use serde::{Deserialize, Serialize};
 use smartstring::alias::String as SmartString;
 
-#[cfg(feature = "algorithm_group_by")]
-use crate::frame::group_by::GroupsIndicator;
 #[cfg(feature = "row_hash")]
 use crate::hashing::_df_rows_to_hashes_threaded_vertical;
 #[cfg(feature = "zip_with")]
@@ -1710,7 +1707,9 @@ impl DataFrame {
         self.take_unchecked_impl(idx, true)
     }
 
-    unsafe fn take_unchecked_impl(&self, idx: &IdxCa, allow_threads: bool) -> Self {
+    /// # Safety
+    /// The indices must be in-bounds.
+    pub unsafe fn take_unchecked_impl(&self, idx: &IdxCa, allow_threads: bool) -> Self {
         let cols = if allow_threads {
             POOL.install(|| self._apply_columns_par(&|s| s.take_unchecked(idx)))
         } else {
@@ -3064,7 +3063,6 @@ fn ensure_can_extend(left: &Series, right: &Series) -> PolarsResult<()> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::frame::NullStrategy;
 
     fn create_frame() -> DataFrame {
         let s0 = Series::new("days", [0, 1, 2].as_ref());

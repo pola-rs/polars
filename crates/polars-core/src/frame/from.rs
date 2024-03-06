@@ -1,5 +1,3 @@
-use arrow::array::StructArray;
-
 use crate::prelude::*;
 
 impl TryFrom<StructArray> for DataFrame {

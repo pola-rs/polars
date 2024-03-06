@@ -1,5 +1,4 @@
 use super::*;
-use crate::prelude::{AnonymousScan, LazyJsonLineReader};
 
 impl AnonymousScan for LazyJsonLineReader {
     fn as_any(&self) -> &dyn std::any::Any {

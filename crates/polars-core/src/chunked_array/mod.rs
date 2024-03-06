@@ -52,7 +52,7 @@ use arrow::legacy::prelude::*;
 use bitflags::bitflags;
 
 use crate::series::IsSorted;
-use crate::utils::{first_non_null, last_non_null, CustomIterTools};
+use crate::utils::{first_non_null, last_non_null};
 
 #[cfg(not(feature = "dtype-categorical"))]
 pub struct RevMapping {}

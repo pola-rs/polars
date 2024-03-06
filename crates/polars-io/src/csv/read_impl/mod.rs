@@ -3,7 +3,6 @@ mod batched_read;
 
 use std::fmt;
 use std::ops::Deref;
-use std::sync::Arc;
 
 pub use batched_mmap::*;
 pub use batched_read::*;
@@ -346,7 +345,7 @@ impl<'a> CoreReader<'a> {
             bytes,
             self.sample_size,
             self.eol_char,
-            self.schema.len(),
+            Some(self.schema.len()),
             self.separator,
             self.quote_char,
         ) {
@@ -426,7 +425,7 @@ impl<'a> CoreReader<'a> {
         let chunks = get_file_chunks(
             bytes,
             n_file_chunks,
-            self.schema.len(),
+            Some(self.schema.len()),
             self.separator,
             self.quote_char,
             self.eol_char,

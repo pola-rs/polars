@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import polars.functions as F
-from polars.utils.deprecation import deprecate_renamed_function
+from polars._utils.deprecation import deprecate_renamed_function
 
 if TYPE_CHECKING:
     from polars import Expr

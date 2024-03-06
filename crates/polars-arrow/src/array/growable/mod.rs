@@ -1,8 +1,6 @@
 //! Contains the trait [`Growable`] and corresponding concreate implementations, one per concrete array,
 //! that offer the ability to create a new [`Array`] out of slices of existing [`Array`]s.
 
-use std::sync::Arc;
-
 use crate::array::*;
 use crate::datatypes::*;
 

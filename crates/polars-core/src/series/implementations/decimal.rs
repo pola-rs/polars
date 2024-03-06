@@ -1,4 +1,4 @@
-use super::{private, IntoSeries, SeriesTrait, SeriesWrap, *};
+use super::*;
 use crate::prelude::*;
 
 unsafe impl IntoSeries for DecimalChunked {
@@ -65,6 +65,12 @@ impl private::PrivateSeries for SeriesWrap<DecimalChunked> {
             .zip_with(mask, other.as_ref().as_ref())?
             .into_decimal_unchecked(self.0.precision(), self.0.scale())
             .into_series())
+    }
+    fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
+        (&self.0).into_total_eq_inner()
+    }
+    fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a> {
+        (&self.0).into_total_ord_inner()
     }
 
     #[cfg(feature = "algorithm_group_by")]
@@ -209,6 +215,17 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
     #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
         self.0.get_any_value_unchecked(index)
+    }
+
+    fn sort_with(&self, options: SortOptions) -> Series {
+        self.0
+            .sort_with(options)
+            .into_decimal_unchecked(self.0.precision(), self.0.scale())
+            .into_series()
+    }
+
+    fn arg_sort(&self, options: SortOptions) -> IdxCa {
+        self.0.arg_sort(options)
     }
 
     fn null_count(&self) -> usize {

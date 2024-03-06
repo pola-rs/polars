@@ -1,14 +1,12 @@
 //! Read parquet files in parallel from the Object Store without a third party crate.
 use std::ops::Range;
-use std::sync::Arc;
 
 use arrow::datatypes::ArrowSchemaRef;
 use bytes::Bytes;
 use object_store::path::Path as ObjectPath;
 use object_store::ObjectStore;
 use polars_core::config::{get_rg_prefetch_size, verbose};
-use polars_core::datatypes::PlHashMap;
-use polars_core::error::{to_compute_err, PolarsResult};
+use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
 use polars_parquet::read::{self as parquet2_read, RowGroupMetaData};
 use polars_parquet::write::FileMetaData;
@@ -20,7 +18,9 @@ use super::cloud::{build_object_store, CloudLocation, CloudReader};
 use super::mmap::ColumnStore;
 use crate::cloud::CloudOptions;
 use crate::parquet::read_impl::compute_row_group_range;
-use crate::pl_async::{get_runtime, with_concurrency_budget, MAX_BUDGET_PER_REQUEST};
+use crate::pl_async::{
+    get_runtime, tune_with_concurrency_budget, with_concurrency_budget, MAX_BUDGET_PER_REQUEST,
+};
 use crate::predicates::PhysicalIoExpr;
 use crate::prelude::predicates::read_this_row_group;
 
@@ -52,7 +52,7 @@ impl ParquetObjectStore {
     }
 
     async fn get_range(&self, start: usize, length: usize) -> PolarsResult<Bytes> {
-        with_concurrency_budget(1, || async {
+        tune_with_concurrency_budget(1, || async {
             self.store
                 .get_range(&self.path, start..start + length)
                 .await
@@ -63,7 +63,7 @@ impl ParquetObjectStore {
 
     async fn get_ranges(&self, ranges: &[Range<usize>]) -> PolarsResult<Vec<Bytes>> {
         // Object-store has a maximum of 10 concurrent.
-        with_concurrency_budget(
+        tune_with_concurrency_budget(
             (ranges.len() as u32).clamp(0, MAX_BUDGET_PER_REQUEST as u32),
             || async {
                 self.store

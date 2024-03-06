@@ -1,4 +1,3 @@
-use polars::lazy::dsl::lit;
 use polars::prelude::*;
 use polars::series::ops::NullBehavior;
 use pyo3::prelude::*;

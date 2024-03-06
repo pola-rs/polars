@@ -1,7 +1,6 @@
 use std::mem::ManuallyDrop;
 use std::ops::Deref;
 
-use arrow::legacy::utils::CustomIterTools;
 use polars_utils::idx_vec::IdxVec;
 use polars_utils::sync::SyncPtr;
 use rayon::iter::plumbing::UnindexedConsumer;

@@ -1,7 +1,5 @@
-use no_nulls::{rolling_apply_agg_window, RollingAggWindowNoNulls};
 use polars_error::polars_ensure;
 
-use super::mean::MeanWindow;
 use super::*;
 
 pub(super) struct SumSquaredWindow<'a, T> {

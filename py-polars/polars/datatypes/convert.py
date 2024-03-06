@@ -66,7 +66,7 @@ else:
 if TYPE_CHECKING:
     from typing import Literal
 
-    from polars.type_aliases import PolarsDataType, PythonDataType, SchemaDict
+    from polars.type_aliases import PolarsDataType, PythonDataType, SchemaDict, TimeUnit
 
 
 PY_STR_TO_DTYPE: SchemaDict = {
@@ -370,15 +370,13 @@ def dtype_to_py_type(dtype: PolarsDataType) -> PythonDataType:
 @overload
 def py_type_to_dtype(
     data_type: Any, *, raise_unmatched: Literal[True] = ...
-) -> PolarsDataType:
-    ...
+) -> PolarsDataType: ...
 
 
 @overload
 def py_type_to_dtype(
     data_type: Any, *, raise_unmatched: Literal[False]
-) -> PolarsDataType | None:
-    ...
+) -> PolarsDataType | None: ...
 
 
 def py_type_to_dtype(
@@ -485,17 +483,18 @@ def numpy_char_code_to_dtype(dtype_char: str) -> PolarsDataType:
 def maybe_cast(el: Any, dtype: PolarsDataType) -> Any:
     """Try casting a value to a value that is valid for the given Polars dtype."""
     # cast el if it doesn't match
-    from polars.utils.convert import (
-        _datetime_to_pl_timestamp,
-        _timedelta_to_pl_timedelta,
+    from polars._utils.convert import (
+        datetime_to_int,
+        timedelta_to_int,
     )
 
+    time_unit: TimeUnit
     if isinstance(el, datetime):
-        time_unit = getattr(dtype, "time_unit", None)
-        return _datetime_to_pl_timestamp(el, time_unit)
+        time_unit = getattr(dtype, "time_unit", "us")
+        return datetime_to_int(el, time_unit)
     elif isinstance(el, timedelta):
-        time_unit = getattr(dtype, "time_unit", None)
-        return _timedelta_to_pl_timedelta(el, time_unit)
+        time_unit = getattr(dtype, "time_unit", "us")
+        return timedelta_to_int(el, time_unit)
 
     py_type = dtype_to_py_type(dtype)
     if not isinstance(el, py_type):

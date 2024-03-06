@@ -5,10 +5,10 @@ from datetime import time
 from typing import TYPE_CHECKING, overload
 
 from polars import functions as F
+from polars._utils.deprecation import deprecate_saturating
+from polars._utils.parse_expr_input import parse_as_expression
+from polars._utils.wrap import wrap_expr
 from polars.functions.range._utils import parse_interval_argument
-from polars.utils._parse_expr_input import parse_as_expression
-from polars.utils._wrap import wrap_expr
-from polars.utils.deprecation import deprecate_saturating
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -29,8 +29,7 @@ def time_range(
     *,
     closed: ClosedInterval = ...,
     eager: Literal[False] = ...,
-) -> Expr:
-    ...
+) -> Expr: ...
 
 
 @overload
@@ -41,8 +40,7 @@ def time_range(
     *,
     closed: ClosedInterval = ...,
     eager: Literal[True],
-) -> Series:
-    ...
+) -> Series: ...
 
 
 @overload
@@ -53,8 +51,7 @@ def time_range(
     *,
     closed: ClosedInterval = ...,
     eager: bool,
-) -> Series | Expr:
-    ...
+) -> Series | Expr: ...
 
 
 def time_range(
@@ -166,8 +163,7 @@ def time_ranges(
     *,
     closed: ClosedInterval = ...,
     eager: Literal[False] = ...,
-) -> Expr:
-    ...
+) -> Expr: ...
 
 
 @overload
@@ -178,8 +174,7 @@ def time_ranges(
     *,
     closed: ClosedInterval = ...,
     eager: Literal[True],
-) -> Series:
-    ...
+) -> Series: ...
 
 
 @overload
@@ -190,8 +185,7 @@ def time_ranges(
     *,
     closed: ClosedInterval = ...,
     eager: bool,
-) -> Series | Expr:
-    ...
+) -> Series | Expr: ...
 
 
 def time_ranges(

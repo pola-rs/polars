@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from polars.datatypes.constants import N_INFER_DEFAULT
-from polars.series.utils import expr_dispatch
-from polars.utils.deprecation import (
+from polars._utils.deprecation import (
     deprecate_renamed_function,
     deprecate_renamed_parameter,
 )
+from polars.datatypes.constants import N_INFER_DEFAULT
+from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
     from polars import Expr, Series
@@ -635,8 +635,8 @@ class StringNameSpace:
         """
 
     def decode(self, encoding: TransferEncoding, *, strict: bool = True) -> Series:
-        """
-        Decode a value using the provided encoding.
+        r"""
+        Decode values using the provided encoding.
 
         Parameters
         ----------
@@ -645,6 +645,23 @@ class StringNameSpace:
         strict
             Raise an error if the underlying value cannot be decoded,
             otherwise mask out with a null value.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`Binary`.
+
+        Examples
+        --------
+        >>> s = pl.Series("color", ["000000", "ffff00", "0000ff"])
+        >>> s.str.decode("hex")
+        shape: (3,)
+        Series: 'color' [binary]
+        [
+                b"\x00\x00\x00"
+                b"\xff\xff\x00"
+                b"\x00\x00\xff"
+        ]
         """
 
     def encode(self, encoding: TransferEncoding) -> Series:

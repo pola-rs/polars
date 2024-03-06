@@ -23,6 +23,14 @@ from typing import (
 
 import polars._reexport as pl
 from polars import functions as F
+from polars._utils.various import (
+    _is_generator,
+    arrlen,
+    find_stacklevel,
+    parse_version,
+    range_to_series,
+)
+from polars._utils.wrap import wrap_df, wrap_s
 from polars.datatypes import (
     INTEGER_DTYPES,
     N_INFER_DEFAULT,
@@ -70,14 +78,6 @@ from polars.exceptions import (
     TimeZoneAwareConstructorWarning,
 )
 from polars.meta import get_index_type, thread_pool_size
-from polars.utils._wrap import wrap_df, wrap_s
-from polars.utils.various import (
-    _is_generator,
-    arrlen,
-    find_stacklevel,
-    parse_version,
-    range_to_series,
-)
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyDataFrame, PySeries
@@ -488,7 +488,7 @@ def sequence_to_pyseries(
         )
         if dtype in (Date, Datetime, Duration, Time, Categorical, Boolean, Enum):
             if pyseries.dtype() != dtype:
-                pyseries = pyseries.cast(dtype, strict=True)
+                pyseries = pyseries.cast(dtype, strict=strict)
         return pyseries
 
     elif dtype == Struct:
@@ -531,15 +531,21 @@ def sequence_to_pyseries(
             # We use the AnyValue builder to create the datetime array
             # We store the values internally as UTC and set the timezone
             py_series = PySeries.new_from_any_values(name, values, strict)
+
             time_unit = getattr(dtype, "time_unit", None)
+            time_zone = getattr(dtype, "time_zone", None)
+
             if time_unit is None or values_dtype == Date:
                 s = wrap_s(py_series)
             else:
                 s = wrap_s(py_series).dt.cast_time_unit(time_unit)
-            time_zone = getattr(dtype, "time_zone", None)
 
             if (values_dtype == Date) & (dtype == Datetime):
-                return s.cast(Datetime(time_unit)).dt.replace_time_zone(time_zone)._s
+                return (
+                    s.cast(Datetime(time_unit or "us"))
+                    .dt.replace_time_zone(time_zone)
+                    ._s
+                )
 
             if (dtype == Datetime) and (
                 value.tzinfo is not None or time_zone is not None
@@ -1568,19 +1574,21 @@ def numpy_to_pydf(
 
 
 def arrow_to_pydf(
-    data: pa.Table,
+    data: pa.Table | pa.RecordBatch,
     schema: SchemaDefinition | None = None,
     *,
     schema_overrides: SchemaDict | None = None,
     rechunk: bool = True,
 ) -> PyDataFrame:
-    """Construct a PyDataFrame from an Arrow Table."""
+    """Construct a PyDataFrame from an Arrow Table or RecordBatch."""
     original_schema = schema
     column_names, schema_overrides = _unpack_schema(
         (schema or data.column_names), schema_overrides=schema_overrides
     )
     try:
         if column_names != data.column_names:
+            if isinstance(data, pa.RecordBatch):
+                data = pa.Table.from_batches([data])
             data = data.rename_columns(column_names)
     except pa.lib.ArrowInvalid as e:
         msg = "dimensions of columns arg must match data dimensions"

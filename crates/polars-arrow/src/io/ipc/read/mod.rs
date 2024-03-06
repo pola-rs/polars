@@ -17,6 +17,7 @@ mod schema;
 mod stream;
 
 pub use error::OutOfSpecKind;
+pub use file::get_row_count;
 
 #[cfg(feature = "io_ipc_read_async")]
 #[cfg_attr(docsrs, doc(cfg(feature = "io_ipc_read_async")))]

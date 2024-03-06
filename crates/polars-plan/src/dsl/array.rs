@@ -4,7 +4,7 @@ use polars_ops::chunked_array::array::{
     arr_default_struct_name_gen, ArrToStructNameGenerator, ToStruct,
 };
 
-use crate::dsl::function_expr::{ArrayFunction, FunctionExpr};
+use crate::dsl::function_expr::ArrayFunction;
 use crate::prelude::*;
 
 /// Specialized expressions for [`Series`] of [`DataType::Array`].

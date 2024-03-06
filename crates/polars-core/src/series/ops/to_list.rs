@@ -126,7 +126,6 @@ impl Series {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::chunked_array::builder::get_list_builder;
 
     #[test]
     fn test_to_list() -> PolarsResult<()> {

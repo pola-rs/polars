@@ -1,5 +1,3 @@
-use std::iter::FromIterator;
-
 use super::{BooleanArray, MutableBooleanArray};
 
 impl<P: AsRef<[Option<bool>]>> From<P> for BooleanArray {

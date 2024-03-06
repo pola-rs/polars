@@ -16,7 +16,6 @@ pub mod unstable;
 use std::borrow::Cow;
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
-use std::sync::Arc;
 
 use ahash::RandomState;
 use arrow::compute::aggregate::estimated_bytes_size;
@@ -913,8 +912,6 @@ where
 
 #[cfg(test)]
 mod test {
-    use std::convert::TryFrom;
-
     use crate::prelude::*;
     use crate::series::*;
 

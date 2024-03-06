@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import polars._reexport as pl
+from polars._utils.deprecation import deprecate_renamed_parameter
 from polars.datatypes import N_INFER_DEFAULT
-from polars.utils.deprecation import deprecate_renamed_parameter
 
 if TYPE_CHECKING:
     from io import IOBase

@@ -1,8 +1,6 @@
 use std::borrow::Cow;
 use std::collections::VecDeque;
-use std::convert::TryFrom;
 use std::ops::{Deref, Range};
-use std::sync::Arc;
 
 use arrow::array::new_empty_array;
 use arrow::datatypes::ArrowSchemaRef;
@@ -550,16 +548,25 @@ impl BatchedParquetReader {
         chunk_size: usize,
         use_statistics: bool,
         hive_partition_columns: Option<Vec<Series>>,
+        mut parallel: ParallelStrategy,
     ) -> PolarsResult<Self> {
         let n_row_groups = metadata.row_groups.len();
         let projection = projection.unwrap_or_else(|| (0usize..schema.len()).collect::<Vec<_>>());
 
-        let parallel =
-            if n_row_groups > projection.len() || n_row_groups > POOL.current_num_threads() {
-                ParallelStrategy::RowGroups
-            } else {
-                ParallelStrategy::Columns
-            };
+        parallel = match parallel {
+            ParallelStrategy::Auto => {
+                if n_row_groups > projection.len() || n_row_groups > POOL.current_num_threads() {
+                    ParallelStrategy::RowGroups
+                } else {
+                    ParallelStrategy::Columns
+                }
+            },
+            _ => parallel,
+        };
+
+        if let (ParallelStrategy::Columns, true) = (parallel, projection.len() == 1) {
+            parallel = ParallelStrategy::None;
+        }
 
         Ok(BatchedParquetReader {
             row_group_fetcher,
@@ -599,7 +606,11 @@ impl BatchedParquetReader {
 
     pub async fn next_batches(&mut self, n: usize) -> PolarsResult<Option<Vec<DataFrame>>> {
         if self.limit == 0 && self.has_returned {
-            return Ok(None);
+            return if self.chunks_fifo.is_empty() {
+                Ok(None)
+            } else {
+                Ok(Some(self.chunks_fifo.drain(..n).collect()))
+            };
         }
 
         let mut skipped_all_rgs = false;

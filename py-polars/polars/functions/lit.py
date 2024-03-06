@@ -5,15 +5,16 @@ from datetime import date, datetime, time, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 
 import polars._reexport as pl
+from polars._utils.convert import (
+    date_to_int,
+    datetime_to_int,
+    time_to_int,
+    timedelta_to_int,
+)
+from polars._utils.wrap import wrap_expr
 from polars.datatypes import Date, Datetime, Duration, Time
 from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
-from polars.utils._wrap import wrap_expr
-from polars.utils.convert import (
-    _datetime_to_pl_timestamp,
-    _time_to_pl_time,
-    _timedelta_to_pl_timedelta,
-)
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -35,7 +36,8 @@ def lit(
     value
         Value that should be used as a `literal`.
     dtype
-        Optionally define a dtype.
+        The data type of the resulting expression.
+        If set to `None` (default), the data type is inferred from the `value` input.
     allow_object
         If type is unknown use an 'object' type.
         By default, we will raise a `ValueException`
@@ -43,7 +45,7 @@ def lit(
 
     Notes
     -----
-    Expected datatypes
+    Expected datatypes:
 
     - `pl.lit([])` -> empty  Series Float32
     - `pl.lit([1, 2, 3])` -> Series Int64
@@ -75,41 +77,44 @@ def lit(
     time_unit: TimeUnit
 
     if isinstance(value, datetime):
-        time_unit = "us" if dtype is None else getattr(dtype, "time_unit", "us")
-        time_zone = (
-            value.tzinfo
-            if getattr(dtype, "time_zone", None) is None
-            else getattr(dtype, "time_zone", None)
-        )
-        if (
-            value.tzinfo is not None
-            and getattr(dtype, "time_zone", None) is not None
-            and dtype.time_zone != str(value.tzinfo)  # type: ignore[union-attr]
-        ):
-            msg = f"time zone of dtype ({dtype.time_zone!r}) differs from time zone of value ({value.tzinfo!r})"  # type: ignore[union-attr]
-            raise TypeError(msg)
-        e = lit(
-            _datetime_to_pl_timestamp(value.replace(tzinfo=timezone.utc), time_unit)
-        ).cast(Datetime(time_unit))
-        if time_zone is not None:
-            return e.dt.replace_time_zone(
-                str(time_zone), ambiguous="earliest" if value.fold == 0 else "latest"
-            )
+        if dtype is not None and (tu := getattr(dtype, "time_unit", "us")) is not None:
+            time_unit = tu  # type: ignore[assignment]
         else:
-            return e
+            time_unit = "us"
+
+        time_zone: str | None = getattr(dtype, "time_zone", None)
+        if (tzinfo := value.tzinfo) is not None:
+            tzinfo_str = str(tzinfo)
+            if time_zone is not None and time_zone != tzinfo_str:
+                msg = f"time zone of dtype ({time_zone!r}) differs from time zone of value ({tzinfo!r})"
+                raise TypeError(msg)
+            time_zone = tzinfo_str
+
+        dt_utc = value.replace(tzinfo=timezone.utc)
+        dt_int = datetime_to_int(dt_utc, time_unit)
+        expr = lit(dt_int).cast(Datetime(time_unit))
+        if time_zone is not None:
+            expr = expr.dt.replace_time_zone(
+                time_zone, ambiguous="earliest" if value.fold == 0 else "latest"
+            )
+        return expr
 
     elif isinstance(value, timedelta):
-        if dtype is None or (time_unit := getattr(dtype, "time_unit", "us")) is None:
+        if dtype is not None and (tu := getattr(dtype, "time_unit", "us")) is not None:
+            time_unit = tu  # type: ignore[assignment]
+        else:
             time_unit = "us"
-        return lit(_timedelta_to_pl_timedelta(value, time_unit)).cast(
-            Duration(time_unit)
-        )
+
+        td_int = timedelta_to_int(value, time_unit)
+        return lit(td_int).cast(Duration(time_unit))
 
     elif isinstance(value, time):
-        return lit(_time_to_pl_time(value)).cast(Time)
+        time_int = time_to_int(value)
+        return lit(time_int).cast(Time)
 
     elif isinstance(value, date):
-        return lit(datetime(value.year, value.month, value.day)).cast(Date)
+        date_int = date_to_int(value)
+        return lit(date_int).cast(Date)
 
     elif isinstance(value, pl.Series):
         value = value._s

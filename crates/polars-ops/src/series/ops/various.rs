@@ -1,5 +1,3 @@
-#[cfg(feature = "hash")]
-use polars_core::export::ahash;
 #[cfg(feature = "dtype-struct")]
 use polars_core::prelude::sort::arg_sort_multiple::_get_rows_encoded_ca;
 use polars_core::prelude::*;

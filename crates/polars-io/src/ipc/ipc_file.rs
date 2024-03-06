@@ -33,7 +33,6 @@
 //! assert!(df.equals(&df_read));
 //! ```
 use std::io::{Read, Seek};
-use std::sync::Arc;
 
 use arrow::datatypes::ArrowSchemaRef;
 use arrow::io::ipc::read;

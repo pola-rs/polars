@@ -1,10 +1,7 @@
-use polars_core::frame::explode::MeltArgs;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
 
 use super::*;
-#[cfg(feature = "range")]
-use crate::dsl::arg_sort_by;
 
 #[test]
 fn test_lazy_with_column() {

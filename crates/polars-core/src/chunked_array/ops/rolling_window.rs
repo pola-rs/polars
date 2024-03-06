@@ -30,7 +30,6 @@ impl Default for RollingOptionsFixedWindow {
 mod inner_mod {
     use std::ops::SubAssign;
 
-    use arrow::array::{Array, PrimitiveArray};
     use arrow::bitmap::MutableBitmap;
     use arrow::legacy::bit_util::unset_bit_raw;
     use arrow::legacy::trusted_len::TrustedLenPush;

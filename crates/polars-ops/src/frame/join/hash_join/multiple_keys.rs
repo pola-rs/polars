@@ -1,11 +1,7 @@
 use arrow::array::{MutablePrimitiveArray, PrimitiveArray};
-use hashbrown::hash_map::RawEntryMut;
 use hashbrown::HashMap;
-use polars_core::hashing::{
-    populate_multiple_key_hashmap, IdBuildHasher, IdxHash, _HASHMAP_INIT_SIZE,
-};
-use polars_core::utils::{_set_partition_size, split_df};
-use polars_core::POOL;
+use polars_core::hashing::{populate_multiple_key_hashmap, IdBuildHasher, IdxHash};
+use polars_core::utils::split_df;
 use polars_utils::hashing::hash_to_partition;
 use polars_utils::idx_vec::IdxVec;
 use polars_utils::unitvec;
@@ -325,12 +321,13 @@ pub fn _left_join_multiple_keys(
                             Some((_, indexes_b)) => {
                                 result_idx_left
                                     .extend(std::iter::repeat(idx_a).take(indexes_b.len()));
-                                result_idx_right.extend(indexes_b.iter().copied().map(Some))
+                                let indexes_b = bytemuck::cast_slice(indexes_b);
+                                result_idx_right.extend_from_slice(indexes_b);
                             },
                             // only left values, right = null
                             None => {
                                 result_idx_left.push(idx_a);
-                                result_idx_right.push(None);
+                                result_idx_right.push(NullableIdxSize::null());
                             },
                         }
                         idx_a += 1;

@@ -13,6 +13,8 @@ use crate::buffer::Buffer;
 use crate::datatypes::PrimitiveType;
 use crate::types::NativeType;
 
+pub const INLINE_VIEW_SIZE: u32 = 12;
+
 // We use this instead of u128 because we want alignment of <= 8 bytes.
 #[derive(Debug, Copy, Clone, Default)]
 #[repr(C)]
@@ -148,8 +150,8 @@ where
 {
     for view in views {
         let len = view.length;
-        if len <= 12 {
-            if len < 12 && view.as_u128() >> (32 + len * 8) != 0 {
+        if len <= INLINE_VIEW_SIZE {
+            if len < INLINE_VIEW_SIZE && view.as_u128() >> (32 + len * 8) != 0 {
                 polars_bail!(ComputeError: "view contained non-zero padding in prefix");
             }
 
@@ -193,10 +195,11 @@ pub(super) fn validate_utf8_view(views: &[View], buffers: &[Buffer<u8>]) -> Pola
 /// The views and buffers must uphold the invariants of BinaryView otherwise we will go OOB.
 pub(super) unsafe fn validate_utf8_only(
     views: &[View],
-    buffers: &[Buffer<u8>],
+    buffers_to_check: &[Buffer<u8>],
+    all_buffers: &[Buffer<u8>],
 ) -> PolarsResult<()> {
     // If we have no buffers, we don't have to branch.
-    if buffers.is_empty() {
+    if all_buffers.is_empty() {
         for view in views {
             let len = view.length;
             validate_utf8(
@@ -208,7 +211,7 @@ pub(super) unsafe fn validate_utf8_only(
     }
 
     // Fast path if all buffers are ascii
-    if buffers.iter().all(|buf| buf.is_ascii()) {
+    if buffers_to_check.iter().all(|buf| buf.is_ascii()) {
         for view in views {
             let len = view.length;
             if len <= 12 {
@@ -229,7 +232,7 @@ pub(super) unsafe fn validate_utf8_only(
             } else {
                 let buffer_idx = view.buffer_idx;
                 let offset = view.offset;
-                let data = buffers.get_unchecked_release(buffer_idx as usize);
+                let data = all_buffers.get_unchecked_release(buffer_idx as usize);
 
                 let start = offset as usize;
                 let end = start + len as usize;

@@ -1,6 +1,4 @@
 use std::collections::BTreeMap;
-use std::convert::Into;
-use std::string::ToString;
 
 use super::*;
 #[cfg(feature = "object")]
@@ -209,6 +207,27 @@ impl DataType {
     /// Check if this [`DataType`] is a boolean
     pub fn is_bool(&self) -> bool {
         matches!(self, DataType::Boolean)
+    }
+
+    /// Check if this [`DataType`] is a list
+    pub fn is_list(&self) -> bool {
+        matches!(self, DataType::List(_))
+    }
+
+    pub fn is_nested(&self) -> bool {
+        self.is_list() || self.is_struct()
+    }
+
+    /// Check if this [`DataType`] is a struct
+    pub fn is_struct(&self) -> bool {
+        #[cfg(feature = "dtype-struct")]
+        {
+            matches!(self, DataType::Struct(_))
+        }
+        #[cfg(not(feature = "dtype-struct"))]
+        {
+            false
+        }
     }
 
     pub fn is_binary(&self) -> bool {

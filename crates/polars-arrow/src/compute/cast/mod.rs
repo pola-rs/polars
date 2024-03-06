@@ -17,15 +17,16 @@ pub use boolean_to::*;
 pub use decimal_to::*;
 pub use dictionary_to::*;
 use polars_error::{polars_bail, polars_ensure, polars_err, PolarsResult};
+use polars_utils::IdxSize;
 pub use primitive_to::*;
 pub use utf8_to::*;
 
 use crate::array::*;
 use crate::compute::cast::binview_to::{
-    utf8view_to_date32_dyn, utf8view_to_naive_timestamp_dyn, view_to_binary,
+    binview_to_dictionary, utf8view_to_date32_dyn, utf8view_to_dictionary,
+    utf8view_to_naive_timestamp_dyn, view_to_binary,
 };
 use crate::datatypes::*;
-use crate::legacy::index::IdxSize;
 use crate::match_integer_type;
 use crate::offset::{Offset, Offsets};
 use crate::temporal_conversions::utf8view_to_timestamp;
@@ -293,6 +294,12 @@ pub fn cast(
         (Struct(_), _) | (_, Struct(_)) => polars_bail!(InvalidOperation:
             "Cannot cast from struct to other types"
         ),
+        (Dictionary(index_type, ..), _) => match_integer_type!(index_type, |$T| {
+            dictionary_cast_dyn::<$T>(array, to_type, options)
+        }),
+        (_, Dictionary(index_type, value_type, _)) => match_integer_type!(index_type, |$T| {
+            cast_to_dictionary::<$T>(array, value_type, options)
+        }),
         // not supported by polars
         // (List(_), FixedSizeList(inner, size)) => cast_list_to_fixed_size_list::<i32>(
         //     array.as_any().downcast_ref().unwrap(),
@@ -320,11 +327,6 @@ pub fn cast(
             options,
         )
         .map(|x| x.boxed()),
-        // not supported by polars
-        // (List(_), List(_)) => {
-        //     cast_list::<i32>(array.as_any().downcast_ref().unwrap(), to_type, options)
-        //         .map(|x| x.boxed())
-        // },
         (BinaryView, _) => match to_type {
             Utf8View => array
                 .as_any()
@@ -430,12 +432,6 @@ pub fn cast(
             }
         },
 
-        (Dictionary(index_type, ..), _) => match_integer_type!(index_type, |$T| {
-            dictionary_cast_dyn::<$T>(array, to_type, options)
-        }),
-        (_, Dictionary(index_type, value_type, _)) => match_integer_type!(index_type, |$T| {
-            cast_to_dictionary::<$T>(array, value_type, options)
-        }),
         (_, Boolean) => match from_type {
             UInt8 => primitive_to_boolean_dyn::<u8>(array, to_type.clone()),
             UInt16 => primitive_to_boolean_dyn::<u16>(array, to_type.clone()),
@@ -774,6 +770,14 @@ fn cast_to_dictionary<K: DictionaryKey>(
         ArrowDataType::UInt16 => primitive_to_dictionary_dyn::<u16, K>(array),
         ArrowDataType::UInt32 => primitive_to_dictionary_dyn::<u32, K>(array),
         ArrowDataType::UInt64 => primitive_to_dictionary_dyn::<u64, K>(array),
+        ArrowDataType::BinaryView => {
+            binview_to_dictionary::<K>(array.as_any().downcast_ref().unwrap())
+                .map(|arr| arr.boxed())
+        },
+        ArrowDataType::Utf8View => {
+            utf8view_to_dictionary::<K>(array.as_any().downcast_ref().unwrap())
+                .map(|arr| arr.boxed())
+        },
         ArrowDataType::LargeUtf8 => utf8_to_dictionary_dyn::<i64, K>(array),
         ArrowDataType::LargeBinary => binary_to_dictionary_dyn::<i64, K>(array),
         ArrowDataType::Time64(_) => primitive_to_dictionary_dyn::<i64, K>(array),

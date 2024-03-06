@@ -1,8 +1,7 @@
 #[cfg(feature = "group_by_list")]
 use arrow::legacy::kernels::list_bytes_iter::numeric_list_bytes_iter;
 use arrow::legacy::kernels::sort_partition::{create_clean_partitions, partition_to_groups};
-use arrow::legacy::prelude::*;
-use polars_utils::total_ord::TotalHash;
+use polars_utils::total_ord::{ToTotalOrd, TotalHash};
 
 use super::*;
 use crate::config::verbose;
@@ -13,7 +12,7 @@ use crate::utils::flatten::flatten_par;
 pub trait IntoGroupsProxy {
     /// Create the tuples need for a group_by operation.
     ///     * The first value in the tuple is the first index of the group.
-    ///     * The second value in the tuple is are the indexes of the groups including the first value.
+    ///     * The second value in the tuple is the indexes of the groups including the first value.
     fn group_tuples(&self, _multithreaded: bool, _sorted: bool) -> PolarsResult<GroupsProxy> {
         unimplemented!()
     }
@@ -27,7 +26,8 @@ fn group_multithreaded<T: PolarsDataType>(ca: &ChunkedArray<T>) -> bool {
 fn num_groups_proxy<T>(ca: &ChunkedArray<T>, multithreaded: bool, sorted: bool) -> GroupsProxy
 where
     T: PolarsNumericType,
-    T::Native: Send + Sync + Copy + TotalHash + TotalEq + DirtyHash,
+    T::Native: TotalHash + TotalEq + DirtyHash + ToTotalOrd,
+    <T::Native as ToTotalOrd>::TotalOrdItem: Send + Sync + Copy + Hash + Eq + DirtyHash,
 {
     if multithreaded && group_multithreaded(ca) {
         let n_partitions = _set_partition_size();

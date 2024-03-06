@@ -1,10 +1,5 @@
-use std::sync::Arc;
-
 use super::*;
-use crate::dsl::function_expr::FunctionExpr;
-use crate::logical_plan::functions::FunctionNode;
 use crate::logical_plan::iterator::*;
-use crate::utils::aexpr_to_leaf_names;
 
 /// If we realize that a predicate drops nulls on a subset
 /// we replace it with an explicit df.drop_nulls call, as this

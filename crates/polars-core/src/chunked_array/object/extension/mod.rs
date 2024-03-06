@@ -4,7 +4,7 @@ pub(crate) mod polars_extension;
 
 use std::mem;
 
-use arrow::array::{Array, FixedSizeBinaryArray};
+use arrow::array::FixedSizeBinaryArray;
 use arrow::bitmap::MutableBitmap;
 use arrow::buffer::Buffer;
 use polars_extension::PolarsExtension;

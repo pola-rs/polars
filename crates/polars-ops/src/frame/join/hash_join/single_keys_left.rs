@@ -1,7 +1,7 @@
 use polars_core::utils::flatten::flatten_par;
 use polars_utils::hashing::{hash_to_partition, DirtyHash};
 use polars_utils::nulls::IsNull;
-use polars_utils::total_ord::{TotalEq, TotalHash, TotalOrdWrap};
+use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 
 use super::*;
 
@@ -13,19 +13,22 @@ unsafe fn apply_mapping(idx: Vec<IdxSize>, chunk_mapping: &[ChunkId]) -> Vec<Chu
 }
 
 #[cfg(feature = "chunked_ids")]
-unsafe fn apply_opt_mapping(
-    idx: Vec<Option<IdxSize>>,
-    chunk_mapping: &[ChunkId],
-) -> Vec<Option<ChunkId>> {
+unsafe fn apply_opt_mapping(idx: Vec<NullableIdxSize>, chunk_mapping: &[ChunkId]) -> Vec<ChunkId> {
     idx.iter()
-        .map(|opt_idx| opt_idx.map(|idx| *chunk_mapping.get_unchecked(idx as usize)))
+        .map(|opt_idx| {
+            if opt_idx.is_null_idx() {
+                ChunkId::null()
+            } else {
+                *chunk_mapping.get_unchecked(opt_idx.idx() as usize)
+            }
+        })
         .collect()
 }
 
 #[cfg(feature = "chunked_ids")]
 pub(super) fn finish_left_join_mappings(
     result_idx_left: Vec<IdxSize>,
-    result_idx_right: Vec<Option<IdxSize>>,
+    result_idx_right: Vec<NullableIdxSize>,
     chunk_mapping_left: Option<&[ChunkId]>,
     chunk_mapping_right: Option<&[ChunkId]>,
 ) -> LeftJoinIds {
@@ -46,7 +49,7 @@ pub(super) fn finish_left_join_mappings(
 #[cfg(not(feature = "chunked_ids"))]
 pub(super) fn finish_left_join_mappings(
     _result_idx_left: Vec<IdxSize>,
-    _result_idx_right: Vec<Option<IdxSize>>,
+    _result_idx_right: Vec<NullableIdxSize>,
     _chunk_mapping_left: Option<&[ChunkId]>,
     _chunk_mapping_right: Option<&[ChunkId]>,
 ) -> LeftJoinIds {
@@ -113,7 +116,8 @@ pub(super) fn hash_join_tuples_left<T, I>(
 where
     I: IntoIterator<Item = T>,
     <I as IntoIterator>::IntoIter: Send + Sync + Clone,
-    T: Send + Sync + Copy + TotalHash + TotalEq + DirtyHash + IsNull,
+    T: Send + Sync + Copy + TotalHash + TotalEq + DirtyHash + IsNull + ToTotalOrd,
+    <T as ToTotalOrd>::TotalOrdItem: Send + Sync + Copy + Hash + Eq + DirtyHash + IsNull,
 {
     let probe = probe.into_iter().map(|i| i.into_iter()).collect::<Vec<_>>();
     let build = build.into_iter().map(|i| i.into_iter()).collect::<Vec<_>>();
@@ -148,7 +152,7 @@ where
                 let mut result_idx_right = Vec::with_capacity(probe.size_hint().1.unwrap());
 
                 probe.enumerate().for_each(|(idx_a, k)| {
-                    let k = TotalOrdWrap(k);
+                    let k = k.to_total_ord();
                     let idx_a = (idx_a + offset) as IdxSize;
                     // probe table that contains the hashed value
                     let current_probe_table = unsafe {
@@ -162,12 +166,12 @@ where
                         // left and right matches
                         Some(indexes_b) => {
                             result_idx_left.extend(std::iter::repeat(idx_a).take(indexes_b.len()));
-                            result_idx_right.extend(indexes_b.iter().copied().map(Some))
+                            result_idx_right.extend_from_slice(bytemuck::cast_slice(indexes_b));
                         },
                         // only left values, right = null
                         None => {
                             result_idx_left.push(idx_a);
-                            result_idx_right.push(None);
+                            result_idx_right.push(NullableIdxSize::null());
                         },
                     }
                 });

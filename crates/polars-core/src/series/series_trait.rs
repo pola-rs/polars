@@ -1,9 +1,6 @@
 use std::any::Any;
 use std::borrow::Cow;
-#[cfg(feature = "temporal")]
-use std::sync::Arc;
 
-use arrow::legacy::prelude::QuantileInterpolOptions;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -46,8 +43,6 @@ pub(crate) mod private {
     use super::*;
     use crate::chunked_array::ops::compare_inner::{TotalEqInner, TotalOrdInner};
     use crate::chunked_array::Settings;
-    #[cfg(feature = "algorithm_group_by")]
-    use crate::frame::group_by::GroupsProxy;
 
     pub trait PrivateSeriesNumeric {
         fn bit_repr_is_large(&self) -> bool {

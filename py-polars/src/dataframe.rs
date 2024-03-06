@@ -4,16 +4,12 @@ use std::ops::Deref;
 
 use either::Either;
 use polars::frame::row::{rows_to_schema_supertypes, Row};
-use polars::frame::NullStrategy;
 #[cfg(feature = "avro")]
 use polars::io::avro::AvroCompression;
-#[cfg(feature = "ipc")]
-use polars::io::ipc::IpcCompression;
 use polars::io::mmap::ReaderBytes;
 use polars::io::RowIndex;
 use polars::prelude::*;
 use polars_core::export::arrow::datatypes::IntegerType;
-use polars_core::frame::explode::MeltArgs;
 use polars_core::frame::*;
 use polars_core::utils::arrow::compute::cast::CastOptions;
 #[cfg(feature = "pivot")]
@@ -1222,11 +1218,12 @@ impl PyDataFrame {
     }
 
     #[cfg(feature = "pivot")]
+    #[pyo3(signature = (index, columns, values, maintain_order, sort_columns, aggregate_expr, separator))]
     pub fn pivot_expr(
         &self,
-        values: Vec<String>,
         index: Vec<String>,
         columns: Vec<String>,
+        values: Option<Vec<String>>,
         maintain_order: bool,
         sort_columns: bool,
         aggregate_expr: Option<PyExpr>,
@@ -1236,9 +1233,9 @@ impl PyDataFrame {
         let agg_expr = aggregate_expr.map(|expr| expr.inner);
         let df = fun(
             &self.df,
-            values,
             index,
             columns,
+            values,
             sort_columns,
             agg_expr,
             separator,

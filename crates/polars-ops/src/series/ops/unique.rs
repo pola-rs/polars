@@ -1,17 +1,20 @@
+use std::hash::Hash;
+
 use polars_core::hashing::_HASHMAP_INIT_SIZE;
 use polars_core::prelude::*;
 use polars_core::utils::NoNull;
 use polars_core::with_match_physical_numeric_polars_type;
-use polars_utils::total_ord::{TotalEq, TotalHash, TotalOrdWrap};
+use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 
 fn unique_counts_helper<I, J>(items: I) -> IdxCa
 where
     I: Iterator<Item = J>,
-    J: TotalHash + TotalEq,
+    J: TotalHash + TotalEq + ToTotalOrd,
+    <J as ToTotalOrd>::TotalOrdItem: Hash + Eq,
 {
     let mut map = PlIndexMap::with_capacity_and_hasher(_HASHMAP_INIT_SIZE, Default::default());
     for item in items {
-        let item = TotalOrdWrap(item);
+        let item = item.to_total_ord();
         map.entry(item)
             .and_modify(|cnt| {
                 *cnt += 1;

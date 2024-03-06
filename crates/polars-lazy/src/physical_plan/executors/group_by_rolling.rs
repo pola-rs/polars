@@ -1,8 +1,3 @@
-#[cfg(feature = "dynamic_group_by")]
-use polars_core::frame::group_by::GroupBy;
-#[cfg(feature = "dynamic_group_by")]
-use polars_time::RollingGroupOptions;
-
 use super::*;
 
 #[cfg_attr(not(feature = "dynamic_group_by"), allow(dead_code))]

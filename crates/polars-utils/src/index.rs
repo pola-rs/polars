@@ -1,8 +1,73 @@
+use std::fmt::{Debug, Formatter};
+
 use polars_error::{polars_bail, polars_ensure, PolarsResult};
 
 use crate::nulls::IsNull;
 use crate::slice::GetSaferUnchecked;
-use crate::IdxSize;
+
+#[cfg(not(feature = "bigidx"))]
+pub type IdxSize = u32;
+#[cfg(feature = "bigidx")]
+pub type IdxSize = u64;
+
+#[derive(Clone, Copy)]
+#[repr(transparent)]
+pub struct NullableIdxSize {
+    pub inner: IdxSize,
+}
+
+impl PartialEq<Self> for NullableIdxSize {
+    fn eq(&self, other: &Self) -> bool {
+        self.inner == other.inner
+    }
+}
+
+impl Eq for NullableIdxSize {}
+
+unsafe impl bytemuck::Zeroable for NullableIdxSize {}
+unsafe impl bytemuck::AnyBitPattern for NullableIdxSize {}
+unsafe impl bytemuck::NoUninit for NullableIdxSize {}
+
+impl Debug for NullableIdxSize {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self.inner)
+    }
+}
+
+impl NullableIdxSize {
+    #[inline(always)]
+    pub fn is_null_idx(&self) -> bool {
+        self.inner == IdxSize::MAX
+    }
+
+    #[inline(always)]
+    pub const fn null() -> Self {
+        Self {
+            inner: IdxSize::MAX,
+        }
+    }
+
+    #[inline(always)]
+    pub fn idx(&self) -> IdxSize {
+        self.inner
+    }
+
+    #[inline(always)]
+    pub fn to_opt(&self) -> Option<IdxSize> {
+        if self.is_null_idx() {
+            None
+        } else {
+            Some(self.idx())
+        }
+    }
+}
+
+impl From<IdxSize> for NullableIdxSize {
+    #[inline(always)]
+    fn from(value: IdxSize) -> Self {
+        Self { inner: value }
+    }
+}
 
 pub trait Bounded {
     fn len(&self) -> usize;
@@ -116,15 +181,38 @@ impl_to_idx!(i64, i64);
 
 // Allows for 2^24 (~16M) chunks
 // Leaves 2^40 (~1T) rows per chunk
-const CHUNK_BITS: u64 = 24;
+const DEFAULT_CHUNK_BITS: u64 = 24;
 
-#[derive(Clone, Copy, Debug)]
-#[repr(C)]
-pub struct ChunkId {
+#[derive(Clone, Copy)]
+#[repr(transparent)]
+pub struct ChunkId<const CHUNK_BITS: u64 = DEFAULT_CHUNK_BITS> {
     swizzled: u64,
 }
 
-impl ChunkId {
+pub type NullableChunkId = ChunkId;
+
+impl Debug for ChunkId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        if self.is_null() {
+            write!(f, "NULL")
+        } else {
+            let (chunk, row) = self.extract();
+            write!(f, "({chunk}, {row})")
+        }
+    }
+}
+
+impl<const CHUNK_BITS: u64> ChunkId<CHUNK_BITS> {
+    #[inline(always)]
+    pub const fn null() -> Self {
+        Self { swizzled: u64::MAX }
+    }
+
+    #[inline(always)]
+    pub fn is_null(&self) -> bool {
+        self.swizzled == u64::MAX
+    }
+
     #[inline(always)]
     #[allow(clippy::unnecessary_cast)]
     pub fn store(chunk: IdxSize, row: IdxSize) -> Self {
@@ -139,9 +227,14 @@ impl ChunkId {
     pub fn extract(self) -> (IdxSize, IdxSize) {
         let row = (self.swizzled >> CHUNK_BITS) as IdxSize;
 
-        const MASK: IdxSize = IdxSize::MAX << CHUNK_BITS;
-        let chunk = (self.swizzled as IdxSize) & !MASK;
+        let mask: IdxSize = IdxSize::MAX << CHUNK_BITS;
+        let chunk = (self.swizzled as IdxSize) & !mask;
         (chunk, row)
+    }
+
+    #[inline(always)]
+    pub fn inner_mut(&mut self) -> &mut u64 {
+        &mut self.swizzled
     }
 }
 
@@ -154,7 +247,7 @@ mod test {
         let chunk = 213908;
         let row = 813457;
 
-        let ci = ChunkId::store(chunk, row);
+        let ci: ChunkId = ChunkId::store(chunk, row);
         let (c, r) = ci.extract();
 
         assert_eq!(c, chunk);

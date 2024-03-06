@@ -5,18 +5,18 @@ from typing import TYPE_CHECKING
 
 import polars._reexport as pl
 from polars import functions as F
-from polars.datatypes import Date, Datetime, Int32, Time, py_type_to_dtype
-from polars.datatypes.constants import N_INFER_DEFAULT
-from polars.exceptions import ChronoFormatWarning
-from polars.utils._parse_expr_input import parse_as_expression
-from polars.utils._wrap import wrap_expr
-from polars.utils.deprecation import (
+from polars._utils.deprecation import (
     deprecate_renamed_function,
     deprecate_renamed_parameter,
     issue_deprecation_warning,
     rename_use_earliest_to_ambiguous,
 )
-from polars.utils.various import find_stacklevel
+from polars._utils.parse_expr_input import parse_as_expression
+from polars._utils.various import find_stacklevel
+from polars._utils.wrap import wrap_expr
+from polars.datatypes import Date, Datetime, Int32, Time, py_type_to_dtype
+from polars.datatypes.constants import N_INFER_DEFAULT
+from polars.exceptions import ChronoFormatWarning
 
 if TYPE_CHECKING:
     from polars import Expr
@@ -1346,8 +1346,8 @@ class ExprStringNameSpace:
         return wrap_expr(self._pyexpr.str_json_path_match(json_path))
 
     def decode(self, encoding: TransferEncoding, *, strict: bool = True) -> Expr:
-        """
-        Decode a value using the provided encoding.
+        r"""
+        Decode values using the provided encoding.
 
         Parameters
         ----------
@@ -1356,6 +1356,26 @@ class ExprStringNameSpace:
         strict
             Raise an error if the underlying value cannot be decoded,
             otherwise mask out with a null value.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Binary`.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"color": ["000000", "ffff00", "0000ff"]})
+        >>> df.with_columns(pl.col("color").str.decode("hex").alias("decoded"))
+        shape: (3, 2)
+        ┌────────┬─────────────────┐
+        │ color  ┆ decoded         │
+        │ ---    ┆ ---             │
+        │ str    ┆ binary          │
+        ╞════════╪═════════════════╡
+        │ 000000 ┆ b"\x00\x00\x00" │
+        │ ffff00 ┆ b"\xff\xff\x00" │
+        │ 0000ff ┆ b"\x00\x00\xff" │
+        └────────┴─────────────────┘
         """
         if encoding == "hex":
             return wrap_expr(self._pyexpr.str_hex_decode(strict))
@@ -1367,7 +1387,7 @@ class ExprStringNameSpace:
 
     def encode(self, encoding: TransferEncoding) -> Expr:
         """
-        Encode a value using the provided encoding.
+        Encode values using the provided encoding.
 
         Parameters
         ----------

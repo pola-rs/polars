@@ -1,5 +1,4 @@
 use polars_core::utils::{accumulate_dataframes_vertical, split_df};
-use polars_core::POOL;
 use rayon::prelude::*;
 
 use super::*;
@@ -257,6 +256,7 @@ impl PartitionGroupByExec {
             &mut vec![],
             false,
             false,
+            true,
         )
         .unwrap();
 

@@ -3,12 +3,12 @@ use polars_error::to_compute_err;
 use rand::distributions::Bernoulli;
 use rand::prelude::*;
 use rand::seq::index::IndexVec;
-use rand_distr::{Distribution, Normal, Standard, StandardNormal, Uniform};
+use rand_distr::{Normal, Standard, StandardNormal, Uniform};
 
 use crate::prelude::DataType::Float64;
 use crate::prelude::*;
 use crate::random::get_global_random_u64;
-use crate::utils::{CustomIterTools, NoNull};
+use crate::utils::NoNull;
 
 fn create_rand_index_with_replacement(n: usize, len: usize, seed: Option<u64>) -> IdxCa {
     if len == 0 {

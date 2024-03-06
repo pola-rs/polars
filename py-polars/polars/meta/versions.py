@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import sys
 
+from polars._utils.polars_version import get_polars_version
 from polars.meta.index_type import get_index_type
-from polars.utils._polars_version import get_polars_version
 
 
 def show_versions() -> None:
@@ -64,6 +64,7 @@ def _get_dependency_info() -> dict[str, str]:
         "cloudpickle",
         "connectorx",
         "deltalake",
+        "fastexcel",
         "fsspec",
         "gevent",
         "hvplot",

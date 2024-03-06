@@ -5,7 +5,7 @@ from typing import Any
 
 import pytest
 
-from polars.utils.deprecation import (
+from polars._utils.deprecation import (
     deprecate_function,
     deprecate_nonkeyword_arguments,
     deprecate_renamed_function,
@@ -21,8 +21,7 @@ def test_issue_deprecation_warning() -> None:
 
 def test_deprecate_function() -> None:
     @deprecate_function("This is deprecated.", version="1.0.0")
-    def hello() -> None:
-        ...
+    def hello() -> None: ...
 
     with pytest.deprecated_call():
         hello()
@@ -30,8 +29,7 @@ def test_deprecate_function() -> None:
 
 def test_deprecate_renamed_function() -> None:
     @deprecate_renamed_function("new_hello", version="1.0.0")
-    def hello() -> None:
-        ...
+    def hello() -> None: ...
 
     with pytest.deprecated_call(match="new_hello"):
         hello()
@@ -40,8 +38,7 @@ def test_deprecate_renamed_function() -> None:
 def test_deprecate_renamed_parameter(recwarn: Any) -> None:
     @deprecate_renamed_parameter("foo", "oof", version="1.0.0")
     @deprecate_renamed_parameter("bar", "rab", version="2.0.0")
-    def hello(oof: str, rab: str, ham: str) -> None:
-        ...
+    def hello(oof: str, rab: str, ham: str) -> None: ...
 
     hello(foo="x", bar="y", ham="z")  # type: ignore[call-arg]
 
@@ -52,10 +49,9 @@ def test_deprecate_renamed_parameter(recwarn: Any) -> None:
 
 class Foo:  # noqa: D101
     @deprecate_nonkeyword_arguments(allowed_args=["self", "baz"], version="0.1.2")
-    def bar(  # noqa: D102
+    def bar(
         self, baz: str, ham: str | None = None, foobar: str | None = None
-    ) -> None:
-        ...
+    ) -> None: ...
 
 
 def test_deprecate_nonkeyword_arguments_method_signature() -> None:

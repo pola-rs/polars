@@ -10,11 +10,7 @@ use polars::frame::row::Row;
 use polars::frame::NullStrategy;
 #[cfg(feature = "avro")]
 use polars::io::avro::AvroCompression;
-#[cfg(feature = "ipc")]
-use polars::io::ipc::IpcCompression;
-use polars::prelude::AnyValue;
 use polars::series::ops::NullBehavior;
-use polars_core::prelude::{IndexOrder, QuantileInterpolOptions};
 use polars_core::utils::arrow::array::Array;
 use polars_core::utils::arrow::types::NativeType;
 use polars_lazy::prelude::*;
@@ -22,11 +18,10 @@ use polars_lazy::prelude::*;
 use polars_rs::io::cloud::CloudOptions;
 use polars_utils::total_ord::{TotalEq, TotalHash};
 use pyo3::basic::CompareOp;
-use pyo3::conversion::{FromPyObject, IntoPy};
 use pyo3::exceptions::{PyTypeError, PyValueError};
+use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList, PySequence};
-use pyo3::{intern, PyAny, PyResult};
 use smartstring::alias::String as SmartString;
 
 use crate::error::PyPolarsErr;
@@ -440,6 +435,7 @@ impl ToPyObject for Wrap<TimeUnit> {
 impl<'s> FromPyObject<'s> for Wrap<Row<'s>> {
     fn extract(ob: &'s PyAny) -> PyResult<Self> {
         let vals = ob.extract::<Vec<Wrap<AnyValue<'s>>>>()?;
+        // SAFETY. Wrap is repr transparent.
         let vals: Vec<AnyValue> = unsafe { std::mem::transmute(vals) };
         Ok(Wrap(Row(vals)))
     }

@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 
-use polars_error::PolarsResult;
 use polars_parquet::arrow::read::*;
 
 use super::*;
@@ -36,11 +35,11 @@ fn all_types() -> PolarsResult<()> {
 
     let result = batches[0].columns()[9]
         .as_any()
-        .downcast_ref::<BinaryArray<i64>>()
+        .downcast_ref::<BinaryViewArray>()
         .unwrap();
     assert_eq!(
         result,
-        &BinaryArray::<i64>::from_slice([[48], [49], [48], [49], [48], [49], [48], [49]])
+        &BinaryViewArray::from_slice_values([[48], [49], [48], [49], [48], [49], [48], [49]])
     );
 
     Ok(())
@@ -85,18 +84,21 @@ fn all_types_chunked() -> PolarsResult<()> {
 
     let result = batches[0].columns()[9]
         .as_any()
-        .downcast_ref::<BinaryArray<i64>>()
+        .downcast_ref::<BinaryViewArray>()
         .unwrap();
     assert_eq!(
         result,
-        &BinaryArray::<i64>::from_slice([[48], [49], [48], [49], [48]])
+        &BinaryViewArray::from_slice_values([[48], [49], [48], [49], [48]])
     );
 
     let result = batches[1].columns()[9]
         .as_any()
-        .downcast_ref::<BinaryArray<i64>>()
+        .downcast_ref::<BinaryViewArray>()
         .unwrap();
-    assert_eq!(result, &BinaryArray::<i64>::from_slice([[49], [48], [49]]));
+    assert_eq!(
+        result,
+        &BinaryViewArray::from_slice_values([[49], [48], [49]])
+    );
 
     Ok(())
 }

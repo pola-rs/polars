@@ -1,5 +1,3 @@
-use std::iter::FromIterator;
-
 use super::{MutablePrimitiveArray, PrimitiveArray};
 use crate::types::NativeType;
 

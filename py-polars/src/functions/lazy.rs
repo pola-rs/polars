@@ -1,5 +1,4 @@
 use polars::lazy::dsl;
-use polars::lazy::dsl::Expr;
 use polars::prelude::*;
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
@@ -8,7 +7,7 @@ use pyo3::types::{PyBool, PyBytes, PyFloat, PyInt, PyString};
 use crate::conversion::{get_lf, Wrap};
 use crate::expr::ToExprs;
 use crate::map::lazy::binary_lambda;
-use crate::prelude::{vec_extract_wrapped, DataType, DatetimeArgs, DurationArgs, ObjectValue};
+use crate::prelude::{vec_extract_wrapped, ObjectValue};
 use crate::{map, PyDataFrame, PyExpr, PyLazyFrame, PyPolarsErr, PySeries};
 
 macro_rules! set_unwrapped_or_0 {

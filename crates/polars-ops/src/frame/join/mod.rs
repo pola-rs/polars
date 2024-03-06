@@ -9,9 +9,9 @@ mod hash_join;
 #[cfg(feature = "merge_sorted")]
 mod merge_sorted;
 
-#[cfg(feature = "chunked_ids")]
 use std::borrow::Cow;
 use std::fmt::{Debug, Display, Formatter};
+use std::hash::Hash;
 
 use ahash::RandomState;
 pub use args::*;
@@ -25,7 +25,7 @@ pub use cross_join::CrossJoin;
 use either::Either;
 #[cfg(feature = "chunked_ids")]
 use general::create_chunked_index_mapping;
-pub use general::{_finish_join, _join_suffix_name};
+pub use general::{_coalesce_outer_join, _finish_join, _join_suffix_name};
 pub use hash_join::*;
 use hashbrown::hash_map::{Entry, RawEntryMut};
 #[cfg(feature = "merge_sorted")]
@@ -33,13 +33,14 @@ pub use merge_sorted::_merge_sorted_dfs;
 use polars_core::hashing::{_df_rows_to_hashes_threaded_vertical, _HASHMAP_INIT_SIZE};
 use polars_core::prelude::*;
 pub(super) use polars_core::series::IsSorted;
-use polars_core::utils::{_to_physical_and_bit_repr, slice_offsets, slice_slice};
+#[allow(unused_imports)]
+use polars_core::utils::slice_slice;
+use polars_core::utils::{_to_physical_and_bit_repr, slice_offsets};
 use polars_core::POOL;
 use polars_utils::hashing::BytesHash;
 use rayon::prelude::*;
 
 use super::IntoDf;
-use crate::frame::join::general::coalesce_outer_join;
 
 pub trait DataFrameJoinOps: IntoDf {
     /// Generic join method. Can be used to join on multiple columns.
@@ -336,7 +337,7 @@ pub trait DataFrameJoinOps: IntoDf {
                 let names_right = selected_right.iter().map(|s| s.name()).collect::<Vec<_>>();
                 let out = _finish_join(df_left, df_right, args.suffix.as_deref());
                 if coalesce {
-                    Ok(coalesce_outer_join(
+                    Ok(_coalesce_outer_join(
                         out?,
                         &names_left,
                         &names_right,

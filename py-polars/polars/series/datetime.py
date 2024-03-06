@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from polars._utils.convert import to_py_date, to_py_datetime
+from polars._utils.deprecation import deprecate_function, deprecate_renamed_function
+from polars._utils.unstable import unstable
+from polars._utils.wrap import wrap_s
 from polars.datatypes import Date, Datetime, Duration, Time
 from polars.series.utils import expr_dispatch
-from polars.utils._wrap import wrap_s
-from polars.utils.convert import _to_python_date, _to_python_datetime
-from polars.utils.deprecation import deprecate_function, deprecate_renamed_function
-from polars.utils.unstable import unstable
 
 if TYPE_CHECKING:
     import datetime as dt
@@ -81,11 +81,11 @@ class DateTimeNameSpace:
         out = s.median()
         if out is not None:
             if s.dtype == Date:
-                return _to_python_date(int(out))  # type: ignore[arg-type]
+                return to_py_date(int(out))  # type: ignore[arg-type]
             elif s.dtype in (Datetime, Duration, Time):
                 return out  # type: ignore[return-value]
             else:
-                return _to_python_datetime(int(out), s.dtype.time_unit)  # type: ignore[arg-type, attr-defined]
+                return to_py_datetime(int(out), s.dtype.time_unit)  # type: ignore[arg-type, attr-defined]
         return None
 
     def mean(self) -> TemporalLiteral | float | None:
@@ -105,11 +105,11 @@ class DateTimeNameSpace:
         out = s.mean()
         if out is not None:
             if s.dtype == Date:
-                return _to_python_date(int(out))  # type: ignore[arg-type]
+                return to_py_date(int(out))  # type: ignore[arg-type]
             elif s.dtype in (Datetime, Duration, Time):
                 return out  # type: ignore[return-value]
             else:
-                return _to_python_datetime(int(out), s.dtype.time_unit)  # type: ignore[arg-type, attr-defined]
+                return to_py_datetime(int(out), s.dtype.time_unit)  # type: ignore[arg-type, attr-defined]
         return None
 
     def to_string(self, format: str) -> Series:
@@ -1195,7 +1195,7 @@ class DateTimeNameSpace:
         │ 2020-07-01 01:00:00 BST     ┆ 2020-07-01 01:00:00 CEST       │
         └─────────────────────────────┴────────────────────────────────┘
 
-        You can use `use_earliest` to deal with ambiguous datetimes:
+        You can use `ambiguous` to deal with ambiguous datetimes:
 
         >>> dates = [
         ...     "2018-10-28 01:30",

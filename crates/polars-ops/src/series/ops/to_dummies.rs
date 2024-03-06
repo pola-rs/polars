@@ -1,5 +1,3 @@
-use polars_core::frame::group_by::GroupsIndicator;
-
 use super::*;
 
 #[cfg(feature = "dtype-u8")]

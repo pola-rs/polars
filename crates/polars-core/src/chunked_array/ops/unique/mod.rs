@@ -1,10 +1,8 @@
-use arrow::bitmap::MutableBitmap;
-use polars_utils::total_ord::{TotalEq, TotalHash, TotalOrdWrap};
+use std::hash::Hash;
 
-#[cfg(feature = "object")]
-use crate::datatypes::ObjectType;
-use crate::datatypes::PlHashSet;
-use crate::frame::group_by::GroupsProxy;
+use arrow::bitmap::MutableBitmap;
+use polars_utils::total_ord::{ToTotalOrd, TotalHash};
+
 use crate::hashing::_HASHMAP_INIT_SIZE;
 use crate::prelude::*;
 use crate::series::IsSorted;
@@ -59,12 +57,13 @@ impl<T: PolarsObject> ChunkUnique<ObjectType<T>> for ObjectChunked<T> {
 
 fn arg_unique<T>(a: impl Iterator<Item = T>, capacity: usize) -> Vec<IdxSize>
 where
-    T: TotalHash + TotalEq,
+    T: ToTotalOrd,
+    <T as ToTotalOrd>::TotalOrdItem: Hash + Eq,
 {
     let mut set = PlHashSet::new();
     let mut unique = Vec::with_capacity(capacity);
     a.enumerate().for_each(|(idx, val)| {
-        if set.insert(TotalOrdWrap(val)) {
+        if set.insert(val.to_total_ord()) {
             unique.push(idx as IdxSize)
         }
     });
@@ -83,7 +82,8 @@ macro_rules! arg_unique_ca {
 impl<T> ChunkUnique<T> for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: TotalHash + TotalEq,
+    T::Native: TotalHash + TotalEq + ToTotalOrd,
+    <T::Native as ToTotalOrd>::TotalOrdItem: Hash + Eq + Ord,
     ChunkedArray<T>: IntoSeries + for<'a> ChunkCompare<&'a ChunkedArray<T>, Item = BooleanChunked>,
 {
     fn unique(&self) -> PolarsResult<Self> {
@@ -100,10 +100,10 @@ where
                         let mut iter = self.iter();
                         let last = iter.next().unwrap();
                         arr.push(last);
-                        let mut last = TotalOrdWrap(last);
+                        let mut last = last.to_total_ord();
 
                         let to_extend = iter.filter(|opt_val| {
-                            let opt_val_tot_ord = TotalOrdWrap(*opt_val);
+                            let opt_val_tot_ord = opt_val.to_total_ord();
                             let out = opt_val_tot_ord != last;
                             last = opt_val_tot_ord;
                             out
@@ -145,12 +145,12 @@ where
                     }
 
                     let mut iter = self.iter();
-                    let mut last = TotalOrdWrap(iter.next().unwrap());
+                    let mut last = iter.next().unwrap().to_total_ord();
 
                     count += 1;
 
                     iter.for_each(|opt_val| {
-                        let opt_val = TotalOrdWrap(opt_val);
+                        let opt_val = opt_val.to_total_ord();
                         if opt_val != last {
                             last = opt_val;
                             count += 1;

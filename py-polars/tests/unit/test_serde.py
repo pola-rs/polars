@@ -100,14 +100,6 @@ def test_deser_empty_list() -> None:
     assert s.to_list() == [[[42.0]], []]
 
 
-def test_expression_json() -> None:
-    e = pl.col("foo").sum().over("bar")
-    json = e.meta.write_json()
-
-    round_tripped = pl.Expr.from_json(json)
-    assert round_tripped.meta == e
-
-
 def times2(x: pl.Series) -> pl.Series:
     return x * 2
 
@@ -202,9 +194,64 @@ def test_serde_array_dtype() -> None:
     assert_series_equal(pickle.loads(pickle.dumps(nested_s)), nested_s)
 
 
-def test_expression_json_13991() -> None:
-    e = pl.col("foo").cast(pl.Decimal)
-    json = e.meta.write_json()
+def test_expr_serialization_roundtrip() -> None:
+    expr = pl.col("foo").sum().over("bar")
+    json = expr.meta.serialize()
+    round_tripped = pl.Expr.deserialize(io.StringIO(json))
+    assert round_tripped.meta == expr
 
-    round_tripped = pl.Expr.from_json(json)
-    assert round_tripped.meta == e
+
+def test_expr_deserialize_file_not_found() -> None:
+    with pytest.raises(FileNotFoundError):
+        pl.Expr.deserialize("abcdef")
+
+
+def test_expr_deserialize_invalid_json() -> None:
+    with pytest.raises(
+        pl.ComputeError, match="could not deserialize input into an expression"
+    ):
+        pl.Expr.deserialize(io.StringIO("abcdef"))
+
+
+def test_expr_write_json_from_json_deprecated() -> None:
+    expr = pl.col("foo").sum().over("bar")
+
+    with pytest.deprecated_call():
+        json = expr.meta.write_json()
+
+    with pytest.deprecated_call():
+        round_tripped = pl.Expr.from_json(json)
+
+    assert round_tripped.meta == expr
+
+
+def test_expression_json_13991() -> None:
+    expr = pl.col("foo").cast(pl.Decimal)
+    json = expr.meta.serialize()
+
+    round_tripped = pl.Expr.deserialize(io.StringIO(json))
+    assert round_tripped.meta == expr
+
+
+def test_serde_data_type_class() -> None:
+    dtype = pl.Datetime
+    serialized = pickle.dumps(dtype)
+    deserialized = pickle.loads(serialized)
+    assert deserialized == dtype
+    assert isinstance(deserialized, type)
+
+
+def test_serde_data_type_instantiated() -> None:
+    dtype = pl.Int8()
+    serialized = pickle.dumps(dtype)
+    deserialized = pickle.loads(serialized)
+    assert deserialized == dtype
+    assert isinstance(deserialized, pl.DataType)
+
+
+def test_serde_data_type_instantiated_with_attributes() -> None:
+    dtype = pl.Enum(["a", "b"])
+    serialized = pickle.dumps(dtype)
+    deserialized = pickle.loads(serialized)
+    assert deserialized == dtype
+    assert isinstance(deserialized, pl.DataType)

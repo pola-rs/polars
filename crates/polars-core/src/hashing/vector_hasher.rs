@@ -1,15 +1,13 @@
 use arrow::bitmap::utils::get_bit_unchecked;
 #[cfg(feature = "group_by_list")]
 use arrow::legacy::kernels::list_bytes_iter::numeric_list_bytes_iter;
-use polars_utils::total_ord::{TotalHash, TotalOrdWrap};
+use polars_utils::total_ord::{ToTotalOrd, TotalHash};
 use rayon::prelude::*;
 use xxhash_rust::xxh3::xxh3_64_with_seed;
 
 use super::*;
-use crate::datatypes::UInt64Chunked;
 use crate::prelude::*;
 use crate::series::implementations::null::NullChunked;
-use crate::utils::arrow::array::Array;
 use crate::POOL;
 
 // See: https://github.com/tkaitchuck/aHash/blob/f9acd508bd89e7c5b2877a9510098100f9018d64/src/operations.rs#L4
@@ -71,7 +69,8 @@ fn insert_null_hash(chunks: &[ArrayRef], random_state: RandomState, buf: &mut Ve
 fn numeric_vec_hash<T>(ca: &ChunkedArray<T>, random_state: RandomState, buf: &mut Vec<u64>)
 where
     T: PolarsNumericType,
-    T::Native: TotalHash,
+    T::Native: TotalHash + ToTotalOrd,
+    <T::Native as ToTotalOrd>::TotalOrdItem: Hash,
 {
     // Note that we don't use the no null branch! This can break in unexpected ways.
     // for instance with threading we split an array in n_threads, this may lead to
@@ -90,7 +89,7 @@ where
                 .as_slice()
                 .iter()
                 .copied()
-                .map(|v| random_state.hash_one(TotalOrdWrap(v))),
+                .map(|v| random_state.hash_one(v.to_total_ord())),
         );
     });
     insert_null_hash(&ca.chunks, random_state, buf)
@@ -99,7 +98,8 @@ where
 fn numeric_vec_hash_combine<T>(ca: &ChunkedArray<T>, random_state: RandomState, hashes: &mut [u64])
 where
     T: PolarsNumericType,
-    T::Native: TotalHash,
+    T::Native: TotalHash + ToTotalOrd,
+    <T::Native as ToTotalOrd>::TotalOrdItem: Hash,
 {
     let null_h = get_null_hash_value(&random_state);
 
@@ -112,7 +112,7 @@ where
                 .iter()
                 .zip(&mut hashes[offset..])
                 .for_each(|(v, h)| {
-                    *h = folded_multiply(random_state.hash_one(TotalOrdWrap(v)) ^ *h, MULTIPLE);
+                    *h = folded_multiply(random_state.hash_one(v.to_total_ord()) ^ *h, MULTIPLE);
                 }),
             _ => {
                 let validity = arr.validity().unwrap();
@@ -122,7 +122,7 @@ where
                     .zip(&mut hashes[offset..])
                     .zip(arr.values().as_slice())
                     .for_each(|((valid, h), l)| {
-                        let lh = random_state.hash_one(TotalOrdWrap(l));
+                        let lh = random_state.hash_one(l.to_total_ord());
                         let to_hash = [null_h, lh][valid as usize];
 
                         // inlined from ahash. This ensures we combine with the previous state
@@ -440,12 +440,8 @@ where
         buf.clear();
         buf.reserve(self.len());
 
-        self.downcast_iter().for_each(|arr| {
-            buf.extend(
-                arr.into_iter()
-                    .map(|opt_v| random_state.hash_one(TotalOrdWrap(opt_v))),
-            )
-        });
+        self.downcast_iter()
+            .for_each(|arr| buf.extend(arr.into_iter().map(|opt_v| random_state.hash_one(opt_v))));
 
         Ok(())
     }
@@ -453,7 +449,7 @@ where
     fn vec_hash_combine(&self, random_state: RandomState, hashes: &mut [u64]) -> PolarsResult<()> {
         self.apply_to_slice(
             |opt_v, h| {
-                let hashed = random_state.hash_one(TotalOrdWrap(opt_v));
+                let hashed = random_state.hash_one(opt_v);
                 _boost_hash_combine(hashed, *h)
             },
             hashes,

@@ -13,11 +13,11 @@ pub(super) struct Args {
 }
 
 fn to_py_datetime(v: i64, tu: &TimeUnit, tz: Option<&TimeZone>) -> String {
-    // note: `_to_python_datetime` and the `Datetime`
+    // note: `to_py_datetime` and the `Datetime`
     // dtype have to be in-scope on the python side
     match tz {
-        None => format!("_to_python_datetime({},'{}')", v, tu.to_ascii()),
-        Some(tz) => format!("_to_python_datetime({},'{}',{})", v, tu.to_ascii(), tz),
+        None => format!("to_py_datetime({},'{}')", v, tu.to_ascii()),
+        Some(tz) => format!("to_py_datetime({},'{}',{})", v, tu.to_ascii(), tz),
     }
 }
 
@@ -53,7 +53,7 @@ pub(super) fn predicate_to_pa(
                         let dtm = to_py_datetime(v, &tu, tz.as_ref());
                         write!(list_repr, "{dtm},").unwrap();
                     } else if let AnyValue::Date(v) = av {
-                        write!(list_repr, "_to_python_date({v}),").unwrap();
+                        write!(list_repr, "to_py_date({v}),").unwrap();
                     } else {
                         write!(list_repr, "{av},").unwrap();
                     }
@@ -79,25 +79,25 @@ pub(super) fn predicate_to_pa(
                 },
                 #[cfg(feature = "dtype-date")]
                 AnyValue::Date(v) => {
-                    // the function `_to_python_date` and the `Date`
+                    // the function `to_py_date` and the `Date`
                     // dtype have to be in scope on the python side
-                    Some(format!("_to_python_date({v})"))
+                    Some(format!("to_py_date({v})"))
                 },
                 #[cfg(feature = "dtype-datetime")]
                 AnyValue::Datetime(v, tu, tz) => Some(to_py_datetime(v, &tu, tz.as_ref())),
                 // Activate once pyarrow supports them
                 // #[cfg(feature = "dtype-time")]
                 // AnyValue::Time(v) => {
-                //     // the function `_to_python_time` has to be in scope
+                //     // the function `to_py_time` has to be in scope
                 //     // on the python side
-                //     Some(format!("_to_python_time(value={v})"))
+                //     Some(format!("to_py_time(value={v})"))
                 // }
                 // #[cfg(feature = "dtype-duration")]
                 // AnyValue::Duration(v, tu) => {
-                //     // the function `_to_python_timedelta` has to be in scope
+                //     // the function `to_py_timedelta` has to be in scope
                 //     // on the python side
                 //     Some(format!(
-                //         "_to_python_timedelta(value={}, tu='{}')",
+                //         "to_py_timedelta(value={}, tu='{}')",
                 //         v,
                 //         tu.to_ascii()
                 //     ))

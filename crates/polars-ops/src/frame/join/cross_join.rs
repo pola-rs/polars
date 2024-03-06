@@ -1,6 +1,4 @@
-use polars_core::series::IsSorted;
-use polars_core::utils::{concat_df_unchecked, slice_offsets, CustomIterTools, NoNull};
-use polars_core::POOL;
+use polars_core::utils::{concat_df_unchecked, CustomIterTools, NoNull};
 use smartstring::alias::String as SmartString;
 
 use super::*;

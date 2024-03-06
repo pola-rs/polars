@@ -153,6 +153,7 @@ pub fn encoded_size(data_type: &ArrowDataType) -> usize {
         Int16 => i16::ENCODED_LEN,
         Int32 => i32::ENCODED_LEN,
         Int64 => i64::ENCODED_LEN,
+        Decimal(_, _) => i128::ENCODED_LEN,
         Float32 => f32::ENCODED_LEN,
         Float64 => f64::ENCODED_LEN,
         Boolean => bool::ENCODED_LEN,

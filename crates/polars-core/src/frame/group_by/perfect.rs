@@ -1,12 +1,10 @@
 use std::fmt::Debug;
 
-use arrow::array::Array;
 use arrow::legacy::bit_util::round_upto_multiple_of_64;
 use num_traits::{FromPrimitive, ToPrimitive};
 use polars_utils::idx_vec::IdxVec;
 use polars_utils::slice::GetSaferUnchecked;
 use polars_utils::sync::SyncPtr;
-use polars_utils::IdxSize;
 use rayon::prelude::*;
 
 #[cfg(all(feature = "dtype-categorical", feature = "performant"))]

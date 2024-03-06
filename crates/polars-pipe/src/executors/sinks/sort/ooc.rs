@@ -105,7 +105,7 @@ impl PartitionSpiller {
 }
 
 pub(super) fn sort_ooc(
-    io_thread: &IOThread,
+    io_thread: IOThread,
     // these partitions are the samples
     // these are not yet assigned to a buckets
     samples: Series,
@@ -147,10 +147,11 @@ pub(super) fn sort_ooc(
                     io_thread.dump_partition_local(part, df)
                 }
             }
+            io_thread.clean(path);
             PolarsResult::Ok(())
         })
     })?;
-    partitions_spiller.spill_all(io_thread);
+    partitions_spiller.spill_all(&io_thread);
     if verbose {
         eprintln!("finished partitioning sort files");
     }
@@ -172,7 +173,7 @@ pub(super) fn sort_ooc(
         })
         .collect::<std::io::Result<Vec<_>>>()?;
 
-    let source = SortSource::new(files, idx, descending, slice, verbose);
+    let source = SortSource::new(files, idx, descending, slice, verbose, io_thread);
     Ok(FinalizedSink::Source(Box::new(source)))
 }
 

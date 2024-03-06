@@ -1,13 +1,10 @@
 use std::fmt::Formatter;
 use std::iter::FlatMap;
-use std::sync::Arc;
 
 use polars_core::prelude::*;
 use polars_utils::idx_vec::UnitVec;
 use smartstring::alias::String as SmartString;
 
-use crate::logical_plan::iterator::ArenaExprIter;
-use crate::logical_plan::Context;
 use crate::prelude::consts::{LEN, LITERAL_NAME};
 use crate::prelude::*;
 
@@ -82,22 +79,17 @@ pub(crate) fn aexpr_is_simple_projection(current_node: Node, arena: &Arena<AExpr
         .all(|(_node, e)| matches!(e, AExpr::Column(_) | AExpr::Alias(_, _)))
 }
 
-pub(crate) fn aexpr_is_elementwise(current_node: Node, arena: &Arena<AExpr>) -> bool {
-    arena.iter(current_node).all(|(_node, e)| {
-        use AExpr::*;
-        match e {
-            AnonymousFunction { options, .. } | Function { options, .. } => {
-                !matches!(options.collect_groups, ApplyOptions::GroupWise)
-            },
-            Column(_)
-            | Alias(_, _)
-            | Literal(_)
-            | BinaryExpr { .. }
-            | Ternary { .. }
-            | Cast { .. } => true,
-            _ => false,
-        }
-    })
+pub(crate) fn single_aexpr_is_elementwise(ae: &AExpr) -> bool {
+    use AExpr::*;
+    match ae {
+        AnonymousFunction { options, .. } | Function { options, .. } => {
+            !matches!(options.collect_groups, ApplyOptions::GroupWise)
+        },
+        Column(_) | Alias(_, _) | Literal(_) | BinaryExpr { .. } | Ternary { .. } | Cast { .. } => {
+            true
+        },
+        _ => false,
+    }
 }
 
 pub fn has_aexpr<F>(current_node: Node, arena: &Arena<AExpr>, matches: F) -> bool
@@ -292,9 +284,9 @@ pub(crate) fn aexpr_assign_renamed_leaf(
     current: &str,
     new_name: &str,
 ) -> Node {
-    let leafs = aexpr_to_column_nodes_iter(node, arena);
+    let leaf_nodes = aexpr_to_column_nodes_iter(node, arena);
 
-    for node in leafs {
+    for node in leaf_nodes {
         match arena.get(node) {
             AExpr::Column(name) if &**name == current => {
                 return arena.add(AExpr::Column(Arc::from(new_name)))
