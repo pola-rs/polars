@@ -319,6 +319,7 @@ unsafe fn take_opt_unchecked_object(s: &Series, by: &[NullableChunkId]) -> Serie
     builder.to_series()
 }
 
+#[allow(clippy::unnecessary_cast)]
 unsafe fn take_unchecked_binview(
     ca: &BinaryChunked,
     by: &[ChunkId],
@@ -344,7 +345,10 @@ unsafe fn take_unchecked_binview(
                 let target = *views.get_unchecked_release(chunk_idx as usize);
                 let mut view = *target.get_unchecked_release(array_idx);
 
-                view.buffer_idx += chunk_idx as u32;
+                #[allow(clippy::unnecessary_cast)]
+                {
+                    view.buffer_idx += chunk_idx as u32;
+                }
 
                 view
             })
@@ -368,7 +372,10 @@ unsafe fn take_unchecked_binview(
             } else {
                 let target = *views.get_unchecked_release(chunk_idx as usize);
                 let mut view = *target.get_unchecked_release(array_idx);
-                view.buffer_idx += chunk_idx as u32;
+                #[allow(clippy::unnecessary_cast)]
+                {
+                    view.buffer_idx += chunk_idx as u32;
+                }
                 mut_views.push_unchecked(view);
                 validity.push_unchecked(true)
             }
@@ -420,7 +427,10 @@ unsafe fn take_unchecked_binview_opt(ca: &BinaryChunked, by: &[NullableChunkId])
                 let target = *views.get_unchecked_release(chunk_idx as usize);
                 let mut view = *target.get_unchecked_release(array_idx);
 
-                view.buffer_idx += chunk_idx as u32;
+                #[allow(clippy::unnecessary_cast)]
+                {
+                    view.buffer_idx += chunk_idx as u32;
+                }
 
                 mut_views.push_unchecked(view);
                 validity.push_unchecked(true)
@@ -443,7 +453,10 @@ unsafe fn take_unchecked_binview_opt(ca: &BinaryChunked, by: &[NullableChunkId])
                 } else {
                     let target = *views.get_unchecked_release(chunk_idx as usize);
                     let mut view = *target.get_unchecked_release(array_idx);
-                    view.buffer_idx += chunk_idx as u32;
+                    #[allow(clippy::unnecessary_cast)]
+                    {
+                        view.buffer_idx += chunk_idx as u32;
+                    }
                     mut_views.push_unchecked(view);
                     validity.push_unchecked(true);
                 }
