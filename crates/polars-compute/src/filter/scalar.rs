@@ -5,7 +5,7 @@ use polars_utils::slice::load_padded_le_u64;
 /// # Safety
 /// If the ith bit of m is set (m & (1 << i)), then v[i] must be in-bounds.
 /// out must be valid for at least m.count_ones() + 1 writes.
-unsafe fn scalar_sparse_filter_unchecked<T: Pod>(v: &[T], mut m: u64, out: *mut T) {
+unsafe fn scalar_sparse_filter64<T: Pod>(v: &[T], mut m: u64, out: *mut T) {
     let mut written = 0usize;
 
     while m > 0 {
@@ -26,7 +26,7 @@ unsafe fn scalar_sparse_filter_unchecked<T: Pod>(v: &[T], mut m: u64, out: *mut 
 /// # Safety
 /// v.len() >= 64 must hold.
 /// out must be valid for at least m.count_ones() + 1 writes.
-unsafe fn scalar_dense_filter_unchecked<T: Pod>(v: &[T], mut m: u64, out: *mut T) {
+unsafe fn scalar_dense_filter64<T: Pod>(v: &[T], mut m: u64, out: *mut T) {
     // Rust generated significantly better code if we write the below loop
     // with v as a pointer, and out.add(written) instead of incrementing out
     // directly.
@@ -44,13 +44,16 @@ unsafe fn scalar_dense_filter_unchecked<T: Pod>(v: &[T], mut m: u64, out: *mut T
     }
 }
 
+/// Handles the offset portion of a Bitmap to start an efficient filter operation.
+/// Returns the remaining values and mask bytes for the filter, as well as where
+/// to continue writing to out.
+///
 /// # Safety
-/// out must be valid for at least mask.count_ones() + 1 writes.
-pub unsafe fn filter_scalar_values<T: Pod>(values: &[T], mask: &Bitmap, mut out: *mut T) {
+/// out must be valid for at least mask.set_bits() + 1 writes.
+pub unsafe fn scalar_filter_offset<'a, T: Pod>(values: &'a [T], mask: &'a Bitmap, mut out: *mut T) -> (&'a [T], &'a [u8], *mut T) {
     assert_eq!(values.len(), mask.len());
-    let (mut mask_bytes, offset, len) = mask.as_slice();
 
-    // Handle offset.
+    let (mut mask_bytes, offset, len) = mask.as_slice();
     let mut value_idx = 0;
     if offset > 0 {
         let first_byte = mask_bytes[0];
@@ -70,11 +73,20 @@ pub unsafe fn filter_scalar_values<T: Pod>(values: &[T], mask: &Bitmap, mut out:
         }
     }
 
+    (&values[value_idx..], mask_bytes, out)
+}
+
+/// # Safety
+/// out must be valid for 1 + bitslice(mask_bytes, 0..values.len()).count_ones() writes.
+pub unsafe fn scalar_filter<T: Pod>(values: &[T], mut mask_bytes: &[u8], mut out: *mut T) {
+    assert!(mask_bytes.len() * 8 >= values.len());
+
     // Handle bulk.
-    while value_idx + 64 <= len {
+    let mut value_idx = 0;
+    while value_idx + 64 <= values.len() {
         let (mask_chunk, value_chunk);
         unsafe {
-            // SAFETY: we checked that value_idx + 64 <= len, so these are
+            // SAFETY: we checked that value_idx + 64 <= values.len(), so these are
             // all in-bounds.
             mask_chunk = mask_bytes.get_unchecked(0..8);
             mask_bytes = mask_bytes.get_unchecked(8..);
@@ -101,21 +113,22 @@ pub unsafe fn filter_scalar_values<T: Pod>(values: &[T], mask: &Bitmap, mut out:
 
             let m_popcnt = m.count_ones();
             if m_popcnt <= 16 {
-                scalar_sparse_filter_unchecked(value_chunk, m, out)
+                scalar_sparse_filter64(value_chunk, m, out)
             } else {
-                scalar_dense_filter_unchecked(value_chunk, m, out)
+                scalar_dense_filter64(value_chunk, m, out)
             };
             out = out.add(m_popcnt as usize);
         }
     }
 
-    if value_idx < len {
-        let rest_len = len - value_idx;
+    // Handle remainder.
+    if value_idx < values.len() {
+        let rest_len = values.len() - value_idx;
         assert!(rest_len < 64);
         let m = load_padded_le_u64(mask_bytes) & ((1 << rest_len) - 1);
         unsafe {
             let value_chunk = values.get_unchecked(value_idx..);
-            scalar_sparse_filter_unchecked(value_chunk, m, out);
+            scalar_sparse_filter64(value_chunk, m, out);
         }
     }
 }
