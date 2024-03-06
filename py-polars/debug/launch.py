@@ -47,8 +47,9 @@ def launch_debugging() -> None:
     if not found:
         msg = (
             "Cannot locate pid definition in launch.json for Rust LLDB configuration. "
-            "Please follow the instructions in CONTRIBUTING.md for creating the "
-            "launch configuration."
+            "Please follow the instructions in the debugging section of the "
+            "contributing guide (https://docs.pola.rs/development/contributing/ide/#debugging) "
+            "for creating the launch configuration."
         )
         raise RuntimeError(msg)
 
