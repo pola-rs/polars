@@ -258,6 +258,7 @@ impl DataType {
 
         let phys = self.to_physical();
         (phys.is_numeric()
+            || self.is_decimal()
             || matches!(
                 phys,
                 DataType::Binary | DataType::String | DataType::Boolean
