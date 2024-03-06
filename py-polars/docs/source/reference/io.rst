@@ -45,8 +45,8 @@ Delta Lake
 .. autosummary::
    :toctree: api/
 
-   scan_delta
    read_delta
+   scan_delta
    DataFrame.write_delta
 
 Excel / ODS
@@ -64,9 +64,9 @@ Feather / IPC
    :toctree: api/
 
    read_ipc
+   read_ipc_schema
    read_ipc_stream
    scan_ipc
-   read_ipc_schema
    DataFrame.write_ipc
    DataFrame.write_ipc_stream
    LazyFrame.sink_ipc
@@ -96,8 +96,8 @@ Parquet
    :toctree: api/
 
    read_parquet
-   scan_parquet
    read_parquet_schema
+   scan_parquet
    DataFrame.write_parquet
    LazyFrame.sink_parquet
 
