@@ -3857,13 +3857,15 @@ class DataFrame:
             if delta_write_options is None:
                 delta_write_options = {}
 
+            if overwrite_schema:
+                delta_write_options["schema_mode"] = "overwrite"
+
             schema = delta_write_options.pop("schema", None)
             write_deltalake(
                 table_or_uri=target,
                 data=data,
                 schema=schema,
                 mode=mode,
-                overwrite_schema=overwrite_schema,
                 storage_options=storage_options,
                 large_dtypes=True,
                 **delta_write_options,
