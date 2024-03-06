@@ -1,6 +1,10 @@
 use std::borrow::Cow;
 use std::fmt::Debug;
 
+use arrow::array::{Array, BinaryViewArray, View};
+use arrow::bitmap::MutableBitmap;
+use arrow::buffer::Buffer;
+use arrow::legacy::trusted_len::TrustedLenPush;
 use polars_core::prelude::gather::_update_gather_sorted_flag;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
@@ -102,11 +106,14 @@ impl TakeChunked for Series {
             },
             Binary => {
                 let ca = phys.binary().unwrap();
-                ca.take_chunked_unchecked(by, sorted).into_series()
+                let out = take_unchecked_binview(ca, by, sorted);
+                out.into_series()
             },
             String => {
                 let ca = phys.str().unwrap();
-                ca.take_chunked_unchecked(by, sorted).into_series()
+                let ca = ca.as_binary();
+                let out = take_unchecked_binview(&ca, by, sorted);
+                out.to_string().into_series()
             },
             List(_) => {
                 let ca = phys.list().unwrap();
@@ -155,11 +162,14 @@ impl TakeChunked for Series {
             },
             Binary => {
                 let ca = phys.binary().unwrap();
-                ca.take_opt_chunked_unchecked(by).into_series()
+                let out = take_unchecked_binview_opt(ca, by);
+                out.into_series()
             },
             String => {
                 let ca = phys.str().unwrap();
-                ca.take_opt_chunked_unchecked(by).into_series()
+                let ca = ca.as_binary();
+                let out = take_unchecked_binview_opt(&ca, by);
+                out.to_string().into_series()
             },
             List(_) => {
                 let ca = phys.list().unwrap();
@@ -307,4 +317,236 @@ unsafe fn take_opt_unchecked_object(s: &Series, by: &[NullableChunkId]) -> Serie
         }
     });
     builder.to_series()
+}
+
+unsafe fn take_unchecked_binview(
+    ca: &BinaryChunked,
+    by: &[ChunkId],
+    sorted: IsSorted,
+) -> BinaryChunked {
+    let views = ca
+        .downcast_iter()
+        .map(|arr| arr.views().as_slice())
+        .collect::<Vec<_>>();
+    let buffers: Arc<[Buffer<u8>]> = ca
+        .downcast_iter()
+        .flat_map(|arr| arr.data_buffers().as_ref())
+        .cloned()
+        .collect();
+
+    let (views, validity) = if ca.null_count() == 0 {
+        let views = by
+            .iter()
+            .map(|chunk_id| {
+                let (chunk_idx, array_idx) = chunk_id.extract();
+                let array_idx = array_idx as usize;
+
+                let target = *views.get_unchecked_release(chunk_idx as usize);
+                let mut view = *target.get_unchecked_release(array_idx);
+
+                view.buffer_idx += chunk_idx as u32;
+
+                view
+            })
+            .collect::<Vec<_>>();
+
+        (views, None)
+    } else {
+        let targets = ca.downcast_iter().collect::<Vec<_>>();
+
+        let mut mut_views = Vec::with_capacity(by.len());
+        let mut validity = MutableBitmap::with_capacity(by.len());
+
+        for id in by.iter() {
+            let (chunk_idx, array_idx) = id.extract();
+            let array_idx = array_idx as usize;
+
+            let target = *targets.get_unchecked_release(chunk_idx as usize);
+            if target.is_null_unchecked(array_idx) {
+                mut_views.push_unchecked(View::default());
+                validity.push_unchecked(false)
+            } else {
+                let target = *views.get_unchecked_release(chunk_idx as usize);
+                let mut view = *target.get_unchecked_release(array_idx);
+                view.buffer_idx += chunk_idx as u32;
+                mut_views.push_unchecked(view);
+                validity.push_unchecked(true)
+            }
+        }
+
+        (mut_views, Some(validity.freeze()))
+    };
+
+    let arr = BinaryViewArray::new_unchecked_unknown_md(
+        ArrowDataType::BinaryView,
+        views.into(),
+        buffers,
+        validity,
+        None,
+    )
+    .maybe_gc();
+
+    let mut out = BinaryChunked::with_chunk(ca.name(), arr);
+    let sorted_flag = _update_gather_sorted_flag(ca.is_sorted_flag(), sorted);
+    out.set_sorted_flag(sorted_flag);
+    out
+}
+
+unsafe fn take_unchecked_binview_opt(ca: &BinaryChunked, by: &[NullableChunkId]) -> BinaryChunked {
+    let views = ca
+        .downcast_iter()
+        .map(|arr| arr.views().as_slice())
+        .collect::<Vec<_>>();
+    let buffers: Arc<[Buffer<u8>]> = ca
+        .downcast_iter()
+        .flat_map(|arr| arr.data_buffers().as_ref())
+        .cloned()
+        .collect();
+
+    let targets = ca.downcast_iter().collect::<Vec<_>>();
+
+    let mut mut_views = Vec::with_capacity(by.len());
+    let mut validity = MutableBitmap::with_capacity(by.len());
+
+    let (views, validity) = if ca.null_count() == 0 {
+        for id in by.iter() {
+            if id.is_null() {
+                mut_views.push_unchecked(View::default());
+                validity.push_unchecked(false)
+            } else {
+                let (chunk_idx, array_idx) = id.extract();
+                let array_idx = array_idx as usize;
+
+                let target = *views.get_unchecked_release(chunk_idx as usize);
+                let mut view = *target.get_unchecked_release(array_idx);
+
+                view.buffer_idx += chunk_idx as u32;
+
+                mut_views.push_unchecked(view);
+                validity.push_unchecked(true)
+            }
+        }
+        (mut_views, Some(validity.freeze()))
+    } else {
+        for id in by.iter() {
+            if id.is_null() {
+                mut_views.push_unchecked(View::default());
+                validity.push_unchecked(false)
+            } else {
+                let (chunk_idx, array_idx) = id.extract();
+                let array_idx = array_idx as usize;
+
+                let target = *targets.get_unchecked_release(chunk_idx as usize);
+                if target.is_null_unchecked(array_idx) {
+                    mut_views.push_unchecked(View::default());
+                    validity.push_unchecked(false)
+                } else {
+                    let target = *views.get_unchecked_release(chunk_idx as usize);
+                    let mut view = *target.get_unchecked_release(array_idx);
+                    view.buffer_idx += chunk_idx as u32;
+                    mut_views.push_unchecked(view);
+                    validity.push_unchecked(true);
+                }
+            }
+        }
+
+        (mut_views, Some(validity.freeze()))
+    };
+
+    let arr = BinaryViewArray::new_unchecked_unknown_md(
+        ArrowDataType::BinaryView,
+        views.into(),
+        buffers,
+        validity,
+        None,
+    )
+    .maybe_gc();
+
+    BinaryChunked::with_chunk(ca.name(), arr)
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_binview_chunked_gather() {
+        unsafe {
+            // # Series without nulls;
+            let mut s_1 = Series::new(
+                "a",
+                &["1 loooooooooooong string 1", "2 loooooooooooong string 2"],
+            );
+            let s_2 = Series::new(
+                "a",
+                &[
+                    "11 loooooooooooong string 11",
+                    "22 loooooooooooong string 22",
+                ],
+            );
+            s_1.append(&s_2).unwrap();
+
+            assert_eq!(s_1.n_chunks(), 2);
+
+            // ## Ids without nulls;
+            let by = [
+                ChunkId::store(0, 0),
+                ChunkId::store(0, 1),
+                ChunkId::store(1, 1),
+                ChunkId::store(1, 0),
+            ];
+
+            let out = s_1.take_chunked_unchecked(&by, IsSorted::Not);
+            let idx = IdxCa::new("", [0, 1, 3, 2]);
+            let expected = s_1.rechunk().take(&idx).unwrap();
+            assert!(out.equals(&expected));
+
+            // ## Ids with nulls;
+            let by: [ChunkId; 4] = [
+                ChunkId::null(),
+                ChunkId::store(0, 1),
+                ChunkId::store(1, 1),
+                ChunkId::store(1, 0),
+            ];
+            let out = s_1.take_opt_chunked_unchecked(&by);
+
+            let idx = IdxCa::new("", [None, Some(1), Some(3), Some(2)]);
+            let expected = s_1.rechunk().take(&idx).unwrap();
+            assert!(out.equals_missing(&expected));
+
+            // # Series with nulls;
+            let mut s_1 = Series::new(
+                "a",
+                &["1 loooooooooooong string 1", "2 loooooooooooong string 2"],
+            );
+            let s_2 = Series::new("a", &[Some("11 loooooooooooong string 11"), None]);
+            s_1.append(&s_2).unwrap();
+
+            // ## Ids without nulls;
+            let by = [
+                ChunkId::store(0, 0),
+                ChunkId::store(0, 1),
+                ChunkId::store(1, 1),
+                ChunkId::store(1, 0),
+            ];
+
+            let out = s_1.take_chunked_unchecked(&by, IsSorted::Not);
+            let idx = IdxCa::new("", [0, 1, 3, 2]);
+            let expected = s_1.rechunk().take(&idx).unwrap();
+            assert!(out.equals_missing(&expected));
+
+            // ## Ids with nulls;
+            let by: [ChunkId; 4] = [
+                ChunkId::null(),
+                ChunkId::store(0, 1),
+                ChunkId::store(1, 1),
+                ChunkId::store(1, 0),
+            ];
+            let out = s_1.take_opt_chunked_unchecked(&by);
+
+            let idx = IdxCa::new("", [None, Some(1), Some(3), Some(2)]);
+            let expected = s_1.rechunk().take(&idx).unwrap();
+            assert!(out.equals_missing(&expected));
+        }
+    }
 }
