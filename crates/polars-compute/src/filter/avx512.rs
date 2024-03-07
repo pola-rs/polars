@@ -26,7 +26,7 @@ macro_rules! simd_filter {
                 m64 >>= MASK_BITS % 64;
             }
         }
-        
+
         // Handle the SIMD-block-sized remainder.
         let subchunks = $values.chunks_exact(MASK_BITS);
         $values = subchunks.remainder();
@@ -38,7 +38,7 @@ macro_rules! simd_filter {
         }
 
         ($values, $mask_bytes, $out)
-    }}
+    }};
 }
 
 /// # Safety
@@ -46,7 +46,11 @@ macro_rules! simd_filter {
 /// AVX512_VBMI2 must be enabled.
 #[target_feature(enable = "avx512f")]
 #[target_feature(enable = "avx512vbmi2")]
-pub unsafe fn filter_u8_avx512vbmi2<'a>(mut values: &'a [u8], mut mask_bytes: &'a [u8], mut out: *mut u8) -> (&'a [u8], &'a [u8], *mut u8) {
+pub unsafe fn filter_u8_avx512vbmi2<'a>(
+    mut values: &'a [u8],
+    mut mask_bytes: &'a [u8],
+    mut out: *mut u8,
+) -> (&'a [u8], &'a [u8], *mut u8) {
     simd_filter!(values, mask_bytes, out, |vchunk, m: u64| {
         // We don't use compress-store instructions because they are very slow
         // on Zen. We are allowed to overshoot anyway.
@@ -62,7 +66,11 @@ pub unsafe fn filter_u8_avx512vbmi2<'a>(mut values: &'a [u8], mut mask_bytes: &'
 /// AVX512_VBMI2 must be enabled.
 #[target_feature(enable = "avx512f")]
 #[target_feature(enable = "avx512vbmi2")]
-pub unsafe fn filter_u16_avx512vbmi2<'a>(mut values: &'a [u16], mut mask_bytes: &'a [u8], mut out: *mut u16) -> (&'a [u16], &'a [u8], *mut u16) {
+pub unsafe fn filter_u16_avx512vbmi2<'a>(
+    mut values: &'a [u16],
+    mut mask_bytes: &'a [u8],
+    mut out: *mut u16,
+) -> (&'a [u16], &'a [u8], *mut u16) {
     simd_filter!(values, mask_bytes, out, |vchunk, m: u32| {
         let v = _mm512_loadu_si512(vchunk.as_ptr().cast());
         let filtered = _mm512_maskz_compress_epi16(m, v);
@@ -75,7 +83,11 @@ pub unsafe fn filter_u16_avx512vbmi2<'a>(mut values: &'a [u16], mut mask_bytes: 
 /// out must be valid for 16 + bitslice(mask_bytes, 0..values.len()).count_ones() writes.
 /// AVX512F must be enabled.
 #[target_feature(enable = "avx512f")]
-pub unsafe fn filter_u32_avx512f<'a>(mut values: &'a [u32], mut mask_bytes: &'a [u8], mut out: *mut u32) -> (&'a [u32], &'a [u8], *mut u32) {
+pub unsafe fn filter_u32_avx512f<'a>(
+    mut values: &'a [u32],
+    mut mask_bytes: &'a [u8],
+    mut out: *mut u32,
+) -> (&'a [u32], &'a [u8], *mut u32) {
     simd_filter!(values, mask_bytes, out, |vchunk, m: u16| {
         let v = _mm512_loadu_si512(vchunk.as_ptr().cast());
         let filtered = _mm512_maskz_compress_epi32(m, v);
@@ -88,7 +100,11 @@ pub unsafe fn filter_u32_avx512f<'a>(mut values: &'a [u32], mut mask_bytes: &'a 
 /// out must be valid for 8 + bitslice(mask_bytes, 0..values.len()).count_ones() writes.
 /// AVX512F must be enabled.
 #[target_feature(enable = "avx512f")]
-pub unsafe fn filter_u64_avx512f<'a>(mut values: &'a [u64], mut mask_bytes: &'a [u8], mut out:*mut u64) -> (&'a [u64], &'a [u8], *mut u64) {
+pub unsafe fn filter_u64_avx512f<'a>(
+    mut values: &'a [u64],
+    mut mask_bytes: &'a [u8],
+    mut out: *mut u64,
+) -> (&'a [u64], &'a [u8], *mut u64) {
     simd_filter!(values, mask_bytes, out, |vchunk, m: u8| {
         let v = _mm512_loadu_si512(vchunk.as_ptr().cast());
         let filtered = _mm512_maskz_compress_epi64(m, v);

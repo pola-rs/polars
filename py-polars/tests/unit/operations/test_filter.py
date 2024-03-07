@@ -1,11 +1,11 @@
 from datetime import datetime
 
+import numpy as np
 import pytest
 
-import numpy as np
 import polars as pl
 from polars import PolarsDataType
-from polars.testing import assert_series_equal, assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 def test_simplify_expression_lit_true_4376() -> None:
@@ -241,23 +241,20 @@ def test_filter_logical_type_13194() -> None:
     )
     assert_frame_equal(df, expected_df)
 
+
 @pytest.mark.slow()
 @pytest.mark.parametrize(
     "dtype", [pl.Boolean, pl.Int8, pl.Int16, pl.Int32, pl.Int64, pl.String]
 )
-@pytest.mark.parametrize(
-    "size", list(range(64)) + [100, 1000, 10000]
-)
-@pytest.mark.parametrize(
-    "selectivity", [0.0, 0.01, 0.1, 0.5, 0.9, 0.99, 1.0 + 1e-6]
-)
+@pytest.mark.parametrize("size", list(range(64)) + [100, 1000, 10000])
+@pytest.mark.parametrize("selectivity", [0.0, 0.01, 0.1, 0.5, 0.9, 0.99, 1.0 + 1e-6])
 def test_filter(dtype: PolarsDataType, size: int, selectivity: float) -> None:
     rng = np.random.Generator(np.random.PCG64(size * 100 + int(100 * selectivity)))
-    np_payload = rng.uniform(size = size) * 100.0
-    np_mask = rng.uniform(size = size) < selectivity
+    np_payload = rng.uniform(size=size) * 100.0
+    np_mask = rng.uniform(size=size) < selectivity
     payload = pl.Series(np_payload).cast(dtype)
     mask = pl.Series(np_mask, dtype=pl.Boolean)
-    
+
     reference = pl.Series(np_payload[np_mask]).cast(dtype)
     result = payload.filter(mask)
     assert_series_equal(reference, result)

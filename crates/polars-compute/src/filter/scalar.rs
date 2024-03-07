@@ -50,7 +50,11 @@ unsafe fn scalar_dense_filter64<T: Pod>(v: &[T], mut m: u64, out: *mut T) {
 ///
 /// # Safety
 /// out must be valid for at least mask.set_bits() + 1 writes.
-pub unsafe fn scalar_filter_offset<'a, T: Pod>(values: &'a [T], mask: &'a Bitmap, mut out: *mut T) -> (&'a [T], &'a [u8], *mut T) {
+pub unsafe fn scalar_filter_offset<'a, T: Pod>(
+    values: &'a [T],
+    mask: &'a Bitmap,
+    mut out: *mut T,
+) -> (&'a [T], &'a [u8], *mut T) {
     assert_eq!(values.len(), mask.len());
 
     let (mut mask_bytes, offset, len) = mask.as_slice();
