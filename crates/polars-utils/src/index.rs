@@ -1,6 +1,6 @@
 use std::fmt::{Debug, Formatter};
 
-use polars_error::{polars_bail, polars_ensure, PolarsResult};
+use polars_error::{polars_ensure, PolarsResult};
 
 use crate::nulls::IsNull;
 use crate::slice::GetSaferUnchecked;

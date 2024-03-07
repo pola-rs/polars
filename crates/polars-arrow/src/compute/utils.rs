@@ -1,6 +1,6 @@
 use std::ops::{BitAnd, BitOr};
 
-use polars_error::{polars_bail, polars_ensure, PolarsResult};
+use polars_error::{polars_ensure, PolarsResult};
 
 use crate::array::Array;
 use crate::bitmap::{ternary, Bitmap};
