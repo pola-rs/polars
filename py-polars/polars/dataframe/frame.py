@@ -7260,12 +7260,6 @@ class DataFrame:
         know these unique values in advance, you can perform a "lazy pivot", as shown in
         the "Examples" section below.
 
-        Notes
-        -----
-        `pivot` will introduce `null` values in the output `DataFrame` if not every
-        combination of the values in `index` and `columns` appears in the input
-        `DataFrame`.
-
         Parameters
         ----------
         values
@@ -7313,6 +7307,12 @@ class DataFrame:
         --------
         melt : the inverse of `pivot`; "unpivots" from wide to long format.
 
+        Notes
+        -----
+        This will introduce `null` values in the output `DataFrame` if not every
+        combination of the values in `index` and `columns` appears in the input
+        `DataFrame`.
+
         Examples
         --------
         >>> df_long = pl.DataFrame(
@@ -7358,8 +7358,7 @@ class DataFrame:
         │ Cam   ┆ Yu   ┆ 83.0 ┆ null │
         └───────┴──────┴──────┴──────┘
 
-        Use a selector to determine the `values` columns, `maintain_order=True` to
-        alphabetically order the index rows (`'First'` and `'Last'`), and
+        Use a selector to determine the `values` columns, and
         `sort_columns=True` to alphabetically order the non-index columns (`'Art'` and
         `'Math'`):
 
@@ -7368,7 +7367,6 @@ class DataFrame:
         ...     index=["First", "Last"],
         ...     columns="Subject",
         ...     values=cs.integer(),
-        ...     maintain_order=True,
         ...     sort_columns=True,
         ... )
         shape: (3, 4)
@@ -7403,7 +7401,6 @@ class DataFrame:
         ...     )
         ...     .collect()
         ... )  # doctest: +IGNORE_RESULT
-
         shape: (3, 4)
         ┌───────┬──────┬──────┬──────┐
         │ First ┆ Last ┆ Art  ┆ Math │
@@ -7475,9 +7472,9 @@ class DataFrame:
         value_name: str | None = None,
     ) -> Self:
         """
-        Unpivot this `DataFrame` from wide to long format. The inverse of :func:`pivot`.
+        Unpivot `DataFrame` from wide to long format. The inverse of :func:`pivot`.
 
-        `melt` transforms a "wide-format" `DataFrame`, where each element represents an
+        Transforms a "wide-format" `DataFrame`, where each element represents an
         observation, into a "long-format" one, where each row represents an observation.
 
         Parameters

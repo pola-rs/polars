@@ -49,7 +49,7 @@ argument.
 When multiple rows of the input `DataFrame` have the same `values` for all the
 columns in `index` and `columns`, `pivot` will raise an error unless these
 multiple values are aggregated into a single value before pivoting. This can be
-done prior to pivoting with a :func:`group_by`, but `pivot` also provides a
+done prior to pivoting with a `group_by`, but `pivot` also provides a
 convenient way to do this aggregation internally, by specifying the
 `aggregate_function` argument. You can specify one of 8 predefined aggregation
 functions as strings:

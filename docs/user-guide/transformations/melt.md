@@ -1,6 +1,6 @@
 # Melts
 
-`melt` is the opposite of `pivot`: it transforms a "wide-format" `DataFrame`,
+The `melt` operation is the opposite of `pivot`: it transforms a "wide-format" `DataFrame`,
 where each element represents an observation, into a "long-format" one, where
 each row represents an observation.
 

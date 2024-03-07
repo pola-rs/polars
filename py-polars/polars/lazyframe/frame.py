@@ -5667,11 +5667,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         streamable: bool = True,
     ) -> Self:
         """
-        Unpivot this `LazyFrame` from wide to long format.
+        Unpivot `LazyFrame` from wide to long format.
 
         The inverse of :func:`DataFrame.pivot`.
 
-        `melt` transforms a "wide-format" `DataFrame`, where each element represents an
+        Transforms a "wide-format" `DataFrame`, where each element represents an
         observation, into a "long-format" one, where each row represents an observation.
 
         Parameters
