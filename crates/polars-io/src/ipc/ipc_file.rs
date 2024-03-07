@@ -164,7 +164,7 @@ impl<R: MmapBytesReader> IpcReader<R> {
         let rechunk = self.rechunk;
         let metadata = read::read_file_metadata(&mut self.reader)?;
 
-        assert!(
+        debug_assert!(
             self.columns.is_none(),
             "column names must have already been converted into indices",
         );
