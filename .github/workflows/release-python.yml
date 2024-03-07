@@ -216,7 +216,8 @@ jobs:
 
       - name: Publish to PyPI
         if: inputs.dry-run == false
-        uses: pypa/gh-action-pypi-publish@release/v1
+        # Pinned to commit to circumvent an issue with the v1.8.12 release
+        uses: pypa/gh-action-pypi-publish@aec4e82833d00547d2c8e4744a0d08766a02629a
         with:
           verbose: true
 
