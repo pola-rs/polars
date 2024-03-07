@@ -5688,8 +5688,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             The name to give to the measured variables column; defaults to `"value"`.
         streamable
             Whether to allow this node to run in the streaming engine.
-            If `streamable=True`, the output of the melt operation will not have a
-            stable ordering.
+            If this runs in streaming, the output of the melt operation
+            will not have a stable ordering.
 
         See Also
         --------

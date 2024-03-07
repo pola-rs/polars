@@ -7267,11 +7267,11 @@ class DataFrame:
             If None, all columns not specified in the index and columns arguments will
             be used.
         index
-            The column(s) whose values will become the index of the output `DataFrame`.
+            The column(s) whose values will act like row labels in the output `DataFrame`.
         columns
             The column(s) whose values will become the columns of the output
             `DataFrame`. If these columns are not :class:`String` columns, their values
-            will be coerced to strings, since polars column names must be strings.
+            will be coerced to strings, since Polars column names must be strings.
         aggregate_function
             A function to aggregate multiple `values` with the same `index` and
             `columns` prior to pivoting, equivalent to using :func:`group_by` as a
@@ -7292,8 +7292,7 @@ class DataFrame:
             `maintain_order=False` is not currently implemented.
         sort_columns
             Whether to order the non-index columns of the output `DataFrame` in
-            alphabetical order (if `sort_columns=True`), or in the same order they first
-            appeared in the `columns` of the input `DataFrame` (if `sort_columns=False`).
+            alphabetical order (if `sort_columns=True`).
         separator
             A string used as the separator/delimiter in generated column names. Only
             used when there are multiple `values` columns.
