@@ -9,6 +9,7 @@ from pathlib import Path
 from types import GeneratorType
 from typing import TYPE_CHECKING, Any, NamedTuple
 
+import pyarrow as pa
 import pytest
 from sqlalchemy import Integer, MetaData, Table, create_engine, func, select
 from sqlalchemy.orm import sessionmaker
@@ -20,8 +21,6 @@ from polars.io.database import _ARROW_DRIVER_REGISTRY_
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
-    import pyarrow as pa
-
     from polars.type_aliases import (
         ConnectionOrCursor,
         DbReadEngine,
@@ -431,7 +430,7 @@ def test_read_database_parameterised_uri(
     expected_frame = pl.DataFrame({"year": [2021], "name": ["other"], "value": [-99.5]})
 
     for param, param_value in (
-        (":n", {"n": 0}),
+        (":n", pa.Table.from_pydict({"n": [0]})),
         ("?", (0,)),
         ("?", [0]),
     ):

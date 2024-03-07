@@ -8,11 +8,12 @@ from typing import TYPE_CHECKING, Any, Iterable, Literal, Sequence, TypedDict, o
 
 from polars._utils.deprecation import issue_deprecation_warning
 from polars.convert import from_arrow
-from polars.dependencies import pyarrow as pa
 from polars.exceptions import InvalidOperationError, UnsuitableSQLError
 
 if TYPE_CHECKING:
     from types import TracebackType
+
+    import pyarrow as pa
 
     if sys.version_info >= (3, 10):
         from typing import TypeAlias
@@ -822,14 +823,6 @@ def _read_sql_adbc(
     execute_options: dict[str, Any] | None = None,
 ) -> DataFrame:
     with _open_adbc_connection(connection_uri) as conn, conn.cursor() as cursor:
-        if (
-            execute_options
-            and (params := execute_options.get("parameters")) is not None
-        ):
-            if isinstance(params, dict):
-                params = pa.Table.from_pydict({k: [v] for k, v in params.items()})
-                execute_options["parameters"] = params
-
         cursor.execute(query, **(execute_options or {}))
         tbl = cursor.fetch_arrow_table()
     return from_arrow(tbl, schema_overrides=schema_overrides)  # type: ignore[return-value]
