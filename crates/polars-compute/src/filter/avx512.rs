@@ -1,6 +1,4 @@
 use core::arch::x86_64::*;
-use polars_utils::clmul::clmul64;
-
 
 // It's not possible to inline target_feature(enable = ...) functions into other
 // functions without that enabled, so we use a macro for these very-similarly
@@ -96,36 +94,5 @@ pub unsafe fn filter_u64_avx512f<'a>(mut values: &'a [u64], mut mask_bytes: &'a 
         let filtered = _mm512_maskz_compress_epi64(m, v);
         _mm512_storeu_si512(out.cast(), filtered);
         out = out.add(m.count_ones() as usize);
-    })
-}
-
-/// # Safety
-/// out must be valid for 4 + bitslice(mask_bytes, 0..values.len()).count_ones() writes.
-/// AVX512F must be enabled.
-#[target_feature(enable = "avx512f")]
-pub unsafe fn filter_u128_unaligned_avx512f<'a>(mut values: &'a [[u8; 16]], mut mask_bytes: &'a [u8], mut out: *mut [u8; 16]) -> (&'a [[u8; 16]], &'a [u8], *mut [u8; 16]) {
-    simd_filter!(values, mask_bytes, out, |vchunk, m: u8| {
-        // u8 is the smallest mask type, this covers two 512-bit chunks.
-        // We want to duplicate each bit so we can use the 64-bit AVX compress
-        // instruction, so abcdefgh -> aabbccdd eeffgghh.
-        // clmul(x, x) is the bits of x interleaved with zeros, multiplying by
-        // 3 afterwards is equivalent to m + (m << 1) filling the zeros with
-        // the duplicate bits as desired.
-        let dup_m = clmul64(m as u64, m as u64) * 3;
-        let lo_mask = dup_m as u8;
-        let hi_mask = (dup_m >> 8) as u8;
-        let lo_popcnt = (m & 0b1111).count_ones();
-        let hi_popcnt = m.count_ones() - lo_popcnt;
-        
-        let base_ptr = vchunk.as_ptr() as *const u8;
-        let lo_v = _mm512_loadu_si512(base_ptr.cast());
-        let lo_filtered = _mm512_maskz_compress_epi64(lo_mask, lo_v);
-        _mm512_storeu_si512(out.cast(), lo_filtered);
-        out = out.add(lo_popcnt as usize);
-
-        let hi_v = _mm512_loadu_si512(base_ptr.add(64).cast());
-        let hi_filtered = _mm512_maskz_compress_epi64(hi_mask, hi_v);
-        _mm512_storeu_si512(out.cast(), hi_filtered);
-        out = out.add(hi_popcnt as usize);
     })
 }
