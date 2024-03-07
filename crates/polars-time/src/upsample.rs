@@ -127,37 +127,44 @@ fn upsample_impl(
         )
     }
     ensure_sorted_arg(s, "upsample")?;
-    if matches!(s.dtype(), DataType::Date) {
+    let time_type = s.dtype();
+    if matches!(time_type, DataType::Date) {
         let mut df = source.clone();
-        df.try_apply(index_column, |s| {
+        df.apply(index_column, |s| {
             s.cast(&DataType::Datetime(TimeUnit::Milliseconds, None))
+                .unwrap()
         })
         .unwrap();
         let mut out = upsample_impl(&df, by, index_column, every, offset, stable).unwrap();
-        out.try_apply(index_column, |s| s.cast(&DataType::Date))
+        out.apply(index_column, |s| s.cast(time_type).unwrap())
             .unwrap();
         Ok(out)
-    } else if matches!(s.dtype(), DataType::Int32) {
+    } else if matches!(
+        time_type,
+        DataType::UInt32 | DataType::UInt64 | DataType::Int32
+    ) {
         let mut df = source.clone();
 
-        df.try_apply(index_column, |s| {
+        df.apply(index_column, |s| {
             s.cast(&DataType::Int64)
                 .unwrap()
                 .cast(&DataType::Datetime(TimeUnit::Nanoseconds, None))
+                .unwrap()
         })
         .unwrap();
         let mut out = upsample_impl(&df, by, index_column, every, offset, stable).unwrap();
-        out.try_apply(index_column, |s| s.cast(&DataType::Int32))
+        out.apply(index_column, |s| s.cast(time_type).unwrap())
             .unwrap();
         Ok(out)
-    } else if matches!(s.dtype(), DataType::Int64) {
+    } else if matches!(time_type, DataType::Int64) {
         let mut df = source.clone();
-        df.try_apply(index_column, |s| {
+        df.apply(index_column, |s| {
             s.cast(&DataType::Datetime(TimeUnit::Nanoseconds, None))
+                .unwrap()
         })
         .unwrap();
         let mut out = upsample_impl(&df, by, index_column, every, offset, stable).unwrap();
-        out.try_apply(index_column, |s| s.cast(&DataType::Int64))
+        out.apply(index_column, |s| s.cast(time_type).unwrap())
             .unwrap();
         Ok(out)
     } else if by.is_empty() {

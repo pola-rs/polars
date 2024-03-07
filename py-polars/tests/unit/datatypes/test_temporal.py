@@ -781,6 +781,17 @@ def test_upsample_time_zones(
         ),
         (
             "1i",
+            "0h",
+            "forward",
+            pl.DataFrame(
+                {
+                    "index": [1, 2, 3, 4] + [5, 6, 7],
+                    "groups": ["a"] * 4 + ["b"] * 3,
+                }
+            ),
+        ),
+        (
+            "1i",
             "1i",
             "backward",
             pl.DataFrame(
@@ -792,7 +803,7 @@ def test_upsample_time_zones(
         ),
     ],
 )
-@pytest.mark.parametrize("dtype", [pl.Int32, pl.Int64])
+@pytest.mark.parametrize("dtype", [pl.Int32, pl.Int64, pl.UInt32, pl.UInt64])
 def test_upsample_index(
     every: str,
     offset: str,
@@ -807,8 +818,8 @@ def test_upsample_index(
                 "groups": ["a"] * 3 + ["b"] * 2,
             }
         )
-        .set_sorted("index")
         .with_columns(pl.col("index").cast(dtype))
+        .set_sorted("index")
     )
     expected = expected.with_columns(pl.col("index").cast(dtype))
     result = (
@@ -824,7 +835,22 @@ def test_upsample_index(
     [
         (
             "1i",
-            "1h",  # invalid duration type
+            "1h",
+            "forward",
+        ),
+        (
+            "1h",
+            "1i",
+            "forward",
+        ),
+        (
+            "1h",
+            "0i",
+            "forward",
+        ),
+        (
+            "0i",
+            "1h",
             "forward",
         ),
     ],
@@ -841,7 +867,9 @@ def test_upsample_index_invalid(
             "groups": ["a"] * 3 + ["b"] * 2,
         }
     ).set_sorted("index")
-    with pytest.raises(ComputeError):
+    with pytest.raises(
+        ComputeError, match=r"cannot combine time .* integer"
+    ):
         df.upsample(time_column="index", every=every, offset=offset)
 
 
