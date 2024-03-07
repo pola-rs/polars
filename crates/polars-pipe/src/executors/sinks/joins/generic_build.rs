@@ -334,7 +334,8 @@ impl<K: ExtraPayload> Sink for GenericBuild<K> {
                     self.join_type.clone(),
                     self.join_nulls,
                 );
-                Ok(FinalizedSink::Operator(Box::new(probe_operator)))
+                self.placeholder.replace(Box::new(probe_operator));
+                Ok(FinalizedSink::Operator)
             },
             JoinType::Outer { coalesce } => {
                 let probe_operator = GenericOuterJoinProbe::new(
@@ -352,7 +353,7 @@ impl<K: ExtraPayload> Sink for GenericBuild<K> {
                     self.key_names_right.clone(),
                 );
                 self.placeholder.replace(Box::new(probe_operator));
-                Ok(FinalizedSink::Operator(Box::new(get_dummy_operator())))
+                Ok(FinalizedSink::Operator)
             },
 
             _ => unimplemented!(),

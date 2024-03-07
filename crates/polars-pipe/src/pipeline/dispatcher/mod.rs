@@ -314,17 +314,17 @@ impl PipeLine {
                     if sink.is_join_build()
                         && (!reduced_sink.is_join_build() || (sink.node() != reduced_sink.node()))
                     {
-                        let FinalizedSink::Operator(op) = sink.finalize(ec)? else {
+                        let FinalizedSink::Operator = sink.finalize(ec)? else {
                             unreachable!()
                         };
-                        let mut q = pipeline_q.borrow_mut();
-                        let Some(node) = pipeline.sink_nodes.pop() else {
-                            unreachable!()
-                        };
-
-                        for probe_side in q.iter_mut() {
-                            let _ = probe_side.replace_operator(op.as_ref(), node);
-                        }
+                        // let mut q = pipeline_q.borrow_mut();
+                        // let Some(node) = pipeline.sink_nodes.pop() else {
+                        //     unreachable!()
+                        // };
+                        //
+                        // for probe_side in q.iter_mut() {
+                        //     let _ = probe_side.replace_operator(op.as_ref(), node);
+                        // }
                     } else {
                         reduced_sink.combine(sink.as_mut());
                         shared_sink_count = count;
@@ -339,7 +339,7 @@ impl PipeLine {
                     FinalizedSink::Finished(df) => self.set_df_as_sources(df),
                     FinalizedSink::Source(src) => self.set_sources(src),
                     // should not happen
-                    FinalizedSink::Operator(_) => {
+                    FinalizedSink::Operator => {
                         unreachable!()
                     },
                 }
@@ -395,7 +395,7 @@ impl PipeLine {
                 // we replace the dummy node in the right hand side pipeline with this
                 // operator and then we run the pipeline rinse and repeat
                 // until the final right hand side pipeline ran
-                Some(FinalizedSink::Operator(op)) => {
+                Some(FinalizedSink::Operator) => {
                     // we unwrap, because the latest pipeline should not return an Operator
                     let mut pipeline = self.other_branches.borrow_mut().pop_front().unwrap();
 

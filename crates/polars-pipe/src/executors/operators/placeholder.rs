@@ -17,7 +17,7 @@ impl CallBack {
             inner: Default::default()
         }
     }
-    
+
     pub fn replace(&self, op: Box<dyn Operator>) {
         let mut inner = self.inner.lock().unwrap();
         *inner = Some(op);
@@ -35,12 +35,24 @@ impl Operator for CallBack {
         panic!("should not be called")
     }
 
+    fn must_flush(&self) -> bool {
+        let inner = self.inner.lock().unwrap();
+        let inner = inner.as_ref().unwrap();
+        inner.must_flush()
+    }
+
+    fn flush(&mut self) -> PolarsResult<OperatorResult> {
+        let mut inner = self.inner.lock().unwrap();
+        let inner = inner.as_mut().unwrap();
+        inner.flush()
+    }
+
     fn fmt(&self) -> &str {
         "callback"
     }
 }
 
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct PlaceHolder {
     inner: Arc<Mutex<Vec<(usize, CallBack)>>>
 }
