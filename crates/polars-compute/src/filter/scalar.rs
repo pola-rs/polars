@@ -64,16 +64,15 @@ pub unsafe fn scalar_filter_offset<'a, T: Pod>(
         mask_bytes = &mask_bytes[1..];
 
         for byte_idx in offset..8 {
-            let mask_bit = first_byte & (1 << byte_idx) != 0;
-            if mask_bit && value_idx < len {
+            if value_idx < len {
                 unsafe {
-                    // SAFETY: we only write to out for one bits, and checked
-                    // that value_idx < len.
+                    // SAFETY: we checked that value_idx < len.
+                    let bit_is_set = first_byte & (1 << byte_idx) != 0;
                     *out = *values.get_unchecked(value_idx);
-                    out = out.add(1);
+                    out = out.add(bit_is_set as usize);
                 }
+                value_idx += 1;
             }
-            value_idx += 1;
         }
     }
 
