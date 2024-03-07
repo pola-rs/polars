@@ -2,7 +2,7 @@ use std::ops::BitOr;
 
 use polars_core::prelude::*;
 use polars_core::utils::try_get_supertype;
-use polars_error::{polars_bail, polars_ensure};
+use polars_error::polars_ensure;
 
 use crate::frame::join::*;
 use crate::prelude::*;
