@@ -7260,8 +7260,8 @@ class DataFrame:
         know these unique values in advance, you can perform a "lazy pivot", as shown in
         the "Examples" section below.
 
-        Warnings
-        --------
+        Notes
+        -----
         `pivot` will introduce `null` values in the output `DataFrame` if not every
         combination of the values in `index` and `columns` appears in the input
         `DataFrame`.

@@ -23,8 +23,9 @@ column:
   be placed at row `"index_n"` (i.e. the row where the `index` column has
   the value `index_n`) and column `"columns_n"`.
 
-Thus, if there are `N` unique values in the `columns` column, there will be
-`N + 1` columns in the pivoted `DataFrame`: one for the row names, the
+Thus, in this simple case where `values`, `index` and `columns` are each a 
+single column, if there are `N` unique values in the `columns` column, there 
+will be `N + 1` columns in the pivoted `DataFrame`: one for the row names, the
 remaining `N` for the values.
 
 If there are multiple `index` columns instead of one, each unique _combination_
