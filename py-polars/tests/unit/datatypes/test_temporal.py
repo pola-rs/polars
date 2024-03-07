@@ -867,9 +867,7 @@ def test_upsample_index_invalid(
             "groups": ["a"] * 3 + ["b"] * 2,
         }
     ).set_sorted("index")
-    with pytest.raises(
-        ComputeError, match=r"cannot combine time .* integer"
-    ):
+    with pytest.raises(ComputeError, match=r"cannot combine time .* integer"):
         df.upsample(time_column="index", every=every, offset=offset)
 
 
