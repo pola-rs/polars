@@ -1,4 +1,5 @@
 use super::*;
+use crate::pipeline::*;
 
 /// Take data chunks from the sources and pushes them into the operators + sink. Every operator
 /// works thread local.
@@ -102,6 +103,7 @@ pub(super) fn push_operators_single_thread(
                 }
             },
             Some(op) => {
+                let op = op.get_mut();
                 match op.execute(ec, &chunk)? {
                     OperatorResult::Finished(chunk) => {
                         must_flush.store(op.must_flush(), Ordering::Relaxed);
@@ -163,13 +165,13 @@ pub(super) fn par_flush(
 
 pub(super) fn flush_operators(
     ec: &PExecutionContext,
-    operators: &mut [Box<dyn Operator>],
+    operators: &mut [PhysOperator],
     sink: &mut Box<dyn Sink>,
 ) -> PolarsResult<SinkResult> {
     let needs_flush = operators
-        .iter()
+        .iter_mut()
         .enumerate()
-        .filter_map(|(i, op)| if op.must_flush() { Some(i) } else { None })
+        .filter_map(|(i, op)| if op.get_mut().must_flush() { Some(i) } else { None })
         .collect::<Vec<_>>();
 
     // Stack based flushing + operator execution.
@@ -190,7 +192,7 @@ pub(super) fn flush_operators(
                 match chunk {
                     // The branch for flushing.
                     None => {
-                        let op = operators.get_mut(op_i).unwrap();
+                        let op = operators.get_mut(op_i).unwrap().get_mut();
                         match op.flush()? {
                             OperatorResult::Finished(chunk) => {
                                 // Push the chunk in the next operator.
@@ -216,6 +218,7 @@ pub(super) fn flush_operators(
                                 }
                             },
                             Some(op) => {
+                                let op = op.get_mut();
                                 match op.execute(ec, &chunk)? {
                                     OperatorResult::Finished(chunk) => {
                                         in_process.push((op_i + 1, Some(chunk)))

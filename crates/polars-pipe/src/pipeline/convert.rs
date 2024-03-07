@@ -9,14 +9,15 @@ use polars_io::predicates::{PhysicalIoExpr, StatsEvaluator};
 use polars_ops::prelude::JoinType;
 use polars_plan::prelude::*;
 
-use crate::executors::operators::HstackOperator;
+use crate::executors::operators::{HstackOperator, PlaceHolder};
 use crate::executors::sinks::group_by::aggregates::convert_to_hash_agg;
 use crate::executors::sinks::group_by::GenericGroupby2;
 use crate::executors::sinks::*;
 use crate::executors::{operators, sources};
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{Operator, Sink as SinkTrait, Source};
-use crate::pipeline::dispatcher::SinkNode;
+use crate::pipeline::callbacks::CallBackReplacer;
+use crate::pipeline::dispatcher::ThreadedSink;
 use crate::pipeline::PipeLine;
 
 fn exprs_to_physical<F>(
@@ -159,6 +160,7 @@ pub fn get_sink<F>(
     lp_arena: &Arena<ALogicalPlan>,
     expr_arena: &mut Arena<AExpr>,
     to_physical: &F,
+    callbacks: &mut CallBackReplacer
 ) -> PolarsResult<Box<dyn SinkTrait>>
 where
     F: Fn(Node, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
@@ -244,11 +246,12 @@ where
             // slice pushdown optimization should not set this one in a streaming query.
             assert!(options.args.slice.is_none());
             let swapped = swap_join_order(options);
+            let placeholder = callbacks.get_placeholder(&node);
 
             match &options.args.how {
                 #[cfg(feature = "cross_join")]
                 JoinType::Cross => {
-                    Box::new(CrossJoin::new(options.args.suffix().into(), swapped, node))
+                    Box::new(CrossJoin::new(options.args.suffix().into(), swapped, node, placeholder))
                         as Box<dyn SinkTrait>
                 },
                 jt => {
@@ -290,6 +293,7 @@ where
                                 // We don't need the key names for these joins.
                                 vec![].into(),
                                 vec![].into(),
+                                placeholder
                             )) as Box<dyn SinkTrait>
                         },
                         JoinType::Outer { .. } => {
@@ -315,6 +319,7 @@ where
                                 node,
                                 key_names_left,
                                 key_names_right,
+                                placeholder
                             )) as Box<dyn SinkTrait>
                         },
                         _ => unimplemented!(),
@@ -520,8 +525,8 @@ where
     Ok(out)
 }
 
-pub fn get_dummy_operator() -> Box<dyn Operator> {
-    Box::new(operators::PlaceHolder {})
+pub fn get_dummy_operator() ->  PlaceHolder {
+    operators::PlaceHolder::new()
 }
 
 fn get_hstack<F>(
@@ -548,6 +553,7 @@ pub fn get_operator<F>(
     lp_arena: &Arena<ALogicalPlan>,
     expr_arena: &Arena<AExpr>,
     to_physical: &F,
+    callbacks: &mut CallBackReplacer
 ) -> PolarsResult<Box<dyn Operator>>
 where
     F: Fn(Node, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
@@ -650,7 +656,10 @@ pub fn create_pipeline<F>(
     expr_arena: &mut Arena<AExpr>,
     to_physical: F,
     verbose: bool,
+    // Shared sinks are stored in a cache, so that they share state.
+    // If the shared sink is already in cache, that one is used.
     sink_cache: &mut PlHashMap<usize, Box<dyn SinkTrait>>,
+    callbacks: &mut CallBackReplacer
 ) -> PolarsResult<PipeLine>
 where
     F: Fn(Node, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
@@ -714,18 +723,18 @@ where
             // ensure that shared sinks are really shared
             // to achieve this we store/fetch them in a cache
             let sink = if *shared_count.borrow() == 1 {
-                get_sink(node, lp_arena, expr_arena, &to_physical)?
+                get_sink(node, lp_arena, expr_arena, &to_physical, callbacks)?
             } else {
                 match sink_cache.entry(node.0) {
                     Entry::Vacant(entry) => {
-                        let sink = get_sink(node, lp_arena, expr_arena, &to_physical)?;
+                        let sink = get_sink(node, lp_arena, expr_arena, &to_physical, callbacks)?;
                         entry.insert(sink.split(0));
                         sink
                     },
                     Entry::Occupied(entry) => entry.get().split(0),
                 }
             };
-            Ok(SinkNode::new(
+            Ok(ThreadedSink::new(
                 sink,
                 shared_count,
                 offset + operator_offset,
@@ -736,7 +745,7 @@ where
 
     Ok(PipeLine::new(
         source_objects,
-        operator_objects,
+        unsafe { std::mem::transmute(operator_objects) },
         operator_nodes,
         sinks,
         operator_offset,

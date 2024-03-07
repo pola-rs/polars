@@ -12,6 +12,7 @@ use polars_core::POOL;
 use polars_utils::arena::Node;
 use polars_utils::sync::SyncPtr;
 use rayon::prelude::*;
+use polars_utils::cell::SyncUnsafeCell;
 
 use crate::executors::sources::DataFrameSource;
 use crate::operators::{
@@ -21,15 +22,11 @@ use crate::operators::{
 use crate::pipeline::dispatcher::drive_operator::{par_flush, par_process_chunks};
 use crate::pipeline::morsels_per_sink;
 mod drive_operator;
+use super::*;
 
-type PhysOperator = Box<dyn Operator>;
-type PhysSink = Box<dyn Sink>;
-/// A physical operator/sink per thread.
-type ThreadedOperator = Vec<PhysOperator>;
-type ThreadedOperatorMut<'a> = &'a mut [PhysOperator];
-type ThreadedSinkMut<'a> = &'a mut [PhysSink];
 
-pub(super) struct SinkNode {
+pub(super) struct ThreadedSink {
+    /// A sink split per thread.
     pub sinks: Vec<Box<dyn Sink>>,
     /// when that hits 0, the sink will finalize
     pub shared_count: Rc<RefCell<u32>>,
@@ -42,7 +39,7 @@ pub(super) struct SinkNode {
     pub node: Node,
 }
 
-impl SinkNode {
+impl ThreadedSink {
     pub fn new(
         sink: Box<dyn Sink>,
         shared_count: Rc<RefCell<u32>>,
@@ -52,7 +49,7 @@ impl SinkNode {
         let n_threads = morsels_per_sink();
         let sinks = (0..n_threads).map(|i| sink.split(i)).collect();
         let initial_shared_count = *shared_count.borrow();
-        SinkNode {
+        ThreadedSink {
             sinks,
             initial_shared_count,
             shared_count,
@@ -117,7 +114,7 @@ pub struct PipeLine {
     /// - shared_count
     ///     when that hits 0, the sink will finalize
     /// - node of the sink
-    sinks: Vec<SinkNode>,
+    sinks: Vec<ThreadedSink>,
     /// are used to identify the sink shared with other pipeline branches
     sink_nodes: Vec<Node>,
     /// Other branch of the pipeline/tree that must be executed
@@ -135,9 +132,9 @@ impl PipeLine {
     #[allow(clippy::type_complexity)]
     pub(super) fn new(
         sources: Vec<Box<dyn Source>>,
-        operators: Vec<PhysOperator>,
+        mut operators: Vec<PhysOperator>,
         operator_nodes: Vec<Node>,
-        sinks: Vec<SinkNode>,
+        sinks: Vec<ThreadedSink>,
         operator_offset: usize,
         verbose: bool,
     ) -> PipeLine {
@@ -150,7 +147,7 @@ impl PipeLine {
         // We split so that every thread gets an operator
         // every index maps to a chain of operators than can be pushed as a pipeline for one thread
         let operators = (0..n_threads)
-            .map(|i| operators.iter().map(|op| op.split(i)).collect())
+            .map(|i| operators.iter().map(|op| op.get_ref().split(i).into()).collect())
             .collect();
 
         PipeLine {
@@ -168,7 +165,7 @@ impl PipeLine {
     /// Create a pipeline only consisting of a single branch that always finishes with a sink
     pub fn new_simple(
         sources: Vec<Box<dyn Source>>,
-        operators: Vec<Box<dyn Operator>>,
+        operators: Vec<PhysOperator>,
         sink: Box<dyn Sink>,
         verbose: bool,
     ) -> Self {
@@ -177,7 +174,7 @@ impl PipeLine {
             sources,
             operators,
             vec![],
-            vec![SinkNode::new(
+            vec![ThreadedSink::new(
                 sink,
                 Rc::new(RefCell::new(1)),
                 operators_len,
@@ -200,7 +197,7 @@ impl PipeLine {
         if let Some(pos) = self.operator_nodes.iter().position(|n| *n == node) {
             let pos = pos + self.operator_offset;
             for (i, operator_pipe) in &mut self.operators.iter_mut().enumerate() {
-                operator_pipe[pos] = op.split(i)
+                operator_pipe[pos] = op.split(i).into()
             }
             true
         } else {
@@ -432,7 +429,7 @@ impl Debug for PipeLine {
             // slice the pipeline
             let ops = &ops[start..sink.operator_end];
             for op in ops {
-                fmt.push_str(op.fmt());
+                fmt.push_str(op.get_ref().fmt());
                 fmt.push_str(" -> ")
             }
             start = sink.operator_end;

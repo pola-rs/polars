@@ -9,6 +9,7 @@ use polars_utils::arena::Node;
 use polars_utils::slice::GetSaferUnchecked;
 use polars_utils::unitvec;
 use smartstring::alias::String as SmartString;
+use crate::executors::operators::PlaceHolder;
 
 use super::*;
 use crate::executors::sinks::joins::generic_probe_inner_left::GenericJoinProbe;
@@ -51,6 +52,7 @@ pub struct GenericBuild<K: ExtraPayload> {
     node: Node,
     key_names_left: Arc<[SmartString]>,
     key_names_right: Arc<[SmartString]>,
+    placeholder: PlaceHolder
 }
 
 impl<K: ExtraPayload> GenericBuild<K> {
@@ -65,6 +67,7 @@ impl<K: ExtraPayload> GenericBuild<K> {
         node: Node,
         key_names_left: Arc<[SmartString]>,
         key_names_right: Arc<[SmartString]>,
+        placeholder: PlaceHolder
     ) -> Self {
         let hb: RandomState = Default::default();
         let partitions = _set_partition_size();
@@ -87,6 +90,7 @@ impl<K: ExtraPayload> GenericBuild<K> {
             node,
             key_names_left,
             key_names_right,
+            placeholder
         }
     }
 }
@@ -282,6 +286,7 @@ impl<K: ExtraPayload> Sink for GenericBuild<K> {
             self.node,
             self.key_names_left.clone(),
             self.key_names_right.clone(),
+            self.placeholder.clone()
         );
         new.hb = self.hb.clone();
         Box::new(new)
@@ -331,6 +336,7 @@ impl<K: ExtraPayload> Sink for GenericBuild<K> {
                 Ok(FinalizedSink::Operator(Box::new(probe_operator)))
             },
             JoinType::Outer { coalesce } => {
+
                 let probe_operator = GenericOuterJoinProbe::new(
                     left_df,
                     materialized_join_cols,
