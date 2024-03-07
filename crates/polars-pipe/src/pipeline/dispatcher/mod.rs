@@ -399,16 +399,16 @@ impl PipeLine {
                     // we unwrap, because the latest pipeline should not return an Operator
                     let mut pipeline = self.other_branches.borrow_mut().pop_front().unwrap();
 
-                    // latest sink_node will be the operator, as the left side of the join
-                    // always finishes that branch.
-                    if let Some(sink_node) = sink_nodes.pop() {
-                        // we traverse all pipeline
-                        pipeline.replace_operator(op.as_ref(), sink_node);
-                        // if there are unions, there can be more
-                        for pl in self.other_branches.borrow_mut().iter_mut() {
-                            pl.replace_operator(op.as_ref(), sink_node);
-                        }
-                    }
+                    // // latest sink_node will be the operator, as the left side of the join
+                    // // always finishes that branch.
+                    // if let Some(sink_node) = sink_nodes.pop() {
+                    //     // we traverse all pipeline
+                    //     pipeline.replace_operator(op.as_ref(), sink_node);
+                    //     // if there are unions, there can be more
+                    //     for pl in self.other_branches.borrow_mut().iter_mut() {
+                    //         pl.replace_operator(op.as_ref(), sink_node);
+                    //     }
+                    // }
                     sink_out = pipeline.run_pipeline(&ec, self.other_branches.clone())?;
                     sink_nodes = std::mem::take(&mut pipeline.sink_nodes);
                 },

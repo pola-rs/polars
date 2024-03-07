@@ -18,6 +18,7 @@ use crate::executors::sinks::utils::{hash_rows, load_vec};
 use crate::executors::sinks::HASHMAP_INIT_SIZE;
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult};
+use crate::pipeline::get_dummy_operator;
 
 pub(super) type ChunkIdx = IdxSize;
 pub(super) type DfIdx = IdxSize;
@@ -336,7 +337,6 @@ impl<K: ExtraPayload> Sink for GenericBuild<K> {
                 Ok(FinalizedSink::Operator(Box::new(probe_operator)))
             },
             JoinType::Outer { coalesce } => {
-
                 let probe_operator = GenericOuterJoinProbe::new(
                     left_df,
                     materialized_join_cols,
@@ -351,7 +351,8 @@ impl<K: ExtraPayload> Sink for GenericBuild<K> {
                     self.key_names_left.clone(),
                     self.key_names_right.clone(),
                 );
-                Ok(FinalizedSink::Operator(Box::new(probe_operator)))
+                self.placeholder.replace(Box::new(probe_operator));
+                Ok(FinalizedSink::Operator(Box::new(get_dummy_operator())))
             },
 
             _ => unimplemented!(),
