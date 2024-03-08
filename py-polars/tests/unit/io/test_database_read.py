@@ -706,7 +706,6 @@ def test_read_database_cx_credentials(uri: str) -> None:
 
 @pytest.mark.write_disk()
 def test_read_kuzu_graph_database(tmp_path: Path, io_files_path: Path) -> None:
-    # validate reading from a kuzu graph database
     import kuzu
 
     tmp_path.mkdir(exist_ok=True)
@@ -717,7 +716,7 @@ def test_read_kuzu_graph_database(tmp_path: Path, io_files_path: Path) -> None:
 
     db = kuzu.Database(test_db)
     conn = kuzu.Connection(db)
-    conn.execute("CREATE NODE TABLE User(name STRING, age INT64, PRIMARY KEY (name))")
+    conn.execute("CREATE NODE TABLE User(name STRING, age UINT64, PRIMARY KEY (name))")
     conn.execute("CREATE REL TABLE Follows(FROM User TO User, since INT64)")
 
     users = str(io_files_path / "graph-data" / "user.csv").replace("\\", "/")
@@ -726,6 +725,7 @@ def test_read_kuzu_graph_database(tmp_path: Path, io_files_path: Path) -> None:
     conn.execute(f'COPY User FROM "{users}"')
     conn.execute(f'COPY Follows FROM "{follows}"')
 
+    # basic: single relation
     df1 = pl.read_database(
         query="MATCH (u:User) RETURN u.name, u.age",
         connection=conn,
@@ -736,10 +736,12 @@ def test_read_kuzu_graph_database(tmp_path: Path, io_files_path: Path) -> None:
             {
                 "u.name": ["Adam", "Karissa", "Zhang", "Noura"],
                 "u.age": [30, 40, 50, 25],
-            }
+            },
+            schema={"u.name": pl.Utf8, "u.age": pl.UInt64},
         ),
     )
 
+    # join: connected edges/relations
     df2 = pl.read_database(
         query="MATCH (a:User)-[f:Follows]->(b:User) RETURN a.name, f.since, b.name",
         connection=conn,
@@ -751,6 +753,19 @@ def test_read_kuzu_graph_database(tmp_path: Path, io_files_path: Path) -> None:
                 "a.name": ["Adam", "Adam", "Karissa", "Zhang"],
                 "f.since": [2020, 2020, 2021, 2022],
                 "b.name": ["Karissa", "Zhang", "Zhang", "Noura"],
-            }
+            },
+            schema={"a.name": pl.Utf8, "f.since": pl.Int64, "b.name": pl.Utf8},
+        ),
+    )
+
+    # empty: no results for the given query
+    df3 = pl.read_database(
+        query="MATCH (a:User)-[f:Follows]->(b:User) WHERE a.name = '🔎️' RETURN a.name, f.since, b.name",
+        connection=conn,
+    )
+    assert_frame_equal(
+        df3,
+        pl.DataFrame(
+            schema={"a.name": pl.Utf8, "f.since": pl.Int64, "b.name": pl.Utf8}
         ),
     )
