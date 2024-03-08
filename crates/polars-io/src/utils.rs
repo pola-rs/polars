@@ -177,6 +177,8 @@ pub static BOOLEAN_RE: Lazy<Regex> = Lazy::new(|| {
         .unwrap()
 });
 
+pub static DATE_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^(\d{4})-(\d{2})-(\d{2})$").unwrap());
+
 pub fn materialize_projection(
     with_columns: Option<&[String]>,
     schema: &Schema,
