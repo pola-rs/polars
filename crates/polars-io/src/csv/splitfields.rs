@@ -83,9 +83,14 @@ mod inner {
                 for &c in self.v.iter() {
                     if c == self.quote_char {
                         // toggle between string field enclosure
-                        //      if we encounter a starting '"' -> in_field = true;
-                        //      if we encounter a closing '"' -> in_field = false;
-                        in_field = !in_field;
+                        if in_field && (current_idx as usize + 1 <= self.v.len() || unsafe { *self.v.get_unchecked(current_idx as usize + 1) } == self.separator) {
+                            // If we encounter a closing '"' and the next character is the separator, in_field = false;
+                            in_field = !in_field;
+                        }
+                        if !in_field && (current_idx == 0 || unsafe { *self.v.get_unchecked(current_idx as usize - 1) } == self.separator) {
+                            // If we encounter a starting '"' and the previous character is the separator, in_field = true;
+                            in_field = !in_field;
+                        }
                     }
 
                     if !in_field && self.eof_oel(c) {
@@ -245,9 +250,14 @@ mod inner {
                 for &c in self.v.iter() {
                     if c == self.quote_char {
                         // toggle between string field enclosure
-                        //      if we encounter a starting '"' -> in_field = true;
-                        //      if we encounter a closing '"' -> in_field = false;
-                        in_field = !in_field;
+                        if in_field && (current_idx as usize + 1 <= self.v.len() || unsafe { *self.v.get_unchecked(current_idx as usize + 1) } == self.separator) {
+                            // If we encounter a closing '"' and the next character is the separator, in_field = false;
+                            in_field = !in_field;
+                        }
+                        if !in_field && (current_idx == 0 || unsafe { *self.v.get_unchecked(current_idx as usize - 1) } == self.separator) {
+                            // If we encounter a starting '"' and the previous character is the separator, in_field = true;
+                            in_field = !in_field;
+                        }
                     }
 
                     if !in_field && self.eof_oel(c) {
