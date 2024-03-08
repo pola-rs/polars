@@ -1,9 +1,10 @@
 use std::path::Path;
+use chrono::NaiveDate;
 
 use percent_encoding::percent_decode_str;
 use polars_core::prelude::*;
 use polars_io::predicates::{BatchStats, ColumnStats};
-use polars_io::utils::{BOOLEAN_RE, FLOAT_RE, INTEGER_RE};
+use polars_io::utils::{BOOLEAN_RE, DATE_RE, FLOAT_RE, INTEGER_RE};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -79,6 +80,9 @@ impl HivePartitions {
                     Series::new(name, &[value])
                 } else if value == "__HIVE_DEFAULT_PARTITION__" {
                     Series::new_null(name, 1)
+                } else if DATE_RE.is_match(value) {
+                    let value = value.parse::<NaiveDate>().ok()?;
+                    Series::new(name, &[value])
                 } else {
                     Series::new(name, &[percent_decode_str(value).decode_utf8().ok()?])
                 };
