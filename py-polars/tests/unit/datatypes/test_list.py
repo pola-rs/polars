@@ -752,3 +752,26 @@ def test_list_median(data_dispersion: pl.DataFrame) -> None:
     )
 
     assert_frame_equal(result, expected)
+
+
+def test_list_gather_null_struct_14927() -> None:
+    df = pl.DataFrame(
+        [
+            {
+                "index": 0,
+                "col_0": [{"field_0": 1.0}],
+            },
+            {
+                "index": 1,
+                "col_0": None,
+            },
+        ]
+    )
+
+    expected = pl.DataFrame(
+        {"index": [1], "col_0": [None], "field_0": [None]},
+        schema=df.schema | {"field_0": pl.Float64},
+    )
+    expr = pl.col("col_0").list.get(0).struct.field("field_0")
+    out = df.filter(pl.col("index") > 0).with_columns(expr)
+    assert_frame_equal(out, expected)
