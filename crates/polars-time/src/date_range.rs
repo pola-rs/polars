@@ -23,11 +23,17 @@ pub fn date_range(
 ) -> PolarsResult<DatetimeChunked> {
     let (start, end) = match tu {
         TimeUnit::Nanoseconds => (
-            start.timestamp_nanos_opt().unwrap(),
-            end.timestamp_nanos_opt().unwrap(),
+            start.and_utc().timestamp_nanos_opt().unwrap(),
+            end.and_utc().timestamp_nanos_opt().unwrap(),
         ),
-        TimeUnit::Microseconds => (start.timestamp_micros(), end.timestamp_micros()),
-        TimeUnit::Milliseconds => (start.timestamp_millis(), end.timestamp_millis()),
+        TimeUnit::Microseconds => (
+            start.and_utc().timestamp_micros(),
+            end.and_utc().timestamp_micros(),
+        ),
+        TimeUnit::Milliseconds => (
+            start.and_utc().timestamp_millis(),
+            end.and_utc().timestamp_millis(),
+        ),
     };
     datetime_range_impl(name, start, end, interval, closed, tu, tz)
 }

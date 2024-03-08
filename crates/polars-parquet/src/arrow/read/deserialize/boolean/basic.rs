@@ -144,7 +144,6 @@ impl<'a> Decoder<'a> for BooleanDecoder {
                 let iter = hybrid_rle::Decoder::new(values, 1);
                 let values = HybridDecoderBitmapIter::new(iter, page.num_values());
                 let values = HybridRleBooleanIter::new(values);
-
                 Ok(State::RleOptional(optional, values))
             },
             _ => Err(utils::not_implemented(page)),

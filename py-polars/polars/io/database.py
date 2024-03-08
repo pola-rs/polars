@@ -53,7 +53,7 @@ _ARROW_DRIVER_REGISTRY_: dict[str, _ArrowDriverProperties_] = {
         "repeat_batch_calls": False,
     },
     "arrow_odbc_proxy": {
-        "fetch_all": "fetch_record_batches",
+        "fetch_all": "fetch_arrow_table",
         "fetch_batches": "fetch_record_batches",
         "exact_batch_size": True,
         "repeat_batch_calls": False,
@@ -122,10 +122,20 @@ class ODBCCursorProxy:
         self.execute_options = execute_options
         self.query = query
 
+    def fetch_arrow_table(
+        self, batch_size: int = 10_000, *, fetch_all: bool = False
+    ) -> pa.Table:
+        """Fetch all results as a pyarrow Table."""
+        from pyarrow import Table
+
+        return Table.from_batches(
+            self.fetch_record_batches(batch_size=batch_size, fetch_all=True)
+        )
+
     def fetch_record_batches(
-        self, batch_size: int = 10_000
+        self, batch_size: int = 10_000, *, fetch_all: bool = False
     ) -> Iterable[pa.RecordBatch]:
-        """Fetch results in batches."""
+        """Fetch results as an iterable of RecordBatches."""
         from arrow_odbc import read_arrow_batches_from_odbc
         from pyarrow import RecordBatch
 
@@ -140,12 +150,13 @@ class ODBCCursorProxy:
             yield batch
             n_batches += 1
 
-        if n_batches == 0:
+        if n_batches == 0 and fetch_all:
             # empty result set; return empty batch with accurate schema
             yield RecordBatch.from_pylist([], schema=batch_reader.schema)
 
-    # internally arrow-odbc always reads batches
-    fetchall = fetchmany = fetch_record_batches
+    # note: internally arrow-odbc always reads batches
+    fetchall = fetch_arrow_table
+    fetchmany = fetch_record_batches
 
 
 class ConnectionExecutor:
