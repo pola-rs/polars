@@ -1458,7 +1458,7 @@ def test_reproducible_hash_with_seeds() -> None:
     if platform.mac_ver()[-1] != "arm64":
         expected = pl.Series(
             "s",
-            [13736875168471412002, 6161148964772490034, 9489472896993257669],
+            [8661293245726181094, 9565952849861441858, 2921274555702885622],
             dtype=pl.UInt64,
         )
         result = df.hash_rows(*seeds)
