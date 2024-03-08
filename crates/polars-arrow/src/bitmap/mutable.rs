@@ -84,7 +84,7 @@ impl MutableBitmap {
                 bytes.len().saturating_mul(8)
             )
         }
-        
+
         // Ensure invariant holds.
         let min_byte_length_needed = length.div_ceil(8);
         bytes.drain(min_byte_length_needed..);
