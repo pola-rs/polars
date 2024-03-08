@@ -159,10 +159,7 @@ impl CategoricalChunked {
         let new_phys: UInt32Chunked = self
             .physical()
             .into_iter()
-            .map(|opt_v: Option<u32>| match opt_v {
-                Some(v) => idx_map.get(&v).copied(),
-                None => None,
-            })
+            .map(|opt_v: Option<u32>| opt_v.and_then(|v| idx_map.get(&v).copied()))
             .collect();
 
         // SAFETY: we created the physical from the enum categories
