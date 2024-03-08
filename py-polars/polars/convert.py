@@ -703,7 +703,7 @@ def from_pandas(
     │ 4   ┆ 5   ┆ 6   │
     └─────┴─────┴─────┘
 
-    Constructing a Series from a :class:`pd.Series`:
+    Constructing a Series from a :class:`pandas.Series`:
 
     >>> import pandas as pd
     >>> pd_series = pd.Series([1, 2, 3], name="pd")
