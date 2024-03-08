@@ -1582,11 +1582,12 @@ def arrow_to_pydf(
 ) -> PyDataFrame:
     """Construct a PyDataFrame from an Arrow Table or RecordBatch."""
     original_schema = schema
+    data_column_names = data.schema.names
     column_names, schema_overrides = _unpack_schema(
-        (schema or data.column_names), schema_overrides=schema_overrides
+        (schema or data_column_names), schema_overrides=schema_overrides
     )
     try:
-        if column_names != data.column_names:
+        if column_names != data_column_names:
             if isinstance(data, pa.RecordBatch):
                 data = pa.Table.from_batches([data])
             data = data.rename_columns(column_names)
