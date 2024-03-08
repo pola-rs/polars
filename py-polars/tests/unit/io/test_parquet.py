@@ -21,6 +21,13 @@ if TYPE_CHECKING:
     from polars.type_aliases import ParquetCompression
 
 
+def test_round_trip(df: pl.DataFrame) -> None:
+    f = io.BytesIO()
+    df.write_parquet(f)
+    f.seek(0)
+    assert_frame_equal(pl.read_parquet(f), df)
+
+
 COMPRESSIONS = [
     "lz4",
     "uncompressed",
@@ -749,3 +756,13 @@ def test_parquet_string_rle_encoding() -> None:
             "encodings"
         ]
     )
+
+
+def test_sliced_dict_with_nulls_14904() -> None:
+    df = (
+        pl.DataFrame({"x": [None, None]})
+        .cast(pl.Categorical)
+        .with_columns(y=pl.concat_list("x"))
+        .slice(0, 1)
+    )
+    test_round_trip(df)
