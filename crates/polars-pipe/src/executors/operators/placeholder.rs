@@ -77,7 +77,7 @@ impl Operator for PlaceHolder {
         _context: &PExecutionContext,
         _chunk: &DataChunk,
     ) -> PolarsResult<OperatorResult> {
-        panic!("placeholder shouldbe replaced")
+        panic!("placeholder should be replaced")
     }
 
     fn split(&self, thread_no: usize) -> Box<dyn Operator> {
