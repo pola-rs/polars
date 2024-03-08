@@ -448,7 +448,10 @@ impl Series {
             Date => Cow::Owned(self.cast(&Int32).unwrap()),
             Datetime(_, _) | Duration(_) | Time => Cow::Owned(self.cast(&Int64).unwrap()),
             #[cfg(feature = "dtype-categorical")]
-            Categorical(_, _) | Enum(_, _) => Cow::Owned(self.cast(&UInt32).unwrap()),
+            Categorical(_, _) | Enum(_, _) => {
+                let ca = self.categorical().unwrap();
+                Cow::Owned(ca.physical().clone().into_series())
+            },
             List(inner) => Cow::Owned(self.cast(&List(Box::new(inner.to_physical()))).unwrap()),
             #[cfg(feature = "dtype-struct")]
             Struct(_) => {
