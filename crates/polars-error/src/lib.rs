@@ -274,7 +274,7 @@ macro_rules! polars_bail {
 macro_rules! polars_ensure {
     ($cond:expr, $($tt:tt)+) => {
         if !$cond {
-            polars_bail!($($tt)+);
+            $crate::polars_bail!($($tt)+);
         }
     };
 }

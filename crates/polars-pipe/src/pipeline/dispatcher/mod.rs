@@ -1,7 +1,8 @@
 use std::cell::RefCell;
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::VecDeque;
 use std::fmt::{Debug, Formatter};
 use std::rc::Rc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use polars_core::error::PolarsResult;
@@ -17,7 +18,16 @@ use crate::operators::{
     DataChunk, FinalizedSink, Operator, OperatorResult, PExecutionContext, SExecutionContext, Sink,
     SinkResult, Source, SourceResult,
 };
+use crate::pipeline::dispatcher::drive_operator::{par_flush, par_process_chunks};
 use crate::pipeline::morsels_per_sink;
+mod drive_operator;
+
+type PhysOperator = Box<dyn Operator>;
+type PhysSink = Box<dyn Sink>;
+/// A physical operator/sink per thread.
+type ThreadedOperator = Vec<PhysOperator>;
+type ThreadedOperatorMut<'a> = &'a mut [PhysOperator];
+type ThreadedSinkMut<'a> = &'a mut [PhysSink];
 
 pub(super) struct SinkNode {
     pub sinks: Vec<Box<dyn Sink>>,
@@ -97,7 +107,7 @@ pub struct PipeLine {
     sources: Vec<Box<dyn Source>>,
     /// All the operators of this pipeline. Some may be placeholders that will be replaced during
     /// execution
-    operators: Vec<Vec<Box<dyn Operator>>>,
+    operators: Vec<ThreadedOperator>,
     /// The nodes of operators. These are used to identify operators between pipelines
     operator_nodes: Vec<Node>,
     /// - offset in the operators vec
@@ -125,7 +135,7 @@ impl PipeLine {
     #[allow(clippy::type_complexity)]
     pub(super) fn new(
         sources: Vec<Box<dyn Source>>,
-        operators: Vec<Box<dyn Operator>>,
+        operators: Vec<PhysOperator>,
         operator_nodes: Vec<Node>,
         sinks: Vec<SinkNode>,
         operator_offset: usize,
@@ -198,230 +208,6 @@ impl PipeLine {
         }
     }
 
-    /// Take data chunks from the sources and pushes them into the operators + sink. Every operator
-    /// works thread local.
-    /// The caller passes an `operator_start`/`operator_end` to indicate which part of the pipeline
-    /// branch should be executed.
-    fn par_process_chunks(
-        &mut self,
-        chunks: Vec<DataChunk>,
-        sink: &mut [Box<dyn Sink>],
-        ec: &PExecutionContext,
-        operator_start: usize,
-        operator_end: usize,
-        src: &mut Box<dyn Source>,
-    ) -> PolarsResult<(Option<SinkResult>, SourceResult)> {
-        debug_assert!(chunks.len() <= sink.len());
-
-        fn run_operator_pipe(
-            pipe: &PipeLine,
-            operator_start: usize,
-            operator_end: usize,
-            chunk: DataChunk,
-            sink: &mut Box<dyn Sink>,
-            operator_pipe: &mut [Box<dyn Operator>],
-            ec: &PExecutionContext,
-        ) -> PolarsResult<SinkResult> {
-            // truncate the operators that should run into the current sink.
-            let operator_pipe = &mut operator_pipe[operator_start..operator_end];
-
-            if operator_pipe.is_empty() {
-                sink.sink(ec, chunk)
-            } else {
-                pipe.push_operators(chunk, ec, operator_pipe, sink)
-            }
-        }
-        let sink_results = Arc::new(Mutex::new(None));
-        let mut next_batches: Option<PolarsResult<SourceResult>> = None;
-        let next_batches_ptr = &mut next_batches as *mut Option<PolarsResult<SourceResult>>;
-        let next_batches_ptr = unsafe { SyncPtr::new(next_batches_ptr) };
-
-        // 1. We will iterate the chunks/sinks/operators
-        // where every iteration belongs to a single thread
-        // 2. Then we will truncate the pipeline by `start`/`end`
-        // so that the pipeline represents pipeline that belongs to this sink
-        // 3. Then we push the data
-        // # Threading
-        // Within a rayon scope
-        // we spawn the jobs. They don't have to finish in any specific order,
-        // this makes it more lightweight than `par_iter`
-
-        // temporarily take to please the borrow checker
-        let mut operators = std::mem::take(&mut self.operators);
-
-        // borrow as ref and move into the closure
-        let pipeline = &*self;
-        POOL.scope(|s| {
-            for ((chunk, sink), operator_pipe) in chunks
-                .into_iter()
-                .zip(sink.iter_mut())
-                .zip(operators.iter_mut())
-            {
-                let sink_results = sink_results.clone();
-                s.spawn(move |_| {
-                    let out = run_operator_pipe(
-                        pipeline,
-                        operator_start,
-                        operator_end,
-                        chunk,
-                        sink,
-                        operator_pipe,
-                        ec,
-                    );
-                    match out {
-                        Ok(SinkResult::Finished) | Err(_) => {
-                            let mut lock = sink_results.lock().unwrap();
-                            *lock = Some(out)
-                        },
-                        _ => {},
-                    }
-                })
-            }
-            // already get batches on the thread pool
-            // if one job is finished earlier we can already start that work
-            s.spawn(|_| {
-                let out = src.get_batches(ec);
-                unsafe {
-                    let ptr = next_batches_ptr.get();
-                    *ptr = Some(out);
-                }
-            })
-        });
-        self.operators = operators;
-
-        let next_batches = next_batches.unwrap()?;
-        let mut lock = sink_results.lock().unwrap();
-        lock.take()
-            .transpose()
-            .map(|sink_result| (sink_result, next_batches))
-    }
-
-    /// This thread local logic that pushed a data chunk into the operators + sink
-    /// It can be that a single operator needs to be called multiple times, this is for instance the
-    /// case with joins that produce many tuples, that's why we keep a stack of `in_process`
-    /// operators.
-    fn push_operators(
-        &self,
-        chunk: DataChunk,
-        ec: &PExecutionContext,
-        operators: &mut [Box<dyn Operator>],
-        sink: &mut Box<dyn Sink>,
-    ) -> PolarsResult<SinkResult> {
-        debug_assert!(!operators.is_empty());
-
-        // Stack based operator execution.
-        let mut in_process = vec![];
-        let operator_offset = 0usize;
-        in_process.push((operator_offset, chunk));
-        let mut needs_flush = BTreeSet::new();
-
-        while let Some((op_i, chunk)) = in_process.pop() {
-            match operators.get_mut(op_i) {
-                None => {
-                    if let SinkResult::Finished = sink.sink(ec, chunk)? {
-                        return Ok(SinkResult::Finished);
-                    }
-                },
-                Some(op) => {
-                    match op.execute(ec, &chunk)? {
-                        OperatorResult::Finished(chunk) => {
-                            if op.must_flush() {
-                                let _ = needs_flush.insert(op_i);
-                            }
-                            in_process.push((op_i + 1, chunk))
-                        },
-                        OperatorResult::HaveMoreOutPut(output_chunk) => {
-                            // Push the next operator call with the same chunk on the stack
-                            in_process.push((op_i, chunk));
-
-                            // But first push the output in the next operator
-                            // If a join can produce many rows, we want the filter to
-                            // be executed in between, or sink into a slice so that we get
-                            // sink::finished before we grow the stack with ever more coming chunks
-                            in_process.push((op_i + 1, output_chunk));
-                        },
-                        OperatorResult::NeedsNewData => {
-                            // done, take another chunk from the stack
-                        },
-                    }
-                },
-            }
-        }
-
-        // Stack based flushing + operator execution.
-        if !needs_flush.is_empty() {
-            drop(in_process);
-            let mut in_process = vec![];
-
-            for op_i in needs_flush.into_iter() {
-                // Push all operators that need flushing on the stack.
-                // The `None` indicates that we have no `chunk` input, so we `flush`.
-                // `Some(chunk)` is the pushing branch
-                in_process.push((op_i, None));
-
-                // Next we immediately pop and determine the order of execution below.
-                // This is to ensure that all operators below upper operators are completely
-                // flushed when the `flush` is called in higher operators. As operators can `flush`
-                // multiple times.
-                while let Some((op_i, chunk)) = in_process.pop() {
-                    match chunk {
-                        // The branch for flushing.
-                        None => {
-                            let op = operators.get_mut(op_i).unwrap();
-                            match op.flush()? {
-                                OperatorResult::Finished(chunk) => {
-                                    // Push the chunk in the next operator.
-                                    in_process.push((op_i + 1, Some(chunk)))
-                                },
-                                OperatorResult::HaveMoreOutPut(chunk) => {
-                                    // Ensure it is flushed again
-                                    in_process.push((op_i, None));
-                                    // Push the chunk in the next operator.
-                                    in_process.push((op_i + 1, Some(chunk)))
-                                },
-                                _ => unreachable!(),
-                            }
-                        },
-                        // The branch for pushing data in the operators.
-                        // This is the same as the default stack exectuor, except now it pushes
-                        // `Some(chunk)` instead of `chunk`.
-                        Some(chunk) => {
-                            match operators.get_mut(op_i) {
-                                None => {
-                                    if let SinkResult::Finished = sink.sink(ec, chunk)? {
-                                        return Ok(SinkResult::Finished);
-                                    }
-                                },
-                                Some(op) => {
-                                    match op.execute(ec, &chunk)? {
-                                        OperatorResult::Finished(chunk) => {
-                                            in_process.push((op_i + 1, Some(chunk)))
-                                        },
-                                        OperatorResult::HaveMoreOutPut(output_chunk) => {
-                                            // Push the next operator call with the same chunk on the stack
-                                            in_process.push((op_i, Some(chunk)));
-
-                                            // But first push the output in the next operator
-                                            // If a join can produce many rows, we want the filter to
-                                            // be executed in between, or sink into a slice so that we get
-                                            // sink::finished before we grow the stack with ever more coming chunks
-                                            in_process.push((op_i + 1, Some(output_chunk)));
-                                        },
-                                        OperatorResult::NeedsNewData => {
-                                            // Done, take another chunk from the stack
-                                        },
-                                    }
-                                },
-                            }
-                        },
-                    }
-                }
-            }
-        }
-
-        Ok(SinkResult::CanHaveMoreInput)
-    }
-
     /// Replace the current sources with a [`DataFrameSource`].
     fn set_df_as_sources(&mut self, df: DataFrame) {
         let src = Box::new(DataFrameSource::from_df(df)) as Box<dyn Source>;
@@ -453,17 +239,20 @@ impl PipeLine {
             for src in &mut std::mem::take(&mut self.sources) {
                 let mut next_batches = src.get_batches(ec)?;
 
+                let must_flush: AtomicBool = AtomicBool::new(false);
                 while let SourceResult::GotMoreData(chunks) = next_batches {
                     // Every batches iteration we check if we must continue.
                     ec.execution_state.should_stop()?;
 
-                    let (sink_result, next_batches2) = self.par_process_chunks(
+                    let (sink_result, next_batches2) = par_process_chunks(
                         chunks,
                         &mut sink.sinks,
                         ec,
+                        &mut self.operators,
                         operator_start,
                         sink.operator_end,
                         src,
+                        &must_flush,
                     )?;
                     next_batches = next_batches2;
 
@@ -471,6 +260,15 @@ impl PipeLine {
                         sink_finished = true;
                         break;
                     }
+                }
+                if !sink_finished && must_flush.load(Ordering::Relaxed) {
+                    par_flush(
+                        &mut sink.sinks,
+                        ec,
+                        &mut self.operators,
+                        operator_start,
+                        sink.operator_end,
+                    );
                 }
             }
 

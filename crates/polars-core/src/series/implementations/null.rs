@@ -1,7 +1,6 @@
 use std::any::Any;
 
 use polars_error::constants::LENGTH_LIMIT_MSG;
-use polars_utils::IdxSize;
 
 use crate::prelude::compare_inner::{IntoTotalEqInner, TotalEqInner};
 use crate::prelude::explode::ExplodeByOffsets;

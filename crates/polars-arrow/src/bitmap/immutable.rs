@@ -11,6 +11,7 @@ use crate::bitmap::iterator::{
     FastU32BitmapIter, FastU56BitmapIter, FastU64BitmapIter, TrueIdxIter,
 };
 use crate::buffer::Bytes;
+use crate::legacy::utils::FromTrustedLenIterator;
 use crate::trusted_len::TrustedLen;
 
 const UNKNOWN_BIT_COUNT: u64 = u64::MAX;
@@ -481,6 +482,15 @@ impl FromIterator<bool> for Bitmap {
         I: IntoIterator<Item = bool>,
     {
         MutableBitmap::from_iter(iter).into()
+    }
+}
+
+impl FromTrustedLenIterator<bool> for Bitmap {
+    fn from_iter_trusted_length<T: IntoIterator<Item = bool>>(iter: T) -> Self
+    where
+        T::IntoIter: TrustedLen,
+    {
+        MutableBitmap::from_trusted_len_iter(iter.into_iter()).into()
     }
 }
 

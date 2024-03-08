@@ -13,6 +13,8 @@ use crate::buffer::Buffer;
 use crate::datatypes::PrimitiveType;
 use crate::types::NativeType;
 
+pub const INLINE_VIEW_SIZE: u32 = 12;
+
 // We use this instead of u128 because we want alignment of <= 8 bytes.
 #[derive(Debug, Copy, Clone, Default)]
 #[repr(C)]
@@ -148,8 +150,8 @@ where
 {
     for view in views {
         let len = view.length;
-        if len <= 12 {
-            if len < 12 && view.as_u128() >> (32 + len * 8) != 0 {
+        if len <= INLINE_VIEW_SIZE {
+            if len < INLINE_VIEW_SIZE && view.as_u128() >> (32 + len * 8) != 0 {
                 polars_bail!(ComputeError: "view contained non-zero padding in prefix");
             }
 

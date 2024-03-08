@@ -1,5 +1,6 @@
+use polars_utils::IdxSize;
+
 use crate::bitmap::Bitmap;
-use crate::legacy::index::IdxSize;
 
 /// # Safety
 /// doesn't do any bound checks

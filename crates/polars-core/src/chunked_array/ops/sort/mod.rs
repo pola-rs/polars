@@ -629,6 +629,9 @@ pub(crate) fn convert_sort_column_multi_sort(s: &Series) -> PolarsResult<Series>
                 .collect::<PolarsResult<Vec<_>>>()?;
             return StructChunked::new(ca.name(), &new_fields).map(|ca| ca.into_series());
         },
+        // we could fallback to default branch, but decimal is not numeric dtype for now, so explicit here
+        #[cfg(feature = "dtype-decimal")]
+        Decimal(_, _) => s.clone(),
         _ => {
             let phys = s.to_physical_repr().into_owned();
             polars_ensure!(

@@ -12,16 +12,14 @@ pub struct CsvExec {
 
 impl CsvExec {
     fn read(&mut self) -> PolarsResult<DataFrame> {
-        let mut with_columns = mem::take(&mut self.file_options.with_columns);
-        let mut projected_len = 0;
-        with_columns.as_ref().map(|columns| {
-            projected_len = columns.len();
-            columns
-        });
+        let with_columns = self
+            .file_options
+            .with_columns
+            .take()
+            // Interpret selecting no columns as selecting all columns.
+            .filter(|columns| !columns.is_empty())
+            .map(Arc::unwrap_or_clone);
 
-        if projected_len == 0 {
-            with_columns = None;
-        }
         let n_rows = _set_n_rows_for_scan(self.file_options.n_rows);
         let predicate = self.predicate.clone().map(phys_expr_to_io_expr);
 
@@ -33,7 +31,7 @@ impl CsvExec {
             .with_ignore_errors(self.options.ignore_errors)
             .with_skip_rows(self.options.skip_rows)
             .with_n_rows(n_rows)
-            .with_columns(with_columns.map(|mut cols| std::mem::take(Arc::make_mut(&mut cols))))
+            .with_columns(with_columns)
             .low_memory(self.options.low_memory)
             .with_null_values(std::mem::take(&mut self.options.null_values))
             .with_predicate(predicate)

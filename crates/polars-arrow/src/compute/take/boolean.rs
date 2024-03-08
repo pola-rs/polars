@@ -1,7 +1,8 @@
+use polars_utils::IdxSize;
+
 use super::bitmap::take_bitmap_unchecked;
 use crate::array::{Array, BooleanArray, PrimitiveArray};
 use crate::bitmap::{Bitmap, MutableBitmap};
-use crate::legacy::index::IdxSize;
 
 // take implementation when neither values nor indices contain nulls
 unsafe fn take_no_validity(values: &Bitmap, indices: &[IdxSize]) -> (Bitmap, Option<Bitmap>) {

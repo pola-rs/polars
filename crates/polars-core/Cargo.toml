@@ -80,7 +80,6 @@ round_series = []
 checked_arithmetic = []
 is_first_distinct = []
 is_last_distinct = []
-asof_join = []
 dot_product = []
 row_hash = []
 reinterpret = []
@@ -133,7 +132,6 @@ docs-selection = [
   "checked_arithmetic",
   "is_first_distinct",
   "is_last_distinct",
-  "asof_join",
   "dot_product",
   "row_hash",
   "rolling_window",

@@ -105,12 +105,16 @@ pub(crate) fn insert_streaming_nodes(
     // whether the full plan needs to be translated
     // to streaming
     allow_partial: bool,
+    row_estimate: bool,
 ) -> PolarsResult<bool> {
     scratch.clear();
 
-    // this is needed to determine which side of the joins should be
-    // traversed first
-    set_estimated_row_counts(root, lp_arena, expr_arena, 0, scratch);
+    // This is needed to determine which side of the joins should be
+    // traversed first. As we want to keep the smallest table in the build phase as that keeps most
+    // data in memory.
+    if row_estimate {
+        set_estimated_row_counts(root, lp_arena, expr_arena, 0, scratch);
+    }
 
     scratch.clear();
 

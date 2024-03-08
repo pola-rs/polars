@@ -1,3 +1,4 @@
+use arrow::bitmap::MutableBitmap;
 use polars_utils::sync::SyncPtr;
 
 use super::*;
@@ -88,4 +89,32 @@ fn flatten_par_impl<T: Send + Sync + Copy>(
         out.set_len(len);
     }
     out
+}
+
+pub fn flatten_nullable<S: AsRef<[NullableIdxSize]> + Send + Sync>(
+    bufs: &[S],
+) -> PrimitiveArray<IdxSize> {
+    let a = || flatten_par(bufs);
+    let b = || {
+        let cap = bufs.iter().map(|s| s.as_ref().len()).sum::<usize>();
+        let mut validity = MutableBitmap::with_capacity(cap);
+        validity.extend_constant(cap, true);
+
+        let mut count = 0usize;
+        for s in bufs {
+            let s = s.as_ref();
+
+            for id in s {
+                if id.is_null_idx() {
+                    unsafe { validity.set_bit_unchecked(count, false) };
+                }
+
+                count += 1;
+            }
+        }
+        validity.freeze()
+    };
+
+    let (a, b) = POOL.join(a, b);
+    PrimitiveArray::from_vec(bytemuck::cast_vec::<_, IdxSize>(a)).with_validity(Some(b))
 }

@@ -79,7 +79,7 @@ pub(super) fn streamable_join(args: &JoinArgs) -> bool {
     let supported = match args.how {
         #[cfg(feature = "cross_join")]
         JoinType::Cross => true,
-        JoinType::Inner | JoinType::Left => true,
+        JoinType::Inner | JoinType::Left | JoinType::Outer { .. } => true,
         _ => false,
     };
     supported && !args.validation.needs_checks()

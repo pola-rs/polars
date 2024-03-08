@@ -1,7 +1,6 @@
 use std::cmp::Ordering;
 
 use polars_utils::iter::EnumerateIdxTrait;
-use polars_utils::IdxSize;
 use smartstring::alias::String as SmartString;
 
 use crate::prelude::sort::_broadcast_descending;

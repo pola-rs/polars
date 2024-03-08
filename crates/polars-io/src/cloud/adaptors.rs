@@ -226,7 +226,7 @@ impl Drop for CloudWriter {
 #[cfg(test)]
 mod tests {
     use polars_core::df;
-    use polars_core::prelude::{DataFrame, NamedFrom};
+    use polars_core::prelude::DataFrame;
 
     use super::*;
 

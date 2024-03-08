@@ -286,7 +286,6 @@ class LazyFrame:
     └─────┴─────┴─────┘
     """
 
-    __slots__ = ("_ldf",)
     _ldf: PyLazyFrame
     _accessors: ClassVar[set[str]] = set()
 

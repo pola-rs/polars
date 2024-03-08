@@ -41,11 +41,21 @@ impl ParquetObjectStore {
         options: Option<&CloudOptions>,
         metadata: Option<Arc<FileMetaData>>,
     ) -> PolarsResult<Self> {
-        let (CloudLocation { prefix, .. }, store) = build_object_store(uri, options).await?;
+        let (
+            CloudLocation {
+                prefix, expansion, ..
+            },
+            store,
+        ) = build_object_store(uri, options).await?;
+
+        // Any wildcards should already have been resolved here. Without this assertion they would
+        // be ignored.
+        debug_assert!(expansion.is_none(), "path should not contain wildcards");
+        let path = ObjectPath::from_url_path(prefix).map_err(to_compute_err)?;
 
         Ok(ParquetObjectStore {
             store,
-            path: ObjectPath::from_url_path(prefix).map_err(to_compute_err)?,
+            path,
             length: None,
             metadata,
         })

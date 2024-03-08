@@ -64,6 +64,7 @@ def _get_dependency_info() -> dict[str, str]:
         "cloudpickle",
         "connectorx",
         "deltalake",
+        "fastexcel",
         "fsspec",
         "gevent",
         "hvplot",

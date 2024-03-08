@@ -17,6 +17,7 @@ pub use boolean_to::*;
 pub use decimal_to::*;
 pub use dictionary_to::*;
 use polars_error::{polars_bail, polars_ensure, polars_err, PolarsResult};
+use polars_utils::IdxSize;
 pub use primitive_to::*;
 pub use utf8_to::*;
 
@@ -26,7 +27,6 @@ use crate::compute::cast::binview_to::{
     utf8view_to_naive_timestamp_dyn, view_to_binary,
 };
 use crate::datatypes::*;
-use crate::legacy::index::IdxSize;
 use crate::match_integer_type;
 use crate::offset::{Offset, Offsets};
 use crate::temporal_conversions::utf8view_to_timestamp;

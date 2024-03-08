@@ -2,6 +2,7 @@ use std::ops::{Add, AddAssign, Mul};
 
 use num_traits::{Bounded, One, Zero};
 use polars_core::prelude::*;
+use polars_core::series::IsSorted;
 use polars_core::utils::{CustomIterTools, NoNull};
 use polars_core::with_match_physical_numeric_polars_type;
 
@@ -207,33 +208,37 @@ pub fn cum_max(s: &Series, reverse: bool) -> PolarsResult<Series> {
 }
 
 pub fn cum_count(s: &Series, reverse: bool) -> PolarsResult<Series> {
-    // Fast paths for no nulls
-    if s.null_count() == 0 {
-        let out = cum_count_no_nulls(s.name(), s.len(), reverse);
-        return Ok(out);
-    }
-
-    let ca = s.is_not_null();
-    let out: IdxCa = if reverse {
-        let mut count = (s.len() - s.null_count()) as IdxSize;
-        let mut prev = false;
-        ca.apply_values_generic(|v: bool| {
-            if prev {
-                count -= 1;
-            }
-            prev = v;
-            count
-        })
+    let mut out = if s.null_count() == 0 {
+        // Fast paths for no nulls
+        cum_count_no_nulls(s.name(), s.len(), reverse)
     } else {
-        let mut count = 0 as IdxSize;
-        ca.apply_values_generic(|v: bool| {
-            if v {
-                count += 1;
-            }
-            count
-        })
+        let ca = s.is_not_null();
+        let out: IdxCa = if reverse {
+            let mut count = (s.len() - s.null_count()) as IdxSize;
+            let mut prev = false;
+            ca.apply_values_generic(|v: bool| {
+                if prev {
+                    count -= 1;
+                }
+                prev = v;
+                count
+            })
+        } else {
+            let mut count = 0 as IdxSize;
+            ca.apply_values_generic(|v: bool| {
+                if v {
+                    count += 1;
+                }
+                count
+            })
+        };
+
+        out.into()
     };
-    Ok(out.into())
+
+    out.set_sorted_flag([IsSorted::Ascending, IsSorted::Descending][reverse as usize]);
+
+    Ok(out)
 }
 
 fn cum_count_no_nulls(name: &str, len: usize, reverse: bool) -> Series {

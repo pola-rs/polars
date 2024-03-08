@@ -1,4 +1,4 @@
-use arrow::legacy::prelude::IdxSize;
+use polars_utils::IdxSize;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 

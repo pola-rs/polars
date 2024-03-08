@@ -1,4 +1,3 @@
-use arrow::legacy::error::polars_bail;
 use futures::future::ready;
 use futures::{StreamExt, TryStreamExt};
 use object_store::path::Path;
