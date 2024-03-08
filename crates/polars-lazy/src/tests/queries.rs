@@ -437,9 +437,9 @@ fn test_lazy_query_10() {
     let z: Series = DurationChunked::from_duration(
         "z",
         [
-            ChronoDuration::hours(1),
-            ChronoDuration::hours(2),
-            ChronoDuration::hours(3),
+            ChronoDuration::try_hours(1).unwrap(),
+            ChronoDuration::try_hours(2).unwrap(),
+            ChronoDuration::try_hours(3).unwrap(),
         ],
         TimeUnit::Nanoseconds,
     )
