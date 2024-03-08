@@ -12,7 +12,7 @@ from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from polars.type_aliases import ClosedInterval, TimeUnit
+    from polars.type_aliases import ClosedInterval, PolarsDataType, TimeUnit
 
 
 @pytest.fixture()
@@ -188,18 +188,21 @@ def test_rolling_skew() -> None:
 
 @pytest.mark.parametrize("time_zone", [None, "US/Central"])
 @pytest.mark.parametrize(
-    ("rolling_fn", "expected_values"),
+    ("rolling_fn", "expected_values", "expected_dtype"),
     [
-        ("rolling_mean", [None, 1.0, 2.0, 3.0, 4.0, 5.0]),
-        ("rolling_sum", [None, 1, 2, 3, 4, 5]),
-        ("rolling_min", [None, 1, 2, 3, 4, 5]),
-        ("rolling_max", [None, 1, 2, 3, 4, 5]),
-        ("rolling_std", [None, 0.0, 0.0, 0.0, 0.0, 0.0]),
-        ("rolling_var", [None, 0.0, 0.0, 0.0, 0.0, 0.0]),
+        ("rolling_mean", [None, 1.0, 2.0, 3.0, 4.0, 5.0], pl.Float64),
+        ("rolling_sum", [None, 1, 2, 3, 4, 5], pl.Int64),
+        ("rolling_min", [None, 1, 2, 3, 4, 5], pl.Int64),
+        ("rolling_max", [None, 1, 2, 3, 4, 5], pl.Int64),
+        ("rolling_std", [None, None, None, None, None, None], pl.Float64),
+        ("rolling_var", [None, None, None, None, None, None], pl.Float64),
     ],
 )
 def test_rolling_crossing_dst(
-    time_zone: str | None, rolling_fn: str, expected_values: list[int | None | float]
+    time_zone: str | None,
+    rolling_fn: str,
+    expected_values: list[int | None | float],
+    expected_dtype: PolarsDataType,
 ) -> None:
     ts = pl.datetime_range(
         datetime(2021, 11, 5), datetime(2021, 11, 10), "1d", time_zone="UTC", eager=True
@@ -208,7 +211,9 @@ def test_rolling_crossing_dst(
     result = df.with_columns(
         getattr(pl.col("value"), rolling_fn)("1d", by="ts", closed="left")
     )
-    expected = pl.DataFrame({"ts": ts, "value": expected_values})
+    expected = pl.DataFrame(
+        {"ts": ts, "value": expected_values}, schema_overrides={"value": expected_dtype}
+    )
     assert_frame_equal(result, expected)
 
 
