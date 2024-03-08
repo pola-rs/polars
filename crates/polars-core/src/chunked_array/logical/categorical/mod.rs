@@ -160,11 +160,10 @@ impl CategoricalChunked {
             .physical()
             .into_iter()
             .map(|opt_v: Option<u32>| match opt_v {
-                Some(v) => Ok(idx_map.get(&v).copied()),
-                None => Ok(None),
+                Some(v) => idx_map.get(&v).copied(),
+                None => None,
             })
-            .collect::<PolarsResult<_>>()
-            .unwrap();
+            .collect();
 
         // SAFETY: we created the physical from the enum categories
         unsafe {
