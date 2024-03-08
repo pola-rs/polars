@@ -48,11 +48,9 @@ where
     let mut agg_window = Agg::new(values, start, end, params);
     if let Some(validity) = create_validity(min_periods, len, window_size, &det_offsets_fn) {
         if validity.iter().all(|x| !x) {
-            // all null!
-            return Ok(Box::new(PrimitiveArray::new(
+            return Ok(Box::new(PrimitiveArray::<T>::new_null(
                 T::PRIMITIVE.into(),
-                vec![T::zero(); len].into(),
-                Some(vec![false; len].into()),
+                len,
             )));
         }
     }
