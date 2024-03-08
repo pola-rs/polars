@@ -28,10 +28,6 @@ pub use string::StringMethods;
 #[cfg(feature = "dtype-time")]
 pub use time::TimeMethods;
 
-pub fn unix_time() -> NaiveDateTime {
-    NaiveDateTime::from_timestamp_opt(0, 0).unwrap()
-}
-
 // a separate function so that it is not compiled twice
 #[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
 pub(crate) fn months_to_quarters(mut ca: Int8Chunked) -> Int8Chunked {

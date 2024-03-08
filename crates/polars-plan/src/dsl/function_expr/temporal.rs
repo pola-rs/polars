@@ -154,9 +154,9 @@ pub(super) fn datetime(
                 NaiveDate::from_ymd_opt(y, m, d)
                     .and_then(|nd| nd.and_hms_micro_opt(h, mnt, s, us))
                     .map(|ndt| match time_unit {
-                        TimeUnit::Milliseconds => ndt.timestamp_millis(),
-                        TimeUnit::Microseconds => ndt.timestamp_micros(),
-                        TimeUnit::Nanoseconds => ndt.timestamp_nanos_opt().unwrap(),
+                        TimeUnit::Milliseconds => ndt.and_utc().timestamp_millis(),
+                        TimeUnit::Microseconds => ndt.and_utc().timestamp_micros(),
+                        TimeUnit::Nanoseconds => ndt.and_utc().timestamp_nanos_opt().unwrap(),
                     })
             } else {
                 None
