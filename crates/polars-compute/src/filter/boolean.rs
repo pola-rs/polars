@@ -76,14 +76,6 @@ pub fn filter_boolean_kernel(values: &Bitmap, mask: &Bitmap) -> Bitmap {
     let mut out_vec: Vec<u8> = Vec::with_capacity(num_bytes);
 
     unsafe {
-        // Make sure the tail is always initialized.
-        let guaranteed_initialized = mask_bits_set.div_ceil(8);
-        let num_tail_bytes = num_bytes - guaranteed_initialized;
-        out_vec
-            .as_mut_ptr()
-            .add(num_bytes - num_tail_bytes)
-            .write_bytes(0, num_tail_bytes);
-
         if mask_bits_set <= mask.len() / (64 * 4) {
             // Less than one in 1 in 4 words has a bit set on average, use sparse kernel.
             filter_boolean_kernel_sparse(values, mask, out_vec.as_mut_ptr());
@@ -102,7 +94,8 @@ pub fn filter_boolean_kernel(values: &Bitmap, mask: &Bitmap) -> Bitmap {
             )
         }
 
-        out_vec.set_len(num_bytes);
+        // SAFETY: the above filters must have initialized these bytes.
+        out_vec.set_len(mask_bits_set.div_ceil(8));
     }
 
     Bitmap::from_u8_vec(out_vec, mask_bits_set)
