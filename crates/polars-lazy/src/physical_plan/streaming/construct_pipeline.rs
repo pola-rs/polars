@@ -7,8 +7,9 @@ use polars_core::prelude::*;
 use polars_io::predicates::{PhysicalIoExpr, StatsEvaluator};
 use polars_pipe::expressions::PhysicalPipedExpr;
 use polars_pipe::operators::chunks::DataChunk;
-use polars_pipe::pipeline::{create_pipeline, get_dummy_operator, get_operator, PipeLine};
-use polars_pipe::pipeline::callbacks::CallBackReplacer;
+use polars_pipe::pipeline::{
+    create_pipeline, get_dummy_operator, get_operator, CallBacks, PipeLine,
+};
 use polars_pipe::SExecutionContext;
 
 use crate::physical_plan::planner::{create_physical_expr, ExpressionConversionState};
@@ -106,7 +107,7 @@ pub(super) fn construct(
     use ALogicalPlan::*;
 
     let mut pipelines = Vec::with_capacity(tree.len());
-    let mut callbacks = CallBackReplacer::new();
+    let mut callbacks = CallBacks::new();
 
     let is_verbose = verbose();
 
@@ -127,9 +128,9 @@ pub(super) fn construct(
                         *count.borrow_mut() += 1;
                     },
                     PipelineNode::RhsJoin(node) => {
-                        callbacks.insert_placeholder(*node, get_dummy_operator());
+                        let _ = callbacks.insert(*node, get_dummy_operator());
                     },
-                    _ => {}
+                    _ => {},
                 }
             }
         }
@@ -171,19 +172,19 @@ pub(super) fn construct(
                 },
                 PipelineNode::Operator(node) => {
                     operator_nodes.push(node);
-                    let op = get_operator(node, lp_arena, expr_arena, &to_physical_piped_expr, &mut callbacks)?;
+                    let op = get_operator(node, lp_arena, expr_arena, &to_physical_piped_expr)?;
                     operators.push(op);
                 },
                 PipelineNode::Union(node) => {
                     operator_nodes.push(node);
                     jit_insert_slice(node, lp_arena, &mut sink_nodes, operator_offset);
-                    let op = get_operator(node, lp_arena, expr_arena, &to_physical_piped_expr, &mut callbacks)?;
+                    let op = get_operator(node, lp_arena, expr_arena, &to_physical_piped_expr)?;
                     operators.push(op);
                 },
                 PipelineNode::RhsJoin(node) => {
                     operator_nodes.push(node);
                     jit_insert_slice(node, lp_arena, &mut sink_nodes, operator_offset);
-                    let op = callbacks.get_placeholder(&node);
+                    let op = callbacks.get(&node).unwrap().clone();
                     operators.push(Box::new(op))
                 },
             }
@@ -193,14 +194,13 @@ pub(super) fn construct(
         let pipeline = create_pipeline(
             &branch.sources,
             operators,
-            operator_nodes,
             sink_nodes,
             lp_arena,
             expr_arena,
             to_physical_piped_expr,
             is_verbose,
             &mut sink_cache,
-            &mut callbacks
+            &mut callbacks,
         )?;
         pipelines.push((execution_id, pipeline));
     }

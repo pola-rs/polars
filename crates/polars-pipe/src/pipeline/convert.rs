@@ -16,9 +16,10 @@ use crate::executors::sinks::*;
 use crate::executors::{operators, sources};
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{Operator, Sink as SinkTrait, Source};
-use crate::pipeline::callbacks::CallBackReplacer;
 use crate::pipeline::dispatcher::ThreadedSink;
 use crate::pipeline::PipeLine;
+
+pub type CallBacks = PlHashMap<Node, PlaceHolder>;
 
 fn exprs_to_physical<F>(
     exprs: &[Node],
@@ -160,7 +161,7 @@ pub fn get_sink<F>(
     lp_arena: &Arena<ALogicalPlan>,
     expr_arena: &mut Arena<AExpr>,
     to_physical: &F,
-    callbacks: &mut CallBackReplacer
+    callbacks: &mut CallBacks,
 ) -> PolarsResult<Box<dyn SinkTrait>>
 where
     F: Fn(Node, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
@@ -246,14 +247,16 @@ where
             // slice pushdown optimization should not set this one in a streaming query.
             assert!(options.args.slice.is_none());
             let swapped = swap_join_order(options);
-            let placeholder = callbacks.get_placeholder(&node);
+            let placeholder = callbacks.get(&node).unwrap().clone();
 
             match &options.args.how {
                 #[cfg(feature = "cross_join")]
-                JoinType::Cross => {
-                    Box::new(CrossJoin::new(options.args.suffix().into(), swapped, node, placeholder))
-                        as Box<dyn SinkTrait>
-                },
+                JoinType::Cross => Box::new(CrossJoin::new(
+                    options.args.suffix().into(),
+                    swapped,
+                    node,
+                    placeholder,
+                )) as Box<dyn SinkTrait>,
                 jt => {
                     let input_schema_left = lp_arena.get(*input_left).schema(lp_arena);
                     let join_columns_left = Arc::new(exprs_to_physical(
@@ -293,7 +296,7 @@ where
                                 // We don't need the key names for these joins.
                                 vec![].into(),
                                 vec![].into(),
-                                placeholder
+                                placeholder,
                             )) as Box<dyn SinkTrait>
                         },
                         JoinType::Outer { .. } => {
@@ -319,7 +322,7 @@ where
                                 node,
                                 key_names_left,
                                 key_names_right,
-                                placeholder
+                                placeholder,
                             )) as Box<dyn SinkTrait>
                         },
                         _ => unimplemented!(),
@@ -525,7 +528,7 @@ where
     Ok(out)
 }
 
-pub fn get_dummy_operator() ->  PlaceHolder {
+pub fn get_dummy_operator() -> PlaceHolder {
     operators::PlaceHolder::new()
 }
 
@@ -553,7 +556,6 @@ pub fn get_operator<F>(
     lp_arena: &Arena<ALogicalPlan>,
     expr_arena: &Arena<AExpr>,
     to_physical: &F,
-    callbacks: &mut CallBackReplacer
 ) -> PolarsResult<Box<dyn Operator>>
 where
     F: Fn(Node, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
@@ -650,7 +652,6 @@ where
 pub fn create_pipeline<F>(
     sources: &[Node],
     operators: Vec<Box<dyn Operator>>,
-    operator_nodes: Vec<Node>,
     sink_nodes: Vec<(usize, Node, Rc<RefCell<u32>>)>,
     lp_arena: &Arena<ALogicalPlan>,
     expr_arena: &mut Arena<AExpr>,
@@ -659,7 +660,7 @@ pub fn create_pipeline<F>(
     // Shared sinks are stored in a cache, so that they share state.
     // If the shared sink is already in cache, that one is used.
     sink_cache: &mut PlHashMap<usize, Box<dyn SinkTrait>>,
-    callbacks: &mut CallBackReplacer
+    callbacks: &mut CallBacks,
 ) -> PolarsResult<PipeLine>
 where
     F: Fn(Node, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
@@ -738,7 +739,6 @@ where
                 sink,
                 shared_count,
                 offset + operator_offset,
-                node,
             ))
         })
         .collect::<PolarsResult<Vec<_>>>()?;
@@ -746,9 +746,7 @@ where
     Ok(PipeLine::new(
         source_objects,
         unsafe { std::mem::transmute(operator_objects) },
-        operator_nodes,
         sinks,
-        operator_offset,
         verbose,
     ))
 }

@@ -1,9 +1,10 @@
 mod config;
 mod convert;
 mod dispatcher;
-pub mod callbacks;
 
-pub use convert::{create_pipeline, get_dummy_operator, get_operator, get_sink, swap_join_order};
+pub use convert::{
+    create_pipeline, get_dummy_operator, get_operator, get_sink, swap_join_order, CallBacks,
+};
 pub use dispatcher::PipeLine;
 use polars_core::prelude::*;
 use polars_core::POOL;
@@ -43,16 +44,15 @@ type ThreadedOperator = Vec<PhysOperator>;
 type ThreadedOperatorMut<'a> = &'a mut [PhysOperator];
 type ThreadedSinkMut<'a> = &'a mut [PhysSink];
 
-
 #[repr(transparent)]
 pub(crate) struct PhysOperator {
-    inner: SyncUnsafeCell<Box<dyn Operator>>
+    inner: SyncUnsafeCell<Box<dyn Operator>>,
 }
 
 impl From<Box<dyn Operator>> for PhysOperator {
     fn from(value: Box<dyn Operator>) -> Self {
         Self {
-            inner: SyncUnsafeCell::new(value)
+            inner: SyncUnsafeCell::new(value),
         }
     }
 }
@@ -63,8 +63,6 @@ impl PhysOperator {
     }
 
     pub(crate) fn get_ref(&self) -> &dyn Operator {
-        unsafe {
-            &**self.inner.get()
-        }
+        unsafe { &**self.inner.get() }
     }
 }

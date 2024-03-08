@@ -9,8 +9,8 @@ use polars_core::frame::DataFrame;
 use polars_ops::prelude::CrossJoin as CrossJoinTrait;
 use polars_utils::arena::Node;
 use smartstring::alias::String as SmartString;
-use crate::executors::operators::PlaceHolder;
 
+use crate::executors::operators::PlaceHolder;
 use crate::operators::{
     chunks_to_df_unchecked, DataChunk, FinalizedSink, Operator, OperatorResult, PExecutionContext,
     Sink, SinkResult,
@@ -22,17 +22,22 @@ pub struct CrossJoin {
     suffix: SmartString,
     swapped: bool,
     node: Node,
-    placeholder: PlaceHolder
+    placeholder: PlaceHolder,
 }
 
 impl CrossJoin {
-    pub(crate) fn new(suffix: SmartString, swapped: bool, node: Node, placeholder: PlaceHolder) -> Self {
+    pub(crate) fn new(
+        suffix: SmartString,
+        swapped: bool,
+        node: Node,
+        placeholder: PlaceHolder,
+    ) -> Self {
         CrossJoin {
             chunks: vec![],
             suffix,
             swapped,
             node,
-            placeholder
+            placeholder,
         }
     }
 }

@@ -171,7 +171,13 @@ pub(super) fn flush_operators(
     let needs_flush = operators
         .iter_mut()
         .enumerate()
-        .filter_map(|(i, op)| if op.get_mut().must_flush() { Some(i) } else { None })
+        .filter_map(|(i, op)| {
+            if op.get_mut().must_flush() {
+                Some(i)
+            } else {
+                None
+            }
+        })
         .collect::<Vec<_>>();
 
     // Stack based flushing + operator execution.

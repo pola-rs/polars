@@ -1,50 +1,49 @@
 use std::sync::{Arc, Mutex};
+
 use polars_core::error::PolarsResult;
-use polars_utils::cell::SyncUnsafeCell;
 
 use crate::operators::{DataChunk, Operator, OperatorResult, PExecutionContext};
 
-type Replace = Arc<Mutex<Option<Box<dyn Operator>>>>;
-
 #[derive(Clone)]
 struct CallBack {
-    inner: Replace
+    inner: Arc<Mutex<Option<Box<dyn Operator>>>>,
 }
 
 impl CallBack {
     fn new() -> Self {
         Self {
-            inner: Default::default()
+            inner: Default::default(),
         }
     }
 
-    pub fn replace(&self, op: Box<dyn Operator>) {
-        let mut inner = self.inner.lock().unwrap();
-        *inner = Some(op);
+    fn replace(&self, op: Box<dyn Operator>) {
+        let mut lock = self.inner.try_lock().expect("no-contention");
+        *lock = Some(op);
     }
 }
 
 impl Operator for CallBack {
-    fn execute(&mut self, context: &PExecutionContext, chunk: &DataChunk) -> PolarsResult<OperatorResult> {
-        let mut inner = self.inner.lock().unwrap();
-        let op = inner.as_mut().unwrap();
-        op.execute(context, chunk)
+    fn execute(
+        &mut self,
+        context: &PExecutionContext,
+        chunk: &DataChunk,
+    ) -> PolarsResult<OperatorResult> {
+        let mut lock = self.inner.try_lock().expect("no-contention");
+        lock.as_mut().unwrap().execute(context, chunk)
+    }
+
+    fn flush(&mut self) -> PolarsResult<OperatorResult> {
+        let mut lock = self.inner.try_lock().expect("no-contention");
+        lock.as_mut().unwrap().flush()
+    }
+
+    fn must_flush(&self) -> bool {
+        let lock = self.inner.try_lock().expect("no-contention");
+        lock.as_ref().unwrap().must_flush()
     }
 
     fn split(&self, _thread_no: usize) -> Box<dyn Operator> {
         panic!("should not be called")
-    }
-
-    fn must_flush(&self) -> bool {
-        let inner = self.inner.lock().unwrap();
-        let inner = inner.as_ref().unwrap();
-        inner.must_flush()
-    }
-
-    fn flush(&mut self) -> PolarsResult<OperatorResult> {
-        let mut inner = self.inner.lock().unwrap();
-        let inner = inner.as_mut().unwrap();
-        inner.flush()
     }
 
     fn fmt(&self) -> &str {
@@ -52,20 +51,20 @@ impl Operator for CallBack {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct PlaceHolder {
-    inner: Arc<Mutex<Vec<(usize, CallBack)>>>
+    inner: Arc<Mutex<Vec<(usize, CallBack)>>>,
 }
 
 impl PlaceHolder {
     pub fn new() -> Self {
         Self {
-            inner: Arc::new(Default::default())
+            inner: Arc::new(Default::default()),
         }
     }
 
     pub fn replace(&self, op: Box<dyn Operator>) {
-        let mut inner = self.inner.lock().unwrap();
+        let inner = self.inner.lock().unwrap();
         for (thread_no, cb) in inner.iter() {
             cb.replace(op.split(*thread_no))
         }

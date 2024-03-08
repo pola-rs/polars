@@ -9,16 +9,15 @@ use polars_utils::arena::Node;
 use polars_utils::slice::GetSaferUnchecked;
 use polars_utils::unitvec;
 use smartstring::alias::String as SmartString;
-use crate::executors::operators::PlaceHolder;
 
 use super::*;
+use crate::executors::operators::PlaceHolder;
 use crate::executors::sinks::joins::generic_probe_inner_left::GenericJoinProbe;
 use crate::executors::sinks::joins::generic_probe_outer::GenericOuterJoinProbe;
 use crate::executors::sinks::utils::{hash_rows, load_vec};
 use crate::executors::sinks::HASHMAP_INIT_SIZE;
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult};
-use crate::pipeline::get_dummy_operator;
 
 pub(super) type ChunkIdx = IdxSize;
 pub(super) type DfIdx = IdxSize;
@@ -53,7 +52,7 @@ pub struct GenericBuild<K: ExtraPayload> {
     node: Node,
     key_names_left: Arc<[SmartString]>,
     key_names_right: Arc<[SmartString]>,
-    placeholder: PlaceHolder
+    placeholder: PlaceHolder,
 }
 
 impl<K: ExtraPayload> GenericBuild<K> {
@@ -68,7 +67,7 @@ impl<K: ExtraPayload> GenericBuild<K> {
         node: Node,
         key_names_left: Arc<[SmartString]>,
         key_names_right: Arc<[SmartString]>,
-        placeholder: PlaceHolder
+        placeholder: PlaceHolder,
     ) -> Self {
         let hb: RandomState = Default::default();
         let partitions = _set_partition_size();
@@ -91,7 +90,7 @@ impl<K: ExtraPayload> GenericBuild<K> {
             node,
             key_names_left,
             key_names_right,
-            placeholder
+            placeholder,
         }
     }
 }
@@ -287,7 +286,7 @@ impl<K: ExtraPayload> Sink for GenericBuild<K> {
             self.node,
             self.key_names_left.clone(),
             self.key_names_right.clone(),
-            self.placeholder.clone()
+            self.placeholder.clone(),
         );
         new.hb = self.hb.clone();
         Box::new(new)
