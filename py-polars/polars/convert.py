@@ -656,7 +656,7 @@ def from_pandas(
     include_index: bool = False,
 ) -> DataFrame | Series:
     """
-    Construct a Polars DataFrame or Series from a pandas DataFrame or Series.
+    Construct a Polars DataFrame or Series from a pandas DataFrame, Series, or Index.
 
     This operation clones data.
 
@@ -676,10 +676,10 @@ def from_pandas(
         Load any non-default pandas indexes as columns.
 
         .. note::
-            If the input has a nameless index which just enumerates the rows, then it
-            will not be included in the result, regardless of the value of this
-            parameter. If you want to be sure to include it, please call
-            ``.reset_index()`` prior to calling this function.
+            If the input is a pandas ``Series`` or ``DataFrame`` and has a nameless
+            index which just enumerates the rows, then it will not be included in the
+            result, regardless of this parameter. If you want to be sure to include it,
+            please call ``.reset_index()`` prior to calling this function.
 
     Returns
     -------
