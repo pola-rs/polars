@@ -28,7 +28,7 @@ pub(super) unsafe fn take_unchecked(array: &StructArray, indices: &IdxArr) -> St
 
     let validity = array
         .validity()
-        .map(|b| super::bitmap::take_bitmap_unchecked(b, indices.values()));
+        .map(|b| super::bitmap::take_bitmap_nulls_unchecked(b, indices));
     let validity = combine_validities_and(validity.as_ref(), indices.validity());
     StructArray::new(array.data_type().clone(), values, validity)
 }
