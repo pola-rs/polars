@@ -11,11 +11,10 @@ use super::super::utils::{
     FilteredOptionalPageValidity, MaybeNext, OptionalPageValidity,
 };
 use super::super::{utils, PagesIter};
-use crate::parquet::deserialize::{
-    HybridDecoderBitmapIter, HybridRleBooleanIter, SliceFilteredIter,
-};
-use crate::parquet::encoding::{hybrid_rle, Encoding};
+use crate::parquet::deserialize::SliceFilteredIter;
+use crate::parquet::encoding::Encoding;
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
+use crate::read::deserialize::bitmaps::BitMapRleDecoder;
 
 #[derive(Debug)]
 struct Values<'a>(BitmapIter<'a>);
@@ -77,10 +76,7 @@ enum State<'a> {
     Required(Required<'a>),
     FilteredRequired(FilteredRequired<'a>),
     FilteredOptional(FilteredOptionalPageValidity<'a>, Values<'a>),
-    RleOptional(
-        OptionalPageValidity<'a>,
-        HybridRleBooleanIter<'a, HybridDecoderBitmapIter<'a>>,
-    ),
+    RleOptional(BitMapRleDecoder<'a>, BitMapRleDecoder<'a>),
 }
 
 impl<'a> State<'a> {
@@ -90,7 +86,7 @@ impl<'a> State<'a> {
             State::Required(page) => page.length - page.offset,
             State::FilteredRequired(page) => page.len(),
             State::FilteredOptional(optional, _) => optional.len(),
-            State::RleOptional(optional, _) => optional.len(),
+            State::RleOptional(_, values) => values.len(),
         }
     }
 }
@@ -137,15 +133,11 @@ impl<'a> Decoder<'a> for BooleanDecoder {
                 Ok(State::FilteredRequired(FilteredRequired::try_new(page)?))
             },
             (Encoding::Rle, true, false) => {
-                let optional = OptionalPageValidity::try_new(page)?;
-                let (_, _, values) = split_buffer(page)?;
-                // For boolean values the length is pre-pended.
-                let (_len_in_bytes, values) = values.split_at(4);
-                let iter = hybrid_rle::Decoder::new(values, 1);
-                let values = HybridDecoderBitmapIter::new(iter, page.num_values());
-                let values = HybridRleBooleanIter::new(values);
-
-                Ok(State::RleOptional(optional, values))
+                let (_, validity, values) = split_buffer(page)?;
+                let num_values = page.num_values();
+                let validity_decoder = BitMapRleDecoder::try_new(validity, num_values)?;
+                let values_decoder = BitMapRleDecoder::try_new(values, num_values)?;
+                Ok(State::RleOptional(validity_decoder, values_decoder))
             },
             _ => Err(utils::not_implemented(page)),
         }
@@ -194,13 +186,8 @@ impl<'a> Decoder<'a> for BooleanDecoder {
                 );
             },
             State::RleOptional(page_validity, page_values) => {
-                utils::extend_from_decoder(
-                    validity,
-                    page_validity,
-                    Some(remaining),
-                    values,
-                    page_values.map(|v| v.unwrap()),
-                );
+                page_validity.materialize(remaining, validity)?;
+                page_values.materialize(remaining, values)?;
             },
         }
         Ok(())
