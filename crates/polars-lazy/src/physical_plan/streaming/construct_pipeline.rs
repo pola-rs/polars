@@ -7,9 +7,10 @@ use polars_core::prelude::*;
 use polars_io::predicates::{PhysicalIoExpr, StatsEvaluator};
 use polars_pipe::expressions::PhysicalPipedExpr;
 use polars_pipe::operators::chunks::DataChunk;
-use polars_pipe::pipeline::{create_pipeline, get_dummy_operator, get_operator, PipeLine};
+use polars_pipe::pipeline::{
+    create_pipeline, get_dummy_operator, get_operator, CallBacks, PipeLine,
+};
 use polars_pipe::SExecutionContext;
-use polars_utils::IdxSize;
 
 use crate::physical_plan::planner::{create_physical_expr, ExpressionConversionState};
 use crate::physical_plan::state::ExecutionState;
@@ -106,27 +107,37 @@ pub(super) fn construct(
     use ALogicalPlan::*;
 
     let mut pipelines = Vec::with_capacity(tree.len());
+    let mut callbacks = CallBacks::new();
 
     let is_verbose = verbose();
 
-    // first traverse the branches and nodes to determine how often a sink is
-    // shared
-    // this shared count will be used in the pipeline to determine
+    // First traverse the branches and nodes to determine how often a sink is
+    // shared.
+    // This shared count will be used in the pipeline to determine
     // when the sink can be finalized.
     let mut sink_share_count = PlHashMap::new();
     let n_branches = tree.len();
     if n_branches > 1 {
         for branch in &tree {
-            for sink in branch.iter_sinks() {
-                let count = sink_share_count
-                    .entry(sink.0)
-                    .or_insert(Rc::new(RefCell::new(0u32)));
-                *count.borrow_mut() += 1;
+            for op in branch.operators_sinks.iter() {
+                match op {
+                    PipelineNode::Sink(sink) => {
+                        let count = sink_share_count
+                            .entry(sink.0)
+                            .or_insert(Rc::new(RefCell::new(0u32)));
+                        *count.borrow_mut() += 1;
+                    },
+                    PipelineNode::RhsJoin(node) => {
+                        let _ = callbacks.insert(*node, get_dummy_operator());
+                    },
+                    _ => {},
+                }
             }
         }
     }
 
-    // shared sinks are stored in a cache, so that they share info
+    // Shared sinks are stored in a cache, so that they share state.
+    // If the shared sink is already in cache, that one is used.
     let mut sink_cache = PlHashMap::new();
     let mut final_sink = None;
 
@@ -173,8 +184,8 @@ pub(super) fn construct(
                 PipelineNode::RhsJoin(node) => {
                     operator_nodes.push(node);
                     jit_insert_slice(node, lp_arena, &mut sink_nodes, operator_offset);
-                    let op = get_dummy_operator();
-                    operators.push(op)
+                    let op = callbacks.get(&node).unwrap().clone();
+                    operators.push(Box::new(op))
                 },
             }
         }
@@ -183,13 +194,13 @@ pub(super) fn construct(
         let pipeline = create_pipeline(
             &branch.sources,
             operators,
-            operator_nodes,
             sink_nodes,
             lp_arena,
             expr_arena,
             to_physical_piped_expr,
             is_verbose,
             &mut sink_cache,
+            &mut callbacks,
         )?;
         pipelines.push((execution_id, pipeline));
     }

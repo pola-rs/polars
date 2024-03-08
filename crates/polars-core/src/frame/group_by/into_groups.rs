@@ -1,7 +1,6 @@
 #[cfg(feature = "group_by_list")]
 use arrow::legacy::kernels::list_bytes_iter::numeric_list_bytes_iter;
 use arrow::legacy::kernels::sort_partition::{create_clean_partitions, partition_to_groups};
-use arrow::legacy::prelude::*;
 use polars_utils::total_ord::{ToTotalOrd, TotalHash};
 
 use super::*;

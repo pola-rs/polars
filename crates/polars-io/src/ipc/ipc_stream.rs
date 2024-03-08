@@ -166,20 +166,14 @@ where
             self.projection = Some(prj);
         }
 
-        let sorted_projection = self.projection.clone().map(|mut proj| {
-            proj.sort_unstable();
-            proj
-        });
-
-        let schema = if let Some(projection) = &sorted_projection {
+        let schema = if let Some(projection) = &self.projection {
             apply_projection(&metadata.schema, projection)
         } else {
             metadata.schema.clone()
         };
 
-        let include_row_index = self.row_index.is_some();
         let ipc_reader =
-            read::StreamReader::new(&mut self.reader, metadata.clone(), sorted_projection);
+            read::StreamReader::new(&mut self.reader, metadata.clone(), self.projection);
         finish_reader(
             ipc_reader,
             rechunk,
@@ -188,35 +182,6 @@ where
             &schema,
             self.row_index,
         )
-        .map(|df| fix_column_order(df, self.projection, include_row_index))
-    }
-}
-
-fn fix_column_order(
-    df: DataFrame,
-    projection: Option<Vec<usize>>,
-    include_row_index: bool,
-) -> DataFrame {
-    if let Some(proj) = projection {
-        let offset = usize::from(include_row_index);
-        let mut args = (0..proj.len()).zip(proj).collect::<Vec<_>>();
-        // first el of tuple is argument index
-        // second el is the projection index
-        args.sort_unstable_by_key(|tpl| tpl.1);
-        let cols = df.get_columns();
-
-        let iter = args.iter().map(|tpl| cols[tpl.0 + offset].clone());
-        let cols = if include_row_index {
-            let mut new_cols = vec![df.get_columns()[0].clone()];
-            new_cols.extend(iter);
-            new_cols
-        } else {
-            iter.collect()
-        };
-
-        unsafe { DataFrame::new_no_checks(cols) }
-    } else {
-        df
     }
 }
 

@@ -164,6 +164,11 @@ impl<R: MmapBytesReader> IpcReader<R> {
         let rechunk = self.rechunk;
         let metadata = read::read_file_metadata(&mut self.reader)?;
 
+        debug_assert!(
+            self.columns.is_none(),
+            "column names must have already been converted into indices",
+        );
+
         let schema = if let Some(projection) = &self.projection {
             Arc::new(apply_projection(&metadata.schema, projection))
         } else {

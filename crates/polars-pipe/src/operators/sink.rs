@@ -13,7 +13,7 @@ pub enum SinkResult {
 
 pub enum FinalizedSink {
     Finished(DataFrame),
-    Operator(Box<dyn Operator>),
+    Operator,
     Source(Box<dyn Source>),
 }
 
@@ -21,7 +21,7 @@ impl Debug for FinalizedSink {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let s = match self {
             FinalizedSink::Finished(_) => "finished",
-            FinalizedSink::Operator(_) => "operator",
+            FinalizedSink::Operator => "operator",
             FinalizedSink::Source(_) => "source",
         };
         write!(f, "{s}")

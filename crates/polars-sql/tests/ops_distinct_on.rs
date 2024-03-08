@@ -1,5 +1,4 @@
 use polars_core::df;
-use polars_core::prelude::*;
 use polars_lazy::prelude::*;
 use polars_sql::*;
 

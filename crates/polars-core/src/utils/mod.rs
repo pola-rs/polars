@@ -538,9 +538,9 @@ macro_rules! apply_method_physical_numeric {
 #[macro_export]
 macro_rules! df {
     ($($col_name:expr => $slice:expr), + $(,)?) => {
-        {
-            $crate::prelude::DataFrame::new(vec![$($crate::prelude::Series::new($col_name, $slice),)+])
-        }
+        $crate::prelude::DataFrame::new(vec![
+            $(<$crate::prelude::Series as $crate::prelude::NamedFrom::<_, _>>::new($col_name, $slice),)+
+        ])
     }
 }
 

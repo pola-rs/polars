@@ -14,29 +14,30 @@ def show_versions() -> None:
     --------
     >>> pl.show_versions()  # doctest: +SKIP
     --------Version info---------
-    Polars:               0.19.16
+    Polars:               0.20.14
     Index type:           UInt32
-    Platform:             macOS-14.1.1-arm64-arm-64bit
-    Python:               3.11.6 (main, Oct  2 2023, 13:45:54) [Clang 15.0.0 (clang-1500.0.40.1)]
+    Platform:             macOS-14.3.1-arm64-arm-64bit
+    Python:               3.11.8 (main, Feb  6 2024, 21:21:21) [Clang 15.0.0 (clang-1500.1.0.2.5)]
     ----Optional dependencies----
-    adbc_driver_manager:  0.8.0
+    adbc_driver_manager:  0.10.0
     cloudpickle:          3.0.0
     connectorx:           0.3.2
-    deltalake:            0.13.0
-    fsspec:               2023.10.0
-    hvplot:               0.9.1
-    gevent:               23.9.1
-    matplotlib:           3.8.2
-    numpy:                1.26.2
+    deltalake:            0.16.0
+    fastexcel:            0.9.1
+    fsspec:               2023.12.2
+    gevent:               24.2.1
+    hvplot:               0.9.2
+    matplotlib:           3.8.3
+    numpy:                1.26.4
     openpyxl:             3.1.2
-    pandas:               2.1.3
-    pyarrow:              14.0.1
-    pydantic:             2.5.2
-    pyiceberg:            0.5.1
+    pandas:               2.2.1
+    pyarrow:              15.0.0
+    pydantic:             2.6.3
+    pyiceberg:            0.6.0
     pyxlsb:               1.0.10
-    sqlalchemy:           2.0.23
-    xlsx2csv:             0.8.1
-    xlsxwriter:           3.1.9
+    sqlalchemy:           2.0.28
+    xlsx2csv:             0.8.2
+    xlsxwriter:           3.2.0
     """  # noqa: W505
     # Note: we import 'platform' here (rather than at the top of the
     # module) as a micro-optimization for polars' initial import
@@ -64,6 +65,7 @@ def _get_dependency_info() -> dict[str, str]:
         "cloudpickle",
         "connectorx",
         "deltalake",
+        "fastexcel",
         "fsspec",
         "gevent",
         "hvplot",
