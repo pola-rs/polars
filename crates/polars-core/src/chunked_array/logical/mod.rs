@@ -33,7 +33,7 @@ pub use time::*;
 
 use crate::prelude::*;
 
-/// Maps a logical type to a a chunked array implementation of the physical type.
+/// Maps a logical type to a chunked array implementation of the physical type.
 /// This saves a lot of compiler bloat and allows us to reuse functionality.
 pub struct Logical<Logical: PolarsDataType, Physical: PolarsDataType>(
     pub ChunkedArray<Physical>,

@@ -326,12 +326,24 @@ def test_read_database(
             engine=str(connect_using),  # type: ignore[arg-type]
             schema_overrides=schema_overrides,
         )
+        df_empty = pl.read_database_uri(
+            uri=f"sqlite:///{tmp_sqlite_db}",
+            query="SELECT * FROM test_data WHERE name LIKE '%polars%'",
+            engine=str(connect_using),  # type: ignore[arg-type]
+            schema_overrides=schema_overrides,
+        )
     elif "adbc" in os.environ["PYTEST_CURRENT_TEST"]:
         # externally instantiated adbc connections
         with connect_using(tmp_sqlite_db) as conn, conn.cursor():
             df = pl.read_database(
                 connection=conn,
                 query="SELECT * FROM test_data",
+                schema_overrides=schema_overrides,
+                batch_size=batch_size,
+            )
+            df_empty = pl.read_database(
+                connection=conn,
+                query="SELECT * FROM test_data WHERE name LIKE '%polars%'",
                 schema_overrides=schema_overrides,
                 batch_size=batch_size,
             )
@@ -343,10 +355,23 @@ def test_read_database(
             schema_overrides=schema_overrides,
             batch_size=batch_size,
         )
+        df_empty = pl.read_database(
+            connection=connect_using(tmp_sqlite_db),
+            query="SELECT * FROM test_data WHERE name LIKE '%polars%'",
+            schema_overrides=schema_overrides,
+            batch_size=batch_size,
+        )
 
+    # validate the expected query return (data and schema)
     assert df.schema == expected_dtypes
     assert df.shape == (2, 4)
     assert df["date"].to_list() == expected_dates
+
+    # note: 'cursor.description' is not reliable when no query
+    # data is returned, so no point comparing expected dtypes
+    assert df_empty.columns == ["id", "name", "value", "date"]
+    assert df_empty.shape == (0, 4)
+    assert df_empty["date"].to_list() == []
 
 
 def test_read_database_alchemy_selectable(tmp_sqlite_db: Path) -> None:

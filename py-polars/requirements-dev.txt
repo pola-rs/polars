@@ -7,7 +7,8 @@
 # -----
 
 maturin
-patchelf; platform_system == 'Linux'  # Extra dependency for maturin, only for Linux
+# extra dependency for maturin (linux-only)
+patchelf; platform_system == 'Linux'
 
 # ------------
 # DEPENDENCIES
@@ -36,7 +37,7 @@ s3fs[boto3]
 # Spreadsheet
 ezodf
 lxml
-fastexcel>=0.8.0
+fastexcel>=0.9
 openpyxl
 pyxlsb
 xlsx2csv

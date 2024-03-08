@@ -404,7 +404,7 @@ where
                     },
                     PhysicalType::FixedLenByteArray(n) => {
                         polars_bail!(ComputeError:
-                            "Can't decode Decimal256 type from from `FixedLenByteArray` of len {n}"
+                            "Can't decode Decimal256 type from `FixedLenByteArray` of len {n}"
                         )
                     },
                     _ => {

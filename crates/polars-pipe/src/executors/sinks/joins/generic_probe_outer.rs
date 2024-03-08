@@ -22,7 +22,7 @@ pub struct GenericOuterJoinProbe<K: ExtraPayload> {
     /// all chunks are stacked into a single dataframe
     /// the dataframe is not rechunked.
     df_a: Arc<DataFrame>,
-    // Dummy needed for the the flush phase.
+    // Dummy needed for the flush phase.
     df_b_dummy: Option<DataFrame>,
     /// The join columns are all tightly packed
     /// the values of a join column(s) can be found

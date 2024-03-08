@@ -3,6 +3,9 @@ mod boolean;
 mod primitive;
 mod scalar;
 
+#[cfg(all(target_arch = "x86_64", feature = "simd"))]
+mod avx512;
+
 use arrow::array::growable::make_growable;
 use arrow::array::{new_empty_array, Array, BinaryViewArray, BooleanArray, PrimitiveArray};
 use arrow::bitmap::utils::SlicesIterator;

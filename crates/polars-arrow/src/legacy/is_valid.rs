@@ -19,11 +19,8 @@ impl ArrowArray for ListArray<i64> {}
 impl ArrowArray for FixedSizeListArray {}
 
 impl<A: ArrowArray> IsValid for A {
+    #[inline]
     unsafe fn is_valid_unchecked(&self, i: usize) -> bool {
-        if let Some(b) = self.validity() {
-            b.get_bit_unchecked(i)
-        } else {
-            true
-        }
+        !self.is_null_unchecked(i)
     }
 }

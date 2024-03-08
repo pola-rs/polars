@@ -300,7 +300,7 @@ impl Sink for SortSinkMultiple {
                 output_schema: self.output_schema.clone(),
             }))),
             // SortSink should not produce this branch
-            FinalizedSink::Operator(_) => unreachable!(),
+            FinalizedSink::Operator => unreachable!(),
         }
     }
 

@@ -2109,7 +2109,11 @@ class Series:
         return self._s.quantile(quantile, interpolation)
 
     def to_dummies(
-        self, *, separator: str = "_", keep_column: bool = False
+        self,
+        *,
+        separator: str = "_",
+        drop_first: bool = False,
+        keep_column: bool = False,
     ) -> DataFrame:
         """
         Get dummy/indicator variables.
@@ -2118,6 +2122,8 @@ class Series:
         ----------
         separator
             Separator/delimiter used when generating column names.
+        drop_first
+            Remove the first category from the variable being encoded.
         keep_column
             Retain column used to generated dummy columns.
 
@@ -2136,6 +2142,18 @@ class Series:
         │ 0   ┆ 0   ┆ 1   │
         └─────┴─────┴─────┘
 
+        >>> s.to_dummies(drop_first=True)
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ a_2 ┆ a_3 │
+        │ --- ┆ --- │
+        │ u8  ┆ u8  │
+        ╞═════╪═════╡
+        │ 0   ┆ 0   │
+        │ 1   ┆ 0   │
+        │ 0   ┆ 1   │
+        └─────┴─────┘
+
         >>> s.to_dummies(keep_column=True)
         shape: (3, 4)
         ┌─────┬─────┬─────┬─────┐
@@ -2148,7 +2166,7 @@ class Series:
         │ 3   ┆ 0   ┆ 0   ┆ 1   │
         └─────┴─────┴─────┴─────┘
         """
-        return wrap_df(self._s.to_dummies(separator, False, keep_column))
+        return wrap_df(self._s.to_dummies(separator, drop_first, keep_column))
 
     @overload
     def cut(

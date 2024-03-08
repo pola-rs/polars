@@ -164,6 +164,18 @@ impl PartialEq for DataFrame {
     }
 }
 
+/// Asserts that two expressions of type [`DataFrame`] are equal according to [`DataFrame::equals`]
+/// at runtime. If the expression are not equal, the program will panic with a message that displays
+/// both dataframes.
+#[macro_export]
+macro_rules! assert_df_eq {
+    ($a:expr, $b:expr $(,)?) => {
+        let a: &$crate::frame::DataFrame = &$a;
+        let b: &$crate::frame::DataFrame = &$b;
+        assert!(a.equals(b), "expected {:?}\nto equal {:?}", a, b);
+    };
+}
+
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
@@ -192,6 +204,19 @@ mod test {
 
         let df1 = DataFrame::new(vec![a, b]).unwrap();
         assert!(df1.equals(&df1))
+    }
+
+    #[test]
+    fn assert_df_eq_passes() {
+        let df = df!("a" => [1], "b" => [2]).unwrap();
+        assert_df_eq!(df, df);
+        drop(df); // Ensure `assert_df_eq!` does not consume its arguments.
+    }
+
+    #[test]
+    #[should_panic(expected = "to equal")]
+    fn assert_df_eq_panics() {
+        assert_df_eq!(df!("a" => [1]).unwrap(), df!("a" => [2]).unwrap(),);
     }
 
     #[test]

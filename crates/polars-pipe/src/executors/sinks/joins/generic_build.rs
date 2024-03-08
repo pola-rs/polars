@@ -11,6 +11,7 @@ use polars_utils::unitvec;
 use smartstring::alias::String as SmartString;
 
 use super::*;
+use crate::executors::operators::PlaceHolder;
 use crate::executors::sinks::joins::generic_probe_inner_left::GenericJoinProbe;
 use crate::executors::sinks::joins::generic_probe_outer::GenericOuterJoinProbe;
 use crate::executors::sinks::utils::{hash_rows, load_vec};
@@ -51,6 +52,7 @@ pub struct GenericBuild<K: ExtraPayload> {
     node: Node,
     key_names_left: Arc<[SmartString]>,
     key_names_right: Arc<[SmartString]>,
+    placeholder: PlaceHolder,
 }
 
 impl<K: ExtraPayload> GenericBuild<K> {
@@ -65,6 +67,7 @@ impl<K: ExtraPayload> GenericBuild<K> {
         node: Node,
         key_names_left: Arc<[SmartString]>,
         key_names_right: Arc<[SmartString]>,
+        placeholder: PlaceHolder,
     ) -> Self {
         let hb: RandomState = Default::default();
         let partitions = _set_partition_size();
@@ -87,6 +90,7 @@ impl<K: ExtraPayload> GenericBuild<K> {
             node,
             key_names_left,
             key_names_right,
+            placeholder,
         }
     }
 }
@@ -282,6 +286,7 @@ impl<K: ExtraPayload> Sink for GenericBuild<K> {
             self.node,
             self.key_names_left.clone(),
             self.key_names_right.clone(),
+            self.placeholder.clone(),
         );
         new.hb = self.hb.clone();
         Box::new(new)
@@ -328,7 +333,8 @@ impl<K: ExtraPayload> Sink for GenericBuild<K> {
                     self.join_type.clone(),
                     self.join_nulls,
                 );
-                Ok(FinalizedSink::Operator(Box::new(probe_operator)))
+                self.placeholder.replace(Box::new(probe_operator));
+                Ok(FinalizedSink::Operator)
             },
             JoinType::Outer { coalesce } => {
                 let probe_operator = GenericOuterJoinProbe::new(
@@ -345,7 +351,8 @@ impl<K: ExtraPayload> Sink for GenericBuild<K> {
                     self.key_names_left.clone(),
                     self.key_names_right.clone(),
                 );
-                Ok(FinalizedSink::Operator(Box::new(probe_operator)))
+                self.placeholder.replace(Box::new(probe_operator));
+                Ok(FinalizedSink::Operator)
             },
 
             _ => unimplemented!(),
