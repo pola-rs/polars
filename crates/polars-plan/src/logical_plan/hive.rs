@@ -122,14 +122,13 @@ impl HivePartitions {
                     },
                     #[cfg(feature = "dtype-datetime")]
                     DataType::Datetime(time_unit, tz) => {
-                        let cow_value = percent_decode_str(value).decode_utf8().ok()?;
-                        let str_value = cow_value.as_ref();
+                        let value = percent_decode_str(value).decode_utf8().ok()?;
                         let fmt = if tz.is_some() {
                             "%Y-%m-%d %H:%M:%S%.fZ"
                         } else {
                             "%Y-%m-%d %H:%M:%S%.f"
                         };
-                        let value = NaiveDateTime::parse_from_str(str_value, fmt).ok()?;
+                        let value = NaiveDateTime::parse_from_str(value.as_ref(), fmt).ok()?;
                         let mut datetime_chunked =
                             DatetimeChunked::from_naive_datetime(name, [value], time_unit);
                         if let Some(tz) = tz {
