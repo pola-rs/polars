@@ -109,7 +109,7 @@ pub fn page_to_vec<T: NativeType>(
             },
         },
         PageState::Filtered(state) => match state {
-            FilteredPageState::Optional(values) => values.collect(),
+            FilteredPageState::Optional(values) => Ok(values.collect()),
             FilteredPageState::Required(values) => Ok(values.map(Some).collect()),
         },
     }
