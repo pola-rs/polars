@@ -179,6 +179,22 @@ pub static BOOLEAN_RE: Lazy<Regex> = Lazy::new(|| {
 
 pub static DATE_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^(\d{4})-(\d{2})-(\d{2})$").unwrap());
 
+// The datetime regex needs to match the following possible examples:
+// 2024-03-08%2008%3A17%3A14
+// 2024-03-08%2008%3A17%3A14Z
+// 2024-03-08%2008%3A17%3A14.491
+// 2024-03-08%2008%3A17%3A14.491Z
+// 2024-03-08%2008%3A17%3A14.491822
+// 2024-03-08%2008%3A17%3A14.491822Z
+// 2024-03-08%2008%3A17%3A14.491822123
+// 2024-03-08%2008%3A17%3A14.491822123Z
+pub static DATETIME_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(
+        r"^(\d{4})-(\d{2})-(\d{2})%20(\d{2})%3A(\d{2})%3A(\d{2})(\.\d{3})?(\d{3})?(\d{3})?Z?$",
+    )
+    .unwrap()
+});
+
 pub fn materialize_projection(
     with_columns: Option<&[String]>,
     schema: &Schema,
