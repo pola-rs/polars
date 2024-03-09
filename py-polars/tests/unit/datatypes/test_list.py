@@ -775,3 +775,9 @@ def test_list_gather_null_struct_14927() -> None:
     expr = pl.col("col_0").list.get(0).struct.field("field_0")
     out = df.filter(pl.col("index") > 0).with_columns(expr)
     assert_frame_equal(out, expected)
+
+
+def test_list_of_series_with_nulls() -> None:
+    inner_series = pl.Series("inner", [1, 2, 3])
+    s = pl.Series("a", [inner_series, None])
+    assert_series_equal(s, pl.Series("a", [[1, 2, 3], None]))
