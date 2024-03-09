@@ -766,3 +766,9 @@ def test_sliced_dict_with_nulls_14904() -> None:
         .slice(0, 1)
     )
     test_round_trip(df)
+
+
+def test_parquet_array_dtype() -> None:
+    df = pl.DataFrame({"x": [[1, 2, 3]]})
+    df = df.cast({"x": pl.Array(pl.Int64, width=3)})
+    test_round_trip(df)

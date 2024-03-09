@@ -80,6 +80,7 @@ fn max_def_level(nested: &[Nested]) -> usize {
             Nested::List(nested) => 1 + (nested.is_optional as usize),
             Nested::LargeList(nested) => 1 + (nested.is_optional as usize),
             Nested::Struct(_, is_optional, _) => *is_optional as usize,
+            Nested::FixedSizeList { is_optional, .. } => *is_optional as usize,
         })
         .sum()
 }
@@ -88,7 +89,7 @@ fn max_rep_level(nested: &[Nested]) -> usize {
     nested
         .iter()
         .map(|nested| match nested {
-            Nested::LargeList(_) | Nested::List(_) => 1,
+            Nested::FixedSizeList { .. } | Nested::LargeList(_) | Nested::List(_) => 1,
             Nested::Primitive(_, _, _) | Nested::Struct(_, _, _) => 0,
         })
         .sum()
