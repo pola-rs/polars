@@ -14,7 +14,6 @@ pub struct Decoder<'a> {
 impl<'a> Decoder<'a> {
     /// Returns a new [`Decoder`]
     pub fn new(values: &'a [u8], num_bits: usize) -> Self {
-        assert!(num_bits > 0);
         Self { values, num_bits }
     }
 
@@ -36,7 +35,8 @@ impl<'a> Iterator for Decoder<'a> {
         };
         self.values = unsafe { self.values.get_unchecked_release(consumed..) };
 
-        if self.values.is_empty() {
+        // We want to early return if consumed == 0 OR num_bits == 0, so combine into a single branch.
+        if (consumed * self.num_bits) == 0 {
             return None;
         }
 
