@@ -609,7 +609,9 @@ def sequence_to_pyseries(
             return sequence_from_any_value_or_object(name, values)
 
         elif python_dtype == pl.Series:
-            return PySeries.new_series_list(name, [v._s for v in values], strict)
+            return PySeries.new_series_list(
+                name, [v._s if v is not None else None for v in values], strict
+            )
 
         elif python_dtype == PySeries:
             return PySeries.new_series_list(name, values, strict)
