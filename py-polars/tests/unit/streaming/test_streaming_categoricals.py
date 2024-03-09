@@ -16,3 +16,16 @@ def test_streaming_nested_categorical() -> None:
         "numbers": [1, 2],
         "cat": [["str"], ["bar"]],
     }
+
+
+def test_streaming_cat_14933() -> None:
+    df1 = pl.LazyFrame({"a": pl.Series([0], dtype=pl.UInt32)})
+    df2 = pl.LazyFrame(
+        [
+            pl.Series("a", [0, 1], dtype=pl.UInt32),
+            pl.Series("l", [None, None], dtype=pl.Categorical(ordering="physical")),
+        ]
+    )
+    assert df1.join(df2, on="a", how="left").collect(streaming=True).to_dict(
+        as_series=False
+    ) == {"a": [0], "l": [None]}

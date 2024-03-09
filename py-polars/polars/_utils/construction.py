@@ -609,7 +609,9 @@ def sequence_to_pyseries(
             return sequence_from_any_value_or_object(name, values)
 
         elif python_dtype == pl.Series:
-            return PySeries.new_series_list(name, [v._s for v in values], strict)
+            return PySeries.new_series_list(
+                name, [v._s if v is not None else None for v in values], strict
+            )
 
         elif python_dtype == PySeries:
             return PySeries.new_series_list(name, values, strict)
@@ -1582,11 +1584,12 @@ def arrow_to_pydf(
 ) -> PyDataFrame:
     """Construct a PyDataFrame from an Arrow Table or RecordBatch."""
     original_schema = schema
+    data_column_names = data.schema.names
     column_names, schema_overrides = _unpack_schema(
-        (schema or data.column_names), schema_overrides=schema_overrides
+        (schema or data_column_names), schema_overrides=schema_overrides
     )
     try:
-        if column_names != data.column_names:
+        if column_names != data_column_names:
             if isinstance(data, pa.RecordBatch):
                 data = pa.Table.from_batches([data])
             data = data.rename_columns(column_names)

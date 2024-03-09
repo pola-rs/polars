@@ -53,7 +53,7 @@ _ARROW_DRIVER_REGISTRY_: dict[str, _ArrowDriverProperties_] = {
         "repeat_batch_calls": False,
     },
     "arrow_odbc_proxy": {
-        "fetch_all": "fetch_record_batches",
+        "fetch_all": "fetch_arrow_table",
         "fetch_batches": "fetch_record_batches",
         "exact_batch_size": True,
         "repeat_batch_calls": False,
@@ -122,21 +122,41 @@ class ODBCCursorProxy:
         self.execute_options = execute_options
         self.query = query
 
-    def fetch_record_batches(
-        self, batch_size: int = 10_000
-    ) -> Iterable[pa.RecordBatch]:
-        """Fetch results in batches."""
-        from arrow_odbc import read_arrow_batches_from_odbc
+    def fetch_arrow_table(
+        self, batch_size: int = 10_000, *, fetch_all: bool = False
+    ) -> pa.Table:
+        """Fetch all results as a pyarrow Table."""
+        from pyarrow import Table
 
-        yield from read_arrow_batches_from_odbc(
+        return Table.from_batches(
+            self.fetch_record_batches(batch_size=batch_size, fetch_all=True)
+        )
+
+    def fetch_record_batches(
+        self, batch_size: int = 10_000, *, fetch_all: bool = False
+    ) -> Iterable[pa.RecordBatch]:
+        """Fetch results as an iterable of RecordBatches."""
+        from arrow_odbc import read_arrow_batches_from_odbc
+        from pyarrow import RecordBatch
+
+        n_batches = 0
+        batch_reader = read_arrow_batches_from_odbc(
             query=self.query,
             batch_size=batch_size,
             connection_string=self.connection_string,
             **self.execute_options,
         )
+        for batch in batch_reader:
+            yield batch
+            n_batches += 1
 
-    # internally arrow-odbc always reads batches
-    fetchall = fetchmany = fetch_record_batches
+        if n_batches == 0 and fetch_all:
+            # empty result set; return empty batch with accurate schema
+            yield RecordBatch.from_pylist([], schema=batch_reader.schema)
+
+    # note: internally arrow-odbc always reads batches
+    fetchall = fetch_arrow_table
+    fetchmany = fetch_record_batches
 
 
 class ConnectionExecutor:
@@ -172,14 +192,14 @@ class ConnectionExecutor:
     def __repr__(self) -> str:
         return f"<{type(self).__name__} module={self.driver_name!r}>"
 
-    def _arrow_batches(
+    def _fetch_arrow(
         self,
         driver_properties: _ArrowDriverProperties_,
         *,
         batch_size: int | None,
         iter_batches: bool,
     ) -> Iterable[pa.RecordBatch]:
-        """Yield Arrow data in batches, or as a single 'fetchall' batch."""
+        """Yield Arrow data as a generator of one or more RecordBatches or Tables."""
         fetch_batches = driver_properties["fetch_batches"]
         if not iter_batches or fetch_batches is None:
             fetch_method, sz = driver_properties["fetch_all"], []
@@ -199,31 +219,6 @@ class ConnectionExecutor:
                     if not arrow:
                         break
                     yield arrow
-
-    def _normalise_cursor(self, conn: ConnectionOrCursor) -> Cursor:
-        """Normalise a connection object such that we have the query executor."""
-        if self.driver_name == "sqlalchemy" and type(conn).__name__ == "Engine":
-            self.can_close_cursor = True
-            if conn.driver == "databricks-sql-python":  # type: ignore[union-attr]
-                # take advantage of the raw connection to get arrow integration
-                self.driver_name = "databricks"
-                return conn.raw_connection().cursor()  # type: ignore[union-attr, return-value]
-            else:
-                # sqlalchemy engine; direct use is deprecated, so prefer the connection
-                return conn.connect()  # type: ignore[union-attr, return-value]
-
-        elif hasattr(conn, "cursor"):
-            # connection has a dedicated cursor; prefer over direct execute
-            cursor = cursor() if callable(cursor := conn.cursor) else cursor
-            self.can_close_cursor = True
-            return cursor
-
-        elif hasattr(conn, "execute"):
-            # can execute directly (given cursor, sqlalchemy connection, etc)
-            return conn  # type: ignore[return-value]
-
-        msg = f"Unrecognised connection {conn!r}; unable to find 'execute' method"
-        raise TypeError(msg)
 
     @staticmethod
     def _fetchall_rows(result: Cursor) -> Iterable[Sequence[Any]]:
@@ -265,7 +260,7 @@ class ConnectionExecutor:
                     self.can_close_cursor = fetch_batches is None or not iter_batches
                     frames = (
                         from_arrow(batch, schema_overrides=schema_overrides)
-                        for batch in self._arrow_batches(
+                        for batch in self._fetch_arrow(
                             driver_properties,
                             iter_batches=iter_batches,
                             batch_size=batch_size,
@@ -325,6 +320,31 @@ class ConnectionExecutor:
             )
             return frames if iter_batches else next(frames)  # type: ignore[arg-type]
         return None
+
+    def _normalise_cursor(self, conn: ConnectionOrCursor) -> Cursor:
+        """Normalise a connection object such that we have the query executor."""
+        if self.driver_name == "sqlalchemy" and type(conn).__name__ == "Engine":
+            self.can_close_cursor = True
+            if conn.driver == "databricks-sql-python":  # type: ignore[union-attr]
+                # take advantage of the raw connection to get arrow integration
+                self.driver_name = "databricks"
+                return conn.raw_connection().cursor()  # type: ignore[union-attr, return-value]
+            else:
+                # sqlalchemy engine; direct use is deprecated, so prefer the connection
+                return conn.connect()  # type: ignore[union-attr, return-value]
+
+        elif hasattr(conn, "cursor"):
+            # connection has a dedicated cursor; prefer over direct execute
+            cursor = cursor() if callable(cursor := conn.cursor) else cursor
+            self.can_close_cursor = True
+            return cursor
+
+        elif hasattr(conn, "execute"):
+            # can execute directly (given cursor, sqlalchemy connection, etc)
+            return conn  # type: ignore[return-value]
+
+        msg = f"Unrecognised connection {conn!r}; unable to find 'execute' method"
+        raise TypeError(msg)
 
     def execute(
         self,
@@ -532,7 +552,11 @@ def read_database(  # noqa: D417
 
     * If polars has to create a cursor from your connection in order to execute the
       query then that cursor will be automatically closed when the query completes;
-      however, polars will *never* close any other connection or cursor.
+      however, polars will *never* close any other open connection or cursor.
+
+    * We are able to support more than just relational databases and SQL queries
+      through this function. For example, we can load graph database results from
+      a `KùzuDB` connection in conjunction with a Cypher query.
 
     See Also
     --------
@@ -577,6 +601,14 @@ def read_database(  # noqa: D417
     ...     batch_size=1000,
     ... ):
     ...     do_something(df)  # doctest: +SKIP
+
+    Load graph data query results from a `KùzuDB` connection and a Cypher query:
+
+    >>> df = pl.read_database(
+    ...     query="MATCH (a:User)-[f:Follows]->(b:User) RETURN a.name, f.since, b.name",
+    ...     connection=kuzu_db_conn,
+    ... )  # doctest: +SKIP
+
     """  # noqa: W505
     if isinstance(connection, str):
         # check for odbc connection string

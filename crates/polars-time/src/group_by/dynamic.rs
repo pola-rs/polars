@@ -802,11 +802,13 @@ mod test {
             .unwrap()
             .and_hms_opt(0, 0, 0)
             .unwrap()
+            .and_utc()
             .timestamp_millis();
         let stop = NaiveDate::from_ymd_opt(2021, 12, 16)
             .unwrap()
             .and_hms_opt(3, 0, 0)
             .unwrap()
+            .and_utc()
             .timestamp_millis();
         let range = datetime_range_impl(
             "date",
@@ -855,11 +857,13 @@ mod test {
             .unwrap()
             .and_hms_opt(1, 0, 0)
             .unwrap()
+            .and_utc()
             .timestamp_millis();
         let stop = NaiveDate::from_ymd_opt(2021, 12, 16)
             .unwrap()
             .and_hms_opt(3, 0, 0)
             .unwrap()
+            .and_utc()
             .timestamp_millis();
         let range = datetime_range_impl(
             "_upper_boundary",
@@ -878,11 +882,13 @@ mod test {
             .unwrap()
             .and_hms_opt(0, 0, 0)
             .unwrap()
+            .and_utc()
             .timestamp_millis();
         let stop = NaiveDate::from_ymd_opt(2021, 12, 16)
             .unwrap()
             .and_hms_opt(2, 0, 0)
             .unwrap()
+            .and_utc()
             .timestamp_millis();
         let range = datetime_range_impl(
             "_lower_boundary",
@@ -917,11 +923,13 @@ mod test {
             .unwrap()
             .and_hms_opt(12, 0, 0)
             .unwrap()
+            .and_utc()
             .timestamp_millis();
         let stop = NaiveDate::from_ymd_opt(2021, 3, 7)
             .unwrap()
             .and_hms_opt(12, 0, 0)
             .unwrap()
+            .and_utc()
             .timestamp_millis();
         let range = datetime_range_impl(
             "date",
