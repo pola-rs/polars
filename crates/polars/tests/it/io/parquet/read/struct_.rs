@@ -21,7 +21,7 @@ pub fn extend_validity(val: &mut Vec<bool>, page: &DataPage) -> Result<(), Error
 
     val.reserve(length);
     def_levels.try_for_each(|x| {
-        val.push(x? != 0);
+        val.push(x != 0);
         Ok(())
     })
 }
