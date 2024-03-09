@@ -2,7 +2,8 @@ use std::collections::VecDeque;
 
 use arrow::array::Array;
 use arrow::bitmap::MutableBitmap;
-use polars_error::PolarsResult;
+use polars_error::{polars_bail, PolarsResult};
+use polars_utils::slice::GetSaferUnchecked;
 
 use super::super::PagesIter;
 use super::utils::{DecodedState, MaybeNext, PageState};
@@ -379,6 +380,9 @@ pub(super) fn extend<'a, D: NestedDecoder<'a>>(
 
     let chunk_size = chunk_size.unwrap_or(usize::MAX);
     let mut first_item_is_fully_read = false;
+    // Amortize the allocations.
+    let mut cum_sum = vec![];
+    let mut cum_rep = vec![];
 
     loop {
         if let Some((mut nested, mut decoded)) = items.pop_back() {
@@ -392,6 +396,8 @@ pub(super) fn extend<'a, D: NestedDecoder<'a>>(
                 &mut decoded,
                 decoder,
                 additional,
+                &mut cum_sum,
+                &mut cum_rep,
             )?;
             first_item_is_fully_read |= is_fully_read;
             *remaining -= nested.len() - existing;
@@ -418,6 +424,7 @@ pub(super) fn extend<'a, D: NestedDecoder<'a>>(
     Ok(first_item_is_fully_read)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn extend_offsets2<'a, D: NestedDecoder<'a>>(
     page: &mut NestedPage<'a>,
     values_state: &mut D::State,
@@ -425,19 +432,26 @@ fn extend_offsets2<'a, D: NestedDecoder<'a>>(
     decoded: &mut D::DecodedState,
     decoder: &D,
     additional: usize,
+    // Amortized allocations
+    cum_sum: &mut Vec<u32>,
+    cum_rep: &mut Vec<u32>,
 ) -> PolarsResult<bool> {
     let max_depth = nested.len();
 
-    let mut cum_sum = vec![0u32; max_depth + 1];
+    cum_sum.resize(max_depth + 1, 0);
+    cum_rep.resize(max_depth + 1, 0);
     for (i, nest) in nested.iter().enumerate() {
         let delta = nest.is_nullable() as u32 + nest.is_repeated() as u32;
-        cum_sum[i + 1] = cum_sum[i] + delta;
+        unsafe {
+            *cum_sum.get_unchecked_release_mut(i + 1) = *cum_sum.get_unchecked_release(i) + delta;
+        }
     }
 
-    let mut cum_rep = vec![0u32; max_depth + 1];
     for (i, nest) in nested.iter().enumerate() {
         let delta = nest.is_repeated() as u32;
-        cum_rep[i + 1] = cum_rep[i] + delta;
+        unsafe {
+            *cum_rep.get_unchecked_release_mut(i + 1) = *cum_rep.get_unchecked_release(i) + delta;
+        }
     }
 
     let mut rows = 0;
@@ -454,42 +468,51 @@ fn extend_offsets2<'a, D: NestedDecoder<'a>>(
             rows += 1;
         }
 
-        let (rep, def) = page.iter.next().unwrap();
+        // The errors of the FallibleIterators use in this zipped not checked yet.
+        // If one of them errors, the iterator returns None, and this `unwrap` will panic.
+        let Some((rep, def)) = page.iter.next() else {
+            polars_bail!(ComputeError: "cannot read rep/def levels")
+        };
 
         let mut is_required = false;
-        for depth in 0..max_depth {
-            let right_level = rep <= cum_rep[depth] && def >= cum_sum[depth];
-            if is_required || right_level {
-                let length = nested
-                    .get(depth + 1)
-                    .map(|x| x.len() as i64)
-                    // the last depth is the leaf, which is always increased by 1
-                    .unwrap_or(1);
 
-                let nest = &mut nested[depth];
+        // SAFETY: only bound check elision.
+        unsafe {
+            for depth in 0..max_depth {
+                let right_level = rep <= *cum_rep.get_unchecked_release(depth)
+                    && def >= *cum_sum.get_unchecked_release(depth);
+                if is_required || right_level {
+                    let length = nested
+                        .get(depth + 1)
+                        .map(|x| x.len() as i64)
+                        // the last depth is the leaf, which is always increased by 1
+                        .unwrap_or(1);
 
-                let is_valid = nest.is_nullable() && def > cum_sum[depth];
-                nest.push(length, is_valid);
-                is_required = nest.is_required() && !is_valid;
+                    let nest = nested.get_unchecked_release_mut(depth);
 
-                if depth == max_depth - 1 {
-                    // the leaf / primitive
-                    let is_valid = (def != cum_sum[depth]) || !nest.is_nullable();
-                    if right_level && is_valid {
-                        decoder.push_valid(values_state, decoded)?;
-                    } else {
-                        decoder.push_null(decoded);
+                    let is_valid =
+                        nest.is_nullable() && def > *cum_sum.get_unchecked_release(depth);
+                    nest.push(length, is_valid);
+                    is_required = nest.is_required() && !is_valid;
+
+                    if depth == max_depth - 1 {
+                        // the leaf / primitive
+                        let is_valid =
+                            (def != *cum_sum.get_unchecked_release(depth)) || !nest.is_nullable();
+                        if right_level && is_valid {
+                            decoder.push_valid(values_state, decoded)?;
+                        } else {
+                            decoder.push_null(decoded);
+                        }
                     }
                 }
             }
         }
 
         if page.iter.len() == 0 {
-            break;
+            return Ok(false);
         }
     }
-
-    Ok(false)
 }
 
 #[inline]
