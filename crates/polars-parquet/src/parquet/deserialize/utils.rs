@@ -25,6 +25,7 @@ pub(super) fn dict_indices_decoder(page: &DataPage) -> Result<hybrid_rle::Hybrid
 
 /// Decoder of definition levels.
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum DefLevelsDecoder<'a> {
     /// When the maximum definition level is 1, the definition levels are RLE-encoded and
     /// the bitpacked runs are bitmaps. This variant contains [`HybridDecoderBitmapIter`]
@@ -91,7 +92,7 @@ impl<T, V: Iterator<Item = bool>, I: Iterator<Item = T>> Iterator for OptionalVa
 /// allows this iterator to skip sequences of items without having to call each of them.
 #[derive(Debug, Clone)]
 pub struct SliceFilteredIter<I> {
-    iter: I,
+    pub(crate) iter: I,
     selected_rows: VecDeque<Interval>,
     current_remaining: usize,
     current: usize, // position in the slice

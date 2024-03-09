@@ -5,6 +5,7 @@ use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
 use arrow::offset::Offset;
 use polars_error::PolarsResult;
+use polars_utils::iter::FallibleIterator;
 
 use super::super::nested_utils::*;
 use super::super::utils::MaybeNext;
@@ -60,17 +61,19 @@ impl<'a, O: Offset> NestedDecoder<'a> for BinaryDecoder<O> {
                 let item = page
                     .values
                     .next()
-                    .map(|index| dict_values.value(index.unwrap() as usize))
+                    .map(|index| dict_values.value(index as usize))
                     .unwrap_or_default();
                 values.push(item);
+                page.values.get_result()?;
             },
             BinaryNestedState::OptionalDictionary(page) => {
                 let dict_values = &page.dict;
                 let item = page
                     .values
                     .next()
-                    .map(|index| dict_values.value(index.unwrap() as usize))
+                    .map(|index| dict_values.value(index as usize))
                     .unwrap_or_default();
+                page.values.get_result()?;
                 values.push(item);
                 validity.push(true);
             },
