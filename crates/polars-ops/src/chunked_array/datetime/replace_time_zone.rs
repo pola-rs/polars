@@ -41,7 +41,7 @@ pub fn replace_time_zone(
     };
     let out = match ambiguous.len() {
         1 => match unsafe { ambiguous.get_unchecked(0) } {
-            Some(ambiguous) => datetime.0.try_apply(|timestamp| {
+            Some(ambiguous) => datetime.0.try_apply_values(|timestamp| {
                 let ndt = timestamp_to_datetime(timestamp);
                 Ok(datetime_to_timestamp(convert_to_naive_local(
                     &from_tz,

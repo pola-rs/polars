@@ -202,7 +202,7 @@ fn apply_offsets_to_datetime(
         (_, 1) => match offsets.get(0) {
             Some(offset) => datetime
                 .0
-                .try_apply(|v| offset_fn(&Duration::parse(offset), v, time_zone)),
+                .try_apply_values(|v| offset_fn(&Duration::parse(offset), v, time_zone)),
             _ => Ok(datetime.0.apply(|_| None)),
         },
         _ => try_binary_elementwise(datetime, offsets, |timestamp_opt, offset_opt| {

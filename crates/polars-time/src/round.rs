@@ -20,7 +20,7 @@ impl PolarsRound for DatetimeChunked {
             TimeUnit::Milliseconds => Window::round_ms,
         };
 
-        let out = { self.try_apply(|t| func(&w, t, tz)) };
+        let out = { self.try_apply_values(|t| func(&w, t, tz)) };
         out.map(|ok| ok.into_datetime(self.time_unit(), self.time_zone().clone()))
     }
 }
@@ -29,7 +29,7 @@ impl PolarsRound for DateChunked {
     fn round(&self, every: Duration, offset: Duration, _tz: Option<&Tz>) -> PolarsResult<Self> {
         let w = Window::new(every, every, offset);
         Ok(self
-            .try_apply(|t| {
+            .try_apply_values(|t| {
                 const MSECS_IN_DAY: i64 = MILLISECONDS * SECONDS_IN_DAY;
                 Ok((w.round_ms(MSECS_IN_DAY * t as i64, None)? / MSECS_IN_DAY) as i32)
             })?

@@ -52,7 +52,7 @@ impl PolarsMonthEnd for DatetimeChunked {
         };
         Ok(self
             .0
-            .try_apply(|t| {
+            .try_apply_values(|t| {
                 roll_forward(
                     t,
                     time_zone,
@@ -70,7 +70,7 @@ impl PolarsMonthEnd for DateChunked {
         const MSECS_IN_DAY: i64 = MILLISECONDS * SECONDS_IN_DAY;
         Ok(self
             .0
-            .try_apply(|t| {
+            .try_apply_values(|t| {
                 Ok((roll_forward(
                     MSECS_IN_DAY * t as i64,
                     None,
