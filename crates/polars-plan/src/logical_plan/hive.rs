@@ -1,10 +1,10 @@
 use std::path::Path;
-use chrono::NaiveDate;
 
+use chrono::{NaiveDate, NaiveDateTime};
 use percent_encoding::percent_decode_str;
 use polars_core::prelude::*;
 use polars_io::predicates::{BatchStats, ColumnStats};
-use polars_io::utils::{BOOLEAN_RE, DATE_RE, FLOAT_RE, INTEGER_RE};
+use polars_io::utils::{BOOLEAN_RE, DATETIME_RE, DATE_RE, FLOAT_RE, INTEGER_RE};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -83,6 +83,29 @@ impl HivePartitions {
                 } else if DATE_RE.is_match(value) {
                     let value = value.parse::<NaiveDate>().ok()?;
                     Series::new(name, &[value])
+                } else if DATETIME_RE.is_match(value) {
+                    let cow_value = percent_decode_str(value).decode_utf8().ok()?;
+                    let str_value = cow_value.as_ref();
+                    let has_utc_timezone = str_value.chars().last() == Some('Z');
+                    let fmt = if has_utc_timezone {
+                        "%Y-%m-%d %H:%M:%S%.fZ"
+                    } else {
+                        "%Y-%m-%d %H:%M:%S%.f"
+                    };
+                    let time_unit = match str_value
+                        .chars()
+                        .rev()
+                        .position(|c| c == '.')
+                        .unwrap_or_default()
+                        / 3
+                    {
+                        2 => TimeUnit::Microseconds,
+                        3 => TimeUnit::Nanoseconds,
+                        // Matches both seconds (no '.' found in the path) and milliseconds (3 digits after '.')
+                        _ => TimeUnit::Milliseconds,
+                    };
+                    let value = NaiveDateTime::parse_from_str(str_value, fmt).ok()?;
+                    DatetimeChunked::from_naive_datetime(name, [value], time_unit).into_series()
                 } else {
                     Series::new(name, &[percent_decode_str(value).decode_utf8().ok()?])
                 };
