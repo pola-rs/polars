@@ -130,7 +130,12 @@ impl HivePartitions {
                             "%Y-%m-%d %H:%M:%S%.f"
                         };
                         let value = NaiveDateTime::parse_from_str(str_value, fmt).ok()?;
-                        DatetimeChunked::from_naive_datetime(name, [value], time_unit).into_series()
+                        let mut datetime_chunked =
+                            DatetimeChunked::from_naive_datetime(name, [value], time_unit);
+                        if let Some(tz) = tz {
+                            datetime_chunked.set_time_zone(tz).ok()?;
+                        }
+                        datetime_chunked.into_series()
                     },
                     _ => Series::new(name, &[percent_decode_str(value).decode_utf8().ok()?]),
                 };
