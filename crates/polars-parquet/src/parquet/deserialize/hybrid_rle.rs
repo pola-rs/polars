@@ -1,3 +1,5 @@
+use polars_utils::iter::FallibleIterator;
+
 use crate::parquet::encoding::hybrid_rle::{self, BitmapIter};
 use crate::parquet::error::Error;
 
@@ -139,6 +141,7 @@ where
 {
     iter: I,
     current_run: Option<HybridBooleanState<'a>>,
+    result: Result<(), Error>,
 }
 
 impl<'a, I> HybridRleBooleanIter<'a, I>
@@ -149,26 +152,27 @@ where
         Self {
             iter,
             current_run: None,
+            result: Ok(()),
         }
     }
 
-    fn set_new_run(
-        &mut self,
-        run: Result<HybridEncoded<'a>, Error>,
-    ) -> Option<Result<bool, Error>> {
-        let run = run.map(|run| match run {
+    fn set_new_run(&mut self, run: Result<HybridEncoded<'a>, Error>) -> Option<bool> {
+        let run = match run {
+            Err(e) => {
+                self.result = Err(e);
+                return None;
+            },
+            Ok(r) => r,
+        };
+
+        let run = match run {
             HybridEncoded::Bitmap(bitmap, length) => {
                 HybridBooleanState::Bitmap(BitmapIter::new(bitmap, 0, length))
             },
             HybridEncoded::Repeated(value, length) => HybridBooleanState::Repeated(value, length),
-        });
-        match run {
-            Ok(run) => {
-                self.current_run = Some(run);
-                self.next()
-            },
-            Err(e) => Some(Err(e)),
-        }
+        };
+        self.current_run = Some(run);
+        self.next()
     }
 }
 
@@ -176,14 +180,14 @@ impl<'a, I> Iterator for HybridRleBooleanIter<'a, I>
 where
     I: HybridRleRunsIterator<'a>,
 {
-    type Item = Result<bool, Error>;
+    type Item = bool;
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(run) = &mut self.current_run {
             match run {
                 HybridBooleanState::Bitmap(bitmap) => match bitmap.next() {
-                    Some(val) => Some(Ok(val)),
+                    Some(val) => Some(val),
                     None => {
                         let run = self.iter.next()?;
                         self.set_new_run(run)
@@ -195,7 +199,7 @@ where
                         self.set_new_run(run)
                     } else {
                         *remaining -= 1;
-                        Some(Ok(*value))
+                        Some(*value)
                     }
                 },
             }
@@ -210,6 +214,15 @@ where
     fn size_hint(&self) -> (usize, Option<usize>) {
         let exact = self.iter.number_of_elements();
         (exact, Some(exact))
+    }
+}
+
+impl<'a, I> FallibleIterator<Error> for HybridRleBooleanIter<'a, I>
+where
+    I: HybridRleRunsIterator<'a>,
+{
+    fn get_result(&mut self) -> Result<(), Error> {
+        self.result.clone()
     }
 }
 

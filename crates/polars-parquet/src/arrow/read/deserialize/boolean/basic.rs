@@ -5,6 +5,7 @@ use arrow::bitmap::utils::BitmapIter;
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
 use polars_error::PolarsResult;
+use polars_utils::iter::FallibleIterator;
 
 use super::super::utils::{
     extend_from_decoder, get_selected_rows, next, DecodedState, Decoder,
@@ -198,8 +199,9 @@ impl<'a> Decoder<'a> for BooleanDecoder {
                     page_validity,
                     Some(remaining),
                     values,
-                    page_values.map(|v| v.unwrap()),
+                    &mut *page_values,
                 );
+                page_values.get_result()?;
             },
         }
         Ok(())
