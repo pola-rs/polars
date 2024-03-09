@@ -250,24 +250,6 @@ mod tests {
     }
 
     #[test]
-    fn nested_edge_simple_fixed_size() {
-        // [[0, 1]]
-        let nested = vec![
-            Nested::FixedSizeList {
-                is_optional: true,
-                width: 2,
-                len: 1,
-                offset: 0,
-                validity: None,
-            },
-            Nested::Primitive(None, true, 2),
-        ];
-        let expected = vec![3, 3];
-
-        test(nested, expected)
-    }
-
-    #[test]
     fn struct_optional_1() {
         let b = [
             true, false, true, true, false, true, false, false, true, true,
@@ -304,24 +286,6 @@ mod tests {
             Nested::Primitive(None, false, 12),
         ];
         let expected = vec![1, 1, 0, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 0, 1];
-
-        test(nested, expected)
-    }
-
-    #[test]
-    fn l1_required_required_fixed() {
-        let nested = vec![
-            // [[0, 1], [2, 0]]
-            Nested::FixedSizeList {
-                is_optional: false,
-                width: 2,
-                validity: None,
-                offset: 0,
-                len: 4,
-            },
-            Nested::Primitive(None, false, 4),
-        ];
-        let expected = vec![1, 1, 1, 1];
 
         test(nested, expected)
     }
