@@ -1,6 +1,9 @@
 use std::path::Path;
 
-use chrono::{NaiveDate, NaiveDateTime};
+#[cfg(feature = "dtype-date")]
+use chrono::NaiveDate;
+#[cfg(feature = "dtype-datetime")]
+use chrono::NaiveDateTime;
 use percent_encoding::percent_decode_str;
 use polars_core::prelude::*;
 use polars_io::predicates::{BatchStats, ColumnStats};
@@ -69,30 +72,19 @@ impl HivePartitions {
                     return None;
                 }
 
-                let s = if INTEGER_RE.is_match(value) {
-                    let value = value.parse::<i64>().ok()?;
-                    Series::new(name, &[value])
+                let data_type = if INTEGER_RE.is_match(value) {
+                    DataType::Int64
                 } else if BOOLEAN_RE.is_match(value) {
-                    let value = value.parse::<bool>().ok()?;
-                    Series::new(name, &[value])
+                    DataType::Boolean
                 } else if FLOAT_RE.is_match(value) {
-                    let value = value.parse::<f64>().ok()?;
-                    Series::new(name, &[value])
+                    DataType::Float64
                 } else if value == "__HIVE_DEFAULT_PARTITION__" {
-                    Series::new_null(name, 1)
+                    DataType::Null
                 } else if DATE_RE.is_match(value) {
-                    let value = value.parse::<NaiveDate>().ok()?;
-                    Series::new(name, &[value])
+                    DataType::Date
                 } else if DATETIME_RE.is_match(value) {
-                    let cow_value = percent_decode_str(value).decode_utf8().ok()?;
-                    let str_value = cow_value.as_ref();
-                    let has_utc_timezone = str_value.chars().last() == Some('Z');
-                    let fmt = if has_utc_timezone {
-                        "%Y-%m-%d %H:%M:%S%.fZ"
-                    } else {
-                        "%Y-%m-%d %H:%M:%S%.f"
-                    };
-                    let time_unit = match str_value
+                    let tz = value.ends_with('Z').then_some(TimeZone::from("UTC"));
+                    let time_unit = match value
                         .chars()
                         .rev()
                         .position(|c| c == '.')
@@ -104,10 +96,43 @@ impl HivePartitions {
                         // Matches both seconds (no '.' found in the path) and milliseconds (3 digits after '.')
                         _ => TimeUnit::Milliseconds,
                     };
-                    let value = NaiveDateTime::parse_from_str(str_value, fmt).ok()?;
-                    DatetimeChunked::from_naive_datetime(name, [value], time_unit).into_series()
+                    DataType::Datetime(time_unit, tz)
                 } else {
-                    Series::new(name, &[percent_decode_str(value).decode_utf8().ok()?])
+                    DataType::String
+                };
+
+                let s = match data_type {
+                    DataType::Int64 => {
+                        let value = value.parse::<i64>().ok()?;
+                        Series::new(name, &[value])
+                    },
+                    DataType::Boolean => {
+                        let value = value.parse::<bool>().ok()?;
+                        Series::new(name, &[value])
+                    },
+                    DataType::Float64 => {
+                        let value = value.parse::<f64>().ok()?;
+                        Series::new(name, &[value])
+                    },
+                    DataType::Null => Series::new_null(name, 1),
+                    #[cfg(feature = "dtype-date")]
+                    DataType::Date => {
+                        let value = value.parse::<NaiveDate>().ok()?;
+                        Series::new(name, &[value])
+                    },
+                    #[cfg(feature = "dtype-datetime")]
+                    DataType::Datetime(time_unit, tz) => {
+                        let cow_value = percent_decode_str(value).decode_utf8().ok()?;
+                        let str_value = cow_value.as_ref();
+                        let fmt = if tz.is_some() {
+                            "%Y-%m-%d %H:%M:%S%.fZ"
+                        } else {
+                            "%Y-%m-%d %H:%M:%S%.f"
+                        };
+                        let value = NaiveDateTime::parse_from_str(str_value, fmt).ok()?;
+                        DatetimeChunked::from_naive_datetime(name, [value], time_unit).into_series()
+                    },
+                    _ => Series::new(name, &[percent_decode_str(value).decode_utf8().ok()?]),
                 };
                 Some(s)
             })
