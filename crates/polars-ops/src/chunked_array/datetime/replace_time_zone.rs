@@ -68,7 +68,10 @@ pub fn replace_time_zone(
         }),
     };
     let mut out = out?.into_datetime(datetime.time_unit(), time_zone.map(|x| x.to_string()));
-    if from_time_zone == "UTC" && ambiguous.len() == 1 && ambiguous.get(0).unwrap() == "raise" {
+    if from_time_zone == "UTC"
+        && ambiguous.len() == 1
+        && unsafe { ambiguous.get_unchecked(0) } == Some("raise")
+    {
         // In general, the sortedness flag can't be preserved.
         // To be safe, we only do so in the simplest case when we know for sure that there is no "daylight savings weirdness" going on, i.e.:
         // - `from_tz` is guaranteed to not observe daylight savings time;
