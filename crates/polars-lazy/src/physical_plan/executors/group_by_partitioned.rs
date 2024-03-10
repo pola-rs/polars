@@ -313,7 +313,7 @@ impl PartitionGroupByExec {
             }
 
             #[cfg(feature = "streaming")]
-            if !self.maintain_order && !std::env::var("POLARS_NO_STREAMING_GROUPBY").is_ok() {
+            if !self.maintain_order && std::env::var("POLARS_NO_STREAMING_GROUPBY").is_err() {
                 if let Some(out) = self.run_streaming(state, original_df.clone()) {
                     return out;
                 }
