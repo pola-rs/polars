@@ -960,8 +960,8 @@ def test_partitioned_group_by_14954(monkeypatch: Any) -> None:
         .agg(
             (pl.col("a") > 1000).alias("a > 1000"),
         )
-    ).to_dict(as_series=False) == {
-        "a": [1, 0],
+    ).sort("a").to_dict(as_series=False) == {
+        "a": [0, 1],
         "a > 1000": [
             [False, False, False, False, False, False, False, False, False, False],
             [False, False, False, False, False, False, False, False, False, False],
