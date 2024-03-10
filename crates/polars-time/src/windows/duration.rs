@@ -458,18 +458,18 @@ impl Duration {
         original_dt_utc: NaiveDateTime,
         result_dt_local: NaiveDateTime,
         tz: &Tz,
-    ) -> NaiveDateTime {
+    ) -> PolarsResult<NaiveDateTime> {
         match localize_datetime_opt(result_dt_local, tz, Ambiguous::Raise) {
-            Some(dt) => dt,
+            Some(dt) => Ok(dt),
             None => {
-                if try_localize_datetime(original_dt_local, tz, Ambiguous::Earliest).unwrap()
+                if try_localize_datetime(original_dt_local, tz, Ambiguous::Earliest)?
                     == original_dt_utc
                 {
-                    try_localize_datetime(result_dt_local, tz, Ambiguous::Earliest).unwrap()
-                } else if try_localize_datetime(original_dt_local, tz, Ambiguous::Latest).unwrap()
+                    try_localize_datetime(result_dt_local, tz, Ambiguous::Earliest)
+                } else if try_localize_datetime(original_dt_local, tz, Ambiguous::Latest)?
                     == original_dt_utc
                 {
-                    try_localize_datetime(result_dt_local, tz, Ambiguous::Latest).unwrap()
+                    try_localize_datetime(result_dt_local, tz, Ambiguous::Latest)
                 } else {
                     unreachable!()
                 }
@@ -503,7 +503,7 @@ impl Duration {
                 let result_timestamp = t - remainder;
                 let result_dt_local = _timestamp_to_datetime(result_timestamp);
                 let result_dt_utc =
-                    self.localize_result(original_dt_local, original_dt_utc, result_dt_local, tz);
+                    self.localize_result(original_dt_local, original_dt_utc, result_dt_local, tz)?;
                 Ok(_datetime_to_timestamp(result_dt_utc))
             },
             _ => {
@@ -564,7 +564,7 @@ impl Duration {
                     _original_dt_utc.unwrap(),
                     result_dt_local,
                     tz,
-                );
+                )?;
                 Ok(_datetime_to_timestamp(result_dt_utc))
             },
             _ => Ok(result_t_local),
@@ -647,7 +647,7 @@ impl Duration {
             Some(tz) if tz != &chrono_tz::UTC => {
                 let result_dt_local = timestamp_to_datetime(t - remainder_days * daily_duration);
                 let result_dt_utc =
-                    self.localize_result(original_dt_local, original_dt_utc, result_dt_local, tz);
+                    self.localize_result(original_dt_local, original_dt_utc, result_dt_local, tz)?;
                 Ok(datetime_to_timestamp(result_dt_utc))
             },
             _ => Ok(t - remainder_days * daily_duration),
