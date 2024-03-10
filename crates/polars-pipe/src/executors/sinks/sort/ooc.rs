@@ -14,6 +14,7 @@ use polars_ops::prelude::*;
 use rayon::prelude::*;
 
 use crate::executors::sinks::io::{DfIter, IOThread};
+use crate::executors::sinks::memory::MemTracker;
 use crate::executors::sinks::sort::source::SortSource;
 use crate::operators::FinalizedSink;
 
@@ -27,7 +28,6 @@ pub(super) fn read_df(path: &Path) -> PolarsResult<DataFrame> {
 // and amortize IO cost
 #[derive(Default)]
 struct PartitionSpillBuf {
-    row_count: AtomicU32,
     // keep track of the length
     // that's cheaper than iterating the linked list
     len: AtomicU32,
@@ -36,20 +36,15 @@ struct PartitionSpillBuf {
 }
 
 impl PartitionSpillBuf {
-    fn push(&self, df: DataFrame) -> Option<DataFrame> {
+    fn push(&self, df: DataFrame, spill_limit: u64) -> Option<DataFrame> {
         debug_assert!(df.height() > 0);
-        let acc = self
-            .row_count
-            .fetch_add(df.height() as u32, Ordering::Relaxed);
         let size = self
             .size
             .fetch_add(df.estimated_size() as u64, Ordering::Relaxed);
-        let larger_than_32_mb = size > 1 << 25;
         let len = self.len.fetch_add(1, Ordering::Relaxed);
         self.chunks.push(df);
-        if acc > 50_000 || larger_than_32_mb {
-            // reset all statistics
-            self.row_count.store(0, Ordering::Relaxed);
+        if size > spill_limit {
+            // Reset all statistics.
             self.len.store(0, Ordering::Relaxed);
             self.size.store(0, Ordering::Relaxed);
             // other threads can be pushing while we drain
@@ -75,17 +70,22 @@ impl PartitionSpillBuf {
 
 struct PartitionSpiller {
     partitions: Vec<PartitionSpillBuf>,
+    // Spill limit in bytes.
+    spill_limit: u64,
 }
 
 impl PartitionSpiller {
-    fn new(n_parts: usize) -> Self {
+    fn new(n_parts: usize, spill_limit: u64) -> Self {
         let mut partitions = vec![];
         partitions.resize_with(n_parts + 1, PartitionSpillBuf::default);
-        Self { partitions }
+        Self {
+            partitions,
+            spill_limit,
+        }
     }
 
     fn push(&self, partition: usize, df: DataFrame) -> Option<DataFrame> {
-        self.partitions[partition].push(df)
+        self.partitions[partition].push(df, self.spill_limit)
     }
 
     fn spill_all(self, io_thread: &IOThread) {
@@ -113,8 +113,11 @@ pub(super) fn sort_ooc(
     descending: bool,
     slice: Option<(i64, usize)>,
     verbose: bool,
+    memtrack: MemTracker,
 ) -> PolarsResult<FinalizedSink> {
     let samples = samples.to_physical_repr().into_owned();
+    // Try to use available memory. At least 32MB per spill.
+    let spill_size = std::cmp::max(memtrack.get_available() / (samples.len() * 2), 1 << 25) as u64;
 
     // we collect as I am not sure that if we write to the same directory the
     // iterator will read those also.
@@ -126,7 +129,7 @@ pub(super) fn sort_ooc(
         eprintln!("processing {} files", files.len());
     }
 
-    let partitions_spiller = PartitionSpiller::new(samples.len());
+    let partitions_spiller = PartitionSpiller::new(samples.len(), spill_size);
 
     POOL.install(|| {
         files.par_iter().try_for_each(|entry| {
@@ -173,7 +176,7 @@ pub(super) fn sort_ooc(
         })
         .collect::<std::io::Result<Vec<_>>>()?;
 
-    let source = SortSource::new(files, idx, descending, slice, verbose, io_thread);
+    let source = SortSource::new(files, idx, descending, slice, verbose, io_thread, memtrack);
     Ok(FinalizedSink::Source(Box::new(source)))
 }
 

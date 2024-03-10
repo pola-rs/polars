@@ -6,6 +6,7 @@ use polars_core::POOL;
 use rayon::prelude::*;
 
 use crate::executors::sinks::io::IOThread;
+use crate::executors::sinks::memory::MemTracker;
 use crate::executors::sinks::sort::ooc::read_df;
 use crate::executors::sinks::sort::sink::sort_accumulated;
 use crate::executors::sources::get_source_index;
@@ -20,6 +21,7 @@ pub struct SortSource {
     slice: Option<(i64, usize)>,
     finished: bool,
     io_thread: IOThread,
+    memtrack: MemTracker,
 }
 
 impl SortSource {
@@ -30,6 +32,7 @@ impl SortSource {
         slice: Option<(i64, usize)>,
         verbose: bool,
         io_thread: IOThread,
+        memtrack: MemTracker,
     ) -> Self {
         if verbose {
             eprintln!("started sort source phase");
@@ -49,6 +52,7 @@ impl SortSource {
             slice,
             finished: false,
             io_thread,
+            memtrack,
         }
     }
     fn finish_batch(&mut self, dfs: Vec<DataFrame>) -> Vec<DataChunk> {
@@ -74,20 +78,42 @@ impl Source for SortSource {
 
         match self.files.next() {
             None => Ok(SourceResult::Finished),
-            Some((_, path)) => {
-                let files = std::fs::read_dir(&path)?.collect::<std::io::Result<Vec<_>>>()?;
+            Some((_, mut path)) => {
+                let limit = self.memtrack.get_available() / 3;
 
-                // read the files in a single partition in parallel
-                let dfs = POOL.install(|| {
-                    files
-                        .par_iter()
-                        .map(|entry| read_df(&entry.path()))
-                        .collect::<PolarsResult<Vec<DataFrame>>>()
-                })?;
-                let df = accumulate_dataframes_vertical_unchecked(dfs);
+                let mut read_size = 0;
+                let mut read = vec![];
+                loop {
+                    let files = std::fs::read_dir(&path)?.collect::<std::io::Result<Vec<_>>>()?;
+
+                    // read the files in a single partition in parallel
+                    let dfs = POOL.install(|| {
+                        files
+                            .par_iter()
+                            .map(|entry| {
+                                let df = read_df(&entry.path())?;
+                                Ok(df)
+                            })
+                            .collect::<PolarsResult<Vec<DataFrame>>>()
+                    })?;
+                    let df = accumulate_dataframes_vertical_unchecked(dfs);
+                    read_size += df.estimated_size();
+                    read.push(df);
+                    if read_size > limit {
+                        break;
+                    }
+
+                    let Some((_, next_path)) = self.files.next() else {
+                        break;
+                    };
+                    path = next_path;
+                }
+                let df = accumulate_dataframes_vertical_unchecked(read);
+
                 // Sort a single partition
                 // We always need to sort again!
                 let current_slice = self.slice;
+
                 let mut df = match &mut self.slice {
                     None => sort_accumulated(df, self.sort_idx, self.descending, None),
                     Some((offset, len)) => {
