@@ -1597,13 +1597,24 @@ def test_numpy_inference(
     assert result == expected_dtype
 
 
+def test_series_mixed_dtypes_list() -> None:
+    values = [[0.1, 1]]
+
+    with pytest.raises(pl.SchemaError, match="unexpected value"):
+        pl.Series(values)
+
+    s = pl.Series(values, strict=False)
+    assert s.dtype == pl.List(pl.Float64)
+    assert s.to_list() == [[0.1, 1.0]]
+
+
 def test_series_mixed_dtypes_string() -> None:
     values = [[12], "foo", 9]
 
-    with pytest.raises(pl.ComputeError, match="mixed dtypes"):
-        pl.Series("a", values)
+    with pytest.raises(pl.SchemaError, match="unexpected value"):
+        pl.Series(values)
 
-    s = pl.Series("a", values, strict=False)
+    s = pl.Series(values, strict=False)
     assert s.dtype == pl.String
     assert s.to_list() == ["[12]", "foo", "9"]
     assert s[1] == "foo"
@@ -1612,10 +1623,49 @@ def test_series_mixed_dtypes_string() -> None:
 def test_series_mixed_dtypes_object() -> None:
     values = [[12], b"foo", 9]
 
-    with pytest.raises(pl.ComputeError, match="mixed dtypes"):
-        pl.Series("a", values)
+    with pytest.raises(pl.SchemaError, match="unexpected value"):
+        pl.Series(values)
 
-    s = pl.Series("a", values, strict=False)
+    s = pl.Series(values, strict=False)
     assert s.dtype == pl.Object
     assert s.to_list() == values
     assert s[1] == b"foo"
+
+
+def test_df_mixed_dtypes_string() -> None:
+    data = {"x": [["abc", 12, 34.5]], "y": [1]}
+
+    with pytest.raises(pl.SchemaError, match="unexpected value"):
+        pl.DataFrame(data)
+
+    df = pl.DataFrame(data, strict=False)
+    assert df.schema == {"x": pl.List(pl.String), "y": pl.Int64}
+    assert df.rows() == [(["abc", "12", "34.5"], 1)]
+
+
+def test_df_mixed_dtypes_object() -> None:
+    data = {"x": [[b"abc", 12, 34.5]], "y": [1]}
+    with pytest.raises(pl.SchemaError, match="unexpected value"):
+        pl.DataFrame(data)
+
+    df = pl.DataFrame(data, strict=False)
+    assert df.schema == {"x": pl.List(pl.Object), "y": pl.Int64}
+    assert df.rows() == [(["abc", 12, 34.5], 1)]
+
+
+def test_df_object() -> None:
+    class Foo:
+        def __init__(self, value: int) -> None:
+            self._value = value
+
+        def __eq__(self, other: Any) -> bool:
+            return issubclass(other.__class__, self.__class__) and (
+                self._value == other._value
+            )
+
+        def __repr__(self) -> str:
+            return f"{self.__class__.__name__}({self._value})"
+
+    df = pl.DataFrame({"a": [Foo(1), Foo(2)]})
+    assert df["a"].dtype == pl.Object
+    assert df.rows() == [(Foo(1),), (Foo(2),)]

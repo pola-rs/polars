@@ -1469,30 +1469,6 @@ def test_reproducible_hash_with_seeds() -> None:
         assert_series_equal(expected, result, check_names=False, check_exact=True)
 
 
-def test_create_df_from_object() -> None:
-    class Foo:
-        def __init__(self, value: int) -> None:
-            self._value = value
-
-        def __eq__(self, other: Any) -> bool:
-            return issubclass(other.__class__, self.__class__) and (
-                self._value == other._value
-            )
-
-        def __repr__(self) -> str:
-            return f"{self.__class__.__name__}({self._value})"
-
-    # from miscellaneous object
-    df = pl.DataFrame({"a": [Foo(1), Foo(2)]})
-    assert df["a"].dtype == pl.Object
-    assert df.rows() == [(Foo(1),), (Foo(2),)]
-
-    # from mixed-type input
-    df = pl.DataFrame({"x": [["abc", 12, 34.5]], "y": [1]})
-    assert df.schema == {"x": pl.Object, "y": pl.Int64}
-    assert df.rows() == [(["abc", 12, 34.5], 1)]
-
-
 def test_hashing_on_python_objects() -> None:
     # see if we can do a group_by, drop_duplicates on a DataFrame with objects.
     # this requires that the hashing and aggregations are done on python objects
