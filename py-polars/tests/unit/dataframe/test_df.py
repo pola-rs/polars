@@ -959,8 +959,8 @@ def test_duration_arithmetic() -> None:
     df = pl.DataFrame(
         {"a": [datetime(2022, 1, 1, 0, 0, 0), datetime(2022, 1, 2, 0, 0, 0)]}
     )
-    d1 = pl.duration(days=3, microseconds=987000)
-    d2 = pl.duration(days=6, milliseconds=987)
+    d1 = pl.duration(days=3, microseconds=987000, time_unit="us")
+    d2 = pl.duration(days=6, milliseconds=987, time_unit="us")
 
     assert_frame_equal(
         df.with_columns(
