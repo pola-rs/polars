@@ -182,7 +182,7 @@ def duration(
     milliseconds: Expr | str | int | None = None,
     microseconds: Expr | str | int | None = None,
     nanoseconds: Expr | str | int | None = None,
-    time_unit: TimeUnit = "us",
+    time_unit: TimeUnit | None = None,
 ) -> Expr:
     """
     Create polars `Duration` from distinct time components.
@@ -205,8 +205,11 @@ def duration(
         Number of microseconds.
     nanoseconds
         Number of nanoseconds.
-    time_unit : {'us', 'ms', 'ns'}
-        Time unit of the resulting expression.
+    time_unit : {'us', 'ms', 'ns'} or None
+        Time unit of the resulting expression, if left as None, then the resulting time unit used will be the smallest
+            one provided (nanoseconds->microseconds->milliseconds).
+        If None is provided and milliseconds, microseconds and nanoseconds are None, then will be set to
+            microseconds - 'us'
 
     Returns
     -------
@@ -299,6 +302,12 @@ def duration(
         microseconds = parse_as_expression(microseconds)
     if nanoseconds is not None:
         nanoseconds = parse_as_expression(nanoseconds)
+        if time_unit is None:
+            time_unit = "ns"
+
+    # If the time unit wasn't set in one of the if-clauses then it is set to 'us'
+    if time_unit is None:
+        time_unit = "us"
 
     return wrap_expr(
         plr.duration(
