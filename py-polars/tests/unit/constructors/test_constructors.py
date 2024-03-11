@@ -732,7 +732,7 @@ def test_init_from_frame() -> None:
     assert s2.name == ""
 
 
-def test_init_series() -> None:
+def test_df_init_series() -> None:
     # List of Series
     df = pl.DataFrame([pl.Series("a", [1, 2, 3]), pl.Series("b", [4, 5, 6])])
     expected = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
@@ -784,16 +784,34 @@ def test_init_series() -> None:
     s2 = pl.Series([[[2, 2]]], dtype=pl.List(pl.List(pl.UInt8)))
     assert s2.dtype == pl.List(pl.List(pl.UInt8))
 
-    nested_dtype = pl.List(pl.List(pl.UInt8))
-    s3 = pl.Series("x", dtype=nested_dtype)
-    s4 = pl.Series(s3)
-    for s in (s3, s4):
-        assert s.dtype == nested_dtype
-        assert s.to_list() == []
-        assert s.name == "x"
 
-    s5 = pl.Series("", df, dtype=pl.Int8)
-    assert_series_equal(s5, pl.Series("", [1, 2, 3], dtype=pl.Int8))
+def test_df_init_series_nested_list_empty() -> None:
+    nested_dtype = pl.List(pl.List(pl.UInt8))
+    s = pl.Series("x", dtype=nested_dtype)
+    assert s.dtype == nested_dtype
+    assert s.to_list() == []
+    assert s.name == "x"
+
+
+def test_series_init_series() -> None:
+    nested_dtype = pl.List(pl.List(pl.UInt8))
+    s_orig = pl.Series("x", dtype=nested_dtype)
+
+    print(s_orig)
+
+    s = pl.Series(s_orig)
+    assert s.dtype == nested_dtype
+    assert s.to_list() == []
+    assert s.name == "x"
+
+
+def test_series_init_df() -> None:
+    s = pl.Series("a", [1, 2, 3])
+    df = s.to_frame()
+
+    s = pl.Series("", df, dtype=pl.Int8)
+    expected = pl.Series("", [1, 2, 3], dtype=pl.Int8)
+    assert_series_equal(s, expected)
 
 
 @pytest.mark.parametrize(
