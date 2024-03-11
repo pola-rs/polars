@@ -146,65 +146,6 @@ fn any_values_to_array(
     Ok(out)
 }
 
-fn any_values_to_list(
-    avs: &[AnyValue],
-    inner_dtype: &DataType,
-    strict: bool,
-) -> PolarsResult<ListChunked> {
-    // this is handled downstream. The builder will choose the first non null type
-    let mut valid = true;
-    #[allow(unused_mut)]
-    let mut out: ListChunked = if inner_dtype == &DataType::Null {
-        avs.iter()
-            .map(|av| match av {
-                AnyValue::List(b) => Some(b.clone()),
-                AnyValue::Null => None,
-                _ => {
-                    valid = false;
-                    None
-                },
-            })
-            .collect_trusted()
-    }
-    // make sure that wrongly inferred AnyValues don't deviate from the datatype
-    else {
-        avs.iter()
-            .map(|av| match av {
-                AnyValue::List(b) => {
-                    if b.dtype() == inner_dtype {
-                        Some(b.clone())
-                    } else {
-                        match b.cast(inner_dtype) {
-                            Ok(out) => Some(out),
-                            Err(_) => Some(Series::full_null(b.name(), b.len(), inner_dtype)),
-                        }
-                    }
-                },
-                AnyValue::Null => None,
-                _ => {
-                    valid = false;
-                    None
-                },
-            })
-            .collect_trusted()
-    };
-    #[cfg(feature = "dtype-struct")]
-    if !matches!(inner_dtype, DataType::Null)
-        && matches!(out.inner_dtype(), DataType::Struct(_) | DataType::List(_))
-    {
-        // ensure the logical type is correct
-        unsafe {
-            out.set_dtype(DataType::List(Box::new(inner_dtype.clone())));
-        };
-    }
-
-    if strict && !valid {
-        let target_dtype = DataType::List(Box::new(inner_dtype.clone()));
-        polars_bail!(SchemaMismatch: "unexpected value while building Series of type {:?}", target_dtype)
-    }
-    Ok(out)
-}
-
 impl<'a, T: AsRef<[AnyValue<'a>]>> NamedFrom<T, [AnyValue<'a>]> for Series {
     fn new(name: &str, v: T) -> Self {
         let av = v.as_ref();
@@ -631,6 +572,65 @@ fn any_values_to_binary_nonstrict(values: &[AnyValue]) -> BinaryChunked {
             _ => None,
         })
         .collect_trusted()
+}
+
+fn any_values_to_list(
+    avs: &[AnyValue],
+    inner_dtype: &DataType,
+    strict: bool,
+) -> PolarsResult<ListChunked> {
+    // this is handled downstream. The builder will choose the first non null type
+    let mut valid = true;
+    #[allow(unused_mut)]
+    let mut out: ListChunked = if inner_dtype == &DataType::Null {
+        avs.iter()
+            .map(|av| match av {
+                AnyValue::List(b) => Some(b.clone()),
+                AnyValue::Null => None,
+                _ => {
+                    valid = false;
+                    None
+                },
+            })
+            .collect_trusted()
+    }
+    // make sure that wrongly inferred AnyValues don't deviate from the datatype
+    else {
+        avs.iter()
+            .map(|av| match av {
+                AnyValue::List(b) => {
+                    if b.dtype() == inner_dtype {
+                        Some(b.clone())
+                    } else {
+                        match b.cast(inner_dtype) {
+                            Ok(out) => Some(out),
+                            Err(_) => Some(Series::full_null(b.name(), b.len(), inner_dtype)),
+                        }
+                    }
+                },
+                AnyValue::Null => None,
+                _ => {
+                    valid = false;
+                    None
+                },
+            })
+            .collect_trusted()
+    };
+    #[cfg(feature = "dtype-struct")]
+    if !matches!(inner_dtype, DataType::Null)
+        && matches!(out.inner_dtype(), DataType::Struct(_) | DataType::List(_))
+    {
+        // ensure the logical type is correct
+        unsafe {
+            out.set_dtype(DataType::List(Box::new(inner_dtype.clone())));
+        };
+    }
+
+    if strict && !valid {
+        let target_dtype = DataType::List(Box::new(inner_dtype.clone()));
+        polars_bail!(SchemaMismatch: "unexpected value while building Series of type {:?}", target_dtype)
+    }
+    Ok(out)
 }
 
 fn invalid_value_error(dtype: &DataType, value: &AnyValue) -> PolarsError {
