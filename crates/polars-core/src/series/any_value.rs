@@ -137,11 +137,11 @@ fn any_values_to_array(
             out.set_dtype(DataType::Array(Box::new(inner_type.clone()), width));
         };
     }
-    if valid || !strict {
-        Ok(out)
-    } else {
-        polars_bail!(ComputeError: "got mixed dtypes while constructing List Series")
+
+    if strict && !valid {
+        polars_bail!(ComputeError: "got mixed dtypes while constructing Array Series")
     }
+    Ok(out)
 }
 
 fn any_values_to_list(
@@ -195,11 +195,11 @@ fn any_values_to_list(
             out.set_dtype(DataType::List(Box::new(inner_type.clone())));
         };
     }
-    if valid || !strict {
-        Ok(out)
-    } else {
+
+    if strict && !valid {
         polars_bail!(ComputeError: "got mixed dtypes while constructing List Series")
     }
+    Ok(out)
 }
 
 impl<'a, T: AsRef<[AnyValue<'a>]>> NamedFrom<T, [AnyValue<'a>]> for Series {
