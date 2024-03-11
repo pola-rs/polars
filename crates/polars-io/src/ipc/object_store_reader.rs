@@ -53,12 +53,16 @@ impl IpcReadOptions {
     }
 }
 
-pub async fn read_ipc_async<O: ObjectStore>(
+pub async fn read_ipc_metadata_async<O: ObjectStore>(
     store: &O,
     path: &str,
     options: IpcReadOptions,
 ) -> PolarsResult<DataFrame> {
     let path = ObjectPath::parse(path).map_err(to_compute_err)?;
+
+    let object_metadata = store.head(&path).await.map_err(to_compute_err)?;
+
+    object_metadata.size;
 
     // TODO: Load only what is needed, rather than everything.
     let file_bytes = with_concurrency_budget(1, || read_bytes(store, &path)).await?;
@@ -124,7 +128,7 @@ mod tests {
         write_ipc(&store, "data.ipc", &mut df);
 
         let actual_df = get_runtime()
-            .block_on(read_ipc_async(
+            .block_on(read_ipc_metadata_async(
                 &store,
                 "data.ipc",
                 IpcReadOptions::default().column_names(vec!["c".to_string(), "b".to_string()]),

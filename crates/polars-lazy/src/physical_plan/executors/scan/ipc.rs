@@ -38,7 +38,7 @@ impl IpcExec {
                         location.expansion.is_none(),
                         "path wildcards should have been expanded"
                     );
-                    read_ipc_async(&store, location.prefix.as_str(), IpcReadOptions::default()
+                    read_ipc_metadata_async(&store, location.prefix.as_str(), IpcReadOptions::default()
                         .column_names(self.file_options.with_columns.as_deref().cloned())
                         .row_index(self.file_options.row_index.clone())
                         .row_limit(self.file_options.n_rows),
