@@ -139,7 +139,7 @@ fn any_values_to_array(
     }
 
     if strict && !valid {
-        polars_bail!(ComputeError: "got mixed dtypes while constructing Array Series")
+        polars_bail!(SchemaMismatch: "got mixed dtypes while constructing Array Series")
     }
     Ok(out)
 }
@@ -197,7 +197,7 @@ fn any_values_to_list(
     }
 
     if strict && !valid {
-        polars_bail!(ComputeError: "got mixed dtypes while constructing List Series")
+        polars_bail!(SchemaMismatch: "got mixed dtypes while constructing List Series")
     }
     Ok(out)
 }
