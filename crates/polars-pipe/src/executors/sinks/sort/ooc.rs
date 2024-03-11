@@ -117,7 +117,10 @@ pub(super) fn sort_ooc(
 ) -> PolarsResult<FinalizedSink> {
     let samples = samples.to_physical_repr().into_owned();
     // Try to use available memory. At least 32MB per spill.
-    let spill_size = std::cmp::max(memtrack.get_available() / (samples.len() * 2), 1 << 25) as u64;
+    let spill_size = std::cmp::max(
+        memtrack.get_available_latest() / (samples.len() * 3),
+        1 << 25,
+    ) as u64;
 
     // we collect as I am not sure that if we write to the same directory the
     // iterator will read those also.

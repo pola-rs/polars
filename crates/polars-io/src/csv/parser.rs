@@ -59,14 +59,18 @@ pub fn count_rows(
         if comment_prefix.is_some() {
             Ok(row_iterator
                 .filter(|line| !line.is_empty() && !is_comment_line(line, comment_prefix))
-                .count()
-                - (has_header as usize))
+                .count())
         } else {
-            Ok(row_iterator.count() - (has_header as usize))
+            Ok(row_iterator.count())
         }
     });
 
-    POOL.install(|| iter.sum())
+    let count_result: PolarsResult<usize> = POOL.install(|| iter.sum());
+
+    match count_result {
+        Ok(val) => Ok(val - (has_header as usize)),
+        Err(err) => Err(err),
+    }
 }
 
 /// Skip the utf-8 Byte Order Mark.
