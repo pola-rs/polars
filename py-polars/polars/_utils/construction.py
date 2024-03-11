@@ -896,6 +896,7 @@ def _expand_dict_scalars(
     data: Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | Series],
     *,
     schema_overrides: SchemaDict | None = None,
+    strict: bool = True,
     order: Sequence[str] | None = None,
     nan_to_null: bool = False,
 ) -> dict[str, Series]:
@@ -928,7 +929,11 @@ def _expand_dict_scalars(
 
                 elif arrlen(val) is not None or _is_generator(val):
                     updated_data[name] = pl.Series(
-                        name=name, values=val, dtype=dtype, nan_to_null=nan_to_null
+                        name=name,
+                        values=val,
+                        dtype=dtype,
+                        strict=strict,
+                        nan_to_null=nan_to_null,
                     )
                 elif val is None or isinstance(  # type: ignore[redundant-expr]
                     val, (int, float, str, bool, date, datetime, time, timedelta)
@@ -938,12 +943,14 @@ def _expand_dict_scalars(
                     ).alias(name)
                 else:
                     updated_data[name] = pl.Series(
-                        name=name, values=[val] * array_len, dtype=dtype
+                        name=name, values=[val] * array_len, dtype=dtype, strict=strict
                     )
 
         elif all((arrlen(val) == 0) for val in data.values()):
             for name, val in data.items():
-                updated_data[name] = pl.Series(name, values=val, dtype=dtypes.get(name))
+                updated_data[name] = pl.Series(
+                    name, values=val, dtype=dtypes.get(name), strict=strict
+                )
 
         elif all((arrlen(val) is None) for val in data.values()):
             for name, val in data.items():
@@ -951,6 +958,7 @@ def _expand_dict_scalars(
                     name,
                     values=(val if _is_generator(val) else [val]),
                     dtype=dtypes.get(name),
+                    strict=strict,
                 )
     if order and list(updated_data) != order:
         return {col: updated_data.pop(col) for col in order}
@@ -962,6 +970,7 @@ def dict_to_pydf(
     schema: SchemaDefinition | None = None,
     *,
     schema_overrides: SchemaDict | None = None,
+    strict: bool = True,
     nan_to_null: bool = False,
 ) -> PyDataFrame:
     """Construct a PyDataFrame from a dictionary of sequences."""
@@ -1011,7 +1020,11 @@ def dict_to_pydf(
     if not data and schema_overrides:
         data_series = [
             pl.Series(
-                name, [], dtype=schema_overrides.get(name), nan_to_null=nan_to_null
+                name,
+                [],
+                dtype=schema_overrides.get(name),
+                strict=strict,
+                nan_to_null=nan_to_null,
             )._s
             for name in column_names
         ]
@@ -1019,7 +1032,10 @@ def dict_to_pydf(
         data_series = [
             s._s
             for s in _expand_dict_scalars(
-                data, schema_overrides=schema_overrides, nan_to_null=nan_to_null
+                data,
+                schema_overrides=schema_overrides,
+                strict=strict,
+                nan_to_null=nan_to_null,
             ).values()
         ]
 
