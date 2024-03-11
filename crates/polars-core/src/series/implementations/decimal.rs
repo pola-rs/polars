@@ -73,6 +73,16 @@ impl private::PrivateSeries for SeriesWrap<DecimalChunked> {
         (&self.0).into_total_ord_inner()
     }
 
+    fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
+        self.0.vec_hash(random_state, buf)?;
+        Ok(())
+    }
+
+    fn vec_hash_combine(&self, build_hasher: RandomState, hashes: &mut [u64]) -> PolarsResult<()> {
+        self.0.vec_hash_combine(build_hasher, hashes)?;
+        Ok(())
+    }
+
     #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_sum(&self, groups: &GroupsProxy) -> Series {
         self.agg_helper(|ca| ca.agg_sum(groups))

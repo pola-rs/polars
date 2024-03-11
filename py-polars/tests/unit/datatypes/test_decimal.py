@@ -371,6 +371,19 @@ def test_decimal_sort() -> None:
     ].to_list() == [2, 1, 3]
 
 
+def test_decimal_unique() -> None:
+    df = pl.DataFrame(
+        {
+            "foo": [1, 1, 2],
+            "bar": [D("3.4"), D("3.4"), D("4.5")],
+        }
+    )
+    assert df.unique().sort("bar").to_dict(as_series=False) == {
+        "foo": [1, 2],
+        "bar": [D("3.4"), D("4.5")],
+    }
+
+
 def test_decimal_write_parquet_12375() -> None:
     f = io.BytesIO()
     df = pl.DataFrame(
