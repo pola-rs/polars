@@ -5,7 +5,7 @@ use polars_core::utils::arrow::temporal_conversions::{
     timestamp_ms_to_datetime, MILLISECONDS, SECONDS_IN_DAY,
 };
 
-use crate::date_start::{
+use crate::period_start::{
     get_timestamp_closures, roll_month_backward, roll_quarter_backward, roll_year_backward,
 };
 use crate::windows::duration::Duration;

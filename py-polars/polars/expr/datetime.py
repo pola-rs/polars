@@ -2100,7 +2100,7 @@ class ExprDateTimeNameSpace:
         ...         )
         ...     }
         ... )
-        >>> df.select(pl.col("dates").dt.month_start())
+        >>> df.with_columns(pl.col("dates").dt.month_start())
         shape: (12, 1)
         ┌─────────────────────┐
         │ dates               │
@@ -2149,7 +2149,7 @@ class ExprDateTimeNameSpace:
         ...         )
         ...     }
         ... )
-        >>> df.select(pl.col("dates").dt.month_end())
+        >>> df.with_columns(pl.col("dates").dt.month_end())
         shape: (12, 1)
         ┌─────────────────────┐
         │ dates               │
@@ -2183,7 +2183,7 @@ class ExprDateTimeNameSpace:
         Notes
         -----
         If you're coming from pandas, you can think of this as a vectorised version
-        of `pandas.tseries.offsets.QuarterBegin().rollback(datetime)`.
+        of `pandas.tseries.offsets.QuarterBegin(startingMonth=1).rollback(datetime)`.
 
         Examples
         --------
@@ -2198,7 +2198,7 @@ class ExprDateTimeNameSpace:
         ...         )
         ...     }
         ... )
-        >>> df.select(pl.col("dates").dt.quarter_start())
+        >>> df.with_columns(pl.col("dates").dt.quarter_start())
             shape: (12, 1)
             ┌─────────────────────┐
             │ dates               │
@@ -2247,7 +2247,7 @@ class ExprDateTimeNameSpace:
         ...         )
         ...     }
         ... )
-        >>> df.select(pl.col("dates").dt.quarter_end())
+        >>> df.with_columns(pl.col("dates").dt.quarter_end())
             shape: (12, 1)
             ┌─────────────────────┐
             │ dates               │
@@ -2296,7 +2296,7 @@ class ExprDateTimeNameSpace:
         ...         )
         ...     }
         ... )
-        >>> df.select(pl.col("dates").dt.year_start())
+        >>> df.with_columns(pl.col("dates").dt.year_start())
             shape: (6, 1)
             ┌─────────────────────┐
             │ dates               │
@@ -2340,7 +2340,7 @@ class ExprDateTimeNameSpace:
         ...         )
         ...     }
         ... )
-        >>> df.select(pl.col("dates").dt.year_end())
+        >>> df.with_columns(pl.col("dates").dt.year_end())
             shape: (6, 1)
             ┌─────────────────────┐
             │ dates               │

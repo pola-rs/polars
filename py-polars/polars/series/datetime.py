@@ -1938,7 +1938,7 @@ class DateTimeNameSpace:
         Notes
         -----
         If you're coming from pandas, you can think of this as a vectorised version
-        of `pandas.tseries.offsets.QuarterBegin().rollback(datetime)`.
+        of `pandas.tseries.offsets.QuarterBegin(startingMonth=1).rollback(datetime)`.
 
         Examples
         --------
