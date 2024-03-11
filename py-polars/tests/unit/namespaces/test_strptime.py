@@ -473,6 +473,24 @@ def test_to_datetime_ambiguous_or_non_existent() -> None:
         pl.Series(["2021-03-28 02:30"]).str.to_datetime(
             time_unit="us", time_zone="Europe/Warsaw"
         )
+    with pytest.raises(
+        pl.ComputeError,
+        match="datetime '2021-03-28 02:30:00' is non-existent in time zone 'Europe/Warsaw'",
+    ):
+        pl.Series(["2021-03-28 02:30"]).str.to_datetime(
+            time_unit="us",
+            time_zone="Europe/Warsaw",
+            ambiguous="null",
+        )
+    with pytest.raises(
+        pl.ComputeError,
+        match="datetime '2021-03-28 02:30:00' is non-existent in time zone 'Europe/Warsaw'",
+    ):
+        pl.Series(["2021-03-28 02:30"] * 2).str.to_datetime(
+            time_unit="us",
+            time_zone="Europe/Warsaw",
+            ambiguous=pl.Series(["null", "null"]),
+        )
 
 
 @pytest.mark.parametrize(

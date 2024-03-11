@@ -1684,8 +1684,8 @@ def test_invalid_ambiguous_value_in_expression() -> None:
 def test_replace_time_zone_ambiguous_null() -> None:
     df = pl.DataFrame(
         {
-            "a": [datetime(2020, 10, 25, 1)] * 3,
-            "b": ["earliest", "latest", "null"],
+            "a": [datetime(2020, 10, 25, 1)] * 3 + [None],
+            "b": ["earliest", "latest", "null", "raise"],
         }
     )
     # expression containing 'null'
@@ -1696,10 +1696,12 @@ def test_replace_time_zone_ambiguous_null() -> None:
         datetime(2020, 10, 25, 1, fold=0, tzinfo=ZoneInfo("Europe/London")),
         datetime(2020, 10, 25, 1, fold=1, tzinfo=ZoneInfo("Europe/London")),
         None,
+        None,
     ]
     assert result[0] == expected[0]
     assert result[1] == expected[1]
     assert result[2] == expected[2]
+    assert result[3] == expected[3]
 
     # single 'null' value
     result = df.select(
@@ -1708,6 +1710,7 @@ def test_replace_time_zone_ambiguous_null() -> None:
     assert result[0] is None
     assert result[1] is None
     assert result[2] is None
+    assert result[3] is None
 
 
 def test_use_earliest_deprecation() -> None:
