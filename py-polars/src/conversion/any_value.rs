@@ -159,12 +159,14 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
             if ob.is_empty()? {
                 Ok(Wrap(AnyValue::List(Series::new_empty("", &DataType::Null))))
             } else if ob.is_instance_of::<PyList>() | ob.is_instance_of::<PyTuple>() {
+                const CHUNK_SIZE: usize = 25;
+
                 let list = ob.downcast::<PySequence>().unwrap();
 
-                let mut avs = Vec::with_capacity(25);
+                let mut avs = Vec::with_capacity(CHUNK_SIZE);
                 let mut iter = list.iter()?;
 
-                for item in (&mut iter).take(25) {
+                for item in (&mut iter).take(CHUNK_SIZE) {
                     avs.push(item?.extract::<Wrap<AnyValue>>()?.0)
                 }
 
