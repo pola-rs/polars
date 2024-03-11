@@ -379,6 +379,7 @@ impl ChunkCast for ListChunked {
         match data_type {
             List(child_type) => {
                 match (self.inner_dtype(), &**child_type) {
+                    (old, new) if old == *new => Ok(self.clone().into_series()),
                     #[cfg(feature = "dtype-categorical")]
                     (dt, Categorical(None, _) | Enum(_, _))
                         if !matches!(dt, Categorical(_, _) | Enum(_, _) | String | Null) =>
@@ -442,10 +443,16 @@ impl ChunkCast for ArrayChunked {
         use DataType::*;
         match data_type {
             Array(child_type, width) => {
+                polars_ensure!(
+                    *width == self.width(),
+                    InvalidOperation: "cannot cast Array to a different width"
+                );
+
                 match (self.inner_dtype(), &**child_type) {
+                    (old, new) if old == *new => Ok(self.clone().into_series()),
                     #[cfg(feature = "dtype-categorical")]
                     (dt, Categorical(None, _) | Enum(_, _)) if !matches!(dt, String) => {
-                        polars_bail!(ComputeError: "cannot cast fixed-size-list inner type: '{:?}' to dtype: {:?}", dt, child_type)
+                        polars_bail!(InvalidOperation: "cannot cast fixed-size-list inner type: '{:?}' to dtype: {:?}", dt, child_type)
                     },
                     _ => {
                         // ensure the inner logical type bubbles up
@@ -476,7 +483,7 @@ impl ChunkCast for ArrayChunked {
                     ))
                 }
             },
-            _ => polars_bail!(ComputeError: "cannot cast list type"),
+            _ => polars_bail!(InvalidOperation: "cannot cast list type"),
         }
     }
 
