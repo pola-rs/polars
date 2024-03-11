@@ -110,17 +110,9 @@ impl TemporalFunction {
             }),
             Truncate(_) => mapper.with_same_dtype(),
             #[cfg(feature = "date_offset")]
-            MonthStart => mapper.with_same_dtype(),
-            #[cfg(feature = "date_offset")]
-            MonthEnd => mapper.with_same_dtype(),
-            #[cfg(feature = "date_offset")]
-            QuarterStart => mapper.with_same_dtype(),
-            #[cfg(feature = "date_offset")]
-            QuarterEnd => mapper.with_same_dtype(),
-            #[cfg(feature = "date_offset")]
-            YearStart => mapper.with_same_dtype(),
-            #[cfg(feature = "date_offset")]
-            YearEnd => mapper.with_same_dtype(),
+            MonthStart | MonthEnd | QuarterStart | QuarterEnd | YearStart | YearEnd => {
+                mapper.with_same_dtype()
+            },
             #[cfg(feature = "timezones")]
             BaseUtcOffset => mapper.with_dtype(DataType::Duration(TimeUnit::Milliseconds)),
             #[cfg(feature = "timezones")]
