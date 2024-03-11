@@ -176,10 +176,26 @@ class Series:
         One-dimensional data in various forms. Supported are: Sequence, Series,
         pyarrow Array, and numpy ndarray.
     dtype : DataType, default None
-        Polars dtype of the Series data. If not specified, the dtype is inferred.
-    strict
-        Throw error on numeric overflow.
-    nan_to_null
+        Data type of the resulting Series. If set to `None` (default), the data type is
+        inferred from the `values` input. The strategy for data type inference depends
+        on the `strict` parameter:
+
+        - If `strict` is set to True (default), the inferred data type is equal to the
+          first non-null value, or `Null` if all values are null.
+        - If `strict` is set to False, the inferred data type is the supertype of the
+          values, or :class:`Object` if no supertype can be found. **WARNING**: A full
+          pass over the values is required to determine the supertype.
+        - If no values were passed, the resulting data type is :class:`Null`.
+
+    strict : bool, default True
+        Throw an error if any value does not exactly match the given or inferred data
+        type. If set to `False`, values that do not match the data type are cast to
+        that data type or, if casting is not possible, set to null instead.
+
+        .. warning::
+            This parameter is currently only considered when `data` is a dictionary.
+
+    nan_to_null : bool, default False
         In case a numpy array is used to create this Series, indicate how to deal
         with np.nan values. (This parameter is a no-op on non-numpy data).
     dtype_if_empty : DataType, default Null
