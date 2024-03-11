@@ -12,86 +12,90 @@ use crate::error::PyPolarsErr;
 use crate::py_modules::{SERIES, UTILS};
 use crate::series::PySeries;
 
+pub(crate) fn any_value_into_py_object(av: AnyValue, py: Python) -> PyObject {
+    let utils = UTILS.as_ref(py);
+    match av {
+        AnyValue::UInt8(v) => v.into_py(py),
+        AnyValue::UInt16(v) => v.into_py(py),
+        AnyValue::UInt32(v) => v.into_py(py),
+        AnyValue::UInt64(v) => v.into_py(py),
+        AnyValue::Int8(v) => v.into_py(py),
+        AnyValue::Int16(v) => v.into_py(py),
+        AnyValue::Int32(v) => v.into_py(py),
+        AnyValue::Int64(v) => v.into_py(py),
+        AnyValue::Float32(v) => v.into_py(py),
+        AnyValue::Float64(v) => v.into_py(py),
+        AnyValue::Null => py.None(),
+        AnyValue::Boolean(v) => v.into_py(py),
+        AnyValue::String(v) => v.into_py(py),
+        AnyValue::StringOwned(v) => v.into_py(py),
+        AnyValue::Categorical(idx, rev, arr) | AnyValue::Enum(idx, rev, arr) => {
+            let s = if arr.is_null() {
+                rev.get(idx)
+            } else {
+                unsafe { arr.deref_unchecked().value(idx as usize) }
+            };
+            s.into_py(py)
+        },
+        AnyValue::Date(v) => {
+            let convert = utils.getattr(intern!(py, "to_py_date")).unwrap();
+            convert.call1((v,)).unwrap().into_py(py)
+        },
+        AnyValue::Datetime(v, time_unit, time_zone) => {
+            let convert = utils.getattr(intern!(py, "to_py_datetime")).unwrap();
+            let time_unit = time_unit.to_ascii();
+            convert
+                .call1((v, time_unit, time_zone.as_ref().map(|s| s.as_str())))
+                .unwrap()
+                .into_py(py)
+        },
+        AnyValue::Duration(v, time_unit) => {
+            let convert = utils.getattr(intern!(py, "to_py_timedelta")).unwrap();
+            let time_unit = time_unit.to_ascii();
+            convert.call1((v, time_unit)).unwrap().into_py(py)
+        },
+        AnyValue::Time(v) => {
+            let convert = utils.getattr(intern!(py, "to_py_time")).unwrap();
+            convert.call1((v,)).unwrap().into_py(py)
+        },
+        AnyValue::Array(v, _) | AnyValue::List(v) => PySeries::new(v).to_list(),
+        ref av @ AnyValue::Struct(_, _, flds) => struct_dict(py, av._iter_struct_av(), flds),
+        AnyValue::StructOwned(payload) => struct_dict(py, payload.0.into_iter(), &payload.1),
+        #[cfg(feature = "object")]
+        AnyValue::Object(v) => {
+            let object = v.as_any().downcast_ref::<ObjectValue>().unwrap();
+            object.inner.clone()
+        },
+        #[cfg(feature = "object")]
+        AnyValue::ObjectOwned(v) => {
+            let object = v.0.as_any().downcast_ref::<ObjectValue>().unwrap();
+            object.inner.clone()
+        },
+        AnyValue::Binary(v) => v.into_py(py),
+        AnyValue::BinaryOwned(v) => v.into_py(py),
+        AnyValue::Decimal(v, scale) => {
+            let convert = utils.getattr(intern!(py, "to_py_decimal")).unwrap();
+            const N: usize = 3;
+            let mut buf = [0_u128; N];
+            let n_digits = decimal_to_digits(v.abs(), &mut buf);
+            let buf = unsafe {
+                std::slice::from_raw_parts(
+                    buf.as_slice().as_ptr() as *const u8,
+                    N * std::mem::size_of::<u128>(),
+                )
+            };
+            let digits = PyTuple::new(py, buf.iter().take(n_digits));
+            convert
+                .call1((v.is_negative() as u8, digits, n_digits, -(scale as i32)))
+                .unwrap()
+                .into_py(py)
+        },
+    }
+}
+
 impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
     fn into_py(self, py: Python) -> PyObject {
-        let utils = UTILS.as_ref(py);
-        match self.0 {
-            AnyValue::UInt8(v) => v.into_py(py),
-            AnyValue::UInt16(v) => v.into_py(py),
-            AnyValue::UInt32(v) => v.into_py(py),
-            AnyValue::UInt64(v) => v.into_py(py),
-            AnyValue::Int8(v) => v.into_py(py),
-            AnyValue::Int16(v) => v.into_py(py),
-            AnyValue::Int32(v) => v.into_py(py),
-            AnyValue::Int64(v) => v.into_py(py),
-            AnyValue::Float32(v) => v.into_py(py),
-            AnyValue::Float64(v) => v.into_py(py),
-            AnyValue::Null => py.None(),
-            AnyValue::Boolean(v) => v.into_py(py),
-            AnyValue::String(v) => v.into_py(py),
-            AnyValue::StringOwned(v) => v.into_py(py),
-            AnyValue::Categorical(idx, rev, arr) | AnyValue::Enum(idx, rev, arr) => {
-                let s = if arr.is_null() {
-                    rev.get(idx)
-                } else {
-                    unsafe { arr.deref_unchecked().value(idx as usize) }
-                };
-                s.into_py(py)
-            },
-            AnyValue::Date(v) => {
-                let convert = utils.getattr(intern!(py, "to_py_date")).unwrap();
-                convert.call1((v,)).unwrap().into_py(py)
-            },
-            AnyValue::Datetime(v, time_unit, time_zone) => {
-                let convert = utils.getattr(intern!(py, "to_py_datetime")).unwrap();
-                let time_unit = time_unit.to_ascii();
-                convert
-                    .call1((v, time_unit, time_zone.as_ref().map(|s| s.as_str())))
-                    .unwrap()
-                    .into_py(py)
-            },
-            AnyValue::Duration(v, time_unit) => {
-                let convert = utils.getattr(intern!(py, "to_py_timedelta")).unwrap();
-                let time_unit = time_unit.to_ascii();
-                convert.call1((v, time_unit)).unwrap().into_py(py)
-            },
-            AnyValue::Time(v) => {
-                let convert = utils.getattr(intern!(py, "to_py_time")).unwrap();
-                convert.call1((v,)).unwrap().into_py(py)
-            },
-            AnyValue::Array(v, _) | AnyValue::List(v) => PySeries::new(v).to_list(),
-            ref av @ AnyValue::Struct(_, _, flds) => struct_dict(py, av._iter_struct_av(), flds),
-            AnyValue::StructOwned(payload) => struct_dict(py, payload.0.into_iter(), &payload.1),
-            #[cfg(feature = "object")]
-            AnyValue::Object(v) => {
-                let object = v.as_any().downcast_ref::<ObjectValue>().unwrap();
-                object.inner.clone()
-            },
-            #[cfg(feature = "object")]
-            AnyValue::ObjectOwned(v) => {
-                let object = v.0.as_any().downcast_ref::<ObjectValue>().unwrap();
-                object.inner.clone()
-            },
-            AnyValue::Binary(v) => v.into_py(py),
-            AnyValue::BinaryOwned(v) => v.into_py(py),
-            AnyValue::Decimal(v, scale) => {
-                let convert = utils.getattr(intern!(py, "to_py_decimal")).unwrap();
-                const N: usize = 3;
-                let mut buf = [0_u128; N];
-                let n_digits = decimal_to_digits(v.abs(), &mut buf);
-                let buf = unsafe {
-                    std::slice::from_raw_parts(
-                        buf.as_slice().as_ptr() as *const u8,
-                        N * std::mem::size_of::<u128>(),
-                    )
-                };
-                let digits = PyTuple::new(py, buf.iter().take(n_digits));
-                convert
-                    .call1((v.is_negative() as u8, digits, n_digits, -(scale as i32)))
-                    .unwrap()
-                    .into_py(py)
-            },
-        }
+        any_value_into_py_object(self.0, py)
     }
 }
 
@@ -207,6 +211,32 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
             Ok(AnyValue::Null.into())
         }
 
+        fn get_date(ob: &PyAny) -> PyResult<Wrap<AnyValue>> {
+            Python::with_gil(|py| {
+                let date = UTILS
+                    .as_ref(py)
+                    .getattr(intern!(py, "date_to_int"))
+                    .unwrap()
+                    .call1((ob,))
+                    .unwrap();
+                let v = date.extract::<i32>().unwrap();
+                Ok(Wrap(AnyValue::Date(v)))
+            })
+        }
+
+        fn get_datetime(ob: &PyAny) -> PyResult<Wrap<AnyValue>> {
+            Python::with_gil(|py| {
+                let date = UTILS
+                    .as_ref(py)
+                    .getattr(intern!(py, "datetime_to_int"))
+                    .unwrap()
+                    .call1((ob, intern!(py, "us")))
+                    .unwrap();
+                let v = date.extract::<i64>().unwrap();
+                Ok(AnyValue::Datetime(v, TimeUnit::Microseconds, &None).into())
+            })
+        }
+
         fn get_timedelta(ob: &PyAny) -> PyResult<Wrap<AnyValue>> {
             Python::with_gil(|py| {
                 let td = UTILS
@@ -297,8 +327,8 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                         } else {
                             let type_name = ob.get_type().name().unwrap();
                             match type_name {
-                                "datetime" => convert_datetime,
-                                "date" => convert_date,
+                                "datetime" => get_datetime,
+                                "date" => get_date,
                                 "timedelta" => get_timedelta,
                                 "time" => get_time,
                                 "Decimal" => get_decimal,
@@ -324,10 +354,10 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                                             "<class 'datetime.datetime'>" => {
                                                 // `datetime.datetime` is a subclass of `datetime.date`,
                                                 // so need to check `datetime.datetime` first
-                                                return convert_datetime;
+                                                return get_datetime;
                                             },
                                             "<class 'datetime.date'>" => {
-                                                return convert_date;
+                                                return get_date;
                                             },
                                             _ => (),
                                         }
@@ -344,32 +374,6 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
             })
         })
     }
-}
-
-fn convert_date(ob: &PyAny) -> PyResult<Wrap<AnyValue>> {
-    Python::with_gil(|py| {
-        let date = UTILS
-            .as_ref(py)
-            .getattr(intern!(py, "date_to_int"))
-            .unwrap()
-            .call1((ob,))
-            .unwrap();
-        let v = date.extract::<i32>().unwrap();
-        Ok(Wrap(AnyValue::Date(v)))
-    })
-}
-
-fn convert_datetime(ob: &PyAny) -> PyResult<Wrap<AnyValue>> {
-    Python::with_gil(|py| {
-        let date = UTILS
-            .as_ref(py)
-            .getattr(intern!(py, "datetime_to_int"))
-            .unwrap()
-            .call1((ob, intern!(py, "us")))
-            .unwrap();
-        let v = date.extract::<i64>().unwrap();
-        Ok(AnyValue::Datetime(v, TimeUnit::Microseconds, &None).into())
-    })
 }
 
 fn abs_decimal_from_digits(
