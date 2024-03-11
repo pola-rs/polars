@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::time::Instant;
 
 use polars_core::prelude::*;
 use polars_core::utils::{accumulate_dataframes_vertical_unchecked, split_df};
@@ -22,9 +23,14 @@ pub struct SortSource {
     finished: bool,
     io_thread: IOThread,
     memtrack: MemTracker,
+    // Start of the Source phase
+    source_start: Instant,
+    // Start of the OOC sort operation.
+    ooc_start: Instant,
 }
 
 impl SortSource {
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn new(
         mut files: Vec<(u32, PathBuf)>,
         sort_idx: usize,
@@ -33,6 +39,7 @@ impl SortSource {
         verbose: bool,
         io_thread: IOThread,
         memtrack: MemTracker,
+        ooc_start: Instant,
     ) -> Self {
         if verbose {
             eprintln!("started sort source phase");
@@ -53,6 +60,8 @@ impl SortSource {
             finished: false,
             io_thread,
             memtrack,
+            source_start: Instant::now(),
+            ooc_start,
         }
     }
     fn finish_batch(&mut self, dfs: Vec<DataFrame>) -> Vec<DataChunk> {
@@ -70,14 +79,20 @@ impl SortSource {
 }
 
 impl Source for SortSource {
-    fn get_batches(&mut self, _context: &PExecutionContext) -> PolarsResult<SourceResult> {
+    fn get_batches(&mut self, context: &PExecutionContext) -> PolarsResult<SourceResult> {
         // early return
         if self.finished {
             return Ok(SourceResult::Finished);
         }
 
         match self.files.next() {
-            None => Ok(SourceResult::Finished),
+            None => {
+                if context.verbose {
+                    eprintln!("sort source phase took: {:?}", self.source_start.elapsed());
+                    eprintln!("full ooc sort took: {:?}", self.ooc_start.elapsed());
+                }
+                Ok(SourceResult::Finished)
+            },
             Some((_, mut path)) => {
                 let limit = self.memtrack.get_available() / 3;
 
