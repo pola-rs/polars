@@ -298,8 +298,12 @@ def duration(
         seconds = parse_as_expression(seconds)
     if milliseconds is not None:
         milliseconds = parse_as_expression(milliseconds)
+        if time_unit is None:
+            time_unit = "ms"
     if microseconds is not None:
         microseconds = parse_as_expression(microseconds)
+        if time_unit is None:
+            time_unit = "us"
     if nanoseconds is not None:
         nanoseconds = parse_as_expression(nanoseconds)
         if time_unit is None:
