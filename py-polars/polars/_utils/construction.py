@@ -297,26 +297,6 @@ def _get_first_non_none(values: Sequence[Any | None]) -> Any:
         return next((v for v in values if v is not None), None)
 
 
-def sequence_from_any_value_or_object(name: str, values: Sequence[Any]) -> PySeries:
-    """
-    Last resort conversion.
-
-    AnyValues are most flexible and if they fail we go for object types
-    """
-    try:
-        return PySeries.new_from_any_values(name, values, strict=True)
-    # raised if we cannot convert to Wrap<AnyValue>
-    except RuntimeError:
-        return PySeries.new_object(name, values, _strict=False)
-    # raised if AnyValue fallbacks fail
-    except SchemaError:
-        return PySeries.new_object(name, values, _strict=False)
-    except ComputeError as exc:
-        if "mixed dtypes" in str(exc):
-            return PySeries.new_object(name, values, _strict=False)
-        raise
-
-
 def sequence_from_any_value_and_dtype_or_object(
     name: str, values: Sequence[Any], dtype: PolarsDataType
 ) -> PySeries:
@@ -622,7 +602,7 @@ def sequence_to_pyseries(
                 if dtype != srs.dtype():
                     srs = srs.cast(dtype, strict=False)
                 return srs
-            return sequence_from_any_value_or_object(name, values)
+            return _sequence_from_any_value_or_object(name, values, strict=strict)
 
         elif python_dtype == pl.Series:
             return PySeries.new_series_list(
@@ -646,11 +626,38 @@ def sequence_to_pyseries(
 
                 except RuntimeError:
                     # raised if we cannot convert to Wrap<AnyValue>
-                    return sequence_from_any_value_or_object(name, values)
+                    return _sequence_from_any_value_or_object(
+                        name, values, strict=strict
+                    )
 
             return _construct_series_with_fallbacks(
                 constructor, name, values, dtype, strict=strict
             )
+
+
+def _sequence_from_any_value_or_object(
+    name: str, values: Sequence[Any], *, strict: bool
+) -> PySeries:
+    """
+    Last resort conversion.
+
+    AnyValues are most flexible and if they fail we go for object types
+    """
+    if strict:
+        return PySeries.new_from_any_values(name, values, strict=True)
+
+    try:
+        return PySeries.new_from_any_values(name, values, strict=False)
+    # raised if we cannot convert to Wrap<AnyValue>
+    except RuntimeError:
+        return PySeries.new_object(name, values, _strict=False)
+    # raised if AnyValue fallbacks fail
+    except SchemaError:
+        return PySeries.new_object(name, values, _strict=False)
+    except ComputeError as exc:
+        if "mixed dtypes" in str(exc):
+            return PySeries.new_object(name, values, _strict=False)
+        raise
 
 
 def _pandas_series_to_arrow(
