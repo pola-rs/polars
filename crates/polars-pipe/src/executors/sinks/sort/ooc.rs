@@ -1,5 +1,6 @@
 use std::path::Path;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::time::Instant;
 
 use crossbeam_queue::SegQueue;
 use polars_core::prelude::*;
@@ -104,6 +105,7 @@ impl PartitionSpiller {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn sort_ooc(
     io_thread: IOThread,
     // these partitions are the samples
@@ -114,7 +116,9 @@ pub(super) fn sort_ooc(
     slice: Option<(i64, usize)>,
     verbose: bool,
     memtrack: MemTracker,
+    ooc_start: Instant,
 ) -> PolarsResult<FinalizedSink> {
+    let now = Instant::now();
     let samples = samples.to_physical_repr().into_owned();
     // Try to use available memory. At least 32MB per spill.
     let spill_size = std::cmp::max(
@@ -157,9 +161,12 @@ pub(super) fn sort_ooc(
             PolarsResult::Ok(())
         })
     })?;
+    if verbose {
+        eprintln!("partitioning sort took: {:?}", now.elapsed());
+    }
     partitions_spiller.spill_all(&io_thread);
     if verbose {
-        eprintln!("finished partitioning sort files");
+        eprintln!("spilling all partitioned files took: {:?}", now.elapsed());
     }
 
     let files = std::fs::read_dir(dir)?
@@ -179,7 +186,9 @@ pub(super) fn sort_ooc(
         })
         .collect::<std::io::Result<Vec<_>>>()?;
 
-    let source = SortSource::new(files, idx, descending, slice, verbose, io_thread, memtrack);
+    let source = SortSource::new(
+        files, idx, descending, slice, verbose, io_thread, memtrack, ooc_start,
+    );
     Ok(FinalizedSink::Source(Box::new(source)))
 }
 

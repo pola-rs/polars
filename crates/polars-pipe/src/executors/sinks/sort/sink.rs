@@ -1,5 +1,6 @@
 use std::any::Any;
 use std::sync::{Arc, RwLock};
+use std::time::Instant;
 
 use polars_core::config::verbose;
 use polars_core::error::PolarsResult;
@@ -35,6 +36,8 @@ pub struct SortSink {
     current_chunk_rows: usize,
     // total bytes of tables in current chunks
     current_chunks_size: usize,
+    // Start time of OOC phase.
+    ooc_start: Option<Instant>,
 }
 
 impl SortSink {
@@ -54,6 +57,7 @@ impl SortSink {
             dist_sample: vec![],
             current_chunk_rows: 0,
             current_chunks_size: 0,
+            ooc_start: None,
         };
         if ooc {
             eprintln!("OOC sort forced");
@@ -66,6 +70,7 @@ impl SortSink {
         if verbose() {
             eprintln!("OOC sort started");
         }
+        self.ooc_start = Some(Instant::now());
         self.ooc = true;
 
         // start IO thread
@@ -161,6 +166,7 @@ impl Sink for SortSink {
             dist_sample: vec![],
             current_chunk_rows: 0,
             current_chunks_size: 0,
+            ooc_start: self.ooc_start,
         })
     }
 
@@ -179,7 +185,14 @@ impl Sink for SortSink {
                 maintain_order: self.sort_args.maintain_order,
             });
 
+            let instant = self.ooc_start.unwrap();
+            if context.verbose {
+                eprintln!("finished sinking into OOC sort in {:?}", instant.elapsed());
+            }
             block_thread_until_io_thread_done(&io_thread);
+            if context.verbose {
+                eprintln!("full file dump of OOC sort took {:?}", instant.elapsed());
+            }
 
             sort_ooc(
                 io_thread,
@@ -189,6 +202,7 @@ impl Sink for SortSink {
                 self.sort_args.slice,
                 context.verbose,
                 self.mem_track.clone(),
+                instant,
             )
         } else {
             let chunks = std::mem::take(&mut self.chunks);
