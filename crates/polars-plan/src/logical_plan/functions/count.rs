@@ -1,5 +1,7 @@
 #[cfg(feature = "ipc")]
-use arrow::io::ipc::read::get_row_count as count_rows_ipc;
+use arrow::io::ipc::read::get_row_count as count_rows_ipc_sync;
+#[cfg(feature = "ipc")]
+use polars_core::error::to_compute_err;
 #[cfg(feature = "parquet")]
 use polars_io::cloud::CloudOptions;
 #[cfg(feature = "csv")]
@@ -41,15 +43,21 @@ pub fn count_rows(paths: &Arc<[PathBuf]>, scan_type: &FileScan) -> PolarsResult<
             Ok(DataFrame::new(vec![Series::new("len", [n_rows as IdxSize])]).unwrap())
         },
         #[cfg(feature = "ipc")]
-        FileScan::Ipc { options } => {
-            let n_rows: PolarsResult<i64> = paths
-                .iter()
-                .map(|path| {
-                    let mut reader = polars_utils::open_file(path)?;
-                    count_rows_ipc(&mut reader)
-                })
-                .sum();
-            Ok(DataFrame::new(vec![Series::new("len", [n_rows? as IdxSize])]).unwrap())
+        FileScan::Ipc {
+            options,
+            #[cfg(feature = "cloud")]
+            cloud_options,
+            metadata,
+        } => {
+            let count: IdxSize = count_rows_ipc(
+                paths,
+                #[cfg(feature = "cloud")]
+                cloud_options.as_ref(),
+                metadata.as_ref(),
+            )?
+            .try_into()
+            .map_err(to_compute_err)?;
+            Ok(DataFrame::new(vec![Series::new("len", [count])]).unwrap())
         },
         FileScan::Anonymous { .. } => {
             unreachable!();
@@ -97,6 +105,56 @@ async fn count_rows_cloud_parquet(
                 ParquetAsyncReader::from_uri(&path.to_string_lossy(), cloud_options, None, None)
                     .await?;
             reader.num_rows().await
+        })
+    });
+    futures::future::try_join_all(collection)
+        .await
+        .map(|rows| rows.iter().sum())
+}
+
+#[cfg(feature = "ipc")]
+pub(super) fn count_rows_ipc(
+    paths: &Arc<[PathBuf]>,
+    #[cfg(feature = "cloud")] cloud_options: Option<&CloudOptions>,
+    // TODO: Utilize metadata.
+    metadata: Option<&arrow::io::ipc::read::FileMetadata>,
+) -> PolarsResult<i64> {
+    if paths.is_empty() {
+        return Ok(0);
+    };
+    let is_cloud = is_cloud_url(paths.first().unwrap().as_path());
+
+    if is_cloud {
+        #[cfg(not(feature = "cloud"))]
+        panic!("One or more of the cloud storage features ('aws', 'gcp', ...) must be enabled.");
+
+        #[cfg(feature = "cloud")]
+        {
+            get_runtime().block_on(count_rows_cloud_ipc(paths, cloud_options, metadata))
+        }
+    } else {
+        paths
+            .iter()
+            .map(|path| {
+                let mut reader = polars_utils::open_file(path)?;
+                count_rows_ipc_sync(&mut reader)
+            })
+            .sum()
+    }
+}
+
+#[cfg(all(feature = "ipc", feature = "async"))]
+async fn count_rows_cloud_ipc(
+    paths: &Arc<[PathBuf]>,
+    cloud_options: Option<&CloudOptions>,
+    metadata: Option<&arrow::io::ipc::read::FileMetadata>,
+) -> PolarsResult<i64> {
+    use polars_io::ipc::IpcReaderAsync;
+
+    let collection = paths.iter().map(|path| {
+        with_concurrency_budget(1, || async {
+            let reader = IpcReaderAsync::from_uri(&path.to_string_lossy(), cloud_options).await?;
+            reader.count_rows(metadata).await
         })
     });
     futures::future::try_join_all(collection)

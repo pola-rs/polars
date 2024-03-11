@@ -164,10 +164,10 @@ impl<R: MmapBytesReader> IpcReader<R> {
         let rechunk = self.rechunk;
         let metadata = read::read_file_metadata(&mut self.reader)?;
 
-        debug_assert!(
-            self.columns.is_none(),
-            "column names must have already been converted into indices",
-        );
+        // TODO: Replace this back with the assertion before merging https://github.com/pola-rs/polars/pull/14861.
+        if let Some(columns) = &self.columns {
+            self.projection = Some(columns_to_projection(columns, &metadata.schema)?);
+        }
 
         let schema = if let Some(projection) = &self.projection {
             Arc::new(apply_projection(&metadata.schema, projection))

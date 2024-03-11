@@ -232,7 +232,12 @@ pub fn create_physical_plan(
                     }))
                 },
                 #[cfg(feature = "ipc")]
-                FileScan::Ipc { options } => {
+                FileScan::Ipc {
+                    options,
+                    #[cfg(feature = "cloud")]
+                    cloud_options,
+                    metadata,
+                } => {
                     assert_eq!(paths.len(), 1);
                     let path = paths[0].clone();
                     Ok(Box::new(executors::IpcExec {
@@ -241,6 +246,9 @@ pub fn create_physical_plan(
                         predicate,
                         options,
                         file_options,
+                        #[cfg(feature = "cloud")]
+                        cloud_options,
+                        metadata,
                     }))
                 },
                 #[cfg(feature = "parquet")]

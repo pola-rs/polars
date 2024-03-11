@@ -4,8 +4,6 @@ use std::io::{Read, Seek};
 use polars_core::prelude::*;
 #[cfg(feature = "parquet")]
 use polars_io::cloud::CloudOptions;
-#[cfg(feature = "ipc")]
-use polars_io::ipc::IpcReader;
 #[cfg(all(feature = "parquet", feature = "async"))]
 use polars_io::parquet::ParquetAsyncReader;
 #[cfg(feature = "parquet")]
@@ -239,21 +237,64 @@ impl LogicalPlanBuilder {
         cache: bool,
         row_index: Option<RowIndex>,
         rechunk: bool,
+        #[cfg(feature = "cloud")] cloud_options: Option<CloudOptions>,
     ) -> PolarsResult<Self> {
-        use polars_io::SerReader as _;
+        use polars_io::is_cloud_url;
 
         let path = path.into();
-        let file = polars_utils::open_file(&path)?;
-        let mut reader = IpcReader::new(file);
 
-        let reader_schema = reader.schema()?;
-        let mut schema: Schema = (&reader_schema).into();
-        if let Some(rc) = &row_index {
-            let _ = schema.insert_at_index(0, rc.name.as_str().into(), IDX_DTYPE);
-        }
+        let (schema, reader_schema, num_rows, metadata) = if is_cloud_url(&path) {
+            #[cfg(not(feature = "cloud"))]
+            panic!(
+                "One or more of the cloud storage features ('aws', 'gcp', ...) must be enabled."
+            );
 
-        let num_rows = reader._num_rows()?;
-        let file_info = FileInfo::new(Arc::new(schema), Some(reader_schema), (None, num_rows));
+            #[cfg(feature = "cloud")]
+            {
+                let uri = path.to_string_lossy();
+                get_runtime().block_on(async {
+                    let reader =
+                        polars_io::ipc::IpcReaderAsync::from_uri(&uri, cloud_options.as_ref())
+                            .await?;
+                    let metadata = reader.metadata().await?;
+                    // TODO: Remove cache in reader and return by value? We drop
+                    // the reader anyways...
+                    let metadata = arrow::io::ipc::read::FileMetadata::clone(&metadata);
+                    let reader_schema = Arc::clone(&metadata.schema);
+
+                    let schema = prepare_schema((&reader_schema).into(), row_index.as_ref());
+                    PolarsResult::Ok((schema, reader_schema, None, metadata))
+                })?
+            }
+        } else {
+            // NOTE: We do not really need IpcReader and all of it's memoization
+            // to read the metadata...
+            let mut file = polars_utils::open_file(&path)?;
+
+            let metadata = arrow::io::ipc::read::read_file_metadata(&mut file)?;
+            let reader_schema = Arc::clone(&metadata.schema);
+            let mut schema: Schema = (&reader_schema).into();
+            if let Some(rc) = &row_index {
+                let _ = schema.insert_at_index(0, rc.name.as_str().into(), IDX_DTYPE);
+            }
+
+            pub fn _num_rows(metadata: &arrow::io::ipc::read::FileMetadata) -> PolarsResult<usize> {
+                let n_cols = metadata.schema.fields.len();
+                // this magic number 10 is computed from the yellow trip dataset
+                Ok((metadata.size as usize) / n_cols / 10)
+            }
+
+            let num_rows = _num_rows(&metadata)?;
+
+            let schema = prepare_schema((&reader_schema).into(), row_index.as_ref());
+            (schema, reader_schema, Some(num_rows), metadata)
+        };
+
+        let file_info = FileInfo::new(
+            schema,
+            Some(reader_schema),
+            (num_rows, num_rows.unwrap_or_default()),
+        );
 
         let file_options = FileScanOptions {
             with_columns: None,
@@ -270,7 +311,12 @@ impl LogicalPlanBuilder {
             file_info,
             file_options,
             predicate: None,
-            scan_type: FileScan::Ipc { options },
+            scan_type: FileScan::Ipc {
+                options,
+                #[cfg(feature = "cloud")]
+                cloud_options,
+                metadata: Some(metadata),
+            },
         }
         .into())
     }
