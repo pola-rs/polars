@@ -38,15 +38,13 @@ The following methods are available under the `Series.dt` attribute.
     Series.dt.month
     Series.dt.month_end
     Series.dt.month_start
-    Series.dt.quarter_end
-    Series.dt.quarter_start
-    Series.dt.year_end
-    Series.dt.year_start
     Series.dt.nanosecond
     Series.dt.nanoseconds
     Series.dt.offset_by
     Series.dt.ordinal_day
     Series.dt.quarter
+    Series.dt.quarter_end
+    Series.dt.quarter_start
     Series.dt.replace_time_zone
     Series.dt.round
     Series.dt.second
@@ -67,3 +65,5 @@ The following methods are available under the `Series.dt` attribute.
     Series.dt.weekday
     Series.dt.with_time_unit
     Series.dt.year
+    Series.dt.year_end
+    Series.dt.year_start
