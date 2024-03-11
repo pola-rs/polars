@@ -73,7 +73,7 @@ fn any_values_to_decimal(
 #[cfg(feature = "dtype-array")]
 fn any_values_to_array(
     avs: &[AnyValue],
-    inner_type: &DataType,
+    inner_dtype: &DataType,
     strict: bool,
     width: usize,
 ) -> PolarsResult<ArrayChunked> {
@@ -86,10 +86,12 @@ fn any_values_to_array(
         }
     }
 
+    let target_dtype = DataType::Array(Box::new(inner_dtype.clone()), width);
+
     // this is handled downstream. The builder will choose the first non null type
     let mut valid = true;
     #[allow(unused_mut)]
-    let mut out: ArrayChunked = if inner_type == &DataType::Null {
+    let mut out: ArrayChunked = if inner_dtype == &DataType::Null {
         avs.iter()
             .map(|av| match av {
                 AnyValue::List(b) | AnyValue::Array(b, _) => to_arr(b),
@@ -99,19 +101,19 @@ fn any_values_to_array(
                     None
                 },
             })
-            .collect_ca_with_dtype("", DataType::Array(Box::new(inner_type.clone()), width))
+            .collect_ca_with_dtype("", target_dtype.clone())
     }
     // make sure that wrongly inferred AnyValues don't deviate from the datatype
     else {
         avs.iter()
             .map(|av| match av {
                 AnyValue::List(b) | AnyValue::Array(b, _) => {
-                    if b.dtype() == inner_type {
+                    if b.dtype() == inner_dtype {
                         to_arr(b)
                     } else {
-                        let s = match b.cast(inner_type) {
+                        let s = match b.cast(inner_dtype) {
                             Ok(out) => out,
-                            Err(_) => Series::full_null(b.name(), b.len(), inner_type),
+                            Err(_) => Series::full_null(b.name(), b.len(), inner_dtype),
                         };
                         to_arr(&s)
                     }
@@ -122,37 +124,37 @@ fn any_values_to_array(
                     None
                 },
             })
-            .collect_ca_with_dtype("", DataType::Array(Box::new(inner_type.clone()), width))
+            .collect_ca_with_dtype("", target_dtype.clone())
     };
     if let DataType::Array(_, s) = out.dtype() {
         polars_ensure!(*s == width, ComputeError: "got mixed size array widths where width {} was expected", width)
     }
 
     #[cfg(feature = "dtype-struct")]
-    if !matches!(inner_type, DataType::Null)
+    if !matches!(inner_dtype, DataType::Null)
         && matches!(out.inner_dtype(), DataType::Struct(_) | DataType::List(_))
     {
         // ensure the logical type is correct
         unsafe {
-            out.set_dtype(DataType::Array(Box::new(inner_type.clone()), width));
+            out.set_dtype(target_dtype.clone());
         };
     }
 
     if strict && !valid {
-        polars_bail!(SchemaMismatch: "got mixed dtypes while constructing Array Series")
+        polars_bail!(SchemaMismatch: "unexpected value while building Series of type {:?}", target_dtype)
     }
     Ok(out)
 }
 
 fn any_values_to_list(
     avs: &[AnyValue],
-    inner_type: &DataType,
+    inner_dtype: &DataType,
     strict: bool,
 ) -> PolarsResult<ListChunked> {
     // this is handled downstream. The builder will choose the first non null type
     let mut valid = true;
     #[allow(unused_mut)]
-    let mut out: ListChunked = if inner_type == &DataType::Null {
+    let mut out: ListChunked = if inner_dtype == &DataType::Null {
         avs.iter()
             .map(|av| match av {
                 AnyValue::List(b) => Some(b.clone()),
@@ -169,12 +171,12 @@ fn any_values_to_list(
         avs.iter()
             .map(|av| match av {
                 AnyValue::List(b) => {
-                    if b.dtype() == inner_type {
+                    if b.dtype() == inner_dtype {
                         Some(b.clone())
                     } else {
-                        match b.cast(inner_type) {
+                        match b.cast(inner_dtype) {
                             Ok(out) => Some(out),
-                            Err(_) => Some(Series::full_null(b.name(), b.len(), inner_type)),
+                            Err(_) => Some(Series::full_null(b.name(), b.len(), inner_dtype)),
                         }
                     }
                 },
@@ -187,17 +189,18 @@ fn any_values_to_list(
             .collect_trusted()
     };
     #[cfg(feature = "dtype-struct")]
-    if !matches!(inner_type, DataType::Null)
+    if !matches!(inner_dtype, DataType::Null)
         && matches!(out.inner_dtype(), DataType::Struct(_) | DataType::List(_))
     {
         // ensure the logical type is correct
         unsafe {
-            out.set_dtype(DataType::List(Box::new(inner_type.clone())));
+            out.set_dtype(DataType::List(Box::new(inner_dtype.clone())));
         };
     }
 
     if strict && !valid {
-        polars_bail!(SchemaMismatch: "got mixed dtypes while constructing List Series")
+        let target_dtype = DataType::List(Box::new(inner_dtype.clone()));
+        polars_bail!(SchemaMismatch: "unexpected value while building Series of type {:?}", target_dtype)
     }
     Ok(out)
 }
