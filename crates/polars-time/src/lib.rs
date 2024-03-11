@@ -1,11 +1,11 @@
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
 mod base_utc_offset;
 pub mod chunkedarray;
-mod period_end;
 mod date_range;
-mod period_start;
 mod dst_offset;
 mod group_by;
+mod period_end;
+mod period_start;
 pub mod prelude;
 mod round;
 pub mod series;
@@ -16,13 +16,13 @@ mod windows;
 
 #[cfg(feature = "timezones")]
 pub use base_utc_offset::*;
-pub use period_end::*;
 pub use date_range::*;
-pub use period_start::*;
 #[cfg(feature = "timezones")]
 pub use dst_offset::*;
 #[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
 pub use group_by::dynamic::*;
+pub use period_end::*;
+pub use period_start::*;
 pub use round::*;
 pub use truncate::*;
 pub use upsample::*;
