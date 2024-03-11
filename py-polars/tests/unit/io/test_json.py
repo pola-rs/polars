@@ -297,7 +297,7 @@ def test_write_json_duration() -> None:
         ([["a", "b"], [None, None]], pl.Array(pl.Utf8, width=2)),
         ([[True, False, None], [None, None, None]], pl.Array(pl.Utf8, width=3)),
         (
-            [[[1, 2, 3], [4, None]], None, [[None, None, 2]]],
+            [[[1, 2, 3], [4, None, 5]], None, [[None, None, 2]]],
             pl.List(pl.Array(pl.Int32(), width=3)),
         ),
         (

@@ -444,7 +444,6 @@ def sequence_to_pyseries(
 
     # lists defer to subsequent handling; identify nested type
     elif dtype == List:
-        getattr(dtype, "inner", None)
         python_dtype = list
 
     # infer temporal type handling
@@ -459,7 +458,7 @@ def sequence_to_pyseries(
             or is_namedtuple(value.__class__)
         ) and dtype != Object:
             return pl.DataFrame(values).to_struct(name)._s
-        elif isinstance(value, range):
+        elif isinstance(value, range) and dtype is None:
             values = [range_to_series("", v) for v in values]
         else:
             # for temporal dtypes:
@@ -602,7 +601,18 @@ def sequence_to_pyseries(
             if isinstance(dtype, Object):
                 return PySeries.new_object(name, values, strict)
             if dtype:
-                srs = sequence_from_any_value_and_dtype_or_object(name, values, dtype)
+                if (inner_dtype := getattr(dtype, "inner", None)) is not None:
+                    py_srs = [
+                        None
+                        if value is None
+                        else sequence_to_pyseries("", value, inner_dtype, strict=strict)
+                        for value in values
+                    ]
+                    srs = PySeries.new_series_list(name, py_srs, strict)
+                else:
+                    srs = sequence_from_any_value_and_dtype_or_object(
+                        name, values, dtype
+                    )
                 if dtype != srs.dtype():
                     srs = srs.cast(dtype, strict=False)
                 return srs
