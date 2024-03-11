@@ -1595,3 +1595,27 @@ def test_numpy_inference(
 ) -> None:
     result = infer_func(input)
     assert result == expected_dtype
+
+
+def test_series_mixed_dtypes_string() -> None:
+    values = [[12], "foo", 9]
+
+    with pytest.raises(pl.ComputeError, match="mixed dtypes"):
+        pl.Series("a", values)
+
+    s = pl.Series("a", values, strict=False)
+    assert s.dtype == pl.String
+    assert s.to_list() == ["[12]", "foo", "9"]
+    assert s[1] == "foo"
+
+
+def test_series_mixed_dtypes_object() -> None:
+    values = [[12], b"foo", 9]
+
+    with pytest.raises(pl.ComputeError, match="mixed dtypes"):
+        pl.Series("a", values)
+
+    s = pl.Series("a", values, strict=False)
+    assert s.dtype == pl.Object
+    assert s.to_list() == values
+    assert s[1] == b"foo"
