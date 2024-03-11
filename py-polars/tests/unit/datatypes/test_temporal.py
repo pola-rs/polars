@@ -14,6 +14,7 @@ import polars as pl
 from polars.datatypes import DATETIME_DTYPES, DTYPE_TEMPORAL_UNITS, TEMPORAL_DTYPES
 from polars.exceptions import (
     ComputeError,
+    InvalidOperationError,
     PolarsInefficientMapWarning,
     TimeZoneAwareConstructorWarning,
 )
@@ -1668,6 +1669,16 @@ def test_replace_time_zone_sortedness_expressions(
         pl.col("ts").dt.replace_time_zone("UTC", ambiguous=pl.col("ambiguous"))
     )
     assert result["ts"].flags["SORTED_ASC"] == expected_sortedness
+
+
+def test_invalid_ambiguous_value_in_expression() -> None:
+    df = pl.DataFrame(
+        {"a": [datetime(2020, 10, 25, 1)] * 2, "b": ["earliest", "cabbage"]}
+    )
+    with pytest.raises(InvalidOperationError, match="Invalid argument cabbage"):
+        df.select(
+            pl.col("a").dt.replace_time_zone("Europe/London", ambiguous=pl.col("b"))
+        )
 
 
 def test_replace_time_zone_ambiguous_null() -> None:
