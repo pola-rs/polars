@@ -216,7 +216,7 @@ impl Series {
         av: &[AnyValue],
         dtype: &DataType,
         strict: bool,
-    ) -> PolarsResult<Series> {
+    ) -> PolarsResult<Self> {
         let mut s = match dtype {
             #[cfg(feature = "dtype-i8")]
             DataType::Int8 => any_values_to_integer::<Int8Type>(av, strict)?.into_series(),
@@ -408,7 +408,7 @@ impl Series {
     ///   determine the supertype. Values encountered that do not match the
     ///   supertype are set to null.
     /// - If no values were passed, the resulting data type is `Null`.
-    pub fn from_any_values(name: &str, values: &[AnyValue], strict: bool) -> PolarsResult<Series> {
+    pub fn from_any_values(name: &str, values: &[AnyValue], strict: bool) -> PolarsResult<Self> {
         fn get_first_non_null_dtype(values: &[AnyValue]) -> DataType {
             let mut all_flat_null = true;
             let first_non_null = values.iter().find(|av| {
