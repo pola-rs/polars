@@ -11,6 +11,7 @@ use polars_core::POOL;
 use polars_utils::aliases::PlHashSet;
 use tokio::runtime::{Builder, Runtime};
 use tokio::sync::Semaphore;
+use tokio::task::JoinHandle;
 
 static CONCURRENCY_BUDGET: std::sync::OnceLock<(Semaphore, u32)> = std::sync::OnceLock::new();
 pub(super) const MAX_BUDGET_PER_REQUEST: usize = 10;
@@ -234,6 +235,33 @@ impl RuntimeManager {
             blocking_threads: Default::default(),
         }
     }
+
+    /// Spawns a future onto the Tokio runtime.
+    ///
+    /// This spawns the given future onto the runtime's executor, usually a
+    /// thread pool. The thread pool is then responsible for polling the future
+    /// until it completes.
+    ///
+    /// The provided future will start running in the background immediately
+    /// when `spawn` is called, even if you don't await the returned
+    /// `JoinHandle`.
+    pub fn spawn<F>(&self, future: F) -> JoinHandle<F::Output>
+        where
+            F: Future + Send + 'static,
+            F::Output: Send + 'static,
+    {
+        self.rt.spawn(future)
+    }
+
+    /// Runs the provided function on an executor dedicated to blocking operations.
+    pub fn spawn_blocking<F, R>(&self, func: F) -> JoinHandle<R>
+        where
+            F: FnOnce() -> R + Send + 'static,
+            R: Send + 'static,
+    {
+        self.rt.spawn_blocking(func)
+    }
+
 
     /// Keep track of rayon threads that drive the runtime. Every thread
     /// only allows a single runtime. If this thread calls block_on and this

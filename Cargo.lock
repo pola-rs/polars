@@ -2911,6 +2911,7 @@ dependencies = [
  "rayon",
  "smartstring",
  "tokio",
+ "tokio-util",
  "uuid",
  "version_check",
 ]
