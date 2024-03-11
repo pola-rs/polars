@@ -436,9 +436,9 @@ impl Series {
             let mut dtypes = PlHashSet::<DataType>::new();
             for av in values {
                 if dtypes.insert(av.dtype()) {
-                    // Values with incompatible data types will be set to null later
-                    if let Some(st) = get_supertype(&supertype, &av.dtype()) {
-                        supertype = st;
+                    match get_supertype(&supertype, &av.dtype()) {
+                        Some(st) => supertype = st,
+                        None => return DataType::Object("", None),
                     }
                 }
             }
