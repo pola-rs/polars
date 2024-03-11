@@ -10,6 +10,11 @@ pub struct CsvExec {
     pub predicate: Option<Arc<dyn PhysicalExpr>>,
 }
 
+// TODO: Replace with `Arc::unwrap_or_clone` once Polars' MRSV >= 1.76.
+fn arc_unwrap_or_clone<T: Clone>(this: Arc<T>) -> T {
+    Arc::try_unwrap(this).unwrap_or_else(|this| T::clone(&this))
+}
+
 impl CsvExec {
     fn read(&mut self) -> PolarsResult<DataFrame> {
         let with_columns = self
@@ -18,7 +23,7 @@ impl CsvExec {
             .take()
             // Interpret selecting no columns as selecting all columns.
             .filter(|columns| !columns.is_empty())
-            .map(Arc::unwrap_or_clone);
+            .map(arc_unwrap_or_clone);
 
         let n_rows = _set_n_rows_for_scan(self.file_options.n_rows);
         let predicate = self.predicate.clone().map(phys_expr_to_io_expr);
