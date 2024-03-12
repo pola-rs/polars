@@ -332,103 +332,103 @@ fn any_values_to_f64(values: &[AnyValue], strict: bool) -> PolarsResult<Float64C
 }
 
 fn any_values_to_bool(values: &[AnyValue], strict: bool) -> PolarsResult<BooleanChunked> {
+    fn any_values_to_bool_strict(values: &[AnyValue]) -> PolarsResult<BooleanChunked> {
+        let mut builder = BooleanChunkedBuilder::new("", values.len());
+        for av in values {
+            match av {
+                AnyValue::Boolean(b) => builder.append_value(*b),
+                AnyValue::Null => builder.append_null(),
+                av => return Err(invalid_value_error(&DataType::Boolean, av)),
+            }
+        }
+        Ok(builder.finish())
+    }
+    fn any_values_to_bool_nonstrict(values: &[AnyValue]) -> BooleanChunked {
+        let mapper = |av: &AnyValue| match av {
+            AnyValue::Boolean(b) => Some(*b),
+            AnyValue::Null => None,
+            av => match av.cast(&DataType::Boolean) {
+                AnyValue::Boolean(b) => Some(b),
+                _ => None,
+            },
+        };
+        values.iter().map(mapper).collect_trusted()
+    }
     if strict {
         any_values_to_bool_strict(values)
     } else {
         Ok(any_values_to_bool_nonstrict(values))
     }
 }
-fn any_values_to_bool_strict(values: &[AnyValue]) -> PolarsResult<BooleanChunked> {
-    let mut builder = BooleanChunkedBuilder::new("", values.len());
-    for av in values {
-        match av {
-            AnyValue::Boolean(b) => builder.append_value(*b),
-            AnyValue::Null => builder.append_null(),
-            av => return Err(invalid_value_error(&DataType::Boolean, av)),
-        }
-    }
-    Ok(builder.finish())
-}
-fn any_values_to_bool_nonstrict(values: &[AnyValue]) -> BooleanChunked {
-    let mapper = |av: &AnyValue| match av {
-        AnyValue::Boolean(b) => Some(*b),
-        AnyValue::Null => None,
-        av => match av.cast(&DataType::Boolean) {
-            AnyValue::Boolean(b) => Some(b),
-            _ => None,
-        },
-    };
-    values.iter().map(mapper).collect_trusted()
-}
 
 fn any_values_to_string(values: &[AnyValue], strict: bool) -> PolarsResult<StringChunked> {
+    fn any_values_to_string_strict(values: &[AnyValue]) -> PolarsResult<StringChunked> {
+        let mut builder = StringChunkedBuilder::new("", values.len());
+        for av in values {
+            match av {
+                AnyValue::String(s) => builder.append_value(s),
+                AnyValue::StringOwned(s) => builder.append_value(s),
+                AnyValue::Null => builder.append_null(),
+                av => return Err(invalid_value_error(&DataType::String, av)),
+            }
+        }
+        Ok(builder.finish())
+    }
+    fn any_values_to_string_nonstrict(values: &[AnyValue]) -> StringChunked {
+        let mut builder = StringChunkedBuilder::new("", values.len());
+        let mut owned = String::new(); // Amortize allocations
+        for av in values {
+            match av {
+                AnyValue::String(s) => builder.append_value(s),
+                AnyValue::StringOwned(s) => builder.append_value(s),
+                AnyValue::Null => builder.append_null(),
+                AnyValue::Binary(_) | AnyValue::BinaryOwned(_) => builder.append_null(),
+                av => {
+                    owned.clear();
+                    write!(owned, "{av}").unwrap();
+                    builder.append_value(&owned);
+                },
+            }
+        }
+        builder.finish()
+    }
     if strict {
         any_values_to_string_strict(values)
     } else {
         Ok(any_values_to_string_nonstrict(values))
     }
 }
-fn any_values_to_string_strict(values: &[AnyValue]) -> PolarsResult<StringChunked> {
-    let mut builder = StringChunkedBuilder::new("", values.len());
-    for av in values {
-        match av {
-            AnyValue::String(s) => builder.append_value(s),
-            AnyValue::StringOwned(s) => builder.append_value(s),
-            AnyValue::Null => builder.append_null(),
-            av => return Err(invalid_value_error(&DataType::String, av)),
-        }
-    }
-    Ok(builder.finish())
-}
-fn any_values_to_string_nonstrict(values: &[AnyValue]) -> StringChunked {
-    let mut builder = StringChunkedBuilder::new("", values.len());
-    let mut owned = String::new(); // Amortize allocations
-    for av in values {
-        match av {
-            AnyValue::String(s) => builder.append_value(s),
-            AnyValue::StringOwned(s) => builder.append_value(s),
-            AnyValue::Null => builder.append_null(),
-            AnyValue::Binary(_) | AnyValue::BinaryOwned(_) => builder.append_null(),
-            av => {
-                owned.clear();
-                write!(owned, "{av}").unwrap();
-                builder.append_value(&owned);
-            },
-        }
-    }
-    builder.finish()
-}
 
 fn any_values_to_binary(values: &[AnyValue], strict: bool) -> PolarsResult<BinaryChunked> {
+    fn any_values_to_binary_strict(values: &[AnyValue]) -> PolarsResult<BinaryChunked> {
+        let mut builder = BinaryChunkedBuilder::new("", values.len());
+        for av in values {
+            match av {
+                AnyValue::Binary(s) => builder.append_value(*s),
+                AnyValue::BinaryOwned(s) => builder.append_value(&**s),
+                AnyValue::Null => builder.append_null(),
+                av => return Err(invalid_value_error(&DataType::Binary, av)),
+            }
+        }
+        Ok(builder.finish())
+    }
+    fn any_values_to_binary_nonstrict(values: &[AnyValue]) -> BinaryChunked {
+        values
+            .iter()
+            .map(|av| match av {
+                AnyValue::Binary(b) => Some(*b),
+                AnyValue::BinaryOwned(b) => Some(&**b),
+                AnyValue::String(s) => Some(s.as_bytes()),
+                AnyValue::StringOwned(s) => Some(s.as_bytes()),
+                _ => None,
+            })
+            .collect_trusted()
+    }
     if strict {
         any_values_to_binary_strict(values)
     } else {
         Ok(any_values_to_binary_nonstrict(values))
     }
-}
-fn any_values_to_binary_strict(values: &[AnyValue]) -> PolarsResult<BinaryChunked> {
-    let mut builder = BinaryChunkedBuilder::new("", values.len());
-    for av in values {
-        match av {
-            AnyValue::Binary(s) => builder.append_value(*s),
-            AnyValue::BinaryOwned(s) => builder.append_value(&**s),
-            AnyValue::Null => builder.append_null(),
-            av => return Err(invalid_value_error(&DataType::Binary, av)),
-        }
-    }
-    Ok(builder.finish())
-}
-fn any_values_to_binary_nonstrict(values: &[AnyValue]) -> BinaryChunked {
-    values
-        .iter()
-        .map(|av| match av {
-            AnyValue::Binary(b) => Some(*b),
-            AnyValue::BinaryOwned(b) => Some(&**b),
-            AnyValue::String(s) => Some(s.as_bytes()),
-            AnyValue::StringOwned(s) => Some(s.as_bytes()),
-            _ => None,
-        })
-        .collect_trusted()
 }
 
 #[cfg(feature = "dtype-decimal")]
