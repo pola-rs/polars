@@ -357,6 +357,7 @@ impl<'a> FieldsMapper<'a> {
     }
 
     // Map a categorical to an Enum type
+    #[cfg(feature = "dtype-categorical")]
     pub fn map_cat_to_enum_dtype(&self) -> PolarsResult<Field> {
         self.map_dtype(|dtype| match dtype {
             DataType::Categorical(rev_map, ordering) => DataType::Enum(
