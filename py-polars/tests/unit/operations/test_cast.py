@@ -624,5 +624,11 @@ def test_cast_time_to_date() -> None:
 
 
 def test_cast_decimal() -> None:
-    s = pl.Series([Decimal(0), Decimal(1.5), Decimal(-1.5)])
-    assert_series_equal(s.cast(pl.Boolean), pl.Series([False, True, True]))
+    s = pl.Series("s", [Decimal(0), Decimal(1.5), Decimal(-1.5)])
+    assert_series_equal(s.cast(pl.Boolean), pl.Series("s", [False, True, True]))
+
+    df = s.to_frame()
+    assert_frame_equal(
+        df.select(pl.col("s").cast(pl.Boolean)),
+        pl.DataFrame({"s": [False, True, True]}),
+    )
