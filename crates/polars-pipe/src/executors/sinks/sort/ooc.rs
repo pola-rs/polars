@@ -100,6 +100,24 @@ impl PartitionSpiller {
     pub(crate) fn len(&self) -> usize {
         self.partitions.len()
     }
+
+    #[cfg(debug_assertions)]
+    // Used in testing only.
+    fn spill_all(&self, io_thread: &IOThread) {
+        let min_len = std::cmp::max(self.partitions.len() / POOL.current_num_threads(), 2);
+        POOL.install(|| {
+            self.partitions
+                .par_iter()
+                .with_min_len(min_len)
+                .enumerate()
+                .for_each(|(part, part_buf)| {
+                    if let Some(df) = part_buf.finish() {
+                        io_thread.dump_partition_local(part as IdxSize, df)
+                    }
+                })
+        });
+        eprintln!("PARTITIONED FORCE SPILLED")
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -160,6 +178,14 @@ pub(super) fn sort_ooc(
     })?;
     if verbose {
         eprintln!("partitioning sort took: {:?}", now.elapsed());
+    }
+
+    // Branch for testing so we hit different parts in the Source phase.
+    #[cfg(debug_assertions)]
+    {
+        if std::env::var("POLARS_SPILL_SORT_PARTITIONS").is_ok() {
+            partitions_spiller.spill_all(&io_thread)
+        }
     }
 
     let files = std::fs::read_dir(dir)?
