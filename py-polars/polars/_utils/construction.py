@@ -318,12 +318,12 @@ def iterable_to_pyseries(
         slice_values = list(islice(values, chunk_size))
         if not slice_values:
             break
-        schunk = to_series_chunk(slice_values, dtype)
+        s_chunk = to_series_chunk(slice_values, dtype)
         if series is None:
-            series = schunk
+            series = s_chunk
             dtype = series.dtype
         else:
-            series.append(schunk)
+            series.append(s_chunk)
             n_chunks += 1
 
     if series is None:
@@ -842,23 +842,6 @@ def _unpack_schema(
     return column_names, column_dtypes
 
 
-def _expand_dict_data(
-    data: Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | Series],
-    dtypes: SchemaDict,
-) -> Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | Series]:
-    """
-    Expand any unsized generators/iterators.
-
-    (Note that `range` is sized, and will take a fast-path on Series init).
-    """
-    expanded_data = {}
-    for name, val in data.items():
-        expanded_data[name] = (
-            pl.Series(name, val, dtypes.get(name)) if _is_generator(val) else val
-        )
-    return expanded_data
-
-
 def _expand_dict_scalars(
     data: Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | Series],
     *,
@@ -880,13 +863,15 @@ def _expand_dict_scalars(
             raise TypeError(msg)
 
         dtypes = schema_overrides or {}
-        data = _expand_dict_data(data, dtypes)
+        data = _expand_dict_data(data, dtypes, strict=strict)
         array_len = max((arrlen(val) or 0) for val in data.values())
         if array_len > 0:
             for name, val in data.items():
                 dtype = dtypes.get(name)
                 if isinstance(val, dict) and dtype != Struct:
-                    updated_data[name] = pl.DataFrame(val).to_struct(name)
+                    updated_data[name] = pl.DataFrame(val, strict=strict).to_struct(
+                        name
+                    )
 
                 elif isinstance(val, pl.Series):
                     s = val.rename(name) if name != val.name else val
@@ -930,6 +915,27 @@ def _expand_dict_scalars(
     if order and list(updated_data) != order:
         return {col: updated_data.pop(col) for col in order}
     return updated_data
+
+
+def _expand_dict_data(
+    data: Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | Series],
+    dtypes: SchemaDict,
+    *,
+    strict: bool,
+) -> Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | Series]:
+    """
+    Expand any unsized generators/iterators.
+
+    (Note that `range` is sized, and will take a fast-path on Series init).
+    """
+    expanded_data = {}
+    for name, val in data.items():
+        expanded_data[name] = (
+            pl.Series(name, val, dtypes.get(name), strict=strict)
+            if _is_generator(val)
+            else val
+        )
+    return expanded_data
 
 
 def dict_to_pydf(
