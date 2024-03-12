@@ -1,14 +1,14 @@
 use std::ops::Range;
 use std::sync::Arc;
 
-use arrow::io::ipc::read::FileMetadata;
+use arrow::io::ipc::read::{get_row_count, FileMetadata, OutOfSpecKind};
 use bytes::Bytes;
 use object_store::path::Path;
 use object_store::{ObjectMeta, ObjectStore};
 use polars_core::datatypes::IDX_DTYPE;
 use polars_core::frame::DataFrame;
 use polars_core::schema::Schema;
-use polars_error::{to_compute_err, PolarsResult};
+use polars_error::{polars_bail, polars_err, to_compute_err, PolarsResult};
 
 use crate::cloud::{build_object_store, CloudLocation, CloudOptions};
 use crate::pl_async::{
@@ -237,25 +237,26 @@ impl IpcReaderAsync {
         reader.finish_with_scan_ops(options.predicate, verbose)
     }
 
-    // TODO: Return type i64/u64/usize/alias?
     pub async fn count_rows(&self, _metadata: Option<&FileMetadata>) -> PolarsResult<i64> {
-        unimplemented!(
-            "the row count specialization for the async IPC reader is not yet implemented"
-        )
+        // TODO: Only download what is needed rather than the entire file by
+        // making use of the projection, row limit, predicate and such.
+        let bytes = self.store.get(&self.path).await?;
+        get_row_count(&mut std::io::Cursor::new(bytes.as_ref()))
     }
 }
 
 const FOOTER_METADATA_SIZE: usize = 10;
 
+// TODO: Move to polars-arrow and deduplicate parsing of footer metadata in
+// sync and async readers.
 fn deserialize_footer_metadata(bytes: [u8; FOOTER_METADATA_SIZE]) -> PolarsResult<usize> {
     let footer_size: usize =
         i32::from_le_bytes(bytes[0..4].try_into().unwrap_or_else(|_| unreachable!()))
             .try_into()
-            .map_err(to_compute_err)?;
+            .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?;
 
-    // TODO: Move to polars-arrow and deduplicate parsing of footer metadata in sync and async readers.
     if &bytes[4..] != b"ARROW1" {
-        Err(to_compute_err("invalid ipc footer magic"))?
+        polars_bail!(oos = OutOfSpecKind::InvalidFooter);
     }
 
     Ok(footer_size)

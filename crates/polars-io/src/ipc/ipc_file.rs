@@ -90,16 +90,6 @@ fn check_mmap_err(err: PolarsError) -> PolarsResult<()> {
 }
 
 impl<R: MmapBytesReader> IpcReader<R> {
-    #[doc(hidden)]
-    /// A very bad estimate of the number of rows
-    /// This estimation will be entirely off if the file is compressed.
-    /// And will be varying off depending on the data types.
-    pub fn _num_rows(&mut self) -> PolarsResult<usize> {
-        let metadata = self.get_metadata()?;
-        let n_cols = metadata.schema.fields.len();
-        // this magic number 10 is computed from the yellow trip dataset
-        Ok((metadata.size as usize) / n_cols / 10)
-    }
     fn get_metadata(&mut self) -> PolarsResult<&read::FileMetadata> {
         if self.metadata.is_none() {
             let metadata = read::read_file_metadata(&mut self.reader)?;
@@ -164,7 +154,9 @@ impl<R: MmapBytesReader> IpcReader<R> {
         let rechunk = self.rechunk;
         let metadata = read::read_file_metadata(&mut self.reader)?;
 
-        // TODO: Replace this back with the assertion before merging https://github.com/pola-rs/polars/pull/14861.
+        // NOTE: For some code paths this already happened. See
+        // https://github.com/pola-rs/polars/pull/14984#discussion_r1520125000
+        // where this was introduced.
         if let Some(columns) = &self.columns {
             self.projection = Some(columns_to_projection(columns, &metadata.schema)?);
         }

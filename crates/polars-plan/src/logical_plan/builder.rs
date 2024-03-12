@@ -243,7 +243,7 @@ impl LogicalPlanBuilder {
 
         let path = path.into();
 
-        let (schema, reader_schema, num_rows, metadata) = if is_cloud_url(&path) {
+        let metadata = if is_cloud_url(&path) {
             #[cfg(not(feature = "cloud"))]
             panic!(
                 "One or more of the cloud storage features ('aws', 'gcp', ...) must be enabled."
@@ -253,60 +253,37 @@ impl LogicalPlanBuilder {
             {
                 let uri = path.to_string_lossy();
                 get_runtime().block_on(async {
-                    let reader =
-                        polars_io::ipc::IpcReaderAsync::from_uri(&uri, cloud_options.as_ref())
-                            .await?;
-                    let metadata = reader.metadata().await?;
-                    let reader_schema = Arc::clone(&metadata.schema);
-
-                    let schema = prepare_schema((&reader_schema).into(), row_index.as_ref());
-                    PolarsResult::Ok((schema, reader_schema, None, metadata))
+                    polars_io::ipc::IpcReaderAsync::from_uri(&uri, cloud_options.as_ref())
+                        .await?
+                        .metadata()
+                        .await
                 })?
             }
         } else {
-            // NOTE: We do not really need IpcReader and all of it's memoization
-            // to read the metadata...
-            let mut file = polars_utils::open_file(&path)?;
-
-            let metadata = arrow::io::ipc::read::read_file_metadata(&mut file)?;
-            let reader_schema = Arc::clone(&metadata.schema);
-            let mut schema: Schema = (&reader_schema).into();
-            if let Some(rc) = &row_index {
-                let _ = schema.insert_at_index(0, rc.name.as_str().into(), IDX_DTYPE);
-            }
-
-            pub fn _num_rows(metadata: &arrow::io::ipc::read::FileMetadata) -> PolarsResult<usize> {
-                let n_cols = metadata.schema.fields.len();
-                // this magic number 10 is computed from the yellow trip dataset
-                Ok((metadata.size as usize) / n_cols / 10)
-            }
-
-            let num_rows = _num_rows(&metadata)?;
-
-            let schema = prepare_schema((&reader_schema).into(), row_index.as_ref());
-            (schema, reader_schema, Some(num_rows), metadata)
+            arrow::io::ipc::read::read_file_metadata(&mut std::io::BufReader::new(
+                polars_utils::open_file(&path)?,
+            ))?
         };
 
-        let file_info = FileInfo::new(
-            schema,
-            Some(reader_schema),
-            (num_rows, num_rows.unwrap_or_default()),
-        );
-
-        let file_options = FileScanOptions {
-            with_columns: None,
-            cache,
-            n_rows,
-            rechunk,
-            row_index,
-            file_counter: Default::default(),
-            // TODO! add
-            hive_partitioning: false,
-        };
         Ok(LogicalPlan::Scan {
             paths: Arc::new([path]),
-            file_info,
-            file_options,
+            file_info: FileInfo::new(
+                prepare_schema(metadata.schema.as_ref().into(), row_index.as_ref()),
+                Some(Arc::clone(&metadata.schema)),
+                (None, 0),
+            ),
+            file_options: FileScanOptions {
+                with_columns: None,
+                cache,
+                n_rows,
+                rechunk,
+                row_index,
+                file_counter: Default::default(),
+                // TODO: According to
+                // https://github.com/pola-rs/polars/pull/14984#discussion_r1521226321
+                // we need to re-design hive partitions.
+                hive_partitioning: false,
+            },
             predicate: None,
             scan_type: FileScan::Ipc {
                 options,
