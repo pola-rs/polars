@@ -116,7 +116,6 @@ async fn count_rows_cloud_parquet(
 pub(super) fn count_rows_ipc(
     paths: &Arc<[PathBuf]>,
     #[cfg(feature = "cloud")] cloud_options: Option<&CloudOptions>,
-    // TODO: Utilize metadata.
     metadata: Option<&arrow::io::ipc::read::FileMetadata>,
 ) -> PolarsResult<i64> {
     if paths.is_empty() {
