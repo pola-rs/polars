@@ -59,17 +59,21 @@ impl PartitionSpillBuf {
         }
     }
 
-    fn finish(self) -> Option<DataFrame> {
+    fn finish(&self) -> Option<DataFrame> {
         if !self.chunks.is_empty() {
-            let iter = self.chunks.into_iter();
-            Some(accumulate_dataframes_vertical_unchecked(iter))
+            let len = self.len.load(Ordering::Relaxed) + 1;
+            let mut out = Vec::with_capacity(len as usize);
+            while let Some(df) = self.chunks.pop() {
+                out.push(df)
+            }
+            Some(accumulate_dataframes_vertical_unchecked(out))
         } else {
             None
         }
     }
 }
 
-struct PartitionSpiller {
+pub(crate) struct PartitionSpiller {
     partitions: Vec<PartitionSpillBuf>,
     // Spill limit in bytes.
     spill_limit: u64,
@@ -89,19 +93,12 @@ impl PartitionSpiller {
         self.partitions[partition].push(df, self.spill_limit)
     }
 
-    fn spill_all(self, io_thread: &IOThread) {
-        let min_len = std::cmp::max(self.partitions.len() / POOL.current_num_threads(), 2);
-        POOL.install(|| {
-            self.partitions
-                .into_par_iter()
-                .with_min_len(min_len)
-                .enumerate()
-                .for_each(|(part, part_buf)| {
-                    if let Some(df) = part_buf.finish() {
-                        io_thread.dump_partition_local(part as IdxSize, df)
-                    }
-                })
-        })
+    pub(crate) fn get(&self, partition: usize) -> Option<DataFrame> {
+        self.partitions[partition].finish()
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        self.partitions.len()
     }
 }
 
@@ -120,11 +117,10 @@ pub(super) fn sort_ooc(
 ) -> PolarsResult<FinalizedSink> {
     let now = Instant::now();
     let samples = samples.to_physical_repr().into_owned();
-    // Try to use available memory. At least 32MB per spill.
-    let spill_size = std::cmp::max(
+    let spill_size = std::cmp::min(
         memtrack.get_available_latest() / (samples.len() * 3),
-        1 << 25,
-    ) as u64;
+        1 << 26,
+    );
 
     // we collect as I am not sure that if we write to the same directory the
     // iterator will read those also.
@@ -133,10 +129,11 @@ pub(super) fn sort_ooc(
     let files = std::fs::read_dir(dir)?.collect::<std::io::Result<Vec<_>>>()?;
 
     if verbose {
+        eprintln!("spill size: {} mb", spill_size / 1024 / 1024);
         eprintln!("processing {} files", files.len());
     }
 
-    let partitions_spiller = PartitionSpiller::new(samples.len(), spill_size);
+    let partitions_spiller = PartitionSpiller::new(samples.len(), spill_size as u64);
 
     POOL.install(|| {
         files.par_iter().try_for_each(|entry| {
@@ -164,10 +161,6 @@ pub(super) fn sort_ooc(
     if verbose {
         eprintln!("partitioning sort took: {:?}", now.elapsed());
     }
-    partitions_spiller.spill_all(&io_thread);
-    if verbose {
-        eprintln!("spilling all partitioned files took: {:?}", now.elapsed());
-    }
 
     let files = std::fs::read_dir(dir)?
         .flat_map(|entry| {
@@ -187,7 +180,15 @@ pub(super) fn sort_ooc(
         .collect::<std::io::Result<Vec<_>>>()?;
 
     let source = SortSource::new(
-        files, idx, descending, slice, verbose, io_thread, memtrack, ooc_start,
+        files,
+        idx,
+        descending,
+        slice,
+        verbose,
+        io_thread,
+        memtrack,
+        ooc_start,
+        partitions_spiller,
     );
     Ok(FinalizedSink::Source(Box::new(source)))
 }
@@ -199,7 +200,7 @@ fn det_partitions(s: &Series, partitions: &Series, descending: bool) -> IdxCa {
 }
 
 fn partition_df(df: DataFrame, partitions: &IdxCa) -> PolarsResult<(DfIter, IdxCa)> {
-    let groups = partitions.group_tuples(false, false)?;
+    let groups = partitions.group_tuples(true, false)?;
     let partitions = unsafe { partitions.clone().into_series().agg_first(&groups) };
     let partitions = partitions.idx().unwrap().clone();
 
@@ -207,7 +208,7 @@ fn partition_df(df: DataFrame, partitions: &IdxCa) -> PolarsResult<(DfIter, IdxC
         GroupsProxy::Idx(idx) => {
             let iter = idx.into_iter().map(move |(_, group)| {
                 // groups are in bounds and sorted
-                unsafe { df._take_unchecked_slice_sorted(&group, false, IsSorted::Ascending) }
+                unsafe { df._take_unchecked_slice_sorted(&group, true, IsSorted::Ascending) }
             });
             Box::new(iter) as DfIter
         },

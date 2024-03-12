@@ -104,8 +104,8 @@ impl SortSink {
     }
 
     fn dump(&mut self, force: bool) -> PolarsResult<()> {
-        let larger_than_128_mb = self.current_chunks_size > (1 << 27);
-        if (force || larger_than_128_mb) && !self.chunks.is_empty() {
+        let larger_than_32_mb = self.current_chunks_size > (1 << 25);
+        if (force || larger_than_32_mb) && !self.chunks.is_empty() {
             // into a single chunk because multiple file IO's is expensive
             // and may lead to many smaller files in ooc-sort later, which is exponentially
             // expensive
