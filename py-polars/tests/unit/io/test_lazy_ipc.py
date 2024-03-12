@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -88,6 +89,9 @@ def test_ipc_list_arg(io_files_path: Path) -> None:
     assert df.row(0) == ("vegetables", 45, 0.5, 2)
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="object_store does not handle windows-style paths."
+)
 def test_scan_ipc_local_with_async(
     capfd: Any,
     monkeypatch: Any,
