@@ -71,12 +71,7 @@ from polars.dependencies import (
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
-from polars.exceptions import (
-    ComputeError,
-    SchemaError,
-    ShapeError,
-    TimeZoneAwareConstructorWarning,
-)
+from polars.exceptions import ShapeError, TimeZoneAwareConstructorWarning
 from polars.meta import get_index_type, thread_pool_size
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -295,25 +290,6 @@ def _get_first_non_none(values: Sequence[Any | None]) -> Any:
     """
     if values is not None:
         return next((v for v in values if v is not None), None)
-
-
-def sequence_from_any_value_and_dtype_or_object(
-    name: str, values: Sequence[Any], dtype: PolarsDataType
-) -> PySeries:
-    """
-    Last resort conversion.
-
-    AnyValues are most flexible and if they fail we go for object types
-    """
-    try:
-        return PySeries.new_from_any_values_and_dtype(name, values, dtype, strict=True)
-    # raised if we cannot convert to Wrap<AnyValue>
-    except RuntimeError:
-        return PySeries.new_object(name, values, _strict=False)
-    except ComputeError as exc:
-        if "mixed dtypes" in str(exc):
-            return PySeries.new_object(name, values, _strict=False)
-        raise
 
 
 def iterable_to_pyseries(
@@ -578,9 +554,11 @@ def sequence_to_pyseries(
                 )
 
         elif python_dtype in (list, tuple):
-            if isinstance(dtype, Object):
+            if dtype is None:
+                return _sequence_from_any_value_or_object(name, values, strict=strict)
+            elif isinstance(dtype, Object):
                 return PySeries.new_object(name, values, strict)
-            if dtype:
+            else:
                 if (inner_dtype := getattr(dtype, "inner", None)) is not None:
                     py_srs = [
                         None
@@ -594,15 +572,14 @@ def sequence_to_pyseries(
                         )
                         for value in values
                     ]
-                    srs = PySeries.new_series_list(name, py_srs, strict)
+                    s = PySeries.new_series_list(name, py_srs, strict)
                 else:
-                    srs = sequence_from_any_value_and_dtype_or_object(
-                        name, values, dtype
+                    s = PySeries.new_from_any_values_and_dtype(
+                        name, values, dtype, strict=strict
                     )
-                if dtype != srs.dtype():
-                    srs = srs.cast(dtype, strict=False)
-                return srs
-            return _sequence_from_any_value_or_object(name, values, strict=strict)
+                if dtype != s.dtype():
+                    s = s.cast(dtype, strict=False)
+                return s
 
         elif python_dtype == pl.Series:
             return PySeries.new_series_list(
@@ -643,21 +620,11 @@ def _sequence_from_any_value_or_object(
 
     AnyValues are most flexible and if they fail we go for object types
     """
-    if strict:
-        return PySeries.new_from_any_values(name, values, strict=True)
-
     try:
-        return PySeries.new_from_any_values(name, values, strict=False)
+        return PySeries.new_from_any_values(name, values, strict=strict)
     # raised if we cannot convert to Wrap<AnyValue>
     except RuntimeError:
-        return PySeries.new_object(name, values, _strict=False)
-    # raised if AnyValue fallbacks fail
-    except SchemaError:
-        return PySeries.new_object(name, values, _strict=False)
-    except ComputeError as exc:
-        if "mixed dtypes" in str(exc):
-            return PySeries.new_object(name, values, _strict=False)
-        raise
+        return PySeries.new_object(name, values, _strict=strict)
 
 
 def _pandas_series_to_arrow(
