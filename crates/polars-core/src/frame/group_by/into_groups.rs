@@ -187,7 +187,7 @@ where
             },
             #[cfg(feature = "dtype-decimal")]
             DataType::Decimal(_, _) => {
-                // Safety: DecimalChunked's first field is ChunkedArray<Int128Type>
+                // convince the compiler that we are this type.
                 let ca: &Int128Chunked = unsafe {
                     &*(self as *const ChunkedArray<T> as *const ChunkedArray<Int128Type>)
                 };
