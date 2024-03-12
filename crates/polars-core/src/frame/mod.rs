@@ -933,7 +933,7 @@ impl DataFrame {
                 "unable to append to a DataFrame of width {} with a DataFrame of width {}",
                 self.width(), other.width(),
             );
-            self.columns = other.columns.clone();
+            self.columns.clone_from(&other.columns);
             return Ok(self);
         }
 
