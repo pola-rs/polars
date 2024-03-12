@@ -3660,7 +3660,7 @@ class DataFrame:
             msg = f"engine {engine!r} is not supported"
             raise ValueError(msg)
 
-    def write_iceberg(self, target: str | Path) -> pyiceberg.Table:
+    def write_iceberg(self, target: str | Path) -> pyiceberg.table.Table:
         """
         Write DataFrame to an Iceberg table.
 
@@ -3676,7 +3676,7 @@ class DataFrame:
         """
         from pyiceberg.catalog.sql import SqlCatalog
 
-        def override_pyarrow_table_schema(arrow_table: pa.Table):
+        def override_pyarrow_table_schema(arrow_table: pa.Table) -> pa.Table:
             # Because of schema discrepancy
             #   self.to_arrow().schema produces large_string
             #   iceberg_tbl.schema() produces string
