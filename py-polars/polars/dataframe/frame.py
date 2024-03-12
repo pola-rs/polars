@@ -34,8 +34,8 @@ import polars._reexport as pl
 from polars import functions as F
 from polars._utils.construction import (
     arrow_to_pydf,
+    dataframe_to_pydf,
     dict_to_pydf,
-    frame_to_pydf,
     iterable_to_pydf,
     numpy_to_idxs,
     numpy_to_pydf,
@@ -417,7 +417,7 @@ class DataFrame:
             )
 
         elif isinstance(data, pl.DataFrame):
-            self._df = frame_to_pydf(
+            self._df = dataframe_to_pydf(
                 data, schema=schema, schema_overrides=schema_overrides
             )
         else:

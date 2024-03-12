@@ -1185,7 +1185,10 @@ def test_df_init_from_generator_dict_view() -> None:
     }
 
 
-@pytest.mark.skipif(sys.version_info < (3, 11))
+@pytest.mark.skipif(
+    sys.version_info < (3, 11),
+    reason="reversed dict views not supported before Python 3.11",
+)
 def test_df_init_from_generator_reversed_dict_view() -> None:
     d = {0: "x", 1: "y", 2: "z"}
     df = pl.DataFrame(
