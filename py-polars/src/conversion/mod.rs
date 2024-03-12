@@ -712,6 +712,21 @@ impl FromPyObject<'_> for Wrap<ClosedWindow> {
     }
 }
 
+impl FromPyObject<'_> for Wrap<NonExistent> {
+    fn extract(ob: &PyAny) -> PyResult<Self> {
+        let parsed = match ob.extract::<&str>()? {
+            "null" => NonExistent::Null,
+            "raise" => NonExistent::Raise,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "`closed` must be one of {{'null', 'raise'}}, got {v}",
+                )))
+            },
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
 #[cfg(feature = "csv")]
 impl FromPyObject<'_> for Wrap<CsvEncoding> {
     fn extract(ob: &PyAny) -> PyResult<Self> {

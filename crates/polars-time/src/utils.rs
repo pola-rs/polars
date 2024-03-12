@@ -1,5 +1,7 @@
 #[cfg(feature = "timezones")]
-use arrow::legacy::kernels::{convert_to_naive_local, convert_to_naive_local_opt, Ambiguous};
+use arrow::legacy::kernels::{
+    convert_to_naive_local, convert_to_naive_local_opt, Ambiguous, NonExistent,
+};
 #[cfg(feature = "timezones")]
 use arrow::legacy::time_zone::Tz;
 #[cfg(feature = "timezones")]
@@ -22,8 +24,9 @@ pub(crate) fn try_localize_datetime(
     ndt: NaiveDateTime,
     tz: &Tz,
     ambiguous: Ambiguous,
+    non_existent: NonExistent,
 ) -> PolarsResult<Option<NaiveDateTime>> {
-    convert_to_naive_local(&chrono_tz::UTC, tz, ndt, ambiguous)
+    convert_to_naive_local(&chrono_tz::UTC, tz, ndt, ambiguous, non_existent)
 }
 
 #[cfg(feature = "timezones")]

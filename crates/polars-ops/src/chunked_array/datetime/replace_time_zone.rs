@@ -14,6 +14,7 @@ pub fn replace_time_zone(
     datetime: &Logical<DatetimeType, Int64Type>,
     time_zone: Option<&str>,
     ambiguous: &StringChunked,
+    non_existent: NonExistent,
 ) -> PolarsResult<DatetimeChunked> {
     let from_time_zone = datetime.time_zone().as_deref().unwrap_or("UTC");
     let from_tz = parse_time_zone(from_time_zone)?;
@@ -39,10 +40,14 @@ pub fn replace_time_zone(
         TimeUnit::Nanoseconds => datetime_to_timestamp_ns,
     };
 
-    let out = if ambiguous.len() == 1 && ambiguous.get(0) != Some("null") {
+    let out = if ambiguous.len() == 1
+        && ambiguous.get(0) != Some("null")
+        && non_existent != NonExistent::Null
+    {
         impl_replace_time_zone_fast(
             datetime,
             ambiguous.get(0),
+            non_existent,
             timestamp_to_datetime,
             datetime_to_timestamp,
             &from_tz,
@@ -52,6 +57,7 @@ pub fn replace_time_zone(
         impl_replace_time_zone(
             datetime,
             ambiguous,
+            non_existent,
             timestamp_to_datetime,
             datetime_to_timestamp,
             &from_tz,
@@ -75,6 +81,7 @@ pub fn replace_time_zone(
 pub fn impl_replace_time_zone_fast(
     datetime: &Logical<DatetimeType, Int64Type>,
     ambiguous: Option<&str>,
+    non_existent: NonExistent,
     timestamp_to_datetime: fn(i64) -> NaiveDateTime,
     datetime_to_timestamp: fn(NaiveDateTime) -> i64,
     from_tz: &chrono_tz::Tz,
@@ -84,8 +91,14 @@ pub fn impl_replace_time_zone_fast(
         Some(ambiguous) => datetime.0.try_apply(|timestamp| {
             let ndt = timestamp_to_datetime(timestamp);
             Ok(datetime_to_timestamp(
-                convert_to_naive_local(from_tz, to_tz, ndt, Ambiguous::from_str(ambiguous)?)?
-                    .expect("we didn't use Ambiguous::Null"),
+                convert_to_naive_local(
+                    from_tz,
+                    to_tz,
+                    ndt,
+                    Ambiguous::from_str(ambiguous)?,
+                    non_existent,
+                )?
+                .expect("we didn't use Ambiguous::Null"),
             ))
         }),
         _ => Ok(datetime.0.apply(|_| None)),
@@ -95,6 +108,7 @@ pub fn impl_replace_time_zone_fast(
 pub fn impl_replace_time_zone(
     datetime: &Logical<DatetimeType, Int64Type>,
     ambiguous: &StringChunked,
+    non_existent: NonExistent,
     timestamp_to_datetime: fn(i64) -> NaiveDateTime,
     datetime_to_timestamp: fn(NaiveDateTime) -> i64,
     from_tz: &chrono_tz::Tz,
@@ -102,7 +116,6 @@ pub fn impl_replace_time_zone(
 ) -> PolarsResult<Int64Chunked> {
     match ambiguous.len() {
         1 => {
-            debug_assert!(ambiguous.get(0) == Some("null"));
             let iter = datetime.0.downcast_iter().map(|arr| {
                 let element_iter = arr.iter().map(|timestamp_opt| match timestamp_opt {
                     Some(timestamp) => {
@@ -111,7 +124,8 @@ pub fn impl_replace_time_zone(
                             from_tz,
                             to_tz,
                             ndt,
-                            Ambiguous::from_str("null")?,
+                            Ambiguous::from_str(ambiguous.get(0).unwrap())?,
+                            non_existent,
                         )?;
                         Ok::<_, PolarsError>(res.map(datetime_to_timestamp))
                     },
@@ -130,6 +144,7 @@ pub fn impl_replace_time_zone(
                         to_tz,
                         ndt,
                         Ambiguous::from_str(ambiguous)?,
+                        non_existent,
                     )?
                     .map(datetime_to_timestamp))
                 },

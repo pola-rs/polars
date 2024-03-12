@@ -7,6 +7,8 @@ use chrono_tz::Tz;
 #[cfg(feature = "timezones")]
 use polars_error::PolarsResult;
 use polars_error::{polars_bail, PolarsError};
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
 pub enum Ambiguous {
     Earliest,
@@ -30,12 +32,20 @@ impl FromStr for Ambiguous {
     }
 }
 
+#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub enum NonExistent {
+    Null,
+    Raise,
+}
+
 #[cfg(feature = "timezones")]
 pub fn convert_to_naive_local(
     from_tz: &Tz,
     to_tz: &Tz,
     ndt: NaiveDateTime,
     ambiguous: Ambiguous,
+    non_existent: NonExistent,
 ) -> PolarsResult<Option<NaiveDateTime>> {
     let ndt = from_tz.from_utc_datetime(&ndt).naive_local();
     match to_tz.from_local_datetime(&ndt) {
@@ -48,10 +58,13 @@ pub fn convert_to_naive_local(
                 polars_bail!(ComputeError: "datetime '{}' is ambiguous in time zone '{}'. Please use `ambiguous` to tell how it should be localized.", ndt, to_tz)
             },
         },
-        LocalResult::None => polars_bail!(ComputeError:
-                "datetime '{}' is non-existent in time zone '{}'. Non-existent datetimes are not yet supported",
+        LocalResult::None => match non_existent {
+            NonExistent::Raise => polars_bail!(ComputeError:
+                "datetime '{}' is non-existent in time zone '{}'. You can use `non_existent='null'` to return `null` in this case.",
                 ndt, to_tz
-        ),
+            ),
+            NonExistent::Null => Ok(None),
+        },
     }
 }
 

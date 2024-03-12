@@ -3,7 +3,7 @@ use std::fmt::{Display, Formatter};
 use std::ops::Mul;
 
 #[cfg(feature = "timezones")]
-use arrow::legacy::kernels::Ambiguous;
+use arrow::legacy::kernels::{Ambiguous, NonExistent};
 use arrow::legacy::time_zone::Tz;
 use arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime, MILLISECONDS,
@@ -462,22 +462,38 @@ impl Duration {
         match localize_datetime_opt(result_dt_local, tz, Ambiguous::Raise) {
             Some(dt) => Ok(dt.expect("we didn't use Ambiguous::Null")),
             None => {
-                if try_localize_datetime(original_dt_local, tz, Ambiguous::Earliest)?
-                    .expect("we didn't use Ambiguous::Null")
+                if try_localize_datetime(
+                    original_dt_local,
+                    tz,
+                    Ambiguous::Earliest,
+                    NonExistent::Raise,
+                )?
+                .expect("we didn't use Ambiguous::Null")
                     == original_dt_utc
                 {
-                    Ok(
-                        try_localize_datetime(result_dt_local, tz, Ambiguous::Earliest)?
-                            .expect("we didn't use Ambiguous::Null"),
-                    )
-                } else if try_localize_datetime(original_dt_local, tz, Ambiguous::Latest)?
-                    .expect("we didn't use Ambiguous::Null")
+                    Ok(try_localize_datetime(
+                        result_dt_local,
+                        tz,
+                        Ambiguous::Earliest,
+                        NonExistent::Raise,
+                    )?
+                    .expect("we didn't use Ambiguous::Null"))
+                } else if try_localize_datetime(
+                    original_dt_local,
+                    tz,
+                    Ambiguous::Latest,
+                    NonExistent::Raise,
+                )?
+                .expect("we didn't use Ambiguous::Null")
                     == original_dt_utc
                 {
-                    Ok(
-                        try_localize_datetime(result_dt_local, tz, Ambiguous::Latest)?
-                            .expect("we didn't use Ambiguous::Null"),
-                    )
+                    Ok(try_localize_datetime(
+                        result_dt_local,
+                        tz,
+                        Ambiguous::Latest,
+                        NonExistent::Raise,
+                    )?
+                    .expect("we didn't use Ambiguous::Null"))
                 } else {
                     unreachable!()
                 }
@@ -794,7 +810,7 @@ impl Duration {
                 #[cfg(feature = "timezones")]
                 // for UTC, use fastpath below (same as naive)
                 Some(tz) if tz != &chrono_tz::UTC => datetime_to_timestamp(
-                    try_localize_datetime(dt, tz, Ambiguous::Raise)?
+                    try_localize_datetime(dt, tz, Ambiguous::Raise, NonExistent::Raise)?
                         .expect("we didn't use Ambiguous::Null"),
                 ),
                 _ => datetime_to_timestamp(dt),
@@ -811,8 +827,13 @@ impl Duration {
                         datetime_to_timestamp(unlocalize_datetime(timestamp_to_datetime(t), tz));
                     new_t += if d.negative { -t_weeks } else { t_weeks };
                     new_t = datetime_to_timestamp(
-                        try_localize_datetime(timestamp_to_datetime(new_t), tz, Ambiguous::Raise)?
-                            .expect("we didn't use Ambiguous::Null"),
+                        try_localize_datetime(
+                            timestamp_to_datetime(new_t),
+                            tz,
+                            Ambiguous::Raise,
+                            NonExistent::Raise,
+                        )?
+                        .expect("we didn't use Ambiguous::Null"),
                     );
                 },
                 _ => new_t += if d.negative { -t_weeks } else { t_weeks },
@@ -829,8 +850,13 @@ impl Duration {
                         datetime_to_timestamp(unlocalize_datetime(timestamp_to_datetime(t), tz));
                     new_t += if d.negative { -t_days } else { t_days };
                     new_t = datetime_to_timestamp(
-                        try_localize_datetime(timestamp_to_datetime(new_t), tz, Ambiguous::Raise)?
-                            .expect("we didn't use Ambiguous::Null"),
+                        try_localize_datetime(
+                            timestamp_to_datetime(new_t),
+                            tz,
+                            Ambiguous::Raise,
+                            NonExistent::Raise,
+                        )?
+                        .expect("we didn't use Ambiguous::Null"),
                     );
                 },
                 _ => new_t += if d.negative { -t_days } else { t_days },

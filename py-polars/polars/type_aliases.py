@@ -149,6 +149,7 @@ ToStructStrategy: TypeAlias = Literal[
 
 # The following have no equivalent on the Rust side
 Ambiguous: TypeAlias = Literal["earliest", "latest", "raise", "null"]
+NonExistent: TypeAlias = Literal["raise", "null"]
 ConcatMethod = Literal[
     "vertical",
     "vertical_relaxed",
