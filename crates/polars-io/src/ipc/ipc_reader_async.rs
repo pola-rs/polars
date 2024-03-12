@@ -72,8 +72,6 @@ impl PolarsObjectStore {
 pub struct IpcReaderAsync {
     store: PolarsObjectStore,
     path: Path,
-    // object_metadata: Mutex<Option<ObjectMeta>>,
-    // ipc_metadata: Mutex<Option<FileMetadata>>,
 }
 
 #[derive(Default, Clone)]
@@ -125,36 +123,22 @@ impl IpcReaderAsync {
             store,
         ) = build_object_store(uri, cloud_options).await?;
 
+        let path = {
+            // Any wildcards should already have been resolved here. Without this assertion they would
+            // be ignored.
+            debug_assert!(expansion.is_none(), "path should not contain wildcards");
+            Path::from_url_path(prefix).map_err(to_compute_err)?
+        };
+
         Ok(Self {
             store: PolarsObjectStore::new(store),
-            path: {
-                // Any wildcards should already have been resolved here. Without this assertion they would
-                // be ignored.
-                debug_assert!(expansion.is_none(), "path should not contain wildcards");
-                Path::from_url_path(prefix).map_err(to_compute_err)?
-            },
-            // object_metadata: Default::default(),
-            // ipc_metadata: Default::default(),
+            path,
         })
     }
 
     async fn object_metadata(&self) -> PolarsResult<ObjectMeta> {
         self.store.head(&self.path).await
     }
-
-    // async fn object_metadata(&self) -> PolarsResult<MappedMutexGuard<'_, ObjectMeta>> {
-    //     // NOTE: We have to be careful of deadlocks because we wait here for a
-    //     // `head` request to finish which waits for a semaphore. If that
-    //     // semaphore is also used in places that call this function, we can get
-    //     // a deadlock.
-    //     let mut object_metadata = self.object_metadata.lock().await;
-    //     if object_metadata.is_none() {
-    //         *object_metadata = Some(self.fetch_object_metadata().await?);
-    //     }
-    //     Ok(MutexGuard::map(object_metadata, |x| {
-    //         x.as_mut().unwrap_or_else(|| unreachable!())
-    //     }))
-    // }
 
     async fn file_size(&self) -> PolarsResult<usize> {
         Ok(self.object_metadata().await?.size)
@@ -199,23 +183,14 @@ impl IpcReaderAsync {
         )
     }
 
-    // pub async fn metadata(&self) -> PolarsResult<MappedMutexGuard<'_, FileMetadata>> {
-    //     let mut ipc_metadata = self.ipc_metadata.lock().await;
-    //     if ipc_metadata.is_none() {
-    //         *ipc_metadata = Some(self.fetch_ipc_metadata().await?)
-    //     }
-    //     Ok(MutexGuard::map(ipc_metadata, |x| {
-    //         x.as_mut().unwrap_or_else(|| unreachable!())
-    //     }))
-    // }
-
-    // TODO: Utilize previously obtained metadata.
     pub async fn data(
         &self,
         metadata: Option<&FileMetadata>,
         options: IpcReadOptions,
         verbose: bool,
     ) -> PolarsResult<DataFrame> {
+        // TODO: Only download what is needed rather than the entire file by
+        // making use of the projection, row limit, predicate and such.
         let bytes = self.store.get(&self.path).await?;
 
         let projection = match options.projection.as_deref() {
@@ -239,7 +214,11 @@ impl IpcReaderAsync {
 
                 let schema = prepare_schema((&metadata.schema).into(), options.row_index.as_ref());
 
-                let hive_partitions = None; // TODO
+                // TODO: According to
+                // https://github.com/pola-rs/polars/pull/14984#discussion_r1521226321
+                // we need to re-design hive partitions.
+                let hive_partitions = None;
+
                 materialize_projection(
                     Some(projection),
                     &schema,
@@ -259,9 +238,10 @@ impl IpcReaderAsync {
     }
 
     // TODO: Return type i64/u64/usize/alias?
-    // TODO: Utilize previously obtained metadata.
     pub async fn count_rows(&self, _metadata: Option<&FileMetadata>) -> PolarsResult<i64> {
-        todo!();
+        unimplemented!(
+            "the row count specialization for the async IPC reader is not yet implemented"
+        )
     }
 }
 

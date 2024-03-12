@@ -257,9 +257,6 @@ impl LogicalPlanBuilder {
                         polars_io::ipc::IpcReaderAsync::from_uri(&uri, cloud_options.as_ref())
                             .await?;
                     let metadata = reader.metadata().await?;
-                    // TODO: Remove cache in reader and return by value? We drop
-                    // the reader anyways...
-                    let metadata = arrow::io::ipc::read::FileMetadata::clone(&metadata);
                     let reader_schema = Arc::clone(&metadata.schema);
 
                     let schema = prepare_schema((&reader_schema).into(), row_index.as_ref());
