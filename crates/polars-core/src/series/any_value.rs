@@ -3,205 +3,6 @@ use std::fmt::Write;
 use crate::prelude::*;
 use crate::utils::get_supertype;
 
-#[cfg(feature = "dtype-decimal")]
-fn any_values_to_decimal(
-    avs: &[AnyValue],
-    precision: Option<usize>,
-    scale: Option<usize>, // if None, we're inferring the scale
-) -> PolarsResult<DecimalChunked> {
-    // two-pass approach, first we scan and record the scales, then convert (or not)
-    let mut scale_range: Option<(usize, usize)> = None;
-    for av in avs {
-        let s_av = if av.is_signed_integer() || av.is_unsigned_integer() {
-            0 // integers are treated as decimals with scale of zero
-        } else if let AnyValue::Decimal(_, scale) = av {
-            *scale
-        } else if matches!(av, AnyValue::Null) {
-            continue;
-        } else {
-            polars_bail!(
-                ComputeError: "unable to convert any-value of dtype {} to decimal", av.dtype(),
-            );
-        };
-        scale_range = match scale_range {
-            None => Some((s_av, s_av)),
-            Some((s_min, s_max)) => Some((s_min.min(s_av), s_max.max(s_av))),
-        };
-    }
-    let Some((s_min, s_max)) = scale_range else {
-        // empty array or all nulls, return a decimal array with given scale (or 0 if inferring)
-        return Ok(Int128Chunked::full_null("", avs.len())
-            .into_decimal_unchecked(precision, scale.unwrap_or(0)));
-    };
-    let scale = scale.unwrap_or(s_max);
-    if s_max > scale {
-        // scale is provided but is lower than actual
-        // TODO: do we want lossy conversions here or not?
-        polars_bail!(
-            ComputeError:
-            "unable to losslessly convert any-value of scale {s_max} to scale {}", scale,
-        );
-    }
-    let mut builder = PrimitiveChunkedBuilder::<Int128Type>::new("", avs.len());
-    let is_equally_scaled = s_min == s_max && s_max == scale;
-    for av in avs {
-        let (v, s_av) = if av.is_signed_integer() || av.is_unsigned_integer() {
-            (
-                av.try_extract::<i128>().unwrap_or_else(|_| unreachable!()),
-                0,
-            )
-        } else if let AnyValue::Decimal(v, scale) = av {
-            (*v, *scale)
-        } else {
-            // it has to be a null because we've already checked it
-            builder.append_null();
-            continue;
-        };
-        if is_equally_scaled {
-            builder.append_value(v);
-        } else {
-            let factor = 10_i128.pow((scale - s_av) as _); // this cast is safe
-            builder.append_value(v.checked_mul(factor).ok_or_else(|| {
-                polars_err!(ComputeError: "overflow while converting to decimal scale {}", scale)
-            })?);
-        }
-    }
-    // build the array and do a precision check if needed
-    builder.finish().into_decimal(precision, scale)
-}
-
-#[cfg(feature = "dtype-array")]
-fn any_values_to_array(
-    avs: &[AnyValue],
-    inner_type: &DataType,
-    strict: bool,
-    width: usize,
-) -> PolarsResult<ArrayChunked> {
-    fn to_arr(s: &Series) -> Option<ArrayRef> {
-        if s.chunks().len() > 1 {
-            let s = s.rechunk();
-            Some(s.chunks()[0].clone())
-        } else {
-            Some(s.chunks()[0].clone())
-        }
-    }
-
-    // this is handled downstream. The builder will choose the first non null type
-    let mut valid = true;
-    #[allow(unused_mut)]
-    let mut out: ArrayChunked = if inner_type == &DataType::Null {
-        avs.iter()
-            .map(|av| match av {
-                AnyValue::List(b) | AnyValue::Array(b, _) => to_arr(b),
-                AnyValue::Null => None,
-                _ => {
-                    valid = false;
-                    None
-                },
-            })
-            .collect_ca_with_dtype("", DataType::Array(Box::new(inner_type.clone()), width))
-    }
-    // make sure that wrongly inferred AnyValues don't deviate from the datatype
-    else {
-        avs.iter()
-            .map(|av| match av {
-                AnyValue::List(b) | AnyValue::Array(b, _) => {
-                    if b.dtype() == inner_type {
-                        to_arr(b)
-                    } else {
-                        let s = match b.cast(inner_type) {
-                            Ok(out) => out,
-                            Err(_) => Series::full_null(b.name(), b.len(), inner_type),
-                        };
-                        to_arr(&s)
-                    }
-                },
-                AnyValue::Null => None,
-                _ => {
-                    valid = false;
-                    None
-                },
-            })
-            .collect_ca_with_dtype("", DataType::Array(Box::new(inner_type.clone()), width))
-    };
-    if let DataType::Array(_, s) = out.dtype() {
-        polars_ensure!(*s == width, ComputeError: "got mixed size array widths where width {} was expected", width)
-    }
-
-    #[cfg(feature = "dtype-struct")]
-    if !matches!(inner_type, DataType::Null)
-        && matches!(out.inner_dtype(), DataType::Struct(_) | DataType::List(_))
-    {
-        // ensure the logical type is correct
-        unsafe {
-            out.set_dtype(DataType::Array(Box::new(inner_type.clone()), width));
-        };
-    }
-    if valid || !strict {
-        Ok(out)
-    } else {
-        polars_bail!(ComputeError: "got mixed dtypes while constructing List Series")
-    }
-}
-
-fn any_values_to_list(
-    avs: &[AnyValue],
-    inner_type: &DataType,
-    strict: bool,
-) -> PolarsResult<ListChunked> {
-    // this is handled downstream. The builder will choose the first non null type
-    let mut valid = true;
-    #[allow(unused_mut)]
-    let mut out: ListChunked = if inner_type == &DataType::Null {
-        avs.iter()
-            .map(|av| match av {
-                AnyValue::List(b) => Some(b.clone()),
-                AnyValue::Null => None,
-                _ => {
-                    valid = false;
-                    None
-                },
-            })
-            .collect_trusted()
-    }
-    // make sure that wrongly inferred AnyValues don't deviate from the datatype
-    else {
-        avs.iter()
-            .map(|av| match av {
-                AnyValue::List(b) => {
-                    if b.dtype() == inner_type {
-                        Some(b.clone())
-                    } else {
-                        match b.cast(inner_type) {
-                            Ok(out) => Some(out),
-                            Err(_) => Some(Series::full_null(b.name(), b.len(), inner_type)),
-                        }
-                    }
-                },
-                AnyValue::Null => None,
-                _ => {
-                    valid = false;
-                    None
-                },
-            })
-            .collect_trusted()
-    };
-    #[cfg(feature = "dtype-struct")]
-    if !matches!(inner_type, DataType::Null)
-        && matches!(out.inner_dtype(), DataType::Struct(_) | DataType::List(_))
-    {
-        // ensure the logical type is correct
-        unsafe {
-            out.set_dtype(DataType::List(Box::new(inner_type.clone())));
-        };
-    }
-    if valid || !strict {
-        Ok(out)
-    } else {
-        polars_bail!(ComputeError: "got mixed dtypes while constructing List Series")
-    }
-}
-
 impl<'a, T: AsRef<[AnyValue<'a>]>> NamedFrom<T, [AnyValue<'a>]> for Series {
     fn new(name: &str, v: T) -> Self {
         let av = v.as_ref();
@@ -216,7 +17,7 @@ impl Series {
         av: &[AnyValue],
         dtype: &DataType,
         strict: bool,
-    ) -> PolarsResult<Series> {
+    ) -> PolarsResult<Self> {
         let mut s = match dtype {
             #[cfg(feature = "dtype-i8")]
             DataType::Int8 => any_values_to_integer::<Int8Type>(av, strict)?.into_series(),
@@ -408,7 +209,7 @@ impl Series {
     ///   determine the supertype. Values encountered that do not match the
     ///   supertype are set to null.
     /// - If no values were passed, the resulting data type is `Null`.
-    pub fn from_any_values(name: &str, values: &[AnyValue], strict: bool) -> PolarsResult<Series> {
+    pub fn from_any_values(name: &str, values: &[AnyValue], strict: bool) -> PolarsResult<Self> {
         fn get_first_non_null_dtype(values: &[AnyValue]) -> DataType {
             let mut all_flat_null = true;
             let first_non_null = values.iter().find(|av| {
@@ -531,103 +332,302 @@ fn any_values_to_f64(values: &[AnyValue], strict: bool) -> PolarsResult<Float64C
 }
 
 fn any_values_to_bool(values: &[AnyValue], strict: bool) -> PolarsResult<BooleanChunked> {
+    fn any_values_to_bool_strict(values: &[AnyValue]) -> PolarsResult<BooleanChunked> {
+        let mut builder = BooleanChunkedBuilder::new("", values.len());
+        for av in values {
+            match av {
+                AnyValue::Boolean(b) => builder.append_value(*b),
+                AnyValue::Null => builder.append_null(),
+                av => return Err(invalid_value_error(&DataType::Boolean, av)),
+            }
+        }
+        Ok(builder.finish())
+    }
+    fn any_values_to_bool_nonstrict(values: &[AnyValue]) -> BooleanChunked {
+        let mapper = |av: &AnyValue| match av {
+            AnyValue::Boolean(b) => Some(*b),
+            AnyValue::Null => None,
+            av => match av.cast(&DataType::Boolean) {
+                AnyValue::Boolean(b) => Some(b),
+                _ => None,
+            },
+        };
+        values.iter().map(mapper).collect_trusted()
+    }
     if strict {
         any_values_to_bool_strict(values)
     } else {
         Ok(any_values_to_bool_nonstrict(values))
     }
 }
-fn any_values_to_bool_strict(values: &[AnyValue]) -> PolarsResult<BooleanChunked> {
-    let mut builder = BooleanChunkedBuilder::new("", values.len());
-    for av in values {
-        match av {
-            AnyValue::Boolean(b) => builder.append_value(*b),
-            AnyValue::Null => builder.append_null(),
-            av => return Err(invalid_value_error(&DataType::Boolean, av)),
-        }
-    }
-    Ok(builder.finish())
-}
-fn any_values_to_bool_nonstrict(values: &[AnyValue]) -> BooleanChunked {
-    let mapper = |av: &AnyValue| match av {
-        AnyValue::Boolean(b) => Some(*b),
-        AnyValue::Null => None,
-        av => match av.cast(&DataType::Boolean) {
-            AnyValue::Boolean(b) => Some(b),
-            _ => None,
-        },
-    };
-    values.iter().map(mapper).collect_trusted()
-}
 
 fn any_values_to_string(values: &[AnyValue], strict: bool) -> PolarsResult<StringChunked> {
+    fn any_values_to_string_strict(values: &[AnyValue]) -> PolarsResult<StringChunked> {
+        let mut builder = StringChunkedBuilder::new("", values.len());
+        for av in values {
+            match av {
+                AnyValue::String(s) => builder.append_value(s),
+                AnyValue::StringOwned(s) => builder.append_value(s),
+                AnyValue::Null => builder.append_null(),
+                av => return Err(invalid_value_error(&DataType::String, av)),
+            }
+        }
+        Ok(builder.finish())
+    }
+    fn any_values_to_string_nonstrict(values: &[AnyValue]) -> StringChunked {
+        let mut builder = StringChunkedBuilder::new("", values.len());
+        let mut owned = String::new(); // Amortize allocations
+        for av in values {
+            match av {
+                AnyValue::String(s) => builder.append_value(s),
+                AnyValue::StringOwned(s) => builder.append_value(s),
+                AnyValue::Null => builder.append_null(),
+                AnyValue::Binary(_) | AnyValue::BinaryOwned(_) => builder.append_null(),
+                av => {
+                    owned.clear();
+                    write!(owned, "{av}").unwrap();
+                    builder.append_value(&owned);
+                },
+            }
+        }
+        builder.finish()
+    }
     if strict {
         any_values_to_string_strict(values)
     } else {
         Ok(any_values_to_string_nonstrict(values))
     }
 }
-fn any_values_to_string_strict(values: &[AnyValue]) -> PolarsResult<StringChunked> {
-    let mut builder = StringChunkedBuilder::new("", values.len());
-    for av in values {
-        match av {
-            AnyValue::String(s) => builder.append_value(s),
-            AnyValue::StringOwned(s) => builder.append_value(s),
-            AnyValue::Null => builder.append_null(),
-            av => return Err(invalid_value_error(&DataType::String, av)),
-        }
-    }
-    Ok(builder.finish())
-}
-fn any_values_to_string_nonstrict(values: &[AnyValue]) -> StringChunked {
-    let mut builder = StringChunkedBuilder::new("", values.len());
-    let mut owned = String::new(); // Amortize allocations
-    for av in values {
-        match av {
-            AnyValue::String(s) => builder.append_value(s),
-            AnyValue::StringOwned(s) => builder.append_value(s),
-            AnyValue::Null => builder.append_null(),
-            AnyValue::Binary(_) | AnyValue::BinaryOwned(_) => builder.append_null(),
-            av => {
-                owned.clear();
-                write!(owned, "{av}").unwrap();
-                builder.append_value(&owned);
-            },
-        }
-    }
-    builder.finish()
-}
 
 fn any_values_to_binary(values: &[AnyValue], strict: bool) -> PolarsResult<BinaryChunked> {
+    fn any_values_to_binary_strict(values: &[AnyValue]) -> PolarsResult<BinaryChunked> {
+        let mut builder = BinaryChunkedBuilder::new("", values.len());
+        for av in values {
+            match av {
+                AnyValue::Binary(s) => builder.append_value(*s),
+                AnyValue::BinaryOwned(s) => builder.append_value(&**s),
+                AnyValue::Null => builder.append_null(),
+                av => return Err(invalid_value_error(&DataType::Binary, av)),
+            }
+        }
+        Ok(builder.finish())
+    }
+    fn any_values_to_binary_nonstrict(values: &[AnyValue]) -> BinaryChunked {
+        values
+            .iter()
+            .map(|av| match av {
+                AnyValue::Binary(b) => Some(*b),
+                AnyValue::BinaryOwned(b) => Some(&**b),
+                AnyValue::String(s) => Some(s.as_bytes()),
+                AnyValue::StringOwned(s) => Some(s.as_bytes()),
+                _ => None,
+            })
+            .collect_trusted()
+    }
     if strict {
         any_values_to_binary_strict(values)
     } else {
         Ok(any_values_to_binary_nonstrict(values))
     }
 }
-fn any_values_to_binary_strict(values: &[AnyValue]) -> PolarsResult<BinaryChunked> {
-    let mut builder = BinaryChunkedBuilder::new("", values.len());
-    for av in values {
-        match av {
-            AnyValue::Binary(s) => builder.append_value(*s),
-            AnyValue::BinaryOwned(s) => builder.append_value(&**s),
-            AnyValue::Null => builder.append_null(),
-            av => return Err(invalid_value_error(&DataType::Binary, av)),
+
+#[cfg(feature = "dtype-decimal")]
+fn any_values_to_decimal(
+    avs: &[AnyValue],
+    precision: Option<usize>,
+    scale: Option<usize>, // if None, we're inferring the scale
+) -> PolarsResult<DecimalChunked> {
+    // two-pass approach, first we scan and record the scales, then convert (or not)
+    let mut scale_range: Option<(usize, usize)> = None;
+    for av in avs {
+        let s_av = if av.is_signed_integer() || av.is_unsigned_integer() {
+            0 // integers are treated as decimals with scale of zero
+        } else if let AnyValue::Decimal(_, scale) = av {
+            *scale
+        } else if matches!(av, AnyValue::Null) {
+            continue;
+        } else {
+            polars_bail!(
+                ComputeError: "unable to convert any-value of dtype {} to decimal", av.dtype(),
+            );
+        };
+        scale_range = match scale_range {
+            None => Some((s_av, s_av)),
+            Some((s_min, s_max)) => Some((s_min.min(s_av), s_max.max(s_av))),
+        };
+    }
+    let Some((s_min, s_max)) = scale_range else {
+        // empty array or all nulls, return a decimal array with given scale (or 0 if inferring)
+        return Ok(Int128Chunked::full_null("", avs.len())
+            .into_decimal_unchecked(precision, scale.unwrap_or(0)));
+    };
+    let scale = scale.unwrap_or(s_max);
+    if s_max > scale {
+        // scale is provided but is lower than actual
+        // TODO: do we want lossy conversions here or not?
+        polars_bail!(
+            ComputeError:
+            "unable to losslessly convert any-value of scale {s_max} to scale {}", scale,
+        );
+    }
+    let mut builder = PrimitiveChunkedBuilder::<Int128Type>::new("", avs.len());
+    let is_equally_scaled = s_min == s_max && s_max == scale;
+    for av in avs {
+        let (v, s_av) = if av.is_signed_integer() || av.is_unsigned_integer() {
+            (
+                av.try_extract::<i128>().unwrap_or_else(|_| unreachable!()),
+                0,
+            )
+        } else if let AnyValue::Decimal(v, scale) = av {
+            (*v, *scale)
+        } else {
+            // it has to be a null because we've already checked it
+            builder.append_null();
+            continue;
+        };
+        if is_equally_scaled {
+            builder.append_value(v);
+        } else {
+            let factor = 10_i128.pow((scale - s_av) as _); // this cast is safe
+            builder.append_value(v.checked_mul(factor).ok_or_else(|| {
+                polars_err!(ComputeError: "overflow while converting to decimal scale {}", scale)
+            })?);
         }
     }
-    Ok(builder.finish())
+    // build the array and do a precision check if needed
+    builder.finish().into_decimal(precision, scale)
 }
-fn any_values_to_binary_nonstrict(values: &[AnyValue]) -> BinaryChunked {
-    values
-        .iter()
-        .map(|av| match av {
-            AnyValue::Binary(b) => Some(*b),
-            AnyValue::BinaryOwned(b) => Some(&**b),
-            AnyValue::String(s) => Some(s.as_bytes()),
-            AnyValue::StringOwned(s) => Some(s.as_bytes()),
-            _ => None,
-        })
-        .collect_trusted()
+
+#[cfg(feature = "dtype-array")]
+fn any_values_to_array(
+    avs: &[AnyValue],
+    inner_type: &DataType,
+    strict: bool,
+    width: usize,
+) -> PolarsResult<ArrayChunked> {
+    fn to_arr(s: &Series) -> Option<ArrayRef> {
+        if s.chunks().len() > 1 {
+            let s = s.rechunk();
+            Some(s.chunks()[0].clone())
+        } else {
+            Some(s.chunks()[0].clone())
+        }
+    }
+
+    // this is handled downstream. The builder will choose the first non null type
+    let mut valid = true;
+    #[allow(unused_mut)]
+    let mut out: ArrayChunked = if inner_type == &DataType::Null {
+        avs.iter()
+            .map(|av| match av {
+                AnyValue::List(b) | AnyValue::Array(b, _) => to_arr(b),
+                AnyValue::Null => None,
+                _ => {
+                    valid = false;
+                    None
+                },
+            })
+            .collect_ca_with_dtype("", DataType::Array(Box::new(inner_type.clone()), width))
+    }
+    // make sure that wrongly inferred AnyValues don't deviate from the datatype
+    else {
+        avs.iter()
+            .map(|av| match av {
+                AnyValue::List(b) | AnyValue::Array(b, _) => {
+                    if b.dtype() == inner_type {
+                        to_arr(b)
+                    } else {
+                        let s = match b.cast(inner_type) {
+                            Ok(out) => out,
+                            Err(_) => Series::full_null(b.name(), b.len(), inner_type),
+                        };
+                        to_arr(&s)
+                    }
+                },
+                AnyValue::Null => None,
+                _ => {
+                    valid = false;
+                    None
+                },
+            })
+            .collect_ca_with_dtype("", DataType::Array(Box::new(inner_type.clone()), width))
+    };
+    if let DataType::Array(_, s) = out.dtype() {
+        polars_ensure!(*s == width, ComputeError: "got mixed size array widths where width {} was expected", width)
+    }
+
+    #[cfg(feature = "dtype-struct")]
+    if !matches!(inner_type, DataType::Null)
+        && matches!(out.inner_dtype(), DataType::Struct(_) | DataType::List(_))
+    {
+        // ensure the logical type is correct
+        unsafe {
+            out.set_dtype(DataType::Array(Box::new(inner_type.clone()), width));
+        };
+    }
+
+    if strict && !valid {
+        polars_bail!(ComputeError: "got mixed dtypes while constructing Array Series")
+    }
+    Ok(out)
+}
+
+fn any_values_to_list(
+    avs: &[AnyValue],
+    inner_type: &DataType,
+    strict: bool,
+) -> PolarsResult<ListChunked> {
+    // this is handled downstream. The builder will choose the first non null type
+    let mut valid = true;
+    #[allow(unused_mut)]
+    let mut out: ListChunked = if inner_type == &DataType::Null {
+        avs.iter()
+            .map(|av| match av {
+                AnyValue::List(b) => Some(b.clone()),
+                AnyValue::Null => None,
+                _ => {
+                    valid = false;
+                    None
+                },
+            })
+            .collect_trusted()
+    }
+    // make sure that wrongly inferred AnyValues don't deviate from the datatype
+    else {
+        avs.iter()
+            .map(|av| match av {
+                AnyValue::List(b) => {
+                    if b.dtype() == inner_type {
+                        Some(b.clone())
+                    } else {
+                        match b.cast(inner_type) {
+                            Ok(out) => Some(out),
+                            Err(_) => Some(Series::full_null(b.name(), b.len(), inner_type)),
+                        }
+                    }
+                },
+                AnyValue::Null => None,
+                _ => {
+                    valid = false;
+                    None
+                },
+            })
+            .collect_trusted()
+    };
+    #[cfg(feature = "dtype-struct")]
+    if !matches!(inner_type, DataType::Null)
+        && matches!(out.inner_dtype(), DataType::Struct(_) | DataType::List(_))
+    {
+        // ensure the logical type is correct
+        unsafe {
+            out.set_dtype(DataType::List(Box::new(inner_type.clone())));
+        };
+    }
+
+    if strict && !valid {
+        polars_bail!(ComputeError: "got mixed dtypes while constructing List Series")
+    }
+    Ok(out)
 }
 
 fn invalid_value_error(dtype: &DataType, value: &AnyValue) -> PolarsError {
