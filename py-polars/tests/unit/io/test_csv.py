@@ -1960,3 +1960,8 @@ def test_read_csv_single_column(columns: list[str] | str) -> None:
     df = pl.read_csv(f, columns=columns)
     expected = pl.DataFrame({"b": [2, 5]})
     assert_frame_equal(df, expected)
+
+
+def test_csv_invalid_escape_utf8_14960() -> None:
+    with pytest.raises(pl.ComputeError, match=r"field is not properly escaped"):
+        pl.read_csv('col1\n""•'.encode())

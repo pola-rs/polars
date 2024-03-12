@@ -5,6 +5,7 @@ use num_traits::Pow;
 use polars_core::prelude::*;
 use polars_core::POOL;
 use polars_utils::index::Bounded;
+use polars_utils::slice::GetSaferUnchecked;
 use rayon::prelude::*;
 
 use super::buffer::*;
@@ -473,7 +474,9 @@ pub(super) fn parse_lines(
             match iter.next() {
                 // end of line
                 None => {
-                    bytes = &bytes[std::cmp::min(read_sol, bytes.len())..];
+                    bytes = unsafe {
+                        bytes.get_unchecked_release(std::cmp::min(read_sol, bytes.len())..)
+                    };
                     break;
                 },
                 Some((mut field, needs_escaping)) => {
@@ -485,8 +488,11 @@ pub(super) fn parse_lines(
                     if idx == next_projected as u32 {
                         // the iterator is finished when it encounters a `\n`
                         // this could be preceded by a '\r'
-                        if field_len > 0 && field[field_len - 1] == b'\r' {
-                            field = &field[..field_len - 1];
+                        unsafe {
+                            if field_len > 0 && *field.get_unchecked_release(field_len - 1) == b'\r'
+                            {
+                                field = field.get_unchecked_release(..field_len - 1);
+                            }
                         }
 
                         debug_assert!(processed_fields < buffers.len());
@@ -499,7 +505,7 @@ pub(super) fn parse_lines(
                         // if we have null values argument, check if this field equal null value
                         if let Some(null_values) = null_values {
                             let field = if needs_escaping && !field.is_empty() {
-                                &field[1..field.len() - 1]
+                                unsafe { field.get_unchecked_release(1..field.len() - 1) }
                             } else {
                                 field
                             };
@@ -552,7 +558,7 @@ pub(super) fn parse_lines(
 Consider setting 'truncate_ragged_lines={}'."#, polars_error::constants::TRUE)
                                     }
                                     let bytes_rem = skip_this_line(
-                                        &bytes[read_sol - 1..],
+                                        unsafe { bytes.get_unchecked_release(read_sol - 1..) },
                                         quote_char,
                                         eol_char,
                                     );
