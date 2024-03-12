@@ -127,16 +127,18 @@ class CatNameSpace:
         The Enum series retains all categories of the Categorical series, regardless of
         whether those categories are represented in the series.
 
-        >>> s = pl.Series(["a", "b"], dtype=pl.Categorical(categories=["a", "b", "c"]))
-        >>> s_enum s.to_enum()
-        >>> s
+        Examples
+        --------
+        >>> s = pl.Series(["a", "b", "c"], dtype=pl.Categorical)
+        >>> s = s[:2]  # s is now ['a', 'b'], with categories 'a', 'b', and 'c'
+        >>> s.cat.to_enum()
         shape: (2,)
         Series: '' [enum]
         [
                 "a"
                 "b"
         ]
-        >>> s.dtype
+        >>> s.cat.to_enum().dtype
         Enum(categories=['a', 'b', 'c'])
         """
         return wrap_s(self._s.cat_to_enum())

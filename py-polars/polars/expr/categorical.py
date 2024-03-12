@@ -69,17 +69,25 @@ class ExprCatNameSpace:
         The Enum column retains all categories of the Categorical column, regardless of
         whether those categories are represented in the column.
 
+        Examples
+        --------
         >>> df = pl.Series(
         ...     "cats", ["foo", "bar", "foo", "foo", "ham"], dtype=pl.Categorical
         ... ).to_frame()
         >>> df.select(pl.col("cats").cat.to_enum())
-        shape: (2,)
-        Series: '' [enum]
-        [
-                "a"
-                "b"
-        ]
-        >>> s.dtype
-        Enum(categories=['a', 'b', 'c'])
+        shape: (5, 1)
+        ┌──────┐
+        │ cats │
+        │ ---  │
+        │ enum │
+        ╞══════╡
+        │ foo  │
+        │ bar  │
+        │ foo  │
+        │ foo  │
+        │ ham  │
+        └──────┘
+        >>> df.select(pl.col("cats").cat.to_enum())["cats"].dtype
+        Enum(categories=['foo', 'bar', 'ham'])
         """
         return wrap_expr(self._pyexpr.cat_to_enum())
