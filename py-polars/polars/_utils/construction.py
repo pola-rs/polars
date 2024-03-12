@@ -287,55 +287,6 @@ def numpy_to_pyseries(
         return PySeries.new_object(name, values, strict)
 
 
-def _get_first_non_none(values: Sequence[Any | None]) -> Any:
-    """
-    Return the first value from a sequence that isn't None.
-
-    If sequence doesn't contain non-None values, return None.
-    """
-    if values is not None:
-        return next((v for v in values if v is not None), None)
-
-
-def sequence_from_any_value_or_object(name: str, values: Sequence[Any]) -> PySeries:
-    """
-    Last resort conversion.
-
-    AnyValues are most flexible and if they fail we go for object types
-    """
-    try:
-        return PySeries.new_from_any_values(name, values, strict=True)
-    # raised if we cannot convert to Wrap<AnyValue>
-    except RuntimeError:
-        return PySeries.new_object(name, values, _strict=False)
-    # raised if AnyValue fallbacks fail
-    except SchemaError:
-        return PySeries.new_object(name, values, _strict=False)
-    except ComputeError as exc:
-        if "mixed dtypes" in str(exc):
-            return PySeries.new_object(name, values, _strict=False)
-        raise
-
-
-def sequence_from_any_value_and_dtype_or_object(
-    name: str, values: Sequence[Any], dtype: PolarsDataType
-) -> PySeries:
-    """
-    Last resort conversion.
-
-    AnyValues are most flexible and if they fail we go for object types
-    """
-    try:
-        return PySeries.new_from_any_values_and_dtype(name, values, dtype, strict=True)
-    # raised if we cannot convert to Wrap<AnyValue>
-    except RuntimeError:
-        return PySeries.new_object(name, values, _strict=False)
-    except ComputeError as exc:
-        if "mixed dtypes" in str(exc):
-            return PySeries.new_object(name, values, _strict=False)
-        raise
-
-
 def iterable_to_pyseries(
     name: str,
     values: Iterable[Any],
@@ -376,50 +327,6 @@ def iterable_to_pyseries(
         series.rechunk(in_place=True)
 
     return series._s
-
-
-def _construct_series_with_fallbacks(
-    constructor: Callable[[str, Sequence[Any], bool], PySeries],
-    name: str,
-    values: Sequence[Any],
-    target_dtype: PolarsDataType | None,
-    *,
-    strict: bool,
-) -> PySeries:
-    """Construct Series, with fallbacks for basic type mismatch (eg: bool/int)."""
-    while True:
-        try:
-            return constructor(name, values, strict)
-        except TypeError as exc:
-            str_exc = str(exc)
-
-            # from x to float
-            # error message can be:
-            #   - integers: "'float' object cannot be interpreted as an integer"
-            if "'float'" in str_exc and (
-                # we do not accept float values as int/temporal, as it causes silent
-                # information loss; the caller should explicitly cast in this case.
-                target_dtype not in (INTEGER_DTYPES | TEMPORAL_DTYPES)
-            ):
-                constructor = py_type_to_constructor(float)
-
-            # from x to string
-            # error message can be:
-            #   - integers: "'str' object cannot be interpreted as an integer"
-            #   - floats: "must be real number, not str"
-            elif "'str'" in str_exc or str_exc == "must be real number, not str":
-                constructor = py_type_to_constructor(str)
-
-            # from x to int
-            # error message can be:
-            #   - bools: "'int' object cannot be converted to 'PyBool'"
-            elif str_exc == "'int' object cannot be converted to 'PyBool'":
-                constructor = py_type_to_constructor(int)
-
-            elif "decimal.Decimal" in str_exc:
-                constructor = py_type_to_constructor(PyDecimal)
-            else:
-                raise
 
 
 def sequence_to_pyseries(
@@ -616,13 +523,13 @@ def sequence_to_pyseries(
                     ]
                     srs = PySeries.new_series_list(name, py_srs, strict)
                 else:
-                    srs = sequence_from_any_value_and_dtype_or_object(
+                    srs = _sequence_from_any_value_and_dtype_or_object(
                         name, values, dtype
                     )
                 if dtype != srs.dtype():
                     srs = srs.cast(dtype, strict=False)
                 return srs
-            return sequence_from_any_value_or_object(name, values)
+            return _sequence_from_any_value_or_object(name, values)
 
         elif python_dtype == pl.Series:
             return PySeries.new_series_list(
@@ -646,11 +553,104 @@ def sequence_to_pyseries(
 
                 except RuntimeError:
                     # raised if we cannot convert to Wrap<AnyValue>
-                    return sequence_from_any_value_or_object(name, values)
+                    return _sequence_from_any_value_or_object(name, values)
 
             return _construct_series_with_fallbacks(
                 constructor, name, values, dtype, strict=strict
             )
+
+
+def _get_first_non_none(values: Sequence[Any | None]) -> Any:
+    """
+    Return the first value from a sequence that isn't None.
+
+    If sequence doesn't contain non-None values, return None.
+    """
+    if values is not None:
+        return next((v for v in values if v is not None), None)
+
+
+def _construct_series_with_fallbacks(
+    constructor: Callable[[str, Sequence[Any], bool], PySeries],
+    name: str,
+    values: Sequence[Any],
+    target_dtype: PolarsDataType | None,
+    *,
+    strict: bool,
+) -> PySeries:
+    """Construct Series, with fallbacks for basic type mismatch (eg: bool/int)."""
+    while True:
+        try:
+            return constructor(name, values, strict)
+        except TypeError as exc:
+            str_exc = str(exc)
+
+            # from x to float
+            # error message can be:
+            #   - integers: "'float' object cannot be interpreted as an integer"
+            if "'float'" in str_exc and (
+                # we do not accept float values as int/temporal, as it causes silent
+                # information loss; the caller should explicitly cast in this case.
+                target_dtype not in (INTEGER_DTYPES | TEMPORAL_DTYPES)
+            ):
+                constructor = py_type_to_constructor(float)
+
+            # from x to string
+            # error message can be:
+            #   - integers: "'str' object cannot be interpreted as an integer"
+            #   - floats: "must be real number, not str"
+            elif "'str'" in str_exc or str_exc == "must be real number, not str":
+                constructor = py_type_to_constructor(str)
+
+            # from x to int
+            # error message can be:
+            #   - bools: "'int' object cannot be converted to 'PyBool'"
+            elif str_exc == "'int' object cannot be converted to 'PyBool'":
+                constructor = py_type_to_constructor(int)
+
+            elif "decimal.Decimal" in str_exc:
+                constructor = py_type_to_constructor(PyDecimal)
+            else:
+                raise
+
+
+def _sequence_from_any_value_or_object(name: str, values: Sequence[Any]) -> PySeries:
+    """
+    Last resort conversion.
+
+    AnyValues are most flexible and if they fail we go for object types
+    """
+    try:
+        return PySeries.new_from_any_values(name, values, strict=True)
+    # raised if we cannot convert to Wrap<AnyValue>
+    except RuntimeError:
+        return PySeries.new_object(name, values, _strict=False)
+    # raised if AnyValue fallbacks fail
+    except SchemaError:
+        return PySeries.new_object(name, values, _strict=False)
+    except ComputeError as exc:
+        if "mixed dtypes" in str(exc):
+            return PySeries.new_object(name, values, _strict=False)
+        raise
+
+
+def _sequence_from_any_value_and_dtype_or_object(
+    name: str, values: Sequence[Any], dtype: PolarsDataType
+) -> PySeries:
+    """
+    Last resort conversion.
+
+    AnyValues are most flexible and if they fail we go for object types
+    """
+    try:
+        return PySeries.new_from_any_values_and_dtype(name, values, dtype, strict=True)
+    # raised if we cannot convert to Wrap<AnyValue>
+    except RuntimeError:
+        return PySeries.new_object(name, values, _strict=False)
+    except ComputeError as exc:
+        if "mixed dtypes" in str(exc):
+            return PySeries.new_object(name, values, _strict=False)
+        raise
 
 
 def _pandas_series_to_arrow(
