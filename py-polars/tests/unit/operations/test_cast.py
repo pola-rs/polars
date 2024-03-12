@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -620,3 +621,8 @@ def test_cast_time_to_date() -> None:
     msg = "cannot cast `Time` to `Date`"
     with pytest.raises(pl.ComputeError, match=msg):
         s.cast(pl.Date)
+
+
+def test_cast_decimal() -> None:
+    s = pl.Series([Decimal(0), Decimal(1.5), Decimal(-1.5)])
+    assert_series_equal(s.cast(pl.Boolean), pl.Series([False, True, True]))
