@@ -608,6 +608,8 @@ impl BatchedParquetReader {
         if self.limit == 0 && self.has_returned {
             return if self.chunks_fifo.is_empty() {
                 Ok(None)
+            } else if self.chunks_fifo.len() < n {
+                Ok(Some(self.chunks_fifo.drain(..).collect()))
             } else {
                 Ok(Some(self.chunks_fifo.drain(..n).collect()))
             };
