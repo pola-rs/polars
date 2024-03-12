@@ -193,7 +193,9 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny) -> PyResult<AnyValue> {
                     avs.push(av)
                 }
 
-                let s = Series::from_any_values_and_dtype("", &avs, &dtype, true)
+                // A supertype is available, so using strict=False here will not
+                // introduce null values
+                let s = Series::from_any_values_and_dtype("", &avs, &dtype, false)
                     .map_err(PyPolarsErr::from)?;
                 Ok(AnyValue::List(s))
             }
