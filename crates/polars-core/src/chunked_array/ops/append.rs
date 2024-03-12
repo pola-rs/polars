@@ -4,7 +4,7 @@ use crate::series::IsSorted;
 pub(crate) fn new_chunks(chunks: &mut Vec<ArrayRef>, other: &[ArrayRef], len: usize) {
     // Replace an empty array.
     if chunks.len() == 1 && len == 0 {
-        *chunks = other.to_owned();
+        other.clone_into(chunks);
     } else {
         for chunk in other {
             if chunk.len() > 0 {
