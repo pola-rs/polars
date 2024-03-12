@@ -204,10 +204,10 @@ impl Series {
     /// - If `strict` is `true`, the data type is equal to the data type of the
     ///   first non-null value. If any other non-null values do not match this
     ///   data type, an error is raised.
-    /// - If `strict` is `false`, the data type is the supertype of the
-    ///   `values`. **WARNING**: A full pass over the values is required to
-    ///   determine the supertype. Values encountered that do not match the
-    ///   supertype are set to null.
+    /// - If `strict` is `false`, the data type is the supertype of the `values`,
+    ///   or `Object` if no supertype was found. If the "object" feature is not enabled,
+    ///   values encountered that do not match the supertype are set to null.
+    ///   **WARNING**: A full pass over the values is required to determine the supertype.
     /// - If no values were passed, the resulting data type is `Null`.
     pub fn from_any_values(name: &str, values: &[AnyValue], strict: bool) -> PolarsResult<Self> {
         fn get_first_non_null_dtype(values: &[AnyValue]) -> DataType {
@@ -239,7 +239,11 @@ impl Series {
                 if dtypes.insert(av.dtype()) {
                     match get_supertype(&supertype, &av.dtype()) {
                         Some(st) => supertype = st,
-                        None => return DataType::Object("", None),
+                        None =>
+                        {
+                            #[cfg(feature = "object")]
+                            return DataType::Object("", None)
+                        },
                     }
                 }
             }
