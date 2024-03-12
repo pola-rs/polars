@@ -356,6 +356,22 @@ impl<'a> FieldsMapper<'a> {
         })
     }
 
+    // Map a categorical to an Enum type
+    pub fn map_cat_to_enum_dtype(&self) -> PolarsResult<Field> {
+        self.map_dtype(|dtype| match dtype {
+            DataType::Categorical(rev_map, ordering) => DataType::Enum(
+                rev_map.clone().map(|rm| match &*rm {
+                    RevMapping::Global(..) => {
+                        Arc::new(RevMapping::build_local(rm.get_categories().clone()))
+                    },
+                    _ => rm,
+                }),
+                *ordering,
+            ),
+            _ => dtype.clone(),
+        })
+    }
+
     /// Map to a physical type.
     pub fn to_physical_type(&self) -> PolarsResult<Field> {
         self.map_dtype(|dtype| dtype.to_physical())

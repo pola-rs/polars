@@ -1,4 +1,5 @@
 import polars as pl
+from polars import StringCache
 from polars.testing import assert_frame_equal
 
 
@@ -142,3 +143,32 @@ def test_cat_uses_lexical_ordering() -> None:
 
     s = s.cast(pl.Categorical("physical"))
     assert s.cat.uses_lexical_ordering() is False
+
+
+def test_cat_local_to_enum() -> None:
+    s = pl.Series("s", ["a", "b", None, "c"], dtype=pl.Categorical)
+    s = s[:3]  # extra categories not found in Series
+    out_s = s.cat.to_enum()
+    assert out_s.dtype == pl.Enum(["a", "b", "c"])
+    assert out_s.to_list() == ["a", "b", None]
+
+    out_df = pl.DataFrame(s).select(pl.col("s").cat.to_enum())
+    assert out_df["s"].dtype == pl.Enum(["a", "b", "c"])
+    assert out_df["s"].to_list() == ["a", "b", None]
+
+
+@StringCache()
+def test_cat_global_to_enum() -> None:
+    # pre-set global cache index
+    _ = pl.Series(["d", "a", "c", "b"])
+
+    s = pl.Series("s", ["a", "b", None, "c"], dtype=pl.Categorical)
+    s = s[:3]  # extra categories not found in Series
+    out_s = s.cat.to_enum()
+    assert out_s.dtype == pl.Enum(["a", "b", "c"])
+    assert out_s.to_list() == ["a", "b", None]
+
+    df = pl.DataFrame(s)
+    out_df = df.select(pl.col("s").cat.to_enum())
+    assert out_df["s"].dtype == pl.Enum(["a", "b", "c"])
+    assert out_df["s"].to_list() == ["a", "b", None]

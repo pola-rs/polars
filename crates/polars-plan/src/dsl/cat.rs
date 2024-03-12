@@ -8,4 +8,8 @@ impl CategoricalNameSpace {
         self.0
             .map_private(CategoricalFunction::GetCategories.into())
     }
+
+    pub fn to_enum(self) -> Expr {
+        self.0.map_private(CategoricalFunction::ToEnum.into())
+    }
 }

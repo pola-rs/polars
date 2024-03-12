@@ -16,4 +16,8 @@ impl PyExpr {
     fn cat_get_categories(&self) -> Self {
         self.inner.clone().cat().get_categories().into()
     }
+
+    fn cat_to_enum(&self) -> Self {
+        self.inner.clone().cat().to_enum().into()
+    }
 }

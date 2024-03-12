@@ -61,3 +61,25 @@ class ExprCatNameSpace:
         └──────┘
         """
         return wrap_expr(self._pyexpr.cat_get_categories())
+
+    def to_enum(self) -> Expr:
+        """
+        Convert a categorical column to an Enum.
+
+        The Enum column retains all categories of the Categorical column, regardless of
+        whether those categories are represented in the column.
+
+        >>> df = pl.Series(
+        ...     "cats", ["foo", "bar", "foo", "foo", "ham"], dtype=pl.Categorical
+        ... ).to_frame()
+        >>> df.select(pl.col("cats").cat.to_enum())
+        shape: (2,)
+        Series: '' [enum]
+        [
+                "a"
+                "b"
+        ]
+        >>> s.dtype
+        Enum(categories=['a', 'b', 'c'])
+        """
+        return wrap_expr(self._pyexpr.cat_to_enum())

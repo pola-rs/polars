@@ -7,6 +7,7 @@ from typing import Any, Iterator, Mapping
 import pytest
 
 import polars as pl
+from polars import StringCache
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -632,3 +633,29 @@ def test_literal_subtract_schema_13284() -> None:
         .group_by("a")
         .len()
     ).schema == OrderedDict([("a", pl.UInt8), ("len", pl.UInt32)])
+
+
+def test_local_cat_to_enum() -> None:
+    lf = pl.LazyFrame(
+        {
+            "cat": pl.Series(["a", "b"], dtype=pl.Categorical(ordering="physical")),
+        }
+    )
+
+    schema = lf.select(pl.col("cat").cat.to_enum()).schema
+    assert schema == OrderedDict({"cat": pl.Enum(categories=["a", "b"])})
+
+
+@StringCache()
+def test_global_cat_to_enum() -> None:
+    # pre-set global cache index
+    _ = pl.Series(["d", "a", "c", "b"], dtype=pl.Categorical)
+
+    lf = pl.LazyFrame(
+        {
+            "cat": pl.Series(["a", "b", None], dtype=pl.Categorical),
+        }
+    )
+
+    schema = lf.select(pl.col("cat").cat.to_enum()).schema
+    assert schema == OrderedDict({"cat": pl.Enum(categories=["a", "b"])})

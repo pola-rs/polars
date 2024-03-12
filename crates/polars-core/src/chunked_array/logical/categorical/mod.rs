@@ -130,6 +130,20 @@ impl CategoricalChunked {
         }
     }
 
+    // Convert to fixed enum using existing categories.
+    pub fn convert_to_enum(&self) -> Self {
+        let s = self.to_local();
+        // SAFETY: we create the physical directly from self
+        unsafe {
+            CategoricalChunked::from_cats_and_rev_map_unchecked(
+                s.physical().clone(),
+                s.get_rev_map().clone(),
+                true,
+                s.get_ordering(),
+            )
+        }
+    }
+
     // Convert to fixed enum. Values not in categories are mapped to None.
     pub fn to_enum(&self, categories: &Utf8ViewArray, hash: u128) -> Self {
         // Fast paths

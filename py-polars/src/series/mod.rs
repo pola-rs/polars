@@ -111,6 +111,11 @@ impl PySeries {
         Ok(ca.to_local().into_series().into())
     }
 
+    pub fn cat_to_enum(&self) -> PyResult<Self> {
+        let ca = self.series.categorical().map_err(PyPolarsErr::from)?;
+        Ok(ca.convert_to_enum().into_series().into())
+    }
+
     fn estimated_size(&self) -> usize {
         self.series.estimated_size()
     }

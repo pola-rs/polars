@@ -66,7 +66,7 @@ class CatNameSpace:
 
     def is_local(self) -> bool:
         """
-        Return whether or not the column is a local categorical.
+        Return whether or not the series is a local categorical.
 
         Examples
         --------
@@ -87,9 +87,9 @@ class CatNameSpace:
 
     def to_local(self) -> Series:
         """
-        Convert a categorical column to its local representation.
+        Convert a categorical series to its local representation.
 
-        This may change the underlying physical representation of the column.
+        This may change the underlying physical representation of the series.
 
         See the documentation of :func:`StringCache` for more information on the
         difference between local and global categoricals.
@@ -119,6 +119,27 @@ class CatNameSpace:
         ]
         """
         return wrap_s(self._s.cat_to_local())
+
+    def to_enum(self) -> Series:
+        """
+        Convert a categorical Series to an Enum series.
+
+        The Enum series retains all categories of the Categorical series, regardless of
+        whether those categories are represented in the series.
+
+        >>> s = pl.Series(["a", "b"], dtype=pl.Categorical(categories=["a", "b", "c"]))
+        >>> s_enum s.to_enum()
+        >>> s
+        shape: (2,)
+        Series: '' [enum]
+        [
+                "a"
+                "b"
+        ]
+        >>> s.dtype
+        Enum(categories=['a', 'b', 'c'])
+        """
+        return wrap_s(self._s.cat_to_enum())
 
     @unstable()
     def uses_lexical_ordering(self) -> bool:
