@@ -237,6 +237,7 @@ impl Series {
             let mut dtypes = PlHashSet::<DataType>::new();
             for av in values {
                 if dtypes.insert(av.dtype()) {
+                    #[allow(clippy::single_match)]
                     match get_supertype(&supertype, &av.dtype()) {
                         Some(st) => supertype = st,
                         None =>
