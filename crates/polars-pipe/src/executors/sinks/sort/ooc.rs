@@ -117,7 +117,10 @@ pub(super) fn sort_ooc(
 ) -> PolarsResult<FinalizedSink> {
     let now = Instant::now();
     let samples = samples.to_physical_repr().into_owned();
-    let spill_size = memtrack.get_available_latest() / (samples.len() * 3);
+    let spill_size = std::cmp::min(
+        memtrack.get_available_latest() / (samples.len() * 3),
+        1 << 26,
+    );
 
     // we collect as I am not sure that if we write to the same directory the
     // iterator will read those also.

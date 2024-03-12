@@ -3915,9 +3915,9 @@ class DataFrame:
         ...     schema=[("x", pl.UInt32), ("y", pl.Float64), ("z", pl.String)],
         ... )
         >>> df.estimated_size()
-        28000000
+        17888890
         >>> df.estimated_size("mb")
-        26.702880859375
+        17.0601749420166
         """
         sz = self._df.estimated_size()
         return scale_bytes(sz, unit)
