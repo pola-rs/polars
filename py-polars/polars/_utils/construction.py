@@ -605,7 +605,7 @@ def sequence_to_pyseries(
                     py_srs = [
                         None
                         if value is None
-                        else sequence_to_pyseries("", value, inner_dtype, strict=strict)
+                        else sequence_to_pyseries("", value, inner_dtype, strict=strict, nan_to_null=nan_to_null)
                         for value in values
                     ]
                     srs = PySeries.new_series_list(name, py_srs, strict)
