@@ -3677,23 +3677,23 @@ class DataFrame:
         from pyiceberg.catalog.sql import SqlCatalog
 
         def override_pyarrow_table_schema(arrow_table: pa.Table):
-            # Because of schema discrepency
+            # Because of schema discrepancy
             #   self.to_arrow().schema produces large_string
             #   iceberg_tbl.schema() produces string
             # Override pyarrow schema: Convert large_string to string
             modified_fields = []
             for field in arrow_table.schema:
                 if pa.types.is_large_string(field.type):
-                    modified_fields.append(pa.field(field.name, pa.string(), nullable=field.nullable))
+                    modified_fields.append(
+                        pa.field(field.name, pa.string(), nullable=field.nullable)
+                    )
                 else:
                     modified_fields.append(field)
             modified_schema = pa.schema(modified_fields)
             return arrow_table.cast(modified_schema)
 
         catalog = SqlCatalog(
-            "default",
-            uri="sqlite:///:memory:",
-            warehouse=f"file://{target}"
+            "default", uri="sqlite:///:memory:", warehouse=f"file://{target}"
         )
         catalog.create_namespace("default")
         data = override_pyarrow_table_schema(self.to_arrow())
