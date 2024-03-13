@@ -205,7 +205,8 @@ class DataFrame:
         Two-dimensional data in various forms; dict input must contain Sequences,
         Generators, or a `range`. Sequence may contain Series or other Sequences.
     schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
-        The DataFrame schema may be declared in several ways:
+        The schema of the resulting DataFrame. The schema may be declared in several
+        ways:
 
         * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
         * As a list of column names; in this case types are automatically inferred.
@@ -214,6 +215,8 @@ class DataFrame:
         If you supply a list of column names that does not match the names in the
         underlying data, the names given here will overwrite them. The number
         of names given in the schema should match the underlying data dimensions.
+
+        If set to `None` (default), the schema is inferred from the data.
     schema_overrides : dict, default None
         Support type specification or override of one or more columns; note that
         any dtypes inferred from the schema param will be overridden.
@@ -221,6 +224,11 @@ class DataFrame:
         The number of entries in the schema should match the underlying data
         dimensions, unless a sequence of dictionaries is being passed, in which case
         a *partial* schema can be declared to prevent specific fields from being loaded.
+    strict : bool, default True
+        Throw an error if any `data` value does not exactly match the given or inferred
+        data type for that column. If set to `False`, values that do not match the data
+        type are cast to that data type or, if casting is not possible, set to null
+        instead.
     orient : {'col', 'row'}, default None
         Whether to interpret two-dimensional data as columns or as rows. If None,
         the orientation is inferred by matching the columns and data dimensions. If
@@ -233,6 +241,12 @@ class DataFrame:
     nan_to_null : bool, default False
         If the data comes from one or more numpy arrays, can optionally convert input
         data np.nan values to null instead. This is a no-op for all other input data.
+
+    Notes
+    -----
+    Polars explicitly does not support subclassing of its core data types. See
+    the following GitHub issue for possible workarounds:
+    https://github.com/pola-rs/polars/issues/2846#issuecomment-1711799869
 
     Examples
     --------
@@ -335,17 +349,6 @@ class DataFrame:
     │ 1   ┆ 2   ┆ 3   │
     │ 4   ┆ 5   ┆ 6   │
     └─────┴─────┴─────┘
-
-    Notes
-    -----
-    Some methods internally convert the DataFrame into a LazyFrame before collecting
-    the results back into a DataFrame. This can lead to unexpected behavior when using
-    a subclassed DataFrame. For example,
-
-    >>> class MyDataFrame(pl.DataFrame):
-    ...     pass
-    >>> isinstance(MyDataFrame().lazy().collect(), MyDataFrame)
-    False
     """
 
     _df: PyDataFrame
@@ -357,6 +360,7 @@ class DataFrame:
         schema: SchemaDefinition | None = None,
         *,
         schema_overrides: SchemaDict | None = None,
+        strict: bool = True,
         orient: Orientation | None = None,
         infer_schema_length: int | None = N_INFER_DEFAULT,
         nan_to_null: bool = False,
@@ -371,6 +375,7 @@ class DataFrame:
                 data,
                 schema=schema,
                 schema_overrides=schema_overrides,
+                strict=strict,
                 nan_to_null=nan_to_null,
             )
 
@@ -379,13 +384,14 @@ class DataFrame:
                 data,
                 schema=schema,
                 schema_overrides=schema_overrides,
+                strict=strict,
                 orient=orient,
                 infer_schema_length=infer_schema_length,
             )
 
         elif isinstance(data, pl.Series):
             self._df = series_to_pydf(
-                data, schema=schema, schema_overrides=schema_overrides
+                data, schema=schema, schema_overrides=schema_overrides, strict=strict
             )
 
         elif _check_for_numpy(data) and isinstance(data, np.ndarray):
@@ -393,18 +399,19 @@ class DataFrame:
                 data,
                 schema=schema,
                 schema_overrides=schema_overrides,
+                strict=strict,
                 orient=orient,
                 nan_to_null=nan_to_null,
             )
 
         elif _check_for_pyarrow(data) and isinstance(data, pa.Table):
             self._df = arrow_to_pydf(
-                data, schema=schema, schema_overrides=schema_overrides
+                data, schema=schema, schema_overrides=schema_overrides, strict=strict
             )
 
         elif _check_for_pandas(data) and isinstance(data, pd.DataFrame):
             self._df = pandas_to_pydf(
-                data, schema=schema, schema_overrides=schema_overrides
+                data, schema=schema, schema_overrides=schema_overrides, strict=strict
             )
 
         elif not isinstance(data, Sized) and isinstance(data, (Generator, Iterable)):
@@ -412,13 +419,14 @@ class DataFrame:
                 data,
                 schema=schema,
                 schema_overrides=schema_overrides,
+                strict=strict,
                 orient=orient,
                 infer_schema_length=infer_schema_length,
             )
 
         elif isinstance(data, pl.DataFrame):
             self._df = dataframe_to_pydf(
-                data, schema=schema, schema_overrides=schema_overrides
+                data, schema=schema, schema_overrides=schema_overrides, strict=strict
             )
         else:
             msg = (
