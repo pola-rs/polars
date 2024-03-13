@@ -772,3 +772,15 @@ def test_parquet_array_dtype() -> None:
     df = pl.DataFrame({"x": [[1, 2, 3]]})
     df = df.cast({"x": pl.Array(pl.Int64, width=3)})
     test_round_trip(df)
+
+
+@pytest.mark.write_disk()
+def test_parquet_array_statistics() -> None:
+    df = pl.DataFrame({"a": [[1, 2, 3], [4, 5, 6], [7, 8, 9]], "b": [1, 2, 3]})
+    df.with_columns(a=pl.col("a").list.to_array(3)).lazy().filter(
+        pl.col("a") != [1, 2, 3]
+    ).collect()
+    df.with_columns(a=pl.col("a").list.to_array(3)).lazy().sink_parquet("test.parquet")
+    assert pl.scan_parquet("test.parquet").filter(
+        pl.col("a") != [1, 2, 3]
+    ).collect().to_dict(as_series=False) == {"a": [[4, 5, 6], [7, 8, 9]], "b": [2, 3]}

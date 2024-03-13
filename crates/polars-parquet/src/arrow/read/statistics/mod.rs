@@ -62,90 +62,76 @@ struct MutableStatistics {
 
 impl From<MutableStatistics> for Statistics {
     fn from(mut s: MutableStatistics) -> Self {
-        let null_count = if let PhysicalType::Struct = s.null_count.data_type().to_physical_type() {
-            s.null_count
+        let null_count = match s.null_count.data_type().to_physical_type() {
+            PhysicalType::Struct => s
+                .null_count
                 .as_box()
                 .as_any()
                 .downcast_ref::<StructArray>()
                 .unwrap()
                 .clone()
-                .boxed()
-        } else if let PhysicalType::Map = s.null_count.data_type().to_physical_type() {
-            s.null_count
-                .as_box()
-                .as_any()
-                .downcast_ref::<MapArray>()
-                .unwrap()
-                .clone()
-                .boxed()
-        } else if let PhysicalType::List = s.null_count.data_type().to_physical_type() {
-            s.null_count
+                .boxed(),
+            PhysicalType::List => s
+                .null_count
                 .as_box()
                 .as_any()
                 .downcast_ref::<ListArray<i32>>()
                 .unwrap()
                 .clone()
-                .boxed()
-        } else if let PhysicalType::LargeList = s.null_count.data_type().to_physical_type() {
-            s.null_count
+                .boxed(),
+            PhysicalType::LargeList => s
+                .null_count
                 .as_box()
                 .as_any()
                 .downcast_ref::<ListArray<i64>>()
                 .unwrap()
                 .clone()
-                .boxed()
-        } else {
-            s.null_count
+                .boxed(),
+            _ => s
+                .null_count
                 .as_box()
                 .as_any()
                 .downcast_ref::<UInt64Array>()
                 .unwrap()
                 .clone()
-                .boxed()
+                .boxed(),
         };
-        let distinct_count = if let PhysicalType::Struct =
-            s.distinct_count.data_type().to_physical_type()
-        {
-            s.distinct_count
+
+        let distinct_count = match s.distinct_count.data_type().to_physical_type() {
+            PhysicalType::Struct => s
+                .distinct_count
                 .as_box()
                 .as_any()
                 .downcast_ref::<StructArray>()
                 .unwrap()
                 .clone()
-                .boxed()
-        } else if let PhysicalType::Map = s.distinct_count.data_type().to_physical_type() {
-            s.distinct_count
-                .as_box()
-                .as_any()
-                .downcast_ref::<MapArray>()
-                .unwrap()
-                .clone()
-                .boxed()
-        } else if let PhysicalType::List = s.distinct_count.data_type().to_physical_type() {
-            s.distinct_count
+                .boxed(),
+            PhysicalType::List => s
+                .distinct_count
                 .as_box()
                 .as_any()
                 .downcast_ref::<ListArray<i32>>()
                 .unwrap()
                 .clone()
-                .boxed()
-        } else if let PhysicalType::LargeList = s.distinct_count.data_type().to_physical_type() {
-            s.distinct_count
+                .boxed(),
+            PhysicalType::LargeList => s
+                .distinct_count
                 .as_box()
                 .as_any()
                 .downcast_ref::<ListArray<i64>>()
                 .unwrap()
                 .clone()
-                .boxed()
-        } else {
-            s.distinct_count
+                .boxed(),
+            _ => s
+                .distinct_count
                 .as_box()
                 .as_any()
                 .downcast_ref::<UInt64Array>()
                 .unwrap()
                 .clone()
-                .boxed()
+                .boxed(),
         };
+
         Self {
             null_count,
             distinct_count,
@@ -180,9 +166,10 @@ fn make_mutable(data_type: &ArrowDataType, capacity: usize) -> PolarsResult<Box<
             Box::new(MutableFixedSizeBinaryArray::try_new(data_type.clone(), vec![], None).unwrap())
                 as _
         },
-        PhysicalType::LargeList | PhysicalType::List => Box::new(
+        PhysicalType::LargeList | PhysicalType::List | PhysicalType::FixedSizeList => Box::new(
             DynMutableListArray::try_with_capacity(data_type.clone(), capacity)?,
-        ) as Box<dyn MutableArray>,
+        )
+            as Box<dyn MutableArray>,
         PhysicalType::Dictionary(_) => Box::new(
             dictionary::DynMutableDictionary::try_with_capacity(data_type.clone(), capacity)?,
         ),
@@ -212,32 +199,27 @@ fn make_mutable(data_type: &ArrowDataType, capacity: usize) -> PolarsResult<Box<
 }
 
 fn create_dt(data_type: &ArrowDataType) -> ArrowDataType {
-    if let ArrowDataType::Struct(fields) = data_type.to_logical_type() {
-        ArrowDataType::Struct(
+    match data_type.to_logical_type() {
+        ArrowDataType::Struct(fields) => ArrowDataType::Struct(
             fields
                 .iter()
                 .map(|f| Field::new(&f.name, create_dt(&f.data_type), f.is_nullable))
                 .collect(),
-        )
-    } else if let ArrowDataType::Map(f, ordered) = data_type.to_logical_type() {
-        ArrowDataType::Map(
+        ),
+        ArrowDataType::Map(f, ordered) => ArrowDataType::Map(
             Box::new(Field::new(&f.name, create_dt(&f.data_type), f.is_nullable)),
             *ordered,
-        )
-    } else if let ArrowDataType::List(f) = data_type.to_logical_type() {
-        ArrowDataType::List(Box::new(Field::new(
+        ),
+        ArrowDataType::LargeList(f) => ArrowDataType::LargeList(Box::new(Field::new(
             &f.name,
             create_dt(&f.data_type),
             f.is_nullable,
-        )))
-    } else if let ArrowDataType::LargeList(f) = data_type.to_logical_type() {
-        ArrowDataType::LargeList(Box::new(Field::new(
-            &f.name,
-            create_dt(&f.data_type),
-            f.is_nullable,
-        )))
-    } else {
-        ArrowDataType::UInt64
+        ))),
+        // FixedSizeList piggy backs on list
+        ArrowDataType::List(f) | ArrowDataType::FixedSizeList(f, _) => ArrowDataType::List(
+            Box::new(Field::new(&f.name, create_dt(&f.data_type), f.is_nullable)),
+        ),
+        _ => ArrowDataType::UInt64,
     }
 }
 
@@ -330,7 +312,7 @@ fn push(
     null_count: &mut dyn MutableArray,
 ) -> PolarsResult<()> {
     match min.data_type().to_logical_type() {
-        List(_) | LargeList(_) => {
+        List(_) | LargeList(_) | FixedSizeList(_, _) => {
             let min = min
                 .as_mut_any()
                 .downcast_mut::<list::DynMutableListArray>()
