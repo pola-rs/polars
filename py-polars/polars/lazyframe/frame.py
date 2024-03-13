@@ -491,6 +491,7 @@ class LazyFrame:
         row_index_offset: int = 0,
         storage_options: dict[str, object] | None = None,
         memory_map: bool = True,
+        retries: int = 0,
     ) -> Self:
         """
         Lazily read from an Arrow IPC (Feather v2) file.
@@ -528,6 +529,8 @@ class LazyFrame:
             rechunk,
             _prepare_row_index_args(row_index_name, row_index_offset),
             memory_map=memory_map,
+            cloud_options=storage_options,
+            retries=retries,
         )
         return self
 

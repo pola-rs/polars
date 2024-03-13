@@ -222,6 +222,7 @@ def scan_ipc(
     row_index_offset: int = 0,
     storage_options: dict[str, Any] | None = None,
     memory_map: bool = True,
+    retries: int = 0,
 ) -> LazyFrame:
     """
     Lazily read from an Arrow IPC (Feather v2) file or multiple files via glob patterns.
@@ -252,6 +253,9 @@ def scan_ipc(
         Try to memory map the file. This can greatly improve performance on repeated
         queries as the OS may cache pages.
         Only uncompressed IPC files can be memory mapped.
+    retries
+        Number of retries if accessing a cloud instance fails.
+
     """
     return pl.LazyFrame._scan_ipc(
         source,
@@ -262,4 +266,5 @@ def scan_ipc(
         row_index_offset=row_index_offset,
         storage_options=storage_options,
         memory_map=memory_map,
+        retries=retries,
     )

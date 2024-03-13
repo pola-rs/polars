@@ -16,7 +16,13 @@ pub enum FileScan {
         metadata: Option<Arc<FileMetaData>>,
     },
     #[cfg(feature = "ipc")]
-    Ipc { options: IpcScanOptions },
+    Ipc {
+        options: IpcScanOptions,
+        #[cfg(feature = "cloud")]
+        cloud_options: Option<CloudOptions>,
+        #[cfg_attr(feature = "serde", serde(skip))]
+        metadata: Option<arrow::io::ipc::read::FileMetadata>,
+    },
     #[cfg_attr(feature = "serde", serde(skip))]
     Anonymous {
         options: Arc<AnonymousScanOptions>,
@@ -43,7 +49,29 @@ impl PartialEq for FileScan {
                 },
             ) => opt_l == opt_r && c_l == c_r,
             #[cfg(feature = "ipc")]
-            (FileScan::Ipc { options: l }, FileScan::Ipc { options: r }) => l == r,
+            (
+                FileScan::Ipc {
+                    options: l,
+                    #[cfg(feature = "cloud")]
+                        cloud_options: c_l,
+                    ..
+                },
+                FileScan::Ipc {
+                    options: r,
+                    #[cfg(feature = "cloud")]
+                        cloud_options: c_r,
+                    ..
+                },
+            ) => {
+                #[cfg(not(feature = "cloud"))]
+                {
+                    l == r
+                }
+                #[cfg(feature = "cloud")]
+                {
+                    l == r && c_l == c_r
+                }
+            },
             _ => false,
         }
     }
