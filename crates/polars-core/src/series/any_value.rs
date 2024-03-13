@@ -205,6 +205,7 @@ impl Series {
     ///   first non-null value. If any other non-null values do not match this
     ///   data type, an error is raised.
     /// - If `strict` is `false`, the data type is the supertype of the `values`.
+    ///   An error is returned if no supertype can be determined.
     ///   **WARNING**: A full pass over the values is required to determine the supertype.
     /// - If no values were passed, the resulting data type is `Null`.
     pub fn from_any_values(name: &str, values: &[AnyValue], strict: bool) -> PolarsResult<Self> {
