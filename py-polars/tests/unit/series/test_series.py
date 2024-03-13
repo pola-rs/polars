@@ -1044,14 +1044,6 @@ def test_map_elements() -> None:
     a.map_elements(lambda x: x)
 
 
-def test_object() -> None:
-    vals = [[12], "foo", 9]
-    a = pl.Series("a", vals)
-    assert a.dtype == pl.Object
-    assert a.to_list() == vals
-    assert a[1] == "foo"
-
-
 def test_shape() -> None:
     s = pl.Series([1, 2, 3])
     assert s.shape == (3,)
