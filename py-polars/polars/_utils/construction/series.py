@@ -61,11 +61,7 @@ from polars.dependencies import (
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
-from polars.exceptions import (
-    ComputeError,
-    SchemaError,
-    TimeZoneAwareConstructorWarning,
-)
+from polars.exceptions import SchemaError, TimeZoneAwareConstructorWarning
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyDataFrame, PySeries
@@ -252,9 +248,11 @@ def sequence_to_pyseries(
                 )
 
         elif python_dtype in (list, tuple):
-            if isinstance(dtype, Object):
+            if dtype is None:
+                return _sequence_from_any_value_or_object(name, values, strict=strict)
+            elif dtype == Object:
                 return PySeries.new_object(name, values, strict)
-            if dtype:
+            else:
                 if (inner_dtype := getattr(dtype, "inner", None)) is not None:
                     py_srs = [
                         None
@@ -268,15 +266,14 @@ def sequence_to_pyseries(
                         )
                         for value in values
                     ]
-                    srs = PySeries.new_series_list(name, py_srs, strict)
+                    s = PySeries.new_series_list(name, py_srs, strict)
                 else:
-                    srs = _sequence_from_any_value_and_dtype_or_object(
-                        name, values, dtype
+                    s = PySeries.new_from_any_values_and_dtype(
+                        name, values, dtype, strict=strict
                     )
-                if dtype != srs.dtype():
-                    srs = srs.cast(dtype, strict=False)
-                return srs
-            return _sequence_from_any_value_or_object(name, values)
+                if dtype != s.dtype():
+                    s = s.cast(dtype, strict=False)
+                return s
 
         elif python_dtype == pl.Series:
             return PySeries.new_series_list(
@@ -300,7 +297,9 @@ def sequence_to_pyseries(
 
                 except RuntimeError:
                     # raised if we cannot convert to Wrap<AnyValue>
-                    return _sequence_from_any_value_or_object(name, values)
+                    return _sequence_from_any_value_or_object(
+                        name, values, strict=strict
+                    )
 
             return _construct_series_with_fallbacks(
                 constructor, name, values, dtype, strict=strict
@@ -351,28 +350,8 @@ def _construct_series_with_fallbacks(
                 raise
 
 
-def _sequence_from_any_value_or_object(name: str, values: Sequence[Any]) -> PySeries:
-    """
-    Last resort conversion.
-
-    AnyValues are most flexible and if they fail we go for object types
-    """
-    try:
-        return PySeries.new_from_any_values(name, values, strict=True)
-    # raised if we cannot convert to Wrap<AnyValue>
-    except RuntimeError:
-        return PySeries.new_object(name, values, _strict=False)
-    # raised if AnyValue fallbacks fail
-    except SchemaError:
-        return PySeries.new_object(name, values, _strict=False)
-    except ComputeError as exc:
-        if "mixed dtypes" in str(exc):
-            return PySeries.new_object(name, values, _strict=False)
-        raise
-
-
-def _sequence_from_any_value_and_dtype_or_object(
-    name: str, values: Sequence[Any], dtype: PolarsDataType
+def _sequence_from_any_value_or_object(
+    name: str, values: Sequence[Any], *, strict: bool
 ) -> PySeries:
     """
     Last resort conversion.
@@ -380,12 +359,15 @@ def _sequence_from_any_value_and_dtype_or_object(
     AnyValues are most flexible and if they fail we go for object types
     """
     try:
-        return PySeries.new_from_any_values_and_dtype(name, values, dtype, strict=True)
-    # raised if we cannot convert to Wrap<AnyValue>
+        return PySeries.new_from_any_values(name, values, strict=strict)
+    # raised if we cannot convert to AnyValue
     except RuntimeError:
-        return PySeries.new_object(name, values, _strict=False)
-    except ComputeError as exc:
-        if "mixed dtypes" in str(exc):
+        if not strict:
+            return PySeries.new_object(name, values, _strict=False)
+        raise
+    # raised if AnyValue fallbacks fail
+    except SchemaError:
+        if not strict:
             return PySeries.new_object(name, values, _strict=False)
         raise
 
