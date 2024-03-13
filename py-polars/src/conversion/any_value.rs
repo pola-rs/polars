@@ -26,7 +26,7 @@ impl ToPyObject for Wrap<AnyValue<'_>> {
 
 impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
     fn extract(ob: &'s PyAny) -> PyResult<Self> {
-        py_object_to_any_value(ob).map(Wrap)
+        py_object_to_any_value(ob, true).map(Wrap)
     }
 }
 
@@ -112,17 +112,18 @@ pub(crate) fn any_value_into_py_object(av: AnyValue, py: Python) -> PyObject {
 }
 
 type TypeObjectPtr = usize;
-type InitFn = fn(&PyAny) -> PyResult<AnyValue>;
+type InitFn = fn(&PyAny, bool) -> PyResult<AnyValue>;
 pub(crate) static LUT: crate::gil_once_cell::GILOnceCell<PlHashMap<TypeObjectPtr, InitFn>> =
     crate::gil_once_cell::GILOnceCell::new();
 
-pub(crate) fn py_object_to_any_value(ob: &PyAny) -> PyResult<AnyValue> {
+pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyValue> {
     // conversion functions
-    fn get_bool(ob: &PyAny) -> PyResult<AnyValue> {
-        Ok(AnyValue::Boolean(ob.extract::<bool>().unwrap()))
+    fn get_bool(ob: &PyAny, _strict: bool) -> PyResult<AnyValue> {
+        let b = ob.extract::<bool>().unwrap();
+        Ok(AnyValue::Boolean(b))
     }
 
-    fn get_int(ob: &PyAny) -> PyResult<AnyValue> {
+    fn get_int(ob: &PyAny, _strict: bool) -> PyResult<AnyValue> {
         // can overflow
         match ob.extract::<i64>() {
             Ok(v) => Ok(AnyValue::Int64(v)),
@@ -130,23 +131,23 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny) -> PyResult<AnyValue> {
         }
     }
 
-    fn get_float(ob: &PyAny) -> PyResult<AnyValue> {
+    fn get_float(ob: &PyAny, _strict: bool) -> PyResult<AnyValue> {
         Ok(AnyValue::Float64(ob.extract::<f64>().unwrap()))
     }
 
-    fn get_str(ob: &PyAny) -> PyResult<AnyValue> {
+    fn get_str(ob: &PyAny, _strict: bool) -> PyResult<AnyValue> {
         let value = ob.extract::<&str>().unwrap();
         Ok(AnyValue::String(value))
     }
 
-    fn get_struct(ob: &PyAny) -> PyResult<AnyValue<'_>> {
+    fn get_struct(ob: &PyAny, strict: bool) -> PyResult<AnyValue<'_>> {
         let dict = ob.downcast::<PyDict>().unwrap();
         let len = dict.len();
         let mut keys = Vec::with_capacity(len);
         let mut vals = Vec::with_capacity(len);
         for (k, v) in dict.into_iter() {
             let key = k.extract::<&str>()?;
-            let val = py_object_to_any_value(v)?;
+            let val = py_object_to_any_value(v, strict)?;
             let dtype = val.dtype();
             keys.push(Field::new(key, dtype));
             vals.push(val)
@@ -154,14 +155,14 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny) -> PyResult<AnyValue> {
         Ok(AnyValue::StructOwned(Box::new((vals, keys))))
     }
 
-    fn get_list(ob: &PyAny) -> PyResult<AnyValue> {
+    fn get_list(ob: &PyAny, strict: bool) -> PyResult<AnyValue> {
         fn get_list_with_constructor(ob: &PyAny) -> PyResult<AnyValue> {
             // Use the dedicated constructor
             // this constructor is able to go via dedicated type constructors
             // so it can be much faster
             Python::with_gil(|py| {
                 let s = SERIES.call1(py, (ob,))?;
-                get_series_el(s.as_ref(py))
+                get_series_el(s.as_ref(py), true)
             })
         }
 
@@ -176,7 +177,7 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny) -> PyResult<AnyValue> {
             let mut iter = list.iter()?;
 
             for item in (&mut iter).take(INFER_SCHEMA_LENGTH) {
-                let av = py_object_to_any_value(item?)?;
+                let av = py_object_to_any_value(item?, strict)?;
                 avs.push(av)
             }
 
@@ -189,11 +190,11 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny) -> PyResult<AnyValue> {
                 // push the rest
                 avs.reserve(list.len()?);
                 for item in iter {
-                    let av = py_object_to_any_value(item?)?;
+                    let av = py_object_to_any_value(item?, strict)?;
                     avs.push(av)
                 }
 
-                let s = Series::from_any_values_and_dtype("", &avs, &dtype, true)
+                let s = Series::from_any_values_and_dtype("", &avs, &dtype, strict)
                     .map_err(PyPolarsErr::from)?;
                 Ok(AnyValue::List(s))
             }
@@ -203,22 +204,22 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny) -> PyResult<AnyValue> {
         }
     }
 
-    fn get_series_el(ob: &PyAny) -> PyResult<AnyValue<'static>> {
+    fn get_series_el(ob: &PyAny, _strict: bool) -> PyResult<AnyValue<'static>> {
         let py_pyseries = ob.getattr(intern!(ob.py(), "_s")).unwrap();
         let series = py_pyseries.extract::<PySeries>().unwrap().series;
         Ok(AnyValue::List(series))
     }
 
-    fn get_bin(ob: &PyAny) -> PyResult<AnyValue> {
+    fn get_bin(ob: &PyAny, _strict: bool) -> PyResult<AnyValue> {
         let value = ob.extract::<&[u8]>().unwrap();
         Ok(AnyValue::Binary(value))
     }
 
-    fn get_null(_ob: &PyAny) -> PyResult<AnyValue> {
+    fn get_null(_ob: &PyAny, _strict: bool) -> PyResult<AnyValue> {
         Ok(AnyValue::Null)
     }
 
-    fn get_date(ob: &PyAny) -> PyResult<AnyValue> {
+    fn get_date(ob: &PyAny, _strict: bool) -> PyResult<AnyValue> {
         Python::with_gil(|py| {
             let date = UTILS
                 .as_ref(py)
@@ -231,7 +232,7 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny) -> PyResult<AnyValue> {
         })
     }
 
-    fn get_datetime(ob: &PyAny) -> PyResult<AnyValue> {
+    fn get_datetime(ob: &PyAny, _strict: bool) -> PyResult<AnyValue> {
         Python::with_gil(|py| {
             let date = UTILS
                 .as_ref(py)
@@ -244,7 +245,7 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny) -> PyResult<AnyValue> {
         })
     }
 
-    fn get_timedelta(ob: &PyAny) -> PyResult<AnyValue> {
+    fn get_timedelta(ob: &PyAny, _strict: bool) -> PyResult<AnyValue> {
         Python::with_gil(|py| {
             let td = UTILS
                 .as_ref(py)
@@ -257,7 +258,7 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny) -> PyResult<AnyValue> {
         })
     }
 
-    fn get_time(ob: &PyAny) -> PyResult<AnyValue> {
+    fn get_time(ob: &PyAny, _strict: bool) -> PyResult<AnyValue> {
         Python::with_gil(|py| {
             let time = UTILS
                 .as_ref(py)
@@ -270,7 +271,7 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny) -> PyResult<AnyValue> {
         })
     }
 
-    fn get_decimal(ob: &PyAny) -> PyResult<AnyValue> {
+    fn get_decimal(ob: &PyAny, _strict: bool) -> PyResult<AnyValue> {
         fn abs_decimal_from_digits(
             digits: impl IntoIterator<Item = u8>,
             exp: i32,
@@ -315,7 +316,7 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny) -> PyResult<AnyValue> {
         Ok(AnyValue::Decimal(v, scale))
     }
 
-    fn get_object(ob: &PyAny) -> PyResult<AnyValue> {
+    fn get_object(ob: &PyAny, _strict: bool) -> PyResult<AnyValue> {
         #[cfg(feature = "object")]
         {
             // this is slow, but hey don't use objects
@@ -404,7 +405,7 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny) -> PyResult<AnyValue> {
                 },
             );
 
-            convert_fn(ob)
+            convert_fn(ob, strict)
         })
     })
 }

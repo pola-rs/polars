@@ -187,7 +187,7 @@ impl PySeries {
     fn new_from_any_values(name: &str, values: Vec<&PyAny>, strict: bool) -> PyResult<PySeries> {
         let any_values = values
             .into_iter()
-            .map(py_object_to_any_value)
+            .map(|v| py_object_to_any_value(v, strict))
             .collect::<PyResult<Vec<AnyValue>>>()?;
         let s = Series::from_any_values(name, any_values.as_slice(), strict)
             .map_err(PyPolarsErr::from)?;
@@ -203,7 +203,7 @@ impl PySeries {
     ) -> PyResult<PySeries> {
         let any_values = values
             .into_iter()
-            .map(py_object_to_any_value)
+            .map(|v| py_object_to_any_value(v, strict))
             .collect::<PyResult<Vec<AnyValue>>>()?;
         let s = Series::from_any_values_and_dtype(name, any_values.as_slice(), &dtype.0, strict)
             .map_err(PyPolarsErr::from)?;
