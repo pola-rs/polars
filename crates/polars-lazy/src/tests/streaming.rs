@@ -213,6 +213,7 @@ fn test_streaming_inner_join3() -> PolarsResult<()> {
     assert_streaming_with_default(q, true, false);
     Ok(())
 }
+
 #[test]
 fn test_streaming_inner_join2() -> PolarsResult<()> {
     let lf_left = df![
