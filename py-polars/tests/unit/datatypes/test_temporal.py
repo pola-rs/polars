@@ -766,40 +766,28 @@ def test_upsample_time_zones(
 
 
 @pytest.mark.parametrize(
-    ("every", "offset", "fill", "expected"),
+    ("every", "offset", "fill", "expected_index", "expected_groups"),
     [
         (
             "1i",
             "0i",
             "forward",
-            pl.DataFrame(
-                {
-                    "index": [1, 2, 3, 4] + [5, 6, 7],
-                    "groups": ["a"] * 4 + ["b"] * 3,
-                }
-            ),
+            [1, 2, 3, 4] + [5, 6, 7],
+            ["a"] * 4 + ["b"] * 3,
         ),
         (
             "1i",
             "0h",
             "forward",
-            pl.DataFrame(
-                {
-                    "index": [1, 2, 3, 4] + [5, 6, 7],
-                    "groups": ["a"] * 4 + ["b"] * 3,
-                }
-            ),
+            [1, 2, 3, 4] + [5, 6, 7],
+            ["a"] * 4 + ["b"] * 3,
         ),
         (
             "1i",
             "1i",
             "backward",
-            pl.DataFrame(
-                {
-                    "index": [2, 3, 4] + [6, 7],
-                    "groups": ["a"] * 3 + ["b"] * 2,
-                }
-            ),
+            [2, 3, 4] + [6, 7],
+            ["a"] * 3 + ["b"] * 2,
         ),
     ],
 )
@@ -808,7 +796,8 @@ def test_upsample_index(
     every: str,
     offset: str,
     fill: FillNullStrategy | None,
-    expected: pl.DataFrame,
+    expected_index: list[int],
+    expected_groups: list[str],
     dtype: pl.datatypes.DataTypeClass,
 ) -> None:
     df = (
@@ -821,7 +810,12 @@ def test_upsample_index(
         .with_columns(pl.col("index").cast(dtype))
         .set_sorted("index")
     )
-    expected = expected.with_columns(pl.col("index").cast(dtype))
+    expected = pl.DataFrame(
+        {
+            "index": expected_index,
+            "groups": expected_groups,
+        }
+    ).with_columns(pl.col("index").cast(dtype))
     result = (
         df.upsample(time_column="index", by="groups", every=every, offset=offset)
         .fill_null(strategy=fill)

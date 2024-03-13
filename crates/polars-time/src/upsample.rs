@@ -135,7 +135,7 @@ fn upsample_impl(
                 .unwrap()
         })
         .unwrap();
-        let mut out = upsample_impl(&df, by, index_column, every, offset, stable).unwrap();
+        let mut out = upsample_impl(&df, by, index_column, every, offset, stable)?;
         out.apply(index_column, |s| s.cast(time_type).unwrap())
             .unwrap();
         Ok(out)
@@ -152,7 +152,7 @@ fn upsample_impl(
                 .unwrap()
         })
         .unwrap();
-        let mut out = upsample_impl(&df, by, index_column, every, offset, stable).unwrap();
+        let mut out = upsample_impl(&df, by, index_column, every, offset, stable)?;
         out.apply(index_column, |s| s.cast(time_type).unwrap())
             .unwrap();
         Ok(out)
@@ -163,7 +163,7 @@ fn upsample_impl(
                 .unwrap()
         })
         .unwrap();
-        let mut out = upsample_impl(&df, by, index_column, every, offset, stable).unwrap();
+        let mut out = upsample_impl(&df, by, index_column, every, offset, stable)?;
         out.apply(index_column, |s| s.cast(time_type).unwrap())
             .unwrap();
         Ok(out)
