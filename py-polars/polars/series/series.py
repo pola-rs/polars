@@ -191,10 +191,6 @@ class Series:
         Throw an error if any value does not exactly match the given or inferred data
         type. If set to `False`, values that do not match the data type are cast to
         that data type or, if casting is not possible, set to null instead.
-
-        .. warning::
-            This parameter is currently only considered when `data` is a dictionary.
-
     nan_to_null : bool, default False
         In case a numpy array is used to create this Series, indicate how to deal
         with np.nan values. (This parameter is a no-op on non-numpy data).
