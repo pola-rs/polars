@@ -286,7 +286,6 @@ pub(crate) fn insert_streaming_nodes(
                     (input_left, input_right)
                 };
                 let mut state_left = state.split();
-                state_left.parent = Some(execution_id);
 
                 // Rhs is second, so that is first on the stack.
                 let mut state_right = state;
@@ -294,7 +293,6 @@ pub(crate) fn insert_streaming_nodes(
                 state_right
                     .operators_sinks
                     .push(PipelineNode::RhsJoin(root));
-                state_right.parent = Some(execution_id);
 
                 // We want to traverse lhs last, so push it first on the stack
                 // rhs is a new pipeline.
@@ -343,7 +341,6 @@ pub(crate) fn insert_streaming_nodes(
                         state
                     };
                     state.operators_sinks.push(PipelineNode::Union(root));
-                    state.parent = Some(execution_id);
                     stack.push(StackFrame::new(*input, state, current_idx));
                 }
             },

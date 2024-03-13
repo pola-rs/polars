@@ -5,7 +5,7 @@ mod dispatcher;
 pub use convert::{
     create_pipeline, get_dummy_operator, get_operator, get_sink, swap_join_order, CallBacks,
 };
-pub use dispatcher::PipeLine;
+pub use dispatcher::{execute_pipeline, PipeLine};
 use polars_core::prelude::*;
 use polars_core::POOL;
 use polars_utils::cell::SyncUnsafeCell;
