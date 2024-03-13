@@ -310,7 +310,7 @@ def test_duplicate_columns_arg_csv() -> None:
 
 
 def test_datetime_time_add_err() -> None:
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(pl.SchemaError, match="failed to determine supertype"):
         pl.Series([datetime(1970, 1, 1, 0, 0, 1)]) + pl.Series([time(0, 0, 2)])
 
 

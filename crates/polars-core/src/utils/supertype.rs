@@ -7,7 +7,7 @@ use super::*;
 /// Returns a [`PolarsError::ComputeError`] if no such data type exists.
 pub fn try_get_supertype(l: &DataType, r: &DataType) -> PolarsResult<DataType> {
     get_supertype(l, r).ok_or_else(
-        || polars_err!(ComputeError: "failed to determine supertype of {} and {}", l, r),
+        || polars_err!(SchemaMismatch: "failed to determine supertype of {} and {}", l, r),
     )
 }
 
