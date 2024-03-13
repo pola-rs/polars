@@ -32,7 +32,13 @@ pub fn _finish_join(
     let suffix = get_suffix(suffix);
 
     for name in rename_strs {
-        df_right.rename(&name, &_join_suffix_name(&name, suffix))?;
+        let new_name = _join_suffix_name(&name, suffix);
+        df_right.rename(&name, new_name.as_str()).map_err(|_| {
+            polars_err!(Duplicate: "column with name '{}' already exists.\n\n\
+            You may want to try:\n\
+            - renaming the column prior to joining\n\
+            - using `suffix` to specify a suffix different to the default one (`_right`)", new_name)
+        })?;
     }
 
     drop(left_names);
