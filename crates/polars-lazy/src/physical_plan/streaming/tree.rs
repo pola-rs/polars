@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 use std::fmt::Debug;
 
 use polars_plan::prelude::*;
+use polars_utils::idx_vec::UnitVec;
 
 #[derive(Copy, Clone, Debug)]
 pub(super) enum PipelineNode {
@@ -39,6 +40,7 @@ pub(super) struct Branch {
     pub(super) join_count: u32,
     // node is operator/sink
     pub(super) operators_sinks: Vec<PipelineNode>,
+    pub(super) parent: Option<u32>
 }
 
 fn sink_node(pl_node: &PipelineNode) -> Option<Node> {

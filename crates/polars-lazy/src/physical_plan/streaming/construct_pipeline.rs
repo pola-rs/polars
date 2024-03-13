@@ -205,10 +205,13 @@ pub(super) fn construct(
         pipelines.push((execution_id, pipeline));
     }
 
-    // We sort to ensure we execute in the stack traversal order.
-    // this is important to make unions and joins work as expected
-    // also pipelines are not ready to receive inputs otherwise
-    pipelines.sort_by(|a, b| a.0.cmp(&b.0));
+    // // We sort to ensure we execute in the stack traversal order.
+    // // this is important to make unions and joins work as expected
+    // // also pipelines are not ready to receive inputs otherwise
+    pipelines.sort_by(|a, b| b.0.cmp(&b.0));
+    // let stack = vec![];
+
+    dbg!(&pipelines);
 
     let Some(final_sink) = final_sink else {
         return Ok(None);
@@ -234,12 +237,12 @@ pub(super) fn construct(
         None
     };
 
-    let Some((_, mut most_left)) = pipelines.pop() else {
-        unreachable!()
-    };
-    while let Some((_, rhs)) = pipelines.pop() {
-        most_left = most_left.with_other_branch(rhs)
-    }
+    // let Some((_, mut most_left)) = pipelines.pop() else {
+    //     unreachable!()
+    // };
+    // while let Some((_, rhs)) = pipelines.pop() {
+    //     most_left = most_left.with_other_branch(rhs)
+    // }
     // replace the part of the logical plan with a `MapFunction` that will execute the pipeline.
     let schema = lp_arena
         .get(insertion_location)

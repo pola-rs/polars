@@ -183,7 +183,7 @@ impl PipeLine {
     fn run_pipeline_no_finalize(
         &mut self,
         ec: &PExecutionContext,
-        pipeline_q: Rc<RefCell<VecDeque<PipeLine>>>,
+        // pipeline_q: Rc<RefCell<VecDeque<PipeLine>>>,
     ) -> PolarsResult<(u32, Box<dyn Sink>)> {
         let mut out = None;
         let mut operator_start = 0;
@@ -313,7 +313,7 @@ impl PipeLine {
     pub fn run_pipeline(
         &mut self,
         ec: &PExecutionContext,
-        pipeline_q: Rc<RefCell<VecDeque<PipeLine>>>,
+        // pipeline_q: Rc<RefCell<VecDeque<PipeLine>>>,
     ) -> PolarsResult<Option<FinalizedSink>> {
         let (sink_shared_count, mut reduced_sink) =
             self.run_pipeline_no_finalize(ec, pipeline_q)?;
@@ -321,40 +321,42 @@ impl PipeLine {
         Ok(reduced_sink.finalize(ec).ok())
     }
 
-    /// Executes all branches and replaces operators and sinks during execution to ensure
-    /// we materialize.
-    pub fn execute(&mut self, state: Box<dyn SExecutionContext>) -> PolarsResult<DataFrame> {
-        let ec = PExecutionContext::new(state, self.verbose);
+}
 
-        if self.verbose {
-            eprintln!("{self:?}");
-            eprintln!("{:?}", &self.other_branches);
-        }
-        let mut sink_out = self.run_pipeline(&ec, self.other_branches.clone())?;
-        loop {
-            match &mut sink_out {
-                None => {
-                    let mut pipeline = self.other_branches.borrow_mut().pop_front().unwrap();
-                    sink_out = pipeline.run_pipeline(&ec, self.other_branches.clone())?;
-                },
-                Some(FinalizedSink::Finished(df)) => return Ok(std::mem::take(df)),
-                Some(FinalizedSink::Source(src)) => return consume_source(&mut **src, &ec),
+/// Executes all branches and replaces operators and sinks during execution to ensure
+/// we materialize.
+pub fn execute_pipeline(state: Box<dyn SExecutionContext>, pipelines: &mut Vec<PipeLine>) -> PolarsResult<DataFrame> {
+    let mut pipeline = pipelines.pop().unwrap();
+    let ec = PExecutionContext::new(state, pipeline.verbose);
 
-                //
-                //  1/\
-                //   2/\
-                //     3\
-                // the left hand side of the join has finished and now is an operator
-                // we replace the dummy node in the right hand side pipeline with this
-                // operator and then we run the pipeline rinse and repeat
-                // until the final right hand side pipeline ran
-                Some(FinalizedSink::Operator) => {
-                    // we unwrap, because the latest pipeline should not return an Operator
-                    let mut pipeline = self.other_branches.borrow_mut().pop_front().unwrap();
+    if pipeline.verbose {
+        eprintln!("{self:?}");
+        eprintln!("{:?}", &self.other_branches);
+    }
+    let mut sink_out = pipeline.run_pipeline(&ec, self.other_branches.clone())?;
+    loop {
+        match &mut sink_out {
+            None => {
+                let mut pipeline = self.other_branches.borrow_mut().pop_front().unwrap();
+                sink_out = pipeline.run_pipeline(&ec, self.other_branches.clone())?;
+            },
+            Some(FinalizedSink::Finished(df)) => return Ok(std::mem::take(df)),
+            Some(FinalizedSink::Source(src)) => return consume_source(&mut **src, &ec),
 
-                    sink_out = pipeline.run_pipeline(&ec, self.other_branches.clone())?;
-                },
-            }
+            //
+            //  1/\
+            //   2/\
+            //     3\
+            // the left hand side of the join has finished and now is an operator
+            // we replace the dummy node in the right hand side pipeline with this
+            // operator and then we run the pipeline rinse and repeat
+            // until the final right hand side pipeline ran
+            Some(FinalizedSink::Operator) => {
+                // we unwrap, because the latest pipeline should not return an Operator
+                let mut pipeline = self.other_branches.borrow_mut().pop_front().unwrap();
+
+                sink_out = pipeline.run_pipeline(&ec, self.other_branches.clone())?;
+            },
         }
     }
 }
