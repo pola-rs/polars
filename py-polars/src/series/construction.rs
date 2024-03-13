@@ -270,36 +270,32 @@ impl PySeries {
         _strict: bool,
     ) -> PyResult<Self> {
         if val.is_empty() {
-            let series =
-                Series::new_empty(name, &DataType::Array(Box::new(inner.unwrap().0), width));
-            Ok(series.into())
+            let s = Series::new_empty(name, &DataType::Array(Box::new(inner.unwrap().0), width));
+            return Ok(s.into());
+        };
+
+        let val = vec_extract_wrapped(val);
+        let out = if let Some(inner) = inner {
+            Series::from_any_values_and_dtype(
+                name,
+                val.as_ref(),
+                &DataType::Array(Box::new(inner.0), width),
+                true,
+            )
+            .map_err(PyPolarsErr::from)?
         } else {
-            let val = vec_extract_wrapped(val);
-            return if let Some(inner) = inner {
-                let series = Series::from_any_values_and_dtype(
-                    name,
-                    val.as_ref(),
-                    &DataType::Array(Box::new(inner.0), width),
-                    true,
-                )
-                .map_err(PyPolarsErr::from)?;
-                Ok(series.into())
-            } else {
-                let series = Series::new(name, &val);
-                match series.dtype() {
-                    DataType::List(list_inner) => {
-                        let series = series
-                            .cast(&DataType::Array(
-                                Box::new(inner.map(|dt| dt.0).unwrap_or(*list_inner.clone())),
-                                width,
-                            ))
-                            .map_err(PyPolarsErr::from)?;
-                        Ok(series.into())
-                    },
-                    _ => Err(PyValueError::new_err("could not create Array from input")),
-                }
-            };
-        }
+            let series = Series::new(name, &val);
+            match series.dtype() {
+                DataType::List(list_inner) => series
+                    .cast(&DataType::Array(
+                        Box::new(inner.map(|dt| dt.0).unwrap_or(*list_inner.clone())),
+                        width,
+                    ))
+                    .map_err(PyPolarsErr::from)?,
+                _ => return Err(PyValueError::new_err("could not create Array from input")),
+            }
+        };
+        Ok(out.into())
     }
 
     #[staticmethod]
