@@ -279,9 +279,6 @@ impl LogicalPlanBuilder {
                 rechunk,
                 row_index,
                 file_counter: Default::default(),
-                // TODO: According to
-                // https://github.com/pola-rs/polars/pull/14984#discussion_r1521226321
-                // we need to re-design hive partitions.
                 hive_partitioning: false,
             },
             predicate: None,

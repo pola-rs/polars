@@ -214,9 +214,6 @@ impl IpcReaderAsync {
 
                 let schema = prepare_schema((&metadata.schema).into(), options.row_index.as_ref());
 
-                // TODO: According to
-                // https://github.com/pola-rs/polars/pull/14984#discussion_r1521226321
-                // we need to re-design hive partitions.
                 let hive_partitions = None;
 
                 materialize_projection(
