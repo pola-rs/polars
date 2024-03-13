@@ -244,9 +244,9 @@ class DataFrame:
 
     Notes
     -----
-    Some methods internally convert the DataFrame into a LazyFrame before collecting
-    the results back into a DataFrame. This can lead to unexpected behavior when using
-    a subclassed DataFrame. For example,
+    Polars explicitly does not support subclassing of its core data types. See
+    the following GitHub issue for possible workarounds:
+    https://github.com/pola-rs/polars/issues/2846#issuecomment-1711799869
 
     Examples
     --------
@@ -349,17 +349,6 @@ class DataFrame:
     │ 1   ┆ 2   ┆ 3   │
     │ 4   ┆ 5   ┆ 6   │
     └─────┴─────┴─────┘
-
-    Notes
-    -----
-    Some methods internally convert the DataFrame into a LazyFrame before collecting
-    the results back into a DataFrame. This can lead to unexpected behavior when using
-    a subclassed DataFrame. For example,
-
-    >>> class MyDataFrame(pl.DataFrame):
-    ...     pass
-    >>> isinstance(MyDataFrame().lazy().collect(), MyDataFrame)
-    False
     """
 
     _df: PyDataFrame
