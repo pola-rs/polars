@@ -1168,7 +1168,8 @@ def test_from_generator_or_iterable() -> None:
         pl.DataFrame(schema=["a", "b", "c", "d"]),
     )
 
-    # dict-related generator-views
+
+def test_df_init_from_generator_dict_view() -> None:
     d = {0: "x", 1: "y", 2: "z"}
     df = pl.DataFrame(
         {
@@ -1182,19 +1183,26 @@ def test_from_generator_or_iterable() -> None:
         "vals": ["x", "y", "z"],
         "itms": [(0, "x"), (1, "y"), (2, "z")],
     }
-    if sys.version_info >= (3, 11):
-        df = pl.DataFrame(
-            {
-                "rev_keys": reversed(d.keys()),
-                "rev_vals": reversed(d.values()),
-                "rev_itms": reversed(d.items()),
-            }
-        )
-        assert df.to_dict(as_series=False) == {
-            "rev_keys": [2, 1, 0],
-            "rev_vals": ["z", "y", "x"],
-            "rev_itms": [(2, "z"), (1, "y"), (0, "x")],
+
+
+@pytest.mark.skipif(
+    sys.version_info < (3, 11),
+    reason="reversed dict views not supported before Python 3.11",
+)
+def test_df_init_from_generator_reversed_dict_view() -> None:
+    d = {0: "x", 1: "y", 2: "z"}
+    df = pl.DataFrame(
+        {
+            "rev_keys": reversed(d.keys()),
+            "rev_vals": reversed(d.values()),
+            "rev_itms": reversed(d.items()),
         }
+    )
+    assert df.to_dict(as_series=False) == {
+        "rev_keys": [2, 1, 0],
+        "rev_vals": ["z", "y", "x"],
+        "rev_itms": [(2, "z"), (1, "y"), (0, "x")],
+    }
 
 
 def test_from_rows() -> None:
@@ -1458,7 +1466,7 @@ def test_reproducible_hash_with_seeds() -> None:
     if platform.mac_ver()[-1] != "arm64":
         expected = pl.Series(
             "s",
-            [13736875168471412002, 6161148964772490034, 9489472896993257669],
+            [8661293245726181094, 9565952849861441858, 2921274555702885622],
             dtype=pl.UInt64,
         )
         result = df.hash_rows(*seeds)

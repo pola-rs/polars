@@ -8,6 +8,7 @@ use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::{ArrowDataType, PhysicalType};
 use arrow::offset::Offset;
 use polars_error::PolarsResult;
+use polars_utils::iter::FallibleIterator;
 
 use super::super::utils::{extend_from_decoder, next, DecodedState, MaybeNext};
 use super::super::{utils, PagesIter};
@@ -121,8 +122,9 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
                     &mut page_values
                         .values
                         .by_ref()
-                        .map(|index| page_dict.value(index.unwrap() as usize)),
-                )
+                        .map(|index| page_dict.value(index as usize)),
+                );
+                page_values.values.get_result()?;
             },
             BinaryState::RequiredDictionary(page) => {
                 // Already done on the dict.
@@ -132,11 +134,12 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
                 for x in page
                     .values
                     .by_ref()
-                    .map(|index| page_dict.value(index.unwrap() as usize))
+                    .map(|index| page_dict.value(index as usize))
                     .take(additional)
                 {
                     values.push(x)
                 }
+                page.values.get_result()?;
             },
             BinaryState::FilteredOptional(page_validity, page_values) => {
                 extend_from_decoder(
@@ -160,14 +163,15 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
                 // Already done on the dict.
                 validate_utf8 = false;
                 let page_dict = &page.dict;
-                for x in page
+                for x in &mut page
                     .values
                     .by_ref()
-                    .map(|index| page_dict.value(index.unwrap() as usize))
+                    .map(|index| page_dict.value(index as usize))
                     .take(additional)
                 {
                     values.push(x)
                 }
+                page.values.iter.get_result()?;
             },
             BinaryState::FilteredOptionalDictionary(page_validity, page_values) => {
                 // Already done on the dict.
@@ -181,8 +185,9 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
                     &mut page_values
                         .values
                         .by_ref()
-                        .map(|index| page_dict.value(index.unwrap() as usize)),
-                )
+                        .map(|index| page_dict.value(index as usize)),
+                );
+                page_values.values.get_result()?;
             },
             BinaryState::OptionalDeltaByteArray(page_validity, page_values) => extend_from_decoder(
                 validity,

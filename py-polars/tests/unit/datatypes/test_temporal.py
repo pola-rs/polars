@@ -1831,6 +1831,19 @@ def test_ambiguous_expressions() -> None:
     assert_series_equal(result, expected)
 
 
+def test_single_ambiguous_null() -> None:
+    df = pl.DataFrame(
+        {"ts": [datetime(2020, 10, 2, 1, 1)], "ambiguous": [None]},
+        schema_overrides={"ambiguous": pl.String},
+    )
+    result = df.select(
+        pl.col("ts").dt.replace_time_zone(
+            "Europe/London", ambiguous=pl.col("ambiguous")
+        )
+    )["ts"].item()
+    assert result is None
+
+
 def test_unlocalize() -> None:
     tz_naive = pl.Series(["2020-01-01 03:00:00"]).str.strptime(pl.Datetime)
     tz_aware = tz_naive.dt.replace_time_zone("UTC").dt.convert_time_zone(
@@ -2294,6 +2307,13 @@ def test_truncate_ambiguous() -> None:
         .rename("datetime")
     )
     assert_series_equal(result, expected)
+
+
+def test_truncate_non_existent_14957() -> None:
+    with pytest.raises(ComputeError, match="non-existent"):
+        pl.Series([datetime(2020, 3, 29, 2, 1)]).dt.replace_time_zone(
+            "Europe/London"
+        ).dt.truncate("46m")
 
 
 def test_round_ambiguous() -> None:

@@ -5,6 +5,7 @@ use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
 use arrow::pushable::Pushable;
 use polars_error::PolarsResult;
+use polars_utils::iter::FallibleIterator;
 
 use super::super::utils::{
     dict_indices_decoder, extend_from_decoder, get_selected_rows, next, not_implemented,
@@ -229,28 +230,32 @@ impl<'a> Decoder<'a> for BinaryDecoder {
                     values.push(x)
                 }
             },
-            State::OptionalDictionary(page) => extend_from_decoder(
-                validity,
-                &mut page.validity,
-                Some(remaining),
-                values,
-                page.values.by_ref().map(|index| {
-                    let index = index.unwrap() as usize;
-                    &page.dict[index * self.size..(index + 1) * self.size]
-                }),
-            ),
+            State::OptionalDictionary(page) => {
+                extend_from_decoder(
+                    validity,
+                    &mut page.validity,
+                    Some(remaining),
+                    values,
+                    page.values.by_ref().map(|index| {
+                        let index = index as usize;
+                        &page.dict[index * self.size..(index + 1) * self.size]
+                    }),
+                );
+                page.values.get_result()?;
+            },
             State::RequiredDictionary(page) => {
                 for x in page
                     .values
                     .by_ref()
                     .map(|index| {
-                        let index = index.unwrap() as usize;
+                        let index = index as usize;
                         &page.dict[index * self.size..(index + 1) * self.size]
                     })
                     .take(remaining)
                 {
                     values.push(x)
                 }
+                page.values.get_result()?;
             },
             State::FilteredOptional(page_validity, page_values) => {
                 extend_from_decoder(

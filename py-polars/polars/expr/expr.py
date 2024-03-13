@@ -6834,7 +6834,7 @@ class Expr:
         │ u32   ┆ datetime[μs]        ┆ f64             │
         ╞═══════╪═════════════════════╪═════════════════╡
         │ 0     ┆ 2001-01-01 00:00:00 ┆ null            │
-        │ 1     ┆ 2001-01-01 01:00:00 ┆ 0.0             │
+        │ 1     ┆ 2001-01-01 01:00:00 ┆ null            │
         │ 2     ┆ 2001-01-01 02:00:00 ┆ 0.707107        │
         │ 3     ┆ 2001-01-01 03:00:00 ┆ 0.707107        │
         │ 4     ┆ 2001-01-01 04:00:00 ┆ 0.707107        │
@@ -6859,7 +6859,7 @@ class Expr:
         │ ---   ┆ ---                 ┆ ---             │
         │ u32   ┆ datetime[μs]        ┆ f64             │
         ╞═══════╪═════════════════════╪═════════════════╡
-        │ 0     ┆ 2001-01-01 00:00:00 ┆ 0.0             │
+        │ 0     ┆ 2001-01-01 00:00:00 ┆ null            │
         │ 1     ┆ 2001-01-01 01:00:00 ┆ 0.707107        │
         │ 2     ┆ 2001-01-01 02:00:00 ┆ 1.0             │
         │ 3     ┆ 2001-01-01 03:00:00 ┆ 1.0             │
@@ -7081,7 +7081,7 @@ class Expr:
         │ u32   ┆ datetime[μs]        ┆ f64             │
         ╞═══════╪═════════════════════╪═════════════════╡
         │ 0     ┆ 2001-01-01 00:00:00 ┆ null            │
-        │ 1     ┆ 2001-01-01 01:00:00 ┆ 0.0             │
+        │ 1     ┆ 2001-01-01 01:00:00 ┆ null            │
         │ 2     ┆ 2001-01-01 02:00:00 ┆ 0.5             │
         │ 3     ┆ 2001-01-01 03:00:00 ┆ 0.5             │
         │ 4     ┆ 2001-01-01 04:00:00 ┆ 0.5             │
@@ -7106,7 +7106,7 @@ class Expr:
         │ ---   ┆ ---                 ┆ ---             │
         │ u32   ┆ datetime[μs]        ┆ f64             │
         ╞═══════╪═════════════════════╪═════════════════╡
-        │ 0     ┆ 2001-01-01 00:00:00 ┆ 0.0             │
+        │ 0     ┆ 2001-01-01 00:00:00 ┆ null            │
         │ 1     ┆ 2001-01-01 01:00:00 ┆ 0.5             │
         │ 2     ┆ 2001-01-01 02:00:00 ┆ 1.0             │
         │ 3     ┆ 2001-01-01 03:00:00 ┆ 1.0             │
@@ -9263,7 +9263,7 @@ class Expr:
             Accepts expression input. Sequences are parsed as Series,
             other non-expression inputs are parsed as literals.
             Also accepts a mapping of values to their replacement as syntactic sugar for
-            `replace(new=Series(mapping.keys()), old=Series(mapping.values()))`.
+            `replace(old=Series(mapping.keys()), new=Series(mapping.values()))`.
         new
             Value or sequence of values to replace by.
             Accepts expression input. Sequences are parsed as Series,

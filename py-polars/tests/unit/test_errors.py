@@ -699,3 +699,9 @@ def test_error_lazyframe_not_repeating() -> None:
 
     match = "Error originated just after this operation:"
     assert str(exc_info).count(match) == 1
+
+
+def test_raise_not_found_in_simplify_14974() -> None:
+    df = pl.DataFrame()
+    with pytest.raises(pl.ColumnNotFoundError):
+        df.select(1 / (1 + pl.col("a")))

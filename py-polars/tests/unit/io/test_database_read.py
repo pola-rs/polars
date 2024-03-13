@@ -9,6 +9,7 @@ from pathlib import Path
 from types import GeneratorType
 from typing import TYPE_CHECKING, Any, NamedTuple
 
+import pyarrow as pa
 import pytest
 from sqlalchemy import Integer, MetaData, Table, create_engine, func, select
 from sqlalchemy.orm import sessionmaker
@@ -20,8 +21,6 @@ from polars.io.database import _ARROW_DRIVER_REGISTRY_
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
-    import pyarrow as pa
-
     from polars.type_aliases import (
         ConnectionOrCursor,
         DbReadEngine,
@@ -34,24 +33,26 @@ def adbc_sqlite_connect(*args: Any, **kwargs: Any) -> Any:
     with suppress(ModuleNotFoundError):  # not available on 3.8/windows
         from adbc_driver_sqlite.dbapi import connect
 
+        args = tuple(str(a) if isinstance(a, Path) else a for a in args)
         return connect(*args, **kwargs)
 
 
-def create_temp_sqlite_db(test_db: str) -> None:
-    Path(test_db).unlink(missing_ok=True)
+@pytest.fixture()
+def tmp_sqlite_db(tmp_path: Path) -> Path:
+    test_db = tmp_path / "test.db"
+    test_db.unlink(missing_ok=True)
 
     def convert_date(val: bytes) -> date:
         """Convert ISO 8601 date to datetime.date object."""
         return date.fromisoformat(val.decode())
 
-    sqlite3.register_converter("date", convert_date)
-
     # NOTE: at the time of writing adcb/connectorx have weak SQLite support (poor or
     # no bool/date/datetime dtypes, for example) and there is a bug in connectorx that
     # causes float rounding < py 3.11, hence we are only testing/storing simple values
     # in this test db for now. as support improves, we can add/test additional dtypes).
-
+    sqlite3.register_converter("date", convert_date)
     conn = sqlite3.connect(test_db)
+
     # ┌─────┬───────┬───────┬────────────┐
     # │ id  ┆ name  ┆ value ┆ date       │
     # │ --- ┆ ---   ┆ ---   ┆ ---        │
@@ -62,17 +63,19 @@ def create_temp_sqlite_db(test_db: str) -> None:
     # └─────┴───────┴───────┴────────────┘
     conn.executescript(
         """
-        CREATE TABLE test_data (
+        CREATE TABLE IF NOT EXISTS test_data (
             id    INTEGER PRIMARY KEY,
             name  TEXT NOT NULL,
             value FLOAT,
             date  DATE
         );
-        INSERT INTO test_data(name,value,date)
-        VALUES ('misc',100.0,'2020-01-01'), ('other',-99.5,'2021-12-31');
+        REPLACE INTO test_data(name,value,date)
+          VALUES ('misc',100.0,'2020-01-01'),
+                 ('other',-99.5,'2021-12-31');
         """
     )
     conn.close()
+    return test_db
 
 
 class DatabaseReadTestParams(NamedTuple):
@@ -313,50 +316,67 @@ def test_read_database(
     expected_dates: list[date | str],
     schema_overrides: SchemaDict | None,
     batch_size: int | None,
-    tmp_path: Path,
+    tmp_sqlite_db: Path,
 ) -> None:
-    tmp_path.mkdir(exist_ok=True)
-    test_db = str(tmp_path / "test.db")
-    create_temp_sqlite_db(test_db)
-
     if read_method == "read_database_uri":
         # instantiate the connection ourselves, using connectorx/adbc
         df = pl.read_database_uri(
-            uri=f"sqlite:///{test_db}",
+            uri=f"sqlite:///{tmp_sqlite_db}",
             query="SELECT * FROM test_data",
+            engine=str(connect_using),  # type: ignore[arg-type]
+            schema_overrides=schema_overrides,
+        )
+        df_empty = pl.read_database_uri(
+            uri=f"sqlite:///{tmp_sqlite_db}",
+            query="SELECT * FROM test_data WHERE name LIKE '%polars%'",
             engine=str(connect_using),  # type: ignore[arg-type]
             schema_overrides=schema_overrides,
         )
     elif "adbc" in os.environ["PYTEST_CURRENT_TEST"]:
         # externally instantiated adbc connections
-        with connect_using(test_db) as conn, conn.cursor():
+        with connect_using(tmp_sqlite_db) as conn, conn.cursor():
             df = pl.read_database(
                 connection=conn,
                 query="SELECT * FROM test_data",
                 schema_overrides=schema_overrides,
                 batch_size=batch_size,
             )
+            df_empty = pl.read_database(
+                connection=conn,
+                query="SELECT * FROM test_data WHERE name LIKE '%polars%'",
+                schema_overrides=schema_overrides,
+                batch_size=batch_size,
+            )
     else:
         # other user-supplied connections
         df = pl.read_database(
-            connection=connect_using(test_db),
+            connection=connect_using(tmp_sqlite_db),
             query="SELECT * FROM test_data WHERE name NOT LIKE '%polars%'",
             schema_overrides=schema_overrides,
             batch_size=batch_size,
         )
+        df_empty = pl.read_database(
+            connection=connect_using(tmp_sqlite_db),
+            query="SELECT * FROM test_data WHERE name LIKE '%polars%'",
+            schema_overrides=schema_overrides,
+            batch_size=batch_size,
+        )
 
+    # validate the expected query return (data and schema)
     assert df.schema == expected_dtypes
     assert df.shape == (2, 4)
     assert df["date"].to_list() == expected_dates
 
+    # note: 'cursor.description' is not reliable when no query
+    # data is returned, so no point comparing expected dtypes
+    assert df_empty.columns == ["id", "name", "value", "date"]
+    assert df_empty.shape == (0, 4)
+    assert df_empty["date"].to_list() == []
 
-def test_read_database_alchemy_selectable(tmp_path: Path) -> None:
-    # setup underlying test data
-    tmp_path.mkdir(exist_ok=True)
-    create_temp_sqlite_db(test_db := str(tmp_path / "test.db"))
 
+def test_read_database_alchemy_selectable(tmp_sqlite_db: Path) -> None:
     # various flavours of alchemy connection
-    alchemy_engine = create_engine(f"sqlite:///{test_db}")
+    alchemy_engine = create_engine(f"sqlite:///{tmp_sqlite_db}")
     alchemy_session: ConnectionOrCursor = sessionmaker(bind=alchemy_engine)()
     alchemy_conn: ConnectionOrCursor = alchemy_engine.connect()
 
@@ -376,16 +396,12 @@ def test_read_database_alchemy_selectable(tmp_path: Path) -> None:
         )
 
 
-def test_read_database_parameterised(tmp_path: Path) -> None:
-    # setup underlying test data
-    tmp_path.mkdir(exist_ok=True)
-    create_temp_sqlite_db(test_db := str(tmp_path / "test.db"))
-    alchemy_engine = create_engine(f"sqlite:///{test_db}")
-
+def test_read_database_parameterised(tmp_sqlite_db: Path) -> None:
     # raw cursor "execute" only takes positional params, alchemy cursor takes kwargs
-    raw_conn: ConnectionOrCursor = sqlite3.connect(test_db)
+    alchemy_engine = create_engine(f"sqlite:///{tmp_sqlite_db}")
     alchemy_conn: ConnectionOrCursor = alchemy_engine.connect()
     alchemy_session: ConnectionOrCursor = sessionmaker(bind=alchemy_engine)()
+    raw_conn: ConnectionOrCursor = sqlite3.connect(tmp_sqlite_db)
 
     # establish parameterised queries and validate usage
     query = """
@@ -393,6 +409,8 @@ def test_read_database_parameterised(tmp_path: Path) -> None:
         FROM test_data
         WHERE value < {n}
     """
+    expected_frame = pl.DataFrame({"year": [2021], "name": ["other"], "value": [-99.5]})
+
     for param, param_value in (
         (":n", {"n": 0}),
         ("?", (0,)),
@@ -403,13 +421,66 @@ def test_read_database_parameterised(tmp_path: Path) -> None:
                 continue  # alchemy session.execute() doesn't support positional params
 
             assert_frame_equal(
+                expected_frame,
                 pl.read_database(
                     query.format(n=param),
                     connection=conn,
                     execute_options={"parameters": param_value},
                 ),
-                pl.DataFrame({"year": [2021], "name": ["other"], "value": [-99.5]}),
             )
+
+
+@pytest.mark.parametrize(
+    ("param", "param_value"),
+    [
+        (":n", {"n": 0}),
+        ("?", (0,)),
+        ("?", [0]),
+    ],
+)
+@pytest.mark.skipif(
+    sys.version_info < (3, 9) or sys.platform == "win32",
+    reason="adbc_driver_sqlite not available on py3.8/windows",
+)
+def test_read_database_parameterised_uri(
+    param: str, param_value: Any, tmp_sqlite_db: Path
+) -> None:
+    alchemy_engine = create_engine(f"sqlite:///{tmp_sqlite_db}")
+    uri = alchemy_engine.url.render_as_string(hide_password=False)
+    query = """
+        SELECT CAST(STRFTIME('%Y',"date") AS INT) as "year", name, value
+        FROM test_data
+        WHERE value < {n}
+    """
+    expected_frame = pl.DataFrame({"year": [2021], "name": ["other"], "value": [-99.5]})
+
+    for param, param_value in (
+        (":n", pa.Table.from_pydict({"n": [0]})),
+        ("?", (0,)),
+        ("?", [0]),
+    ):
+        # test URI read method (adbc only)
+        assert_frame_equal(
+            expected_frame,
+            pl.read_database_uri(
+                query.format(n=param),
+                uri=uri,
+                engine="adbc",
+                execute_options={"parameters": param_value},
+            ),
+        )
+
+    #  no connectorx support for execute_options
+    with pytest.raises(
+        ValueError,
+        match="connectorx.*does not support.*execute_options",
+    ):
+        pl.read_database_uri(
+            query.format(n=":n"),
+            uri=uri,
+            engine="connectorx",
+            execute_options={"parameters": (":n", {"n": 0})},
+        )
 
 
 @pytest.mark.parametrize(
@@ -598,7 +669,6 @@ def test_read_database_exceptions(
     engine: DbReadEngine | None,
     execute_options: dict[str, Any] | None,
     kwargs: dict[str, Any] | None,
-    tmp_path: Path,
 ) -> None:
     if read_method == "read_database_uri":
         conn = f"{protocol}://test" if isinstance(protocol, str) else protocol
@@ -636,7 +706,6 @@ def test_read_database_cx_credentials(uri: str) -> None:
 
 @pytest.mark.write_disk()
 def test_read_kuzu_graph_database(tmp_path: Path, io_files_path: Path) -> None:
-    # validate reading from a kuzu graph database
     import kuzu
 
     tmp_path.mkdir(exist_ok=True)
@@ -647,7 +716,7 @@ def test_read_kuzu_graph_database(tmp_path: Path, io_files_path: Path) -> None:
 
     db = kuzu.Database(test_db)
     conn = kuzu.Connection(db)
-    conn.execute("CREATE NODE TABLE User(name STRING, age INT64, PRIMARY KEY (name))")
+    conn.execute("CREATE NODE TABLE User(name STRING, age UINT64, PRIMARY KEY (name))")
     conn.execute("CREATE REL TABLE Follows(FROM User TO User, since INT64)")
 
     users = str(io_files_path / "graph-data" / "user.csv").replace("\\", "/")
@@ -656,6 +725,7 @@ def test_read_kuzu_graph_database(tmp_path: Path, io_files_path: Path) -> None:
     conn.execute(f'COPY User FROM "{users}"')
     conn.execute(f'COPY Follows FROM "{follows}"')
 
+    # basic: single relation
     df1 = pl.read_database(
         query="MATCH (u:User) RETURN u.name, u.age",
         connection=conn,
@@ -666,10 +736,12 @@ def test_read_kuzu_graph_database(tmp_path: Path, io_files_path: Path) -> None:
             {
                 "u.name": ["Adam", "Karissa", "Zhang", "Noura"],
                 "u.age": [30, 40, 50, 25],
-            }
+            },
+            schema={"u.name": pl.Utf8, "u.age": pl.UInt64},
         ),
     )
 
+    # join: connected edges/relations
     df2 = pl.read_database(
         query="MATCH (a:User)-[f:Follows]->(b:User) RETURN a.name, f.since, b.name",
         connection=conn,
@@ -681,6 +753,19 @@ def test_read_kuzu_graph_database(tmp_path: Path, io_files_path: Path) -> None:
                 "a.name": ["Adam", "Adam", "Karissa", "Zhang"],
                 "f.since": [2020, 2020, 2021, 2022],
                 "b.name": ["Karissa", "Zhang", "Zhang", "Noura"],
-            }
+            },
+            schema={"a.name": pl.Utf8, "f.since": pl.Int64, "b.name": pl.Utf8},
+        ),
+    )
+
+    # empty: no results for the given query
+    df3 = pl.read_database(
+        query="MATCH (a:User)-[f:Follows]->(b:User) WHERE a.name = '🔎️' RETURN a.name, f.since, b.name",
+        connection=conn,
+    )
+    assert_frame_equal(
+        df3,
+        pl.DataFrame(
+            schema={"a.name": pl.Utf8, "f.since": pl.Int64, "b.name": pl.Utf8}
         ),
     )

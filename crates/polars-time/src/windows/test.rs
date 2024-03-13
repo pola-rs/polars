@@ -16,8 +16,8 @@ fn test_date_range() {
         .and_hms_opt(0, 0, 0)
         .unwrap();
     let dates = datetime_range_i64(
-        start.timestamp_nanos_opt().unwrap(),
-        end.timestamp_nanos_opt().unwrap(),
+        start.and_utc().timestamp_nanos_opt().unwrap(),
+        end.and_utc().timestamp_nanos_opt().unwrap(),
         Duration::parse("1mo"),
         ClosedWindow::Both,
         TimeUnit::Nanoseconds,
@@ -34,6 +34,7 @@ fn test_date_range() {
     .map(|d| {
         d.and_hms_opt(0, 0, 0)
             .unwrap()
+            .and_utc()
             .timestamp_nanos_opt()
             .unwrap()
     })
@@ -52,8 +53,8 @@ fn test_feb_date_range() {
         .and_hms_opt(0, 0, 0)
         .unwrap();
     let dates = datetime_range_i64(
-        start.timestamp_nanos_opt().unwrap(),
-        end.timestamp_nanos_opt().unwrap(),
+        start.and_utc().timestamp_nanos_opt().unwrap(),
+        end.and_utc().timestamp_nanos_opt().unwrap(),
         Duration::parse("1mo"),
         ClosedWindow::Both,
         TimeUnit::Nanoseconds,
@@ -68,6 +69,7 @@ fn test_feb_date_range() {
     .map(|d| {
         d.and_hms_opt(0, 0, 0)
             .unwrap()
+            .and_utc()
             .timestamp_nanos_opt()
             .unwrap()
     })
@@ -101,6 +103,7 @@ fn test_groups_large_interval() {
         .map(|d| {
             d.and_hms_opt(0, 0, 0)
                 .unwrap()
+                .and_utc()
                 .timestamp_nanos_opt()
                 .unwrap()
         })
@@ -155,6 +158,7 @@ fn test_offset() {
         .unwrap()
         .and_hms_opt(0, 0, 0)
         .unwrap()
+        .and_utc()
         .timestamp_nanos_opt()
         .unwrap();
     let w = Window::new(
@@ -168,6 +172,7 @@ fn test_offset() {
         .unwrap()
         .and_hms_opt(23, 58, 0)
         .unwrap()
+        .and_utc()
         .timestamp_nanos_opt()
         .unwrap();
     assert_eq!(b.start, start);
@@ -185,8 +190,8 @@ fn test_boundaries() {
         .unwrap();
 
     let ts = datetime_range_i64(
-        start.timestamp_nanos_opt().unwrap(),
-        stop.timestamp_nanos_opt().unwrap(),
+        start.and_utc().timestamp_nanos_opt().unwrap(),
+        stop.and_utc().timestamp_nanos_opt().unwrap(),
         Duration::parse("30m"),
         ClosedWindow::Both,
         TimeUnit::Nanoseconds,
@@ -205,7 +210,7 @@ fn test_boundaries() {
 
     // earliest bound is first datapoint: 2021-12-16 00:00:00
     let b = w.get_earliest_bounds_ns(ts[0], None).unwrap();
-    assert_eq!(b.start, start.timestamp_nanos_opt().unwrap());
+    assert_eq!(b.start, start.and_utc().timestamp_nanos_opt().unwrap());
 
     // test closed: "both" (includes both ends of the interval)
     let (groups, lower, higher) = group_by_windows(
@@ -242,9 +247,9 @@ fn test_boundaries() {
     assert_eq!(
         g,
         &[
-            t0.timestamp_nanos_opt().unwrap(),
-            t1.timestamp_nanos_opt().unwrap(),
-            t2.timestamp_nanos_opt().unwrap()
+            t0.and_utc().timestamp_nanos_opt().unwrap(),
+            t1.and_utc().timestamp_nanos_opt().unwrap(),
+            t2.and_utc().timestamp_nanos_opt().unwrap()
         ]
     );
     let b_start = NaiveDate::from_ymd_opt(2021, 12, 16)
@@ -258,8 +263,8 @@ fn test_boundaries() {
     assert_eq!(
         &[lower[0], higher[0]],
         &[
-            b_start.timestamp_nanos_opt().unwrap(),
-            b_end.timestamp_nanos_opt().unwrap()
+            b_start.and_utc().timestamp_nanos_opt().unwrap(),
+            b_end.and_utc().timestamp_nanos_opt().unwrap()
         ]
     );
 
@@ -286,9 +291,9 @@ fn test_boundaries() {
     assert_eq!(
         g,
         &[
-            t0.timestamp_nanos_opt().unwrap(),
-            t1.timestamp_nanos_opt().unwrap(),
-            t2.timestamp_nanos_opt().unwrap()
+            t0.and_utc().timestamp_nanos_opt().unwrap(),
+            t1.and_utc().timestamp_nanos_opt().unwrap(),
+            t2.and_utc().timestamp_nanos_opt().unwrap()
         ]
     );
     let b_start = NaiveDate::from_ymd_opt(2021, 12, 16)
@@ -302,8 +307,8 @@ fn test_boundaries() {
     assert_eq!(
         &[lower[1], higher[1]],
         &[
-            b_start.timestamp_nanos_opt().unwrap(),
-            b_end.timestamp_nanos_opt().unwrap()
+            b_start.and_utc().timestamp_nanos_opt().unwrap(),
+            b_end.and_utc().timestamp_nanos_opt().unwrap()
         ]
     );
 
@@ -367,8 +372,8 @@ fn test_boundaries_2() {
         .unwrap();
 
     let ts = datetime_range_i64(
-        start.timestamp_nanos_opt().unwrap(),
-        stop.timestamp_nanos_opt().unwrap(),
+        start.and_utc().timestamp_nanos_opt().unwrap(),
+        stop.and_utc().timestamp_nanos_opt().unwrap(),
         Duration::parse("30m"),
         ClosedWindow::Both,
         TimeUnit::Nanoseconds,
@@ -390,7 +395,7 @@ fn test_boundaries_2() {
 
     assert_eq!(
         b.start,
-        start.timestamp_nanos_opt().unwrap() + offset.duration_ns()
+        start.and_utc().timestamp_nanos_opt().unwrap() + offset.duration_ns()
     );
 
     let (groups, lower, higher) = group_by_windows(
@@ -424,8 +429,8 @@ fn test_boundaries_2() {
     assert_eq!(
         g,
         &[
-            t0.timestamp_nanos_opt().unwrap(),
-            t1.timestamp_nanos_opt().unwrap()
+            t0.and_utc().timestamp_nanos_opt().unwrap(),
+            t1.and_utc().timestamp_nanos_opt().unwrap()
         ]
     );
     let b_start = NaiveDate::from_ymd_opt(2021, 12, 16)
@@ -439,8 +444,8 @@ fn test_boundaries_2() {
     assert_eq!(
         &[lower[0], higher[0]],
         &[
-            b_start.timestamp_nanos_opt().unwrap(),
-            b_end.timestamp_nanos_opt().unwrap()
+            b_start.and_utc().timestamp_nanos_opt().unwrap(),
+            b_end.and_utc().timestamp_nanos_opt().unwrap()
         ]
     );
 
@@ -463,8 +468,8 @@ fn test_boundaries_2() {
     assert_eq!(
         g,
         &[
-            t0.timestamp_nanos_opt().unwrap(),
-            t1.timestamp_nanos_opt().unwrap()
+            t0.and_utc().timestamp_nanos_opt().unwrap(),
+            t1.and_utc().timestamp_nanos_opt().unwrap()
         ]
     );
     let b_start = NaiveDate::from_ymd_opt(2021, 12, 16)
@@ -478,8 +483,8 @@ fn test_boundaries_2() {
     assert_eq!(
         &[lower[1], higher[1]],
         &[
-            b_start.timestamp_nanos_opt().unwrap(),
-            b_end.timestamp_nanos_opt().unwrap()
+            b_start.and_utc().timestamp_nanos_opt().unwrap(),
+            b_end.and_utc().timestamp_nanos_opt().unwrap()
         ]
     );
 }
@@ -496,8 +501,8 @@ fn test_boundaries_ms() {
         .unwrap();
 
     let ts = datetime_range_i64(
-        start.timestamp_millis(),
-        stop.timestamp_millis(),
+        start.and_utc().timestamp_millis(),
+        stop.and_utc().timestamp_millis(),
         Duration::parse("30m"),
         ClosedWindow::Both,
         TimeUnit::Milliseconds,
@@ -516,7 +521,7 @@ fn test_boundaries_ms() {
 
     // earliest bound is first datapoint: 2021-12-16 00:00:00
     let b = w.get_earliest_bounds_ms(ts[0], None).unwrap();
-    assert_eq!(b.start, start.timestamp_millis());
+    assert_eq!(b.start, start.and_utc().timestamp_millis());
 
     // test closed: "both" (includes both ends of the interval)
     let (groups, lower, higher) = group_by_windows(
@@ -553,9 +558,9 @@ fn test_boundaries_ms() {
     assert_eq!(
         g,
         &[
-            t0.timestamp_millis(),
-            t1.timestamp_millis(),
-            t2.timestamp_millis()
+            t0.and_utc().timestamp_millis(),
+            t1.and_utc().timestamp_millis(),
+            t2.and_utc().timestamp_millis()
         ]
     );
     let b_start = NaiveDate::from_ymd_opt(2021, 12, 16)
@@ -568,7 +573,10 @@ fn test_boundaries_ms() {
         .unwrap();
     assert_eq!(
         &[lower[0], higher[0]],
-        &[b_start.timestamp_millis(), b_end.timestamp_millis()]
+        &[
+            b_start.and_utc().timestamp_millis(),
+            b_end.and_utc().timestamp_millis()
+        ]
     );
 
     // 2nd group
@@ -594,9 +602,9 @@ fn test_boundaries_ms() {
     assert_eq!(
         g,
         &[
-            t0.timestamp_millis(),
-            t1.timestamp_millis(),
-            t2.timestamp_millis()
+            t0.and_utc().timestamp_millis(),
+            t1.and_utc().timestamp_millis(),
+            t2.and_utc().timestamp_millis()
         ]
     );
     let b_start = NaiveDate::from_ymd_opt(2021, 12, 16)
@@ -609,7 +617,10 @@ fn test_boundaries_ms() {
         .unwrap();
     assert_eq!(
         &[lower[1], higher[1]],
-        &[b_start.timestamp_millis(), b_end.timestamp_millis()]
+        &[
+            b_start.and_utc().timestamp_millis(),
+            b_end.and_utc().timestamp_millis()
+        ]
     );
 
     assert_eq!(groups[2], [4, 3]);
@@ -672,8 +683,8 @@ fn test_rolling_lookback() {
         .and_hms_opt(4, 0, 0)
         .unwrap();
     let dates = datetime_range_i64(
-        start.timestamp_millis(),
-        end.timestamp_millis(),
+        start.and_utc().timestamp_millis(),
+        end.and_utc().timestamp_millis(),
         Duration::parse("30m"),
         ClosedWindow::Both,
         TimeUnit::Milliseconds,
@@ -787,11 +798,13 @@ fn test_end_membership() {
             .unwrap()
             .and_hms_opt(0, 0, 0)
             .unwrap()
+            .and_utc()
             .timestamp_millis(),
         NaiveDate::from_ymd_opt(2021, 5, 1)
             .unwrap()
             .and_hms_opt(0, 0, 0)
             .unwrap()
+            .and_utc()
             .timestamp_millis(),
     ];
     let window = Window::new(
@@ -878,6 +891,7 @@ fn test_group_by_windows_offsets_3776() {
         .map(|d| {
             d.and_hms_opt(0, 0, 0)
                 .unwrap()
+                .and_utc()
                 .timestamp_nanos_opt()
                 .unwrap()
         })

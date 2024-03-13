@@ -1942,7 +1942,7 @@ impl JoinBuilder {
     /// The passed expressions must be valid in both `LazyFrame`s in the join.
     pub fn on<E: AsRef<[Expr]>>(mut self, on: E) -> Self {
         let on = on.as_ref().to_vec();
-        self.left_on = on.clone();
+        self.left_on.clone_from(&on);
         self.right_on = on;
         self
     }

@@ -77,7 +77,7 @@ impl LazyJsonLineReader {
         self
     }
 
-    /// Reduce memory usage in expensive of performance
+    /// Reduce memory usage at the expense of performance
     #[must_use]
     pub fn low_memory(mut self, toggle: bool) -> Self {
         self.low_memory = toggle;

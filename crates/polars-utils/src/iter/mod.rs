@@ -1,5 +1,8 @@
 mod enumerate_idx;
+mod fallible;
+
 pub use enumerate_idx::EnumerateIdxTrait;
+pub use fallible::*;
 
 pub trait IntoIteratorCopied: IntoIterator {
     /// The type of the elements being iterated over.

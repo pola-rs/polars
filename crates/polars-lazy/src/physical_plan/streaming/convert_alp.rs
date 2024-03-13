@@ -287,15 +287,15 @@ pub(crate) fn insert_streaming_nodes(
                 };
                 let mut state_left = state.split();
 
-                // rhs is second, so that is first on the stack
+                // Rhs is second, so that is first on the stack.
                 let mut state_right = state;
                 state_right.join_count = 0;
                 state_right
                     .operators_sinks
                     .push(PipelineNode::RhsJoin(root));
 
-                // we want to traverse lhs last, so push it first on the stack
-                // rhs is a new pipeline
+                // We want to traverse lhs last, so push it first on the stack
+                // rhs is a new pipeline.
                 state_left.operators_sinks.push(PipelineNode::Sink(root));
                 stack.push(StackFrame::new(input_left, state_left, current_idx));
                 stack.push(StackFrame::new(input_right, state_right, current_idx));
@@ -331,7 +331,7 @@ pub(crate) fn insert_streaming_nodes(
                 };
                 for (i, input) in inputs.iter().enumerate() {
                     let mut state = if i == 0 {
-                        // note the clone!
+                        // Note the clone!
                         let mut state = state.clone();
                         state.join_count += inputs.len() as u32 - 1;
                         state

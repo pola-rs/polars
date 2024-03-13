@@ -13,7 +13,7 @@ import pytest
 from pydantic import BaseModel, Field, TypeAdapter
 
 import polars as pl
-from polars._utils.construction import type_hints
+from polars._utils.construction.utils import try_get_type_hints
 from polars.datatypes import PolarsDataType, numpy_char_code_to_dtype
 from polars.dependencies import dataclasses, pydantic
 from polars.exceptions import TimeZoneAwareConstructorWarning
@@ -263,7 +263,7 @@ def test_init_structured_objects(monkeypatch: Any) -> None:
         assert df.rows() == raw_data
 
         # cover a miscellaneous edge-case when detecting the annotations
-        assert type_hints(obj=type(None)) == {}
+        assert try_get_type_hints(obj=type(None)) == {}
 
 
 def test_init_pydantic_2x() -> None:

@@ -176,10 +176,22 @@ class Series:
         One-dimensional data in various forms. Supported are: Sequence, Series,
         pyarrow Array, and numpy ndarray.
     dtype : DataType, default None
-        Polars dtype of the Series data. If not specified, the dtype is inferred.
-    strict
-        Throw error on numeric overflow.
-    nan_to_null
+        Data type of the resulting Series. If set to `None` (default), the data type is
+        inferred from the `values` input. The strategy for data type inference depends
+        on the `strict` parameter:
+
+        - If `strict` is set to True (default), the inferred data type is equal to the
+          first non-null value, or `Null` if all values are null.
+        - If `strict` is set to False, the inferred data type is the supertype of the
+          values, or :class:`Object` if no supertype can be found. **WARNING**: A full
+          pass over the values is required to determine the supertype.
+        - If no values were passed, the resulting data type is :class:`Null`.
+
+    strict : bool, default True
+        Throw an error if any value does not exactly match the given or inferred data
+        type. If set to `False`, values that do not match the data type are cast to
+        that data type or, if casting is not possible, set to null instead.
+    nan_to_null : bool, default False
         In case a numpy array is used to create this Series, indicate how to deal
         with np.nan values. (This parameter is a no-op on non-numpy data).
     dtype_if_empty : DataType, default Null
@@ -2108,7 +2120,9 @@ class Series:
         """
         return self._s.quantile(quantile, interpolation)
 
-    def to_dummies(self, separator: str = "_") -> DataFrame:
+    def to_dummies(
+        self, *, separator: str = "_", drop_first: bool = False
+    ) -> DataFrame:
         """
         Get dummy/indicator variables.
 
@@ -2116,6 +2130,8 @@ class Series:
         ----------
         separator
             Separator/delimiter used when generating column names.
+        drop_first
+            Remove the first category from the variable being encoded.
 
         Examples
         --------
@@ -2131,8 +2147,20 @@ class Series:
         │ 0   ┆ 1   ┆ 0   │
         │ 0   ┆ 0   ┆ 1   │
         └─────┴─────┴─────┘
+
+        >>> s.to_dummies(drop_first=True)
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ a_2 ┆ a_3 │
+        │ --- ┆ --- │
+        │ u8  ┆ u8  │
+        ╞═════╪═════╡
+        │ 0   ┆ 0   │
+        │ 1   ┆ 0   │
+        │ 0   ┆ 1   │
+        └─────┴─────┘
         """
-        return wrap_df(self._s.to_dummies(separator))
+        return wrap_df(self._s.to_dummies(separator, drop_first))
 
     @overload
     def cut(
@@ -6568,7 +6596,7 @@ class Series:
         old
             Value or sequence of values to replace.
             Also accepts a mapping of values to their replacement as syntactic sugar for
-            `replace(new=Series(mapping.keys()), old=Series(mapping.values()))`.
+            `replace(old=Series(mapping.keys()), new=Series(mapping.values()))`.
         new
             Value or sequence of values to replace by.
             Length must match the length of `old` or have length 1.

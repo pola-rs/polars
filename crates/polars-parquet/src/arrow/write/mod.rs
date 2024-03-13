@@ -92,8 +92,9 @@ pub fn slice_nested_leaf(nested: &[Nested]) -> (usize, usize) {
                 let end = *l_nested.offsets.last();
                 return (start as usize, (end - start) as usize);
             },
+            Nested::FixedSizeList { len, width, .. } => return (0, *len * *width),
             Nested::Primitive(_, _, len) => out = (0, *len),
-            _ => {},
+            Nested::Struct(_, _, _) => {},
         }
     }
     out
@@ -135,6 +136,7 @@ pub fn slice_parquet_array(
                     validity.slice(current_offset, current_length)
                 };
 
+                // Update the offset/ length so that the Primitive is sliced properly.
                 current_length = l_nested.offsets.range() as usize;
                 current_offset = *l_nested.offsets.first() as usize;
             },
@@ -144,6 +146,7 @@ pub fn slice_parquet_array(
                     validity.slice(current_offset, current_length)
                 };
 
+                // Update the offset/ length so that the Primitive is sliced properly.
                 current_length = l_nested.offsets.range() as usize;
                 current_offset = *l_nested.offsets.first() as usize;
             },
@@ -160,6 +163,20 @@ pub fn slice_parquet_array(
                 };
                 primitive_array.slice(current_offset, current_length);
             },
+            Nested::FixedSizeList {
+                validity,
+                len,
+                width,
+                ..
+            } => {
+                if let Some(validity) = validity.as_mut() {
+                    validity.slice(current_offset, current_length)
+                };
+                *len = current_length;
+                // Update the offset/ length so that the Primitive is sliced properly.
+                current_length *= *width;
+                current_offset *= *width;
+            },
         }
     }
 }
@@ -171,6 +188,7 @@ pub fn get_max_length(nested: &[Nested]) -> usize {
         match nested {
             Nested::LargeList(l_nested) => length += l_nested.offsets.range() as usize,
             Nested::List(l_nested) => length += l_nested.offsets.range() as usize,
+            Nested::FixedSizeList { len, width, .. } => length += *len * *width,
             _ => {},
         }
     }

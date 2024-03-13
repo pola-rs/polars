@@ -21,6 +21,13 @@ if TYPE_CHECKING:
     from polars.type_aliases import ParquetCompression
 
 
+def test_round_trip(df: pl.DataFrame) -> None:
+    f = io.BytesIO()
+    df.write_parquet(f)
+    f.seek(0)
+    assert_frame_equal(pl.read_parquet(f), df)
+
+
 COMPRESSIONS = [
     "lz4",
     "uncompressed",
@@ -749,3 +756,31 @@ def test_parquet_string_rle_encoding() -> None:
             "encodings"
         ]
     )
+
+
+def test_sliced_dict_with_nulls_14904() -> None:
+    df = (
+        pl.DataFrame({"x": [None, None]})
+        .cast(pl.Categorical)
+        .with_columns(y=pl.concat_list("x"))
+        .slice(0, 1)
+    )
+    test_round_trip(df)
+
+
+def test_parquet_array_dtype() -> None:
+    df = pl.DataFrame({"x": [[1, 2, 3]]})
+    df = df.cast({"x": pl.Array(pl.Int64, width=3)})
+    test_round_trip(df)
+
+
+@pytest.mark.write_disk()
+def test_parquet_array_statistics() -> None:
+    df = pl.DataFrame({"a": [[1, 2, 3], [4, 5, 6], [7, 8, 9]], "b": [1, 2, 3]})
+    df.with_columns(a=pl.col("a").list.to_array(3)).lazy().filter(
+        pl.col("a") != [1, 2, 3]
+    ).collect()
+    df.with_columns(a=pl.col("a").list.to_array(3)).lazy().sink_parquet("test.parquet")
+    assert pl.scan_parquet("test.parquet").filter(
+        pl.col("a") != [1, 2, 3]
+    ).collect().to_dict(as_series=False) == {"a": [[4, 5, 6], [7, 8, 9]], "b": [2, 3]}
