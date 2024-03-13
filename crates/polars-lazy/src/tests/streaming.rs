@@ -415,29 +415,3 @@ fn test_streaming_outer_join() -> PolarsResult<()> {
 
     Ok(())
 }
-
-// #[test]
-// fn test_streaming_complex() -> PolarsResult<()> {
-//     let lf_left = df![
-//            "a"=> [0, 0, 0, 3, 0, 1, 3, 3, 3, 1, 4, 4, 2, 1, 1, 3, 1, 4, 2, 2],
-//     "b"=> [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
-//        ]?
-//         .lazy();
-//
-//     let lf_right = df![
-//            "a"=> [10, 18, 13, 9, 1, 13, 14, 12, 15, 11],
-//     "b"=> [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
-//        ]?
-//         .lazy();
-//
-//     let q = lf_left.clone().inner_join(lf_right, col("a"), col("a"));
-//     let q= concat([q.clone(), q.clone(), q.clone()], Default::default())?;
-//
-//     let q= q.select([col("a"), col("b")])
-//         .inner_join(lf_left, col("a"), col("a"));
-//
-//     println!("{}", q.describe_optimized_plan().unwrap());
-//
-//     assert_streaming_with_default(q, true, false);
-//     Ok(())
-// }
