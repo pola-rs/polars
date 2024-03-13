@@ -9,6 +9,7 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
 use crate::arrow_interop::to_rust::array_to_rust;
+use crate::conversion::any_value::py_object_to_any_value;
 use crate::conversion::{slice_extract_wrapped, vec_extract_wrapped, Wrap};
 use crate::error::PyPolarsErr;
 use crate::prelude::ObjectValue;
@@ -183,26 +184,28 @@ init_method_opt!(new_opt_f64, Float64Type, f64);
 )]
 impl PySeries {
     #[staticmethod]
-    fn new_from_any_values(
-        name: &str,
-        val: Vec<Wrap<AnyValue<'_>>>,
-        strict: bool,
-    ) -> PyResult<PySeries> {
-        // From AnyValues is fallible.
-        let avs = slice_extract_wrapped(&val);
-        let s = Series::from_any_values(name, avs, strict).map_err(PyPolarsErr::from)?;
+    fn new_from_any_values(name: &str, values: Vec<&PyAny>, strict: bool) -> PyResult<PySeries> {
+        let any_values = values
+            .into_iter()
+            .map(py_object_to_any_value)
+            .collect::<PyResult<Vec<AnyValue>>>()?;
+        let s = Series::from_any_values(name, any_values.as_slice(), strict)
+            .map_err(PyPolarsErr::from)?;
         Ok(s.into())
     }
 
     #[staticmethod]
     fn new_from_any_values_and_dtype(
         name: &str,
-        val: Vec<Wrap<AnyValue<'_>>>,
+        values: Vec<&PyAny>,
         dtype: Wrap<DataType>,
         strict: bool,
     ) -> PyResult<PySeries> {
-        let avs = slice_extract_wrapped(&val);
-        let s = Series::from_any_values_and_dtype(name, avs, &dtype.0, strict)
+        let any_values = values
+            .into_iter()
+            .map(py_object_to_any_value)
+            .collect::<PyResult<Vec<AnyValue>>>()?;
+        let s = Series::from_any_values_and_dtype(name, any_values.as_slice(), &dtype.0, strict)
             .map_err(PyPolarsErr::from)?;
         Ok(s.into())
     }
