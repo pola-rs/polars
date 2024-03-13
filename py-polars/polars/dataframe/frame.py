@@ -6153,41 +6153,111 @@ class DataFrame:
 
         Examples
         --------
-        >>> from datetime import datetime
+        >>> from datetime import date
         >>> gdp = pl.DataFrame(
         ...     {
-        ...         "date": [
-        ...             datetime(2016, 1, 1),
-        ...             datetime(2017, 1, 1),
-        ...             datetime(2018, 1, 1),
-        ...             datetime(2019, 1, 1),
-        ...         ],  # note record date: Jan 1st (sorted!)
-        ...         "gdp": [4164, 4411, 4566, 4696],
+        ...         "date": pl.date_range(
+        ...             date(2016, 1, 1),
+        ...             date(2020, 1, 1),
+        ...             "1y",
+        ...             eager=True,
+        ...         ),
+        ...         "gdp": [4164, 4411, 4566, 4696, 4827],
         ...     }
-        ... ).set_sorted("date")
+        ... )
+        >>> gdp
+        shape: (5, 2)
+        ┌────────────┬──────┐
+        │ date       ┆ gdp  │
+        │ ---        ┆ ---  │
+        │ date       ┆ i64  │
+        ╞════════════╪══════╡
+        │ 2016-01-01 ┆ 4164 │
+        │ 2017-01-01 ┆ 4411 │
+        │ 2018-01-01 ┆ 4566 │
+        │ 2019-01-01 ┆ 4696 │
+        │ 2020-01-01 ┆ 4827 │
+        └────────────┴──────┘
+
         >>> population = pl.DataFrame(
         ...     {
-        ...         "date": [
-        ...             datetime(2016, 5, 12),
-        ...             datetime(2017, 5, 12),
-        ...             datetime(2018, 5, 12),
-        ...             datetime(2019, 5, 12),
-        ...         ],  # note record date: May 12th (sorted!)
-        ...         "population": [82.19, 82.66, 83.12, 83.52],
+        ...         "date": [date(2016, 3, 1), date(2018, 8, 1), date(2019, 1, 1)],
+        ...         "population": [82.19, 82.66, 83.12],
         ...     }
-        ... ).set_sorted("date")
+        ... ).sort("date")
+        >>> population
+        shape: (3, 2)
+        ┌────────────┬────────────┐
+        │ date       ┆ population │
+        │ ---        ┆ ---        │
+        │ date       ┆ f64        │
+        ╞════════════╪════════════╡
+        │ 2016-03-01 ┆ 82.19      │
+        │ 2018-08-01 ┆ 82.66      │
+        │ 2019-01-01 ┆ 83.12      │
+        └────────────┴────────────┘
+
+        Note how the dates don't quite match. If we join them using `join_asof` and
+        `strategy='backward'`, then each date from `population` which doesn't have an
+        exact match is matched with the closest earlier date from `gdp`:
+
         >>> population.join_asof(gdp, on="date", strategy="backward")
-        shape: (4, 3)
-        ┌─────────────────────┬────────────┬──────┐
-        │ date                ┆ population ┆ gdp  │
-        │ ---                 ┆ ---        ┆ ---  │
-        │ datetime[μs]        ┆ f64        ┆ i64  │
-        ╞═════════════════════╪════════════╪══════╡
-        │ 2016-05-12 00:00:00 ┆ 82.19      ┆ 4164 │
-        │ 2017-05-12 00:00:00 ┆ 82.66      ┆ 4411 │
-        │ 2018-05-12 00:00:00 ┆ 83.12      ┆ 4566 │
-        │ 2019-05-12 00:00:00 ┆ 83.52      ┆ 4696 │
-        └─────────────────────┴────────────┴──────┘
+        shape: (3, 3)
+        ┌────────────┬────────────┬──────┐
+        │ date       ┆ population ┆ gdp  │
+        │ ---        ┆ ---        ┆ ---  │
+        │ date       ┆ f64        ┆ i64  │
+        ╞════════════╪════════════╪══════╡
+        │ 2016-03-01 ┆ 82.19      ┆ 4164 │
+        │ 2018-08-01 ┆ 82.66      ┆ 4566 │
+        │ 2019-01-01 ┆ 83.12      ┆ 4696 │
+        └────────────┴────────────┴──────┘
+
+        Note how:
+
+        - date `2016-03-01` from `population` is matched with `2016-01-01` from `gdp`;
+        - date `2018-08-01` from `population` is matched with `2018-01-01` from `gdp`.
+
+        If we instead use `strategy='forward'`, then each date from `population` which
+        doesn't have an exact match is matched with the closest later date from `gdp`:
+
+        >>> population.join_asof(gdp, on="date", strategy="forward")
+        shape: (3, 3)
+        ┌────────────┬────────────┬──────┐
+        │ date       ┆ population ┆ gdp  │
+        │ ---        ┆ ---        ┆ ---  │
+        │ date       ┆ f64        ┆ i64  │
+        ╞════════════╪════════════╪══════╡
+        │ 2016-03-01 ┆ 82.19      ┆ 4411 │
+        │ 2018-08-01 ┆ 82.66      ┆ 4696 │
+        │ 2019-01-01 ┆ 83.12      ┆ 4696 │
+        └────────────┴────────────┴──────┘
+
+        Note how:
+
+        - date `2016-03-01` from `population` is matched with `2017-01-01` from `gdp`;
+        - date `2018-08-01` from `population` is matched with `2019-01-01` from `gdp`.
+
+        Finally, `strategy='nearest'` gives us a mix of the two results above, as each
+        date from `population` which doesn't have an exact match is matched with the
+        closest date from `gdp`, regardless of whether it's earlier or later:
+
+        >>> population.join_asof(gdp, on="date", strategy="nearest")
+        shape: (3, 3)
+        ┌────────────┬────────────┬──────┐
+        │ date       ┆ population ┆ gdp  │
+        │ ---        ┆ ---        ┆ ---  │
+        │ date       ┆ f64        ┆ i64  │
+        ╞════════════╪════════════╪══════╡
+        │ 2016-03-01 ┆ 82.19      ┆ 4164 │
+        │ 2018-08-01 ┆ 82.66      ┆ 4696 │
+        │ 2019-01-01 ┆ 83.12      ┆ 4696 │
+        └────────────┴────────────┴──────┘
+
+        Note how:
+
+        - date `2016-03-01` from `population` is matched with `2016-01-01` from `gdp`;
+        - date `2018-08-01` from `population` is matched with `2019-01-01` from `gdp`.
         """
         tolerance = deprecate_saturating(tolerance)
         if not isinstance(other, DataFrame):
