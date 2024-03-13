@@ -2,10 +2,9 @@ import sys
 from datetime import datetime
 from typing import Any
 
-import pytest
-
 import polars as pl
 import polars.selectors as cs
+import pytest
 from polars.dependencies import _ZONEINFO_AVAILABLE
 from polars.exceptions import ColumnNotFoundError
 from polars.selectors import expand_selector, is_selector
@@ -130,6 +129,9 @@ def test_selector_by_name(df: pl.DataFrame) -> None:
     assert df.select(cs.by_name()).columns == []
     assert df.select(cs.by_name([])).columns == []
 
+    selected_cols = df.select(cs.by_name("???", "fgg", "!!!", match_any=True)).columns
+    assert selected_cols == ["fgg"]
+
     # check "by_name & col"
     for selector_expr in (
         cs.by_name("abc", "cde") & pl.col("ghi"),
@@ -138,6 +140,9 @@ def test_selector_by_name(df: pl.DataFrame) -> None:
         assert df.select(selector_expr).columns == ["abc", "cde", "ghi"]
 
     # expected errors
+    with pytest.raises(ColumnNotFoundError, match="xxx"):
+        df.select(cs.by_name("xxx", "fgg", "!!!"))
+
     with pytest.raises(ColumnNotFoundError):
         df.select(cs.by_name("stroopwafel"))
 
@@ -494,7 +499,16 @@ def test_selector_repr() -> None:
     assert_repr_equals(~cs.starts_with("a", "b"), "~cs.starts_with('a', 'b')")
     assert_repr_equals(cs.float() | cs.by_name("x"), "(cs.float() | cs.by_name('x'))")
     assert_repr_equals(
-        cs.integer() & cs.matches("z"), "(cs.integer() & cs.matches(pattern='z'))"
+        cs.integer() & cs.matches("z"),
+        "(cs.integer() & cs.matches(pattern='z'))",
+    )
+    assert_repr_equals(
+        cs.by_name("baz", "moose", "foo", "bear"),
+        "cs.by_name('baz', 'moose', 'foo', 'bear')",
+    )
+    assert_repr_equals(
+        cs.by_name("baz", "moose", "foo", "bear", match_any=True),
+        "cs.by_name('baz', 'moose', 'foo', 'bear', match_any=True)",
     )
     assert_repr_equals(
         cs.temporal() | cs.by_dtype(pl.String) & cs.string(include_categorical=False),
