@@ -163,7 +163,7 @@ impl Series {
                                 AnyValue::Object(val) => builder.append_value(val.as_any()),
                                 AnyValue::Null => builder.append_null(),
                                 _ => {
-                                    polars_bail!(ComputeError: "expected object");
+                                    polars_bail!(SchemaMismatch: "expected object");
                                 },
                             }
                         }
@@ -180,7 +180,7 @@ impl Series {
                             any_values_to_string(av, strict)?
                         },
                         _ => polars_bail!(
-                             ComputeError:
+                            SchemaMismatch:
                              "categorical dtype with any-values of dtype {} not supported",
                              single_av.dtype()
                         ),
@@ -451,7 +451,7 @@ fn any_values_to_decimal(
             continue;
         } else {
             polars_bail!(
-                ComputeError: "unable to convert any-value of dtype {} to decimal", av.dtype(),
+                SchemaMismatch: "unable to convert any-value of dtype {} to decimal", av.dtype(),
             );
         };
         scale_range = match scale_range {
@@ -469,7 +469,7 @@ fn any_values_to_decimal(
         // scale is provided but is lower than actual
         // TODO: do we want lossy conversions here or not?
         polars_bail!(
-            ComputeError:
+            SchemaMismatch:
             "unable to losslessly convert any-value of scale {s_max} to scale {}", scale,
         );
     }
@@ -493,7 +493,7 @@ fn any_values_to_decimal(
         } else {
             let factor = 10_i128.pow((scale - s_av) as _); // this cast is safe
             builder.append_value(v.checked_mul(factor).ok_or_else(|| {
-                polars_err!(ComputeError: "overflow while converting to decimal scale {}", scale)
+                polars_err!(InvalidOperation: "overflow while converting to decimal scale {}", scale)
             })?);
         }
     }
@@ -570,7 +570,7 @@ fn any_values_to_array(
     }
 
     if strict && !valid {
-        polars_bail!(ComputeError: "got mixed dtypes while constructing Array Series")
+        polars_bail!(SchemaMismatch: "got mixed dtypes while constructing Array Series")
     }
     Ok(out)
 }
@@ -628,7 +628,7 @@ fn any_values_to_list(
     }
 
     if strict && !valid {
-        polars_bail!(ComputeError: "got mixed dtypes while constructing List Series")
+        polars_bail!(SchemaMismatch: "got mixed dtypes while constructing List Series")
     }
     Ok(out)
 }

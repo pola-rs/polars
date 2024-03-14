@@ -5,7 +5,7 @@ from typing import Iterator
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError, StringCacheMismatchError
+from polars.exceptions import StringCacheMismatchError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -31,7 +31,7 @@ def test_transpose_tz_naive_and_tz_aware() -> None:
     )
     df = df.with_columns(pl.col("b").dt.replace_time_zone("Asia/Kathmandu"))
     with pytest.raises(
-        ComputeError,
+        pl.SchemaError,
         match=r"failed to determine supertype of datetime\[μs\] and datetime\[μs, Asia/Kathmandu\]",
     ):
         df.transpose()

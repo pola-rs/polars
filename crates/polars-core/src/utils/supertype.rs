@@ -3,7 +3,7 @@ use super::*;
 /// Given two datatypes, determine the supertype that both types can safely be cast to
 pub fn try_get_supertype(l: &DataType, r: &DataType) -> PolarsResult<DataType> {
     get_supertype(l, r).ok_or_else(
-        || polars_err!(ComputeError: "failed to determine supertype of {} and {}", l, r),
+        || polars_err!(SchemaMismatch: "failed to determine supertype of {} and {}", l, r),
     )
 }
 
