@@ -18,11 +18,41 @@ impl SeriesWrap<DecimalChunked> {
 
     fn agg_helper<F: Fn(&Int128Chunked) -> Series>(&self, f: F) -> Series {
         let agg_s = f(&self.0);
-        let ca = agg_s.decimal().unwrap();
-        let ca = ca.as_ref().clone();
-        let precision = self.0.precision();
-        let scale = self.0.scale();
-        ca.into_decimal_unchecked(precision, scale).into_series()
+        match agg_s.dtype() {
+            DataType::Decimal(_, _) => {
+                let ca = agg_s.decimal().unwrap();
+                let ca = ca.as_ref().clone();
+                let precision = self.0.precision();
+                let scale = self.0.scale();
+                ca.into_decimal_unchecked(precision, scale).into_series()
+            },
+            DataType::List(dtype) if dtype.is_decimal() => {
+                let dtype = self.0.dtype();
+                let ca = agg_s.list().unwrap();
+                let arr = ca.downcast_iter().next().unwrap();
+                // SAFETY: dtype is passed correctly
+                let s = unsafe {
+                    Series::from_chunks_and_dtype_unchecked("", vec![arr.values().clone()], dtype)
+                };
+                let new_values = s.array_ref(0).clone();
+                let data_type = ListArray::<i64>::default_datatype(dtype.to_arrow(true));
+                let new_arr = ListArray::<i64>::new(
+                    data_type,
+                    arr.offsets().clone(),
+                    new_values,
+                    arr.validity().cloned(),
+                );
+                unsafe {
+                    ListChunked::from_chunks_and_dtype_unchecked(
+                        agg_s.name(),
+                        vec![Box::new(new_arr)],
+                        DataType::List(Box::new(self.dtype().clone())),
+                    )
+                    .into_series()
+                }
+            },
+            _ => unreachable!(),
+        }
     }
 }
 
@@ -100,7 +130,7 @@ impl private::PrivateSeries for SeriesWrap<DecimalChunked> {
 
     #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
-        self.0.agg_list(groups)
+        self.agg_helper(|ca| ca.agg_list(groups))
     }
 
     fn subtract(&self, rhs: &Series) -> PolarsResult<Series> {
