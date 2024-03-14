@@ -9623,7 +9623,7 @@ class Expr:
         return self.shift(n, fill_value=fill_value)
 
     @deprecate_function(
-        "Use `polars.plugins.register_plugin` instead.", version="0.20.15"
+        "Use `polars.plugins.register_plugin` instead.", version="0.20.16"
     )
     def register_plugin(
         self,
@@ -9642,20 +9642,19 @@ class Expr:
         """
         Register a dynamic library as a plugin.
 
+        .. deprecated:: 0.20.16
+            Use :func:`polars.plugins.register_plugin` instead.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
         .. warning::
             This is highly unsafe as this will call the C function
             loaded by `lib::symbol`.
 
             The parameters you give dictate how polars will deal
             with the function. Make sure they are correct!
-
-        .. note::
-            This functionality is unstable and may change without it
-            being considered breaking.
-
-        .. deprecated:: 0.20.15
-
-            Use :func:`polars.plugins.register_plugin` instead.
 
         Parameters
         ----------

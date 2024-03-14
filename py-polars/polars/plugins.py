@@ -20,11 +20,11 @@ __all__ = ["register_plugin"]
 
 @unstable()
 def register_plugin(
+    *,
     plugin_location: Path | str,
     function_name: str,
     inputs: IntoExpr | Iterable[IntoExpr],
     kwargs: dict[str, Any] | None = None,
-    *,
     is_elementwise: bool = False,
     input_wildcard_expansion: bool = False,
     returns_scalar: bool = False,
@@ -33,7 +33,7 @@ def register_plugin(
     changes_length: bool = False,
 ) -> Expr:
     """
-    Register a dynamic library as a plugin.
+    Register a plugin function.
 
     .. warning::
         This functionality is considered **unstable**. It may be changed
@@ -52,10 +52,10 @@ def register_plugin(
     Parameters
     ----------
     plugin_location
-        Path to package where plugin is located. This should either be the dynamic
+        Path to the package where plugin is located. This should either be the dynamic
         library file, or the directory containing it.
     function_name
-        Rust function to load.
+        Name of the Rust function to register.
     inputs
         Arguments passed to this function. These get passed to the ``inputs``
         argument on the Rust side, and have to be of type Expression (or be
@@ -63,8 +63,8 @@ def register_plugin(
     kwargs
         Non-expression arguments. They must be JSON serializable.
     is_elementwise
-        If the function only operates on scalars
-        this will trigger fast paths.
+        If the function only operates on scalars, this will potentially trigger fast
+        paths.
     input_wildcard_expansion
         Expand expressions as input of this function.
     returns_scalar
@@ -80,7 +80,7 @@ def register_plugin(
 
     Returns
     -------
-    polars.Expr
+    Expr
     """
     pyexprs = parse_as_list_of_expressions(inputs)
     if not pyexprs:

@@ -189,13 +189,13 @@ def append_args(
         plugin_location=Path(__file__).parent,
         function_name="append_kwargs",
         inputs=expr,
-        is_elementwise=True,
         kwargs={
             "float_arg": float_arg,
             "integer_arg": integer_arg,
             "string_arg": string_arg,
             "boolean_arg": boolean_arg,
         },
+        is_elementwise=True,
     )
 ```
 
