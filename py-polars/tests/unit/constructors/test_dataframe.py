@@ -26,8 +26,8 @@ def test_df_mixed_dtypes_object() -> None:
         pl.DataFrame(data, strict=True)
 
     df = pl.DataFrame(data, strict=False)
-    assert df.schema == {"x": pl.List(pl.Object), "y": pl.Int64}
-    assert df.rows() == [(["abc", 12, 34.5], 1)]
+    assert df.schema == {"x": pl.Object, "y": pl.Int64}
+    assert df.rows() == [([b"abc", 12, 34.5], 1)]
 
 
 def test_df_object() -> None:

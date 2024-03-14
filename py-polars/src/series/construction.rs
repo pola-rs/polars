@@ -21,7 +21,7 @@ macro_rules! init_method {
         #[pymethods]
         impl PySeries {
             #[staticmethod]
-            fn $name(py: Python, name: &str, array: &PyArray1<$type>, _strict: bool) -> PySeries {
+            fn $name(py: Python, name: &str, array: &PyArray1<$type>, _strict: bool) -> Self {
                 mmap_numpy_array(py, name, array)
             }
         }
@@ -51,7 +51,7 @@ fn mmap_numpy_array<T: Element + NativeType>(
 #[pymethods]
 impl PySeries {
     #[staticmethod]
-    fn new_bool(py: Python, name: &str, array: &PyArray1<bool>, _strict: bool) -> PySeries {
+    fn new_bool(py: Python, name: &str, array: &PyArray1<bool>, _strict: bool) -> Self {
         let array = array.readonly();
         let vals = array.as_slice().unwrap();
         py.allow_threads(|| PySeries {
@@ -60,7 +60,7 @@ impl PySeries {
     }
 
     #[staticmethod]
-    fn new_f32(py: Python, name: &str, array: &PyArray1<f32>, nan_is_null: bool) -> PySeries {
+    fn new_f32(py: Python, name: &str, array: &PyArray1<f32>, nan_is_null: bool) -> Self {
         if nan_is_null {
             let array = array.readonly();
             let vals = array.as_slice().unwrap();
@@ -75,7 +75,7 @@ impl PySeries {
     }
 
     #[staticmethod]
-    fn new_f64(py: Python, name: &str, array: &PyArray1<f64>, nan_is_null: bool) -> PySeries {
+    fn new_f64(py: Python, name: &str, array: &PyArray1<f64>, nan_is_null: bool) -> Self {
         if nan_is_null {
             let array = array.readonly();
             let vals = array.as_slice().unwrap();
@@ -93,7 +93,7 @@ impl PySeries {
 #[pymethods]
 impl PySeries {
     #[staticmethod]
-    fn new_opt_bool(name: &str, obj: &PyAny, strict: bool) -> PyResult<PySeries> {
+    fn new_opt_bool(name: &str, obj: &PyAny, strict: bool) -> PyResult<Self> {
         let len = obj.len()?;
         let mut builder = BooleanChunkedBuilder::new(name, len);
 
@@ -158,7 +158,7 @@ macro_rules! init_method_opt {
         #[pymethods]
         impl PySeries {
             #[staticmethod]
-            fn $name(name: &str, obj: &PyAny, strict: bool) -> PyResult<PySeries> {
+            fn $name(name: &str, obj: &PyAny, strict: bool) -> PyResult<Self> {
                 new_primitive::<$type>(name, obj, strict)
             }
         }
@@ -184,14 +184,38 @@ init_method_opt!(new_opt_f64, Float64Type, f64);
 )]
 impl PySeries {
     #[staticmethod]
-    fn new_from_any_values(name: &str, values: Vec<&PyAny>, strict: bool) -> PyResult<PySeries> {
-        let any_values = values
-            .into_iter()
-            .map(|v| py_object_to_any_value(v, strict))
-            .collect::<PyResult<Vec<AnyValue>>>()?;
-        let s = Series::from_any_values(name, any_values.as_slice(), strict)
-            .map_err(PyPolarsErr::from)?;
-        Ok(s.into())
+    fn new_from_any_values(name: &str, values: Vec<&PyAny>, strict: bool) -> PyResult<Self> {
+        fn new_from_any_values_no_fallback(
+            name: &str,
+            values: &[&PyAny],
+            strict: bool,
+        ) -> PyResult<PySeries> {
+            let any_values = values
+                .iter()
+                .map(|v| py_object_to_any_value(v, strict))
+                .collect::<PyResult<Vec<AnyValue>>>()?;
+            let s = Series::from_any_values(name, any_values.as_slice(), strict)
+                .map_err(PyPolarsErr::from)?;
+            Ok(s.into())
+        }
+
+        let result = new_from_any_values_no_fallback(name, values.as_slice(), strict);
+
+        // Fall back to Object type for non-strict construction
+        if !strict && result.is_err() {
+            let s = Python::with_gil(|py| {
+                let objects = values
+                    .into_iter()
+                    .map(|v| ObjectValue {
+                        inner: v.to_object(py),
+                    })
+                    .collect();
+                Self::new_object(py, name, objects, strict)
+            });
+            return Ok(s);
+        }
+
+        result
     }
 
     #[staticmethod]
@@ -200,7 +224,7 @@ impl PySeries {
         values: Vec<&PyAny>,
         dtype: Wrap<DataType>,
         strict: bool,
-    ) -> PyResult<PySeries> {
+    ) -> PyResult<Self> {
         let any_values = values
             .into_iter()
             .map(|v| py_object_to_any_value(v, strict))
@@ -246,9 +270,7 @@ impl PySeries {
             s.into()
         }
         #[cfg(not(feature = "object"))]
-        {
-            todo!()
-        }
+        panic!("activate 'object' feature")
     }
 
     #[staticmethod]
@@ -299,7 +321,7 @@ impl PySeries {
     }
 
     #[staticmethod]
-    fn new_decimal(name: &str, val: Vec<Wrap<AnyValue<'_>>>, strict: bool) -> PyResult<PySeries> {
+    fn new_decimal(name: &str, val: Vec<Wrap<AnyValue<'_>>>, strict: bool) -> PyResult<Self> {
         // TODO: do we have to respect 'strict' here? It's possible if we want to.
         let avs = slice_extract_wrapped(&val);
         // Create a fake dtype with a placeholder "none" scale, to be inferred later.

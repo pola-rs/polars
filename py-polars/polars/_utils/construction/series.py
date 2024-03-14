@@ -61,7 +61,7 @@ from polars.dependencies import (
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
-from polars.exceptions import SchemaError, TimeZoneAwareConstructorWarning
+from polars.exceptions import TimeZoneAwareConstructorWarning
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyDataFrame, PySeries
@@ -249,7 +249,7 @@ def sequence_to_pyseries(
 
         elif python_dtype in (list, tuple):
             if dtype is None:
-                return _sequence_from_any_value_or_object(name, values, strict=strict)
+                return PySeries.new_from_any_values(name, values, strict=strict)
             elif dtype == Object:
                 return PySeries.new_object(name, values, strict)
             else:
@@ -296,10 +296,7 @@ def sequence_to_pyseries(
                         return srs
 
                 except RuntimeError:
-                    # raised if we cannot convert to Wrap<AnyValue>
-                    return _sequence_from_any_value_or_object(
-                        name, values, strict=strict
-                    )
+                    return PySeries.new_from_any_values(name, values, strict=strict)
 
             return _construct_series_with_fallbacks(
                 constructor, name, values, dtype, strict=strict
@@ -348,28 +345,6 @@ def _construct_series_with_fallbacks(
                 constructor = py_type_to_constructor(PyDecimal)
             else:
                 raise
-
-
-def _sequence_from_any_value_or_object(
-    name: str, values: Sequence[Any], *, strict: bool
-) -> PySeries:
-    """
-    Last resort conversion.
-
-    AnyValues are most flexible and if they fail we go for object types
-    """
-    try:
-        return PySeries.new_from_any_values(name, values, strict=strict)
-    # raised if we cannot convert to AnyValue
-    except RuntimeError:
-        if not strict:
-            return PySeries.new_object(name, values, _strict=False)
-        raise
-    # raised if AnyValue fallbacks fail
-    except SchemaError:
-        if not strict:
-            return PySeries.new_object(name, values, _strict=False)
-        raise
 
 
 def iterable_to_pyseries(

@@ -144,6 +144,7 @@ def test_fallback_without_dtype_nonstrict_single_type(
         ([True, 2], [1, 2], pl.Int64),
         ([1, 2.0], [1.0, 2.0], pl.Float64),
         ([2.0, "c"], ["2.0", "c"], pl.String),
+        ([1, 2.0, b"d", date(2022, 1, 1)], [1, 2.0, b"d", date(2022, 1, 1)], pl.Object),
     ],
 )
 def test_fallback_without_dtype_nonstrict_mixed_types(
@@ -154,9 +155,3 @@ def test_fallback_without_dtype_nonstrict_mixed_types(
     result = wrap_s(PySeries.new_from_any_values("", values, strict=False))
     assert result.dtype == expected_dtype
     assert result.to_list() == expected
-
-
-def test_fallback_without_dtype_nonstrict_no_supertype() -> None:
-    values = [1, 2.0, b"d", date(2022, 1, 1)]
-    with pytest.raises(pl.SchemaError, match="failed to infer supertype of values"):
-        PySeries.new_from_any_values("", values, strict=False)
