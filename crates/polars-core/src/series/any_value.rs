@@ -76,77 +76,64 @@ impl Series {
     /// Construct a new [`Series`]` with the given `dtype` from a slice of AnyValues.
     pub fn from_any_values_and_dtype(
         name: &str,
-        av: &[AnyValue],
+        values: &[AnyValue],
         dtype: &DataType,
         strict: bool,
     ) -> PolarsResult<Self> {
         let mut s = match dtype {
             #[cfg(feature = "dtype-i8")]
-            DataType::Int8 => any_values_to_integer::<Int8Type>(av, strict)?.into_series(),
+            DataType::Int8 => any_values_to_integer::<Int8Type>(values, strict)?.into_series(),
             #[cfg(feature = "dtype-i16")]
-            DataType::Int16 => any_values_to_integer::<Int16Type>(av, strict)?.into_series(),
-            DataType::Int32 => any_values_to_integer::<Int32Type>(av, strict)?.into_series(),
-            DataType::Int64 => any_values_to_integer::<Int64Type>(av, strict)?.into_series(),
+            DataType::Int16 => any_values_to_integer::<Int16Type>(values, strict)?.into_series(),
+            DataType::Int32 => any_values_to_integer::<Int32Type>(values, strict)?.into_series(),
+            DataType::Int64 => any_values_to_integer::<Int64Type>(values, strict)?.into_series(),
             #[cfg(feature = "dtype-u8")]
-            DataType::UInt8 => any_values_to_integer::<UInt8Type>(av, strict)?.into_series(),
+            DataType::UInt8 => any_values_to_integer::<UInt8Type>(values, strict)?.into_series(),
             #[cfg(feature = "dtype-u16")]
-            DataType::UInt16 => any_values_to_integer::<UInt16Type>(av, strict)?.into_series(),
-            DataType::UInt32 => any_values_to_integer::<UInt32Type>(av, strict)?.into_series(),
-            DataType::UInt64 => any_values_to_integer::<UInt64Type>(av, strict)?.into_series(),
-            DataType::Float32 => any_values_to_f32(av, strict)?.into_series(),
-            DataType::Float64 => any_values_to_f64(av, strict)?.into_series(),
-            DataType::String => any_values_to_string(av, strict)?.into_series(),
-            DataType::Binary => any_values_to_binary(av, strict)?.into_series(),
-            DataType::Boolean => any_values_to_bool(av, strict)?.into_series(),
+            DataType::UInt16 => any_values_to_integer::<UInt16Type>(values, strict)?.into_series(),
+            DataType::UInt32 => any_values_to_integer::<UInt32Type>(values, strict)?.into_series(),
+            DataType::UInt64 => any_values_to_integer::<UInt64Type>(values, strict)?.into_series(),
+            DataType::Float32 => any_values_to_f32(values, strict)?.into_series(),
+            DataType::Float64 => any_values_to_f64(values, strict)?.into_series(),
+            DataType::Boolean => any_values_to_bool(values, strict)?.into_series(),
+            DataType::String => any_values_to_string(values, strict)?.into_series(),
+            DataType::Binary => any_values_to_binary(values, strict)?.into_series(),
             #[cfg(feature = "dtype-date")]
-            DataType::Date => any_values_to_primitive_nonstrict::<Int32Type>(av)
+            DataType::Date => any_values_to_primitive_nonstrict::<Int32Type>(values)
                 .into_date()
                 .into_series(),
             #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime(tu, tz) => any_values_to_primitive_nonstrict::<Int64Type>(av)
+            DataType::Datetime(tu, tz) => any_values_to_primitive_nonstrict::<Int64Type>(values)
                 .into_datetime(*tu, (*tz).clone())
                 .into_series(),
             #[cfg(feature = "dtype-time")]
-            DataType::Time => any_values_to_primitive_nonstrict::<Int64Type>(av)
+            DataType::Time => any_values_to_primitive_nonstrict::<Int64Type>(values)
                 .into_time()
                 .into_series(),
             #[cfg(feature = "dtype-duration")]
-            DataType::Duration(tu) => any_values_to_primitive_nonstrict::<Int64Type>(av)
+            DataType::Duration(tu) => any_values_to_primitive_nonstrict::<Int64Type>(values)
                 .into_duration(*tu)
                 .into_series(),
-            #[cfg(feature = "dtype-decimal")]
-            DataType::Decimal(precision, scale) => {
-                any_values_to_decimal(av, *precision, *scale)?.into_series()
-            },
-            DataType::List(inner) => any_values_to_list(av, inner, strict)?.into_series(),
-            #[cfg(feature = "dtype-array")]
-            DataType::Array(inner, size) => any_values_to_array(av, inner, strict, *size)?
-                .into_series()
-                .cast(&DataType::Array(inner.clone(), *size))?,
             #[cfg(feature = "dtype-categorical")]
             dt @ (DataType::Categorical(_, _) | DataType::Enum(_, _)) => {
-                let ca = if let Some(single_av) = av.first() {
-                    match single_av {
-                        AnyValue::String(_) | AnyValue::StringOwned(_) | AnyValue::Null => {
-                            any_values_to_string(av, strict)?
-                        },
-                        _ => polars_bail!(
-                             ComputeError:
-                             "categorical dtype with any-values of dtype {} not supported",
-                             single_av.dtype()
-                        ),
-                    }
-                } else {
-                    StringChunked::full("", "", 0)
-                };
-
-                ca.cast(dt).unwrap()
+                any_values_to_categorical(values, dt, strict)?
             },
+            #[cfg(feature = "dtype-decimal")]
+            DataType::Decimal(precision, scale) => {
+                any_values_to_decimal(values, *precision, *scale)?.into_series()
+            },
+            DataType::List(inner) => any_values_to_list(values, inner, strict)?.into_series(),
+            #[cfg(feature = "dtype-array")]
+            DataType::Array(inner, size) => any_values_to_array(values, inner, strict, *size)?
+                .into_series()
+                .cast(&DataType::Array(inner.clone(), *size))?,
             #[cfg(feature = "dtype-struct")]
-            DataType::Struct(dtype_fields) => any_values_to_struct(av, dtype_fields, name, strict)?,
+            DataType::Struct(dtype_fields) => {
+                any_values_to_struct(values, dtype_fields, name, strict)?
+            },
             #[cfg(feature = "object")]
-            DataType::Object(_, registry) => any_values_to_object(av, registry, name)?,
-            DataType::Null => Series::new_null(name, av.len()),
+            DataType::Object(_, registry) => any_values_to_object(values, registry, name)?,
+            DataType::Null => Series::new_null(name, values.len()),
             dt => panic!("{dt:?} not supported"),
         };
         s.rename(name);
@@ -330,6 +317,30 @@ fn any_values_to_binary(values: &[AnyValue], strict: bool) -> PolarsResult<Binar
     }
 }
 
+#[cfg(feature = "dtype-categorical")]
+fn any_values_to_categorical(
+    values: &[AnyValue],
+    dtype: &DataType,
+    strict: bool,
+) -> PolarsResult<Series> {
+    let ca = if let Some(single_av) = values.first() {
+        match single_av {
+            AnyValue::String(_) | AnyValue::StringOwned(_) | AnyValue::Null => {
+                any_values_to_string(values, strict)?
+            },
+            _ => polars_bail!(
+                 ComputeError:
+                 "categorical dtype with any-values of dtype {} not supported",
+                 single_av.dtype()
+            ),
+        }
+    } else {
+        StringChunked::full("", "", 0)
+    };
+
+    ca.cast(dtype)
+}
+
 #[cfg(feature = "dtype-decimal")]
 fn any_values_to_decimal(
     avs: &[AnyValue],
@@ -397,6 +408,66 @@ fn any_values_to_decimal(
     builder.finish().into_decimal(precision, scale)
 }
 
+fn any_values_to_list(
+    avs: &[AnyValue],
+    inner_type: &DataType,
+    strict: bool,
+) -> PolarsResult<ListChunked> {
+    let target_dtype = DataType::List(Box::new(inner_type.clone()));
+
+    // this is handled downstream. The builder will choose the first non null type
+    let mut valid = true;
+    #[allow(unused_mut)]
+    let mut out: ListChunked = if inner_type == &DataType::Null {
+        avs.iter()
+            .map(|av| match av {
+                AnyValue::List(b) => Some(b.clone()),
+                AnyValue::Null => None,
+                _ => {
+                    valid = false;
+                    None
+                },
+            })
+            .collect_trusted()
+    }
+    // make sure that wrongly inferred AnyValues don't deviate from the datatype
+    else {
+        avs.iter()
+            .map(|av| match av {
+                AnyValue::List(b) => {
+                    if b.dtype() == inner_type {
+                        Some(b.clone())
+                    } else {
+                        match b.cast(inner_type) {
+                            Ok(out) => Some(out),
+                            Err(_) => Some(Series::full_null(b.name(), b.len(), inner_type)),
+                        }
+                    }
+                },
+                AnyValue::Null => None,
+                _ => {
+                    valid = false;
+                    None
+                },
+            })
+            .collect_trusted()
+    };
+
+    if strict && !valid {
+        polars_bail!(SchemaMismatch: "unexpected value while building Series of type {:?}", target_dtype);
+    }
+
+    // Ensure the logical type is correct for nested types
+    #[cfg(feature = "dtype-struct")]
+    if !matches!(inner_type, DataType::Null) && out.inner_dtype().is_nested() {
+        unsafe {
+            out.set_dtype(target_dtype.clone());
+        };
+    }
+
+    Ok(out)
+}
+
 #[cfg(feature = "dtype-array")]
 fn any_values_to_array(
     avs: &[AnyValue],
@@ -461,66 +532,6 @@ fn any_values_to_array(
         out.width() == width,
         SchemaMismatch: "got mixed size array widths where width {} was expected", width
     );
-
-    // Ensure the logical type is correct for nested types
-    #[cfg(feature = "dtype-struct")]
-    if !matches!(inner_type, DataType::Null) && out.inner_dtype().is_nested() {
-        unsafe {
-            out.set_dtype(target_dtype.clone());
-        };
-    }
-
-    Ok(out)
-}
-
-fn any_values_to_list(
-    avs: &[AnyValue],
-    inner_type: &DataType,
-    strict: bool,
-) -> PolarsResult<ListChunked> {
-    let target_dtype = DataType::List(Box::new(inner_type.clone()));
-
-    // this is handled downstream. The builder will choose the first non null type
-    let mut valid = true;
-    #[allow(unused_mut)]
-    let mut out: ListChunked = if inner_type == &DataType::Null {
-        avs.iter()
-            .map(|av| match av {
-                AnyValue::List(b) => Some(b.clone()),
-                AnyValue::Null => None,
-                _ => {
-                    valid = false;
-                    None
-                },
-            })
-            .collect_trusted()
-    }
-    // make sure that wrongly inferred AnyValues don't deviate from the datatype
-    else {
-        avs.iter()
-            .map(|av| match av {
-                AnyValue::List(b) => {
-                    if b.dtype() == inner_type {
-                        Some(b.clone())
-                    } else {
-                        match b.cast(inner_type) {
-                            Ok(out) => Some(out),
-                            Err(_) => Some(Series::full_null(b.name(), b.len(), inner_type)),
-                        }
-                    }
-                },
-                AnyValue::Null => None,
-                _ => {
-                    valid = false;
-                    None
-                },
-            })
-            .collect_trusted()
-    };
-
-    if strict && !valid {
-        polars_bail!(SchemaMismatch: "unexpected value while building Series of type {:?}", target_dtype);
-    }
 
     // Ensure the logical type is correct for nested types
     #[cfg(feature = "dtype-struct")]
