@@ -13,6 +13,66 @@ impl<'a, T: AsRef<[AnyValue<'a>]>> NamedFrom<T, [AnyValue<'a>]> for Series {
 }
 
 impl Series {
+    /// Construct a new [`Series`] from a slice of AnyValues.
+    ///
+    /// The data type of the resulting Series is determined by the `values`
+    /// and the `strict` parameter:
+    /// - If `strict` is `true`, the data type is equal to the data type of the
+    ///   first non-null value. If any other non-null values do not match this
+    ///   data type, an error is raised.
+    /// - If `strict` is `false`, the data type is the supertype of the `values`.
+    ///   An error is returned if no supertype can be determined.
+    ///   **WARNING**: A full pass over the values is required to determine the supertype.
+    /// - If no values were passed, the resulting data type is `Null`.
+    pub fn from_any_values(name: &str, values: &[AnyValue], strict: bool) -> PolarsResult<Self> {
+        fn get_first_non_null_dtype(values: &[AnyValue]) -> DataType {
+            let mut all_flat_null = true;
+            let first_non_null = values.iter().find(|av| {
+                if !av.is_null() {
+                    all_flat_null = false
+                };
+                !av.is_nested_null()
+            });
+            match first_non_null {
+                Some(av) => av.dtype(),
+                None => {
+                    if all_flat_null {
+                        DataType::Null
+                    } else {
+                        // Second pass to check for the nested null value that
+                        // toggled `all_flat_null` to false, e.g. a List(Null)
+                        let first_nested_null = values.iter().find(|av| !av.is_null()).unwrap();
+                        first_nested_null.dtype()
+                    }
+                },
+            }
+        }
+        fn get_any_values_supertype(values: &[AnyValue]) -> PolarsResult<DataType> {
+            let mut supertype = DataType::Null;
+            let mut dtypes = PlHashSet::<DataType>::new();
+            for av in values {
+                if dtypes.insert(av.dtype()) {
+                    supertype = try_get_supertype(&supertype, &av.dtype()).map_err(|_| {
+                            polars_err!(
+                                SchemaMismatch:
+                                "failed to infer supertype of values; partial supertype is {:?}, found value of type {:?}: {}",
+                                supertype, av.dtype(), av
+                            )
+                        }
+                    )?;
+                }
+            }
+            Ok(supertype)
+        }
+
+        let dtype = if strict {
+            get_first_non_null_dtype(values)
+        } else {
+            get_any_values_supertype(values)?
+        };
+        Self::from_any_values_and_dtype(name, values, &dtype, strict)
+    }
+
     /// Construct a new [`Series`]` with the given `dtype` from a slice of AnyValues.
     pub fn from_any_values_and_dtype(
         name: &str,
@@ -163,66 +223,6 @@ impl Series {
         };
         s.rename(name);
         Ok(s)
-    }
-
-    /// Construct a new [`Series`] from a slice of AnyValues.
-    ///
-    /// The data type of the resulting Series is determined by the `values`
-    /// and the `strict` parameter:
-    /// - If `strict` is `true`, the data type is equal to the data type of the
-    ///   first non-null value. If any other non-null values do not match this
-    ///   data type, an error is raised.
-    /// - If `strict` is `false`, the data type is the supertype of the `values`.
-    ///   An error is returned if no supertype can be determined.
-    ///   **WARNING**: A full pass over the values is required to determine the supertype.
-    /// - If no values were passed, the resulting data type is `Null`.
-    pub fn from_any_values(name: &str, values: &[AnyValue], strict: bool) -> PolarsResult<Self> {
-        fn get_first_non_null_dtype(values: &[AnyValue]) -> DataType {
-            let mut all_flat_null = true;
-            let first_non_null = values.iter().find(|av| {
-                if !av.is_null() {
-                    all_flat_null = false
-                };
-                !av.is_nested_null()
-            });
-            match first_non_null {
-                Some(av) => av.dtype(),
-                None => {
-                    if all_flat_null {
-                        DataType::Null
-                    } else {
-                        // Second pass to check for the nested null value that
-                        // toggled `all_flat_null` to false, e.g. a List(Null)
-                        let first_nested_null = values.iter().find(|av| !av.is_null()).unwrap();
-                        first_nested_null.dtype()
-                    }
-                },
-            }
-        }
-        fn get_any_values_supertype(values: &[AnyValue]) -> PolarsResult<DataType> {
-            let mut supertype = DataType::Null;
-            let mut dtypes = PlHashSet::<DataType>::new();
-            for av in values {
-                if dtypes.insert(av.dtype()) {
-                    supertype = try_get_supertype(&supertype, &av.dtype()).map_err(|_| {
-                            polars_err!(
-                                SchemaMismatch:
-                                "failed to infer supertype of values; partial supertype is {:?}, found value of type {:?}: {}",
-                                supertype, av.dtype(), av
-                            )
-                        }
-                    )?;
-                }
-            }
-            Ok(supertype)
-        }
-
-        let dtype = if strict {
-            get_first_non_null_dtype(values)
-        } else {
-            get_any_values_supertype(values)?
-        };
-        Self::from_any_values_and_dtype(name, values, &dtype, strict)
     }
 }
 
