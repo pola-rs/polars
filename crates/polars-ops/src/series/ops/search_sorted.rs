@@ -1,6 +1,5 @@
 use arrow::array::Array;
-use polars_core::chunked_array::ops::search_sorted::binary_search_array;
-pub use polars_core::chunked_array::ops::search_sorted::SearchSortedSide;
+use polars_core::chunked_array::ops::search_sorted::{binary_search_array, SearchSortedSide};
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
 
