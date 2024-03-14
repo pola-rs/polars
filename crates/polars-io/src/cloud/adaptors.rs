@@ -4,6 +4,7 @@
 //! [parquet2]: https://crates.io/crates/parquet2
 use std::io::{self};
 use std::pin::Pin;
+use std::sync::Arc;
 use std::task::Poll;
 
 use bytes::Bytes;
@@ -11,11 +12,11 @@ use futures::executor::block_on;
 use futures::future::BoxFuture;
 use futures::{AsyncRead, AsyncSeek, Future, TryFutureExt};
 use object_store::path::Path;
-use object_store::MultipartId;
-use polars_error::to_compute_err;
+use object_store::{MultipartId, ObjectStore};
+use polars_error::{to_compute_err, PolarsResult};
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 
-use super::*;
+use super::CloudOptions;
 use crate::pl_async::get_runtime;
 
 type OptionalFuture = Option<BoxFuture<'static, std::io::Result<Bytes>>>;
@@ -156,16 +157,13 @@ impl CloudWriter {
         object_store: Arc<dyn ObjectStore>,
         path: Path,
     ) -> PolarsResult<Self> {
-        let build_result = Self::build_writer(&object_store, &path).await;
-        match build_result {
-            Err(error) => Err(PolarsError::from(error)),
-            Ok((multipart_id, writer)) => Ok(CloudWriter {
-                object_store,
-                path,
-                multipart_id,
-                writer,
-            }),
-        }
+        let (multipart_id, writer) = Self::build_writer(&object_store, &path).await?;
+        Ok(CloudWriter {
+            object_store,
+            path,
+            multipart_id,
+            writer,
+        })
     }
 
     /// Constructs a new CloudWriter from a path and an optional set of CloudOptions.
