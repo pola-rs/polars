@@ -84,7 +84,7 @@ class StructNameSpace:
         --------
         >>> s = pl.Series([{"a": 1, "b": 2}, {"a": 3, "b": 4}])
         >>> s.struct.fields
-        ['a', 'b']
+        ["a", "b"]
         >>> s = s.struct.rename_fields(["c", "d"])
         >>> s.struct.fields
         ["c", "d"]
