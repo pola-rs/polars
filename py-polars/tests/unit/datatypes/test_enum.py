@@ -460,3 +460,16 @@ def test_enum_creating_col_expr() -> None:
     out = df.select(pl.col(pl.Enum))
     expected = df.select("col1", "col3")
     assert_frame_equal(out, expected)
+
+
+def test_enum_cse_eq() -> None:
+    df = pl.DataFrame({"a": [1]})
+
+    # these both share the value "a", which is used in both expressions
+    dt1 = pl.Enum(["a", "b"])
+    dt2 = pl.Enum(["a", "c"])
+
+    df.lazy().select(
+        pl.when(True).then(pl.lit("a", dtype=dt1)).alias("dt1"),
+        pl.when(True).then(pl.lit("a", dtype=dt2)).alias("dt2"),
+    ).collect()
