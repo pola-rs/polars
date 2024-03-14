@@ -75,7 +75,7 @@ impl Series {
 
     /// Construct a new [`Series`]` with the given `dtype` from a slice of AnyValues.
     ///
-    /// If `strict` is `true`, an error is raised if the values do not match the given
+    /// If `strict` is `true`, an error is returned if the values do not match the given
     /// data type. If `strict` is `false`, values that do not match the given data type
     /// are cast. If casting is not possible, the values are set to null instead.`
     pub fn from_any_values_and_dtype(
@@ -136,7 +136,12 @@ impl Series {
             #[cfg(feature = "object")]
             DataType::Object(_, registry) => any_values_to_object(values, registry)?,
             DataType::Null => Series::new_null(name, values.len()),
-            dt => panic!("{dt:?} not supported"),
+            dt @ (DataType::BinaryOffset | DataType::Unknown) => {
+                polars_bail!(
+                    InvalidOperation:
+                    "constructing a Series with data type {dt:?} from AnyValues is not supported"
+                )
+            },
         };
         s.rename(name);
         Ok(s)
