@@ -2,7 +2,7 @@ use argminmax::ArgMinMax;
 use arrow::array::Array;
 use arrow::legacy::bit_util::*;
 use polars_core::chunked_array::ops::search_sorted::{
-    binary_search_array, slice_sorted_non_null_and_offset,
+    binary_search_array, slice_sorted_non_null_and_offset, SearchSortedSide,
 };
 use polars_core::series::IsSorted;
 use polars_core::{with_match_physical_float_type, with_match_physical_numeric_polars_type};
