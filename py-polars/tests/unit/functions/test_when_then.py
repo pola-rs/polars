@@ -242,6 +242,18 @@ def test_comp_categorical_lit_dtype() -> None:
     ).dtypes == [pl.Categorical, pl.Int32]
 
 
+def test_comp_incompatible_enum_dtype() -> None:
+    df = pl.DataFrame({"a": pl.Series(["a", "b"], dtype=pl.Enum(["a", "b"]))})
+
+    with pytest.raises(
+        pl.ComputeError,
+        match="conversion from `str` to `enum` failed in column 'literal'",
+    ):
+        df.with_columns(
+            pl.when(pl.col("a") == "a").then(pl.col("a")).otherwise(pl.lit("c"))
+        )
+
+
 def test_predicate_broadcast() -> None:
     df = pl.DataFrame(
         {
