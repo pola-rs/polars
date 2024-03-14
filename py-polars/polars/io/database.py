@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, Iterable, Literal, Sequence, TypedDict, o
 
 from polars._utils.deprecation import issue_deprecation_warning
 from polars.convert import from_arrow
+from polars.datatypes import N_INFER_DEFAULT
 from polars.exceptions import InvalidOperationError, UnsuitableSQLError
 
 if TYPE_CHECKING:
@@ -249,6 +250,7 @@ class ConnectionExecutor:
         batch_size: int | None,
         iter_batches: bool,
         schema_overrides: SchemaDict | None,
+        **kwargs: Any,
     ) -> DataFrame | Iterable[DataFrame] | None:
         """Return resultset data in Arrow format for frame init."""
         from polars import from_arrow
@@ -285,6 +287,7 @@ class ConnectionExecutor:
         batch_size: int | None,
         iter_batches: bool,
         schema_overrides: SchemaDict | None,
+        infer_schema_length: int | None,
     ) -> DataFrame | Iterable[DataFrame] | None:
         """Return resultset data row-wise for frame init."""
         from polars import DataFrame
@@ -304,12 +307,12 @@ class ConnectionExecutor:
             # TODO: refine types based on the cursor description's type_code,
             #  if/where available? (for now, we just read the column names)
             result_columns = list(cursor_desc)
-
             frames = (
                 DataFrame(
                     data=rows,
                     schema=result_columns,
                     schema_overrides=schema_overrides,
+                    infer_schema_length=infer_schema_length,
                     orient="row",
                 )
                 for rows in (
@@ -420,6 +423,7 @@ class ConnectionExecutor:
         iter_batches: bool = False,
         batch_size: int | None = None,
         schema_overrides: SchemaDict | None = None,
+        infer_schema_length: int | None = N_INFER_DEFAULT,
     ) -> DataFrame | Iterable[DataFrame]:
         """
         Convert the result set to a DataFrame.
@@ -444,6 +448,7 @@ class ConnectionExecutor:
                 batch_size=batch_size,
                 iter_batches=iter_batches,
                 schema_overrides=schema_overrides,
+                infer_schema_length=infer_schema_length,
             )
             if frame is not None:
                 return frame
@@ -462,6 +467,8 @@ def read_database(
     iter_batches: Literal[False] = False,
     batch_size: int | None = ...,
     schema_overrides: SchemaDict | None = ...,
+    infer_schema_length: int | None = ...,
+    execute_options: dict[str, Any] | None = ...,
     **kwargs: Any,
 ) -> DataFrame: ...
 
@@ -474,6 +481,8 @@ def read_database(
     iter_batches: Literal[True],
     batch_size: int | None = ...,
     schema_overrides: SchemaDict | None = ...,
+    infer_schema_length: int | None = ...,
+    execute_options: dict[str, Any] | None = ...,
     **kwargs: Any,
 ) -> Iterable[DataFrame]: ...
 
@@ -485,6 +494,7 @@ def read_database(  # noqa: D417
     iter_batches: bool = False,
     batch_size: int | None = None,
     schema_overrides: SchemaDict | None = None,
+    infer_schema_length: int | None = N_INFER_DEFAULT,
     execute_options: dict[str, Any] | None = None,
     **kwargs: Any,
 ) -> DataFrame | Iterable[DataFrame]:
@@ -523,6 +533,11 @@ def read_database(  # noqa: D417
         on driver/backend). This can be useful if the given types can be more precisely
         defined (for example, if you know that a given column can be declared as `u32`
         instead of `i64`).
+    infer_schema_length
+        The maximum number of rows to scan for schema inference. If set to `None`, the
+        full data may be scanned *(this can be slow)*. This parameter only applies if
+        the data is read as a sequence of rows and the `schema_overrides` parameter
+        is not set for the given column; Arrow-aware drivers also ignore this value.
     execute_options
         These options will be passed through into the underlying query execution method
         as kwargs. In the case of connections made using an ODBC string (which use
@@ -657,6 +672,7 @@ def read_database(  # noqa: D417
             batch_size=batch_size,
             iter_batches=iter_batches,
             schema_overrides=schema_overrides,
+            infer_schema_length=infer_schema_length,
         )
 
 
