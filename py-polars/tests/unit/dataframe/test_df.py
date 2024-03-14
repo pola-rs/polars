@@ -1169,42 +1169,6 @@ def test_from_generator_or_iterable() -> None:
     )
 
 
-def test_df_init_from_generator_dict_view() -> None:
-    d = {0: "x", 1: "y", 2: "z"}
-    df = pl.DataFrame(
-        {
-            "keys": d.keys(),
-            "vals": d.values(),
-            "itms": d.items(),
-        }
-    )
-    assert df.to_dict(as_series=False) == {
-        "keys": [0, 1, 2],
-        "vals": ["x", "y", "z"],
-        "itms": [(0, "x"), (1, "y"), (2, "z")],
-    }
-
-
-@pytest.mark.skipif(
-    sys.version_info < (3, 11),
-    reason="reversed dict views not supported before Python 3.11",
-)
-def test_df_init_from_generator_reversed_dict_view() -> None:
-    d = {0: "x", 1: "y", 2: "z"}
-    df = pl.DataFrame(
-        {
-            "rev_keys": reversed(d.keys()),
-            "rev_vals": reversed(d.values()),
-            "rev_itms": reversed(d.items()),
-        }
-    )
-    assert df.to_dict(as_series=False) == {
-        "rev_keys": [2, 1, 0],
-        "rev_vals": ["z", "y", "x"],
-        "rev_itms": [(2, "z"), (1, "y"), (0, "x")],
-    }
-
-
 def test_from_rows() -> None:
     df = pl.from_records([[1, 2, "foo"], [2, 3, "bar"]])
     assert_frame_equal(
@@ -1475,30 +1439,6 @@ def test_reproducible_hash_with_seeds() -> None:
         assert_series_equal(expected, result, check_names=False, check_exact=True)
         result = df.select([pl.col("s").hash(*seeds)])["s"]
         assert_series_equal(expected, result, check_names=False, check_exact=True)
-
-
-def test_create_df_from_object() -> None:
-    class Foo:
-        def __init__(self, value: int) -> None:
-            self._value = value
-
-        def __eq__(self, other: Any) -> bool:
-            return issubclass(other.__class__, self.__class__) and (
-                self._value == other._value
-            )
-
-        def __repr__(self) -> str:
-            return f"{self.__class__.__name__}({self._value})"
-
-    # from miscellaneous object
-    df = pl.DataFrame({"a": [Foo(1), Foo(2)]})
-    assert df["a"].dtype == pl.Object
-    assert df.rows() == [(Foo(1),), (Foo(2),)]
-
-    # from mixed-type input
-    df = pl.DataFrame({"x": [["abc", 12, 34.5]], "y": [1]})
-    assert df.schema == {"x": pl.Object, "y": pl.Int64}
-    assert df.rows() == [(["abc", 12, 34.5], 1)]
 
 
 def test_hashing_on_python_objects() -> None:

@@ -293,6 +293,11 @@ def test_decimal_aggregations() -> None:
         }
     )
 
+    assert df.group_by("g").agg("a").sort("g").to_dict(as_series=False) == {
+        "g": [1, 2],
+        "a": [[D("0.1"), D("10.1")], [D("100.01"), D("9000.12")]],
+    }
+
     assert df.group_by("g", maintain_order=True).agg(
         sum=pl.sum("a"),
         min=pl.min("a"),

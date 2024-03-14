@@ -80,7 +80,14 @@ impl PartialEq for DataType {
             match (self, other) {
                 // Don't include rev maps in comparisons
                 #[cfg(feature = "dtype-categorical")]
-                (Categorical(_, _), Categorical(_, _)) | (Enum(_, _), Enum(_, _)) => true,
+                (Categorical(_, _), Categorical(_, _)) => true,
+                #[cfg(feature = "dtype-categorical")]
+                // None means select all Enum dtypes. This is for operation `pl.col(pl.Enum)`
+                (Enum(None, _), Enum(_, _)) | (Enum(_, _), Enum(None, _)) => true,
+                #[cfg(feature = "dtype-categorical")]
+                (Enum(Some(cat_lhs), _), Enum(Some(cat_rhs), _)) => {
+                    cat_lhs.get_categories() == cat_rhs.get_categories()
+                },
                 (Datetime(tu_l, tz_l), Datetime(tu_r, tz_r)) => tu_l == tu_r && tz_l == tz_r,
                 (List(left_inner), List(right_inner)) => left_inner == right_inner,
                 #[cfg(feature = "dtype-duration")]
