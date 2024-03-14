@@ -109,7 +109,8 @@ where
     left
 }
 
-/// Get a slice of the non-null values of a sorted array.
+/// Get a slice of the non-null values of a sorted array. The returned array
+/// will have a single chunk.
 /// # Safety
 /// The array is sorted and has at least one non-null value.
 pub unsafe fn slice_sorted_non_null_and_offset<T>(ca: &ChunkedArray<T>) -> (usize, ChunkedArray<T>)
@@ -123,5 +124,5 @@ where
     debug_assert!(out.null_count() != out.len());
     debug_assert!(out.null_count() == 0);
 
-    (offset, out)
+    (offset, out.rechunk())
 }

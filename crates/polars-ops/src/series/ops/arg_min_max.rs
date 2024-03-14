@@ -174,7 +174,7 @@ where
     T: PolarsNumericType,
 {
     let (offset, ca) = unsafe { slice_sorted_non_null_and_offset(ca) };
-    let arr = unsafe { ca.rechunk().downcast_get_unchecked(0).clone() };
+    let arr = unsafe { ca.downcast_get_unchecked(0) };
 
     let out = match ca.is_sorted_flag() {
         IsSorted::Ascending => {
@@ -183,7 +183,7 @@ where
 
             let idx = with_match_physical_float_type!(T::get_dtype(), |$T| {
                 let val = unsafe { std::mem::transmute_copy::<$T, _>(&$T::NAN) };
-                binary_search_array(side, &arr, val, is_descending)
+                binary_search_array(side, arr, val, is_descending)
             }) as usize;
 
             let idx = idx.saturating_sub(1);
@@ -196,7 +196,7 @@ where
 
             let idx = with_match_physical_float_type!(T::get_dtype(), |$T| {
                 let val = unsafe { std::mem::transmute_copy::<$T, _>(&$T::NAN) };
-                binary_search_array(side, &arr, val, is_descending)
+                binary_search_array(side, arr, val, is_descending)
             }) as usize;
 
             let idx = if idx == arr.len() { idx - 1 } else { idx };
