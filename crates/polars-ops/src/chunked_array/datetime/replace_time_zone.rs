@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use arrow::legacy::kernels::{convert_to_naive_local, Ambiguous};
+use arrow::legacy::kernels::convert_to_naive_local;
 use arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
 };
@@ -42,12 +42,11 @@ pub fn replace_time_zone(
 
     let out = if ambiguous.len() == 1
         && ambiguous.get(0) != Some("null")
-        && non_existent != NonExistent::Null
+        && non_existent == NonExistent::Raise
     {
         impl_replace_time_zone_fast(
             datetime,
             ambiguous.get(0),
-            non_existent,
             timestamp_to_datetime,
             datetime_to_timestamp,
             &from_tz,
@@ -81,7 +80,6 @@ pub fn replace_time_zone(
 pub fn impl_replace_time_zone_fast(
     datetime: &Logical<DatetimeType, Int64Type>,
     ambiguous: Option<&str>,
-    non_existent: NonExistent,
     timestamp_to_datetime: fn(i64) -> NaiveDateTime,
     datetime_to_timestamp: fn(NaiveDateTime) -> i64,
     from_tz: &chrono_tz::Tz,
@@ -96,9 +94,9 @@ pub fn impl_replace_time_zone_fast(
                     to_tz,
                     ndt,
                     Ambiguous::from_str(ambiguous)?,
-                    non_existent,
+                    NonExistent::Raise,
                 )?
-                .expect("we didn't use Ambiguous::Null"),
+                .expect("we didn't use Ambiguous::Null or NonExistent::Null"),
             ))
         }),
         _ => Ok(datetime.0.apply(|_| None)),

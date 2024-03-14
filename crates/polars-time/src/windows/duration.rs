@@ -468,7 +468,7 @@ impl Duration {
                     Ambiguous::Earliest,
                     NonExistent::Raise,
                 )?
-                .expect("we didn't use Ambiguous::Null")
+                .expect("we didn't use Ambiguous::Null or NonExistent::Null")
                     == original_dt_utc
                 {
                     Ok(try_localize_datetime(
@@ -477,14 +477,14 @@ impl Duration {
                         Ambiguous::Earliest,
                         NonExistent::Raise,
                     )?
-                    .expect("we didn't use Ambiguous::Null"))
+                    .expect("we didn't use Ambiguous::Null or NonExistent::Null"))
                 } else if try_localize_datetime(
                     original_dt_local,
                     tz,
                     Ambiguous::Latest,
                     NonExistent::Raise,
                 )?
-                .expect("we didn't use Ambiguous::Null")
+                .expect("we didn't use Ambiguous::Null or NonExistent::Null")
                     == original_dt_utc
                 {
                     Ok(try_localize_datetime(
@@ -493,7 +493,7 @@ impl Duration {
                         Ambiguous::Latest,
                         NonExistent::Raise,
                     )?
-                    .expect("we didn't use Ambiguous::Null"))
+                    .expect("we didn't use Ambiguous::Null or NonExistent::Null"))
                 } else {
                     unreachable!()
                 }
@@ -811,7 +811,7 @@ impl Duration {
                 // for UTC, use fastpath below (same as naive)
                 Some(tz) if tz != &chrono_tz::UTC => datetime_to_timestamp(
                     try_localize_datetime(dt, tz, Ambiguous::Raise, NonExistent::Raise)?
-                        .expect("we didn't use Ambiguous::Null"),
+                        .expect("we didn't use Ambiguous::Null or NonExistent::Null"),
                 ),
                 _ => datetime_to_timestamp(dt),
             };
@@ -833,7 +833,7 @@ impl Duration {
                             Ambiguous::Raise,
                             NonExistent::Raise,
                         )?
-                        .expect("we didn't use Ambiguous::Null"),
+                        .expect("we didn't use Ambiguous::Null or NonExistent::Null"),
                     );
                 },
                 _ => new_t += if d.negative { -t_weeks } else { t_weeks },
@@ -856,7 +856,7 @@ impl Duration {
                             Ambiguous::Raise,
                             NonExistent::Raise,
                         )?
-                        .expect("we didn't use Ambiguous::Null"),
+                        .expect("we didn't use Ambiguous::Null or NonExistent::Null"),
                     );
                 },
                 _ => new_t += if d.negative { -t_days } else { t_days },
