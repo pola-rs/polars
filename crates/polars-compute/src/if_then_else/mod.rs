@@ -121,7 +121,7 @@ where
         .zip(out_chunks.by_ref());
     for (i, ((tc, fc), oc)) in combined.enumerate() {
         let m =
-            unsafe { u64::from_le_bytes(bulk_mask.get_unchecked(i..i + 8).try_into().unwrap()) };
+            unsafe { u64::from_le_bytes(bulk_mask.get_unchecked(8*i..8*i + 8).try_into().unwrap()) };
         process_chunk(
             m,
             tc.try_into().unwrap(),
@@ -186,7 +186,7 @@ where
     let combined = true_chunks.by_ref().zip(out_chunks.by_ref());
     for (i, (tc, oc)) in combined.enumerate() {
         let m =
-            unsafe { u64::from_le_bytes(bulk_mask.get_unchecked(i..i + 8).try_into().unwrap()) };
+            unsafe { u64::from_le_bytes(bulk_mask.get_unchecked(8*i..8*i + 8).try_into().unwrap()) };
         process_chunk(
             m ^ xor_inverter,
             tc.try_into().unwrap(),
@@ -244,7 +244,7 @@ where
     let mut out_chunks = rest_out.chunks_exact_mut(64);
     for (i, oc) in out_chunks.by_ref().enumerate() {
         let m =
-            unsafe { u64::from_le_bytes(bulk_mask.get_unchecked(i..i + 8).try_into().unwrap()) };
+            unsafe { u64::from_le_bytes(bulk_mask.get_unchecked(8*i..8*i + 8).try_into().unwrap()) };
         generate_chunk(
             m,
             if_true,
