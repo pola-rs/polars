@@ -74,6 +74,10 @@ impl Series {
     }
 
     /// Construct a new [`Series`]` with the given `dtype` from a slice of AnyValues.
+    ///
+    /// If `strict` is `true`, an error is raised if the values do not match the given
+    /// data type. If `strict` is `false`, values that do not match the given data type
+    /// are cast. If casting is not possible, the values are set to null instead.`
     pub fn from_any_values_and_dtype(
         name: &str,
         values: &[AnyValue],
@@ -128,11 +132,9 @@ impl Series {
                 .into_series()
                 .cast(&DataType::Array(inner.clone(), *size))?,
             #[cfg(feature = "dtype-struct")]
-            DataType::Struct(dtype_fields) => {
-                any_values_to_struct(values, dtype_fields, name, strict)?
-            },
+            DataType::Struct(fields) => any_values_to_struct(values, fields, strict)?,
             #[cfg(feature = "object")]
-            DataType::Object(_, registry) => any_values_to_object(values, registry, name)?,
+            DataType::Object(_, registry) => any_values_to_object(values, registry)?,
             DataType::Null => Series::new_null(name, values.len()),
             dt => panic!("{dt:?} not supported"),
         };
@@ -548,12 +550,11 @@ fn any_values_to_array(
 fn any_values_to_struct(
     values: &[AnyValue],
     fields: &[Field],
-    name: &str,
     strict: bool,
 ) -> PolarsResult<Series> {
     // Fast path for empty structs.
     if fields.is_empty() {
-        return Ok(StructChunked::full_null(name, values.len()).into_series());
+        return Ok(StructChunked::full_null("", values.len()).into_series());
     }
 
     // The physical series fields of the struct.
@@ -616,20 +617,19 @@ fn any_values_to_struct(
         };
         series_fields.push(s)
     }
-    StructChunked::new(name, &series_fields).map(|ca| ca.into_series())
+    StructChunked::new("", &series_fields).map(|ca| ca.into_series())
 }
 
 #[cfg(feature = "object")]
 fn any_values_to_object(
     values: &[AnyValue],
     registry: &Option<Arc<ObjectRegistry>>,
-    name: &str,
 ) -> PolarsResult<Series> {
     let mut builder = match registry {
         None => {
             use crate::chunked_array::object::registry;
             let converter = registry::get_object_converter();
-            let mut builder = registry::get_object_builder(name, values.len());
+            let mut builder = registry::get_object_builder("", values.len());
             for av in values {
                 match av {
                     AnyValue::Object(val) => builder.append_value(val.as_any()),
@@ -645,7 +645,7 @@ fn any_values_to_object(
             builder
         },
         Some(registry) => {
-            let mut builder = (*registry.builder_constructor)(name, values.len());
+            let mut builder = (*registry.builder_constructor)("", values.len());
             for av in values {
                 match av {
                     AnyValue::Object(val) => builder.append_value(val.as_any()),
