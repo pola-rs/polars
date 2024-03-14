@@ -384,7 +384,7 @@ impl ChunkCast for ListChunked {
                     (dt, Categorical(None, _) | Enum(_, _))
                         if !matches!(dt, Categorical(_, _) | Enum(_, _) | String | Null) =>
                     {
-                        polars_bail!(ComputeError: "cannot cast List inner type: '{:?}' to Categorical", dt)
+                        polars_bail!(InvalidOperation: "cannot cast List inner type: '{:?}' to Categorical", dt)
                     },
                     _ => {
                         // ensure the inner logical type bubbles up
@@ -418,7 +418,7 @@ impl ChunkCast for ListChunked {
             },
             _ => {
                 polars_bail!(
-                    ComputeError: "cannot cast List type (inner: '{:?}', to: '{:?}')",
+                    InvalidOperation: "cannot cast List type (inner: '{:?}', to: '{:?}')",
                     self.inner_dtype(),
                     data_type,
                 )
@@ -452,7 +452,7 @@ impl ChunkCast for ArrayChunked {
                     (old, new) if old == *new => Ok(self.clone().into_series()),
                     #[cfg(feature = "dtype-categorical")]
                     (dt, Categorical(None, _) | Enum(_, _)) if !matches!(dt, String) => {
-                        polars_bail!(InvalidOperation: "cannot cast fixed-size-list inner type: '{:?}' to dtype: {:?}", dt, child_type)
+                        polars_bail!(InvalidOperation: "cannot cast Array inner type: '{:?}' to dtype: {:?}", dt, child_type)
                     },
                     _ => {
                         // ensure the inner logical type bubbles up
@@ -483,7 +483,13 @@ impl ChunkCast for ArrayChunked {
                     ))
                 }
             },
-            _ => polars_bail!(InvalidOperation: "cannot cast list type"),
+            _ => {
+                polars_bail!(
+                    InvalidOperation: "cannot cast Array type (inner: '{:?}', to: '{:?}')",
+                    self.inner_dtype(),
+                    data_type,
+                )
+            },
         }
     }
 
