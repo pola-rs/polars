@@ -558,10 +558,10 @@ fn any_values_to_array(
             .collect_ca_with_dtype("", target_dtype.clone())
     };
 
-    polars_ensure!(
-        valid || !strict,
-        SchemaMismatch: "unexpected value while building Series of type {:?}", target_dtype
-    );
+    if strict && !valid {
+        polars_bail!(SchemaMismatch: "unexpected value while building Series of type {:?}", target_dtype);
+    }
+
     polars_ensure!(
         out.width() == width,
         SchemaMismatch: "got mixed size array widths where width {} was expected", width
@@ -622,10 +622,9 @@ fn any_values_to_list(
             .collect_trusted()
     };
 
-    polars_ensure!(
-        valid || !strict,
-        SchemaMismatch: "unexpected value while building Series of type {:?}", target_dtype
-    );
+    if strict && !valid {
+        polars_bail!(SchemaMismatch: "unexpected value while building Series of type {:?}", target_dtype);
+    }
 
     if !matches!(inner_type, DataType::Null) && out.inner_dtype().is_nested() {
         // ensure the logical type is correct
