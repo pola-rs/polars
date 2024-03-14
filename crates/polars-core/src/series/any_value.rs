@@ -561,14 +561,14 @@ fn any_values_to_array(
     if strict && !valid {
         polars_bail!(SchemaMismatch: "unexpected value while building Series of type {:?}", target_dtype);
     }
-
     polars_ensure!(
         out.width() == width,
         SchemaMismatch: "got mixed size array widths where width {} was expected", width
     );
 
+    // Ensure the logical type is correct for nested types
+    #[cfg(feature = "dtype-struct")]
     if !matches!(inner_type, DataType::Null) && out.inner_dtype().is_nested() {
-        // ensure the logical type is correct
         unsafe {
             out.set_dtype(target_dtype.clone());
         };
@@ -626,8 +626,9 @@ fn any_values_to_list(
         polars_bail!(SchemaMismatch: "unexpected value while building Series of type {:?}", target_dtype);
     }
 
+    // Ensure the logical type is correct for nested types
+    #[cfg(feature = "dtype-struct")]
     if !matches!(inner_type, DataType::Null) && out.inner_dtype().is_nested() {
-        // ensure the logical type is correct
         unsafe {
             out.set_dtype(target_dtype.clone());
         };
