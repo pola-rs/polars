@@ -789,3 +789,17 @@ def test_join_on_nth_error() -> None:
         pl.ComputeError, match="nth column selection not supported at this point"
     ):
         df.join(df2, on=pl.first())
+
+
+def test_join_results_in_duplicate_names() -> None:
+    lhs = pl.DataFrame(
+        {
+            "a": [1, 2, 3],
+            "b": [4, 5, 6],
+            "c": [1, 2, 3],
+            "c_right": [1, 2, 3],
+        }
+    )
+    rhs = lhs.clone()
+    with pytest.raises(pl.DuplicateError, match="'c_right' already exists"):
+        lhs.join(rhs, on=["a", "b"], how="left")
