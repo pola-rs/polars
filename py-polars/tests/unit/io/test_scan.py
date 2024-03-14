@@ -70,11 +70,13 @@ def data_file_single(session_tmp_dir: Path, data_file_extension: str) -> _DataFi
     return _DataFile(path=file_path, df=df)
 
 
+@pytest.mark.write_disk()
 def test_scan(data_file_single: _DataFile) -> None:
     df = _scan(data_file_single.path, data_file_single.df.schema).collect()
     assert_frame_equal(df, data_file_single.df)
 
 
+@pytest.mark.write_disk()
 def test_scan_with_limit(data_file_single: _DataFile) -> None:
     df = _scan(data_file_single.path, data_file_single.df.schema).limit(100).collect()
     assert_frame_equal(df, data_file_single.df.limit(100))
