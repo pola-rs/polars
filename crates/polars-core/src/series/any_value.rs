@@ -123,80 +123,6 @@ impl Series {
             DataType::Array(inner, size) => any_values_to_array(av, inner, strict, *size)?
                 .into_series()
                 .cast(&DataType::Array(inner.clone(), *size))?,
-            #[cfg(feature = "dtype-struct")]
-            DataType::Struct(dtype_fields) => {
-                // fast path for empty structs
-                if dtype_fields.is_empty() {
-                    return Ok(StructChunked::full_null(name, av.len()).into_series());
-                }
-                // the physical series fields of the struct
-                let mut series_fields = Vec::with_capacity(dtype_fields.len());
-                for (i, field) in dtype_fields.iter().enumerate() {
-                    let mut field_avs = Vec::with_capacity(av.len());
-
-                    for av in av.iter() {
-                        match av {
-                            AnyValue::StructOwned(payload) => {
-                                // TODO: optimize
-                                let av_fields = &payload.1;
-                                let av_values = &payload.0;
-
-                                let mut append_by_search = || {
-                                    // search for the name
-                                    let mut pushed = false;
-                                    for (av_fld, av_val) in av_fields.iter().zip(av_values) {
-                                        if av_fld.name == field.name {
-                                            field_avs.push(av_val.clone());
-                                            pushed = true;
-                                            break;
-                                        }
-                                    }
-                                    if !pushed {
-                                        field_avs.push(AnyValue::Null)
-                                    }
-                                };
-
-                                // all fields are available in this single value
-                                // we can use the index to get value
-                                if dtype_fields.len() == av_fields.len() {
-                                    let mut search = false;
-                                    for (l, r) in dtype_fields.iter().zip(av_fields.iter()) {
-                                        if l.name() != r.name() {
-                                            search = true;
-                                        }
-                                    }
-                                    if search {
-                                        append_by_search()
-                                    } else {
-                                        let av_val =
-                                            av_values.get(i).cloned().unwrap_or(AnyValue::Null);
-                                        field_avs.push(av_val)
-                                    }
-                                }
-                                // not all fields are available, we search the proper field
-                                else {
-                                    // search for the name
-                                    append_by_search()
-                                }
-                            },
-                            _ => field_avs.push(AnyValue::Null),
-                        }
-                    }
-                    // if the inferred dtype is null, we let auto inference work
-                    let s = if matches!(field.dtype, DataType::Null) {
-                        Series::new(field.name(), &field_avs)
-                    } else {
-                        Series::from_any_values_and_dtype(
-                            field.name(),
-                            &field_avs,
-                            &field.dtype,
-                            strict,
-                        )?
-                    };
-                    series_fields.push(s)
-                }
-                return StructChunked::new(name, &series_fields).map(|ca| ca.into_series());
-            },
             #[cfg(feature = "dtype-categorical")]
             dt @ (DataType::Categorical(_, _) | DataType::Enum(_, _)) => {
                 let ca = if let Some(single_av) = av.first() {
@@ -216,6 +142,8 @@ impl Series {
 
                 ca.cast(dt).unwrap()
             },
+            #[cfg(feature = "dtype-struct")]
+            DataType::Struct(dtype_fields) => any_values_to_struct(av, dtype_fields, name, strict)?,
             #[cfg(feature = "object")]
             DataType::Object(_, registry) => any_values_to_object(av, registry, name)?,
             DataType::Null => Series::new_null(name, av.len()),
@@ -603,6 +531,81 @@ fn any_values_to_list(
     }
 
     Ok(out)
+}
+
+#[cfg(feature = "dtype-struct")]
+fn any_values_to_struct(
+    values: &[AnyValue],
+    fields: &[Field],
+    name: &str,
+    strict: bool,
+) -> PolarsResult<Series> {
+    // Fast path for empty structs.
+    if fields.is_empty() {
+        return Ok(StructChunked::full_null(name, values.len()).into_series());
+    }
+
+    // The physical series fields of the struct.
+    let mut series_fields = Vec::with_capacity(fields.len());
+    for (i, field) in fields.iter().enumerate() {
+        let mut field_avs = Vec::with_capacity(values.len());
+
+        for av in values.iter() {
+            match av {
+                AnyValue::StructOwned(payload) => {
+                    // TODO: Optimize.
+                    let av_fields = &payload.1;
+                    let av_values = &payload.0;
+
+                    let mut append_by_search = || {
+                        // Search for the name.
+                        let mut pushed = false;
+                        for (av_fld, av_val) in av_fields.iter().zip(av_values) {
+                            if av_fld.name == field.name {
+                                field_avs.push(av_val.clone());
+                                pushed = true;
+                                break;
+                            }
+                        }
+                        if !pushed {
+                            field_avs.push(AnyValue::Null)
+                        }
+                    };
+
+                    // All fields are available in this single value.
+                    // We can use the index to get value.
+                    if fields.len() == av_fields.len() {
+                        let mut search = false;
+                        for (l, r) in fields.iter().zip(av_fields.iter()) {
+                            if l.name() != r.name() {
+                                search = true;
+                            }
+                        }
+                        if search {
+                            append_by_search()
+                        } else {
+                            let av_val = av_values.get(i).cloned().unwrap_or(AnyValue::Null);
+                            field_avs.push(av_val)
+                        }
+                    }
+                    // Not all fields are available, we search the proper field.
+                    else {
+                        // Search for the name.
+                        append_by_search()
+                    }
+                },
+                _ => field_avs.push(AnyValue::Null),
+            }
+        }
+        // If the inferred dtype is null, we let auto inference work.
+        let s = if matches!(field.dtype, DataType::Null) {
+            Series::new(field.name(), &field_avs)
+        } else {
+            Series::from_any_values_and_dtype(field.name(), &field_avs, &field.dtype, strict)?
+        };
+        series_fields.push(s)
+    }
+    StructChunked::new(name, &series_fields).map(|ca| ca.into_series())
 }
 
 #[cfg(feature = "object")]
