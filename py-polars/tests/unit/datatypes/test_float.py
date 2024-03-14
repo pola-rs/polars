@@ -39,19 +39,23 @@ def test_nan_aggregations() -> None:
 
 @pytest.mark.parametrize("descending", [True, False])
 def test_sorted_nan_min_max_12931(descending: bool) -> None:
-    s = pl.Series("x", [1.0, float("nan")]).sort(descending=descending)
+    s = pl.Series("x", [1.0, 2.0, float("nan")]).sort(descending=descending)
 
     assert s.min() == 1.0
-    assert s.max() == 1.0
+    assert s.max() == 2.0
+    assert s.arg_min() == (0, 2)[descending]
+    assert s.arg_max() == 1
 
-    df = (
-        pl.Series("x", [float("nan"), float("nan")])
-        .sort(descending=descending)
-        .to_frame()
+    s = pl.Series("x", [float("nan"), float("nan"), float("nan")]).sort(
+        descending=descending
     )
+    df = s.to_frame()
 
     assert df.select(pl.col("x").min().is_nan()).item()
     assert df.select(pl.col("x").max().is_nan()).item()
+
+    assert s.arg_min() == (0, 2)[descending]
+    assert s.arg_max() == (0, 2)[descending]
 
 
 @pytest.mark.parametrize(
