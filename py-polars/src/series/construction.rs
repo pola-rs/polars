@@ -185,23 +185,17 @@ init_method_opt!(new_opt_f64, Float64Type, f64);
 impl PySeries {
     #[staticmethod]
     fn new_from_any_values(name: &str, values: Vec<&PyAny>, strict: bool) -> PyResult<Self> {
-        fn new_from_any_values_no_fallback(
-            name: &str,
-            values: &[&PyAny],
-            strict: bool,
-        ) -> PyResult<PySeries> {
-            let any_values = values
-                .iter()
-                .map(|v| py_object_to_any_value(v, strict))
-                .collect::<PyResult<Vec<AnyValue>>>()?;
-            let s = Series::from_any_values(name, any_values.as_slice(), strict)
-                .map_err(PyPolarsErr::from)?;
+        let any_values_result = values
+            .iter()
+            .map(|v| py_object_to_any_value(v, strict))
+            .collect::<PyResult<Vec<AnyValue>>>();
+        let result = any_values_result.and_then(|avs| {
+            let s =
+                Series::from_any_values(name, avs.as_slice(), strict).map_err(PyPolarsErr::from)?;
             Ok(s.into())
-        }
+        });
 
-        let result = new_from_any_values_no_fallback(name, values.as_slice(), strict);
-
-        // Fall back to Object type for non-strict construction
+        // Fall back to Object type for non-strict construction.
         if !strict && result.is_err() {
             let s = Python::with_gil(|py| {
                 let objects = values
