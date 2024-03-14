@@ -44,7 +44,7 @@ class StructNameSpace:
         --------
         >>> s = pl.Series([{"a": 1, "b": 2}, {"a": 3, "b": 4}])
         >>> s.struct.fields
-        ["a", "b"]
+        ['a', 'b']
         """
         if getattr(self, "_s", None) is None:
             return []
@@ -84,10 +84,10 @@ class StructNameSpace:
         --------
         >>> s = pl.Series([{"a": 1, "b": 2}, {"a": 3, "b": 4}])
         >>> s.struct.fields
-        ["a", "b"]
+        ['a', 'b']
         >>> s = s.struct.rename_fields(["c", "d"])
         >>> s.struct.fields
-        ["c", "d"]
+        ['c', 'd']
         """
 
     @property
@@ -99,7 +99,7 @@ class StructNameSpace:
         --------
         >>> s = pl.Series([{"a": 1, "b": 2}, {"a": 3, "b": 4}])
         >>> s.struct.schema
-        OrderedDict([('a', Int64), ('b', Int64)])
+        OrderedDict({'a': Int64, 'b': Int64})
         """
         if getattr(self, "_s", None) is None:
             return OrderedDict()
