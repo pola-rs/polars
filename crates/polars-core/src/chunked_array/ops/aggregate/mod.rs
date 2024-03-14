@@ -13,6 +13,9 @@ use polars_utils::min_max::MinMax;
 pub use quantile::*;
 pub use var::*;
 
+use self::search_sorted::{
+    binary_search_array, slice_sorted_non_null_and_offset, SearchSortedSide,
+};
 use crate::chunked_array::ChunkedArray;
 use crate::datatypes::{BooleanChunked, PolarsNumericType};
 use crate::prelude::*;
@@ -93,21 +96,17 @@ where
     }
 
     fn min(&self) -> Option<T::Native> {
-        if self.is_empty() {
+        if self.null_count() == self.len() {
             return None;
         }
         match self.is_sorted_flag() {
             IsSorted::Ascending => {
-                self.first_non_null().and_then(|idx| {
-                    // SAFETY: first_non_null returns in bound index.
-                    unsafe { self.get_unchecked(idx) }
-                })
+                let idx = self.first_non_null().unwrap();
+                unsafe { self.get_unchecked(idx) }
             },
             IsSorted::Descending => {
-                self.last_non_null().and_then(|idx| {
-                    // SAFETY: last returns in bound index.
-                    unsafe { self.get_unchecked(idx) }
-                })
+                let idx = self.last_non_null().unwrap();
+                unsafe { self.get_unchecked(idx) }
             },
             IsSorted::Not => self
                 .downcast_iter()
@@ -117,23 +116,51 @@ where
     }
 
     fn max(&self) -> Option<T::Native> {
-        if self.is_empty() {
+        if self.null_count() == self.len() {
             return None;
         }
         match self.is_sorted_flag() {
             IsSorted::Ascending => {
-                self.last_non_null().and_then(|idx| {
-                    // SAFETY:
-                    // last_non_null returns in bound index
+                if T::get_dtype().is_float() {
+                    let is_descending = false;
+                    let side = SearchSortedSide::Left;
+
+                    let (_, ca) = unsafe { slice_sorted_non_null_and_offset(self) };
+                    let arr = unsafe { ca.rechunk().downcast_get_unchecked(0).clone() };
+
+                    let idx = with_match_physical_float_type!(T::get_dtype(), |$T| {
+                        let val = unsafe { std::mem::transmute_copy::<$T, _>(&$T::NAN) };
+                        binary_search_array(side, &arr, val, is_descending)
+                    }) as usize;
+
+                    let idx = idx.saturating_sub(1);
+
+                    unsafe { arr.get_unchecked(idx) }
+                } else {
+                    let idx = self.last_non_null().unwrap();
                     unsafe { self.get_unchecked(idx) }
-                })
+                }
             },
             IsSorted::Descending => {
-                self.first_non_null().and_then(|idx| {
-                    // SAFETY:
-                    // first_non_null returns in bound index
+                if T::get_dtype().is_float() {
+                    let is_descending = true;
+                    let side = SearchSortedSide::Right;
+
+                    let (_, ca) = unsafe { slice_sorted_non_null_and_offset(self) };
+                    let arr = unsafe { ca.rechunk().downcast_get_unchecked(0).clone() };
+
+                    let idx = with_match_physical_float_type!(T::get_dtype(), |$T| {
+                        let val = unsafe { std::mem::transmute_copy::<$T, _>(&$T::NAN) };
+                        binary_search_array(side, &arr, val, is_descending)
+                    }) as usize;
+
+                    let idx = if idx == arr.len() { idx - 1 } else { idx };
+
+                    unsafe { arr.get_unchecked(idx) }
+                } else {
+                    let idx = self.first_non_null().unwrap();
                     unsafe { self.get_unchecked(idx) }
-                })
+                }
             },
             IsSorted::Not => self
                 .downcast_iter()
@@ -143,30 +170,27 @@ where
     }
 
     fn min_max(&self) -> Option<(T::Native, T::Native)> {
-        if self.is_empty() {
+        if self.null_count() == self.len() {
             return None;
         }
         match self.is_sorted_flag() {
             IsSorted::Ascending => {
-                let min = self.first_non_null().and_then(|idx| {
-                    // SAFETY: first_non_null returns in bound index.
-                    unsafe { self.get_unchecked(idx) }
-                });
-                let max = self.last_non_null().and_then(|idx| {
-                    // SAFETY: last_non_null returns in bound index.
-                    unsafe { self.get_unchecked(idx) }
-                });
+                let min = unsafe { self.get_unchecked(self.first_non_null().unwrap()) };
+                let max = if T::get_dtype().is_float() {
+                    self.max()
+                } else {
+                    unsafe { self.get_unchecked(self.last_non_null().unwrap()) }
+                };
                 min.zip(max)
             },
             IsSorted::Descending => {
-                let max = self.first_non_null().and_then(|idx| {
-                    // SAFETY: first_non_null returns in bound index.
-                    unsafe { self.get_unchecked(idx) }
-                });
-                let min = self.last_non_null().and_then(|idx| {
-                    // SAFETY: last_non_null returns in bound index.
-                    unsafe { self.get_unchecked(idx) }
-                });
+                let min = unsafe { self.get_unchecked(self.last_non_null().unwrap()) };
+                let max = if T::get_dtype().is_float() {
+                    self.max()
+                } else {
+                    unsafe { self.get_unchecked(self.first_non_null().unwrap()) }
+                };
+
                 min.zip(max)
             },
             IsSorted::Not => self
@@ -182,10 +206,10 @@ where
     }
 
     fn mean(&self) -> Option<f64> {
-        if self.is_empty() || self.null_count() == self.len() {
+        if self.null_count() == self.len() {
             return None;
         }
-        match self.dtype() {
+        match T::get_dtype() {
             DataType::Float64 => {
                 let len = (self.len() - self.null_count()) as f64;
                 self.sum().map(|v| v.to_f64().unwrap() / len)
