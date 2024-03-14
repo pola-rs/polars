@@ -1,5 +1,7 @@
 use std::fmt::Write;
 
+#[cfg(feature = "object")]
+use crate::chunked_array::object::registry::ObjectRegistry;
 use crate::prelude::*;
 use crate::utils::try_get_supertype;
 
@@ -135,43 +137,6 @@ impl Series {
                 }
                 return StructChunked::new(name, &series_fields).map(|ca| ca.into_series());
             },
-            #[cfg(feature = "object")]
-            DataType::Object(_, registry) => {
-                match registry {
-                    None => {
-                        use crate::chunked_array::object::registry;
-                        let converter = registry::get_object_converter();
-                        let mut builder = registry::get_object_builder(name, av.len());
-                        for av in av {
-                            match av {
-                                AnyValue::Object(val) => builder.append_value(val.as_any()),
-                                AnyValue::Null => builder.append_null(),
-                                _ => {
-                                    // This is needed because in python people can send mixed types.
-                                    // This only works if you set a global converter.
-                                    let any = converter(av.as_borrowed());
-                                    builder.append_value(&*any)
-                                },
-                            }
-                        }
-                        return Ok(builder.to_series());
-                    },
-                    Some(registry) => {
-                        let mut builder = (*registry.builder_constructor)(name, av.len());
-                        for av in av {
-                            match av {
-                                AnyValue::Object(val) => builder.append_value(val.as_any()),
-                                AnyValue::Null => builder.append_null(),
-                                _ => {
-                                    polars_bail!(ComputeError: "expected object");
-                                },
-                            }
-                        }
-                        return Ok(builder.to_series());
-                    },
-                }
-            },
-            DataType::Null => Series::new_null(name, av.len()),
             #[cfg(feature = "dtype-categorical")]
             dt @ (DataType::Categorical(_, _) | DataType::Enum(_, _)) => {
                 let ca = if let Some(single_av) = av.first() {
@@ -191,6 +156,9 @@ impl Series {
 
                 ca.cast(dt).unwrap()
             },
+            #[cfg(feature = "object")]
+            DataType::Object(_, registry) => any_values_to_object(av, registry, name)?,
+            DataType::Null => Series::new_null(name, av.len()),
             dt => panic!("{dt:?} not supported"),
         };
         s.rename(name);
@@ -635,6 +603,49 @@ fn any_values_to_list(
     }
 
     Ok(out)
+}
+
+#[cfg(feature = "object")]
+fn any_values_to_object(
+    values: &[AnyValue],
+    registry: &Option<Arc<ObjectRegistry>>,
+    name: &str,
+) -> PolarsResult<Series> {
+    let mut builder = match registry {
+        None => {
+            use crate::chunked_array::object::registry;
+            let converter = registry::get_object_converter();
+            let mut builder = registry::get_object_builder(name, values.len());
+            for av in values {
+                match av {
+                    AnyValue::Object(val) => builder.append_value(val.as_any()),
+                    AnyValue::Null => builder.append_null(),
+                    _ => {
+                        // This is needed because in Python users can send mixed types.
+                        // This only works if you set a global converter.
+                        let any = converter(av.as_borrowed());
+                        builder.append_value(&*any)
+                    },
+                }
+            }
+            builder
+        },
+        Some(registry) => {
+            let mut builder = (*registry.builder_constructor)(name, values.len());
+            for av in values {
+                match av {
+                    AnyValue::Object(val) => builder.append_value(val.as_any()),
+                    AnyValue::Null => builder.append_null(),
+                    _ => {
+                        polars_bail!(ComputeError: "expected object");
+                    },
+                }
+            }
+            builder
+        },
+    };
+
+    Ok(builder.to_series())
 }
 
 fn invalid_value_error(dtype: &DataType, value: &AnyValue) -> PolarsError {
