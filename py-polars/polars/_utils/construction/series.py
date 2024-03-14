@@ -254,7 +254,7 @@ def sequence_to_pyseries(
                 return PySeries.new_object(name, values, strict)
             else:
                 if (inner_dtype := getattr(dtype, "inner", None)) is not None:
-                    py_srs = [
+                    pyseries_list = [
                         None
                         if value is None
                         else sequence_to_pyseries(
@@ -266,14 +266,14 @@ def sequence_to_pyseries(
                         )
                         for value in values
                     ]
-                    s = PySeries.new_series_list(name, py_srs, strict)
+                    pyseries = PySeries.new_series_list(name, pyseries_list, strict)
                 else:
-                    s = PySeries.new_from_any_values_and_dtype(
+                    pyseries = PySeries.new_from_any_values_and_dtype(
                         name, values, dtype, strict=strict
                     )
-                if dtype != s.dtype():
-                    s = s.cast(dtype, strict=False)
-                return s
+                if dtype != pyseries.dtype():
+                    pyseries = pyseries.cast(dtype, strict=False)
+                return pyseries
 
         elif python_dtype == pl.Series:
             return PySeries.new_series_list(
