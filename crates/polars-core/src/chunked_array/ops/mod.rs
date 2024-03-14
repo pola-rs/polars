@@ -29,6 +29,7 @@ pub(crate) mod min_max_binary;
 pub(crate) mod nulls;
 mod reverse;
 pub(crate) mod rolling_window;
+pub mod search_sorted;
 mod set;
 mod shift;
 pub mod sort;
