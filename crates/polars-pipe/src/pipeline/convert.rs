@@ -206,29 +206,29 @@ where
                 },
                 #[cfg(feature = "cloud")]
                 SinkType::Cloud {
+                    #[cfg(any(feature = "parquet", feature = "ipc"))]
                     uri,
                     file_type,
+                    #[cfg(any(feature = "parquet", feature = "ipc"))]
                     cloud_options,
+                    ..
                 } => {
-                    let uri = uri.as_ref().as_str();
-                    let input_schema = lp_arena.get(*input).schema(lp_arena);
-                    let cloud_options = &cloud_options;
                     match &file_type {
                         #[cfg(feature = "parquet")]
                         FileType::Parquet(parquet_options) => Box::new(ParquetCloudSink::new(
-                            uri,
+                            uri.as_ref().as_str(),
                             cloud_options.as_ref(),
                             *parquet_options,
-                            input_schema.as_ref(),
+                            lp_arena.get(*input).schema(lp_arena).as_ref(),
                         )?)
                             as Box<dyn SinkTrait>,
                         #[cfg(feature = "ipc")]
                         FileType::Ipc(ipc_options) => Box::new(IpcCloudSink::new(
-                                uri,
-                                cloud_options.as_ref(),
-                                *ipc_options,
-                                input_schema.as_ref(),
-                            )?)
+                            uri.as_ref().as_str(),
+                            cloud_options.as_ref(),
+                            *ipc_options,
+                            lp_arena.get(*input).schema(lp_arena).as_ref(),
+                        )?)
                             as Box<dyn SinkTrait>,
                         #[allow(unreachable_patterns)]
                         other_file_type => todo!("Cloud-sinking of the file type {other_file_type:?} is not (yet) supported."),
