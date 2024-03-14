@@ -90,6 +90,13 @@ where
     let is_descending = false;
     let side = SearchSortedSide::Left;
 
+    let maybe_max = unsafe { ca.value_unchecked(ca.last_non_null().unwrap()) };
+    with_match_physical_float_type!(T::get_dtype(), |$T| {
+        if unsafe { !std::mem::transmute_copy::<_, $T>(&maybe_max).is_nan() } {
+            return Some(maybe_max);
+        }
+    });
+
     let (_, ca) = unsafe { slice_sorted_non_null_and_offset(ca) };
     let arr = unsafe { ca.downcast_get_unchecked(0) };
 
@@ -112,6 +119,13 @@ where
     debug_assert!(matches!(ca.is_sorted_flag(), IsSorted::Descending));
     let is_descending = true;
     let side = SearchSortedSide::Right;
+
+    let maybe_max = unsafe { ca.value_unchecked(ca.first_non_null().unwrap()) };
+    with_match_physical_float_type!(T::get_dtype(), |$T| {
+        if unsafe { !std::mem::transmute_copy::<_, $T>(&maybe_max).is_nan() } {
+            return Some(maybe_max);
+        }
+    });
 
     let (_, ca) = unsafe { slice_sorted_non_null_and_offset(ca) };
     let arr = unsafe { ca.downcast_get_unchecked(0) };

@@ -173,18 +173,24 @@ fn arg_max_float_sorted<T>(ca: &ChunkedArray<T>) -> Option<usize>
 where
     T: PolarsNumericType,
 {
-    let (offset, ca) = unsafe { slice_sorted_non_null_and_offset(ca) };
-    let arr = unsafe { ca.downcast_get_unchecked(0) };
-
     let out = match ca.is_sorted_flag() {
         IsSorted::Ascending => {
             let is_descending = false;
             let side = SearchSortedSide::Left;
 
-            let idx = with_match_physical_float_type!(T::get_dtype(), |$T| {
+            let maybe_max_idx = ca.last_non_null().unwrap();
+            let maybe_max = unsafe { ca.value_unchecked(maybe_max_idx) };
+            let (offset, idx) = with_match_physical_float_type!(T::get_dtype(), |$T| {
+                if unsafe { !std::mem::transmute_copy::<_, $T>(&maybe_max).is_nan() } {
+                    return Some(maybe_max_idx);
+                };
+
+                let (offset, ca) = unsafe { slice_sorted_non_null_and_offset(ca) };
+                let arr = unsafe { ca.downcast_get_unchecked(0) };
+
                 let val = unsafe { std::mem::transmute_copy::<$T, _>(&$T::NAN) };
-                binary_search_array(side, arr, val, is_descending)
-            }) as usize;
+                (offset, binary_search_array(side, arr, val, is_descending) as usize)
+            });
 
             let idx = idx.saturating_sub(1);
 
@@ -194,12 +200,21 @@ where
             let is_descending = true;
             let side = SearchSortedSide::Right;
 
-            let idx = with_match_physical_float_type!(T::get_dtype(), |$T| {
-                let val = unsafe { std::mem::transmute_copy::<$T, _>(&$T::NAN) };
-                binary_search_array(side, arr, val, is_descending)
-            }) as usize;
+            let maybe_max_idx = ca.first_non_null().unwrap();
+            let maybe_max = unsafe { ca.value_unchecked(maybe_max_idx) };
+            let (offset, idx, len) = with_match_physical_float_type!(T::get_dtype(), |$T| {
+                if unsafe { !std::mem::transmute_copy::<_, $T>(&maybe_max).is_nan() } {
+                    return Some(maybe_max_idx);
+                };
 
-            let idx = if idx == arr.len() { idx - 1 } else { idx };
+                let (offset, ca) = unsafe { slice_sorted_non_null_and_offset(ca) };
+                let arr = unsafe { ca.downcast_get_unchecked(0) };
+
+                let val = unsafe { std::mem::transmute_copy::<$T, _>(&$T::NAN) };
+                (offset as usize, binary_search_array(side, arr, val, is_descending) as usize, arr.len())
+            });
+
+            let idx = if idx == len { idx - 1 } else { idx };
 
             offset + idx
         },
