@@ -15,9 +15,6 @@ impl CountAgg {
     pub(crate) fn new() -> Self {
         CountAgg { count: 0 }
     }
-    fn incr(&mut self) {
-        self.count += 1;
-    }
 }
 
 impl AggregateFn for CountAgg {
@@ -25,8 +22,9 @@ impl AggregateFn for CountAgg {
         false
     }
 
-    fn pre_agg(&mut self, _chunk_idx: IdxSize, _item: &mut dyn ExactSizeIterator<Item = AnyValue>) {
-        self.incr();
+    fn pre_agg(&mut self, _chunk_idx: IdxSize, item: &mut dyn ExactSizeIterator<Item = AnyValue>) {
+        let item = unsafe { item.next().unwrap_unchecked_release() };
+        self.count += !matches!(item, AnyValue::Null) as IdxSize;
     }
     fn pre_agg_ordered(
         &mut self,
