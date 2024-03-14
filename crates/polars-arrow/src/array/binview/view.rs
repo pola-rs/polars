@@ -34,6 +34,17 @@ impl View {
     pub fn as_u128(self) -> u128 {
         unsafe { std::mem::transmute(self) }
     }
+    
+    #[inline]
+    pub fn new_from_bytes(bytes: &[u8], buffer_idx: u32, offset: u32) -> Self {
+        let prefix_buf: [u8; 4] = std::array::from_fn(|i| *bytes.get(i).unwrap_or(&0));
+        Self {
+            length: bytes.len() as u32,
+            prefix: u32::from_le_bytes(prefix_buf),
+            buffer_idx,
+            offset,
+        }
+    }
 }
 
 impl IsNull for View {

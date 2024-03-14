@@ -18,6 +18,7 @@ pub trait StaticArray:
     + for<'a> ArrayFromIterDtype<Self::ValueT<'a>>
     + for<'a> ArrayFromIterDtype<Self::ZeroableValueT<'a>>
     + for<'a> ArrayFromIterDtype<Option<Self::ValueT<'a>>>
+    + Clone
 {
     type ValueT<'a>: Clone
     where
