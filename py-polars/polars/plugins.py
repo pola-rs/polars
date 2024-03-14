@@ -20,7 +20,7 @@ __all__ = ["register_plugin"]
 
 @unstable()
 def register_plugin(
-    plugin_location: str | Path,
+    plugin_location: Path | str,
     function_name: str,
     inputs: IntoExpr | Iterable[IntoExpr],
     kwargs: dict[str, Any] | None = None,
@@ -43,8 +43,8 @@ def register_plugin(
         This is highly unsafe as this will call the C function
         loaded by `lib::symbol`.
 
-        The parameters you give dictate how polars will deal
-        with the function. Make sure they are correct!
+        The parameters you set dictate how Polars will deal with the function.
+        Make sure they are correct!
 
     See the `user guide <https://docs.pola.rs/user-guide/expressions/plugins/>`_
     for more information about plugins.
@@ -98,7 +98,7 @@ def register_plugin(
 
     return wrap_expr(
         plr.register_plugin(
-            lib_location,
+            str(lib_location),
             function_name,
             pyexprs,
             serialized_kwargs,
@@ -112,19 +112,21 @@ def register_plugin(
     )
 
 
-def _get_dynamic_lib_location(plugin_location: str | Path) -> str:
-    """Get location of dynamic library file."""
-    if Path(plugin_location).is_file():
-        return str(plugin_location)
-    if not Path(plugin_location).is_dir():
-        msg = f"expected file or directory, got {plugin_location!r}"
-        raise TypeError(msg)
-    for path in Path(plugin_location).iterdir():
-        if _is_shared_lib(path):
-            return str(path)
-    msg = f"no dynamic library found in {plugin_location}"
-    raise FileNotFoundError(msg)
+def _get_dynamic_lib_location(path: Path | str) -> Path:
+    """Get the file path of the dynamic library file."""
+    if not isinstance(path, Path):
+        path = Path(path)
+
+    if path.is_file():
+        return path
+
+    for p in path.iterdir():
+        if _is_dynamic_lib(p):
+            return p
+    else:
+        msg = f"no dynamic library found at path: {path}"
+        raise FileNotFoundError(msg)
 
 
-def _is_shared_lib(file: Path) -> bool:
-    return file.name.endswith((".so", ".dll", ".pyd"))
+def _is_dynamic_lib(path: Path) -> bool:
+    return path.is_file() and path.suffix in (".so", ".dll", ".pyd")
