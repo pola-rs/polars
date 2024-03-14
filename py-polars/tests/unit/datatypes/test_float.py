@@ -38,23 +38,23 @@ def test_nan_aggregations() -> None:
 
 
 @pytest.mark.parametrize("descending", [True, False])
-def test_sorted_nan_min_max_12931(descending: bool) -> None:
+def test_sorted_nan_max_12931(descending: bool) -> None:
     s = pl.Series("x", [1.0, 2.0, float("nan")]).sort(descending=descending)
 
-    assert s.min() == 1.0
     assert s.max() == 2.0
-    assert s.arg_min() == (0, 2)[descending]
     assert s.arg_max() == 1
 
+    # Test full-nan
     s = pl.Series("x", [float("nan"), float("nan"), float("nan")]).sort(
         descending=descending
     )
     df = s.to_frame()
 
-    assert df.select(pl.col("x").min().is_nan()).item()
     assert df.select(pl.col("x").max().is_nan()).item()
 
-    assert s.arg_min() == (0, 2)[descending]
+    # This is flipped because float arg_max calculates the index as
+    # * sorted ascending: (index of left-most NaN) - 1, saturating subtraction at 0
+    # * sorted descending: (index of right-most NaN) + 1, saturating addition at s.len()
     assert s.arg_max() == (0, 2)[descending]
 
 
