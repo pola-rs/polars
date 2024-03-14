@@ -220,8 +220,23 @@ impl<T: PolarsDataType> ChunkedArray<T> {
 
     /// Get the index of the first non null value in this [`ChunkedArray`].
     pub fn first_non_null(&self) -> Option<usize> {
-        if self.is_empty() {
+        if self.null_count() == self.len() {
             None
+        }
+        // We now know there is at least 1 non-null item in the array, and self.len() > 0
+        else if matches!(
+            self.is_sorted_flag(),
+            IsSorted::Ascending | IsSorted::Descending
+        ) {
+            let out = if unsafe { self.downcast_get_unchecked(0).is_null_unchecked(0) } {
+                // nulls are all at the start
+                self.null_count()
+            } else {
+                // nulls are all at the end
+                0
+            };
+
+            Some(out)
         } else {
             first_non_null(self.iter_validities())
         }
@@ -229,7 +244,26 @@ impl<T: PolarsDataType> ChunkedArray<T> {
 
     /// Get the index of the last non null value in this [`ChunkedArray`].
     pub fn last_non_null(&self) -> Option<usize> {
-        last_non_null(self.iter_validities(), self.length as usize)
+        if self.null_count() == self.len() {
+            None
+        }
+        // We now know there is at least 1 non-null item in the array, and self.len() > 0
+        else if matches!(
+            self.is_sorted_flag(),
+            IsSorted::Ascending | IsSorted::Descending
+        ) {
+            let out = if unsafe { self.downcast_get_unchecked(0).is_null_unchecked(0) } {
+                // nulls are all at the start
+                self.len() - 1
+            } else {
+                // nulls are all at the end
+                self.len() - self.null_count() - 1
+            };
+
+            Some(out)
+        } else {
+            last_non_null(self.iter_validities(), self.len())
+        }
     }
 
     /// Get the buffer of bits representing null values
