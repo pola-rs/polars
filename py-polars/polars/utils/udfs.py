@@ -13,12 +13,12 @@ def _get_shared_lib_location(main_file: Any) -> str:
     Get the location of the dynamic library file.
 
     .. deprecated:: 0.20.16
-        Use :func:`polars.plugins.register_plugin` instead.
+        Use :func:`polars.plugins.register_plugin_function` instead.
     """
     issue_deprecation_warning(
         "`_get_shared_lib_location` is deprecated and will be removed in the next breaking release."
-        " The new `register_plugin` function has this functionality built in."
-        " Use `from polars.plugins import register_plugin` to import that function."
+        " The new `register_plugin_function` function has this functionality built in."
+        " Use `from polars.plugins import register_plugin_function` to import that function."
         " Check the user guide for the currently-recommended way to register a plugin:"
         " https://docs.pola.rs/user-guide/expressions/plugins",
         version="0.20.16",

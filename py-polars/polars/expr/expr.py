@@ -9622,9 +9622,6 @@ class Expr:
         """
         return self.shift(n, fill_value=fill_value)
 
-    @deprecate_function(
-        "Use `polars.plugins.register_plugin` instead.", version="0.20.16"
-    )
     def register_plugin(
         self,
         *,
@@ -9640,10 +9637,10 @@ class Expr:
         changes_length: bool = False,
     ) -> Self:
         """
-        Register a dynamic library as a plugin.
+        Register a plugin function.
 
         .. deprecated:: 0.20.16
-            Use :func:`polars.plugins.register_plugin` instead.
+            Use :func:`polars.plugins.register_plugin_function` instead.
 
         .. warning::
             This functionality is considered **unstable**. It may be changed
@@ -9655,6 +9652,9 @@ class Expr:
 
             The parameters you give dictate how polars will deal
             with the function. Make sure they are correct!
+
+        See the `user guide <https://docs.pola.rs/user-guide/expressions/plugins/>`_
+        for more information about plugins.
 
         Parameters
         ----------

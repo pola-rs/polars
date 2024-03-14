@@ -306,7 +306,7 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     )?;
 
     // Plugins
-    m.add_wrapped(wrap_pyfunction!(functions::register_plugin))
+    m.add_wrapped(wrap_pyfunction!(functions::register_plugin_function))
         .unwrap();
 
     Ok(())

@@ -15,11 +15,11 @@ if TYPE_CHECKING:
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
 
-__all__ = ["register_plugin"]
+__all__ = ["register_plugin_function"]
 
 
 @unstable()
-def register_plugin(
+def register_plugin_function(
     *,
     plugin_location: Path | str,
     function_name: str,
@@ -73,7 +73,7 @@ def register_plugin(
     cast_to_supertypes
         Cast the input datatypes to their supertype.
     pass_name_to_apply
-        if set, then the `Series` passed to the function in the group_by operation
+        If set to `True`, the `Series` passed to the function in the group_by operation
         will ensure the name is set. This is an extra heap allocation per group.
     changes_length
         For example a `unique` or a `slice`
@@ -97,7 +97,7 @@ def register_plugin(
     lib_location = _get_dynamic_lib_location(plugin_location)
 
     return wrap_expr(
-        plr.register_plugin(
+        plr.register_plugin_function(
             str(lib_location),
             function_name,
             pyexprs,

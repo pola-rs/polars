@@ -96,13 +96,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import polars as pl
-from polars.plugins import register_plugin
+from polars.plugins import register_plugin_function
 from polars.type_aliases import IntoExpr
 
 
 def pig_latinnify(expr: IntoExpr) -> pl.Expr:
     """Pig-latinnify expression."""
-    return register_plugin(
+    return register_plugin_function(
         plugin_location=Path(__file__).parent,
         function_name="pig_latinnify",
         inputs=expr,
@@ -185,7 +185,7 @@ def append_args(
     """
     This example shows how arguments other than `Series` can be used.
     """
-    return register_plugin(
+    return register_plugin_function(
         plugin_location=Path(__file__).parent,
         function_name="append_kwargs",
         inputs=expr,

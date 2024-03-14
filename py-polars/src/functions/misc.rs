@@ -14,7 +14,7 @@ pub fn dtype_str_repr(dtype: Wrap<DataType>) -> PyResult<String> {
 
 #[cfg(feature = "ffi_plugin")]
 #[pyfunction]
-pub fn register_plugin(
+pub fn register_plugin_function(
     lib: &str,
     symbol: &str,
     args: Vec<PyExpr>,
