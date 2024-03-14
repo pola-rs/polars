@@ -199,6 +199,7 @@ impl Sink for SortSink {
                 dist,
                 self.sort_idx,
                 self.sort_args.descending[0],
+                self.sort_args.nulls_last,
                 self.sort_args.slice,
                 context.verbose,
                 self.mem_track.clone(),
@@ -212,6 +213,7 @@ impl Sink for SortSink {
                 self.sort_idx,
                 self.sort_args.descending[0],
                 self.sort_args.slice,
+                self.sort_args.nulls_last,
             )?;
             Ok(FinalizedSink::Finished(df))
         }
@@ -231,6 +233,7 @@ pub(super) fn sort_accumulated(
     sort_idx: usize,
     descending: bool,
     slice: Option<(i64, usize)>,
+    nulls_last: bool,
 ) -> PolarsResult<DataFrame> {
     // This is needed because we can have empty blocks and we require chunks to have single chunks.
     df.as_single_chunk_par();
@@ -238,7 +241,7 @@ pub(super) fn sort_accumulated(
     df.sort_impl(
         vec![sort_column],
         vec![descending],
-        false,
+        nulls_last,
         false,
         slice,
         true,
