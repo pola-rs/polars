@@ -258,3 +258,9 @@ def test_reverse_variable_sort_13573() -> None:
     assert df.sort("a", "b", descending=[True, False]).collect(streaming=True).to_dict(
         as_series=False
     ) == {"a": ["two", "three", "one"], "b": ["five", "six", "four"]}
+
+
+def test_nulls_last_streaming_sort() -> None:
+    assert pl.LazyFrame({"x": [1, None]}).sort("x", nulls_last=True).collect(
+        streaming=True
+    ).to_dict(as_series=False) == {"x": [1, None]}

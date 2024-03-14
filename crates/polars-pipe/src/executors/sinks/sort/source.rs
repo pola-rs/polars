@@ -19,6 +19,7 @@ pub struct SortSource {
     n_threads: usize,
     sort_idx: usize,
     descending: bool,
+    nulls_last: bool,
     chunk_offset: IdxSize,
     slice: Option<(i64, usize)>,
     finished: bool,
@@ -38,6 +39,7 @@ impl SortSource {
         mut files: Vec<(u32, PathBuf)>,
         sort_idx: usize,
         descending: bool,
+        nulls_last: bool,
         slice: Option<(i64, usize)>,
         verbose: bool,
         io_thread: IOThread,
@@ -59,6 +61,7 @@ impl SortSource {
             n_threads,
             sort_idx,
             descending,
+            nulls_last,
             chunk_offset: get_source_index(1) as IdxSize,
             slice,
             finished: false,
@@ -89,15 +92,21 @@ impl SortSource {
         let current_slice = self.slice;
 
         let mut df = match &mut self.slice {
-            None => sort_accumulated(df, self.sort_idx, self.descending, None),
+            None => sort_accumulated(df, self.sort_idx, self.descending, None, self.nulls_last),
             Some((offset, len)) => {
                 let df_len = df.height();
-                assert!(*offset >= 0);
+                debug_assert!(*offset >= 0);
                 let out = if *offset as usize >= df_len {
                     *offset -= df_len as i64;
                     Ok(df.slice(0, 0))
                 } else {
-                    let out = sort_accumulated(df, self.sort_idx, self.descending, current_slice);
+                    let out = sort_accumulated(
+                        df,
+                        self.sort_idx,
+                        self.descending,
+                        current_slice,
+                        self.nulls_last,
+                    );
                     *len = len.saturating_sub(df_len);
                     *offset = 0;
                     out
