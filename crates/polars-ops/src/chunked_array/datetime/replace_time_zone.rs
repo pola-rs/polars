@@ -38,34 +38,27 @@ pub fn replace_time_zone(
         TimeUnit::Microseconds => datetime_to_timestamp_us,
         TimeUnit::Nanoseconds => datetime_to_timestamp_ns,
     };
-    let out = match ambiguous.len() {
-        1 => match ambiguous.get(0) {
-            Some(ambiguous) => datetime.0.try_apply(|timestamp| {
-                let ndt = timestamp_to_datetime(timestamp);
-                Ok(datetime_to_timestamp(convert_to_naive_local(
-                    &from_tz,
-                    &to_tz,
-                    ndt,
-                    Ambiguous::from_str(ambiguous)?,
-                )?))
-            }),
-            _ => Ok(datetime.0.apply(|_| None)),
-        },
-        _ => try_binary_elementwise(datetime, ambiguous, |timestamp_opt, ambiguous_opt| {
-            match (timestamp_opt, ambiguous_opt) {
-                (Some(timestamp), Some(ambiguous)) => {
-                    let ndt = timestamp_to_datetime(timestamp);
-                    Ok(Some(datetime_to_timestamp(convert_to_naive_local(
-                        &from_tz,
-                        &to_tz,
-                        ndt,
-                        Ambiguous::from_str(ambiguous)?,
-                    )?)))
-                },
-                _ => Ok(None),
-            }
-        }),
+
+    let out = if ambiguous.len() == 1 && ambiguous.get(0) != Some("null") {
+        impl_replace_time_zone_fast(
+            datetime,
+            ambiguous.get(0),
+            timestamp_to_datetime,
+            datetime_to_timestamp,
+            &from_tz,
+            &to_tz,
+        )
+    } else {
+        impl_replace_time_zone(
+            datetime,
+            ambiguous,
+            timestamp_to_datetime,
+            datetime_to_timestamp,
+            &from_tz,
+            &to_tz,
+        )
     };
+
     let mut out = out?.into_datetime(datetime.time_unit(), time_zone.map(|x| x.to_string()));
     if from_time_zone == "UTC" && ambiguous.len() == 1 && ambiguous.get(0) == Some("raise") {
         // In general, the sortedness flag can't be preserved.
@@ -76,4 +69,72 @@ pub fn replace_time_zone(
         out.set_sorted_flag(datetime.is_sorted_flag());
     }
     Ok(out)
+}
+
+/// If `ambiguous` is length-1 and not equal to "null", we can take a slightly faster path.
+pub fn impl_replace_time_zone_fast(
+    datetime: &Logical<DatetimeType, Int64Type>,
+    ambiguous: Option<&str>,
+    timestamp_to_datetime: fn(i64) -> NaiveDateTime,
+    datetime_to_timestamp: fn(NaiveDateTime) -> i64,
+    from_tz: &chrono_tz::Tz,
+    to_tz: &chrono_tz::Tz,
+) -> PolarsResult<Int64Chunked> {
+    match ambiguous {
+        Some(ambiguous) => datetime.0.try_apply(|timestamp| {
+            let ndt = timestamp_to_datetime(timestamp);
+            Ok(datetime_to_timestamp(
+                convert_to_naive_local(from_tz, to_tz, ndt, Ambiguous::from_str(ambiguous)?)?
+                    .expect("we didn't use Ambiguous::Null"),
+            ))
+        }),
+        _ => Ok(datetime.0.apply(|_| None)),
+    }
+}
+
+pub fn impl_replace_time_zone(
+    datetime: &Logical<DatetimeType, Int64Type>,
+    ambiguous: &StringChunked,
+    timestamp_to_datetime: fn(i64) -> NaiveDateTime,
+    datetime_to_timestamp: fn(NaiveDateTime) -> i64,
+    from_tz: &chrono_tz::Tz,
+    to_tz: &chrono_tz::Tz,
+) -> PolarsResult<Int64Chunked> {
+    match ambiguous.len() {
+        1 => {
+            debug_assert!(ambiguous.get(0) == Some("null"));
+            let iter = datetime.0.downcast_iter().map(|arr| {
+                let element_iter = arr.iter().map(|timestamp_opt| match timestamp_opt {
+                    Some(timestamp) => {
+                        let ndt = timestamp_to_datetime(*timestamp);
+                        let res = convert_to_naive_local(
+                            from_tz,
+                            to_tz,
+                            ndt,
+                            Ambiguous::from_str("null")?,
+                        )?;
+                        Ok::<_, PolarsError>(res.map(datetime_to_timestamp))
+                    },
+                    None => Ok(None),
+                });
+                element_iter.try_collect_arr()
+            });
+            ChunkedArray::try_from_chunk_iter(datetime.0.name(), iter)
+        },
+        _ => try_binary_elementwise(datetime, ambiguous, |timestamp_opt, ambiguous_opt| {
+            match (timestamp_opt, ambiguous_opt) {
+                (Some(timestamp), Some(ambiguous)) => {
+                    let ndt = timestamp_to_datetime(timestamp);
+                    Ok(convert_to_naive_local(
+                        from_tz,
+                        to_tz,
+                        ndt,
+                        Ambiguous::from_str(ambiguous)?,
+                    )?
+                    .map(datetime_to_timestamp))
+                },
+                _ => Ok(None),
+            }
+        }),
+    }
 }

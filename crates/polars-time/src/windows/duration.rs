@@ -440,7 +440,7 @@ impl Duration {
         )
     }
 
-    /// Localize result to given time zone., respecting DST fold of original datetime.
+    /// Localize result to given time zone, respecting DST fold of original datetime.
     /// For example, 2022-11-06 01:30:00 CST truncated by 1 hour becomes 2022-11-06 01:00:00 CST,
     /// whereas 2022-11-06 01:30:00 CDT truncated by 1 hour becomes 2022-11-06 01:00:00 CDT.
     ///
@@ -460,16 +460,24 @@ impl Duration {
         tz: &Tz,
     ) -> PolarsResult<NaiveDateTime> {
         match localize_datetime_opt(result_dt_local, tz, Ambiguous::Raise) {
-            Some(dt) => Ok(dt),
+            Some(dt) => Ok(dt.expect("we didn't use Ambiguous::Null")),
             None => {
                 if try_localize_datetime(original_dt_local, tz, Ambiguous::Earliest)?
+                    .expect("we didn't use Ambiguous::Null")
                     == original_dt_utc
                 {
-                    try_localize_datetime(result_dt_local, tz, Ambiguous::Earliest)
+                    Ok(
+                        try_localize_datetime(result_dt_local, tz, Ambiguous::Earliest)?
+                            .expect("we didn't use Ambiguous::Null"),
+                    )
                 } else if try_localize_datetime(original_dt_local, tz, Ambiguous::Latest)?
+                    .expect("we didn't use Ambiguous::Null")
                     == original_dt_utc
                 {
-                    try_localize_datetime(result_dt_local, tz, Ambiguous::Latest)
+                    Ok(
+                        try_localize_datetime(result_dt_local, tz, Ambiguous::Latest)?
+                            .expect("we didn't use Ambiguous::Null"),
+                    )
                 } else {
                     unreachable!()
                 }
@@ -785,9 +793,10 @@ impl Duration {
             new_t = match tz {
                 #[cfg(feature = "timezones")]
                 // for UTC, use fastpath below (same as naive)
-                Some(tz) if tz != &chrono_tz::UTC => {
-                    datetime_to_timestamp(try_localize_datetime(dt, tz, Ambiguous::Raise)?)
-                },
+                Some(tz) if tz != &chrono_tz::UTC => datetime_to_timestamp(
+                    try_localize_datetime(dt, tz, Ambiguous::Raise)?
+                        .expect("we didn't use Ambiguous::Null"),
+                ),
                 _ => datetime_to_timestamp(dt),
             };
         }
@@ -801,11 +810,10 @@ impl Duration {
                     new_t =
                         datetime_to_timestamp(unlocalize_datetime(timestamp_to_datetime(t), tz));
                     new_t += if d.negative { -t_weeks } else { t_weeks };
-                    new_t = datetime_to_timestamp(try_localize_datetime(
-                        timestamp_to_datetime(new_t),
-                        tz,
-                        Ambiguous::Raise,
-                    )?);
+                    new_t = datetime_to_timestamp(
+                        try_localize_datetime(timestamp_to_datetime(new_t), tz, Ambiguous::Raise)?
+                            .expect("we didn't use Ambiguous::Null"),
+                    );
                 },
                 _ => new_t += if d.negative { -t_weeks } else { t_weeks },
             };
@@ -820,11 +828,10 @@ impl Duration {
                     new_t =
                         datetime_to_timestamp(unlocalize_datetime(timestamp_to_datetime(t), tz));
                     new_t += if d.negative { -t_days } else { t_days };
-                    new_t = datetime_to_timestamp(try_localize_datetime(
-                        timestamp_to_datetime(new_t),
-                        tz,
-                        Ambiguous::Raise,
-                    )?);
+                    new_t = datetime_to_timestamp(
+                        try_localize_datetime(timestamp_to_datetime(new_t), tz, Ambiguous::Raise)?
+                            .expect("we didn't use Ambiguous::Null"),
+                    );
                 },
                 _ => new_t += if d.negative { -t_days } else { t_days },
             };
