@@ -512,7 +512,8 @@ def test_err_on_invalid_time_zone_cast() -> None:
 def test_invalid_inner_type_cast_list() -> None:
     s = pl.Series([[-1, 1]])
     with pytest.raises(
-        pl.ComputeError, match=r"cannot cast List inner type: 'Int64' to Categorical"
+        pl.InvalidOperationError,
+        match=r"cannot cast List inner type: 'Int64' to Categorical",
     ):
         s.cast(pl.List(pl.Categorical))
 
