@@ -136,7 +136,7 @@ impl Series {
             #[cfg(feature = "object")]
             DataType::Object(_, registry) => any_values_to_object(values, registry)?,
             DataType::Null => Series::new_null(name, values.len()),
-            dt @ (DataType::BinaryOffset | DataType::Unknown) => {
+            dt => {
                 polars_bail!(
                     InvalidOperation:
                     "constructing a Series with data type {dt:?} from AnyValues is not supported"
