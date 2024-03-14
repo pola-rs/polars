@@ -609,7 +609,9 @@ impl BatchedParquetReader {
             return if self.chunks_fifo.is_empty() {
                 Ok(None)
             } else {
-                Ok(Some(self.chunks_fifo.drain(..n).collect()))
+                // the range end point must not be greater than the length of the deque
+                let n_drainable = std::cmp::min(n, self.chunks_fifo.len());
+                Ok(Some(self.chunks_fifo.drain(..n_drainable).collect()))
             };
         }
 
