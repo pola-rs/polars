@@ -43,8 +43,8 @@ impl<T: NativeType> IfThenElseKernel for PrimitiveArray<T> {
             mask,
             if_true.values(),
             if_false.values(),
-            |m, t, f, o| scalar::if_then_else_scalar_rest(m, t, f, |f| f, o),
-            |m, t, f, o| scalar::if_then_else_scalar_64(m, t, f, |f| f, o),
+            scalar::if_then_else_scalar_rest,
+            scalar::if_then_else_scalar_64,
         );
         let validity = if_then_else_validity(mask, if_true.validity(), if_false.validity());
         PrimitiveArray::from_vec(values).with_validity(validity)

@@ -1,17 +1,15 @@
 use std::mem::MaybeUninit;
 
-pub fn if_then_else_scalar_rest<T: Copy, F: Fn(T) -> T>(
+pub fn if_then_else_scalar_rest<T: Copy>(
     mask: u64,
     if_true: &[T],
     if_false: &[T],
-    map_false: F,
     out: &mut [MaybeUninit<T>],
 ) {
     assert!(if_true.len() <= out.len()); // Removes bounds checks in inner loop.
     let true_it = if_true.iter().copied();
     let false_it = if_false.iter().copied();
     for (i, (t, f)) in true_it.zip(false_it).enumerate() {
-        let f = map_false(f);
         let src = if (mask >> i) & 1 != 0 { t } else { f };
         out[i] = MaybeUninit::new(src);
     }
@@ -47,15 +45,14 @@ pub fn if_then_else_broadcast_both_scalar_rest<T: Copy>(
     }
 }
 
-pub fn if_then_else_scalar_64<T: Copy, F: Fn(T) -> T>(
+pub fn if_then_else_scalar_64<T: Copy>(
     mask: u64,
     if_true: &[T; 64],
     if_false: &[T; 64],
-    map_false: F,
     out: &mut [MaybeUninit<T>; 64],
 ) {
     // This generated the best autovectorized code on ARM, and branchless everywhere.
-    if_then_else_scalar_rest(mask, if_true, if_false, map_false, out)
+    if_then_else_scalar_rest(mask, if_true, if_false, out)
 }
 
 pub fn if_then_else_broadcast_false_scalar_64<T: Copy>(

@@ -1,3 +1,4 @@
+use std::mem::MaybeUninit;
 use std::sync::Arc;
 
 use arrow::array::{Array, BinaryViewArray, Utf8ViewArray, View};
@@ -5,7 +6,6 @@ use arrow::bitmap::Bitmap;
 use arrow::buffer::Buffer;
 use arrow::datatypes::ArrowDataType;
 
-use super::scalar::{if_then_else_scalar_64, if_then_else_scalar_rest};
 use super::IfThenElseKernel;
 use crate::if_then_else::scalar::{
     if_then_else_broadcast_both_scalar_64, if_then_else_broadcast_false_scalar_64,
@@ -50,22 +50,12 @@ impl IfThenElseKernel for BinaryViewArray {
             false_buffer_idx_offset = if_true.data_buffers().len() as u32;
         }
 
-        let map_false_view = |mut v: View| -> View {
-            // Let's hope this is branchless by unconditionally computing offset.
-            let offset = if v.length <= 12 {
-                0
-            } else {
-                false_buffer_idx_offset
-            };
-            v.buffer_idx += offset;
-            v
-        };
         let views = super::if_then_else_loop(
             mask,
             if_true.views(),
             if_false.views(),
-            |m, t, f, o| if_then_else_scalar_rest(m, t, f, map_false_view, o),
-            |m, t, f, o| if_then_else_scalar_64(m, t, f, map_false_view, o),
+            |m, t, f, o| if_then_else_view_rest(m, t, f, o, false_buffer_idx_offset),
+            |m, t, f, o| if_then_else_view_64(m, t, f, o, false_buffer_idx_offset),
         );
 
         let validity = super::if_then_else_validity(mask, if_true.validity(), if_false.validity());
@@ -215,4 +205,39 @@ impl IfThenElseKernel for Utf8ViewArray {
         );
         unsafe { ret.to_utf8view_unchecked() }
     }
+}
+
+pub fn if_then_else_view_rest(
+    mask: u64,
+    if_true: &[View],
+    if_false: &[View],
+    out: &mut [MaybeUninit<View>],
+    false_buffer_idx_offset: u32,
+) {
+    assert!(if_true.len() <= out.len()); // Removes bounds checks in inner loop.
+    let true_it = if_true.iter().copied();
+    let false_it = if_false.iter().copied();
+    for (i, (t, f)) in true_it.zip(false_it).enumerate() {
+        // Written like this, this loop *should* be branchless.
+        // Unfortunately we're still dependent on the compiler.
+        let m = (mask >> i) & 1 != 0;
+        let mut v = if m { t } else { f };
+        let offset = if m | (v.length <= 12) { // Yes, | instead of || is intentional.
+            0
+        } else {
+            false_buffer_idx_offset
+        };
+        v.buffer_idx += offset;
+        out[i] = MaybeUninit::new(v);
+    }
+}
+
+pub fn if_then_else_view_64(
+    mask: u64,
+    if_true: &[View; 64],
+    if_false: &[View; 64],
+    out: &mut [MaybeUninit<View>; 64],
+    false_buffer_idx_offset: u32,
+) {
+    if_then_else_view_rest(mask, if_true, if_false, out, false_buffer_idx_offset)
 }
