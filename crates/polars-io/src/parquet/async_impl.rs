@@ -163,7 +163,10 @@ pub async fn fetch_metadata(
 
     Ok(polars_parquet::parquet::read::deserialize_metadata(
         std::io::Cursor::new(footer_bytes.as_ref()),
-        footer_bytes.as_ref().len(),
+        // TODO: Describe why this makes sense. Taken from the previous
+        // implementation which said "a highly nested but sparse struct could
+        // result in many allocations".
+        footer_bytes.as_ref().len() * 2 + 1024,
     )?)
 }
 
