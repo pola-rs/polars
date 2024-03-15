@@ -206,10 +206,8 @@ def duration(
     nanoseconds
         Number of nanoseconds.
     time_unit : {'us', 'ms', 'ns'} or None
-        Time unit of the resulting expression, if left as None, then the resulting time unit used will be the smallest
-            one provided (nanoseconds->microseconds->milliseconds).
-        If None is provided and milliseconds, microseconds and nanoseconds are None, then will be set to
-            microseconds - 'us'
+        Time unit of the resulting expression, if no time unit is specified, and if nanosecond is specified,
+        then it will be set to `ns`. Otherwise, it will be set tu  `us`.
 
     Returns
     -------
@@ -256,7 +254,7 @@ def duration(
     ┌─────────────────────┬─────────────────────┬─────────────────────┬─────────────────────────┬─────────────────────┐
     │ add_weeks           ┆ add_days            ┆ add_seconds         ┆ add_millis              ┆ add_hours           │
     │ ---                 ┆ ---                 ┆ ---                 ┆ ---                     ┆ ---                 │
-    │ datetime[μs]        ┆ datetime[μs]        ┆ datetime[μs]        ┆ datetime[ms]            ┆ datetime[μs]        │
+    │ datetime[μs]        ┆ datetime[μs]        ┆ datetime[μs]        ┆ datetime[μs]            ┆ datetime[μs]        │
     ╞═════════════════════╪═════════════════════╪═════════════════════╪═════════════════════════╪═════════════════════╡
     │ 2022-01-08 00:00:00 ┆ 2022-01-02 00:00:00 ┆ 2022-01-01 00:00:01 ┆ 2022-01-01 00:00:00.001 ┆ 2022-01-01 01:00:00 │
     │ 2022-01-16 00:00:00 ┆ 2022-01-04 00:00:00 ┆ 2022-01-02 00:00:02 ┆ 2022-01-02 00:00:00.002 ┆ 2022-01-02 02:00:00 │
@@ -298,12 +296,8 @@ def duration(
         seconds = parse_as_expression(seconds)
     if milliseconds is not None:
         milliseconds = parse_as_expression(milliseconds)
-        if time_unit is None:
-            time_unit = "ms"
     if microseconds is not None:
         microseconds = parse_as_expression(microseconds)
-        if time_unit is None:
-            time_unit = "us"
     if nanoseconds is not None:
         nanoseconds = parse_as_expression(nanoseconds)
         if time_unit is None:

@@ -161,3 +161,17 @@ def test_duration_subseconds_us(time_unit: TimeUnit, ms: int, us: int, ns: int) 
         milliseconds=ms, microseconds=us, nanoseconds=ns, time_unit=time_unit
     )
     assert_frame_equal(pl.select(result), pl.select(expected))
+
+
+def test_duration_time_unit_ns() -> None:
+    result = pl.duration(milliseconds=4, microseconds=3_000, nanoseconds=10)
+    expected = pl.duration(
+        milliseconds=4, microseconds=3_000, nanoseconds=10, time_unit="ns"
+    )
+    assert_frame_equal(pl.select(result), pl.select(expected))
+
+
+def test_duration_time_unit_us() -> None:
+    result = pl.duration(milliseconds=4, microseconds=3_000)
+    expected = pl.duration(milliseconds=4, microseconds=3_000, time_unit="us")
+    assert_frame_equal(pl.select(result), pl.select(expected))
