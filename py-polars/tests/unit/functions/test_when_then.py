@@ -531,7 +531,7 @@ def test_when_then_null_broadcast() -> None:
 
 
 @pytest.mark.slow()
-@pytest.mark.parametrize("len", [1, 10, 100])
+@pytest.mark.parametrize("len", [1, 10, 100, 500])
 @pytest.mark.parametrize(
     ("dtype", "vals"),
     [
@@ -543,9 +543,11 @@ def test_when_then_null_broadcast() -> None:
         pytest.param(pl.Float32, [0.0, 1.0], id="Float32"),
         pytest.param(pl.Float64, [0.0, 1.0], id="Float64"),
         pytest.param(pl.String, ["0", "12"], id="String"),
-        pytest.param(pl.Array(pl.String, 2), [["0", "1"], ["1", "2"]], id="Array"),
+        pytest.param(pl.Array(pl.String, 2), [["0", "1"], ["3", "4"]], id="StrArray"),
+        pytest.param(pl.Array(pl.Int64, 2), [[0, 1], [3, 4]], id="IntArray"),
         pytest.param(pl.List(pl.String), [["0"], ["1", "2"]], id="List"),
         pytest.param(pl.Struct({"foo": pl.Int32, "bar": pl.String}), [{"foo": 0, "bar": "1"}, {"foo": 1, "bar": "2"}], id="Struct"),
+        pytest.param(pl.Object, ["x", "y"], id="Object"),
     ]
 )
 @pytest.mark.parametrize("broadcast", list(itertools.product([False, True], repeat=3)))
@@ -574,4 +576,8 @@ def test_when_then_parametric(len: int, dtype: pl.DataType, vals: list[Any], bro
         }, schema={"mask": pl.Boolean, "if_true": dtype, "if_false": dtype})
         
         ans = df.select(pl.when(pl_mask).then(pl_true).otherwise(pl_false))
-        assert_frame_equal(ref, ans)
+        if dtype != pl.Object:
+            assert_frame_equal(ref, ans)
+        else:
+            assert ref["if_true"].to_list() == ans["if_true"].to_list()
+            
