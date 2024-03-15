@@ -17,7 +17,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
     __register_startup_deps()
 
-from polars import api
+from polars import api, exceptions, plugins, selectors
 from polars._utils.polars_version import get_polars_version as _get_polars_version
 
 # TODO: remove need for importing wrap utils at top level
@@ -225,6 +225,7 @@ del _get_polars_version
 __all__ = [
     "api",
     "exceptions",
+    "plugins",
     # exceptions/errors
     "ArrowError",
     "ColumnNotFoundError",
