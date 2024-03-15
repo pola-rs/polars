@@ -433,7 +433,7 @@ impl DataType {
                 Ok(ArrowDataType::Struct(fields))
             },
             BinaryOffset => Ok(ArrowDataType::LargeBinary),
-            Unknown => Ok(ArrowDataType::Unknown)
+            Unknown => Ok(ArrowDataType::Unknown),
         }
     }
 

@@ -7,21 +7,32 @@ use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;
 use polars_utils::slice::load_padded_le_u64;
 
-
+mod array;
+mod boolean;
+mod list;
 mod scalar;
 mod view;
-mod boolean;
-mod array;
-mod list;
-
 
 pub trait IfThenElseKernel: Sized + Array {
     type Scalar<'a>;
 
     fn if_then_else(mask: &Bitmap, if_true: &Self, if_false: &Self) -> Self;
-    fn if_then_else_broadcast_true(mask: &Bitmap, if_true: Self::Scalar<'_>, if_false: &Self) -> Self;
-    fn if_then_else_broadcast_false(mask: &Bitmap, if_true: &Self, if_false: Self::Scalar<'_>) -> Self;
-    fn if_then_else_broadcast_both(dtype: ArrowDataType, mask: &Bitmap, if_true: Self::Scalar<'_>, if_false: Self::Scalar<'_>) -> Self;
+    fn if_then_else_broadcast_true(
+        mask: &Bitmap,
+        if_true: Self::Scalar<'_>,
+        if_false: &Self,
+    ) -> Self;
+    fn if_then_else_broadcast_false(
+        mask: &Bitmap,
+        if_true: &Self,
+        if_false: Self::Scalar<'_>,
+    ) -> Self;
+    fn if_then_else_broadcast_both(
+        dtype: ArrowDataType,
+        mask: &Bitmap,
+        if_true: Self::Scalar<'_>,
+        if_false: Self::Scalar<'_>,
+    ) -> Self;
 }
 
 impl<T: NativeType> IfThenElseKernel for PrimitiveArray<T> {
@@ -39,7 +50,11 @@ impl<T: NativeType> IfThenElseKernel for PrimitiveArray<T> {
         PrimitiveArray::from_vec(values).with_validity(validity)
     }
 
-    fn if_then_else_broadcast_true(mask: &Bitmap, if_true: Self::Scalar<'_>, if_false: &Self) -> Self {
+    fn if_then_else_broadcast_true(
+        mask: &Bitmap,
+        if_true: Self::Scalar<'_>,
+        if_false: &Self,
+    ) -> Self {
         let values = if_then_else_loop_broadcast_false(
             true,
             mask,
@@ -51,7 +66,11 @@ impl<T: NativeType> IfThenElseKernel for PrimitiveArray<T> {
         PrimitiveArray::from_vec(values).with_validity(validity)
     }
 
-    fn if_then_else_broadcast_false(mask: &Bitmap, if_true: &Self, if_false: Self::Scalar<'_>) -> Self {
+    fn if_then_else_broadcast_false(
+        mask: &Bitmap,
+        if_true: &Self,
+        if_false: Self::Scalar<'_>,
+    ) -> Self {
         let values = if_then_else_loop_broadcast_false(
             false,
             mask,
@@ -63,7 +82,12 @@ impl<T: NativeType> IfThenElseKernel for PrimitiveArray<T> {
         PrimitiveArray::from_vec(values).with_validity(validity)
     }
 
-    fn if_then_else_broadcast_both(_dtype: ArrowDataType, mask: &Bitmap, if_true: Self::Scalar<'_>, if_false: Self::Scalar<'_>) -> Self {
+    fn if_then_else_broadcast_both(
+        _dtype: ArrowDataType,
+        mask: &Bitmap,
+        if_true: Self::Scalar<'_>,
+        if_false: Self::Scalar<'_>,
+    ) -> Self {
         let values = if_then_else_loop_broadcast_both(
             mask,
             if_true,
@@ -73,7 +97,6 @@ impl<T: NativeType> IfThenElseKernel for PrimitiveArray<T> {
         PrimitiveArray::from_vec(values)
     }
 }
-
 
 fn if_then_else_validity(
     mask: &Bitmap,
@@ -106,7 +129,6 @@ fn if_then_else_extend<G, ET: Fn(&mut G, usize, usize), EF: Fn(&mut G, usize, us
         extend_false(growable, last_true_end, mask.len() - last_true_end)
     }
 }
-
 
 fn if_then_else_loop<T, F, F64>(
     mask: &Bitmap,
@@ -144,8 +166,14 @@ where
         .zip(false_chunks.by_ref())
         .zip(out_chunks.by_ref());
     for (i, ((tc, fc), oc)) in combined.enumerate() {
-        let m =
-            unsafe { u64::from_le_bytes(bulk_mask.get_unchecked(8*i..8*i + 8).try_into().unwrap()) };
+        let m = unsafe {
+            u64::from_le_bytes(
+                bulk_mask
+                    .get_unchecked(8 * i..8 * i + 8)
+                    .try_into()
+                    .unwrap(),
+            )
+        };
         process_chunk(
             m,
             tc.try_into().unwrap(),
@@ -209,8 +237,14 @@ where
     let mut out_chunks = rest_out.chunks_exact_mut(64);
     let combined = true_chunks.by_ref().zip(out_chunks.by_ref());
     for (i, (tc, oc)) in combined.enumerate() {
-        let m =
-            unsafe { u64::from_le_bytes(bulk_mask.get_unchecked(8*i..8*i + 8).try_into().unwrap()) };
+        let m = unsafe {
+            u64::from_le_bytes(
+                bulk_mask
+                    .get_unchecked(8 * i..8 * i + 8)
+                    .try_into()
+                    .unwrap(),
+            )
+        };
         process_chunk(
             m ^ xor_inverter,
             tc.try_into().unwrap(),
@@ -237,7 +271,6 @@ where
     ret
 }
 
-
 fn if_then_else_loop_broadcast_both<T, F64>(
     mask: &Bitmap,
     if_true: T,
@@ -246,7 +279,7 @@ fn if_then_else_loop_broadcast_both<T, F64>(
 ) -> Vec<T>
 where
     T: Copy,
-    F64: Fn(u64, T, T, &mut [MaybeUninit<T>; 64])
+    F64: Fn(u64, T, T, &mut [MaybeUninit<T>; 64]),
 {
     let (mask_slice, offset, len) = mask.as_slice();
 
@@ -267,14 +300,15 @@ where
     // Handle bulk.
     let mut out_chunks = rest_out.chunks_exact_mut(64);
     for (i, oc) in out_chunks.by_ref().enumerate() {
-        let m =
-            unsafe { u64::from_le_bytes(bulk_mask.get_unchecked(8*i..8*i + 8).try_into().unwrap()) };
-        generate_chunk(
-            m,
-            if_true,
-            if_false,
-            oc.try_into().unwrap(),
-        );
+        let m = unsafe {
+            u64::from_le_bytes(
+                bulk_mask
+                    .get_unchecked(8 * i..8 * i + 8)
+                    .try_into()
+                    .unwrap(),
+            )
+        };
+        generate_chunk(m, if_true, if_false, oc.try_into().unwrap());
     }
 
     // Handle remainder.
@@ -282,12 +316,7 @@ where
     if !out_chunk.is_empty() {
         let rest_mask_byte_offset = bulk_len / 64 * 8;
         let rest_mask = load_padded_le_u64(&bulk_mask[rest_mask_byte_offset..]);
-        scalar::if_then_else_broadcast_both_scalar_rest(
-            rest_mask,
-            if_true,
-            if_false,
-            out_chunk,
-        );
+        scalar::if_then_else_broadcast_both_scalar_rest(rest_mask, if_true, if_false, out_chunk);
     }
 
     unsafe {

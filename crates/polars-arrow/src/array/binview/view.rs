@@ -34,11 +34,14 @@ impl View {
     pub fn as_u128(self) -> u128 {
         unsafe { std::mem::transmute(self) }
     }
-    
+
     #[inline]
     pub fn new_from_bytes(bytes: &[u8], buffer_idx: u32, offset: u32) -> Self {
         if bytes.len() <= 12 {
-            let mut ret = Self { length: bytes.len() as u32, ..Default::default() };
+            let mut ret = Self {
+                length: bytes.len() as u32,
+                ..Default::default()
+            };
             let ret_ptr = &mut ret as *mut _ as *mut u8;
             unsafe {
                 core::ptr::copy_nonoverlapping(bytes.as_ptr(), ret_ptr.add(4), bytes.len());

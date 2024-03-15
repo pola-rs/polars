@@ -36,7 +36,10 @@ pub fn combine_validities_or(opt_l: Option<&Bitmap>, opt_r: Option<&Bitmap>) -> 
         _ => None,
     }
 }
-pub fn combine_validities_and_not(opt_l: Option<&Bitmap>, opt_r: Option<&Bitmap>) -> Option<Bitmap> {
+pub fn combine_validities_and_not(
+    opt_l: Option<&Bitmap>,
+    opt_r: Option<&Bitmap>,
+) -> Option<Bitmap> {
     match (opt_l, opt_r) {
         (Some(l), Some(r)) => Some(and_not(l, r)),
         (None, Some(r)) => Some(!r),

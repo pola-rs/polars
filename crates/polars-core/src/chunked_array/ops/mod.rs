@@ -562,7 +562,12 @@ impl ChunkExpandAtIndex<FixedSizeListType> for ArrayChunked {
                 unsafe { ca.to_logical(self.inner_dtype()) };
                 ca
             },
-            None => ArrayChunked::full_null_with_dtype(self.name(), length, &self.inner_dtype(), self.width()),
+            None => ArrayChunked::full_null_with_dtype(
+                self.name(),
+                length,
+                &self.inner_dtype(),
+                self.width(),
+            ),
         }
     }
 }

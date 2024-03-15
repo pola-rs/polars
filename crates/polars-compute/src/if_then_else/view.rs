@@ -25,7 +25,7 @@ fn make_buffer_and_views<const N: usize>(
         }
         View::new_from_bytes(s, buffer_idx, offset)
     });
-    let buf = (buf_data.len() > 0).then(|| buf_data.into());
+    let buf = (!buf_data.is_empty()).then(|| buf_data.into());
     (views, buf)
 }
 

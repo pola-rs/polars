@@ -176,7 +176,8 @@ impl<'a, T: ViewType + ?Sized> Growable<'a> for GrowableBinaryViewArray<'a, T> {
             extend_validity_copies(&mut self.validity, array, start, len, copies - 1);
             let extended_view_end = self.views.len();
             for _ in 0..copies - 1 {
-                self.views.extend_from_within(orig_view_start..extended_view_end)
+                self.views
+                    .extend_from_within(orig_view_start..extended_view_end)
             }
         }
     }

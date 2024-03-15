@@ -7,30 +7,18 @@ use crate::chunked_array::object::{ObjectArray, PolarsObject};
 
 // TODO: more efficient implementations, I really took the short path here.
 impl<'a, T: PolarsObject> ArrayFromIter<&'a T> for ObjectArray<T> {
-    fn arr_from_iter<I: IntoIterator<Item = &'a T>>(
-        iter: I,
-    ) -> Self {
-        Self::try_arr_from_iter(
-            iter.into_iter().map(|o| -> Result<_, ()> { Ok(Some(o)) }),
-        )
-        .unwrap()
+    fn arr_from_iter<I: IntoIterator<Item = &'a T>>(iter: I) -> Self {
+        Self::try_arr_from_iter(iter.into_iter().map(|o| -> Result<_, ()> { Ok(Some(o)) })).unwrap()
     }
 
-    fn try_arr_from_iter<E, I: IntoIterator<Item = Result<&'a T, E>>>(
-        iter: I,
-    ) -> Result<Self, E> {
+    fn try_arr_from_iter<E, I: IntoIterator<Item = Result<&'a T, E>>>(iter: I) -> Result<Self, E> {
         Self::try_arr_from_iter(iter.into_iter().map(|o| Ok(Some(o?))))
     }
 }
 
 impl<'a, T: PolarsObject> ArrayFromIter<Option<&'a T>> for ObjectArray<T> {
-    fn arr_from_iter<I: IntoIterator<Item = Option<&'a T>>>(
-        iter: I,
-    ) -> Self {
-        Self::try_arr_from_iter(
-            iter.into_iter().map(|o| -> Result<_, ()> { Ok(o) }),
-        )
-        .unwrap()
+    fn arr_from_iter<I: IntoIterator<Item = Option<&'a T>>>(iter: I) -> Self {
+        Self::try_arr_from_iter(iter.into_iter().map(|o| -> Result<_, ()> { Ok(o) })).unwrap()
     }
 
     fn try_arr_from_iter<E, I: IntoIterator<Item = Result<Option<&'a T>, E>>>(

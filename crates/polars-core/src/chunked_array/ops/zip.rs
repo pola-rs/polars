@@ -6,7 +6,7 @@ use crate::chunked_array::object::ObjectArray;
 use crate::prelude::*;
 use crate::utils::{align_chunks_binary, align_chunks_ternary};
 
-const SHAPE_MISMATCH_STR: &'static str =
+const SHAPE_MISMATCH_STR: &str =
     "shapes of `self`, `mask` and `other` are not suitable for `zip_with` operation";
 
 fn if_then_else_broadcast_mask<T: PolarsDataType>(

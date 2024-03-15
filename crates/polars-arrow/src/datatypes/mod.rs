@@ -235,7 +235,7 @@ impl From<ArrowDataType> for arrow_schema::DataType {
             ArrowDataType::BinaryView | ArrowDataType::Utf8View => {
                 panic!("view datatypes not supported by arrow-rs")
             },
-            ArrowDataType::Unknown => unimplemented!()
+            ArrowDataType::Unknown => unimplemented!(),
         }
     }
 }
@@ -473,7 +473,7 @@ impl ArrowDataType {
             Map(_, _) => PhysicalType::Map,
             Dictionary(key, _, _) => PhysicalType::Dictionary(*key),
             Extension(_, key, _) => key.to_physical_type(),
-            Unknown => unimplemented!()
+            Unknown => unimplemented!(),
         }
     }
 

@@ -4,8 +4,8 @@ use crate::array::binview::BinaryViewValueIter;
 use crate::array::static_array_collect::ArrayFromIterDtype;
 use crate::array::{
     Array, ArrayValuesIter, BinaryArray, BinaryValueIter, BinaryViewArray, BooleanArray,
-    FixedSizeListArray, ListArray, ListValuesIter, MutableBinaryViewArray,
-    PrimitiveArray, Utf8Array, Utf8ValuesIter, Utf8ViewArray,
+    FixedSizeListArray, ListArray, ListValuesIter, MutableBinaryViewArray, PrimitiveArray,
+    Utf8Array, Utf8ValuesIter, Utf8ViewArray,
 };
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::bitmap::Bitmap;

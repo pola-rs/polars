@@ -226,7 +226,7 @@ impl<T: PolarsObject> StaticArray for ObjectArray<T> {
             values: Arc::new(vec![T::default(); length]),
             null_bitmap: Some(Bitmap::new_with_value(false, length)),
             offset: 0,
-            len: length
+            len: length,
         }
     }
 }

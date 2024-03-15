@@ -52,7 +52,7 @@ where
             None => self.append_null(),
         }
     }
-    
+
     pub fn finish(mut self) -> ObjectChunked<T> {
         let null_bitmap: Option<Bitmap> = self.bitmask_builder.into();
 

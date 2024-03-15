@@ -8,7 +8,7 @@
 pub mod arithmetic;
 pub mod comparisons;
 pub mod filter;
-pub mod min_max;
 pub mod if_then_else;
+pub mod min_max;
 
 pub mod arity;

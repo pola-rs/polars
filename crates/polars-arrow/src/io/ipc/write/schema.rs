@@ -247,7 +247,7 @@ fn serialize_type(data_type: &ArrowDataType) -> arrow_format::ipc::Type {
         Extension(_, v, _) => serialize_type(v),
         Utf8View => ipc::Type::Utf8View(Box::new(ipc::Utf8View {})),
         BinaryView => ipc::Type::BinaryView(Box::new(ipc::BinaryView {})),
-        Unknown => unimplemented!()
+        Unknown => unimplemented!(),
     }
 }
 
@@ -296,7 +296,7 @@ fn serialize_children(
             .collect(),
         Dictionary(_, inner, _) => serialize_children(inner, ipc_field),
         Extension(_, inner, _) => serialize_children(inner, ipc_field),
-        Unknown => unimplemented!()
+        Unknown => unimplemented!(),
     }
 }
 

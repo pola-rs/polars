@@ -1,9 +1,8 @@
 use arrow::array::growable::{Growable, GrowableList};
 use arrow::array::{Array, ArrayCollectIterExt, ListArray};
-use super::if_then_else_extend;
 use arrow::bitmap::Bitmap;
 
-use super::IfThenElseKernel;
+use super::{if_then_else_extend, IfThenElseKernel};
 
 impl IfThenElseKernel for ListArray<i64> {
     type Scalar<'a> = Box<dyn Array>;
@@ -69,7 +68,8 @@ impl IfThenElseKernel for ListArray<i64> {
             std::iter::once(if_true).collect_arr_trusted_with_dtype(dtype.clone());
         let if_false_list: ListArray<i64> =
             std::iter::once(if_false).collect_arr_trusted_with_dtype(dtype.clone());
-        let mut growable = GrowableList::new(vec![&if_true_list, &if_false_list], false, mask.len());
+        let mut growable =
+            GrowableList::new(vec![&if_true_list, &if_false_list], false, mask.len());
         unsafe {
             if_then_else_extend(
                 &mut growable,

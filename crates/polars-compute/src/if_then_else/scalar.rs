@@ -37,9 +37,13 @@ pub fn if_then_else_broadcast_both_scalar_rest<T: Copy>(
     if_false: T,
     out: &mut [MaybeUninit<T>],
 ) {
-    for i in 0..out.len() {
-        let src = if (mask >> i) & 1 != 0 { if_true } else { if_false };
-        out[i] = MaybeUninit::new(src);
+    for (i, dst) in out.iter_mut().enumerate() {
+        let src = if (mask >> i) & 1 != 0 {
+            if_true
+        } else {
+            if_false
+        };
+        *dst = MaybeUninit::new(src);
     }
 }
 
