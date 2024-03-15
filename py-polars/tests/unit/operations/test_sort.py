@@ -885,12 +885,12 @@ def test_sorted_flag_concat_15072() -> None:
 
     # coerces sorted flag if there is only a single non-null
     assert pl.concat(
-        (pl.Series([3, 2]).set_sorted(descending=True), pl.Series([1]).set_sorted())
+        (pl.Series([3, 2]).set_sorted(descending=True), pl.Series([1]))
     ).flags["SORTED_DESC"]
 
     assert pl.concat(
         (
             pl.Series([3, 2]).set_sorted(descending=True),
-            pl.Series([1, None]).set_sorted(),
+            pl.Series([1, None]),
         )
     ).flags["SORTED_DESC"]
