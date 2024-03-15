@@ -16,7 +16,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.sql.expression import cast as alchemy_cast
 
 import polars as pl
-from polars.exceptions import UnsuitableSQLError
+from polars.exceptions import ComputeError, UnsuitableSQLError
 from polars.io.database import _ARROW_DRIVER_REGISTRY_
 from polars.testing import assert_frame_equal
 
@@ -72,6 +72,21 @@ def tmp_sqlite_db(tmp_path: Path) -> Path:
         REPLACE INTO test_data(name,value,date)
           VALUES ('misc',100.0,'2020-01-01'),
                  ('other',-99.5,'2021-12-31');
+        """
+    )
+    conn.close()
+    return test_db
+
+
+@pytest.fixture()
+def tmp_sqlite_inference_db(tmp_path: Path) -> Path:
+    test_db = tmp_path / "test_inference.db"
+    test_db.unlink(missing_ok=True)
+    conn = sqlite3.connect(test_db)
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS test_data (name TEXT, value FLOAT);
+        REPLACE INTO test_data(name,value) VALUES (NULL,NULL), ('foo',0);
         """
     )
     conn.close()
@@ -702,6 +717,28 @@ def test_read_database_cx_credentials(uri: str) -> None:
     # can reasonably mitigate the issue.
     with pytest.raises(BaseException, match=r"fakedb://\*\*\*:\*\*\*@\w+"):
         pl.read_database_uri("SELECT * FROM data", uri=uri)
+
+
+def test_database_infer_schema_length(tmp_sqlite_inference_db: Path) -> None:
+    # note: first row of this test database contains only NULL values
+    conn = sqlite3.connect(tmp_sqlite_inference_db)
+    for infer_len in (2, 100, None):
+        df = pl.read_database(
+            connection=conn,
+            query="SELECT * FROM test_data",
+            infer_schema_length=infer_len,
+        )
+        assert df.schema == {"name": pl.String, "value": pl.Float64}
+
+    with pytest.raises(
+        ComputeError,
+        match='could not append value: "foo" of type: str.*`infer_schema_length`',
+    ):
+        pl.read_database(
+            connection=conn,
+            query="SELECT * FROM test_data",
+            infer_schema_length=1,
+        )
 
 
 @pytest.mark.write_disk()
