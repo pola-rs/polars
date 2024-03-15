@@ -250,7 +250,7 @@ class ConnectionExecutor:
         batch_size: int | None,
         iter_batches: bool,
         schema_overrides: SchemaDict | None,
-        **kwargs: Any,
+        infer_schema_length: int | None,
     ) -> DataFrame | Iterable[DataFrame] | None:
         """Return resultset data in Arrow format for frame init."""
         from polars import from_arrow
