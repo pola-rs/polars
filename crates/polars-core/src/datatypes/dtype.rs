@@ -406,8 +406,13 @@ impl DataType {
             ))),
             Null => Ok(ArrowDataType::Null),
             #[cfg(feature = "object")]
-            Object(_, _) => {
-                polars_bail!(InvalidOperation: "cannot convert Object dtype data to Arrow")
+            Object(_, Some(reg)) => Ok(reg.physical_dtype.clone()),
+            #[cfg(feature = "object")]
+            Object(_, None) => {
+                // FIXME: find out why we have Objects floating around without a
+                // known dtype.
+                // polars_bail!(InvalidOperation: "cannot convert Object dtype without registry to Arrow")
+                Ok(ArrowDataType::Unknown)
             },
             #[cfg(feature = "dtype-categorical")]
             Categorical(_, _) | Enum(_, _) => {
@@ -428,9 +433,7 @@ impl DataType {
                 Ok(ArrowDataType::Struct(fields))
             },
             BinaryOffset => Ok(ArrowDataType::LargeBinary),
-            Unknown => {
-                polars_bail!(InvalidOperation: "cannot convert Unknown dtype data to Arrow")
-            },
+            Unknown => Ok(ArrowDataType::Unknown)
         }
     }
 

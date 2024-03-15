@@ -169,6 +169,8 @@ pub enum ArrowDataType {
     /// A string type that inlines small values
     /// and can intern strings.
     Utf8View,
+    /// A type unknown to Arrow.
+    Unknown,
 }
 
 #[cfg(feature = "arrow_rs")]
@@ -233,6 +235,7 @@ impl From<ArrowDataType> for arrow_schema::DataType {
             ArrowDataType::BinaryView | ArrowDataType::Utf8View => {
                 panic!("view datatypes not supported by arrow-rs")
             },
+            ArrowDataType::Unknown => unimplemented!()
         }
     }
 }
@@ -470,6 +473,7 @@ impl ArrowDataType {
             Map(_, _) => PhysicalType::Map,
             Dictionary(key, _, _) => PhysicalType::Dictionary(*key),
             Extension(_, key, _) => key.to_physical_type(),
+            Unknown => unimplemented!()
         }
     }
 

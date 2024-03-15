@@ -479,6 +479,7 @@ fn to_format(data_type: &ArrowDataType) -> String {
         ArrowDataType::Map(_, _) => "+m".to_string(),
         ArrowDataType::Dictionary(index, _, _) => to_format(&(*index).into()),
         ArrowDataType::Extension(_, inner, _) => to_format(inner.as_ref()),
+        ArrowDataType::Unknown => unimplemented!()
     }
 }
 

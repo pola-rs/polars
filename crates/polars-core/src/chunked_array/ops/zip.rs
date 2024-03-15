@@ -3,6 +3,7 @@ use arrow::compute::if_then_else::if_then_else;
 use arrow::compute::utils::{combine_validities_and, combine_validities_and_not};
 use polars_compute::if_then_else::IfThenElseKernel;
 
+use crate::chunked_array::object::ObjectArray;
 use crate::prelude::*;
 use crate::utils::{align_chunks_binary, align_chunks_ternary};
 
@@ -39,7 +40,10 @@ fn bool_null_to_false(mask: &BooleanArray) -> Bitmap {
 /// Combines the validities of ca with the bits in mask using the given combiner.
 ///
 /// If the mask itself has validity, those null bits are converted to false.
-fn combine_validities_chunked<T: PolarsDataType, F: Fn(Option<&Bitmap>, Option<&Bitmap>) -> Option<Bitmap>>(
+fn combine_validities_chunked<
+    T: PolarsDataType,
+    F: Fn(Option<&Bitmap>, Option<&Bitmap>) -> Option<Bitmap>,
+>(
     ca: &ChunkedArray<T>,
     mask: &BooleanChunked,
     combiner: F,
@@ -76,21 +80,27 @@ where
     if mask.len() == 1 {
         return if_then_else_broadcast_mask(mask.get(0).unwrap_or(false), if_true, if_false);
     }
-    
+
     // Broadcast both.
     let ret = if if_true.len() == 1 && if_false.len() == 1 {
         match (if_true.get(0), if_false.get(0)) {
             (None, None) => ChunkedArray::full_null_like(if_true, mask.len()),
-            (None, Some(_)) => combine_validities_chunked(&if_false.new_from_index(0, mask.len()), mask, combine_validities_and_not),
-            (Some(_), None) => combine_validities_chunked(&if_true.new_from_index(0, mask.len()), mask, combine_validities_and),
+            (None, Some(_)) => combine_validities_chunked(
+                &if_false.new_from_index(0, mask.len()),
+                mask,
+                combine_validities_and_not,
+            ),
+            (Some(_), None) => combine_validities_chunked(
+                &if_true.new_from_index(0, mask.len()),
+                mask,
+                combine_validities_and,
+            ),
             (Some(t), Some(f)) => {
                 let dtype = if_true.downcast_iter().next().unwrap().data_type();
-                let chunks = mask
-                    .downcast_iter()
-                    .map(|m| {
-                        let bm = bool_null_to_false(m);
-                        kernel_broadcast_both(dtype.clone(), &bm, t.clone(), f.clone())
-                    });
+                let chunks = mask.downcast_iter().map(|m| {
+                    let bm = bool_null_to_false(m);
+                    kernel_broadcast_both(dtype.clone(), &bm, t.clone(), f.clone())
+                });
                 ChunkedArray::from_chunk_iter_like(if_true, chunks)
             },
         }
@@ -144,7 +154,7 @@ where
     } else {
         polars_bail!(ShapeMismatch: SHAPE_MISMATCH_STR)
     };
-    
+
     Ok(ret.with_name(if_true.name()))
 }
 
@@ -322,20 +332,15 @@ impl ChunkZip<BooleanType> for BooleanChunked {
         mask: &BooleanChunked,
         other: &BooleanChunked,
     ) -> PolarsResult<BooleanChunked> {
-        // broadcasting path
-        if self.len() != mask.len() || other.len() != mask.len() {
-            impl_ternary_broadcast!(
-                self,
-                self.len(),
-                other.len(),
-                mask.len(),
-                other,
-                mask,
-                BooleanType
-            )
-        } else {
-            zip_with(self, other, mask)
-        }
+        if_then_else_dispatch(
+            mask,
+            self,
+            other,
+            IfThenElseKernel::if_then_else,
+            |m, t, f| IfThenElseKernel::if_then_else_broadcast_true(m, t, f),
+            |m, t, f| IfThenElseKernel::if_then_else_broadcast_false(m, t, f),
+            |dt, m, t, f| IfThenElseKernel::if_then_else_broadcast_both(dt, m, t, f),
+        )
     }
 }
 
@@ -345,11 +350,15 @@ impl ChunkZip<StringType> for StringChunked {
         mask: &BooleanChunked,
         other: &StringChunked,
     ) -> PolarsResult<StringChunked> {
-        unsafe {
-            self.as_binary()
-                .zip_with(mask, &other.as_binary())
-                .map(|ca| ca.to_string())
-        }
+        if_then_else_dispatch(
+            mask,
+            self,
+            other,
+            IfThenElseKernel::if_then_else,
+            |m, t, f| IfThenElseKernel::if_then_else_broadcast_true(m, t, f),
+            |m, t, f| IfThenElseKernel::if_then_else_broadcast_false(m, t, f),
+            |dt, m, t, f| IfThenElseKernel::if_then_else_broadcast_both(dt, m, t, f),
+        )
     }
 }
 
@@ -359,19 +368,15 @@ impl ChunkZip<BinaryType> for BinaryChunked {
         mask: &BooleanChunked,
         other: &BinaryChunked,
     ) -> PolarsResult<BinaryChunked> {
-        if self.len() != mask.len() || other.len() != mask.len() {
-            impl_ternary_broadcast!(
-                self,
-                self.len(),
-                other.len(),
-                mask.len(),
-                other,
-                mask,
-                BinaryType
-            )
-        } else {
-            zip_with(self, other, mask)
-        }
+        if_then_else_dispatch(
+            mask,
+            self,
+            other,
+            IfThenElseKernel::if_then_else,
+            |m, t, f| IfThenElseKernel::if_then_else_broadcast_true(m, t, f),
+            |m, t, f| IfThenElseKernel::if_then_else_broadcast_false(m, t, f),
+            |dt, m, t, f| IfThenElseKernel::if_then_else_broadcast_both(dt, m, t, f),
+        )
     }
 }
 
@@ -392,6 +397,52 @@ impl ChunkZip<FixedSizeListType> for ArrayChunked {
     }
 }
 
+// Basic implementation for ObjectArray.
+impl<T: PolarsObject> IfThenElseKernel for ObjectArray<T> {
+    type Scalar<'a> = &'a T;
+
+    fn if_then_else(mask: &Bitmap, if_true: &Self, if_false: &Self) -> Self {
+        mask.iter()
+            .zip(if_true.iter())
+            .zip(if_false.iter())
+            .map(|((m, t), f)| if m { t } else { f })
+            .collect_arr()
+    }
+
+    fn if_then_else_broadcast_true(
+        mask: &Bitmap,
+        if_true: Self::Scalar<'_>,
+        if_false: &Self,
+    ) -> Self {
+        mask.iter()
+            .zip(if_false.iter())
+            .map(|(m, f)| if m { Some(if_true) } else { f })
+            .collect_arr()
+    }
+
+    fn if_then_else_broadcast_false(
+        mask: &Bitmap,
+        if_true: &Self,
+        if_false: Self::Scalar<'_>,
+    ) -> Self {
+        mask.iter()
+            .zip(if_true.iter())
+            .map(|(m, t)| if m { t } else { Some(if_false) })
+            .collect_arr()
+    }
+
+    fn if_then_else_broadcast_both(
+        _dtype: ArrowDataType,
+        mask: &Bitmap,
+        if_true: Self::Scalar<'_>,
+        if_false: Self::Scalar<'_>,
+    ) -> Self {
+        mask.iter()
+            .map(|m| if m { if_true } else { if_false })
+            .collect_arr()
+    }
+}
+
 #[cfg(feature = "object")]
 impl<T: PolarsObject> ChunkZip<ObjectType<T>> for ObjectChunked<T> {
     fn zip_with(
@@ -399,22 +450,14 @@ impl<T: PolarsObject> ChunkZip<ObjectType<T>> for ObjectChunked<T> {
         mask: &BooleanChunked,
         other: &ChunkedArray<ObjectType<T>>,
     ) -> PolarsResult<ChunkedArray<ObjectType<T>>> {
-        let (truthy, falsy, mask) = (self, other, mask);
-        let (truthy, falsy, mask) = expand_lengths!(truthy, falsy, mask);
-
-        let (left, right, mask) = align_chunks_ternary(&truthy, &falsy, &mask);
-        let mut ca: Self = left
-            .as_ref()
-            .into_iter()
-            .zip(right.as_ref())
-            .zip(mask.as_ref())
-            .map(|((left_c, right_c), mask_c)| match mask_c {
-                Some(true) => left_c.cloned(),
-                Some(false) => right_c.cloned(),
-                None => None,
-            })
-            .collect();
-        ca.rename(self.name());
-        Ok(ca)
+        if_then_else_dispatch(
+            mask,
+            self,
+            other,
+            IfThenElseKernel::if_then_else,
+            |m, t, f| IfThenElseKernel::if_then_else_broadcast_true(m, t, f),
+            |m, t, f| IfThenElseKernel::if_then_else_broadcast_false(m, t, f),
+            |dt, m, t, f| IfThenElseKernel::if_then_else_broadcast_both(dt, m, t, f),
+        )
     }
 }

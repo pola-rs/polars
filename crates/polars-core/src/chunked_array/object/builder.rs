@@ -1,7 +1,5 @@
 use std::marker::PhantomData;
 
-use arrow::bitmap::MutableBitmap;
-
 use super::*;
 use crate::chunked_array::object::registry::{AnonymousObjectBuilder, ObjectRegistry};
 use crate::utils::get_iter_capacity;
@@ -54,7 +52,7 @@ where
             None => self.append_null(),
         }
     }
-
+    
     pub fn finish(mut self) -> ObjectChunked<T> {
         let null_bitmap: Option<Bitmap> = self.bitmask_builder.into();
 

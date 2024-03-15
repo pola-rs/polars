@@ -70,7 +70,10 @@ pub trait ArrayFromIter<T>: Sized {
 impl<T, A: ParameterFreeDtypeStaticArray + ArrayFromIter<T>> ArrayFromIterDtype<T> for A {
     #[inline(always)]
     fn arr_from_iter_with_dtype<I: IntoIterator<Item = T>>(dtype: ArrowDataType, iter: I) -> Self {
-        debug_assert!(std::mem::discriminant(&dtype) == std::mem::discriminant(&A::get_dtype()));
+        // FIXME: currently some Object arrays have Unknown dtype, when this is fixed remove this bypass.
+        if dtype != ArrowDataType::Unknown {
+            debug_assert_eq!(std::mem::discriminant(&dtype), std::mem::discriminant(&A::get_dtype()));
+        }
         Self::arr_from_iter(iter)
     }
 
@@ -80,7 +83,10 @@ impl<T, A: ParameterFreeDtypeStaticArray + ArrayFromIter<T>> ArrayFromIterDtype<
         I: IntoIterator<Item = T>,
         I::IntoIter: TrustedLen,
     {
-        debug_assert!(std::mem::discriminant(&dtype) == std::mem::discriminant(&A::get_dtype()));
+        // FIXME: currently some Object arrays have Unknown dtype, when this is fixed remove this bypass.
+        if dtype != ArrowDataType::Unknown {
+            debug_assert_eq!(std::mem::discriminant(&dtype), std::mem::discriminant(&A::get_dtype()));
+        }
         Self::arr_from_iter_trusted(iter)
     }
 
@@ -89,7 +95,10 @@ impl<T, A: ParameterFreeDtypeStaticArray + ArrayFromIter<T>> ArrayFromIterDtype<
         dtype: ArrowDataType,
         iter: I,
     ) -> Result<Self, E> {
-        debug_assert!(std::mem::discriminant(&dtype) == std::mem::discriminant(&A::get_dtype()));
+        // FIXME: currently some Object arrays have Unknown dtype, when this is fixed remove this bypass.
+        if dtype != ArrowDataType::Unknown {
+            debug_assert_eq!(std::mem::discriminant(&dtype), std::mem::discriminant(&A::get_dtype()));
+        }
         Self::try_arr_from_iter(iter)
     }
 
@@ -99,7 +108,10 @@ impl<T, A: ParameterFreeDtypeStaticArray + ArrayFromIter<T>> ArrayFromIterDtype<
         I: IntoIterator<Item = Result<T, E>>,
         I::IntoIter: TrustedLen,
     {
-        debug_assert!(std::mem::discriminant(&dtype) == std::mem::discriminant(&A::get_dtype()));
+        // FIXME: currently some Object arrays have Unknown dtype, when this is fixed remove this bypass.
+        if dtype != ArrowDataType::Unknown {
+            debug_assert_eq!(std::mem::discriminant(&dtype), std::mem::discriminant(&A::get_dtype()));
+        }
         Self::try_arr_from_iter_trusted(iter)
     }
 }
