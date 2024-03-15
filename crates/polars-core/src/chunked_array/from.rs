@@ -283,7 +283,7 @@ where
     }
 
     pub fn full_null_like(ca: &Self, length: usize) -> Self {
-        let chunks = std::iter::once(T::Array::full_null(length, ca.dtype().to_arrow(false)));
+        let chunks = std::iter::once(T::Array::full_null(length, ca.dtype().to_arrow(true)));
         Self::from_chunk_iter_like(ca, chunks)
     }
 }

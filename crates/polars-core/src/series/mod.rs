@@ -879,6 +879,8 @@ where
         if &T::get_dtype() == self.dtype() ||
             // Needed because we want to get ref of List no matter what the inner type is.
             (matches!(T::get_dtype(), DataType::List(_)) && matches!(self.dtype(), DataType::List(_)))
+            // Similarly for arrays.
+            || (matches!(T::get_dtype(), DataType::Array(_, _)) && matches!(self.dtype(), DataType::Array(_, _)))
         {
             unsafe { &*(self as *const dyn SeriesTrait as *const ChunkedArray<T>) }
         } else {

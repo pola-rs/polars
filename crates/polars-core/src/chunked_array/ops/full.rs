@@ -1,3 +1,4 @@
+use arrow::array::growable::make_growable;
 use arrow::bitmap::MutableBitmap;
 
 use crate::chunked_array::builder::get_list_builder;
@@ -134,14 +135,21 @@ impl ArrayChunked {
 #[cfg(feature = "dtype-array")]
 impl ChunkFull<&Series> for ArrayChunked {
     fn full(name: &str, value: &Series, length: usize) -> ArrayChunked {
-        if !value.dtype().is_numeric() {
-            todo!("Array only supports numeric data types");
-        };
         let width = value.len();
-        let values = value.tile(length);
-        let values = values.chunks()[0].clone();
+        let dtype = value.dtype();
+        let values = if value.dtype().is_numeric() {
+            let values = value.tile(length);
+            values.chunks()[0].clone()
+        } else {
+            let value = value.rechunk().chunks()[0].clone();
+            let mut growable = make_growable(&[&*value], false, width * length);
+            unsafe {
+                growable.extend_copies(0, 0, width, length);
+                growable.as_box()
+            }
+        };
         let data_type = ArrowDataType::FixedSizeList(
-            Box::new(ArrowField::new("item", values.data_type().clone(), true)),
+            Box::new(ArrowField::new("item", dtype.to_arrow(true), true)),
             width,
         );
         let arr = FixedSizeListArray::new(data_type, values, None);

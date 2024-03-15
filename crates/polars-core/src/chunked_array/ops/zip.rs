@@ -391,9 +391,15 @@ impl ChunkZip<ListType> for ListChunked {
 #[cfg(feature = "dtype-array")]
 impl ChunkZip<FixedSizeListType> for ArrayChunked {
     fn zip_with(&self, mask: &BooleanChunked, other: &ArrayChunked) -> PolarsResult<ArrayChunked> {
-        let (truthy, falsy, mask) = (self, other, mask);
-        let (truthy, falsy, mask) = expand_lengths!(truthy, falsy, mask);
-        zip_with(&truthy, &falsy, &mask)
+        if_then_else_dispatch(
+            mask,
+            self,
+            other,
+            IfThenElseKernel::if_then_else,
+            |m, t, f| IfThenElseKernel::if_then_else_broadcast_true(m, t, f),
+            |m, t, f| IfThenElseKernel::if_then_else_broadcast_false(m, t, f),
+            |dt, m, t, f| IfThenElseKernel::if_then_else_broadcast_both(dt, m, t, f),
+        )
     }
 }
 
