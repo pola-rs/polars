@@ -9642,19 +9642,19 @@ class Expr:
         .. deprecated:: 0.20.16
             Use :func:`polars.plugins.register_plugin_function` instead.
 
-        .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
-
-        .. warning::
-            This is highly unsafe as this will call the C function
-            loaded by `lib::symbol`.
-
-            The parameters you give dictate how polars will deal
-            with the function. Make sure they are correct!
-
         See the `user guide <https://docs.pola.rs/user-guide/expressions/plugins/>`_
         for more information about plugins.
+
+        Warnings
+        --------
+        This method is deprecated. Use the new `polars.plugins.register_plugin_function`
+        function instead.
+
+        This is highly unsafe as this will call the C function loaded by
+        `lib::symbol`.
+
+        The parameters you set dictate how Polars will handle the function.
+        Make sure they are correct!
 
         Parameters
         ----------

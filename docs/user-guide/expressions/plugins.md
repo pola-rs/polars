@@ -103,9 +103,9 @@ from polars.type_aliases import IntoExpr
 def pig_latinnify(expr: IntoExpr) -> pl.Expr:
     """Pig-latinnify expression."""
     return register_plugin_function(
-        plugin_location=Path(__file__).parent,
+        plugin_path=Path(__file__).parent,
         function_name="pig_latinnify",
-        inputs=expr,
+        args=expr,
         is_elementwise=True,
     )
 ```
@@ -186,9 +186,9 @@ def append_args(
     This example shows how arguments other than `Series` can be used.
     """
     return register_plugin_function(
-        plugin_location=Path(__file__).parent,
+        plugin_path=Path(__file__).parent,
         function_name="append_kwargs",
-        inputs=expr,
+        args=expr,
         kwargs={
             "float_arg": float_arg,
             "integer_arg": integer_arg,
