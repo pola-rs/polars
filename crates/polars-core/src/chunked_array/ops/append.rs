@@ -19,9 +19,6 @@ where
     T: PolarsDataType,
     for<'a> T::Physical<'a>: TotalOrd,
 {
-    let is_sorted_any = |ca: &ChunkedArray<T>| !matches!(ca.is_sorted_flag(), IsSorted::Not);
-    let is_not_sorted = |ca: &ChunkedArray<T>| matches!(ca.is_sorted_flag(), IsSorted::Not);
-
     // Note: Do not call (first|last)_non_null on an array here before checking
     // it is sorted, otherwise it will lead to quadratic behavior.
     let sorted_flag = match (
@@ -30,7 +27,7 @@ where
     ) {
         (false, false) => IsSorted::Ascending, // all null
         (false, true) => {
-            if is_sorted_any(other) && 1 + other.last_non_null().unwrap() == other.len() {
+            if other.is_sorted_any() && 1 + other.last_non_null().unwrap() == other.len() {
                 // nulls first
                 other.is_sorted_flag()
             } else {
@@ -38,7 +35,7 @@ where
             }
         },
         (true, false) => {
-            if is_sorted_any(ca) && ca.first_non_null().unwrap() == 0 {
+            if ca.is_sorted_any() && ca.first_non_null().unwrap() == 0 {
                 // nulls last
                 ca.is_sorted_flag()
             } else {
@@ -47,8 +44,8 @@ where
         },
         (true, true) => {
             // both arrays have non-null values
-            if is_not_sorted(ca)
-                || is_not_sorted(other)
+            if !ca.is_sorted_any()
+                || !other.is_sorted_any()
                 || ca.is_sorted_flag() != other.is_sorted_flag()
             {
                 IsSorted::Not
