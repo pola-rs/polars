@@ -1,7 +1,7 @@
 use std::mem::MaybeUninit;
 
 use arrow::array::{Array, PrimitiveArray};
-use arrow::bitmap::utils::align_bitslice_start_u8;
+use arrow::bitmap::utils::{align_bitslice_start_u8, SlicesIterator};
 use arrow::bitmap::{self, Bitmap};
 use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;
@@ -12,19 +12,8 @@ mod scalar;
 mod view;
 mod boolean;
 mod array;
+mod list;
 
-fn if_then_else_validity(
-    mask: &Bitmap,
-    if_true: Option<&Bitmap>,
-    if_false: Option<&Bitmap>,
-) -> Option<Bitmap> {
-    match (if_true, if_false) {
-        (None, None) => None,
-        (None, Some(f)) => Some(mask | f),
-        (Some(t), None) => Some(bitmap::binary(mask, t, |m, t| !m | t)),
-        (Some(t), Some(f)) => Some(bitmap::ternary(mask, t, f, |m, t, f| (m & t) | (!m & f))),
-    }
-}
 
 pub trait IfThenElseKernel: Sized + Array {
     type Scalar<'a>;
@@ -82,6 +71,39 @@ impl<T: NativeType> IfThenElseKernel for PrimitiveArray<T> {
             scalar::if_then_else_broadcast_both_scalar_64,
         );
         PrimitiveArray::from_vec(values)
+    }
+}
+
+
+fn if_then_else_validity(
+    mask: &Bitmap,
+    if_true: Option<&Bitmap>,
+    if_false: Option<&Bitmap>,
+) -> Option<Bitmap> {
+    match (if_true, if_false) {
+        (None, None) => None,
+        (None, Some(f)) => Some(mask | f),
+        (Some(t), None) => Some(bitmap::binary(mask, t, |m, t| !m | t)),
+        (Some(t), Some(f)) => Some(bitmap::ternary(mask, t, f, |m, t, f| (m & t) | (!m & f))),
+    }
+}
+
+fn if_then_else_extend<G, ET: Fn(&mut G, usize, usize), EF: Fn(&mut G, usize, usize)>(
+    growable: &mut G,
+    mask: &Bitmap,
+    extend_true: ET,
+    extend_false: EF,
+) {
+    let mut last_true_end = 0;
+    for (start, len) in SlicesIterator::new(mask) {
+        if start != last_true_end {
+            extend_false(growable, last_true_end, start - last_true_end);
+        };
+        extend_true(growable, start, len);
+        last_true_end = start + len;
+    }
+    if last_true_end != mask.len() {
+        extend_false(growable, last_true_end, mask.len() - last_true_end)
     }
 }
 
