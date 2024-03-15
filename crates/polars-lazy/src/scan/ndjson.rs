@@ -123,6 +123,16 @@ impl LazyFileListReader for LazyJsonLineReader {
         self
     }
 
+    fn with_n_rows(mut self, n_rows: impl Into<Option<usize>>) -> Self {
+        self.n_rows = n_rows.into();
+        self
+    }
+
+    fn with_row_index(mut self, row_index: impl Into<Option<RowIndex>>) -> Self {
+        self.row_index = row_index.into();
+        self
+    }
+
     fn rechunk(&self) -> bool {
         self.rechunk
     }
