@@ -107,13 +107,11 @@ impl Series {
             #[cfg(feature = "dtype-time")]
             DataType::Time => any_values_to_time(values, strict)?.into_series(),
             #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime(tu, tz) => any_values_to_primitive_nonstrict::<Int64Type>(values)
-                .into_datetime(*tu, (*tz).clone())
-                .into_series(),
+            DataType::Datetime(tu, tz) => {
+                any_values_to_datetime(values, *tu, (*tz).clone(), strict)?.into_series()
+            },
             #[cfg(feature = "dtype-duration")]
-            DataType::Duration(tu) => any_values_to_primitive_nonstrict::<Int64Type>(values)
-                .into_duration(*tu)
-                .into_series(),
+            DataType::Duration(tu) => any_values_to_duration(values, *tu, strict)?.into_series(),
             #[cfg(feature = "dtype-categorical")]
             dt @ (DataType::Categorical(_, _) | DataType::Enum(_, _)) => {
                 any_values_to_categorical(values, dt, strict)?
@@ -350,6 +348,59 @@ fn any_values_to_time(values: &[AnyValue], strict: bool) -> PolarsResult<TimeChu
         }
     }
     Ok(builder.finish().into())
+}
+
+#[cfg(feature = "dtype-datetime")]
+fn any_values_to_datetime(
+    values: &[AnyValue],
+    time_unit: TimeUnit,
+    time_zone: Option<TimeZone>,
+    strict: bool,
+) -> PolarsResult<DatetimeChunked> {
+    let mut builder = PrimitiveChunkedBuilder::<Int64Type>::new("", values.len());
+    let target_dtype = DataType::Datetime(time_unit, time_zone.clone());
+    for av in values {
+        match av {
+            AnyValue::Datetime(i, tu, _) if *tu == time_unit => builder.append_value(*i),
+            AnyValue::Null => builder.append_null(),
+            av => {
+                if strict {
+                    return Err(invalid_value_error(&target_dtype, av));
+                }
+                match av.cast(&target_dtype) {
+                    AnyValue::Datetime(i, _, _) => builder.append_value(i),
+                    _ => builder.append_null(),
+                }
+            },
+        }
+    }
+    Ok(builder.finish().into_datetime(time_unit, time_zone))
+}
+
+#[cfg(feature = "dtype-duration")]
+fn any_values_to_duration(
+    values: &[AnyValue],
+    time_unit: TimeUnit,
+    strict: bool,
+) -> PolarsResult<DurationChunked> {
+    let mut builder = PrimitiveChunkedBuilder::<Int64Type>::new("", values.len());
+    let target_dtype = DataType::Duration(time_unit);
+    for av in values {
+        match av {
+            AnyValue::Duration(i, tu) if *tu == time_unit => builder.append_value(*i),
+            AnyValue::Null => builder.append_null(),
+            av => {
+                if strict {
+                    return Err(invalid_value_error(&target_dtype, av));
+                }
+                match av.cast(&target_dtype) {
+                    AnyValue::Duration(i, _) => builder.append_value(i),
+                    _ => builder.append_null(),
+                }
+            },
+        }
+    }
+    Ok(builder.finish().into_duration(time_unit))
 }
 
 #[cfg(feature = "dtype-categorical")]
