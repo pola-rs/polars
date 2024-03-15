@@ -5,7 +5,27 @@ from typing import Any
 
 import pytest
 
-from polars.plugins import _is_dynamic_lib, _resolve_plugin_path, _serialize_kwargs
+import polars as pl
+from polars.plugins import (
+    _is_dynamic_lib,
+    _resolve_plugin_path,
+    _serialize_kwargs,
+    register_plugin_function,
+)
+
+
+@pytest.mark.write_disk()
+def test_register_plugin_function_invalid_plugin_path(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    plugin_path = tmp_path / "lib.so"
+    plugin_path.touch()
+
+    expr = register_plugin_function(
+        plugin_path=plugin_path, function_name="hello", args=5
+    )
+
+    with pytest.raises(pl.ComputeError, match="error loading dynamic library"):
+        pl.select(expr)
 
 
 @pytest.mark.parametrize(
