@@ -9622,6 +9622,9 @@ class Expr:
         """
         return self.shift(n, fill_value=fill_value)
 
+    @deprecate_function(
+        "Use `polars.plugins.register_plugin_function` instead.", version="0.20.16"
+    )
     def register_plugin(
         self,
         *,

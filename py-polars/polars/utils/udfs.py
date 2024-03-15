@@ -3,9 +3,19 @@
 import os
 from typing import Any
 
+from polars._utils.deprecation import deprecate_function
+
 __all__ = ["_get_shared_lib_location"]
 
 
+@deprecate_function(
+    "It will be removed in the next breaking release."
+    " The new `register_plugin_function` function has this functionality built in."
+    " Use `from polars.plugins import register_plugin_function` to import that function."
+    " Check the user guide for the currently-recommended way to register a plugin:"
+    " https://docs.pola.rs/user-guide/expressions/plugins",
+    version="0.20.16",
+)
 def _get_shared_lib_location(main_file: Any) -> str:
     """
     Get the location of the dynamic library file.
