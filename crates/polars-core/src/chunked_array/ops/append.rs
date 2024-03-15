@@ -19,8 +19,6 @@ where
     T: PolarsDataType,
     for<'a> T::Physical<'a>: TotalOrd,
 {
-    // TODO: attempt to maintain sortedness better in case of nulls.
-
     // If either is empty, copy the sorted flag from the other.
     if ca.is_empty() {
         ca.set_sorted_flag(other.is_sorted_flag());
@@ -41,26 +39,39 @@ where
     }
 
     // Check the order is maintained.
-    let still_sorted = {
-        // To prevent potential quadratic append behavior we do not find
-        // the last non-null element in ca.
-        if let Some(left) = ca.last() {
-            if let Some(right_idx) = other.first_non_null() {
-                let right = other.get(right_idx).unwrap();
-                if ca.is_sorted_ascending_flag() {
-                    left.tot_le(&right)
-                } else {
-                    left.tot_ge(&right)
-                }
+    let still_sorted = match (
+        ca.null_count() != ca.len(),
+        other.null_count() != other.len(),
+    ) {
+        (false, false) => true, // all null
+        (false, true) => 1 + other.last_non_null().unwrap() == other.len(), // nulls first
+        (true, false) => ca.first_non_null().unwrap() == 0, // nulls last
+        (true, true) => {
+            // both arrays have non-null values
+            let l_idx = ca.last_non_null().unwrap();
+            let r_idx = other.first_non_null().unwrap();
+
+            let l_val = unsafe { ca.value_unchecked(l_idx) };
+            let r_val = unsafe { other.value_unchecked(r_idx) };
+
+            // compare values
+            let out = if ca.is_sorted_ascending_flag() {
+                l_val.tot_le(&r_val)
             } else {
-                // Right is only nulls, trivially sorted.
-                true
-            }
-        } else {
-            // Last element in left is null, pessimistically assume not sorted.
-            false
-        }
+                l_val.tot_ge(&r_val)
+            };
+
+            out && (
+                // check null position
+                // the first 2 ensure there are no nulls in the center
+                (1 + l_idx == ca.len())
+                && (r_idx == 0)
+                // this checks that if there are nulls, they are all on one side
+                && !(ca.first_non_null().unwrap() != 0 && 1 + other.last_non_null().unwrap() != other.len())
+            )
+        },
     };
+
     if !still_sorted {
         ca.set_sorted_flag(IsSorted::Not);
     }
