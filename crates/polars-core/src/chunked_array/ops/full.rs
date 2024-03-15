@@ -1,4 +1,3 @@
-use arrow::array::growable::make_growable;
 use arrow::bitmap::MutableBitmap;
 
 use crate::chunked_array::builder::get_list_builder;
@@ -137,22 +136,17 @@ impl ChunkFull<&Series> for ArrayChunked {
     fn full(name: &str, value: &Series, length: usize) -> ArrayChunked {
         let width = value.len();
         let dtype = value.dtype();
-        let values = if value.dtype().is_numeric() {
-            let values = value.tile(length);
-            values.chunks()[0].clone()
-        } else {
-            let value = value.rechunk().chunks()[0].clone();
-            let mut growable = make_growable(&[&*value], false, width * length);
-            unsafe {
-                growable.extend_copies(0, 0, width, length);
-                growable.as_box()
-            }
-        };
-        let data_type = ArrowDataType::FixedSizeList(
+        let arrow_dtype = ArrowDataType::FixedSizeList(
             Box::new(ArrowField::new("item", dtype.to_arrow(true), true)),
             width,
         );
-        let arr = FixedSizeListArray::new(data_type, values, None);
+        let arr = if value.dtype().is_numeric() {
+            let values = value.tile(length);
+            FixedSizeListArray::new(arrow_dtype, values.chunks()[0].clone(), None)
+        } else {
+            let value = value.rechunk().chunks()[0].clone();
+            FixedSizeListArray::full(length, value, arrow_dtype)
+        };
         ChunkedArray::with_chunk(name, arr)
     }
 }
