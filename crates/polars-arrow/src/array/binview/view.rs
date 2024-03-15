@@ -37,12 +37,21 @@ impl View {
     
     #[inline]
     pub fn new_from_bytes(bytes: &[u8], buffer_idx: u32, offset: u32) -> Self {
-        let prefix_buf: [u8; 4] = std::array::from_fn(|i| *bytes.get(i).unwrap_or(&0));
-        Self {
-            length: bytes.len() as u32,
-            prefix: u32::from_le_bytes(prefix_buf),
-            buffer_idx,
-            offset,
+        if bytes.len() <= 12 {
+            let mut ret = Self { length: bytes.len() as u32, ..Default::default() };
+            let ret_ptr = &mut ret as *mut _ as *mut u8;
+            unsafe {
+                core::ptr::copy_nonoverlapping(bytes.as_ptr(), ret_ptr.add(4), bytes.len());
+            }
+            ret
+        } else {
+            let prefix_buf: [u8; 4] = std::array::from_fn(|i| *bytes.get(i).unwrap_or(&0));
+            Self {
+                length: bytes.len() as u32,
+                prefix: u32::from_le_bytes(prefix_buf),
+                buffer_idx,
+                offset,
+            }
         }
     }
 }

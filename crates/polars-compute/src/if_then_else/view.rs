@@ -7,7 +7,27 @@ use arrow::datatypes::ArrowDataType;
 
 use super::scalar::{if_then_else_scalar_64, if_then_else_scalar_rest};
 use super::IfThenElseKernel;
-use crate::if_then_else::scalar::{if_then_else_broadcast_both_scalar_64, if_then_else_broadcast_false_scalar_64};
+use crate::if_then_else::scalar::{
+    if_then_else_broadcast_both_scalar_64, if_then_else_broadcast_false_scalar_64,
+};
+
+// Makes a buffer and a set of views into that buffer from a set of strings.
+// Does not allocate a buffer if not necessary.
+fn make_buffer_and_views<const N: usize>(
+    strings: [&[u8]; N],
+    buffer_idx: u32,
+) -> ([View; N], Option<Buffer<u8>>) {
+    let mut buf_data = Vec::new();
+    let views = strings.map(|s| {
+        let offset = buf_data.len().try_into().unwrap();
+        if s.len() > 12 {
+            buf_data.extend(s);
+        }
+        View::new_from_bytes(s, buffer_idx, offset)
+    });
+    let buf = (buf_data.len() > 0).then(|| buf_data.into());
+    (views, buf)
+}
 
 impl IfThenElseKernel for BinaryViewArray {
     type Scalar<'a> = &'a [u8];
@@ -31,7 +51,13 @@ impl IfThenElseKernel for BinaryViewArray {
         }
 
         let map_false_view = |mut v: View| -> View {
-            v.buffer_idx += false_buffer_idx_offset;
+            // Let's hope this is branchless by unconditionally computing offset.
+            let offset = if v.length <= 12 {
+                0
+            } else {
+                false_buffer_idx_offset
+            };
+            v.buffer_idx += offset;
             v
         };
         let views = super::if_then_else_loop(
@@ -54,15 +80,18 @@ impl IfThenElseKernel for BinaryViewArray {
         }
     }
 
-    fn if_then_else_broadcast_true(mask: &Bitmap, if_true: Self::Scalar<'_>, if_false: &Self) -> Self {
+    fn if_then_else_broadcast_true(
+        mask: &Bitmap,
+        if_true: Self::Scalar<'_>,
+        if_false: &Self,
+    ) -> Self {
         // It's cheaper if we put the false buffers first, that way we don't need to modify any views in the loop.
         let false_buffers = if_false.data_buffers().iter().cloned();
-        let true_buffer: Buffer<u8> = if_true.to_owned().into();
-        let combined_buffers: Arc<_> = false_buffers.chain(std::iter::once(true_buffer)).collect();
+        let true_buffer_idx_offset: u32 = if_false.data_buffers().len() as u32;
+        let ([true_view], true_buffer) = make_buffer_and_views([if_true], true_buffer_idx_offset);
+        let combined_buffers: Arc<_> = false_buffers.chain(true_buffer).collect();
         let combined_buffer_len = if_false.total_buffer_len() + if_true.len();
 
-        let true_buffer_idx_offset: u32 = if_false.data_buffers().len() as u32;
-        let true_view = View::new_from_bytes(if_true, true_buffer_idx_offset, 0);
         let views = super::if_then_else_loop_broadcast_false(
             true, // Invert the mask so we effectively broadcast true.
             mask,
@@ -90,12 +119,12 @@ impl IfThenElseKernel for BinaryViewArray {
     ) -> Self {
         // It's cheaper if we put the true buffers first, that way we don't need to modify any views in the loop.
         let true_buffers = if_true.data_buffers().iter().cloned();
-        let false_buffer: Buffer<u8> = if_false.to_owned().into();
-        let combined_buffers: Arc<_> = true_buffers.chain(std::iter::once(false_buffer)).collect();
+        let false_buffer_idx_offset: u32 = if_true.data_buffers().len() as u32;
+        let ([false_view], false_buffer) =
+            make_buffer_and_views([if_false], false_buffer_idx_offset);
+        let combined_buffers: Arc<_> = true_buffers.chain(false_buffer).collect();
         let combined_buffer_len = if_true.total_buffer_len() + if_false.len();
 
-        let false_buffer_idx_offset: u32 = if_true.data_buffers().len() as u32;
-        let false_view = View::new_from_bytes(if_false, false_buffer_idx_offset, 0);
         let views = super::if_then_else_loop_broadcast_false(
             false,
             mask,
@@ -116,12 +145,15 @@ impl IfThenElseKernel for BinaryViewArray {
         }
     }
 
-    fn if_then_else_broadcast_both(dtype: ArrowDataType, mask: &Bitmap, if_true: Self::Scalar<'_>, if_false: Self::Scalar<'_>) -> Self {
+    fn if_then_else_broadcast_both(
+        dtype: ArrowDataType,
+        mask: &Bitmap,
+        if_true: Self::Scalar<'_>,
+        if_false: Self::Scalar<'_>,
+    ) -> Self {
         let total_len = if_true.len() + if_false.len();
-        let buffer: Buffer<u8> = [if_true, if_false].concat().into();
-        let buffers: Arc<_> = std::iter::once(buffer).collect();
-        let true_view = View::new_from_bytes(if_true, 0, 0);
-        let false_view = View::new_from_bytes(if_false, 0, if_true.len().try_into().unwrap());
+        let ([true_view, false_view], buffer) = make_buffer_and_views([if_true, if_false], 0);
+        let buffers: Arc<_> = buffer.into_iter().collect();
         let views = super::if_then_else_loop_broadcast_both(
             mask,
             true_view,
@@ -129,14 +161,7 @@ impl IfThenElseKernel for BinaryViewArray {
             if_then_else_broadcast_both_scalar_64,
         );
         unsafe {
-            BinaryViewArray::new_unchecked(
-                dtype,
-                views.into(),
-                buffers,
-                None,
-                total_len,
-                total_len,
-            )
+            BinaryViewArray::new_unchecked(dtype, views.into(), buffers, None, total_len, total_len)
         }
     }
 }
@@ -150,7 +175,11 @@ impl IfThenElseKernel for Utf8ViewArray {
         unsafe { ret.to_utf8view_unchecked() }
     }
 
-    fn if_then_else_broadcast_true(mask: &Bitmap, if_true: Self::Scalar<'_>, if_false: &Self) -> Self {
+    fn if_then_else_broadcast_true(
+        mask: &Bitmap,
+        if_true: Self::Scalar<'_>,
+        if_false: &Self,
+    ) -> Self {
         let ret = IfThenElseKernel::if_then_else_broadcast_true(
             mask,
             if_true.as_bytes(),
@@ -172,7 +201,12 @@ impl IfThenElseKernel for Utf8ViewArray {
         unsafe { ret.to_utf8view_unchecked() }
     }
 
-    fn if_then_else_broadcast_both(dtype: ArrowDataType, mask: &Bitmap, if_true: Self::Scalar<'_>, if_false: Self::Scalar<'_>) -> Self {
+    fn if_then_else_broadcast_both(
+        dtype: ArrowDataType,
+        mask: &Bitmap,
+        if_true: Self::Scalar<'_>,
+        if_false: Self::Scalar<'_>,
+    ) -> Self {
         let ret: BinaryViewArray = IfThenElseKernel::if_then_else_broadcast_both(
             dtype,
             mask,
