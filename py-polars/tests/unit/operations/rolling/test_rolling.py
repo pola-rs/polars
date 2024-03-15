@@ -8,7 +8,7 @@ import pytest
 from numpy import nan
 
 import polars as pl
-from polars.exceptions import ComputeError
+from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -215,6 +215,12 @@ def test_rolling_crossing_dst(
         {"ts": ts, "value": expected_values}, schema_overrides={"value": expected_dtype}
     )
     assert_frame_equal(result, expected)
+
+
+def test_rolling_by_invalid() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]}).sort("a")
+    with pytest.raises(InvalidOperationError, match="`rolling_min` operation"):
+        df.select(pl.col("b").rolling_min(2, by="a"))
 
 
 def test_rolling_infinity() -> None:
