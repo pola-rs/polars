@@ -115,6 +115,16 @@ impl LazyFileListReader for LazyParquetReader {
         self
     }
 
+    fn with_n_rows(mut self, n_rows: impl Into<Option<usize>>) -> Self {
+        self.args.n_rows = n_rows.into();
+        self
+    }
+
+    fn with_row_index(mut self, row_index: impl Into<Option<RowIndex>>) -> Self {
+        self.args.row_index = row_index.into();
+        self
+    }
+
     fn rechunk(&self) -> bool {
         self.args.rechunk
     }

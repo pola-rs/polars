@@ -40,6 +40,10 @@ pub trait LazyFileListReader: Clone {
                 .map(|r| {
                     let path = r?;
                     self.clone()
+                        // Each individual reader should not apply a row limit.
+                        .with_n_rows(None)
+                        // Each individual reader should not apply a row index.
+                        .with_row_index(None)
                         .with_path(path.clone())
                         .with_rechunk(false)
                         .finish_no_glob()
@@ -99,6 +103,12 @@ pub trait LazyFileListReader: Clone {
     /// Doesn't glob patterns.
     #[must_use]
     fn with_paths(self, paths: Arc<[PathBuf]>) -> Self;
+
+    /// Configure the row limit.
+    fn with_n_rows(self, n_rows: impl Into<Option<usize>>) -> Self;
+
+    /// Configure the row index.
+    fn with_row_index(self, row_index: impl Into<Option<RowIndex>>) -> Self;
 
     /// Rechunk the memory to contiguous chunks when parsing is done.
     fn rechunk(&self) -> bool;
