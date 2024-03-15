@@ -1,5 +1,4 @@
 use arrow::bitmap::Bitmap;
-use arrow::compute::if_then_else::if_then_else;
 use arrow::compute::utils::{combine_validities_and, combine_validities_and_not};
 use polars_compute::if_then_else::IfThenElseKernel;
 
