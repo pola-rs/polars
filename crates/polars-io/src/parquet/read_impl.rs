@@ -518,7 +518,7 @@ pub struct BatchedParquetReader {
     #[allow(dead_code)]
     row_group_fetcher: RowGroupFetcher,
     limit: usize,
-    projection: Vec<usize>,
+    projection: Arc<[usize]>,
     schema: ArrowSchemaRef,
     metadata: FileMetaDataRef,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
@@ -530,7 +530,7 @@ pub struct BatchedParquetReader {
     parallel: ParallelStrategy,
     chunk_size: usize,
     use_statistics: bool,
-    hive_partition_columns: Option<Vec<Series>>,
+    hive_partition_columns: Option<Arc<[Series]>>,
     /// Has returned at least one materialized frame.
     has_returned: bool,
 }
@@ -551,7 +551,9 @@ impl BatchedParquetReader {
         mut parallel: ParallelStrategy,
     ) -> PolarsResult<Self> {
         let n_row_groups = metadata.row_groups.len();
-        let projection = projection.unwrap_or_else(|| (0usize..schema.len()).collect::<Vec<_>>());
+        let projection = projection
+            .map(Arc::from)
+            .unwrap_or_else(|| (0usize..schema.len()).collect::<Arc<[_]>>());
 
         parallel = match parallel {
             ParallelStrategy::Auto => {
@@ -583,7 +585,7 @@ impl BatchedParquetReader {
             parallel,
             chunk_size,
             use_statistics,
-            hive_partition_columns,
+            hive_partition_columns: hive_partition_columns.map(Arc::from),
             has_returned: false,
         })
     }
@@ -632,21 +634,65 @@ impl BatchedParquetReader {
                 .fetch_row_groups(row_group_start..row_group_end)
                 .await?;
 
-            let dfs = rg_to_dfs(
-                &store,
-                &mut self.rows_read,
-                row_group_start,
-                row_group_end,
-                &mut self.limit,
-                &self.metadata,
-                &self.schema,
-                self.predicate.as_deref(),
-                self.row_index.clone(),
-                self.parallel,
-                &self.projection,
-                self.use_statistics,
-                self.hive_partition_columns.as_deref(),
-            )?;
+            let dfs = match store {
+                ColumnStore::Local(_) => rg_to_dfs(
+                    &store,
+                    &mut self.rows_read,
+                    row_group_start,
+                    row_group_end,
+                    &mut self.limit,
+                    &self.metadata,
+                    &self.schema,
+                    self.predicate.as_deref(),
+                    self.row_index.clone(),
+                    self.parallel,
+                    &self.projection,
+                    self.use_statistics,
+                    self.hive_partition_columns.as_deref(),
+                ),
+                ColumnStore::Fetched(b) => {
+                    // This branch we spawn th decoding and decompression of the bytes on a rayon task.
+                    // This will ensure we don't block the aysnc thread.
+
+                    // Reconstruct as that makes it a static.
+                    let store = ColumnStore::Fetched(b);
+                    let (tx, rx) = tokio::sync::oneshot::channel();
+
+                    // Make everything 'static.
+                    let mut rows_read = self.rows_read;
+                    let mut limit = self.limit;
+                    let row_index = self.row_index.clone();
+                    let predicate = self.predicate.clone();
+                    let schema = self.schema.clone();
+                    let metadata = self.metadata.clone();
+                    let parallel = self.parallel;
+                    let projection = self.projection.clone();
+                    let use_statistics = self.use_statistics;
+                    let hive_partition_columns = self.hive_partition_columns.clone();
+                    POOL.spawn(move || {
+                        let dfs = rg_to_dfs(
+                            &store,
+                            &mut rows_read,
+                            row_group_start,
+                            row_group_end,
+                            &mut limit,
+                            &metadata,
+                            &schema,
+                            predicate.as_deref(),
+                            row_index,
+                            parallel,
+                            &projection,
+                            use_statistics,
+                            hive_partition_columns.as_deref(),
+                        );
+                        tx.send((dfs, rows_read, limit)).unwrap();
+                    });
+                    let (dfs, rows_read, limit) = rx.await.unwrap();
+                    self.rows_read = rows_read;
+                    self.limit = limit;
+                    dfs
+                },
+            }?;
 
             self.row_group_offset += n;
 
@@ -681,8 +727,8 @@ impl BatchedParquetReader {
         if self.chunks_fifo.is_empty() {
             if skipped_all_rgs {
                 Ok(Some(vec![materialize_empty_df(
-                    Some(self.projection.as_slice()),
-                    self.schema(),
+                    Some(self.projection.as_ref()),
+                    &self.schema,
                     self.hive_partition_columns.as_deref(),
                     self.row_index.as_ref(),
                 )]))
