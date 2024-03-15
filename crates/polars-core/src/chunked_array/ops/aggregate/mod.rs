@@ -13,8 +13,8 @@ use polars_utils::min_max::MinMax;
 pub use quantile::*;
 pub use var::*;
 
-use self::search_sorted::{
-    binary_search_array, slice_sorted_non_null_and_offset, SearchSortedSide,
+use super::float_sorted_arg_max::{
+    float_arg_max_sorted_ascending, float_arg_max_sorted_descending,
 };
 use crate::chunked_array::ChunkedArray;
 use crate::datatypes::{BooleanChunked, PolarsNumericType};
@@ -80,66 +80,6 @@ where
     }
 }
 
-/// # Safety
-/// `ca` has at least 1 non-null value and is sorted ascending
-fn float_max_sorted_ascending<T>(ca: &ChunkedArray<T>) -> Option<T::Native>
-where
-    T: PolarsNumericType,
-{
-    debug_assert!(matches!(ca.is_sorted_flag(), IsSorted::Ascending));
-    let is_descending = false;
-    let side = SearchSortedSide::Left;
-
-    let maybe_max = unsafe { ca.value_unchecked(ca.last_non_null().unwrap()) };
-    with_match_physical_float_type!(T::get_dtype(), |$T| {
-        if unsafe { !std::mem::transmute_copy::<_, $T>(&maybe_max).is_nan() } {
-            return Some(maybe_max);
-        }
-    });
-
-    let (_, ca) = unsafe { slice_sorted_non_null_and_offset(ca) };
-    let arr = unsafe { ca.downcast_get_unchecked(0) };
-
-    let idx = with_match_physical_float_type!(T::get_dtype(), |$T| {
-        let val = unsafe { std::mem::transmute_copy::<$T, _>(&$T::NAN) };
-        binary_search_array(side, arr, val, is_descending)
-    }) as usize;
-
-    let idx = idx.saturating_sub(1);
-
-    unsafe { arr.get_unchecked(idx) }
-}
-
-/// # Safety
-/// `ca` has at least 1 non-null value and is sorted descending
-fn float_max_sorted_descending<T>(ca: &ChunkedArray<T>) -> Option<T::Native>
-where
-    T: PolarsNumericType,
-{
-    debug_assert!(matches!(ca.is_sorted_flag(), IsSorted::Descending));
-    let is_descending = true;
-    let side = SearchSortedSide::Right;
-
-    let maybe_max = unsafe { ca.value_unchecked(ca.first_non_null().unwrap()) };
-    with_match_physical_float_type!(T::get_dtype(), |$T| {
-        if unsafe { !std::mem::transmute_copy::<_, $T>(&maybe_max).is_nan() } {
-            return Some(maybe_max);
-        }
-    });
-
-    let (_, ca) = unsafe { slice_sorted_non_null_and_offset(ca) };
-    let arr = unsafe { ca.downcast_get_unchecked(0) };
-
-    let idx = with_match_physical_float_type!(T::get_dtype(), |$T| {
-        let val = unsafe { std::mem::transmute_copy::<$T, _>(&$T::NAN) };
-        binary_search_array(side, arr, val, is_descending)
-    }) as usize;
-
-    let idx = if idx == arr.len() { idx - 1 } else { idx };
-
-    unsafe { arr.get_unchecked(idx) }
-}
-
 impl<T> ChunkAgg<T::Native> for ChunkedArray<T>
 where
     T: PolarsNumericType,
@@ -183,20 +123,22 @@ where
         // There is at least one non-null value.
         match self.is_sorted_flag() {
             IsSorted::Ascending => {
-                if T::get_dtype().is_float() {
-                    float_max_sorted_ascending(self)
+                let idx = if T::get_dtype().is_float() {
+                    float_arg_max_sorted_ascending(self)
                 } else {
-                    let idx = self.last_non_null().unwrap();
-                    unsafe { self.get_unchecked(idx) }
-                }
+                    self.last_non_null().unwrap()
+                };
+
+                unsafe { self.get_unchecked(idx) }
             },
             IsSorted::Descending => {
-                if T::get_dtype().is_float() {
-                    float_max_sorted_descending(self)
+                let idx = if T::get_dtype().is_float() {
+                    float_arg_max_sorted_descending(self)
                 } else {
-                    let idx = self.first_non_null().unwrap();
-                    unsafe { self.get_unchecked(idx) }
-                }
+                    self.first_non_null().unwrap()
+                };
+
+                unsafe { self.get_unchecked(idx) }
             },
             IsSorted::Not => self
                 .downcast_iter()
@@ -213,19 +155,27 @@ where
         match self.is_sorted_flag() {
             IsSorted::Ascending => {
                 let min = unsafe { self.get_unchecked(self.first_non_null().unwrap()) };
-                let max = if T::get_dtype().is_float() {
-                    float_max_sorted_ascending(self)
-                } else {
-                    unsafe { self.get_unchecked(self.last_non_null().unwrap()) }
+                let max = {
+                    let idx = if T::get_dtype().is_float() {
+                        float_arg_max_sorted_ascending(self)
+                    } else {
+                        self.last_non_null().unwrap()
+                    };
+
+                    unsafe { self.get_unchecked(idx) }
                 };
                 min.zip(max)
             },
             IsSorted::Descending => {
                 let min = unsafe { self.get_unchecked(self.last_non_null().unwrap()) };
-                let max = if T::get_dtype().is_float() {
-                    float_max_sorted_descending(self)
-                } else {
-                    unsafe { self.get_unchecked(self.first_non_null().unwrap()) }
+                let max = {
+                    let idx = if T::get_dtype().is_float() {
+                        float_arg_max_sorted_descending(self)
+                    } else {
+                        self.first_non_null().unwrap()
+                    };
+
+                    unsafe { self.get_unchecked(idx) }
                 };
 
                 min.zip(max)
