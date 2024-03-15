@@ -2111,6 +2111,11 @@ def test_min_max_agg_on_str() -> None:
     assert (s.min(), s.max()) == ("a", "x")
 
 
+def test_min_max_full_nan_15058() -> None:
+    s = pl.Series([float("nan")] * 2)
+    assert all(x != x for x in [s.min(), s.max()])
+
+
 def test_is_between() -> None:
     s = pl.Series("num", [1, 2, None, 4, 5])
     assert s.is_between(2, 4).to_list() == [False, True, None, True, False]
