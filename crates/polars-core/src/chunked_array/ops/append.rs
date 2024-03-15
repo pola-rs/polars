@@ -25,18 +25,30 @@ where
         ca.null_count() != ca.len(),
         other.null_count() != other.len(),
     ) {
-        (false, false) => IsSorted::Ascending, // all null
+        (false, false) => IsSorted::Ascending,
         (false, true) => {
-            if other.is_sorted_any() && 1 + other.last_non_null().unwrap() == other.len() {
-                // nulls first
+            if
+            // lhs is empty, just take sorted flag from rhs
+            ca.is_empty()
+                || (
+                    // lhs is non-empty and all-null, so rhs must have nulls ordered first
+                    other.is_sorted_any() && 1 + other.last_non_null().unwrap() == other.len()
+                )
+            {
                 other.is_sorted_flag()
             } else {
                 IsSorted::Not
             }
         },
         (true, false) => {
-            if ca.is_sorted_any() && ca.first_non_null().unwrap() == 0 {
-                // nulls last
+            if
+            // rhs is empty, just take sorted flag from lhs
+            other.is_empty()
+                || (
+                    // rhs is non-empty and all-null, so lhs must have nulls ordered last
+                    ca.is_sorted_any() && ca.first_non_null().unwrap() == 0
+                )
+            {
                 ca.is_sorted_flag()
             } else {
                 IsSorted::Not
