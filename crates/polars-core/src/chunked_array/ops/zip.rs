@@ -135,21 +135,19 @@ where
     // Broadcast false value.
     } else if if_false.len() == 1 {
         polars_ensure!(mask.len() == if_true.len(), ShapeMismatch: SHAPE_MISMATCH_STR);
-        let false_scalar = if_false.get(0);
-        let (mask_al, if_true_al) = align_chunks_binary(mask, if_true);
-        let chunks = mask_al
-            .downcast_iter()
-            .zip(if_true_al.downcast_iter())
-            .map(|(m, t)| {
-                let bm = bool_null_to_false(m);
-                if let Some(false_val) = false_scalar.clone() {
-                    kernel_broadcast_false(&bm, t, false_val)
-                } else {
-                    let validity = combine_validities_and(t.validity(), Some(&bm));
-                    t.clone().with_validity_typed(validity)
-                }
-            });
-        ChunkedArray::from_chunk_iter_like(if_true, chunks)
+        if let Some(false_scalar) = if_false.get(0) {
+            let (mask_al, if_true_al) = align_chunks_binary(mask, if_true);
+            let chunks = mask_al
+                .downcast_iter()
+                .zip(if_true_al.downcast_iter())
+                .map(|(m, t)| {
+                    let bm = bool_null_to_false(m);
+                    kernel_broadcast_false(&bm, t, false_scalar.clone())
+                });
+            ChunkedArray::from_chunk_iter_like(if_false, chunks)
+        } else {
+            combine_validities_chunked(if_true, mask, combine_validities_and)
+        }
     } else {
         polars_bail!(ShapeMismatch: SHAPE_MISMATCH_STR)
     };
