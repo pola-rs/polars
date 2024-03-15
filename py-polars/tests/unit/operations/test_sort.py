@@ -885,7 +885,7 @@ def test_sorted_flag_concat_15072() -> None:
 
     # Concat with empty series
     s = pl.Series([None, 1]).set_sorted()
-    
+
     out = pl.concat((s.clear(), s))
     assert_series_equal(out, s)
     assert out.flags["SORTED_ASC"]
