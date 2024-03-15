@@ -20,12 +20,15 @@ where
     for<'a> T::Physical<'a>: TotalOrd,
 {
     let is_sorted_any = |ca: &ChunkedArray<T>| !matches!(ca.is_sorted_flag(), IsSorted::Not);
+    let is_not_sorted = |ca: &ChunkedArray<T>| matches!(ca.is_sorted_flag(), IsSorted::Not);
 
+    // Note: Do not call (first|last)_non_null on an array here before checking
+    // it is sorted, otherwise it will lead to quadratic behavior.
     let sorted_flag = match (
         ca.null_count() != ca.len(),
         other.null_count() != other.len(),
     ) {
-        (false, false) => IsSorted::Ascending,
+        (false, false) => IsSorted::Ascending, // all null
         (false, true) => {
             if is_sorted_any(other) && 1 + other.last_non_null().unwrap() == other.len() {
                 // nulls first
@@ -35,8 +38,8 @@ where
             }
         },
         (true, false) => {
-            // nulls last
             if is_sorted_any(ca) && ca.first_non_null().unwrap() == 0 {
+                // nulls last
                 ca.is_sorted_flag()
             } else {
                 IsSorted::Not
@@ -44,13 +47,9 @@ where
         },
         (true, true) => {
             // both arrays have non-null values
-            if (
-                // we can ignore the sorted flag of other if there is only 1 non-null value
-                // ca    : descending [3, 2]
-                // other : ascending [1]
-                // out   : descending [3, 2, 1]
-                other.len() - other.null_count() > 1
-            ) && ca.is_sorted_flag() != other.is_sorted_flag()
+            if is_not_sorted(ca)
+                || is_not_sorted(other)
+                || ca.is_sorted_flag() != other.is_sorted_flag()
             {
                 IsSorted::Not
             } else {
@@ -60,22 +59,22 @@ where
                 let l_val = unsafe { ca.value_unchecked(l_idx) };
                 let r_val = unsafe { other.value_unchecked(r_idx) };
 
-                // compare values
-                let keep_sorted = if ca.is_sorted_ascending_flag() {
-                    l_val.tot_le(&r_val)
-                } else {
-                    l_val.tot_ge(&r_val)
-                };
+                let keep_sorted =
+                    // check null positions
+                    // lhs does not end in nulls
+                    (1 + l_idx == ca.len())
+                    // rhs does not start with nulls
+                    && (r_idx == 0)
+                    // if there are nulls, they are all on one end
+                    && !(ca.first_non_null().unwrap() != 0 && 1 + other.last_non_null().unwrap() != other.len());
 
                 let keep_sorted = keep_sorted
-                    & (
-                        // check null position
-                        // the first 2 ensure there are no nulls in the center
-                        (1 + l_idx == ca.len())
-                && (r_idx == 0)
-                // this checks that if there are nulls, they are all on one side
-                && !(ca.first_non_null().unwrap() != 0 && 1 + other.last_non_null().unwrap() != other.len())
-                    );
+                    // compare values
+                    && if ca.is_sorted_ascending_flag() {
+                        l_val.tot_le(&r_val)
+                    } else {
+                        l_val.tot_ge(&r_val)
+                    };
 
                 if keep_sorted {
                     ca.is_sorted_flag()
