@@ -1,5 +1,7 @@
 use std::fmt::Write;
 
+#[cfg(feature = "object")]
+use crate::chunked_array::object::registry::ObjectRegistry;
 use crate::prelude::*;
 use crate::utils::try_get_supertype;
 
@@ -11,192 +13,6 @@ impl<'a, T: AsRef<[AnyValue<'a>]>> NamedFrom<T, [AnyValue<'a>]> for Series {
 }
 
 impl Series {
-    /// Construct a new [`Series`]` with the given `dtype` from a slice of AnyValues.
-    pub fn from_any_values_and_dtype(
-        name: &str,
-        av: &[AnyValue],
-        dtype: &DataType,
-        strict: bool,
-    ) -> PolarsResult<Self> {
-        let mut s = match dtype {
-            #[cfg(feature = "dtype-i8")]
-            DataType::Int8 => any_values_to_integer::<Int8Type>(av, strict)?.into_series(),
-            #[cfg(feature = "dtype-i16")]
-            DataType::Int16 => any_values_to_integer::<Int16Type>(av, strict)?.into_series(),
-            DataType::Int32 => any_values_to_integer::<Int32Type>(av, strict)?.into_series(),
-            DataType::Int64 => any_values_to_integer::<Int64Type>(av, strict)?.into_series(),
-            #[cfg(feature = "dtype-u8")]
-            DataType::UInt8 => any_values_to_integer::<UInt8Type>(av, strict)?.into_series(),
-            #[cfg(feature = "dtype-u16")]
-            DataType::UInt16 => any_values_to_integer::<UInt16Type>(av, strict)?.into_series(),
-            DataType::UInt32 => any_values_to_integer::<UInt32Type>(av, strict)?.into_series(),
-            DataType::UInt64 => any_values_to_integer::<UInt64Type>(av, strict)?.into_series(),
-            DataType::Float32 => any_values_to_f32(av, strict)?.into_series(),
-            DataType::Float64 => any_values_to_f64(av, strict)?.into_series(),
-            DataType::String => any_values_to_string(av, strict)?.into_series(),
-            DataType::Binary => any_values_to_binary(av, strict)?.into_series(),
-            DataType::Boolean => any_values_to_bool(av, strict)?.into_series(),
-            #[cfg(feature = "dtype-date")]
-            DataType::Date => any_values_to_primitive_nonstrict::<Int32Type>(av)
-                .into_date()
-                .into_series(),
-            #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime(tu, tz) => any_values_to_primitive_nonstrict::<Int64Type>(av)
-                .into_datetime(*tu, (*tz).clone())
-                .into_series(),
-            #[cfg(feature = "dtype-time")]
-            DataType::Time => any_values_to_primitive_nonstrict::<Int64Type>(av)
-                .into_time()
-                .into_series(),
-            #[cfg(feature = "dtype-duration")]
-            DataType::Duration(tu) => any_values_to_primitive_nonstrict::<Int64Type>(av)
-                .into_duration(*tu)
-                .into_series(),
-            #[cfg(feature = "dtype-decimal")]
-            DataType::Decimal(precision, scale) => {
-                any_values_to_decimal(av, *precision, *scale)?.into_series()
-            },
-            DataType::List(inner) => any_values_to_list(av, inner, strict)?.into_series(),
-            #[cfg(feature = "dtype-array")]
-            DataType::Array(inner, size) => any_values_to_array(av, inner, strict, *size)?
-                .into_series()
-                .cast(&DataType::Array(inner.clone(), *size))?,
-            #[cfg(feature = "dtype-struct")]
-            DataType::Struct(dtype_fields) => {
-                // fast path for empty structs
-                if dtype_fields.is_empty() {
-                    return Ok(StructChunked::full_null(name, av.len()).into_series());
-                }
-                // the physical series fields of the struct
-                let mut series_fields = Vec::with_capacity(dtype_fields.len());
-                for (i, field) in dtype_fields.iter().enumerate() {
-                    let mut field_avs = Vec::with_capacity(av.len());
-
-                    for av in av.iter() {
-                        match av {
-                            AnyValue::StructOwned(payload) => {
-                                // TODO: optimize
-                                let av_fields = &payload.1;
-                                let av_values = &payload.0;
-
-                                let mut append_by_search = || {
-                                    // search for the name
-                                    let mut pushed = false;
-                                    for (av_fld, av_val) in av_fields.iter().zip(av_values) {
-                                        if av_fld.name == field.name {
-                                            field_avs.push(av_val.clone());
-                                            pushed = true;
-                                            break;
-                                        }
-                                    }
-                                    if !pushed {
-                                        field_avs.push(AnyValue::Null)
-                                    }
-                                };
-
-                                // all fields are available in this single value
-                                // we can use the index to get value
-                                if dtype_fields.len() == av_fields.len() {
-                                    let mut search = false;
-                                    for (l, r) in dtype_fields.iter().zip(av_fields.iter()) {
-                                        if l.name() != r.name() {
-                                            search = true;
-                                        }
-                                    }
-                                    if search {
-                                        append_by_search()
-                                    } else {
-                                        let av_val =
-                                            av_values.get(i).cloned().unwrap_or(AnyValue::Null);
-                                        field_avs.push(av_val)
-                                    }
-                                }
-                                // not all fields are available, we search the proper field
-                                else {
-                                    // search for the name
-                                    append_by_search()
-                                }
-                            },
-                            _ => field_avs.push(AnyValue::Null),
-                        }
-                    }
-                    // if the inferred dtype is null, we let auto inference work
-                    let s = if matches!(field.dtype, DataType::Null) {
-                        Series::new(field.name(), &field_avs)
-                    } else {
-                        Series::from_any_values_and_dtype(
-                            field.name(),
-                            &field_avs,
-                            &field.dtype,
-                            strict,
-                        )?
-                    };
-                    series_fields.push(s)
-                }
-                return StructChunked::new(name, &series_fields).map(|ca| ca.into_series());
-            },
-            #[cfg(feature = "object")]
-            DataType::Object(_, registry) => {
-                match registry {
-                    None => {
-                        use crate::chunked_array::object::registry;
-                        let converter = registry::get_object_converter();
-                        let mut builder = registry::get_object_builder(name, av.len());
-                        for av in av {
-                            match av {
-                                AnyValue::Object(val) => builder.append_value(val.as_any()),
-                                AnyValue::Null => builder.append_null(),
-                                _ => {
-                                    // This is needed because in python people can send mixed types.
-                                    // This only works if you set a global converter.
-                                    let any = converter(av.as_borrowed());
-                                    builder.append_value(&*any)
-                                },
-                            }
-                        }
-                        return Ok(builder.to_series());
-                    },
-                    Some(registry) => {
-                        let mut builder = (*registry.builder_constructor)(name, av.len());
-                        for av in av {
-                            match av {
-                                AnyValue::Object(val) => builder.append_value(val.as_any()),
-                                AnyValue::Null => builder.append_null(),
-                                _ => {
-                                    polars_bail!(ComputeError: "expected object");
-                                },
-                            }
-                        }
-                        return Ok(builder.to_series());
-                    },
-                }
-            },
-            DataType::Null => Series::new_null(name, av.len()),
-            #[cfg(feature = "dtype-categorical")]
-            dt @ (DataType::Categorical(_, _) | DataType::Enum(_, _)) => {
-                let ca = if let Some(single_av) = av.first() {
-                    match single_av {
-                        AnyValue::String(_) | AnyValue::StringOwned(_) | AnyValue::Null => {
-                            any_values_to_string(av, strict)?
-                        },
-                        _ => polars_bail!(
-                             ComputeError:
-                             "categorical dtype with any-values of dtype {} not supported",
-                             single_av.dtype()
-                        ),
-                    }
-                } else {
-                    StringChunked::full("", "", 0)
-                };
-
-                ca.cast(dt).unwrap()
-            },
-            dt => panic!("{dt:?} not supported"),
-        };
-        s.rename(name);
-        Ok(s)
-    }
-
     /// Construct a new [`Series`] from a slice of AnyValues.
     ///
     /// The data type of the resulting Series is determined by the `values`
@@ -255,6 +71,80 @@ impl Series {
             get_any_values_supertype(values)?
         };
         Self::from_any_values_and_dtype(name, values, &dtype, strict)
+    }
+
+    /// Construct a new [`Series`]` with the given `dtype` from a slice of AnyValues.
+    ///
+    /// If `strict` is `true`, an error is returned if the values do not match the given
+    /// data type. If `strict` is `false`, values that do not match the given data type
+    /// are cast. If casting is not possible, the values are set to null instead.`
+    pub fn from_any_values_and_dtype(
+        name: &str,
+        values: &[AnyValue],
+        dtype: &DataType,
+        strict: bool,
+    ) -> PolarsResult<Self> {
+        let mut s = match dtype {
+            #[cfg(feature = "dtype-i8")]
+            DataType::Int8 => any_values_to_integer::<Int8Type>(values, strict)?.into_series(),
+            #[cfg(feature = "dtype-i16")]
+            DataType::Int16 => any_values_to_integer::<Int16Type>(values, strict)?.into_series(),
+            DataType::Int32 => any_values_to_integer::<Int32Type>(values, strict)?.into_series(),
+            DataType::Int64 => any_values_to_integer::<Int64Type>(values, strict)?.into_series(),
+            #[cfg(feature = "dtype-u8")]
+            DataType::UInt8 => any_values_to_integer::<UInt8Type>(values, strict)?.into_series(),
+            #[cfg(feature = "dtype-u16")]
+            DataType::UInt16 => any_values_to_integer::<UInt16Type>(values, strict)?.into_series(),
+            DataType::UInt32 => any_values_to_integer::<UInt32Type>(values, strict)?.into_series(),
+            DataType::UInt64 => any_values_to_integer::<UInt64Type>(values, strict)?.into_series(),
+            DataType::Float32 => any_values_to_f32(values, strict)?.into_series(),
+            DataType::Float64 => any_values_to_f64(values, strict)?.into_series(),
+            DataType::Boolean => any_values_to_bool(values, strict)?.into_series(),
+            DataType::String => any_values_to_string(values, strict)?.into_series(),
+            DataType::Binary => any_values_to_binary(values, strict)?.into_series(),
+            #[cfg(feature = "dtype-date")]
+            DataType::Date => any_values_to_primitive_nonstrict::<Int32Type>(values)
+                .into_date()
+                .into_series(),
+            #[cfg(feature = "dtype-datetime")]
+            DataType::Datetime(tu, tz) => any_values_to_primitive_nonstrict::<Int64Type>(values)
+                .into_datetime(*tu, (*tz).clone())
+                .into_series(),
+            #[cfg(feature = "dtype-time")]
+            DataType::Time => any_values_to_primitive_nonstrict::<Int64Type>(values)
+                .into_time()
+                .into_series(),
+            #[cfg(feature = "dtype-duration")]
+            DataType::Duration(tu) => any_values_to_primitive_nonstrict::<Int64Type>(values)
+                .into_duration(*tu)
+                .into_series(),
+            #[cfg(feature = "dtype-categorical")]
+            dt @ (DataType::Categorical(_, _) | DataType::Enum(_, _)) => {
+                any_values_to_categorical(values, dt, strict)?
+            },
+            #[cfg(feature = "dtype-decimal")]
+            DataType::Decimal(precision, scale) => {
+                any_values_to_decimal(values, *precision, *scale)?.into_series()
+            },
+            DataType::List(inner) => any_values_to_list(values, inner, strict)?.into_series(),
+            #[cfg(feature = "dtype-array")]
+            DataType::Array(inner, size) => any_values_to_array(values, inner, strict, *size)?
+                .into_series()
+                .cast(&DataType::Array(inner.clone(), *size))?,
+            #[cfg(feature = "dtype-struct")]
+            DataType::Struct(fields) => any_values_to_struct(values, fields, strict)?,
+            #[cfg(feature = "object")]
+            DataType::Object(_, registry) => any_values_to_object(values, registry)?,
+            DataType::Null => Series::new_null(name, values.len()),
+            dt => {
+                polars_bail!(
+                    InvalidOperation:
+                    "constructing a Series with data type {dt:?} from AnyValues is not supported"
+                )
+            },
+        };
+        s.rename(name);
+        Ok(s)
     }
 }
 
@@ -434,6 +324,30 @@ fn any_values_to_binary(values: &[AnyValue], strict: bool) -> PolarsResult<Binar
     }
 }
 
+#[cfg(feature = "dtype-categorical")]
+fn any_values_to_categorical(
+    values: &[AnyValue],
+    dtype: &DataType,
+    strict: bool,
+) -> PolarsResult<Series> {
+    let ca = if let Some(single_av) = values.first() {
+        match single_av {
+            AnyValue::String(_) | AnyValue::StringOwned(_) | AnyValue::Null => {
+                any_values_to_string(values, strict)?
+            },
+            _ => polars_bail!(
+                 ComputeError:
+                 "categorical dtype with any-values of dtype {} not supported",
+                 single_av.dtype()
+            ),
+        }
+    } else {
+        StringChunked::full("", "", 0)
+    };
+
+    ca.cast(dtype)
+}
+
 #[cfg(feature = "dtype-decimal")]
 fn any_values_to_decimal(
     avs: &[AnyValue],
@@ -499,6 +413,66 @@ fn any_values_to_decimal(
     }
     // build the array and do a precision check if needed
     builder.finish().into_decimal(precision, scale)
+}
+
+fn any_values_to_list(
+    avs: &[AnyValue],
+    inner_type: &DataType,
+    strict: bool,
+) -> PolarsResult<ListChunked> {
+    let target_dtype = DataType::List(Box::new(inner_type.clone()));
+
+    // this is handled downstream. The builder will choose the first non null type
+    let mut valid = true;
+    #[allow(unused_mut)]
+    let mut out: ListChunked = if inner_type == &DataType::Null {
+        avs.iter()
+            .map(|av| match av {
+                AnyValue::List(b) => Some(b.clone()),
+                AnyValue::Null => None,
+                _ => {
+                    valid = false;
+                    None
+                },
+            })
+            .collect_trusted()
+    }
+    // make sure that wrongly inferred AnyValues don't deviate from the datatype
+    else {
+        avs.iter()
+            .map(|av| match av {
+                AnyValue::List(b) => {
+                    if b.dtype() == inner_type {
+                        Some(b.clone())
+                    } else {
+                        match b.cast(inner_type) {
+                            Ok(out) => Some(out),
+                            Err(_) => Some(Series::full_null(b.name(), b.len(), inner_type)),
+                        }
+                    }
+                },
+                AnyValue::Null => None,
+                _ => {
+                    valid = false;
+                    None
+                },
+            })
+            .collect_trusted()
+    };
+
+    if strict && !valid {
+        polars_bail!(SchemaMismatch: "unexpected value while building Series of type {:?}", target_dtype);
+    }
+
+    // Ensure the logical type is correct for nested types
+    #[cfg(feature = "dtype-struct")]
+    if !matches!(inner_type, DataType::Null) && out.inner_dtype().is_nested() {
+        unsafe {
+            out.set_dtype(target_dtype.clone());
+        };
+    }
+
+    Ok(out)
 }
 
 #[cfg(feature = "dtype-array")]
@@ -577,64 +551,120 @@ fn any_values_to_array(
     Ok(out)
 }
 
-fn any_values_to_list(
-    avs: &[AnyValue],
-    inner_type: &DataType,
+#[cfg(feature = "dtype-struct")]
+fn any_values_to_struct(
+    values: &[AnyValue],
+    fields: &[Field],
     strict: bool,
-) -> PolarsResult<ListChunked> {
-    let target_dtype = DataType::List(Box::new(inner_type.clone()));
-
-    // this is handled downstream. The builder will choose the first non null type
-    let mut valid = true;
-    #[allow(unused_mut)]
-    let mut out: ListChunked = if inner_type == &DataType::Null {
-        avs.iter()
-            .map(|av| match av {
-                AnyValue::List(b) => Some(b.clone()),
-                AnyValue::Null => None,
-                _ => {
-                    valid = false;
-                    None
-                },
-            })
-            .collect_trusted()
+) -> PolarsResult<Series> {
+    // Fast path for empty structs.
+    if fields.is_empty() {
+        return Ok(StructChunked::full_null("", values.len()).into_series());
     }
-    // make sure that wrongly inferred AnyValues don't deviate from the datatype
-    else {
-        avs.iter()
-            .map(|av| match av {
-                AnyValue::List(b) => {
-                    if b.dtype() == inner_type {
-                        Some(b.clone())
-                    } else {
-                        match b.cast(inner_type) {
-                            Ok(out) => Some(out),
-                            Err(_) => Some(Series::full_null(b.name(), b.len(), inner_type)),
+
+    // The physical series fields of the struct.
+    let mut series_fields = Vec::with_capacity(fields.len());
+    for (i, field) in fields.iter().enumerate() {
+        let mut field_avs = Vec::with_capacity(values.len());
+
+        for av in values.iter() {
+            match av {
+                AnyValue::StructOwned(payload) => {
+                    // TODO: Optimize.
+                    let av_fields = &payload.1;
+                    let av_values = &payload.0;
+
+                    let mut append_by_search = || {
+                        // Search for the name.
+                        let mut pushed = false;
+                        for (av_fld, av_val) in av_fields.iter().zip(av_values) {
+                            if av_fld.name == field.name {
+                                field_avs.push(av_val.clone());
+                                pushed = true;
+                                break;
+                            }
+                        }
+                        if !pushed {
+                            field_avs.push(AnyValue::Null)
+                        }
+                    };
+
+                    // All fields are available in this single value.
+                    // We can use the index to get value.
+                    if fields.len() == av_fields.len() {
+                        let mut search = false;
+                        for (l, r) in fields.iter().zip(av_fields.iter()) {
+                            if l.name() != r.name() {
+                                search = true;
+                            }
+                        }
+                        if search {
+                            append_by_search()
+                        } else {
+                            let av_val = av_values.get(i).cloned().unwrap_or(AnyValue::Null);
+                            field_avs.push(av_val)
                         }
                     }
+                    // Not all fields are available, we search the proper field.
+                    else {
+                        // Search for the name.
+                        append_by_search()
+                    }
                 },
-                AnyValue::Null => None,
-                _ => {
-                    valid = false;
-                    None
-                },
-            })
-            .collect_trusted()
+                _ => field_avs.push(AnyValue::Null),
+            }
+        }
+        // If the inferred dtype is null, we let auto inference work.
+        let s = if matches!(field.dtype, DataType::Null) {
+            Series::new(field.name(), &field_avs)
+        } else {
+            Series::from_any_values_and_dtype(field.name(), &field_avs, &field.dtype, strict)?
+        };
+        series_fields.push(s)
+    }
+    StructChunked::new("", &series_fields).map(|ca| ca.into_series())
+}
+
+#[cfg(feature = "object")]
+fn any_values_to_object(
+    values: &[AnyValue],
+    registry: &Option<Arc<ObjectRegistry>>,
+) -> PolarsResult<Series> {
+    let mut builder = match registry {
+        None => {
+            use crate::chunked_array::object::registry;
+            let converter = registry::get_object_converter();
+            let mut builder = registry::get_object_builder("", values.len());
+            for av in values {
+                match av {
+                    AnyValue::Object(val) => builder.append_value(val.as_any()),
+                    AnyValue::Null => builder.append_null(),
+                    _ => {
+                        // This is needed because in Python users can send mixed types.
+                        // This only works if you set a global converter.
+                        let any = converter(av.as_borrowed());
+                        builder.append_value(&*any)
+                    },
+                }
+            }
+            builder
+        },
+        Some(registry) => {
+            let mut builder = (*registry.builder_constructor)("", values.len());
+            for av in values {
+                match av {
+                    AnyValue::Object(val) => builder.append_value(val.as_any()),
+                    AnyValue::Null => builder.append_null(),
+                    _ => {
+                        polars_bail!(ComputeError: "expected object");
+                    },
+                }
+            }
+            builder
+        },
     };
 
-    if strict && !valid {
-        polars_bail!(SchemaMismatch: "unexpected value while building Series of type {:?}", target_dtype);
-    }
-
-    // Ensure the logical type is correct for nested types
-    #[cfg(feature = "dtype-struct")]
-    if !matches!(inner_type, DataType::Null) && out.inner_dtype().is_nested() {
-        unsafe {
-            out.set_dtype(target_dtype.clone());
-        };
-    }
-
-    Ok(out)
+    Ok(builder.to_series())
 }
 
 fn invalid_value_error(dtype: &DataType, value: &AnyValue) -> PolarsError {
