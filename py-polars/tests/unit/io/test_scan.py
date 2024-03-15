@@ -148,13 +148,31 @@ def test_scan(data_file: _DataFile) -> None:
 @pytest.mark.write_disk()
 def test_scan_with_limit(data_file: _DataFile) -> None:
     df = _scan(data_file.path, data_file.df.schema).limit(100).collect()
-    assert_frame_equal(df, data_file.df.limit(100))
+    assert_frame_equal(
+        df,
+        pl.DataFrame(
+            {
+                "seq_int": range(100),
+                "seq_str": [str(x) for x in range(100)],
+            }
+        ),
+    )
 
 
 @pytest.mark.write_disk()
 def test_scan_with_row_index(data_file: _DataFile) -> None:
     df = _scan(data_file.path, data_file.df.schema, row_index=_RowIndex()).collect()
-    assert_frame_equal(df, data_file.df.with_row_index())
+    assert_frame_equal(
+        df,
+        pl.DataFrame(
+            {
+                "index": range(10000),
+                "seq_int": range(10000),
+                "seq_str": [str(x) for x in range(10000)],
+            },
+            schema_overrides={"index": pl.UInt32},
+        ),
+    )
 
 
 @pytest.mark.write_disk()
@@ -165,5 +183,13 @@ def test_scan_with_row_index_and_predicate(data_file: _DataFile) -> None:
         .collect()
     )
     assert_frame_equal(
-        df, data_file.df.with_row_index().filter(pl.col("seq_int") % 2 == 0)
+        df,
+        pl.DataFrame(
+            {
+                "index": [2 * x for x in range(5000)],
+                "seq_int": [2 * x for x in range(5000)],
+                "seq_str": [str(2 * x) for x in range(5000)],
+            },
+            schema_overrides={"index": pl.UInt32},
+        ),
     )
