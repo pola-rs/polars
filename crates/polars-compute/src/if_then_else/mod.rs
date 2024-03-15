@@ -10,6 +10,7 @@ use polars_utils::slice::load_padded_le_u64;
 
 mod scalar;
 mod view;
+mod boolean;
 
 fn if_then_else_validity(
     mask: &Bitmap,
