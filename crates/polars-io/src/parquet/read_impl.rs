@@ -650,11 +650,12 @@ impl BatchedParquetReader {
                     self.use_statistics,
                     self.hive_partition_columns.as_deref(),
                 ),
+                #[cfg(feature = "async")]
                 ColumnStore::Fetched(b) => {
-                    // This branch we spawn th decoding and decompression of the bytes on a rayon task.
-                    // This will ensure we don't block the aysnc thread.
+                    // This branch we spawn the decoding and decompression of the bytes on a rayon task.
+                    // This will ensure we don't block the async thread.
 
-                    // Reconstruct as that makes it a static.
+                    // Reconstruct as that makes it a 'static.
                     let store = ColumnStore::Fetched(b);
                     let (tx, rx) = tokio::sync::oneshot::channel();
 
