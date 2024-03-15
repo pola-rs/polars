@@ -719,7 +719,7 @@ impl FromPyObject<'_> for Wrap<NonExistent> {
             "raise" => NonExistent::Raise,
             v => {
                 return Err(PyValueError::new_err(format!(
-                    "`closed` must be one of {{'null', 'raise'}}, got {v}",
+                    "`non_existent` must be one of {{'null', 'raise'}}, got {v}",
                 )))
             },
         };

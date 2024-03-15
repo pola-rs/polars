@@ -1416,6 +1416,18 @@ def test_replace_time_zone_non_existent_null() -> None:
     assert_series_equal(result, expected)
 
 
+def test_invalid_non_existent() -> None:
+    with pytest.raises(
+        ValueError, match="`non_existent` must be one of {'null', 'raise'}, got cabbage"
+    ):
+        (
+            pl.Series([datetime(2020, 1, 1)]).dt.replace_time_zone(
+                "Europe/Warsaw",
+                non_existent="cabbage",  # type: ignore[arg-type]
+            )
+        )
+
+
 @pytest.mark.parametrize(
     ("to_tz", "tzinfo"),
     [

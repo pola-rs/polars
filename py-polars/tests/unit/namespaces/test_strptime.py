@@ -669,6 +669,20 @@ def test_to_datetime_use_earliest(exact: bool) -> None:
         ).item()
 
 
+def test_to_datetime_naive_format_and_time_zone() -> None:
+    # format-specified path
+    result = pl.Series(["2020-01-01"]).str.to_datetime(
+        format="%Y-%m-%d", time_zone="Asia/Kathmandu"
+    )
+    expected = pl.Series(
+        [datetime(2020, 1, 1)], dtype=pl.Datetime("us", "Asia/Kathmandu")
+    )
+    assert_series_equal(result, expected)
+    # format-inferred path
+    result = pl.Series(["2020-01-01"]).str.to_datetime(time_zone="Asia/Kathmandu")
+    assert_series_equal(result, expected)
+
+
 @pytest.mark.parametrize("exact", [True, False])
 def test_strptime_use_earliest(exact: bool) -> None:
     result = (
