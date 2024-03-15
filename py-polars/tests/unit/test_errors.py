@@ -706,3 +706,11 @@ def test_raise_not_found_in_simplify_14974() -> None:
     df = pl.DataFrame()
     with pytest.raises(pl.ColumnNotFoundError):
         df.select(1 / (1 + pl.col("a")))
+
+
+def test_invalid_product_type() -> None:
+    with pytest.raises(
+        pl.InvalidOperationError,
+        match="`product` operation not supported for dtype",
+    ):
+        pl.Series([[1, 2, 3]]).product()

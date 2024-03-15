@@ -737,7 +737,7 @@ impl Expr {
         };
 
         self.function_with_options(
-            move |s: Series| Ok(Some(s.product())),
+            move |s: Series| Some(s.product()).transpose(),
             GetOutput::map_dtype(|dt| {
                 use DataType::*;
                 match dt {
