@@ -19,62 +19,74 @@ where
     T: PolarsDataType,
     for<'a> T::Physical<'a>: TotalOrd,
 {
-    // If either is empty, copy the sorted flag from the other.
-    if ca.is_empty() {
-        ca.set_sorted_flag(other.is_sorted_flag());
-        return;
-    }
-    if other.is_empty() {
-        return;
-    }
+    let is_sorted_any = |ca: &ChunkedArray<T>| !matches!(ca.is_sorted_flag(), IsSorted::Not);
 
-    // Both need to be sorted, in the same order, if the order is maintained.
-    // TODO: rework sorted flags, ascending and descending are not mutually
-    // exclusive for all-equal/all-null arrays.
-    let ls = ca.is_sorted_flag();
-    let rs = other.is_sorted_flag();
-    if ls != rs || ls == IsSorted::Not || rs == IsSorted::Not {
-        ca.set_sorted_flag(IsSorted::Not);
-        return;
-    }
-
-    // Check the order is maintained.
-    let still_sorted = match (
+    let sorted_flag = match (
         ca.null_count() != ca.len(),
         other.null_count() != other.len(),
     ) {
-        (false, false) => true, // all null
-        (false, true) => 1 + other.last_non_null().unwrap() == other.len(), // nulls first
-        (true, false) => ca.first_non_null().unwrap() == 0, // nulls last
+        (false, false) => IsSorted::Ascending,
+        (false, true) => {
+            if is_sorted_any(other) && 1 + other.last_non_null().unwrap() == other.len() {
+                // nulls first
+                other.is_sorted_flag()
+            } else {
+                IsSorted::Not
+            }
+        },
+        (true, false) => {
+            // nulls last
+            if is_sorted_any(ca) && ca.first_non_null().unwrap() == 0 {
+                ca.is_sorted_flag()
+            } else {
+                IsSorted::Not
+            }
+        },
         (true, true) => {
             // both arrays have non-null values
-            let l_idx = ca.last_non_null().unwrap();
-            let r_idx = other.first_non_null().unwrap();
-
-            let l_val = unsafe { ca.value_unchecked(l_idx) };
-            let r_val = unsafe { other.value_unchecked(r_idx) };
-
-            // compare values
-            let out = if ca.is_sorted_ascending_flag() {
-                l_val.tot_le(&r_val)
+            if (
+                // we can ignore the sorted flag of other if there is only 1 non-null value
+                // ca    : descending [3, 2]
+                // other : ascending [1]
+                // out   : descending [3, 2, 1]
+                other.len() - other.null_count() > 1
+            ) && ca.is_sorted_flag() != other.is_sorted_flag()
+            {
+                IsSorted::Not
             } else {
-                l_val.tot_ge(&r_val)
-            };
+                let l_idx = ca.last_non_null().unwrap();
+                let r_idx = other.first_non_null().unwrap();
 
-            out && (
-                // check null position
-                // the first 2 ensure there are no nulls in the center
-                (1 + l_idx == ca.len())
+                let l_val = unsafe { ca.value_unchecked(l_idx) };
+                let r_val = unsafe { other.value_unchecked(r_idx) };
+
+                // compare values
+                let keep_sorted = if ca.is_sorted_ascending_flag() {
+                    l_val.tot_le(&r_val)
+                } else {
+                    l_val.tot_ge(&r_val)
+                };
+
+                let keep_sorted = keep_sorted
+                    & (
+                        // check null position
+                        // the first 2 ensure there are no nulls in the center
+                        (1 + l_idx == ca.len())
                 && (r_idx == 0)
                 // this checks that if there are nulls, they are all on one side
                 && !(ca.first_non_null().unwrap() != 0 && 1 + other.last_non_null().unwrap() != other.len())
-            )
+                    );
+
+                if keep_sorted {
+                    ca.is_sorted_flag()
+                } else {
+                    IsSorted::Not
+                }
+            }
         },
     };
 
-    if !still_sorted {
-        ca.set_sorted_flag(IsSorted::Not);
-    }
+    ca.set_sorted_flag(sorted_flag);
 }
 
 impl<T> ChunkedArray<T>

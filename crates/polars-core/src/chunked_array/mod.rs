@@ -236,6 +236,12 @@ impl<T: PolarsDataType> ChunkedArray<T> {
                 0
             };
 
+            debug_assert!(
+                // If we are lucky this catches something.
+                unsafe { self.get_unchecked(out).is_some() },
+                "incorrect sorted flag"
+            );
+
             Some(out)
         } else {
             first_non_null(self.iter_validities())
@@ -259,6 +265,12 @@ impl<T: PolarsDataType> ChunkedArray<T> {
                 // nulls are all at the end
                 self.len() - self.null_count() - 1
             };
+
+            debug_assert!(
+                // If we are lucky this catches something.
+                unsafe { self.get_unchecked(out).is_some() },
+                "incorrect sorted flag"
+            );
 
             Some(out)
         } else {
