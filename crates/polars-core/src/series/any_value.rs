@@ -221,33 +221,23 @@ fn any_values_to_f64(values: &[AnyValue], strict: bool) -> PolarsResult<Float64C
 }
 
 fn any_values_to_bool(values: &[AnyValue], strict: bool) -> PolarsResult<BooleanChunked> {
-    fn any_values_to_bool_strict(values: &[AnyValue]) -> PolarsResult<BooleanChunked> {
-        let mut builder = BooleanChunkedBuilder::new("", values.len());
-        for av in values {
-            match av {
-                AnyValue::Boolean(b) => builder.append_value(*b),
-                AnyValue::Null => builder.append_null(),
-                av => return Err(invalid_value_error(&DataType::Boolean, av)),
-            }
-        }
-        Ok(builder.finish())
-    }
-    fn any_values_to_bool_nonstrict(values: &[AnyValue]) -> BooleanChunked {
-        let mapper = |av: &AnyValue| match av {
-            AnyValue::Boolean(b) => Some(*b),
-            AnyValue::Null => None,
-            av => match av.cast(&DataType::Boolean) {
-                AnyValue::Boolean(b) => Some(b),
-                _ => None,
+    let mut builder = BooleanChunkedBuilder::new("", values.len());
+    for av in values {
+        match av {
+            AnyValue::Boolean(b) => builder.append_value(*b),
+            AnyValue::Null => builder.append_null(),
+            av => {
+                if strict {
+                    return Err(invalid_value_error(&DataType::Boolean, av));
+                }
+                match av.cast(&DataType::Boolean) {
+                    AnyValue::Boolean(b) => builder.append_value(b),
+                    _ => builder.append_null(),
+                }
             },
-        };
-        values.iter().map(mapper).collect_trusted()
+        }
     }
-    if strict {
-        any_values_to_bool_strict(values)
-    } else {
-        Ok(any_values_to_bool_nonstrict(values))
-    }
+    Ok(builder.finish())
 }
 
 fn any_values_to_string(values: &[AnyValue], strict: bool) -> PolarsResult<StringChunked> {
