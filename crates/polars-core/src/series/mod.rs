@@ -599,7 +599,7 @@ impl Series {
     ///
     /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
     /// first cast to `Int64` to prevent overflow issues.
-    pub fn product(&self) -> Series {
+    pub fn product(&self) -> PolarsResult<Series> {
         #[cfg(feature = "product")]
         {
             use DataType::*;
@@ -609,11 +609,13 @@ impl Series {
                     let s = self.cast(&Int64).unwrap();
                     s.product()
                 },
-                Int64 => self.i64().unwrap().prod_as_series(),
-                UInt64 => self.u64().unwrap().prod_as_series(),
-                Float32 => self.f32().unwrap().prod_as_series(),
-                Float64 => self.f64().unwrap().prod_as_series(),
-                dt => panic!("product not supported for dtype: {dt:?}"),
+                Int64 => Ok(self.i64().unwrap().prod_as_series()),
+                UInt64 => Ok(self.u64().unwrap().prod_as_series()),
+                Float32 => Ok(self.f32().unwrap().prod_as_series()),
+                Float64 => Ok(self.f64().unwrap().prod_as_series()),
+                dt => {
+                    polars_bail!(InvalidOperation: "`product` operation not supported for dtype `{dt}`")
+                },
             }
         }
         #[cfg(not(feature = "product"))]
