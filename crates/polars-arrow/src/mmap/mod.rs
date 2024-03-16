@@ -106,25 +106,6 @@ unsafe fn _mmap_record<T: AsRef<[u8]>>(
         .and_then(Chunk::try_new)
 }
 
-unsafe fn _mmap_unchecked<T: AsRef<[u8]>>(
-    fields: &[Field],
-    ipc_fields: &[IpcField],
-    data: Arc<T>,
-    block: Block,
-    dictionaries: &Dictionaries,
-) -> PolarsResult<Chunk<Box<dyn Array>>> {
-    let (message, offset) = read_message(data.as_ref().as_ref(), block)?;
-    let batch = get_record_batch(message)?;
-    _mmap_record(
-        fields,
-        ipc_fields,
-        data.clone(),
-        batch,
-        offset,
-        dictionaries,
-    )
-}
-
 /// Memory maps an record batch from an IPC file into a [`Chunk`].
 /// # Errors
 /// This function errors when:
