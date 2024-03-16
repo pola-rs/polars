@@ -18,8 +18,6 @@ use object_store::gcp::GoogleCloudStorageBuilder;
 pub use object_store::gcp::GoogleConfigKey;
 #[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
 use object_store::ClientOptions;
-#[cfg(feature = "cloud")]
-use object_store::ObjectStore;
 #[cfg(any(feature = "aws", feature = "gcp", feature = "azure"))]
 use object_store::{BackoffConfig, RetryConfig};
 #[cfg(feature = "aws")]
@@ -226,9 +224,9 @@ impl CloudOptions {
         self
     }
 
-    /// Build the [`ObjectStore`] implementation for AWS.
+    /// Build the [`object_store::ObjectStore`] implementation for AWS.
     #[cfg(feature = "aws")]
-    pub async fn build_aws(&self, url: &str) -> PolarsResult<impl ObjectStore> {
+    pub async fn build_aws(&self, url: &str) -> PolarsResult<impl object_store::ObjectStore> {
         let options = self.aws.as_ref();
         let mut builder = AmazonS3Builder::from_env().with_url(url);
         if let Some(options) = options {
@@ -329,9 +327,9 @@ impl CloudOptions {
         self
     }
 
-    /// Build the [`ObjectStore`] implementation for Azure.
+    /// Build the [`object_store::ObjectStore`] implementation for Azure.
     #[cfg(feature = "azure")]
-    pub fn build_azure(&self, url: &str) -> PolarsResult<impl ObjectStore> {
+    pub fn build_azure(&self, url: &str) -> PolarsResult<impl object_store::ObjectStore> {
         let options = self.azure.as_ref();
         let mut builder = MicrosoftAzureBuilder::from_env();
         if let Some(options) = options {
@@ -363,9 +361,9 @@ impl CloudOptions {
         self
     }
 
-    /// Build the [`ObjectStore`] implementation for GCP.
+    /// Build the [`object_store::ObjectStore`] implementation for GCP.
     #[cfg(feature = "gcp")]
-    pub fn build_gcp(&self, url: &str) -> PolarsResult<impl ObjectStore> {
+    pub fn build_gcp(&self, url: &str) -> PolarsResult<impl object_store::ObjectStore> {
         let options = self.gcp.as_ref();
         let mut builder = GoogleCloudStorageBuilder::from_env();
         if let Some(options) = options {

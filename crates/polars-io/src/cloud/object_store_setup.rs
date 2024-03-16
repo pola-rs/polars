@@ -1,11 +1,14 @@
+use std::sync::Arc;
+
+use object_store::local::LocalFileSystem;
+use object_store::ObjectStore;
 use once_cell::sync::Lazy;
-pub use options::*;
-use polars_error::to_compute_err;
+use polars_error::{polars_bail, to_compute_err, PolarsError, PolarsResult};
 use polars_utils::aliases::PlHashMap;
 use tokio::sync::RwLock;
 use url::Url;
 
-use super::*;
+use super::{parse_url, CloudLocation, CloudOptions, CloudType};
 
 /// Object stores must be cached. Every object-store will do DNS lookups and
 /// get rate limited when querying the DNS (can take up to 5s).
@@ -35,7 +38,14 @@ fn url_to_key(url: &Url) -> String {
 }
 
 /// Build an [`ObjectStore`] based on the URL and passed in url. Return the cloud location and an implementation of the object store.
-pub async fn build_object_store(url: &str, options: Option<&CloudOptions>) -> BuildResult {
+pub async fn build_object_store(
+    url: &str,
+    #[cfg_attr(
+        not(any(feature = "aws", feature = "gcp", feature = "azure")),
+        allow(unused_variables)
+    )]
+    options: Option<&CloudOptions>,
+) -> BuildResult {
     let parsed = parse_url(url).map_err(to_compute_err)?;
     let cloud_location = CloudLocation::from_url(&parsed)?;
 
@@ -48,9 +58,8 @@ pub async fn build_object_store(url: &str, options: Option<&CloudOptions>) -> Bu
         }
     }
 
-    let options = options
-        .map(Cow::Borrowed)
-        .unwrap_or_else(|| Cow::Owned(Default::default()));
+    #[cfg(any(feature = "aws", feature = "gcp", feature = "azure"))]
+    let options = options.map(std::borrow::Cow::Borrowed).unwrap_or_default();
 
     let cloud_type = CloudType::from_url(&parsed)?;
     let store = match cloud_type {
@@ -93,7 +102,7 @@ pub async fn build_object_store(url: &str, options: Option<&CloudOptions>) -> Bu
                 {
                     let store = object_store::http::HttpBuilder::new()
                         .with_url(url)
-                        .with_client_options(get_client_options())
+                        .with_client_options(super::get_client_options())
                         .build()?;
                     Ok::<_, PolarsError>(Arc::new(store) as Arc<dyn ObjectStore>)
                 }

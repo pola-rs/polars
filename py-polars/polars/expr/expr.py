@@ -9622,6 +9622,9 @@ class Expr:
         """
         return self.shift(n, fill_value=fill_value)
 
+    @deprecate_function(
+        "Use `polars.plugins.register_plugin_function` instead.", version="0.20.16"
+    )
     def register_plugin(
         self,
         *,
@@ -9635,20 +9638,26 @@ class Expr:
         cast_to_supertypes: bool = False,
         pass_name_to_apply: bool = False,
         changes_length: bool = False,
-    ) -> Self:
+    ) -> Expr:
         """
-        Register a shared library as a plugin.
+        Register a plugin function.
 
-        .. warning::
-            This is highly unsafe as this will call the C function
-            loaded by `lib::symbol`.
+        .. deprecated:: 0.20.16
+            Use :func:`polars.plugins.register_plugin_function` instead.
 
-            The parameters you give dictate how polars will deal
-            with the function. Make sure they are correct!
+        See the `user guide <https://docs.pola.rs/user-guide/expressions/plugins/>`_
+        for more information about plugins.
 
-        .. note::
-            This functionality is unstable and may change without it
-            being considered breaking.
+        Warnings
+        --------
+        This method is deprecated. Use the new `polars.plugins.register_plugin_function`
+        function instead.
+
+        This is highly unsafe as this will call the C function loaded by
+        `lib::symbol`.
+
+        The parameters you set dictate how Polars will handle the function.
+        Make sure they are correct!
 
         Parameters
         ----------
@@ -9677,31 +9686,24 @@ class Expr:
         changes_length
             For example a `unique` or a `slice`
         """
+        from polars.plugins import register_plugin_function
+
         if args is None:
-            args = []
+            args = [self]
         else:
-            args = [parse_as_expression(a) for a in args]
-        if kwargs is None:
-            serialized_kwargs = b""
-        else:
-            import pickle
+            args = [self, *list(args)]
 
-            # Choose the highest protocol supported by https://docs.rs/serde-pickle/latest/serde_pickle/
-            serialized_kwargs = pickle.dumps(kwargs, protocol=5)
-
-        return self._from_pyexpr(
-            self._pyexpr.register_plugin(
-                lib,
-                symbol,
-                args,
-                serialized_kwargs,
-                is_elementwise,
-                input_wildcard_expansion,
-                returns_scalar,
-                cast_to_supertypes,
-                pass_name_to_apply,
-                changes_length,
-            )
+        return register_plugin_function(
+            plugin_path=lib,
+            function_name=symbol,
+            args=args,
+            kwargs=kwargs,
+            is_elementwise=is_elementwise,
+            changes_length=changes_length,
+            returns_scalar=returns_scalar,
+            cast_to_supertype=cast_to_supertypes,
+            input_wildcard_expansion=input_wildcard_expansion,
+            pass_name_to_apply=pass_name_to_apply,
         )
 
     @deprecate_renamed_function("register_plugin", version="0.19.12")
@@ -9716,7 +9718,7 @@ class Expr:
         input_wildcard_expansion: bool = False,
         auto_explode: bool = False,
         cast_to_supertypes: bool = False,
-    ) -> Self:
+    ) -> Expr:
         return self.register_plugin(
             lib=lib,
             symbol=symbol,

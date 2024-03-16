@@ -11,7 +11,7 @@ pub enum FileScan {
     #[cfg(feature = "parquet")]
     Parquet {
         options: ParquetOptions,
-        cloud_options: Option<CloudOptions>,
+        cloud_options: Option<polars_io::cloud::CloudOptions>,
         #[cfg_attr(feature = "serde", serde(skip))]
         metadata: Option<Arc<FileMetaData>>,
     },
@@ -19,7 +19,7 @@ pub enum FileScan {
     Ipc {
         options: IpcScanOptions,
         #[cfg(feature = "cloud")]
-        cloud_options: Option<CloudOptions>,
+        cloud_options: Option<polars_io::cloud::CloudOptions>,
         #[cfg_attr(feature = "serde", serde(skip))]
         metadata: Option<arrow::io::ipc::read::FileMetadata>,
     },

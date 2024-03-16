@@ -632,3 +632,11 @@ def test_cast_decimal() -> None:
         df.select(pl.col("s").cast(pl.Boolean)),
         pl.DataFrame({"s": [False, True, True]}),
     )
+
+
+def test_cast_array_to_different_width() -> None:
+    s = pl.Series([[1, 2], [3, 4]], dtype=pl.Array(pl.Int8, 2))
+    with pytest.raises(
+        pl.InvalidOperationError, match="cannot cast Array to a different width"
+    ):
+        s.cast(pl.Array(pl.Int16, 3))
