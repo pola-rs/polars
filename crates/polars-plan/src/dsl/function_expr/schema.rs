@@ -411,6 +411,23 @@ impl<'a> FieldsMapper<'a> {
         self.map_dtype(|dtype| dtype.to_physical())
     }
 
+    #[cfg(feature = "dtype-categorical")]
+    /// Map a global categorical to local
+    pub fn map_global_cat_to_local(&self) -> PolarsResult<Field> {
+        self.map_dtype(|dtype| match dtype {
+            DataType::Categorical(rev_map, ordering) => DataType::Categorical(
+                rev_map.clone().map(|rm| match &*rm {
+                    RevMapping::Global(..) => {
+                        Arc::new(RevMapping::build_local(rm.get_categories().clone()))
+                    },
+                    _ => rm,
+                }),
+                *ordering,
+            ),
+            _ => dtype.clone(),
+        })
+    }
+
     /// Map a single dtype with a potentially failing mapper function.
     pub fn try_map_dtype(
         &self,
