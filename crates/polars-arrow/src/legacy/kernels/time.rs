@@ -60,7 +60,7 @@ pub fn convert_to_naive_local(
         },
         LocalResult::None => match non_existent {
             NonExistent::Raise => polars_bail!(ComputeError:
-                "datetime '{}' is non-existent in time zone '{}'. You can use `non_existent='null'` to return `null` in this case.",
+                "datetime '{}' is non-existent in time zone '{}'. You may be able to use `non_existent='null'` to return `null` in this case.",
                 ndt, to_tz
             ),
             NonExistent::Null => Ok(None),

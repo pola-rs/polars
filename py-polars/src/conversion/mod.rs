@@ -712,21 +712,6 @@ impl FromPyObject<'_> for Wrap<ClosedWindow> {
     }
 }
 
-impl FromPyObject<'_> for Wrap<NonExistent> {
-    fn extract(ob: &PyAny) -> PyResult<Self> {
-        let parsed = match ob.extract::<&str>()? {
-            "null" => NonExistent::Null,
-            "raise" => NonExistent::Raise,
-            v => {
-                return Err(PyValueError::new_err(format!(
-                    "`non_existent` must be one of {{'null', 'raise'}}, got {v}",
-                )))
-            },
-        };
-        Ok(Wrap(parsed))
-    }
-}
-
 #[cfg(feature = "csv")]
 impl FromPyObject<'_> for Wrap<CsvEncoding> {
     fn extract(ob: &PyAny) -> PyResult<Self> {
@@ -805,6 +790,21 @@ impl FromPyObject<'_> for Wrap<ListToStructWidthStrategy> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "`n_field_strategy` must be one of {{'first_non_null', 'max_width'}}, got {v}",
+                )))
+            },
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
+impl FromPyObject<'_> for Wrap<NonExistent> {
+    fn extract(ob: &PyAny) -> PyResult<Self> {
+        let parsed = match ob.extract::<&str>()? {
+            "null" => NonExistent::Null,
+            "raise" => NonExistent::Raise,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "`non_existent` must be one of {{'null', 'raise'}}, got {v}",
                 )))
             },
         };

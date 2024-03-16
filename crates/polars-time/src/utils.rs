@@ -15,9 +15,11 @@ use polars_core::prelude::PolarsResult;
 ///
 /// e.g. '2021-01-01 03:00' -> '2021-01-01 03:00CDT'
 ///
-/// Note: this may only return `Ok(None)` if ambiguous is Ambiguous::Null.
+/// Note: this may only return `Ok(None)` if ambiguous is Ambiguous::Null
+/// or if non_existent is NonExistent::Null.
 /// Otherwise, it will either return `Ok(Some(NaiveDateTime))` or `PolarsError`.
-/// Therefore, calling `try_localize_datetime(..., Ambiguous::Raise)?.unwrap()`
+///
+/// Therefore, calling `try_localize_datetime(..., Ambiguous::Raise, NonExistent::Raise)?.unwrap()`
 /// is safe, and will never panic.
 #[cfg(feature = "timezones")]
 pub(crate) fn try_localize_datetime(
