@@ -326,10 +326,40 @@ def test_decimal_aggregations() -> None:
         sum=pl.sum("a"),
         min=pl.min("a"),
         max=pl.max("a"),
+        mean=pl.mean("a"),
+        median=pl.median("a"),
     ).to_dict(as_series=False) == {
         "sum": [D("9110.33")],
         "min": [D("0.10")],
         "max": [D("9000.12")],
+        "mean": [2277.5825],
+        "median": [55.055],
+    }
+
+    assert df.describe().to_dict(as_series=False) == {
+        "statistic": [
+            "count",
+            "null_count",
+            "mean",
+            "std",
+            "min",
+            "25%",
+            "50%",
+            "75%",
+            "max",
+        ],
+        "g": [4.0, 0.0, 1.5, 0.5773502691896257, 1.0, 1.0, 2.0, 2.0, 2.0],
+        "a": [
+            4.0,
+            0.0,
+            2277.5825,
+            4481.916846516863,
+            0.1,
+            10.1,
+            100.01,
+            100.01,
+            9000.12,
+        ],
     }
 
 

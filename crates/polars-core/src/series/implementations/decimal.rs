@@ -24,6 +24,20 @@ impl SeriesWrap<DecimalChunked> {
         f(&self.0)
     }
 
+    fn scale_factor(&self) -> u128 {
+        10u128.pow(self.0.scale() as u32)
+    }
+
+    fn apply_scale(&self, mut scalar: Scalar) -> Scalar {
+        debug_assert_eq!(scalar.dtype(), &DataType::Float64);
+        let v = scalar
+            .value()
+            .try_extract::<f64>()
+            .expect("should be f64 scalar");
+        scalar.update((v / self.scale_factor() as f64).into());
+        scalar
+    }
+
     fn agg_helper<F: Fn(&Int128Chunked) -> Series>(&self, f: F) -> Series {
         let agg_s = f(&self.0);
         match agg_s.dtype() {
@@ -370,6 +384,35 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
             Scalar::new(self.dtype().clone(), av)
         }))
     }
+
+    fn mean(&self) -> Option<f64> {
+        self.0.mean().map(|v| v / self.scale_factor() as f64)
+    }
+
+    fn median(&self) -> Option<f64> {
+        self.0.median().map(|v| v / self.scale_factor() as f64)
+    }
+    fn median_reduce(&self) -> PolarsResult<Scalar> {
+        Ok(self.apply_scale(self.0.median_reduce()))
+    }
+
+    fn std(&self, ddof: u8) -> Option<f64> {
+        self.0.std(ddof).map(|v| v / self.scale_factor() as f64)
+    }
+    fn std_reduce(&self, ddof: u8) -> PolarsResult<Scalar> {
+        Ok(self.apply_scale(self.0.std_reduce(ddof)))
+    }
+
+    fn quantile_reduce(
+        &self,
+        quantile: f64,
+        interpol: QuantileInterpolOptions,
+    ) -> PolarsResult<Scalar> {
+        self.0
+            .quantile_reduce(quantile, interpol)
+            .map(|v| self.apply_scale(v))
+    }
+
     fn as_any(&self) -> &dyn Any {
         &self.0
     }
