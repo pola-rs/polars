@@ -7,6 +7,7 @@ from typing import Any, Iterator, Mapping
 import pytest
 
 import polars as pl
+from polars import StringCache
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -632,3 +633,15 @@ def test_literal_subtract_schema_13284() -> None:
         .group_by("a")
         .len()
     ).schema == OrderedDict([("a", pl.UInt8), ("len", pl.UInt32)])
+
+
+@StringCache()
+def test_cat_global_to_local_schema() -> None:
+    _ = pl.Series(["a", "b", "c"], dtype=pl.Categorical)
+    schema = (
+        pl.LazyFrame({"s": pl.Series(["c", "b", "d"], dtype=pl.Categorical)})
+        .select(pl.col("s").cat.to_local())
+        .schema
+    )
+
+    assert schema == OrderedDict([("s", pl.Categorical(ordering="physical"))])
