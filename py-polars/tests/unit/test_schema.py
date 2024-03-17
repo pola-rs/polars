@@ -2,12 +2,15 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from datetime import date, timedelta
-from typing import Any, Iterator, Mapping
+from typing import TYPE_CHECKING, Any, Iterator, Mapping
 
 import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from polars.type_aliases import PolarsDataType
 
 
 class CustomSchema(Mapping[str, Any]):
@@ -637,3 +640,30 @@ def test_literal_subtract_schema_13284() -> None:
 def test_schema_boolean_sum_horizontal() -> None:
     lf = pl.LazyFrame({"a": [True, False]}).select(pl.sum_horizontal("a"))
     assert lf.schema == OrderedDict([("a", pl.UInt32)])
+
+
+@pytest.mark.parametrize(
+    ("in_dtype", "out_dtype"),
+    [
+        (pl.Boolean, pl.Float64),
+        (pl.UInt8, pl.Float64),
+        (pl.UInt16, pl.Float64),
+        (pl.UInt32, pl.Float64),
+        (pl.UInt64, pl.Float64),
+        (pl.Int8, pl.Float64),
+        (pl.Int16, pl.Float64),
+        (pl.Int32, pl.Float64),
+        (pl.Int64, pl.Float64),
+        (pl.Float32, pl.Float32),
+        (pl.Float64, pl.Float64),
+    ],
+)
+def test_schema_mean_horizontal_single_column(
+    in_dtype: PolarsDataType,
+    out_dtype: PolarsDataType,
+) -> None:
+    lf = pl.LazyFrame({"a": pl.Series([1, 0], dtype=in_dtype)}).select(
+        pl.mean_horizontal(pl.all())
+    )
+
+    assert lf.schema == OrderedDict([("a", out_dtype)])

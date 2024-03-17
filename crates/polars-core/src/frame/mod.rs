@@ -2561,7 +2561,12 @@ impl DataFrame {
     pub fn mean_horizontal(&self, null_strategy: NullStrategy) -> PolarsResult<Option<Series>> {
         match self.columns.len() {
             0 => Ok(None),
-            1 => Ok(Some(self.columns[0].clone())),
+            1 => Ok(Some(match self.columns[0].dtype() {
+                dt if dt != &DataType::Float32 && (dt.is_numeric() || dt == &DataType::Boolean) => {
+                    self.columns[0].cast(&DataType::Float64)?
+                },
+                _ => self.columns[0].clone(),
+            })),
             _ => {
                 let columns = self
                     .columns
