@@ -222,10 +222,14 @@ fn can_run_partitioned(
         if from_partitioned_ds {
             let estimated_cardinality = unique_estimate as f32 / original_df.height() as f32;
             if estimated_cardinality < 0.4 {
-                eprintln!("PARTITIONED DS");
+                if state.verbose() {
+                    eprintln!("PARTITIONED DS");
+                }
                 Ok(true)
             } else {
-                eprintln!("PARTITIONED DS: estimated cardinality: {estimated_cardinality} exceeded the boundary: 0.4, running default HASH AGGREGATION");
+                if state.verbose() {
+                    eprintln!("PARTITIONED DS: estimated cardinality: {estimated_cardinality} exceeded the boundary: 0.4, running default HASH AGGREGATION");
+                }
                 Ok(false)
             }
         } else if unique_estimate > unique_count_boundary {

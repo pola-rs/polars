@@ -60,7 +60,9 @@ impl SortSink {
             ooc_start: None,
         };
         if ooc {
-            eprintln!("OOC sort forced");
+            if verbose() {
+                eprintln!("OOC sort forced");
+            }
             out.init_ooc().unwrap();
         }
         out
