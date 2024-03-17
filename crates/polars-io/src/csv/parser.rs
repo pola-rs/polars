@@ -153,7 +153,7 @@ pub(crate) fn next_line_position(
         if rejected_line_groups >= 3 {
             return None;
         }
-        lines_checked += 1;
+        lines_checked = lines_checked.wrapping_add(1);
         // headers might have an extra value
         // So if we have churned through enough lines
         // we try one field less.
