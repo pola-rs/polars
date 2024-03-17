@@ -165,9 +165,11 @@ impl<'a> TryFrom<RollingOptionsImpl<'a>> for RollingOptionsFixedWindow {
             InvalidOperation: "`closed_window` is not supported for fixed window size rolling aggregations, \
             consider using DataFrame.rolling for greater flexibility",
         );
+        let window_size = window_size.nanoseconds() as usize;
+        check_input(window_size, options.min_periods)?;
 
         Ok(RollingOptionsFixedWindow {
-            window_size: window_size.nanoseconds() as usize,
+            window_size,
             min_periods: options.min_periods,
             weights: options.weights,
             center: options.center,

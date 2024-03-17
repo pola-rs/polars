@@ -77,7 +77,7 @@ where
         polars_ensure!(duration.duration_ns() > 0 && !duration.negative, ComputeError:"window size should be strictly positive");
         let tu = options.tu.unwrap();
         let by = options.by.unwrap();
-        let closed_window = options.closed_window.unwrap_or(ClosedWindow::Right);
+        let closed_window = options.closed_window.expect("closed window  must be set");
         let func = rolling_agg_fn_dynamic.expect(
             "'rolling by' not yet supported for this expression, consider using 'group_by_rolling'",
         );

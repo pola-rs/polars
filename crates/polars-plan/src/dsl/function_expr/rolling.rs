@@ -117,7 +117,7 @@ fn convert<'a>(
             by: Some(by_values),
             tu: Some(tu),
             tz: tz.as_ref(),
-            closed_window: options.closed_window,
+            closed_window: options.closed_window.or(Some(ClosedWindow::Right)),
             fn_params: options.fn_params.clone(),
         };
 
