@@ -185,6 +185,22 @@ class ListNameSpace:
         ]
         """
 
+    def product(self) -> Series:
+        """
+        Compute the product of the arrays in the list.
+
+        Examples
+        --------
+        >>> s = pl.Series("values", [[2, 2], [2, 3, 4]])
+        >>> s.list.product()
+        shape: (2,)
+        Series: 'values' [i64]
+        [
+            4
+            24
+        ]
+        """
+
     def max(self) -> Series:
         """
         Compute the max value of the arrays in the list.

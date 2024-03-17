@@ -29,6 +29,7 @@ pub enum ListFunction {
     #[cfg(feature = "list_count")]
     CountMatches,
     Sum,
+    Product,
     Length,
     Max,
     Min,
@@ -79,6 +80,7 @@ impl ListFunction {
             #[cfg(feature = "list_count")]
             CountMatches => mapper.with_dtype(IDX_DTYPE),
             Sum => mapper.nested_sum_type(),
+            Product => mapper.nested_product_type(),
             Min => mapper.map_to_list_and_array_inner_dtype(),
             Max => mapper.map_to_list_and_array_inner_dtype(),
             Mean => mapper.with_dtype(DataType::Float64),
@@ -144,6 +146,7 @@ impl Display for ListFunction {
             #[cfg(feature = "list_count")]
             CountMatches => "count_matches",
             Sum => "sum",
+            Product => "product",
             Min => "min",
             Max => "max",
             Mean => "mean",
@@ -211,6 +214,7 @@ impl From<ListFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "list_count")]
             CountMatches => map_as_slice!(count_matches),
             Sum => map!(sum),
+            Product => map!(product),
             Length => map!(length),
             Max => map!(max),
             Min => map!(min),
@@ -512,6 +516,10 @@ pub(super) fn count_matches(args: &[Series]) -> PolarsResult<Series> {
 
 pub(super) fn sum(s: &Series) -> PolarsResult<Series> {
     s.list()?.lst_sum()
+}
+
+pub(super) fn product(s: &Series) -> PolarsResult<Series> {
+    s.list()?.lst_product()
 }
 
 pub(super) fn length(s: &Series) -> PolarsResult<Series> {

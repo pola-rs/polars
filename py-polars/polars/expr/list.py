@@ -215,6 +215,26 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.list_sum())
 
+    def product(self) -> Expr:
+        """
+        Compute the product of the lists in the array.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"values": [[2, 2], [2, 3, 4]]})
+        >>> df.with_columns(product=pl.col("values").list.product())
+        shape: (2, 2)
+        ┌───────────┬─────────┐
+        │ values    ┆ product │
+        │ ---       ┆ ---     │
+        │ list[i64] ┆ i64     │
+        ╞═══════════╪═════════╡
+        │ [2, 2]    ┆ 4       │
+        │ [2, 3, 4] ┆ 24      │
+        └───────────┴─────────┘
+        """
+        return wrap_expr(self._pyexpr.list_product())
+
     def max(self) -> Expr:
         """
         Compute the max value of the lists in the array.
