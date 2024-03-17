@@ -36,7 +36,7 @@ pub fn convert_columns_amortized_no_order(columns: &[ArrayRef], rows: &mut RowsE
 enum Encoder {
     // For list encoding we recursively call encode on the inner until we
     // have a leaf we can encode.
-    // On allocation we already encode the leafs and set those to `rows`.
+    // On allocation we already encode the leaves and set those to `rows`.
     List {
         enc: Vec<Encoder>,
         rows: Option<LargeBinaryArray>,
@@ -52,7 +52,7 @@ impl Encoder {
             Encoder::Leaf(_) => unreachable!(),
             Encoder::List { original, rows, .. } => {
                 let rows = rows.as_ref().unwrap();
-                // This should be 0 due ot rows encoding;
+                // This should be 0 due to rows encoding;
                 assert_eq!(rows.null_count(), 0);
 
                 let offsets = original.offsets().windows(2);
@@ -315,8 +315,8 @@ fn allocate_rows_buf(
                     field,
                     original,
                 } => {
-                    // Nested lists don't yet work as that requires the leafs not only allocating, but also
-                    // encoding. To make that work we must add a flag `in_list` that tell the leafs to immediately
+                    // Nested lists don't yet work as that requires the leaves not only allocating, but also
+                    // encoding. To make that work we must add a flag `in_list` that tell the leaves to immediately
                     // encode the rows instead of only setting the length.
                     // This needs a bit refactoring, might require allocation and encoding to be in
                     // the same function.
