@@ -229,7 +229,9 @@ impl<T: PolarsDataType> ChunkedArray<T> {
             None
         }
         // We now know there is at least 1 non-null item in the array, and self.len() > 0
-        else if self.is_sorted_any() {
+        else if self.null_count() == 0 {
+            Some(0)
+        } else if self.is_sorted_any() {
             let out = if unsafe { self.downcast_get_unchecked(0).is_null_unchecked(0) } {
                 // nulls are all at the start
                 self.null_count()
@@ -256,7 +258,9 @@ impl<T: PolarsDataType> ChunkedArray<T> {
             None
         }
         // We now know there is at least 1 non-null item in the array, and self.len() > 0
-        else if self.is_sorted_any() {
+        else if self.null_count() == 0 {
+            Some(self.len() - 1)
+        } else if self.is_sorted_any() {
             let out = if unsafe { self.downcast_get_unchecked(0).is_null_unchecked(0) } {
                 // nulls are all at the start
                 self.len() - 1
