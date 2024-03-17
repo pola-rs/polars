@@ -55,10 +55,17 @@ where
             }
         },
         (true, true) => {
-            // both arrays have non-null values
-            if !ca.is_sorted_any()
-                || !other.is_sorted_any()
-                || ca.is_sorted_flag() != other.is_sorted_flag()
+            // both arrays have non-null values.
+            // for arrays of unit length we can ignore the sorted flag, as it is
+            // not necessarily set.
+            if !(ca.is_sorted_any() || ca.len() == 1)
+                || !(other.is_sorted_any() || other.len() == 1)
+                || !(
+                    // We will coerce for single values
+                    ca.len() - ca.null_count() == 1
+                        || other.len() - other.null_count() == 1
+                        || ca.is_sorted_flag() == other.is_sorted_flag()
+                )
             {
                 IsSorted::Not
             } else {
@@ -68,7 +75,7 @@ where
                 let l_val = unsafe { ca.value_unchecked(l_idx) };
                 let r_val = unsafe { other.value_unchecked(r_idx) };
 
-                let keep_sorted =
+                let null_pos_check =
                     // check null positions
                     // lhs does not end in nulls
                     (1 + l_idx == ca.len())
@@ -77,18 +84,43 @@ where
                     // if there are nulls, they are all on one end
                     && !(ca.first_non_null().unwrap() != 0 && 1 + other.last_non_null().unwrap() != other.len());
 
-                let keep_sorted = keep_sorted
-                    // compare values
-                    && if ca.is_sorted_ascending_flag() {
-                        l_val.tot_le(&r_val)
-                    } else {
-                        l_val.tot_ge(&r_val)
-                    };
-
-                if keep_sorted {
-                    ca.is_sorted_flag()
-                } else {
+                if !null_pos_check {
                     IsSorted::Not
+                } else {
+                    #[allow(unused_assignments)]
+                    let mut out = IsSorted::Not;
+
+                    #[allow(clippy::never_loop)]
+                    loop {
+                        match (
+                            ca.len() - ca.null_count() == 1,
+                            other.len() - other.null_count() == 1,
+                        ) {
+                            (true, true) => {
+                                out = [IsSorted::Descending, IsSorted::Ascending]
+                                    [l_val.tot_le(&r_val) as usize];
+                                break;
+                            },
+                            (true, false) => out = other.is_sorted_flag(),
+                            _ => out = ca.is_sorted_flag(),
+                        }
+
+                        debug_assert!(!matches!(out, IsSorted::Not));
+
+                        let check = if matches!(out, IsSorted::Ascending) {
+                            l_val.tot_le(&r_val)
+                        } else {
+                            l_val.tot_ge(&r_val)
+                        };
+
+                        if !check {
+                            out = IsSorted::Not
+                        }
+
+                        break;
+                    }
+
+                    out
                 }
             }
         },
