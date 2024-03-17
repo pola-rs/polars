@@ -8,7 +8,7 @@ import pytest
 from numpy import nan
 
 import polars as pl
-from polars.exceptions import ComputeError
+from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -222,6 +222,12 @@ def test_rolling_infinity() -> None:
     s = s.rolling_mean(2)
     expected = pl.Series("col", [None, "-inf", "5"]).cast(pl.Float64)
     assert_series_equal(s, expected)
+
+
+def test_rolling_invalid_closed_option() -> None:
+    df = pl.DataFrame({"a": [4, 5, 6]}).sort("a")
+    with pytest.raises(InvalidOperationError, match="consider using DataFrame.rolling"):
+        df.with_columns(pl.col("a").rolling_sum(2, closed="left"))
 
 
 def test_rolling_extrema() -> None:

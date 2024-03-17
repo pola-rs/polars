@@ -126,7 +126,7 @@ fn convert<'a>(
 }
 
 pub(super) fn rolling_min(s: &Series, options: RollingOptions) -> PolarsResult<Series> {
-    s.rolling_min(options.clone().into())
+    s.rolling_min(options.clone().try_into()?)
 }
 
 pub(super) fn rolling_min_by(s: &[Series], options: RollingOptions) -> PolarsResult<Series> {
@@ -134,7 +134,7 @@ pub(super) fn rolling_min_by(s: &[Series], options: RollingOptions) -> PolarsRes
 }
 
 pub(super) fn rolling_max(s: &Series, options: RollingOptions) -> PolarsResult<Series> {
-    s.rolling_max(options.clone().into())
+    s.rolling_max(options.clone().try_into()?)
 }
 
 pub(super) fn rolling_max_by(s: &[Series], options: RollingOptions) -> PolarsResult<Series> {
@@ -142,7 +142,7 @@ pub(super) fn rolling_max_by(s: &[Series], options: RollingOptions) -> PolarsRes
 }
 
 pub(super) fn rolling_mean(s: &Series, options: RollingOptions) -> PolarsResult<Series> {
-    s.rolling_mean(options.clone().into())
+    s.rolling_mean(options.clone().try_into()?)
 }
 
 pub(super) fn rolling_mean_by(s: &[Series], options: RollingOptions) -> PolarsResult<Series> {
@@ -150,7 +150,7 @@ pub(super) fn rolling_mean_by(s: &[Series], options: RollingOptions) -> PolarsRe
 }
 
 pub(super) fn rolling_sum(s: &Series, options: RollingOptions) -> PolarsResult<Series> {
-    s.rolling_sum(options.clone().into())
+    s.rolling_sum(options.clone().try_into()?)
 }
 
 pub(super) fn rolling_sum_by(s: &[Series], options: RollingOptions) -> PolarsResult<Series> {
@@ -158,7 +158,7 @@ pub(super) fn rolling_sum_by(s: &[Series], options: RollingOptions) -> PolarsRes
 }
 
 pub(super) fn rolling_quantile(s: &Series, options: RollingOptions) -> PolarsResult<Series> {
-    s.rolling_quantile(options.clone().into())
+    s.rolling_quantile(options.clone().try_into()?)
 }
 
 pub(super) fn rolling_quantile_by(s: &[Series], options: RollingOptions) -> PolarsResult<Series> {
@@ -170,7 +170,7 @@ pub(super) fn rolling_quantile_by(s: &[Series], options: RollingOptions) -> Pola
 }
 
 pub(super) fn rolling_var(s: &Series, options: RollingOptions) -> PolarsResult<Series> {
-    s.rolling_var(options.clone().into())
+    s.rolling_var(options.clone().try_into()?)
 }
 
 pub(super) fn rolling_var_by(s: &[Series], options: RollingOptions) -> PolarsResult<Series> {
@@ -178,7 +178,7 @@ pub(super) fn rolling_var_by(s: &[Series], options: RollingOptions) -> PolarsRes
 }
 
 pub(super) fn rolling_std(s: &Series, options: RollingOptions) -> PolarsResult<Series> {
-    s.rolling_std(options.clone().into())
+    s.rolling_std(options.clone().try_into()?)
 }
 
 pub(super) fn rolling_std_by(s: &[Series], options: RollingOptions) -> PolarsResult<Series> {
