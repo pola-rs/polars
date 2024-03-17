@@ -342,15 +342,15 @@ def test_assert_frame_equal_ignore_row_order() -> None:
 
     assert_frame_equal(df1, df3, check_row_order=False, check_column_order=False)
 
+    class Foo:
+        def __init__(self) -> None:
+            pass
+
     # note: not all column types support sorting
     with pytest.raises(
         InvalidAssert,
         match="cannot set `check_row_order=False`.*unsortable columns",
     ):
-        class Foo:
-            def __init__(self):
-                pass
-
         assert_frame_equal(
             left=pl.DataFrame({"a": [Foo(), Foo()], "b": [3, 4]}),
             right=pl.DataFrame({"a": [Foo(), Foo()], "b": [4, 3]}),
