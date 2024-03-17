@@ -632,3 +632,8 @@ def test_literal_subtract_schema_13284() -> None:
         .group_by("a")
         .len()
     ).schema == OrderedDict([("a", pl.UInt8), ("len", pl.UInt32)])
+
+
+def test_schema_boolean_sum_horizontal() -> None:
+    lf = pl.LazyFrame({"a": [True, False]}).select(pl.sum_horizontal("a"))
+    assert lf.schema == OrderedDict([("a", pl.UInt32)])

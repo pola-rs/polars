@@ -2527,7 +2527,11 @@ impl DataFrame {
                 }
             },
             1 => Ok(Some(apply_null_strategy(
-                non_null_cols[0].clone(),
+                if non_null_cols[0].dtype() == &DataType::Boolean {
+                    non_null_cols[0].cast(&DataType::UInt32)?
+                } else {
+                    non_null_cols[0].clone()
+                },
                 null_strategy,
             )?)),
             2 => sum_fn(
