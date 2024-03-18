@@ -87,6 +87,15 @@ pub trait ArrowReader {
     fn next_record_batch(&mut self) -> PolarsResult<Option<ArrowChunk>>;
 }
 
+pub struct ReadOutput {
+    /// The resulting data frame.
+    pub df: DataFrame,
+    /// The total number of rows in the file if known. The row count can be
+    /// unknown if file parsing stops early because of a row limit or for
+    /// another reason.
+    pub total_rows: Option<usize>,
+}
+
 #[cfg(any(feature = "ipc", feature = "avro", feature = "ipc_streaming",))]
 pub(crate) fn finish_reader<R: ArrowReader>(
     mut reader: R,
@@ -95,7 +104,7 @@ pub(crate) fn finish_reader<R: ArrowReader>(
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     arrow_schema: &ArrowSchema,
     row_index: Option<RowIndex>,
-) -> PolarsResult<DataFrame> {
+) -> PolarsResult<ReadOutput> {
     use polars_core::utils::accumulate_dataframes_vertical;
 
     let mut num_rows = 0;
@@ -149,10 +158,19 @@ pub(crate) fn finish_reader<R: ArrowReader>(
         }
     };
 
-    match rechunk {
-        true => Ok(df.agg_chunks()),
-        false => Ok(df),
-    }
+    let is_total_rows_known = match n_rows {
+        Some(limit) => num_rows < limit,
+        None => true,
+    };
+
+    Ok(ReadOutput {
+        df: if rechunk {
+            df.agg_chunks()
+        } else {
+            df
+        },
+        total_rows: is_total_rows_known.then_some(num_rows)
+    })
 }
 
 static CLOUD_URL: Lazy<Regex> =
