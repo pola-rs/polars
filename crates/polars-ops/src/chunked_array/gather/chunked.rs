@@ -404,8 +404,8 @@ unsafe fn take_unchecked_binview(
         buffers,
         validity,
         None,
-    );
-    // .maybe_gc();
+    )
+    .maybe_gc();
 
     let mut out = BinaryChunked::with_chunk(ca.name(), arr);
     let sorted_flag = _update_gather_sorted_flag(ca.is_sorted_flag(), sorted);
@@ -480,8 +480,8 @@ unsafe fn take_unchecked_binview_opt(ca: &BinaryChunked, by: &[NullableChunkId])
         buffers,
         validity,
         None,
-    );
-    // .maybe_gc();
+    )
+    .maybe_gc();
 
     BinaryChunked::with_chunk(ca.name(), arr)
 }
