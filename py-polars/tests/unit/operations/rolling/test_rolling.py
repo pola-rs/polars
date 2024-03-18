@@ -225,9 +225,13 @@ def test_rolling_infinity() -> None:
 
 
 def test_rolling_invalid_closed_option() -> None:
-    df = pl.DataFrame({"a": [4, 5, 6]}).sort("a")
+    df = pl.DataFrame(
+        {"a": [4, 5, 6], "b": [date(2020, 1, 1), date(2020, 1, 2), date(2020, 1, 3)]}
+    ).sort("a", "b")
     with pytest.raises(InvalidOperationError, match="consider using DataFrame.rolling"):
         df.with_columns(pl.col("a").rolling_sum(2, closed="left"))
+    with pytest.raises(InvalidOperationError, match="consider using DataFrame.rolling"):
+        df.with_columns(pl.col("a").rolling_sum(2, by="b", closed="left"))
 
 
 def test_rolling_extrema() -> None:
