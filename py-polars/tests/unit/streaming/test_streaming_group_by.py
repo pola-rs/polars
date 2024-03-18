@@ -453,3 +453,30 @@ def test_streaming_group_null_count() -> None:
     assert df.group_by("g").agg(pl.col("a").count()).collect(streaming=True).to_dict(
         as_series=False
     ) == {"g": [1], "a": [3]}
+
+
+def test_streaming_groupby_binary_15116() -> None:
+    assert (
+        pl.LazyFrame(
+            {
+                "str": [
+                    "A",
+                    "A",
+                    "BB",
+                    "BB",
+                    "CCCC",
+                    "CCCC",
+                    "DDDDDDDD",
+                    "DDDDDDDD",
+                    "EEEEEEEEEEEEEEEE",
+                    "A",
+                ]
+            }
+        )
+        .select([pl.col("str").cast(pl.Binary)])
+        .group_by(["str"])
+        .agg([pl.len().alias("count")])
+    ).sort("str").collect(streaming=True).to_dict(as_series=False) == {
+        "str": [b"A", b"BB", b"CCCC", b"DDDDDDDD", b"EEEEEEEEEEEEEEEE"],
+        "count": [3, 2, 2, 2, 1],
+    }
