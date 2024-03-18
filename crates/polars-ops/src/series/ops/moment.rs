@@ -61,15 +61,18 @@ pub trait MomentSeries: SeriesSealed {
         // we can unwrap because if it were None, we already return None above
         let m2 = moment_precomputed_mean(s, 2, mean)?.unwrap();
         let m3 = moment_precomputed_mean(s, 3, mean)?.unwrap();
-
-        let out = m3 / m2.powf(1.5);
-
-        if !bias {
-            let n = (s.len() - s.null_count()) as f64;
-            Ok(Some(((n - 1.0) * n).sqrt() / (n - 2.0) * out))
+        let zero = m2 <= (f64::EPSILON * mean).powf(2.0);
+        let vals = match zero {
+            true => f64::NAN,
+            false => m3 / m2.powf(1.5)
+        };
+        let n = (s.len() - s.null_count()) as f64;
+        let out = if !bias && !zero && n > 3.0 {
+            ((n - 1.0) * n).sqrt() / (n - 2.0) * vals
         } else {
-            Ok(Some(out))
-        }
+            vals
+        };
+        Ok(Some(out))
     }
 
     /// Compute the kurtosis (Fisher or Pearson) of a dataset.
@@ -91,13 +94,17 @@ pub trait MomentSeries: SeriesSealed {
         // we can unwrap because if it were None, we already return None above
         let m2 = moment_precomputed_mean(s, 2, mean)?.unwrap();
         let m4 = moment_precomputed_mean(s, 4, mean)?.unwrap();
-
-        let out = if !bias {
-            let n = (s.len() - s.null_count()) as f64;
+        let zero = m2 <= (f64::EPSILON * mean).powf(2.0);
+        let vals = match zero {
+            true => f64::NAN,
+            false => m4 / m2.powf(2.0)
+        };
+        let n = (s.len() - s.null_count()) as f64;
+        let out = if !bias && !zero && n > 3.0 {
             3.0 + 1.0 / (n - 2.0) / (n - 3.0)
-                * ((n.powf(2.0) - 1.0) * m4 / m2.powf(2.0) - 3.0 * (n - 1.0).powf(2.0))
+                * ((n.powf(2.0) - 1.0) * vals - 3.0 * (n - 1.0).powf(2.0))
         } else {
-            m4 / m2.powf(2.0)
+            vals
         };
         if fisher {
             Ok(Some(out - 3.0))
