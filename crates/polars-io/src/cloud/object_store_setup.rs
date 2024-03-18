@@ -50,6 +50,7 @@ pub async fn build_object_store(
     let cloud_location = CloudLocation::from_url(&parsed)?;
 
     let key = url_to_key(&parsed);
+    let mut allow_cache = true;
 
     {
         let cache = OBJECT_STORE_CACHE.read().await;
@@ -93,11 +94,13 @@ pub async fn build_object_store(
             return err_missing_feature("azure", &cloud_location.scheme);
         },
         CloudType::File => {
+            allow_cache = false;
             let local = LocalFileSystem::new();
             Ok::<_, PolarsError>(Arc::new(local) as Arc<dyn ObjectStore>)
         },
         CloudType::Http => {
             {
+                allow_cache = false;
                 #[cfg(feature = "http")]
                 {
                     let store = object_store::http::HttpBuilder::new()
@@ -111,11 +114,13 @@ pub async fn build_object_store(
             return err_missing_feature("http", &cloud_location.scheme);
         },
     }?;
-    let mut cache = OBJECT_STORE_CACHE.write().await;
-    // Clear the cache if we surpass a certain amount of buckets. Don't expect that to happen.
-    if cache.len() > 512 {
-        cache.clear()
+    if allow_cache {
+        let mut cache = OBJECT_STORE_CACHE.write().await;
+        // Clear the cache if we surpass a certain amount of buckets.
+        if cache.len() > 32 {
+            cache.clear()
+        }
+        cache.insert(key, store.clone());
     }
-    cache.insert(key, store.clone());
     Ok((cloud_location, store))
 }
