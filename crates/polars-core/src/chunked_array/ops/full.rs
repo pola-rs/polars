@@ -134,17 +134,19 @@ impl ArrayChunked {
 #[cfg(feature = "dtype-array")]
 impl ChunkFull<&Series> for ArrayChunked {
     fn full(name: &str, value: &Series, length: usize) -> ArrayChunked {
-        if !value.dtype().is_numeric() {
-            todo!("Array only supports numeric data types");
-        };
         let width = value.len();
-        let values = value.tile(length);
-        let values = values.chunks()[0].clone();
-        let data_type = ArrowDataType::FixedSizeList(
-            Box::new(ArrowField::new("item", values.data_type().clone(), true)),
+        let dtype = value.dtype();
+        let arrow_dtype = ArrowDataType::FixedSizeList(
+            Box::new(ArrowField::new("item", dtype.to_arrow(true), true)),
             width,
         );
-        let arr = FixedSizeListArray::new(data_type, values, None);
+        let arr = if value.dtype().is_numeric() {
+            let values = value.tile(length);
+            FixedSizeListArray::new(arrow_dtype, values.chunks()[0].clone(), None)
+        } else {
+            let value = value.rechunk().chunks()[0].clone();
+            FixedSizeListArray::full(length, value, arrow_dtype)
+        };
         ChunkedArray::with_chunk(name, arr)
     }
 }

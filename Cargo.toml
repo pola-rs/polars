@@ -118,7 +118,6 @@ features = [
   "compute_boolean_kleene",
   "compute_cast",
   "compute_comparison",
-  "compute_if_then_else",
 ]
 
 [patch.crates-io]

@@ -7,7 +7,7 @@ use polars_utils::unwrap::UnwrapUncheckedRelease;
 
 use super::Growable;
 use crate::array::binview::{BinaryViewArrayGeneric, View, ViewType};
-use crate::array::growable::utils::{extend_validity, prepare_validity};
+use crate::array::growable::utils::{extend_validity, extend_validity_copies, prepare_validity};
 use crate::array::Array;
 use crate::bitmap::MutableBitmap;
 use crate::buffer::Buffer;
@@ -164,6 +164,22 @@ impl<'a, T: ViewType + ?Sized> GrowableBinaryViewArray<'a, T> {
 impl<'a, T: ViewType + ?Sized> Growable<'a> for GrowableBinaryViewArray<'a, T> {
     unsafe fn extend(&mut self, index: usize, start: usize, len: usize) {
         unsafe { self.extend_unchecked(index, start, len) }
+    }
+
+    unsafe fn extend_copies(&mut self, index: usize, start: usize, len: usize, copies: usize) {
+        let orig_view_start = self.views.len();
+        if copies > 0 {
+            unsafe { self.extend_unchecked(index, start, len) }
+        }
+        if copies > 1 {
+            let array = *self.arrays.get_unchecked(index);
+            extend_validity_copies(&mut self.validity, array, start, len, copies - 1);
+            let extended_view_end = self.views.len();
+            for _ in 0..copies - 1 {
+                self.views
+                    .extend_from_within(orig_view_start..extended_view_end)
+            }
+        }
     }
 
     fn extend_validity(&mut self, additional: usize) {

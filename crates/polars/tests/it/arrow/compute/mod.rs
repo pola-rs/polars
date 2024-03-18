@@ -6,7 +6,5 @@ mod bitwise;
 mod boolean;
 #[cfg(feature = "compute_boolean_kleene")]
 mod boolean_kleene;
-#[cfg(feature = "compute_if_then_else")]
-mod if_then_else;
 
 mod arity_assign;
