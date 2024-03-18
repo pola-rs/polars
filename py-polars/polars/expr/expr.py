@@ -5717,7 +5717,7 @@ class Expr:
         *,
         center: bool = False,
         by: str | None = None,
-        closed: ClosedInterval = "right",
+        closed: ClosedInterval | None = None,
         warn_if_unsorted: bool = True,
     ) -> Self:
         """
@@ -5789,7 +5789,7 @@ class Expr:
                 results will not be correct.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive); only
-            applicable if `by` has been set.
+            applicable if `by` has been set (in which case, it defaults to `'right'`).
         warn_if_unsorted
             Warn if data is not known to be sorted by `by` column (if passed).
 
@@ -5929,7 +5929,7 @@ class Expr:
         *,
         center: bool = False,
         by: str | None = None,
-        closed: ClosedInterval = "right",
+        closed: ClosedInterval | None = None,
         warn_if_unsorted: bool = True,
     ) -> Self:
         """
@@ -5997,7 +5997,7 @@ class Expr:
             be of dtype Datetime or Date.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive); only
-            applicable if `by` has been set.
+            applicable if `by` has been set (in which case, it defaults to `'right'`).
         warn_if_unsorted
             Warn if data is not known to be sorted by `by` column (if passed).
 
@@ -6166,7 +6166,7 @@ class Expr:
         *,
         center: bool = False,
         by: str | None = None,
-        closed: ClosedInterval = "right",
+        closed: ClosedInterval | None = None,
         warn_if_unsorted: bool = True,
     ) -> Self:
         """
@@ -6238,7 +6238,7 @@ class Expr:
                 results will not be correct.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive); only
-            applicable if `by` has been set.
+            applicable if `by` has been set (in which case, it defaults to `'right'`).
         warn_if_unsorted
             Warn if data is not known to be sorted by `by` column (if passed).
 
@@ -6413,7 +6413,7 @@ class Expr:
         *,
         center: bool = False,
         by: str | None = None,
-        closed: ClosedInterval = "right",
+        closed: ClosedInterval | None = None,
         warn_if_unsorted: bool = True,
     ) -> Self:
         """
@@ -6481,7 +6481,7 @@ class Expr:
             of dtype `{Date, Datetime}`
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive); only
-            applicable if `by` has been set.
+            applicable if `by` has been set (in which case, it defaults to `'right'`).
         warn_if_unsorted
             Warn if data is not known to be sorted by `by` column (if passed).
 
@@ -6650,7 +6650,7 @@ class Expr:
         *,
         center: bool = False,
         by: str | None = None,
-        closed: ClosedInterval = "right",
+        closed: ClosedInterval | None = None,
         ddof: int = 1,
         warn_if_unsorted: bool = True,
     ) -> Self:
@@ -6720,7 +6720,7 @@ class Expr:
                 results will not be correct.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive); only
-            applicable if `by` has been set.
+            applicable if `by` has been set (in which case, it defaults to `'right'`).
         ddof
             "Delta Degrees of Freedom": The divisor for a length N window is N - ddof
         warn_if_unsorted
@@ -6898,7 +6898,7 @@ class Expr:
         *,
         center: bool = False,
         by: str | None = None,
-        closed: ClosedInterval = "right",
+        closed: ClosedInterval | None = None,
         ddof: int = 1,
         warn_if_unsorted: bool = True,
     ) -> Self:
@@ -6967,7 +6967,7 @@ class Expr:
                 results will not be correct.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive); only
-            applicable if `by` has been set.
+            applicable if `by` has been set (in which case, it defaults to `'right'`).
         ddof
             "Delta Degrees of Freedom": The divisor for a length N window is N - ddof
         warn_if_unsorted
@@ -7145,7 +7145,7 @@ class Expr:
         *,
         center: bool = False,
         by: str | None = None,
-        closed: ClosedInterval = "right",
+        closed: ClosedInterval | None = None,
         warn_if_unsorted: bool = True,
     ) -> Self:
         """
@@ -7214,7 +7214,7 @@ class Expr:
                 results will not be correct.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive); only
-            applicable if `by` has been set.
+            applicable if `by` has been set (in which case, it defaults to `'right'`).
         warn_if_unsorted
             Warn if data is not known to be sorted by `by` column (if passed).
 
@@ -7305,7 +7305,7 @@ class Expr:
         *,
         center: bool = False,
         by: str | None = None,
-        closed: ClosedInterval = "right",
+        closed: ClosedInterval | None = None,
         warn_if_unsorted: bool = True,
     ) -> Self:
         """
@@ -7377,7 +7377,7 @@ class Expr:
                 results will not be correct.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive); only
-            applicable if `by` has been set.
+            applicable if `by` has been set (in which case, it defaults to `'right'`).
         warn_if_unsorted
             Warn if data is not known to be sorted by `by` column (if passed).
 

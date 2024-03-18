@@ -48,8 +48,7 @@ where
     let arr = ca.downcast_iter().next().unwrap();
     // "5i" is a window size of 5, e.g. fixed
     let arr = if options.window_size.parsed_int {
-        let options: RollingOptionsFixedWindow = options.into();
-        check_input(options.window_size, options.min_periods)?;
+        let options: RollingOptionsFixedWindow = options.try_into()?;
 
         Ok(match ca.null_count() {
             0 => rolling_agg_fn(
