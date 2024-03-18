@@ -7,9 +7,7 @@ use arrow::buffer::Buffer;
 use arrow::datatypes::ArrowDataType;
 
 use super::IfThenElseKernel;
-use crate::if_then_else::scalar::{
-    if_then_else_broadcast_both_scalar_64, if_then_else_broadcast_false_scalar_64,
-};
+use crate::if_then_else::scalar::if_then_else_broadcast_both_scalar_64;
 
 // Makes a buffer and a set of views into that buffer from a set of strings.
 // Does not allocate a buffer if not necessary.
@@ -87,7 +85,7 @@ impl IfThenElseKernel for BinaryViewArray {
             mask,
             if_false.views(),
             true_view,
-            if_then_else_broadcast_false_scalar_64,
+            if_then_else_broadcast_false_view_64,
         );
 
         let validity = super::if_then_else_validity(mask, None, if_false.validity());
@@ -120,7 +118,7 @@ impl IfThenElseKernel for BinaryViewArray {
             mask,
             if_true.views(),
             false_view,
-            if_then_else_broadcast_false_scalar_64,
+            if_then_else_broadcast_false_view_64,
         );
 
         let validity = super::if_then_else_validity(mask, if_true.validity(), None);
@@ -241,4 +239,19 @@ pub fn if_then_else_view_64(
     false_buffer_idx_offset: u32,
 ) {
     if_then_else_view_rest(mask, if_true, if_false, out, false_buffer_idx_offset)
+}
+
+// Using the scalar variant of this works, but was slower, we want to select a source pointer and
+// then copy it. Using this version for the integers results in branches.
+pub fn if_then_else_broadcast_false_view_64(
+    mask: u64,
+    if_true: &[View; 64],
+    if_false: View,
+    out: &mut [MaybeUninit<View>; 64],
+) {
+    assert!(if_true.len() == out.len()); // Removes bounds checks in inner loop.
+    for (i, t) in if_true.iter().enumerate() {
+        let src = if (mask >> i) & 1 != 0 { t } else { &if_false };
+        out[i] = MaybeUninit::new(*src);
+    }
 }

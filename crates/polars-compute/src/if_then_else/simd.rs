@@ -4,7 +4,6 @@ use std::simd::{Mask, Simd, SimdElement};
 use arrow::array::PrimitiveArray;
 use arrow::bitmap::Bitmap;
 use arrow::datatypes::ArrowDataType;
-
 #[cfg(target_arch = "x86_64")]
 use polars_utils::cpuid::is_avx512_enabled;
 
@@ -92,7 +91,11 @@ macro_rules! impl_if_then_else {
                         if_true.values(),
                         if_false.values(),
                         scalar::if_then_else_scalar_rest,
+                        // Auto-generated SIMD was slower on ARM.
+                        #[cfg(target_arch = "x86_64")]
                         if_then_else_simd_64,
+                        #[cfg(not(target_arch = "x86_64"))]
+                        scalar::if_then_else_scalar_64,
                     )
                 });
                 let validity = if_then_else_validity(mask, if_true.validity(), if_false.validity());
@@ -110,7 +113,11 @@ macro_rules! impl_if_then_else {
                         mask,
                         if_false.values(),
                         if_true,
+                        // Auto-generated SIMD was slower on ARM.
+                        #[cfg(target_arch = "x86_64")]
                         if_then_else_broadcast_false_simd_64,
+                        #[cfg(not(target_arch = "x86_64"))]
+                        scalar::if_then_else_broadcast_false_scalar_64,
                     )
                 });
                 let validity = if_then_else_validity(mask, None, if_false.validity());
@@ -122,13 +129,19 @@ macro_rules! impl_if_then_else {
                 if_true: &Self,
                 if_false: Self::Scalar<'_>,
             ) -> Self {
-                let values = with_avx512_if_available(|| if_then_else_loop_broadcast_false(
-                    false,
-                    mask,
-                    if_true.values(),
-                    if_false,
-                    if_then_else_broadcast_false_simd_64,
-                ));
+                let values = with_avx512_if_available(|| {
+                    if_then_else_loop_broadcast_false(
+                        false,
+                        mask,
+                        if_true.values(),
+                        if_false,
+                        // Auto-generated SIMD was slower on ARM.
+                        #[cfg(target_arch = "x86_64")]
+                        if_then_else_broadcast_false_simd_64,
+                        #[cfg(not(target_arch = "x86_64"))]
+                        scalar::if_then_else_broadcast_false_scalar_64,
+                    )
+                });
                 let validity = if_then_else_validity(mask, if_true.validity(), None);
                 PrimitiveArray::from_vec(values).with_validity(validity)
             }
@@ -139,16 +152,22 @@ macro_rules! impl_if_then_else {
                 if_true: Self::Scalar<'_>,
                 if_false: Self::Scalar<'_>,
             ) -> Self {
-                let values = with_avx512_if_available(|| if_then_else_loop_broadcast_both(
-                    mask,
-                    if_true,
-                    if_false,
-                    if_then_else_broadcast_both_simd_64,
-                ));
+                let values = with_avx512_if_available(|| {
+                    if_then_else_loop_broadcast_both(
+                        mask,
+                        if_true,
+                        if_false,
+                        // Auto-generated SIMD was slower on ARM.
+                        #[cfg(target_arch = "x86_64")]
+                        if_then_else_broadcast_both_simd_64,
+                        #[cfg(not(target_arch = "x86_64"))]
+                        scalar::if_then_else_broadcast_both_scalar_64,
+                    )
+                });
                 PrimitiveArray::from_vec(values)
             }
         }
-    }
+    };
 }
 
 impl_if_then_else!(i8);
