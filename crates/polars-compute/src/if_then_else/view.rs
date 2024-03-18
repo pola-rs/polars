@@ -213,13 +213,14 @@ pub fn if_then_else_view_rest(
     false_buffer_idx_offset: u32,
 ) {
     assert!(if_true.len() <= out.len()); // Removes bounds checks in inner loop.
-    let true_it = if_true.iter().copied();
-    let false_it = if_false.iter().copied();
+    let true_it = if_true.iter();
+    let false_it = if_false.iter();
     for (i, (t, f)) in true_it.zip(false_it).enumerate() {
         // Written like this, this loop *should* be branchless.
         // Unfortunately we're still dependent on the compiler.
         let m = (mask >> i) & 1 != 0;
-        let mut v = if m { t } else { f };
+        let src = if m { t } else { f };
+        let mut v = *src;
         let offset = if m | (v.length <= 12) {
             // Yes, | instead of || is intentional.
             0
