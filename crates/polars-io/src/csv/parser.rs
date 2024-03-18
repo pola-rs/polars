@@ -148,16 +148,16 @@ pub(crate) fn next_line_position(
     if input.is_empty() {
         return None;
     }
-    let mut lines_checked = 0u16;
+    let mut lines_checked = 0u8;
     loop {
         if rejected_line_groups >= 3 {
             return None;
         }
-        lines_checked += 1;
+        lines_checked = lines_checked.wrapping_add(1);
         // headers might have an extra value
         // So if we have churned through enough lines
         // we try one field less.
-        if lines_checked == 256 {
+        if lines_checked == u8::MAX {
             if let Some(ef) = expected_fields {
                 expected_fields = Some(ef.saturating_sub(1))
             }
