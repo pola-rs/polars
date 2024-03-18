@@ -876,11 +876,17 @@ where
     T: 'static + PolarsDataType,
 {
     fn as_ref(&self) -> &ChunkedArray<T> {
+        #[cfg(feature = "dtype-array")]
+        let is_array = matches!(T::get_dtype(), DataType::Array(_, _))
+            && matches!(self.dtype(), DataType::Array(_, _));
+        #[cfg(not(feature = "dtype-array"))]
+        let is_array = false;
+
         if &T::get_dtype() == self.dtype() ||
             // Needed because we want to get ref of List no matter what the inner type is.
             (matches!(T::get_dtype(), DataType::List(_)) && matches!(self.dtype(), DataType::List(_)))
             // Similarly for arrays.
-            || (matches!(T::get_dtype(), DataType::Array(_, _)) && matches!(self.dtype(), DataType::Array(_, _)))
+            || is_array
         {
             unsafe { &*(self as *const dyn SeriesTrait as *const ChunkedArray<T>) }
         } else {

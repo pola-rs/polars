@@ -222,7 +222,8 @@ pub fn if_then_else_view_rest(
         // Unfortunately we're still dependent on the compiler.
         let m = (mask >> i) & 1 != 0;
         let mut v = if m { t } else { f };
-        let offset = if m | (v.length <= 12) { // Yes, | instead of || is intentional.
+        let offset = if m | (v.length <= 12) {
+            // Yes, | instead of || is intentional.
             0
         } else {
             false_buffer_idx_offset

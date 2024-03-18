@@ -2,6 +2,7 @@ use arrow::bitmap::Bitmap;
 use arrow::compute::utils::{combine_validities_and, combine_validities_and_not};
 use polars_compute::if_then_else::IfThenElseKernel;
 
+#[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectArray;
 use crate::prelude::*;
 use crate::utils::{align_chunks_binary, align_chunks_ternary};
@@ -160,6 +161,7 @@ where
 }
 
 // Basic implementation for ObjectArray.
+#[cfg(feature = "object")]
 impl<T: PolarsObject> IfThenElseKernel for ObjectArray<T> {
     type Scalar<'a> = &'a T;
 
