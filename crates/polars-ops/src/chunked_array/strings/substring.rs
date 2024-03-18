@@ -6,48 +6,23 @@ fn substring_ternary(
     opt_offset: Option<i64>,
     opt_length: Option<u64>,
 ) -> Option<&str> {
-    match (opt_str_val, opt_offset) {
-        (Some(str_val), Some(offset)) => {
-            // If `offset` is negative, it counts from the end of the string.
-            let offset = if offset >= 0 {
-                offset as usize
-            } else {
-                let offset = (0i64 - offset) as usize;
-                str_val
-                    .char_indices()
-                    .rev()
-                    .nth(offset)
-                    .map(|(idx, _)| idx + 1)
-                    .unwrap_or(0)
-            };
+    let str_val = opt_str_val?;
+    let offset = opt_offset?;
 
-            let mut iter_chars = str_val.char_indices();
-            if let Some((offset_idx, _)) = iter_chars.nth(offset) {
-                let len_end = str_val.len() - offset_idx;
+    // If `offset` is negative, it counts from the end of the string.
+    let mut indices = str_val.char_indices().map(|(o, _)| o);
+    let start_byte_offset = if offset >= 0 {
+        indices.nth(offset as usize).unwrap_or(str_val.len())
+    } else {
+        indices.nth_back((-offset - 1) as usize).unwrap_or(0)
+    };
 
-                // Slice to end of str if no length given.
-                let length = if let Some(length) = opt_length {
-                    length as usize
-                } else {
-                    len_end
-                };
-
-                if length == 0 {
-                    return Some("");
-                }
-
-                let end_idx = iter_chars
-                    .nth(length.saturating_sub(1))
-                    .map(|(idx, _)| idx)
-                    .unwrap_or(str_val.len());
-
-                Some(&str_val[offset_idx..end_idx])
-            } else {
-                Some("")
-            }
-        },
-        _ => None,
-    }
+    let str_val = &str_val[start_byte_offset..];
+    let mut indices = str_val.char_indices().map(|(o, _)| o);
+    let stop_byte_offset = opt_length
+        .and_then(|l| indices.nth(l as usize))
+        .unwrap_or(str_val.len());
+    Some(&str_val[..stop_byte_offset])
 }
 
 pub(super) fn substring(
