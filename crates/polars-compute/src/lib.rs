@@ -15,9 +15,8 @@ pub mod min_max;
 
 pub mod arity;
 
-
 // Trait to enable the scalar blanket implementation.
-pub trait NotSimdPrimitive : NativeType {}
+pub trait NotSimdPrimitive: NativeType {}
 
 #[cfg(not(feature = "simd"))]
 impl<T> NotSimdPrimitive for T {}

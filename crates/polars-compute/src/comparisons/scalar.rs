@@ -2,9 +2,8 @@ use arrow::array::{BinaryArray, BooleanArray, PrimitiveArray, Utf8Array};
 use arrow::bitmap::{self, Bitmap};
 use polars_utils::total_ord::{TotalEq, TotalOrd};
 
-use crate::NotSimdPrimitive;
-
 use super::TotalOrdKernel;
+use crate::NotSimdPrimitive;
 
 impl<T: NotSimdPrimitive + TotalOrd> TotalOrdKernel for PrimitiveArray<T> {
     type Scalar = T;
