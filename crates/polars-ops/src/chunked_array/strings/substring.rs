@@ -9,18 +9,37 @@ fn substring_ternary(
     let str_val = opt_str_val?;
     let offset = opt_offset?;
 
-    // If `offset` is negative, it counts from the end of the string.
+    // Fast-path: always empty string.
+    if opt_length == Some(0) || offset >= str_val.len() as i64 {
+        return Some("");
+    }
+
     let mut indices = str_val.char_indices().map(|(o, _)| o);
+    let mut length_reduction = 0;
     let start_byte_offset = if offset >= 0 {
         indices.nth(offset as usize).unwrap_or(str_val.len())
     } else {
-        indices.nth_back((-offset - 1) as usize).unwrap_or(0)
+        // If `offset` is negative, it counts from the end of the string.
+        let mut chars_skipped = 0;
+        let found = indices
+            .inspect(|_| chars_skipped += 1)
+            .nth_back((-offset - 1) as usize);
+
+        // If we didn't find our char that means our offset was so negative it
+        // is before the start of our string. This means our length must be
+        // reduced, assuming it is finite.
+        if let Some(off) = found {
+            off
+        } else {
+            length_reduction = (-offset) as usize - chars_skipped;
+            0
+        }
     };
 
     let str_val = &str_val[start_byte_offset..];
     let mut indices = str_val.char_indices().map(|(o, _)| o);
     let stop_byte_offset = opt_length
-        .and_then(|l| indices.nth(l as usize))
+        .and_then(|l| indices.nth((l as usize).saturating_sub(length_reduction)))
         .unwrap_or(str_val.len());
     Some(&str_val[..stop_byte_offset])
 }
