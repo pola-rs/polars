@@ -458,7 +458,22 @@ pub(super) fn compute_row_idx(
     } else {
         let binding = pivot_df.select(index)?;
         let fields = binding.get_columns();
-        let index_struct_series = StructChunked::new("placeholder", fields)?.into_series();
+
+        let fields = fields.iter().map(|field| {
+            match field.dtype() {
+                DataType::List(dt) => {
+                    polars_ensure!(dt.is_numeric(), InvalidOperation: "pivot with lists only supported on lists with numeric values");
+
+                    let ca = field.list().unwrap();
+                    let chunks = ca.downcast_iter().map(|v| polars_compute::reinterpret::list_to_binary(v));
+
+                    BinaryOffsetChunked::try_from_chunk_iter(field.name(), chunks).map(|ca| ca.into_series())
+                },
+                _ => Ok(field.clone())
+            }
+        }).collect::<PolarsResult<Vec<_>>>()?;
+
+        let index_struct_series = StructChunked::new("placeholder", &fields)?.into_series();
         let index_agg = unsafe { index_struct_series.agg_first(groups) };
         let index_agg_physical = index_agg.to_physical_repr();
         let ca = index_agg_physical.struct_()?;

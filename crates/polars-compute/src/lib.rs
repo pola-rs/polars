@@ -12,3 +12,4 @@ pub mod if_then_else;
 pub mod min_max;
 
 pub mod arity;
+pub mod reinterpret;
