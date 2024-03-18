@@ -64,7 +64,7 @@ pub trait MomentSeries: SeriesSealed {
         let zero = m2 <= (f64::EPSILON * mean).powf(2.0);
         let vals = match zero {
             true => f64::NAN,
-            false => m3 / m2.powf(1.5)
+            false => m3 / m2.powf(1.5),
         };
         let n = (s.len() - s.null_count()) as f64;
         let out = if !bias && !zero && n > 3.0 {
@@ -97,7 +97,7 @@ pub trait MomentSeries: SeriesSealed {
         let zero = m2 <= (f64::EPSILON * mean).powf(2.0);
         let vals = match zero {
             true => f64::NAN,
-            false => m4 / m2.powf(2.0)
+            false => m4 / m2.powf(2.0),
         };
         let n = (s.len() - s.null_count()) as f64;
         let out = if !bias && !zero && n > 3.0 {
