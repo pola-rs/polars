@@ -2,18 +2,32 @@ use polars_core::prelude::arity::{binary_elementwise, ternary_elementwise, unary
 use polars_core::prelude::{Int64Chunked, StringChunked, UInt64Chunked};
 
 fn head_binary(opt_str_val: Option<&str>, opt_n: Option<i64>) -> Option<&str> {
-    if let (Some(str_val), Some(mut n)) = (opt_str_val, opt_n) {
-        let str_len = str_val.len() as i64;
-        if n >= str_len {
-            Some(str_val)
-        } else if (n == 0) | (str_len == 0) | (n <= -str_len) {
+    if let (Some(str_val), Some(n)) = (opt_str_val, opt_n) {
+        // `max_len` is guaranteed to be at least the total number of characters.
+        let max_len = str_val.len();
+        if n == 0 {
             Some("")
         } else {
-            if n < 0 {
-                // If `n` is negative, it counts from the end of the string.
-                n += str_len; // adding negative value
-            }
-            Some(&str_val[0..n as usize])
+            let end_idx = if n > 0 {
+                if (n as usize >= max_len) {
+                    return opt_str_val;
+                }
+                // End after the nth codepoint.
+                str_val
+                    .char_indices()
+                    .nth(n as usize)
+                    .map(|(idx, _)| idx)
+                    .unwrap_or(max_len)
+            } else {
+                // End after the nth codepoint from the end.
+                str_val
+                    .char_indices()
+                    .rev()
+                    .nth((-n - 1) as usize)
+                    .map(|(idx, _)| idx)
+                    .unwrap_or(0)
+            };
+            Some(&str_val[..end_idx as usize])
         }
     } else {
         None
