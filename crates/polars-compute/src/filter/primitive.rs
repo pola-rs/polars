@@ -1,5 +1,6 @@
 use arrow::bitmap::Bitmap;
 use bytemuck::{cast_slice, cast_vec, Pod};
+use polars_utils::cpuid::is_avx512_enabled;
 
 #[cfg(all(target_arch = "x86_64", feature = "simd"))]
 use super::avx512;
@@ -28,7 +29,7 @@ pub fn filter_values<T: Pod>(values: &[T], mask: &Bitmap) -> Vec<T> {
 
 fn filter_values_u8(values: &[u8], mask: &Bitmap) -> Vec<u8> {
     #[cfg(all(target_arch = "x86_64", feature = "simd"))]
-    if std::arch::is_x86_feature_detected!("avx512vbmi2") {
+    if is_avx512_enabled() && std::arch::is_x86_feature_detected!("avx512vbmi2") {
         return filter_values_generic(values, mask, 64, avx512::filter_u8_avx512vbmi2);
     }
 
@@ -37,7 +38,7 @@ fn filter_values_u8(values: &[u8], mask: &Bitmap) -> Vec<u8> {
 
 fn filter_values_u16(values: &[u16], mask: &Bitmap) -> Vec<u16> {
     #[cfg(all(target_arch = "x86_64", feature = "simd"))]
-    if std::arch::is_x86_feature_detected!("avx512vbmi2") {
+    if is_avx512_enabled() && std::arch::is_x86_feature_detected!("avx512vbmi2") {
         return filter_values_generic(values, mask, 32, avx512::filter_u16_avx512vbmi2);
     }
 
@@ -46,7 +47,7 @@ fn filter_values_u16(values: &[u16], mask: &Bitmap) -> Vec<u16> {
 
 fn filter_values_u32(values: &[u32], mask: &Bitmap) -> Vec<u32> {
     #[cfg(all(target_arch = "x86_64", feature = "simd"))]
-    if std::arch::is_x86_feature_detected!("avx512f") {
+    if is_avx512_enabled() {
         return filter_values_generic(values, mask, 16, avx512::filter_u32_avx512f);
     }
 
@@ -55,7 +56,7 @@ fn filter_values_u32(values: &[u32], mask: &Bitmap) -> Vec<u32> {
 
 fn filter_values_u64(values: &[u64], mask: &Bitmap) -> Vec<u64> {
     #[cfg(all(target_arch = "x86_64", feature = "simd"))]
-    if std::arch::is_x86_feature_detected!("avx512f") {
+    if is_avx512_enabled() {
         return filter_values_generic(values, mask, 8, avx512::filter_u64_avx512f);
     }
 
