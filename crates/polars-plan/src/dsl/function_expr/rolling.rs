@@ -85,7 +85,11 @@ fn convert<'a>(
                 by.cast(&DataType::Datetime(TimeUnit::Milliseconds, None))?,
                 &None,
             ),
-            dt => polars_bail!(opq = expr_name, got = dt, expected = "date/datetime"),
+            dt => polars_bail!(InvalidOperation:
+                "in `{}` operation, `by` argument of dtype `{}` is not supported (expected `{}`)",
+                expr_name,
+                dt,
+                "date/datetime"),
         };
         if by.is_sorted_flag() != IsSorted::Ascending && options.warn_if_unsorted {
             polars_warn!(format!(
