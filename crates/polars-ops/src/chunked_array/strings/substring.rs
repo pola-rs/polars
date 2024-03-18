@@ -9,7 +9,7 @@ fn head_binary(opt_str_val: Option<&str>, opt_n: Option<i64>) -> Option<&str> {
             Some("")
         } else {
             let end_idx = if n > 0 {
-                if (n as usize >= max_len) {
+                if n as usize >= max_len {
                     return opt_str_val;
                 }
                 // End after the nth codepoint.
@@ -27,7 +27,7 @@ fn head_binary(opt_str_val: Option<&str>, opt_n: Option<i64>) -> Option<&str> {
                     .map(|(idx, _)| idx)
                     .unwrap_or(0)
             };
-            Some(&str_val[..end_idx as usize])
+            Some(&str_val[..end_idx])
         }
     } else {
         None
@@ -35,23 +35,32 @@ fn head_binary(opt_str_val: Option<&str>, opt_n: Option<i64>) -> Option<&str> {
 }
 
 fn tail_binary(opt_str_val: Option<&str>, opt_n: Option<i64>) -> Option<&str> {
-    if let (Some(str_val), Some(mut n)) = (opt_str_val, opt_n) {
-        let str_len = str_val.len() as i64;
-        if n >= str_len {
-            Some(str_val)
-        } else if (n == 0) | (str_len == 0) | (n <= -str_len) {
+    if let (Some(str_val), Some(n)) = (opt_str_val, opt_n) {
+        // `max_len` is guaranteed to be at least the total number of characters.
+        let max_len = str_val.len();
+        if n == 0 {
             Some("")
         } else {
-            // We re-assign `n` to be the start of the slice.
-            // The end of the slice is always the end of the string.
-            if n < 0 {
-                // If `n` is negative, we count from the beginning.
-                n = -n;
+            let start_idx = if n > 0 {
+                if n as usize >= max_len {
+                    return opt_str_val;
+                }
+                // Start from nth codepoint from the end
+                str_val
+                    .char_indices()
+                    .rev()
+                    .nth((n - 1) as usize)
+                    .map(|(idx, _)| idx)
+                    .unwrap_or(0)
             } else {
-                // If `n` is positive, we count from the end.
-                n = str_len - n;
-            }
-            Some(&str_val[n as usize..str_len as usize])
+                // Start after the nth codepoint
+                str_val
+                    .char_indices()
+                    .nth((-n) as usize)
+                    .map(|(idx, _)| idx)
+                    .unwrap_or(max_len)
+            };
+            Some(&str_val[start_idx..])
         }
     } else {
         None

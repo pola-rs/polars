@@ -46,13 +46,33 @@ def test_str_slice_expr() -> None:
         df.select(pl.col("a").str.slice(0, -1))
 
 
-def test_str_head() -> None:
-    s = pl.Series(["012345", "", None])
-    assert s.str.head(0).to_list() == ["", "", None]
-    assert s.str.head(2).to_list() == ["01", "", None]
-    assert s.str.head(-2).to_list() == ["0123", "", None]
-    assert s.str.head(100).to_list() == ["012345", "", None]
-    assert s.str.head(-100).to_list() == ["", "", None]
+@pytest.mark.parametrize(
+    ("input", "n", "output"),
+    [
+        (["012345", "", None], 0, ["", "", None]),
+        (["012345", "", None], 2, ["01", "", None]),
+        (["012345", "", None], -2, ["0123", "", None]),
+        (["012345", "", None], 100, ["012345", "", None]),
+        (["012345", "", None], -100, ["", "", None]),
+    ],
+)
+def test_str_head(input: list[str], n: int, output: list[str]) -> None:
+    assert pl.Series(input).str.head(n).to_list() == output
+
+
+@pytest.mark.parametrize(
+    ("input", "n", "output"),
+    [
+        ("你好世界", 0, ""),
+        ("你好世界", 2, "你好"),
+        ("你好世界", 999, "你好世界"),
+        ("你好世界", -1, "你好世"),
+        ("你好世界", -2, "你好"),
+        ("你好世界", -999, ""),
+    ],
+)
+def test_str_head_codepoints(input: str, n: int, output: str) -> None:
+    assert pl.Series([input]).str.head(n).to_list() == [output]
 
 
 def test_str_head_expr() -> None:
@@ -87,13 +107,33 @@ def test_str_head_expr() -> None:
     assert_frame_equal(out, expected)
 
 
-def test_str_tail() -> None:
-    s = pl.Series(["012345", "", None])
-    assert s.str.tail(0).to_list() == ["", "", None]
-    assert s.str.tail(2).to_list() == ["45", "", None]
-    assert s.str.tail(-2).to_list() == ["2345", "", None]
-    assert s.str.tail(100).to_list() == ["012345", "", None]
-    assert s.str.tail(-100).to_list() == ["", "", None]
+@pytest.mark.parametrize(
+    ("input", "n", "output"),
+    [
+        (["012345", "", None], 0, ["", "", None]),
+        (["012345", "", None], 2, ["45", "", None]),
+        (["012345", "", None], -2, ["2345", "", None]),
+        (["012345", "", None], 100, ["012345", "", None]),
+        (["012345", "", None], -100, ["", "", None]),
+    ],
+)
+def test_str_tail(input: list[str], n: int, output: list[str]) -> None:
+    assert pl.Series(input).str.tail(n).to_list() == output
+
+
+@pytest.mark.parametrize(
+    ("input", "n", "output"),
+    [
+        ("你好世界", 0, ""),
+        ("你好世界", 2, "世界"),
+        ("你好世界", 999, "你好世界"),
+        ("你好世界", -1, "好世界"),
+        ("你好世界", -2, "世界"),
+        ("你好世界", -999, ""),
+    ],
+)
+def test_str_tail_codepoints(input: str, n: int, output: str) -> None:
+    assert pl.Series([input]).str.tail(n).to_list() == [output]
 
 
 def test_str_tail_expr() -> None:
