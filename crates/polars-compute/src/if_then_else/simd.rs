@@ -10,6 +10,7 @@ use super::{
     if_then_else_validity, scalar, IfThenElseKernel,
 };
 
+#[cfg(target_arch = "x86_64")]
 fn select_simd_64<T: Copy + SimdElement>(
     mask: u64,
     if_true: Simd<T, 64>,
@@ -24,6 +25,7 @@ fn select_simd_64<T: Copy + SimdElement>(
     }
 }
 
+#[cfg(target_arch = "x86_64")]
 fn if_then_else_simd_64<T: Copy + SimdElement>(
     mask: u64,
     if_true: &[T; 64],
@@ -38,6 +40,7 @@ fn if_then_else_simd_64<T: Copy + SimdElement>(
     )
 }
 
+#[cfg(target_arch = "x86_64")]
 fn if_then_else_broadcast_false_simd_64<T: Copy + SimdElement>(
     mask: u64,
     if_true: &[T; 64],
@@ -47,6 +50,7 @@ fn if_then_else_broadcast_false_simd_64<T: Copy + SimdElement>(
     select_simd_64(mask, Simd::from_slice(if_true), Simd::splat(if_false), out)
 }
 
+#[cfg(target_arch = "x86_64")]
 fn if_then_else_broadcast_both_simd_64<T: Copy + SimdElement>(
     mask: u64,
     if_true: T,
