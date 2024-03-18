@@ -438,16 +438,25 @@ impl<T> ChunkedArray<T>
 where
     T: PolarsDataType,
 {
+    /// Get a single value from this [`ChunkedArray`]. If the return values is `None` this
+    /// indicates a NULL value.
+    ///
+    /// # Panics
+    /// This function will panic if `idx` is out of bounds.
     #[inline]
     pub fn get(&self, idx: usize) -> Option<T::Physical<'_>> {
         let (chunk_idx, arr_idx) = self.index_to_chunked_index(idx);
-        let arr = self.downcast_get(chunk_idx)?;
-
-        // SAFETY: if index_to_chunked_index returns a valid chunk_idx, we know
-        // that arr_idx < arr.len().
-        unsafe { arr.get_unchecked(arr_idx) }
+        assert!(chunk_idx < self.chunks().len());
+        unsafe {
+            let arr = self.downcast_get_unchecked(chunk_idx);
+            assert!(arr_idx < arr.len());
+            arr.get(arr_idx)
+        }
     }
 
+    /// Get a single value from this [`ChunkedArray`]. If the return values is `None` this
+    /// indicates a NULL value.
+    ///
     /// # Safety
     /// It is the callers responsibility that the `idx < self.len()`.
     #[inline]
@@ -461,6 +470,9 @@ where
         }
     }
 
+    /// Get a single value from this [`ChunkedArray`]. Null values are ignored and the returned
+    /// value could be garbage if it was masked out by NULL. Note that the value always is initialized.
+    ///
     /// # Safety
     /// It is the callers responsibility that the `idx < self.len()`.
     #[inline]
