@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::fmt::Debug;
 
-use arrow::array::{Array, BinaryViewArray, View, INLINE_VIEW_SIZE};
+use arrow::array::{Array, BinaryViewArray, View};
 use arrow::bitmap::MutableBitmap;
 use arrow::buffer::Buffer;
 use arrow::legacy::trusted_len::TrustedLenPush;
@@ -321,11 +321,25 @@ unsafe fn take_opt_unchecked_object(s: &Series, by: &[NullableChunkId]) -> Serie
 
 #[allow(clippy::unnecessary_cast)]
 #[inline(always)]
-fn rewrite_view(mut view: View, chunk_idx: IdxSize) -> View {
-    let chunk_idx = chunk_idx as u32;
-    let offset = [0, chunk_idx][(view.length > INLINE_VIEW_SIZE) as usize];
-    view.buffer_idx += offset;
+unsafe fn rewrite_view(mut view: View, chunk_idx: IdxSize, buffer_offsets: &[u32]) -> View {
+    let base_offset = *buffer_offsets.get_unchecked_release(chunk_idx as usize);
+    view.buffer_idx += base_offset;
     view
+}
+
+fn create_buffer_offsets(ca: &BinaryChunked) -> Vec<u32> {
+    // Create a buffer with buffer offsets that we can index.
+    let total_buffers = ca
+        .downcast_iter()
+        .map(|arr| arr.data_buffers().len())
+        .sum::<usize>();
+    let mut buffer_offsets = Vec::with_capacity(total_buffers + 1);
+    buffer_offsets.push(0u32);
+    buffer_offsets.extend(
+        ca.downcast_iter()
+            .map(|arr| arr.data_buffers().len() as u32),
+    );
+    buffer_offsets
 }
 
 #[allow(clippy::unnecessary_cast)]
@@ -338,6 +352,8 @@ unsafe fn take_unchecked_binview(
         .downcast_iter()
         .map(|arr| arr.views().as_slice())
         .collect::<Vec<_>>();
+    let buffer_offsets = create_buffer_offsets(ca);
+
     let buffers: Arc<[Buffer<u8>]> = ca
         .downcast_iter()
         .flat_map(|arr| arr.data_buffers().as_ref())
@@ -353,8 +369,7 @@ unsafe fn take_unchecked_binview(
 
                 let target = *views.get_unchecked_release(chunk_idx as usize);
                 let view = *target.get_unchecked_release(array_idx);
-
-                rewrite_view(view, chunk_idx)
+                rewrite_view(view, chunk_idx, &buffer_offsets)
             })
             .collect::<Vec<_>>();
 
@@ -376,7 +391,7 @@ unsafe fn take_unchecked_binview(
             } else {
                 let target = *views.get_unchecked_release(chunk_idx as usize);
                 let view = *target.get_unchecked_release(array_idx);
-                let view = rewrite_view(view, chunk_idx);
+                let view = rewrite_view(view, chunk_idx, &buffer_offsets);
                 mut_views.push_unchecked(view);
                 validity.push_unchecked(true)
             }
@@ -410,6 +425,7 @@ unsafe fn take_unchecked_binview_opt(ca: &BinaryChunked, by: &[NullableChunkId])
         .flat_map(|arr| arr.data_buffers().as_ref())
         .cloned()
         .collect();
+    let buffer_offsets = create_buffer_offsets(ca);
 
     let targets = ca.downcast_iter().collect::<Vec<_>>();
 
@@ -427,7 +443,7 @@ unsafe fn take_unchecked_binview_opt(ca: &BinaryChunked, by: &[NullableChunkId])
 
                 let target = *views.get_unchecked_release(chunk_idx as usize);
                 let view = *target.get_unchecked_release(array_idx);
-                let view = rewrite_view(view, chunk_idx);
+                let view = rewrite_view(view, chunk_idx, &buffer_offsets);
 
                 mut_views.push_unchecked(view);
                 validity.push_unchecked(true)
@@ -450,7 +466,7 @@ unsafe fn take_unchecked_binview_opt(ca: &BinaryChunked, by: &[NullableChunkId])
                 } else {
                     let target = *views.get_unchecked_release(chunk_idx as usize);
                     let view = *target.get_unchecked_release(array_idx);
-                    let view = rewrite_view(view, chunk_idx);
+                    let view = rewrite_view(view, chunk_idx, &buffer_offsets);
                     mut_views.push_unchecked(view);
                     validity.push_unchecked(true);
                 }
@@ -492,8 +508,9 @@ mod test {
                 ],
             );
             s_1.append(&s_2).unwrap();
+            s_1.append(&s_2).unwrap();
 
-            assert_eq!(s_1.n_chunks(), 2);
+            assert_eq!(s_1.n_chunks(), 3);
 
             // ## Ids without nulls;
             let by = [
@@ -501,10 +518,12 @@ mod test {
                 ChunkId::store(0, 1),
                 ChunkId::store(1, 1),
                 ChunkId::store(1, 0),
+                ChunkId::store(2, 0),
+                ChunkId::store(2, 1),
             ];
 
             let out = s_1.take_chunked_unchecked(&by, IsSorted::Not);
-            let idx = IdxCa::new("", [0, 1, 3, 2]);
+            let idx = IdxCa::new("", [0, 1, 3, 2, 4, 5]);
             let expected = s_1.rechunk().take(&idx).unwrap();
             assert!(out.equals(&expected));
 
