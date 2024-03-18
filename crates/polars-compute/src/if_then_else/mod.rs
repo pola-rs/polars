@@ -4,13 +4,16 @@ use arrow::array::{Array, PrimitiveArray};
 use arrow::bitmap::utils::{align_bitslice_start_u8, SlicesIterator};
 use arrow::bitmap::{self, Bitmap};
 use arrow::datatypes::ArrowDataType;
-use arrow::types::NativeType;
 use polars_utils::slice::load_padded_le_u64;
+
+use crate::NotSimdPrimitive;
 
 mod array;
 mod boolean;
 mod list;
 mod scalar;
+#[cfg(feature = "simd")]
+mod simd;
 mod view;
 
 pub trait IfThenElseKernel: Sized + Array {
@@ -35,7 +38,7 @@ pub trait IfThenElseKernel: Sized + Array {
     ) -> Self;
 }
 
-impl<T: NativeType> IfThenElseKernel for PrimitiveArray<T> {
+impl<T: NotSimdPrimitive> IfThenElseKernel for PrimitiveArray<T> {
     type Scalar<'a> = T;
 
     fn if_then_else(mask: &Bitmap, if_true: &Self, if_false: &Self) -> Self {
@@ -97,6 +100,7 @@ impl<T: NativeType> IfThenElseKernel for PrimitiveArray<T> {
         PrimitiveArray::from_vec(values)
     }
 }
+
 
 fn if_then_else_validity(
     mask: &Bitmap,
