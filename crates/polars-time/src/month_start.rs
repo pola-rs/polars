@@ -1,5 +1,3 @@
-#[cfg(feature = "timezones")]
-use arrow::legacy::kernels::Ambiguous;
 use arrow::legacy::time_zone::Tz;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use polars_core::prelude::*;
@@ -50,8 +48,8 @@ pub(crate) fn roll_backward(
     let t = match tz {
         #[cfg(feature = "timezones")]
         Some(tz) => datetime_to_timestamp(
-            try_localize_datetime(ndt, tz, Ambiguous::Raise)?
-                .expect("we didn't use Ambiguous::Null"),
+            try_localize_datetime(ndt, tz, Ambiguous::Raise, NonExistent::Raise)?
+                .expect("we didn't use Ambiguous::Null or NonExistent::Null"),
         ),
         _ => datetime_to_timestamp(ndt),
     };

@@ -797,6 +797,21 @@ impl FromPyObject<'_> for Wrap<ListToStructWidthStrategy> {
     }
 }
 
+impl FromPyObject<'_> for Wrap<NonExistent> {
+    fn extract(ob: &PyAny) -> PyResult<Self> {
+        let parsed = match ob.extract::<&str>()? {
+            "null" => NonExistent::Null,
+            "raise" => NonExistent::Raise,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "`non_existent` must be one of {{'null', 'raise'}}, got {v}",
+                )))
+            },
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
 impl FromPyObject<'_> for Wrap<NullBehavior> {
     fn extract(ob: &PyAny) -> PyResult<Self> {
         let parsed = match ob.extract::<&str>()? {

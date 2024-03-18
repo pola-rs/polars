@@ -2,7 +2,6 @@ pub mod infer;
 use chrono::DateTime;
 mod patterns;
 mod strptime;
-
 use chrono::ParseError;
 pub use patterns::Pattern;
 #[cfg(feature = "dtype-time")]
@@ -216,6 +215,7 @@ pub trait StringMethods: AsString {
                 &ca.into_datetime(tu, None),
                 Some(tz),
                 _ambiguous,
+                NonExistent::Raise,
             ),
             #[cfg(feature = "timezones")]
             (true, _) => Ok(ca.into_datetime(tu, Some("UTC".to_string()))),
@@ -323,7 +323,12 @@ pub trait StringMethods: AsString {
             let dt = ca.with_name(string_ca.name()).into_datetime(tu, None);
             match tz {
                 #[cfg(feature = "timezones")]
-                Some(tz) => polars_ops::prelude::replace_time_zone(&dt, Some(tz), ambiguous),
+                Some(tz) => polars_ops::prelude::replace_time_zone(
+                    &dt,
+                    Some(tz),
+                    ambiguous,
+                    NonExistent::Raise,
+                ),
                 _ => Ok(dt),
             }
         }
