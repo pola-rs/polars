@@ -19,7 +19,7 @@ pub mod arity;
 pub trait NotSimdPrimitive: NativeType {}
 
 #[cfg(not(feature = "simd"))]
-impl<T> NotSimdPrimitive for T {}
+impl<T: NativeType> NotSimdPrimitive for T {}
 
 #[cfg(feature = "simd")]
 impl NotSimdPrimitive for u128 {}
