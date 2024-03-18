@@ -23,13 +23,33 @@ fn check_double_projection(
     acc_projections: &mut Vec<Node>,
     projected_names: &mut PlHashSet<Arc<str>>,
 ) {
+    // Factor out the pruning function
+    fn prune_projections_by_name(
+        acc_projections: &mut Vec<Node>,
+        name: &str,
+        expr_arena: &Arena<AExpr>,
+    ) {
+        acc_projections.retain(|expr| {
+            !aexpr_to_leaf_names_iter(*expr, expr_arena).any(|q| q.as_ref() == name)
+        });
+    }
+
     for (_, ae) in (&*expr_arena).iter(*expr) {
-        if let AExpr::Alias(_, name) = ae {
-            if projected_names.remove(name) {
-                acc_projections
-                    .retain(|expr| !aexpr_to_leaf_names(*expr, expr_arena).contains(name));
-            }
-        }
+        match ae {
+            // Series literals come from another source so should not be pushed down.
+            AExpr::Literal(LiteralValue::Series(s)) => {
+                let name = s.name();
+                if projected_names.remove(name) {
+                    prune_projections_by_name(acc_projections, name, expr_arena)
+                }
+            },
+            AExpr::Alias(_, name) => {
+                if projected_names.remove(name) {
+                    prune_projections_by_name(acc_projections, name.as_ref(), expr_arena)
+                }
+            },
+            _ => {},
+        };
     }
 }
 
@@ -64,6 +84,7 @@ pub(super) fn process_projection(
         }
         add_expr_to_accumulated(expr, &mut acc_projections, &mut projected_names, expr_arena);
         local_projection.push(exprs[0]);
+        proj_pd.is_count_star = true;
     } else {
         // A projection can consist of a chain of expressions followed by an alias.
         // We want to do the chain locally because it can have complicated side effects.

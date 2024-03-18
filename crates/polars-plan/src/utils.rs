@@ -1,13 +1,10 @@
 use std::fmt::Formatter;
 use std::iter::FlatMap;
-use std::sync::Arc;
 
 use polars_core::prelude::*;
 use polars_utils::idx_vec::UnitVec;
 use smartstring::alias::String as SmartString;
 
-use crate::logical_plan::iterator::ArenaExprIter;
-use crate::logical_plan::Context;
 use crate::prelude::consts::{LEN, LITERAL_NAME};
 use crate::prelude::*;
 
@@ -43,17 +40,27 @@ pub(crate) fn fmt_column_delimited<S: AsRef<str>>(
 
 pub trait PushNode {
     fn push_node(&mut self, value: Node);
+
+    fn extend_from_slice(&mut self, values: &[Node]);
 }
 
 impl PushNode for Vec<Node> {
     fn push_node(&mut self, value: Node) {
         self.push(value)
     }
+
+    fn extend_from_slice(&mut self, values: &[Node]) {
+        Vec::extend_from_slice(self, values)
+    }
 }
 
 impl PushNode for UnitVec<Node> {
     fn push_node(&mut self, value: Node) {
         self.push(value)
+    }
+
+    fn extend_from_slice(&mut self, values: &[Node]) {
+        UnitVec::extend(self, values.iter().copied())
     }
 }
 
@@ -64,16 +71,6 @@ pub(crate) fn is_scan(plan: &ALogicalPlan) -> bool {
     )
 }
 
-impl PushNode for &mut [Option<Node>] {
-    fn push_node(&mut self, value: Node) {
-        if self[0].is_some() {
-            self[1] = Some(value)
-        } else {
-            self[0] = Some(value)
-        }
-    }
-}
-
 /// A projection that only takes a column or a column + alias.
 #[cfg(feature = "meta")]
 pub(crate) fn aexpr_is_simple_projection(current_node: Node, arena: &Arena<AExpr>) -> bool {
@@ -82,22 +79,17 @@ pub(crate) fn aexpr_is_simple_projection(current_node: Node, arena: &Arena<AExpr
         .all(|(_node, e)| matches!(e, AExpr::Column(_) | AExpr::Alias(_, _)))
 }
 
-pub(crate) fn aexpr_is_elementwise(current_node: Node, arena: &Arena<AExpr>) -> bool {
-    arena.iter(current_node).all(|(_node, e)| {
-        use AExpr::*;
-        match e {
-            AnonymousFunction { options, .. } | Function { options, .. } => {
-                !matches!(options.collect_groups, ApplyOptions::GroupWise)
-            },
-            Column(_)
-            | Alias(_, _)
-            | Literal(_)
-            | BinaryExpr { .. }
-            | Ternary { .. }
-            | Cast { .. } => true,
-            _ => false,
-        }
-    })
+pub(crate) fn single_aexpr_is_elementwise(ae: &AExpr) -> bool {
+    use AExpr::*;
+    match ae {
+        AnonymousFunction { options, .. } | Function { options, .. } => {
+            !matches!(options.collect_groups, ApplyOptions::GroupWise)
+        },
+        Column(_) | Alias(_, _) | Literal(_) | BinaryExpr { .. } | Ternary { .. } | Cast { .. } => {
+            true
+        },
+        _ => false,
+    }
 }
 
 pub fn has_aexpr<F>(current_node: Node, arena: &Arena<AExpr>, matches: F) -> bool
@@ -157,6 +149,30 @@ pub fn has_null(current_expr: &Expr) -> bool {
     has_expr(current_expr, |e| {
         matches!(e, Expr::Literal(LiteralValue::Null))
     })
+}
+
+pub fn aexpr_output_name(node: Node, arena: &Arena<AExpr>) -> PolarsResult<Arc<str>> {
+    for (_, ae) in arena.iter(node) {
+        match ae {
+            // don't follow the partition by branch
+            AExpr::Window { function, .. } => return aexpr_output_name(*function, arena),
+            AExpr::Column(name) => return Ok(name.clone()),
+            AExpr::Alias(_, name) => return Ok(name.clone()),
+            AExpr::Len => return Ok(Arc::from(LEN)),
+            AExpr::Literal(val) => {
+                return match val {
+                    LiteralValue::Series(s) => Ok(Arc::from(s.name())),
+                    _ => Ok(Arc::from(LITERAL_NAME)),
+                }
+            },
+            _ => {},
+        }
+    }
+    let expr = node_to_expr(node, arena);
+    polars_bail!(
+        ComputeError:
+        "unable to find root column name for expr '{expr:?}' when calling 'output_name'",
+    );
 }
 
 /// output name of expr
@@ -292,9 +308,9 @@ pub(crate) fn aexpr_assign_renamed_leaf(
     current: &str,
     new_name: &str,
 ) -> Node {
-    let leafs = aexpr_to_column_nodes_iter(node, arena);
+    let leaf_nodes = aexpr_to_column_nodes_iter(node, arena);
 
-    for node in leafs {
+    for node in leaf_nodes {
         match arena.get(node) {
             AExpr::Column(name) if &**name == current => {
                 return arena.add(AExpr::Column(Arc::from(new_name)))

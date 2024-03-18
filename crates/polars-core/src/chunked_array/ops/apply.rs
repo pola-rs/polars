@@ -1,14 +1,11 @@
 //! Implementations of the ChunkApply Trait.
 use std::borrow::Cow;
-use std::convert::TryFrom;
 
-use arrow::array::{BooleanArray, PrimitiveArray};
 use arrow::bitmap::utils::{get_bit_unchecked, set_bit_unchecked};
 use arrow::legacy::bitmap::unary_mut;
 
 use crate::prelude::*;
 use crate::series::IsSorted;
-use crate::utils::CustomIterTools;
 
 impl<T> ChunkedArray<T>
 where
@@ -214,7 +211,7 @@ impl<T: PolarsNumericType> ChunkedArray<T> {
     where
         F: Fn(T::Native) -> T::Native + Copy,
     {
-        // safety, we do no t change the lengths
+        // SAFETY, we do no t change the lengths
         unsafe {
             self.downcast_iter_mut()
                 .for_each(|arr| arrow::compute::arity_assign::unary(arr, f))
@@ -281,7 +278,7 @@ where
         let mut idx = 0;
         self.downcast_iter().for_each(|arr| {
             arr.into_iter().for_each(|opt_val| {
-                // Safety:
+                // SAFETY:
                 // length asserted above
                 let item = unsafe { slice.get_unchecked_mut(idx) };
                 *item = f(opt_val.copied(), item);
@@ -371,7 +368,7 @@ impl<'a> ChunkApply<'a, bool> for BooleanChunked {
         let mut idx = 0;
         self.downcast_iter().for_each(|arr| {
             arr.into_iter().for_each(|opt_val| {
-                // Safety:
+                // SAFETY:
                 // length asserted above
                 let item = unsafe { slice.get_unchecked_mut(idx) };
                 *item = f(opt_val, item);
@@ -457,7 +454,7 @@ impl<'a> ChunkApply<'a, &'a str> for StringChunked {
         let mut idx = 0;
         self.downcast_iter().for_each(|arr| {
             arr.into_iter().for_each(|opt_val| {
-                // Safety:
+                // SAFETY:
                 // length asserted above
                 let item = unsafe { slice.get_unchecked_mut(idx) };
                 *item = f(opt_val, item);
@@ -500,7 +497,7 @@ impl<'a> ChunkApply<'a, &'a [u8]> for BinaryChunked {
         let mut idx = 0;
         self.downcast_iter().for_each(|arr| {
             arr.into_iter().for_each(|opt_val| {
-                // Safety:
+                // SAFETY:
                 // length asserted above
                 let item = unsafe { slice.get_unchecked_mut(idx) };
                 *item = f(opt_val, item);
@@ -663,7 +660,7 @@ impl<'a> ChunkApply<'a, Series> for ListChunked {
             arr.iter().for_each(|opt_val| {
                 let opt_val = opt_val.map(|arrayref| Series::try_from(("", arrayref)).unwrap());
 
-                // Safety:
+                // SAFETY:
                 // length asserted above
                 let item = unsafe { slice.get_unchecked_mut(idx) };
                 *item = f(opt_val, item);
@@ -713,7 +710,7 @@ where
         let mut idx = 0;
         self.downcast_iter().for_each(|arr| {
             arr.into_iter().for_each(|opt_val| {
-                // Safety:
+                // SAFETY:
                 // length asserted above
                 let item = unsafe { slice.get_unchecked_mut(idx) };
                 *item = f(opt_val, item);

@@ -4,7 +4,6 @@ use polars_utils::iter::EnumerateIdxTrait;
 use super::*;
 #[cfg(feature = "dtype-struct")]
 use crate::utils::_split_offsets;
-use crate::POOL;
 
 pub(crate) fn args_validate<T: PolarsDataType>(
     ca: &ChunkedArray<T>,
@@ -89,17 +88,15 @@ pub(crate) fn encode_rows_vertical(by: &[Series]) -> PolarsResult<BinaryOffsetCh
     let splits = _split_offsets(len, n_threads);
     let descending = vec![false; by.len()];
 
-    let chunks: PolarsResult<Vec<_>> = splits
-        .into_par_iter()
-        .map(|(offset, len)| {
-            let sliced = by
-                .iter()
-                .map(|s| s.slice(offset as i64, len))
-                .collect::<Vec<_>>();
-            let rows = _get_rows_encoded(&sliced, &descending, false)?;
-            Ok(rows.into_array())
-        })
-        .collect();
+    let chunks = splits.into_par_iter().map(|(offset, len)| {
+        let sliced = by
+            .iter()
+            .map(|s| s.slice(offset as i64, len))
+            .collect::<Vec<_>>();
+        let rows = _get_rows_encoded(&sliced, &descending, false)?;
+        Ok(rows.into_array())
+    });
+    let chunks = POOL.install(|| chunks.collect::<PolarsResult<Vec<_>>>());
 
     Ok(BinaryOffsetChunked::from_chunk_iter("", chunks?))
 }

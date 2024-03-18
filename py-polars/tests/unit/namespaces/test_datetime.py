@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING
 
@@ -8,19 +7,15 @@ import pytest
 
 import polars as pl
 from polars.datatypes import DTYPE_TEMPORAL_UNITS
-from polars.dependencies import _ZONEINFO_AVAILABLE
 from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
-if sys.version_info >= (3, 9):
-    from zoneinfo import ZoneInfo
-elif _ZONEINFO_AVAILABLE:
-    # Import from submodule due to typing issue with backports.zoneinfo package:
-    # https://github.com/pganssle/zoneinfo/issues/125
-    from backports.zoneinfo._zoneinfo import ZoneInfo
-
 if TYPE_CHECKING:
-    from polars.type_aliases import TimeUnit
+    from zoneinfo import ZoneInfo
+
+    from polars.type_aliases import TemporalLiteral, TimeUnit
+else:
+    from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
 
 @pytest.fixture()
@@ -782,9 +777,9 @@ def test_offset_by_broadcasting() -> None:
             None,
         ],
         "d3": [
-            datetime(2020, 10, 26, tzinfo=ZoneInfo(key="Europe/London")),
-            datetime(2020, 11, 4, tzinfo=ZoneInfo(key="Europe/London")),
-            datetime(2020, 10, 28, tzinfo=ZoneInfo(key="Europe/London")),
+            datetime(2020, 10, 26, tzinfo=ZoneInfo("Europe/London")),
+            datetime(2020, 11, 4, tzinfo=ZoneInfo("Europe/London")),
+            datetime(2020, 10, 28, tzinfo=ZoneInfo("Europe/London")),
             None,
         ],
         "d4": [
@@ -811,8 +806,8 @@ def test_offset_by_broadcasting() -> None:
         "d1": [datetime(2020, 11, 28), datetime(2021, 2, 5), None],
         "d2": [datetime(2021, 11, 25), datetime(2022, 2, 2), None],
         "d3": [
-            datetime(2020, 10, 28, tzinfo=ZoneInfo(key="Europe/London")),
-            datetime(2021, 1, 5, tzinfo=ZoneInfo(key="Europe/London")),
+            datetime(2020, 10, 28, tzinfo=ZoneInfo("Europe/London")),
+            datetime(2021, 1, 5, tzinfo=ZoneInfo("Europe/London")),
             None,
         ],
         "d4": [datetime(2021, 11, 26).date(), datetime(2022, 2, 3).date(), None],
@@ -931,21 +926,36 @@ def test_weekday(time_unit: TimeUnit) -> None:
         ([date(2022, 1, 1)], date(2022, 1, 1)),
         ([date(2022, 1, 1), date(2022, 1, 2), date(2022, 1, 3)], date(2022, 1, 2)),
         ([date(2022, 1, 1), date(2022, 1, 2), date(2024, 5, 15)], date(2022, 1, 2)),
+        ([datetime(2022, 1, 1)], datetime(2022, 1, 1)),
+        (
+            [datetime(2022, 1, 1), datetime(2022, 1, 2), datetime(2022, 1, 3)],
+            datetime(2022, 1, 2),
+        ),
         (
             [datetime(2022, 1, 1), datetime(2022, 1, 2), datetime(2024, 5, 15)],
             datetime(2022, 1, 2),
         ),
+        ([timedelta(days=1)], timedelta(days=1)),
+        ([timedelta(days=1), timedelta(days=2), timedelta(days=3)], timedelta(days=2)),
+        ([timedelta(days=1), timedelta(days=2), timedelta(days=15)], timedelta(days=2)),
     ],
     ids=[
         "empty",
         "Nones",
-        "single",
-        "spread_even",
-        "spread_skewed",
-        "spread_skewed_dt",
+        "single_date",
+        "spread_even_date",
+        "spread_skewed_date",
+        "single_datetime",
+        "spread_even_datetime",
+        "spread_skewed_datetime",
+        "single_dur",
+        "spread_even_dur",
+        "spread_skewed_dur",
     ],
 )
-def test_median(values: list[date | None], expected_median: date | None) -> None:
+def test_median(
+    values: list[TemporalLiteral | None], expected_median: TemporalLiteral | None
+) -> None:
     s = pl.Series(values)
     assert s.dt.median() == expected_median
 
@@ -961,22 +971,35 @@ def test_median(values: list[date | None], expected_median: date | None) -> None
         ([date(2022, 1, 1)], date(2022, 1, 1)),
         ([date(2022, 1, 1), date(2022, 1, 2), date(2022, 1, 3)], date(2022, 1, 2)),
         ([date(2022, 1, 1), date(2022, 1, 2), date(2024, 5, 15)], date(2022, 10, 16)),
+        ([datetime(2022, 1, 1)], datetime(2022, 1, 1)),
+        (
+            [datetime(2022, 1, 1), datetime(2022, 1, 2), datetime(2022, 1, 3)],
+            datetime(2022, 1, 2),
+        ),
         (
             [datetime(2022, 1, 1), datetime(2022, 1, 2), datetime(2024, 5, 15)],
             datetime(2022, 10, 16, 16, 0, 0),
         ),
+        ([timedelta(days=1)], timedelta(days=1)),
+        ([timedelta(days=1), timedelta(days=2), timedelta(days=3)], timedelta(days=2)),
+        ([timedelta(days=1), timedelta(days=2), timedelta(days=15)], timedelta(days=6)),
     ],
     ids=[
         "empty",
         "Nones",
-        "single",
-        "spread_even",
-        "spread_skewed",
-        "spread_skewed_dt",
+        "single_date",
+        "spread_even_date",
+        "spread_skewed_date",
+        "single_datetime",
+        "spread_even_datetime",
+        "spread_skewed_datetime",
+        "single_duration",
+        "spread_even_duration",
+        "spread_skewed_duration",
     ],
 )
 def test_mean(
-    values: list[date | datetime | None], expected_mean: date | datetime | None
+    values: list[TemporalLiteral | None], expected_mean: TemporalLiteral | None
 ) -> None:
     s = pl.Series(values)
     assert s.dt.mean() == expected_mean
@@ -996,12 +1019,44 @@ def test_mean(
     ids=["spread_skewed_dt"],
 )
 def test_datetime_mean_with_tu(values: list[datetime], expected_mean: datetime) -> None:
-    assert pl.Series(values, dtype=pl.Datetime("ms")).mean() == expected_mean
-    assert pl.Series(values, dtype=pl.Datetime("ms")).dt.mean() == expected_mean
-    assert pl.Series(values, dtype=pl.Datetime("us")).mean() == expected_mean
-    assert pl.Series(values, dtype=pl.Datetime("us")).dt.mean() == expected_mean
-    assert pl.Series(values, dtype=pl.Datetime("ns")).mean() == expected_mean
-    assert pl.Series(values, dtype=pl.Datetime("ns")).dt.mean() == expected_mean
+    assert pl.Series(values, dtype=pl.Duration("ms")).mean() == expected_mean
+    assert pl.Series(values, dtype=pl.Duration("ms")).dt.mean() == expected_mean
+    assert pl.Series(values, dtype=pl.Duration("us")).mean() == expected_mean
+    assert pl.Series(values, dtype=pl.Duration("us")).dt.mean() == expected_mean
+    assert pl.Series(values, dtype=pl.Duration("ns")).mean() == expected_mean
+    assert pl.Series(values, dtype=pl.Duration("ns")).dt.mean() == expected_mean
+
+
+@pytest.mark.parametrize(
+    ("values", "expected_mean"),
+    [([timedelta(days=1), timedelta(days=2), timedelta(days=15)], timedelta(days=6))],
+    ids=["spread_skewed_dur"],
+)
+def test_duration_mean_with_tu(
+    values: list[timedelta], expected_mean: timedelta
+) -> None:
+    assert pl.Series(values, dtype=pl.Duration("ms")).mean() == expected_mean
+    assert pl.Series(values, dtype=pl.Duration("ms")).dt.mean() == expected_mean
+    assert pl.Series(values, dtype=pl.Duration("us")).mean() == expected_mean
+    assert pl.Series(values, dtype=pl.Duration("us")).dt.mean() == expected_mean
+    assert pl.Series(values, dtype=pl.Duration("ns")).mean() == expected_mean
+    assert pl.Series(values, dtype=pl.Duration("ns")).dt.mean() == expected_mean
+
+
+@pytest.mark.parametrize(
+    ("values", "expected_median"),
+    [([timedelta(days=1), timedelta(days=2), timedelta(days=15)], timedelta(days=2))],
+    ids=["spread_skewed_dur"],
+)
+def test_duration_median_with_tu(
+    values: list[timedelta], expected_median: timedelta
+) -> None:
+    assert pl.Series(values, dtype=pl.Duration("ms")).median() == expected_median
+    assert pl.Series(values, dtype=pl.Duration("ms")).dt.median() == expected_median
+    assert pl.Series(values, dtype=pl.Duration("us")).median() == expected_median
+    assert pl.Series(values, dtype=pl.Duration("us")).dt.median() == expected_median
+    assert pl.Series(values, dtype=pl.Duration("ns")).median() == expected_median
+    assert pl.Series(values, dtype=pl.Duration("ns")).dt.median() == expected_median
 
 
 def test_agg_expr() -> None:

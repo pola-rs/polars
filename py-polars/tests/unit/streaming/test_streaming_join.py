@@ -12,6 +12,34 @@ from polars.testing import assert_frame_equal
 pytestmark = pytest.mark.xdist_group("streaming")
 
 
+def test_streaming_outer_joins() -> None:
+    n = 100
+    dfa = pl.DataFrame(
+        {
+            "a": np.random.randint(0, 40, n),
+            "idx": np.arange(0, n),
+        }
+    )
+
+    n = 100
+    dfb = pl.DataFrame(
+        {
+            "a": np.random.randint(0, 40, n),
+            "idx": np.arange(0, n),
+        }
+    )
+
+    join_strategies: list[Literal["outer", "outer_coalesce"]] = [
+        "outer",
+        "outer_coalesce",
+    ]
+    for how in join_strategies:
+        q = dfa.lazy().join(dfb.lazy(), on="a", how=how).sort(["idx"])
+        a = q.collect(streaming=True)
+        b = q.collect(streaming=False)
+        assert_frame_equal(a, b)
+
+
 def test_streaming_joins() -> None:
     n = 100
     dfa = pd.DataFrame(
@@ -190,3 +218,18 @@ def test_join_null_matches_multiple_keys(streaming: bool) -> None:
     assert_frame_equal(
         df_a.join(df_b, on=["a", "idx"], how="outer").sort("a").collect(), expected
     )
+
+
+def test_streaming_join_and_union() -> None:
+    a = pl.LazyFrame({"a": [1, 2]})
+
+    b = pl.LazyFrame({"a": [1, 2, 4, 8]})
+
+    c = a.join(b, on="a")
+    # The join node latest ensures that the dispatcher
+    # needs to replace placeholders in unions.
+    q = pl.concat([a, b, c])
+
+    out = q.collect(streaming=True)
+    assert_frame_equal(out, q.collect(streaming=False))
+    assert out.to_series().to_list() == [1, 2, 1, 2, 4, 8, 1, 2]

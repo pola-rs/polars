@@ -177,7 +177,7 @@ impl<'a> IntoIterator for &'a Expr {
 }
 
 pub struct AExprIter<'a> {
-    stack: Vec<Node>,
+    stack: UnitVec<Node>,
     arena: Option<&'a Arena<AExpr>>,
 }
 
@@ -203,8 +203,7 @@ pub trait ArenaExprIter<'a> {
 
 impl<'a> ArenaExprIter<'a> for &'a Arena<AExpr> {
     fn iter(&self, root: Node) -> AExprIter<'a> {
-        let mut stack = Vec::with_capacity(4);
-        stack.push(root);
+        let stack = unitvec![root];
         AExprIter {
             stack,
             arena: Some(self),
@@ -213,7 +212,7 @@ impl<'a> ArenaExprIter<'a> for &'a Arena<AExpr> {
 }
 
 pub struct AlpIter<'a> {
-    stack: Vec<Node>,
+    stack: UnitVec<Node>,
     arena: &'a Arena<ALogicalPlan>,
 }
 
@@ -223,7 +222,7 @@ pub trait ArenaLpIter<'a> {
 
 impl<'a> ArenaLpIter<'a> for &'a Arena<ALogicalPlan> {
     fn iter(&self, root: Node) -> AlpIter<'a> {
-        let stack = vec![root];
+        let stack = unitvec![root];
         AlpIter { stack, arena: self }
     }
 }

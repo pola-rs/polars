@@ -14,9 +14,10 @@ import pytest
 import zstandard
 
 import polars as pl
+from polars._utils.various import normalize_filepath
 from polars.exceptions import ComputeError, NoDataError
+from polars.io.csv import BatchedCsvReader
 from polars.testing import assert_frame_equal, assert_series_equal
-from polars.utils.various import normalize_filepath
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -1414,8 +1415,9 @@ def test_csv_categorical_categorical_merge() -> None:
 
 def test_batched_csv_reader(foods_file_path: Path) -> None:
     reader = pl.read_csv_batched(foods_file_path, batch_size=4)
-    batches = reader.next_batches(5)
+    assert isinstance(reader, BatchedCsvReader)
 
+    batches = reader.next_batches(5)
     assert batches is not None
     assert len(batches) == 5
     assert batches[0].to_dict(as_series=False) == {
@@ -1431,10 +1433,12 @@ def test_batched_csv_reader(foods_file_path: Path) -> None:
         "sugars_g": [25, 0, 5, 11],
     }
     assert_frame_equal(pl.concat(batches), pl.read_csv(foods_file_path))
+
     # the final batch of the low-memory variant is different
     reader = pl.read_csv_batched(foods_file_path, batch_size=4, low_memory=True)
     batches = reader.next_batches(5)
     assert len(batches) == 5  # type: ignore[arg-type]
+
     batches += reader.next_batches(5)  # type: ignore[operator]
     assert_frame_equal(pl.concat(batches), pl.read_csv(foods_file_path))
 
@@ -1474,6 +1478,11 @@ def test_batched_csv_reader_no_batches(foods_file_path: Path) -> None:
     batches = reader.next_batches(0)
 
     assert batches is None
+
+
+def test_read_csv_batched_invalid_source() -> None:
+    with pytest.raises(TypeError):
+        pl.read_csv_batched(source=5)  # type: ignore[arg-type]
 
 
 def test_csv_single_categorical_null() -> None:
@@ -1671,7 +1680,7 @@ def test_write_csv_stdout_stderr(capsys: pytest.CaptureFixture[str]) -> None:
     )
 
     # pytest hijacks sys.stdout and changes its type, which causes mypy failure
-    df.write_csv(sys.stdout)  # type: ignore[call-overload]
+    df.write_csv(sys.stdout)
     captured = capsys.readouterr()
     assert captured.out == (
         "numbers,strings,dates\n"
@@ -1680,7 +1689,7 @@ def test_write_csv_stdout_stderr(capsys: pytest.CaptureFixture[str]) -> None:
         "3,stdout,2023-01-03\n"
     )
 
-    df.write_csv(sys.stderr)  # type: ignore[call-overload]
+    df.write_csv(sys.stderr)
     captured = capsys.readouterr()
     assert captured.err == (
         "numbers,strings,dates\n"
@@ -1820,7 +1829,7 @@ def test_provide_schema() -> None:
     }
 
 
-def test_custom_writeable_object() -> None:
+def test_custom_writable_object() -> None:
     df = pl.DataFrame({"a": [10, 20, 30], "b": ["x", "y", "z"]})
 
     class CustomBuffer:
@@ -1955,3 +1964,8 @@ def test_read_csv_single_column(columns: list[str] | str) -> None:
     df = pl.read_csv(f, columns=columns)
     expected = pl.DataFrame({"b": [2, 5]})
     assert_frame_equal(df, expected)
+
+
+def test_csv_invalid_escape_utf8_14960() -> None:
+    with pytest.raises(pl.ComputeError, match=r"field is not properly escaped"):
+        pl.read_csv('col1\n""•'.encode())

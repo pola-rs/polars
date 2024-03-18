@@ -161,6 +161,7 @@ impl<O: Offset> BinaryArray<O> {
     }
 
     /// Returns the element at index `i`
+    ///
     /// # Safety
     /// Assumes that the `i < self.len`.
     #[inline]
@@ -225,6 +226,7 @@ impl<O: Offset> BinaryArray<O> {
     /// Slices this [`BinaryArray`].
     /// # Implementation
     /// This function is `O(1)`.
+    ///
     /// # Safety
     /// The caller must ensure that `offset + length <= self.len()`.
     pub unsafe fn slice_unchecked(&mut self, offset: usize, length: usize) {
@@ -258,7 +260,7 @@ impl<O: Offset> BinaryArray<O> {
         use Either::*;
         if let Some(bitmap) = self.validity {
             match bitmap.into_mut() {
-                // Safety: invariants are preserved
+                // SAFETY: invariants are preserved
                 Left(bitmap) => Left(BinaryArray::new(
                     self.data_type,
                     self.offsets,
@@ -374,6 +376,7 @@ impl<O: Offset> BinaryArray<O> {
     }
 
     /// Creates a [`BinaryArray`] from an iterator of trusted length.
+    ///
     /// # Safety
     /// The iterator must be [`TrustedLen`](https://doc.rust-lang.org/std/iter/trait.TrustedLen.html).
     /// I.e. that `size_hint().1` correctly reports its length.
@@ -398,6 +401,7 @@ impl<O: Offset> BinaryArray<O> {
     }
 
     /// Creates a [`BinaryArray`] from an falible iterator of trusted length.
+    ///
     /// # Safety
     /// The iterator must be [`TrustedLen`](https://doc.rust-lang.org/std/iter/trait.TrustedLen.html).
     /// I.e. that `size_hint().1` correctly reports its length.

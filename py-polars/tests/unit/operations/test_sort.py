@@ -9,6 +9,14 @@ import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
+def is_sorted_any(s: pl.Series) -> bool:
+    return s.flags["SORTED_ASC"] or s.flags["SORTED_DESC"]
+
+
+def is_not_sorted(s: pl.Series) -> bool:
+    return not is_sorted_any(s)
+
+
 def test_sort_dates_multiples() -> None:
     df = pl.DataFrame(
         [
@@ -789,3 +797,188 @@ def test_sort_with_null_12272() -> None:
 )
 def test_sort_series_nulls_last(input: list[Any], expected: list[Any]) -> None:
     assert pl.Series(input).sort(nulls_last=True).to_list() == expected
+
+
+def test_sorted_flag_14552() -> None:
+    a = pl.DataFrame({"a": [2, 1, 3]})
+
+    a = pl.concat([a, a], rechunk=False)
+    assert not a.join(a, on="a", how="left")["a"].flags["SORTED_ASC"]
+
+
+def test_sorted_flag_concat_15072() -> None:
+    # Both all-null
+    a = pl.Series("x", [None, None], dtype=pl.Int8)
+    b = pl.Series("x", [None, None], dtype=pl.Int8)
+    assert pl.concat((a, b)).flags["SORTED_ASC"]
+
+    # left all-null, right 0 < null_count < len
+    a = pl.Series("x", [None, None], dtype=pl.Int8)
+    b = pl.Series("x", [1, 2, 1, None], dtype=pl.Int8)
+
+    out = pl.concat((a, b.sort()))
+    assert out.to_list() == [None, None, None, 1, 1, 2]
+    assert out.flags["SORTED_ASC"]
+
+    out = pl.concat((a, b.sort(descending=True)))
+    assert out.to_list() == [None, None, None, 2, 1, 1]
+    assert out.flags["SORTED_DESC"]
+
+    out = pl.concat((a, b.sort(nulls_last=True)))
+    assert out.to_list() == [None, None, 1, 1, 2, None]
+    assert is_not_sorted(out)
+
+    out = pl.concat((a, b.sort(nulls_last=True, descending=True)))
+    assert out.to_list() == [None, None, 2, 1, 1, None]
+    assert is_not_sorted(out)
+
+    # left 0 < null_count < len, right all-null
+    a = pl.Series("x", [1, 2, 1, None], dtype=pl.Int8)
+    b = pl.Series("x", [None, None], dtype=pl.Int8)
+
+    out = pl.concat((a.sort(), b))
+    assert out.to_list() == [None, 1, 1, 2, None, None]
+    assert is_not_sorted(out)
+
+    out = pl.concat((a.sort(descending=True), b))
+    assert out.to_list() == [None, 2, 1, 1, None, None]
+    assert is_not_sorted(out)
+
+    out = pl.concat((a.sort(nulls_last=True), b))
+    assert out.to_list() == [1, 1, 2, None, None, None]
+    assert out.flags["SORTED_ASC"]
+
+    out = pl.concat((a.sort(nulls_last=True, descending=True), b))
+    assert out.to_list() == [2, 1, 1, None, None, None]
+    assert out.flags["SORTED_DESC"]
+
+    # both 0 < null_count < len
+    assert pl.concat(
+        (
+            pl.Series([None, 1]).set_sorted(),
+            pl.Series([2]).set_sorted(),
+        )
+    ).flags["SORTED_ASC"]
+
+    assert is_not_sorted(
+        pl.concat(
+            (
+                pl.Series([None, 1]).set_sorted(),
+                pl.Series([2, None]).set_sorted(),
+            )
+        )
+    )
+
+    assert pl.concat(
+        (
+            pl.Series([None, 2]).set_sorted(descending=True),
+            pl.Series([1]).set_sorted(descending=True),
+        )
+    ).flags["SORTED_DESC"]
+
+    assert is_not_sorted(
+        pl.concat(
+            (
+                pl.Series([None, 2]).set_sorted(descending=True),
+                pl.Series([1, None]).set_sorted(descending=True),
+            )
+        )
+    )
+
+    # Concat with empty series
+    s = pl.Series([None, 1]).set_sorted()
+
+    out = pl.concat((s.clear(), s))
+    assert_series_equal(out, s)
+    assert out.flags["SORTED_ASC"]
+
+    out = pl.concat((s, s.clear()))
+    assert_series_equal(out, s)
+    assert out.flags["SORTED_ASC"]
+
+    s = pl.Series([1, None]).set_sorted()
+
+    out = pl.concat((s.clear(), s))
+    assert_series_equal(out, s)
+    assert out.flags["SORTED_ASC"]
+
+    out = pl.concat((s, s.clear()))
+    assert_series_equal(out, s)
+    assert out.flags["SORTED_ASC"]
+
+
+@pytest.mark.parametrize("unit_descending", [True, False])
+def test_sorted_flag_concat_unit(unit_descending: bool) -> None:
+    unit = pl.Series([1]).set_sorted(descending=unit_descending)
+
+    a = unit
+    b = pl.Series([2, 3]).set_sorted()
+
+    out = pl.concat((a, b))
+    assert out.to_list() == [1, 2, 3]
+    assert out.flags["SORTED_ASC"]
+
+    out = pl.concat((b, a))
+    assert out.to_list() == [2, 3, 1]
+    assert is_not_sorted(out)
+
+    a = unit
+    b = pl.Series([3, 2]).set_sorted(descending=True)
+
+    out = pl.concat((a, b))
+    assert out.to_list() == [1, 3, 2]
+    assert is_not_sorted(out)
+
+    out = pl.concat((b, a))
+    assert out.to_list() == [3, 2, 1]
+    assert out.flags["SORTED_DESC"]
+
+    # unit with nulls first
+    unit = pl.Series([None, 1]).set_sorted(descending=unit_descending)
+
+    a = unit
+    b = pl.Series([2, 3]).set_sorted()
+
+    out = pl.concat((a, b))
+    assert out.to_list() == [None, 1, 2, 3]
+    assert out.flags["SORTED_ASC"]
+
+    out = pl.concat((b, a))
+    assert out.to_list() == [2, 3, None, 1]
+    assert is_not_sorted(out)
+
+    a = unit
+    b = pl.Series([3, 2]).set_sorted(descending=True)
+
+    out = pl.concat((a, b))
+    assert out.to_list() == [None, 1, 3, 2]
+    assert is_not_sorted(out)
+
+    out = pl.concat((b, a))
+    assert out.to_list() == [3, 2, None, 1]
+    assert is_not_sorted(out)
+
+    # unit with nulls last
+    unit = pl.Series([1, None]).set_sorted(descending=unit_descending)
+
+    a = unit
+    b = pl.Series([2, 3]).set_sorted()
+
+    out = pl.concat((a, b))
+    assert out.to_list() == [1, None, 2, 3]
+    assert is_not_sorted(out)
+
+    out = pl.concat((b, a))
+    assert out.to_list() == [2, 3, 1, None]
+    assert is_not_sorted(out)
+
+    a = unit
+    b = pl.Series([3, 2]).set_sorted(descending=True)
+
+    out = pl.concat((a, b))
+    assert out.to_list() == [1, None, 3, 2]
+    assert is_not_sorted(out)
+
+    out = pl.concat((b, a))
+    assert out.to_list() == [3, 2, 1, None]
+    assert out.flags["SORTED_DESC"]

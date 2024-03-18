@@ -1,5 +1,4 @@
 // --8<-- [start:setup]
-use polars::lazy::dsl::len;
 use polars::prelude::*;
 // --8<-- [end:setup]
 fn main() -> Result<(), Box<dyn std::error::Error>> {

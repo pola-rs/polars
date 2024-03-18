@@ -78,7 +78,6 @@ arrow-data = { workspace = true, optional = true }
 arrow-schema = { workspace = true, optional = true }
 
 [dev-dependencies]
-apache-avro = { version = "0.16", features = ["snappy"] }
 criterion = "0.5"
 crossbeam-channel = { workspace = true }
 doc-comment = "0.3"
@@ -141,7 +140,6 @@ compute_boolean_kleene = []
 compute_cast = ["compute_take", "ryu", "atoi_simd", "itoa", "fast-float"]
 compute_comparison = ["compute_take", "compute_boolean"]
 compute_hash = ["multiversion"]
-compute_if_then_else = []
 compute_take = []
 compute_temporal = []
 compute = [
@@ -153,14 +151,15 @@ compute = [
   "compute_cast",
   "compute_comparison",
   "compute_hash",
-  "compute_if_then_else",
   "compute_take",
   "compute_temporal",
 ]
 simd = []
 
 # polars-arrow
-timezones = []
+timezones = [
+  "chrono-tz",
+]
 dtype-array = []
 dtype-decimal = ["atoi", "itoap"]
 bigidx = []

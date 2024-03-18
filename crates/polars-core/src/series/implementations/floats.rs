@@ -1,21 +1,8 @@
-use std::borrow::Cow;
-
-use ahash::RandomState;
-use arrow::legacy::prelude::QuantileInterpolOptions;
-
-use super::{private, IntoSeries, SeriesTrait, SeriesWrap, *};
+use super::*;
 use crate::chunked_array::comparison::*;
-use crate::chunked_array::ops::aggregate::{ChunkAggSeries, QuantileAggSeries, VarAggSeries};
-use crate::chunked_array::ops::compare_inner::{
-    IntoTotalEqInner, IntoTotalOrdInner, TotalEqInner, TotalOrdInner,
-};
-use crate::chunked_array::ops::explode::ExplodeByOffsets;
-use crate::chunked_array::AsSinglePtr;
 #[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::*;
 use crate::prelude::*;
-#[cfg(feature = "checked_arithmetic")]
-use crate::series::arithmetic::checked::NumOpsDispatchChecked;
 
 macro_rules! impl_dyn_series {
     ($ca: ident) => {
@@ -326,6 +313,9 @@ macro_rules! impl_dyn_series {
             #[cfg(feature = "checked_arithmetic")]
             fn checked_div(&self, rhs: &Series) -> PolarsResult<Series> {
                 self.0.checked_div(rhs)
+            }
+            fn as_any(&self) -> &dyn Any {
+                &self.0
             }
         }
     };

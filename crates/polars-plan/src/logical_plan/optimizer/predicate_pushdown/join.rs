@@ -1,10 +1,17 @@
 use super::*;
 
-// information concerning individual sides of a join
+// Information concerning individual sides of a join.
 #[derive(PartialEq, Eq)]
 struct LeftRight<T>(T, T);
 
-fn should_block_join_specific(ae: &AExpr, how: &JoinType) -> LeftRight<bool> {
+fn should_block_join_specific(
+    ae: &AExpr,
+    how: &JoinType,
+    on_names: &PlHashSet<Arc<str>>,
+    expr_arena: &Arena<AExpr>,
+    schema_left: &Schema,
+    schema_right: &Schema,
+) -> LeftRight<bool> {
     use AExpr::*;
     match ae {
         // joins can produce null values
@@ -36,12 +43,23 @@ fn should_block_join_specific(ae: &AExpr, how: &JoinType) -> LeftRight<bool> {
         // any operation that checks for equality or ordering can be wrong because
         // the join can produce null values
         // TODO! check if we can be less conservative here
-        BinaryExpr { op, .. } => {
-            if matches!(op, Operator::NotEq) {
-                LeftRight(false, false)
-            } else {
-                join_produces_null(how)
-            }
+        BinaryExpr { op, left, right } => match op {
+            Operator::NotEq => LeftRight(false, false),
+            Operator::Eq => {
+                let LeftRight(bleft, bright) = join_produces_null(how);
+
+                let l_name = aexpr_output_name(*left, expr_arena).unwrap();
+                let r_name = aexpr_output_name(*right, expr_arena).unwrap();
+
+                let is_in_on = on_names.contains(&l_name) || on_names.contains(&r_name);
+
+                let block_left =
+                    is_in_on && (schema_left.contains(&l_name) || schema_left.contains(&r_name));
+                let block_right =
+                    is_in_on && (schema_right.contains(&l_name) || schema_right.contains(&r_name));
+                LeftRight(block_left | bleft, block_right | bright)
+            },
+            _ => join_produces_null(how),
         },
         _ => LeftRight(false, false),
     }
@@ -98,6 +116,16 @@ pub(super) fn process_join(
     let schema_left = lp_arena.get(input_left).schema(lp_arena);
     let schema_right = lp_arena.get(input_right).schema(lp_arena);
 
+    let on_names = left_on
+        .iter()
+        .flat_map(|n| aexpr_to_leaf_names_iter(*n, expr_arena))
+        .chain(
+            right_on
+                .iter()
+                .flat_map(|n| aexpr_to_leaf_names_iter(*n, expr_arena)),
+        )
+        .collect::<PlHashSet<_>>();
+
     let mut pushdown_left = init_hashmap(Some(acc_predicates.len()));
     let mut pushdown_right = init_hashmap(Some(acc_predicates.len()));
     let mut local_predicates = Vec::with_capacity(acc_predicates.len());
@@ -105,10 +133,26 @@ pub(super) fn process_join(
     for (_, predicate) in acc_predicates {
         // check if predicate can pass the joins node
         let block_pushdown_left = has_aexpr(predicate, expr_arena, |ae| {
-            should_block_join_specific(ae, &options.args.how).0
+            should_block_join_specific(
+                ae,
+                &options.args.how,
+                &on_names,
+                expr_arena,
+                &schema_left,
+                &schema_right,
+            )
+            .0
         });
         let block_pushdown_right = has_aexpr(predicate, expr_arena, |ae| {
-            should_block_join_specific(ae, &options.args.how).1
+            should_block_join_specific(
+                ae,
+                &options.args.how,
+                &on_names,
+                expr_arena,
+                &schema_left,
+                &schema_right,
+            )
+            .1
         });
 
         // these indicate to which tables we are going to push down the predicate

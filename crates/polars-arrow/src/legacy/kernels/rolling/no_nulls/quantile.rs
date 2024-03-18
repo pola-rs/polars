@@ -1,5 +1,3 @@
-use std::fmt::Debug;
-
 use num_traits::ToPrimitive;
 use polars_error::polars_ensure;
 use polars_utils::slice::GetSaferUnchecked;
@@ -37,7 +35,7 @@ impl<
         }
     }
 
-    unsafe fn update(&mut self, start: usize, end: usize) -> T {
+    unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
         let vals = self.sorted.update(start, end);
         let length = vals.len();
 
@@ -50,13 +48,13 @@ impl<
                 let float_idx_top = (length_f - 1.0) * self.prob;
                 let top_idx = float_idx_top.ceil() as usize;
                 return if idx == top_idx {
-                    unsafe { *vals.get_unchecked_release(idx) }
+                    Some(unsafe { *vals.get_unchecked_release(idx) })
                 } else {
                     let proportion = T::from(float_idx_top - idx as f64).unwrap();
                     let vi = unsafe { *vals.get_unchecked_release(idx) };
                     let vj = unsafe { *vals.get_unchecked_release(top_idx) };
 
-                    proportion * (vj - vi) + vi
+                    Some(proportion * (vj - vi) + vi)
                 };
             },
             Midpoint => {
@@ -66,11 +64,11 @@ impl<
 
                 let top_idx = ((length_f - 1.0) * self.prob).ceil() as usize;
                 return if top_idx == idx {
-                    // safety
+                    // SAFETY:
                     // we are in bounds
-                    unsafe { *vals.get_unchecked_release(idx) }
+                    Some(unsafe { *vals.get_unchecked_release(idx) })
                 } else {
-                    // safety
+                    // SAFETY:
                     // we are in bounds
                     let (mid, mid_plus_1) = unsafe {
                         (
@@ -79,7 +77,7 @@ impl<
                         )
                     };
 
-                    (mid + mid_plus_1) / (T::one() + T::one())
+                    Some((mid + mid_plus_1) / (T::one() + T::one()))
                 };
             },
             Nearest => {
@@ -93,9 +91,9 @@ impl<
             },
         };
 
-        // safety
+        // SAFETY:
         // we are in bounds
-        unsafe { *vals.get_unchecked_release(idx) }
+        Some(unsafe { *vals.get_unchecked_release(idx) })
     }
 }
 
@@ -261,7 +259,6 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::legacy::kernels::rolling::no_nulls::{rolling_max, rolling_min};
 
     #[test]
     fn test_rolling_median() {

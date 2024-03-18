@@ -18,13 +18,10 @@ use object_store::gcp::GoogleCloudStorageBuilder;
 pub use object_store::gcp::GoogleConfigKey;
 #[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
 use object_store::ClientOptions;
-#[cfg(feature = "cloud")]
-use object_store::ObjectStore;
 #[cfg(any(feature = "aws", feature = "gcp", feature = "azure"))]
 use object_store::{BackoffConfig, RetryConfig};
 #[cfg(feature = "aws")]
 use once_cell::sync::Lazy;
-use polars_core::error::{PolarsError, PolarsResult};
 use polars_error::*;
 #[cfg(feature = "aws")]
 use polars_utils::cache::FastFixedCache;
@@ -37,6 +34,8 @@ use smartstring::alias::String as SmartString;
 #[cfg(feature = "cloud")]
 use url::Url;
 
+#[cfg(feature = "aws")]
+use crate::pl_async::with_concurrency_budget;
 #[cfg(feature = "aws")]
 use crate::utils::resolve_homedir;
 
@@ -170,9 +169,9 @@ pub(super) fn get_client_options() -> ClientOptions {
         // We set request timeout super high as the timeout isn't reset at ACK,
         // but starts from the moment we start downloading a body.
         // https://docs.rs/reqwest/latest/reqwest/struct.ClientBuilder.html#method.timeout
-        .with_timeout(std::time::Duration::from_secs(60 * 5))
-        // Concurrency can increase connection latency, so also set high.
-        .with_connect_timeout(std::time::Duration::from_secs(30))
+        .with_timeout_disabled()
+        // Concurrency can increase connection latency, so set to None, similar to default.
+        .with_connect_timeout_disabled()
         .with_allow_http(true)
 }
 
@@ -225,9 +224,9 @@ impl CloudOptions {
         self
     }
 
-    /// Build the [`ObjectStore`] implementation for AWS.
+    /// Build the [`object_store::ObjectStore`] implementation for AWS.
     #[cfg(feature = "aws")]
-    pub async fn build_aws(&self, url: &str) -> PolarsResult<impl ObjectStore> {
+    pub async fn build_aws(&self, url: &str) -> PolarsResult<impl object_store::ObjectStore> {
         let options = self.aws.as_ref();
         let mut builder = AmazonS3Builder::from_env().with_url(url);
         if let Some(options) = options {
@@ -284,13 +283,16 @@ impl CloudOptions {
                         builder = builder.with_config(AmazonS3ConfigKey::Region, "us-east-1");
                     } else {
                         polars_warn!("'(default_)region' not set; polars will try to get it from bucket\n\nSet the region manually to silence this warning.");
-                        let result = reqwest::Client::builder()
-                            .build()
-                            .unwrap()
-                            .head(format!("https://{bucket}.s3.amazonaws.com"))
-                            .send()
-                            .await
-                            .map_err(to_compute_err)?;
+                        let result = with_concurrency_budget(1, || async {
+                            reqwest::Client::builder()
+                                .build()
+                                .unwrap()
+                                .head(format!("https://{bucket}.s3.amazonaws.com"))
+                                .send()
+                                .await
+                                .map_err(to_compute_err)
+                        })
+                        .await?;
                         if let Some(region) = result.headers().get("x-amz-bucket-region") {
                             let region =
                                 std::str::from_utf8(region.as_bytes()).map_err(to_compute_err)?;
@@ -325,9 +327,9 @@ impl CloudOptions {
         self
     }
 
-    /// Build the [`ObjectStore`] implementation for Azure.
+    /// Build the [`object_store::ObjectStore`] implementation for Azure.
     #[cfg(feature = "azure")]
-    pub fn build_azure(&self, url: &str) -> PolarsResult<impl ObjectStore> {
+    pub fn build_azure(&self, url: &str) -> PolarsResult<impl object_store::ObjectStore> {
         let options = self.azure.as_ref();
         let mut builder = MicrosoftAzureBuilder::from_env();
         if let Some(options) = options {
@@ -359,9 +361,9 @@ impl CloudOptions {
         self
     }
 
-    /// Build the [`ObjectStore`] implementation for GCP.
+    /// Build the [`object_store::ObjectStore`] implementation for GCP.
     #[cfg(feature = "gcp")]
-    pub fn build_gcp(&self, url: &str) -> PolarsResult<impl ObjectStore> {
+    pub fn build_gcp(&self, url: &str) -> PolarsResult<impl object_store::ObjectStore> {
         let options = self.gcp.as_ref();
         let mut builder = GoogleCloudStorageBuilder::from_env();
         if let Some(options) = options {

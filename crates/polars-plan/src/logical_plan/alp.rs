@@ -1,18 +1,12 @@
 use std::borrow::Cow;
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use polars_core::prelude::*;
-use polars_utils::arena::{Arena, Node};
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::unitvec;
 
 use super::projection_expr::*;
-use crate::logical_plan::functions::FunctionNode;
-use crate::logical_plan::schema::FileInfo;
-use crate::logical_plan::FileScan;
 use crate::prelude::*;
-use crate::utils::PushNode;
 
 /// [`ALogicalPlan`] is a representation of [`LogicalPlan`] with [`Node`]s which are allocated in an [`Arena`]
 #[derive(Clone, Debug)]

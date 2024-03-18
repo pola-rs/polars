@@ -1,26 +1,23 @@
 //! Read parquet files in parallel from the Object Store without a third party crate.
 use std::ops::Range;
-use std::sync::Arc;
 
 use arrow::datatypes::ArrowSchemaRef;
 use bytes::Bytes;
 use object_store::path::Path as ObjectPath;
-use object_store::ObjectStore;
 use polars_core::config::{get_rg_prefetch_size, verbose};
-use polars_core::datatypes::PlHashMap;
-use polars_core::error::{to_compute_err, PolarsResult};
+use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
-use polars_parquet::read::{self as parquet2_read, RowGroupMetaData};
+use polars_parquet::read::RowGroupMetaData;
 use polars_parquet::write::FileMetaData;
 use smartstring::alias::String as SmartString;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::Mutex;
 
-use super::cloud::{build_object_store, CloudLocation, CloudReader};
+use super::cloud::{build_object_store, CloudLocation};
 use super::mmap::ColumnStore;
-use crate::cloud::CloudOptions;
+use crate::cloud::{CloudOptions, PolarsObjectStore};
 use crate::parquet::read_impl::compute_row_group_range;
-use crate::pl_async::{get_runtime, with_concurrency_budget, MAX_BUDGET_PER_REQUEST};
+use crate::pl_async::get_runtime;
 use crate::predicates::PhysicalIoExpr;
 use crate::prelude::predicates::read_this_row_group;
 
@@ -29,9 +26,9 @@ type QueuePayload = (usize, DownloadedRowGroup);
 type QueueSend = Arc<Sender<PolarsResult<QueuePayload>>>;
 
 pub struct ParquetObjectStore {
-    store: Arc<dyn ObjectStore>,
+    store: PolarsObjectStore,
     path: ObjectPath,
-    length: Option<u64>,
+    length: Option<usize>,
     metadata: Option<Arc<FileMetaData>>,
 }
 
@@ -41,61 +38,42 @@ impl ParquetObjectStore {
         options: Option<&CloudOptions>,
         metadata: Option<Arc<FileMetaData>>,
     ) -> PolarsResult<Self> {
-        let (CloudLocation { prefix, .. }, store) = build_object_store(uri, options).await?;
+        let (
+            CloudLocation {
+                prefix, expansion, ..
+            },
+            store,
+        ) = build_object_store(uri, options).await?;
+
+        // Any wildcards should already have been resolved here. Without this assertion they would
+        // be ignored.
+        debug_assert!(expansion.is_none(), "path should not contain wildcards");
+        let path = ObjectPath::from_url_path(prefix).map_err(to_compute_err)?;
 
         Ok(ParquetObjectStore {
-            store,
-            path: ObjectPath::from_url_path(prefix).map_err(to_compute_err)?,
+            store: PolarsObjectStore::new(store),
+            path,
             length: None,
             metadata,
         })
     }
 
     async fn get_range(&self, start: usize, length: usize) -> PolarsResult<Bytes> {
-        with_concurrency_budget(1, || async {
-            self.store
-                .get_range(&self.path, start..start + length)
-                .await
-                .map_err(to_compute_err)
-        })
-        .await
+        self.store
+            .get_range(&self.path, start..start + length)
+            .await
     }
 
     async fn get_ranges(&self, ranges: &[Range<usize>]) -> PolarsResult<Vec<Bytes>> {
-        // Object-store has a maximum of 10 concurrent.
-        with_concurrency_budget(
-            (ranges.len() as u32).clamp(0, MAX_BUDGET_PER_REQUEST as u32),
-            || async {
-                self.store
-                    .get_ranges(&self.path, ranges)
-                    .await
-                    .map_err(to_compute_err)
-            },
-        )
-        .await
+        self.store.get_ranges(&self.path, ranges).await
     }
 
     /// Initialize the length property of the object, unless it has already been fetched.
-    async fn initialize_length(&mut self) -> PolarsResult<()> {
-        if self.length.is_some() {
-            return Ok(());
+    async fn length(&mut self) -> PolarsResult<usize> {
+        if self.length.is_none() {
+            self.length = Some(self.store.head(&self.path).await?.size);
         }
-        self.length = Some(
-            self.store
-                .head(&self.path)
-                .await
-                .map_err(to_compute_err)?
-                .size as u64,
-        );
-        Ok(())
-    }
-
-    pub async fn schema(&mut self) -> PolarsResult<ArrowSchemaRef> {
-        let metadata = self.get_metadata().await?;
-
-        let arrow_schema = parquet2_read::infer_schema(metadata)?;
-
-        Ok(Arc::new(arrow_schema))
+        Ok(self.length.unwrap())
     }
 
     /// Number of rows in the parquet file.
@@ -106,15 +84,8 @@ impl ParquetObjectStore {
 
     /// Fetch the metadata of the parquet file, do not memoize it.
     async fn fetch_metadata(&mut self) -> PolarsResult<FileMetaData> {
-        self.initialize_length().await?;
-        let object_store = self.store.clone();
-        let path = self.path.clone();
-        let length = self.length;
-        let mut reader = CloudReader::new(length, object_store, path);
-
-        parquet2_read::read_metadata_async(&mut reader)
-            .await
-            .map_err(to_compute_err)
+        let length = self.length().await?;
+        fetch_metadata(&self.store, &self.path, length).await
     }
 
     /// Fetch and memoize the metadata of the parquet file.
@@ -124,6 +95,79 @@ impl ParquetObjectStore {
         }
         Ok(self.metadata.as_ref().unwrap())
     }
+}
+
+fn read_n<const N: usize>(reader: &mut &[u8]) -> Option<[u8; N]> {
+    if N <= reader.len() {
+        let (head, tail) = reader.split_at(N);
+        *reader = tail;
+        Some(head.try_into().unwrap())
+    } else {
+        None
+    }
+}
+
+fn read_i32le(reader: &mut &[u8]) -> Option<i32> {
+    read_n(reader).map(i32::from_le_bytes)
+}
+
+/// Asynchronously reads the files' metadata
+pub async fn fetch_metadata(
+    store: &PolarsObjectStore,
+    path: &ObjectPath,
+    file_byte_length: usize,
+) -> PolarsResult<FileMetaData> {
+    let footer_header_bytes = store
+        .get_range(
+            path,
+            file_byte_length
+                .checked_sub(polars_parquet::parquet::FOOTER_SIZE as usize)
+                .ok_or_else(|| {
+                    polars_parquet::parquet::error::Error::OutOfSpec(
+                        "not enough bytes to contain parquet footer".to_string(),
+                    )
+                })?..file_byte_length,
+        )
+        .await?;
+
+    let footer_byte_length: usize = {
+        let reader = &mut footer_header_bytes.as_ref();
+        let footer_byte_size = read_i32le(reader).unwrap();
+        let magic = read_n(reader).unwrap();
+        debug_assert!(reader.is_empty());
+        if magic != polars_parquet::parquet::PARQUET_MAGIC {
+            return Err(polars_parquet::parquet::error::Error::OutOfSpec(
+                "incorrect magic in parquet footer".to_string(),
+            )
+            .into());
+        }
+        footer_byte_size.try_into().map_err(|_| {
+            polars_parquet::parquet::error::Error::OutOfSpec(
+                "negative footer byte length".to_string(),
+            )
+        })?
+    };
+
+    let footer_bytes = store
+        .get_range(
+            path,
+            file_byte_length
+                .checked_sub(polars_parquet::parquet::FOOTER_SIZE as usize + footer_byte_length)
+                .ok_or_else(|| {
+                    polars_parquet::parquet::error::Error::OutOfSpec(
+                        "not enough bytes to contain parquet footer".to_string(),
+                    )
+                })?..file_byte_length,
+        )
+        .await?;
+
+    Ok(polars_parquet::parquet::read::deserialize_metadata(
+        std::io::Cursor::new(footer_bytes.as_ref()),
+        // TODO: Describe why this makes sense. Taken from the previous
+        // implementation which said "a highly nested but sparse struct could
+        // result in many allocations".
+        footer_bytes.as_ref().len() * 2 + 1024,
+    )?)
 }
 
 /// Download rowgroups for the column whose indexes are given in `projection`.

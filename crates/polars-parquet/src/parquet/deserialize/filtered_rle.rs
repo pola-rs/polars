@@ -88,7 +88,7 @@ impl<'a, I: Iterator<Item = Result<HybridEncoded<'a>, Error>>> FilteredHybridBit
     }
 
     /// Returns the number of elements remaining. Note that each run
-    /// of the iterator contains more than one element - this is is _not_ equivalent to size_hint.
+    /// of the iterator contains more than one element - this is _not_ equivalent to size_hint.
     pub fn len(&self) -> usize {
         self.total_items
     }

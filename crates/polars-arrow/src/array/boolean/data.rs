@@ -15,7 +15,7 @@ impl Arrow2Arrow for BooleanArray {
             .buffers(vec![buffer.into_inner().into_inner()])
             .nulls(self.validity.as_ref().map(|b| b.clone().into()));
 
-        // Safety: Array is valid
+        // SAFETY: Array is valid
         unsafe { builder.build_unchecked() }
     }
 

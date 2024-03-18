@@ -189,15 +189,13 @@ impl ParsedBuffer for Utf8Field {
             return Ok(());
         }
 
-        let parse_result = validate_utf8(bytes);
-
         // note that one branch writes without updating the length, so we must do that later.
-        let bytes = if needs_escaping {
+        let escaped_bytes = if needs_escaping {
             self.scratch.clear();
             self.scratch.reserve(bytes.len());
             polars_ensure!(bytes.len() > 1, ComputeError: "invalid csv file\n\nField `{}` is not properly escaped.", std::str::from_utf8(bytes).map_err(to_compute_err)?);
 
-            // Safety:
+            // SAFETY:
             // we just allocated enough capacity and data_len is correct.
             unsafe {
                 let n_written =
@@ -209,20 +207,29 @@ impl ParsedBuffer for Utf8Field {
             bytes
         };
 
+        // It is important that this happens after escaping, as invalid escaped string can produce
+        // invalid utf8.
+        let parse_result = validate_utf8(escaped_bytes);
+
         match parse_result {
             true => {
-                let value = unsafe { std::str::from_utf8_unchecked(bytes) };
+                let value = unsafe { std::str::from_utf8_unchecked(escaped_bytes) };
                 self.mutable.push_value(value)
             },
             false => {
                 if matches!(self.encoding, CsvEncoding::LossyUtf8) {
                     // TODO! do this without allocating
-                    let s = String::from_utf8_lossy(bytes);
+                    let s = String::from_utf8_lossy(escaped_bytes);
                     self.mutable.push_value(s.as_ref())
                 } else if ignore_errors {
                     self.mutable.push_null()
                 } else {
-                    polars_bail!(ComputeError: "invalid utf-8 sequence");
+                    // If field before escaping is valid utf8, the escaping is incorrect.
+                    if needs_escaping && validate_utf8(bytes) {
+                        polars_bail!(ComputeError: "string field is not properly escaped");
+                    } else {
+                        polars_bail!(ComputeError: "invalid utf-8 sequence");
+                    }
                 }
             },
         }
@@ -279,7 +286,7 @@ impl CategoricalField {
                 polars_ensure!(bytes.len() > 1, ComputeError: "invalid csv file\n\nField `{}` is not properly escaped.", std::str::from_utf8(bytes).map_err(to_compute_err)?);
                 self.escape_scratch.clear();
                 self.escape_scratch.reserve(bytes.len());
-                // Safety:
+                // SAFETY:
                 // we just allocated enough capacity and data_len is correct.
                 unsafe {
                     let n_written = escape_field(
@@ -290,12 +297,12 @@ impl CategoricalField {
                     self.escape_scratch.set_len(n_written);
                 }
 
-                // safety:
+                // SAFETY:
                 // just did utf8 check
                 let key = unsafe { std::str::from_utf8_unchecked(&self.escape_scratch) };
                 self.builder.append_value(key);
             } else {
-                // safety:
+                // SAFETY:
                 // just did utf8 check
                 unsafe {
                     self.builder
@@ -371,7 +378,7 @@ where
     DatetimeInfer<T>: TryFromWithUnit<Pattern>,
 {
     let val = if bytes.is_ascii() {
-        // Safety:
+        // SAFETY:
         // we just checked it is ascii
         unsafe { std::str::from_utf8_unchecked(bytes) }
     } else {

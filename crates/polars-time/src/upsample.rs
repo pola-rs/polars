@@ -46,7 +46,10 @@ pub trait PolarsUpsample {
         offset: Duration,
     ) -> PolarsResult<DataFrame>;
 
-    /// Upsample a DataFrame at a regular frequency.
+    /// Upsample a [`DataFrame`] at a regular frequency.
+    ///
+    /// Similar to [`upsample`][PolarsUpsample::upsample], but order of the
+    /// DataFrame is maintained when `by` is specified.
     ///
     /// # Arguments
     /// * `by` - First group by these columns and then upsample for every group

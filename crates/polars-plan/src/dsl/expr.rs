@@ -6,7 +6,6 @@ use polars_core::prelude::*;
 use serde::{Deserialize, Serialize};
 
 pub use super::expr_dyn_fn::*;
-use crate::dsl::function_expr::FunctionExpr;
 use crate::prelude::*;
 
 #[derive(PartialEq, Clone)]

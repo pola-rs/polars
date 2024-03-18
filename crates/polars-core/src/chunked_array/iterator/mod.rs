@@ -3,7 +3,6 @@ use arrow::array::*;
 use crate::prelude::*;
 #[cfg(feature = "dtype-struct")]
 use crate::series::iterator::SeriesIter;
-use crate::utils::CustomIterTools;
 
 pub mod par;
 
@@ -453,7 +452,7 @@ impl<'a> Iterator for StructIter<'a> {
         for it in &mut self.field_iter {
             self.buf.push(it.next()?);
         }
-        // Safety:
+        // SAFETY:
         // Lifetime is bound to struct, we just cannot set the lifetime for the iterator trait
         unsafe {
             Some(std::mem::transmute::<&'_ [AnyValue], &'a [AnyValue]>(

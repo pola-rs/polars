@@ -1,6 +1,6 @@
 use std::any::Any;
 
-use arrow::array::{ArrayRef, BinaryArray};
+use arrow::array::BinaryArray;
 use polars_core::prelude::sort::_broadcast_descending;
 use polars_core::prelude::sort::arg_sort_multiple::_get_rows_encoded_compat_array;
 use polars_core::prelude::*;
@@ -81,7 +81,7 @@ fn finalize_dataframe(
             assert_eq!(encoded.chunks().len(), 1);
             let arr = encoded.downcast_iter().next().unwrap();
 
-            // safety
+            // SAFETY:
             // temporary extend lifetime
             // this is safe as the lifetime in rows stays bound to this scope
             let arrays = {
@@ -230,7 +230,7 @@ impl SortSinkMultiple {
         };
 
         debug_assert_eq!(column.chunks().len(), 1);
-        // Safety: length is correct
+        // SAFETY: length is correct
         unsafe { chunk.data.with_column_unchecked(column) };
         Ok(())
     }
@@ -300,7 +300,7 @@ impl Sink for SortSinkMultiple {
                 output_schema: self.output_schema.clone(),
             }))),
             // SortSink should not produce this branch
-            FinalizedSink::Operator(_) => unreachable!(),
+            FinalizedSink::Operator => unreachable!(),
         }
     }
 

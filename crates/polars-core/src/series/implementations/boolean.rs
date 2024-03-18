@@ -1,19 +1,8 @@
-use std::borrow::Cow;
-use std::ops::{BitAnd, BitOr, BitXor};
-
-use ahash::RandomState;
-
-use super::{private, IntoSeries, SeriesTrait, *};
+use super::*;
 use crate::chunked_array::comparison::*;
-use crate::chunked_array::ops::compare_inner::{
-    IntoTotalEqInner, IntoTotalOrdInner, TotalEqInner, TotalOrdInner,
-};
-use crate::chunked_array::ops::explode::ExplodeByOffsets;
-use crate::chunked_array::{AsSinglePtr, ChunkIdIter};
 #[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::*;
 use crate::prelude::*;
-use crate::series::implementations::SeriesWrap;
 
 impl private::PrivateSeries for SeriesWrap<BooleanChunked> {
     fn compute_len(&mut self) {
@@ -309,5 +298,8 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
     }
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
+    }
+    fn as_any(&self) -> &dyn Any {
+        &self.0
     }
 }

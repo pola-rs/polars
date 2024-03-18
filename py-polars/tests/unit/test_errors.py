@@ -464,7 +464,7 @@ def test_with_column_duplicates() -> None:
     df = pl.DataFrame({"a": [0, None, 2, 3, None], "b": [None, 1, 2, 3, None]})
     with pytest.raises(
         pl.ComputeError,
-        match=r"The name: 'same' passed to `LazyFrame.with_columns` is duplicate",
+        match=r"the name: 'same' passed to `LazyFrame.with_columns` is duplicate.*",
     ):
         assert df.with_columns([pl.all().alias("same")]).columns == ["a", "b", "same"]
 
@@ -512,7 +512,8 @@ def test_err_on_invalid_time_zone_cast() -> None:
 def test_invalid_inner_type_cast_list() -> None:
     s = pl.Series([[-1, 1]])
     with pytest.raises(
-        pl.ComputeError, match=r"cannot cast List inner type: 'Int64' to Categorical"
+        pl.InvalidOperationError,
+        match=r"cannot cast List inner type: 'Int64' to Categorical",
     ):
         s.cast(pl.List(pl.Categorical))
 
@@ -699,3 +700,17 @@ def test_error_lazyframe_not_repeating() -> None:
 
     match = "Error originated just after this operation:"
     assert str(exc_info).count(match) == 1
+
+
+def test_raise_not_found_in_simplify_14974() -> None:
+    df = pl.DataFrame()
+    with pytest.raises(pl.ColumnNotFoundError):
+        df.select(1 / (1 + pl.col("a")))
+
+
+def test_invalid_product_type() -> None:
+    with pytest.raises(
+        pl.InvalidOperationError,
+        match="`product` operation not supported for dtype",
+    ):
+        pl.Series([[1, 2, 3]]).product()

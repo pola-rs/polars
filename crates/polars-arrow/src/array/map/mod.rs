@@ -111,6 +111,7 @@ impl MapArray {
     }
 
     /// Returns a slice of this [`MapArray`].
+    ///
     /// # Safety
     /// The caller must ensure that `offset + length < self.len()`.
     #[inline]
@@ -168,6 +169,7 @@ impl MapArray {
     }
 
     /// Returns the element at index `i`.
+    ///
     /// # Safety
     /// Assumes that the `i < self.len`.
     #[inline]

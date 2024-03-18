@@ -45,6 +45,7 @@ impl<'a> UnstableSeries<'a> {
     }
 
     /// Creates a new `[UnsafeSeries]`
+    ///
     /// # Safety
     /// Inner chunks must be from `Series` otherwise the dtype may be incorrect and lead to UB.
     #[inline]

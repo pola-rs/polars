@@ -297,6 +297,38 @@ def test_horizontal_sum_null_to_identity() -> None:
     ).to_series().to_list() == [11, 5]
 
 
+def test_horizontal_sum_bool_dtype() -> None:
+    out = pl.DataFrame({"a": [True, False]}).select(pl.sum_horizontal("a"))
+    assert_frame_equal(out, pl.DataFrame({"a": pl.Series([1, 0], dtype=pl.UInt32)}))
+
+
+def test_horizontal_sum_in_groupby_15102() -> None:
+    nbr_records = 1000
+    out = (
+        pl.LazyFrame(
+            {
+                "x": [None, "two", None] * nbr_records,
+                "y": ["one", "two", None] * nbr_records,
+                "z": [None, "two", None] * nbr_records,
+            }
+        )
+        .select(pl.sum_horizontal(pl.all().is_null()).alias("num_null"))
+        .group_by("num_null")
+        .len()
+        .sort(by="num_null")
+        .collect()
+    )
+    assert_frame_equal(
+        out,
+        pl.DataFrame(
+            {
+                "num_null": pl.Series([0, 2, 3], dtype=pl.UInt32),
+                "len": pl.Series([nbr_records] * 3, dtype=pl.UInt32),
+            }
+        ),
+    )
+
+
 def test_first_last_unit_length_12363() -> None:
     df = pl.DataFrame(
         {
@@ -398,3 +430,44 @@ def test_agg_filter_over_empty_df_13610() -> None:
     out = df.group_by("a").agg(pl.col("b").filter(pl.col("b").shift()))
     expected = pl.DataFrame(schema={"a": pl.Int64, "b": pl.List(pl.Boolean)})
     assert_frame_equal(out, expected)
+
+
+@pytest.mark.slow()
+def test_agg_empty_sum_after_filter_14734() -> None:
+    f = (
+        pl.DataFrame({"a": [1, 2], "b": [1, 2]})
+        .lazy()
+        .group_by("a")
+        .agg(pl.col("b").filter(pl.lit(False)).sum())
+        .collect
+    )
+
+    last = f()
+
+    # We need both possible output orders, which should happen within
+    # 1000 iterations (during testing it usually happens within 10).
+    limit = 1000
+    i = 0
+    while (curr := f()).equals(last):
+        i += 1
+        assert i != limit
+
+    expect = pl.Series("b", [0, 0]).to_frame()
+    assert_frame_equal(expect, last.select("b"))
+    assert_frame_equal(expect, curr.select("b"))
+
+
+@pytest.mark.slow()
+def test_grouping_hash_14749() -> None:
+    n_groups = 251
+    rows_per_group = 4
+    assert (
+        pl.DataFrame(
+            {
+                "grp": np.repeat(np.arange(n_groups), rows_per_group),
+                "x": np.tile(np.arange(rows_per_group), n_groups),
+            }
+        )
+        .select(pl.col("x").max().over("grp"))["x"]
+        .value_counts()
+    ).to_dict(as_series=False) == {"x": [3], "count": [1004]}

@@ -25,9 +25,9 @@ def assert_zero_copy(s: pl.Series, arr: np.ndarray[Any, Any]) -> None:
     assert s_ptr == arr_ptr
 
 
-def assert_zero_copy_only_raises(s: pl.Series) -> None:
+def assert_allow_copy_false_raises(s: pl.Series) -> None:
     with pytest.raises(ValueError, match="cannot return a zero-copy array"):
-        s.to_numpy(use_pyarrow=False, zero_copy_only=True)
+        s.to_numpy(use_pyarrow=False, allow_copy=False)
 
 
 @pytest.mark.parametrize(
@@ -48,8 +48,8 @@ def assert_zero_copy_only_raises(s: pl.Series) -> None:
 def test_series_to_numpy_numeric_zero_copy(
     dtype: pl.PolarsDataType, expected_dtype: npt.DTypeLike
 ) -> None:
-    s = pl.Series([1, 2, 3]).cast(dtype)  # =dtype, strict=False)
-    result = s.to_numpy(use_pyarrow=False, zero_copy_only=True)
+    s = pl.Series([1, 2, 3]).cast(dtype)
+    result = s.to_numpy(use_pyarrow=False, allow_copy=False)
 
     assert_zero_copy(s, result)
     assert result.tolist() == s.to_list()
@@ -80,7 +80,7 @@ def test_series_to_numpy_numeric_with_nulls(
     assert result.tolist()[:-1] == s.to_list()[:-1]
     assert np.isnan(result[-1])
     assert result.dtype == expected_dtype
-    assert_zero_copy_only_raises(s)
+    assert_allow_copy_false_raises(s)
 
 
 @pytest.mark.parametrize(
@@ -101,7 +101,7 @@ def test_series_to_numpy_temporal_zero_copy(
 ) -> None:
     values = [0, 2_000, 1_000_000]
     s = pl.Series(values, dtype=dtype, strict=False)
-    result = s.to_numpy(use_pyarrow=False, zero_copy_only=True)
+    result = s.to_numpy(use_pyarrow=False, allow_copy=False)
 
     assert_zero_copy(s, result)
     # NumPy tolist returns integers for ns precision
@@ -115,7 +115,7 @@ def test_series_to_numpy_temporal_zero_copy(
 def test_series_to_numpy_datetime_with_tz_zero_copy() -> None:
     values = [datetime(1970, 1, 1), datetime(2024, 2, 28)]
     s = pl.Series(values).dt.convert_time_zone("Europe/Amsterdam")
-    result = s.to_numpy(use_pyarrow=False, zero_copy_only=True)
+    result = s.to_numpy(use_pyarrow=False, allow_copy=False)
 
     assert_zero_copy(s, result)
     assert result.tolist() == values
@@ -130,7 +130,7 @@ def test_series_to_numpy_date() -> None:
 
     assert s.to_list() == result.tolist()
     assert result.dtype == np.dtype("datetime64[D]")
-    assert_zero_copy_only_raises(s)
+    assert_allow_copy_false_raises(s)
 
 
 @pytest.mark.parametrize(
@@ -159,7 +159,7 @@ def test_series_to_numpy_temporal_with_nulls(
     else:
         assert result.tolist() == s.to_list()
     assert result.dtype == expected_dtype
-    assert_zero_copy_only_raises(s)
+    assert_allow_copy_false_raises(s)
 
 
 def test_series_to_numpy_datetime_with_tz_with_nulls() -> None:
@@ -169,7 +169,7 @@ def test_series_to_numpy_datetime_with_tz_with_nulls() -> None:
 
     assert result.tolist() == values
     assert result.dtype == np.dtype("datetime64[us]")
-    assert_zero_copy_only_raises(s)
+    assert_allow_copy_false_raises(s)
 
 
 @pytest.mark.parametrize(
@@ -199,7 +199,7 @@ def test_to_numpy_object_dtypes(
 
     assert result.tolist() == values
     assert result.dtype == np.object_
-    assert_zero_copy_only_raises(s)
+    assert_allow_copy_false_raises(s)
 
 
 def test_series_to_numpy_bool() -> None:
@@ -208,7 +208,7 @@ def test_series_to_numpy_bool() -> None:
 
     assert s.to_list() == result.tolist()
     assert result.dtype == np.bool_
-    assert_zero_copy_only_raises(s)
+    assert_allow_copy_false_raises(s)
 
 
 def test_series_to_numpy_bool_with_nulls() -> None:
@@ -217,7 +217,7 @@ def test_series_to_numpy_bool_with_nulls() -> None:
 
     assert s.to_list() == result.tolist()
     assert result.dtype == np.object_
-    assert_zero_copy_only_raises(s)
+    assert_allow_copy_false_raises(s)
 
 
 def test_series_to_numpy_array_of_int() -> None:
@@ -249,7 +249,7 @@ def test_series_to_numpy_array_with_nulls() -> None:
     expected = np.array([[1.0, 2.0], [3.0, 4.0], [np.nan, np.nan]])
     assert_array_equal(result, expected)
     assert result.dtype == np.float64
-    assert_zero_copy_only_raises(s)
+    assert_allow_copy_false_raises(s)
 
 
 def test_to_numpy_null() -> None:
@@ -258,12 +258,12 @@ def test_to_numpy_null() -> None:
     expected = np.array([np.nan, np.nan], dtype=np.float32)
     assert_array_equal(result, expected)
     assert result.dtype == np.float32
-    assert_zero_copy_only_raises(s)
+    assert_allow_copy_false_raises(s)
 
 
 def test_to_numpy_empty() -> None:
     s = pl.Series(dtype=pl.String)
-    result = s.to_numpy(use_pyarrow=False, zero_copy_only=True)
+    result = s.to_numpy(use_pyarrow=False, allow_copy=False)
     assert result.dtype == np.object_
     assert result.shape == (0,)
     assert result.size == 0
@@ -278,7 +278,15 @@ def test_to_numpy_chunked() -> None:
 
     assert result.tolist() == s.to_list()
     assert result.dtype == np.int64
-    assert_zero_copy_only_raises(s)
+    assert_allow_copy_false_raises(s)
+
+
+def test_zero_copy_only_deprecated() -> None:
+    values = [1, 2]
+    s = pl.Series([1, 2])
+    with pytest.deprecated_call():
+        result = s.to_numpy(zero_copy_only=True)
+    assert result.tolist() == values
 
 
 def test_series_to_numpy_temporal() -> None:
@@ -372,7 +380,8 @@ def test_to_numpy2(
 
 def test_view() -> None:
     s = pl.Series("a", [1.0, 2.5, 3.0])
-    result = s._view()
+    with pytest.deprecated_call():
+        result = s.view()
     assert isinstance(result, np.ndarray)
     assert np.all(result == np.array([1.0, 2.5, 3.0]))
 
@@ -380,27 +389,22 @@ def test_view() -> None:
 def test_view_nulls() -> None:
     s = pl.Series("b", [1, 2, None])
     assert s.has_validity()
-    with pytest.raises(AssertionError):
-        s._view()
+    with pytest.deprecated_call(), pytest.raises(AssertionError):
+        s.view()
 
 
 def test_view_nulls_sliced() -> None:
     s = pl.Series("b", [1, 2, None])
     sliced = s[:2]
-    assert np.all(sliced._view() == np.array([1, 2]))
+    with pytest.deprecated_call():
+        view = sliced.view()
+    assert np.all(view == np.array([1, 2]))
     assert not sliced.has_validity()
 
 
 def test_view_ub() -> None:
     # this would be UB if the series was dropped and not passed to the view
     s = pl.Series([3, 1, 5])
-    result = s.sort()._view()
-    assert np.sum(result) == 9
-
-
-def test_view_deprecated() -> None:
-    s = pl.Series("a", [1.0, 2.5, 3.0])
     with pytest.deprecated_call():
-        result = s.view()
-    assert isinstance(result, np.ndarray)
-    assert np.all(result == np.array([1.0, 2.5, 3.0]))
+        result = s.sort().view()
+    assert np.sum(result) == 9

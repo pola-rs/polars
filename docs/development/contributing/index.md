@@ -128,7 +128,7 @@ When you have resolved your issue, [open a pull request](https://docs.github.com
 Please adhere to the following guidelines:
 
 - Start your pull request title with a [conventional commit](https://www.conventionalcommits.org/) tag. This helps us add your contribution to the right section of the changelog. We use the [Angular convention](https://github.com/angular/angular/blob/22b96b9/CONTRIBUTING.md#type). Scope can be `rust` and/or `python`, depending on your contribution.
-- Use a descriptive title. This text will end up in the [changelog](https://github.com/pola-rs/polars/releases).
+- Use a descriptive title starting with an uppercase letter. This text will end up in the [changelog](https://github.com/pola-rs/polars/releases).
 - In the pull request description, [link](https://docs.github.com/en/issues/tracking-your-work-with-issues/linking-a-pull-request-to-an-issue) to the issue you were working on.
 - Add any relevant information to the description that you think may help the maintainers review your code.
 - Make sure your branch is [rebased](https://docs.github.com/en/get-started/using-git/about-git-rebase) against the latest version of the `main` branch.

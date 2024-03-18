@@ -1,7 +1,4 @@
 use std::marker::PhantomData;
-use std::sync::Arc;
-
-use arrow::bitmap::MutableBitmap;
 
 use super::*;
 use crate::chunked_array::object::registry::{AnonymousObjectBuilder, ObjectRegistry};
@@ -194,7 +191,7 @@ pub(crate) fn object_series_to_arrow_array(s: &Series) -> ArrayRef {
     // The list builder knows how to create an arrow array
     // we simply piggy back on that code.
 
-    // safety: 0..len is in bounds
+    // SAFETY: 0..len is in bounds
     let list_s = unsafe {
         s.agg_list(&GroupsProxy::Slice {
             groups: vec![[0, s.len() as IdxSize]],

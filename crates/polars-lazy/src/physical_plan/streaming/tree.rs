@@ -1,11 +1,7 @@
 use std::collections::BTreeSet;
 use std::fmt::Debug;
 
-#[cfg(debug_assertions)]
 use polars_plan::prelude::*;
-#[cfg(debug_assertions)]
-use polars_utils::arena::Arena;
-use polars_utils::arena::Node;
 
 #[derive(Copy, Clone, Debug)]
 pub(super) enum PipelineNode {
@@ -58,10 +54,6 @@ impl Branch {
         // so the first sink is the final one.
         self.operators_sinks.iter().find_map(sink_node)
     }
-    pub(super) fn iter_sinks(&self) -> impl Iterator<Item = Node> + '_ {
-        self.operators_sinks.iter().flat_map(sink_node)
-    }
-
     pub(super) fn split(&self) -> Self {
         Self {
             execution_id: self.execution_id,

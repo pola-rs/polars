@@ -11,6 +11,7 @@ import pytest
 
 import polars
 import polars as pl
+from polars._utils.construction import iterable_to_pyseries
 from polars.datatypes import (
     Date,
     Datetime,
@@ -29,14 +30,13 @@ from polars.datatypes import (
 )
 from polars.exceptions import ComputeError, PolarsInefficientMapWarning, ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
-from polars.utils._construction import iterable_to_pyseries
 
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
 
     from polars.type_aliases import EpochTimeUnit, PolarsDataType, TimeUnit
 else:
-    from polars.utils.convert import get_zoneinfo as ZoneInfo
+    from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
 
 def test_cum_agg() -> None:
@@ -379,6 +379,23 @@ def test_date_agg() -> None:
     )
     assert series.min() == date(2022, 8, 2)
     assert series.max() == date(9009, 9, 9)
+
+
+@pytest.mark.parametrize(
+    ("s", "min", "max"),
+    [
+        (pl.Series(["c", "b", "a"], dtype=pl.Categorical("lexical")), "a", "c"),
+        (pl.Series(["a", "c", "b"], dtype=pl.Categorical), "a", "b"),
+        (pl.Series([None, "a", "c", "b"], dtype=pl.Categorical("lexical")), "a", "c"),
+        (pl.Series([None, "c", "a", "b"], dtype=pl.Categorical), "c", "b"),
+        (pl.Series([], dtype=pl.Categorical("lexical")), None, None),
+        (pl.Series(["c", "b", "a"], dtype=pl.Enum(["c", "b", "a"])), "c", "a"),
+        (pl.Series(["c", "b", "a"], dtype=pl.Enum(["c", "b", "a", "d"])), "c", "a"),
+    ],
+)
+def test_categorical_agg(s: pl.Series, min: str | None, max: str | None) -> None:
+    assert s.min() == min
+    assert s.max() == max
 
 
 @pytest.mark.parametrize(
@@ -1027,14 +1044,6 @@ def test_map_elements() -> None:
     a.map_elements(lambda x: x)
 
 
-def test_object() -> None:
-    vals = [[12], "foo", 9]
-    a = pl.Series("a", vals)
-    assert a.dtype == pl.Object
-    assert a.to_list() == vals
-    assert a[1] == "foo"
-
-
 def test_shape() -> None:
     s = pl.Series([1, 2, 3])
     assert s.shape == (3,)
@@ -1525,6 +1534,16 @@ def test_to_dummies() -> None:
     assert_frame_equal(result, expected)
 
 
+def test_to_dummies_drop_first() -> None:
+    s = pl.Series("a", [1, 2, 3])
+    result = s.to_dummies(drop_first=True)
+    expected = pl.DataFrame(
+        {"a_2": [0, 1, 0], "a_3": [0, 0, 1]},
+        schema={"a_2": pl.UInt8, "a_3": pl.UInt8},
+    )
+    assert_frame_equal(result, expected)
+
+
 def test_chunk_lengths() -> None:
     s = pl.Series("a", [1, 2, 2, 3])
     # this is a Series with one chunk, of length 4
@@ -1561,76 +1580,62 @@ def test_arg_sort() -> None:
     assert_series_equal(s.arg_sort(descending=True), expected_descending)
 
 
-def test_arg_min_and_arg_max() -> None:
-    # numerical no null.
-    s = pl.Series([5, 3, 4, 1, 2])
-    assert s.arg_min() == 3
-    assert s.arg_max() == 0
+@pytest.mark.parametrize(
+    ("series", "argmin", "argmax"),
+    [
+        # Numeric
+        (pl.Series([5, 3, 4, 1, 2]), 3, 0),
+        (pl.Series([None, 5, 1]), 2, 1),
+        # Boolean
+        (pl.Series([True, False]), 1, 0),
+        (pl.Series([True, True]), 0, 0),
+        (pl.Series([False, False]), 0, 0),
+        (pl.Series([None, True, False, True]), 2, 1),
+        (pl.Series([None, True, True]), 1, 1),
+        (pl.Series([None, False, False]), 1, 1),
+        # String
+        (pl.Series(["a", "c", "b"]), 0, 1),
+        (pl.Series([None, "a", None, "b"]), 1, 3),
+        # Categorical
+        (pl.Series(["c", "b", "a"], dtype=pl.Categorical), 0, 2),
+        (pl.Series([None, "c", "b", None, "a"], dtype=pl.Categorical), 1, 4),
+        (pl.Series(["c", "b", "a"], dtype=pl.Categorical(ordering="lexical")), 2, 0),
+        (
+            pl.Series(
+                [None, "c", "b", None, "a"], dtype=pl.Categorical(ordering="lexical")
+            ),
+            4,
+            1,
+        ),
+    ],
+)
+def test_arg_min_arg_max(series: pl.Series, argmin: int, argmax: int) -> None:
+    assert series.arg_min() == argmin
+    assert series.arg_max() == argmax
 
-    # numerical has null.
-    s = pl.Series([None, 5, 1])
-    assert s.arg_min() == 2
-    assert s.arg_max() == 1
 
-    # numerical all null.
-    s = pl.Series([None, None], dtype=Int32)
-    assert s.arg_min() is None
-    assert s.arg_max() is None
+@pytest.mark.parametrize(
+    ("series"),
+    [
+        # All nulls
+        pl.Series([None, None], dtype=pl.Int32),
+        pl.Series([None, None], dtype=pl.Boolean),
+        pl.Series([None, None], dtype=pl.String),
+        pl.Series([None, None], dtype=pl.Categorical),
+        pl.Series([None, None], dtype=pl.Categorical(ordering="lexical")),
+        # Empty Series
+        pl.Series([], dtype=pl.Int32),
+        pl.Series([], dtype=pl.Boolean),
+        pl.Series([], dtype=pl.String),
+        pl.Series([], dtype=pl.Categorical),
+    ],
+)
+def test_arg_min_arg_max_all_nulls_or_empty(series: pl.Series) -> None:
+    assert series.arg_min() is None
+    assert series.arg_max() is None
 
-    # boolean no null.
-    s = pl.Series([True, False])
-    assert s.arg_min() == 1
-    assert s.arg_max() == 0
-    s = pl.Series([True, True])
-    assert s.arg_min() == 0
-    assert s.arg_max() == 0
-    s = pl.Series([False, False])
-    assert s.arg_min() == 0
-    assert s.arg_max() == 0
 
-    # boolean has null.
-    s = pl.Series([None, True, False, True])
-    assert s.arg_min() == 2
-    assert s.arg_max() == 1
-    s = pl.Series([None, True, True])
-    assert s.arg_min() == 1
-    assert s.arg_max() == 1
-    s = pl.Series([None, False, False])
-    assert s.arg_min() == 1
-    assert s.arg_max() == 1
-
-    # boolean all null.
-    s = pl.Series([None, None], dtype=pl.Boolean)
-    assert s.arg_min() is None
-    assert s.arg_max() is None
-
-    # str no null
-    s = pl.Series(["a", "c", "b"])
-    assert s.arg_min() == 0
-    assert s.arg_max() == 1
-
-    # str has null
-    s = pl.Series([None, "a", None, "b"])
-    assert s.arg_min() == 1
-    assert s.arg_max() == 3
-
-    # str all null
-    s = pl.Series([None, None], dtype=pl.String)
-    assert s.arg_min() is None
-    assert s.arg_max() is None
-
-    # test ascending and descending series
-    s = pl.Series([None, 1, 2, 3, 4, 5])
-    s.sort(in_place=True)  # set ascending sorted flag
-    assert s.flags == {"SORTED_ASC": True, "SORTED_DESC": False}
-    assert s.arg_min() == 1
-    assert s.arg_max() == 5
-    s = pl.Series([None, 5, 4, 3, 2, 1])
-    s.sort(descending=True, in_place=True)  # set descing sorted flag
-    assert s.flags == {"SORTED_ASC": False, "SORTED_DESC": True}
-    assert s.arg_min() == 5
-    assert s.arg_max() == 1
-
+def test_arg_min_and_arg_max_sorted() -> None:
     # test ascending and descending numerical series
     s = pl.Series([None, 1, 2, 3, 4, 5])
     s.sort(in_place=True)  # set ascending sorted flag
@@ -1654,56 +1659,6 @@ def test_arg_min_and_arg_max() -> None:
     assert s.flags == {"SORTED_ASC": False, "SORTED_DESC": True}
     assert s.arg_min() == 5
     assert s.arg_max() == 1
-
-    # test numerical empty series
-    s = pl.Series([], dtype=pl.Int32)
-    assert s.arg_min() is None
-    assert s.arg_max() is None
-
-    # test boolean empty series
-    s = pl.Series([], dtype=pl.Boolean)
-    assert s.arg_min() is None
-    assert s.arg_max() is None
-
-    # test str empty series
-    s = pl.Series([], dtype=pl.String)
-    assert s.arg_min() is None
-    assert s.arg_max() is None
-
-    # categorical empty series
-    s = pl.Series([], dtype=pl.Categorical)
-    assert s.arg_min() is None
-    assert s.arg_max() is None
-
-    # categorical with physical ordering no null
-    s = pl.Series(["c", "b", "a"], dtype=pl.Categorical)
-    assert s.arg_min() == 0
-    assert s.arg_max() == 2
-
-    # categorical with physical ordering has null
-    s = pl.Series([None, "c", "b", None, "a"], dtype=pl.Categorical)
-    assert s.arg_min() == 1
-    assert s.arg_max() == 4
-
-    # categorical with physical all null
-    s = pl.Series([None, None], dtype=pl.Categorical)
-    assert s.arg_min() is None
-    assert s.arg_max() is None
-
-    # categorical with lexical ordering no null
-    s = pl.Series(["c", "b", "a"], dtype=pl.Categorical(ordering="lexical"))
-    assert s.arg_min() == 2
-    assert s.arg_max() == 0
-
-    # categorical with lexical ordering has null
-    s = pl.Series([None, "c", "b", None, "a"], dtype=pl.Categorical(ordering="lexical"))
-    assert s.arg_min() == 4
-    assert s.arg_max() == 1
-
-    # categorical with lexical ordering all null
-    s = pl.Series([None, None], dtype=pl.Categorical(ordering="lexical"))
-    assert s.arg_min() is None
-    assert s.arg_max() is None
 
 
 def test_is_null_is_not_null() -> None:
@@ -1956,176 +1911,6 @@ def test_trigonometric_invalid_input() -> None:
         s.cosh()
 
 
-def test_ewm_mean() -> None:
-    s = pl.Series([2, 5, 3])
-
-    expected = pl.Series([2.0, 4.0, 3.4285714285714284])
-    assert_series_equal(s.ewm_mean(alpha=0.5, adjust=True, ignore_nulls=True), expected)
-    assert_series_equal(
-        s.ewm_mean(alpha=0.5, adjust=True, ignore_nulls=False), expected
-    )
-
-    expected = pl.Series([2.0, 3.8, 3.421053])
-    assert_series_equal(s.ewm_mean(com=2.0, adjust=True, ignore_nulls=True), expected)
-    assert_series_equal(s.ewm_mean(com=2.0, adjust=True, ignore_nulls=False), expected)
-
-    expected = pl.Series([2.0, 3.5, 3.25])
-    assert_series_equal(
-        s.ewm_mean(alpha=0.5, adjust=False, ignore_nulls=True), expected
-    )
-    assert_series_equal(
-        s.ewm_mean(alpha=0.5, adjust=False, ignore_nulls=False), expected
-    )
-
-    s = pl.Series([2, 3, 5, 7, 4])
-
-    expected = pl.Series([None, 2.666667, 4.0, 5.6, 4.774194])
-    assert_series_equal(
-        s.ewm_mean(alpha=0.5, adjust=True, min_periods=2, ignore_nulls=True), expected
-    )
-    assert_series_equal(
-        s.ewm_mean(alpha=0.5, adjust=True, min_periods=2, ignore_nulls=False), expected
-    )
-
-    expected = pl.Series([None, None, 4.0, 5.6, 4.774194])
-    assert_series_equal(
-        s.ewm_mean(alpha=0.5, adjust=True, min_periods=3, ignore_nulls=True), expected
-    )
-    assert_series_equal(
-        s.ewm_mean(alpha=0.5, adjust=True, min_periods=3, ignore_nulls=False), expected
-    )
-
-    s = pl.Series([None, 1.0, 5.0, 7.0, None, 2.0, 5.0, 4])
-
-    expected = pl.Series(
-        [
-            None,
-            1.0,
-            3.6666666666666665,
-            5.571428571428571,
-            5.571428571428571,
-            3.6666666666666665,
-            4.354838709677419,
-            4.174603174603175,
-        ],
-    )
-    assert_series_equal(s.ewm_mean(alpha=0.5, adjust=True, ignore_nulls=True), expected)
-    expected = pl.Series(
-        [
-            None,
-            1.0,
-            3.666666666666667,
-            5.571428571428571,
-            5.571428571428571,
-            3.08695652173913,
-            4.2,
-            4.092436974789916,
-        ]
-    )
-    assert_series_equal(
-        s.ewm_mean(alpha=0.5, adjust=True, ignore_nulls=False), expected
-    )
-
-    expected = pl.Series([None, 1.0, 3.0, 5.0, 5.0, 3.5, 4.25, 4.125])
-    assert_series_equal(
-        s.ewm_mean(alpha=0.5, adjust=False, ignore_nulls=True), expected
-    )
-
-    expected = pl.Series([None, 1.0, 3.0, 5.0, 5.0, 3.0, 4.0, 4.0])
-    assert_series_equal(
-        s.ewm_mean(alpha=0.5, adjust=False, ignore_nulls=False), expected
-    )
-
-
-def test_ewm_mean_leading_nulls() -> None:
-    for min_periods in [1, 2, 3]:
-        assert (
-            pl.Series([1, 2, 3, 4])
-            .ewm_mean(com=3, min_periods=min_periods)
-            .null_count()
-            == min_periods - 1
-        )
-    assert pl.Series([None, 1.0, 1.0, 1.0]).ewm_mean(
-        alpha=0.5, min_periods=1
-    ).to_list() == [None, 1.0, 1.0, 1.0]
-    assert pl.Series([None, 1.0, 1.0, 1.0]).ewm_mean(
-        alpha=0.5, min_periods=2
-    ).to_list() == [None, None, 1.0, 1.0]
-
-
-def test_ewm_mean_min_periods() -> None:
-    series = pl.Series([1.0, None, None, None])
-
-    ewm_mean = series.ewm_mean(alpha=0.5, min_periods=1)
-    assert ewm_mean.to_list() == [1.0, 1.0, 1.0, 1.0]
-    ewm_mean = series.ewm_mean(alpha=0.5, min_periods=2)
-    assert ewm_mean.to_list() == [None, None, None, None]
-
-    series = pl.Series([1.0, None, 2.0, None, 3.0])
-
-    ewm_mean = series.ewm_mean(alpha=0.5, min_periods=1)
-    assert_series_equal(
-        ewm_mean,
-        pl.Series(
-            [
-                1.0,
-                1.0,
-                1.6666666666666665,
-                1.6666666666666665,
-                2.4285714285714284,
-            ]
-        ),
-    )
-    ewm_mean = series.ewm_mean(alpha=0.5, min_periods=2)
-    assert_series_equal(
-        ewm_mean,
-        pl.Series(
-            [
-                None,
-                None,
-                1.6666666666666665,
-                1.6666666666666665,
-                2.4285714285714284,
-            ]
-        ),
-    )
-
-
-def test_ewm_std_var() -> None:
-    series = pl.Series("a", [2, 5, 3])
-
-    var = series.ewm_var(alpha=0.5)
-    std = series.ewm_std(alpha=0.5)
-
-    assert np.allclose(var, std**2, rtol=1e-16)
-
-
-def test_ewm_param_validation() -> None:
-    s = pl.Series("values", range(10))
-
-    with pytest.raises(ValueError, match="mutually exclusive"):
-        s.ewm_std(com=0.5, alpha=0.5)
-
-    with pytest.raises(ValueError, match="mutually exclusive"):
-        s.ewm_mean(span=1.5, half_life=0.75)
-
-    with pytest.raises(ValueError, match="mutually exclusive"):
-        s.ewm_var(alpha=0.5, span=1.5)
-
-    with pytest.raises(ValueError, match="require `com` >= 0"):
-        s.ewm_std(com=-0.5)
-
-    with pytest.raises(ValueError, match="require `span` >= 1"):
-        s.ewm_mean(span=0.5)
-
-    with pytest.raises(ValueError, match="require `half_life` > 0"):
-        s.ewm_var(half_life=0)
-
-    for alpha in (-0.5, -0.0000001, 0.0, 1.0000001, 1.5):
-        with pytest.raises(ValueError, match="require 0 < `alpha` <= 1"):
-            s.ewm_std(alpha=alpha)
-
-
 def test_product() -> None:
     a = pl.Series("a", [1, 2, 3])
     out = a.product()
@@ -2324,6 +2109,11 @@ def test_min_max_agg_on_str() -> None:
     strings = ["b", "a", "x"]
     s = pl.Series(strings)
     assert (s.min(), s.max()) == ("a", "x")
+
+
+def test_min_max_full_nan_15058() -> None:
+    s = pl.Series([float("nan")] * 2)
+    assert all(x != x for x in [s.min(), s.max()])
 
 
 def test_is_between() -> None:

@@ -13,6 +13,28 @@ use crate::types::NativeType;
 
 pub(super) const RFC3339: &str = "%Y-%m-%dT%H:%M:%S%.f%:z";
 
+/// Cast [`BinaryViewArray`] to [`DictionaryArray`], also known as packing.
+/// # Errors
+/// This function errors if the maximum key is smaller than the number of distinct elements
+/// in the array.
+pub(super) fn binview_to_dictionary<K: DictionaryKey>(
+    from: &BinaryViewArray,
+) -> PolarsResult<DictionaryArray<K>> {
+    let mut array = MutableDictionaryArray::<K, MutableBinaryViewArray<[u8]>>::new();
+    array.try_extend(from.iter())?;
+
+    Ok(array.into())
+}
+
+pub(super) fn utf8view_to_dictionary<K: DictionaryKey>(
+    from: &Utf8ViewArray,
+) -> PolarsResult<DictionaryArray<K>> {
+    let mut array = MutableDictionaryArray::<K, MutableBinaryViewArray<str>>::new();
+    array.try_extend(from.iter())?;
+
+    Ok(array.into())
+}
+
 pub(super) fn view_to_binary<O: Offset>(array: &BinaryViewArray) -> BinaryArray<O> {
     let len: usize = Array::len(array);
     let mut mutable = MutableBinaryValuesArray::<O>::with_capacities(len, array.total_bytes_len());

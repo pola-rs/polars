@@ -1,5 +1,4 @@
 use std::hint::unreachable_unchecked;
-use std::iter::FromIterator;
 use std::sync::Arc;
 
 use polars_error::{polars_bail, PolarsResult};
@@ -77,7 +76,7 @@ impl MutableBitmap {
     /// # Errors
     /// This function errors iff `length > bytes.len() * 8`
     #[inline]
-    pub fn try_new(bytes: Vec<u8>, length: usize) -> PolarsResult<Self> {
+    pub fn try_new(mut bytes: Vec<u8>, length: usize) -> PolarsResult<Self> {
         if length > bytes.len().saturating_mul(8) {
             polars_bail!(InvalidOperation:
                 "The length of the bitmap ({}) must be `<=` to the number of bytes times 8 ({})",
@@ -85,6 +84,10 @@ impl MutableBitmap {
                 bytes.len().saturating_mul(8)
             )
         }
+
+        // Ensure invariant holds.
+        let min_byte_length_needed = length.div_ceil(8);
+        bytes.drain(min_byte_length_needed..);
         Ok(Self {
             length,
             buffer: bytes,
@@ -221,6 +224,7 @@ impl MutableBitmap {
     }
 
     /// Pushes a new bit to the [`MutableBitmap`]
+    ///
     /// # Safety
     /// The caller must ensure that the [`MutableBitmap`] has sufficient capacity.
     #[inline]
@@ -318,6 +322,7 @@ impl MutableBitmap {
     }
 
     /// Sets the position `index` to `value`
+    ///
     /// # Safety
     /// Caller must ensure that `index < self.len()`
     #[inline]
@@ -524,11 +529,12 @@ impl MutableBitmap {
     /// Extends `self` from a [`TrustedLen`] iterator.
     #[inline]
     pub fn extend_from_trusted_len_iter<I: TrustedLen<Item = bool>>(&mut self, iterator: I) {
-        // safety: I: TrustedLen
+        // SAFETY: I: TrustedLen
         unsafe { self.extend_from_trusted_len_iter_unchecked(iterator) }
     }
 
     /// Extends `self` from an iterator of trusted len.
+    ///
     /// # Safety
     /// The caller must guarantee that the iterator has a trusted len.
     #[inline]
@@ -577,6 +583,7 @@ impl MutableBitmap {
     }
 
     /// Creates a new [`MutableBitmap`] from an iterator of booleans.
+    ///
     /// # Safety
     /// The iterator must report an accurate length.
     #[inline]
@@ -597,7 +604,7 @@ impl MutableBitmap {
     where
         I: TrustedLen<Item = bool>,
     {
-        // Safety: Iterator is `TrustedLen`
+        // SAFETY: Iterator is `TrustedLen`
         unsafe { Self::from_trusted_len_iter_unchecked(iterator) }
     }
 
@@ -610,6 +617,7 @@ impl MutableBitmap {
     }
 
     /// Creates a new [`MutableBitmap`] from an falible iterator of booleans.
+    ///
     /// # Safety
     /// The caller must guarantee that the iterator is `TrustedLen`.
     pub unsafe fn try_from_trusted_len_iter_unchecked<E, I>(
@@ -697,6 +705,7 @@ impl MutableBitmap {
     /// # Implementation
     /// When both [`MutableBitmap`]'s length and `offset` are both multiples of 8,
     /// this function performs a memcopy. Else, it first aligns bit by bit and then performs a memcopy.
+    ///
     /// # Safety
     /// Caller must ensure `offset + length <= slice.len() * 8`
     #[inline]
@@ -729,7 +738,7 @@ impl MutableBitmap {
     #[inline]
     pub fn extend_from_slice(&mut self, slice: &[u8], offset: usize, length: usize) {
         assert!(offset + length <= slice.len() * 8);
-        // safety: invariant is asserted
+        // SAFETY: invariant is asserted
         unsafe { self.extend_from_slice_unchecked(slice, offset, length) }
     }
 
@@ -737,7 +746,7 @@ impl MutableBitmap {
     #[inline]
     pub fn extend_from_bitmap(&mut self, bitmap: &Bitmap) {
         let (slice, offset, length) = bitmap.as_slice();
-        // safety: bitmap.as_slice adheres to the invariant
+        // SAFETY: bitmap.as_slice adheres to the invariant
         unsafe {
             self.extend_from_slice_unchecked(slice, offset, length);
         }

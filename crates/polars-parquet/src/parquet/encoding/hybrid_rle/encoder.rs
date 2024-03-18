@@ -40,7 +40,8 @@ fn bitpacked_encode_u32<W: Write, I: Iterator<Item = u32>>(
     let remainder = length - chunks * U32_BLOCK_LEN;
     let mut buffer = [0u32; U32_BLOCK_LEN];
 
-    let compressed_chunk_size = ceil8(U32_BLOCK_LEN * num_bits);
+    // simplified from ceil8(U32_BLOCK_LEN * num_bits) since U32_BLOCK_LEN = 32
+    let compressed_chunk_size = 4 * num_bits;
 
     for _ in 0..chunks {
         iterator
@@ -58,6 +59,9 @@ fn bitpacked_encode_u32<W: Write, I: Iterator<Item = u32>>(
         // Must be careful here to ensure we write a multiple of `num_bits`
         // (the bit width) to align with the spec. Some readers also rely on
         // this - see https://github.com/pola-rs/polars/pull/13883.
+
+        // this is ceil8(remainder * num_bits), but we ensure the output is a
+        // multiple of num_bits by rewriting it as ceil8(remainder) * num_bits
         let compressed_remainder_size = ceil8(remainder) * num_bits;
         iterator
             .by_ref()

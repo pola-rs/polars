@@ -1,7 +1,6 @@
 use arrow::legacy::kernels::fixed_size_list::{
     sub_fixed_size_list_get, sub_fixed_size_list_get_literal,
 };
-use polars_core::datatypes::ArrayChunked;
 use polars_core::prelude::arity::binary_to_series;
 
 use super::*;

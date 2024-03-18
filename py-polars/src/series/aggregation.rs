@@ -54,7 +54,7 @@ impl PySeries {
                     .map_err(PyPolarsErr::from)?,
             )
             .into_py(py)),
-            DataType::Datetime(_, _) => Ok(Wrap(
+            DataType::Datetime(_, _) | DataType::Duration(_) => Ok(Wrap(
                 self.series
                     .mean_as_series()
                     .get(0)
@@ -77,7 +77,7 @@ impl PySeries {
                     .map_err(PyPolarsErr::from)?,
             )
             .into_py(py)),
-            DataType::Datetime(_, _) => Ok(Wrap(
+            DataType::Datetime(_, _) | DataType::Duration(_) => Ok(Wrap(
                 self.series
                     .median_as_series()
                     .map_err(PyPolarsErr::from)?
@@ -101,7 +101,14 @@ impl PySeries {
     }
 
     fn product(&self, py: Python) -> PyResult<PyObject> {
-        Ok(Wrap(self.series.product().get(0).map_err(PyPolarsErr::from)?).into_py(py))
+        Ok(Wrap(
+            self.series
+                .product()
+                .map_err(PyPolarsErr::from)?
+                .get(0)
+                .map_err(PyPolarsErr::from)?,
+        )
+        .into_py(py))
     }
 
     fn quantile(

@@ -68,7 +68,7 @@ impl ListChunked {
         }
 
         debug_assert_eq!(row_idx, self.len());
-        // Safety:
+        // SAFETY:
         // We have assigned to every row and element of the array
         unsafe { Ok(ndarray.assume_init()) }
     }
@@ -142,7 +142,7 @@ impl DataFrame {
                     let vals = ca.cont_slice().unwrap();
 
                     // Depending on the desired order, we add items to the buffer.
-                    // Safety:
+                    // SAFETY:
                     // We get parallel access to the vector by offsetting index access accordingly.
                     // For C-order, we only operate on every num-col-th element, starting from the
                     // column index. For Fortran-order we only operate on n contiguous elements,
@@ -158,7 +158,7 @@ impl DataFrame {
                         },
                         IndexOrder::Fortran => unsafe {
                             let offset_ptr = (ptr as *mut N::Native).add(col_idx * height);
-                            // Safety:
+                            // SAFETY:
                             // this is uninitialized memory, so we must never read from this data
                             // copy_from_slice does not read
                             let buf = std::slice::from_raw_parts_mut(offset_ptr, height);
@@ -170,7 +170,7 @@ impl DataFrame {
                 .collect::<PolarsResult<Vec<_>>>()
         })?;
 
-        // Safety:
+        // SAFETY:
         // we have written all data, so we can now safely set length
         unsafe {
             membuf.set_len(shape.0 * shape.1);

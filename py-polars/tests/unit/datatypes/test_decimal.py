@@ -293,6 +293,11 @@ def test_decimal_aggregations() -> None:
         }
     )
 
+    assert df.group_by("g").agg("a").sort("g").to_dict(as_series=False) == {
+        "g": [1, 2],
+        "a": [[D("0.1"), D("10.1")], [D("100.01"), D("9000.12")]],
+    }
+
     assert df.group_by("g", maintain_order=True).agg(
         sum=pl.sum("a"),
         min=pl.min("a"),
@@ -315,6 +320,21 @@ def test_decimal_aggregations() -> None:
     }
 
 
+def test_decimal_df_vertical_sum() -> None:
+    df = pl.DataFrame({"a": [D("1.1"), D("2.2")]})
+    expected = pl.DataFrame({"a": [D("3.3")]})
+
+    assert_frame_equal(df.sum(), expected)
+
+
+def test_decimal_df_vertical_agg() -> None:
+    df = pl.DataFrame({"a": [D("1.0"), D("2.0"), D("3.0")]})
+    expected_min = pl.DataFrame({"a": [D("1.0")]})
+    expected_max = pl.DataFrame({"a": [D("3.0")]})
+    assert_frame_equal(df.min(), expected_min)
+    assert_frame_equal(df.max(), expected_max)
+
+
 def test_decimal_in_filter() -> None:
     df = pl.DataFrame(
         {
@@ -326,6 +346,46 @@ def test_decimal_in_filter() -> None:
     assert df.filter(pl.col("foo") > 1).to_dict(as_series=False) == {
         "foo": [2, 3],
         "bar": [D("7"), D("8")],
+    }
+
+
+def test_decimal_sort() -> None:
+    df = pl.DataFrame(
+        {
+            "foo": [1, 2, 3],
+            "bar": [D("3.4"), D("2.1"), D("4.5")],
+            "baz": [1, 1, 2],
+        }
+    )
+    assert df.sort("bar").to_dict(as_series=False) == {
+        "foo": [2, 1, 3],
+        "bar": [D("2.1"), D("3.4"), D("4.5")],
+        "baz": [1, 1, 2],
+    }
+    assert df.sort(["foo", "bar"]).to_dict(as_series=False) == {
+        "foo": [1, 2, 3],
+        "bar": [D("3.4"), D("2.1"), D("4.5")],
+        "baz": [1, 1, 2],
+    }
+
+    assert df.select([pl.col("foo").sort_by("bar", descending=True).alias("s1")])[
+        "s1"
+    ].to_list() == [3, 1, 2]
+    assert df.select([pl.col("foo").sort_by(["baz", "bar"]).alias("s2")])[
+        "s2"
+    ].to_list() == [2, 1, 3]
+
+
+def test_decimal_unique() -> None:
+    df = pl.DataFrame(
+        {
+            "foo": [1, 1, 2],
+            "bar": [D("3.4"), D("3.4"), D("4.5")],
+        }
+    )
+    assert df.unique().sort("bar").to_dict(as_series=False) == {
+        "foo": [1, 2],
+        "bar": [D("3.4"), D("4.5")],
     }
 
 

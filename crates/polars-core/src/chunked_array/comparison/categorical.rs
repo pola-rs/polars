@@ -49,7 +49,7 @@ where
     } else {
         match (lhs.len(), rhs.len()) {
             (lhs_len, 1) => {
-                // Safety: physical is in range of revmap
+                // SAFETY: physical is in range of revmap
                 let v = unsafe {
                     rhs.physical()
                         .get(0)
@@ -65,7 +65,7 @@ where
                     .collect_ca_trusted(lhs.name()))
             },
             (1, rhs_len) => {
-                // Safety: physical is in range of revmap
+                // SAFETY: physical is in range of revmap
                 let v = unsafe {
                     lhs.physical()
                         .get(0)
@@ -168,7 +168,7 @@ where
     CompareString: Fn(&StringChunked, &'a StringChunked) -> BooleanChunked,
 {
     if lhs.is_enum() {
-        let rhs_cat = rhs.cast(lhs.dtype())?;
+        let rhs_cat = rhs.clone().into_series().strict_cast(lhs.dtype())?;
         cat_compare_function(lhs, rhs_cat.categorical().unwrap())
     } else if rhs.len() == 1 {
         match rhs.get(0) {
@@ -198,7 +198,7 @@ where
     CompareString: Fn(&StringChunked, &'a StringChunked) -> BooleanChunked,
 {
     if lhs.is_enum() {
-        let rhs_cat = rhs.cast(lhs.dtype())?;
+        let rhs_cat = rhs.clone().into_series().strict_cast(lhs.dtype())?;
         cat_compare_function(lhs, rhs_cat.categorical().unwrap())
     } else if rhs.len() == 1 {
         match rhs.get(0) {
@@ -367,7 +367,7 @@ where
 
         Ok(
             BooleanChunked::from_iter_trusted_length(lhs.physical().into_iter().map(|opt_idx| {
-                // Safety: indexing into bitmap with same length as original array
+                // SAFETY: indexing into bitmap with same length as original array
                 opt_idx.map(|idx| unsafe { bitmap.get_bit_unchecked(idx as usize) })
             }))
             .with_name(lhs.name()),

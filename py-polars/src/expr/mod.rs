@@ -33,7 +33,7 @@ pub(crate) trait ToExprs {
 
 impl ToExprs for Vec<PyExpr> {
     fn to_exprs(self) -> Vec<Expr> {
-        // Safety
+        // SAFETY:
         // repr is transparent
         unsafe { std::mem::transmute(self) }
     }
@@ -45,7 +45,7 @@ pub(crate) trait ToPyExprs {
 
 impl ToPyExprs for Vec<Expr> {
     fn to_pyexprs(self) -> Vec<PyExpr> {
-        // Safety
+        // SAFETY:
         // repr is transparent
         unsafe { std::mem::transmute(self) }
     }

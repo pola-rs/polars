@@ -1,6 +1,5 @@
 use arrow::array::{Utf8Array, ValueSize};
 use arrow::compute::cast::utf8_to_utf8view;
-use arrow::legacy::array::default_arrays::FromDataUtf8;
 use polars_core::prelude::*;
 
 // Vertically concatenate all strings in a StringChunked.
@@ -89,12 +88,10 @@ pub fn hor_str_concat(
     // Broadcast if appropriate.
     let mut cols: Vec<_> = cas
         .iter()
-        .map(|ca| {
-            if ca.len() > 1 {
-                ColumnIter::Iter(ca.iter())
-            } else {
-                ColumnIter::Broadcast(ca.get(0))
-            }
+        .map(|ca| match ca.len() {
+            0 => ColumnIter::Broadcast(None),
+            1 => ColumnIter::Broadcast(ca.get(0)),
+            _ => ColumnIter::Iter(ca.iter()),
         })
         .collect();
 

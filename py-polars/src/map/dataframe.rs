@@ -1,14 +1,10 @@
 use polars::prelude::*;
 use polars_core::frame::row::{rows_to_schema_first_non_null, Row};
 use polars_core::series::SeriesIter;
-use pyo3::conversion::{FromPyObject, IntoPy};
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyFloat, PyInt, PyList, PyString, PyTuple};
 
 use super::*;
-use crate::conversion::Wrap;
-use crate::error::PyPolarsErr;
-use crate::series::PySeries;
 use crate::PyDataFrame;
 
 fn get_iters(df: &DataFrame) -> Vec<SeriesIter> {
@@ -277,7 +273,7 @@ pub fn apply_lambda_with_rows_output<'a>(
                 row_buf.0.push(v);
             }
             let ptr = &row_buf as *const Row;
-            // Safety:
+            // SAFETY:
             // we know that row constructor of polars dataframe does not keep a reference
             // to the row. Before we mutate the row buf again, the reference is dropped.
             // we only cannot prove it to the compiler.
@@ -296,7 +292,7 @@ pub fn apply_lambda_with_rows_output<'a>(
     let schema = rows_to_schema_first_non_null(&buf, Some(50));
 
     if init_null_count > 0 {
-        // Safety: we know the iterators size
+        // SAFETY: we know the iterators size
         let iter = unsafe {
             (0..init_null_count)
                 .map(|_| Ok(&null_row))
@@ -306,7 +302,7 @@ pub fn apply_lambda_with_rows_output<'a>(
         };
         DataFrame::try_from_rows_iter_and_schema(iter, &schema)
     } else {
-        // Safety: we know the iterators size
+        // SAFETY: we know the iterators size
         let iter = unsafe {
             buf.iter()
                 .map(Ok)

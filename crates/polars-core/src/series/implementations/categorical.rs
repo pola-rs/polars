@@ -1,14 +1,6 @@
-use std::borrow::Cow;
-
-use ahash::RandomState;
-
-use super::{private, IntoSeries, SeriesTrait, *};
+use super::*;
 use crate::chunked_array::comparison::*;
-use crate::chunked_array::ops::compare_inner::{IntoTotalOrdInner, TotalOrdInner};
-use crate::chunked_array::ops::explode::ExplodeByOffsets;
-use crate::chunked_array::AsSinglePtr;
 use crate::prelude::*;
-use crate::series::implementations::SeriesWrap;
 
 unsafe impl IntoSeries for CategoricalChunked {
     fn into_series(self) -> Series {
@@ -26,7 +18,7 @@ impl SeriesWrap<CategoricalChunked> {
                 self.0.get_ordering(),
             )
         };
-        if keep_fast_unique && self.0.can_fast_unique() {
+        if keep_fast_unique && self.0._can_fast_unique() {
             out.set_fast_unique(true)
         }
         out
@@ -287,6 +279,17 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
 
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
+    }
+
+    fn min_as_series(&self) -> PolarsResult<Series> {
+        Ok(ChunkAggSeries::min_as_series(&self.0))
+    }
+
+    fn max_as_series(&self) -> PolarsResult<Series> {
+        Ok(ChunkAggSeries::max_as_series(&self.0))
+    }
+    fn as_any(&self) -> &dyn Any {
+        &self.0
     }
 }
 

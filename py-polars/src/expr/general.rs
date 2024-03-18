@@ -3,7 +3,6 @@ use std::ops::Neg;
 use polars::lazy::dsl;
 use polars::prelude::*;
 use polars::series::ops::NullBehavior;
-use polars_core::prelude::QuantileInterpolOptions;
 use polars_core::series::IsSorted;
 use pyo3::class::basic::CompareOp;
 use pyo3::prelude::*;
@@ -686,7 +685,7 @@ impl PyExpr {
         self.inner.clone().exclude(columns).into()
     }
     fn exclude_dtype(&self, dtypes: Vec<Wrap<DataType>>) -> Self {
-        // Safety:
+        // SAFETY:
         // Wrap is transparent.
         let dtypes: Vec<DataType> = unsafe { std::mem::transmute(dtypes) };
         self.inner.clone().exclude_dtype(&dtypes).into()
@@ -863,54 +862,6 @@ impl PyExpr {
                 return_dtype.map(|dt| dt.0),
             )
             .into()
-    }
-
-    #[cfg(feature = "ffi_plugin")]
-    fn register_plugin(
-        &self,
-        lib: &str,
-        symbol: &str,
-        args: Vec<PyExpr>,
-        kwargs: Vec<u8>,
-        is_elementwise: bool,
-        input_wildcard_expansion: bool,
-        returns_scalar: bool,
-        cast_to_supertypes: bool,
-        pass_name_to_apply: bool,
-        changes_length: bool,
-    ) -> PyResult<Self> {
-        use polars_plan::prelude::*;
-        let inner = self.inner.clone();
-
-        let collect_groups = if is_elementwise {
-            ApplyOptions::ElementWise
-        } else {
-            ApplyOptions::GroupWise
-        };
-        let mut input = Vec::with_capacity(args.len() + 1);
-        input.push(inner);
-        for a in args {
-            input.push(a.inner)
-        }
-
-        Ok(Expr::Function {
-            input,
-            function: FunctionExpr::FfiPlugin {
-                lib: Arc::from(lib),
-                symbol: Arc::from(symbol),
-                kwargs: Arc::from(kwargs),
-            },
-            options: FunctionOptions {
-                collect_groups,
-                input_wildcard_expansion,
-                returns_scalar,
-                cast_to_supertypes,
-                pass_name_to_apply,
-                changes_length,
-                ..Default::default()
-            },
-        }
-        .into())
     }
 
     #[cfg(feature = "hist")]

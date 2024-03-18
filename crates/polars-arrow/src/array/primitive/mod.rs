@@ -208,6 +208,7 @@ impl<T: NativeType> PrimitiveArray<T> {
 
     /// Returns the value at index `i`.
     /// The value on null slots is undetermined (it can be anything).
+    ///
     /// # Safety
     /// Caller must be sure that `i < self.len()`
     #[inline]
@@ -243,6 +244,7 @@ impl<T: NativeType> PrimitiveArray<T> {
     /// Slices this [`PrimitiveArray`] by an offset and length.
     /// # Implementation
     /// This operation is `O(1)`.
+    ///
     /// # Safety
     /// The caller must ensure that `offset + length <= self.len()`.
     #[inline]
@@ -420,6 +422,7 @@ impl<T: NativeType> PrimitiveArray<T> {
     }
 
     /// Creates a new [`PrimitiveArray`] from an iterator over values
+    ///
     /// # Safety
     /// The iterator must be [`TrustedLen`](https://doc.rust-lang.org/std/iter/trait.TrustedLen.html).
     /// I.e. that `size_hint().1` correctly reports its length.
@@ -433,6 +436,7 @@ impl<T: NativeType> PrimitiveArray<T> {
     }
 
     /// Creates a [`PrimitiveArray`] from an iterator of optional values.
+    ///
     /// # Safety
     /// The iterator must be [`TrustedLen`](https://doc.rust-lang.org/std/iter/trait.TrustedLen.html).
     /// I.e. that `size_hint().1` correctly reports its length.

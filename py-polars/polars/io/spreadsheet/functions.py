@@ -5,10 +5,12 @@ from contextlib import nullcontext
 from datetime import time
 from io import BufferedReader, BytesIO, StringIO
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, BinaryIO, Callable, NoReturn, Sequence, overload
+from typing import IO, TYPE_CHECKING, Any, Callable, NoReturn, Sequence, overload
 
 import polars._reexport as pl
 from polars import functions as F
+from polars._utils.deprecation import deprecate_renamed_parameter
+from polars._utils.various import normalize_filepath
 from polars.datatypes import (
     FLOAT_DTYPES,
     NUMERIC_DTYPES,
@@ -22,8 +24,6 @@ from polars.dependencies import import_optional
 from polars.exceptions import NoDataError, ParameterCollisionError
 from polars.io._utils import PortableTemporaryFile, _looks_like_url, _process_file_url
 from polars.io.csv.functions import read_csv
-from polars.utils.deprecation import deprecate_renamed_parameter
-from polars.utils.various import normalize_filepath
 
 if TYPE_CHECKING:
     from typing import Literal
@@ -33,7 +33,7 @@ if TYPE_CHECKING:
 
 @overload
 def read_excel(
-    source: str | BytesIO | Path | BinaryIO | bytes,
+    source: str | Path | IO[bytes] | bytes,
     *,
     sheet_id: None = ...,
     sheet_name: str,
@@ -42,13 +42,12 @@ def read_excel(
     read_options: dict[str, Any] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     raise_if_empty: bool = ...,
-) -> pl.DataFrame:
-    ...
+) -> pl.DataFrame: ...
 
 
 @overload
 def read_excel(
-    source: str | BytesIO | Path | BinaryIO | bytes,
+    source: str | Path | IO[bytes] | bytes,
     *,
     sheet_id: None = ...,
     sheet_name: None = ...,
@@ -57,13 +56,12 @@ def read_excel(
     read_options: dict[str, Any] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     raise_if_empty: bool = ...,
-) -> pl.DataFrame:
-    ...
+) -> pl.DataFrame: ...
 
 
 @overload
 def read_excel(
-    source: str | BytesIO | Path | BinaryIO | bytes,
+    source: str | Path | IO[bytes] | bytes,
     *,
     sheet_id: int,
     sheet_name: str,
@@ -72,15 +70,14 @@ def read_excel(
     read_options: dict[str, Any] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     raise_if_empty: bool = ...,
-) -> NoReturn:
-    ...
+) -> NoReturn: ...
 
 
 # note: 'ignore' required as mypy thinks that the return value for
 # Literal[0] overlaps with the return value for other integers
 @overload  # type: ignore[overload-overlap]
 def read_excel(
-    source: str | BytesIO | Path | BinaryIO | bytes,
+    source: str | Path | IO[bytes] | bytes,
     *,
     sheet_id: Literal[0] | Sequence[int],
     sheet_name: None = ...,
@@ -89,13 +86,12 @@ def read_excel(
     read_options: dict[str, Any] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     raise_if_empty: bool = ...,
-) -> dict[str, pl.DataFrame]:
-    ...
+) -> dict[str, pl.DataFrame]: ...
 
 
 @overload
 def read_excel(
-    source: str | BytesIO | Path | BinaryIO | bytes,
+    source: str | Path | IO[bytes] | bytes,
     *,
     sheet_id: int,
     sheet_name: None = ...,
@@ -104,13 +100,12 @@ def read_excel(
     read_options: dict[str, Any] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     raise_if_empty: bool = ...,
-) -> pl.DataFrame:
-    ...
+) -> pl.DataFrame: ...
 
 
 @overload
 def read_excel(
-    source: str | BytesIO | Path | BinaryIO | bytes,
+    source: str | Path | IO[bytes] | bytes,
     *,
     sheet_id: None,
     sheet_name: list[str] | tuple[str],
@@ -119,14 +114,13 @@ def read_excel(
     read_options: dict[str, Any] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     raise_if_empty: bool = ...,
-) -> dict[str, pl.DataFrame]:
-    ...
+) -> dict[str, pl.DataFrame]: ...
 
 
 @deprecate_renamed_parameter("xlsx2csv_options", "engine_options", version="0.20.6")
 @deprecate_renamed_parameter("read_csv_options", "read_options", version="0.20.7")
 def read_excel(
-    source: str | BytesIO | Path | BinaryIO | bytes,
+    source: str | Path | IO[bytes] | bytes,
     *,
     sheet_id: int | Sequence[int] | None = None,
     sheet_name: str | list[str] | tuple[str] | None = None,
@@ -270,78 +264,72 @@ def read_excel(
 
 @overload
 def read_ods(
-    source: str | BytesIO | Path | BinaryIO | bytes,
+    source: str | Path | IO[bytes] | bytes,
     *,
     sheet_id: None = ...,
     sheet_name: str,
     schema_overrides: SchemaDict | None = None,
     raise_if_empty: bool = ...,
-) -> pl.DataFrame:
-    ...
+) -> pl.DataFrame: ...
 
 
 @overload
 def read_ods(
-    source: str | BytesIO | Path | BinaryIO | bytes,
+    source: str | Path | IO[bytes] | bytes,
     *,
     sheet_id: None = ...,
     sheet_name: None = ...,
     schema_overrides: SchemaDict | None = None,
     raise_if_empty: bool = ...,
-) -> pl.DataFrame:
-    ...
+) -> pl.DataFrame: ...
 
 
 @overload
 def read_ods(
-    source: str | BytesIO | Path | BinaryIO | bytes,
+    source: str | Path | IO[bytes] | bytes,
     *,
     sheet_id: int,
     sheet_name: str,
     schema_overrides: SchemaDict | None = None,
     raise_if_empty: bool = ...,
-) -> NoReturn:
-    ...
+) -> NoReturn: ...
 
 
 @overload  # type: ignore[overload-overlap]
 def read_ods(
-    source: str | BytesIO | Path | BinaryIO | bytes,
+    source: str | Path | IO[bytes] | bytes,
     *,
     sheet_id: Literal[0] | Sequence[int],
     sheet_name: None = ...,
     schema_overrides: SchemaDict | None = None,
     raise_if_empty: bool = ...,
-) -> dict[str, pl.DataFrame]:
-    ...
+) -> dict[str, pl.DataFrame]: ...
 
 
 @overload
 def read_ods(
-    source: str | BytesIO | Path | BinaryIO | bytes,
+    source: str | Path | IO[bytes] | bytes,
     *,
     sheet_id: int,
     sheet_name: None = ...,
     schema_overrides: SchemaDict | None = None,
     raise_if_empty: bool = ...,
-) -> pl.DataFrame:
-    ...
+) -> pl.DataFrame: ...
 
 
 @overload
 def read_ods(
-    source: str | BytesIO | Path | BinaryIO | bytes,
+    source: str | Path | IO[bytes] | bytes,
     *,
     sheet_id: None,
     sheet_name: list[str] | tuple[str],
     schema_overrides: SchemaDict | None = None,
     raise_if_empty: bool = ...,
-) -> dict[str, pl.DataFrame]:
-    ...
+) -> dict[str, pl.DataFrame]: ...
 
 
 def read_ods(
-    source: str | BytesIO | Path | BinaryIO | bytes,
+    source: str | Path | IO[bytes] | bytes,
     *,
     sheet_id: int | Sequence[int] | None = None,
     sheet_name: str | list[str] | tuple[str] | None = None,
@@ -406,7 +394,7 @@ def read_ods(
     )
 
 
-def _identify_from_magic_bytes(data: bytes | BinaryIO | BytesIO) -> str | None:
+def _identify_from_magic_bytes(data: IO[bytes] | bytes) -> str | None:
     if isinstance(data, bytes):
         data = BytesIO(data)
 
@@ -425,7 +413,7 @@ def _identify_from_magic_bytes(data: bytes | BinaryIO | BytesIO) -> str | None:
         data.seek(initial_position)
 
 
-def _identify_workbook(wb: str | bytes | Path | BinaryIO | BytesIO) -> str | None:
+def _identify_workbook(wb: str | Path | IO[bytes] | bytes) -> str | None:
     """Use file extension (and magic bytes) to identify Workbook type."""
     if not isinstance(wb, (str, Path)):
         # raw binary data (bytesio, etc)
@@ -449,7 +437,7 @@ def _identify_workbook(wb: str | bytes | Path | BinaryIO | BytesIO) -> str | Non
 def _read_spreadsheet(
     sheet_id: int | Sequence[int] | None,
     sheet_name: str | list[str] | tuple[str] | None,
-    source: str | BytesIO | Path | BinaryIO | bytes,
+    source: str | Path | IO[bytes] | bytes,
     engine: ExcelSpreadsheetEngine | Literal["ods"] | None,
     engine_options: dict[str, Any] | None = None,
     read_options: dict[str, Any] | None = None,
@@ -557,7 +545,7 @@ def _get_sheet_names(
 
 def _initialise_spreadsheet_parser(
     engine: str | None,
-    source: str | BytesIO | Path | BinaryIO | bytes,
+    source: str | Path | IO[bytes] | bytes,
     engine_options: dict[str, Any],
 ) -> tuple[Callable[..., pl.DataFrame], Any, list[dict[str, Any]]]:
     """Instantiate the indicated spreadsheet parser and establish related properties."""

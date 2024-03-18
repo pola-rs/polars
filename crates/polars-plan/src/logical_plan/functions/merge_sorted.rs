@@ -2,7 +2,7 @@ use polars_core::prelude::*;
 use polars_ops::prelude::*;
 
 pub(super) fn merge_sorted(df: &DataFrame, column: &str) -> PolarsResult<DataFrame> {
-    // Safety:
+    // SAFETY:
     // the dtype is known
     let (left_cols, right_cols) = unsafe {
         (
@@ -29,8 +29,8 @@ pub(super) fn merge_sorted(df: &DataFrame, column: &str) -> PolarsResult<DataFra
         )
     };
 
-    let left = DataFrame::new_no_checks(left_cols);
-    let right = DataFrame::new_no_checks(right_cols);
+    let left = unsafe { DataFrame::new_no_checks(left_cols) };
+    let right = unsafe { DataFrame::new_no_checks(right_cols) };
 
     let lhs = left.column(column)?;
     let rhs = right.column(column)?;

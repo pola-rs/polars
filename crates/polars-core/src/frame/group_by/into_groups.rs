@@ -1,7 +1,7 @@
 #[cfg(feature = "group_by_list")]
 use arrow::legacy::kernels::list_bytes_iter::numeric_list_bytes_iter;
 use arrow::legacy::kernels::sort_partition::{create_clean_partitions, partition_to_groups};
-use arrow::legacy::prelude::*;
+use polars_utils::total_ord::{ToTotalOrd, TotalHash};
 
 use super::*;
 use crate::config::verbose;
@@ -12,7 +12,7 @@ use crate::utils::flatten::flatten_par;
 pub trait IntoGroupsProxy {
     /// Create the tuples need for a group_by operation.
     ///     * The first value in the tuple is the first index of the group.
-    ///     * The second value in the tuple is are the indexes of the groups including the first value.
+    ///     * The second value in the tuple is the indexes of the groups including the first value.
     fn group_tuples(&self, _multithreaded: bool, _sorted: bool) -> PolarsResult<GroupsProxy> {
         unimplemented!()
     }
@@ -25,9 +25,9 @@ fn group_multithreaded<T: PolarsDataType>(ca: &ChunkedArray<T>) -> bool {
 
 fn num_groups_proxy<T>(ca: &ChunkedArray<T>, multithreaded: bool, sorted: bool) -> GroupsProxy
 where
-    T: PolarsIntegerType,
-    T::Native: Hash + Eq + Send + DirtyHash,
-    Option<T::Native>: DirtyHash,
+    T: PolarsNumericType,
+    T::Native: TotalHash + TotalEq + DirtyHash + ToTotalOrd,
+    <T::Native as ToTotalOrd>::TotalOrdItem: Send + Sync + Copy + Hash + Eq + DirtyHash,
 {
     if multithreaded && group_multithreaded(ca) {
         let n_partitions = _set_partition_size();
@@ -93,35 +93,31 @@ where
             let n_parts = parts.len();
 
             let first_ptr = &values[0] as *const T::Native as usize;
-            let groups = POOL
-                .install(|| {
-                    parts.par_iter().enumerate().map(|(i, part)| {
-                        // we go via usize as *const is not send
-                        let first_ptr = first_ptr as *const T::Native;
+            let groups = parts.par_iter().enumerate().map(|(i, part)| {
+                // we go via usize as *const is not send
+                let first_ptr = first_ptr as *const T::Native;
 
-                        let part_first_ptr = &part[0] as *const T::Native;
-                        let mut offset =
-                            unsafe { part_first_ptr.offset_from(first_ptr) } as IdxSize;
+                let part_first_ptr = &part[0] as *const T::Native;
+                let mut offset = unsafe { part_first_ptr.offset_from(first_ptr) } as IdxSize;
 
-                        // nulls first: only add the nulls at the first partition
-                        if nulls_first && i == 0 {
-                            partition_to_groups(part, null_count as IdxSize, true, offset)
-                        }
-                        // nulls last: only compute at the last partition
-                        else if !nulls_first && i == n_parts - 1 {
-                            partition_to_groups(part, null_count as IdxSize, false, offset)
-                        }
-                        // other partitions
-                        else {
-                            if nulls_first {
-                                offset += null_count as IdxSize;
-                            };
+                // nulls first: only add the nulls at the first partition
+                if nulls_first && i == 0 {
+                    partition_to_groups(part, null_count as IdxSize, true, offset)
+                }
+                // nulls last: only compute at the last partition
+                else if !nulls_first && i == n_parts - 1 {
+                    partition_to_groups(part, null_count as IdxSize, false, offset)
+                }
+                // other partitions
+                else {
+                    if nulls_first {
+                        offset += null_count as IdxSize;
+                    };
 
-                            partition_to_groups(part, 0, false, offset)
-                        }
-                    })
-                })
-                .collect::<Vec<_>>();
+                    partition_to_groups(part, 0, false, offset)
+                }
+            });
+            let groups = POOL.install(|| groups.collect::<Vec<_>>());
             flatten_par(&groups)
         } else {
             partition_to_groups(values, null_count as IdxSize, nulls_first, 0)
@@ -167,13 +163,35 @@ where
                 };
                 num_groups_proxy(ca, multithreaded, sorted)
             },
-            DataType::Int64 | DataType::Float64 => {
+            DataType::Int64 => {
                 let ca = self.bit_repr_large();
                 num_groups_proxy(&ca, multithreaded, sorted)
             },
-            DataType::Int32 | DataType::Float32 => {
+            DataType::Int32 => {
                 let ca = self.bit_repr_small();
                 num_groups_proxy(&ca, multithreaded, sorted)
+            },
+            DataType::Float64 => {
+                // convince the compiler that we are this type.
+                let ca: &Float64Chunked = unsafe {
+                    &*(self as *const ChunkedArray<T> as *const ChunkedArray<Float64Type>)
+                };
+                num_groups_proxy(ca, multithreaded, sorted)
+            },
+            DataType::Float32 => {
+                // convince the compiler that we are this type.
+                let ca: &Float32Chunked = unsafe {
+                    &*(self as *const ChunkedArray<T> as *const ChunkedArray<Float32Type>)
+                };
+                num_groups_proxy(ca, multithreaded, sorted)
+            },
+            #[cfg(feature = "dtype-decimal")]
+            DataType::Decimal(_, _) => {
+                // convince the compiler that we are this type.
+                let ca: &Int128Chunked = unsafe {
+                    &*(self as *const ChunkedArray<T> as *const ChunkedArray<Int128Type>)
+                };
+                num_groups_proxy(ca, multithreaded, sorted)
             },
             #[cfg(all(feature = "performant", feature = "dtype-i8", feature = "dtype-u8"))]
             DataType::Int8 => {
@@ -271,7 +289,7 @@ impl IntoGroupsProxy for BinaryChunked {
                         let ca = self.slice(offset as i64, len);
                         let byte_hashes = fill_bytes_hashes(&ca, null_h, hb.clone());
 
-                        // Safety:
+                        // SAFETY:
                         // the underlying data is tied to self
                         unsafe {
                             std::mem::transmute::<Vec<BytesHash<'_>>, Vec<BytesHash<'a>>>(
@@ -327,7 +345,7 @@ impl IntoGroupsProxy for BinaryOffsetChunked {
                         let ca = self.slice(offset as i64, len);
                         let byte_hashes = fill_bytes_offset_hashes(&ca, null_h, hb.clone());
 
-                        // Safety:
+                        // SAFETY:
                         // the underlying data is tied to self
                         unsafe {
                             std::mem::transmute::<Vec<BytesHash<'_>>, Vec<BytesHash<'a>>>(
@@ -371,7 +389,7 @@ impl IntoGroupsProxy for ListChunked {
                             None => null_h,
                         };
 
-                        // Safety:
+                        // SAFETY:
                         // the underlying data is tied to self
                         unsafe {
                             std::mem::transmute::<BytesHash<'_>, BytesHash<'a>>(BytesHash::new(

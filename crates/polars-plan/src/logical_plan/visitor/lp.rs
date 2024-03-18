@@ -31,7 +31,7 @@ impl ALogicalPlanNode {
     where
         F: FnMut(ALogicalPlanNode) -> T,
     {
-        // safety: we drop this context before arena is out of scope
+        // SAFETY: we drop this context before arena is out of scope
         unsafe { op(Self::new(node, arena)) }
     }
 

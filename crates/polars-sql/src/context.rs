@@ -5,7 +5,6 @@ use polars_core::prelude::*;
 use polars_error::to_compute_err;
 use polars_lazy::prelude::*;
 use polars_plan::prelude::*;
-use polars_plan::utils::expressions_to_schema;
 use sqlparser::ast::{
     Distinct, ExcludeSelectItem, Expr as SQLExpr, FunctionArg, GroupByExpr, JoinOperator,
     ObjectName, ObjectType, Offset, OrderByExpr, Query, Select, SelectItem, SetExpr, SetOperator,

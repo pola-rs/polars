@@ -29,6 +29,7 @@ impl<T> Bytes<T> {
     /// Takes ownership of an allocated memory region.
     /// # Panics
     /// This function panics if and only if pointer is not null
+    ///
     /// # Safety
     /// This function is safe if and only if `ptr` is valid for `length`
     /// # Implementation
@@ -78,7 +79,7 @@ pub(crate) fn to_buffer<T: crate::types::NativeType>(
     // This should never panic as ForeignVec pointer must be non-null
     let ptr = std::ptr::NonNull::new(value.as_ptr() as _).unwrap();
     let len = value.len() * std::mem::size_of::<T>();
-    // Safety: allocation is guaranteed to be valid for `len` bytes
+    // SAFETY: allocation is guaranteed to be valid for `len` bytes
     unsafe { arrow_buffer::Buffer::from_custom_allocation(ptr, len, value) }
 }
 
@@ -94,7 +95,7 @@ pub(crate) fn to_bytes<T: crate::types::NativeType>(value: arrow_buffer::Buffer)
 
     let owner = crate::buffer::BytesAllocator::Arrow(value);
 
-    // Safety: slice is valid for len elements of T
+    // SAFETY: slice is valid for len elements of T
     unsafe { Bytes::from_foreign(ptr, len, owner) }
 }
 

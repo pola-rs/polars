@@ -1,4 +1,3 @@
-use std::convert::TryFrom;
 use std::fmt::Write;
 
 use arrow::array::ValueSize;
@@ -349,7 +348,7 @@ pub trait ListNameSpaceImpl: AsList {
             .downcast_iter()
             .map(|arr| sublist_get(arr, idx))
             .collect::<Vec<_>>();
-        // Safety: every element in list has dtype equal to its inner type
+        // SAFETY: every element in list has dtype equal to its inner type
         unsafe {
             Series::try_from((ca.name(), chunks))
                 .unwrap()

@@ -31,7 +31,8 @@ pub(crate) fn prepare_expression_for_context(
     // create a dummy lazyframe and run a very simple optimization run so that
     // type coercion and simplify expression optimizations run.
     let column = Series::full_null(name, 0, dtype);
-    let lf = DataFrame::new_no_checks(vec![column])
+    let lf = column
+        .into_frame()
         .lazy()
         .without_optimizations()
         .with_simplify_expr(true)

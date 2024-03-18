@@ -1,5 +1,3 @@
-use std::convert::TryInto;
-
 mod chunks_exact;
 mod merge;
 

@@ -260,7 +260,13 @@ impl<'a> TreeFmtNode<'a> {
                     .collect(),
             ),
             NL(h, Distinct { input, options }) => ND(
-                wh(h, &format!("UNIQUE BY {:?}", options.subset)),
+                wh(
+                    h,
+                    &format!(
+                        "UNIQUE[maintain_order: {:?}, keep_strategy: {:?}] BY {:?}",
+                        options.maintain_order, options.keep_strategy, options.subset
+                    ),
+                ),
                 vec![NL(None, input)],
             ),
             NL(h, LogicalPlan::Slice { input, offset, len }) => ND(

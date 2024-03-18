@@ -1,5 +1,3 @@
-use polars_ops::prelude::search_sorted;
-
 use super::*;
 
 pub(super) fn search_sorted_impl(s: &mut [Series], side: SearchSortedSide) -> PolarsResult<Series> {

@@ -10,23 +10,18 @@ use polars::frame::row::Row;
 use polars::frame::NullStrategy;
 #[cfg(feature = "avro")]
 use polars::io::avro::AvroCompression;
-#[cfg(feature = "ipc")]
-use polars::io::ipc::IpcCompression;
-use polars::prelude::AnyValue;
 use polars::series::ops::NullBehavior;
-use polars_core::prelude::{IndexOrder, QuantileInterpolOptions};
 use polars_core::utils::arrow::array::Array;
 use polars_core::utils::arrow::types::NativeType;
 use polars_lazy::prelude::*;
 #[cfg(feature = "cloud")]
 use polars_rs::io::cloud::CloudOptions;
-use polars_utils::total_ord::TotalEq;
+use polars_utils::total_ord::{TotalEq, TotalHash};
 use pyo3::basic::CompareOp;
-use pyo3::conversion::{FromPyObject, IntoPy};
 use pyo3::exceptions::{PyTypeError, PyValueError};
+use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList, PySequence};
-use pyo3::{intern, PyAny, PyResult};
 use smartstring::alias::String as SmartString;
 
 use crate::error::PyPolarsErr;
@@ -38,19 +33,19 @@ use crate::series::PySeries;
 use crate::{PyDataFrame, PyLazyFrame};
 
 pub(crate) fn slice_to_wrapped<T>(slice: &[T]) -> &[Wrap<T>] {
-    // Safety:
+    // SAFETY:
     // Wrap is transparent.
     unsafe { std::mem::transmute(slice) }
 }
 
 pub(crate) fn slice_extract_wrapped<T>(slice: &[Wrap<T>]) -> &[T] {
-    // Safety:
+    // SAFETY:
     // Wrap is transparent.
     unsafe { std::mem::transmute(slice) }
 }
 
 pub(crate) fn vec_extract_wrapped<T>(buf: Vec<Wrap<T>>) -> Vec<T> {
-    // Safety:
+    // SAFETY:
     // Wrap is transparent.
     unsafe { std::mem::transmute(buf) }
 }
@@ -129,7 +124,7 @@ fn struct_dict<'a>(
 // accept u128 array to ensure alignment is correct
 fn decimal_to_digits(v: i128, buf: &mut [u128; 3]) -> usize {
     const ZEROS: i128 = 0x3030_3030_3030_3030_3030_3030_3030_3030;
-    // safety: transmute is safe as there are 48 bytes in 3 128bit ints
+    // SAFETY: transmute is safe as there are 48 bytes in 3 128bit ints
     // and the minimal alignment of u8 fits u16
     let buf = unsafe { std::mem::transmute::<&mut [u128; 3], &mut [u8; 48]>(buf) };
     let mut buffer = itoa::Buffer::new();
@@ -440,6 +435,7 @@ impl ToPyObject for Wrap<TimeUnit> {
 impl<'s> FromPyObject<'s> for Wrap<Row<'s>> {
     fn extract(ob: &'s PyAny) -> PyResult<Self> {
         let vals = ob.extract::<Vec<Wrap<AnyValue<'s>>>>()?;
+        // SAFETY. Wrap is repr transparent.
         let vals: Vec<AnyValue> = unsafe { std::mem::transmute(vals) };
         Ok(Wrap(Row(vals)))
     }
@@ -495,6 +491,15 @@ impl PartialEq for ObjectValue {
 impl TotalEq for ObjectValue {
     fn tot_eq(&self, other: &Self) -> bool {
         self == other
+    }
+}
+
+impl TotalHash for ObjectValue {
+    fn tot_hash<H>(&self, state: &mut H)
+    where
+        H: Hasher,
+    {
+        self.hash(state);
     }
 }
 
@@ -785,6 +790,21 @@ impl FromPyObject<'_> for Wrap<ListToStructWidthStrategy> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "`n_field_strategy` must be one of {{'first_non_null', 'max_width'}}, got {v}",
+                )))
+            },
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
+impl FromPyObject<'_> for Wrap<NonExistent> {
+    fn extract(ob: &PyAny) -> PyResult<Self> {
+        let parsed = match ob.extract::<&str>()? {
+            "null" => NonExistent::Null,
+            "raise" => NonExistent::Raise,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "`non_existent` must be one of {{'null', 'raise'}}, got {v}",
                 )))
             },
         };

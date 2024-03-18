@@ -93,11 +93,16 @@ def test_ooc_sort(tmp_path: Path, monkeypatch: Any) -> None:
 
 
 @pytest.mark.write_disk()
-def test_streaming_sort(tmp_path: Path, monkeypatch: Any, capfd: Any) -> None:
+@pytest.mark.parametrize("spill_source", [True, False])
+def test_streaming_sort(
+    tmp_path: Path, monkeypatch: Any, capfd: Any, spill_source: bool
+) -> None:
     tmp_path.mkdir(exist_ok=True)
     monkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
     monkeypatch.setenv("POLARS_FORCE_OOC", "1")
     monkeypatch.setenv("POLARS_VERBOSE", "1")
+    if spill_source:
+        monkeypatch.setenv("POLARS_SPILL_SORT_PARTITIONS", "1")
     # this creates a lot of duplicate partitions and triggers: #7568
     assert (
         pl.Series(np.random.randint(0, 100, 100))
@@ -109,16 +114,23 @@ def test_streaming_sort(tmp_path: Path, monkeypatch: Any, capfd: Any) -> None:
     )
     (_, err) = capfd.readouterr()
     assert "df -> sort" in err
+    if spill_source:
+        assert "PARTITIONED FORCE SPILLED" in err
 
 
 @pytest.mark.write_disk()
-def test_out_of_core_sort_9503(tmp_path: Path, monkeypatch: Any) -> None:
+@pytest.mark.parametrize("spill_source", [True, False])
+def test_out_of_core_sort_9503(
+    tmp_path: Path, monkeypatch: Any, spill_source: bool
+) -> None:
     tmp_path.mkdir(exist_ok=True)
     monkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
     monkeypatch.setenv("POLARS_FORCE_OOC", "1")
+    if spill_source:
+        monkeypatch.setenv("POLARS_SPILL_SORT_PARTITIONS", "1")
     np.random.seed(0)
 
-    num_rows = 1_00_000
+    num_rows = 100_000
     num_columns = 2
     num_tables = 10
 
@@ -168,10 +180,6 @@ def test_out_of_core_sort_9503(tmp_path: Path, monkeypatch: Any) -> None:
     }
 
 
-@pytest.mark.skip(
-    reason="This test is unreliable - it fails intermittently in our CI"
-    " with 'OSError: No such file or directory (os error 2)'."
-)
 @pytest.mark.write_disk()
 @pytest.mark.slow()
 def test_streaming_sort_multiple_columns(
@@ -250,3 +258,9 @@ def test_reverse_variable_sort_13573() -> None:
     assert df.sort("a", "b", descending=[True, False]).collect(streaming=True).to_dict(
         as_series=False
     ) == {"a": ["two", "three", "one"], "b": ["five", "six", "four"]}
+
+
+def test_nulls_last_streaming_sort() -> None:
+    assert pl.LazyFrame({"x": [1, None]}).sort("x", nulls_last=True).collect(
+        streaming=True
+    ).to_dict(as_series=False) == {"x": [1, None]}

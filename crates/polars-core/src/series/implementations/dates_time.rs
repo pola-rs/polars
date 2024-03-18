@@ -7,15 +7,7 @@
 //! opting for a little more run time cost. We cast to the physical type -> apply the operation and
 //! (depending on the result) cast back to the original type
 //!
-use std::borrow::Cow;
-use std::ops::Deref;
-
-use ahash::RandomState;
-
-use super::{private, IntoSeries, SeriesTrait, SeriesWrap, *};
-use crate::chunked_array::ops::explode::ExplodeByOffsets;
-use crate::chunked_array::ops::ToBitRepr;
-use crate::chunked_array::AsSinglePtr;
+use super::*;
 #[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::*;
 use crate::prelude::*;
@@ -334,6 +326,9 @@ macro_rules! impl_dyn_series {
 
             fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
                 Arc::new(SeriesWrap(Clone::clone(&self.0)))
+            }
+            fn as_any(&self) -> &dyn Any {
+                &self.0
             }
         }
     };

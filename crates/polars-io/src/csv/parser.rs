@@ -1,11 +1,78 @@
+use std::path::PathBuf;
+
 use memchr::memchr2_iter;
 use num_traits::Pow;
 use polars_core::prelude::*;
+use polars_core::POOL;
+use polars_utils::index::Bounded;
+use polars_utils::slice::GetSaferUnchecked;
+use rayon::prelude::*;
 
 use super::buffer::*;
 use crate::csv::read::NullValuesCompiled;
 use crate::csv::splitfields::SplitFields;
+use crate::csv::utils::get_file_chunks;
 use crate::csv::CommentPrefix;
+use crate::utils::get_reader_bytes;
+
+/// Read the number of rows without parsing columns
+/// useful for count(*) queries
+pub fn count_rows(
+    path: &PathBuf,
+    separator: u8,
+    quote_char: Option<u8>,
+    comment_prefix: Option<&CommentPrefix>,
+    eol_char: u8,
+    has_header: bool,
+) -> PolarsResult<usize> {
+    let mut reader = polars_utils::open_file(path)?;
+    let reader_bytes = get_reader_bytes(&mut reader)?;
+    const MIN_ROWS_PER_THREAD: usize = 1024;
+    let max_threads = POOL.current_num_threads();
+
+    // Determine if parallelism is beneficial and how many threads
+    let n_threads = get_line_stats(
+        &reader_bytes,
+        MIN_ROWS_PER_THREAD,
+        eol_char,
+        None,
+        separator,
+        quote_char,
+    )
+    .map(|(mean, std)| {
+        let n_rows = (reader_bytes.len() as f32 / (mean - 0.01 * std)) as usize;
+        (n_rows / MIN_ROWS_PER_THREAD).clamp(1, max_threads)
+    })
+    .unwrap_or(1);
+
+    let file_chunks = get_file_chunks(
+        &reader_bytes,
+        n_threads,
+        None,
+        separator,
+        quote_char,
+        eol_char,
+    );
+
+    let iter = file_chunks.into_par_iter().map(|(start, stop)| {
+        let local_bytes = &reader_bytes[start..stop];
+        let row_iterator = SplitLines::new(local_bytes, quote_char.unwrap_or(b'"'), eol_char);
+        if comment_prefix.is_some() {
+            Ok(row_iterator
+                .filter(|line| !line.is_empty() && !is_comment_line(line, comment_prefix))
+                .count())
+        } else {
+            Ok(row_iterator.count())
+        }
+    });
+
+    let count_result: PolarsResult<usize> = POOL.install(|| iter.sum());
+
+    match count_result {
+        Ok(val) => Ok(val - (has_header as usize)),
+        Err(err) => Err(err),
+    }
+}
 
 /// Skip the utf-8 Byte Order Mark.
 /// credits to csv-core
@@ -81,16 +148,16 @@ pub(crate) fn next_line_position(
     if input.is_empty() {
         return None;
     }
-    let mut lines_checked = 0u16;
+    let mut lines_checked = 0u8;
     loop {
         if rejected_line_groups >= 3 {
             return None;
         }
-        lines_checked += 1;
+        lines_checked = lines_checked.wrapping_add(1);
         // headers might have an extra value
         // So if we have churned through enough lines
         // we try one field less.
-        if lines_checked == 256 {
+        if lines_checked == u8::MAX {
             if let Some(ef) = expected_fields {
                 expected_fields = Some(ef.saturating_sub(1))
             }
@@ -183,7 +250,7 @@ pub(crate) fn get_line_stats(
     bytes: &[u8],
     n_lines: usize,
     eol_char: u8,
-    expected_fields: usize,
+    expected_fields: Option<usize>,
     separator: u8,
     quote_char: Option<u8>,
 ) -> Option<(f32, f32)> {
@@ -199,7 +266,7 @@ pub(crate) fn get_line_stats(
         bytes_trunc = &bytes[offset..];
         let pos = next_line_position(
             bytes_trunc,
-            Some(expected_fields),
+            expected_fields,
             separator,
             quote_char,
             eol_char,
@@ -407,7 +474,9 @@ pub(super) fn parse_lines(
             match iter.next() {
                 // end of line
                 None => {
-                    bytes = &bytes[std::cmp::min(read_sol, bytes.len())..];
+                    bytes = unsafe {
+                        bytes.get_unchecked_release(std::cmp::min(read_sol, bytes.len())..)
+                    };
                     break;
                 },
                 Some((mut field, needs_escaping)) => {
@@ -419,8 +488,11 @@ pub(super) fn parse_lines(
                     if idx == next_projected as u32 {
                         // the iterator is finished when it encounters a `\n`
                         // this could be preceded by a '\r'
-                        if field_len > 0 && field[field_len - 1] == b'\r' {
-                            field = &field[..field_len - 1];
+                        unsafe {
+                            if field_len > 0 && *field.get_unchecked_release(field_len - 1) == b'\r'
+                            {
+                                field = field.get_unchecked_release(..field_len - 1);
+                            }
                         }
 
                         debug_assert!(processed_fields < buffers.len());
@@ -433,12 +505,12 @@ pub(super) fn parse_lines(
                         // if we have null values argument, check if this field equal null value
                         if let Some(null_values) = null_values {
                             let field = if needs_escaping && !field.is_empty() {
-                                &field[1..field.len() - 1]
+                                unsafe { field.get_unchecked_release(1..field.len() - 1) }
                             } else {
                                 field
                             };
 
-                            // safety:
+                            // SAFETY:
                             // process fields is in bounds
                             add_null = unsafe { null_values.is_null(field, processed_fields) }
                         }
@@ -486,7 +558,7 @@ pub(super) fn parse_lines(
 Consider setting 'truncate_ragged_lines={}'."#, polars_error::constants::TRUE)
                                     }
                                     let bytes_rem = skip_this_line(
-                                        &bytes[read_sol - 1..],
+                                        unsafe { bytes.get_unchecked_release(read_sol - 1..) },
                                         quote_char,
                                         eol_char,
                                     );

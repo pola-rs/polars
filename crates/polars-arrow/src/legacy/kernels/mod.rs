@@ -7,8 +7,10 @@ pub mod agg_mean;
 pub mod atan2;
 pub mod concatenate;
 pub mod ewm;
+#[cfg(feature = "compute_take")]
 pub mod fixed_size_list;
 pub mod float;
+#[cfg(feature = "compute_take")]
 pub mod list;
 pub mod list_bytes_iter;
 pub mod pow;
@@ -22,9 +24,9 @@ pub mod string;
 pub mod take_agg;
 mod time;
 
-pub use time::Ambiguous;
 #[cfg(feature = "timezones")]
 pub use time::{convert_to_naive_local, convert_to_naive_local_opt};
+pub use time::{Ambiguous, NonExistent};
 
 /// Internal state of [SlicesIterator]
 #[derive(Debug, PartialEq)]

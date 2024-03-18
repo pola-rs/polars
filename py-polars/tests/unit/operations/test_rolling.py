@@ -9,17 +9,18 @@ import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from polars.type_aliases import ClosedInterval
+    from polars.type_aliases import ClosedInterval, PolarsIntegerType
 
 
-def test_rolling_group_by_overlapping_groups() -> None:
+@pytest.mark.parametrize("dtype", [pl.UInt32, pl.UInt64, pl.Int32, pl.Int64])
+def test_rolling_group_by_overlapping_groups(dtype: PolarsIntegerType) -> None:
     # this first aggregates overlapping groups so they cannot be naively flattened
     df = pl.DataFrame({"a": [41, 60, 37, 51, 52, 39, 40]})
 
     assert_series_equal(
         (
             df.with_row_index()
-            .with_columns(pl.col("index").cast(pl.Int32))
+            .with_columns(pl.col("index").cast(dtype))
             .rolling(index_column="index", period="5i")
             .agg(
                 # trigger the apply on the expression engine
@@ -31,12 +32,17 @@ def test_rolling_group_by_overlapping_groups() -> None:
 
 
 @pytest.mark.parametrize("input", [[pl.col("b").sum()], pl.col("b").sum()])
-def test_rolling_agg_input_types(input: Any) -> None:
-    df = pl.LazyFrame({"index_column": [0, 1, 2, 3], "b": [1, 3, 1, 2]}).set_sorted(
-        "index_column"
-    )
+@pytest.mark.parametrize("dtype", [pl.UInt32, pl.UInt64, pl.Int32, pl.Int64])
+def test_rolling_agg_input_types(input: Any, dtype: PolarsIntegerType) -> None:
+    df = pl.LazyFrame(
+        {"index_column": [0, 1, 2, 3], "b": [1, 3, 1, 2]},
+        schema_overrides={"index_column": dtype},
+    ).set_sorted("index_column")
     result = df.rolling(index_column="index_column", period="2i").agg(input)
-    expected = pl.LazyFrame({"index_column": [0, 1, 2, 3], "b": [1, 4, 4, 3]})
+    expected = pl.LazyFrame(
+        {"index_column": [0, 1, 2, 3], "b": [1, 4, 4, 3]},
+        schema_overrides={"index_column": dtype},
+    )
     assert_frame_equal(result, expected)
 
 

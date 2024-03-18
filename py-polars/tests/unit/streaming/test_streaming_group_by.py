@@ -209,16 +209,13 @@ def test_streaming_group_by_ooc_q1(
     tmp_path: Path,
     monkeypatch: Any,
 ) -> None:
-    s = random_integers
-
     tmp_path.mkdir(exist_ok=True)
     monkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
     monkeypatch.setenv("POLARS_FORCE_OOC", "1")
 
+    lf = random_integers.to_frame().lazy()
     result = (
-        s.to_frame()
-        .lazy()
-        .group_by("a")
+        lf.group_by("a")
         .agg(pl.first("a").alias("a_first"), pl.last("a").alias("a_last"))
         .sort("a")
         .collect(streaming=True)
@@ -240,17 +237,13 @@ def test_streaming_group_by_ooc_q2(
     tmp_path: Path,
     monkeypatch: Any,
 ) -> None:
-    s = random_integers
-
     tmp_path.mkdir(exist_ok=True)
     monkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
     monkeypatch.setenv("POLARS_FORCE_OOC", "1")
 
+    lf = random_integers.cast(str).to_frame().lazy()
     result = (
-        s.cast(str)
-        .to_frame()
-        .lazy()
-        .group_by("a")
+        lf.group_by("a")
         .agg(pl.first("a").alias("a_first"), pl.last("a").alias("a_last"))
         .sort("a")
         .collect(streaming=True)
@@ -272,16 +265,13 @@ def test_streaming_group_by_ooc_q3(
     tmp_path: Path,
     monkeypatch: Any,
 ) -> None:
-    s = random_integers
-
     tmp_path.mkdir(exist_ok=True)
     monkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
     monkeypatch.setenv("POLARS_FORCE_OOC", "1")
 
+    lf = pl.LazyFrame({"a": random_integers, "b": random_integers})
     result = (
-        pl.DataFrame({"a": s, "b": s})
-        .lazy()
-        .group_by(["a", "b"])
+        lf.group_by("a", "b")
         .agg(pl.first("a").alias("a_first"), pl.last("a").alias("a_last"))
         .sort("a")
         .collect(streaming=True)
@@ -456,3 +446,37 @@ def test_group_by_multiple_keys_one_literal(streaming: bool) -> None:
         .to_dict(as_series=False)
         == expected
     )
+
+
+def test_streaming_group_null_count() -> None:
+    df = pl.DataFrame({"g": [1] * 6, "a": ["yes", None] * 3}).lazy()
+    assert df.group_by("g").agg(pl.col("a").count()).collect(streaming=True).to_dict(
+        as_series=False
+    ) == {"g": [1], "a": [3]}
+
+
+def test_streaming_groupby_binary_15116() -> None:
+    assert (
+        pl.LazyFrame(
+            {
+                "str": [
+                    "A",
+                    "A",
+                    "BB",
+                    "BB",
+                    "CCCC",
+                    "CCCC",
+                    "DDDDDDDD",
+                    "DDDDDDDD",
+                    "EEEEEEEEEEEEEEEE",
+                    "A",
+                ]
+            }
+        )
+        .select([pl.col("str").cast(pl.Binary)])
+        .group_by(["str"])
+        .agg([pl.len().alias("count")])
+    ).sort("str").collect(streaming=True).to_dict(as_series=False) == {
+        "str": [b"A", b"BB", b"CCCC", b"DDDDDDDD", b"EEEEEEEEEEEEEEEE"],
+        "count": [3, 2, 2, 2, 1],
+    }

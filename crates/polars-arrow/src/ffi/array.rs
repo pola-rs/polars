@@ -93,6 +93,7 @@ struct PrivateData {
 
 impl ArrowArray {
     /// creates a new `ArrowArray` from existing data.
+    ///
     /// # Safety
     /// This method releases `buffers`. Consumers of this struct *must* call `release` before
     /// releasing this struct, or contents in `buffers` leak.
@@ -411,7 +412,8 @@ unsafe fn buffer_len(
     })
 }
 
-/// Safety
+/// # Safety
+///
 /// This function is safe iff:
 /// * `array.children` at `index` is valid
 /// * `array.children` is not mutably shared for the lifetime of `parent`
@@ -437,7 +439,7 @@ unsafe fn create_child(
         );
     }
 
-    // Safety - part of the invariant
+    // SAFETY: part of the invariant
     let arr_ptr = unsafe { *array.children.add(index) };
 
     // catch what we can
@@ -448,12 +450,13 @@ unsafe fn create_child(
         )
     }
 
-    // Safety - invariant of this function
+    // SAFETY: invariant of this function
     let arr_ptr = unsafe { &*arr_ptr };
     Ok(ArrowArrayChild::new(arr_ptr, data_type, parent))
 }
 
-/// Safety
+/// # Safety
+///
 /// This function is safe iff:
 /// * `array.dictionary` is valid
 /// * `array.dictionary` is not mutably shared for the lifetime of `parent`
@@ -472,7 +475,7 @@ unsafe fn create_dictionary(
             )
         }
 
-        // safety: part of the invariant
+        // SAFETY: part of the invariant
         let array = unsafe { &*array.dictionary };
         Ok(Some(ArrowArrayChild::new(array, data_type, parent)))
     } else {
@@ -488,6 +491,7 @@ pub trait ArrowArrayRef: std::fmt::Debug {
     /// returns the null bit buffer.
     /// Rust implementation uses a buffer that is not part of the array of buffers.
     /// The C Data interface's null buffer is part of the array of buffers.
+    ///
     /// # Safety
     /// The caller must guarantee that the buffer `index` corresponds to a bitmap.
     /// This function assumes that the bitmap created from FFI is valid; this is impossible to prove.

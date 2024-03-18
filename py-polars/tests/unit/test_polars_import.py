@@ -28,11 +28,11 @@ def _import_timings() -> bytes:
     # assemble suitable command to get polars module import timing;
     # run in a separate process to ensure clean timing results.
     cmd = f'{sys.executable} -S -X importtime -c "import polars"'
-    return (
-        subprocess.run(cmd, shell=True, capture_output=True)
-        .stderr.replace(b"import time:", b"")
-        .strip()
-    )
+    output = subprocess.run(cmd, shell=True, capture_output=True).stderr
+    if b"Traceback" in output:
+        msg = f"measuring import timings failed\n\nCommand output:\n{output.decode()}"
+        raise RuntimeError(msg)
+    return output.replace(b"import time:", b"").strip()
 
 
 def _import_timings_as_frame(n_tries: int) -> tuple[pl.DataFrame, int]:

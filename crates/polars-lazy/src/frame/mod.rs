@@ -19,7 +19,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 pub use anonymous_scan::*;
-use arrow::legacy::prelude::QuantileInterpolOptions;
 #[cfg(feature = "csv")]
 pub use csv::*;
 #[cfg(not(target_arch = "wasm32"))]
@@ -31,20 +30,10 @@ pub use ipc::*;
 pub use ndjson::*;
 #[cfg(feature = "parquet")]
 pub use parquet::*;
-use polars_core::frame::explode::MeltArgs;
 use polars_core::prelude::*;
 use polars_io::RowIndex;
 pub use polars_plan::frame::{AllowedOptimizations, OptState};
 use polars_plan::global::FETCH_ROWS;
-#[cfg(any(
-    feature = "ipc",
-    feature = "parquet",
-    feature = "csv",
-    feature = "json"
-))]
-use polars_plan::logical_plan::collect_fingerprints;
-use polars_plan::logical_plan::optimize;
-use polars_plan::utils::expr_output_name;
 use smartstring::alias::String as SmartString;
 
 use crate::fallible;
@@ -151,6 +140,7 @@ impl LazyFrame {
             streaming: false,
             eager: false,
             fast_projection: false,
+            row_estimate: false,
         })
     }
 
@@ -198,12 +188,19 @@ impl LazyFrame {
         self
     }
 
-    /// Allow (partial) streaming engine.
+    /// Run nodes that are capably of doing so on the streaming engine.
     pub fn with_streaming(mut self, toggle: bool) -> Self {
         self.opt_state.streaming = toggle;
         self
     }
 
+    /// Try to estimate the number of rows so that joins can determine which side to keep in memory.
+    pub fn with_row_estimate(mut self, toggle: bool) -> Self {
+        self.opt_state.row_estimate = toggle;
+        self
+    }
+
+    /// Run every node eagerly. This turns off multi-node optimizations.
     pub fn _with_eager(mut self, toggle: bool) -> Self {
         self.opt_state.eager = toggle;
         self
@@ -613,7 +610,15 @@ impl LazyFrame {
         if streaming {
             #[cfg(feature = "streaming")]
             {
-                insert_streaming_nodes(lp_top, lp_arena, expr_arena, scratch, _fmt, true)?;
+                insert_streaming_nodes(
+                    lp_top,
+                    lp_arena,
+                    expr_arena,
+                    scratch,
+                    _fmt,
+                    true,
+                    opt_state.row_estimate,
+                )?;
             }
             #[cfg(not(feature = "streaming"))]
             {
@@ -1113,7 +1118,7 @@ impl LazyFrame {
         )
     }
 
-    /// Creates the cartesian product from both frames, preserving the order of the left keys.
+    /// Creates the Cartesian product from both frames, preserving the order of the left keys.
     #[cfg(feature = "cross_join")]
     pub fn cross_join(self, other: LazyFrame) -> LazyFrame {
         self.join(other, vec![], vec![], JoinArgs::new(JoinType::Cross))
@@ -1411,7 +1416,11 @@ impl LazyFrame {
     /// - String columns will sum to None.
     pub fn sum(self) -> PolarsResult<LazyFrame> {
         self.stats_helper(
-            |dt| dt.is_numeric() || matches!(dt, DataType::Boolean | DataType::Duration(_)),
+            |dt| {
+                dt.is_numeric()
+                    || dt.is_decimal()
+                    || matches!(dt, DataType::Boolean | DataType::Duration(_))
+            },
             |name| col(name).sum(),
         )
     }
@@ -1440,7 +1449,13 @@ impl LazyFrame {
     /// - String columns will sum to None.
     pub fn median(self) -> PolarsResult<LazyFrame> {
         self.stats_helper(
-            |dt| dt.is_numeric() || matches!(dt, DataType::Boolean | DataType::Datetime(_, _)),
+            |dt| {
+                dt.is_numeric()
+                    || matches!(
+                        dt,
+                        DataType::Boolean | DataType::Duration(_) | DataType::Datetime(_, _)
+                    )
+            },
             |name| col(name).median(),
         )
     }
@@ -1927,7 +1942,7 @@ impl JoinBuilder {
     /// The passed expressions must be valid in both `LazyFrame`s in the join.
     pub fn on<E: AsRef<[Expr]>>(mut self, on: E) -> Self {
         let on = on.as_ref().to_vec();
-        self.left_on = on.clone();
+        self.left_on.clone_from(&on);
         self.right_on = on;
         self
     }

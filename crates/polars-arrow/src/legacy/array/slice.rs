@@ -15,6 +15,7 @@ pub trait SlicedArray {
     /// Slices the [`Array`].
     /// # Implementation
     /// This operation is `O(1)`.
+    ///
     /// # Safety
     /// The caller must ensure that `offset + length <= self.len()`
     unsafe fn slice_typed_unchecked(&self, offset: usize, length: usize) -> Self

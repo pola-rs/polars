@@ -8,7 +8,6 @@ use std::ops::Not;
 use arrow::array::BooleanArray;
 use arrow::bitmap::MutableBitmap;
 use arrow::compute;
-use arrow::legacy::prelude::FromData;
 use num_traits::{NumCast, ToPrimitive};
 use polars_compute::comparisons::TotalOrdKernel;
 

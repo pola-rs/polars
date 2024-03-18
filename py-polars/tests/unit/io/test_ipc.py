@@ -85,15 +85,28 @@ def test_select_columns_from_file(
 
 @pytest.mark.parametrize("stream", [True, False])
 def test_select_columns_from_buffer(stream: bool) -> None:
-    df = pl.DataFrame({"a": [1, 2, 3], "b": [True, False, True], "c": ["a", "b", "c"]})
-    expected = pl.DataFrame({"b": [True, False, True], "c": ["a", "b", "c"]})
+    df = pl.DataFrame(
+        {
+            "a": [1],
+            "b": [2],
+            "c": [3],
+        }
+    )
 
     f = io.BytesIO()
     write_ipc(df, stream, f)
     f.seek(0)
 
-    read_df = read_ipc(stream, f, columns=["b", "c"], use_pyarrow=False)
-    assert_frame_equal(expected, read_df)
+    actual = read_ipc(stream, f, columns=["b", "c", "a"], use_pyarrow=False)
+
+    expected = pl.DataFrame(
+        {
+            "b": [2],
+            "c": [3],
+            "a": [1],
+        }
+    )
+    assert_frame_equal(expected, actual)
 
 
 @pytest.mark.parametrize("stream", [True, False])
@@ -241,3 +254,15 @@ def test_struct_nested_enum() -> None:
     df.write_ipc(buffer)
     df = pl.read_ipc(buffer)
     assert df.get_column("struct_cat").dtype == dtype
+
+
+@pytest.mark.slow()
+def test_ipc_view_gc_14448() -> None:
+    f = io.BytesIO()
+    # This size was required to trigger the bug
+    df = pl.DataFrame(
+        pl.Series(["small"] * 10 + ["looooooong string......."] * 750).slice(20, 20)
+    )
+    df.write_ipc(f, future=True)
+    f.seek(0)
+    assert_frame_equal(pl.read_ipc(f), df)

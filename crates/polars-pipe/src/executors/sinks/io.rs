@@ -2,10 +2,9 @@ use std::fs;
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
-use crossbeam_channel::{bounded, Sender};
+use crossbeam_channel::{bounded, unbounded, Receiver, Sender};
 use polars_core::error::ErrString;
 use polars_core::prelude::*;
 use polars_core::utils::arrow::temporal_conversions::SECONDS_IN_DAY;
@@ -21,7 +20,8 @@ type Payload = (Option<IdxCa>, DfIter);
 
 /// A helper that can be used to spill to disk
 pub(crate) struct IOThread {
-    sender: Sender<Payload>,
+    payload_tx: Sender<Payload>,
+    cleanup_tx: Sender<PathBuf>,
     _lockfile: Arc<LockFile>,
     pub(in crate::executors::sinks) dir: PathBuf,
     pub(in crate::executors::sinks) sent: Arc<AtomicUsize>,
@@ -37,13 +37,10 @@ fn get_lockfile_path(dir: &Path) -> PathBuf {
 }
 
 fn get_spill_dir(operation_name: &'static str) -> PolarsResult<PathBuf> {
-    let uuid = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
+    let id = uuid::Uuid::new_v4();
 
     let mut dir = std::path::PathBuf::from(get_base_temp_dir());
-    dir.push(&format!("polars/{operation_name}/{uuid}"));
+    dir.push(&format!("polars/{operation_name}/{id}"));
 
     if !dir.exists() {
         fs::create_dir_all(&dir).map_err(|err| {
@@ -61,10 +58,24 @@ fn get_spill_dir(operation_name: &'static str) -> PolarsResult<PathBuf> {
     Ok(dir)
 }
 
+fn clean_after_delay(time: Option<SystemTime>, secs: u64, path: &Path) {
+    if let Some(time) = time {
+        let modified_since = SystemTime::now().duration_since(time).unwrap().as_secs();
+        if modified_since > secs {
+            // This can be fallible if another thread removes this.
+            // That is fine.
+            let _ = std::fs::remove_dir_all(path);
+        }
+    } else {
+        polars_warn!("could not modified time on this platform")
+    }
+}
+
 /// Starts a new thread that will clean up operations of directories that don't
 /// have a lockfile (opened with 'w' permissions).
-fn gc_thread(operation_name: &'static str) {
+fn gc_thread(operation_name: &'static str, rx: Receiver<PathBuf>) {
     let _ = std::thread::spawn(move || {
+        // First clean all existing
         let mut dir = std::path::PathBuf::from(get_base_temp_dir());
         dir.push(&format!("polars/{operation_name}"));
 
@@ -81,21 +92,33 @@ fn gc_thread(operation_name: &'static str) {
 
                 if let Ok(lockfile) = File::open(lockfile_path) {
                     // lockfile can be read
-                    if let Ok(time) = lockfile.metadata().unwrap().modified() {
-                        let modified_since =
-                            SystemTime::now().duration_since(time).unwrap().as_secs();
-                        // the lockfile can still exist if a process was canceled
+                    if let Ok(md) = lockfile.metadata() {
+                        let time = md.modified().ok();
+                        // The lockfile can still exist if a process was canceled
                         // so we also check the modified date
-                        // we don't expect queries that run a month
-                        if modified_since > (SECONDS_IN_DAY as u64 * 30) {
-                            std::fs::remove_dir_all(path).unwrap()
-                        }
-                    } else {
-                        eprintln!("could not modified time on this platform")
+                        // we don't expect queries that run a month.
+                        clean_after_delay(time, SECONDS_IN_DAY as u64 * 30, &path);
                     }
                 } else {
-                    std::fs::remove_dir_all(path).unwrap()
+                    // If path already removed, we simply continue.
+                    if let Ok(md) = path.metadata() {
+                        let time = md.modified().ok();
+                        // Wait 15 seconds to ensure we don't remove before lockfile is created
+                        // in a `collect_all` contention case
+                        clean_after_delay(time, 15, &path);
+                    }
                 }
+            }
+        }
+
+        // Clean on receive
+        while let Ok(path) = rx.recv() {
+            if path.is_file() {
+                let res = std::fs::remove_file(path);
+                debug_assert!(res.is_ok());
+            } else {
+                let res = std::fs::remove_dir_all(path);
+                debug_assert!(res.is_ok());
             }
         }
     });
@@ -114,12 +137,13 @@ impl IOThread {
         let lockfile_path = get_lockfile_path(&dir);
         let lockfile = Arc::new(LockFile::new(lockfile_path)?);
 
+        let (cleanup_tx, rx) = unbounded::<PathBuf>();
         // start a thread that will clean up old dumps.
         // TODO: if we will have more ooc in the future  we will have a dedicated GC thread
-        gc_thread(operation_name);
+        gc_thread(operation_name, rx);
 
         // we need some pushback otherwise we still could go OOM.
-        let (sender, receiver) = bounded::<Payload>(morsels_per_sink() * 2);
+        let (tx, rx) = bounded::<Payload>(morsels_per_sink() * 2);
 
         let sent: Arc<AtomicUsize> = Default::default();
         let total: Arc<AtomicUsize> = Default::default();
@@ -142,9 +166,10 @@ impl IOThread {
             //    This will dump to `dir/count.ipc`
             // 2. (Some(partitions), DfIter)
             //    This will dump to `dir/partition/count.ipc`
-            while let Ok((partitions, iter)) = receiver.recv() {
+            while let Ok((partitions, iter)) = rx.recv() {
                 if let Some(partitions) = partitions {
-                    for (part, df) in partitions.into_no_null_iter().zip(iter) {
+                    for (part, mut df) in partitions.into_no_null_iter().zip(iter) {
+                        df.shrink_to_fit();
                         let mut path = dir2.clone();
                         path.push(format!("{part}"));
 
@@ -160,13 +185,14 @@ impl IOThread {
                     }
                 } else {
                     let mut path = dir2.clone();
-                    path.push(format!("{count}.ipc"));
+                    path.push(format!("{count}_0_pass.ipc"));
 
                     let file = File::create(path).unwrap();
                     let writer = IpcWriter::new(file).with_pl_flavor(true);
                     let mut writer = writer.batched(&schema).unwrap();
 
-                    for df in iter {
+                    for mut df in iter {
+                        df.shrink_to_fit();
                         writer.write_batch(&df).unwrap();
                     }
                     writer.finish().unwrap();
@@ -178,7 +204,8 @@ impl IOThread {
         });
 
         Ok(Self {
-            sender,
+            payload_tx: tx,
+            cleanup_tx,
             dir,
             sent,
             total,
@@ -191,12 +218,13 @@ impl IOThread {
     pub(in crate::executors::sinks) fn dump_chunk(&self, mut df: DataFrame) {
         // if IO thread is blocked
         // we write locally on this thread
-        if self.sender.is_full() {
+        if self.payload_tx.is_full() {
+            df.shrink_to_fit();
             let mut path = self.dir.clone();
             let count = self.thread_local_count.fetch_add(1, Ordering::Relaxed);
             // thread local name we start with an underscore to ensure we don't get
             // duplicates
-            path.push(format!("_{count}.ipc"));
+            path.push(format!("_{count}_full.ipc"));
 
             let file = File::create(path).unwrap();
             let mut writer = IpcWriter::new(file).with_pl_flavor(true);
@@ -205,6 +233,10 @@ impl IOThread {
             let iter = Box::new(std::iter::once(df));
             self.dump_iter(None, iter)
         }
+    }
+
+    pub(in crate::executors::sinks) fn clean(&self, path: PathBuf) {
+        self.cleanup_tx.send(path).unwrap()
     }
 
     pub(in crate::executors::sinks) fn dump_partition(&self, partition_no: IdxSize, df: DataFrame) {
@@ -216,8 +248,9 @@ impl IOThread {
     pub(in crate::executors::sinks) fn dump_partition_local(
         &self,
         partition_no: IdxSize,
-        df: DataFrame,
+        mut df: DataFrame,
     ) {
+        df.shrink_to_fit();
         let count = self.thread_local_count.fetch_add(1, Ordering::Relaxed);
         let mut path = self.dir.clone();
         path.push(format!("{partition_no}"));
@@ -235,7 +268,7 @@ impl IOThread {
 
     pub(in crate::executors::sinks) fn dump_iter(&self, partition: Option<IdxCa>, iter: DfIter) {
         let add = iter.size_hint().1.unwrap();
-        self.sender.send((partition, iter)).unwrap();
+        self.payload_tx.send((partition, iter)).unwrap();
         self.sent.fetch_add(add, Ordering::Relaxed);
     }
 }
@@ -262,10 +295,11 @@ struct LockFile {
 
 impl LockFile {
     fn new(path: PathBuf) -> PolarsResult<Self> {
-        if File::create(&path).is_ok() {
-            Ok(Self { path })
-        } else {
-            polars_bail!(ComputeError: "could not create lockfile")
+        match File::create(&path) {
+            Ok(_) => Ok(Self { path }),
+            Err(e) => {
+                polars_bail!(ComputeError: "could not create lockfile: {e}")
+            },
         }
     }
 }

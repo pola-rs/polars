@@ -1,7 +1,6 @@
 #[cfg(feature = "timezones")]
 use polars_core::chunked_array::temporal::parse_time_zone;
 use polars_core::prelude::*;
-use polars_core::series::Series;
 use polars_time::{datetime_range_impl, ClosedWindow, Duration};
 
 use super::utils::{
@@ -67,6 +66,7 @@ pub(super) fn datetime_range(
                 start.datetime().unwrap(),
                 Some(&tz),
                 &StringChunked::from_iter(std::iter::once("raise")),
+                NonExistent::Raise,
             )?
             .cast(&dtype)?
             .into_series(),
@@ -74,6 +74,7 @@ pub(super) fn datetime_range(
                 end.datetime().unwrap(),
                 Some(&tz),
                 &StringChunked::from_iter(std::iter::once("raise")),
+                NonExistent::Raise,
             )?
             .cast(&dtype)?
             .into_series(),
@@ -154,6 +155,7 @@ pub(super) fn datetime_ranges(
                 start.datetime().unwrap(),
                 Some(&tz),
                 &StringChunked::from_iter(std::iter::once("raise")),
+                NonExistent::Raise,
             )?
             .cast(&dtype)?
             .into_series()
@@ -163,6 +165,7 @@ pub(super) fn datetime_ranges(
                 end.datetime().unwrap(),
                 Some(&tz),
                 &StringChunked::from_iter(std::iter::once("raise")),
+                NonExistent::Raise,
             )?
             .cast(&dtype)?
             .into_series()

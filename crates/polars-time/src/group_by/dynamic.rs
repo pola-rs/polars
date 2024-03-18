@@ -1,7 +1,6 @@
 use arrow::legacy::time_zone::Tz;
 use arrow::legacy::utils::CustomIterTools;
 use polars_core::export::rayon::prelude::*;
-use polars_core::frame::group_by::GroupsProxy;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::ensure_sorted_arg;
@@ -151,18 +150,18 @@ impl Wrap<&DataFrame> {
                 TimeUnit::Milliseconds,
                 None,
             ),
-            Int32 => {
-                let time_type = Datetime(TimeUnit::Nanoseconds, None);
-                let dt = time.cast(&Int64).unwrap().cast(&time_type).unwrap();
+            UInt32 | UInt64 | Int32 => {
+                let time_type_dt = Datetime(TimeUnit::Nanoseconds, None);
+                let dt = time.cast(&Int64).unwrap().cast(&time_type_dt).unwrap();
                 let (out, by, gt) = self.impl_group_by_rolling(
                     dt,
                     by,
                     options,
                     TimeUnit::Nanoseconds,
                     None,
-                    &time_type,
+                    &time_type_dt,
                 )?;
-                let out = out.cast(&Int64).unwrap().cast(&Int32).unwrap();
+                let out = out.cast(&Int64).unwrap().cast(time_type).unwrap();
                 return Ok((out, by, gt));
             },
             Int64 => {
@@ -803,11 +802,13 @@ mod test {
             .unwrap()
             .and_hms_opt(0, 0, 0)
             .unwrap()
+            .and_utc()
             .timestamp_millis();
         let stop = NaiveDate::from_ymd_opt(2021, 12, 16)
             .unwrap()
             .and_hms_opt(3, 0, 0)
             .unwrap()
+            .and_utc()
             .timestamp_millis();
         let range = datetime_range_impl(
             "date",
@@ -856,11 +857,13 @@ mod test {
             .unwrap()
             .and_hms_opt(1, 0, 0)
             .unwrap()
+            .and_utc()
             .timestamp_millis();
         let stop = NaiveDate::from_ymd_opt(2021, 12, 16)
             .unwrap()
             .and_hms_opt(3, 0, 0)
             .unwrap()
+            .and_utc()
             .timestamp_millis();
         let range = datetime_range_impl(
             "_upper_boundary",
@@ -879,11 +882,13 @@ mod test {
             .unwrap()
             .and_hms_opt(0, 0, 0)
             .unwrap()
+            .and_utc()
             .timestamp_millis();
         let stop = NaiveDate::from_ymd_opt(2021, 12, 16)
             .unwrap()
             .and_hms_opt(2, 0, 0)
             .unwrap()
+            .and_utc()
             .timestamp_millis();
         let range = datetime_range_impl(
             "_lower_boundary",
@@ -918,11 +923,13 @@ mod test {
             .unwrap()
             .and_hms_opt(12, 0, 0)
             .unwrap()
+            .and_utc()
             .timestamp_millis();
         let stop = NaiveDate::from_ymd_opt(2021, 3, 7)
             .unwrap()
             .and_hms_opt(12, 0, 0)
             .unwrap()
+            .and_utc()
             .timestamp_millis();
         let range = datetime_range_impl(
             "date",

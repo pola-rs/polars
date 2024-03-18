@@ -1,16 +1,12 @@
 use std::fmt::Write;
-use std::sync::Arc;
 
 use arrow::array::PrimitiveArray;
 use polars_core::export::arrow::bitmap::Bitmap;
-use polars_core::frame::group_by::{GroupBy, GroupsProxy};
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::_split_offsets;
 use polars_core::{downcast_as_macro_arg_physical, POOL};
-use polars_ops::frame::join::{
-    default_join_ids, private_left_join_multiple_keys, ChunkJoinOptIds, JoinValidation,
-};
+use polars_ops::frame::join::{default_join_ids, private_left_join_multiple_keys, ChunkJoinOptIds};
 use polars_ops::frame::SeriesJoin;
 use polars_utils::format_smartstring;
 use polars_utils::sort::perfect_sort;
@@ -18,7 +14,6 @@ use polars_utils::sync::SyncPtr;
 use rayon::prelude::*;
 
 use super::*;
-use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 
 pub struct WindowExpr {
@@ -114,12 +109,12 @@ impl WindowExpr {
             take_idx = original_idx;
         }
         cache_gb(gb, state, cache_key);
-        // Safety:
+        // SAFETY:
         // we only have unique indices ranging from 0..len
         unsafe { perfect_sort(&POOL, &idx_mapping, &mut take_idx) };
         let idx = IdxCa::from_vec("", take_idx);
 
-        // Safety:
+        // SAFETY:
         // groups should always be in bounds.
         unsafe { Ok(flattened.take_unchecked(&idx)) }
     }
@@ -567,8 +562,8 @@ impl PhysicalExpr for WindowExpr {
                                     .unwrap()
                                     .1
                             } else {
-                                let df_right = DataFrame::new_no_checks(keys);
-                                let df_left = DataFrame::new_no_checks(group_by_columns);
+                                let df_right = unsafe { DataFrame::new_no_checks(keys) };
+                                let df_left = unsafe { DataFrame::new_no_checks(group_by_columns) };
                                 private_left_join_multiple_keys(
                                     &df_left, &df_right, None, None, true,
                                 )
@@ -635,7 +630,7 @@ fn materialize_column(join_opt_ids: &ChunkJoinOptIds, out_column: &Series) -> Se
 
         match join_opt_ids {
             Either::Left(ids) => unsafe {
-                out_column.take_unchecked(&ids.iter().copied().collect_ca(""))
+                IdxCa::with_nullable_idx(ids, |idx| out_column.take_unchecked(idx))
             },
             Either::Right(ids) => unsafe { out_column.take_opt_chunked_unchecked(ids) },
         }
@@ -682,7 +677,7 @@ where
 {
     let mut values = Vec::with_capacity(len);
     let ptr: *mut T::Native = values.as_mut_ptr();
-    // safety:
+    // SAFETY:
     // we will write from different threads but we will never alias.
     let sync_ptr_values = unsafe { SyncPtr::new(ptr) };
 
@@ -724,7 +719,7 @@ where
             },
         }
 
-        // safety: we have written all slots
+        // SAFETY: we have written all slots
         unsafe { values.set_len(len) }
         Some(ChunkedArray::new_vec(ca.name(), values).into_series())
     } else {
@@ -796,7 +791,7 @@ where
                 })
             },
         }
-        // safety: we have written all slots
+        // SAFETY: we have written all slots
         unsafe { values.set_len(len) }
         unsafe { validity.set_len(len) }
         let validity = Bitmap::from(validity);

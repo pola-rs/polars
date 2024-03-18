@@ -105,7 +105,7 @@ impl CategoricalChunked {
                 self.get_ordering(),
             )
         };
-        out.set_fast_unique(self.can_fast_unique());
+        out.set_fast_unique(self._can_fast_unique());
 
         out
     }
@@ -118,7 +118,7 @@ impl CategoricalChunked {
             RevMapping::Local(categories, _) => categories,
         };
 
-        // Safety: keys and values are in bounds
+        // SAFETY: keys and values are in bounds
         unsafe {
             Ok(CategoricalChunked::from_keys_and_values_global(
                 self.name(),
@@ -130,18 +130,18 @@ impl CategoricalChunked {
         }
     }
 
-    // Convert to fixed enum. In case a value is not in the categories return Error
-    pub fn to_enum(&self, categories: &Utf8ViewArray, hash: u128) -> PolarsResult<Self> {
+    // Convert to fixed enum. Values not in categories are mapped to None.
+    pub fn to_enum(&self, categories: &Utf8ViewArray, hash: u128) -> Self {
         // Fast paths
         match self.get_rev_map().as_ref() {
             RevMapping::Local(_, cur_hash) if hash == *cur_hash => {
                 return unsafe {
-                    Ok(CategoricalChunked::from_cats_and_rev_map_unchecked(
+                    CategoricalChunked::from_cats_and_rev_map_unchecked(
                         self.physical().clone(),
                         self.get_rev_map().clone(),
                         true,
                         self.get_ordering(),
-                    ))
+                    )
                 };
             },
             _ => (),
@@ -159,34 +159,18 @@ impl CategoricalChunked {
         let new_phys: UInt32Chunked = self
             .physical()
             .into_iter()
-            .map(|opt_v: Option<u32>| {
-                let Some(v) = opt_v else {
-                    return Ok(None);
-                };
+            .map(|opt_v: Option<u32>| opt_v.and_then(|v| idx_map.get(&v).copied()))
+            .collect();
 
-                let Some(idx) = idx_map.get(&v) else {
-                    polars_bail!(
-                        not_in_enum,
-                        value = old_rev_map.get(v),
-                        categories = &categories
-                    );
-                };
-
-                Ok(Some(*idx))
-            })
-            .collect::<PolarsResult<_>>()?;
-
-        Ok(
-            // Safety: we created the physical from the enum categories
-            unsafe {
-                CategoricalChunked::from_cats_and_rev_map_unchecked(
-                    new_phys,
-                    Arc::new(RevMapping::Local(categories.clone(), hash)),
-                    true,
-                    self.get_ordering(),
-                )
-            },
-        )
+        // SAFETY: we created the physical from the enum categories
+        unsafe {
+            CategoricalChunked::from_cats_and_rev_map_unchecked(
+                new_phys,
+                Arc::new(RevMapping::Local(categories.clone(), hash)),
+                true,
+                self.get_ordering(),
+            )
+        }
     }
 
     pub(crate) fn get_flags(&self) -> Settings {
@@ -274,7 +258,9 @@ impl CategoricalChunked {
         }
     }
 
-    pub(crate) fn can_fast_unique(&self) -> bool {
+    /// True if all categories are represented in this array. When this is the case, the unique
+    /// values of the array are the categories.
+    pub fn _can_fast_unique(&self) -> bool {
         self.bit_settings.contains(BitSettings::ORIGINAL)
             && self.physical.chunks.len() == 1
             && self.null_count() == 0
@@ -371,7 +357,7 @@ impl LogicalType for CategoricalChunked {
                     polars_bail!(ComputeError: "can not cast to enum with global mapping")
                 };
                 Ok(self
-                    .to_enum(categories, *hash)?
+                    .to_enum(categories, *hash)
                     .set_ordering(*ordering, true)
                     .into_series()
                     .with_name(self.name()))
@@ -410,7 +396,7 @@ impl LogicalType for CategoricalChunked {
                 }
                 #[cfg(not(feature = "bigidx"))]
                 {
-                    // Safety: Invariant of categorical means indices are in bound
+                    // SAFETY: Invariant of categorical means indices are in bound
                     Ok(unsafe { casted_series.take_unchecked(&self.physical) })
                 }
             },
@@ -432,7 +418,7 @@ impl<'a> Iterator for CatIter<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         self.iter.next().map(|item| {
             item.map(|idx| {
-                // Safety:
+                // SAFETY:
                 // all categories are in bound
                 unsafe { self.rev.get_unchecked(idx) }
             })
@@ -448,8 +434,6 @@ impl<'a> ExactSizeIterator for CatIter<'a> {}
 
 #[cfg(test)]
 mod test {
-    use std::convert::TryFrom;
-
     use super::*;
     use crate::{disable_string_cache, enable_string_cache, SINGLE_LOCK};
 

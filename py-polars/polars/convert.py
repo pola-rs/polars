@@ -7,12 +7,12 @@ from typing import TYPE_CHECKING, Any, Iterable, Mapping, Sequence, overload
 
 import polars._reexport as pl
 from polars import functions as F
+from polars._utils.various import _cast_repr_strings_with_schema
 from polars.datatypes import N_INFER_DEFAULT, Categorical, List, Object, String, Struct
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.exceptions import NoDataError
 from polars.io import read_csv
-from polars.utils.various import _cast_repr_strings_with_schema
 
 if TYPE_CHECKING:
     from polars import DataFrame, Series
@@ -107,8 +107,8 @@ def from_dicts(
     schema_overrides : dict, default None
         Support override of inferred types for one or more columns.
     infer_schema_length
-        How many dictionaries/rows to scan to determine the data types
-        if set to `None` then ALL dicts are scanned; this will be slow.
+        The maximum number of rows to scan for schema inference.
+        If set to `None`, the full data may be scanned *(this is slow)*.
 
     Returns
     -------
@@ -211,8 +211,8 @@ def from_records(
         the orientation is inferred by matching the columns and data dimensions. If
         this does not yield conclusive results, column orientation is used.
     infer_schema_length
-        How many dictionaries/rows to scan to determine the data types
-        if set to `None` all rows are scanned. This will be slow.
+        The maximum number of rows to scan for schema inference.
+        If set to `None`, the full data may be scanned *(this is slow)*.
 
     Returns
     -------
@@ -588,9 +588,12 @@ def from_arrow(
         3
     ]
     """  # noqa: W505
-    if isinstance(data, pa.Table):
+    if isinstance(data, (pa.Table, pa.RecordBatch)):
         return pl.DataFrame._from_arrow(
-            data=data, rechunk=rechunk, schema=schema, schema_overrides=schema_overrides
+            data=data,
+            rechunk=rechunk,
+            schema=schema,
+            schema_overrides=schema_overrides,
         )
     elif isinstance(data, (pa.Array, pa.ChunkedArray)):
         name = getattr(data, "_name", "") or ""
@@ -606,8 +609,6 @@ def from_arrow(
             schema_overrides=schema_overrides,
         )
 
-    if isinstance(data, pa.RecordBatch):
-        data = [data]
     if isinstance(data, Iterable):
         return pl.DataFrame._from_arrow(
             data=pa.Table.from_batches(
@@ -632,8 +633,7 @@ def from_pandas(
     rechunk: bool = ...,
     nan_to_null: bool = ...,
     include_index: bool = ...,
-) -> DataFrame:
-    ...
+) -> DataFrame: ...
 
 
 @overload
@@ -644,8 +644,7 @@ def from_pandas(
     rechunk: bool = ...,
     nan_to_null: bool = ...,
     include_index: bool = ...,
-) -> Series:
-    ...
+) -> Series: ...
 
 
 def from_pandas(
@@ -657,7 +656,7 @@ def from_pandas(
     include_index: bool = False,
 ) -> DataFrame | Series:
     """
-    Construct a Polars DataFrame or Series from a pandas DataFrame or Series.
+    Construct a Polars DataFrame or Series from a pandas DataFrame, Series, or Index.
 
     This operation clones data.
 
@@ -675,6 +674,12 @@ def from_pandas(
         If data contains `NaN` values PyArrow will convert the `NaN` to `None`
     include_index : bool, default False
         Load any non-default pandas indexes as columns.
+
+        .. note::
+            If the input is a pandas ``Series`` or ``DataFrame`` and has a nameless
+            index which just enumerates the rows, then it will not be included in the
+            result, regardless of this parameter. If you want to be sure to include it,
+            please call ``.reset_index()`` prior to calling this function.
 
     Returns
     -------
@@ -698,7 +703,7 @@ def from_pandas(
     │ 4   ┆ 5   ┆ 6   │
     └─────┴─────┴─────┘
 
-    Constructing a Series from a :class:`pd.Series`:
+    Constructing a Series from a :class:`pandas.Series`:
 
     >>> import pandas as pd
     >>> pd_series = pd.Series([1, 2, 3], name="pd")

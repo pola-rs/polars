@@ -1,6 +1,4 @@
-use polars_core::series::IsSorted;
-use polars_core::utils::{concat_df_unchecked, slice_offsets, CustomIterTools, NoNull};
-use polars_core::POOL;
+use polars_core::utils::{concat_df_unchecked, CustomIterTools, NoNull};
 use smartstring::alias::String as SmartString;
 
 use super::*;
@@ -70,7 +68,7 @@ pub trait CrossJoin: IntoDf {
         // right take idx:  012301230123
 
         let create_left_df = || {
-            // Safety:
+            // SAFETY:
             // take left is in bounds
             unsafe { df_self.take_unchecked(&take_left(total_rows, n_rows_right, slice)) }
         };
@@ -80,7 +78,7 @@ pub trait CrossJoin: IntoDf {
             // many times, these are atomic operations
             // so we choose a different strategy at > 100 rows (arbitrarily small number)
             if n_rows_left > 100 || slice.is_some() {
-                // Safety:
+                // SAFETY:
                 // take right is in bounds
                 unsafe { other.take_unchecked(&take_right(total_rows, n_rows_right, slice)) }
             } else {
@@ -120,7 +118,7 @@ pub trait CrossJoin: IntoDf {
         Ok(l_df)
     }
 
-    /// Creates the cartesian product from both frames, preserves the order of the left keys.
+    /// Creates the Cartesian product from both frames, preserves the order of the left keys.
     fn cross_join(
         &self,
         other: &DataFrame,

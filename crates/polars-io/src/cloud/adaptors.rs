@@ -2,134 +2,16 @@
 //! This is used, for example, by the [parquet2] crate.
 //!
 //! [parquet2]: https://crates.io/crates/parquet2
-use std::io::{self};
-use std::pin::Pin;
-use std::sync::Arc;
-use std::task::Poll;
 
-use bytes::Bytes;
-use futures::executor::block_on;
-use futures::future::BoxFuture;
-use futures::{AsyncRead, AsyncSeek, Future, TryFutureExt};
+use std::sync::Arc;
+
 use object_store::path::Path;
 use object_store::{MultipartId, ObjectStore};
-use polars_error::{to_compute_err, PolarsError, PolarsResult};
+use polars_error::{to_compute_err, PolarsResult};
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 
-use super::*;
+use super::CloudOptions;
 use crate::pl_async::get_runtime;
-
-type OptionalFuture = Option<BoxFuture<'static, std::io::Result<Bytes>>>;
-
-/// Adaptor to translate from AsyncSeek and AsyncRead to the object_store get_range API.
-pub struct CloudReader {
-    // The current position in the stream, it is set by seeking and updated by reading bytes.
-    pos: u64,
-    // The total size of the object is required when seeking from the end of the file.
-    length: Option<u64>,
-    // Hold an reference to the store in a thread safe way.
-    object_store: Arc<dyn ObjectStore>,
-    // The path in the object_store of the current object being read.
-    path: Path,
-    // If a read is pending then `active` will point to its future.
-    active: OptionalFuture,
-}
-
-impl CloudReader {
-    pub fn new(length: Option<u64>, object_store: Arc<dyn ObjectStore>, path: Path) -> Self {
-        Self {
-            pos: 0,
-            length,
-            object_store,
-            path,
-            active: None,
-        }
-    }
-
-    /// For each read request we create a new future.
-    async fn read_operation(
-        mut self: Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-        length: usize,
-    ) -> std::task::Poll<std::io::Result<Bytes>> {
-        let start = self.pos as usize;
-
-        // If we already have a future just poll it.
-        if let Some(fut) = self.active.as_mut() {
-            return Future::poll(fut.as_mut(), cx);
-        }
-
-        // Create the future.
-        let future = {
-            let path = self.path.clone();
-            let object_store = self.object_store.clone();
-            // Use an async move block to get our owned objects.
-            async move {
-                object_store
-                    .get_range(&path, start..start + length)
-                    .map_err(|e| {
-                        std::io::Error::new(
-                            std::io::ErrorKind::Other,
-                            format!("object store error {e:?}"),
-                        )
-                    })
-                    .await
-            }
-        };
-        // Prepare for next read.
-        self.pos += length as u64;
-
-        let mut future = Box::pin(future);
-
-        // Need to poll it once to get the pump going.
-        let polled = Future::poll(future.as_mut(), cx);
-
-        // Save for next time.
-        self.active = Some(future);
-        polled
-    }
-}
-
-impl AsyncRead for CloudReader {
-    fn poll_read(
-        self: Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-        buf: &mut [u8],
-    ) -> std::task::Poll<std::io::Result<usize>> {
-        // Use block_on in order to get the future result in this thread and copy the data in the output buffer.
-        // With this approach we keep ownership of the buffer and we don't have to pass it to the future runtime.
-        match block_on(self.read_operation(cx, buf.len())) {
-            Poll::Ready(Ok(bytes)) => {
-                buf.copy_from_slice(bytes.as_ref());
-                Poll::Ready(Ok(bytes.len()))
-            },
-            Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
-            Poll::Pending => Poll::Pending,
-        }
-    }
-}
-
-impl AsyncSeek for CloudReader {
-    fn poll_seek(
-        mut self: Pin<&mut Self>,
-        _: &mut std::task::Context<'_>,
-        pos: io::SeekFrom,
-    ) -> std::task::Poll<std::io::Result<u64>> {
-        match pos {
-            io::SeekFrom::Start(pos) => self.pos = pos,
-            io::SeekFrom::End(pos) => {
-                let length = self.length.ok_or::<io::Error>(io::Error::new(
-                    std::io::ErrorKind::Other,
-                    "Cannot seek from end of stream when length is unknown.",
-                ))?;
-                self.pos = (length as i64 + pos) as u64
-            },
-            io::SeekFrom::Current(pos) => self.pos = (self.pos as i64 + pos) as u64,
-        };
-        self.active = None;
-        std::task::Poll::Ready(Ok(self.pos))
-    }
-}
 
 /// Adaptor which wraps the asynchronous interface of [ObjectStore::put_multipart](https://docs.rs/object_store/latest/object_store/trait.ObjectStore.html#tymethod.put_multipart)
 /// exposing a synchronous interface which implements `std::io::Write`.
@@ -157,16 +39,13 @@ impl CloudWriter {
         object_store: Arc<dyn ObjectStore>,
         path: Path,
     ) -> PolarsResult<Self> {
-        let build_result = Self::build_writer(&object_store, &path).await;
-        match build_result {
-            Err(error) => Err(PolarsError::from(error)),
-            Ok((multipart_id, writer)) => Ok(CloudWriter {
-                object_store,
-                path,
-                multipart_id,
-                writer,
-            }),
-        }
+        let (multipart_id, writer) = Self::build_writer(&object_store, &path).await?;
+        Ok(CloudWriter {
+            object_store,
+            path,
+            multipart_id,
+            writer,
+        })
     }
 
     /// Constructs a new CloudWriter from a path and an optional set of CloudOptions.
@@ -226,9 +105,8 @@ impl Drop for CloudWriter {
 #[cfg(feature = "csv")]
 #[cfg(test)]
 mod tests {
-    use object_store::ObjectStore;
     use polars_core::df;
-    use polars_core::prelude::{DataFrame, NamedFrom};
+    use polars_core::prelude::DataFrame;
 
     use super::*;
 

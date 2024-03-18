@@ -6,6 +6,8 @@ from functools import lru_cache
 from typing import TYPE_CHECKING, Any, overload
 
 from polars import functions as F
+from polars._utils.parse_expr_input import parse_as_expression
+from polars._utils.wrap import wrap_expr
 from polars.datatypes import (
     FLOAT_DTYPES,
     INTEGER_DTYPES,
@@ -16,8 +18,6 @@ from polars.datatypes import (
     List,
     Utf8,
 )
-from polars.utils._parse_expr_input import parse_as_expression
-from polars.utils._wrap import wrap_expr
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -57,8 +57,7 @@ def repeat(
     *,
     dtype: PolarsDataType | None = ...,
     eager: Literal[False] = ...,
-) -> Expr:
-    ...
+) -> Expr: ...
 
 
 @overload
@@ -68,8 +67,7 @@ def repeat(
     *,
     dtype: PolarsDataType | None = ...,
     eager: Literal[True],
-) -> Series:
-    ...
+) -> Series: ...
 
 
 @overload
@@ -79,8 +77,7 @@ def repeat(
     *,
     dtype: PolarsDataType | None = ...,
     eager: bool,
-) -> Expr | Series:
-    ...
+) -> Expr | Series: ...
 
 
 def repeat(
@@ -155,8 +152,7 @@ def ones(
     dtype: PolarsDataType = ...,
     *,
     eager: Literal[False] = ...,
-) -> Expr:
-    ...
+) -> Expr: ...
 
 
 @overload
@@ -165,8 +161,7 @@ def ones(
     dtype: PolarsDataType = ...,
     *,
     eager: Literal[True],
-) -> Series:
-    ...
+) -> Series: ...
 
 
 @overload
@@ -175,8 +170,7 @@ def ones(
     dtype: PolarsDataType = ...,
     *,
     eager: bool,
-) -> Expr | Series:
-    ...
+) -> Expr | Series: ...
 
 
 def ones(
@@ -234,8 +228,7 @@ def zeros(
     dtype: PolarsDataType = ...,
     *,
     eager: Literal[False] = ...,
-) -> Expr:
-    ...
+) -> Expr: ...
 
 
 @overload
@@ -244,8 +237,7 @@ def zeros(
     dtype: PolarsDataType = ...,
     *,
     eager: Literal[True],
-) -> Series:
-    ...
+) -> Series: ...
 
 
 @overload
@@ -254,8 +246,7 @@ def zeros(
     dtype: PolarsDataType = ...,
     *,
     eager: bool,
-) -> Expr | Series:
-    ...
+) -> Expr | Series: ...
 
 
 def zeros(

@@ -2,7 +2,7 @@
 use crate::chunked_array::builder::get_fixed_size_list_builder;
 use crate::prelude::*;
 use crate::series::IsSorted;
-use crate::utils::{CustomIterTools, NoNull};
+use crate::utils::NoNull;
 
 impl<T> ChunkReverse for ChunkedArray<T>
 where
@@ -92,7 +92,7 @@ impl ChunkReverse for ArrayChunked {
             get_fixed_size_list_builder(&ca.inner_dtype(), ca.len(), ca.width(), ca.name())
                 .expect("not yet supported");
 
-        // safety, we are within bounds
+        // SAFETY, we are within bounds
         unsafe {
             if arr.null_count() == 0 {
                 for i in (0..arr.len()).rev() {

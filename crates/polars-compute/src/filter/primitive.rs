@@ -1,183 +1,92 @@
-use super::*;
+use arrow::bitmap::Bitmap;
+use bytemuck::{cast_slice, cast_vec, Pod};
 
-pub(super) fn filter_values_and_validity<T: NativeType>(
+#[cfg(all(target_arch = "x86_64", feature = "simd"))]
+use super::avx512;
+use super::boolean::filter_boolean_kernel;
+use super::scalar::{scalar_filter, scalar_filter_offset};
+
+type FilterFn<T> = for<'a> unsafe fn(&'a [T], &'a [u8], *mut T) -> (&'a [T], &'a [u8], *mut T);
+
+fn nop_filter<'a, T: Pod>(
+    values: &'a [T],
+    mask: &'a [u8],
+    out: *mut T,
+) -> (&'a [T], &'a [u8], *mut T) {
+    (values, mask, out)
+}
+
+pub fn filter_values<T: Pod>(values: &[T], mask: &Bitmap) -> Vec<T> {
+    match (std::mem::size_of::<T>(), std::mem::align_of::<T>()) {
+        (1, 1) => cast_vec(filter_values_u8(cast_slice(values), mask)),
+        (2, 2) => cast_vec(filter_values_u16(cast_slice(values), mask)),
+        (4, 4) => cast_vec(filter_values_u32(cast_slice(values), mask)),
+        (8, 8) => cast_vec(filter_values_u64(cast_slice(values), mask)),
+        _ => filter_values_generic(values, mask, 1, nop_filter),
+    }
+}
+
+fn filter_values_u8(values: &[u8], mask: &Bitmap) -> Vec<u8> {
+    #[cfg(all(target_arch = "x86_64", feature = "simd"))]
+    if std::arch::is_x86_feature_detected!("avx512vbmi2") {
+        return filter_values_generic(values, mask, 64, avx512::filter_u8_avx512vbmi2);
+    }
+
+    filter_values_generic(values, mask, 1, nop_filter)
+}
+
+fn filter_values_u16(values: &[u16], mask: &Bitmap) -> Vec<u16> {
+    #[cfg(all(target_arch = "x86_64", feature = "simd"))]
+    if std::arch::is_x86_feature_detected!("avx512vbmi2") {
+        return filter_values_generic(values, mask, 32, avx512::filter_u16_avx512vbmi2);
+    }
+
+    filter_values_generic(values, mask, 1, nop_filter)
+}
+
+fn filter_values_u32(values: &[u32], mask: &Bitmap) -> Vec<u32> {
+    #[cfg(all(target_arch = "x86_64", feature = "simd"))]
+    if std::arch::is_x86_feature_detected!("avx512f") {
+        return filter_values_generic(values, mask, 16, avx512::filter_u32_avx512f);
+    }
+
+    filter_values_generic(values, mask, 1, nop_filter)
+}
+
+fn filter_values_u64(values: &[u64], mask: &Bitmap) -> Vec<u64> {
+    #[cfg(all(target_arch = "x86_64", feature = "simd"))]
+    if std::arch::is_x86_feature_detected!("avx512f") {
+        return filter_values_generic(values, mask, 8, avx512::filter_u64_avx512f);
+    }
+
+    filter_values_generic(values, mask, 1, nop_filter)
+}
+
+fn filter_values_generic<T: Pod>(
+    values: &[T],
+    mask: &Bitmap,
+    pad: usize,
+    bulk_filter: FilterFn<T>,
+) -> Vec<T> {
+    assert_eq!(values.len(), mask.len());
+    let mask_bits_set = mask.set_bits();
+    let mut out = Vec::with_capacity(mask_bits_set + pad);
+    unsafe {
+        let (values, mask_bytes, out_ptr) = scalar_filter_offset(values, mask, out.as_mut_ptr());
+        let (values, mask_bytes, out_ptr) = bulk_filter(values, mask_bytes, out_ptr);
+        scalar_filter(values, mask_bytes, out_ptr);
+        out.set_len(mask_bits_set);
+    }
+    out
+}
+
+pub fn filter_values_and_validity<T: Pod>(
     values: &[T],
     validity: Option<&Bitmap>,
     mask: &Bitmap,
-) -> (Vec<T>, Option<MutableBitmap>) {
-    if let Some(validity) = validity {
-        let (values, validity) = null_filter(values, validity, mask);
-        (values, Some(validity))
-    } else {
-        (nonnull_filter(values, mask), None)
-    }
-}
-
-pub(super) fn filter_primitive<T: NativeType + Simd>(
-    array: &PrimitiveArray<T>,
-    mask: &Bitmap,
-) -> PrimitiveArray<T> {
-    assert_eq!(array.len(), mask.len());
-    let (values, validity) = filter_values_and_validity(array.values(), array.validity(), mask);
-    let validity = validity.map(|validity| validity.freeze());
-    unsafe {
-        PrimitiveArray::<T>::new_unchecked(array.data_type().clone(), values.into(), validity)
-    }
-}
-
-/// # Safety
-/// This assumes that the `mask_chunks` contains a number of set/true items equal
-/// to `filter_count`
-unsafe fn nonnull_filter_impl<T, I>(values: &[T], mut mask_chunks: I, filter_count: usize) -> Vec<T>
-where
-    T: NativeType,
-    I: BitChunkIterExact<u64>,
-{
-    let mut chunks = values.chunks_exact(64);
-    let mut new = Vec::<T>::with_capacity(filter_count);
-    let mut dst = new.as_mut_ptr();
-
-    chunks
-        .by_ref()
-        .zip(mask_chunks.by_ref())
-        .for_each(|(chunk, mask_chunk)| {
-            let ones = mask_chunk.count_ones();
-            let leading_ones = get_leading_ones(mask_chunk);
-
-            if ones == leading_ones {
-                let size = leading_ones as usize;
-                unsafe {
-                    std::ptr::copy(chunk.as_ptr(), dst, size);
-                    dst = dst.add(size);
-                }
-                return;
-            }
-
-            let ones_iter = BitChunkOnes::from_known_count(mask_chunk, ones as usize);
-            for pos in ones_iter {
-                dst.write(*chunk.get_unchecked(pos));
-                dst = dst.add(1);
-            }
-        });
-
-    chunks
-        .remainder()
-        .iter()
-        .zip(mask_chunks.remainder_iter())
-        .for_each(|(value, b)| {
-            if b {
-                unsafe {
-                    dst.write(*value);
-                    dst = dst.add(1);
-                };
-            }
-        });
-
-    unsafe { new.set_len(filter_count) };
-    new
-}
-
-/// # Safety
-/// This assumes that the `mask_chunks` contains a number of set/true items equal
-/// to `filter_count`
-unsafe fn null_filter_impl<T, I>(
-    values: &[T],
-    validity: &Bitmap,
-    mut mask_chunks: I,
-    filter_count: usize,
-) -> (Vec<T>, MutableBitmap)
-where
-    T: NativeType,
-    I: BitChunkIterExact<u64>,
-{
-    let mut chunks = values.chunks_exact(64);
-
-    let mut validity_chunks = validity.chunks::<u64>();
-
-    let mut new = Vec::<T>::with_capacity(filter_count);
-    let mut dst = new.as_mut_ptr();
-    let mut new_validity = MutableBitmap::with_capacity(filter_count);
-
-    chunks
-        .by_ref()
-        .zip(validity_chunks.by_ref())
-        .zip(mask_chunks.by_ref())
-        .for_each(|((chunk, validity_chunk), mask_chunk)| {
-            let ones = mask_chunk.count_ones();
-            let leading_ones = get_leading_ones(mask_chunk);
-
-            if ones == leading_ones {
-                let size = leading_ones as usize;
-                unsafe {
-                    std::ptr::copy(chunk.as_ptr(), dst, size);
-                    dst = dst.add(size);
-
-                    // safety: invariant offset + length <= slice.len()
-                    new_validity.extend_from_slice_unchecked(
-                        validity_chunk.to_ne_bytes().as_ref(),
-                        0,
-                        size,
-                    );
-                }
-                return;
-            }
-
-            // this triggers a bitcount
-            let ones_iter = BitChunkOnes::from_known_count(mask_chunk, ones as usize);
-            for pos in ones_iter {
-                dst.write(*chunk.get_unchecked(pos));
-                dst = dst.add(1);
-                new_validity.push_unchecked(validity_chunk & (1 << pos) > 0);
-            }
-        });
-
-    chunks
-        .remainder()
-        .iter()
-        .zip(validity_chunks.remainder_iter())
-        .zip(mask_chunks.remainder_iter())
-        .for_each(|((value, is_valid), is_selected)| {
-            if is_selected {
-                unsafe {
-                    dst.write(*value);
-                    dst = dst.add(1);
-                    new_validity.push_unchecked(is_valid);
-                };
-            }
-        });
-
-    unsafe { new.set_len(filter_count) };
-    (new, new_validity)
-}
-
-fn null_filter<T: NativeType>(
-    values: &[T],
-    validity: &Bitmap,
-    mask: &Bitmap,
-) -> (Vec<T>, MutableBitmap) {
-    assert_eq!(values.len(), mask.len());
-    let filter_count = mask.len() - mask.unset_bits();
-
-    let (slice, offset, length) = mask.as_slice();
-    if offset == 0 {
-        let mask_chunks = BitChunksExact::<u64>::new(slice, length);
-        unsafe { null_filter_impl(values, validity, mask_chunks, filter_count) }
-    } else {
-        let mask_chunks = mask.chunks::<u64>();
-        unsafe { null_filter_impl(values, validity, mask_chunks, filter_count) }
-    }
-}
-
-fn nonnull_filter<T: NativeType>(values: &[T], mask: &Bitmap) -> Vec<T> {
-    assert_eq!(values.len(), mask.len());
-    let filter_count = mask.len() - mask.unset_bits();
-
-    let (slice, offset, length) = mask.as_slice();
-    if offset == 0 {
-        let mask_chunks = BitChunksExact::<u64>::new(slice, length);
-        unsafe { nonnull_filter_impl(values, mask_chunks, filter_count) }
-    } else {
-        let mask_chunks = mask.chunks::<u64>();
-        unsafe { nonnull_filter_impl(values, mask_chunks, filter_count) }
-    }
+) -> (Vec<T>, Option<Bitmap>) {
+    (
+        filter_values(values, mask),
+        validity.map(|v| filter_boolean_kernel(v, mask)),
+    )
 }

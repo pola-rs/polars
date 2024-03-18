@@ -1,4 +1,5 @@
 """Run all Python code snippets."""
+
 import os
 import runpy
 from pathlib import Path
@@ -22,7 +23,7 @@ snippet_paths = [p for p in snippet_paths if "visualization" not in str(p)]
 @pytest.fixture(scope="module")
 def _change_test_dir() -> Iterator[None]:
     """Change path to repo root to accommodate data paths in code snippets."""
-    current_path = Path()
+    current_path = Path().resolve()
     os.chdir(repo_root)
     yield
     os.chdir(current_path)

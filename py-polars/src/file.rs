@@ -3,6 +3,7 @@ use std::io;
 use std::io::{BufReader, Cursor, Read, Seek, SeekFrom, Write};
 
 use polars::io::mmap::MmapBytesReader;
+use polars_error::polars_warn;
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyString};
@@ -216,7 +217,7 @@ pub fn get_mmap_bytes_reader<'a>(py_f: &'a PyAny) -> PyResult<Box<dyn MmapBytesR
     else if py_f.getattr("read").is_ok() {
         // we can still get a file name, inform the user of possibly wrong API usage.
         if py_f.getattr("name").is_ok() {
-            eprintln!("Polars found a filename. \
+            polars_warn!("Polars found a filename. \
             Ensure you pass a path to the file instead of a python file object when possible for best \
             performance.")
         }

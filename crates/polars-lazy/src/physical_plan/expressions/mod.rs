@@ -31,7 +31,6 @@ pub(crate) use column::*;
 pub(crate) use count::*;
 pub(crate) use filter::*;
 pub(crate) use literal::*;
-use polars_core::frame::group_by::GroupsProxy;
 use polars_core::prelude::*;
 use polars_io::predicates::PhysicalIoExpr;
 #[cfg(feature = "dynamic_group_by")]
@@ -343,7 +342,7 @@ impl<'a> AggregationContext<'a> {
             AggState::NotAggregated(s) => {
                 // We should not aggregate literals!!
                 if self.state.safe_to_agg(&self.groups) {
-                    // safety:
+                    // SAFETY:
                     // groups are in bounds
                     let agg = unsafe { s.agg_list(&self.groups) };
                     self.update_groups = UpdateGroups::WithGroupsLen;
@@ -445,7 +444,7 @@ impl<'a> AggregationContext<'a> {
                     }
                 }
 
-                // safety:
+                // SAFETY:
                 // groups are in bounds
                 let out = unsafe { s.agg_list(&self.groups) };
                 self.state = AggState::AggregatedList(out.clone());

@@ -1,7 +1,5 @@
 use std::borrow::Cow;
-use std::sync::Arc;
 
-use polars_core::frame::group_by::GroupsProxy;
 use polars_core::prelude::*;
 use polars_plan::constants::CSE_REPLACED;
 

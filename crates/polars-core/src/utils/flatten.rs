@@ -1,23 +1,24 @@
+use arrow::bitmap::MutableBitmap;
 use polars_utils::sync::SyncPtr;
 
 use super::*;
 
 pub fn flatten_df_iter(df: &DataFrame) -> impl Iterator<Item = DataFrame> + '_ {
     df.iter_chunks_physical().flat_map(|chunk| {
-        let df = DataFrame::new_no_checks(
-            df.iter()
-                .zip(chunk.into_arrays())
-                .map(|(s, arr)| {
-                    // Safety:
-                    // datatypes are correct
-                    let mut out = unsafe {
-                        Series::from_chunks_and_dtype_unchecked(s.name(), vec![arr], s.dtype())
-                    };
-                    out.set_sorted_flag(s.is_sorted_flag());
-                    out
-                })
-                .collect(),
-        );
+        let columns = df
+            .iter()
+            .zip(chunk.into_arrays())
+            .map(|(s, arr)| {
+                // SAFETY:
+                // datatypes are correct
+                let mut out = unsafe {
+                    Series::from_chunks_and_dtype_unchecked(s.name(), vec![arr], s.dtype())
+                };
+                out.set_sorted_flag(s.is_sorted_flag());
+                out
+            })
+            .collect();
+        let df = unsafe { DataFrame::new_no_checks(columns) };
         if df.height() == 0 {
             None
         } else {
@@ -88,4 +89,32 @@ fn flatten_par_impl<T: Send + Sync + Copy>(
         out.set_len(len);
     }
     out
+}
+
+pub fn flatten_nullable<S: AsRef<[NullableIdxSize]> + Send + Sync>(
+    bufs: &[S],
+) -> PrimitiveArray<IdxSize> {
+    let a = || flatten_par(bufs);
+    let b = || {
+        let cap = bufs.iter().map(|s| s.as_ref().len()).sum::<usize>();
+        let mut validity = MutableBitmap::with_capacity(cap);
+        validity.extend_constant(cap, true);
+
+        let mut count = 0usize;
+        for s in bufs {
+            let s = s.as_ref();
+
+            for id in s {
+                if id.is_null_idx() {
+                    unsafe { validity.set_bit_unchecked(count, false) };
+                }
+
+                count += 1;
+            }
+        }
+        validity.freeze()
+    };
+
+    let (a, b) = POOL.join(a, b);
+    PrimitiveArray::from_vec(bytemuck::cast_vec::<_, IdxSize>(a)).with_validity(Some(b))
 }

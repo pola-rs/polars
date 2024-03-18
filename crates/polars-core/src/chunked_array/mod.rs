@@ -52,7 +52,7 @@ use arrow::legacy::prelude::*;
 use bitflags::bitflags;
 
 use crate::series::IsSorted;
-use crate::utils::{first_non_null, last_non_null, CustomIterTools};
+use crate::utils::{first_non_null, last_non_null};
 
 #[cfg(not(feature = "dtype-categorical"))]
 pub struct RevMapping {}
@@ -189,6 +189,11 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         self.bit_settings.contains(Settings::SORTED_DSC)
     }
 
+    /// Whether `self` is sorted in any direction.
+    pub(crate) fn is_sorted_any(&self) -> bool {
+        self.is_sorted_ascending_flag() || self.is_sorted_descending_flag()
+    }
+
     pub fn unset_fast_explode_list(&mut self) {
         self.bit_settings.remove(Settings::FAST_EXPLODE_LIST)
     }
@@ -220,8 +225,28 @@ impl<T: PolarsDataType> ChunkedArray<T> {
 
     /// Get the index of the first non null value in this [`ChunkedArray`].
     pub fn first_non_null(&self) -> Option<usize> {
-        if self.is_empty() {
+        if self.null_count() == self.len() {
             None
+        }
+        // We now know there is at least 1 non-null item in the array, and self.len() > 0
+        else if self.null_count() == 0 {
+            Some(0)
+        } else if self.is_sorted_any() {
+            let out = if unsafe { self.downcast_get_unchecked(0).is_null_unchecked(0) } {
+                // nulls are all at the start
+                self.null_count()
+            } else {
+                // nulls are all at the end
+                0
+            };
+
+            debug_assert!(
+                // If we are lucky this catches something.
+                unsafe { self.get_unchecked(out) }.is_some(),
+                "incorrect sorted flag"
+            );
+
+            Some(out)
         } else {
             first_non_null(self.iter_validities())
         }
@@ -229,7 +254,31 @@ impl<T: PolarsDataType> ChunkedArray<T> {
 
     /// Get the index of the last non null value in this [`ChunkedArray`].
     pub fn last_non_null(&self) -> Option<usize> {
-        last_non_null(self.iter_validities(), self.length as usize)
+        if self.null_count() == self.len() {
+            None
+        }
+        // We now know there is at least 1 non-null item in the array, and self.len() > 0
+        else if self.null_count() == 0 {
+            Some(self.len() - 1)
+        } else if self.is_sorted_any() {
+            let out = if unsafe { self.downcast_get_unchecked(0).is_null_unchecked(0) } {
+                // nulls are all at the start
+                self.len() - 1
+            } else {
+                // nulls are all at the end
+                self.len() - self.null_count() - 1
+            };
+
+            debug_assert!(
+                // If we are lucky this catches something.
+                unsafe { self.get_unchecked(out) }.is_some(),
+                "incorrect sorted flag"
+            );
+
+            Some(out)
+        } else {
+            last_non_null(self.iter_validities(), self.len())
+        }
     }
 
     /// Get the buffer of bits representing null values
@@ -303,7 +352,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
             series.dtype(),
             self.dtype(),
         );
-        // Safety
+        // SAFETY:
         // dtype will be correct.
         Ok(unsafe { self.unpack_series_matching_physical_type(series) })
     }
@@ -389,16 +438,35 @@ impl<T> ChunkedArray<T>
 where
     T: PolarsDataType,
 {
+    /// Get a single value from this [`ChunkedArray`]. If the return values is `None` this
+    /// indicates a NULL value.
+    ///
+    /// # Panics
+    /// This function will panic if `idx` is out of bounds.
     #[inline]
     pub fn get(&self, idx: usize) -> Option<T::Physical<'_>> {
         let (chunk_idx, arr_idx) = self.index_to_chunked_index(idx);
-        let arr = self.downcast_get(chunk_idx)?;
-
-        // SAFETY: if index_to_chunked_index returns a valid chunk_idx, we know
-        // that arr_idx < arr.len().
-        unsafe { arr.get_unchecked(arr_idx) }
+        assert!(
+            chunk_idx < self.chunks().len(),
+            "index: {} out of bounds for len: {}",
+            idx,
+            self.len()
+        );
+        unsafe {
+            let arr = self.downcast_get_unchecked(chunk_idx);
+            assert!(
+                arr_idx < arr.len(),
+                "index: {} out of bounds for len: {}",
+                idx,
+                self.len()
+            );
+            arr.get_unchecked(arr_idx)
+        }
     }
 
+    /// Get a single value from this [`ChunkedArray`]. If the return values is `None` this
+    /// indicates a NULL value.
+    ///
     /// # Safety
     /// It is the callers responsibility that the `idx < self.len()`.
     #[inline]
@@ -412,6 +480,9 @@ where
         }
     }
 
+    /// Get a single value from this [`ChunkedArray`]. Null values are ignored and the returned
+    /// value could be garbage if it was masked out by NULL. Note that the value always is initialized.
+    ///
     /// # Safety
     /// It is the callers responsibility that the `idx < self.len()`.
     #[inline]
@@ -581,7 +652,7 @@ where
     /// Contiguous mutable slice
     pub(crate) fn cont_slice_mut(&mut self) -> Option<&mut [T::Native]> {
         if self.chunks.len() == 1 && self.chunks[0].null_count() == 0 {
-            // Safety, we will not swap the PrimitiveArray.
+            // SAFETY, we will not swap the PrimitiveArray.
             let arr = unsafe { self.downcast_iter_mut().next().unwrap() };
             arr.get_mut_values()
         } else {

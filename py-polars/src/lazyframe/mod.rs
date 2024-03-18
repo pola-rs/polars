@@ -6,30 +6,15 @@ use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
 pub use exitable::PyInProcessQuery;
-#[cfg(feature = "csv")]
-use polars::io::csv::SerializeOptions;
 use polars::io::RowIndex;
-#[cfg(feature = "csv")]
-use polars::lazy::frame::LazyCsvReader;
-#[cfg(feature = "json")]
-use polars::lazy::frame::LazyJsonLineReader;
-use polars::lazy::frame::{AllowedOptimizations, LazyFrame};
-use polars::lazy::prelude::col;
-#[cfg(feature = "csv")]
-use polars::prelude::CsvEncoding;
-use polars::prelude::{ClosedWindow, Field, JoinType, Schema};
 use polars::time::*;
-use polars_core::frame::explode::MeltArgs;
-use polars_core::frame::UniqueKeepStrategy;
 use polars_core::prelude::*;
-use polars_ops::prelude::AsOfOptions;
 use polars_rs::io::cloud::CloudOptions;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyList};
 
 use crate::arrow_interop::to_rust::pyarrow_schema_to_rust;
-use crate::conversion::Wrap;
 use crate::error::PyPolarsErr;
 use crate::expr::ToExprs;
 use crate::file::get_file_like;
@@ -99,7 +84,7 @@ impl PyLazyFrame {
             .read_to_string(&mut json)
             .unwrap();
 
-        // Safety
+        // SAFETY:
         // we skipped the serializing/deserializing of the static in lifetime in `DataType`
         // so we actually don't have a lifetime at all when serializing.
 
@@ -319,7 +304,7 @@ impl PyLazyFrame {
 
     #[cfg(feature = "ipc")]
     #[staticmethod]
-    #[pyo3(signature = (path, paths, n_rows, cache, rechunk, row_index, memory_map))]
+    #[pyo3(signature = (path, paths, n_rows, cache, rechunk, row_index, memory_map, cloud_options, retries))]
     fn new_from_ipc(
         path: Option<PathBuf>,
         paths: Vec<PathBuf>,
@@ -328,14 +313,45 @@ impl PyLazyFrame {
         rechunk: bool,
         row_index: Option<(String, IdxSize)>,
         memory_map: bool,
+        cloud_options: Option<Vec<(String, String)>>,
+        retries: usize,
     ) -> PyResult<Self> {
         let row_index = row_index.map(|(name, offset)| RowIndex { name, offset });
+
+        #[cfg(feature = "cloud")]
+        let cloud_options = {
+            let first_path = if let Some(path) = &path {
+                path
+            } else {
+                paths
+                    .first()
+                    .ok_or_else(|| PyValueError::new_err("expected a path argument"))?
+            };
+
+            let first_path_url = first_path.to_string_lossy();
+            let mut cloud_options = cloud_options
+                .map(|kv| parse_cloud_options(&first_path_url, kv))
+                .transpose()?;
+            if retries > 0 {
+                cloud_options =
+                    cloud_options
+                        .or_else(|| Some(CloudOptions::default()))
+                        .map(|mut options| {
+                            options.max_retries = retries;
+                            options
+                        });
+            }
+            cloud_options
+        };
+
         let args = ScanArgsIpc {
             n_rows,
             cache,
             rechunk,
             row_index,
             memmap: memory_map,
+            #[cfg(feature = "cloud")]
+            cloud_options,
         };
 
         let lf = if let Some(path) = &path {

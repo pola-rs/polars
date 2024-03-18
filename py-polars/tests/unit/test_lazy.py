@@ -738,8 +738,8 @@ def test_rolling(fruits_cars: pl.DataFrame) -> None:
         ]
     ).collect()
 
-    assert cast(float, out_single_val_variance[0, "std"]) == 0.0
-    assert cast(float, out_single_val_variance[0, "var"]) == 0.0
+    assert cast(float, out_single_val_variance[0, "std"]) is None
+    assert cast(float, out_single_val_variance[0, "var"]) is None
 
 
 def test_arr_namespace(fruits_cars: pl.DataFrame) -> None:
@@ -1065,23 +1065,6 @@ def test_self_join() -> None:
         (101, "Alice", "James"),
         (102, "Bob", "Alice"),
     }
-
-
-def test_preservation_of_subclasses() -> None:
-    """Test for LazyFrame inheritance."""
-
-    # We should be able to inherit from polars.LazyFrame
-    class SubClassedLazyFrame(pl.LazyFrame):
-        pass
-
-    # The constructor creates an object which is an instance of both the
-    # superclass and subclass
-    ldf = pl.DataFrame({"column_1": [1, 2, 3]}).lazy()
-    ldf.__class__ = SubClassedLazyFrame
-    extended_ldf = ldf.with_columns(pl.lit(1).alias("column_2"))
-
-    assert isinstance(extended_ldf, pl.LazyFrame)
-    assert isinstance(extended_ldf, SubClassedLazyFrame)
 
 
 def test_group_lengths() -> None:

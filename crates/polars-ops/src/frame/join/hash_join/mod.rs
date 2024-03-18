@@ -10,9 +10,7 @@ pub(super) mod sort_merge;
 use arrow::array::ArrayRef;
 pub use multiple_keys::private_left_join_multiple_keys;
 pub(super) use multiple_keys::*;
-#[cfg(any(feature = "chunked_ids", feature = "semi_anti_join"))]
-use polars_core::utils::slice_slice;
-use polars_core::utils::{_set_partition_size, slice_offsets, split_ca};
+use polars_core::utils::{_set_partition_size, split_ca};
 use polars_core::POOL;
 use polars_utils::index::ChunkId;
 pub(super) use single_keys::*;
@@ -55,8 +53,6 @@ macro_rules! det_hash_prone_order {
 #[cfg(feature = "performant")]
 use arrow::legacy::conversion::primitive_to_vec;
 pub(super) use det_hash_prone_order;
-
-use crate::frame::join::general::coalesce_outer_join;
 
 pub trait JoinDispatch: IntoDf {
     /// # Safety
@@ -114,7 +110,7 @@ pub trait JoinDispatch: IntoDf {
 
         let materialize_right = || {
             let right_idx = &*right_idx;
-            unsafe { other.take_unchecked(&right_idx.iter().copied().collect_ca("")) }
+            unsafe { IdxCa::with_nullable_idx(right_idx, |idx| other.take_unchecked(idx)) }
         };
         let (df_left, df_right) = POOL.join(materialize_left, materialize_right);
 
@@ -154,7 +150,7 @@ pub trait JoinDispatch: IntoDf {
                 if let Some((offset, len)) = args.slice {
                     right_idx = slice_slice(right_idx, offset, len);
                 }
-                other.take_unchecked(&right_idx.iter().copied().collect_ca(""))
+                IdxCa::with_nullable_idx(right_idx, |idx| other.take_unchecked(idx))
             },
             ChunkJoinOptIds::Right(right_idx) => unsafe {
                 let mut right_idx = &*right_idx;
@@ -177,11 +173,11 @@ pub trait JoinDispatch: IntoDf {
         args: JoinArgs,
         verbose: bool,
     ) -> PolarsResult<DataFrame> {
-        let ca_self = self.to_df();
+        let df_self = self.to_df();
         #[cfg(feature = "dtype-categorical")]
         _check_categorical_src(s_left.dtype(), s_right.dtype())?;
 
-        let mut left = ca_self.clone();
+        let mut left = df_self.clone();
         let mut s_left = s_left.clone();
         // Eagerly limit left if possible.
         if let Some((offset, len)) = args.slice {
@@ -192,16 +188,19 @@ pub trait JoinDispatch: IntoDf {
         }
 
         // Ensure that the chunks are aligned otherwise we go OOB.
-        let mut right = other.clone();
+        let mut right = Cow::Borrowed(other);
         let mut s_right = s_right.clone();
         if left.should_rechunk() {
             left.as_single_chunk_par();
             s_left = s_left.rechunk();
         }
         if right.should_rechunk() {
-            right.as_single_chunk_par();
+            let mut other = other.clone();
+            other.as_single_chunk_par();
+            right = Cow::Owned(other);
             s_right = s_right.rechunk();
         }
+
         let ids = sort_or_hash_left(&s_left, &s_right, verbose, args.validation, args.join_nulls)?;
         left._finish_left_join(ids, &right.drop(s_right.name()).unwrap(), args)
     }
@@ -235,7 +234,7 @@ pub trait JoinDispatch: IntoDf {
         _check_categorical_src(s_left.dtype(), s_right.dtype())?;
 
         let idx = s_left.hash_join_semi_anti(s_right, anti);
-        // Safety:
+        // SAFETY:
         // indices are in bounds
         Ok(unsafe { ca_self._finish_anti_semi_join(&idx, slice) })
     }
@@ -273,7 +272,7 @@ pub trait JoinDispatch: IntoDf {
         };
         let out = _finish_join(df_left, df_right, args.suffix.as_deref());
         if coalesce {
-            Ok(coalesce_outer_join(
+            Ok(_coalesce_outer_join(
                 out?,
                 &[s_left.name()],
                 &[s_right.name()],

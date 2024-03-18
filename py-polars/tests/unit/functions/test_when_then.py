@@ -1,4 +1,9 @@
+from __future__ import annotations
+
+import itertools
+import random
 from datetime import datetime
+from typing import Any
 
 import pytest
 
@@ -240,6 +245,18 @@ def test_comp_categorical_lit_dtype() -> None:
         .otherwise(pl.col("column"))
         .alias("column")
     ).dtypes == [pl.Categorical, pl.Int32]
+
+
+def test_comp_incompatible_enum_dtype() -> None:
+    df = pl.DataFrame({"a": pl.Series(["a", "b"], dtype=pl.Enum(["a", "b"]))})
+
+    with pytest.raises(
+        pl.ComputeError,
+        match="conversion from `str` to `enum` failed in column 'literal'",
+    ):
+        df.with_columns(
+            pl.when(pl.col("a") == "a").then(pl.col("a")).otherwise(pl.lit("c"))
+        )
 
 
 def test_predicate_broadcast() -> None:
@@ -511,3 +528,71 @@ def test_when_then_null_broadcast() -> None:
         ).height
         == 2
     )
+
+
+@pytest.mark.slow()
+@pytest.mark.parametrize("len", [1, 10, 100, 500])
+@pytest.mark.parametrize(
+    ("dtype", "vals"),
+    [
+        pytest.param(pl.Boolean, [False, True], id="Boolean"),
+        pytest.param(pl.UInt8, [0, 1], id="UInt8"),
+        pytest.param(pl.UInt16, [0, 1], id="UInt16"),
+        pytest.param(pl.UInt32, [0, 1], id="UInt32"),
+        pytest.param(pl.UInt64, [0, 1], id="UInt64"),
+        pytest.param(pl.Float32, [0.0, 1.0], id="Float32"),
+        pytest.param(pl.Float64, [0.0, 1.0], id="Float64"),
+        pytest.param(pl.String, ["0", "12"], id="String"),
+        pytest.param(pl.Array(pl.String, 2), [["0", "1"], ["3", "4"]], id="StrArray"),
+        pytest.param(pl.Array(pl.Int64, 2), [[0, 1], [3, 4]], id="IntArray"),
+        pytest.param(pl.List(pl.String), [["0"], ["1", "2"]], id="List"),
+        pytest.param(
+            pl.Struct({"foo": pl.Int32, "bar": pl.String}),
+            [{"foo": 0, "bar": "1"}, {"foo": 1, "bar": "2"}],
+            id="Struct",
+        ),
+        pytest.param(pl.Object, ["x", "y"], id="Object"),
+    ],
+)
+@pytest.mark.parametrize("broadcast", list(itertools.product([False, True], repeat=3)))
+def test_when_then_parametric(
+    len: int, dtype: pl.DataType, vals: list[Any], broadcast: list[bool]
+) -> None:
+    # Makes no sense to broadcast all columns.
+    if all(broadcast):
+        return
+
+    rng = random.Random(42)
+
+    for _ in range(10):
+        mask = rng.choices([False, True, None], k=len)
+        if_true = rng.choices(vals + [None], k=len)
+        if_false = rng.choices(vals + [None], k=len)
+
+        py_mask, py_true, py_false = (
+            [c[0]] * len if b else c
+            for b, c in zip(broadcast, [mask, if_true, if_false])
+        )
+        pl_mask, pl_true, pl_false = (
+            c.first() if b else c
+            for b, c in zip(broadcast, [pl.col.mask, pl.col.if_true, pl.col.if_false])
+        )
+
+        ref = pl.DataFrame(
+            {"if_true": [t if m else f for m, t, f in zip(py_mask, py_true, py_false)]},
+            schema={"if_true": dtype},
+        )
+        df = pl.DataFrame(
+            {
+                "mask": mask,
+                "if_true": if_true,
+                "if_false": if_false,
+            },
+            schema={"mask": pl.Boolean, "if_true": dtype, "if_false": dtype},
+        )
+
+        ans = df.select(pl.when(pl_mask).then(pl_true).otherwise(pl_false))
+        if dtype != pl.Object:
+            assert_frame_equal(ref, ans)
+        else:
+            assert ref["if_true"].to_list() == ans["if_true"].to_list()

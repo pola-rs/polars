@@ -13,6 +13,9 @@ use polars_utils::min_max::MinMax;
 pub use quantile::*;
 pub use var::*;
 
+use super::float_sorted_arg_max::{
+    float_arg_max_sorted_ascending, float_arg_max_sorted_descending,
+};
 use crate::chunked_array::ChunkedArray;
 use crate::datatypes::{BooleanChunked, PolarsNumericType};
 use crate::prelude::*;
@@ -93,21 +96,18 @@ where
     }
 
     fn min(&self) -> Option<T::Native> {
-        if self.is_empty() {
+        if self.null_count() == self.len() {
             return None;
         }
+        // There is at least one non-null value.
         match self.is_sorted_flag() {
             IsSorted::Ascending => {
-                self.first_non_null().and_then(|idx| {
-                    // SAFETY: first_non_null returns in bound index.
-                    unsafe { self.get_unchecked(idx) }
-                })
+                let idx = self.first_non_null().unwrap();
+                unsafe { self.get_unchecked(idx) }
             },
             IsSorted::Descending => {
-                self.last_non_null().and_then(|idx| {
-                    // SAFETY: last returns in bound index.
-                    unsafe { self.get_unchecked(idx) }
-                })
+                let idx = self.last_non_null().unwrap();
+                unsafe { self.get_unchecked(idx) }
             },
             IsSorted::Not => self
                 .downcast_iter()
@@ -117,23 +117,28 @@ where
     }
 
     fn max(&self) -> Option<T::Native> {
-        if self.is_empty() {
+        if self.null_count() == self.len() {
             return None;
         }
+        // There is at least one non-null value.
         match self.is_sorted_flag() {
             IsSorted::Ascending => {
-                self.last_non_null().and_then(|idx| {
-                    // SAFETY:
-                    // last_non_null returns in bound index
-                    unsafe { self.get_unchecked(idx) }
-                })
+                let idx = if T::get_dtype().is_float() {
+                    float_arg_max_sorted_ascending(self)
+                } else {
+                    self.last_non_null().unwrap()
+                };
+
+                unsafe { self.get_unchecked(idx) }
             },
             IsSorted::Descending => {
-                self.first_non_null().and_then(|idx| {
-                    // SAFETY:
-                    // first_non_null returns in bound index
-                    unsafe { self.get_unchecked(idx) }
-                })
+                let idx = if T::get_dtype().is_float() {
+                    float_arg_max_sorted_descending(self)
+                } else {
+                    self.first_non_null().unwrap()
+                };
+
+                unsafe { self.get_unchecked(idx) }
             },
             IsSorted::Not => self
                 .downcast_iter()
@@ -143,30 +148,36 @@ where
     }
 
     fn min_max(&self) -> Option<(T::Native, T::Native)> {
-        if self.is_empty() {
+        if self.null_count() == self.len() {
             return None;
         }
+        // There is at least one non-null value.
         match self.is_sorted_flag() {
             IsSorted::Ascending => {
-                let min = self.first_non_null().and_then(|idx| {
-                    // SAFETY: first_non_null returns in bound index.
+                let min = unsafe { self.get_unchecked(self.first_non_null().unwrap()) };
+                let max = {
+                    let idx = if T::get_dtype().is_float() {
+                        float_arg_max_sorted_ascending(self)
+                    } else {
+                        self.last_non_null().unwrap()
+                    };
+
                     unsafe { self.get_unchecked(idx) }
-                });
-                let max = self.last_non_null().and_then(|idx| {
-                    // SAFETY: last_non_null returns in bound index.
-                    unsafe { self.get_unchecked(idx) }
-                });
+                };
                 min.zip(max)
             },
             IsSorted::Descending => {
-                let max = self.first_non_null().and_then(|idx| {
-                    // SAFETY: first_non_null returns in bound index.
+                let min = unsafe { self.get_unchecked(self.last_non_null().unwrap()) };
+                let max = {
+                    let idx = if T::get_dtype().is_float() {
+                        float_arg_max_sorted_descending(self)
+                    } else {
+                        self.first_non_null().unwrap()
+                    };
+
                     unsafe { self.get_unchecked(idx) }
-                });
-                let min = self.last_non_null().and_then(|idx| {
-                    // SAFETY: last_non_null returns in bound index.
-                    unsafe { self.get_unchecked(idx) }
-                });
+                };
+
                 min.zip(max)
             },
             IsSorted::Not => self
@@ -182,10 +193,10 @@ where
     }
 
     fn mean(&self) -> Option<f64> {
-        if self.is_empty() || self.null_count() == self.len() {
+        if self.null_count() == self.len() {
             return None;
         }
-        match self.dtype() {
+        match T::get_dtype() {
             DataType::Float64 => {
                 let len = (self.len() - self.null_count()) as f64;
                 self.sum().map(|v| v.to_f64().unwrap() / len)
@@ -214,7 +225,7 @@ where
                         for arr in self.downcast_iter() {
                             if arr.null_count() > 0 {
                                 for v in arr.into_iter().flatten() {
-                                    // safety
+                                    // SAFETY:
                                     // all these types can be coerced to f64
                                     unsafe {
                                         let val = v.to_f64().unwrap_unchecked();
@@ -223,7 +234,7 @@ where
                                 }
                             } else {
                                 for v in arr.values().as_slice() {
-                                    // safety
+                                    // SAFETY:
                                     // all these types can be coerced to f64
                                     unsafe {
                                         let val = v.to_f64().unwrap_unchecked();
@@ -514,6 +525,75 @@ impl ChunkAggSeries for StringChunked {
     }
 }
 
+#[cfg(feature = "dtype-categorical")]
+impl CategoricalChunked {
+    fn min_categorical(&self) -> Option<&str> {
+        if self.is_empty() || self.null_count() == self.len() {
+            return None;
+        }
+        if self.uses_lexical_ordering() {
+            // Fast path where all categories are used
+            if self._can_fast_unique() {
+                self.get_rev_map().get_categories().min_ignore_nan_kernel()
+            } else {
+                let rev_map = self.get_rev_map();
+                // SAFETY:
+                // Indices are in bounds
+                self.physical()
+                    .iter()
+                    .flat_map(|opt_el: Option<u32>| {
+                        opt_el.map(|el| unsafe { rev_map.get_unchecked(el) })
+                    })
+                    .min()
+            }
+        } else {
+            // SAFETY:
+            // Indices are in bounds
+            self.physical()
+                .min()
+                .map(|el| unsafe { self.get_rev_map().get_unchecked(el) })
+        }
+    }
+
+    fn max_categorical(&self) -> Option<&str> {
+        if self.is_empty() || self.null_count() == self.len() {
+            return None;
+        }
+        if self.uses_lexical_ordering() {
+            // Fast path where all categories are used
+            if self._can_fast_unique() {
+                self.get_rev_map().get_categories().max_ignore_nan_kernel()
+            } else {
+                let rev_map = self.get_rev_map();
+                // SAFETY:
+                // Indices are in bounds
+                self.physical()
+                    .iter()
+                    .flat_map(|opt_el: Option<u32>| {
+                        opt_el.map(|el| unsafe { rev_map.get_unchecked(el) })
+                    })
+                    .max()
+            }
+        } else {
+            // SAFETY:
+            // Indices are in bounds
+            self.physical()
+                .max()
+                .map(|el| unsafe { self.get_rev_map().get_unchecked(el) })
+        }
+    }
+}
+
+#[cfg(feature = "dtype-categorical")]
+impl ChunkAggSeries for CategoricalChunked {
+    fn min_as_series(&self) -> Series {
+        Series::new(self.name(), &[self.min_categorical()])
+    }
+    fn max_as_series(&self) -> Series {
+        Series::new(self.name(), &[self.max_categorical()])
+    }
+}
+
 impl BinaryChunked {
     pub(crate) fn max_binary(&self) -> Option<&[u8]> {
         if self.is_empty() {
@@ -581,8 +661,6 @@ impl<T: PolarsObject> ChunkAggSeries for ObjectChunked<T> {}
 
 #[cfg(test)]
 mod test {
-    use arrow::legacy::prelude::QuantileInterpolOptions;
-
     use crate::prelude::*;
 
     #[test]

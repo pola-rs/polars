@@ -39,9 +39,9 @@ where
                 if len < (min_periods as IdxSize) {
                     None
                 } else {
-                    // safety:
+                    // SAFETY:
                     // we are in bounds
-                    Some(unsafe { agg_window.update(start as usize, end as usize) })
+                    unsafe { agg_window.update(start as usize, end as usize) }
                 }
             })
         })

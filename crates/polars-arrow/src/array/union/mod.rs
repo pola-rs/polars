@@ -130,7 +130,7 @@ impl UnionArray {
 
             Some(hash)
         } else {
-            // Safety: every type in types is smaller than number of fields
+            // SAFETY: every type in types is smaller than number of fields
             let mut is_valid = true;
             for &type_ in types.iter() {
                 if type_ < 0 || type_ >= number_of_fields {
@@ -240,6 +240,7 @@ impl UnionArray {
     /// Returns a slice of this [`UnionArray`].
     /// # Implementation
     /// This operation is `O(F)` where `F` is the number of fields.
+    ///
     /// # Safety
     /// The caller must ensure that `offset + length <= self.len()`.
     #[inline]
@@ -296,20 +297,21 @@ impl UnionArray {
 
     /// Returns the index and slot of the field to select from `self.fields`.
     /// The first value is guaranteed to be `< self.fields().len()`
+    ///
     /// # Safety
     /// This function is safe iff `index < self.len`.
     #[inline]
     pub unsafe fn index_unchecked(&self, index: usize) -> (usize, usize) {
         debug_assert!(index < self.len());
-        // Safety: assumption of the function
+        // SAFETY: assumption of the function
         let type_ = unsafe { *self.types.get_unchecked(index) };
-        // Safety: assumption of the struct
+        // SAFETY: assumption of the struct
         let type_ = self
             .map
             .as_ref()
             .map(|map| unsafe { *map.get_unchecked(type_ as usize) })
             .unwrap_or(type_ as usize);
-        // Safety: assumption of the function
+        // SAFETY: assumption of the function
         let index = self.field_slot_unchecked(index);
         (type_, index)
     }
@@ -323,12 +325,13 @@ impl UnionArray {
     }
 
     /// Returns the slot `index` as a [`Scalar`].
+    ///
     /// # Safety
     /// This function is safe iff `i < self.len`.
     pub unsafe fn value_unchecked(&self, index: usize) -> Box<dyn Scalar> {
         debug_assert!(index < self.len());
         let (type_, index) = self.index_unchecked(index);
-        // Safety: assumption of the struct
+        // SAFETY: assumption of the struct
         debug_assert!(type_ < self.fields.len());
         let field = self.fields.get_unchecked(type_).as_ref();
         new_scalar(field, index)

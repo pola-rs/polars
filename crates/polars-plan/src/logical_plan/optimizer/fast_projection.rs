@@ -4,8 +4,6 @@ use polars_core::prelude::*;
 use smartstring::SmartString;
 
 use super::*;
-use crate::logical_plan::alp::ALogicalPlan;
-use crate::logical_plan::functions::FunctionNode;
 
 /// Projection in the physical plan is done by selecting an expression per thread.
 /// In case of many projections and columns this can be expensive when the expressions are simple

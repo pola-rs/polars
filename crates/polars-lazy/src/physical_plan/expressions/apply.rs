@@ -1,15 +1,11 @@
 use std::borrow::Cow;
-use std::sync::Arc;
 
-use polars_core::frame::group_by::GroupsProxy;
 use polars_core::prelude::*;
 use polars_core::POOL;
 #[cfg(feature = "parquet")]
 use polars_io::predicates::{BatchStats, StatsEvaluator};
 #[cfg(feature = "is_between")]
 use polars_ops::prelude::ClosedInterval;
-#[cfg(feature = "parquet")]
-use polars_plan::dsl::FunctionExpr;
 use rayon::prelude::*;
 
 use crate::physical_plan::state::ExecutionState;

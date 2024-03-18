@@ -26,6 +26,7 @@ mod private {
 }
 pub use iterator::BinaryViewValueIter;
 pub use mutable::MutableBinaryViewArray;
+use polars_utils::slice::GetSaferUnchecked;
 use private::Sealed;
 
 use crate::array::binview::view::{validate_binary_view, validate_utf8_only, validate_utf8_view};
@@ -33,7 +34,7 @@ use crate::array::iterator::NonNullValuesIter;
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
 pub type BinaryViewArray = BinaryViewArrayGeneric<[u8]>;
 pub type Utf8ViewArray = BinaryViewArrayGeneric<str>;
-pub use view::View;
+pub use view::{View, INLINE_VIEW_SIZE};
 
 pub type MutablePlString = MutableBinaryViewArray<str>;
 pub type MutablePlBinary = MutableBinaryViewArray<[u8]>;
@@ -178,6 +179,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     }
 
     /// Create a new BinaryViewArray but initialize a statistics compute.
+    ///
     /// # Safety
     /// The caller must ensure the invariants
     pub unsafe fn new_unchecked_unknown_md(
@@ -267,11 +269,12 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     }
 
     /// Returns the element at index `i`
+    ///
     /// # Safety
     /// Assumes that the `i < self.len`.
     #[inline]
     pub unsafe fn value_unchecked(&self, i: usize) -> &T {
-        let v = *self.views.get_unchecked(i);
+        let v = *self.views.get_unchecked_release(i);
         let len = v.length;
 
         // view layout:
@@ -288,10 +291,12 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
             let ptr = self.views.as_ptr() as *const u8;
             std::slice::from_raw_parts(ptr.add(i * 16 + 4), len as usize)
         } else {
-            let (data_ptr, data_len) = *self.raw_buffers.get_unchecked(v.buffer_idx as usize);
+            let (data_ptr, data_len) = *self
+                .raw_buffers
+                .get_unchecked_release(v.buffer_idx as usize);
             let data = std::slice::from_raw_parts(data_ptr, data_len);
             let offset = v.offset as usize;
-            data.get_unchecked(offset..offset + len as usize)
+            data.get_unchecked_release(offset..offset + len as usize)
         };
         T::from_bytes_unchecked(bytes)
     }
@@ -422,7 +427,7 @@ impl BinaryViewArray {
     /// Validate the underlying bytes on UTF-8.
     pub fn validate_utf8(&self) -> PolarsResult<()> {
         // SAFETY: views are correct
-        unsafe { validate_utf8_only(&self.views, &self.buffers) }
+        unsafe { validate_utf8_only(&self.views, &self.buffers, &self.buffers) }
     }
 
     /// Convert [`BinaryViewArray`] to [`Utf8ViewArray`].

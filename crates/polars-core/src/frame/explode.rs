@@ -96,7 +96,7 @@ impl DataFrame {
             let mut row_idx = IdxCa::from_vec("", row_idx);
             row_idx.set_sorted_flag(IsSorted::Ascending);
 
-            // Safety
+            // SAFETY:
             // We just created indices that are in bounds.
             let mut df = unsafe { df.take_unchecked(&row_idx) };
             process_column(self, &mut df, exploded.clone())?;
@@ -275,7 +275,7 @@ impl DataFrame {
                 out.push(variable_col);
                 out.push(value_col);
 
-                return Ok(DataFrame::new_no_checks(out));
+                return Ok(unsafe { DataFrame::new_no_checks(out) });
             }
 
             let id_vars_set = PlHashSet::from_iter(id_vars.iter().map(|s| s.as_str()));
@@ -330,13 +330,13 @@ impl DataFrame {
             values.extend_from_slice(value_col.chunks())
         }
         let values_arr = concatenate_owned_unchecked(&values)?;
-        // Safety
+        // SAFETY:
         // The give dtype is correct
         let values =
             unsafe { Series::from_chunks_and_dtype_unchecked(value_name, vec![values_arr], &st) };
 
         let variable_col = variable_col.as_box();
-        // Safety
+        // SAFETY:
         // The given dtype is correct
         let variables = unsafe {
             Series::from_chunks_and_dtype_unchecked(
@@ -354,7 +354,6 @@ impl DataFrame {
 
 #[cfg(test)]
 mod test {
-    use crate::frame::explode::MeltArgs;
     use crate::prelude::*;
 
     #[test]

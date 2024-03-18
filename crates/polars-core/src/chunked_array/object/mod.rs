@@ -3,7 +3,8 @@ use std::fmt::{Debug, Display};
 use std::hash::Hash;
 
 use arrow::bitmap::utils::{BitmapIter, ZipValidity};
-use arrow::bitmap::Bitmap;
+use arrow::bitmap::{Bitmap, MutableBitmap};
+use polars_utils::total_ord::TotalHash;
 
 use crate::prelude::*;
 
@@ -36,7 +37,7 @@ pub trait PolarsObjectSafe: Any + Debug + Send + Sync + Display {
 
 /// Values need to implement this so that they can be stored into a Series and DataFrame
 pub trait PolarsObject:
-    Any + Debug + Clone + Send + Sync + Default + Display + Hash + PartialEq + Eq + TotalEq
+    Any + Debug + Clone + Send + Sync + Default + Display + Hash + TotalHash + PartialEq + Eq + TotalEq
 {
     /// This should be used as type information. Consider this a part of the type system.
     fn type_name() -> &'static str;
@@ -152,7 +153,7 @@ where
     }
 
     fn data_type(&self) -> &ArrowDataType {
-        unimplemented!()
+        &ArrowDataType::FixedSizeBinary(std::mem::size_of::<T>())
     }
 
     fn slice(&mut self, offset: usize, length: usize) {
@@ -195,6 +196,44 @@ where
             None => 0,
             Some(validity) => validity.unset_bits(),
         }
+    }
+}
+
+impl<T: PolarsObject> StaticArray for ObjectArray<T> {
+    type ValueT<'a> = &'a T;
+    type ZeroableValueT<'a> = Option<&'a T>;
+    type ValueIterT<'a> = ObjectValueIter<'a, T>;
+
+    #[inline]
+    unsafe fn value_unchecked(&self, idx: usize) -> Self::ValueT<'_> {
+        self.value_unchecked(idx)
+    }
+
+    fn values_iter(&self) -> Self::ValueIterT<'_> {
+        self.values_iter()
+    }
+
+    fn iter(&self) -> ZipValidity<Self::ValueT<'_>, Self::ValueIterT<'_>, BitmapIter> {
+        self.iter()
+    }
+
+    fn with_validity_typed(self, validity: Option<Bitmap>) -> Self {
+        self.with_validity(validity)
+    }
+
+    fn full_null(length: usize, _dtype: ArrowDataType) -> Self {
+        ObjectArray {
+            values: Arc::new(vec![T::default(); length]),
+            null_bitmap: Some(Bitmap::new_with_value(false, length)),
+            offset: 0,
+            len: length,
+        }
+    }
+}
+
+impl<T: PolarsObject> ParameterFreeDtypeStaticArray for ObjectArray<T> {
+    fn get_dtype() -> ArrowDataType {
+        ArrowDataType::FixedSizeBinary(std::mem::size_of::<T>())
     }
 }
 

@@ -1,5 +1,3 @@
-use polars_core::datatypes::ListChunked;
-
 use super::*;
 
 pub(super) fn median_with_nulls(ca: &ListChunked) -> Series {

@@ -41,7 +41,7 @@ impl MemTracker {
     }
 
     /// This shouldn't be called often as this is expensive.
-    fn refresh_memory(&self) {
+    pub fn refresh_memory(&self) {
         self.available_mem
             .store(MEMINFO.free() as usize, Ordering::Relaxed);
     }
@@ -54,6 +54,12 @@ impl MemTracker {
         if fetch_count % (self.refresh_interval * self.thread_count) == 0 {
             self.refresh_memory()
         }
+        self.available_mem.load(Ordering::Relaxed)
+    }
+
+    pub(super) fn get_available_latest(&self) -> usize {
+        self.refresh_memory();
+        self.fetch_count.store(0, Ordering::Relaxed);
         self.available_mem.load(Ordering::Relaxed)
     }
 

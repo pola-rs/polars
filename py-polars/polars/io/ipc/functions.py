@@ -2,27 +2,25 @@ from __future__ import annotations
 
 import contextlib
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, Any, BinaryIO
+from typing import IO, TYPE_CHECKING, Any
 
 import polars._reexport as pl
+from polars._utils.deprecation import deprecate_renamed_parameter
+from polars._utils.various import normalize_filepath
 from polars.dependencies import _PYARROW_AVAILABLE
 from polars.io._utils import _prepare_file_arg
-from polars.utils.deprecation import deprecate_renamed_parameter
-from polars.utils.various import normalize_filepath
 
 with contextlib.suppress(ImportError):
     from polars.polars import read_ipc_schema as _read_ipc_schema
 
 if TYPE_CHECKING:
-    from io import BytesIO
-
     from polars import DataFrame, DataType, LazyFrame
 
 
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
 @deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
 def read_ipc(
-    source: str | BinaryIO | BytesIO | Path | bytes,
+    source: str | Path | IO[bytes] | bytes,
     *,
     columns: list[int] | list[str] | None = None,
     n_rows: int | None = None,
@@ -114,7 +112,7 @@ def read_ipc(
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
 @deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
 def read_ipc_stream(
-    source: str | BinaryIO | BytesIO | Path | bytes,
+    source: str | Path | IO[bytes] | bytes,
     *,
     columns: list[int] | list[str] | None = None,
     n_rows: int | None = None,
@@ -224,6 +222,7 @@ def scan_ipc(
     row_index_offset: int = 0,
     storage_options: dict[str, Any] | None = None,
     memory_map: bool = True,
+    retries: int = 0,
 ) -> LazyFrame:
     """
     Lazily read from an Arrow IPC (Feather v2) file or multiple files via glob patterns.
@@ -254,6 +253,9 @@ def scan_ipc(
         Try to memory map the file. This can greatly improve performance on repeated
         queries as the OS may cache pages.
         Only uncompressed IPC files can be memory mapped.
+    retries
+        Number of retries if accessing a cloud instance fails.
+
     """
     return pl.LazyFrame._scan_ipc(
         source,
@@ -264,4 +266,5 @@ def scan_ipc(
         row_index_offset=row_index_offset,
         storage_options=storage_options,
         memory_map=memory_map,
+        retries=retries,
     )
