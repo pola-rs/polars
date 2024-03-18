@@ -101,14 +101,38 @@ pub(crate) fn finish_reader<R: ArrowReader>(
     let mut num_rows = 0;
     let mut parsed_dfs = Vec::with_capacity(1024);
 
-    while let Some(batch) = reader.next_record_batch()? {
-        let current_num_rows = num_rows as IdxSize;
-        num_rows += batch.len();
+    loop {
+        let remaining = match n_rows {
+            Some(limit) => match limit.checked_sub(num_rows) {
+                // We still need to read `remaining` rows.
+                Some(remaining) => Some(remaining),
+                // We have read enough since `num_rows >= limit`.
+                None => break,
+            },
+            // Read until the end.
+            None => None,
+        };
+
+        let Some(batch) = reader.next_record_batch()? else {
+            break;
+        };
+
         let mut df = DataFrame::try_from((batch, arrow_schema.fields.as_slice()))?;
 
         if let Some(rc) = &row_index {
-            df.with_row_index_mut(&rc.name, Some(current_num_rows + rc.offset));
+            df.with_row_index_mut(
+                &rc.name,
+                Some(IdxSize::try_from(num_rows).unwrap() + rc.offset),
+            );
         }
+
+        if let Some(remaining) = remaining {
+            if remaining < df.height() {
+                df = df.slice(0, remaining);
+            }
+        }
+
+        num_rows += df.height();
 
         if let Some(predicate) = &predicate {
             let s = predicate.evaluate_io(&df)?;
@@ -116,19 +140,6 @@ pub(crate) fn finish_reader<R: ArrowReader>(
             df = df.filter(mask)?;
         }
 
-        if let Some(n) = n_rows {
-            if num_rows >= n {
-                let len = n - parsed_dfs
-                    .iter()
-                    .map(|df: &DataFrame| df.height())
-                    .sum::<usize>();
-                if polars_core::config::verbose() {
-                    eprintln!("sliced off {} rows of the 'DataFrame'. These lines were read because they were in a single chunk.", df.height().saturating_sub(n))
-                }
-                parsed_dfs.push(df.slice(0, len));
-                break;
-            }
-        }
         parsed_dfs.push(df);
     }
 
