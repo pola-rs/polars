@@ -446,11 +446,21 @@ where
     #[inline]
     pub fn get(&self, idx: usize) -> Option<T::Physical<'_>> {
         let (chunk_idx, arr_idx) = self.index_to_chunked_index(idx);
-        assert!(chunk_idx < self.chunks().len());
+        assert!(
+            chunk_idx < self.chunks().len(),
+            "index: {} out of bounds for len: {}",
+            idx,
+            self.len()
+        );
         unsafe {
             let arr = self.downcast_get_unchecked(chunk_idx);
-            assert!(arr_idx < arr.len());
-            arr.get(arr_idx)
+            assert!(
+                arr_idx < arr.len(),
+                "index: {} out of bounds for len: {}",
+                idx,
+                self.len()
+            );
+            arr.get_unchecked(arr_idx)
         }
     }
 
