@@ -322,23 +322,21 @@ unsafe fn take_opt_unchecked_object(s: &Series, by: &[NullableChunkId]) -> Serie
 #[allow(clippy::unnecessary_cast)]
 #[inline(always)]
 unsafe fn rewrite_view(mut view: View, chunk_idx: IdxSize, buffer_offsets: &[u32]) -> View {
-    let base_offset = *buffer_offsets.get_unchecked_release(chunk_idx as usize);
-    view.buffer_idx += base_offset;
+    if view.length > 12 {
+        let base_offset = *buffer_offsets.get_unchecked_release(chunk_idx as usize);
+        view.buffer_idx += base_offset;
+    }
     view
 }
 
 fn create_buffer_offsets(ca: &BinaryChunked) -> Vec<u32> {
-    // Create a buffer with buffer offsets that we can index.
-    let total_buffers = ca
-        .downcast_iter()
-        .map(|arr| arr.data_buffers().len())
-        .sum::<usize>();
-    let mut buffer_offsets = Vec::with_capacity(total_buffers + 1);
-    buffer_offsets.push(0u32);
-    buffer_offsets.extend(
-        ca.downcast_iter()
-            .map(|arr| arr.data_buffers().len() as u32),
-    );
+    let mut buffer_offsets = Vec::with_capacity(ca.chunks().len() + 1);
+    let mut cumsum = 0u32;
+    buffer_offsets.push(cumsum);
+    buffer_offsets.extend(ca.downcast_iter().map(|arr| {
+        cumsum += arr.data_buffers().len() as u32;
+        cumsum
+    }));
     buffer_offsets
 }
 
@@ -406,8 +404,8 @@ unsafe fn take_unchecked_binview(
         buffers,
         validity,
         None,
-    )
-    .maybe_gc();
+    );
+    // .maybe_gc();
 
     let mut out = BinaryChunked::with_chunk(ca.name(), arr);
     let sorted_flag = _update_gather_sorted_flag(ca.is_sorted_flag(), sorted);
@@ -482,8 +480,8 @@ unsafe fn take_unchecked_binview_opt(ca: &BinaryChunked, by: &[NullableChunkId])
         buffers,
         validity,
         None,
-    )
-    .maybe_gc();
+    );
+    // .maybe_gc();
 
     BinaryChunked::with_chunk(ca.name(), arr)
 }
@@ -498,17 +496,22 @@ mod test {
             // # Series without nulls;
             let mut s_1 = Series::new(
                 "a",
-                &["1 loooooooooooong string 1", "2 loooooooooooong string 2"],
+                &["1 loooooooooooong string", "2 loooooooooooong string"],
             );
             let s_2 = Series::new(
                 "a",
+                &["11 loooooooooooong string", "22 loooooooooooong string"],
+            );
+            let s_3 = Series::new(
+                "a",
                 &[
-                    "11 loooooooooooong string 11",
-                    "22 loooooooooooong string 22",
+                    "111 loooooooooooong string",
+                    "222 loooooooooooong string",
+                    "small", // this tests we don't mess with the inlined view
                 ],
             );
             s_1.append(&s_2).unwrap();
-            s_1.append(&s_2).unwrap();
+            s_1.append(&s_3).unwrap();
 
             assert_eq!(s_1.n_chunks(), 3);
 
@@ -520,10 +523,11 @@ mod test {
                 ChunkId::store(1, 0),
                 ChunkId::store(2, 0),
                 ChunkId::store(2, 1),
+                ChunkId::store(2, 2),
             ];
 
             let out = s_1.take_chunked_unchecked(&by, IsSorted::Not);
-            let idx = IdxCa::new("", [0, 1, 3, 2, 4, 5]);
+            let idx = IdxCa::new("", [0, 1, 3, 2, 4, 5, 6]);
             let expected = s_1.rechunk().take(&idx).unwrap();
             assert!(out.equals(&expected));
 
