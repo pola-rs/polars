@@ -1,9 +1,9 @@
 use std::borrow::Borrow;
 
 use crate::array::PrimitiveArray;
+use crate::bitmap::utils::set_bit_unchecked;
 use crate::bitmap::MutableBitmap;
 use crate::datatypes::ArrowDataType;
-use crate::legacy::bit_util::unset_bit_raw;
 use crate::legacy::trusted_len::{FromIteratorReversed, TrustedLenPush};
 use crate::trusted_len::{TrustMyLength, TrustedLen};
 use crate::types::NativeType;
@@ -139,7 +139,7 @@ impl<T: NativeType> FromIteratorReversed<Option<T>> for PrimitiveArray<T> {
         let mut vals: Vec<T> = Vec::with_capacity(size);
         let mut validity = MutableBitmap::with_capacity(size);
         validity.extend_constant(size, true);
-        let validity_ptr = validity.as_slice().as_ptr() as *mut u8;
+        let validity_slice = validity.as_mut_slice();
         unsafe {
             // Set to end of buffer.
             let mut ptr = vals.as_mut_ptr().add(size);
@@ -154,7 +154,7 @@ impl<T: NativeType> FromIteratorReversed<Option<T>> for PrimitiveArray<T> {
                     },
                     None => {
                         std::ptr::write(ptr, T::default());
-                        unset_bit_raw(validity_ptr, offset)
+                        set_bit_unchecked(validity_slice, offset, false);
                     },
                 }
             });

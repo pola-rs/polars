@@ -759,6 +759,14 @@ impl MutableBitmap {
         let len = (self.length).saturating_add(7) / 8;
         &self.buffer[..len]
     }
+
+    /// Returns the slice of bytes of this [`MutableBitmap`].
+    /// Note that the last byte may not be fully used.
+    #[inline]
+    pub fn as_mut_slice(&mut self) -> &mut [u8] {
+        let len = (self.length).saturating_add(7) / 8;
+        &mut self.buffer[..len]
+    }
 }
 
 impl Default for MutableBitmap {
