@@ -98,7 +98,7 @@ impl PySeries {
 #[pymethods]
 impl PySeries {
     #[staticmethod]
-    fn new_opt_bool(name: &str, values: &Bound<PyAny>, strict: bool) -> PyResult<Self> {
+    fn new_opt_bool(name: &str, values: &Bound<PyAny>, _strict: bool) -> PyResult<Self> {
         let len = values.len()?;
         let mut builder = BooleanChunkedBuilder::new(name, len);
 
@@ -107,15 +107,8 @@ impl PySeries {
             if value.is_none() {
                 builder.append_null()
             } else {
-                match value.extract::<bool>() {
-                    Ok(v) => builder.append_value(v),
-                    Err(e) => {
-                        if strict {
-                            return Err(e);
-                        }
-                        builder.append_null()
-                    },
-                }
+                let v = item.extract::<bool>()?;
+                builder.append_value(v)
             }
         }
         let ca = builder.finish();
