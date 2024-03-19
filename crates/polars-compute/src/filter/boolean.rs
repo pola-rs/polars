@@ -1,6 +1,5 @@
 use arrow::bitmap::Bitmap;
 use polars_utils::clmul::prefix_xorsum;
-use polars_utils::slice::load_padded_le_u64;
 
 const U56_MAX: u64 = (1 << 56) - 1;
 
@@ -110,25 +109,8 @@ unsafe fn filter_boolean_kernel_sparse(values: &Bitmap, mask: &Bitmap, mut out_p
     let mut value_idx = 0;
     let mut bits_in_word = 0usize;
     let mut word = 0u64;
-    let (mut mask_bytes, offset, len) = mask.as_slice();
-    if len == 0 {
+    if mask.len() == 0 {
         return;
-    }
-
-    // Handle offset.
-    if offset > 0 {
-        let first_byte = mask_bytes[0];
-        mask_bytes = &mask_bytes[1..];
-
-        for byte_idx in offset..8 {
-            let mask_bit = first_byte & (1 << byte_idx) != 0;
-            if mask_bit && value_idx < len {
-                let bit = unsafe { values.get_bit_unchecked(value_idx) };
-                word |= (bit as u64) << bits_in_word;
-                bits_in_word += 1;
-            }
-            value_idx += 1;
-        }
     }
 
     macro_rules! loop_body {
@@ -154,25 +136,19 @@ unsafe fn filter_boolean_kernel_sparse(values: &Bitmap, mask: &Bitmap, mut out_p
         }};
     }
 
-    // Handle bulk.
-    while value_idx + 64 <= len {
-        let chunk;
-        unsafe {
-            // SAFETY: we checked that value and mask have same length.
-            chunk = mask_bytes.get_unchecked(0..8);
-            mask_bytes = mask_bytes.get_unchecked(8..);
-        };
-        let m = u64::from_le_bytes(chunk.try_into().unwrap());
+    let mask_aligned = mask.aligned::<u64>();
+    if mask_aligned.prefix_bitlen() > 0 {
+        loop_body!(mask_aligned.prefix());
+        value_idx += mask_aligned.prefix_bitlen();
+    }
+
+    for m in mask_aligned.bulk_iter() {
         loop_body!(m);
         value_idx += 64;
     }
 
-    // Handle remainder.
-    if value_idx < len {
-        let rest_len = len - value_idx;
-        assert!(rest_len < 64);
-        let m = load_padded_le_u64(mask_bytes) & ((1 << rest_len) - 1);
-        loop_body!(m);
+    if mask_aligned.suffix_bitlen() > 0 {
+        loop_body!(mask_aligned.suffix());
     }
 
     if bits_in_word > 0 {
