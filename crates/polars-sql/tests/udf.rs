@@ -128,10 +128,9 @@ fn test_udf_allow_schema_validation() {
     assert!(res.is_err());
 }
 
-
-// test forbid schema validation when input fields does not match with custom function args 
+// test forbid schema validation when input fields does not match with custom function args
 #[test]
-fn test_udf_forbid_schema_validation() { 
+fn test_udf_forbid_schema_validation() {
     let mut my_custom_sum = UserDefinedFunction::new(
         "my_custom_sum",
         vec![],
@@ -159,4 +158,3 @@ fn test_udf_forbid_schema_validation() {
     let res = ctx.execute("SELECT a, b, my_custom_sum(a, b) FROM foo");
     assert!(res.is_ok());
 }
-
