@@ -464,10 +464,9 @@ class ConnectionExecutor:
         msg = f"Unrecognised connection {conn!r}; unable to find 'execute' method"
         raise TypeError(msg)
 
-    async def _sqlalchemy_async_execute(
-        self, query: TextClause, *, is_session: bool = False, **options: Any
-    ) -> Any:
+    async def _sqlalchemy_async_execute(self, query: TextClause, **options: Any) -> Any:
         """Execute a query using an async SQLAlchemy connection."""
+        is_session = type(self.cursor).__name__ == "async_sessionmaker"
         cursor = self.cursor.begin() if is_session else self.cursor  # type: ignore[attr-defined]
         async with cursor as conn:
             result = await conn.execute(query, **options)
@@ -481,13 +480,12 @@ class ConnectionExecutor:
         from sqlalchemy.sql import text
         from sqlalchemy.sql.elements import TextClause
 
-        is_async = (cursor_type_name := type(self.cursor).__name__) in (
+        is_async = type(self.cursor).__name__ in (
             "AsyncConnection",
             "async_sessionmaker",
         )
         param_key = "parameters"
         cursor_execute = None
-
         if (
             isinstance(self.cursor, Session)
             and "parameters" in options
@@ -518,9 +516,6 @@ class ConnectionExecutor:
             cursor_execute = (
                 self._sqlalchemy_async_execute if is_async else self.cursor.execute
             )
-        if cursor_type_name == "async_sessionmaker":
-            options["is_session"] = True
-
         return cursor_execute, options, query
 
     def execute(
