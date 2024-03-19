@@ -1,7 +1,6 @@
 pub mod array;
 pub mod bit_util;
 pub mod bitmap;
-pub mod compute;
 pub mod conversion;
 pub mod error;
 pub mod index;
