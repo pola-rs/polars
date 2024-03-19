@@ -24,11 +24,6 @@ pub mod unwrap;
 
 pub use functions::*;
 
-#[cfg(not(feature = "bigidx"))]
-pub type IdxSize = u32;
-#[cfg(feature = "bigidx")]
-pub type IdxSize = u64;
-
 pub mod aliases;
 pub mod fmt;
 pub mod iter;
@@ -42,5 +37,7 @@ pub mod index;
 pub mod io;
 pub mod nulls;
 pub mod ord;
+pub mod partitioned;
 
+pub use index::{IdxSize, NullableIdxSize};
 pub use io::open_file;

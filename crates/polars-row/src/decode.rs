@@ -44,7 +44,9 @@ unsafe fn decode(rows: &mut [&[u8]], field: &SortField, data_type: &ArrowDataTyp
     match data_type {
         ArrowDataType::Null => NullArray::new(ArrowDataType::Null, rows.len()).to_boxed(),
         ArrowDataType::Boolean => decode_bool(rows, field).to_boxed(),
-        ArrowDataType::LargeBinary => decode_binview(rows, field).to_boxed(),
+        ArrowDataType::BinaryView | ArrowDataType::LargeBinary => {
+            decode_binview(rows, field).to_boxed()
+        },
         ArrowDataType::Utf8View => {
             let arr = decode_binview(rows, field);
             arr.to_utf8view_unchecked().boxed()

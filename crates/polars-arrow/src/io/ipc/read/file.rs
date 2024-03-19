@@ -215,7 +215,7 @@ fn deserialize_footer_blocks(
     Ok((footer, blocks))
 }
 
-pub(super) fn deserialize_footer(footer_data: &[u8], size: u64) -> PolarsResult<FileMetadata> {
+pub fn deserialize_footer(footer_data: &[u8], size: u64) -> PolarsResult<FileMetadata> {
     let (footer, blocks) = deserialize_footer_blocks(footer_data)?;
 
     let ipc_schema = footer

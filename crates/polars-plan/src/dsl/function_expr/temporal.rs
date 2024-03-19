@@ -59,8 +59,8 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             DSTOffset => map!(datetime::dst_offset),
             Round(every, offset) => map_as_slice!(datetime::round, &every, &offset),
             #[cfg(feature = "timezones")]
-            ReplaceTimeZone(tz) => {
-                map_as_slice!(dispatch::replace_time_zone, tz.as_deref())
+            ReplaceTimeZone(tz, non_existent) => {
+                map_as_slice!(dispatch::replace_time_zone, tz.as_deref(), non_existent)
             },
             Combine(tu) => map_as_slice!(temporal::combine, tu),
             DatetimeFunction {
@@ -154,9 +154,9 @@ pub(super) fn datetime(
                 NaiveDate::from_ymd_opt(y, m, d)
                     .and_then(|nd| nd.and_hms_micro_opt(h, mnt, s, us))
                     .map(|ndt| match time_unit {
-                        TimeUnit::Milliseconds => ndt.timestamp_millis(),
-                        TimeUnit::Microseconds => ndt.timestamp_micros(),
-                        TimeUnit::Nanoseconds => ndt.timestamp_nanos_opt().unwrap(),
+                        TimeUnit::Milliseconds => ndt.and_utc().timestamp_millis(),
+                        TimeUnit::Microseconds => ndt.and_utc().timestamp_micros(),
+                        TimeUnit::Nanoseconds => ndt.and_utc().timestamp_nanos_opt().unwrap(),
                     })
             } else {
                 None
@@ -168,7 +168,7 @@ pub(super) fn datetime(
         #[cfg(feature = "timezones")]
         Some(_) => {
             let mut ca = ca.into_datetime(*time_unit, None);
-            ca = replace_time_zone(&ca, time_zone, _ambiguous)?;
+            ca = replace_time_zone(&ca, time_zone, _ambiguous, NonExistent::Raise)?;
             ca
         },
         _ => {
@@ -314,6 +314,7 @@ pub(super) fn combine(s: &[Series], tu: TimeUnit) -> PolarsResult<Series> {
             result_naive.datetime().unwrap(),
             Some(tz),
             &StringChunked::from_iter(std::iter::once("raise")),
+            NonExistent::Raise,
         )?
         .into()),
         _ => Ok(result_naive),

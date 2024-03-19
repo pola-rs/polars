@@ -3,15 +3,15 @@ from __future__ import annotations
 import contextlib
 from typing import TYPE_CHECKING, Sequence
 
-from polars.datatypes import N_INFER_DEFAULT, py_type_to_dtype
-from polars.io.csv._utils import _update_columns
-from polars.utils._wrap import wrap_df
-from polars.utils.various import (
+from polars._utils.various import (
     _prepare_row_index_args,
     _process_null_values,
     handle_projection_columns,
     normalize_filepath,
 )
+from polars._utils.wrap import wrap_df
+from polars.datatypes import N_INFER_DEFAULT, py_type_to_dtype
+from polars.io.csv._utils import _update_columns
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyBatchedCsv
@@ -110,14 +110,12 @@ class BatchedCsvReader:
         """
         Read `n` batches from the reader.
 
-        The `n` chunks will be parallelized over the
-        available threads.
+        These batches will be parallelized over the available threads.
 
         Parameters
         ----------
         n
-            Number of chunks to fetch.
-            This is ideally >= number of threads
+            Number of chunks to fetch; ideally this is >= number of threads.
 
         Examples
         --------

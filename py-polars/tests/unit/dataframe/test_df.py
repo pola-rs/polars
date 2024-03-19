@@ -16,6 +16,7 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
+from polars._utils.construction import iterable_to_pydf
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, INTEGER_DTYPES
 from polars.exceptions import ComputeError, TimeZoneAwareConstructorWarning
 from polars.testing import (
@@ -24,14 +25,13 @@ from polars.testing import (
     assert_series_equal,
 )
 from polars.testing.parametric import columns
-from polars.utils._construction import iterable_to_pydf
 
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
 
     from polars.type_aliases import JoinStrategy, UniqueKeepStrategy
 else:
-    from polars.utils.convert import string_to_zoneinfo as ZoneInfo
+    from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
 
 def test_version() -> None:
@@ -1168,34 +1168,6 @@ def test_from_generator_or_iterable() -> None:
         pl.DataFrame(schema=["a", "b", "c", "d"]),
     )
 
-    # dict-related generator-views
-    d = {0: "x", 1: "y", 2: "z"}
-    df = pl.DataFrame(
-        {
-            "keys": d.keys(),
-            "vals": d.values(),
-            "itms": d.items(),
-        }
-    )
-    assert df.to_dict(as_series=False) == {
-        "keys": [0, 1, 2],
-        "vals": ["x", "y", "z"],
-        "itms": [(0, "x"), (1, "y"), (2, "z")],
-    }
-    if sys.version_info >= (3, 11):
-        df = pl.DataFrame(
-            {
-                "rev_keys": reversed(d.keys()),
-                "rev_vals": reversed(d.values()),
-                "rev_itms": reversed(d.items()),
-            }
-        )
-        assert df.to_dict(as_series=False) == {
-            "rev_keys": [2, 1, 0],
-            "rev_vals": ["z", "y", "x"],
-            "rev_itms": [(2, "z"), (1, "y"), (0, "x")],
-        }
-
 
 def test_from_rows() -> None:
     df = pl.from_records([[1, 2, "foo"], [2, 3, "bar"]])
@@ -1458,7 +1430,7 @@ def test_reproducible_hash_with_seeds() -> None:
     if platform.mac_ver()[-1] != "arm64":
         expected = pl.Series(
             "s",
-            [13736875168471412002, 6161148964772490034, 9489472896993257669],
+            [8661293245726181094, 9565952849861441858, 2921274555702885622],
             dtype=pl.UInt64,
         )
         result = df.hash_rows(*seeds)
@@ -1467,30 +1439,6 @@ def test_reproducible_hash_with_seeds() -> None:
         assert_series_equal(expected, result, check_names=False, check_exact=True)
         result = df.select([pl.col("s").hash(*seeds)])["s"]
         assert_series_equal(expected, result, check_names=False, check_exact=True)
-
-
-def test_create_df_from_object() -> None:
-    class Foo:
-        def __init__(self, value: int) -> None:
-            self._value = value
-
-        def __eq__(self, other: Any) -> bool:
-            return issubclass(other.__class__, self.__class__) and (
-                self._value == other._value
-            )
-
-        def __repr__(self) -> str:
-            return f"{self.__class__.__name__}({self._value})"
-
-    # from miscellaneous object
-    df = pl.DataFrame({"a": [Foo(1), Foo(2)]})
-    assert df["a"].dtype == pl.Object
-    assert df.rows() == [(Foo(1),), (Foo(2),)]
-
-    # from mixed-type input
-    df = pl.DataFrame({"x": [["abc", 12, 34.5]], "y": [1]})
-    assert df.schema == {"x": pl.Object, "y": pl.Int64}
-    assert df.rows() == [(["abc", 12, 34.5], 1)]
 
 
 def test_hashing_on_python_objects() -> None:

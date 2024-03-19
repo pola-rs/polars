@@ -7,12 +7,13 @@ from typing import TYPE_CHECKING, Any, Iterable, Mapping, Sequence, overload
 
 import polars._reexport as pl
 from polars import functions as F
+from polars._utils.deprecation import deprecate_renamed_parameter
+from polars._utils.various import _cast_repr_strings_with_schema
 from polars.datatypes import N_INFER_DEFAULT, Categorical, List, Object, String, Struct
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.exceptions import NoDataError
 from polars.io import read_csv
-from polars.utils.various import _cast_repr_strings_with_schema
 
 if TYPE_CHECKING:
     from polars import DataFrame, Series
@@ -26,6 +27,7 @@ def from_dict(
     schema: SchemaDefinition | None = None,
     *,
     schema_overrides: SchemaDict | None = None,
+    strict: bool = True,
 ) -> DataFrame:
     """
     Construct a DataFrame from a dictionary of sequences.
@@ -50,6 +52,11 @@ def from_dict(
     schema_overrides : dict, default None
         Support type specification or override of one or more columns; note that
         any dtypes inferred from the columns param will be overridden.
+    strict : bool, default True
+        Throw an error if any `data` value does not exactly match the given or inferred
+        data type for that column. If set to `False`, values that do not match the data
+        type are cast to that data type or, if casting is not possible, set to null
+        instead.
 
     Returns
     -------
@@ -70,7 +77,7 @@ def from_dict(
     └─────┴─────┘
     """
     return pl.DataFrame._from_dict(
-        data, schema=schema, schema_overrides=schema_overrides
+        data, schema=schema, schema_overrides=schema_overrides, strict=strict
     )
 
 
@@ -79,6 +86,7 @@ def from_dicts(
     schema: SchemaDefinition | None = None,
     *,
     schema_overrides: SchemaDict | None = None,
+    strict: bool = True,
     infer_schema_length: int | None = N_INFER_DEFAULT,
 ) -> DataFrame:
     """
@@ -106,6 +114,11 @@ def from_dicts(
         adding them to the schema.
     schema_overrides : dict, default None
         Support override of inferred types for one or more columns.
+    strict : bool, default True
+        Throw an error if any `data` value does not exactly match the given or inferred
+        data type for that column. If set to `False`, values that do not match the data
+        type are cast to that data type or, if casting is not possible, set to null
+        instead.
     infer_schema_length
         The maximum number of rows to scan for schema inference.
         If set to `None`, the full data may be scanned *(this is slow)*.
@@ -172,6 +185,7 @@ def from_dicts(
         data,
         schema=schema,
         schema_overrides=schema_overrides,
+        strict=strict,
         infer_schema_length=infer_schema_length,
     )
 
@@ -181,6 +195,7 @@ def from_records(
     schema: SchemaDefinition | None = None,
     *,
     schema_overrides: SchemaDict | None = None,
+    strict: bool = True,
     orient: Orientation | None = None,
     infer_schema_length: int | None = N_INFER_DEFAULT,
 ) -> DataFrame:
@@ -206,6 +221,11 @@ def from_records(
     schema_overrides : dict, default None
         Support type specification or override of one or more columns; note that
         any dtypes inferred from the columns param will be overridden.
+    strict : bool, default True
+        Throw an error if any `data` value does not exactly match the given or inferred
+        data type for that column. If set to `False`, values that do not match the data
+        type are cast to that data type or, if casting is not possible, set to null
+        instead.
     orient : {None, 'col', 'row'}
         Whether to interpret two-dimensional data as columns or as rows. If None,
         the orientation is inferred by matching the columns and data dimensions. If
@@ -238,213 +258,10 @@ def from_records(
         data,
         schema=schema,
         schema_overrides=schema_overrides,
+        strict=strict,
         orient=orient,
         infer_schema_length=infer_schema_length,
     )
-
-
-def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
-    """Reconstruct a DataFrame from a regex-matched table repr."""
-    from polars.datatypes.convert import dtype_short_repr_to_dtype
-
-    # extract elements from table structure
-    lines = m.group().split("\n")[1:-1]
-    rows = [
-        [re.sub(r"^[\W+]*│", "", elem).strip() for elem in row]
-        for row in [re.split("[┆|]", row.rstrip("│ ")) for row in lines]
-        if len(row) > 1 or not re.search("├[╌┼]+┤", row[0])
-    ]
-
-    # determine beginning/end of the header block
-    table_body_start = 2
-    for idx, (elem, *_) in enumerate(rows):
-        if re.match(r"^\W*╞", elem):
-            table_body_start = idx
-            break
-
-    # handle headers with wrapped column names and determine headers/dtypes
-    header_block = ["".join(h).split("---") for h in zip(*rows[:table_body_start])]
-    dtypes: list[str | None]
-    if all(len(h) == 1 for h in header_block):
-        headers = [h[0] for h in header_block]
-        dtypes = [None] * len(headers)
-    else:
-        headers, dtypes = (list(h) for h in zip_longest(*header_block))
-
-    body = rows[table_body_start + 1 :]
-    no_dtypes = all(d is None for d in dtypes)
-
-    # transpose rows into columns, detect/omit truncated columns
-    coldata = list(zip(*(row for row in body if not all((e == "…") for e in row))))
-    for el in ("…", "..."):
-        if el in headers:
-            idx = headers.index(el)
-            for table_elem in (headers, dtypes):
-                table_elem.pop(idx)  # type: ignore[attr-defined]
-            if coldata:
-                coldata.pop(idx)
-
-    # init cols as String Series, handle "null" -> None, create schema from repr dtype
-    data = [
-        pl.Series([(None if v == "null" else v) for v in cd], dtype=String)
-        for cd in coldata
-    ]
-    schema = dict(zip(headers, (dtype_short_repr_to_dtype(d) for d in dtypes)))
-    if schema and data and (n_extend_cols := (len(schema) - len(data))) > 0:
-        empty_data = [None] * len(data[0])
-        data.extend((pl.Series(empty_data, dtype=String)) for _ in range(n_extend_cols))
-    for dtype in set(schema.values()):
-        if dtype in (List, Struct, Object):
-            msg = (
-                f"`from_repr` does not support data type {dtype.base_type().__name__!r}"
-            )
-            raise NotImplementedError(msg)
-
-    # construct DataFrame from string series and cast from repr to native dtype
-    df = pl.DataFrame(data=data, orient="col", schema=list(schema))
-    if no_dtypes:
-        if df.is_empty():
-            # if no dtypes *and* empty, default to string
-            return df.with_columns(F.all().cast(String))
-        else:
-            # otherwise, take a trip through our CSV inference logic
-            if all(tp == String for tp in df.schema.values()):
-                buf = io.BytesIO()
-                df.write_csv(file=buf)
-                df = read_csv(buf, new_columns=df.columns, try_parse_dates=True)
-            return df
-    elif schema and not data:
-        return df.cast(schema)  # type: ignore[arg-type]
-    else:
-        return _cast_repr_strings_with_schema(df, schema)
-
-
-def _from_series_repr(m: re.Match[str]) -> Series:
-    """Reconstruct a Series from a regex-matched series repr."""
-    from polars.datatypes.convert import dtype_short_repr_to_dtype
-
-    shape = m.groups()[0]
-    name = m.groups()[1][1:-1]
-    length = int(shape[1:-2] if shape else -1)
-    dtype = dtype_short_repr_to_dtype(m.groups()[2])
-
-    if length == 0:
-        string_values = []
-    else:
-        string_values = [
-            v.strip()
-            for v in re.findall(r"[\s>#]*(?:\t|\s{4,})([^\n]*)\n", m.groups()[-1])
-        ]
-        if string_values == ["[", "]"]:
-            string_values = []
-        elif string_values and string_values[0].lstrip("#> ") == "[":
-            string_values = string_values[1:]
-
-    values = string_values[:length] if length > 0 else string_values
-    values = [(None if v == "null" else v) for v in values if v not in ("…", "...")]
-
-    if not values:
-        return pl.Series(name=name, values=values, dtype=dtype)
-    else:
-        srs = pl.Series(name=name, values=values, dtype=String)
-        if dtype is None:
-            return srs
-        elif dtype in (Categorical, String):
-            return srs.str.replace('^"(.*)"$', r"$1").cast(dtype)
-
-        return _cast_repr_strings_with_schema(
-            srs.to_frame(), schema={srs.name: dtype}
-        ).to_series()
-
-
-def from_repr(tbl: str) -> DataFrame | Series:
-    """
-    Utility function that reconstructs a DataFrame or Series from the object's repr.
-
-    Parameters
-    ----------
-    tbl
-        A string containing a polars DataFrame or Series repr; does not need
-        to be trimmed of whitespace (or leading prompts) as the repr will be
-        found/extracted automatically.
-
-    Notes
-    -----
-    This function handles the default UTF8_FULL and UTF8_FULL_CONDENSED DataFrame
-    tables (with or without rounded corners). Truncated columns/rows are omitted,
-    wrapped headers are accounted for, and dtypes automatically identified.
-
-    Currently compound/nested dtypes such as List and Struct are not supported;
-    neither are Object dtypes.
-
-    See Also
-    --------
-    polars.DataFrame.to_init_repr
-    polars.Series.to_init_repr
-
-    Examples
-    --------
-    From DataFrame table repr:
-
-    >>> df = pl.from_repr(
-    ...     '''
-    ...     Out[3]:
-    ...     shape: (1, 5)
-    ...     ┌───────────┬────────────┬───┬───────┬────────────────────────────────┐
-    ...     │ source_ac ┆ source_cha ┆ … ┆ ident ┆ timestamp                      │
-    ...     │ tor_id    ┆ nnel_id    ┆   ┆ ---   ┆ ---                            │
-    ...     │ ---       ┆ ---        ┆   ┆ str   ┆ datetime[μs, Asia/Tokyo]       │
-    ...     │ i32       ┆ i64        ┆   ┆       ┆                                │
-    ...     ╞═══════════╪════════════╪═══╪═══════╪════════════════════════════════╡
-    ...     │ 123456780 ┆ 9876543210 ┆ … ┆ a:b:c ┆ 2023-03-25 10:56:59.663053 JST │
-    ...     │ …         ┆ …          ┆ … ┆ …     ┆ …                              │
-    ...     │ 803065983 ┆ 2055938745 ┆ … ┆ x:y:z ┆ 2023-03-25 12:38:18.050545 JST │
-    ...     └───────────┴────────────┴───┴───────┴────────────────────────────────┘
-    ... '''
-    ... )
-    >>> df
-    shape: (2, 4)
-    ┌─────────────────┬───────────────────┬───────┬────────────────────────────────┐
-    │ source_actor_id ┆ source_channel_id ┆ ident ┆ timestamp                      │
-    │ ---             ┆ ---               ┆ ---   ┆ ---                            │
-    │ i32             ┆ i64               ┆ str   ┆ datetime[μs, Asia/Tokyo]       │
-    ╞═════════════════╪═══════════════════╪═══════╪════════════════════════════════╡
-    │ 123456780       ┆ 9876543210        ┆ a:b:c ┆ 2023-03-25 10:56:59.663053 JST │
-    │ 803065983       ┆ 2055938745        ┆ x:y:z ┆ 2023-03-25 12:38:18.050545 JST │
-    └─────────────────┴───────────────────┴───────┴────────────────────────────────┘
-
-    From Series repr:
-
-    >>> s = pl.from_repr(
-    ...     '''
-    ...     shape: (3,)
-    ...     Series: 's' [bool]
-    ...     [
-    ...        true
-    ...        false
-    ...        true
-    ...     ]
-    ...     '''
-    ... )
-    >>> s.to_list()
-    [True, False, True]
-    """
-    # find DataFrame table...
-    m = re.search(r"([┌╭].*?[┘╯])", tbl, re.DOTALL)
-    if m is not None:
-        return _from_dataframe_repr(m)
-
-    # ...or Series in the given string
-    m = re.search(
-        pattern=r"(?:shape: (\(\d+,\))\n.*?)?Series:\s+([^\n]+)\s+\[([^\n]+)](.*)",
-        string=tbl,
-        flags=re.DOTALL,
-    )
-    if m is not None:
-        return _from_series_repr(m)
-
-    msg = "input string does not contain DataFrame or Series"
-    raise ValueError(msg)
 
 
 def from_numpy(
@@ -633,8 +450,7 @@ def from_pandas(
     rechunk: bool = ...,
     nan_to_null: bool = ...,
     include_index: bool = ...,
-) -> DataFrame:
-    ...
+) -> DataFrame: ...
 
 
 @overload
@@ -645,8 +461,7 @@ def from_pandas(
     rechunk: bool = ...,
     nan_to_null: bool = ...,
     include_index: bool = ...,
-) -> Series:
-    ...
+) -> Series: ...
 
 
 def from_pandas(
@@ -658,7 +473,7 @@ def from_pandas(
     include_index: bool = False,
 ) -> DataFrame | Series:
     """
-    Construct a Polars DataFrame or Series from a pandas DataFrame or Series.
+    Construct a Polars DataFrame or Series from a pandas DataFrame, Series, or Index.
 
     This operation clones data.
 
@@ -676,6 +491,12 @@ def from_pandas(
         If data contains `NaN` values PyArrow will convert the `NaN` to `None`
     include_index : bool, default False
         Load any non-default pandas indexes as columns.
+
+        .. note::
+            If the input is a pandas ``Series`` or ``DataFrame`` and has a nameless
+            index which just enumerates the rows, then it will not be included in the
+            result, regardless of this parameter. If you want to be sure to include it,
+            please call ``.reset_index()`` prior to calling this function.
 
     Returns
     -------
@@ -699,7 +520,7 @@ def from_pandas(
     │ 4   ┆ 5   ┆ 6   │
     └─────┴─────┴─────┘
 
-    Constructing a Series from a :class:`pd.Series`:
+    Constructing a Series from a :class:`pandas.Series`:
 
     >>> import pandas as pd
     >>> pd_series = pd.Series([1, 2, 3], name="pd")
@@ -726,6 +547,211 @@ def from_pandas(
     else:
         msg = f"expected pandas DataFrame or Series, got {type(data).__name__!r}"
         raise TypeError(msg)
+
+
+@deprecate_renamed_parameter("tbl", "data", version="0.20.17")
+def from_repr(data: str) -> DataFrame | Series:
+    """
+    Construct a Polars DataFrame or Series from its string representation.
+
+    Parameters
+    ----------
+    data
+        A string containing a polars DataFrame or Series repr; does not need
+        to be trimmed of whitespace (or leading prompts) as the repr will be
+        found/extracted automatically.
+
+    Notes
+    -----
+    This function handles the default UTF8_FULL and UTF8_FULL_CONDENSED DataFrame
+    tables (with or without rounded corners). Truncated columns/rows are omitted,
+    wrapped headers are accounted for, and dtypes automatically identified.
+
+    Currently compound/nested dtypes such as List and Struct are not supported;
+    neither are Object dtypes.
+
+    See Also
+    --------
+    polars.DataFrame.to_init_repr
+    polars.Series.to_init_repr
+
+    Examples
+    --------
+    From DataFrame table repr:
+
+    >>> df = pl.from_repr(
+    ...     '''
+    ...     Out[3]:
+    ...     shape: (1, 5)
+    ...     ┌───────────┬────────────┬───┬───────┬────────────────────────────────┐
+    ...     │ source_ac ┆ source_cha ┆ … ┆ ident ┆ timestamp                      │
+    ...     │ tor_id    ┆ nnel_id    ┆   ┆ ---   ┆ ---                            │
+    ...     │ ---       ┆ ---        ┆   ┆ str   ┆ datetime[μs, Asia/Tokyo]       │
+    ...     │ i32       ┆ i64        ┆   ┆       ┆                                │
+    ...     ╞═══════════╪════════════╪═══╪═══════╪════════════════════════════════╡
+    ...     │ 123456780 ┆ 9876543210 ┆ … ┆ a:b:c ┆ 2023-03-25 10:56:59.663053 JST │
+    ...     │ …         ┆ …          ┆ … ┆ …     ┆ …                              │
+    ...     │ 803065983 ┆ 2055938745 ┆ … ┆ x:y:z ┆ 2023-03-25 12:38:18.050545 JST │
+    ...     └───────────┴────────────┴───┴───────┴────────────────────────────────┘
+    ... '''
+    ... )
+    >>> df
+    shape: (2, 4)
+    ┌─────────────────┬───────────────────┬───────┬────────────────────────────────┐
+    │ source_actor_id ┆ source_channel_id ┆ ident ┆ timestamp                      │
+    │ ---             ┆ ---               ┆ ---   ┆ ---                            │
+    │ i32             ┆ i64               ┆ str   ┆ datetime[μs, Asia/Tokyo]       │
+    ╞═════════════════╪═══════════════════╪═══════╪════════════════════════════════╡
+    │ 123456780       ┆ 9876543210        ┆ a:b:c ┆ 2023-03-25 10:56:59.663053 JST │
+    │ 803065983       ┆ 2055938745        ┆ x:y:z ┆ 2023-03-25 12:38:18.050545 JST │
+    └─────────────────┴───────────────────┴───────┴────────────────────────────────┘
+
+    From Series repr:
+
+    >>> s = pl.from_repr(
+    ...     '''
+    ...     shape: (3,)
+    ...     Series: 's' [bool]
+    ...     [
+    ...        true
+    ...        false
+    ...        true
+    ...     ]
+    ...     '''
+    ... )
+    >>> s.to_list()
+    [True, False, True]
+    """
+    # find DataFrame table...
+    m = re.search(r"([┌╭].*?[┘╯])", data, re.DOTALL)
+    if m is not None:
+        return _from_dataframe_repr(m)
+
+    # ...or Series in the given string
+    m = re.search(
+        pattern=r"(?:shape: (\(\d+,\))\n.*?)?Series:\s+([^\n]+)\s+\[([^\n]+)](.*)",
+        string=data,
+        flags=re.DOTALL,
+    )
+    if m is not None:
+        return _from_series_repr(m)
+
+    msg = "input string does not contain DataFrame or Series"
+    raise ValueError(msg)
+
+
+def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
+    """Reconstruct a DataFrame from a regex-matched table repr."""
+    from polars.datatypes.convert import dtype_short_repr_to_dtype
+
+    # extract elements from table structure
+    lines = m.group().split("\n")[1:-1]
+    rows = [
+        [re.sub(r"^[\W+]*│", "", elem).strip() for elem in row]
+        for row in [re.split("[┆|]", row.rstrip("│ ")) for row in lines]
+        if len(row) > 1 or not re.search("├[╌┼]+┤", row[0])
+    ]
+
+    # determine beginning/end of the header block
+    table_body_start = 2
+    for idx, (elem, *_) in enumerate(rows):
+        if re.match(r"^\W*╞", elem):
+            table_body_start = idx
+            break
+
+    # handle headers with wrapped column names and determine headers/dtypes
+    header_block = ["".join(h).split("---") for h in zip(*rows[:table_body_start])]
+    dtypes: list[str | None]
+    if all(len(h) == 1 for h in header_block):
+        headers = [h[0] for h in header_block]
+        dtypes = [None] * len(headers)
+    else:
+        headers, dtypes = (list(h) for h in zip_longest(*header_block))
+
+    body = rows[table_body_start + 1 :]
+    no_dtypes = all(d is None for d in dtypes)
+
+    # transpose rows into columns, detect/omit truncated columns
+    coldata = list(zip(*(row for row in body if not all((e == "…") for e in row))))
+    for el in ("…", "..."):
+        if el in headers:
+            idx = headers.index(el)
+            for table_elem in (headers, dtypes):
+                table_elem.pop(idx)  # type: ignore[attr-defined]
+            if coldata:
+                coldata.pop(idx)
+
+    # init cols as String Series, handle "null" -> None, create schema from repr dtype
+    data = [
+        pl.Series([(None if v == "null" else v) for v in cd], dtype=String)
+        for cd in coldata
+    ]
+    schema = dict(zip(headers, (dtype_short_repr_to_dtype(d) for d in dtypes)))
+    if schema and data and (n_extend_cols := (len(schema) - len(data))) > 0:
+        empty_data = [None] * len(data[0])
+        data.extend((pl.Series(empty_data, dtype=String)) for _ in range(n_extend_cols))
+    for dtype in set(schema.values()):
+        if dtype in (List, Struct, Object):
+            msg = (
+                f"`from_repr` does not support data type {dtype.base_type().__name__!r}"
+            )
+            raise NotImplementedError(msg)
+
+    # construct DataFrame from string series and cast from repr to native dtype
+    df = pl.DataFrame(data=data, orient="col", schema=list(schema))
+    if no_dtypes:
+        if df.is_empty():
+            # if no dtypes *and* empty, default to string
+            return df.with_columns(F.all().cast(String))
+        else:
+            # otherwise, take a trip through our CSV inference logic
+            if all(tp == String for tp in df.schema.values()):
+                buf = io.BytesIO()
+                df.write_csv(file=buf)
+                df = read_csv(buf, new_columns=df.columns, try_parse_dates=True)
+            return df
+    elif schema and not data:
+        return df.cast(schema)  # type: ignore[arg-type]
+    else:
+        return _cast_repr_strings_with_schema(df, schema)
+
+
+def _from_series_repr(m: re.Match[str]) -> Series:
+    """Reconstruct a Series from a regex-matched series repr."""
+    from polars.datatypes.convert import dtype_short_repr_to_dtype
+
+    shape = m.groups()[0]
+    name = m.groups()[1][1:-1]
+    length = int(shape[1:-2] if shape else -1)
+    dtype = dtype_short_repr_to_dtype(m.groups()[2])
+
+    if length == 0:
+        string_values = []
+    else:
+        string_values = [
+            v.strip()
+            for v in re.findall(r"[\s>#]*(?:\t|\s{4,})([^\n]*)\n", m.groups()[-1])
+        ]
+        if string_values == ["[", "]"]:
+            string_values = []
+        elif string_values and string_values[0].lstrip("#> ") == "[":
+            string_values = string_values[1:]
+
+    values = string_values[:length] if length > 0 else string_values
+    values = [(None if v == "null" else v) for v in values if v not in ("…", "...")]
+
+    if not values:
+        return pl.Series(name=name, values=values, dtype=dtype)
+    else:
+        srs = pl.Series(name=name, values=values, dtype=String)
+        if dtype is None:
+            return srs
+        elif dtype in (Categorical, String):
+            return srs.str.replace('^"(.*)"$', r"$1").cast(dtype)
+
+        return _cast_repr_strings_with_schema(
+            srs.to_frame(), schema={srs.name: dtype}
+        ).to_series()
 
 
 def from_dataframe(df: SupportsInterchange, *, allow_copy: bool = True) -> DataFrame:

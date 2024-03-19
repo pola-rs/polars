@@ -188,7 +188,7 @@ def test_serde_array_dtype() -> None:
     assert_series_equal(pickle.loads(pickle.dumps(s)), s)
 
     nested_s = pl.Series(
-        [[[1, 2, 3], [4, None]], None, [[None, None, 2]]],
+        [[[1, 2, 3], [4, None, 5]], None, [[None, None, 2]]],
         dtype=pl.List(pl.Array(pl.Int32(), width=3)),
     )
     assert_series_equal(pickle.loads(pickle.dumps(nested_s)), nested_s)
@@ -231,3 +231,27 @@ def test_expression_json_13991() -> None:
 
     round_tripped = pl.Expr.deserialize(io.StringIO(json))
     assert round_tripped.meta == expr
+
+
+def test_serde_data_type_class() -> None:
+    dtype = pl.Datetime
+    serialized = pickle.dumps(dtype)
+    deserialized = pickle.loads(serialized)
+    assert deserialized == dtype
+    assert isinstance(deserialized, type)
+
+
+def test_serde_data_type_instantiated() -> None:
+    dtype = pl.Int8()
+    serialized = pickle.dumps(dtype)
+    deserialized = pickle.loads(serialized)
+    assert deserialized == dtype
+    assert isinstance(deserialized, pl.DataType)
+
+
+def test_serde_data_type_instantiated_with_attributes() -> None:
+    dtype = pl.Enum(["a", "b"])
+    serialized = pickle.dumps(dtype)
+    deserialized = pickle.loads(serialized)
+    assert deserialized == dtype
+    assert isinstance(deserialized, pl.DataType)

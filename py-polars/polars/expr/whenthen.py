@@ -3,12 +3,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Iterable
 
 import polars.functions as F
-from polars.expr.expr import Expr
-from polars.utils._parse_expr_input import (
+from polars._utils.parse_expr_input import (
     parse_as_expression,
     parse_when_inputs,
 )
-from polars.utils._wrap import wrap_expr
+from polars._utils.wrap import wrap_expr
+from polars.expr.expr import Expr
 
 if TYPE_CHECKING:
     from polars.polars import PyExpr
@@ -23,8 +23,6 @@ class When:
 
     In this state, `then` must be called to continue to finish the expression.
     """
-
-    __slots__ = ("_when",)
 
     def __init__(self, when: Any):
         self._when = when
@@ -50,8 +48,6 @@ class Then(Expr):
 
     Represents the state of the expression after `pl.when(...).then(...)` is called.
     """
-
-    __slots__ = ("_then",)
 
     def __init__(self, then: Any):
         self._then = then
@@ -110,8 +106,6 @@ class ChainedWhen(Expr):
     In this state, `then` must be called to continue to finish the expression.
     """
 
-    __slots__ = ("_chained_when",)
-
     def __init__(self, chained_when: Any):
         self._chained_when = chained_when
 
@@ -136,8 +130,6 @@ class ChainedThen(Expr):
 
     Represents the state of the expression after an additional `then` is called.
     """
-
-    __slots__ = ("_chained_then",)
 
     def __init__(self, chained_then: Any):
         self._chained_then = chained_then

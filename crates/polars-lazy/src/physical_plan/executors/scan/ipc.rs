@@ -1,5 +1,10 @@
 use std::path::PathBuf;
 
+use polars_core::config::env_force_async;
+#[cfg(feature = "cloud")]
+use polars_io::cloud::CloudOptions;
+use polars_io::is_cloud_url;
+
 use super::*;
 
 pub struct IpcExec {
@@ -8,10 +13,43 @@ pub struct IpcExec {
     pub(crate) predicate: Option<Arc<dyn PhysicalExpr>>,
     pub(crate) options: IpcScanOptions,
     pub(crate) file_options: FileScanOptions,
+    #[cfg(feature = "cloud")]
+    pub(crate) cloud_options: Option<CloudOptions>,
+    pub(crate) metadata: Option<arrow::io::ipc::read::FileMetadata>,
 }
 
 impl IpcExec {
     fn read(&mut self, verbose: bool) -> PolarsResult<DataFrame> {
+        let is_cloud = is_cloud_url(&self.path);
+        let force_async = env_force_async();
+
+        let mut out = if is_cloud || force_async {
+            #[cfg(not(feature = "cloud"))]
+            {
+                panic!("activate cloud feature")
+            }
+
+            #[cfg(feature = "cloud")]
+            {
+                if !is_cloud && verbose {
+                    eprintln!("ASYNC READING FORCED");
+                }
+
+                polars_io::pl_async::get_runtime()
+                    .block_on_potential_spawn(self.read_async(verbose))?
+            }
+        } else {
+            self.read_sync(verbose)?
+        };
+
+        if self.file_options.rechunk {
+            out.as_single_chunk_par();
+        }
+
+        Ok(out)
+    }
+
+    fn read_sync(&mut self, verbose: bool) -> PolarsResult<DataFrame> {
         let file = std::fs::File::open(&self.path)?;
         let (projection, predicate) = prepare_scan_args(
             self.predicate.clone(),
@@ -27,6 +65,26 @@ impl IpcExec {
             .with_projection(projection)
             .memory_mapped(self.options.memmap)
             .finish_with_scan_ops(predicate, verbose)
+    }
+
+    #[cfg(feature = "cloud")]
+    async fn read_async(&mut self, verbose: bool) -> PolarsResult<DataFrame> {
+        let predicate = self.predicate.clone().map(phys_expr_to_io_expr);
+
+        let reader =
+            IpcReaderAsync::from_uri(self.path.to_str().unwrap(), self.cloud_options.as_ref())
+                .await?;
+        reader
+            .data(
+                self.metadata.as_ref(),
+                IpcReadOptions::default()
+                    .with_row_limit(self.file_options.n_rows)
+                    .with_row_index(self.file_options.row_index.clone())
+                    .with_projection(self.file_options.with_columns.as_deref().cloned())
+                    .with_predicate(predicate),
+                verbose,
+            )
+            .await
     }
 }
 

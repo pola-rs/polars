@@ -161,8 +161,7 @@ def _xl_column_range(
     *,
     include_header: bool,
     as_range: Literal[True] = ...,
-) -> str:
-    ...
+) -> str: ...
 
 
 @overload
@@ -173,8 +172,7 @@ def _xl_column_range(
     *,
     include_header: bool,
     as_range: Literal[False],
-) -> tuple[int, int, int, int]:
-    ...
+) -> tuple[int, int, int, int]: ...
 
 
 def _xl_column_range(

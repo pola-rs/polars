@@ -5,18 +5,18 @@ from typing import TYPE_CHECKING
 
 import polars._reexport as pl
 from polars import functions as F
-from polars.datatypes import Date, Datetime, Int32, Time, py_type_to_dtype
-from polars.datatypes.constants import N_INFER_DEFAULT
-from polars.exceptions import ChronoFormatWarning
-from polars.utils._parse_expr_input import parse_as_expression
-from polars.utils._wrap import wrap_expr
-from polars.utils.deprecation import (
+from polars._utils.deprecation import (
     deprecate_renamed_function,
     deprecate_renamed_parameter,
     issue_deprecation_warning,
     rename_use_earliest_to_ambiguous,
 )
-from polars.utils.various import find_stacklevel
+from polars._utils.parse_expr_input import parse_as_expression
+from polars._utils.various import find_stacklevel
+from polars._utils.wrap import wrap_expr
+from polars.datatypes import Date, Datetime, Int32, Time, py_type_to_dtype
+from polars.datatypes.constants import N_INFER_DEFAULT
+from polars.exceptions import ChronoFormatWarning
 
 if TYPE_CHECKING:
     from polars import Expr
@@ -139,6 +139,7 @@ class ExprStringNameSpace:
             - `'raise'` (default): raise
             - `'earliest'`: use the earliest datetime
             - `'latest'`: use the latest datetime
+            - `'null'`: set to null
 
         Examples
         --------
@@ -253,6 +254,7 @@ class ExprStringNameSpace:
             - `'raise'` (default): raise
             - `'earliest'`: use the earliest datetime
             - `'latest'`: use the latest datetime
+            - `'null'`: set to null
 
         Notes
         -----

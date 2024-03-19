@@ -2,19 +2,25 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from polars._utils.convert import to_py_date, to_py_datetime
+from polars._utils.deprecation import deprecate_function, deprecate_renamed_function
+from polars._utils.unstable import unstable
+from polars._utils.wrap import wrap_s
 from polars.datatypes import Date, Datetime, Duration
 from polars.series.utils import expr_dispatch
-from polars.utils._wrap import wrap_s
-from polars.utils.convert import to_py_date, to_py_datetime
-from polars.utils.deprecation import deprecate_function, deprecate_renamed_function
-from polars.utils.unstable import unstable
 
 if TYPE_CHECKING:
     import datetime as dt
 
     from polars import Expr, Series
     from polars.polars import PySeries
-    from polars.type_aliases import Ambiguous, EpochTimeUnit, TemporalLiteral, TimeUnit
+    from polars.type_aliases import (
+        Ambiguous,
+        EpochTimeUnit,
+        NonExistent,
+        TemporalLiteral,
+        TimeUnit,
+    )
 
 
 @expr_dispatch
@@ -1131,6 +1137,7 @@ class DateTimeNameSpace:
         *,
         use_earliest: bool | None = None,
         ambiguous: Ambiguous | Series = "raise",
+        non_existent: NonExistent = "raise",
     ) -> Series:
         """
         Replace time zone for a Series of type Datetime.
@@ -1157,6 +1164,12 @@ class DateTimeNameSpace:
             - `'raise'` (default): raise
             - `'earliest'`: use the earliest datetime
             - `'latest'`: use the latest datetime
+            - `'null'`: set to null
+        non_existent
+            Determine how to deal with non-existent datetimes:
+
+            - `'raise'` (default): raise
+            - `'null'`: set to null
 
         Examples
         --------
@@ -1195,7 +1208,7 @@ class DateTimeNameSpace:
         │ 2020-07-01 01:00:00 BST     ┆ 2020-07-01 01:00:00 CEST       │
         └─────────────────────────────┴────────────────────────────────┘
 
-        You can use `use_earliest` to deal with ambiguous datetimes:
+        You can use `ambiguous` to deal with ambiguous datetimes:
 
         >>> dates = [
         ...     "2018-10-28 01:30",

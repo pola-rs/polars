@@ -3,6 +3,7 @@ Module for testing `.str.strptime` of the string namespace.
 
 This method gets its own module due to its complexity.
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -20,7 +21,7 @@ if TYPE_CHECKING:
 
     from polars.type_aliases import PolarsTemporalType, TimeUnit
 else:
-    from polars.utils.convert import string_to_zoneinfo as ZoneInfo
+    from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
 
 def test_str_strptime() -> None:
@@ -472,6 +473,24 @@ def test_to_datetime_ambiguous_or_non_existent() -> None:
         pl.Series(["2021-03-28 02:30"]).str.to_datetime(
             time_unit="us", time_zone="Europe/Warsaw"
         )
+    with pytest.raises(
+        pl.ComputeError,
+        match="datetime '2021-03-28 02:30:00' is non-existent in time zone 'Europe/Warsaw'",
+    ):
+        pl.Series(["2021-03-28 02:30"]).str.to_datetime(
+            time_unit="us",
+            time_zone="Europe/Warsaw",
+            ambiguous="null",
+        )
+    with pytest.raises(
+        pl.ComputeError,
+        match="datetime '2021-03-28 02:30:00' is non-existent in time zone 'Europe/Warsaw'",
+    ):
+        pl.Series(["2021-03-28 02:30"] * 2).str.to_datetime(
+            time_unit="us",
+            time_zone="Europe/Warsaw",
+            ambiguous=pl.Series(["null", "null"]),
+        )
 
 
 @pytest.mark.parametrize(
@@ -648,6 +667,20 @@ def test_to_datetime_use_earliest(exact: bool) -> None:
             time_zone="Europe/London",
             exact=exact,
         ).item()
+
+
+def test_to_datetime_naive_format_and_time_zone() -> None:
+    # format-specified path
+    result = pl.Series(["2020-01-01"]).str.to_datetime(
+        format="%Y-%m-%d", time_zone="Asia/Kathmandu"
+    )
+    expected = pl.Series(
+        [datetime(2020, 1, 1)], dtype=pl.Datetime("us", "Asia/Kathmandu")
+    )
+    assert_series_equal(result, expected)
+    # format-inferred path
+    result = pl.Series(["2020-01-01"]).str.to_datetime(time_zone="Asia/Kathmandu")
+    assert_series_equal(result, expected)
 
 
 @pytest.mark.parametrize("exact", [True, False])

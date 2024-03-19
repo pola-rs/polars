@@ -20,7 +20,7 @@ pub trait StatsEvaluator {
 }
 
 #[cfg(feature = "parquet")]
-pub(crate) fn apply_predicate(
+pub fn apply_predicate(
     df: &mut DataFrame,
     predicate: Option<&dyn PhysicalIoExpr>,
     parallel: bool,

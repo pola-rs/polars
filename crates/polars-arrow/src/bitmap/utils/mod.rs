@@ -11,6 +11,7 @@ pub use chunk_iterator::{BitChunk, BitChunkIterExact, BitChunks, BitChunksExact}
 pub use chunks_exact_mut::BitChunksExactMut;
 pub use fmt::fmt;
 pub use iterator::BitmapIter;
+use polars_utils::slice::GetSaferUnchecked;
 pub use slice_iterator::SlicesIterator;
 pub use zip_validity::{ZipValidity, ZipValidityIter};
 
@@ -64,7 +65,7 @@ pub fn get_bit(bytes: &[u8], i: usize) -> bool {
 /// `i >= bytes.len() * 8` results in undefined behavior.
 #[inline]
 pub unsafe fn get_bit_unchecked(bytes: &[u8], i: usize) -> bool {
-    let byte = *bytes.get_unchecked(i / 8);
+    let byte = *bytes.get_unchecked_release(i / 8);
     let bit = (byte >> (i % 8)) & 1;
     bit != 0
 }
@@ -138,4 +139,42 @@ pub fn count_zeros(mut slice: &[u8], mut offset: usize, len: usize) -> usize {
         .sum::<usize>();
 
     len - num_ones
+}
+
+/// Takes the given slice of bytes plus a bit offset and bit length and returns
+/// the slice so that it starts at a byte-aligned boundary.
+///
+/// Returns (in order):
+///  - the bits of the first byte if it isn't a full byte
+///  - the number of bits in the first partial byte
+///  - the rest of the bits as a byteslice
+///  - the number of bits in the byteslice
+#[inline]
+pub fn align_bitslice_start_u8(
+    slice: &[u8],
+    offset: usize,
+    len: usize,
+) -> (u8, usize, &[u8], usize) {
+    if len == 0 {
+        return (0, 0, &[], 0);
+    }
+
+    // Protects the below get_uncheckeds.
+    assert!(slice.len() * 8 >= offset + len);
+
+    let mut first_byte_idx = offset / 8;
+    let partial_offset = offset % 8;
+    let bits_in_partial_byte = (8 - partial_offset).min(len) % 8;
+    let mut partial_byte = unsafe { *slice.get_unchecked(first_byte_idx) };
+    partial_byte >>= partial_offset;
+    partial_byte &= (1 << bits_in_partial_byte) - 1;
+    first_byte_idx += (partial_offset > 0) as usize;
+
+    let rest_slice = unsafe { slice.get_unchecked(first_byte_idx..) };
+    (
+        partial_byte,
+        bits_in_partial_byte,
+        rest_slice,
+        len - bits_in_partial_byte,
+    )
 }

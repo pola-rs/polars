@@ -25,7 +25,7 @@ pub use cross_join::CrossJoin;
 use either::Either;
 #[cfg(feature = "chunked_ids")]
 use general::create_chunked_index_mapping;
-pub use general::{_finish_join, _join_suffix_name};
+pub use general::{_coalesce_outer_join, _finish_join, _join_suffix_name};
 pub use hash_join::*;
 use hashbrown::hash_map::{Entry, RawEntryMut};
 #[cfg(feature = "merge_sorted")]
@@ -41,7 +41,6 @@ use polars_utils::hashing::BytesHash;
 use rayon::prelude::*;
 
 use super::IntoDf;
-use crate::frame::join::general::coalesce_outer_join;
 
 pub trait DataFrameJoinOps: IntoDf {
     /// Generic join method. Can be used to join on multiple columns.
@@ -338,7 +337,7 @@ pub trait DataFrameJoinOps: IntoDf {
                 let names_right = selected_right.iter().map(|s| s.name()).collect::<Vec<_>>();
                 let out = _finish_join(df_left, df_right, args.suffix.as_deref());
                 if coalesce {
-                    Ok(coalesce_outer_join(
+                    Ok(_coalesce_outer_join(
                         out?,
                         &names_left,
                         &names_right,

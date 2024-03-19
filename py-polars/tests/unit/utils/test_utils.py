@@ -7,15 +7,14 @@ import numpy as np
 import pytest
 
 import polars as pl
-from polars.io._utils import _looks_like_url
-from polars.utils.convert import (
+from polars._utils.convert import (
     date_to_int,
     datetime_to_int,
     parse_as_duration_string,
     time_to_int,
     timedelta_to_int,
 )
-from polars.utils.various import (
+from polars._utils.various import (
     _in_notebook,
     is_bool_sequence,
     is_int_sequence,
@@ -24,13 +23,14 @@ from polars.utils.various import (
     parse_percentiles,
     parse_version,
 )
+from polars.io._utils import _looks_like_url
 
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
 
     from polars.type_aliases import TimeUnit
 else:
-    from polars.utils.convert import string_to_zoneinfo as ZoneInfo
+    from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
 
 @pytest.mark.parametrize(

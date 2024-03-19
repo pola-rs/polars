@@ -933,7 +933,7 @@ impl DataFrame {
                 "unable to append to a DataFrame of width {} with a DataFrame of width {}",
                 self.width(), other.width(),
             );
-            self.columns = other.columns.clone();
+            self.columns.clone_from(&other.columns);
             return Ok(self);
         }
 
@@ -1707,7 +1707,9 @@ impl DataFrame {
         self.take_unchecked_impl(idx, true)
     }
 
-    unsafe fn take_unchecked_impl(&self, idx: &IdxCa, allow_threads: bool) -> Self {
+    /// # Safety
+    /// The indices must be in-bounds.
+    pub unsafe fn take_unchecked_impl(&self, idx: &IdxCa, allow_threads: bool) -> Self {
         let cols = if allow_threads {
             POOL.install(|| self._apply_columns_par(&|s| s.take_unchecked(idx)))
         } else {
@@ -2525,7 +2527,11 @@ impl DataFrame {
                 }
             },
             1 => Ok(Some(apply_null_strategy(
-                non_null_cols[0].clone(),
+                if non_null_cols[0].dtype() == &DataType::Boolean {
+                    non_null_cols[0].cast(&DataType::UInt32)?
+                } else {
+                    non_null_cols[0].clone()
+                },
                 null_strategy,
             )?)),
             2 => sum_fn(

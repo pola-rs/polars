@@ -3,12 +3,12 @@ from __future__ import annotations
 import contextlib
 from typing import TYPE_CHECKING, Collection, Generic, Mapping, overload
 
+from polars._utils.unstable import issue_unstable_warning
+from polars._utils.various import _get_stack_locals
+from polars._utils.wrap import wrap_ldf
 from polars.dataframe import DataFrame
 from polars.lazyframe import LazyFrame
 from polars.type_aliases import FrameType
-from polars.utils._wrap import wrap_ldf
-from polars.utils.unstable import issue_unstable_warning
-from polars.utils.various import _get_stack_locals
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PySQLContext
@@ -52,8 +52,7 @@ class SQLContext(Generic[FrameType]):
         register_globals: bool | int = ...,
         eager_execution: Literal[False] = False,
         **named_frames: DataFrame | LazyFrame | None,
-    ) -> None:
-        ...
+    ) -> None: ...
 
     @overload
     def __init__(
@@ -63,8 +62,7 @@ class SQLContext(Generic[FrameType]):
         register_globals: bool | int = ...,
         eager_execution: Literal[True],
         **named_frames: DataFrame | LazyFrame | None,
-    ) -> None:
-        ...
+    ) -> None: ...
 
     def __init__(
         self,
@@ -162,38 +160,32 @@ class SQLContext(Generic[FrameType]):
     @overload
     def execute(
         self: SQLContext[DataFrame], query: str, eager: None = ...
-    ) -> DataFrame:
-        ...
+    ) -> DataFrame: ...
 
     @overload
     def execute(
         self: SQLContext[DataFrame], query: str, eager: Literal[False]
-    ) -> LazyFrame:
-        ...
+    ) -> LazyFrame: ...
 
     @overload
     def execute(
         self: SQLContext[DataFrame], query: str, eager: Literal[True]
-    ) -> DataFrame:
-        ...
+    ) -> DataFrame: ...
 
     @overload
     def execute(
         self: SQLContext[LazyFrame], query: str, eager: None = ...
-    ) -> LazyFrame:
-        ...
+    ) -> LazyFrame: ...
 
     @overload
     def execute(
         self: SQLContext[LazyFrame], query: str, eager: Literal[False]
-    ) -> LazyFrame:
-        ...
+    ) -> LazyFrame: ...
 
     @overload
     def execute(
         self: SQLContext[LazyFrame], query: str, eager: Literal[True]
-    ) -> DataFrame:
-        ...
+    ) -> DataFrame: ...
 
     def execute(self, query: str, eager: bool | None = None) -> LazyFrame | DataFrame:
         """

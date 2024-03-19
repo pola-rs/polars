@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import operator
+import re
 from datetime import date
 from textwrap import dedent
 from typing import Any, Callable
@@ -37,9 +38,19 @@ def test_enum_init_empty(categories: pl.Series | list[str] | None) -> None:
 def test_enum_non_existent() -> None:
     with pytest.raises(
         pl.ComputeError,
-        match=("value 'c' is not present in Enum"),
+        match=re.escape(
+            "conversion from `str` to `enum` failed in column '' for 1 out of 4 values: [\"c\"]"
+        ),
     ):
         pl.Series([None, "a", "b", "c"], dtype=pl.Enum(categories=["a", "b"]))
+
+
+def test_enum_non_existent_non_strict() -> None:
+    s = pl.Series(
+        [None, "a", "b", "c"], dtype=pl.Enum(categories=["a", "b"]), strict=False
+    )
+    expected = pl.Series([None, "a", "b", None], dtype=pl.Enum(categories=["a", "b"]))
+    assert_series_equal(s, expected)
 
 
 def test_enum_from_schema_argument() -> None:
@@ -106,6 +117,26 @@ def test_casting_to_an_enum_from_categorical() -> None:
     assert_series_equal(s2, expected)
 
 
+def test_casting_to_an_enum_from_categorical_nonstrict() -> None:
+    dtype = pl.Enum(["a", "b"])
+    s = pl.Series([None, "a", "b", "c"], dtype=pl.Categorical)
+    s2 = s.cast(dtype, strict=False)
+    assert s2.dtype == dtype
+    assert s2.null_count() == 2  # "c" mapped to null
+    expected = pl.Series([None, "a", "b", None], dtype=dtype)
+    assert_series_equal(s2, expected)
+
+
+def test_casting_to_an_enum_from_enum_nonstrict() -> None:
+    dtype = pl.Enum(["a", "b"])
+    s = pl.Series([None, "a", "b", "c"], dtype=pl.Enum(["a", "b", "c"]))
+    s2 = s.cast(dtype, strict=False)
+    assert s2.dtype == dtype
+    assert s2.null_count() == 2  # "c" mapped to null
+    expected = pl.Series([None, "a", "b", None], dtype=dtype)
+    assert_series_equal(s2, expected)
+
+
 def test_casting_to_an_enum_from_integer() -> None:
     dtype = pl.Enum(["a", "b", "c"])
     expected = pl.Series([None, "b", "a", "c"], dtype=dtype)
@@ -128,7 +159,9 @@ def test_casting_to_an_enum_oob_from_integer() -> None:
 def test_casting_to_an_enum_from_categorical_nonexistent() -> None:
     with pytest.raises(
         pl.ComputeError,
-        match=("value 'c' is not present in Enum"),
+        match=(
+            r"conversion from `cat` to `enum` failed in column '' for 1 out of 4 values: \[\"c\"\]"
+        ),
     ):
         pl.Series([None, "a", "b", "c"], dtype=pl.Categorical).cast(pl.Enum(["a", "b"]))
 
@@ -148,7 +181,9 @@ def test_casting_to_an_enum_from_global_categorical() -> None:
 def test_casting_to_an_enum_from_global_categorical_nonexistent() -> None:
     with pytest.raises(
         pl.ComputeError,
-        match=("value 'c' is not present in Enum"),
+        match=(
+            r"conversion from `cat` to `enum` failed in column '' for 1 out of 4 values: \[\"c\"\]"
+        ),
     ):
         pl.Series([None, "a", "b", "c"], dtype=pl.Categorical).cast(pl.Enum(["a", "b"]))
 
@@ -305,7 +340,10 @@ def test_compare_enum_str_single_raise(
     s2 = "NOTEXIST"
 
     with pytest.raises(
-        pl.ComputeError, match="value 'NOTEXIST' is not present in Enum"
+        pl.ComputeError,
+        match=re.escape(
+            "conversion from `str` to `enum` failed in column '' for 1 out of 1 values: [\"NOTEXIST\"]"
+        ),
     ):
         op(s, s2)  # type: ignore[arg-type]
 
@@ -318,7 +356,8 @@ def test_compare_enum_str_raise() -> None:
     for s_compare in [s2, s_broadcast]:
         for op in [operator.le, operator.gt, operator.ge, operator.lt]:
             with pytest.raises(
-                pl.ComputeError, match="value 'd' is not present in Enum"
+                pl.ComputeError,
+                match="conversion from `str` to `enum` failed in column",
             ):
                 op(s, s_compare)
 
@@ -421,3 +460,16 @@ def test_enum_creating_col_expr() -> None:
     out = df.select(pl.col(pl.Enum))
     expected = df.select("col1", "col3")
     assert_frame_equal(out, expected)
+
+
+def test_enum_cse_eq() -> None:
+    df = pl.DataFrame({"a": [1]})
+
+    # these both share the value "a", which is used in both expressions
+    dt1 = pl.Enum(["a", "b"])
+    dt2 = pl.Enum(["a", "c"])
+
+    df.lazy().select(
+        pl.when(True).then(pl.lit("a", dtype=dt1)).alias("dt1"),
+        pl.when(True).then(pl.lit("a", dtype=dt2)).alias("dt2"),
+    ).collect()

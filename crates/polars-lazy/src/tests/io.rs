@@ -416,6 +416,8 @@ fn test_ipc_globbing() -> PolarsResult<()> {
             rechunk: false,
             row_index: None,
             memmap: true,
+            #[cfg(feature = "cloud")]
+            cloud_options: None,
         },
     )?
     .collect()?;

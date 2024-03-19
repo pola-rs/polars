@@ -9,6 +9,8 @@ mod parquet;
 #[cfg(feature = "avro")]
 mod avro;
 
+#[cfg(feature = "ipc")]
+mod ipc;
 #[cfg(feature = "ipc_streaming")]
 mod ipc_stream;
 

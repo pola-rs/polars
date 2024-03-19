@@ -1,7 +1,6 @@
+use arrow::bitmap::Bitmap;
 use polars_utils::clmul::prefix_xorsum;
 use polars_utils::slice::load_padded_le_u64;
-
-use super::*;
 
 const U56_MAX: u64 = (1 << 56) - 1;
 
@@ -12,13 +11,13 @@ fn pext64_polyfill(mut v: u64, mut m: u64, m_popcnt: u32) -> u64 {
         // unrolls the loop, this makes bit << i much faster.
         let mut out = 0;
         for i in 0..4 {
-            let bit = (v >> m.trailing_zeros()) & 1;
-            out |= bit << i;
-            m &= m.wrapping_sub(1); // Clear least significant bit.
-
             if m == 0 {
                 break;
             };
+
+            let bit = (v >> m.trailing_zeros()) & 1;
+            out |= bit << i;
+            m &= m.wrapping_sub(1); // Clear least significant bit.
         }
         return out;
     }
@@ -77,14 +76,6 @@ pub fn filter_boolean_kernel(values: &Bitmap, mask: &Bitmap) -> Bitmap {
     let mut out_vec: Vec<u8> = Vec::with_capacity(num_bytes);
 
     unsafe {
-        // Make sure the tail is always initialized.
-        let guaranteed_initialized = mask_bits_set.div_ceil(8);
-        let num_tail_bytes = num_bytes - guaranteed_initialized;
-        out_vec
-            .as_mut_ptr()
-            .add(num_bytes - num_tail_bytes)
-            .write_bytes(0, num_tail_bytes);
-
         if mask_bits_set <= mask.len() / (64 * 4) {
             // Less than one in 1 in 4 words has a bit set on average, use sparse kernel.
             filter_boolean_kernel_sparse(values, mask, out_vec.as_mut_ptr());
@@ -103,7 +94,8 @@ pub fn filter_boolean_kernel(values: &Bitmap, mask: &Bitmap) -> Bitmap {
             )
         }
 
-        out_vec.set_len(num_bytes);
+        // SAFETY: the above filters must have initialized these bytes.
+        out_vec.set_len(mask_bits_set.div_ceil(8));
     }
 
     Bitmap::from_u8_vec(out_vec, mask_bits_set)
@@ -260,7 +252,7 @@ unsafe fn filter_boolean_kernel_pext<const HAS_NATIVE_PEXT: bool, F: Fn(u64, u64
     }
 }
 
-pub(super) fn filter_bitmap_and_validity(
+pub fn filter_bitmap_and_validity(
     values: &Bitmap,
     validity: Option<&Bitmap>,
     mask: &Bitmap,

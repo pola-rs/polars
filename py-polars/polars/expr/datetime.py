@@ -5,24 +5,24 @@ from typing import TYPE_CHECKING
 
 import polars._reexport as pl
 from polars import functions as F
-from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Int32
-from polars.utils._parse_expr_input import parse_as_expression
-from polars.utils._wrap import wrap_expr
-from polars.utils.convert import parse_as_duration_string
-from polars.utils.deprecation import (
+from polars._utils.convert import parse_as_duration_string
+from polars._utils.deprecation import (
     deprecate_function,
     deprecate_renamed_function,
     deprecate_saturating,
     issue_deprecation_warning,
     rename_use_earliest_to_ambiguous,
 )
-from polars.utils.unstable import unstable
+from polars._utils.parse_expr_input import parse_as_expression
+from polars._utils.unstable import unstable
+from polars._utils.wrap import wrap_expr
+from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Int32
 
 if TYPE_CHECKING:
     from datetime import timedelta
 
     from polars import Expr
-    from polars.type_aliases import Ambiguous, EpochTimeUnit, TimeUnit
+    from polars.type_aliases import Ambiguous, EpochTimeUnit, NonExistent, TimeUnit
 
 
 class ExprDateTimeNameSpace:
@@ -1594,6 +1594,7 @@ class ExprDateTimeNameSpace:
         *,
         use_earliest: bool | None = None,
         ambiguous: Ambiguous | Expr = "raise",
+        non_existent: NonExistent = "raise",
     ) -> Expr:
         """
         Replace time zone for an expression of type Datetime.
@@ -1620,6 +1621,12 @@ class ExprDateTimeNameSpace:
             - `'raise'` (default): raise
             - `'earliest'`: use the earliest datetime
             - `'latest'`: use the latest datetime
+            - `'null'`: set to null
+        non_existent
+            Determine how to deal with non-existent datetimes:
+
+            - `'raise'` (default): raise
+            - `'null'`: set to null
 
         Examples
         --------
@@ -1656,7 +1663,7 @@ class ExprDateTimeNameSpace:
         │ 2020-07-01 01:00:00 BST     ┆ 2020-07-01 01:00:00 CEST       │
         └─────────────────────────────┴────────────────────────────────┘
 
-        You can use `use_earliest` to deal with ambiguous datetimes:
+        You can use `ambiguous` to deal with ambiguous datetimes:
 
         >>> dates = [
         ...     "2018-10-28 01:30",
@@ -1691,7 +1698,9 @@ class ExprDateTimeNameSpace:
         if not isinstance(ambiguous, pl.Expr):
             ambiguous = F.lit(ambiguous)
         return wrap_expr(
-            self._pyexpr.dt_replace_time_zone(time_zone, ambiguous._pyexpr)
+            self._pyexpr.dt_replace_time_zone(
+                time_zone, ambiguous._pyexpr, non_existent
+            )
         )
 
     def total_days(self) -> Expr:

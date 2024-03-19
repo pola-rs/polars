@@ -42,6 +42,7 @@ miri:  ## Run miri
 .PHONY: test
 test:  ## Run tests
 	cargo test --all-features \
+		-p polars-compute \
 		-p polars-core \
 		-p polars-io \
 		-p polars-lazy \
@@ -57,6 +58,7 @@ test:  ## Run tests
 .PHONY: nextest
 nextest:  ## Run tests with nextest
 	cargo nextest run --all-features \
+		-p polars-compute \
 		-p polars-core \
 		-p polars-io \
 		-p polars-lazy \
@@ -100,8 +102,8 @@ doctest:  ## Check that documentation builds
 
 .PHONY: publish
 publish:  ## Publish Polars crates
-	#cargo publish --allow-dirty -p polars-error
-	#cargo publish --allow-dirty -p polars-utils
+	cargo publish --allow-dirty -p polars-error
+	cargo publish --allow-dirty -p polars-utils
 	cargo publish --allow-dirty -p polars-arrow
 	cargo publish --allow-dirty -p polars-compute
 	cargo publish --allow-dirty -p polars-row

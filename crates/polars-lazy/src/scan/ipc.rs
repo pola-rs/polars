@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use polars_core::prelude::*;
+use polars_io::cloud::CloudOptions;
 use polars_io::RowIndex;
 
 use crate::prelude::*;
@@ -12,6 +13,8 @@ pub struct ScanArgsIpc {
     pub rechunk: bool,
     pub row_index: Option<RowIndex>,
     pub memmap: bool,
+    #[cfg(feature = "cloud")]
+    pub cloud_options: Option<CloudOptions>,
 }
 
 impl Default for ScanArgsIpc {
@@ -22,6 +25,8 @@ impl Default for ScanArgsIpc {
             rechunk: false,
             row_index: None,
             memmap: true,
+            #[cfg(feature = "cloud")]
+            cloud_options: Default::default(),
         }
     }
 }
@@ -58,6 +63,8 @@ impl LazyFileListReader for LazyIpcReader {
             args.cache,
             args.row_index.clone(),
             args.rechunk,
+            #[cfg(feature = "cloud")]
+            args.cloud_options,
         )?
         .build()
         .into();
@@ -86,6 +93,16 @@ impl LazyFileListReader for LazyIpcReader {
 
     fn with_paths(mut self, paths: Arc<[PathBuf]>) -> Self {
         self.paths = paths;
+        self
+    }
+
+    fn with_n_rows(mut self, n_rows: impl Into<Option<usize>>) -> Self {
+        self.args.n_rows = n_rows.into();
+        self
+    }
+
+    fn with_row_index(mut self, row_index: impl Into<Option<RowIndex>>) -> Self {
+        self.args.row_index = row_index.into();
         self
     }
 

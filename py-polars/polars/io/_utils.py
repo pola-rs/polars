@@ -8,9 +8,9 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import IO, Any, ContextManager, Iterator, cast, overload
 
+from polars._utils.various import normalize_filepath
 from polars.dependencies import _FSSPEC_AVAILABLE, fsspec
 from polars.exceptions import NoDataError
-from polars.utils.various import normalize_filepath
 
 
 def _is_glob_pattern(file: str) -> bool:
@@ -38,8 +38,7 @@ def _prepare_file_arg(
     use_pyarrow: bool = ...,
     raise_if_empty: bool = ...,
     storage_options: dict[str, Any] | None = ...,
-) -> ContextManager[str | BytesIO]:
-    ...
+) -> ContextManager[str | BytesIO]: ...
 
 
 @overload
@@ -50,8 +49,7 @@ def _prepare_file_arg(
     use_pyarrow: bool = ...,
     raise_if_empty: bool = ...,
     storage_options: dict[str, Any] | None = ...,
-) -> ContextManager[str | BytesIO]:
-    ...
+) -> ContextManager[str | BytesIO]: ...
 
 
 @overload
@@ -62,8 +60,7 @@ def _prepare_file_arg(
     use_pyarrow: bool = ...,
     raise_if_empty: bool = ...,
     storage_options: dict[str, Any] | None = ...,
-) -> ContextManager[str | list[str] | BytesIO | list[BytesIO]]:
-    ...
+) -> ContextManager[str | list[str] | BytesIO | list[BytesIO]]: ...
 
 
 def _prepare_file_arg(

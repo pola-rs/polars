@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Callable, TypeVar
 from warnings import warn
 
 import polars._reexport as pl
-from polars.utils.various import find_stacklevel
+from polars._utils.various import find_stacklevel
 
 if TYPE_CHECKING:
     from polars import DataFrame, Expr, LazyFrame, Series
@@ -43,6 +43,7 @@ class NameSpace:
             return self._ns
 
         ns_instance = self._ns(instance)  # type: ignore[call-arg]
+        setattr(instance, self._accessor, ns_instance)
         return ns_instance
 
 

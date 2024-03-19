@@ -258,11 +258,16 @@ impl ParquetAsyncReader {
     }
 
     pub async fn schema(&mut self) -> PolarsResult<ArrowSchemaRef> {
-        match &self.schema {
-            Some(schema) => Ok(schema.clone()),
-            None => self.reader.schema().await,
-        }
+        Ok(match self.schema.as_ref() {
+            Some(schema) => Arc::clone(schema),
+            None => {
+                let metadata = self.reader.get_metadata().await?;
+                let arrow_schema = polars_parquet::arrow::read::infer_schema(metadata)?;
+                Arc::new(arrow_schema)
+            },
+        })
     }
+
     pub async fn num_rows(&mut self) -> PolarsResult<usize> {
         self.reader.num_rows().await
     }

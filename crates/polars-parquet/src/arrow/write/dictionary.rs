@@ -1,4 +1,4 @@
-use arrow::array::{Array, DictionaryArray, DictionaryKey, Utf8ViewArray};
+use arrow::array::{Array, BinaryViewArray, DictionaryArray, DictionaryKey, Utf8ViewArray};
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::datatypes::{ArrowDataType, IntegerType};
 use num_traits::ToPrimitive;
@@ -149,13 +149,11 @@ fn serialize_levels(
 fn normalized_validity<K: DictionaryKey>(array: &DictionaryArray<K>) -> Option<Bitmap> {
     match (array.keys().validity(), array.values().validity()) {
         (None, None) => None,
-        (None, rhs) => rhs.cloned(),
-        (lhs, None) => lhs.cloned(),
-        (Some(_), Some(rhs)) => {
-            let projected_validity = array
-                .keys_iter()
-                .map(|x| x.map(|x| rhs.get_bit(x)).unwrap_or(false));
-            MutableBitmap::from_trusted_len_iter(projected_validity).into()
+        (keys, None) => keys.cloned(),
+        // The values can have a different length than the keys
+        (_, Some(_values)) => {
+            let iter = (0..array.len()).map(|i| unsafe { !array.is_null_unchecked(i) });
+            MutableBitmap::from_trusted_len_iter(iter).into()
         },
     }
 }
@@ -169,9 +167,6 @@ fn serialize_keys<K: DictionaryKey>(
 ) -> PolarsResult<Page> {
     let mut buffer = vec![];
 
-    // parquet only accepts a single validity - we "&" the validities into a single one
-    // and ignore keys whole _value_ is null.
-    let validity = normalized_validity(array);
     let (start, len) = slice_nested_leaf(nested);
 
     let mut nested = nested.to_vec();
@@ -181,6 +176,10 @@ fn serialize_keys<K: DictionaryKey>(
     } else {
         unreachable!("")
     }
+    // Parquet only accepts a single validity - we "&" the validities into a single one
+    // and ignore keys whose _value_ is null.
+    // It's important that we slice before normalizing.
+    let validity = normalized_validity(&array);
 
     let (repetition_levels_byte_length, definition_levels_byte_length) = serialize_levels(
         validity.as_ref(),
@@ -242,7 +241,7 @@ pub fn array_to_pages<K: DictionaryKey>(
     match encoding {
         Encoding::PlainDictionary | Encoding::RleDictionary => {
             // write DictPage
-            let (dict_page, statistics): (_, Option<ParquetStatistics>) =
+            let (dict_page, mut statistics): (_, Option<ParquetStatistics>) =
                 match array.values().data_type().to_logical_type() {
                     ArrowDataType::Int8 => dyn_prim!(i8, i32, array, options, type_),
                     ArrowDataType::Int16 => dyn_prim!(i16, i32, array, options, type_),
@@ -278,6 +277,22 @@ pub fn array_to_pages<K: DictionaryKey>(
                         };
                         (DictPage::new(buffer, array.len(), false), stats)
                     },
+                    ArrowDataType::BinaryView => {
+                        let array = array
+                            .values()
+                            .as_any()
+                            .downcast_ref::<BinaryViewArray>()
+                            .unwrap();
+                        let mut buffer = vec![];
+                        binview::encode_plain(array, &mut buffer);
+
+                        let stats = if options.write_statistics {
+                            Some(binview::build_statistics(array, type_.clone()))
+                        } else {
+                            None
+                        };
+                        (DictPage::new(buffer, array.len(), false), stats)
+                    },
                     ArrowDataType::Utf8View => {
                         let array = array
                             .values()
@@ -301,9 +316,7 @@ pub fn array_to_pages<K: DictionaryKey>(
                         let mut buffer = vec![];
                         binary_encode_plain::<i64>(values, &mut buffer);
                         let stats = if options.write_statistics {
-                            let mut stats = binary_build_statistics(values, type_.clone());
-                            stats.null_count = Some(array.null_count() as i64);
-                            Some(stats)
+                            Some(binary_build_statistics(values, type_.clone()))
                         } else {
                             None
                         };
@@ -314,8 +327,7 @@ pub fn array_to_pages<K: DictionaryKey>(
                         let array = array.values().as_any().downcast_ref().unwrap();
                         fixed_binary_encode_plain(array, false, &mut buffer);
                         let stats = if options.write_statistics {
-                            let mut stats = fixed_binary_build_statistics(array, type_.clone());
-                            stats.null_count = Some(array.null_count() as i64);
+                            let stats = fixed_binary_build_statistics(array, type_.clone());
                             Some(serialize_statistics(&stats))
                         } else {
                             None
@@ -328,6 +340,10 @@ pub fn array_to_pages<K: DictionaryKey>(
                         )
                     },
                 };
+
+            if let Some(stats) = &mut statistics {
+                stats.null_count = Some(array.null_count() as i64)
+            }
 
             // write DataPage pointing to DictPage
             let data_page =

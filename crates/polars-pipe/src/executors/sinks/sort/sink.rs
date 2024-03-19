@@ -1,5 +1,6 @@
 use std::any::Any;
 use std::sync::{Arc, RwLock};
+use std::time::Instant;
 
 use polars_core::config::verbose;
 use polars_core::error::PolarsResult;
@@ -35,6 +36,8 @@ pub struct SortSink {
     current_chunk_rows: usize,
     // total bytes of tables in current chunks
     current_chunks_size: usize,
+    // Start time of OOC phase.
+    ooc_start: Option<Instant>,
 }
 
 impl SortSink {
@@ -54,9 +57,12 @@ impl SortSink {
             dist_sample: vec![],
             current_chunk_rows: 0,
             current_chunks_size: 0,
+            ooc_start: None,
         };
         if ooc {
-            eprintln!("OOC sort forced");
+            if verbose() {
+                eprintln!("OOC sort forced");
+            }
             out.init_ooc().unwrap();
         }
         out
@@ -66,6 +72,7 @@ impl SortSink {
         if verbose() {
             eprintln!("OOC sort started");
         }
+        self.ooc_start = Some(Instant::now());
         self.ooc = true;
 
         // start IO thread
@@ -99,10 +106,8 @@ impl SortSink {
     }
 
     fn dump(&mut self, force: bool) -> PolarsResult<()> {
-        let larger_than_32_mb = self.current_chunks_size > 1 << 25;
-        if (force || larger_than_32_mb || self.current_chunk_rows > 50_000)
-            && !self.chunks.is_empty()
-        {
+        let larger_than_32_mb = self.current_chunks_size > (1 << 25);
+        if (force || larger_than_32_mb) && !self.chunks.is_empty() {
             // into a single chunk because multiple file IO's is expensive
             // and may lead to many smaller files in ooc-sort later, which is exponentially
             // expensive
@@ -163,6 +168,7 @@ impl Sink for SortSink {
             dist_sample: vec![],
             current_chunk_rows: 0,
             current_chunks_size: 0,
+            ooc_start: self.ooc_start,
         })
     }
 
@@ -170,8 +176,8 @@ impl Sink for SortSink {
         if self.ooc {
             // spill everything
             self.dump(true).unwrap();
-            let lock = self.io_thread.read().unwrap();
-            let io_thread = lock.as_ref().unwrap();
+            let mut lock = self.io_thread.write().unwrap();
+            let io_thread = lock.take().unwrap();
 
             let dist = Series::from_any_values("", &self.dist_sample, true).unwrap();
             let dist = dist.sort_with(SortOptions {
@@ -181,15 +187,25 @@ impl Sink for SortSink {
                 maintain_order: self.sort_args.maintain_order,
             });
 
-            block_thread_until_io_thread_done(io_thread);
+            let instant = self.ooc_start.unwrap();
+            if context.verbose {
+                eprintln!("finished sinking into OOC sort in {:?}", instant.elapsed());
+            }
+            block_thread_until_io_thread_done(&io_thread);
+            if context.verbose {
+                eprintln!("full file dump of OOC sort took {:?}", instant.elapsed());
+            }
 
             sort_ooc(
                 io_thread,
                 dist,
                 self.sort_idx,
                 self.sort_args.descending[0],
+                self.sort_args.nulls_last,
                 self.sort_args.slice,
                 context.verbose,
+                self.mem_track.clone(),
+                instant,
             )
         } else {
             let chunks = std::mem::take(&mut self.chunks);
@@ -199,6 +215,7 @@ impl Sink for SortSink {
                 self.sort_idx,
                 self.sort_args.descending[0],
                 self.sort_args.slice,
+                self.sort_args.nulls_last,
             )?;
             Ok(FinalizedSink::Finished(df))
         }
@@ -218,6 +235,7 @@ pub(super) fn sort_accumulated(
     sort_idx: usize,
     descending: bool,
     slice: Option<(i64, usize)>,
+    nulls_last: bool,
 ) -> PolarsResult<DataFrame> {
     // This is needed because we can have empty blocks and we require chunks to have single chunks.
     df.as_single_chunk_par();
@@ -225,7 +243,7 @@ pub(super) fn sort_accumulated(
     df.sort_impl(
         vec![sort_column],
         vec![descending],
-        false,
+        nulls_last,
         false,
         slice,
         true,

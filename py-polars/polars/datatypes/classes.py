@@ -90,11 +90,6 @@ class DataTypeClass(type):
 class DataType(metaclass=DataTypeClass):
     """Base class for all Polars data types."""
 
-    __slots__ = ()
-
-    def __reduce__(self) -> Any:
-        return (_custom_reconstruct, (type(self), object, None), self.__dict__)
-
     def _string_repr(self) -> str:
         return _dtype_str_repr(self)
 
@@ -171,7 +166,7 @@ class DataType(metaclass=DataTypeClass):
         >>> pl.List.is_not(pl.List(pl.Int32))  # doctest: +SKIP
         True
         """
-        from polars.utils.deprecation import issue_deprecation_warning
+        from polars._utils.deprecation import issue_deprecation_warning
 
         issue_deprecation_warning(
             "`DataType.is_not` is deprecated and will be removed in the next breaking release."
@@ -221,23 +216,9 @@ class DataType(metaclass=DataTypeClass):
         return issubclass(cls, NestedType)
 
 
-def _custom_reconstruct(
-    cls: type[Any], base: type[Any], state: Any
-) -> PolarsDataType | type:
-    """Helper function for unpickling DataType objects."""
-    if state:
-        obj = base.__new__(cls, state)
-        if base.__init__ != object.__init__:
-            base.__init__(obj, state)
-    else:
-        obj = object.__new__(cls)
-    return obj
-
-
 class DataTypeGroup(frozenset):  # type: ignore[type-arg]
     """Group of data types."""
 
-    __slots__ = ("_match_base_type",)
     _match_base_type: bool
 
     def __new__(
@@ -270,103 +251,69 @@ class DataTypeGroup(frozenset):  # type: ignore[type-arg]
 class NumericType(DataType):
     """Base class for numeric data types."""
 
-    __slots__ = ()
-
 
 class IntegerType(NumericType):
     """Base class for integer data types."""
-
-    __slots__ = ()
 
 
 class SignedIntegerType(IntegerType):
     """Base class for signed integer data types."""
 
-    __slots__ = ()
-
 
 class UnsignedIntegerType(IntegerType):
     """Base class for unsigned integer data types."""
-
-    __slots__ = ()
 
 
 class FloatType(NumericType):
     """Base class for float data types."""
 
-    __slots__ = ()
-
 
 class TemporalType(DataType):
     """Base class for temporal data types."""
-
-    __slots__ = ()
 
 
 class NestedType(DataType):
     """Base class for nested data types."""
 
-    __slots__ = ()
-
 
 class Int8(SignedIntegerType):
     """8-bit signed integer type."""
-
-    __slots__ = ()
 
 
 class Int16(SignedIntegerType):
     """16-bit signed integer type."""
 
-    __slots__ = ()
-
 
 class Int32(SignedIntegerType):
     """32-bit signed integer type."""
-
-    __slots__ = ()
 
 
 class Int64(SignedIntegerType):
     """64-bit signed integer type."""
 
-    __slots__ = ()
-
 
 class UInt8(UnsignedIntegerType):
     """8-bit unsigned integer type."""
-
-    __slots__ = ()
 
 
 class UInt16(UnsignedIntegerType):
     """16-bit unsigned integer type."""
 
-    __slots__ = ()
-
 
 class UInt32(UnsignedIntegerType):
     """32-bit unsigned integer type."""
-
-    __slots__ = ()
 
 
 class UInt64(UnsignedIntegerType):
     """64-bit unsigned integer type."""
 
-    __slots__ = ()
-
 
 class Float32(FloatType):
     """32-bit floating point type."""
 
-    __slots__ = ()
-
 
 class Float64(FloatType):
     """64-bit floating point type."""
-
-    __slots__ = ()
 
 
 class Decimal(NumericType):
@@ -387,7 +334,6 @@ class Decimal(NumericType):
         Number of digits to the right of the decimal point in each number.
     """
 
-    __slots__ = ("precision", "scale")
     precision: int | None
     scale: int
 
@@ -398,7 +344,7 @@ class Decimal(NumericType):
     ):
         # Issuing the warning on `__init__` does not trigger when the class is used
         # without being instantiated, but it's better than nothing
-        from polars.utils.unstable import issue_unstable_warning
+        from polars._utils.unstable import issue_unstable_warning
 
         issue_unstable_warning(
             "The Decimal data type is considered unstable."
@@ -429,13 +375,9 @@ class Decimal(NumericType):
 class Boolean(DataType):
     """Boolean type."""
 
-    __slots__ = ()
-
 
 class String(DataType):
     """UTF-8 encoded string type."""
-
-    __slots__ = ()
 
 
 # Allow Utf8 as an alias for String
@@ -444,8 +386,6 @@ Utf8 = String
 
 class Binary(DataType):
     """Binary type."""
-
-    __slots__ = ()
 
 
 class Date(TemporalType):
@@ -459,8 +399,6 @@ class Date(TemporalType):
     The number can be negative to indicate dates before the epoch.
     """
 
-    __slots__ = ()
-
 
 class Time(TemporalType):
     """
@@ -471,8 +409,6 @@ class Time(TemporalType):
     The underlying representation of this type is a 64-bit signed integer.
     The integer indicates the number of nanoseconds since midnight.
     """
-
-    __slots__ = ()
 
 
 class Datetime(TemporalType):
@@ -504,7 +440,7 @@ class Datetime(TemporalType):
         self, time_unit: TimeUnit = "us", time_zone: str | timezone | None = None
     ):
         if time_unit is None:
-            from polars.utils.deprecation import issue_deprecation_warning
+            from polars._utils.deprecation import issue_deprecation_warning
 
             issue_deprecation_warning(
                 "Passing `time_unit=None` to the Datetime constructor is deprecated."
@@ -604,7 +540,6 @@ class Categorical(DataType):
         or string value (`'lexical'`).
     """
 
-    __slots__ = ("ordering",)
     ordering: CategoricalOrdering | None
 
     def __init__(
@@ -644,13 +579,12 @@ class Enum(DataType):
         The categories in the dataset. Categories must be strings.
     """
 
-    __slots__ = ("categories",)
     categories: Series
 
     def __init__(self, categories: Series | Iterable[str]):
         # Issuing the warning on `__init__` does not trigger when the class is used
         # without being instantiated, but it's better than nothing
-        from polars.utils.unstable import issue_unstable_warning
+        from polars._utils.unstable import issue_unstable_warning
 
         issue_unstable_warning(
             "The Enum data type is considered unstable."
@@ -699,19 +633,13 @@ class Enum(DataType):
 class Object(DataType):
     """Data type for wrapping arbitrary Python objects."""
 
-    __slots__ = ()
-
 
 class Null(DataType):
     """Data type representing null values."""
 
-    __slots__ = ()
-
 
 class Unknown(DataType):
     """Type representing DataType values that could not be determined statically."""
-
-    __slots__ = ()
 
 
 class List(NestedType):
@@ -844,7 +772,6 @@ class Field:
         The `DataType` of the field's values.
     """
 
-    __slots__ = ("name", "dtype")
     name: str
     dtype: PolarsDataType
 
@@ -901,7 +828,6 @@ class Struct(NestedType):
     Struct({'a': Int64, 'b': List(String)})
     """
 
-    __slots__ = ("fields",)
     fields: list[Field]
 
     def __init__(self, fields: Sequence[Field] | SchemaDict):

@@ -260,13 +260,13 @@ impl Literal for NaiveDateTime {
     fn lit(self) -> Expr {
         if in_nanoseconds_window(&self) {
             Expr::Literal(LiteralValue::DateTime(
-                self.timestamp_nanos_opt().unwrap(),
+                self.and_utc().timestamp_nanos_opt().unwrap(),
                 TimeUnit::Nanoseconds,
                 None,
             ))
         } else {
             Expr::Literal(LiteralValue::DateTime(
-                self.timestamp_micros(),
+                self.and_utc().timestamp_micros(),
                 TimeUnit::Microseconds,
                 None,
             ))

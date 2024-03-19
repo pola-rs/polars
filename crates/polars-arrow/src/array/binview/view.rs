@@ -13,6 +13,8 @@ use crate::buffer::Buffer;
 use crate::datatypes::PrimitiveType;
 use crate::types::NativeType;
 
+pub const INLINE_VIEW_SIZE: u32 = 12;
+
 // We use this instead of u128 because we want alignment of <= 8 bytes.
 #[derive(Debug, Copy, Clone, Default)]
 #[repr(C)]
@@ -31,6 +33,29 @@ impl View {
     #[inline(always)]
     pub fn as_u128(self) -> u128 {
         unsafe { std::mem::transmute(self) }
+    }
+
+    #[inline]
+    pub fn new_from_bytes(bytes: &[u8], buffer_idx: u32, offset: u32) -> Self {
+        if bytes.len() <= 12 {
+            let mut ret = Self {
+                length: bytes.len() as u32,
+                ..Default::default()
+            };
+            let ret_ptr = &mut ret as *mut _ as *mut u8;
+            unsafe {
+                core::ptr::copy_nonoverlapping(bytes.as_ptr(), ret_ptr.add(4), bytes.len());
+            }
+            ret
+        } else {
+            let prefix_buf: [u8; 4] = std::array::from_fn(|i| *bytes.get(i).unwrap_or(&0));
+            Self {
+                length: bytes.len() as u32,
+                prefix: u32::from_le_bytes(prefix_buf),
+                buffer_idx,
+                offset,
+            }
+        }
     }
 }
 
@@ -148,8 +173,8 @@ where
 {
     for view in views {
         let len = view.length;
-        if len <= 12 {
-            if len < 12 && view.as_u128() >> (32 + len * 8) != 0 {
+        if len <= INLINE_VIEW_SIZE {
+            if len < INLINE_VIEW_SIZE && view.as_u128() >> (32 + len * 8) != 0 {
                 polars_bail!(ComputeError: "view contained non-zero padding in prefix");
             }
 

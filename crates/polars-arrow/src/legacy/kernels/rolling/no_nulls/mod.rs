@@ -3,12 +3,11 @@ mod min_max;
 mod quantile;
 mod sum;
 mod variance;
-
 use std::fmt::Debug;
 
 pub use mean::*;
 pub use min_max::*;
-use num_traits::{Float, NumCast};
+use num_traits::{Float, Num, NumCast};
 pub use quantile::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -18,7 +17,7 @@ pub use variance::*;
 use super::*;
 use crate::array::PrimitiveArray;
 use crate::datatypes::ArrowDataType;
-use crate::legacy::error::{polars_bail, PolarsResult};
+use crate::legacy::error::PolarsResult;
 use crate::types::NativeType;
 
 pub trait RollingAggWindowNoNulls<'a, T: NativeType> {
@@ -28,7 +27,7 @@ pub trait RollingAggWindowNoNulls<'a, T: NativeType> {
     ///
     /// # Safety
     /// `start` and `end` must be within the windows bounds
-    unsafe fn update(&mut self, start: usize, end: usize) -> T;
+    unsafe fn update(&mut self, start: usize, end: usize) -> Option<T>;
 }
 
 // Use an aggregation window that maintains the state
@@ -42,27 +41,34 @@ pub(super) fn rolling_apply_agg_window<'a, Agg, T, Fo>(
 where
     Fo: Fn(Idx, WindowSize, Len) -> (Start, End),
     Agg: RollingAggWindowNoNulls<'a, T>,
-    T: Debug + NativeType,
+    T: Debug + NativeType + Num,
 {
     let len = values.len();
     let (start, end) = det_offsets_fn(0, window_size, len);
     let mut agg_window = Agg::new(values, start, end, params);
+    if let Some(validity) = create_validity(min_periods, len, window_size, &det_offsets_fn) {
+        if validity.iter().all(|x| !x) {
+            return Ok(Box::new(PrimitiveArray::<T>::new_null(
+                T::PRIMITIVE.into(),
+                len,
+            )));
+        }
+    }
 
     let out = (0..len)
         .map(|idx| {
             let (start, end) = det_offsets_fn(idx, window_size, len);
-            // SAFETY:
-            // we are in bounds
-            unsafe { agg_window.update(start, end) }
+            if end - start < min_periods {
+                None
+            } else {
+                // SAFETY:
+                // we are in bounds
+                unsafe { agg_window.update(start, end) }
+            }
         })
         .collect_trusted::<Vec<_>>();
-
-    let validity = create_validity(min_periods, len, window_size, det_offsets_fn);
-    Ok(Box::new(PrimitiveArray::new(
-        T::PRIMITIVE.into(),
-        out.into(),
-        validity.map(|b| b.into()),
-    )))
+    let arr = PrimitiveArray::from(out);
+    Ok(Box::new(arr))
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Hash)]

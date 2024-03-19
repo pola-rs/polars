@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import sys
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
+from polars.testing.asserts.frame import assert_frame_equal
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -85,3 +87,30 @@ def test_ipc_list_arg(io_files_path: Path) -> None:
     assert df.shape == (54, 4)
     assert df.row(-1) == ("seafood", 194, 12.0, 1)
     assert df.row(0) == ("vegetables", 45, 0.5, 2)
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="object_store does not handle windows-style paths."
+)
+def test_scan_ipc_local_with_async(
+    capfd: Any,
+    monkeypatch: Any,
+    io_files_path: Path,
+) -> None:
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    monkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+
+    assert_frame_equal(
+        pl.scan_ipc(io_files_path / "foods1.ipc").head(1).collect(),
+        pl.DataFrame(
+            {
+                "category": ["vegetables"],
+                "calories": [45],
+                "fats_g": [0.5],
+                "sugars_g": [2],
+            }
+        ),
+    )
+
+    captured = capfd.readouterr().err
+    assert "ASYNC READING FORCED" in captured

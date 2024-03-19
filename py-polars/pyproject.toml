@@ -39,17 +39,18 @@ Changelog = "https://github.com/pola-rs/polars/releases"
 
 [project.optional-dependencies]
 # NOTE: keep this list in sync with show_versions() and requirements-dev.txt
-adbc = ["adbc_driver_sqlite"]
+adbc = ["adbc_driver_manager", "adbc_driver_sqlite"]
 cloudpickle = ["cloudpickle"]
 connectorx = ["connectorx >= 0.3.2"]
 deltalake = ["deltalake >= 0.14.0"]
+fastexcel = ["fastexcel >= 0.9"]
 fsspec = ["fsspec"]
 gevent = ["gevent"]
-plot = ["hvplot >= 0.9.1"]
 matplotlib = ["matplotlib"]
 numpy = ["numpy >= 1.16.0"]
 openpyxl = ["openpyxl >= 3.0.0"]
 pandas = ["pyarrow >= 7.0.0", "pandas"]
+plot = ["hvplot >= 0.9.1"]
 pyarrow = ["pyarrow >= 7.0.0"]
 pydantic = ["pydantic"]
 pyiceberg = ["pyiceberg >= 0.5.0"]
@@ -59,7 +60,7 @@ timezone = ["backports.zoneinfo; python_version < '3.9'", "tzdata; platform_syst
 xlsx2csv = ["xlsx2csv >= 0.8.0"]
 xlsxwriter = ["xlsxwriter"]
 all = [
-  "polars[pyarrow,pandas,numpy,fsspec,plot,connectorx,xlsx2csv,deltalake,timezone,pydantic,pyiceberg,sqlalchemy,xlsxwriter,adbc,cloudpickle,gevent]",
+  "polars[adbc,cloudpickle,connectorx,deltalake,fastexcel,fsspec,gevent,numpy,pandas,plot,pyarrow,pydantic,pyiceberg,sqlalchemy,timezone,xlsx2csv,xlsxwriter]",
 ]
 
 [tool.maturin]
@@ -90,6 +91,7 @@ module = [
   "fsspec.*",
   "gevent",
   "hvplot.*",
+  "kuzu",
   "matplotlib.*",
   "moto.server",
   "openpyxl",
@@ -179,7 +181,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["D100", "D103", "B018", "FBT001"]
+"tests/**/*.py" = ["D100", "D102", "D103", "B018", "FBT001"]
 
 [tool.ruff.lint.pycodestyle]
 max-doc-length = 88

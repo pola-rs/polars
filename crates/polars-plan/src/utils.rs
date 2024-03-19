@@ -151,6 +151,30 @@ pub fn has_null(current_expr: &Expr) -> bool {
     })
 }
 
+pub fn aexpr_output_name(node: Node, arena: &Arena<AExpr>) -> PolarsResult<Arc<str>> {
+    for (_, ae) in arena.iter(node) {
+        match ae {
+            // don't follow the partition by branch
+            AExpr::Window { function, .. } => return aexpr_output_name(*function, arena),
+            AExpr::Column(name) => return Ok(name.clone()),
+            AExpr::Alias(_, name) => return Ok(name.clone()),
+            AExpr::Len => return Ok(Arc::from(LEN)),
+            AExpr::Literal(val) => {
+                return match val {
+                    LiteralValue::Series(s) => Ok(Arc::from(s.name())),
+                    _ => Ok(Arc::from(LITERAL_NAME)),
+                }
+            },
+            _ => {},
+        }
+    }
+    let expr = node_to_expr(node, arena);
+    polars_bail!(
+        ComputeError:
+        "unable to find root column name for expr '{expr:?}' when calling 'output_name'",
+    );
+}
+
 /// output name of expr
 pub fn expr_output_name(expr: &Expr) -> PolarsResult<Arc<str>> {
     for e in expr {
@@ -284,9 +308,9 @@ pub(crate) fn aexpr_assign_renamed_leaf(
     current: &str,
     new_name: &str,
 ) -> Node {
-    let leafs = aexpr_to_column_nodes_iter(node, arena);
+    let leaf_nodes = aexpr_to_column_nodes_iter(node, arena);
 
-    for node in leafs {
+    for node in leaf_nodes {
         match arena.get(node) {
             AExpr::Column(name) if &**name == current => {
                 return arena.add(AExpr::Column(Arc::from(new_name)))

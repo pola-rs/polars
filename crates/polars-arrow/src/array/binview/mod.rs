@@ -26,6 +26,7 @@ mod private {
 }
 pub use iterator::BinaryViewValueIter;
 pub use mutable::MutableBinaryViewArray;
+use polars_utils::slice::GetSaferUnchecked;
 use private::Sealed;
 
 use crate::array::binview::view::{validate_binary_view, validate_utf8_only, validate_utf8_view};
@@ -33,7 +34,7 @@ use crate::array::iterator::NonNullValuesIter;
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
 pub type BinaryViewArray = BinaryViewArrayGeneric<[u8]>;
 pub type Utf8ViewArray = BinaryViewArrayGeneric<str>;
-pub use view::View;
+pub use view::{View, INLINE_VIEW_SIZE};
 
 pub type MutablePlString = MutableBinaryViewArray<str>;
 pub type MutablePlBinary = MutableBinaryViewArray<[u8]>;
@@ -273,7 +274,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     /// Assumes that the `i < self.len`.
     #[inline]
     pub unsafe fn value_unchecked(&self, i: usize) -> &T {
-        let v = *self.views.get_unchecked(i);
+        let v = *self.views.get_unchecked_release(i);
         let len = v.length;
 
         // view layout:
@@ -290,10 +291,12 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
             let ptr = self.views.as_ptr() as *const u8;
             std::slice::from_raw_parts(ptr.add(i * 16 + 4), len as usize)
         } else {
-            let (data_ptr, data_len) = *self.raw_buffers.get_unchecked(v.buffer_idx as usize);
+            let (data_ptr, data_len) = *self
+                .raw_buffers
+                .get_unchecked_release(v.buffer_idx as usize);
             let data = std::slice::from_raw_parts(data_ptr, data_len);
             let offset = v.offset as usize;
-            data.get_unchecked(offset..offset + len as usize)
+            data.get_unchecked_release(offset..offset + len as usize)
         };
         T::from_bytes_unchecked(bytes)
     }

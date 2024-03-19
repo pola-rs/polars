@@ -25,6 +25,29 @@ from typing import (
 
 import polars._reexport as pl
 from polars import functions as F
+from polars._utils.convert import negate_duration_string, parse_as_duration_string
+from polars._utils.deprecation import (
+    deprecate_function,
+    deprecate_nonkeyword_arguments,
+    deprecate_renamed_function,
+    deprecate_renamed_parameter,
+    deprecate_saturating,
+    issue_deprecation_warning,
+)
+from polars._utils.parse_expr_input import (
+    parse_as_expression,
+    parse_as_list_of_expressions,
+    parse_predicates_constraints_as_expression,
+)
+from polars._utils.unstable import issue_unstable_warning, unstable
+from polars._utils.various import (
+    BUILDING_SPHINX_DOCS,
+    find_stacklevel,
+    no_default,
+    normalize_filepath,
+    sphinx_accessor,
+    warn_null_comparison,
+)
 from polars.datatypes import (
     Int64,
     is_polars_dtype,
@@ -43,29 +66,6 @@ from polars.expr.name import ExprNameNameSpace
 from polars.expr.string import ExprStringNameSpace
 from polars.expr.struct import ExprStructNameSpace
 from polars.meta import thread_pool_size
-from polars.utils._parse_expr_input import (
-    parse_as_expression,
-    parse_as_list_of_expressions,
-    parse_predicates_constraints_as_expression,
-)
-from polars.utils.convert import negate_duration_string, parse_as_duration_string
-from polars.utils.deprecation import (
-    deprecate_function,
-    deprecate_nonkeyword_arguments,
-    deprecate_renamed_function,
-    deprecate_renamed_parameter,
-    deprecate_saturating,
-    issue_deprecation_warning,
-)
-from polars.utils.unstable import issue_unstable_warning, unstable
-from polars.utils.various import (
-    BUILDING_SPHINX_DOCS,
-    find_stacklevel,
-    no_default,
-    normalize_filepath,
-    sphinx_accessor,
-    warn_null_comparison,
-)
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import arg_where as py_arg_where
@@ -78,6 +78,9 @@ if TYPE_CHECKING:
     from io import IOBase
 
     from polars import DataFrame, LazyFrame, Series
+    from polars._utils.various import (
+        NoDefault,
+    )
     from polars.type_aliases import (
         ClosedInterval,
         FillNullStrategy,
@@ -93,9 +96,6 @@ if TYPE_CHECKING:
         SearchSortedSide,
         TemporalLiteral,
         WindowMappingStrategy,
-    )
-    from polars.utils.various import (
-        NoDefault,
     )
 
     if sys.version_info >= (3, 11):
@@ -113,8 +113,7 @@ elif BUILDING_SPHINX_DOCS:
 class Expr:
     """Expressions that can be used in various contexts."""
 
-    __slots__ = ("_pyexpr",)
-    _pyexpr: PyExpr
+    _pyexpr: PyExpr = None
     _accessors: ClassVar[set[str]] = {
         "arr",
         "cat",
@@ -4358,7 +4357,7 @@ class Expr:
             )
 
         # input x: Series of type list containing the group values
-        from polars.utils.udfs import warn_on_inefficient_map
+        from polars._utils.udfs import warn_on_inefficient_map
 
         root_names = self.meta.root_names()
         if len(root_names) > 0:
@@ -5718,7 +5717,7 @@ class Expr:
         *,
         center: bool = False,
         by: str | None = None,
-        closed: ClosedInterval = "right",
+        closed: ClosedInterval | None = None,
         warn_if_unsorted: bool = True,
     ) -> Self:
         """
@@ -5790,7 +5789,7 @@ class Expr:
                 results will not be correct.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive); only
-            applicable if `by` has been set.
+            applicable if `by` has been set (in which case, it defaults to `'right'`).
         warn_if_unsorted
             Warn if data is not known to be sorted by `by` column (if passed).
 
@@ -5930,7 +5929,7 @@ class Expr:
         *,
         center: bool = False,
         by: str | None = None,
-        closed: ClosedInterval = "right",
+        closed: ClosedInterval | None = None,
         warn_if_unsorted: bool = True,
     ) -> Self:
         """
@@ -5998,7 +5997,7 @@ class Expr:
             be of dtype Datetime or Date.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive); only
-            applicable if `by` has been set.
+            applicable if `by` has been set (in which case, it defaults to `'right'`).
         warn_if_unsorted
             Warn if data is not known to be sorted by `by` column (if passed).
 
@@ -6167,7 +6166,7 @@ class Expr:
         *,
         center: bool = False,
         by: str | None = None,
-        closed: ClosedInterval = "right",
+        closed: ClosedInterval | None = None,
         warn_if_unsorted: bool = True,
     ) -> Self:
         """
@@ -6239,7 +6238,7 @@ class Expr:
                 results will not be correct.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive); only
-            applicable if `by` has been set.
+            applicable if `by` has been set (in which case, it defaults to `'right'`).
         warn_if_unsorted
             Warn if data is not known to be sorted by `by` column (if passed).
 
@@ -6414,7 +6413,7 @@ class Expr:
         *,
         center: bool = False,
         by: str | None = None,
-        closed: ClosedInterval = "right",
+        closed: ClosedInterval | None = None,
         warn_if_unsorted: bool = True,
     ) -> Self:
         """
@@ -6482,7 +6481,7 @@ class Expr:
             of dtype `{Date, Datetime}`
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive); only
-            applicable if `by` has been set.
+            applicable if `by` has been set (in which case, it defaults to `'right'`).
         warn_if_unsorted
             Warn if data is not known to be sorted by `by` column (if passed).
 
@@ -6651,7 +6650,7 @@ class Expr:
         *,
         center: bool = False,
         by: str | None = None,
-        closed: ClosedInterval = "right",
+        closed: ClosedInterval | None = None,
         ddof: int = 1,
         warn_if_unsorted: bool = True,
     ) -> Self:
@@ -6721,7 +6720,7 @@ class Expr:
                 results will not be correct.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive); only
-            applicable if `by` has been set.
+            applicable if `by` has been set (in which case, it defaults to `'right'`).
         ddof
             "Delta Degrees of Freedom": The divisor for a length N window is N - ddof
         warn_if_unsorted
@@ -6835,7 +6834,7 @@ class Expr:
         │ u32   ┆ datetime[μs]        ┆ f64             │
         ╞═══════╪═════════════════════╪═════════════════╡
         │ 0     ┆ 2001-01-01 00:00:00 ┆ null            │
-        │ 1     ┆ 2001-01-01 01:00:00 ┆ 0.0             │
+        │ 1     ┆ 2001-01-01 01:00:00 ┆ null            │
         │ 2     ┆ 2001-01-01 02:00:00 ┆ 0.707107        │
         │ 3     ┆ 2001-01-01 03:00:00 ┆ 0.707107        │
         │ 4     ┆ 2001-01-01 04:00:00 ┆ 0.707107        │
@@ -6860,7 +6859,7 @@ class Expr:
         │ ---   ┆ ---                 ┆ ---             │
         │ u32   ┆ datetime[μs]        ┆ f64             │
         ╞═══════╪═════════════════════╪═════════════════╡
-        │ 0     ┆ 2001-01-01 00:00:00 ┆ 0.0             │
+        │ 0     ┆ 2001-01-01 00:00:00 ┆ null            │
         │ 1     ┆ 2001-01-01 01:00:00 ┆ 0.707107        │
         │ 2     ┆ 2001-01-01 02:00:00 ┆ 1.0             │
         │ 3     ┆ 2001-01-01 03:00:00 ┆ 1.0             │
@@ -6899,7 +6898,7 @@ class Expr:
         *,
         center: bool = False,
         by: str | None = None,
-        closed: ClosedInterval = "right",
+        closed: ClosedInterval | None = None,
         ddof: int = 1,
         warn_if_unsorted: bool = True,
     ) -> Self:
@@ -6968,7 +6967,7 @@ class Expr:
                 results will not be correct.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive); only
-            applicable if `by` has been set.
+            applicable if `by` has been set (in which case, it defaults to `'right'`).
         ddof
             "Delta Degrees of Freedom": The divisor for a length N window is N - ddof
         warn_if_unsorted
@@ -7082,7 +7081,7 @@ class Expr:
         │ u32   ┆ datetime[μs]        ┆ f64             │
         ╞═══════╪═════════════════════╪═════════════════╡
         │ 0     ┆ 2001-01-01 00:00:00 ┆ null            │
-        │ 1     ┆ 2001-01-01 01:00:00 ┆ 0.0             │
+        │ 1     ┆ 2001-01-01 01:00:00 ┆ null            │
         │ 2     ┆ 2001-01-01 02:00:00 ┆ 0.5             │
         │ 3     ┆ 2001-01-01 03:00:00 ┆ 0.5             │
         │ 4     ┆ 2001-01-01 04:00:00 ┆ 0.5             │
@@ -7107,7 +7106,7 @@ class Expr:
         │ ---   ┆ ---                 ┆ ---             │
         │ u32   ┆ datetime[μs]        ┆ f64             │
         ╞═══════╪═════════════════════╪═════════════════╡
-        │ 0     ┆ 2001-01-01 00:00:00 ┆ 0.0             │
+        │ 0     ┆ 2001-01-01 00:00:00 ┆ null            │
         │ 1     ┆ 2001-01-01 01:00:00 ┆ 0.5             │
         │ 2     ┆ 2001-01-01 02:00:00 ┆ 1.0             │
         │ 3     ┆ 2001-01-01 03:00:00 ┆ 1.0             │
@@ -7146,7 +7145,7 @@ class Expr:
         *,
         center: bool = False,
         by: str | None = None,
-        closed: ClosedInterval = "right",
+        closed: ClosedInterval | None = None,
         warn_if_unsorted: bool = True,
     ) -> Self:
         """
@@ -7215,7 +7214,7 @@ class Expr:
                 results will not be correct.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive); only
-            applicable if `by` has been set.
+            applicable if `by` has been set (in which case, it defaults to `'right'`).
         warn_if_unsorted
             Warn if data is not known to be sorted by `by` column (if passed).
 
@@ -7306,7 +7305,7 @@ class Expr:
         *,
         center: bool = False,
         by: str | None = None,
-        closed: ClosedInterval = "right",
+        closed: ClosedInterval | None = None,
         warn_if_unsorted: bool = True,
     ) -> Self:
         """
@@ -7378,7 +7377,7 @@ class Expr:
                 results will not be correct.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive); only
-            applicable if `by` has been set.
+            applicable if `by` has been set (in which case, it defaults to `'right'`).
         warn_if_unsorted
             Warn if data is not known to be sorted by `by` column (if passed).
 
@@ -9264,7 +9263,7 @@ class Expr:
             Accepts expression input. Sequences are parsed as Series,
             other non-expression inputs are parsed as literals.
             Also accepts a mapping of values to their replacement as syntactic sugar for
-            `replace(new=Series(mapping.keys()), old=Series(mapping.values()))`.
+            `replace(old=Series(mapping.keys()), new=Series(mapping.values()))`.
         new
             Value or sequence of values to replace by.
             Accepts expression input. Sequences are parsed as Series,
@@ -9623,6 +9622,9 @@ class Expr:
         """
         return self.shift(n, fill_value=fill_value)
 
+    @deprecate_function(
+        "Use `polars.plugins.register_plugin_function` instead.", version="0.20.16"
+    )
     def register_plugin(
         self,
         *,
@@ -9636,20 +9638,26 @@ class Expr:
         cast_to_supertypes: bool = False,
         pass_name_to_apply: bool = False,
         changes_length: bool = False,
-    ) -> Self:
+    ) -> Expr:
         """
-        Register a shared library as a plugin.
+        Register a plugin function.
 
-        .. warning::
-            This is highly unsafe as this will call the C function
-            loaded by `lib::symbol`.
+        .. deprecated:: 0.20.16
+            Use :func:`polars.plugins.register_plugin_function` instead.
 
-            The parameters you give dictate how polars will deal
-            with the function. Make sure they are correct!
+        See the `user guide <https://docs.pola.rs/user-guide/expressions/plugins/>`_
+        for more information about plugins.
 
-        .. note::
-            This functionality is unstable and may change without it
-            being considered breaking.
+        Warnings
+        --------
+        This method is deprecated. Use the new `polars.plugins.register_plugin_function`
+        function instead.
+
+        This is highly unsafe as this will call the C function loaded by
+        `lib::symbol`.
+
+        The parameters you set dictate how Polars will handle the function.
+        Make sure they are correct!
 
         Parameters
         ----------
@@ -9678,31 +9686,24 @@ class Expr:
         changes_length
             For example a `unique` or a `slice`
         """
+        from polars.plugins import register_plugin_function
+
         if args is None:
-            args = []
+            args = [self]
         else:
-            args = [parse_as_expression(a) for a in args]
-        if kwargs is None:
-            serialized_kwargs = b""
-        else:
-            import pickle
+            args = [self, *list(args)]
 
-            # Choose the highest protocol supported by https://docs.rs/serde-pickle/latest/serde_pickle/
-            serialized_kwargs = pickle.dumps(kwargs, protocol=5)
-
-        return self._from_pyexpr(
-            self._pyexpr.register_plugin(
-                lib,
-                symbol,
-                args,
-                serialized_kwargs,
-                is_elementwise,
-                input_wildcard_expansion,
-                returns_scalar,
-                cast_to_supertypes,
-                pass_name_to_apply,
-                changes_length,
-            )
+        return register_plugin_function(
+            plugin_path=lib,
+            function_name=symbol,
+            args=args,
+            kwargs=kwargs,
+            is_elementwise=is_elementwise,
+            changes_length=changes_length,
+            returns_scalar=returns_scalar,
+            cast_to_supertype=cast_to_supertypes,
+            input_wildcard_expansion=input_wildcard_expansion,
+            pass_name_to_apply=pass_name_to_apply,
         )
 
     @deprecate_renamed_function("register_plugin", version="0.19.12")
@@ -9717,7 +9718,7 @@ class Expr:
         input_wildcard_expansion: bool = False,
         auto_explode: bool = False,
         cast_to_supertypes: bool = False,
-    ) -> Self:
+    ) -> Expr:
         return self.register_plugin(
             lib=lib,
             symbol=symbol,

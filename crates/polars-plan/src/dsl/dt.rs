@@ -238,9 +238,14 @@ impl DateLikeNameSpace {
     }
 
     #[cfg(feature = "timezones")]
-    pub fn replace_time_zone(self, time_zone: Option<TimeZone>, ambiguous: Expr) -> Expr {
+    pub fn replace_time_zone(
+        self,
+        time_zone: Option<TimeZone>,
+        ambiguous: Expr,
+        non_existent: NonExistent,
+    ) -> Expr {
         self.0.map_many_private(
-            FunctionExpr::TemporalExpr(TemporalFunction::ReplaceTimeZone(time_zone)),
+            FunctionExpr::TemporalExpr(TemporalFunction::ReplaceTimeZone(time_zone, non_existent)),
             &[ambiguous],
             false,
             false,
