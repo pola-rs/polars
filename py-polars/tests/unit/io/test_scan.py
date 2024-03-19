@@ -30,7 +30,7 @@ def _enable_force_async(monkeypatch: pytest.MonkeyPatch) -> None:
 def _assert_force_async(capfd: Any) -> None:
     """Calls `capfd.readouterr`, consuming the captured output so far."""
     captured = capfd.readouterr().err
-    assert "ASYNC READING FORCED" in captured
+    assert captured.count("ASYNC READING FORCED") == 1
 
 
 def _scan(
