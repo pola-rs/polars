@@ -3,8 +3,6 @@ use pyo3::prelude::*;
 
 use super::*;
 use crate::conversion::Wrap;
-use crate::py_modules;
-use crate::series::PySeries;
 
 #[pymethods]
 impl PyDataFrame {
@@ -64,31 +62,6 @@ impl PyDataFrame {
 
             Ok(pydf)
         })
-    }
-
-    #[staticmethod]
-    pub fn read_dict(py: Python, dict: &PyDict) -> PyResult<Self> {
-        let cols = dict
-            .into_iter()
-            .map(|(key, val)| {
-                let name = key.extract::<&str>()?;
-
-                let s = if val.is_instance_of::<PyDict>() {
-                    let df = Self::read_dict(py, val.extract::<&PyDict>()?)?;
-                    df.df.into_struct(name).into_series()
-                } else {
-                    let obj = py_modules::SERIES.call1(py, (name, val))?;
-
-                    let pyseries_obj = obj.getattr(py, "_s")?;
-                    let pyseries = pyseries_obj.extract::<PySeries>(py)?;
-                    pyseries.series
-                };
-                Ok(s)
-            })
-            .collect::<PyResult<Vec<_>>>()?;
-
-        let df = DataFrame::new(cols).map_err(PyPolarsErr::from)?;
-        Ok(df.into())
     }
 }
 
