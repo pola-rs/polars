@@ -67,6 +67,15 @@ impl IpcExec {
     }
 
     fn read_sync(&mut self) -> PolarsResult<DataFrame> {
+        if config::verbose() {
+            println!("executing ipc read sync with row_index = {:?}, n_rows = {:?}, predicate = {:?} for paths {:?}",
+                self.file_options.row_index.as_ref(),
+                self.file_options.n_rows.as_ref(),
+                self.predicate.is_some(),
+                self.paths
+            );
+        }
+
         let (projection, predicate) = prepare_scan_args(
             self.predicate.clone(),
             &mut self.file_options.with_columns,
@@ -135,13 +144,15 @@ impl IpcExec {
 
         index_and_dfs.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
 
-        if let Some(row_index) = self.file_options.row_index.as_ref() {
-            let offsets = {
-                let mut row_counter = row_counter.into_inner().unwrap();
-                prefix_sum_in_place(&mut row_counter.counts[..]);
-                row_counter.counts
-            };
+        let offsets = {
+            let mut counts = row_counter.into_inner().unwrap().into_counts();
+            prefix_sum_in_place(&mut counts[..]);
+            counts
+        };
 
+        // Update the row indices now that we know how many rows are in each
+        // file.
+        if let Some(row_index) = self.file_options.row_index.as_ref() {
             for &mut (index, ref mut df) in index_and_dfs.iter_mut() {
                 let offset = offsets[index];
                 df.apply(&row_index.name, |series| {
@@ -151,7 +162,21 @@ impl IpcExec {
             }
         }
 
-        let mut df = accumulate_dataframes_vertical(index_and_dfs.into_iter().map(|(_, df)| df))?;
+        // Accumulate dataframes while adjusting for the possibility of having
+        // read more rows than the limit.
+        let mut df =
+            accumulate_dataframes_vertical(index_and_dfs.into_iter().filter_map(|(index, df)| {
+                let count: IdxSize = df.height().try_into().unwrap();
+                if count == 0 {
+                    return None;
+                }
+                let remaining = row_limit.checked_sub(offsets[index])?;
+                Some(if remaining < count {
+                    df.slice(0, remaining.try_into().unwrap())
+                } else {
+                    df
+                })
+            }))?;
 
         apply_predicate(&mut df, predicate.as_deref(), true)?;
 
@@ -289,5 +314,15 @@ impl ConsecutiveCountState {
             self.sum += count;
             self.next_index += 1;
         }
+    }
+
+    fn into_counts(mut self) -> Box<[IdxSize]> {
+        // Set the counts to which no value has been written to zero.
+        for i in self.next_index..self.counts.len() {
+            if self.counts[i] == IdxSize::MAX {
+                self.counts[i] = 0;
+            }
+        }
+        self.counts
     }
 }
