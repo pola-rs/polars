@@ -26,6 +26,7 @@ def from_dict(
     schema: SchemaDefinition | None = None,
     *,
     schema_overrides: SchemaDict | None = None,
+    strict: bool = True,
 ) -> DataFrame:
     """
     Construct a DataFrame from a dictionary of sequences.
@@ -50,6 +51,11 @@ def from_dict(
     schema_overrides : dict, default None
         Support type specification or override of one or more columns; note that
         any dtypes inferred from the columns param will be overridden.
+    strict : bool, default True
+        Throw an error if any `data` value does not exactly match the given or inferred
+        data type for that column. If set to `False`, values that do not match the data
+        type are cast to that data type or, if casting is not possible, set to null
+        instead.
 
     Returns
     -------
@@ -70,7 +76,7 @@ def from_dict(
     └─────┴─────┘
     """
     return pl.DataFrame._from_dict(
-        data, schema=schema, schema_overrides=schema_overrides
+        data, schema=schema, schema_overrides=schema_overrides, strict=strict
     )
 
 
@@ -79,6 +85,7 @@ def from_dicts(
     schema: SchemaDefinition | None = None,
     *,
     schema_overrides: SchemaDict | None = None,
+    strict: bool = True,
     infer_schema_length: int | None = N_INFER_DEFAULT,
 ) -> DataFrame:
     """
@@ -106,6 +113,11 @@ def from_dicts(
         adding them to the schema.
     schema_overrides : dict, default None
         Support override of inferred types for one or more columns.
+    strict : bool, default True
+        Throw an error if any `data` value does not exactly match the given or inferred
+        data type for that column. If set to `False`, values that do not match the data
+        type are cast to that data type or, if casting is not possible, set to null
+        instead.
     infer_schema_length
         The maximum number of rows to scan for schema inference.
         If set to `None`, the full data may be scanned *(this is slow)*.
@@ -172,6 +184,7 @@ def from_dicts(
         data,
         schema=schema,
         schema_overrides=schema_overrides,
+        strict=strict,
         infer_schema_length=infer_schema_length,
     )
 
@@ -181,6 +194,7 @@ def from_records(
     schema: SchemaDefinition | None = None,
     *,
     schema_overrides: SchemaDict | None = None,
+    strict: bool = True,
     orient: Orientation | None = None,
     infer_schema_length: int | None = N_INFER_DEFAULT,
 ) -> DataFrame:
@@ -206,6 +220,11 @@ def from_records(
     schema_overrides : dict, default None
         Support type specification or override of one or more columns; note that
         any dtypes inferred from the columns param will be overridden.
+    strict : bool, default True
+        Throw an error if any `data` value does not exactly match the given or inferred
+        data type for that column. If set to `False`, values that do not match the data
+        type are cast to that data type or, if casting is not possible, set to null
+        instead.
     orient : {None, 'col', 'row'}
         Whether to interpret two-dimensional data as columns or as rows. If None,
         the orientation is inferred by matching the columns and data dimensions. If
@@ -238,6 +257,7 @@ def from_records(
         data,
         schema=schema,
         schema_overrides=schema_overrides,
+        strict=strict,
         orient=orient,
         infer_schema_length=infer_schema_length,
     )

@@ -448,31 +448,19 @@ class DataFrame:
         schema: SchemaDefinition | None = None,
         *,
         schema_overrides: SchemaDict | None = None,
+        strict: bool = True,
     ) -> Self:
         """
         Construct a DataFrame from a dictionary of sequences.
 
-        Parameters
-        ----------
-        data : dict of sequences
-          Two-dimensional data represented as a dictionary. dict must contain
-          Sequences.
-        schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
-            The DataFrame schema may be declared in several ways:
-
-            * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
-            * As a list of column names; in this case types are automatically inferred.
-            * As a list of (name,type) pairs; this is equivalent to the dictionary form.
-
-            If you supply a list of column names that does not match the names in the
-            underlying data, the names given here will overwrite them. The number
-            of names given in the schema should match the underlying data dimensions.
-        schema_overrides : dict, default None
-          Support type specification or override of one or more columns; note that
-          any dtypes inferred from the columns param will be overridden.
+        See Also
+        --------
+        polars.convert.from_dict
         """
         return cls._from_pydf(
-            dict_to_pydf(data, schema=schema, schema_overrides=schema_overrides)
+            dict_to_pydf(
+                data, schema=schema, schema_overrides=schema_overrides, strict=strict
+            )
         )
 
     @classmethod
@@ -482,6 +470,7 @@ class DataFrame:
         schema: SchemaDefinition | None = None,
         *,
         schema_overrides: SchemaDict | None = None,
+        strict: bool = True,
         orient: Orientation | None = None,
         infer_schema_length: int | None = N_INFER_DEFAULT,
     ) -> Self:
@@ -490,13 +479,14 @@ class DataFrame:
 
         See Also
         --------
-        polars.io.from_records
+        polars.convert.from_records
         """
         return cls._from_pydf(
             sequence_to_pydf(
                 data,
                 schema=schema,
                 schema_overrides=schema_overrides,
+                strict=strict,
                 orient=orient,
                 infer_schema_length=infer_schema_length,
             )
