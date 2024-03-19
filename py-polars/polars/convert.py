@@ -37,7 +37,6 @@ def from_dict(
     *,
     schema_overrides: SchemaDict | None = None,
     strict: bool = True,
-    nan_to_null: bool = False,
 ) -> DataFrame:
     """
     Construct a DataFrame from a dictionary of sequences.
@@ -67,9 +66,6 @@ def from_dict(
         data type for that column. If set to `False`, values that do not match the data
         type are cast to that data type or, if casting is not possible, set to null
         instead.
-    nan_to_null : bool, default False
-        If the data comes from one or more numpy arrays, can optionally convert input
-        data np.nan values to null instead. This is a no-op for all other input data.
 
     Returns
     -------
@@ -95,7 +91,6 @@ def from_dict(
             schema=schema,
             schema_overrides=schema_overrides,
             strict=strict,
-            nan_to_null=nan_to_null,
         )
     )
 
