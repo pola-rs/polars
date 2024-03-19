@@ -1,11 +1,13 @@
 mod construction;
 mod general;
+mod io;
 
 use polars::prelude::*;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
 use crate::PyPolarsErr;
+
 #[pyclass]
 #[repr(transparent)]
 #[derive(Clone)]
