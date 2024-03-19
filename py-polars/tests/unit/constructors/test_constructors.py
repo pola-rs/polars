@@ -1235,7 +1235,7 @@ def test_from_dicts_schema() -> None:
         assert df.schema == schema
 
 
-def test_nested_read_dict_4143() -> None:
+def test_nested_read_dicts_4143() -> None:
     result = pl.from_dicts(
         [
             {
@@ -1270,7 +1270,7 @@ def test_nested_read_dict_4143() -> None:
     assert result.to_dict(as_series=False) == expected
 
 
-def test_nested_read_dict_4143_2() -> None:
+def test_nested_read_dicts_4143_2() -> None:
     result = pl.from_dicts(
         [
             {

@@ -9,7 +9,7 @@ use crate::series::PySeries;
 #[pymethods]
 impl PyDataFrame {
     #[staticmethod]
-    pub fn read_rows(
+    pub fn from_rows(
         py: Python,
         rows: Vec<Wrap<Row>>,
         infer_schema_length: Option<usize>,
@@ -23,7 +23,7 @@ impl PyDataFrame {
     }
 
     #[staticmethod]
-    pub fn read_dicts(
+    pub fn from_dicts(
         py: Python,
         dicts: &PyAny,
         infer_schema_length: Option<usize>,
