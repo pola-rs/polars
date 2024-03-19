@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, Iterable, Mapping, Sequence, overload
 
 import polars._reexport as pl
 from polars import functions as F
+from polars._utils.deprecation import deprecate_renamed_parameter
 from polars._utils.various import _cast_repr_strings_with_schema
 from polars.datatypes import N_INFER_DEFAULT, Categorical, List, Object, String, Struct
 from polars.dependencies import pandas as pd
@@ -572,13 +573,14 @@ def from_dataframe(df: SupportsInterchange, *, allow_copy: bool = True) -> DataF
     return from_dataframe(df, allow_copy=allow_copy)
 
 
-def from_repr(tbl: str) -> DataFrame | Series:
+@deprecate_renamed_parameter("tbl", "data", version="0.20.17")
+def from_repr(data: str) -> DataFrame | Series:
     """
     Utility function that reconstructs a DataFrame or Series from the object's repr.
 
     Parameters
     ----------
-    tbl
+    data
         A string containing a polars DataFrame or Series repr; does not need
         to be trimmed of whitespace (or leading prompts) as the repr will be
         found/extracted automatically.
@@ -645,14 +647,14 @@ def from_repr(tbl: str) -> DataFrame | Series:
     [True, False, True]
     """
     # find DataFrame table...
-    m = re.search(r"([┌╭].*?[┘╯])", tbl, re.DOTALL)
+    m = re.search(r"([┌╭].*?[┘╯])", data, re.DOTALL)
     if m is not None:
         return _from_dataframe_repr(m)
 
     # ...or Series in the given string
     m = re.search(
         pattern=r"(?:shape: (\(\d+,\))\n.*?)?Series:\s+([^\n]+)\s+\[([^\n]+)](.*)",
-        string=tbl,
+        string=data,
         flags=re.DOTALL,
     )
     if m is not None:
