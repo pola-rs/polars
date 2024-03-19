@@ -34,7 +34,7 @@ const UNKNOWN_BIT_COUNT: u64 = u64::MAX;
 /// // we can also get the slice:
 /// assert_eq!(bitmap.as_slice(), ([0b00001101u8].as_ref(), 0, 5));
 /// // debug helps :)
-/// assert_eq!(format!("{:?}", bitmap), "[0b___01101]".to_string());
+/// assert_eq!(format!("{:?}", bitmap), "Bitmap { len: 5, offset: 0, bytes: [0b___01101] }".to_string());
 ///
 /// // it supports copy-on-write semantics (to a `MutableBitmap`)
 /// let bitmap: MutableBitmap = bitmap.into_mut().right().unwrap();
