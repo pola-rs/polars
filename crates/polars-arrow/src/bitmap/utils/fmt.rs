@@ -11,7 +11,7 @@ pub fn fmt(
 ) -> std::fmt::Result {
     assert!(offset < 8);
 
-    f.write_char('[')?;
+    write!(f, "Bitmap {{ len: {length}, offset: {offset}, bytes: [")?;
     let mut remaining = length;
     if remaining == 0 {
         f.write_char(']')?;
@@ -68,5 +68,5 @@ pub fn fmt(
             f.write_char('0')?;
         }
     }
-    f.write_char(']')
+    f.write_str("] }")
 }

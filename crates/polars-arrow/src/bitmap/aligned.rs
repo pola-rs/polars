@@ -76,10 +76,10 @@ impl<'a, T: BitChunk> AlignedBitmapSlice<'a, T> {
         bytes = &bytes[start_byte_idx..];
         offset %= 8;
 
-        // Fast-path: don't have enough bits to fill even one chunk.
+        // Fast-path: fits entirely in one chunk.
         let chunk_len = std::mem::size_of::<T>();
         let chunk_len_bits = 8 * chunk_len;
-        if len < chunk_len_bits {
+        if offset + len <= chunk_len_bits {
             let ret = Self {
                 prefix: load_chunk_le::<T>(bytes) >> offset,
                 prefix_len: len as u32,
