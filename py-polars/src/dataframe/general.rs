@@ -3,7 +3,6 @@ use std::num::NonZeroUsize;
 use std::ops::Deref;
 
 use either::Either;
-use polars::frame::row::{rows_to_schema_supertypes, Row};
 #[cfg(feature = "avro")]
 use polars::io::avro::AvroCompression;
 use polars::io::mmap::ReaderBytes;
@@ -15,82 +14,22 @@ use polars_core::utils::arrow::compute::cast::CastOptions;
 #[cfg(feature = "pivot")]
 use polars_lazy::frame::pivot::{pivot, pivot_stable};
 use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyDict, PyList, PyTuple};
+use pyo3::types::{PyBytes, PyList, PyTuple};
 
+use super::*;
 #[cfg(feature = "parquet")]
 use crate::conversion::parse_parquet_compression;
 use crate::conversion::{ObjectValue, Wrap};
-use crate::error::PyPolarsErr;
 use crate::file::{get_either_file, get_file_like, get_mmap_bytes_reader, EitherRustPythonFile};
 use crate::map::dataframe::{
     apply_lambda_unknown, apply_lambda_with_bool_out_type, apply_lambda_with_primitive_out_type,
     apply_lambda_with_string_out_type,
 };
-use crate::prelude::{dicts_to_rows, strings_to_smartstrings};
+use crate::prelude::strings_to_smartstrings;
 use crate::series::{PySeries, ToPySeries, ToSeries};
-use crate::{arrow_interop, py_modules, PyExpr, PyLazyFrame};
-
-#[pyclass]
-#[repr(transparent)]
-#[derive(Clone)]
-pub struct PyDataFrame {
-    pub df: DataFrame,
-}
+use crate::{arrow_interop, PyExpr, PyLazyFrame};
 
 impl PyDataFrame {
-    pub(crate) fn new(df: DataFrame) -> Self {
-        PyDataFrame { df }
-    }
-
-    fn finish_from_rows(
-        rows: Vec<Row>,
-        infer_schema_length: Option<usize>,
-        schema: Option<Schema>,
-        schema_overrides_by_idx: Option<Vec<(usize, DataType)>>,
-    ) -> PyResult<Self> {
-        // Object builder must be registered, this is done on import.
-        let mut final_schema =
-            rows_to_schema_supertypes(&rows, infer_schema_length.map(|n| std::cmp::max(1, n)))
-                .map_err(PyPolarsErr::from)?;
-
-        // Erase scale from inferred decimals.
-        for dtype in final_schema.iter_dtypes_mut() {
-            if let DataType::Decimal(_, _) = dtype {
-                *dtype = DataType::Decimal(None, None)
-            }
-        }
-
-        // Integrate explicit/inferred schema.
-        if let Some(schema) = schema {
-            for (i, (name, dtype)) in schema.into_iter().enumerate() {
-                if let Some((name_, dtype_)) = final_schema.get_at_index_mut(i) {
-                    *name_ = name;
-
-                    // If schema dtype is Unknown, overwrite with inferred datatype.
-                    if !matches!(dtype, DataType::Unknown) {
-                        *dtype_ = dtype;
-                    }
-                } else {
-                    final_schema.with_column(name, dtype);
-                }
-            }
-        }
-
-        // Optional per-field overrides; these supersede default/inferred dtypes.
-        if let Some(overrides) = schema_overrides_by_idx {
-            for (i, dtype) in overrides {
-                if let Some((_, dtype_)) = final_schema.get_at_index_mut(i) {
-                    if !matches!(dtype, DataType::Unknown) {
-                        *dtype_ = dtype;
-                    }
-                }
-            }
-        }
-        let df =
-            DataFrame::from_rows_and_schema(&rows, &final_schema).map_err(PyPolarsErr::from)?;
-        Ok(df.into())
-    }
-
     #[cfg(feature = "ipc_streaming")]
     fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
         // Used in pickle/pickling
@@ -119,12 +58,6 @@ impl PyDataFrame {
             },
             Err(e) => Err(e),
         }
-    }
-}
-
-impl From<DataFrame> for PyDataFrame {
-    fn from(df: DataFrame) -> Self {
-        PyDataFrame { df }
     }
 }
 
@@ -531,90 +464,6 @@ impl PyDataFrame {
     pub fn from_arrow_record_batches(rb: Vec<&PyAny>) -> PyResult<Self> {
         let df = arrow_interop::to_rust::to_rust_df(&rb)?;
         Ok(Self::from(df))
-    }
-
-    // somehow from_rows did not work
-    #[staticmethod]
-    pub fn read_rows(
-        py: Python,
-        rows: Vec<Wrap<Row>>,
-        infer_schema_length: Option<usize>,
-        schema: Option<Wrap<Schema>>,
-    ) -> PyResult<Self> {
-        // SAFETY: Wrap<T> is transparent.
-        let rows = unsafe { std::mem::transmute::<Vec<Wrap<Row>>, Vec<Row>>(rows) };
-        py.allow_threads(move || {
-            Self::finish_from_rows(rows, infer_schema_length, schema.map(|wrap| wrap.0), None)
-        })
-    }
-
-    #[staticmethod]
-    pub fn read_dicts(
-        py: Python,
-        dicts: &PyAny,
-        infer_schema_length: Option<usize>,
-        schema: Option<Wrap<Schema>>,
-        schema_overrides: Option<Wrap<Schema>>,
-    ) -> PyResult<Self> {
-        // If given, read dict fields in schema order.
-        let mut schema_columns = PlIndexSet::new();
-        if let Some(s) = &schema {
-            schema_columns.extend(s.0.iter_names().map(|n| n.to_string()))
-        }
-        let (rows, names) = dicts_to_rows(dicts, infer_schema_length, schema_columns)?;
-        py.allow_threads(move || {
-            let mut schema_overrides_by_idx: Vec<(usize, DataType)> = Vec::new();
-            if let Some(overrides) = schema_overrides {
-                for (idx, name) in names.iter().enumerate() {
-                    if let Some(dtype) = overrides.0.get(name) {
-                        schema_overrides_by_idx.push((idx, dtype.clone()));
-                    }
-                }
-            }
-            let mut pydf = Self::finish_from_rows(
-                rows,
-                infer_schema_length,
-                schema.map(|wrap| wrap.0),
-                Some(schema_overrides_by_idx),
-            )?;
-            unsafe {
-                for (s, name) in pydf.df.get_columns_mut().iter_mut().zip(&names) {
-                    s.rename(name);
-                }
-            }
-            let length = names.len();
-            if names.into_iter().collect::<PlHashSet<_>>().len() != length {
-                let err = PolarsError::Duplicate("duplicate column names found".into());
-                Err(PyPolarsErr::Polars(err))?;
-            }
-
-            Ok(pydf)
-        })
-    }
-
-    #[staticmethod]
-    pub fn read_dict(py: Python, dict: &PyDict) -> PyResult<Self> {
-        let cols = dict
-            .into_iter()
-            .map(|(key, val)| {
-                let name = key.extract::<&str>()?;
-
-                let s = if val.is_instance_of::<PyDict>() {
-                    let df = Self::read_dict(py, val.extract::<&PyDict>()?)?;
-                    df.df.into_struct(name).into_series()
-                } else {
-                    let obj = py_modules::SERIES.call1(py, (name, val))?;
-
-                    let pyseries_obj = obj.getattr(py, "_s")?;
-                    let pyseries = pyseries_obj.extract::<PySeries>(py)?;
-                    pyseries.series
-                };
-                Ok(s)
-            })
-            .collect::<PyResult<Vec<_>>>()?;
-
-        let df = DataFrame::new(cols).map_err(PyPolarsErr::from)?;
-        Ok(df.into())
     }
 
     #[cfg(feature = "csv")]
