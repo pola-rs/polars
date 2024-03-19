@@ -38,3 +38,14 @@ def test_series_mixed_dtypes_object() -> None:
     assert s.dtype == pl.Object
     assert s.to_list() == values
     assert s[1] == b"foo"
+
+
+# https://github.com/pola-rs/polars/issues/15139
+@pytest.mark.parametrize("dtype", [pl.List(pl.Int64), None])
+def test_sequence_of_series_with_dtype(dtype: pl.PolarsDataType | None) -> None:
+    values = [1, 2, 3]
+    int_series = pl.Series(values)
+    list_series = pl.Series([int_series], dtype=dtype)
+
+    assert list_series.to_list() == [values]
+    assert list_series.dtype == pl.List(pl.Int64)

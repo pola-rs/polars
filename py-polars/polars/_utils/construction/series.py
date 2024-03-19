@@ -87,7 +87,7 @@ def sequence_to_pyseries(
         return range_to_series(name, values, dtype=dtype)._s
 
     # empty sequence
-    if not values and dtype is None:
+    if len(values) == 0 and dtype is None:
         # if dtype for empty sequence could be guessed
         # (e.g comparisons between self and other), default to Null
         dtype = Null
