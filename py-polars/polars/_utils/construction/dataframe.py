@@ -1122,7 +1122,7 @@ def numpy_to_pydf(
     strict: bool = True,
     nan_to_null: bool = False,
 ) -> PyDataFrame:
-    """Construct a PyDataFrame from a numpy ndarray (including structured ndarrays)."""
+    """Construct a PyDataFrame from a NumPy ndarray (including structured ndarrays)."""
     shape = data.shape
     two_d = len(shape) == 2
 

@@ -1,14 +1,23 @@
 from __future__ import annotations
 
 import io
+import itertools
 import re
-from itertools import chain, zip_longest
 from typing import TYPE_CHECKING, Any, Iterable, Mapping, Sequence, overload
 
 import polars._reexport as pl
 from polars import functions as F
+from polars._utils.construction.dataframe import (
+    arrow_to_pydf,
+    dict_to_pydf,
+    numpy_to_pydf,
+    pandas_to_pydf,
+    sequence_to_pydf,
+)
+from polars._utils.construction.series import arrow_to_pyseries, pandas_to_pyseries
 from polars._utils.deprecation import deprecate_renamed_parameter
 from polars._utils.various import _cast_repr_strings_with_schema
+from polars._utils.wrap import wrap_df, wrap_s
 from polars.datatypes import N_INFER_DEFAULT, Categorical, List, Object, String, Struct
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
@@ -28,6 +37,7 @@ def from_dict(
     *,
     schema_overrides: SchemaDict | None = None,
     strict: bool = True,
+    nan_to_null: bool = False,
 ) -> DataFrame:
     """
     Construct a DataFrame from a dictionary of sequences.
@@ -57,6 +67,9 @@ def from_dict(
         data type for that column. If set to `False`, values that do not match the data
         type are cast to that data type or, if casting is not possible, set to null
         instead.
+    nan_to_null : bool, default False
+        If the data comes from one or more numpy arrays, can optionally convert input
+        data np.nan values to null instead. This is a no-op for all other input data.
 
     Returns
     -------
@@ -76,8 +89,14 @@ def from_dict(
     │ 2   ┆ 4   │
     └─────┴─────┘
     """
-    return pl.DataFrame._from_dict(
-        data, schema=schema, schema_overrides=schema_overrides, strict=strict
+    return wrap_df(
+        dict_to_pydf(
+            data,
+            schema=schema,
+            schema_overrides=schema_overrides,
+            strict=strict,
+            nan_to_null=nan_to_null,
+        )
     )
 
 
@@ -254,13 +273,15 @@ def from_records(
     │ 3   ┆ 6   │
     └─────┴─────┘
     """
-    return pl.DataFrame._from_records(
-        data,
-        schema=schema,
-        schema_overrides=schema_overrides,
-        strict=strict,
-        orient=orient,
-        infer_schema_length=infer_schema_length,
+    return wrap_df(
+        sequence_to_pydf(
+            data,
+            schema=schema,
+            schema_overrides=schema_overrides,
+            strict=strict,
+            orient=orient,
+            infer_schema_length=infer_schema_length,
+        )
     )
 
 
@@ -272,14 +293,14 @@ def from_numpy(
     orient: Orientation | None = None,
 ) -> DataFrame:
     """
-    Construct a DataFrame from a numpy ndarray. This operation clones data.
+    Construct a DataFrame from a NumPy ndarray. This operation clones data.
 
     Note that this is slower than creating from columnar memory.
 
     Parameters
     ----------
     data : :class:`numpy.ndarray`
-        Two-dimensional data represented as a numpy ndarray.
+        Two-dimensional data represented as a NumPy ndarray.
     schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
         The DataFrame schema may be declared in several ways:
 
@@ -319,8 +340,10 @@ def from_numpy(
     │ 3   ┆ 6   │
     └─────┴─────┘
     """
-    return pl.DataFrame._from_numpy(
-        data, schema=schema, orient=orient, schema_overrides=schema_overrides
+    return wrap_df(
+        numpy_to_pydf(
+            data, schema=schema, orient=orient, schema_overrides=schema_overrides
+        )
     )
 
 
@@ -378,8 +401,7 @@ def from_arrow(
 
     >>> import pyarrow as pa
     >>> data = pa.table({"a": [1, 2, 3], "b": [4, 5, 6]})
-    >>> df = pl.from_arrow(data)
-    >>> df
+    >>> pl.from_arrow(data)
     shape: (3, 2)
     ┌─────┬─────┐
     │ a   ┆ b   │
@@ -395,8 +417,7 @@ def from_arrow(
 
     >>> import pyarrow as pa
     >>> data = pa.array([1, 2, 3])
-    >>> series = pl.from_arrow(data, schema={"s": pl.Int32})
-    >>> series
+    >>> pl.from_arrow(data, schema={"s": pl.Int32})
     shape: (3,)
     Series: 's' [i32]
     [
@@ -406,16 +427,19 @@ def from_arrow(
     ]
     """  # noqa: W505
     if isinstance(data, (pa.Table, pa.RecordBatch)):
-        return pl.DataFrame._from_arrow(
-            data=data,
-            rechunk=rechunk,
-            schema=schema,
-            schema_overrides=schema_overrides,
+        return wrap_df(
+            arrow_to_pydf(
+                data=data,
+                rechunk=rechunk,
+                schema=schema,
+                schema_overrides=schema_overrides,
+            )
         )
     elif isinstance(data, (pa.Array, pa.ChunkedArray)):
         name = getattr(data, "_name", "") or ""
+        s = wrap_s(arrow_to_pyseries(name, data, rechunk=rechunk))
         s = pl.DataFrame(
-            data=pl.Series._from_arrow(name, data, rechunk=rechunk),
+            data=s,
             schema=schema,
             schema_overrides=schema_overrides,
         ).to_series()
@@ -427,15 +451,18 @@ def from_arrow(
         )
 
     if isinstance(data, Iterable):
-        return pl.DataFrame._from_arrow(
-            data=pa.Table.from_batches(
-                chain.from_iterable(
-                    (b.to_batches() if isinstance(b, pa.Table) else [b]) for b in data
-                )
-            ),
-            rechunk=rechunk,
-            schema=schema,
-            schema_overrides=schema_overrides,
+        pa_table = pa.Table.from_batches(
+            itertools.chain.from_iterable(
+                (b.to_batches() if isinstance(b, pa.Table) else [b]) for b in data
+            )
+        )
+        return wrap_df(
+            arrow_to_pydf(
+                data=pa_table,
+                rechunk=rechunk,
+                schema=schema,
+                schema_overrides=schema_overrides,
+            )
         )
 
     msg = f"expected PyArrow Table, Array, or one or more RecordBatches; got {type(data).__name__!r}"
@@ -535,14 +562,16 @@ def from_pandas(
     ]
     """
     if isinstance(data, (pd.Series, pd.Index, pd.DatetimeIndex)):
-        return pl.Series._from_pandas("", data, nan_to_null=nan_to_null)
+        return wrap_s(pandas_to_pyseries("", data, nan_to_null=nan_to_null))
     elif isinstance(data, pd.DataFrame):
-        return pl.DataFrame._from_pandas(
-            data,
-            rechunk=rechunk,
-            nan_to_null=nan_to_null,
-            schema_overrides=schema_overrides,
-            include_index=include_index,
+        return wrap_df(
+            pandas_to_pydf(
+                data,
+                schema_overrides=schema_overrides,
+                rechunk=rechunk,
+                nan_to_null=nan_to_null,
+                include_index=include_index,
+            )
         )
     else:
         msg = f"expected pandas DataFrame or Series, got {type(data).__name__!r}"
@@ -666,7 +695,7 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
         headers = [h[0] for h in header_block]
         dtypes = [None] * len(headers)
     else:
-        headers, dtypes = (list(h) for h in zip_longest(*header_block))
+        headers, dtypes = (list(h) for h in itertools.zip_longest(*header_block))
 
     body = rows[table_body_start + 1 :]
     no_dtypes = all(d is None for d in dtypes)
