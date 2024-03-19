@@ -107,18 +107,18 @@ impl PySeries {
             if value.is_none() {
                 builder.append_null()
             } else {
-                let v = item.extract::<bool>()?;
+                let v = value.extract::<bool>()?;
                 builder.append_value(v)
             }
         }
-        let ca = builder.finish();
 
+        let ca = builder.finish();
         let s = ca.into_series();
         Ok(s.into())
     }
 }
 
-fn new_primitive<'a, T>(name: &str, values: &'a Bound<PyAny>, strict: bool) -> PyResult<PySeries>
+fn new_primitive<'a, T>(name: &str, values: &'a Bound<PyAny>, _strict: bool) -> PyResult<PySeries>
 where
     T: PolarsNumericType,
     ChunkedArray<T>: IntoSeries,
@@ -132,19 +132,12 @@ where
         if value.is_none() {
             builder.append_null()
         } else {
-            match value.extract::<T::Native>() {
-                Ok(v) => builder.append_value(v),
-                Err(e) => {
-                    if strict {
-                        return Err(e);
-                    }
-                    builder.append_null()
-                },
-            }
+            let v = value.extract::<T::Native>()?;
+            builder.append_value(v)
         }
     }
-    let ca = builder.finish();
 
+    let ca = builder.finish();
     let s = ca.into_series();
     Ok(s.into())
 }
