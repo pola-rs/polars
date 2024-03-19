@@ -97,3 +97,66 @@ fn test_udfs() -> PolarsResult<()> {
 
     Ok(())
 }
+
+// test allow schema validation when input fields does not match with custom function args
+#[test]
+fn test_udf_allow_schema_validation() {
+    let my_custom_sum = UserDefinedFunction::new(
+        "my_custom_sum",
+        vec![],
+        GetOutput::same_type(),
+        move |s: &mut [Series]| {
+            let first = s[0].clone();
+            let second = s[1].clone();
+            Ok(Some(first + second))
+        },
+    );
+
+    let mut ctx = SQLContext::new()
+        .with_function_registry(Arc::new(MyFunctionRegistry::new(vec![my_custom_sum])));
+
+    let df = df! {
+        "a" => &[1, 2, 3],
+        "b" => &[1, 2, 3],
+        "c" => &["a", "b", "c"]
+    }
+    .unwrap()
+    .lazy();
+
+    ctx.register("foo", df);
+    let res = ctx.execute("SELECT a, b, my_custom_sum(a, b) FROM foo");
+    assert!(res.is_err());
+}
+
+
+// test forbid schema validation when input fields does not match with custom function args 
+#[test]
+fn test_udf_forbid_schema_validation() { 
+    let mut my_custom_sum = UserDefinedFunction::new(
+        "my_custom_sum",
+        vec![],
+        GetOutput::same_type(),
+        move |s: &mut [Series]| {
+            let first = s[0].clone();
+            let second = s[1].clone();
+            Ok(Some(first + second))
+        },
+    );
+    my_custom_sum.options.allow_schema_validation = false;
+
+    let mut ctx = SQLContext::new()
+        .with_function_registry(Arc::new(MyFunctionRegistry::new(vec![my_custom_sum])));
+
+    let df = df! {
+        "a" => &[1, 2, 3],
+        "b" => &[1, 2, 3],
+        "c" => &["a", "b", "c"]
+    }
+    .unwrap()
+    .lazy();
+
+    ctx.register("foo", df);
+    let res = ctx.execute("SELECT a, b, my_custom_sum(a, b) FROM foo");
+    assert!(res.is_ok());
+}
+
