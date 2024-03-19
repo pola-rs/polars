@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::RwLock;
 
-use polars_core::config::env_force_async;
+use polars_core::config;
 use polars_core::utils::accumulate_dataframes_vertical;
 #[cfg(feature = "cloud")]
 use polars_io::cloud::CloudOptions;
@@ -40,9 +40,7 @@ fn prefix_sum_in_place<'a, I: IntoIterator<Item = &'a mut IdxSize>>(values: I) {
 impl IpcExec {
     fn read(&mut self, verbose: bool) -> PolarsResult<DataFrame> {
         let is_cloud = self.paths.iter().any(is_cloud_url);
-        let force_async = env_force_async();
-
-        let mut out = if is_cloud || force_async {
+        let mut out = if is_cloud || config::force_async() {
             #[cfg(not(feature = "cloud"))]
             {
                 panic!("activate cloud feature")

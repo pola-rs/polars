@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import ceil
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -21,6 +21,18 @@ class _RowIndex:
     offset: int = 0
 
 
+def _enable_force_async(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Modifies the provided monkeypatch context."""
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    monkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+
+
+def _assert_force_async(capfd: Any) -> None:
+    """Calls `capfd.readouterr`, consuming the captured output so far."""
+    captured = capfd.readouterr().err
+    assert "ASYNC READING FORCED" in captured
+
+
 def _scan(
     file_path: Path,
     schema: SchemaDict | None = None,
@@ -29,27 +41,31 @@ def _scan(
     suffix = file_path.suffix
     row_index_name = None if row_index is None else row_index.name
     row_index_offset = 0 if row_index is None else row_index.offset
+
     if suffix == ".ipc":
-        return pl.scan_ipc(
+        result = pl.scan_ipc(
             file_path,
             row_index_name=row_index_name,
             row_index_offset=row_index_offset,
         )
-    if suffix == ".parquet":
-        return pl.scan_parquet(
+    elif suffix == ".parquet":
+        result = pl.scan_parquet(
             file_path,
             row_index_name=row_index_name,
             row_index_offset=row_index_offset,
         )
-    if suffix == ".csv":
-        return pl.scan_csv(
+    elif suffix == ".csv":
+        result = pl.scan_csv(
             file_path,
             schema=schema,
             row_index_name=row_index_name,
             row_index_offset=row_index_offset,
         )
-    msg = f"Unknown suffix {suffix}"
-    raise NotImplementedError(msg)
+    else:
+        msg = f"Unknown suffix {suffix}"
+        raise NotImplementedError(msg)
+
+    return result
 
 
 def _write(df: pl.DataFrame, file_path: Path) -> None:
@@ -75,6 +91,17 @@ def data_file_extension(request: pytest.FixtureRequest) -> str:
 @pytest.fixture(scope="session")
 def session_tmp_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
     return tmp_path_factory.mktemp("polars-test")
+
+
+@pytest.fixture(
+    params=[False, True],
+    ids=["sync", "async"],
+)
+def force_async(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> bool:
+    value: bool = request.param
+    return value
 
 
 @dataclass
@@ -161,14 +188,38 @@ def data_file(
 
 
 @pytest.mark.write_disk()
-def test_scan(data_file: _DataFile) -> None:
+def test_scan(
+    capfd: Any, monkeypatch: pytest.MonkeyPatch, data_file: _DataFile, force_async: bool
+) -> None:
+    if data_file.path.suffix == ".csv" and force_async:
+        pytest.skip(reason="async reading of .csv not yet implemented")
+
+    if force_async:
+        _enable_force_async(monkeypatch)
+
     df = _scan(data_file.path, data_file.df.schema).collect()
+
+    if force_async:
+        _assert_force_async(capfd)
+
     assert_frame_equal(df, data_file.df)
 
 
 @pytest.mark.write_disk()
-def test_scan_with_limit(data_file: _DataFile) -> None:
+def test_scan_with_limit(
+    capfd: Any, monkeypatch: pytest.MonkeyPatch, data_file: _DataFile, force_async: bool
+) -> None:
+    if data_file.path.suffix == ".csv" and force_async:
+        pytest.skip(reason="async reading of .csv not yet implemented")
+
+    if force_async:
+        _enable_force_async(monkeypatch)
+
     df = _scan(data_file.path, data_file.df.schema).limit(4483).collect()
+
+    if force_async:
+        _assert_force_async(capfd)
+
     assert_frame_equal(
         df,
         pl.DataFrame(
@@ -180,12 +231,24 @@ def test_scan_with_limit(data_file: _DataFile) -> None:
 
 
 @pytest.mark.write_disk()
-def test_scan_with_filter(data_file: _DataFile) -> None:
+def test_scan_with_filter(
+    capfd: Any, monkeypatch: pytest.MonkeyPatch, data_file: _DataFile, force_async: bool
+) -> None:
+    if data_file.path.suffix == ".csv" and force_async:
+        pytest.skip(reason="async reading of .csv not yet implemented")
+
+    if force_async:
+        _enable_force_async(monkeypatch)
+
     df = (
         _scan(data_file.path, data_file.df.schema)
         .filter(pl.col("sequence") % 2 == 0)
         .collect()
     )
+
+    if force_async:
+        _assert_force_async(capfd)
+
     assert_frame_equal(
         df,
         pl.DataFrame(
@@ -197,13 +260,25 @@ def test_scan_with_filter(data_file: _DataFile) -> None:
 
 
 @pytest.mark.write_disk()
-def test_scan_with_filter_and_limit(data_file: _DataFile) -> None:
+def test_scan_with_filter_and_limit(
+    capfd: Any, monkeypatch: pytest.MonkeyPatch, data_file: _DataFile, force_async: bool
+) -> None:
+    if data_file.path.suffix == ".csv" and force_async:
+        pytest.skip(reason="async reading of .csv not yet implemented")
+
+    if force_async:
+        _enable_force_async(monkeypatch)
+
     df = (
         _scan(data_file.path, data_file.df.schema)
         .filter(pl.col("sequence") % 2 == 0)
         .limit(4483)
         .collect()
     )
+
+    if force_async:
+        _assert_force_async(capfd)
+
     assert_frame_equal(
         df,
         pl.DataFrame(
@@ -215,13 +290,25 @@ def test_scan_with_filter_and_limit(data_file: _DataFile) -> None:
 
 
 @pytest.mark.write_disk()
-def test_scan_with_limit_and_filter(data_file: _DataFile) -> None:
+def test_scan_with_limit_and_filter(
+    capfd: Any, monkeypatch: pytest.MonkeyPatch, data_file: _DataFile, force_async: bool
+) -> None:
+    if data_file.path.suffix == ".csv" and force_async:
+        pytest.skip(reason="async reading of .csv not yet implemented")
+
+    if force_async:
+        _enable_force_async(monkeypatch)
+
     df = (
         _scan(data_file.path, data_file.df.schema)
         .limit(4483)
         .filter(pl.col("sequence") % 2 == 0)
         .collect()
     )
+
+    if force_async:
+        _assert_force_async(capfd)
+
     assert_frame_equal(
         df,
         pl.DataFrame(
@@ -233,12 +320,24 @@ def test_scan_with_limit_and_filter(data_file: _DataFile) -> None:
 
 
 @pytest.mark.write_disk()
-def test_scan_with_row_index_and_limit(data_file: _DataFile) -> None:
+def test_scan_with_row_index_and_limit(
+    capfd: Any, monkeypatch: pytest.MonkeyPatch, data_file: _DataFile, force_async: bool
+) -> None:
+    if data_file.path.suffix == ".csv" and force_async:
+        pytest.skip(reason="async reading of .csv not yet implemented")
+
+    if force_async:
+        _enable_force_async(monkeypatch)
+
     df = (
         _scan(data_file.path, data_file.df.schema, row_index=_RowIndex())
         .limit(4483)
         .collect()
     )
+
+    if force_async:
+        _assert_force_async(capfd)
+
     assert_frame_equal(
         df,
         pl.DataFrame(
@@ -252,12 +351,24 @@ def test_scan_with_row_index_and_limit(data_file: _DataFile) -> None:
 
 
 @pytest.mark.write_disk()
-def test_scan_with_row_index_and_filter(data_file: _DataFile) -> None:
+def test_scan_with_row_index_and_filter(
+    capfd: Any, monkeypatch: pytest.MonkeyPatch, data_file: _DataFile, force_async: bool
+) -> None:
+    if data_file.path.suffix == ".csv" and force_async:
+        pytest.skip(reason="async reading of .csv not yet implemented")
+
+    if force_async:
+        _enable_force_async(monkeypatch)
+
     df = (
         _scan(data_file.path, data_file.df.schema, row_index=_RowIndex())
         .filter(pl.col("sequence") % 2 == 0)
         .collect()
     )
+
+    if force_async:
+        _assert_force_async(capfd)
+
     assert_frame_equal(
         df,
         pl.DataFrame(
@@ -271,13 +382,25 @@ def test_scan_with_row_index_and_filter(data_file: _DataFile) -> None:
 
 
 @pytest.mark.write_disk()
-def test_scan_with_row_index_limit_and_filter(data_file: _DataFile) -> None:
+def test_scan_with_row_index_limit_and_filter(
+    capfd: Any, monkeypatch: pytest.MonkeyPatch, data_file: _DataFile, force_async: bool
+) -> None:
+    if data_file.path.suffix == ".csv" and force_async:
+        pytest.skip(reason="async reading of .csv not yet implemented")
+
+    if force_async:
+        _enable_force_async(monkeypatch)
+
     df = (
         _scan(data_file.path, data_file.df.schema, row_index=_RowIndex())
         .limit(4483)
         .filter(pl.col("sequence") % 2 == 0)
         .collect()
     )
+
+    if force_async:
+        _assert_force_async(capfd)
+
     assert_frame_equal(
         df,
         pl.DataFrame(
@@ -291,13 +414,25 @@ def test_scan_with_row_index_limit_and_filter(data_file: _DataFile) -> None:
 
 
 @pytest.mark.write_disk()
-def test_scan_with_row_index_filter_and_limit(data_file: _DataFile) -> None:
+def test_scan_with_row_index_filter_and_limit(
+    capfd: Any, monkeypatch: pytest.MonkeyPatch, data_file: _DataFile, force_async: bool
+) -> None:
+    if data_file.path.suffix == ".csv" and force_async:
+        pytest.skip(reason="async reading of .csv not yet implemented")
+
+    if force_async:
+        _enable_force_async(monkeypatch)
+
     df = (
         _scan(data_file.path, data_file.df.schema, row_index=_RowIndex())
         .filter(pl.col("sequence") % 2 == 0)
         .limit(4483)
         .collect()
     )
+
+    if force_async:
+        _assert_force_async(capfd)
+
     assert_frame_equal(
         df,
         pl.DataFrame(

@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use arrow::datatypes::ArrowSchemaRef;
-use polars_core::config::{env_force_async, get_file_prefetch_size};
+use polars_core::config::{self, get_file_prefetch_size};
 use polars_core::error::*;
 use polars_core::prelude::Series;
 use polars_core::POOL;
@@ -204,7 +204,7 @@ impl ParquetSource {
         if verbose {
             eprintln!("POLARS PREFETCH_SIZE: {}", prefetch_size)
         }
-        let run_async = paths.first().map(is_cloud_url).unwrap_or(false) || env_force_async();
+        let run_async = paths.first().map(is_cloud_url).unwrap_or(false) || config::force_async();
 
         let mut source = ParquetSource {
             batched_readers: VecDeque::new(),

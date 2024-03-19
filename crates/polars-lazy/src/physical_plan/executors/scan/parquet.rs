@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use polars_core::config::env_force_async;
+use polars_core::config;
 #[cfg(feature = "cloud")]
 use polars_core::config::{get_file_prefetch_size, verbose};
 use polars_core::utils::accumulate_dataframes_vertical;
@@ -346,12 +346,16 @@ impl ParquetExec {
                 ));
             },
         };
-        let force_async = env_force_async();
+        let force_async = config::force_async();
 
         let out = if is_cloud || force_async {
             #[cfg(not(feature = "cloud"))]
             {
                 panic!("activate cloud feature")
+            }
+
+            if !is_cloud && config::verbose() {
+                eprintln!("ASYNC READING FORCED");
             }
 
             #[cfg(feature = "cloud")]
