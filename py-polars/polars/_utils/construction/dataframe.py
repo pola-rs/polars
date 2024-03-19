@@ -123,7 +123,11 @@ def dict_to_pydf(
     if not data and schema_overrides:
         data_series = [
             pl.Series(
-                name, [], dtype=schema_overrides.get(name), nan_to_null=nan_to_null
+                name,
+                [],
+                dtype=schema_overrides.get(name),
+                strict=strict,
+                nan_to_null=nan_to_null,
             )._s
             for name in column_names
         ]
@@ -555,7 +559,10 @@ def _sequence_of_sequence_to_pydf(
         )
         data_series: list[PySeries] = [
             pl.Series(
-                column_names[i], element, schema_overrides.get(column_names[i])
+                column_names[i],
+                element,
+                dtype=schema_overrides.get(column_names[i]),
+                strict=strict,
             )._s
             for i, element in enumerate(data)
         ]
@@ -667,13 +674,20 @@ def _sequence_of_elements_to_pydf(
     data: Sequence[Any],
     schema: SchemaDefinition | None,
     schema_overrides: SchemaDict | None,
+    *,
+    strict: bool,
     **kwargs: Any,
 ) -> PyDataFrame:
     column_names, schema_overrides = _unpack_schema(
         schema, schema_overrides=schema_overrides, n_expected=1
     )
     data_series: list[PySeries] = [
-        pl.Series(column_names[0], data, schema_overrides.get(column_names[0]))._s
+        pl.Series(
+            column_names[0],
+            data,
+            schema_overrides.get(column_names[0]),
+            strict=strict,
+        )._s
     ]
     data_series = _handle_columns_arg(data_series, columns=column_names)
     return PyDataFrame(data_series)

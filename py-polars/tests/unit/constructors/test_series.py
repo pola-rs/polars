@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
 import polars as pl
@@ -49,3 +51,22 @@ def test_sequence_of_series_with_dtype(dtype: pl.PolarsDataType | None) -> None:
 
     assert list_series.to_list() == [values]
     assert list_series.dtype == pl.List(pl.Int64)
+
+
+@pytest.mark.parametrize(
+    ("values", "dtype", "expected_dtype"),
+    [
+        ([1, 1.0, 1], None, pl.Float64),
+        ([1, 1, "1.0"], None, pl.String),
+        ([1, 1.0, "1.0"], None, pl.String),
+        ([True, 1], None, pl.Int64),
+        ([True, 1.0], None, pl.Float64),
+        ([True, 1], pl.Boolean, pl.Boolean),
+        ([True, 1.0], pl.Boolean, pl.Boolean),
+        ([False, "1.0"], None, pl.String),
+    ],
+)
+def test_upcast_primitive_and_strings(
+    values: list[Any], dtype: pl.PolarsDataType, expected_dtype: pl.PolarsDataType
+) -> None:
+    assert pl.Series(values, dtype=dtype).dtype == expected_dtype

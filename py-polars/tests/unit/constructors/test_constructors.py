@@ -1121,19 +1121,9 @@ def test_from_dicts_list_struct_without_inner_dtype_5611() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_upcast_primitive_and_strings() -> None:
-    assert pl.Series([1, 1.0, 1]).dtype == pl.Float64
-    assert pl.Series([1, 1, "1.0"]).dtype == pl.String
-    assert pl.Series([1, 1.0, "1.0"]).dtype == pl.String
-    assert pl.Series([True, 1]).dtype == pl.Int64
-    assert pl.Series([True, 1.0]).dtype == pl.Float64
-    assert pl.Series([True, 1], dtype=pl.Boolean).dtype == pl.Boolean
-    assert pl.Series([False, 1.0], dtype=pl.Boolean).dtype == pl.Boolean
-    assert pl.Series([False, "1.0"]).dtype == pl.String
-    assert pl.from_dict({"a": [1, 2.1, 3], "b": [4, 5, 6.4]}).dtypes == [
-        pl.Float64,
-        pl.Float64,
-    ]
+def test_from_dict_upcast_primitive() -> None:
+    df = pl.from_dict({"a": [1, 2.1, 3], "b": [4, 5, 6.4]})
+    assert df.dtypes == [pl.Float64, pl.Float64]
 
 
 def test_u64_lit_5031() -> None:
