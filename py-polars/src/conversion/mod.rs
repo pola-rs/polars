@@ -565,50 +565,6 @@ impl<'a, T: NativeType + FromPyObject<'a>> FromPyObject<'a> for Wrap<Vec<T>> {
     }
 }
 
-pub(crate) fn dicts_to_rows(
-    records: &PyAny,
-    infer_schema_len: Option<usize>,
-    schema_columns: PlIndexSet<String>,
-) -> PyResult<(Vec<Row>, Vec<String>)> {
-    let infer_schema_len = infer_schema_len.map(|n| std::cmp::max(1, n));
-    let len = records.len()?;
-
-    let key_names = {
-        if !schema_columns.is_empty() {
-            schema_columns
-        } else {
-            let mut inferred_keys = PlIndexSet::new();
-            for d in records.iter()?.take(infer_schema_len.unwrap_or(usize::MAX)) {
-                let d = d?;
-                let d = d.downcast::<PyDict>()?;
-                let keys = d.keys();
-                for name in keys {
-                    let name = name.extract::<String>()?;
-                    inferred_keys.insert(name);
-                }
-            }
-            inferred_keys
-        }
-    };
-    let mut rows = Vec::with_capacity(len);
-
-    for d in records.iter()? {
-        let d = d?;
-        let d = d.downcast::<PyDict>()?;
-
-        let mut row = Vec::with_capacity(key_names.len());
-        for k in key_names.iter() {
-            let val = match d.get_item(k)? {
-                None => AnyValue::Null,
-                Some(val) => val.extract::<Wrap<AnyValue>>()?.0,
-            };
-            row.push(val)
-        }
-        rows.push(Row(row))
-    }
-    Ok((rows, key_names.into_iter().collect()))
-}
-
 #[cfg(feature = "asof_join")]
 impl FromPyObject<'_> for Wrap<AsofStrategy> {
     fn extract(ob: &PyAny) -> PyResult<Self> {
