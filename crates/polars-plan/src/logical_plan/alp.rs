@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::path::PathBuf;
+use smartstring::alias::String as SmartString;
 
 use polars_core::prelude::*;
 use polars_utils::idx_vec::UnitVec;
@@ -14,7 +15,7 @@ pub enum ALogicalPlan {
     #[cfg(feature = "python")]
     PythonScan {
         options: PythonOptions,
-        predicate: Option<Node>,
+        predicate: Option<ExprIR>,
     },
     Slice {
         input: Node,
@@ -23,12 +24,12 @@ pub enum ALogicalPlan {
     },
     Selection {
         input: Node,
-        predicate: Node,
+        predicate: ExprIR,
     },
     Scan {
         paths: Arc<[PathBuf]>,
         file_info: FileInfo,
-        predicate: Option<Node>,
+        predicate: Option<ExprIR>,
         /// schema of the projected file
         output_schema: Option<SchemaRef>,
         scan_type: FileScan,
@@ -41,7 +42,12 @@ pub enum ALogicalPlan {
         // schema of the projected file
         output_schema: Option<SchemaRef>,
         projection: Option<Arc<Vec<String>>>,
-        selection: Option<Node>,
+        selection: Option<ExprIR>,
+    },
+    // Only selects columns
+    SimpleProjection {
+        input: Node,
+        columns: SchemaRef,
     },
     Projection {
         input: Node,
@@ -51,7 +57,7 @@ pub enum ALogicalPlan {
     },
     Sort {
         input: Node,
-        by_column: Vec<Node>,
+        by_column: Vec<ExprIR>,
         args: SortArguments,
     },
     Cache {
@@ -61,8 +67,8 @@ pub enum ALogicalPlan {
     },
     Aggregate {
         input: Node,
-        keys: Vec<Node>,
-        aggs: Vec<Node>,
+        keys: Vec<ExprIR>,
+        aggs: Vec<ExprIR>,
         schema: SchemaRef,
         apply: Option<Arc<dyn DataFrameUdf>>,
         maintain_order: bool,
@@ -72,8 +78,8 @@ pub enum ALogicalPlan {
         input_left: Node,
         input_right: Node,
         schema: SchemaRef,
-        left_on: Vec<Node>,
-        right_on: Vec<Node>,
+        left_on: Vec<ExprIR>,
+        right_on: Vec<ExprIR>,
         options: Arc<JoinOptions>,
     },
     HStack {
@@ -108,16 +114,12 @@ pub enum ALogicalPlan {
         input: Node,
         payload: SinkType,
     },
+    Invalid
 }
 
 impl Default for ALogicalPlan {
     fn default() -> Self {
-        // the lp is should not be valid. By choosing a max value we'll likely panic indicating
-        // a programming error early.
-        ALogicalPlan::Selection {
-            input: Node(usize::MAX),
-            predicate: Node(usize::MAX),
-        }
+        ALogicalPlan::Invalid
     }
 }
 
@@ -210,7 +212,7 @@ impl ALogicalPlan {
     /// Takes the expressions of an LP node and the inputs of that node and reconstruct
     pub fn with_exprs_and_input(
         &self,
-        mut exprs: Vec<Node>,
+        mut exprs: Vec<ExprIR>,
         mut inputs: Vec<Node>,
     ) -> ALogicalPlan {
         use ALogicalPlan::*;
@@ -360,7 +362,7 @@ impl ALogicalPlan {
     }
 
     /// Copy the exprs in this LP node to an existing container.
-    pub fn copy_exprs(&self, container: &mut Vec<Node>) {
+    pub fn copy_exprs(&self, container: &mut Vec<ExprIR>) {
         use ALogicalPlan::*;
         match self {
             Slice { .. } | Cache { .. } | Distinct { .. } | Union { .. } | MapFunction { .. } => {},
@@ -368,13 +370,13 @@ impl ALogicalPlan {
             Selection { predicate, .. } => container.push(*predicate),
             Projection { expr, .. } => container.extend_from_slice(expr),
             Aggregate { keys, aggs, .. } => {
-                let iter = keys.iter().copied().chain(aggs.iter().copied());
+                let iter = keys.iter().cloned().chain(aggs.iter().cloned());
                 container.extend(iter)
             },
             Join {
                 left_on, right_on, ..
             } => {
-                let iter = left_on.iter().copied().chain(right_on.iter().copied());
+                let iter = left_on.iter().cloned().chain(right_on.iter().cloned());
                 container.extend(iter)
             },
             HStack { exprs, .. } => container.extend_from_slice(exprs),
@@ -396,7 +398,7 @@ impl ALogicalPlan {
     }
 
     /// Get expressions in this node.
-    pub fn get_exprs(&self) -> Vec<Node> {
+    pub fn get_exprs(&self) -> Vec<ExprIR> {
         let mut exprs = Vec::new();
         self.copy_exprs(&mut exprs);
         exprs

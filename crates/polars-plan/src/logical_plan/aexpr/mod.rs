@@ -11,7 +11,7 @@ use strum_macros::IntoStaticStr;
 #[cfg(feature = "cse")]
 use crate::logical_plan::visitor::AexprNode;
 use crate::logical_plan::Context;
-use crate::prelude::consts::LEN;
+use crate::constants::LEN;
 use crate::prelude::*;
 
 #[derive(Clone, Debug, IntoStaticStr)]

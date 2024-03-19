@@ -14,8 +14,8 @@ fn get_upper_projections(
     match parent {
         Projection { expr, .. } => {
             let mut out = Vec::with_capacity(expr.len());
-            for node in expr {
-                out.extend(aexpr_to_leaf_names_iter(*node, expr_arena));
+            for e in expr {
+                out.extend(aexpr_to_leaf_names_iter(e.node(), expr_arena));
             }
             Some(out)
         },
@@ -157,13 +157,14 @@ pub(super) fn set_cache_states(
                             .flat_map(|name| {
                                 columns
                                     .get(name.as_str())
-                                    .map(|name| expr_arena.add(AExpr::Column(name.clone())))
+                                    .map(|name| name.as_ref())
                             })
                             .collect();
 
                         let new_child = lp_arena.add(child_lp);
+
                         let lp = ALogicalPlanBuilder::new(new_child, expr_arena, lp_arena)
-                            .project(projection.clone(), Default::default())
+                            .project_simple(&projection).unwrap()
                             .build();
 
                         let lp = pd.optimize(lp, lp_arena, expr_arena).unwrap();

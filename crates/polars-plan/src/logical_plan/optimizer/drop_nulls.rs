@@ -21,7 +21,7 @@ impl OptimizationRule for ReplaceDropNulls {
                 // We want to make sure we find this pattern
                 // A != null AND B != null AND C != null .. etc.
                 // the outer expression always is a binary and operation and the inner
-                let iter = (&*expr_arena).iter(*predicate);
+                let iter = (&*expr_arena).iter(predicate.node());
                 let is_binary_and = |e: &AExpr| {
                     matches!(
                         e,

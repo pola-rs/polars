@@ -34,6 +34,8 @@ mod pyarrow;
 mod schema;
 pub(crate) mod tree_format;
 pub mod visitor;
+pub mod expr_ir;
+pub(crate) use expr_ir::*;
 
 pub use aexpr::*;
 pub use alp::*;

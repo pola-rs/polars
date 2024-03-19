@@ -5,7 +5,7 @@ use polars_core::prelude::*;
 use polars_utils::idx_vec::UnitVec;
 use smartstring::alias::String as SmartString;
 
-use crate::prelude::consts::{LEN, LITERAL_NAME};
+use crate::constants::{LEN, LITERAL_NAME};
 use crate::prelude::*;
 
 /// Utility to write comma delimited strings
@@ -370,6 +370,14 @@ pub(crate) fn check_input_node(
 ) -> bool {
     aexpr_to_leaf_names_iter(node, expr_arena)
         .all(|name| input_schema.index_of(name.as_ref()).is_some())
+}
+
+pub(crate) fn expr_irs_to_schema(
+    expr: &[ExprIR],
+) -> Schema {
+    expr.iter()
+        .map(|expr| expr.to_field())
+        .collect()
 }
 
 pub(crate) fn aexprs_to_schema(
