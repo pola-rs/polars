@@ -813,7 +813,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @overload
     def serialize(self, file: IOBase | str | Path) -> None: ...
 
-    def serialize(self, file: IOBase | str | Path | None = None) -> str | None:
+    def serialize(
+        self, file: IOBase | str | Path | None = None, *, as_dict: bool = False
+    ) -> str | None:
         """
         Serialize the logical plan of this LazyFrame to a file or string in JSON format.
 
@@ -822,6 +824,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         file
             File path to which the result should be written. If set to `None`
             (default), the output is returned as a string instead.
+        as_dict
+            If set and file is None, will return a dict instead of json string
 
         See Also
         --------
@@ -861,6 +865,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             if to_string_io:
                 file.write(json_str)  # type: ignore[union-attr]
             else:
+                if as_dict:
+                    return F.select(F.lit(json_str).str.json_decode()).item()
                 return json_str
         else:
             self._ldf.serialize(file)
