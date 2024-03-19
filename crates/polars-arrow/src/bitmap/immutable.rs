@@ -7,6 +7,7 @@ use polars_error::{polars_bail, PolarsResult};
 
 use super::utils::{count_zeros, fmt, get_bit, get_bit_unchecked, BitChunk, BitChunks, BitmapIter};
 use super::{chunk_iter_to_vec, IntoIter, MutableBitmap};
+use crate::bitmap::aligned::AlignedBitmapSlice;
 use crate::bitmap::iterator::{
     FastU32BitmapIter, FastU56BitmapIter, FastU64BitmapIter, TrueIdxIter,
 };
@@ -165,6 +166,11 @@ impl Bitmap {
     /// Returns an iterator that only iterates over the set bits.
     pub fn true_idx_iter(&self) -> TrueIdxIter<'_> {
         TrueIdxIter::new(self.len(), Some(self))
+    }
+    
+    /// Returns the bits of this [`Bitmap`] as a [`AlignedBitmapSlice`].
+    pub fn aligned<T: BitChunk>(&self) -> AlignedBitmapSlice<'_, T> {
+        AlignedBitmapSlice::new(&self.bytes, self.offset, self.length)
     }
 
     /// Returns the byte slice of this [`Bitmap`].
