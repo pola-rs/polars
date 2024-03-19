@@ -73,7 +73,10 @@ def test_sequence_of_series_with_dtype(dtype: pl.PolarsDataType | None) -> None:
 def test_upcast_primitive_and_strings(
     values: list[Any], dtype: pl.PolarsDataType, expected_dtype: pl.PolarsDataType
 ) -> None:
-    assert pl.Series(values, dtype=dtype).dtype == expected_dtype
+    with pytest.raises(TypeError):
+        pl.Series(values, dtype=dtype, strict=True)
+
+    assert pl.Series(values, dtype=dtype, strict=False).dtype == expected_dtype
 
 
 def test_preserve_decimal_precision() -> None:
