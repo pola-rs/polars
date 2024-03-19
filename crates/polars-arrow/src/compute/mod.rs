@@ -29,6 +29,8 @@ pub mod boolean_kleene;
 #[cfg_attr(docsrs, doc(cfg(feature = "compute_cast")))]
 pub mod cast;
 pub mod concatenate;
+#[cfg(feature = "dtype-decimal")]
+pub mod decimal;
 #[cfg(feature = "compute_take")]
 #[cfg_attr(docsrs, doc(cfg(feature = "compute_take")))]
 pub mod take;

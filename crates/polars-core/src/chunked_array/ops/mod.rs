@@ -34,7 +34,6 @@ pub mod search_sorted;
 mod set;
 mod shift;
 pub mod sort;
-mod tile;
 #[cfg(feature = "algorithm_group_by")]
 pub(crate) mod unique;
 #[cfg(feature = "zip_with")]
