@@ -167,7 +167,7 @@ impl Bitmap {
     pub fn true_idx_iter(&self) -> TrueIdxIter<'_> {
         TrueIdxIter::new(self.len(), Some(self))
     }
-    
+
     /// Returns the bits of this [`Bitmap`] as a [`AlignedBitmapSlice`].
     pub fn aligned<T: BitChunk>(&self) -> AlignedBitmapSlice<'_, T> {
         AlignedBitmapSlice::new(&self.bytes, self.offset, self.length)

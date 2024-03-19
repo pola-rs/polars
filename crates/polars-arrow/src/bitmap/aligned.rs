@@ -30,7 +30,7 @@ impl<'a, T: BitChunk> AlignedBitmapSlice<'a, T> {
     pub fn prefix(&self) -> T {
         self.prefix
     }
-    
+
     #[inline(always)]
     pub fn bulk_iter(&self) -> Copied<Iter<'a, T>> {
         self.bulk.iter().copied()

@@ -32,7 +32,8 @@ pub trait NativeType:
 
     /// Type denoting its representation as bytes.
     /// This is `[u8; N]` where `N = size_of::<T>`.
-    type Bytes: AsRef<[u8]> + AsMut<[u8]>
+    type Bytes: AsRef<[u8]>
+        + AsMut<[u8]>
         + std::ops::Index<usize, Output = u8>
         + std::ops::IndexMut<usize, Output = u8>
         + for<'a> TryFrom<&'a [u8]>

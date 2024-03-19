@@ -109,9 +109,6 @@ unsafe fn filter_boolean_kernel_sparse(values: &Bitmap, mask: &Bitmap, mut out_p
     let mut value_idx = 0;
     let mut bits_in_word = 0usize;
     let mut word = 0u64;
-    if mask.len() == 0 {
-        return;
-    }
 
     macro_rules! loop_body {
         ($m: expr) => {{
