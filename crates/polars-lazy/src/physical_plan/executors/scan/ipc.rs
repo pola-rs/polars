@@ -7,6 +7,7 @@ use polars_core::utils::accumulate_dataframes_vertical;
 #[cfg(feature = "cloud")]
 use polars_io::cloud::CloudOptions;
 use polars_io::is_cloud_url;
+use polars_io::predicates::apply_predicate;
 use rayon::prelude::*;
 
 use super::*;
@@ -20,6 +21,20 @@ pub struct IpcExec {
     #[cfg(feature = "cloud")]
     pub(crate) cloud_options: Option<CloudOptions>,
     pub(crate) metadata: Option<arrow::io::ipc::read::FileMetadata>,
+}
+
+fn prefix_sum_in_place<'a, I: IntoIterator<Item = &'a mut IdxSize>>(values: I) {
+    let mut values = values.into_iter();
+    let Some(first) = values.next() else {
+        return;
+    };
+    let mut sum = *first;
+    *first = 0;
+    for val in values {
+        let new_sum = sum + *val;
+        *val = sum;
+        sum = new_sum;
+    }
 }
 
 impl IpcExec {
@@ -43,7 +58,7 @@ impl IpcExec {
                     .block_on_potential_spawn(self.read_async(verbose))?
             }
         } else {
-            self.read_sync(verbose)?
+            self.read_sync()?
         };
 
         if self.file_options.rechunk {
@@ -53,7 +68,7 @@ impl IpcExec {
         Ok(out)
     }
 
-    fn read_sync(&mut self, verbose: bool) -> PolarsResult<DataFrame> {
+    fn read_sync(&mut self) -> PolarsResult<DataFrame> {
         let (projection, predicate) = prepare_scan_args(
             self.predicate.clone(),
             &mut self.file_options.with_columns,
@@ -62,7 +77,13 @@ impl IpcExec {
             None,
         );
 
-        let row_limit = self.file_options.n_rows.unwrap_or(usize::MAX);
+        // TODO: Make `n_rows: IdxSize`.
+        let n_rows = self
+            .file_options
+            .n_rows
+            .map(|n| IdxSize::try_from(n).unwrap());
+
+        let row_limit = n_rows.unwrap_or(IdxSize::MAX);
 
         // Used to determine the next file to open. This guarantees the order.
         let path_index = AtomicUsize::new(0);
@@ -74,21 +95,41 @@ impl IpcExec {
                 let index = path_index.fetch_add(1, Ordering::SeqCst);
                 let path = &self.paths[index];
 
-                if row_counter.read().unwrap().sum() >= row_limit {
+                let already_read_in_sequence = row_counter.read().unwrap().sum();
+                if already_read_in_sequence >= row_limit {
                     return Ok(Default::default());
                 }
 
                 let file = std::fs::File::open(path)?;
 
                 let df = IpcReader::new(file)
-                    // .with_n_rows(self.file_options.n_rows)
+                    .with_n_rows(
+                        // NOTE: If there is any file that by itself exceeds the
+                        // row limit, passing the total row limit to each
+                        // individual reader helps.
+                        n_rows.map(|n| {
+                            n.saturating_sub(already_read_in_sequence)
+                                .try_into()
+                                .unwrap()
+                        }),
+                    )
                     .with_row_index(self.file_options.row_index.clone())
-                    // .set_rechunk(self.file_options.rechunk)
                     .with_projection(projection.clone())
                     .memory_mapped(self.options.memmap)
-                    .finish_with_scan_ops(predicate.clone(), verbose)?;
+                    .finish()?;
+                // TODO: We can not supply a filter until the readers return
+                // how many total rows have been read before applying the
+                // filter. Without that, we can not correctly compute the
+                // pre-filter row count.
+                // .finish_with_scan_ops(
+                //     predicate.clone(),
+                //     verbose,
+                // )?;
 
-                row_counter.write().unwrap().write(index, df.height());
+                row_counter
+                    .write()
+                    .unwrap()
+                    .write(index, df.height().try_into().unwrap());
 
                 Ok((index, df))
             })
@@ -96,7 +137,25 @@ impl IpcExec {
 
         index_and_dfs.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
 
-        let df = accumulate_dataframes_vertical(index_and_dfs.into_iter().map(|(_, df)| df))?;
+        if let Some(row_index) = self.file_options.row_index.as_ref() {
+            let offsets = {
+                let mut row_counter = row_counter.into_inner().unwrap();
+                prefix_sum_in_place(&mut row_counter.counts[..]);
+                row_counter.counts
+            };
+
+            for &mut (index, ref mut df) in index_and_dfs.iter_mut() {
+                let offset = offsets[index];
+                df.apply(&row_index.name, |series| {
+                    series.idx().expect("index column should be of index type") + offset
+                })
+                .expect("index column should exist");
+            }
+        }
+
+        let mut df = accumulate_dataframes_vertical(index_and_dfs.into_iter().map(|(_, df)| df))?;
+
+        apply_predicate(&mut df, predicate.as_deref(), true)?;
 
         Ok(df)
     }
@@ -194,39 +253,39 @@ impl Executor for IpcExec {
 // Tracks the sum of consecutive values in a dynamically sized array where the values can be written
 // in any order.
 struct ConsecutiveCountState {
-    counts: Box<[usize]>,
+    counts: Box<[IdxSize]>,
     next_index: usize,
-    sum: usize,
+    sum: IdxSize,
 }
 
 impl ConsecutiveCountState {
     fn new(len: usize) -> Self {
         Self {
-            counts: vec![usize::MAX; len].into_boxed_slice(),
+            counts: vec![IdxSize::MAX; len].into_boxed_slice(),
             next_index: 0,
             sum: 0,
         }
     }
 
     /// Sum of all consecutive counts.
-    fn sum(&self) -> usize {
+    fn sum(&self) -> IdxSize {
         self.sum
     }
 
     /// Write count at index.
-    fn write(&mut self, index: usize, count: usize) {
+    fn write(&mut self, index: usize, count: IdxSize) {
         debug_assert!(
-            self.counts[index] == usize::MAX,
+            self.counts[index] == IdxSize::MAX,
             "second write to same index"
         );
-        debug_assert!(count != usize::MAX, "count can not be usize::MAX");
+        debug_assert!(count != IdxSize::MAX, "count can not be IdxSize::MAX");
 
         self.counts[index] = count;
 
         // Update sum and next index.
         while self.next_index < self.counts.len() {
             let count = self.counts[self.next_index];
-            if count == usize::MAX {
+            if count == IdxSize::MAX {
                 break;
             }
             self.sum += count;
