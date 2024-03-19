@@ -16,9 +16,12 @@ impl SeriesWrap<DecimalChunked> {
             .into_series()
     }
 
+    fn scale_factor(&self) -> u128 {
+        10u128.pow(self.0.scale() as u32)
+    }
+
     fn apply_scale(&self, s: Series) -> PolarsResult<Series> {
-        let factor = 10u128.pow(self.0.scale() as u32);
-        s.divide(&Series::new("", &[factor as f64]))
+        s.divide(&Series::new("", &[self.scale_factor() as f64]))
     }
 
     fn agg_helper<F: Fn(&Int128Chunked) -> Series>(&self, f: F) -> Series {
@@ -325,17 +328,13 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
     }
 
     fn mean(&self) -> Option<f64> {
-        // simd doesn't support `i128` type, so fallback to `f64`
-        // refer: https://www.reddit.com/r/rust/comments/12wwng9/comment/jhj9axt/
-        self.cast(&DataType::Float64).unwrap().mean()
+        self.0.mean().map(|v| v / self.scale_factor() as f64)
     }
     fn median_as_series(&self) -> PolarsResult<Series> {
         self.apply_scale(self.0.median_as_series())
     }
     fn std_as_series(&self, ddof: u8) -> PolarsResult<Series> {
-        // simd doesn't support `i128` type, so fallback to `f64`
-        // self.apply_scale(self.0.std_as_series(ddof))
-        self.cast(&DataType::Float64).unwrap().std_as_series(ddof)
+        self.apply_scale(self.0.std_as_series(ddof))
     }
     fn quantile_as_series(
         &self,
