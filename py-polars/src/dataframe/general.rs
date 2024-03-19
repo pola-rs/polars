@@ -2,40 +2,24 @@ use std::io::Cursor;
 
 use either::Either;
 use polars::prelude::*;
-use polars_core::export::arrow::datatypes::IntegerType;
 use polars_core::frame::*;
-use polars_core::utils::arrow::compute::cast::CastOptions;
 #[cfg(feature = "pivot")]
 use polars_lazy::frame::pivot::{pivot, pivot_stable};
 use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyList, PyTuple};
+use pyo3::types::{PyBytes, PyList};
 
 use super::*;
-use crate::conversion::{ObjectValue, Wrap};
+use crate::conversion::Wrap;
 use crate::map::dataframe::{
     apply_lambda_unknown, apply_lambda_with_bool_out_type, apply_lambda_with_primitive_out_type,
     apply_lambda_with_string_out_type,
 };
 use crate::prelude::strings_to_smartstrings;
 use crate::series::{PySeries, ToPySeries, ToSeries};
-use crate::{arrow_interop, PyExpr, PyLazyFrame};
+use crate::{PyExpr, PyLazyFrame};
 
 #[pymethods]
-#[allow(
-    clippy::wrong_self_convention,
-    clippy::should_implement_trait,
-    clippy::len_without_is_empty
-)]
 impl PyDataFrame {
-    pub fn into_raw_parts(&mut self) -> (usize, usize, usize) {
-        // Used for polars-lazy python node. This takes the dataframe from
-        // underneath of you, so don't use this anywhere else.
-        let mut df = std::mem::take(&mut self.df);
-        let cols = unsafe { std::mem::take(df.get_columns_mut()) };
-        let (ptr, len, cap) = cols.into_raw_parts();
-        (ptr as usize, len, cap)
-    }
-
     #[new]
     pub fn __init__(columns: Vec<PySeries>) -> PyResult<Self> {
         let columns = columns.to_series();
@@ -82,124 +66,6 @@ impl PyDataFrame {
             .iter()
             .map(|s| format!("{}", s.dtype()))
             .collect()
-    }
-
-    #[cfg(feature = "object")]
-    pub fn row_tuple(&self, idx: i64) -> PyResult<PyObject> {
-        let idx = if idx < 0 {
-            (self.df.height() as i64 + idx) as usize
-        } else {
-            idx as usize
-        };
-        if idx >= self.df.height() {
-            return Err(PyPolarsErr::from(polars_err!(oob = idx, self.df.height())).into());
-        }
-        let out = Python::with_gil(|py| {
-            PyTuple::new(
-                py,
-                self.df.get_columns().iter().map(|s| match s.dtype() {
-                    DataType::Object(_, _) => {
-                        let obj: Option<&ObjectValue> = s.get_object(idx).map(|any| any.into());
-                        obj.to_object(py)
-                    },
-                    _ => Wrap(s.get(idx).unwrap()).into_py(py),
-                }),
-            )
-            .into_py(py)
-        });
-        Ok(out)
-    }
-
-    #[cfg(feature = "object")]
-    pub fn row_tuples(&self) -> PyObject {
-        Python::with_gil(|py| {
-            let df = &self.df;
-            PyList::new(
-                py,
-                (0..df.height()).map(|idx| {
-                    PyTuple::new(
-                        py,
-                        self.df.get_columns().iter().map(|s| match s.dtype() {
-                            DataType::Null => py.None(),
-                            DataType::Object(_, _) => {
-                                let obj: Option<&ObjectValue> =
-                                    s.get_object(idx).map(|any| any.into());
-                                obj.to_object(py)
-                            },
-                            // SAFETY: we are in bounds.
-                            _ => unsafe { Wrap(s.get_unchecked(idx)).into_py(py) },
-                        }),
-                    )
-                }),
-            )
-            .into_py(py)
-        })
-    }
-
-    pub fn to_arrow(&mut self) -> PyResult<Vec<PyObject>> {
-        self.df.align_chunks();
-        Python::with_gil(|py| {
-            let pyarrow = py.import("pyarrow")?;
-            let names = self.df.get_column_names();
-
-            let rbs = self
-                .df
-                .iter_chunks(false)
-                .map(|rb| arrow_interop::to_py::to_py_rb(&rb, &names, py, pyarrow))
-                .collect::<PyResult<_>>()?;
-            Ok(rbs)
-        })
-    }
-
-    /// Create a `Vec` of PyArrow RecordBatch instances.
-    ///
-    /// Note this will give bad results for columns with dtype `pl.Object`,
-    /// since those can't be converted correctly via PyArrow. The calling Python
-    /// code should make sure these are not included.
-    pub fn to_pandas(&mut self) -> PyResult<Vec<PyObject>> {
-        self.df.as_single_chunk_par();
-        Python::with_gil(|py| {
-            let pyarrow = py.import("pyarrow")?;
-            let names = self.df.get_column_names();
-            let cat_columns = self
-                .df
-                .get_columns()
-                .iter()
-                .enumerate()
-                .filter(|(_i, s)| {
-                    matches!(
-                        s.dtype(),
-                        DataType::Categorical(_, _) | DataType::Enum(_, _)
-                    )
-                })
-                .map(|(i, _)| i)
-                .collect::<Vec<_>>();
-            let rbs = self
-                .df
-                .iter_chunks(false)
-                .map(|rb| {
-                    let mut rb = rb.into_arrays();
-                    for i in &cat_columns {
-                        let arr = rb.get_mut(*i).unwrap();
-                        let out = polars_core::export::arrow::compute::cast::cast(
-                            &**arr,
-                            &ArrowDataType::Dictionary(
-                                IntegerType::Int64,
-                                Box::new(ArrowDataType::LargeUtf8),
-                                false,
-                            ),
-                            CastOptions::default(),
-                        )
-                        .unwrap();
-                        *arr = out;
-                    }
-                    let rb = ArrowChunk::new(rb);
-
-                    arrow_interop::to_py::to_py_rb(&rb, &names, py, pyarrow)
-                })
-                .collect::<PyResult<_>>()?;
-            Ok(rbs)
-        })
     }
 
     pub fn add(&self, s: &PySeries) -> PyResult<Self> {
@@ -736,5 +602,15 @@ impl PyDataFrame {
 
     pub fn clear(&self) -> Self {
         self.df.clear().into()
+    }
+
+    #[allow(clippy::wrong_self_convention)]
+    pub fn into_raw_parts(&mut self) -> (usize, usize, usize) {
+        // Used for polars-lazy python node. This takes the dataframe from
+        // underneath of you, so don't use this anywhere else.
+        let mut df = std::mem::take(&mut self.df);
+        let cols = unsafe { std::mem::take(df.get_columns_mut()) };
+        let (ptr, len, cap) = cols.into_raw_parts();
+        (ptr as usize, len, cap)
     }
 }
