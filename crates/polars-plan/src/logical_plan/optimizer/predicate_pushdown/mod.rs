@@ -34,7 +34,7 @@ impl<'a> PredicatePushDown<'a> {
     fn optional_apply_predicate(
         &self,
         lp: ALogicalPlan,
-        local_predicates: Vec<Node>,
+        local_predicates: Vec<ExprIR>,
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
     ) -> ALogicalPlan {
@@ -51,7 +51,7 @@ impl<'a> PredicatePushDown<'a> {
     fn pushdown_and_assign(
         &self,
         input: Node,
-        acc_predicates: PlHashMap<Arc<str>, Node>,
+        acc_predicates: PlHashMap<Arc<str>, ExprIR>,
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<()> {
@@ -178,7 +178,7 @@ impl<'a> PredicatePushDown<'a> {
     fn no_pushdown_restart_opt(
         &self,
         lp: ALogicalPlan,
-        acc_predicates: PlHashMap<Arc<str>, Node>,
+        acc_predicates: PlHashMap<Arc<str>, ExprIR>,
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<ALogicalPlan> {
@@ -220,7 +220,7 @@ impl<'a> PredicatePushDown<'a> {
     fn push_down(
         &self,
         lp: ALogicalPlan,
-        mut acc_predicates: PlHashMap<Arc<str>, Node>,
+        mut acc_predicates: PlHashMap<Arc<str>, ExprIR>,
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<ALogicalPlan> {

@@ -105,7 +105,7 @@ fn visit_logical_plan_for_scan_paths(
         }),
         ALogicalPlan::Projection { input, expr, .. } => {
             if expr.len() == 1 {
-                let (valid, alias) = is_valid_count_expr(expr[0], expr_arena);
+                let (valid, alias) = is_valid_count_expr(expr[0].node(), expr_arena);
                 if valid || inside_union {
                     return visit_logical_plan_for_scan_paths(*input, lp_arena, expr_arena, false)
                         .map(|mut expr| {

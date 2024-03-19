@@ -6,13 +6,13 @@ pub(super) fn process_group_by(
     lp_arena: &mut Arena<ALogicalPlan>,
     expr_arena: &mut Arena<AExpr>,
     input: Node,
-    keys: Vec<Node>,
-    aggs: Vec<Node>,
+    keys: Vec<ExprIR>,
+    aggs: Vec<ExprIR>,
     schema: SchemaRef,
     maintain_order: bool,
     apply: Option<Arc<dyn DataFrameUdf>>,
     options: Arc<GroupbyOptions>,
-    acc_predicates: PlHashMap<Arc<str>, Node>,
+    acc_predicates: PlHashMap<Arc<str>, ExprIR>,
 ) -> PolarsResult<ALogicalPlan> {
     use ALogicalPlan::*;
 
@@ -39,23 +39,18 @@ pub(super) fn process_group_by(
     // If the predicate only resolves to the keys we can push it down.
     // When it filters the aggregations, the predicate should be done after aggregation.
     let mut local_predicates = Vec::with_capacity(acc_predicates.len());
-    let key_schema = aexprs_to_schema(
-        &keys,
-        lp_arena.get(input).schema(lp_arena).as_ref(),
-        Context::Default,
-        expr_arena,
-    );
+    let key_schema = expr_irs_to_schema(&keys);
 
     let mut new_acc_predicates = PlHashMap::with_capacity(acc_predicates.len());
 
     for (pred_name, predicate) in &acc_predicates {
         // Counts change due to groupby's
         // TODO! handle aliases, so that the predicate that is pushed down refers to the column before alias.
-        let mut push_down = !has_aexpr(*predicate, expr_arena, |ae| {
+        let mut push_down = !has_aexpr(predicate.node(), expr_arena, |ae| {
             matches!(ae, AExpr::Len | AExpr::Alias(_, _))
         });
 
-        for name in aexpr_to_leaf_names_iter(*predicate, expr_arena) {
+        for name in aexpr_to_leaf_names_iter(predicate.node(), expr_arena) {
             push_down &= key_schema.contains(name.as_ref());
 
             if !push_down {
@@ -65,7 +60,7 @@ pub(super) fn process_group_by(
         if !push_down {
             local_predicates.push(*predicate)
         } else {
-            new_acc_predicates.insert(pred_name.clone(), *predicate);
+            new_acc_predicates.insert(pred_name.clone(), predicate.clone());
         }
     }
 

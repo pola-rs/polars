@@ -19,26 +19,26 @@ impl Dsl for Node {
 
 /// Don't overwrite predicates but combine them.
 pub(super) fn insert_and_combine_predicate(
-    acc_predicates: &mut PlHashMap<Arc<str>, Node>,
-    predicate: Node,
+    acc_predicates: &mut PlHashMap<Arc<str>, ExprIR>,
+    predicate: &ExprIR,
     arena: &mut Arena<AExpr>,
 ) {
-    let name = predicate_to_key(predicate, arena);
+    let name = predicate_to_key(predicate.node(), arena);
 
     acc_predicates
         .entry(name)
         .and_modify(|existing_predicate| {
             let node = arena.add(AExpr::BinaryExpr {
-                left: predicate,
+                left: predicate.node(),
                 op: Operator::And,
-                right: *existing_predicate,
+                right: existing_predicate.node(),
             });
-            *existing_predicate = node
+            existing_predicate.set_node(node)
         })
-        .or_insert_with(|| predicate);
+        .or_insert_with(|| predicate.clone());
 }
 
-pub(super) fn temporary_unique_key(acc_predicates: &PlHashMap<Arc<str>, Node>) -> String {
+pub(super) fn temporary_unique_key(acc_predicates: &PlHashMap<Arc<str>, ExprIR>) -> String {
     let mut out_key = '\u{1D17A}'.to_string();
     let mut existing_keys = acc_predicates.keys();
 
@@ -49,32 +49,36 @@ pub(super) fn temporary_unique_key(acc_predicates: &PlHashMap<Arc<str>, Node>) -
     out_key
 }
 
-pub(super) fn combine_predicates<I>(iter: I, arena: &mut Arena<AExpr>) -> Node
+pub(super) fn combine_predicates<I>(iter: I, arena: &mut Arena<AExpr>) -> ExprIR
 where
-    I: Iterator<Item = Node>,
+    I: Iterator<Item = ExprIR>,
 {
     let mut single_pred = None;
-    for node in iter {
+    for e in iter {
         single_pred = match single_pred {
-            None => Some(node),
-            Some(left) => Some(arena.add(AExpr::BinaryExpr {
-                left,
-                op: Operator::And,
-                right: node,
-            })),
+            None => Some(e.node()),
+            Some(left) => {
+                Some(arena.add(AExpr::BinaryExpr {
+                    left,
+                    op: Operator::And,
+                    right: e.node(),
+                }))
+            },
         };
     }
-    single_pred.expect("an empty iterator was passed")
+    single_pred
+        .map(|node| ExprIR::new_minimal(node))
+        .expect("an empty iterator was passed")
 }
 
 pub(super) fn predicate_at_scan(
-    acc_predicates: PlHashMap<Arc<str>, Node>,
-    predicate: Option<Node>,
+    acc_predicates: PlHashMap<Arc<str>, ExprIR>,
+    predicate: Option<ExprIR>,
     expr_arena: &mut Arena<AExpr>,
 ) -> Option<Node> {
     if !acc_predicates.is_empty() {
         let mut new_predicate =
-            combine_predicates(acc_predicates.into_iter().map(|t| t.1), expr_arena);
+            combine_predicates(acc_predicates.into_values(), expr_arena);
         if let Some(pred) = predicate {
             new_predicate = new_predicate.and(pred, expr_arena)
         }

@@ -32,21 +32,21 @@ impl FastProjectionAndCollapse {
 
 fn impl_fast_projection(
     input: Node,
-    expr: &[Node],
+    expr: &[ExprIR],
     expr_arena: &Arena<AExpr>,
     duplicate_check: bool,
 ) -> Option<ALogicalPlan> {
     // First check if we can apply the optimization before we allocate.
     if !expr
         .iter()
-        .all(|node| matches!(expr_arena.get(*node), AExpr::Column(_)))
+        .all(|e| matches!(expr_arena.get(e.node()), AExpr::Column(_)))
     {
         return None;
     }
 
     let mut columns = Vec::with_capacity(expr.len());
-    for node in expr.iter() {
-        if let AExpr::Column(name) = expr_arena.get(*node) {
+    for e in expr.iter() {
+        if let AExpr::Column(name) = expr_arena.get(e.node()) {
             columns.push(SmartString::from(name.as_ref()))
         } else {
             unreachable!();
