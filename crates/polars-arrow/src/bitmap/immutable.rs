@@ -34,7 +34,7 @@ const UNKNOWN_BIT_COUNT: u64 = u64::MAX;
 /// // we can also get the slice:
 /// assert_eq!(bitmap.as_slice(), ([0b00001101u8].as_ref(), 0, 5));
 /// // debug helps :)
-/// assert_eq!(format!("{:?}", bitmap), "Bitmap { len: 5, offset: 0, bytes: [0b___01101] }".to_string());
+/// assert_eq!(format!("{:?}", bitmap), "Bitmap { len: 5, offset: 0, bytes: [0b___01101] }");
 ///
 /// // it supports copy-on-write semantics (to a `MutableBitmap`)
 /// let bitmap: MutableBitmap = bitmap.into_mut().right().unwrap();
@@ -45,7 +45,7 @@ const UNKNOWN_BIT_COUNT: u64 = u64::MAX;
 /// let mut sliced = bitmap.clone();
 /// sliced.slice(1, 4);
 /// assert_eq!(sliced.as_slice(), ([0b00001101u8].as_ref(), 1, 4)); // 1 here is the offset:
-/// assert_eq!(format!("{:?}", sliced), "[0b___0110_]".to_string());
+/// assert_eq!(format!("{:?}", sliced), "Bitmap { len: 4, offset: 1, bytes: [0b___0110_] }");
 /// // when sliced (or cloned), it is no longer possible to `into_mut`.
 /// let same: Bitmap = sliced.into_mut().left().unwrap();
 /// ```
