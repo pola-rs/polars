@@ -248,6 +248,7 @@ pub struct FunctionOptions {
     // this should always be true or we could OOB
     pub check_lengths: UnsafeBool,
     pub allow_group_aware: bool,
+    pub allow_schema_validation: bool,
 }
 
 impl FunctionOptions {
@@ -281,6 +282,7 @@ impl Default for FunctionOptions {
             changes_length: false,
             check_lengths: UnsafeBool(true),
             allow_group_aware: true,
+            allow_schema_validation: true,
         }
     }
 }

@@ -54,19 +54,21 @@ impl UserDefinedFunction {
     /// This utility allows using the UDF without requiring access to the registry.
     /// The schema is validated and the query will fail if the schema is invalid.
     pub fn call(self, args: Vec<Expr>) -> PolarsResult<Expr> {
-        if args.len() != self.input_fields.len() {
-            polars_bail!(InvalidOperation: "expected {} arguments, got {}", self.input_fields.len(), args.len())
-        }
-        let schema = Schema::from_iter(self.input_fields);
+        if self.options.allow_schema_validation {
+            if args.len() != self.input_fields.len() {
+                polars_bail!(InvalidOperation: "expected {} arguments, got {}", self.input_fields.len(), args.len())
+            }
+            let schema = Schema::from_iter(self.input_fields);
 
-        if args
-            .iter()
-            .map(|e| e.to_field(&schema, Context::Default))
-            .collect::<PolarsResult<Vec<_>>>()
-            .is_err()
-        {
-            polars_bail!(InvalidOperation: "unexpected field in UDF \nexpected: {:?}\n received {:?}", schema, args)
-        };
+            if args
+                .iter()
+                .map(|e| e.to_field(&schema, Context::Default))
+                .collect::<PolarsResult<Vec<_>>>()
+                .is_err()
+            {
+                polars_bail!(InvalidOperation: "unexpected field in UDF \nexpected: {:?}\n received {:?}", schema, args)
+            };
+        }
 
         Ok(Expr::AnonymousFunction {
             input: args,
@@ -74,19 +76,5 @@ impl UserDefinedFunction {
             output_type: self.return_type,
             options: self.options,
         })
-    }
-
-    /// creates a logical expression with a call of the UDF
-    /// This does not do any schema validation and is therefore faster.
-    ///
-    /// Only use this if you are certain that the schema is correct.
-    /// If the schema is invalid, the query will fail at runtime.
-    pub fn call_unchecked(self, args: Vec<Expr>) -> Expr {
-        Expr::AnonymousFunction {
-            input: args,
-            function: self.fun,
-            output_type: self.return_type.clone(),
-            options: self.options,
-        }
     }
 }
