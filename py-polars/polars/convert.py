@@ -532,7 +532,7 @@ def from_pandas(
 @deprecate_renamed_parameter("tbl", "data", version="0.20.17")
 def from_repr(data: str) -> DataFrame | Series:
     """
-    Utility function that reconstructs a DataFrame or Series from the object's repr.
+    Construct a Polars DataFrame or Series from its string representation.
 
     Parameters
     ----------
