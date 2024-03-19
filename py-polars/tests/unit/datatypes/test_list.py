@@ -885,3 +885,11 @@ def test_list_product_and_dtypes() -> None:
     ).select(pl.col("a").list.product()).to_dict(as_series=False) == {
         "a": [1, 1, 0, 1, 0]
     }
+
+
+def test_list_product_invalid_type_raises() -> None:
+    with pytest.raises(
+        pl.InvalidOperationError,
+        match="`list.product` operation not supported for dtype",
+    ):
+        pl.Series("a", [["a", "b"]]).list.product()
