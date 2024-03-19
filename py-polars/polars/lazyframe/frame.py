@@ -1995,12 +1995,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
 
-        Collects into a DataFrame (like :func:`collect`), but instead of returning
-        DataFrame directly, they are scheduled to be collected inside thread pool,
+        Collects into a DataFrame (like :func:`collect`) but, instead of returning
+        a DataFrame directly, it is scheduled to be collected inside a thread pool,
         while this method returns almost instantly.
 
-        May be useful if you use gevent or asyncio and want to release control to other
-        greenlets/tasks while LazyFrames are being collected.
+        This can be useful if you use `gevent` or `asyncio` and want to release
+        control to other greenlets/tasks while LazyFrames are being collected.
 
         Parameters
         ----------
@@ -2032,20 +2032,20 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 at any point without it being considered a breaking change.
 
             .. note::
-                Use :func:`explain` to see if Polars can process the query in streaming
-                mode.
+                Use :func:`explain` to see if Polars can process the query in
+                streaming mode.
 
         Returns
         -------
-        If `gevent=False` (default) then returns awaitable.
+        If `gevent=False` (default) then returns an awaitable.
 
-        If `gevent=True` then returns wrapper that has
+        If `gevent=True` then returns wrapper that has a
         `.get(block=True, timeout=None)` method.
 
         See Also
         --------
         polars.collect_all : Collect multiple LazyFrames at the same time.
-        polars.collect_all_async: Collect multiple LazyFrames at the same time lazily.
+        polars.collect_all_async : Collect multiple LazyFrames at the same time lazily.
 
         Notes
         -----

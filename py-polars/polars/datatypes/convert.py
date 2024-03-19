@@ -280,15 +280,14 @@ def _infer_dtype_from_database_typename(
                 return None  # there's a timezone, but we don't know what it is
         unit = _timeunit_from_precision(modifier) if modifier else "us"
         dtype = Datetime(time_unit=(unit or "us"))  # type: ignore[arg-type]
-
-    elif re.sub(r"\d", "", value) in ("INTERVAL", "TIMEDELTA"):
-        dtype = Duration
-
-    elif value in ("DATE", "DATE32", "DATE64"):
-        dtype = Date
-
-    elif value in ("TIME", "TIME32", "TIME64"):
-        dtype = Time
+    else:
+        value = re.sub(r"\d", "", value)
+        if value in ("INTERVAL", "TIMEDELTA"):
+            dtype = Duration
+        elif value == "DATE":
+            dtype = Date
+        elif value == "TIME":
+            dtype = Time
 
     if not dtype and raise_unmatched:
         msg = f"cannot infer dtype from {original_value!r} string value"
