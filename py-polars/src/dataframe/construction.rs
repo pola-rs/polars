@@ -2,6 +2,7 @@ use polars::frame::row::{rows_to_schema_supertypes, Row};
 use pyo3::prelude::*;
 
 use super::*;
+use crate::arrow_interop;
 use crate::conversion::Wrap;
 
 #[pymethods]
@@ -62,6 +63,12 @@ impl PyDataFrame {
 
             Ok(pydf)
         })
+    }
+
+    #[staticmethod]
+    pub fn from_arrow_record_batches(rb: Vec<&PyAny>) -> PyResult<Self> {
+        let df = arrow_interop::to_rust::to_rust_df(&rb)?;
+        Ok(Self::from(df))
     }
 }
 

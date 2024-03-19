@@ -460,12 +460,6 @@ impl PyDataFrame {
         Ok(())
     }
 
-    #[staticmethod]
-    pub fn from_arrow_record_batches(rb: Vec<&PyAny>) -> PyResult<Self> {
-        let df = arrow_interop::to_rust::to_rust_df(&rb)?;
-        Ok(Self::from(df))
-    }
-
     #[cfg(feature = "csv")]
     pub fn write_csv(
         &mut self,
