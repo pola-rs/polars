@@ -6,7 +6,7 @@ pub fn if_then_else_scalar_rest<T: Copy>(
     if_false: &[T],
     out: &mut [MaybeUninit<T>],
 ) {
-    assert!(if_true.len() <= out.len()); // Removes bounds checks in inner loop.
+    assert!(if_true.len() == out.len()); // Removes bounds checks in inner loop.
     let true_it = if_true.iter().copied();
     let false_it = if_false.iter().copied();
     for (i, (t, f)) in true_it.zip(false_it).enumerate() {
@@ -21,7 +21,7 @@ pub fn if_then_else_broadcast_false_scalar_rest<T: Copy>(
     if_false: T,
     out: &mut [MaybeUninit<T>],
 ) {
-    assert!(if_true.len() <= out.len()); // Removes bounds checks in inner loop.
+    assert!(if_true.len() == out.len()); // Removes bounds checks in inner loop.
     let true_it = if_true.iter().copied();
     for (i, t) in true_it.enumerate() {
         let src = if (mask >> i) & 1 != 0 { t } else { if_false };

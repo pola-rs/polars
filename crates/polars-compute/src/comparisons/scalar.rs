@@ -1,11 +1,11 @@
 use arrow::array::{BinaryArray, BooleanArray, PrimitiveArray, Utf8Array};
 use arrow::bitmap::{self, Bitmap};
-use arrow::types::NativeType;
 use polars_utils::total_ord::{TotalEq, TotalOrd};
 
-use super::{NotSimdPrimitive, TotalOrdKernel};
+use super::TotalOrdKernel;
+use crate::NotSimdPrimitive;
 
-impl<T: NativeType + NotSimdPrimitive + TotalOrd> TotalOrdKernel for PrimitiveArray<T> {
+impl<T: NotSimdPrimitive + TotalOrd> TotalOrdKernel for PrimitiveArray<T> {
     type Scalar = T;
 
     fn tot_lt_kernel(&self, other: &Self) -> Bitmap {
