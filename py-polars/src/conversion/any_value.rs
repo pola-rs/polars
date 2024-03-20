@@ -374,10 +374,19 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
                     // Support custom subclasses of datetime/date.
                     // `datetime.datetime` is a subclass of `datetime.date`,
                     // so need to check `datetime.datetime` first.
-                    if is_instance_by_name(ob, "datetime.datetime", py) {
-                        return get_datetime;
-                    } else if is_instance_by_name(ob, "datetime.date", py) {
-                        return get_date;
+                    let ancestors = ob.get_type().getattr(intern!(py, "__mro__")).unwrap();
+                    let ancestors_str_iter = ancestors
+                        .iter()
+                        .unwrap()
+                        .map(|b| b.unwrap().str().unwrap().to_str().unwrap());
+                    for c in ancestors_str_iter {
+                        match c {
+                            // `datetime.datetime` is a subclass of `datetime.date`,
+                            // so it must be checked first.
+                            "<class 'datetime.datetime'>" => return get_datetime,
+                            "<class 'datetime.date'>" => return get_date,
+                            _ => (),
+                        }
                     }
 
                     get_object
@@ -400,16 +409,4 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
             convert_fn(ob, strict)
         })
     })
-}
-
-/// Check if the object is an instance of the given class.
-/// This may be useful if the class does not exist in PyO3.
-fn is_instance_by_name(ob: &PyAny, class_name: &str, py: Python) -> bool {
-    let type_name = format!("<class '{class_name}'>");
-    let ancestors = ob.get_type().getattr(intern!(py, "__mro__")).unwrap();
-    ancestors
-        .iter()
-        .unwrap()
-        .map(|b| b.unwrap().str().unwrap().to_str().unwrap())
-        .any(|v| v == type_name)
 }
