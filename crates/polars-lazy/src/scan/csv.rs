@@ -281,9 +281,25 @@ impl<'a> LazyCsvReader<'a> {
 }
 
 impl LazyFileListReader for LazyCsvReader<'_> {
+    fn finish(mut self) -> PolarsResult<LazyFrame> {
+        if let Some(paths) = self.iter_paths()? {
+            let paths = paths
+                .into_iter()
+                .collect::<PolarsResult<Arc<[PathBuf]>>>()?;
+            self.paths = paths;
+        }
+        self.finish_no_glob()
+    }
+
     fn finish_no_glob(self) -> PolarsResult<LazyFrame> {
+        let paths = if self.paths.is_empty() {
+            Arc::new([self.path]) as Arc<[PathBuf]>
+        } else {
+            self.paths
+        };
+
         let mut lf: LazyFrame = LogicalPlanBuilder::scan_csv(
-            self.path,
+            paths,
             self.separator,
             self.has_header,
             self.ignore_errors,
