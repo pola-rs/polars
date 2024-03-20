@@ -86,11 +86,6 @@ impl LazyFileListReader for LazyIpcReader {
         .into();
         lf.opt_state.file_caching = true;
 
-        // // it is a bit hacky, but this `with_row_index` function updates the schema
-        // if let Some(row_index) = args.row_index {
-        //     lf = lf.with_row_index(&row_index.name, Some(row_index.offset))
-        // }
-
         Ok(lf)
     }
 
