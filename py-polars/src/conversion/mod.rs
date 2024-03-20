@@ -38,12 +38,6 @@ pub(crate) fn slice_to_wrapped<T>(slice: &[T]) -> &[Wrap<T>] {
     unsafe { std::mem::transmute(slice) }
 }
 
-pub(crate) fn slice_extract_wrapped<T>(slice: &[Wrap<T>]) -> &[T] {
-    // SAFETY:
-    // Wrap is transparent.
-    unsafe { std::mem::transmute(slice) }
-}
-
 pub(crate) fn vec_extract_wrapped<T>(buf: Vec<Wrap<T>>) -> Vec<T> {
     // SAFETY:
     // Wrap is transparent.

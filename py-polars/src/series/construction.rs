@@ -10,7 +10,7 @@ use pyo3::prelude::*;
 
 use crate::arrow_interop::to_rust::array_to_rust;
 use crate::conversion::any_value::py_object_to_any_value;
-use crate::conversion::{slice_extract_wrapped, vec_extract_wrapped, Wrap};
+use crate::conversion::{vec_extract_wrapped, Wrap};
 use crate::error::PyPolarsErr;
 use crate::prelude::ObjectValue;
 use crate::PySeries;
@@ -344,14 +344,10 @@ impl PySeries {
     }
 
     #[staticmethod]
-    fn new_decimal(name: &str, val: Vec<Wrap<AnyValue<'_>>>, strict: bool) -> PyResult<Self> {
-        // TODO: do we have to respect 'strict' here? It's possible if we want to.
-        let avs = slice_extract_wrapped(&val);
+    fn new_decimal(name: &str, values: &PyAny, strict: bool) -> PyResult<Self> {
         // Create a fake dtype with a placeholder "none" scale, to be inferred later.
         let dtype = DataType::Decimal(None, None);
-        let s = Series::from_any_values_and_dtype(name, avs, &dtype, strict)
-            .map_err(PyPolarsErr::from)?;
-        Ok(s.into())
+        Self::new_from_any_values_and_dtype(name, values, Wrap(dtype), strict)
     }
 
     #[staticmethod]
