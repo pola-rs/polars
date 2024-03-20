@@ -340,7 +340,6 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
                 || {
                     if ob.is_instance_of::<PyBool>() {
                         get_bool
-                    // TODO: this heap allocs on failure
                     } else if ob.is_instance_of::<PyInt>() {
                         get_int
                     } else if ob.is_instance_of::<PyFloat>() {
