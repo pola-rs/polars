@@ -212,7 +212,7 @@ impl IpcExec {
                 }
             })
             .assert_send()
-            .buffer_unordered(100)
+            .buffer_unordered(config::get_file_prefetch_size())
             .try_collect::<Vec<_>>()
             .await?;
 
