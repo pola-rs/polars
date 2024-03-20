@@ -113,7 +113,8 @@ out = df3.select(
         lambda combined: add(
             combined.struct.field("values1"), combined.struct.field("values2")
         )
-    ).alias("add_columns")
+    )
+    .alias("add_columns")
 )
 print(out)
 # --8<-- [end:combine]
