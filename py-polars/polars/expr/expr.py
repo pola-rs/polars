@@ -5438,6 +5438,11 @@ class Expr:
         closed : {'both', 'left', 'right', 'none'}
             Define which sides of the interval are closed (inclusive).
 
+        Notes
+        -----
+        If the value of the `lower_bound` is greater than that of the `upper_bound`
+        then the result will be False, as no value can satisfy the condition.
+
         Returns
         -------
         Expr
@@ -5500,6 +5505,25 @@ class Expr:
         │ d   ┆ false      │
         │ e   ┆ false      │
         └─────┴────────────┘
+
+        Use column expressions as lower/upper bounds, comparing to a literal value:
+
+        >>> df = pl.DataFrame({"a": [1, 2, 3, 4, 5], "b": [5, 4, 3, 2, 1]})
+        >>> df.with_columns(
+        ...     pl.lit(3).is_between(pl.col("a"), pl.col("b")).alias("between_ab")
+        ... )
+        shape: (5, 3)
+        ┌─────┬─────┬────────────┐
+        │ a   ┆ b   ┆ between_ab │
+        │ --- ┆ --- ┆ ---        │
+        │ i64 ┆ i64 ┆ bool       │
+        ╞═════╪═════╪════════════╡
+        │ 1   ┆ 5   ┆ true       │
+        │ 2   ┆ 4   ┆ true       │
+        │ 3   ┆ 3   ┆ true       │
+        │ 4   ┆ 2   ┆ false      │
+        │ 5   ┆ 1   ┆ false      │
+        └─────┴─────┴────────────┘
         """
         lower_bound = parse_as_expression(lower_bound)
         upper_bound = parse_as_expression(upper_bound)
