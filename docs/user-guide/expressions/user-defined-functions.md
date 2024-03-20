@@ -1,18 +1,13 @@
 # User-defined functions (Python)
 
-You should be convinced by now that Polars expressions are so powerful and flexible that there is much less need for custom Python functions
-than in other libraries.
+Polars expressions are quite powerful and flexible, so there is much less need for custom Python functions compared to other libraries.
+Still, you may need to pass an expression's state to a third party library or apply your black box function to data in Polars.
 
-Still, you need to have the power to be able to pass an expression's state to a third party library or apply your black box function
-over data in Polars.
-
-In this part of the documentation we'll be using one specific API:
+In this part of the documentation we'll be using one specific API that allows you to do this:
 
 - [:material-api: `map_batches`](https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.Expr.map_batches.html): Always passes the full `Series` to the function.
 
-A later section will explain other available APIs for applying user-defined functions.
-
-## Example: A slow, custom sum function written in Python
+## Example: A slow, custom function written in Python
 
 For demonstration purposes, let's say we want to calculate the difference between the mean of a `Series` and each value.
 Here is our data:
@@ -41,7 +36,7 @@ However, running the `for` loop in Python, and then summing the values in Python
 
 To maximize speed, you'll want to make sure that you're using a function written in a compiled language.
 For numeric calculations Polars supports a pair of interfaces defined by NumPy called ["ufuncs"](https://numpy.org/doc/stable/reference/ufuncs.html) and ["generalized ufuncs"](https://numpy.org/neps/nep-0005-generalized-ufuncs.html).
-The former runs on each item individually, and the latter accepts a whole NumPy array, so allows for more flexible operations.
+The former runs on each item individually, and the latter accepts a whole NumPy array, which allows for more flexible operations.
 
 [NumPy](https://numpy.org/doc/stable/reference/ufuncs.html) and other libraries like [SciPy](https://docs.scipy.org/doc/scipy/reference/special.html#module-scipy.special) come with pre-written ufuncs you can use with Polars.
 For example:
@@ -92,8 +87,8 @@ But if the result of a user-defined function depend on multiple values in the `S
 --8<-- "python/user-guide/expressions/user-defined-functions.py:missing_data"
 ```
 
-So how do you deal with missing data?
-Either [fill it in](missing-data.md) or [drop it](https://docs.pola.rs/py-polars/html/reference/dataframe/api/polars.DataFrame.drop_nulls.html) before calling the customer user function.
+How do you deal with missing data?
+Either [fill it in](missing-data.md) or [drop it](https://docs.pola.rs/py-polars/html/reference/dataframe/api/polars.DataFrame.drop_nulls.html) before calling your custom function.
 
 ## Combining multiple column values
 
@@ -108,17 +103,17 @@ The basic idea is to combine multiple columns into a `Struct`, and then the func
 
 ## Streaming calculations
 
-Passing the full `Series` to the user-defined function has a cost: it will use a lot of memory.
-You can use a `is_elementwise=True` argument to [:material-api: `map_batches`](https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.Expr.map_batches.html) to stream results into the function, which means it might not get all values.
+Passing the full `Series` to the user-defined function has a cost: it may use a lot of memory, as its contents are copied into a NumPy array.
+You can use a `is_elementwise=True` argument to [:material-api: `map_batches`](https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.Expr.map_batches.html) to stream results into the function, which means it might not get all values at once.
 
-For a function like `numpy.log()`, this works fine, because `numpy.log()` effectively calculates each individual value separately anyway.
+For a function like `numpy.log()` this works fine, because `numpy.log()` effectively calculates each individual value separately anyway.
 However, for our example `diff_from_mean()` function above, this would result in incorrect results, since it would calculate the mean on only part of the `Series`.
 
 ## Return types
 
 Custom Python functions are often black boxes; Polars doesn't know what your function is doing or what it will return.
-The data type is automatically inferred. We do that by waiting for the first non-null value. That value will then be used
-to determine the type of the `Series`.
+The return data type is therefore automatically inferred. We do that by waiting for the first non-null value. That value will then be used
+to determine the type of the resulting `Series`.
 
 The mapping of Python types to Polars data types is as follows:
 

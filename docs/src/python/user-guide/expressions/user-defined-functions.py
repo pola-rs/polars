@@ -49,7 +49,9 @@ from numba import guvectorize, int64, float64
 
 
 # This will be compiled to machine code, so it will be fast. The Series is
-# converted to a NumPy array before being passed to the function:
+# converted to a NumPy array before being passed to the function. See the
+# Numba documentation for more details:
+# https://numba.readthedocs.io/en/stable/user/vectorize.html
 @guvectorize([(int64[:], float64[:])], "(n)->(n)")
 def diff_from_mean_numba(arr, result):
     total = 0
@@ -62,7 +64,6 @@ def diff_from_mean_numba(arr, result):
 
 out = df.select(pl.col("values").map_batches(diff_from_mean_numba))
 print("== select() with UDF ==")
-# assert out["values"].item() == 18
 print(out)
 
 out = df.group_by("keys").agg(pl.col("values").map_batches(diff_from_mean_numba))
@@ -84,12 +85,10 @@ print(df2)
 # Implement equivalent of diff_from_mean_numba() using Polars APIs:
 out = df2.select(pl.col("values") - pl.col("values").mean())
 print("== built-in mean() knows to skip empty values ==")
-# assert out["values"][0] == 2.5
 print(out)
 
 out = df2.select(pl.col("values").map_batches(diff_from_mean_numba))
 print("== custom mean gets the wrong answer because of missing data ==")
-# assert out["values"][0] != 2.5
 print(out)
 
 # --8<-- [end:missing_data]
