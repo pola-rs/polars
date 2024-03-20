@@ -362,6 +362,8 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
                     } else {
                         let type_name = ob.get_type().name().unwrap();
                         match type_name {
+                            // Can't use pyo3::types::PyDateTime with abi3-py37 feature,
+                            // so need this workaround instead of `isinstance(ob, datetime)`.
                             "datetime" => get_datetime,
                             "date" => get_date,
                             "timedelta" => get_timedelta,
@@ -369,35 +371,20 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
                             "Decimal" => get_decimal,
                             "range" => get_list,
                             _ => {
-                                // special branch for numpy as this fails isinstance checks
+                                // Support NumPy scalars.
                                 if ob.extract::<i64>().is_ok() || ob.extract::<u64>().is_ok() {
                                     return get_int;
                                 } else if ob.extract::<f64>().is_ok() {
                                     return get_float;
                                 }
 
-                                // Can't use pyo3::types::PyDateTime with abi3-py37 feature,
-                                // so need this workaround instead of `isinstance(ob, datetime)`.
-                                let bases = ob
-                                    .get_type()
-                                    .getattr(intern!(py, "__bases__"))
-                                    .unwrap()
-                                    .iter()
-                                    .unwrap();
-                                for base in bases {
-                                    let parent_type =
-                                        base.unwrap().str().unwrap().to_str().unwrap();
-                                    match parent_type {
-                                        "<class 'datetime.datetime'>" => {
-                                            // `datetime.datetime` is a subclass of `datetime.date`,
-                                            // so need to check `datetime.datetime` first
-                                            return get_datetime;
-                                        },
-                                        "<class 'datetime.date'>" => {
-                                            return get_date;
-                                        },
-                                        _ => (),
-                                    }
+                                // Support custom subclasses of datetime/date.
+                                // `datetime.datetime` is a subclass of `datetime.date`,
+                                // so need to check `datetime.datetime` first.
+                                if is_instance_by_name(ob, "datetime.datetime", py) {
+                                    return get_datetime;
+                                } else if is_instance_by_name(ob, "datetime.date", py) {
+                                    return get_date;
                                 }
 
                                 get_object
@@ -410,4 +397,16 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
             convert_fn(ob, strict)
         })
     })
+}
+
+/// Check if the object is an instance of the given class.
+/// This is useful if the class does not exist in PyO3
+fn is_instance_by_name(ob: &PyAny, class_name: &str, py: Python) -> bool {
+    let type_name = format!("<class '{class_name}'>");
+    let ancestors = ob.get_type().getattr(intern!(py, "__mro__")).unwrap();
+    ancestors
+        .iter()
+        .unwrap()
+        .map(|b| b.unwrap().str().unwrap().to_str().unwrap())
+        .any(|v| v == type_name)
 }

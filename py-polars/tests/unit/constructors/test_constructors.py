@@ -1481,13 +1481,20 @@ def test_nested_categorical() -> None:
 def test_datetime_date_subclasses() -> None:
     class FakeDate(date): ...
 
+    class FakeDateChild(FakeDate): ...
+
     class FakeDatetime(FakeDate, datetime): ...
+
+    result = pl.Series([FakeDate(2020, 1, 1)])
+    expected = pl.Series([date(2020, 1, 1)])
+    assert_series_equal(result, expected)
+
+    result = pl.Series([FakeDateChild(2020, 1, 1)])
+    expected = pl.Series([date(2020, 1, 1)])
+    assert_series_equal(result, expected)
 
     result = pl.Series([FakeDatetime(2020, 1, 1, 3)])
     expected = pl.Series([datetime(2020, 1, 1, 3)])
-    assert_series_equal(result, expected)
-    result = pl.Series([FakeDate(2020, 1, 1)])
-    expected = pl.Series([date(2020, 1, 1)])
     assert_series_equal(result, expected)
 
 
