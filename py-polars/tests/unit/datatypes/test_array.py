@@ -27,7 +27,6 @@ def test_cast_list_array() -> None:
         s.cast(pl.Array(pl.Int64, 2))
 
 
-
 def test_array_in_group_by() -> None:
     df = pl.DataFrame(
         [
