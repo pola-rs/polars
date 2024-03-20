@@ -4200,6 +4200,11 @@ class Series:
         closed : {'both', 'left', 'right', 'none'}
             Define which sides of the interval are closed (inclusive).
 
+        Notes
+        -----
+        If the value of the `lower_bound` is greater than that of the `upper_bound`
+        then the result will be False, as no value can satisfy the condition.
+
         Examples
         --------
         >>> s = pl.Series("num", [1, 2, 3, 4, 5])
