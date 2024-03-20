@@ -2,19 +2,12 @@ use polars_core::prelude::*;
 
 use super::keys::*;
 use crate::prelude::*;
-
-trait Dsl {
-    fn and(self, right: Node, arena: &mut Arena<AExpr>) -> Node;
-}
-
-impl Dsl for Node {
-    fn and(self, right: Node, arena: &mut Arena<AExpr>) -> Node {
-        arena.add(AExpr::BinaryExpr {
-            left: self,
-            op: Operator::And,
-            right,
-        })
-    }
+fn combine_by_and(left: Node, right: Node, arena: &mut Arena<AExpr>) -> Node {
+    arena.add(AExpr::BinaryExpr {
+        left,
+        op: Operator::And,
+        right,
+    })
 }
 
 /// Don't overwrite predicates but combine them.
@@ -28,11 +21,7 @@ pub(super) fn insert_and_combine_predicate(
     acc_predicates
         .entry(name)
         .and_modify(|existing_predicate| {
-            let node = arena.add(AExpr::BinaryExpr {
-                left: predicate.node(),
-                op: Operator::And,
-                right: existing_predicate.node(),
-            });
+            let node = combine_by_and(predicate.node(), existing_predicate.node(), arena);
             existing_predicate.set_node(node)
         })
         .or_insert_with(|| predicate.clone());
@@ -75,12 +64,12 @@ pub(super) fn predicate_at_scan(
     acc_predicates: PlHashMap<Arc<str>, ExprIR>,
     predicate: Option<ExprIR>,
     expr_arena: &mut Arena<AExpr>,
-) -> Option<Node> {
+) -> Option<ExprIR> {
     if !acc_predicates.is_empty() {
         let mut new_predicate =
             combine_predicates(acc_predicates.into_values(), expr_arena);
         if let Some(pred) = predicate {
-            new_predicate = new_predicate.and(pred, expr_arena)
+            new_predicate.set_node(combine_by_and(new_predicate.node(), pred.node(), expr_arena));
         }
         Some(new_predicate)
     } else {
@@ -121,16 +110,16 @@ pub(super) fn predicate_is_sort_boundary(node: Node, expr_arena: &Arena<AExpr>) 
 /// transferred to local.
 pub(super) fn transfer_to_local_by_name<F>(
     expr_arena: &Arena<AExpr>,
-    acc_predicates: &mut PlHashMap<Arc<str>, Node>,
+    acc_predicates: &mut PlHashMap<Arc<str>, ExprIR >,
     mut condition: F,
-) -> Vec<Node>
+) -> Vec<ExprIR>
 where
     F: FnMut(Arc<str>) -> bool,
 {
     let mut remove_keys = Vec::with_capacity(acc_predicates.len());
 
     for (key, predicate) in &*acc_predicates {
-        let root_names = aexpr_to_leaf_names(*predicate, expr_arena);
+        let root_names = aexpr_to_leaf_names(predicate.node(), expr_arena);
         for name in root_names {
             if condition(name) {
                 remove_keys.push(key.clone());
@@ -223,33 +212,24 @@ pub(super) fn aexpr_blocks_predicate_pushdown(node: Node, expr_arena: &Arena<AEx
 /// * `col(A)                   => (A, A)`
 /// * `col(A).sum().alias(B)    => None`
 fn get_maybe_aliased_projection_to_input_name_map(
-    node: Node,
-    expr_arena: &Arena<AExpr>,
+    e: &ExprIR,
+    expr_arena: &Arena<AExpr>
 ) -> Option<(Arc<str>, Arc<str>)> {
-    let mut curr_node = node;
-    let mut curr_alias: Option<Arc<str>> = None;
-
-    loop {
-        match expr_arena.get(curr_node) {
-            AExpr::Alias(node, alias) => {
-                if curr_alias.is_none() {
-                    curr_alias = Some(alias.clone());
-                }
-
-                curr_node = *node;
-            },
-            AExpr::Column(name) => {
-                return if let Some(alias) = curr_alias {
-                    Some((alias, name.clone()))
-                } else {
-                    Some((name.clone(), name.clone()))
-                }
-            },
-            _ => break,
+    let ae = expr_arena.get(e.node());
+    match e.get_alias() {
+        Some(alias) => {
+            match ae {
+                AExpr::Column(c_name) => Some((alias.clone(), c_name.clone())),
+                _ => None
+            }
+        },
+        _ => {
+            match ae {
+                AExpr::Column(c_name) => Some((c_name.clone(), c_name.clone())),
+                _ => None
+            }
         }
     }
-
-    None
 }
 
 pub enum PushdownEligibility {
@@ -262,8 +242,8 @@ pub enum PushdownEligibility {
 #[allow(clippy::type_complexity)]
 pub fn pushdown_eligibility(
     input_schema: &Schema,
-    projection_nodes: &[Node],
-    acc_predicates: &PlHashMap<Arc<str>, Node>,
+    projection_nodes: &[ExprIR],
+    acc_predicates: &PlHashMap<Arc<str>, ExprIR>,
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<(PushdownEligibility, PlHashMap<Arc<str>, Arc<str>>)> {
     let mut ae_nodes_stack = Vec::<Node>::with_capacity(4);
@@ -307,10 +287,8 @@ pub fn pushdown_eligibility(
                             PlHashSet::<Arc<str>>::with_capacity(partition_by.len());
 
                         for node in partition_by.iter() {
-                            // Only accept col() or col().alias()
-                            if let Some((_, name)) =
-                                get_maybe_aliased_projection_to_input_name_map(*node, expr_arena)
-                            {
+                            // Only accept col()
+                            if let AExpr::Column(name) = expr_arena.get(*node) {
                                 partition_by_names.insert(name.clone());
                             } else {
                                 // Nested windows can also qualify for push down.
@@ -320,6 +298,7 @@ pub fn pushdown_eligibility(
                                 // Both exprs window over A, so predicates referring
                                 // to A can still be pushed.
                                 ae_nodes_stack.push(*node);
+
                             }
                         }
 
@@ -352,9 +331,9 @@ pub fn pushdown_eligibility(
             true
         };
 
-    for node in projection_nodes.iter() {
+    for e in projection_nodes.iter() {
         if let Some((alias, column_name)) =
-            get_maybe_aliased_projection_to_input_name_map(*node, expr_arena)
+            get_maybe_aliased_projection_to_input_name_map(e, expr_arena)
         {
             if alias != column_name {
                 alias_to_col_map.insert(alias.clone(), column_name.clone());
@@ -363,16 +342,10 @@ pub fn pushdown_eligibility(
             continue;
         }
 
-        modified_projection_columns.insert(Arc::<str>::from(
-            expr_arena
-                .get(*node)
-                .to_field(input_schema, Context::Default, expr_arena)?
-                .name()
-                .as_str(),
-        ));
+        modified_projection_columns.insert(e.output_name_arc().clone());
 
         debug_assert!(ae_nodes_stack.is_empty());
-        ae_nodes_stack.push(*node);
+        ae_nodes_stack.push(e.node());
 
         if !process_projection_or_predicate(
             &mut ae_nodes_stack,
@@ -407,9 +380,9 @@ pub fn pushdown_eligibility(
         common_window_inputs = new;
     }
 
-    for node in acc_predicates.values() {
+    for e in acc_predicates.values() {
         debug_assert!(ae_nodes_stack.is_empty());
-        ae_nodes_stack.push(*node);
+        ae_nodes_stack.push(e.node());
 
         if !process_projection_or_predicate(
             &mut ae_nodes_stack,
@@ -438,10 +411,10 @@ pub fn pushdown_eligibility(
 
     let to_local = acc_predicates
         .iter()
-        .filter_map(|(key, &node)| {
+        .filter_map(|(key, e)| {
             debug_assert!(ae_nodes_stack.is_empty());
 
-            ae_nodes_stack.push(node);
+            ae_nodes_stack.push(e.node());
 
             let mut can_pushdown = true;
 
@@ -481,6 +454,7 @@ pub fn pushdown_eligibility(
 
 /// Used in places that previously handled blocking exprs before refactoring.
 /// Can probably be eventually removed if it isn't catching anything.
+#[inline(always)]
 pub(super) fn debug_assert_aexpr_allows_predicate_pushdown(node: Node, expr_arena: &Arena<AExpr>) {
     debug_assert!(
         !aexpr_blocks_predicate_pushdown(node, expr_arena),

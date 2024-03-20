@@ -1,5 +1,34 @@
 use super::*;
 
+type Name = Arc<str>;
+
+#[derive(Default)]
+pub(crate) enum OutputName {
+    #[default]
+    None,
+    LiteralLhs(Name),
+    ColumnLhs(Name),
+    Alias(Name)
+}
+
+impl OutputName {
+    fn unwrap(&self) -> &Name {
+        match self {
+            OutputName::Alias(name) => name,
+            OutputName::ColumnLhs(name) => name,
+            OutputName::LiteralLhs(name) => name,
+            OutputName::None => panic!("no output name set")
+        }
+    }
+
+    pub(crate) fn is_none(&self) -> bool {
+        matches!(self, OutputName::None)
+    }
+    pub(crate) fn is_alias(&self) -> bool {
+        matches!(self, OutputName::Alias(_))
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct ExprIR {
     output_dtype: Option<DataType>,
@@ -7,7 +36,7 @@ pub struct ExprIR {
     /// This is `None` for literals.
     left_most_input_name: Option<Arc<str>>,
     /// Output name of this expression.
-    output_name: Option<Arc<str>>,
+    output_name: OutputName,
     /// Reduced expression.
     /// This expression is pruned from `alias` and already expanded.
     node: Node
@@ -17,11 +46,11 @@ impl ExprIR {
     pub(crate) fn new(
         node: Node,
         left_most_input_name: Option<Arc<str>>,
-        output_name: Arc<str>) -> Self {
+        output_name: OutputName) -> Self {
         ExprIR {
             output_dtype: None,
             left_most_input_name,
-            output_name: Some(output_name),
+            output_name,
             node
         }
     }
@@ -31,9 +60,8 @@ impl ExprIR {
             node,
             output_dtype: None,
             left_most_input_name: None,
-            output_name: None
+            output_name: OutputName::None
         }
-
     }
 
     #[inline]
@@ -46,7 +74,7 @@ impl ExprIR {
     }
 
     pub(crate) fn output_name_arc(&self) -> &Arc<str> {
-        self.output_name.as_ref().unwrap()
+        self.output_name.unwrap()
     }
 
     pub(crate) fn output_name(&self) -> &str {
@@ -67,17 +95,16 @@ impl ExprIR {
     pub(crate) fn to_expr(&self, expr_arena: &Arena<AExpr>) -> Expr {
         let out = node_to_expr(self.node, expr_arena);
 
-        match (&self.left_most_input_name, &self.output_name) {
-            (Some(i), Some(o)) => {
-                if i == o {
-                    out
-                } else {
-                    out.alias(o)
-                }
-            },
-            (Some(_), None) => out,
-            (None, None) => out,
-            (None, Some(o)) => out.alias(o),
+        match &self.output_name {
+            OutputName::Alias(name) => out.alias(name.as_ref()),
+            _ => out
+        }
+    }
+
+    pub(crate) fn get_alias(&self) -> Option<&Name> {
+        match &self.output_name {
+            OutputName::Alias(name) => Some(name),
+            _ => None
         }
     }
 }

@@ -17,7 +17,7 @@ fn get_literal_name() -> Arc<str> {
 pub fn to_expr_ir(expr: Expr, arena: &mut Arena<AExpr>) -> ExprIR {
     let mut state = ConversionState::new();
     let node = to_aexpr_impl(expr, arena, &mut state);
-    ExprIR::new(node, state.input_name, state.output_name.unwrap())
+    ExprIR::new(node, state.left_most_input_name, state.output_name)
 }
 
 fn to_expr_irs(input: Vec<Expr>, arena: &mut Arena<AExpr>) -> Vec<ExprIR> {
@@ -36,8 +36,8 @@ pub fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
 #[derive(Default)]
 struct ConversionState {
     prune_alias: bool,
-    output_name: Option<Arc<str>>,
-    input_name: Option<Arc<str>>,
+    left_most_input_name: Option<Arc<str>>,
+    output_name: OutputName,
 }
 
 impl ConversionState {
@@ -60,7 +60,7 @@ fn to_aexpr_impl(expr: Expr, arena: &mut Arena<AExpr>, state: &mut ConversionSta
         Expr::Alias(e, name) => {
             if state.prune_alias {
                 if state.output_name.is_none() {
-                    state.output_name = Some(name);
+                    state.output_name = OutputName::Alias(name);
                 }
                 to_aexpr_impl(*e, arena, state);
                 arena.pop().unwrap()
@@ -69,14 +69,17 @@ fn to_aexpr_impl(expr: Expr, arena: &mut Arena<AExpr>, state: &mut ConversionSta
             }
         },
         Expr::Literal(value) => {
-            if state.output_name.is_none() && state.input_name.is_none() {
-                state.output_name = Some(get_literal_name())
+            if state.output_name.is_none() {
+                state.output_name = OutputName::LiteralLhs(get_literal_name())
             }
             AExpr::Literal(value)
         },
         Expr::Column(name) => {
-            if state.input_name.is_none() {
-                state.input_name = Some(name.clone())
+            if state.output_name.is_none() {
+                state.output_name = OutputName::ColumnLhs(name.clone())
+            }
+            if state.left_most_input_name.is_none() {
+                state.left_most_input_name = Some(name.clone())
             }
             AExpr::Column(name)
         },
