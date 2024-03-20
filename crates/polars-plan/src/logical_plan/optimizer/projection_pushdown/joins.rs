@@ -5,8 +5,8 @@ use super::*;
 
 fn add_keys_to_accumulated_state(
     expr: Node,
-    acc_projections: &mut Vec<Node>,
-    local_projection: &mut Vec<Node>,
+    acc_projections: &mut Vec<ColumnNode>,
+    local_projection: &mut Vec<ColumnNode>,
     projected_names: &mut PlHashSet<Arc<str>>,
     expr_arena: &mut Arena<AExpr>,
     // only for left hand side table we add local names
@@ -21,7 +21,7 @@ fn add_keys_to_accumulated_state(
         // take the left most name as output name
         let name = aexpr_to_leaf_name(expr, expr_arena);
         let node = expr_arena.add(AExpr::Column(name.clone()));
-        local_projection.push(node);
+        local_projection.push(ColumnNode(node));
         Some(name)
     } else {
         None
@@ -33,10 +33,10 @@ pub(super) fn process_asof_join(
     proj_pd: &mut ProjectionPushDown,
     input_left: Node,
     input_right: Node,
-    left_on: Vec<Node>,
-    right_on: Vec<Node>,
+    left_on: Vec<ExprIR>,
+    right_on: Vec<ExprIR>,
     options: Arc<JoinOptions>,
-    acc_projections: Vec<Node>,
+    acc_projections: Vec<ColumnNode>,
     _projected_names: PlHashSet<Arc<str>>,
     projections_seen: usize,
     lp_arena: &mut Arena<ALogicalPlan>,
@@ -195,10 +195,10 @@ pub(super) fn process_join(
     proj_pd: &mut ProjectionPushDown,
     input_left: Node,
     input_right: Node,
-    left_on: Vec<Node>,
-    right_on: Vec<Node>,
+    left_on: Vec<ExprIR>,
+    right_on: Vec<ExprIR>,
     options: Arc<JoinOptions>,
-    acc_projections: Vec<Node>,
+    acc_projections: Vec<ColumnNode>,
     _projected_names: PlHashSet<Arc<str>>,
     projections_seen: usize,
     lp_arena: &mut Arena<ALogicalPlan>,

@@ -108,3 +108,9 @@ impl ExprIR {
         }
     }
 }
+
+
+/// A Node that is restricted to `AExpr::Column`
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub(crate) struct ColumnNode(pub(crate) Node);

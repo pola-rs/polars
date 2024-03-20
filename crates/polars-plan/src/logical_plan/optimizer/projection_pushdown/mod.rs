@@ -25,10 +25,10 @@ use crate::prelude::optimizer::projection_pushdown::projection::process_projecti
 use crate::prelude::optimizer::projection_pushdown::rename::process_rename;
 use crate::prelude::*;
 use crate::utils::{
-    aexpr_assign_renamed_leaf, aexpr_to_leaf_names, check_input_node, expr_is_projected_upstream,
+    aexpr_assign_renamed_leaf, aexpr_to_leaf_names, check_input_node
 };
 
-fn init_vec() -> Vec<Node> {
+fn init_vec() -> Vec<ExprIR> {
     Vec::with_capacity(16)
 }
 fn init_set() -> PlHashSet<Arc<str>> {
@@ -37,7 +37,7 @@ fn init_set() -> PlHashSet<Arc<str>> {
 
 /// utility function to get names of the columns needed in projection at scan level
 fn get_scan_columns(
-    acc_projections: &mut Vec<Node>,
+    acc_projections: &mut Vec<ExprIR>,
     expr_arena: &Arena<AExpr>,
     row_index: Option<&RowIndex>,
 ) -> Option<Arc<Vec<String>>> {
@@ -45,7 +45,7 @@ fn get_scan_columns(
     if !acc_projections.is_empty() {
         let mut columns = Vec::with_capacity(acc_projections.len());
         for expr in acc_projections {
-            for name in aexpr_to_leaf_names(*expr, expr_arena) {
+            for name in aexpr_to_leaf_names(expr.node(), expr_arena) {
                 // we shouldn't project the row-count column, as that is generated
                 // in the scan
                 let push = match row_index {
@@ -71,17 +71,17 @@ fn get_scan_columns(
 ///
 /// - `expands_schema`. An unnest adds more columns to a schema, so we cannot use fast path
 fn split_acc_projections(
-    acc_projections: Vec<Node>,
+    acc_projections: Vec<ColumnNode>,
     down_schema: &Schema,
     expr_arena: &Arena<AExpr>,
     expands_schema: bool,
-) -> (Vec<Node>, Vec<Node>, PlHashSet<Arc<str>>) {
+) -> (Vec<ColumnNode>, Vec<ColumnNode>, PlHashSet<Arc<str>>) {
     // If node above has as many columns as the projection there is nothing to pushdown.
     if !expands_schema && down_schema.len() == acc_projections.len() {
         let local_projections = acc_projections;
         (vec![], local_projections, PlHashSet::new())
     } else {
-        let (acc_projections, local_projections): (Vec<Node>, Vec<Node>) = acc_projections
+        let (acc_projections, local_projections): (Vec<_>, Vec<_>) = acc_projections
             .into_iter()
             .partition(|expr| check_input_node(*expr, down_schema, expr_arena));
         let mut names = init_set();
@@ -194,9 +194,24 @@ impl ProjectionPushDown {
         Ok(self.finish_node(acc_projections, builder))
     }
 
+    fn finish_node_simple_projection(
+        &mut self,
+        local_projections: &[Node],
+        builder: ALogicalPlanBuilder,
+        expr_arena: &Arena<AExpr>
+    ) -> ALogicalPlan {
+        if !local_projections.is_empty() {
+            builder
+                .project_simple_nodes(local_projections, expr_arena)
+                .build()
+        } else {
+            builder.build()
+        }
+    }
+
     fn finish_node(
         &mut self,
-        local_projections: Vec<Node>,
+        local_projections: Vec<ExprIR>,
         builder: ALogicalPlanBuilder,
     ) -> ALogicalPlan {
         if !local_projections.is_empty() {
@@ -214,8 +229,8 @@ impl ProjectionPushDown {
         schema_left: &Schema,
         schema_right: &Schema,
         proj: Node,
-        pushdown_left: &mut Vec<Node>,
-        pushdown_right: &mut Vec<Node>,
+        pushdown_left: &mut Vec<ExprIR>,
+        pushdown_right: &mut Vec<ExprIR>,
         names_left: &mut PlHashSet<Arc<str>>,
         names_right: &mut PlHashSet<Arc<str>>,
         expr_arena: &Arena<AExpr>,
@@ -250,7 +265,7 @@ impl ProjectionPushDown {
     fn pushdown_and_assign(
         &mut self,
         input: Node,
-        acc_projections: Vec<Node>,
+        acc_projections: Vec<ColumnNode>,
         names: PlHashSet<Arc<str>>,
         projections_seen: usize,
         lp_arena: &mut Arena<ALogicalPlan>,
@@ -277,13 +292,13 @@ impl ProjectionPushDown {
     fn pushdown_and_assign_check_schema(
         &mut self,
         input: Node,
-        acc_projections: Vec<Node>,
+        acc_projections: Vec<ColumnNode>,
         projections_seen: usize,
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
         // an unnest changes/expands the schema
         expands_schema: bool,
-    ) -> PolarsResult<Vec<Node>> {
+    ) -> PolarsResult<Vec<ExprIR>> {
         let alp = lp_arena.take(input);
         let down_schema = alp.schema(lp_arena);
 

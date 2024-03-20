@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use smartstring::alias::String as SmartString;
+use polars_utils::iter::IntoIteratorCopied;
 
 use super::builder_functions::*;
 use super::*;
@@ -59,13 +60,26 @@ impl<'a> ALogicalPlanBuilder<'a> {
         }
     }
 
-    pub fn project_simple(self, names: &[&str]) -> PolarsResult<Self> {
+    pub(crate) fn project_simple_nodes(self, nodes: &[Node], expr_arena: &Arena<AExpr>) -> PolarsResult<Self> {
+        let iter = nodes.iter().map(|node| match expr_arena.get(*node) {
+            AExpr::Column(name) => name.as_ref(),
+            _ => unreachable!()
+        });
+
+        self.project_simple(iter)
+    }
+
+    pub(crate) fn project_simple<'c, I>(self, names: I) -> PolarsResult<Self>
+    where I: IntoIterator<Item = &'c str>,
+    I::IntoIter: ExactSizeIterator,
+    {
+        let mut names = names.into_iter();
         // if len == 0, no projection has to be done. This is a select all operation.
-        if names.is_empty() {
+        if names.size_hint().0 == 0 {
             Ok(self)
         } else {
             let input_schema = self.schema();
-            let schema = names.iter().copied().map(|name| {
+            let schema = names.map(|name| {
                 let dtype = input_schema.try_get(name)?;
                 Ok(Field::new(name, dtype.clone()))
             }).collect::<PolarsResult<Schema>>()?;

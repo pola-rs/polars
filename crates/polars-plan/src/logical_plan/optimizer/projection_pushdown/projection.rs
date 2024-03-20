@@ -2,7 +2,6 @@ use super::*;
 
 fn is_count(node: Node, expr_arena: &Arena<AExpr>) -> bool {
     match expr_arena.get(node) {
-        AExpr::Alias(node, _) => is_count(*node, expr_arena),
         AExpr::Len => true,
         _ => false,
     }
@@ -57,7 +56,7 @@ fn check_double_projection(
 pub(super) fn process_projection(
     proj_pd: &mut ProjectionPushDown,
     input: Node,
-    exprs: Vec<Node>,
+    exprs: Vec<ExprIR>,
     mut acc_projections: Vec<Node>,
     mut projected_names: PlHashSet<Arc<str>>,
     projections_seen: usize,
@@ -98,7 +97,7 @@ pub(super) fn process_projection(
         for e in &exprs {
             if has_pushed_down {
                 // remove projections that are not used upstream
-                if !expr_is_projected_upstream(e, input, lp_arena, expr_arena, &projected_names) {
+                if !projected_names.contains(e.output_name_arc()) {
                     continue;
                 }
 
