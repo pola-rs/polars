@@ -245,10 +245,10 @@ impl LogicalPlanBuilder {
 
         // Use first path to get schema.
         let path = paths
-            .get(0)
+            .first()
             .ok_or_else(|| polars_err!(ComputeError: "expected at least 1 path"))?;
 
-        let metadata = if is_cloud_url(&path) {
+        let metadata = if is_cloud_url(path) {
             #[cfg(not(feature = "cloud"))]
             panic!(
                 "One or more of the cloud storage features ('aws', 'gcp', ...) must be enabled."
@@ -266,7 +266,7 @@ impl LogicalPlanBuilder {
             }
         } else {
             arrow::io::ipc::read::read_file_metadata(&mut std::io::BufReader::new(
-                polars_utils::open_file(&path)?,
+                polars_utils::open_file(path)?,
             ))?
         };
 
