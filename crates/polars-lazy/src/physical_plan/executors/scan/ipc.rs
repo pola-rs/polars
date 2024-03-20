@@ -200,15 +200,65 @@ impl IpcExec {
                         IpcReadOptions::default()
                             .with_row_limit(self.file_options.n_rows)
                             .with_row_index(self.file_options.row_index.clone())
-                            .with_projection(self.file_options.with_columns.as_deref().cloned())
-                            .with_predicate(predicate.clone()),
+                            .with_projection(self.file_options.with_columns.as_deref().cloned()),
+                        // .with_predicate(predicate.clone()),
                         verbose,
                     )
                     .await?,
             );
         }
 
-        accumulate_dataframes_vertical(dfs)
+        let offsets = {
+            // NOTE: Could use `scan` here but I believe this gets optimized
+            // better, unverified.
+            let mut counts = dfs
+                .iter()
+                .map(|df| IdxSize::try_from(df.height()).unwrap())
+                .collect::<Box<[IdxSize]>>();
+            prefix_sum_in_place(&mut counts[..]);
+            counts
+        };
+
+        // Update the row indices now that we know how many rows are in each
+        // file.
+        if let Some(row_index) = self.file_options.row_index.as_ref() {
+            let mut offset = 0;
+            for df in dfs.iter_mut() {
+                let count = df.height();
+                df.apply(&row_index.name, |series| {
+                    series.idx().expect("index column should be of index type") + offset
+                })
+                .expect("index column should exist");
+                offset += count;
+            }
+        }
+
+        // Accumulate dataframes while adjusting for the possibility of having
+        // read more rows than the limit.
+        let row_limit = self
+            .file_options
+            .n_rows
+            .map(|limit| limit.try_into().unwrap())
+            .unwrap_or(IdxSize::MAX);
+
+        let mut df = accumulate_dataframes_vertical(dfs.into_iter().enumerate().filter_map(
+            |(index, df)| {
+                let count: IdxSize = df.height().try_into().unwrap();
+                if count == 0 {
+                    return None;
+                }
+                let remaining = row_limit.checked_sub(offsets[index])?;
+                Some(if remaining < count {
+                    df.slice(0, remaining.try_into().unwrap())
+                } else {
+                    df
+                })
+            },
+        ))?;
+
+        apply_predicate(&mut df, predicate.as_deref(), true)?;
+
+        Ok(df)
 
         // TODO: WIP
         // let paths = self.paths.clone();
