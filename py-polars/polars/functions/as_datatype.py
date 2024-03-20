@@ -205,9 +205,10 @@ def duration(
         Number of microseconds.
     nanoseconds
         Number of nanoseconds.
-    time_unit : {'us', 'ms', 'ns'} or None
-        Time unit of the resulting expression, if no time unit is specified, and if nanosecond is specified,
-        then it will be set to `ns`. Otherwise, it will be set tu  `us`.
+    time_unit : {None, 'us', 'ms', 'ns'}
+        Time unit of the resulting expression. If set to `None` (default), the time
+        unit will be inferred from the other inputs: `'ns'` if `nanoseconds` was
+        specified, `'us'` otherwise.
 
     Returns
     -------
@@ -303,7 +304,6 @@ def duration(
         if time_unit is None:
             time_unit = "ns"
 
-    # If the time unit wasn't set in one of the if-clauses then it is set to 'us'
     if time_unit is None:
         time_unit = "us"
 

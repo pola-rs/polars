@@ -175,3 +175,9 @@ def test_duration_time_unit_us() -> None:
     result = pl.duration(milliseconds=4, microseconds=3_000)
     expected = pl.duration(milliseconds=4, microseconds=3_000, time_unit="us")
     assert_frame_equal(pl.select(result), pl.select(expected))
+
+
+def test_duration_time_unit_ms() -> None:
+    result = pl.duration(milliseconds=4)
+    expected = pl.duration(milliseconds=4, time_unit="us")
+    assert_frame_equal(pl.select(result), pl.select(expected))
