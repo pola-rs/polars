@@ -298,9 +298,8 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
     }
 
     fn get_list_from_series(ob: &PyAny, _strict: bool) -> PyResult<AnyValue<'static>> {
-        let py_pyseries = ob.getattr(intern!(ob.py(), "_s")).unwrap();
-        let series = py_pyseries.extract::<PySeries>().unwrap().series;
-        Ok(AnyValue::List(series))
+        let s = super::get_series(ob)?;
+        Ok(AnyValue::List(s))
     }
 
     fn get_struct(ob: &PyAny, strict: bool) -> PyResult<AnyValue<'_>> {
@@ -347,10 +346,10 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
             get_str
         } else if ob.is_instance_of::<PyBytes>() {
             get_bytes
-        } else if ob.is_instance_of::<PyDict>() {
-            get_struct
         } else if ob.is_instance_of::<PyList>() || ob.is_instance_of::<PyTuple>() {
             get_list
+        } else if ob.is_instance_of::<PyDict>() {
+            get_struct
         } else if ob.hasattr(intern!(py, "_s")).unwrap() {
             get_list_from_series
         } else {
@@ -358,10 +357,10 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
             match type_name {
                 // Can't use pyo3::types::PyDateTime with abi3-py37 feature,
                 // so need this workaround instead of `isinstance(ob, datetime)`.
-                "datetime" => get_datetime,
                 "date" => get_date,
-                "timedelta" => get_timedelta,
                 "time" => get_time,
+                "datetime" => get_datetime,
+                "timedelta" => get_timedelta,
                 "Decimal" => get_decimal,
                 "range" => get_list,
                 _ => {
@@ -404,7 +403,7 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
 }
 
 /// Check if the object is an instance of the given class.
-/// This is useful if the class does not exist in PyO3
+/// This may be useful if the class does not exist in PyO3.
 fn is_instance_by_name(ob: &PyAny, class_name: &str, py: Python) -> bool {
     let type_name = format!("<class '{class_name}'>");
     let ancestors = ob.get_type().getattr(intern!(py, "__mro__")).unwrap();
