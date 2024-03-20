@@ -17,9 +17,9 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.sql.expression import cast as alchemy_cast
 
 import polars as pl
-from polars.datatypes.convert import _infer_dtype_from_database_typename
 from polars.exceptions import ComputeError, UnsuitableSQLError
-from polars.io.database import _ARROW_DRIVER_REGISTRY_
+from polars.io.database._arrow_registry import ARROW_DRIVER_REGISTRY
+from polars.io.database._inference import _infer_dtype_from_database_typename
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
@@ -528,7 +528,7 @@ def test_read_database_mocked(
         driver,
         batch_size,
         test_data=arrow,
-        repeat_batch_calls=_ARROW_DRIVER_REGISTRY_.get(driver, {}).get(  # type: ignore[call-overload]
+        repeat_batch_calls=ARROW_DRIVER_REGISTRY.get(driver, {}).get(  # type: ignore[call-overload]
             "repeat_batch_calls", False
         ),
     )

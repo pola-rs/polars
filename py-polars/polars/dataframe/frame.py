@@ -3445,8 +3445,6 @@ class DataFrame:
             The number of rows affected, if the driver provides this information.
             Otherwise, returns -1.
         """
-        from polars.io.database import _open_adbc_connection
-
         if if_table_exists not in (valid_write_modes := get_args(DbWriteMode)):
             allowed = ", ".join(repr(m) for m in valid_write_modes)
             msg = f"write_database `if_table_exists` must be one of {{{allowed}}}, got {if_table_exists!r}"
@@ -3476,6 +3474,8 @@ class DataFrame:
                     "\n\nInstall Polars with: pip install adbc_driver_manager"
                 )
                 raise ModuleNotFoundError(msg) from exc
+
+            from polars.io.database._uri import _open_adbc_connection
 
             if if_table_exists == "fail":
                 # if the table exists, 'create' will raise an error,
