@@ -227,13 +227,10 @@ fn finish_index_and_dfs(
 ) -> PolarsResult<DataFrame> {
     index_and_dfs.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
 
-    #[cfg(debug_assertions)]
-    {
-        assert!(
-            index_and_dfs.iter().enumerate().all(|(a, &(b, _))| a == b),
-            "expected dataframe indices in order from 0 to len"
-        );
-    }
+    debug_assert!(
+        index_and_dfs.iter().enumerate().all(|(a, &(b, _))| a == b),
+        "expected dataframe indices in order from 0 to len"
+    );
 
     debug_assert_eq!(index_and_dfs.len(), row_counter.counts.len());
     let mut offset = 0;
