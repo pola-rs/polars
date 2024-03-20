@@ -5,12 +5,12 @@ use polars::export::arrow::types::NativeType;
 use polars_core::prelude::*;
 use polars_core::utils::CustomIterTools;
 use polars_rs::export::arrow::bitmap::MutableBitmap;
-use pyo3::exceptions::{PyTypeError, PyValueError};
+use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 
 use crate::arrow_interop::to_rust::array_to_rust;
 use crate::conversion::any_value::py_object_to_any_value;
-use crate::conversion::{slice_extract_wrapped, vec_extract_wrapped, Wrap};
+use crate::conversion::Wrap;
 use crate::error::PyPolarsErr;
 use crate::prelude::ObjectValue;
 use crate::PySeries;
@@ -54,9 +54,7 @@ impl PySeries {
     fn new_bool(py: Python, name: &str, array: &PyArray1<bool>, _strict: bool) -> Self {
         let array = array.readonly();
         let vals = array.as_slice().unwrap();
-        py.allow_threads(|| PySeries {
-            series: Series::new(name, vals),
-        })
+        py.allow_threads(|| Series::new(name, vals).into())
     }
 
     #[staticmethod]
@@ -93,17 +91,17 @@ impl PySeries {
 #[pymethods]
 impl PySeries {
     #[staticmethod]
-    fn new_opt_bool(name: &str, obj: &PyAny, strict: bool) -> PyResult<Self> {
-        let len = obj.len()?;
+    fn new_opt_bool(name: &str, values: &PyAny, strict: bool) -> PyResult<Self> {
+        let len = values.len()?;
         let mut builder = BooleanChunkedBuilder::new(name, len);
 
-        for res in obj.iter()? {
-            let item = res?;
-            if item.is_none() {
+        for res in values.iter()? {
+            let value = res?;
+            if value.is_none() {
                 builder.append_null()
             } else {
-                match item.extract::<bool>() {
-                    Ok(val) => builder.append_value(val),
+                match value.extract::<bool>() {
+                    Ok(v) => builder.append_value(v),
                     Err(e) => {
                         if strict {
                             return Err(e);
@@ -116,27 +114,26 @@ impl PySeries {
         let ca = builder.finish();
 
         let s = ca.into_series();
-        Ok(PySeries { series: s })
+        Ok(s.into())
     }
 }
 
-fn new_primitive<'a, T>(name: &str, obj: &'a PyAny, strict: bool) -> PyResult<PySeries>
+fn new_primitive<'a, T>(name: &str, values: &'a PyAny, strict: bool) -> PyResult<PySeries>
 where
     T: PolarsNumericType,
     ChunkedArray<T>: IntoSeries,
     T::Native: FromPyObject<'a>,
 {
-    let len = obj.len()?;
+    let len = values.len()?;
     let mut builder = PrimitiveChunkedBuilder::<T>::new(name, len);
 
-    for res in obj.iter()? {
-        let item = res?;
-
-        if item.is_none() {
+    for res in values.iter()? {
+        let value = res?;
+        if value.is_none() {
             builder.append_null()
         } else {
-            match item.extract::<T::Native>() {
-                Ok(val) => builder.append_value(val),
+            match value.extract::<T::Native>() {
+                Ok(v) => builder.append_value(v),
                 Err(e) => {
                     if strict {
                         return Err(e);
@@ -149,7 +146,7 @@ where
     let ca = builder.finish();
 
     let s = ca.into_series();
-    Ok(PySeries { series: s })
+    Ok(s.into())
 }
 
 // Init with lists that can contain Nones
@@ -177,98 +174,141 @@ init_method_opt!(new_opt_f32, Float32Type, f32);
 init_method_opt!(new_opt_f64, Float64Type, f64);
 
 #[pymethods]
-#[allow(
-    clippy::wrong_self_convention,
-    clippy::should_implement_trait,
-    clippy::len_without_is_empty
-)]
 impl PySeries {
     #[staticmethod]
-    fn new_from_any_values(name: &str, values: Vec<&PyAny>, strict: bool) -> PyResult<Self> {
+    fn new_from_any_values(name: &str, values: &PyAny, strict: bool) -> PyResult<Self> {
         let any_values_result = values
-            .iter()
-            .map(|v| py_object_to_any_value(v, strict))
+            .iter()?
+            .map(|v| py_object_to_any_value(v?, strict))
             .collect::<PyResult<Vec<AnyValue>>>();
         let result = any_values_result.and_then(|avs| {
-            let s =
-                Series::from_any_values(name, avs.as_slice(), strict).map_err(PyPolarsErr::from)?;
+            let s = Series::from_any_values(name, avs.as_slice(), strict).map_err(|e| {
+                PyTypeError::new_err(format!(
+                    "{e}\n\nHint: Try setting `strict=False` to allow passing data with mixed types."
+                ))
+            })?;
             Ok(s.into())
         });
 
         // Fall back to Object type for non-strict construction.
         if !strict && result.is_err() {
-            let s = Python::with_gil(|py| {
+            return Python::with_gil(|py| {
                 let objects = values
-                    .into_iter()
-                    .map(|v| ObjectValue {
-                        inner: v.to_object(py),
+                    .iter()?
+                    .map(|v| {
+                        let obj = ObjectValue {
+                            inner: v?.to_object(py),
+                        };
+                        Ok(obj)
                     })
-                    .collect();
-                Self::new_object(py, name, objects, strict)
+                    .collect::<PyResult<Vec<ObjectValue>>>()?;
+                Ok(Self::new_object(py, name, objects, strict))
             });
-            return Ok(s);
         }
 
-        result.map_err(|e| {
-            PyTypeError::new_err(format!(
-                "{e}\n\nHint: Try setting `strict=False` to allow passing data with mixed types."
-            ))
-        })
+        result
     }
 
     #[staticmethod]
     fn new_from_any_values_and_dtype(
         name: &str,
-        values: Vec<&PyAny>,
+        values: &PyAny,
         dtype: Wrap<DataType>,
         strict: bool,
     ) -> PyResult<Self> {
         let any_values = values
-            .into_iter()
-            .map(|v| py_object_to_any_value(v, strict))
+            .iter()?
+            .map(|v| py_object_to_any_value(v?, strict))
             .collect::<PyResult<Vec<AnyValue>>>()?;
         let s = Series::from_any_values_and_dtype(name, any_values.as_slice(), &dtype.0, strict)
             .map_err(|e| {
                 PyTypeError::new_err(format!(
-                "{e}\n\nHint: Try setting `strict=False` to allow passing data with mixed types."
-            ))
+                    "{e}\n\nHint: Try setting `strict=False` to allow passing data with mixed types."
+                ))
             })?;
         Ok(s.into())
     }
 
     #[staticmethod]
-    fn new_str(name: &str, val: Wrap<StringChunked>, _strict: bool) -> Self {
-        val.0.into_series().with_name(name).into()
+    fn new_str(name: &str, values: &PyAny, _strict: bool) -> PyResult<Self> {
+        let len = values.len()?;
+        let mut builder = StringChunkedBuilder::new(name, len);
+
+        for res in values.iter()? {
+            let value = res?;
+            match value.extract::<&str>() {
+                Ok(v) => builder.append_value(v),
+                Err(_) => builder.append_null(),
+            }
+        }
+
+        let ca = builder.finish();
+        let s = ca.into_series();
+        Ok(s.into())
     }
 
     #[staticmethod]
-    fn new_binary(name: &str, val: Wrap<BinaryChunked>, _strict: bool) -> Self {
-        val.0.into_series().with_name(name).into()
+    fn new_binary(name: &str, values: &PyAny, _strict: bool) -> PyResult<Self> {
+        let len = values.len()?;
+        let mut builder = BinaryChunkedBuilder::new(name, len);
+
+        for res in values.iter()? {
+            let value = res?;
+            match value.extract::<&[u8]>() {
+                Ok(v) => builder.append_value(v),
+                Err(_) => builder.append_null(),
+            }
+        }
+
+        let ca = builder.finish();
+        let s = ca.into_series();
+        Ok(s.into())
     }
 
     #[staticmethod]
-    fn new_null(name: &str, val: &PyAny, _strict: bool) -> PyResult<Self> {
-        Ok(Series::new_null(name, val.len()?).into())
+    fn new_decimal(name: &str, values: &PyAny, strict: bool) -> PyResult<Self> {
+        // Create a fake dtype with a placeholder "none" scale, to be inferred later.
+        let dtype = DataType::Decimal(None, None);
+        Self::new_from_any_values_and_dtype(name, values, Wrap(dtype), strict)
     }
 
     #[staticmethod]
-    pub fn new_object(py: Python, name: &str, val: Vec<ObjectValue>, _strict: bool) -> Self {
+    fn new_series_list(name: &str, values: Vec<Option<PySeries>>, _strict: bool) -> Self {
+        let series_vec: Vec<Option<Series>> = values
+            .into_iter()
+            .map(|v| v.map(|py_s| py_s.series))
+            .collect();
+        Series::new(name, series_vec).into()
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (name, values, strict, dtype))]
+    fn new_array(
+        name: &str,
+        values: &PyAny,
+        strict: bool,
+        dtype: Wrap<DataType>,
+    ) -> PyResult<Self> {
+        Self::new_from_any_values_and_dtype(name, values, dtype, strict)
+    }
+
+    #[staticmethod]
+    pub fn new_object(py: Python, name: &str, values: Vec<ObjectValue>, _strict: bool) -> Self {
         #[cfg(feature = "object")]
         {
-            let mut validity = MutableBitmap::with_capacity(val.len());
-            val.iter().for_each(|v| {
-                if v.inner.is_none(py) {
-                    // SAFETY: we can ensure that validity has correct capacity.
-                    unsafe { validity.push_unchecked(false) };
-                } else {
-                    // SAFETY: we can ensure that validity has correct capacity.
-                    unsafe { validity.push_unchecked(true) };
-                }
+            let mut validity = MutableBitmap::with_capacity(values.len());
+            values.iter().for_each(|v| {
+                let is_valid = !v.inner.is_none(py);
+                // SAFETY: we can ensure that validity has correct capacity.
+                unsafe { validity.push_unchecked(is_valid) };
             });
             // Object builder must be registered. This is done on import.
-            let s =
-                ObjectChunked::<ObjectValue>::new_from_vec_and_validity(name, val, validity.into())
-                    .into_series();
+            let ca = ObjectChunked::<ObjectValue>::new_from_vec_and_validity(
+                name,
+                values,
+                validity.into(),
+            );
+            let s = ca.into_series();
             s.into()
         }
         #[cfg(not(feature = "object"))]
@@ -276,61 +316,9 @@ impl PySeries {
     }
 
     #[staticmethod]
-    fn new_series_list(name: &str, val: Vec<Option<PySeries>>, _strict: bool) -> Self {
-        let series_vec: Vec<Option<Series>> = val
-            .iter()
-            .map(|v| v.as_ref().map(|py_s| py_s.clone().series))
-            .collect();
-        Series::new(name, &series_vec).into()
-    }
-
-    #[staticmethod]
-    #[pyo3(signature = (width, inner, name, val, _strict))]
-    fn new_array(
-        width: usize,
-        inner: Option<Wrap<DataType>>,
-        name: &str,
-        val: Vec<Wrap<AnyValue>>,
-        _strict: bool,
-    ) -> PyResult<Self> {
-        if val.is_empty() {
-            let s = Series::new_empty(name, &DataType::Array(Box::new(inner.unwrap().0), width));
-            return Ok(s.into());
-        };
-
-        let val = vec_extract_wrapped(val);
-        let out = if let Some(inner) = inner {
-            Series::from_any_values_and_dtype(
-                name,
-                val.as_ref(),
-                &DataType::Array(Box::new(inner.0), width),
-                true,
-            )
-            .map_err(PyPolarsErr::from)?
-        } else {
-            let series = Series::new(name, &val);
-            match series.dtype() {
-                DataType::List(list_inner) => series
-                    .cast(&DataType::Array(
-                        Box::new(inner.map(|dt| dt.0).unwrap_or(*list_inner.clone())),
-                        width,
-                    ))
-                    .map_err(PyPolarsErr::from)?,
-                _ => return Err(PyValueError::new_err("could not create Array from input")),
-            }
-        };
-        Ok(out.into())
-    }
-
-    #[staticmethod]
-    fn new_decimal(name: &str, val: Vec<Wrap<AnyValue<'_>>>, strict: bool) -> PyResult<Self> {
-        // TODO: do we have to respect 'strict' here? It's possible if we want to.
-        let avs = slice_extract_wrapped(&val);
-        // Create a fake dtype with a placeholder "none" scale, to be inferred later.
-        let dtype = DataType::Decimal(None, None);
-        let s = Series::from_any_values_and_dtype(name, avs, &dtype, strict)
-            .map_err(PyPolarsErr::from)?;
-        Ok(s.into())
+    fn new_null(name: &str, values: &PyAny, _strict: bool) -> PyResult<Self> {
+        let len = values.len()?;
+        Ok(Series::new_null(name, len).into())
     }
 
     #[staticmethod]
