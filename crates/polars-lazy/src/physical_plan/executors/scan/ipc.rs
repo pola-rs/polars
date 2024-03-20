@@ -6,8 +6,8 @@ use polars_core::config;
 use polars_core::utils::accumulate_dataframes_vertical;
 #[cfg(feature = "cloud")]
 use polars_io::cloud::CloudOptions;
-use polars_io::is_cloud_url;
 use polars_io::predicates::apply_predicate;
+use polars_io::{is_cloud_url, RowIndex};
 use rayon::prelude::*;
 
 use super::*;
@@ -21,20 +21,6 @@ pub struct IpcExec {
     #[cfg(feature = "cloud")]
     pub(crate) cloud_options: Option<CloudOptions>,
     pub(crate) metadata: Option<arrow::io::ipc::read::FileMetadata>,
-}
-
-fn prefix_sum_in_place<'a, I: IntoIterator<Item = &'a mut IdxSize>>(values: I) {
-    let mut values = values.into_iter();
-    let Some(first) = values.next() else {
-        return;
-    };
-    let mut sum = *first;
-    *first = 0;
-    for val in values {
-        let new_sum = sum + *val;
-        *val = sum;
-        sum = new_sum;
-    }
 }
 
 impl IpcExec {
@@ -76,15 +62,16 @@ impl IpcExec {
             );
         }
 
-        let (projection, predicate) = prepare_scan_args(
-            self.predicate.clone(),
-            &mut self.file_options.with_columns,
-            &mut self.schema,
-            self.file_options.row_index.is_some(),
+        let projection = materialize_projection(
+            self.file_options
+                .with_columns
+                .as_deref()
+                .map(|cols| cols.deref()),
+            &self.schema,
             None,
+            self.file_options.row_index.is_some(),
         );
 
-        // TODO: Make `n_rows: IdxSize`.
         let n_rows = self
             .file_options
             .n_rows
@@ -96,7 +83,7 @@ impl IpcExec {
         let path_index = AtomicUsize::new(0);
         let row_counter = RwLock::new(ConsecutiveCountState::new(self.paths.len()));
 
-        let mut index_and_dfs = (0..self.paths.len())
+        let index_and_dfs = (0..self.paths.len())
             .into_par_iter()
             .map(|_| -> PolarsResult<(usize, DataFrame)> {
                 let index = path_index.fetch_add(1, Ordering::SeqCst);
@@ -142,45 +129,13 @@ impl IpcExec {
             })
             .collect::<PolarsResult<Vec<_>>>()?;
 
-        index_and_dfs.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
-
-        let offsets = {
-            let mut counts = row_counter.into_inner().unwrap().into_counts();
-            prefix_sum_in_place(&mut counts[..]);
-            counts
-        };
-
-        // Update the row indices now that we know how many rows are in each
-        // file.
-        if let Some(row_index) = self.file_options.row_index.as_ref() {
-            for &mut (index, ref mut df) in index_and_dfs.iter_mut() {
-                let offset = offsets[index];
-                df.apply(&row_index.name, |series| {
-                    series.idx().expect("index column should be of index type") + offset
-                })
-                .expect("index column should exist");
-            }
-        }
-
-        // Accumulate dataframes while adjusting for the possibility of having
-        // read more rows than the limit.
-        let mut df =
-            accumulate_dataframes_vertical(index_and_dfs.into_iter().filter_map(|(index, df)| {
-                let count: IdxSize = df.height().try_into().unwrap();
-                if count == 0 {
-                    return None;
-                }
-                let remaining = row_limit.checked_sub(offsets[index])?;
-                Some(if remaining < count {
-                    df.slice(0, remaining.try_into().unwrap())
-                } else {
-                    df
-                })
-            }))?;
-
-        apply_predicate(&mut df, predicate.as_deref(), true)?;
-
-        Ok(df)
+        finish_index_and_dfs(
+            index_and_dfs,
+            row_counter.into_inner().unwrap(),
+            self.file_options.row_index.as_ref(),
+            row_limit,
+            self.predicate.as_ref(),
+        )
     }
 
     #[cfg(feature = "cloud")]
@@ -200,15 +155,16 @@ impl IpcExec {
 
         impl<T: Send + stream::Stream + Sized> AssertSend for T {}
 
-        let row_limit = self
+        let n_rows = self
             .file_options
             .n_rows
-            .map(|limit| limit.try_into().unwrap())
-            .unwrap_or(IdxSize::MAX);
+            .map(|limit| limit.try_into().unwrap());
+
+        let row_limit = n_rows.unwrap_or(IdxSize::MAX);
 
         let row_counter = RwLock::new(ConsecutiveCountState::new(self.paths.len()));
 
-        let mut index_and_dfs = stream::iter(&*self.paths)
+        let index_and_dfs = stream::iter(&*self.paths)
             .enumerate()
             .map(|(index, path)| {
                 let this = &*self;
@@ -228,7 +184,17 @@ impl IpcExec {
                         .data(
                             this.metadata.as_ref(),
                             IpcReadOptions::default()
-                                .with_row_limit(this.file_options.n_rows)
+                                .with_row_limit(
+                                    // NOTE: If there is any file that by itself
+                                    // exceeds the row limit, passing the total
+                                    // row limit to each individual reader
+                                    // helps.
+                                    n_rows.map(|n| {
+                                        n.saturating_sub(already_read_in_sequence)
+                                            .try_into()
+                                            .unwrap()
+                                    }),
+                                )
                                 .with_row_index(this.file_options.row_index.clone())
                                 .with_projection(
                                     this.file_options.with_columns.as_deref().cloned(),
@@ -250,47 +216,67 @@ impl IpcExec {
             .try_collect::<Vec<_>>()
             .await?;
 
-        index_and_dfs.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
-
-        let offsets = {
-            let mut counts = row_counter.into_inner().unwrap().into_counts();
-            prefix_sum_in_place(&mut counts[..]);
-            counts
-        };
-
-        // Update the row indices now that we know how many rows are in each
-        // file.
-        if let Some(row_index) = self.file_options.row_index.as_ref() {
-            for &mut (index, ref mut df) in index_and_dfs.iter_mut() {
-                let offset = offsets[index];
-                df.apply(&row_index.name, |series| {
-                    series.idx().expect("index column should be of index type") + offset
-                })
-                .expect("index column should exist");
-            }
-        }
-
-        // Accumulate dataframes while adjusting for the possibility of having
-        // read more rows than the limit.
-        let mut df =
-            accumulate_dataframes_vertical(index_and_dfs.into_iter().filter_map(|(index, df)| {
-                let count: IdxSize = df.height().try_into().unwrap();
-                if count == 0 {
-                    return None;
-                }
-                let remaining = row_limit.checked_sub(offsets[index])?;
-                Some(if remaining < count {
-                    df.slice(0, remaining.try_into().unwrap())
-                } else {
-                    df
-                })
-            }))?;
-
-        let predicate = self.predicate.clone().map(phys_expr_to_io_expr);
-        apply_predicate(&mut df, predicate.as_deref(), true)?;
-
-        Ok(df)
+        finish_index_and_dfs(
+            index_and_dfs,
+            row_counter.into_inner().unwrap(),
+            self.file_options.row_index.as_ref(),
+            row_limit,
+            self.predicate.as_ref(),
+        )
     }
+}
+
+fn finish_index_and_dfs(
+    mut index_and_dfs: Vec<(usize, DataFrame)>,
+    row_counter: ConsecutiveCountState,
+    row_index: Option<&RowIndex>,
+    row_limit: IdxSize,
+    predicate: Option<&Arc<dyn PhysicalExpr>>,
+) -> PolarsResult<DataFrame> {
+    index_and_dfs.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
+
+    #[cfg(debug_assertions)]
+    {
+        assert!(
+            index_and_dfs.iter().enumerate().all(|(a, &(b, _))| a == b),
+            "expected dataframe indices in order from 0 to len"
+        );
+    }
+
+    debug_assert_eq!(index_and_dfs.len(), row_counter.counts.len());
+    let mut offset = 0;
+    let mut df = accumulate_dataframes_vertical(
+        index_and_dfs
+            .into_iter()
+            .zip(row_counter.counts())
+            .filter_map(|((_, mut df), count)| {
+                let count = count?;
+
+                let remaining = row_limit.checked_sub(offset)?;
+
+                // If necessary, correct having read too much from a single file.
+                if remaining < count {
+                    df = df.slice(0, remaining.try_into().unwrap());
+                }
+
+                // If necessary, correct row indices now that we know the offset.
+                if let Some(row_index) = row_index {
+                    df.apply(&row_index.name, |series| {
+                        series.idx().expect("index column should be of index type") + offset
+                    })
+                    .expect("index column should exist");
+                }
+
+                offset += count;
+
+                Some(df)
+            }),
+    )?;
+
+    let predicate = predicate.cloned().map(phys_expr_to_io_expr);
+    apply_predicate(&mut df, predicate.as_deref(), true)?;
+
+    Ok(df)
 }
 
 impl Executor for IpcExec {
@@ -372,13 +358,9 @@ impl ConsecutiveCountState {
         }
     }
 
-    fn into_counts(mut self) -> Box<[IdxSize]> {
-        // Set the counts to which no value has been written to zero.
-        for i in self.next_index..self.counts.len() {
-            if self.counts[i] == IdxSize::MAX {
-                self.counts[i] = 0;
-            }
-        }
+    fn counts(&self) -> impl Iterator<Item = Option<IdxSize>> + '_ {
         self.counts
+            .iter()
+            .map(|&count| (count != IdxSize::MAX).then_some(count))
     }
 }
