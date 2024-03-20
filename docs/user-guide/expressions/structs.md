@@ -99,5 +99,4 @@ That's a pretty complex set of requirements done very elegantly in Polars!
 This was discussed in the previous section on _User Defined Functions_ for the Python case.
 Here's an example of doing so with Rust:
 
-
 {{code_block('user-guide/expressions/structs','multi_column_apply',[])}}
