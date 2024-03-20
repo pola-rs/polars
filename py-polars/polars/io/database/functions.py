@@ -76,9 +76,10 @@ def read_database(  # noqa: D417
     connection
         An instantiated connection (or cursor/client object) that the query can be
         executed against. Can also pass a valid ODBC connection string, identified as
-        such if it contains the string "Driver=", in which case the `arrow-odbc`
+        such if it contains the string "Driver={...}", in which case the `arrow-odbc`
         package will be used to establish the connection and return Arrow-native data
-        to Polars.
+        to Polars. Async driver connections are also supported, though this is currently
+        considered experimental.
     iter_batches
         Return an iterator of DataFrames, where each DataFrame represents a batch of
         data returned by the query; this can be useful for processing large resultsets
@@ -126,15 +127,14 @@ def read_database(  # noqa: D417
       include Dremio and InfluxDB).
 
     * The `read_database_uri` function can be noticeably faster than `read_database`
-      if you are using a SQLAlchemy or DBAPI2 connection, as `connectorx` optimises
-      translation of the result set into Arrow format in Rust, whereas these libraries
-      will return row-wise data to Python *before* we can load into Arrow. Note that
-      you can determine the connection's URI from a SQLAlchemy engine object by calling
+      if you are using a SQLAlchemy or DBAPI2 connection, as `connectorx` and `adbc`
+      optimises translation of the result set into Arrow format. Note that you can
+      determine a connection's URI from a SQLAlchemy engine object by calling
       `conn.engine.url.render_as_string(hide_password=False)`.
 
-    * If polars has to create a cursor from your connection in order to execute the
+    * If Polars has to create a cursor from your connection in order to execute the
       query then that cursor will be automatically closed when the query completes;
-      however, polars will *never* close any other open connection or cursor.
+      however, Polars will *never* close any other open connection or cursor.
 
     * We are able to support more than just relational databases and SQL queries
       through this function. For example, we can load graph database results from
@@ -171,9 +171,9 @@ def read_database(  # noqa: D417
     ...     execute_options={"parameters": [0]},
     ... )  # doctest: +SKIP
 
-    Instantiate a DataFrame using an ODBC connection string (requires `arrow-odbc`)
-    setting upper limits on the buffer size of variadic text/binary columns, returning
-    the result as an iterator over DataFrames that each contain 1000 rows:
+    Instantiate a DataFrame using an ODBC connection string (requires the `arrow-odbc`
+    package) setting upper limits on the buffer size of variadic text/binary columns,
+    returning the result as an iterator over DataFrames that each contain 1000 rows:
 
     >>> for df in pl.read_database(
     ...     query="SELECT * FROM test_data",
@@ -189,6 +189,31 @@ def read_database(  # noqa: D417
     >>> df = pl.read_database(
     ...     query="MATCH (a:User)-[f:Follows]->(b:User) RETURN a.name, f.since, b.name",
     ...     connection=kuzu_db_conn,
+    ... )  # doctest: +SKIP
+
+    Load data from an asynchronous SQLAlchemy driver/engine; note that asynchronous
+    connections and sessions are also supported here:
+
+    >>> from sqlalchemy.ext.asyncio import create_async_engine
+    >>> async_engine = create_async_engine("sqlite+aiosqlite:///test.db")
+    >>> df = pl.read_database(
+    ...     query="SELECT * FROM test_data",
+    ...     connection=async_engine,
+    ... )  # doctest: +SKIP
+
+    Load data from an asynchronous SurrealDB client connection object; note that
+    both the WS (`Surreal`) and HTTP (`SurrealHTTP`) clients are supported:
+
+    >>> import asyncio
+    >>> async def surreal_query_to_frame(query: str, url: str):
+    ...     async with Surreal(url) as client:
+    ...         await client.use(namespace="test", database="test")
+    ...         return pl.read_database(query=query, connection=client)
+    >>> df = asyncio.run(
+    ...     surreal_query_to_frame(
+    ...         query="SELECT * FROM test_data",
+    ...         url="ws://localhost:8000/rpc",
+    ...     )
     ... )  # doctest: +SKIP
 
     """  # noqa: W505
@@ -364,7 +389,7 @@ def read_database_uri(
     ...     engine="adbc",
     ... )  # doctest: +SKIP
     """
-    from polars.io.database._uri import _read_sql_adbc, _read_sql_connectorx
+    from polars.io.database._utilities import _read_sql_adbc, _read_sql_connectorx
 
     if not isinstance(uri, str):
         msg = f"expected connection to be a URI string; found {type(uri).__name__!r}"

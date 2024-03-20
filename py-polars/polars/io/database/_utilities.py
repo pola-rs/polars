@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING, Any
 from polars.convert import from_arrow
 
 if TYPE_CHECKING:
+    from collections.abc import Coroutine
+
     if sys.version_info >= (3, 10):
         from typing import TypeAlias
     else:
@@ -20,6 +22,24 @@ if TYPE_CHECKING:
         from sqlalchemy.sql.expression import Selectable
     except ImportError:
         Selectable: TypeAlias = Any  # type: ignore[no-redef]
+
+
+def _run_async(co: Coroutine[Any, Any, Any]) -> Any:
+    """Run asynchronous code as if it was synchronous."""
+    import asyncio
+
+    try:
+        import nest_asyncio
+
+        nest_asyncio.apply()
+    except ModuleNotFoundError as _err:
+        msg = (
+            "Executing using async drivers requires the `nest_asyncio` package."
+            "\n\nPlease run: pip install nest_asyncio"
+        )
+        raise ModuleNotFoundError(msg) from None
+
+    return asyncio.run(co)
 
 
 def _read_sql_connectorx(

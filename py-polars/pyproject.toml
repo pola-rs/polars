@@ -102,6 +102,7 @@ module = [
   "pydantic",
   "pyxlsb",
   "sqlalchemy.*",
+  "surrealdb",
   "xlsx2csv",
   "xlsxwriter.*",
   "zoneinfo",
