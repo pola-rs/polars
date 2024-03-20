@@ -5,7 +5,7 @@ use polars::prelude::{AnyValue, Series};
 use polars_core::frame::row::any_values_to_dtype;
 use pyo3::intern;
 use pyo3::prelude::*;
-use pyo3::types::{PyBool, PyDict, PyFloat, PyList, PySequence, PyString, PyTuple, PyType};
+use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyList, PySequence, PyString, PyTuple, PyType};
 
 use super::{decimal_to_digits, struct_dict, ObjectValue, Wrap};
 use crate::error::PyPolarsErr;
@@ -341,7 +341,7 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
                     if ob.is_instance_of::<PyBool>() {
                         get_bool
                     // TODO: this heap allocs on failure
-                    } else if ob.extract::<i64>().is_ok() || ob.extract::<u64>().is_ok() {
+                    } else if ob.is_instance_of::<PyInt>() {
                         get_int
                     } else if ob.is_instance_of::<PyFloat>() {
                         get_float
@@ -369,8 +369,10 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
                             "Decimal" => get_decimal,
                             "range" => get_list,
                             _ => {
-                                // special branch for np.float as this fails isinstance float
-                                if ob.extract::<f64>().is_ok() {
+                                // special branch for numpy as this fails isinstance checks
+                                if ob.extract::<i64>().is_ok() || ob.extract::<u64>().is_ok() {
+                                    return get_int;
+                                } else if ob.extract::<f64>().is_ok() {
                                     return get_float;
                                 }
 
