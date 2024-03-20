@@ -294,23 +294,22 @@ impl PySeries {
     }
 
     #[staticmethod]
-    pub fn new_object(py: Python, name: &str, val: Vec<ObjectValue>, _strict: bool) -> Self {
+    pub fn new_object(py: Python, name: &str, values: Vec<ObjectValue>, _strict: bool) -> Self {
         #[cfg(feature = "object")]
         {
-            let mut validity = MutableBitmap::with_capacity(val.len());
-            val.iter().for_each(|v| {
-                if v.inner.is_none(py) {
-                    // SAFETY: we can ensure that validity has correct capacity.
-                    unsafe { validity.push_unchecked(false) };
-                } else {
-                    // SAFETY: we can ensure that validity has correct capacity.
-                    unsafe { validity.push_unchecked(true) };
-                }
+            let mut validity = MutableBitmap::with_capacity(values.len());
+            values.iter().for_each(|v| {
+                let is_valid = !v.inner.is_none(py);
+                // SAFETY: we can ensure that validity has correct capacity.
+                unsafe { validity.push_unchecked(is_valid) };
             });
             // Object builder must be registered. This is done on import.
-            let s =
-                ObjectChunked::<ObjectValue>::new_from_vec_and_validity(name, val, validity.into())
-                    .into_series();
+            let ca = ObjectChunked::<ObjectValue>::new_from_vec_and_validity(
+                name,
+                values,
+                validity.into(),
+            );
+            let s = ca.into_series();
             s.into()
         }
         #[cfg(not(feature = "object"))]
