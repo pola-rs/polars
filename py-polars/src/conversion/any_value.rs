@@ -3,6 +3,7 @@ use polars::chunked_array::object::PolarsObjectSafe;
 use polars::datatypes::{DataType, Field, OwnedObject, PlHashMap, TimeUnit};
 use polars::prelude::{AnyValue, Series};
 use polars_core::frame::row::any_values_to_dtype;
+use pyo3::exceptions::PyOverflowError;
 use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::{
@@ -129,11 +130,18 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
         Ok(AnyValue::Boolean(b))
     }
 
-    fn get_int(ob: &PyAny, _strict: bool) -> PyResult<AnyValue> {
-        // can overflow
-        match ob.extract::<i64>() {
-            Ok(v) => Ok(AnyValue::Int64(v)),
-            Err(_) => Ok(AnyValue::UInt64(ob.extract::<u64>()?)),
+    fn get_int(ob: &PyAny, strict: bool) -> PyResult<AnyValue> {
+        if let Ok(v) = ob.extract::<i64>() {
+            Ok(AnyValue::Int64(v))
+        } else if let Ok(v) = ob.extract::<u64>() {
+            Ok(AnyValue::UInt64(v))
+        } else if !strict {
+            let f = ob.extract::<f64>()?;
+            Ok(AnyValue::Float64(f))
+        } else {
+            Err(PyOverflowError::new_err(format!(
+                "int value too large for Polars integer types: {ob}"
+            )))
         }
     }
 
