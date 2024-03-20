@@ -111,14 +111,6 @@ impl IpcExec {
                     .with_projection(projection.clone())
                     .memory_mapped(self.options.memmap)
                     .finish()?;
-                // TODO: We can not supply a filter until the readers return
-                // how many total rows have been read before applying the
-                // filter. Without that, we can not correctly compute the
-                // pre-filter row count.
-                // .finish_with_scan_ops(
-                //     predicate.clone(),
-                //     verbose,
-                // )?;
 
                 row_counter
                     .write()
