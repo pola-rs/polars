@@ -177,11 +177,6 @@ init_method_opt!(new_opt_f32, Float32Type, f32);
 init_method_opt!(new_opt_f64, Float64Type, f64);
 
 #[pymethods]
-#[allow(
-    clippy::wrong_self_convention,
-    clippy::should_implement_trait,
-    clippy::len_without_is_empty
-)]
 impl PySeries {
     #[staticmethod]
     fn new_from_any_values(name: &str, values: Vec<&PyAny>, strict: bool) -> PyResult<Self> {
