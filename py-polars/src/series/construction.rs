@@ -274,12 +274,12 @@ impl PySeries {
     }
 
     #[staticmethod]
-    fn new_series_list(name: &str, val: Vec<Option<PySeries>>, _strict: bool) -> Self {
-        let series_vec: Vec<Option<Series>> = val
-            .iter()
-            .map(|v| v.as_ref().map(|py_s| py_s.clone().series))
+    fn new_series_list(name: &str, values: Vec<Option<PySeries>>, _strict: bool) -> Self {
+        let series_vec: Vec<Option<Series>> = values
+            .into_iter()
+            .map(|v| v.map(|py_s| py_s.series))
             .collect();
-        Series::new(name, &series_vec).into()
+        Series::new(name, series_vec).into()
     }
 
     #[staticmethod]
