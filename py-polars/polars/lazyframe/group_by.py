@@ -3,9 +3,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Callable, Iterable
 
 from polars import functions as F
-from polars.utils._parse_expr_input import parse_as_list_of_expressions
-from polars.utils._wrap import wrap_ldf
-from polars.utils.deprecation import deprecate_renamed_function
+from polars._utils.deprecation import deprecate_renamed_function
+from polars._utils.parse_expr_input import parse_as_list_of_expressions
+from polars._utils.wrap import wrap_ldf
 
 if TYPE_CHECKING:
     from polars import DataFrame, LazyFrame
@@ -364,6 +364,9 @@ class LazyGroupBy:
     def count(self) -> LazyFrame:
         """
         Return the number of rows in each group.
+
+        .. deprecated:: 0.20.5
+            This method has been renamed to :func:`LazyGroupBy.len`.
 
         Rows containing null values count towards the total.
 

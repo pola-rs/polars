@@ -23,11 +23,7 @@ pub(super) fn fill_null(s: &[Series], super_type: &DataType) -> PolarsResult<Ser
     }
 
     // default branch
-    fn default(series: Series, mut fill_value: Series) -> PolarsResult<Series> {
-        // broadcast to the proper length for zip_with
-        if fill_value.len() == 1 && series.len() != 1 {
-            fill_value = fill_value.new_from_index(0, series.len());
-        }
+    fn default(series: Series, fill_value: Series) -> PolarsResult<Series> {
         let mask = series.is_not_null();
         series.zip_with_same_type(&mask, &fill_value)
     }

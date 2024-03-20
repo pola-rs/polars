@@ -4,8 +4,6 @@ use std::io::{Read, Seek};
 use polars_core::prelude::*;
 #[cfg(feature = "parquet")]
 use polars_io::cloud::CloudOptions;
-#[cfg(feature = "ipc")]
-use polars_io::ipc::IpcReader;
 #[cfg(all(feature = "parquet", feature = "async"))]
 use polars_io::parquet::ParquetAsyncReader;
 #[cfg(feature = "parquet")]
@@ -239,38 +237,57 @@ impl LogicalPlanBuilder {
         cache: bool,
         row_index: Option<RowIndex>,
         rechunk: bool,
+        #[cfg(feature = "cloud")] cloud_options: Option<CloudOptions>,
     ) -> PolarsResult<Self> {
-        use polars_io::SerReader as _;
+        use polars_io::is_cloud_url;
 
         let path = path.into();
-        let file = polars_utils::open_file(&path)?;
-        let mut reader = IpcReader::new(file);
 
-        let reader_schema = reader.schema()?;
-        let mut schema: Schema = (&reader_schema).into();
-        if let Some(rc) = &row_index {
-            let _ = schema.insert_at_index(0, rc.name.as_str().into(), IDX_DTYPE);
-        }
+        let metadata = if is_cloud_url(&path) {
+            #[cfg(not(feature = "cloud"))]
+            panic!(
+                "One or more of the cloud storage features ('aws', 'gcp', ...) must be enabled."
+            );
 
-        let num_rows = reader._num_rows()?;
-        let file_info = FileInfo::new(Arc::new(schema), Some(reader_schema), (None, num_rows));
-
-        let file_options = FileScanOptions {
-            with_columns: None,
-            cache,
-            n_rows,
-            rechunk,
-            row_index,
-            file_counter: Default::default(),
-            // TODO! add
-            hive_partitioning: false,
+            #[cfg(feature = "cloud")]
+            {
+                let uri = path.to_string_lossy();
+                get_runtime().block_on(async {
+                    polars_io::ipc::IpcReaderAsync::from_uri(&uri, cloud_options.as_ref())
+                        .await?
+                        .metadata()
+                        .await
+                })?
+            }
+        } else {
+            arrow::io::ipc::read::read_file_metadata(&mut std::io::BufReader::new(
+                polars_utils::open_file(&path)?,
+            ))?
         };
+
         Ok(LogicalPlan::Scan {
             paths: Arc::new([path]),
-            file_info,
-            file_options,
+            file_info: FileInfo::new(
+                prepare_schema(metadata.schema.as_ref().into(), row_index.as_ref()),
+                Some(Arc::clone(&metadata.schema)),
+                (None, 0),
+            ),
+            file_options: FileScanOptions {
+                with_columns: None,
+                cache,
+                n_rows,
+                rechunk,
+                row_index,
+                file_counter: Default::default(),
+                hive_partitioning: false,
+            },
             predicate: None,
-            scan_type: FileScan::Ipc { options },
+            scan_type: FileScan::Ipc {
+                options,
+                #[cfg(feature = "cloud")]
+                cloud_options,
+                metadata: Some(metadata),
+            },
         }
         .into())
     }

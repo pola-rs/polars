@@ -164,6 +164,8 @@ vec_hash_numeric!(UInt16Chunked);
 vec_hash_numeric!(UInt8Chunked);
 vec_hash_numeric!(Float64Chunked);
 vec_hash_numeric!(Float32Chunked);
+#[cfg(feature = "dtype-decimal")]
+vec_hash_numeric!(Int128Chunked);
 
 impl VecHash for StringChunked {
     fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {

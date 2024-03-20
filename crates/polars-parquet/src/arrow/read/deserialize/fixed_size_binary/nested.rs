@@ -5,6 +5,7 @@ use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
 use arrow::pushable::Pushable;
 use polars_error::PolarsResult;
+use polars_utils::iter::FallibleIterator;
 
 use super::super::utils::{not_implemented, MaybeNext, PageState};
 use super::utils::FixedSizeBinary;
@@ -101,11 +102,12 @@ impl<'a> NestedDecoder<'a> for BinaryDecoder {
                     .by_ref()
                     .next()
                     .map(|index| {
-                        let index = index.unwrap() as usize;
+                        let index = index as usize;
                         &page.dict[index * self.size..(index + 1) * self.size]
                     })
                     .unwrap_or_default();
                 values.push(item);
+                page.values.get_result()?;
             },
             State::OptionalDictionary(page) => {
                 let item = page
@@ -113,12 +115,13 @@ impl<'a> NestedDecoder<'a> for BinaryDecoder {
                     .by_ref()
                     .next()
                     .map(|index| {
-                        let index = index.unwrap() as usize;
+                        let index = index as usize;
                         &page.dict[index * self.size..(index + 1) * self.size]
                     })
                     .unwrap_or_default();
                 values.push(item);
                 validity.push(true);
+                page.values.get_result()?;
             },
         }
         Ok(())

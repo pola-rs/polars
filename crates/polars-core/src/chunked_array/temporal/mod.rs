@@ -26,10 +26,6 @@ pub use self::conversion::*;
 #[cfg(feature = "timezones")]
 use crate::prelude::{polars_bail, PolarsResult};
 
-pub fn unix_time() -> NaiveDateTime {
-    NaiveDateTime::from_timestamp_opt(0, 0).unwrap()
-}
-
 #[cfg(feature = "timezones")]
 static FIXED_OFFSET_PATTERN: &str = r#"(?x)
     ^

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 from collections import OrderedDict, namedtuple
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
@@ -14,23 +13,20 @@ import pytest
 from pydantic import BaseModel, Field, TypeAdapter
 
 import polars as pl
+from polars._utils.construction.utils import try_get_type_hints
 from polars.datatypes import PolarsDataType, numpy_char_code_to_dtype
-from polars.dependencies import _ZONEINFO_AVAILABLE, dataclasses, pydantic
+from polars.dependencies import dataclasses, pydantic
 from polars.exceptions import TimeZoneAwareConstructorWarning
 from polars.testing import assert_frame_equal, assert_series_equal
-from polars.utils._construction import type_hints
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from polars.datatypes import PolarsDataType
-
-if sys.version_info >= (3, 9):
     from zoneinfo import ZoneInfo
-elif _ZONEINFO_AVAILABLE:
-    # Import from submodule due to typing issue with backports.zoneinfo package:
-    # https://github.com/pganssle/zoneinfo/issues/125
-    from backports.zoneinfo._zoneinfo import ZoneInfo
+
+    from polars.datatypes import PolarsDataType
+else:
+    from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
 
 # -----------------------------------------------------------------------------------
@@ -267,7 +263,7 @@ def test_init_structured_objects(monkeypatch: Any) -> None:
         assert df.rows() == raw_data
 
         # cover a miscellaneous edge-case when detecting the annotations
-        assert type_hints(obj=type(None)) == {}
+        assert try_get_type_hints(obj=type(None)) == {}
 
 
 def test_init_pydantic_2x() -> None:
@@ -1125,19 +1121,9 @@ def test_from_dicts_list_struct_without_inner_dtype_5611() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_upcast_primitive_and_strings() -> None:
-    assert pl.Series([1, 1.0, 1]).dtype == pl.Float64
-    assert pl.Series([1, 1, "1.0"]).dtype == pl.String
-    assert pl.Series([1, 1.0, "1.0"]).dtype == pl.String
-    assert pl.Series([True, 1]).dtype == pl.Int64
-    assert pl.Series([True, 1.0]).dtype == pl.Float64
-    assert pl.Series([True, 1], dtype=pl.Boolean).dtype == pl.Boolean
-    assert pl.Series([False, 1.0], dtype=pl.Boolean).dtype == pl.Boolean
-    assert pl.Series([False, "1.0"]).dtype == pl.String
-    assert pl.from_dict({"a": [1, 2.1, 3], "b": [4, 5, 6.4]}).dtypes == [
-        pl.Float64,
-        pl.Float64,
-    ]
+def test_from_dict_upcast_primitive() -> None:
+    df = pl.from_dict({"a": [1, 2.1, 3], "b": [4, 5, 6.4]})
+    assert df.dtypes == [pl.Float64, pl.Float64]
 
 
 def test_u64_lit_5031() -> None:
@@ -1239,7 +1225,7 @@ def test_from_dicts_schema() -> None:
         assert df.schema == schema
 
 
-def test_nested_read_dict_4143() -> None:
+def test_nested_read_dicts_4143() -> None:
     result = pl.from_dicts(
         [
             {
@@ -1274,7 +1260,7 @@ def test_nested_read_dict_4143() -> None:
     assert result.to_dict(as_series=False) == expected
 
 
-def test_nested_read_dict_4143_2() -> None:
+def test_nested_read_dicts_4143_2() -> None:
     result = pl.from_dicts(
         [
             {
@@ -1465,7 +1451,7 @@ def test_nested_schema_construction2() -> None:
 
 
 def test_arrow_to_pyseries_with_one_chunk_does_not_copy_data() -> None:
-    from polars.utils._construction import arrow_to_pyseries
+    from polars._utils.construction import arrow_to_pyseries
 
     original_array = pa.chunked_array([[1, 2, 3]], type=pa.int64())
     pyseries = arrow_to_pyseries("", original_array)
@@ -1492,11 +1478,9 @@ def test_nested_categorical() -> None:
 
 
 def test_datetime_date_subclasses() -> None:
-    class FakeDate(date):
-        ...
+    class FakeDate(date): ...
 
-    class FakeDatetime(FakeDate, datetime):
-        ...
+    class FakeDatetime(FakeDate, datetime): ...
 
     result = pl.Series([FakeDatetime(2020, 1, 1, 3)])
     expected = pl.Series([datetime(2020, 1, 1, 3)])

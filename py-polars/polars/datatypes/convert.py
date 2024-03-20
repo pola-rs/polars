@@ -66,7 +66,7 @@ else:
 if TYPE_CHECKING:
     from typing import Literal
 
-    from polars.type_aliases import PolarsDataType, PythonDataType, SchemaDict
+    from polars.type_aliases import PolarsDataType, PythonDataType, SchemaDict, TimeUnit
 
 
 PY_STR_TO_DTYPE: SchemaDict = {
@@ -135,8 +135,189 @@ def _map_py_type_to_dtype(
                 dtype if nested is None else dtype(_map_py_type_to_dtype(nested))  # type: ignore[operator]
             )
 
-    msg = "invalid type"
+    msg = f"unrecognised Python type: {python_dtype!r}"
     raise TypeError(msg)
+
+
+def _timeunit_from_precision(precision: int | str | None) -> str | None:
+    """Return `time_unit` from integer precision value."""
+    from math import ceil
+
+    if not precision:
+        return None
+    elif isinstance(precision, str):
+        if precision.isdigit():
+            precision = int(precision)
+        elif (precision := precision.lower()) in ("s", "ms", "us", "ns"):
+            return "ms" if precision == "s" else precision
+    try:
+        n = min(max(3, int(ceil(precision / 3)) * 3), 9)  # type: ignore[operator]
+        return {3: "ms", 6: "us", 9: "ns"}.get(n)
+    except TypeError:
+        return None
+
+
+def _infer_dtype_from_database_typename(
+    value: str,
+    *,
+    raise_unmatched: bool = True,
+) -> PolarsDataType | None:
+    """Attempt to infer Polars dtype from database cursor `type_code` string value."""
+    dtype: PolarsDataType | None = None
+
+    # normalise string name/case (eg: 'IntegerType' -> 'INTEGER')
+    original_value = value
+    value = value.upper().replace("TYPE", "")
+
+    # extract optional type modifier (eg: 'VARCHAR(64)' -> '64')
+    if re.search(r"\([\w,: ]+\)$", value):
+        modifier = value[value.find("(") + 1 : -1]
+        value = value.split("(")[0]
+    elif (
+        not value.startswith(("<", ">")) and re.search(r"\[[\w,\]\[: ]+]$", value)
+    ) or value.endswith(("[S]", "[MS]", "[US]", "[NS]")):
+        modifier = value[value.find("[") + 1 : -1]
+        value = value.split("[")[0]
+    else:
+        modifier = ""
+
+    # array dtypes
+    array_aliases = ("ARRAY", "LIST", "[]")
+    if value.endswith(array_aliases) or value.startswith(array_aliases):
+        for a in array_aliases:
+            value = value.replace(a, "", 1) if value else ""
+
+        nested: PolarsDataType | None = None
+        if not value and modifier:
+            nested = _infer_dtype_from_database_typename(
+                value=modifier,
+                raise_unmatched=False,
+            )
+        else:
+            if inner_value := _infer_dtype_from_database_typename(
+                value[1:-1]
+                if (value[0], value[-1]) == ("<", ">")
+                else re.sub(r"\W", "", re.sub(r"\WOF\W", "", value)),
+                raise_unmatched=False,
+            ):
+                nested = inner_value
+            elif modifier:
+                nested = _infer_dtype_from_database_typename(
+                    value=modifier,
+                    raise_unmatched=False,
+                )
+        if nested:
+            dtype = List(nested)
+
+    # float dtypes
+    elif value.startswith("FLOAT") or ("DOUBLE" in value) or (value == "REAL"):
+        dtype = (
+            Float32
+            if value == "FLOAT4"
+            or (value.endswith(("16", "32")) or (modifier in ("16", "32")))
+            else Float64
+        )
+
+    # integer dtypes
+    elif ("INTERVAL" not in value) and (
+        value.startswith(("INT", "UINT", "UNSIGNED"))
+        or value.endswith(("INT", "SERIAL"))
+        or ("INTEGER" in value)
+        or value == "ROWID"
+    ):
+        sz: Any
+        if "LARGE" in value or value.startswith("BIG") or value == "INT8":
+            sz = 64
+        elif "MEDIUM" in value or value in ("INT4", "SERIAL"):
+            sz = 32
+        elif "SMALL" in value or value == "INT2":
+            sz = 16
+        elif "TINY" in value:
+            sz = 8
+        else:
+            sz = None
+
+        sz = modifier if (not sz and modifier) else sz
+        if not isinstance(sz, int):
+            sz = int(sz) if isinstance(sz, str) and sz.isdigit() else None
+        if (
+            ("U" in value and "MEDIUM" not in value)
+            or ("UNSIGNED" in value)
+            or value == "ROWID"
+        ):
+            dtype = _integer_dtype_from_nbits(sz, unsigned=True, default=UInt64)
+        else:
+            dtype = _integer_dtype_from_nbits(sz, unsigned=False, default=Int64)
+
+    # decimal dtypes
+    elif (is_dec := ("DECIMAL" in value)) or ("NUMERIC" in value):
+        if "," in modifier:
+            prec, scale = modifier.split(",")
+            dtype = Decimal(int(prec), int(scale))
+        else:
+            dtype = Decimal if is_dec else Float64
+
+    # string dtypes
+    elif (
+        any(tp in value for tp in ("VARCHAR", "STRING", "TEXT", "UNICODE"))
+        or value.startswith(("STR", "CHAR", "NCHAR", "UTF"))
+        or value.endswith(("_UTF8", "_UTF16", "_UTF32"))
+    ):
+        dtype = String
+
+    # binary dtypes
+    elif value in ("BYTEA", "BYTES", "BLOB", "CLOB", "BINARY"):
+        dtype = Binary
+
+    # boolean dtypes
+    elif value.startswith("BOOL"):
+        dtype = Boolean
+
+    # temporal dtypes
+    elif value.startswith(("DATETIME", "TIMESTAMP")) and not (value.endswith("[D]")):
+        if any((tz in value.replace(" ", "")) for tz in ("TZ", "TIMEZONE")):
+            if "WITHOUT" not in value:
+                return None  # there's a timezone, but we don't know what it is
+        unit = _timeunit_from_precision(modifier) if modifier else "us"
+        dtype = Datetime(time_unit=(unit or "us"))  # type: ignore[arg-type]
+
+    elif re.sub(r"\d", "", value) in ("INTERVAL", "TIMEDELTA"):
+        dtype = Duration
+
+    elif value in ("DATE", "DATE32", "DATE64"):
+        dtype = Date
+
+    elif value in ("TIME", "TIME32", "TIME64"):
+        dtype = Time
+
+    if not dtype and raise_unmatched:
+        msg = f"cannot infer dtype from {original_value!r} string value"
+        raise ValueError(msg)
+
+    return dtype
+
+
+@functools.lru_cache(8)
+def _integer_dtype_from_nbits(
+    bits: int,
+    *,
+    unsigned: bool,
+    default: PolarsDataType | None = None,
+) -> PolarsDataType | None:
+    dtype = {
+        (8, False): Int8,
+        (8, True): UInt8,
+        (16, False): Int16,
+        (16, True): UInt16,
+        (32, False): Int32,
+        (32, True): UInt32,
+        (64, False): Int64,
+        (64, True): UInt64,
+    }.get((bits, unsigned), None)
+
+    if dtype is None and default is not None:
+        return default
+    return dtype
 
 
 def is_polars_dtype(dtype: Any, *, include_unknown: bool = False) -> bool:
@@ -370,15 +551,13 @@ def dtype_to_py_type(dtype: PolarsDataType) -> PythonDataType:
 @overload
 def py_type_to_dtype(
     data_type: Any, *, raise_unmatched: Literal[True] = ...
-) -> PolarsDataType:
-    ...
+) -> PolarsDataType: ...
 
 
 @overload
 def py_type_to_dtype(
     data_type: Any, *, raise_unmatched: Literal[False]
-) -> PolarsDataType | None:
-    ...
+) -> PolarsDataType | None: ...
 
 
 def py_type_to_dtype(
@@ -417,10 +596,10 @@ def py_type_to_dtype(
     try:
         return _map_py_type_to_dtype(data_type)
     except (KeyError, TypeError):  # pragma: no cover
-        if not raise_unmatched:
-            return None
-        msg = f"cannot infer dtype from {data_type!r} (type: {type(data_type).__name__!r})"
-        raise ValueError(msg) from None
+        if raise_unmatched:
+            msg = f"cannot infer dtype from {data_type!r} (type: {type(data_type).__name__!r})"
+            raise ValueError(msg) from None
+        return None
 
 
 def py_type_to_arrow_type(dtype: PythonDataType) -> pa.lib.DataType:
@@ -485,17 +664,18 @@ def numpy_char_code_to_dtype(dtype_char: str) -> PolarsDataType:
 def maybe_cast(el: Any, dtype: PolarsDataType) -> Any:
     """Try casting a value to a value that is valid for the given Polars dtype."""
     # cast el if it doesn't match
-    from polars.utils.convert import (
-        _datetime_to_pl_timestamp,
-        _timedelta_to_pl_timedelta,
+    from polars._utils.convert import (
+        datetime_to_int,
+        timedelta_to_int,
     )
 
+    time_unit: TimeUnit
     if isinstance(el, datetime):
-        time_unit = getattr(dtype, "time_unit", None)
-        return _datetime_to_pl_timestamp(el, time_unit)
+        time_unit = getattr(dtype, "time_unit", "us")
+        return datetime_to_int(el, time_unit)
     elif isinstance(el, timedelta):
-        time_unit = getattr(dtype, "time_unit", None)
-        return _timedelta_to_pl_timedelta(el, time_unit)
+        time_unit = getattr(dtype, "time_unit", "us")
+        return timedelta_to_int(el, time_unit)
 
     py_type = dtype_to_py_type(dtype)
     if not isinstance(el, py_type):

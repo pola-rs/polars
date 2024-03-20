@@ -265,7 +265,7 @@ pub(crate) fn elim_cmn_subplans(
     }
     let trails = trails.into_values().collect::<Vec<_>>();
 
-    // search from the leafs upwards and find the longest shared subplans
+    // search from the leaf nodes upwards and find the longest shared subplans
     let mut trail_ends = vec![];
     // if i matches j
     // we don't need to search with j as they are equal

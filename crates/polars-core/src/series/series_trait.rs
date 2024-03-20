@@ -490,10 +490,6 @@ pub trait SeriesTrait:
     ) -> PolarsResult<Series> {
         polars_bail!(opq = rolling_map, self._dtype());
     }
-
-    fn tile(&self, _n: usize) -> Series {
-        invalid_operation_panic!(tile, self);
-    }
 }
 
 impl<'a> (dyn SeriesTrait + 'a) {

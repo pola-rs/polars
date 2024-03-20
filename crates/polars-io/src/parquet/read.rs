@@ -160,6 +160,7 @@ impl<R: MmapBytesReader + 'static> ParquetReader<R> {
             chunk_size,
             self.use_statistics,
             self.hive_partition_columns,
+            self.parallel,
         )
     }
 }
@@ -231,6 +232,7 @@ pub struct ParquetAsyncReader {
     use_statistics: bool,
     hive_partition_columns: Option<Vec<Series>>,
     schema: Option<ArrowSchemaRef>,
+    parallel: ParallelStrategy,
 }
 
 #[cfg(feature = "cloud")]
@@ -251,15 +253,21 @@ impl ParquetAsyncReader {
             use_statistics: true,
             hive_partition_columns: None,
             schema,
+            parallel: Default::default(),
         })
     }
 
     pub async fn schema(&mut self) -> PolarsResult<ArrowSchemaRef> {
-        match &self.schema {
-            Some(schema) => Ok(schema.clone()),
-            None => self.reader.schema().await,
-        }
+        Ok(match self.schema.as_ref() {
+            Some(schema) => Arc::clone(schema),
+            None => {
+                let metadata = self.reader.get_metadata().await?;
+                let arrow_schema = polars_parquet::arrow::read::infer_schema(metadata)?;
+                Arc::new(arrow_schema)
+            },
+        })
     }
+
     pub async fn num_rows(&mut self) -> PolarsResult<usize> {
         self.reader.num_rows().await
     }
@@ -301,6 +309,11 @@ impl ParquetAsyncReader {
         self
     }
 
+    pub fn read_parallel(mut self, parallel: ParallelStrategy) -> Self {
+        self.parallel = parallel;
+        self
+    }
+
     pub async fn batched(mut self, chunk_size: usize) -> PolarsResult<BatchedParquetReader> {
         let metadata = self.reader.get_metadata().await?.clone();
         let schema = match self.schema {
@@ -328,6 +341,7 @@ impl ParquetAsyncReader {
             chunk_size,
             self.use_statistics,
             self.hive_partition_columns,
+            self.parallel,
         )
     }
 

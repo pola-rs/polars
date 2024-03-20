@@ -18,11 +18,41 @@ impl SeriesWrap<DecimalChunked> {
 
     fn agg_helper<F: Fn(&Int128Chunked) -> Series>(&self, f: F) -> Series {
         let agg_s = f(&self.0);
-        let ca = agg_s.decimal().unwrap();
-        let ca = ca.as_ref().clone();
-        let precision = self.0.precision();
-        let scale = self.0.scale();
-        ca.into_decimal_unchecked(precision, scale).into_series()
+        match agg_s.dtype() {
+            DataType::Decimal(_, _) => {
+                let ca = agg_s.decimal().unwrap();
+                let ca = ca.as_ref().clone();
+                let precision = self.0.precision();
+                let scale = self.0.scale();
+                ca.into_decimal_unchecked(precision, scale).into_series()
+            },
+            DataType::List(dtype) if dtype.is_decimal() => {
+                let dtype = self.0.dtype();
+                let ca = agg_s.list().unwrap();
+                let arr = ca.downcast_iter().next().unwrap();
+                // SAFETY: dtype is passed correctly
+                let s = unsafe {
+                    Series::from_chunks_and_dtype_unchecked("", vec![arr.values().clone()], dtype)
+                };
+                let new_values = s.array_ref(0).clone();
+                let data_type = ListArray::<i64>::default_datatype(dtype.to_arrow(true));
+                let new_arr = ListArray::<i64>::new(
+                    data_type,
+                    arr.offsets().clone(),
+                    new_values,
+                    arr.validity().cloned(),
+                );
+                unsafe {
+                    ListChunked::from_chunks_and_dtype_unchecked(
+                        agg_s.name(),
+                        vec![Box::new(new_arr)],
+                        DataType::List(Box::new(self.dtype().clone())),
+                    )
+                    .into_series()
+                }
+            },
+            _ => unreachable!(),
+        }
     }
 }
 
@@ -66,6 +96,22 @@ impl private::PrivateSeries for SeriesWrap<DecimalChunked> {
             .into_decimal_unchecked(self.0.precision(), self.0.scale())
             .into_series())
     }
+    fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
+        (&self.0).into_total_eq_inner()
+    }
+    fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a> {
+        (&self.0).into_total_ord_inner()
+    }
+
+    fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
+        self.0.vec_hash(random_state, buf)?;
+        Ok(())
+    }
+
+    fn vec_hash_combine(&self, build_hasher: RandomState, hashes: &mut [u64]) -> PolarsResult<()> {
+        self.0.vec_hash_combine(build_hasher, hashes)?;
+        Ok(())
+    }
 
     #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_sum(&self, groups: &GroupsProxy) -> Series {
@@ -84,7 +130,7 @@ impl private::PrivateSeries for SeriesWrap<DecimalChunked> {
 
     #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
-        self.0.agg_list(groups)
+        self.agg_helper(|ca| ca.agg_list(groups))
     }
 
     fn subtract(&self, rhs: &Series) -> PolarsResult<Series> {
@@ -102,6 +148,10 @@ impl private::PrivateSeries for SeriesWrap<DecimalChunked> {
     fn divide(&self, rhs: &Series) -> PolarsResult<Series> {
         let rhs = rhs.decimal()?;
         ((&self.0) / rhs).map(|ca| ca.into_series())
+    }
+    #[cfg(feature = "algorithm_group_by")]
+    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
+        self.0.group_tuples(multithreaded, sorted)
     }
 }
 
@@ -209,6 +259,17 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
     #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
         self.0.get_any_value_unchecked(index)
+    }
+
+    fn sort_with(&self, options: SortOptions) -> Series {
+        self.0
+            .sort_with(options)
+            .into_decimal_unchecked(self.0.precision(), self.0.scale())
+            .into_series()
+    }
+
+    fn arg_sort(&self, options: SortOptions) -> IdxCa {
+        self.0.arg_sort(options)
     }
 
     fn null_count(&self) -> usize {

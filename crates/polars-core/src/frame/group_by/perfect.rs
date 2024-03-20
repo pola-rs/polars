@@ -1,11 +1,9 @@
 use std::fmt::Debug;
 
-use arrow::legacy::bit_util::round_upto_multiple_of_64;
 use num_traits::{FromPrimitive, ToPrimitive};
 use polars_utils::idx_vec::IdxVec;
 use polars_utils::slice::GetSaferUnchecked;
 use polars_utils::sync::SyncPtr;
-use polars_utils::IdxSize;
 use rayon::prelude::*;
 
 #[cfg(all(feature = "dtype-categorical", feature = "performant"))]
@@ -45,8 +43,7 @@ where
             let mut first: Vec<IdxSize> = unsafe { aligned_vec(len) };
 
             // ensure we keep aligned to cache lines
-            let chunk_size =
-                round_upto_multiple_of_64(chunk_size * std::mem::size_of::<T::Native>());
+            let chunk_size = (chunk_size * std::mem::size_of::<T::Native>()).next_multiple_of(64);
             let chunk_size = chunk_size / std::mem::size_of::<T::Native>();
 
             let mut cache_line_offsets = Vec::with_capacity(n_threads + 1);

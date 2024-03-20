@@ -66,6 +66,7 @@ pub(super) fn datetime_range(
                 start.datetime().unwrap(),
                 Some(&tz),
                 &StringChunked::from_iter(std::iter::once("raise")),
+                NonExistent::Raise,
             )?
             .cast(&dtype)?
             .into_series(),
@@ -73,6 +74,7 @@ pub(super) fn datetime_range(
                 end.datetime().unwrap(),
                 Some(&tz),
                 &StringChunked::from_iter(std::iter::once("raise")),
+                NonExistent::Raise,
             )?
             .cast(&dtype)?
             .into_series(),
@@ -153,6 +155,7 @@ pub(super) fn datetime_ranges(
                 start.datetime().unwrap(),
                 Some(&tz),
                 &StringChunked::from_iter(std::iter::once("raise")),
+                NonExistent::Raise,
             )?
             .cast(&dtype)?
             .into_series()
@@ -162,6 +165,7 @@ pub(super) fn datetime_ranges(
                 end.datetime().unwrap(),
                 Some(&tz),
                 &StringChunked::from_iter(std::iter::once("raise")),
+                NonExistent::Raise,
             )?
             .cast(&dtype)?
             .into_series()

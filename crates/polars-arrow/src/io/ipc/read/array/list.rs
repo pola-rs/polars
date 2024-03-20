@@ -85,6 +85,7 @@ pub fn skip_list<O: Offset>(
     field_nodes: &mut VecDeque<Node>,
     data_type: &ArrowDataType,
     buffers: &mut VecDeque<IpcBuffer>,
+    variadic_buffer_counts: &mut VecDeque<usize>,
 ) -> PolarsResult<()> {
     let _ = field_nodes.pop_front().ok_or_else(|| {
         polars_err!(
@@ -101,5 +102,5 @@ pub fn skip_list<O: Offset>(
 
     let data_type = ListArray::<O>::get_child_type(data_type);
 
-    skip(field_nodes, data_type, buffers)
+    skip(field_nodes, data_type, buffers, variadic_buffer_counts)
 }

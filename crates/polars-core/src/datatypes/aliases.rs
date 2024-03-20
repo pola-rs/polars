@@ -1,4 +1,4 @@
-pub use arrow::legacy::index::{IdxArr, IdxSize};
+pub use arrow::legacy::index::IdxArr;
 pub use polars_utils::aliases::{InitHashMaps, PlHashMap, PlHashSet, PlIndexMap, PlIndexSet};
 
 use super::*;

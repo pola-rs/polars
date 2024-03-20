@@ -25,7 +25,10 @@ use num_traits::{Num, NumCast};
 
 use crate::config::*;
 use crate::prelude::*;
-const LIMIT: usize = 25;
+
+// Note: see https://github.com/pola-rs/polars/pull/13699 for the rationale
+// behind choosing 10 as the default value for default number of rows displayed
+const LIMIT: usize = 10;
 
 #[derive(Copy, Clone)]
 #[repr(u8)]
@@ -523,9 +526,7 @@ impl Display for DataFrame {
                 .as_deref()
                 .unwrap_or("")
                 .parse()
-                // Note: see https://github.com/pola-rs/polars/pull/13699 for
-                // the rationale behind choosing 10 as the default value
-                .map_or(10, |n: i64| if n < 0 { height } else { n as usize });
+                .map_or(LIMIT, |n: i64| if n < 0 { height } else { n as usize });
 
             let (n_first, n_last) = if self.width() > max_n_cols {
                 ((max_n_cols + 1) / 2, max_n_cols / 2)
@@ -1157,7 +1158,7 @@ impl Series {
 #[inline]
 #[cfg(feature = "dtype-decimal")]
 pub fn fmt_decimal(f: &mut Formatter<'_>, v: i128, scale: usize) -> fmt::Result {
-    use arrow::legacy::compute::decimal::format_decimal;
+    use arrow::compute::decimal::format_decimal;
 
     let trim_zeros = get_trim_decimal_zeros();
     let repr = format_decimal(v, scale, trim_zeros);

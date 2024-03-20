@@ -51,7 +51,10 @@ pub fn _use_rolling_kernels(groups: &GroupsSlice, chunks: &[ArrayRef]) -> bool {
             let [first_offset, first_len] = groups[0];
             let second_offset = groups[1][0];
 
-            second_offset < (first_offset + first_len) && chunks.len() == 1
+            second_offset >= first_offset // Prevent false positive from regular group-by that has out of order slices.
+                                          // Rolling group-by is expected to have monotonically increasing slices.
+                && second_offset < (first_offset + first_len)
+                && chunks.len() == 1
         },
     }
 }
@@ -139,7 +142,7 @@ where
                 None
             } else {
                 // SAFETY: we are in bounds.
-                Some(unsafe { agg_window.update(start as usize, end as usize) })
+                unsafe { agg_window.update(start as usize, end as usize) }
             }
         })
         .collect::<PrimitiveArray<T>>()
@@ -796,7 +799,13 @@ where
                         debug_assert!(len <= self.len() as IdxSize);
                         match len {
                             0 => None,
-                            1 => NumCast::from(0),
+                            1 => {
+                                if ddof == 0 {
+                                    NumCast::from(0)
+                                } else {
+                                    None
+                                }
+                            },
                             _ => {
                                 let arr_group = _slice_from_offsets(self, first, len);
                                 arr_group.var(ddof).map(|flt| NumCast::from(flt).unwrap())
@@ -858,7 +867,13 @@ where
                         debug_assert!(len <= self.len() as IdxSize);
                         match len {
                             0 => None,
-                            1 => NumCast::from(0),
+                            1 => {
+                                if ddof == 0 {
+                                    NumCast::from(0)
+                                } else {
+                                    None
+                                }
+                            },
                             _ => {
                                 let arr_group = _slice_from_offsets(self, first, len);
                                 arr_group.std(ddof).map(|flt| NumCast::from(flt).unwrap())
@@ -1009,7 +1024,13 @@ where
                         debug_assert!(first + len <= self.len() as IdxSize);
                         match len {
                             0 => None,
-                            1 => NumCast::from(0),
+                            1 => {
+                                if ddof == 0 {
+                                    NumCast::from(0)
+                                } else {
+                                    None
+                                }
+                            },
                             _ => {
                                 let arr_group = _slice_from_offsets(self, first, len);
                                 arr_group.var(ddof)
@@ -1051,7 +1072,13 @@ where
                         debug_assert!(first + len <= self.len() as IdxSize);
                         match len {
                             0 => None,
-                            1 => NumCast::from(0),
+                            1 => {
+                                if ddof == 0 {
+                                    NumCast::from(0)
+                                } else {
+                                    None
+                                }
+                            },
                             _ => {
                                 let arr_group = _slice_from_offsets(self, first, len);
                                 arr_group.std(ddof)

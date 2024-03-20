@@ -77,7 +77,7 @@ impl LazyJsonLineReader {
         self
     }
 
-    /// Reduce memory usage in expensive of performance
+    /// Reduce memory usage at the expense of performance
     #[must_use]
     pub fn low_memory(mut self, toggle: bool) -> Self {
         self.low_memory = toggle;
@@ -120,6 +120,16 @@ impl LazyFileListReader for LazyJsonLineReader {
 
     fn with_paths(mut self, paths: Arc<[PathBuf]>) -> Self {
         self.paths = paths;
+        self
+    }
+
+    fn with_n_rows(mut self, n_rows: impl Into<Option<usize>>) -> Self {
+        self.n_rows = n_rows.into();
+        self
+    }
+
+    fn with_row_index(mut self, row_index: impl Into<Option<RowIndex>>) -> Self {
+        self.row_index = row_index.into();
         self
     }
 

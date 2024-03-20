@@ -14,6 +14,7 @@ import polars as pl
 from polars.datatypes import DATETIME_DTYPES, DTYPE_TEMPORAL_UNITS, TEMPORAL_DTYPES
 from polars.exceptions import (
     ComputeError,
+    InvalidOperationError,
     PolarsInefficientMapWarning,
     TimeZoneAwareConstructorWarning,
 )
@@ -28,7 +29,7 @@ if TYPE_CHECKING:
 
     from polars.type_aliases import Ambiguous, PolarsTemporalType, TimeUnit
 else:
-    from polars.utils.convert import get_zoneinfo as ZoneInfo
+    from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
 
 def test_fill_null() -> None:
@@ -1403,10 +1404,34 @@ def test_replace_time_zone() -> None:
     }
 
 
+def test_replace_time_zone_non_existent_null() -> None:
+    result = (
+        pl.Series(["2021-03-28 02:30", "2021-03-28 03:30"])
+        .str.to_datetime()
+        .dt.replace_time_zone("Europe/Warsaw", non_existent="null")
+    )
+    expected = pl.Series(
+        [None, datetime(2021, 3, 28, 3, 30)], dtype=pl.Datetime("us", "Europe/Warsaw")
+    )
+    assert_series_equal(result, expected)
+
+
+def test_invalid_non_existent() -> None:
+    with pytest.raises(
+        ValueError, match="`non_existent` must be one of {'null', 'raise'}, got cabbage"
+    ):
+        (
+            pl.Series([datetime(2020, 1, 1)]).dt.replace_time_zone(
+                "Europe/Warsaw",
+                non_existent="cabbage",  # type: ignore[arg-type]
+            )
+        )
+
+
 @pytest.mark.parametrize(
     ("to_tz", "tzinfo"),
     [
-        ("America/Barbados", ZoneInfo(key="America/Barbados")),
+        ("America/Barbados", ZoneInfo("America/Barbados")),
         (None, None),
     ],
 )
@@ -1430,7 +1455,7 @@ def test_strptime_with_tz() -> None:
         .str.strptime(pl.Datetime("us", "Africa/Monrovia"))
         .item()
     )
-    assert result == datetime(2020, 1, 1, 3, tzinfo=ZoneInfo(key="Africa/Monrovia"))
+    assert result == datetime(2020, 1, 1, 3, tzinfo=ZoneInfo("Africa/Monrovia"))
 
 
 @pytest.mark.parametrize(
@@ -1496,7 +1521,7 @@ def test_convert_time_zone_lazy_schema() -> None:
 def test_convert_time_zone_on_tz_naive() -> None:
     ts = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime)
     result = ts.dt.convert_time_zone("Asia/Kathmandu").item()
-    expected = datetime(2020, 1, 1, 5, 45, tzinfo=ZoneInfo(key="Asia/Kathmandu"))
+    expected = datetime(2020, 1, 1, 5, 45, tzinfo=ZoneInfo("Asia/Kathmandu"))
     assert result == expected
     result = (
         ts.dt.replace_time_zone("UTC").dt.convert_time_zone("Asia/Kathmandu").item()
@@ -1582,8 +1607,8 @@ def test_replace_time_zone_from_naive() -> None:
         pl.col("date").cast(pl.Datetime).dt.replace_time_zone("America/New_York")
     ).to_dict(as_series=False) == {
         "date": [
-            datetime(2022, 1, 1, 0, 0, tzinfo=ZoneInfo(key="America/New_York")),
-            datetime(2022, 1, 2, 0, 0, tzinfo=ZoneInfo(key="America/New_York")),
+            datetime(2022, 1, 1, 0, 0, tzinfo=ZoneInfo("America/New_York")),
+            datetime(2022, 1, 2, 0, 0, tzinfo=ZoneInfo("America/New_York")),
         ]
     }
 
@@ -1668,6 +1693,48 @@ def test_replace_time_zone_sortedness_expressions(
         pl.col("ts").dt.replace_time_zone("UTC", ambiguous=pl.col("ambiguous"))
     )
     assert result["ts"].flags["SORTED_ASC"] == expected_sortedness
+
+
+def test_invalid_ambiguous_value_in_expression() -> None:
+    df = pl.DataFrame(
+        {"a": [datetime(2020, 10, 25, 1)] * 2, "b": ["earliest", "cabbage"]}
+    )
+    with pytest.raises(InvalidOperationError, match="Invalid argument cabbage"):
+        df.select(
+            pl.col("a").dt.replace_time_zone("Europe/London", ambiguous=pl.col("b"))
+        )
+
+
+def test_replace_time_zone_ambiguous_null() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [datetime(2020, 10, 25, 1)] * 3 + [None],
+            "b": ["earliest", "latest", "null", "raise"],
+        }
+    )
+    # expression containing 'null'
+    result = df.select(
+        pl.col("a").dt.replace_time_zone("Europe/London", ambiguous=pl.col("b"))
+    )["a"]
+    expected = [
+        datetime(2020, 10, 25, 1, fold=0, tzinfo=ZoneInfo("Europe/London")),
+        datetime(2020, 10, 25, 1, fold=1, tzinfo=ZoneInfo("Europe/London")),
+        None,
+        None,
+    ]
+    assert result[0] == expected[0]
+    assert result[1] == expected[1]
+    assert result[2] == expected[2]
+    assert result[3] == expected[3]
+
+    # single 'null' value
+    result = df.select(
+        pl.col("a").dt.replace_time_zone("Europe/London", ambiguous="null")
+    )["a"]
+    assert result[0] is None
+    assert result[1] is None
+    assert result[2] is None
+    assert result[3] is None
 
 
 def test_use_earliest_deprecation() -> None:
@@ -1831,6 +1898,19 @@ def test_ambiguous_expressions() -> None:
     assert_series_equal(result, expected)
 
 
+def test_single_ambiguous_null() -> None:
+    df = pl.DataFrame(
+        {"ts": [datetime(2020, 10, 2, 1, 1)], "ambiguous": [None]},
+        schema_overrides={"ambiguous": pl.String},
+    )
+    result = df.select(
+        pl.col("ts").dt.replace_time_zone(
+            "Europe/London", ambiguous=pl.col("ambiguous")
+        )
+    )["ts"].item()
+    assert result is None
+
+
 def test_unlocalize() -> None:
     tz_naive = pl.Series(["2020-01-01 03:00:00"]).str.strptime(pl.Datetime)
     tz_aware = tz_naive.dt.replace_time_zone("UTC").dt.convert_time_zone(
@@ -1854,22 +1934,22 @@ def test_tz_aware_truncate() -> None:
     result = df.with_columns(pl.col("dt").dt.truncate("1d").alias("trunced"))
     expected = {
         "dt": [
-            datetime(2022, 11, 1, 0, 0, tzinfo=ZoneInfo(key="America/New_York")),
-            datetime(2022, 11, 1, 12, 0, tzinfo=ZoneInfo(key="America/New_York")),
-            datetime(2022, 11, 2, 0, 0, tzinfo=ZoneInfo(key="America/New_York")),
-            datetime(2022, 11, 2, 12, 0, tzinfo=ZoneInfo(key="America/New_York")),
-            datetime(2022, 11, 3, 0, 0, tzinfo=ZoneInfo(key="America/New_York")),
-            datetime(2022, 11, 3, 12, 0, tzinfo=ZoneInfo(key="America/New_York")),
-            datetime(2022, 11, 4, 0, 0, tzinfo=ZoneInfo(key="America/New_York")),
+            datetime(2022, 11, 1, 0, 0, tzinfo=ZoneInfo("America/New_York")),
+            datetime(2022, 11, 1, 12, 0, tzinfo=ZoneInfo("America/New_York")),
+            datetime(2022, 11, 2, 0, 0, tzinfo=ZoneInfo("America/New_York")),
+            datetime(2022, 11, 2, 12, 0, tzinfo=ZoneInfo("America/New_York")),
+            datetime(2022, 11, 3, 0, 0, tzinfo=ZoneInfo("America/New_York")),
+            datetime(2022, 11, 3, 12, 0, tzinfo=ZoneInfo("America/New_York")),
+            datetime(2022, 11, 4, 0, 0, tzinfo=ZoneInfo("America/New_York")),
         ],
         "trunced": [
-            datetime(2022, 11, 1, 0, 0, tzinfo=ZoneInfo(key="America/New_York")),
-            datetime(2022, 11, 1, 0, 0, tzinfo=ZoneInfo(key="America/New_York")),
-            datetime(2022, 11, 2, 0, 0, tzinfo=ZoneInfo(key="America/New_York")),
-            datetime(2022, 11, 2, 0, 0, tzinfo=ZoneInfo(key="America/New_York")),
-            datetime(2022, 11, 3, 0, 0, tzinfo=ZoneInfo(key="America/New_York")),
-            datetime(2022, 11, 3, 0, 0, tzinfo=ZoneInfo(key="America/New_York")),
-            datetime(2022, 11, 4, 0, 0, tzinfo=ZoneInfo(key="America/New_York")),
+            datetime(2022, 11, 1, 0, 0, tzinfo=ZoneInfo("America/New_York")),
+            datetime(2022, 11, 1, 0, 0, tzinfo=ZoneInfo("America/New_York")),
+            datetime(2022, 11, 2, 0, 0, tzinfo=ZoneInfo("America/New_York")),
+            datetime(2022, 11, 2, 0, 0, tzinfo=ZoneInfo("America/New_York")),
+            datetime(2022, 11, 3, 0, 0, tzinfo=ZoneInfo("America/New_York")),
+            datetime(2022, 11, 3, 0, 0, tzinfo=ZoneInfo("America/New_York")),
+            datetime(2022, 11, 4, 0, 0, tzinfo=ZoneInfo("America/New_York")),
         ],
     }
     assert result.to_dict(as_series=False) == expected
@@ -1900,34 +1980,34 @@ def test_tz_aware_truncate() -> None:
             datetime(2022, 1, 1, 6, 0),
         ],
         "UTC": [
-            datetime(2021, 12, 31, 23, 0, tzinfo=ZoneInfo(key="UTC")),
-            datetime(2022, 1, 1, 0, 0, tzinfo=ZoneInfo(key="UTC")),
-            datetime(2022, 1, 1, 1, 0, tzinfo=ZoneInfo(key="UTC")),
-            datetime(2022, 1, 1, 2, 0, tzinfo=ZoneInfo(key="UTC")),
-            datetime(2022, 1, 1, 3, 0, tzinfo=ZoneInfo(key="UTC")),
-            datetime(2022, 1, 1, 4, 0, tzinfo=ZoneInfo(key="UTC")),
-            datetime(2022, 1, 1, 5, 0, tzinfo=ZoneInfo(key="UTC")),
-            datetime(2022, 1, 1, 6, 0, tzinfo=ZoneInfo(key="UTC")),
+            datetime(2021, 12, 31, 23, 0, tzinfo=ZoneInfo("UTC")),
+            datetime(2022, 1, 1, 0, 0, tzinfo=ZoneInfo("UTC")),
+            datetime(2022, 1, 1, 1, 0, tzinfo=ZoneInfo("UTC")),
+            datetime(2022, 1, 1, 2, 0, tzinfo=ZoneInfo("UTC")),
+            datetime(2022, 1, 1, 3, 0, tzinfo=ZoneInfo("UTC")),
+            datetime(2022, 1, 1, 4, 0, tzinfo=ZoneInfo("UTC")),
+            datetime(2022, 1, 1, 5, 0, tzinfo=ZoneInfo("UTC")),
+            datetime(2022, 1, 1, 6, 0, tzinfo=ZoneInfo("UTC")),
         ],
         "CST": [
-            datetime(2021, 12, 31, 17, 0, tzinfo=ZoneInfo(key="US/Central")),
-            datetime(2021, 12, 31, 18, 0, tzinfo=ZoneInfo(key="US/Central")),
-            datetime(2021, 12, 31, 19, 0, tzinfo=ZoneInfo(key="US/Central")),
-            datetime(2021, 12, 31, 20, 0, tzinfo=ZoneInfo(key="US/Central")),
-            datetime(2021, 12, 31, 21, 0, tzinfo=ZoneInfo(key="US/Central")),
-            datetime(2021, 12, 31, 22, 0, tzinfo=ZoneInfo(key="US/Central")),
-            datetime(2021, 12, 31, 23, 0, tzinfo=ZoneInfo(key="US/Central")),
-            datetime(2022, 1, 1, 0, 0, tzinfo=ZoneInfo(key="US/Central")),
+            datetime(2021, 12, 31, 17, 0, tzinfo=ZoneInfo("US/Central")),
+            datetime(2021, 12, 31, 18, 0, tzinfo=ZoneInfo("US/Central")),
+            datetime(2021, 12, 31, 19, 0, tzinfo=ZoneInfo("US/Central")),
+            datetime(2021, 12, 31, 20, 0, tzinfo=ZoneInfo("US/Central")),
+            datetime(2021, 12, 31, 21, 0, tzinfo=ZoneInfo("US/Central")),
+            datetime(2021, 12, 31, 22, 0, tzinfo=ZoneInfo("US/Central")),
+            datetime(2021, 12, 31, 23, 0, tzinfo=ZoneInfo("US/Central")),
+            datetime(2022, 1, 1, 0, 0, tzinfo=ZoneInfo("US/Central")),
         ],
         "CST truncated": [
-            datetime(2021, 12, 31, 0, 0, tzinfo=ZoneInfo(key="US/Central")),
-            datetime(2021, 12, 31, 0, 0, tzinfo=ZoneInfo(key="US/Central")),
-            datetime(2021, 12, 31, 0, 0, tzinfo=ZoneInfo(key="US/Central")),
-            datetime(2021, 12, 31, 0, 0, tzinfo=ZoneInfo(key="US/Central")),
-            datetime(2021, 12, 31, 0, 0, tzinfo=ZoneInfo(key="US/Central")),
-            datetime(2021, 12, 31, 0, 0, tzinfo=ZoneInfo(key="US/Central")),
-            datetime(2021, 12, 31, 0, 0, tzinfo=ZoneInfo(key="US/Central")),
-            datetime(2022, 1, 1, 0, 0, tzinfo=ZoneInfo(key="US/Central")),
+            datetime(2021, 12, 31, 0, 0, tzinfo=ZoneInfo("US/Central")),
+            datetime(2021, 12, 31, 0, 0, tzinfo=ZoneInfo("US/Central")),
+            datetime(2021, 12, 31, 0, 0, tzinfo=ZoneInfo("US/Central")),
+            datetime(2021, 12, 31, 0, 0, tzinfo=ZoneInfo("US/Central")),
+            datetime(2021, 12, 31, 0, 0, tzinfo=ZoneInfo("US/Central")),
+            datetime(2021, 12, 31, 0, 0, tzinfo=ZoneInfo("US/Central")),
+            datetime(2021, 12, 31, 0, 0, tzinfo=ZoneInfo("US/Central")),
+            datetime(2022, 1, 1, 0, 0, tzinfo=ZoneInfo("US/Central")),
         ],
     }
 
@@ -1956,10 +2036,10 @@ def test_tz_aware_to_string() -> None:
     result = df.with_columns(pl.col("dt").dt.to_string("%c").alias("fmt"))
     expected = {
         "dt": [
-            datetime(2022, 11, 1, 0, 0, tzinfo=ZoneInfo(key="America/New_York")),
-            datetime(2022, 11, 2, 0, 0, tzinfo=ZoneInfo(key="America/New_York")),
-            datetime(2022, 11, 3, 0, 0, tzinfo=ZoneInfo(key="America/New_York")),
-            datetime(2022, 11, 4, 0, 0, tzinfo=ZoneInfo(key="America/New_York")),
+            datetime(2022, 11, 1, 0, 0, tzinfo=ZoneInfo("America/New_York")),
+            datetime(2022, 11, 2, 0, 0, tzinfo=ZoneInfo("America/New_York")),
+            datetime(2022, 11, 3, 0, 0, tzinfo=ZoneInfo("America/New_York")),
+            datetime(2022, 11, 4, 0, 0, tzinfo=ZoneInfo("America/New_York")),
         ],
         "fmt": [
             "Tue Nov  1 00:00:00 2022",
@@ -2017,12 +2097,12 @@ def test_tz_aware_filter_lit() -> None:
             datetime(1970, 1, 1, 5, 0),
         ],
         "nyc": [
-            datetime(1970, 1, 1, 0, 0, tzinfo=ZoneInfo(key="America/New_York")),
-            datetime(1970, 1, 1, 1, 0, tzinfo=ZoneInfo(key="America/New_York")),
-            datetime(1970, 1, 1, 2, 0, tzinfo=ZoneInfo(key="America/New_York")),
-            datetime(1970, 1, 1, 3, 0, tzinfo=ZoneInfo(key="America/New_York")),
-            datetime(1970, 1, 1, 4, 0, tzinfo=ZoneInfo(key="America/New_York")),
-            datetime(1970, 1, 1, 5, 0, tzinfo=ZoneInfo(key="America/New_York")),
+            datetime(1970, 1, 1, 0, 0, tzinfo=ZoneInfo("America/New_York")),
+            datetime(1970, 1, 1, 1, 0, tzinfo=ZoneInfo("America/New_York")),
+            datetime(1970, 1, 1, 2, 0, tzinfo=ZoneInfo("America/New_York")),
+            datetime(1970, 1, 1, 3, 0, tzinfo=ZoneInfo("America/New_York")),
+            datetime(1970, 1, 1, 4, 0, tzinfo=ZoneInfo("America/New_York")),
+            datetime(1970, 1, 1, 5, 0, tzinfo=ZoneInfo("America/New_York")),
         ],
     }
 
@@ -2097,26 +2177,26 @@ def test_truncate_expr() -> None:
     ambiguous_expr = df.select(pl.col("date").dt.truncate(every=pl.lit("30m")))
     assert ambiguous_expr.to_dict(as_series=False) == {
         "date": [
-            datetime(2020, 10, 25, tzinfo=ZoneInfo(key="Europe/London")),
-            datetime(2020, 10, 25, 0, 30, tzinfo=ZoneInfo(key="Europe/London")),
-            datetime(2020, 10, 25, 1, 0, tzinfo=ZoneInfo(key="Europe/London")),
-            datetime(2020, 10, 25, 1, 30, tzinfo=ZoneInfo(key="Europe/London")),
-            datetime(2020, 10, 25, 1, 0, tzinfo=ZoneInfo(key="Europe/London")),
-            datetime(2020, 10, 25, 1, 30, tzinfo=ZoneInfo(key="Europe/London")),
-            datetime(2020, 10, 25, 2, 0, tzinfo=ZoneInfo(key="Europe/London")),
+            datetime(2020, 10, 25, tzinfo=ZoneInfo("Europe/London")),
+            datetime(2020, 10, 25, 0, 30, tzinfo=ZoneInfo("Europe/London")),
+            datetime(2020, 10, 25, 1, 0, tzinfo=ZoneInfo("Europe/London")),
+            datetime(2020, 10, 25, 1, 30, tzinfo=ZoneInfo("Europe/London")),
+            datetime(2020, 10, 25, 1, 0, tzinfo=ZoneInfo("Europe/London")),
+            datetime(2020, 10, 25, 1, 30, tzinfo=ZoneInfo("Europe/London")),
+            datetime(2020, 10, 25, 2, 0, tzinfo=ZoneInfo("Europe/London")),
         ]
     }
 
     all_expr = df.select(pl.col("date").dt.truncate(every=pl.col("every")))
     assert all_expr.to_dict(as_series=False) == {
         "date": [
-            datetime(2020, 10, 25, tzinfo=ZoneInfo(key="Europe/London")),
-            datetime(2020, 10, 25, 0, 45, tzinfo=ZoneInfo(key="Europe/London")),
-            datetime(2020, 10, 25, 1, 0, tzinfo=ZoneInfo(key="Europe/London")),
-            datetime(2020, 10, 25, 1, 45, tzinfo=ZoneInfo(key="Europe/London")),
-            datetime(2020, 10, 25, 1, 0, tzinfo=ZoneInfo(key="Europe/London")),
-            datetime(2020, 10, 25, 1, 45, tzinfo=ZoneInfo(key="Europe/London")),
-            datetime(2020, 10, 25, 2, 0, tzinfo=ZoneInfo(key="Europe/London")),
+            datetime(2020, 10, 25, tzinfo=ZoneInfo("Europe/London")),
+            datetime(2020, 10, 25, 0, 45, tzinfo=ZoneInfo("Europe/London")),
+            datetime(2020, 10, 25, 1, 0, tzinfo=ZoneInfo("Europe/London")),
+            datetime(2020, 10, 25, 1, 45, tzinfo=ZoneInfo("Europe/London")),
+            datetime(2020, 10, 25, 1, 0, tzinfo=ZoneInfo("Europe/London")),
+            datetime(2020, 10, 25, 1, 45, tzinfo=ZoneInfo("Europe/London")),
+            datetime(2020, 10, 25, 2, 0, tzinfo=ZoneInfo("Europe/London")),
         ]
     }
 
@@ -2296,6 +2376,13 @@ def test_truncate_ambiguous() -> None:
     assert_series_equal(result, expected)
 
 
+def test_truncate_non_existent_14957() -> None:
+    with pytest.raises(ComputeError, match="non-existent"):
+        pl.Series([datetime(2020, 3, 29, 2, 1)]).dt.replace_time_zone(
+            "Europe/London"
+        ).dt.truncate("46m")
+
+
 def test_round_ambiguous() -> None:
     t = (
         pl.datetime_range(
@@ -2352,13 +2439,13 @@ def test_round_ambiguous() -> None:
         df = df.select(pl.col("date").dt.round("30m", ambiguous=pl.col("ambiguous")))
     assert df.to_dict(as_series=False) == {
         "date": [
-            datetime(2020, 10, 25, 0, 30, tzinfo=ZoneInfo(key="Europe/London")),
-            datetime(2020, 10, 25, 1, tzinfo=ZoneInfo(key="Europe/London")),
-            datetime(2020, 10, 25, 1, 30, tzinfo=ZoneInfo(key="Europe/London")),
-            datetime(2020, 10, 25, 1, tzinfo=ZoneInfo(key="Europe/London")),
-            datetime(2020, 10, 25, 1, 30, tzinfo=ZoneInfo(key="Europe/London")),
-            datetime(2020, 10, 25, 2, tzinfo=ZoneInfo(key="Europe/London")),
-            datetime(2020, 10, 25, 2, 30, tzinfo=ZoneInfo(key="Europe/London")),
+            datetime(2020, 10, 25, 0, 30, tzinfo=ZoneInfo("Europe/London")),
+            datetime(2020, 10, 25, 1, tzinfo=ZoneInfo("Europe/London")),
+            datetime(2020, 10, 25, 1, 30, tzinfo=ZoneInfo("Europe/London")),
+            datetime(2020, 10, 25, 1, tzinfo=ZoneInfo("Europe/London")),
+            datetime(2020, 10, 25, 1, 30, tzinfo=ZoneInfo("Europe/London")),
+            datetime(2020, 10, 25, 2, tzinfo=ZoneInfo("Europe/London")),
+            datetime(2020, 10, 25, 2, 30, tzinfo=ZoneInfo("Europe/London")),
         ]
     }
 
@@ -2661,3 +2748,9 @@ def test_rolling_duplicates() -> None:
     assert df.sort("ts").with_columns(pl.col("value").rolling_max("1d", by="ts"))[
         "value"
     ].to_list() == [1, 1]
+
+
+def test_datetime_time_unit_none_deprecated() -> None:
+    with pytest.deprecated_call():
+        dtype = pl.Datetime(time_unit=None)  # type: ignore[arg-type]
+    assert dtype.time_unit == "us"

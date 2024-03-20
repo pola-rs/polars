@@ -16,3 +16,8 @@ pub use ipc_file::IpcReader;
 #[cfg(feature = "ipc_streaming")]
 pub use ipc_stream::*;
 pub use write::{BatchedWriter, IpcCompression, IpcWriter, IpcWriterOption};
+
+#[cfg(feature = "cloud")]
+mod ipc_reader_async;
+#[cfg(feature = "cloud")]
+pub use ipc_reader_async::*;

@@ -98,6 +98,7 @@ pub use moment::*;
 pub use negate::*;
 #[cfg(feature = "pct_change")]
 pub use pct_change::*;
+pub use polars_core::chunked_array::ops::search_sorted::SearchSortedSide;
 use polars_core::prelude::*;
 #[cfg(feature = "rank")]
 pub use rank::*;

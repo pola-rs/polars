@@ -5,14 +5,14 @@ use polars::export::arrow::types::NativeType;
 use polars_core::prelude::*;
 use polars_core::utils::CustomIterTools;
 use polars_rs::export::arrow::bitmap::MutableBitmap;
-use pyo3::exceptions::PyValueError;
+use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 
 use crate::arrow_interop::to_rust::array_to_rust;
+use crate::conversion::any_value::py_object_to_any_value;
 use crate::conversion::{slice_extract_wrapped, vec_extract_wrapped, Wrap};
 use crate::error::PyPolarsErr;
 use crate::prelude::ObjectValue;
-use crate::series::ToSeries;
 use crate::PySeries;
 
 // Init with numpy arrays.
@@ -21,7 +21,7 @@ macro_rules! init_method {
         #[pymethods]
         impl PySeries {
             #[staticmethod]
-            fn $name(py: Python, name: &str, array: &PyArray1<$type>, _strict: bool) -> PySeries {
+            fn $name(py: Python, name: &str, array: &PyArray1<$type>, _strict: bool) -> Self {
                 mmap_numpy_array(py, name, array)
             }
         }
@@ -51,7 +51,7 @@ fn mmap_numpy_array<T: Element + NativeType>(
 #[pymethods]
 impl PySeries {
     #[staticmethod]
-    fn new_bool(py: Python, name: &str, array: &PyArray1<bool>, _strict: bool) -> PySeries {
+    fn new_bool(py: Python, name: &str, array: &PyArray1<bool>, _strict: bool) -> Self {
         let array = array.readonly();
         let vals = array.as_slice().unwrap();
         py.allow_threads(|| PySeries {
@@ -60,7 +60,7 @@ impl PySeries {
     }
 
     #[staticmethod]
-    fn new_f32(py: Python, name: &str, array: &PyArray1<f32>, nan_is_null: bool) -> PySeries {
+    fn new_f32(py: Python, name: &str, array: &PyArray1<f32>, nan_is_null: bool) -> Self {
         if nan_is_null {
             let array = array.readonly();
             let vals = array.as_slice().unwrap();
@@ -75,7 +75,7 @@ impl PySeries {
     }
 
     #[staticmethod]
-    fn new_f64(py: Python, name: &str, array: &PyArray1<f64>, nan_is_null: bool) -> PySeries {
+    fn new_f64(py: Python, name: &str, array: &PyArray1<f64>, nan_is_null: bool) -> Self {
         if nan_is_null {
             let array = array.readonly();
             let vals = array.as_slice().unwrap();
@@ -93,7 +93,7 @@ impl PySeries {
 #[pymethods]
 impl PySeries {
     #[staticmethod]
-    fn new_opt_bool(name: &str, obj: &PyAny, strict: bool) -> PyResult<PySeries> {
+    fn new_opt_bool(name: &str, obj: &PyAny, strict: bool) -> PyResult<Self> {
         let len = obj.len()?;
         let mut builder = BooleanChunkedBuilder::new(name, len);
 
@@ -158,7 +158,7 @@ macro_rules! init_method_opt {
         #[pymethods]
         impl PySeries {
             #[staticmethod]
-            fn $name(name: &str, obj: &PyAny, strict: bool) -> PyResult<PySeries> {
+            fn $name(name: &str, obj: &PyAny, strict: bool) -> PyResult<Self> {
                 new_primitive::<$type>(name, obj, strict)
             }
         }
@@ -184,27 +184,55 @@ init_method_opt!(new_opt_f64, Float64Type, f64);
 )]
 impl PySeries {
     #[staticmethod]
-    fn new_from_any_values(
-        name: &str,
-        val: Vec<Wrap<AnyValue<'_>>>,
-        strict: bool,
-    ) -> PyResult<PySeries> {
-        // From AnyValues is fallible.
-        let avs = slice_extract_wrapped(&val);
-        let s = Series::from_any_values(name, avs, strict).map_err(PyPolarsErr::from)?;
-        Ok(s.into())
+    fn new_from_any_values(name: &str, values: Vec<&PyAny>, strict: bool) -> PyResult<Self> {
+        let any_values_result = values
+            .iter()
+            .map(|v| py_object_to_any_value(v, strict))
+            .collect::<PyResult<Vec<AnyValue>>>();
+        let result = any_values_result.and_then(|avs| {
+            let s =
+                Series::from_any_values(name, avs.as_slice(), strict).map_err(PyPolarsErr::from)?;
+            Ok(s.into())
+        });
+
+        // Fall back to Object type for non-strict construction.
+        if !strict && result.is_err() {
+            let s = Python::with_gil(|py| {
+                let objects = values
+                    .into_iter()
+                    .map(|v| ObjectValue {
+                        inner: v.to_object(py),
+                    })
+                    .collect();
+                Self::new_object(py, name, objects, strict)
+            });
+            return Ok(s);
+        }
+
+        result.map_err(|e| {
+            PyTypeError::new_err(format!(
+                "{e}\n\nHint: Try setting `strict=False` to allow passing data with mixed types."
+            ))
+        })
     }
 
     #[staticmethod]
     fn new_from_any_values_and_dtype(
         name: &str,
-        val: Vec<Wrap<AnyValue<'_>>>,
+        values: Vec<&PyAny>,
         dtype: Wrap<DataType>,
         strict: bool,
-    ) -> PyResult<PySeries> {
-        let avs = slice_extract_wrapped(&val);
-        let s = Series::from_any_values_and_dtype(name, avs, &dtype.0, strict)
-            .map_err(PyPolarsErr::from)?;
+    ) -> PyResult<Self> {
+        let any_values = values
+            .into_iter()
+            .map(|v| py_object_to_any_value(v, strict))
+            .collect::<PyResult<Vec<AnyValue>>>()?;
+        let s = Series::from_any_values_and_dtype(name, any_values.as_slice(), &dtype.0, strict)
+            .map_err(|e| {
+                PyTypeError::new_err(format!(
+                "{e}\n\nHint: Try setting `strict=False` to allow passing data with mixed types."
+            ))
+            })?;
         Ok(s.into())
     }
 
@@ -244,14 +272,15 @@ impl PySeries {
             s.into()
         }
         #[cfg(not(feature = "object"))]
-        {
-            todo!()
-        }
+        panic!("activate 'object' feature")
     }
 
     #[staticmethod]
-    fn new_series_list(name: &str, val: Vec<PySeries>, _strict: bool) -> Self {
-        let series_vec = val.to_series();
+    fn new_series_list(name: &str, val: Vec<Option<PySeries>>, _strict: bool) -> Self {
+        let series_vec: Vec<Option<Series>> = val
+            .iter()
+            .map(|v| v.as_ref().map(|py_s| py_s.clone().series))
+            .collect();
         Series::new(name, &series_vec).into()
     }
 
@@ -265,40 +294,36 @@ impl PySeries {
         _strict: bool,
     ) -> PyResult<Self> {
         if val.is_empty() {
-            let series =
-                Series::new_empty(name, &DataType::Array(Box::new(inner.unwrap().0), width));
-            Ok(series.into())
+            let s = Series::new_empty(name, &DataType::Array(Box::new(inner.unwrap().0), width));
+            return Ok(s.into());
+        };
+
+        let val = vec_extract_wrapped(val);
+        let out = if let Some(inner) = inner {
+            Series::from_any_values_and_dtype(
+                name,
+                val.as_ref(),
+                &DataType::Array(Box::new(inner.0), width),
+                true,
+            )
+            .map_err(PyPolarsErr::from)?
         } else {
-            let val = vec_extract_wrapped(val);
-            return if let Some(inner) = inner {
-                let series = Series::from_any_values_and_dtype(
-                    name,
-                    val.as_ref(),
-                    &DataType::Array(Box::new(inner.0), width),
-                    true,
-                )
-                .map_err(PyPolarsErr::from)?;
-                Ok(series.into())
-            } else {
-                let series = Series::new(name, &val);
-                match series.dtype() {
-                    DataType::List(list_inner) => {
-                        let series = series
-                            .cast(&DataType::Array(
-                                Box::new(inner.map(|dt| dt.0).unwrap_or(*list_inner.clone())),
-                                width,
-                            ))
-                            .map_err(PyPolarsErr::from)?;
-                        Ok(series.into())
-                    },
-                    _ => Err(PyValueError::new_err("could not create Array from input")),
-                }
-            };
-        }
+            let series = Series::new(name, &val);
+            match series.dtype() {
+                DataType::List(list_inner) => series
+                    .cast(&DataType::Array(
+                        Box::new(inner.map(|dt| dt.0).unwrap_or(*list_inner.clone())),
+                        width,
+                    ))
+                    .map_err(PyPolarsErr::from)?,
+                _ => return Err(PyValueError::new_err("could not create Array from input")),
+            }
+        };
+        Ok(out.into())
     }
 
     #[staticmethod]
-    fn new_decimal(name: &str, val: Vec<Wrap<AnyValue<'_>>>, strict: bool) -> PyResult<PySeries> {
+    fn new_decimal(name: &str, val: Vec<Wrap<AnyValue<'_>>>, strict: bool) -> PyResult<Self> {
         // TODO: do we have to respect 'strict' here? It's possible if we want to.
         let avs = slice_extract_wrapped(&val);
         // Create a fake dtype with a placeholder "none" scale, to be inferred later.

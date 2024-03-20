@@ -3,12 +3,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Callable, Sequence
 
 from polars import functions as F
-from polars.series.utils import expr_dispatch
-from polars.utils._wrap import wrap_s
-from polars.utils.deprecation import (
+from polars._utils.deprecation import (
     deprecate_renamed_function,
     deprecate_renamed_parameter,
 )
+from polars._utils.wrap import wrap_s
+from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
     from datetime import date, datetime, time

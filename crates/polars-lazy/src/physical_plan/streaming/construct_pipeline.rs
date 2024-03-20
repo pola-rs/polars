@@ -7,9 +7,10 @@ use polars_core::prelude::*;
 use polars_io::predicates::{PhysicalIoExpr, StatsEvaluator};
 use polars_pipe::expressions::PhysicalPipedExpr;
 use polars_pipe::operators::chunks::DataChunk;
-use polars_pipe::pipeline::{create_pipeline, get_dummy_operator, get_operator, PipeLine};
+use polars_pipe::pipeline::{
+    create_pipeline, execute_pipeline, get_dummy_operator, get_operator, CallBacks, PipeLine,
+};
 use polars_pipe::SExecutionContext;
-use polars_utils::IdxSize;
 
 use crate::physical_plan::planner::{create_physical_expr, ExpressionConversionState};
 use crate::physical_plan::state::ExecutionState;
@@ -106,27 +107,37 @@ pub(super) fn construct(
     use ALogicalPlan::*;
 
     let mut pipelines = Vec::with_capacity(tree.len());
+    let mut callbacks = CallBacks::new();
 
     let is_verbose = verbose();
 
-    // first traverse the branches and nodes to determine how often a sink is
-    // shared
-    // this shared count will be used in the pipeline to determine
+    // First traverse the branches and nodes to determine how often a sink is
+    // shared.
+    // This shared count will be used in the pipeline to determine
     // when the sink can be finalized.
     let mut sink_share_count = PlHashMap::new();
     let n_branches = tree.len();
     if n_branches > 1 {
         for branch in &tree {
-            for sink in branch.iter_sinks() {
-                let count = sink_share_count
-                    .entry(sink.0)
-                    .or_insert(Rc::new(RefCell::new(0u32)));
-                *count.borrow_mut() += 1;
+            for op in branch.operators_sinks.iter() {
+                match op {
+                    PipelineNode::Sink(sink) => {
+                        let count = sink_share_count
+                            .entry(sink.0)
+                            .or_insert(Rc::new(RefCell::new(0u32)));
+                        *count.borrow_mut() += 1;
+                    },
+                    PipelineNode::RhsJoin(node) => {
+                        let _ = callbacks.insert(*node, get_dummy_operator());
+                    },
+                    _ => {},
+                }
             }
         }
     }
 
-    // shared sinks are stored in a cache, so that they share info
+    // Shared sinks are stored in a cache, so that they share state.
+    // If the shared sink is already in cache, that one is used.
     let mut sink_cache = PlHashMap::new();
     let mut final_sink = None;
 
@@ -173,31 +184,25 @@ pub(super) fn construct(
                 PipelineNode::RhsJoin(node) => {
                     operator_nodes.push(node);
                     jit_insert_slice(node, lp_arena, &mut sink_nodes, operator_offset);
-                    let op = get_dummy_operator();
-                    operators.push(op)
+                    let op = callbacks.get(&node).unwrap().clone();
+                    operators.push(Box::new(op))
                 },
             }
         }
-        let execution_id = branch.execution_id;
 
         let pipeline = create_pipeline(
             &branch.sources,
             operators,
-            operator_nodes,
             sink_nodes,
             lp_arena,
             expr_arena,
             to_physical_piped_expr,
             is_verbose,
             &mut sink_cache,
+            &mut callbacks,
         )?;
-        pipelines.push((execution_id, pipeline));
+        pipelines.push(pipeline);
     }
-
-    // We sort to ensure we execute in the stack traversal order.
-    // this is important to make unions and joins work as expected
-    // also pipelines are not ready to receive inputs otherwise
-    pipelines.sort_by(|a, b| a.0.cmp(&b.0));
 
     let Some(final_sink) = final_sink else {
         return Ok(None);
@@ -223,18 +228,12 @@ pub(super) fn construct(
         None
     };
 
-    let Some((_, mut most_left)) = pipelines.pop() else {
-        unreachable!()
-    };
-    while let Some((_, rhs)) = pipelines.pop() {
-        most_left = most_left.with_other_branch(rhs)
-    }
-    // replace the part of the logical plan with a `MapFunction` that will execute the pipeline.
+    // Replace the part of the logical plan with a `MapFunction` that will execute the pipeline.
     let schema = lp_arena
         .get(insertion_location)
         .schema(lp_arena)
         .into_owned();
-    let pipeline_node = get_pipeline_node(lp_arena, most_left, schema, original_lp);
+    let pipeline_node = get_pipeline_node(lp_arena, pipelines, schema, original_lp);
     lp_arena.replace(insertion_location, pipeline_node);
 
     Ok(Some(final_sink))
@@ -252,7 +251,7 @@ impl SExecutionContext for ExecutionState {
 
 fn get_pipeline_node(
     lp_arena: &mut Arena<ALogicalPlan>,
-    mut pipeline: PipeLine,
+    mut pipelines: Vec<PipeLine>,
     schema: SchemaRef,
     original_lp: Option<LogicalPlan>,
 ) -> ALogicalPlan {
@@ -271,11 +270,12 @@ fn get_pipeline_node(
             function: Arc::new(move |_df: DataFrame| {
                 let mut state = ExecutionState::new();
                 if state.verbose() {
-                    eprintln!("RUN STREAMING PIPELINE")
+                    eprintln!("RUN STREAMING PIPELINE");
+                    eprintln!("{:?}", &pipelines)
                 }
                 state.set_in_streaming_engine();
                 let state = Box::new(state) as Box<dyn SExecutionContext>;
-                pipeline.execute(state)
+                execute_pipeline(state, std::mem::take(&mut pipelines))
             }),
             schema,
             original: original_lp.map(Arc::new),

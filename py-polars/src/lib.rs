@@ -305,5 +305,9 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         pyo3_built!(py, build, "build", "time", "deps", "features", "host", "target", "git"),
     )?;
 
+    // Plugins
+    m.add_wrapped(wrap_pyfunction!(functions::register_plugin_function))
+        .unwrap();
+
     Ok(())
 }

@@ -11,6 +11,7 @@ import pytest
 
 import polars
 import polars as pl
+from polars._utils.construction import iterable_to_pyseries
 from polars.datatypes import (
     Date,
     Datetime,
@@ -29,14 +30,13 @@ from polars.datatypes import (
 )
 from polars.exceptions import ComputeError, PolarsInefficientMapWarning, ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
-from polars.utils._construction import iterable_to_pyseries
 
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
 
     from polars.type_aliases import EpochTimeUnit, PolarsDataType, TimeUnit
 else:
-    from polars.utils.convert import get_zoneinfo as ZoneInfo
+    from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
 
 def test_cum_agg() -> None:
@@ -1044,14 +1044,6 @@ def test_map_elements() -> None:
     a.map_elements(lambda x: x)
 
 
-def test_object() -> None:
-    vals = [[12], "foo", 9]
-    a = pl.Series("a", vals)
-    assert a.dtype == pl.Object
-    assert a.to_list() == vals
-    assert a[1] == "foo"
-
-
 def test_shape() -> None:
     s = pl.Series([1, 2, 3])
     assert s.shape == (3,)
@@ -1538,6 +1530,16 @@ def test_to_dummies() -> None:
     expected = pl.DataFrame(
         {"a_1": [1, 0, 0], "a_2": [0, 1, 0], "a_3": [0, 0, 1]},
         schema={"a_1": pl.UInt8, "a_2": pl.UInt8, "a_3": pl.UInt8},
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_to_dummies_drop_first() -> None:
+    s = pl.Series("a", [1, 2, 3])
+    result = s.to_dummies(drop_first=True)
+    expected = pl.DataFrame(
+        {"a_2": [0, 1, 0], "a_3": [0, 0, 1]},
+        schema={"a_2": pl.UInt8, "a_3": pl.UInt8},
     )
     assert_frame_equal(result, expected)
 
@@ -2107,6 +2109,11 @@ def test_min_max_agg_on_str() -> None:
     strings = ["b", "a", "x"]
     s = pl.Series(strings)
     assert (s.min(), s.max()) == ("a", "x")
+
+
+def test_min_max_full_nan_15058() -> None:
+    s = pl.Series([float("nan")] * 2)
+    assert all(x != x for x in [s.min(), s.max()])
 
 
 def test_is_between() -> None:

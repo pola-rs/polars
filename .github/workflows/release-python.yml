@@ -129,13 +129,14 @@ jobs:
         env:
           IS_LTS_CPU: ${{ matrix.package == 'polars-lts-cpu' }}
           IS_MACOS: ${{ matrix.os == 'macos-latest' }}
+        # IMPORTANT: All features enabled here should also be included in py-polars/polars/_cpu_check.py
         run: |
           if [[ "$IS_LTS_CPU" = true ]]; then
             FEATURES=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt
           elif [[ "$IS_MACOS" = true ]]; then
-            FEATURES=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma
+            FEATURES=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma,+pclmulqdq
           else
-            FEATURES=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+avx2,+fma,+bmi1,+bmi2,+lzcnt
+            FEATURES=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+avx2,+fma,+bmi1,+bmi2,+lzcnt,+pclmulqdq
           fi
           echo "features=$FEATURES" >> $GITHUB_OUTPUT
 
@@ -177,6 +178,13 @@ jobs:
             --manifest-path py-polars/Cargo.toml
             --out dist
           manylinux: ${{ matrix.architecture == 'aarch64' && '2_24' || 'auto' }}
+
+      - name: Test wheel
+        # Only test on x86-64 for now as this matches the runner architecture
+        if: matrix.architecture == 'x86-64'
+        run: |
+          pip install --force-reinstall --verbose dist/*.whl
+          python -c 'import polars'
 
       - name: Upload wheel
         uses: actions/upload-artifact@v4

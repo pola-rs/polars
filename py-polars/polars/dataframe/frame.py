@@ -1,4 +1,5 @@
 """Module containing logic related to eager DataFrames."""
+
 from __future__ import annotations
 
 import contextlib
@@ -31,6 +32,43 @@ from typing import (
 
 import polars._reexport as pl
 from polars import functions as F
+from polars._utils.construction import (
+    arrow_to_pydf,
+    dataframe_to_pydf,
+    dict_to_pydf,
+    iterable_to_pydf,
+    numpy_to_idxs,
+    numpy_to_pydf,
+    pandas_to_pydf,
+    sequence_to_pydf,
+    series_to_pydf,
+)
+from polars._utils.convert import parse_as_duration_string
+from polars._utils.deprecation import (
+    deprecate_function,
+    deprecate_nonkeyword_arguments,
+    deprecate_parameter_as_positional,
+    deprecate_renamed_function,
+    deprecate_renamed_parameter,
+    deprecate_saturating,
+    issue_deprecation_warning,
+)
+from polars._utils.parse_expr_input import parse_as_expression
+from polars._utils.unstable import issue_unstable_warning, unstable
+from polars._utils.various import (
+    _prepare_row_index_args,
+    _process_null_values,
+    handle_projection_columns,
+    is_bool_sequence,
+    is_int_sequence,
+    is_str_sequence,
+    normalize_filepath,
+    parse_version,
+    range_to_slice,
+    scale_bytes,
+    warn_null_comparison,
+)
+from polars._utils.wrap import wrap_expr, wrap_ldf, wrap_s
 from polars.dataframe._html import NotebookFormatter
 from polars.dataframe.group_by import DynamicGroupBy, GroupBy, RollingGroupBy
 from polars.datatypes import (
@@ -76,43 +114,6 @@ from polars.io.spreadsheet._write_utils import (
 from polars.selectors import _expand_selector_dicts, _expand_selectors
 from polars.slice import PolarsSlice
 from polars.type_aliases import DbWriteMode
-from polars.utils._construction import (
-    arrow_to_pydf,
-    dict_to_pydf,
-    frame_to_pydf,
-    iterable_to_pydf,
-    numpy_to_idxs,
-    numpy_to_pydf,
-    pandas_to_pydf,
-    sequence_to_pydf,
-    series_to_pydf,
-)
-from polars.utils._parse_expr_input import parse_as_expression
-from polars.utils._wrap import wrap_expr, wrap_ldf, wrap_s
-from polars.utils.convert import _timedelta_to_pl_duration
-from polars.utils.deprecation import (
-    deprecate_function,
-    deprecate_nonkeyword_arguments,
-    deprecate_parameter_as_positional,
-    deprecate_renamed_function,
-    deprecate_renamed_parameter,
-    deprecate_saturating,
-    issue_deprecation_warning,
-)
-from polars.utils.unstable import issue_unstable_warning, unstable
-from polars.utils.various import (
-    _prepare_row_index_args,
-    _process_null_values,
-    handle_projection_columns,
-    is_bool_sequence,
-    is_int_sequence,
-    is_str_sequence,
-    normalize_filepath,
-    parse_version,
-    range_to_slice,
-    scale_bytes,
-    warn_null_comparison,
-)
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyDataFrame
@@ -204,7 +205,8 @@ class DataFrame:
         Two-dimensional data in various forms; dict input must contain Sequences,
         Generators, or a `range`. Sequence may contain Series or other Sequences.
     schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
-        The DataFrame schema may be declared in several ways:
+        The schema of the resulting DataFrame. The schema may be declared in several
+        ways:
 
         * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
         * As a list of column names; in this case types are automatically inferred.
@@ -213,6 +215,8 @@ class DataFrame:
         If you supply a list of column names that does not match the names in the
         underlying data, the names given here will overwrite them. The number
         of names given in the schema should match the underlying data dimensions.
+
+        If set to `None` (default), the schema is inferred from the data.
     schema_overrides : dict, default None
         Support type specification or override of one or more columns; note that
         any dtypes inferred from the schema param will be overridden.
@@ -220,18 +224,28 @@ class DataFrame:
         The number of entries in the schema should match the underlying data
         dimensions, unless a sequence of dictionaries is being passed, in which case
         a *partial* schema can be declared to prevent specific fields from being loaded.
+    strict : bool, default True
+        Throw an error if any `data` value does not exactly match the given or inferred
+        data type for that column. If set to `False`, values that do not match the data
+        type are cast to that data type or, if casting is not possible, set to null
+        instead.
     orient : {'col', 'row'}, default None
         Whether to interpret two-dimensional data as columns or as rows. If None,
         the orientation is inferred by matching the columns and data dimensions. If
         this does not yield conclusive results, column orientation is used.
     infer_schema_length : int or None
-        The maximum number of rows to scan for schema inference.
-        If set to `None`, the full data may be scanned *(this is slow)*.
-        This parameter only applies if the input data is a sequence or generator of
-        rows; other input is read as-is.
+        The maximum number of rows to scan for schema inference. If set to `None`, the
+        full data may be scanned *(this can be slow)*. This parameter only applies if
+        the input data is a sequence or generator of rows; other input is read as-is.
     nan_to_null : bool, default False
         If the data comes from one or more numpy arrays, can optionally convert input
         data np.nan values to null instead. This is a no-op for all other input data.
+
+    Notes
+    -----
+    Polars explicitly does not support subclassing of its core data types. See
+    the following GitHub issue for possible workarounds:
+    https://github.com/pola-rs/polars/issues/2846#issuecomment-1711799869
 
     Examples
     --------
@@ -334,19 +348,9 @@ class DataFrame:
     │ 1   ┆ 2   ┆ 3   │
     │ 4   ┆ 5   ┆ 6   │
     └─────┴─────┴─────┘
-
-    Notes
-    -----
-    Some methods internally convert the DataFrame into a LazyFrame before collecting
-    the results back into a DataFrame. This can lead to unexpected behavior when using
-    a subclassed DataFrame. For example,
-
-    >>> class MyDataFrame(pl.DataFrame):
-    ...     pass
-    >>> isinstance(MyDataFrame().lazy().collect(), MyDataFrame)
-    False
     """
 
+    _df: PyDataFrame
     _accessors: ClassVar[set[str]] = {"plot"}
 
     def __init__(
@@ -355,6 +359,7 @@ class DataFrame:
         schema: SchemaDefinition | None = None,
         *,
         schema_overrides: SchemaDict | None = None,
+        strict: bool = True,
         orient: Orientation | None = None,
         infer_schema_length: int | None = N_INFER_DEFAULT,
         nan_to_null: bool = False,
@@ -369,6 +374,7 @@ class DataFrame:
                 data,
                 schema=schema,
                 schema_overrides=schema_overrides,
+                strict=strict,
                 nan_to_null=nan_to_null,
             )
 
@@ -377,13 +383,14 @@ class DataFrame:
                 data,
                 schema=schema,
                 schema_overrides=schema_overrides,
+                strict=strict,
                 orient=orient,
                 infer_schema_length=infer_schema_length,
             )
 
         elif isinstance(data, pl.Series):
             self._df = series_to_pydf(
-                data, schema=schema, schema_overrides=schema_overrides
+                data, schema=schema, schema_overrides=schema_overrides, strict=strict
             )
 
         elif _check_for_numpy(data) and isinstance(data, np.ndarray):
@@ -391,18 +398,19 @@ class DataFrame:
                 data,
                 schema=schema,
                 schema_overrides=schema_overrides,
+                strict=strict,
                 orient=orient,
                 nan_to_null=nan_to_null,
             )
 
         elif _check_for_pyarrow(data) and isinstance(data, pa.Table):
             self._df = arrow_to_pydf(
-                data, schema=schema, schema_overrides=schema_overrides
+                data, schema=schema, schema_overrides=schema_overrides, strict=strict
             )
 
         elif _check_for_pandas(data) and isinstance(data, pd.DataFrame):
             self._df = pandas_to_pydf(
-                data, schema=schema, schema_overrides=schema_overrides
+                data, schema=schema, schema_overrides=schema_overrides, strict=strict
             )
 
         elif not isinstance(data, Sized) and isinstance(data, (Generator, Iterable)):
@@ -410,13 +418,14 @@ class DataFrame:
                 data,
                 schema=schema,
                 schema_overrides=schema_overrides,
+                strict=strict,
                 orient=orient,
                 infer_schema_length=infer_schema_length,
             )
 
         elif isinstance(data, pl.DataFrame):
-            self._df = frame_to_pydf(
-                data, schema=schema, schema_overrides=schema_overrides
+            self._df = dataframe_to_pydf(
+                data, schema=schema, schema_overrides=schema_overrides, strict=strict
             )
         else:
             msg = (
@@ -431,107 +440,6 @@ class DataFrame:
         df = cls.__new__(cls)
         df._df = py_df
         return df
-
-    @classmethod
-    def _from_dict(
-        cls,
-        data: Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | Series],
-        schema: SchemaDefinition | None = None,
-        *,
-        schema_overrides: SchemaDict | None = None,
-    ) -> Self:
-        """
-        Construct a DataFrame from a dictionary of sequences.
-
-        Parameters
-        ----------
-        data : dict of sequences
-          Two-dimensional data represented as a dictionary. dict must contain
-          Sequences.
-        schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
-            The DataFrame schema may be declared in several ways:
-
-            * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
-            * As a list of column names; in this case types are automatically inferred.
-            * As a list of (name,type) pairs; this is equivalent to the dictionary form.
-
-            If you supply a list of column names that does not match the names in the
-            underlying data, the names given here will overwrite them. The number
-            of names given in the schema should match the underlying data dimensions.
-        schema_overrides : dict, default None
-          Support type specification or override of one or more columns; note that
-          any dtypes inferred from the columns param will be overridden.
-        """
-        return cls._from_pydf(
-            dict_to_pydf(data, schema=schema, schema_overrides=schema_overrides)
-        )
-
-    @classmethod
-    def _from_records(
-        cls,
-        data: Sequence[Any],
-        schema: SchemaDefinition | None = None,
-        *,
-        schema_overrides: SchemaDict | None = None,
-        orient: Orientation | None = None,
-        infer_schema_length: int | None = N_INFER_DEFAULT,
-    ) -> Self:
-        """
-        Construct a DataFrame from a sequence of sequences.
-
-        See Also
-        --------
-        polars.io.from_records
-        """
-        return cls._from_pydf(
-            sequence_to_pydf(
-                data,
-                schema=schema,
-                schema_overrides=schema_overrides,
-                orient=orient,
-                infer_schema_length=infer_schema_length,
-            )
-        )
-
-    @classmethod
-    def _from_numpy(
-        cls,
-        data: np.ndarray[Any, Any],
-        schema: SchemaDefinition | None = None,
-        *,
-        schema_overrides: SchemaDict | None = None,
-        orient: Orientation | None = None,
-    ) -> Self:
-        """
-        Construct a DataFrame from a numpy ndarray.
-
-        Parameters
-        ----------
-        data : numpy ndarray
-            Two-dimensional data represented as a numpy ndarray.
-        schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
-            The DataFrame schema may be declared in several ways:
-
-            * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
-            * As a list of column names; in this case types are automatically inferred.
-            * As a list of (name,type) pairs; this is equivalent to the dictionary form.
-
-            If you supply a list of column names that does not match the names in the
-            underlying data, the names given here will overwrite them. The number
-            of names given in the schema should match the underlying data dimensions.
-        schema_overrides : dict, default None
-            Support type specification or override of one or more columns; note that
-            any dtypes inferred from the columns param will be overridden.
-        orient : {'col', 'row'}, default None
-            Whether to interpret two-dimensional data as columns or as rows. If None,
-            the orientation is inferred by matching the columns and data dimensions. If
-            this does not yield conclusive results, column orientation is used.
-        """
-        return cls._from_pydf(
-            numpy_to_pydf(
-                data, schema=schema, schema_overrides=schema_overrides, orient=orient
-            )
-        )
 
     @classmethod
     def _from_arrow(
@@ -1536,8 +1444,7 @@ class DataFrame:
         return self._from_pydf(self._df.take_with_series(s._s))
 
     @overload
-    def __getitem__(self, item: str) -> Series:
-        ...
+    def __getitem__(self, item: str) -> Series: ...
 
     @overload
     def __getitem__(
@@ -1549,16 +1456,13 @@ class DataFrame:
             | tuple[int, MultiColSelector]
             | tuple[MultiRowSelector, MultiColSelector]
         ),
-    ) -> Self:
-        ...
+    ) -> Self: ...
 
     @overload
-    def __getitem__(self, item: tuple[int, int | str]) -> Any:
-        ...
+    def __getitem__(self, item: tuple[int, int | str]) -> Any: ...
 
     @overload
-    def __getitem__(self, item: tuple[MultiRowSelector, int | str]) -> Series:
-        ...
+    def __getitem__(self, item: tuple[MultiRowSelector, int | str]) -> Series: ...
 
     def __getitem__(
         self,
@@ -1916,19 +1820,16 @@ class DataFrame:
         return pa.Table.from_batches(record_batches)
 
     @overload
-    def to_dict(self, as_series: Literal[True] = ...) -> dict[str, Series]:
-        ...
+    def to_dict(self, as_series: Literal[True] = ...) -> dict[str, Series]: ...
 
     @overload
-    def to_dict(self, as_series: Literal[False]) -> dict[str, list[Any]]:
-        ...
+    def to_dict(self, as_series: Literal[False]) -> dict[str, list[Any]]: ...
 
     @overload
     def to_dict(
         self,
         as_series: bool,  # noqa: FBT001
-    ) -> dict[str, Series] | dict[str, list[Any]]:
-        ...
+    ) -> dict[str, Series] | dict[str, list[Any]]: ...
 
     @deprecate_nonkeyword_arguments(version="0.19.13")
     def to_dict(
@@ -2423,8 +2324,7 @@ class DataFrame:
         *,
         pretty: bool = ...,
         row_oriented: bool = ...,
-    ) -> str:
-        ...
+    ) -> str: ...
 
     @overload
     def write_json(
@@ -2433,8 +2333,7 @@ class DataFrame:
         *,
         pretty: bool = ...,
         row_oriented: bool = ...,
-    ) -> None:
-        ...
+    ) -> None: ...
 
     def write_json(
         self,
@@ -2491,12 +2390,10 @@ class DataFrame:
         return None
 
     @overload
-    def write_ndjson(self, file: None = None) -> str:
-        ...
+    def write_ndjson(self, file: None = None) -> str: ...
 
     @overload
-    def write_ndjson(self, file: IOBase | str | Path) -> None:
-        ...
+    def write_ndjson(self, file: IOBase | str | Path) -> None: ...
 
     def write_ndjson(self, file: IOBase | str | Path | None = None) -> str | None:
         r"""
@@ -2553,8 +2450,7 @@ class DataFrame:
         float_precision: int | None = ...,
         null_value: str | None = ...,
         quote_style: CsvQuoteStyle | None = ...,
-    ) -> str:
-        ...
+    ) -> str: ...
 
     @overload
     def write_csv(
@@ -2573,8 +2469,7 @@ class DataFrame:
         float_precision: int | None = ...,
         null_value: str | None = ...,
         quote_style: CsvQuoteStyle | None = ...,
-    ) -> None:
-        ...
+    ) -> None: ...
 
     @deprecate_renamed_parameter("quote", "quote_char", version="0.19.8")
     @deprecate_renamed_parameter("has_header", "include_header", version="0.19.13")
@@ -3252,8 +3147,7 @@ class DataFrame:
         compression: IpcCompression = "uncompressed",
         *,
         future: bool = False,
-    ) -> BytesIO:
-        ...
+    ) -> BytesIO: ...
 
     @overload
     def write_ipc(
@@ -3262,8 +3156,7 @@ class DataFrame:
         compression: IpcCompression = "uncompressed",
         *,
         future: bool = False,
-    ) -> None:
-        ...
+    ) -> None: ...
 
     def write_ipc(
         self,
@@ -3328,16 +3221,14 @@ class DataFrame:
         self,
         file: None,
         compression: IpcCompression = "uncompressed",
-    ) -> BytesIO:
-        ...
+    ) -> BytesIO: ...
 
     @overload
     def write_ipc_stream(
         self,
         file: str | Path | IO[bytes],
         compression: IpcCompression = "uncompressed",
-    ) -> None:
-        ...
+    ) -> None: ...
 
     def write_ipc_stream(
         self,
@@ -3680,11 +3571,10 @@ class DataFrame:
         target: str | Path | deltalake.DeltaTable,
         *,
         mode: Literal["error", "append", "overwrite", "ignore"] = ...,
-        overwrite_schema: bool = ...,
+        overwrite_schema: bool | None = ...,
         storage_options: dict[str, str] | None = ...,
         delta_write_options: dict[str, Any] | None = ...,
-    ) -> None:
-        ...
+    ) -> None: ...
 
     @overload
     def write_delta(
@@ -3692,18 +3582,17 @@ class DataFrame:
         target: str | Path | deltalake.DeltaTable,
         *,
         mode: Literal["merge"],
-        overwrite_schema: bool = ...,
+        overwrite_schema: bool | None = ...,
         storage_options: dict[str, str] | None = ...,
         delta_merge_options: dict[str, Any],
-    ) -> deltalake.table.TableMerger:
-        ...
+    ) -> deltalake.table.TableMerger: ...
 
     def write_delta(
         self,
         target: str | Path | deltalake.DeltaTable,
         *,
         mode: Literal["error", "append", "overwrite", "ignore", "merge"] = "error",
-        overwrite_schema: bool = False,
+        overwrite_schema: bool | None = None,
         storage_options: dict[str, str] | None = None,
         delta_write_options: dict[str, Any] | None = None,
         delta_merge_options: dict[str, Any] | None = None,
@@ -3726,6 +3615,10 @@ class DataFrame:
               with the existing data.
         overwrite_schema
             If True, allows updating the schema of the table.
+
+            .. deprecated:: 0.20.14
+                Use the parameter `delta_write_options` instead and pass
+                `{"schema_mode": "overwrite"}`.
         storage_options
             Extra options for the storage backends supported by `deltalake`.
             For cloud storages, this may include configurations for authentication etc.
@@ -3781,12 +3674,14 @@ class DataFrame:
         >>> df.write_delta(table_path, mode="append")  # doctest: +SKIP
 
         Overwrite a Delta Lake table as a new version.
-        If the schemas of the new and old data are the same, setting
-        `overwrite_schema` is not required.
+        If the schemas of the new and old data are the same, specifying the
+        `schema_mode` is not required.
 
         >>> existing_table_path = "/path/to/delta-table/"
         >>> df.write_delta(
-        ...     existing_table_path, mode="overwrite", overwrite_schema=True
+        ...     existing_table_path,
+        ...     mode="overwrite",
+        ...     delta_write_options={"schema_mode": "overwrite"},
         ... )  # doctest: +SKIP
 
         Write a DataFrame as a Delta Lake table to a cloud object store like S3.
@@ -3816,9 +3711,6 @@ class DataFrame:
         For all `TableMerger` methods, check the deltalake docs
         `here <https://delta-io.github.io/delta-rs/api/delta_table/delta_table_merger/>`__.
 
-        Schema evolution is not yet supported in by the `deltalake` package, therefore
-        `overwrite_schema` will not have any effect on a merge operation.
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "foo": [1, 2, 3, 4, 5],
@@ -3842,6 +3734,13 @@ class DataFrame:
         ...     .execute()
         ... )  # doctest: +SKIP
         """
+        if overwrite_schema is not None:
+            issue_deprecation_warning(
+                "The parameter `overwrite_schema` for `write_delta` is deprecated."
+                ' Use the parameter `delta_write_options` instead and pass `{"schema_mode": "overwrite"}`.',
+                version="0.20.14",
+            )
+
         from polars.io.delta import (
             _check_for_unsupported_types,
             _check_if_delta_available,
@@ -3874,13 +3773,15 @@ class DataFrame:
             if delta_write_options is None:
                 delta_write_options = {}
 
+            if overwrite_schema:
+                delta_write_options["schema_mode"] = "overwrite"
+
             schema = delta_write_options.pop("schema", None)
             write_deltalake(
                 table_or_uri=target,
                 data=data,
                 schema=schema,
                 mode=mode,
-                overwrite_schema=overwrite_schema,
                 storage_options=storage_options,
                 large_dtypes=True,
                 **delta_write_options,
@@ -3920,9 +3821,9 @@ class DataFrame:
         ...     schema=[("x", pl.UInt32), ("y", pl.Float64), ("z", pl.String)],
         ... )
         >>> df.estimated_size()
-        28000000
+        17888890
         >>> df.estimated_size("mb")
-        26.702880859375
+        17.0601749420166
         """
         sz = self._df.estimated_size()
         return scale_bytes(sz, unit)
@@ -4274,8 +4175,7 @@ class DataFrame:
         max_items_per_column: int = ...,
         max_colname_length: int = ...,
         return_as_string: Literal[False] = ...,
-    ) -> None:
-        ...
+    ) -> None: ...
 
     @overload
     def glimpse(
@@ -4284,8 +4184,7 @@ class DataFrame:
         max_items_per_column: int = ...,
         max_colname_length: int = ...,
         return_as_string: Literal[True],
-    ) -> str:
-        ...
+    ) -> str: ...
 
     @overload
     def glimpse(
@@ -4294,8 +4193,7 @@ class DataFrame:
         max_items_per_column: int = ...,
         max_colname_length: int = ...,
         return_as_string: bool,
-    ) -> str | None:
-        ...
+    ) -> str | None: ...
 
     def glimpse(
         self,
@@ -6059,8 +5957,8 @@ class DataFrame:
         if offset is None:
             offset = "0ns"
 
-        every = _timedelta_to_pl_duration(every)
-        offset = _timedelta_to_pl_duration(offset)
+        every = parse_as_duration_string(every)
+        offset = parse_as_duration_string(offset)
 
         return self._from_pydf(
             self._df.upsample(by, time_column, every, offset, maintain_order)
@@ -6161,41 +6059,111 @@ class DataFrame:
 
         Examples
         --------
-        >>> from datetime import datetime
+        >>> from datetime import date
         >>> gdp = pl.DataFrame(
         ...     {
-        ...         "date": [
-        ...             datetime(2016, 1, 1),
-        ...             datetime(2017, 1, 1),
-        ...             datetime(2018, 1, 1),
-        ...             datetime(2019, 1, 1),
-        ...         ],  # note record date: Jan 1st (sorted!)
-        ...         "gdp": [4164, 4411, 4566, 4696],
+        ...         "date": pl.date_range(
+        ...             date(2016, 1, 1),
+        ...             date(2020, 1, 1),
+        ...             "1y",
+        ...             eager=True,
+        ...         ),
+        ...         "gdp": [4164, 4411, 4566, 4696, 4827],
         ...     }
-        ... ).set_sorted("date")
+        ... )
+        >>> gdp
+        shape: (5, 2)
+        ┌────────────┬──────┐
+        │ date       ┆ gdp  │
+        │ ---        ┆ ---  │
+        │ date       ┆ i64  │
+        ╞════════════╪══════╡
+        │ 2016-01-01 ┆ 4164 │
+        │ 2017-01-01 ┆ 4411 │
+        │ 2018-01-01 ┆ 4566 │
+        │ 2019-01-01 ┆ 4696 │
+        │ 2020-01-01 ┆ 4827 │
+        └────────────┴──────┘
+
         >>> population = pl.DataFrame(
         ...     {
-        ...         "date": [
-        ...             datetime(2016, 5, 12),
-        ...             datetime(2017, 5, 12),
-        ...             datetime(2018, 5, 12),
-        ...             datetime(2019, 5, 12),
-        ...         ],  # note record date: May 12th (sorted!)
-        ...         "population": [82.19, 82.66, 83.12, 83.52],
+        ...         "date": [date(2016, 3, 1), date(2018, 8, 1), date(2019, 1, 1)],
+        ...         "population": [82.19, 82.66, 83.12],
         ...     }
-        ... ).set_sorted("date")
+        ... ).sort("date")
+        >>> population
+        shape: (3, 2)
+        ┌────────────┬────────────┐
+        │ date       ┆ population │
+        │ ---        ┆ ---        │
+        │ date       ┆ f64        │
+        ╞════════════╪════════════╡
+        │ 2016-03-01 ┆ 82.19      │
+        │ 2018-08-01 ┆ 82.66      │
+        │ 2019-01-01 ┆ 83.12      │
+        └────────────┴────────────┘
+
+        Note how the dates don't quite match. If we join them using `join_asof` and
+        `strategy='backward'`, then each date from `population` which doesn't have an
+        exact match is matched with the closest earlier date from `gdp`:
+
         >>> population.join_asof(gdp, on="date", strategy="backward")
-        shape: (4, 3)
-        ┌─────────────────────┬────────────┬──────┐
-        │ date                ┆ population ┆ gdp  │
-        │ ---                 ┆ ---        ┆ ---  │
-        │ datetime[μs]        ┆ f64        ┆ i64  │
-        ╞═════════════════════╪════════════╪══════╡
-        │ 2016-05-12 00:00:00 ┆ 82.19      ┆ 4164 │
-        │ 2017-05-12 00:00:00 ┆ 82.66      ┆ 4411 │
-        │ 2018-05-12 00:00:00 ┆ 83.12      ┆ 4566 │
-        │ 2019-05-12 00:00:00 ┆ 83.52      ┆ 4696 │
-        └─────────────────────┴────────────┴──────┘
+        shape: (3, 3)
+        ┌────────────┬────────────┬──────┐
+        │ date       ┆ population ┆ gdp  │
+        │ ---        ┆ ---        ┆ ---  │
+        │ date       ┆ f64        ┆ i64  │
+        ╞════════════╪════════════╪══════╡
+        │ 2016-03-01 ┆ 82.19      ┆ 4164 │
+        │ 2018-08-01 ┆ 82.66      ┆ 4566 │
+        │ 2019-01-01 ┆ 83.12      ┆ 4696 │
+        └────────────┴────────────┴──────┘
+
+        Note how:
+
+        - date `2016-03-01` from `population` is matched with `2016-01-01` from `gdp`;
+        - date `2018-08-01` from `population` is matched with `2018-01-01` from `gdp`.
+
+        If we instead use `strategy='forward'`, then each date from `population` which
+        doesn't have an exact match is matched with the closest later date from `gdp`:
+
+        >>> population.join_asof(gdp, on="date", strategy="forward")
+        shape: (3, 3)
+        ┌────────────┬────────────┬──────┐
+        │ date       ┆ population ┆ gdp  │
+        │ ---        ┆ ---        ┆ ---  │
+        │ date       ┆ f64        ┆ i64  │
+        ╞════════════╪════════════╪══════╡
+        │ 2016-03-01 ┆ 82.19      ┆ 4411 │
+        │ 2018-08-01 ┆ 82.66      ┆ 4696 │
+        │ 2019-01-01 ┆ 83.12      ┆ 4696 │
+        └────────────┴────────────┴──────┘
+
+        Note how:
+
+        - date `2016-03-01` from `population` is matched with `2017-01-01` from `gdp`;
+        - date `2018-08-01` from `population` is matched with `2019-01-01` from `gdp`.
+
+        Finally, `strategy='nearest'` gives us a mix of the two results above, as each
+        date from `population` which doesn't have an exact match is matched with the
+        closest date from `gdp`, regardless of whether it's earlier or later:
+
+        >>> population.join_asof(gdp, on="date", strategy="nearest")
+        shape: (3, 3)
+        ┌────────────┬────────────┬──────┐
+        │ date       ┆ population ┆ gdp  │
+        │ ---        ┆ ---        ┆ ---  │
+        │ date       ┆ f64        ┆ i64  │
+        ╞════════════╪════════════╪══════╡
+        │ 2016-03-01 ┆ 82.19      ┆ 4164 │
+        │ 2018-08-01 ┆ 82.66      ┆ 4696 │
+        │ 2019-01-01 ┆ 83.12      ┆ 4696 │
+        └────────────┴────────────┴──────┘
+
+        Note how:
+
+        - date `2016-03-01` from `population` is matched with `2016-01-01` from `gdp`;
+        - date `2018-08-01` from `population` is matched with `2019-01-01` from `gdp`.
         """
         tolerance = deprecate_saturating(tolerance)
         if not isinstance(other, DataFrame):
@@ -6496,7 +6464,7 @@ class DataFrame:
         >>> df.select(pl.col("foo") * 2 + pl.col("bar"))  # doctest: +IGNORE_RESULT
         """
         # TODO: Enable warning for inefficient map
-        # from polars.utils.udfs import warn_on_inefficient_map
+        # from polars._utils.udfs import warn_on_inefficient_map
         # warn_on_inefficient_map(function, columns=self.columns, map_target="frame)
 
         out, is_df = self._df.map_rows(function, return_dtype, inference_size)
@@ -7654,8 +7622,7 @@ class DataFrame:
         maintain_order: bool = ...,
         include_key: bool = ...,
         as_dict: Literal[False] = ...,
-    ) -> list[Self]:
-        ...
+    ) -> list[Self]: ...
 
     @overload
     def partition_by(
@@ -7665,8 +7632,7 @@ class DataFrame:
         maintain_order: bool = ...,
         include_key: bool = ...,
         as_dict: Literal[True],
-    ) -> dict[Any, Self]:
-        ...
+    ) -> dict[Any, Self]: ...
 
     def partition_by(
         self,
@@ -8333,12 +8299,10 @@ class DataFrame:
         return self.lazy().with_columns_seq(*exprs, **named_exprs).collect(_eager=True)
 
     @overload
-    def n_chunks(self, strategy: Literal["first"] = ...) -> int:
-        ...
+    def n_chunks(self, strategy: Literal["first"] = ...) -> int: ...
 
     @overload
-    def n_chunks(self, strategy: Literal["all"]) -> list[int]:
-        ...
+    def n_chunks(self, strategy: Literal["all"]) -> list[int]: ...
 
     def n_chunks(self, strategy: str = "first") -> int | list[int]:
         """
@@ -8377,16 +8341,13 @@ class DataFrame:
             raise ValueError(msg)
 
     @overload
-    def max(self, axis: Literal[0] = ...) -> Self:
-        ...
+    def max(self, axis: Literal[0] = ...) -> Self: ...
 
     @overload
-    def max(self, axis: Literal[1]) -> Series:
-        ...
+    def max(self, axis: Literal[1]) -> Series: ...
 
     @overload
-    def max(self, axis: int = 0) -> Self | Series:
-        ...
+    def max(self, axis: int = 0) -> Self | Series: ...
 
     def max(self, axis: int | None = None) -> Self | Series:
         """
@@ -8466,16 +8427,13 @@ class DataFrame:
         return self.select(max=F.max_horizontal(F.all())).to_series()
 
     @overload
-    def min(self, axis: Literal[0] | None = ...) -> Self:
-        ...
+    def min(self, axis: Literal[0] | None = ...) -> Self: ...
 
     @overload
-    def min(self, axis: Literal[1]) -> Series:
-        ...
+    def min(self, axis: Literal[1]) -> Series: ...
 
     @overload
-    def min(self, axis: int) -> Self | Series:
-        ...
+    def min(self, axis: int) -> Self | Series: ...
 
     def min(self, axis: int | None = None) -> Self | Series:
         """
@@ -8560,8 +8518,7 @@ class DataFrame:
         *,
         axis: Literal[0] = ...,
         null_strategy: NullStrategy = "ignore",
-    ) -> Self:
-        ...
+    ) -> Self: ...
 
     @overload
     def sum(
@@ -8569,8 +8526,7 @@ class DataFrame:
         *,
         axis: Literal[1],
         null_strategy: NullStrategy = "ignore",
-    ) -> Series:
-        ...
+    ) -> Series: ...
 
     @overload
     def sum(
@@ -8578,8 +8534,7 @@ class DataFrame:
         *,
         axis: int,
         null_strategy: NullStrategy = "ignore",
-    ) -> Self | Series:
-        ...
+    ) -> Self | Series: ...
 
     def sum(
         self,
@@ -8687,8 +8642,7 @@ class DataFrame:
         *,
         axis: Literal[0] = ...,
         null_strategy: NullStrategy = "ignore",
-    ) -> Self:
-        ...
+    ) -> Self: ...
 
     @overload
     def mean(
@@ -8696,8 +8650,7 @@ class DataFrame:
         *,
         axis: Literal[1],
         null_strategy: NullStrategy = "ignore",
-    ) -> Series:
-        ...
+    ) -> Series: ...
 
     @overload
     def mean(
@@ -8705,8 +8658,7 @@ class DataFrame:
         *,
         axis: int,
         null_strategy: NullStrategy = "ignore",
-    ) -> Self | Series:
-        ...
+    ) -> Self | Series: ...
 
     def mean(
         self,
@@ -9222,7 +9174,7 @@ class DataFrame:
         """
         Approximate count of unique values.
 
-        .. deprecated: 0.20.11
+        .. deprecated:: 0.20.11
             Use `select(pl.all().approx_n_unique())` instead.
 
         This is done using the HyperLogLog++ algorithm for cardinality estimation.
@@ -9453,8 +9405,7 @@ class DataFrame:
         *,
         by_predicate: Expr | None = ...,
         named: Literal[False] = ...,
-    ) -> tuple[Any, ...]:
-        ...
+    ) -> tuple[Any, ...]: ...
 
     @overload
     def row(
@@ -9463,8 +9414,7 @@ class DataFrame:
         *,
         by_predicate: Expr | None = ...,
         named: Literal[True],
-    ) -> dict[str, Any]:
-        ...
+    ) -> dict[str, Any]: ...
 
     def row(
         self,
@@ -9573,12 +9523,10 @@ class DataFrame:
             raise ValueError(msg)
 
     @overload
-    def rows(self, *, named: Literal[False] = ...) -> list[tuple[Any, ...]]:
-        ...
+    def rows(self, *, named: Literal[False] = ...) -> list[tuple[Any, ...]]: ...
 
     @overload
-    def rows(self, *, named: Literal[True]) -> list[dict[str, Any]]:
-        ...
+    def rows(self, *, named: Literal[True]) -> list[dict[str, Any]]: ...
 
     def rows(
         self, *, named: bool = False
@@ -9814,14 +9762,12 @@ class DataFrame:
     @overload
     def iter_rows(
         self, *, named: Literal[False] = ..., buffer_size: int = ...
-    ) -> Iterator[tuple[Any, ...]]:
-        ...
+    ) -> Iterator[tuple[Any, ...]]: ...
 
     @overload
     def iter_rows(
         self, *, named: Literal[True], buffer_size: int = ...
-    ) -> Iterator[dict[str, Any]]:
-        ...
+    ) -> Iterator[dict[str, Any]]: ...
 
     def iter_rows(
         self, *, named: bool = False, buffer_size: int = 512

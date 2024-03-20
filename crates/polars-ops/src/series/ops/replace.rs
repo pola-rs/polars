@@ -2,7 +2,7 @@ use std::ops::BitOr;
 
 use polars_core::prelude::*;
 use polars_core::utils::try_get_supertype;
-use polars_error::{polars_bail, polars_ensure};
+use polars_error::polars_ensure;
 
 use crate::frame::join::*;
 use crate::prelude::*;
@@ -24,19 +24,21 @@ pub fn replace(
         None => try_get_supertype(new.dtype(), default.dtype())?,
     };
 
-    let default = match default.len() {
-        len if len == s.len() => default.cast(&return_dtype)?,
-        1 => default.cast(&return_dtype)?.new_from_index(0, s.len()),
-        _ => {
-            polars_bail!(
-                ComputeError:
-                "`default` input for `replace` must have the same length as the input or have length 1"
-            )
-        },
-    };
+    polars_ensure!(
+        default.len() == s.len() || default.len() == 1,
+        ComputeError: "`default` input for `replace` must have the same length as the input or have length 1"
+    );
+
+    let default = default.cast(&return_dtype)?;
 
     if old.len() == 0 {
-        return Ok(default);
+        let out = if default.len() == 1 && s.len() != 1 {
+            default.new_from_index(0, s.len())
+        } else {
+            default
+        };
+
+        return Ok(out);
     }
 
     let old = match (s.dtype(), old.dtype()) {

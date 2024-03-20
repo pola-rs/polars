@@ -2,7 +2,6 @@ use std::any::Any;
 
 use polars_core::schema::SchemaRef;
 
-use crate::executors::operators::ReProjectOperator;
 use crate::executors::sources::ReProjectSource;
 use crate::operators::{
     DataChunk, FinalizedSink, PExecutionContext, PolarsResult, Sink, SinkResult,
@@ -43,12 +42,10 @@ impl Sink for ReProjectSink {
             FinalizedSink::Finished(df) => {
                 FinalizedSink::Finished(df.select(self.schema.iter_names())?)
             },
-            FinalizedSink::Operator(op) => {
-                FinalizedSink::Operator(Box::new(ReProjectOperator::new(self.schema.clone(), op)))
-            },
             FinalizedSink::Source(source) => {
                 FinalizedSink::Source(Box::new(ReProjectSource::new(self.schema.clone(), source)))
             },
+            _ => unimplemented!(),
         })
     }
 
