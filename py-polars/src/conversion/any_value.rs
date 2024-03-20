@@ -151,76 +151,6 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
         Ok(AnyValue::Binary(value))
     }
 
-    fn get_struct(ob: &PyAny, strict: bool) -> PyResult<AnyValue<'_>> {
-        let dict = ob.downcast::<PyDict>().unwrap();
-        let len = dict.len();
-        let mut keys = Vec::with_capacity(len);
-        let mut vals = Vec::with_capacity(len);
-        for (k, v) in dict.into_iter() {
-            let key = k.extract::<&str>()?;
-            let val = py_object_to_any_value(v, strict)?;
-            let dtype = val.dtype();
-            keys.push(Field::new(key, dtype));
-            vals.push(val)
-        }
-        Ok(AnyValue::StructOwned(Box::new((vals, keys))))
-    }
-
-    fn get_list(ob: &PyAny, strict: bool) -> PyResult<AnyValue> {
-        fn get_list_with_constructor(ob: &PyAny) -> PyResult<AnyValue> {
-            // Use the dedicated constructor
-            // this constructor is able to go via dedicated type constructors
-            // so it can be much faster
-            Python::with_gil(|py| {
-                let s = SERIES.call1(py, (ob,))?;
-                get_series_el(s.as_ref(py), true)
-            })
-        }
-
-        if ob.is_empty()? {
-            Ok(AnyValue::List(Series::new_empty("", &DataType::Null)))
-        } else if ob.is_instance_of::<PyList>() | ob.is_instance_of::<PyTuple>() {
-            const INFER_SCHEMA_LENGTH: usize = 25;
-
-            let list = ob.downcast::<PySequence>().unwrap();
-
-            let mut avs = Vec::with_capacity(INFER_SCHEMA_LENGTH);
-            let mut iter = list.iter()?;
-
-            for item in (&mut iter).take(INFER_SCHEMA_LENGTH) {
-                let av = py_object_to_any_value(item?, strict)?;
-                avs.push(av)
-            }
-
-            let (dtype, n_types) = any_values_to_dtype(&avs).map_err(PyPolarsErr::from)?;
-
-            // we only take this path if there is no question of the data-type
-            if dtype.is_primitive() && n_types == 1 {
-                get_list_with_constructor(ob)
-            } else {
-                // push the rest
-                avs.reserve(list.len()?);
-                for item in iter {
-                    let av = py_object_to_any_value(item?, strict)?;
-                    avs.push(av)
-                }
-
-                let s = Series::from_any_values_and_dtype("", &avs, &dtype, strict)
-                    .map_err(PyPolarsErr::from)?;
-                Ok(AnyValue::List(s))
-            }
-        } else {
-            // range will take this branch
-            get_list_with_constructor(ob)
-        }
-    }
-
-    fn get_series_el(ob: &PyAny, _strict: bool) -> PyResult<AnyValue<'static>> {
-        let py_pyseries = ob.getattr(intern!(ob.py(), "_s")).unwrap();
-        let series = py_pyseries.extract::<PySeries>().unwrap().series;
-        Ok(AnyValue::List(series))
-    }
-
     fn get_date(ob: &PyAny, _strict: bool) -> PyResult<AnyValue> {
         Python::with_gil(|py| {
             let date = UTILS
@@ -318,6 +248,76 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
         Ok(AnyValue::Decimal(v, scale))
     }
 
+    fn get_list(ob: &PyAny, strict: bool) -> PyResult<AnyValue> {
+        fn get_list_with_constructor(ob: &PyAny) -> PyResult<AnyValue> {
+            // Use the dedicated constructor
+            // this constructor is able to go via dedicated type constructors
+            // so it can be much faster
+            Python::with_gil(|py| {
+                let s = SERIES.call1(py, (ob,))?;
+                get_list_from_series(s.as_ref(py), true)
+            })
+        }
+
+        if ob.is_empty()? {
+            Ok(AnyValue::List(Series::new_empty("", &DataType::Null)))
+        } else if ob.is_instance_of::<PyList>() | ob.is_instance_of::<PyTuple>() {
+            const INFER_SCHEMA_LENGTH: usize = 25;
+
+            let list = ob.downcast::<PySequence>().unwrap();
+
+            let mut avs = Vec::with_capacity(INFER_SCHEMA_LENGTH);
+            let mut iter = list.iter()?;
+
+            for item in (&mut iter).take(INFER_SCHEMA_LENGTH) {
+                let av = py_object_to_any_value(item?, strict)?;
+                avs.push(av)
+            }
+
+            let (dtype, n_types) = any_values_to_dtype(&avs).map_err(PyPolarsErr::from)?;
+
+            // we only take this path if there is no question of the data-type
+            if dtype.is_primitive() && n_types == 1 {
+                get_list_with_constructor(ob)
+            } else {
+                // push the rest
+                avs.reserve(list.len()?);
+                for item in iter {
+                    let av = py_object_to_any_value(item?, strict)?;
+                    avs.push(av)
+                }
+
+                let s = Series::from_any_values_and_dtype("", &avs, &dtype, strict)
+                    .map_err(PyPolarsErr::from)?;
+                Ok(AnyValue::List(s))
+            }
+        } else {
+            // range will take this branch
+            get_list_with_constructor(ob)
+        }
+    }
+
+    fn get_list_from_series(ob: &PyAny, _strict: bool) -> PyResult<AnyValue<'static>> {
+        let py_pyseries = ob.getattr(intern!(ob.py(), "_s")).unwrap();
+        let series = py_pyseries.extract::<PySeries>().unwrap().series;
+        Ok(AnyValue::List(series))
+    }
+
+    fn get_struct(ob: &PyAny, strict: bool) -> PyResult<AnyValue<'_>> {
+        let dict = ob.downcast::<PyDict>().unwrap();
+        let len = dict.len();
+        let mut keys = Vec::with_capacity(len);
+        let mut vals = Vec::with_capacity(len);
+        for (k, v) in dict.into_iter() {
+            let key = k.extract::<&str>()?;
+            let val = py_object_to_any_value(v, strict)?;
+            let dtype = val.dtype();
+            keys.push(Field::new(key, dtype));
+            vals.push(val)
+        }
+        Ok(AnyValue::StructOwned(Box::new((vals, keys))))
+    }
+
     fn get_object(ob: &PyAny, _strict: bool) -> PyResult<AnyValue> {
         #[cfg(feature = "object")]
         {
@@ -331,6 +331,62 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
         }
     }
 
+    /// Determine which conversion function to use for the given object.
+    fn get_conversion_function(ob: &PyAny, py: Python) -> InitFn {
+        if ob.is_none() {
+            get_null
+        }
+        // bool must be checked before int because Python bool is an instance of int
+        else if ob.is_instance_of::<PyBool>() {
+            get_bool
+        } else if ob.is_instance_of::<PyInt>() {
+            get_int
+        } else if ob.is_instance_of::<PyFloat>() {
+            get_float
+        } else if ob.is_instance_of::<PyString>() {
+            get_str
+        } else if ob.is_instance_of::<PyBytes>() {
+            get_bytes
+        } else if ob.is_instance_of::<PyDict>() {
+            get_struct
+        } else if ob.is_instance_of::<PyList>() || ob.is_instance_of::<PyTuple>() {
+            get_list
+        } else if ob.hasattr(intern!(py, "_s")).unwrap() {
+            get_list_from_series
+        } else {
+            let type_name = ob.get_type().name().unwrap();
+            match type_name {
+                // Can't use pyo3::types::PyDateTime with abi3-py37 feature,
+                // so need this workaround instead of `isinstance(ob, datetime)`.
+                "datetime" => get_datetime,
+                "date" => get_date,
+                "timedelta" => get_timedelta,
+                "time" => get_time,
+                "Decimal" => get_decimal,
+                "range" => get_list,
+                _ => {
+                    // Support NumPy scalars.
+                    if ob.extract::<i64>().is_ok() || ob.extract::<u64>().is_ok() {
+                        return get_int;
+                    } else if ob.extract::<f64>().is_ok() {
+                        return get_float;
+                    }
+
+                    // Support custom subclasses of datetime/date.
+                    // `datetime.datetime` is a subclass of `datetime.date`,
+                    // so need to check `datetime.datetime` first.
+                    if is_instance_by_name(ob, "datetime.datetime", py) {
+                        return get_datetime;
+                    } else if is_instance_by_name(ob, "datetime.date", py) {
+                        return get_date;
+                    }
+
+                    get_object
+                },
+            }
+        }
+    }
+
     // TYPE key
     let type_object_ptr = PyType::as_type_ptr(ob.get_type()) as usize;
 
@@ -339,60 +395,7 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
             // get the conversion function
             let convert_fn = lut.entry(type_object_ptr).or_insert_with(
                 // This only runs if type is not in LUT
-                || {
-                    if ob.is_none() {
-                        get_null
-                    }
-                    // bool must be checked before int because Python bool is an instance of int
-                    else if ob.is_instance_of::<PyBool>() {
-                        get_bool
-                    } else if ob.is_instance_of::<PyInt>() {
-                        get_int
-                    } else if ob.is_instance_of::<PyFloat>() {
-                        get_float
-                    } else if ob.is_instance_of::<PyString>() {
-                        get_str
-                    } else if ob.is_instance_of::<PyBytes>() {
-                        get_bytes
-                    } else if ob.is_instance_of::<PyDict>() {
-                        get_struct
-                    } else if ob.is_instance_of::<PyList>() || ob.is_instance_of::<PyTuple>() {
-                        get_list
-                    } else if ob.hasattr(intern!(py, "_s")).unwrap() {
-                        get_series_el
-                    } else {
-                        let type_name = ob.get_type().name().unwrap();
-                        match type_name {
-                            // Can't use pyo3::types::PyDateTime with abi3-py37 feature,
-                            // so need this workaround instead of `isinstance(ob, datetime)`.
-                            "datetime" => get_datetime,
-                            "date" => get_date,
-                            "timedelta" => get_timedelta,
-                            "time" => get_time,
-                            "Decimal" => get_decimal,
-                            "range" => get_list,
-                            _ => {
-                                // Support NumPy scalars.
-                                if ob.extract::<i64>().is_ok() || ob.extract::<u64>().is_ok() {
-                                    return get_int;
-                                } else if ob.extract::<f64>().is_ok() {
-                                    return get_float;
-                                }
-
-                                // Support custom subclasses of datetime/date.
-                                // `datetime.datetime` is a subclass of `datetime.date`,
-                                // so need to check `datetime.datetime` first.
-                                if is_instance_by_name(ob, "datetime.datetime", py) {
-                                    return get_datetime;
-                                } else if is_instance_by_name(ob, "datetime.date", py) {
-                                    return get_date;
-                                }
-
-                                get_object
-                            },
-                        }
-                    }
-                },
+                || get_conversion_function(ob, py),
             );
 
             convert_fn(ob, strict)
