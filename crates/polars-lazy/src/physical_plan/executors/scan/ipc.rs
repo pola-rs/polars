@@ -86,7 +86,7 @@ impl IpcExec {
         let index_and_dfs = (0..self.paths.len())
             .into_par_iter()
             .map(|_| -> PolarsResult<(usize, DataFrame)> {
-                let index = path_index.fetch_add(1, Ordering::SeqCst);
+                let index = path_index.fetch_add(1, Ordering::Relaxed);
                 let path = &self.paths[index];
 
                 let already_read_in_sequence = row_counter.read().unwrap().sum();
