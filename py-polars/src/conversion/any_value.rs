@@ -3,7 +3,7 @@ use polars::chunked_array::object::PolarsObjectSafe;
 use polars::datatypes::{DataType, Field, OwnedObject, PlHashMap, TimeUnit};
 use polars::prelude::{AnyValue, Series};
 use polars_core::frame::row::any_values_to_dtype;
-use pyo3::exceptions::PyOverflowError;
+use pyo3::exceptions::{PyOverflowError, PyTypeError};
 use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::{
@@ -282,7 +282,8 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
                 avs.push(av)
             }
 
-            let (dtype, n_types) = any_values_to_dtype(&avs).map_err(PyPolarsErr::from)?;
+            let (dtype, n_types) =
+                any_values_to_dtype(&avs).map_err(|e| PyTypeError::new_err(e.to_string()))?;
 
             // we only take this path if there is no question of the data-type
             if dtype.is_primitive() && n_types == 1 {
@@ -296,7 +297,11 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
                 }
 
                 let s = Series::from_any_values_and_dtype("", &avs, &dtype, strict)
-                    .map_err(PyPolarsErr::from)?;
+                    .map_err(|e| {
+                        PyTypeError::new_err(format!(
+                            "{e}\n\nHint: Try setting `strict=False` to allow passing data with mixed types."
+                        ))
+                    })?;
                 Ok(AnyValue::List(s))
             }
         } else {

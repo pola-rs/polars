@@ -182,8 +182,11 @@ impl PySeries {
             .map(|v| py_object_to_any_value(v?, strict))
             .collect::<PyResult<Vec<AnyValue>>>();
         let result = any_values_result.and_then(|avs| {
-            let s =
-                Series::from_any_values(name, avs.as_slice(), strict).map_err(PyPolarsErr::from)?;
+            let s = Series::from_any_values(name, avs.as_slice(), strict).map_err(|e| {
+                PyTypeError::new_err(format!(
+                    "{e}\n\nHint: Try setting `strict=False` to allow passing data with mixed types."
+                ))
+            })?;
             Ok(s.into())
         });
 
@@ -203,11 +206,7 @@ impl PySeries {
             });
         }
 
-        result.map_err(|e| {
-            PyTypeError::new_err(format!(
-                "{e}\n\nHint: Try setting `strict=False` to allow passing data with mixed types."
-            ))
-        })
+        result
     }
 
     #[staticmethod]
@@ -224,8 +223,8 @@ impl PySeries {
         let s = Series::from_any_values_and_dtype(name, any_values.as_slice(), &dtype.0, strict)
             .map_err(|e| {
                 PyTypeError::new_err(format!(
-                "{e}\n\nHint: Try setting `strict=False` to allow passing data with mixed types."
-            ))
+                    "{e}\n\nHint: Try setting `strict=False` to allow passing data with mixed types."
+                ))
             })?;
         Ok(s.into())
     }
