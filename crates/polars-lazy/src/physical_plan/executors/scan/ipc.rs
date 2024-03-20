@@ -104,7 +104,7 @@ impl IpcExec {
 
                 let already_read_in_sequence = row_counter.read().unwrap().sum();
                 if already_read_in_sequence >= row_limit {
-                    return Ok(Default::default());
+                    return Ok((index, Default::default()));
                 }
 
                 let file = std::fs::File::open(path)?;
@@ -185,36 +185,75 @@ impl IpcExec {
 
     #[cfg(feature = "cloud")]
     async fn read_async(&mut self, verbose: bool) -> PolarsResult<DataFrame> {
-        let predicate = self.predicate.clone().map(phys_expr_to_io_expr);
+        use futures::stream::{self, StreamExt};
+        use futures::TryStreamExt;
 
-        let mut dfs = vec![];
-
-        for path in self.paths.iter() {
-            let reader =
-                IpcReaderAsync::from_uri(path.to_str().unwrap(), self.cloud_options.as_ref())
-                    .await?;
-            dfs.push(
-                reader
-                    .data(
-                        self.metadata.as_ref(),
-                        IpcReadOptions::default()
-                            .with_row_limit(self.file_options.n_rows)
-                            .with_row_index(self.file_options.row_index.clone())
-                            .with_projection(self.file_options.with_columns.as_deref().cloned()),
-                        // .with_predicate(predicate.clone()),
-                        verbose,
-                    )
-                    .await?,
-            );
+        /// See https://users.rust-lang.org/t/implementation-of-fnonce-is-not-general-enough-with-async-block/83427/3.
+        trait AssertSend {
+            fn assert_send<R>(self) -> impl Send + stream::Stream<Item = R>
+            where
+                Self: Send + stream::Stream<Item = R> + Sized,
+            {
+                self
+            }
         }
 
+        impl<T: Send + stream::Stream + Sized> AssertSend for T {}
+
+        let row_limit = self
+            .file_options
+            .n_rows
+            .map(|limit| limit.try_into().unwrap())
+            .unwrap_or(IdxSize::MAX);
+
+        let row_counter = RwLock::new(ConsecutiveCountState::new(self.paths.len()));
+
+        let mut index_and_dfs = stream::iter(&*self.paths)
+            .enumerate()
+            .map(|(index, path)| {
+                let this = &*self;
+                let row_counter = &row_counter;
+                async move {
+                    let already_read_in_sequence = row_counter.read().unwrap().sum();
+                    if already_read_in_sequence >= row_limit {
+                        return Ok((index, Default::default()));
+                    }
+
+                    let reader = IpcReaderAsync::from_uri(
+                        path.to_str().unwrap(),
+                        this.cloud_options.as_ref(),
+                    )
+                    .await?;
+                    let df = reader
+                        .data(
+                            this.metadata.as_ref(),
+                            IpcReadOptions::default()
+                                .with_row_limit(this.file_options.n_rows)
+                                .with_row_index(this.file_options.row_index.clone())
+                                .with_projection(
+                                    this.file_options.with_columns.as_deref().cloned(),
+                                ),
+                            verbose,
+                        )
+                        .await?;
+
+                    row_counter
+                        .write()
+                        .unwrap()
+                        .write(index, df.height().try_into().unwrap());
+
+                    PolarsResult::Ok((index, df))
+                }
+            })
+            .assert_send()
+            .buffer_unordered(100)
+            .try_collect::<Vec<_>>()
+            .await?;
+
+        index_and_dfs.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
+
         let offsets = {
-            // NOTE: Could use `scan` here but I believe this gets optimized
-            // better, unverified.
-            let mut counts = dfs
-                .iter()
-                .map(|df| IdxSize::try_from(df.height()).unwrap())
-                .collect::<Box<[IdxSize]>>();
+            let mut counts = row_counter.into_inner().unwrap().into_counts();
             prefix_sum_in_place(&mut counts[..]);
             counts
         };
@@ -222,27 +261,19 @@ impl IpcExec {
         // Update the row indices now that we know how many rows are in each
         // file.
         if let Some(row_index) = self.file_options.row_index.as_ref() {
-            let mut offset = 0;
-            for df in dfs.iter_mut() {
-                let count = df.height();
+            for &mut (index, ref mut df) in index_and_dfs.iter_mut() {
+                let offset = offsets[index];
                 df.apply(&row_index.name, |series| {
                     series.idx().expect("index column should be of index type") + offset
                 })
                 .expect("index column should exist");
-                offset += count;
             }
         }
 
         // Accumulate dataframes while adjusting for the possibility of having
         // read more rows than the limit.
-        let row_limit = self
-            .file_options
-            .n_rows
-            .map(|limit| limit.try_into().unwrap())
-            .unwrap_or(IdxSize::MAX);
-
-        let mut df = accumulate_dataframes_vertical(dfs.into_iter().enumerate().filter_map(
-            |(index, df)| {
+        let mut df =
+            accumulate_dataframes_vertical(index_and_dfs.into_iter().filter_map(|(index, df)| {
                 let count: IdxSize = df.height().try_into().unwrap();
                 if count == 0 {
                     return None;
@@ -253,37 +284,12 @@ impl IpcExec {
                 } else {
                     df
                 })
-            },
-        ))?;
+            }))?;
 
+        let predicate = self.predicate.clone().map(phys_expr_to_io_expr);
         apply_predicate(&mut df, predicate.as_deref(), true)?;
 
         Ok(df)
-
-        // TODO: WIP
-        // let paths = self.paths.clone();
-        // let cloud_options = self.cloud_options.clone();
-        // let metadata
-        // use futures::{stream::{self, StreamExt}, TryStreamExt};
-        // let dfs = stream::iter(&*paths).map(
-        //     move |path| async move {
-        //         let reader =
-        //             IpcReaderAsync::from_uri(path.to_str().unwrap(), cloud_options.as_ref())
-        //                 .await?;
-        //         reader
-        //                 .data(
-        //                     self.metadata.as_ref(),
-        //                     IpcReadOptions::default()
-        //                         .with_row_limit(self.file_options.n_rows)
-        //                         .with_row_index(self.file_options.row_index.clone())
-        //                         .with_projection(self.file_options.with_columns.as_deref().cloned())
-        //                         .with_predicate(predicate.clone()),
-        //                     verbose,
-        //                 )
-        //                 .await
-        //     }
-        // ).buffer_unordered(100).try_collect::<Vec<_>>().await?;
-        // accumulate_dataframes_vertical(dfs)
     }
 }
 
