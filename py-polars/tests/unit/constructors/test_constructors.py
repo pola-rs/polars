@@ -561,7 +561,8 @@ def test_init_ndarray() -> None:
 
     test_rows = [(1, 2), (3, 4)]
     df = pl.DataFrame([np.array(test_rows[0]), np.array(test_rows[1])], orient="row")
-    assert_frame_equal(df, pl.DataFrame(test_rows, orient="row"))
+    expected = pl.DataFrame(test_rows, orient="row")
+    assert_frame_equal(df, expected)
 
     # round trip export/init
     for shape in ((4, 4), (4, 8), (8, 4)):
