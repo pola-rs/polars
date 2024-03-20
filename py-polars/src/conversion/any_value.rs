@@ -120,7 +120,7 @@ pub(crate) static LUT: crate::gil_once_cell::GILOnceCell<PlHashMap<TypeObjectPtr
     crate::gil_once_cell::GILOnceCell::new();
 
 pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyValue> {
-    // conversion functions
+    // Conversion functions.
     fn get_null(_ob: &PyAny, _strict: bool) -> PyResult<AnyValue> {
         Ok(AnyValue::Null)
     }
@@ -225,9 +225,9 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
                     v = v.checked_mul(10).and_then(|v| v.checked_add(d))?;
                 }
             }
-            // we only support non-negative scale (=> non-positive exponent)
+            // We only support non-negative scale (=> non-positive exponent).
             let scale = if exp > 0 {
-                // the decimal may be in a non-canonical representation, try to fix it first
+                // The decimal may be in a non-canonical representation, try to fix it first.
                 v = 10_i128
                     .checked_pow(exp as u32)
                     .and_then(|factor| v.checked_mul(factor))?;
@@ -235,32 +235,32 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
             } else {
                 (-exp) as usize
             };
-            // TODO: do we care for checking if it fits in MAX_ABS_DEC? (if we set precision to None anyway?)
+            // TODO: Do we care for checking if it fits in MAX_ABS_DEC? (if we set precision to None anyway?)
             (v <= MAX_ABS_DEC).then_some((v, scale))
         }
 
+        // Note: Using Vec<u8> is not the most efficient thing here (input is a tuple)
         let (sign, digits, exp): (i8, Vec<u8>, i32) = ob
             .call_method0(intern!(ob.py(), "as_tuple"))
             .unwrap()
             .extract()
             .unwrap();
-        // note: using Vec<u8> is not the most efficient thing here (input is a tuple)
         let (mut v, scale) = abs_decimal_from_digits(digits, exp).ok_or_else(|| {
             PyErr::from(PyPolarsErr::Other(
                 "Decimal is too large to fit in Decimal128".into(),
             ))
         })?;
         if sign > 0 {
-            v = -v; // won't overflow since -i128::MAX > i128::MIN
+            v = -v; // Won't overflow since -i128::MAX > i128::MIN
         }
         Ok(AnyValue::Decimal(v, scale))
     }
 
     fn get_list(ob: &PyAny, strict: bool) -> PyResult<AnyValue> {
         fn get_list_with_constructor(ob: &PyAny) -> PyResult<AnyValue> {
-            // Use the dedicated constructor
-            // this constructor is able to go via dedicated type constructors
-            // so it can be much faster
+            // Use the dedicated constructor.
+            // This constructor is able to go via dedicated type constructors
+            // so it can be much faster.
             Python::with_gil(|py| {
                 let s = SERIES.call1(py, (ob,))?;
                 get_list_from_series(s.as_ref(py), true)
@@ -285,11 +285,11 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
             let (dtype, n_types) =
                 any_values_to_dtype(&avs).map_err(|e| PyTypeError::new_err(e.to_string()))?;
 
-            // we only take this path if there is no question of the data-type
+            // This path is only taken if there is no question about the data type.
             if dtype.is_primitive() && n_types == 1 {
                 get_list_with_constructor(ob)
             } else {
-                // push the rest
+                // Push the rest.
                 avs.reserve(list.len()?);
                 for item in iter {
                     let av = py_object_to_any_value(item?, strict)?;
@@ -333,22 +333,23 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
     fn get_object(ob: &PyAny, _strict: bool) -> PyResult<AnyValue> {
         #[cfg(feature = "object")]
         {
-            // this is slow, but hey don't use objects
+            // This is slow, but hey don't use objects.
             let v = &ObjectValue { inner: ob.into() };
             Ok(AnyValue::ObjectOwned(OwnedObject(v.to_boxed())))
         }
         #[cfg(not(feature = "object"))]
-        {
-            panic!("activate object")
-        }
+        panic!("activate object")
     }
 
     /// Determine which conversion function to use for the given object.
+    ///
+    /// Note: This function is only ran if the object's type is not already in the
+    /// lookup table.
     fn get_conversion_function(ob: &PyAny, py: Python) -> InitFn {
         if ob.is_none() {
             get_null
         }
-        // bool must be checked before int because Python bool is an instance of int
+        // bool must be checked before int because Python bool is an instance of int.
         else if ob.is_instance_of::<PyBool>() {
             get_bool
         } else if ob.is_instance_of::<PyInt>() {
@@ -385,8 +386,6 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
                     }
 
                     // Support custom subclasses of datetime/date.
-                    // `datetime.datetime` is a subclass of `datetime.date`,
-                    // so need to check `datetime.datetime` first.
                     let ancestors = ob.get_type().getattr(intern!(py, "__mro__")).unwrap();
                     let ancestors_str_iter = ancestors
                         .iter()
@@ -394,8 +393,8 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
                         .map(|b| b.unwrap().str().unwrap().to_str().unwrap());
                     for c in ancestors_str_iter {
                         match c {
-                            // `datetime.datetime` is a subclass of `datetime.date`,
-                            // so it must be checked first.
+                            // datetime must be checked before date because
+                            // Python datetime is an instance of date.
                             "<class 'datetime.datetime'>" => return get_datetime,
                             "<class 'datetime.date'>" => return get_date,
                             _ => (),
@@ -408,16 +407,13 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
         }
     }
 
-    // TYPE key
     let type_object_ptr = PyType::as_type_ptr(ob.get_type()) as usize;
 
     Python::with_gil(|py| {
         LUT.with_gil(py, |lut| {
-            // get the conversion function
-            let convert_fn = lut.entry(type_object_ptr).or_insert_with(
-                // This only runs if type is not in LUT
-                || get_conversion_function(ob, py),
-            );
+            let convert_fn = lut
+                .entry(type_object_ptr)
+                .or_insert_with(|| get_conversion_function(ob, py));
 
             convert_fn(ob, strict)
         })
