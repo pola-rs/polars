@@ -84,6 +84,10 @@ impl Series {
         dtype: &DataType,
         strict: bool,
     ) -> PolarsResult<Self> {
+        if values.is_empty() {
+            return Ok(Self::new_empty(name, dtype));
+        }
+
         let mut s = match dtype {
             #[cfg(feature = "dtype-i8")]
             DataType::Int8 => any_values_to_integer::<Int8Type>(values, strict)?.into_series(),

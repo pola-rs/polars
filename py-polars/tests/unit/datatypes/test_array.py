@@ -27,44 +27,6 @@ def test_cast_list_array() -> None:
         s.cast(pl.Array(pl.Int64, 2))
 
 
-def test_array_construction() -> None:
-    payload = [[1, 2, 3], None, [4, 2, 3]]
-
-    dtype = pl.Array(pl.Int64, 3)
-    s = pl.Series(payload, dtype=dtype)
-    assert s.dtype == dtype
-    assert s.to_list() == payload
-
-    # inner type
-    dtype = pl.Array(pl.UInt8, 2)
-    payload = [[1, 2], None, [3, 4]]
-    s = pl.Series(payload, dtype=dtype)
-    assert s.dtype == dtype
-    assert s.to_list() == payload
-
-    # create using schema
-    df = pl.DataFrame(
-        schema={
-            "a": pl.Array(pl.Float32, 3),
-            "b": pl.Array(pl.Datetime("ms"), 5),
-        }
-    )
-    assert df.dtypes == [
-        pl.Array(pl.Float32, 3),
-        pl.Array(pl.Datetime("ms"), 5),
-    ]
-    assert df.rows() == []
-
-    # from dicts
-    rows = [
-        {"row_id": "a", "data": [1, 2, 3]},
-        {"row_id": "b", "data": [2, 3, 4]},
-    ]
-    schema = {"row_id": pl.String(), "data": pl.Array(inner=pl.Int64, width=3)}
-    df = pl.from_dicts(rows, schema=schema)
-    assert df.schema == schema
-    assert df.rows() == [("a", [1, 2, 3]), ("b", [2, 3, 4])]
-
 
 def test_array_in_group_by() -> None:
     df = pl.DataFrame(

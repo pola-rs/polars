@@ -10,7 +10,7 @@ use pyo3::prelude::*;
 
 use crate::arrow_interop::to_rust::array_to_rust;
 use crate::conversion::any_value::py_object_to_any_value;
-use crate::conversion::{vec_extract_wrapped, Wrap};
+use crate::conversion::Wrap;
 use crate::error::PyPolarsErr;
 use crate::prelude::ObjectValue;
 use crate::PySeries;
@@ -283,41 +283,31 @@ impl PySeries {
     }
 
     #[staticmethod]
-    #[pyo3(signature = (width, inner, name, val, _strict))]
+    #[pyo3(signature = (width, inner, name, values, strict))]
     fn new_array(
         width: usize,
         inner: Option<Wrap<DataType>>,
         name: &str,
-        val: Vec<Wrap<AnyValue>>,
-        _strict: bool,
+        values: &PyAny,
+        strict: bool,
     ) -> PyResult<Self> {
-        if val.is_empty() {
-            let s = Series::new_empty(name, &DataType::Array(Box::new(inner.unwrap().0), width));
-            return Ok(s.into());
-        };
-
-        let val = vec_extract_wrapped(val);
-        let out = if let Some(inner) = inner {
-            Series::from_any_values_and_dtype(
-                name,
-                val.as_ref(),
-                &DataType::Array(Box::new(inner.0), width),
-                true,
-            )
-            .map_err(PyPolarsErr::from)?
+        if let Some(inner) = inner {
+            let target_dtype = DataType::Array(Box::new(inner.0), width);
+            Self::new_from_any_values_and_dtype(name, values, Wrap(target_dtype), strict)
         } else {
-            let series = Series::new(name, &val);
-            match series.dtype() {
-                DataType::List(list_inner) => series
-                    .cast(&DataType::Array(
+            let s = Self::new_from_any_values(name, values, strict)?.series;
+            let out = match s.dtype() {
+                DataType::List(list_inner) => {
+                    let target_dtype = DataType::Array(
                         Box::new(inner.map(|dt| dt.0).unwrap_or(*list_inner.clone())),
                         width,
-                    ))
-                    .map_err(PyPolarsErr::from)?,
+                    );
+                    s.cast(&target_dtype).map_err(PyPolarsErr::from)?
+                },
                 _ => return Err(PyValueError::new_err("could not create Array from input")),
-            }
-        };
-        Ok(out.into())
+            };
+            Ok(out.into())
+        }
     }
 
     #[staticmethod]
