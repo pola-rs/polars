@@ -6,38 +6,6 @@ use super::{decimal_to_digits, struct_dict};
 use crate::prelude::*;
 use crate::py_modules::UTILS;
 
-impl<'a> FromPyObject<'a> for Wrap<StringChunked> {
-    fn extract(obj: &'a PyAny) -> PyResult<Self> {
-        let len = obj.len()?;
-        let mut builder = StringChunkedBuilder::new("", len);
-
-        for res in obj.iter()? {
-            let item = res?;
-            match item.extract::<&str>() {
-                Ok(val) => builder.append_value(val),
-                Err(_) => builder.append_null(),
-            }
-        }
-        Ok(Wrap(builder.finish()))
-    }
-}
-
-impl<'a> FromPyObject<'a> for Wrap<BinaryChunked> {
-    fn extract(obj: &'a PyAny) -> PyResult<Self> {
-        let len = obj.len()?;
-        let mut builder = BinaryChunkedBuilder::new("", len);
-
-        for res in obj.iter()? {
-            let item = res?;
-            match item.extract::<&[u8]>() {
-                Ok(val) => builder.append_value(val),
-                Err(_) => builder.append_null(),
-            }
-        }
-        Ok(Wrap(builder.finish()))
-    }
-}
-
 impl ToPyObject for Wrap<&StringChunked> {
     fn to_object(&self, py: Python) -> PyObject {
         let iter = self.0.into_iter();

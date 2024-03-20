@@ -54,9 +54,7 @@ impl PySeries {
     fn new_bool(py: Python, name: &str, array: &PyArray1<bool>, _strict: bool) -> Self {
         let array = array.readonly();
         let vals = array.as_slice().unwrap();
-        py.allow_threads(|| PySeries {
-            series: Series::new(name, vals),
-        })
+        py.allow_threads(|| Series::new(name, vals).into())
     }
 
     #[staticmethod]
@@ -116,7 +114,7 @@ impl PySeries {
         let ca = builder.finish();
 
         let s = ca.into_series();
-        Ok(PySeries { series: s })
+        Ok(s.into())
     }
 }
 
@@ -149,7 +147,7 @@ where
     let ca = builder.finish();
 
     let s = ca.into_series();
-    Ok(PySeries { series: s })
+    Ok(s.into())
 }
 
 // Init with lists that can contain Nones
@@ -232,18 +230,45 @@ impl PySeries {
     }
 
     #[staticmethod]
-    fn new_str(name: &str, val: Wrap<StringChunked>, _strict: bool) -> Self {
-        val.0.into_series().with_name(name).into()
+    fn new_str(name: &str, values: &PyAny, _strict: bool) -> PyResult<Self> {
+        let len = values.len()?;
+        let mut builder = StringChunkedBuilder::new(name, len);
+
+        for res in values.iter()? {
+            let value = res?;
+            match value.extract::<&str>() {
+                Ok(v) => builder.append_value(v),
+                Err(_) => builder.append_null(),
+            }
+        }
+
+        let ca = builder.finish();
+        let s = ca.into_series();
+        Ok(s.into())
     }
 
     #[staticmethod]
-    fn new_binary(name: &str, val: Wrap<BinaryChunked>, _strict: bool) -> Self {
-        val.0.into_series().with_name(name).into()
+    fn new_binary(name: &str, values: &PyAny, _strict: bool) -> PyResult<Self> {
+        let len = values.len()?;
+        let mut builder = BinaryChunkedBuilder::new(name, len);
+
+        for res in values.iter()? {
+            let value = res?;
+            match value.extract::<&[u8]>() {
+                Ok(v) => builder.append_value(v),
+                Err(_) => builder.append_null(),
+            }
+        }
+
+        let ca = builder.finish();
+        let s = ca.into_series();
+        Ok(s.into())
     }
 
     #[staticmethod]
-    fn new_null(name: &str, val: &PyAny, _strict: bool) -> PyResult<Self> {
-        Ok(Series::new_null(name, val.len()?).into())
+    fn new_null(name: &str, values: &PyAny, _strict: bool) -> PyResult<Self> {
+        let len = values.len()?;
+        Ok(Series::new_null(name, len).into())
     }
 
     #[staticmethod]
