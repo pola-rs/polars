@@ -91,17 +91,17 @@ impl PySeries {
 #[pymethods]
 impl PySeries {
     #[staticmethod]
-    fn new_opt_bool(name: &str, obj: &PyAny, strict: bool) -> PyResult<Self> {
-        let len = obj.len()?;
+    fn new_opt_bool(name: &str, values: &PyAny, strict: bool) -> PyResult<Self> {
+        let len = values.len()?;
         let mut builder = BooleanChunkedBuilder::new(name, len);
 
-        for res in obj.iter()? {
-            let item = res?;
-            if item.is_none() {
+        for res in values.iter()? {
+            let value = res?;
+            if value.is_none() {
                 builder.append_null()
             } else {
-                match item.extract::<bool>() {
-                    Ok(val) => builder.append_value(val),
+                match value.extract::<bool>() {
+                    Ok(v) => builder.append_value(v),
                     Err(e) => {
                         if strict {
                             return Err(e);
@@ -118,23 +118,22 @@ impl PySeries {
     }
 }
 
-fn new_primitive<'a, T>(name: &str, obj: &'a PyAny, strict: bool) -> PyResult<PySeries>
+fn new_primitive<'a, T>(name: &str, values: &'a PyAny, strict: bool) -> PyResult<PySeries>
 where
     T: PolarsNumericType,
     ChunkedArray<T>: IntoSeries,
     T::Native: FromPyObject<'a>,
 {
-    let len = obj.len()?;
+    let len = values.len()?;
     let mut builder = PrimitiveChunkedBuilder::<T>::new(name, len);
 
-    for res in obj.iter()? {
-        let item = res?;
-
-        if item.is_none() {
+    for res in values.iter()? {
+        let value = res?;
+        if value.is_none() {
             builder.append_null()
         } else {
-            match item.extract::<T::Native>() {
-                Ok(val) => builder.append_value(val),
+            match value.extract::<T::Native>() {
+                Ok(v) => builder.append_value(v),
                 Err(e) => {
                     if strict {
                         return Err(e);
@@ -177,10 +176,10 @@ init_method_opt!(new_opt_f64, Float64Type, f64);
 #[pymethods]
 impl PySeries {
     #[staticmethod]
-    fn new_from_any_values(name: &str, values: Vec<&PyAny>, strict: bool) -> PyResult<Self> {
+    fn new_from_any_values(name: &str, values: &PyAny, strict: bool) -> PyResult<Self> {
         let any_values_result = values
-            .iter()
-            .map(|v| py_object_to_any_value(v, strict))
+            .iter()?
+            .map(|v| py_object_to_any_value(v?, strict))
             .collect::<PyResult<Vec<AnyValue>>>();
         let result = any_values_result.and_then(|avs| {
             let s =
@@ -190,16 +189,18 @@ impl PySeries {
 
         // Fall back to Object type for non-strict construction.
         if !strict && result.is_err() {
-            let s = Python::with_gil(|py| {
+            return Python::with_gil(|py| {
                 let objects = values
-                    .into_iter()
-                    .map(|v| ObjectValue {
-                        inner: v.to_object(py),
+                    .iter()?
+                    .map(|v| {
+                        let obj = ObjectValue {
+                            inner: v?.to_object(py),
+                        };
+                        Ok(obj)
                     })
-                    .collect();
-                Self::new_object(py, name, objects, strict)
+                    .collect::<PyResult<Vec<ObjectValue>>>()?;
+                Ok(Self::new_object(py, name, objects, strict))
             });
-            return Ok(s);
         }
 
         result.map_err(|e| {
@@ -212,13 +213,13 @@ impl PySeries {
     #[staticmethod]
     fn new_from_any_values_and_dtype(
         name: &str,
-        values: Vec<&PyAny>,
+        values: &PyAny,
         dtype: Wrap<DataType>,
         strict: bool,
     ) -> PyResult<Self> {
         let any_values = values
-            .into_iter()
-            .map(|v| py_object_to_any_value(v, strict))
+            .iter()?
+            .map(|v| py_object_to_any_value(v?, strict))
             .collect::<PyResult<Vec<AnyValue>>>()?;
         let s = Series::from_any_values_and_dtype(name, any_values.as_slice(), &dtype.0, strict)
             .map_err(|e| {
