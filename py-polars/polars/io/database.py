@@ -2,12 +2,26 @@ from __future__ import annotations
 
 import re
 import sys
+from contextlib import suppress
 from importlib import import_module
-from inspect import Parameter, signature
+from inspect import Parameter, isclass, signature
 from typing import TYPE_CHECKING, Any, Iterable, Literal, Sequence, TypedDict, overload
 
 from polars._utils.deprecation import issue_deprecation_warning
 from polars.convert import from_arrow
+from polars.datatypes import (
+    INTEGER_DTYPES,
+    N_INFER_DEFAULT,
+    UNSIGNED_INTEGER_DTYPES,
+    Decimal,
+    Float32,
+    Float64,
+)
+from polars.datatypes.convert import (
+    _infer_dtype_from_database_typename,
+    _integer_dtype_from_nbits,
+    _map_py_type_to_dtype,
+)
 from polars.exceptions import InvalidOperationError, UnsuitableSQLError
 
 if TYPE_CHECKING:
@@ -25,6 +39,7 @@ if TYPE_CHECKING:
         from typing_extensions import Self
 
     from polars import DataFrame
+    from polars.datatypes import PolarsDataType
     from polars.type_aliases import ConnectionOrCursor, Cursor, DbReadEngine, SchemaDict
 
     try:
@@ -249,6 +264,7 @@ class ConnectionExecutor:
         batch_size: int | None,
         iter_batches: bool,
         schema_overrides: SchemaDict | None,
+        infer_schema_length: int | None,
     ) -> DataFrame | Iterable[DataFrame] | None:
         """Return resultset data in Arrow format for frame init."""
         from polars import from_arrow
@@ -285,6 +301,7 @@ class ConnectionExecutor:
         batch_size: int | None,
         iter_batches: bool,
         schema_overrides: SchemaDict | None,
+        infer_schema_length: int | None,
     ) -> DataFrame | Iterable[DataFrame] | None:
         """Return resultset data row-wise for frame init."""
         from polars import DataFrame
@@ -292,24 +309,26 @@ class ConnectionExecutor:
         if hasattr(self.result, "fetchall"):
             if self.driver_name == "sqlalchemy":
                 if hasattr(self.result, "cursor"):
-                    cursor_desc = {d[0]: d[1] for d in self.result.cursor.description}
+                    cursor_desc = {d[0]: d[1:] for d in self.result.cursor.description}
                 elif hasattr(self.result, "_metadata"):
                     cursor_desc = {k: None for k in self.result._metadata.keys}
                 else:
                     msg = f"Unable to determine metadata from query result; {self.result!r}"
                     raise ValueError(msg)
             else:
-                cursor_desc = {d[0]: d[1] for d in self.result.description}
+                cursor_desc = {d[0]: d[1:] for d in self.result.description}
 
-            # TODO: refine types based on the cursor description's type_code,
-            #  if/where available? (for now, we just read the column names)
+            schema_overrides = self._inject_type_overrides(
+                description=cursor_desc,
+                schema_overrides=(schema_overrides or {}),
+            )
             result_columns = list(cursor_desc)
-
             frames = (
                 DataFrame(
                     data=rows,
                     schema=result_columns,
                     schema_overrides=schema_overrides,
+                    infer_schema_length=infer_schema_length,
                     orient="row",
                 )
                 for rows in (
@@ -321,17 +340,79 @@ class ConnectionExecutor:
             return frames if iter_batches else next(frames)  # type: ignore[arg-type]
         return None
 
-    def _normalise_cursor(self, conn: ConnectionOrCursor) -> Cursor:
+    def _inject_type_overrides(
+        self,
+        description: dict[str, Any],
+        schema_overrides: SchemaDict,
+    ) -> SchemaDict:
+        """Attempt basic dtype inference from a cursor description."""
+        # note: this is limited; the `type_code` property may contain almost anything,
+        # from strings or python types to driver-specific codes, classes, enums, etc.
+        # currently we only do additional inference from string/python type values.
+        # (further refinement requires per-driver module knowledge and lookups).
+
+        dtype: PolarsDataType | None = None
+        for nm, desc in description.items():
+            if desc is None:
+                continue
+            elif nm not in schema_overrides:
+                type_code, _disp_size, internal_size, prec, scale, _null_ok = desc
+                if isclass(type_code):
+                    # python types, eg: int, float, str, etc
+                    with suppress(TypeError):
+                        dtype = _map_py_type_to_dtype(type_code)  # type: ignore[arg-type]
+
+                elif isinstance(type_code, str):
+                    # database/sql type names, eg: "VARCHAR", "NUMERIC", "BLOB", etc
+                    dtype = _infer_dtype_from_database_typename(
+                        value=type_code,
+                        raise_unmatched=False,
+                    )
+
+                if dtype is not None:
+                    # check additional cursor information to improve dtype inference
+                    if dtype == Float64 and internal_size == 4:
+                        dtype = Float32
+
+                    elif dtype in INTEGER_DTYPES and internal_size in (2, 4, 8):
+                        bits = internal_size * 8
+                        dtype = _integer_dtype_from_nbits(
+                            bits,
+                            unsigned=(dtype in UNSIGNED_INTEGER_DTYPES),
+                            default=dtype,
+                        )
+                    elif (
+                        dtype == Decimal
+                        and isinstance(prec, int)
+                        and isinstance(scale, int)
+                        and prec <= 38
+                        and scale <= 38
+                    ):
+                        dtype = Decimal(prec, scale)
+
+                if dtype is not None:
+                    schema_overrides[nm] = dtype  # type: ignore[index]
+
+        return schema_overrides
+
+    def _normalise_cursor(self, conn: Any) -> Cursor:
         """Normalise a connection object such that we have the query executor."""
-        if self.driver_name == "sqlalchemy" and type(conn).__name__ == "Engine":
-            self.can_close_cursor = True
-            if conn.driver == "databricks-sql-python":  # type: ignore[union-attr]
-                # take advantage of the raw connection to get arrow integration
-                self.driver_name = "databricks"
-                return conn.raw_connection().cursor()  # type: ignore[union-attr, return-value]
+        if self.driver_name == "sqlalchemy":
+            self.can_close_cursor = (conn_type := type(conn).__name__) == "Engine"
+            if conn_type == "Session":
+                return conn
             else:
-                # sqlalchemy engine; direct use is deprecated, so prefer the connection
-                return conn.connect()  # type: ignore[union-attr, return-value]
+                # where possible, use the raw connection to access arrow integration
+                if conn.engine.driver == "databricks-sql-python":
+                    self.driver_name = "databricks"
+                    return conn.engine.raw_connection().cursor()
+                elif conn.engine.driver == "duckdb_engine":
+                    self.driver_name = "duckdb"
+                    return conn.engine.raw_connection().driver_connection.c
+                elif conn_type == "Engine":
+                    return conn.connect()
+                else:
+                    return conn
 
         elif hasattr(conn, "cursor"):
             # connection has a dedicated cursor; prefer over direct execute
@@ -341,7 +422,7 @@ class ConnectionExecutor:
 
         elif hasattr(conn, "execute"):
             # can execute directly (given cursor, sqlalchemy connection, etc)
-            return conn  # type: ignore[return-value]
+            return conn
 
         msg = f"Unrecognised connection {conn!r}; unable to find 'execute' method"
         raise TypeError(msg)
@@ -420,6 +501,7 @@ class ConnectionExecutor:
         iter_batches: bool = False,
         batch_size: int | None = None,
         schema_overrides: SchemaDict | None = None,
+        infer_schema_length: int | None = N_INFER_DEFAULT,
     ) -> DataFrame | Iterable[DataFrame]:
         """
         Convert the result set to a DataFrame.
@@ -444,6 +526,7 @@ class ConnectionExecutor:
                 batch_size=batch_size,
                 iter_batches=iter_batches,
                 schema_overrides=schema_overrides,
+                infer_schema_length=infer_schema_length,
             )
             if frame is not None:
                 return frame
@@ -462,6 +545,8 @@ def read_database(
     iter_batches: Literal[False] = False,
     batch_size: int | None = ...,
     schema_overrides: SchemaDict | None = ...,
+    infer_schema_length: int | None = ...,
+    execute_options: dict[str, Any] | None = ...,
     **kwargs: Any,
 ) -> DataFrame: ...
 
@@ -474,6 +559,8 @@ def read_database(
     iter_batches: Literal[True],
     batch_size: int | None = ...,
     schema_overrides: SchemaDict | None = ...,
+    infer_schema_length: int | None = ...,
+    execute_options: dict[str, Any] | None = ...,
     **kwargs: Any,
 ) -> Iterable[DataFrame]: ...
 
@@ -485,6 +572,7 @@ def read_database(  # noqa: D417
     iter_batches: bool = False,
     batch_size: int | None = None,
     schema_overrides: SchemaDict | None = None,
+    infer_schema_length: int | None = N_INFER_DEFAULT,
     execute_options: dict[str, Any] | None = None,
     **kwargs: Any,
 ) -> DataFrame | Iterable[DataFrame]:
@@ -523,6 +611,11 @@ def read_database(  # noqa: D417
         on driver/backend). This can be useful if the given types can be more precisely
         defined (for example, if you know that a given column can be declared as `u32`
         instead of `i64`).
+    infer_schema_length
+        The maximum number of rows to scan for schema inference. If set to `None`, the
+        full data may be scanned *(this can be slow)*. This parameter only applies if
+        the data is read as a sequence of rows and the `schema_overrides` parameter
+        is not set for the given column; Arrow-aware drivers also ignore this value.
     execute_options
         These options will be passed through into the underlying query execution method
         as kwargs. In the case of connections made using an ODBC string (which use
@@ -657,6 +750,7 @@ def read_database(  # noqa: D417
             batch_size=batch_size,
             iter_batches=iter_batches,
             schema_overrides=schema_overrides,
+            infer_schema_length=infer_schema_length,
         )
 
 

@@ -8,7 +8,7 @@ import pytest
 from numpy import nan
 
 import polars as pl
-from polars.exceptions import ComputeError
+from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -217,11 +217,27 @@ def test_rolling_crossing_dst(
     assert_frame_equal(result, expected)
 
 
+def test_rolling_by_invalid() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]}).sort("a")
+    with pytest.raises(InvalidOperationError, match="`rolling_min` operation"):
+        df.select(pl.col("b").rolling_min(2, by="a"))
+
+
 def test_rolling_infinity() -> None:
     s = pl.Series("col", ["-inf", "5", "5"]).cast(pl.Float64)
     s = s.rolling_mean(2)
     expected = pl.Series("col", [None, "-inf", "5"]).cast(pl.Float64)
     assert_series_equal(s, expected)
+
+
+def test_rolling_invalid_closed_option() -> None:
+    df = pl.DataFrame(
+        {"a": [4, 5, 6], "b": [date(2020, 1, 1), date(2020, 1, 2), date(2020, 1, 3)]}
+    ).sort("a", "b")
+    with pytest.raises(InvalidOperationError, match="consider using DataFrame.rolling"):
+        df.with_columns(pl.col("a").rolling_sum(2, closed="left"))
+    with pytest.raises(InvalidOperationError, match="consider using DataFrame.rolling"):
+        df.with_columns(pl.col("a").rolling_sum(2, by="b", closed="left"))
 
 
 def test_rolling_extrema() -> None:

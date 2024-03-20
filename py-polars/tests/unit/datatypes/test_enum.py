@@ -117,6 +117,26 @@ def test_casting_to_an_enum_from_categorical() -> None:
     assert_series_equal(s2, expected)
 
 
+def test_casting_to_an_enum_from_categorical_nonstrict() -> None:
+    dtype = pl.Enum(["a", "b"])
+    s = pl.Series([None, "a", "b", "c"], dtype=pl.Categorical)
+    s2 = s.cast(dtype, strict=False)
+    assert s2.dtype == dtype
+    assert s2.null_count() == 2  # "c" mapped to null
+    expected = pl.Series([None, "a", "b", None], dtype=dtype)
+    assert_series_equal(s2, expected)
+
+
+def test_casting_to_an_enum_from_enum_nonstrict() -> None:
+    dtype = pl.Enum(["a", "b"])
+    s = pl.Series([None, "a", "b", "c"], dtype=pl.Enum(["a", "b", "c"]))
+    s2 = s.cast(dtype, strict=False)
+    assert s2.dtype == dtype
+    assert s2.null_count() == 2  # "c" mapped to null
+    expected = pl.Series([None, "a", "b", None], dtype=dtype)
+    assert_series_equal(s2, expected)
+
+
 def test_casting_to_an_enum_from_integer() -> None:
     dtype = pl.Enum(["a", "b", "c"])
     expected = pl.Series([None, "b", "a", "c"], dtype=dtype)
@@ -139,7 +159,9 @@ def test_casting_to_an_enum_oob_from_integer() -> None:
 def test_casting_to_an_enum_from_categorical_nonexistent() -> None:
     with pytest.raises(
         pl.ComputeError,
-        match=("value 'c' is not present in Enum"),
+        match=(
+            r"conversion from `cat` to `enum` failed in column '' for 1 out of 4 values: \[\"c\"\]"
+        ),
     ):
         pl.Series([None, "a", "b", "c"], dtype=pl.Categorical).cast(pl.Enum(["a", "b"]))
 
@@ -159,7 +181,9 @@ def test_casting_to_an_enum_from_global_categorical() -> None:
 def test_casting_to_an_enum_from_global_categorical_nonexistent() -> None:
     with pytest.raises(
         pl.ComputeError,
-        match=("value 'c' is not present in Enum"),
+        match=(
+            r"conversion from `cat` to `enum` failed in column '' for 1 out of 4 values: \[\"c\"\]"
+        ),
     ):
         pl.Series([None, "a", "b", "c"], dtype=pl.Categorical).cast(pl.Enum(["a", "b"]))
 
@@ -436,3 +460,16 @@ def test_enum_creating_col_expr() -> None:
     out = df.select(pl.col(pl.Enum))
     expected = df.select("col1", "col3")
     assert_frame_equal(out, expected)
+
+
+def test_enum_cse_eq() -> None:
+    df = pl.DataFrame({"a": [1]})
+
+    # these both share the value "a", which is used in both expressions
+    dt1 = pl.Enum(["a", "b"])
+    dt2 = pl.Enum(["a", "c"])
+
+    df.lazy().select(
+        pl.when(True).then(pl.lit("a", dtype=dt1)).alias("dt1"),
+        pl.when(True).then(pl.lit("a", dtype=dt2)).alias("dt2"),
+    ).collect()

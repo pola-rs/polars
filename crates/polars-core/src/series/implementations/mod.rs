@@ -421,10 +421,6 @@ macro_rules! impl_dyn_series {
             fn as_any(&self) -> &dyn Any {
                 &self.0
             }
-
-            fn tile(&self, n: usize) -> Series {
-                self.0.tile(n).into_series()
-            }
         }
     };
 }

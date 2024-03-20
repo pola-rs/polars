@@ -1,6 +1,9 @@
 use argminmax::ArgMinMax;
 use arrow::array::Array;
 use arrow::legacy::bit_util::*;
+use polars_core::chunked_array::ops::float_sorted_arg_max::{
+    float_arg_max_sorted_ascending, float_arg_max_sorted_descending,
+};
 use polars_core::series::IsSorted;
 use polars_core::with_match_physical_numeric_polars_type;
 
@@ -22,7 +25,7 @@ impl ArgAgg for Series {
             #[cfg(feature = "dtype-categorical")]
             Categorical(_, _) => {
                 let ca = self.categorical().unwrap();
-                if ca.is_empty() || ca.null_count() == ca.len() {
+                if ca.null_count() == ca.len() {
                     return None;
                 }
                 if ca.uses_lexical_ordering() {
@@ -69,7 +72,7 @@ impl ArgAgg for Series {
             #[cfg(feature = "dtype-categorical")]
             Categorical(_, _) => {
                 let ca = self.categorical().unwrap();
-                if ca.is_empty() || ca.null_count() == ca.len() {
+                if ca.null_count() == ca.len() {
                     return None;
                 }
                 if ca.uses_lexical_ordering() {
@@ -114,8 +117,10 @@ where
     T: PolarsNumericType,
     for<'b> &'b [T::Native]: ArgMinMax,
 {
-    if ca.is_empty() || ca.null_count() == ca.len() {
+    if ca.null_count() == ca.len() {
         None
+    } else if T::get_dtype().is_float() && !matches!(ca.is_sorted_flag(), IsSorted::Not) {
+        arg_max_float_sorted(ca)
     } else if let Ok(vals) = ca.cont_slice() {
         arg_max_numeric_slice(vals, ca.is_sorted_flag())
     } else {
@@ -128,7 +133,7 @@ where
     T: PolarsNumericType,
     for<'b> &'b [T::Native]: ArgMinMax,
 {
-    if ca.is_empty() || ca.null_count() == ca.len() {
+    if ca.null_count() == ca.len() {
         None
     } else if let Ok(vals) = ca.cont_slice() {
         arg_min_numeric_slice(vals, ca.is_sorted_flag())
@@ -138,7 +143,7 @@ where
 }
 
 pub(crate) fn arg_max_bool(ca: &BooleanChunked) -> Option<usize> {
-    if ca.is_empty() || ca.null_count() == ca.len() {
+    if ca.null_count() == ca.len() {
         None
     }
     // don't check for any, that on itself is already an argmax search
@@ -162,8 +167,23 @@ pub(crate) fn arg_max_bool(ca: &BooleanChunked) -> Option<usize> {
     }
 }
 
+/// # Safety
+/// `ca` has a float dtype, has at least one non-null value and is sorted.
+fn arg_max_float_sorted<T>(ca: &ChunkedArray<T>) -> Option<usize>
+where
+    T: PolarsNumericType,
+{
+    let out = match ca.is_sorted_flag() {
+        IsSorted::Ascending => float_arg_max_sorted_ascending(ca),
+        IsSorted::Descending => float_arg_max_sorted_descending(ca),
+        _ => unreachable!(),
+    };
+
+    Some(out)
+}
+
 fn arg_min_bool(ca: &BooleanChunked) -> Option<usize> {
-    if ca.is_empty() || ca.null_count() == ca.len() {
+    if ca.null_count() == ca.len() {
         None
     } else if ca.null_count() == 0 && ca.chunks().len() == 1 {
         let arr = ca.downcast_iter().next().unwrap();
@@ -186,7 +206,7 @@ fn arg_min_bool(ca: &BooleanChunked) -> Option<usize> {
 }
 
 fn arg_min_str(ca: &StringChunked) -> Option<usize> {
-    if ca.is_empty() || ca.null_count() == ca.len() {
+    if ca.null_count() == ca.len() {
         return None;
     }
     match ca.is_sorted_flag() {
@@ -202,7 +222,7 @@ fn arg_min_str(ca: &StringChunked) -> Option<usize> {
 }
 
 fn arg_max_str(ca: &StringChunked) -> Option<usize> {
-    if ca.is_empty() || ca.null_count() == ca.len() {
+    if ca.null_count() == ca.len() {
         return None;
     }
     match ca.is_sorted_flag() {

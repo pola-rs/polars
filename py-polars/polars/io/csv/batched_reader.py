@@ -110,14 +110,12 @@ class BatchedCsvReader:
         """
         Read `n` batches from the reader.
 
-        The `n` chunks will be parallelized over the
-        available threads.
+        These batches will be parallelized over the available threads.
 
         Parameters
         ----------
         n
-            Number of chunks to fetch.
-            This is ideally >= number of threads
+            Number of chunks to fetch; ideally this is >= number of threads.
 
         Examples
         --------

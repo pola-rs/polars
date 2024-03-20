@@ -176,10 +176,22 @@ class Series:
         One-dimensional data in various forms. Supported are: Sequence, Series,
         pyarrow Array, and numpy ndarray.
     dtype : DataType, default None
-        Polars dtype of the Series data. If not specified, the dtype is inferred.
-    strict
-        Throw error on numeric overflow.
-    nan_to_null
+        Data type of the resulting Series. If set to `None` (default), the data type is
+        inferred from the `values` input. The strategy for data type inference depends
+        on the `strict` parameter:
+
+        - If `strict` is set to True (default), the inferred data type is equal to the
+          first non-null value, or `Null` if all values are null.
+        - If `strict` is set to False, the inferred data type is the supertype of the
+          values, or :class:`Object` if no supertype can be found. **WARNING**: A full
+          pass over the values is required to determine the supertype.
+        - If no values were passed, the resulting data type is :class:`Null`.
+
+    strict : bool, default True
+        Throw an error if any value does not exactly match the given or inferred data
+        type. If set to `False`, values that do not match the data type are cast to
+        that data type or, if casting is not possible, set to null instead.
+    nan_to_null : bool, default False
         In case a numpy array is used to create this Series, indicate how to deal
         with np.nan values. (This parameter is a no-op on non-numpy data).
     dtype_if_empty : DataType, default Null
@@ -366,11 +378,6 @@ class Series:
         return series
 
     @classmethod
-    def _from_arrow(cls, name: str, values: pa.Array, *, rechunk: bool = True) -> Self:
-        """Construct a Series from an Arrow Array."""
-        return cls._from_pyseries(arrow_to_pyseries(name, values, rechunk=rechunk))
-
-    @classmethod
     def _import_from_c(cls, name: str, pointers: list[tuple[int, int]]) -> Self:
         """
         Construct a Series from Arrows C interface.
@@ -381,19 +388,6 @@ class Series:
         garbage collect the heap pointer, but not its contents.
         """
         return cls._from_pyseries(PySeries._import_from_c(name, pointers))
-
-    @classmethod
-    def _from_pandas(
-        cls,
-        name: str,
-        values: pd.Series[Any] | pd.Index[Any] | pd.DatetimeIndex,
-        *,
-        nan_to_null: bool = True,
-    ) -> Self:
-        """Construct a Series from a pandas Series or DatetimeIndex."""
-        return cls._from_pyseries(
-            pandas_to_pyseries(name, values, nan_to_null=nan_to_null)
-        )
 
     def _get_buffer_info(self) -> BufferInfo:
         """
@@ -6584,7 +6578,7 @@ class Series:
         old
             Value or sequence of values to replace.
             Also accepts a mapping of values to their replacement as syntactic sugar for
-            `replace(new=Series(mapping.keys()), old=Series(mapping.values()))`.
+            `replace(old=Series(mapping.keys()), new=Series(mapping.values()))`.
         new
             Value or sequence of values to replace by.
             Length must match the length of `old` or have length 1.

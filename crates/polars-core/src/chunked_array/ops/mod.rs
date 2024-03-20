@@ -19,6 +19,7 @@ mod explode_and_offsets;
 mod extend;
 pub mod fill_null;
 mod filter;
+pub mod float_sorted_arg_max;
 mod for_each;
 pub mod full;
 pub mod gather;
@@ -29,10 +30,10 @@ pub(crate) mod min_max_binary;
 pub(crate) mod nulls;
 mod reverse;
 pub(crate) mod rolling_window;
+pub mod search_sorted;
 mod set;
 mod shift;
 pub mod sort;
-mod tile;
 #[cfg(feature = "algorithm_group_by")]
 pub(crate) mod unique;
 #[cfg(feature = "zip_with")]
@@ -560,7 +561,12 @@ impl ChunkExpandAtIndex<FixedSizeListType> for ArrayChunked {
                 unsafe { ca.to_logical(self.inner_dtype()) };
                 ca
             },
-            None => ArrayChunked::full_null_with_dtype(self.name(), length, &self.inner_dtype(), 0),
+            None => ArrayChunked::full_null_with_dtype(
+                self.name(),
+                length,
+                &self.inner_dtype(),
+                self.width(),
+            ),
         }
     }
 }

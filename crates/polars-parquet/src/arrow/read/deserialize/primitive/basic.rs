@@ -5,6 +5,7 @@ use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;
 use polars_error::PolarsResult;
+use polars_utils::iter::FallibleIterator;
 
 use super::super::utils::{
     get_selected_rows, FilteredOptionalPageValidity, MaybeNext, OptionalPageValidity,
@@ -232,18 +233,14 @@ where
                     page_validity,
                     Some(remaining),
                     values,
-                    &mut page_values.values.by_ref().map(|x| x.unwrap()).map(op1),
-                )
+                    &mut page_values.values.by_ref().map(op1),
+                );
+                page_values.values.get_result()?;
             },
             State::RequiredDictionary(page) => {
                 let op1 = |index: u32| page.dict[index as usize];
-                values.extend(
-                    page.values
-                        .by_ref()
-                        .map(|x| x.unwrap())
-                        .map(op1)
-                        .take(remaining),
-                );
+                values.extend(page.values.by_ref().map(op1).take(remaining));
+                page.values.get_result()?;
             },
             State::FilteredRequired(page) => {
                 values.extend(

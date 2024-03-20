@@ -34,8 +34,15 @@ fn partitionable_gb(
 
         if partitionable {
             for agg in aggs {
-                let aexpr = expr_arena.get(*agg);
-                let depth = (expr_arena).iter(*agg).count();
+                let mut agg = *agg;
+                let mut aexpr = expr_arena.get(agg);
+                // It should end with an aggregation
+                if let AExpr::Alias(input, _) = aexpr {
+                    agg = *input;
+                    aexpr = expr_arena.get(agg);
+                }
+
+                let depth = (expr_arena).iter(agg).count();
 
                 // These single expressions are partitionable
                 if matches!(aexpr, AExpr::Len) {
@@ -48,29 +55,13 @@ fn partitionable_gb(
                     break;
                 }
 
-                // it should end with an aggregation
-                if let AExpr::Alias(input, _) = aexpr {
-                    // col().agg().alias() is allowed: count of 3
-                    // col().alias() is not allowed: count of 2
-                    // count().alias() is allowed: count of 2
-                    if depth <= 2 {
-                        match expr_arena.get(*input) {
-                            AExpr::Len => {},
-                            _ => {
-                                partitionable = false;
-                                break;
-                            },
-                        }
-                    }
-                }
-
                 let has_aggregation =
                     |node: Node| has_aexpr(node, expr_arena, |ae| matches!(ae, AExpr::Agg(_)));
 
                 // check if the aggregation type is partitionable
                 // only simple aggregation like col().sum
                 // that can be divided in to the aggregation of their partitions are allowed
-                if !((expr_arena).iter(*agg).all(|(_, ae)| {
+                if !((expr_arena).iter(agg).all(|(_, ae)| {
                     use AExpr::*;
                     match ae {
                         // struct is needed to keep both states
@@ -78,7 +69,7 @@ fn partitionable_gb(
                         Agg(AAggExpr::Mean(_)) => {
                             // only numeric means for now.
                             // logical types seem to break because of casts to float.
-                            matches!(expr_arena.get(*agg).get_type(_input_schema, Context::Default, expr_arena).map(|dt| {
+                            matches!(expr_arena.get(agg).get_type(_input_schema, Context::Default, expr_arena).map(|dt| {
                                         dt.is_numeric()}), Ok(true))
                         },
                         // only allowed expressions
@@ -120,7 +111,7 @@ fn partitionable_gb(
 
                 #[cfg(feature = "object")]
                 {
-                    for name in aexpr_to_leaf_names(*agg, expr_arena) {
+                    for name in aexpr_to_leaf_names(agg, expr_arena) {
                         let dtype = _input_schema.get(&name).unwrap();
 
                         if let DataType::Object(_, _) = dtype {
@@ -241,7 +232,12 @@ pub fn create_physical_plan(
                     }))
                 },
                 #[cfg(feature = "ipc")]
-                FileScan::Ipc { options } => {
+                FileScan::Ipc {
+                    options,
+                    #[cfg(feature = "cloud")]
+                    cloud_options,
+                    metadata,
+                } => {
                     assert_eq!(paths.len(), 1);
                     let path = paths[0].clone();
                     Ok(Box::new(executors::IpcExec {
@@ -250,6 +246,9 @@ pub fn create_physical_plan(
                         predicate,
                         options,
                         file_options,
+                        #[cfg(feature = "cloud")]
+                        cloud_options,
+                        metadata,
                     }))
                 },
                 #[cfg(feature = "parquet")]

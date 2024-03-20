@@ -46,7 +46,8 @@ pub(crate) trait AggregateFn: Send + Sync {
 pub(crate) enum AggregateFunction {
     First(FirstAgg),
     Last(LastAgg),
-    Count(CountAgg),
+    Count(CountAgg<false>),
+    Len(CountAgg<true>),
     SumF32(SumAgg<f32>),
     SumF64(SumAgg<f64>),
     SumU32(SumAgg<u32>),
@@ -83,6 +84,7 @@ impl AggregateFunction {
             MeanF32(_) => MeanF32(MeanAgg::new()),
             MeanF64(_) => MeanF64(MeanAgg::new()),
             Count(_) => Count(CountAgg::new()),
+            Len(_) => Len(CountAgg::new()),
             Null(a) => Null(a.clone()),
             MinMaxF32(inner) => MinMaxF32(inner.split()),
             MinMaxF64(inner) => MinMaxF64(inner.split()),

@@ -4,7 +4,6 @@ use arrow::compute::take::take_unchecked;
 use polars_error::polars_ensure;
 use polars_utils::index::check_bounds;
 
-use crate::chunked_array::collect::prepare_collect_dtype;
 use crate::prelude::*;
 use crate::series::IsSorted;
 
@@ -153,7 +152,7 @@ impl<T: PolarsDataType, I: AsRef<[IdxSize]> + ?Sized> ChunkTakeUnchecked<I> for 
         }
         let targets: Vec<_> = ca.downcast_iter().collect();
         let arr = gather_idx_array_unchecked(
-            prepare_collect_dtype(ca.dtype()),
+            ca.dtype().to_arrow(true),
             &targets,
             ca.null_count() > 0,
             indices.as_ref(),
@@ -210,7 +209,7 @@ impl<T: PolarsDataType + NotSpecialized> ChunkTakeUnchecked<IdxCa> for ChunkedAr
         let targets: Vec<_> = ca.downcast_iter().collect();
 
         let chunks = indices.downcast_iter().map(|idx_arr| {
-            let dtype = prepare_collect_dtype(ca.dtype());
+            let dtype = ca.dtype().to_arrow(true);
             if idx_arr.null_count() == 0 {
                 gather_idx_array_unchecked(dtype, &targets, targets_have_nulls, idx_arr.values())
             } else if targets.len() == 1 {

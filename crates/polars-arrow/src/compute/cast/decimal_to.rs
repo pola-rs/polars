@@ -150,7 +150,7 @@ pub(super) fn decimal_to_utf8view(from: &PrimitiveArray<i128>) -> Utf8ViewArray 
     let mut mutable = MutableBinaryViewArray::with_capacity(from.len());
 
     for &x in from.values().iter() {
-        let buf = crate::legacy::compute::decimal::format_decimal(x, from_scale, false);
+        let buf = crate::compute::decimal::format_decimal(x, from_scale, false);
         mutable.push_value_ignore_validity(buf.as_str())
     }
 

@@ -5,9 +5,23 @@
     feature(stdarch_x86_avx512)
 )]
 
+use arrow::types::NativeType;
+
 pub mod arithmetic;
 pub mod comparisons;
 pub mod filter;
+pub mod if_then_else;
 pub mod min_max;
 
 pub mod arity;
+
+// Trait to enable the scalar blanket implementation.
+pub trait NotSimdPrimitive: NativeType {}
+
+#[cfg(not(feature = "simd"))]
+impl<T: NativeType> NotSimdPrimitive for T {}
+
+#[cfg(feature = "simd")]
+impl NotSimdPrimitive for u128 {}
+#[cfg(feature = "simd")]
+impl NotSimdPrimitive for i128 {}

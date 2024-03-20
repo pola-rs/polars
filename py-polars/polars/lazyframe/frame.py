@@ -166,15 +166,19 @@ class LazyFrame:
         The number of entries in the schema should match the underlying data
         dimensions, unless a sequence of dictionaries is being passed, in which case
         a *partial* schema can be declared to prevent specific fields from being loaded.
+    strict : bool, default True
+        Throw an error if any `data` value does not exactly match the given or inferred
+        data type for that column. If set to `False`, values that do not match the data
+        type are cast to that data type or, if casting is not possible, set to null
+        instead.
     orient : {'col', 'row'}, default None
         Whether to interpret two-dimensional data as columns or as rows. If None,
         the orientation is inferred by matching the columns and data dimensions. If
         this does not yield conclusive results, column orientation is used.
     infer_schema_length : int or None
-        The maximum number of rows to scan for schema inference.
-        If set to `None`, the full data may be scanned *(this is slow)*.
-        This parameter only applies if the input data is a sequence or generator of
-        rows; other input is read as-is.
+        The maximum number of rows to scan for schema inference. If set to `None`, the
+        full data may be scanned *(this can be slow)*. This parameter only applies if
+        the input data is a sequence or generator of rows; other input is read as-is.
     nan_to_null : bool, default False
         If the data comes from one or more numpy arrays, can optionally convert input
         data np.nan values to null instead. This is a no-op for all other input data.
@@ -295,6 +299,7 @@ class LazyFrame:
         schema: SchemaDefinition | None = None,
         *,
         schema_overrides: SchemaDict | None = None,
+        strict: bool = True,
         orient: Orientation | None = None,
         infer_schema_length: int | None = N_INFER_DEFAULT,
         nan_to_null: bool = False,
@@ -306,6 +311,7 @@ class LazyFrame:
                 data=data,
                 schema=schema,
                 schema_overrides=schema_overrides,
+                strict=strict,
                 orient=orient,
                 infer_schema_length=infer_schema_length,
                 nan_to_null=nan_to_null,
@@ -491,6 +497,7 @@ class LazyFrame:
         row_index_offset: int = 0,
         storage_options: dict[str, object] | None = None,
         memory_map: bool = True,
+        retries: int = 0,
     ) -> Self:
         """
         Lazily read from an Arrow IPC (Feather v2) file.
@@ -528,6 +535,8 @@ class LazyFrame:
             rechunk,
             _prepare_row_index_args(row_index_name, row_index_offset),
             memory_map=memory_map,
+            cloud_options=storage_options,
+            retries=retries,
         )
         return self
 

@@ -1,3 +1,4 @@
+use polars_core::series::IsSorted;
 use polars_core::utils::{accumulate_dataframes_vertical, split_df};
 use rayon::prelude::*;
 
@@ -155,6 +156,12 @@ fn estimate_unique_count(keys: &[Series], mut sample_size: usize) -> PolarsResul
     }
 }
 
+// Lower this at debug builds so that we hit this in the test suite.
+#[cfg(debug_assertions)]
+const PARTITION_LIMIT: usize = 15;
+#[cfg(not(debug_assertions))]
+const PARTITION_LIMIT: usize = 1000;
+
 // Checks if we should run normal or default aggregation
 // by sampling data.
 fn can_run_partitioned(
@@ -163,7 +170,16 @@ fn can_run_partitioned(
     state: &ExecutionState,
     from_partitioned_ds: bool,
 ) -> PolarsResult<bool> {
-    if std::env::var("POLARS_NO_PARTITION").is_ok() {
+    if !keys
+        .iter()
+        .take(1)
+        .all(|s| matches!(s.is_sorted_flag(), IsSorted::Not))
+    {
+        if state.verbose() {
+            eprintln!("FOUND SORTED KEY: running default HASH AGGREGATION")
+        }
+        Ok(false)
+    } else if std::env::var("POLARS_NO_PARTITION").is_ok() {
         if state.verbose() {
             eprintln!("POLARS_NO_PARTITION set: running default HASH AGGREGATION")
         }
@@ -173,9 +189,9 @@ fn can_run_partitioned(
             eprintln!("POLARS_FORCE_PARTITION set: running partitioned HASH AGGREGATION")
         }
         Ok(true)
-    } else if original_df.height() < 1000 && !cfg!(test) {
+    } else if original_df.height() < PARTITION_LIMIT && !cfg!(test) {
         if state.verbose() {
-            eprintln!("DATAFRAME < 1000 rows: running default HASH AGGREGATION")
+            eprintln!("DATAFRAME < {PARTITION_LIMIT} rows: running default HASH AGGREGATION")
         }
         Ok(false)
     } else {
@@ -206,10 +222,14 @@ fn can_run_partitioned(
         if from_partitioned_ds {
             let estimated_cardinality = unique_estimate as f32 / original_df.height() as f32;
             if estimated_cardinality < 0.4 {
-                eprintln!("PARTITIONED DS");
+                if state.verbose() {
+                    eprintln!("PARTITIONED DS");
+                }
                 Ok(true)
             } else {
-                eprintln!("PARTITIONED DS: estimated cardinality: {estimated_cardinality} exceeded the boundary: 0.4, running default HASH AGGREGATION");
+                if state.verbose() {
+                    eprintln!("PARTITIONED DS: estimated cardinality: {estimated_cardinality} exceeded the boundary: 0.4, running default HASH AGGREGATION");
+                }
                 Ok(false)
             }
         } else if unique_estimate > unique_count_boundary {
@@ -297,7 +317,7 @@ impl PartitionGroupByExec {
             }
 
             #[cfg(feature = "streaming")]
-            if !self.maintain_order {
+            if !self.maintain_order && std::env::var("POLARS_NO_STREAMING_GROUPBY").is_err() {
                 if let Some(out) = self.run_streaming(state, original_df.clone()) {
                     return out;
                 }

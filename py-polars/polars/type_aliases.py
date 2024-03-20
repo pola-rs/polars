@@ -83,6 +83,7 @@ ColumnNameOrSelector: TypeAlias = Union[str, SelectorType]
 
 # User-facing string literal types
 # The following all have an equivalent Rust enum with the same name
+Ambiguous: TypeAlias = Literal["earliest", "latest", "raise", "null"]
 AvroCompression: TypeAlias = Literal["uncompressed", "snappy", "deflate"]
 CsvQuoteStyle: TypeAlias = Literal["necessary", "always", "non_numeric", "never"]
 CategoricalOrdering: TypeAlias = Literal["physical", "lexical"]
@@ -95,6 +96,7 @@ IndexOrder: TypeAlias = Literal["c", "fortran"]
 IpcCompression: TypeAlias = Literal["uncompressed", "lz4", "zstd"]
 JoinValidation: TypeAlias = Literal["m:m", "m:1", "1:m", "1:1"]
 Label: TypeAlias = Literal["left", "right", "datapoint"]
+NonExistent: TypeAlias = Literal["raise", "null"]
 NullBehavior: TypeAlias = Literal["ignore", "drop"]
 NullStrategy: TypeAlias = Literal["ignore", "propagate"]
 ParallelStrategy: TypeAlias = Literal["auto", "columns", "row_groups", "none"]
@@ -148,7 +150,6 @@ ToStructStrategy: TypeAlias = Literal[
 ]  # ListToStructWidthStrategy
 
 # The following have no equivalent on the Rust side
-Ambiguous: TypeAlias = Literal["earliest", "latest", "raise"]
 ConcatMethod = Literal[
     "vertical",
     "vertical_relaxed",

@@ -16,11 +16,13 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.sql.expression import cast as alchemy_cast
 
 import polars as pl
-from polars.exceptions import UnsuitableSQLError
+from polars.datatypes.convert import _infer_dtype_from_database_typename
+from polars.exceptions import ComputeError, UnsuitableSQLError
 from polars.io.database import _ARROW_DRIVER_REGISTRY_
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
+    from polars.datatypes import PolarsDataType
     from polars.type_aliases import (
         ConnectionOrCursor,
         DbReadEngine,
@@ -72,6 +74,21 @@ def tmp_sqlite_db(tmp_path: Path) -> Path:
         REPLACE INTO test_data(name,value,date)
           VALUES ('misc',100.0,'2020-01-01'),
                  ('other',-99.5,'2021-12-31');
+        """
+    )
+    conn.close()
+    return test_db
+
+
+@pytest.fixture()
+def tmp_sqlite_inference_db(tmp_path: Path) -> Path:
+    test_db = tmp_path / "test_inference.db"
+    test_db.unlink(missing_ok=True)
+    conn = sqlite3.connect(test_db)
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS test_data (name TEXT, value FLOAT);
+        REPLACE INTO test_data(name,value) VALUES (NULL,NULL), ('foo',0);
         """
     )
     conn.close()
@@ -704,6 +721,28 @@ def test_read_database_cx_credentials(uri: str) -> None:
         pl.read_database_uri("SELECT * FROM data", uri=uri)
 
 
+def test_database_infer_schema_length(tmp_sqlite_inference_db: Path) -> None:
+    # note: first row of this test database contains only NULL values
+    conn = sqlite3.connect(tmp_sqlite_inference_db)
+    for infer_len in (2, 100, None):
+        df = pl.read_database(
+            connection=conn,
+            query="SELECT * FROM test_data",
+            infer_schema_length=infer_len,
+        )
+        assert df.schema == {"name": pl.String, "value": pl.Float64}
+
+    with pytest.raises(
+        ComputeError,
+        match='could not append value: "foo" of type: str.*`infer_schema_length`',
+    ):
+        pl.read_database(
+            connection=conn,
+            query="SELECT * FROM test_data",
+            infer_schema_length=1,
+        )
+
+
 @pytest.mark.write_disk()
 def test_read_kuzu_graph_database(tmp_path: Path, io_files_path: Path) -> None:
     import kuzu
@@ -769,3 +808,84 @@ def test_read_kuzu_graph_database(tmp_path: Path, io_files_path: Path) -> None:
             schema={"a.name": pl.Utf8, "f.since": pl.Int64, "b.name": pl.Utf8}
         ),
     )
+
+
+@pytest.mark.parametrize(
+    ("value", "expected_dtype"),
+    [
+        # string types
+        ("UTF16", pl.String),
+        ("char(8)", pl.String),
+        ("nchar[128]", pl.String),
+        ("varchar", pl.String),
+        ("CHARACTER VARYING(64)", pl.String),
+        ("nvarchar(32)", pl.String),
+        ("TEXT", pl.String),
+        # array types
+        ("float32[]", pl.List(pl.Float32)),
+        ("double array", pl.List(pl.Float64)),
+        ("array[bool]", pl.List(pl.Boolean)),
+        ("array of nchar(8)", pl.List(pl.String)),
+        ("array[array[int8]]", pl.List(pl.List(pl.Int64))),
+        # numeric types
+        ("numeric[10,5]", pl.Decimal(10, 5)),
+        ("bigdecimal", pl.Decimal),
+        ("decimal128(10,5)", pl.Decimal(10, 5)),
+        ("double precision", pl.Float64),
+        ("floating point", pl.Float64),
+        ("numeric", pl.Float64),
+        ("real", pl.Float64),
+        ("boolean", pl.Boolean),
+        ("tinyint", pl.Int8),
+        ("smallint", pl.Int16),
+        ("int", pl.Int64),
+        ("int4", pl.Int32),
+        ("int2", pl.Int16),
+        ("int(16)", pl.Int16),
+        ("ROWID", pl.UInt64),
+        ("mediumint", pl.Int32),
+        ("unsigned mediumint", pl.UInt32),
+        ("smallserial", pl.Int16),
+        ("serial", pl.Int32),
+        ("bigserial", pl.Int64),
+        # temporal types
+        ("timestamp(3)", pl.Datetime("ms")),
+        ("timestamp(5)", pl.Datetime("us")),
+        ("timestamp(7)", pl.Datetime("ns")),
+        ("datetime without tz", pl.Datetime("us")),
+        ("date", pl.Date),
+        ("time", pl.Time),
+        ("date32", pl.Date),
+        ("time64", pl.Time),
+        # binary types
+        ("BYTEA", pl.Binary),
+        ("BLOB", pl.Binary),
+    ],
+)
+def test_database_dtype_inference_from_string(
+    value: str,
+    expected_dtype: PolarsDataType,
+) -> None:
+    inferred_dtype = _infer_dtype_from_database_typename(value)
+    assert inferred_dtype == expected_dtype  # type: ignore[operator]
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "FooType",
+        "Unknown",
+        "MISSING",
+        "XML",  # note: we deliberately exclude "number" as it is ambiguous.
+        "Number",  # (could refer to any size of int, float, or decimal dtype)
+    ],
+)
+def test_database_dtype_inference_from_invalid_string(value: str) -> None:
+    with pytest.raises(ValueError, match="cannot infer dtype"):
+        _infer_dtype_from_database_typename(value)
+
+    inferred_dtype = _infer_dtype_from_database_typename(
+        value=value,
+        raise_unmatched=False,
+    )
+    assert inferred_dtype is None

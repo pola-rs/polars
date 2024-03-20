@@ -5,6 +5,7 @@ use arrow::array::{Array, ArrayRef, BinaryViewArray, MutableBinaryViewArray, Utf
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::datatypes::{ArrowDataType, PhysicalType};
 use polars_error::PolarsResult;
+use polars_utils::iter::FallibleIterator;
 
 use super::super::binary::decoders::*;
 use crate::parquet::page::{DataPage, DictPage};
@@ -110,8 +111,9 @@ impl<'a> utils::Decoder<'a> for BinViewDecoder {
                     &mut page_values
                         .values
                         .by_ref()
-                        .map(|index| page_dict.value(index.unwrap() as usize)),
-                )
+                        .map(|index| page_dict.value(index as usize)),
+                );
+                page_values.values.get_result()?;
             },
             BinaryState::RequiredDictionary(page) => {
                 // Already done on the dict.
@@ -121,11 +123,12 @@ impl<'a> utils::Decoder<'a> for BinViewDecoder {
                 for x in page
                     .values
                     .by_ref()
-                    .map(|index| page_dict.value(index.unwrap() as usize))
+                    .map(|index| page_dict.value(index as usize))
                     .take(additional)
                 {
                     values.push_value_ignore_validity(x)
                 }
+                page.values.get_result()?;
             },
             BinaryState::FilteredOptional(page_validity, page_values) => {
                 extend_from_decoder(
@@ -154,11 +157,12 @@ impl<'a> utils::Decoder<'a> for BinViewDecoder {
                 for x in page
                     .values
                     .by_ref()
-                    .map(|index| page_dict.value(index.unwrap() as usize))
+                    .map(|index| page_dict.value(index as usize))
                     .take(additional)
                 {
                     values.push_value_ignore_validity(x)
                 }
+                page.values.iter.get_result()?;
             },
             BinaryState::FilteredOptionalDictionary(page_validity, page_values) => {
                 // Already done on the dict.
@@ -174,8 +178,9 @@ impl<'a> utils::Decoder<'a> for BinViewDecoder {
                     &mut page_values
                         .values
                         .by_ref()
-                        .map(|index| page_dict.value(index.unwrap() as usize)),
-                )
+                        .map(|index| page_dict.value(index as usize)),
+                );
+                page_values.values.get_result()?;
             },
             BinaryState::OptionalDeltaByteArray(page_validity, page_values) => extend_from_decoder(
                 validity,

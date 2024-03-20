@@ -14,6 +14,7 @@ import polars as pl
 from polars.datatypes import DATETIME_DTYPES, DTYPE_TEMPORAL_UNITS, TEMPORAL_DTYPES
 from polars.exceptions import (
     ComputeError,
+    InvalidOperationError,
     PolarsInefficientMapWarning,
     TimeZoneAwareConstructorWarning,
 )
@@ -1403,6 +1404,30 @@ def test_replace_time_zone() -> None:
     }
 
 
+def test_replace_time_zone_non_existent_null() -> None:
+    result = (
+        pl.Series(["2021-03-28 02:30", "2021-03-28 03:30"])
+        .str.to_datetime()
+        .dt.replace_time_zone("Europe/Warsaw", non_existent="null")
+    )
+    expected = pl.Series(
+        [None, datetime(2021, 3, 28, 3, 30)], dtype=pl.Datetime("us", "Europe/Warsaw")
+    )
+    assert_series_equal(result, expected)
+
+
+def test_invalid_non_existent() -> None:
+    with pytest.raises(
+        ValueError, match="`non_existent` must be one of {'null', 'raise'}, got cabbage"
+    ):
+        (
+            pl.Series([datetime(2020, 1, 1)]).dt.replace_time_zone(
+                "Europe/Warsaw",
+                non_existent="cabbage",  # type: ignore[arg-type]
+            )
+        )
+
+
 @pytest.mark.parametrize(
     ("to_tz", "tzinfo"),
     [
@@ -1670,6 +1695,48 @@ def test_replace_time_zone_sortedness_expressions(
     assert result["ts"].flags["SORTED_ASC"] == expected_sortedness
 
 
+def test_invalid_ambiguous_value_in_expression() -> None:
+    df = pl.DataFrame(
+        {"a": [datetime(2020, 10, 25, 1)] * 2, "b": ["earliest", "cabbage"]}
+    )
+    with pytest.raises(InvalidOperationError, match="Invalid argument cabbage"):
+        df.select(
+            pl.col("a").dt.replace_time_zone("Europe/London", ambiguous=pl.col("b"))
+        )
+
+
+def test_replace_time_zone_ambiguous_null() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [datetime(2020, 10, 25, 1)] * 3 + [None],
+            "b": ["earliest", "latest", "null", "raise"],
+        }
+    )
+    # expression containing 'null'
+    result = df.select(
+        pl.col("a").dt.replace_time_zone("Europe/London", ambiguous=pl.col("b"))
+    )["a"]
+    expected = [
+        datetime(2020, 10, 25, 1, fold=0, tzinfo=ZoneInfo("Europe/London")),
+        datetime(2020, 10, 25, 1, fold=1, tzinfo=ZoneInfo("Europe/London")),
+        None,
+        None,
+    ]
+    assert result[0] == expected[0]
+    assert result[1] == expected[1]
+    assert result[2] == expected[2]
+    assert result[3] == expected[3]
+
+    # single 'null' value
+    result = df.select(
+        pl.col("a").dt.replace_time_zone("Europe/London", ambiguous="null")
+    )["a"]
+    assert result[0] is None
+    assert result[1] is None
+    assert result[2] is None
+    assert result[3] is None
+
+
 def test_use_earliest_deprecation() -> None:
     # strptime
     with pytest.warns(
@@ -1829,6 +1896,19 @@ def test_ambiguous_expressions() -> None:
         schema={"datetime": pl.Datetime("us", "Europe/London")},
     )["datetime"]
     assert_series_equal(result, expected)
+
+
+def test_single_ambiguous_null() -> None:
+    df = pl.DataFrame(
+        {"ts": [datetime(2020, 10, 2, 1, 1)], "ambiguous": [None]},
+        schema_overrides={"ambiguous": pl.String},
+    )
+    result = df.select(
+        pl.col("ts").dt.replace_time_zone(
+            "Europe/London", ambiguous=pl.col("ambiguous")
+        )
+    )["ts"].item()
+    assert result is None
 
 
 def test_unlocalize() -> None:
@@ -2294,6 +2374,13 @@ def test_truncate_ambiguous() -> None:
         .rename("datetime")
     )
     assert_series_equal(result, expected)
+
+
+def test_truncate_non_existent_14957() -> None:
+    with pytest.raises(ComputeError, match="non-existent"):
+        pl.Series([datetime(2020, 3, 29, 2, 1)]).dt.replace_time_zone(
+            "Europe/London"
+        ).dt.truncate("46m")
 
 
 def test_round_ambiguous() -> None:

@@ -34,8 +34,8 @@ Config options
     Config.set_trim_decimal_zeros
     Config.set_verbose
 
-Config load, save, and current state
-------------------------------------
+Config load, save, state
+------------------------
 .. autosummary::
    :toctree: api/
 
@@ -81,8 +81,8 @@ explicitly calling one or more of the available "set\_" methods on it...
     with pl.Config(verbose=True):
         do_various_things()
 
-Use as a function decorator
----------------------------
+Use as a decorator
+------------------
 
 In the same vein, you can also use ``Config`` as a function decorator to
 temporarily set options for the duration of the function call:

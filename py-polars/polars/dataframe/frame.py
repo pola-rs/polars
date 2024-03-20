@@ -34,8 +34,8 @@ import polars._reexport as pl
 from polars import functions as F
 from polars._utils.construction import (
     arrow_to_pydf,
+    dataframe_to_pydf,
     dict_to_pydf,
-    frame_to_pydf,
     iterable_to_pydf,
     numpy_to_idxs,
     numpy_to_pydf,
@@ -205,7 +205,8 @@ class DataFrame:
         Two-dimensional data in various forms; dict input must contain Sequences,
         Generators, or a `range`. Sequence may contain Series or other Sequences.
     schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
-        The DataFrame schema may be declared in several ways:
+        The schema of the resulting DataFrame. The schema may be declared in several
+        ways:
 
         * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
         * As a list of column names; in this case types are automatically inferred.
@@ -214,6 +215,8 @@ class DataFrame:
         If you supply a list of column names that does not match the names in the
         underlying data, the names given here will overwrite them. The number
         of names given in the schema should match the underlying data dimensions.
+
+        If set to `None` (default), the schema is inferred from the data.
     schema_overrides : dict, default None
         Support type specification or override of one or more columns; note that
         any dtypes inferred from the schema param will be overridden.
@@ -221,18 +224,28 @@ class DataFrame:
         The number of entries in the schema should match the underlying data
         dimensions, unless a sequence of dictionaries is being passed, in which case
         a *partial* schema can be declared to prevent specific fields from being loaded.
+    strict : bool, default True
+        Throw an error if any `data` value does not exactly match the given or inferred
+        data type for that column. If set to `False`, values that do not match the data
+        type are cast to that data type or, if casting is not possible, set to null
+        instead.
     orient : {'col', 'row'}, default None
         Whether to interpret two-dimensional data as columns or as rows. If None,
         the orientation is inferred by matching the columns and data dimensions. If
         this does not yield conclusive results, column orientation is used.
     infer_schema_length : int or None
-        The maximum number of rows to scan for schema inference.
-        If set to `None`, the full data may be scanned *(this is slow)*.
-        This parameter only applies if the input data is a sequence or generator of
-        rows; other input is read as-is.
+        The maximum number of rows to scan for schema inference. If set to `None`, the
+        full data may be scanned *(this can be slow)*. This parameter only applies if
+        the input data is a sequence or generator of rows; other input is read as-is.
     nan_to_null : bool, default False
         If the data comes from one or more numpy arrays, can optionally convert input
         data np.nan values to null instead. This is a no-op for all other input data.
+
+    Notes
+    -----
+    Polars explicitly does not support subclassing of its core data types. See
+    the following GitHub issue for possible workarounds:
+    https://github.com/pola-rs/polars/issues/2846#issuecomment-1711799869
 
     Examples
     --------
@@ -335,17 +348,6 @@ class DataFrame:
     │ 1   ┆ 2   ┆ 3   │
     │ 4   ┆ 5   ┆ 6   │
     └─────┴─────┴─────┘
-
-    Notes
-    -----
-    Some methods internally convert the DataFrame into a LazyFrame before collecting
-    the results back into a DataFrame. This can lead to unexpected behavior when using
-    a subclassed DataFrame. For example,
-
-    >>> class MyDataFrame(pl.DataFrame):
-    ...     pass
-    >>> isinstance(MyDataFrame().lazy().collect(), MyDataFrame)
-    False
     """
 
     _df: PyDataFrame
@@ -357,6 +359,7 @@ class DataFrame:
         schema: SchemaDefinition | None = None,
         *,
         schema_overrides: SchemaDict | None = None,
+        strict: bool = True,
         orient: Orientation | None = None,
         infer_schema_length: int | None = N_INFER_DEFAULT,
         nan_to_null: bool = False,
@@ -371,6 +374,7 @@ class DataFrame:
                 data,
                 schema=schema,
                 schema_overrides=schema_overrides,
+                strict=strict,
                 nan_to_null=nan_to_null,
             )
 
@@ -379,13 +383,14 @@ class DataFrame:
                 data,
                 schema=schema,
                 schema_overrides=schema_overrides,
+                strict=strict,
                 orient=orient,
                 infer_schema_length=infer_schema_length,
             )
 
         elif isinstance(data, pl.Series):
             self._df = series_to_pydf(
-                data, schema=schema, schema_overrides=schema_overrides
+                data, schema=schema, schema_overrides=schema_overrides, strict=strict
             )
 
         elif _check_for_numpy(data) and isinstance(data, np.ndarray):
@@ -393,18 +398,19 @@ class DataFrame:
                 data,
                 schema=schema,
                 schema_overrides=schema_overrides,
+                strict=strict,
                 orient=orient,
                 nan_to_null=nan_to_null,
             )
 
         elif _check_for_pyarrow(data) and isinstance(data, pa.Table):
             self._df = arrow_to_pydf(
-                data, schema=schema, schema_overrides=schema_overrides
+                data, schema=schema, schema_overrides=schema_overrides, strict=strict
             )
 
         elif _check_for_pandas(data) and isinstance(data, pd.DataFrame):
             self._df = pandas_to_pydf(
-                data, schema=schema, schema_overrides=schema_overrides
+                data, schema=schema, schema_overrides=schema_overrides, strict=strict
             )
 
         elif not isinstance(data, Sized) and isinstance(data, (Generator, Iterable)):
@@ -412,13 +418,14 @@ class DataFrame:
                 data,
                 schema=schema,
                 schema_overrides=schema_overrides,
+                strict=strict,
                 orient=orient,
                 infer_schema_length=infer_schema_length,
             )
 
         elif isinstance(data, pl.DataFrame):
-            self._df = frame_to_pydf(
-                data, schema=schema, schema_overrides=schema_overrides
+            self._df = dataframe_to_pydf(
+                data, schema=schema, schema_overrides=schema_overrides, strict=strict
             )
         else:
             msg = (
@@ -433,107 +440,6 @@ class DataFrame:
         df = cls.__new__(cls)
         df._df = py_df
         return df
-
-    @classmethod
-    def _from_dict(
-        cls,
-        data: Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | Series],
-        schema: SchemaDefinition | None = None,
-        *,
-        schema_overrides: SchemaDict | None = None,
-    ) -> Self:
-        """
-        Construct a DataFrame from a dictionary of sequences.
-
-        Parameters
-        ----------
-        data : dict of sequences
-          Two-dimensional data represented as a dictionary. dict must contain
-          Sequences.
-        schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
-            The DataFrame schema may be declared in several ways:
-
-            * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
-            * As a list of column names; in this case types are automatically inferred.
-            * As a list of (name,type) pairs; this is equivalent to the dictionary form.
-
-            If you supply a list of column names that does not match the names in the
-            underlying data, the names given here will overwrite them. The number
-            of names given in the schema should match the underlying data dimensions.
-        schema_overrides : dict, default None
-          Support type specification or override of one or more columns; note that
-          any dtypes inferred from the columns param will be overridden.
-        """
-        return cls._from_pydf(
-            dict_to_pydf(data, schema=schema, schema_overrides=schema_overrides)
-        )
-
-    @classmethod
-    def _from_records(
-        cls,
-        data: Sequence[Any],
-        schema: SchemaDefinition | None = None,
-        *,
-        schema_overrides: SchemaDict | None = None,
-        orient: Orientation | None = None,
-        infer_schema_length: int | None = N_INFER_DEFAULT,
-    ) -> Self:
-        """
-        Construct a DataFrame from a sequence of sequences.
-
-        See Also
-        --------
-        polars.io.from_records
-        """
-        return cls._from_pydf(
-            sequence_to_pydf(
-                data,
-                schema=schema,
-                schema_overrides=schema_overrides,
-                orient=orient,
-                infer_schema_length=infer_schema_length,
-            )
-        )
-
-    @classmethod
-    def _from_numpy(
-        cls,
-        data: np.ndarray[Any, Any],
-        schema: SchemaDefinition | None = None,
-        *,
-        schema_overrides: SchemaDict | None = None,
-        orient: Orientation | None = None,
-    ) -> Self:
-        """
-        Construct a DataFrame from a numpy ndarray.
-
-        Parameters
-        ----------
-        data : numpy ndarray
-            Two-dimensional data represented as a numpy ndarray.
-        schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
-            The DataFrame schema may be declared in several ways:
-
-            * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
-            * As a list of column names; in this case types are automatically inferred.
-            * As a list of (name,type) pairs; this is equivalent to the dictionary form.
-
-            If you supply a list of column names that does not match the names in the
-            underlying data, the names given here will overwrite them. The number
-            of names given in the schema should match the underlying data dimensions.
-        schema_overrides : dict, default None
-            Support type specification or override of one or more columns; note that
-            any dtypes inferred from the columns param will be overridden.
-        orient : {'col', 'row'}, default None
-            Whether to interpret two-dimensional data as columns or as rows. If None,
-            the orientation is inferred by matching the columns and data dimensions. If
-            this does not yield conclusive results, column orientation is used.
-        """
-        return cls._from_pydf(
-            numpy_to_pydf(
-                data, schema=schema, schema_overrides=schema_overrides, orient=orient
-            )
-        )
 
     @classmethod
     def _from_arrow(
@@ -3915,9 +3821,9 @@ class DataFrame:
         ...     schema=[("x", pl.UInt32), ("y", pl.Float64), ("z", pl.String)],
         ... )
         >>> df.estimated_size()
-        28000000
+        17888890
         >>> df.estimated_size("mb")
-        26.702880859375
+        17.0601749420166
         """
         sz = self._df.estimated_size()
         return scale_bytes(sz, unit)
@@ -6153,41 +6059,111 @@ class DataFrame:
 
         Examples
         --------
-        >>> from datetime import datetime
+        >>> from datetime import date
         >>> gdp = pl.DataFrame(
         ...     {
-        ...         "date": [
-        ...             datetime(2016, 1, 1),
-        ...             datetime(2017, 1, 1),
-        ...             datetime(2018, 1, 1),
-        ...             datetime(2019, 1, 1),
-        ...         ],  # note record date: Jan 1st (sorted!)
-        ...         "gdp": [4164, 4411, 4566, 4696],
+        ...         "date": pl.date_range(
+        ...             date(2016, 1, 1),
+        ...             date(2020, 1, 1),
+        ...             "1y",
+        ...             eager=True,
+        ...         ),
+        ...         "gdp": [4164, 4411, 4566, 4696, 4827],
         ...     }
-        ... ).set_sorted("date")
+        ... )
+        >>> gdp
+        shape: (5, 2)
+        ┌────────────┬──────┐
+        │ date       ┆ gdp  │
+        │ ---        ┆ ---  │
+        │ date       ┆ i64  │
+        ╞════════════╪══════╡
+        │ 2016-01-01 ┆ 4164 │
+        │ 2017-01-01 ┆ 4411 │
+        │ 2018-01-01 ┆ 4566 │
+        │ 2019-01-01 ┆ 4696 │
+        │ 2020-01-01 ┆ 4827 │
+        └────────────┴──────┘
+
         >>> population = pl.DataFrame(
         ...     {
-        ...         "date": [
-        ...             datetime(2016, 5, 12),
-        ...             datetime(2017, 5, 12),
-        ...             datetime(2018, 5, 12),
-        ...             datetime(2019, 5, 12),
-        ...         ],  # note record date: May 12th (sorted!)
-        ...         "population": [82.19, 82.66, 83.12, 83.52],
+        ...         "date": [date(2016, 3, 1), date(2018, 8, 1), date(2019, 1, 1)],
+        ...         "population": [82.19, 82.66, 83.12],
         ...     }
-        ... ).set_sorted("date")
+        ... ).sort("date")
+        >>> population
+        shape: (3, 2)
+        ┌────────────┬────────────┐
+        │ date       ┆ population │
+        │ ---        ┆ ---        │
+        │ date       ┆ f64        │
+        ╞════════════╪════════════╡
+        │ 2016-03-01 ┆ 82.19      │
+        │ 2018-08-01 ┆ 82.66      │
+        │ 2019-01-01 ┆ 83.12      │
+        └────────────┴────────────┘
+
+        Note how the dates don't quite match. If we join them using `join_asof` and
+        `strategy='backward'`, then each date from `population` which doesn't have an
+        exact match is matched with the closest earlier date from `gdp`:
+
         >>> population.join_asof(gdp, on="date", strategy="backward")
-        shape: (4, 3)
-        ┌─────────────────────┬────────────┬──────┐
-        │ date                ┆ population ┆ gdp  │
-        │ ---                 ┆ ---        ┆ ---  │
-        │ datetime[μs]        ┆ f64        ┆ i64  │
-        ╞═════════════════════╪════════════╪══════╡
-        │ 2016-05-12 00:00:00 ┆ 82.19      ┆ 4164 │
-        │ 2017-05-12 00:00:00 ┆ 82.66      ┆ 4411 │
-        │ 2018-05-12 00:00:00 ┆ 83.12      ┆ 4566 │
-        │ 2019-05-12 00:00:00 ┆ 83.52      ┆ 4696 │
-        └─────────────────────┴────────────┴──────┘
+        shape: (3, 3)
+        ┌────────────┬────────────┬──────┐
+        │ date       ┆ population ┆ gdp  │
+        │ ---        ┆ ---        ┆ ---  │
+        │ date       ┆ f64        ┆ i64  │
+        ╞════════════╪════════════╪══════╡
+        │ 2016-03-01 ┆ 82.19      ┆ 4164 │
+        │ 2018-08-01 ┆ 82.66      ┆ 4566 │
+        │ 2019-01-01 ┆ 83.12      ┆ 4696 │
+        └────────────┴────────────┴──────┘
+
+        Note how:
+
+        - date `2016-03-01` from `population` is matched with `2016-01-01` from `gdp`;
+        - date `2018-08-01` from `population` is matched with `2018-01-01` from `gdp`.
+
+        If we instead use `strategy='forward'`, then each date from `population` which
+        doesn't have an exact match is matched with the closest later date from `gdp`:
+
+        >>> population.join_asof(gdp, on="date", strategy="forward")
+        shape: (3, 3)
+        ┌────────────┬────────────┬──────┐
+        │ date       ┆ population ┆ gdp  │
+        │ ---        ┆ ---        ┆ ---  │
+        │ date       ┆ f64        ┆ i64  │
+        ╞════════════╪════════════╪══════╡
+        │ 2016-03-01 ┆ 82.19      ┆ 4411 │
+        │ 2018-08-01 ┆ 82.66      ┆ 4696 │
+        │ 2019-01-01 ┆ 83.12      ┆ 4696 │
+        └────────────┴────────────┴──────┘
+
+        Note how:
+
+        - date `2016-03-01` from `population` is matched with `2017-01-01` from `gdp`;
+        - date `2018-08-01` from `population` is matched with `2019-01-01` from `gdp`.
+
+        Finally, `strategy='nearest'` gives us a mix of the two results above, as each
+        date from `population` which doesn't have an exact match is matched with the
+        closest date from `gdp`, regardless of whether it's earlier or later:
+
+        >>> population.join_asof(gdp, on="date", strategy="nearest")
+        shape: (3, 3)
+        ┌────────────┬────────────┬──────┐
+        │ date       ┆ population ┆ gdp  │
+        │ ---        ┆ ---        ┆ ---  │
+        │ date       ┆ f64        ┆ i64  │
+        ╞════════════╪════════════╪══════╡
+        │ 2016-03-01 ┆ 82.19      ┆ 4164 │
+        │ 2018-08-01 ┆ 82.66      ┆ 4696 │
+        │ 2019-01-01 ┆ 83.12      ┆ 4696 │
+        └────────────┴────────────┴──────┘
+
+        Note how:
+
+        - date `2016-03-01` from `population` is matched with `2016-01-01` from `gdp`;
+        - date `2018-08-01` from `population` is matched with `2019-01-01` from `gdp`.
         """
         tolerance = deprecate_saturating(tolerance)
         if not isinstance(other, DataFrame):

@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 
 def test_quantile_expr_input() -> None:
-    df = pl.DataFrame({"a": [1, 2, 3, 4, 5], "b": [0, 0, 0.3, 0.2, 0]})
+    df = pl.DataFrame({"a": [1, 2, 3, 4, 5], "b": [0.0, 0.0, 0.3, 0.2, 0.0]})
 
     assert_frame_equal(
         df.select([pl.col("a").quantile(pl.col("b").sum() + 0.1)]),
@@ -295,6 +295,38 @@ def test_horizontal_sum_null_to_identity() -> None:
     assert pl.DataFrame({"a": [1, 5], "b": [10, None]}).select(
         [pl.sum_horizontal(["a", "b"])]
     ).to_series().to_list() == [11, 5]
+
+
+def test_horizontal_sum_bool_dtype() -> None:
+    out = pl.DataFrame({"a": [True, False]}).select(pl.sum_horizontal("a"))
+    assert_frame_equal(out, pl.DataFrame({"a": pl.Series([1, 0], dtype=pl.UInt32)}))
+
+
+def test_horizontal_sum_in_groupby_15102() -> None:
+    nbr_records = 1000
+    out = (
+        pl.LazyFrame(
+            {
+                "x": [None, "two", None] * nbr_records,
+                "y": ["one", "two", None] * nbr_records,
+                "z": [None, "two", None] * nbr_records,
+            }
+        )
+        .select(pl.sum_horizontal(pl.all().is_null()).alias("num_null"))
+        .group_by("num_null")
+        .len()
+        .sort(by="num_null")
+        .collect()
+    )
+    assert_frame_equal(
+        out,
+        pl.DataFrame(
+            {
+                "num_null": pl.Series([0, 2, 3], dtype=pl.UInt32),
+                "len": pl.Series([nbr_records] * 3, dtype=pl.UInt32),
+            }
+        ),
+    )
 
 
 def test_first_last_unit_length_12363() -> None:

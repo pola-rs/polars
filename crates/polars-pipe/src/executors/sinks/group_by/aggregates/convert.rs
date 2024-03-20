@@ -131,7 +131,7 @@ where
         AExpr::Len => (
             IDX_DTYPE,
             Arc::new(Len {}),
-            AggregateFunction::Count(CountAgg::new()),
+            AggregateFunction::Len(CountAgg::new()),
         ),
         AExpr::Agg(agg) => match agg {
             AAggExpr::Min { input, .. } => {

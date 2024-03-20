@@ -56,7 +56,7 @@ fn deserialize_levels<C: Clone, I: Iterator<Item = Result<C, Error>>>(
     levels
         .into_iter()
         .map(|x| {
-            if x? == max {
+            if x == max {
                 values.next().transpose()
             } else {
                 Ok(None)

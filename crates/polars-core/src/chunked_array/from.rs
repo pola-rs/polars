@@ -281,6 +281,11 @@ where
         out.compute_len();
         out
     }
+
+    pub fn full_null_like(ca: &Self, length: usize) -> Self {
+        let chunks = std::iter::once(T::Array::full_null(length, ca.dtype().to_arrow(true)));
+        Self::from_chunk_iter_like(ca, chunks)
+    }
 }
 
 impl<T> ChunkedArray<T>

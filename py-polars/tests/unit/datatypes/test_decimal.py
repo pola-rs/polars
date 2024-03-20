@@ -293,6 +293,11 @@ def test_decimal_aggregations() -> None:
         }
     )
 
+    assert df.group_by("g").agg("a").sort("g").to_dict(as_series=False) == {
+        "g": [1, 2],
+        "a": [[D("0.1"), D("10.1")], [D("100.01"), D("9000.12")]],
+    }
+
     assert df.group_by("g", maintain_order=True).agg(
         sum=pl.sum("a"),
         min=pl.min("a"),
@@ -371,10 +376,26 @@ def test_decimal_sort() -> None:
     ].to_list() == [2, 1, 3]
 
 
+def test_decimal_unique() -> None:
+    df = pl.DataFrame(
+        {
+            "foo": [1, 1, 2],
+            "bar": [D("3.4"), D("3.4"), D("4.5")],
+        }
+    )
+    assert df.unique().sort("bar").to_dict(as_series=False) == {
+        "foo": [1, 2],
+        "bar": [D("3.4"), D("4.5")],
+    }
+
+
 def test_decimal_write_parquet_12375() -> None:
     f = io.BytesIO()
     df = pl.DataFrame(
-        {"hi": [True, False, True, False], "bye": [1, 2, 3, D(47283957238957239875)]}
+        {
+            "hi": [True, False, True, False],
+            "bye": [1, 2, 3, D(47283957238957239875)],
+        }
     )
     assert df["bye"].dtype == pl.Decimal
 
