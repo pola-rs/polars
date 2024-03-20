@@ -127,12 +127,10 @@ pub(crate) fn parse_url(url: &str) -> std::result::Result<Url, url::ParseError> 
     match Url::parse(url) {
         Err(err) => match err {
             url::ParseError::RelativeUrlWithoutBase => {
-                let parsed = Url::parse(&format!(
-                    "file://{}/",
-                    std::env::current_dir().unwrap().to_string_lossy()
-                ))
-                .unwrap();
-                parsed.join(url)
+                let mut path = std::env::current_dir().unwrap();
+                path.push(url);
+                Ok(Url::from_file_path(&path)
+                    .map_err(|_| url::ParseError::RelativeUrlWithoutBase)?)
             },
             err => Err(err),
         },
