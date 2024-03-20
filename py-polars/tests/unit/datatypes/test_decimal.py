@@ -390,7 +390,6 @@ def test_decimal_unique() -> None:
 
 
 def test_decimal_write_parquet_12375() -> None:
-    f = io.BytesIO()
     df = pl.DataFrame(
         {
             "hi": [True, False, True, False],
@@ -399,6 +398,7 @@ def test_decimal_write_parquet_12375() -> None:
     )
     assert df["bye"].dtype == pl.Decimal
 
+    f = io.BytesIO()
     df.write_parquet(f)
 
 

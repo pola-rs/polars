@@ -5,7 +5,7 @@ use polars::export::arrow::types::NativeType;
 use polars_core::prelude::*;
 use polars_core::utils::CustomIterTools;
 use polars_rs::export::arrow::bitmap::MutableBitmap;
-use pyo3::exceptions::PyValueError;
+use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 
 use crate::arrow_interop::to_rust::array_to_rust;
@@ -209,7 +209,11 @@ impl PySeries {
             return Ok(s);
         }
 
-        result
+        result.map_err(|e| {
+            PyTypeError::new_err(format!(
+                "{e}\n\nHint: Try setting `strict=False` to allow passing data with mixed types."
+            ))
+        })
     }
 
     #[staticmethod]
@@ -224,7 +228,11 @@ impl PySeries {
             .map(|v| py_object_to_any_value(v, strict))
             .collect::<PyResult<Vec<AnyValue>>>()?;
         let s = Series::from_any_values_and_dtype(name, any_values.as_slice(), &dtype.0, strict)
-            .map_err(PyPolarsErr::from)?;
+            .map_err(|e| {
+                PyTypeError::new_err(format!(
+                "{e}\n\nHint: Try setting `strict=False` to allow passing data with mixed types."
+            ))
+            })?;
         Ok(s.into())
     }
 
