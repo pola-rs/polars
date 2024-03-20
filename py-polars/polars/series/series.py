@@ -5253,7 +5253,7 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
-        >>> s.map_elements(lambda x: x + 10)  # doctest: +SKIP
+        >>> s.map_elements(lambda x: x + 10, return_dtype=pl.Int64)  # doctest: +SKIP
         shape: (3,)
         Series: 'a' [i64]
         [

@@ -1023,12 +1023,12 @@ def test_fill_nan() -> None:
 def test_map_elements() -> None:
     with pytest.warns(PolarsInefficientMapWarning):
         a = pl.Series("a", [1, 2, None])
-        b = a.map_elements(lambda x: x**2)
+        b = a.map_elements(lambda x: x**2, return_dtype=pl.Int64)
         assert list(b) == [1, 4, None]
 
     with pytest.warns(PolarsInefficientMapWarning):
         a = pl.Series("a", ["foo", "bar", None])
-        b = a.map_elements(lambda x: x + "py")
+        b = a.map_elements(lambda x: x + "py", return_dtype=pl.String)
         assert list(b) == ["foopy", "barpy", None]
 
     b = a.map_elements(lambda x: len(x), return_dtype=pl.Int32)

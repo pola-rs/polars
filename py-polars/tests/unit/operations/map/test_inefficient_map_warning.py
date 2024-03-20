@@ -255,7 +255,10 @@ def test_parse_invalid_function(func: str) -> None:
     ("col", "func", "expr_repr"),
     TEST_CASES,
 )
-@pytest.mark.filterwarnings("ignore:invalid value encountered:RuntimeWarning")
+@pytest.mark.filterwarnings(
+    "ignore:invalid value encountered:RuntimeWarning",
+    "ignore:.*without specifying `return_dtype`:UserWarning",
+)
 def test_parse_apply_functions(col: str, func: str, expr_repr: str) -> None:
     with pytest.warns(
         PolarsInefficientMapWarning,
@@ -294,7 +297,10 @@ def test_parse_apply_functions(col: str, func: str, expr_repr: str) -> None:
         )
 
 
-@pytest.mark.filterwarnings("ignore:invalid value encountered:RuntimeWarning")
+@pytest.mark.filterwarnings(
+    "ignore:invalid value encountered:RuntimeWarning",
+    "ignore:.*without specifying `return_dtype`:UserWarning",
+)
 def test_parse_apply_raw_functions() -> None:
     lf = pl.LazyFrame({"a": [1.1, 2.0, 3.4]})
 
@@ -373,7 +379,9 @@ def test_parse_apply_miscellaneous() -> None:
     ):
         pl_series = pl.Series("srs", [0, 1, 2, 3, 4])
         assert_series_equal(
-            pl_series.map_elements(lambda x: numpy.cos(3) + x - abs(-1)),
+            pl_series.map_elements(
+                lambda x: numpy.cos(3) + x - abs(-1), return_dtype=pl.Float64
+            ),
             numpy.cos(3) + pl_series - 1,
         )
 
@@ -405,6 +413,7 @@ def test_parse_apply_miscellaneous() -> None:
         ),
     ],
 )
+@pytest.mark.filterwarnings("ignore:.*without specifying `return_dtype`:UserWarning")
 def test_parse_apply_series(
     data: list[Any], func: Callable[[Any], Any], expr_repr: str
 ) -> None:
@@ -443,7 +452,7 @@ def test_expr_exact_warning_message() -> None:
     # and to keep the assertion on `len(warnings)`.
     with pytest.warns(PolarsInefficientMapWarning, match=rf"^{msg}$") as warnings:
         df = pl.DataFrame({"a": [1, 2, 3]})
-        df.select(pl.col("a").map_elements(lambda x: x + 1))
+        df.select(pl.col("a").map_elements(lambda x: x + 1, return_dtype=pl.Int64))
 
     assert len(warnings) == 1
 

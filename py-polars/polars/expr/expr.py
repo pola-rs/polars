@@ -4255,7 +4255,9 @@ class Expr:
         The function is applied to each element of column `'a'`:
 
         >>> df.with_columns(  # doctest: +SKIP
-        ...     pl.col("a").map_elements(lambda x: x * 2).alias("a_times_2"),
+        ...     pl.col("a")
+        ...     .map_elements(lambda x: x * 2, return_dtype=pl.Int64)
+        ...     .alias("a_times_2"),
         ... )
         shape: (4, 3)
         ┌─────┬─────┬───────────┐
@@ -4296,7 +4298,7 @@ class Expr:
         >>> (
         ...     df.lazy()
         ...     .group_by("b")
-        ...     .agg(pl.col("a").map_elements(lambda x: x.sum()))
+        ...     .agg(pl.col("a").map_elements(lambda x: x.sum(), return_dtype=pl.Int64))
         ...     .collect()
         ... )  # doctest: +IGNORE_RESULT
         shape: (3, 2)
@@ -4329,7 +4331,9 @@ class Expr:
         ...     }
         ... )
         >>> df.with_columns(
-        ...     scaled=pl.col("val").map_elements(lambda s: s * len(s)).over("key"),
+        ...     scaled=pl.col("val")
+        ...     .map_elements(lambda s: s * len(s), return_dtype=pl.List(pl.Int64))
+        ...     .over("key"),
         ... ).sort("key")
         shape: (6, 3)
         ┌─────┬─────┬────────┐
@@ -5315,12 +5319,16 @@ class Expr:
         ...     schema={"x": pl.UInt8, "y": pl.UInt8},
         ... )
         >>> df.with_columns(
-        ...     pl.col("x").map_elements(binary_string).alias("bin_x"),
-        ...     pl.col("y").map_elements(binary_string).alias("bin_y"),
+        ...     pl.col("x")
+        ...     .map_elements(binary_string, return_dtype=pl.String)
+        ...     .alias("bin_x"),
+        ...     pl.col("y")
+        ...     .map_elements(binary_string, return_dtype=pl.String)
+        ...     .alias("bin_y"),
         ...     pl.col("x").xor(pl.col("y")).alias("xor_xy"),
         ...     pl.col("x")
         ...     .xor(pl.col("y"))
-        ...     .map_elements(binary_string)
+        ...     .map_elements(binary_string, return_dtype=pl.String)
         ...     .alias("bin_xor_xy"),
         ... )
         shape: (4, 6)

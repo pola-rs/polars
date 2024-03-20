@@ -899,7 +899,7 @@ def _read_spreadsheet_pyxlsb(
     if schema_overrides:
         for idx, s in enumerate(series_data):
             if schema_overrides.get(s.name) in (Datetime, Date):
-                series_data[idx] = s.map_elements(convert_date)
+                series_data[idx] = s.map_elements(convert_date, return_dtype=Datetime)
 
     df = pl.DataFrame(
         {s.name: s for s in series_data},
