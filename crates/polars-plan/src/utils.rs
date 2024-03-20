@@ -252,25 +252,21 @@ pub fn expr_to_leaf_column_name(expr: &Expr) -> PolarsResult<Arc<str>> {
     }
 }
 
-fn is_column_aexpr(ae: &AExpr) -> bool {
-    matches!(ae, AExpr::Column(_) | AExpr::Wildcard)
-}
-
 #[allow(clippy::type_complexity)]
 pub(crate) fn aexpr_to_column_nodes_iter<'a>(
     root: Node,
     arena: &'a Arena<AExpr>,
-) -> FlatMap<AExprIter<'a>, Option<Node>, fn((Node, &'a AExpr)) -> Option<Node>> {
+) -> FlatMap<AExprIter<'a>, Option<ColumnNode>, fn((Node, &'a AExpr)) -> Option<ColumnNode>> {
     arena.iter(root).flat_map(|(node, ae)| {
-        if is_column_aexpr(ae) {
-            Some(node)
+        if matches!(ae, AExpr::Column(_)) {
+            Some(ColumnNode(node))
         } else {
             None
         }
     })
 }
 
-pub(crate) fn aexpr_to_column_nodes(root: Node, arena: &Arena<AExpr>) -> Vec<Node> {
+pub(crate) fn aexpr_to_column_nodes(root: Node, arena: &Arena<AExpr>) -> Vec<ColumnNode> {
     aexpr_to_column_nodes_iter(root, arena).collect()
 }
 
@@ -345,12 +341,9 @@ pub fn aexpr_to_leaf_names_iter(
     node: Node,
     arena: &Arena<AExpr>,
 ) -> impl Iterator<Item = Arc<str>> + '_ {
-    aexpr_to_column_nodes_iter(node, arena).map(|node| match arena.get(node) {
-        // expecting only columns here, wildcards and dtypes should already be replaced
+    aexpr_to_column_nodes_iter(node, arena).map(|node| match arena.get(node.0) {
         AExpr::Column(name) => name.clone(),
-        e => {
-            panic!("{e:?} not expected")
-        },
+        _ => unreachable!()
     })
 }
 
@@ -369,7 +362,19 @@ pub(crate) fn check_input_node(
     expr_arena: &Arena<AExpr>,
 ) -> bool {
     aexpr_to_leaf_names_iter(node, expr_arena)
-        .all(|name| input_schema.index_of(name.as_ref()).is_some())
+        .all(|name| input_schema.contains(name.as_ref()))
+}
+
+pub(crate) fn check_input_column_node(
+    node: ColumnNode,
+    input_schema: &Schema,
+    expr_arena: &Arena<AExpr>,
+) -> bool {
+    match expr_arena.get(node.0) {
+        AExpr::Column(name) => input_schema.contains(name.as_ref()),
+        // Invariant of `ColumnNode`
+        _ => unreachable!()
+    }
 }
 
 pub(crate) fn expr_irs_to_schema(

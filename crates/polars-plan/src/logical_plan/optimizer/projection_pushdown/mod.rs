@@ -83,7 +83,7 @@ fn split_acc_projections(
     } else {
         let (acc_projections, local_projections): (Vec<_>, Vec<_>) = acc_projections
             .into_iter()
-            .partition(|expr| check_input_node(*expr, down_schema, expr_arena));
+            .partition(|expr| check_input_column_node(*expr, down_schema, expr_arena));
         let mut names = init_set();
         for proj in &acc_projections {
             for name in aexpr_to_leaf_names(*proj, expr_arena) {
@@ -97,7 +97,7 @@ fn split_acc_projections(
 /// utility function such that we can recurse all binary expressions in the expression tree
 fn add_expr_to_accumulated(
     expr: Node,
-    acc_projections: &mut Vec<Node>,
+    acc_projections: &mut Vec<ColumnNode>,
     projected_names: &mut PlHashSet<Arc<str>>,
     expr_arena: &Arena<AExpr>,
 ) {
@@ -112,7 +112,7 @@ fn add_expr_to_accumulated(
 
 fn add_str_to_accumulated(
     name: &str,
-    acc_projections: &mut Vec<Node>,
+    acc_projections: &mut Vec<ColumnNode>,
     projected_names: &mut PlHashSet<Arc<str>>,
     expr_arena: &mut Arena<AExpr>,
 ) {
@@ -164,7 +164,7 @@ impl ProjectionPushDown {
     fn no_pushdown_restart_opt(
         &mut self,
         lp: ALogicalPlan,
-        acc_projections: Vec<Node>,
+        acc_projections: Vec<ColumnNode>,
         projections_seen: usize,
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
@@ -191,12 +191,12 @@ impl ProjectionPushDown {
         let lp = lp.with_exprs_and_input(exprs, new_inputs);
 
         let builder = ALogicalPlanBuilder::from_lp(lp, expr_arena, lp_arena);
-        Ok(self.finish_node(acc_projections, builder))
+        Ok(self.finish_node_simple_projection(acc_projections, builder))
     }
 
     fn finish_node_simple_projection(
         &mut self,
-        local_projections: &[Node],
+        local_projections: &[ColumnNode],
         builder: ALogicalPlanBuilder,
         expr_arena: &Arena<AExpr>
     ) -> ALogicalPlan {
@@ -246,12 +246,12 @@ impl ProjectionPushDown {
             already_projected |= is_in_left;
             already_projected |= is_in_right;
 
-            if check_input_node(root_projection, schema_left, expr_arena) && !is_in_left {
+            if check_input_column_node(root_projection, schema_left, expr_arena) && !is_in_left {
                 names_left.insert(name.clone());
                 pushdown_left.push(proj);
                 pushed_at_least_one = true;
             }
-            if check_input_node(root_projection, schema_right, expr_arena) && !is_in_right {
+            if check_input_column_node(root_projection, schema_right, expr_arena) && !is_in_right {
                 names_right.insert(name.clone());
                 pushdown_right.push(proj);
                 pushed_at_least_one = true;
@@ -331,7 +331,7 @@ impl ProjectionPushDown {
     fn push_down(
         &mut self,
         logical_plan: ALogicalPlan,
-        mut acc_projections: Vec<Node>,
+        mut acc_projections: Vec<ColumnNode>,
         mut projected_names: PlHashSet<Arc<str>>,
         projections_seen: usize,
         lp_arena: &mut Arena<ALogicalPlan>,

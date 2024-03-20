@@ -81,6 +81,14 @@ impl ExprIR {
         self.output_name_arc().as_ref()
     }
 
+    pub(crate) fn left_most_input_name_arc(&self) -> &Name {
+        self.left_most_input_name.as_ref().unwrap()
+    }
+
+    pub(crate) fn left_most_input_name(&self) -> &str {
+        self.left_most_input_name_arc().as_ref()
+    }
+
     pub(crate) fn output_dtype(&self) -> &DataType {
         &self.output_dtype.unwrap()
     }
@@ -114,3 +122,9 @@ impl ExprIR {
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub(crate) struct ColumnNode(pub(crate) Node);
+
+impl From<ColumnNode> for Node {
+    fn from(value: ColumnNode) -> Self {
+        value.0
+    }
+}

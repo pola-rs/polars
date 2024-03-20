@@ -19,12 +19,12 @@ fn is_count(node: Node, expr_arena: &Arena<AExpr>) -> bool {
 fn check_double_projection(
     expr: &Node,
     expr_arena: &mut Arena<AExpr>,
-    acc_projections: &mut Vec<Node>,
+    acc_projections: &mut Vec<ColumnNode>,
     projected_names: &mut PlHashSet<Arc<str>>,
 ) {
     // Factor out the pruning function
     fn prune_projections_by_name(
-        acc_projections: &mut Vec<Node>,
+        acc_projections: &mut Vec<ColumnNode>,
         name: &str,
         expr_arena: &Arena<AExpr>,
     ) {
@@ -57,7 +57,7 @@ pub(super) fn process_projection(
     proj_pd: &mut ProjectionPushDown,
     input: Node,
     exprs: Vec<ExprIR>,
-    mut acc_projections: Vec<Node>,
+    mut acc_projections: Vec<ColumnNode>,
     mut projected_names: PlHashSet<Arc<str>>,
     projections_seen: usize,
     lp_arena: &mut Arena<ALogicalPlan>,

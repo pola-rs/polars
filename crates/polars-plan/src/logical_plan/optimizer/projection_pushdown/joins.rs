@@ -101,7 +101,7 @@ pub(super) fn process_asof_join(
         // We need the join columns so we push the projection downwards
         for e in &left_on {
             let local_name = add_keys_to_accumulated_state(
-                *e,
+                e.node(),
                 &mut pushdown_left,
                 &mut local_projection,
                 &mut names_left,
@@ -248,7 +248,7 @@ pub(super) fn process_join(
         // We need the join columns so we push the projection downwards
         for e in &left_on {
             let local_name = add_keys_to_accumulated_state(
-                *e,
+                e.node(),
                 &mut pushdown_left,
                 &mut local_projection,
                 &mut names_left,
@@ -264,14 +264,13 @@ pub(super) fn process_join(
             // In case of outer joins we also add the columns.
             // But before we do that we must check if the column wasn't already added by the lhs.
             let add_local = if add_local {
-                let name = aexpr_to_leaf_name(*e, expr_arena);
-                !already_added_local_to_local_projected.contains(name.as_ref())
+                !already_added_local_to_local_projected.contains(e.left_most_input_name())
             } else {
                 false
             };
 
             let local_name = add_keys_to_accumulated_state(
-                *e,
+                e.node(),
                 &mut pushdown_right,
                 &mut local_projection,
                 &mut names_right,

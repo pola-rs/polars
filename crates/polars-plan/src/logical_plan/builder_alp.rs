@@ -60,8 +60,11 @@ impl<'a> ALogicalPlanBuilder<'a> {
         }
     }
 
-    pub(crate) fn project_simple_nodes(self, nodes: &[Node], expr_arena: &Arena<AExpr>) -> PolarsResult<Self> {
-        let iter = nodes.iter().map(|node| match expr_arena.get(*node) {
+    pub(crate) fn project_simple_nodes<I, N>(self, nodes: I, expr_arena: &Arena<AExpr>) -> PolarsResult<Self>
+    where I: IntoIterator<Item=N>,
+        N: Into<Node>, I::IntoIter: ExactSizeIterator,
+    {
+        let iter = nodes.into_iter().map(|node| match expr_arena.get(node.into()) {
             AExpr::Column(name) => name.as_ref(),
             _ => unreachable!()
         });

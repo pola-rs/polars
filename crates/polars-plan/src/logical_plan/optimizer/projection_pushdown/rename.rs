@@ -7,7 +7,7 @@ use super::*;
 fn iter_and_update_nodes(
     existing: &str,
     new: &str,
-    acc_projections: &mut [Node],
+    acc_projections: &mut [ColumnNode],
     expr_arena: &mut Arena<AExpr>,
     processed: &mut BTreeSet<usize>,
 ) {
@@ -24,7 +24,7 @@ fn iter_and_update_nodes(
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn process_rename(
-    acc_projections: &mut [Node],
+    acc_projections: &mut [ColumnNode],
     projected_names: &mut PlHashSet<Arc<str>>,
     expr_arena: &mut Arena<AExpr>,
     existing: &[SmartString],

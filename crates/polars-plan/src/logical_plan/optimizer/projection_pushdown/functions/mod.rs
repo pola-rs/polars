@@ -9,7 +9,7 @@ pub(super) fn process_functions(
     proj_pd: &mut ProjectionPushDown,
     input: Node,
     function: &FunctionNode,
-    mut acc_projections: Vec<Node>,
+    mut acc_projections: Vec<ColumnNode>,
     mut projected_names: PlHashSet<Arc<str>>,
     projections_seen: usize,
     lp_arena: &mut Arena<ALogicalPlan>,

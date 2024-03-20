@@ -10,7 +10,7 @@ pub(super) fn process_group_by(
     schema: SchemaRef,
     maintain_order: bool,
     options: Arc<GroupbyOptions>,
-    acc_projections: Vec<Node>,
+    acc_projections: Vec<ColumnNode>,
     projected_names: PlHashSet<Arc<str>>,
     projections_seen: usize,
     lp_arena: &mut Arena<ALogicalPlan>,

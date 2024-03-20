@@ -6,7 +6,7 @@ pub(super) fn process_hstack(
     input: Node,
     mut exprs: Vec<ExprIR>,
     options: ProjectionOptions,
-    mut acc_projections: Vec<Node>,
+    mut acc_projections: Vec<ColumnNode>,
     mut projected_names: PlHashSet<Arc<str>>,
     projections_seen: usize,
     lp_arena: &mut Arena<ALogicalPlan>,

@@ -4,7 +4,7 @@ use super::*;
 pub(super) fn process_generic(
     proj_pd: &mut ProjectionPushDown,
     lp: ALogicalPlan,
-    acc_projections: Vec<Node>,
+    acc_projections: Vec<ColumnNode>,
     projected_names: PlHashSet<Arc<str>>,
     projections_seen: usize,
     lp_arena: &mut Arena<ALogicalPlan>,
@@ -46,7 +46,7 @@ pub(super) fn process_generic(
             // so we ensure we do the 'a' projection again before we concatenate
             if !acc_projections.is_empty() && inputs.len() > 1 {
                 alp = ALogicalPlanBuilder::from_lp(alp, expr_arena, lp_arena)
-                    .project_simple_nodes(&acc_projections, expr_arena).unwrap()
+                    .project_simple_nodes(acc_projections, expr_arena).unwrap()
                     .build()
             }
             lp_arena.replace(node, alp);
