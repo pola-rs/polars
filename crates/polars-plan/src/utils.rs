@@ -270,6 +270,14 @@ pub(crate) fn aexpr_to_column_nodes(root: Node, arena: &Arena<AExpr>) -> Vec<Col
     aexpr_to_column_nodes_iter(root, arena).collect()
 }
 
+pub fn column_node_to_name(node: ColumnNode, arena: &Arena<AExpr>) -> Arc<str> {
+    if let AExpr::Column(name) = arena.get(node.0) {
+        name.clone()
+    } else {
+        unreachable!()
+    }
+}
+
 /// If the leaf names match `current`, the node will be replaced
 /// with a renamed expression.
 pub(crate) fn rename_matching_aexpr_leaf_names(
@@ -294,27 +302,6 @@ pub(crate) fn rename_matching_aexpr_leaf_names(
     } else {
         node
     }
-}
-
-/// Rename the root of the expression from `current` to `new` and assign to new node in arena.
-/// Returns `Node` on first successful rename.
-pub(crate) fn aexpr_assign_renamed_leaf(
-    node: Node,
-    arena: &mut Arena<AExpr>,
-    current: &str,
-    new_name: &str,
-) -> Node {
-    let leaf_nodes = aexpr_to_column_nodes_iter(node, arena);
-
-    for node in leaf_nodes {
-        match arena.get(node) {
-            AExpr::Column(name) if &**name == current => {
-                return arena.add(AExpr::Column(Arc::from(new_name)))
-            },
-            _ => {},
-        }
-    }
-    panic!("should be a root column that is renamed");
 }
 
 /// Get all leaf column expressions in the expression tree.

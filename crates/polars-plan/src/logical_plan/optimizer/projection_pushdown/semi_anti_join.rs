@@ -6,10 +6,10 @@ pub(super) fn process_semi_anti_join(
     proj_pd: &mut ProjectionPushDown,
     input_left: Node,
     input_right: Node,
-    left_on: Vec<Node>,
-    right_on: Vec<Node>,
+    left_on: Vec<ExprIR>,
+    right_on: Vec<ExprIR>,
     options: Arc<JoinOptions>,
-    acc_projections: Vec<Node>,
+    acc_projections: Vec<ColumnNode>,
     _projected_names: PlHashSet<Arc<str>>,
     projections_seen: usize,
     lp_arena: &mut Arena<ALogicalPlan>,
@@ -44,8 +44,6 @@ pub(super) fn process_semi_anti_join(
         }
 
         for proj in acc_projections {
-            let add_local = process_alias(proj, &mut local_projection, expr_arena, true);
-
             let _ = proj_pd.join_push_down(
                 &schema_left,
                 &schema_right,
@@ -56,18 +54,6 @@ pub(super) fn process_semi_anti_join(
                 &mut names_right,
                 expr_arena,
             );
-            if add_local {
-                // always also do the projection locally, because the join columns may not be
-                // included in the projection.
-                // for instance:
-                //
-                // SELECT [COLUMN temp]
-                // FROM
-                // JOIN (["days", "temp"]) WITH (["days", "rain"]) ON (left: days right: days)
-                //
-                // should drop the days column after the join.
-                local_projection.push(proj);
-            }
         }
     }
 

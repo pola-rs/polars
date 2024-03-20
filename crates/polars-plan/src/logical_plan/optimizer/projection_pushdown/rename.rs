@@ -11,11 +11,12 @@ fn iter_and_update_nodes(
     expr_arena: &mut Arena<AExpr>,
     processed: &mut BTreeSet<usize>,
 ) {
-    for node in acc_projections.iter_mut() {
+    for column_node in acc_projections.iter_mut() {
+        let node = column_node.0;
         if !processed.contains(&node.0) {
-            let new_node = rename_matching_aexpr_leaf_names(*node, expr_arena, new, existing);
-            if new_node != *node {
-                *node = new_node;
+            let new_node = rename_matching_aexpr_leaf_names(node, expr_arena, new, existing);
+            if new_node != node {
+                *column_node = ColumnNode(new_node);
                 processed.insert(node.0);
             }
         }

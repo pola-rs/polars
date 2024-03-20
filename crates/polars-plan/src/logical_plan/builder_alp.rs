@@ -60,11 +60,11 @@ impl<'a> ALogicalPlanBuilder<'a> {
         }
     }
 
-    pub(crate) fn project_simple_nodes<I, N>(self, nodes: I, expr_arena: &Arena<AExpr>) -> PolarsResult<Self>
+    pub(crate) fn project_simple_nodes<I, N>(self, nodes: I) -> PolarsResult<Self>
     where I: IntoIterator<Item=N>,
         N: Into<Node>, I::IntoIter: ExactSizeIterator,
     {
-        let iter = nodes.into_iter().map(|node| match expr_arena.get(node.into()) {
+        let iter = nodes.into_iter().map(|node| match self.expr_arena.get(node.into()) {
             AExpr::Column(name) => name.as_ref(),
             _ => unreachable!()
         });
@@ -110,17 +110,48 @@ impl<'a> ALogicalPlanBuilder<'a> {
         self.lp_arena.get(self.root).schema(self.lp_arena)
     }
 
-    pub(crate) fn with_columns(self, exprs: Vec<ExprIR>, options: ProjectionOptions) -> Self {
+    pub(crate) fn with_columns(self, exprs: Vec<ExprIR>, options: ProjectionOptions) -> Self
+    {
         let schema = self.schema();
         let mut new_schema = (**schema).clone();
 
-        for e in &exprs {
-            new_schema.with_column(e.output_name().into(), e.output_dtype().clone());
+        for e in exprs.into_iter() {
+            let field = e.to_field();
+            new_schema.with_column(field.name().clone(), field.data_type().clone());
         }
 
         let lp = ALogicalPlan::HStack {
             input: self.root,
             exprs: ProjectionExprs::new(exprs),
+            schema: Arc::new(new_schema),
+            options,
+        };
+        self.add_alp(lp)
+    }
+
+    pub(crate) fn with_columns_simple<I, J: Into<Node>>(self, exprs: I, options: ProjectionOptions) -> Self
+        where I: IntoIterator<Item=J>
+    {
+        let schema = self.schema();
+        let mut new_schema = (**schema).clone();
+
+        let iter = exprs.into_iter();
+        let mut expr_irs = Vec::with_capacity(iter.size_hint().0);
+        for node in iter {
+            let node = node.into();
+            let field = self
+                .expr_arena
+                .get(node)
+                .to_field(&schema, Context::Default, self.expr_arena)
+                .unwrap();
+
+            expr_irs.push(ExprIR::new(node, None, OutputName::ColumnLhs(Arc::from(field.name.as_ref()))));
+            new_schema.with_column(field.name().clone(), field.data_type().clone());
+        };
+
+        let lp = ALogicalPlan::HStack {
+            input: self.root,
+            exprs: ProjectionExprs::new(expr_irs),
             schema: Arc::new(new_schema),
             options,
         };

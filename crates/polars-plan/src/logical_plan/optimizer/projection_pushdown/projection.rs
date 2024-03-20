@@ -17,7 +17,7 @@ fn is_count(node: Node, expr_arena: &Arena<AExpr>) -> bool {
 /// this removes projection names, so any checks to upstream names should
 /// be done before this branch.
 fn check_double_projection(
-    expr: &Node,
+    expr: &ExprIR,
     expr_arena: &mut Arena<AExpr>,
     acc_projections: &mut Vec<ColumnNode>,
     projected_names: &mut PlHashSet<Arc<str>>,
@@ -28,23 +28,23 @@ fn check_double_projection(
         name: &str,
         expr_arena: &Arena<AExpr>,
     ) {
-        acc_projections.retain(|expr| {
-            !aexpr_to_leaf_names_iter(*expr, expr_arena).any(|q| q.as_ref() == name)
+        acc_projections.retain(|node| {
+            column_node_to_name(*node, expr_arena).as_ref() != name
         });
     }
+    if let Some(name) = expr.get_alias() {
+        if projected_names.remove(name) {
+            prune_projections_by_name(acc_projections, name.as_ref(), expr_arena)
+        }
+    }
 
-    for (_, ae) in (&*expr_arena).iter(*expr) {
+    for (_, ae) in (&*expr_arena).iter(expr.node()) {
         match ae {
             // Series literals come from another source so should not be pushed down.
             AExpr::Literal(LiteralValue::Series(s)) => {
                 let name = s.name();
                 if projected_names.remove(name) {
                     prune_projections_by_name(acc_projections, name, expr_arena)
-                }
-            },
-            AExpr::Alias(_, name) => {
-                if projected_names.remove(name) {
-                    prune_projections_by_name(acc_projections, name.as_ref(), expr_arena)
                 }
             },
             _ => {},
@@ -68,7 +68,7 @@ pub(super) fn process_projection(
     // path for `SELECT count(*) FROM`
     // as there would be no projections and we would read
     // the whole file while we only want the count
-    if exprs.len() == 1 && is_count(exprs[0], expr_arena) {
+    if exprs.len() == 1 && is_count(exprs[0].node(), expr_arena) {
         let input_schema = lp_arena.get(input).schema(lp_arena);
         // simply select the first column
         let (first_name, _) = input_schema.try_get_at_index(0)?;
@@ -94,21 +94,21 @@ pub(super) fn process_projection(
 
         // set this flag outside the loop as we modify within the loop
         let has_pushed_down = !acc_projections.is_empty();
-        for e in &exprs {
+        for e in exprs {
             if has_pushed_down {
                 // remove projections that are not used upstream
                 if !projected_names.contains(e.output_name_arc()) {
                     continue;
                 }
 
-                check_double_projection(e, expr_arena, &mut acc_projections, &mut projected_names);
+                check_double_projection(&e, expr_arena, &mut acc_projections, &mut projected_names);
             }
             // do local as we still need the effect of the projection
             // e.g. a projection is more than selecting a column, it can
             // also be a function/ complicated expression
-            local_projection.push(*e);
+            local_projection.push(e);
 
-            add_expr_to_accumulated(*e, &mut acc_projections, &mut projected_names, expr_arena);
+            add_expr_to_accumulated(e.node(), &mut acc_projections, &mut projected_names, expr_arena);
         }
     }
     proj_pd.pushdown_and_assign(
