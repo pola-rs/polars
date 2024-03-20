@@ -5,7 +5,9 @@ use polars::prelude::{AnyValue, Series};
 use polars_core::frame::row::any_values_to_dtype;
 use pyo3::intern;
 use pyo3::prelude::*;
-use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyList, PySequence, PyString, PyTuple, PyType};
+use pyo3::types::{
+    PyBool, PyBytes, PyDict, PyFloat, PyInt, PyList, PySequence, PyString, PyTuple, PyType,
+};
 
 use super::{decimal_to_digits, struct_dict, ObjectValue, Wrap};
 use crate::error::PyPolarsErr;
@@ -118,9 +120,8 @@ pub(crate) static LUT: crate::gil_once_cell::GILOnceCell<PlHashMap<TypeObjectPtr
 
 pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyValue> {
     // conversion functions
-    fn get_bool(ob: &PyAny, _strict: bool) -> PyResult<AnyValue> {
-        let b = ob.extract::<bool>().unwrap();
-        Ok(AnyValue::Boolean(b))
+    fn get_null(_ob: &PyAny, _strict: bool) -> PyResult<AnyValue> {
+        Ok(AnyValue::Null)
     }
 
     fn get_int(ob: &PyAny, _strict: bool) -> PyResult<AnyValue> {
@@ -135,9 +136,19 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
         Ok(AnyValue::Float64(ob.extract::<f64>().unwrap()))
     }
 
+    fn get_bool(ob: &PyAny, _strict: bool) -> PyResult<AnyValue> {
+        let b = ob.extract::<bool>().unwrap();
+        Ok(AnyValue::Boolean(b))
+    }
+
     fn get_str(ob: &PyAny, _strict: bool) -> PyResult<AnyValue> {
         let value = ob.extract::<&str>().unwrap();
         Ok(AnyValue::String(value))
+    }
+
+    fn get_bytes(ob: &PyAny, _strict: bool) -> PyResult<AnyValue> {
+        let value = ob.extract::<&[u8]>().unwrap();
+        Ok(AnyValue::Binary(value))
     }
 
     fn get_struct(ob: &PyAny, strict: bool) -> PyResult<AnyValue<'_>> {
@@ -208,15 +219,6 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
         let py_pyseries = ob.getattr(intern!(ob.py(), "_s")).unwrap();
         let series = py_pyseries.extract::<PySeries>().unwrap().series;
         Ok(AnyValue::List(series))
-    }
-
-    fn get_bin(ob: &PyAny, _strict: bool) -> PyResult<AnyValue> {
-        let value = ob.extract::<&[u8]>().unwrap();
-        Ok(AnyValue::Binary(value))
-    }
-
-    fn get_null(_ob: &PyAny, _strict: bool) -> PyResult<AnyValue> {
-        Ok(AnyValue::Null)
     }
 
     fn get_date(ob: &PyAny, _strict: bool) -> PyResult<AnyValue> {
@@ -346,16 +348,14 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
                         get_float
                     } else if ob.is_instance_of::<PyString>() {
                         get_str
+                    } else if ob.is_instance_of::<PyBytes>() {
+                        get_bytes
                     } else if ob.is_instance_of::<PyDict>() {
                         get_struct
                     } else if ob.is_instance_of::<PyList>() || ob.is_instance_of::<PyTuple>() {
                         get_list
                     } else if ob.hasattr(intern!(py, "_s")).unwrap() {
                         get_series_el
-                    }
-                    // TODO: this heap allocs on failure
-                    else if ob.extract::<&[u8]>().is_ok() {
-                        get_bin
                     } else if ob.is_none() {
                         get_null
                     } else {
