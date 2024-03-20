@@ -97,21 +97,8 @@ Either [fill it in](missing-data.md) or [drop it](https://docs.pola.rs/py-polars
 
 ## Combining multiple column values
 
-TODO
-
-If we want to have access to values of different columns in a single `map_elements` function call, we can create `struct` data
-type. This data type collects those columns as fields in the `struct`. So if we'd create a struct from the columns
-`"keys"` and `"values"`, we would get the following struct elements:
-
-```python
-[
-    {"keys": "a", "values": 10},
-    {"keys": "a", "values": 7},
-    {"keys": "b", "values": 1},
-]
-```
-
-In Python, those would be passed as `dict` to the calling Python function and can thus be indexed by `field: str`. In Rust, you'll get a `Series` with the `Struct` type. The fields of the struct can then be indexed and downcast.
+If you want to pass multiple columns to a user-defined function, you can use `Struct`s, which are [covered in detail in a different section](structs.md).
+The basic idea is to combine multiple columns into a `Struct`, and then the function can extract the columns back out:
 
 {{code_block('user-guide/expressions/user-defined-functions','combine',[])}}
 
@@ -119,23 +106,17 @@ In Python, those would be passed as `dict` to the calling Python function and ca
 --8<-- "python/user-guide/expressions/user-defined-functions.py:combine"
 ```
 
-`Structs` are covered in detail in the next section.
-
 ## Streaming calculations
 
 Passing the full `Series` to the user-defined function has a cost: it will use a lot of memory.
+You can use a `is_elementwise=True` argument to [:material-api: `map_batches`](https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.Expr.map_batches.html) to stream results into the function, which means it might not get all values.
 
-TODO
+For a function like `numpy.log()`, this works fine, because `numpy.log()` effectively calculates each individual value separately anyway.
+However, for our example `diff_from_mean()` function above, this would result in incorrect results, since it would calculate the mean on only part of the `Series`.
 
 ## Return types
 
-TODO
-
-Custom Python functions are black boxes for Polars. We really don't know what kind of black arts you are doing, so we have
-to infer and try our best to understand what you meant.
-
-As a user it helps to understand what we do to better utilize custom functions.
-
+Custom Python functions are often black boxes; Polars doesn't know what your function is doing or what it will return.
 The data type is automatically inferred. We do that by waiting for the first non-null value. That value will then be used
 to determine the type of the `Series`.
 
@@ -156,3 +137,5 @@ Rust types map as follows:
 - `bool` -> `Boolean`
 - `String` or `str` -> `String`
 - `Vec<tp>` -> `List[tp]` (where the inner type is inferred with the same rules)
+
+You can pass a `return_dtype` argument to [:material-api: `map_batches`](https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.Expr.map_batches.html) if you want to override the inferred type.
