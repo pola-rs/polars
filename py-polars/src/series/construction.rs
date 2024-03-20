@@ -267,33 +267,10 @@ impl PySeries {
     }
 
     #[staticmethod]
-    fn new_null(name: &str, values: &PyAny, _strict: bool) -> PyResult<Self> {
-        let len = values.len()?;
-        Ok(Series::new_null(name, len).into())
-    }
-
-    #[staticmethod]
-    pub fn new_object(py: Python, name: &str, val: Vec<ObjectValue>, _strict: bool) -> Self {
-        #[cfg(feature = "object")]
-        {
-            let mut validity = MutableBitmap::with_capacity(val.len());
-            val.iter().for_each(|v| {
-                if v.inner.is_none(py) {
-                    // SAFETY: we can ensure that validity has correct capacity.
-                    unsafe { validity.push_unchecked(false) };
-                } else {
-                    // SAFETY: we can ensure that validity has correct capacity.
-                    unsafe { validity.push_unchecked(true) };
-                }
-            });
-            // Object builder must be registered. This is done on import.
-            let s =
-                ObjectChunked::<ObjectValue>::new_from_vec_and_validity(name, val, validity.into())
-                    .into_series();
-            s.into()
-        }
-        #[cfg(not(feature = "object"))]
-        panic!("activate 'object' feature")
+    fn new_decimal(name: &str, values: &PyAny, strict: bool) -> PyResult<Self> {
+        // Create a fake dtype with a placeholder "none" scale, to be inferred later.
+        let dtype = DataType::Decimal(None, None);
+        Self::new_from_any_values_and_dtype(name, values, Wrap(dtype), strict)
     }
 
     #[staticmethod]
@@ -344,10 +321,33 @@ impl PySeries {
     }
 
     #[staticmethod]
-    fn new_decimal(name: &str, values: &PyAny, strict: bool) -> PyResult<Self> {
-        // Create a fake dtype with a placeholder "none" scale, to be inferred later.
-        let dtype = DataType::Decimal(None, None);
-        Self::new_from_any_values_and_dtype(name, values, Wrap(dtype), strict)
+    pub fn new_object(py: Python, name: &str, val: Vec<ObjectValue>, _strict: bool) -> Self {
+        #[cfg(feature = "object")]
+        {
+            let mut validity = MutableBitmap::with_capacity(val.len());
+            val.iter().for_each(|v| {
+                if v.inner.is_none(py) {
+                    // SAFETY: we can ensure that validity has correct capacity.
+                    unsafe { validity.push_unchecked(false) };
+                } else {
+                    // SAFETY: we can ensure that validity has correct capacity.
+                    unsafe { validity.push_unchecked(true) };
+                }
+            });
+            // Object builder must be registered. This is done on import.
+            let s =
+                ObjectChunked::<ObjectValue>::new_from_vec_and_validity(name, val, validity.into())
+                    .into_series();
+            s.into()
+        }
+        #[cfg(not(feature = "object"))]
+        panic!("activate 'object' feature")
+    }
+
+    #[staticmethod]
+    fn new_null(name: &str, values: &PyAny, _strict: bool) -> PyResult<Self> {
+        let len = values.len()?;
+        Ok(Series::new_null(name, len).into())
     }
 
     #[staticmethod]
