@@ -64,3 +64,6 @@ out = ratings.with_columns(
 ).filter(pl.struct("Movie", "Theatre").is_duplicated())
 print(out)
 # --8<-- [end:struct_ranking]
+
+# --8<-- [start:multi_column_apply]
+# --8<-- [end:multi_column_apply]

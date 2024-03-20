@@ -94,12 +94,27 @@ print(out)
 
 # --8<-- [end:missing_data]
 
+
 # --8<-- [start:combine]
-out = df.select(
-    pl.struct(["keys", "values"])
-    .map_elements(lambda x: len(x["keys"]) + x["values"])
-    .alias("solution_map_elements"),
-    (pl.col("keys").str.len_bytes() + pl.col("values")).alias("solution_expr"),
+# Add two arrays together:
+@guvectorize([(int64[:], int64[:], float64[:])], "(n),(n)->(n)")
+def add(arr, arr2, result):
+    for i in range(len(arr)):
+        result[i] = arr[i] + arr2[i]
+
+
+df3 = pl.DataFrame({"values1": [1, 2, 3], "values2": [10, 20, 30]})
+
+out = df3.select(
+    # Create a struct that has two columns in it:
+    pl.struct(["values1", "values2"])
+    # Pass the struct to a lambda that then passes the individual columns to
+    # the add() function:
+    .map_batches(
+        lambda combined: add(
+            combined.struct.field("values1"), combined.struct.field("values2")
+        )
+    ).alias("add_columns")
 )
 print(out)
 # --8<-- [end:combine]
