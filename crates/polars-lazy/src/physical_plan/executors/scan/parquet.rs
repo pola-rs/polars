@@ -354,12 +354,12 @@ impl ParquetExec {
                 panic!("activate cloud feature")
             }
 
-            if !is_cloud && config::verbose() {
-                eprintln!("ASYNC READING FORCED");
-            }
-
             #[cfg(feature = "cloud")]
             {
+                if !is_cloud && config::verbose() {
+                    eprintln!("ASYNC READING FORCED");
+                }
+
                 polars_io::pl_async::get_runtime().block_on_potential_spawn(self.read_async())?
             }
         } else {
