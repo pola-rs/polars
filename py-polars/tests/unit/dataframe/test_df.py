@@ -1213,6 +1213,28 @@ def test_from_rows_of_dicts() -> None:
         assert df3.schema == {"id": pl.Int16, "value": pl.Int32}
 
 
+def test_from_records_in_series_15195() -> None:
+    # note: this was not intended to be a valid way to use `from_records`, but
+    # it was a regression that caused it to start throwing errors, so until
+    # being formally deprecated (imminent!) it should not raise an error...
+
+    with pytest.warns(
+        DeprecationWarning,
+        match=r"`from_records` does not support Series .* `srs\.struct\.unnest",
+    ):
+        series_record_data = pl.Series([{"x": "abcdefg", "y": 123456, "z": 0.0}])
+        df = pl.from_records(
+            data=series_record_data,  # type: ignore[arg-type]
+            schema_overrides={"y": pl.Int32, "z": pl.Float32},
+        )
+
+    expected = pl.DataFrame(
+        data={"x": ["abcdefg"], "y": [123456], "z": [0.0]},
+        schema={"x": pl.String, "y": pl.Int32, "z": pl.Float32},
+    )
+    assert_frame_equal(expected, df)
+
+
 def test_from_records_with_schema_overrides_12032() -> None:
     # the 'id' fields contains an int value that exceeds Int64 and doesn't have an exact
     # Float64 representation; confirm that the override is applied *during* inference,

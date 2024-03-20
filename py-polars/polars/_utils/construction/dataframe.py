@@ -404,7 +404,7 @@ def _expand_dict_data(
 
 
 def sequence_to_pydf(
-    data: Sequence[Any],
+    data: Sequence[Any] | None,
     schema: SchemaDefinition | None = None,
     *,
     schema_overrides: SchemaDict | None = None,
@@ -413,7 +413,7 @@ def sequence_to_pydf(
     infer_schema_length: int | None = N_INFER_DEFAULT,
 ) -> PyDataFrame:
     """Construct a PyDataFrame from a sequence."""
-    if not data:
+    if data is None or len(data) == 0:
         return dict_to_pydf({}, schema=schema, schema_overrides=schema_overrides)
 
     return _sequence_to_pydf_dispatcher(
@@ -655,9 +655,12 @@ def _sequence_of_dict_to_pydf(
         if column_names
         else None
     )
-    pydf = PyDataFrame.from_dicts(
-        data, infer_schema_length, dicts_schema, schema_overrides
-    )
+    if isinstance(data, pl.Series) and data.dtype == Struct:
+        pydf = data.struct.unnest()._df
+    else:
+        pydf = PyDataFrame.from_dicts(
+            data, infer_schema_length, dicts_schema, schema_overrides
+        )
 
     # TODO: we can remove this `schema_overrides` block completely
     #  once https://github.com/pola-rs/polars/issues/11044 is fixed

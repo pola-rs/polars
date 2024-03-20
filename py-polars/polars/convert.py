@@ -15,7 +15,10 @@ from polars._utils.construction.dataframe import (
     sequence_to_pydf,
 )
 from polars._utils.construction.series import arrow_to_pyseries, pandas_to_pyseries
-from polars._utils.deprecation import deprecate_renamed_parameter
+from polars._utils.deprecation import (
+    deprecate_renamed_parameter,
+    issue_deprecation_warning,
+)
 from polars._utils.various import _cast_repr_strings_with_schema
 from polars._utils.wrap import wrap_df, wrap_s
 from polars.datatypes import N_INFER_DEFAULT, Categorical, List, Object, String, Struct
@@ -268,6 +271,15 @@ def from_records(
     │ 3   ┆ 6   │
     └─────┴─────┘
     """
+    if isinstance(data, pl.Series):
+        msg_prefix = "`from_records` does not support Series input"
+        msg = (
+            f"{msg_prefix}; unpack Struct records using `srs.struct.unnest()` instead"
+            if data.dtype == Struct
+            else f"{msg_prefix}; pass to `DataFrame` constructor directly"
+        )
+        issue_deprecation_warning(message=msg, version="0.20.17")
+
     return wrap_df(
         sequence_to_pydf(
             data,
