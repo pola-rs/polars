@@ -11,7 +11,7 @@ import polars as pl
 def test_df_mixed_dtypes_string() -> None:
     data = {"x": [["abc", 12, 34.5]], "y": [1]}
 
-    with pytest.raises(pl.SchemaError, match="unexpected value"):
+    with pytest.raises(TypeError, match="unexpected value"):
         pl.DataFrame(data, strict=True)
 
     df = pl.DataFrame(data, strict=False)
@@ -21,8 +21,8 @@ def test_df_mixed_dtypes_string() -> None:
 
 def test_df_mixed_dtypes_object() -> None:
     data = {"x": [[b"abc", 12, 34.5]], "y": [1]}
-    # with pytest.raises(pl.SchemaError, match="unexpected value"):
-    with pytest.raises(pl.ComputeError, match="failed to determine supertype"):
+
+    with pytest.raises(TypeError, match="failed to determine supertype"):
         pl.DataFrame(data, strict=True)
 
     df = pl.DataFrame(data, strict=False)
@@ -55,7 +55,7 @@ def test_df_init_from_generator_dict_view() -> None:
         "vals": d.values(),
         "itms": d.items(),
     }
-    with pytest.raises(pl.SchemaError, match="unexpected value"):
+    with pytest.raises(TypeError, match="unexpected value"):
         pl.DataFrame(data, strict=True)
 
     df = pl.DataFrame(data, strict=False)

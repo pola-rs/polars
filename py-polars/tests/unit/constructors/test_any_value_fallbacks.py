@@ -57,7 +57,7 @@ def test_fallback_with_dtype_strict(
 def test_fallback_with_dtype_strict_failure(
     dtype: pl.PolarsDataType, values: list[Any]
 ) -> None:
-    with pytest.raises(pl.SchemaError, match="unexpected value"):
+    with pytest.raises(TypeError, match="unexpected value"):
         PySeries.new_from_any_values_and_dtype("", values, dtype, strict=True)
 
 
@@ -230,7 +230,7 @@ def test_fallback_without_dtype(
     ],
 )
 def test_fallback_without_dtype_strict_failure(values: list[Any]) -> None:
-    with pytest.raises(pl.SchemaError, match="unexpected value"):
+    with pytest.raises(TypeError, match="unexpected value"):
         PySeries.new_from_any_values("", values, strict=True)
 
 
