@@ -14,7 +14,7 @@ A later section will explain other available APIs for applying user-defined func
 
 ## Example: A slow, custom sum function written in Python
 
-For demonstration purposes, let's say we want to sum the values in a `Series` using a function we write in Python.
+For demonstration purposes, let's say we want to calculate the difference between the mean of a `Series` and each value.
 Here is our data:
 
 {{code_block('user-guide/expressions/user-defined-functions','dataframe',[])}}
@@ -26,10 +26,10 @@ Here is our data:
 
 We can use `map_batches()` to run this function on either the full `Series` or individual groups in a `group_by()`:
 
-{{code_block('user-guide/expressions/user-defined-functions','custom_sum',[])}}
+{{code_block('user-guide/expressions/user-defined-functions','diff_from_mean',[])}}
 
 ```python exec="on" result="text" session="user-guide/udf"
---8<-- "python/user-guide/expressions/user-defined-functions.py:custom_sum"
+--8<-- "python/user-guide/expressions/user-defined-functions.py:diff_from_mean"
 ```
 
 ## Fast operations with user-defined functions
@@ -52,27 +52,27 @@ For example:
 --8<-- "python/user-guide/expressions/user-defined-functions.py:np_log"
 ```
 
-## Example: A fast custom sum function in Python using Numba
+## Example: A fast custom function using Numba
 
 The pre-written functions are helpful, but our goal is to write our own functions.
-For example, let's say we want a fast version of our `custum_sum()` example above.
+For example, let's say we want a fast version of our `diff_from_mean()` example above.
 The easiest way to write this in Python is to use [Numba](https://numba.readthedocs.io/en/stable/), which allows you to write custom functions in (a subset) of Python while still getting the benefit of compiled code.
 
 In particular, Numba provides a decorator called [`@guvectorize`](https://numba.readthedocs.io/en/stable/user/vectorize.html#the-guvectorize-decorator) that compiles a Python function to fast machine code, in a way that allows it to be used by Polars.
 
-In the following example the `custom_sum_numba()` will be compiled to fast machine code at import time, which will take a little time.
+In the following example the `diff_from_mean_numba()` will be compiled to fast machine code at import time, which will take a little time.
 After that all calls to the function will run quickly.
 The `Series` will be converted to a NumPy array before being passed to the function:
 
-{{code_block('user-guide/expressions/user-defined-functions','custom_sum_numba',[])}}
+{{code_block('user-guide/expressions/user-defined-functions','diff_from_mean_numba',[])}}
 
 ```python exec="on" result="text" session="user-guide/udf"
---8<-- "python/user-guide/expressions/user-defined-functions.py:custom_sum_numba"
+--8<-- "python/user-guide/expressions/user-defined-functions.py:diff_from_mean_numba"
 ```
 
 ## Missing data can break your calculation
 
-Before being passed to a user-defined function like `custom_sum_numba()`, a `Series` will be converted to a NumPy array.
+Before being passed to a user-defined function like `diff_from_mean_numba()`, a `Series` will be converted to a NumPy array.
 Unfortunately, NumPy arrays don't have a concept of missing data.
 If there is missing data in the original `Series`, this means the resulting array won't actually match the `Series`.
 
@@ -86,11 +86,14 @@ But if the result of a user-defined function depend on multiple values in the `S
 --8<-- "python/user-guide/expressions/user-defined-functions.py:dataframe2"
 ```
 
-{{code_block('user-guide/expressions/user-defined-functions','custom_mean_numba',[])}}
+{{code_block('user-guide/expressions/user-defined-functions','missing_data',[])}}
 
 ```python exec="on" result="text" session="user-guide/udf"
---8<-- "python/user-guide/expressions/user-defined-functions.py:custom_mean_numba"
+--8<-- "python/user-guide/expressions/user-defined-functions.py:missing_data"
 ```
+
+So how do you deal with missing data?
+Either [fill it in](missing-data.md) or [drop it](https://docs.pola.rs/py-polars/html/reference/dataframe/api/polars.DataFrame.drop_nulls.html) before calling the customer user function.
 
 ## Combining multiple column values
 
