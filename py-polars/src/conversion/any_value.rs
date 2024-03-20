@@ -124,6 +124,11 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
         Ok(AnyValue::Null)
     }
 
+    fn get_bool(ob: &PyAny, _strict: bool) -> PyResult<AnyValue> {
+        let b = ob.extract::<bool>().unwrap();
+        Ok(AnyValue::Boolean(b))
+    }
+
     fn get_int(ob: &PyAny, _strict: bool) -> PyResult<AnyValue> {
         // can overflow
         match ob.extract::<i64>() {
@@ -134,11 +139,6 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
 
     fn get_float(ob: &PyAny, _strict: bool) -> PyResult<AnyValue> {
         Ok(AnyValue::Float64(ob.extract::<f64>().unwrap()))
-    }
-
-    fn get_bool(ob: &PyAny, _strict: bool) -> PyResult<AnyValue> {
-        let b = ob.extract::<bool>().unwrap();
-        Ok(AnyValue::Boolean(b))
     }
 
     fn get_str(ob: &PyAny, _strict: bool) -> PyResult<AnyValue> {
@@ -340,7 +340,11 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
             let convert_fn = lut.entry(type_object_ptr).or_insert_with(
                 // This only runs if type is not in LUT
                 || {
-                    if ob.is_instance_of::<PyBool>() {
+                    if ob.is_none() {
+                        get_null
+                    }
+                    // bool must be checked before int because Python bool is an instance of int
+                    else if ob.is_instance_of::<PyBool>() {
                         get_bool
                     } else if ob.is_instance_of::<PyInt>() {
                         get_int
@@ -356,8 +360,6 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
                         get_list
                     } else if ob.hasattr(intern!(py, "_s")).unwrap() {
                         get_series_el
-                    } else if ob.is_none() {
-                        get_null
                     } else {
                         let type_name = ob.get_type().name().unwrap();
                         match type_name {
