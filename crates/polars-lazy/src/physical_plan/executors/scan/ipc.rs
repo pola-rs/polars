@@ -54,7 +54,7 @@ impl IpcExec {
 
     fn read_sync(&mut self) -> PolarsResult<DataFrame> {
         if config::verbose() {
-            println!("executing ipc read sync with row_index = {:?}, n_rows = {:?}, predicate = {:?} for paths {:?}",
+            eprintln!("executing ipc read sync with row_index = {:?}, n_rows = {:?}, predicate = {:?} for paths {:?}",
                 self.file_options.row_index.as_ref(),
                 self.file_options.n_rows.as_ref(),
                 self.predicate.is_some(),
