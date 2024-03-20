@@ -5,7 +5,7 @@ use polars::export::arrow::types::NativeType;
 use polars_core::prelude::*;
 use polars_core::utils::CustomIterTools;
 use polars_rs::export::arrow::bitmap::MutableBitmap;
-use pyo3::exceptions::{PyTypeError, PyValueError};
+use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 
 use crate::arrow_interop::to_rust::array_to_rust;
@@ -283,31 +283,14 @@ impl PySeries {
     }
 
     #[staticmethod]
-    #[pyo3(signature = (width, inner, name, values, strict))]
+    #[pyo3(signature = (name, values, strict, dtype))]
     fn new_array(
-        width: usize,
-        inner: Option<Wrap<DataType>>,
         name: &str,
         values: &PyAny,
         strict: bool,
+        dtype: Wrap<DataType>,
     ) -> PyResult<Self> {
-        if let Some(inner) = inner {
-            let target_dtype = DataType::Array(Box::new(inner.0), width);
-            Self::new_from_any_values_and_dtype(name, values, Wrap(target_dtype), strict)
-        } else {
-            let s = Self::new_from_any_values(name, values, strict)?.series;
-            let out = match s.dtype() {
-                DataType::List(list_inner) => {
-                    let target_dtype = DataType::Array(
-                        Box::new(inner.map(|dt| dt.0).unwrap_or(*list_inner.clone())),
-                        width,
-                    );
-                    s.cast(&target_dtype).map_err(PyPolarsErr::from)?
-                },
-                _ => return Err(PyValueError::new_err("could not create Array from input")),
-            };
-            Ok(out.into())
-        }
+        Self::new_from_any_values_and_dtype(name, values, dtype, strict)
     }
 
     #[staticmethod]
