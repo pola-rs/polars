@@ -6,42 +6,6 @@ use super::{decimal_to_digits, struct_dict};
 use crate::prelude::*;
 use crate::py_modules::UTILS;
 
-impl<'a, T> FromPyObject<'a> for Wrap<ChunkedArray<T>>
-where
-    T: PyPolarsNumericType,
-    T::Native: FromPyObject<'a>,
-{
-    fn extract(obj: &'a PyAny) -> PyResult<Self> {
-        let len = obj.len()?;
-        let mut builder = PrimitiveChunkedBuilder::new("", len);
-
-        for res in obj.iter()? {
-            let item = res?;
-            match item.extract::<T::Native>() {
-                Ok(val) => builder.append_value(val),
-                Err(_) => builder.append_null(),
-            };
-        }
-        Ok(Wrap(builder.finish()))
-    }
-}
-
-impl<'a> FromPyObject<'a> for Wrap<BooleanChunked> {
-    fn extract(obj: &'a PyAny) -> PyResult<Self> {
-        let len = obj.len()?;
-        let mut builder = BooleanChunkedBuilder::new("", len);
-
-        for res in obj.iter()? {
-            let item = res?;
-            match item.extract::<bool>() {
-                Ok(val) => builder.append_value(val),
-                Err(_) => builder.append_null(),
-            }
-        }
-        Ok(Wrap(builder.finish()))
-    }
-}
-
 impl<'a> FromPyObject<'a> for Wrap<StringChunked> {
     fn extract(obj: &'a PyAny) -> PyResult<Self> {
         let len = obj.len()?;
