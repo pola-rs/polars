@@ -38,7 +38,7 @@ impl<T: TotalOrd> NullOrderCmp for Option<T> {
                     Ordering::Greater
                 }
             },
-            (Some(l), Some(r)) => l.tot_cmp(&r),
+            (Some(l), Some(r)) => l.tot_cmp(r),
         }
     }
 }
