@@ -123,18 +123,29 @@ impl CloudType {
 }
 
 #[cfg(feature = "cloud")]
-pub(crate) fn parse_url(url: &str) -> std::result::Result<Url, url::ParseError> {
-    match Url::parse(url) {
-        Err(err) => match err {
-            url::ParseError::RelativeUrlWithoutBase => {
-                let mut path = std::env::current_dir().unwrap();
-                path.push(url);
-                Ok(Url::from_file_path(&path)
-                    .map_err(|_| url::ParseError::RelativeUrlWithoutBase)?)
-            },
-            err => Err(err),
+pub(crate) fn parse_url(input: &str) -> std::result::Result<Url, url::ParseError> {
+    match input.split_once("://") {
+        Some(("file", path)) => Url::options()
+            .base_url(
+                Path::new(path)
+                    .is_relative()
+                    .then(|| Url::from_file_path(std::env::current_dir().unwrap()).unwrap())
+                    .as_ref(),
+            )
+            .parse(path),
+        Some((_, _)) => Url::parse(input),
+        None => {
+            let path = Path::new(input);
+            let mut tmp;
+            Ok(Url::from_file_path(if path.is_relative() {
+                tmp = std::env::current_dir().unwrap();
+                tmp.push(path);
+                tmp.as_path()
+            } else {
+                path
+            })
+            .unwrap())
         },
-        parsed => parsed,
     }
 }
 
@@ -421,5 +432,51 @@ impl CloudOptions {
                 }
             },
         }
+    }
+}
+
+#[cfg(feature = "cloud")]
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_path() {
+        assert_eq!(
+            parse_url(r"http://Users/Jane Doe/data.csv")
+                .unwrap()
+                .as_str(),
+            "http://users/Jane%20Doe/data.csv"
+        );
+        assert_eq!(
+            parse_url(r"http://Users/Jane Doe/data.csv")
+                .unwrap()
+                .as_str(),
+            "http://users/Jane%20Doe/data.csv"
+        );
+        assert_eq!(
+            parse_url(r"file:///c:/Users/Jane Doe/data.csv")
+                .unwrap()
+                .as_str(),
+            "file:///c:/Users/Jane%20Doe/data.csv"
+        );
+        assert_eq!(
+            parse_url(r"file://\c:\Users\Jane Doe\data.csv")
+                .unwrap()
+                .as_str(),
+            "file:///c:/Users/Jane%20Doe/data.csv"
+        );
+        assert_eq!(
+            parse_url(r"c:\Users\Jane Doe\data.csv").unwrap().as_str(),
+            "file:///C:/Users/Jane%20Doe/data.csv"
+        );
+        assert_eq!(
+            parse_url(r"\Users\Jane Doe\data.csv").unwrap().as_str(),
+            Url::from_file_path(std::env::current_dir().unwrap())
+                .unwrap()
+                .join("/Users/Jane%20Doe/data.csv")
+                .unwrap()
+                .as_str()
+        );
     }
 }
