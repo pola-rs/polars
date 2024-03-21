@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import re
 import sys
+import warnings
+from collections.abc import Coroutine
 from contextlib import suppress
 from importlib import import_module
 from inspect import Parameter, isclass, signature
@@ -46,6 +48,8 @@ if TYPE_CHECKING:
         from sqlalchemy.sql.expression import Selectable
     except ImportError:
         Selectable: TypeAlias = Any  # type: ignore[no-redef]
+
+    from sqlalchemy.sql.elements import TextClause
 
 
 class _ArrowDriverProperties_(TypedDict):
@@ -201,11 +205,20 @@ class ConnectionExecutor:
     ) -> None:
         # if we created it and are finished with it, we can
         # close the cursor (but NOT the connection)
-        if self.can_close_cursor and hasattr(self.cursor, "close"):
+        if type(self.cursor).__name__ == "AsyncConnection":
+            self._run_async(self._close_async_cursor())
+        elif self.can_close_cursor and hasattr(self.cursor, "close"):
             self.cursor.close()
 
     def __repr__(self) -> str:
         return f"<{type(self).__name__} module={self.driver_name!r}>"
+
+    async def _close_async_cursor(self) -> None:
+        if self.can_close_cursor and hasattr(self.cursor, "close"):
+            from sqlalchemy.ext.asyncio.exc import AsyncContextNotStarted
+
+            with suppress(AsyncContextNotStarted):
+                await self.cursor.close()
 
     def _fetch_arrow(
         self,
@@ -306,39 +319,61 @@ class ConnectionExecutor:
         """Return resultset data row-wise for frame init."""
         from polars import DataFrame
 
-        if hasattr(self.result, "fetchall"):
-            if self.driver_name == "sqlalchemy":
-                if hasattr(self.result, "cursor"):
-                    cursor_desc = {d[0]: d[1:] for d in self.result.cursor.description}
-                elif hasattr(self.result, "_metadata"):
-                    cursor_desc = {k: None for k in self.result._metadata.keys}
+        if is_async := isinstance(original_result := self.result, Coroutine):
+            self.result = self._run_async(self.result)
+        try:
+            if hasattr(self.result, "fetchall"):
+                if self.driver_name == "sqlalchemy":
+                    if hasattr(self.result, "cursor"):
+                        cursor_desc = {
+                            d[0]: d[1:] for d in self.result.cursor.description
+                        }
+                    elif hasattr(self.result, "_metadata"):
+                        cursor_desc = {k: None for k in self.result._metadata.keys}
+                    else:
+                        msg = f"Unable to determine metadata from query result; {self.result!r}"
+                        raise ValueError(msg)
                 else:
-                    msg = f"Unable to determine metadata from query result; {self.result!r}"
-                    raise ValueError(msg)
-            else:
-                cursor_desc = {d[0]: d[1:] for d in self.result.description}
+                    cursor_desc = {d[0]: d[1:] for d in self.result.description}
 
-            schema_overrides = self._inject_type_overrides(
-                description=cursor_desc,
-                schema_overrides=(schema_overrides or {}),
-            )
-            result_columns = list(cursor_desc)
-            frames = (
-                DataFrame(
-                    data=rows,
-                    schema=result_columns,
-                    schema_overrides=schema_overrides,
-                    infer_schema_length=infer_schema_length,
-                    orient="row",
+                schema_overrides = self._inject_type_overrides(
+                    description=cursor_desc,
+                    schema_overrides=(schema_overrides or {}),
                 )
-                for rows in (
-                    list(self._fetchmany_rows(self.result, batch_size))
-                    if iter_batches
-                    else [self._fetchall_rows(self.result)]  # type: ignore[list-item]
+                result_columns = list(cursor_desc)
+                frames = (
+                    DataFrame(
+                        data=rows,
+                        schema=result_columns,
+                        schema_overrides=schema_overrides,
+                        infer_schema_length=infer_schema_length,
+                        orient="row",
+                    )
+                    for rows in (
+                        list(self._fetchmany_rows(self.result, batch_size))
+                        if iter_batches
+                        else [self._fetchall_rows(self.result)]  # type: ignore[list-item]
+                    )
                 )
-            )
-            return frames if iter_batches else next(frames)  # type: ignore[arg-type]
-        return None
+                return frames if iter_batches else next(frames)  # type: ignore[arg-type]
+            return None
+        finally:
+            if is_async:
+                original_result.close()
+
+    @staticmethod
+    def _run_async(co: Coroutine) -> Any:  # type: ignore[type-arg]
+        """Consolidate async event loop acquisition and coroutine/func execution."""
+        import asyncio
+
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", DeprecationWarning)
+                loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        return loop.run_until_complete(co)
 
     def _inject_type_overrides(
         self,
@@ -398,8 +433,10 @@ class ConnectionExecutor:
     def _normalise_cursor(self, conn: Any) -> Cursor:
         """Normalise a connection object such that we have the query executor."""
         if self.driver_name == "sqlalchemy":
-            self.can_close_cursor = (conn_type := type(conn).__name__) == "Engine"
-            if conn_type == "Session":
+            conn_type = type(conn).__name__
+            self.can_close_cursor = conn_type.endswith("Engine")
+
+            if conn_type in ("Session", "async_sessionmaker"):
                 return conn
             else:
                 # where possible, use the raw connection to access arrow integration
@@ -409,7 +446,7 @@ class ConnectionExecutor:
                 elif conn.engine.driver == "duckdb_engine":
                     self.driver_name = "duckdb"
                     return conn.engine.raw_connection().driver_connection.c
-                elif conn_type == "Engine":
+                elif conn_type in ("AsyncEngine", "Engine"):
                     return conn.connect()
                 else:
                     return conn
@@ -427,9 +464,63 @@ class ConnectionExecutor:
         msg = f"Unrecognised connection {conn!r}; unable to find 'execute' method"
         raise TypeError(msg)
 
+    async def _sqlalchemy_async_execute(self, query: TextClause, **options: Any) -> Any:
+        """Execute a query using an async SQLAlchemy connection."""
+        is_session = type(self.cursor).__name__ == "async_sessionmaker"
+        cursor = self.cursor.begin() if is_session else self.cursor  # type: ignore[attr-defined]
+        async with cursor as conn:
+            result = await conn.execute(query, **options)
+            return result
+
+    def _sqlalchemy_setup(
+        self, query: str | TextClause | Selectable, options: dict[str, Any]
+    ) -> tuple[Any, dict[str, Any], str | TextClause | Selectable]:
+        """Prepare a query for execution using a SQLAlchemy connection."""
+        from sqlalchemy.orm import Session
+        from sqlalchemy.sql import text
+        from sqlalchemy.sql.elements import TextClause
+
+        is_async = type(self.cursor).__name__ in (
+            "AsyncConnection",
+            "async_sessionmaker",
+        )
+        param_key = "parameters"
+        cursor_execute = None
+        if (
+            isinstance(self.cursor, Session)
+            and "parameters" in options
+            and "params" not in options
+        ):
+            options = options.copy()
+            options["params"] = options.pop("parameters")
+            param_key = "params"
+
+        params = options.get(param_key)
+        if (
+            not is_async
+            and isinstance(params, Sequence)
+            and hasattr(self.cursor, "exec_driver_sql")
+        ):
+            cursor_execute = self.cursor.exec_driver_sql
+            if isinstance(query, TextClause):
+                query = str(query)
+            if isinstance(params, list) and not all(
+                isinstance(p, (dict, tuple)) for p in params
+            ):
+                options[param_key] = tuple(params)
+
+        elif isinstance(query, str):
+            query = text(query)
+
+        if cursor_execute is None:
+            cursor_execute = (
+                self._sqlalchemy_async_execute if is_async else self.cursor.execute
+            )
+        return cursor_execute, options, query
+
     def execute(
         self,
-        query: str | Selectable,
+        query: str | TextClause | Selectable,
         *,
         options: dict[str, Any] | None = None,
         select_queries_only: bool = True,
@@ -442,42 +533,18 @@ class ConnectionExecutor:
                 raise UnsuitableSQLError(msg)
 
         options = options or {}
-        cursor_execute = self.cursor.execute
 
         if self.driver_name == "sqlalchemy":
-            from sqlalchemy.orm import Session
-
-            param_key = "parameters"
-            if (
-                isinstance(self.cursor, Session)
-                and "parameters" in options
-                and "params" not in options
-            ):
-                options = options.copy()
-                options["params"] = options.pop("parameters")
-                param_key = "params"
-
-            if isinstance(query, str):
-                params = options.get(param_key)
-                if isinstance(params, Sequence) and hasattr(
-                    self.cursor, "exec_driver_sql"
-                ):
-                    cursor_execute = self.cursor.exec_driver_sql
-                    if isinstance(params, list) and not all(
-                        isinstance(p, (dict, tuple)) for p in params
-                    ):
-                        options[param_key] = tuple(params)
-                else:
-                    from sqlalchemy.sql import text
-
-                    query = text(query)  # type: ignore[assignment]
+            cursor_execute, options, query = self._sqlalchemy_setup(query, options)
+        else:
+            cursor_execute = self.cursor.execute
 
         # note: some cursor execute methods (eg: sqlite3) only take positional
         # params, hence the slightly convoluted resolution of the 'options' dict
         try:
             params = signature(cursor_execute).parameters
         except ValueError:
-            params = {}
+            params = {}  # type: ignore[assignment]
 
         if not options or any(
             p.kind in (Parameter.KEYWORD_ONLY, Parameter.POSITIONAL_OR_KEYWORD)

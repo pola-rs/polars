@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 import pyarrow as pa
 import pytest
 from sqlalchemy import Integer, MetaData, Table, create_engine, func, select
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.sql.expression import cast as alchemy_cast
 
@@ -889,3 +890,38 @@ def test_database_dtype_inference_from_invalid_string(value: str) -> None:
         raise_unmatched=False,
     )
     assert inferred_dtype is None
+
+
+def test_read_database_async(tmp_sqlite_db: Path) -> None:
+    # confirm that we can load frame data from the core sqlalchemy async
+    # primitives: AsyncConnection, AsyncEngine, and async_sessionmaker
+
+    async_engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_sqlite_db}")
+    async_connection = async_engine.connect()
+    async_session = async_sessionmaker(async_engine)
+
+    expected_frame = pl.DataFrame(
+        {"id": [2, 1], "name": ["other", "misc"], "value": [-99.5, 100.0]}
+    )
+    async_conn: Any
+    for async_conn in (
+        async_engine,
+        async_connection,
+        async_session,
+    ):
+        if async_conn is async_session:
+            constraint, execute_opts = "", {}
+        else:
+            constraint = "WHERE value > :n"
+            execute_opts = {"parameters": {"n": -1000}}
+
+        df = pl.read_database(
+            query=f"""
+                SELECT id, name, value
+                FROM test_data {constraint}
+                ORDER BY id DESC
+            """,
+            connection=async_conn,
+            execute_options=execute_opts,
+        )
+        assert_frame_equal(expected_frame, df)
