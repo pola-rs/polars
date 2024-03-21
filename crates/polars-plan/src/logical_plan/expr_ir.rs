@@ -101,6 +101,10 @@ impl ExprIR {
             _ => None
         }
     }
+
+    pub(crate) fn has_alias(&self) -> bool {
+        matches!(self.output_name, OutputName::Alias(_))
+    }
 }
 
 impl AsRef<ExprIR> for ExprIR {

@@ -39,7 +39,7 @@ fn impl_fast_projection(
     // First check if we can apply the optimization before we allocate.
     if !expr
         .iter()
-        .all(|e| matches!(expr_arena.get(e.node()), AExpr::Column(_)))
+        .all(|e| matches!(expr_arena.get(e.node()), AExpr::Column(_)) && !e.has_alias())
     {
         return None;
     }

@@ -48,7 +48,7 @@ impl<'a> ALogicalPlanBuilder<'a> {
         if exprs.is_empty() {
             self
         } else {
-            let input_schema = self.lp_arena.get(self.root).schema(self.lp_arena);
+            let input_schema = self.schema();
             let schema = expr_irs_to_schema(&exprs, &input_schema, Context::Default, self.expr_arena);
 
             let lp = ALogicalPlan::Projection {
@@ -139,16 +139,8 @@ impl<'a> ALogicalPlanBuilder<'a> {
         let schema = self.schema();
         let mut new_schema = (**schema).clone();
 
-        for e in &exprs {
-            let node = e.node();
-            let field = self
-                .expr_arena
-                .get(node)
-                .to_field(&schema, Context::Default, self.expr_arena)
-                .unwrap();
-
-            new_schema.with_column(field.name().clone(), field.data_type().clone());
-        };
+        let hstack_schema = expr_irs_to_schema(&exprs, &schema, Context::Default, self.expr_arena);
+        new_schema.merge(hstack_schema);
 
         let lp = ALogicalPlan::HStack {
             input: self.root,

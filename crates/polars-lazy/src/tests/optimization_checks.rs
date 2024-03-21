@@ -111,7 +111,7 @@ fn test_pred_pd_1() -> PolarsResult<()> {
 
     assert!(predicate_at_scan(q));
 
-    // check if we understand that we can unwrap the alias
+    // Check if we understand that we can unwrap the alias.
     let q = df
         .clone()
         .lazy()
@@ -120,7 +120,7 @@ fn test_pred_pd_1() -> PolarsResult<()> {
 
     assert!(predicate_at_scan(q));
 
-    // check if we pass hstack
+    // Check if we pass hstack.
     let q = df
         .clone()
         .lazy()

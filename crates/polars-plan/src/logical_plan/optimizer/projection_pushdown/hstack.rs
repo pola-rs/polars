@@ -74,6 +74,7 @@ pub(super) fn process_hstack(
         lp_arena,
         expr_arena,
     )?;
+    
     let lp = ALogicalPlanBuilder::new(input, expr_arena, lp_arena)
         .with_columns(exprs, options)
         .build();
