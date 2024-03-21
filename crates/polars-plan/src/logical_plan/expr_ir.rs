@@ -65,7 +65,7 @@ impl ExprIR {
     }
 
     #[inline]
-    pub(crate) fn node(&self) -> Node {
+    pub fn node(&self) -> Node {
         self.node
     }
 
@@ -109,7 +109,7 @@ impl ExprIR {
         }
     }
 
-    pub(crate) fn get_alias(&self) -> Option<&Name> {
+    pub fn get_alias(&self) -> Option<&Name> {
         match &self.output_name {
             OutputName::Alias(name) => Some(name),
             _ => None

@@ -82,19 +82,19 @@ impl<T> CapacityByFactor for Vec<T> {
 pub trait ConvertVec<Out> {
     type ItemIn;
 
-    fn convert_owned<F: Fn(Self::ItemIn) -> Out>(self, f: F) -> Vec<Out>;
+    fn convert_owned<F: FnMut(Self::ItemIn) -> Out>(self, f: F) -> Vec<Out>;
 
-    fn convert<F: Fn(&Self::ItemIn) -> Out>(&self, f: F) -> Vec<Out>;
+    fn convert<F: FnMut(&Self::ItemIn) -> Out>(&self, f: F) -> Vec<Out>;
 }
 
 impl<T, Out> ConvertVec<Out> for Vec<T> {
     type ItemIn = T;
 
-    fn convert_owned<F: Fn(Self::ItemIn) -> Out>(self, f: F) -> Vec<Out> {
+    fn convert_owned<F: FnMut(Self::ItemIn) -> Out>(self, f: F) -> Vec<Out> {
         self.into_iter().map(f).collect()
     }
 
-    fn convert<F: Fn(&Self::ItemIn) -> Out>(&self, f: F) -> Vec<Out> {
+    fn convert<F: FnMut(&Self::ItemIn) -> Out>(&self, f: F) -> Vec<Out> {
         self.iter().map(f).collect()
     }
 }

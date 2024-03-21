@@ -72,6 +72,7 @@ fn test_agg_unique_first() -> PolarsResult<()> {
 }
 
 #[test]
+#[cfg(feature = "cum_agg")]
 fn test_cum_sum_agg_as_key() -> PolarsResult<()> {
     let df = df![
         "depth" => &[0i32, 1, 2, 3, 4, 5, 6, 7, 8, 9],
