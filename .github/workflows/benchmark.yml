@@ -36,6 +36,9 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Set up Graphviz
+        uses: ts-graphviz/setup-graphviz@v2
+
       - name: Create virtual environment
         run: |
           python -m venv .venv
@@ -101,3 +104,7 @@ jobs:
       - name: Run various benchmark tests
         working-directory: py-polars
         run: pytest -m benchmark --durations 0 -v
+
+      - name: Run non-benchmark tests
+        working-directory: py-polars
+        run: pytest -m 'not benchmark' -n auto --dist loadgroup
