@@ -124,8 +124,10 @@ impl CloudType {
 
 #[cfg(feature = "cloud")]
 pub(crate) fn parse_url(input: &str) -> std::result::Result<url::Url, url::ParseError> {
-    fn from_file_path(path: &str) -> url::Url {
-        let path = std::path::Path::new(path);
+    Ok(if input.contains("://") {
+        url::Url::parse(input)?
+    } else {
+        let path = std::path::Path::new(input);
         let mut tmp;
         url::Url::from_file_path(if path.is_relative() {
             tmp = std::env::current_dir().unwrap();
@@ -135,12 +137,6 @@ pub(crate) fn parse_url(input: &str) -> std::result::Result<url::Url, url::Parse
             path
         })
         .unwrap()
-    }
-
-    Ok(match input.split_once("://") {
-        Some(("file", path)) => from_file_path(path),
-        Some((_, _)) => url::Url::parse(input)?,
-        None => from_file_path(input),
     })
 }
 
@@ -492,19 +488,6 @@ mod tests {
             assert_eq!(
                 parse_url(r"/home/Jane Doe/data.csv").unwrap().as_str(),
                 "file:///home/Jane%20Doe/data.csv"
-            );
-            assert_eq!(
-                parse_url(r"file://data.csv").unwrap().as_str(),
-                url::Url::from_file_path(
-                    [
-                        std::env::current_dir().unwrap().as_path(),
-                        std::path::Path::new("data.csv")
-                    ]
-                    .into_iter()
-                    .collect::<std::path::PathBuf>()
-                )
-                .unwrap()
-                .as_str()
             );
             assert_eq!(
                 parse_url(r"data.csv").unwrap().as_str(),
