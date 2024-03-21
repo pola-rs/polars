@@ -32,7 +32,7 @@ pub(super) fn process_group_by(
         let input = lp_arena.add(lp);
 
         let builder = ALogicalPlanBuilder::new(input, expr_arena, lp_arena);
-        Ok(proj_pd.finish_node_simple_projection(&acc_projections, builder, expr_arena))
+        Ok(proj_pd.finish_node_simple_projection(&acc_projections, builder))
     } else {
         let has_pushed_down = !acc_projections.is_empty();
 

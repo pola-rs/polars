@@ -880,6 +880,7 @@ impl ALogicalPlan {
                 let input = Box::new(convert_to_lp(input, lp_arena));
                 LogicalPlan::Sink { input, payload }
             },
+            ALogicalPlan::Invalid | ALogicalPlan::SimpleProjection {..} => unreachable!()
         }
     }
 }

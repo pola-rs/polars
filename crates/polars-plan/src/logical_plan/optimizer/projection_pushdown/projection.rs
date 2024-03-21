@@ -56,7 +56,7 @@ fn check_double_projection(
 pub(super) fn process_projection(
     proj_pd: &mut ProjectionPushDown,
     input: Node,
-    exprs: Vec<ExprIR>,
+    mut exprs: Vec<ExprIR>,
     mut acc_projections: Vec<ColumnNode>,
     mut projected_names: PlHashSet<Arc<str>>,
     projections_seen: usize,
@@ -82,7 +82,7 @@ pub(super) fn process_projection(
             );
         }
         add_expr_to_accumulated(expr, &mut acc_projections, &mut projected_names, expr_arena);
-        local_projection.push(exprs[0]);
+        local_projection.push(exprs.pop().unwrap());
         proj_pd.is_count_star = true;
     } else {
         // A projection can consist of a chain of expressions followed by an alias.
@@ -103,12 +103,12 @@ pub(super) fn process_projection(
 
                 check_double_projection(&e, expr_arena, &mut acc_projections, &mut projected_names);
             }
+            add_expr_to_accumulated(e.node(), &mut acc_projections, &mut projected_names, expr_arena);
+
             // do local as we still need the effect of the projection
             // e.g. a projection is more than selecting a column, it can
             // also be a function/ complicated expression
             local_projection.push(e);
-
-            add_expr_to_accumulated(e.node(), &mut acc_projections, &mut projected_names, expr_arena);
         }
     }
     proj_pd.pushdown_and_assign(

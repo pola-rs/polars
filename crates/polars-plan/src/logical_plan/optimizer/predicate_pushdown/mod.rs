@@ -228,7 +228,7 @@ impl<'a> PredicatePushDown<'a> {
         use ALogicalPlan::*;
 
         match lp {
-            Selection { predicate, input } => {
+            Selection { ref predicate, input } => {
                 // Use a tmp_key to avoid inadvertently combining predicates that otherwise would have
                 // been partially pushed:
                 //
@@ -238,7 +238,7 @@ impl<'a> PredicatePushDown<'a> {
                 // (2) can be pushed past (1) but they both have the same predicate
                 // key name in the hashtable.
                 let tmp_key = Arc::<str>::from(&*temporary_unique_key(&acc_predicates));
-                acc_predicates.insert(tmp_key.clone(), predicate);
+                acc_predicates.insert(tmp_key.clone(), predicate.clone());
 
                 let local_predicates = match pushdown_eligibility(lp.schema(lp_arena).as_ref(), &[], &acc_predicates, expr_arena)?.0 {
                     PushdownEligibility::Full => vec![],
@@ -290,7 +290,7 @@ impl<'a> PredicatePushDown<'a> {
             Scan {
                 mut paths,
                 mut file_info,
-                predicate,
+                ref predicate,
                 mut scan_type,
                 file_options: options,
                 output_schema
@@ -318,9 +318,9 @@ impl<'a> PredicatePushDown<'a> {
                         }
                     }
                 };
-                let predicate = predicate_at_scan(acc_predicates, predicate, expr_arena);
+                let predicate = predicate_at_scan(acc_predicates, predicate.clone(), expr_arena);
 
-                if let (true, Some(predicate)) = (file_info.hive_parts.is_some(), predicate) {
+                if let (true, Some(predicate)) = (file_info.hive_parts.is_some(), &predicate) {
                     if let Some(io_expr) = self.hive_partition_eval.unwrap()(&predicate, expr_arena) {
                         if let Some(stats_evaluator) = io_expr.as_stats_evaluator() {
                             let mut new_paths = Vec::with_capacity(paths.len());
@@ -594,7 +594,8 @@ impl<'a> PredicatePushDown<'a> {
                 } else {
                     self.no_pushdown_restart_opt(PythonScan {options, predicate}, acc_predicates, lp_arena, expr_arena)
                 }
-            }
+            },
+            Invalid | SimpleProjection {..} => unreachable!()
 
         }
     }

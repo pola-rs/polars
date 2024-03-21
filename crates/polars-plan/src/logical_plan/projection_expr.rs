@@ -25,13 +25,6 @@ impl From<Vec<ExprIR>> for ProjectionExprs {
     }
 }
 
-impl FromIterator<Node> for ProjectionExprs {
-    fn from_iter<T: IntoIterator<Item = Node>>(iter: T) -> Self {
-        let expr = iter.into_iter().collect();
-        Self::new(expr)
-    }
-}
-
 impl ProjectionExprs {
     pub(crate) fn new(expr: Vec<ExprIR>) -> Self {
         Self::new_with_cse(expr, 0)

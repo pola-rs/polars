@@ -162,6 +162,10 @@ impl ALogicalPlan {
                 #[cfg(feature = "cloud")]
                 SinkType::Cloud { .. } => "sink (cloud)",
             },
+            SimpleProjection {
+                ..
+            } => "simple_projection",
+            Invalid => "invalid"
         }
     }
 
@@ -187,6 +191,7 @@ impl ALogicalPlan {
             } => output_schema.as_ref().unwrap_or(schema),
             Selection { input, .. } => return arena.get(*input).schema(arena),
             Projection { schema, .. } => schema,
+            SimpleProjection { columns, .. } => columns,
             Aggregate { schema, .. } => schema,
             Join { schema, .. } => schema,
             HStack { schema, .. } => schema,
@@ -203,6 +208,7 @@ impl ALogicalPlan {
                 };
             },
             ExtContext { schema, .. } => schema,
+            Invalid => unreachable!()
         };
         Cow::Borrowed(schema)
     }
@@ -241,7 +247,7 @@ impl ALogicalPlan {
             },
             Selection { .. } => Selection {
                 input: inputs[0],
-                predicate: exprs[0],
+                predicate: exprs.pop().unwrap(),
             },
             Projection {
                 schema, options, ..
@@ -358,6 +364,14 @@ impl ALogicalPlan {
                 input: inputs.pop().unwrap(),
                 payload: payload.clone(),
             },
+            SimpleProjection {
+                columns,
+                ..
+            } => SimpleProjection {
+                input: inputs.pop().unwrap(),
+                columns: columns.clone()
+            },
+            Invalid => unreachable!()
         }
     }
 
@@ -367,7 +381,7 @@ impl ALogicalPlan {
         match self {
             Slice { .. } | Cache { .. } | Distinct { .. } | Union { .. } | MapFunction { .. } => {},
             Sort { by_column, .. } => container.extend_from_slice(by_column),
-            Selection { predicate, .. } => container.push(*predicate),
+            Selection { predicate, .. } => container.push(predicate.clone()),
             Projection { expr, .. } => container.extend_from_slice(expr),
             Aggregate { keys, aggs, .. } => {
                 let iter = keys.iter().cloned().chain(aggs.iter().cloned());
@@ -381,19 +395,20 @@ impl ALogicalPlan {
             },
             HStack { exprs, .. } => container.extend_from_slice(exprs),
             Scan { predicate, .. } => {
-                if let Some(node) = predicate {
-                    container.push(*node)
+                if let Some(pred) = predicate {
+                    container.push(pred.clone())
                 }
             },
             DataFrameScan { selection, .. } => {
                 if let Some(expr) = selection {
-                    container.push(*expr)
+                    container.push(expr.clone())
                 }
             },
             #[cfg(feature = "python")]
             PythonScan { .. } => {},
             HConcat { .. } => {},
-            ExtContext { .. } | Sink { .. } => {},
+            ExtContext { .. } | Sink { .. } | SimpleProjection {..} => {},
+            Invalid => unreachable!()
         }
     }
 
@@ -428,6 +443,7 @@ impl ALogicalPlan {
             Slice { input, .. } => *input,
             Selection { input, .. } => *input,
             Projection { input, .. } => *input,
+            SimpleProjection {input, ..} => *input,
             Sort { input, .. } => *input,
             Cache { input, .. } => *input,
             Aggregate { input, .. } => *input,
@@ -456,6 +472,7 @@ impl ALogicalPlan {
             DataFrameScan { .. } => return,
             #[cfg(feature = "python")]
             PythonScan { .. } => return,
+            Invalid => unreachable!()
         };
         container.push_node(input)
     }

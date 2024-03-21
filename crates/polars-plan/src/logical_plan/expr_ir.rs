@@ -2,7 +2,7 @@ use super::*;
 
 type Name = Arc<str>;
 
-#[derive(Default)]
+#[derive(Default, Debug, Clone)]
 pub(crate) enum OutputName {
     #[default]
     None,
@@ -90,7 +90,7 @@ impl ExprIR {
     }
 
     pub(crate) fn output_dtype(&self) -> &DataType {
-        &self.output_dtype.unwrap()
+        self.output_dtype.as_ref().unwrap()
     }
 
     pub(crate) fn to_field(&self) -> Field {

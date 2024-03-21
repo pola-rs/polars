@@ -288,7 +288,7 @@ pub(crate) fn rename_matching_aexpr_leaf_names(
 ) -> Node {
     let mut leaves = aexpr_to_column_nodes_iter(node, arena);
 
-    if leaves.any(|node| matches!(arena.get(node), AExpr::Column(name) if &**name == current)) {
+    if leaves.any(|node| matches!(arena.get(node.0), AExpr::Column(name) if &**name == current)) {
         // we convert to expression as we cannot easily copy the aexpr.
         let mut new_expr = node_to_expr(node, arena);
         new_expr.mutate().apply(|e| match e {

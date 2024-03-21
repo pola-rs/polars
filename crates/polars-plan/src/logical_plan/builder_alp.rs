@@ -64,12 +64,32 @@ impl<'a> ALogicalPlanBuilder<'a> {
     where I: IntoIterator<Item=N>,
         N: Into<Node>, I::IntoIter: ExactSizeIterator,
     {
-        let iter = nodes.into_iter().map(|node| match self.expr_arena.get(node.into()) {
+        let names = nodes.into_iter().map(|node| match self.expr_arena.get(node.into()) {
             AExpr::Column(name) => name.as_ref(),
             _ => unreachable!()
         });
+        // This is a duplication of `project_simple` because we already borrow self.expr_arena :/
+        if names.size_hint().0 == 0 {
+            Ok(self)
+        } else {
+            let input_schema = self.schema();
+            let mut count = 0;
+            let schema = names.map(|name| {
+                let dtype = input_schema.try_get(name)?;
+                count += 1;
+                Ok(Field::new(name, dtype.clone()))
+            }).collect::<PolarsResult<Schema>>()?;
 
-        self.project_simple(iter)
+            polars_ensure!(count == schema.len(), Duplicate: "found duplicate columns");
+
+            let lp = ALogicalPlan::SimpleProjection {
+                input: self.root,
+                columns: Arc::new(schema),
+            };
+            let node = self.lp_arena.add(lp);
+            Ok(ALogicalPlanBuilder::new(node, self.expr_arena, self.lp_arena))
+
+        }
     }
 
     pub(crate) fn project_simple<'c, I>(self, names: I) -> PolarsResult<Self>
@@ -82,12 +102,14 @@ impl<'a> ALogicalPlanBuilder<'a> {
             Ok(self)
         } else {
             let input_schema = self.schema();
+            let mut count = 0;
             let schema = names.map(|name| {
                 let dtype = input_schema.try_get(name)?;
+                count += 1;
                 Ok(Field::new(name, dtype.clone()))
             }).collect::<PolarsResult<Schema>>()?;
 
-            polars_ensure!(names.len() == schema.len(), Duplicate: "found duplicate columns");
+            polars_ensure!(count == schema.len(), Duplicate: "found duplicate columns");
 
             let lp = ALogicalPlan::SimpleProjection {
                 input: self.root,
@@ -115,9 +137,9 @@ impl<'a> ALogicalPlanBuilder<'a> {
         let schema = self.schema();
         let mut new_schema = (**schema).clone();
 
-        for e in exprs.into_iter() {
+        for e in exprs.iter() {
             let field = e.to_field();
-            new_schema.with_column(field.name().clone(), field.data_type().clone());
+            new_schema.with_column(field.name, field.dtype);
         }
 
         let lp = ALogicalPlan::HStack {

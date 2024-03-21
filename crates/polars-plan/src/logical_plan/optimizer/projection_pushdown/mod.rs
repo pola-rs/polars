@@ -186,14 +186,13 @@ impl ProjectionPushDown {
         let lp = lp.with_exprs_and_input(exprs, new_inputs);
 
         let builder = ALogicalPlanBuilder::from_lp(lp, expr_arena, lp_arena);
-        Ok(self.finish_node_simple_projection(&acc_projections, builder, expr_arena))
+        Ok(self.finish_node_simple_projection(&acc_projections, builder))
     }
 
     fn finish_node_simple_projection(
         &mut self,
         local_projections: &[ColumnNode],
         builder: ALogicalPlanBuilder,
-        expr_arena: &Arena<AExpr>
     ) -> ALogicalPlan {
         if !local_projections.is_empty() {
             builder
@@ -701,6 +700,7 @@ impl ProjectionPushDown {
                     )
                 }
             },
+            SimpleProjection {..} | Invalid => unreachable!()
         }
     }
 

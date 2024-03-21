@@ -43,7 +43,7 @@ pub(super) fn process_group_by(
 
     let mut new_acc_predicates = PlHashMap::with_capacity(acc_predicates.len());
 
-    for (pred_name, predicate) in &acc_predicates {
+    for (pred_name, predicate) in acc_predicates {
         // Counts change due to groupby's
         // TODO! handle aliases, so that the predicate that is pushed down refers to the column before alias.
         let mut push_down = !has_aexpr(predicate.node(), expr_arena, |ae| {
@@ -58,7 +58,7 @@ pub(super) fn process_group_by(
             }
         }
         if !push_down {
-            local_predicates.push(*predicate)
+            local_predicates.push(predicate)
         } else {
             new_acc_predicates.insert(pred_name.clone(), predicate.clone());
         }
