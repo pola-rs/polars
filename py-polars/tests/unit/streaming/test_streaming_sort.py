@@ -92,6 +92,7 @@ def test_ooc_sort(tmp_path: Path, monkeypatch: Any) -> None:
         assert_series_equal(out, s.sort(descending=descending))
 
 
+@pytest.mark.debug()
 @pytest.mark.write_disk()
 @pytest.mark.parametrize("spill_source", [True, False])
 def test_streaming_sort(
