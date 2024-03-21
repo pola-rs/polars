@@ -41,13 +41,13 @@ def _infer_dtype_from_database_typename(
     Examples
     --------
     >>> _infer_dtype_from_database_typename("INT2")
-    Int8
+    Int16
     >>> _infer_dtype_from_database_typename("NVARCHAR")
     String
     >>> _infer_dtype_from_database_typename("NUMERIC(10,2)")
-    Decimal(10, 2)
-    >>> _infer_dtype_from_database_typename("TIMESTAMP(3) WITHOUT TZ")
-    Datetime(time_unit='ms', time_zone=None)
+    Decimal(precision=10, scale=2)
+    >>> _infer_dtype_from_database_typename("TIMESTAMP WITHOUT TZ")
+    Datetime(time_unit='us', time_zone=None)
     """
     dtype: PolarsDataType | None = None
 
