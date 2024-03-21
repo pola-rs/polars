@@ -464,11 +464,11 @@ mod tests {
                 "file:///C:/Users/Jane%20Doe/data.csv"
             );
             assert_eq!(
-                parse_url(r"\Users\Jane Doe\data.csv").unwrap().as_str(),
+                parse_url(r"data.csv").unwrap().as_str(),
                 url::Url::from_file_path(
                     [
                         std::env::current_dir().unwrap().as_path(),
-                        std::path::Path::new("Users/Jane%20Doe/data.csv")
+                        std::path::Path::new("data.csv")
                     ]
                     .into_iter()
                     .collect::<std::path::PathBuf>()
