@@ -103,8 +103,8 @@ jobs:
 
       - name: Run various benchmark tests
         working-directory: py-polars
-        run: pytest -m benchmark --durations 0 -v
+        run: pytest -m release --durations 0 -v
 
       - name: Run non-benchmark tests
         working-directory: py-polars
-        run: pytest -m 'not benchmark' -n auto --dist loadgroup
+        run: pytest -m 'not release' -n auto --dist loadgroup

@@ -56,7 +56,8 @@ jobs:
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
 
-      - uses: Swatinem/rust-cache@v2
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref_name == 'main' }}
 
@@ -85,13 +86,13 @@ jobs:
         run: maturin develop
 
       - name: Run Python tests
-        run: pytest --cov -n auto --dist loadgroup -m "not benchmark and not docs" --cov-report xml:main.xml
+        run: pytest --cov -n auto --dist loadgroup -m "not release and not docs" --cov-report xml:main.xml
         continue-on-error: true
 
       - name: Run Python tests - async reader
         env:
           POLARS_FORCE_ASYNC: 1
-        run: pytest --cov -m "not benchmark and not docs" tests/unit/io/ --cov-report xml:async.xml
+        run: pytest --cov -m "not release and not docs" tests/unit/io/ --cov-report xml:async.xml
         continue-on-error: true
 
       - name: Report coverage
