@@ -257,7 +257,7 @@ def test_parse_invalid_function(func: str) -> None:
 )
 @pytest.mark.filterwarnings(
     "ignore:invalid value encountered:RuntimeWarning",
-    "ignore:.*without specifying `return_dtype`:MapWithoutReturnDtypeWarning",
+    "ignore:.*without specifying `return_dtype`:polars.exceptions.MapWithoutReturnDtypeWarning",
 )
 def test_parse_apply_functions(col: str, func: str, expr_repr: str) -> None:
     with pytest.warns(
@@ -299,7 +299,7 @@ def test_parse_apply_functions(col: str, func: str, expr_repr: str) -> None:
 
 @pytest.mark.filterwarnings(
     "ignore:invalid value encountered:RuntimeWarning",
-    "ignore:.*without specifying `return_dtype`:MapWithoutReturnDtypeWarning",
+    "ignore:.*without specifying `return_dtype`:polars.exceptions.MapWithoutReturnDtypeWarning",
 )
 def test_parse_apply_raw_functions() -> None:
     lf = pl.LazyFrame({"a": [1.1, 2.0, 3.4]})
@@ -414,7 +414,7 @@ def test_parse_apply_miscellaneous() -> None:
     ],
 )
 @pytest.mark.filterwarnings(
-    "ignore:.*without specifying `return_dtype`:MapWithoutReturnDtypeWarning"
+    "ignore:.*without specifying `return_dtype`:polars.exceptions.MapWithoutReturnDtypeWarning"
 )
 def test_parse_apply_series(
     data: list[Any], func: Callable[[Any], Any], expr_repr: str
