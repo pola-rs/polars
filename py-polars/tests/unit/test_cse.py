@@ -172,6 +172,7 @@ Gr1,B
     assert_frame_equal(result, expected)
 
 
+@pytest.mark.debug()
 def test_cse_expr_selection_context(monkeypatch: Any, capfd: Any) -> None:
     monkeypatch.setenv("POLARS_VERBOSE", "1")
     q = pl.LazyFrame(

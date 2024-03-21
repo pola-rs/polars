@@ -211,6 +211,7 @@ markers = [
   "write_disk: Tests that write to disk",
   "slow: Tests with a longer than average runtime.",
   "release: Tests that should be run on a Polars release build.",
+  "debug: Tests that should be run on a Polars debug build.",
   "docs: Documentation code snippets",
 ]
 filterwarnings = [

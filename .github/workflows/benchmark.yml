@@ -107,4 +107,4 @@ jobs:
 
       - name: Run non-benchmark tests
         working-directory: py-polars
-        run: pytest -m 'not release' -n auto --dist loadgroup
+        run: pytest -m 'not release and not debug' -n auto --dist loadgroup
