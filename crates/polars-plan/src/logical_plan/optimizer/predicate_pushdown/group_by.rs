@@ -39,7 +39,12 @@ pub(super) fn process_group_by(
     // If the predicate only resolves to the keys we can push it down.
     // When it filters the aggregations, the predicate should be done after aggregation.
     let mut local_predicates = Vec::with_capacity(acc_predicates.len());
-    let key_schema = expr_irs_to_schema(&keys);
+    let key_schema = aexprs_to_schema(
+        &keys,
+        lp_arena.get(input).schema(lp_arena).as_ref(),
+        Context::Default,
+        expr_arena,
+    );
 
     let mut new_acc_predicates = PlHashMap::with_capacity(acc_predicates.len());
 

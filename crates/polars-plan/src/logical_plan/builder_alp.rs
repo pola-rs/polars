@@ -48,7 +48,9 @@ impl<'a> ALogicalPlanBuilder<'a> {
         if exprs.is_empty() {
             self
         } else {
-            let schema = expr_irs_to_schema(&exprs);
+            let input_schema = self.lp_arena.get(self.root).schema(self.lp_arena);
+            let schema = aexprs_to_schema(&exprs, &input_schema, Context::Default, self.expr_arena);
+
             let lp = ALogicalPlan::Projection {
                 expr: exprs.into(),
                 input: self.root,
@@ -137,10 +139,16 @@ impl<'a> ALogicalPlanBuilder<'a> {
         let schema = self.schema();
         let mut new_schema = (**schema).clone();
 
-        for e in exprs.iter() {
-            let field = e.to_field();
-            new_schema.with_column(field.name, field.dtype);
-        }
+        for e in &exprs {
+            let node = e.node();
+            let field = self
+                .expr_arena
+                .get(node)
+                .to_field(&schema, Context::Default, self.expr_arena)
+                .unwrap();
+
+            new_schema.with_column(field.name().clone(), field.data_type().clone());
+        };
 
         let lp = ALogicalPlan::HStack {
             input: self.root,
@@ -204,10 +212,9 @@ impl<'a> ALogicalPlanBuilder<'a> {
         options: Arc<GroupbyOptions>,
     ) -> Self {
         let current_schema = self.schema();
-        // TODO! add this line if LogicalPlan is dropped in favor of ALogicalPlan
-        // let aggs = rewrite_projections(aggs, current_schema);
+        let mut schema =
+            aexprs_to_schema(&keys, &current_schema, Context::Default, self.expr_arena);
 
-        let mut schema = expr_irs_to_schema(&keys);
 
         #[cfg(feature = "dynamic_group_by")]
         {
@@ -226,7 +233,13 @@ impl<'a> ALogicalPlanBuilder<'a> {
             }
         }
 
-        let agg_schema = expr_irs_to_schema(&aggs);
+
+        let agg_schema = aexprs_to_schema(
+            &aggs,
+            &current_schema,
+            Context::Aggregation,
+            self.expr_arena,
+        );
         schema.merge(agg_schema);
 
         let lp = ALogicalPlan::Aggregate {

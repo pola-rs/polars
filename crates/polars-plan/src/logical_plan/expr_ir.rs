@@ -31,7 +31,6 @@ impl OutputName {
 
 #[derive(Clone, Debug)]
 pub struct ExprIR {
-    output_dtype: Option<DataType>,
     /// Name that this expression refers to via `col(<name>)`
     /// This is `None` for literals.
     left_most_input_name: Option<Arc<str>>,
@@ -48,7 +47,6 @@ impl ExprIR {
         left_most_input_name: Option<Arc<str>>,
         output_name: OutputName) -> Self {
         ExprIR {
-            output_dtype: None,
             left_most_input_name,
             output_name,
             node
@@ -58,7 +56,6 @@ impl ExprIR {
     pub(crate) fn new_minimal(node: Node) -> Self {
         Self {
             node,
-            output_dtype: None,
             left_most_input_name: None,
             output_name: OutputName::None
         }
@@ -89,17 +86,6 @@ impl ExprIR {
         self.left_most_input_name_arc().as_ref()
     }
 
-    pub(crate) fn output_dtype(&self) -> &DataType {
-        self.output_dtype.as_ref().unwrap()
-    }
-
-    pub(crate) fn to_field(&self) -> Field {
-        Field::new(
-            self.output_name(),
-            self.output_dtype().clone()
-        )
-    }
-
     pub(crate) fn to_expr(&self, expr_arena: &Arena<AExpr>) -> Expr {
         let out = node_to_expr(self.node, expr_arena);
 
@@ -126,5 +112,10 @@ pub(crate) struct ColumnNode(pub(crate) Node);
 impl From<ColumnNode> for Node {
     fn from(value: ColumnNode) -> Self {
         value.0
+    }
+}
+impl From<&ExprIR> for Node {
+    fn from(value: &ExprIR) -> Self {
+        value.node()
     }
 }
