@@ -11,6 +11,7 @@ use polars_pipe::pipeline::{
     create_pipeline, execute_pipeline, get_dummy_operator, get_operator, CallBacks, PipeLine,
 };
 use polars_pipe::SExecutionContext;
+use polars_plan::prelude::expr_ir::ExprIR;
 
 use crate::physical_plan::planner::{create_physical_expr, ExpressionConversionState};
 use crate::physical_plan::state::ExecutionState;
@@ -46,13 +47,13 @@ impl PhysicalPipedExpr for Wrap {
 }
 
 fn to_physical_piped_expr(
-    node: Node,
+    expr: ExprIR,
     expr_arena: &Arena<AExpr>,
     schema: Option<&SchemaRef>,
 ) -> PolarsResult<Arc<dyn PhysicalPipedExpr>> {
     // this is a double Arc<dyn> explore if we can create a single of it.
     create_physical_expr(
-        node,
+        &expr,
         Context::Default,
         expr_arena,
         schema,

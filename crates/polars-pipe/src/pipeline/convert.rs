@@ -8,6 +8,7 @@ use polars_core::with_match_physical_integer_polars_type;
 use polars_io::predicates::{PhysicalIoExpr, StatsEvaluator};
 use polars_ops::prelude::JoinType;
 use polars_plan::prelude::*;
+use polars_plan::prelude::expr_ir::{ExprIR, OutputName};
 
 use crate::executors::operators::{HstackOperator, PlaceHolder};
 use crate::executors::sinks::group_by::aggregates::convert_to_hash_agg;
@@ -22,17 +23,17 @@ use crate::pipeline::PipeLine;
 pub type CallBacks = PlHashMap<Node, PlaceHolder>;
 
 fn exprs_to_physical<F>(
-    exprs: &[Node],
+    exprs: &[ExprIR],
     expr_arena: &Arena<AExpr>,
     to_physical: &F,
     schema: Option<&SchemaRef>,
 ) -> PolarsResult<Vec<Arc<dyn PhysicalPipedExpr>>>
 where
-    F: Fn(Node, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
+    F: Fn(&ExprIR, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
 {
     exprs
         .iter()
-        .map(|node| to_physical(*node, expr_arena, schema))
+        .map(|e| to_physical(e, expr_arena, schema))
         .collect()
 }
 
@@ -46,7 +47,7 @@ fn get_source<F>(
     verbose: bool,
 ) -> PolarsResult<Box<dyn Source>>
 where
-    F: Fn(Node, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
+    F: Fn(&ExprIR, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
 {
     use ALogicalPlan::*;
     match source {
@@ -60,7 +61,7 @@ where
             let mut df = (*df).clone();
             if push_predicate {
                 if let Some(predicate) = selection {
-                    let predicate = to_physical(predicate, expr_arena, output_schema.as_ref())?;
+                    let predicate = to_physical(&predicate, expr_arena, output_schema.as_ref())?;
                     let op = operators::FilterOperator { predicate };
                     let op = Box::new(op) as Box<dyn Operator>;
                     operator_objects.push(op)
@@ -87,10 +88,10 @@ where
             #[cfg(not(feature = "parquet"))]
             let is_parquet = false;
 
-            if let (false, true, Some(predicate)) = (is_parquet, push_predicate, predicate) {
+            if let (false, true, Some(predicate)) = (is_parquet, push_predicate, predicate.clone()) {
                 #[cfg(feature = "parquet")]
                 debug_assert!(!matches!(scan_type, FileScan::Parquet { .. }));
-                let predicate = to_physical(predicate, expr_arena, output_schema.as_ref())?;
+                let predicate = to_physical(&predicate, expr_arena, output_schema.as_ref())?;
                 let op = operators::FilterOperator { predicate };
                 let op = Box::new(op) as Box<dyn Operator>;
                 operator_objects.push(op)
@@ -116,9 +117,9 @@ where
                     cloud_options,
                     metadata,
                 } => {
-                    let predicate = predicate
+                    let predicate = predicate.as_ref()
                         .map(|predicate| {
-                            let p = to_physical(predicate, expr_arena, output_schema.as_ref())?;
+                            let p = to_physical(&predicate, expr_arena, output_schema.as_ref())?;
                             // Arc's all the way down. :(
                             // Temporarily until: https://github.com/rust-lang/rust/issues/65991
                             // stabilizes
@@ -164,7 +165,7 @@ pub fn get_sink<F>(
     callbacks: &mut CallBacks,
 ) -> PolarsResult<Box<dyn SinkTrait>>
 where
-    F: Fn(Node, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
+    F: Fn(&ExprIR, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
 {
     use ALogicalPlan::*;
     let out = match lp_arena.get(node) {
@@ -343,7 +344,7 @@ where
             let input_schema = lp_arena.get(*input).schema(lp_arena).into_owned();
 
             if by_column.len() == 1 {
-                let by_column = aexpr_to_leaf_names_iter(by_column[0], expr_arena)
+                let by_column = aexpr_to_leaf_names_iter(by_column[0].node(), expr_arena)
                     .next()
                     .unwrap();
                 let index = input_schema.try_index_of(by_column.as_ref())?;
@@ -353,8 +354,8 @@ where
             } else {
                 let sort_idx = by_column
                     .iter()
-                    .map(|node| {
-                        let name = aexpr_to_leaf_names_iter(*node, expr_arena).next().unwrap();
+                    .map(|e| {
+                        let name = aexpr_to_leaf_names_iter(e.node(), expr_arena).next().unwrap();
                         input_schema.try_index_of(name.as_ref())
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
@@ -371,7 +372,11 @@ where
                 None => {
                     let keys = input_schema
                         .iter_names()
-                        .map(|name| expr_arena.add(AExpr::Column(Arc::from(name.as_str()))))
+                        .map(|name| {
+                            let name: Arc<str> = Arc::from(name.as_str());
+                            let node = expr_arena.add(AExpr::Column(name.clone()));
+                            ExprIR::new(node, Some(name.clone()), OutputName::Alias(name))
+                        })
                         .collect::<Vec<_>>();
                     let aggs = vec![];
                     (keys, aggs, input_schema.clone())
@@ -384,9 +389,11 @@ where
                         .map(|key| {
                             let (_, name, dtype) = input_schema.get_full(key.as_str()).unwrap();
                             group_by_out_schema.with_column(name.clone(), dtype.clone());
-                            expr_arena.add(AExpr::Column(Arc::from(key.as_str())))
+                            let name: Arc<str> = Arc::from(key.as_str());
+                            let node = expr_arena.add(AExpr::Column(name.clone()));
+                            ExprIR::new(node, Some(name.clone()), OutputName::Alias(name))
                         })
-                        .collect();
+                        .collect::<Vec<_>>();
 
                     let aggs = input_schema
                         .iter_names()
@@ -397,8 +404,10 @@ where
                                 let (_, name, dtype) =
                                     input_schema.get_full(name.as_str()).unwrap();
                                 group_by_out_schema.with_column(name.clone(), dtype.clone());
-                                let col = expr_arena.add(AExpr::Column(Arc::from(name.as_str())));
-                                Some(match options.keep_strategy {
+
+                                let name: Arc<str> = Arc::from(name.as_str());
+                                let col = expr_arena.add(AExpr::Column(name.clone()));
+                                let node = match options.keep_strategy {
                                     UniqueKeepStrategy::First | UniqueKeepStrategy::Any => {
                                         expr_arena.add(AExpr::Agg(AAggExpr::First(col)))
                                     },
@@ -408,7 +417,8 @@ where
                                     UniqueKeepStrategy::None => {
                                         unreachable!()
                                     },
-                                })
+                                };
+                                Some(ExprIR::new(node, Some(name.clone()), OutputName::Alias(name)))
                             }
                         })
                         .collect();
@@ -427,9 +437,9 @@ where
             let mut agg_fns = Vec::with_capacity(aggs.len());
             let mut input_agg_dtypes = Vec::with_capacity(aggs.len());
 
-            for node in &aggs {
+            for e in &aggs {
                 let (input_dtype, index, agg_fn) =
-                    convert_to_hash_agg(*node, expr_arena, &input_schema, &to_physical);
+                    convert_to_hash_agg(e.node(), expr_arena, &input_schema, &to_physical);
                 aggregation_columns.push(index);
                 agg_fns.push(agg_fn);
                 input_agg_dtypes.push(input_dtype);
@@ -467,9 +477,9 @@ where
             let mut agg_fns = Vec::with_capacity(aggs.len());
             let mut input_agg_dtypes = Vec::with_capacity(aggs.len());
 
-            for node in aggs {
+            for e in aggs {
                 let (input_dtype, index, agg_fn) =
-                    convert_to_hash_agg(*node, expr_arena, &input_schema, &to_physical);
+                    convert_to_hash_agg(e.node(), expr_arena, &input_schema, &to_physical);
                 aggregation_columns.push(index);
                 agg_fns.push(agg_fn);
                 input_agg_dtypes.push(input_dtype);
@@ -533,7 +543,7 @@ pub fn get_dummy_operator() -> PlaceHolder {
 }
 
 fn get_hstack<F>(
-    exprs: &[Node],
+    exprs: &[ExprIR],
     expr_arena: &Arena<AExpr>,
     to_physical: &F,
     input_schema: SchemaRef,
@@ -541,7 +551,7 @@ fn get_hstack<F>(
     unchecked: bool,
 ) -> PolarsResult<HstackOperator>
 where
-    F: Fn(Node, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
+    F: Fn(&ExprIR, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
 {
     Ok(operators::HstackOperator {
         exprs: exprs_to_physical(exprs, expr_arena, &to_physical, Some(&input_schema))?,
@@ -558,7 +568,7 @@ pub fn get_operator<F>(
     to_physical: &F,
 ) -> PolarsResult<Box<dyn Operator>>
 where
-    F: Fn(Node, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
+    F: Fn(&ExprIR, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
 {
     use ALogicalPlan::*;
     let op = match lp_arena.get(node) {
@@ -619,7 +629,7 @@ where
         },
         Selection { predicate, input } => {
             let input_schema = lp_arena.get(*input).schema(lp_arena);
-            let predicate = to_physical(*predicate, expr_arena, Some(input_schema.as_ref()))?;
+            let predicate = to_physical(predicate, expr_arena, Some(input_schema.as_ref()))?;
             let op = operators::FilterOperator { predicate };
             Box::new(op) as Box<dyn Operator>
         },
@@ -663,7 +673,7 @@ pub fn create_pipeline<F>(
     callbacks: &mut CallBacks,
 ) -> PolarsResult<PipeLine>
 where
-    F: Fn(Node, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
+    F: Fn(&ExprIR, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
 {
     use ALogicalPlan::*;
 

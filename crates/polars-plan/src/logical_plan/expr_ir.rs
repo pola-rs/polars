@@ -3,7 +3,7 @@ use super::*;
 type Name = Arc<str>;
 
 #[derive(Default, Debug, Clone)]
-pub(crate) enum OutputName {
+pub enum OutputName {
     #[default]
     None,
     LiteralLhs(Name),
@@ -42,7 +42,7 @@ pub struct ExprIR {
 }
 
 impl ExprIR {
-    pub(crate) fn new(
+    pub fn new(
         node: Node,
         left_most_input_name: Option<Arc<str>>,
         output_name: OutputName) -> Self {
@@ -53,7 +53,7 @@ impl ExprIR {
         }
     }
 
-    pub(crate) fn new_minimal(node: Node) -> Self {
+    pub fn new_minimal(node: Node) -> Self {
         Self {
             node,
             left_most_input_name: None,
