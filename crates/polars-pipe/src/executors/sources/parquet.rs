@@ -254,7 +254,9 @@ impl ParquetSource {
                     let init_iter = range.into_iter().map(|index| self.init_reader_async(index));
 
                     let batched_readers = polars_io::pl_async::get_runtime()
-                        .block_on_potential_spawn(async { futures::future::try_join_all(init_iter).await })?;
+                        .block_on_potential_spawn(async {
+                            futures::future::try_join_all(init_iter).await
+                        })?;
 
                     for r in batched_readers {
                         self.finish_init_reader(r)?;
