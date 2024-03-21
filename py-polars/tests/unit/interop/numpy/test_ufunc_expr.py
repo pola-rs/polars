@@ -141,7 +141,7 @@ def test_grouped_ufunc() -> None:
 
 
 @pytest.mark.skipif(numba is None, reason="Numba is not available")
-def test_generalized_ufunc() -> None:
+def test_generalized_ufunc_scalar() -> None:
     assert numba is not None  # to pacify type checkers
 
     @numba.guvectorize([(numba.int64[:], numba.int64[:])], "(n)->()")  # type: ignore[misc]
@@ -162,5 +162,16 @@ def test_generalized_ufunc() -> None:
     assert custom_sum(df.get_column("values")) == 15
 
     # Indirect call of the gufunc:
-    indirect = df.select(pl.col("values").map_batches(custom_sum))
+    indirect = df.select(pl.col("values").map_to_scalar(custom_sum))
     assert_frame_equal(indirect, pl.DataFrame({"values": 15}))
+
+    # group_by()
+    df = pl.DataFrame({"labels": ["a", "b", "a", "b"], "values": [10, 2, 3, 30]})
+    indirect = (
+        df.group_by("labels")
+        .agg(pl.col("values").map_to_scalar(custom_sum))
+        .sort("labels")
+    )
+    assert_frame_equal(
+        indirect, pl.DataFrame({"labels": ["a", "b"], "values": [13, 32]})
+    )

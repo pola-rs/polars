@@ -4167,6 +4167,28 @@ class Expr:
                 return_dtype,
                 agg_list,
                 is_elementwise,
+                False,
+            )
+        )
+
+    def map_to_scalar(
+        self,
+        function: Callable[[Series], Series | Any],
+        return_dtype: PolarsDataType | None = None,
+        *,
+        agg_list: bool = False,
+        is_elementwise: bool = False,
+    ):
+        if return_dtype is not None:
+            return_dtype = py_type_to_dtype(return_dtype)
+
+        return self._from_pyexpr(
+            self._pyexpr.map_batches(
+                self._map_batches_wrapper(function, return_dtype),
+                return_dtype,
+                agg_list,
+                is_elementwise,
+                True,
             )
         )
 
