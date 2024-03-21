@@ -80,12 +80,15 @@ impl<'a, T: BitChunk> AlignedBitmapSlice<'a, T> {
         let chunk_len = std::mem::size_of::<T>();
         let chunk_len_bits = 8 * chunk_len;
         if offset + len <= chunk_len_bits {
-            let ret = Self {
-                prefix: load_chunk_le::<T>(bytes) >> offset,
+            let mut prefix = load_chunk_le::<T>(bytes) >> offset;
+            if len < chunk_len_bits {
+                prefix &= (T::one() << len) - T::one();
+            }
+            return Self {
+                prefix,
                 prefix_len: len as u32,
                 ..Self::default()
             };
-            return ret.normalize();
         }
 
         // Find how many bytes from the start our aligned section would start.
@@ -111,22 +114,16 @@ impl<'a, T: BitChunk> AlignedBitmapSlice<'a, T> {
         // Now we just have to load.
         let (prefix_bytes, rest_bytes) = bytes.split_at(align_offset);
         let (bulk_bytes, suffix_bytes) = rest_bytes.split_at(bulk_len / 8);
-        let ret = Self {
-            prefix: load_chunk_le::<T>(prefix_bytes) >> offset,
+        let mut prefix = load_chunk_le::<T>(prefix_bytes) >> offset;
+        let mut suffix = load_chunk_le::<T>(suffix_bytes);
+        prefix &= (T::one() << prefix_len) - T::one();
+        suffix &= (T::one() << suffix_len) - T::one();
+        Self {
+            prefix,
             bulk: bytemuck::cast_slice(bulk_bytes),
-            suffix: load_chunk_le::<T>(suffix_bytes),
+            suffix,
             prefix_len: prefix_len as u32,
             suffix_len: suffix_len as u32,
-        };
-        ret.normalize()
-    }
-
-    #[inline(always)]
-    fn normalize(mut self) -> Self {
-        // prefix_len and suffix_len should always be less than 8 * size_of::<T>(),
-        // so these shifts fit.
-        self.prefix &= (T::one() << self.prefix_len as usize) - T::one();
-        self.suffix &= (T::one() << self.suffix_len as usize) - T::one();
-        self
+        }
     }
 }
