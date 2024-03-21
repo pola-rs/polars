@@ -4,6 +4,7 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
+from polars.exceptions import ColumnNotFoundError
 from polars.selectors import expand_selector, is_selector
 from polars.testing import assert_frame_equal
 
@@ -79,6 +80,13 @@ def test_selector_by_name(df: pl.DataFrame) -> None:
     ]
     assert df.select(cs.by_name()).columns == []
     assert df.select(cs.by_name([])).columns == []
+
+    # test any/all behaviour
+    with pytest.raises(ColumnNotFoundError, match="xxx"):
+        df.select(cs.by_name("xxx", "fgg", "!!!"))
+
+    selected_cols = df.select(cs.by_name("???", "fgg", "!!!", any_=True)).columns
+    assert selected_cols == ["fgg"]
 
 
 def test_selector_contains(df: pl.DataFrame) -> None:
@@ -388,7 +396,16 @@ def test_selector_repr() -> None:
     assert_repr_equals(~cs.starts_with("a", "b"), "~cs.starts_with('a', 'b')")
     assert_repr_equals(cs.float() | cs.by_name("x"), "(cs.float() | cs.by_name('x'))")
     assert_repr_equals(
-        cs.integer() & cs.matches("z"), "(cs.integer() & cs.matches(pattern='z'))"
+        cs.integer() & cs.matches("z"),
+        "(cs.integer() & cs.matches(pattern='z'))",
+    )
+    assert_repr_equals(
+        cs.by_name("baz", "moose", "foo", "bear"),
+        "cs.by_name('baz', 'moose', 'foo', 'bear')",
+    )
+    assert_repr_equals(
+        cs.by_name("baz", "moose", "foo", "bear", any_=True),
+        "cs.by_name('baz', 'moose', 'foo', 'bear',any_=True)",
     )
     assert_repr_equals(
         cs.temporal() | cs.by_dtype(pl.String) & cs.string(include_categorical=False),

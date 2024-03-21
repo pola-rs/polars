@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any, Collection, Literal, Mapping, overload
 from polars import functions as F
 from polars._utils.deprecation import deprecate_nonkeyword_arguments
 from polars._utils.parse_expr_input import _parse_inputs_as_iterable
-from polars._utils.various import is_column
+from polars._utils.various import is_column, re_escape
 from polars.datatypes import (
     FLOAT_DTYPES,
     INTEGER_DTYPES,
@@ -357,7 +357,7 @@ class _selector_proxy_(Expr):
 def _re_string(string: str | Collection[str], *, escape: bool = True) -> str:
     """Return escaped regex, potentially representing multiple string fragments."""
     if isinstance(string, str):
-        rx = f"{re.escape(string)}" if escape else string
+        rx = f"{re_escape(string)}" if escape else string
     else:
         strings: list[str] = []
         for st in string:
@@ -365,7 +365,7 @@ def _re_string(string: str | Collection[str], *, escape: bool = True) -> str:
                 strings.extend(st)
             else:
                 strings.append(st)
-        rx = "|".join((re.escape(x) if escape else x) for x in strings)
+        rx = "|".join((re_escape(x) if escape else x) for x in strings)
     return f"({rx})"
 
 
@@ -595,14 +595,16 @@ def by_dtype(
     )
 
 
-def by_name(*names: str | Collection[str]) -> SelectorType:
+def by_name(*names: str | Collection[str], any_: bool = False) -> SelectorType:
     """
     Select all columns matching the given names.
 
     Parameters
     ----------
-    *names
+    *names : str
         One or more names of columns to select.
+    any_ : bool
+        Whether to match *all* names (the default) or *any* of the names.
 
     See Also
     --------
@@ -633,6 +635,19 @@ def by_name(*names: str | Collection[str]) -> SelectorType:
     │ y   ┆ 456 │
     └─────┴─────┘
 
+    Match *any* of the given columns by name:
+
+    >>> df.select(cs.by_name("baz", "moose", "foo", "bear", any_=True))
+    shape: (2, 2)
+    ┌─────┬─────┐
+    │ foo ┆ baz │
+    │ --- ┆ --- │
+    │ str ┆ f64 │
+    ╞═════╪═════╡
+    │ x   ┆ 2.0 │
+    │ y   ┆ 5.5 │
+    └─────┴─────┘
+
     Match all columns *except* for those given:
 
     >>> df.select(~cs.by_name("foo", "bar"))
@@ -659,8 +674,16 @@ def by_name(*names: str | Collection[str]) -> SelectorType:
         else:
             TypeError(f"Invalid name: {nm!r}")
 
+    selector_params: dict[str, Any] = {"*names": all_names}
+    match_cols: list[str] | str = all_names
+    if any_:
+        match_cols = f"^({'|'.join(re_escape(nm) for nm in all_names)})$"
+        selector_params["any_"] = any_
+
     return _selector_proxy_(
-        F.col(all_names), name="by_name", parameters={"*names": all_names}
+        F.col(match_cols),
+        name="by_name",
+        parameters=selector_params,
     )
 
 
