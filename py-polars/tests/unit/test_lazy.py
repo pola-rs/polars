@@ -95,7 +95,7 @@ def test_apply() -> None:
             ldf = pl.LazyFrame({"a": [1, 2, 3] * 20, "b": [1.0, 2.0, 3.0] * 20})
             new = ldf.with_columns(
                 pl.col("a")
-                .map_elements(lambda s: s * 2, strategy=strategy)  # type: ignore[arg-type]
+                .map_elements(lambda s: s * 2, strategy=strategy, return_dtype=pl.Int64)  # type: ignore[arg-type]
                 .alias("foo")
             )
             expected = ldf.clone().with_columns((pl.col("a") * 2).alias("foo"))

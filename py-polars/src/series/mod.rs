@@ -342,6 +342,13 @@ impl PySeries {
     ) -> PyResult<PySeries> {
         let series = &self.series;
 
+        if output_type.is_none() {
+            polars_warn!(
+                MapWithoutReturnDtypeWarning,
+                "Calling `map_elements` without specifying `return_dtype` can lead to unpredictable results. \
+                Specify `return_dtype` to silence this warning.")
+        }
+
         if skip_nulls && (series.null_count() == series.len()) {
             if let Some(output_type) = output_type {
                 return Ok(Series::full_null(series.name(), series.len(), &output_type.0).into());

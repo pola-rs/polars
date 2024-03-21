@@ -80,6 +80,7 @@ from polars.exceptions import (
     ComputeError,
     DuplicateError,
     InvalidOperationError,
+    MapWithoutReturnDtypeWarning,
     NoDataError,
     OutOfBoundsError,
     PolarsError,
@@ -244,6 +245,7 @@ __all__ = [
     "PolarsWarning",
     "CategoricalRemappingWarning",
     "ChronoFormatWarning",
+    "MapWithoutReturnDtypeWarning",
     "UnstableWarning",
     # core classes
     "DataFrame",

@@ -961,14 +961,26 @@ def test_temporal_dtypes_map_elements(
                 [
                     # don't actually do this; native expressions are MUCH faster ;)
                     pl.col("timestamp")
-                    .map_elements(lambda x: const_dtm, skip_nulls=skip_nulls)
+                    .map_elements(
+                        lambda x: const_dtm,
+                        skip_nulls=skip_nulls,
+                        return_dtype=pl.Datetime,
+                    )
                     .alias("const_dtm"),
                     # note: the below now trigger a PolarsInefficientMapWarning
                     pl.col("timestamp")
-                    .map_elements(lambda x: x and x.date(), skip_nulls=skip_nulls)
+                    .map_elements(
+                        lambda x: x and x.date(),
+                        skip_nulls=skip_nulls,
+                        return_dtype=pl.Date,
+                    )
                     .alias("date"),
                     pl.col("timestamp")
-                    .map_elements(lambda x: x and x.time(), skip_nulls=skip_nulls)
+                    .map_elements(
+                        lambda x: x and x.time(),
+                        skip_nulls=skip_nulls,
+                        return_dtype=pl.Time,
+                    )
                     .alias("time"),
                 ]
             ),
