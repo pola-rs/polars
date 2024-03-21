@@ -207,9 +207,9 @@ def _in_notebook() -> bool:
 
 
 def arrlen(obj: Any) -> int | None:
-    """Return length of (non-string) sequence object; returns None for non-sequences."""
+    """Return length of (non-string/dict) sequence; returns None for non-sequences."""
     try:
-        return None if isinstance(obj, str) else len(obj)
+        return None if isinstance(obj, (str, dict)) else len(obj)
     except TypeError:
         return None
 
