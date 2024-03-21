@@ -12,6 +12,10 @@ pub trait PolarsRound {
 
 impl PolarsRound for DatetimeChunked {
     fn round(&self, every: Duration, offset: Duration, tz: Option<&Tz>) -> PolarsResult<Self> {
+        if every.negative {
+            polars_bail!(ComputeError: "cannot round a Datetime to a negative duration")
+        }
+
         let w = Window::new(every, every, offset);
 
         let func = match self.time_unit() {
@@ -27,6 +31,10 @@ impl PolarsRound for DatetimeChunked {
 
 impl PolarsRound for DateChunked {
     fn round(&self, every: Duration, offset: Duration, _tz: Option<&Tz>) -> PolarsResult<Self> {
+        if every.negative {
+            polars_bail!(ComputeError: "cannot round a Date to a negative duration")
+        }
+
         let w = Window::new(every, every, offset);
         Ok(self
             .try_apply_values(|t| {
