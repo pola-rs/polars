@@ -770,6 +770,20 @@ impl ALogicalPlan {
                     options,
                 }
             },
+            ALogicalPlan::SimpleProjection {
+                input,
+                columns,
+                ..
+            } => {
+                let input = convert_to_lp(input, lp_arena);
+                let expr = columns.iter_names().map(|name| Expr::Column(Arc::from(name.as_str()))).collect::<Vec<_>>();
+                LogicalPlan::Projection {
+                    expr,
+                    input: Box::new(input),
+                    schema: columns.clone(),
+                    options: Default::default()
+                }
+            }
             ALogicalPlan::Sort {
                 input,
                 by_column,
@@ -880,7 +894,7 @@ impl ALogicalPlan {
                 let input = Box::new(convert_to_lp(input, lp_arena));
                 LogicalPlan::Sink { input, payload }
             },
-            ALogicalPlan::Invalid | ALogicalPlan::SimpleProjection {..} => unreachable!()
+            ALogicalPlan::Invalid  => unreachable!()
         }
     }
 }
