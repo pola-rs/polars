@@ -980,13 +980,13 @@ impl LazyFrame {
 
     /// Create rolling groups based on a time column.
     ///
-    /// Also works for index values of type Int32 or Int64.
+    /// Also works for index values of type UInt32, UInt64, Int32, or Int64.
     ///
     /// Different from a [`group_by_dynamic`][`Self::group_by_dynamic`], the windows are now determined by the
     /// individual values and are not of constant intervals. For constant intervals use
     /// *group_by_dynamic*
     #[cfg(feature = "dynamic_group_by")]
-    pub fn group_by_rolling<E: AsRef<[Expr]>>(
+    pub fn rolling<E: AsRef<[Expr]>>(
         self,
         index_column: Expr,
         group_by: E,
@@ -998,7 +998,7 @@ impl LazyFrame {
             let output_field = index_column
                 .to_field(&self.schema().unwrap(), Context::Default)
                 .unwrap();
-            return self.with_column(index_column).group_by_rolling(
+            return self.with_column(index_column).rolling(
                 Expr::Column(Arc::from(output_field.name().as_str())),
                 group_by,
                 options,
