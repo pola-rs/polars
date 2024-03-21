@@ -984,25 +984,23 @@ def test_sorted_flag_concat_unit(unit_descending: bool) -> None:
     assert out.flags["SORTED_DESC"]
 
 
-def test_sort_descending_nulls_last() -> None:
+@pytest.mark.parametrize("descending", [True, False])
+@pytest.mark.parametrize("nulls_last", [True, False])
+def test_sort_descending_nulls_last(descending: bool, nulls_last: bool) -> None:
     df = pl.DataFrame({"x": [1, 3, None, 2, None], "y": [1, 3, 0, 2, 0]})
 
+    null_sentinel = 100 if descending ^ nulls_last else -100
+    ref_x = [1, 3, None, 2, None]
+    ref_x.sort(key=lambda k: null_sentinel if k is None else k, reverse=descending)
+    ref_y = [1, 3, 0, 2, 0]
+    ref_y.sort(key=lambda k: null_sentinel if k == 0 else k, reverse=descending)
+
     assert_frame_equal(
-        df.sort("x", descending=False, nulls_last=False),
-        pl.DataFrame({"x": [None, None, 1, 2, 3], "y": [0, 0, 1, 2, 3]}),
+        df.sort("x", descending=descending, nulls_last=nulls_last),
+        pl.DataFrame({"x": ref_x, "y": ref_y}),
     )
 
     assert_frame_equal(
-        df.sort("x", descending=True, nulls_last=False),
-        pl.DataFrame({"x": [None, None, 3, 2, 1], "y": [0, 0, 3, 2, 1]}),
-    )
-
-    assert_frame_equal(
-        df.sort("x", descending=False, nulls_last=True),
-        pl.DataFrame({"x": [1, 2, 3, None, None], "y": [1, 2, 3, 0, 0]}),
-    )
-
-    assert_frame_equal(
-        df.sort("x", descending=True, nulls_last=True),
-        pl.DataFrame({"x": [3, 2, 1, None, None], "y": [3, 2, 1, 0, 0]}),
+        df.sort(["x", "y"], descending=descending, nulls_last=nulls_last),
+        pl.DataFrame({"x": ref_x, "y": ref_y}),
     )
