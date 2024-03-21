@@ -172,7 +172,7 @@ impl PolarsDateStart for DatetimeChunked {
             get_timestamp_closures(self.time_unit());
         Ok(self
             .0
-            .try_apply(|t| {
+            .try_apply_values(|t| {
                 roll_month_backward(t, tz, timestamp_to_datetime, datetime_to_timestamp)
             })?
             .into_datetime(self.time_unit(), self.time_zone().clone()))
@@ -183,7 +183,7 @@ impl PolarsDateStart for DatetimeChunked {
             get_timestamp_closures(self.time_unit());
         Ok(self
             .0
-            .try_apply(|t| {
+            .try_apply_values(|t| {
                 roll_quarter_backward(t, tz, timestamp_to_datetime, datetime_to_timestamp)
             })?
             .into_datetime(self.time_unit(), self.time_zone().clone()))
@@ -194,7 +194,9 @@ impl PolarsDateStart for DatetimeChunked {
             get_timestamp_closures(self.time_unit());
         Ok(self
             .0
-            .try_apply(|t| roll_year_backward(t, tz, timestamp_to_datetime, datetime_to_timestamp))?
+            .try_apply_values(|t| {
+                roll_year_backward(t, tz, timestamp_to_datetime, datetime_to_timestamp)
+            })?
             .into_datetime(self.time_unit(), self.time_zone().clone()))
     }
 }
@@ -204,7 +206,7 @@ impl PolarsDateStart for DateChunked {
         const MSECS_IN_DAY: i64 = MILLISECONDS * SECONDS_IN_DAY;
         Ok(self
             .0
-            .try_apply(|t| {
+            .try_apply_values(|t| {
                 Ok((roll_month_backward(
                     MSECS_IN_DAY * t as i64,
                     None,
@@ -219,7 +221,7 @@ impl PolarsDateStart for DateChunked {
         const MSECS_IN_DAY: i64 = MILLISECONDS * SECONDS_IN_DAY;
         Ok(self
             .0
-            .try_apply(|t| {
+            .try_apply_values(|t| {
                 Ok((roll_quarter_backward(
                     MSECS_IN_DAY * t as i64,
                     None,
@@ -234,7 +236,7 @@ impl PolarsDateStart for DateChunked {
         const MSECS_IN_DAY: i64 = MILLISECONDS * SECONDS_IN_DAY;
         Ok(self
             .0
-            .try_apply(|t| {
+            .try_apply_values(|t| {
                 Ok((roll_year_backward(
                     MSECS_IN_DAY * t as i64,
                     None,
