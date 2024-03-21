@@ -593,9 +593,9 @@ impl LazyFrame {
             lp_arena,
             expr_arena,
             scratch,
-            Some(&|node, expr_arena| {
+            Some(&|expr, expr_arena| {
                 let phys_expr = create_physical_expr(
-                    node,
+                    expr,
                     Context::Default,
                     expr_arena,
                     None,

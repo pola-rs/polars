@@ -3,22 +3,28 @@ use polars_core::series::IsSorted;
 use polars_core::utils::_split_offsets;
 use polars_core::POOL;
 use rayon::prelude::*;
+use polars_plan::prelude::expr_ir::ExprIR;
 
 use super::super::expressions as phys_expr;
 use crate::prelude::*;
 
-pub(crate) fn create_physical_expressions(
-    exprs: &[Node],
+
+fn ok_checker(_state: &ExpressionConversionState) -> PolarsResult<()> {
+    Ok(())
+}
+
+pub(crate) fn create_physical_expressions_from_irs(
+    exprs: &[ExprIR],
     context: Context,
     expr_arena: &Arena<AExpr>,
     schema: Option<&SchemaRef>,
     state: &mut ExpressionConversionState,
 ) -> PolarsResult<Vec<Arc<dyn PhysicalExpr>>> {
-    create_physical_expressions_check_state(exprs, context, expr_arena, schema, state, |_| Ok(()))
+    create_physical_expressions_check_state(exprs, context, expr_arena, schema, state, ok_checker)
 }
 
 pub(crate) fn create_physical_expressions_check_state<F>(
-    exprs: &[Node],
+    exprs: &[ExprIR],
     context: Context,
     expr_arena: &Arena<AExpr>,
     schema: Option<&SchemaRef>,
@@ -32,7 +38,39 @@ where
         .iter()
         .map(|e| {
             state.reset();
-            let out = create_physical_expr(*e, context, expr_arena, schema, state);
+            let out = create_physical_expr(e, context, expr_arena, schema, state);
+            checker(state)?;
+            out
+        })
+        .collect()
+}
+
+pub(crate) fn create_physical_expressions_from_nodes(
+    exprs: &[Node],
+    context: Context,
+    expr_arena: &Arena<AExpr>,
+    schema: Option<&SchemaRef>,
+    state: &mut ExpressionConversionState,
+) -> PolarsResult<Vec<Arc<dyn PhysicalExpr>>> {
+    create_physical_expressions_from_nodes_check_state(exprs, context, expr_arena, schema, state, ok_checker)
+}
+
+pub(crate) fn create_physical_expressions_from_nodes_check_state<F>(
+    exprs: &[Node],
+    context: Context,
+    expr_arena: &Arena<AExpr>,
+    schema: Option<&SchemaRef>,
+    state: &mut ExpressionConversionState,
+    checker: F,
+) -> PolarsResult<Vec<Arc<dyn PhysicalExpr>>>
+    where
+        F: Fn(&ExpressionConversionState) -> PolarsResult<()>,
+{
+    exprs
+        .iter()
+        .map(|e| {
+            state.reset();
+            let out = create_physical_expr_inner(*e, context, expr_arena, schema, state);
             checker(state)?;
             out
         })
@@ -81,6 +119,31 @@ impl ExpressionConversionState {
 }
 
 pub(crate) fn create_physical_expr(
+    expr_ir: &ExprIR,
+    ctxt: Context,
+    expr_arena: &Arena<AExpr>,
+    schema: Option<&SchemaRef>,
+    state: &mut ExpressionConversionState,
+) -> PolarsResult<Arc<dyn PhysicalExpr>> {
+    let phys_expr = create_physical_expr_inner(expr_ir.node(),
+                                               ctxt,
+                                               expr_arena,
+                                               schema,
+                                               state
+    )?;
+
+    if let Some(name) = expr_ir.get_alias() {
+        Ok(Arc::new(AliasExpr::new(
+            phys_expr,
+            name.clone(),
+            node_to_expr(expr_ir.node(), expr_arena),
+        )))
+    } else {
+        Ok(phys_expr)
+    }
+}
+
+fn create_physical_expr_inner(
     expression: Node,
     ctxt: Context,
     expr_arena: &Arena<AExpr>,
@@ -98,7 +161,7 @@ pub(crate) fn create_physical_expr(
         } => {
             state.set_window();
             let phys_function =
-                create_physical_expr(function, Context::Aggregation, expr_arena, schema, state)?;
+                create_physical_expr_inner(function, Context::Aggregation, expr_arena, schema, state)?;
 
             let mut out_name = None;
             if let Alias(expr, name) = expr_arena.get(function) {
@@ -113,7 +176,7 @@ pub(crate) fn create_physical_expr(
             match options {
                 WindowType::Over(mapping) => {
                     // TODO! Order by
-                    let group_by = create_physical_expressions(
+                    let group_by = create_physical_expressions_from_nodes(
                         &partition_by,
                         Context::Default,
                         expr_arena,
@@ -168,8 +231,8 @@ pub(crate) fn create_physical_expr(
             )))
         },
         BinaryExpr { left, op, right } => {
-            let lhs = create_physical_expr(left, ctxt, expr_arena, schema, state)?;
-            let rhs = create_physical_expr(right, ctxt, expr_arena, schema, state)?;
+            let lhs = create_physical_expr_inner(left, ctxt, expr_arena, schema, state)?;
+            let rhs = create_physical_expr_inner(right, ctxt, expr_arena, schema, state)?;
             Ok(Arc::new(phys_expr::BinaryExpr::new(
                 lhs,
                 op,
@@ -184,7 +247,7 @@ pub(crate) fn create_physical_expr(
             schema.cloned(),
         ))),
         Sort { expr, options } => {
-            let phys_expr = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
+            let phys_expr = create_physical_expr_inner(expr, ctxt, expr_arena, schema, state)?;
             Ok(Arc::new(SortExpr::new(
                 phys_expr,
                 options,
@@ -196,8 +259,8 @@ pub(crate) fn create_physical_expr(
             idx,
             returns_scalar,
         } => {
-            let phys_expr = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
-            let phys_idx = create_physical_expr(idx, ctxt, expr_arena, schema, state)?;
+            let phys_expr = create_physical_expr_inner(expr, ctxt, expr_arena, schema, state)?;
+            let phys_idx = create_physical_expr_inner(idx, ctxt, expr_arena, schema, state)?;
             Ok(Arc::new(TakeExpr {
                 phys_expr,
                 idx: phys_idx,
@@ -211,8 +274,8 @@ pub(crate) fn create_physical_expr(
             descending,
         } => {
             polars_ensure!(!by.is_empty(), InvalidOperation: "'sort_by' got an empty set");
-            let phys_expr = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
-            let phys_by = create_physical_expressions(&by, ctxt, expr_arena, schema, state)?;
+            let phys_expr = create_physical_expr_inner(expr, ctxt, expr_arena, schema, state)?;
+            let phys_by = create_physical_expressions_from_nodes(&by, ctxt, expr_arena, schema, state)?;
             Ok(Arc::new(SortByExpr::new(
                 phys_expr,
                 phys_by,
@@ -221,25 +284,17 @@ pub(crate) fn create_physical_expr(
             )))
         },
         Filter { input, by } => {
-            let phys_input = create_physical_expr(input, ctxt, expr_arena, schema, state)?;
-            let phys_by = create_physical_expr(by, ctxt, expr_arena, schema, state)?;
+            let phys_input = create_physical_expr_inner(input, ctxt, expr_arena, schema, state)?;
+            let phys_by = create_physical_expr_inner(by, ctxt, expr_arena, schema, state)?;
             Ok(Arc::new(FilterExpr::new(
                 phys_input,
                 phys_by,
                 node_to_expr(expression, expr_arena),
             )))
         },
-        Alias(expr, name) => {
-            let phys_expr = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
-            Ok(Arc::new(AliasExpr::new(
-                phys_expr,
-                name,
-                node_to_expr(expression, expr_arena),
-            )))
-        },
         Agg(agg) => {
             let expr = agg.get_input().first();
-            let input = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
+            let input = create_physical_expr_inner(expr, ctxt, expr_arena, schema, state)?;
             polars_ensure!(!(state.has_implode() && matches!(ctxt, Context::Aggregation)), InvalidOperation: "'implode' followed by an aggregation is not allowed");
             state.local.has_implode |= matches!(agg, AAggExpr::Implode(_));
 
@@ -410,9 +465,9 @@ pub(crate) fn create_physical_expr(
                         interpol,
                     } = agg
                     {
-                        let input = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
+                        let input = create_physical_expr_inner(expr, ctxt, expr_arena, schema, state)?;
                         let quantile =
-                            create_physical_expr(quantile, ctxt, expr_arena, schema, state)?;
+                            create_physical_expr_inner(quantile, ctxt, expr_arena, schema, state)?;
                         return Ok(Arc::new(AggQuantileExpr::new(input, quantile, interpol)));
                     }
                     let field = schema
@@ -434,7 +489,7 @@ pub(crate) fn create_physical_expr(
             data_type,
             strict,
         } => {
-            let phys_expr = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
+            let phys_expr = create_physical_expr_inner(expr, ctxt, expr_arena, schema, state)?;
             Ok(Arc::new(CastExpr {
                 input: phys_expr,
                 data_type,
@@ -449,13 +504,13 @@ pub(crate) fn create_physical_expr(
         } => {
             let mut lit_count = 0u8;
             state.reset();
-            let predicate = create_physical_expr(predicate, ctxt, expr_arena, schema, state)?;
+            let predicate = create_physical_expr_inner(predicate, ctxt, expr_arena, schema, state)?;
             lit_count += state.local.has_lit as u8;
             state.reset();
-            let truthy = create_physical_expr(truthy, ctxt, expr_arena, schema, state)?;
+            let truthy = create_physical_expr_inner(truthy, ctxt, expr_arena, schema, state)?;
             lit_count += state.local.has_lit as u8;
             state.reset();
-            let falsy = create_physical_expr(falsy, ctxt, expr_arena, schema, state)?;
+            let falsy = create_physical_expr_inner(falsy, ctxt, expr_arena, schema, state)?;
             lit_count += state.local.has_lit as u8;
             Ok(Arc::new(TernaryExpr::new(
                 predicate,
@@ -475,7 +530,7 @@ pub(crate) fn create_physical_expr(
                 options.returns_scalar && matches!(options.collect_groups, ApplyOptions::GroupWise);
             // will be reset in the function so get that here
             let has_window = state.local.has_window;
-            let input = create_physical_expressions_check_state(
+            let input = create_physical_expressions_from_nodes_check_state(
                 &input,
                 ctxt,
                 expr_arena,
@@ -506,7 +561,7 @@ pub(crate) fn create_physical_expr(
                 options.returns_scalar && matches!(options.collect_groups, ApplyOptions::GroupWise);
             // will be reset in the function so get that here
             let has_window = state.local.has_window;
-            let input = create_physical_expressions_check_state(
+            let input = create_physical_expressions_from_nodes_check_state(
                 &input,
                 ctxt,
                 expr_arena,
@@ -532,9 +587,9 @@ pub(crate) fn create_physical_expr(
             offset,
             length,
         } => {
-            let input = create_physical_expr(input, ctxt, expr_arena, schema, state)?;
-            let offset = create_physical_expr(offset, ctxt, expr_arena, schema, state)?;
-            let length = create_physical_expr(length, ctxt, expr_arena, schema, state)?;
+            let input = create_physical_expr_inner(input, ctxt, expr_arena, schema, state)?;
+            let offset = create_physical_expr_inner(offset, ctxt, expr_arena, schema, state)?;
+            let length = create_physical_expr_inner(length, ctxt, expr_arena, schema, state)?;
             polars_ensure!(!(state.has_implode() && matches!(ctxt, Context::Aggregation)), InvalidOperation: "'implode' followed by a slice during aggregation is not allowed");
             Ok(Arc::new(SliceExpr {
                 input,
@@ -544,7 +599,7 @@ pub(crate) fn create_physical_expr(
             }))
         },
         Explode(expr) => {
-            let input = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
+            let input = create_physical_expr_inner(expr, ctxt, expr_arena, schema, state)?;
             let function =
                 SpecialEq::new(Arc::new(move |s: &mut [Series]| s[0].explode().map(Some))
                     as Arc<dyn SeriesUdf>);
@@ -561,6 +616,7 @@ pub(crate) fn create_physical_expr(
         Nth(_) => {
             polars_bail!(ComputeError: "nth column selection not supported at this point")
         },
+        Alias(_, _) => unreachable!()
     }
 }
 

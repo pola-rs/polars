@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use polars_core::prelude::*;
-use polars_plan::dsl::consts::LEN;
+use polars_plan::constants::LEN;
 
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
