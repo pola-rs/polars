@@ -123,21 +123,21 @@ impl CloudType {
 }
 
 #[cfg(feature = "cloud")]
-pub(crate) fn parse_url(url: &str) -> std::result::Result<Url, url::ParseError> {
-    match Url::parse(url) {
-        Err(err) => match err {
-            url::ParseError::RelativeUrlWithoutBase => {
-                let parsed = Url::parse(&format!(
-                    "file://{}/",
-                    std::env::current_dir().unwrap().to_string_lossy()
-                ))
-                .unwrap();
-                parsed.join(url)
-            },
-            err => Err(err),
-        },
-        parsed => parsed,
-    }
+pub(crate) fn parse_url(input: &str) -> std::result::Result<url::Url, url::ParseError> {
+    Ok(if input.contains("://") {
+        url::Url::parse(input)?
+    } else {
+        let path = std::path::Path::new(input);
+        let mut tmp;
+        url::Url::from_file_path(if path.is_relative() {
+            tmp = std::env::current_dir().unwrap();
+            tmp.push(path);
+            tmp.as_path()
+        } else {
+            path
+        })
+        .unwrap()
+    })
 }
 
 impl FromStr for CloudType {
@@ -422,6 +422,86 @@ impl CloudOptions {
                     polars_bail!(ComputeError: "'gcp' feature is not enabled");
                 }
             },
+        }
+    }
+}
+
+#[cfg(feature = "cloud")]
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_path() {
+        assert_eq!(
+            parse_url(r"http://Users/Jane Doe/data.csv")
+                .unwrap()
+                .as_str(),
+            "http://users/Jane%20Doe/data.csv"
+        );
+        assert_eq!(
+            parse_url(r"http://Users/Jane Doe/data.csv")
+                .unwrap()
+                .as_str(),
+            "http://users/Jane%20Doe/data.csv"
+        );
+        #[cfg(target_os = "windows")]
+        {
+            assert_eq!(
+                parse_url(r"file:///c:/Users/Jane Doe/data.csv")
+                    .unwrap()
+                    .as_str(),
+                "file:///c:/Users/Jane%20Doe/data.csv"
+            );
+            assert_eq!(
+                parse_url(r"file://\c:\Users\Jane Doe\data.csv")
+                    .unwrap()
+                    .as_str(),
+                "file:///c:/Users/Jane%20Doe/data.csv"
+            );
+            assert_eq!(
+                parse_url(r"c:\Users\Jane Doe\data.csv").unwrap().as_str(),
+                "file:///C:/Users/Jane%20Doe/data.csv"
+            );
+            assert_eq!(
+                parse_url(r"data.csv").unwrap().as_str(),
+                url::Url::from_file_path(
+                    [
+                        std::env::current_dir().unwrap().as_path(),
+                        std::path::Path::new("data.csv")
+                    ]
+                    .into_iter()
+                    .collect::<std::path::PathBuf>()
+                )
+                .unwrap()
+                .as_str()
+            );
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            assert_eq!(
+                parse_url(r"file:///home/Jane Doe/data.csv")
+                    .unwrap()
+                    .as_str(),
+                "file:///home/Jane%20Doe/data.csv"
+            );
+            assert_eq!(
+                parse_url(r"/home/Jane Doe/data.csv").unwrap().as_str(),
+                "file:///home/Jane%20Doe/data.csv"
+            );
+            assert_eq!(
+                parse_url(r"data.csv").unwrap().as_str(),
+                url::Url::from_file_path(
+                    [
+                        std::env::current_dir().unwrap().as_path(),
+                        std::path::Path::new("data.csv")
+                    ]
+                    .into_iter()
+                    .collect::<std::path::PathBuf>()
+                )
+                .unwrap()
+                .as_str()
+            );
         }
     }
 }

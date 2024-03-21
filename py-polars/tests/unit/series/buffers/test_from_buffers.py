@@ -9,6 +9,17 @@ import polars as pl
 from polars.testing import assert_series_equal
 from polars.testing.parametric import series
 
+# TODO: Define data type groups centrally somewhere in the test suite
+DATETIME_DTYPES: set[pl.PolarsDataType] = {
+    pl.Datetime,
+    pl.Datetime("ms"),
+    pl.Datetime("us"),
+    pl.Datetime("ns"),
+}
+TEMPORAL_DTYPES: set[pl.PolarsDataType] = (
+    {pl.Date, pl.Time} | pl.DURATION_DTYPES | DATETIME_DTYPES
+)
+
 
 @given(
     s=series(
@@ -34,7 +45,7 @@ def test_series_from_buffers_numeric(s: pl.Series) -> None:
     assert_series_equal(s, result)
 
 
-@given(s=series(allowed_dtypes=pl.TEMPORAL_DTYPES, chunked=False))
+@given(s=series(allowed_dtypes=TEMPORAL_DTYPES, chunked=False))
 def test_series_from_buffers_temporal_with_validity(s: pl.Series) -> None:
     validity = s.is_not_null()
     physical = pl.Int32 if s.dtype == pl.Date else pl.Int64

@@ -1995,12 +1995,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
 
-        Collects into a DataFrame (like :func:`collect`), but instead of returning
-        DataFrame directly, they are scheduled to be collected inside thread pool,
+        Collects into a DataFrame (like :func:`collect`) but, instead of returning
+        a DataFrame directly, it is scheduled to be collected inside a thread pool,
         while this method returns almost instantly.
 
-        May be useful if you use gevent or asyncio and want to release control to other
-        greenlets/tasks while LazyFrames are being collected.
+        This can be useful if you use `gevent` or `asyncio` and want to release
+        control to other greenlets/tasks while LazyFrames are being collected.
 
         Parameters
         ----------
@@ -2032,20 +2032,20 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 at any point without it being considered a breaking change.
 
             .. note::
-                Use :func:`explain` to see if Polars can process the query in streaming
-                mode.
+                Use :func:`explain` to see if Polars can process the query in
+                streaming mode.
 
         Returns
         -------
-        If `gevent=False` (default) then returns awaitable.
+        If `gevent=False` (default) then returns an awaitable.
 
-        If `gevent=True` then returns wrapper that has
+        If `gevent=True` then returns wrapper that has a
         `.get(block=True, timeout=None)` method.
 
         See Also
         --------
         polars.collect_all : Collect multiple LazyFrames at the same time.
-        polars.collect_all_async: Collect multiple LazyFrames at the same time lazily.
+        polars.collect_all_async : Collect multiple LazyFrames at the same time lazily.
 
         Notes
         -----
@@ -3226,6 +3226,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         lgb = self._ldf.group_by(exprs, maintain_order)
         return LazyGroupBy(lgb)
 
+    @deprecate_renamed_parameter("by", "group_by", version="0.20.14")
     def rolling(
         self,
         index_column: IntoExpr,
@@ -3233,7 +3234,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         period: str | timedelta,
         offset: str | timedelta | None = None,
         closed: ClosedInterval = "right",
-        by: IntoExpr | Iterable[IntoExpr] | None = None,
+        group_by: IntoExpr | Iterable[IntoExpr] | None = None,
         check_sorted: bool = True,
     ) -> LazyGroupBy:
         """
@@ -3298,7 +3299,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             offset of the window. Default is -period
         closed : {'right', 'left', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive).
-        by
+        group_by
             Also group by this column/these columns
         check_sorted
             When the `by` argument is given, polars can not check sortedness
@@ -3361,7 +3362,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if offset is None:
             offset = negate_duration_string(parse_as_duration_string(period))
 
-        pyexprs_by = parse_as_list_of_expressions(by) if by is not None else []
+        pyexprs_by = (
+            parse_as_list_of_expressions(group_by) if group_by is not None else []
+        )
         period = parse_as_duration_string(period)
         offset = parse_as_duration_string(offset)
 
@@ -3370,6 +3373,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
         return LazyGroupBy(lgb)
 
+    @deprecate_renamed_parameter("by", "group_by", version="0.20.14")
     def group_by_dynamic(
         self,
         index_column: IntoExpr,
@@ -3381,7 +3385,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         include_boundaries: bool = False,
         closed: ClosedInterval = "left",
         label: Label = "left",
-        by: IntoExpr | Iterable[IntoExpr] | None = None,
+        group_by: IntoExpr | Iterable[IntoExpr] | None = None,
         start_by: StartBy = "window",
         check_sorted: bool = True,
     ) -> LazyGroupBy:
@@ -3441,7 +3445,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             - 'datapoint': the first value of the index column in the given window.
               If you don't need the label to be at one of the boundaries, choose this
               option for maximum performance
-        by
+        group_by
             Also group by this column/these columns
         start_by : {'window', 'datapoint', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'}
             The strategy to determine the start of the first window by.
@@ -3644,7 +3648,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     "time",
         ...     every="1h",
         ...     closed="both",
-        ...     by="groups",
+        ...     group_by="groups",
         ...     include_boundaries=True,
         ... ).agg(pl.col("n")).collect()
         shape: (7, 5)
@@ -3714,7 +3718,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         offset = parse_as_duration_string(offset)
         every = parse_as_duration_string(every)
 
-        pyexprs_by = parse_as_list_of_expressions(by) if by is not None else []
+        pyexprs_by = (
+            parse_as_list_of_expressions(group_by) if group_by is not None else []
+        )
         lgb = self._ldf.group_by_dynamic(
             index_column,
             every,
@@ -6333,7 +6339,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             period=period,
             offset=offset,
             closed=closed,
-            by=by,
+            group_by=by,
             check_sorted=check_sorted,
         )
 
@@ -6392,7 +6398,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             period=period,
             offset=offset,
             closed=closed,
-            by=by,
+            group_by=by,
             check_sorted=check_sorted,
         )
 
@@ -6480,7 +6486,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             truncate=truncate,
             include_boundaries=include_boundaries,
             closed=closed,
-            by=by,
+            group_by=by,
             start_by=start_by,
             check_sorted=check_sorted,
         )

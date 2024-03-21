@@ -3,7 +3,7 @@ Various benchmark tests.
 
 Tests in this module will be run in the CI using a release build of Polars.
 
-To run these tests: pytest -m benchmark
+To run these tests: pytest -m release
 """
 
 import time
@@ -17,7 +17,7 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 # Mark all tests in this module as benchmark tests
-pytestmark = pytest.mark.benchmark()
+pytestmark = pytest.mark.release()
 
 
 @pytest.mark.skipif(

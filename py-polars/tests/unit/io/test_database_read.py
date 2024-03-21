@@ -12,13 +12,14 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 import pyarrow as pa
 import pytest
 from sqlalchemy import Integer, MetaData, Table, create_engine, func, select
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.sql.expression import cast as alchemy_cast
 
 import polars as pl
-from polars.datatypes.convert import _infer_dtype_from_database_typename
 from polars.exceptions import ComputeError, UnsuitableSQLError
-from polars.io.database import _ARROW_DRIVER_REGISTRY_
+from polars.io.database._arrow_registry import ARROW_DRIVER_REGISTRY
+from polars.io.database._inference import _infer_dtype_from_database_typename
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
@@ -527,7 +528,7 @@ def test_read_database_mocked(
         driver,
         batch_size,
         test_data=arrow,
-        repeat_batch_calls=_ARROW_DRIVER_REGISTRY_.get(driver, {}).get(  # type: ignore[call-overload]
+        repeat_batch_calls=ARROW_DRIVER_REGISTRY.get(driver, {}).get(  # type: ignore[call-overload]
             "repeat_batch_calls", False
         ),
     )
@@ -889,3 +890,38 @@ def test_database_dtype_inference_from_invalid_string(value: str) -> None:
         raise_unmatched=False,
     )
     assert inferred_dtype is None
+
+
+def test_read_database_async(tmp_sqlite_db: Path) -> None:
+    # confirm that we can load frame data from the core sqlalchemy async
+    # primitives: AsyncConnection, AsyncEngine, and async_sessionmaker
+
+    async_engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_sqlite_db}")
+    async_connection = async_engine.connect()
+    async_session = async_sessionmaker(async_engine)
+
+    expected_frame = pl.DataFrame(
+        {"id": [2, 1], "name": ["other", "misc"], "value": [-99.5, 100.0]}
+    )
+    async_conn: Any
+    for async_conn in (
+        async_engine,
+        async_connection,
+        async_session,
+    ):
+        if async_conn is async_session:
+            constraint, execute_opts = "", {}
+        else:
+            constraint = "WHERE value > :n"
+            execute_opts = {"parameters": {"n": -1000}}
+
+        df = pl.read_database(
+            query=f"""
+                SELECT id, name, value
+                FROM test_data {constraint}
+                ORDER BY id DESC
+            """,
+            connection=async_conn,
+            execute_options=execute_opts,
+        )
+        assert_frame_equal(expected_frame, df)

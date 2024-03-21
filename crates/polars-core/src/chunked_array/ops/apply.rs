@@ -242,7 +242,7 @@ where
         ChunkedArray::from_chunk_iter(self.name(), chunks)
     }
 
-    fn try_apply<F>(&'a self, f: F) -> PolarsResult<Self>
+    fn try_apply_values<F>(&'a self, f: F) -> PolarsResult<Self>
     where
         F: Fn(T::Native) -> PolarsResult<T::Native> + Copy,
     {
@@ -315,7 +315,7 @@ impl<'a> ChunkApply<'a, bool> for BooleanChunked {
         })
     }
 
-    fn try_apply<F>(&self, f: F) -> PolarsResult<Self>
+    fn try_apply_values<F>(&self, f: F) -> PolarsResult<Self>
     where
         F: Fn(bool) -> PolarsResult<bool> + Copy,
     {
@@ -431,7 +431,7 @@ impl<'a> ChunkApply<'a, &'a str> for StringChunked {
         ChunkedArray::apply_values_generic(self, f)
     }
 
-    fn try_apply<F>(&'a self, f: F) -> PolarsResult<Self>
+    fn try_apply_values<F>(&'a self, f: F) -> PolarsResult<Self>
     where
         F: Fn(&'a str) -> PolarsResult<Cow<'a, str>> + Copy,
     {
@@ -474,7 +474,7 @@ impl<'a> ChunkApply<'a, &'a [u8]> for BinaryChunked {
         self.apply_values_generic(f)
     }
 
-    fn try_apply<F>(&'a self, f: F) -> PolarsResult<Self>
+    fn try_apply_values<F>(&'a self, f: F) -> PolarsResult<Self>
     where
         F: Fn(&'a [u8]) -> PolarsResult<Cow<'a, [u8]>> + Copy,
     {
@@ -605,7 +605,7 @@ impl<'a> ChunkApply<'a, Series> for ListChunked {
         ca
     }
 
-    fn try_apply<F>(&'a self, f: F) -> PolarsResult<Self>
+    fn try_apply_values<F>(&'a self, f: F) -> PolarsResult<Self>
     where
         F: Fn(Series) -> PolarsResult<Series> + Copy,
     {
@@ -686,7 +686,7 @@ where
         ca
     }
 
-    fn try_apply<F>(&'a self, _f: F) -> PolarsResult<Self>
+    fn try_apply_values<F>(&'a self, _f: F) -> PolarsResult<Self>
     where
         F: Fn(&'a T) -> PolarsResult<T> + Copy,
     {

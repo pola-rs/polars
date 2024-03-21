@@ -3445,8 +3445,6 @@ class DataFrame:
             The number of rows affected, if the driver provides this information.
             Otherwise, returns -1.
         """
-        from polars.io.database import _open_adbc_connection
-
         if if_table_exists not in (valid_write_modes := get_args(DbWriteMode)):
             allowed = ", ".join(repr(m) for m in valid_write_modes)
             msg = f"write_database `if_table_exists` must be one of {{{allowed}}}, got {if_table_exists!r}"
@@ -3476,6 +3474,8 @@ class DataFrame:
                     "\n\nInstall Polars with: pip install adbc_driver_manager"
                 )
                 raise ModuleNotFoundError(msg) from exc
+
+            from polars.io.database._uri import _open_adbc_connection
 
             if if_table_exists == "fail":
                 # if the table exists, 'create' will raise an error,
@@ -5381,6 +5381,7 @@ class DataFrame:
         """
         return GroupBy(self, *by, **named_by, maintain_order=maintain_order)
 
+    @deprecate_renamed_parameter("by", "group_by", version="0.20.14")
     def rolling(
         self,
         index_column: IntoExpr,
@@ -5388,7 +5389,7 @@ class DataFrame:
         period: str | timedelta,
         offset: str | timedelta | None = None,
         closed: ClosedInterval = "right",
-        by: IntoExpr | Iterable[IntoExpr] | None = None,
+        group_by: IntoExpr | Iterable[IntoExpr] | None = None,
         check_sorted: bool = True,
     ) -> RollingGroupBy:
         """
@@ -5453,7 +5454,7 @@ class DataFrame:
             offset of the window. Default is -period
         closed : {'right', 'left', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive).
-        by
+        group_by
             Also group by this column/these columns
         check_sorted
             When the `by` argument is given, polars can not check sortedness
@@ -5519,10 +5520,11 @@ class DataFrame:
             period=period,
             offset=offset,
             closed=closed,
-            by=by,
+            group_by=group_by,
             check_sorted=check_sorted,
         )
 
+    @deprecate_renamed_parameter("by", "group_by", version="0.20.14")
     def group_by_dynamic(
         self,
         index_column: IntoExpr,
@@ -5534,7 +5536,7 @@ class DataFrame:
         include_boundaries: bool = False,
         closed: ClosedInterval = "left",
         label: Label = "left",
-        by: IntoExpr | Iterable[IntoExpr] | None = None,
+        group_by: IntoExpr | Iterable[IntoExpr] | None = None,
         start_by: StartBy = "window",
         check_sorted: bool = True,
     ) -> DynamicGroupBy:
@@ -5594,7 +5596,7 @@ class DataFrame:
             - 'datapoint': the first value of the index column in the given window.
               If you don't need the label to be at one of the boundaries, choose this
               option for maximum performance
-        by
+        group_by
             Also group by this column/these columns
         start_by : {'window', 'datapoint', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'}
             The strategy to determine the start of the first window by.
@@ -5791,7 +5793,7 @@ class DataFrame:
         ...     "time",
         ...     every="1h",
         ...     closed="both",
-        ...     by="groups",
+        ...     group_by="groups",
         ...     include_boundaries=True,
         ... ).agg(pl.col("n"))
         shape: (7, 5)
@@ -5851,18 +5853,19 @@ class DataFrame:
             label=label,
             include_boundaries=include_boundaries,
             closed=closed,
-            by=by,
+            group_by=group_by,
             start_by=start_by,
             check_sorted=check_sorted,
         )
 
+    @deprecate_renamed_parameter("by", "group_by", version="0.20.14")
     def upsample(
         self,
         time_column: str,
         *,
         every: str | timedelta,
         offset: str | timedelta | None = None,
-        by: str | Sequence[str] | None = None,
+        group_by: str | Sequence[str] | None = None,
         maintain_order: bool = False,
     ) -> Self:
         """
@@ -5902,7 +5905,7 @@ class DataFrame:
             Interval will start 'every' duration.
         offset
             Change the start of the date_range by this offset.
-        by
+        group_by
             First group by these columns and then upsample for every group.
         maintain_order
             Keep the ordering predictable. This is slower.
@@ -5931,7 +5934,7 @@ class DataFrame:
         ...     }
         ... ).set_sorted("time")
         >>> df.upsample(
-        ...     time_column="time", every="1mo", by="groups", maintain_order=True
+        ...     time_column="time", every="1mo", group_by="groups", maintain_order=True
         ... ).select(pl.all().forward_fill())
         shape: (7, 3)
         ┌─────────────────────┬────────┬────────┐
@@ -5950,10 +5953,10 @@ class DataFrame:
         """
         every = deprecate_saturating(every)
         offset = deprecate_saturating(offset)
-        if by is None:
-            by = []
-        if isinstance(by, str):
-            by = [by]
+        if group_by is None:
+            group_by = []
+        if isinstance(group_by, str):
+            group_by = [group_by]
         if offset is None:
             offset = "0ns"
 
@@ -5961,7 +5964,7 @@ class DataFrame:
         offset = parse_as_duration_string(offset)
 
         return self._from_pydf(
-            self._df.upsample(by, time_column, every, offset, maintain_order)
+            self._df.upsample(group_by, time_column, every, offset, maintain_order)
         )
 
     def join_asof(
@@ -10565,7 +10568,7 @@ class DataFrame:
             period=period,
             offset=offset,
             closed=closed,
-            by=by,
+            group_by=by,
             check_sorted=check_sorted,
         )
 
@@ -10617,7 +10620,7 @@ class DataFrame:
             period=period,
             offset=offset,
             closed=closed,
-            by=by,
+            group_by=by,
             check_sorted=check_sorted,
         )
 
@@ -10705,7 +10708,7 @@ class DataFrame:
             truncate=truncate,
             include_boundaries=include_boundaries,
             closed=closed,
-            by=by,
+            group_by=by,
             start_by=start_by,
             check_sorted=check_sorted,
         )

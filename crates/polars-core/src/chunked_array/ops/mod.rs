@@ -223,7 +223,7 @@ pub trait ChunkApply<'a, T> {
     where
         F: Fn(T) -> Self::FuncRet + Copy;
 
-    fn try_apply<F>(&'a self, f: F) -> PolarsResult<Self>
+    fn try_apply_values<F>(&'a self, f: F) -> PolarsResult<Self>
     where
         F: Fn(T) -> PolarsResult<Self::FuncRet> + Copy,
         Self: Sized;

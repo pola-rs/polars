@@ -192,12 +192,14 @@ def test_rolling_dynamic_sortedness_check() -> None:
     )
 
     with pytest.raises(pl.ComputeError, match=r"input data is not sorted"):
-        df.rolling("idx", period="2i", by="group").agg(pl.col("idx").alias("idx1"))
+        df.rolling("idx", period="2i", group_by="group").agg(
+            pl.col("idx").alias("idx1")
+        )
 
-    # no `by` argument
+    # no `group_by` argument
     with pytest.raises(
         pl.InvalidOperationError,
-        match=r"argument in operation 'group_by_rolling' is not explicitly sorted",
+        match="argument in operation 'rolling' is not explicitly sorted",
     ):
         df.rolling("idx", period="2i").agg(pl.col("idx").alias("idx1"))
 
@@ -231,7 +233,7 @@ def test_rolling_empty_groups_9973() -> None:
 
     out = data.rolling(
         index_column="date",
-        by="id",
+        group_by="id",
         period="2d",
         offset="1d",
         closed="left",

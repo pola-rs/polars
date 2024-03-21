@@ -86,8 +86,11 @@ impl SemaphoreTuner {
     }
 
     fn tune(&mut self, semaphore: &'static Semaphore) -> bool {
-        let download_speed = self.downloaded.fetch_add(0, Ordering::Relaxed)
-            / self.download_time.fetch_add(0, Ordering::Relaxed);
+        let bytes_downloaded = self.downloaded.fetch_add(0, Ordering::Relaxed);
+        let time_elapsed = self.download_time.fetch_add(0, Ordering::Relaxed);
+        let download_speed = bytes_downloaded
+            .checked_div(time_elapsed)
+            .unwrap_or_default();
 
         let increased = download_speed > self.previous_download_speed;
         self.previous_download_speed = download_speed;

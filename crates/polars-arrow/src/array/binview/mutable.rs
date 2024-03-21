@@ -136,7 +136,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
     /// - caller must allocate enough capacity
     /// - caller must ensure the view and buffers match.
     #[inline]
-    pub unsafe fn push_view(&mut self, v: View, buffers: &[(*const u8, usize)]) {
+    pub unsafe fn push_view(&mut self, v: View, buffers: &[Buffer<u8>]) {
         let len = v.length;
         self.total_bytes_len += len as usize;
         if len <= 12 {
@@ -144,8 +144,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
             self.views.push_unchecked(v)
         } else {
             self.total_buffer_len += len as usize;
-            let (data_ptr, data_len) = *buffers.get_unchecked_release(v.buffer_idx as usize);
-            let data = std::slice::from_raw_parts(data_ptr, data_len);
+            let data = buffers.get_unchecked_release(v.buffer_idx as usize);
             let offset = v.offset as usize;
             let bytes = data.get_unchecked_release(offset..offset + len as usize);
             let t = T::from_bytes_unchecked(bytes);
