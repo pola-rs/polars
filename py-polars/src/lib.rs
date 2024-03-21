@@ -54,8 +54,9 @@ use crate::conversion::Wrap;
 use crate::dataframe::PyDataFrame;
 use crate::error::{
     CategoricalRemappingWarning, ColumnNotFoundError, ComputeError, DuplicateError,
-    InvalidOperationError, NoDataError, OutOfBoundsError, PolarsBaseError, PolarsBaseWarning,
-    PyPolarsErr, SchemaError, SchemaFieldNotFoundError, StructFieldNotFoundError,
+    InvalidOperationError, MapWithoutReturnDtypeWarning, NoDataError, OutOfBoundsError,
+    PolarsBaseError, PolarsBaseWarning, PyPolarsErr, SchemaError, SchemaFieldNotFoundError,
+    StructFieldNotFoundError,
 };
 use crate::expr::PyExpr;
 use crate::functions::PyStringCacheHolder;
@@ -294,6 +295,11 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add(
         "CategoricalRemappingWarning",
         py.get_type::<CategoricalRemappingWarning>(),
+    )
+    .unwrap();
+    m.add(
+        "MapWithoutReturnDtypeWarning",
+        py.get_type::<MapWithoutReturnDtypeWarning>(),
     )
     .unwrap();
 

@@ -344,6 +344,7 @@ impl PySeries {
 
         if output_type.is_none() {
             polars_warn!(
+                MapWithoutReturnDtypeWarning,
                 "Calling `map_elements` without specifying `return_dtype` can lead to unpredictable results. \
                 Specify `return_dtype` to silence this warning.")
         }
