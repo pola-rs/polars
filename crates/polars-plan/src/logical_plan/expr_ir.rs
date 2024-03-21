@@ -70,6 +70,10 @@ impl ExprIR {
         self.node = node;
     }
 
+    pub(crate) fn set_alias(&mut self, name: Name) {
+        self.output_name = OutputName::Alias(name)
+    }
+
     pub(crate) fn output_name_arc(&self) -> &Arc<str> {
         self.output_name.unwrap()
     }

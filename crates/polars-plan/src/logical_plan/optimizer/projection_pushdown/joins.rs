@@ -115,7 +115,7 @@ pub(super) fn process_asof_join(
         // both columns remain. So `add_local=true` also for the right table
         for e in &right_on {
             if let Some(local_name) = add_keys_to_accumulated_state(
-                *e,
+                e.node(),
                 &mut pushdown_right,
                 &mut local_projection,
                 &mut names_right,
@@ -135,7 +135,7 @@ pub(super) fn process_asof_join(
             let mut add_local = if already_added_local_to_local_projected.is_empty() {
                 true
             } else {
-                let name = aexpr_to_leaf_name(proj, expr_arena);
+                let name = column_node_to_name(proj, expr_arena);
                 !already_added_local_to_local_projected.contains(&name)
             };
 

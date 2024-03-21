@@ -569,7 +569,7 @@ impl<'a> PredicatePushDown<'a> {
                 if options.pyarrow {
                     let predicate = predicate_at_scan(acc_predicates, predicate, expr_arena);
 
-                    if let Some(predicate) = predicate {
+                    if let Some(predicate) = predicate.clone() {
                         // simplify expressions before we translate them to pyarrow
                         let lp = PythonScan {options: options.clone(), predicate: Some(predicate)};
                         let lp_top = lp_arena.add(lp);

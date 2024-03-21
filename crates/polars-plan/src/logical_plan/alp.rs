@@ -228,7 +228,7 @@ impl ALogicalPlan {
             #[cfg(feature = "python")]
             PythonScan { options, predicate } => PythonScan {
                 options: options.clone(),
-                predicate: *predicate,
+                predicate: predicate.clone(),
             },
             Union { options, .. } => Union {
                 inputs,

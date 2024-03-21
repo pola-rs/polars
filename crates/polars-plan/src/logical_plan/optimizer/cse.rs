@@ -133,7 +133,7 @@ fn lp_node_equal(a: &ALogicalPlan, b: &ALogicalPlan, expr_arena: &Arena<AExpr>) 
         ) => {
             path_left == path_right
                 && scan_type_left == scan_type_right
-                && predicate_equal(predicate_left.map(|e| e.node()), predicate_right.map(|e| e.node()), expr_arena)
+                && predicate_equal(predicate_left.as_ref().map(|e| e.node()), predicate_right.as_ref().map(|e| e.node()), expr_arena)
         },
         (Selection { predicate: l, .. }, Selection { predicate: r, .. }) => {
             AExpr::is_equal(l.node(), r.node(), expr_arena)

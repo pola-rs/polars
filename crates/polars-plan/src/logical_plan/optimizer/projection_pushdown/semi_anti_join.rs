@@ -37,10 +37,10 @@ pub(super) fn process_semi_anti_join(
 
         // We need the join columns so we push the projection downwards
         for e in &left_on {
-            add_expr_to_accumulated(*e, &mut pushdown_left, &mut names_left, expr_arena);
+            add_expr_to_accumulated(e.node(), &mut pushdown_left, &mut names_left, expr_arena);
         }
         for e in &right_on {
-            add_expr_to_accumulated(*e, &mut pushdown_right, &mut names_right, expr_arena);
+            add_expr_to_accumulated(e.node(), &mut pushdown_right, &mut names_right, expr_arena);
         }
 
         for proj in acc_projections {
