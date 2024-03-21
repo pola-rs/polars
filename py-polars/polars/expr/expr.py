@@ -4067,11 +4067,8 @@ class Expr:
         A reasonable use case for `map` functions is transforming the values
         represented by an expression using a third-party library.
 
-        .. warning::
-            If you are looking to map a function over a window function or group_by
-            context, refer to :func:`map_elements` instead.
-            Read more in `the book
-            <https://docs.pola.rs/user-guide/expressions/user-defined-functions>`_.
+        If your function returns a scalar, for example a float, use
+        :func:`map_to_scalar` instead.
 
         Parameters
         ----------
@@ -4097,6 +4094,7 @@ class Expr:
 
         See Also
         --------
+        map_to_scalar
         map_elements
         replace
 
@@ -4130,7 +4128,7 @@ class Expr:
         ...     }
         ... )
         >>> df.group_by("a").agg(
-        ...     pl.col("b").map_batches(lambda x: x.max(), agg_list=False)
+        ...     pl.col("b").map_batches(lambda x: x + 2, agg_list=False)
         ... )  # doctest: +IGNORE_RESULT
         shape: (2, 2)
         ┌─────┬───────────┐
@@ -4138,25 +4136,28 @@ class Expr:
         │ --- ┆ ---       │
         │ i64 ┆ list[i64] │
         ╞═════╪═══════════╡
-        │ 1   ┆ [4]       │
-        │ 0   ┆ [3]       │
+        │ 1   ┆ [4, 6]    │
+        │ 0   ┆ [3, 5]    │
         └─────┴───────────┘
 
         Using `agg_list=True` would be more efficient. In this example, the input of
         the function is a Series of type `List(Int64)`.
 
         >>> df.group_by("a").agg(
-        ...     pl.col("b").map_batches(lambda x: x.list.max(), agg_list=True)
+        ...     pl.col("b").map_batches(
+        ...          lambda x: x.list.eval(pl.element() + 2),
+        ...          agg_list=True
+        ...    )
         ... )  # doctest: +IGNORE_RESULT
         shape: (2, 2)
-        ┌─────┬─────┐
-        │ a   ┆ b   │
-        │ --- ┆ --- │
-        │ i64 ┆ i64 │
-        ╞═════╪═════╡
-        │ 0   ┆ 3   │
-        │ 1   ┆ 4   │
-        └─────┴─────┘
+        ┌─────┬───────────┐
+        │ a   ┆ b         │
+        │ --- ┆ ---       │
+        │ i64 ┆ list[i64] │
+        ╞═════╪═══════════╡
+        │ 0   ┆ [3, 5]    │
+        │ 1   ┆ [4, 6]    │
+        └─────┴───────────┘
         """
         if return_dtype is not None:
             return_dtype = py_type_to_dtype(return_dtype)
@@ -4173,12 +4174,104 @@ class Expr:
 
     def map_to_scalar(
         self,
-        function: Callable[[Series], Series | Any],
+        function: Callable[[Series], Any],
         return_dtype: PolarsDataType | None = None,
         *,
         agg_list: bool = False,
         is_elementwise: bool = False,
-    ):
+    ) -> Self:
+        """
+        Apply a custom python function to a whole Series or sequence of Series.
+
+        The output of this custom function must be a scalar. If your function
+        returns a Series, use :func:`map_batches` instead.
+
+        Parameters
+        ----------
+        function
+            Lambda/function to apply.
+        return_dtype
+            Dtype of the output value.
+            If not set, the dtype will be inferred based on the value that is
+            returned by the function.
+        is_elementwise
+            If set to true this can run in the streaming engine, but may yield
+            incorrect results in group-by. Ensure you know what you are doing!
+        agg_list
+            Aggregate the values of the expression into a list before applying the
+            function. This parameter only works in a group-by context.
+            The function will be invoked only once on a list of groups, rather than
+            once per group.
+
+        Warnings
+        --------
+        If `return_dtype` is not provided, this may lead to unexpected results.
+        We allow this, but it is considered a bug in the user's query.
+
+        See Also
+        --------
+        map_batches
+        map_elements
+        replace
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "sine": [0.0, 1.0, 0.0, -1.0],
+        ...         "cosine": [1.0, 0.0, -1.0, 0.0],
+        ...     }
+        ... )
+        >>> df.select(pl.all().map_batches(lambda x: x.to_numpy().argmax()))
+        shape: (1, 2)
+        ┌──────┬────────┐
+        │ sine ┆ cosine │
+        │ ---  ┆ ---    │
+        │ i64  ┆ i64    │
+        ╞══════╪════════╡
+        │ 1    ┆ 0      │
+        └──────┴────────┘
+
+        In a group-by context, the `agg_list` parameter can improve performance if used
+        correctly. The following example has `agg_list` set to `False`, which causes
+        the function to be applied once per group. The input of the function is a
+        Series of type `Int64`. This is less efficient.
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [0, 1, 0, 1],
+        ...         "b": [1, 2, 3, 4],
+        ...     }
+        ... )
+        >>> df.group_by("a").agg(
+        ...     pl.col("b").map_to_scalar(lambda x: x.max(), agg_list=False)
+        ... )  # doctest: +IGNORE_RESULT
+        shape: (2, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 4   │
+        │ 0   ┆ 3   │
+        └─────┴─────┘
+
+        Using `agg_list=True` would be more efficient. In this example, the input of
+        the function is a Series of type `List(Int64)`.
+
+        >>> df.group_by("a").agg(
+        ...     pl.col("b").map_to_scalar(lambda x: x.list.max(), agg_list=True)
+        ... )  # doctest: +IGNORE_RESULT
+        shape: (2, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 0   ┆ 3   │
+        │ 1   ┆ 4   │
+        └─────┴─────┘
+        """
         if return_dtype is not None:
             return_dtype = py_type_to_dtype(return_dtype)
 
