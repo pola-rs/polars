@@ -404,7 +404,7 @@ def _expand_dict_data(
 
 
 def sequence_to_pydf(
-    data: Sequence[Any],
+    data: Sequence[Any] | Series,
     schema: SchemaDefinition | None = None,
     *,
     schema_overrides: SchemaDict | None = None,
@@ -430,7 +430,7 @@ def sequence_to_pydf(
 @singledispatch
 def _sequence_to_pydf_dispatcher(
     first_element: Any,
-    data: Sequence[Any],
+    data: Sequence[Any] | Series,
     schema: SchemaDefinition | None,
     *,
     schema_overrides: SchemaDict | None,

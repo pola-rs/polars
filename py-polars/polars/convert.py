@@ -205,7 +205,7 @@ def from_dicts(
 
 
 def from_records(
-    data: Sequence[Any],
+    data: Sequence[Any] | Series,
     schema: SchemaDefinition | None = None,
     *,
     schema_overrides: SchemaDict | None = None,
@@ -216,12 +216,11 @@ def from_records(
     """
     Construct a DataFrame from a sequence of sequences. This operation clones data.
 
-    Note that this is slower than creating from columnar memory.
-
     Parameters
     ----------
-    data : Sequence of sequences
-        Two-dimensional data represented as a sequence of sequences.
+    data : Sequence of sequences (or dicts)
+        Two-dimensional data represented as a sequence of dicts or sequence
+        of sequences.
     schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
         The DataFrame schema may be declared in several ways:
 
