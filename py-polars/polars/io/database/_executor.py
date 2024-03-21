@@ -253,17 +253,42 @@ class ConnectionExecutor:
 
     @staticmethod
     def _run_async(co: Coroutine) -> Any:  # type: ignore[type-arg]
-        """Consolidate async event loop acquisition and coroutine/func execution."""
+        """Run asynchronous code as if it was synchronous."""
         import asyncio
 
+        can_nest_asyncio = close_loop = False
         try:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", DeprecationWarning)
                 loop = asyncio.get_event_loop()
         except RuntimeError:
+            # if we create the loop, we can clean it up
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-        return loop.run_until_complete(co)
+            close_loop = True
+
+        try:
+            import nest_asyncio
+
+            nest_asyncio.apply()
+            can_nest_asyncio = True
+        except ModuleNotFoundError:
+            pass
+
+        try:
+            return loop.run_until_complete(co)
+        except RuntimeError as err:
+            if not can_nest_asyncio and "event loop is already running" in str(err):
+                msg = (
+                    "Synchronising this query requires nesting asyncio calls."
+                    "\n\nPlease run: pip install nest_asyncio"
+                )
+                raise RuntimeError(msg) from err
+            else:
+                raise
+        finally:
+            if close_loop:
+                loop.close()
 
     @staticmethod
     def _inject_type_overrides(
