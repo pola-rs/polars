@@ -49,19 +49,35 @@ impl LazyIpcReader {
 }
 
 impl LazyFileListReader for LazyIpcReader {
+    fn finish(mut self) -> PolarsResult<LazyFrame> {
+        if let Some(paths) = self.iter_paths()? {
+            let paths = paths
+                .into_iter()
+                .collect::<PolarsResult<Arc<[PathBuf]>>>()?;
+            self.paths = paths;
+        }
+        self.finish_no_glob()
+    }
+
     fn finish_no_glob(self) -> PolarsResult<LazyFrame> {
         let args = self.args;
-        let path = self.path;
+
+        let paths = if self.paths.is_empty() {
+            Arc::new([self.path]) as Arc<[PathBuf]>
+        } else {
+            self.paths
+        };
 
         let options = IpcScanOptions {
             memmap: args.memmap,
         };
+
         let mut lf: LazyFrame = LogicalPlanBuilder::scan_ipc(
-            path,
+            paths,
             options,
             args.n_rows,
             args.cache,
-            args.row_index.clone(),
+            args.row_index,
             args.rechunk,
             #[cfg(feature = "cloud")]
             args.cloud_options,
@@ -69,11 +85,6 @@ impl LazyFileListReader for LazyIpcReader {
         .build()
         .into();
         lf.opt_state.file_caching = true;
-
-        // it is a bit hacky, but this `with_row_index` function updates the schema
-        if let Some(row_index) = args.row_index {
-            lf = lf.with_row_index(&row_index.name, Some(row_index.offset))
-        }
 
         Ok(lf)
     }
