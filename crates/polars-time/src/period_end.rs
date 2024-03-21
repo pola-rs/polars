@@ -65,7 +65,7 @@ impl PolarsDateEnd for DatetimeChunked {
             get_timestamp_closures(self.time_unit());
         Ok(self
             .0
-            .try_apply(|t| {
+            .try_apply_values(|t| {
                 roll_month_forward(
                     t,
                     time_zone,
@@ -82,7 +82,7 @@ impl PolarsDateEnd for DatetimeChunked {
             get_timestamp_closures(self.time_unit());
         Ok(self
             .0
-            .try_apply(|t| {
+            .try_apply_values(|t| {
                 roll_quarter_forward(
                     t,
                     time_zone,
@@ -99,7 +99,7 @@ impl PolarsDateEnd for DatetimeChunked {
             get_timestamp_closures(self.time_unit());
         Ok(self
             .0
-            .try_apply(|t| {
+            .try_apply_values(|t| {
                 roll_year_forward(
                     t,
                     time_zone,
@@ -117,7 +117,7 @@ impl PolarsDateEnd for DateChunked {
         const MSECS_IN_DAY: i64 = MILLISECONDS * SECONDS_IN_DAY;
         Ok(self
             .0
-            .try_apply(|t| {
+            .try_apply_values(|t| {
                 Ok((roll_month_forward(
                     MSECS_IN_DAY * t as i64,
                     None,
@@ -132,7 +132,7 @@ impl PolarsDateEnd for DateChunked {
         const MSECS_IN_DAY: i64 = MILLISECONDS * SECONDS_IN_DAY;
         Ok(self
             .0
-            .try_apply(|t| {
+            .try_apply_values(|t| {
                 Ok((roll_quarter_forward(
                     MSECS_IN_DAY * t as i64,
                     None,
@@ -147,7 +147,7 @@ impl PolarsDateEnd for DateChunked {
         const MSECS_IN_DAY: i64 = MILLISECONDS * SECONDS_IN_DAY;
         Ok(self
             .0
-            .try_apply(|t| {
+            .try_apply_values(|t| {
                 Ok((roll_year_forward(
                     MSECS_IN_DAY * t as i64,
                     None,
