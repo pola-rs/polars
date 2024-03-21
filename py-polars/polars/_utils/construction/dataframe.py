@@ -404,7 +404,7 @@ def _expand_dict_data(
 
 
 def sequence_to_pydf(
-    data: Sequence[Any] | None,
+    data: Sequence[Any],
     schema: SchemaDefinition | None = None,
     *,
     schema_overrides: SchemaDict | None = None,
@@ -413,7 +413,7 @@ def sequence_to_pydf(
     infer_schema_length: int | None = N_INFER_DEFAULT,
 ) -> PyDataFrame:
     """Construct a PyDataFrame from a sequence."""
-    if data is None or len(data) == 0:
+    if len(data) == 0:
         return dict_to_pydf({}, schema=schema, schema_overrides=schema_overrides)
 
     return _sequence_to_pydf_dispatcher(
