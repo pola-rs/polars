@@ -103,6 +103,12 @@ impl ExprIR {
     }
 }
 
+impl AsRef<ExprIR> for ExprIR {
+    fn as_ref(&self) -> &ExprIR {
+        self
+    }
+}
+
 
 /// A Node that is restricted to `AExpr::Column`
 #[repr(transparent)]

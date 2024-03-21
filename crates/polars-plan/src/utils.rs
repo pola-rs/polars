@@ -375,6 +375,25 @@ pub(crate) fn aexprs_to_schema<I: IntoIterator<Item=K>, K: Into<Node>>(
         .collect()
 }
 
+pub(crate) fn expr_irs_to_schema<I: IntoIterator<Item=K>, K: AsRef<ExprIR>>(
+    expr: I,
+    schema: &Schema,
+    ctxt: Context,
+    arena: &Arena<AExpr>,
+) -> Schema {
+    expr.into_iter()
+        .map(|e| {
+            let e = e.as_ref();
+            let mut field = arena.get(e.node()).to_field(schema, ctxt, arena).unwrap();
+
+            if let Some(name) = e.get_alias() {
+                field.name = name.as_ref().into()
+            }
+            field
+        })
+        .collect()
+}
+
 /// Concatenate multiple schemas into one, disallowing duplicate field names
 pub fn merge_schemas(schemas: &[SchemaRef]) -> PolarsResult<Schema> {
     let schema_size = schemas.iter().map(|schema| schema.len()).sum();

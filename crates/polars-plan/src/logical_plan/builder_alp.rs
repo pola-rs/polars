@@ -49,7 +49,7 @@ impl<'a> ALogicalPlanBuilder<'a> {
             self
         } else {
             let input_schema = self.lp_arena.get(self.root).schema(self.lp_arena);
-            let schema = aexprs_to_schema(&exprs, &input_schema, Context::Default, self.expr_arena);
+            let schema = expr_irs_to_schema(&exprs, &input_schema, Context::Default, self.expr_arena);
 
             let lp = ALogicalPlan::Projection {
                 expr: exprs.into(),
@@ -213,7 +213,7 @@ impl<'a> ALogicalPlanBuilder<'a> {
     ) -> Self {
         let current_schema = self.schema();
         let mut schema =
-            aexprs_to_schema(&keys, &current_schema, Context::Default, self.expr_arena);
+            expr_irs_to_schema(&keys, &current_schema, Context::Default, self.expr_arena);
 
 
         #[cfg(feature = "dynamic_group_by")]
@@ -234,7 +234,7 @@ impl<'a> ALogicalPlanBuilder<'a> {
         }
 
 
-        let agg_schema = aexprs_to_schema(
+        let agg_schema = expr_irs_to_schema(
             &aggs,
             &current_schema,
             Context::Aggregation,
