@@ -214,7 +214,7 @@ def test_group_by_dynamic_by_monday_and_offset_5444() -> None:
     ).with_columns(pl.col("date").str.strptime(pl.Date, "%Y-%m-%d").set_sorted())
 
     result = df.group_by_dynamic(
-        "date", every="1w", offset="1d", by="label", start_by="monday"
+        "date", every="1w", offset="1d", group_by="label", start_by="monday"
     ).agg(pl.col("value").sum())
 
     assert result.to_dict(as_series=False) == {
@@ -232,7 +232,7 @@ def test_group_by_dynamic_by_monday_and_offset_5444() -> None:
     result_empty = (
         df.filter(pl.col("date") == date(1, 1, 1))
         .group_by_dynamic(
-            "date", every="1w", offset="1d", by="label", start_by="monday"
+            "date", every="1w", offset="1d", group_by="label", start_by="monday"
         )
         .agg(pl.col("value").sum())
     )
@@ -273,7 +273,7 @@ def test_group_by_dynamic_label(label: Label, expected: list[datetime]) -> None:
         }
     ).sort("ts")
     result = (
-        df.group_by_dynamic("ts", every="1d", label=label, by="group")
+        df.group_by_dynamic("ts", every="1d", label=label, group_by="group")
         .agg(pl.col("n"))["ts"]
         .to_list()
     )
@@ -314,7 +314,7 @@ def test_group_by_dynamic_slice_pushdown() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "a", "b"], "c": [1, 3, 5]}).lazy()
     df = (
         df.sort("a")
-        .group_by_dynamic("a", by="b", every="2i")
+        .group_by_dynamic("a", group_by="b", every="2i")
         .agg((pl.col("c") - pl.col("c").shift(fill_value=0)).sum().alias("c"))
     )
     assert df.head(2).collect().to_dict(as_series=False) == {
@@ -366,7 +366,7 @@ def test_rolling_dynamic_sortedness_check() -> None:
     )
 
     with pytest.raises(pl.ComputeError, match=r"input data is not sorted"):
-        df.group_by_dynamic("idx", every="2i", by="group").agg(
+        df.group_by_dynamic("idx", every="2i", group_by="group").agg(
             pl.col("idx").alias("idx1")
         )
 
@@ -496,7 +496,7 @@ def test_group_by_dynamic_validation(every: str, match: str) -> None:
     )
 
     with pytest.raises(pl.ComputeError, match=match):
-        df.group_by_dynamic("index", by="group", every=every, period="2i").agg(
+        df.group_by_dynamic("index", group_by="group", every=every, period="2i").agg(
             pl.col("weight")
         )
 
@@ -564,7 +564,7 @@ def test_truncate_negative_offset(tzinfo: ZoneInfo | None) -> None:
     out = df.group_by_dynamic(
         index_column="event_date",
         every="1mo",
-        by=["admin", "five_type", "actor"],
+        group_by=["admin", "five_type", "actor"],
     ).agg([pl.col("adm1_code").unique(), (pl.col("fatalities") > 0).sum()])
 
     assert out["event_date"].to_list() == [
@@ -885,7 +885,7 @@ def test_group_by_dynamic_iter(every: str | timedelta, tzinfo: ZoneInfo | None) 
     result2 = [
         (name, data.shape)
         for name, data in df.group_by_dynamic(
-            "datetime", every=every, closed="left", by="a"
+            "datetime", every=every, closed="left", group_by="a"
         )
     ]
     expected2 = [

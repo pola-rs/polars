@@ -989,7 +989,7 @@ impl LazyFrame {
     pub fn group_by_rolling<E: AsRef<[Expr]>>(
         self,
         index_column: Expr,
-        by: E,
+        group_by: E,
         mut options: RollingGroupOptions,
     ) -> LazyGroupBy {
         if let Expr::Column(name) = index_column {
@@ -1000,7 +1000,7 @@ impl LazyFrame {
                 .unwrap();
             return self.with_column(index_column).group_by_rolling(
                 Expr::Column(Arc::from(output_field.name().as_str())),
-                by,
+                group_by,
                 options,
             );
         }
@@ -1008,7 +1008,7 @@ impl LazyFrame {
         LazyGroupBy {
             logical_plan: self.logical_plan,
             opt_state,
-            keys: by.as_ref().to_vec(),
+            keys: group_by.as_ref().to_vec(),
             maintain_order: true,
             dynamic_options: None,
             rolling_options: Some(options),
@@ -1028,13 +1028,13 @@ impl LazyFrame {
     /// - period: length of the window
     /// - offset: offset of the window
     ///
-    /// The `by` argument should be empty `[]` if you don't want to combine this
+    /// The `group_by` argument should be empty `[]` if you don't want to combine this
     /// with a ordinary group_by on these keys.
     #[cfg(feature = "dynamic_group_by")]
     pub fn group_by_dynamic<E: AsRef<[Expr]>>(
         self,
         index_column: Expr,
-        by: E,
+        group_by: E,
         mut options: DynamicGroupOptions,
     ) -> LazyGroupBy {
         if let Expr::Column(name) = index_column {
@@ -1045,7 +1045,7 @@ impl LazyFrame {
                 .unwrap();
             return self.with_column(index_column).group_by_dynamic(
                 Expr::Column(Arc::from(output_field.name().as_str())),
-                by,
+                group_by,
                 options,
             );
         }
@@ -1053,7 +1053,7 @@ impl LazyFrame {
         LazyGroupBy {
             logical_plan: self.logical_plan,
             opt_state,
-            keys: by.as_ref().to_vec(),
+            keys: group_by.as_ref().to_vec(),
             maintain_order: true,
             dynamic_options: Some(options),
             rolling_options: None,

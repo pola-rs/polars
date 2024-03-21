@@ -577,7 +577,7 @@ def test_upsample(time_zone: str | None, tzinfo: ZoneInfo | timezone | None) -> 
     ).with_columns(pl.col("time").dt.replace_time_zone(time_zone).set_sorted())
 
     up = df.upsample(
-        time_column="time", every="1mo", by="admin", maintain_order=True
+        time_column="time", every="1mo", group_by="admin", maintain_order=True
     ).select(pl.all().forward_fill())
     # this print will panic if timezones feature is not activated
     # don't remove
@@ -751,7 +751,7 @@ def test_asof_join_tolerance_grouper() -> None:
 def test_rolling_group_by_by_argument() -> None:
     df = pl.DataFrame({"times": range(10), "groups": [1] * 4 + [2] * 6})
 
-    out = df.rolling("times", period="5i", by=["groups"]).agg(
+    out = df.rolling("times", period="5i", group_by=["groups"]).agg(
         pl.col("times").alias("agg_list")
     )
 
@@ -1210,7 +1210,7 @@ def test_rolling_by_ordering() -> None:
         period="2m",
         closed="both",
         offset="-1m",
-        by="key",
+        group_by="key",
     ).agg(
         [
             pl.col("val").sum().alias("sum val"),
@@ -1243,13 +1243,13 @@ def test_rolling_by_() -> None:
     )
     out = (
         df.sort("datetime")
-        .rolling(index_column="datetime", by="group", period=timedelta(days=3))
+        .rolling(index_column="datetime", group_by="group", period=timedelta(days=3))
         .agg([pl.len().alias("count")])
     )
 
     expected = (
         df.sort(["group", "datetime"])
-        .rolling(index_column="datetime", by="group", period="3d")
+        .rolling(index_column="datetime", group_by="group", period="3d")
         .agg([pl.len().alias("count")])
     )
     assert_frame_equal(out.sort(["group", "datetime"]), expected)
@@ -2584,7 +2584,7 @@ def test_rolling_group_by_empty_groups_by_take_6330() -> None:
     df = df1.join(df2, how="cross").set_sorted("Date")
 
     result = df.rolling(
-        index_column="Date", period="2i", offset="-2i", by="Event", closed="left"
+        index_column="Date", period="2i", offset="-2i", group_by="Event", closed="left"
     ).agg(pl.len())
 
     assert result.to_dict(as_series=False) == {
