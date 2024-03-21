@@ -39,8 +39,6 @@ pub unsafe fn decode_rows(
 }
 
 unsafe fn decode(rows: &mut [&[u8]], field: &SortField, data_type: &ArrowDataType) -> ArrayRef {
-    // not yet supported for fixed types
-    assert!(!field.nulls_last, "not yet supported");
     match data_type {
         ArrowDataType::Null => NullArray::new(ArrowDataType::Null, rows.len()).to_boxed(),
         ArrowDataType::Boolean => decode_bool(rows, field).to_boxed(),

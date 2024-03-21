@@ -10,6 +10,7 @@ pub(crate) use arg_sort_multiple::argsort_multiple_row_fmt;
 use arrow::bitmap::MutableBitmap;
 use arrow::buffer::Buffer;
 use arrow::legacy::trusted_len::TrustedLenPush;
+use compare_inner::NonNull;
 use rayon::prelude::*;
 pub use slice::*;
 
@@ -221,7 +222,7 @@ fn arg_sort_multiple_numeric<T: PolarsNumericType>(
             vals.extend_trusted_len(arr.values().as_slice().iter().map(|v| {
                 let i = count;
                 count += 1;
-                (i, *v)
+                (i, NonNull(*v))
             }))
         }
         arg_sort_multiple_impl(vals, options)
@@ -269,13 +270,14 @@ where
 fn ordering_other_columns<'a>(
     compare_inner: &'a [Box<dyn TotalOrdInner + 'a>],
     descending: &[bool],
+    nulls_last: bool,
     idx_a: usize,
     idx_b: usize,
 ) -> Ordering {
     for (cmp, descending) in compare_inner.iter().zip(descending) {
         // SAFETY:
         // indices are in bounds
-        let ordering = unsafe { cmp.cmp_element_unchecked(idx_a, idx_b) };
+        let ordering = unsafe { cmp.cmp_element_unchecked(idx_a, idx_b, nulls_last ^ descending) };
         match (ordering, descending) {
             (Ordering::Equal, _) => continue,
             (_, true) => return ordering.reverse(),

@@ -982,3 +982,27 @@ def test_sorted_flag_concat_unit(unit_descending: bool) -> None:
     out = pl.concat((b, a))
     assert out.to_list() == [3, 2, 1, None]
     assert out.flags["SORTED_DESC"]
+
+
+def test_sort_descending_nulls_last() -> None:
+    df = pl.DataFrame({"x": [1, 3, None, 2, None], "y": [1, 3, 0, 2, 0]})
+
+    assert_frame_equal(
+        df.sort("x", descending=False, nulls_last=False),
+        pl.DataFrame({"x": [None, None, 1, 2, 3], "y": [0, 0, 1, 2, 3]}),
+    )
+
+    assert_frame_equal(
+        df.sort("x", descending=True, nulls_last=False),
+        pl.DataFrame({"x": [None, None, 3, 2, 1], "y": [0, 0, 3, 2, 1]}),
+    )
+
+    assert_frame_equal(
+        df.sort("x", descending=False, nulls_last=True),
+        pl.DataFrame({"x": [1, 2, 3, None, None], "y": [1, 2, 3, 0, 0]}),
+    )
+
+    assert_frame_equal(
+        df.sort("x", descending=True, nulls_last=True),
+        pl.DataFrame({"x": [3, 2, 1, None, None], "y": [3, 2, 1, 0, 0]}),
+    )

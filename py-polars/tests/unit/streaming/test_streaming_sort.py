@@ -264,3 +264,27 @@ def test_nulls_last_streaming_sort() -> None:
     assert pl.LazyFrame({"x": [1, None]}).sort("x", nulls_last=True).collect(
         streaming=True
     ).to_dict(as_series=False) == {"x": [1, None]}
+
+
+def test_sort_descending_nulls_last() -> None:
+    df = pl.DataFrame({"x": [1, 3, None, 2, None], "y": [1, 3, 0, 2, 0]})
+
+    assert_frame_equal(
+        df.lazy().sort("x", descending=False, nulls_last=False).collect(streaming=True),
+        pl.DataFrame({"x": [None, None, 1, 2, 3], "y": [0, 0, 1, 2, 3]}),
+    )
+
+    assert_frame_equal(
+        df.lazy().sort("x", descending=True, nulls_last=False).collect(streaming=True),
+        pl.DataFrame({"x": [None, None, 3, 2, 1], "y": [0, 0, 3, 2, 1]}),
+    )
+
+    assert_frame_equal(
+        df.lazy().sort("x", descending=False, nulls_last=True).collect(streaming=True),
+        pl.DataFrame({"x": [1, 2, 3, None, None], "y": [1, 2, 3, 0, 0]}),
+    )
+
+    assert_frame_equal(
+        df.lazy().sort("x", descending=True, nulls_last=True).collect(streaming=True),
+        pl.DataFrame({"x": [3, 2, 1, None, None], "y": [3, 2, 1, 0, 0]}),
+    )

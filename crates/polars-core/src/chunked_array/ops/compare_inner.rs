@@ -7,7 +7,47 @@ use crate::prelude::*;
 use crate::series::implementations::null::NullChunked;
 
 #[repr(transparent)]
-struct NonNull<T>(T);
+#[derive(Copy, Clone)]
+pub struct NonNull<T>(pub T);
+
+impl<T: TotalEq> TotalEq for NonNull<T> {
+    fn tot_eq(&self, other: &Self) -> bool {
+        self.0.tot_eq(&other.0)
+    }
+}
+
+pub trait NullOrderCmp {
+    fn null_order_cmp(&self, other: &Self, nulls_last: bool) -> Ordering;
+}
+
+impl<T: TotalOrd> NullOrderCmp for Option<T> {
+    fn null_order_cmp(&self, other: &Self, nulls_last: bool) -> Ordering {
+        match (self, other) {
+            (None, None) => Ordering::Equal,
+            (None, Some(_)) => {
+                if nulls_last {
+                    Ordering::Greater
+                } else {
+                    Ordering::Less
+                }
+            },
+            (Some(_), None) => {
+                if nulls_last {
+                    Ordering::Less
+                } else {
+                    Ordering::Greater
+                }
+            },
+            (Some(l), Some(r)) => l.tot_cmp(&r),
+        }
+    }
+}
+
+impl<T: TotalOrd> NullOrderCmp for NonNull<T> {
+    fn null_order_cmp(&self, other: &Self, _nulls_last: bool) -> Ordering {
+        self.0.tot_cmp(&other.0)
+    }
+}
 
 trait GetInner {
     type Item;
@@ -29,16 +69,16 @@ impl<'a, T: StaticArray> GetInner for &'a T {
 }
 
 impl<'a, T: PolarsDataType> GetInner for NonNull<&'a ChunkedArray<T>> {
-    type Item = T::Physical<'a>;
+    type Item = NonNull<T::Physical<'a>>;
     unsafe fn get_unchecked(&self, idx: usize) -> Self::Item {
-        self.0.value_unchecked(idx)
+        NonNull(self.0.value_unchecked(idx))
     }
 }
 
 impl<'a, T: StaticArray> GetInner for NonNull<&'a T> {
-    type Item = T::ValueT<'a>;
+    type Item = NonNull<T::ValueT<'a>>;
     unsafe fn get_unchecked(&self, idx: usize) -> Self::Item {
-        self.0.value_unchecked(idx)
+        NonNull(self.0.value_unchecked(idx))
     }
 }
 
@@ -51,7 +91,12 @@ pub trait TotalEqInner: Send + Sync {
 pub trait TotalOrdInner: Send + Sync {
     /// # Safety
     /// Does not do any bound checks.
-    unsafe fn cmp_element_unchecked(&self, idx_a: usize, idx_b: usize) -> Ordering;
+    unsafe fn cmp_element_unchecked(
+        &self,
+        idx_a: usize,
+        idx_b: usize,
+        nulls_last: bool,
+    ) -> Ordering;
 }
 
 impl<T> TotalEqInner for T
@@ -102,13 +147,18 @@ where
 impl<T> TotalOrdInner for T
 where
     T: GetInner + Send + Sync,
-    T::Item: TotalOrd,
+    T::Item: NullOrderCmp,
 {
     #[inline]
-    unsafe fn cmp_element_unchecked(&self, idx_a: usize, idx_b: usize) -> Ordering {
+    unsafe fn cmp_element_unchecked(
+        &self,
+        idx_a: usize,
+        idx_b: usize,
+        nulls_last: bool,
+    ) -> Ordering {
         let a = self.get_unchecked(idx_a);
         let b = self.get_unchecked(idx_b);
-        a.tot_cmp(&b)
+        a.null_order_cmp(&b, nulls_last)
     }
 }
 

@@ -375,6 +375,7 @@ pub struct SortOptions {
 pub struct SortMultipleOptions {
     pub other: Vec<Series>,
     pub descending: Vec<bool>,
+    pub nulls_last: bool,
     pub multithreaded: bool,
 }
 
