@@ -229,9 +229,11 @@ impl PySeries {
 
         for res in values.iter()? {
             let value = res?;
-            match value.extract::<Cow<str>>() {
-                Ok(v) => builder.append_value(v),
-                Err(_) => builder.append_null(),
+            if value.is_none() {
+                builder.append_null()
+            } else {
+                let v = value.extract::<Cow<str>>()?;
+                builder.append_value(v)
             }
         }
 
@@ -247,9 +249,11 @@ impl PySeries {
 
         for res in values.iter()? {
             let value = res?;
-            match value.extract::<&[u8]>() {
-                Ok(v) => builder.append_value(v),
-                Err(_) => builder.append_null(),
+            if value.is_none() {
+                builder.append_null()
+            } else {
+                let v = value.extract::<&[u8]>()?;
+                builder.append_value(v)
             }
         }
 
