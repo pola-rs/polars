@@ -24,6 +24,7 @@ concurrency:
 
 env:
   RUSTFLAGS: -C debuginfo=0  # Do not produce debug symbols to keep memory usage down
+  RUST_BACKTRACE: 1
 
 defaults:
   run:
