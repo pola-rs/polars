@@ -232,7 +232,7 @@ fn finish_index_and_dfs(
         "expected dataframe indices in order from 0 to len"
     );
 
-    debug_assert_eq!(index_and_dfs.len(), row_counter.counts.len());
+    debug_assert_eq!(index_and_dfs.len(), row_counter.len());
     let mut offset = 0;
     let mut df = accumulate_dataframes_vertical(
         index_and_dfs
@@ -301,55 +301,5 @@ impl Executor for IpcExec {
             },
             profile_name,
         )
-    }
-}
-
-// Tracks the sum of consecutive values in a dynamically sized array where the values can be written
-// in any order.
-struct ConsecutiveCountState {
-    counts: Box<[IdxSize]>,
-    next_index: usize,
-    sum: IdxSize,
-}
-
-impl ConsecutiveCountState {
-    fn new(len: usize) -> Self {
-        Self {
-            counts: vec![IdxSize::MAX; len].into_boxed_slice(),
-            next_index: 0,
-            sum: 0,
-        }
-    }
-
-    /// Sum of all consecutive counts.
-    fn sum(&self) -> IdxSize {
-        self.sum
-    }
-
-    /// Write count at index.
-    fn write(&mut self, index: usize, count: IdxSize) {
-        debug_assert!(
-            self.counts[index] == IdxSize::MAX,
-            "second write to same index"
-        );
-        debug_assert!(count != IdxSize::MAX, "count can not be IdxSize::MAX");
-
-        self.counts[index] = count;
-
-        // Update sum and next index.
-        while self.next_index < self.counts.len() {
-            let count = self.counts[self.next_index];
-            if count == IdxSize::MAX {
-                break;
-            }
-            self.sum += count;
-            self.next_index += 1;
-        }
-    }
-
-    fn counts(&self) -> impl Iterator<Item = Option<IdxSize>> + '_ {
-        self.counts
-            .iter()
-            .map(|&count| (count != IdxSize::MAX).then_some(count))
     }
 }
