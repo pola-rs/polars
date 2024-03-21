@@ -454,29 +454,61 @@ mod tests {
                 .as_str(),
             "http://users/Jane%20Doe/data.csv"
         );
-        assert_eq!(
-            parse_url(r"file:///c:/Users/Jane Doe/data.csv")
-                .unwrap()
-                .as_str(),
-            "file:///c:/Users/Jane%20Doe/data.csv"
-        );
-        assert_eq!(
-            parse_url(r"file://\c:\Users\Jane Doe\data.csv")
-                .unwrap()
-                .as_str(),
-            "file:///c:/Users/Jane%20Doe/data.csv"
-        );
-        assert_eq!(
-            parse_url(r"c:\Users\Jane Doe\data.csv").unwrap().as_str(),
-            "file:///C:/Users/Jane%20Doe/data.csv"
-        );
-        assert_eq!(
-            parse_url(r"\Users\Jane Doe\data.csv").unwrap().as_str(),
-            Url::from_file_path(std::env::current_dir().unwrap())
-                .unwrap()
-                .join("/Users/Jane%20Doe/data.csv")
-                .unwrap()
-                .as_str()
-        );
+        #[cfg(target_os = "windows")]
+        {
+            assert_eq!(
+                parse_url(r"file:///c:/Users/Jane Doe/data.csv")
+                    .unwrap()
+                    .as_str(),
+                "file:///c:/Users/Jane%20Doe/data.csv"
+            );
+            assert_eq!(
+                parse_url(r"file://\c:\Users\Jane Doe\data.csv")
+                    .unwrap()
+                    .as_str(),
+                "file:///c:/Users/Jane%20Doe/data.csv"
+            );
+            assert_eq!(
+                parse_url(r"c:\Users\Jane Doe\data.csv").unwrap().as_str(),
+                "file:///C:/Users/Jane%20Doe/data.csv"
+            );
+            assert_eq!(
+                parse_url(r"\Users\Jane Doe\data.csv").unwrap().as_str(),
+                Url::from_file_path(std::env::current_dir().unwrap())
+                    .unwrap()
+                    .join("/Users/Jane%20Doe/data.csv")
+                    .unwrap()
+                    .as_str()
+            );
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            assert_eq!(
+                parse_url(r"file:///home/Jane Doe/data.csv")
+                    .unwrap()
+                    .as_str(),
+                "file:///home/Jane%20Doe/data.csv"
+            );
+            assert_eq!(
+                parse_url(r"/home/Jane Doe/data.csv").unwrap().as_str(),
+                "file:///home/Jane%20Doe/data.csv"
+            );
+            assert_eq!(
+                parse_url(r"file://data.csv").unwrap().as_str(),
+                Url::from_file_path(std::env::current_dir().unwrap())
+                    .unwrap()
+                    .join("data.csv")
+                    .unwrap()
+                    .as_str()
+            );
+            assert_eq!(
+                parse_url(r"\Users\Jane Doe\data.csv").unwrap().as_str(),
+                Url::from_file_path(std::env::current_dir().unwrap())
+                    .unwrap()
+                    .join("data.csv")
+                    .unwrap()
+                    .as_str()
+            );
+        }
     }
 }
