@@ -549,7 +549,7 @@ impl<'a> PredicatePushDown<'a> {
             lp@ Sink {..} => {
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
             }
-            lp @ HStack {..} | lp @ Projection {..} | lp @ ExtContext {..} => {
+            lp @ HStack {..} | lp @ Projection {..} | lp @ SimpleProjection {..} | lp @ ExtContext {..} => {
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, true)
             }
             // NOT Pushed down passed these nodes
@@ -595,8 +595,7 @@ impl<'a> PredicatePushDown<'a> {
                     self.no_pushdown_restart_opt(PythonScan {options, predicate}, acc_predicates, lp_arena, expr_arena)
                 }
             },
-            Invalid | SimpleProjection {..} => unreachable!()
-
+            Invalid => unreachable!(),
         }
     }
 

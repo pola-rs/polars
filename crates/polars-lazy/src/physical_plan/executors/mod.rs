@@ -19,6 +19,7 @@ mod stack;
 mod udf;
 mod union;
 mod unique;
+mod projection_simple;
 
 use std::borrow::Cow;
 
@@ -50,4 +51,5 @@ pub(super) use self::stack::*;
 pub(super) use self::udf::*;
 pub(super) use self::union::*;
 pub(super) use self::unique::*;
+pub(super) use self::projection_simple::*;
 use super::*;

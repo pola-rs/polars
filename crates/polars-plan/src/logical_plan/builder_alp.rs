@@ -87,6 +87,7 @@ impl<'a> ALogicalPlanBuilder<'a> {
             let lp = ALogicalPlan::SimpleProjection {
                 input: self.root,
                 columns: Arc::new(schema),
+                duplicate_check: false
             };
             let node = self.lp_arena.add(lp);
             Ok(ALogicalPlanBuilder::new(node, self.expr_arena, self.lp_arena))
@@ -116,6 +117,7 @@ impl<'a> ALogicalPlanBuilder<'a> {
             let lp = ALogicalPlan::SimpleProjection {
                 input: self.root,
                 columns: Arc::new(schema),
+                duplicate_check: false
             };
             let node = self.lp_arena.add(lp);
             Ok(ALogicalPlanBuilder::new(node, self.expr_arena, self.lp_arena))

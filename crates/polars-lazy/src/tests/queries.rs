@@ -1557,6 +1557,7 @@ fn test_fill_nan() -> PolarsResult<()> {
 }
 
 #[test]
+#[cfg(feature = "regex")]
 fn test_exclude_regex() -> PolarsResult<()> {
     let df = fruits_cars();
     let out = df

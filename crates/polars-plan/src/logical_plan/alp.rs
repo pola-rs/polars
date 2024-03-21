@@ -48,6 +48,7 @@ pub enum ALogicalPlan {
     SimpleProjection {
         input: Node,
         columns: SchemaRef,
+        duplicate_check: bool
     },
     Projection {
         input: Node,
@@ -366,10 +367,13 @@ impl ALogicalPlan {
             },
             SimpleProjection {
                 columns,
+                duplicate_check,
                 ..
             } => SimpleProjection {
                 input: inputs.pop().unwrap(),
-                columns: columns.clone()
+                columns: columns.clone(),
+                duplicate_check: *duplicate_check
+
             },
             Invalid => unreachable!()
         }

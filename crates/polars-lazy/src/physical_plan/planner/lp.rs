@@ -561,6 +561,20 @@ pub fn create_physical_plan(
                 .collect::<PolarsResult<_>>()?;
             Ok(Box::new(executors::ExternalContext { input, contexts }))
         },
-        SimpleProjection {..} | Invalid => unreachable!()
+        SimpleProjection {
+            input,
+            columns,
+            duplicate_check
+        } => {
+            let input = create_physical_plan(input, lp_arena, expr_arena)?;
+            let exec = executors::ProjectionSimple{
+                input,
+                columns,
+                duplicate_check
+            };
+            Ok(Box::new(exec))
+
+        }
+        Invalid => unreachable!()
     }
 }
