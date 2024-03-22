@@ -440,37 +440,66 @@ fn slice_at_union(lp_arena: &Arena<ALogicalPlan>, lp: Node) -> bool {
 }
 
 #[test]
-fn test_csv_globbing() -> PolarsResult<()> {
+fn test_csv_globbing() {
     let glob = "../../examples/datasets/foods*.csv";
-    let full_df = LazyCsvReader::new(glob).finish()?.collect()?;
+    let full_df = LazyCsvReader::new(glob)
+        .finish()
+        .unwrap()
+        .collect()
+        .unwrap();
 
     // all 5 files * 27 rows
     assert_eq!(full_df.shape(), (135, 4));
-    let cal = full_df.column("calories")?;
-    assert_eq!(cal.get(0)?, AnyValue::Int64(45));
-    assert_eq!(cal.get(53)?, AnyValue::Int64(194));
+    let cal = full_df.column("calories").unwrap();
+    assert_eq!(cal.get(0).unwrap(), AnyValue::Int64(45));
+    assert_eq!(cal.get(53).unwrap(), AnyValue::Int64(194));
+}
 
-    let glob = "../../examples/datasets/*.csv";
-    let lf = LazyCsvReader::new(glob).finish()?.slice(0, 100);
-
-    let df = lf.clone().collect()?;
+#[test]
+fn test_csv_globbing_2() {
+    let lf = LazyCsvReader::new("../../examples/datasets/*.csv")
+        .finish()
+        .unwrap()
+        .slice(0, 100);
+    let df = lf.clone().collect().unwrap();
     assert_eq!(df.shape(), (100, 4));
-    let df = LazyCsvReader::new(glob).finish()?.slice(20, 60).collect()?;
-    assert!(full_df.slice(20, 60).equals(&df));
+}
 
+#[test]
+fn test_csv_globbing_3() {
+    let df_foods = LazyCsvReader::new("../../examples/datasets/foods*.csv")
+        .finish()
+        .unwrap()
+        .collect()
+        .unwrap()
+        .slice(20, 60);
+    let df_all = LazyCsvReader::new("../../examples/datasets/*.csv")
+        .finish()
+        .unwrap()
+        .slice(20, 60)
+        .collect()
+        .unwrap();
+    assert!(df_foods.equals(&df_all));
+}
+
+#[test]
+fn test_csv_globbing_4() {
     let mut expr_arena = Arena::with_capacity(16);
     let mut lp_arena = Arena::with_capacity(8);
-    let node = lf.optimize(&mut lp_arena, &mut expr_arena)?;
+    let lf = LazyCsvReader::new("../../examples/datasets/*.csv")
+        .finish()
+        .unwrap()
+        .slice(0, 100);
+    let node = lf.optimize(&mut lp_arena, &mut expr_arena).unwrap();
     assert!(slice_at_union(&lp_arena, node));
 
-    let lf = LazyCsvReader::new(glob)
-        .finish()?
+    let lf = LazyCsvReader::new("../../examples/datasets/*.csv")
+        .finish()
+        .unwrap()
         .filter(col("sugars_g").lt(lit(1i32)))
         .slice(0, 100);
-    let node = lf.optimize(&mut lp_arena, &mut expr_arena)?;
+    let node = lf.optimize(&mut lp_arena, &mut expr_arena).unwrap();
     assert!(slice_at_union(&lp_arena, node));
-
-    Ok(())
 }
 
 #[test]
