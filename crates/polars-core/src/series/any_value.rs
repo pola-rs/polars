@@ -413,38 +413,26 @@ fn any_values_to_categorical(
     dtype: &DataType,
     strict: bool,
 ) -> PolarsResult<Series> {
-    let ca = if let Some(single_av) = values.first() {
-        match single_av {
-            AnyValue::String(_) | AnyValue::StringOwned(_) | AnyValue::Null => {
-                any_values_to_string(values, strict)?
-            },
-            _ => polars_bail!(
-                 ComputeError:
-                 "categorical dtype with any-values of dtype {} not supported",
-                 single_av.dtype()
-            ),
-        }
-    } else {
-        StringChunked::full("", "", 0)
-    };
-
+    // TODO: Handle AnyValues of type Categorical / Enum
+    // TODO: Avoid materializing to String before casting to categorical
+    let ca = any_values_to_string(values, strict)?;
     ca.cast(dtype)
 }
 
 #[cfg(feature = "dtype-decimal")]
 fn any_values_to_decimal(
-    avs: &[AnyValue],
+    values: &[AnyValue],
     precision: Option<usize>,
     scale: Option<usize>, // if None, we're inferring the scale
 ) -> PolarsResult<DecimalChunked> {
     // two-pass approach, first we scan and record the scales, then convert (or not)
     let mut scale_range: Option<(usize, usize)> = None;
-    for av in avs {
-        let s_av = if av.is_signed_integer() || av.is_unsigned_integer() {
+    for av in values {
+        let s_av = if av.is_integer() {
             0 // integers are treated as decimals with scale of zero
         } else if let AnyValue::Decimal(_, scale) = av {
             *scale
-        } else if matches!(av, AnyValue::Null) {
+        } else if av.is_null() {
             continue;
         } else {
             polars_bail!(
@@ -458,7 +446,7 @@ fn any_values_to_decimal(
     }
     let Some((s_min, s_max)) = scale_range else {
         // empty array or all nulls, return a decimal array with given scale (or 0 if inferring)
-        return Ok(Int128Chunked::full_null("", avs.len())
+        return Ok(Int128Chunked::full_null("", values.len())
             .into_decimal_unchecked(precision, scale.unwrap_or(0)));
     };
     let scale = scale.unwrap_or(s_max);
@@ -470,10 +458,11 @@ fn any_values_to_decimal(
             "unable to losslessly convert any-value of scale {s_max} to scale {}", scale,
         );
     }
-    let mut builder = PrimitiveChunkedBuilder::<Int128Type>::new("", avs.len());
+
+    let mut builder = PrimitiveChunkedBuilder::<Int128Type>::new("", values.len());
     let is_equally_scaled = s_min == s_max && s_max == scale;
-    for av in avs {
-        let (v, s_av) = if av.is_signed_integer() || av.is_unsigned_integer() {
+    for av in values {
+        let (v, s_av) = if av.is_integer() {
             (
                 av.try_extract::<i128>().unwrap_or_else(|_| unreachable!()),
                 0,
@@ -494,6 +483,7 @@ fn any_values_to_decimal(
             })?);
         }
     }
+
     // build the array and do a precision check if needed
     builder.finish().into_decimal(precision, scale)
 }
