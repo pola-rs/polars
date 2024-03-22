@@ -1860,6 +1860,7 @@ impl DataFrame {
                     let options = SortMultipleOptions {
                         other,
                         descending,
+                        nulls_last,
                         multithreaded: parallel,
                     };
                     first.arg_sort_multiple(&options)?
