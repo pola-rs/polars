@@ -29,6 +29,16 @@ def test_list_arr_get() -> None:
     assert_series_equal(out, expected)
     out = pl.select(pl.lit(a).list.last()).to_series()
     assert_series_equal(out, expected)
+    
+    # Out of bounds index.
+    out = a.list.get(3)
+    expected = pl.Series("a", [None, None, 9])
+    assert_series_equal(out, expected)
+
+    # Null index.
+    out = a.list.get(None)
+    expected = pl.Series("a", [None, None, None], dtype=pl.Int64)
+    assert_series_equal(out, expected)
 
     a = pl.Series("a", [[1, 2, 3], [4, 5], [6, 7, 8, 9]])
     out = a.list.get(-3)
