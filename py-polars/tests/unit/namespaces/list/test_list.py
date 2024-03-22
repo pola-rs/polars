@@ -268,6 +268,7 @@ def test_slice() -> None:
     assert s.list.tail(200).to_list() == vals
     assert s.list.head(200).to_list() == vals
     assert s.list.slice(1, 2).to_list() == [[2, 3], [2, 1]]
+    assert s.list.slice(-5, 2).to_list() == [[1], []]
 
 
 def test_list_eval_dtype_inference() -> None:
