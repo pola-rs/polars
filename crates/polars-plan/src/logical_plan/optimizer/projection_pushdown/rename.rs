@@ -14,10 +14,11 @@ fn iter_and_update_nodes(
     for column_node in acc_projections.iter_mut() {
         let node = column_node.0;
         if !processed.contains(&node.0) {
-            let new_node = rename_matching_aexpr_leaf_names(node, expr_arena, new, existing);
-            if new_node != node {
+            // We walk the query backwards, so we rename new to existing
+            if column_node_to_name(*column_node, expr_arena).as_ref() == new {
+                let new_node = expr_arena.add(AExpr::Column(Name::from(existing)));
                 *column_node = ColumnNode(new_node);
-                processed.insert(node.0);
+                processed.insert(new_node.0);
             }
         }
     }

@@ -425,7 +425,7 @@ impl LazyFrame {
         let mut existing_vec: Vec<SmartString> = Vec::with_capacity(cap);
         let mut new_vec: Vec<SmartString> = Vec::with_capacity(cap);
 
-        // todo! should this error if `existing` and `new` have different lengths?
+        // TODO! should this error if `existing` and `new` have different lengths?
         // Currently, the longer of the two is truncated.
         for (existing, new) in iter.zip(new) {
             let existing = existing.as_ref();

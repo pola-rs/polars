@@ -1,6 +1,6 @@
 use super::*;
 
-type Name = Arc<str>;
+pub type Name = Arc<str>;
 
 #[derive(Default, Debug, Clone)]
 pub enum OutputName {
@@ -46,6 +46,7 @@ impl ExprIR {
         node: Node,
         left_most_input_name: Option<Arc<str>>,
         output_name: OutputName) -> Self {
+        debug_assert!(!output_name.is_none());
         ExprIR {
             left_most_input_name,
             output_name,
@@ -53,12 +54,29 @@ impl ExprIR {
         }
     }
 
-    pub fn new_minimal(node: Node) -> Self {
-        Self {
+    pub fn from_node(node: Node, arena: &Arena<AExpr>) -> Self {
+        let mut out = Self {
             node,
             left_most_input_name: None,
             output_name: OutputName::None
+        };
+        out.node = node;
+        for (_, ae) in arena.iter(node) {
+            match ae {
+                AExpr::Column(name) => {
+                    out.output_name = OutputName::ColumnLhs(name.clone());
+                    break
+                },
+                AExpr::Alias(node, name) => {
+                    out.output_name = OutputName::ColumnLhs(name.clone());
+                    out.node = *node;
+                    break
+                }
+                _ => {}
+            }
         }
+        debug_assert!(!out.output_name.is_none());
+        out
     }
 
     #[inline]

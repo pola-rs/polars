@@ -136,7 +136,7 @@ where
         ),
         AExpr::Agg(agg) => match agg {
             AAggExpr::Min { input, .. } => {
-                let phys_expr = to_physical(&ExprIR::new_minimal(*input), expr_arena, Some(schema)).unwrap();
+                let phys_expr = to_physical(&ExprIR::from_node(*input, expr_arena), expr_arena, Some(schema)).unwrap();
                 let logical_dtype = phys_expr.field(schema).unwrap().dtype;
 
                 let agg_fn = match logical_dtype.to_physical() {
@@ -155,7 +155,7 @@ where
                 (logical_dtype, phys_expr, agg_fn)
             },
             AAggExpr::Max { input, .. } => {
-                let phys_expr = to_physical(&ExprIR::new_minimal(*input), expr_arena, Some(schema)).unwrap();
+                let phys_expr = to_physical(&ExprIR::from_node(*input, expr_arena), expr_arena, Some(schema)).unwrap();
                 let logical_dtype = phys_expr.field(schema).unwrap().dtype;
 
                 let agg_fn = match logical_dtype.to_physical() {
@@ -174,7 +174,7 @@ where
                 (logical_dtype, phys_expr, agg_fn)
             },
             AAggExpr::Sum(input) => {
-                let phys_expr = to_physical(&ExprIR::new_minimal(*input), expr_arena, Some(schema)).unwrap();
+                let phys_expr = to_physical(&ExprIR::from_node(*input, expr_arena), expr_arena, Some(schema)).unwrap();
                 let logical_dtype = phys_expr.field(schema).unwrap().dtype;
 
                 #[cfg(feature = "dtype-categorical")]
@@ -215,7 +215,7 @@ where
                 (logical_dtype, phys_expr, agg_fn)
             },
             AAggExpr::Mean(input) => {
-                let phys_expr = to_physical(&ExprIR::new_minimal(*input), expr_arena, Some(schema)).unwrap();
+                let phys_expr = to_physical(&ExprIR::from_node(*input, expr_arena), expr_arena, Some(schema)).unwrap();
 
                 let logical_dtype = phys_expr.field(schema).unwrap().dtype;
                 #[cfg(feature = "dtype-categorical")]
@@ -238,7 +238,7 @@ where
                 (logical_dtype, phys_expr, agg_fn)
             },
             AAggExpr::First(input) => {
-                let phys_expr = to_physical(&ExprIR::new_minimal(*input), expr_arena, Some(schema)).unwrap();
+                let phys_expr = to_physical(&ExprIR::from_node(*input, expr_arena), expr_arena, Some(schema)).unwrap();
                 let logical_dtype = phys_expr.field(schema).unwrap().dtype;
                 (
                     logical_dtype.clone(),
@@ -247,7 +247,7 @@ where
                 )
             },
             AAggExpr::Last(input) => {
-                let phys_expr = to_physical(&ExprIR::new_minimal(*input), expr_arena, Some(schema)).unwrap();
+                let phys_expr = to_physical(&ExprIR::from_node(*input, expr_arena), expr_arena, Some(schema)).unwrap();
                 let logical_dtype = phys_expr.field(schema).unwrap().dtype;
                 (
                     logical_dtype.clone(),
@@ -256,7 +256,7 @@ where
                 )
             },
             AAggExpr::Count(input, _) => {
-                let phys_expr = to_physical(&ExprIR::new_minimal(*input), expr_arena, Some(schema)).unwrap();
+                let phys_expr = to_physical(&ExprIR::from_node(*input, expr_arena), expr_arena, Some(schema)).unwrap();
                 let logical_dtype = phys_expr.field(schema).unwrap().dtype;
                 (
                     logical_dtype,

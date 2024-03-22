@@ -56,7 +56,7 @@ where
         };
     }
     single_pred
-        .map(|node| ExprIR::new_minimal(node))
+        .map(|node| ExprIR::from_node(node, arena))
         .expect("an empty iterator was passed")
 }
 

@@ -610,13 +610,20 @@ fn create_physical_expr_inner(
                 ApplyOptions::GroupWise,
             )))
         },
+        Alias(input, name) => {
+            let phys_expr = create_physical_expr_inner(input, ctxt, expr_arena, schema, state)?;
+            Ok(Arc::new(AliasExpr::new(
+                phys_expr,
+                name,
+                node_to_expr(input, expr_arena),
+            )))
+        }
         Wildcard => {
             polars_bail!(ComputeError: "wildcard column selection not supported at this point")
         },
         Nth(_) => {
             polars_bail!(ComputeError: "nth column selection not supported at this point")
         },
-        Alias(_, _) => unreachable!()
     }
 }
 

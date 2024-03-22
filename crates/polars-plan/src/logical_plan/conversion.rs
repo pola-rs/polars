@@ -3,6 +3,7 @@ use crate::prelude::*;
 
 use std::sync::OnceLock;
 use polars_utils::vec::ConvertVec;
+use crate::constants::LEN;
 use crate::logical_plan::projection_expr::ProjectionExprs;
 
 static LITERAL_NAME: OnceLock<Arc<str>> = OnceLock::new();
@@ -35,9 +36,9 @@ pub fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
 
 #[derive(Default)]
 struct ConversionState {
-    prune_alias: bool,
     left_most_input_name: Option<Arc<str>>,
     output_name: OutputName,
+    prune_alias: bool,
 }
 
 impl ConversionState {
@@ -198,10 +199,19 @@ fn to_aexpr_impl(expr: Expr, arena: &mut Arena<AExpr>, state: &mut ConversionSta
             input,
             function,
             options,
-        } => AExpr::Function {
-            input: to_aexprs(input, arena, state),
-            function,
-            options,
+        } => {
+            match function {
+                #[cfg(feature = "dtype-struct")]
+                FunctionExpr::AsStruct => {
+                    state.prune_alias = false;
+                }
+                _ => {}
+            }
+            AExpr::Function {
+                input: to_aexprs(input, arena, state),
+                function,
+                options,
+            }
         },
         Expr::Window {
             function,
@@ -221,7 +231,12 @@ fn to_aexpr_impl(expr: Expr, arena: &mut Arena<AExpr>, state: &mut ConversionSta
             offset: to_aexpr_impl(*offset, arena, state),
             length: to_aexpr_impl(*length, arena, state),
         },
-        Expr::Len => AExpr::Len,
+        Expr::Len => {
+            if state.output_name.is_none() {
+                state.output_name = OutputName::LiteralLhs(Arc::from(LEN))
+            }
+            AExpr::Len
+        },
         Expr::Nth(i) => AExpr::Nth(i),
         Expr::Wildcard => AExpr::Wildcard,
         Expr::SubPlan { .. } => panic!("no SQLSubquery expected at this point"),
