@@ -33,11 +33,11 @@ use crate::trusted_len::TrustedLen;
 /// // we can also get the slice:
 /// assert_eq!(bitmap.as_slice(), [0b00001101u8].as_ref());
 /// // debug helps :)
-/// assert_eq!(format!("{:?}", bitmap), "[0b___01101]".to_string());
+/// assert_eq!(format!("{:?}", bitmap), "Bitmap { len: 5, offset: 0, bytes: [0b___01101] }");
 ///
 /// // It supports mutation in place
 /// bitmap.set(0, false);
-/// assert_eq!(format!("{:?}", bitmap), "[0b___01100]".to_string());
+/// assert_eq!(format!("{:?}", bitmap), "Bitmap { len: 5, offset: 0, bytes: [0b___01100] }");
 /// // and `O(1)` random access
 /// assert_eq!(bitmap.get(0), false);
 /// ```
