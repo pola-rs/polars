@@ -1,4 +1,5 @@
 use polars_ops::prelude::*;
+use polars_plan::logical_plan::expr_ir::ExprIR;
 use polars_plan::prelude::*;
 
 pub(super) fn is_streamable_sort(args: &SortArguments) -> bool {
@@ -62,17 +63,17 @@ pub(super) fn is_streamable(node: Node, expr_arena: &Arena<AExpr>, context: Cont
     false
 }
 
-pub(super) fn all_streamable(exprs: &[Node], expr_arena: &Arena<AExpr>, context: Context) -> bool {
+pub(super) fn all_streamable(exprs: &[ExprIR], expr_arena: &Arena<AExpr>, context: Context) -> bool {
     exprs
         .iter()
-        .all(|node| is_streamable(*node, expr_arena, context))
+        .all(|e| is_streamable(e.node(), expr_arena, context))
 }
 
 /// check if all expressions are a simple column projection
-pub(super) fn all_column(exprs: &[Node], expr_arena: &Arena<AExpr>) -> bool {
+pub(super) fn all_column(exprs: &[ExprIR], expr_arena: &Arena<AExpr>) -> bool {
     exprs
         .iter()
-        .all(|node| matches!(expr_arena.get(*node), AExpr::Column(_)))
+        .all(|e| matches!(expr_arena.get(e.node()), AExpr::Column(_)))
 }
 
 pub(super) fn streamable_join(args: &JoinArgs) -> bool {
