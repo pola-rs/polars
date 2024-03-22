@@ -413,8 +413,8 @@ fn any_values_to_categorical(
     dtype: &DataType,
     strict: bool,
 ) -> PolarsResult<Series> {
-    // TODO: Handle AnyValues of type Categorical / Enum
-    // TODO: Avoid materializing to String before casting to categorical
+    // TODO: Handle AnyValues of type Categorical/Enum.
+    // TODO: Avoid materializing to String before casting to Categorical/Enum.
     let ca = any_values_to_string(values, strict)?;
     if strict {
         ca.into_series().strict_cast(dtype)
