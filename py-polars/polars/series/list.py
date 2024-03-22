@@ -1024,7 +1024,7 @@ class ListNameSpace:
         Return the number of elements in each list.
 
         .. deprecated:: 0.19.8
-            This method has been renamed to :func:`len`.
+            This method has been renamed to :meth:`.len`.
         """
 
     @deprecate_renamed_function("gather", version="0.19.14")
