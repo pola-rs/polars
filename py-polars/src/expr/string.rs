@@ -102,6 +102,14 @@ impl PyExpr {
             .into()
     }
 
+    fn str_head(&self, n: Self) -> Self {
+        self.inner.clone().str().head(n.inner).into()
+    }
+
+    fn str_tail(&self, n: Self) -> Self {
+        self.inner.clone().str().tail(n.inner).into()
+    }
+
     fn str_explode(&self) -> Self {
         self.inner.clone().str().explode().into()
     }
