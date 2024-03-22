@@ -7,6 +7,7 @@ from contextlib import suppress
 from inspect import Parameter, isclass, signature
 from typing import TYPE_CHECKING, Any, Iterable, Sequence
 
+from polars._utils.various import parse_version
 from polars.convert import from_arrow
 from polars.datatypes import (
     INTEGER_DTYPES,
@@ -17,7 +18,7 @@ from polars.datatypes import (
     Float64,
 )
 from polars.datatypes.convert import _map_py_type_to_dtype
-from polars.exceptions import UnsuitableSQLError
+from polars.exceptions import ModuleUpgradeRequired, UnsuitableSQLError
 from polars.io.database._arrow_registry import ARROW_DRIVER_REGISTRY
 from polars.io.database._cursor_proxies import ODBCCursorProxy
 from polars.io.database._inference import (
@@ -53,7 +54,6 @@ if TYPE_CHECKING:
         Selectable: TypeAlias = Any  # type: ignore[no-redef]
 
     from sqlalchemy.sql.elements import TextClause
-
 
 _INVALID_QUERY_TYPES = {
     "ALTER",
@@ -112,6 +112,20 @@ class ConnectionExecutor:
             with suppress(AsyncContextNotStarted):
                 await self.cursor.close()
 
+    @staticmethod
+    def _check_module_version(module_name: str, minimum_version: str) -> None:
+        """Check the module version against a minimum required version."""
+        mod = __import__(module_name)
+        with suppress(AttributeError):
+            module_version: tuple[int, ...] | None = None
+            for version_attr in ("__version__", "version"):
+                if isinstance(ver := getattr(mod, version_attr, None), str):
+                    module_version = parse_version(ver)
+                    break
+            if module_version and module_version < parse_version(minimum_version):
+                msg = f"`read_database` queries require at least {module_name} version {minimum_version}"
+                raise ModuleUpgradeRequired(msg)
+
     def _fetch_arrow(
         self,
         driver_properties: ArrowDriverProperties,
@@ -122,11 +136,8 @@ class ConnectionExecutor:
         """Yield Arrow data as a generator of one or more RecordBatches or Tables."""
         fetch_batches = driver_properties["fetch_batches"]
         if not iter_batches or fetch_batches is None:
-            fetch_method, sz = driver_properties["fetch_all"], []
-            if isinstance(fetch_method, tuple):
-                fetch_method, chunk_size = fetch_method
-                sz = [chunk_size]
-            yield getattr(self.result, fetch_method)(*sz)
+            fetch_method = driver_properties["fetch_all"]
+            yield getattr(self.result, fetch_method)()
         else:
             size = batch_size if driver_properties["exact_batch_size"] else None
             repeat_batch_calls = driver_properties["repeat_batch_calls"]
@@ -172,13 +183,19 @@ class ConnectionExecutor:
         infer_schema_length: int | None,
     ) -> DataFrame | Iterable[DataFrame] | None:
         """Return resultset data in Arrow format for frame init."""
+        from polars import DataFrame
+
         try:
             for driver, driver_properties in ARROW_DRIVER_REGISTRY.items():
                 if re.match(f"^{driver}$", self.driver_name):
+                    if ver := driver_properties["minimum_version"]:
+                        self._check_module_version(self.driver_name, ver)
                     fetch_batches = driver_properties["fetch_batches"]
                     self.can_close_cursor = fetch_batches is None or not iter_batches
                     frames = (
-                        from_arrow(batch, schema_overrides=schema_overrides)
+                        batch
+                        if isinstance(batch, DataFrame)
+                        else from_arrow(batch, schema_overrides=schema_overrides)
                         for batch in self._fetch_arrow(
                             driver_properties,
                             iter_batches=iter_batches,
