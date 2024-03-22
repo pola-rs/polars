@@ -196,13 +196,16 @@ def _unpack_schema(
     # determine column names from schema
     if isinstance(schema, Mapping):
         column_names: list[str] = list(schema)
-        # coerce schema to list[str | tuple[str, PolarsDataType | PythonDataType | None]
         schema = list(schema.items())
     else:
-        column_names = [
-            (col or f"column_{i}") if isinstance(col, str) else col[0]
-            for i, col in enumerate(schema)
-        ]
+        column_names = []
+        for i, col in enumerate(schema):
+            if isinstance(col, str):
+                unnamed = not col and col not in schema_overrides
+                col = f"column_{i}" if unnamed else col
+            else:
+                col = col[0]
+            column_names.append(col)
 
     # determine column dtypes from schema and lookup_names
     lookup: dict[str, str] | None = (

@@ -1650,11 +1650,15 @@ def test_extension() -> None:
 def test_group_by_order_dispatch() -> None:
     df = pl.DataFrame({"x": list("bab"), "y": range(3)})
 
-    result = df.group_by("x", maintain_order=True).len()
-    expected = pl.DataFrame(
-        {"x": ["b", "a"], "len": [2, 1]}, schema_overrides={"len": pl.UInt32}
-    )
-    assert_frame_equal(result, expected)
+    for name in (None, "n", ""):
+        result = df.group_by("x", maintain_order=True).len(name=name)
+        name = "len" if name is None else name
+
+        expected = pl.DataFrame(
+            data={"x": ["b", "a"], name: [2, 1]},
+            schema_overrides={name: pl.UInt32},
+        )
+        assert_frame_equal(result, expected)
 
     result = df.group_by("x", maintain_order=True).all()
     expected = pl.DataFrame({"x": ["b", "a"], "y": [[0, 2], [1]]})
