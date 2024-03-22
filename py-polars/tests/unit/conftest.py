@@ -1,11 +1,23 @@
 from __future__ import annotations
 
+import gc
 import random
 import string
-from typing import List, cast
+import tracemalloc
+from typing import Any, Generator, List, Optional, cast
 
 import numpy as np
 import pytest
+
+try:
+    import pyarrow
+    from pyarrow import MemoryPool
+except ImportError:
+    pyarrow = None
+
+    class MemoryPool:
+        pass
+
 
 import polars as pl
 
@@ -138,3 +150,57 @@ for date_sep in ("/", "-"):
 @pytest.fixture(params=ISO8601_FORMATS_DATE)
 def iso8601_format_date(request: pytest.FixtureRequest) -> list[str]:
     return cast(List[str], request.param)
+
+
+class MemoryUsage:
+    """
+    Provide an API for measuring peak memory usage.
+
+    Gets info from PyArrow, if possible, by overriding the memory pool.
+    """
+
+    def __init__(self):
+        self._pool = None
+        self.reset_tracking()
+
+    def reset_tracking(self):
+        """Reset tracking to zero."""
+        if pyarrow is not None:
+            # Clear existing pool's memory:
+            pyarrow.default_memory_pool().release_unused()
+            # Setup a new pool so that we can track peak allocations from this
+            # point onwards.
+            pool = pyarrow.system_memory_pool()
+            pyarrow.set_memory_pool(pool)
+            self._pool = pool
+        tracemalloc.reset_peak()
+
+    def get_peak(self) -> int:
+        """Return peak allocated memory, in bytes.
+
+        This returns peak allocations since this object was created or
+        ``reset_tracking()`` was called, whichever is later.
+        """
+        result = tracemalloc.get_traced_memory()[1]
+        if self._pool is not None:
+            result += self._pool.max_memory()
+        return result
+
+
+@pytest.fixture
+def memory_usage() -> Generator[MemoryUsage, Any, Any]:
+    """
+    Provide an API for measuring peak memory usage.
+
+    Not thread-safe: there should only be one instance of MemoryUsage at any
+    given time.
+    """
+    if not pl.build_info()["build"]["debug"]:
+        pytest.skip("Memory usage only available in debug/dev builds.")
+
+    gc.collect()
+    tracemalloc.start()
+    try:
+        yield MemoryUsage()
+    finally:
+        tracemalloc.stop()
