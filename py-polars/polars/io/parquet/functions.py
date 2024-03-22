@@ -188,7 +188,7 @@ def read_parquet(
             columns = [lf.columns[i] for i in columns]
         lf = lf.select(columns)
 
-    return lf.collect(no_optimization=True)
+    return lf.collect()
 
 
 def read_parquet_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, DataType]:
