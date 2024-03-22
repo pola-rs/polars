@@ -140,9 +140,9 @@ def test_array_get() -> None:
     assert_series_equal(out, expected)
 
     # Null index literal.
-    out = s.arr.get(None)
-    expected = pl.Series("a", [None, None, None], dtype=pl.Int64)
-    assert_series_equal(out, expected)
+    out_df = s.to_frame().select(pl.col.a.arr.get(pl.lit(None)))
+    expected_df = pl.Series("a", [None, None, None], dtype=pl.Int64).to_frame()
+    assert_frame_equal(out_df, expected_df)
 
     # Out-of-bounds index literal.
     out = s.arr.get(100)

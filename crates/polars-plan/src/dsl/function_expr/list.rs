@@ -425,7 +425,11 @@ pub(super) fn get(s: &mut [Series]) -> PolarsResult<Option<Series>> {
             if let Some(index) = index {
                 ca.lst_get(index).map(Some)
             } else {
-                Ok(Some(Series::full_null(ca.name(), ca.len(), &ca.inner_dtype())))
+                Ok(Some(Series::full_null(
+                    ca.name(),
+                    ca.len(),
+                    &ca.inner_dtype(),
+                )))
             }
         },
         len if len == ca.len() => {
