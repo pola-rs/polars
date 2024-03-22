@@ -17,7 +17,7 @@ pub(crate) enum RollUnit {
 #[cfg(feature = "timezones")]
 use crate::utils::{try_localize_datetime, unlocalize_datetime};
 
-// roll backward to the first day of the month
+// roll backward to the first day of the month, quarter, or year base on roll_unit value.
 pub(crate) fn roll_backward(
     t: i64,
     tz: Option<&Tz>,
@@ -31,24 +31,16 @@ pub(crate) fn roll_backward(
         _ => timestamp_to_datetime(t),
     };
     let date = match roll_unit {
-        RollUnit::Month => NaiveDate::from_ymd_opt(ts.year(), ts.month(), 1).ok_or_else(|| {
-            polars_err!(
-                ComputeError: format!("Could not construct date {}-{}-1", ts.year(), ts.month())
-            )
-        })?,
+        RollUnit::Month => NaiveDate::from_ymd_opt(ts.year(), ts.month(), 1)
+            .expect("we know we're creating a valid date"),
         RollUnit::Quarter => {
             let quarter = ((ts.month() - 1) / 3) * 3 + 1;
-            NaiveDate::from_ymd_opt(ts.year(), quarter, 1).ok_or_else(|| {
-                polars_err!(
-                    ComputeError: format!("Could not construct date {}-{}-1", ts.year(), ts.month())
-                )
-            })?
+            NaiveDate::from_ymd_opt(ts.year(), quarter, 1)
+                .expect("we know we're creating a valid date")
         },
-        RollUnit::Year => NaiveDate::from_ymd_opt(ts.year(), 1, 1).ok_or_else(|| {
-            polars_err!(
-                ComputeError: format!("Could not construct date {}-{}-1", ts.year(), ts.month())
-            )
-        })?,
+        RollUnit::Year => {
+            NaiveDate::from_ymd_opt(ts.year(), 1, 1).expect("we know we're creating a valid date")
+        },
     };
     let time = NaiveTime::from_hms_nano_opt(
         ts.hour(),

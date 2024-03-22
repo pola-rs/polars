@@ -23,6 +23,7 @@ fn roll_month_forward(
     offset_fn(&Duration::parse("-1d"), t, time_zone)
 }
 
+// roll forward to the last day of the quarter
 fn roll_quarter_forward(
     t: i64,
     time_zone: Option<&Tz>,
@@ -35,6 +36,7 @@ fn roll_quarter_forward(
     offset_fn(&Duration::parse("-1d"), t, time_zone)
 }
 
+// roll forward to the last day of the year
 fn roll_year_forward(
     t: i64,
     time_zone: Option<&Tz>,
