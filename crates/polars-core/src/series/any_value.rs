@@ -40,7 +40,7 @@ impl Series {
                         DataType::Null
                     } else {
                         // Second pass to check for the nested null value that
-                        // toggled `all_flat_null` to false, e.g. a List(Null)
+                        // toggled `all_flat_null` to false, e.g. a List(Null).
                         let first_nested_null = values.iter().find(|av| !av.is_null()).unwrap();
                         first_nested_null.dtype()
                     }
@@ -257,7 +257,7 @@ fn any_values_to_string(values: &[AnyValue], strict: bool) -> PolarsResult<Strin
     }
     fn any_values_to_string_nonstrict(values: &[AnyValue]) -> StringChunked {
         let mut builder = StringChunkedBuilder::new("", values.len());
-        let mut owned = String::new(); // Amortize allocations
+        let mut owned = String::new(); // Amortize allocations.
         for av in values {
             match av {
                 AnyValue::String(s) => builder.append_value(s),
@@ -413,38 +413,30 @@ fn any_values_to_categorical(
     dtype: &DataType,
     strict: bool,
 ) -> PolarsResult<Series> {
-    let ca = if let Some(single_av) = values.first() {
-        match single_av {
-            AnyValue::String(_) | AnyValue::StringOwned(_) | AnyValue::Null => {
-                any_values_to_string(values, strict)?
-            },
-            _ => polars_bail!(
-                 ComputeError:
-                 "categorical dtype with any-values of dtype {} not supported",
-                 single_av.dtype()
-            ),
-        }
+    // TODO: Handle AnyValues of type Categorical/Enum.
+    // TODO: Avoid materializing to String before casting to Categorical/Enum.
+    let ca = any_values_to_string(values, strict)?;
+    if strict {
+        ca.into_series().strict_cast(dtype)
     } else {
-        StringChunked::full("", "", 0)
-    };
-
-    ca.cast(dtype)
+        ca.cast(dtype)
+    }
 }
 
 #[cfg(feature = "dtype-decimal")]
 fn any_values_to_decimal(
-    avs: &[AnyValue],
+    values: &[AnyValue],
     precision: Option<usize>,
-    scale: Option<usize>, // if None, we're inferring the scale
+    scale: Option<usize>, // If None, we're inferring the scale.
 ) -> PolarsResult<DecimalChunked> {
-    // two-pass approach, first we scan and record the scales, then convert (or not)
+    // Two-pass approach, first we scan and record the scales, then convert (or not).
     let mut scale_range: Option<(usize, usize)> = None;
-    for av in avs {
-        let s_av = if av.is_signed_integer() || av.is_unsigned_integer() {
-            0 // integers are treated as decimals with scale of zero
+    for av in values {
+        let s_av = if av.is_integer() {
+            0 // Integers are treated as decimals with scale of zero.
         } else if let AnyValue::Decimal(_, scale) = av {
             *scale
-        } else if matches!(av, AnyValue::Null) {
+        } else if av.is_null() {
             continue;
         } else {
             polars_bail!(
@@ -457,23 +449,24 @@ fn any_values_to_decimal(
         };
     }
     let Some((s_min, s_max)) = scale_range else {
-        // empty array or all nulls, return a decimal array with given scale (or 0 if inferring)
-        return Ok(Int128Chunked::full_null("", avs.len())
+        // Empty array or all nulls, return a decimal array with given scale (or 0 if inferring).
+        return Ok(Int128Chunked::full_null("", values.len())
             .into_decimal_unchecked(precision, scale.unwrap_or(0)));
     };
     let scale = scale.unwrap_or(s_max);
     if s_max > scale {
-        // scale is provided but is lower than actual
-        // TODO: do we want lossy conversions here or not?
+        // Scale is provided but is lower than actual.
+        // TODO: Do we want lossy conversions here or not?
         polars_bail!(
             ComputeError:
             "unable to losslessly convert any-value of scale {s_max} to scale {}", scale,
         );
     }
-    let mut builder = PrimitiveChunkedBuilder::<Int128Type>::new("", avs.len());
+
+    let mut builder = PrimitiveChunkedBuilder::<Int128Type>::new("", values.len());
     let is_equally_scaled = s_min == s_max && s_max == scale;
-    for av in avs {
-        let (v, s_av) = if av.is_signed_integer() || av.is_unsigned_integer() {
+    for av in values {
+        let (v, s_av) = if av.is_integer() {
             (
                 av.try_extract::<i128>().unwrap_or_else(|_| unreachable!()),
                 0,
@@ -481,7 +474,7 @@ fn any_values_to_decimal(
         } else if let AnyValue::Decimal(v, scale) = av {
             (*v, *scale)
         } else {
-            // it has to be a null because we've already checked it
+            // It has to be a null because we've already checked it.
             builder.append_null();
             continue;
         };
@@ -494,7 +487,8 @@ fn any_values_to_decimal(
             })?);
         }
     }
-    // build the array and do a precision check if needed
+
+    // Build the array and do a precision check if needed.
     builder.finish().into_decimal(precision, scale)
 }
 
@@ -505,7 +499,7 @@ fn any_values_to_list(
 ) -> PolarsResult<ListChunked> {
     let target_dtype = DataType::List(Box::new(inner_type.clone()));
 
-    // this is handled downstream. The builder will choose the first non null type
+    // This is handled downstream. The builder will choose the first non null type.
     let mut valid = true;
     #[allow(unused_mut)]
     let mut out: ListChunked = if inner_type == &DataType::Null {
@@ -520,7 +514,7 @@ fn any_values_to_list(
             })
             .collect_trusted()
     }
-    // make sure that wrongly inferred AnyValues don't deviate from the datatype
+    // Make sure that wrongly inferred AnyValues don't deviate from the datatype.
     else {
         avs.iter()
             .map(|av| match av {
@@ -547,7 +541,7 @@ fn any_values_to_list(
         polars_bail!(SchemaMismatch: "unexpected value while building Series of type {:?}", target_dtype);
     }
 
-    // Ensure the logical type is correct for nested types
+    // Ensure the logical type is correct for nested types.
     #[cfg(feature = "dtype-struct")]
     if !matches!(inner_type, DataType::Null) && out.inner_dtype().is_nested() {
         unsafe {
@@ -576,7 +570,7 @@ fn any_values_to_array(
 
     let target_dtype = DataType::Array(Box::new(inner_type.clone()), width);
 
-    // this is handled downstream. The builder will choose the first non null type
+    // This is handled downstream. The builder will choose the first non null type.
     let mut valid = true;
     #[allow(unused_mut)]
     let mut out: ArrayChunked = if inner_type == &DataType::Null {
@@ -591,7 +585,7 @@ fn any_values_to_array(
             })
             .collect_ca_with_dtype("", target_dtype.clone())
     }
-    // make sure that wrongly inferred AnyValues don't deviate from the datatype
+    // Make sure that wrongly inferred AnyValues don't deviate from the datatype.
     else {
         avs.iter()
             .map(|av| match av {
@@ -623,7 +617,7 @@ fn any_values_to_array(
         SchemaMismatch: "got mixed size array widths where width {} was expected", width
     );
 
-    // Ensure the logical type is correct for nested types
+    // Ensure the logical type is correct for nested types.
     #[cfg(feature = "dtype-struct")]
     if !matches!(inner_type, DataType::Null) && out.inner_dtype().is_nested() {
         unsafe {
