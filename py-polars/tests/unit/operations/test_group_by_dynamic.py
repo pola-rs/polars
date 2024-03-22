@@ -968,3 +968,25 @@ def test_group_by_dynamic_agg_bad_input_types(input: Any) -> None:
         df.group_by_dynamic(
             index_column="index_column", every="2i", closed="right"
         ).agg(input)
+
+
+def test_group_by_dynamic_check_sorted_15225() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3],
+            "b": [date(2020, 1, 1), date(2020, 1, 2), date(2020, 1, 3)],
+            "c": [1, 1, 2],
+        }
+    )
+    result = df.group_by_dynamic("b", every="2d", check_sorted=False).agg(pl.sum("a"))
+    expected = pl.DataFrame({"b": [date(2020, 1, 1), date(2020, 1, 3)], "a": [3, 3]})
+    assert_frame_equal(result, expected)
+    result = df.group_by_dynamic("b", every="2d", check_sorted=False, group_by="c").agg(
+        pl.sum("a")
+    )
+    expected = pl.DataFrame(
+        {"c": [1, 2], "b": [date(2020, 1, 1), date(2020, 1, 3)], "a": [3, 3]}
+    )
+    assert_frame_equal(result, expected)
+    with pytest.raises(pl.InvalidOperationError, match="not explicitly sorted"):
+        result = df.group_by_dynamic("b", every="2d").agg(pl.sum("a"))

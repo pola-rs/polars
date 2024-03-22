@@ -3294,18 +3294,20 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             {UInt32, UInt64, Int32, Int64}. Note that the first three get temporarily
             cast to Int64, so if performance matters use an Int64 column.
         period
-            length of the window - must be non-negative
+            Length of the window - must be non-negative.
         offset
-            offset of the window. Default is -period
+            Offset of the window. Default is `-period`.
         closed : {'right', 'left', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive).
         group_by
             Also group by this column/these columns
         check_sorted
-            When the `by` argument is given, polars can not check sortedness
+            Check whether `index_column` is sorted (or, if `group_by` is given,
+            check whether it's sorted within each group).
+            When the `group_by` argument is given, polars can not check sortedness
             by the metadata and has to do a full scan on the index column to
             verify data is sorted. This is expensive. If you are sure the
-            data within the by groups is sorted, you can set this to `False`.
+            data within the groups is sorted, you can set this to `False`.
             Doing so incorrectly will lead to incorrect output
 
         Returns
@@ -3461,10 +3463,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
               * ...
               * 'sunday': Start the window on the Sunday before the first data point.
         check_sorted
-            When the `by` argument is given, polars can not check sortedness
+            Check whether `index_column` is sorted (or, if `group_by` is given,
+            check whether it's sorted within each group).
+            When the `group_by` argument is given, polars can not check sortedness
             by the metadata and has to do a full scan on the index column to
             verify data is sorted. This is expensive. If you are sure the
-            data within the by groups is sorted, you can set this to `False`.
+            data within the groups is sorted, you can set this to `False`.
             Doing so incorrectly will lead to incorrect output
 
         Returns
@@ -6321,10 +6325,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         by
             Also group by this column/these columns
         check_sorted
+            Check whether `index_column` is sorted (or, if `by` is given,
+            check whether it's sorted within each group).
             When the `by` argument is given, polars can not check sortedness
             by the metadata and has to do a full scan on the index column to
             verify data is sorted. This is expensive. If you are sure the
-            data within the by groups is sorted, you can set this to `False`.
+            data within the groups is sorted, you can set this to `False`.
             Doing so incorrectly will lead to incorrect output
 
         Returns
@@ -6380,10 +6386,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         by
             Also group by this column/these columns
         check_sorted
+            Check whether `index_column` is sorted (or, if `by` is given,
+            check whether it's sorted within each group).
             When the `by` argument is given, polars can not check sortedness
             by the metadata and has to do a full scan on the index column to
             verify data is sorted. This is expensive. If you are sure the
-            data within the by groups is sorted, you can set this to `False`.
+            data within the groups is sorted, you can set this to `False`.
             Doing so incorrectly will lead to incorrect output
 
         Returns
@@ -6465,10 +6473,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
               * ...
               * 'sunday': Start the window on the Sunday before the first data point.
         check_sorted
+            Check whether `index_column` is sorted (or, if `by` is given,
+            check whether it's sorted within each group).
             When the `by` argument is given, polars can not check sortedness
             by the metadata and has to do a full scan on the index column to
             verify data is sorted. This is expensive. If you are sure the
-            data within the by groups is sorted, you can set this to `False`.
+            data within the groups is sorted, you can set this to `False`.
             Doing so incorrectly will lead to incorrect output
 
         Returns

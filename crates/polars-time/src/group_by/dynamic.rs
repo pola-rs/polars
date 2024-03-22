@@ -133,7 +133,7 @@ impl Wrap<&DataFrame> {
                         "rolling window period should be strictly positive",
         );
         let time = self.0.column(&options.index_column)?.clone();
-        if group_by.is_empty() {
+        if group_by.is_empty() && options.check_sorted {
             // If by is given, the column must be sorted in the 'by' arg, which we can not check now
             // this will be checked when the groups are materialized.
             ensure_sorted_arg(&time, "rolling")?;
@@ -209,7 +209,7 @@ impl Wrap<&DataFrame> {
         }
 
         let time = self.0.column(&options.index_column)?.rechunk();
-        if group_by.is_empty() {
+        if group_by.is_empty() && options.check_sorted {
             // If by is given, the column must be sorted in the 'by' arg, which we can not check now
             // this will be checked when the groups are materialized.
             ensure_sorted_arg(&time, "group_by_dynamic")?;
@@ -529,7 +529,7 @@ impl Wrap<&DataFrame> {
     fn impl_rolling(
         &self,
         dt: Series,
-        by: Vec<Series>,
+        group_by: Vec<Series>,
         options: &RollingGroupOptions,
         tu: TimeUnit,
         tz: Option<Tz>,
@@ -537,7 +537,7 @@ impl Wrap<&DataFrame> {
     ) -> PolarsResult<(Series, Vec<Series>, GroupsProxy)> {
         let mut dt = dt.rechunk();
 
-        let groups = if by.is_empty() {
+        let groups = if group_by.is_empty() {
             // a requirement for the index
             // so we can set this such that downstream code has this info
             dt.set_sorted_flag(IsSorted::Ascending);
@@ -558,7 +558,7 @@ impl Wrap<&DataFrame> {
         } else {
             let groups = self
                 .0
-                .group_by_with_series(by.clone(), true, true)?
+                .group_by_with_series(group_by.clone(), true, true)?
                 .take_groups();
 
             // we keep a local copy, as we are reordering on next operation.
@@ -627,7 +627,7 @@ impl Wrap<&DataFrame> {
 
         let dt = dt.cast(time_type).unwrap();
 
-        Ok((dt, by, groups))
+        Ok((dt, group_by, groups))
     }
 }
 
