@@ -341,6 +341,19 @@ impl ProjectionPushDown {
                 lp_arena,
                 expr_arena,
             ),
+            SimpleProjection {columns, input, ..} => {
+                let exprs = names_to_expr_irs(columns.iter_names(), expr_arena);
+                process_projection(
+                    self,
+                    input,
+                    exprs,
+                    acc_projections,
+                    projected_names,
+                    projections_seen,
+                    lp_arena,
+                    expr_arena,
+                )
+            }
             DataFrameScan {
                 df,
                 schema,
@@ -700,7 +713,7 @@ impl ProjectionPushDown {
                     )
                 }
             },
-            SimpleProjection {..} | Invalid => unreachable!()
+            Invalid => unreachable!()
         }
     }
 

@@ -572,6 +572,13 @@ where
 {
     use ALogicalPlan::*;
     let op = match lp_arena.get(node) {
+        SimpleProjection {input, columns, ..} => {
+            let input_schema = lp_arena.get(*input).schema(lp_arena);
+            let columns = columns.iter_names().cloned().collect();
+            let op =
+                operators::SimpleProjectionOperator::new(columns, input_schema.into_owned());
+            Box::new(op) as Box<dyn Operator>
+        }
         Projection { expr, input, .. } => {
             let input_schema = lp_arena.get(*input).schema(lp_arena);
 
@@ -639,7 +646,7 @@ where
         } => {
             let input_schema = lp_arena.get(*input).schema(lp_arena);
             let op =
-                operators::FastProjectionOperator::new(columns.clone(), input_schema.into_owned());
+                operators::SimpleProjectionOperator::new(columns.clone(), input_schema.into_owned());
             Box::new(op) as Box<dyn Operator>
         },
         MapFunction { function, .. } => {

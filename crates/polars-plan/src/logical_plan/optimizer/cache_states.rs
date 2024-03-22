@@ -10,7 +10,7 @@ fn get_upper_projections(
     let parent = lp_arena.get(parent);
 
     use ALogicalPlan::*;
-    // during projection pushdown all accumulated
+    // During projection pushdown all accumulated.
     match parent {
         Projection { expr, .. } => {
             let mut out = Vec::with_capacity(expr.len());
@@ -19,6 +19,10 @@ fn get_upper_projections(
             }
             Some(out)
         },
+        SimpleProjection {columns, ..} => {
+            let out = columns.iter_names().map(|s| Arc::from(s.as_str())).collect();
+            Some(out)
+        }
         // other
         _ => None,
     }
@@ -168,8 +172,8 @@ pub(super) fn set_cache_states(
                             .build();
 
                         let lp = pd.optimize(lp, lp_arena, expr_arena).unwrap();
-                        // remove the projection added by the optimization
-                        let lp = if let ALogicalPlan::Projection { input, .. } = lp {
+                        // Remove the projection added by the optimization.
+                        let lp = if let ALogicalPlan::Projection { input, .. } | ALogicalPlan::SimpleProjection {input, ..} = lp {
                             lp_arena.take(input)
                         } else {
                             lp

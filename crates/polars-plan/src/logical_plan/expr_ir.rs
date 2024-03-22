@@ -133,3 +133,17 @@ impl From<&ExprIR> for Node {
         value.node()
     }
 }
+
+
+pub(crate) fn name_to_expr_ir(name: &str, expr_arena: &mut Arena<AExpr>) -> ExprIR {
+    let name: Name = Arc::from(name);
+    let node = expr_arena.add(AExpr::Column(name.clone()));
+    ExprIR::new(node, Some(name.clone()), OutputName::ColumnLhs(name))
+}
+
+pub(crate) fn names_to_expr_irs<I: IntoIterator<Item=S>, S: AsRef<str>>(names: I, expr_arena: &mut Arena<AExpr>) -> Vec<ExprIR> {
+    names.into_iter().map(|name| {
+        let name = name.as_ref();
+        name_to_expr_ir(name, expr_arena)
+    }).collect()
+}

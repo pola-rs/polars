@@ -182,7 +182,7 @@ fn test_cse_joins_4954() -> PolarsResult<()> {
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let lp = c.optimize(&mut lp_arena, &mut expr_arena).unwrap();
 
-    // ensure we get only one cache and the it is not above the join
+    // Ensure we get only one cache and the it is not above the join
     // and ensure that every cache only has 1 hit.
     let cache_ids = (&lp_arena)
         .iter(lp)

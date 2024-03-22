@@ -138,6 +138,9 @@ fn lp_node_equal(a: &ALogicalPlan, b: &ALogicalPlan, expr_arena: &Arena<AExpr>) 
         (Selection { predicate: l, .. }, Selection { predicate: r, .. }) => {
             AExpr::is_equal(l.node(), r.node(), expr_arena)
         },
+        (SimpleProjection {columns: l, ..}, SimpleProjection {columns: r, ..}) => {
+            l == r
+        }
         (Projection { expr: l, .. }, Projection { expr: r, .. })
         | (HStack { exprs: l, .. }, HStack { exprs: r, .. }) => expr_nodes_equal(l, r, expr_arena),
         (

@@ -434,8 +434,8 @@ fn test_string_addition_to_concat_str() -> PolarsResult<()> {
     let root = q.clone().optimize(&mut lp_arena, &mut expr_arena)?;
     let lp = lp_arena.get(root);
     let mut exprs = lp.get_exprs();
-    let expr_node = exprs.pop().unwrap();
-    if let AExpr::Function { input, .. } = expr_arena.get(expr_node) {
+    let e = exprs.pop().unwrap();
+    if let AExpr::Function { input, .. } = expr_arena.get(e.node()) {
         // the concat_str has the 4 expressions as input
         assert_eq!(input.len(), 4);
     } else {
@@ -493,8 +493,7 @@ fn test_with_column_prune() -> PolarsResult<()> {
 
         matches!(
             lp,
-            ALogicalPlan::MapFunction {
-                function: FunctionNode::FastProjection { .. },
+            ALogicalPlan::SimpleProjection {
                 ..
             } | DataFrameScan { .. }
         )
