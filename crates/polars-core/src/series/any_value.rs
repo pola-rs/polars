@@ -416,7 +416,11 @@ fn any_values_to_categorical(
     // TODO: Handle AnyValues of type Categorical / Enum
     // TODO: Avoid materializing to String before casting to categorical
     let ca = any_values_to_string(values, strict)?;
-    ca.cast(dtype)
+    if strict {
+        ca.into_series().strict_cast(dtype)
+    } else {
+        ca.cast(dtype)
+    }
 }
 
 #[cfg(feature = "dtype-decimal")]
