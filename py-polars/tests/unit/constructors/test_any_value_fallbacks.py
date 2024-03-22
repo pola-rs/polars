@@ -203,25 +203,25 @@ def test_fallback_with_dtype_nonstrict(
 
 
 @pytest.mark.parametrize(
-    ("values", "expected_dtype"),
+    ("expected_dtype", "values"),
     [
-        ([-1, 0, 100_000, None], pl.Int64),
-        ([-1.5, 0.0, 10.0, None], pl.Float64),
-        ([True, False, None], pl.Boolean),
-        ([b"123", b"xyz", None], pl.Binary),
-        (["123", "xyz", None], pl.String),
-        ([date(1970, 1, 1), date(2020, 12, 31), None], pl.Date),
-        ([time(0, 0), time(23, 59, 59), None], pl.Time),
+        (pl.Int64, [-1, 0, 100_000, None]),
+        (pl.Float64, [-1.5, 0.0, 10.0, None]),
+        (pl.Boolean, [True, False, None]),
+        (pl.Binary, [b"123", b"xyz", None]),
+        (pl.String, ["123", "xyz", None]),
+        (pl.Date, [date(1970, 1, 1), date(2020, 12, 31), None]),
+        (pl.Time, [time(0, 0), time(23, 59, 59), None]),
         (
-            [datetime(1970, 1, 1), datetime(2020, 12, 31, 23, 59, 59), None],
             pl.Datetime("us"),
+            [datetime(1970, 1, 1), datetime(2020, 12, 31, 23, 59, 59), None],
         ),
-        ([timedelta(hours=0), timedelta(seconds=100), None], pl.Duration("us")),
+        (pl.Duration("us"), [timedelta(hours=0), timedelta(seconds=100), None]),
     ],
 )
 @pytest.mark.parametrize("strict", [True, False])
 def test_fallback_without_dtype(
-    values: list[Any], expected_dtype: pl.PolarsDataType, strict: bool
+    expected_dtype: pl.PolarsDataType, values: list[Any], strict: bool
 ) -> None:
     result = wrap_s(PySeries.new_from_any_values("", values, strict=strict))
     assert result.to_list() == values
