@@ -24,6 +24,8 @@ from polars.polars import PySeries
         (pl.Time, [time(0, 0), time(23, 59, 59), None]),
         (pl.Datetime, [datetime(1970, 1, 1), datetime(2020, 12, 31, 23, 59, 59), None]),
         (pl.Duration, [timedelta(hours=0), timedelta(seconds=100), None]),
+        (pl.Categorical, ["a", "b", "a", None]),
+        (pl.Enum(["a", "b"]), ["a", "b", "a", None]),
     ],
 )
 @pytest.mark.parametrize("strict", [True, False])
@@ -52,6 +54,8 @@ def test_fallback_with_dtype_strict(
         (pl.Duration, [0, 1200]),
         (pl.Duration("ms"), [timedelta(hours=0), timedelta(seconds=100)]),
         (pl.Duration("ns"), [timedelta(hours=0), timedelta(seconds=100)]),
+        (pl.Categorical, [0, 1, 0]),
+        (pl.Enum(["a", "b"]), [0, 1, 0]),
     ],
 )
 def test_fallback_with_dtype_strict_failure(
@@ -177,6 +181,16 @@ def test_fallback_with_dtype_strict_failure(
                 None,
             ],
         ),
+        (
+            pl.Categorical,
+            ["xyz", 1, 2.5, date(1970, 1, 1), True, b"123", None],
+            ["xyz", "1", "2.5", "1970-01-01", "true", None, None],
+        ),
+        (
+            pl.Enum(["a", "b"]),
+            ["a", "b", "c", 1, 2, None],
+            ["a", "b", None, None, None, None],
+        ),
     ],
 )
 def test_fallback_with_dtype_nonstrict(
@@ -185,7 +199,6 @@ def test_fallback_with_dtype_nonstrict(
     result = wrap_s(
         PySeries.new_from_any_values_and_dtype("", values, dtype, strict=False)
     )
-    print(result.to_list())
     assert result.to_list() == expected
 
 
