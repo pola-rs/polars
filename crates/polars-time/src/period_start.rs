@@ -17,7 +17,7 @@ pub(crate) enum RollUnit {
 #[cfg(feature = "timezones")]
 use crate::utils::{try_localize_datetime, unlocalize_datetime};
 
-// roll backward to the first day of the month, quarter, or year base on roll_unit value.
+// roll backward to the first day of the month, quarter, or year based on roll_unit value.
 pub(crate) fn roll_backward(
     t: i64,
     tz: Option<&Tz>,
