@@ -201,8 +201,12 @@ impl FunctionNode {
             DropNulls { .. } => Ok(Cow::Borrowed(input_schema)),
             Count { alias, .. } => {
                 let mut schema: Schema = Schema::with_capacity(1);
-                let name =
-                    SmartString::from(alias.as_ref().map(|alias| alias.as_ref()).unwrap_or("len"));
+                let name = SmartString::from(
+                    alias
+                        .as_ref()
+                        .map(|alias| alias.as_ref())
+                        .unwrap_or(crate::constants::LEN),
+                );
                 schema.insert_at_index(0, name, IDX_DTYPE)?;
                 Ok(Cow::Owned(Arc::new(schema)))
             },

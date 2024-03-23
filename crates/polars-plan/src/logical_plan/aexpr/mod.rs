@@ -122,8 +122,8 @@ impl From<AAggExpr> for GroupByMethod {
 #[derive(Clone, Debug, Default)]
 pub enum AExpr {
     Explode(Node),
-    Alias(Node, Arc<str>),
-    Column(Arc<str>),
+    Alias(Node, ColumnName),
+    Column(ColumnName),
     Literal(LiteralValue),
     BinaryExpr {
         left: Node,

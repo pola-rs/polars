@@ -1,7 +1,7 @@
 use polars_core::prelude::*;
 use polars_utils::vec::ConvertVec;
 
-use crate::constants::LEN;
+use crate::constants::get_len_name;
 use crate::prelude::*;
 
 pub fn to_expr_ir(expr: Expr, arena: &mut Arena<AExpr>) -> ExprIR {
@@ -241,7 +241,7 @@ fn to_aexpr_impl(expr: Expr, arena: &mut Arena<AExpr>, state: &mut ConversionSta
         },
         Expr::Len => {
             if state.output_name.is_none() {
-                state.output_name = OutputName::LiteralLhs(ColumnName::from(LEN))
+                state.output_name = OutputName::LiteralLhs(get_len_name())
             }
             AExpr::Len
         },

@@ -5,7 +5,7 @@ use polars_core::prelude::*;
 use polars_utils::idx_vec::UnitVec;
 use smartstring::alias::String as SmartString;
 
-use crate::constants::LEN;
+use crate::constants::{get_len_name, LEN};
 use crate::prelude::*;
 
 /// Utility to write comma delimited strings
@@ -158,7 +158,7 @@ pub fn aexpr_output_name(node: Node, arena: &Arena<AExpr>) -> PolarsResult<Arc<s
             AExpr::Window { function, .. } => return aexpr_output_name(*function, arena),
             AExpr::Column(name) => return Ok(name.clone()),
             AExpr::Alias(_, name) => return Ok(name.clone()),
-            AExpr::Len => return Ok(ColumnName::from(LEN)),
+            AExpr::Len => return Ok(get_len_name()),
             AExpr::Literal(val) => return Ok(val.output_column_name()),
             _ => {},
         }
@@ -186,7 +186,7 @@ pub fn expr_output_name(expr: &Expr) -> PolarsResult<Arc<str>> {
                 ComputeError:
                 "this expression may produce multiple output names"
             ),
-            Expr::Len => return Ok(ColumnName::from(LEN)),
+            Expr::Len => return Ok(get_len_name()),
             Expr::Literal(val) => return Ok(val.output_column_name()),
             _ => {},
         }
