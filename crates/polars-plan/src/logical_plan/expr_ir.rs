@@ -95,6 +95,7 @@ impl ExprIR {
         self.node = node;
     }
 
+    #[cfg(feature = "cse")]
     pub(crate) fn set_alias(&mut self, name: Name) {
         self.output_name = OutputName::Alias(name)
     }
