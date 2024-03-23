@@ -630,7 +630,7 @@ impl<'a> CommonSubExprOptimizer<'a> {
 
     fn find_cse(
         &mut self,
-        expr: &[Node],
+        expr: &[ExprIR],
         expr_arena: &mut Arena<AExpr>,
         id_array_offsets: &mut Vec<u32>,
         is_group_by: bool,
@@ -638,15 +638,15 @@ impl<'a> CommonSubExprOptimizer<'a> {
     ) -> PolarsResult<Option<ProjectionExprs>> {
         let mut has_sub_expr = false;
 
-        // first get all cse's
-        for node in expr {
-            // the visitor can return early thus depleted its stack
-            // on a previous iteration
+        // First get all cse's.
+        for e in expr {
+            // The visitor can return early thus depleted its stack
+            // on a previous iteration.
             self.visit_stack.clear();
 
-            // visit expressions and collect sub-expression counts
+            // Visit expressions and collect sub-expression counts.
             let (id_array_offset, this_expr_has_se) =
-                AexprNode::with_context(*node, expr_arena, |ae_node| {
+                AexprNode::with_context(e.node(), expr_arena, |ae_node| {
                     self.visit_expression(ae_node, is_group_by)
                 })?;
             id_array_offsets.push(id_array_offset as u32);
@@ -656,39 +656,40 @@ impl<'a> CommonSubExprOptimizer<'a> {
         if has_sub_expr {
             let mut new_expr = Vec::with_capacity_by_factor(expr.len(), 1.3);
 
-            // then rewrite the expressions that have a cse count > 1
-            for (node, offset) in expr.iter().zip(id_array_offsets.iter()) {
-                let new_node =
-                    AexprNode::with_context_and_arena(*node, expr_arena, |ae_node, expr_arena| {
+            // Then rewrite the expressions that have a cse count > 1.
+            for (e, offset) in expr.iter().zip(id_array_offsets.iter()) {
+                let new_node = AexprNode::with_context_and_arena(
+                    e.node(),
+                    expr_arena,
+                    |ae_node, _expr_arena| {
                         let (out, rewritten) =
                             self.mutate_expression(ae_node, *offset as usize, is_group_by)?;
 
-                        let mut out_node = out.node();
+                        let out_node = out.node();
+                        let mut out_e = e.clone();
                         if !rewritten {
-                            return Ok(out_node);
+                            return Ok(out_e);
                         }
+                        out_e.set_node(out_node);
 
-                        let ae = expr_arena.get(out_node);
                         // If we don't end with an alias we add an alias. Because the normal left-hand
                         // rule we apply for determining the name will not work we now refer to
                         // intermediate temporary names starting with the `CSE_REPLACED` constant.
-                        if !matches!(ae, AExpr::Alias(_, _)) {
+                        if !e.has_alias() {
                             let name = ae_node.to_field(schema)?.name;
-                            out_node =
-                                expr_arena.add(AExpr::Alias(out_node, Arc::from(name.as_str())))
+                            out_e.set_alias(Arc::from(name.as_str()));
                         }
-
-                        PolarsResult::Ok(out_node)
-                    })?;
+                        PolarsResult::Ok(out_e)
+                    },
+                )?;
                 new_expr.push(new_node)
             }
             // Add the tmp columns
             for id in &self.replaced_identifiers {
                 let (node, _count) = self.se_count.get(id).unwrap();
                 let name = id.materialize();
-                let ae = AExpr::Alias(*node, Arc::from(name));
-                let node = expr_arena.add(ae);
-                new_expr.push(node)
+                let out_e = ExprIR::new(*node, None, OutputName::Alias(Arc::from(name)));
+                new_expr.push(out_e)
             }
             let expr = ProjectionExprs::new_with_cse(new_expr, self.replaced_identifiers.len());
             Ok(Some(expr))
@@ -897,15 +898,15 @@ mod test {
         let default = expr.default_exprs();
         assert_eq!(default.len(), 3);
         assert_eq!(
-            format!("{}", node_to_expr(default[0], &expr_arena)),
+            format!("{}", default[0].to_expr(&expr_arena)),
             r#"col("__POLARS_CSER_binary: *!sum!col(a)!col(b)").alias("a")"#
         );
         assert_eq!(
-            format!("{}", node_to_expr(default[1], &expr_arena)),
+            format!("{}", default[1].to_expr(&expr_arena)),
             r#"[(col("__POLARS_CSER_binary: *!sum!col(a)!col(b)")) + (col("__POLARS_CSER_sum!col(a)"))].alias("a")"#
         );
         assert_eq!(
-            format!("{}", node_to_expr(default[2], &expr_arena)),
+            format!("{}", default[2].to_expr(&expr_arena)),
             r#"col("b")"#
         );
 
@@ -915,7 +916,7 @@ mod test {
         // Hashmap can change the order of the cse's.
         let mut cse = cse
             .iter()
-            .map(|node| format!("{}", node_to_expr(*node, &expr_arena)))
+            .map(|e| format!("{}", e.to_expr(&expr_arena)))
             .collect::<Vec<_>>();
         cse.sort();
         assert_eq!(

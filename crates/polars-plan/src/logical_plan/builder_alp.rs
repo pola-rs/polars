@@ -41,12 +41,15 @@ impl<'a> ALogicalPlanBuilder<'a> {
         ALogicalPlanBuilder::new(node, self.expr_arena, self.lp_arena)
     }
 
-    pub fn project(self, exprs: Vec<Node>, options: ProjectionOptions) -> Self {
-        let input_schema = self.lp_arena.get(self.root).schema(self.lp_arena);
-        let schema = aexprs_to_schema(&exprs, &input_schema, Context::Default, self.expr_arena);
-
+    pub fn project(self, exprs: Vec<ExprIR>, options: ProjectionOptions) -> Self {
         // if len == 0, no projection has to be done. This is a select all operation.
-        if !exprs.is_empty() {
+        if exprs.is_empty() {
+            self
+        } else {
+            let input_schema = self.schema();
+            let schema =
+                expr_irs_to_schema(&exprs, &input_schema, Context::Default, self.expr_arena);
+
             let lp = ALogicalPlan::Projection {
                 expr: exprs.into(),
                 input: self.root,
@@ -55,8 +58,84 @@ impl<'a> ALogicalPlanBuilder<'a> {
             };
             let node = self.lp_arena.add(lp);
             ALogicalPlanBuilder::new(node, self.expr_arena, self.lp_arena)
+        }
+    }
+
+    pub(crate) fn project_simple_nodes<I, N>(self, nodes: I) -> PolarsResult<Self>
+    where
+        I: IntoIterator<Item = N>,
+        N: Into<Node>,
+        I::IntoIter: ExactSizeIterator,
+    {
+        let names = nodes
+            .into_iter()
+            .map(|node| match self.expr_arena.get(node.into()) {
+                AExpr::Column(name) => name.as_ref(),
+                _ => unreachable!(),
+            });
+        // This is a duplication of `project_simple` because we already borrow self.expr_arena :/
+        if names.size_hint().0 == 0 {
+            Ok(self)
         } else {
-            self
+            let input_schema = self.schema();
+            let mut count = 0;
+            let schema = names
+                .map(|name| {
+                    let dtype = input_schema.try_get(name)?;
+                    count += 1;
+                    Ok(Field::new(name, dtype.clone()))
+                })
+                .collect::<PolarsResult<Schema>>()?;
+
+            polars_ensure!(count == schema.len(), Duplicate: "found duplicate columns");
+
+            let lp = ALogicalPlan::SimpleProjection {
+                input: self.root,
+                columns: Arc::new(schema),
+                duplicate_check: false,
+            };
+            let node = self.lp_arena.add(lp);
+            Ok(ALogicalPlanBuilder::new(
+                node,
+                self.expr_arena,
+                self.lp_arena,
+            ))
+        }
+    }
+
+    pub(crate) fn project_simple<'c, I>(self, names: I) -> PolarsResult<Self>
+    where
+        I: IntoIterator<Item = &'c str>,
+        I::IntoIter: ExactSizeIterator,
+    {
+        let names = names.into_iter();
+        // if len == 0, no projection has to be done. This is a select all operation.
+        if names.size_hint().0 == 0 {
+            Ok(self)
+        } else {
+            let input_schema = self.schema();
+            let mut count = 0;
+            let schema = names
+                .map(|name| {
+                    let dtype = input_schema.try_get(name)?;
+                    count += 1;
+                    Ok(Field::new(name, dtype.clone()))
+                })
+                .collect::<PolarsResult<Schema>>()?;
+
+            polars_ensure!(count == schema.len(), Duplicate: "found duplicate columns");
+
+            let lp = ALogicalPlan::SimpleProjection {
+                input: self.root,
+                columns: Arc::new(schema),
+                duplicate_check: false,
+            };
+            let node = self.lp_arena.add(lp);
+            Ok(ALogicalPlanBuilder::new(
+                node,
+                self.expr_arena,
+                self.lp_arena,
+            ))
         }
     }
 
@@ -72,23 +151,54 @@ impl<'a> ALogicalPlanBuilder<'a> {
         self.lp_arena.get(self.root).schema(self.lp_arena)
     }
 
-    pub(crate) fn with_columns(self, exprs: Vec<Node>, options: ProjectionOptions) -> Self {
+    pub(crate) fn with_columns(self, exprs: Vec<ExprIR>, options: ProjectionOptions) -> Self {
         let schema = self.schema();
         let mut new_schema = (**schema).clone();
 
-        for e in &exprs {
+        let hstack_schema = expr_irs_to_schema(&exprs, &schema, Context::Default, self.expr_arena);
+        new_schema.merge(hstack_schema);
+
+        let lp = ALogicalPlan::HStack {
+            input: self.root,
+            exprs: ProjectionExprs::new(exprs),
+            schema: Arc::new(new_schema),
+            options,
+        };
+        self.add_alp(lp)
+    }
+
+    pub(crate) fn with_columns_simple<I, J: Into<Node>>(
+        self,
+        exprs: I,
+        options: ProjectionOptions,
+    ) -> Self
+    where
+        I: IntoIterator<Item = J>,
+    {
+        let schema = self.schema();
+        let mut new_schema = (**schema).clone();
+
+        let iter = exprs.into_iter();
+        let mut expr_irs = Vec::with_capacity(iter.size_hint().0);
+        for node in iter {
+            let node = node.into();
             let field = self
                 .expr_arena
-                .get(*e)
+                .get(node)
                 .to_field(&schema, Context::Default, self.expr_arena)
                 .unwrap();
 
+            expr_irs.push(ExprIR::new(
+                node,
+                None,
+                OutputName::ColumnLhs(Arc::from(field.name.as_ref())),
+            ));
             new_schema.with_column(field.name().clone(), field.data_type().clone());
         }
 
         let lp = ALogicalPlan::HStack {
             input: self.root,
-            exprs: ProjectionExprs::new(exprs),
+            exprs: ProjectionExprs::new(expr_irs),
             schema: Arc::new(new_schema),
             options,
         };
@@ -112,18 +222,15 @@ impl<'a> ALogicalPlanBuilder<'a> {
 
     pub fn group_by(
         self,
-        keys: Vec<Node>,
-        aggs: Vec<Node>,
+        keys: Vec<ExprIR>,
+        aggs: Vec<ExprIR>,
         apply: Option<Arc<dyn DataFrameUdf>>,
         maintain_order: bool,
         options: Arc<GroupbyOptions>,
     ) -> Self {
         let current_schema = self.schema();
-        // TODO! add this line if LogicalPlan is dropped in favor of ALogicalPlan
-        // let aggs = rewrite_projections(aggs, current_schema);
-
         let mut schema =
-            aexprs_to_schema(&keys, &current_schema, Context::Default, self.expr_arena);
+            expr_irs_to_schema(&keys, &current_schema, Context::Default, self.expr_arena);
 
         #[cfg(feature = "dynamic_group_by")]
         {
@@ -142,7 +249,7 @@ impl<'a> ALogicalPlanBuilder<'a> {
             }
         }
 
-        let agg_schema = aexprs_to_schema(
+        let agg_schema = expr_irs_to_schema(
             &aggs,
             &current_schema,
             Context::Aggregation,
@@ -165,8 +272,8 @@ impl<'a> ALogicalPlanBuilder<'a> {
     pub fn join(
         self,
         other: Node,
-        left_on: Vec<Node>,
-        right_on: Vec<Node>,
+        left_on: Vec<ExprIR>,
+        right_on: Vec<ExprIR>,
         options: Arc<JoinOptions>,
     ) -> Self {
         let schema_left = self.schema();
@@ -174,11 +281,11 @@ impl<'a> ALogicalPlanBuilder<'a> {
 
         let left_on_exprs = left_on
             .iter()
-            .map(|node| node_to_expr(*node, self.expr_arena))
+            .map(|e| e.to_expr(self.expr_arena))
             .collect::<Vec<_>>();
         let right_on_exprs = right_on
             .iter()
-            .map(|node| node_to_expr(*node, self.expr_arena))
+            .map(|e| e.to_expr(self.expr_arena))
             .collect::<Vec<_>>();
 
         let schema = det_join_schema(

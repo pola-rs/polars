@@ -4,13 +4,13 @@ use super::*;
 pub(super) fn process_group_by(
     proj_pd: &mut ProjectionPushDown,
     input: Node,
-    keys: Vec<Node>,
-    aggs: Vec<Node>,
+    keys: Vec<ExprIR>,
+    aggs: Vec<ExprIR>,
     apply: Option<Arc<dyn DataFrameUdf>>,
     schema: SchemaRef,
     maintain_order: bool,
     options: Arc<GroupbyOptions>,
-    acc_projections: Vec<Node>,
+    acc_projections: Vec<ColumnNode>,
     projected_names: PlHashSet<Arc<str>>,
     projections_seen: usize,
     lp_arena: &mut Arena<ALogicalPlan>,
@@ -32,11 +32,11 @@ pub(super) fn process_group_by(
         let input = lp_arena.add(lp);
 
         let builder = ALogicalPlanBuilder::new(input, expr_arena, lp_arena);
-        Ok(proj_pd.finish_node(acc_projections, builder))
+        Ok(proj_pd.finish_node_simple_projection(&acc_projections, builder))
     } else {
         let has_pushed_down = !acc_projections.is_empty();
 
-        // todo! remove unnecessary vec alloc.
+        // TODO! remove unnecessary vec alloc.
         let (mut acc_projections, _local_projections, mut names) = split_acc_projections(
             acc_projections,
             lp_arena.get(input).schema(lp_arena).as_ref(),
@@ -45,24 +45,24 @@ pub(super) fn process_group_by(
         );
 
         // add the columns used in the aggregations to the projection only if they are used upstream
-        let projected_aggs: Vec<Node> = aggs
+        let projected_aggs = aggs
             .into_iter()
             .filter(|agg| {
                 if has_pushed_down && projections_seen > 0 {
-                    expr_is_projected_upstream(agg, input, lp_arena, expr_arena, &projected_names)
+                    projected_names.contains(agg.output_name_arc())
                 } else {
                     true
                 }
             })
-            .collect();
+            .collect::<Vec<_>>();
 
         for agg in &projected_aggs {
-            add_expr_to_accumulated(*agg, &mut acc_projections, &mut names, expr_arena);
+            add_expr_to_accumulated(agg.node(), &mut acc_projections, &mut names, expr_arena);
         }
 
         // make sure the keys are projected
         for key in &*keys {
-            add_expr_to_accumulated(*key, &mut acc_projections, &mut names, expr_arena);
+            add_expr_to_accumulated(key.node(), &mut acc_projections, &mut names, expr_arena);
         }
 
         // make sure that the dynamic key is projected

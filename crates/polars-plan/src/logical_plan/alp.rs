@@ -9,12 +9,12 @@ use super::projection_expr::*;
 use crate::prelude::*;
 
 /// [`ALogicalPlan`] is a representation of [`LogicalPlan`] with [`Node`]s which are allocated in an [`Arena`]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub enum ALogicalPlan {
     #[cfg(feature = "python")]
     PythonScan {
         options: PythonOptions,
-        predicate: Option<Node>,
+        predicate: Option<ExprIR>,
     },
     Slice {
         input: Node,
@@ -23,12 +23,12 @@ pub enum ALogicalPlan {
     },
     Selection {
         input: Node,
-        predicate: Node,
+        predicate: ExprIR,
     },
     Scan {
         paths: Arc<[PathBuf]>,
         file_info: FileInfo,
-        predicate: Option<Node>,
+        predicate: Option<ExprIR>,
         /// schema of the projected file
         output_schema: Option<SchemaRef>,
         scan_type: FileScan,
@@ -41,7 +41,13 @@ pub enum ALogicalPlan {
         // schema of the projected file
         output_schema: Option<SchemaRef>,
         projection: Option<Arc<Vec<String>>>,
-        selection: Option<Node>,
+        selection: Option<ExprIR>,
+    },
+    // Only selects columns
+    SimpleProjection {
+        input: Node,
+        columns: SchemaRef,
+        duplicate_check: bool,
     },
     Projection {
         input: Node,
@@ -51,7 +57,7 @@ pub enum ALogicalPlan {
     },
     Sort {
         input: Node,
-        by_column: Vec<Node>,
+        by_column: Vec<ExprIR>,
         args: SortArguments,
     },
     Cache {
@@ -61,8 +67,8 @@ pub enum ALogicalPlan {
     },
     Aggregate {
         input: Node,
-        keys: Vec<Node>,
-        aggs: Vec<Node>,
+        keys: Vec<ExprIR>,
+        aggs: Vec<ExprIR>,
         schema: SchemaRef,
         apply: Option<Arc<dyn DataFrameUdf>>,
         maintain_order: bool,
@@ -72,8 +78,8 @@ pub enum ALogicalPlan {
         input_left: Node,
         input_right: Node,
         schema: SchemaRef,
-        left_on: Vec<Node>,
-        right_on: Vec<Node>,
+        left_on: Vec<ExprIR>,
+        right_on: Vec<ExprIR>,
         options: Arc<JoinOptions>,
     },
     HStack {
@@ -108,17 +114,8 @@ pub enum ALogicalPlan {
         input: Node,
         payload: SinkType,
     },
-}
-
-impl Default for ALogicalPlan {
-    fn default() -> Self {
-        // the lp is should not be valid. By choosing a max value we'll likely panic indicating
-        // a programming error early.
-        ALogicalPlan::Selection {
-            input: Node(usize::MAX),
-            predicate: Node(usize::MAX),
-        }
-    }
+    #[default]
+    Invalid,
 }
 
 impl ALogicalPlan {
@@ -160,6 +157,8 @@ impl ALogicalPlan {
                 #[cfg(feature = "cloud")]
                 SinkType::Cloud { .. } => "sink (cloud)",
             },
+            SimpleProjection { .. } => "simple_projection",
+            Invalid => "invalid",
         }
     }
 
@@ -185,6 +184,7 @@ impl ALogicalPlan {
             } => output_schema.as_ref().unwrap_or(schema),
             Selection { input, .. } => return arena.get(*input).schema(arena),
             Projection { schema, .. } => schema,
+            SimpleProjection { columns, .. } => columns,
             Aggregate { schema, .. } => schema,
             Join { schema, .. } => schema,
             HStack { schema, .. } => schema,
@@ -201,6 +201,7 @@ impl ALogicalPlan {
                 };
             },
             ExtContext { schema, .. } => schema,
+            Invalid => unreachable!(),
         };
         Cow::Borrowed(schema)
     }
@@ -210,7 +211,7 @@ impl ALogicalPlan {
     /// Takes the expressions of an LP node and the inputs of that node and reconstruct
     pub fn with_exprs_and_input(
         &self,
-        mut exprs: Vec<Node>,
+        mut exprs: Vec<ExprIR>,
         mut inputs: Vec<Node>,
     ) -> ALogicalPlan {
         use ALogicalPlan::*;
@@ -219,7 +220,7 @@ impl ALogicalPlan {
             #[cfg(feature = "python")]
             PythonScan { options, predicate } => PythonScan {
                 options: options.clone(),
-                predicate: *predicate,
+                predicate: predicate.clone(),
             },
             Union { options, .. } => Union {
                 inputs,
@@ -239,7 +240,7 @@ impl ALogicalPlan {
             },
             Selection { .. } => Selection {
                 input: inputs[0],
-                predicate: exprs[0],
+                predicate: exprs.pop().unwrap(),
             },
             Projection {
                 schema, options, ..
@@ -356,47 +357,58 @@ impl ALogicalPlan {
                 input: inputs.pop().unwrap(),
                 payload: payload.clone(),
             },
+            SimpleProjection {
+                columns,
+                duplicate_check,
+                ..
+            } => SimpleProjection {
+                input: inputs.pop().unwrap(),
+                columns: columns.clone(),
+                duplicate_check: *duplicate_check,
+            },
+            Invalid => unreachable!(),
         }
     }
 
     /// Copy the exprs in this LP node to an existing container.
-    pub fn copy_exprs(&self, container: &mut Vec<Node>) {
+    pub fn copy_exprs(&self, container: &mut Vec<ExprIR>) {
         use ALogicalPlan::*;
         match self {
             Slice { .. } | Cache { .. } | Distinct { .. } | Union { .. } | MapFunction { .. } => {},
             Sort { by_column, .. } => container.extend_from_slice(by_column),
-            Selection { predicate, .. } => container.push(*predicate),
+            Selection { predicate, .. } => container.push(predicate.clone()),
             Projection { expr, .. } => container.extend_from_slice(expr),
             Aggregate { keys, aggs, .. } => {
-                let iter = keys.iter().copied().chain(aggs.iter().copied());
+                let iter = keys.iter().cloned().chain(aggs.iter().cloned());
                 container.extend(iter)
             },
             Join {
                 left_on, right_on, ..
             } => {
-                let iter = left_on.iter().copied().chain(right_on.iter().copied());
+                let iter = left_on.iter().cloned().chain(right_on.iter().cloned());
                 container.extend(iter)
             },
             HStack { exprs, .. } => container.extend_from_slice(exprs),
             Scan { predicate, .. } => {
-                if let Some(node) = predicate {
-                    container.push(*node)
+                if let Some(pred) = predicate {
+                    container.push(pred.clone())
                 }
             },
             DataFrameScan { selection, .. } => {
                 if let Some(expr) = selection {
-                    container.push(*expr)
+                    container.push(expr.clone())
                 }
             },
             #[cfg(feature = "python")]
             PythonScan { .. } => {},
             HConcat { .. } => {},
-            ExtContext { .. } | Sink { .. } => {},
+            ExtContext { .. } | Sink { .. } | SimpleProjection { .. } => {},
+            Invalid => unreachable!(),
         }
     }
 
     /// Get expressions in this node.
-    pub fn get_exprs(&self) -> Vec<Node> {
+    pub fn get_exprs(&self) -> Vec<ExprIR> {
         let mut exprs = Vec::new();
         self.copy_exprs(&mut exprs);
         exprs
@@ -426,6 +438,7 @@ impl ALogicalPlan {
             Slice { input, .. } => *input,
             Selection { input, .. } => *input,
             Projection { input, .. } => *input,
+            SimpleProjection { input, .. } => *input,
             Sort { input, .. } => *input,
             Cache { input, .. } => *input,
             Aggregate { input, .. } => *input,
@@ -454,6 +467,7 @@ impl ALogicalPlan {
             DataFrameScan { .. } => return,
             #[cfg(feature = "python")]
             PythonScan { .. } => return,
+            Invalid => unreachable!(),
         };
         container.push_node(input)
     }

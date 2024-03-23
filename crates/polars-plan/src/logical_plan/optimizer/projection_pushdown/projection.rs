@@ -1,11 +1,8 @@
 use super::*;
 
+#[inline]
 fn is_count(node: Node, expr_arena: &Arena<AExpr>) -> bool {
-    match expr_arena.get(node) {
-        AExpr::Alias(node, _) => is_count(*node, expr_arena),
-        AExpr::Len => true,
-        _ => false,
-    }
+    matches!(expr_arena.get(node), AExpr::Len)
 }
 
 /// In this function we check a double projection case
@@ -18,38 +15,32 @@ fn is_count(node: Node, expr_arena: &Arena<AExpr>) -> bool {
 /// this removes projection names, so any checks to upstream names should
 /// be done before this branch.
 fn check_double_projection(
-    expr: &Node,
+    expr: &ExprIR,
     expr_arena: &mut Arena<AExpr>,
-    acc_projections: &mut Vec<Node>,
+    acc_projections: &mut Vec<ColumnNode>,
     projected_names: &mut PlHashSet<Arc<str>>,
 ) {
     // Factor out the pruning function
     fn prune_projections_by_name(
-        acc_projections: &mut Vec<Node>,
+        acc_projections: &mut Vec<ColumnNode>,
         name: &str,
         expr_arena: &Arena<AExpr>,
     ) {
-        acc_projections.retain(|expr| {
-            !aexpr_to_leaf_names_iter(*expr, expr_arena).any(|q| q.as_ref() == name)
-        });
+        acc_projections.retain(|node| column_node_to_name(*node, expr_arena).as_ref() != name);
+    }
+    if let Some(name) = expr.get_alias() {
+        if projected_names.remove(name) {
+            prune_projections_by_name(acc_projections, name.as_ref(), expr_arena)
+        }
     }
 
-    for (_, ae) in (&*expr_arena).iter(*expr) {
-        match ae {
-            // Series literals come from another source so should not be pushed down.
-            AExpr::Literal(LiteralValue::Series(s)) => {
-                let name = s.name();
-                if projected_names.remove(name) {
-                    prune_projections_by_name(acc_projections, name, expr_arena)
-                }
-            },
-            AExpr::Alias(_, name) => {
-                if projected_names.remove(name) {
-                    prune_projections_by_name(acc_projections, name.as_ref(), expr_arena)
-                }
-            },
-            _ => {},
-        };
+    for (_, ae) in (&*expr_arena).iter(expr.node()) {
+        if let AExpr::Literal(LiteralValue::Series(s)) = ae {
+            let name = s.name();
+            if projected_names.remove(name) {
+                prune_projections_by_name(acc_projections, name, expr_arena)
+            }
+        }
     }
 }
 
@@ -57,8 +48,8 @@ fn check_double_projection(
 pub(super) fn process_projection(
     proj_pd: &mut ProjectionPushDown,
     input: Node,
-    exprs: Vec<Node>,
-    mut acc_projections: Vec<Node>,
+    mut exprs: Vec<ExprIR>,
+    mut acc_projections: Vec<ColumnNode>,
     mut projected_names: PlHashSet<Arc<str>>,
     projections_seen: usize,
     lp_arena: &mut Arena<ALogicalPlan>,
@@ -69,7 +60,7 @@ pub(super) fn process_projection(
     // path for `SELECT count(*) FROM`
     // as there would be no projections and we would read
     // the whole file while we only want the count
-    if exprs.len() == 1 && is_count(exprs[0], expr_arena) {
+    if exprs.len() == 1 && is_count(exprs[0].node(), expr_arena) {
         let input_schema = lp_arena.get(input).schema(lp_arena);
         // simply select the first column
         let (first_name, _) = input_schema.try_get_at_index(0)?;
@@ -83,7 +74,7 @@ pub(super) fn process_projection(
             );
         }
         add_expr_to_accumulated(expr, &mut acc_projections, &mut projected_names, expr_arena);
-        local_projection.push(exprs[0]);
+        local_projection.push(exprs.pop().unwrap());
         proj_pd.is_count_star = true;
     } else {
         // A projection can consist of a chain of expressions followed by an alias.
@@ -95,21 +86,26 @@ pub(super) fn process_projection(
 
         // set this flag outside the loop as we modify within the loop
         let has_pushed_down = !acc_projections.is_empty();
-        for e in &exprs {
+        for e in exprs {
             if has_pushed_down {
                 // remove projections that are not used upstream
-                if !expr_is_projected_upstream(e, input, lp_arena, expr_arena, &projected_names) {
+                if !projected_names.contains(e.output_name_arc()) {
                     continue;
                 }
 
-                check_double_projection(e, expr_arena, &mut acc_projections, &mut projected_names);
+                check_double_projection(&e, expr_arena, &mut acc_projections, &mut projected_names);
             }
+            add_expr_to_accumulated(
+                e.node(),
+                &mut acc_projections,
+                &mut projected_names,
+                expr_arena,
+            );
+
             // do local as we still need the effect of the projection
             // e.g. a projection is more than selecting a column, it can
             // also be a function/ complicated expression
-            local_projection.push(*e);
-
-            add_expr_to_accumulated(*e, &mut acc_projections, &mut projected_names, expr_arena);
+            local_projection.push(e);
         }
     }
     proj_pd.pushdown_and_assign(

@@ -15,7 +15,6 @@ mod arity;
 #[cfg(feature = "dtype-array")]
 mod array;
 pub mod binary;
-pub mod consts;
 #[cfg(feature = "temporal")]
 pub mod dt;
 mod expr;

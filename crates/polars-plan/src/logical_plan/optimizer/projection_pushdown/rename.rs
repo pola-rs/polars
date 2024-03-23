@@ -7,16 +7,18 @@ use super::*;
 fn iter_and_update_nodes(
     existing: &str,
     new: &str,
-    acc_projections: &mut [Node],
+    acc_projections: &mut [ColumnNode],
     expr_arena: &mut Arena<AExpr>,
     processed: &mut BTreeSet<usize>,
 ) {
-    for node in acc_projections.iter_mut() {
+    for column_node in acc_projections.iter_mut() {
+        let node = column_node.0;
         if !processed.contains(&node.0) {
-            let new_node = rename_matching_aexpr_leaf_names(*node, expr_arena, new, existing);
-            if new_node != *node {
-                *node = new_node;
-                processed.insert(node.0);
+            // We walk the query backwards, so we rename new to existing
+            if column_node_to_name(*column_node, expr_arena).as_ref() == new {
+                let new_node = expr_arena.add(AExpr::Column(Name::from(existing)));
+                *column_node = ColumnNode(new_node);
+                processed.insert(new_node.0);
             }
         }
     }
@@ -24,7 +26,7 @@ fn iter_and_update_nodes(
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn process_rename(
-    acc_projections: &mut [Node],
+    acc_projections: &mut [ColumnNode],
     projected_names: &mut PlHashSet<Arc<str>>,
     expr_arena: &mut Arena<AExpr>,
     existing: &[SmartString],

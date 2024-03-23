@@ -10,13 +10,20 @@ fn get_upper_projections(
     let parent = lp_arena.get(parent);
 
     use ALogicalPlan::*;
-    // during projection pushdown all accumulated
+    // During projection pushdown all accumulated.
     match parent {
         Projection { expr, .. } => {
             let mut out = Vec::with_capacity(expr.len());
-            for node in expr {
-                out.extend(aexpr_to_leaf_names_iter(*node, expr_arena));
+            for e in expr {
+                out.extend(aexpr_to_leaf_names_iter(e.node(), expr_arena));
             }
+            Some(out)
+        },
+        SimpleProjection { columns, .. } => {
+            let out = columns
+                .iter_names()
+                .map(|s| Arc::from(s.as_str()))
+                .collect();
             Some(out)
         },
         // other
@@ -154,21 +161,21 @@ pub(super) fn set_cache_states(
                         let child_schema = child_schema.as_ref();
                         let projection: Vec<_> = child_schema
                             .iter_names()
-                            .flat_map(|name| {
-                                columns
-                                    .get(name.as_str())
-                                    .map(|name| expr_arena.add(AExpr::Column(name.clone())))
-                            })
+                            .flat_map(|name| columns.get(name.as_str()).map(|name| name.as_ref()))
                             .collect();
 
                         let new_child = lp_arena.add(child_lp);
+
                         let lp = ALogicalPlanBuilder::new(new_child, expr_arena, lp_arena)
-                            .project(projection.clone(), Default::default())
+                            .project_simple(projection.iter().copied())
+                            .unwrap()
                             .build();
 
                         let lp = pd.optimize(lp, lp_arena, expr_arena).unwrap();
-                        // remove the projection added by the optimization
-                        let lp = if let ALogicalPlan::Projection { input, .. } = lp {
+                        // Remove the projection added by the optimization.
+                        let lp = if let ALogicalPlan::Projection { input, .. }
+                        | ALogicalPlan::SimpleProjection { input, .. } = lp
+                        {
                             lp_arena.take(input)
                         } else {
                             lp

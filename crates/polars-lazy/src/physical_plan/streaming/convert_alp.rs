@@ -178,7 +178,7 @@ pub(crate) fn insert_streaming_nodes(
         execution_id += 1;
         match lp_arena.get(root) {
             Selection { input, predicate }
-                if is_streamable(*predicate, expr_arena, Context::Default) =>
+                if is_streamable(predicate.node(), expr_arena, Context::Default) =>
             {
                 state.streamable = true;
                 state.operators_sinks.push(PipelineNode::Operator(root));
@@ -211,6 +211,11 @@ pub(crate) fn insert_streaming_nodes(
             Projection { input, expr, .. }
                 if all_streamable(expr, expr_arena, Context::Default) =>
             {
+                state.streamable = true;
+                state.operators_sinks.push(PipelineNode::Operator(root));
+                stack.push(StackFrame::new(*input, state, current_idx))
+            },
+            SimpleProjection { input, .. } => {
                 state.streamable = true;
                 state.operators_sinks.push(PipelineNode::Operator(root));
                 stack.push(StackFrame::new(*input, state, current_idx))
@@ -419,9 +424,9 @@ pub(crate) fn insert_streaming_nodes(
                 }
 
                 let valid_agg = || {
-                    aggs.iter().all(|node| {
+                    aggs.iter().all(|e| {
                         polars_pipe::pipeline::can_convert_to_hash_agg(
-                            *node,
+                            e.node(),
                             expr_arena,
                             &input_schema,
                         )
@@ -429,9 +434,9 @@ pub(crate) fn insert_streaming_nodes(
                 };
 
                 let valid_key = || {
-                    keys.iter().all(|node| {
+                    keys.iter().all(|e| {
                         expr_arena
-                            .get(*node)
+                            .get(e.node())
                             .get_type(schema, Context::Default, expr_arena)
                             // ensure we don't group_by list
                             .map(|dt| !matches!(dt, DataType::List(_)))

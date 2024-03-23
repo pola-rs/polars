@@ -85,11 +85,11 @@ pub(super) fn collect_trails(
     Some(())
 }
 
-fn expr_nodes_equal(a: &[Node], b: &[Node], expr_arena: &Arena<AExpr>) -> bool {
+fn expr_nodes_equal(a: &[ExprIR], b: &[ExprIR], expr_arena: &Arena<AExpr>) -> bool {
     a.len() == b.len()
         && a.iter()
             .zip(b)
-            .all(|(a, b)| AExpr::is_equal(*a, *b, expr_arena))
+            .all(|(a, b)| AExpr::is_equal(a.node(), b.node(), expr_arena))
 }
 
 fn predicate_equal(a: Option<Node>, b: Option<Node>, expr_arena: &Arena<AExpr>) -> bool {
@@ -133,11 +133,16 @@ fn lp_node_equal(a: &ALogicalPlan, b: &ALogicalPlan, expr_arena: &Arena<AExpr>) 
         ) => {
             path_left == path_right
                 && scan_type_left == scan_type_right
-                && predicate_equal(*predicate_left, *predicate_right, expr_arena)
+                && predicate_equal(
+                    predicate_left.as_ref().map(|e| e.node()),
+                    predicate_right.as_ref().map(|e| e.node()),
+                    expr_arena,
+                )
         },
         (Selection { predicate: l, .. }, Selection { predicate: r, .. }) => {
-            AExpr::is_equal(*l, *r, expr_arena)
+            AExpr::is_equal(l.node(), r.node(), expr_arena)
         },
+        (SimpleProjection { columns: l, .. }, SimpleProjection { columns: r, .. }) => l == r,
         (Projection { expr: l, .. }, Projection { expr: r, .. })
         | (HStack { exprs: l, .. }, HStack { exprs: r, .. }) => expr_nodes_equal(l, r, expr_arena),
         (

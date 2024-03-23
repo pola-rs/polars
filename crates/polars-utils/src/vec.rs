@@ -74,3 +74,26 @@ impl<T> CapacityByFactor for Vec<T> {
         Vec::with_capacity(cap)
     }
 }
+
+// Trait to convert a Vec.
+// The reason for this is to reduce code-generation. Conversion functions that are named
+// functions should only generate the conversion loop once.
+pub trait ConvertVec<Out> {
+    type ItemIn;
+
+    fn convert_owned<F: FnMut(Self::ItemIn) -> Out>(self, f: F) -> Vec<Out>;
+
+    fn convert<F: FnMut(&Self::ItemIn) -> Out>(&self, f: F) -> Vec<Out>;
+}
+
+impl<T, Out> ConvertVec<Out> for Vec<T> {
+    type ItemIn = T;
+
+    fn convert_owned<F: FnMut(Self::ItemIn) -> Out>(self, f: F) -> Vec<Out> {
+        self.into_iter().map(f).collect()
+    }
+
+    fn convert<F: FnMut(&Self::ItemIn) -> Out>(&self, f: F) -> Vec<Out> {
+        self.iter().map(f).collect()
+    }
+}

@@ -5,8 +5,8 @@ use super::*;
 
 fn add_keys_to_accumulated_state(
     expr: Node,
-    acc_projections: &mut Vec<Node>,
-    local_projection: &mut Vec<Node>,
+    acc_projections: &mut Vec<ColumnNode>,
+    local_projection: &mut Vec<ColumnNode>,
     projected_names: &mut PlHashSet<Arc<str>>,
     expr_arena: &mut Arena<AExpr>,
     // only for left hand side table we add local names
@@ -21,7 +21,7 @@ fn add_keys_to_accumulated_state(
         // take the left most name as output name
         let name = aexpr_to_leaf_name(expr, expr_arena);
         let node = expr_arena.add(AExpr::Column(name.clone()));
-        local_projection.push(node);
+        local_projection.push(ColumnNode(node));
         Some(name)
     } else {
         None
@@ -33,10 +33,10 @@ pub(super) fn process_asof_join(
     proj_pd: &mut ProjectionPushDown,
     input_left: Node,
     input_right: Node,
-    left_on: Vec<Node>,
-    right_on: Vec<Node>,
+    left_on: Vec<ExprIR>,
+    right_on: Vec<ExprIR>,
     options: Arc<JoinOptions>,
-    acc_projections: Vec<Node>,
+    acc_projections: Vec<ColumnNode>,
     _projected_names: PlHashSet<Arc<str>>,
     projections_seen: usize,
     lp_arena: &mut Arena<ALogicalPlan>,
@@ -101,7 +101,7 @@ pub(super) fn process_asof_join(
         // We need the join columns so we push the projection downwards
         for e in &left_on {
             let local_name = add_keys_to_accumulated_state(
-                *e,
+                e.node(),
                 &mut pushdown_left,
                 &mut local_projection,
                 &mut names_left,
@@ -115,7 +115,7 @@ pub(super) fn process_asof_join(
         // both columns remain. So `add_local=true` also for the right table
         for e in &right_on {
             if let Some(local_name) = add_keys_to_accumulated_state(
-                *e,
+                e.node(),
                 &mut pushdown_right,
                 &mut local_projection,
                 &mut names_right,
@@ -132,14 +132,13 @@ pub(super) fn process_asof_join(
         }
 
         for proj in acc_projections {
-            let mut add_local = if already_added_local_to_local_projected.is_empty() {
+            let add_local = if already_added_local_to_local_projected.is_empty() {
                 true
             } else {
-                let name = aexpr_to_leaf_name(proj, expr_arena);
+                let name = column_node_to_name(proj, expr_arena);
                 !already_added_local_to_local_projected.contains(&name)
             };
 
-            add_local = process_alias(proj, &mut local_projection, expr_arena, add_local);
             process_projection(
                 proj_pd,
                 &schema_left,
@@ -174,7 +173,7 @@ pub(super) fn process_asof_join(
         expr_arena,
     )?;
 
-    let alp = resolve_join_suffixes(
+    Ok(resolve_join_suffixes(
         input_left,
         input_right,
         left_on,
@@ -182,12 +181,8 @@ pub(super) fn process_asof_join(
         options,
         lp_arena,
         expr_arena,
-        &mut local_projection,
-    );
-    let root = lp_arena.add(alp);
-    let builder = ALogicalPlanBuilder::new(root, expr_arena, lp_arena);
-
-    Ok(proj_pd.finish_node(local_projection, builder))
+        &local_projection,
+    ))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -195,10 +190,10 @@ pub(super) fn process_join(
     proj_pd: &mut ProjectionPushDown,
     input_left: Node,
     input_right: Node,
-    left_on: Vec<Node>,
-    right_on: Vec<Node>,
+    left_on: Vec<ExprIR>,
+    right_on: Vec<ExprIR>,
     options: Arc<JoinOptions>,
-    acc_projections: Vec<Node>,
+    acc_projections: Vec<ColumnNode>,
     _projected_names: PlHashSet<Arc<str>>,
     projections_seen: usize,
     lp_arena: &mut Arena<ALogicalPlan>,
@@ -248,7 +243,7 @@ pub(super) fn process_join(
         // We need the join columns so we push the projection downwards
         for e in &left_on {
             let local_name = add_keys_to_accumulated_state(
-                *e,
+                e.node(),
                 &mut pushdown_left,
                 &mut local_projection,
                 &mut names_left,
@@ -264,14 +259,13 @@ pub(super) fn process_join(
             // In case of outer joins we also add the columns.
             // But before we do that we must check if the column wasn't already added by the lhs.
             let add_local = if add_local {
-                let name = aexpr_to_leaf_name(*e, expr_arena);
-                !already_added_local_to_local_projected.contains(name.as_ref())
+                !already_added_local_to_local_projected.contains(e.left_most_input_name())
             } else {
                 false
             };
 
             let local_name = add_keys_to_accumulated_state(
-                *e,
+                e.node(),
                 &mut pushdown_right,
                 &mut local_projection,
                 &mut names_right,
@@ -285,14 +279,13 @@ pub(super) fn process_join(
         }
 
         for proj in acc_projections {
-            let mut add_local = if already_added_local_to_local_projected.is_empty() {
+            let add_local = if already_added_local_to_local_projected.is_empty() {
                 true
             } else {
-                let name = aexpr_to_leaf_name(proj, expr_arena);
+                let name = column_node_to_name(proj, expr_arena);
                 !already_added_local_to_local_projected.contains(&name)
             };
 
-            add_local = process_alias(proj, &mut local_projection, expr_arena, add_local);
             process_projection(
                 proj_pd,
                 &schema_left,
@@ -327,7 +320,7 @@ pub(super) fn process_join(
         expr_arena,
     )?;
 
-    let alp = resolve_join_suffixes(
+    Ok(resolve_join_suffixes(
         input_left,
         input_right,
         left_on,
@@ -335,24 +328,21 @@ pub(super) fn process_join(
         options,
         lp_arena,
         expr_arena,
-        &mut local_projection,
-    );
-    let root = lp_arena.add(alp);
-    let builder = ALogicalPlanBuilder::new(root, expr_arena, lp_arena);
-    Ok(proj_pd.finish_node(local_projection, builder))
+        &local_projection,
+    ))
 }
 
 fn process_projection(
     proj_pd: &mut ProjectionPushDown,
     schema_left: &Schema,
     schema_right: &Schema,
-    proj: Node,
-    pushdown_left: &mut Vec<Node>,
-    pushdown_right: &mut Vec<Node>,
+    proj: ColumnNode,
+    pushdown_left: &mut Vec<ColumnNode>,
+    pushdown_right: &mut Vec<ColumnNode>,
     names_left: &mut PlHashSet<Arc<str>>,
     names_right: &mut PlHashSet<Arc<str>>,
     expr_arena: &mut Arena<AExpr>,
-    local_projection: &mut Vec<Node>,
+    local_projection: &mut Vec<ColumnNode>,
     add_local: bool,
     options: &JoinOptions,
 ) {
@@ -378,7 +368,7 @@ fn process_projection(
     // this branch tries to pushdown the column without suffix
     {
         // Column name of the projection without any alias.
-        let leaf_column_name = aexpr_to_leaf_names(proj, expr_arena).pop().unwrap();
+        let leaf_column_name = column_node_to_name(proj, expr_arena);
 
         let suffix = options.args.suffix();
         // If _right suffix exists we need to push a projection down without this
@@ -391,7 +381,7 @@ fn process_projection(
             let downwards_name_column = expr_arena.add(AExpr::Column(Arc::from(downwards_name)));
             // project downwards and locally immediately alias to prevent wrong projections
             if names_right.insert(Arc::from(downwards_name)) {
-                pushdown_right.push(downwards_name_column);
+                pushdown_right.push(ColumnNode(downwards_name_column));
             }
             local_projection.push(proj);
         }
@@ -412,27 +402,6 @@ fn process_projection(
     }
 }
 
-// if it is an alias we want to project the leaf column name downwards
-// but we don't want to project it a this level, otherwise we project both
-// the root and the alias, hence add_local = false.
-pub(super) fn process_alias(
-    proj: Node,
-    local_projection: &mut Vec<Node>,
-    expr_arena: &mut Arena<AExpr>,
-    mut add_local: bool,
-) -> bool {
-    if let AExpr::Alias(expr, name) = expr_arena.get(proj).clone() {
-        for root_name in aexpr_to_leaf_names(expr, expr_arena) {
-            let node = expr_arena.add(AExpr::Column(root_name));
-            let proj = expr_arena.add(AExpr::Alias(node, name.clone()));
-            local_projection.push(proj)
-        }
-        // now we don't
-        add_local = false;
-    }
-    add_local
-}
-
 // Because we do a projection pushdown
 // We may influence the suffixes.
 // For instance if a join would have created a schema
@@ -449,12 +418,12 @@ pub(super) fn process_alias(
 fn resolve_join_suffixes(
     input_left: Node,
     input_right: Node,
-    left_on: Vec<Node>,
-    right_on: Vec<Node>,
+    left_on: Vec<ExprIR>,
+    right_on: Vec<ExprIR>,
     options: Arc<JoinOptions>,
     lp_arena: &mut Arena<ALogicalPlan>,
     expr_arena: &mut Arena<AExpr>,
-    local_projection: &mut [Node],
+    local_projection: &[ColumnNode],
 ) -> ALogicalPlan {
     let suffix = options.args.suffix();
     let alp = ALogicalPlanBuilder::new(input_left, expr_arena, lp_arena)
@@ -462,17 +431,26 @@ fn resolve_join_suffixes(
         .build();
     let schema_after_join = alp.schema(lp_arena);
 
-    for proj in local_projection {
-        for name in aexpr_to_leaf_names(*proj, expr_arena) {
+    let projections = local_projection
+        .iter()
+        .map(|proj| {
+            let name = column_node_to_name(*proj, expr_arena);
             if name.contains(suffix) && schema_after_join.get(&name).is_none() {
-                let new_name = &name.as_ref()[..name.len() - suffix.len()];
-
-                let renamed = aexpr_assign_renamed_leaf(*proj, expr_arena, &name, new_name);
-
-                let aliased = expr_arena.add(AExpr::Alias(renamed, name));
-                *proj = aliased;
+                let downstream_name = &name.as_ref()[..name.len() - suffix.len()];
+                let col = AExpr::Column(Arc::from(downstream_name));
+                let node = expr_arena.add(col);
+                ExprIR::new(
+                    node,
+                    Some(Arc::from(downstream_name)),
+                    OutputName::Alias(name),
+                )
+            } else {
+                ExprIR::new(proj.0, Some(name.clone()), OutputName::ColumnLhs(name))
             }
-        }
-    }
-    alp
+        })
+        .collect::<Vec<_>>();
+
+    ALogicalPlanBuilder::from_lp(alp, expr_arena, lp_arena)
+        .project(projections, Default::default())
+        .build()
 }
