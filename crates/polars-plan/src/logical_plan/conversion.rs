@@ -772,7 +772,7 @@ impl ALogicalPlan {
                 options,
             } => {
                 let i = convert_to_lp(input, lp_arena);
-                let expr = expr_irs_to_exprs(expr.exprs(), expr_arena);
+                let expr = expr_irs_to_exprs(expr.all_exprs(), expr_arena);
                 LogicalPlan::Projection {
                     expr,
                     input: Box::new(i),
@@ -864,7 +864,7 @@ impl ALogicalPlan {
                 options,
             } => {
                 let i = convert_to_lp(input, lp_arena);
-                let exprs = expr_irs_to_exprs(exprs.exprs(), expr_arena);
+                let exprs = expr_irs_to_exprs(exprs.all_exprs(), expr_arena);
 
                 LogicalPlan::HStack {
                     input: Box::new(i),

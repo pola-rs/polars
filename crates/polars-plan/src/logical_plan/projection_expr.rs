@@ -57,6 +57,10 @@ impl ProjectionExprs {
         self.dbg_assert_no_sub_exprs();
         self.expr
     }
+
+    pub(crate) fn all_exprs(self) -> Vec<ExprIR> {
+        self.expr
+    }
 }
 
 impl IntoIterator for ProjectionExprs {
