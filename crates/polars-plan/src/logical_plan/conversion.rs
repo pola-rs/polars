@@ -3,17 +3,8 @@ use crate::prelude::*;
 
 use std::sync::OnceLock;
 use polars_utils::vec::ConvertVec;
-use crate::constants::LEN;
+use crate::constants::{get_literal_name, LEN};
 use crate::logical_plan::projection_expr::ProjectionExprs;
-
-static LITERAL_NAME: OnceLock<Arc<str>> = OnceLock::new();
-
-fn get_literal_name() -> Arc<str> {
-    LITERAL_NAME.get_or_init(|| {
-        Arc::from(crate::constants::LITERAL_NAME)
-    }).clone()
-}
-
 
 pub fn to_expr_ir(expr: Expr, arena: &mut Arena<AExpr>) -> ExprIR {
     let mut state = ConversionState::new();
@@ -69,11 +60,15 @@ fn to_aexpr_impl(expr: Expr, arena: &mut Arena<AExpr>, state: &mut ConversionSta
                 AExpr::Alias(to_aexpr_impl(*e, arena, state), name)
             }
         },
-        Expr::Literal(value) => {
+        Expr::Literal(lv) => {
             if state.output_name.is_none() {
-                state.output_name = OutputName::LiteralLhs(get_literal_name())
+                let output_name = match lv {
+                    LiteralValue::Series(ref s) => OutputName::LiteralLhs(s.name().into()),
+                    _ => OutputName::LiteralLhs(get_literal_name())
+                };
+                state.output_name = output_name;
             }
-            AExpr::Literal(value)
+            AExpr::Literal(lv)
         },
         Expr::Column(name) => {
             if state.output_name.is_none() {

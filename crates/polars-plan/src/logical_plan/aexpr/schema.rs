@@ -53,7 +53,7 @@ impl AExpr {
             },
             Literal(sv) => Ok(match sv {
                 LiteralValue::Series(s) => s.field().into_owned(),
-                _ => Field::new("literal", sv.get_datatype()),
+                _ => Field::new(sv.output_name(), sv.get_datatype()),
             }),
             BinaryExpr { left, right, op } => {
                 use DataType::*;

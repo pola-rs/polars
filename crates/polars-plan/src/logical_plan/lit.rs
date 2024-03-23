@@ -5,6 +5,7 @@ use polars_core::export::chrono::{Duration as ChronoDuration, NaiveDate, NaiveDa
 use polars_core::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+use crate::constants::LITERAL_NAME;
 
 use crate::prelude::*;
 
@@ -59,6 +60,13 @@ pub enum LiteralValue {
 }
 
 impl LiteralValue {
+    pub(crate) fn output_name(&self) -> &str {
+        match self {
+            LiteralValue::Series(s) => s.name(),
+            _ => LITERAL_NAME
+        }
+    }
+
     pub(crate) fn is_float(&self) -> bool {
         matches!(self, LiteralValue::Float32(_) | LiteralValue::Float64(_))
     }

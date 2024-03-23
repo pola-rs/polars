@@ -133,6 +133,11 @@ impl ExprIR {
         }
     }
 
+    #[cfg(debug_assertions)]
+    pub(crate) fn print(&self, expr_arena: &Arena<AExpr>) {
+        eprintln!("{:?}", self.to_expr(expr_arena))
+    }
+
     pub(crate) fn has_alias(&self) -> bool {
         matches!(self.output_name, OutputName::Alias(_))
     }
