@@ -677,7 +677,7 @@ impl<'a> CommonSubExprOptimizer<'a> {
                         // intermediate temporary names starting with the `CSE_REPLACED` constant.
                         if !e.has_alias() {
                             let name = ae_node.to_field(schema)?.name;
-                            out_e.set_alias(Arc::from(name.as_str()));
+                            out_e.set_alias(ColumnName::from(name.as_str()));
                         }
                         PolarsResult::Ok(out_e)
                     },
@@ -688,7 +688,7 @@ impl<'a> CommonSubExprOptimizer<'a> {
             for id in &self.replaced_identifiers {
                 let (node, _count) = self.se_count.get(id).unwrap();
                 let name = id.materialize();
-                let out_e = ExprIR::new(*node, OutputName::Alias(Arc::from(name)));
+                let out_e = ExprIR::new(*node, OutputName::Alias(ColumnName::from(name)));
                 new_expr.push(out_e)
             }
             let expr = ProjectionExprs::new_with_cse(new_expr, self.replaced_identifiers.len());

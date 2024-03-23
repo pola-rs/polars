@@ -68,13 +68,17 @@ pub(super) fn process_group_by(
         // make sure that the dynamic key is projected
         #[cfg(feature = "dynamic_group_by")]
         if let Some(options) = &options.dynamic {
-            let node = expr_arena.add(AExpr::Column(Arc::from(options.index_column.as_str())));
+            let node = expr_arena.add(AExpr::Column(ColumnName::from(
+                options.index_column.as_str(),
+            )));
             add_expr_to_accumulated(node, &mut acc_projections, &mut names, expr_arena);
         }
         // make sure that the rolling key is projected
         #[cfg(feature = "dynamic_group_by")]
         if let Some(options) = &options.rolling {
-            let node = expr_arena.add(AExpr::Column(Arc::from(options.index_column.as_str())));
+            let node = expr_arena.add(AExpr::Column(ColumnName::from(
+                options.index_column.as_str(),
+            )));
             add_expr_to_accumulated(node, &mut acc_projections, &mut names, expr_arena);
         }
 

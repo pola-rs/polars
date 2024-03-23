@@ -112,7 +112,7 @@ fn add_str_to_accumulated(
 ) {
     // if empty: all columns are already projected.
     if !acc_projections.is_empty() && !projected_names.contains(name) {
-        let node = expr_arena.add(AExpr::Column(Arc::from(name)));
+        let node = expr_arena.add(AExpr::Column(ColumnName::from(name)));
         add_expr_to_accumulated(node, acc_projections, projected_names, expr_arena);
     }
 }

@@ -64,7 +64,7 @@ pub(super) fn process_projection(
         let input_schema = lp_arena.get(input).schema(lp_arena);
         // simply select the first column
         let (first_name, _) = input_schema.try_get_at_index(0)?;
-        let expr = expr_arena.add(AExpr::Column(Arc::from(first_name.as_str())));
+        let expr = expr_arena.add(AExpr::Column(ColumnName::from(first_name.as_str())));
         if !acc_projections.is_empty() {
             check_double_projection(
                 &exprs[0],

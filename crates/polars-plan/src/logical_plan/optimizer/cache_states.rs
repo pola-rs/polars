@@ -22,7 +22,7 @@ fn get_upper_projections(
         SimpleProjection { columns, .. } => {
             let out = columns
                 .iter_names()
-                .map(|s| Arc::from(s.as_str()))
+                .map(|s| ColumnName::from(s.as_str()))
                 .collect();
             Some(out)
         },
@@ -125,8 +125,11 @@ pub(super) fn set_cache_states(
                         // all columns
                         else {
                             let schema = lp.schema(lp_arena);
-                            union_names
-                                .extend(schema.iter_names().map(|name| Arc::from(name.as_str())));
+                            union_names.extend(
+                                schema
+                                    .iter_names()
+                                    .map(|name| ColumnName::from(name.as_str())),
+                            );
                         }
                     }
                     cache_id = Some(*id);

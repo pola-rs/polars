@@ -5,7 +5,7 @@ use polars_core::prelude::*;
 use polars_utils::idx_vec::UnitVec;
 use smartstring::alias::String as SmartString;
 
-use crate::constants::{LEN, LITERAL_NAME};
+use crate::constants::LEN;
 use crate::prelude::*;
 
 /// Utility to write comma delimited strings
@@ -158,13 +158,8 @@ pub fn aexpr_output_name(node: Node, arena: &Arena<AExpr>) -> PolarsResult<Arc<s
             AExpr::Window { function, .. } => return aexpr_output_name(*function, arena),
             AExpr::Column(name) => return Ok(name.clone()),
             AExpr::Alias(_, name) => return Ok(name.clone()),
-            AExpr::Len => return Ok(Arc::from(LEN)),
-            AExpr::Literal(val) => {
-                return match val {
-                    LiteralValue::Series(s) => Ok(Arc::from(s.name())),
-                    _ => Ok(Arc::from(LITERAL_NAME)),
-                }
-            },
+            AExpr::Len => return Ok(ColumnName::from(LEN)),
+            AExpr::Literal(val) => return Ok(val.output_column_name()),
             _ => {},
         }
     }
@@ -191,13 +186,8 @@ pub fn expr_output_name(expr: &Expr) -> PolarsResult<Arc<str>> {
                 ComputeError:
                 "this expression may produce multiple output names"
             ),
-            Expr::Len => return Ok(Arc::from(LEN)),
-            Expr::Literal(val) => {
-                return match val {
-                    LiteralValue::Series(s) => Ok(Arc::from(s.name())),
-                    _ => Ok(Arc::from(LITERAL_NAME)),
-                }
-            },
+            Expr::Len => return Ok(ColumnName::from(LEN)),
+            Expr::Literal(val) => return Ok(val.output_column_name()),
             _ => {},
         }
     }
@@ -217,7 +207,7 @@ pub(crate) fn get_single_leaf(expr: &Expr) -> PolarsResult<Arc<str>> {
             Expr::SortBy { expr, .. } => return get_single_leaf(expr),
             Expr::Window { function, .. } => return get_single_leaf(function),
             Expr::Column(name) => return Ok(name.clone()),
-            Expr::Len => return Ok(Arc::from(LEN)),
+            Expr::Len => return Ok(ColumnName::from(LEN)),
             _ => {},
         }
     }
@@ -289,7 +279,7 @@ pub(crate) fn rename_matching_aexpr_leaf_names(
         let mut new_expr = node_to_expr(node, arena);
         new_expr.mutate().apply(|e| match e {
             Expr::Column(name) if &**name == current => {
-                *name = Arc::from(new_name);
+                *name = ColumnName::from(new_name);
                 true
             },
             _ => true,

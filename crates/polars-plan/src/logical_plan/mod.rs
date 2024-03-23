@@ -65,6 +65,8 @@ pub use crate::logical_plan::optimizer::file_caching::{
     collect_fingerprints, find_column_union_and_fingerprints, FileCacher, FileFingerPrint,
 };
 
+pub type ColumnName = Arc<str>;
+
 #[derive(Clone, Copy, Debug)]
 pub enum Context {
     /// Any operation that is done on groups

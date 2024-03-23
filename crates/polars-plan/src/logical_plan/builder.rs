@@ -873,7 +873,7 @@ impl LogicalPlanBuilder {
         LogicalPlan::MapFunction {
             input: Box::new(self.0),
             function: FunctionNode::RowIndex {
-                name: Arc::from(name),
+                name: ColumnName::from(name),
                 offset,
                 schema,
             },

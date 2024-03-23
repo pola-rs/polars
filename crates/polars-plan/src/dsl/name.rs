@@ -94,7 +94,7 @@ impl ExprNameNameSpace {
     pub fn prefix_fields(self, prefix: &str) -> Expr {
         self.0
             .map_private(FunctionExpr::StructExpr(StructFunction::PrefixFields(
-                Arc::from(prefix),
+                ColumnName::from(prefix),
             )))
     }
 
@@ -102,7 +102,7 @@ impl ExprNameNameSpace {
     pub fn suffix_fields(self, suffix: &str) -> Expr {
         self.0
             .map_private(FunctionExpr::StructExpr(StructFunction::SuffixFields(
-                Arc::from(suffix),
+                ColumnName::from(suffix),
             )))
     }
 }

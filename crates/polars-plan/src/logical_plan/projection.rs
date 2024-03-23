@@ -50,7 +50,7 @@ fn rewrite_special_aliases(expr: Expr) -> PolarsResult<Expr> {
             Expr::RenameAlias { expr, function } => {
                 let name = get_single_leaf(&expr).unwrap();
                 let name = function.call(&name)?;
-                Ok(Expr::Alias(expr, Arc::from(name)))
+                Ok(Expr::Alias(expr, ColumnName::from(name)))
             },
             _ => panic!("`keep`, `suffix`, `prefix` should be last expression"),
         }
@@ -70,7 +70,8 @@ fn replace_wildcard(
 ) -> PolarsResult<()> {
     for name in schema.iter_names() {
         if !exclude.contains(name.as_str()) {
-            let new_expr = replace_wildcard_with_column(expr.clone(), Arc::from(name.as_str()));
+            let new_expr =
+                replace_wildcard_with_column(expr.clone(), ColumnName::from(name.as_str()));
             let new_expr = rewrite_special_aliases(new_expr)?;
             result.push(new_expr)
         }
@@ -84,11 +85,11 @@ fn replace_nth(expr: &mut Expr, schema: &Schema) {
             match i.negative_to_usize(schema.len()) {
                 None => {
                     let name = if *i == 0 { "first" } else { "last" };
-                    *e = Expr::Column(Arc::from(name));
+                    *e = Expr::Column(ColumnName::from(name));
                 },
                 Some(idx) => {
                     let (name, _dtype) = schema.get_at_index(idx).unwrap();
-                    *e = Expr::Column(Arc::from(&**name))
+                    *e = Expr::Column(ColumnName::from(&**name))
                 },
             }
             true
@@ -115,7 +116,7 @@ fn expand_regex(
 
             new_expr.mutate().apply(|e| match &e {
                 Expr::Column(pat) if pat.as_ref() == pattern => {
-                    *e = Expr::Column(Arc::from(name.as_str()));
+                    *e = Expr::Column(ColumnName::from(name.as_str()));
                     true
                 },
                 _ => true,
@@ -232,7 +233,7 @@ pub(super) fn replace_columns_with_column(
             Expr::Columns(members) => {
                 // `col([a, b]) + col([c, d])`
                 if members == names {
-                    *e = Expr::Column(Arc::from(column_name));
+                    *e = Expr::Column(ColumnName::from(column_name));
                 } else {
                     is_valid = false;
                 }
@@ -281,7 +282,7 @@ fn expand_dtypes(
     }) {
         let name = field.name();
         let new_expr = expr.clone();
-        let new_expr = replace_dtype_with_column(new_expr, Arc::from(name.as_str()));
+        let new_expr = replace_dtype_with_column(new_expr, ColumnName::from(name.as_str()));
         let new_expr = rewrite_special_aliases(new_expr)?;
         result.push(new_expr)
     }
@@ -323,7 +324,7 @@ fn prepare_excluded(
                             Excluded::Dtype(dt) => {
                                 for fld in schema.iter_fields() {
                                     if dtypes_match(fld.data_type(), dt) {
-                                        exclude.insert(Arc::from(fld.name().as_ref()));
+                                        exclude.insert(ColumnName::from(fld.name().as_ref()));
                                     }
                                 }
                             },
@@ -341,7 +342,7 @@ fn prepare_excluded(
                             Excluded::Dtype(dt) => {
                                 for (name, dtype) in schema.iter() {
                                     if matches!(dtype, dt) {
-                                        exclude.insert(Arc::from(name.as_str()));
+                                        exclude.insert(ColumnName::from(name.as_str()));
                                     }
                                 }
                             },

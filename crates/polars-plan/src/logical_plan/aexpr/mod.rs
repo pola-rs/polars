@@ -203,7 +203,7 @@ impl AExpr {
 
     #[cfg(feature = "cse")]
     pub(crate) fn col(name: &str) -> Self {
-        AExpr::Column(Arc::from(name))
+        AExpr::Column(ColumnName::from(name))
     }
     /// Any expression that is sensitive to the number of elements in a group
     /// - Aggregations
