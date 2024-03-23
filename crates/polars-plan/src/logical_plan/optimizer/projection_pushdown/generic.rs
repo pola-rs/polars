@@ -44,7 +44,7 @@ pub(super) fn process_generic(
             // df3 => a, b
             // df1 => a
             // so we ensure we do the 'a' projection again before we concatenate
-            if acc_projections.len() > 1 && inputs.len() > 1 {
+            if !acc_projections.is_empty() && inputs.len() > 1 {
                 alp = ALogicalPlanBuilder::from_lp(alp, expr_arena, lp_arena)
                     .project_simple_nodes(acc_projections.iter().map(|e| e.0)).unwrap()
                     .build()

@@ -1,3 +1,4 @@
+use crate::constants::LITERAL_NAME;
 use super::*;
 
 pub type Name = Arc<str>;
@@ -67,6 +68,14 @@ impl ExprIR {
                     out.output_name = OutputName::ColumnLhs(name.clone());
                     break
                 },
+                AExpr::Literal(lv) => {
+                    if let LiteralValue::Series(s) = lv {
+                        out.output_name = OutputName::LiteralLhs(s.name().into());
+                    } else {
+                        out.output_name = OutputName::LiteralLhs(LITERAL_NAME.into());
+                    }
+                    break;
+                }
                 AExpr::Alias(node, name) => {
                     out.output_name = OutputName::ColumnLhs(name.clone());
                     out.node = *node;
