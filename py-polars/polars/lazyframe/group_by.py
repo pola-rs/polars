@@ -345,7 +345,7 @@ class LazyGroupBy:
         Examples
         --------
         >>> lf = pl.LazyFrame({"a": ["Apple", "Apple", "Orange"], "b": [1, None, 2]})
-        >>> lf.group_by("a").len().collect()  # doctest: +SKIP
+        >>> lf.group_by("a").len().collect()  # doctest: +IGNORE_RESULT
         shape: (2, 2)
         ┌────────┬─────┐
         │ a      ┆ len │
@@ -355,7 +355,7 @@ class LazyGroupBy:
         │ Apple  ┆ 2   │
         │ Orange ┆ 1   │
         └────────┴─────┘
-        >>> lf.group_by("a").len(name="n").collect()  # doctest: +SKIP
+        >>> lf.group_by("a").len(name="n").collect()  # doctest: +IGNORE_RESULT
         shape: (2, 2)
         ┌────────┬─────┐
         │ a      ┆ n   │

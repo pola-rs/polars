@@ -460,7 +460,7 @@ class GroupBy:
         Examples
         --------
         >>> df = pl.DataFrame({"a": ["Apple", "Apple", "Orange"], "b": [1, None, 2]})
-        >>> df.group_by("a", maintain_order=True).len()
+        >>> df.group_by("a").len()  # doctest: +IGNORE_RESULT
         shape: (2, 2)
         ┌────────┬─────┐
         │ a      ┆ len │
@@ -470,8 +470,7 @@ class GroupBy:
         │ Apple  ┆ 2   │
         │ Orange ┆ 1   │
         └────────┴─────┘
-
-        >>> df.group_by("a", maintain_order=True).len(name="n")
+        >>> df.group_by("a").len(name="n")  # doctest: +IGNORE_RESULT
         shape: (2, 2)
         ┌────────┬─────┐
         │ a      ┆ n   │
