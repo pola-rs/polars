@@ -12,7 +12,7 @@ def test_rle() -> None:
     )
 
     result_expr = lf.select(pl.col("a").rle()).unnest("a")
-    assert_frame_equal(result_expr.collect(), expected.collect())
+    assert_frame_equal(result_expr, expected)
 
     result_series = lf.collect().to_series().rle().struct.unnest()
     assert_frame_equal(result_series, expected.collect())
