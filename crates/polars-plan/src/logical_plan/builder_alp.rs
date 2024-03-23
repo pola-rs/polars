@@ -190,7 +190,6 @@ impl<'a> ALogicalPlanBuilder<'a> {
 
             expr_irs.push(ExprIR::new(
                 node,
-                None,
                 OutputName::ColumnLhs(Arc::from(field.name.as_ref())),
             ));
             new_schema.with_column(field.name().clone(), field.data_type().clone());

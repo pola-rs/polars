@@ -29,9 +29,6 @@ impl OutputName {
 
 #[derive(Clone, Debug)]
 pub struct ExprIR {
-    /// Name that this expression refers to via `col(<name>)`
-    /// This is `None` for literals.
-    left_most_input_name: Option<Arc<str>>,
     /// Output name of this expression.
     output_name: OutputName,
     /// Reduced expression.
@@ -40,23 +37,14 @@ pub struct ExprIR {
 }
 
 impl ExprIR {
-    pub fn new(
-        node: Node,
-        left_most_input_name: Option<Arc<str>>,
-        output_name: OutputName,
-    ) -> Self {
+    pub fn new(node: Node, output_name: OutputName) -> Self {
         debug_assert!(!output_name.is_none());
-        ExprIR {
-            left_most_input_name,
-            output_name,
-            node,
-        }
+        ExprIR { output_name, node }
     }
 
     pub fn from_node(node: Node, arena: &Arena<AExpr>) -> Self {
         let mut out = Self {
             node,
-            left_most_input_name: None,
             output_name: OutputName::None,
         };
         out.node = node;
@@ -106,14 +94,6 @@ impl ExprIR {
 
     pub(crate) fn output_name(&self) -> &str {
         self.output_name_arc().as_ref()
-    }
-
-    pub(crate) fn left_most_input_name_arc(&self) -> &Name {
-        self.left_most_input_name.as_ref().unwrap()
-    }
-
-    pub(crate) fn left_most_input_name(&self) -> &str {
-        self.left_most_input_name_arc().as_ref()
     }
 
     pub(crate) fn to_expr(&self, expr_arena: &Arena<AExpr>) -> Expr {
@@ -169,7 +149,7 @@ impl From<&ExprIR> for Node {
 pub(crate) fn name_to_expr_ir(name: &str, expr_arena: &mut Arena<AExpr>) -> ExprIR {
     let name: Name = Arc::from(name);
     let node = expr_arena.add(AExpr::Column(name.clone()));
-    ExprIR::new(node, Some(name.clone()), OutputName::ColumnLhs(name))
+    ExprIR::new(node, OutputName::ColumnLhs(name))
 }
 
 pub(crate) fn names_to_expr_irs<I: IntoIterator<Item = S>, S: AsRef<str>>(
