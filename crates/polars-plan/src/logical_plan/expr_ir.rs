@@ -1,19 +1,17 @@
 use super::*;
 use crate::constants::LITERAL_NAME;
 
-pub type Name = Arc<str>;
-
 #[derive(Default, Debug, Clone)]
 pub enum OutputName {
     #[default]
     None,
-    LiteralLhs(Name),
-    ColumnLhs(Name),
-    Alias(Name),
+    LiteralLhs(ColumnName),
+    ColumnLhs(ColumnName),
+    Alias(ColumnName),
 }
 
 impl OutputName {
-    fn unwrap(&self) -> &Name {
+    fn unwrap(&self) -> &ColumnName {
         match self {
             OutputName::Alias(name) => name,
             OutputName::ColumnLhs(name) => name,
@@ -84,7 +82,7 @@ impl ExprIR {
     }
 
     #[cfg(feature = "cse")]
-    pub(crate) fn set_alias(&mut self, name: Name) {
+    pub(crate) fn set_alias(&mut self, name: ColumnName) {
         self.output_name = OutputName::Alias(name)
     }
 
@@ -105,7 +103,7 @@ impl ExprIR {
         }
     }
 
-    pub fn get_alias(&self) -> Option<&Name> {
+    pub fn get_alias(&self) -> Option<&ColumnName> {
         match &self.output_name {
             OutputName::Alias(name) => Some(name),
             _ => None,
@@ -147,7 +145,7 @@ impl From<&ExprIR> for Node {
 }
 
 pub(crate) fn name_to_expr_ir(name: &str, expr_arena: &mut Arena<AExpr>) -> ExprIR {
-    let name: Name = Arc::from(name);
+    let name = ColumnName::from(name);
     let node = expr_arena.add(AExpr::Column(name.clone()));
     ExprIR::new(node, OutputName::ColumnLhs(name))
 }

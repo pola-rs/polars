@@ -71,7 +71,7 @@ pub(super) fn process_asof_join(
             for name in left_by {
                 let add = _projected_names.contains(name.as_str());
 
-                let node = expr_arena.add(AExpr::Column(Arc::from(name.as_str())));
+                let node = expr_arena.add(AExpr::Column(ColumnName::from(name.as_str())));
                 add_keys_to_accumulated_state(
                     node,
                     &mut pushdown_left,
@@ -82,7 +82,7 @@ pub(super) fn process_asof_join(
                 );
             }
             for name in right_by {
-                let node = expr_arena.add(AExpr::Column(Arc::from(name.as_str())));
+                let node = expr_arena.add(AExpr::Column(ColumnName::from(name.as_str())));
                 add_keys_to_accumulated_state(
                     node,
                     &mut pushdown_right,
@@ -380,7 +380,7 @@ fn process_projection(
 
             let downwards_name_column = expr_arena.add(AExpr::Column(Arc::from(downwards_name)));
             // project downwards and locally immediately alias to prevent wrong projections
-            if names_right.insert(Arc::from(downwards_name)) {
+            if names_right.insert(ColumnName::from(downwards_name)) {
                 pushdown_right.push(ColumnNode(downwards_name_column));
             }
             local_projection.push(proj);
@@ -437,7 +437,7 @@ fn resolve_join_suffixes(
             let name = column_node_to_name(*proj, expr_arena);
             if name.contains(suffix) && schema_after_join.get(&name).is_none() {
                 let downstream_name = &name.as_ref()[..name.len() - suffix.len()];
-                let col = AExpr::Column(Arc::from(downstream_name));
+                let col = AExpr::Column(ColumnName::from(downstream_name));
                 let node = expr_arena.add(col);
                 ExprIR::new(node, OutputName::Alias(name))
             } else {

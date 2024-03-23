@@ -35,12 +35,20 @@ pub fn count_rows(paths: &Arc<[PathBuf]>, scan_type: &FileScan) -> PolarsResult<
                     )
                 })
                 .sum();
-            Ok(DataFrame::new(vec![Series::new("len", [n_rows? as IdxSize])]).unwrap())
+            Ok(DataFrame::new(vec![Series::new(
+                crate::constants::LEN,
+                [n_rows? as IdxSize],
+            )])
+            .unwrap())
         },
         #[cfg(feature = "parquet")]
         FileScan::Parquet { cloud_options, .. } => {
             let n_rows = count_rows_parquet(paths, cloud_options.as_ref())?;
-            Ok(DataFrame::new(vec![Series::new("len", [n_rows as IdxSize])]).unwrap())
+            Ok(DataFrame::new(vec![Series::new(
+                crate::constants::LEN,
+                [n_rows as IdxSize],
+            )])
+            .unwrap())
         },
         #[cfg(feature = "ipc")]
         FileScan::Ipc {
@@ -57,7 +65,7 @@ pub fn count_rows(paths: &Arc<[PathBuf]>, scan_type: &FileScan) -> PolarsResult<
             )?
             .try_into()
             .map_err(to_compute_err)?;
-            Ok(DataFrame::new(vec![Series::new("len", [count])]).unwrap())
+            Ok(DataFrame::new(vec![Series::new(crate::constants::LEN, [count])]).unwrap())
         },
         FileScan::Anonymous { .. } => {
             unreachable!();

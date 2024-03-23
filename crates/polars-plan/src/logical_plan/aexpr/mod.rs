@@ -122,8 +122,8 @@ impl From<AAggExpr> for GroupByMethod {
 #[derive(Clone, Debug, Default)]
 pub enum AExpr {
     Explode(Node),
-    Alias(Node, Arc<str>),
-    Column(Arc<str>),
+    Alias(Node, ColumnName),
+    Column(ColumnName),
     Literal(LiteralValue),
     BinaryExpr {
         left: Node,
@@ -203,7 +203,7 @@ impl AExpr {
 
     #[cfg(feature = "cse")]
     pub(crate) fn col(name: &str) -> Self {
-        AExpr::Column(Arc::from(name))
+        AExpr::Column(ColumnName::from(name))
     }
     /// Any expression that is sensitive to the number of elements in a group
     /// - Aggregations

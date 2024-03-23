@@ -169,7 +169,7 @@ impl FileCacher {
 
                 let projections = std::mem::take(Arc::make_mut(&mut with_columns))
                     .into_iter()
-                    .map(|s| expr_arena.add(AExpr::Column(Arc::from(s))))
+                    .map(|s| expr_arena.add(AExpr::Column(ColumnName::from(s))))
                     .collect::<Vec<_>>();
 
                 lp = ALogicalPlanBuilder::new(node, expr_arena, lp_arena)

@@ -1,7 +1,7 @@
 use polars_core::prelude::*;
 use polars_utils::vec::ConvertVec;
 
-use crate::constants::{get_literal_name, LEN};
+use crate::constants::get_len_name;
 use crate::prelude::*;
 
 pub fn to_expr_ir(expr: Expr, arena: &mut Arena<AExpr>) -> ExprIR {
@@ -79,11 +79,7 @@ fn to_aexpr_impl(expr: Expr, arena: &mut Arena<AExpr>, state: &mut ConversionSta
         },
         Expr::Literal(lv) => {
             if state.output_name.is_none() {
-                let output_name = match lv {
-                    LiteralValue::Series(ref s) => OutputName::LiteralLhs(s.name().into()),
-                    _ => OutputName::LiteralLhs(get_literal_name()),
-                };
-                state.output_name = output_name;
+                state.output_name = OutputName::LiteralLhs(lv.output_column_name());
             }
             AExpr::Literal(lv)
         },
@@ -245,7 +241,7 @@ fn to_aexpr_impl(expr: Expr, arena: &mut Arena<AExpr>, state: &mut ConversionSta
         },
         Expr::Len => {
             if state.output_name.is_none() {
-                state.output_name = OutputName::LiteralLhs(Arc::from(LEN))
+                state.output_name = OutputName::LiteralLhs(get_len_name())
             }
             AExpr::Len
         },
@@ -801,7 +797,7 @@ impl ALogicalPlan {
                 let input = convert_to_lp(input, lp_arena);
                 let expr = columns
                     .iter_names()
-                    .map(|name| Expr::Column(Arc::from(name.as_str())))
+                    .map(|name| Expr::Column(ColumnName::from(name.as_str())))
                     .collect::<Vec<_>>();
                 LogicalPlan::Projection {
                     expr,

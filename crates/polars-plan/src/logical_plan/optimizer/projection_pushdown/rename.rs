@@ -16,7 +16,7 @@ fn iter_and_update_nodes(
         if !processed.contains(&node.0) {
             // We walk the query backwards, so we rename new to existing
             if column_node_to_name(*column_node, expr_arena).as_ref() == new {
-                let new_node = expr_arena.add(AExpr::Column(Name::from(existing)));
+                let new_node = expr_arena.add(AExpr::Column(ColumnName::from(existing)));
                 *column_node = ColumnNode(new_node);
                 processed.insert(new_node.0);
             }
@@ -59,7 +59,7 @@ pub(super) fn process_rename(
                 // this must add and remove names
                 else {
                     new_projected_names.remove(new.as_str());
-                    let name: Arc<str> = Arc::from(existing.as_str());
+                    let name = ColumnName::from(existing.as_str());
                     new_projected_names.insert(name);
                     iter_and_update_nodes(
                         existing,
@@ -75,7 +75,7 @@ pub(super) fn process_rename(
     } else {
         for (existing, new) in existing.iter().zip(new.iter()) {
             if projected_names.remove(new.as_str()) {
-                let name: Arc<str> = Arc::from(existing.as_str());
+                let name: Arc<str> = ColumnName::from(existing.as_str());
                 projected_names.insert(name);
                 iter_and_update_nodes(existing, new, acc_projections, expr_arena, &mut processed);
             }
