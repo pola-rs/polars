@@ -898,15 +898,15 @@ mod test {
         let default = expr.default_exprs();
         assert_eq!(default.len(), 3);
         assert_eq!(
-            format!("{}", node_to_expr(default[0], &expr_arena)),
+            format!("{}", default[0].to_expr(&expr_arena)),
             r#"col("__POLARS_CSER_binary: *!sum!col(a)!col(b)").alias("a")"#
         );
         assert_eq!(
-            format!("{}", node_to_expr(default[1], &expr_arena)),
+            format!("{}", default[1].to_expr(&expr_arena)),
             r#"[(col("__POLARS_CSER_binary: *!sum!col(a)!col(b)")) + (col("__POLARS_CSER_sum!col(a)"))].alias("a")"#
         );
         assert_eq!(
-            format!("{}", node_to_expr(default[2], &expr_arena)),
+            format!("{}", default[2].to_expr(&expr_arena)),
             r#"col("b")"#
         );
 
@@ -916,7 +916,7 @@ mod test {
         // Hashmap can change the order of the cse's.
         let mut cse = cse
             .iter()
-            .map(|node| format!("{}", node_to_expr(*node, &expr_arena)))
+            .map(|e| format!("{}", e.to_expr(&expr_arena)))
             .collect::<Vec<_>>();
         cse.sort();
         assert_eq!(
