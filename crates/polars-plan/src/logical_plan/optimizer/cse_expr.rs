@@ -688,7 +688,7 @@ impl<'a> CommonSubExprOptimizer<'a> {
             for id in &self.replaced_identifiers {
                 let (node, _count) = self.se_count.get(id).unwrap();
                 let name = id.materialize();
-                let out_e = ExprIR::new(*node, None, OutputName::Alias(Arc::from(name)));
+                let out_e = ExprIR::new(*node, OutputName::Alias(Arc::from(name)));
                 new_expr.push(out_e)
             }
             let expr = ProjectionExprs::new_with_cse(new_expr, self.replaced_identifiers.len());

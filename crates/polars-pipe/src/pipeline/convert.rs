@@ -379,7 +379,7 @@ where
                         .map(|name| {
                             let name: Arc<str> = Arc::from(name.as_str());
                             let node = expr_arena.add(AExpr::Column(name.clone()));
-                            ExprIR::new(node, Some(name.clone()), OutputName::Alias(name))
+                            ExprIR::new(node, OutputName::Alias(name))
                         })
                         .collect::<Vec<_>>();
                     let aggs = vec![];
@@ -395,7 +395,7 @@ where
                             group_by_out_schema.with_column(name.clone(), dtype.clone());
                             let name: Arc<str> = Arc::from(key.as_str());
                             let node = expr_arena.add(AExpr::Column(name.clone()));
-                            ExprIR::new(node, Some(name.clone()), OutputName::Alias(name))
+                            ExprIR::new(node, OutputName::Alias(name))
                         })
                         .collect::<Vec<_>>();
 
@@ -422,11 +422,7 @@ where
                                         unreachable!()
                                     },
                                 };
-                                Some(ExprIR::new(
-                                    node,
-                                    Some(name.clone()),
-                                    OutputName::Alias(name),
-                                ))
+                                Some(ExprIR::new(node, OutputName::Alias(name)))
                             }
                         })
                         .collect();

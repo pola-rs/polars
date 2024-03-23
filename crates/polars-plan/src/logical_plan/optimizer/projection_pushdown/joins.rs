@@ -259,7 +259,7 @@ pub(super) fn process_join(
             // In case of outer joins we also add the columns.
             // But before we do that we must check if the column wasn't already added by the lhs.
             let add_local = if add_local {
-                !already_added_local_to_local_projected.contains(e.left_most_input_name())
+                !already_added_local_to_local_projected.contains(e.output_name())
             } else {
                 false
             };
@@ -439,13 +439,9 @@ fn resolve_join_suffixes(
                 let downstream_name = &name.as_ref()[..name.len() - suffix.len()];
                 let col = AExpr::Column(Arc::from(downstream_name));
                 let node = expr_arena.add(col);
-                ExprIR::new(
-                    node,
-                    Some(Arc::from(downstream_name)),
-                    OutputName::Alias(name),
-                )
+                ExprIR::new(node, OutputName::Alias(name))
             } else {
-                ExprIR::new(proj.0, Some(name.clone()), OutputName::ColumnLhs(name))
+                ExprIR::new(proj.0, OutputName::ColumnLhs(name))
             }
         })
         .collect::<Vec<_>>();

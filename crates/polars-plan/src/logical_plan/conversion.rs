@@ -7,11 +7,22 @@ use crate::prelude::*;
 pub fn to_expr_ir(expr: Expr, arena: &mut Arena<AExpr>) -> ExprIR {
     let mut state = ConversionState::new();
     let node = to_aexpr_impl(expr, arena, &mut state);
-    ExprIR::new(node, state.left_most_input_name, state.output_name)
+    ExprIR::new(node, state.output_name)
 }
 
 fn to_expr_irs(input: Vec<Expr>, arena: &mut Arena<AExpr>) -> Vec<ExprIR> {
     input.convert_owned(|e| to_expr_ir(e, arena))
+}
+
+pub fn to_expr_ir_ignore_alias(expr: Expr, arena: &mut Arena<AExpr>) -> ExprIR {
+    let mut state = ConversionState::new();
+    state.ignore_alias = true;
+    let node = to_aexpr_impl(expr, arena, &mut state);
+    ExprIR::new(node, state.output_name)
+}
+
+fn to_expr_irs_ignore_alias(input: Vec<Expr>, arena: &mut Arena<AExpr>) -> Vec<ExprIR> {
+    input.convert_owned(|e| to_expr_ir_ignore_alias(e, arena))
 }
 
 /// converts expression to AExpr and adds it to the arena, which uses an arena (Vec) for allocation
@@ -28,9 +39,11 @@ pub fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
 
 #[derive(Default)]
 struct ConversionState {
-    left_most_input_name: Option<Arc<str>>,
     output_name: OutputName,
+    /// Remove alias from the expressions and set as [`OutputName`].
     prune_alias: bool,
+    /// If an `alias` is encountered prune and ignore it.
+    ignore_alias: bool,
 }
 
 impl ConversionState {
@@ -55,7 +68,7 @@ fn to_aexpr_impl(expr: Expr, arena: &mut Arena<AExpr>, state: &mut ConversionSta
         Expr::Explode(expr) => AExpr::Explode(to_aexpr_impl(*expr, arena, state)),
         Expr::Alias(e, name) => {
             if state.prune_alias {
-                if state.output_name.is_none() {
+                if state.output_name.is_none() && !state.ignore_alias {
                     state.output_name = OutputName::Alias(name);
                 }
                 to_aexpr_impl(*e, arena, state);
@@ -77,9 +90,6 @@ fn to_aexpr_impl(expr: Expr, arena: &mut Arena<AExpr>, state: &mut ConversionSta
         Expr::Column(name) => {
             if state.output_name.is_none() {
                 state.output_name = OutputName::ColumnLhs(name.clone())
-            }
-            if state.left_most_input_name.is_none() {
-                state.left_most_input_name = Some(name.clone())
             }
             AExpr::Column(name)
         },
@@ -394,8 +404,8 @@ pub fn to_alp(
             let input_left = to_alp(*input_left, expr_arena, lp_arena)?;
             let input_right = to_alp(*input_right, expr_arena, lp_arena)?;
 
-            let left_on = to_expr_irs(left_on, expr_arena);
-            let right_on = to_expr_irs(right_on, expr_arena);
+            let left_on = to_expr_irs_ignore_alias(left_on, expr_arena);
+            let right_on = to_expr_irs_ignore_alias(right_on, expr_arena);
 
             ALogicalPlan::Join {
                 input_left,
