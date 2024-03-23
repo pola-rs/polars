@@ -262,6 +262,34 @@ def test_rolling_duplicates_11281() -> None:
     assert_frame_equal(result, expected)
 
 
+def test_rolling_check_sorted_15225() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3],
+            "b": [date(2020, 1, 1), date(2020, 1, 2), date(2020, 1, 3)],
+            "c": [1, 1, 2],
+        }
+    )
+    result = df.rolling("b", period="2d", check_sorted=False).agg(pl.sum("a"))
+    expected = pl.DataFrame(
+        {"b": [date(2020, 1, 1), date(2020, 1, 2), date(2020, 1, 3)], "a": [1, 3, 5]}
+    )
+    assert_frame_equal(result, expected)
+    result = df.rolling("b", period="2d", group_by="c", check_sorted=False).agg(
+        pl.sum("a")
+    )
+    expected = pl.DataFrame(
+        {
+            "c": [1, 1, 2],
+            "b": [date(2020, 1, 1), date(2020, 1, 2), date(2020, 1, 3)],
+            "a": [1, 3, 3],
+        }
+    )
+    assert_frame_equal(result, expected)
+    with pytest.raises(pl.InvalidOperationError, match="not explicitly sorted"):
+        result = df.rolling("b", period="2d").agg(pl.sum("a"))
+
+
 def test_multiple_rolling_in_single_expression() -> None:
     df = pl.DataFrame(
         {
