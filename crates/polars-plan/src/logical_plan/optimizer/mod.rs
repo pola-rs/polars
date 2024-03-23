@@ -12,7 +12,6 @@ mod collect_members;
 mod count_star;
 #[cfg(feature = "cse")]
 mod cse_expr;
-mod fast_projection;
 #[cfg(any(
     feature = "ipc",
     feature = "parquet",
@@ -26,6 +25,7 @@ mod flatten_union;
 mod fused;
 mod predicate_pushdown;
 mod projection_pushdown;
+mod simple_projection;
 mod simplify_expr;
 mod simplify_functions;
 mod slice_pushdown_expr;
@@ -35,10 +35,10 @@ mod type_coercion;
 
 use delay_rechunk::DelayRechunk;
 use drop_nulls::ReplaceDropNulls;
-use fast_projection::FastProjectionAndCollapse;
 use polars_io::predicates::PhysicalIoExpr;
 pub use predicate_pushdown::PredicatePushDown;
 pub use projection_pushdown::ProjectionPushDown;
+use simple_projection::SimpleProjectionAndCollapse;
 pub use simplify_expr::{SimplifyBooleanRule, SimplifyExprRule};
 use slice_pushdown_lp::SlicePushDown;
 pub use stack_opt::{OptimizationRule, StackOptimizer};
@@ -156,7 +156,7 @@ pub fn optimize(
 
     // make sure its before slice pushdown.
     if fast_projection {
-        rules.push(Box::new(FastProjectionAndCollapse::new(eager)));
+        rules.push(Box::new(SimpleProjectionAndCollapse::new(eager)));
     }
 
     if !eager {

@@ -61,10 +61,6 @@ pub enum FunctionNode {
     Unnest {
         columns: Arc<[Arc<str>]>,
     },
-    FastProjection {
-        columns: Arc<[SmartString]>,
-        duplicate_check: bool,
-    },
     DropNulls {
         subset: Arc<[Arc<str>]>,
     },
@@ -103,16 +99,6 @@ impl PartialEq for FunctionNode {
     fn eq(&self, other: &Self) -> bool {
         use FunctionNode::*;
         match (self, other) {
-            (
-                FastProjection {
-                    columns: l,
-                    duplicate_check: dl,
-                },
-                FastProjection {
-                    columns: r,
-                    duplicate_check: dr,
-                },
-            ) => l == r && dl == dr,
             (DropNulls { subset: l }, DropNulls { subset: r }) => l == r,
             (Rechunk, Rechunk) => true,
             (Count { paths: paths_l, .. }, Count { paths: paths_r, .. }) => paths_l == paths_r,
@@ -144,12 +130,9 @@ impl FunctionNode {
             Rechunk | Pipeline { .. } => false,
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => false,
-            DropNulls { .. }
-            | FastProjection { .. }
-            | Count { .. }
-            | Unnest { .. }
-            | Rename { .. }
-            | Explode { .. } => true,
+            DropNulls { .. } | Count { .. } | Unnest { .. } | Rename { .. } | Explode { .. } => {
+                true
+            },
             Melt { args, .. } => args.streamable,
             Opaque { streamable, .. } => *streamable,
             #[cfg(feature = "python")]
@@ -188,16 +171,6 @@ impl FunctionNode {
                 .map(|schema| Cow::Owned(schema.clone()))
                 .unwrap_or_else(|| Cow::Borrowed(input_schema))),
             Pipeline { schema, .. } => Ok(Cow::Owned(schema.clone())),
-            FastProjection { columns, .. } => {
-                let schema = columns
-                    .iter()
-                    .map(|name| {
-                        let name = name.as_ref();
-                        input_schema.try_get_field(name)
-                    })
-                    .collect::<PolarsResult<Schema>>()?;
-                Ok(Cow::Owned(Arc::new(schema)))
-            },
             DropNulls { .. } => Ok(Cow::Borrowed(input_schema)),
             Count { alias, .. } => {
                 let mut schema: Schema = Schema::with_capacity(1);
@@ -262,8 +235,7 @@ impl FunctionNode {
             Opaque { predicate_pd, .. } => *predicate_pd,
             #[cfg(feature = "python")]
             OpaquePython { predicate_pd, .. } => *predicate_pd,
-            FastProjection { .. }
-            | DropNulls { .. }
+            DropNulls { .. }
             | Rechunk
             | Unnest { .. }
             | Rename { .. }
@@ -282,8 +254,7 @@ impl FunctionNode {
             Opaque { projection_pd, .. } => *projection_pd,
             #[cfg(feature = "python")]
             OpaquePython { projection_pd, .. } => *projection_pd,
-            FastProjection { .. }
-            | DropNulls { .. }
+            DropNulls { .. }
             | Rechunk
             | Count { .. }
             | Unnest { .. }
@@ -319,16 +290,6 @@ impl FunctionNode {
                 schema,
                 ..
             } => python_udf::call_python_udf(function, df, *validate_output, schema.as_deref()),
-            FastProjection {
-                columns,
-                duplicate_check,
-            } => {
-                if *duplicate_check {
-                    df._select_impl(columns.as_ref())
-                } else {
-                    df._select_impl_unchecked(columns.as_ref())
-                }
-            },
             DropNulls { subset } => df.drop_nulls(Some(subset.as_ref())),
             Count {
                 paths, scan_type, ..
@@ -386,11 +347,6 @@ impl Display for FunctionNode {
             Opaque { fmt_str, .. } => write!(f, "{fmt_str}"),
             #[cfg(feature = "python")]
             OpaquePython { .. } => write!(f, "python dataframe udf"),
-            FastProjection { columns, .. } => {
-                write!(f, "FAST_PROJECT: ")?;
-                let columns = columns.as_ref();
-                fmt_column_delimited(f, columns, "[", "]")
-            },
             DropNulls { subset } => {
                 write!(f, "DROP_NULLS by: ")?;
                 let subset = subset.as_ref();
