@@ -11,14 +11,14 @@ use super::*;
 /// It is important that this optimization is ran after projection pushdown.
 ///
 /// The schema reported after this optimization is also
-pub(super) struct FastProjectionAndCollapse {
+pub(super) struct SimpleProjectionAndCollapse {
     /// keep track of nodes that are already processed when they
     /// can be expensive. Schema materialization can be for instance.
     processed: BTreeSet<Node>,
     eager: bool,
 }
 
-impl FastProjectionAndCollapse {
+impl SimpleProjectionAndCollapse {
     pub(super) fn new(eager: bool) -> Self {
         Self {
             processed: Default::default(),
@@ -27,7 +27,7 @@ impl FastProjectionAndCollapse {
     }
 }
 
-impl OptimizationRule for FastProjectionAndCollapse {
+impl OptimizationRule for SimpleProjectionAndCollapse {
     fn optimize_plan(
         &mut self,
         lp_arena: &mut Arena<ALogicalPlan>,
@@ -82,39 +82,6 @@ impl OptimizationRule for FastProjectionAndCollapse {
                         let cache_schema = cache_lp.schema(lp_arena);
                         if cache_schema.len() == columns.len()
                             && cache_schema.iter_names().zip(columns.iter_names()).all(
-                                |(left_name, right_name)| left_name.as_str() == right_name.as_str(),
-                            )
-                        {
-                            Some(cache_lp.clone())
-                        } else {
-                            None
-                        }
-                    },
-                    _ => None,
-                }
-            },
-            MapFunction {
-                input,
-                function: FunctionNode::FastProjection { columns, .. },
-            } if !self.eager => {
-                // if there are 2 subsequent fast projections, flatten them and only take the last
-                match lp_arena.get(*input) {
-                    MapFunction {
-                        function: FunctionNode::FastProjection { .. },
-                        input: prev_input,
-                    } => Some(MapFunction {
-                        input: *prev_input,
-                        function: FunctionNode::FastProjection {
-                            columns: columns.clone(),
-                            duplicate_check: true,
-                        },
-                    }),
-                    // cleanup projections set in projection pushdown just above caches
-                    // they are not needed.
-                    cache_lp @ Cache { .. } if self.processed.insert(node) => {
-                        let cache_schema = cache_lp.schema(lp_arena);
-                        if cache_schema.len() == columns.len()
-                            && cache_schema.iter_names().zip(columns.iter()).all(
                                 |(left_name, right_name)| left_name.as_str() == right_name.as_str(),
                             )
                         {

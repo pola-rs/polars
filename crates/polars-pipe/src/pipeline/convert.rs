@@ -643,17 +643,6 @@ where
             let op = operators::FilterOperator { predicate };
             Box::new(op) as Box<dyn Operator>
         },
-        MapFunction {
-            function: FunctionNode::FastProjection { columns, .. },
-            input,
-        } => {
-            let input_schema = lp_arena.get(*input).schema(lp_arena);
-            let op = operators::SimpleProjectionOperator::new(
-                columns.clone(),
-                input_schema.into_owned(),
-            );
-            Box::new(op) as Box<dyn Operator>
-        },
         MapFunction { function, .. } => {
             let op = operators::FunctionOperator::new(function.clone());
             Box::new(op) as Box<dyn Operator>
