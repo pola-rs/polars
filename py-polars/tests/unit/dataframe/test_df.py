@@ -1647,18 +1647,21 @@ def test_extension() -> None:
     assert sys.getrefcount(foos[0]) == base_count
 
 
-def test_group_by_order_dispatch() -> None:
+@pytest.mark.parametrize("name", [None, "n", ""])
+def test_group_by_order_dispatch(name: str) -> None:
     df = pl.DataFrame({"x": list("bab"), "y": range(3)})
+    lf = df.lazy()
 
-    for name in (None, "n", ""):
-        result = df.group_by("x", maintain_order=True).len(name=name)
-        name = "len" if name is None else name
+    result = df.group_by("x", maintain_order=True).len(name=name)
+    lazy_result = lf.group_by("x").len(name=name).sort(by="x", descending=True)
 
-        expected = pl.DataFrame(
-            data={"x": ["b", "a"], name: [2, 1]},
-            schema_overrides={name: pl.UInt32},
-        )
-        assert_frame_equal(result, expected)
+    name = "len" if name is None else name
+    expected = pl.DataFrame(
+        data={"x": ["b", "a"], name: [2, 1]},
+        schema_overrides={name: pl.UInt32},
+    )
+    assert_frame_equal(result, expected)
+    assert_frame_equal(lazy_result.collect(), expected)
 
     result = df.group_by("x", maintain_order=True).all()
     expected = pl.DataFrame({"x": ["b", "a"], "y": [[0, 2], [1]]})
