@@ -251,12 +251,12 @@ impl FunctionExpr {
             #[cfg(feature = "rle")]
             RLE => mapper.map_dtype(|dt| {
                 DataType::Struct(vec![
-                    Field::new("lengths", DataType::Int32),
-                    Field::new("values", dt.clone()),
+                    Field::new("len", IDX_DTYPE),
+                    Field::new("value", dt.clone()),
                 ])
             }),
             #[cfg(feature = "rle")]
-            RLEID => mapper.with_dtype(DataType::UInt32),
+            RLEID => mapper.with_dtype(IDX_DTYPE),
             ToPhysical => mapper.to_physical_type(),
             #[cfg(feature = "random")]
             Random { .. } => mapper.with_same_dtype(),
