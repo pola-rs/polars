@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import re
-import warnings
 from collections.abc import Coroutine
 from contextlib import suppress
 from inspect import Parameter, isclass, signature
@@ -270,17 +269,21 @@ class ConnectionExecutor:
 
     @staticmethod
     def _run_async(co: Coroutine) -> Any:  # type: ignore[type-arg]
-        """Consolidate async event loop acquisition and coroutine/func execution."""
+        """Run asynchronous code as if it was synchronous."""
         import asyncio
 
         try:
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore", DeprecationWarning)
-                loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-        return loop.run_until_complete(co)
+            import nest_asyncio
+
+            nest_asyncio.apply()
+        except ModuleNotFoundError as _err:
+            msg = (
+                "Executing using async drivers requires the `nest_asyncio` package."
+                "\n\nPlease run: pip install nest_asyncio"
+            )
+            raise ModuleNotFoundError(msg) from None
+
+        return asyncio.run(co)
 
     @staticmethod
     def _inject_type_overrides(
