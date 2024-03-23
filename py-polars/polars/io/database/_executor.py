@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import re
-import warnings
 from collections.abc import Coroutine
 from contextlib import suppress
 from inspect import Parameter, isclass, signature
@@ -53,7 +52,6 @@ if TYPE_CHECKING:
         Selectable: TypeAlias = Any  # type: ignore[no-redef]
 
     from sqlalchemy.sql.elements import TextClause
-
 
 _INVALID_QUERY_TYPES = {
     "ALTER",
@@ -256,39 +254,18 @@ class ConnectionExecutor:
         """Run asynchronous code as if it was synchronous."""
         import asyncio
 
-        can_nest_asyncio = close_loop = False
-        try:
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore", DeprecationWarning)
-                loop = asyncio.get_event_loop()
-        except RuntimeError:
-            # if we create the loop, we can clean it up
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            close_loop = True
-
         try:
             import nest_asyncio
 
             nest_asyncio.apply()
-            can_nest_asyncio = True
-        except ModuleNotFoundError:
-            pass
+        except ModuleNotFoundError as _err:
+            msg = (
+                "Executing using async drivers requires the `nest_asyncio` package."
+                "\n\nPlease run: pip install nest_asyncio"
+            )
+            raise ModuleNotFoundError(msg) from None
 
-        try:
-            return loop.run_until_complete(co)
-        except RuntimeError as err:
-            if not can_nest_asyncio and "event loop is already running" in str(err):
-                msg = (
-                    "Synchronising this query requires nesting asyncio calls."
-                    "\n\nPlease run: pip install nest_asyncio"
-                )
-                raise RuntimeError(msg) from err
-            else:
-                raise
-        finally:
-            if close_loop:
-                loop.close()
+        return asyncio.run(co)
 
     @staticmethod
     def _inject_type_overrides(
