@@ -50,7 +50,8 @@ pub(super) fn process_rename(
             // Find the key and update the predicate as well as the key
             // This ensure the optimization is pushed down.
             if let Some(mut e) = acc_predicates.remove(new.as_str()) {
-                let new_node = rename_matching_aexpr_leaf_names(e.node(), expr_arena, new, existing);
+                let new_node =
+                    rename_matching_aexpr_leaf_names(e.node(), expr_arena, new, existing);
                 e.set_node(new_node);
                 acc_predicates.insert(predicate_to_key(new_node, expr_arena), e);
             } else {

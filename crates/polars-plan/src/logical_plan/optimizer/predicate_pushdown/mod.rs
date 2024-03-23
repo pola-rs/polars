@@ -16,7 +16,8 @@ use crate::prelude::optimizer::predicate_pushdown::join::process_join;
 use crate::prelude::optimizer::predicate_pushdown::rename::process_rename;
 use crate::utils::{check_input_node, has_aexpr};
 
-pub type HiveEval<'a> = Option<&'a dyn Fn(&ExprIR, &Arena<AExpr>) -> Option<Arc<dyn PhysicalIoExpr>>>;
+pub type HiveEval<'a> =
+    Option<&'a dyn Fn(&ExprIR, &Arena<AExpr>) -> Option<Arc<dyn PhysicalIoExpr>>>;
 
 pub struct PredicatePushDown<'a> {
     hive_partition_eval: HiveEval<'a>,
@@ -80,10 +81,9 @@ impl<'a> PredicatePushDown<'a> {
                 assert!(matches!(lp, ALogicalPlan::ExtContext { .. }));
             }
             let input = inputs[inputs.len() - 1];
-            let input_schema = lp_arena.get(input).schema(lp_arena);
 
             let (eligibility, alias_rename_map) =
-                pushdown_eligibility(input_schema.as_ref(), &exprs, &acc_predicates, expr_arena)?;
+                pushdown_eligibility(&exprs, &acc_predicates, expr_arena)?;
 
             let local_predicates = match eligibility {
                 PushdownEligibility::Full => vec![],
@@ -240,7 +240,7 @@ impl<'a> PredicatePushDown<'a> {
                 let tmp_key = Arc::<str>::from(&*temporary_unique_key(&acc_predicates));
                 acc_predicates.insert(tmp_key.clone(), predicate.clone());
 
-                let local_predicates = match pushdown_eligibility(lp.schema(lp_arena).as_ref(), &[], &acc_predicates, expr_arena)?.0 {
+                let local_predicates = match pushdown_eligibility(&[], &acc_predicates, expr_arena)?.0 {
                     PushdownEligibility::Full => vec![],
                     PushdownEligibility::Partial { to_local } => {
                         let mut out = Vec::with_capacity(to_local.len());
@@ -321,7 +321,7 @@ impl<'a> PredicatePushDown<'a> {
                 let predicate = predicate_at_scan(acc_predicates, predicate.clone(), expr_arena);
 
                 if let (true, Some(predicate)) = (file_info.hive_parts.is_some(), &predicate) {
-                    if let Some(io_expr) = self.hive_partition_eval.unwrap()(&predicate, expr_arena) {
+                    if let Some(io_expr) = self.hive_partition_eval.unwrap()(predicate, expr_arena) {
                         if let Some(stats_evaluator) = io_expr.as_stats_evaluator() {
                             let mut new_paths = Vec::with_capacity(paths.len());
 

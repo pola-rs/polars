@@ -1,5 +1,4 @@
 use super::*;
-use crate::logical_plan::optimizer::projection_pushdown::joins::process_alias;
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn process_semi_anti_join(
@@ -21,7 +20,6 @@ pub(super) fn process_semi_anti_join(
     let mut pushdown_right = Vec::with_capacity(n);
     let mut names_left = PlHashSet::with_capacity(n);
     let mut names_right = PlHashSet::with_capacity(n);
-    let mut local_projection = Vec::with_capacity(n);
 
     // if there are no projections we don't have to do anything (all columns are projected)
     // otherwise we build local projections to sort out proper column names due to the
@@ -81,5 +79,5 @@ pub(super) fn process_semi_anti_join(
     let root = lp_arena.add(alp);
     let builder = ALogicalPlanBuilder::new(root, expr_arena, lp_arena);
 
-    Ok(proj_pd.finish_node(local_projection, builder))
+    Ok(proj_pd.finish_node(vec![], builder))
 }

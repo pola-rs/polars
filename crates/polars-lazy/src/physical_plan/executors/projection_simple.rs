@@ -1,16 +1,19 @@
 use smartstring::alias::String as SmartString;
+
 use super::*;
 
 pub struct ProjectionSimple {
     pub(crate) input: Box<dyn Executor>,
     pub(crate) columns: SchemaRef,
-    pub(crate) duplicate_check: bool
+    pub(crate) duplicate_check: bool,
 }
 
 impl ProjectionSimple {
-    fn execute_impl(&mut self,
-                    state: &mut ExecutionState,
-                    columns: &[SmartString<>]) -> PolarsResult<DataFrame> {
+    fn execute_impl(
+        &mut self,
+        state: &mut ExecutionState,
+        columns: &[SmartString],
+    ) -> PolarsResult<DataFrame> {
         let df = self.input.execute(state)?;
         if self.duplicate_check {
             df._select_impl(columns.as_ref())
@@ -18,7 +21,6 @@ impl ProjectionSimple {
             df._select_impl_unchecked(columns.as_ref())
         }
     }
-
 }
 
 impl Executor for ProjectionSimple {

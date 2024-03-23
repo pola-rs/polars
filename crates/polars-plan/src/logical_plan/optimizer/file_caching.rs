@@ -63,7 +63,9 @@ pub fn collect_fingerprints(
             ..
         } => {
             let slice = (scan_type.skip_rows(), options.n_rows);
-            let predicate = predicate.as_ref().map(|e| node_to_expr(e.node(), expr_arena));
+            let predicate = predicate
+                .as_ref()
+                .map(|e| node_to_expr(e.node(), expr_arena));
             let fp = FileFingerPrint {
                 paths: paths.clone(),
                 predicate,
@@ -101,7 +103,9 @@ pub fn find_column_union_and_fingerprints(
             ..
         } => {
             let slice = (scan_type.skip_rows(), options.n_rows);
-            let predicate = predicate.as_ref().map(|e| node_to_expr(e.node(), expr_arena));
+            let predicate = predicate
+                .as_ref()
+                .map(|e| node_to_expr(e.node(), expr_arena));
             process_with_columns(
                 paths,
                 options.with_columns.as_deref(),
@@ -165,13 +169,12 @@ impl FileCacher {
 
                 let projections = std::mem::take(Arc::make_mut(&mut with_columns))
                     .into_iter()
-                    .map(|s| {
-                        expr_arena.add(AExpr::Column(Arc::from(s)))
-                    })
+                    .map(|s| expr_arena.add(AExpr::Column(Arc::from(s))))
                     .collect::<Vec<_>>();
 
                 lp = ALogicalPlanBuilder::new(node, expr_arena, lp_arena)
-                    .project_simple_nodes(projections).unwrap()
+                    .project_simple_nodes(projections)
+                    .unwrap()
                     .build();
             }
         }
@@ -210,7 +213,9 @@ impl FileCacher {
                     scan_type,
                     file_options: mut options,
                 } => {
-                    let predicate_expr = predicate.as_ref().map(|e| node_to_expr(e.node(), expr_arena));
+                    let predicate_expr = predicate
+                        .as_ref()
+                        .map(|e| node_to_expr(e.node(), expr_arena));
                     let finger_print = FileFingerPrint {
                         paths,
                         predicate: predicate_expr,

@@ -206,7 +206,7 @@ test_all = [
   "rle",
   "cutqcut",
   "replace",
-  "list_sample"
+  "list_sample",
 ]
 
 [package.metadata.docs.rs]

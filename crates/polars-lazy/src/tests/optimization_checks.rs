@@ -493,9 +493,7 @@ fn test_with_column_prune() -> PolarsResult<()> {
 
         matches!(
             lp,
-            ALogicalPlan::SimpleProjection {
-                ..
-            } | DataFrameScan { .. }
+            ALogicalPlan::SimpleProjection { .. } | DataFrameScan { .. }
         )
     }));
     assert_eq!(

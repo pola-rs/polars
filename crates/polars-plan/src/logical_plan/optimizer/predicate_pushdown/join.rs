@@ -89,9 +89,11 @@ fn all_pred_cols_in_left_on(
     expr_arena: &mut Arena<AExpr>,
     left_on: &[ExprIR],
 ) -> bool {
-
-    aexpr_to_leaf_names_iter(predicate.node(), expr_arena)
-        .all(|pred_column_name| left_on.iter().any(|e| e.output_name() == pred_column_name.as_ref()))
+    aexpr_to_leaf_names_iter(predicate.node(), expr_arena).all(|pred_column_name| {
+        left_on
+            .iter()
+            .any(|e| e.output_name() == pred_column_name.as_ref())
+    })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -177,7 +179,9 @@ pub(super) fn process_join(
         // the right hand side should be renamed with the suffix.
         // in that case we should not push down as the user wants to filter on `x`
         // not on `x_rhs`.
-        } else if !block_pushdown_right && check_input_node(predicate.node(), &schema_right, expr_arena) {
+        } else if !block_pushdown_right
+            && check_input_node(predicate.node(), &schema_right, expr_arena)
+        {
             filter_right = true
         }
         if filter_right {

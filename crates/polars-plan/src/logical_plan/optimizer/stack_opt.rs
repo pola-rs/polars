@@ -53,7 +53,7 @@ impl StackOptimizer {
                 while let Some(expr_ir) = scratch.pop() {
                     exprs.push(expr_ir.node());
                     // traverse all subexpressions and add to the stack
-                    let expr = unsafe { expr_arena.get_unchecked(expr_ir.node() ) };
+                    let expr = unsafe { expr_arena.get_unchecked(expr_ir.node()) };
                     expr.nodes(&mut exprs);
                 }
 

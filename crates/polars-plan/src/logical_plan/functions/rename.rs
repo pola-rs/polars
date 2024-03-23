@@ -32,7 +32,7 @@ pub(super) fn rename_schema<'a>(
     for (old, new) in existing.iter().zip(new.iter()) {
         // The column might be removed due to projection pushdown
         // so we only update if we can find it.
-        if let Some((idx,_, _)) = input_schema.get_full(old) {
+        if let Some((idx, _, _)) = input_schema.get_full(old) {
             new_schema[idx].name = new.as_str().into();
         }
     }

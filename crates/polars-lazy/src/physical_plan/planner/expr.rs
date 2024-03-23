@@ -2,12 +2,11 @@ use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::_split_offsets;
 use polars_core::POOL;
-use rayon::prelude::*;
 use polars_plan::prelude::expr_ir::ExprIR;
+use rayon::prelude::*;
 
 use super::super::expressions as phys_expr;
 use crate::prelude::*;
-
 
 fn ok_checker(_state: &ExpressionConversionState) -> PolarsResult<()> {
     Ok(())
@@ -52,7 +51,9 @@ pub(crate) fn create_physical_expressions_from_nodes(
     schema: Option<&SchemaRef>,
     state: &mut ExpressionConversionState,
 ) -> PolarsResult<Vec<Arc<dyn PhysicalExpr>>> {
-    create_physical_expressions_from_nodes_check_state(exprs, context, expr_arena, schema, state, ok_checker)
+    create_physical_expressions_from_nodes_check_state(
+        exprs, context, expr_arena, schema, state, ok_checker,
+    )
 }
 
 pub(crate) fn create_physical_expressions_from_nodes_check_state<F>(
@@ -63,8 +64,8 @@ pub(crate) fn create_physical_expressions_from_nodes_check_state<F>(
     state: &mut ExpressionConversionState,
     checker: F,
 ) -> PolarsResult<Vec<Arc<dyn PhysicalExpr>>>
-    where
-        F: Fn(&ExpressionConversionState) -> PolarsResult<()>,
+where
+    F: Fn(&ExpressionConversionState) -> PolarsResult<()>,
 {
     exprs
         .iter()
@@ -125,12 +126,7 @@ pub(crate) fn create_physical_expr(
     schema: Option<&SchemaRef>,
     state: &mut ExpressionConversionState,
 ) -> PolarsResult<Arc<dyn PhysicalExpr>> {
-    let phys_expr = create_physical_expr_inner(expr_ir.node(),
-                                               ctxt,
-                                               expr_arena,
-                                               schema,
-                                               state
-    )?;
+    let phys_expr = create_physical_expr_inner(expr_ir.node(), ctxt, expr_arena, schema, state)?;
 
     if let Some(name) = expr_ir.get_alias() {
         Ok(Arc::new(AliasExpr::new(
@@ -160,8 +156,13 @@ fn create_physical_expr_inner(
             options,
         } => {
             state.set_window();
-            let phys_function =
-                create_physical_expr_inner(function, Context::Aggregation, expr_arena, schema, state)?;
+            let phys_function = create_physical_expr_inner(
+                function,
+                Context::Aggregation,
+                expr_arena,
+                schema,
+                state,
+            )?;
 
             let mut out_name = None;
             if let Alias(expr, name) = expr_arena.get(function) {
@@ -275,7 +276,8 @@ fn create_physical_expr_inner(
         } => {
             polars_ensure!(!by.is_empty(), InvalidOperation: "'sort_by' got an empty set");
             let phys_expr = create_physical_expr_inner(expr, ctxt, expr_arena, schema, state)?;
-            let phys_by = create_physical_expressions_from_nodes(&by, ctxt, expr_arena, schema, state)?;
+            let phys_by =
+                create_physical_expressions_from_nodes(&by, ctxt, expr_arena, schema, state)?;
             Ok(Arc::new(SortByExpr::new(
                 phys_expr,
                 phys_by,
@@ -465,7 +467,8 @@ fn create_physical_expr_inner(
                         interpol,
                     } = agg
                     {
-                        let input = create_physical_expr_inner(expr, ctxt, expr_arena, schema, state)?;
+                        let input =
+                            create_physical_expr_inner(expr, ctxt, expr_arena, schema, state)?;
                         let quantile =
                             create_physical_expr_inner(quantile, ctxt, expr_arena, schema, state)?;
                         return Ok(Arc::new(AggQuantileExpr::new(input, quantile, interpol)));
@@ -617,7 +620,7 @@ fn create_physical_expr_inner(
                 name,
                 node_to_expr(input, expr_arena),
             )))
-        }
+        },
         Wildcard => {
             polars_bail!(ComputeError: "wildcard column selection not supported at this point")
         },

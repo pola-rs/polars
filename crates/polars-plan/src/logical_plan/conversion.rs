@@ -1,10 +1,8 @@
 use polars_core::prelude::*;
-use crate::prelude::*;
-
-use std::sync::OnceLock;
 use polars_utils::vec::ConvertVec;
+
 use crate::constants::{get_literal_name, LEN};
-use crate::logical_plan::projection_expr::ProjectionExprs;
+use crate::prelude::*;
 
 pub fn to_expr_ir(expr: Expr, arena: &mut Arena<AExpr>) -> ExprIR {
     let mut state = ConversionState::new();
@@ -16,13 +14,16 @@ fn to_expr_irs(input: Vec<Expr>, arena: &mut Arena<AExpr>) -> Vec<ExprIR> {
     input.convert_owned(|e| to_expr_ir(e, arena))
 }
 
-
 /// converts expression to AExpr and adds it to the arena, which uses an arena (Vec) for allocation
 pub fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
-    to_aexpr_impl(expr, arena, &mut ConversionState {
-        prune_alias: false,
-        ..Default::default()
-    })
+    to_aexpr_impl(
+        expr,
+        arena,
+        &mut ConversionState {
+            prune_alias: false,
+            ..Default::default()
+        },
+    )
 }
 
 #[derive(Default)]
@@ -41,8 +42,11 @@ impl ConversionState {
     }
 }
 
-fn to_aexprs(input: Vec<Expr>, arena: &mut Arena<AExpr>, state:  &mut ConversionState) -> Vec<Node> {
-    input.into_iter().map(|e| to_aexpr_impl(e, arena, state)).collect()
+fn to_aexprs(input: Vec<Expr>, arena: &mut Arena<AExpr>, state: &mut ConversionState) -> Vec<Node> {
+    input
+        .into_iter()
+        .map(|e| to_aexpr_impl(e, arena, state))
+        .collect()
 }
 
 /// converts expression to AExpr and adds it to the arena, which uses an arena (Vec) for allocation
@@ -64,7 +68,7 @@ fn to_aexpr_impl(expr: Expr, arena: &mut Arena<AExpr>, state: &mut ConversionSta
             if state.output_name.is_none() {
                 let output_name = match lv {
                     LiteralValue::Series(ref s) => OutputName::LiteralLhs(s.name().into()),
-                    _ => OutputName::LiteralLhs(get_literal_name())
+                    _ => OutputName::LiteralLhs(get_literal_name()),
                 };
                 state.output_name = output_name;
             }
@@ -116,7 +120,10 @@ fn to_aexpr_impl(expr: Expr, arena: &mut Arena<AExpr>, state: &mut ConversionSta
             descending,
         } => AExpr::SortBy {
             expr: to_aexpr_impl(*expr, arena, state),
-            by: by.into_iter().map(|e| to_aexpr_impl(e, arena, state)).collect(),
+            by: by
+                .into_iter()
+                .map(|e| to_aexpr_impl(e, arena, state))
+                .collect(),
             descending,
         },
         Expr::Filter { input, by } => AExpr::Filter {
@@ -199,8 +206,8 @@ fn to_aexpr_impl(expr: Expr, arena: &mut Arena<AExpr>, state: &mut ConversionSta
                 #[cfg(feature = "dtype-struct")]
                 FunctionExpr::AsStruct => {
                     state.prune_alias = false;
-                }
-                _ => {}
+                },
+                _ => {},
             }
             AExpr::Function {
                 input: to_aexprs(input, arena, state),
@@ -749,7 +756,7 @@ impl ALogicalPlan {
                 let predicate = predicate.to_expr(expr_arena);
                 LogicalPlan::Selection {
                     input: Box::new(lp),
-                    predicate
+                    predicate,
                 }
             },
             ALogicalPlan::DataFrameScan {
@@ -780,20 +787,19 @@ impl ALogicalPlan {
                     options,
                 }
             },
-            ALogicalPlan::SimpleProjection {
-                input,
-                columns,
-                ..
-            } => {
+            ALogicalPlan::SimpleProjection { input, columns, .. } => {
                 let input = convert_to_lp(input, lp_arena);
-                let expr = columns.iter_names().map(|name| Expr::Column(Arc::from(name.as_str()))).collect::<Vec<_>>();
+                let expr = columns
+                    .iter_names()
+                    .map(|name| Expr::Column(Arc::from(name.as_str())))
+                    .collect::<Vec<_>>();
                 LogicalPlan::Projection {
                     expr,
                     input: Box::new(input),
                     schema: columns.clone(),
-                    options: Default::default()
+                    options: Default::default(),
                 }
-            }
+            },
             ALogicalPlan::Sort {
                 input,
                 by_column,
@@ -904,7 +910,7 @@ impl ALogicalPlan {
                 let input = Box::new(convert_to_lp(input, lp_arena));
                 LogicalPlan::Sink { input, payload }
             },
-            ALogicalPlan::Invalid  => unreachable!()
+            ALogicalPlan::Invalid => unreachable!(),
         }
     }
 }

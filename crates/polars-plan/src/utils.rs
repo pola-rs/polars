@@ -266,10 +266,6 @@ pub(crate) fn aexpr_to_column_nodes_iter<'a>(
     })
 }
 
-pub(crate) fn aexpr_to_column_nodes(root: Node, arena: &Arena<AExpr>) -> Vec<ColumnNode> {
-    aexpr_to_column_nodes_iter(root, arena).collect()
-}
-
 pub fn column_node_to_name(node: ColumnNode, arena: &Arena<AExpr>) -> Arc<str> {
     if let AExpr::Column(name) = arena.get(node.0) {
         name.clone()
@@ -330,7 +326,7 @@ pub fn aexpr_to_leaf_names_iter(
 ) -> impl Iterator<Item = Arc<str>> + '_ {
     aexpr_to_column_nodes_iter(node, arena).map(|node| match arena.get(node.0) {
         AExpr::Column(name) => name.clone(),
-        _ => unreachable!()
+        _ => unreachable!(),
     })
 }
 
@@ -348,8 +344,7 @@ pub(crate) fn check_input_node(
     input_schema: &Schema,
     expr_arena: &Arena<AExpr>,
 ) -> bool {
-    aexpr_to_leaf_names_iter(node, expr_arena)
-        .all(|name| input_schema.contains(name.as_ref()))
+    aexpr_to_leaf_names_iter(node, expr_arena).all(|name| input_schema.contains(name.as_ref()))
 }
 
 pub(crate) fn check_input_column_node(
@@ -360,22 +355,27 @@ pub(crate) fn check_input_column_node(
     match expr_arena.get(node.0) {
         AExpr::Column(name) => input_schema.contains(name.as_ref()),
         // Invariant of `ColumnNode`
-        _ => unreachable!()
+        _ => unreachable!(),
     }
 }
 
-pub(crate) fn aexprs_to_schema<I: IntoIterator<Item=K>, K: Into<Node>>(
+pub(crate) fn aexprs_to_schema<I: IntoIterator<Item = K>, K: Into<Node>>(
     expr: I,
     schema: &Schema,
     ctxt: Context,
     arena: &Arena<AExpr>,
 ) -> Schema {
     expr.into_iter()
-        .map(|node| arena.get(node.into()).to_field(schema, ctxt, arena).unwrap())
+        .map(|node| {
+            arena
+                .get(node.into())
+                .to_field(schema, ctxt, arena)
+                .unwrap()
+        })
         .collect()
 }
 
-pub(crate) fn expr_irs_to_schema<I: IntoIterator<Item=K>, K: AsRef<ExprIR>>(
+pub(crate) fn expr_irs_to_schema<I: IntoIterator<Item = K>, K: AsRef<ExprIR>>(
     expr: I,
     schema: &Schema,
     ctxt: Context,
@@ -410,18 +410,4 @@ pub fn merge_schemas(schemas: &[SchemaRef]) -> PolarsResult<Schema> {
     }
 
     Ok(merged_schema)
-}
-
-pub(crate) fn combine_predicates_expr<I>(iter: I) -> Expr
-where
-    I: Iterator<Item = Expr>,
-{
-    let mut single_pred = None;
-    for expr in iter {
-        single_pred = match single_pred {
-            None => Some(expr),
-            Some(e) => Some(e.and(expr)),
-        };
-    }
-    single_pred.expect("an empty iterator was passed")
 }

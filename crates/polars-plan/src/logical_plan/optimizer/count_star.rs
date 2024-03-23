@@ -105,10 +105,10 @@ fn visit_logical_plan_for_scan_paths(
         }),
         // A union can insert a simple projection to ensure all projections align.
         // We can ignore that if we are inside a count star.
-        ALogicalPlan::SimpleProjection {input, ..} if inside_union => {
+        ALogicalPlan::SimpleProjection { input, .. } if inside_union => {
             visit_logical_plan_for_scan_paths(*input, lp_arena, expr_arena, false)
-        }
-        ALogicalPlan::Projection { input, expr, .. }  => {
+        },
+        ALogicalPlan::Projection { input, expr, .. } => {
             if expr.len() == 1 {
                 let (valid, alias) = is_valid_count_expr(&expr[0], expr_arena);
                 if valid || inside_union {

@@ -19,10 +19,13 @@ fn get_upper_projections(
             }
             Some(out)
         },
-        SimpleProjection {columns, ..} => {
-            let out = columns.iter_names().map(|s| Arc::from(s.as_str())).collect();
+        SimpleProjection { columns, .. } => {
+            let out = columns
+                .iter_names()
+                .map(|s| Arc::from(s.as_str()))
+                .collect();
             Some(out)
-        }
+        },
         // other
         _ => None,
     }
@@ -158,22 +161,21 @@ pub(super) fn set_cache_states(
                         let child_schema = child_schema.as_ref();
                         let projection: Vec<_> = child_schema
                             .iter_names()
-                            .flat_map(|name| {
-                                columns
-                                    .get(name.as_str())
-                                    .map(|name| name.as_ref())
-                            })
+                            .flat_map(|name| columns.get(name.as_str()).map(|name| name.as_ref()))
                             .collect();
 
                         let new_child = lp_arena.add(child_lp);
 
                         let lp = ALogicalPlanBuilder::new(new_child, expr_arena, lp_arena)
-                            .project_simple(projection.iter().copied()).unwrap()
+                            .project_simple(projection.iter().copied())
+                            .unwrap()
                             .build();
 
                         let lp = pd.optimize(lp, lp_arena, expr_arena).unwrap();
                         // Remove the projection added by the optimization.
-                        let lp = if let ALogicalPlan::Projection { input, .. } | ALogicalPlan::SimpleProjection {input, ..} = lp {
+                        let lp = if let ALogicalPlan::Projection { input, .. }
+                        | ALogicalPlan::SimpleProjection { input, .. } = lp
+                        {
                             lp_arena.take(input)
                         } else {
                             lp

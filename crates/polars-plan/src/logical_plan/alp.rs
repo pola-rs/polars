@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 use std::path::PathBuf;
-use smartstring::alias::String as SmartString;
 
 use polars_core::prelude::*;
 use polars_utils::idx_vec::UnitVec;
@@ -10,7 +9,7 @@ use super::projection_expr::*;
 use crate::prelude::*;
 
 /// [`ALogicalPlan`] is a representation of [`LogicalPlan`] with [`Node`]s which are allocated in an [`Arena`]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub enum ALogicalPlan {
     #[cfg(feature = "python")]
     PythonScan {
@@ -48,7 +47,7 @@ pub enum ALogicalPlan {
     SimpleProjection {
         input: Node,
         columns: SchemaRef,
-        duplicate_check: bool
+        duplicate_check: bool,
     },
     Projection {
         input: Node,
@@ -115,13 +114,8 @@ pub enum ALogicalPlan {
         input: Node,
         payload: SinkType,
     },
-    Invalid
-}
-
-impl Default for ALogicalPlan {
-    fn default() -> Self {
-        ALogicalPlan::Invalid
-    }
+    #[default]
+    Invalid,
 }
 
 impl ALogicalPlan {
@@ -163,10 +157,8 @@ impl ALogicalPlan {
                 #[cfg(feature = "cloud")]
                 SinkType::Cloud { .. } => "sink (cloud)",
             },
-            SimpleProjection {
-                ..
-            } => "simple_projection",
-            Invalid => "invalid"
+            SimpleProjection { .. } => "simple_projection",
+            Invalid => "invalid",
         }
     }
 
@@ -209,7 +201,7 @@ impl ALogicalPlan {
                 };
             },
             ExtContext { schema, .. } => schema,
-            Invalid => unreachable!()
+            Invalid => unreachable!(),
         };
         Cow::Borrowed(schema)
     }
@@ -372,10 +364,9 @@ impl ALogicalPlan {
             } => SimpleProjection {
                 input: inputs.pop().unwrap(),
                 columns: columns.clone(),
-                duplicate_check: *duplicate_check
-
+                duplicate_check: *duplicate_check,
             },
-            Invalid => unreachable!()
+            Invalid => unreachable!(),
         }
     }
 
@@ -411,8 +402,8 @@ impl ALogicalPlan {
             #[cfg(feature = "python")]
             PythonScan { .. } => {},
             HConcat { .. } => {},
-            ExtContext { .. } | Sink { .. } | SimpleProjection {..} => {},
-            Invalid => unreachable!()
+            ExtContext { .. } | Sink { .. } | SimpleProjection { .. } => {},
+            Invalid => unreachable!(),
         }
     }
 
@@ -447,7 +438,7 @@ impl ALogicalPlan {
             Slice { input, .. } => *input,
             Selection { input, .. } => *input,
             Projection { input, .. } => *input,
-            SimpleProjection {input, ..} => *input,
+            SimpleProjection { input, .. } => *input,
             Sort { input, .. } => *input,
             Cache { input, .. } => *input,
             Aggregate { input, .. } => *input,
@@ -476,7 +467,7 @@ impl ALogicalPlan {
             DataFrameScan { .. } => return,
             #[cfg(feature = "python")]
             PythonScan { .. } => return,
-            Invalid => unreachable!()
+            Invalid => unreachable!(),
         };
         container.push_node(input)
     }

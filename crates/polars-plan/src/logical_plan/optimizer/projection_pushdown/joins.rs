@@ -132,7 +132,7 @@ pub(super) fn process_asof_join(
         }
 
         for proj in acc_projections {
-            let mut add_local = if already_added_local_to_local_projected.is_empty() {
+            let add_local = if already_added_local_to_local_projected.is_empty() {
                 true
             } else {
                 let name = column_node_to_name(proj, expr_arena);
@@ -279,7 +279,7 @@ pub(super) fn process_join(
         }
 
         for proj in acc_projections {
-            let mut add_local = if already_added_local_to_local_projected.is_empty() {
+            let add_local = if already_added_local_to_local_projected.is_empty() {
                 true
             } else {
                 let name = column_node_to_name(proj, expr_arena);
@@ -328,7 +328,7 @@ pub(super) fn process_join(
         options,
         lp_arena,
         expr_arena,
-        &mut local_projection,
+        &local_projection,
     ))
 }
 
@@ -402,27 +402,6 @@ fn process_projection(
     }
 }
 
-// if it is an alias we want to project the leaf column name downwards
-// but we don't want to project it a this level, otherwise we project both
-// the root and the alias, hence add_local = false.
-pub(super) fn process_alias(
-    proj: Node,
-    local_projection: &mut Vec<Node>,
-    expr_arena: &mut Arena<AExpr>,
-    mut add_local: bool,
-) -> bool {
-    if let AExpr::Alias(expr, name) = expr_arena.get(proj).clone() {
-        for root_name in aexpr_to_leaf_names(expr, expr_arena) {
-            let node = expr_arena.add(AExpr::Column(root_name));
-            let proj = expr_arena.add(AExpr::Alias(node, name.clone()));
-            local_projection.push(proj)
-        }
-        // now we don't
-        add_local = false;
-    }
-    add_local
-}
-
 // Because we do a projection pushdown
 // We may influence the suffixes.
 // For instance if a join would have created a schema
@@ -452,17 +431,24 @@ fn resolve_join_suffixes(
         .build();
     let schema_after_join = alp.schema(lp_arena);
 
-    let projections = local_projection.iter().map(|proj| {
-        let name = column_node_to_name(*proj, expr_arena);
-        if name.contains(suffix) && schema_after_join.get(&name).is_none() {
-            let downstream_name = &name.as_ref()[..name.len() - suffix.len()];
-            let col = AExpr::Column(Arc::from(downstream_name));
-            let node = expr_arena.add(col);
-            ExprIR::new(node, Some(Arc::from(downstream_name)), OutputName::Alias(name))
-        } else {
-            ExprIR::new(proj.0, Some(name.clone()), OutputName::ColumnLhs(name))
-        }
-    }).collect::<Vec<_>>();
+    let projections = local_projection
+        .iter()
+        .map(|proj| {
+            let name = column_node_to_name(*proj, expr_arena);
+            if name.contains(suffix) && schema_after_join.get(&name).is_none() {
+                let downstream_name = &name.as_ref()[..name.len() - suffix.len()];
+                let col = AExpr::Column(Arc::from(downstream_name));
+                let node = expr_arena.add(col);
+                ExprIR::new(
+                    node,
+                    Some(Arc::from(downstream_name)),
+                    OutputName::Alias(name),
+                )
+            } else {
+                ExprIR::new(proj.0, Some(name.clone()), OutputName::ColumnLhs(name))
+            }
+        })
+        .collect::<Vec<_>>();
 
     ALogicalPlanBuilder::from_lp(alp, expr_arena, lp_arena)
         .project(projections, Default::default())

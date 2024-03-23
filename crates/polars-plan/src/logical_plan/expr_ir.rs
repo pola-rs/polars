@@ -1,5 +1,5 @@
-use crate::constants::LITERAL_NAME;
 use super::*;
+use crate::constants::LITERAL_NAME;
 
 pub type Name = Arc<str>;
 
@@ -9,7 +9,7 @@ pub enum OutputName {
     None,
     LiteralLhs(Name),
     ColumnLhs(Name),
-    Alias(Name)
+    Alias(Name),
 }
 
 impl OutputName {
@@ -18,15 +18,12 @@ impl OutputName {
             OutputName::Alias(name) => name,
             OutputName::ColumnLhs(name) => name,
             OutputName::LiteralLhs(name) => name,
-            OutputName::None => panic!("no output name set")
+            OutputName::None => panic!("no output name set"),
         }
     }
 
     pub(crate) fn is_none(&self) -> bool {
         matches!(self, OutputName::None)
-    }
-    pub(crate) fn is_alias(&self) -> bool {
-        matches!(self, OutputName::Alias(_))
     }
 }
 
@@ -39,19 +36,20 @@ pub struct ExprIR {
     output_name: OutputName,
     /// Reduced expression.
     /// This expression is pruned from `alias` and already expanded.
-    node: Node
+    node: Node,
 }
 
 impl ExprIR {
     pub fn new(
         node: Node,
         left_most_input_name: Option<Arc<str>>,
-        output_name: OutputName) -> Self {
+        output_name: OutputName,
+    ) -> Self {
         debug_assert!(!output_name.is_none());
         ExprIR {
             left_most_input_name,
             output_name,
-            node
+            node,
         }
     }
 
@@ -59,14 +57,14 @@ impl ExprIR {
         let mut out = Self {
             node,
             left_most_input_name: None,
-            output_name: OutputName::None
+            output_name: OutputName::None,
         };
         out.node = node;
         for (_, ae) in arena.iter(node) {
             match ae {
                 AExpr::Column(name) => {
                     out.output_name = OutputName::ColumnLhs(name.clone());
-                    break
+                    break;
                 },
                 AExpr::Literal(lv) => {
                     if let LiteralValue::Series(s) = lv {
@@ -75,13 +73,13 @@ impl ExprIR {
                         out.output_name = OutputName::LiteralLhs(LITERAL_NAME.into());
                     }
                     break;
-                }
+                },
                 AExpr::Alias(node, name) => {
                     out.output_name = OutputName::ColumnLhs(name.clone());
                     out.node = *node;
-                    break
-                }
-                _ => {}
+                    break;
+                },
+                _ => {},
             }
         }
         debug_assert!(!out.output_name.is_none());
@@ -122,18 +120,20 @@ impl ExprIR {
 
         match &self.output_name {
             OutputName::Alias(name) => out.alias(name.as_ref()),
-            _ => out
+            _ => out,
         }
     }
 
     pub fn get_alias(&self) -> Option<&Name> {
         match &self.output_name {
             OutputName::Alias(name) => Some(name),
-            _ => None
+            _ => None,
         }
     }
 
+    // Utility for debugging.
     #[cfg(debug_assertions)]
+    #[allow(dead_code)]
     pub(crate) fn print(&self, expr_arena: &Arena<AExpr>) {
         eprintln!("{:?}", self.to_expr(expr_arena))
     }
@@ -149,11 +149,10 @@ impl AsRef<ExprIR> for ExprIR {
     }
 }
 
-
 /// A Node that is restricted to `AExpr::Column`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub(crate) struct ColumnNode(pub(crate) Node);
+pub struct ColumnNode(pub(crate) Node);
 
 impl From<ColumnNode> for Node {
     fn from(value: ColumnNode) -> Self {
@@ -166,16 +165,21 @@ impl From<&ExprIR> for Node {
     }
 }
 
-
 pub(crate) fn name_to_expr_ir(name: &str, expr_arena: &mut Arena<AExpr>) -> ExprIR {
     let name: Name = Arc::from(name);
     let node = expr_arena.add(AExpr::Column(name.clone()));
     ExprIR::new(node, Some(name.clone()), OutputName::ColumnLhs(name))
 }
 
-pub(crate) fn names_to_expr_irs<I: IntoIterator<Item=S>, S: AsRef<str>>(names: I, expr_arena: &mut Arena<AExpr>) -> Vec<ExprIR> {
-    names.into_iter().map(|name| {
-        let name = name.as_ref();
-        name_to_expr_ir(name, expr_arena)
-    }).collect()
+pub(crate) fn names_to_expr_irs<I: IntoIterator<Item = S>, S: AsRef<str>>(
+    names: I,
+    expr_arena: &mut Arena<AExpr>,
+) -> Vec<ExprIR> {
+    names
+        .into_iter()
+        .map(|name| {
+            let name = name.as_ref();
+            name_to_expr_ir(name, expr_arena)
+        })
+        .collect()
 }

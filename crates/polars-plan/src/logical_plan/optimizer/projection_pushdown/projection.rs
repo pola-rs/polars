@@ -1,10 +1,8 @@
 use super::*;
 
+#[inline]
 fn is_count(node: Node, expr_arena: &Arena<AExpr>) -> bool {
-    match expr_arena.get(node) {
-        AExpr::Len => true,
-        _ => false,
-    }
+    matches!(expr_arena.get(node), AExpr::Len)
 }
 
 /// In this function we check a double projection case
@@ -28,9 +26,7 @@ fn check_double_projection(
         name: &str,
         expr_arena: &Arena<AExpr>,
     ) {
-        acc_projections.retain(|node| {
-            column_node_to_name(*node, expr_arena).as_ref() != name
-        });
+        acc_projections.retain(|node| column_node_to_name(*node, expr_arena).as_ref() != name);
     }
     if let Some(name) = expr.get_alias() {
         if projected_names.remove(name) {
@@ -39,16 +35,12 @@ fn check_double_projection(
     }
 
     for (_, ae) in (&*expr_arena).iter(expr.node()) {
-        match ae {
-            // Series literals come from another source so should not be pushed down.
-            AExpr::Literal(LiteralValue::Series(s)) => {
-                let name = s.name();
-                if projected_names.remove(name) {
-                    prune_projections_by_name(acc_projections, name, expr_arena)
-                }
-            },
-            _ => {},
-        };
+        if let AExpr::Literal(LiteralValue::Series(s)) = ae {
+            let name = s.name();
+            if projected_names.remove(name) {
+                prune_projections_by_name(acc_projections, name, expr_arena)
+            }
+        }
     }
 }
 
@@ -103,7 +95,12 @@ pub(super) fn process_projection(
 
                 check_double_projection(&e, expr_arena, &mut acc_projections, &mut projected_names);
             }
-            add_expr_to_accumulated(e.node(), &mut acc_projections, &mut projected_names, expr_arena);
+            add_expr_to_accumulated(
+                e.node(),
+                &mut acc_projections,
+                &mut projected_names,
+                expr_arena,
+            );
 
             // do local as we still need the effect of the projection
             // e.g. a projection is more than selecting a column, it can

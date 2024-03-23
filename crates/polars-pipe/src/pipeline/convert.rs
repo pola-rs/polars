@@ -7,8 +7,8 @@ use polars_core::with_match_physical_integer_polars_type;
 #[cfg(feature = "parquet")]
 use polars_io::predicates::{PhysicalIoExpr, StatsEvaluator};
 use polars_ops::prelude::JoinType;
-use polars_plan::prelude::*;
 use polars_plan::prelude::expr_ir::{ExprIR, OutputName};
+use polars_plan::prelude::*;
 
 use crate::executors::operators::{HstackOperator, PlaceHolder};
 use crate::executors::sinks::group_by::aggregates::convert_to_hash_agg;
@@ -88,7 +88,8 @@ where
             #[cfg(not(feature = "parquet"))]
             let is_parquet = false;
 
-            if let (false, true, Some(predicate)) = (is_parquet, push_predicate, predicate.clone()) {
+            if let (false, true, Some(predicate)) = (is_parquet, push_predicate, predicate.clone())
+            {
                 #[cfg(feature = "parquet")]
                 debug_assert!(!matches!(scan_type, FileScan::Parquet { .. }));
                 let predicate = to_physical(&predicate, expr_arena, output_schema.as_ref())?;
@@ -117,9 +118,10 @@ where
                     cloud_options,
                     metadata,
                 } => {
-                    let predicate = predicate.as_ref()
+                    let predicate = predicate
+                        .as_ref()
                         .map(|predicate| {
-                            let p = to_physical(&predicate, expr_arena, output_schema.as_ref())?;
+                            let p = to_physical(predicate, expr_arena, output_schema.as_ref())?;
                             // Arc's all the way down. :(
                             // Temporarily until: https://github.com/rust-lang/rust/issues/65991
                             // stabilizes
@@ -355,7 +357,9 @@ where
                 let sort_idx = by_column
                     .iter()
                     .map(|e| {
-                        let name = aexpr_to_leaf_names_iter(e.node(), expr_arena).next().unwrap();
+                        let name = aexpr_to_leaf_names_iter(e.node(), expr_arena)
+                            .next()
+                            .unwrap();
                         input_schema.try_index_of(name.as_ref())
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
@@ -418,7 +422,11 @@ where
                                         unreachable!()
                                     },
                                 };
-                                Some(ExprIR::new(node, Some(name.clone()), OutputName::Alias(name)))
+                                Some(ExprIR::new(
+                                    node,
+                                    Some(name.clone()),
+                                    OutputName::Alias(name),
+                                ))
                             }
                         })
                         .collect();
@@ -572,13 +580,12 @@ where
 {
     use ALogicalPlan::*;
     let op = match lp_arena.get(node) {
-        SimpleProjection {input, columns, ..} => {
+        SimpleProjection { input, columns, .. } => {
             let input_schema = lp_arena.get(*input).schema(lp_arena);
             let columns = columns.iter_names().cloned().collect();
-            let op =
-                operators::SimpleProjectionOperator::new(columns, input_schema.into_owned());
+            let op = operators::SimpleProjectionOperator::new(columns, input_schema.into_owned());
             Box::new(op) as Box<dyn Operator>
-        }
+        },
         Projection { expr, input, .. } => {
             let input_schema = lp_arena.get(*input).schema(lp_arena);
 
@@ -645,8 +652,10 @@ where
             input,
         } => {
             let input_schema = lp_arena.get(*input).schema(lp_arena);
-            let op =
-                operators::SimpleProjectionOperator::new(columns.clone(), input_schema.into_owned());
+            let op = operators::SimpleProjectionOperator::new(
+                columns.clone(),
+                input_schema.into_owned(),
+            );
             Box::new(op) as Box<dyn Operator>
         },
         MapFunction { function, .. } => {

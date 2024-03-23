@@ -39,8 +39,8 @@ impl AExpr {
             )),
             Column(name) => {
                 let field = schema
-                    .get_field(name).ok_or_else(|| { PolarsError::ColumnNotFound(name.to_string().into())
-                });
+                    .get_field(name)
+                    .ok_or_else(|| PolarsError::ColumnNotFound(name.to_string().into()));
 
                 match ctxt {
                     Context::Default => field,

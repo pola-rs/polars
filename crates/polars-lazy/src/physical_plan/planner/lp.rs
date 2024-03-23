@@ -35,8 +35,8 @@ fn partitionable_gb(
 
         if partitionable {
             for agg in aggs {
-                let mut agg = agg.node();
-                let mut aexpr = expr_arena.get(agg);
+                let agg = agg.node();
+                let aexpr = expr_arena.get(agg);
                 let depth = (expr_arena).iter(agg).count();
 
                 // These single expressions are partitionable
@@ -564,17 +564,16 @@ pub fn create_physical_plan(
         SimpleProjection {
             input,
             columns,
-            duplicate_check
+            duplicate_check,
         } => {
             let input = create_physical_plan(input, lp_arena, expr_arena)?;
-            let exec = executors::ProjectionSimple{
+            let exec = executors::ProjectionSimple {
                 input,
                 columns,
-                duplicate_check
+                duplicate_check,
             };
             Ok(Box::new(exec))
-
-        }
-        Invalid => unreachable!()
+        },
+        Invalid => unreachable!(),
     }
 }

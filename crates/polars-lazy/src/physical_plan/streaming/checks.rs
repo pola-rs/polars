@@ -63,7 +63,11 @@ pub(super) fn is_streamable(node: Node, expr_arena: &Arena<AExpr>, context: Cont
     false
 }
 
-pub(super) fn all_streamable(exprs: &[ExprIR], expr_arena: &Arena<AExpr>, context: Context) -> bool {
+pub(super) fn all_streamable(
+    exprs: &[ExprIR],
+    expr_arena: &Arena<AExpr>,
+    context: Context,
+) -> bool {
     exprs
         .iter()
         .all(|e| is_streamable(e.node(), expr_arena, context))

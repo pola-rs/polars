@@ -1,7 +1,7 @@
 use polars_utils::floor_divmod::FloorDivMod;
 use polars_utils::total_ord::ToTotalOrd;
-use crate::constants::get_literal_name;
 
+use crate::constants::get_literal_name;
 use crate::logical_plan::*;
 use crate::prelude::optimizer::simplify_functions::optimize_functions;
 

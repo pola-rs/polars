@@ -658,8 +658,10 @@ impl<'a> CommonSubExprOptimizer<'a> {
 
             // Then rewrite the expressions that have a cse count > 1.
             for (e, offset) in expr.iter().zip(id_array_offsets.iter()) {
-                let new_node =
-                    AexprNode::with_context_and_arena(e.node(), expr_arena, |ae_node, expr_arena| {
+                let new_node = AexprNode::with_context_and_arena(
+                    e.node(),
+                    expr_arena,
+                    |ae_node, _expr_arena| {
                         let (out, rewritten) =
                             self.mutate_expression(ae_node, *offset as usize, is_group_by)?;
 
@@ -673,12 +675,13 @@ impl<'a> CommonSubExprOptimizer<'a> {
                         // If we don't end with an alias we add an alias. Because the normal left-hand
                         // rule we apply for determining the name will not work we now refer to
                         // intermediate temporary names starting with the `CSE_REPLACED` constant.
-                        if !e.has_alias()  {
+                        if !e.has_alias() {
                             let name = ae_node.to_field(schema)?.name;
                             out_e.set_alias(Arc::from(name.as_str()));
                         }
                         PolarsResult::Ok(out_e)
-                    })?;
+                    },
+                )?;
                 new_expr.push(new_node)
             }
             // Add the tmp columns

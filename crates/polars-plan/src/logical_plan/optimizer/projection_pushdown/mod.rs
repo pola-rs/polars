@@ -12,11 +12,9 @@ mod semi_anti_join;
 use polars_core::datatypes::PlHashSet;
 use polars_core::prelude::*;
 use polars_io::RowIndex;
-use polars_utils::iter::IntoIteratorCopied;
 #[cfg(feature = "semi_anti_join")]
 use semi_anti_join::process_semi_anti_join;
 
-use crate::logical_plan::Context;
 use crate::prelude::optimizer::projection_pushdown::generic::process_generic;
 use crate::prelude::optimizer::projection_pushdown::group_by::process_group_by;
 use crate::prelude::optimizer::projection_pushdown::hconcat::process_hconcat;
@@ -25,9 +23,7 @@ use crate::prelude::optimizer::projection_pushdown::joins::process_join;
 use crate::prelude::optimizer::projection_pushdown::projection::process_projection;
 use crate::prelude::optimizer::projection_pushdown::rename::process_rename;
 use crate::prelude::*;
-use crate::utils::{
-    aexpr_to_leaf_names, check_input_node
-};
+use crate::utils::aexpr_to_leaf_names;
 
 fn init_vec() -> Vec<ColumnNode> {
     Vec::with_capacity(16)
@@ -196,7 +192,8 @@ impl ProjectionPushDown {
     ) -> ALogicalPlan {
         if !local_projections.is_empty() {
             builder
-                .project_simple_nodes(local_projections.iter().map(|node| node.0)).unwrap()
+                .project_simple_nodes(local_projections.iter().map(|node| node.0))
+                .unwrap()
                 .build()
         } else {
             builder.build()
@@ -341,7 +338,7 @@ impl ProjectionPushDown {
                 lp_arena,
                 expr_arena,
             ),
-            SimpleProjection {columns, input, ..} => {
+            SimpleProjection { columns, input, .. } => {
                 let exprs = names_to_expr_irs(columns.iter_names(), expr_arena);
                 process_projection(
                     self,
@@ -353,7 +350,7 @@ impl ProjectionPushDown {
                     lp_arena,
                     expr_arena,
                 )
-            }
+            },
             DataFrameScan {
                 df,
                 schema,
@@ -708,12 +705,13 @@ impl ProjectionPushDown {
                 } else {
                     Ok(
                         ALogicalPlanBuilder::from_lp(logical_plan, expr_arena, lp_arena)
-                            .project_simple_nodes(acc_projections).unwrap()
+                            .project_simple_nodes(acc_projections)
+                            .unwrap()
                             .build(),
                     )
                 }
             },
-            Invalid => unreachable!()
+            Invalid => unreachable!(),
         }
     }
 

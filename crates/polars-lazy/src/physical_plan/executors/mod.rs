@@ -9,6 +9,7 @@ pub(super) mod group_by_rolling;
 mod hconcat;
 mod join;
 mod projection;
+mod projection_simple;
 mod projection_utils;
 #[cfg(feature = "python")]
 mod python_scan;
@@ -19,7 +20,6 @@ mod stack;
 mod udf;
 mod union;
 mod unique;
-mod projection_simple;
 
 use std::borrow::Cow;
 
@@ -42,6 +42,7 @@ pub(super) use self::group_by_rolling::GroupByRollingExec;
 pub(super) use self::hconcat::*;
 pub(super) use self::join::*;
 pub(super) use self::projection::*;
+pub(super) use self::projection_simple::*;
 #[cfg(feature = "python")]
 pub(super) use self::python_scan::*;
 pub(super) use self::scan::*;
@@ -51,5 +52,4 @@ pub(super) use self::stack::*;
 pub(super) use self::udf::*;
 pub(super) use self::union::*;
 pub(super) use self::unique::*;
-pub(super) use self::projection_simple::*;
 use super::*;

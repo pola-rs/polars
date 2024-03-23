@@ -75,7 +75,6 @@ impl<T> CapacityByFactor for Vec<T> {
     }
 }
 
-
 // Trait to convert a Vec.
 // The reason for this is to reduce code-generation. Conversion functions that are named
 // functions should only generate the conversion loop once.

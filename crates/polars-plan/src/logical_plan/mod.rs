@@ -19,6 +19,7 @@ pub mod builder_functions;
 pub(crate) mod conversion;
 #[cfg(feature = "debugging")]
 pub(crate) mod debug;
+pub mod expr_ir;
 mod file_scan;
 mod format;
 mod functions;
@@ -34,9 +35,6 @@ mod pyarrow;
 mod schema;
 pub(crate) mod tree_format;
 pub mod visitor;
-pub mod expr_ir;
-pub(crate) use expr_ir::*;
-
 pub use aexpr::*;
 pub use alp::*;
 pub use anonymous_scan::*;
@@ -44,6 +42,7 @@ pub use apply::*;
 pub use builder::*;
 pub use builder_alp::*;
 pub use conversion::*;
+pub(crate) use expr_ir::*;
 pub use file_scan::*;
 pub use functions::*;
 pub use iterator::*;

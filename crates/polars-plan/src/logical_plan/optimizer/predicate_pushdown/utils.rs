@@ -46,13 +46,11 @@ where
     for e in iter {
         single_pred = match single_pred {
             None => Some(e.node()),
-            Some(left) => {
-                Some(arena.add(AExpr::BinaryExpr {
-                    left,
-                    op: Operator::And,
-                    right: e.node(),
-                }))
-            },
+            Some(left) => Some(arena.add(AExpr::BinaryExpr {
+                left,
+                op: Operator::And,
+                right: e.node(),
+            })),
         };
     }
     single_pred
@@ -66,10 +64,13 @@ pub(super) fn predicate_at_scan(
     expr_arena: &mut Arena<AExpr>,
 ) -> Option<ExprIR> {
     if !acc_predicates.is_empty() {
-        let mut new_predicate =
-            combine_predicates(acc_predicates.into_values(), expr_arena);
+        let mut new_predicate = combine_predicates(acc_predicates.into_values(), expr_arena);
         if let Some(pred) = predicate {
-            new_predicate.set_node(combine_by_and(new_predicate.node(), pred.node(), expr_arena));
+            new_predicate.set_node(combine_by_and(
+                new_predicate.node(),
+                pred.node(),
+                expr_arena,
+            ));
         }
         Some(new_predicate)
     } else {
@@ -110,7 +111,7 @@ pub(super) fn predicate_is_sort_boundary(node: Node, expr_arena: &Arena<AExpr>) 
 /// transferred to local.
 pub(super) fn transfer_to_local_by_name<F>(
     expr_arena: &Arena<AExpr>,
-    acc_predicates: &mut PlHashMap<Arc<str>, ExprIR >,
+    acc_predicates: &mut PlHashMap<Arc<str>, ExprIR>,
     mut condition: F,
 ) -> Vec<ExprIR>
 where
@@ -213,22 +214,18 @@ pub(super) fn aexpr_blocks_predicate_pushdown(node: Node, expr_arena: &Arena<AEx
 /// * `col(A).sum().alias(B)    => None`
 fn get_maybe_aliased_projection_to_input_name_map(
     e: &ExprIR,
-    expr_arena: &Arena<AExpr>
+    expr_arena: &Arena<AExpr>,
 ) -> Option<(Arc<str>, Arc<str>)> {
     let ae = expr_arena.get(e.node());
     match e.get_alias() {
-        Some(alias) => {
-            match ae {
-                AExpr::Column(c_name) => Some((alias.clone(), c_name.clone())),
-                _ => None
-            }
+        Some(alias) => match ae {
+            AExpr::Column(c_name) => Some((alias.clone(), c_name.clone())),
+            _ => None,
         },
-        _ => {
-            match ae {
-                AExpr::Column(c_name) => Some((c_name.clone(), c_name.clone())),
-                _ => None
-            }
-        }
+        _ => match ae {
+            AExpr::Column(c_name) => Some((c_name.clone(), c_name.clone())),
+            _ => None,
+        },
     }
 }
 
@@ -241,7 +238,6 @@ pub enum PushdownEligibility {
 
 #[allow(clippy::type_complexity)]
 pub fn pushdown_eligibility(
-    input_schema: &Schema,
     projection_nodes: &[ExprIR],
     acc_predicates: &PlHashMap<Arc<str>, ExprIR>,
     expr_arena: &mut Arena<AExpr>,
@@ -298,7 +294,6 @@ pub fn pushdown_eligibility(
                                 // Both exprs window over A, so predicates referring
                                 // to A can still be pushed.
                                 ae_nodes_stack.push(*node);
-
                             }
                         }
 
