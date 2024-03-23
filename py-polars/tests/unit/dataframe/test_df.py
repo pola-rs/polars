@@ -1648,7 +1648,7 @@ def test_extension() -> None:
 
 
 @pytest.mark.parametrize("name", [None, "n", ""])
-def test_group_by_order_dispatch(name: str) -> None:
+def test_group_by_order_dispatch(name: str | None) -> None:
     df = pl.DataFrame({"x": list("bab"), "y": range(3)})
     lf = df.lazy()
 
