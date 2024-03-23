@@ -73,11 +73,11 @@ impl Series {
         Self::from_any_values_and_dtype(name, values, &dtype, strict)
     }
 
-    /// Construct a new [`Series`]` with the given `dtype` from a slice of AnyValues.
+    /// Construct a new [`Series`] with the given `dtype` from a slice of AnyValues.
     ///
     /// If `strict` is `true`, an error is returned if the values do not match the given
     /// data type. If `strict` is `false`, values that do not match the given data type
-    /// are cast. If casting is not possible, the values are set to null instead.`
+    /// are cast. If casting is not possible, the values are set to null instead.
     pub fn from_any_values_and_dtype(
         name: &str,
         values: &[AnyValue],
