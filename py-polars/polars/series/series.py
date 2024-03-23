@@ -2557,16 +2557,16 @@ class Series:
 
     def rle(self) -> Series:
         """
-        Get the lengths and values of runs of identical values.
+        Compress the Series data using run-length encoding.
+
+        Run-length encoding (RLE) encodes data by storing each *run* of identical values
+        as a single value and its length.
 
         Returns
         -------
         Series
-            Series of data type :class:`Struct` with Fields "lengths" and "values".
-
-        See Also
-        --------
-        rle_id
+            Series of data type `Struct` with fields `lengths` of data type `Int32`
+            and `values` of the original data type.
 
         Examples
         --------
@@ -2591,19 +2591,22 @@ class Series:
         """
         Get a distinct integer ID for each run of identical values.
 
-        The ID increases by one each time the value of a column (which can be a
-        :class:`Struct`) changes.
-
-        This is especially useful when you want to define a new group for every time a
-        column's value changes, rather than for every distinct value of that column.
+        The ID starts at 0 and increases by one each time the value of the column
+        changes.
 
         Returns
         -------
         Series
+            Series of data type `UInt32`.
 
         See Also
         --------
         rle
+
+        Notes
+        -----
+        This functionality is especially useful for defining a new group for every time
+        a column's value changes, rather than for every distinct value of that column.
 
         Examples
         --------
