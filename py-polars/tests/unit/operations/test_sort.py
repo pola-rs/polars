@@ -1113,7 +1113,9 @@ def test_aggregate_top_k():
     )
 
     assert_frame_equal(
-        df.group_by("d", maintain_order=True).bottom_k(2, by=["c", "a"], descending=True),
+        df.group_by("d", maintain_order=True).bottom_k(
+            2, by=["c", "a"], descending=True
+        ),
         pl.DataFrame(
             {
                 "d": ["Apple", "Apple", "Orange", "Banana", "Banana"],
@@ -1125,7 +1127,9 @@ def test_aggregate_top_k():
     )
 
     assert_frame_equal(
-        df.group_by("d", maintain_order=True).top_k(2, by=["c", "a"], descending=[True, False]),
+        df.group_by("d", maintain_order=True).top_k(
+            2, by=["c", "a"], descending=[True, False]
+        ),
         pl.DataFrame(
             {
                 "d": ["Apple", "Apple", "Orange", "Banana", "Banana"],
@@ -1137,7 +1141,9 @@ def test_aggregate_top_k():
     )
 
     assert_frame_equal(
-        df.group_by("d", maintain_order=True).bottom_k(2, by=["c", "a"], descending=[True, False]),
+        df.group_by("d", maintain_order=True).bottom_k(
+            2, by=["c", "a"], descending=[True, False]
+        ),
         pl.DataFrame(
             {
                 "d": ["Apple", "Apple", "Orange", "Banana", "Banana"],
@@ -1182,7 +1188,9 @@ def test_aggregate_top_k():
         ValueError,
         match=r"the length of `descending` \(1\) does not match the length of `by` \(2\)",
     ):
-        df.group_by("d", maintain_order=True).bottom_k(2, by=["a", "b"], descending=[True])
+        df.group_by("d", maintain_order=True).bottom_k(
+            2, by=["a", "b"], descending=[True]
+        )
 
     with pytest.raises(
         ValueError,

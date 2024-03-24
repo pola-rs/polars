@@ -759,12 +759,12 @@ class LazyGroupBy:
                 descending = [descending]
 
         if len(by) != 0 and len(by) != len(descending):
-            raise ValueError(
-                f"the length of `descending` ({len(descending)}) does not match the length of `by` ({len(by)})"
-            )
+            err = f"the length of `descending` ({len(descending)}) does not match the length of `by` ({len(by)})"
+            raise ValueError(err)
 
         if len(descending) == 0:
-            raise ValueError("Order must be specified but is not provided. ")
+            err = "Order must be specified but is not provided. "
+            raise ValueError(err)
 
         return wrap_ldf(self.lgb.top_k(k, by, descending))
 
@@ -848,11 +848,11 @@ class LazyGroupBy:
                 descending = [descending]
 
         if len(by) != 0 and len(by) != len(descending):
-            raise ValueError(
-                f"the length of `descending` ({len(descending)}) does not match the length of `by` ({len(by)})"
-            )
+            err = f"the length of `descending` ({len(descending)}) does not match the length of `by` ({len(by)})"
+            raise ValueError(err)
 
         if len(descending) == 0:
-            raise ValueError("Order must be specified but is not provided. ")
+            err = "Order must be specified but is not provided. "
+            raise ValueError(err)
 
         return wrap_ldf(self.lgb.bottom_k(k, by, descending))
