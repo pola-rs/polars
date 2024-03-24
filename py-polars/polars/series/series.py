@@ -735,8 +735,7 @@ class Series:
         return self._from_pyseries(f(other))
 
     @overload  # type: ignore[override]
-    def __eq__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def __eq__(self, other: Expr) -> Expr: ...  # type: ignore[overload-overlap]
 
     @overload
     def __eq__(self, other: Any) -> Series: ...
@@ -6490,7 +6489,7 @@ class Series:
         >>> s.kurtosis(fisher=False)
         1.9477376373212048
         >>> s.kurtosis(fisher=False, bias=False)
-        2.104036180264273
+        2.1040361802642726
         """
         return self._s.kurtosis(fisher, bias)
 
