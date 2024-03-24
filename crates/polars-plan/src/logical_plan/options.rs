@@ -52,7 +52,7 @@ pub struct ParquetOptions {
 }
 
 #[cfg(feature = "parquet")]
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ParquetWriteOptions {
     /// Data page compression
@@ -68,7 +68,7 @@ pub struct ParquetWriteOptions {
 }
 
 #[cfg(feature = "ipc")]
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct IpcWriterOptions {
     /// Data page compression
@@ -78,7 +78,7 @@ pub struct IpcWriterOptions {
 }
 
 #[cfg(feature = "csv")]
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct CsvWriterOptions {
     pub include_bom: bool,
@@ -102,7 +102,7 @@ impl Default for CsvWriterOptions {
 }
 
 #[cfg(feature = "json")]
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct JsonWriterOptions {
     /// maintain the order the data was processed
@@ -128,7 +128,7 @@ pub struct FileScanOptions {
     pub hive_partitioning: bool,
 }
 
-#[derive(Clone, Debug, Copy, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Copy, Default, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct UnionOptions {
     pub slice: Option<(i64, usize)>,
@@ -140,7 +140,7 @@ pub struct UnionOptions {
     pub rechunk: bool,
 }
 
-#[derive(Clone, Debug, Copy, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Copy, Default, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct HConcatOptions {
     pub parallel: bool,
@@ -328,7 +328,7 @@ pub struct AnonymousScanOptions {
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum SinkType {
     Memory,
     File {
@@ -351,7 +351,7 @@ pub struct FileSinkOptions {
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum FileType {
     #[cfg(feature = "parquet")]
     Parquet(ParquetWriteOptions),

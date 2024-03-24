@@ -2,6 +2,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use polars_utils::arena::Arena;
 use crate::logical_plan::{AExpr, ALogicalPlan};
+use crate::prelude::aexpr::traverse_and_hash_aexpr;
 use crate::prelude::ExprIR;
 use super::*;
 
@@ -81,17 +82,27 @@ impl Hash for HashableAlpNode<'_> {
                 options.hash(state);
             }
             ALogicalPlan::MapFunction { input: _, function } => {
-                function.has
+                function.hash(state);
             }
-            ALogicalPlan::Union { .. } => {}
-            ALogicalPlan::HConcat { .. } => {}
-            ALogicalPlan::ExtContext { .. } => {}
-            ALogicalPlan::Sink { .. } => {}
-            ALogicalPlan::Invalid => {}
+            ALogicalPlan::Union { inputs: _, options } => {
+                options.hash(state)
+            }
+            ALogicalPlan::HConcat { inputs:_, schema: _, options } => {
+                options.hash(state);
+            }
+            ALogicalPlan::ExtContext { input: _, contexts, schema: _ } => {
+                for node in contexts {
+                    traverse_and_hash_aexpr(*node, self.expr_arena, state);
+                }
+            }
+            ALogicalPlan::Sink {input:_, payload} => {
+                payload.hash(state);
+            }
             ALogicalPlan::Cache { input: _, id, count } => {
                 id.hash(state);
                 count.hash(state);
             }
+            ALogicalPlan::Invalid => unreachable!()
         }
     }
 }
