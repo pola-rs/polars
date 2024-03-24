@@ -204,8 +204,8 @@ impl PartialEq for AexprNode {
                         return false;
                     }
 
-                    self.to_aexpr().nodes(&mut scratch1);
-                    other.to_aexpr().nodes(&mut scratch2);
+                    l.to_aexpr().nodes(&mut scratch1);
+                    r.to_aexpr().nodes(&mut scratch2);
                 },
                 (None, None) => return true,
                 _ => return false,
