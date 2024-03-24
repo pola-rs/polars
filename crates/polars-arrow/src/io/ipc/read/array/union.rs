@@ -97,6 +97,7 @@ pub fn skip_union(
     field_nodes: &mut VecDeque<Node>,
     data_type: &ArrowDataType,
     buffers: &mut VecDeque<IpcBuffer>,
+    variadic_buffer_counts: &mut VecDeque<usize>,
 ) -> PolarsResult<()> {
     let _ = field_nodes.pop_front().ok_or_else(|| {
         polars_err!(
@@ -117,7 +118,12 @@ pub fn skip_union(
 
     let fields = UnionArray::get_fields(data_type);
 
-    fields
-        .iter()
-        .try_for_each(|field| skip(field_nodes, field.data_type(), buffers))
+    fields.iter().try_for_each(|field| {
+        skip(
+            field_nodes,
+            field.data_type(),
+            buffers,
+            variadic_buffer_counts,
+        )
+    })
 }

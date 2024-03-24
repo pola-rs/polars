@@ -12,13 +12,14 @@ Usage:
 
 Running it without `PYTHONPATH` set will result in the test failing.
 """
+
 import datetime as dt  # noqa: F401
 import subprocess
 from datetime import datetime  # noqa: F401
 from typing import Any, Callable
 
 import pytest
-from polars.utils.udfs import BytecodeParser
+from polars._utils.udfs import BytecodeParser
 from tests.unit.operations.map.test_inefficient_map_warning import (
     MY_DICT,
     NOOP_TEST_CASES,
@@ -44,7 +45,7 @@ def test_bytecode_parser_expression_in_ipython(
     col: str, func: Callable[[Any], Any], expected: str
 ) -> None:
     script = (
-        "from polars.utils.udfs import BytecodeParser; "
+        "from polars._utils.udfs import BytecodeParser; "
         "import datetime as dt; "
         "from datetime import datetime; "
         "import numpy as np; "
@@ -73,7 +74,7 @@ def test_bytecode_parser_expression_noop(func: str) -> None:
 )
 def test_bytecode_parser_expression_noop_in_ipython(func: str) -> None:
     script = (
-        "from polars.utils.udfs import BytecodeParser; "
+        "from polars._utils.udfs import BytecodeParser; "
         f"MY_DICT = {MY_DICT};"
         f'parser = BytecodeParser({func}, map_target="expr");'
         f'print(not parser.can_attempt_rewrite() or not parser.to_expression("x"));'

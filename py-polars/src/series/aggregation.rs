@@ -101,7 +101,14 @@ impl PySeries {
     }
 
     fn product(&self, py: Python) -> PyResult<PyObject> {
-        Ok(Wrap(self.series.product().get(0).map_err(PyPolarsErr::from)?).into_py(py))
+        Ok(Wrap(
+            self.series
+                .product()
+                .map_err(PyPolarsErr::from)?
+                .get(0)
+                .map_err(PyPolarsErr::from)?,
+        )
+        .into_py(py))
     }
 
     fn quantile(

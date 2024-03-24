@@ -7,7 +7,7 @@ use polars_utils::unwrap::UnwrapUncheckedRelease;
 
 use super::Growable;
 use crate::array::binview::{BinaryViewArrayGeneric, View, ViewType};
-use crate::array::growable::utils::{extend_validity, prepare_validity};
+use crate::array::growable::utils::{extend_validity, extend_validity_copies, prepare_validity};
 use crate::array::Array;
 use crate::bitmap::MutableBitmap;
 use crate::buffer::Buffer;
@@ -43,7 +43,6 @@ pub struct GrowableBinaryViewArray<'a, T: ViewType + ?Sized> {
     // See: #14201
     buffers: PlIndexSet<BufferKey<'a>>,
     total_bytes_len: usize,
-    total_buffer_len: usize,
 }
 
 impl<'a, T: ViewType + ?Sized> GrowableBinaryViewArray<'a, T> {
@@ -73,10 +72,6 @@ impl<'a, T: ViewType + ?Sized> GrowableBinaryViewArray<'a, T> {
                     .map(|buf| BufferKey { inner: buf })
             })
             .collect::<PlIndexSet<_>>();
-        let total_buffer_len = arrays
-            .iter()
-            .map(|arr| arr.data_buffers().len())
-            .sum::<usize>();
 
         Self {
             arrays,
@@ -85,27 +80,33 @@ impl<'a, T: ViewType + ?Sized> GrowableBinaryViewArray<'a, T> {
             views: Vec::with_capacity(capacity),
             buffers,
             total_bytes_len: 0,
-            total_buffer_len,
         }
     }
 
     fn to(&mut self) -> BinaryViewArrayGeneric<T> {
         let views = std::mem::take(&mut self.views);
         let buffers = std::mem::take(&mut self.buffers);
+        let mut total_buffer_len = 0;
+        let buffers = Arc::from(
+            buffers
+                .into_iter()
+                .map(|buf| {
+                    let buf = buf.inner;
+                    total_buffer_len += buf.len();
+                    buf.clone()
+                })
+                .collect::<Vec<_>>(),
+        );
         let validity = self.validity.take();
+
         unsafe {
             BinaryViewArrayGeneric::<T>::new_unchecked(
                 self.data_type.clone(),
                 views.into(),
-                Arc::from(
-                    buffers
-                        .into_iter()
-                        .map(|buf| buf.inner.clone())
-                        .collect::<Vec<_>>(),
-                ),
+                buffers,
                 validity.map(|v| v.into()),
                 self.total_bytes_len,
-                self.total_buffer_len,
+                total_buffer_len,
             )
             .maybe_gc()
         }
@@ -140,6 +141,7 @@ impl<'a, T: ViewType + ?Sized> GrowableBinaryViewArray<'a, T> {
 
     #[inline]
     /// Ignores the buffers and doesn't update the view. This is only correct in a filter.
+    ///
     /// # Safety
     /// doesn't check bounds
     pub unsafe fn extend_unchecked_no_buffers(&mut self, index: usize, start: usize, len: usize) {
@@ -162,6 +164,22 @@ impl<'a, T: ViewType + ?Sized> GrowableBinaryViewArray<'a, T> {
 impl<'a, T: ViewType + ?Sized> Growable<'a> for GrowableBinaryViewArray<'a, T> {
     unsafe fn extend(&mut self, index: usize, start: usize, len: usize) {
         unsafe { self.extend_unchecked(index, start, len) }
+    }
+
+    unsafe fn extend_copies(&mut self, index: usize, start: usize, len: usize, copies: usize) {
+        let orig_view_start = self.views.len();
+        if copies > 0 {
+            unsafe { self.extend_unchecked(index, start, len) }
+        }
+        if copies > 1 {
+            let array = *self.arrays.get_unchecked(index);
+            extend_validity_copies(&mut self.validity, array, start, len, copies - 1);
+            let extended_view_end = self.views.len();
+            for _ in 0..copies - 1 {
+                self.views
+                    .extend_from_within(orig_view_start..extended_view_end)
+            }
+        }
     }
 
     fn extend_validity(&mut self, additional: usize) {
@@ -187,22 +205,7 @@ impl<'a, T: ViewType + ?Sized> Growable<'a> for GrowableBinaryViewArray<'a, T> {
 }
 
 impl<'a, T: ViewType + ?Sized> From<GrowableBinaryViewArray<'a, T>> for BinaryViewArrayGeneric<T> {
-    fn from(val: GrowableBinaryViewArray<'a, T>) -> Self {
-        unsafe {
-            BinaryViewArrayGeneric::<T>::new_unchecked(
-                val.data_type,
-                val.views.into(),
-                Arc::from(
-                    val.buffers
-                        .into_iter()
-                        .map(|buf| buf.inner.clone())
-                        .collect::<Vec<_>>(),
-                ),
-                val.validity.map(|v| v.into()),
-                val.total_bytes_len,
-                val.total_buffer_len,
-            )
-            .maybe_gc()
-        }
+    fn from(mut val: GrowableBinaryViewArray<'a, T>) -> Self {
+        val.to()
     }
 }

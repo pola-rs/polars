@@ -949,3 +949,21 @@ def test_group_by_with_null() -> None:
     )
     output = df.group_by(["a", "b"], maintain_order=True).agg(pl.col("c"))
     assert_frame_equal(expected, output)
+
+
+def test_partitioned_group_by_14954(monkeypatch: Any) -> None:
+    monkeypatch.setenv("POLARS_FORCE_PARTITION", "1")
+    assert (
+        pl.DataFrame({"a": range(20)})
+        .select(pl.col("a") % 2)
+        .group_by("a")
+        .agg(
+            (pl.col("a") > 1000).alias("a > 1000"),
+        )
+    ).sort("a").to_dict(as_series=False) == {
+        "a": [0, 1],
+        "a > 1000": [
+            [False, False, False, False, False, False, False, False, False, False],
+            [False, False, False, False, False, False, False, False, False, False],
+        ],
+    }

@@ -1,81 +1,10 @@
-use polars::prelude::AnyValue;
-#[cfg(feature = "cloud")]
-use pyo3::conversion::{FromPyObject, IntoPy};
+use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList, PyTuple};
-use pyo3::{intern, PyAny, PyResult};
 
 use super::{decimal_to_digits, struct_dict};
 use crate::prelude::*;
 use crate::py_modules::UTILS;
-
-impl<'a, T> FromPyObject<'a> for Wrap<ChunkedArray<T>>
-where
-    T: PyPolarsNumericType,
-    T::Native: FromPyObject<'a>,
-{
-    fn extract(obj: &'a PyAny) -> PyResult<Self> {
-        let len = obj.len()?;
-        let mut builder = PrimitiveChunkedBuilder::new("", len);
-
-        for res in obj.iter()? {
-            let item = res?;
-            match item.extract::<T::Native>() {
-                Ok(val) => builder.append_value(val),
-                Err(_) => builder.append_null(),
-            };
-        }
-        Ok(Wrap(builder.finish()))
-    }
-}
-
-impl<'a> FromPyObject<'a> for Wrap<BooleanChunked> {
-    fn extract(obj: &'a PyAny) -> PyResult<Self> {
-        let len = obj.len()?;
-        let mut builder = BooleanChunkedBuilder::new("", len);
-
-        for res in obj.iter()? {
-            let item = res?;
-            match item.extract::<bool>() {
-                Ok(val) => builder.append_value(val),
-                Err(_) => builder.append_null(),
-            }
-        }
-        Ok(Wrap(builder.finish()))
-    }
-}
-
-impl<'a> FromPyObject<'a> for Wrap<StringChunked> {
-    fn extract(obj: &'a PyAny) -> PyResult<Self> {
-        let len = obj.len()?;
-        let mut builder = StringChunkedBuilder::new("", len);
-
-        for res in obj.iter()? {
-            let item = res?;
-            match item.extract::<&str>() {
-                Ok(val) => builder.append_value(val),
-                Err(_) => builder.append_null(),
-            }
-        }
-        Ok(Wrap(builder.finish()))
-    }
-}
-
-impl<'a> FromPyObject<'a> for Wrap<BinaryChunked> {
-    fn extract(obj: &'a PyAny) -> PyResult<Self> {
-        let len = obj.len()?;
-        let mut builder = BinaryChunkedBuilder::new("", len);
-
-        for res in obj.iter()? {
-            let item = res?;
-            match item.extract::<&[u8]>() {
-                Ok(val) => builder.append_value(val),
-                Err(_) => builder.append_null(),
-            }
-        }
-        Ok(Wrap(builder.finish()))
-    }
-}
 
 impl ToPyObject for Wrap<&StringChunked> {
     fn to_object(&self, py: Python) -> PyObject {
@@ -115,12 +44,12 @@ impl ToPyObject for Wrap<&StructChunked> {
 impl ToPyObject for Wrap<&DurationChunked> {
     fn to_object(&self, py: Python) -> PyObject {
         let utils = UTILS.as_ref(py);
-        let convert = utils.getattr(intern!(py, "_to_python_timedelta")).unwrap();
-        let time_unit = Wrap(self.0.time_unit()).to_object(py);
+        let convert = utils.getattr(intern!(py, "to_py_timedelta")).unwrap();
+        let time_unit = self.0.time_unit().to_ascii();
         let iter = self
             .0
             .into_iter()
-            .map(|opt_v| opt_v.map(|v| convert.call1((v, &time_unit)).unwrap()));
+            .map(|opt_v| opt_v.map(|v| convert.call1((v, time_unit)).unwrap()));
         PyList::new(py, iter).into_py(py)
     }
 }
@@ -128,13 +57,13 @@ impl ToPyObject for Wrap<&DurationChunked> {
 impl ToPyObject for Wrap<&DatetimeChunked> {
     fn to_object(&self, py: Python) -> PyObject {
         let utils = UTILS.as_ref(py);
-        let convert = utils.getattr(intern!(py, "_to_python_datetime")).unwrap();
-        let time_unit = Wrap(self.0.time_unit()).to_object(py);
+        let convert = utils.getattr(intern!(py, "to_py_datetime")).unwrap();
+        let time_unit = self.0.time_unit().to_ascii();
         let time_zone = self.0.time_zone().to_object(py);
         let iter = self
             .0
             .into_iter()
-            .map(|opt_v| opt_v.map(|v| convert.call1((v, &time_unit, &time_zone)).unwrap()));
+            .map(|opt_v| opt_v.map(|v| convert.call1((v, time_unit, &time_zone)).unwrap()));
         PyList::new(py, iter).into_py(py)
     }
 }
@@ -151,7 +80,7 @@ pub(crate) fn time_to_pyobject_iter<'a>(
     ca: &'a TimeChunked,
 ) -> impl ExactSizeIterator<Item = Option<&'a PyAny>> {
     let utils = UTILS.as_ref(py);
-    let convert = utils.getattr(intern!(py, "_to_python_time")).unwrap();
+    let convert = utils.getattr(intern!(py, "to_py_time")).unwrap();
     ca.0.into_iter()
         .map(|opt_v| opt_v.map(|v| convert.call1((v,)).unwrap()))
 }
@@ -159,7 +88,7 @@ pub(crate) fn time_to_pyobject_iter<'a>(
 impl ToPyObject for Wrap<&DateChunked> {
     fn to_object(&self, py: Python) -> PyObject {
         let utils = UTILS.as_ref(py);
-        let convert = utils.getattr(intern!(py, "_to_python_date")).unwrap();
+        let convert = utils.getattr(intern!(py, "to_py_date")).unwrap();
         let iter = self
             .0
             .into_iter()
@@ -180,7 +109,7 @@ pub(crate) fn decimal_to_pyobject_iter<'a>(
     ca: &'a DecimalChunked,
 ) -> impl ExactSizeIterator<Item = Option<&'a PyAny>> {
     let utils = UTILS.as_ref(py);
-    let convert = utils.getattr(intern!(py, "_to_python_decimal")).unwrap();
+    let convert = utils.getattr(intern!(py, "to_py_decimal")).unwrap();
     let py_scale = (-(ca.scale() as i32)).to_object(py);
     // if we don't know precision, the only safe bet is to set it to 39
     let py_precision = ca.precision().unwrap_or(39).to_object(py);

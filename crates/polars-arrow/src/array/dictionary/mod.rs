@@ -37,6 +37,7 @@ pub unsafe trait DictionaryKey: NativeType + TryInto<usize> + TryFrom<usize> + H
     const KEY_TYPE: IntegerType;
 
     /// Represents this key as a `usize`.
+    ///
     /// # Safety
     /// The caller _must_ have checked that the value can be casted to `usize`.
     #[inline]
@@ -178,6 +179,7 @@ impl<K: DictionaryKey> DictionaryArray<K> {
     /// * the `data_type`'s logical type is not a `DictionaryArray`
     /// * the `data_type`'s keys is not compatible with `keys`
     /// * the `data_type`'s values's data_type is not equal with `values.data_type()`
+    ///
     /// # Safety
     /// The caller must ensure that every keys's values is represented in `usize` and is `< values.len()`
     pub unsafe fn try_new_unchecked(
@@ -292,6 +294,7 @@ impl<K: DictionaryKey> DictionaryArray<K> {
     }
 
     /// Slices this [`DictionaryArray`].
+    ///
     /// # Safety
     /// Safe iff `offset + length <= self.len()`.
     pub unsafe fn slice_unchecked(&mut self, offset: usize, length: usize) {

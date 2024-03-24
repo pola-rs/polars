@@ -53,8 +53,8 @@ Other
     :toctree: api/
     :nosignatures:
 
-    Boolean
     Binary
+    Boolean
     Categorical
     Enum
     Null

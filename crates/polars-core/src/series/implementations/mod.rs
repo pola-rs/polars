@@ -28,22 +28,17 @@ mod struct_;
 
 use std::any::Any;
 use std::borrow::Cow;
-use std::ops::{BitAnd, BitOr, BitXor, Deref};
+use std::ops::{BitAnd, BitOr, BitXor};
 
 use ahash::RandomState;
-use arrow::legacy::prelude::QuantileInterpolOptions;
 
-use super::{private, IntoSeries, SeriesTrait, *};
+use super::*;
 use crate::chunked_array::comparison::*;
-use crate::chunked_array::ops::aggregate::{ChunkAggSeries, QuantileAggSeries, VarAggSeries};
 use crate::chunked_array::ops::compare_inner::{
     IntoTotalEqInner, IntoTotalOrdInner, TotalEqInner, TotalOrdInner,
 };
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::AsSinglePtr;
-use crate::prelude::*;
-#[cfg(feature = "checked_arithmetic")]
-use crate::series::arithmetic::checked::NumOpsDispatchChecked;
 
 // Utility wrapper struct
 pub(crate) struct SeriesWrap<T>(pub T);
@@ -425,10 +420,6 @@ macro_rules! impl_dyn_series {
 
             fn as_any(&self) -> &dyn Any {
                 &self.0
-            }
-
-            fn tile(&self, n: usize) -> Series {
-                self.0.tile(n).into_series()
             }
         }
     };

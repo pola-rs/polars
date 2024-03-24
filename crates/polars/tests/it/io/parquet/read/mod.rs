@@ -28,9 +28,8 @@ use polars_parquet::parquet::read::{
     get_column_iterator, get_field_columns, read_metadata, BasicDecompressor, MutStreamingIterator,
     State,
 };
-use polars_parquet::parquet::schema::types::{GroupConvertedType, ParquetType, PhysicalType};
+use polars_parquet::parquet::schema::types::{GroupConvertedType, ParquetType};
 use polars_parquet::parquet::schema::Repetition;
-use polars_parquet::parquet::statistics::Statistics;
 use polars_parquet::parquet::types::int96_to_i64_ns;
 use polars_parquet::parquet::FallibleStreamingIterator;
 

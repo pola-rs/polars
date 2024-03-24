@@ -12,6 +12,34 @@ from polars.testing import assert_frame_equal
 pytestmark = pytest.mark.xdist_group("streaming")
 
 
+def test_streaming_outer_joins() -> None:
+    n = 100
+    dfa = pl.DataFrame(
+        {
+            "a": np.random.randint(0, 40, n),
+            "idx": np.arange(0, n),
+        }
+    )
+
+    n = 100
+    dfb = pl.DataFrame(
+        {
+            "a": np.random.randint(0, 40, n),
+            "idx": np.arange(0, n),
+        }
+    )
+
+    join_strategies: list[Literal["outer", "outer_coalesce"]] = [
+        "outer",
+        "outer_coalesce",
+    ]
+    for how in join_strategies:
+        q = dfa.lazy().join(dfb.lazy(), on="a", how=how).sort(["idx"])
+        a = q.collect(streaming=True)
+        b = q.collect(streaming=False)
+        assert_frame_equal(a, b)
+
+
 def test_streaming_joins() -> None:
     n = 100
     dfa = pd.DataFrame(

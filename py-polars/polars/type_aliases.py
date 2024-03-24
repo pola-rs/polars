@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     import sys
 
     from sqlalchemy import Engine
+    from sqlalchemy.orm import Session
 
     from polars import DataFrame, Expr, LazyFrame, Series
     from polars.datatypes import DataType, DataTypeClass, IntegerType, TemporalType
@@ -82,6 +83,7 @@ ColumnNameOrSelector: TypeAlias = Union[str, SelectorType]
 
 # User-facing string literal types
 # The following all have an equivalent Rust enum with the same name
+Ambiguous: TypeAlias = Literal["earliest", "latest", "raise", "null"]
 AvroCompression: TypeAlias = Literal["uncompressed", "snappy", "deflate"]
 CsvQuoteStyle: TypeAlias = Literal["necessary", "always", "non_numeric", "never"]
 CategoricalOrdering: TypeAlias = Literal["physical", "lexical"]
@@ -94,6 +96,7 @@ IndexOrder: TypeAlias = Literal["c", "fortran"]
 IpcCompression: TypeAlias = Literal["uncompressed", "lz4", "zstd"]
 JoinValidation: TypeAlias = Literal["m:m", "m:1", "1:m", "1:1"]
 Label: TypeAlias = Literal["left", "right", "datapoint"]
+NonExistent: TypeAlias = Literal["raise", "null"]
 NullBehavior: TypeAlias = Literal["ignore", "drop"]
 NullStrategy: TypeAlias = Literal["ignore", "propagate"]
 ParallelStrategy: TypeAlias = Literal["auto", "columns", "row_groups", "none"]
@@ -147,7 +150,6 @@ ToStructStrategy: TypeAlias = Literal[
 ]  # ListToStructWidthStrategy
 
 # The following have no equivalent on the Rust side
-Ambiguous: TypeAlias = Literal["earliest", "latest", "raise"]
 ConcatMethod = Literal[
     "vertical",
     "vertical_relaxed",
@@ -227,17 +229,11 @@ class SeriesBuffers(TypedDict):
 # minimal protocol definitions that can reasonably represent
 # an executable connection, cursor, or equivalent object
 class BasicConnection(Protocol):  # noqa: D101
-    def close(self) -> None:
-        """Close the connection."""
-
     def cursor(self, *args: Any, **kwargs: Any) -> Any:
         """Return a cursor object."""
 
 
 class BasicCursor(Protocol):  # noqa: D101
-    def close(self) -> None:
-        """Close the cursor."""
-
     def execute(self, *args: Any, **kwargs: Any) -> Any:
         """Execute a query."""
 
@@ -250,4 +246,4 @@ class Cursor(BasicCursor):  # noqa: D101
         """Fetch results in batches."""
 
 
-ConnectionOrCursor = Union[BasicConnection, BasicCursor, Cursor, "Engine"]
+ConnectionOrCursor = Union[BasicConnection, BasicCursor, Cursor, "Engine", "Session"]

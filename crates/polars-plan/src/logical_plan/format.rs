@@ -202,7 +202,11 @@ impl LogicalPlan {
                 input._format(f, sub_indent)
             },
             Distinct { input, options } => {
-                write!(f, "{:indent$}UNIQUE BY {:?}", "", options.subset)?;
+                write!(
+                    f,
+                    "{:indent$}UNIQUE[maintain_order: {:?}, keep_strategy: {:?}] BY {:?}",
+                    "", options.maintain_order, options.keep_strategy, options.subset
+                )?;
                 input._format(f, sub_indent)
             },
             Slice { input, offset, len } => {

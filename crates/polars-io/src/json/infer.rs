@@ -1,5 +1,3 @@
-use simd_json::value::BorrowedValue;
-
 use super::*;
 
 pub(crate) fn json_values_to_supertype(

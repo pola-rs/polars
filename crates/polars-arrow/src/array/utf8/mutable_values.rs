@@ -1,4 +1,3 @@
-use std::iter::FromIterator;
 use std::sync::Arc;
 
 use polars_error::{polars_bail, PolarsResult};
@@ -95,6 +94,7 @@ impl<O: Offset> MutableUtf8ValuesArray<O> {
     /// This function does not panic iff:
     /// * The last offset is equal to the values' length.
     /// * The `data_type`'s [`crate::datatypes::PhysicalType`] is equal to either `Utf8` or `LargeUtf8`.
+    ///
     /// # Safety
     /// This function is safe iff:
     /// * the offsets are monotonically increasing
@@ -201,6 +201,7 @@ impl<O: Offset> MutableUtf8ValuesArray<O> {
     }
 
     /// Returns the value of the element at index `i`.
+    ///
     /// # Safety
     /// This function is safe iff `i < self.len`.
     #[inline]
@@ -309,6 +310,7 @@ impl<O: Offset> MutableUtf8ValuesArray<O> {
     }
 
     /// Extends [`MutableUtf8ValuesArray`] from an iterator of trusted len.
+    ///
     /// # Safety
     /// The iterator must be trusted len.
     #[inline]
@@ -333,6 +335,7 @@ impl<O: Offset> MutableUtf8ValuesArray<O> {
     }
 
     /// Returns a new [`MutableUtf8ValuesArray`] from an iterator of trusted length.
+    ///
     /// # Safety
     /// The iterator must be [`TrustedLen`](https://doc.rust-lang.org/std/iter/trait.TrustedLen.html).
     /// I.e. that `size_hint().1` correctly reports its length.

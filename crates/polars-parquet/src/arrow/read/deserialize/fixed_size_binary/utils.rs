@@ -55,4 +55,9 @@ impl<'a> Pushable<&'a [u8]> for FixedSizeBinary {
     fn len(&self) -> usize {
         self.values.len() / self.size
     }
+
+    #[inline]
+    fn extend_null_constant(&mut self, additional: usize) {
+        self.extend_constant(additional)
+    }
 }

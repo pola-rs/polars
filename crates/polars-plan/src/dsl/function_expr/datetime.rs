@@ -58,7 +58,7 @@ pub enum TemporalFunction {
     DSTOffset,
     Round(String, String),
     #[cfg(feature = "timezones")]
-    ReplaceTimeZone(Option<TimeZone>),
+    ReplaceTimeZone(Option<TimeZone>, NonExistent),
     Combine(TimeUnit),
     DatetimeFunction {
         time_unit: TimeUnit,
@@ -111,7 +111,7 @@ impl TemporalFunction {
             DSTOffset => mapper.with_dtype(DataType::Duration(TimeUnit::Milliseconds)),
             Round(..) => mapper.with_same_dtype(),
             #[cfg(feature = "timezones")]
-            ReplaceTimeZone(tz) => mapper.map_datetime_dtype_timezone(tz.as_ref()),
+            ReplaceTimeZone(tz, _non_existent) => mapper.map_datetime_dtype_timezone(tz.as_ref()),
             DatetimeFunction {
                 time_unit,
                 time_zone,
@@ -179,7 +179,7 @@ impl Display for TemporalFunction {
             DSTOffset => "dst_offset",
             Round(..) => "round",
             #[cfg(feature = "timezones")]
-            ReplaceTimeZone(_) => "replace_time_zone",
+            ReplaceTimeZone(_, _) => "replace_time_zone",
             DatetimeFunction { .. } => return write!(f, "dt.datetime"),
             Combine(_) => "combine",
         };
@@ -227,6 +227,7 @@ pub(super) fn time(s: &Series) -> PolarsResult<Series> {
             s.datetime().unwrap(),
             None,
             &StringChunked::from_iter(std::iter::once("raise")),
+            NonExistent::Raise,
         )?
         .cast(&DataType::Time),
         DataType::Datetime(_, _) => s.datetime().unwrap().cast(&DataType::Time),
@@ -243,6 +244,7 @@ pub(super) fn date(s: &Series) -> PolarsResult<Series> {
                     s.datetime().unwrap(),
                     None,
                     &StringChunked::from_iter(std::iter::once("raise")),
+                    NonExistent::Raise,
                 )?
                 .cast(&DataType::Date)?
             };
@@ -266,6 +268,7 @@ pub(super) fn datetime(s: &Series) -> PolarsResult<Series> {
                     s.datetime().unwrap(),
                     None,
                     &StringChunked::from_iter(std::iter::once("raise")),
+                    NonExistent::Raise,
                 )?
                 .cast(&DataType::Datetime(*tu, None))?
             };

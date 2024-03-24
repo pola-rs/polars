@@ -111,7 +111,7 @@ fn test_pred_pd_1() -> PolarsResult<()> {
 
     assert!(predicate_at_scan(q));
 
-    // check if we understand that we can unwrap the alias
+    // Check if we understand that we can unwrap the alias.
     let q = df
         .clone()
         .lazy()
@@ -120,7 +120,7 @@ fn test_pred_pd_1() -> PolarsResult<()> {
 
     assert!(predicate_at_scan(q));
 
-    // check if we pass hstack
+    // Check if we pass hstack.
     let q = df
         .clone()
         .lazy()
@@ -434,8 +434,8 @@ fn test_string_addition_to_concat_str() -> PolarsResult<()> {
     let root = q.clone().optimize(&mut lp_arena, &mut expr_arena)?;
     let lp = lp_arena.get(root);
     let mut exprs = lp.get_exprs();
-    let expr_node = exprs.pop().unwrap();
-    if let AExpr::Function { input, .. } = expr_arena.get(expr_node) {
+    let e = exprs.pop().unwrap();
+    if let AExpr::Function { input, .. } = expr_arena.get(e.node()) {
         // the concat_str has the 4 expressions as input
         assert_eq!(input.len(), 4);
     } else {
@@ -493,10 +493,7 @@ fn test_with_column_prune() -> PolarsResult<()> {
 
         matches!(
             lp,
-            ALogicalPlan::MapFunction {
-                function: FunctionNode::FastProjection { .. },
-                ..
-            } | DataFrameScan { .. }
+            ALogicalPlan::SimpleProjection { .. } | DataFrameScan { .. }
         )
     }));
     assert_eq!(

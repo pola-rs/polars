@@ -3,7 +3,6 @@ use arrow::legacy::trusted_len::TrustedLenPush;
 use hashbrown::hash_map::Entry;
 use polars_utils::iter::EnumerateIdxTrait;
 
-use crate::datatypes::PlHashMap;
 use crate::hashing::_HASHMAP_INIT_SIZE;
 use crate::prelude::*;
 use crate::{using_string_cache, StringCache, POOL};
@@ -359,18 +358,12 @@ impl CategoricalChunked {
             map.insert(cat, idx as u32);
         }
         // Find idx of every value in the map
-        let mut keys: UInt32Chunked = values
-            .into_iter()
-            .map(|opt_s: Option<&str>| {
-                opt_s
-                    .map(|s| {
-                        map.get(s).copied().ok_or_else(|| {
-                            polars_err!(not_in_enum, value = s, categories = categories)
-                        })
-                    })
-                    .transpose()
-            })
-            .collect::<Result<UInt32Chunked, PolarsError>>()?;
+        let iter = values.downcast_iter().map(|arr| {
+            arr.iter()
+                .map(|opt_s: Option<&str>| opt_s.and_then(|s| map.get(s).copied()))
+                .collect_arr()
+        });
+        let mut keys: UInt32Chunked = ChunkedArray::from_chunk_iter(values.name(), iter);
         keys.rename(values.name());
         let rev_map = RevMapping::build_local(categories.clone());
         unsafe {
@@ -386,7 +379,6 @@ impl CategoricalChunked {
 
 #[cfg(test)]
 mod test {
-    use crate::chunked_array::categorical::CategoricalChunkedBuilder;
     use crate::prelude::*;
     use crate::{disable_string_cache, enable_string_cache, SINGLE_LOCK};
 

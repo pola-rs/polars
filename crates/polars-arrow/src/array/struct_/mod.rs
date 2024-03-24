@@ -178,6 +178,7 @@ impl StructArray {
     /// Slices this [`StructArray`].
     /// # Implementation
     /// This operation is `O(F)` where `F` is the number of fields.
+    ///
     /// # Safety
     /// The caller must ensure that `offset + length <= self.len()`.
     pub unsafe fn slice_unchecked(&mut self, offset: usize, length: usize) {

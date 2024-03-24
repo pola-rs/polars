@@ -1,5 +1,4 @@
 use std::path::Path;
-use std::sync::Arc;
 
 use crossbeam_channel::bounded;
 use polars_core::prelude::*;

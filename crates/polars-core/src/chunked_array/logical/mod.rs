@@ -33,7 +33,7 @@ pub use time::*;
 
 use crate::prelude::*;
 
-/// Maps a logical type to a a chunked array implementation of the physical type.
+/// Maps a logical type to a chunked array implementation of the physical type.
 /// This saves a lot of compiler bloat and allows us to reuse functionality.
 pub struct Logical<Logical: PolarsDataType, Physical: PolarsDataType>(
     pub ChunkedArray<Physical>,
@@ -44,7 +44,7 @@ pub struct Logical<Logical: PolarsDataType, Physical: PolarsDataType>(
 impl<K: PolarsDataType, T: PolarsDataType> Clone for Logical<K, T> {
     fn clone(&self) -> Self {
         let mut new = Logical::<K, _>::new_logical(self.0.clone());
-        new.2 = self.2.clone();
+        new.2.clone_from(&self.2);
         new
     }
 }

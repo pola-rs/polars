@@ -1,5 +1,4 @@
 use super::*;
-use crate::prelude::DecimalChunked;
 
 impl Add for &DecimalChunked {
     type Output = PolarsResult<DecimalChunked>;

@@ -1,5 +1,3 @@
-use arrow::legacy::prelude::QuantileInterpolOptions;
-
 use super::*;
 
 pub trait QuantileAggSeries {

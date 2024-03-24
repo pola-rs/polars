@@ -1,7 +1,6 @@
 // --8<-- [start:setup]
 use chrono::prelude::*;
 use polars::io::prelude::*;
-use polars::lazy::dsl::GetOutput;
 use polars::prelude::*;
 // --8<-- [end:setup]
 

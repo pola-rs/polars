@@ -1,10 +1,9 @@
 use std::ops::Div;
 
-use arrow::array::{Array, ArrayRef, PrimitiveArray};
+use arrow::array::{Array, PrimitiveArray};
 use arrow::bitmap::Bitmap;
 use arrow::legacy::utils::CustomIterTools;
 use arrow::types::NativeType;
-use polars_core::datatypes::ListChunked;
 use polars_core::export::num::{NumCast, ToPrimitive};
 use polars_utils::unwrap::UnwrapUncheckedRelease;
 

@@ -1,5 +1,3 @@
-use std::any::Any;
-
 use super::*;
 use crate::hashing::series_to_hashes;
 use crate::prelude::*;
@@ -65,7 +63,7 @@ impl private::PrivateSeries for SeriesWrap<StructChunked> {
 
     #[cfg(feature = "algorithm_group_by")]
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
-        let df = DataFrame::new_no_checks(vec![]);
+        let df = DataFrame::empty();
         let gb = df
             .group_by_with_series(self.0.fields().to_vec(), multithreaded, sorted)
             .unwrap();

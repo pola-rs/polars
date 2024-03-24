@@ -1,5 +1,4 @@
 // Bridges structs from thrift-generated code to rust enums.
-use std::convert::TryFrom;
 
 #[cfg(feature = "serde_types")]
 use serde::{Deserialize, Serialize};

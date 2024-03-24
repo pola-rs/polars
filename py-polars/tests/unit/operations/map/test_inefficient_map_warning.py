@@ -12,10 +12,10 @@ import numpy as np  # noqa: F401
 import pytest
 
 import polars as pl
+from polars._utils.udfs import _NUMPY_FUNCTIONS, BytecodeParser
+from polars._utils.various import in_terminal_that_supports_colour
 from polars.exceptions import PolarsInefficientMapWarning
 from polars.testing import assert_frame_equal, assert_series_equal
-from polars.utils.udfs import _NUMPY_FUNCTIONS, BytecodeParser
-from polars.utils.various import in_terminal_that_supports_colour
 
 MY_CONSTANT = 3
 MY_DICT = {0: "a", 1: "b", 2: "c", 3: "d", 4: "e"}
@@ -133,13 +133,28 @@ TEST_CASES = [
         '(pl.col("a") > 1) & ((pl.col("a") != 2) | ((pl.col("a") % 2) == 0)) & (pl.col("a") < 3)',
     ),
     # ---------------------------------------------
-    # string expr: case/cast ops
+    # string exprs
     # ---------------------------------------------
     ("b", "lambda x: str(x).title()", 'pl.col("b").cast(pl.String).str.to_titlecase()'),
     (
         "b",
         'lambda x: x.lower() + ":" + x.upper() + ":" + x.title()',
         '(((pl.col("b").str.to_lowercase() + \':\') + pl.col("b").str.to_uppercase()) + \':\') + pl.col("b").str.to_titlecase()',
+    ),
+    (
+        "b",
+        "lambda x: x.strip().startswith('#')",
+        """pl.col("b").str.strip_chars().str.starts_with('#')""",
+    ),
+    (
+        "b",
+        """lambda x: x.rstrip().endswith(('!','#','?','"'))""",
+        """pl.col("b").str.strip_chars_end().str.contains(r'(!|\\#|\\?|")$')""",
+    ),
+    (
+        "b",
+        """lambda x: x.lstrip().startswith(('!','#','?',"'"))""",
+        """pl.col("b").str.strip_chars_start().str.contains(r"^(!|\\#|\\?|')")""",
     ),
     # ---------------------------------------------
     # json expr: load/extract
@@ -186,12 +201,12 @@ TEST_CASES = [
     (
         "a",
         "lambda x: (3 << (32-x)) & 3",
-        '(3*2**(32 - pl.col("a"))).cast(pl.Int64) & 3',
+        '(3 * 2**(32 - pl.col("a"))).cast(pl.Int64) & 3',
     ),
     (
         "a",
         "lambda x: (x << 32) & 3",
-        '(pl.col("a")*2**32).cast(pl.Int64) & 3',
+        '(pl.col("a") * 2**32).cast(pl.Int64) & 3',
     ),
     (
         "a",
@@ -240,7 +255,10 @@ def test_parse_invalid_function(func: str) -> None:
     ("col", "func", "expr_repr"),
     TEST_CASES,
 )
-@pytest.mark.filterwarnings("ignore:invalid value encountered:RuntimeWarning")
+@pytest.mark.filterwarnings(
+    "ignore:invalid value encountered:RuntimeWarning",
+    "ignore:.*without specifying `return_dtype`:polars.exceptions.MapWithoutReturnDtypeWarning",
+)
 def test_parse_apply_functions(col: str, func: str, expr_repr: str) -> None:
     with pytest.warns(
         PolarsInefficientMapWarning,
@@ -279,7 +297,10 @@ def test_parse_apply_functions(col: str, func: str, expr_repr: str) -> None:
         )
 
 
-@pytest.mark.filterwarnings("ignore:invalid value encountered:RuntimeWarning")
+@pytest.mark.filterwarnings(
+    "ignore:invalid value encountered:RuntimeWarning",
+    "ignore:.*without specifying `return_dtype`:polars.exceptions.MapWithoutReturnDtypeWarning",
+)
 def test_parse_apply_raw_functions() -> None:
     lf = pl.LazyFrame({"a": [1.1, 2.0, 3.4]})
 
@@ -358,7 +379,9 @@ def test_parse_apply_miscellaneous() -> None:
     ):
         pl_series = pl.Series("srs", [0, 1, 2, 3, 4])
         assert_series_equal(
-            pl_series.map_elements(lambda x: numpy.cos(3) + x - abs(-1)),
+            pl_series.map_elements(
+                lambda x: numpy.cos(3) + x - abs(-1), return_dtype=pl.Float64
+            ),
             numpy.cos(3) + pl_series - 1,
         )
 
@@ -389,6 +412,9 @@ def test_parse_apply_miscellaneous() -> None:
             "(s.abs() != 12) & ((s > 10) | (s < -10) | (s == 0))",
         ),
     ],
+)
+@pytest.mark.filterwarnings(
+    "ignore:.*without specifying `return_dtype`:polars.exceptions.MapWithoutReturnDtypeWarning"
 )
 def test_parse_apply_series(
     data: list[Any], func: Callable[[Any], Any], expr_repr: str
@@ -428,7 +454,7 @@ def test_expr_exact_warning_message() -> None:
     # and to keep the assertion on `len(warnings)`.
     with pytest.warns(PolarsInefficientMapWarning, match=rf"^{msg}$") as warnings:
         df = pl.DataFrame({"a": [1, 2, 3]})
-        df.select(pl.col("a").map_elements(lambda x: x + 1))
+        df.select(pl.col("a").map_elements(lambda x: x + 1, return_dtype=pl.Int64))
 
     assert len(warnings) == 1
 

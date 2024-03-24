@@ -4,7 +4,6 @@ use std::ptr::NonNull;
 
 use crate::prelude::*;
 use crate::series::unstable::{ArrayBox, UnstableSeries};
-use crate::utils::CustomIterTools;
 
 pub struct AmortizedListIter<'a, I: Iterator<Item = Option<ArrayBox>>> {
     len: usize,

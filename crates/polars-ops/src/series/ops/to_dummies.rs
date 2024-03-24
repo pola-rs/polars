@@ -1,5 +1,3 @@
-use polars_core::frame::group_by::GroupsIndicator;
-
 use super::*;
 
 #[cfg(feature = "dtype-u8")]
@@ -48,7 +46,7 @@ impl ToDummies for Series {
             })
             .collect();
 
-        Ok(DataFrame::new_no_checks(sort_columns(columns)))
+        Ok(unsafe { DataFrame::new_no_checks(sort_columns(columns)) })
     }
 }
 

@@ -1,7 +1,4 @@
 use std::marker::PhantomData;
-use std::sync::Arc;
-
-use arrow::bitmap::MutableBitmap;
 
 use super::*;
 use crate::chunked_array::object::registry::{AnonymousObjectBuilder, ObjectRegistry};

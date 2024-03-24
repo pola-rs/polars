@@ -1,14 +1,15 @@
-use super::bitmap::take_bitmap_unchecked;
+use polars_utils::IdxSize;
+
+use super::bitmap::{take_bitmap_nulls_unchecked, take_bitmap_unchecked};
 use crate::array::{Array, BooleanArray, PrimitiveArray};
 use crate::bitmap::{Bitmap, MutableBitmap};
-use crate::legacy::index::IdxSize;
 
-// take implementation when neither values nor indices contain nulls
+// Take implementation when neither values nor indices contain nulls.
 unsafe fn take_no_validity(values: &Bitmap, indices: &[IdxSize]) -> (Bitmap, Option<Bitmap>) {
     (take_bitmap_unchecked(values, indices), None)
 }
 
-// take implementation when only values contain nulls
+// Take implementation when only values contain nulls.
 unsafe fn take_values_validity(
     values: &BooleanArray,
     indices: &[IdxSize],
@@ -22,18 +23,16 @@ unsafe fn take_values_validity(
     (buffer, validity.into())
 }
 
-// take implementation when only indices contain nulls
+// Take implementation when only indices contain nulls.
 unsafe fn take_indices_validity(
     values: &Bitmap,
     indices: &PrimitiveArray<IdxSize>,
 ) -> (Bitmap, Option<Bitmap>) {
-    // simply take all and copy the bitmap
-    let buffer = take_bitmap_unchecked(values, indices.values());
-
+    let buffer = take_bitmap_nulls_unchecked(values, indices);
     (buffer, indices.validity().cloned())
 }
 
-// take implementation when both values and indices contain nulls
+// Take implementation when both values and indices contain nulls.
 unsafe fn take_values_indices_validity(
     values: &BooleanArray,
     indices: &PrimitiveArray<IdxSize>,

@@ -1,6 +1,6 @@
 use std::any::Any;
 
-use arrow::array::{ArrayRef, BinaryArray};
+use arrow::array::BinaryArray;
 use polars_core::prelude::sort::_broadcast_descending;
 use polars_core::prelude::sort::arg_sort_multiple::_get_rows_encoded_compat_array;
 use polars_core::prelude::*;
@@ -300,7 +300,7 @@ impl Sink for SortSinkMultiple {
                 output_schema: self.output_schema.clone(),
             }))),
             // SortSink should not produce this branch
-            FinalizedSink::Operator(_) => unreachable!(),
+            FinalizedSink::Operator => unreachable!(),
         }
     }
 

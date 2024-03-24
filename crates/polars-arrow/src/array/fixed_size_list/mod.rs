@@ -111,6 +111,7 @@ impl FixedSizeListArray {
     /// Slices this [`FixedSizeListArray`].
     /// # Implementation
     /// This operation is `O(1)`.
+    ///
     /// # Safety
     /// The caller must ensure that `offset + length <= self.len()`.
     pub unsafe fn slice_unchecked(&mut self, offset: usize, length: usize) {
@@ -156,6 +157,7 @@ impl FixedSizeListArray {
     }
 
     /// Returns the `Vec<T>` at position `i`.
+    ///
     /// # Safety
     /// Caller must ensure that `i < self.len()`
     #[inline]

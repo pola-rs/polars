@@ -1,14 +1,17 @@
+use std::hash::Hash;
+
 use arrow::array::BooleanArray;
 use arrow::bitmap::MutableBitmap;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_integer_polars_type;
-use polars_utils::total_ord::{TotalEq, TotalHash, TotalOrdWrap};
+use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 
 // If invert is true then this is an `is_duplicated`.
 fn is_unique_ca<'a, T>(ca: &'a ChunkedArray<T>, invert: bool) -> BooleanChunked
 where
     T: PolarsDataType,
-    T::Physical<'a>: TotalHash + TotalEq,
+    T::Physical<'a>: TotalHash + TotalEq + Copy + ToTotalOrd,
+    <Option<T::Physical<'a>> as ToTotalOrd>::TotalOrdItem: Hash + Eq,
 {
     let len = ca.len();
     let mut idx_key = PlHashMap::new();
@@ -17,7 +20,7 @@ where
     // just toggle a boolean that's false if a group has multiple entries.
     ca.iter().enumerate().for_each(|(idx, key)| {
         idx_key
-            .entry(TotalOrdWrap(key))
+            .entry(key.to_total_ord())
             .and_modify(|v: &mut (IdxSize, bool)| v.1 = false)
             .or_insert((idx as IdxSize, true));
     });

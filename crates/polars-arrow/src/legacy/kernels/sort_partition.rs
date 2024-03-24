@@ -1,6 +1,7 @@
 use std::fmt::Debug;
 
-use crate::legacy::index::IdxSize;
+use polars_utils::IdxSize;
+
 use crate::types::NativeType;
 
 /// Find partition indexes such that every partition contains unique groups.

@@ -1,4 +1,3 @@
-use polars_core::datatypes::PlHashMap;
 use polars_core::prelude::*;
 
 use crate::prelude::*;
@@ -10,9 +9,9 @@ mod delay_rechunk;
 mod drop_nulls;
 
 mod collect_members;
+mod count_star;
 #[cfg(feature = "cse")]
 mod cse_expr;
-mod fast_projection;
 #[cfg(any(
     feature = "ipc",
     feature = "parquet",
@@ -26,6 +25,7 @@ mod flatten_union;
 mod fused;
 mod predicate_pushdown;
 mod projection_pushdown;
+mod simple_projection;
 mod simplify_expr;
 mod simplify_functions;
 mod slice_pushdown_expr;
@@ -35,12 +35,10 @@ mod type_coercion;
 
 use delay_rechunk::DelayRechunk;
 use drop_nulls::ReplaceDropNulls;
-use fast_projection::FastProjectionAndCollapse;
-#[cfg(any(feature = "ipc", feature = "parquet", feature = "csv"))]
-use file_caching::{find_column_union_and_fingerprints, FileCacher};
 use polars_io::predicates::PhysicalIoExpr;
 pub use predicate_pushdown::PredicatePushDown;
 pub use projection_pushdown::ProjectionPushDown;
+use simple_projection::SimpleProjectionAndCollapse;
 pub use simplify_expr::{SimplifyBooleanRule, SimplifyExprRule};
 use slice_pushdown_lp::SlicePushDown;
 pub use stack_opt::{OptimizationRule, StackOptimizer};
@@ -48,6 +46,7 @@ pub use type_coercion::TypeCoercionRule;
 
 use self::flatten_union::FlattenUnionRule;
 pub use crate::frame::{AllowedOptimizations, OptState};
+use crate::logical_plan::optimizer::count_star::CountStar;
 #[cfg(feature = "cse")]
 use crate::logical_plan::optimizer::cse_expr::CommonSubExprOptimizer;
 use crate::logical_plan::optimizer::predicate_pushdown::HiveEval;
@@ -141,6 +140,11 @@ pub fn optimize(
         if members.has_joins_or_unions && members.has_cache {
             cache_states::set_cache_states(lp_top, lp_arena, expr_arena, scratch, cse_plan_changed);
         }
+
+        if projection_pushdown_opt.is_count_star {
+            let mut count_star_opt = CountStar::new();
+            count_star_opt.optimize_plan(lp_arena, expr_arena, lp_top);
+        }
     }
 
     if predicate_pushdown {
@@ -152,7 +156,7 @@ pub fn optimize(
 
     // make sure its before slice pushdown.
     if fast_projection {
-        rules.push(Box::new(FastProjectionAndCollapse::new(eager)));
+        rules.push(Box::new(SimpleProjectionAndCollapse::new(eager)));
     }
 
     if !eager {

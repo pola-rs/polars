@@ -34,7 +34,7 @@ unsafe fn rows_to_array(buf: Vec<u8>, offsets: Vec<usize>) -> BinaryArray<i64> {
     checks(&offsets);
 
     // SAFETY: we checked overflow
-    let offsets = std::mem::transmute::<Vec<usize>, Vec<i64>>(offsets);
+    let offsets = bytemuck::cast_vec::<usize, i64>(offsets);
 
     // SAFETY: monotonically increasing
     let offsets = Offsets::new_unchecked(offsets);
@@ -60,14 +60,14 @@ impl RowsEncoded {
     /// Borrows the buffers and returns a [`BinaryArray`].
     ///
     /// # Safety
-    /// The lifetime of that `BinaryArray` is tight to the lifetime of
+    /// The lifetime of that `BinaryArray` is tied to the lifetime of
     /// `Self`. The caller must ensure that both stay alive for the same time.
     pub unsafe fn borrow_array(&self) -> BinaryArray<i64> {
         checks(&self.offsets);
 
         unsafe {
             let (_, values, _) = mmap::slice(&self.values).into_inner();
-            let offsets = std::mem::transmute::<&[usize], &[i64]>(self.offsets.as_slice());
+            let offsets = bytemuck::cast_slice::<usize, i64>(self.offsets.as_slice());
             let (_, offsets, _) = mmap::slice(offsets).into_inner();
             let offsets = OffsetsBuffer::new_unchecked(offsets);
 

@@ -103,6 +103,7 @@ impl ArrayChunked {
     }
 
     /// Apply a closure `F` to each array.
+    ///
     /// # Safety
     /// Return series of `F` must has the same dtype and number of elements as input.
     #[must_use]
@@ -124,6 +125,7 @@ impl ArrayChunked {
     }
 
     /// Zip with a `ChunkedArray` then apply a binary function `F` elementwise.
+    ///
     /// # Safety
     //  Return series of `F` must has the same dtype and number of elements as input series.
     #[must_use]

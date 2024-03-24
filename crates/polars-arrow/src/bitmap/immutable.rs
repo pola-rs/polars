@@ -1,4 +1,3 @@
-use std::iter::FromIterator;
 use std::ops::Deref;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -8,7 +7,12 @@ use polars_error::{polars_bail, PolarsResult};
 
 use super::utils::{count_zeros, fmt, get_bit, get_bit_unchecked, BitChunk, BitChunks, BitmapIter};
 use super::{chunk_iter_to_vec, IntoIter, MutableBitmap};
+use crate::bitmap::aligned::AlignedBitmapSlice;
+use crate::bitmap::iterator::{
+    FastU32BitmapIter, FastU56BitmapIter, FastU64BitmapIter, TrueIdxIter,
+};
 use crate::buffer::Bytes;
+use crate::legacy::utils::FromTrustedLenIterator;
 use crate::trusted_len::TrustedLen;
 
 const UNKNOWN_BIT_COUNT: u64 = u64::MAX;
@@ -30,7 +34,7 @@ const UNKNOWN_BIT_COUNT: u64 = u64::MAX;
 /// // we can also get the slice:
 /// assert_eq!(bitmap.as_slice(), ([0b00001101u8].as_ref(), 0, 5));
 /// // debug helps :)
-/// assert_eq!(format!("{:?}", bitmap), "[0b___01101]".to_string());
+/// assert_eq!(format!("{:?}", bitmap), "Bitmap { len: 5, offset: 0, bytes: [0b___01101] }");
 ///
 /// // it supports copy-on-write semantics (to a `MutableBitmap`)
 /// let bitmap: MutableBitmap = bitmap.into_mut().right().unwrap();
@@ -41,7 +45,7 @@ const UNKNOWN_BIT_COUNT: u64 = u64::MAX;
 /// let mut sliced = bitmap.clone();
 /// sliced.slice(1, 4);
 /// assert_eq!(sliced.as_slice(), ([0b00001101u8].as_ref(), 1, 4)); // 1 here is the offset:
-/// assert_eq!(format!("{:?}", sliced), "[0b___0110_]".to_string());
+/// assert_eq!(format!("{:?}", sliced), "Bitmap { len: 4, offset: 1, bytes: [0b___0110_] }");
 /// // when sliced (or cloned), it is no longer possible to `into_mut`.
 /// let same: Bitmap = sliced.into_mut().left().unwrap();
 /// ```
@@ -141,6 +145,34 @@ impl Bitmap {
         BitChunks::new(&self.bytes, self.offset, self.length)
     }
 
+    /// Returns a fast iterator that gives 32 bits at a time.
+    /// Has a remainder that must be handled separately.
+    pub fn fast_iter_u32(&self) -> FastU32BitmapIter<'_> {
+        FastU32BitmapIter::new(&self.bytes, self.offset, self.length)
+    }
+
+    /// Returns a fast iterator that gives 56 bits at a time.
+    /// Has a remainder that must be handled separately.
+    pub fn fast_iter_u56(&self) -> FastU56BitmapIter<'_> {
+        FastU56BitmapIter::new(&self.bytes, self.offset, self.length)
+    }
+
+    /// Returns a fast iterator that gives 64 bits at a time.
+    /// Has a remainder that must be handled separately.
+    pub fn fast_iter_u64(&self) -> FastU64BitmapIter<'_> {
+        FastU64BitmapIter::new(&self.bytes, self.offset, self.length)
+    }
+
+    /// Returns an iterator that only iterates over the set bits.
+    pub fn true_idx_iter(&self) -> TrueIdxIter<'_> {
+        TrueIdxIter::new(self.len(), Some(self))
+    }
+
+    /// Returns the bits of this [`Bitmap`] as a [`AlignedBitmapSlice`].
+    pub fn aligned<T: BitChunk>(&self) -> AlignedBitmapSlice<'_, T> {
+        AlignedBitmapSlice::new(&self.bytes, self.offset, self.length)
+    }
+
     /// Returns the byte slice of this [`Bitmap`].
     ///
     /// The returned tuple contains:
@@ -157,6 +189,22 @@ impl Bitmap {
             self.offset % 8,
             self.length,
         )
+    }
+
+    /// Returns the number of set bits on this [`Bitmap`].
+    ///
+    /// See `unset_bits` for details.
+    #[inline]
+    pub fn set_bits(&self) -> usize {
+        self.length - self.unset_bits()
+    }
+
+    /// Returns the number of set bits on this [`Bitmap`] if it is known.
+    ///
+    /// See `lazy_unset_bits` for details.
+    #[inline]
+    pub fn lazy_set_bits(&self) -> Option<usize> {
+        Some(self.length - self.lazy_unset_bits()?)
     }
 
     /// Returns the number of unset bits on this [`Bitmap`].
@@ -179,6 +227,30 @@ impl Bitmap {
         }
     }
 
+    /// Returns the number of unset bits on this [`Bitmap`] if it is known.
+    ///
+    /// Guaranteed to be `<= self.len()`.
+    pub fn lazy_unset_bits(&self) -> Option<usize> {
+        let cache = self.unset_bit_count_cache.load(Ordering::Relaxed);
+        if cache >> 63 != 0 {
+            None
+        } else {
+            Some(cache as usize)
+        }
+    }
+
+    /// Updates the count of the number of set bits on this [`Bitmap`].
+    ///
+    /// # Safety
+    ///
+    /// The number of set bits must be correct.
+    pub unsafe fn update_bit_count(&mut self, bits_set: usize) {
+        assert!(bits_set <= self.length);
+        let zeros = self.length - bits_set;
+        self.unset_bit_count_cache
+            .store(zeros as u64, Ordering::Relaxed);
+    }
+
     /// Slices `self`, offsetting by `offset` and truncating up to `length` bits.
     /// # Panic
     /// Panics iff `offset + length > self.length`, i.e. if the offset and `length`
@@ -190,6 +262,7 @@ impl Bitmap {
     }
 
     /// Slices `self`, offsetting by `offset` and truncating up to `length` bits.
+    ///
     /// # Safety
     /// The caller must ensure that `self.offset + offset + length <= self.len()`
     #[inline]
@@ -246,6 +319,7 @@ impl Bitmap {
     }
 
     /// Slices `self`, offsetting by `offset` and truncating up to `length` bits.
+    ///
     /// # Safety
     /// The caller must ensure that `self.offset + offset + length <= self.len()`
     #[inline]
@@ -264,6 +338,7 @@ impl Bitmap {
     }
 
     /// Unsafely returns whether the bit at position `i` is set.
+    ///
     /// # Safety
     /// Unsound iff `i >= self.len()`.
     #[inline]
@@ -358,7 +433,7 @@ impl Bitmap {
     /// Alias for `Bitmap::try_new().unwrap()`
     /// This function is `O(1)`
     /// # Panic
-    /// This function panics iff `length <= bytes.len() * 8`
+    /// This function panics iff `length > bytes.len() * 8`
     #[inline]
     pub fn from_u8_vec(vec: Vec<u8>, length: usize) -> Self {
         Bitmap::try_new(vec, length).unwrap()
@@ -416,8 +491,18 @@ impl FromIterator<bool> for Bitmap {
     }
 }
 
+impl FromTrustedLenIterator<bool> for Bitmap {
+    fn from_iter_trusted_length<T: IntoIterator<Item = bool>>(iter: T) -> Self
+    where
+        T::IntoIter: TrustedLen,
+    {
+        MutableBitmap::from_trusted_len_iter(iter.into_iter()).into()
+    }
+}
+
 impl Bitmap {
     /// Creates a new [`Bitmap`] from an iterator of booleans.
+    ///
     /// # Safety
     /// The iterator must report an accurate length.
     #[inline]
@@ -440,6 +525,7 @@ impl Bitmap {
     }
 
     /// Creates a new [`Bitmap`] from a fallible iterator of booleans.
+    ///
     /// # Safety
     /// The iterator must report an accurate length.
     #[inline]

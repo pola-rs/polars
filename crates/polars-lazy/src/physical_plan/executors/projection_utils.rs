@@ -34,7 +34,7 @@ fn rolling_evaluate(
                 // clear the cache for every partitioned group
                 let state = state.split();
 
-                let (_time_key, _keys, groups) = df.group_by_rolling(vec![], options)?;
+                let (_time_key, _keys, groups) = df.rolling(vec![], options)?;
 
                 let groups_key = format!("{:?}", options);
                 // Set the groups so all expressions in partition can use it.
@@ -316,7 +316,7 @@ pub(super) fn check_expand_literals(
             .collect::<PolarsResult<_>>()?
     }
 
-    let df = DataFrame::new_no_checks(selected_columns);
+    let df = unsafe { DataFrame::new_no_checks(selected_columns) };
 
     // a literal could be projected to a zero length dataframe.
     // This prevents a panic.

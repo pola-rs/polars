@@ -1,5 +1,3 @@
-#[cfg(feature = "hash")]
-use polars_core::export::ahash;
 #[cfg(feature = "dtype-struct")]
 use polars_core::prelude::sort::arg_sort_multiple::_get_rows_encoded_ca;
 use polars_core::prelude::*;
@@ -21,7 +19,7 @@ pub trait SeriesMethods: SeriesSealed {
         let values = unsafe { s.agg_first(&groups) };
         let counts = groups.group_lengths("count");
         let cols = vec![values, counts.into_series()];
-        let df = DataFrame::new_no_checks(cols);
+        let df = unsafe { DataFrame::new_no_checks(cols) };
         if sort {
             df.sort(["count"], true, false)
         } else {

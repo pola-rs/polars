@@ -91,7 +91,10 @@ impl OptimizationRule for FusedArithmetic {
                             let node = expr_arena.add(fma);
                             // we reordered the arguments, so we don't obey the left expression output name
                             // rule anymore, that's why we alias
-                            Ok(Some(Alias(node, Arc::from(output_field.name.as_str()))))
+                            Ok(Some(Alias(
+                                node,
+                                ColumnName::from(output_field.name.as_str()),
+                            )))
                         },
                         _ => unreachable!(),
                     },

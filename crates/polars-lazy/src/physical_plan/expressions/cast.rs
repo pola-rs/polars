@@ -1,6 +1,3 @@
-use std::sync::Arc;
-
-use polars_core::frame::group_by::GroupsProxy;
 use polars_core::prelude::*;
 
 use crate::physical_plan::state::ExecutionState;

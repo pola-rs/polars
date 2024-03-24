@@ -416,6 +416,8 @@ fn test_ipc_globbing() -> PolarsResult<()> {
             rechunk: false,
             row_index: None,
             memmap: true,
+            #[cfg(feature = "cloud")]
+            cloud_options: None,
         },
     )?
     .collect()?;
@@ -510,7 +512,6 @@ fn test_union_and_agg_projections() -> PolarsResult<()> {
             col("fats_g").cast(DataType::Float64).mean().alias("mean"),
             col("fats_g").min().alias("min"),
         ]);
-        println!("{}", lf.describe_optimized_plan().unwrap());
 
         let out = lf.collect()?;
         assert_eq!(out.shape(), (1, 3));

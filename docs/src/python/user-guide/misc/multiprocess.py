@@ -51,6 +51,7 @@ if __name__ == "__main__":
 
 # --8<-- [end:example1]
 """
+
 # --8<-- [start:example2]
 import multiprocessing
 import polars as pl

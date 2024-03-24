@@ -155,7 +155,6 @@ mod test {
 
     use rand::distributions::uniform::SampleUniform;
     use rand::prelude::*;
-    use rand::rngs::SmallRng;
 
     use super::*;
 

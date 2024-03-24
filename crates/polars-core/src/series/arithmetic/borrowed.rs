@@ -708,21 +708,21 @@ where
     #[must_use]
     pub fn lhs_sub<N: Num + NumCast>(&self, lhs: N) -> Self {
         let lhs: T::Native = NumCast::from(lhs).expect("could not cast");
-        self.apply_values(|v| lhs - v)
+        ArithmeticChunked::wrapping_sub_scalar_lhs(lhs, self)
     }
 
     /// Apply lhs / self
     #[must_use]
     pub fn lhs_div<N: Num + NumCast>(&self, lhs: N) -> Self {
         let lhs: T::Native = NumCast::from(lhs).expect("could not cast");
-        self.apply_values(|v| lhs / v)
+        ArithmeticChunked::legacy_div_scalar_lhs(lhs, self)
     }
 
     /// Apply lhs % self
     #[must_use]
     pub fn lhs_rem<N: Num + NumCast>(&self, lhs: N) -> Self {
         let lhs: T::Native = NumCast::from(lhs).expect("could not cast");
-        self.apply_values(|v| lhs % v)
+        ArithmeticChunked::wrapping_mod_scalar_lhs(lhs, self)
     }
 }
 

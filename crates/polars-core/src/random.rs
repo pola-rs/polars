@@ -2,7 +2,6 @@ use std::sync::Mutex;
 
 use once_cell::sync::Lazy;
 use rand::prelude::*;
-use rand::rngs::SmallRng;
 
 static POLARS_GLOBAL_RNG_STATE: Lazy<Mutex<SmallRng>> =
     Lazy::new(|| Mutex::new(SmallRng::from_entropy()));

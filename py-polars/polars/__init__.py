@@ -17,7 +17,11 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
     __register_startup_deps()
 
-from polars import api
+from polars import api, exceptions, plugins, selectors
+from polars._utils.polars_version import get_polars_version as _get_polars_version
+
+# TODO: remove need for importing wrap utils at top level
+from polars._utils.wrap import wrap_df, wrap_s  # noqa: F401
 from polars.config import Config
 from polars.convert import (
     from_arrow,
@@ -76,6 +80,7 @@ from polars.exceptions import (
     ComputeError,
     DuplicateError,
     InvalidOperationError,
+    MapWithoutReturnDtypeWarning,
     NoDataError,
     OutOfBoundsError,
     PolarsError,
@@ -214,10 +219,6 @@ from polars.string_cache import (
     using_string_cache,
 )
 from polars.type_aliases import PolarsDataType
-from polars.utils._polars_version import get_polars_version as _get_polars_version
-
-# TODO: remove need for importing wrap utils at top level
-from polars.utils._wrap import wrap_df, wrap_s  # noqa: F401
 
 __version__: str = _get_polars_version()
 del _get_polars_version
@@ -225,6 +226,7 @@ del _get_polars_version
 __all__ = [
     "api",
     "exceptions",
+    "plugins",
     # exceptions/errors
     "ArrowError",
     "ColumnNotFoundError",
@@ -243,6 +245,7 @@ __all__ = [
     "PolarsWarning",
     "CategoricalRemappingWarning",
     "ChronoFormatWarning",
+    "MapWithoutReturnDtypeWarning",
     "UnstableWarning",
     # core classes
     "DataFrame",

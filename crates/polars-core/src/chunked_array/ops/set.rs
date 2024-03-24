@@ -1,9 +1,8 @@
 use arrow::bitmap::MutableBitmap;
 use arrow::legacy::kernels::set::{scatter_single_non_null, set_with_mask};
-use arrow::legacy::prelude::FromData;
 
 use crate::prelude::*;
-use crate::utils::{align_chunks_binary, CustomIterTools};
+use crate::utils::align_chunks_binary;
 
 macro_rules! impl_scatter_with {
     ($self:ident, $builder:ident, $idx:ident, $f:ident) => {{

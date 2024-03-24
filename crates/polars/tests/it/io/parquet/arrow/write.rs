@@ -1,6 +1,3 @@
-use std::io::Cursor;
-
-use polars_error::PolarsResult;
 use polars_parquet::arrow::write::*;
 
 use super::*;

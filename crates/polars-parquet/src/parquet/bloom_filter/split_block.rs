@@ -1,5 +1,3 @@
-use std::convert::TryInto;
-
 /// magic numbers taken from https://github.com/apache/parquet-format/blob/master/BloomFilter.md
 const SALT: [u32; 8] = [
     1203114875, 1150766481, 2284105051, 2729912477, 1884591559, 770785867, 2667333959, 1550580529,

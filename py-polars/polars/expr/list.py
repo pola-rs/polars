@@ -5,12 +5,12 @@ from typing import TYPE_CHECKING, Any, Callable, Sequence
 
 import polars._reexport as pl
 from polars import functions as F
-from polars.utils._parse_expr_input import parse_as_expression
-from polars.utils._wrap import wrap_expr
-from polars.utils.deprecation import (
+from polars._utils.deprecation import (
     deprecate_renamed_function,
     deprecate_renamed_parameter,
 )
+from polars._utils.parse_expr_input import parse_as_expression
+from polars._utils.wrap import wrap_expr
 
 if TYPE_CHECKING:
     from datetime import date, datetime, time
@@ -1376,7 +1376,7 @@ class ExprListNameSpace:
         Return the number of elements in each list.
 
         .. deprecated:: 0.19.8
-            This method has been renamed to :func:`len`.
+            This method has been renamed to :meth:`.len`.
         """
         return self.len()
 

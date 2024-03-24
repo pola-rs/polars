@@ -71,6 +71,7 @@ pub fn skip_struct(
     field_nodes: &mut VecDeque<Node>,
     data_type: &ArrowDataType,
     buffers: &mut VecDeque<IpcBuffer>,
+    variadic_buffer_counts: &mut VecDeque<usize>,
 ) -> PolarsResult<()> {
     let _ = field_nodes.pop_front().ok_or_else(|| {
         polars_err!(
@@ -84,7 +85,12 @@ pub fn skip_struct(
 
     let fields = StructArray::get_fields(data_type);
 
-    fields
-        .iter()
-        .try_for_each(|field| skip(field_nodes, field.data_type(), buffers))
+    fields.iter().try_for_each(|field| {
+        skip(
+            field_nodes,
+            field.data_type(),
+            buffers,
+            variadic_buffer_counts,
+        )
+    })
 }

@@ -1,5 +1,3 @@
-use std::convert::TryFrom;
-
 use arrow::compute::cast::cast_unchecked as cast;
 use arrow::datatypes::Metadata;
 #[cfg(any(feature = "dtype-struct", feature = "dtype-categorical"))]

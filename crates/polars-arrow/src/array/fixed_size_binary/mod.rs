@@ -105,6 +105,7 @@ impl FixedSizeBinaryArray {
     /// Slices this [`FixedSizeBinaryArray`].
     /// # Implementation
     /// This operation is `O(1)`.
+    ///
     /// # Safety
     /// The caller must ensure that `offset + length <= self.len()`.
     pub unsafe fn slice_unchecked(&mut self, offset: usize, length: usize) {
@@ -151,6 +152,7 @@ impl FixedSizeBinaryArray {
     }
 
     /// Returns the element at index `i` as &str
+    ///
     /// # Safety
     /// Assumes that the `i < self.len`.
     #[inline]
@@ -262,22 +264,5 @@ impl FixedSizeBinaryArray {
     // Note: this can't be `impl From` because Rust does not allow double `AsRef` on it.
     pub fn from<const N: usize, P: AsRef<[Option<[u8; N]>]>>(slice: P) -> Self {
         MutableFixedSizeBinaryArray::from(slice).into()
-    }
-}
-
-pub trait FixedSizeBinaryValues {
-    fn values(&self) -> &[u8];
-    fn size(&self) -> usize;
-}
-
-impl FixedSizeBinaryValues for FixedSizeBinaryArray {
-    #[inline]
-    fn values(&self) -> &[u8] {
-        &self.values
-    }
-
-    #[inline]
-    fn size(&self) -> usize {
-        self.size
     }
 }

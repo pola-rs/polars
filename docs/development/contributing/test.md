@@ -111,10 +111,10 @@ Refer to the [benchmark workflow](https://github.com/pola-rs/polars/blob/main/.g
 ### Running other benchmark tests
 
 The other benchmark tests are run using pytest.
-Run `pytest -m benchmark --durations 0 -v` to run these tests and report run duration.
+Run `pytest -m release --durations 0 -v` to run these tests and report run duration.
 
 Note that benchmark tests are excluded by default when running `pytest`.
-You must explicitly specify `-m benchmark` to run them.
+You must explicitly specify `-m release` to run them.
 They will also be excluded when calculating test coverage.
 
 These tests _will_ be run as part of the `make test-all` make command.

@@ -5,7 +5,6 @@ use chrono::NaiveDateTime;
 use chrono::TimeZone;
 use now::DateTimeNow;
 use polars_core::prelude::*;
-use polars_core::utils::arrow::temporal_conversions::timeunit_scale;
 
 use crate::prelude::*;
 

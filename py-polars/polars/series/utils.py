@@ -7,8 +7,8 @@ from typing import TYPE_CHECKING, Any, Callable, TypeVar
 
 import polars._reexport as pl
 from polars import functions as F
+from polars._utils.wrap import wrap_s
 from polars.datatypes import dtype_to_ffiname
-from polars.utils._wrap import wrap_s
 
 if TYPE_CHECKING:
     from polars import Series

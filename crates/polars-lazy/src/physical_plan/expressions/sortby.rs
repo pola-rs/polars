@@ -1,6 +1,3 @@
-use std::sync::Arc;
-
-use polars_core::frame::group_by::{GroupsIndicator, GroupsProxy};
 use polars_core::prelude::*;
 use polars_core::POOL;
 use polars_utils::idx_vec::IdxVec;
@@ -138,6 +135,7 @@ fn sort_by_groups_multiple_by(
             let options = SortMultipleOptions {
                 other: groups[1..].to_vec(),
                 descending: descending.to_owned(),
+                nulls_last: false,
                 multithreaded: false,
             };
 
@@ -153,6 +151,7 @@ fn sort_by_groups_multiple_by(
             let options = SortMultipleOptions {
                 other: groups[1..].to_vec(),
                 descending: descending.to_owned(),
+                nulls_last: false,
                 multithreaded: false,
             };
             let sorted_idx = groups[0].arg_sort_multiple(&options).unwrap();
@@ -200,6 +199,7 @@ impl PhysicalExpr for SortByExpr {
                 let options = SortMultipleOptions {
                     other: s_sort_by[1..].to_vec(),
                     descending,
+                    nulls_last: false,
                     multithreaded: true,
                 };
                 s_sort_by[0].arg_sort_multiple(&options)

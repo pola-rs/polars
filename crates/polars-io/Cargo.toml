@@ -80,7 +80,7 @@ dtype-i8 = ["polars-core/dtype-i8"]
 dtype-i16 = ["polars-core/dtype-i16"]
 dtype-categorical = ["polars-core/dtype-categorical"]
 dtype-date = ["polars-core/dtype-date", "polars-time/dtype-date"]
-object = []
+object = ["polars-core/object"]
 dtype-datetime = [
   "polars-core/dtype-datetime",
   "polars-core/temporal",
@@ -90,6 +90,7 @@ dtype-datetime = [
 timezones = [
   "chrono-tz",
   "dtype-datetime",
+  "arrow/timezones",
 ]
 dtype-time = ["polars-core/dtype-time", "polars-core/temporal", "polars-time/dtype-time"]
 dtype-struct = ["polars-core/dtype-struct"]

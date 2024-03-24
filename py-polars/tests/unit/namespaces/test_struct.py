@@ -60,7 +60,7 @@ def test_struct_json_encode_logical_type() -> None:
         }
     ).select(pl.col("a").struct.json_encode().alias("encoded"))
     assert df.to_dict(as_series=False) == {
-        "encoded": ['{"a":["1997-01-01"],"b":["2000-01-29 10:30:00"],"c":["P1DT25S"]}']
+        "encoded": ['{"a":["1997-01-01"],"b":["2000-01-29 10:30:00"],"c":["PT86425S"]}']
     }
 
 

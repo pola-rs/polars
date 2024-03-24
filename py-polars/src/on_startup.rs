@@ -1,20 +1,17 @@
 use std::any::Any;
-use std::sync::Arc;
 
 use polars::prelude::*;
 use polars_core::chunked_array::object::builder::ObjectChunkedBuilder;
 use polars_core::chunked_array::object::registry;
 use polars_core::chunked_array::object::registry::AnonymousObjectBuilder;
 use polars_core::error::PolarsError::ComputeError;
-use polars_core::error::PolarsResult;
-use polars_core::frame::DataFrame;
 use polars_error::PolarsWarning;
 use pyo3::intern;
 use pyo3::prelude::*;
 
 use crate::dataframe::PyDataFrame;
 use crate::map::lazy::{call_lambda_with_series, ToSeries};
-use crate::prelude::{python_udf, ObjectValue};
+use crate::prelude::ObjectValue;
 use crate::py_modules::{POLARS, UTILS};
 use crate::Wrap;
 

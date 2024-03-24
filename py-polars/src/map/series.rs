@@ -1,13 +1,10 @@
-use polars::chunked_array::builder::get_list_builder;
 use polars::prelude::*;
 use pyo3::prelude::*;
-use pyo3::types::{PyBool, PyCFunction, PyDict, PyFloat, PyList, PyString, PyTuple};
+use pyo3::types::{PyBool, PyCFunction, PyFloat, PyList, PyString, PyTuple};
 
 use super::*;
 use crate::conversion::slice_to_wrapped;
 use crate::py_modules::SERIES;
-use crate::series::PySeries;
-use crate::{PyPolarsErr, Wrap};
 
 /// Find the output type and dispatch to that implementation.
 fn infer_and_finish<'a, A: ApplyLambda<'a>>(
@@ -125,9 +122,6 @@ fn infer_and_finish<'a, A: ApplyLambda<'a>>(
 
 pub trait ApplyLambda<'a> {
     fn apply_lambda_unknown(&'a self, _py: Python, _lambda: &'a PyAny) -> PyResult<PySeries>;
-
-    /// Apply a lambda that doesn't change output types
-    fn apply_lambda(&'a self, _py: Python, _lambda: &'a PyAny) -> PyResult<PySeries>;
 
     // Used to store a struct type
     fn apply_to_struct(
@@ -249,11 +243,6 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
         Ok(Self::full_null(self.name(), self.len())
             .into_series()
             .into())
-    }
-
-    fn apply_lambda(&'a self, py: Python, lambda: &'a PyAny) -> PyResult<PySeries> {
-        self.apply_lambda_with_bool_out_type(py, lambda, 0, None)
-            .map(|ca| PySeries::new(ca.into_series()))
     }
 
     fn apply_to_struct(
@@ -547,11 +536,6 @@ where
             .into())
     }
 
-    fn apply_lambda(&'a self, py: Python, lambda: &'a PyAny) -> PyResult<PySeries> {
-        self.apply_lambda_with_primitive_out_type::<T>(py, lambda, 0, None)
-            .map(|ca| PySeries::new(ca.into_series()))
-    }
-
     fn apply_to_struct(
         &'a self,
         py: Python,
@@ -838,11 +822,6 @@ impl<'a> ApplyLambda<'a> for StringChunked {
             .into())
     }
 
-    fn apply_lambda(&'a self, py: Python, lambda: &'a PyAny) -> PyResult<PySeries> {
-        let ca = self.apply_lambda_with_string_out_type(py, lambda, 0, None)?;
-        Ok(ca.into_series().into())
-    }
-
     fn apply_to_struct(
         &'a self,
         py: Python,
@@ -1107,40 +1086,6 @@ impl<'a> ApplyLambda<'a> for StringChunked {
     }
 }
 
-fn append_series(
-    pypolars: &PyModule,
-    builder: &mut (impl ListBuilderTrait + ?Sized),
-    lambda: &PyAny,
-    series: Series,
-) -> PyResult<()> {
-    // create a PySeries struct/object for Python
-    let pyseries = PySeries::new(series);
-    // Wrap this PySeries object in the python side Series wrapper
-    let python_series_wrapper = pypolars
-        .getattr("wrap_s")
-        .unwrap()
-        .call1((pyseries,))
-        .unwrap();
-    // call the lambda en get a python side Series wrapper
-    let out = lambda.call1((python_series_wrapper,));
-    match out {
-        Ok(out) => {
-            // unpack the wrapper in a PySeries
-            let py_pyseries = out
-                .getattr("_s")
-                .expect("could not get Series attribute '_s'");
-            let pyseries = py_pyseries.extract::<PySeries>()?;
-            builder
-                .append_series(&pyseries.series)
-                .map_err(PyPolarsErr::from)?;
-        },
-        Err(_) => {
-            builder.append_opt_series(None).map_err(PyPolarsErr::from)?;
-        },
-    };
-    Ok(())
-}
-
 fn call_series_lambda(pypolars: &PyModule, lambda: &PyAny, series: Series) -> Option<Series> {
     // create a PySeries struct/object for Python
     let pyseries = PySeries::new(series);
@@ -1194,74 +1139,6 @@ impl<'a> ApplyLambda<'a> for ListChunked {
         Ok(Self::full_null(self.name(), self.len())
             .into_series()
             .into())
-    }
-
-    fn apply_lambda(&'a self, py: Python, lambda: &'a PyAny) -> PyResult<PySeries> {
-        // get the pypolars module
-        let pypolars = PyModule::import(py, "polars")?;
-
-        match self.dtype() {
-            DataType::List(dt) => {
-                let mut builder = get_list_builder(dt, self.len() * 5, self.len(), self.name())
-                    .map_err(PyPolarsErr::from)?;
-                if !self.has_validity() {
-                    let mut it = self.into_no_null_iter();
-                    // use first value to get dtype and replace default builder
-                    if let Some(series) = it.next() {
-                        let out_series = call_series_lambda(pypolars, lambda, series)
-                            .expect("Cannot determine dtype because lambda failed; Make sure that your udf returns a Series");
-                        let dt = out_series.dtype();
-                        builder = get_list_builder(dt, self.len() * 5, self.len(), self.name())
-                            .map_err(PyPolarsErr::from)?;
-                        builder
-                            .append_opt_series(Some(&out_series))
-                            .map_err(PyPolarsErr::from)?;
-                    } else {
-                        let mut builder =
-                            get_list_builder(dt, 0, 1, self.name()).map_err(PyPolarsErr::from)?;
-                        let ca = builder.finish();
-                        return Ok(PySeries::new(ca.into_series()));
-                    }
-                    for series in it {
-                        append_series(pypolars, &mut *builder, lambda, series)?;
-                    }
-                } else {
-                    let mut it = self.into_iter();
-                    let mut nulls = 0;
-
-                    // use first values to get dtype and replace default builders
-                    // continue until no null is found
-                    for opt_series in &mut it {
-                        if let Some(series) = opt_series {
-                            let out_series = call_series_lambda(pypolars, lambda, series)
-                                .expect("Cannot determine dtype because lambda failed; Make sure that your udf returns a Series");
-                            let dt = out_series.dtype();
-                            builder = get_list_builder(dt, self.len() * 5, self.len(), self.name())
-                                .map_err(PyPolarsErr::from)?;
-                            builder
-                                .append_opt_series(Some(&out_series))
-                                .map_err(PyPolarsErr::from)?;
-                            break;
-                        } else {
-                            nulls += 1;
-                        }
-                    }
-                    for _ in 0..nulls {
-                        builder.append_opt_series(None).map_err(PyPolarsErr::from)?;
-                    }
-                    for opt_series in it {
-                        if let Some(series) = opt_series {
-                            append_series(pypolars, &mut *builder, lambda, series)?;
-                        } else {
-                            builder.append_opt_series(None).unwrap()
-                        }
-                    }
-                };
-                let ca = builder.finish();
-                Ok(PySeries::new(ca.into_series()))
-            },
-            _ => unimplemented!(),
-        }
     }
 
     fn apply_to_struct(
@@ -1679,70 +1556,6 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
             .into())
     }
 
-    fn apply_lambda(&'a self, py: Python, lambda: &'a PyAny) -> PyResult<PySeries> {
-        // get the pypolars module
-        let pypolars = PyModule::import(py, "polars")?;
-
-        match self.dtype() {
-            DataType::List(dt) => {
-                let mut builder = get_list_builder(dt, self.len() * 5, self.len(), self.name())
-                    .map_err(PyPolarsErr::from)?;
-                if !self.has_validity() {
-                    let mut it = self.into_no_null_iter();
-                    // use first value to get dtype and replace default builder
-                    if let Some(series) = it.next() {
-                        let out_series = call_series_lambda(pypolars, lambda, series)
-                            .expect("Cannot determine dtype because lambda failed; Make sure that your udf returns a Series");
-                        let dt = out_series.dtype();
-                        builder = get_list_builder(dt, self.len() * 5, self.len(), self.name())
-                            .map_err(PyPolarsErr::from)?;
-                        builder.append_opt_series(Some(&out_series));
-                    } else {
-                        let mut builder =
-                            get_list_builder(dt, 0, 1, self.name()).map_err(PyPolarsErr::from)?;
-                        let ca = builder.finish();
-                        return Ok(PySeries::new(ca.into_series()));
-                    }
-                    for series in it {
-                        append_series(pypolars, &mut *builder, lambda, series)?;
-                    }
-                } else {
-                    let mut it = self.into_iter();
-                    let mut nulls = 0;
-
-                    // use first values to get dtype and replace default builders
-                    // continue until no null is found
-                    for opt_series in &mut it {
-                        if let Some(series) = opt_series {
-                            let out_series = call_series_lambda(pypolars, lambda, series)
-                                .expect("Cannot determine dtype because lambda failed; Make sure that your udf returns a Series");
-                            let dt = out_series.dtype();
-                            builder = get_list_builder(dt, self.len() * 5, self.len(), self.name())
-                                .map_err(PyPolarsErr::from)?;
-                            builder.append_opt_series(Some(&out_series));
-                            break;
-                        } else {
-                            nulls += 1;
-                        }
-                    }
-                    for _ in 0..nulls {
-                        builder.append_opt_series(None);
-                    }
-                    for opt_series in it {
-                        if let Some(series) = opt_series {
-                            append_series(pypolars, &mut *builder, lambda, series)?;
-                        } else {
-                            builder.append_opt_series(None)
-                        }
-                    }
-                };
-                let ca = builder.finish();
-                Ok(PySeries::new(ca.into_series()))
-            },
-            _ => unimplemented!(),
-        }
-    }
-
     fn apply_to_struct(
         &'a self,
         py: Python,
@@ -2149,18 +1962,6 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
             .into())
     }
 
-    fn apply_lambda(&'a self, py: Python, lambda: &'a PyAny) -> PyResult<PySeries> {
-        #[cfg(feature = "object")]
-        {
-            self.apply_lambda_with_object_out_type(py, lambda, 0, None)
-                .map(|ca| PySeries::new(ca.into_series()))
-        }
-        #[cfg(not(feature = "object"))]
-        {
-            todo!()
-        }
-    }
-
     fn apply_to_struct(
         &'a self,
         _py: Python,
@@ -2445,10 +2246,6 @@ impl<'a> ApplyLambda<'a> for StructChunked {
 
         // todo! full null
         Ok(self.clone().into_series().into())
-    }
-
-    fn apply_lambda(&'a self, py: Python, lambda: &'a PyAny) -> PyResult<PySeries> {
-        self.apply_lambda_unknown(py, lambda)
     }
 
     fn apply_to_struct(

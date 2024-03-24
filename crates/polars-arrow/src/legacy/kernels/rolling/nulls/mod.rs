@@ -94,7 +94,6 @@ mod test {
     use crate::array::{Array, Int32Array};
     use crate::buffer::Buffer;
     use crate::datatypes::ArrowDataType;
-    use crate::legacy::kernels::rolling::nulls::mean::rolling_mean;
 
     fn get_null_arr() -> PrimitiveArray<f64> {
         // 1, None, -1, 4

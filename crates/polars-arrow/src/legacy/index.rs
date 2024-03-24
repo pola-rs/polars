@@ -1,9 +1,7 @@
 use num_traits::{NumCast, Signed, Zero};
+use polars_utils::IdxSize;
 
-#[cfg(not(feature = "bigidx"))]
-use crate::array::UInt32Array;
-#[cfg(feature = "bigidx")]
-use crate::array::UInt64Array;
+use crate::array::PrimitiveArray;
 
 pub trait IndexToUsize {
     /// Translate the negative index to an offset.
@@ -33,17 +31,8 @@ where
     }
 }
 
-/// The type used by polars to index data.
-#[cfg(not(feature = "bigidx"))]
-pub type IdxSize = u32;
-#[cfg(feature = "bigidx")]
-pub type IdxSize = u64;
-
-#[cfg(not(feature = "bigidx"))]
-pub type IdxArr = UInt32Array;
-#[cfg(feature = "bigidx")]
-pub type IdxArr = UInt64Array;
-
 pub fn indexes_to_usizes(idx: &[IdxSize]) -> impl Iterator<Item = usize> + '_ {
     idx.iter().map(|idx| *idx as usize)
 }
+
+pub type IdxArr = PrimitiveArray<IdxSize>;

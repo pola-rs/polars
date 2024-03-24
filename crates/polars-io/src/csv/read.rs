@@ -73,7 +73,8 @@ impl NullValuesCompiled {
         }
     }
 
-    /// Safety
+    /// # Safety
+    ///
     /// The caller must ensure that `index` is in bounds
     pub(super) unsafe fn is_null(&self, field: &[u8], index: usize) -> bool {
         use NullValuesCompiled::*;
@@ -680,6 +681,8 @@ where
 
 #[cfg(feature = "temporal")]
 fn parse_dates(mut df: DataFrame, fixed_schema: &Schema) -> DataFrame {
+    use polars_core::POOL;
+
     let cols = unsafe { std::mem::take(df.get_columns_mut()) }
         .into_par_iter()
         .map(|s| {
@@ -699,8 +702,8 @@ fn parse_dates(mut df: DataFrame, fixed_schema: &Schema) -> DataFrame {
                 },
                 _ => s,
             }
-        })
-        .collect::<Vec<_>>();
+        });
+    let cols = POOL.install(|| cols.collect::<Vec<_>>());
 
-    DataFrame::new_no_checks(cols)
+    unsafe { DataFrame::new_no_checks(cols) }
 }

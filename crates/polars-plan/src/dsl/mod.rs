@@ -8,12 +8,13 @@ use std::any::Any;
 
 #[cfg(feature = "dtype-categorical")]
 pub use cat::*;
+#[cfg(feature = "rolling_window")]
+pub(crate) use polars_time::prelude::*;
 mod arithmetic;
 mod arity;
 #[cfg(feature = "dtype-array")]
 mod array;
 pub mod binary;
-pub mod consts;
 #[cfg(feature = "temporal")]
 pub mod dt;
 mod expr;
@@ -59,8 +60,6 @@ use polars_core::prelude::*;
 use polars_core::series::ops::NullBehavior;
 use polars_core::series::IsSorted;
 use polars_core::utils::try_get_supertype;
-#[cfg(feature = "rolling_window")]
-use polars_time::prelude::SeriesOpsTime;
 pub(crate) use selector::Selector;
 #[cfg(feature = "dtype-struct")]
 pub use struct_::*;
@@ -69,9 +68,6 @@ pub use udf::UserDefinedFunction;
 use crate::constants::MAP_LIST_NAME;
 pub use crate::logical_plan::lit;
 use crate::prelude::*;
-use crate::utils::has_expr;
-#[cfg(feature = "is_in")]
-use crate::utils::has_leaf_literal;
 
 impl Expr {
     /// Modify the Options passed to the `Function` node.
@@ -170,7 +166,7 @@ impl Expr {
 
     /// Rename Column.
     pub fn alias(self, name: &str) -> Expr {
-        Expr::Alias(Box::new(self), Arc::from(name))
+        Expr::Alias(Box::new(self), ColumnName::from(name))
     }
 
     /// Run is_null operation on `Expr`.
@@ -740,7 +736,7 @@ impl Expr {
         };
 
         self.function_with_options(
-            move |s: Series| Ok(Some(s.product())),
+            move |s: Series| Some(s.product()).transpose(),
             GetOutput::map_dtype(|dt| {
                 use DataType::*;
                 match dt {
@@ -1139,7 +1135,7 @@ impl Expr {
         let v = columns
             .into_vec()
             .into_iter()
-            .map(|s| Excluded::Name(Arc::from(s)))
+            .map(|s| Excluded::Name(ColumnName::from(s)))
             .collect();
         Expr::Exclude(Box::new(self), v)
     }

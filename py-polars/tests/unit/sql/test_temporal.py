@@ -154,7 +154,6 @@ def test_extract_century_millennium(dt: date, expected: list[int]) -> None:
         ("ms", [1704589323123, 1609324245987, 1136159999555]),
         ("us", [1704589323123456, 1609324245987654, 1136159999555555]),
         ("ns", [1704589323123456000, 1609324245987654000, 1136159999555555000]),
-        (None, [1704589323123456, 1609324245987654, 1136159999555555]),
     ],
 )
 def test_timestamp_time_unit(unit: str | None, expected: list[int]) -> None:

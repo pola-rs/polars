@@ -15,6 +15,7 @@ pub trait Pushable<T>: Sized + Default {
     fn len(&self) -> usize;
     fn push_null(&mut self);
     fn extend_constant(&mut self, additional: usize, value: T);
+    fn extend_null_constant(&mut self, additional: usize);
 }
 
 impl Pushable<bool> for MutableBitmap {
@@ -40,6 +41,11 @@ impl Pushable<bool> for MutableBitmap {
     #[inline]
     fn extend_constant(&mut self, additional: usize, value: bool) {
         self.extend_constant(additional, value)
+    }
+
+    #[inline]
+    fn extend_null_constant(&mut self, additional: usize) {
+        self.extend_constant(additional, false)
     }
 }
 
@@ -67,6 +73,11 @@ impl<T: Copy + Default> Pushable<T> for Vec<T> {
     fn extend_constant(&mut self, additional: usize, value: T) {
         self.resize(self.len() + additional, value);
     }
+
+    #[inline]
+    fn extend_null_constant(&mut self, additional: usize) {
+        self.extend_constant(additional, T::default())
+    }
 }
 impl<O: Offset> Pushable<usize> for Offsets<O> {
     fn reserve(&mut self, additional: usize) {
@@ -89,6 +100,11 @@ impl<O: Offset> Pushable<usize> for Offsets<O> {
 
     #[inline]
     fn extend_constant(&mut self, additional: usize, _: usize) {
+        self.extend_constant(additional)
+    }
+
+    #[inline]
+    fn extend_null_constant(&mut self, additional: usize) {
         self.extend_constant(additional)
     }
 }
@@ -117,6 +133,11 @@ impl<T: NativeType> Pushable<Option<T>> for MutablePrimitiveArray<T> {
     #[inline]
     fn extend_constant(&mut self, additional: usize, value: Option<T>) {
         MutablePrimitiveArray::extend_constant(self, additional, value)
+    }
+
+    #[inline]
+    fn extend_null_constant(&mut self, additional: usize) {
+        MutablePrimitiveArray::extend_constant(self, additional, None)
     }
 }
 
@@ -156,5 +177,10 @@ impl<T: ViewType + ?Sized> Pushable<&T> for MutableBinaryViewArray<T> {
         if let Some(bitmap) = self.validity() {
             bitmap.extend_constant(remaining, true)
         }
+    }
+
+    #[inline]
+    fn extend_null_constant(&mut self, additional: usize) {
+        self.extend_null(additional);
     }
 }

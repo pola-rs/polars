@@ -4,10 +4,10 @@ import contextlib
 from typing import TYPE_CHECKING, Iterable
 
 import polars.functions as F
+from polars._utils.deprecation import deprecate_renamed_function
+from polars._utils.parse_expr_input import parse_as_list_of_expressions
+from polars._utils.wrap import wrap_expr
 from polars.datatypes import UInt32
-from polars.utils._parse_expr_input import parse_as_list_of_expressions
-from polars.utils._wrap import wrap_expr
-from polars.utils.deprecation import deprecate_renamed_function
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr

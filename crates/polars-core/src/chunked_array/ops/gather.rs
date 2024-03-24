@@ -1,14 +1,11 @@
-use arrow::array::Array;
 use arrow::bitmap::bitmask::BitMask;
+use arrow::bitmap::Bitmap;
 use arrow::compute::take::take_unchecked;
-use polars_error::{polars_bail, polars_ensure, PolarsResult};
+use polars_error::polars_ensure;
 use polars_utils::index::check_bounds;
 
-use crate::chunked_array::collect::prepare_collect_dtype;
-use crate::chunked_array::ops::{ChunkTake, ChunkTakeUnchecked};
-use crate::chunked_array::ChunkedArray;
-use crate::datatypes::{IdxCa, PolarsDataType, StaticArray};
 use crate::prelude::*;
+use crate::series::IsSorted;
 
 const BINARY_SEARCH_LIMIT: usize = 8;
 
@@ -155,7 +152,7 @@ impl<T: PolarsDataType, I: AsRef<[IdxSize]> + ?Sized> ChunkTakeUnchecked<I> for 
         }
         let targets: Vec<_> = ca.downcast_iter().collect();
         let arr = gather_idx_array_unchecked(
-            prepare_collect_dtype(ca.dtype()),
+            ca.dtype().to_arrow(true),
             &targets,
             ca.null_count() > 0,
             indices.as_ref(),
@@ -187,6 +184,18 @@ impl NotSpecialized for DecimalType {}
 #[cfg(feature = "object")]
 impl<T> NotSpecialized for ObjectType<T> {}
 
+pub fn _update_gather_sorted_flag(sorted_arr: IsSorted, sorted_idx: IsSorted) -> IsSorted {
+    use crate::series::IsSorted::*;
+    match (sorted_arr, sorted_idx) {
+        (_, Not) => Not,
+        (Not, _) => Not,
+        (Ascending, Ascending) => Ascending,
+        (Ascending, Descending) => Descending,
+        (Descending, Ascending) => Descending,
+        (Descending, Descending) => Ascending,
+    }
+}
+
 impl<T: PolarsDataType + NotSpecialized> ChunkTakeUnchecked<IdxCa> for ChunkedArray<T> {
     /// Gather values from ChunkedArray by index.
     unsafe fn take_unchecked(&self, indices: &IdxCa) -> Self {
@@ -200,7 +209,7 @@ impl<T: PolarsDataType + NotSpecialized> ChunkTakeUnchecked<IdxCa> for ChunkedAr
         let targets: Vec<_> = ca.downcast_iter().collect();
 
         let chunks = indices.downcast_iter().map(|idx_arr| {
-            let dtype = prepare_collect_dtype(ca.dtype());
+            let dtype = ca.dtype().to_arrow(true);
             if idx_arr.null_count() == 0 {
                 gather_idx_array_unchecked(dtype, &targets, targets_have_nulls, idx_arr.values())
             } else if targets.len() == 1 {
@@ -233,16 +242,8 @@ impl<T: PolarsDataType + NotSpecialized> ChunkTakeUnchecked<IdxCa> for ChunkedAr
         });
 
         let mut out = ChunkedArray::from_chunk_iter_like(ca, chunks);
+        let sorted_flag = _update_gather_sorted_flag(ca.is_sorted_flag(), indices.is_sorted_flag());
 
-        use crate::series::IsSorted::*;
-        let sorted_flag = match (ca.is_sorted_flag(), indices.is_sorted_flag()) {
-            (_, Not) => Not,
-            (Not, _) => Not,
-            (Ascending, Ascending) => Ascending,
-            (Ascending, Descending) => Descending,
-            (Descending, Ascending) => Descending,
-            (Descending, Descending) => Ascending,
-        };
         out.set_sorted_flag(sorted_flag);
         out
     }
@@ -262,15 +263,8 @@ impl ChunkTakeUnchecked<IdxCa> for BinaryChunked {
 
         let mut out = ChunkedArray::from_chunks(self.name(), chunks);
 
-        use crate::series::IsSorted::*;
-        let sorted_flag = match (self.is_sorted_flag(), indices.is_sorted_flag()) {
-            (_, Not) => Not,
-            (Not, _) => Not,
-            (Ascending, Ascending) => Ascending,
-            (Ascending, Descending) => Descending,
-            (Descending, Ascending) => Descending,
-            (Descending, Descending) => Ascending,
-        };
+        let sorted_flag =
+            _update_gather_sorted_flag(self.is_sorted_flag(), indices.is_sorted_flag());
         out.set_sorted_flag(sorted_flag);
         out
     }
@@ -279,5 +273,17 @@ impl ChunkTakeUnchecked<IdxCa> for BinaryChunked {
 impl ChunkTakeUnchecked<IdxCa> for StringChunked {
     unsafe fn take_unchecked(&self, indices: &IdxCa) -> Self {
         self.as_binary().take_unchecked(indices).to_string()
+    }
+}
+
+impl IdxCa {
+    pub fn with_nullable_idx<T, F: FnOnce(&IdxCa) -> T>(idx: &[NullableIdxSize], f: F) -> T {
+        let validity: Bitmap = idx.iter().map(|idx| !idx.is_null_idx()).collect_trusted();
+        let idx = bytemuck::cast_slice::<_, IdxSize>(idx);
+        let arr = unsafe { arrow::ffi::mmap::slice(idx) };
+        let arr = arr.with_validity_typed(Some(validity));
+        let ca = IdxCa::with_chunk("", arr);
+
+        f(&ca)
     }
 }

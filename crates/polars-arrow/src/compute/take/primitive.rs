@@ -2,8 +2,8 @@ use polars_utils::index::NullCount;
 use polars_utils::slice::GetSaferUnchecked;
 
 use crate::array::PrimitiveArray;
+use crate::bitmap::utils::set_bit_unchecked;
 use crate::bitmap::{Bitmap, MutableBitmap};
-use crate::legacy::bit_util::unset_bit_raw;
 use crate::legacy::index::IdxArr;
 use crate::legacy::utils::CustomIterTools;
 use crate::types::NativeType;
@@ -41,7 +41,7 @@ pub(super) unsafe fn take_values_and_validity_unchecked<T: NativeType>(
         // Maybe we could add another branch based on the null count
         let mut validity = MutableBitmap::with_capacity(indices.len());
         validity.extend_constant(indices.len(), true);
-        let validity_ptr = validity.as_slice().as_ptr() as *mut u8;
+        let validity_slice = validity.as_mut_slice();
 
         if let Some(validity_indices) = indices.validity().as_ref() {
             index_values.iter().enumerate().for_each(|(i, idx)| {
@@ -50,14 +50,14 @@ pub(super) unsafe fn take_values_and_validity_unchecked<T: NativeType>(
                 let idx = *idx as usize;
                 if !validity_indices.get_bit_unchecked(i) || !validity_values.get_bit_unchecked(idx)
                 {
-                    unset_bit_raw(validity_ptr, i);
+                    set_bit_unchecked(validity_slice, i, false);
                 }
             });
         } else {
             index_values.iter().enumerate().for_each(|(i, idx)| {
                 let idx = *idx as usize;
                 if !validity_values.get_bit_unchecked(idx) {
-                    unset_bit_raw(validity_ptr, i);
+                    set_bit_unchecked(validity_slice, i, false);
                 }
             });
         };

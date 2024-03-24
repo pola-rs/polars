@@ -2,7 +2,7 @@
 use crate::chunked_array::builder::get_fixed_size_list_builder;
 use crate::prelude::*;
 use crate::series::IsSorted;
-use crate::utils::{CustomIterTools, NoNull};
+use crate::utils::NoNull;
 
 impl<T> ChunkReverse for ChunkedArray<T>
 where

@@ -8,7 +8,7 @@ use arrow::types::NativeType;
 ///
 /// # Safety
 ///  - arr must point to a readable slice of length len.
-///  - out must point to a writeable slice of length len.
+///  - out must point to a writable slice of length len.
 #[inline(never)]
 unsafe fn ptr_apply_unary_kernel<I: Copy, O, F: Fn(I) -> O>(
     arr: *const I,
@@ -25,7 +25,7 @@ unsafe fn ptr_apply_unary_kernel<I: Copy, O, F: Fn(I) -> O>(
 /// # Safety
 ///  - left must point to a readable slice of length len.
 ///  - right must point to a readable slice of length len.
-///  - out must point to a writeable slice of length len.
+///  - out must point to a writable slice of length len.
 #[inline(never)]
 unsafe fn ptr_apply_binary_kernel<L: Copy, R: Copy, O, F: Fn(L, R) -> O>(
     left: *const L,

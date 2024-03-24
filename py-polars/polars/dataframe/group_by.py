@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Callable, Iterable, Iterator
 
 from polars import functions as F
-from polars.utils.convert import _timedelta_to_pl_duration
-from polars.utils.deprecation import (
+from polars._utils.convert import parse_as_duration_string
+from polars._utils.deprecation import (
     deprecate_renamed_function,
     issue_deprecation_warning,
 )
@@ -448,35 +448,51 @@ class GroupBy:
         """
         return self.agg(F.all())
 
-    def len(self) -> DataFrame:
+    def len(self, name: str | None = None) -> DataFrame:
         """
         Return the number of rows in each group.
 
+        Parameters
+        ----------
+        name
+            Assign a name to the resulting column; if unset, defaults to "len".
+
         Examples
         --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": ["apple", "apple", "orange"],
-        ...         "b": [1, None, 2],
-        ...     }
-        ... )
-        >>> df.group_by("a").len()  # doctest: +SKIP
+        >>> df = pl.DataFrame({"a": ["Apple", "Apple", "Orange"], "b": [1, None, 2]})
+        >>> df.group_by("a").len()  # doctest: +IGNORE_RESULT
         shape: (2, 2)
         ┌────────┬─────┐
         │ a      ┆ len │
         │ ---    ┆ --- │
         │ str    ┆ u32 │
         ╞════════╪═════╡
-        │ apple  ┆ 2   │
-        │ orange ┆ 1   │
+        │ Apple  ┆ 2   │
+        │ Orange ┆ 1   │
+        └────────┴─────┘
+        >>> df.group_by("a").len(name="n")  # doctest: +IGNORE_RESULT
+        shape: (2, 2)
+        ┌────────┬─────┐
+        │ a      ┆ n   │
+        │ ---    ┆ --- │
+        │ str    ┆ u32 │
+        ╞════════╪═════╡
+        │ Apple  ┆ 2   │
+        │ Orange ┆ 1   │
         └────────┴─────┘
         """
-        return self.agg(F.len())
+        len_expr = F.len()
+        if name is not None:
+            len_expr = len_expr.alias(name)
+        return self.agg(len_expr)
 
     @deprecate_renamed_function("len", version="0.20.5")
     def count(self) -> DataFrame:
         """
         Return the number of rows in each group.
+
+        .. deprecated:: 0.20.5
+            This method has been renamed to :func:`GroupBy.len`.
 
         Rows containing null values count towards the total.
 
@@ -484,7 +500,7 @@ class GroupBy:
         --------
         >>> df = pl.DataFrame(
         ...     {
-        ...         "a": ["apple", "apple", "orange"],
+        ...         "a": ["Apple", "Apple", "Orange"],
         ...         "b": [1, None, 2],
         ...     }
         ... )
@@ -495,8 +511,8 @@ class GroupBy:
         │ ---    ┆ ---   │
         │ str    ┆ u32   │
         ╞════════╪═══════╡
-        │ apple  ┆ 2     │
-        │ orange ┆ 1     │
+        │ Apple  ┆ 2     │
+        │ Orange ┆ 1     │
         └────────┴───────┘
         """
         return self.agg(F.len().alias("count"))
@@ -789,18 +805,18 @@ class RollingGroupBy:
         period: str | timedelta,
         offset: str | timedelta | None,
         closed: ClosedInterval,
-        by: IntoExpr | Iterable[IntoExpr] | None,
+        group_by: IntoExpr | Iterable[IntoExpr] | None,
         check_sorted: bool,
     ):
-        period = _timedelta_to_pl_duration(period)
-        offset = _timedelta_to_pl_duration(offset)
+        period = parse_as_duration_string(period)
+        offset = parse_as_duration_string(offset)
 
         self.df = df
         self.time_column = index_column
         self.period = period
         self.offset = offset
         self.closed = closed
-        self.by = by
+        self.group_by = group_by
         self.check_sorted = check_sorted
 
     def __iter__(self) -> Self:
@@ -812,7 +828,7 @@ class RollingGroupBy:
                 period=self.period,
                 offset=self.offset,
                 closed=self.closed,
-                by=self.by,
+                group_by=self.group_by,
                 check_sorted=self.check_sorted,
             )
             .agg(F.first().agg_groups().alias(temp_col))
@@ -824,7 +840,7 @@ class RollingGroupBy:
         # When grouping by a single column, group name is a single value
         # When grouping by multiple columns, group name is a tuple of values
         self._group_names: Iterator[object] | Iterator[tuple[object, ...]]
-        if self.by is None:
+        if self.group_by is None:
             self._group_names = iter(group_names.to_series())
         else:
             self._group_names = group_names.iter_rows()
@@ -871,7 +887,7 @@ class RollingGroupBy:
                 period=self.period,
                 offset=self.offset,
                 closed=self.closed,
-                by=self.by,
+                group_by=self.group_by,
                 check_sorted=self.check_sorted,
             )
             .agg(*aggs, **named_aggs)
@@ -914,7 +930,7 @@ class RollingGroupBy:
                 period=self.period,
                 offset=self.offset,
                 closed=self.closed,
-                by=self.by,
+                group_by=self.group_by,
                 check_sorted=self.check_sorted,
             )
             .map_groups(function, schema)
@@ -965,13 +981,13 @@ class DynamicGroupBy:
         include_boundaries: bool,
         closed: ClosedInterval,
         label: Label,
-        by: IntoExpr | Iterable[IntoExpr] | None,
+        group_by: IntoExpr | Iterable[IntoExpr] | None,
         start_by: StartBy,
         check_sorted: bool,
     ):
-        every = _timedelta_to_pl_duration(every)
-        period = _timedelta_to_pl_duration(period)
-        offset = _timedelta_to_pl_duration(offset)
+        every = parse_as_duration_string(every)
+        period = parse_as_duration_string(period)
+        offset = parse_as_duration_string(offset)
 
         self.df = df
         self.time_column = index_column
@@ -982,7 +998,7 @@ class DynamicGroupBy:
         self.label = label
         self.include_boundaries = include_boundaries
         self.closed = closed
-        self.by = by
+        self.group_by = group_by
         self.start_by = start_by
         self.check_sorted = check_sorted
 
@@ -999,7 +1015,7 @@ class DynamicGroupBy:
                 label=self.label,
                 include_boundaries=self.include_boundaries,
                 closed=self.closed,
-                by=self.by,
+                group_by=self.group_by,
                 start_by=self.start_by,
                 check_sorted=self.check_sorted,
             )
@@ -1012,7 +1028,7 @@ class DynamicGroupBy:
         # When grouping by a single column, group name is a single value
         # When grouping by multiple columns, group name is a tuple of values
         self._group_names: Iterator[object] | Iterator[tuple[object, ...]]
-        if self.by is None:
+        if self.group_by is None:
             self._group_names = iter(group_names.to_series())
         else:
             self._group_names = group_names.iter_rows()
@@ -1063,7 +1079,7 @@ class DynamicGroupBy:
                 label=self.label,
                 include_boundaries=self.include_boundaries,
                 closed=self.closed,
-                by=self.by,
+                group_by=self.group_by,
                 start_by=self.start_by,
                 check_sorted=self.check_sorted,
             )
@@ -1110,7 +1126,7 @@ class DynamicGroupBy:
                 truncate=self.truncate,
                 include_boundaries=self.include_boundaries,
                 closed=self.closed,
-                by=self.by,
+                group_by=self.group_by,
                 start_by=self.start_by,
                 check_sorted=self.check_sorted,
             )

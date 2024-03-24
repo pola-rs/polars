@@ -2,7 +2,6 @@ use std::fmt::Display;
 use std::ops::BitAnd;
 
 use super::*;
-use crate::dsl::selector::Selector;
 use crate::logical_plan::projection::is_regex_projection;
 use crate::logical_plan::tree_format::TreeFmtVisitor;
 use crate::logical_plan::visitor::{AexprNode, TreeWalker};

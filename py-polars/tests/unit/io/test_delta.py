@@ -120,11 +120,15 @@ def test_write_delta(df: pl.DataFrame, tmp_path: Path) -> None:
         v1.write_delta(tmp_path)
 
     # Case: Overwrite with new version (version 1)
-    v1.write_delta(tmp_path, mode="overwrite", overwrite_schema=True)
+    v1.write_delta(
+        tmp_path, mode="overwrite", delta_write_options={"schema_mode": "overwrite"}
+    )
 
     # Case: Error if schema contains unsupported columns
     with pytest.raises(TypeError):
-        df.write_delta(tmp_path, mode="overwrite", overwrite_schema=True)
+        df.write_delta(
+            tmp_path, mode="overwrite", delta_write_options={"schema_mode": "overwrite"}
+        )
 
     partitioned_tbl_uri = (tmp_path / ".." / "partitioned_table").resolve()
 
@@ -182,6 +186,17 @@ def test_write_delta(df: pl.DataFrame, tmp_path: Path) -> None:
     assert df_supported.columns == pl_df_partitioned.columns
 
     df_supported.write_delta(partitioned_tbl_uri, mode="overwrite")
+
+
+@pytest.mark.write_disk()
+def test_write_delta_overwrite_schema_deprecated(
+    df: pl.DataFrame, tmp_path: Path
+) -> None:
+    df = df.select(pl.col(pl.Int64))
+    with pytest.deprecated_call():
+        df.write_delta(tmp_path, overwrite_schema=True)
+    result = pl.read_delta(str(tmp_path))
+    assert_frame_equal(df, result)
 
 
 @pytest.mark.write_disk()
@@ -360,18 +375,19 @@ def test_write_delta_with_schema_10540(tmp_path: Path) -> None:
 def test_write_delta_with_tz_in_df(expr: pl.Expr, tmp_path: Path) -> None:
     df = pl.select(expr)
 
-    pa_schema = pa.schema([("datetime", pa.timestamp("us"))])
+    expected_dtype = pl.Datetime("us", "UTC")
+    expected = pl.select(expr.cast(expected_dtype))
 
     df.write_delta(tmp_path, mode="append")
     # write second time because delta-rs also casts timestamp with tz to timestamp no tz
     df.write_delta(tmp_path, mode="append")
 
+    # Check schema of DeltaTable object
     tbl = DeltaTable(tmp_path)
-    assert pa_schema == tbl.schema().to_pyarrow()
+    assert tbl.schema().to_pyarrow() == expected.to_arrow().schema
 
+    # Check result
     result = pl.read_delta(str(tmp_path), version=0)
-
-    expected = df.cast(pl.Datetime)
     assert_frame_equal(result, expected)
 
 

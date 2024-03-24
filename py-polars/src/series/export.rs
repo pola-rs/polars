@@ -6,7 +6,7 @@ use pyo3::types::PyList;
 
 use crate::conversion::chunked_array::{decimal_to_pyobject_iter, time_to_pyobject_iter};
 use crate::error::PyPolarsErr;
-use crate::prelude::{ObjectValue, *};
+use crate::prelude::*;
 use crate::{arrow_interop, raise_err, PySeries};
 
 #[pymethods]

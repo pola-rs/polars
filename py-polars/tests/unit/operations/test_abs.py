@@ -74,10 +74,10 @@ def test_abs_duration() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_abs_overflow() -> None:
+def test_abs_overflow_wrapping() -> None:
     df = pl.DataFrame({"a": [-128]}, schema={"a": pl.Int8})
-    with pytest.raises(pl.PolarsPanicError, match="attempt to negate with overflow"):
-        df.select(pl.col("a").abs())
+    result = df.select(pl.col("a").abs())
+    assert_frame_equal(result, df)
 
 
 def test_abs_unsigned_int() -> None:

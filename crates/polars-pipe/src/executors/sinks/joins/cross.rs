@@ -10,6 +10,7 @@ use polars_ops::prelude::CrossJoin as CrossJoinTrait;
 use polars_utils::arena::Node;
 use smartstring::alias::String as SmartString;
 
+use crate::executors::operators::PlaceHolder;
 use crate::operators::{
     chunks_to_df_unchecked, DataChunk, FinalizedSink, Operator, OperatorResult, PExecutionContext,
     Sink, SinkResult,
@@ -21,15 +22,22 @@ pub struct CrossJoin {
     suffix: SmartString,
     swapped: bool,
     node: Node,
+    placeholder: PlaceHolder,
 }
 
 impl CrossJoin {
-    pub(crate) fn new(suffix: SmartString, swapped: bool, node: Node) -> Self {
+    pub(crate) fn new(
+        suffix: SmartString,
+        swapped: bool,
+        node: Node,
+        placeholder: PlaceHolder,
+    ) -> Self {
         CrossJoin {
             chunks: vec![],
             suffix,
             swapped,
             node,
+            placeholder,
         }
     }
 }
@@ -57,13 +65,13 @@ impl Sink for CrossJoin {
         Box::new(Self {
             suffix: self.suffix.clone(),
             swapped: self.swapped,
+            placeholder: self.placeholder.clone(),
             ..Default::default()
         })
     }
 
     fn finalize(&mut self, _context: &PExecutionContext) -> PolarsResult<FinalizedSink> {
-        // todo! share sink
-        Ok(FinalizedSink::Operator(Box::new(CrossJoinProbe {
+        let op = Box::new(CrossJoinProbe {
             df: Arc::new(chunks_to_df_unchecked(std::mem::take(&mut self.chunks))),
             suffix: Arc::from(self.suffix.as_ref()),
             in_process_left: None,
@@ -71,7 +79,10 @@ impl Sink for CrossJoin {
             in_process_left_df: Default::default(),
             output_names: None,
             swapped: self.swapped,
-        })))
+        });
+        self.placeholder.replace(op);
+
+        Ok(FinalizedSink::Operator)
     }
 
     fn as_any(&mut self) -> &mut dyn Any {

@@ -12,17 +12,12 @@ use crate::row::{RowsEncoded, SortField};
 
 pub(crate) trait FromSlice {
     fn from_slice(slice: &[u8]) -> Self;
-    fn from_slice_inverted(slice: &[u8]) -> Self;
 }
 
 impl<const N: usize> FromSlice for [u8; N] {
     #[inline]
     fn from_slice(slice: &[u8]) -> Self {
         slice.try_into().unwrap()
-    }
-
-    fn from_slice_inverted(_slice: &[u8]) -> Self {
-        todo!()
     }
 }
 
@@ -110,6 +105,7 @@ encode_signed!(1, i8);
 encode_signed!(2, i16);
 encode_signed!(4, i32);
 encode_signed!(8, i64);
+encode_signed!(16, i128);
 
 impl FixedLengthEncoding for f32 {
     type Encoded = [u8; 4];

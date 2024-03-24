@@ -1,7 +1,6 @@
 use arrow::legacy::kernels::fixed_size_list::{
     sub_fixed_size_list_get, sub_fixed_size_list_get_literal,
 };
-use polars_core::datatypes::ArrayChunked;
 use polars_core::prelude::arity::binary_to_series;
 
 use super::*;
@@ -27,7 +26,7 @@ pub fn array_get(ca: &ArrayChunked, index: &Int64Chunked) -> PolarsResult<Series
             if let Some(index) = index {
                 array_get_literal(ca, index)
             } else {
-                polars_bail!(ComputeError: "unexpected null index received in `arr.get`")
+                Ok(Series::full_null(ca.name(), ca.len(), &ca.inner_dtype()))
             }
         },
         len if len == ca.len() => {

@@ -98,7 +98,7 @@ pub fn to_rust_df(rb: &[&PyAny]) -> PyResult<DataFrame> {
             }?;
 
             // no need to check as a record batch has the same guarantees
-            Ok(DataFrame::new_no_checks(columns))
+            Ok(unsafe { DataFrame::new_no_checks(columns) })
         })
         .collect::<PyResult<Vec<_>>>()?;
 

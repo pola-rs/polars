@@ -1,5 +1,4 @@
 use polars::prelude::*;
-use polars_plan::dsl::FieldsNameMapper;
 use pyo3::prelude::*;
 use smartstring::alias::String as SmartString;
 

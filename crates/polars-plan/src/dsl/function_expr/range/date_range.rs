@@ -1,5 +1,4 @@
 use polars_core::prelude::*;
-use polars_core::series::Series;
 use polars_core::utils::arrow::temporal_conversions::MILLISECONDS_IN_DAY;
 use polars_time::{datetime_range_impl, ClosedWindow, Duration};
 

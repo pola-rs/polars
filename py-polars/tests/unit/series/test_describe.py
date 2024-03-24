@@ -117,7 +117,7 @@ def test_series_describe_null() -> None:
 def test_series_describe_nested_list() -> None:
     s = pl.Series(
         values=[[10e10, 10e15], [10e12, 10e13], [10e10, 10e15]],
-        dtype=pl.List(pl.Int64),
+        dtype=pl.List(pl.Float64),
     )
     result = s.describe()
     stats = {

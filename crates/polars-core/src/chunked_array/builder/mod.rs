@@ -6,7 +6,6 @@ mod null;
 mod primitive;
 mod string;
 
-use std::iter::FromIterator;
 use std::marker::PhantomData;
 use std::sync::Arc;
 

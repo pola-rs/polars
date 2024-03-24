@@ -8,7 +8,6 @@ use std::io::Cursor;
 use std::path::PathBuf;
 
 use polars::prelude::*;
-use polars_error::PolarsResult;
 
 // The dynamic representation of values in native Rust. This is not exhaustive.
 // todo: maybe refactor this into serde/json?

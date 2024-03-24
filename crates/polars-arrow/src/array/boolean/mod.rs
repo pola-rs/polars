@@ -136,6 +136,7 @@ impl BooleanArray {
     }
 
     /// Returns the element at index `i` as bool
+    ///
     /// # Safety
     /// Caller must be sure that `i < self.len()`
     #[inline]
@@ -173,6 +174,7 @@ impl BooleanArray {
     /// Slices this [`BooleanArray`].
     /// # Implementation
     /// This operation is `O(1)` as it amounts to increase two ref counts.
+    ///
     /// # Safety
     /// The caller must ensure that `offset + length <= self.len()`.
     #[inline]
@@ -279,6 +281,7 @@ impl BooleanArray {
     /// Creates a new [`BooleanArray`] from an [`TrustedLen`] of `bool`.
     /// Use this over [`BooleanArray::from_trusted_len_iter`] when the iterator is trusted len
     /// but this crate does not mark it as such.
+    ///
     /// # Safety
     /// The iterator must be [`TrustedLen`](https://doc.rust-lang.org/std/iter/trait.TrustedLen.html).
     /// I.e. that `size_hint().1` correctly reports its length.
@@ -298,6 +301,7 @@ impl BooleanArray {
     /// Creates a [`BooleanArray`] from an iterator of trusted length.
     /// Use this over [`BooleanArray::from_trusted_len_iter`] when the iterator is trusted len
     /// but this crate does not mark it as such.
+    ///
     /// # Safety
     /// The iterator must be [`TrustedLen`](https://doc.rust-lang.org/std/iter/trait.TrustedLen.html).
     /// I.e. that `size_hint().1` correctly reports its length.
@@ -321,6 +325,7 @@ impl BooleanArray {
     }
 
     /// Creates a [`BooleanArray`] from an falible iterator of trusted length.
+    ///
     /// # Safety
     /// The iterator must be [`TrustedLen`](https://doc.rust-lang.org/std/iter/trait.TrustedLen.html).
     /// I.e. that `size_hint().1` correctly reports its length.

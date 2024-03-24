@@ -1,4 +1,3 @@
-use std::convert::TryInto;
 use std::slice::ChunksExact;
 
 use super::{BitChunk, BitChunkIterExact};

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING
 
@@ -8,19 +7,15 @@ import pytest
 
 import polars as pl
 from polars.datatypes import DTYPE_TEMPORAL_UNITS
-from polars.dependencies import _ZONEINFO_AVAILABLE
 from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
-if sys.version_info >= (3, 9):
-    from zoneinfo import ZoneInfo
-elif _ZONEINFO_AVAILABLE:
-    # Import from submodule due to typing issue with backports.zoneinfo package:
-    # https://github.com/pganssle/zoneinfo/issues/125
-    from backports.zoneinfo._zoneinfo import ZoneInfo
-
 if TYPE_CHECKING:
+    from zoneinfo import ZoneInfo
+
     from polars.type_aliases import TemporalLiteral, TimeUnit
+else:
+    from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
 
 @pytest.fixture()
@@ -513,6 +508,37 @@ def test_truncate(
     assert out.dt[-1] == stop
 
 
+def test_truncate_negative() -> None:
+    """Test that truncating to a negative duration gives a helpful error message."""
+    df = pl.DataFrame(
+        {
+            "date": [date(1895, 5, 7), date(1955, 11, 5)],
+            "datetime": [datetime(1895, 5, 7), datetime(1955, 11, 5)],
+            "duration": ["-1m", "1m"],
+        }
+    )
+
+    with pytest.raises(
+        ComputeError, match="cannot truncate a Date to a negative duration"
+    ):
+        df.select(pl.col("date").dt.truncate("-1m"))
+
+    with pytest.raises(
+        ComputeError, match="cannot truncate a Datetime to a negative duration"
+    ):
+        df.select(pl.col("datetime").dt.truncate("-1m"))
+
+    with pytest.raises(
+        ComputeError, match="cannot truncate a Date to a negative duration"
+    ):
+        df.select(pl.col("date").dt.truncate(pl.col("duration")))
+
+    with pytest.raises(
+        ComputeError, match="cannot truncate a Datetime to a negative duration"
+    ):
+        df.select(pl.col("datetime").dt.truncate(pl.col("duration")))
+
+
 @pytest.mark.parametrize(
     ("time_unit", "every"),
     [
@@ -545,6 +571,19 @@ def test_round(
     assert out.dt[-3] == stop - timedelta(hours=1)
     assert out.dt[-2] == stop
     assert out.dt[-1] == stop
+
+
+def test_round_negative() -> None:
+    """Test that rounding to a negative duration gives a helpful error message."""
+    with pytest.raises(
+        ComputeError, match="cannot round a Date to a negative duration"
+    ):
+        pl.Series([date(1895, 5, 7)]).dt.round("-1m")
+
+    with pytest.raises(
+        ComputeError, match="cannot round a Datetime to a negative duration"
+    ):
+        pl.Series([datetime(1895, 5, 7)]).dt.round("-1m")
 
 
 @pytest.mark.parametrize(
@@ -782,9 +821,9 @@ def test_offset_by_broadcasting() -> None:
             None,
         ],
         "d3": [
-            datetime(2020, 10, 26, tzinfo=ZoneInfo(key="Europe/London")),
-            datetime(2020, 11, 4, tzinfo=ZoneInfo(key="Europe/London")),
-            datetime(2020, 10, 28, tzinfo=ZoneInfo(key="Europe/London")),
+            datetime(2020, 10, 26, tzinfo=ZoneInfo("Europe/London")),
+            datetime(2020, 11, 4, tzinfo=ZoneInfo("Europe/London")),
+            datetime(2020, 10, 28, tzinfo=ZoneInfo("Europe/London")),
             None,
         ],
         "d4": [
@@ -811,8 +850,8 @@ def test_offset_by_broadcasting() -> None:
         "d1": [datetime(2020, 11, 28), datetime(2021, 2, 5), None],
         "d2": [datetime(2021, 11, 25), datetime(2022, 2, 2), None],
         "d3": [
-            datetime(2020, 10, 28, tzinfo=ZoneInfo(key="Europe/London")),
-            datetime(2021, 1, 5, tzinfo=ZoneInfo(key="Europe/London")),
+            datetime(2020, 10, 28, tzinfo=ZoneInfo("Europe/London")),
+            datetime(2021, 1, 5, tzinfo=ZoneInfo("Europe/London")),
             None,
         ],
         "d4": [datetime(2021, 11, 26).date(), datetime(2022, 2, 3).date(), None],

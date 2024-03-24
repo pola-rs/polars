@@ -31,13 +31,13 @@ pl.read_database_uri(query=query, uri=uri, engine="adbc")
 uri = "postgresql://username:password@server:port/database"
 df = pl.DataFrame({"foo": [1, 2, 3]})
 
-df.write_database(table_name="records",  uri=uri)
+df.write_database(table_name="records",  connection=uri)
 # --8<-- [end:write]
 
 # --8<-- [start:write_adbc]
 uri = "postgresql://username:password@server:port/database"
 df = pl.DataFrame({"foo": [1, 2, 3]})
 
-df.write_database(table_name="records", uri=uri, engine="adbc")
+df.write_database(table_name="records", connection=uri, engine="adbc")
 # --8<-- [end:write_adbc]
 """

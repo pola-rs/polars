@@ -21,7 +21,7 @@ impl Executor for PythonScanExec {
         let n_rows = self.options.n_rows.take();
         Python::with_gil(|py| {
             let pl = PyModule::import(py, "polars").unwrap();
-            let utils = pl.getattr("utils").unwrap();
+            let utils = pl.getattr("_utils").unwrap();
             let callable = utils.getattr("_execute_from_rust").unwrap();
 
             let python_scan_function = self.options.scan_fn.take().unwrap().0;

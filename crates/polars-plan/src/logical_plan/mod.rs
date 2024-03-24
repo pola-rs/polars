@@ -3,8 +3,6 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use polars_core::prelude::*;
-#[cfg(any(feature = "cloud", feature = "parquet"))]
-use polars_io::cloud::CloudOptions;
 
 use crate::logical_plan::LogicalPlan::DataFrameScan;
 use crate::prelude::*;
@@ -21,6 +19,7 @@ pub mod builder_functions;
 pub(crate) mod conversion;
 #[cfg(feature = "debugging")]
 pub(crate) mod debug;
+pub mod expr_ir;
 mod file_scan;
 mod format;
 mod functions;
@@ -36,7 +35,6 @@ mod pyarrow;
 mod schema;
 pub(crate) mod tree_format;
 pub mod visitor;
-
 pub use aexpr::*;
 pub use alp::*;
 pub use anonymous_scan::*;
@@ -44,6 +42,7 @@ pub use apply::*;
 pub use builder::*;
 pub use builder_alp::*;
 pub use conversion::*;
+pub(crate) use expr_ir::*;
 pub use file_scan::*;
 pub use functions::*;
 pub use iterator::*;
@@ -65,6 +64,8 @@ use self::tree_format::{TreeFmtNode, TreeFmtVisitor};
 pub use crate::logical_plan::optimizer::file_caching::{
     collect_fingerprints, find_column_union_and_fingerprints, FileCacher, FileFingerPrint,
 };
+
+pub type ColumnName = Arc<str>;
 
 #[derive(Clone, Copy, Debug)]
 pub enum Context {

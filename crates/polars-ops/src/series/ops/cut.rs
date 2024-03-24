@@ -1,6 +1,3 @@
-use std::cmp::PartialOrd;
-use std::iter::once;
-
 use polars_core::prelude::*;
 
 fn map_cats(
@@ -82,8 +79,8 @@ pub fn cut(
             polars_ensure!(ll.len() == sorted_breaks.len() + 1, ShapeMismatch: "Provide nbreaks + 1 labels");
             ll
         },
-        None => (once(&f64::NEG_INFINITY).chain(sorted_breaks.iter()))
-            .zip(sorted_breaks.iter().chain(once(&f64::INFINITY)))
+        None => (std::iter::once(&f64::NEG_INFINITY).chain(sorted_breaks.iter()))
+            .zip(sorted_breaks.iter().chain(std::iter::once(&f64::INFINITY)))
             .map(|v| {
                 if left_closed {
                     format!("[{}, {})", v.0, v.1)

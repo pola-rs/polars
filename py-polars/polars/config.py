@@ -6,9 +6,9 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, get_args
 
+from polars._utils.deprecation import deprecate_nonkeyword_arguments
+from polars._utils.various import normalize_filepath
 from polars.dependencies import json
-from polars.utils.deprecation import deprecate_nonkeyword_arguments
-from polars.utils.various import normalize_filepath
 
 if sys.version_info >= (3, 10):
     from typing import TypeAlias

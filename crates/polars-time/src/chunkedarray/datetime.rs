@@ -1,4 +1,3 @@
-use arrow;
 use arrow::array::{Array, PrimitiveArray};
 use arrow::compute::cast::{cast, CastOptions};
 use arrow::compute::temporal;
@@ -161,8 +160,6 @@ impl DatetimeMethods for DatetimeChunked {}
 
 #[cfg(test)]
 mod test {
-    use chrono::NaiveDateTime;
-
     use super::*;
 
     #[test]

@@ -1,10 +1,10 @@
+use compare_inner::NullOrderCmp;
 use polars_row::{convert_columns, RowsEncoded, SortField};
 use polars_utils::iter::EnumerateIdxTrait;
 
 use super::*;
 #[cfg(feature = "dtype-struct")]
 use crate::utils::_split_offsets;
-use crate::POOL;
 
 pub(crate) fn args_validate<T: PolarsDataType>(
     ca: &ChunkedArray<T>,
@@ -22,7 +22,7 @@ pub(crate) fn args_validate<T: PolarsDataType>(
     Ok(())
 }
 
-pub(crate) fn arg_sort_multiple_impl<T: TotalOrd + Send + Copy>(
+pub(crate) fn arg_sort_multiple_impl<T: NullOrderCmp + Send + Copy>(
     mut vals: Vec<(IdxSize, T)>,
     options: &SortMultipleOptions,
 ) -> PolarsResult<IdxCa> {
@@ -37,7 +37,12 @@ pub(crate) fn arg_sort_multiple_impl<T: TotalOrd + Send + Copy>(
     let first_descending = descending[0];
     POOL.install(|| {
         vals.par_sort_by(|tpl_a, tpl_b| {
-            match (first_descending, tpl_a.1.tot_cmp(&tpl_b.1)) {
+            match (
+                first_descending,
+                tpl_a
+                    .1
+                    .null_order_cmp(&tpl_b.1, options.nulls_last ^ first_descending),
+            ) {
                 // if ordering is equal, we check the other arrays until we find a non-equal ordering
                 // if we have exhausted all arrays, we keep the equal ordering.
                 (_, Ordering::Equal) => {
@@ -47,6 +52,7 @@ pub(crate) fn arg_sort_multiple_impl<T: TotalOrd + Send + Copy>(
                         ordering_other_columns(
                             &compare_inner,
                             descending.get_unchecked(1..),
+                            options.nulls_last,
                             idx_a,
                             idx_b,
                         )
@@ -89,17 +95,15 @@ pub(crate) fn encode_rows_vertical(by: &[Series]) -> PolarsResult<BinaryOffsetCh
     let splits = _split_offsets(len, n_threads);
     let descending = vec![false; by.len()];
 
-    let chunks: PolarsResult<Vec<_>> = splits
-        .into_par_iter()
-        .map(|(offset, len)| {
-            let sliced = by
-                .iter()
-                .map(|s| s.slice(offset as i64, len))
-                .collect::<Vec<_>>();
-            let rows = _get_rows_encoded(&sliced, &descending, false)?;
-            Ok(rows.into_array())
-        })
-        .collect();
+    let chunks = splits.into_par_iter().map(|(offset, len)| {
+        let sliced = by
+            .iter()
+            .map(|s| s.slice(offset as i64, len))
+            .collect::<Vec<_>>();
+        let rows = _get_rows_encoded(&sliced, &descending, false)?;
+        Ok(rows.into_array())
+    });
+    let chunks = POOL.install(|| chunks.collect::<PolarsResult<Vec<_>>>());
 
     Ok(BinaryOffsetChunked::from_chunk_iter("", chunks?))
 }

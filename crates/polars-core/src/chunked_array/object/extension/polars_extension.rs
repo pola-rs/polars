@@ -1,7 +1,5 @@
 use std::mem::ManuallyDrop;
 
-use arrow::array::FixedSizeBinaryArray;
-
 use super::*;
 use crate::prelude::*;
 

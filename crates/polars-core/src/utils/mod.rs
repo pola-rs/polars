@@ -133,7 +133,11 @@ pub fn split_series(s: &Series, n: usize) -> PolarsResult<Vec<Series>> {
     split_array!(s, n, i64)
 }
 
-pub fn split_df_as_ref(df: &DataFrame, n: usize) -> PolarsResult<Vec<DataFrame>> {
+pub fn split_df_as_ref(
+    df: &DataFrame,
+    n: usize,
+    extend_sub_chunks: bool,
+) -> PolarsResult<Vec<DataFrame>> {
     let total_len = df.height();
     let chunk_size = std::cmp::max(total_len / n, 1);
 
@@ -155,7 +159,7 @@ pub fn split_df_as_ref(df: &DataFrame, n: usize) -> PolarsResult<Vec<DataFrame>>
             chunk_size
         };
         let df = df.slice((i * chunk_size) as i64, len);
-        if df.n_chunks() > 1 {
+        if extend_sub_chunks && df.n_chunks() > 1 {
             // we add every chunk as separate dataframe. This make sure that every partition
             // deals with it.
             out.extend(flatten_df_iter(&df))
@@ -175,7 +179,7 @@ pub fn split_df(df: &mut DataFrame, n: usize) -> PolarsResult<Vec<DataFrame>> {
     }
     // make sure that chunks are aligned.
     df.align_chunks();
-    split_df_as_ref(df, n)
+    split_df_as_ref(df, n, true)
 }
 
 pub fn slice_slice<T>(vals: &[T], offset: i64, len: usize) -> &[T] {
@@ -186,24 +190,22 @@ pub fn slice_slice<T>(vals: &[T], offset: i64, len: usize) -> &[T] {
 #[inline]
 #[doc(hidden)]
 pub fn slice_offsets(offset: i64, length: usize, array_len: usize) -> (usize, usize) {
-    let abs_offset = offset.unsigned_abs() as usize;
-
-    // The offset counted from the start of the array
-    // negative index
-    if offset < 0 {
-        if abs_offset <= array_len {
-            (array_len - abs_offset, std::cmp::min(length, abs_offset))
-            // negative index larger that array: slice from start
-        } else {
-            (0, std::cmp::min(length, array_len))
-        }
-        // positive index
-    } else if abs_offset <= array_len {
-        (abs_offset, std::cmp::min(length, array_len - abs_offset))
-        // empty slice
+    let signed_start_offset = if offset < 0 {
+        offset.saturating_add_unsigned(array_len as u64)
     } else {
-        (array_len, 0)
-    }
+        offset
+    };
+    let signed_stop_offset = signed_start_offset.saturating_add_unsigned(length as u64);
+
+    let signed_array_len: i64 = array_len
+        .try_into()
+        .expect("array length larger than i64::MAX");
+    let clamped_start_offset = signed_start_offset.clamp(0, signed_array_len);
+    let clamped_stop_offset = signed_stop_offset.clamp(0, signed_array_len);
+
+    let slice_start_idx = clamped_start_offset as usize;
+    let slice_len = (clamped_stop_offset - clamped_start_offset) as usize;
+    (slice_start_idx, slice_len)
 }
 
 /// Apply a macro on the Series
@@ -499,18 +501,6 @@ macro_rules! apply_method_all_arrow_series {
 }
 
 #[macro_export]
-macro_rules! apply_amortized_generic_list_or_array {
-        ($self:expr, $method:ident, $($args:expr),*) => {
-        match $self.dtype() {
-            #[cfg(feature = "dtype-array")]
-            DataType::Array(_, _) => $self.array().unwrap().apply_amortized_generic($($args),*),
-            DataType::List(_) => $self.list().unwrap().apply_amortized_generic($($args),*),
-            dt => panic!("not implemented for dtype {:?}", dt),
-        }
-    }
-}
-
-#[macro_export]
 macro_rules! apply_method_physical_integer {
     ($self:expr, $method:ident, $($args:expr),*) => {
         match $self.dtype() {
@@ -546,9 +536,9 @@ macro_rules! apply_method_physical_numeric {
 #[macro_export]
 macro_rules! df {
     ($($col_name:expr => $slice:expr), + $(,)?) => {
-        {
-            $crate::prelude::DataFrame::new(vec![$($crate::prelude::Series::new($col_name, $slice),)+])
-        }
+        $crate::prelude::DataFrame::new(vec![
+            $(<$crate::prelude::Series as $crate::prelude::NamedFrom::<_, _>>::new($col_name, $slice),)+
+        ])
     }
 }
 

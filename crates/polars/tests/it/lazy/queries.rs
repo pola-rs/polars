@@ -44,7 +44,7 @@ fn test_special_group_by_schemas() -> PolarsResult<()> {
         .clone()
         .lazy()
         .with_column(col("a").set_sorted_flag(IsSorted::Ascending))
-        .group_by_rolling(
+        .rolling(
             col("a"),
             [],
             RollingGroupOptions {

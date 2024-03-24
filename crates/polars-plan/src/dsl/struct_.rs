@@ -1,5 +1,4 @@
 use super::*;
-use crate::dsl::function_expr::StructFunction;
 
 /// Specialized expressions for Struct dtypes.
 pub struct StructNameSpace(pub(crate) Expr);
@@ -20,7 +19,7 @@ impl StructNameSpace {
     pub fn field_by_name(self, name: &str) -> Expr {
         self.0
             .map_private(FunctionExpr::StructExpr(StructFunction::FieldByName(
-                Arc::from(name),
+                ColumnName::from(name),
             )))
             .with_function_options(|mut options| {
                 options.allow_rename = true;

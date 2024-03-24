@@ -1,6 +1,4 @@
 use std::collections::BTreeMap;
-use std::convert::Into;
-use std::string::ToString;
 
 use super::*;
 #[cfg(feature = "object")]
@@ -82,7 +80,14 @@ impl PartialEq for DataType {
             match (self, other) {
                 // Don't include rev maps in comparisons
                 #[cfg(feature = "dtype-categorical")]
-                (Categorical(_, _), Categorical(_, _)) | (Enum(_, _), Enum(_, _)) => true,
+                (Categorical(_, _), Categorical(_, _)) => true,
+                #[cfg(feature = "dtype-categorical")]
+                // None means select all Enum dtypes. This is for operation `pl.col(pl.Enum)`
+                (Enum(None, _), Enum(_, _)) | (Enum(_, _), Enum(None, _)) => true,
+                #[cfg(feature = "dtype-categorical")]
+                (Enum(Some(cat_lhs), _), Enum(Some(cat_rhs), _)) => {
+                    cat_lhs.get_categories() == cat_rhs.get_categories()
+                },
                 (Datetime(tu_l, tz_l), Datetime(tu_r, tz_r)) => tu_l == tu_r && tz_l == tz_r,
                 (List(left_inner), List(right_inner)) => left_inner == right_inner,
                 #[cfg(feature = "dtype-duration")]
@@ -211,6 +216,27 @@ impl DataType {
         matches!(self, DataType::Boolean)
     }
 
+    /// Check if this [`DataType`] is a list
+    pub fn is_list(&self) -> bool {
+        matches!(self, DataType::List(_))
+    }
+
+    pub fn is_nested(&self) -> bool {
+        self.is_list() || self.is_struct()
+    }
+
+    /// Check if this [`DataType`] is a struct
+    pub fn is_struct(&self) -> bool {
+        #[cfg(feature = "dtype-struct")]
+        {
+            matches!(self, DataType::Struct(_))
+        }
+        #[cfg(not(feature = "dtype-struct"))]
+        {
+            false
+        }
+    }
+
     pub fn is_binary(&self) -> bool {
         matches!(self, DataType::Binary)
     }
@@ -239,6 +265,7 @@ impl DataType {
 
         let phys = self.to_physical();
         (phys.is_numeric()
+            || self.is_decimal()
             || matches!(
                 phys,
                 DataType::Binary | DataType::String | DataType::Boolean
@@ -379,8 +406,13 @@ impl DataType {
             ))),
             Null => Ok(ArrowDataType::Null),
             #[cfg(feature = "object")]
-            Object(_, _) => {
-                polars_bail!(InvalidOperation: "cannot convert Object dtype data to Arrow")
+            Object(_, Some(reg)) => Ok(reg.physical_dtype.clone()),
+            #[cfg(feature = "object")]
+            Object(_, None) => {
+                // FIXME: find out why we have Objects floating around without a
+                // known dtype.
+                // polars_bail!(InvalidOperation: "cannot convert Object dtype without registry to Arrow")
+                Ok(ArrowDataType::Unknown)
             },
             #[cfg(feature = "dtype-categorical")]
             Categorical(_, _) | Enum(_, _) => {
@@ -401,9 +433,7 @@ impl DataType {
                 Ok(ArrowDataType::Struct(fields))
             },
             BinaryOffset => Ok(ArrowDataType::LargeBinary),
-            Unknown => {
-                polars_bail!(InvalidOperation: "cannot convert Unknown dtype data to Arrow")
-            },
+            Unknown => Ok(ArrowDataType::Unknown),
         }
     }
 

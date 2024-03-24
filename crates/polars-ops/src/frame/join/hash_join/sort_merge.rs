@@ -11,7 +11,7 @@ use super::*;
 fn par_sorted_merge_left_impl<T>(
     s_left: &ChunkedArray<T>,
     s_right: &ChunkedArray<T>,
-) -> (Vec<IdxSize>, Vec<Option<IdxSize>>)
+) -> (Vec<IdxSize>, Vec<NullableIdxSize>)
 where
     T: PolarsNumericType,
 {
@@ -23,13 +23,12 @@ where
     let slice_left = s_left.cont_slice().unwrap();
     let slice_right = s_right.cont_slice().unwrap();
 
-    let indexes = offsets
-        .into_par_iter()
-        .map(|(offset, len)| {
-            let slice_left = &slice_left[offset..offset + len];
-            sorted_join::left::join(slice_left, slice_right, offset as IdxSize)
-        })
-        .collect::<Vec<_>>();
+    let indexes = offsets.into_par_iter().map(|(offset, len)| {
+        let slice_left = &slice_left[offset..offset + len];
+        sorted_join::left::join(slice_left, slice_right, offset as IdxSize)
+    });
+    let indexes = POOL.install(|| indexes.collect::<Vec<_>>());
+
     let lefts = indexes.iter().map(|t| &t.0).collect::<Vec<_>>();
     let rights = indexes.iter().map(|t| &t.1).collect::<Vec<_>>();
 
@@ -40,7 +39,7 @@ where
 pub(super) fn par_sorted_merge_left(
     s_left: &Series,
     s_right: &Series,
-) -> (Vec<IdxSize>, Vec<Option<IdxSize>>) {
+) -> (Vec<IdxSize>, Vec<NullableIdxSize>) {
     // Don't use bit_repr here. It messes up sortedness.
     debug_assert_eq!(s_left.dtype(), s_right.dtype());
     let s_left = s_left.to_physical_repr();
@@ -96,13 +95,12 @@ where
     let slice_left = s_left.cont_slice().unwrap();
     let slice_right = s_right.cont_slice().unwrap();
 
-    let indexes = offsets
-        .into_par_iter()
-        .map(|(offset, len)| {
-            let slice_left = &slice_left[offset..offset + len];
-            sorted_join::inner::join(slice_left, slice_right, offset as IdxSize)
-        })
-        .collect::<Vec<_>>();
+    let indexes = offsets.into_par_iter().map(|(offset, len)| {
+        let slice_left = &slice_left[offset..offset + len];
+        sorted_join::inner::join(slice_left, slice_right, offset as IdxSize)
+    });
+    let indexes = POOL.install(|| indexes.collect::<Vec<_>>());
+
     let lefts = indexes.iter().map(|t| &t.0).collect::<Vec<_>>();
     let rights = indexes.iter().map(|t| &t.1).collect::<Vec<_>>();
 
@@ -155,7 +153,7 @@ pub(super) fn par_sorted_merge_inner_no_nulls(
 }
 
 #[cfg(feature = "performant")]
-fn to_left_join_ids(left_idx: Vec<IdxSize>, right_idx: Vec<Option<IdxSize>>) -> LeftJoinIds {
+fn to_left_join_ids(left_idx: Vec<IdxSize>, right_idx: Vec<NullableIdxSize>) -> LeftJoinIds {
     #[cfg(feature = "chunked_ids")]
     {
         (Either::Left(left_idx), Either::Left(right_idx))
@@ -334,8 +332,11 @@ pub(super) fn sort_or_hash_left(
 
             POOL.install(|| {
                 right.par_iter_mut().for_each(|opt_idx| {
-                    *opt_idx =
-                        opt_idx.map(|idx| unsafe { *reverse_idx_map.get_unchecked(idx as usize) });
+                    if !opt_idx.is_null_idx() {
+                        *opt_idx =
+                            unsafe { *reverse_idx_map.get_unchecked(opt_idx.idx() as usize) }
+                                .into();
+                    }
                 });
             });
 

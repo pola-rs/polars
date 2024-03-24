@@ -73,7 +73,7 @@ pub trait BinaryNameSpaceImpl: AsBinary {
     fn hex_decode(&self, strict: bool) -> PolarsResult<BinaryChunked> {
         let ca = self.as_binary();
         if strict {
-            ca.try_apply(|s| {
+            ca.try_apply_values(|s| {
                 let bytes = hex::decode(s).map_err(|_| {
                     polars_err!(
                         ComputeError:
@@ -101,7 +101,7 @@ pub trait BinaryNameSpaceImpl: AsBinary {
     fn base64_decode(&self, strict: bool) -> PolarsResult<BinaryChunked> {
         let ca = self.as_binary();
         if strict {
-            ca.try_apply(|s| {
+            ca.try_apply_values(|s| {
                 let bytes = general_purpose::STANDARD.decode(s).map_err(|_e| {
                     polars_err!(
                         ComputeError:

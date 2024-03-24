@@ -54,6 +54,7 @@ impl<Iter: DerefMut<Target = ArrowArrayStream>> ArrowArrayStreamReader<Iter> {
     /// # Error
     /// Errors iff the [`ArrowArrayStream`] is out of specification,
     /// or was already released prior to calling this function.
+    ///
     /// # Safety
     /// This method is intrinsically `unsafe` since it assumes that the `ArrowArrayStream`
     /// contains a valid Arrow C stream interface.
@@ -101,6 +102,7 @@ impl<Iter: DerefMut<Target = ArrowArrayStream>> ArrowArrayStreamReader<Iter> {
     /// Errors iff:
     /// * The C stream interface returns an error
     /// * The C stream interface returns an invalid array (that we can identify, see Safety below)
+    ///
     /// # Safety
     /// Calling this iterator's `next` assumes that the [`ArrowArrayStream`] produces arrow arrays
     /// that fulfill the C data interface

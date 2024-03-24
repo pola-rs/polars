@@ -228,7 +228,7 @@ Requires Rust version `>=1.71`.
 
 ## Contributing
 
-Want to contribute? Read our [contribution guideline](/CONTRIBUTING.md).
+Want to contribute? Read our [contributing guide](https://docs.pola.rs/development/contributing/).
 
 ## Python: compile Polars from source
 

@@ -18,13 +18,10 @@ use object_store::gcp::GoogleCloudStorageBuilder;
 pub use object_store::gcp::GoogleConfigKey;
 #[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
 use object_store::ClientOptions;
-#[cfg(feature = "cloud")]
-use object_store::ObjectStore;
 #[cfg(any(feature = "aws", feature = "gcp", feature = "azure"))]
 use object_store::{BackoffConfig, RetryConfig};
 #[cfg(feature = "aws")]
 use once_cell::sync::Lazy;
-use polars_core::error::{PolarsError, PolarsResult};
 use polars_error::*;
 #[cfg(feature = "aws")]
 use polars_utils::cache::FastFixedCache;
@@ -126,21 +123,21 @@ impl CloudType {
 }
 
 #[cfg(feature = "cloud")]
-pub(crate) fn parse_url(url: &str) -> std::result::Result<Url, url::ParseError> {
-    match Url::parse(url) {
-        Err(err) => match err {
-            url::ParseError::RelativeUrlWithoutBase => {
-                let parsed = Url::parse(&format!(
-                    "file://{}/",
-                    std::env::current_dir().unwrap().to_string_lossy()
-                ))
-                .unwrap();
-                parsed.join(url)
-            },
-            err => Err(err),
-        },
-        parsed => parsed,
-    }
+pub(crate) fn parse_url(input: &str) -> std::result::Result<url::Url, url::ParseError> {
+    Ok(if input.contains("://") {
+        url::Url::parse(input)?
+    } else {
+        let path = std::path::Path::new(input);
+        let mut tmp;
+        url::Url::from_file_path(if path.is_relative() {
+            tmp = std::env::current_dir().unwrap();
+            tmp.push(path);
+            tmp.as_path()
+        } else {
+            path
+        })
+        .unwrap()
+    })
 }
 
 impl FromStr for CloudType {
@@ -172,9 +169,9 @@ pub(super) fn get_client_options() -> ClientOptions {
         // We set request timeout super high as the timeout isn't reset at ACK,
         // but starts from the moment we start downloading a body.
         // https://docs.rs/reqwest/latest/reqwest/struct.ClientBuilder.html#method.timeout
-        .with_timeout(std::time::Duration::from_secs(60 * 5))
-        // Concurrency can increase connection latency, so also set high.
-        .with_connect_timeout(std::time::Duration::from_secs(30))
+        .with_timeout_disabled()
+        // Concurrency can increase connection latency, so set to None, similar to default.
+        .with_connect_timeout_disabled()
         .with_allow_http(true)
 }
 
@@ -227,9 +224,9 @@ impl CloudOptions {
         self
     }
 
-    /// Build the [`ObjectStore`] implementation for AWS.
+    /// Build the [`object_store::ObjectStore`] implementation for AWS.
     #[cfg(feature = "aws")]
-    pub async fn build_aws(&self, url: &str) -> PolarsResult<impl ObjectStore> {
+    pub async fn build_aws(&self, url: &str) -> PolarsResult<impl object_store::ObjectStore> {
         let options = self.aws.as_ref();
         let mut builder = AmazonS3Builder::from_env().with_url(url);
         if let Some(options) = options {
@@ -330,9 +327,9 @@ impl CloudOptions {
         self
     }
 
-    /// Build the [`ObjectStore`] implementation for Azure.
+    /// Build the [`object_store::ObjectStore`] implementation for Azure.
     #[cfg(feature = "azure")]
-    pub fn build_azure(&self, url: &str) -> PolarsResult<impl ObjectStore> {
+    pub fn build_azure(&self, url: &str) -> PolarsResult<impl object_store::ObjectStore> {
         let options = self.azure.as_ref();
         let mut builder = MicrosoftAzureBuilder::from_env();
         if let Some(options) = options {
@@ -364,9 +361,9 @@ impl CloudOptions {
         self
     }
 
-    /// Build the [`ObjectStore`] implementation for GCP.
+    /// Build the [`object_store::ObjectStore`] implementation for GCP.
     #[cfg(feature = "gcp")]
-    pub fn build_gcp(&self, url: &str) -> PolarsResult<impl ObjectStore> {
+    pub fn build_gcp(&self, url: &str) -> PolarsResult<impl object_store::ObjectStore> {
         let options = self.gcp.as_ref();
         let mut builder = GoogleCloudStorageBuilder::from_env();
         if let Some(options) = options {
@@ -425,6 +422,86 @@ impl CloudOptions {
                     polars_bail!(ComputeError: "'gcp' feature is not enabled");
                 }
             },
+        }
+    }
+}
+
+#[cfg(feature = "cloud")]
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_path() {
+        assert_eq!(
+            parse_url(r"http://Users/Jane Doe/data.csv")
+                .unwrap()
+                .as_str(),
+            "http://users/Jane%20Doe/data.csv"
+        );
+        assert_eq!(
+            parse_url(r"http://Users/Jane Doe/data.csv")
+                .unwrap()
+                .as_str(),
+            "http://users/Jane%20Doe/data.csv"
+        );
+        #[cfg(target_os = "windows")]
+        {
+            assert_eq!(
+                parse_url(r"file:///c:/Users/Jane Doe/data.csv")
+                    .unwrap()
+                    .as_str(),
+                "file:///c:/Users/Jane%20Doe/data.csv"
+            );
+            assert_eq!(
+                parse_url(r"file://\c:\Users\Jane Doe\data.csv")
+                    .unwrap()
+                    .as_str(),
+                "file:///c:/Users/Jane%20Doe/data.csv"
+            );
+            assert_eq!(
+                parse_url(r"c:\Users\Jane Doe\data.csv").unwrap().as_str(),
+                "file:///C:/Users/Jane%20Doe/data.csv"
+            );
+            assert_eq!(
+                parse_url(r"data.csv").unwrap().as_str(),
+                url::Url::from_file_path(
+                    [
+                        std::env::current_dir().unwrap().as_path(),
+                        std::path::Path::new("data.csv")
+                    ]
+                    .into_iter()
+                    .collect::<std::path::PathBuf>()
+                )
+                .unwrap()
+                .as_str()
+            );
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            assert_eq!(
+                parse_url(r"file:///home/Jane Doe/data.csv")
+                    .unwrap()
+                    .as_str(),
+                "file:///home/Jane%20Doe/data.csv"
+            );
+            assert_eq!(
+                parse_url(r"/home/Jane Doe/data.csv").unwrap().as_str(),
+                "file:///home/Jane%20Doe/data.csv"
+            );
+            assert_eq!(
+                parse_url(r"data.csv").unwrap().as_str(),
+                url::Url::from_file_path(
+                    [
+                        std::env::current_dir().unwrap().as_path(),
+                        std::path::Path::new("data.csv")
+                    ]
+                    .into_iter()
+                    .collect::<std::path::PathBuf>()
+                )
+                .unwrap()
+                .as_str()
+            );
         }
     }
 }

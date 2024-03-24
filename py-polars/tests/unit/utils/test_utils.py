@@ -7,15 +7,14 @@ import numpy as np
 import pytest
 
 import polars as pl
-from polars.io._utils import _looks_like_url
-from polars.utils.convert import (
-    _date_to_pl_date,
-    _datetime_to_pl_timestamp,
-    _time_to_pl_time,
-    _timedelta_to_pl_duration,
-    _timedelta_to_pl_timedelta,
+from polars._utils.convert import (
+    date_to_int,
+    datetime_to_int,
+    parse_as_duration_string,
+    time_to_int,
+    timedelta_to_int,
 )
-from polars.utils.various import (
+from polars._utils.various import (
     _in_notebook,
     is_bool_sequence,
     is_int_sequence,
@@ -24,59 +23,20 @@ from polars.utils.various import (
     parse_percentiles,
     parse_version,
 )
+from polars.io._utils import _looks_like_url
 
 if TYPE_CHECKING:
+    from zoneinfo import ZoneInfo
+
     from polars.type_aliases import TimeUnit
-
-
-@pytest.mark.parametrize(
-    ("dt", "time_unit", "expected"),
-    [
-        (datetime(2121, 1, 1), "ns", 4765132800000000000),
-        (datetime(2121, 1, 1), "us", 4765132800000000),
-        (datetime(2121, 1, 1), "ms", 4765132800000),
-    ],
-)
-def test_datetime_to_pl_timestamp(
-    dt: datetime, time_unit: TimeUnit, expected: int
-) -> None:
-    out = _datetime_to_pl_timestamp(dt, time_unit)
-    assert out == expected
-
-
-@pytest.mark.parametrize(
-    ("t", "expected"),
-    [
-        (time(0, 0, 0), 0),
-        (time(0, 0, 1), 1_000_000_000),
-        (time(20, 52, 10), 75_130_000_000_000),
-        (time(20, 52, 10, 200), 75_130_000_200_000),
-    ],
-)
-def test_time_to_pl_time(t: time, expected: int) -> None:
-    assert _time_to_pl_time(t) == expected
-
-
-def test_date_to_pl_date() -> None:
-    d = date(1999, 9, 9)
-    out = _date_to_pl_date(d)
-    assert out == 10843
-
-
-def test_timedelta_to_pl_timedelta() -> None:
-    out = _timedelta_to_pl_timedelta(timedelta(days=1), "ns")
-    assert out == 86_400_000_000_000
-    out = _timedelta_to_pl_timedelta(timedelta(days=1), "us")
-    assert out == 86_400_000_000
-    out = _timedelta_to_pl_timedelta(timedelta(days=1), "ms")
-    assert out == 86_400_000
-    out = _timedelta_to_pl_timedelta(timedelta(days=1), time_unit=None)
-    assert out == 86_400_000_000
+else:
+    from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
 
 @pytest.mark.parametrize(
     ("td", "expected"),
     [
+        (timedelta(), ""),
         (timedelta(days=1), "1d"),
         (timedelta(days=-1), "-1d"),
         (timedelta(seconds=1), "1s"),
@@ -84,14 +44,116 @@ def test_timedelta_to_pl_timedelta() -> None:
         (timedelta(microseconds=1), "1us"),
         (timedelta(microseconds=-1), "-1us"),
         (timedelta(days=1, seconds=1), "1d1s"),
+        (timedelta(minutes=-1, seconds=1), "-59s"),
         (timedelta(days=-1, seconds=-1), "-1d1s"),
         (timedelta(days=1, microseconds=1), "1d1us"),
         (timedelta(days=-1, microseconds=-1), "-1d1us"),
+        (None, None),
+        ("1d2s", "1d2s"),
     ],
 )
-def test_timedelta_to_pl_duration(td: timedelta, expected: str) -> None:
-    out = _timedelta_to_pl_duration(td)
-    assert out == expected
+def test_parse_as_duration_string(
+    td: timedelta | str | None, expected: str | None
+) -> None:
+    assert parse_as_duration_string(td) == expected
+
+
+@pytest.mark.parametrize(
+    ("d", "expected"),
+    [
+        (date(1999, 9, 9), 10_843),
+        (date(1969, 12, 31), -1),
+        (date.min, -719_162),
+        (date.max, 2_932_896),
+    ],
+)
+def test_date_to_int(d: date, expected: int) -> None:
+    assert date_to_int(d) == expected
+
+
+@pytest.mark.parametrize(
+    ("t", "expected"),
+    [
+        (time(0, 0, 1), 1_000_000_000),
+        (time(20, 52, 10), 75_130_000_000_000),
+        (time(20, 52, 10, 200), 75_130_000_200_000),
+        (time.min, 0),
+        (time.max, 86_399_999_999_000),
+        (time(12, 0, tzinfo=None), 43_200_000_000_000),
+        (time(12, 0, tzinfo=ZoneInfo("UTC")), 43_200_000_000_000),
+        (time(12, 0, tzinfo=ZoneInfo("Asia/Shanghai")), 43_200_000_000_000),
+        (time(12, 0, tzinfo=ZoneInfo("US/Central")), 43_200_000_000_000),
+    ],
+)
+def test_time_to_int(t: time, expected: int) -> None:
+    assert time_to_int(t) == expected
+
+
+@pytest.mark.parametrize(
+    "tzinfo", [None, ZoneInfo("UTC"), ZoneInfo("Asia/Shanghai"), ZoneInfo("US/Central")]
+)
+def test_time_to_int_with_time_zone(tzinfo: Any) -> None:
+    t = time(12, 0, tzinfo=tzinfo)
+    assert time_to_int(t) == 43_200_000_000_000
+
+
+@pytest.mark.parametrize(
+    ("dt", "time_unit", "expected"),
+    [
+        (datetime(2121, 1, 1), "ns", 4_765_132_800_000_000_000),
+        (datetime(2121, 1, 1), "us", 4_765_132_800_000_000),
+        (datetime(2121, 1, 1), "ms", 4_765_132_800_000),
+        (datetime(1969, 12, 31, 23, 59, 59, 999999), "us", -1),
+        (datetime(1969, 12, 30, 23, 59, 59, 999999), "us", -86_400_000_001),
+        (datetime.min, "ns", -62_135_596_800_000_000_000),
+        (datetime.max, "ns", 253_402_300_799_999_999_000),
+        (datetime.min, "ms", -62_135_596_800_000),
+        (datetime.max, "ms", 253_402_300_799_999),
+    ],
+)
+def test_datetime_to_int(dt: datetime, time_unit: TimeUnit, expected: int) -> None:
+    assert datetime_to_int(dt, time_unit) == expected
+
+
+@pytest.mark.parametrize(
+    ("dt", "expected"),
+    [
+        (
+            datetime(2000, 1, 1, 12, 0, tzinfo=None),
+            946_728_000_000_000,
+        ),
+        (
+            datetime(2000, 1, 1, 12, 0, tzinfo=ZoneInfo("UTC")),
+            946_728_000_000_000,
+        ),
+        (
+            datetime(2000, 1, 1, 12, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+            946_699_200_000_000,
+        ),
+        (
+            datetime(2000, 1, 1, 12, 0, tzinfo=ZoneInfo("US/Central")),
+            946_749_600_000_000,
+        ),
+    ],
+)
+def test_datetime_to_int_with_time_zone(dt: datetime, expected: int) -> None:
+    assert datetime_to_int(dt, "us") == expected
+
+
+@pytest.mark.parametrize(
+    ("td", "time_unit", "expected"),
+    [
+        (timedelta(days=1), "ns", 86_400_000_000_000),
+        (timedelta(days=1), "us", 86_400_000_000),
+        (timedelta(days=1), "ms", 86_400_000),
+        (timedelta.min, "ns", -86_399_999_913_600_000_000_000),
+        (timedelta.max, "ns", 86_399_999_999_999_999_999_000),
+        (timedelta.min, "ms", -86_399_999_913_600_000),
+        (timedelta.max, "ms", 86_399_999_999_999_999),
+    ],
+)
+def test_timedelta_to_int(td: timedelta, time_unit: TimeUnit, expected: int) -> None:
+    assert timedelta_to_int(td, time_unit) == expected
 
 
 def test_estimated_size() -> None:

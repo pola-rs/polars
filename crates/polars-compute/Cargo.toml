@@ -17,10 +17,13 @@ polars-error = { workspace = true }
 polars-utils = { workspace = true }
 strength_reduce = { workspace = true }
 
+[dev-dependencies]
+rand = { workspace = true }
+
 [build-dependencies]
 version_check = { workspace = true }
 
 [features]
 nightly = []
-simd = []
+simd = ["arrow/simd"]
 dtype-array = []

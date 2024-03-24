@@ -1,5 +1,3 @@
-#[cfg(feature = "object")]
-use arrow::array::Array;
 use polars_compute::filter::filter as filter_fn;
 
 #[cfg(feature = "object")]

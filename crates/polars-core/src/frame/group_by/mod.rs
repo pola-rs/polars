@@ -2,7 +2,6 @@ use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
 
 use ahash::RandomState;
-use arrow::legacy::prelude::QuantileInterpolOptions;
 use num_traits::NumCast;
 use polars_utils::hashing::{BytesHash, DirtyHash};
 use rayon::prelude::*;
@@ -28,28 +27,31 @@ use crate::prelude::sort::arg_sort_multiple::encode_rows_vertical;
 
 // This will remove the sorted flag on signed integers
 fn prepare_dataframe_unsorted(by: &[Series]) -> DataFrame {
-    DataFrame::new_no_checks(
-        by.iter()
-            .map(|s| match s.dtype() {
-                #[cfg(feature = "dtype-categorical")]
-                DataType::Categorical(_, _) | DataType::Enum(_, _) => {
-                    s.cast(&DataType::UInt32).unwrap()
-                },
-                _ => {
-                    if s.dtype().to_physical().is_numeric() {
-                        let s = s.to_physical_repr();
-                        if s.bit_repr_is_large() {
-                            s.bit_repr_large().into_series()
-                        } else {
-                            s.bit_repr_small().into_series()
-                        }
+    let columns = by
+        .iter()
+        .map(|s| match s.dtype() {
+            #[cfg(feature = "dtype-categorical")]
+            DataType::Categorical(_, _) | DataType::Enum(_, _) => {
+                s.cast(&DataType::UInt32).unwrap()
+            },
+            _ => {
+                if s.dtype().to_physical().is_numeric() {
+                    let s = s.to_physical_repr();
+
+                    if s.dtype().is_float() {
+                        s.into_owned().into_series()
+                    } else if s.bit_repr_is_large() {
+                        s.bit_repr_large().into_series()
                     } else {
-                        s.clone()
+                        s.bit_repr_small().into_series()
                     }
-                },
-            })
-            .collect(),
-    )
+                } else {
+                    s.clone()
+                }
+            },
+        })
+        .collect();
+    unsafe { DataFrame::new_no_checks(columns) }
 }
 
 impl DataFrame {
@@ -793,7 +795,7 @@ impl<'df> GroupBy<'df> {
                 new_cols.extend_from_slice(&self.selected_keys);
                 let cols = self.df.select_series(agg)?;
                 new_cols.extend(cols);
-                Ok(DataFrame::new_no_checks(new_cols))
+                Ok(unsafe { DataFrame::new_no_checks(new_cols) })
             }
         } else {
             Ok(self.df.clone())

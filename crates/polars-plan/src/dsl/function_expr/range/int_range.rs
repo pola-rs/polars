@@ -1,5 +1,4 @@
 use polars_core::prelude::*;
-use polars_core::series::Series;
 use polars_core::with_match_physical_integer_polars_type;
 use polars_ops::series::new_int_range;
 

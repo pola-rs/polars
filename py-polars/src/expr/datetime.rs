@@ -41,12 +41,17 @@ impl PyExpr {
     }
 
     #[cfg(feature = "timezones")]
-    #[pyo3(signature = (time_zone, ambiguous))]
-    fn dt_replace_time_zone(&self, time_zone: Option<String>, ambiguous: Self) -> Self {
+    #[pyo3(signature = (time_zone, ambiguous, non_existent))]
+    fn dt_replace_time_zone(
+        &self,
+        time_zone: Option<String>,
+        ambiguous: Self,
+        non_existent: Wrap<NonExistent>,
+    ) -> Self {
         self.inner
             .clone()
             .dt()
-            .replace_time_zone(time_zone, ambiguous.inner)
+            .replace_time_zone(time_zone, ambiguous.inner, non_existent.0)
             .into()
     }
 

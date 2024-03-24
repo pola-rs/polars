@@ -1,10 +1,5 @@
-use std::sync::Arc;
-
 use super::*;
-use crate::dsl::function_expr::FunctionExpr;
-use crate::logical_plan::functions::FunctionNode;
 use crate::logical_plan::iterator::*;
-use crate::utils::aexpr_to_leaf_names;
 
 /// If we realize that a predicate drops nulls on a subset
 /// we replace it with an explicit df.drop_nulls call, as this
@@ -26,7 +21,7 @@ impl OptimizationRule for ReplaceDropNulls {
                 // We want to make sure we find this pattern
                 // A != null AND B != null AND C != null .. etc.
                 // the outer expression always is a binary and operation and the inner
-                let iter = (&*expr_arena).iter(*predicate);
+                let iter = (&*expr_arena).iter(predicate.node());
                 let is_binary_and = |e: &AExpr| {
                     matches!(
                         e,
@@ -72,7 +67,7 @@ impl OptimizationRule for ReplaceDropNulls {
                     }
                 }
                 if not_null_count == column_count && binary_and_count < column_count {
-                    let subset = Arc::from(aexpr_to_leaf_names(*predicate, expr_arena));
+                    let subset = Arc::from(aexpr_to_leaf_names(predicate.node(), expr_arena));
 
                     Some(ALogicalPlan::MapFunction {
                         input: *input,

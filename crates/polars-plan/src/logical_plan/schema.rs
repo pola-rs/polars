@@ -141,7 +141,7 @@ pub fn set_estimated_row_counts(
     match lp_arena.get(root) {
         Selection { predicate, input } => {
             _filter_count += expr_arena
-                .iter(*predicate)
+                .iter(predicate.node())
                 .filter(|(_, ae)| matches!(ae, AExpr::BinaryExpr { .. }))
                 .count()
                 + 1;

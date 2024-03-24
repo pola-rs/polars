@@ -1,5 +1,3 @@
-use std::convert::TryFrom;
-
 use crate::parquet::schema::types::PhysicalType;
 
 /// A physical native representation of a Parquet fixed-sized type.

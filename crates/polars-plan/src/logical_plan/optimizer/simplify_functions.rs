@@ -1,6 +1,3 @@
-#[cfg(feature = "is_between")]
-use polars_ops::series::ClosedInterval;
-
 use super::*;
 
 pub(super) fn optimize_functions(

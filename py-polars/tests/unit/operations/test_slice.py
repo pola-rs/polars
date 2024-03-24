@@ -30,6 +30,10 @@ def test_python_slicing_data_frame() -> None:
     ):
         assert_frame_equal(df.slice(*slice_params), expected)
 
+    # Negative starting index before start of dataframe.
+    expected = pl.DataFrame({"a": [1, 2], "b": ["a", "b"]})
+    assert_frame_equal(df.slice(-5, 4), expected)
+
     for py_slice in (
         slice(1, 2),
         slice(0, 2, 2),
@@ -50,6 +54,8 @@ def test_python_slicing_series() -> None:
         [s.slice(4, None), [4, 5]],
         [s.slice(3), [3, 4, 5]],
         [s.slice(-2), [4, 5]],
+        [s.slice(-7, 4), [0, 1, 2]],
+        [s.slice(-700, 4), []],
     ):
         assert srs_slice.to_list() == expected  # type: ignore[attr-defined]
 
@@ -168,3 +174,48 @@ def test_slice_pushdown_set_sorted() -> None:
     plan = ldf.explain()
     # check the set sorted is above slice
     assert plan.index("set_sorted") < plan.index("SLICE")
+
+
+def test_slice_pushdown_literal_projection_14349() -> None:
+    lf = pl.select(a=pl.int_range(10)).lazy()
+    expect = pl.DataFrame({"a": [0, 1, 2, 3, 4], "b": [10, 11, 12, 13, 14]})
+
+    out = lf.with_columns(b=pl.int_range(10, 20, eager=True)).head(5).collect()
+    assert_frame_equal(expect, out)
+
+    out = lf.select("a", b=pl.int_range(10, 20, eager=True)).head(5).collect()
+    assert_frame_equal(expect, out)
+
+    assert pl.LazyFrame().select(x=1).head(0).collect().height == 0
+    assert pl.LazyFrame().with_columns(x=1).head(0).collect().height == 0
+
+    q = lf.select(x=1).head(0)
+    assert q.collect().height == 0
+
+    # For select, slice pushdown should happen when at least 1 input column is selected
+    q = lf.select("a", x=1).head(0)
+    plan = q.explain()
+    assert plan.index("SELECT") < plan.index("SLICE")
+    assert q.collect().height == 0
+
+    # For with_columns, slice pushdown should happen if the input has at least 1 column
+    q = lf.with_columns(x=1).head(0)
+    plan = q.explain()
+    assert plan.index("WITH_COLUMNS") < plan.index("SLICE")
+    assert q.collect().height == 0
+
+    q = lf.with_columns(pl.col("a") + 1).head(0)
+    plan = q.explain()
+    assert plan.index("WITH_COLUMNS") < plan.index("SLICE")
+    assert q.collect().height == 0
+
+    # This does not project any of the original columns
+    q = lf.with_columns(a=1, b=2).head(0)
+    plan = q.explain()
+    assert plan.index("SLICE") < plan.index("WITH_COLUMNS")
+    assert q.collect().height == 0
+
+    q = lf.with_columns(b=1, c=2).head(0)
+    plan = q.explain()
+    assert plan.index("WITH_COLUMNS") < plan.index("SLICE")
+    assert q.collect().height == 0

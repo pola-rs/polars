@@ -1,5 +1,3 @@
-use std::convert::TryInto;
-
 use avro_schema::file::Block;
 use avro_schema::schema::{Enum, Field as AvroField, Record, Schema as AvroSchema};
 use polars_error::{polars_bail, polars_err, PolarsResult};

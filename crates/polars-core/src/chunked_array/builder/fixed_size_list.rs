@@ -1,7 +1,3 @@
-use arrow::array::{
-    Array, MutableArray, MutableFixedSizeListArray, MutablePrimitiveArray, PrimitiveArray,
-    PushUnchecked,
-};
 use arrow::types::NativeType;
 use polars_utils::unwrap::UnwrapUncheckedRelease;
 use smartstring::alias::String as SmartString;
@@ -16,7 +12,8 @@ pub(crate) struct FixedSizeListNumericBuilder<T: NativeType> {
 }
 
 impl<T: NativeType> FixedSizeListNumericBuilder<T> {
-    /// SAFETY
+    /// # Safety
+    ///
     /// The caller must ensure that the physical numerical type match logical type.
     pub(crate) unsafe fn new(
         name: &str,

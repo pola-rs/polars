@@ -54,8 +54,13 @@ build-opt-native: .venv  ## Same as build-opt, except with native CPU optimizati
 build-release-native: .venv  ## Same as build-release, except with native CPU optimizations turned on
 	@$(MAKE) -s -C .. $@
 
+.PHONY: lint
+lint: .venv  ## Run lint checks
+	$(VENV_BIN)/ruff check
+	-$(VENV_BIN)/mypy
+
 .PHONY: fmt
-fmt: .venv  ## Run autoformatting and linting
+fmt: .venv  ## Run autoformatting (and lint)
 	$(VENV_BIN)/ruff check
 	$(VENV_BIN)/ruff format
 	$(VENV_BIN)/typos
@@ -68,7 +73,7 @@ clippy:  ## Run clippy
 	cargo clippy --locked -- -D warnings -D clippy::dbg_macro
 
 .PHONY: pre-commit
-pre-commit: fmt clippy  ## Run all code quality checks
+pre-commit: fmt clippy  ## Run all code formatting and lint/quality checks
 
 .PHONY: test
 test: .venv build  ## Run fast unittests
@@ -86,7 +91,7 @@ test-all: .venv build  ## Run all tests
 
 .PHONY: coverage
 coverage: .venv build  ## Run tests and report coverage
-	$(VENV_BIN)/pytest --cov -n auto --dist loadgroup -m "not benchmark"
+	$(VENV_BIN)/pytest --cov -n auto --dist loadgroup -m "not release"
 
 .PHONY: clean
 clean:  ## Clean up caches and build artifacts

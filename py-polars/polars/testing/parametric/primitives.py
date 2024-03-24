@@ -461,8 +461,7 @@ def dataframes(
     allow_infinities: bool = True,
     allowed_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
     excluded_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
-) -> SearchStrategy[DataFrame]:
-    ...
+) -> SearchStrategy[DataFrame]: ...
 
 
 @overload
@@ -481,8 +480,7 @@ def dataframes(
     allow_infinities: bool = True,
     allowed_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
     excluded_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
-) -> SearchStrategy[LazyFrame]:
-    ...
+) -> SearchStrategy[LazyFrame]: ...
 
 
 @defines_strategy()

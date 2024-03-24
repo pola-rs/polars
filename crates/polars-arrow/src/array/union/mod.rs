@@ -240,6 +240,7 @@ impl UnionArray {
     /// Returns a slice of this [`UnionArray`].
     /// # Implementation
     /// This operation is `O(F)` where `F` is the number of fields.
+    ///
     /// # Safety
     /// The caller must ensure that `offset + length <= self.len()`.
     #[inline]
@@ -296,6 +297,7 @@ impl UnionArray {
 
     /// Returns the index and slot of the field to select from `self.fields`.
     /// The first value is guaranteed to be `< self.fields().len()`
+    ///
     /// # Safety
     /// This function is safe iff `index < self.len`.
     #[inline]
@@ -323,6 +325,7 @@ impl UnionArray {
     }
 
     /// Returns the slot `index` as a [`Scalar`].
+    ///
     /// # Safety
     /// This function is safe iff `i < self.len`.
     pub unsafe fn value_unchecked(&self, index: usize) -> Box<dyn Scalar> {

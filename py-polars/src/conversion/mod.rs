@@ -10,23 +10,18 @@ use polars::frame::row::Row;
 use polars::frame::NullStrategy;
 #[cfg(feature = "avro")]
 use polars::io::avro::AvroCompression;
-#[cfg(feature = "ipc")]
-use polars::io::ipc::IpcCompression;
-use polars::prelude::AnyValue;
 use polars::series::ops::NullBehavior;
-use polars_core::prelude::{IndexOrder, QuantileInterpolOptions};
 use polars_core::utils::arrow::array::Array;
 use polars_core::utils::arrow::types::NativeType;
 use polars_lazy::prelude::*;
 #[cfg(feature = "cloud")]
 use polars_rs::io::cloud::CloudOptions;
-use polars_utils::total_ord::TotalEq;
+use polars_utils::total_ord::{TotalEq, TotalHash};
 use pyo3::basic::CompareOp;
-use pyo3::conversion::{FromPyObject, IntoPy};
 use pyo3::exceptions::{PyTypeError, PyValueError};
+use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList, PySequence};
-use pyo3::{intern, PyAny, PyResult};
 use smartstring::alias::String as SmartString;
 
 use crate::error::PyPolarsErr;
@@ -38,12 +33,6 @@ use crate::series::PySeries;
 use crate::{PyDataFrame, PyLazyFrame};
 
 pub(crate) fn slice_to_wrapped<T>(slice: &[T]) -> &[Wrap<T>] {
-    // SAFETY:
-    // Wrap is transparent.
-    unsafe { std::mem::transmute(slice) }
-}
-
-pub(crate) fn slice_extract_wrapped<T>(slice: &[Wrap<T>]) -> &[T] {
     // SAFETY:
     // Wrap is transparent.
     unsafe { std::mem::transmute(slice) }
@@ -440,6 +429,7 @@ impl ToPyObject for Wrap<TimeUnit> {
 impl<'s> FromPyObject<'s> for Wrap<Row<'s>> {
     fn extract(ob: &'s PyAny) -> PyResult<Self> {
         let vals = ob.extract::<Vec<Wrap<AnyValue<'s>>>>()?;
+        // SAFETY: Wrap is repr transparent.
         let vals: Vec<AnyValue> = unsafe { std::mem::transmute(vals) };
         Ok(Wrap(Row(vals)))
     }
@@ -495,6 +485,15 @@ impl PartialEq for ObjectValue {
 impl TotalEq for ObjectValue {
     fn tot_eq(&self, other: &Self) -> bool {
         self == other
+    }
+}
+
+impl TotalHash for ObjectValue {
+    fn tot_hash<H>(&self, state: &mut H)
+    where
+        H: Hasher,
+    {
+        self.hash(state);
     }
 }
 
@@ -558,50 +557,6 @@ impl<'a, T: NativeType + FromPyObject<'a>> FromPyObject<'a> for Wrap<Vec<T>> {
         }
         Ok(Wrap(v))
     }
-}
-
-pub(crate) fn dicts_to_rows(
-    records: &PyAny,
-    infer_schema_len: Option<usize>,
-    schema_columns: PlIndexSet<String>,
-) -> PyResult<(Vec<Row>, Vec<String>)> {
-    let infer_schema_len = infer_schema_len.map(|n| std::cmp::max(1, n));
-    let len = records.len()?;
-
-    let key_names = {
-        if !schema_columns.is_empty() {
-            schema_columns
-        } else {
-            let mut inferred_keys = PlIndexSet::new();
-            for d in records.iter()?.take(infer_schema_len.unwrap_or(usize::MAX)) {
-                let d = d?;
-                let d = d.downcast::<PyDict>()?;
-                let keys = d.keys();
-                for name in keys {
-                    let name = name.extract::<String>()?;
-                    inferred_keys.insert(name);
-                }
-            }
-            inferred_keys
-        }
-    };
-    let mut rows = Vec::with_capacity(len);
-
-    for d in records.iter()? {
-        let d = d?;
-        let d = d.downcast::<PyDict>()?;
-
-        let mut row = Vec::with_capacity(key_names.len());
-        for k in key_names.iter() {
-            let val = match d.get_item(k)? {
-                None => AnyValue::Null,
-                Some(val) => val.extract::<Wrap<AnyValue>>()?.0,
-            };
-            row.push(val)
-        }
-        rows.push(Row(row))
-    }
-    Ok((rows, key_names.into_iter().collect()))
 }
 
 #[cfg(feature = "asof_join")]
@@ -785,6 +740,21 @@ impl FromPyObject<'_> for Wrap<ListToStructWidthStrategy> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "`n_field_strategy` must be one of {{'first_non_null', 'max_width'}}, got {v}",
+                )))
+            },
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
+impl FromPyObject<'_> for Wrap<NonExistent> {
+    fn extract(ob: &PyAny) -> PyResult<Self> {
+        let parsed = match ob.extract::<&str>()? {
+            "null" => NonExistent::Null,
+            "raise" => NonExistent::Raise,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "`non_existent` must be one of {{'null', 'raise'}}, got {v}",
                 )))
             },
         };

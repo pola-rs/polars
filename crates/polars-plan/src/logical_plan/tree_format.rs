@@ -5,6 +5,7 @@ use polars_core::error::*;
 #[cfg(feature = "regex")]
 use regex::Regex;
 
+use crate::constants::LEN;
 use crate::logical_plan::visitor::{VisitRecursion, Visitor};
 use crate::prelude::visitor::AexprNode;
 use crate::prelude::*;
@@ -56,7 +57,7 @@ impl UpperExp for AExpr {
             AExpr::Window { .. } => "window",
             AExpr::Wildcard => "*",
             AExpr::Slice { .. } => "slice",
-            AExpr::Len => "len",
+            AExpr::Len => LEN,
             AExpr::Nth(v) => return write!(f, "nth({})", v),
         };
 
@@ -260,7 +261,13 @@ impl<'a> TreeFmtNode<'a> {
                     .collect(),
             ),
             NL(h, Distinct { input, options }) => ND(
-                wh(h, &format!("UNIQUE BY {:?}", options.subset)),
+                wh(
+                    h,
+                    &format!(
+                        "UNIQUE[maintain_order: {:?}, keep_strategy: {:?}] BY {:?}",
+                        options.maintain_order, options.keep_strategy, options.subset
+                    ),
+                ),
                 vec![NL(None, input)],
             ),
             NL(h, LogicalPlan::Slice { input, offset, len }) => ND(

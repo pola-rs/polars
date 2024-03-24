@@ -7,7 +7,6 @@ use polars_core::prelude::*;
 use polars_core::utils::try_get_supertype;
 use polars_core::with_match_physical_numeric_polars_type;
 use pyo3::prelude::*;
-use pyo3::{IntoPy, PyAny, PyObject, Python};
 
 use crate::conversion::Wrap;
 use crate::dataframe::PyDataFrame;
@@ -49,10 +48,16 @@ where
 }
 
 #[pymethods]
-#[allow(clippy::wrong_self_convention)]
 impl PySeries {
+    /// Create a view of the data as a NumPy ndarray.
+    ///
+    /// WARNING: The resulting view will show the underlying value for nulls,
+    /// which may be any value. The caller is responsible for handling nulls
+    /// appropriately.
+    #[allow(clippy::wrong_self_convention)]
     pub fn to_numpy_view(&self, py: Python) -> Option<PyObject> {
-        if self.series.null_count() != 0 || self.series.chunks().len() > 1 {
+        // NumPy arrays are always contiguous
+        if self.series.n_chunks() > 1 {
             return None;
         }
 
@@ -62,15 +67,18 @@ impl PySeries {
                 // Object to the series keep the memory alive.
                 let owner = self.clone().into_py(py);
                 with_match_physical_numeric_polars_type!(self.series.dtype(), |$T| {
-                            let ca: &ChunkedArray<$T> = self.series.unpack::<$T>().unwrap();
-                            let slice = ca.cont_slice().unwrap();
-                            unsafe { Some(create_borrowed_np_array::<<$T as PolarsNumericType>::Native, _>(
-                                py,
-                                dims,
-                                flags::NPY_ARRAY_FARRAY_RO,
-                                slice.as_ptr() as _,
-                                owner,
-                            )) }
+                    let ca: &ChunkedArray<$T> = self.series.unpack::<$T>().unwrap();
+                    let slice = ca.data_views().next().unwrap();
+                    let view = unsafe {
+                        create_borrowed_np_array::<<$T as PolarsNumericType>::Native, _>(
+                            py,
+                            dims,
+                            flags::NPY_ARRAY_FARRAY_RO,
+                            slice.as_ptr() as _,
+                            owner,
+                        )
+                    };
+                    Some(view)
                 })
             },
             _ => None,

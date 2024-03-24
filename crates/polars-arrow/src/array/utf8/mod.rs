@@ -156,6 +156,7 @@ impl<O: Offset> Utf8Array<O> {
     }
 
     /// Returns the value of the element at index `i`, ignoring the array's validity.
+    ///
     /// # Safety
     /// This function is safe iff `i < self.len`.
     #[inline]
@@ -223,6 +224,7 @@ impl<O: Offset> Utf8Array<O> {
     /// Slices this [`Utf8Array`].
     /// # Implementation
     /// This function is `O(1)`
+    ///
     /// # Safety
     /// The caller must ensure that `offset + length <= self.len()`.
     pub unsafe fn slice_unchecked(&mut self, offset: usize, length: usize) {
@@ -362,6 +364,7 @@ impl<O: Offset> Utf8Array<O> {
     /// * The last offset is not equal to the values' length.
     /// * the validity's length is not equal to `offsets.len()`.
     /// * The `data_type`'s [`crate::datatypes::PhysicalType`] is not equal to either `Utf8` or `LargeUtf8`.
+    ///
     /// # Safety
     /// This function is unsound iff:
     /// * The `values` between two consecutive `offsets` are not valid utf8
@@ -430,6 +433,7 @@ impl<O: Offset> Utf8Array<O> {
     }
 
     /// Creates a [`Utf8Array`] from an iterator of trusted length.
+    ///
     /// # Safety
     /// The iterator must be [`TrustedLen`](https://doc.rust-lang.org/std/iter/trait.TrustedLen.html).
     /// I.e. that `size_hint().1` correctly reports its length.
@@ -453,6 +457,7 @@ impl<O: Offset> Utf8Array<O> {
     }
 
     /// Creates a [`Utf8Array`] from an falible iterator of trusted length.
+    ///
     /// # Safety
     /// The iterator must be [`TrustedLen`](https://doc.rust-lang.org/std/iter/trait.TrustedLen.html).
     /// I.e. that `size_hint().1` correctly reports its length.

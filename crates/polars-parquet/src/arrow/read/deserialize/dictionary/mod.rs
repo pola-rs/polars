@@ -154,29 +154,28 @@ where
     ) -> PolarsResult<()> {
         let (values, validity) = decoded;
         match state {
-            State::Optional(page) => extend_from_decoder(
-                validity,
-                &mut page.validity,
-                Some(remaining),
-                values,
-                &mut page.values.by_ref().map(|x| {
-                    // todo: rm unwrap
-                    let x: usize = x.unwrap().try_into().unwrap();
-                    match x.try_into() {
-                        Ok(key) => key,
-                        // todo: convert this to an error.
-                        Err(_) => panic!("The maximum key is too small"),
-                    }
-                }),
-            ),
+            State::Optional(page) => {
+                extend_from_decoder(
+                    validity,
+                    &mut page.validity,
+                    Some(remaining),
+                    values,
+                    &mut page.values.by_ref().map(|x| {
+                        match (x as usize).try_into() {
+                            Ok(key) => key,
+                            // todo: convert this to an error.
+                            Err(_) => panic!("The maximum key is too small"),
+                        }
+                    }),
+                );
+                page.values.get_result()?;
+            },
             State::Required(page) => {
                 values.extend(
                     page.values
                         .by_ref()
                         .map(|x| {
-                            // todo: rm unwrap
-                            let x: usize = x.unwrap().try_into().unwrap();
-                            let x: K = match x.try_into() {
+                            let x: K = match (x as usize).try_into() {
                                 Ok(key) => key,
                                 // todo: convert this to an error.
                                 Err(_) => {
@@ -187,33 +186,33 @@ where
                         })
                         .take(remaining),
                 );
+                page.values.get_result()?;
             },
-            State::FilteredOptional(page_validity, page_values) => extend_from_decoder(
-                validity,
-                page_validity,
-                Some(remaining),
-                values,
-                &mut page_values.by_ref().map(|x| {
-                    // todo: rm unwrap
-                    let x: usize = x.unwrap().try_into().unwrap();
-                    let x: K = match x.try_into() {
-                        Ok(key) => key,
-                        // todo: convert this to an error.
-                        Err(_) => {
-                            panic!("The maximum key is too small")
-                        },
-                    };
-                    x
-                }),
-            ),
+            State::FilteredOptional(page_validity, page_values) => {
+                extend_from_decoder(
+                    validity,
+                    page_validity,
+                    Some(remaining),
+                    values,
+                    &mut page_values.by_ref().map(|x| {
+                        let x: K = match (x as usize).try_into() {
+                            Ok(key) => key,
+                            // todo: convert this to an error.
+                            Err(_) => {
+                                panic!("The maximum key is too small")
+                            },
+                        };
+                        x
+                    }),
+                );
+                page_values.get_result()?;
+            },
             State::FilteredRequired(page) => {
                 values.extend(
                     page.values
                         .by_ref()
                         .map(|x| {
-                            // todo: rm unwrap
-                            let x: usize = x.unwrap().try_into().unwrap();
-                            let x: K = match x.try_into() {
+                            let x: K = match (x as usize).try_into() {
                                 Ok(key) => key,
                                 // todo: convert this to an error.
                                 Err(_) => {
@@ -224,6 +223,7 @@ where
                         })
                         .take(remaining),
                 );
+                page.values.iter.get_result()?;
             },
         }
         Ok(())
@@ -319,3 +319,4 @@ pub(super) fn next_dict<K: DictionaryKey, I: PagesIter, F: Fn(&DictPage) -> Box<
 
 pub use nested::next_dict as nested_next_dict;
 use polars_error::{polars_err, PolarsResult};
+use polars_utils::iter::FallibleIterator;

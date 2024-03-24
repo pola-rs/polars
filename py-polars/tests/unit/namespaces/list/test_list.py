@@ -30,6 +30,16 @@ def test_list_arr_get() -> None:
     out = pl.select(pl.lit(a).list.last()).to_series()
     assert_series_equal(out, expected)
 
+    # Out of bounds index.
+    out = a.list.get(3)
+    expected = pl.Series("a", [None, None, 9])
+    assert_series_equal(out, expected)
+
+    # Null index.
+    out_df = a.to_frame().select(pl.col.a.list.get(pl.lit(None)))
+    expected_df = pl.Series("a", [None, None, None], dtype=pl.Int64).to_frame()
+    assert_frame_equal(out_df, expected_df)
+
     a = pl.Series("a", [[1, 2, 3], [4, 5], [6, 7, 8, 9]])
     out = a.list.get(-3)
     expected = pl.Series("a", [1, None, 7])
@@ -258,6 +268,7 @@ def test_slice() -> None:
     assert s.list.tail(200).to_list() == vals
     assert s.list.head(200).to_list() == vals
     assert s.list.slice(1, 2).to_list() == [[2, 3], [2, 1]]
+    assert s.list.slice(-5, 2).to_list() == [[1], []]
 
 
 def test_list_eval_dtype_inference() -> None:

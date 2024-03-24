@@ -2,19 +2,10 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use once_cell::sync::Lazy;
-#[cfg(any(feature = "csv", feature = "json"))]
-use polars_core::frame::DataFrame;
 use polars_core::prelude::*;
 use regex::{Regex, RegexBuilder};
 
 use crate::mmap::{MmapBytesReader, ReaderBytes};
-#[cfg(any(
-    feature = "ipc",
-    feature = "ipc_streaming",
-    feature = "parquet",
-    feature = "avro"
-))]
-use crate::ArrowSchema;
 
 pub fn get_reader_bytes<'a, R: Read + MmapBytesReader + ?Sized>(
     reader: &'a mut R,

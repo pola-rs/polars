@@ -250,8 +250,8 @@ def test_compare_frame_equal_nested_nans() -> None:
             {
                 "id": 2,
                 "struct": [
-                    {"x": "text", "y": [nan, 1], "z": ["!"]},
-                    {"x": "text", "y": [nan, 1], "z": ["?"]},
+                    {"x": "text", "y": [nan, 1.0], "z": ["!"]},
+                    {"x": "text", "y": [nan, 1.0], "z": ["?"]},
                 ],
             },
         ]
@@ -342,14 +342,18 @@ def test_assert_frame_equal_ignore_row_order() -> None:
 
     assert_frame_equal(df1, df3, check_row_order=False, check_column_order=False)
 
+    class Foo:
+        def __init__(self) -> None:
+            pass
+
     # note: not all column types support sorting
     with pytest.raises(
         InvalidAssert,
         match="cannot set `check_row_order=False`.*unsortable columns",
     ):
         assert_frame_equal(
-            left=pl.DataFrame({"a": [[1, 2], [3, 4]], "b": [3, 4]}),
-            right=pl.DataFrame({"a": [[3, 4], [1, 2]], "b": [4, 3]}),
+            left=pl.DataFrame({"a": [Foo(), Foo()], "b": [3, 4]}),
+            right=pl.DataFrame({"a": [Foo(), Foo()], "b": [4, 3]}),
             check_row_order=False,
         )
 

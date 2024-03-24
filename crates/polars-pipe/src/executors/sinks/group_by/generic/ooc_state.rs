@@ -1,7 +1,6 @@
 use polars_core::config::verbose;
 
 use super::*;
-use crate::executors::sinks::io::IOThread;
 use crate::executors::sinks::memory::MemTracker;
 use crate::pipeline::{morsels_per_sink, FORCE_OOC};
 

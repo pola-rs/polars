@@ -9,12 +9,12 @@ use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{DataChunk, Operator, OperatorResult, PExecutionContext};
 
 #[derive(Clone)]
-pub(crate) struct FastProjectionOperator {
+pub(crate) struct SimpleProjectionOperator {
     columns: Arc<[SmartString]>,
     input_schema: SchemaRef,
 }
 
-impl FastProjectionOperator {
+impl SimpleProjectionOperator {
     pub(crate) fn new(columns: Arc<[SmartString]>, input_schema: SchemaRef) -> Self {
         Self {
             columns,
@@ -23,7 +23,7 @@ impl FastProjectionOperator {
     }
 }
 
-impl Operator for FastProjectionOperator {
+impl Operator for SimpleProjectionOperator {
     fn execute(
         &mut self,
         _context: &PExecutionContext,
@@ -98,7 +98,7 @@ impl Operator for ProjectionOperator {
             }
         }
 
-        let chunk = chunk.with_data(DataFrame::new_no_checks(projected));
+        let chunk = chunk.with_data(unsafe { DataFrame::new_no_checks(projected) });
         Ok(OperatorResult::Finished(chunk))
     }
     fn split(&self, _thread_no: usize) -> Box<dyn Operator> {
@@ -149,7 +149,8 @@ impl Operator for HstackOperator {
             .map(|e| e.evaluate(chunk, context.execution_state.as_any()))
             .collect::<PolarsResult<Vec<_>>>()?;
 
-        let mut df = DataFrame::new_no_checks(chunk.data.get_columns()[..width].to_vec());
+        let columns = chunk.data.get_columns()[..width].to_vec();
+        let mut df = unsafe { DataFrame::new_no_checks(columns) };
 
         let schema = &*self.input_schema;
         if self.unchecked {

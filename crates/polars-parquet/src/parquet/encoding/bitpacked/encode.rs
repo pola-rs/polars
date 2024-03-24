@@ -1,5 +1,3 @@
-use std::convert::TryInto;
-
 use super::{Packed, Unpackable, Unpacked};
 
 /// Encodes (packs) a slice of [`Unpackable`] into bitpacked bytes `packed`, using `num_bits` per value.

@@ -244,8 +244,8 @@ def import_optional(
     min_version : {str, tuple[int]}, optional
         If a minimum module version is required, specify it here.
     """
+    from polars._utils.various import parse_version
     from polars.exceptions import ModuleUpgradeRequired
-    from polars.utils.various import parse_version
 
     try:
         module = import_module(module_name)

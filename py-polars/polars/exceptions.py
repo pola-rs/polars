@@ -5,6 +5,7 @@ try:
         ComputeError,
         DuplicateError,
         InvalidOperationError,
+        MapWithoutReturnDtypeWarning,
         NoDataError,
         OutOfBoundsError,
         PolarsError,
@@ -63,6 +64,9 @@ except ImportError:
 
     class CategoricalRemappingWarning(PolarsWarning):  # type: ignore[no-redef, misc]
         """Warning raised when a categorical needs to be remapped to be compatible with another categorical."""  # noqa: W505
+
+    class MapWithoutReturnDtypeWarning(PolarsWarning):  # type: ignore[no-redef, misc]
+        """Warning raised when `map_elements` is performed without specifying the return dtype."""  # noqa: W505
 
 
 class InvalidAssert(PolarsError):  # type: ignore[misc]
@@ -132,6 +136,7 @@ __all__ = [
     "ChronoFormatWarning",
     "DuplicateError",
     "InvalidOperationError",
+    "MapWithoutReturnDtypeWarning",
     "ModuleUpgradeRequired",
     "NoDataError",
     "NoRowsReturnedError",

@@ -29,22 +29,16 @@ impl<'a> Iterator for Decoder<'a> {
 
     #[inline] // -18% improvement in bench
     fn next(&mut self) -> Option<Self::Item> {
-        if self.num_bits == 0 {
-            return None;
-        }
-
-        if self.values.is_empty() {
-            return None;
-        }
-
         let (indicator, consumed) = match uleb128::decode(self.values) {
             Ok((indicator, consumed)) => (indicator, consumed),
             Err(e) => return Some(Err(e)),
         };
         self.values = unsafe { self.values.get_unchecked_release(consumed..) };
-        if self.values.is_empty() {
+
+        // We want to early return if consumed == 0 OR num_bits == 0, so combine into a single branch.
+        if (consumed * self.num_bits) == 0 {
             return None;
-        };
+        }
 
         if indicator & 1 == 1 {
             // is bitpacking

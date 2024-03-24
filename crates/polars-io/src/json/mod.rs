@@ -64,12 +64,10 @@
 //!
 pub(crate) mod infer;
 
-use std::convert::TryFrom;
 use std::io::Write;
 use std::num::NonZeroUsize;
 use std::ops::Deref;
 
-use arrow::array::{ArrayRef, StructArray};
 use arrow::legacy::conversion::chunk_to_struct;
 use polars_core::error::to_compute_err;
 use polars_core::prelude::*;

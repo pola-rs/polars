@@ -13,8 +13,6 @@ mod any_value;
 mod dtype;
 mod field;
 #[cfg(feature = "object")]
-mod static_array;
-#[cfg(feature = "object")]
 mod static_array_collect;
 mod time_unit;
 

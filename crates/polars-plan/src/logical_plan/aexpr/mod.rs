@@ -2,20 +2,16 @@ mod hash;
 mod schema;
 
 use std::hash::{Hash, Hasher};
-use std::sync::Arc;
 
-use arrow::legacy::prelude::QuantileInterpolOptions;
-use polars_core::frame::group_by::GroupByMethod;
 use polars_core::prelude::*;
 use polars_core::utils::{get_time_units, try_get_supertype};
 use polars_utils::arena::{Arena, Node};
 use strum_macros::IntoStaticStr;
 
-use crate::dsl::function_expr::FunctionExpr;
+use crate::constants::LEN;
 #[cfg(feature = "cse")]
 use crate::logical_plan::visitor::AexprNode;
 use crate::logical_plan::Context;
-use crate::prelude::consts::LEN;
 use crate::prelude::*;
 
 #[derive(Clone, Debug, IntoStaticStr)]
@@ -126,8 +122,8 @@ impl From<AAggExpr> for GroupByMethod {
 #[derive(Clone, Debug, Default)]
 pub enum AExpr {
     Explode(Node),
-    Alias(Node, Arc<str>),
-    Column(Arc<str>),
+    Alias(Node, ColumnName),
+    Column(ColumnName),
     Literal(LiteralValue),
     BinaryExpr {
         left: Node,
@@ -207,7 +203,7 @@ impl AExpr {
 
     #[cfg(feature = "cse")]
     pub(crate) fn col(name: &str) -> Self {
-        AExpr::Column(Arc::from(name))
+        AExpr::Column(ColumnName::from(name))
     }
     /// Any expression that is sensitive to the number of elements in a group
     /// - Aggregations

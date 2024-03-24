@@ -26,6 +26,7 @@ pub(crate) unsafe trait ToFfi {
 /// [C data interface](https://arrow.apache.org/docs/format/CDataInterface.html) (FFI).
 pub(crate) trait FromFfi<T: ffi::ArrowArrayRef>: Sized {
     /// Convert itself from FFI.
+    ///
     /// # Safety
     /// This function is intrinsically `unsafe` as it requires the FFI to be made according
     /// to the [C data interface](https://arrow.apache.org/docs/format/CDataInterface.html)

@@ -54,6 +54,7 @@ use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 
+pub use parser::count_rows;
 use polars_core::prelude::*;
 #[cfg(feature = "temporal")]
 use polars_time::prelude::*;

@@ -73,10 +73,6 @@ pub(crate) use correlation::CorrelationMethod;
 pub(crate) use fused::FusedOperator;
 pub(super) use list::ListFunction;
 use polars_core::prelude::*;
-#[cfg(feature = "cutqcut")]
-use polars_ops::prelude::{cut, qcut};
-#[cfg(feature = "rle")]
-use polars_ops::prelude::{rle, rle_id};
 #[cfg(feature = "random")]
 pub(crate) use random::RandomMethod;
 use schema::FieldsMapper;

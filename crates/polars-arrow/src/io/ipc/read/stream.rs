@@ -1,7 +1,6 @@
 use std::io::Read;
 
 use ahash::AHashMap;
-use arrow_format;
 use arrow_format::ipc::planus::ReadAsRoot;
 use polars_error::{polars_bail, polars_err, PolarsError, PolarsResult};
 

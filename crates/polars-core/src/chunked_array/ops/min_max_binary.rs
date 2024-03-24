@@ -1,4 +1,3 @@
-use crate::datatypes::PolarsNumericType;
 use crate::prelude::*;
 use crate::series::arithmetic::coerce_lhs_rhs;
 

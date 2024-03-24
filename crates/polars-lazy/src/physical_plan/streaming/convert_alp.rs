@@ -1,4 +1,3 @@
-use polars_core::error::PolarsResult;
 use polars_core::prelude::*;
 use polars_pipe::pipeline::swap_join_order;
 use polars_plan::prelude::*;
@@ -106,12 +105,16 @@ pub(crate) fn insert_streaming_nodes(
     // whether the full plan needs to be translated
     // to streaming
     allow_partial: bool,
+    row_estimate: bool,
 ) -> PolarsResult<bool> {
     scratch.clear();
 
-    // this is needed to determine which side of the joins should be
-    // traversed first
-    set_estimated_row_counts(root, lp_arena, expr_arena, 0, scratch);
+    // This is needed to determine which side of the joins should be
+    // traversed first. As we want to keep the smallest table in the build phase as that keeps most
+    // data in memory.
+    if row_estimate {
+        set_estimated_row_counts(root, lp_arena, expr_arena, 0, scratch);
+    }
 
     scratch.clear();
 
@@ -175,7 +178,7 @@ pub(crate) fn insert_streaming_nodes(
         execution_id += 1;
         match lp_arena.get(root) {
             Selection { input, predicate }
-                if is_streamable(*predicate, expr_arena, Context::Default) =>
+                if is_streamable(predicate.node(), expr_arena, Context::Default) =>
             {
                 state.streamable = true;
                 state.operators_sinks.push(PipelineNode::Operator(root));
@@ -208,6 +211,11 @@ pub(crate) fn insert_streaming_nodes(
             Projection { input, expr, .. }
                 if all_streamable(expr, expr_arena, Context::Default) =>
             {
+                state.streamable = true;
+                state.operators_sinks.push(PipelineNode::Operator(root));
+                stack.push(StackFrame::new(*input, state, current_idx))
+            },
+            SimpleProjection { input, .. } => {
                 state.streamable = true;
                 state.operators_sinks.push(PipelineNode::Operator(root));
                 stack.push(StackFrame::new(*input, state, current_idx))
@@ -284,15 +292,15 @@ pub(crate) fn insert_streaming_nodes(
                 };
                 let mut state_left = state.split();
 
-                // rhs is second, so that is first on the stack
+                // Rhs is second, so that is first on the stack.
                 let mut state_right = state;
                 state_right.join_count = 0;
                 state_right
                     .operators_sinks
                     .push(PipelineNode::RhsJoin(root));
 
-                // we want to traverse lhs last, so push it first on the stack
-                // rhs is a new pipeline
+                // We want to traverse lhs last, so push it first on the stack
+                // rhs is a new pipeline.
                 state_left.operators_sinks.push(PipelineNode::Sink(root));
                 stack.push(StackFrame::new(input_left, state_left, current_idx));
                 stack.push(StackFrame::new(input_right, state_right, current_idx));
@@ -328,7 +336,7 @@ pub(crate) fn insert_streaming_nodes(
                 };
                 for (i, input) in inputs.iter().enumerate() {
                     let mut state = if i == 0 {
-                        // note the clone!
+                        // Note the clone!
                         let mut state = state.clone();
                         state.join_count += inputs.len() as u32 - 1;
                         state
@@ -416,9 +424,9 @@ pub(crate) fn insert_streaming_nodes(
                 }
 
                 let valid_agg = || {
-                    aggs.iter().all(|node| {
+                    aggs.iter().all(|e| {
                         polars_pipe::pipeline::can_convert_to_hash_agg(
-                            *node,
+                            e.node(),
                             expr_arena,
                             &input_schema,
                         )
@@ -426,9 +434,9 @@ pub(crate) fn insert_streaming_nodes(
                 };
 
                 let valid_key = || {
-                    keys.iter().all(|node| {
+                    keys.iter().all(|e| {
                         expr_arena
-                            .get(*node)
+                            .get(e.node())
                             .get_type(schema, Context::Default, expr_arena)
                             // ensure we don't group_by list
                             .map(|dt| !matches!(dt, DataType::List(_)))

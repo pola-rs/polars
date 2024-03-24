@@ -4,13 +4,13 @@ import contextlib
 from typing import TYPE_CHECKING, Iterable, overload
 
 from polars import functions as F
-from polars.datatypes import Date, Struct, Time
-from polars.utils._parse_expr_input import (
+from polars._utils.deprecation import rename_use_earliest_to_ambiguous
+from polars._utils.parse_expr_input import (
     parse_as_expression,
     parse_as_list_of_expressions,
 )
-from polars.utils._wrap import wrap_expr
-from polars.utils.deprecation import rename_use_earliest_to_ambiguous
+from polars._utils.wrap import wrap_expr
+from polars.datatypes import Date, Struct, Time
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -75,7 +75,7 @@ def datetime_(
         - `'raise'` (default): raise
         - `'earliest'`: use the earliest datetime
         - `'latest'`: use the latest datetime
-
+        - `'null'`: set to null
 
     Returns
     -------
@@ -182,7 +182,7 @@ def duration(
     milliseconds: Expr | str | int | None = None,
     microseconds: Expr | str | int | None = None,
     nanoseconds: Expr | str | int | None = None,
-    time_unit: TimeUnit = "us",
+    time_unit: TimeUnit | None = None,
 ) -> Expr:
     """
     Create polars `Duration` from distinct time components.
@@ -205,8 +205,10 @@ def duration(
         Number of microseconds.
     nanoseconds
         Number of nanoseconds.
-    time_unit : {'us', 'ms', 'ns'}
-        Time unit of the resulting expression.
+    time_unit : {None, 'us', 'ms', 'ns'}
+        Time unit of the resulting expression. If set to `None` (default), the time
+        unit will be inferred from the other inputs: `'ns'` if `nanoseconds` was
+        specified, `'us'` otherwise.
 
     Returns
     -------
@@ -299,6 +301,11 @@ def duration(
         microseconds = parse_as_expression(microseconds)
     if nanoseconds is not None:
         nanoseconds = parse_as_expression(nanoseconds)
+        if time_unit is None:
+            time_unit = "ns"
+
+    if time_unit is None:
+        time_unit = "us"
 
     return wrap_expr(
         plr.duration(
@@ -363,8 +370,7 @@ def struct(
     schema: SchemaDict | None = ...,
     eager: Literal[False] = ...,
     **named_exprs: IntoExpr,
-) -> Expr:
-    ...
+) -> Expr: ...
 
 
 @overload
@@ -373,8 +379,7 @@ def struct(
     schema: SchemaDict | None = ...,
     eager: Literal[True],
     **named_exprs: IntoExpr,
-) -> Series:
-    ...
+) -> Series: ...
 
 
 @overload
@@ -383,8 +388,7 @@ def struct(
     schema: SchemaDict | None = ...,
     eager: bool,
     **named_exprs: IntoExpr,
-) -> Expr | Series:
-    ...
+) -> Expr | Series: ...
 
 
 def struct(

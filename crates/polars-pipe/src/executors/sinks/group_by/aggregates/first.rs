@@ -55,7 +55,7 @@ impl AggregateFn for FirstAgg {
     fn combine(&mut self, other: &dyn Any) {
         let other = unsafe { other.downcast_ref::<Self>().unwrap_unchecked_release() };
         if other.first.is_some() && other.chunk_idx < self.chunk_idx {
-            self.first = other.first.clone();
+            self.first.clone_from(&other.first);
             self.chunk_idx = other.chunk_idx;
         };
     }

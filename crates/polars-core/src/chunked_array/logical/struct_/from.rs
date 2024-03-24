@@ -4,11 +4,11 @@ impl From<StructChunked> for DataFrame {
     fn from(ca: StructChunked) -> Self {
         #[cfg(feature = "object")]
         {
-            DataFrame::new_no_checks(ca.fields.clone())
+            unsafe { DataFrame::new_no_checks(ca.fields.clone()) }
         }
         #[cfg(not(feature = "object"))]
         {
-            DataFrame::new_no_checks(ca.fields)
+            unsafe { DataFrame::new_no_checks(ca.fields) }
         }
     }
 }

@@ -1,8 +1,3 @@
-#[cfg(feature = "dynamic_group_by")]
-use polars_core::frame::group_by::GroupBy;
-#[cfg(feature = "dynamic_group_by")]
-use polars_time::RollingGroupOptions;
-
 use super::*;
 
 #[cfg_attr(not(feature = "dynamic_group_by"), allow(dead_code))]
@@ -53,7 +48,7 @@ impl GroupByRollingExec {
             .map(|e| e.evaluate(&df, state))
             .collect::<PolarsResult<Vec<_>>>()?;
 
-        let (mut time_key, mut keys, groups) = df.group_by_rolling(keys, &self.options)?;
+        let (mut time_key, mut keys, groups) = df.rolling(keys, &self.options)?;
 
         if let Some(f) = &self.apply {
             let gb = GroupBy::new(&df, vec![], groups, None);

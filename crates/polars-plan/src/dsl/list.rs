@@ -5,7 +5,6 @@ use polars_core::prelude::*;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
 
-use crate::dsl::function_expr::FunctionExpr;
 use crate::prelude::function_expr::ListFunction;
 use crate::prelude::*;
 

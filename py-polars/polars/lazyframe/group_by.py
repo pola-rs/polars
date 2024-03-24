@@ -3,9 +3,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Callable, Iterable
 
 from polars import functions as F
-from polars.utils._parse_expr_input import parse_as_list_of_expressions
-from polars.utils._wrap import wrap_ldf
-from polars.utils.deprecation import deprecate_renamed_function
+from polars._utils.deprecation import deprecate_renamed_function
+from polars._utils.parse_expr_input import parse_as_list_of_expressions
+from polars._utils.wrap import wrap_ldf
 
 if TYPE_CHECKING:
     from polars import DataFrame, LazyFrame
@@ -333,45 +333,59 @@ class LazyGroupBy:
         """
         return self.agg(F.all())
 
-    def len(self) -> LazyFrame:
+    def len(self, name: str | None = None) -> LazyFrame:
         """
         Return the number of rows in each group.
 
-        Rows containing null values count towards the total.
+        Parameters
+        ----------
+        name
+            Assign a name to the resulting column; if unset, defaults to "len".
 
         Examples
         --------
-        >>> lf = pl.LazyFrame(
-        ...     {
-        ...         "a": ["apple", "apple", "orange"],
-        ...         "b": [1, None, 2],
-        ...     }
-        ... )
-        >>> lf.group_by("a").count().collect()  # doctest: +SKIP
+        >>> lf = pl.LazyFrame({"a": ["Apple", "Apple", "Orange"], "b": [1, None, 2]})
+        >>> lf.group_by("a").len().collect()  # doctest: +IGNORE_RESULT
         shape: (2, 2)
-        ┌────────┬───────┐
-        │ a      ┆ count │
-        │ ---    ┆ ---   │
-        │ str    ┆ u32   │
-        ╞════════╪═══════╡
-        │ apple  ┆ 2     │
-        │ orange ┆ 1     │
-        └────────┴───────┘
+        ┌────────┬─────┐
+        │ a      ┆ len │
+        │ ---    ┆ --- │
+        │ str    ┆ u32 │
+        ╞════════╪═════╡
+        │ Apple  ┆ 2   │
+        │ Orange ┆ 1   │
+        └────────┴─────┘
+        >>> lf.group_by("a").len(name="n").collect()  # doctest: +IGNORE_RESULT
+        shape: (2, 2)
+        ┌────────┬─────┐
+        │ a      ┆ n   │
+        │ ---    ┆ --- │
+        │ str    ┆ u32 │
+        ╞════════╪═════╡
+        │ Apple  ┆ 2   │
+        │ Orange ┆ 1   │
+        └────────┴─────┘
         """
-        return self.agg(F.len())
+        len_expr = F.len()
+        if name is not None:
+            len_expr = len_expr.alias(name)
+        return self.agg(len_expr)
 
     @deprecate_renamed_function("len", version="0.20.5")
     def count(self) -> LazyFrame:
         """
         Return the number of rows in each group.
 
+        .. deprecated:: 0.20.5
+            This method has been renamed to :func:`LazyGroupBy.len`.
+
         Rows containing null values count towards the total.
 
         Examples
         --------
         >>> lf = pl.LazyFrame(
         ...     {
-        ...         "a": ["apple", "apple", "orange"],
+        ...         "a": ["Apple", "Apple", "Orange"],
         ...         "b": [1, None, 2],
         ...     }
         ... )
@@ -382,8 +396,8 @@ class LazyGroupBy:
         │ ---    ┆ ---   │
         │ str    ┆ u32   │
         ╞════════╪═══════╡
-        │ apple  ┆ 2     │
-        │ orange ┆ 1     │
+        │ Apple  ┆ 2     │
+        │ Orange ┆ 1     │
         └────────┴───────┘
         """
         return self.agg(F.len().alias("count"))

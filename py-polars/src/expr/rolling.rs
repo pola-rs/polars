@@ -1,7 +1,6 @@
 use std::any::Any;
 
 use polars::prelude::*;
-use polars_core::prelude::QuantileInterpolOptions;
 use pyo3::prelude::*;
 use pyo3::types::PyFloat;
 

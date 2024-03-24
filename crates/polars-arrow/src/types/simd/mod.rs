@@ -123,6 +123,7 @@ macro_rules! native_simd {
     };
 }
 
+#[cfg(not(feature = "simd"))]
 pub(super) use native_simd;
 
 // Types do not have specific intrinsics and thus SIMD can't be specialized.

@@ -9,7 +9,7 @@ pub(super) fn process_functions(
     proj_pd: &mut ProjectionPushDown,
     input: Node,
     function: &FunctionNode,
-    mut acc_projections: Vec<Node>,
+    mut acc_projections: Vec<ColumnNode>,
     mut projected_names: PlHashSet<Arc<str>>,
     projections_seen: usize,
     lp_arena: &mut Arena<ALogicalPlan>,
@@ -112,12 +112,13 @@ pub(super) fn process_functions(
                     // if we would project, we would remove pushed down predicates
                     if local_projections.len() < original_acc_projection_len {
                         Ok(ALogicalPlanBuilder::from_lp(lp, expr_arena, lp_arena)
-                            .with_columns(local_projections, Default::default())
+                            .with_columns_simple(local_projections, Default::default())
                             .build())
                         // all projections are local
                     } else {
                         Ok(ALogicalPlanBuilder::from_lp(lp, expr_arena, lp_arena)
-                            .project(local_projections, Default::default())
+                            .project_simple_nodes(local_projections)
+                            .unwrap()
                             .build())
                     }
                 }

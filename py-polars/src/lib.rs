@@ -54,8 +54,9 @@ use crate::conversion::Wrap;
 use crate::dataframe::PyDataFrame;
 use crate::error::{
     CategoricalRemappingWarning, ColumnNotFoundError, ComputeError, DuplicateError,
-    InvalidOperationError, NoDataError, OutOfBoundsError, PolarsBaseError, PolarsBaseWarning,
-    PyPolarsErr, SchemaError, SchemaFieldNotFoundError, StructFieldNotFoundError,
+    InvalidOperationError, MapWithoutReturnDtypeWarning, NoDataError, OutOfBoundsError,
+    PolarsBaseError, PolarsBaseWarning, PyPolarsErr, SchemaError, SchemaFieldNotFoundError,
+    StructFieldNotFoundError,
 };
 use crate::expr::PyExpr;
 use crate::functions::PyStringCacheHolder;
@@ -296,6 +297,11 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         py.get_type::<CategoricalRemappingWarning>(),
     )
     .unwrap();
+    m.add(
+        "MapWithoutReturnDtypeWarning",
+        py.get_type::<MapWithoutReturnDtypeWarning>(),
+    )
+    .unwrap();
 
     // Build info
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
@@ -304,6 +310,10 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         "__build__",
         pyo3_built!(py, build, "build", "time", "deps", "features", "host", "target", "git"),
     )?;
+
+    // Plugins
+    m.add_wrapped(wrap_pyfunction!(functions::register_plugin_function))
+        .unwrap();
 
     Ok(())
 }
