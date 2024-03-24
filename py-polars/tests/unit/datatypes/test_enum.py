@@ -469,16 +469,36 @@ def test_enum_cse_eq() -> None:
     dt1 = pl.Enum(["a", "b"])
     dt2 = pl.Enum(["a", "c"])
 
-    df.lazy().select(
-        pl.when(True).then(pl.lit("a", dtype=dt1)).alias("dt1"),
-        pl.when(True).then(pl.lit("a", dtype=dt2)).alias("dt2"),
-    ).collect()
+    out = (
+        df.lazy()
+        .select(
+            pl.when(True).then(pl.lit("a", dtype=dt1)).alias("dt1"),
+            pl.when(True).then(pl.lit("a", dtype=dt2)).alias("dt2"),
+        )
+        .collect()
+    )
+
+    assert out["dt1"].item() == "a"
+    assert out["dt2"].item() == "a"
+    assert out["dt1"].dtype == pl.Enum(["a", "b"])
+    assert out["dt2"].dtype == pl.Enum(["a", "c"])
+    assert out["dt1"].dtype != out["dt2"].dtype
 
 
-def test_same_literal_separate_categories_not_equal() -> None:
+def test_category_comparison_subset() -> None:
     dt1 = pl.Enum(["a"])
     dt2 = pl.Enum(["a", "b"])
-    pl.LazyFrame().select(
-        pl.lit("a", dtype=dt1).alias("dt1"),
-        pl.lit("a", dtype=dt2).alias("dt2"),
-    ).collect().dtypes
+    out = (
+        pl.LazyFrame()
+        .select(
+            pl.lit("a", dtype=dt1).alias("dt1"),
+            pl.lit("a", dtype=dt2).alias("dt2"),
+        )
+        .collect()
+    )
+
+    assert out["dt1"].item() == "a"
+    assert out["dt2"].item() == "a"
+    assert out["dt1"].dtype == pl.Enum(["a"])
+    assert out["dt2"].dtype == pl.Enum(["a", "b"])
+    assert out["dt1"].dtype != out["dt2"].dtype
