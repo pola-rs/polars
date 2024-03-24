@@ -322,7 +322,7 @@ impl HashableEqLP<'_> {
                     aggs: aggs_l,
                     schema: _,
                     apply: apply_l,
-                    maintain_order: mol,
+                    maintain_order: maintain_l,
                     options: ol,
                 },
                 ALogicalPlan::Aggregate {
@@ -331,14 +331,14 @@ impl HashableEqLP<'_> {
                     aggs: aggs_r,
                     schema: _,
                     apply: apply_r,
-                    maintain_order: mor,
+                    maintain_order: maintain_r,
                     options: or,
                 },
             ) => {
                 apply_l.is_none()
                     && apply_r.is_none()
                     && ol == or
-                    && mol == mor
+                    && maintain_l == maintain_r
                     && expr_irs_eq(keys_l, keys_r, self.expr_arena)
                     && expr_irs_eq(aggs_l, aggs_r, self.expr_arena)
             },
