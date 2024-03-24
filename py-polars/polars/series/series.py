@@ -169,12 +169,12 @@ class Series:
 
     Parameters
     ----------
-    name : str, default None
-        Name of the Series. Will be used as a column name when used in a DataFrame.
-        When not specified, name is set to an empty string.
     values : ArrayLike, default None
         One-dimensional data in various forms. Supported are: Sequence, Series,
         pyarrow Array, and numpy ndarray.
+    name : str, default None
+        Name of the Series. Will be used as a column name when used in a DataFrame.
+        When not specified, name is set to an empty string.
     dtype : DataType, default None
         Data type of the resulting Series. If set to `None` (default), the data type is
         inferred from the `values` input. The strategy for data type inference depends
@@ -263,14 +263,18 @@ class Series:
 
     def __init__(
         self,
-        name: str | ArrayLike | None = None,
+        *args: Any,
         values: ArrayLike | None = None,
+        name: str | None = None,
         dtype: PolarsDataType | None = None,
-        *,
         strict: bool = True,
         nan_to_null: bool = False,
         dtype_if_empty: PolarsDataType = Null,
     ):
+        values, name, dtype = _handle_series_init_positional_args(
+            args, values=values, name=name, dtype=dtype
+        )
+
         if dtype_if_empty != Null:
             issue_deprecation_warning(
                 "The `dtype_if_empty` parameter for the Series constructor is deprecated."
@@ -293,19 +297,15 @@ class Series:
             else:
                 dtype = pl_dtype
 
-        # Handle case where values are passed as the first argument
+        # Handle name input
         original_name: str | None = None
         if name is None:
             name = ""
         elif isinstance(name, str):
             original_name = name
         else:
-            if values is None:
-                values = name
-                name = ""
-            else:
-                msg = "Series name must be a string"
-                raise TypeError(msg)
+            msg = "Series name must be a string"
+            raise TypeError(msg)
 
         if isinstance(values, Sequence):
             self._s = sequence_to_pyseries(
@@ -7691,6 +7691,70 @@ class Series:
             raise ModuleUpgradeRequired(msg)
         hvplot.post_patch()
         return hvplot.plotting.core.hvPlotTabularPolars(self)
+
+
+def _handle_series_init_positional_args(
+    args: tuple[Any, ...],
+    values: ArrayLike | None,
+    name: str | None,
+    dtype: PolarsDataType | None,
+) -> tuple[ArrayLike | None, str | None, PolarsDataType | None]:
+    """Interpret positional inputs to `__init__` as either values, name, or dtype."""
+    n_args = len(args)
+    if n_args == 0:
+        return values, name, dtype
+    elif n_args > 3:
+        msg = f"Series constructor takes at most 3 positional arguments, got {n_args}"
+        raise TypeError(msg)
+
+    if n_args == 1:
+        arg = args[0]
+        if (
+            (isinstance(arg, str) or arg is None)
+            and name is None
+            and not (arg is None and values is None)
+        ):
+            first_arg_is_name = True
+            name = arg
+        else:
+            if values is not None:
+                msg = "Series constructor got multiple arguments for argument `values`"
+                raise TypeError(msg)
+            first_arg_is_name = False
+            values = arg
+
+    else:
+        if name is not None:
+            msg = "Series constructor got multiple arguments for argument `name`"
+            raise TypeError(msg)
+        if values is not None:
+            msg = "Series constructor got multiple arguments for argument `values`"
+            raise TypeError(msg)
+
+        arg1, arg2 = args[:2]
+        if (isinstance(arg1, str) or arg1 is None) and not (
+            arg1 is None and arg2 is None
+        ):
+            first_arg_is_name = True
+            values, name = arg2, arg1
+        else:
+            first_arg_is_name = False
+            values, name = arg1, arg2
+
+    if n_args == 3:
+        if dtype is not None:
+            msg = "Series constructor got multiple arguments for argument `dtype`"
+            raise TypeError(msg)
+        dtype = args[2]
+
+    if first_arg_is_name:
+        # issue_deprecation_warning(
+        #     "...",
+        #     version="0.20.17",
+        # )
+        pass
+
+    return values, name, dtype
 
 
 def _resolve_temporal_dtype(
