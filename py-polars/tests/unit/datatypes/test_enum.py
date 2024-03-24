@@ -214,8 +214,8 @@ def test_append_to_an_enum() -> None:
 
 def test_append_to_an_enum_with_new_category() -> None:
     with pytest.raises(
-        pl.ComputeError,
-        match=("can not merge incompatible Enum types"),
+        pl.SchemaError,
+        match=("cannot extend/append Enum"),
     ):
         pl.Series([None, "a", "b", "c"], dtype=pl.Enum(["a", "b", "c"])).append(
             pl.Series(["d", "a", "b", "c"], dtype=pl.Enum(["a", "b", "c", "d"]))
@@ -473,3 +473,12 @@ def test_enum_cse_eq() -> None:
         pl.when(True).then(pl.lit("a", dtype=dt1)).alias("dt1"),
         pl.when(True).then(pl.lit("a", dtype=dt2)).alias("dt2"),
     ).collect()
+
+
+def test_same_literal_separate_categories_not_equal() -> None:
+    dt1 = pl.Enum(["a"])
+    dt2 = pl.Enum(["a", "b"])
+    pl.LazyFrame().select(
+        pl.lit("a", dtype=dt1).alias("dt1"),
+        pl.lit("a", dtype=dt2).alias("dt2"),
+    ).collect().dtypes
