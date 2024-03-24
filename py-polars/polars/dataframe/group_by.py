@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable, Iterable, Iterator
+from typing import TYPE_CHECKING, Callable, Iterable, Iterator, Sequence
 
 from polars import functions as F
 from polars._utils.convert import parse_as_duration_string
@@ -792,8 +792,8 @@ class GroupBy:
         self,
         k: int,
         *,
-        by: IntoExpr | Iterable[IntoExpr] | None = None,
-        descending: bool | Iterable[bool] = False,
+        by: IntoExpr | Sequence[IntoExpr] | None = None,
+        descending: bool | Sequence[bool] = False,
     ) -> DataFrame:
         """
         Return the `k` top rows sorted by given order in each group.
@@ -869,8 +869,8 @@ class GroupBy:
         self,
         k: int,
         *,
-        by: IntoExpr | Iterable[IntoExpr] | None = None,
-        descending: bool | Iterable[bool] = False,
+        by: IntoExpr | Sequence[IntoExpr] | None = None,
+        descending: bool | Sequence[bool] = False,
     ) -> DataFrame:
         """
         Return the `k` bottom rows sorted by given order in each group.

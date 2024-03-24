@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable, Iterable
+from typing import TYPE_CHECKING, Callable, Iterable, Sequence
 
 from polars import functions as F
 from polars._utils.deprecation import deprecate_renamed_function
@@ -685,8 +685,8 @@ class LazyGroupBy:
         self,
         k: int,
         *,
-        by: IntoExpr | Iterable[IntoExpr] | None = None,
-        descending: bool | Iterable[bool] = False,
+        by: IntoExpr | Sequence[IntoExpr] | None = None,
+        descending: bool | Sequence[bool] = False,
     ) -> LazyFrame:
         """
         Return the `k` top rows sorted by given order in each group.
@@ -772,8 +772,8 @@ class LazyGroupBy:
         self,
         k: int,
         *,
-        by: IntoExpr | Iterable[IntoExpr] | None = None,
-        descending: bool | Iterable[bool] = False,
+        by: IntoExpr | Sequence[IntoExpr] | None = None,
+        descending: bool | Sequence[bool] = False,
     ) -> LazyFrame:
         """
         Return the `k` bottom rows sorted by given order in each group.

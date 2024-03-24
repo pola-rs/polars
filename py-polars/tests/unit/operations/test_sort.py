@@ -1006,7 +1006,7 @@ def test_sort_descending_nulls_last(descending: bool, nulls_last: bool) -> None:
     )
 
 
-def test_aggregate_top_k():
+def test_aggregate_top_k() -> None:
     df = pl.DataFrame(
         {
             "a": [1, 2, 2, 3, 4, 5],
