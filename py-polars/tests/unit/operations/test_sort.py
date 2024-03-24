@@ -82,6 +82,19 @@ def test_sort_by_exprs() -> None:
     assert out.to_list() == [1, -1, 2, -2]
 
 
+def test_not_panic_on_arg_sort_by() -> None:
+    with pytest.raises(
+        pl.ComputeError,
+        match="cannot determine output column without a context for this expression",
+    ):
+        pl.arg_sort_by("*")
+
+    with pytest.raises(
+        pl.ComputeError, match="this expression may produce multiple output names"
+    ):
+        pl.arg_sort_by(pl.col(["a", "b"]))
+
+
 def test_arg_sort_nulls() -> None:
     a = pl.Series("a", [1.0, 2.0, 3.0, None, None])
     assert a.arg_sort(nulls_last=True).to_list() == [0, 1, 2, 3, 4]
