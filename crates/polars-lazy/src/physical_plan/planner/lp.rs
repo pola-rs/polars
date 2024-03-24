@@ -229,7 +229,6 @@ pub fn create_physical_plan(
                 #[cfg(feature = "ipc")]
                 FileScan::Ipc {
                     options,
-                    #[cfg(feature = "cloud")]
                     cloud_options,
                     metadata,
                 } => Ok(Box::new(executors::IpcExec {
@@ -238,7 +237,6 @@ pub fn create_physical_plan(
                     predicate,
                     options,
                     file_options,
-                    #[cfg(feature = "cloud")]
                     cloud_options,
                     metadata,
                 })),

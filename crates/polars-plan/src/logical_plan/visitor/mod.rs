@@ -2,9 +2,9 @@
 
 use arrow::legacy::error::PolarsResult;
 mod expr;
+mod hash;
 mod lp;
 mod visitors;
-mod hash;
 
 pub use expr::*;
 pub use lp::*;

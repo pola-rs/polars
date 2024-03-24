@@ -147,4 +147,3 @@ impl TreeWalker for ALogicalPlanNode {
         Ok(self)
     }
 }
-

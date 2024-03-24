@@ -1924,3 +1924,31 @@ fn test_sort_maintain_order_true() -> PolarsResult<()> {
     ]?));
     Ok(())
 }
+
+#[test]
+fn test_cse_lp_full() -> PolarsResult<()> {
+    let q1 = df![
+        "a" => [1],
+        "b" => ["A"],
+    ]?
+    .lazy();
+
+    let q2 = df![
+        "a" => [2],
+        "b" => ["B"],
+    ]?
+    .lazy();
+
+    let q = q1
+        .filter(col("a").eq(lit(1)))
+        .inner_join(q2, col("a"), col("b"));
+
+    let out = q
+        .clone()
+        .inner_join(q, col("a"), col("b"))
+        .describe_optimized_plan()?;
+
+    println!("{}", out);
+
+    Ok(())
+}

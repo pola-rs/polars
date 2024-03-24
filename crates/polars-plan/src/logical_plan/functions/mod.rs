@@ -120,7 +120,8 @@ impl PartialEq for FunctionNode {
             (Explode { columns: l, .. }, Explode { columns: r, .. }) => l == r,
             (Melt { args: l, .. }, Melt { args: r, .. }) => l == r,
             (RowIndex { name: l, .. }, RowIndex { name: r, .. }) => l == r,
-            (MergeSorted {column: l}, MergeSorted {column: r}) => l == r,
+            #[cfg(feature = "merge_sorted")]
+            (MergeSorted { column: l }, MergeSorted { column: r }) => l == r,
             _ => false,
         }
     }
@@ -131,28 +132,41 @@ impl Hash for FunctionNode {
         std::mem::discriminant(self).hash(state);
         match self {
             #[cfg(feature = "python")]
-            FunctionNode::OpaquePython { .. } => {}
-            FunctionNode::Opaque { fmt_str, .. } => {fmt_str.hash(state)}
-            FunctionNode::Count { paths, scan_type, alias } => {
+            FunctionNode::OpaquePython { .. } => {},
+            FunctionNode::Opaque { fmt_str, .. } => fmt_str.hash(state),
+            FunctionNode::Count {
+                paths,
+                scan_type,
+                alias,
+            } => {
                 paths.hash(state);
                 scan_type.hash(state);
                 alias.hash(state);
-            }
-            FunctionNode::Pipeline { .. } => {}
+            },
+            FunctionNode::Pipeline { .. } => {},
             FunctionNode::Unnest { columns } => columns.hash(state),
             FunctionNode::DropNulls { subset } => subset.hash(state),
-            FunctionNode::Rechunk => {}
+            FunctionNode::Rechunk => {},
+            #[cfg(feature = "merge_sorted")]
             FunctionNode::MergeSorted { column } => column.hash(state),
-            FunctionNode::Rename { existing, new, swapping: _ } => {
+            FunctionNode::Rename {
+                existing,
+                new,
+                swapping: _,
+            } => {
                 existing.hash(state);
                 new.hash(state);
-            }
+            },
             FunctionNode::Explode { columns, schema: _ } => columns.hash(state),
             FunctionNode::Melt { args, schema: _ } => args.hash(state),
-            FunctionNode::RowIndex { name, schema: _, offset } => {
+            FunctionNode::RowIndex {
+                name,
+                schema: _,
+                offset,
+            } => {
                 name.hash(state);
                 offset.hash(state);
-            }
+            },
         }
     }
 }

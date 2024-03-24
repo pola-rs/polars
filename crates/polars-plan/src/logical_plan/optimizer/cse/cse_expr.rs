@@ -252,7 +252,6 @@ struct ExprIdentifierVisitor<'a> {
     is_group_by: bool,
 }
 
-
 impl ExprIdentifierVisitor<'_> {
     fn new<'a>(
         se_count: &'a mut SubExprCount,
@@ -497,7 +496,7 @@ impl RewritingVisitor for CommonSubExprRewriter<'_> {
 
         let id = &self.identifier_array[self.visited_idx + self.id_array_offset].1;
 
-        // placeholder not overwritten, so we can skip this sub-expression
+        // Id placeholder not overwritten, so we can skip this sub-expression.
         if !id.is_valid() {
             self.visited_idx += 1;
             let recurse = if ae_node.is_leaf() {

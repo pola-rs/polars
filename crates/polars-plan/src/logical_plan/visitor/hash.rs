@@ -1,26 +1,28 @@
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
+
 use polars_utils::arena::Arena;
-use crate::logical_plan::{AExpr, ALogicalPlan, ArenaExprIter};
+
+use super::*;
+use crate::logical_plan::{AExpr, ALogicalPlan};
 use crate::prelude::aexpr::traverse_and_hash_aexpr;
 use crate::prelude::ExprIR;
-use super::*;
 
 impl ALogicalPlanNode {
     pub(crate) fn hashable_and_cmp<'a>(&'a self, expr_arena: &'a Arena<AExpr>) -> HashableEqLP<'a> {
         HashableEqLP {
             node: self,
-            expr_arena
+            expr_arena,
         }
     }
 }
 
 pub(crate) struct HashableEqLP<'a> {
     node: &'a ALogicalPlanNode,
-    expr_arena: &'a Arena<AExpr>
+    expr_arena: &'a Arena<AExpr>,
 }
 
-fn hash_option_expr<H: Hasher>(expr: &Option<ExprIR>, expr_arena: &Arena<AExpr>, state: &mut H)  {
+fn hash_option_expr<H: Hasher>(expr: &Option<ExprIR>, expr_arena: &Arena<AExpr>, state: &mut H) {
     if let Some(e) = expr {
         e.traverse_and_hash(expr_arena, state)
     }
@@ -39,79 +41,142 @@ impl Hash for HashableEqLP<'_> {
         std::mem::discriminant(alp).hash(state);
         match alp {
             #[cfg(feature = "python")]
-            ALogicalPlan::PythonScan {.. } => {}
-            ALogicalPlan::Slice { offset, len, input: _ } => {
+            ALogicalPlan::PythonScan { .. } => {},
+            ALogicalPlan::Slice {
+                offset,
+                len,
+                input: _,
+            } => {
                 len.hash(state);
                 offset.hash(state);
-            }
-            ALogicalPlan::Selection { input: _, predicate } => {
+            },
+            ALogicalPlan::Selection {
+                input: _,
+                predicate,
+            } => {
                 predicate.traverse_and_hash(self.expr_arena, state);
-            }
-            ALogicalPlan::Scan { paths, file_info: _, predicate, output_schema: _, scan_type, file_options, } => {
+            },
+            ALogicalPlan::Scan {
+                paths,
+                file_info: _,
+                predicate,
+                output_schema: _,
+                scan_type,
+                file_options,
+            } => {
                 // We don't have to traverse the schema, hive partitions etc. as they are derivative from the paths.
                 scan_type.hash(state);
                 paths.hash(state);
                 hash_option_expr(predicate, self.expr_arena, state);
                 file_options.hash(state);
-            }
-            ALogicalPlan::DataFrameScan { df, schema:_, output_schema: _, projection, selection } => {
+            },
+            ALogicalPlan::DataFrameScan {
+                df,
+                schema: _,
+                output_schema: _,
+                projection,
+                selection,
+            } => {
                 (Arc::as_ptr(df) as usize).hash(state);
                 projection.hash(state);
                 hash_option_expr(selection, self.expr_arena, state);
-            }
-            ALogicalPlan::SimpleProjection { columns, duplicate_check, input: _ } => {
+            },
+            ALogicalPlan::SimpleProjection {
+                columns,
+                duplicate_check,
+                input: _,
+            } => {
                 columns.hash(state);
                 duplicate_check.hash(state);
-            }
-            ALogicalPlan::Projection { input: _, expr, schema: _, options } => {
+            },
+            ALogicalPlan::Projection {
+                input: _,
+                expr,
+                schema: _,
+                options,
+            } => {
                 hash_exprs(expr.default_exprs(), self.expr_arena, state);
                 options.hash(state);
-            }
-            ALogicalPlan::Sort { input: _, by_column, args } => {
+            },
+            ALogicalPlan::Sort {
+                input: _,
+                by_column,
+                args,
+            } => {
                 hash_exprs(by_column, self.expr_arena, state);
                 args.hash(state);
-            }
-            ALogicalPlan::Aggregate { input:_, keys, aggs, schema: _, apply, maintain_order, options } => {
+            },
+            ALogicalPlan::Aggregate {
+                input: _,
+                keys,
+                aggs,
+                schema: _,
+                apply,
+                maintain_order,
+                options,
+            } => {
                 hash_exprs(keys, self.expr_arena, state);
                 hash_exprs(aggs, self.expr_arena, state);
                 apply.is_none().hash(state);
                 maintain_order.hash(state);
                 options.hash(state);
-            }
-            ALogicalPlan::Join { input_left: _, input_right: _, schema: _, left_on, right_on, options } => {
+            },
+            ALogicalPlan::Join {
+                input_left: _,
+                input_right: _,
+                schema: _,
+                left_on,
+                right_on,
+                options,
+            } => {
                 hash_exprs(left_on, self.expr_arena, state);
                 hash_exprs(right_on, self.expr_arena, state);
                 options.hash(state);
-            }
-            ALogicalPlan::HStack { input:_, exprs, schema: _, options } => {
+            },
+            ALogicalPlan::HStack {
+                input: _,
+                exprs,
+                schema: _,
+                options,
+            } => {
                 hash_exprs(exprs.default_exprs(), self.expr_arena, state);
                 options.hash(state);
-            }
+            },
             ALogicalPlan::Distinct { input: _, options } => {
                 options.hash(state);
-            }
+            },
             ALogicalPlan::MapFunction { input: _, function } => {
                 function.hash(state);
-            }
-            ALogicalPlan::Union { inputs: _, options } => {
-                options.hash(state)
-            }
-            ALogicalPlan::HConcat { inputs:_, schema: _, options } => {
+            },
+            ALogicalPlan::Union { inputs: _, options } => options.hash(state),
+            ALogicalPlan::HConcat {
+                inputs: _,
+                schema: _,
+                options,
+            } => {
                 options.hash(state);
-            }
-            ALogicalPlan::ExtContext { input: _, contexts, schema: _ } => {
+            },
+            ALogicalPlan::ExtContext {
+                input: _,
+                contexts,
+                schema: _,
+            } => {
                 for node in contexts {
                     traverse_and_hash_aexpr(*node, self.expr_arena, state);
                 }
-            }
-            ALogicalPlan::Sink {input:_, payload} => {
+            },
+            ALogicalPlan::Sink { input: _, payload } => {
                 payload.hash(state);
-            }
-            ALogicalPlan::Cache { input: _, id, count } => {
+            },
+            ALogicalPlan::Cache {
+                input: _,
+                id,
+                count,
+            } => {
                 id.hash(state);
                 count.hash(state);
-            }
-            ALogicalPlan::Invalid => unreachable!()
+            },
+            ALogicalPlan::Invalid => unreachable!(),
         }
     }
 }
@@ -135,7 +200,7 @@ fn opt_expr_ir_eq(l: &Option<ExprIR>, r: &Option<ExprIR>, expr_arena: &Arena<AEx
     match (l, r) {
         (None, None) => true,
         (Some(l), Some(r)) => expr_ir_eq(l, r, expr_arena),
-        _ => false
+        _ => false,
     }
 }
 
@@ -144,97 +209,231 @@ impl HashableEqLP<'_> {
         let alp_l = self.node.to_alp();
         let alp_r = other.node.to_alp();
         if std::mem::discriminant(alp_l) != std::mem::discriminant(alp_r) {
-            return false
+            return false;
         }
         match (alp_l, alp_r) {
-            (ALogicalPlan::Slice { input:_, offset: ol, len: ll }, ALogicalPlan::Slice {input: _, offset: or, len: lr}) => {
-                ol == or && ll == lr
+            (
+                ALogicalPlan::Slice {
+                    input: _,
+                    offset: ol,
+                    len: ll,
+                },
+                ALogicalPlan::Slice {
+                    input: _,
+                    offset: or,
+                    len: lr,
+                },
+            ) => ol == or && ll == lr,
+            (
+                ALogicalPlan::Selection {
+                    input: _,
+                    predicate: l,
+                },
+                ALogicalPlan::Selection {
+                    input: _,
+                    predicate: r,
+                },
+            ) => expr_ir_eq(l, r, self.expr_arena),
+            (
+                ALogicalPlan::Scan {
+                    paths: pl,
+                    file_info: _,
+                    predicate: pred_l,
+                    output_schema: _,
+                    scan_type: stl,
+                    file_options: ol,
+                },
+                ALogicalPlan::Scan {
+                    paths: pr,
+                    file_info: _,
+                    predicate: pred_r,
+                    output_schema: _,
+                    scan_type: str,
+                    file_options: or,
+                },
+            ) => {
+                pl == pr
+                    && stl == str
+                    && ol == or
+                    && opt_expr_ir_eq(pred_l, pred_r, self.expr_arena)
             },
-            (ALogicalPlan::Selection {input: _, predicate: l}, ALogicalPlan::Selection {input:_, predicate: r}) => {
-                expr_ir_eq(l, r, self.expr_arena)
-            }
-            (ALogicalPlan::Scan {paths: pl, file_info: _, predicate: pred_l, output_schema: _, scan_type: stl,file_options: ol},
-                ALogicalPlan::Scan {paths: pr, file_info: _, predicate: pred_r, output_schema: _, scan_type: str,file_options: or}
+            (
+                ALogicalPlan::DataFrameScan {
+                    df: dfl,
+                    schema: _,
+                    output_schema: _,
+                    projection: pl,
+                    selection: sl,
+                },
+                ALogicalPlan::DataFrameScan {
+                    df: dfr,
+                    schema: _,
+                    output_schema: _,
+                    projection: pr,
+                    selection: sr,
+                },
             ) => {
-                pl == pr && stl == str && ol == or && opt_expr_ir_eq(pred_l, pred_r, self.expr_arena)
+                Arc::as_ptr(dfl) == Arc::as_ptr(dfr)
+                    && pl == pr
+                    && opt_expr_ir_eq(sl, sr, self.expr_arena)
             },
             (
-                ALogicalPlan::DataFrameScan {df: dfl, schema:_, output_schema:_, projection: pl, selection: sl },
-                ALogicalPlan::DataFrameScan {df: dfr, schema:_, output_schema:_, projection: pr, selection: sr },
-            ) => {
-                Arc::as_ptr(dfl) == Arc::as_ptr(dfr) && pl == pr && opt_expr_ir_eq(sl, sr, self.expr_arena)
-            },
+                ALogicalPlan::SimpleProjection {
+                    input: _,
+                    columns: cl,
+                    duplicate_check: dl,
+                },
+                ALogicalPlan::SimpleProjection {
+                    input: _,
+                    columns: cr,
+                    duplicate_check: dr,
+                },
+            ) => dl == dr && cl == cr,
             (
-                ALogicalPlan::SimpleProjection {input: _, columns: cl, duplicate_check: dl},
-                ALogicalPlan::SimpleProjection {input: _, columns: cr, duplicate_check: dr},
-            ) => {
-                dl == dr && cl == cr
-            },
+                ALogicalPlan::Projection {
+                    input: _,
+                    expr: el,
+                    options: ol,
+                    schema: _,
+                },
+                ALogicalPlan::Projection {
+                    input: _,
+                    expr: er,
+                    options: or,
+                    schema: _,
+                },
+            ) => ol == or && expr_irs_eq(el.default_exprs(), er.default_exprs(), self.expr_arena),
             (
-                ALogicalPlan::Projection {input: _, expr: el, options: ol, schema: _},
-                ALogicalPlan::Projection {input: _, expr: er, options:or, schema: _},
-            ) => {
-                ol == or && expr_irs_eq(el.default_exprs(), er.default_exprs(), self.expr_arena)
-            }
+                ALogicalPlan::Sort {
+                    input: _,
+                    by_column: cl,
+                    args: al,
+                },
+                ALogicalPlan::Sort {
+                    input: _,
+                    by_column: cr,
+                    args: ar,
+                },
+            ) => al == ar && expr_irs_eq(cl, cr, self.expr_arena),
             (
-                ALogicalPlan::Sort { input:_, by_column: cl, args: al },
-                ALogicalPlan::Sort { input:_, by_column: cr, args: ar },
+                ALogicalPlan::Aggregate {
+                    input: _,
+                    keys: keys_l,
+                    aggs: aggs_l,
+                    schema: _,
+                    apply: apply_l,
+                    maintain_order: mol,
+                    options: ol,
+                },
+                ALogicalPlan::Aggregate {
+                    input: _,
+                    keys: keys_r,
+                    aggs: aggs_r,
+                    schema: _,
+                    apply: apply_r,
+                    maintain_order: mor,
+                    options: or,
+                },
             ) => {
-                al == ar && expr_irs_eq(cl, cr, self.expr_arena)
-            }
-            (
-                ALogicalPlan::Aggregate { input:_, keys: keys_l, aggs: aggs_l, schema: _, apply: apply_l, maintain_order: mol, options: ol },
-                ALogicalPlan::Aggregate { input:_, keys: keys_r, aggs: aggs_r, schema: _, apply: apply_r, maintain_order: mor, options: or },
-            ) => {
-                apply_l.is_none() && apply_r.is_none()
+                apply_l.is_none()
+                    && apply_r.is_none()
                     && ol == or
                     && mol == mor
                     && expr_irs_eq(keys_l, keys_r, self.expr_arena)
                     && expr_irs_eq(aggs_l, aggs_r, self.expr_arena)
             },
             (
-            ALogicalPlan::Join { input_left: _, input_right: _, schema: _, left_on: ll, right_on: rl, options: ol },
-                ALogicalPlan::Join { input_left: _, input_right: _, schema: _, left_on: lr, right_on: rr, options: or },
-
+                ALogicalPlan::Join {
+                    input_left: _,
+                    input_right: _,
+                    schema: _,
+                    left_on: ll,
+                    right_on: rl,
+                    options: ol,
+                },
+                ALogicalPlan::Join {
+                    input_left: _,
+                    input_right: _,
+                    schema: _,
+                    left_on: lr,
+                    right_on: rr,
+                    options: or,
+                },
             ) => {
                 ol == or
                     && expr_irs_eq(ll, lr, self.expr_arena)
                     && expr_irs_eq(rl, rr, self.expr_arena)
             },
             (
-                ALogicalPlan::HStack { input:_, exprs: el, schema: _, options: ol },
-                ALogicalPlan::HStack { input:_, exprs: er, schema: _, options: or },
-            ) => {
-                ol == or
-                    && expr_irs_eq(el.default_exprs(), er.default_exprs(), self.expr_arena)
-            },
+                ALogicalPlan::HStack {
+                    input: _,
+                    exprs: el,
+                    schema: _,
+                    options: ol,
+                },
+                ALogicalPlan::HStack {
+                    input: _,
+                    exprs: er,
+                    schema: _,
+                    options: or,
+                },
+            ) => ol == or && expr_irs_eq(el.default_exprs(), er.default_exprs(), self.expr_arena),
             (
-                ALogicalPlan::Distinct { input: _, options: ol },
-                ALogicalPlan::Distinct { input: _, options: or },
-            ) => {
-                ol == or
-            },
-            (ALogicalPlan::MapFunction { input: _, function : l},
-                ALogicalPlan::MapFunction { input: _, function: r }
-
+                ALogicalPlan::Distinct {
+                    input: _,
+                    options: ol,
+                },
+                ALogicalPlan::Distinct {
+                    input: _,
+                    options: or,
+                },
+            ) => ol == or,
+            (
+                ALogicalPlan::MapFunction {
+                    input: _,
+                    function: l,
+                },
+                ALogicalPlan::MapFunction {
+                    input: _,
+                    function: r,
+                },
             ) => l == r,
             (
-                ALogicalPlan::Union { inputs: _, options : l},
-                ALogicalPlan::Union { inputs: _, options : r},
-            ) => {
-                l == r
-            },
-            (ALogicalPlan::HConcat { inputs:_, schema: _, options : l},
-                ALogicalPlan::HConcat { inputs:_, schema: _, options: r }
-            ) => {
-                l == r
-            },
+                ALogicalPlan::Union {
+                    inputs: _,
+                    options: l,
+                },
+                ALogicalPlan::Union {
+                    inputs: _,
+                    options: r,
+                },
+            ) => l == r,
             (
-                ALogicalPlan::ExtContext { input: _, contexts: l, schema: _},
-                ALogicalPlan::ExtContext { input: _, contexts: r, schema: _},
+                ALogicalPlan::HConcat {
+                    inputs: _,
+                    schema: _,
+                    options: l,
+                },
+                ALogicalPlan::HConcat {
+                    inputs: _,
+                    schema: _,
+                    options: r,
+                },
+            ) => l == r,
+            (
+                ALogicalPlan::ExtContext {
+                    input: _,
+                    contexts: l,
+                    schema: _,
+                },
+                ALogicalPlan::ExtContext {
+                    input: _,
+                    contexts: r,
+                    schema: _,
+                },
             ) => {
-                l.len() == r.len() &&
-                    l.iter().zip(r.iter()).all(|(l, r)| {
+                l.len() == r.len()
+                    && l.iter().zip(r.iter()).all(|(l, r)| {
                         let expr_arena = self.expr_arena as *const _ as *mut _;
                         unsafe {
                             let l = AexprNode::from_raw(*l, expr_arena);
@@ -243,11 +442,10 @@ impl HashableEqLP<'_> {
                         }
                     })
             },
-            _ => false
+            _ => false,
         }
     }
 }
-
 
 impl PartialEq for HashableEqLP<'_> {
     fn eq(&self, other: &Self) -> bool {
@@ -257,7 +455,6 @@ impl PartialEq for HashableEqLP<'_> {
         scratch_1.push(self.node.node());
         scratch_2.push(other.node.node());
 
-
         loop {
             match (scratch_1.pop(), scratch_2.pop()) {
                 (Some(l), Some(r)) => {
@@ -266,7 +463,10 @@ impl PartialEq for HashableEqLP<'_> {
                     let l = unsafe { ALogicalPlanNode::from_raw(l, self.node.get_arena_raw()) };
                     let r = unsafe { ALogicalPlanNode::from_raw(r, self.node.get_arena_raw()) };
 
-                    if !l.hashable_and_cmp(self.expr_arena).is_equal(&r.hashable_and_cmp(self.expr_arena)) {
+                    if !l
+                        .hashable_and_cmp(self.expr_arena)
+                        .is_equal(&r.hashable_and_cmp(self.expr_arena))
+                    {
                         return false;
                     }
 

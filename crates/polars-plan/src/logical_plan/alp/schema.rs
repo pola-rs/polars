@@ -88,4 +88,3 @@ impl ALogicalPlan {
         Cow::Borrowed(schema)
     }
 }
-

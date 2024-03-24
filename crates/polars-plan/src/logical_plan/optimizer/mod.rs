@@ -8,6 +8,8 @@ mod drop_nulls;
 
 mod collect_members;
 mod count_star;
+#[cfg(feature = "cse")]
+mod cse;
 #[cfg(any(
     feature = "ipc",
     feature = "parquet",
@@ -28,8 +30,6 @@ mod slice_pushdown_expr;
 mod slice_pushdown_lp;
 mod stack_opt;
 mod type_coercion;
-#[cfg(feature = "cse")]
-mod cse;
 
 use delay_rechunk::DelayRechunk;
 use drop_nulls::ReplaceDropNulls;
@@ -111,11 +111,10 @@ pub fn optimize(
 
     #[cfg(feature = "cse")]
     let cse_plan_changed = if comm_subplan_elim {
-        // let (lp, changed) = cse::elim_cmn_subplans(lp_top, lp_arena, expr_arena);
-        // lp_top = lp;
-        // members.has_cache |= changed;
-        // changed
-        false
+        let (lp, changed) = cse::elim_cmn_subplans(lp_top, lp_arena, expr_arena);
+        lp_top = lp;
+        members.has_cache |= changed;
+        changed
     } else {
         false
     };

@@ -1,4 +1,5 @@
 use std::hash::{Hash, Hasher};
+
 use super::*;
 use crate::constants::LITERAL_NAME;
 
@@ -123,11 +124,10 @@ impl ExprIR {
     }
 
     pub(crate) fn traverse_and_hash<H: Hasher>(&self, expr_arena: &Arena<AExpr>, state: &mut H) {
-        traverse_and_hash_aexpr(self.node,expr_arena, state);
+        traverse_and_hash_aexpr(self.node, expr_arena, state);
         if let Some(alias) = self.get_alias() {
             alias.hash(state)
         }
-
     }
 }
 

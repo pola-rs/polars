@@ -1,5 +1,5 @@
-mod schema;
 mod inputs;
+mod schema;
 
 use std::borrow::Cow;
 use std::path::PathBuf;
@@ -120,8 +120,6 @@ pub enum ALogicalPlan {
     #[default]
     Invalid,
 }
-
-
 
 #[cfg(test)]
 mod test {

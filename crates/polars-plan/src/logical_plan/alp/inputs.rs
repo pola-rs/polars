@@ -211,8 +211,8 @@ impl ALogicalPlan {
     /// Most plans have typically one input. A join has two and a scan (CsvScan)
     /// or an in-memory DataFrame has none. A Union has multiple.
     pub fn copy_inputs<T>(&self, container: &mut T)
-        where
-            T: PushNode,
+    where
+        T: PushNode,
     {
         use ALogicalPlan::*;
         let input = match self {
@@ -272,9 +272,9 @@ impl ALogicalPlan {
     }
     /// panics if more than one input
     #[cfg(any(
-    all(feature = "strings", feature = "concat_str"),
-    feature = "streaming",
-    feature = "fused"
+        all(feature = "strings", feature = "concat_str"),
+        feature = "streaming",
+        feature = "fused"
     ))]
     pub(crate) fn get_input(&self) -> Option<Node> {
         let mut inputs: UnitVec<Node> = unitvec!();

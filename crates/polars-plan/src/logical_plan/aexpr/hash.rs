@@ -1,7 +1,8 @@
 use std::hash::{Hash, Hasher};
-use polars_utils::arena::{Arena, Node};
-use crate::logical_plan::ArenaExprIter;
 
+use polars_utils::arena::{Arena, Node};
+
+use crate::logical_plan::ArenaExprIter;
 use crate::prelude::AExpr;
 
 impl Hash for AExpr {
@@ -33,7 +34,11 @@ impl Hash for AExpr {
     }
 }
 
-pub(crate) fn traverse_and_hash_aexpr<H: Hasher>(node: Node, expr_arena: &Arena<AExpr>, state: &mut H) {
+pub(crate) fn traverse_and_hash_aexpr<H: Hasher>(
+    node: Node,
+    expr_arena: &Arena<AExpr>,
+    state: &mut H,
+) {
     for (_, ae) in expr_arena.iter(node) {
         ae.hash(state);
     }
