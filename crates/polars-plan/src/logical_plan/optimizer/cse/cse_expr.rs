@@ -19,7 +19,7 @@ mod identifier_impl {
     /// We will do a full expression comparison to check if the
     /// expressions with equal identifiers are truly equal
     #[derive(Clone, Debug)]
-    pub struct Identifier {
+    pub(super) struct Identifier {
         inner: String,
         last_node: Option<AexprNode>,
     }
@@ -87,7 +87,7 @@ mod identifier_impl {
     /// We will do a full expression comparison to check if the
     /// expressions with equal identifiers are truly equal
     #[derive(Clone, Debug)]
-    pub struct Identifier {
+    pub(super) struct Identifier {
         inner: Option<u64>,
         last_node: Option<AexprNode>,
         hb: RandomState,
