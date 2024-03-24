@@ -795,6 +795,65 @@ class GroupBy:
         by: IntoExpr | Iterable[IntoExpr] | None = None,
         descending: bool | Iterable[bool] = False,
     ) -> DataFrame:
+        """
+        Return the `k` top rows sorted by given order in each group.
+
+        Parameters
+        ----------
+        k
+            Number of rows to return.
+        by
+            Column(s) included in sort order. Accepts expression input.
+            Strings are parsed as column names. If it is not given,
+            the top `k` rows in original order will be return.
+        descending
+            Sort order specified. Single boolean will be applied for all columns.
+            Top-k by multiple columns can be specified per column by passing a
+            sequence of booleans. If a sequence is passed, it must match the length
+            of `by`. If `by` is empty, the first boolean will be applied.
+
+        See Also
+        --------
+        bottom_k
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, 2, 3, 4, 5],
+        ...         "b": [5.5, 0.5, 4, 10, 13, 17],
+        ...         "c": [True, True, True, False, False, True],
+        ...         "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
+        ...     }
+        ... )
+        >>> df
+        shape: (6, 4)
+        ┌─────┬──────┬───────┬────────┐
+        │ a   ┆ b    ┆ c     ┆ d      │
+        │ --- ┆ ---  ┆ ---   ┆ ---    │
+        │ i64 ┆ f64  ┆ bool  ┆ str    │
+        ╞═════╪══════╪═══════╪════════╡
+        │ 1   ┆ 5.5  ┆ true  ┆ Apple  │
+        │ 2   ┆ 0.5  ┆ true  ┆ Orange │
+        │ 2   ┆ 4.0  ┆ true  ┆ Apple  │
+        │ 3   ┆ 10.0 ┆ false ┆ Apple  │
+        │ 4   ┆ 13.0 ┆ false ┆ Banana │
+        │ 5   ┆ 17.0 ┆ true  ┆ Banana │
+        └─────┴──────┴───────┴────────┘
+        >>> df.group_by("d", maintain_order=True).top_k(2, by="b")
+        shape: (5, 4)
+        ┌────────┬─────┬──────┬───────┐
+        │ d      ┆ a   ┆ b    ┆ c     │
+        │ ---    ┆ --- ┆ ---  ┆ ---   │
+        │ str    ┆ i64 ┆ f64  ┆ bool  │
+        ╞════════╪═════╪══════╪═══════╡
+        │ Apple  ┆ 3   ┆ 10.0 ┆ false │
+        │ Apple  ┆ 1   ┆ 5.5  ┆ true  │
+        │ Orange ┆ 2   ┆ 0.5  ┆ true  │
+        │ Banana ┆ 5   ┆ 17.0 ┆ true  │
+        │ Banana ┆ 4   ┆ 13.0 ┆ false │
+        └────────┴─────┴──────┴───────┘
+        """
         return (
             self.df.lazy()
             .group_by(*self.by, **self.named_by, maintain_order=self.maintain_order)
@@ -813,6 +872,67 @@ class GroupBy:
         by: IntoExpr | Iterable[IntoExpr] | None = None,
         descending: bool | Iterable[bool] = False,
     ) -> DataFrame:
+        """
+        Return the `k` bottom rows sorted by given order in each group.
+
+        The smaller one will be on the top, as opposed to `tail`.
+
+        Parameters
+        ----------
+        k
+            Number of rows to return.
+        by
+            Column(s) included in sort order. Accepts expression input.
+            Strings are parsed as column names. If it is not given,
+            the top `k` rows in original order will be return.
+        descending
+            Sort order specified. Single boolean will be applied for all columns.
+            Bottom-k by multiple columns can be specified per column by passing a
+            sequence of booleans. If a sequence is passed, it must match the length
+            of `by`. If `by` is empty, the first boolean will be applied.
+
+        See Also
+        --------
+        top_k
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, 2, 3, 4, 5],
+        ...         "b": [5.5, 0.5, 4, 10, 13, 17],
+        ...         "c": [True, True, True, False, False, True],
+        ...         "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
+        ...     }
+        ... )
+        >>> df
+        shape: (6, 4)
+        ┌─────┬──────┬───────┬────────┐
+        │ a   ┆ b    ┆ c     ┆ d      │
+        │ --- ┆ ---  ┆ ---   ┆ ---    │
+        │ i64 ┆ f64  ┆ bool  ┆ str    │
+        ╞═════╪══════╪═══════╪════════╡
+        │ 1   ┆ 5.5  ┆ true  ┆ Apple  │
+        │ 2   ┆ 0.5  ┆ true  ┆ Orange │
+        │ 2   ┆ 4.0  ┆ true  ┆ Apple  │
+        │ 3   ┆ 10.0 ┆ false ┆ Apple  │
+        │ 4   ┆ 13.0 ┆ false ┆ Banana │
+        │ 5   ┆ 17.0 ┆ true  ┆ Banana │
+        └─────┴──────┴───────┴────────┘
+        >>> df.group_by("d", maintain_order=True).bottom_k(2, by="b")
+        shape: (5, 4)
+        ┌────────┬─────┬──────┬───────┐
+        │ d      ┆ a   ┆ b    ┆ c     │
+        │ ---    ┆ --- ┆ ---  ┆ ---   │
+        │ str    ┆ i64 ┆ f64  ┆ bool  │
+        ╞════════╪═════╪══════╪═══════╡
+        │ Apple  ┆ 2   ┆ 4.0  ┆ true  │
+        │ Apple  ┆ 1   ┆ 5.5  ┆ true  │
+        │ Orange ┆ 2   ┆ 0.5  ┆ true  │
+        │ Banana ┆ 4   ┆ 13.0 ┆ false │
+        │ Banana ┆ 5   ┆ 17.0 ┆ true  │
+        └────────┴─────┴──────┴───────┘
+        """
         return (
             self.df.lazy()
             .group_by(*self.by, **self.named_by, maintain_order=self.maintain_order)

@@ -1835,7 +1835,7 @@ impl LazyGroupBy {
         LazyFrame::from_logical_plan(lp, self.opt_state)
     }
 
-    /// Return the k largest elements sorted by given order.
+    /// Return the k top rows sorted by given order in each group.
     ///
     /// If no `by_exprs` is provided, it will return top k elements in original order.
     ///
@@ -1896,7 +1896,7 @@ impl LazyGroupBy {
         )
     }
 
-    /// Return the k smallest elements sorted by given order.
+    /// Return the k bottom rows sorted by given order in each group.
     ///
     /// The smaller one will be on the top, as opposed to [`tail`](Expr::tail).
     ///

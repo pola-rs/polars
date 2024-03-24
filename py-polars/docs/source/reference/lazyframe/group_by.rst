@@ -26,3 +26,5 @@ This namespace comes available by calling `LazyFrame.group_by(..)`.
     LazyGroupBy.quantile
     LazyGroupBy.sum
     LazyGroupBy.tail
+    LazyGroupBy.top_k
+    LazyGroupBy.bottom_k

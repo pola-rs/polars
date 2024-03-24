@@ -26,3 +26,5 @@ This namespace is available after calling :code:`DataFrame.group_by(...)`.
     GroupBy.quantile
     GroupBy.sum
     GroupBy.tail
+    GroupBy.top_k
+    GroupBy.bottom_k
