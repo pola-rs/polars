@@ -1,13 +1,22 @@
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use polars_utils::arena::Arena;
-use crate::logical_plan::{AExpr, ALogicalPlan};
+use crate::logical_plan::{AExpr, ALogicalPlan, ArenaExprIter};
 use crate::prelude::aexpr::traverse_and_hash_aexpr;
 use crate::prelude::ExprIR;
 use super::*;
 
-struct HashableAlpNode<'a> {
-    node: ALogicalPlanNode,
+impl ALogicalPlanNode {
+    pub(crate) fn hashable_and_cmp<'a>(&'a self, expr_arena: &'a Arena<AExpr>) -> HashableEqLP<'a> {
+        HashableEqLP {
+            node: self,
+            expr_arena
+        }
+    }
+}
+
+pub(crate) struct HashableEqLP<'a> {
+    node: &'a ALogicalPlanNode,
     expr_arena: &'a Arena<AExpr>
 }
 
@@ -23,7 +32,7 @@ fn hash_exprs<H: Hasher>(exprs: &[ExprIR], expr_arena: &Arena<AExpr>, state: &mu
     }
 }
 
-impl Hash for HashableAlpNode<'_> {
+impl Hash for HashableEqLP<'_> {
     // This hashes the variant, not the whole plan
     fn hash<H: Hasher>(&self, state: &mut H) {
         let alp = self.node.to_alp();
@@ -103,6 +112,170 @@ impl Hash for HashableAlpNode<'_> {
                 count.hash(state);
             }
             ALogicalPlan::Invalid => unreachable!()
+        }
+    }
+}
+
+fn expr_irs_eq(l: &[ExprIR], r: &[ExprIR], expr_arena: &Arena<AExpr>) -> bool {
+    l.len() == r.len() && l.iter().zip(r).all(|(l, r)| expr_ir_eq(l, r, expr_arena))
+}
+
+fn expr_ir_eq(l: &ExprIR, r: &ExprIR, expr_arena: &Arena<AExpr>) -> bool {
+    l.get_alias() == r.get_alias() && {
+        let expr_arena = expr_arena as *const _ as *mut _;
+        unsafe {
+            let l = AexprNode::from_raw(l.node(), expr_arena);
+            let r = AexprNode::from_raw(r.node(), expr_arena);
+            l == r
+        }
+    }
+}
+
+fn opt_expr_ir_eq(l: &Option<ExprIR>, r: &Option<ExprIR>, expr_arena: &Arena<AExpr>) -> bool {
+    match (l, r) {
+        (None, None) => true,
+        (Some(l), Some(r)) => expr_ir_eq(l, r, expr_arena),
+        _ => false
+    }
+}
+
+impl HashableEqLP<'_> {
+    fn is_equal(&self, other: &Self) -> bool {
+        let alp_l = self.node.to_alp();
+        let alp_r = other.node.to_alp();
+        if std::mem::discriminant(alp_l) != std::mem::discriminant(alp_r) {
+            return false
+        }
+        match (alp_l, alp_r) {
+            (ALogicalPlan::Slice { input:_, offset: ol, len: ll }, ALogicalPlan::Slice {input: _, offset: or, len: lr}) => {
+                ol == or && ll == lr
+            },
+            (ALogicalPlan::Selection {input: _, predicate: l}, ALogicalPlan::Selection {input:_, predicate: r}) => {
+                expr_ir_eq(l, r, self.expr_arena)
+            }
+            (ALogicalPlan::Scan {paths: pl, file_info: _, predicate: pred_l, output_schema: _, scan_type: stl,file_options: ol},
+                ALogicalPlan::Scan {paths: pr, file_info: _, predicate: pred_r, output_schema: _, scan_type: str,file_options: or}
+            ) => {
+                pl == pr && stl == str && ol == or && opt_expr_ir_eq(pred_l, pred_r, self.expr_arena)
+            },
+            (
+                ALogicalPlan::DataFrameScan {df: dfl, schema:_, output_schema:_, projection: pl, selection: sl },
+                ALogicalPlan::DataFrameScan {df: dfr, schema:_, output_schema:_, projection: pr, selection: sr },
+            ) => {
+                Arc::as_ptr(dfl) == Arc::as_ptr(dfr) && pl == pr && opt_expr_ir_eq(sl, sr, self.expr_arena)
+            },
+            (
+                ALogicalPlan::SimpleProjection {input: _, columns: cl, duplicate_check: dl},
+                ALogicalPlan::SimpleProjection {input: _, columns: cr, duplicate_check: dr},
+            ) => {
+                dl == dr && cl == cr
+            },
+            (
+                ALogicalPlan::Projection {input: _, expr: el, options: ol, schema: _},
+                ALogicalPlan::Projection {input: _, expr: er, options:or, schema: _},
+            ) => {
+                ol == or && expr_irs_eq(el.default_exprs(), er.default_exprs(), self.expr_arena)
+            }
+            (
+                ALogicalPlan::Sort { input:_, by_column: cl, args: al },
+                ALogicalPlan::Sort { input:_, by_column: cr, args: ar },
+            ) => {
+                al == ar && expr_irs_eq(cl, cr, self.expr_arena)
+            }
+            (
+                ALogicalPlan::Aggregate { input:_, keys: keys_l, aggs: aggs_l, schema: _, apply: apply_l, maintain_order: mol, options: ol },
+                ALogicalPlan::Aggregate { input:_, keys: keys_r, aggs: aggs_r, schema: _, apply: apply_r, maintain_order: mor, options: or },
+            ) => {
+                apply_l.is_none() && apply_r.is_none()
+                    && ol == or
+                    && mol == mor
+                    && expr_irs_eq(keys_l, keys_r, self.expr_arena)
+                    && expr_irs_eq(aggs_l, aggs_r, self.expr_arena)
+            },
+            (
+            ALogicalPlan::Join { input_left: _, input_right: _, schema: _, left_on: ll, right_on: rl, options: ol },
+                ALogicalPlan::Join { input_left: _, input_right: _, schema: _, left_on: lr, right_on: rr, options: or },
+
+            ) => {
+                ol == or
+                    && expr_irs_eq(ll, lr, self.expr_arena)
+                    && expr_irs_eq(rl, rr, self.expr_arena)
+            },
+            (
+                ALogicalPlan::HStack { input:_, exprs: el, schema: _, options: ol },
+                ALogicalPlan::HStack { input:_, exprs: er, schema: _, options: or },
+            ) => {
+                ol == or
+                    && expr_irs_eq(el.default_exprs(), er.default_exprs(), self.expr_arena)
+            },
+            (
+                ALogicalPlan::Distinct { input: _, options: ol },
+                ALogicalPlan::Distinct { input: _, options: or },
+            ) => {
+                ol == or
+            },
+            (ALogicalPlan::MapFunction { input: _, function : l},
+                ALogicalPlan::MapFunction { input: _, function: r }
+
+            ) => l == r,
+            (
+                ALogicalPlan::Union { inputs: _, options : l},
+                ALogicalPlan::Union { inputs: _, options : r},
+            ) => {
+                l == r
+            },
+            (ALogicalPlan::HConcat { inputs:_, schema: _, options : l},
+                ALogicalPlan::HConcat { inputs:_, schema: _, options: r }
+            ) => {
+                l == r
+            },
+            (
+                ALogicalPlan::ExtContext { input: _, contexts: l, schema: _},
+                ALogicalPlan::ExtContext { input: _, contexts: r, schema: _},
+            ) => {
+                l.len() == r.len() &&
+                    l.iter().zip(r.iter()).all(|(l, r)| {
+                        let expr_arena = self.expr_arena as *const _ as *mut _;
+                        unsafe {
+                            let l = AexprNode::from_raw(*l, expr_arena);
+                            let r = AexprNode::from_raw(*r, expr_arena);
+                            l == r
+                        }
+                    })
+            },
+            _ => false
+        }
+    }
+}
+
+
+impl PartialEq for HashableEqLP<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        let mut scratch_1 = vec![];
+        let mut scratch_2 = vec![];
+
+        scratch_1.push(self.node.node());
+        scratch_2.push(other.node.node());
+
+
+        loop {
+            match (scratch_1.pop(), scratch_2.pop()) {
+                (Some(l), Some(r)) => {
+                    // SAFETY: we can pass a *mut pointer
+                    // the equality operation will not access mutable
+                    let l = unsafe { ALogicalPlanNode::from_raw(l, self.node.get_arena_raw()) };
+                    let r = unsafe { ALogicalPlanNode::from_raw(r, self.node.get_arena_raw()) };
+
+                    if !l.hashable_and_cmp(self.expr_arena).is_equal(&r.hashable_and_cmp(self.expr_arena)) {
+                        return false;
+                    }
+
+                    l.to_alp().copy_inputs(&mut scratch_1);
+                    r.to_alp().copy_inputs(&mut scratch_2);
+                },
+                (None, None) => return true,
+                _ => return false,
+            }
         }
     }
 }

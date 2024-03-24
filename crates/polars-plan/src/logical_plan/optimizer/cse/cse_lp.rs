@@ -5,75 +5,6 @@ use crate::constants::CSE_REPLACED;
 use crate::logical_plan::projection_expr::ProjectionExprs;
 use crate::prelude::visitor::ALogicalPlanNode;
 
-// // We use hashes to get an Identifier
-// // but this is very hard to debug, so we also have a version that
-// // uses a string trail.
-// #[cfg(test)]
-// mod identifier_impl {
-//     use std::hash::{Hash, Hasher};
-//
-//     use super::*;
-//     /// Identifier that shows the sub-expression path.
-//     /// Must implement hash and equality and ideally
-//     /// have little collisions
-//     /// We will do a full expression comparison to check if the
-//     /// expressions with equal identifiers are truly equal
-//     #[derive(Clone, Debug)]
-//     pub struct Identifier {
-//         inner: String,
-//         last_node: Option<ALogicalPlanNode>,
-//     }
-//
-//     impl PartialEq for Identifier {
-//         fn eq(&self, other: &Self) -> bool {
-//             self.inner == other.inner && self.last_node == other.last_node
-//         }
-//     }
-//
-//     impl Eq for Identifier {}
-//
-//     impl Hash for Identifier {
-//         fn hash<H: Hasher>(&self, state: &mut H) {
-//             self.inner.hash(state)
-//         }
-//     }
-//
-//     impl Identifier {
-//         pub fn new() -> Self {
-//             Self {
-//                 inner: String::new(),
-//                 last_node: None,
-//             }
-//         }
-//
-//         pub fn alp_node(&self) -> ALogicalPlanNode {
-//             self.last_node.unwrap()
-//         }
-//
-//         pub fn is_valid(&self) -> bool {
-//             !self.inner.is_empty()
-//         }
-//
-//         pub fn materialize(&self) -> String {
-//             format!("{}{}", CSE_REPLACED, self.inner)
-//         }
-//
-//         pub fn combine(&mut self, other: &Identifier) {
-//             self.inner.push('!');
-//             self.inner.push_str(&other.inner);
-//         }
-//
-//         pub fn add_alp_node(&self, ae: &ALogicalPlanNode) -> Self {
-//             let inner = format!("{:E}{}", ae.to_alp(), self.inner);
-//             Self {
-//                 inner,
-//                 last_node: Some(*ae),
-//             }
-//         }
-//     }
-// }
-//
-// #[cfg(not(test))]
 // mod identifier_impl {
 //     use std::hash::{Hash, Hasher};
 //
@@ -138,8 +69,8 @@ use crate::prelude::visitor::ALogicalPlanNode;
 //             self.inner = Some(inner);
 //         }
 //
-//         pub fn add_alp_node(&self, alp: &ALogicalPlanNode) -> Self {
-//             let hashed = self.hb.hash_one(alp.to_alp());
+//         pub fn add_alp_node(&self, alp: &ALogicalPlanNode, expr_arena: &Arena<AExpr>) -> Self {
+//             let hashed = self.hb.hash_one(alp.hashable(expr_arena));
 //             let inner = Some(
 //                 self.inner
 //                     .map_or(hashed, |l| _boost_hash_combine(l, hashed)),
