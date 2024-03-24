@@ -239,20 +239,19 @@ fn skip_pre_visit(ae: &AExpr, is_groupby: bool) -> bool {
 struct ExprIdentifierVisitor<'a> {
     se_count: &'a mut SubExprCount,
     identifier_array: &'a mut IdentifierArray,
-    // index in pre-visit traversal order
+    // Index in pre-visit traversal order.
     pre_visit_idx: usize,
     post_visit_idx: usize,
     visit_stack: &'a mut Vec<VisitRecord>,
     /// Offset in the identifier array
     /// this allows us to use a single `vec` on multiple expressions
     id_array_offset: usize,
-    // whether the expression replaced a subexpression
+    // Whether the expression replaced a subexpression.
     has_sub_expr: bool,
     // During aggregation we only identify element-wise operations
     is_group_by: bool,
 }
 
-type Accepted = Option<(VisitRecursion, bool)>;
 
 impl ExprIdentifierVisitor<'_> {
     fn new<'a>(
@@ -300,14 +299,6 @@ impl ExprIdentifierVisitor<'_> {
     /// `Some(_, true)` don't accept this node, but can be a member of a cse.
     /// `Some(_,  false)` don't accept this node, and don't allow as a member of a cse.
     fn accept_node_post_visit(&self, ae: &AExpr) -> Accepted {
-        // Don't allow this node in a cse.
-        const REFUSE_NO_MEMBER: Accepted = Some((VisitRecursion::Continue, false));
-        // Don't allow this node, but allow as a member of a cse.
-        const REFUSE_ALLOW_MEMBER: Accepted = Some((VisitRecursion::Continue, true));
-        const REFUSE_SKIP: Accepted = Some((VisitRecursion::Skip, false));
-        // Accept this node.
-        const ACCEPT: Accepted = None;
-
         match ae {
             // window expressions should `evaluate_on_groups`, not `evaluate`
             // so we shouldn't cache the children as they are evaluated incorrectly
@@ -382,7 +373,7 @@ impl Visitor for ExprIdentifierVisitor<'_> {
         self.post_visit_idx += 1;
 
         let (pre_visit_idx, sub_expr_id, is_valid_accumulated) = self.pop_until_entered();
-        // create the id of this node
+        // Create the Id of this node.
         let id: Identifier = sub_expr_id.add_ae_node(node);
 
         if !is_valid_accumulated {
@@ -391,8 +382,8 @@ impl Visitor for ExprIdentifierVisitor<'_> {
             return Ok(VisitRecursion::Continue);
         }
 
-        // if we don't store this node
-        // we only push the visit_stack, so the parents know the trail
+        // If we don't store this node
+        // we only push the visit_stack, so the parents know the trail.
         if let Some((recurse, local_is_valid)) = self.accept_node_post_visit(ae) {
             self.identifier_array[pre_visit_idx + self.id_array_offset].0 = self.post_visit_idx;
 
@@ -401,12 +392,12 @@ impl Visitor for ExprIdentifierVisitor<'_> {
             return Ok(recurse);
         }
 
-        // store the created id
+        // Store the created id.
         self.identifier_array[pre_visit_idx + self.id_array_offset] =
             (self.post_visit_idx, id.clone());
 
         // We popped until entered, push this Id on the stack so the trail
-        // is available for the parent expression
+        // is available for the parent expression.
         self.visit_stack
             .push(VisitRecord::SubExprId(id.clone(), true));
 
