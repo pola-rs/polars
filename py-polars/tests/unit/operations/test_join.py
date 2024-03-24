@@ -808,8 +808,10 @@ def test_join_results_in_duplicate_names() -> None:
 def test_join_projection_invalid_name_contains_suffix_15243() -> None:
     df1 = pl.DataFrame({"a": [1, 2, 3]}).lazy()
     df2 = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]}).lazy()
-    (
-        df1.join(df2, on="a")
-        .select(pl.col("b").filter(pl.col("b") == pl.col("foo_right")))
-        .collect()
-    )
+
+    with pytest.raises(pl.ColumnNotFoundError):
+        (
+            df1.join(df2, on="a")
+            .select(pl.col("b").filter(pl.col("b") == pl.col("foo_right")))
+            .collect()
+        )
