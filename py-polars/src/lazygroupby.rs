@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use polars::lazy::frame::{LazyFrame, LazyGroupBy};
-use polars::prelude::{DataFrame, PolarsError, Schema, IdxSize};
+use polars::prelude::{DataFrame, IdxSize, PolarsError, Schema};
 use pyo3::prelude::*;
 
 use crate::conversion::Wrap;
@@ -34,28 +34,16 @@ impl PyLazyGroupBy {
         lgb.tail(Some(n)).into()
     }
 
-    fn top_k(
-        &self,
-        k: IdxSize,
-        by: Vec<PyExpr>,
-        descending: Vec<bool>,
-    ) -> PyLazyFrame {
+    fn top_k(&self, k: IdxSize, by: Vec<PyExpr>, descending: Vec<bool>) -> PyLazyFrame {
         let lgb = self.lgb.clone().unwrap();
         let exprs = by.to_exprs();
-        lgb.top_k(k, exprs, descending)
-            .into()
+        lgb.top_k(k, exprs, descending).into()
     }
 
-    fn bottom_k(
-        &self,
-        k: IdxSize,
-        by: Vec<PyExpr>,
-        descending: Vec<bool>,
-    ) -> PyLazyFrame {
+    fn bottom_k(&self, k: IdxSize, by: Vec<PyExpr>, descending: Vec<bool>) -> PyLazyFrame {
         let lgb = self.lgb.clone().unwrap();
         let exprs = by.to_exprs();
-        lgb.bottom_k(k, exprs, descending)
-            .into()
+        lgb.bottom_k(k, exprs, descending).into()
     }
 
     fn map_groups(
