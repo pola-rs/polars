@@ -134,7 +134,7 @@ def dict_to_pydf(
     else:
         data_series = [
             s._s
-            for s in _expand_dict_scalars(
+            for s in _expand_dict_values(
                 data,
                 schema_overrides=schema_overrides,
                 strict=strict,
@@ -310,7 +310,7 @@ def _post_apply_columns(
     return pydf
 
 
-def _expand_dict_scalars(
+def _expand_dict_values(
     data: Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | Series],
     *,
     schema_overrides: SchemaDict | None = None,
@@ -337,9 +337,20 @@ def _expand_dict_scalars(
             for name, val in data.items():
                 dtype = dtypes.get(name)
                 if isinstance(val, dict) and dtype != Struct:
-                    updated_data[name] = pl.DataFrame(val, strict=strict).to_struct(
-                        name
-                    )
+                    vdf = pl.DataFrame(val, strict=strict)
+                    if (
+                        len(vdf) == 1
+                        and array_len > 1
+                        and all(not d.is_nested() for d in vdf.schema.values())
+                    ):
+                        s_vals = {
+                            nm: vdf[nm].extend_constant(v, n=(array_len - 1))
+                            for nm, v in val.items()
+                        }
+                        st = pl.DataFrame(s_vals).to_struct(name)
+                    else:
+                        st = vdf.to_struct(name)
+                    updated_data[name] = st
 
                 elif isinstance(val, pl.Series):
                     s = val.rename(name) if name != val.name else val
