@@ -3,15 +3,11 @@ use polars_core::prelude::*;
 use crate::prelude::*;
 
 mod cache_states;
-#[cfg(feature = "cse")]
-mod cse;
 mod delay_rechunk;
 mod drop_nulls;
 
 mod collect_members;
 mod count_star;
-#[cfg(feature = "cse")]
-mod cse_expr;
 #[cfg(any(
     feature = "ipc",
     feature = "parquet",
@@ -32,6 +28,8 @@ mod slice_pushdown_expr;
 mod slice_pushdown_lp;
 mod stack_opt;
 mod type_coercion;
+#[cfg(feature = "cse")]
+mod cse;
 
 use delay_rechunk::DelayRechunk;
 use drop_nulls::ReplaceDropNulls;
@@ -48,7 +46,7 @@ use self::flatten_union::FlattenUnionRule;
 pub use crate::frame::{AllowedOptimizations, OptState};
 use crate::logical_plan::optimizer::count_star::CountStar;
 #[cfg(feature = "cse")]
-use crate::logical_plan::optimizer::cse_expr::CommonSubExprOptimizer;
+use crate::logical_plan::optimizer::cse::CommonSubExprOptimizer;
 use crate::logical_plan::optimizer::predicate_pushdown::HiveEval;
 #[cfg(feature = "cse")]
 use crate::logical_plan::visitor::*;
@@ -113,10 +111,11 @@ pub fn optimize(
 
     #[cfg(feature = "cse")]
     let cse_plan_changed = if comm_subplan_elim {
-        let (lp, changed) = cse::elim_cmn_subplans(lp_top, lp_arena, expr_arena);
-        lp_top = lp;
-        members.has_cache |= changed;
-        changed
+        // let (lp, changed) = cse::elim_cmn_subplans(lp_top, lp_arena, expr_arena);
+        // lp_top = lp;
+        // members.has_cache |= changed;
+        // changed
+        false
     } else {
         false
     };

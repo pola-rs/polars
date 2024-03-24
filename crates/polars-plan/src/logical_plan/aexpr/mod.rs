@@ -13,6 +13,7 @@ use crate::constants::LEN;
 use crate::logical_plan::visitor::AexprNode;
 use crate::logical_plan::Context;
 use crate::prelude::*;
+pub(super) use hash::traverse_and_hash_aexpr;
 
 #[derive(Clone, Debug, IntoStaticStr)]
 pub enum AAggExpr {

@@ -1,3 +1,4 @@
+use std::hash::{Hash, Hasher};
 #[cfg(feature = "parquet")]
 use polars_parquet::write::FileMetaData;
 
@@ -73,6 +74,29 @@ impl PartialEq for FileScan {
                 }
             },
             _ => false,
+        }
+    }
+}
+
+impl Eq for FileScan {}
+
+impl Hash for FileScan {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        std::mem::discriminant(self).hash(state);
+        match self {
+            #[cfg(feature = "csv")]
+            FileScan::Csv { options } => options.hash(state),
+            #[cfg(feature = "parquet")]
+            FileScan::Parquet { options, cloud_options, metadata: _ } => {
+                options.hash(state);
+                cloud_options.hash(state)
+            }
+            #[cfg(feature = "ipc")]
+            FileScan::Ipc { options, cloud_options, metadata: _ } => {
+                options.hash(state);
+                cloud_options.hash(state);
+            }
+            FileScan::Anonymous { options, .. } => options.hash(state),
         }
     }
 }

@@ -4,6 +4,7 @@ use arrow::legacy::error::PolarsResult;
 mod expr;
 mod lp;
 mod visitors;
+mod hash;
 
 pub use expr::*;
 pub use lp::*;

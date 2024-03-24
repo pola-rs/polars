@@ -23,7 +23,7 @@ use crate::prelude::python_udf::PythonFunction;
 pub type FileCount = u32;
 
 #[cfg(feature = "csv")]
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct CsvParserOptions {
     pub separator: u8,
@@ -43,7 +43,7 @@ pub struct CsvParserOptions {
 }
 
 #[cfg(feature = "parquet")]
-#[derive(Clone, Debug, PartialEq, Eq, Copy)]
+#[derive(Clone, Debug, PartialEq, Eq, Copy, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ParquetOptions {
     pub parallel: polars_io::parquet::ParallelStrategy,
@@ -109,13 +109,13 @@ pub struct JsonWriterOptions {
     pub maintain_order: bool,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct IpcScanOptions {
     pub memmap: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Default)]
+#[derive(Clone, Debug, PartialEq, Eq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 /// Generic options for all file types
 pub struct FileScanOptions {
@@ -146,7 +146,7 @@ pub struct HConcatOptions {
     pub parallel: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Default)]
+#[derive(Clone, Debug, PartialEq, Eq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct GroupbyOptions {
     #[cfg(feature = "dynamic_group_by")]
@@ -157,7 +157,7 @@ pub struct GroupbyOptions {
     pub slice: Option<(i64, usize)>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Default)]
+#[derive(Clone, Debug, Eq, PartialEq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct DistinctOptions {
     /// Subset of columns that will be taken into account.
@@ -295,7 +295,7 @@ pub struct LogicalPlanUdfOptions {
     pub fmt_str: &'static str,
 }
 
-#[derive(Clone, PartialEq, Eq, Debug, Default)]
+#[derive(Clone, PartialEq, Eq, Debug, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct SortArguments {
     pub descending: Vec<bool>,
@@ -320,7 +320,7 @@ pub struct PythonOptions {
     pub n_rows: Option<usize>,
 }
 
-#[derive(Clone, PartialEq, Eq, Debug, Default)]
+#[derive(Clone, PartialEq, Eq, Debug, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct AnonymousScanOptions {
     pub skip_rows: Option<usize>,
@@ -364,7 +364,7 @@ pub enum FileType {
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct ProjectionOptions {
     pub run_parallel: bool,
     pub duplicate_check: bool,
