@@ -1835,6 +1835,54 @@ impl LazyGroupBy {
         LazyFrame::from_logical_plan(lp, self.opt_state)
     }
 
+    /// Return the k largest elements sorted by given order.
+    ///
+    /// If no `by_exprs` is provided, it will return top k elements in original order.
+    ///
+    /// Also see [`LazyGroupBy::bottom_k`], [`DataFrame::top_k`], [`LazyFrame::top_k`].
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::prelude::*;
+    /// use polars_lazy::prelude::*;
+    ///
+    /// let df = df![
+    ///     "a" => &[1, 2, 2, 3, 4, 5],
+    ///     "b" => &[5.5, 0.5, 4.0, 10.0, 13.0, 17.0],
+    ///     "c" => &[true, true, true, false, false, true],
+    ///     "d" => &["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
+    /// ].unwrap();
+    ///
+    /// println!(
+    ///     "{:?}",
+    ///     df.lazy().group_by_stable(&[col("d")])
+    ///         .top_k(2, &[col("b")], &[true])
+    ///         .collect()
+    /// );
+    /// ```
+    ///
+    /// output:
+    ///
+    /// ```txt
+    /// shape: (5, 4)
+    /// ┌────────┬─────┬──────┬───────┐
+    /// │ d      ┆ a   ┆ b    ┆ c     │
+    /// │ ---    ┆ --- ┆ ---  ┆ ---   │
+    /// │ str    ┆ i32 ┆ f64  ┆ bool  │
+    /// ╞════════╪═════╪══════╪═══════╡
+    /// │ Apple  ┆ 2   ┆ 4.0  ┆ true  │
+    /// │ Apple  ┆ 1   ┆ 5.5  ┆ true  │
+    /// │ Orange ┆ 2   ┆ 0.5  ┆ true  │
+    /// │ Banana ┆ 4   ┆ 13.0 ┆ false │
+    /// │ Banana ┆ 5   ┆ 17.0 ┆ true  │
+    /// └────────┴─────┴──────┴───────┘
+    /// ```
+    ///
+    /// # Safety
+    ///
+    /// - If `by_exprs` is provided (not empty), `descending` must have the same length.
+    /// - If `by_exprs` is NOT provided (empty), first `descending` will be used. If `descending` is empty, it panics.
     pub fn top_k<E: AsRef<[Expr]>, B: AsRef<[bool]>>(
         self,
         k: IdxSize,
@@ -1848,6 +1896,56 @@ impl LazyGroupBy {
         )
     }
 
+    /// Return the k smallest elements sorted by given order.
+    ///
+    /// The smaller one will be on the top, as opposed to [`tail`](Expr::tail).
+    ///
+    /// If no `by_exprs` is provided, it will return bottom k elements in original order.
+    ///
+    /// Also see [`LazyGroupBy::top_k`], [`LazyFrame::bottom_k`].
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::prelude::*;
+    /// use polars_lazy::prelude::*;
+    ///
+    /// let df = df![
+    ///     "a" => &[1, 2, 2, 3, 4, 5],
+    ///     "b" => &[5.5, 0.5, 4.0, 10.0, 13.0, 17.0],
+    ///     "c" => &[true, true, true, false, false, true],
+    ///     "d" => &["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
+    /// ].unwrap();
+    ///
+    /// println!(
+    ///     "{:?}",
+    ///     df.lazy().group_by_stable(&[col("d")])
+    ///         .bottom_k(2, &[col("b")], &[true])
+    ///         .collect()
+    /// );
+    /// ```
+    ///
+    /// output:
+    ///
+    /// ```txt
+    /// shape: (5, 4)
+    /// ┌────────┬─────┬──────┬───────┐
+    /// │ d      ┆ a   ┆ b    ┆ c     │
+    /// │ ---    ┆ --- ┆ ---  ┆ ---   │
+    /// │ str    ┆ i32 ┆ f64  ┆ bool  │
+    /// ╞════════╪═════╪══════╪═══════╡
+    /// │ Apple  ┆ 3   ┆ 10.0 ┆ false │
+    /// │ Apple  ┆ 1   ┆ 5.5  ┆ true  │
+    /// │ Orange ┆ 2   ┆ 0.5  ┆ true  │
+    /// │ Banana ┆ 5   ┆ 17.0 ┆ true  │
+    /// │ Banana ┆ 4   ┆ 13.0 ┆ false │
+    /// └────────┴─────┴──────┴───────┘
+    /// ```
+    ///
+    /// # Safety
+    ///
+    /// - If `by_exprs` is provided (not empty), `descending` must have the same length.
+    /// - If `by_exprs` is NOT provided (empty), first `descending` will be used. If `descending` is empty, it panics.
     pub fn bottom_k<E: AsRef<[Expr]>, B: AsRef<[bool]>>(
         self,
         k: IdxSize,
