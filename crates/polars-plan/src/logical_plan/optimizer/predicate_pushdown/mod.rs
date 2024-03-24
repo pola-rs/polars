@@ -4,7 +4,6 @@ mod keys;
 mod rename;
 mod utils;
 
-use polars_core::config::verbose;
 use polars_core::datatypes::PlHashMap;
 use polars_core::prelude::*;
 use utils::*;

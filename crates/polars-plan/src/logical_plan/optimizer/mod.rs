@@ -33,6 +33,7 @@ mod type_coercion;
 
 use delay_rechunk::DelayRechunk;
 use drop_nulls::ReplaceDropNulls;
+use polars_core::config::verbose;
 use polars_io::predicates::PhysicalIoExpr;
 pub use predicate_pushdown::PredicatePushDown;
 pub use projection_pushdown::ProjectionPushDown;
@@ -71,6 +72,8 @@ pub fn optimize(
     scratch: &mut Vec<Node>,
     hive_partition_eval: HiveEval<'_>,
 ) -> PolarsResult<Node> {
+    #[cfg(feature = "cse")]
+    let verbose = verbose();
     // get toggle values
     let predicate_pushdown = opt_state.predicate_pushdown;
     let projection_pushdown = opt_state.projection_pushdown;
@@ -106,11 +109,14 @@ pub fn optimize(
     // Collect members for optimizations that need it.
     let mut members = MemberCollector::new();
     if !eager && (comm_subexpr_elim || projection_pushdown) {
-        members.collect(lp_top, lp_arena)
+        members.collect(lp_top, lp_arena, expr_arena)
     }
 
     #[cfg(feature = "cse")]
-    let cse_plan_changed = if comm_subplan_elim {
+    let cse_plan_changed = if comm_subplan_elim && members.has_joins_or_unions && members.has_duplicate_scans() {
+        if verbose {
+            eprintln!("found multiple sources; run comm_subplan_elim")
+        }
         let (lp, changed) = cse::elim_cmn_subplans(lp_top, lp_arena, expr_arena);
         lp_top = lp;
         members.has_cache |= changed;

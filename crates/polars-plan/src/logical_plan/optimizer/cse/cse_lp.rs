@@ -2,6 +2,7 @@ use super::*;
 use crate::prelude::visitor::ALogicalPlanNode;
 
 mod identifier_impl {
+    use std::fmt::{Debug, Formatter};
     use std::hash::{Hash, Hasher};
 
     use ahash::RandomState;
@@ -21,6 +22,12 @@ mod identifier_impl {
         expr_arena: *const Arena<AExpr>,
     }
 
+    impl Debug for Identifier {
+        fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{:?}", self.last_node.as_ref().map(|n| n.to_alp()))
+        }
+    }
+
     impl PartialEq<Self> for Identifier {
         fn eq(&self, other: &Self) -> bool {
             self.inner == other.inner
@@ -28,7 +35,10 @@ mod identifier_impl {
                     (None, None) => true,
                     (Some(l), Some(r)) => {
                         let expr_arena = unsafe { &*self.expr_arena };
-                        l.hashable_and_cmp(expr_arena) == r.hashable_and_cmp(expr_arena)
+                        // We ignore caches as they are inserted on the node locations.
+                        // In that case we don't want to cmp the cache (as we just inserted it),
+                        // but the input node of the cache.
+                        l.hashable_and_cmp(expr_arena).ignore_caches() == r.hashable_and_cmp(expr_arena).ignore_caches()
                     },
                     _ => false,
                 }
@@ -212,8 +222,6 @@ impl Visitor for LpIdentifierVisitor<'_> {
 struct CommonSubPlanRewriter<'a> {
     sp_count: &'a SubPlanCount,
     identifier_array: &'a IdentifierArray,
-    /// keep track of the replaced identifiers.
-    replaced_identifiers: &'a mut PlHashSet<Identifier>,
 
     max_post_visit_idx: usize,
     /// index in traversal order in which `identifier_array`
@@ -228,12 +236,10 @@ impl<'a> CommonSubPlanRewriter<'a> {
     fn new(
         sp_count: &'a SubPlanCount,
         identifier_array: &'a IdentifierArray,
-        replaced_identifiers: &'a mut PlHashSet<Identifier>,
     ) -> Self {
         Self {
             sp_count,
             identifier_array,
-            replaced_identifiers,
             max_post_visit_idx: 0,
             visited_idx: 0,
             rewritten: false,
@@ -266,7 +272,6 @@ impl RewritingVisitor for CommonSubPlanRewriter<'_> {
         };
 
         if *count > 1 {
-            self.replaced_identifiers.insert(id.clone());
             // Rewrite this sub-plan, don't visit its children
             Ok(RewriteRecursion::MutateAndStop)
         } else {
@@ -319,8 +324,7 @@ pub(crate) fn elim_cmn_subplans(
 
         lp_node.visit(&mut visitor).map(|_| ()).unwrap();
 
-        let mut replaced_ids = Default::default();
-        let mut rewriter = CommonSubPlanRewriter::new(&sp_count, &id_array, &mut replaced_ids);
+        let mut rewriter = CommonSubPlanRewriter::new(&sp_count, &id_array);
         lp_node.rewrite(&mut rewriter).unwrap();
         rewriter.rewritten
     });

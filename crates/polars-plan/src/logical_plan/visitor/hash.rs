@@ -13,6 +13,7 @@ impl ALogicalPlanNode {
         HashableEqLP {
             node: self,
             expr_arena,
+            ignore_cache: false
         }
     }
 }
@@ -20,6 +21,15 @@ impl ALogicalPlanNode {
 pub(crate) struct HashableEqLP<'a> {
     node: &'a ALogicalPlanNode,
     expr_arena: &'a Arena<AExpr>,
+    ignore_cache: bool
+}
+
+impl HashableEqLP<'_> {
+    /// When encountering a Cache node, ignore it and take the input.
+    pub(crate) fn ignore_caches(mut self) -> Self {
+        self.ignore_cache = true;
+        self
+    }
 }
 
 fn hash_option_expr<H: Hasher>(expr: &Option<ExprIR>, expr_arena: &Arena<AExpr>, state: &mut H) {
@@ -377,7 +387,9 @@ impl HashableEqLP<'_> {
                     schema: _,
                     options: or,
                 },
-            ) => ol == or && expr_irs_eq(el.default_exprs(), er.default_exprs(), self.expr_arena),
+            ) => {
+                ol == or && expr_irs_eq(el.default_exprs(), er.default_exprs(), self.expr_arena)
+            },
             (
                 ALogicalPlan::Distinct {
                     input: _,
@@ -462,6 +474,29 @@ impl PartialEq for HashableEqLP<'_> {
                     // the equality operation will not access mutable
                     let l = unsafe { ALogicalPlanNode::from_raw(l, self.node.get_arena_raw()) };
                     let r = unsafe { ALogicalPlanNode::from_raw(r, self.node.get_arena_raw()) };
+                    let l_alp = l.to_alp();
+                    let r_alp = r.to_alp();
+
+                    if self.ignore_cache {
+                        match (l_alp, r_alp) {
+                            (ALogicalPlan::Cache {input: l, ..}, ALogicalPlan::Cache {input: r, ..}) => {
+                                scratch_1.push(*l);
+                                scratch_2.push(*r);
+                                continue
+                            },
+                            (ALogicalPlan::Cache {input: l, ..}, _) => {
+                                scratch_1.push(*l);
+                                scratch_2.push(r.node());
+                                continue
+                            },
+                            (_, ALogicalPlan::Cache {input: r, ..}) => {
+                                scratch_1.push(l.node());
+                                    scratch_2.push(*r);
+                                continue
+                            }
+                            _ => {}
+                        }
+                    }
 
                     if !l
                         .hashable_and_cmp(self.expr_arena)

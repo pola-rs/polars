@@ -68,6 +68,10 @@ impl ALogicalPlanNode {
         self.node = node
     }
 
+    pub fn replace_node(&mut self, node: Node) {
+        self.node = node;
+    }
+
     /// Replace the current `Node` with a new `ALogicalPlan`.
     pub fn replace(&mut self, ae: ALogicalPlan) {
         let node = self.node;
