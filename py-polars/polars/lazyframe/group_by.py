@@ -680,3 +680,59 @@ class LazyGroupBy:
             lead to errors. If set to None, polars assumes the schema is unchanged.
         """
         return self.map_groups(function, schema)
+
+    def top_k(
+        self,
+        k: int,
+        *,
+        by: IntoExpr | Iterable[IntoExpr] | None = None,
+        descending: bool | Iterable[bool] = False,
+    ) -> LazyFrame:
+        if by is None:
+            by = []
+        else:
+            by = parse_as_list_of_expressions(by)
+
+        if isinstance(descending, bool):
+            if len(by) != 0:
+                descending = [descending for _ in by]
+            else:
+                descending = [descending]
+
+        if len(by) != 0 and len(by) != len(descending):
+            raise ValueError(
+                f"the length of `descending` ({len(descending)}) does not match the length of `by` ({len(by)})"
+            )
+
+        if len(descending) == 0:
+            raise ValueError("Order must be specified but is not provided. ")
+
+        return wrap_ldf(self.lgb.top_k(k, by, descending))
+
+    def bottom_k(
+        self,
+        k: int,
+        *,
+        by: IntoExpr | Iterable[IntoExpr] | None = None,
+        descending: bool | Iterable[bool] = False,
+    ) -> LazyFrame:
+        if by is None:
+            by = []
+        else:
+            by = parse_as_list_of_expressions(by)
+
+        if isinstance(descending, bool):
+            if len(by) != 0:
+                descending = [descending for _ in by]
+            else:
+                descending = [descending]
+
+        if len(by) != 0 and len(by) != len(descending):
+            raise ValueError(
+                f"the length of `descending` ({len(descending)}) does not match the length of `by` ({len(by)})"
+            )
+
+        if len(descending) == 0:
+            raise ValueError("Order must be specified but is not provided. ")
+
+        return wrap_ldf(self.lgb.bottom_k(k, by, descending))

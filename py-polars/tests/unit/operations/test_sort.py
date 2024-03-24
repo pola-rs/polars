@@ -1004,3 +1004,194 @@ def test_sort_descending_nulls_last(descending: bool, nulls_last: bool) -> None:
         df.sort(["x", "y"], descending=descending, nulls_last=nulls_last),
         pl.DataFrame({"x": ref_x, "y": ref_y}),
     )
+
+
+def test_aggregate_top_k():
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 2, 3, 4, 5],
+            "b": [5.5, 0.5, 4, 10, 13, 17],
+            "c": [True, True, True, False, False, True],
+            "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
+        }
+    )
+
+    assert_frame_equal(
+        df.group_by("d", maintain_order=True).top_k(1, by="b"),
+        pl.DataFrame(
+            {
+                "d": ["Apple", "Orange", "Banana"],
+                "a": [3, 2, 5],
+                "b": [10.0, 0.5, 17.0],
+                "c": [False, True, True],
+            }
+        ),
+    )
+
+    assert_frame_equal(
+        df.group_by("d", maintain_order=True).top_k(2, by="b"),
+        pl.DataFrame(
+            {
+                "d": ["Apple", "Apple", "Orange", "Banana", "Banana"],
+                "a": [3, 1, 2, 5, 4],
+                "b": [10.0, 5.5, 0.5, 17.0, 13.0],
+                "c": [False, True, True, True, False],
+            }
+        ),
+    )
+
+    assert_frame_equal(
+        df.group_by("d", maintain_order=True).bottom_k(2, by="b"),
+        pl.DataFrame(
+            {
+                "d": ["Apple", "Apple", "Orange", "Banana", "Banana"],
+                "a": [2, 1, 2, 4, 5],
+                "b": [4.0, 5.5, 0.5, 13.0, 17.0],
+                "c": [True, True, True, False, True],
+            }
+        ),
+    )
+
+    assert_frame_equal(
+        df.group_by("d", maintain_order=True).top_k(2, by="b", descending=True),
+        pl.DataFrame(
+            {
+                "d": ["Apple", "Apple", "Orange", "Banana", "Banana"],
+                "a": [2, 1, 2, 4, 5],
+                "b": [4.0, 5.5, 0.5, 13.0, 17.0],
+                "c": [True, True, True, False, True],
+            }
+        ),
+    )
+
+    assert_frame_equal(
+        df.group_by("d", maintain_order=True).bottom_k(2, by="b", descending=True),
+        pl.DataFrame(
+            {
+                "d": ["Apple", "Apple", "Orange", "Banana", "Banana"],
+                "a": [3, 1, 2, 5, 4],
+                "b": [10.0, 5.5, 0.5, 17.0, 13.0],
+                "c": [False, True, True, True, False],
+            }
+        ),
+    )
+
+    assert_frame_equal(
+        df.group_by("d", maintain_order=True).top_k(2, by=["c", "a"]),
+        pl.DataFrame(
+            {
+                "d": ["Apple", "Apple", "Orange", "Banana", "Banana"],
+                "a": [2, 1, 2, 5, 4],
+                "b": [4.0, 5.5, 0.5, 17.0, 13.0],
+                "c": [True, True, True, True, False],
+            }
+        ),
+    )
+
+    assert_frame_equal(
+        df.group_by("d", maintain_order=True).bottom_k(2, by=["c", "a"]),
+        pl.DataFrame(
+            {
+                "d": ["Apple", "Apple", "Orange", "Banana", "Banana"],
+                "a": [3, 1, 2, 4, 5],
+                "b": [10.0, 5.5, 0.5, 13.0, 17.0],
+                "c": [False, True, True, False, True],
+            }
+        ),
+    )
+
+    assert_frame_equal(
+        df.group_by("d", maintain_order=True).top_k(2, by=["c", "a"], descending=True),
+        pl.DataFrame(
+            {
+                "d": ["Apple", "Apple", "Orange", "Banana", "Banana"],
+                "a": [3, 1, 2, 4, 5],
+                "b": [10.0, 5.5, 0.5, 13.0, 17.0],
+                "c": [False, True, True, False, True],
+            }
+        ),
+    )
+
+    assert_frame_equal(
+        df.group_by("d", maintain_order=True).bottom_k(2, by=["c", "a"], descending=True),
+        pl.DataFrame(
+            {
+                "d": ["Apple", "Apple", "Orange", "Banana", "Banana"],
+                "a": [2, 1, 2, 5, 4],
+                "b": [4.0, 5.5, 0.5, 17.0, 13.0],
+                "c": [True, True, True, True, False],
+            }
+        ),
+    )
+
+    assert_frame_equal(
+        df.group_by("d", maintain_order=True).top_k(2, by=["c", "a"], descending=[True, False]),
+        pl.DataFrame(
+            {
+                "d": ["Apple", "Apple", "Orange", "Banana", "Banana"],
+                "a": [3, 2, 2, 4, 5],
+                "b": [10.0, 4.0, 0.5, 13.0, 17.0],
+                "c": [False, True, True, False, True],
+            }
+        ),
+    )
+
+    assert_frame_equal(
+        df.group_by("d", maintain_order=True).bottom_k(2, by=["c", "a"], descending=[True, False]),
+        pl.DataFrame(
+            {
+                "d": ["Apple", "Apple", "Orange", "Banana", "Banana"],
+                "a": [1, 2, 2, 5, 4],
+                "b": [5.5, 4.0, 0.5, 17.0, 13.0],
+                "c": [True, True, True, True, False],
+            }
+        ),
+    )
+
+    assert_frame_equal(
+        df.group_by("d", maintain_order=True).top_k(2),
+        pl.DataFrame(
+            {
+                "d": ["Apple", "Apple", "Orange", "Banana", "Banana"],
+                "a": [1, 2, 2, 4, 5],
+                "b": [5.5, 4.0, 0.5, 13.0, 17.0],
+                "c": [True, True, True, False, True],
+            }
+        ),
+    )
+
+    assert_frame_equal(
+        df.group_by("d", maintain_order=True).bottom_k(2),
+        pl.DataFrame(
+            {
+                "d": ["Apple", "Apple", "Orange", "Banana", "Banana"],
+                "a": [3, 2, 2, 5, 4],
+                "b": [10.0, 4.0, 0.5, 17.0, 13.0],
+                "c": [False, True, True, True, False],
+            }
+        ),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"the length of `descending` \(1\) does not match the length of `by` \(2\)",
+    ):
+        df.group_by("d", maintain_order=True).top_k(2, by=["a", "b"], descending=[True])
+
+    with pytest.raises(
+        ValueError,
+        match=r"the length of `descending` \(1\) does not match the length of `by` \(2\)",
+    ):
+        df.group_by("d", maintain_order=True).bottom_k(2, by=["a", "b"], descending=[True])
+
+    with pytest.raises(
+        ValueError,
+        match=r"Order must be specified but is not provided. ",
+    ):
+        df.group_by("d", maintain_order=True).top_k(2, descending=[])
+
+    with pytest.raises(
+        ValueError,
+        match=r"Order must be specified but is not provided. ",
+    ):
+        df.group_by("d", maintain_order=True).bottom_k(2, descending=[])

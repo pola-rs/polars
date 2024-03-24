@@ -1835,6 +1835,48 @@ impl LazyGroupBy {
         LazyFrame::from_logical_plan(lp, self.opt_state)
     }
 
+    pub fn top_k<E: AsRef<[Expr]>, B: AsRef<[bool]>>(
+        self,
+        k: IdxSize,
+        by_exprs: E,
+        descending: B,
+    ) -> LazyFrame {
+        self.bottom_k(
+            k,
+            by_exprs,
+            descending.as_ref().iter().map(|v| !*v).collect::<Vec<_>>(),
+        )
+    }
+
+    pub fn bottom_k<E: AsRef<[Expr]>, B: AsRef<[bool]>>(
+        self,
+        k: IdxSize,
+        by_exprs: E,
+        descending: B,
+    ) -> LazyFrame {
+        let by_exprs = by_exprs.as_ref().to_vec();
+        let descending = descending.as_ref().to_vec();
+
+        let keys = self
+            .keys
+            .iter()
+            .filter_map(|expr| expr_output_name(expr).ok())
+            .collect::<Vec<_>>();
+        let agg_expr = if by_exprs.is_empty() {
+            if *descending.first().expect("Order must be set") {
+                col("*").exclude(&keys).head(Some(k as usize))
+            } else {
+                col("*").exclude(&keys).reverse().head(Some(k as usize))
+            }
+        } else {
+            col("*")
+                .exclude(&keys)
+                .sort_by(by_exprs, descending)
+                .head(Some(k as usize))
+        };
+        self.agg([agg_expr]).explode([col("*").exclude(&keys)])
+    }
+
     /// Return first n rows of each group
     pub fn head(self, n: Option<usize>) -> LazyFrame {
         let keys = self

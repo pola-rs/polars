@@ -788,6 +788,42 @@ class GroupBy:
         """
         return self.map_groups(function)
 
+    def top_k(
+        self,
+        k: int,
+        *,
+        by: IntoExpr | Iterable[IntoExpr] | None = None,
+        descending: bool | Iterable[bool] = False,
+    ) -> DataFrame:
+        return (
+            self.df.lazy()
+            .group_by(*self.by, **self.named_by, maintain_order=self.maintain_order)
+            .top_k(
+                k,
+                by=by,
+                descending=descending,
+            )
+            .collect(no_optimization=True)
+        )
+
+    def bottom_k(
+        self,
+        k: int,
+        *,
+        by: IntoExpr | Iterable[IntoExpr] | None = None,
+        descending: bool | Iterable[bool] = False,
+    ) -> DataFrame:
+        return (
+            self.df.lazy()
+            .group_by(*self.by, **self.named_by, maintain_order=self.maintain_order)
+            .bottom_k(
+                k,
+                by=by,
+                descending=descending,
+            )
+            .collect(no_optimization=True)
+        )
+
 
 class RollingGroupBy:
     """
