@@ -4567,7 +4567,7 @@ class DataFrame:
         maintain_order
             Whether the order should be maintained if elements are equal.
             Note that if `true` streaming is not possible and performance might be
-            wors since this requires a stable search.
+            worse since this requires a stable search.
 
         See Also
         --------
