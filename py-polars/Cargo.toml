@@ -17,6 +17,7 @@ polars-plan = { workspace = true }
 polars-utils = { workspace = true }
 
 ahash = { workspace = true }
+arboard = { workspace = true, optional = true }
 ciborium = { workspace = true }
 either = { workspace = true }
 itoa = { workspace = true }
@@ -30,7 +31,6 @@ pyo3-built = { version = "0.4", optional = true }
 serde_json = { workspace = true, optional = true }
 smartstring = { workspace = true }
 thiserror = { workspace = true }
-arboard = { workspace = true, optional = true }
 
 [dependencies.polars]
 workspace = true
@@ -206,7 +206,7 @@ io = [
   "avro",
   "csv",
   "cloud",
-  "clipboard"
+  "clipboard",
 ]
 
 optimizations = [
