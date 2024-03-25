@@ -84,7 +84,7 @@ impl Series {
             GroupsProxy::Idx(groups) => agg_helper_idx_on_all::<IdxType, _>(groups, |idx| {
                 debug_assert!(idx.len() <= self.len());
                 if idx.is_empty() {
-                    None
+                    Some(0)
                 } else {
                     let take = self.take_slice_unchecked(idx);
                     take.n_unique().ok().map(|v| v as IdxSize)
@@ -94,7 +94,7 @@ impl Series {
                 _agg_helper_slice::<IdxType, _>(groups, |[first, len]| {
                     debug_assert!(len <= self.len() as IdxSize);
                     if len == 0 {
-                        None
+                        Some(0)
                     } else {
                         let take = self.slice_from_offsets(first, len);
                         take.n_unique().ok().map(|v| v as IdxSize)
