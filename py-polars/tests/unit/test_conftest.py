@@ -6,11 +6,8 @@ import polars as pl
 from tests.unit.conftest import MemoryUsage
 
 
-def test_memory_usage(memory_usage_without_pyarrow: MemoryUsage):
-    """
-    The ``memory_usage`` fixture gives somewhat accurate results for common use
-    cases.
-    """
+def test_memory_usage(memory_usage_without_pyarrow: MemoryUsage) -> None:
+    """The ``memory_usage`` fixture gives somewhat accurate results."""
     memory_usage = memory_usage_without_pyarrow
 
     # Memory from Python is tracked:

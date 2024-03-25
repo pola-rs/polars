@@ -8,7 +8,6 @@ from typing import Any, Generator, List, cast
 
 import numpy as np
 import pytest
-import pyarrow as pa
 
 import polars as pl
 
@@ -158,7 +157,8 @@ class MemoryUsage:
         assert self.get_peak() < 100_000
 
     def get_peak(self) -> int:
-        """Return peak allocated memory, in bytes.
+        """
+        Return peak allocated memory, in bytes.
 
         This returns peak allocations since this object was created or
         ``reset_tracking()`` was called, whichever is later.
@@ -166,7 +166,7 @@ class MemoryUsage:
         return tracemalloc.get_traced_memory()[1]
 
 
-@pytest.fixture
+@pytest.fixture()
 def memory_usage_without_pyarrow() -> Generator[MemoryUsage, Any, Any]:
     """
     Provide an API for measuring peak memory usage.
