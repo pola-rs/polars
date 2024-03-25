@@ -201,6 +201,7 @@ from polars.io import (
     scan_ndjson,
     scan_parquet,
     scan_pyarrow_dataset,
+    read_clipboard,
 )
 from polars.lazyframe import InProcessQuery, LazyFrame
 from polars.meta import (
@@ -316,6 +317,7 @@ __all__ = [
     "scan_ndjson",
     "scan_parquet",
     "scan_pyarrow_dataset",
+    "read_clipboard",
     # polars.stringcache
     "StringCache",
     "disable_string_cache",

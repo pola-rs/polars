@@ -117,7 +117,7 @@ from polars.type_aliases import DbWriteMode
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyDataFrame
-    from polars.polars import dtype_str_repr as _dtype_str_repr
+    from polars.polars import dtype_str_repr as _dtype_str_repr, write_clipboard_string as _write_clipboard_string
 
 if TYPE_CHECKING:
     import sys
@@ -2594,6 +2594,10 @@ class DataFrame:
             return str(buffer.getvalue(), encoding="utf-8")
 
         return None
+
+    def write_clipboard(self, *, separator: str = "\t", **kwargs: Any):
+        result: str = self.write_csv(file=None, separator=separator, **kwargs)
+        _write_clipboard_string(result)
 
     def write_avro(
         self,
