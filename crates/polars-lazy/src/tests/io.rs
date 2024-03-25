@@ -450,7 +450,7 @@ fn test_csv_globbing() -> PolarsResult<()> {
     assert_eq!(cal.get(0)?, AnyValue::Int64(45));
     assert_eq!(cal.get(53)?, AnyValue::Int64(194));
 
-    let glob = "../../examples/datasets/*.csv";
+    let glob = "../../examples/datasets/foods*.csv";
     let lf = LazyCsvReader::new(glob).finish()?.slice(0, 100);
 
     let df = lf.clone().collect()?;
