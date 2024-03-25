@@ -26,6 +26,7 @@ pub(crate) struct HashableEqLP<'a> {
 
 impl HashableEqLP<'_> {
     /// When encountering a Cache node, ignore it and take the input.
+    #[cfg(feature = "cse")]
     pub(crate) fn ignore_caches(mut self) -> Self {
         self.ignore_cache = true;
         self

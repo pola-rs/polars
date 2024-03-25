@@ -256,10 +256,12 @@ fn test_cache_with_partial_projection() -> PolarsResult<()> {
             JoinType::Semi.into(),
         );
 
-    let q = q.with_comm_subplan_elim(true);
-
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
+
+    // EDIT: #15264 this originally
+    // tested 2 chaces, but we cannot do that after #15264 due to projection pushdown
+    // running first and the cache semantics changing, so now we test 1. Maybe we can improve later.
 
     // ensure we get two different caches
     // and ensure that every cache only has 1 hit.
@@ -273,7 +275,7 @@ fn test_cache_with_partial_projection() -> PolarsResult<()> {
             }
         })
         .collect::<BTreeSet<_>>();
-    assert_eq!(cache_ids.len(), 2);
+    assert_eq!(cache_ids.len(), 1);
 
     Ok(())
 }
