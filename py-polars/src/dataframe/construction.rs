@@ -29,21 +29,23 @@ impl PyDataFrame {
         schema_overrides: Option<Wrap<Schema>>,
         infer_schema_length: Option<usize>,
     ) -> PyResult<Self> {
+        let schema = schema.map(|wrap| wrap.0);
+        let schema_overrides = schema_overrides.map(|wrap| wrap.0);
+
         // If given, read dict fields in schema order.
         let mut schema_columns = PlIndexSet::new();
-        if let Some(s) = &schema {
-            schema_columns.extend(s.0.iter_names().map(|n| n.to_string()))
+        if let Some(ref s) = schema {
+            schema_columns.extend(s.iter_names().map(|n| n.to_string()))
         }
 
         let (rows, names) = dicts_to_rows(data, infer_schema_length, schema_columns)?;
 
+        let schema = schema
+            .unwrap_or_else(|| columns_names_to_empty_schema(names.iter().map(String::as_str)));
+
         py.allow_threads(move || {
-            let mut pydf = finish_from_rows(
-                rows,
-                schema.map(|wrap| wrap.0),
-                schema_overrides.map(|wrap| wrap.0),
-                infer_schema_length,
-            )?;
+            let mut pydf =
+                finish_from_rows(rows, Some(schema), schema_overrides, infer_schema_length)?;
             unsafe {
                 for (s, name) in pydf.df.get_columns_mut().iter_mut().zip(&names) {
                     s.rename(name);
@@ -137,6 +139,16 @@ fn resolve_schema_overrides(schema: &mut Schema, schema_overrides: Option<Schema
         }
     }
     Ok(())
+}
+
+fn columns_names_to_empty_schema<'a, I>(column_names: I) -> Schema
+where
+    I: IntoIterator<Item = &'a str>,
+{
+    let fields = column_names
+        .into_iter()
+        .map(|c| Field::new(c, DataType::Unknown));
+    Schema::from_iter(fields)
 }
 
 fn dicts_to_rows(
