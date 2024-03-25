@@ -143,6 +143,18 @@ unsafe fn write_any_value(
                     },
                     Some(precision) => write!(f, "{v:.precision$}"),
                 },
+                #[cfg(feature = "dtype-decimal")]
+                AnyValue::Decimal(v, scale) => {
+                    // Decimal is always quoted as str
+                    if !end_with_quote {
+                        // start the quote
+                        write!(f, "{quote}")?;
+                        end_with_quote = true
+                    }
+                    let trim_zeros = polars_core::fmt::get_trim_decimal_zeros();
+                    let buf = arrow::legacy::compute::decimal::format_decimal(v, scale, trim_zeros);
+                    write!(f, "{}", buf.as_str())
+                },
                 _ => {
                     // And here we deal with the non-numeric types (excluding strings)
                     if !end_with_quote && matches!(options.quote_style, QuoteStyle::NonNumeric) {
