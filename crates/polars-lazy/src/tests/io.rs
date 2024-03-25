@@ -456,34 +456,46 @@ fn test_csv_globbing() {
 }
 
 #[test]
-fn test_csv_globbing_2() {
-    let lf = LazyCsvReader::new("../../examples/datasets/*.csv")
-        .finish()
-        .unwrap()
-        .slice(0, 100);
-    let df = lf.clone().collect().unwrap();
-    assert_eq!(df.shape(), (100, 4));
-}
-
-#[test]
-fn test_csv_globbing_3() {
-    let df_foods = LazyCsvReader::new("../../examples/datasets/foods*.csv")
-        .finish()
-        .unwrap()
-        .collect()
-        .unwrap()
-        .slice(20, 60);
-    let df_all = LazyCsvReader::new("../../examples/datasets/*.csv")
+fn test_csv_globbing_with_slice_2() {
+    let df_lazy_slice = LazyCsvReader::new("../../examples/datasets/foods*.csv")
         .finish()
         .unwrap()
         .slice(20, 60)
         .collect()
         .unwrap();
-    assert!(df_foods.equals(&df_all));
+    assert_eq!(df_lazy_slice.shape(), (60, 4));
+
+    let df_materialized_slice = LazyCsvReader::new("../../examples/datasets/foods*.csv")
+        .finish()
+        .unwrap()
+        .collect()
+        .unwrap()
+        .slice(20, 60);
+    assert!(df_materialized_slice.equals(&df_lazy_slice));
 }
 
 #[test]
-fn test_csv_globbing_4() {
+#[should_panic(expected = "unable to append to a DataFrame of width 4 with a DataFrame of width 6")]
+fn test_csv_globbing_with_different_schemas_should_panic() {
+    let _df = LazyCsvReader::new("../../examples/datasets/*.csv")
+        .finish()
+        .unwrap()
+        .collect()
+        .unwrap();
+}
+
+#[test]
+fn test_csv_globbing_with_slice_should_pass_even_if_unread_csv_schemas_are_different() {
+    let _df = LazyCsvReader::new("../../examples/datasets/*.csv")
+        .finish()
+        .unwrap()
+        .slice(100, 4)
+        .collect()
+        .unwrap();
+}
+
+#[test]
+fn test_csv_globbing_slice_at_union() {
     let mut expr_arena = Arena::with_capacity(16);
     let mut lp_arena = Arena::with_capacity(8);
     let lf = LazyCsvReader::new("../../examples/datasets/*.csv")
@@ -492,7 +504,12 @@ fn test_csv_globbing_4() {
         .slice(0, 100);
     let node = lf.optimize(&mut lp_arena, &mut expr_arena).unwrap();
     assert!(slice_at_union(&lp_arena, node));
+}
 
+#[test]
+fn test_csv_globbing_with_filter_slice_at_union() {
+    let mut expr_arena = Arena::with_capacity(16);
+    let mut lp_arena = Arena::with_capacity(8);
     let lf = LazyCsvReader::new("../../examples/datasets/*.csv")
         .finish()
         .unwrap()
