@@ -10,24 +10,24 @@ impl PyDataFrame {
     #[staticmethod]
     pub fn from_rows(
         py: Python,
-        rows: Vec<Wrap<Row>>,
-        infer_schema_length: Option<usize>,
+        data: Vec<Wrap<Row>>,
         schema: Option<Wrap<Schema>>,
+        infer_schema_length: Option<usize>,
     ) -> PyResult<Self> {
-        let rows = vec_extract_wrapped(rows);
+        let rows = vec_extract_wrapped(data);
         py.allow_threads(move || {
             finish_from_rows(rows, schema.map(|wrap| wrap.0), None, infer_schema_length)
         })
     }
 
     #[staticmethod]
-    #[pyo3(signature = (data, schema, schema_overrides, strict=false, infer_schema_length=None))]
+    #[pyo3(signature = (data, schema=None, schema_overrides=None, _strict=false, infer_schema_length=None))]
     pub fn from_dicts(
         py: Python,
         data: &PyAny,
         schema: Option<Wrap<Schema>>,
         schema_overrides: Option<Wrap<Schema>>,
-        strict: bool,
+        _strict: bool,
         infer_schema_length: Option<usize>,
     ) -> PyResult<Self> {
         // If given, read dict fields in schema order.
