@@ -43,8 +43,6 @@ fn test_cse_unions() -> PolarsResult<()> {
     .select([col("category"), col("fats_g")])
     .with_comm_subplan_elim(true);
 
-    println!("{}", lf.explain(true).unwrap());
-
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let lp = lf.clone().optimize(&mut lp_arena, &mut expr_arena).unwrap();
     let mut cache_count = 0;
@@ -262,7 +260,7 @@ fn test_cache_with_partial_projection() -> PolarsResult<()> {
     let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
 
     // EDIT: #15264 this originally
-    // tested 2 chaces, but we cannot do that after #15264 due to projection pushdown
+    // tested 2 caches, but we cannot do that after #15264 due to projection pushdown
     // running first and the cache semantics changing, so now we test 1. Maybe we can improve later.
 
     // ensure we get two different caches
