@@ -3,7 +3,7 @@ use std::fmt::Write;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::registry::ObjectRegistry;
 use crate::prelude::*;
-use crate::utils::try_get_supertype;
+use crate::utils::any_values_to_supertype;
 
 impl<'a, T: AsRef<[AnyValue<'a>]>> NamedFrom<T, [AnyValue<'a>]> for Series {
     fn new(name: &str, v: T) -> Self {
@@ -47,28 +47,10 @@ impl Series {
                 },
             }
         }
-        fn get_any_values_supertype(values: &[AnyValue]) -> PolarsResult<DataType> {
-            let mut supertype = DataType::Null;
-            let mut dtypes = PlHashSet::<DataType>::new();
-            for av in values {
-                if dtypes.insert(av.dtype()) {
-                    supertype = try_get_supertype(&supertype, &av.dtype()).map_err(|_| {
-                            polars_err!(
-                                SchemaMismatch:
-                                "failed to infer supertype of values; partial supertype is {:?}, found value of type {:?}: {}",
-                                supertype, av.dtype(), av
-                            )
-                        }
-                    )?;
-                }
-            }
-            Ok(supertype)
-        }
-
         let dtype = if strict {
             get_first_non_null_dtype(values)
         } else {
-            get_any_values_supertype(values)?
+            any_values_to_supertype(values)?
         };
         Self::from_any_values_and_dtype(name, values, &dtype, strict)
     }
