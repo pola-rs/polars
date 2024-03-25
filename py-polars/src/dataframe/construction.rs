@@ -38,18 +38,10 @@ impl PyDataFrame {
         let (rows, names) = dicts_to_rows(data, infer_schema_length, schema_columns)?;
 
         py.allow_threads(move || {
-            let mut schema_overrides_by_idx: Vec<(usize, DataType)> = Vec::new();
-            if let Some(overrides) = schema_overrides {
-                for (idx, name) in names.iter().enumerate() {
-                    if let Some(dtype) = overrides.0.get(name) {
-                        schema_overrides_by_idx.push((idx, dtype.clone()));
-                    }
-                }
-            }
             let mut pydf = finish_from_rows(
                 rows,
                 schema.map(|wrap| wrap.0),
-                Some(schema_overrides_by_idx),
+                schema_overrides.map(|wrap| wrap.0),
                 infer_schema_length,
             )?;
             unsafe {
@@ -77,54 +69,74 @@ impl PyDataFrame {
 fn finish_from_rows(
     rows: Vec<Row>,
     schema: Option<Schema>,
-    schema_overrides_by_idx: Option<Vec<(usize, DataType)>>,
+    schema_overrides: Option<Schema>,
     infer_schema_length: Option<usize>,
 ) -> PyResult<PyDataFrame> {
-    /// Infer the schema from the row values
-    fn infer_schema(rows: &[Row], infer_schema_length: Option<usize>) -> PolarsResult<Schema> {
-        let mut schema =
-            rows_to_schema_supertypes(rows, infer_schema_length.map(|n| std::cmp::max(1, n)))?;
+    /// Infer the schema from the row values.
+    fn infer_row_dtypes(
+        rows: &[Row],
+        infer_schema_length: Option<usize>,
+    ) -> PyResult<Vec<DataType>> {
+        let mut dtypes =
+            rows_to_schema_supertypes(rows, infer_schema_length).map_err(PyPolarsErr::from)?;
 
         // Erase scale from inferred decimals.
-        for dtype in schema.iter_dtypes_mut() {
+        for dtype in dtypes.iter_mut() {
             if let DataType::Decimal(_, _) = dtype {
                 *dtype = DataType::Decimal(None, None)
             }
         }
 
-        Ok(schema)
+        Ok(dtypes)
     }
 
-    let mut final_schema = infer_schema(&rows, infer_schema_length).map_err(PyPolarsErr::from)?;
+    let schema = if let Some(mut schema) = schema {
+        resolve_schema_overrides(&mut schema, schema_overrides)?;
 
-    // Integrate explicit/inferred schema.
-    if let Some(schema) = schema {
-        for (i, (name, dtype)) in schema.into_iter().enumerate() {
-            if let Some((name_, dtype_)) = final_schema.get_at_index_mut(i) {
-                *name_ = name;
+        let contains_unknown = schema.iter_dtypes().any(|dtype| !dtype.is_known());
 
-                // If schema dtype is Unknown, overwrite with inferred datatype.
-                if !matches!(dtype, DataType::Unknown) {
-                    *dtype_ = dtype;
-                }
-            } else {
-                final_schema.with_column(name, dtype);
-            }
-        }
-    }
+        if contains_unknown {
+            // TODO: Only infer dtypes for columns with an unknown dtype
+            let inferred_dtypes = infer_row_dtypes(&rows, infer_schema_length)?;
+            let inferred_dtypes_slice = inferred_dtypes.as_slice();
 
-    // Optional per-field overrides; these supersede default/inferred dtypes.
-    if let Some(overrides) = schema_overrides_by_idx {
-        for (i, dtype) in overrides {
-            if let Some((_, dtype_)) = final_schema.get_at_index_mut(i) {
-                if !matches!(dtype, DataType::Unknown) {
-                    *dtype_ = dtype;
+            for (i, dtype) in schema.iter_dtypes_mut().enumerate() {
+                if !dtype.is_known() {
+                    *dtype = inferred_dtypes_slice.get(i).ok_or_else(|| {
+                        polars_err!(SchemaMismatch: "the number of columns in the schema does not match the data")
+                    })
+                    .map_err(PyPolarsErr::from)?
+                    .clone();
                 }
             }
-        }
-    }
-    let df = DataFrame::from_rows_and_schema(&rows, &final_schema).map_err(PyPolarsErr::from)?;
+        };
+        schema
+    } else {
+        let dtypes = infer_row_dtypes(&rows, infer_schema_length)?;
+        let mut schema = dtypes
+            .into_iter()
+            .enumerate()
+            .map(|(i, dtype)| Field::new(format!("column_{i}").as_ref(), dtype))
+            .collect();
+        resolve_schema_overrides(&mut schema, schema_overrides)?;
+        schema
+    };
+
+    let df = DataFrame::from_rows_and_schema(&rows, &schema).map_err(PyPolarsErr::from)?;
     Ok(df.into())
+}
+
+// Optional per-field overrides; these supersede default/inferred dtypes.
+// TODO: Make schema overrides work when column names are known from the data
+fn resolve_schema_overrides(schema: &mut Schema, schema_overrides: Option<Schema>) -> PyResult<()> {
+    if let Some(overrides) = schema_overrides {
+        for (name, dtype) in overrides.into_iter() {
+            schema.set_dtype(name.as_str(), dtype).ok_or_else(|| {
+                polars_err!(SchemaMismatch: "non-existing column specified in `schema_overrides`: {name}")
+            }).map_err(PyPolarsErr::from)?;
+        }
+    }
+    Ok(())
 }
 
 fn dicts_to_rows(
