@@ -43,6 +43,8 @@ fn test_cse_unions() -> PolarsResult<()> {
     .select([col("category"), col("fats_g")])
     .with_comm_subplan_elim(true);
 
+    println!("{}", lf.explain(true).unwrap());
+
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let lp = lf.clone().optimize(&mut lp_arena, &mut expr_arena).unwrap();
     let mut cache_count = 0;
@@ -203,7 +205,7 @@ fn test_cse_joins_4954() -> PolarsResult<()> {
         .flat_map(|(_, lp)| {
             use ALogicalPlan::*;
             match lp {
-                Cache { id, count, input } => {
+                Cache { id, count, input , ..} => {
                     assert_eq!(*count, 1);
                     assert!(matches!(
                         lp_arena.get(*input),

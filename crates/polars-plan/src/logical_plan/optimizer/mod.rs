@@ -121,6 +121,29 @@ pub fn optimize(
         rules.push(Box::new(fused::FusedArithmetic {}));
     }
 
+    #[cfg(feature = "cse")]
+        let mut cache_id_to_cache = None;
+
+    #[cfg(feature = "cse")]
+        let cse_plan_changed =
+        if comm_subplan_elim && members.has_joins_or_unions && members.has_duplicate_scans() {
+            if verbose {
+                eprintln!("found multiple sources; run comm_subplan_elim")
+            }
+            let (lp, changed, cid2c) = cse::elim_cmn_subplans(lp_top, lp_arena, expr_arena);
+
+            cache_id_to_cache = Some(cid2c.clone());
+            prune_unused_caches(lp_arena, cid2c);
+
+            lp_top = lp;
+            members.has_cache |= changed;
+            changed
+        } else {
+            false
+        };
+    #[cfg(not(feature = "cse"))]
+    let cse_plan_changed = false;
+
     // should be run before predicate pushdown
     if projection_pushdown {
         let mut projection_pushdown_opt = ProjectionPushDown::new();
@@ -176,26 +199,6 @@ pub fn optimize(
 
     lp_top = opt.optimize_loop(&mut rules, expr_arena, lp_arena, lp_top)?;
 
-    #[cfg(feature = "cse")]
-    let mut cache_id_to_cache = None;
-
-    #[cfg(feature = "cse")]
-    let cse_plan_changed =
-        if comm_subplan_elim && members.has_joins_or_unions && members.has_duplicate_scans() {
-            if verbose {
-                eprintln!("found multiple sources; run comm_subplan_elim")
-            }
-            let (lp, changed, cid2c) = cse::elim_cmn_subplans(lp_top, lp_arena, expr_arena);
-            cache_id_to_cache = Some(cid2c);
-            lp_top = lp;
-            members.has_cache |= changed;
-            changed
-        } else {
-            false
-        };
-    #[cfg(not(feature = "cse"))]
-    let cse_plan_changed = false;
-
     if members.has_joins_or_unions && members.has_cache {
         cache_states::set_cache_states(lp_top, lp_arena, expr_arena, scratch, cse_plan_changed);
     }
@@ -214,7 +217,7 @@ pub fn optimize(
     // and predicate pushdown are done. At that moment
     // the file fingerprints are finished.
     #[cfg(any(feature = "cse", feature = "parquet", feature = "ipc", feature = "csv"))]
-    if agg_scan_projection || cse_plan_changed {
+    if agg_scan_projection && !cse_plan_changed {
         // we do this so that expressions are simplified created by the pushdown optimizations
         // we must clean up the predicates, because the agg_scan_projection
         // uses them in the hashtable to determine duplicates.
@@ -233,16 +236,12 @@ pub fn optimize(
 
         let mut file_cacher = FileCacher::new(file_predicate_to_columns_and_count);
         file_cacher.assign_unions(lp_top, lp_arena, expr_arena, scratch);
+    }
 
-        #[cfg(feature = "cse")]
-        if cse_plan_changed {
-            // this must run after cse
-            cse::decrement_file_counters_by_cache_hits(lp_top, lp_arena, expr_arena, 0, scratch);
-
-            if let Some(cid2c) = cache_id_to_cache {
-                prune_unused_caches(lp_arena, cid2c)
-            }
-        }
+    #[cfg(feature = "cse")]
+    if cse_plan_changed {
+        // this must run after cse
+        cse::decrement_file_counters_by_cache_hits(lp_top, lp_arena, expr_arena, 0, scratch);
     }
 
     // during debug we check if the optimizations have not modified the final schema

@@ -2,6 +2,12 @@ use std::collections::BTreeMap;
 
 use super::*;
 
+struct CacheProjectionVisitor {
+    cache_schema_and_children: PlHashMap<usize, ()>
+
+}
+
+
 fn get_upper_projections(
     parent: Node,
     lp_arena: &Arena<ALogicalPlan>,
@@ -43,9 +49,6 @@ pub(super) fn set_cache_states(
     let mut loop_count = 0;
     let mut stack = Vec::with_capacity(4);
 
-    // we loop because there can be nested caches and we must run the projection pushdown
-    // optimization between cache nodes.
-    loop {
         scratch.clear();
         stack.clear();
 
@@ -92,12 +95,12 @@ pub(super) fn set_cache_states(
                     }
                 },
                 Cache { input, id, .. } => {
-                    caches_seen += 1;
-
-                    // no need to run the same cache optimization twice
-                    if loop_count > caches_seen {
-                        continue;
-                    }
+                    // caches_seen += 1;
+                    //
+                    // // no need to run the same cache optimization twice
+                    // if loop_count > caches_seen {
+                    //     continue;
+                    // }
 
                     max_cache_depth = std::cmp::max(caches_seen, max_cache_depth);
                     if let Some(cache_id) = cache_id {
@@ -187,11 +190,5 @@ pub(super) fn set_cache_states(
                     }
                 }
             }
-        }
-
-        if loop_count >= max_cache_depth {
-            break;
-        }
-        loop_count += 1;
     }
 }
