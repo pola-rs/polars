@@ -4,20 +4,11 @@ import gc
 import random
 import string
 import tracemalloc
-from typing import Any, Generator, List, Optional, cast
+from typing import Any, Generator, List, cast
 
 import numpy as np
 import pytest
-
-try:
-    import pyarrow
-    from pyarrow import MemoryPool
-except ImportError:
-    pyarrow = None
-
-    class MemoryPool:
-        pass
-
+import pyarrow as pa
 
 import polars as pl
 
@@ -160,19 +151,17 @@ class MemoryUsage:
     """
 
     def __init__(self):
-        self._pool = None
         self.reset_tracking()
 
-    def reset_tracking(self):
+    def reset_tracking(self) -> None:
         """Reset tracking to zero."""
-        if pyarrow is not None:
-            # Clear existing pool's memory:
-            pyarrow.default_memory_pool().release_unused()
-            # Setup a new pool so that we can track peak allocations from this
-            # point onwards.
-            pool = pyarrow.system_memory_pool()
-            pyarrow.set_memory_pool(pool)
-            self._pool = pool
+        # Clear existing pool's memory:
+        pa.default_memory_pool().release_unused()
+        # Setup a new pool so that we can track peak allocations from this
+        # point onwards.
+        pool = pa.system_memory_pool()
+        pa.set_memory_pool(pool)
+        self._pool = pool
         tracemalloc.reset_peak()
 
     def get_peak(self) -> int:
@@ -182,8 +171,7 @@ class MemoryUsage:
         ``reset_tracking()`` was called, whichever is later.
         """
         result = tracemalloc.get_traced_memory()[1]
-        if self._pool is not None:
-            result += self._pool.max_memory()
+        result += self._pool.max_memory()
         return result
 
 

@@ -1,9 +1,6 @@
 """Tests for the testing infrastructure."""
 
-try:
-    import pyarrow
-except ImportArrow:
-    pyarrow = None
+import pyarrow as pa
 
 import polars as pl
 
@@ -29,13 +26,10 @@ def test_memory_usage(memory_usage):
     memory_usage.reset_tracking()
     assert memory_usage.get_peak() < 1_000_000
 
-    # Memory from pyarrow is tracked, if available:
-    if pyarrow is None:
-        return
-
+    # Memory from pyarrow is tracked:
     b = b"X" * 1_300_000
     old_peak = memory_usage.get_peak()
-    table = pyarrow.Table.from_pylist([{"value": b}])
+    table = pa.Table.from_pylist([{"value": b}])
     del table
     del b
     new_peak = memory_usage.get_peak()
