@@ -5685,55 +5685,87 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         streamable: bool = True,
     ) -> Self:
         """
-        Unpivot a DataFrame from wide to long format.
+        Unpivot `LazyFrame` from wide to long format.
 
-        Optionally leaves identifiers set.
+        The inverse of :func:`DataFrame.pivot`.
 
-        This function is useful to massage a DataFrame into a format where one or more
-        columns are identifier variables (id_vars) while all other columns, considered
-        measured variables (value_vars), are "unpivoted" to the row axis leaving just
-        two non-identifier columns, 'variable' and 'value'.
+        Transforms a "wide-format" `DataFrame`, where each element represents an
+        observation, into a "long-format" one, where each row represents an observation.
 
         Parameters
         ----------
         id_vars
             Column(s) or selector(s) to use as identifier variables.
         value_vars
-            Column(s) or selector(s) to use as values variables; if `value_vars`
-            is empty all columns that are not in `id_vars` will be used.
+            Column(s) or selector(s) to use as measured variables; if `value_vars`
+            is empty, all columns that are not in `id_vars` will be used.
         variable_name
-            Name to give to the `variable` column. Defaults to "variable"
+            The name to give to the identifier variables column; defaults to
+            `"variable"`.
         value_name
-            Name to give to the `value` column. Defaults to "value"
+            The name to give to the measured variables column; defaults to `"value"`.
         streamable
-            Allow this node to run in the streaming engine.
+            Whether to allow this node to run in the streaming engine.
             If this runs in streaming, the output of the melt operation
             will not have a stable ordering.
 
+        See Also
+        --------
+        DataFrame.pivot : the inverse of `melt`; pivots from long to wide format.
+                          Not available in lazy mode.
+
         Examples
         --------
-        >>> lf = pl.LazyFrame(
+        >>> import polars.selectors as cs
+        >>> df_wide = pl.LazyFrame(
         ...     {
-        ...         "a": ["x", "y", "z"],
-        ...         "b": [1, 3, 5],
-        ...         "c": [2, 4, 6],
+        ...         "First": ["Amy", "Bo", "Cam"],
+        ...         "Last": ["Wu", "Xi", "Yu"],
+        ...         "Math": [90, 85, 78],
+        ...         "Art": [88, 92, None],
         ...     }
         ... )
-        >>> import polars.selectors as cs
-        >>> lf.melt(id_vars="a", value_vars=cs.numeric()).collect()
-        shape: (6, 3)
-        ┌─────┬──────────┬───────┐
-        │ a   ┆ variable ┆ value │
-        │ --- ┆ ---      ┆ ---   │
-        │ str ┆ str      ┆ i64   │
-        ╞═════╪══════════╪═══════╡
-        │ x   ┆ b        ┆ 1     │
-        │ y   ┆ b        ┆ 3     │
-        │ z   ┆ b        ┆ 5     │
-        │ x   ┆ c        ┆ 2     │
-        │ y   ┆ c        ┆ 4     │
-        │ z   ┆ c        ┆ 6     │
-        └─────┴──────────┴───────┘
+        >>> df_wide.melt(id_vars=cs.string()).collect()
+        shape: (6, 4)
+        ┌───────┬──────┬──────────┬───────┐
+        │ First ┆ Last ┆ variable ┆ value │
+        │ ---   ┆ ---  ┆ ---      ┆ ---   │
+        │ str   ┆ str  ┆ str      ┆ i64   │
+        ╞═══════╪══════╪══════════╪═══════╡
+        │ Amy   ┆ Wu   ┆ Math     ┆ 90    │
+        │ Bo    ┆ Xi   ┆ Math     ┆ 85    │
+        │ Cam   ┆ Yu   ┆ Math     ┆ 78    │
+        │ Amy   ┆ Wu   ┆ Art      ┆ 88    │
+        │ Bo    ┆ Xi   ┆ Art      ┆ 92    │
+        │ Cam   ┆ Yu   ┆ Art      ┆ null  │
+        └───────┴──────┴──────────┴───────┘
+        >>> df_wide.melt(id_vars=["First", "Last"], value_vars="Math").collect()
+        shape: (3, 4)
+        ┌───────┬──────┬──────────┬───────┐
+        │ First ┆ Last ┆ variable ┆ value │
+        │ ---   ┆ ---  ┆ ---      ┆ ---   │
+        │ str   ┆ str  ┆ str      ┆ i64   │
+        ╞═══════╪══════╪══════════╪═══════╡
+        │ Amy   ┆ Wu   ┆ Math     ┆ 90    │
+        │ Bo    ┆ Xi   ┆ Math     ┆ 85    │
+        │ Cam   ┆ Yu   ┆ Math     ┆ 78    │
+        └───────┴──────┴──────────┴───────┘
+        >>> df_wide.melt(
+        ...     id_vars=["First", "Last"], variable_name="Subject", value_name="Grade"
+        ... ).collect()
+        shape: (6, 4)
+        ┌───────┬──────┬─────────┬───────┐
+        │ First ┆ Last ┆ Subject ┆ Grade │
+        │ ---   ┆ ---  ┆ ---     ┆ ---   │
+        │ str   ┆ str  ┆ str     ┆ i64   │
+        ╞═══════╪══════╪═════════╪═══════╡
+        │ Amy   ┆ Wu   ┆ Math    ┆ 90    │
+        │ Bo    ┆ Xi   ┆ Math    ┆ 85    │
+        │ Cam   ┆ Yu   ┆ Math    ┆ 78    │
+        │ Amy   ┆ Wu   ┆ Art     ┆ 88    │
+        │ Bo    ┆ Xi   ┆ Art     ┆ 92    │
+        │ Cam   ┆ Yu   ┆ Art     ┆ null  │
+        └───────┴──────┴─────────┴───────┘
         """
         value_vars = [] if value_vars is None else _expand_selectors(self, value_vars)
         id_vars = [] if id_vars is None else _expand_selectors(self, id_vars)
