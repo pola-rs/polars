@@ -13,7 +13,7 @@ impl ALogicalPlanNode {
         HashableEqLP {
             node: self,
             expr_arena,
-            ignore_cache: false
+            ignore_cache: false,
         }
     }
 }
@@ -21,7 +21,7 @@ impl ALogicalPlanNode {
 pub(crate) struct HashableEqLP<'a> {
     node: &'a ALogicalPlanNode,
     expr_arena: &'a Arena<AExpr>,
-    ignore_cache: bool
+    ignore_cache: bool,
 }
 
 impl HashableEqLP<'_> {
@@ -387,9 +387,7 @@ impl HashableEqLP<'_> {
                     schema: _,
                     options: or,
                 },
-            ) => {
-                ol == or && expr_irs_eq(el.default_exprs(), er.default_exprs(), self.expr_arena)
-            },
+            ) => ol == or && expr_irs_eq(el.default_exprs(), er.default_exprs(), self.expr_arena),
             (
                 ALogicalPlan::Distinct {
                     input: _,
@@ -479,22 +477,25 @@ impl PartialEq for HashableEqLP<'_> {
 
                     if self.ignore_cache {
                         match (l_alp, r_alp) {
-                            (ALogicalPlan::Cache {input: l, ..}, ALogicalPlan::Cache {input: r, ..}) => {
+                            (
+                                ALogicalPlan::Cache { input: l, .. },
+                                ALogicalPlan::Cache { input: r, .. },
+                            ) => {
                                 scratch_1.push(*l);
                                 scratch_2.push(*r);
-                                continue
+                                continue;
                             },
-                            (ALogicalPlan::Cache {input: l, ..}, _) => {
+                            (ALogicalPlan::Cache { input: l, .. }, _) => {
                                 scratch_1.push(*l);
                                 scratch_2.push(r.node());
-                                continue
+                                continue;
                             },
-                            (_, ALogicalPlan::Cache {input: r, ..}) => {
+                            (_, ALogicalPlan::Cache { input: r, .. }) => {
                                 scratch_1.push(l.node());
-                                    scratch_2.push(*r);
-                                continue
-                            }
-                            _ => {}
+                                scratch_2.push(*r);
+                                continue;
+                            },
+                            _ => {},
                         }
                     }
 

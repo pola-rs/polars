@@ -51,9 +51,9 @@ impl MemberCollector {
                 Scan { .. } => {
                     self.scans.insert(node, lp_arena, expr_arena);
                 },
-                HConcat {..} => {
+                HConcat { .. } => {
                     self.has_joins_or_unions = true;
-                }
+                },
                 DataFrameScan { .. } => {
                     self.scans.insert(node, lp_arena, expr_arena);
                 },

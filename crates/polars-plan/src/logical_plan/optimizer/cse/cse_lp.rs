@@ -38,7 +38,8 @@ mod identifier_impl {
                         // We ignore caches as they are inserted on the node locations.
                         // In that case we don't want to cmp the cache (as we just inserted it),
                         // but the input node of the cache.
-                        l.hashable_and_cmp(expr_arena).ignore_caches() == r.hashable_and_cmp(expr_arena).ignore_caches()
+                        l.hashable_and_cmp(expr_arena).ignore_caches()
+                            == r.hashable_and_cmp(expr_arena).ignore_caches()
                     },
                     _ => false,
                 }
@@ -107,7 +108,7 @@ type IdentifierArray = Vec<(usize, Identifier)>;
 enum VisitRecord {
     /// Entered a new plan node
     Entered(usize),
-    SubPlanId(Identifier, bool),
+    SubPlanId(Identifier),
 }
 
 struct LpIdentifierVisitor<'a> {
@@ -138,30 +139,20 @@ impl LpIdentifierVisitor<'_> {
         }
     }
 
-    fn pop_until_entered(&mut self) -> (usize, Identifier, bool) {
+    fn pop_until_entered(&mut self) -> (usize, Identifier) {
         // SAFETY:
         // we keep pointer valid and will not create mutable refs.
         let mut id = unsafe { Identifier::new(self.expr_arena as *const _) };
-        let mut is_valid_accumulated = true;
 
         while let Some(item) = self.visit_stack.pop() {
             match item {
-                VisitRecord::Entered(idx) => return (idx, id, is_valid_accumulated),
-                VisitRecord::SubPlanId(s, valid) => {
+                VisitRecord::Entered(idx) => return (idx, id),
+                VisitRecord::SubPlanId(s) => {
                     id.combine(&s);
-                    is_valid_accumulated &= valid
                 },
             }
         }
         unreachable!()
-    }
-
-    /// return `None` -> node is accepted
-    /// return `Some(_)` node is not accepted and apply the given recursion operation
-    /// `Some(_, true)` don't accept this node, but can be a member of a cse.
-    /// `Some(_,  false)` don't accept this node, and don't allow as a member of a cse.
-    fn accept_node_post_visit(&self) -> Accepted {
-        ACCEPT
     }
 }
 
@@ -183,34 +174,17 @@ impl Visitor for LpIdentifierVisitor<'_> {
     fn post_visit(&mut self, node: &Self::Node) -> PolarsResult<VisitRecursion> {
         self.post_visit_idx += 1;
 
-        let (pre_visit_idx, sub_plan_id, is_valid_accumulated) = self.pop_until_entered();
+        let (pre_visit_idx, sub_plan_id) = self.pop_until_entered();
 
         // Create the Id of this node.
         let id: Identifier = sub_plan_id.add_alp_node(node);
-
-        if !is_valid_accumulated {
-            self.identifier_array[pre_visit_idx].0 = self.post_visit_idx;
-            self.visit_stack.push(VisitRecord::SubPlanId(id, false));
-            return Ok(VisitRecursion::Continue);
-        }
-
-        // If we don't store this node
-        // we only push the visit_stack, so the parents know the trail.
-        if let Some((recurse, local_is_valid)) = self.accept_node_post_visit() {
-            self.identifier_array[pre_visit_idx].0 = self.post_visit_idx;
-
-            self.visit_stack
-                .push(VisitRecord::SubPlanId(id, local_is_valid));
-            return Ok(recurse);
-        }
 
         // Store the created id.
         self.identifier_array[pre_visit_idx] = (self.post_visit_idx, id.clone());
 
         // We popped until entered, push this Id on the stack so the trail
         // is available for the parent plan.
-        self.visit_stack
-            .push(VisitRecord::SubPlanId(id.clone(), true));
+        self.visit_stack.push(VisitRecord::SubPlanId(id.clone()));
 
         let (_, sp_count) = self.sp_count.entry(id).or_insert_with(|| (node.node(), 0));
         *sp_count += 1;
@@ -233,10 +207,7 @@ struct CommonSubPlanRewriter<'a> {
 }
 
 impl<'a> CommonSubPlanRewriter<'a> {
-    fn new(
-        sp_count: &'a SubPlanCount,
-        identifier_array: &'a IdentifierArray,
-    ) -> Self {
+    fn new(sp_count: &'a SubPlanCount, identifier_array: &'a IdentifierArray) -> Self {
         Self {
             sp_count,
             identifier_array,

@@ -112,21 +112,6 @@ pub fn optimize(
         members.collect(lp_top, lp_arena, expr_arena)
     }
 
-    #[cfg(feature = "cse")]
-    let cse_plan_changed = if comm_subplan_elim && members.has_joins_or_unions && members.has_duplicate_scans() {
-        if verbose {
-            eprintln!("found multiple sources; run comm_subplan_elim")
-        }
-        let (lp, changed) = cse::elim_cmn_subplans(lp_top, lp_arena, expr_arena);
-        lp_top = lp;
-        members.has_cache |= changed;
-        changed
-    } else {
-        false
-    };
-    #[cfg(not(feature = "cse"))]
-    let cse_plan_changed = false;
-
     // we do simplification
     if simplify_expr {
         rules.push(Box::new(SimplifyExprRule {}));
@@ -140,10 +125,6 @@ pub fn optimize(
         let alp = lp_arena.take(lp_top);
         let alp = projection_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
         lp_arena.replace(lp_top, alp);
-
-        if members.has_joins_or_unions && members.has_cache {
-            cache_states::set_cache_states(lp_top, lp_arena, expr_arena, scratch, cse_plan_changed);
-        }
 
         if projection_pushdown_opt.is_count_star {
             let mut count_star_opt = CountStar::new();
@@ -186,6 +167,43 @@ pub fn optimize(
         rules.push(Box::new(SimplifyBooleanRule {}));
     }
 
+    rules.push(Box::new(ReplaceDropNulls {}));
+    if !eager {
+        rules.push(Box::new(FlattenUnionRule {}));
+    }
+
+    lp_top = opt.optimize_loop(&mut rules, expr_arena, lp_arena, lp_top)?;
+
+    #[cfg(feature = "cse")]
+    let cse_plan_changed =
+        if comm_subplan_elim && members.has_joins_or_unions && members.has_duplicate_scans() {
+            if verbose {
+                eprintln!("found multiple sources; run comm_subplan_elim")
+            }
+            let (lp, changed) = cse::elim_cmn_subplans(lp_top, lp_arena, expr_arena);
+            lp_top = lp;
+            members.has_cache |= changed;
+            changed
+        } else {
+            false
+        };
+    #[cfg(not(feature = "cse"))]
+    let cse_plan_changed = false;
+
+    if members.has_joins_or_unions && members.has_cache {
+        cache_states::set_cache_states(lp_top, lp_arena, expr_arena, scratch, cse_plan_changed);
+    }
+
+    // This one should run (nearly) last as this modifies the projections
+    #[cfg(feature = "cse")]
+    if comm_subexpr_elim && !members.has_ext_context {
+        let mut optimizer = CommonSubExprOptimizer::new(expr_arena);
+        lp_top = ALogicalPlanNode::with_context(lp_top, lp_arena, |alp_node| {
+            alp_node.rewrite(&mut optimizer)
+        })?
+        .node()
+    }
+
     // make sure that we do that once slice pushdown
     // and predicate pushdown are done. At that moment
     // the file fingerprints are finished.
@@ -215,23 +233,6 @@ pub fn optimize(
             // this must run after cse
             cse::decrement_file_counters_by_cache_hits(lp_top, lp_arena, expr_arena, 0, scratch);
         }
-    }
-
-    rules.push(Box::new(ReplaceDropNulls {}));
-    if !eager {
-        rules.push(Box::new(FlattenUnionRule {}));
-    }
-
-    lp_top = opt.optimize_loop(&mut rules, expr_arena, lp_arena, lp_top)?;
-
-    // This one should run (nearly) last as this modifies the projections
-    #[cfg(feature = "cse")]
-    if comm_subexpr_elim && !members.has_ext_context {
-        let mut optimizer = CommonSubExprOptimizer::new(expr_arena);
-        lp_top = ALogicalPlanNode::with_context(lp_top, lp_arena, |alp_node| {
-            alp_node.rewrite(&mut optimizer)
-        })?
-        .node()
     }
 
     // during debug we check if the optimizations have not modified the final schema
