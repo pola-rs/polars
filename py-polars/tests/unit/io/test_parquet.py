@@ -14,6 +14,7 @@ import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.conftest import MemoryUsage
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -784,3 +785,44 @@ def test_parquet_array_statistics() -> None:
     assert pl.scan_parquet("test.parquet").filter(
         pl.col("a") != [1, 2, 3]
     ).collect().to_dict(as_series=False) == {"a": [[4, 5, 6], [7, 8, 9]], "b": [2, 3]}
+
+
+@pytest.mark.write_disk()
+def test_read_parquet_only_loads_selected_columns_15098(
+    memory_usage: MemoryUsage, tmp_path: Path
+) -> None:
+    """
+    If a subset of columns are requested in ``read_parquet()``, only that
+    column is loaded.
+    """
+    tmp_path.mkdir(exist_ok=True)
+
+    # Each column will be about 8MB of RAM
+    series = pl.arange(0, 1_000_000, dtype=pl.Int64, eager=True)
+
+    file_path = tmp_path / "multicolumn.parquet"
+    df = pl.DataFrame(
+        {
+            "a": series,
+            "b": series,
+            "c": series,
+            "d": series,
+            "e": series,
+        }
+    )
+    df.write_parquet(file_path)
+    del df, series
+
+    memory_usage.reset_tracking()
+
+    # Only load one column:
+    df = pl.read_parquet([file_path], columns=["a"], rechunk=False)
+    # Only one column's worth of memory should be used:
+    assert 8_000_000 < memory_usage.get_peak() < 10_000_000
+
+    memory_usage.reset_tracking()
+
+    # Only load one column, Arrow version:
+    df = pl.read_parquet([file_path], columns=["a"], rechunk=False, use_pyarrow=True)
+    # Only one column's worth of memory should be used:
+    assert 8_000_000 < memory_usage.get_peak() < 10_000_000
