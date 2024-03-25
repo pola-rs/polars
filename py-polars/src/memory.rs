@@ -8,6 +8,7 @@ use libc::{c_int, c_uint, size_t, uintptr_t};
 // are unchanged between 3.7 and 3.12. Moreover, this code is intended only for
 // use with dev profile builds for testing, so it won't be used in release
 // wheels where the limited ABI is relevant.
+#[cfg_attr(windows, link(name = "pythonXY"))]
 extern "C" {
     fn PyTraceMalloc_Track(domain: c_uint, ptr: uintptr_t, size: size_t) -> c_int;
     fn PyTraceMalloc_Untrack(domain: c_uint, ptr: uintptr_t) -> c_int;
