@@ -54,30 +54,29 @@ pub fn collect_fingerprints(
     expr_arena: &Arena<AExpr>,
 ) {
     use ALogicalPlan::*;
-    match lp_arena.get(root) {
-        Scan {
-            paths,
-            file_options: options,
-            predicate,
-            scan_type,
-            ..
-        } => {
-            let slice = (scan_type.skip_rows(), options.n_rows);
-            let predicate = predicate
-                .as_ref()
-                .map(|e| node_to_expr(e.node(), expr_arena));
-            let fp = FileFingerPrint {
-                paths: paths.clone(),
+
+    for (_node, lp) in lp_arena.iter(root) {
+        match lp {
+            Scan {
+                paths,
+                file_options: options,
                 predicate,
-                slice,
-            };
-            fps.push(fp);
-        },
-        lp => {
-            for input in lp.get_inputs() {
-                collect_fingerprints(input, fps, lp_arena, expr_arena)
-            }
-        },
+                scan_type,
+                ..
+            } => {
+                let slice = (scan_type.skip_rows(), options.n_rows);
+                let predicate = predicate
+                    .as_ref()
+                    .map(|e| node_to_expr(e.node(), expr_arena));
+                let fp = FileFingerPrint {
+                    paths: paths.clone(),
+                    predicate,
+                    slice,
+                };
+                fps.push(fp);
+            },
+            _ => {},
+        }
     }
 }
 
@@ -93,33 +92,32 @@ pub fn find_column_union_and_fingerprints(
     expr_arena: &Arena<AExpr>,
 ) {
     use ALogicalPlan::*;
-    match lp_arena.get(root) {
-        Scan {
-            paths,
-            file_options: options,
-            predicate,
-            file_info,
-            scan_type,
-            ..
-        } => {
-            let slice = (scan_type.skip_rows(), options.n_rows);
-            let predicate = predicate
-                .as_ref()
-                .map(|e| node_to_expr(e.node(), expr_arena));
-            process_with_columns(
+
+    for (_node, lp) in lp_arena.iter(root) {
+        match lp {
+            Scan {
                 paths,
-                options.with_columns.as_deref(),
+                file_options: options,
                 predicate,
-                slice,
-                columns,
-                &file_info.schema,
-            );
-        },
-        lp => {
-            for input in lp.get_inputs() {
-                find_column_union_and_fingerprints(input, columns, lp_arena, expr_arena)
-            }
-        },
+                file_info,
+                scan_type,
+                ..
+            } => {
+                let slice = (scan_type.skip_rows(), options.n_rows);
+                let predicate = predicate
+                    .as_ref()
+                    .map(|e| node_to_expr(e.node(), expr_arena));
+                process_with_columns(
+                    paths,
+                    options.with_columns.as_deref(),
+                    predicate,
+                    slice,
+                    columns,
+                    &file_info.schema,
+                );
+            },
+            _ => {},
+        }
     }
 }
 

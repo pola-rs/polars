@@ -122,10 +122,10 @@ pub fn optimize(
     }
 
     #[cfg(feature = "cse")]
-        let mut cache_id_to_cache = None;
+    let mut cache_id_to_cache = None;
 
     #[cfg(feature = "cse")]
-        let cse_plan_changed =
+    let cse_plan_changed =
         if comm_subplan_elim && members.has_joins_or_unions && members.has_duplicate_scans() {
             if verbose {
                 eprintln!("found multiple sources; run comm_subplan_elim")
