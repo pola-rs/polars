@@ -122,9 +122,6 @@ pub fn optimize(
     }
 
     #[cfg(feature = "cse")]
-    let mut cache_id_to_cache = None;
-
-    #[cfg(feature = "cse")]
     let cse_plan_changed =
         if comm_subplan_elim && members.has_joins_or_unions && members.has_duplicate_scans() {
             if verbose {
@@ -132,7 +129,6 @@ pub fn optimize(
             }
             let (lp, changed, cid2c) = cse::elim_cmn_subplans(lp_top, lp_arena, expr_arena);
 
-            cache_id_to_cache = Some(cid2c.clone());
             prune_unused_caches(lp_arena, cid2c);
 
             lp_top = lp;
@@ -200,7 +196,7 @@ pub fn optimize(
     lp_top = opt.optimize_loop(&mut rules, expr_arena, lp_arena, lp_top)?;
 
     if members.has_joins_or_unions && members.has_cache {
-        cache_states::set_cache_states(lp_top, lp_arena, expr_arena, scratch, cse_plan_changed);
+        cache_states::set_cache_states(lp_top, lp_arena, expr_arena, scratch, cse_plan_changed)?;
     }
 
     // This one should run (nearly) last as this modifies the projections

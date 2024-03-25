@@ -2,10 +2,6 @@ use std::collections::BTreeMap;
 
 use super::*;
 
-struct CacheProjectionVisitor {
-    cache_schema_and_children: PlHashMap<usize, ()>,
-}
-
 fn get_upper_projections(
     parent: Node,
     lp_arena: &Arena<ALogicalPlan>,
@@ -49,23 +45,18 @@ pub(super) fn set_cache_states(
     scratch.clear();
     stack.clear();
 
-    // per cache id holds:
-    // a Vec: with children of the node
-    // a Set: with the union of projected column names.
-    // a Set: with the union of hstack column names.
+    // Per cache id holds:
+    // - a Vec: with children of the node
+    // - a Set: with the union of projected column names.
+    // - a Set: with the union of hstack column names.
     let mut cache_schema_and_children = BTreeMap::new();
 
-    stack.push((root, None, None, None, 0));
+    stack.push((root, None, None, None));
 
-    // the depth of the caches in a single tree branch
-    let mut max_cache_depth = 0;
-
-    // first traversal
-    // collect the union of columns per cache id.
-    // and find the cache parents
-    while let Some((current_node, mut cache_id, mut parent, mut previous_cache, mut caches_seen)) =
-        stack.pop()
-    {
+    // # First traversal.
+    // Collect the union of columns per cache id.
+    // And find the cache parents.
+    while let Some((current_node, mut cache_id, mut parent, mut previous_cache)) = stack.pop() {
         let lp = lp_arena.get(current_node);
         lp.copy_inputs(scratch);
 
@@ -124,7 +115,7 @@ pub(super) fn set_cache_states(
 
         parent = Some(current_node);
         for n in scratch.iter() {
-            stack.push((*n, cache_id, parent, previous_cache, caches_seen))
+            stack.push((*n, cache_id, parent, previous_cache))
         }
         scratch.clear();
     }
@@ -136,7 +127,7 @@ pub(super) fn set_cache_states(
     // back to the cache node again
     if !cache_schema_and_children.is_empty() {
         let mut proj_pd = ProjectionPushDown::new();
-        let mut pred_pd = PredicatePushDown::new(Default::default());
+        let pred_pd = PredicatePushDown::new(Default::default());
         for (_cache_id, (children, columns)) in cache_schema_and_children {
             if !columns.is_empty() {
                 for child in children {

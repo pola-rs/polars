@@ -56,6 +56,7 @@ pub fn collect_fingerprints(
     use ALogicalPlan::*;
 
     for (_node, lp) in lp_arena.iter(root) {
+        #[allow(clippy::single_match)]
         match lp {
             Scan {
                 paths,
@@ -94,6 +95,7 @@ pub fn find_column_union_and_fingerprints(
     use ALogicalPlan::*;
 
     for (_node, lp) in lp_arena.iter(root) {
+        #[allow(clippy::single_match)]
         match lp {
             Scan {
                 paths,
