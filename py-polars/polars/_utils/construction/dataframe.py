@@ -670,7 +670,11 @@ def _sequence_of_dict_to_pydf(
         else None
     )
     pydf = PyDataFrame.from_dicts(
-        data, infer_schema_length, dicts_schema, schema_overrides
+        data,
+        dicts_schema,
+        schema_overrides,
+        strict=strict,
+        infer_schema_length=infer_schema_length,
     )
 
     # TODO: we can remove this `schema_overrides` block completely

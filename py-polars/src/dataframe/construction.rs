@@ -17,24 +17,28 @@ impl PyDataFrame {
         // SAFETY: Wrap<T> is transparent.
         let rows = unsafe { std::mem::transmute::<Vec<Wrap<Row>>, Vec<Row>>(rows) };
         py.allow_threads(move || {
-            finish_from_rows(rows, infer_schema_length, schema.map(|wrap| wrap.0), None)
+            finish_from_rows(rows, schema.map(|wrap| wrap.0), None, infer_schema_length)
         })
     }
 
     #[staticmethod]
+    #[pyo3(signature = (data, schema, schema_overrides, strict=false, infer_schema_length=None))]
     pub fn from_dicts(
         py: Python,
-        dicts: &PyAny,
-        infer_schema_length: Option<usize>,
+        data: &PyAny,
         schema: Option<Wrap<Schema>>,
         schema_overrides: Option<Wrap<Schema>>,
+        strict: bool,
+        infer_schema_length: Option<usize>,
     ) -> PyResult<Self> {
         // If given, read dict fields in schema order.
         let mut schema_columns = PlIndexSet::new();
         if let Some(s) = &schema {
             schema_columns.extend(s.0.iter_names().map(|n| n.to_string()))
         }
-        let (rows, names) = dicts_to_rows(dicts, infer_schema_length, schema_columns)?;
+
+        let (rows, names) = dicts_to_rows(data, infer_schema_length, schema_columns)?;
+
         py.allow_threads(move || {
             let mut schema_overrides_by_idx: Vec<(usize, DataType)> = Vec::new();
             if let Some(overrides) = schema_overrides {
@@ -46,9 +50,9 @@ impl PyDataFrame {
             }
             let mut pydf = finish_from_rows(
                 rows,
-                infer_schema_length,
                 schema.map(|wrap| wrap.0),
                 Some(schema_overrides_by_idx),
+                infer_schema_length,
             )?;
             unsafe {
                 for (s, name) in pydf.df.get_columns_mut().iter_mut().zip(&names) {
@@ -74,9 +78,9 @@ impl PyDataFrame {
 
 fn finish_from_rows(
     rows: Vec<Row>,
-    infer_schema_length: Option<usize>,
     schema: Option<Schema>,
     schema_overrides_by_idx: Option<Vec<(usize, DataType)>>,
+    infer_schema_length: Option<usize>,
 ) -> PyResult<PyDataFrame> {
     // Object builder must be registered, this is done on import.
     let mut final_schema =
@@ -125,7 +129,9 @@ fn dicts_to_rows(
     infer_schema_len: Option<usize>,
     schema_columns: PlIndexSet<String>,
 ) -> PyResult<(Vec<Row>, Vec<String>)> {
-    let infer_schema_len = infer_schema_len.map(|n| std::cmp::max(1, n));
+    let infer_schema_len = infer_schema_len
+        .map(|n| std::cmp::max(1, n))
+        .unwrap_or(usize::MAX);
     let len = records.len()?;
 
     let key_names = {
@@ -133,7 +139,7 @@ fn dicts_to_rows(
             schema_columns
         } else {
             let mut inferred_keys = PlIndexSet::new();
-            for d in records.iter()?.take(infer_schema_len.unwrap_or(usize::MAX)) {
+            for d in records.iter()?.take(infer_schema_len) {
                 let d = d?;
                 let d = d.downcast::<PyDict>()?;
                 let keys = d.keys();
