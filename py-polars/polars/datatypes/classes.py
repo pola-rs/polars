@@ -627,7 +627,15 @@ class Enum(DataType):
 
     def __repr__(self) -> str:
         class_name = self.__class__.__name__
-        return f"{class_name}(categories={self.categories.to_list()!r})"
+        if len(categories := self.categories) <= 6:
+            category_repr = ",".join(f"{cat!r}" for cat in categories)
+        else:
+            category_repr = (
+                ",".join(f"{cat!r}" for cat in categories[:3])
+                + " … "
+                + ",".join(f"{cat!r}" for cat in categories[-3:])
+            )
+        return f"{class_name}(categories=[{category_repr}])"
 
 
 class Object(DataType):
