@@ -114,14 +114,14 @@ impl Series {
             Float64 => SeriesWrap(self.f64().unwrap().clone()).agg_median(groups),
             dt if dt.is_numeric() => apply_method_physical_integer!(self, agg_median, groups),
             #[cfg(feature = "dtype-datetime")]
-            dt @ (Datetime(_, _) | Duration(_)) => self
+            dt @ (Datetime(_, _) | Duration(_) | Time) => self
                 .to_physical_repr()
                 .agg_median(groups)
                 .cast(&Int64)
                 .unwrap()
                 .cast(dt)
                 .unwrap(),
-            dt @ (Date | Time) => {
+            dt @ Date => {
                 let ca = self.to_physical_repr();
                 let physical_type = ca.dtype();
                 let s = apply_method_physical_integer!(ca, agg_median, groups);
@@ -172,14 +172,14 @@ impl Series {
             Float64 => SeriesWrap(self.f64().unwrap().clone()).agg_mean(groups),
             dt if dt.is_numeric() => apply_method_physical_integer!(self, agg_mean, groups),
             #[cfg(feature = "dtype-datetime")]
-            dt @ (Datetime(_, _) | Duration(_)) => self
+            dt @ (Datetime(_, _) | Duration(_) | Time) => self
                 .to_physical_repr()
                 .agg_mean(groups)
                 .cast(&Int64)
                 .unwrap()
                 .cast(dt)
                 .unwrap(),
-            dt @ (Date | Time) => {
+            dt @ Date => {
                 let ca = self.to_physical_repr();
                 let physical_type = ca.dtype();
                 let s = apply_method_physical_integer!(ca, agg_mean, groups);

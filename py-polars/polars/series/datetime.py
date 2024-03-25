@@ -6,7 +6,7 @@ from polars._utils.convert import to_py_date, to_py_datetime
 from polars._utils.deprecation import deprecate_function, deprecate_renamed_function
 from polars._utils.unstable import unstable
 from polars._utils.wrap import wrap_s
-from polars.datatypes import Date, Datetime, Duration
+from polars.datatypes import Date, Datetime, Duration, Time
 from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
@@ -88,7 +88,7 @@ class DateTimeNameSpace:
         if out is not None:
             if s.dtype == Date:
                 return to_py_date(int(out))  # type: ignore[arg-type]
-            elif s.dtype in (Datetime, Duration):
+            elif s.dtype in (Datetime, Duration, Time):
                 return out  # type: ignore[return-value]
             else:
                 return to_py_datetime(int(out), s.dtype.time_unit)  # type: ignore[arg-type, attr-defined]
@@ -112,7 +112,7 @@ class DateTimeNameSpace:
         if out is not None:
             if s.dtype == Date:
                 return to_py_date(int(out))  # type: ignore[arg-type]
-            elif s.dtype in (Datetime, Duration):
+            elif s.dtype in (Datetime, Duration, Time):
                 return out  # type: ignore[return-value]
             else:
                 return to_py_datetime(int(out), s.dtype.time_unit)  # type: ignore[arg-type, attr-defined]

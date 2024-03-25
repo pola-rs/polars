@@ -54,7 +54,7 @@ impl PySeries {
                     .map_err(PyPolarsErr::from)?,
             )
             .into_py(py)),
-            DataType::Datetime(_, _) | DataType::Duration(_) => Ok(Wrap(
+            DataType::Datetime(_, _) | DataType::Duration(_) | DataType::Time => Ok(Wrap(
                 self.series
                     .mean_as_series()
                     .get(0)
@@ -77,7 +77,7 @@ impl PySeries {
                     .map_err(PyPolarsErr::from)?,
             )
             .into_py(py)),
-            DataType::Datetime(_, _) | DataType::Duration(_) => Ok(Wrap(
+            DataType::Datetime(_, _) | DataType::Duration(_) | DataType::Time => Ok(Wrap(
                 self.series
                     .median_as_series()
                     .map_err(PyPolarsErr::from)?
