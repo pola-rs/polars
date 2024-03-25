@@ -37,14 +37,18 @@ impl DataFrame {
             });
     }
 
-    /// Create a new [`DataFrame`] from rows. This should only be used when you have row wise data,
-    /// as this is a lot slower than creating the [`Series`] in a columnar fashion
+    /// Create a new [`DataFrame`] from rows.
+    ///
+    /// This should only be used when you have row wise data, as this is a lot slower
+    /// than creating the [`Series`] in a columnar fashion
     pub fn from_rows_and_schema(rows: &[Row], schema: &Schema) -> PolarsResult<Self> {
         Self::from_rows_iter_and_schema(rows.iter(), schema)
     }
 
-    /// Create a new [`DataFrame`] from an iterator over rows. This should only be used when you have row wise data,
-    /// as this is a lot slower than creating the [`Series`] in a columnar fashion
+    /// Create a new [`DataFrame`] from an iterator over rows.
+    ///
+    /// This should only be used when you have row wise data, as this is a lot slower
+    /// than creating the [`Series`] in a columnar fashion.
     pub fn from_rows_iter_and_schema<'a, I>(mut rows: I, schema: &Schema) -> PolarsResult<Self>
     where
         I: Iterator<Item = &'a Row<'a>>,
