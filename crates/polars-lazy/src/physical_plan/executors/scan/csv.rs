@@ -2,10 +2,9 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::RwLock;
 
-use polars_core::config;
 use polars_core::utils::accumulate_dataframes_vertical;
 use polars_io::predicates::apply_predicate;
-use polars_io::{is_cloud_url, RowIndex};
+use polars_io::RowIndex;
 
 use super::*;
 
@@ -19,24 +18,7 @@ pub struct CsvExec {
 
 impl CsvExec {
     fn read(&mut self) -> PolarsResult<DataFrame> {
-        let is_cloud = self.paths.iter().any(is_cloud_url);
-        let mut out = if is_cloud || config::force_async() {
-            #[cfg(not(feature = "cloud"))]
-            {
-                panic!("activate cloud feature")
-            }
-
-            #[cfg(feature = "cloud")]
-            {
-                if !is_cloud && config::verbose() {
-                    eprintln!("ASYNC READING FORCED");
-                }
-
-                polars_io::pl_async::get_runtime().block_on_potential_spawn(self.read_async())?
-            }
-        } else {
-            self.read_sync()?
-        };
+        let mut out = self.read_sync()?;
 
         if self.file_options.rechunk {
             out.as_single_chunk_par();
@@ -128,94 +110,10 @@ impl CsvExec {
         )
     }
 
-    #[cfg(feature = "cloud")]
-    async fn read_async(&mut self) -> PolarsResult<DataFrame> {
-        todo!();
-
-        // use futures::stream::{self, StreamExt};
-        // use futures::TryStreamExt;
-
-        // /// See https://users.rust-lang.org/t/implementation-of-fnonce-is-not-general-enough-with-async-block/83427/3.
-        // trait AssertSend {
-        //     fn assert_send<R>(self) -> impl Send + stream::Stream<Item = R>
-        //     where
-        //         Self: Send + stream::Stream<Item = R> + Sized,
-        //     {
-        //         self
-        //     }
-        // }
-
-        // impl<T: Send + stream::Stream + Sized> AssertSend for T {}
-
-        // let n_rows = self
-        //     .file_options
-        //     .n_rows
-        //     .map(|limit| limit.try_into().unwrap());
-
-        // let row_limit = n_rows.unwrap_or(IdxSize::MAX);
-
-        // let row_counter = RwLock::new(ConsecutiveCountState::new(self.paths.len()));
-
-        // let index_and_dfs = stream::iter(&*self.paths)
-        //     .enumerate()
-        //     .map(|(index, path)| {
-        //         let this = &*self;
-        //         let row_counter = &row_counter;
-        //         async move {
-        //             let already_read_in_sequence = row_counter.read().unwrap().sum();
-        //             if already_read_in_sequence >= row_limit {
-        //                 return Ok((index, Default::default()));
-        //             }
-
-        //             let reader = IpcReaderAsync::from_uri(
-        //                 path.to_str().unwrap(),
-        //                 this.cloud_options.as_ref(),
-        //             )
-        //             .await?;
-        //             let df = reader
-        //                 .data(
-        //                     this.metadata.as_ref(),
-        //                     IpcReadOptions::default()
-        //                         .with_row_limit(
-        //                             // NOTE: If there is any file that by itself
-        //                             // exceeds the row limit, passing the total
-        //                             // row limit to each individual reader
-        //                             // helps.
-        //                             n_rows.map(|n| {
-        //                                 n.saturating_sub(already_read_in_sequence)
-        //                                     .try_into()
-        //                                     .unwrap()
-        //                             }),
-        //                         )
-        //                         .with_row_index(this.file_options.row_index.clone())
-        //                         .with_projection(
-        //                             this.file_options.with_columns.as_deref().cloned(),
-        //                         ),
-        //                     verbose,
-        //                 )
-        //                 .await?;
-
-        //             row_counter
-        //                 .write()
-        //                 .unwrap()
-        //                 .write(index, df.height().try_into().unwrap());
-
-        //             PolarsResult::Ok((index, df))
-        //         }
-        //     })
-        //     .assert_send()
-        //     .buffer_unordered(100)
-        //     .try_collect::<Vec<_>>()
-        //     .await?;
-
-        // finish_index_and_dfs(
-        //     index_and_dfs,
-        //     row_counter.into_inner().unwrap(),
-        //     self.file_options.row_index.as_ref(),
-        //     row_limit,
-        //     self.predicate.as_ref(),
-        // )
-    }
+    // #[cfg(feature = "cloud")]
+    // async fn read_async(&mut self) -> PolarsResult<DataFrame> {
+    //     todo!();
+    // }
 }
 
 fn finish_index_and_dfs(
