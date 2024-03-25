@@ -1,8 +1,9 @@
 #[cfg(feature = "object")]
 use polars::chunked_array::object::PolarsObjectSafe;
-use polars::datatypes::{DataType, Field, OwnedObject, PlHashMap, TimeUnit};
+use polars::datatypes::{DataType, Field, OwnedObject, PlHashMap, PlIndexSet, TimeUnit};
+use polars::error::PolarsResult;
 use polars::prelude::{AnyValue, Series};
-use polars_core::frame::row::any_values_to_dtype;
+use polars_core::utils::dtypes_to_supertype;
 use pyo3::exceptions::{PyOverflowError, PyTypeError};
 use pyo3::intern;
 use pyo3::prelude::*;
@@ -282,8 +283,8 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
                 avs.push(av)
             }
 
-            let (dtype, n_types) =
-                any_values_to_dtype(&avs).map_err(|e| PyTypeError::new_err(e.to_string()))?;
+            let (dtype, n_types) = any_values_to_supertype_and_n_types(&avs)
+                .map_err(|e| PyTypeError::new_err(e.to_string()))?;
 
             // This path is only taken if there is no question about the data type.
             if dtype.is_primitive() && n_types == 1 {
@@ -418,4 +419,13 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
             convert_fn(ob, strict)
         })
     })
+}
+
+fn any_values_to_supertype_and_n_types(values: &[AnyValue]) -> PolarsResult<(DataType, usize)> {
+    // We need an IndexSet because the order of dtypes can influence
+    // how Struct fields are constructed.
+    let dtypes: PlIndexSet<DataType> = values.iter().map(|av| av.into()).collect();
+    let supertype = dtypes_to_supertype(&dtypes)?;
+    let n_types = dtypes.len();
+    Ok((supertype, n_types))
 }

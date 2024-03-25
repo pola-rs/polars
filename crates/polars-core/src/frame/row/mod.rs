@@ -83,17 +83,6 @@ pub fn coerce_data_type<A: Borrow<DataType>>(datatypes: &[A]) -> DataType {
     try_get_supertype(lhs, rhs).unwrap_or(String)
 }
 
-pub fn any_values_to_dtype(column: &[AnyValue]) -> PolarsResult<(DataType, usize)> {
-    // we need an index-map as the order of dtypes influences how the
-    // struct fields are constructed.
-    let mut types_set = PlIndexSet::new();
-    for val in column.iter() {
-        types_set.insert(val.into());
-    }
-    let n_types = types_set.len();
-    Ok((types_set_to_dtype(types_set)?, n_types))
-}
-
 /// Infer schema from rows and set the supertypes of the columns as column data type.
 pub fn rows_to_schema_supertypes(
     rows: &[Row],
