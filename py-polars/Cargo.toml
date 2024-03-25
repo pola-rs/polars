@@ -30,6 +30,7 @@ pyo3-built = { version = "0.4", optional = true }
 serde_json = { workspace = true, optional = true }
 smartstring = { workspace = true }
 thiserror = { workspace = true }
+arboard = { workspace = true, optional = true }
 
 [dependencies.polars]
 workspace = true
@@ -126,6 +127,7 @@ search_sorted = ["polars/search_sorted"]
 decompress = ["polars/decompress-fast"]
 regex = ["polars/regex"]
 csv = ["polars/csv"]
+clipboard = ["arboard"]
 object = ["polars/object"]
 extract_jsonpath = ["polars/extract_jsonpath"]
 pivot = ["polars/pivot"]
@@ -204,6 +206,7 @@ io = [
   "avro",
   "csv",
   "cloud",
+  "clipboard"
 ]
 
 optimizations = [
