@@ -21,13 +21,12 @@ impl PyDataFrame {
     }
 
     #[staticmethod]
-    #[pyo3(signature = (data, schema=None, schema_overrides=None, _strict=false, infer_schema_length=None))]
+    #[pyo3(signature = (data, schema=None, schema_overrides=None, infer_schema_length=None))]
     pub fn from_dicts(
         py: Python,
         data: &PyAny,
         schema: Option<Wrap<Schema>>,
         schema_overrides: Option<Wrap<Schema>>,
-        _strict: bool,
         infer_schema_length: Option<usize>,
     ) -> PyResult<Self> {
         // If given, read dict fields in schema order.
