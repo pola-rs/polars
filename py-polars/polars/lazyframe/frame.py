@@ -3224,7 +3224,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         exprs = parse_as_list_of_expressions(*by, **named_by)
         lgb = self._ldf.group_by(exprs, maintain_order)
-        return LazyGroupBy(lgb)
+        lf = self
+        return LazyGroupBy(lgb, *by, _lf=lf, maintain_order=maintain_order, **named_by)
 
     @deprecate_renamed_parameter("by", "group_by", version="0.20.14")
     def rolling(

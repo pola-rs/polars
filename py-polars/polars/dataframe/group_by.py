@@ -311,16 +311,12 @@ class GroupBy:
         ...     pl.int_range(pl.len()).shuffle().over("color") < 2
         ... )  # doctest: +IGNORE_RESULT
         """
-        if self.named_by:
-            msg = "cannot call `map_groups` when grouping by named expressions"
-            raise TypeError(msg)
-        if not all(isinstance(c, str) for c in self.by):
-            msg = "cannot call `map_groups` when grouping by an expression"
-            raise TypeError(msg)
+        self.by_str_cols = self.df.lazy().select(*self.by, **self.named_by).columns
+        df = self.df.with_columns(*self.by, **self.named_by)
 
-        return self.df.__class__._from_pydf(
-            self.df._df.group_by_map_groups(
-                list(self.by), function, self.maintain_order
+        return df.__class__._from_pydf(
+            df._df.group_by_map_groups(
+                list(self.by_str_cols), function, self.maintain_order
             )
         )
 
