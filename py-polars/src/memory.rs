@@ -4,10 +4,11 @@ use std::alloc::GlobalAlloc;
 
 use libc::{c_int, c_uint, size_t, uintptr_t};
 
-// These APIs are not part of the limited Python ABI Polars uses. However, they
-// are unchanged between 3.7 and 3.12. Moreover, this code is intended only for
-// use with dev profile builds for testing, so it won't be used in release
-// wheels where the limited ABI is relevant.
+// When debug_assertions is enabled, use Python's tracemalloc to track memory
+// allocations. This is a useful feature for production use too, but has a
+// potential performance impact and so would need additional benchmarking. In
+// addition, these APIs are not part of the limited Python ABI Polars uses,
+// though they are unchanged between 3.7 and 3.12.
 #[cfg_attr(windows, link(name = "pythonXY"))]
 extern "C" {
     fn PyTraceMalloc_Track(domain: c_uint, ptr: uintptr_t, size: size_t) -> c_int;
