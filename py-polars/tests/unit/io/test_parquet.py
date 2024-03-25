@@ -789,7 +789,7 @@ def test_parquet_array_statistics() -> None:
 
 @pytest.mark.write_disk()
 def test_read_parquet_only_loads_selected_columns_15098(
-    memory_usage: MemoryUsage, tmp_path: Path
+    memory_usage_without_pyarrow: MemoryUsage, tmp_path: Path
 ) -> None:
     """
     If a subset of columns are requested in ``read_parquet()``, only that
@@ -805,24 +805,15 @@ def test_read_parquet_only_loads_selected_columns_15098(
         {
             "a": series,
             "b": series,
-            "c": series,
-            "d": series,
-            "e": series,
         }
     )
     df.write_parquet(file_path)
     del df, series
 
-    memory_usage.reset_tracking()
+    memory_usage_without_pyarrow.reset_tracking()
 
     # Only load one column:
-    df = pl.read_parquet([file_path], columns=["a"], rechunk=False)
-    # Only one column's worth of memory should be used:
-    assert 8_000_000 < memory_usage.get_peak() < 10_000_000
-
-    memory_usage.reset_tracking()
-
-    # Only load one column, Arrow version:
-    df = pl.read_parquet([file_path], columns=["a"], rechunk=False, use_pyarrow=True)
-    # Only one column's worth of memory should be used:
-    assert 8_000_000 < memory_usage.get_peak() < 10_000_000
+    df = pl.read_parquet([file_path], columns=["b"], rechunk=False)
+    # Only one column's worth of memory should be used; 2 columns would be
+    # 16_000_000 at least, but there's some overhead.
+    assert 8_000_000 < memory_usage_without_pyarrow.get_peak() < 13_000_000

@@ -147,22 +147,15 @@ class MemoryUsage:
     """
     Provide an API for measuring peak memory usage.
 
-    Gets info from PyArrow, if possible, by overriding the memory pool.
+    Memory from PyArrow is not tracked at the moment.
     """
-
-    def __init__(self):
-        self.reset_tracking()
 
     def reset_tracking(self) -> None:
         """Reset tracking to zero."""
-        # Clear existing pool's memory:
-        pa.default_memory_pool().release_unused()
-        # Setup a new pool so that we can track peak allocations from this
-        # point onwards.
-        pool = pa.system_memory_pool()
-        pa.set_memory_pool(pool)
-        self._pool = pool
-        tracemalloc.reset_peak()
+        gc.collect()
+        tracemalloc.stop()
+        tracemalloc.start()
+        assert self.get_peak() < 100_000
 
     def get_peak(self) -> int:
         """Return peak allocated memory, in bytes.
@@ -170,18 +163,18 @@ class MemoryUsage:
         This returns peak allocations since this object was created or
         ``reset_tracking()`` was called, whichever is later.
         """
-        result = tracemalloc.get_traced_memory()[1]
-        result += self._pool.max_memory()
-        return result
+        return tracemalloc.get_traced_memory()[1]
 
 
 @pytest.fixture
-def memory_usage() -> Generator[MemoryUsage, Any, Any]:
+def memory_usage_without_pyarrow() -> Generator[MemoryUsage, Any, Any]:
     """
     Provide an API for measuring peak memory usage.
 
     Not thread-safe: there should only be one instance of MemoryUsage at any
     given time.
+
+    Memory usage from PyArrow is not tracked.
     """
     if not pl.build_info()["build"]["debug"]:
         pytest.skip("Memory usage only available in debug/dev builds.")

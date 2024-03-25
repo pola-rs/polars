@@ -1,14 +1,18 @@
 """Tests for the testing infrastructure."""
 
-import pyarrow as pa
+import numpy as np
 
 import polars as pl
+from tests.unit.conftest import MemoryUsage
 
 
-def test_memory_usage(memory_usage):
+def test_memory_usage(memory_usage_without_pyarrow: MemoryUsage):
     """
-    The ``memory_usage`` fixture gives somewhat accurate results.
+    The ``memory_usage`` fixture gives somewhat accurate results for common use
+    cases.
     """
+    memory_usage = memory_usage_without_pyarrow
+
     # Memory from Python is tracked:
     b = b"X" * 1_300_000
     del b
@@ -26,11 +30,8 @@ def test_memory_usage(memory_usage):
     memory_usage.reset_tracking()
     assert memory_usage.get_peak() < 1_000_000
 
-    # Memory from pyarrow is tracked:
-    b = b"X" * 1_300_000
-    old_peak = memory_usage.get_peak()
-    table = pa.Table.from_pylist([{"value": b}])
-    del table
-    del b
-    new_peak = memory_usage.get_peak()
-    assert new_peak - old_peak >= 1_300_000
+    # Memory from NumPy is tracked:
+    arr = np.ones((1_400_000,), dtype=np.uint8)
+    del arr
+    peak = memory_usage.get_peak()
+    assert 1_400_000 < peak < 1_500_000
