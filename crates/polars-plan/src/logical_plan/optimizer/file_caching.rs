@@ -154,6 +154,9 @@ impl FileCacher {
         with_columns: Option<Arc<Vec<String>>>,
         behind_cache: bool,
     ) -> ALogicalPlan {
+        if behind_cache {
+            return lp;
+        }
         // if the original projection is less than the new one. Also project locally
         if let Some(mut with_columns) = with_columns {
             // we cannot always find the predicates, because some have `SpecialEq` functions so for those
@@ -162,7 +165,7 @@ impl FileCacher {
                 Some((_file_count, agg_columns)) => with_columns.len() < agg_columns.len(),
                 None => true,
             };
-            if !behind_cache && do_projection {
+            if do_projection {
                 let node = lp_arena.add(lp);
 
                 let projections = std::mem::take(Arc::make_mut(&mut with_columns))

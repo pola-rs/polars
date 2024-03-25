@@ -43,8 +43,7 @@ pub(super) fn set_cache_states(
     expr_arena: &mut Arena<AExpr>,
     scratch: &mut Vec<Node>,
     has_caches: bool,
-) {
-    let mut loop_count = 0;
+) -> PolarsResult<()> {
     let mut stack = Vec::with_capacity(4);
 
     scratch.clear();
@@ -88,14 +87,6 @@ pub(super) fn set_cache_states(
                 }
             },
             Cache { input, id, .. } => {
-                // caches_seen += 1;
-                //
-                // // no need to run the same cache optimization twice
-                // if loop_count > caches_seen {
-                //     continue;
-                // }
-
-                max_cache_depth = std::cmp::max(caches_seen, max_cache_depth);
                 if let Some(cache_id) = cache_id {
                     previous_cache = Some(cache_id)
                 }
@@ -144,7 +135,8 @@ pub(super) fn set_cache_states(
     // and finally remove that last projection and stitch the subplan
     // back to the cache node again
     if !cache_schema_and_children.is_empty() {
-        let mut pd = ProjectionPushDown::new();
+        let mut proj_pd = ProjectionPushDown::new();
+        let mut pred_pd = PredicatePushDown::new(Default::default());
         for (_cache_id, (children, columns)) in cache_schema_and_children {
             if !columns.is_empty() {
                 for child in children {
@@ -168,7 +160,8 @@ pub(super) fn set_cache_states(
                         .unwrap()
                         .build();
 
-                    let lp = pd.optimize(lp, lp_arena, expr_arena).unwrap();
+                    let lp = proj_pd.optimize(lp, lp_arena, expr_arena)?;
+                    let lp = pred_pd.optimize(lp, lp_arena, expr_arena)?;
                     // Remove the projection added by the optimization.
                     let lp = if let ALogicalPlan::Projection { input, .. }
                     | ALogicalPlan::SimpleProjection { input, .. } = lp
@@ -182,4 +175,5 @@ pub(super) fn set_cache_states(
             }
         }
     }
+    Ok(())
 }

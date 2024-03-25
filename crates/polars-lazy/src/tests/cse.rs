@@ -72,8 +72,6 @@ fn test_cse_unions() -> PolarsResult<()> {
     Ok(())
 }
 
-// This test doesn't insert a cache anymore after we change CSE_LP.
-// We might change this later.
 #[test]
 fn test_cse_cache_union_projection_pd() -> PolarsResult<()> {
     let q = df![
@@ -108,7 +106,7 @@ fn test_cse_cache_union_projection_pd() -> PolarsResult<()> {
             _ => true,
         }
     }));
-    assert_eq!(cache_count, 0);
+    assert_eq!(cache_count, 2);
 
     Ok(())
 }
