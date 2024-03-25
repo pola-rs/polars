@@ -46,6 +46,7 @@ pub use type_coercion::TypeCoercionRule;
 use self::flatten_union::FlattenUnionRule;
 pub use crate::frame::{AllowedOptimizations, OptState};
 use crate::logical_plan::optimizer::count_star::CountStar;
+use crate::logical_plan::optimizer::cse::prune_unused_caches;
 #[cfg(feature = "cse")]
 use crate::logical_plan::optimizer::cse::CommonSubExprOptimizer;
 use crate::logical_plan::optimizer::predicate_pushdown::HiveEval;
@@ -173,6 +174,7 @@ pub fn optimize(
     }
 
     lp_top = opt.optimize_loop(&mut rules, expr_arena, lp_arena, lp_top)?;
+    let mut cache_id_to_cache = None;
 
     #[cfg(feature = "cse")]
     let cse_plan_changed =
@@ -180,7 +182,8 @@ pub fn optimize(
             if verbose {
                 eprintln!("found multiple sources; run comm_subplan_elim")
             }
-            let (lp, changed) = cse::elim_cmn_subplans(lp_top, lp_arena, expr_arena);
+            let (lp, changed, cid2c) = cse::elim_cmn_subplans(lp_top, lp_arena, expr_arena);
+            cache_id_to_cache = Some(cid2c);
             lp_top = lp;
             members.has_cache |= changed;
             changed
@@ -233,6 +236,9 @@ pub fn optimize(
             // this must run after cse
             cse::decrement_file_counters_by_cache_hits(lp_top, lp_arena, expr_arena, 0, scratch);
         }
+    }
+    if let Some(cid2c) = cache_id_to_cache {
+        prune_unused_caches(lp_arena, cid2c)
     }
 
     // during debug we check if the optimizations have not modified the final schema

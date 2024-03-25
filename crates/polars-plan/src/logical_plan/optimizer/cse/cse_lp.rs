@@ -193,6 +193,8 @@ impl Visitor for LpIdentifierVisitor<'_> {
     }
 }
 
+pub(super) type CacheId2Caches = PlHashMap<usize, (usize, Vec<Node>)>;
+
 struct CommonSubPlanRewriter<'a> {
     sp_count: &'a SubPlanCount,
     identifier_array: &'a IdentifierArray,
@@ -204,6 +206,8 @@ struct CommonSubPlanRewriter<'a> {
     /// Indicates if this expression is rewritten.
     rewritten: bool,
     cache_id: PlHashMap<Identifier, usize>,
+    // Maps cache_id : (cache_count and cache_nodes)
+    cache_id_to_caches: CacheId2Caches,
 }
 
 impl<'a> CommonSubPlanRewriter<'a> {
@@ -215,6 +219,7 @@ impl<'a> CommonSubPlanRewriter<'a> {
             visited_idx: 0,
             rewritten: false,
             cache_id: Default::default(),
+            cache_id_to_caches: Default::default(),
         }
     }
 }
@@ -269,14 +274,19 @@ impl RewritingVisitor for CommonSubPlanRewriter<'_> {
 
         let cache_id = self.cache_id.len();
         let cache_id = *self.cache_id.entry(id.clone()).or_insert(cache_id);
-        let count = self.sp_count.get(id).unwrap().1 - 1;
+        let cache_count = self.sp_count.get(id).unwrap().1;
 
         let cache_node = ALogicalPlan::Cache {
             input: node.node(),
             id: cache_id,
-            count,
+            count: cache_count - 1,
         };
         node.assign(cache_node);
+        let (_count, nodes) = self
+            .cache_id_to_caches
+            .entry(cache_id)
+            .or_insert_with(|| (cache_count, vec![]));
+        nodes.push(node.node());
         self.rewritten = true;
         Ok(node)
     }
@@ -286,19 +296,42 @@ pub(crate) fn elim_cmn_subplans(
     root: Node,
     lp_arena: &mut Arena<ALogicalPlan>,
     expr_arena: &Arena<AExpr>,
-) -> (Node, bool) {
+) -> (Node, bool, CacheId2Caches) {
     let mut sp_count = Default::default();
     let mut id_array = Default::default();
 
-    let changed = ALogicalPlanNode::with_context(root, lp_arena, |lp_node| {
+    let (changed, cache_id_to_caches) = ALogicalPlanNode::with_context(root, lp_arena, |lp_node| {
         let mut visitor = LpIdentifierVisitor::new(&mut sp_count, &mut id_array, expr_arena);
 
         lp_node.visit(&mut visitor).map(|_| ()).unwrap();
 
         let mut rewriter = CommonSubPlanRewriter::new(&sp_count, &id_array);
         lp_node.rewrite(&mut rewriter).unwrap();
-        rewriter.rewritten
+
+        (rewriter.rewritten, rewriter.cache_id_to_caches)
     });
 
-    (root, changed)
+    (root, changed, cache_id_to_caches)
+}
+
+/// Prune unused caches.
+/// In the query below the query will be insert cache 0 with a count of 2 on `lf.select`
+/// and cache 1 with a count of 3 on `lf`. But because cache 0 is higher in the chain cache 1
+/// will never be used. So we prune caches that don't fit their count.
+///
+/// `conctat([lf.select(), lf.select(), lf])`
+///
+pub(crate) fn prune_unused_caches(lp_arena: &mut Arena<ALogicalPlan>, cid2c: CacheId2Caches) {
+    for (count, nodes) in cid2c.values() {
+        if *count == nodes.len() {
+            continue;
+        }
+
+        for node in nodes {
+            let ALogicalPlan::Cache { input, .. } = lp_arena.get(*node) else {
+                unreachable!()
+            };
+            lp_arena.swap(*input, *node)
+        }
+    }
 }

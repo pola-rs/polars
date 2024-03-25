@@ -45,9 +45,14 @@ fn test_cse_unions() -> PolarsResult<()> {
 
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let lp = lf.clone().optimize(&mut lp_arena, &mut expr_arena).unwrap();
+    let mut cache_count = 0;
     assert!((&lp_arena).iter(lp).all(|(_, lp)| {
         use ALogicalPlan::*;
         match lp {
+            Cache { .. } => {
+                cache_count += 1;
+                true
+            },
             Scan { file_options, .. } => {
                 if let Some(columns) = &file_options.with_columns {
                     columns.len() == 2
@@ -58,12 +63,15 @@ fn test_cse_unions() -> PolarsResult<()> {
             _ => true,
         }
     }));
+    assert_eq!(cache_count, 2);
     let out = lf.collect()?;
     assert_eq!(out.get_column_names(), &["category", "fats_g"]);
 
     Ok(())
 }
 
+// This test doesn't insert a cache anymore after we change CSE_LP.
+// We might change this later.
 #[test]
 fn test_cse_cache_union_projection_pd() -> PolarsResult<()> {
     let q = df![
@@ -82,9 +90,14 @@ fn test_cse_cache_union_projection_pd() -> PolarsResult<()> {
     // check that the projection of a is not done before the cache
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
+    let mut cache_count = 0;
     assert!((&lp_arena).iter(lp).all(|(_, lp)| {
         use ALogicalPlan::*;
         match lp {
+            Cache { .. } => {
+                cache_count += 1;
+                true
+            },
             DataFrameScan {
                 projection: Some(projection),
                 ..
@@ -93,6 +106,7 @@ fn test_cse_cache_union_projection_pd() -> PolarsResult<()> {
             _ => true,
         }
     }));
+    assert_eq!(cache_count, 0);
 
     Ok(())
 }
