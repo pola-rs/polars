@@ -14,10 +14,9 @@ impl PyDataFrame {
         schema: Option<Wrap<Schema>>,
         infer_schema_length: Option<usize>,
     ) -> PyResult<Self> {
-        let rows = vec_extract_wrapped(data);
-        py.allow_threads(move || {
-            finish_from_rows(rows, schema.map(|wrap| wrap.0), None, infer_schema_length)
-        })
+        let data = vec_extract_wrapped(data);
+        let schema = schema.map(|wrap| wrap.0);
+        py.allow_threads(move || finish_from_rows(data, schema, None, infer_schema_length))
     }
 
     #[staticmethod]
