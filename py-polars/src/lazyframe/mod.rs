@@ -85,11 +85,11 @@ impl PyLazyFrame {
             .unwrap();
 
         // SAFETY:
-        // we skipped the serializing/deserializing of the static in lifetime in `DataType`
+        // We skipped the serializing/deserializing of the static in lifetime in `DataType`
         // so we actually don't have a lifetime at all when serializing.
 
         // &str still has a lifetime. But it's ok, because we drop it immediately
-        // in this scope
+        // in this scope.
         let json = unsafe { std::mem::transmute::<&'_ str, &'static str>(json.as_str()) };
 
         let lp = serde_json::from_str::<LogicalPlan>(json)

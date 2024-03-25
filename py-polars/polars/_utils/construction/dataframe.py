@@ -554,12 +554,14 @@ def _sequence_of_sequence_to_pydf(
 
         if unpack_nested:
             dicts = [nt_unpack(d) for d in data]
-            pydf = PyDataFrame.from_dicts(dicts, infer_schema_length)
+            pydf = PyDataFrame.from_dicts(
+                dicts, infer_schema_length=infer_schema_length
+            )
         else:
             pydf = PyDataFrame.from_rows(
                 data,
-                infer_schema_length,
                 local_schema_override or None,
+                infer_schema_length,
             )
         if column_names or schema_overrides:
             pydf = _post_apply_columns(
@@ -670,7 +672,10 @@ def _sequence_of_dict_to_pydf(
         else None
     )
     pydf = PyDataFrame.from_dicts(
-        data, infer_schema_length, dicts_schema, schema_overrides
+        data,
+        dicts_schema,
+        schema_overrides,
+        infer_schema_length=infer_schema_length,
     )
 
     # TODO: we can remove this `schema_overrides` block completely
@@ -769,10 +774,10 @@ def _sequence_of_dataclasses_to_pydf(
     )
     if unpack_nested:
         dicts = [asdict(md) for md in data]
-        pydf = PyDataFrame.from_dicts(dicts, infer_schema_length)
+        pydf = PyDataFrame.from_dicts(dicts, infer_schema_length=infer_schema_length)
     else:
         rows = [astuple(dc) for dc in data]
-        pydf = PyDataFrame.from_rows(rows, infer_schema_length, overrides or None)
+        pydf = PyDataFrame.from_rows(rows, overrides or None, infer_schema_length)
 
     if overrides:
         structs = {c: tp for c, tp in overrides.items() if isinstance(tp, Struct)}
@@ -816,17 +821,19 @@ def _sequence_of_pydantic_models_to_pydf(
             if old_pydantic
             else [md.model_dump(mode="python") for md in data]
         )
-        pydf = PyDataFrame.from_dicts(dicts, infer_schema_length)
+        pydf = PyDataFrame.from_dicts(dicts, infer_schema_length=infer_schema_length)
 
     elif len(model_fields) > 50:
         # 'from_rows' is the faster codepath for models with a lot of fields...
         get_values = itemgetter(*model_fields)
         rows = [get_values(md.__dict__) for md in data]
-        pydf = PyDataFrame.from_rows(rows, infer_schema_length, overrides)
+        pydf = PyDataFrame.from_rows(rows, overrides, infer_schema_length)
     else:
         # ...and 'from_dicts' is faster otherwise
         dicts = [md.__dict__ for md in data]
-        pydf = PyDataFrame.from_dicts(dicts, infer_schema_length, overrides)
+        pydf = PyDataFrame.from_dicts(
+            dicts, schema=overrides, infer_schema_length=infer_schema_length
+        )
 
     if overrides:
         structs = {c: tp for c, tp in overrides.items() if isinstance(tp, Struct)}
