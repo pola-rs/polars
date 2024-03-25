@@ -74,24 +74,6 @@ fn finish_from_rows(
     schema_overrides: Option<Schema>,
     infer_schema_length: Option<usize>,
 ) -> PyResult<PyDataFrame> {
-    /// Infer the schema from the row values.
-    fn infer_row_dtypes(
-        rows: &[Row],
-        infer_schema_length: Option<usize>,
-    ) -> PyResult<Vec<DataType>> {
-        let mut dtypes =
-            rows_to_schema_supertypes(rows, infer_schema_length).map_err(PyPolarsErr::from)?;
-
-        // Erase scale from inferred decimals.
-        for dtype in dtypes.iter_mut() {
-            if let DataType::Decimal(_, _) = dtype {
-                *dtype = DataType::Decimal(None, None)
-            }
-        }
-
-        Ok(dtypes)
-    }
-
     let schema = if let Some(mut schema) = schema {
         resolve_schema_overrides(&mut schema, schema_overrides)?;
 
@@ -99,7 +81,8 @@ fn finish_from_rows(
 
         if contains_unknown {
             // TODO: Only infer dtypes for columns with an unknown dtype
-            let inferred_dtypes = infer_row_dtypes(&rows, infer_schema_length)?;
+            let inferred_dtypes =
+                rows_to_schema_supertypes(&rows, infer_schema_length).map_err(PyPolarsErr::from)?;
             let inferred_dtypes_slice = inferred_dtypes.as_slice();
 
             for (i, dtype) in schema.iter_dtypes_mut().enumerate() {
@@ -114,7 +97,8 @@ fn finish_from_rows(
         };
         schema
     } else {
-        let dtypes = infer_row_dtypes(&rows, infer_schema_length)?;
+        let dtypes =
+            rows_to_schema_supertypes(&rows, infer_schema_length).map_err(PyPolarsErr::from)?;
         let mut schema = dtypes
             .into_iter()
             .enumerate()
@@ -139,16 +123,6 @@ fn resolve_schema_overrides(schema: &mut Schema, schema_overrides: Option<Schema
         }
     }
     Ok(())
-}
-
-fn columns_names_to_empty_schema<'a, I>(column_names: I) -> Schema
-where
-    I: IntoIterator<Item = &'a str>,
-{
-    let fields = column_names
-        .into_iter()
-        .map(|c| Field::new(c, DataType::Unknown));
-    Schema::from_iter(fields)
 }
 
 fn dicts_to_rows(
@@ -195,4 +169,14 @@ fn dicts_to_rows(
         rows.push(Row(row))
     }
     Ok((rows, key_names.into_iter().collect()))
+}
+
+fn columns_names_to_empty_schema<'a, I>(column_names: I) -> Schema
+where
+    I: IntoIterator<Item = &'a str>,
+{
+    let fields = column_names
+        .into_iter()
+        .map(|c| Field::new(c, DataType::Unknown));
+    Schema::from_iter(fields)
 }
