@@ -81,17 +81,22 @@ fn finish_from_rows(
     schema_overrides_by_idx: Option<Vec<(usize, DataType)>>,
     infer_schema_length: Option<usize>,
 ) -> PyResult<PyDataFrame> {
-    // Object builder must be registered, this is done on import.
-    let mut final_schema =
-        rows_to_schema_supertypes(&rows, infer_schema_length.map(|n| std::cmp::max(1, n)))
-            .map_err(PyPolarsErr::from)?;
+    /// Infer the schema from the row values
+    fn infer_schema(rows: &[Row], infer_schema_length: Option<usize>) -> PolarsResult<Schema> {
+        let mut schema =
+            rows_to_schema_supertypes(rows, infer_schema_length.map(|n| std::cmp::max(1, n)))?;
 
-    // Erase scale from inferred decimals.
-    for dtype in final_schema.iter_dtypes_mut() {
-        if let DataType::Decimal(_, _) = dtype {
-            *dtype = DataType::Decimal(None, None)
+        // Erase scale from inferred decimals.
+        for dtype in schema.iter_dtypes_mut() {
+            if let DataType::Decimal(_, _) = dtype {
+                *dtype = DataType::Decimal(None, None)
+            }
         }
+
+        Ok(schema)
     }
+
+    let mut final_schema = infer_schema(&rows, infer_schema_length).map_err(PyPolarsErr::from)?;
 
     // Integrate explicit/inferred schema.
     if let Some(schema) = schema {
