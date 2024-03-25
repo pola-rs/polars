@@ -11,7 +11,7 @@ pub use av_buffer::*;
 use rayon::prelude::*;
 
 use crate::prelude::*;
-use crate::utils::try_get_supertype;
+use crate::utils::{dtypes_to_supertype, try_get_supertype};
 use crate::POOL;
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -94,14 +94,6 @@ pub fn any_values_to_dtype(column: &[AnyValue]) -> PolarsResult<(DataType, usize
     Ok((types_set_to_dtype(types_set)?, n_types))
 }
 
-fn types_set_to_dtype(types_set: PlIndexSet<DataType>) -> PolarsResult<DataType> {
-    types_set
-        .into_iter()
-        .map(Ok)
-        .reduce(|a, b| try_get_supertype(&a?, &b?))
-        .unwrap()
-}
-
 /// Infer schema from rows and set the supertypes of the columns as column data type.
 pub fn rows_to_schema_supertypes(
     rows: &[Row],
@@ -125,7 +117,7 @@ pub fn rows_to_schema_supertypes(
             let dtype = if types_set.is_empty() {
                 DataType::Unknown
             } else {
-                types_set_to_dtype(types_set)?
+                dtypes_to_supertype(&types_set)?
             };
             Ok(Field::new(format!("column_{i}").as_ref(), dtype))
         })
