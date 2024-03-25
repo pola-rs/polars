@@ -40,24 +40,14 @@ impl PyDataFrame {
 
         let (rows, names) = dicts_to_rows(data, infer_schema_length, schema_columns)?;
 
-        let schema = schema
-            .unwrap_or_else(|| columns_names_to_empty_schema(names.iter().map(String::as_str)));
+        let schema = schema.or_else(|| {
+            Some(columns_names_to_empty_schema(
+                names.iter().map(String::as_str),
+            ))
+        });
 
         py.allow_threads(move || {
-            let mut pydf =
-                finish_from_rows(rows, Some(schema), schema_overrides, infer_schema_length)?;
-            unsafe {
-                for (s, name) in pydf.df.get_columns_mut().iter_mut().zip(&names) {
-                    s.rename(name);
-                }
-            }
-            let length = names.len();
-            if names.into_iter().collect::<PlHashSet<_>>().len() != length {
-                let err = PolarsError::Duplicate("duplicate column names found".into());
-                Err(PyPolarsErr::Polars(err))?;
-            }
-
-            Ok(pydf)
+            finish_from_rows(rows, schema, schema_overrides, infer_schema_length)
         })
     }
 
