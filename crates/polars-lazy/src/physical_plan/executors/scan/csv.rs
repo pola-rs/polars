@@ -28,20 +28,16 @@ impl CsvExec {
     }
 
     fn read_sync(&mut self) -> PolarsResult<DataFrame> {
-        let projection = materialize_projection(
-            self.file_options
-                .with_columns
-                .as_deref()
-                .map(|cols| cols.deref()),
-            &self.schema,
-            None,
-            self.file_options.row_index.is_some(),
-        );
-
-        let n_rows = self
+        let with_columns = self
             .file_options
-            .n_rows
-            .map(|n| IdxSize::try_from(n).unwrap());
+            .with_columns
+            .take()
+            // Interpret selecting no columns as selecting all columns.
+            .filter(|columns| !columns.is_empty())
+            .map(Arc::unwrap_or_clone);
+
+        let n_rows =
+            _set_n_rows_for_scan(self.file_options.n_rows).map(|n| IdxSize::try_from(n).unwrap());
 
         let row_limit = n_rows.unwrap_or(IdxSize::MAX);
 
@@ -76,7 +72,7 @@ impl CsvExec {
                                 .unwrap()
                         }),
                     )
-                    .with_projection(projection.clone())
+                    .with_columns(with_columns.clone())
                     .low_memory(self.options.low_memory)
                     .with_null_values(self.options.null_values.clone())
                     .with_encoding(CsvEncoding::LossyUtf8)
