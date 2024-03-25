@@ -3,7 +3,7 @@ use pyo3::prelude::*;
 
 use super::*;
 use crate::arrow_interop;
-use crate::conversion::Wrap;
+use crate::conversion::{vec_extract_wrapped, Wrap};
 
 #[pymethods]
 impl PyDataFrame {
@@ -14,8 +14,7 @@ impl PyDataFrame {
         infer_schema_length: Option<usize>,
         schema: Option<Wrap<Schema>>,
     ) -> PyResult<Self> {
-        // SAFETY: Wrap<T> is transparent.
-        let rows = unsafe { std::mem::transmute::<Vec<Wrap<Row>>, Vec<Row>>(rows) };
+        let rows = vec_extract_wrapped(rows);
         py.allow_threads(move || {
             finish_from_rows(rows, schema.map(|wrap| wrap.0), None, infer_schema_length)
         })
