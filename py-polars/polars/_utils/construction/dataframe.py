@@ -560,8 +560,8 @@ def _sequence_of_sequence_to_pydf(
         else:
             pydf = PyDataFrame.from_rows(
                 data,
-                local_schema_override or None,
-                infer_schema_length,
+                schema=local_schema_override or None,
+                infer_schema_length=infer_schema_length,
             )
         if column_names or schema_overrides:
             pydf = _post_apply_columns(
@@ -777,7 +777,9 @@ def _sequence_of_dataclasses_to_pydf(
         pydf = PyDataFrame.from_dicts(dicts, infer_schema_length=infer_schema_length)
     else:
         rows = [astuple(dc) for dc in data]
-        pydf = PyDataFrame.from_rows(rows, overrides or None, infer_schema_length)
+        pydf = PyDataFrame.from_rows(
+            rows, schema=overrides or None, infer_schema_length=infer_schema_length
+        )
 
     if overrides:
         structs = {c: tp for c, tp in overrides.items() if isinstance(tp, Struct)}
@@ -827,7 +829,9 @@ def _sequence_of_pydantic_models_to_pydf(
         # 'from_rows' is the faster codepath for models with a lot of fields...
         get_values = itemgetter(*model_fields)
         rows = [get_values(md.__dict__) for md in data]
-        pydf = PyDataFrame.from_rows(rows, overrides, infer_schema_length)
+        pydf = PyDataFrame.from_rows(
+            rows, schema=overrides, infer_schema_length=infer_schema_length
+        )
     else:
         # ...and 'from_dicts' is faster otherwise
         dicts = [md.__dict__ for md in data]
