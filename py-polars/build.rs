@@ -18,4 +18,15 @@ fn main() {
         built::write_built_file_with_opts(Some(src), &dst)
             .expect("Failed to acquire build-time information");
     }
+
+    // Add a pythonXY alias for Windows, so we can use CPython APIs that aren't
+    // part of pyo3 (the tracemalloc APIs, see src/memory.rs).
+    #[cfg(all(target_os = "windows", debug_assertions))]
+    {
+        let interpreter_config = pyo3_build_config::get();
+        println!(
+            "cargo:rustc-link-lib=pythonXY:{lib_name}",
+            lib_name = interpreter_config.lib_name.as_ref().unwrap(),
+        );
+    }
 }

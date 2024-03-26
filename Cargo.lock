@@ -3101,6 +3101,7 @@ dependencies = [
  "polars-plan",
  "polars-utils",
  "pyo3",
+ "pyo3-build-config",
  "pyo3-built",
  "serde_json",
  "smartstring",
