@@ -1,15 +1,15 @@
 use std::io::{Read, Seek};
 
 use arrow::array::Array;
-use arrow::chunk::Chunk;
 use arrow::datatypes::ArrowSchema;
+use arrow::record_batch::RecordBatch;
 use polars_error::PolarsResult;
 
 use super::{RowGroupDeserializer, RowGroupMetaData};
 use crate::arrow::read::read_columns_many;
 use crate::parquet::indexes::FilteredPage;
 
-/// An iterator of [`Chunk`]s coming from row groups of a parquet file.
+/// An iterator of [`RecordBatch`]s coming from row groups of a parquet file.
 ///
 /// This can be thought of a flatten chain of [`Iterator<Item=Chunk>`] - each row group is sequentially
 /// mapped to an [`Iterator<Item=Chunk>`] and each iterator is iterated upon until either the limit
@@ -64,7 +64,7 @@ impl<R: Read + Seek> FileReader<R> {
 }
 
 impl<R: Read + Seek> Iterator for FileReader<R> {
-    type Item = PolarsResult<Chunk<Box<dyn Array>>>;
+    type Item = PolarsResult<RecordBatch<Box<dyn Array>>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.remaining_rows == 0 {
