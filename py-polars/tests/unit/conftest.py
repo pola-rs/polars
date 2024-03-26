@@ -157,6 +157,15 @@ class MemoryUsage:
         tracemalloc.start()
         assert self.get_peak() < 100_000
 
+    def get_current(self) -> int:
+        """
+        Return currently allocated memory, in bytes.
+
+        This only tracks allocations since this object was created or
+        ``reset_tracking()`` was called, whichever is later.
+        """
+        return tracemalloc.get_traced_memory()[0]
+
     def get_peak(self) -> int:
         """
         Return peak allocated memory, in bytes.
