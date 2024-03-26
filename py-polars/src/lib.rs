@@ -69,17 +69,17 @@ use crate::series::PySeries;
 #[cfg(feature = "sql")]
 use crate::sql::PySQLContext;
 
+// On Windows tracemalloc does work. However, we build abi3 wheels, and the
+// relevant C APIs are not part of the limited stable CPython API. As a result,
+// linking breaks on Windows if we use tracemalloc C APIs. So we only use this
+// on Windows for now.
 #[global_allocator]
-#[cfg(all(target_family = "unix", not(use_mimalloc), debug_assertions))]
+#[cfg(all(target_family = "unix", debug_assertions))]
 static ALLOC: TracemallocAllocator<Jemalloc> = TracemallocAllocator::new(Jemalloc);
 
 #[global_allocator]
 #[cfg(all(target_family = "unix", not(use_mimalloc), not(debug_assertions)))]
 static ALLOC: Jemalloc = Jemalloc;
-
-#[global_allocator]
-#[cfg(all(any(not(target_family = "unix"), use_mimalloc), debug_assertions))]
-static ALLOC: TracemallocAllocator<MiMalloc> = TracemallocAllocator::new(MiMalloc);
 
 #[global_allocator]
 #[cfg(all(any(not(target_family = "unix"), use_mimalloc), not(debug_assertions)))]

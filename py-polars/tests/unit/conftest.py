@@ -3,6 +3,7 @@ from __future__ import annotations
 import gc
 import random
 import string
+import sys
 import tracemalloc
 from typing import Any, Generator, List, cast
 
@@ -178,6 +179,11 @@ def memory_usage_without_pyarrow() -> Generator[MemoryUsage, Any, Any]:
     """
     if not pl.build_info()["build"]["debug"]:
         pytest.skip("Memory usage only available in debug/dev builds.")
+
+    if sys.platform == "win32":
+        # abi3 wheels don't have the tracemalloc C APIs, which breaks linking
+        # on Windows.
+        pytest.skip("Windows not supported at the moment.")
 
     gc.collect()
     tracemalloc.start()
