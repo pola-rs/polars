@@ -88,10 +88,9 @@ pub(crate) fn cast_columns(
 /// CSV file reader
 pub(crate) struct CoreReader<'a> {
     reader_bytes: Option<ReaderBytes<'a>>,
-    /// Explicit schema for the CSV file
     schema: SchemaRef,
-    /// Optional projection for which columns to load (zero-based column indices)
-    projection: Option<Vec<usize>>,
+    /// Optional projection for which indices/columns to load (zero-based column indices)
+    projection: Option<ColumnProjectionOptions>,
     /// Current line number, used in error reporting
     line_number: usize,
     ignore_errors: bool,
@@ -109,10 +108,11 @@ pub(crate) struct CoreReader<'a> {
     comment_prefix: Option<CommentPrefix>,
     quote_char: Option<u8>,
     eol_char: u8,
-    null_values: Option<NullValuesCompiled>,
+    null_values: Option<NullValues>,
     missing_is_null: bool,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     to_cast: Vec<Field>,
+    has_cat: bool,
     row_index: Option<RowIndex>,
     truncate_ragged_lines: bool,
 }
@@ -133,17 +133,14 @@ impl<'a> CoreReader<'a> {
         reader_bytes: ReaderBytes<'a>,
         n_rows: Option<usize>,
         mut skip_rows: usize,
-        mut projection: Option<Vec<usize>>,
+        projection: Option<ColumnProjectionOptions>,
         max_records: Option<usize>,
         separator: Option<u8>,
         has_header: bool,
         ignore_errors: bool,
-        schema: Option<SchemaRef>,
-        columns: Option<Vec<String>>,
+        schema_options: ReaderSchemaOptions<'a>,
         encoding: CsvEncoding,
         mut n_threads: Option<usize>,
-        schema_overwrite: Option<SchemaRef>,
-        dtype_overwrite: Option<&'a [DataType]>,
         sample_size: usize,
         chunk_size: usize,
         low_memory: bool,
@@ -153,7 +150,6 @@ impl<'a> CoreReader<'a> {
         null_values: Option<NullValues>,
         missing_is_null: bool,
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
-        to_cast: Vec<Field>,
         skip_rows_after_header: usize,
         row_index: Option<RowIndex>,
         try_parse_dates: bool,
@@ -174,10 +170,14 @@ impl<'a> CoreReader<'a> {
         // check if schema should be inferred
         let separator = separator.unwrap_or(b',');
 
-        let mut schema = match schema {
-            Some(schema) => schema,
-            None => {
-                {
+        let (schema_options, to_cast, has_cat) = schema_options.prepare_schema_overwrite()?;
+
+        let schema = {
+            use InferSchemaOptions::*;
+            use ReaderSchemaOptions::*;
+            match schema_options {
+                Enforce(schema) => schema,
+                Infer(infer_options) => {
                     // We keep track of the inferred schema bool
                     // In case the file is compressed this schema inference is wrong and has to be done
                     // again after decompression.
@@ -192,51 +192,44 @@ impl<'a> CoreReader<'a> {
                             reader_bytes = ReaderBytes::Owned(b);
                         }
                     }
+                    let mut get_inferred_schema =
+                        |dtypes_map: Option<SchemaRef>| -> PolarsResult<Schema> {
+                            infer_file_schema(
+                                &reader_bytes,
+                                separator,
+                                max_records,
+                                has_header,
+                                dtypes_map.as_deref(),
+                                &mut skip_rows,
+                                skip_rows_after_header,
+                                comment_prefix.as_ref(),
+                                quote_char,
+                                eol_char,
+                                null_values.as_ref(),
+                                try_parse_dates,
+                                raise_if_empty,
+                                &mut n_threads,
+                            )
+                            .map(|(schema, _, _)| schema)
+                        };
 
-                    let (inferred_schema, _, _) = infer_file_schema(
-                        &reader_bytes,
-                        separator,
-                        max_records,
-                        has_header,
-                        schema_overwrite.as_deref(),
-                        &mut skip_rows,
-                        skip_rows_after_header,
-                        comment_prefix.as_ref(),
-                        quote_char,
-                        eol_char,
-                        null_values.as_ref(),
-                        try_parse_dates,
-                        raise_if_empty,
-                        &mut n_threads,
-                    )?;
-                    Arc::new(inferred_schema)
-                }
-            },
+                    let schema = match infer_options {
+                        Some(OverwriteDtypesMap(dtypes_map)) => {
+                            get_inferred_schema(Some(dtypes_map))?
+                        },
+                        Some(OverwriteDtypesSlice(overwrite_dtypes_slice)) => {
+                            let mut schema = get_inferred_schema(None)?;
+                            for (index, dt) in overwrite_dtypes_slice.iter().enumerate() {
+                                schema.set_dtype_at_index(index, dt.clone()).unwrap();
+                            }
+                            schema
+                        },
+                        None => get_inferred_schema(None)?,
+                    };
+                    Arc::new(schema)
+                },
+            }
         };
-        if let Some(dtypes) = dtype_overwrite {
-            let s = Arc::make_mut(&mut schema);
-            for (index, dt) in dtypes.iter().enumerate() {
-                s.set_dtype_at_index(index, dt.clone()).unwrap();
-            }
-        }
-
-        // create a null value for every column
-        let mut null_values = null_values.map(|nv| nv.compile(&schema)).transpose()?;
-
-        if let Some(cols) = columns {
-            let mut prj = Vec::with_capacity(cols.len());
-            for col in cols {
-                let i = schema.try_index_of(&col)?;
-                prj.push(i);
-            }
-
-            // update null values with projection
-            if let Some(nv) = null_values.as_mut() {
-                nv.apply_projection(&prj);
-            }
-
-            projection = Some(prj);
-        }
 
         Ok(CoreReader {
             reader_bytes: Some(reader_bytes),
@@ -261,6 +254,7 @@ impl<'a> CoreReader<'a> {
             missing_is_null,
             predicate,
             to_cast,
+            has_cat,
             row_index,
             truncate_ragged_lines,
         })
@@ -447,20 +441,6 @@ impl<'a> CoreReader<'a> {
             remaining_bytes,
         ))
     }
-    fn get_projection(&mut self) -> PolarsResult<Vec<usize>> {
-        // we also need to sort the projection to have predictable output.
-        // the `parse_lines` function expects this.
-        self.projection
-            .take()
-            .map(|mut v| {
-                v.sort_unstable();
-                if let Some(idx) = v.last() {
-                    polars_ensure!(*idx < self.schema.len(), OutOfBounds: "projection index: {} is out of bounds for csv schema with length: {}", idx, self.schema.len())
-                }
-                Ok(v)
-            })
-            .unwrap_or_else(|| Ok((0..self.schema.len()).collect()))
-    }
 
     fn parse_csv(
         &mut self,
@@ -471,13 +451,28 @@ impl<'a> CoreReader<'a> {
         let logging = verbose();
         let (file_chunks, chunk_size, total_rows, starting_point_offset, bytes, remaining_bytes) =
             self.determine_file_chunks_and_statistics(&mut n_threads, bytes, logging)?;
-        let projection = self.get_projection()?;
+        let (projection, pos) =
+            get_sorted_projection(&self.projection, self.schema.clone())?;
+
+        // create a null value for every column
+        let null_values_compiled = self
+            .null_values
+            .clone()
+            .map(|nv| nv.compile(&self.schema))
+            .transpose()?
+            .map(|mut nv| {
+                nv.apply_projection(&projection);
+                nv
+            });
 
         // An empty file with a schema should return an empty DataFrame with that schema
         if bytes.is_empty() {
             let mut df = DataFrame::from(self.schema.as_ref());
             if let Some(ref row_index) = self.row_index {
                 df.insert_column(0, Series::new_empty(&row_index.name, &IDX_DTYPE))?;
+            }
+            unsafe {
+                sort_series_origin_order(df.get_columns_mut(), pos);
             }
             return Ok(df);
         }
@@ -524,7 +519,7 @@ impl<'a> CoreReader<'a> {
                                 self.missing_is_null,
                                 ignore_errors,
                                 self.truncate_ragged_lines,
-                                self.null_values.as_ref(),
+                                null_values_compiled.as_ref(),
                                 projection,
                                 &mut buffers,
                                 chunk_size,
@@ -586,7 +581,7 @@ impl<'a> CoreReader<'a> {
                             self.comment_prefix.as_ref(),
                             capacity,
                             self.encoding,
-                            self.null_values.as_ref(),
+                            null_values_compiled.as_ref(),
                             self.missing_is_null,
                             self.truncate_ragged_lines,
                             usize::MAX,
@@ -627,7 +622,7 @@ impl<'a> CoreReader<'a> {
                                 self.missing_is_null,
                                 self.ignore_errors,
                                 self.truncate_ragged_lines,
-                                self.null_values.as_ref(),
+                                null_values_compiled.as_ref(),
                                 &projection,
                                 &mut buffers,
                                 remaining_rows - 1,
@@ -654,7 +649,11 @@ impl<'a> CoreReader<'a> {
             if self.row_index.is_some() {
                 update_row_counts(&mut dfs, 0)
             }
-            accumulate_dataframes_vertical(dfs.into_iter().map(|t| t.0))
+            let mut result_df = accumulate_dataframes_vertical(dfs.into_iter().map(|t| t.0))?;
+            unsafe {
+                sort_series_origin_order(result_df.get_columns_mut(), pos);
+            }
+            Ok(result_df)
         }
     }
 

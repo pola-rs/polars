@@ -1,3 +1,5 @@
+use self::utils::{InferSchemaOptions, ReaderSchemaOptions};
+use super::utils::ColumnProjectionOptions;
 use super::*;
 use crate::csv::read_impl::{
     to_batched_owned_mmap, to_batched_owned_read, BatchedCsvReaderMmap, BatchedCsvReaderRead,
@@ -133,17 +135,12 @@ where
     // used by error ignore logic
     max_records: Option<usize>,
     skip_rows_before_header: usize,
-    /// Optional indexes of the columns to project
-    projection: Option<Vec<usize>>,
-    /// Optional column names to project/ select.
-    columns: Option<Vec<String>>,
+    projection: Option<ColumnProjectionOptions>,
     separator: Option<u8>,
-    pub(crate) schema: Option<SchemaRef>,
+    schema_options: ReaderSchemaOptions<'a>,
     encoding: CsvEncoding,
     n_threads: Option<usize>,
     path: Option<PathBuf>,
-    schema_overwrite: Option<SchemaRef>,
-    dtype_overwrite: Option<&'a [DataType]>,
     sample_size: usize,
     chunk_size: usize,
     comment_prefix: Option<CommentPrefix>,
@@ -210,7 +207,9 @@ where
     ///
     /// It is recommended to use [with_dtypes](Self::with_dtypes) instead.
     pub fn with_schema(mut self, schema: Option<SchemaRef>) -> Self {
-        self.schema = schema;
+        if let Some(schema) = schema {
+            self.schema_options = ReaderSchemaOptions::Enforce(schema);
+        }
         self
     }
 
@@ -277,14 +276,21 @@ where
     /// Overwrite the schema with the dtypes in this given Schema. The given schema may be a subset
     /// of the total schema.
     pub fn with_dtypes(mut self, schema: Option<SchemaRef>) -> Self {
-        self.schema_overwrite = schema;
+        if let Some(schema) = schema {
+            self.schema_options =
+                ReaderSchemaOptions::Infer(Some(InferSchemaOptions::OverwriteDtypesMap(schema)));
+        }
         self
     }
 
     /// Overwrite the dtypes in the schema in the order of the slice that's given.
     /// This is useful if you don't know the column names beforehand
     pub fn with_dtypes_slice(mut self, dtypes: Option<&'a [DataType]>) -> Self {
-        self.dtype_overwrite = dtypes;
+        if let Some(dtypes_slice) = dtypes {
+            self.schema_options = ReaderSchemaOptions::Infer(Some(
+                InferSchemaOptions::OverwriteDtypesSlice(dtypes_slice),
+            ));
+        }
         self
     }
 
@@ -302,13 +308,13 @@ where
     /// Set the reader's column projection. This counts from 0, meaning that
     /// `vec![0, 4]` would select the 1st and 5th column.
     pub fn with_projection(mut self, projection: Option<Vec<usize>>) -> Self {
-        self.projection = projection;
+        self.projection = projection.map(ColumnProjectionOptions::from).or(self.projection);
         self
     }
 
     /// Columns to select/ project
     pub fn with_columns(mut self, columns: Option<Vec<String>>) -> Self {
-        self.columns = columns;
+        self.projection = columns.map(ColumnProjectionOptions::from).or(self.projection);
         self
     }
 
@@ -383,11 +389,7 @@ impl<'a> CsvReader<'a, File> {
 }
 
 impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
-    fn core_reader<'b>(
-        &'b mut self,
-        schema: Option<SchemaRef>,
-        to_cast: Vec<Field>,
-    ) -> PolarsResult<CoreReader<'b>>
+    fn core_reader<'b>(&'b mut self) -> PolarsResult<CoreReader<'b>>
     where
         'a: 'b,
     {
@@ -401,12 +403,9 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
             self.separator,
             self.has_header,
             self.ignore_errors,
-            self.schema.clone(),
-            std::mem::take(&mut self.columns),
+            self.schema_options.clone(),
             self.encoding,
             self.n_threads,
-            schema,
-            self.dtype_overwrite,
             self.sample_size,
             self.chunk_size,
             self.low_memory,
@@ -416,7 +415,6 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
             std::mem::take(&mut self.null_values),
             self.missing_is_null,
             std::mem::take(&mut self.predicate),
-            to_cast,
             self.skip_rows_after_header,
             std::mem::take(&mut self.row_index),
             self.try_parse_dates,
@@ -425,82 +423,11 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
         )
     }
 
-    fn prepare_schema_overwrite(
-        &self,
-        overwriting_schema: &Schema,
-    ) -> PolarsResult<(Schema, Vec<Field>, bool)> {
-        // This branch we check if there are dtypes we cannot parse.
-        // We only support a few dtypes in the parser and later cast to the required dtype
-        let mut to_cast = Vec::with_capacity(overwriting_schema.len());
-
-        let mut _has_categorical = false;
-        let mut _err: Option<PolarsError> = None;
-
-        #[allow(unused_mut)]
-        let schema = overwriting_schema
-            .iter_fields()
-            .filter_map(|mut fld| {
-                use DataType::*;
-                match fld.data_type() {
-                    Time => {
-                        to_cast.push(fld);
-                        // let inference decide the column type
-                        None
-                    },
-                    #[cfg(feature = "dtype-categorical")]
-                    Categorical(_, _) => {
-                        _has_categorical = true;
-                        Some(fld)
-                    },
-                    #[cfg(feature = "dtype-decimal")]
-                    Decimal(precision, scale) => match (precision, scale) {
-                        (_, Some(_)) => {
-                            to_cast.push(fld.clone());
-                            fld.coerce(String);
-                            Some(fld)
-                        },
-                        _ => {
-                            _err = Some(PolarsError::ComputeError(
-                                "'scale' must be set when reading csv column as Decimal".into(),
-                            ));
-                            None
-                        },
-                    },
-                    _ => Some(fld),
-                }
-            })
-            .collect::<Schema>();
-
-        if let Some(err) = _err {
-            Err(err)
-        } else {
-            Ok((schema, to_cast, _has_categorical))
-        }
-    }
-
     pub fn batched_borrowed_mmap(&'a mut self) -> PolarsResult<BatchedCsvReaderMmap<'a>> {
-        if let Some(schema) = self.schema_overwrite.as_deref() {
-            let (schema, to_cast, has_cat) = self.prepare_schema_overwrite(schema)?;
-            let schema = Arc::new(schema);
-
-            let csv_reader = self.core_reader(Some(schema), to_cast)?;
-            csv_reader.batched_mmap(has_cat)
-        } else {
-            let csv_reader = self.core_reader(self.schema.clone(), vec![])?;
-            csv_reader.batched_mmap(false)
-        }
+        self.core_reader()?.batched_mmap()
     }
     pub fn batched_borrowed_read(&'a mut self) -> PolarsResult<BatchedCsvReaderRead<'a>> {
-        if let Some(schema) = self.schema_overwrite.as_deref() {
-            let (schema, to_cast, has_cat) = self.prepare_schema_overwrite(schema)?;
-            let schema = Arc::new(schema);
-
-            let csv_reader = self.core_reader(Some(schema), to_cast)?;
-            csv_reader.batched_read(has_cat)
-        } else {
-            let csv_reader = self.core_reader(self.schema.clone(), vec![])?;
-            csv_reader.batched_read(false)
-        }
+        self.core_reader()?.batched_read()
     }
 }
 
@@ -583,13 +510,10 @@ where
             separator: None,
             has_header: true,
             ignore_errors: false,
-            schema: None,
-            columns: None,
+            schema_options: ReaderSchemaOptions::Infer(None),
             encoding: CsvEncoding::Utf8,
             n_threads: None,
             path: None,
-            schema_overwrite: None,
-            dtype_overwrite: None,
             sample_size: 1024,
             chunk_size: 1 << 18,
             low_memory: false,
@@ -610,41 +534,22 @@ where
     /// Read the file and create the DataFrame.
     fn finish(mut self) -> PolarsResult<DataFrame> {
         let rechunk = self.rechunk;
-        let schema_overwrite = self.schema_overwrite.clone();
         let low_memory = self.low_memory;
 
+        use InferSchemaOptions::*;
+        use ReaderSchemaOptions::*;
+
+        // TODO! move to other place
         #[cfg(feature = "dtype-categorical")]
-        let mut _cat_lock = None;
-
-        let mut df = if let Some(schema) = schema_overwrite.as_deref() {
-            let (schema, to_cast, _has_cat) = self.prepare_schema_overwrite(schema)?;
-
-            #[cfg(feature = "dtype-categorical")]
-            if _has_cat {
+        {
+            let mut _cat_lock = None;
+            let (_schema, _to_cast, has_cat) = self.schema_options.prepare_schema_overwrite()?;
+            if has_cat {
                 _cat_lock = Some(polars_core::StringCacheHolder::hold())
             }
+        }
 
-            let mut csv_reader = self.core_reader(Some(Arc::new(schema)), to_cast)?;
-            csv_reader.as_df()?
-        } else {
-            #[cfg(feature = "dtype-categorical")]
-            {
-                let has_cat = self
-                    .schema
-                    .clone()
-                    .map(|schema| {
-                        schema
-                            .iter_dtypes()
-                            .any(|dtype| matches!(dtype, DataType::Categorical(_, _)))
-                    })
-                    .unwrap_or(false);
-                if has_cat {
-                    _cat_lock = Some(polars_core::StringCacheHolder::hold())
-                }
-            }
-            let mut csv_reader = self.core_reader(self.schema.clone(), vec![])?;
-            csv_reader.as_df()?
-        };
+        let mut df = self.core_reader()?.as_df()?;
 
         // Important that this rechunk is never done in parallel.
         // As that leads to great memory overhead.
@@ -660,18 +565,20 @@ where
         // only needed until we also can parse time columns in place
         if self.try_parse_dates {
             // determine the schema that's given by the user. That should not be changed
-            let fixed_schema = match (schema_overwrite, self.dtype_overwrite) {
-                (Some(schema), _) => schema,
-                (None, Some(dtypes)) => {
-                    let schema = dtypes
-                        .iter()
-                        .zip(df.get_column_names())
-                        .map(|(dtype, name)| Field::new(name, dtype.clone()))
-                        .collect::<Schema>();
-
-                    Arc::new(schema)
-                },
-                _ => Arc::default(),
+            let fixed_schema = if let Infer(Some(ref options)) = self.schema_options {
+                match options {
+                    OverwriteDtypesMap(ref schema) => schema.clone(),
+                    OverwriteDtypesSlice(dtypes) => {
+                        let schema = dtypes
+                            .iter()
+                            .zip(df.get_column_names())
+                            .map(|(dtype, name)| Field::new(name, dtype.clone()))
+                            .collect::<Schema>();
+                        Arc::new(schema)
+                    },
+                }
+            } else {
+                Arc::default()
             };
             df = parse_dates(df, &fixed_schema)
         }

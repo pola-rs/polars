@@ -691,3 +691,156 @@ mod test {
         );
     }
 }
+
+#[derive(Debug, Clone)]
+pub(crate) enum ColumnProjectionOptions {
+    /// Indexes of the columns to project
+    Indices(Vec<usize>),
+    /// Column names to project/select.
+    Columns(Vec<String>),
+}
+
+impl From<Vec<String>> for ColumnProjectionOptions {
+    fn from(value: Vec<String>) -> Self {
+        ColumnProjectionOptions::Columns(value)
+    }
+}
+
+impl From<Vec<usize>> for ColumnProjectionOptions {
+    fn from(value: Vec<usize>) -> Self {
+        ColumnProjectionOptions::Indices(value)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum ReaderSchemaOptions<'a> {
+    Enforce(SchemaRef),
+    Infer(Option<InferSchemaOptions<'a>>),
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum InferSchemaOptions<'a> {
+    OverwriteDtypesMap(SchemaRef),
+    OverwriteDtypesSlice(&'a [DataType]),
+}
+
+impl<'a> ReaderSchemaOptions<'a> {
+    pub(super) fn prepare_schema_overwrite(&self) -> PolarsResult<(Self, Vec<Field>, bool)> {
+        use InferSchemaOptions::*;
+        use ReaderSchemaOptions::*;
+        if let ReaderSchemaOptions::Infer(Some(OverwriteDtypesMap(ref schema))) = self {
+            // This branch we check if there are dtypes we cannot parse.
+            // We only support a few dtypes in the parser and later cast to the required dtype
+            let mut to_cast = Vec::with_capacity(schema.len());
+
+            let mut _has_categorical = false;
+            let mut _err: Option<PolarsError> = None;
+
+            #[allow(unused_mut)]
+            let schema = schema
+                .iter_fields()
+                .filter_map(|mut fld| {
+                    use DataType::*;
+                    match fld.data_type() {
+                        Time => {
+                            to_cast.push(fld);
+                            // let inference decide the column type
+                            None
+                        },
+                        #[cfg(feature = "dtype-categorical")]
+                        Categorical(_, _) => {
+                            _has_categorical = true;
+                            Some(fld)
+                        },
+                        #[cfg(feature = "dtype-decimal")]
+                        Decimal(precision, scale) => match (precision, scale) {
+                            (_, Some(_)) => {
+                                to_cast.push(fld.clone());
+                                fld.coerce(String);
+                                Some(fld)
+                            },
+                            _ => {
+                                _err = Some(PolarsError::ComputeError(
+                                    "'scale' must be set when reading csv column as Decimal".into(),
+                                ));
+                                None
+                            },
+                        },
+                        _ => Some(fld),
+                    }
+                })
+                .collect::<Schema>();
+
+            if let Some(err) = _err {
+                Err(err)
+            } else {
+                let result = Infer(Some(OverwriteDtypesMap(Arc::new(schema))));
+                Ok((result, to_cast, _has_categorical))
+            }
+        } else if let Enforce(schema) = self {
+            let has_cat = schema
+                .iter_dtypes()
+                .any(|dtype| matches!(dtype, DataType::Categorical(_, _)));
+            Ok((self.clone(), vec![], has_cat))
+        } else if let Infer(Some(OverwriteDtypesSlice(dtypes))) = self {
+            let has_cat = dtypes
+                .iter()
+                .any(|x| matches!(x, DataType::Categorical(_, _)));
+            Ok((self.clone(), vec![], has_cat))
+        } else {
+            Ok((self.clone(), vec![], false))
+        }
+    }
+}
+
+impl ColumnProjectionOptions {
+    /// sorted projection for csv reading, pos for re-ordering as user input
+    pub(super) fn get_sorted_pj_and_original_pos(
+        &self,
+        schema: SchemaRef,
+    ) -> PolarsResult<(Vec<usize>, Vec<usize>)> {
+        use ColumnProjectionOptions::*;
+        let mut pos_and_indices: Vec<(usize, usize)> = match self {
+            Indices(indices) => indices.iter().enumerate().map(|(a, b)| (a, *b)).collect(),
+            Columns(columns) => columns
+                .iter()
+                .enumerate()
+                .map(|(pos, column)| schema.try_index_of(column).map(|idx| (pos, idx)))
+                .collect::<Result<Vec<(usize, usize)>, _>>()?,
+        };
+        pos_and_indices.sort_unstable_by_key(|x| x.1);
+        let (pos, indices): (Vec<usize>, Vec<usize>) = pos_and_indices.into_iter().unzip();
+        Ok((indices, pos))
+    }
+}
+
+pub(super) fn get_sorted_projection(
+    projection: &Option<ColumnProjectionOptions>,
+    schema: SchemaRef,
+) -> PolarsResult<(Vec<usize>, Vec<usize>)> {
+    let (pj, pos): (Vec<usize>, Vec<usize>) = if let Some(projection) = projection {
+        projection.get_sorted_pj_and_original_pos(schema.clone())?
+    } else {
+        ((0..schema.len()).collect(), (0..schema.len()).collect())
+    };
+
+    Ok((pj, pos))
+}
+
+/// # Safety
+///
+/// Column should be consistent with paired projection
+pub(super) fn sort_series_origin_order(series: &mut [Series], mut original_pos: Vec<usize>) {
+    debug_assert!(series.len() == original_pos.len());
+    for i in 0..series.len() {
+        loop {
+            let should_be_in = original_pos[i];
+            if should_be_in == i {
+                break;
+            } else {
+                series.swap(i, should_be_in);
+                original_pos.swap(i, should_be_in);
+            }
+        }
+    }
+}
