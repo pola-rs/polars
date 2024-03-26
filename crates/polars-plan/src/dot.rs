@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 use polars_core::prelude::*;
 
+use crate::constants::UNLIMITED_CACHE;
 use crate::prelude::*;
 
 impl Expr {
@@ -162,7 +163,7 @@ impl LogicalPlan {
                 id: cache_id,
                 cache_hits,
             } => {
-                let fmt = if *cache_hits == usize::MAX {
+                let fmt = if *cache_hits == UNLIMITED_CACHE {
                     Cow::Borrowed("CACHE")
                 } else {
                     Cow::Owned(format!("CACHE: {} times", *cache_hits))

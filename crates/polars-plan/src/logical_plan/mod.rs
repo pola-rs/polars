@@ -150,7 +150,7 @@ pub enum LogicalPlan {
     Cache {
         input: Box<LogicalPlan>,
         id: usize,
-        cache_hits: usize,
+        cache_hits: u32,
     },
     Scan {
         paths: Arc<[PathBuf]>,

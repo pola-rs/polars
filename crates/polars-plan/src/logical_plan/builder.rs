@@ -27,6 +27,7 @@ use polars_io::{
 };
 
 use super::builder_functions::*;
+use crate::constants::UNLIMITED_CACHE;
 use crate::dsl::functions::horizontal::all_horizontal;
 use crate::logical_plan::projection::{is_regex_projection, rewrite_projections};
 #[cfg(feature = "python")]
@@ -428,7 +429,7 @@ impl LogicalPlanBuilder {
         LogicalPlan::Cache {
             input,
             id,
-            cache_hits: usize::MAX,
+            cache_hits: UNLIMITED_CACHE,
         }
         .into()
     }

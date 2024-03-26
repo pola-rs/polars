@@ -241,7 +241,7 @@ impl ExecutionState {
         lock.clone()
     }
 
-    pub(crate) fn get_df_cache(&self, key: usize, cache_hits: usize) -> CachedValue {
+    pub(crate) fn get_df_cache(&self, key: usize, cache_hits: u32) -> CachedValue {
         let mut guard = self.df_cache.lock().unwrap();
         guard
             .entry(key)

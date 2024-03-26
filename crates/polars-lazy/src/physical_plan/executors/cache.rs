@@ -5,7 +5,7 @@ use super::*;
 pub struct CacheExec {
     pub input: Box<dyn Executor>,
     pub id: usize,
-    pub count: usize,
+    pub count: u32,
 }
 
 impl Executor for CacheExec {
