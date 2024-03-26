@@ -148,8 +148,8 @@ fn test_cse_union2_4925() -> PolarsResult<()> {
         .flat_map(|(_, lp)| {
             use ALogicalPlan::*;
             match lp {
-                Cache { id, count, .. } => {
-                    assert_eq!(*count, 1);
+                Cache { id, cache_hits, .. } => {
+                    assert_eq!(*cache_hits, 1);
                     Some(*id)
                 },
                 _ => None,
@@ -202,9 +202,12 @@ fn test_cse_joins_4954() -> PolarsResult<()> {
             use ALogicalPlan::*;
             match lp {
                 Cache {
-                    id, count, input, ..
+                    id,
+                    cache_hits,
+                    input,
+                    ..
                 } => {
-                    assert_eq!(*count, 1);
+                    assert_eq!(*cache_hits, 1);
                     assert!(matches!(
                         lp_arena.get(*input),
                         ALogicalPlan::DataFrameScan { .. }

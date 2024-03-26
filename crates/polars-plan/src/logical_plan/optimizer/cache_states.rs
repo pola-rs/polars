@@ -120,7 +120,7 @@ pub(super) fn set_cache_states(
         scratch.clear();
     }
 
-    // second pass
+    // # Second pass.
     // we create a subtree where we project the columns
     // just before the cache. Then we do another projection pushdown
     // and finally remove that last projection and stitch the subplan
@@ -132,9 +132,9 @@ pub(super) fn set_cache_states(
             if !columns.is_empty() {
                 for child in children {
                     let columns = &columns;
-                    let child_lp = lp_arena.get(child).clone();
+                    let child_lp = lp_arena.take(child);
 
-                    // make sure we project in the order of the schema
+                    // Make sure we project in the order of the schema
                     // if we don't a union may fail as we would project by the
                     // order we discovered all values.
                     let child_schema = child_lp.schema(lp_arena);

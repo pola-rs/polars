@@ -279,7 +279,7 @@ impl RewritingVisitor for CommonSubPlanRewriter<'_> {
         let cache_node = ALogicalPlan::Cache {
             input: node.node(),
             id: cache_id,
-            count: cache_count - 1,
+            cache_hits: cache_count - 1,
         };
         node.assign(cache_node);
         let (_count, nodes) = self

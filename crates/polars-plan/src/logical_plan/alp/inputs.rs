@@ -79,10 +79,10 @@ impl ALogicalPlan {
                 by_column: by_column.clone(),
                 args: args.clone(),
             },
-            Cache { id, count, .. } => Cache {
+            Cache { id, cache_hits, .. } => Cache {
                 input: inputs[0],
                 id: *id,
-                count: *count,
+                cache_hits: *cache_hits,
             },
             Distinct { options, .. } => Distinct {
                 input: inputs[0],

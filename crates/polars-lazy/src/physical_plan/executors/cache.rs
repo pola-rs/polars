@@ -8,7 +8,7 @@ pub struct CacheExec {
 
 impl Executor for CacheExec {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
-        // skip cache and always re-execute
+        // Skip cache and always re-execute
         if self.count == 0 {
             if state.verbose() {
                 println!("CACHE IGNORE: cache id: {:x}", self.id);
@@ -24,7 +24,7 @@ impl Executor for CacheExec {
             self.input.execute(state)
         })?;
 
-        // decrement count on cache hits
+        // Decrement count on cache hits
         if cache_hit {
             self.count -= 1;
         }

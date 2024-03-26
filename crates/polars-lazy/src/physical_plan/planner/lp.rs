@@ -347,9 +347,17 @@ pub fn create_physical_plan(
                 args,
             }))
         },
-        Cache { input, id, count } => {
+        Cache {
+            input,
+            id,
+            cache_hits,
+        } => {
             let input = create_physical_plan(input, lp_arena, expr_arena)?;
-            Ok(Box::new(executors::CacheExec { id, input, count }))
+            Ok(Box::new(executors::CacheExec {
+                id,
+                input,
+                count: cache_hits,
+            }))
         },
         Distinct { input, options } => {
             let input = create_physical_plan(input, lp_arena, expr_arena)?;

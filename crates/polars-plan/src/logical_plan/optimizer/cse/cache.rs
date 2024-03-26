@@ -20,10 +20,12 @@ pub(crate) fn decrement_file_counters_by_cache_hits(
                 options.file_counter -= acc_count as FileCount
             }
         },
-        Cache { count, input, .. } => {
+        Cache {
+            cache_hits, input, ..
+        } => {
             // we use usize::MAX for an infinite cache.
-            let new_count = if *count != usize::MAX {
-                acc_count + *count as FileCount
+            let new_count = if *cache_hits != usize::MAX {
+                acc_count + *cache_hits as FileCount
             } else {
                 acc_count
             };
