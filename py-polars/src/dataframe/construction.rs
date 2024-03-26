@@ -1,4 +1,4 @@
-use polars::frame::row::{rows_to_schema_supertypes, Row};
+use polars::frame::row::{rows_to_schema_supertypes, rows_to_supertypes, Row};
 use pyo3::prelude::*;
 
 use super::*;
@@ -68,7 +68,7 @@ fn finish_from_rows(
         update_schema_from_rows(&mut schema, &rows, infer_schema_length)?;
         schema
     } else {
-        infer_schema_from_rows(&rows, infer_schema_length)?
+        rows_to_schema_supertypes(&rows, infer_schema_length).map_err(PyPolarsErr::from)?
     };
 
     let df = DataFrame::from_rows_and_schema(&rows, &schema).map_err(PyPolarsErr::from)?;
@@ -87,7 +87,7 @@ fn update_schema_from_rows(
 
     // TODO: Only infer dtypes for columns with an unknown dtype
     let inferred_dtypes =
-        rows_to_schema_supertypes(rows, infer_schema_length).map_err(PyPolarsErr::from)?;
+        rows_to_supertypes(rows, infer_schema_length).map_err(PyPolarsErr::from)?;
     let inferred_dtypes_slice = inferred_dtypes.as_slice();
 
     for (i, dtype) in schema.iter_dtypes_mut().enumerate() {
@@ -107,21 +107,11 @@ fn resolve_schema_overrides(schema: &mut Schema, schema_overrides: Option<Schema
     if let Some(overrides) = schema_overrides {
         for (name, dtype) in overrides.into_iter() {
             schema.set_dtype(name.as_str(), dtype).ok_or_else(|| {
-                polars_err!(SchemaMismatch: "non-existing column specified in `schema_overrides`: {name}")
+                polars_err!(SchemaMismatch: "nonexistent column specified in `schema_overrides`: {name}")
             }).map_err(PyPolarsErr::from)?;
         }
     }
     Ok(())
-}
-
-fn infer_schema_from_rows(rows: &[Row], infer_schema_length: Option<usize>) -> PyResult<Schema> {
-    let dtypes = rows_to_schema_supertypes(rows, infer_schema_length).map_err(PyPolarsErr::from)?;
-    let schema = dtypes
-        .into_iter()
-        .enumerate()
-        .map(|(i, dtype)| Field::new(format!("column_{i}").as_ref(), dtype))
-        .collect();
-    Ok(schema)
 }
 
 fn columns_names_to_empty_schema<'a, I>(column_names: I) -> Schema

@@ -11,7 +11,7 @@ pub use av_buffer::*;
 use rayon::prelude::*;
 
 use crate::prelude::*;
-use crate::utils::{dtypes_to_supertype, try_get_supertype};
+use crate::utils::{dtypes_to_schema, dtypes_to_supertype, try_get_supertype};
 use crate::POOL;
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -83,8 +83,20 @@ pub fn coerce_data_type<A: Borrow<DataType>>(datatypes: &[A]) -> DataType {
     try_get_supertype(lhs, rhs).unwrap_or(String)
 }
 
-/// Infer schema from rows and set the supertypes of the columns as column data type.
+/// Infer the schema of rows by determining the supertype of the values.
+///
+/// Field names are set as `column_0`, `column_1`, and so on.
 pub fn rows_to_schema_supertypes(
+    rows: &[Row],
+    infer_schema_length: Option<usize>,
+) -> PolarsResult<Schema> {
+    let dtypes = rows_to_supertypes(rows, infer_schema_length)?;
+    let schema = dtypes_to_schema(dtypes);
+    Ok(schema)
+}
+
+/// Infer the schema data types of rows by determining the supertype of the values.
+pub fn rows_to_supertypes(
     rows: &[Row],
     infer_schema_length: Option<usize>,
 ) -> PolarsResult<Vec<DataType>> {
@@ -93,10 +105,9 @@ pub fn rows_to_schema_supertypes(
     let max_infer = infer_schema_length.unwrap_or(rows.len());
 
     let mut dtypes: Vec<PlIndexSet<DataType>> = vec![PlIndexSet::new(); rows[0].0.len()];
-
     for row in rows.iter().take(max_infer) {
-        for (val, types_set) in row.0.iter().zip(dtypes.iter_mut()) {
-            types_set.insert(val.into());
+        for (val, dtypes_set) in row.0.iter().zip(dtypes.iter_mut()) {
+            dtypes_set.insert(val.into());
         }
     }
 
