@@ -61,9 +61,7 @@ use self::tree_format::{TreeFmtNode, TreeFmtVisitor};
     feature = "cse",
     feature = "json"
 ))]
-pub use crate::logical_plan::optimizer::file_caching::{
-    collect_fingerprints, find_column_union_and_fingerprints, FileCacher, FileFingerPrint,
-};
+pub use crate::logical_plan::optimizer::file_caching::FileFingerPrint;
 
 pub type ColumnName = Arc<str>;
 
