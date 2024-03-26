@@ -24,8 +24,7 @@ mod options;
 pub mod parquet;
 pub mod predicates;
 pub mod prelude;
-#[cfg(all(test, feature = "csv"))]
-mod tests;
+
 pub mod utils;
 use once_cell::sync::Lazy;
 use regex::Regex;
@@ -180,7 +179,7 @@ mod tests2 {
 
     use super::*;
 
-    fn project(schema: &ArrowSchema, column_names: &[String]) -> (ArrowSchema, Vec<usize>){
+    fn project(schema: &ArrowSchema, column_names: &[String]) -> (ArrowSchema, Vec<usize>) {
         let column_indices = utils::columns_to_projection(column_names, schema).unwrap();
         let schema = utils::apply_projection(schema, &column_indices);
         (schema, column_indices)
@@ -193,7 +192,8 @@ mod tests2 {
         );
         let metadata = arrow::io::ipc::read::read_file_metadata(&mut reader).unwrap();
         let (schema, projection) = project(metadata.schema.as_ref(), &["calories".to_string()]);
-        let ipc_reader = arrow::io::ipc::read::FileReader::new(&mut reader, metadata, Some(projection), None);
+        let ipc_reader =
+            arrow::io::ipc::read::FileReader::new(&mut reader, metadata, Some(projection), None);
 
         // NOTE: Implementing the [`PhysicalIoExpr`] trait here because I do not
         // have access to the `polars_lazy` crate. There may be a better way to
