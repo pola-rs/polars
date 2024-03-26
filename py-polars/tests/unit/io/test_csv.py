@@ -1969,3 +1969,7 @@ def test_read_csv_single_column(columns: list[str] | str) -> None:
 def test_csv_invalid_escape_utf8_14960() -> None:
     with pytest.raises(pl.ComputeError, match=r"field is not properly escaped"):
         pl.read_csv('col1\n""•'.encode())
+
+def test_read_csv_set_both_schema_dtypes_fail() -> None:
+    with pytest.raises(ValueError, match="cannot provide both 'schema' and 'dtypes'"):
+        pl.read_csv(io.StringIO("a,b\n1,2\n"), schema={"a": pl.Int32}, dtypes={"a": pl.Int64})
