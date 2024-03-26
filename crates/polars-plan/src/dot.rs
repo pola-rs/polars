@@ -163,19 +163,21 @@ impl LogicalPlan {
                 id: cache_id,
                 cache_hits,
             } => {
+                // Always increment cache ids as the `DotNode[0, 0]` will insert a new graph, which we don't want.
+                let cache_id = cache_id.saturating_add(1);
                 let fmt = if *cache_hits == UNLIMITED_CACHE {
                     Cow::Borrowed("CACHE")
                 } else {
                     Cow::Owned(format!("CACHE: {} times", *cache_hits))
                 };
                 let current_node = DotNode {
-                    branch: *cache_id,
-                    id: *cache_id,
+                    branch: cache_id,
+                    id: cache_id,
                     fmt: &fmt,
                 };
                 // here we take the cache id, to ensure the same cached subplans get the same ids
                 self.write_dot(acc_str, prev_node, current_node, id_map)?;
-                input.dot(acc_str, (*cache_id, cache_id + 1), current_node, id_map)
+                input.dot(acc_str, (cache_id, cache_id + 1), current_node, id_map)
             },
             Selection { predicate, input } => {
                 let pred = fmt_predicate(Some(predicate));
