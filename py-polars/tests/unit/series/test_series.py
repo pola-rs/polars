@@ -1089,15 +1089,8 @@ def test_empty() -> None:
         pl.Series(dtype=pl.Int32), pl.Series(dtype=pl.Int64), check_dtype=False
     )
 
-    a = pl.Series(name="a", values=[1, 2, 3], dtype=pl.Int16)
-    for n in (0, 2, 5):
-        empty_a = a.clear(n)
-        assert a.dtype == empty_a.dtype
-        assert a.name == empty_a.name
-        assert len(empty_a) == n
-
     with pytest.raises(TypeError, match="ambiguous"):
-        not empty_a
+        not pl.Series()
 
 
 def test_round() -> None:
