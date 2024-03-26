@@ -164,7 +164,7 @@ impl Series {
                     self.clone()
                 } else {
                     let reg = reg.as_ref().unwrap();
-                    let mut builder = (*reg.builder_constructor)(&self.name(), 0);
+                    let mut builder = (*reg.builder_constructor)(self.name(), 0);
                     builder.to_series()
                 }
             },
