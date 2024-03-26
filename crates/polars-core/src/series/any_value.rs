@@ -6,9 +6,17 @@ use crate::prelude::*;
 use crate::utils::any_values_to_supertype;
 
 impl<'a, T: AsRef<[AnyValue<'a>]>> NamedFrom<T, [AnyValue<'a>]> for Series {
-    fn new(name: &str, v: T) -> Self {
-        let av = v.as_ref();
-        Series::from_any_values(name, av, true).unwrap()
+    /// Construct a new [`Series`] from a collection of [`AnyValue`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if the values do not all share the same data type (with the exception
+    /// of [`DataType::Null`], which is always allowed).
+    ///
+    /// [`AnyValue`]: crate::datatypes::AnyValue
+    fn new(name: &str, values: T) -> Self {
+        let values = values.as_ref();
+        Series::from_any_values(name, values, true).expect("data types of values should match")
     }
 }
 
