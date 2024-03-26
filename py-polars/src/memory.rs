@@ -9,10 +9,25 @@ use libc::{c_int, c_uint, size_t, uintptr_t};
 // potential performance impact and so would need additional benchmarking. In
 // addition, these APIs are not part of the limited Python ABI Polars uses,
 // though they are unchanged between 3.7 and 3.12.
-#[cfg_attr(windows, link(name = "pythonXY"))]
+#[cfg(not(target_os = "windows"))]
 extern "C" {
     fn PyTraceMalloc_Track(domain: c_uint, ptr: uintptr_t, size: size_t) -> c_int;
     fn PyTraceMalloc_Untrack(domain: c_uint, ptr: uintptr_t) -> c_int;
+}
+
+// Windows has issues linking to the tracemalloc APIs, so the functionality is
+// disabled. We have fake implementations just to make sure we don't have
+// issues building.
+#[cfg(target_os = "windows")]
+#[allow(non_snake_case)]
+fn PyTraceMalloc_Track(_domain: c_uint, _ptr: uintptr_t, _size: size_t) -> c_int {
+    -2
+}
+
+#[cfg(target_os = "windows")]
+#[allow(non_snake_case)]
+fn PyTraceMalloc_Untrack(_domain: c_uint, _ptr: uintptr_t) -> c_int {
+    -2
 }
 
 /// Allocations require a domain to identify them when registering with
@@ -21,7 +36,7 @@ extern "C" {
 const TRACEMALLOC_DOMAIN: c_uint = 36740582;
 
 /// Wrap an existing allocator, and register allocations and frees with Python's
-/// `tracemalloc`.
+/// `tracemalloc`. Registration functionality is disabled on Windows.
 pub struct TracemallocAllocator<A: GlobalAlloc> {
     wrapped_alloc: A,
 }
