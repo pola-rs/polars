@@ -157,17 +157,19 @@ impl Series {
     }
 
     pub fn clear(&self) -> Series {
-        // Only the inner of objects know their type, so use this hack.
-        #[cfg(feature = "object")]
-        if matches!(self.dtype(), DataType::Object(_, _)) {
-            return if self.is_empty() {
-                self.clone()
-            } else {
-                let av = self.get(0).unwrap();
-                Series::new(self.name(), [av]).slice(0, 0)
-            };
+        match self.dtype() {
+            #[cfg(feature = "object")]
+            DataType::Object(_, reg) => {
+                if self.is_empty() {
+                    self.clone()
+                } else {
+                    let reg = reg.as_ref().unwrap();
+                    let mut builder = (*reg.builder_constructor)(&self.name(), 0);
+                    builder.to_series()
+                }
+            },
+            dt => Series::new_empty(self.name(), dt),
         }
-        Series::new_empty(self.name(), self.dtype())
     }
 
     #[doc(hidden)]
