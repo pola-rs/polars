@@ -258,12 +258,12 @@ impl<'a> BatchedCsvReaderMmap<'a> {
 
                     cast_columns(&mut df, &self.to_cast, false, self.ignore_errors)?;
 
-                    if let Some(rc) = &self.row_index {
-                        df.with_row_index_mut(&rc.name, Some(rc.offset));
+                    unsafe {
+                        sort_series_origin_order(df.get_columns_mut(), self.projection_original_position.clone(), false);
                     }
 
-                    unsafe {
-                        sort_series_origin_order(df.get_columns_mut(), self.projection_original_position.clone());
+                    if let Some(rc) = &self.row_index {
+                        df.with_row_index_mut(&rc.name, Some(rc.offset));
                     }
 
                     Ok(df)

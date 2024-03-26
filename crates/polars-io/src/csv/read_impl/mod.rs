@@ -486,7 +486,7 @@ impl<'a> CoreReader<'a> {
                 df.insert_column(0, Series::new_empty(&row_index.name, &IDX_DTYPE))?;
             }
             unsafe {
-                sort_series_origin_order(df.get_columns_mut(), self.projection_original_position.clone());
+                sort_series_origin_order(df.get_columns_mut(), self.projection_original_position.clone(), self.row_index.is_some());
             }
             return Ok(df);
         }
@@ -665,7 +665,7 @@ impl<'a> CoreReader<'a> {
             }
             let mut result_df = accumulate_dataframes_vertical(dfs.into_iter().map(|t| t.0))?;
             unsafe {
-                sort_series_origin_order(result_df.get_columns_mut(), self.projection_original_position.clone());
+                sort_series_origin_order(result_df.get_columns_mut(), self.projection_original_position.clone(), self.row_index.is_some());
             }
             Ok(result_df)
         }

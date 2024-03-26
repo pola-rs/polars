@@ -830,8 +830,12 @@ pub(super) fn get_sorted_projection(
 /// # Safety
 ///
 /// Column should be consistent with paired projection
-pub(super) fn sort_series_origin_order(series: &mut [Series], mut original_pos: Vec<usize>) {
-    debug_assert!(series.len() == original_pos.len());
+pub(super) fn sort_series_origin_order(series: &mut [Series], mut original_pos: Vec<usize>, with_index_row: bool) {
+    debug_assert!(series.len() == original_pos.len() + with_index_row as usize);
+    if with_index_row {
+        original_pos.iter_mut().for_each(|e| *e += 1);
+        original_pos.insert(0, 0);
+    }
     for i in 0..series.len() {
         loop {
             let should_be_in = original_pos[i];
