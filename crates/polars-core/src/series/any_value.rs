@@ -616,7 +616,7 @@ fn any_values_to_struct(
     fields: &[Field],
     strict: bool,
 ) -> PolarsResult<Series> {
-    // Fast path for empty structs.
+    // Fast path for structs with no fields.
     if fields.is_empty() {
         return Ok(StructChunked::full_null("", values.len()).into_series());
     }
