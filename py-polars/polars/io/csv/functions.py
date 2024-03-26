@@ -314,10 +314,6 @@ def read_csv(
         raise ValueError(msg)
 
     if columns and dtypes and isinstance(dtypes, list):
-        if len(columns) < len(dtypes):
-            msg = "more dtypes overrides are specified than there are selected columns"
-            raise ValueError(msg)
-
         # Map list of dtypes when used together with selected columns as a dtypes dict
         # so the dtypes are applied to the correct column instead of the first x
         # columns.
