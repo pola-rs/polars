@@ -174,30 +174,56 @@ pub fn is_cloud_url<P: AsRef<Path>>(p: P) -> bool {
 }
 
 #[cfg(test)]
-mod tests2 {
+mod tests {
     use polars_core::assert_df_eq;
 
     use super::*;
 
-    fn project(schema: &ArrowSchema, column_names: &[String]) -> (ArrowSchema, Vec<usize>) {
-        let column_indices = utils::columns_to_projection(column_names, schema).unwrap();
-        let schema = utils::apply_projection(schema, &column_indices);
-        (schema, column_indices)
+    /// An implementation of [`ArrowReader`] for use in testing. It wraps any
+    /// iterator that produces [`PolarsResult<ArrowChunk>`].
+    struct TestReader<T>(T);
+
+    impl<T> TestReader<T> {
+        fn new<U>(t: U) -> Self
+        where
+            U: IntoIterator<Item = PolarsResult<ArrowChunk>, IntoIter = T>,
+        {
+            Self(t.into_iter())
+        }
     }
 
+    impl<T> ArrowReader for TestReader<T>
+    where
+        T: Iterator<Item = PolarsResult<ArrowChunk>>,
+    {
+        fn next_record_batch(&mut self) -> PolarsResult<Option<ArrowChunk>> {
+            self.0.next().transpose()
+        }
+    }
+
+    #[cfg(any(feature = "ipc", feature = "avro", feature = "ipc_streaming",))]
     #[test]
     fn finish_reader_works_with_n_rows_and_predicate() {
-        let mut reader = std::io::BufReader::new(
-            std::fs::File::open("../../examples/datasets/foods1.ipc").unwrap(),
-        );
-        let metadata = arrow::io::ipc::read::read_file_metadata(&mut reader).unwrap();
-        let (schema, projection) = project(metadata.schema.as_ref(), &["calories".to_string()]);
-        let ipc_reader =
-            arrow::io::ipc::read::FileReader::new(&mut reader, metadata, Some(projection), None);
+        let reader = TestReader::new([
+            Ok(ArrowChunk::new(vec![Box::new(
+                arrow::array::PrimitiveArray::from_vec(vec![10, 200, 30, 400]),
+            )])),
+            Ok(ArrowChunk::new(vec![Box::new(
+                arrow::array::PrimitiveArray::from_vec(vec![50, 600, 15, 250, 35, 450, 60]),
+            )])),
+            Ok(ArrowChunk::new(vec![Box::new(
+                arrow::array::PrimitiveArray::from_vec(vec![11, 22, 33, 77, 66, 100, 300]),
+            )])),
+        ]);
 
-        // NOTE: Implementing the [`PhysicalIoExpr`] trait here because I do not
-        // have access to the `polars_lazy` crate. There may be a better way to
-        // accomplish this.
+        let schema = ArrowSchema::from(vec![arrow::datatypes::Field::new(
+            "calories",
+            <i32 as arrow::types::NativeType>::PRIMITIVE.into(),
+            false,
+        )]);
+
+        // NOTE: Implementing the [`PhysicalIoExpr`] trait here because as of
+        // Mar 2024 we do not have access to the `polars_lazy` crate.
         struct CaloriesLt100;
 
         impl PhysicalIoExpr for CaloriesLt100 {
@@ -208,7 +234,7 @@ mod tests2 {
         }
 
         let df = finish_reader(
-            ipc_reader,
+            reader,
             false,
             Some(10),
             Some(Arc::new(CaloriesLt100)),
@@ -217,6 +243,6 @@ mod tests2 {
         )
         .unwrap();
 
-        assert_df_eq!(df, df!("calories" => [45i64, 60, 20, 30, 50]).unwrap());
+        assert_df_eq!(df, df!("calories" => [10i32, 30, 50, 15, 35]).unwrap());
     }
 }
