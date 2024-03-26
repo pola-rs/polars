@@ -301,8 +301,9 @@ impl From<arrow_schema::DataType> for ArrowDataType {
             DataType::RunEndEncoded(_, _) => {
                 panic!("Run-end encoding not supported by polars_arrow")
             },
+            // This ensures that it doesn't fail to compile when new variants are added to Arrow
             #[allow(unreachable_patterns)]
-            _ => unimplemented!("needs arrow-schema >= v51.0.0"),
+            dtype => unimplemented!("unsupported datatype: {dtype}")
         }
     }
 }
