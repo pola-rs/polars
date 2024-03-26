@@ -373,7 +373,8 @@ def test_dtype_overwrite_with_column_name_selection() -> None:
     )
     f = io.StringIO(csv)
     df = pl.read_csv(f, columns=["c", "b", "d"], dtypes=[pl.Int32, pl.String])
-    assert df.dtypes == [pl.String, pl.Int32, pl.Int64]
+    assert df.dtypes == [pl.Int32, pl.String, pl.Int64]
+    assert df.columns == ["c", "b", "d"]
 
 
 def test_dtype_overwrite_with_column_idx_selection() -> None:
@@ -386,12 +387,11 @@ def test_dtype_overwrite_with_column_idx_selection() -> None:
     )
     f = io.StringIO(csv)
     df = pl.read_csv(f, columns=[2, 1, 3], dtypes=[pl.Int32, pl.String])
+    # Projections are sorted.
+    assert df.columns == ["c", "b", "d"]
     # Columns without an explicit dtype set will get pl.String if dtypes is a list
     # if the column selection is done with column indices instead of column names.
-    assert df.dtypes == [pl.String, pl.Int32, pl.String]
-    # Projections are sorted.
-    assert df.columns == ["b", "c", "d"]
-
+    assert df.dtypes == [pl.Int32, pl.String, pl.Int64]
 
 def test_partial_column_rename() -> None:
     csv = textwrap.dedent(

@@ -90,7 +90,8 @@ pub(crate) struct CoreReader<'a> {
     reader_bytes: Option<ReaderBytes<'a>>,
     schema: SchemaRef,
     /// Optional projection for which indices/columns to load (zero-based column indices)
-    projection: Option<ColumnProjectionOptions>,
+    projection: Vec<usize>,
+    projection_original_position: Vec<usize>,
     /// Current line number, used in error reporting
     line_number: usize,
     ignore_errors: bool,
@@ -172,11 +173,14 @@ impl<'a> CoreReader<'a> {
 
         let (schema_options, to_cast, has_cat) = schema_options.prepare_schema_overwrite()?;
 
-        let schema = {
+        let (schema, projection, projection_original_position) = {
             use InferSchemaOptions::*;
             use ReaderSchemaOptions::*;
             match schema_options {
-                Enforce(schema) => schema,
+                Enforce(schema) => {
+                    let (projection, pos) = get_sorted_projection(&projection, schema.as_ref())?;
+                    (schema, projection, pos)
+                },
                 Infer(infer_options) => {
                     // We keep track of the inferred schema bool
                     // In case the file is compressed this schema inference is wrong and has to be done
@@ -213,20 +217,31 @@ impl<'a> CoreReader<'a> {
                             .map(|(schema, _, _)| schema)
                         };
 
-                    let schema = match infer_options {
+                    match infer_options {
                         Some(OverwriteDtypesMap(dtypes_map)) => {
-                            get_inferred_schema(Some(dtypes_map))?
+                            let schema = Arc::new(get_inferred_schema(Some(dtypes_map))?);
+                            let (projection, pos) =
+                                get_sorted_projection(&projection, schema.as_ref())?;
+                            (schema, projection, pos)
                         },
                         Some(OverwriteDtypesSlice(overwrite_dtypes_slice)) => {
                             let mut schema = get_inferred_schema(None)?;
-                            for (index, dt) in overwrite_dtypes_slice.iter().enumerate() {
-                                schema.set_dtype_at_index(index, dt.clone()).unwrap();
-                            }
-                            schema
+                            let (projection, pos) =
+                                get_sorted_projection(&projection, &schema)?;
+                            for (schema_idx, dtypes_idx) in projection.iter().zip(pos.iter()) {
+                                if let Some(dtypes) = overwrite_dtypes_slice.get(*dtypes_idx) {
+                                    schema.set_dtype_at_index(*schema_idx, dtypes.clone()).unwrap();
+                                }
+                            };
+                            (Arc::new(schema), projection, pos)
                         },
-                        None => get_inferred_schema(None)?,
-                    };
-                    Arc::new(schema)
+                        None => {
+                            let schema = Arc::new(get_inferred_schema(None)?);
+                            let (projection, pos) =
+                                get_sorted_projection(&projection, schema.as_ref())?;
+                            (schema, projection, pos)
+                        },
+                    }
                 },
             }
         };
@@ -235,6 +250,7 @@ impl<'a> CoreReader<'a> {
             reader_bytes: Some(reader_bytes),
             schema,
             projection,
+            projection_original_position,
             line_number: usize::from(has_header),
             ignore_errors,
             skip_rows_before_header: skip_rows,
@@ -451,8 +467,6 @@ impl<'a> CoreReader<'a> {
         let logging = verbose();
         let (file_chunks, chunk_size, total_rows, starting_point_offset, bytes, remaining_bytes) =
             self.determine_file_chunks_and_statistics(&mut n_threads, bytes, logging)?;
-        let (projection, pos) =
-            get_sorted_projection(&self.projection, self.schema.clone())?;
 
         // create a null value for every column
         let null_values_compiled = self
@@ -461,7 +475,7 @@ impl<'a> CoreReader<'a> {
             .map(|nv| nv.compile(&self.schema))
             .transpose()?
             .map(|mut nv| {
-                nv.apply_projection(&projection);
+                nv.apply_projection(&self.projection);
                 nv
             });
 
@@ -472,7 +486,7 @@ impl<'a> CoreReader<'a> {
                 df.insert_column(0, Series::new_empty(&row_index.name, &IDX_DTYPE))?;
             }
             unsafe {
-                sort_series_origin_order(df.get_columns_mut(), pos);
+                sort_series_origin_order(df.get_columns_mut(), self.projection_original_position.clone());
             }
             return Ok(df);
         }
@@ -487,7 +501,7 @@ impl<'a> CoreReader<'a> {
                     .map(|(bytes_offset_thread, stop_at_nbytes)| {
                         let schema = self.schema.as_ref();
                         let ignore_errors = self.ignore_errors;
-                        let projection = &projection;
+                        let projection = &self.projection;
 
                         let mut read = bytes_offset_thread;
                         let mut dfs = Vec::with_capacity(256);
@@ -574,7 +588,7 @@ impl<'a> CoreReader<'a> {
                             self.separator,
                             self.schema.as_ref(),
                             self.ignore_errors,
-                            &projection,
+                            &self.projection,
                             bytes_offset_thread,
                             self.quote_char,
                             self.eol_char,
@@ -605,7 +619,7 @@ impl<'a> CoreReader<'a> {
                         let mut df = {
                             let remaining_rows = n_rows - rows_already_read;
                             let mut buffers = init_buffers(
-                                &projection,
+                                &self.projection,
                                 remaining_rows,
                                 self.schema.as_ref(),
                                 self.quote_char,
@@ -623,7 +637,7 @@ impl<'a> CoreReader<'a> {
                                 self.ignore_errors,
                                 self.truncate_ragged_lines,
                                 null_values_compiled.as_ref(),
-                                &projection,
+                                &self.projection,
                                 &mut buffers,
                                 remaining_rows - 1,
                                 self.schema.len(),
@@ -651,7 +665,7 @@ impl<'a> CoreReader<'a> {
             }
             let mut result_df = accumulate_dataframes_vertical(dfs.into_iter().map(|t| t.0))?;
             unsafe {
-                sort_series_origin_order(result_df.get_columns_mut(), pos);
+                sort_series_origin_order(result_df.get_columns_mut(), self.projection_original_position.clone());
             }
             Ok(result_df)
         }

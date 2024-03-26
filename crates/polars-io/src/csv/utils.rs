@@ -797,7 +797,7 @@ impl ColumnProjectionOptions {
     /// sorted projection for csv reading, pos for re-ordering as user input
     pub(super) fn get_sorted_pj_and_original_pos(
         &self,
-        schema: SchemaRef,
+        schema: &Schema,
     ) -> PolarsResult<(Vec<usize>, Vec<usize>)> {
         use ColumnProjectionOptions::*;
         let mut pos_and_indices: Vec<(usize, usize)> = match self {
@@ -816,10 +816,10 @@ impl ColumnProjectionOptions {
 
 pub(super) fn get_sorted_projection(
     projection: &Option<ColumnProjectionOptions>,
-    schema: SchemaRef,
+    schema: &Schema,
 ) -> PolarsResult<(Vec<usize>, Vec<usize>)> {
     let (pj, pos): (Vec<usize>, Vec<usize>) = if let Some(projection) = projection {
-        projection.get_sorted_pj_and_original_pos(schema.clone())?
+        projection.get_sorted_pj_and_original_pos(schema)?
     } else {
         ((0..schema.len()).collect(), (0..schema.len()).collect())
     };

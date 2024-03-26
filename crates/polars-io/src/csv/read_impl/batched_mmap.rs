@@ -146,6 +146,7 @@ impl<'a> CoreReader<'a> {
             file_chunks_iter: file_chunks,
             file_chunks: vec![],
             projection: self.projection,
+            projection_original_position: self.projection_original_position,
             starting_point_offset,
             row_index: self.row_index,
             comment_prefix: self.comment_prefix,
@@ -171,7 +172,8 @@ pub struct BatchedCsvReaderMmap<'a> {
     chunk_size: usize,
     file_chunks_iter: ChunkOffsetIter<'a>,
     file_chunks: Vec<(usize, usize)>,
-    projection: Option<ColumnProjectionOptions>,
+    projection: Vec<usize>,
+    projection_original_position: Vec<usize>,
     starting_point_offset: Option<usize>,
     row_index: Option<RowIndex>,
     comment_prefix: Option<CommentPrefix>,
@@ -218,9 +220,6 @@ impl<'a> BatchedCsvReaderMmap<'a> {
             bytes = &bytes[pos..];
         }
 
-        let (projection, pos) =
-            get_sorted_projection(&self.projection, self.schema.clone())?;
-
         // create a null value for every column
         let null_values_compiled = self
             .null_values
@@ -228,7 +227,7 @@ impl<'a> BatchedCsvReaderMmap<'a> {
             .map(|nv| nv.compile(&self.schema))
             .transpose()?
             .map(|mut nv| {
-                nv.apply_projection(&projection);
+                nv.apply_projection(&self.projection);
                 nv
             });
 
@@ -242,7 +241,7 @@ impl<'a> BatchedCsvReaderMmap<'a> {
                         self.separator,
                         self.schema.as_ref(),
                         self.ignore_errors,
-                        &projection,
+                        &self.projection,
                         bytes_offset_thread,
                         self.quote_char,
                         self.eol_char,
@@ -264,7 +263,7 @@ impl<'a> BatchedCsvReaderMmap<'a> {
                     }
 
                     unsafe {
-                        sort_series_origin_order(df.get_columns_mut(), pos.clone());
+                        sort_series_origin_order(df.get_columns_mut(), self.projection_original_position.clone());
                     }
 
                     Ok(df)

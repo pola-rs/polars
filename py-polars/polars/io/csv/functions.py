@@ -87,7 +87,12 @@ def read_csv(
     skip_rows
         Start reading after `skip_rows` lines.
     dtypes
-        Overwrite dtypes for specific or all columns during schema inference.
+        Overwrite dtypes for specific columns during schema inference.
+        This can be
+        - `dict`: a dictionary that maps column names to data types.
+        - `list`: the data types are applied to the columns in the order they appear
+        in the csv or given `columns` parameter. Elements longer than the number of
+        given `columns` will be ignored.
     schema
         Provide the schema. This means that polars doesn't do schema inference.
         This argument expects the complete schema, whereas `dtypes` can be used
@@ -298,21 +303,6 @@ def read_csv(
         if new_columns:
             return _update_columns(df, new_columns)
         return df
-
-    if projection and dtypes and isinstance(dtypes, list):
-        if len(projection) < len(dtypes):
-            msg = "more dtypes overrides are specified than there are selected columns"
-            raise ValueError(msg)
-
-        # Fix list of dtypes when used together with projection as polars CSV reader
-        # wants a list of dtypes for the x first columns before it does the projection.
-        dtypes_list: list[PolarsDataType] = [String] * (max(projection) + 1)
-
-        for idx, column_idx in enumerate(projection):
-            if idx < len(dtypes):
-                dtypes_list[column_idx] = dtypes[idx]
-
-        dtypes = dtypes_list
 
     if columns and dtypes and isinstance(dtypes, list):
         if len(columns) < len(dtypes):
