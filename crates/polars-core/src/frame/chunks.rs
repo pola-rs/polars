@@ -1,8 +1,8 @@
-use arrow::chunk::Chunk;
+use arrow::record_batch::RecordBatch;
 
 use crate::prelude::*;
 
-pub type ArrowChunk = Chunk<ArrayRef>;
+pub type ArrowChunk = RecordBatch<ArrayRef>;
 
 impl std::convert::TryFrom<(ArrowChunk, &[ArrowField])> for DataFrame {
     type Error = PolarsError;

@@ -7,10 +7,10 @@ use polars_error::{polars_bail, polars_err, PolarsResult};
 use super::deserialize::{read, skip};
 use super::Dictionaries;
 use crate::array::*;
-use crate::chunk::Chunk;
 use crate::datatypes::{ArrowDataType, Field};
 use crate::io::ipc::read::OutOfSpecKind;
 use crate::io::ipc::{IpcField, IpcSchema};
+use crate::record_batch::RecordBatch;
 
 #[derive(Debug, Eq, PartialEq, Hash)]
 enum ProjectionResult<A> {
@@ -70,7 +70,7 @@ impl<'a, A, I: Iterator<Item = A>> Iterator for ProjectionIter<'a, A, I> {
     }
 }
 
-/// Returns a [`Chunk`] from a reader.
+/// Returns a [`RecordBatch`] from a reader.
 /// # Panic
 /// Panics iff the projection is not in increasing order (e.g. `[1, 0]` nor `[0, 1, 1]` are valid)
 #[allow(clippy::too_many_arguments)]
@@ -86,7 +86,7 @@ pub fn read_record_batch<R: Read + Seek>(
     block_offset: u64,
     file_size: u64,
     scratch: &mut Vec<u8>,
-) -> PolarsResult<Chunk<Box<dyn Array>>> {
+) -> PolarsResult<RecordBatch<Box<dyn Array>>> {
     assert_eq!(fields.len(), ipc_schema.fields.len());
     let buffers = batch
         .buffers()
@@ -185,7 +185,7 @@ pub fn read_record_batch<R: Read + Seek>(
             })
             .collect::<PolarsResult<Vec<_>>>()?
     };
-    Chunk::try_new(columns)
+    RecordBatch::try_new(columns)
 }
 
 fn find_first_dict_field_d<'a>(
@@ -338,9 +338,9 @@ pub fn prepare_projection(
 }
 
 pub fn apply_projection(
-    chunk: Chunk<Box<dyn Array>>,
+    chunk: RecordBatch<Box<dyn Array>>,
     map: &AHashMap<usize, usize>,
-) -> Chunk<Box<dyn Array>> {
+) -> RecordBatch<Box<dyn Array>> {
     // re-order according to projection
     let arrays = chunk.into_arrays();
     let mut new_arrays = arrays.clone();
@@ -348,7 +348,7 @@ pub fn apply_projection(
     map.iter()
         .for_each(|(old, new)| new_arrays[*new] = arrays[*old].clone());
 
-    Chunk::new(new_arrays)
+    RecordBatch::new(new_arrays)
 }
 
 #[cfg(test)]
