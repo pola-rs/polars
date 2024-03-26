@@ -616,7 +616,7 @@ fn any_values_to_struct(
     fields: &[Field],
     strict: bool,
 ) -> PolarsResult<Series> {
-    // Fast path for empty structs.
+    // Fast path for structs with no fields.
     if fields.is_empty() {
         return Ok(StructChunked::full_null("", values.len()).into_series());
     }
@@ -675,7 +675,7 @@ fn any_values_to_struct(
         }
         // If the inferred dtype is null, we let auto inference work.
         let s = if matches!(field.dtype, DataType::Null) {
-            Series::new(field.name(), &field_avs)
+            Series::from_any_values(field.name(), &field_avs, strict)?
         } else {
             Series::from_any_values_and_dtype(field.name(), &field_avs, &field.dtype, strict)?
         };
