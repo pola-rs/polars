@@ -1,6 +1,27 @@
+from __future__ import annotations
+
 import pytest
+from hypothesis import given
+from hypothesis.strategies import integers
 
 import polars as pl
+from polars.testing.parametric import series
+
+
+@given(s=series(), n=integers(min_value=0, max_value=10))
+def test_clear_series_parametric(s: pl.Series, n: int) -> None:
+    result = s.clear()
+
+    assert result.dtype == s.dtype
+    assert result.name == s.name
+    assert result.is_empty()
+
+    result = s.clear(n)
+
+    assert result.dtype == s.dtype
+    assert result.name == s.name
+    assert len(result) == n
+    assert result.null_count() == n
 
 
 @pytest.mark.parametrize("n", [0, 2, 5])
@@ -11,6 +32,7 @@ def test_clear_series(n: int) -> None:
     assert result.dtype == a.dtype
     assert result.name == a.name
     assert len(result) == n
+    assert result.null_count() == n
 
 
 def test_clear_df() -> None:
@@ -41,3 +63,14 @@ def test_clear_lf() -> None:
     ldfe = lf.clear(2)
     assert ldfe.schema == lf.schema
     assert ldfe.collect().rows() == [(None, None, None), (None, None, None)]
+
+
+@pytest.mark.skip("Currently bugged: https://github.com/pola-rs/polars/issues/15303")
+def test_clear_series_object_starting_with_null() -> None:
+    s = pl.Series([None, object()])
+
+    result = s.clear()
+
+    assert result.dtype == s.dtype
+    assert result.name == s.name
+    assert result.is_empty()

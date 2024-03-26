@@ -1122,7 +1122,6 @@ def test_lazy_schema() -> None:
     assert lf.dtypes == [pl.Int64, pl.Float64, pl.String]
 
 
-
 def test_predicate_count_vstack() -> None:
     l1 = pl.LazyFrame(
         {

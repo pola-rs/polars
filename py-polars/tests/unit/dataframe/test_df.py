@@ -1701,7 +1701,6 @@ def test_df_schema_unique() -> None:
         df.rename({"b": "a"})
 
 
-
 def test_empty_projection() -> None:
     empty_df = pl.DataFrame({"a": [1, 2], "b": [3, 4]}).select([])
     assert empty_df.rows() == []
