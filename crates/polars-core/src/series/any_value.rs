@@ -675,7 +675,7 @@ fn any_values_to_struct(
         }
         // If the inferred dtype is null, we let auto inference work.
         let s = if matches!(field.dtype, DataType::Null) {
-            Series::new(field.name(), &field_avs)
+            Series::from_any_values(field.name(), &field_avs, strict)?
         } else {
             Series::from_any_values_and_dtype(field.name(), &field_avs, &field.dtype, strict)?
         };
