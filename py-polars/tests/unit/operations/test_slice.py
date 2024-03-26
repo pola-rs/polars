@@ -88,10 +88,13 @@ def test_python_slicing_lazy_frame() -> None:
         slice(None, 2, 2),
         slice(3, None, -1),
         slice(1, None, -2),
+        slice(0, None, -1),
     ):
         # confirm frame slice matches python slice
         assert ldf[py_slice].collect().rows() == ldf.collect().rows()[py_slice]
 
+    assert_frame_equal(ldf[0::-1], ldf.head(1))
+    assert_frame_equal(ldf[2::-1], ldf.head(3).reverse())
     assert_frame_equal(ldf[::-1], ldf.reverse())
     assert_frame_equal(ldf[::-2], ldf.reverse().gather_every(2))
 
