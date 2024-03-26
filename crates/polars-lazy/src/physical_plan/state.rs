@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU8, Ordering};
 use std::sync::{Mutex, RwLock};
 
 use bitflags::bitflags;
@@ -69,10 +69,12 @@ impl From<u8> for StateFlags {
     }
 }
 
+type CachedValue = Arc<(AtomicI64, OnceCell<DataFrame>)>;
+
 /// State/ cache that is maintained during the Execution of the physical plan.
 pub struct ExecutionState {
     // cached by a `.cache` call and kept in memory for the duration of the plan.
-    df_cache: Arc<Mutex<PlHashMap<usize, Arc<OnceCell<DataFrame>>>>>,
+    df_cache: Arc<Mutex<PlHashMap<usize, CachedValue>>>,
     // cache file reads until all branches got there file, then we delete it
     #[cfg(any(
         feature = "ipc",
@@ -239,12 +241,17 @@ impl ExecutionState {
         lock.clone()
     }
 
-    pub(crate) fn get_df_cache(&self, key: usize) -> Arc<OnceCell<DataFrame>> {
+    pub(crate) fn get_df_cache(&self, key: usize, cache_hits: usize) -> CachedValue {
         let mut guard = self.df_cache.lock().unwrap();
         guard
             .entry(key)
-            .or_insert_with(|| Arc::new(OnceCell::new()))
+            .or_insert_with(|| Arc::new((AtomicI64::new(cache_hits as i64), OnceCell::new())))
             .clone()
+    }
+
+    pub(crate) fn remove_df_cache(&self, key: usize) {
+        let mut guard = self.df_cache.lock().unwrap();
+        let _ = guard.remove(&key).unwrap();
     }
 
     /// Clear the cache used by the Window expressions
