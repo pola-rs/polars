@@ -92,7 +92,6 @@ features = [
 
 [build-dependencies]
 built = { version = "0.7", features = ["chrono", "git2", "cargo-lock"], optional = true }
-pyo3-build-config = { version = "0.20" }
 
 [target.'cfg(any(not(target_family = "unix"), use_mimalloc))'.dependencies]
 mimalloc = { version = "0.1", default-features = false }
