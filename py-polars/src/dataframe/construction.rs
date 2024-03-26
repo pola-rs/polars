@@ -65,44 +65,44 @@ fn finish_from_rows(
 ) -> PyResult<PyDataFrame> {
     let schema = if let Some(mut schema) = schema {
         resolve_schema_overrides(&mut schema, schema_overrides)?;
-
-        let contains_unknown = schema.iter_dtypes().any(|dtype| !dtype.is_known());
-
-        if contains_unknown {
-            // TODO: Only infer dtypes for columns with an unknown dtype
-            let inferred_dtypes =
-                rows_to_schema_supertypes(&rows, infer_schema_length).map_err(PyPolarsErr::from)?;
-            let inferred_dtypes_slice = inferred_dtypes.as_slice();
-
-            for (i, dtype) in schema.iter_dtypes_mut().enumerate() {
-                if !dtype.is_known() {
-                    *dtype = inferred_dtypes_slice.get(i).ok_or_else(|| {
-                        polars_err!(SchemaMismatch: "the number of columns in the schema does not match the data")
-                    })
-                    .map_err(PyPolarsErr::from)?
-                    .clone();
-                }
-            }
-        };
+        update_schema_from_rows(&mut schema, &rows, infer_schema_length)?;
         schema
     } else {
-        let dtypes =
-            rows_to_schema_supertypes(&rows, infer_schema_length).map_err(PyPolarsErr::from)?;
-        let mut schema = dtypes
-            .into_iter()
-            .enumerate()
-            .map(|(i, dtype)| Field::new(format!("column_{i}").as_ref(), dtype))
-            .collect();
-        resolve_schema_overrides(&mut schema, schema_overrides)?;
-        schema
+        infer_schema_from_rows(&rows, infer_schema_length)?
     };
 
     let df = DataFrame::from_rows_and_schema(&rows, &schema).map_err(PyPolarsErr::from)?;
     Ok(df.into())
 }
 
-// Optional per-field overrides; these supersede default/inferred dtypes.
-// TODO: Make schema overrides work when column names are known from the data
+fn update_schema_from_rows(
+    schema: &mut Schema,
+    rows: &[Row],
+    infer_schema_length: Option<usize>,
+) -> PyResult<()> {
+    let schema_is_complete = schema.iter_dtypes().all(|dtype| dtype.is_known());
+    if schema_is_complete {
+        return Ok(());
+    }
+
+    // TODO: Only infer dtypes for columns with an unknown dtype
+    let inferred_dtypes =
+        rows_to_schema_supertypes(rows, infer_schema_length).map_err(PyPolarsErr::from)?;
+    let inferred_dtypes_slice = inferred_dtypes.as_slice();
+
+    for (i, dtype) in schema.iter_dtypes_mut().enumerate() {
+        if !dtype.is_known() {
+            *dtype = inferred_dtypes_slice.get(i).ok_or_else(|| {
+                polars_err!(SchemaMismatch: "the number of columns in the schema does not match the data")
+            })
+            .map_err(PyPolarsErr::from)?
+            .clone();
+        }
+    }
+    Ok(())
+}
+
+/// Override the data type of certain schema fields.
 fn resolve_schema_overrides(schema: &mut Schema, schema_overrides: Option<Schema>) -> PyResult<()> {
     if let Some(overrides) = schema_overrides {
         for (name, dtype) in overrides.into_iter() {
@@ -112,6 +112,26 @@ fn resolve_schema_overrides(schema: &mut Schema, schema_overrides: Option<Schema
         }
     }
     Ok(())
+}
+
+fn infer_schema_from_rows(rows: &[Row], infer_schema_length: Option<usize>) -> PyResult<Schema> {
+    let dtypes = rows_to_schema_supertypes(rows, infer_schema_length).map_err(PyPolarsErr::from)?;
+    let schema = dtypes
+        .into_iter()
+        .enumerate()
+        .map(|(i, dtype)| Field::new(format!("column_{i}").as_ref(), dtype))
+        .collect();
+    Ok(schema)
+}
+
+fn columns_names_to_empty_schema<'a, I>(column_names: I) -> Schema
+where
+    I: IntoIterator<Item = &'a str>,
+{
+    let fields = column_names
+        .into_iter()
+        .map(|c| Field::new(c, DataType::Unknown));
+    Schema::from_iter(fields)
 }
 
 fn dicts_to_rows(
@@ -158,14 +178,4 @@ fn dicts_to_rows(
         rows.push(Row(row))
     }
     Ok((rows, key_names.into_iter().collect()))
-}
-
-fn columns_names_to_empty_schema<'a, I>(column_names: I) -> Schema
-where
-    I: IntoIterator<Item = &'a str>,
-{
-    let fields = column_names
-        .into_iter()
-        .map(|c| Field::new(c, DataType::Unknown));
-    Schema::from_iter(fields)
 }
