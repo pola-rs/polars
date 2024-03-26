@@ -724,15 +724,24 @@ pub(crate) enum InferSchemaOptions<'a> {
     OverwriteDtypesSlice(&'a [DataType]),
 }
 
+pub(super) struct PrepareSchemaOverwriteResult<'a> {
+    pub options: ReaderSchemaOptions<'a>,
+    pub to_cast: Vec<Field>,
+    #[cfg(feature = "dtype-categorical")]
+    pub has_cat: bool,
+}
+
 impl<'a> ReaderSchemaOptions<'a> {
-    pub(super) fn prepare_schema_overwrite(&self) -> PolarsResult<(Self, Vec<Field>, bool)> {
+    pub(super) fn prepare_schema_overwrite(&self) -> PolarsResult<PrepareSchemaOverwriteResult> {
         use InferSchemaOptions::*;
         use ReaderSchemaOptions::*;
+
         if let ReaderSchemaOptions::Infer(Some(OverwriteDtypesMap(ref schema))) = self {
             // This branch we check if there are dtypes we cannot parse.
             // We only support a few dtypes in the parser and later cast to the required dtype
             let mut to_cast = Vec::with_capacity(schema.len());
 
+            #[cfg(feature = "dtype-categorical")]
             let mut _has_categorical = false;
             let mut _err: Option<PolarsError> = None;
 
@@ -775,20 +784,49 @@ impl<'a> ReaderSchemaOptions<'a> {
                 Err(err)
             } else {
                 let result = Infer(Some(OverwriteDtypesMap(Arc::new(schema))));
-                Ok((result, to_cast, _has_categorical))
+                Ok(PrepareSchemaOverwriteResult {
+                    options: result,
+                    to_cast,
+                    #[cfg(feature = "dtype-categorical")]
+                    has_cat: _has_categorical,
+                })
             }
-        } else if let Enforce(schema) = self {
-            let has_cat = schema
-                .iter_dtypes()
-                .any(|dtype| matches!(dtype, DataType::Categorical(_, _)));
-            Ok((self.clone(), vec![], has_cat))
-        } else if let Infer(Some(OverwriteDtypesSlice(dtypes))) = self {
-            let has_cat = dtypes
-                .iter()
-                .any(|x| matches!(x, DataType::Categorical(_, _)));
-            Ok((self.clone(), vec![], has_cat))
         } else {
-            Ok((self.clone(), vec![], false))
+            #[cfg(feature = "dtype-categorical")]
+            {
+                if let Enforce(schema) = self {
+                    let has_cat = schema
+                        .iter_dtypes()
+                        .any(|dtype| matches!(dtype, DataType::Categorical(_, _)));
+
+                    Ok(PrepareSchemaOverwriteResult {
+                        options: self.clone(),
+                        to_cast: vec![],
+                        has_cat,
+                    })
+                } else if let Infer(Some(OverwriteDtypesSlice(dtypes))) = self {
+                    let has_cat = dtypes
+                        .iter()
+                        .any(|x| matches!(x, DataType::Categorical(_, _)));
+
+                    Ok(PrepareSchemaOverwriteResult {
+                        options: self.clone(),
+                        to_cast: vec![],
+                        has_cat,
+                    })
+                } else {
+                    Ok(PrepareSchemaOverwriteResult {
+                        options: self.clone(),
+                        to_cast: vec![],
+                        has_cat: false,
+                    })
+                }
+            }
+            #[cfg(not(feature = "dtype-categorical"))]
+            Ok(PrepareSchemaOverwriteResult {
+                options: self.clone(),
+                to_cast: vec![],
+            })
         }
     }
 }
@@ -830,7 +868,11 @@ pub(super) fn get_sorted_projection(
 /// # Safety
 ///
 /// Column should be consistent with paired projection
-pub(super) fn sort_series_origin_order(series: &mut [Series], mut original_pos: Vec<usize>, with_index_row: bool) {
+pub(super) fn sort_series_origin_order(
+    series: &mut [Series],
+    mut original_pos: Vec<usize>,
+    with_index_row: bool,
+) {
     debug_assert!(series.len() == original_pos.len() + with_index_row as usize);
     if with_index_row {
         original_pos.iter_mut().for_each(|e| *e += 1);

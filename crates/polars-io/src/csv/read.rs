@@ -336,7 +336,7 @@ where
         self
     }
 
-    /// Column namess to select/ project
+    /// Column names to select/ project
     ///
     /// Incompactible with [`with_projection`](CsvReader::with_projection).
     /// If `Some` provided, it will overwrite set [`with_projection`](CsvReader::with_projection).

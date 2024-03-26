@@ -259,7 +259,11 @@ impl<'a> BatchedCsvReaderMmap<'a> {
                     cast_columns(&mut df, &self.to_cast, false, self.ignore_errors)?;
 
                     unsafe {
-                        sort_series_origin_order(df.get_columns_mut(), self.projection_original_position.clone(), false);
+                        sort_series_origin_order(
+                            df.get_columns_mut(),
+                            self.projection_original_position.clone(),
+                            false,
+                        );
                     }
 
                     if let Some(rc) = &self.row_index {

@@ -113,6 +113,7 @@ pub(crate) struct CoreReader<'a> {
     missing_is_null: bool,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     to_cast: Vec<Field>,
+    #[cfg(feature = "dtype-categorical")]
     has_cat: bool,
     row_index: Option<RowIndex>,
     truncate_ragged_lines: bool,
@@ -171,7 +172,12 @@ impl<'a> CoreReader<'a> {
         // check if schema should be inferred
         let separator = separator.unwrap_or(b',');
 
-        let (schema_options, to_cast, has_cat) = schema_options.prepare_schema_overwrite()?;
+        let PrepareSchemaOverwriteResult {
+            options: schema_options,
+            to_cast,
+            #[cfg(feature = "dtype-categorical")]
+            has_cat,
+        } = schema_options.prepare_schema_overwrite()?;
 
         let (schema, projection, projection_original_position) = {
             use InferSchemaOptions::*;
@@ -226,13 +232,14 @@ impl<'a> CoreReader<'a> {
                         },
                         Some(OverwriteDtypesSlice(overwrite_dtypes_slice)) => {
                             let mut schema = get_inferred_schema(None)?;
-                            let (projection, pos) =
-                                get_sorted_projection(&projection, &schema)?;
+                            let (projection, pos) = get_sorted_projection(&projection, &schema)?;
                             for (schema_idx, dtypes_idx) in projection.iter().zip(pos.iter()) {
                                 if let Some(dtypes) = overwrite_dtypes_slice.get(*dtypes_idx) {
-                                    schema.set_dtype_at_index(*schema_idx, dtypes.clone()).unwrap();
+                                    schema
+                                        .set_dtype_at_index(*schema_idx, dtypes.clone())
+                                        .unwrap();
                                 }
-                            };
+                            }
                             (Arc::new(schema), projection, pos)
                         },
                         None => {
@@ -270,6 +277,7 @@ impl<'a> CoreReader<'a> {
             missing_is_null,
             predicate,
             to_cast,
+            #[cfg(feature = "dtype-categorical")]
             has_cat,
             row_index,
             truncate_ragged_lines,
@@ -486,7 +494,11 @@ impl<'a> CoreReader<'a> {
                 df.insert_column(0, Series::new_empty(&row_index.name, &IDX_DTYPE))?;
             }
             unsafe {
-                sort_series_origin_order(df.get_columns_mut(), self.projection_original_position.clone(), self.row_index.is_some());
+                sort_series_origin_order(
+                    df.get_columns_mut(),
+                    self.projection_original_position.clone(),
+                    self.row_index.is_some(),
+                );
             }
             return Ok(df);
         }
@@ -665,7 +677,11 @@ impl<'a> CoreReader<'a> {
             }
             let mut result_df = accumulate_dataframes_vertical(dfs.into_iter().map(|t| t.0))?;
             unsafe {
-                sort_series_origin_order(result_df.get_columns_mut(), self.projection_original_position.clone(), self.row_index.is_some());
+                sort_series_origin_order(
+                    result_df.get_columns_mut(),
+                    self.projection_original_position.clone(),
+                    self.row_index.is_some(),
+                );
             }
             Ok(result_df)
         }

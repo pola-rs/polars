@@ -393,6 +393,7 @@ def test_dtype_overwrite_with_column_idx_selection() -> None:
     # if the column selection is done with column indices instead of column names.
     assert df.dtypes == [pl.Int32, pl.String, pl.Int64]
 
+
 def test_partial_column_rename() -> None:
     csv = textwrap.dedent(
         """\
@@ -1970,6 +1971,9 @@ def test_csv_invalid_escape_utf8_14960() -> None:
     with pytest.raises(pl.ComputeError, match=r"field is not properly escaped"):
         pl.read_csv('col1\n""•'.encode())
 
+
 def test_read_csv_set_both_schema_dtypes_fail() -> None:
     with pytest.raises(ValueError, match="cannot provide both 'schema' and 'dtypes'"):
-        pl.read_csv(io.StringIO("a,b\n1,2\n"), schema={"a": pl.Int32}, dtypes={"a": pl.Int64})
+        pl.read_csv(
+            io.StringIO("a,b\n1,2\n"), schema={"a": pl.Int32}, dtypes={"a": pl.Int64}
+        )

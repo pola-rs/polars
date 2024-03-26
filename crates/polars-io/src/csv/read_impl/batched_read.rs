@@ -318,14 +318,14 @@ impl<'a> BatchedCsvReaderRead<'a> {
 
         // create a null value for every column
         let null_values_compiled = self
-        .null_values
-        .clone()
-        .map(|nv| nv.compile(&self.schema))
-        .transpose()?
-        .map(|mut nv| {
-            nv.apply_projection(&self.projection);
-            nv
-        });
+            .null_values
+            .clone()
+            .map(|nv| nv.compile(&self.schema))
+            .transpose()?
+            .map(|mut nv| {
+                nv.apply_projection(&self.projection);
+                nv
+            });
 
         let mut chunks = POOL.install(|| {
             self.file_chunks
@@ -356,7 +356,11 @@ impl<'a> BatchedCsvReaderRead<'a> {
                     cast_columns(&mut df, &self.to_cast, false, self.ignore_errors)?;
 
                     unsafe {
-                        sort_series_origin_order(df.get_columns_mut(), self.projection_original_position.clone(), false);
+                        sort_series_origin_order(
+                            df.get_columns_mut(),
+                            self.projection_original_position.clone(),
+                            false,
+                        );
                     }
 
                     if let Some(rc) = &self.row_index {
