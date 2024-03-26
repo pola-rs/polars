@@ -2,6 +2,7 @@
 
 use arrow::legacy::error::PolarsResult;
 mod expr;
+mod hash;
 mod lp;
 mod visitors;
 

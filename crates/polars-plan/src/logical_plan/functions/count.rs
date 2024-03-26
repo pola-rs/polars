@@ -53,7 +53,6 @@ pub fn count_rows(paths: &Arc<[PathBuf]>, scan_type: &FileScan) -> PolarsResult<
         #[cfg(feature = "ipc")]
         FileScan::Ipc {
             options,
-            #[cfg(feature = "cloud")]
             cloud_options,
             metadata,
         } => {

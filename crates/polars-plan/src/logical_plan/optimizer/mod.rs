@@ -3,15 +3,13 @@ use polars_core::prelude::*;
 use crate::prelude::*;
 
 mod cache_states;
-#[cfg(feature = "cse")]
-mod cse;
 mod delay_rechunk;
 mod drop_nulls;
 
 mod collect_members;
 mod count_star;
 #[cfg(feature = "cse")]
-mod cse_expr;
+mod cse;
 #[cfg(any(
     feature = "ipc",
     feature = "parquet",
@@ -35,6 +33,7 @@ mod type_coercion;
 
 use delay_rechunk::DelayRechunk;
 use drop_nulls::ReplaceDropNulls;
+use polars_core::config::verbose;
 use polars_io::predicates::PhysicalIoExpr;
 pub use predicate_pushdown::PredicatePushDown;
 pub use projection_pushdown::ProjectionPushDown;
@@ -48,7 +47,9 @@ use self::flatten_union::FlattenUnionRule;
 pub use crate::frame::{AllowedOptimizations, OptState};
 use crate::logical_plan::optimizer::count_star::CountStar;
 #[cfg(feature = "cse")]
-use crate::logical_plan::optimizer::cse_expr::CommonSubExprOptimizer;
+use crate::logical_plan::optimizer::cse::prune_unused_caches;
+#[cfg(feature = "cse")]
+use crate::logical_plan::optimizer::cse::CommonSubExprOptimizer;
 use crate::logical_plan::optimizer::predicate_pushdown::HiveEval;
 #[cfg(feature = "cse")]
 use crate::logical_plan::visitor::*;
@@ -73,6 +74,8 @@ pub fn optimize(
     scratch: &mut Vec<Node>,
     hive_partition_eval: HiveEval<'_>,
 ) -> PolarsResult<Node> {
+    #[cfg(feature = "cse")]
+    let verbose = verbose();
     // get toggle values
     let predicate_pushdown = opt_state.predicate_pushdown;
     let projection_pushdown = opt_state.projection_pushdown;
@@ -108,20 +111,8 @@ pub fn optimize(
     // Collect members for optimizations that need it.
     let mut members = MemberCollector::new();
     if !eager && (comm_subexpr_elim || projection_pushdown) {
-        members.collect(lp_top, lp_arena)
+        members.collect(lp_top, lp_arena, expr_arena)
     }
-
-    #[cfg(feature = "cse")]
-    let cse_plan_changed = if comm_subplan_elim {
-        let (lp, changed) = cse::elim_cmn_subplans(lp_top, lp_arena, expr_arena);
-        lp_top = lp;
-        members.has_cache |= changed;
-        changed
-    } else {
-        false
-    };
-    #[cfg(not(feature = "cse"))]
-    let cse_plan_changed = false;
 
     // we do simplification
     if simplify_expr {
@@ -130,16 +121,31 @@ pub fn optimize(
         rules.push(Box::new(fused::FusedArithmetic {}));
     }
 
+    #[cfg(feature = "cse")]
+    let cse_plan_changed =
+        if comm_subplan_elim && members.has_joins_or_unions && members.has_duplicate_scans() {
+            if verbose {
+                eprintln!("found multiple sources; run comm_subplan_elim")
+            }
+            let (lp, changed, cid2c) = cse::elim_cmn_subplans(lp_top, lp_arena, expr_arena);
+
+            prune_unused_caches(lp_arena, cid2c);
+
+            lp_top = lp;
+            members.has_cache |= changed;
+            changed
+        } else {
+            false
+        };
+    #[cfg(not(feature = "cse"))]
+    let cse_plan_changed = false;
+
     // should be run before predicate pushdown
     if projection_pushdown {
         let mut projection_pushdown_opt = ProjectionPushDown::new();
         let alp = lp_arena.take(lp_top);
         let alp = projection_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
         lp_arena.replace(lp_top, alp);
-
-        if members.has_joins_or_unions && members.has_cache {
-            cache_states::set_cache_states(lp_top, lp_arena, expr_arena, scratch, cse_plan_changed);
-        }
 
         if projection_pushdown_opt.is_count_star {
             let mut count_star_opt = CountStar::new();
@@ -182,11 +188,32 @@ pub fn optimize(
         rules.push(Box::new(SimplifyBooleanRule {}));
     }
 
+    rules.push(Box::new(ReplaceDropNulls {}));
+    if !eager {
+        rules.push(Box::new(FlattenUnionRule {}));
+    }
+
+    lp_top = opt.optimize_loop(&mut rules, expr_arena, lp_arena, lp_top)?;
+
+    if members.has_joins_or_unions && members.has_cache {
+        cache_states::set_cache_states(lp_top, lp_arena, expr_arena, scratch, cse_plan_changed)?;
+    }
+
+    // This one should run (nearly) last as this modifies the projections
+    #[cfg(feature = "cse")]
+    if comm_subexpr_elim && !members.has_ext_context {
+        let mut optimizer = CommonSubExprOptimizer::new(expr_arena);
+        lp_top = ALogicalPlanNode::with_context(lp_top, lp_arena, |alp_node| {
+            alp_node.rewrite(&mut optimizer)
+        })?
+        .node()
+    }
+
     // make sure that we do that once slice pushdown
     // and predicate pushdown are done. At that moment
     // the file fingerprints are finished.
     #[cfg(any(feature = "cse", feature = "parquet", feature = "ipc", feature = "csv"))]
-    if agg_scan_projection || cse_plan_changed {
+    if agg_scan_projection && !cse_plan_changed {
         // we do this so that expressions are simplified created by the pushdown optimizations
         // we must clean up the predicates, because the agg_scan_projection
         // uses them in the hashtable to determine duplicates.
@@ -205,29 +232,12 @@ pub fn optimize(
 
         let mut file_cacher = FileCacher::new(file_predicate_to_columns_and_count);
         file_cacher.assign_unions(lp_top, lp_arena, expr_arena, scratch);
-
-        #[cfg(feature = "cse")]
-        if cse_plan_changed {
-            // this must run after cse
-            cse::decrement_file_counters_by_cache_hits(lp_top, lp_arena, expr_arena, 0, scratch);
-        }
     }
 
-    rules.push(Box::new(ReplaceDropNulls {}));
-    if !eager {
-        rules.push(Box::new(FlattenUnionRule {}));
-    }
-
-    lp_top = opt.optimize_loop(&mut rules, expr_arena, lp_arena, lp_top)?;
-
-    // This one should run (nearly) last as this modifies the projections
     #[cfg(feature = "cse")]
-    if comm_subexpr_elim && !members.has_ext_context {
-        let mut optimizer = CommonSubExprOptimizer::new(expr_arena);
-        lp_top = ALogicalPlanNode::with_context(lp_top, lp_arena, |alp_node| {
-            alp_node.rewrite(&mut optimizer)
-        })?
-        .node()
+    if cse_plan_changed {
+        // this must run after cse
+        cse::decrement_file_counters_by_cache_hits(lp_top, lp_arena, expr_arena, 0, scratch);
     }
 
     // during debug we check if the optimizations have not modified the final schema

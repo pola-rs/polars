@@ -1,3 +1,5 @@
+use std::hash::{Hash, Hasher};
+
 #[cfg(feature = "parquet")]
 use polars_parquet::write::FileMetaData;
 
@@ -18,7 +20,6 @@ pub enum FileScan {
     #[cfg(feature = "ipc")]
     Ipc {
         options: IpcScanOptions,
-        #[cfg(feature = "cloud")]
         cloud_options: Option<polars_io::cloud::CloudOptions>,
         #[cfg_attr(feature = "serde", serde(skip))]
         metadata: Option<arrow::io::ipc::read::FileMetadata>,
@@ -52,27 +53,47 @@ impl PartialEq for FileScan {
             (
                 FileScan::Ipc {
                     options: l,
-                    #[cfg(feature = "cloud")]
-                        cloud_options: c_l,
+                    cloud_options: c_l,
                     ..
                 },
                 FileScan::Ipc {
                     options: r,
-                    #[cfg(feature = "cloud")]
-                        cloud_options: c_r,
+                    cloud_options: c_r,
                     ..
                 },
-            ) => {
-                #[cfg(not(feature = "cloud"))]
-                {
-                    l == r
-                }
-                #[cfg(feature = "cloud")]
-                {
-                    l == r && c_l == c_r
-                }
-            },
+            ) => l == r && c_l == c_r,
             _ => false,
+        }
+    }
+}
+
+impl Eq for FileScan {}
+
+impl Hash for FileScan {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        std::mem::discriminant(self).hash(state);
+        match self {
+            #[cfg(feature = "csv")]
+            FileScan::Csv { options } => options.hash(state),
+            #[cfg(feature = "parquet")]
+            FileScan::Parquet {
+                options,
+                cloud_options,
+                metadata: _,
+            } => {
+                options.hash(state);
+                cloud_options.hash(state)
+            },
+            #[cfg(feature = "ipc")]
+            FileScan::Ipc {
+                options,
+                cloud_options,
+                metadata: _,
+            } => {
+                options.hash(state);
+                cloud_options.hash(state);
+            },
+            FileScan::Anonymous { options, .. } => options.hash(state),
         }
     }
 }

@@ -237,7 +237,7 @@ impl LogicalPlanBuilder {
         cache: bool,
         row_index: Option<RowIndex>,
         rechunk: bool,
-        #[cfg(feature = "cloud")] cloud_options: Option<CloudOptions>,
+        cloud_options: Option<CloudOptions>,
     ) -> PolarsResult<Self> {
         use polars_io::is_cloud_url;
 
@@ -289,7 +289,6 @@ impl LogicalPlanBuilder {
             predicate: None,
             scan_type: FileScan::Ipc {
                 options,
-                #[cfg(feature = "cloud")]
                 cloud_options,
                 metadata: Some(metadata),
             },

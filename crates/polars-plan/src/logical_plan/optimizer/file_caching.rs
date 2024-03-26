@@ -54,30 +54,30 @@ pub fn collect_fingerprints(
     expr_arena: &Arena<AExpr>,
 ) {
     use ALogicalPlan::*;
-    match lp_arena.get(root) {
-        Scan {
-            paths,
-            file_options: options,
-            predicate,
-            scan_type,
-            ..
-        } => {
-            let slice = (scan_type.skip_rows(), options.n_rows);
-            let predicate = predicate
-                .as_ref()
-                .map(|e| node_to_expr(e.node(), expr_arena));
-            let fp = FileFingerPrint {
-                paths: paths.clone(),
+
+    for (_node, lp) in lp_arena.iter(root) {
+        #[allow(clippy::single_match)]
+        match lp {
+            Scan {
+                paths,
+                file_options: options,
                 predicate,
-                slice,
-            };
-            fps.push(fp);
-        },
-        lp => {
-            for input in lp.get_inputs() {
-                collect_fingerprints(input, fps, lp_arena, expr_arena)
-            }
-        },
+                scan_type,
+                ..
+            } => {
+                let slice = (scan_type.skip_rows(), options.n_rows);
+                let predicate = predicate
+                    .as_ref()
+                    .map(|e| node_to_expr(e.node(), expr_arena));
+                let fp = FileFingerPrint {
+                    paths: paths.clone(),
+                    predicate,
+                    slice,
+                };
+                fps.push(fp);
+            },
+            _ => {},
+        }
     }
 }
 
@@ -93,33 +93,33 @@ pub fn find_column_union_and_fingerprints(
     expr_arena: &Arena<AExpr>,
 ) {
     use ALogicalPlan::*;
-    match lp_arena.get(root) {
-        Scan {
-            paths,
-            file_options: options,
-            predicate,
-            file_info,
-            scan_type,
-            ..
-        } => {
-            let slice = (scan_type.skip_rows(), options.n_rows);
-            let predicate = predicate
-                .as_ref()
-                .map(|e| node_to_expr(e.node(), expr_arena));
-            process_with_columns(
+
+    for (_node, lp) in lp_arena.iter(root) {
+        #[allow(clippy::single_match)]
+        match lp {
+            Scan {
                 paths,
-                options.with_columns.as_deref(),
+                file_options: options,
                 predicate,
-                slice,
-                columns,
-                &file_info.schema,
-            );
-        },
-        lp => {
-            for input in lp.get_inputs() {
-                find_column_union_and_fingerprints(input, columns, lp_arena, expr_arena)
-            }
-        },
+                file_info,
+                scan_type,
+                ..
+            } => {
+                let slice = (scan_type.skip_rows(), options.n_rows);
+                let predicate = predicate
+                    .as_ref()
+                    .map(|e| node_to_expr(e.node(), expr_arena));
+                process_with_columns(
+                    paths,
+                    options.with_columns.as_deref(),
+                    predicate,
+                    slice,
+                    columns,
+                    &file_info.schema,
+                );
+            },
+            _ => {},
+        }
     }
 }
 
@@ -156,6 +156,9 @@ impl FileCacher {
         with_columns: Option<Arc<Vec<String>>>,
         behind_cache: bool,
     ) -> ALogicalPlan {
+        if behind_cache {
+            return lp;
+        }
         // if the original projection is less than the new one. Also project locally
         if let Some(mut with_columns) = with_columns {
             // we cannot always find the predicates, because some have `SpecialEq` functions so for those
@@ -164,7 +167,7 @@ impl FileCacher {
                 Some((_file_count, agg_columns)) => with_columns.len() < agg_columns.len(),
                 None => true,
             };
-            if !behind_cache && do_projection {
+            if do_projection {
                 let node = lp_arena.add(lp);
 
                 let projections = std::mem::take(Arc::make_mut(&mut with_columns))

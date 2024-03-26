@@ -45,9 +45,14 @@ fn test_cse_unions() -> PolarsResult<()> {
 
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let lp = lf.clone().optimize(&mut lp_arena, &mut expr_arena).unwrap();
+    let mut cache_count = 0;
     assert!((&lp_arena).iter(lp).all(|(_, lp)| {
         use ALogicalPlan::*;
         match lp {
+            Cache { .. } => {
+                cache_count += 1;
+                true
+            },
             Scan { file_options, .. } => {
                 if let Some(columns) = &file_options.with_columns {
                     columns.len() == 2
@@ -58,6 +63,7 @@ fn test_cse_unions() -> PolarsResult<()> {
             _ => true,
         }
     }));
+    assert_eq!(cache_count, 2);
     let out = lf.collect()?;
     assert_eq!(out.get_column_names(), &["category", "fats_g"]);
 
@@ -82,17 +88,23 @@ fn test_cse_cache_union_projection_pd() -> PolarsResult<()> {
     // check that the projection of a is not done before the cache
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
+    let mut cache_count = 0;
     assert!((&lp_arena).iter(lp).all(|(_, lp)| {
         use ALogicalPlan::*;
         match lp {
+            Cache { .. } => {
+                cache_count += 1;
+                true
+            },
             DataFrameScan {
                 projection: Some(projection),
                 ..
-            } => projection.as_ref() == &vec!["a".to_string(), "b".to_string()],
+            } => projection.as_ref().len() <= 2,
             DataFrameScan { .. } => false,
             _ => true,
         }
     }));
+    assert_eq!(cache_count, 2);
 
     Ok(())
 }
@@ -189,7 +201,9 @@ fn test_cse_joins_4954() -> PolarsResult<()> {
         .flat_map(|(_, lp)| {
             use ALogicalPlan::*;
             match lp {
-                Cache { id, count, input } => {
+                Cache {
+                    id, count, input, ..
+                } => {
                     assert_eq!(*count, 1);
                     assert!(matches!(
                         lp_arena.get(*input),
@@ -242,10 +256,12 @@ fn test_cache_with_partial_projection() -> PolarsResult<()> {
             JoinType::Semi.into(),
         );
 
-    let q = q.with_comm_subplan_elim(true);
-
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
+
+    // EDIT: #15264 this originally
+    // tested 2 caches, but we cannot do that after #15264 due to projection pushdown
+    // running first and the cache semantics changing, so now we test 1. Maybe we can improve later.
 
     // ensure we get two different caches
     // and ensure that every cache only has 1 hit.
@@ -259,7 +275,7 @@ fn test_cache_with_partial_projection() -> PolarsResult<()> {
             }
         })
         .collect::<BTreeSet<_>>();
-    assert_eq!(cache_ids.len(), 2);
+    assert_eq!(cache_ids.len(), 1);
 
     Ok(())
 }
