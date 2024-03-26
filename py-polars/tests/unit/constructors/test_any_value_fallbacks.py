@@ -26,6 +26,10 @@ from polars.polars import PySeries
         (pl.Duration, [timedelta(hours=0), timedelta(seconds=100), None]),
         (pl.Categorical, ["a", "b", "a", None]),
         (pl.Enum(["a", "b"]), ["a", "b", "a", None]),
+        (
+            pl.Struct({"a": pl.Int8, "b": pl.String}),
+            [{"a": 1, "b": "foo"}, {"a": -1, "b": "bar"}],
+        ),
     ],
 )
 @pytest.mark.parametrize("strict", [True, False])
@@ -56,20 +60,16 @@ def test_fallback_with_dtype_strict(
         (pl.Duration("ns"), [timedelta(hours=0), timedelta(seconds=100)]),
         (pl.Categorical, [0, 1, 0]),
         (pl.Enum(["a", "b"]), [0, 1, 0]),
+        (
+            pl.Struct({"a": pl.Int8, "b": pl.String}),
+            [{"a": 1, "b": "foo"}, {"a": 2.0, "b": "bar"}],
+        ),
     ],
 )
 def test_fallback_with_dtype_strict_failure(
     dtype: pl.PolarsDataType, values: list[Any]
 ) -> None:
     with pytest.raises(TypeError, match="unexpected value"):
-        PySeries.new_from_any_values_and_dtype("", values, dtype, strict=True)
-
-
-def test_fallback_with_dtype_strict_failure_enum_casting() -> None:
-    dtype = pl.Enum(["a", "b"])
-    values = ["a", "b", "c", None]
-
-    with pytest.raises(TypeError, match="conversion from `str` to `enum` failed"):
         PySeries.new_from_any_values_and_dtype("", values, dtype, strict=True)
 
 
@@ -199,6 +199,11 @@ def test_fallback_with_dtype_strict_failure_enum_casting() -> None:
             ["a", "b", "c", 1, 2, None],
             ["a", "b", None, None, None, None],
         ),
+        (
+            pl.Struct({"a": pl.Int8, "b": pl.String}),
+            [{"a": 1, "b": "foo"}, {"a": 1_000, "b": 2.0}],
+            [{"a": 1, "b": "foo"}, {"a": None, "b": "2.0"}],
+        ),
     ],
 )
 def test_fallback_with_dtype_nonstrict(
@@ -225,6 +230,10 @@ def test_fallback_with_dtype_nonstrict(
             [datetime(1970, 1, 1), datetime(2020, 12, 31, 23, 59, 59), None],
         ),
         (pl.Duration("us"), [timedelta(hours=0), timedelta(seconds=100), None]),
+        (
+            pl.Struct({"a": pl.Int64, "b": pl.String, "c": pl.Float64}),
+            [{"a": 1, "b": "foo", "c": None}, {"a": -1, "b": "bar", "c": 3.0}],
+        ),
     ],
 )
 @pytest.mark.parametrize("strict", [True, False])
@@ -248,6 +257,8 @@ def test_fallback_without_dtype(
         [time(0, 0), 1_000],
         [datetime(1970, 1, 1), date(2020, 12, 31)],
         [timedelta(hours=0), 1_000],
+        [{"a": 1, "b": "foo"}, {"a": -1, "b": date(2020, 12, 31)}],
+        [{"a": None}, {"a": 1.0}, {"a": 1}],
     ],
 )
 def test_fallback_without_dtype_strict_failure(values: list[Any]) -> None:
@@ -267,6 +278,22 @@ def test_fallback_without_dtype_strict_failure(values: list[Any]) -> None:
             pl.Datetime("us"),
         ),
         ([1, 2.0, b"d", date(2022, 1, 1)], [1, 2.0, b"d", date(2022, 1, 1)], pl.Object),
+        (
+            [
+                {"a": 1, "b": "foo", "c": None},
+                {"a": 2.0, "b": date(2020, 12, 31), "c": None},
+            ],
+            [
+                {"a": 1.0, "b": "foo", "c": None},
+                {"a": 2.0, "b": "2020-12-31", "c": None},
+            ],
+            pl.Struct({"a": pl.Float64, "b": pl.String, "c": pl.Null}),
+        ),
+        (
+            [{"a": None}, {"a": 1.0}, {"a": 1}],
+            [{"a": None}, {"a": 1.0}, {"a": 1.0}],
+            pl.Struct({"a": pl.Float64}),
+        ),
     ],
 )
 def test_fallback_without_dtype_nonstrict_mixed_types(
@@ -302,3 +329,11 @@ def test_fallback_with_dtype_large_int() -> None:
     )
     assert result.dtype == pl.Int64
     assert result.to_list() == [1, None, None]
+
+
+def test_fallback_with_dtype_strict_failure_enum_casting() -> None:
+    dtype = pl.Enum(["a", "b"])
+    values = ["a", "b", "c", None]
+
+    with pytest.raises(TypeError, match="conversion from `str` to `enum` failed"):
+        PySeries.new_from_any_values_and_dtype("", values, dtype, strict=True)
