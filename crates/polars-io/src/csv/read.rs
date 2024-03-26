@@ -539,16 +539,6 @@ where
         use InferSchemaOptions::*;
         use ReaderSchemaOptions::*;
 
-        // TODO! move to other place
-        #[cfg(feature = "dtype-categorical")]
-        {
-            let mut _cat_lock = None;
-            let (_schema, _to_cast, has_cat) = self.schema_options.prepare_schema_overwrite()?;
-            if has_cat {
-                _cat_lock = Some(polars_core::StringCacheHolder::hold())
-            }
-        }
-
         let mut df = self.core_reader()?.as_df()?;
 
         // Important that this rechunk is never done in parallel.

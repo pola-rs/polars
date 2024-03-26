@@ -673,6 +673,15 @@ impl<'a> CoreReader<'a> {
 
     /// Read the csv into a DataFrame. The predicate can come from a lazy physical plan.
     pub fn as_df(&mut self) -> PolarsResult<DataFrame> {
+        #[cfg(feature = "dtype-categorical")]
+        let _cat_lock = {
+            if self.has_cat {
+                Some(polars_core::StringCacheHolder::hold())
+            } else {
+                None
+            }
+        };
+
         let predicate = self.predicate.take();
         let n_threads = self.n_threads.unwrap_or_else(|| POOL.current_num_threads());
 
