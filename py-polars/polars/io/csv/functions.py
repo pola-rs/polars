@@ -70,7 +70,7 @@ def read_csv(
         following format: `column_x`, with `x` being an
         enumeration over every column in the dataset starting at 1.
     columns
-        Columns to select. Accepts a list of column indices (starting
+        Columns in csv to select. Accepts a list of column indices (starting
         at zero) or a list of column names.
     new_columns
         Rename columns right after parsing the CSV file. If the given
@@ -94,7 +94,7 @@ def read_csv(
         - `dict`: a dictionary that maps column names to data types.
         - `list`: the data types are applied to the columns in the order they appear
         in the csv or given `columns` parameter. Elements longer than the number of
-        given `columns` will be ignored.
+        given `columns` or csv columns will be ignored.
 
         Should not be used together with `schema`.
     schema

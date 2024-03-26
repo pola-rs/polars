@@ -202,10 +202,21 @@ where
         self
     }
 
-    /// Set the CSV file's schema. This only accepts datatypes that are implemented
+    /// Set the CSV file's schema for reader.
+    /// This only accepts datatypes that are implemented
     /// in the csv parser and expects a complete Schema.
     ///
-    /// It is recommended to use [with_dtypes](Self::with_dtypes) instead.
+    /// This means that polars doesn't do schema inference.
+    /// This argument expects the complete schema, whereas
+    /// [`with_dtypes_slice`](CsvReader::with_dtypes_slice)
+    /// or [`with_dtypes_slice`](CsvReader::with_dtypes_slice)
+    /// can be used to partially overwrite a schema.
+    ///
+    /// Incompactible with [`with_dtypes`](CsvReader::with_dtypes)
+    /// or [`with_dtypes_slice`](CsvReader::with_dtypes_slice).
+    /// If `Some` provided, it will overwrite
+    /// set [`with_dtypes`](CsvReader::with_dtypes)
+    /// or [`with_dtypes_slice`](CsvReader::with_dtypes_slice).
     pub fn with_schema(mut self, schema: Option<SchemaRef>) -> Self {
         if let Some(schema) = schema {
             self.schema_options = ReaderSchemaOptions::Enforce(schema);
@@ -273,8 +284,11 @@ where
         self
     }
 
-    /// Overwrite the schema with the dtypes in this given Schema. The given schema may be a subset
-    /// of the total schema.
+    /// Overwrite the inferred schema with the dtypes in the order they
+    /// appear in the csv or given `columns` parameter.
+    ///
+    /// Incompactible with [`with_dtypes_slice`](CsvReader::with_dtypes_slice) or [`with_schema`](CsvReader::with_schema).
+    /// If `Some` provided, it will overwrite set [`with_dtypes_slice`](CsvReader::with_dtypes_slice) or [`with_schema`](CsvReader::with_schema).
     pub fn with_dtypes(mut self, schema: Option<SchemaRef>) -> Self {
         if let Some(schema) = schema {
             self.schema_options =
@@ -283,8 +297,13 @@ where
         self
     }
 
-    /// Overwrite the dtypes in the schema in the order of the slice that's given.
+    /// Overwrite the dtypes in inferred schema in the order of the slice that's given.
     /// This is useful if you don't know the column names beforehand
+    ///
+    /// Elements longer than the number of given `columns` or csv columns will be ignored.
+    ///
+    /// Incompactible with [`with_dtypes`] or [`with_schema`](CsvReader::with_schema).
+    /// If `Some` provided, it will overwrite set [`with_dtypes`] or [`with_schema`](CsvReader::with_schema).
     pub fn with_dtypes_slice(mut self, dtypes: Option<&'a [DataType]>) -> Self {
         if let Some(dtypes_slice) = dtypes {
             self.schema_options = ReaderSchemaOptions::Infer(Some(
@@ -306,15 +325,25 @@ where
     }
 
     /// Set the reader's column projection. This counts from 0, meaning that
-    /// `vec![0, 4]` would select the 1st and 5th column.
+    /// `vec![0, 4]` would select the 1st and 5th column in csv.
+    ///
+    /// Incompactible with [`with_columns`](CsvReader::with_columns).
+    /// If `Some` provided, it will overwrite set [`with_columns`](CsvReader::with_columns).
     pub fn with_projection(mut self, projection: Option<Vec<usize>>) -> Self {
-        self.projection = projection.map(ColumnProjectionOptions::from).or(self.projection);
+        self.projection = projection
+            .map(ColumnProjectionOptions::from)
+            .or(self.projection);
         self
     }
 
-    /// Columns to select/ project
+    /// Column namess to select/ project
+    ///
+    /// Incompactible with [`with_projection`](CsvReader::with_projection).
+    /// If `Some` provided, it will overwrite set [`with_projection`](CsvReader::with_projection).
     pub fn with_columns(mut self, columns: Option<Vec<String>>) -> Self {
-        self.projection = columns.map(ColumnProjectionOptions::from).or(self.projection);
+        self.projection = columns
+            .map(ColumnProjectionOptions::from)
+            .or(self.projection);
         self
     }
 
