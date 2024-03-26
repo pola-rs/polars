@@ -100,7 +100,7 @@ mod identifier_impl {
 use identifier_impl::*;
 
 /// Identifier maps to Expr Node and count.
-type SubPlanCount = PlHashMap<Identifier, (Node, usize)>;
+type SubPlanCount = PlHashMap<Identifier, (Node, u32)>;
 /// (post_visit_idx, identifier);
 type IdentifierArray = Vec<(usize, Identifier)>;
 
@@ -193,7 +193,7 @@ impl Visitor for LpIdentifierVisitor<'_> {
     }
 }
 
-pub(super) type CacheId2Caches = PlHashMap<usize, (usize, Vec<Node>)>;
+pub(super) type CacheId2Caches = PlHashMap<usize, (u32, Vec<Node>)>;
 
 struct CommonSubPlanRewriter<'a> {
     sp_count: &'a SubPlanCount,
@@ -323,7 +323,7 @@ pub(crate) fn elim_cmn_subplans(
 ///
 pub(crate) fn prune_unused_caches(lp_arena: &mut Arena<ALogicalPlan>, cid2c: CacheId2Caches) {
     for (count, nodes) in cid2c.values() {
-        if *count == nodes.len() {
+        if *count == nodes.len() as u32 {
             continue;
         }
 

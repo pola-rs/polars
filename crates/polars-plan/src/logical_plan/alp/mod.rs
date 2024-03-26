@@ -68,7 +68,7 @@ pub enum ALogicalPlan {
         // Unique ID.
         id: usize,
         /// How many hits the cache must be saved in memory.
-        cache_hits: usize,
+        cache_hits: u32,
     },
     Aggregate {
         input: Node,

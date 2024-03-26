@@ -1,4 +1,5 @@
 use super::*;
+use crate::constants::UNLIMITED_CACHE;
 
 // ensure the file count counters are decremented with the cache counts
 pub(crate) fn decrement_file_counters_by_cache_hits(
@@ -24,7 +25,7 @@ pub(crate) fn decrement_file_counters_by_cache_hits(
             cache_hits, input, ..
         } => {
             // we use usize::MAX for an infinite cache.
-            let new_count = if *cache_hits != usize::MAX {
+            let new_count = if *cache_hits != UNLIMITED_CACHE {
                 acc_count + *cache_hits as FileCount
             } else {
                 acc_count
