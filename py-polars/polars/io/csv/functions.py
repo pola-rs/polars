@@ -88,15 +88,20 @@ def read_csv(
         Start reading after `skip_rows` lines.
     dtypes
         Overwrite dtypes for specific columns during schema inference.
+
         This can be
+
         - `dict`: a dictionary that maps column names to data types.
         - `list`: the data types are applied to the columns in the order they appear
         in the csv or given `columns` parameter. Elements longer than the number of
         given `columns` will be ignored.
+
+        Should not be used together with `schema`.
     schema
         Provide the schema. This means that polars doesn't do schema inference.
         This argument expects the complete schema, whereas `dtypes` can be used
         to partially overwrite a schema.
+        Should not be used together with `dtypes`.
     null_values
         Values to interpret as null values. You can provide a:
 
@@ -303,6 +308,10 @@ def read_csv(
         if new_columns:
             return _update_columns(df, new_columns)
         return df
+
+    if schema and dtypes:
+        msg = "cannot provide both 'schema' and 'dtypes'"
+        raise ValueError(msg)
 
     if columns and dtypes and isinstance(dtypes, list):
         if len(columns) < len(dtypes):
