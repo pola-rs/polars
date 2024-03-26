@@ -26,7 +26,7 @@ impl CsvExec {
         CsvReader::from_path(&self.path)
             .unwrap()
             .has_header(self.options.has_header)
-            .with_dtypes(Some(self.schema.clone()))
+            .with_schema(Some(self.schema.clone()))
             .with_separator(self.options.separator)
             .with_ignore_errors(self.options.ignore_errors)
             .with_skip_rows(self.options.skip_rows)
