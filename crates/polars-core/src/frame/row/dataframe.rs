@@ -134,7 +134,7 @@ impl DataFrame {
     /// Create a new [`DataFrame`] from rows. This should only be used when you have row wise data,
     /// as this is a lot slower than creating the [`Series`] in a columnar fashion
     pub fn from_rows(rows: &[Row]) -> PolarsResult<Self> {
-        let schema = rows_to_schema_first_non_null(rows, Some(50));
+        let schema = rows_to_schema_first_non_null(rows, Some(50))?;
         let has_nulls = schema
             .iter_dtypes()
             .any(|dtype| matches!(dtype, DataType::Null));

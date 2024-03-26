@@ -107,7 +107,12 @@ pub fn rows_to_schema_supertypes(
 }
 
 /// Infer schema from rows and set the first no null type as column data type.
-pub fn rows_to_schema_first_non_null(rows: &[Row], infer_schema_length: Option<usize>) -> Schema {
+pub fn rows_to_schema_first_non_null(
+    rows: &[Row],
+    infer_schema_length: Option<usize>,
+) -> PolarsResult<Schema> {
+    polars_ensure!(!rows.is_empty(), NoData: "no rows, cannot infer schema");
+
     let max_infer = infer_schema_length.unwrap_or(rows.len());
     let mut schema: Schema = (&rows[0]).into();
 
@@ -143,7 +148,7 @@ pub fn rows_to_schema_first_non_null(rows: &[Row], infer_schema_length: Option<u
             }
         }
     }
-    schema
+    Ok(schema)
 }
 
 impl<'a> From<&AnyValue<'a>> for Field {
