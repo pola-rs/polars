@@ -173,3 +173,50 @@ pub fn is_cloud_url<P: AsRef<Path>>(p: P) -> bool {
         _ => false,
     }
 }
+
+#[cfg(test)]
+mod tests2 {
+    use polars_core::assert_df_eq;
+
+    use super::*;
+
+    fn project(schema: &ArrowSchema, column_names: &[String]) -> (ArrowSchema, Vec<usize>){
+        let column_indices = utils::columns_to_projection(column_names, schema).unwrap();
+        let schema = utils::apply_projection(schema, &column_indices);
+        (schema, column_indices)
+    }
+
+    #[test]
+    fn finish_reader_works_with_n_rows_and_predicate() {
+        let mut reader = std::io::BufReader::new(
+            std::fs::File::open("../../examples/datasets/foods1.ipc").unwrap(),
+        );
+        let metadata = arrow::io::ipc::read::read_file_metadata(&mut reader).unwrap();
+        let (schema, projection) = project(metadata.schema.as_ref(), &["calories".to_string()]);
+        let ipc_reader = arrow::io::ipc::read::FileReader::new(&mut reader, metadata, Some(projection), None);
+
+        // NOTE: Implementing the [`PhysicalIoExpr`] trait here because I do not
+        // have access to the `polars_lazy` crate. There may be a better way to
+        // accomplish this.
+        struct CaloriesLt100;
+
+        impl PhysicalIoExpr for CaloriesLt100 {
+            fn evaluate_io(&self, df: &DataFrame) -> PolarsResult<Series> {
+                df.column("calories")
+                    .map(|x| x.lt(100).unwrap().into_series())
+            }
+        }
+
+        let df = finish_reader(
+            ipc_reader,
+            false,
+            Some(10),
+            Some(Arc::new(CaloriesLt100)),
+            &schema,
+            None,
+        )
+        .unwrap();
+
+        assert_df_eq!(df, df!("calories" => [45i64, 60, 20, 30, 50]).unwrap());
+    }
+}
