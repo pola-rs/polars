@@ -182,10 +182,10 @@ impl Hash for HashableEqLP<'_> {
             ALogicalPlan::Cache {
                 input: _,
                 id,
-                count,
+                cache_hits,
             } => {
                 id.hash(state);
-                count.hash(state);
+                cache_hits.hash(state);
             },
             ALogicalPlan::Invalid => unreachable!(),
         }

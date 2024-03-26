@@ -428,7 +428,7 @@ impl LogicalPlanBuilder {
         LogicalPlan::Cache {
             input,
             id,
-            count: usize::MAX,
+            cache_hits: usize::MAX,
         }
         .into()
     }
