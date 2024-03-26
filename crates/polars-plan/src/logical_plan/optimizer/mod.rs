@@ -33,7 +33,21 @@ mod type_coercion;
 
 use delay_rechunk::DelayRechunk;
 use drop_nulls::ReplaceDropNulls;
+#[cfg(any(
+    feature = "ipc",
+    feature = "parquet",
+    feature = "csv",
+    feature = "cse",
+    feature = "json"
+))]
 use file_caching::cache_shared_files;
+#[cfg(any(
+    feature = "ipc",
+    feature = "parquet",
+    feature = "csv",
+    feature = "cse",
+    feature = "json"
+))]
 pub use file_caching::collect_fingerprints;
 use polars_core::config::verbose;
 use polars_io::predicates::PhysicalIoExpr;
