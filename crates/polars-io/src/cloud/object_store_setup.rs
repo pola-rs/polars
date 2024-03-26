@@ -50,7 +50,7 @@ pub async fn build_object_store(
     let cloud_location = CloudLocation::from_url(&parsed)?;
 
     let key = url_to_key(&parsed);
-    let mut allow_cache = true;
+    let mut allow_cache = false;
 
     {
         let cache = OBJECT_STORE_CACHE.read().await;
