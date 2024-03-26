@@ -84,7 +84,7 @@ pub fn collect_fingerprints(
 /// Find the union between the columns per unique IO operation.
 /// A unique IO operation is the file + the predicates pushed down to that file
 #[allow(clippy::type_complexity)]
-pub fn find_column_union_and_fingerprints(
+fn find_column_union_and_fingerprints(
     root: Node,
     // The hashmap maps files to a hashset over column names.
     // we also keep track of how often a needs file needs to be read so we can cache until last read
@@ -126,7 +126,7 @@ pub fn find_column_union_and_fingerprints(
 /// Aggregate all the columns used in csv scans and make sure that all columns are scanned in one go.
 /// Due to self joins there can be multiple Scans of the same file in a LP. We already cache the scans
 /// in the PhysicalPlan, but we need to make sure that the first scan has all the columns needed.
-pub struct FileCacher {
+struct FileCacher {
     file_count_and_column_union: PlHashMap<FileFingerPrint, (FileCount, Arc<Vec<String>>)>,
 }
 
@@ -193,7 +193,7 @@ impl FileCacher {
 
     // This will ensure that all read files have the amount of columns needed for the cache.
     // In case of CSE, it will ensure that the union projected nodes are available.
-    pub(crate) fn assign_unions(
+    fn assign_unions(
         &mut self,
         root: Node,
         lp_arena: &mut Arena<ALogicalPlan>,
@@ -267,4 +267,24 @@ impl FileCacher {
         }
         scratch.clear();
     }
+}
+
+pub(super) fn cache_shared_files(
+    lp_top: Node,
+    lp_arena: &mut Arena<ALogicalPlan>,
+    expr_arena: &mut Arena<AExpr>,
+    scratch: &mut Vec<Node>,
+) {
+    // scan the LP to aggregate all the column used in scans
+    // these columns will be added to the state of the AggScanProjection rule
+    let mut file_predicate_to_columns_and_count = PlHashMap::new();
+    find_column_union_and_fingerprints(
+        lp_top,
+        &mut file_predicate_to_columns_and_count,
+        lp_arena,
+        expr_arena,
+    );
+
+    let mut file_cacher = FileCacher::new(file_predicate_to_columns_and_count);
+    file_cacher.assign_unions(lp_top, lp_arena, expr_arena, scratch);
 }

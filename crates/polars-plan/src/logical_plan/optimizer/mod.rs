@@ -33,6 +33,8 @@ mod type_coercion;
 
 use delay_rechunk::DelayRechunk;
 use drop_nulls::ReplaceDropNulls;
+use file_caching::cache_shared_files;
+pub use file_caching::collect_fingerprints;
 use polars_core::config::verbose;
 use polars_io::predicates::PhysicalIoExpr;
 pub use predicate_pushdown::PredicatePushDown;
@@ -98,11 +100,11 @@ pub fn optimize(
     #[allow(unused_variables)]
     let agg_scan_projection = opt_state.file_caching && !streaming && !eager;
 
-    // gradually fill the rules passed to the optimizer
+    // Gradually fill the rules passed to the optimizer
     let opt = StackOptimizer {};
     let mut rules: Vec<Box<dyn OptimizationRule>> = Vec::with_capacity(8);
 
-    // during debug we check if the optimizations have not modified the final schema
+    // During debug we check if the optimizations have not modified the final schema.
     #[cfg(debug_assertions)]
     let prev_schema = logical_plan.schema()?.into_owned();
 
@@ -114,7 +116,6 @@ pub fn optimize(
         members.collect(lp_top, lp_arena, expr_arena)
     }
 
-    // we do simplification
     if simplify_expr {
         rules.push(Box::new(SimplifyExprRule {}));
         #[cfg(feature = "fused")]
@@ -140,7 +141,7 @@ pub fn optimize(
     #[cfg(not(feature = "cse"))]
     let cse_plan_changed = false;
 
-    // should be run before predicate pushdown
+    // Should be run before predicate pushdown.
     if projection_pushdown {
         let mut projection_pushdown_opt = ProjectionPushDown::new();
         let alp = lp_arena.take(lp_top);
@@ -160,7 +161,7 @@ pub fn optimize(
         lp_arena.replace(lp_top, alp);
     }
 
-    // make sure its before slice pushdown.
+    // Make sure its before slice pushdown.
     if fast_projection {
         rules.push(Box::new(SimpleProjectionAndCollapse::new(eager)));
     }
@@ -176,14 +177,14 @@ pub fn optimize(
 
         lp_arena.replace(lp_top, alp);
 
-        // expressions use the stack optimizer
+        // Expressions use the stack optimizer.
         rules.push(Box::new(slice_pushdown_opt));
     }
     if type_coercion {
         rules.push(Box::new(TypeCoercionRule {}))
     }
-    // this optimization removes branches, so we must do it when type coercion
-    // is completed
+    // This optimization removes branches, so we must do it when type coercion
+    // is completed.
     if simplify_expr {
         rules.push(Box::new(SimplifyBooleanRule {}));
     }
@@ -209,29 +210,19 @@ pub fn optimize(
         .node()
     }
 
-    // make sure that we do that once slice pushdown
-    // and predicate pushdown are done. At that moment
-    // the file fingerprints are finished.
+    // Make sure that we do that once slice pushdowd and predicate pushdown are done.
+    // At that moment the file fingerprints are finished.
     #[cfg(any(feature = "cse", feature = "parquet", feature = "ipc", feature = "csv"))]
     if agg_scan_projection && !cse_plan_changed {
-        // we do this so that expressions are simplified created by the pushdown optimizations
-        // we must clean up the predicates, because the agg_scan_projection
+        // We do this so that expressions, created by the pushdown optimizations, are simplified .
+        // We must clean up the predicates, because the agg_scan_projection
         // uses them in the hashtable to determine duplicates.
         let simplify_bools = &mut [Box::new(SimplifyBooleanRule {}) as Box<dyn OptimizationRule>];
         lp_top = opt.optimize_loop(simplify_bools, expr_arena, lp_arena, lp_top)?;
 
-        // scan the LP to aggregate all the column used in scans
-        // these columns will be added to the state of the AggScanProjection rule
-        let mut file_predicate_to_columns_and_count = PlHashMap::with_capacity(32);
-        find_column_union_and_fingerprints(
-            lp_top,
-            &mut file_predicate_to_columns_and_count,
-            lp_arena,
-            expr_arena,
-        );
-
-        let mut file_cacher = FileCacher::new(file_predicate_to_columns_and_count);
-        file_cacher.assign_unions(lp_top, lp_arena, expr_arena, scratch);
+        // Scan the LP to aggregate all the column used in scans.
+        // These columns will be added to the state of the AggScanProjection rule.
+        cache_shared_files(lp_top, lp_arena, expr_arena, scratch);
     }
 
     #[cfg(feature = "cse")]
