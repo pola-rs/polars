@@ -1,4 +1,5 @@
 use num_traits::{ToPrimitive, Zero};
+use polars_compute::float_sum;
 use polars_core::prelude::*;
 use polars_core::utils::align_chunks_binary;
 

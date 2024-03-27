@@ -8,6 +8,7 @@ use arrow::compute;
 use arrow::types::simd::Simd;
 use arrow::types::NativeType;
 use num_traits::{Float, One, ToPrimitive, Zero};
+use polars_compute::float_sum;
 use polars_compute::min_max::MinMaxKernel;
 use polars_utils::min_max::MinMax;
 pub use quantile::*;
@@ -21,8 +22,6 @@ use crate::datatypes::{BooleanChunked, PolarsNumericType};
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 use crate::series::IsSorted;
-
-pub mod float_sum;
 
 /// Aggregations that return [`Series`] of unit length. Those can be used in broadcasting operations.
 pub trait ChunkAggSeries {
