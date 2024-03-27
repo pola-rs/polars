@@ -193,60 +193,73 @@ where
     }
 
     fn mean(&self) -> Option<f64> {
-        if self.null_count() == self.len() {
-            return None;
+        fn non_simd_mean<T>(ca: &ChunkedArray<T>) -> Option<f64>
+        where
+            T: PolarsNumericType,
+            T::Native: ToPrimitive,
+        {
+            let null_count = ca.null_count();
+            let len = ca.len();
+            if null_count == len {
+                return None;
+            }
+
+            let mut acc = 0.0;
+            let len = (len - null_count) as f64;
+            for arr in ca.downcast_iter() {
+                if arr.null_count() > 0 {
+                    for v in arr.into_iter().flatten() {
+                        // SAFETY:
+                        // all these types can be coerced to f64
+                        unsafe {
+                            let val = v.to_f64().unwrap_unchecked();
+                            acc += val
+                        }
+                    }
+                } else {
+                    for v in arr.values().as_slice() {
+                        // SAFETY:
+                        // all these types can be coerced to f64
+                        unsafe {
+                            let val = v.to_f64().unwrap_unchecked();
+                            acc += val
+                        }
+                    }
+                }
+            }
+            Some(acc / len)
         }
+
         match T::get_dtype() {
             DataType::Float64 => {
-                let len = (self.len() - self.null_count()) as f64;
+                let null_count = self.null_count();
+                let len = self.len();
+                if null_count == len {
+                    return None;
+                }
+                let len = (len - null_count) as f64;
                 self.sum().map(|v| v.to_f64().unwrap() / len)
             },
+            #[cfg(all(feature = "dtype-decimal", feature = "simd"))]
+            DataType::Decimal(_, _) => non_simd_mean(self),
+            #[cfg(feature = "simd")]
             _ => {
                 let null_count = self.null_count();
                 let len = self.len();
-                match null_count {
-                    nc if nc == len => None,
-                    #[cfg(feature = "simd")]
-                    _ => {
-                        // TODO: investigate if we need a stable mean
-                        // because of SIMD memory locations and associativity.
-                        // similar to sum
-                        let mut sum = 0.0;
-                        for arr in self.downcast_iter() {
-                            sum += arrow::legacy::kernels::agg_mean::sum_as_f64(arr);
-                        }
-                        Some(sum / (len - null_count) as f64)
-                    },
-                    #[cfg(not(feature = "simd"))]
-                    _ => {
-                        let mut acc = 0.0;
-                        let len = (len - null_count) as f64;
-
-                        for arr in self.downcast_iter() {
-                            if arr.null_count() > 0 {
-                                for v in arr.into_iter().flatten() {
-                                    // SAFETY:
-                                    // all these types can be coerced to f64
-                                    unsafe {
-                                        let val = v.to_f64().unwrap_unchecked();
-                                        acc += val
-                                    }
-                                }
-                            } else {
-                                for v in arr.values().as_slice() {
-                                    // SAFETY:
-                                    // all these types can be coerced to f64
-                                    unsafe {
-                                        let val = v.to_f64().unwrap_unchecked();
-                                        acc += val
-                                    }
-                                }
-                            }
-                        }
-                        Some(acc / len)
-                    },
+                if null_count == len {
+                    return None;
                 }
+                // TODO: investigate if we need a stable mean
+                // because of SIMD memory locations and associativity.
+                // similar to sum
+                let mut sum = 0.0;
+                for arr in self.downcast_iter() {
+                    sum += arrow::legacy::kernels::agg_mean::sum_as_f64(arr);
+                }
+                Some(sum / (len - null_count) as f64)
             },
+            #[cfg(not(feature = "simd"))]
+            _ => non_simd_mean(self),
         }
     }
 }

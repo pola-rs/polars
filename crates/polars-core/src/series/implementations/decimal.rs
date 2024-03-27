@@ -16,6 +16,14 @@ impl SeriesWrap<DecimalChunked> {
             .into_series()
     }
 
+    fn scale_factor(&self) -> u128 {
+        10u128.pow(self.0.scale() as u32)
+    }
+
+    fn apply_scale(&self, s: Series) -> PolarsResult<Series> {
+        s.divide(&Series::new("", &[self.scale_factor() as f64]))
+    }
+
     fn agg_helper<F: Fn(&Int128Chunked) -> Series>(&self, f: F) -> Series {
         let agg_s = f(&self.0);
         match agg_s.dtype() {
@@ -318,6 +326,24 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
             Int128Chunked::from_slice_options(self.name(), &[max])
         }))
     }
+
+    fn mean(&self) -> Option<f64> {
+        self.0.mean().map(|v| v / self.scale_factor() as f64)
+    }
+    fn median_as_series(&self) -> PolarsResult<Series> {
+        self.apply_scale(self.0.median_as_series())
+    }
+    fn std_as_series(&self, ddof: u8) -> PolarsResult<Series> {
+        self.apply_scale(self.0.std_as_series(ddof))
+    }
+    fn quantile_as_series(
+        &self,
+        quantile: f64,
+        interpol: QuantileInterpolOptions,
+    ) -> PolarsResult<Series> {
+        self.apply_scale(self.0.quantile_as_series(quantile, interpol)?)
+    }
+
     fn as_any(&self) -> &dyn Any {
         &self.0
     }
