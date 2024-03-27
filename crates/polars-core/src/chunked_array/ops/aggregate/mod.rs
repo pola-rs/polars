@@ -191,10 +191,7 @@ where
         }
 
         let len = (self.len() - self.null_count()) as f64;
-        let sum: f64 = self
-            .downcast_iter()
-            .map(|arr| float_sum::sum_arr_as_f64(arr))
-            .sum();
+        let sum: f64 = self.downcast_iter().map(float_sum::sum_arr_as_f64).sum();
         Some(sum / len)
     }
 }
