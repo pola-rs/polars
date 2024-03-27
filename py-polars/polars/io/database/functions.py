@@ -389,7 +389,7 @@ def read_database_uri(
     ...     engine="adbc",
     ... )  # doctest: +SKIP
     """
-    from polars.io.database._utilities import _read_sql_adbc, _read_sql_connectorx
+    from polars.io.database._utils import _read_sql_adbc, _read_sql_connectorx
 
     if not isinstance(uri, str):
         msg = f"expected connection to be a URI string; found {type(uri).__name__!r}"

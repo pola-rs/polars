@@ -25,7 +25,7 @@ from polars.io.database._inference import (
     _infer_dtype_from_database_typename,
     _integer_dtype_from_nbits,
 )
-from polars.io.database._utilities import _run_async
+from polars.io.database._utils import _run_async
 
 if TYPE_CHECKING:
     import sys

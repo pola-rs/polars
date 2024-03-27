@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Iterable
 
-from polars.io.database._utilities import _run_async
+from polars.io.database._utils import _run_async
 
 if TYPE_CHECKING:
     import sys
