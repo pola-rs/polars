@@ -157,17 +157,14 @@ impl Series {
     }
 
     pub fn clear(&self) -> Series {
-        match self.dtype() {
-            #[cfg(feature = "object")]
-            DataType::Object(_, _) => {
-                if self.is_empty() {
-                    self.clone()
-                } else {
-                    // SAFETY: we can always take zero elements
-                    unsafe { self.take_slice_unchecked(&[]).clone() }
-                }
-            },
-            dt => Series::new_empty(self.name(), dt),
+        if self.is_empty() {
+            self.clone()
+        } else {
+            match self.dtype() {
+                #[cfg(feature = "object")]
+                DataType::Object(_, _) => self.take_slice(&[]).unwrap(),
+                dt => Series::new_empty(self.name(), dt),
+            }
         }
     }
 
