@@ -137,7 +137,7 @@ pub fn optimize(
     }
 
     #[cfg(feature = "cse")]
-    let cse_plan_changed =
+    let _cse_plan_changed =
         if comm_subplan_elim && members.has_joins_or_unions && members.has_duplicate_scans() {
             if verbose {
                 eprintln!("found multiple sources; run comm_subplan_elim")
@@ -152,6 +152,8 @@ pub fn optimize(
         } else {
             false
         };
+    #[cfg(not(feature = "cse"))]
+    let _cse_plan_changed = false;
 
     // Should be run before predicate pushdown.
     if projection_pushdown {
@@ -225,7 +227,7 @@ pub fn optimize(
     // Make sure that we do that once slice pushdowd and predicate pushdown are done.
     // At that moment the file fingerprints are finished.
     #[cfg(any(feature = "cse", feature = "parquet", feature = "ipc", feature = "csv"))]
-    if agg_scan_projection && !cse_plan_changed {
+    if agg_scan_projection && !_cse_plan_changed {
         // We do this so that expressions, created by the pushdown optimizations, are simplified .
         // We must clean up the predicates, because the agg_scan_projection
         // uses them in the hashtable to determine duplicates.
@@ -238,7 +240,7 @@ pub fn optimize(
     }
 
     #[cfg(feature = "cse")]
-    if cse_plan_changed {
+    if _cse_plan_changed {
         // this must run after cse
         cse::decrement_file_counters_by_cache_hits(lp_top, lp_arena, expr_arena, 0, scratch);
     }
