@@ -3475,7 +3475,7 @@ class DataFrame:
                 )
                 raise ModuleNotFoundError(msg) from exc
 
-            from polars.io.database._uri import _open_adbc_connection
+            from polars.io.database._utils import _open_adbc_connection
 
             if if_table_exists == "fail":
                 # if the table exists, 'create' will raise an error,
