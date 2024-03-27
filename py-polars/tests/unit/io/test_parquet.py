@@ -787,6 +787,7 @@ def test_parquet_array_statistics() -> None:
     ).collect().to_dict(as_series=False) == {"a": [[4, 5, 6], [7, 8, 9]], "b": [2, 3]}
 
 
+@pytest.mark.slow()
 @pytest.mark.write_disk()
 def test_read_parquet_only_loads_selected_columns_15098(
     memory_usage_without_pyarrow: MemoryUsage, tmp_path: Path
