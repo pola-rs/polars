@@ -6,28 +6,24 @@ fn get_upper_projections(
     parent: Node,
     lp_arena: &Arena<ALogicalPlan>,
     expr_arena: &Arena<AExpr>,
-) -> Option<Vec<Arc<str>>> {
+    names_scratch: &mut Vec<ColumnName>,
+) {
     let parent = lp_arena.get(parent);
 
     use ALogicalPlan::*;
     // During projection pushdown all accumulated.
     match parent {
         Projection { expr, .. } => {
-            let mut out = Vec::with_capacity(expr.len());
             for e in expr {
-                out.extend(aexpr_to_leaf_names_iter(e.node(), expr_arena));
+                names_scratch.extend(aexpr_to_leaf_names_iter(e.node(), expr_arena));
             }
-            Some(out)
         },
         SimpleProjection { columns, .. } => {
-            let out = columns
-                .iter_names()
-                .map(|s| ColumnName::from(s.as_str()))
-                .collect();
-            Some(out)
+            let iter = columns.iter_names().map(|s| ColumnName::from(s.as_str()));
+            names_scratch.extend(iter);
         },
         // other
-        _ => None,
+        _ => {},
     }
 }
 
@@ -41,23 +37,40 @@ pub(super) fn set_cache_states(
     has_caches: bool,
 ) -> PolarsResult<()> {
     let mut stack = Vec::with_capacity(4);
+    let mut names_scratch = vec![];
 
     scratch.clear();
     stack.clear();
 
-    // Per cache id holds:
-    // - a Vec: with children of the node
-    // - a Set: with the union of projected column names.
-    // - a Set: with the union of hstack column names.
+    #[derive(Default)]
+    struct Value {
+        // All the children of the cache per cache-id.
+        children: Vec<Node>,
+        // Union over projected names.
+        names_union: PlHashSet<ColumnName>,
+    }
     let mut cache_schema_and_children = BTreeMap::new();
 
-    stack.push((root, None, None, None));
+    // Stack frame
+    #[derive(Default, Copy, Clone)]
+    struct Frame {
+        current: Node,
+        cache_id: Option<usize>,
+        parent: [Option<Node>; 2],
+        previous_cache: Option<usize>,
+    }
+    let init = Frame {
+        current: root,
+        ..Default::default()
+    };
+
+    stack.push(init);
 
     // # First traversal.
     // Collect the union of columns per cache id.
     // And find the cache parents.
-    while let Some((current_node, mut cache_id, mut parent, mut previous_cache)) = stack.pop() {
-        let lp = lp_arena.get(current_node);
+    while let Some(mut frame) = stack.pop() {
+        let lp = lp_arena.get(frame.current);
         lp.copy_inputs(scratch);
 
         use ALogicalPlan::*;
@@ -65,7 +78,7 @@ pub(super) fn set_cache_states(
             // don't allow parallelism as caches need each others work
             // also self-referencing plans can deadlock on the files they lock
             Join { options, .. } if has_caches && options.allow_parallel => {
-                if let Join { options, .. } = lp_arena.get_mut(current_node) {
+                if let Join { options, .. } = lp_arena.get_mut(frame.current) {
                     let options = Arc::make_mut(options);
                     options.allow_parallel = false;
                 }
@@ -73,49 +86,66 @@ pub(super) fn set_cache_states(
             // don't allow parallelism as caches need each others work
             // also self-referencing plans can deadlock on the files they lock
             Union { options, .. } if has_caches && options.parallel => {
-                if let Union { options, .. } = lp_arena.get_mut(current_node) {
+                if let Union { options, .. } = lp_arena.get_mut(frame.current) {
                     options.parallel = false;
                 }
             },
             Cache { input, id, .. } => {
-                if let Some(cache_id) = cache_id {
-                    previous_cache = Some(cache_id)
+                if let Some(cache_id) = frame.cache_id {
+                    frame.previous_cache = Some(cache_id)
                 }
-                if let Some(parent_node) = parent {
-                    // projection pushdown has already run and blocked on cache nodes
+                if frame.parent[0].is_some() {
+                    // Projection pushdown has already run and blocked on cache nodes
                     // the pushed down columns are projected just above this cache
                     // if there were no pushed down column, we just take the current
                     // nodes schema
                     // we never want to naively take parents, as a join or aggregate for instance
                     // change the schema
 
-                    let (children, union_names) = cache_schema_and_children
+                    let v = cache_schema_and_children
                         .entry(*id)
-                        .or_insert_with(|| (Vec::new(), PlHashSet::new()));
-                    children.push(*input);
+                        .or_insert_with(Value::default);
+                    v.children.push(*input);
 
-                    if let Some(names) = get_upper_projections(parent_node, lp_arena, expr_arena) {
-                        union_names.extend(names);
+                    let mut found_columns = false;
+                    for &parent_node in &frame.parent {
+                        if let Some(parent_node) = parent_node {
+                            get_upper_projections(
+                                parent_node,
+                                lp_arena,
+                                expr_arena,
+                                &mut names_scratch,
+                            );
+                            if !names_scratch.is_empty() {
+                                found_columns = true;
+                                v.names_union.extend(names_scratch.drain(..));
+                            }
+                        }
                     }
+
                     // There was no explicit projection and we must take
                     // all columns
-                    else {
+                    if !found_columns {
                         let schema = lp.schema(lp_arena);
-                        union_names.extend(
+                        v.names_union.extend(
                             schema
                                 .iter_names()
                                 .map(|name| ColumnName::from(name.as_str())),
                         );
                     }
                 }
-                cache_id = Some(*id);
+                frame.cache_id = Some(*id);
             },
             _ => {},
         }
 
-        parent = Some(current_node);
+        // Shift parents.
+        frame.parent[1] = frame.parent[0];
+        frame.parent[0] = Some(frame.current);
         for n in scratch.iter() {
-            stack.push((*n, cache_id, parent, previous_cache))
+            let mut new_frame = frame;
+            new_frame.current = *n;
+            stack.push(new_frame);
         }
         scratch.clear();
     }
@@ -128,10 +158,10 @@ pub(super) fn set_cache_states(
     if !cache_schema_and_children.is_empty() {
         let mut proj_pd = ProjectionPushDown::new();
         let pred_pd = PredicatePushDown::new(Default::default());
-        for (_cache_id, (children, columns)) in cache_schema_and_children {
-            if !columns.is_empty() {
-                for child in children {
-                    let columns = &columns;
+        for (_cache_id, v) in cache_schema_and_children {
+            if !v.names_union.is_empty() {
+                for child in v.children {
+                    let columns = &v.names_union;
                     let child_lp = lp_arena.take(child);
 
                     // Make sure we project in the order of the schema
