@@ -87,14 +87,12 @@ def read_csv(
     skip_rows
         Start reading after `skip_rows` lines.
     dtypes
-        Overwrite dtypes for specific columns during schema inference.
-
-        This can be
+        Overwrite dtypes for specific columns during schema inference. This can be
 
         - `dict`: a dictionary that maps column names to data types.
-        - `list`: the data types are applied to the columns in the order they appear
-        in the csv or given `columns` parameter. Elements longer than the number of
-        given `columns` or csv columns will be ignored.
+        - `list`: the data types are applied to the columns in the order they appear in
+            the csv or given `columns` parameter. Elements longer than the number of
+            given `columns` or csv columns will be ignored.
 
         Should not be used together with `schema`.
     schema

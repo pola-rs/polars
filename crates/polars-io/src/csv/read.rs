@@ -302,8 +302,8 @@ where
     ///
     /// Elements longer than the number of given `columns` or csv columns will be ignored.
     ///
-    /// Incompactible with [`with_dtypes`] or [`with_schema`](CsvReader::with_schema).
-    /// If `Some` provided, it will overwrite set [`with_dtypes`] or [`with_schema`](CsvReader::with_schema).
+    /// Incompactible with [`with_dtypes`](CsvReader::with_dtypes) or [`with_schema`](CsvReader::with_schema).
+    /// If `Some` provided, it will overwrite set [`with_dtypes`](CsvReader::with_dtypes) or [`with_schema`](CsvReader::with_schema).
     pub fn with_dtypes_slice(mut self, dtypes: Option<&'a [DataType]>) -> Self {
         if let Some(dtypes_slice) = dtypes {
             self.schema_options = ReaderSchemaOptions::Infer(Some(
