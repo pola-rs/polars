@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 pub use super::expr_dyn_fn::*;
 use crate::prelude::*;
 
-#[derive(PartialEq, Clone)]
+#[derive(PartialEq, Clone, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum AggExpr {
     Min {
@@ -220,22 +220,61 @@ impl Hash for Expr {
                 std::mem::discriminant(function).hash(state);
                 options.hash(state);
             },
+            Expr::Gather {
+                expr,
+                idx,
+                returns_scalar,
+            } => {
+                expr.hash(state);
+                idx.hash(state);
+                returns_scalar.hash(state);
+            },
             // already hashed by discriminant
             Expr::Wildcard | Expr::Len => {},
-            #[allow(unreachable_code)]
-            _ => {
-                // the panic checks if we hit this
-                #[cfg(debug_assertions)]
-                {
-                    todo!("IMPLEMENT")
-                }
-                // TODO! derive. This is only a temporary fix
-                // Because PartialEq will have a lot of `false`, e.g. on Function
-                // Types, this may lead to many file reads, as we use predicate comparison
-                // to check if we can cache a file
-                let s = format!("{self:?}");
-                s.hash(state)
+            Expr::SortBy {
+                expr,
+                by,
+                descending,
+            } => {
+                expr.hash(state);
+                by.hash(state);
+                descending.hash(state);
             },
+            Expr::Agg(input) => input.hash(state),
+            Expr::Explode(input) => input.hash(state),
+            Expr::Window {
+                function,
+                partition_by,
+                options,
+            } => {
+                function.hash(state);
+                partition_by.hash(state);
+                options.hash(state);
+            },
+            Expr::Slice {
+                input,
+                offset,
+                length,
+            } => {
+                input.hash(state);
+                offset.hash(state);
+                length.hash(state);
+            },
+            Expr::Exclude(input, excl) => {
+                input.hash(state);
+                excl.hash(state);
+            },
+            Expr::RenameAlias { function: _, expr } => expr.hash(state),
+            Expr::AnonymousFunction {
+                input,
+                function: _,
+                output_type: _,
+                options,
+            } => {
+                input.hash(state);
+                options.hash(state);
+            },
+            Expr::SubPlan(_, names) => names.hash(state),
         }
     }
 }
