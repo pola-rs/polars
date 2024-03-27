@@ -129,10 +129,11 @@ pub fn map_single(
     output_type: Option<Wrap<DataType>>,
     agg_list: bool,
     is_elementwise: bool,
+    returns_scalar: bool
 ) -> PyExpr {
     let output_type = output_type.map(|wrap| wrap.0);
 
-    let func = python_udf::PythonUdfExpression::new(lambda, output_type, is_elementwise);
+    let func = python_udf::PythonUdfExpression::new(lambda, output_type, is_elementwise, returns_scalar);
     pyexpr.inner.clone().map_python(func, agg_list).into()
 }
 
