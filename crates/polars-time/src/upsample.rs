@@ -122,15 +122,52 @@ fn upsample_impl(
     stable: bool,
 ) -> PolarsResult<DataFrame> {
     let s = source.column(index_column)?;
+    if offset.parsed_int || every.parsed_int {
+        polars_ensure!(
+            ((offset.parsed_int || offset.is_zero())
+             && (every.parsed_int || every.is_zero())),
+            ComputeError: "you cannot combine time durations like '2h' with integer durations like '3i'"
+        )
+    }
     ensure_sorted_arg(s, "upsample")?;
-    if matches!(s.dtype(), DataType::Date) {
+    let time_type = s.dtype();
+    if matches!(time_type, DataType::Date) {
         let mut df = source.clone();
-        df.try_apply(index_column, |s| {
+        df.apply(index_column, |s| {
             s.cast(&DataType::Datetime(TimeUnit::Milliseconds, None))
+                .unwrap()
         })
         .unwrap();
-        let mut out = upsample_impl(&df, by, index_column, every, offset, stable).unwrap();
-        out.try_apply(index_column, |s| s.cast(&DataType::Date))
+        let mut out = upsample_impl(&df, by, index_column, every, offset, stable)?;
+        out.apply(index_column, |s| s.cast(time_type).unwrap())
+            .unwrap();
+        Ok(out)
+    } else if matches!(
+        time_type,
+        DataType::UInt32 | DataType::UInt64 | DataType::Int32
+    ) {
+        let mut df = source.clone();
+
+        df.apply(index_column, |s| {
+            s.cast(&DataType::Int64)
+                .unwrap()
+                .cast(&DataType::Datetime(TimeUnit::Nanoseconds, None))
+                .unwrap()
+        })
+        .unwrap();
+        let mut out = upsample_impl(&df, by, index_column, every, offset, stable)?;
+        out.apply(index_column, |s| s.cast(time_type).unwrap())
+            .unwrap();
+        Ok(out)
+    } else if matches!(time_type, DataType::Int64) {
+        let mut df = source.clone();
+        df.apply(index_column, |s| {
+            s.cast(&DataType::Datetime(TimeUnit::Nanoseconds, None))
+                .unwrap()
+        })
+        .unwrap();
+        let mut out = upsample_impl(&df, by, index_column, every, offset, stable)?;
+        out.apply(index_column, |s| s.cast(time_type).unwrap())
             .unwrap();
         Ok(out)
     } else if by.is_empty() {
