@@ -1,5 +1,5 @@
 #[cfg(feature = "csv")]
-use std::io::{Read, Seek};
+use std::io::Read;
 
 use polars_core::prelude::*;
 #[cfg(feature = "parquet")]
@@ -299,8 +299,8 @@ impl LogicalPlanBuilder {
 
     #[allow(clippy::too_many_arguments)]
     #[cfg(feature = "csv")]
-    pub fn scan_csv<P: Into<std::path::PathBuf>>(
-        path: P,
+    pub fn scan_csv(
+        paths: Arc<[std::path::PathBuf]>,
         separator: u8,
         has_header: bool,
         ignore_errors: bool,
@@ -324,25 +324,25 @@ impl LogicalPlanBuilder {
         truncate_ragged_lines: bool,
         mut n_threads: Option<usize>,
     ) -> PolarsResult<Self> {
-        let path = path.into();
-        let mut file = polars_utils::open_file(&path)?;
+        for path in paths.iter() {
+            let mut file = polars_utils::open_file(path)?;
 
-        let paths = Arc::new([path]);
-
-        let mut magic_nr = [0u8; 4];
-        let res_len = file.read(&mut magic_nr)?;
-        if res_len < 2 {
-            if raise_if_empty {
-                polars_bail!(NoData: "empty CSV")
+            let mut magic_nr = [0u8; 4];
+            let res_len = file.read(&mut magic_nr)?;
+            if res_len < 2 {
+                if raise_if_empty {
+                    polars_bail!(NoData: "empty CSV")
+                }
+            } else {
+                polars_ensure!(
+                !is_compressed(&magic_nr),
+                ComputeError: "cannot scan compressed csv; use `read_csv` for compressed data",
+                );
             }
-        } else {
-            polars_ensure!(
-            !is_compressed(&magic_nr),
-            ComputeError: "cannot scan compressed csv; use `read_csv` for compressed data",
-            );
         }
 
-        file.rewind()?;
+        let mut file =
+            polars_utils::open_file(paths.first().expect("should have at least one path"))?;
         let reader_bytes = get_reader_bytes(&mut file).expect("could not mmap file");
 
         // TODO! delay inferring schema until absolutely necessary

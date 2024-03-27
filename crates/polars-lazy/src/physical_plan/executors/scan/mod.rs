@@ -7,7 +7,7 @@ mod ndjson;
 #[cfg(feature = "parquet")]
 mod parquet;
 
-#[cfg(feature = "ipc")]
+#[cfg(any(feature = "ipc", feature = "csv"))]
 mod support;
 use std::mem;
 #[cfg(any(feature = "parquet", feature = "ipc", feature = "cse"))]
@@ -26,7 +26,7 @@ use polars_io::prelude::*;
 use polars_plan::global::_set_n_rows_for_scan;
 #[cfg(any(feature = "parquet", feature = "csv", feature = "ipc", feature = "cse"))]
 use polars_plan::logical_plan::FileFingerPrint;
-#[cfg(feature = "ipc")]
+#[cfg(any(feature = "ipc", feature = "csv"))]
 pub(crate) use support::ConsecutiveCountState;
 
 use super::*;
