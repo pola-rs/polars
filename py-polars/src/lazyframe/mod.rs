@@ -1,4 +1,5 @@
 mod exitable;
+mod visit;
 
 use std::collections::HashMap;
 use std::io::BufWriter;
