@@ -82,7 +82,7 @@ def read_database(  # noqa: D417
         considered unstable.
 
         .. warning::
-            Use of asynchronous connections is currently considered unstable, and
+            Use of asynchronous connections is currently considered **unstable**, and
             unexpected issues may arise; if this happens, please report them.
     iter_batches
         Return an iterator of DataFrames, where each DataFrame represents a batch of
