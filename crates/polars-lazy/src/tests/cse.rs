@@ -348,7 +348,9 @@ fn test_cse_prune_scan_filter_difference() -> PolarsResult<()> {
         )
         .with_comm_subplan_elim(true);
 
-    assert_eq!(count_caches(q), 0);
+    // Check that the caches are removed and that both predicates have been pushed down instead.
+    assert_eq!(count_caches(q.clone()), 0);
+    assert!(predicate_at_scan(q));
 
     Ok(())
 }

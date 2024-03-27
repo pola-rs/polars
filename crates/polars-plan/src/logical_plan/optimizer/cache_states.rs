@@ -128,6 +128,7 @@ pub(super) fn set_cache_states(
         // All the children of the cache per cache-id.
         children: Vec<Node>,
         parents: Vec<TwoParents>,
+        cache_nodes: Vec<Node>,
         // Union over projected names.
         names_union: PlHashSet<ColumnName>,
         // Union over predicates.
@@ -191,6 +192,7 @@ pub(super) fn set_cache_states(
                         .or_insert_with(Value::default);
                     v.children.push(*input);
                     v.parents.push(frame.parent);
+                    v.cache_nodes.push(frame.current);
 
                     let mut found_columns = false;
 
@@ -260,6 +262,7 @@ pub(super) fn set_cache_states(
     // back to the cache node again
     if !cache_schema_and_children.is_empty() {
         let mut proj_pd = ProjectionPushDown::new();
+        let pred_pd = PredicatePushDown::new(Default::default()).block_at_cache(false);
         for (_cache_id, v) in cache_schema_and_children {
             // # CHECK IF WE NEED TO REMOVE CACHES
             // If we encounter multiple predicates we remove the cache nodes completely as we don't
@@ -268,21 +271,31 @@ pub(super) fn set_cache_states(
                 if verbose {
                     eprintln!("cache nodes will be removed because predicates don't match")
                 }
-                for (&child, parents) in v.children.iter().zip(v.parents) {
-                    if let Some(parent) = parents[0] {
-                        let lp = lp_arena.get(parent);
-                        let mut inputs = lp.get_inputs();
-                        let exprs = lp.get_exprs();
+                for ((&child, cache), parents) in
+                    v.children.iter().zip(v.cache_nodes).zip(v.parents)
+                {
+                    // Remove the cache and assign the child the cache location.
+                    lp_arena.swap(child, cache);
 
-                        for input in &mut inputs {
-                            if matches!(lp_arena.get(*input), ALogicalPlan::Cache { .. }) {
-                                *input = child
-                            }
+                    // Restart predicate and projection pushdown from most top parent.
+                    // This to ensure we continue the optimization where it was blocked initially.
+                    // We pick up the blocked filter and projection.
+                    let mut node = cache;
+                    for p_node in parents.into_iter().flatten() {
+                        if matches!(
+                            lp_arena.get(p_node),
+                            ALogicalPlan::Selection { .. } | ALogicalPlan::SimpleProjection { .. }
+                        ) {
+                            node = p_node
+                        } else {
+                            break;
                         }
-
-                        let new_lp = lp.with_exprs_and_input(exprs, inputs);
-                        lp_arena.replace(parent, new_lp)
                     }
+
+                    let lp = lp_arena.take(node);
+                    let lp = proj_pd.optimize(lp, lp_arena, expr_arena)?;
+                    let lp = pred_pd.optimize(lp, lp_arena, expr_arena)?;
+                    lp_arena.replace(node, lp);
                 }
                 return Ok(());
             }
@@ -332,7 +345,6 @@ pub(super) fn set_cache_states(
 
             // # RUN PREDICATE PUSHDOWN
             // Run this after projection pushdown, otherwise the predicate columns will not be projected.
-            let pred_pd = PredicatePushDown::new(Default::default()).block_at_cache(false);
 
             // - If all predicates of parent are the same we will restart predicate pushdown from the parent FILTER node.
             // - Otherwise we will start predicate pushdown from the cache node.

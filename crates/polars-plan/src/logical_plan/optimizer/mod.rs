@@ -152,8 +152,6 @@ pub fn optimize(
         } else {
             false
         };
-    #[cfg(not(feature = "cse"))]
-    let cse_plan_changed = false;
 
     // Should be run before predicate pushdown.
     if projection_pushdown {
