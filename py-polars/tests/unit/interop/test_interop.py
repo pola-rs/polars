@@ -375,6 +375,20 @@ def test_from_records() -> None:
     assert df.rows() == [(1, 4), (2, 5), (3, 6)]
 
 
+# https://github.com/pola-rs/polars/issues/15195
+@pytest.mark.parametrize(
+    "input",
+    [
+        pl.Series([1, 2]),
+        pl.Series([{"a": 1, "b": 2}]),
+        pl.DataFrame({"a": [1, 2], "b": [3, 4]}),
+    ],
+)
+def test_from_records_non_sequence_input(input: Any) -> None:
+    with pytest.raises(TypeError, match="expected data of type Sequence"):
+        pl.from_records(input)
+
+
 def test_from_arrow() -> None:
     data = pa.table({"a": [1, 2, 3], "b": [4, 5, 6]})
     df = pl.from_arrow(data)
