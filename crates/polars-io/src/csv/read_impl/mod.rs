@@ -197,6 +197,7 @@ impl<'a> CoreReader<'a> {
                         &reader_bytes,
                         separator,
                         max_records,
+                        n_rows,
                         has_header,
                         schema_overwrite.as_deref(),
                         &mut skip_rows,
@@ -335,15 +336,22 @@ impl<'a> CoreReader<'a> {
         set_upper_bound: bool,
     ) -> (&'b [u8], usize, Option<&'b [u8]>) {
         // initial row guess. We use the line statistic to guess the number of rows to allocate
-        let mut total_rows = 128;
+        let mut total_rows = self.n_rows.unwrap_or(128);
+        let mut line_length_upper_bound = 0.0;
 
         // if we set an upper bound on bytes, keep a reference to the bytes beyond the bound
         let mut remaining_bytes = None;
 
+        // Clip sample_size to n_rows.
+        let sample_size = self
+            .n_rows
+            .map(|n| std::cmp::min(n, self.sample_size))
+            .unwrap_or(self.sample_size);
+
         // if None, there are less then 128 rows in the file and the statistics don't matter that much
         if let Some((mean, std)) = get_line_stats(
             bytes,
-            self.sample_size,
+            sample_size,
             self.eol_char,
             Some(self.schema.len()),
             self.separator,
@@ -355,35 +363,35 @@ impl<'a> CoreReader<'a> {
 
             // x % upper bound of byte length per line assuming normally distributed
             // this upper bound assumption is not guaranteed to be accurate
-            let line_length_upper_bound = mean + 1.1 * std;
+            line_length_upper_bound = mean + 1.1 * std;
             total_rows = (bytes.len() as f32 / (mean - 0.01 * std)) as usize;
+        }
 
-            // if we only need to parse n_rows,
-            // we first try to use the line statistics to estimate the total bytes we need to process
-            if let Some(n_rows) = self.n_rows {
-                total_rows = std::cmp::min(n_rows, total_rows);
+        // if we only need to parse n_rows,
+        // we first try to use the line statistics to estimate the total bytes we need to process
+        if let Some(n_rows) = self.n_rows {
+            total_rows = std::cmp::min(n_rows, total_rows);
 
-                // the guessed upper bound of  the no. of bytes in the file
-                let n_bytes = (line_length_upper_bound * (n_rows as f32)) as usize;
+            // the guessed upper bound of  the no. of bytes in the file
+            let n_bytes = (line_length_upper_bound * (n_rows as f32)) as usize;
 
-                if n_bytes < bytes.len() {
-                    if let Some(pos) = next_line_position(
-                        &bytes[n_bytes..],
-                        Some(self.schema.len()),
-                        self.separator,
-                        self.quote_char,
-                        self.eol_char,
-                    ) {
-                        if set_upper_bound {
-                            (bytes, remaining_bytes) =
-                                (&bytes[..n_bytes + pos], Some(&bytes[n_bytes + pos..]))
-                        }
+            if n_bytes < bytes.len() {
+                if let Some(pos) = next_line_position(
+                    &bytes[n_bytes..],
+                    Some(self.schema.len()),
+                    self.separator,
+                    self.quote_char,
+                    self.eol_char,
+                ) {
+                    if set_upper_bound {
+                        (bytes, remaining_bytes) =
+                            (&bytes[..n_bytes + pos], Some(&bytes[n_bytes + pos..]))
                     }
                 }
             }
-            if logging {
-                eprintln!("initial row estimate: {total_rows}")
-            }
+        }
+        if logging {
+            eprintln!("initial row estimate: {total_rows}")
         }
         (bytes, total_rows, remaining_bytes)
     }
@@ -408,11 +416,11 @@ impl<'a> CoreReader<'a> {
 
         let (bytes, total_rows, remaining_bytes) =
             self.estimate_rows_and_set_upper_bound(bytes, logging, true);
-        if total_rows == 128 {
+        if total_rows <= 128 {
             *n_threads = 1;
 
             if logging {
-                eprintln!("file < 128 rows, no statistics determined")
+                eprintln!("file <= 128 rows, setting n_threads to 1")
             }
         }
 

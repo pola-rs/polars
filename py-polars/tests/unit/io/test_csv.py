@@ -1413,6 +1413,16 @@ def test_csv_categorical_categorical_merge() -> None:
     )["x"].to_list() == ["A", "B"]
 
 
+def test_csv_n_rows_schema_inference() -> None:
+    df = pl.DataFrame({"string_col": ["str1", "str2"], "mixed_col": ["0", "str3"]})
+    f = io.BytesIO()
+    df.write_csv(f)
+    f.seek(0)
+    df = pl.read_csv(f, n_rows=1)
+    assert df.shape == (1, 2)
+    assert df.dtypes == [pl.String, pl.Int64]
+
+
 def test_batched_csv_reader(foods_file_path: Path) -> None:
     reader = pl.read_csv_batched(foods_file_path, batch_size=4)
     assert isinstance(reader, BatchedCsvReader)

@@ -254,6 +254,7 @@ impl<'a> LazyCsvReader<'a> {
             &reader_bytes,
             self.separator,
             self.infer_schema_length,
+            self.n_rows,
             self.has_header,
             // we set it to None and modify them after the schema is updated
             None,
