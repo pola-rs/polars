@@ -80,6 +80,10 @@ def read_database(  # noqa: D417
         package will be used to establish the connection and return Arrow-native data
         to Polars. Async driver connections are also supported, though this is currently
         considered unstable.
+
+        .. warning::
+            Use of asynchronous connections is currently considered unstable, and
+            unexpected issues may arise; if this happens, please report them.
     iter_batches
         Return an iterator of DataFrames, where each DataFrame represents a batch of
         data returned by the query; this can be useful for processing large resultsets
