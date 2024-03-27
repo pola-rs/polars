@@ -55,11 +55,13 @@ where
     if T::is_float() {
         unsafe {
             if T::is_f32() {
-                let f32_arr = std::mem::transmute::<&PrimitiveArray<T>, &PrimitiveArray<f32>>(array);
+                let f32_arr =
+                    std::mem::transmute::<&PrimitiveArray<T>, &PrimitiveArray<f32>>(array);
                 let sum = float_sum::sum_arr_as_f32(f32_arr);
-                 std::mem::transmute_copy::<f32, T>(&sum)
+                std::mem::transmute_copy::<f32, T>(&sum)
             } else if T::is_f64() {
-                let f64_arr = std::mem::transmute::<&PrimitiveArray<T>, &PrimitiveArray<f64>>(array);
+                let f64_arr =
+                    std::mem::transmute::<&PrimitiveArray<T>, &PrimitiveArray<f64>>(array);
                 let sum = float_sum::sum_arr_as_f64(f64_arr);
                 std::mem::transmute_copy::<f64, T>(&sum)
             } else {
@@ -189,7 +191,10 @@ where
         }
 
         let len = (self.len() - self.null_count()) as f64;
-        let sum: f64 = self.downcast_iter().map(|arr| float_sum::sum_arr_as_f64(arr)).sum();
+        let sum: f64 = self
+            .downcast_iter()
+            .map(|arr| float_sum::sum_arr_as_f64(arr))
+            .sum();
         Some(sum / len)
     }
 }
