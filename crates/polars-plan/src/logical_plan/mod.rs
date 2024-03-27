@@ -23,7 +23,7 @@ pub mod expr_ir;
 mod file_scan;
 mod format;
 mod functions;
-pub(super) mod hive;
+pub mod hive;
 pub(crate) mod iterator;
 mod lit;
 pub(crate) mod optimizer;
