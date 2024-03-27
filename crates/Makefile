@@ -16,12 +16,12 @@ check:  ## Run cargo check with all features
 clippy:  ## Run clippy with all features
 	cargo clippy -p polars --all-features -- -W clippy::dbg_macro
 
-.PHONY: clippy-default
-clippy-default:  ## Run clippy with default features
-	cargo clippy -p polars -- -W clippy::dbg_macro
+.PHONY: clippy-stable
+clippy-stable:  ## Run clippy with default features
+	rustup run stable cargo clippy -p polars -- -W clippy::dbg_macro
 
 .PHONY: pre-commit
-pre-commit: fmt clippy clippy-default  ## Run autoformatting and linting
+pre-commit: fmt clippy clippy-stable  ## Run autoformatting and linting
 
 .PHONY: check-features
 check-features:  ## Run cargo check for feature flag combinations (warning: slow)

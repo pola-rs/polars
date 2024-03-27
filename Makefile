@@ -89,9 +89,9 @@ check:  ## Run cargo check with all features
 clippy:  ## Run clippy with all features
 	cargo clippy --workspace --all-targets --all-features --locked -- -D warnings -D clippy::dbg_macro
 
-.PHONY: clippy-default
-clippy-default:  ## Run clippy with default features
-	cargo clippy --all-targets --locked -- -D warnings -D clippy::dbg_macro
+.PHONY: clippy-stable
+clippy-stable:  ## Run clippy with default features
+	rustup run stable cargo clippy --all-targets --locked -- -D warnings -D clippy::dbg_macro
 
 .PHONY: fmt
 fmt:  ## Run autoformatting and linting
@@ -102,7 +102,7 @@ fmt:  ## Run autoformatting and linting
 	$(VENV_BIN)/typos
 
 .PHONY: pre-commit
-pre-commit: fmt clippy clippy-default  ## Run all code quality checks
+pre-commit: fmt clippy clippy-stable  ## Run all code quality checks
 
 .PHONY: clean
 clean:  ## Clean up caches and build artifacts
