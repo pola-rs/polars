@@ -226,7 +226,6 @@ def test_slice_pushdown_literal_projection_14349() -> None:
 
 @pytest.mark.parametrize(
     "input_slice",
-    # All these slices are not supported by LazyFrame, but they should raise properly.
     [
         (-1, None, -1),
         (None, 0, -1),
@@ -237,7 +236,7 @@ def test_slice_pushdown_literal_projection_14349() -> None:
     ],
 )
 def test_slice_lazy_frame_raises_proper(input_slice: tuple[int | None]) -> None:
-    ldf = pl.LazyFrame({"a": [1, 2]})
+    ldf = pl.LazyFrame({"a": [1, 2, 3]})
     s = slice(*input_slice)
     with pytest.raises(ValueError, match="not supported"):
         ldf[s].collect()
