@@ -121,3 +121,8 @@ def test_df_init_from_series_strict() -> None:
 
     assert df["a"].to_list() == [None, 0, 1]
     assert df["a"].dtype == pl.UInt8
+
+
+def test_df_init_rows_overrides_non_existing() -> None:
+    with pytest.raises(pl.SchemaError, match="nonexistent column"):
+        pl.DataFrame([{"a": 1, "b": 2}], schema_overrides={"c": pl.Int8})
