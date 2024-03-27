@@ -308,7 +308,9 @@ def test_from_dicts() -> None:
 def test_from_dict_no_inference() -> None:
     schema = {"a": pl.String}
     data = [{"a": "aa"}]
-    pl.from_dicts(data, schema_overrides=schema, infer_schema_length=0)
+    df = pl.from_dicts(data, schema_overrides=schema, infer_schema_length=0)
+    assert df.schema == schema
+    assert df.to_dicts() == data
 
 
 def test_from_dicts_schema_override() -> None:

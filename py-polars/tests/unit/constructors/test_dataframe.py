@@ -126,3 +126,16 @@ def test_df_init_from_series_strict() -> None:
 def test_df_init_rows_overrides_non_existing() -> None:
     with pytest.raises(pl.SchemaError, match="nonexistent column"):
         pl.DataFrame([{"a": 1, "b": 2}], schema_overrides={"c": pl.Int8})
+
+
+# https://github.com/pola-rs/polars/issues/15245
+def test_df_init_nested_mixed_types() -> None:
+    data = [{"key": [{"value": 1}, {"value": 1.0}]}]
+
+    with pytest.raises(TypeError, match="unexpected value"):
+        pl.DataFrame(data, strict=True)
+
+    df = pl.DataFrame(data, strict=False)
+
+    assert df.schema == {"key": pl.List(pl.Struct({"value": pl.Float64}))}
+    assert df.to_dicts() == [{"key": [{"value": 1.0}, {"value": 1.0}]}]
