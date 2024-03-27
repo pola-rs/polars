@@ -98,11 +98,11 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::concat_df_horizontal))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::eager_int_range))
-        .unwrap();
 
     // Functions - range
     m.add_wrapped(wrap_pyfunction!(functions::int_range))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::eager_int_range))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::int_ranges))
         .unwrap();
