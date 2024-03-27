@@ -1,14 +1,15 @@
 use std::ops::{Add, IndexMut};
 #[cfg(feature = "simd")]
-use std::simd::{*, prelude::*};
+use std::simd::{prelude::*, *};
 
+use arrow::array::{Array, PrimitiveArray};
 use arrow::bitmap::bitmask::BitMask;
 use arrow::bitmap::Bitmap;
-use num_traits::AsPrimitive;
+use arrow::types::NativeType;
+use num_traits::{AsPrimitive, Float};
 
 const STRIPE: usize = 16;
 const PAIRWISE_RECURSION_LIMIT: usize = 128;
-
 
 // We want to be generic over both integers and floats, requiring this helper trait.
 #[cfg(feature = "simd")]
@@ -65,7 +66,6 @@ where
     (v[0] + v[2]) + (v[1] + v[3])
 }
 
-
 // As a trait to not proliferate SIMD bounds.
 pub trait SumBlock<F> {
     fn sum_block_vectorized(&self) -> F;
@@ -87,7 +87,7 @@ where
             .sum::<Simd<F, STRIPE>>();
         vector_horizontal_sum(vsum)
     }
-    
+
     fn sum_block_vectorized_with_mask(&self, mask: BitMask<'_>) -> F {
         let zero = Simd::default();
         let vsum = self
@@ -100,14 +100,31 @@ where
             .sum::<Simd<F, STRIPE>>();
         vector_horizontal_sum(vsum)
     }
+}
 
+#[cfg(feature = "simd")]
+impl<F> SumBlock<F> for [i128; PAIRWISE_RECURSION_LIMIT]
+where
+    i128: AsPrimitive<F>,
+    F: Float + std::iter::Sum + 'static,
+{
+    fn sum_block_vectorized(&self) -> F {
+        self.iter().map(|x| x.as_()).sum()
+    }
+
+    fn sum_block_vectorized_with_mask(&self, mask: BitMask<'_>) -> F {
+        self.iter()
+            .enumerate()
+            .map(|(idx, x)| if mask.get(idx) { x.as_() } else { F::zero() })
+            .sum()
+    }
 }
 
 #[cfg(not(feature = "simd"))]
 impl<T, F> SumBlock<F> for [T; PAIRWISE_RECURSION_LIMIT]
 where
     T: AsPrimitive<F> + 'static,
-    F: Default + Add<Output = F> + Copy + 'static
+    F: Default + Add<Output = F> + Copy + 'static,
 {
     fn sum_block_vectorized(&self) -> F {
         let mut vsum = [F::default(); STRIPE];
@@ -118,7 +135,7 @@ where
         }
         vector_horizontal_sum(vsum)
     }
-    
+
     fn sum_block_vectorized_with_mask(&self, mask: BitMask<'_>) -> F {
         let mut vsum = [F::default(); STRIPE];
         for (i, chunk) in self.chunks_exact(STRIPE).enumerate() {
@@ -140,7 +157,7 @@ where
 unsafe fn pairwise_sum<F, T>(f: &[T]) -> F
 where
     [T; PAIRWISE_RECURSION_LIMIT]: SumBlock<F>,
-    F: Add<Output = F>
+    F: Add<Output = F>,
 {
     debug_assert!(f.len() > 0 && f.len() % PAIRWISE_RECURSION_LIMIT == 0);
 
@@ -166,7 +183,7 @@ where
 unsafe fn pairwise_sum_with_mask<F, T>(f: &[T], mask: BitMask<'_>) -> F
 where
     [T; PAIRWISE_RECURSION_LIMIT]: SumBlock<F>,
-    F: Add<Output = F>
+    F: Add<Output = F>,
 {
     debug_assert!(f.len() > 0 && f.len() % PAIRWISE_RECURSION_LIMIT == 0);
     debug_assert!(f.len() == mask.len());
@@ -182,67 +199,83 @@ where
         let left_len = (blocks / 2) * PAIRWISE_RECURSION_LIMIT;
         let (left, right) = (f.get_unchecked(..left_len), f.get_unchecked(left_len..));
         let (left_mask, right_mask) = mask.split_at_unchecked(left_len);
-        pairwise_sum_with_mask(left, left_mask)
-            + pairwise_sum_with_mask(right, right_mask)
+        pairwise_sum_with_mask(left, left_mask) + pairwise_sum_with_mask(right, right_mask)
     }
 }
 
-macro_rules! def_sum {
-    ($F:ty, $mod:ident) => {
-        pub mod $mod {
-            use super::*;
-
-            pub fn sum<T>(f: &[T]) -> $F
-            where
-                T: AsPrimitive<$F>,
-                [T; PAIRWISE_RECURSION_LIMIT]: SumBlock<$F>,
-            {
-                let remainder = f.len() % PAIRWISE_RECURSION_LIMIT;
-                let (rest, main) = f.split_at(remainder);
-                let mainsum = if f.len() > remainder {
-                    unsafe { pairwise_sum(main) }
-                } else {
-                    0.0
-                };
-                // TODO: faster remainder.
-                let restsum: $F = rest.iter().map(|x| x.as_()).sum();
-                mainsum + restsum
-            }
-
-            pub fn sum_with_validity<T>(f: &[T], validity: &Bitmap) -> $F
-            where
-                T: AsPrimitive<$F>,
-                [T; PAIRWISE_RECURSION_LIMIT]: SumBlock<$F>,
-            {
-                let mask = BitMask::from_bitmap(validity);
-                assert!(f.len() == mask.len());
-
-                let remainder = f.len() % PAIRWISE_RECURSION_LIMIT;
-                let (rest, main) = f.split_at(remainder);
-                let (rest_mask, main_mask) = mask.split_at(remainder);
-                let mainsum = if f.len() > remainder {
-                    unsafe { pairwise_sum_with_mask(main, main_mask) }
-                } else {
-                    0.0
-                };
-                // TODO: faster remainder.
-                let restsum: $F = rest
-                    .iter()
-                    .enumerate()
-                    .map(|(i, x)| {
-                        // No filter but rather select of 0.0 for cmov opt.
-                        if rest_mask.get(i) {
-                            x.as_()
-                        } else {
-                            0.0
-                        }
-                    })
-                    .sum();
-                mainsum + restsum
-            }
-        }
-    };
+pub trait FloatSum<F>: Sized {
+    fn sum(f: &[Self]) -> F;
+    fn sum_with_validity(f: &[Self], validity: &Bitmap) -> F;
 }
 
-def_sum!(f32, f32);
-def_sum!(f64, f64);
+impl<T, F> FloatSum<F> for T
+where
+    F: Float + std::iter::Sum + 'static,
+    T: AsPrimitive<F>,
+    [T; PAIRWISE_RECURSION_LIMIT]: SumBlock<F>,
+{
+    fn sum(f: &[Self]) -> F {
+        let remainder = f.len() % PAIRWISE_RECURSION_LIMIT;
+        let (rest, main) = f.split_at(remainder);
+        let mainsum = if f.len() > remainder {
+            unsafe { pairwise_sum(main) }
+        } else {
+            F::zero()
+        };
+        // TODO: faster remainder.
+        let restsum: F = rest.iter().map(|x| x.as_()).sum();
+        mainsum + restsum
+    }
+
+    fn sum_with_validity(f: &[Self], validity: &Bitmap) -> F {
+        let mask = BitMask::from_bitmap(validity);
+        assert!(f.len() == mask.len());
+
+        let remainder = f.len() % PAIRWISE_RECURSION_LIMIT;
+        let (rest, main) = f.split_at(remainder);
+        let (rest_mask, main_mask) = mask.split_at(remainder);
+        let mainsum = if f.len() > remainder {
+            unsafe { pairwise_sum_with_mask(main, main_mask) }
+        } else {
+            F::zero()
+        };
+        // TODO: faster remainder.
+        let restsum: F = rest
+            .iter()
+            .enumerate()
+            .map(|(i, x)| {
+                // No filter but rather select of 0.0 for cmov opt.
+                if rest_mask.get(i) {
+                    x.as_()
+                } else {
+                    F::zero()
+                }
+            })
+            .sum();
+        mainsum + restsum
+    }
+}
+
+pub fn sum_arr_as_f32<T: NativeType>(arr: &PrimitiveArray<T>) -> f32
+where
+    T: FloatSum<f32>,
+{
+    let validity = arr.validity().filter(|_| arr.null_count() > 0);
+    if let Some(mask) = validity {
+        FloatSum::sum_with_validity(arr.values(), mask)
+    } else {
+        FloatSum::sum(arr.values())
+    }
+}
+
+pub fn sum_arr_as_f64<T: NativeType>(arr: &PrimitiveArray<T>) -> f64
+where
+    T: FloatSum<f64>,
+{
+    let validity = arr.validity().filter(|_| arr.null_count() > 0);
+    if let Some(mask) = validity {
+        FloatSum::sum_with_validity(arr.values(), mask)
+    } else {
+        FloatSum::sum(arr.values())
+    }
+}
