@@ -775,12 +775,16 @@ def test_parquet_array_dtype() -> None:
 
 
 @pytest.mark.write_disk()
-def test_parquet_array_statistics() -> None:
+def test_parquet_array_statistics(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
     df = pl.DataFrame({"a": [[1, 2, 3], [4, 5, 6], [7, 8, 9]], "b": [1, 2, 3]})
+    file_path = tmp_path / "test.parquet"
+
     df.with_columns(a=pl.col("a").list.to_array(3)).lazy().filter(
         pl.col("a") != [1, 2, 3]
     ).collect()
-    df.with_columns(a=pl.col("a").list.to_array(3)).lazy().sink_parquet("test.parquet")
-    assert pl.scan_parquet("test.parquet").filter(
-        pl.col("a") != [1, 2, 3]
-    ).collect().to_dict(as_series=False) == {"a": [[4, 5, 6], [7, 8, 9]], "b": [2, 3]}
+    df.with_columns(a=pl.col("a").list.to_array(3)).lazy().sink_parquet(file_path)
+
+    result = pl.scan_parquet(file_path).filter(pl.col("a") != [1, 2, 3]).collect()
+    assert result.to_dict(as_series=False) == {"a": [[4, 5, 6], [7, 8, 9]], "b": [2, 3]}
