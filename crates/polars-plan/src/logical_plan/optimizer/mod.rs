@@ -211,7 +211,7 @@ pub fn optimize(
     lp_top = opt.optimize_loop(&mut rules, expr_arena, lp_arena, lp_top)?;
 
     if members.has_joins_or_unions && members.has_cache {
-        cache_states::set_cache_states(lp_top, lp_arena, expr_arena, scratch, cse_plan_changed)?;
+        cache_states::set_cache_states(lp_top, lp_arena, expr_arena, scratch, verbose)?;
     }
 
     // This one should run (nearly) last as this modifies the projections

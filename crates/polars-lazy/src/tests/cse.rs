@@ -10,6 +10,14 @@ fn cached_before_root(q: LazyFrame) {
     }
 }
 
+fn count_caches(q: LazyFrame) -> usize {
+    let (node, lp_arena, _) = q.to_alp_optimized().unwrap();
+    (&lp_arena)
+        .iter(node)
+        .filter(|(_node, lp)| matches!(lp, ALogicalPlan::Cache { .. }))
+        .count()
+}
+
 #[test]
 fn test_cse_self_joins() -> PolarsResult<()> {
     let lf = scan_foods_ipc();
@@ -309,6 +317,38 @@ fn test_cse_columns_projections() -> PolarsResult<()> {
     let out = q.collect()?;
 
     assert_eq!(out.get_column_names(), &["C", "A", "D"]);
+
+    Ok(())
+}
+
+#[test]
+fn test_cse_prune_scan_filter_difference() -> PolarsResult<()> {
+    let lf = scan_foods_ipc();
+    let lf = lf.with_column(col("category").str().to_uppercase());
+
+    let pred = col("fats_g").gt(2.0);
+
+    // If filter are the same, we can cache
+    let q = lf
+        .clone()
+        .filter(pred.clone())
+        .left_join(lf.clone().filter(pred), col("fats_g"), col("fats_g"))
+        .with_comm_subplan_elim(true);
+    cached_before_root(q);
+
+    // If the filters are different the caches are removed.
+    let q = lf
+        .clone()
+        .filter(col("fats_g").gt(2.0))
+        .clone()
+        .left_join(
+            lf.filter(col("fats_g").gt(1.0)),
+            col("fats_g"),
+            col("fats_g"),
+        )
+        .with_comm_subplan_elim(true);
+
+    assert_eq!(count_caches(q), 0);
 
     Ok(())
 }

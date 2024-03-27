@@ -27,17 +27,40 @@ fn get_upper_projections(
     }
 }
 
-/// This will ensure that all equal caches communicate the amount of columns
+fn get_upper_predicates(
+    parent: Node,
+    lp_arena: &Arena<ALogicalPlan>,
+    expr_arena: &mut Arena<AExpr>,
+    predicate_scratch: &mut Vec<Expr>,
+) {
+    let parent = lp_arena.get(parent);
+
+    use ALogicalPlan::*;
+    // During projection pushdown all accumulated.
+    if let Selection { predicate, .. } = parent {
+        let expr = predicate.to_expr(expr_arena);
+        predicate_scratch.push(expr);
+    }
+}
+
+type TwoParents = [Option<Node>; 2];
+
+/// 1. This will ensure that all equal caches communicate the amount of columns
 /// they need to project.
+/// 2.
+/// - This will ensure we apply predicate in the subtrees below the caches.
+/// - If the predicate above the cache is the same for all matching caches that filter will be applied
+///  as well.
 pub(super) fn set_cache_states(
     root: Node,
     lp_arena: &mut Arena<ALogicalPlan>,
     expr_arena: &mut Arena<AExpr>,
     scratch: &mut Vec<Node>,
-    has_caches: bool,
+    verbose: bool,
 ) -> PolarsResult<()> {
     let mut stack = Vec::with_capacity(4);
     let mut names_scratch = vec![];
+    let mut predicates_scratch = vec![];
 
     scratch.clear();
     stack.clear();
@@ -46,8 +69,11 @@ pub(super) fn set_cache_states(
     struct Value {
         // All the children of the cache per cache-id.
         children: Vec<Node>,
+        parents: Vec<TwoParents>,
         // Union over projected names.
         names_union: PlHashSet<ColumnName>,
+        // Union over predicates.
+        predicate_union: PlHashMap<Expr, u32>,
     }
     let mut cache_schema_and_children = BTreeMap::new();
 
@@ -56,7 +82,7 @@ pub(super) fn set_cache_states(
     struct Frame {
         current: Node,
         cache_id: Option<usize>,
-        parent: [Option<Node>; 2],
+        parent: TwoParents,
         previous_cache: Option<usize>,
     }
     let init = Frame {
@@ -77,7 +103,7 @@ pub(super) fn set_cache_states(
         match lp {
             // don't allow parallelism as caches need each others work
             // also self-referencing plans can deadlock on the files they lock
-            Join { options, .. } if has_caches && options.allow_parallel => {
+            Join { options, .. } if options.allow_parallel => {
                 if let Join { options, .. } = lp_arena.get_mut(frame.current) {
                     let options = Arc::make_mut(options);
                     options.allow_parallel = false;
@@ -85,7 +111,7 @@ pub(super) fn set_cache_states(
             },
             // don't allow parallelism as caches need each others work
             // also self-referencing plans can deadlock on the files they lock
-            Union { options, .. } if has_caches && options.parallel => {
+            Union { options, .. } if options.parallel => {
                 if let Union { options, .. } = lp_arena.get_mut(frame.current) {
                     options.parallel = false;
                 }
@@ -106,6 +132,7 @@ pub(super) fn set_cache_states(
                         .entry(*id)
                         .or_insert_with(Value::default);
                     v.children.push(*input);
+                    v.parents.push(frame.parent);
 
                     let mut found_columns = false;
                     for &parent_node in &frame.parent {
@@ -119,6 +146,19 @@ pub(super) fn set_cache_states(
                             if !names_scratch.is_empty() {
                                 found_columns = true;
                                 v.names_union.extend(names_scratch.drain(..));
+                            }
+
+                            get_upper_predicates(
+                                parent_node,
+                                lp_arena,
+                                expr_arena,
+                                &mut predicates_scratch,
+                            );
+                            if !predicates_scratch.is_empty() {
+                                for pred in predicates_scratch.drain(..) {
+                                    let count = v.predicate_union.entry(pred).or_insert(0);
+                                    *count += 1;
+                                }
                             }
                         }
                     }
@@ -157,10 +197,57 @@ pub(super) fn set_cache_states(
     // back to the cache node again
     if !cache_schema_and_children.is_empty() {
         let mut proj_pd = ProjectionPushDown::new();
-        let pred_pd = PredicatePushDown::new(Default::default());
         for (_cache_id, v) in cache_schema_and_children {
+            // If we encounter multiple predicates we remove the cache nodes completely as we don't
+            // want to loose predicate pushdown in favor of scan sharing.
+            if v.predicate_union.len() > 1 {
+                if verbose {
+                    eprintln!("cache nodes will be removed because predicates don't match")
+                }
+                for (&child, parents) in v.children.iter().zip(v.parents) {
+                    if let Some(parent) = parents[0] {
+                        let lp = lp_arena.get(parent);
+                        let mut inputs = lp.get_inputs();
+                        let exprs = lp.get_exprs();
+
+                        for input in &mut inputs {
+                            if matches!(lp_arena.get(*input), ALogicalPlan::Cache { .. }) {
+                                *input = child
+                            }
+                        }
+
+                        let new_lp = lp.with_exprs_and_input(exprs, inputs);
+                        lp_arena.replace(parent, new_lp)
+                    }
+                }
+                return Ok(());
+            }
+
+            let pred_pd = PredicatePushDown::new(Default::default()).block_at_cache(false);
+
+            // - If all predicates of parent are the same we will restart predicate pushdown from the parent FILTER node.
+            // - Otherwise we will start predicate pushdown from the cache node.
+            let allow_parent_predicate_pushdown = v.predicate_union.len() == 1 && {
+                let (_pred, count) = v.predicate_union.iter().next().unwrap();
+                *count == v.children.len() as u32
+            };
+
+            for (&child, parents) in v.children.iter().zip(v.parents) {
+                if allow_parent_predicate_pushdown {
+                    let node = get_filter_node(parents, lp_arena)
+                        .expect("expected filter; this is an optimizer bug");
+                    let start_lp = lp_arena.take(node);
+                    let lp = pred_pd.optimize(start_lp, lp_arena, expr_arena)?;
+                    lp_arena.replace(node, lp);
+                } else {
+                    let child_lp = lp_arena.take(child);
+                    let lp = pred_pd.optimize(child_lp, lp_arena, expr_arena)?;
+                    lp_arena.replace(child, lp);
+                }
+            }
+
             if !v.names_union.is_empty() {
-                for child in v.children {
+                for &child in &v.children {
                     let columns = &v.names_union;
                     let child_lp = lp_arena.take(child);
 
@@ -182,7 +269,6 @@ pub(super) fn set_cache_states(
                         .build();
 
                     let lp = proj_pd.optimize(lp, lp_arena, expr_arena)?;
-                    let lp = pred_pd.optimize(lp, lp_arena, expr_arena)?;
                     // Remove the projection added by the optimization.
                     let lp = if let ALogicalPlan::Projection { input, .. }
                     | ALogicalPlan::SimpleProjection { input, .. } = lp
@@ -197,4 +283,11 @@ pub(super) fn set_cache_states(
         }
     }
     Ok(())
+}
+
+fn get_filter_node(parents: TwoParents, lp_arena: &Arena<ALogicalPlan>) -> Option<Node> {
+    parents
+        .into_iter()
+        .flatten()
+        .find(|&parent| matches!(lp_arena.get(parent), ALogicalPlan::Selection { .. }))
 }

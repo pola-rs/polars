@@ -21,6 +21,7 @@ pub type HiveEval<'a> =
 pub struct PredicatePushDown<'a> {
     hive_partition_eval: HiveEval<'a>,
     verbose: bool,
+    block_at_cache: bool,
 }
 
 impl<'a> PredicatePushDown<'a> {
@@ -28,7 +29,13 @@ impl<'a> PredicatePushDown<'a> {
         Self {
             hive_partition_eval,
             verbose: verbose(),
+            block_at_cache: true,
         }
+    }
+
+    pub(crate) fn block_at_cache(mut self, toggle: bool) -> Self {
+        self.block_at_cache = toggle;
+        self
     }
 
     fn optional_apply_predicate(
@@ -622,7 +629,13 @@ impl<'a> PredicatePushDown<'a> {
                 self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
             },
             // Caches will run predicate push-down in the `cache_states` run.
-            Cache { .. } => self.no_pushdown(lp, acc_predicates, lp_arena, expr_arena),
+            Cache { .. } => {
+                if self.block_at_cache {
+                    self.no_pushdown(lp, acc_predicates, lp_arena, expr_arena)
+                } else {
+                    self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
+                }
+            },
             #[cfg(feature = "python")]
             PythonScan {
                 mut options,
@@ -692,7 +705,7 @@ impl<'a> PredicatePushDown<'a> {
         }
     }
 
-    pub fn optimize(
+    pub(crate) fn optimize(
         &self,
         logical_plan: ALogicalPlan,
         lp_arena: &mut Arena<ALogicalPlan>,
