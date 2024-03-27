@@ -5,7 +5,7 @@ use polars_core::prelude::*;
 use polars_utils::idx_vec::UnitVec;
 use smartstring::alias::String as SmartString;
 
-use crate::prelude::consts::{LEN, LITERAL_NAME};
+use crate::constants::{get_len_name, LEN};
 use crate::prelude::*;
 
 /// Utility to write comma delimited strings
@@ -158,13 +158,8 @@ pub fn aexpr_output_name(node: Node, arena: &Arena<AExpr>) -> PolarsResult<Arc<s
             AExpr::Window { function, .. } => return aexpr_output_name(*function, arena),
             AExpr::Column(name) => return Ok(name.clone()),
             AExpr::Alias(_, name) => return Ok(name.clone()),
-            AExpr::Len => return Ok(Arc::from(LEN)),
-            AExpr::Literal(val) => {
-                return match val {
-                    LiteralValue::Series(s) => Ok(Arc::from(s.name())),
-                    _ => Ok(Arc::from(LITERAL_NAME)),
-                }
-            },
+            AExpr::Len => return Ok(get_len_name()),
+            AExpr::Literal(val) => return Ok(val.output_column_name()),
             _ => {},
         }
     }
@@ -191,13 +186,8 @@ pub fn expr_output_name(expr: &Expr) -> PolarsResult<Arc<str>> {
                 ComputeError:
                 "this expression may produce multiple output names"
             ),
-            Expr::Len => return Ok(Arc::from(LEN)),
-            Expr::Literal(val) => {
-                return match val {
-                    LiteralValue::Series(s) => Ok(Arc::from(s.name())),
-                    _ => Ok(Arc::from(LITERAL_NAME)),
-                }
-            },
+            Expr::Len => return Ok(get_len_name()),
+            Expr::Literal(val) => return Ok(val.output_column_name()),
             _ => {},
         }
     }
@@ -217,7 +207,7 @@ pub(crate) fn get_single_leaf(expr: &Expr) -> PolarsResult<Arc<str>> {
             Expr::SortBy { expr, .. } => return get_single_leaf(expr),
             Expr::Window { function, .. } => return get_single_leaf(function),
             Expr::Column(name) => return Ok(name.clone()),
-            Expr::Len => return Ok(Arc::from(LEN)),
+            Expr::Len => return Ok(ColumnName::from(LEN)),
             _ => {},
         }
     }
@@ -252,26 +242,26 @@ pub fn expr_to_leaf_column_name(expr: &Expr) -> PolarsResult<Arc<str>> {
     }
 }
 
-fn is_column_aexpr(ae: &AExpr) -> bool {
-    matches!(ae, AExpr::Column(_) | AExpr::Wildcard)
-}
-
 #[allow(clippy::type_complexity)]
 pub(crate) fn aexpr_to_column_nodes_iter<'a>(
     root: Node,
     arena: &'a Arena<AExpr>,
-) -> FlatMap<AExprIter<'a>, Option<Node>, fn((Node, &'a AExpr)) -> Option<Node>> {
+) -> FlatMap<AExprIter<'a>, Option<ColumnNode>, fn((Node, &'a AExpr)) -> Option<ColumnNode>> {
     arena.iter(root).flat_map(|(node, ae)| {
-        if is_column_aexpr(ae) {
-            Some(node)
+        if matches!(ae, AExpr::Column(_)) {
+            Some(ColumnNode(node))
         } else {
             None
         }
     })
 }
 
-pub(crate) fn aexpr_to_column_nodes(root: Node, arena: &Arena<AExpr>) -> Vec<Node> {
-    aexpr_to_column_nodes_iter(root, arena).collect()
+pub fn column_node_to_name(node: ColumnNode, arena: &Arena<AExpr>) -> Arc<str> {
+    if let AExpr::Column(name) = arena.get(node.0) {
+        name.clone()
+    } else {
+        unreachable!()
+    }
 }
 
 /// If the leaf names match `current`, the node will be replaced
@@ -284,12 +274,12 @@ pub(crate) fn rename_matching_aexpr_leaf_names(
 ) -> Node {
     let mut leaves = aexpr_to_column_nodes_iter(node, arena);
 
-    if leaves.any(|node| matches!(arena.get(node), AExpr::Column(name) if &**name == current)) {
+    if leaves.any(|node| matches!(arena.get(node.0), AExpr::Column(name) if &**name == current)) {
         // we convert to expression as we cannot easily copy the aexpr.
         let mut new_expr = node_to_expr(node, arena);
         new_expr.mutate().apply(|e| match e {
             Expr::Column(name) if &**name == current => {
-                *name = Arc::from(new_name);
+                *name = ColumnName::from(new_name);
                 true
             },
             _ => true,
@@ -298,27 +288,6 @@ pub(crate) fn rename_matching_aexpr_leaf_names(
     } else {
         node
     }
-}
-
-/// Rename the root of the expression from `current` to `new` and assign to new node in arena.
-/// Returns `Node` on first successful rename.
-pub(crate) fn aexpr_assign_renamed_leaf(
-    node: Node,
-    arena: &mut Arena<AExpr>,
-    current: &str,
-    new_name: &str,
-) -> Node {
-    let leaf_nodes = aexpr_to_column_nodes_iter(node, arena);
-
-    for node in leaf_nodes {
-        match arena.get(node) {
-            AExpr::Column(name) if &**name == current => {
-                return arena.add(AExpr::Column(Arc::from(new_name)))
-            },
-            _ => {},
-        }
-    }
-    panic!("should be a root column that is renamed");
 }
 
 /// Get all leaf column expressions in the expression tree.
@@ -345,12 +314,9 @@ pub fn aexpr_to_leaf_names_iter(
     node: Node,
     arena: &Arena<AExpr>,
 ) -> impl Iterator<Item = Arc<str>> + '_ {
-    aexpr_to_column_nodes_iter(node, arena).map(|node| match arena.get(node) {
-        // expecting only columns here, wildcards and dtypes should already be replaced
+    aexpr_to_column_nodes_iter(node, arena).map(|node| match arena.get(node.0) {
         AExpr::Column(name) => name.clone(),
-        e => {
-            panic!("{e:?} not expected")
-        },
+        _ => unreachable!(),
     })
 }
 
@@ -368,18 +334,53 @@ pub(crate) fn check_input_node(
     input_schema: &Schema,
     expr_arena: &Arena<AExpr>,
 ) -> bool {
-    aexpr_to_leaf_names_iter(node, expr_arena)
-        .all(|name| input_schema.index_of(name.as_ref()).is_some())
+    aexpr_to_leaf_names_iter(node, expr_arena).all(|name| input_schema.contains(name.as_ref()))
 }
 
-pub(crate) fn aexprs_to_schema(
-    expr: &[Node],
+pub(crate) fn check_input_column_node(
+    node: ColumnNode,
+    input_schema: &Schema,
+    expr_arena: &Arena<AExpr>,
+) -> bool {
+    match expr_arena.get(node.0) {
+        AExpr::Column(name) => input_schema.contains(name.as_ref()),
+        // Invariant of `ColumnNode`
+        _ => unreachable!(),
+    }
+}
+
+pub(crate) fn aexprs_to_schema<I: IntoIterator<Item = K>, K: Into<Node>>(
+    expr: I,
     schema: &Schema,
     ctxt: Context,
     arena: &Arena<AExpr>,
 ) -> Schema {
-    expr.iter()
-        .map(|expr| arena.get(*expr).to_field(schema, ctxt, arena).unwrap())
+    expr.into_iter()
+        .map(|node| {
+            arena
+                .get(node.into())
+                .to_field(schema, ctxt, arena)
+                .unwrap()
+        })
+        .collect()
+}
+
+pub(crate) fn expr_irs_to_schema<I: IntoIterator<Item = K>, K: AsRef<ExprIR>>(
+    expr: I,
+    schema: &Schema,
+    ctxt: Context,
+    arena: &Arena<AExpr>,
+) -> Schema {
+    expr.into_iter()
+        .map(|e| {
+            let e = e.as_ref();
+            let mut field = arena.get(e.node()).to_field(schema, ctxt, arena).unwrap();
+
+            if let Some(name) = e.get_alias() {
+                field.name = name.as_ref().into()
+            }
+            field
+        })
         .collect()
 }
 
@@ -399,35 +400,4 @@ pub fn merge_schemas(schemas: &[SchemaRef]) -> PolarsResult<Schema> {
     }
 
     Ok(merged_schema)
-}
-
-pub fn combine_predicates_expr<I>(iter: I) -> Expr
-where
-    I: Iterator<Item = Expr>,
-{
-    let mut single_pred = None;
-    for expr in iter {
-        single_pred = match single_pred {
-            None => Some(expr),
-            Some(e) => Some(e.and(expr)),
-        };
-    }
-    single_pred.expect("an empty iterator was passed")
-}
-
-pub fn expr_is_projected_upstream(
-    e: &Node,
-    input: Node,
-    lp_arena: &Arena<ALogicalPlan>,
-    expr_arena: &Arena<AExpr>,
-    projected_names: &PlHashSet<Arc<str>>,
-) -> bool {
-    let input_schema = lp_arena.get(input).schema(lp_arena);
-    // don't do projection that is not used in upstream selection
-    let output_field = expr_arena
-        .get(*e)
-        .to_field(input_schema.as_ref(), Context::Default, expr_arena)
-        .unwrap();
-    let output_name = output_field.name();
-    projected_names.contains(output_name.as_str())
 }

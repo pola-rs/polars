@@ -40,7 +40,7 @@ impl AExpr {
             Column(name) => {
                 let field = schema
                     .get_field(name)
-                    .ok_or_else(|| polars_err!(ColumnNotFound: "{}", name));
+                    .ok_or_else(|| PolarsError::ColumnNotFound(name.to_string().into()));
 
                 match ctxt {
                     Context::Default => field,
@@ -53,7 +53,7 @@ impl AExpr {
             },
             Literal(sv) => Ok(match sv {
                 LiteralValue::Series(s) => s.field().into_owned(),
-                _ => Field::new("literal", sv.get_datatype()),
+                _ => Field::new(sv.output_name(), sv.get_datatype()),
             }),
             BinaryExpr { left, right, op } => {
                 use DataType::*;

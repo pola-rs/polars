@@ -134,7 +134,7 @@ def dict_to_pydf(
     else:
         data_series = [
             s._s
-            for s in _expand_dict_scalars(
+            for s in _expand_dict_values(
                 data,
                 schema_overrides=schema_overrides,
                 strict=strict,
@@ -196,13 +196,16 @@ def _unpack_schema(
     # determine column names from schema
     if isinstance(schema, Mapping):
         column_names: list[str] = list(schema)
-        # coerce schema to list[str | tuple[str, PolarsDataType | PythonDataType | None]
         schema = list(schema.items())
     else:
-        column_names = [
-            (col or f"column_{i}") if isinstance(col, str) else col[0]
-            for i, col in enumerate(schema)
-        ]
+        column_names = []
+        for i, col in enumerate(schema):
+            if isinstance(col, str):
+                unnamed = not col and col not in schema_overrides
+                col = f"column_{i}" if unnamed else col
+            else:
+                col = col[0]
+            column_names.append(col)
 
     # determine column dtypes from schema and lookup_names
     lookup: dict[str, str] | None = (
@@ -307,7 +310,7 @@ def _post_apply_columns(
     return pydf
 
 
-def _expand_dict_scalars(
+def _expand_dict_values(
     data: Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | Series],
     *,
     schema_overrides: SchemaDict | None = None,
@@ -334,9 +337,20 @@ def _expand_dict_scalars(
             for name, val in data.items():
                 dtype = dtypes.get(name)
                 if isinstance(val, dict) and dtype != Struct:
-                    updated_data[name] = pl.DataFrame(val, strict=strict).to_struct(
-                        name
-                    )
+                    vdf = pl.DataFrame(val, strict=strict)
+                    if (
+                        len(vdf) == 1
+                        and array_len > 1
+                        and all(not d.is_nested() for d in vdf.schema.values())
+                    ):
+                        s_vals = {
+                            nm: vdf[nm].extend_constant(v, n=(array_len - 1))
+                            for nm, v in val.items()
+                        }
+                        st = pl.DataFrame(s_vals).to_struct(name)
+                    else:
+                        st = vdf.to_struct(name)
+                    updated_data[name] = st
 
                 elif isinstance(val, pl.Series):
                     s = val.rename(name) if name != val.name else val
@@ -540,12 +554,14 @@ def _sequence_of_sequence_to_pydf(
 
         if unpack_nested:
             dicts = [nt_unpack(d) for d in data]
-            pydf = PyDataFrame.from_dicts(dicts, infer_schema_length)
+            pydf = PyDataFrame.from_dicts(
+                dicts, infer_schema_length=infer_schema_length
+            )
         else:
             pydf = PyDataFrame.from_rows(
                 data,
-                infer_schema_length,
                 local_schema_override or None,
+                infer_schema_length,
             )
         if column_names or schema_overrides:
             pydf = _post_apply_columns(
@@ -656,7 +672,10 @@ def _sequence_of_dict_to_pydf(
         else None
     )
     pydf = PyDataFrame.from_dicts(
-        data, infer_schema_length, dicts_schema, schema_overrides
+        data,
+        dicts_schema,
+        schema_overrides,
+        infer_schema_length=infer_schema_length,
     )
 
     # TODO: we can remove this `schema_overrides` block completely
@@ -755,10 +774,10 @@ def _sequence_of_dataclasses_to_pydf(
     )
     if unpack_nested:
         dicts = [asdict(md) for md in data]
-        pydf = PyDataFrame.from_dicts(dicts, infer_schema_length)
+        pydf = PyDataFrame.from_dicts(dicts, infer_schema_length=infer_schema_length)
     else:
         rows = [astuple(dc) for dc in data]
-        pydf = PyDataFrame.from_rows(rows, infer_schema_length, overrides or None)
+        pydf = PyDataFrame.from_rows(rows, overrides or None, infer_schema_length)
 
     if overrides:
         structs = {c: tp for c, tp in overrides.items() if isinstance(tp, Struct)}
@@ -802,17 +821,19 @@ def _sequence_of_pydantic_models_to_pydf(
             if old_pydantic
             else [md.model_dump(mode="python") for md in data]
         )
-        pydf = PyDataFrame.from_dicts(dicts, infer_schema_length)
+        pydf = PyDataFrame.from_dicts(dicts, infer_schema_length=infer_schema_length)
 
     elif len(model_fields) > 50:
         # 'from_rows' is the faster codepath for models with a lot of fields...
         get_values = itemgetter(*model_fields)
         rows = [get_values(md.__dict__) for md in data]
-        pydf = PyDataFrame.from_rows(rows, infer_schema_length, overrides)
+        pydf = PyDataFrame.from_rows(rows, overrides, infer_schema_length)
     else:
         # ...and 'from_dicts' is faster otherwise
         dicts = [md.__dict__ for md in data]
-        pydf = PyDataFrame.from_dicts(dicts, infer_schema_length, overrides)
+        pydf = PyDataFrame.from_dicts(
+            dicts, schema=overrides, infer_schema_length=infer_schema_length
+        )
 
     if overrides:
         structs = {c: tp for c, tp in overrides.items() if isinstance(tp, Struct)}

@@ -15,7 +15,6 @@ mod arity;
 #[cfg(feature = "dtype-array")]
 mod array;
 pub mod binary;
-pub mod consts;
 #[cfg(feature = "temporal")]
 pub mod dt;
 mod expr;
@@ -167,7 +166,7 @@ impl Expr {
 
     /// Rename Column.
     pub fn alias(self, name: &str) -> Expr {
-        Expr::Alias(Box::new(self), Arc::from(name))
+        Expr::Alias(Box::new(self), ColumnName::from(name))
     }
 
     /// Run is_null operation on `Expr`.
@@ -1136,7 +1135,7 @@ impl Expr {
         let v = columns
             .into_vec()
             .into_iter()
-            .map(|s| Excluded::Name(Arc::from(s)))
+            .map(|s| Excluded::Name(ColumnName::from(s)))
             .collect();
         Expr::Exclude(Box::new(self), v)
     }

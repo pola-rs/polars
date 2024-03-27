@@ -30,6 +30,10 @@ def test_python_slicing_data_frame() -> None:
     ):
         assert_frame_equal(df.slice(*slice_params), expected)
 
+    # Negative starting index before start of dataframe.
+    expected = pl.DataFrame({"a": [1, 2], "b": ["a", "b"]})
+    assert_frame_equal(df.slice(-5, 4), expected)
+
     for py_slice in (
         slice(1, 2),
         slice(0, 2, 2),
@@ -50,6 +54,8 @@ def test_python_slicing_series() -> None:
         [s.slice(4, None), [4, 5]],
         [s.slice(3), [3, 4, 5]],
         [s.slice(-2), [4, 5]],
+        [s.slice(-7, 4), [0, 1, 2]],
+        [s.slice(-700, 4), []],
     ):
         assert srs_slice.to_list() == expected  # type: ignore[attr-defined]
 
@@ -82,10 +88,13 @@ def test_python_slicing_lazy_frame() -> None:
         slice(None, 2, 2),
         slice(3, None, -1),
         slice(1, None, -2),
+        slice(0, None, -1),
     ):
         # confirm frame slice matches python slice
         assert ldf[py_slice].collect().rows() == ldf.collect().rows()[py_slice]
 
+    assert_frame_equal(ldf[0::-1], ldf.head(1))
+    assert_frame_equal(ldf[2::-1], ldf.head(3).reverse())
     assert_frame_equal(ldf[::-1], ldf.reverse())
     assert_frame_equal(ldf[::-2], ldf.reverse().gather_every(2))
 

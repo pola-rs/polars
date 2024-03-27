@@ -10,24 +10,6 @@ import polars as pl
 from polars.testing import assert_series_equal
 from polars.testing.parametric import series
 
-# TODO: once Decimal is a little further along, start actively probing it
-# @given(
-#     s=series(max_size=10, dtype=pl.Decimal, null_probability=0.1),
-# )
-# def test_series_decimal(
-#     s: pl.Series,
-# ) -> None:
-#     with pl.Config(activate_decimals=True):
-#         assert s.dtype == pl.Decimal
-#         assert s.to_list() == list(s)
-#
-#         s_div = s / D(123)
-#         s_mul = s * D(123)
-#         s_sub = s - D(123)
-#         s_add = s - D(123)
-#
-# etc...
-
 
 @given(
     s=series(min_size=1, max_size=10, dtype=pl.Datetime),

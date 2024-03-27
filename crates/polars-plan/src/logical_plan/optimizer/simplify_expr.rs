@@ -1,6 +1,7 @@
 use polars_utils::floor_divmod::FloorDivMod;
 use polars_utils::total_ord::ToTotalOrd;
 
+use crate::constants::get_literal_name;
 use crate::logical_plan::*;
 use crate::prelude::optimizer::simplify_functions::optimize_functions;
 
@@ -123,7 +124,7 @@ impl OptimizationRule for SimplifyBooleanRule {
             ) =>
             {
                 // We alias because of the left-hand naming rule.
-                Some(AExpr::Alias(*right, "literal".into()))
+                Some(AExpr::Alias(*right, get_literal_name()))
             },
             // x AND true => x
             AExpr::BinaryExpr {
@@ -180,7 +181,7 @@ impl OptimizationRule for SimplifyBooleanRule {
             ) =>
             {
                 // We alias because of the left-hand naming rule.
-                Some(AExpr::Alias(*right, "literal".into()))
+                Some(AExpr::Alias(*right, get_literal_name()))
             },
             // x or false => x
             AExpr::BinaryExpr {

@@ -251,7 +251,7 @@ impl FunctionExpr {
             #[cfg(feature = "rle")]
             RLE => mapper.map_dtype(|dt| {
                 DataType::Struct(vec![
-                    Field::new("lengths", DataType::UInt64),
+                    Field::new("lengths", DataType::Int32),
                     Field::new("values", dt.clone()),
                 ])
             }),

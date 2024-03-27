@@ -6,6 +6,7 @@ use polars_core::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+use crate::constants::{get_literal_name, LITERAL_NAME};
 use crate::prelude::*;
 
 #[derive(Clone, PartialEq)]
@@ -59,6 +60,22 @@ pub enum LiteralValue {
 }
 
 impl LiteralValue {
+    /// Get the output name as `&str`.
+    pub(crate) fn output_name(&self) -> &str {
+        match self {
+            LiteralValue::Series(s) => s.name(),
+            _ => LITERAL_NAME,
+        }
+    }
+
+    /// Get the output name as [`ColumnName`].
+    pub(crate) fn output_column_name(&self) -> ColumnName {
+        match self {
+            LiteralValue::Series(s) => ColumnName::from(s.name()),
+            _ => get_literal_name(),
+        }
+    }
+
     pub(crate) fn is_float(&self) -> bool {
         matches!(self, LiteralValue::Float32(_) | LiteralValue::Float64(_))
     }

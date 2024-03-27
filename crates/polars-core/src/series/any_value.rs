@@ -3,12 +3,20 @@ use std::fmt::Write;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::registry::ObjectRegistry;
 use crate::prelude::*;
-use crate::utils::try_get_supertype;
+use crate::utils::any_values_to_supertype;
 
 impl<'a, T: AsRef<[AnyValue<'a>]>> NamedFrom<T, [AnyValue<'a>]> for Series {
-    fn new(name: &str, v: T) -> Self {
-        let av = v.as_ref();
-        Series::from_any_values(name, av, true).unwrap()
+    /// Construct a new [`Series`] from a collection of [`AnyValue`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if the values do not all share the same data type (with the exception
+    /// of [`DataType::Null`], which is always allowed).
+    ///
+    /// [`AnyValue`]: crate::datatypes::AnyValue
+    fn new(name: &str, values: T) -> Self {
+        let values = values.as_ref();
+        Series::from_any_values(name, values, true).expect("data types of values should match")
     }
 }
 
@@ -47,37 +55,19 @@ impl Series {
                 },
             }
         }
-        fn get_any_values_supertype(values: &[AnyValue]) -> PolarsResult<DataType> {
-            let mut supertype = DataType::Null;
-            let mut dtypes = PlHashSet::<DataType>::new();
-            for av in values {
-                if dtypes.insert(av.dtype()) {
-                    supertype = try_get_supertype(&supertype, &av.dtype()).map_err(|_| {
-                            polars_err!(
-                                SchemaMismatch:
-                                "failed to infer supertype of values; partial supertype is {:?}, found value of type {:?}: {}",
-                                supertype, av.dtype(), av
-                            )
-                        }
-                    )?;
-                }
-            }
-            Ok(supertype)
-        }
-
         let dtype = if strict {
             get_first_non_null_dtype(values)
         } else {
-            get_any_values_supertype(values)?
+            any_values_to_supertype(values)?
         };
         Self::from_any_values_and_dtype(name, values, &dtype, strict)
     }
 
-    /// Construct a new [`Series`]` with the given `dtype` from a slice of AnyValues.
+    /// Construct a new [`Series`] with the given `dtype` from a slice of AnyValues.
     ///
     /// If `strict` is `true`, an error is returned if the values do not match the given
     /// data type. If `strict` is `false`, values that do not match the given data type
-    /// are cast. If casting is not possible, the values are set to null instead.`
+    /// are cast. If casting is not possible, the values are set to null instead.
     pub fn from_any_values_and_dtype(
         name: &str,
         values: &[AnyValue],
@@ -634,7 +624,7 @@ fn any_values_to_struct(
     fields: &[Field],
     strict: bool,
 ) -> PolarsResult<Series> {
-    // Fast path for empty structs.
+    // Fast path for structs with no fields.
     if fields.is_empty() {
         return Ok(StructChunked::full_null("", values.len()).into_series());
     }
@@ -693,7 +683,7 @@ fn any_values_to_struct(
         }
         // If the inferred dtype is null, we let auto inference work.
         let s = if matches!(field.dtype, DataType::Null) {
-            Series::new(field.name(), &field_avs)
+            Series::from_any_values(field.name(), &field_avs, strict)?
         } else {
             Series::from_any_values_and_dtype(field.name(), &field_avs, &field.dtype, strict)?
         };

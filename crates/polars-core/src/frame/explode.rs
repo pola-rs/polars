@@ -21,7 +21,7 @@ fn get_exploded(series: &Series) -> PolarsResult<(Series, OffsetsBuffer<i64>)> {
 }
 
 /// Arguments for `[DataFrame::melt]` function
-#[derive(Clone, Default, Debug, PartialEq)]
+#[derive(Clone, Default, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
 pub struct MeltArgs {
     pub id_vars: Vec<SmartString>,

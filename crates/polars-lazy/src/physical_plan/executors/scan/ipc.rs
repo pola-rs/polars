@@ -4,7 +4,6 @@ use std::sync::RwLock;
 
 use polars_core::config;
 use polars_core::utils::accumulate_dataframes_vertical;
-#[cfg(feature = "cloud")]
 use polars_io::cloud::CloudOptions;
 use polars_io::predicates::apply_predicate;
 use polars_io::{is_cloud_url, RowIndex};
@@ -18,7 +17,6 @@ pub struct IpcExec {
     pub(crate) predicate: Option<Arc<dyn PhysicalExpr>>,
     pub(crate) options: IpcScanOptions,
     pub(crate) file_options: FileScanOptions,
-    #[cfg(feature = "cloud")]
     pub(crate) cloud_options: Option<CloudOptions>,
     pub(crate) metadata: Option<arrow::io::ipc::read::FileMetadata>,
 }

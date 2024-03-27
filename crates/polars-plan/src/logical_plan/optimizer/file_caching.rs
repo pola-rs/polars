@@ -54,35 +54,37 @@ pub fn collect_fingerprints(
     expr_arena: &Arena<AExpr>,
 ) {
     use ALogicalPlan::*;
-    match lp_arena.get(root) {
-        Scan {
-            paths,
-            file_options: options,
-            predicate,
-            scan_type,
-            ..
-        } => {
-            let slice = (scan_type.skip_rows(), options.n_rows);
-            let predicate = predicate.map(|node| node_to_expr(node, expr_arena));
-            let fp = FileFingerPrint {
-                paths: paths.clone(),
+
+    for (_node, lp) in lp_arena.iter(root) {
+        #[allow(clippy::single_match)]
+        match lp {
+            Scan {
+                paths,
+                file_options: options,
                 predicate,
-                slice,
-            };
-            fps.push(fp);
-        },
-        lp => {
-            for input in lp.get_inputs() {
-                collect_fingerprints(input, fps, lp_arena, expr_arena)
-            }
-        },
+                scan_type,
+                ..
+            } => {
+                let slice = (scan_type.skip_rows(), options.n_rows);
+                let predicate = predicate
+                    .as_ref()
+                    .map(|e| node_to_expr(e.node(), expr_arena));
+                let fp = FileFingerPrint {
+                    paths: paths.clone(),
+                    predicate,
+                    slice,
+                };
+                fps.push(fp);
+            },
+            _ => {},
+        }
     }
 }
 
 /// Find the union between the columns per unique IO operation.
 /// A unique IO operation is the file + the predicates pushed down to that file
 #[allow(clippy::type_complexity)]
-pub fn find_column_union_and_fingerprints(
+fn find_column_union_and_fingerprints(
     root: Node,
     // The hashmap maps files to a hashset over column names.
     // we also keep track of how often a needs file needs to be read so we can cache until last read
@@ -91,38 +93,40 @@ pub fn find_column_union_and_fingerprints(
     expr_arena: &Arena<AExpr>,
 ) {
     use ALogicalPlan::*;
-    match lp_arena.get(root) {
-        Scan {
-            paths,
-            file_options: options,
-            predicate,
-            file_info,
-            scan_type,
-            ..
-        } => {
-            let slice = (scan_type.skip_rows(), options.n_rows);
-            let predicate = predicate.map(|node| node_to_expr(node, expr_arena));
-            process_with_columns(
+
+    for (_node, lp) in lp_arena.iter(root) {
+        #[allow(clippy::single_match)]
+        match lp {
+            Scan {
                 paths,
-                options.with_columns.as_deref(),
+                file_options: options,
                 predicate,
-                slice,
-                columns,
-                &file_info.schema,
-            );
-        },
-        lp => {
-            for input in lp.get_inputs() {
-                find_column_union_and_fingerprints(input, columns, lp_arena, expr_arena)
-            }
-        },
+                file_info,
+                scan_type,
+                ..
+            } => {
+                let slice = (scan_type.skip_rows(), options.n_rows);
+                let predicate = predicate
+                    .as_ref()
+                    .map(|e| node_to_expr(e.node(), expr_arena));
+                process_with_columns(
+                    paths,
+                    options.with_columns.as_deref(),
+                    predicate,
+                    slice,
+                    columns,
+                    &file_info.schema,
+                );
+            },
+            _ => {},
+        }
     }
 }
 
 /// Aggregate all the columns used in csv scans and make sure that all columns are scanned in one go.
 /// Due to self joins there can be multiple Scans of the same file in a LP. We already cache the scans
 /// in the PhysicalPlan, but we need to make sure that the first scan has all the columns needed.
-pub struct FileCacher {
+struct FileCacher {
     file_count_and_column_union: PlHashMap<FileFingerPrint, (FileCount, Arc<Vec<String>>)>,
 }
 
@@ -152,6 +156,9 @@ impl FileCacher {
         with_columns: Option<Arc<Vec<String>>>,
         behind_cache: bool,
     ) -> ALogicalPlan {
+        if behind_cache {
+            return lp;
+        }
         // if the original projection is less than the new one. Also project locally
         if let Some(mut with_columns) = with_columns {
             // we cannot always find the predicates, because some have `SpecialEq` functions so for those
@@ -160,16 +167,17 @@ impl FileCacher {
                 Some((_file_count, agg_columns)) => with_columns.len() < agg_columns.len(),
                 None => true,
             };
-            if !behind_cache && do_projection {
+            if do_projection {
                 let node = lp_arena.add(lp);
 
                 let projections = std::mem::take(Arc::make_mut(&mut with_columns))
                     .into_iter()
-                    .map(|s| expr_arena.add(AExpr::Column(Arc::from(s))))
-                    .collect();
+                    .map(|s| expr_arena.add(AExpr::Column(ColumnName::from(s))))
+                    .collect::<Vec<_>>();
 
                 lp = ALogicalPlanBuilder::new(node, expr_arena, lp_arena)
-                    .project(projections, Default::default())
+                    .project_simple_nodes(projections)
+                    .unwrap()
                     .build();
             }
         }
@@ -185,7 +193,7 @@ impl FileCacher {
 
     // This will ensure that all read files have the amount of columns needed for the cache.
     // In case of CSE, it will ensure that the union projected nodes are available.
-    pub(crate) fn assign_unions(
+    fn assign_unions(
         &mut self,
         root: Node,
         lp_arena: &mut Arena<ALogicalPlan>,
@@ -208,7 +216,9 @@ impl FileCacher {
                     scan_type,
                     file_options: mut options,
                 } => {
-                    let predicate_expr = predicate.map(|node| node_to_expr(node, expr_arena));
+                    let predicate_expr = predicate
+                        .as_ref()
+                        .map(|e| node_to_expr(e.node(), expr_arena));
                     let finger_print = FileFingerPrint {
                         paths,
                         predicate: predicate_expr,
@@ -257,4 +267,24 @@ impl FileCacher {
         }
         scratch.clear();
     }
+}
+
+pub(super) fn cache_shared_files(
+    lp_top: Node,
+    lp_arena: &mut Arena<ALogicalPlan>,
+    expr_arena: &mut Arena<AExpr>,
+    scratch: &mut Vec<Node>,
+) {
+    // scan the LP to aggregate all the column used in scans
+    // these columns will be added to the state of the AggScanProjection rule
+    let mut file_predicate_to_columns_and_count = PlHashMap::new();
+    find_column_union_and_fingerprints(
+        lp_top,
+        &mut file_predicate_to_columns_and_count,
+        lp_arena,
+        expr_arena,
+    );
+
+    let mut file_cacher = FileCacher::new(file_predicate_to_columns_and_count);
+    file_cacher.assign_unions(lp_top, lp_arena, expr_arena, scratch);
 }

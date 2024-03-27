@@ -1,13 +1,17 @@
 use super::*;
 
-/// Given two datatypes, determine the supertype that both types can safely be cast to
+/// Given two data types, determine the data type that both types can safely be cast to.
+///
+/// Returns a [`PolarsError::ComputeError`] if no such data type exists.
 pub fn try_get_supertype(l: &DataType, r: &DataType) -> PolarsResult<DataType> {
     get_supertype(l, r).ok_or_else(
         || polars_err!(ComputeError: "failed to determine supertype of {} and {}", l, r),
     )
 }
 
-/// Given two datatypes, determine the supertype that both types can safely be cast to
+/// Given two data types, determine the data type that both types can safely be cast to.
+///
+/// Returns [`None`] if no such data type exists.
 pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
     fn inner(l: &DataType, r: &DataType) -> Option<DataType> {
         use DataType::*;
@@ -276,6 +280,20 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
     }
 
     inner(l, r).or_else(|| inner(r, l))
+}
+
+/// Given multiple data types, determine the data type that all types can safely be cast to.
+///
+/// Returns [`DataType::Null`] if no data types were passed.
+pub fn dtypes_to_supertype<'a, I>(dtypes: I) -> PolarsResult<DataType>
+where
+    I: IntoIterator<Item = &'a DataType>,
+{
+    dtypes
+        .into_iter()
+        .try_fold(DataType::Null, |supertype, dtype| {
+            try_get_supertype(&supertype, dtype)
+        })
 }
 
 #[cfg(feature = "dtype-struct")]

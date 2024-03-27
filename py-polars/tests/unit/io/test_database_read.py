@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import sqlite3
 import sys
@@ -925,3 +926,21 @@ def test_read_database_async(tmp_sqlite_db: Path) -> None:
             execute_options=execute_opts,
         )
         assert_frame_equal(expected_frame, df)
+
+
+async def _nested_async_test(tmp_sqlite_db: Path) -> pl.DataFrame:
+    async_engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_sqlite_db}")
+    return pl.read_database(
+        query="SELECT id, name FROM test_data ORDER BY id",
+        connection=async_engine.connect(),
+    )
+
+
+def test_read_database_async_nested(tmp_sqlite_db: Path) -> None:
+    # this tests validates that we can handle nested async calls; without the
+    # internal nested asyncio/loop detection & handling provided by `nest_asyncio`
+    # this test would raise the RuntimeError: "This event loop is already running".
+
+    expected_frame = pl.DataFrame({"id": [1, 2], "name": ["misc", "other"]})
+    df = asyncio.run(_nested_async_test(tmp_sqlite_db))
+    assert_frame_equal(expected_frame, df)

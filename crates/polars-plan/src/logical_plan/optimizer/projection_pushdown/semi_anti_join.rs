@@ -1,15 +1,14 @@
 use super::*;
-use crate::logical_plan::optimizer::projection_pushdown::joins::process_alias;
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn process_semi_anti_join(
     proj_pd: &mut ProjectionPushDown,
     input_left: Node,
     input_right: Node,
-    left_on: Vec<Node>,
-    right_on: Vec<Node>,
+    left_on: Vec<ExprIR>,
+    right_on: Vec<ExprIR>,
     options: Arc<JoinOptions>,
-    acc_projections: Vec<Node>,
+    acc_projections: Vec<ColumnNode>,
     _projected_names: PlHashSet<Arc<str>>,
     projections_seen: usize,
     lp_arena: &mut Arena<ALogicalPlan>,
@@ -21,7 +20,6 @@ pub(super) fn process_semi_anti_join(
     let mut pushdown_right = Vec::with_capacity(n);
     let mut names_left = PlHashSet::with_capacity(n);
     let mut names_right = PlHashSet::with_capacity(n);
-    let mut local_projection = Vec::with_capacity(n);
 
     // if there are no projections we don't have to do anything (all columns are projected)
     // otherwise we build local projections to sort out proper column names due to the
@@ -37,15 +35,13 @@ pub(super) fn process_semi_anti_join(
 
         // We need the join columns so we push the projection downwards
         for e in &left_on {
-            add_expr_to_accumulated(*e, &mut pushdown_left, &mut names_left, expr_arena);
+            add_expr_to_accumulated(e.node(), &mut pushdown_left, &mut names_left, expr_arena);
         }
         for e in &right_on {
-            add_expr_to_accumulated(*e, &mut pushdown_right, &mut names_right, expr_arena);
+            add_expr_to_accumulated(e.node(), &mut pushdown_right, &mut names_right, expr_arena);
         }
 
         for proj in acc_projections {
-            let add_local = process_alias(proj, &mut local_projection, expr_arena, true);
-
             let _ = proj_pd.join_push_down(
                 &schema_left,
                 &schema_right,
@@ -56,18 +52,6 @@ pub(super) fn process_semi_anti_join(
                 &mut names_right,
                 expr_arena,
             );
-            if add_local {
-                // always also do the projection locally, because the join columns may not be
-                // included in the projection.
-                // for instance:
-                //
-                // SELECT [COLUMN temp]
-                // FROM
-                // JOIN (["days", "temp"]) WITH (["days", "rain"]) ON (left: days right: days)
-                //
-                // should drop the days column after the join.
-                local_projection.push(proj);
-            }
         }
     }
 
@@ -95,5 +79,5 @@ pub(super) fn process_semi_anti_join(
     let root = lp_arena.add(alp);
     let builder = ALogicalPlanBuilder::new(root, expr_arena, lp_arena);
 
-    Ok(proj_pd.finish_node(local_projection, builder))
+    Ok(proj_pd.finish_node(vec![], builder))
 }

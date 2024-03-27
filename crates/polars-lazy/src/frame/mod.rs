@@ -425,7 +425,7 @@ impl LazyFrame {
         let mut existing_vec: Vec<SmartString> = Vec::with_capacity(cap);
         let mut new_vec: Vec<SmartString> = Vec::with_capacity(cap);
 
-        // todo! should this error if `existing` and `new` have different lengths?
+        // TODO! should this error if `existing` and `new` have different lengths?
         // Currently, the longer of the two is truncated.
         for (existing, new) in iter.zip(new) {
             let existing = existing.as_ref();
@@ -593,9 +593,9 @@ impl LazyFrame {
             lp_arena,
             expr_arena,
             scratch,
-            Some(&|node, expr_arena| {
+            Some(&|expr, expr_arena| {
                 let phys_expr = create_physical_expr(
-                    node,
+                    expr,
                     Context::Default,
                     expr_arena,
                     None,
@@ -633,7 +633,7 @@ impl LazyFrame {
         mut self,
         check_sink: bool,
     ) -> PolarsResult<(ExecutionState, Box<dyn Executor>, bool)> {
-        let file_caching = self.opt_state.file_caching;
+        let file_caching = self.opt_state.file_caching && !self.opt_state.streaming;
         let mut expr_arena = Arena::with_capacity(256);
         let mut lp_arena = Arena::with_capacity(128);
         let mut scratch = vec![];

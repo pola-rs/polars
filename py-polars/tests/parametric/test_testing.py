@@ -269,7 +269,13 @@ def test_invalid_arguments() -> None:
         column("colx", strategy=sampled_from([None]))
 
 
-@given(s=series(allowed_dtypes=pl.Binary))
+@given(s=series(dtype=pl.Binary))
 @settings(max_examples=5)
 def test_strategy_dtype_binary(s: pl.Series) -> None:
     assert s.dtype == pl.Binary
+
+
+@given(s=series(dtype=pl.Decimal))
+@settings(max_examples=5)
+def test_strategy_dtype_decimal(s: pl.Series) -> None:
+    assert s.dtype == pl.Decimal

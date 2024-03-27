@@ -11,7 +11,7 @@ pub use av_buffer::*;
 use rayon::prelude::*;
 
 use crate::prelude::*;
-use crate::utils::try_get_supertype;
+use crate::utils::{dtypes_to_supertype, try_get_supertype};
 use crate::POOL;
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -83,33 +83,15 @@ pub fn coerce_data_type<A: Borrow<DataType>>(datatypes: &[A]) -> DataType {
     try_get_supertype(lhs, rhs).unwrap_or(String)
 }
 
-pub fn any_values_to_dtype(column: &[AnyValue]) -> PolarsResult<(DataType, usize)> {
-    // we need an index-map as the order of dtypes influences how the
-    // struct fields are constructed.
-    let mut types_set = PlIndexSet::new();
-    for val in column.iter() {
-        types_set.insert(val.into());
-    }
-    let n_types = types_set.len();
-    Ok((types_set_to_dtype(types_set)?, n_types))
-}
-
-fn types_set_to_dtype(types_set: PlIndexSet<DataType>) -> PolarsResult<DataType> {
-    types_set
-        .into_iter()
-        .map(Ok)
-        .reduce(|a, b| try_get_supertype(&a?, &b?))
-        .unwrap()
-}
-
 /// Infer schema from rows and set the supertypes of the columns as column data type.
 pub fn rows_to_schema_supertypes(
     rows: &[Row],
     infer_schema_length: Option<usize>,
 ) -> PolarsResult<Schema> {
+    polars_ensure!(!rows.is_empty(), NoData: "no rows, cannot infer schema");
+
     // no of rows to use to infer dtype
     let max_infer = infer_schema_length.unwrap_or(rows.len());
-    polars_ensure!(!rows.is_empty(), NoData: "no rows, cannot infer schema");
     let mut dtypes: Vec<PlIndexSet<DataType>> = vec![PlIndexSet::new(); rows[0].0.len()];
 
     for row in rows.iter().take(max_infer) {
@@ -125,7 +107,7 @@ pub fn rows_to_schema_supertypes(
             let dtype = if types_set.is_empty() {
                 DataType::Unknown
             } else {
-                types_set_to_dtype(types_set)?
+                dtypes_to_supertype(&types_set)?
             };
             Ok(Field::new(format!("column_{i}").as_ref(), dtype))
         })
