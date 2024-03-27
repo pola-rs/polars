@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, Iterable, Iterator, Mapping, Sequence
 
 import polars._reexport as pl
 import polars.datatypes
+import polars.functions as F
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import dtype_str_repr as _dtype_str_repr
@@ -628,6 +629,14 @@ class Enum(DataType):
     def __repr__(self) -> str:
         class_name = self.__class__.__name__
         return f"{class_name}(categories={self.categories.to_list()!r})"
+
+    def union(self, other: Enum) -> Enum:
+        """Union of two Enums."""
+        return Enum(
+            F.concat((self.categories, other.categories)).unique(maintain_order=True)
+        )
+
+    __or__ = union
 
 
 class Object(DataType):

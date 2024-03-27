@@ -81,6 +81,13 @@ def test_nested_enum_creation() -> None:
     assert s.dtype == dtype
 
 
+def test_enum_union() -> None:
+    e1 = pl.Enum(["a", "b"])
+    e2 = pl.Enum(["b", "c"])
+    assert e1 | e2 == pl.Enum(["a", "b", "c"])
+    assert e1.union(e2) == pl.Enum(["a", "b", "c"])
+
+
 def test_nested_enum_concat() -> None:
     dtype = pl.List(pl.Enum(["a", "b", "c", "d"]))
     s1 = pl.Series([[None, "a"], ["b", "c"]], dtype=dtype)
