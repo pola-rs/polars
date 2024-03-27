@@ -72,19 +72,18 @@ def test_numeric_decimal_type(
     expected_value: D,
     expected_dtype: PolarsDataType,
 ) -> None:
-    with pl.Config(activate_decimals=True):
-        df = pl.DataFrame({"n": [value]})
-        with pl.SQLContext(df=df) as ctx:
-            result = ctx.execute(
-                f"""
-                SELECT n::{sqltype}{prec_scale} AS "dec" FROM df
-                """
-            )
-        expected = pl.LazyFrame(
-            data={"dec": [expected_value]},
-            schema={"dec": expected_dtype},
+    df = pl.DataFrame({"n": [value]})
+    with pl.SQLContext(df=df) as ctx:
+        result = ctx.execute(
+            f"""
+            SELECT n::{sqltype}{prec_scale} AS "dec" FROM df
+            """
         )
-        assert_frame_equal(result, expected)
+    expected = pl.LazyFrame(
+        data={"dec": [expected_value]},
+        schema={"dec": expected_dtype},
+    )
+    assert_frame_equal(result, expected)
 
 
 @pytest.mark.parametrize(

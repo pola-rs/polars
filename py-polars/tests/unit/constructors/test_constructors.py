@@ -187,8 +187,6 @@ def test_error_string_dtypes() -> None:
 
 def test_init_structured_objects(monkeypatch: Any) -> None:
     # validate init from dataclass, namedtuple, and pydantic model objects
-    monkeypatch.setenv("POLARS_ACTIVATE_DECIMAL", "1")
-
     @dataclasses.dataclass
     class TradeDC:
         timestamp: datetime
