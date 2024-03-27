@@ -101,7 +101,15 @@ pub fn eager_int_range(
     step: &PyAny,
     dtype: Wrap<DataType>,
 ) -> PyResult<PySeries> {
-    let ret = with_match_physical_integer_polars_type!(dtype.0, |$T| {
+    let dtype = dtype.0;
+    if !dtype.is_integer() {
+        return Err(PyPolarsErr::from(
+            polars_err!(ComputeError: "non-integer `dtype` passed to `int_range`: {:?}", dtype),
+        )
+        .into());
+    }
+
+    let ret = with_match_physical_integer_polars_type!(dtype, |$T| {
         let start_v: <$T as PolarsNumericType>::Native = lower.extract()?;
         let end_v: <$T as PolarsNumericType>::Native = upper.extract()?;
         let step: i64 = step.extract()?;
