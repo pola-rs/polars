@@ -25,27 +25,6 @@ where
         ChunkedArray::from_chunk_iter(self.name(), iter)
     }
 
-    /// Applies a function to all elements, regardless of whether they
-    /// are null or not, after which the null mask is copied from the
-    /// original array.
-    pub fn try_apply_values_generic<'a, U, K, F, E>(
-        &'a self,
-        mut op: F,
-    ) -> Result<ChunkedArray<U>, E>
-    where
-        U: PolarsDataType,
-        F: FnMut(T::Physical<'a>) -> Result<K, E>,
-        U::Array: ArrayFromIter<K>,
-    {
-        let iter = self.downcast_iter().map(|arr| {
-            let element_iter = arr.values_iter().map(&mut op);
-            let array: U::Array = element_iter.try_collect_arr()?;
-            Ok(array.with_validity_typed(arr.validity().cloned()))
-        });
-
-        ChunkedArray::try_from_chunk_iter(self.name(), iter)
-    }
-
     /// Applies a function only to the non-null elements, propagating nulls.
     pub fn apply_nonnull_values_generic<'a, U, K, F>(
         &'a self,
@@ -239,22 +218,6 @@ where
         ChunkedArray::from_chunk_iter(self.name(), chunks)
     }
 
-    fn try_apply_values<F>(&'a self, f: F) -> PolarsResult<Self>
-    where
-        F: Fn(T::Native) -> PolarsResult<T::Native> + Copy,
-    {
-        let mut ca: ChunkedArray<T> = self
-            .data_views()
-            .zip(self.iter_validities())
-            .map(|(slice, validity)| {
-                let vec: PolarsResult<Vec<_>> = slice.iter().copied().map(f).collect();
-                Ok((vec?, validity.cloned()))
-            })
-            .collect::<PolarsResult<_>>()?;
-        ca.rename(self.name());
-        Ok(ca)
-    }
-
     fn apply<F>(&'a self, f: F) -> Self
     where
         F: Fn(Option<T::Native>) -> Option<T::Native> + Copy,
@@ -309,14 +272,6 @@ impl<'a> ChunkApply<'a, bool> for BooleanChunked {
                 )
             }),
         }
-    }
-
-    fn try_apply_values<F>(&self, f: F) -> PolarsResult<Self>
-    where
-        F: Fn(bool) -> PolarsResult<bool> + Copy,
-    {
-        // Inefficient implementation but never actually used I believe.
-        self.try_apply_values_generic(f)
     }
 
     fn apply<F>(&'a self, f: F) -> Self
@@ -398,13 +353,6 @@ impl<'a> ChunkApply<'a, &'a str> for StringChunked {
         ChunkedArray::apply_values_generic(self, f)
     }
 
-    fn try_apply_values<F>(&'a self, f: F) -> PolarsResult<Self>
-    where
-        F: Fn(&'a str) -> PolarsResult<Cow<'a, str>> + Copy,
-    {
-        self.try_apply_values_generic(f)
-    }
-
     fn apply<F>(&'a self, f: F) -> Self
     where
         F: Fn(Option<&'a str>) -> Option<Cow<'a, str>> + Copy,
@@ -439,13 +387,6 @@ impl<'a> ChunkApply<'a, &'a [u8]> for BinaryChunked {
         F: Fn(&'a [u8]) -> Cow<'a, [u8]> + Copy,
     {
         self.apply_values_generic(f)
-    }
-
-    fn try_apply_values<F>(&'a self, f: F) -> PolarsResult<Self>
-    where
-        F: Fn(&'a [u8]) -> PolarsResult<Cow<'a, [u8]>> + Copy,
-    {
-        self.try_apply_values_generic(f)
     }
 
     fn apply<F>(&'a self, f: F) -> Self
@@ -572,40 +513,6 @@ impl<'a> ChunkApply<'a, Series> for ListChunked {
         ca
     }
 
-    fn try_apply_values<F>(&'a self, f: F) -> PolarsResult<Self>
-    where
-        F: Fn(Series) -> PolarsResult<Series> + Copy,
-    {
-        if self.is_empty() {
-            return Ok(self.clone());
-        }
-
-        let mut fast_explode = true;
-        let mut function = |s: Series| {
-            let out = f(s);
-            if let Ok(out) = &out {
-                if out.is_empty() {
-                    fast_explode = false;
-                }
-            }
-            out
-        };
-        let ca: PolarsResult<ListChunked> = {
-            if !self.has_validity() {
-                self.into_no_null_iter().map(&mut function).collect()
-            } else {
-                self.into_iter()
-                    .map(|opt_v| opt_v.map(&mut function).transpose())
-                    .collect()
-            }
-        };
-        let mut ca = ca?;
-        if fast_explode {
-            ca.set_fast_explode()
-        }
-        Ok(ca)
-    }
-
     fn apply<F>(&'a self, f: F) -> Self
     where
         F: Fn(Option<Series>) -> Option<Series> + Copy,
@@ -651,13 +558,6 @@ where
         let mut ca: ObjectChunked<T> = self.into_iter().map(|opt_v| opt_v.map(f)).collect();
         ca.rename(self.name());
         ca
-    }
-
-    fn try_apply_values<F>(&'a self, _f: F) -> PolarsResult<Self>
-    where
-        F: Fn(&'a T) -> PolarsResult<T> + Copy,
-    {
-        todo!()
     }
 
     fn apply<F>(&'a self, f: F) -> Self

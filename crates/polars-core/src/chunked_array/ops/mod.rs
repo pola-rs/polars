@@ -223,11 +223,6 @@ pub trait ChunkApply<'a, T> {
     where
         F: Fn(T) -> Self::FuncRet + Copy;
 
-    fn try_apply_values<F>(&'a self, f: F) -> PolarsResult<Self>
-    where
-        F: Fn(T) -> PolarsResult<Self::FuncRet> + Copy,
-        Self: Sized;
-
     /// Apply a closure elementwise including null values.
     #[must_use]
     fn apply<F>(&'a self, f: F) -> Self
