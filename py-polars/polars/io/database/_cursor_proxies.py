@@ -9,7 +9,6 @@ if TYPE_CHECKING:
     from collections.abc import Coroutine
 
     import pyarrow as pa
-    from surrealdb import Surreal
 
     if sys.version_info >= (3, 11):
         from typing import Self
@@ -76,7 +75,7 @@ class SurrealDBCursorProxy:
 
     _cached_result: list[dict[str, Any]] | None = None
 
-    def __init__(self, client: Surreal) -> None:
+    def __init__(self, client: Any) -> None:
         self.client = client
         self.execute_options: dict[str, Any] = {}
         self.query: str = None  # type: ignore[assignment]
