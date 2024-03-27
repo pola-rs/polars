@@ -28,6 +28,12 @@ def _run_async(co: Coroutine[Any, Any, Any]) -> Any:
     """Run asynchronous code as if it was synchronous."""
     import asyncio
 
+    from polars._utils.unstable import issue_unstable_warning
+
+    issue_unstable_warning(
+        "Use of asynchronous connections is currently considered unstable"
+        " and unexpected issues may arise; if this happens, please report them."
+    )
     try:
         import nest_asyncio
 
