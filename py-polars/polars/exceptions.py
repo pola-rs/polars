@@ -24,16 +24,40 @@ except ImportError:
         """Base class for all Polars errors."""
 
     class ColumnNotFoundError(PolarsError):  # type: ignore[no-redef, misc]
-        """Exception raised when a specified column is not found."""
+        """
+        Exception raised when a specified column is not found.
+
+        Example
+        -------
+        >>> df = pl.DataFrame({"a": [1, 2, 3]})
+        >>> df.select("b")
+        polars.exceptions.ColumnNotFoundError: b
+        """
 
     class ComputeError(PolarsError):  # type: ignore[no-redef, misc]
         """Exception raised when Polars could not perform an underlying computation."""
 
     class DuplicateError(PolarsError):  # type: ignore[no-redef, misc]
-        """Exception raised when a column name is duplicated."""
+        """
+        Exception raised when a column name is duplicated.
+
+        Example
+        -------
+        >>> df = pl.DataFrame({"a": [1, 1, 1]})
+        >>> pl.concat([df, df], how="horizontal")
+        polars.exceptions.DuplicateError: unable to hstack, column with name "a" already exists
+        """  # noqa: W505
 
     class InvalidOperationError(PolarsError):  # type: ignore[no-redef, misc]
-        """Exception raised when an operation is not allowed (or possible) against a given object or data structure."""  # noqa: W505
+        """
+        Exception raised when an operation is not allowed (or possible) against a given object or data structure.
+
+        Example
+        -------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.is_in(["x", "y"])
+        polars.exceptions.InvalidOperationError: `is_in` cannot check for String values in Int64 data
+        """  # noqa: W505
 
     class NoDataError(PolarsError):  # type: ignore[no-redef, misc]
         """Exception raised when an operation cannot be performed on an empty data structure."""  # noqa: W505
