@@ -1,9 +1,6 @@
 //! Implementations of the ChunkApply Trait.
 use std::borrow::Cow;
 
-use arrow::bitmap::utils::{get_bit_unchecked, set_bit_unchecked};
-use arrow::legacy::bitmap::unary_mut;
-
 use crate::prelude::*;
 use crate::series::IsSorted;
 
@@ -295,61 +292,31 @@ impl<'a> ChunkApply<'a, bool> for BooleanChunked {
     where
         F: Fn(bool) -> bool + Copy,
     {
-        self.apply_kernel(&|arr| {
-            let values = arrow::bitmap::unary(arr.values(), |chunk| {
-                let bytes = chunk.to_ne_bytes();
-
-                // different output as that might lead
-                // to better internal parallelism
-                let mut out = 0u64.to_ne_bytes();
-                for i in 0..64 {
-                    unsafe {
-                        let val = get_bit_unchecked(&bytes, i);
-                        let res = f(val);
-                        set_bit_unchecked(&mut out, i, res)
-                    };
-                }
-                u64::from_ne_bytes(out)
-            });
-            BooleanArray::from_data_default(values, arr.validity().cloned()).boxed()
-        })
+        // Can just fully deduce behavior from two invocations.
+        match (f(false), f(true)) {
+            (false, false) => self.apply_kernel(&|arr| {
+                Box::new(
+                    BooleanArray::full(arr.len(), false, ArrowDataType::Boolean)
+                        .with_validity(arr.validity().cloned()),
+                )
+            }),
+            (false, true) => self.clone(),
+            (true, false) => !self,
+            (true, true) => self.apply_kernel(&|arr| {
+                Box::new(
+                    BooleanArray::full(arr.len(), true, ArrowDataType::Boolean)
+                        .with_validity(arr.validity().cloned()),
+                )
+            }),
+        }
     }
 
     fn try_apply_values<F>(&self, f: F) -> PolarsResult<Self>
     where
         F: Fn(bool) -> PolarsResult<bool> + Copy,
     {
-        let mut failed: Option<PolarsError> = None;
-        let chunks = self.downcast_iter().map(|arr| {
-            let values = unary_mut(arr.values(), |chunk| {
-                let bytes = chunk.to_ne_bytes();
-
-                if failed.is_some() {
-                    0
-                } else {
-                    let mut out = 0u64.to_ne_bytes();
-                    // We reverse the order of the loop so we keep the first error, if any.
-                    for i in (0..64).rev() {
-                        unsafe {
-                            let val = get_bit_unchecked(&bytes, i);
-                            match f(val) {
-                                Ok(res) => set_bit_unchecked(&mut out, i, res),
-                                Err(e) => failed = Some(e),
-                            }
-                        };
-                    }
-                    u64::from_ne_bytes(out)
-                }
-            });
-
-            BooleanArray::from_data_default(values, arr.validity().cloned())
-        });
-
-        let ret = BooleanChunked::from_chunk_iter(self.name(), chunks);
-        if let Some(e) = failed {
-            return Err(e);
-        }
-        Ok(ret)
+        // Inefficient implementation but never actually used I believe.
+        self.try_apply_values_generic(f)
     }
 
     fn apply<F>(&'a self, f: F) -> Self
