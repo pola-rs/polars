@@ -146,7 +146,8 @@ class LazyPolarsSlice:
         # [i:<=i]
         # [i:>=i:-k]
         if (step > 0 and (s.stop is not None and start >= s.stop)) or (
-            step < 0 and (s.stop is not None and s.stop >= s.start >= 0)
+            step < 0
+            and (s.start is not None and s.stop is not None and s.stop >= s.start >= 0)
         ):
             return self.obj.clear()
 
@@ -192,7 +193,7 @@ class LazyPolarsSlice:
         # ---------------------------------------
         # [-i:]    => tail(abs(i))
         # [-i::k]  => tail(abs(i)).gather_every(k)
-        elif start < 0 and s.stop is None:
+        elif start < 0 and s.stop is None and step > 0:
             obj = self.obj.tail(abs(start))
             return obj if (step == 1) else obj.gather_every(step)
 
