@@ -159,13 +159,12 @@ impl Series {
     pub fn clear(&self) -> Series {
         match self.dtype() {
             #[cfg(feature = "object")]
-            DataType::Object(_, reg) => {
+            DataType::Object(_, _) => {
                 if self.is_empty() {
                     self.clone()
                 } else {
-                    let reg = reg.as_ref().unwrap();
-                    let mut builder = (*reg.builder_constructor)(self.name(), 0);
-                    builder.to_series()
+                    // SAFETY: we can always take zero elements
+                    unsafe { self.take_slice_unchecked(&[]).clone() }
                 }
             },
             dt => Series::new_empty(self.name(), dt),
