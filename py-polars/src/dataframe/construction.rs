@@ -21,19 +21,20 @@ impl PyDataFrame {
     }
 
     #[staticmethod]
-    #[pyo3(signature = (data, schema=None, schema_overrides=None, infer_schema_length=None))]
+    #[pyo3(signature = (data, schema=None, schema_overrides=None, strict=true, infer_schema_length=None))]
     pub fn from_dicts(
         py: Python,
         data: &PyAny,
         schema: Option<Wrap<Schema>>,
         schema_overrides: Option<Wrap<Schema>>,
+        strict: bool,
         infer_schema_length: Option<usize>,
     ) -> PyResult<Self> {
         let schema = schema.map(|wrap| wrap.0);
         let schema_overrides = schema_overrides.map(|wrap| wrap.0);
 
         let names = get_schema_names(data, schema.as_ref(), infer_schema_length)?;
-        let rows = dicts_to_rows(data, &names)?;
+        let rows = dicts_to_rows(data, &names, strict)?;
 
         let schema = schema.or_else(|| {
             Some(columns_names_to_empty_schema(
@@ -134,7 +135,7 @@ where
     Schema::from_iter(fields)
 }
 
-fn dicts_to_rows<'a>(data: &'a PyAny, names: &'a [String]) -> PyResult<Vec<Row<'a>>> {
+fn dicts_to_rows<'a>(data: &'a PyAny, names: &'a [String], strict: bool) -> PyResult<Vec<Row<'a>>> {
     let len = data.len()?;
     let mut rows = Vec::with_capacity(len);
     for d in data.iter()? {
@@ -145,9 +146,7 @@ fn dicts_to_rows<'a>(data: &'a PyAny, names: &'a [String]) -> PyResult<Vec<Row<'
         for k in names.iter() {
             let val = match d.get_item(k)? {
                 None => AnyValue::Null,
-                // TODO: Propagate strictness here.
-                // https://github.com/pola-rs/polars/issues/14427
-                Some(val) => py_object_to_any_value(val, false)?,
+                Some(val) => py_object_to_any_value(val, strict)?,
             };
             row.push(val)
         }

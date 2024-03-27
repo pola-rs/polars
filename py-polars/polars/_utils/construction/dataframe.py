@@ -555,7 +555,7 @@ def _sequence_of_sequence_to_pydf(
         if unpack_nested:
             dicts = [nt_unpack(d) for d in data]
             pydf = PyDataFrame.from_dicts(
-                dicts, infer_schema_length=infer_schema_length
+                dicts, strict=strict, infer_schema_length=infer_schema_length
             )
         else:
             pydf = PyDataFrame.from_rows(
@@ -675,6 +675,7 @@ def _sequence_of_dict_to_pydf(
         data,
         dicts_schema,
         schema_overrides,
+        strict=strict,
         infer_schema_length=infer_schema_length,
     )
 
@@ -774,7 +775,9 @@ def _sequence_of_dataclasses_to_pydf(
     )
     if unpack_nested:
         dicts = [asdict(md) for md in data]
-        pydf = PyDataFrame.from_dicts(dicts, infer_schema_length=infer_schema_length)
+        pydf = PyDataFrame.from_dicts(
+            dicts, strict=strict, infer_schema_length=infer_schema_length
+        )
     else:
         rows = [astuple(dc) for dc in data]
         pydf = PyDataFrame.from_rows(
@@ -823,7 +826,9 @@ def _sequence_of_pydantic_models_to_pydf(
             if old_pydantic
             else [md.model_dump(mode="python") for md in data]
         )
-        pydf = PyDataFrame.from_dicts(dicts, infer_schema_length=infer_schema_length)
+        pydf = PyDataFrame.from_dicts(
+            dicts, strict=strict, infer_schema_length=infer_schema_length
+        )
 
     elif len(model_fields) > 50:
         # 'from_rows' is the faster codepath for models with a lot of fields...
@@ -836,7 +841,10 @@ def _sequence_of_pydantic_models_to_pydf(
         # ...and 'from_dicts' is faster otherwise
         dicts = [md.__dict__ for md in data]
         pydf = PyDataFrame.from_dicts(
-            dicts, schema=overrides, infer_schema_length=infer_schema_length
+            dicts,
+            schema=overrides,
+            strict=strict,
+            infer_schema_length=infer_schema_length,
         )
 
     if overrides:
