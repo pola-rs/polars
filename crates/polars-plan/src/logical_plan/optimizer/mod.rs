@@ -90,7 +90,7 @@ pub fn optimize(
     scratch: &mut Vec<Node>,
     hive_partition_eval: HiveEval<'_>,
 ) -> PolarsResult<Node> {
-    #[cfg(feature = "cse")]
+    #[allow(dead_code)]
     let verbose = verbose();
     // get toggle values
     let predicate_pushdown = opt_state.predicate_pushdown;
