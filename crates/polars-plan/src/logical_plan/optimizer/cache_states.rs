@@ -5,25 +5,21 @@ use super::*;
 fn get_upper_projections(
     parent: Node,
     lp_arena: &Arena<ALogicalPlan>,
-    expr_arena: &Arena<AExpr>,
     names_scratch: &mut Vec<ColumnName>,
-) {
+) -> bool {
     let parent = lp_arena.get(parent);
 
     use ALogicalPlan::*;
     // During projection pushdown all accumulated.
     match parent {
-        Projection { expr, .. } => {
-            for e in expr {
-                names_scratch.extend(aexpr_to_leaf_names_iter(e.node(), expr_arena));
-            }
-        },
         SimpleProjection { columns, .. } => {
             let iter = columns.iter_names().map(|s| ColumnName::from(s.as_str()));
             names_scratch.extend(iter);
+            false
         },
-        // other
-        _ => {},
+        Selection { .. } => true,
+        // Only filter and projection nodes are allowed, any other node we stop.
+        _ => false,
     }
 }
 
@@ -32,14 +28,19 @@ fn get_upper_predicates(
     lp_arena: &Arena<ALogicalPlan>,
     expr_arena: &mut Arena<AExpr>,
     predicate_scratch: &mut Vec<Expr>,
-) {
+) -> bool {
     let parent = lp_arena.get(parent);
 
     use ALogicalPlan::*;
-    // During projection pushdown all accumulated.
-    if let Selection { predicate, .. } = parent {
-        let expr = predicate.to_expr(expr_arena);
-        predicate_scratch.push(expr);
+    match parent {
+        Selection { predicate, .. } => {
+            let expr = predicate.to_expr(expr_arena);
+            predicate_scratch.push(expr);
+            false
+        },
+        SimpleProjection { .. } => true,
+        // Only filter and projection nodes are allowed, any other node we stop.
+        _ => false,
     }
 }
 
@@ -192,31 +193,36 @@ pub(super) fn set_cache_states(
                     v.parents.push(frame.parent);
 
                     let mut found_columns = false;
-                    for &parent_node in &frame.parent {
-                        if let Some(parent_node) = parent_node {
-                            get_upper_projections(
-                                parent_node,
-                                lp_arena,
-                                expr_arena,
-                                &mut names_scratch,
-                            );
-                            if !names_scratch.is_empty() {
-                                found_columns = true;
-                                v.names_union.extend(names_scratch.drain(..));
-                            }
 
-                            get_upper_predicates(
-                                parent_node,
-                                lp_arena,
-                                expr_arena,
-                                &mut predicates_scratch,
-                            );
-                            if !predicates_scratch.is_empty() {
-                                for pred in predicates_scratch.drain(..) {
-                                    let count = v.predicate_union.entry(pred).or_insert(0);
-                                    *count += 1;
-                                }
+                    for parent_node in frame.parent.into_iter().flatten() {
+                        let keep_going =
+                            get_upper_projections(parent_node, lp_arena, &mut names_scratch);
+                        if !names_scratch.is_empty() {
+                            found_columns = true;
+                            v.names_union.extend(names_scratch.drain(..));
+                        }
+                        // We stop early as we want to find the first projection node above the cache.
+                        if !keep_going {
+                            break;
+                        }
+                    }
+
+                    for parent_node in frame.parent.into_iter().flatten() {
+                        let keep_going = get_upper_predicates(
+                            parent_node,
+                            lp_arena,
+                            expr_arena,
+                            &mut predicates_scratch,
+                        );
+                        if !predicates_scratch.is_empty() {
+                            for pred in predicates_scratch.drain(..) {
+                                let count = v.predicate_union.entry(pred).or_insert(0);
+                                *count += 1;
                             }
+                        }
+                        // We stop early as we want to find the first predicate node above the cache.
+                        if !keep_going {
+                            break;
                         }
                     }
 
@@ -255,6 +261,7 @@ pub(super) fn set_cache_states(
     if !cache_schema_and_children.is_empty() {
         let mut proj_pd = ProjectionPushDown::new();
         for (_cache_id, v) in cache_schema_and_children {
+            // # CHECK IF WE NEED TO REMOVE CACHES
             // If we encounter multiple predicates we remove the cache nodes completely as we don't
             // want to loose predicate pushdown in favor of scan sharing.
             if v.predicate_union.len() > 1 {
@@ -280,29 +287,7 @@ pub(super) fn set_cache_states(
                 return Ok(());
             }
 
-            let pred_pd = PredicatePushDown::new(Default::default()).block_at_cache(false);
-
-            // - If all predicates of parent are the same we will restart predicate pushdown from the parent FILTER node.
-            // - Otherwise we will start predicate pushdown from the cache node.
-            let allow_parent_predicate_pushdown = v.predicate_union.len() == 1 && {
-                let (_pred, count) = v.predicate_union.iter().next().unwrap();
-                *count == v.children.len() as u32
-            };
-
-            for (&child, parents) in v.children.iter().zip(v.parents) {
-                if allow_parent_predicate_pushdown {
-                    let node = get_filter_node(parents, lp_arena)
-                        .expect("expected filter; this is an optimizer bug");
-                    let start_lp = lp_arena.take(node);
-                    let lp = pred_pd.optimize(start_lp, lp_arena, expr_arena)?;
-                    lp_arena.replace(node, lp);
-                } else {
-                    let child_lp = lp_arena.take(child);
-                    let lp = pred_pd.optimize(child_lp, lp_arena, expr_arena)?;
-                    lp_arena.replace(child, lp);
-                }
-            }
-
+            // # RUN PROJECTION PUSHDOWN
             if !v.names_union.is_empty() {
                 for &child in &v.children {
                     let columns = &v.names_union;
@@ -334,6 +319,38 @@ pub(super) fn set_cache_states(
                     } else {
                         lp
                     };
+                    lp_arena.replace(child, lp);
+                }
+            } else {
+                // No upper projections to include, run projection pushdown from cache node.
+                for &child in &v.children {
+                    let child_lp = lp_arena.take(child);
+                    let lp = proj_pd.optimize(child_lp, lp_arena, expr_arena)?;
+                    lp_arena.replace(child, lp);
+                }
+            }
+
+            // # RUN PREDICATE PUSHDOWN
+            // Run this after projection pushdown, otherwise the predicate columns will not be projected.
+            let pred_pd = PredicatePushDown::new(Default::default()).block_at_cache(false);
+
+            // - If all predicates of parent are the same we will restart predicate pushdown from the parent FILTER node.
+            // - Otherwise we will start predicate pushdown from the cache node.
+            let allow_parent_predicate_pushdown = v.predicate_union.len() == 1 && {
+                let (_pred, count) = v.predicate_union.iter().next().unwrap();
+                *count == v.children.len() as u32
+            };
+
+            for (&child, parents) in v.children.iter().zip(v.parents) {
+                if allow_parent_predicate_pushdown {
+                    let node = get_filter_node(parents, lp_arena)
+                        .expect("expected filter; this is an optimizer bug");
+                    let start_lp = lp_arena.take(node);
+                    let lp = pred_pd.optimize(start_lp, lp_arena, expr_arena)?;
+                    lp_arena.replace(node, lp);
+                } else {
+                    let child_lp = lp_arena.take(child);
+                    let lp = pred_pd.optimize(child_lp, lp_arena, expr_arena)?;
                     lp_arena.replace(child, lp);
                 }
             }
