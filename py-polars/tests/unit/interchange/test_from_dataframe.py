@@ -21,12 +21,7 @@ from polars.interchange.from_dataframe import (
     _construct_validity_buffer_from_bytemask,
     _string_column_to_series,
 )
-from polars.interchange.protocol import (
-    ColumnNullType,
-    CopyNotAllowedError,
-    DtypeKind,
-    Endianness,
-)
+from polars.interchange.protocol import ColumnNullType, DtypeKind, Endianness
 from polars.testing import assert_frame_equal, assert_series_equal
 
 NE = Endianness.NATIVE
@@ -175,7 +170,7 @@ def test_from_dataframe_pandas_boolean_bytes() -> None:
     assert_frame_equal(result, expected)
 
     with pytest.raises(
-        CopyNotAllowedError,
+        pl.CopyNotAllowedError,
         match="byte-packed boolean buffer must be converted to bit-packed boolean",
     ):
         result = pl.from_dataframe(df, allow_copy=False)
@@ -190,7 +185,9 @@ def test_from_dataframe_categorical_pandas() -> None:
     expected = pl.Series("a", values, dtype=pl.Enum(["a", "b"])).to_frame()
     assert_frame_equal(result, expected)
 
-    with pytest.raises(CopyNotAllowedError, match="string buffers must be converted"):
+    with pytest.raises(
+        pl.CopyNotAllowedError, match="string buffers must be converted"
+    ):
         result = pl.from_dataframe(df_pd, allow_copy=False)
 
 
@@ -205,7 +202,9 @@ def test_from_dataframe_categorical_pyarrow() -> None:
     expected = pl.Series("a", values, dtype=pl.Enum(["a", "b"])).to_frame()
     assert_frame_equal(result, expected)
 
-    with pytest.raises(CopyNotAllowedError, match="string buffers must be converted"):
+    with pytest.raises(
+        pl.CopyNotAllowedError, match="string buffers must be converted"
+    ):
         result = pl.from_dataframe(df_pa, allow_copy=False)
 
 
@@ -234,7 +233,7 @@ def test_from_dataframe_categorical_non_u32_values() -> None:
     assert_frame_equal(result, expected)
 
     with pytest.raises(
-        CopyNotAllowedError, match="data buffer must be cast from Int8 to UInt32"
+        pl.CopyNotAllowedError, match="data buffer must be cast from Int8 to UInt32"
     ):
         result = pl.from_dataframe(df_pa, allow_copy=False)
 
@@ -398,7 +397,7 @@ def test_construct_offsets_buffer_copy() -> None:
     buffer = PolarsBuffer(data)
     dtype = (DtypeKind.UINT, 32, "I", NE)
 
-    with pytest.raises(CopyNotAllowedError):
+    with pytest.raises(pl.CopyNotAllowedError):
         _construct_offsets_buffer(buffer, dtype, offset=0, allow_copy=False)
 
     result = _construct_offsets_buffer(buffer, dtype, offset=0, allow_copy=True)
@@ -491,7 +490,7 @@ def test_construct_validity_buffer_use_nan() -> None:
     expected = pl.Series([True, True, False])
     assert_series_equal(result, expected)  # type: ignore[arg-type]
 
-    with pytest.raises(CopyNotAllowedError, match="bitmask must be constructed"):
+    with pytest.raises(pl.CopyNotAllowedError, match="bitmask must be constructed"):
         _construct_validity_buffer(None, col, s.dtype, s, allow_copy=False)
 
 
@@ -506,7 +505,7 @@ def test_construct_validity_buffer_use_sentinel() -> None:
     expected = pl.Series([True, True, False])
     assert_series_equal(result, expected)  # type: ignore[arg-type]
 
-    with pytest.raises(CopyNotAllowedError, match="bitmask must be constructed"):
+    with pytest.raises(pl.CopyNotAllowedError, match="bitmask must be constructed"):
         _construct_validity_buffer(None, col, s.dtype, s, allow_copy=False)
 
 
@@ -543,7 +542,7 @@ def test_construct_validity_buffer_from_bitmask_inverted(bitmask: PolarsBuffer) 
 def test_construct_validity_buffer_from_bitmask_zero_copy_fails(
     bitmask: PolarsBuffer,
 ) -> None:
-    with pytest.raises(CopyNotAllowedError):
+    with pytest.raises(pl.CopyNotAllowedError):
         _construct_validity_buffer_from_bitmask(
             bitmask, null_value=1, offset=0, length=4, allow_copy=False
         )
@@ -581,7 +580,7 @@ def test_construct_validity_buffer_from_bytemask_inverted(
 def test_construct_validity_buffer_from_bytemask_zero_copy_fails(
     bytemask: PolarsBuffer,
 ) -> None:
-    with pytest.raises(CopyNotAllowedError):
+    with pytest.raises(pl.CopyNotAllowedError):
         _construct_validity_buffer_from_bytemask(
             bytemask, null_value=0, allow_copy=False
         )

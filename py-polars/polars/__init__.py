@@ -78,6 +78,7 @@ from polars.exceptions import (
     ChronoFormatWarning,
     ColumnNotFoundError,
     ComputeError,
+    CopyNotAllowedError,
     DuplicateError,
     InvalidOperationError,
     MapWithoutReturnDtypeWarning,
@@ -229,6 +230,7 @@ __all__ = [
     "plugins",
     # exceptions/errors
     "ArrowError",
+    "CopyNotAllowedError",
     "ColumnNotFoundError",
     "ComputeError",
     "DuplicateError",

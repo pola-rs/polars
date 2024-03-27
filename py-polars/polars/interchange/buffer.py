@@ -2,12 +2,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from polars.interchange.protocol import (
-    Buffer,
-    CopyNotAllowedError,
-    DlpackDeviceType,
-    DtypeKind,
-)
+from polars.exceptions import CopyNotAllowedError
+from polars.interchange.protocol import Buffer, DlpackDeviceType, DtypeKind
 from polars.interchange.utils import polars_dtype_to_dtype
 
 if TYPE_CHECKING:

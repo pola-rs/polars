@@ -3,14 +3,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from polars.datatypes import Boolean, Categorical, Enum, String
+from polars.exceptions import CopyNotAllowedError
 from polars.interchange.buffer import PolarsBuffer
-from polars.interchange.protocol import (
-    Column,
-    ColumnNullType,
-    CopyNotAllowedError,
-    DtypeKind,
-    Endianness,
-)
+from polars.interchange.protocol import Column, ColumnNullType, DtypeKind, Endianness
 from polars.interchange.utils import polars_dtype_to_dtype
 
 if TYPE_CHECKING:

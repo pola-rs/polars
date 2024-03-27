@@ -4,8 +4,8 @@ from collections.abc import Sequence
 from itertools import accumulate
 from typing import TYPE_CHECKING
 
+from polars.exceptions import CopyNotAllowedError
 from polars.interchange.column import PolarsColumn
-from polars.interchange.protocol import CopyNotAllowedError
 from polars.interchange.protocol import DataFrame as InterchangeDataFrame
 
 if TYPE_CHECKING:

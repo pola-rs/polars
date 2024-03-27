@@ -69,6 +69,10 @@ except ImportError:
         """Warning raised when `map_elements` is performed without specifying the return dtype."""  # noqa: W505
 
 
+class CopyNotAllowedError(PolarsError, RuntimeError):  # type: ignore[misc]
+    """Exception raised when data copy is required, but copying data was explicitly disallowed."""  # noqa: W505
+
+
 class InvalidAssert(PolarsError):  # type: ignore[misc]
     """Exception raised when an unsupported testing assert is made."""
 
@@ -132,6 +136,7 @@ class CustomUFuncWarning(PolarsWarning):  # type: ignore[misc]
 __all__ = [
     "ArrowError",
     "ColumnNotFoundError",
+    "CopyNotAllowedError",
     "ComputeError",
     "ChronoFormatWarning",
     "DuplicateError",
