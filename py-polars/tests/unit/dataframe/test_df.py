@@ -1620,8 +1620,8 @@ def test_extension() -> None:
             return f"foo({self.value})"
 
     foos = [Foo(1), Foo(2), Foo(3)]
-    # I believe foos, stack, and sys.getrefcount have a ref
-    base_count = 3
+    # foos and sys.getrefcount have a reference.
+    base_count = 2
     assert sys.getrefcount(foos[0]) == base_count
 
     df = pl.DataFrame({"groups": [1, 1, 2], "a": foos})
