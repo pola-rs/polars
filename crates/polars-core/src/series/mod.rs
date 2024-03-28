@@ -163,7 +163,7 @@ impl Series {
                 if self.is_empty() {
                     self.clone()
                 } else {
-                    self.slice(0, 0)
+                    self.take(&UInt32Chunked::new_vec("", vec![])).unwrap()
                 }
             },
             dt => Series::new_empty(self.name(), dt),
