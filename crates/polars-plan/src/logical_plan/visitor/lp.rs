@@ -27,6 +27,7 @@ impl ALogicalPlanNode {
         Self { node, arena }
     }
 
+    #[cfg(feature = "cse")]
     pub(crate) fn get_arena_raw(&self) -> *mut Arena<ALogicalPlan> {
         self.arena
     }
