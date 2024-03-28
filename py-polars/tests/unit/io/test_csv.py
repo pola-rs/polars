@@ -2031,16 +2031,15 @@ def test_read_csv_batched_only_loads_selected_columns(
     del df, series
 
     memory_usage_without_pyarrow.reset_tracking()
-
     result = []
+    batched = pl.read_csv_batched(
+        str(file_path), columns=["b"], rechunk=False, n_threads=1, low_memory=True
+    )
     while sum(df.height for df in result) < 1_000_000:
-        result += pl.read_csv_batched(
-            str(file_path),
-            columns=["b"],
-            rechunk=False,
-            n_threads=1,
-        ).next_batches(3)
-
+        next_batch = batched.next_batches(3)
+        if next_batch is None:
+            break
+        result += next_batch
     del result
 
     # Only one column's worth of memory should be used:
