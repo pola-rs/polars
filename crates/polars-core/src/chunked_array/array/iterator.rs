@@ -161,6 +161,16 @@ impl ArrayChunked {
         self.amortized_iter().map(f).collect_ca(self.name())
     }
 
+    /// Try apply a closure `F` elementwise.
+    pub fn try_apply_amortized_generic<'a, F, K, V>(&'a self, f: F) -> PolarsResult<ChunkedArray<V>>
+    where
+        V: PolarsDataType,
+        F: FnMut(Option<UnstableSeries<'a>>) -> PolarsResult<Option<K>> + Copy,
+        V::Array: ArrayFromIter<Option<K>>,
+    {
+        self.amortized_iter().map(f).try_collect_ca(self.name())
+    }
+
     pub fn for_each_amortized<'a, F>(&'a self, f: F)
     where
         F: FnMut(Option<UnstableSeries<'a>>),

@@ -362,9 +362,17 @@ pub fn to_alp(
                 args,
             }
         },
-        LogicalPlan::Cache { input, id, count } => {
+        LogicalPlan::Cache {
+            input,
+            id,
+            cache_hits,
+        } => {
             let input = to_alp(*input, expr_arena, lp_arena)?;
-            ALogicalPlan::Cache { input, id, count }
+            ALogicalPlan::Cache {
+                input,
+                id,
+                cache_hits,
+            }
         },
         LogicalPlan::Aggregate {
             input,
@@ -819,9 +827,17 @@ impl ALogicalPlan {
                     args,
                 }
             },
-            ALogicalPlan::Cache { input, id, count } => {
+            ALogicalPlan::Cache {
+                input,
+                id,
+                cache_hits,
+            } => {
                 let input = Box::new(convert_to_lp(input, lp_arena));
-                LogicalPlan::Cache { input, id, count }
+                LogicalPlan::Cache {
+                    input,
+                    id,
+                    cache_hits,
+                }
             },
             ALogicalPlan::Aggregate {
                 input,

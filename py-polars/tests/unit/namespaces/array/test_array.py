@@ -382,3 +382,18 @@ def test_array_shift() -> None:
         schema={"lit": pl.Array(pl.Int64, 3), "expr": pl.Array(pl.Int64, 3)},
     )
     assert_frame_equal(out, expected)
+
+
+def test_array_n_unique() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [[1, 1, 2], [3, 3, 3], [None, None, None], None],
+        },
+        schema={"a": pl.Array(pl.Int64, 3)},
+    )
+
+    out = df.select(n_unique=pl.col("a").arr.n_unique())
+    expected = pl.DataFrame(
+        {"n_unique": [2, 1, 1, None]}, schema={"n_unique": pl.UInt32}
+    )
+    assert_frame_equal(out, expected)

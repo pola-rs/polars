@@ -125,14 +125,14 @@ impl AexprNode {
         })
     }
 
-    // traverses all nodes and does a full equality check
-    fn is_equal(&self, other: &Self, scratch1: &mut Vec<Node>, scratch2: &mut Vec<Node>) -> bool {
+    // Check single node on equality
+    fn is_equal(&self, other: &Self) -> bool {
         self.with_arena(|arena| {
             let self_ae = self.to_aexpr();
             let other_ae = arena.get(other.node());
 
             use AExpr::*;
-            let this_node_equal = match (self_ae, other_ae) {
+            match (self_ae, other_ae) {
                 (Alias(_, l), Alias(_, r)) => l == r,
                 (Column(l), Column(r)) => l == r,
                 (Literal(l), Literal(r)) => l == r,
@@ -174,30 +174,6 @@ impl AexprNode {
                 (AnonymousFunction { .. }, AnonymousFunction { .. }) => false,
                 (BinaryExpr { op: l, .. }, BinaryExpr { op: r, .. }) => l == r,
                 _ => false,
-            };
-
-            if !this_node_equal {
-                return false;
-            }
-
-            self_ae.nodes(scratch1);
-            other_ae.nodes(scratch2);
-
-            loop {
-                match (scratch1.pop(), scratch2.pop()) {
-                    (Some(l), Some(r)) => {
-                        // SAFETY: we can pass a *mut pointer
-                        // the equality operation will not access mutable
-                        let l = unsafe { AexprNode::from_raw(l, self.arena) };
-                        let r = unsafe { AexprNode::from_raw(r, self.arena) };
-
-                        if !l.is_equal(&r, scratch1, scratch2) {
-                            return false;
-                        }
-                    },
-                    (None, None) => return true,
-                    _ => return false,
-                }
             }
         })
     }
@@ -212,7 +188,29 @@ impl PartialEq for AexprNode {
     fn eq(&self, other: &Self) -> bool {
         let mut scratch1 = vec![];
         let mut scratch2 = vec![];
-        self.is_equal(other, &mut scratch1, &mut scratch2)
+
+        scratch1.push(self.node);
+        scratch2.push(other.node);
+
+        loop {
+            match (scratch1.pop(), scratch2.pop()) {
+                (Some(l), Some(r)) => {
+                    // SAFETY: we can pass a *mut pointer
+                    // the equality operation will not access mutable
+                    let l = unsafe { AexprNode::from_raw(l, self.arena) };
+                    let r = unsafe { AexprNode::from_raw(r, self.arena) };
+
+                    if !l.is_equal(&r) {
+                        return false;
+                    }
+
+                    l.to_aexpr().nodes(&mut scratch1);
+                    r.to_aexpr().nodes(&mut scratch2);
+                },
+                (None, None) => return true,
+                _ => return false,
+            }
+        }
     }
 }
 

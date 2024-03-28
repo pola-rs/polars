@@ -229,7 +229,6 @@ pub fn create_physical_plan(
                 #[cfg(feature = "ipc")]
                 FileScan::Ipc {
                     options,
-                    #[cfg(feature = "cloud")]
                     cloud_options,
                     metadata,
                 } => Ok(Box::new(executors::IpcExec {
@@ -238,7 +237,6 @@ pub fn create_physical_plan(
                     predicate,
                     options,
                     file_options,
-                    #[cfg(feature = "cloud")]
                     cloud_options,
                     metadata,
                 })),
@@ -349,9 +347,17 @@ pub fn create_physical_plan(
                 args,
             }))
         },
-        Cache { input, id, count } => {
+        Cache {
+            input,
+            id,
+            cache_hits,
+        } => {
             let input = create_physical_plan(input, lp_arena, expr_arena)?;
-            Ok(Box::new(executors::CacheExec { id, input, count }))
+            Ok(Box::new(executors::CacheExec {
+                id,
+                input,
+                count: cache_hits,
+            }))
         },
         Distinct { input, options } => {
             let input = create_physical_plan(input, lp_arena, expr_arena)?;

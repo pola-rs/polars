@@ -6,6 +6,7 @@ pub static MAP_LIST_NAME: &str = "map_list";
 pub static CSE_REPLACED: &str = "__POLARS_CSER_";
 pub const LEN: &str = "len";
 pub const LITERAL_NAME: &str = "literal";
+pub const UNLIMITED_CACHE: u32 = u32::MAX;
 
 // Cache the often used LITERAL and LEN constants
 static LITERAL_NAME_INIT: OnceLock<Arc<str>> = OnceLock::new();
