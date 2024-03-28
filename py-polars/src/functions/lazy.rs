@@ -57,9 +57,10 @@ pub fn rolling_cov(
 }
 
 #[pyfunction]
-pub fn arg_sort_by(by: Vec<PyExpr>, descending: Vec<bool>) -> PyExpr {
+pub fn arg_sort_by(by: Vec<PyExpr>, descending: Vec<bool>) -> PyResult<PyExpr> {
     let by = by.into_iter().map(|e| e.inner).collect::<Vec<Expr>>();
-    dsl::arg_sort_by(by, &descending).into()
+    let e = dsl::arg_sort_by(by, &descending).map_err(PyPolarsErr::from)?;
+    Ok(e.into())
 }
 
 #[pyfunction]
