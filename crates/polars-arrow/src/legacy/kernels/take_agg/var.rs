@@ -42,16 +42,14 @@ where
 /// Take kernel for single chunk and an iterator as index.
 /// # Safety
 /// caller must ensure iterators indexes are in bounds
-pub unsafe fn take_var_no_null_primitive_iter_unchecked<
-    T: NativeType + ToPrimitive,
-    I: IntoIterator<Item = usize>,
->(
+pub unsafe fn take_var_no_null_primitive_iter_unchecked<T, I>(
     arr: &PrimitiveArray<T>,
     indices: I,
     ddof: u8,
 ) -> Option<f64>
 where
-    T: ToPrimitive,
+    T: NativeType + ToPrimitive,
+    I: IntoIterator<Item = usize>,
 {
     debug_assert!(arr.null_count() == 0);
     let array_values = arr.values().as_slice();
@@ -67,16 +65,14 @@ where
 /// Take kernel for single chunk and an iterator as index.
 /// # Safety
 /// caller must ensure iterators indexes are in bounds
-pub unsafe fn take_var_nulls_primitive_iter_unchecked<
-    T: NativeType + ToPrimitive,
-    I: IntoIterator<Item = usize>,
->(
+pub unsafe fn take_var_nulls_primitive_iter_unchecked<T, I>(
     arr: &PrimitiveArray<T>,
     indices: I,
     ddof: u8,
 ) -> Option<f64>
 where
-    T: ToPrimitive,
+    T: NativeType + ToPrimitive,
+    I: IntoIterator<Item = usize>,
 {
     debug_assert!(arr.null_count() > 0);
     let array_values = arr.values().as_slice();

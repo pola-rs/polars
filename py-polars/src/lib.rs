@@ -28,6 +28,7 @@ mod gil_once_cell;
 mod lazyframe;
 mod lazygroupby;
 mod map;
+#[cfg(debug_assertions)]
 mod memory;
 #[cfg(feature = "object")]
 mod object;

@@ -43,7 +43,7 @@ pub trait ChunkAggSeries {
     }
 }
 
-fn sum<T: NumericNative + NativeType>(array: &PrimitiveArray<T>) -> T
+fn sum<T>(array: &PrimitiveArray<T>) -> T
 where
     T: NumericNative + NativeType,
     <T as Simd>::Simd: Add<Output = <T as Simd>::Simd> + compute::aggregate::Sum<T>,

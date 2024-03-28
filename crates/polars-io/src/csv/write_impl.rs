@@ -266,16 +266,6 @@ impl Default for SerializeOptions {
     }
 }
 
-/// Utility to write to `&mut Vec<u8>` buffer.
-struct StringWrap<'a>(pub &'a mut Vec<u8>);
-
-impl<'a> std::fmt::Write for StringWrap<'a> {
-    fn write_str(&mut self, s: &str) -> std::fmt::Result {
-        self.0.extend_from_slice(s.as_bytes());
-        Ok(())
-    }
-}
-
 pub(crate) fn write<W: Write>(
     writer: &mut W,
     df: &DataFrame,

@@ -1,8 +1,10 @@
+#[cfg(feature = "cse")]
 mod hash;
 mod schema;
 
 use std::hash::{Hash, Hasher};
 
+#[cfg(feature = "cse")]
 pub(super) use hash::traverse_and_hash_aexpr;
 use polars_core::prelude::*;
 use polars_core::utils::{get_time_units, try_get_supertype};
