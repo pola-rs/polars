@@ -256,9 +256,9 @@ where
     }
 }
 
-pub fn sum_arr_as_f32<T: NativeType>(arr: &PrimitiveArray<T>) -> f32
+pub fn sum_arr_as_f32<T>(arr: &PrimitiveArray<T>) -> f32
 where
-    T: FloatSum<f32>,
+    T: NativeType + FloatSum<f32>,
 {
     let validity = arr.validity().filter(|_| arr.null_count() > 0);
     if let Some(mask) = validity {
@@ -268,9 +268,9 @@ where
     }
 }
 
-pub fn sum_arr_as_f64<T: NativeType>(arr: &PrimitiveArray<T>) -> f64
+pub fn sum_arr_as_f64<T>(arr: &PrimitiveArray<T>) -> f64
 where
-    T: FloatSum<f64>,
+    T: NativeType + FloatSum<f64>,
 {
     let validity = arr.validity().filter(|_| arr.null_count() > 0);
     if let Some(mask) = validity {
