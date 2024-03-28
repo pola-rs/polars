@@ -142,14 +142,14 @@ checksum = "bf7d0a018de4f6aa429b9d33d69edf69072b1c5b1cb8d3e4a5f7ef898fc3eb76"
 
 [[package]]
 name = "arrow-array"
-version = "50.0.0"
+version = "51.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d390feeb7f21b78ec997a4081a025baef1e2e0d6069e181939b61864c9779609"
+checksum = "8010572cf8c745e242d1b632bd97bd6d4f40fefed5ed1290a8f433abaa686fea"
 dependencies = [
  "ahash",
- "arrow-buffer",
- "arrow-data",
- "arrow-schema",
+ "arrow-buffer 51.0.0",
+ "arrow-data 51.0.0",
+ "arrow-schema 51.0.0",
  "chrono",
  "half",
  "hashbrown 0.14.3",
@@ -168,13 +168,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "arrow-buffer"
+version = "51.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0d0a2432f0cba5692bf4cb757469c66791394bac9ec7ce63c1afe74744c37b27"
+dependencies = [
+ "bytes",
+ "half",
+ "num",
+]
+
+[[package]]
 name = "arrow-data"
 version = "50.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "67d644b91a162f3ad3135ce1184d0a31c28b816a581e08f29e8e9277a574c64e"
 dependencies = [
- "arrow-buffer",
- "arrow-schema",
+ "arrow-buffer 50.0.0",
+ "arrow-schema 50.0.0",
+ "half",
+ "num",
+]
+
+[[package]]
+name = "arrow-data"
+version = "51.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2742ac1f6650696ab08c88f6dd3f0eb68ce10f8c253958a18c943a68cd04aec5"
+dependencies = [
+ "arrow-buffer 51.0.0",
+ "arrow-schema 51.0.0",
  "half",
  "num",
 ]
@@ -184,6 +207,12 @@ name = "arrow-schema"
 version = "50.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0ff3e9c01f7cd169379d269f926892d0e622a704960350d09d331be3ec9e0029"
+
+[[package]]
+name = "arrow-schema"
+version = "51.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "02d9483aaabe910c4781153ae1b6ae0393f72d9ef757d38d09d450070cf2e528"
 
 [[package]]
 name = "arrow2"
@@ -2011,7 +2040,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c2a198fb6b0eada2a8df47933734e6d35d350665a33a3593d7164fa52c75c19"
 dependencies = [
  "cfg-if",
- "windows-targets 0.52.4",
+ "windows-targets 0.48.5",
 ]
 
 [[package]]
@@ -2594,9 +2623,9 @@ version = "0.38.3"
 dependencies = [
  "ahash",
  "arrow-array",
- "arrow-buffer",
- "arrow-data",
- "arrow-schema",
+ "arrow-buffer 50.0.0",
+ "arrow-data 50.0.0",
+ "arrow-schema 50.0.0",
  "async-stream",
  "atoi",
  "atoi_simd",
