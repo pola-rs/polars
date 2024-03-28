@@ -1,3 +1,5 @@
+use polars_utils::recursion::with_dynamic_stack;
+
 use super::*;
 
 /// An implementor of this trait decides how and in which order its nodes get traversed
@@ -12,39 +14,43 @@ pub trait TreeWalker: Sized {
 
     /// Walks all nodes in depth-first-order.
     fn visit(&self, visitor: &mut dyn Visitor<Node = Self>) -> PolarsResult<VisitRecursion> {
-        match visitor.pre_visit(self)? {
-            VisitRecursion::Continue => {},
-            // If the recursion should skip, do not apply to its children. And let the recursion continue
-            VisitRecursion::Skip => return Ok(VisitRecursion::Continue),
-            // If the recursion should stop, do not apply to its children
-            VisitRecursion::Stop => return Ok(VisitRecursion::Stop),
-        };
+        with_dynamic_stack(|| {
+            match visitor.pre_visit(self)? {
+                VisitRecursion::Continue => {},
+                // If the recursion should skip, do not apply to its children. And let the recursion continue
+                VisitRecursion::Skip => return Ok(VisitRecursion::Continue),
+                // If the recursion should stop, do not apply to its children
+                VisitRecursion::Stop => return Ok(VisitRecursion::Stop),
+            };
 
-        match self.apply_children(&mut |node| node.visit(visitor))? {
-            // let the recursion continue
-            VisitRecursion::Continue | VisitRecursion::Skip => {},
-            // If the recursion should stop, no further post visit will be performed
-            VisitRecursion::Stop => return Ok(VisitRecursion::Stop),
-        }
+            match self.apply_children(&mut |node| node.visit(visitor))? {
+                // let the recursion continue
+                VisitRecursion::Continue | VisitRecursion::Skip => {},
+                // If the recursion should stop, no further post visit will be performed
+                VisitRecursion::Stop => return Ok(VisitRecursion::Stop),
+            }
 
-        visitor.post_visit(self)
+            visitor.post_visit(self)
+        })
     }
 
     fn rewrite(self, rewriter: &mut dyn RewritingVisitor<Node = Self>) -> PolarsResult<Self> {
-        let mutate_this_node = match rewriter.pre_visit(&self)? {
-            RewriteRecursion::MutateAndStop => return rewriter.mutate(self),
-            RewriteRecursion::Stop => return Ok(self),
-            RewriteRecursion::MutateAndContinue => true,
-            RewriteRecursion::NoMutateAndContinue => false,
-        };
+        with_dynamic_stack(|| {
+            let mutate_this_node = match rewriter.pre_visit(&self)? {
+                RewriteRecursion::MutateAndStop => return rewriter.mutate(self),
+                RewriteRecursion::Stop => return Ok(self),
+                RewriteRecursion::MutateAndContinue => true,
+                RewriteRecursion::NoMutateAndContinue => false,
+            };
 
-        let after_applied_children = self.map_children(&mut |node| node.rewrite(rewriter))?;
+            let after_applied_children = self.map_children(&mut |node| node.rewrite(rewriter))?;
 
-        if mutate_this_node {
-            rewriter.mutate(after_applied_children)
-        } else {
-            Ok(after_applied_children)
-        }
+            if mutate_this_node {
+                rewriter.mutate(after_applied_children)
+            } else {
+                Ok(after_applied_children)
+            }
+        })
     }
 }
 
