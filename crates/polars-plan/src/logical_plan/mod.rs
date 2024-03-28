@@ -254,6 +254,7 @@ pub enum LogicalPlan {
 }
 
 impl Clone for LogicalPlan {
+    #[rustfmt::skip]
     fn clone(&self) -> Self {
         with_dynamic_stack(|| {
             match self {

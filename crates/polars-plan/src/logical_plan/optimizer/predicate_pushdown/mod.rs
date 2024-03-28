@@ -292,14 +292,12 @@ impl<'a> PredicatePushDown<'a> {
                     // predicates, we simply don't pushdown this one passed this node
                     // However, we can do better and let it pass but store the order of the predicates
                     // so that we can apply them in correct order at the deepest level
-                    Ok(
-                        self.optional_apply_predicate(
-                            new_input,
-                            local_predicates,
-                            lp_arena,
-                            expr_arena,
-                        ),
-                    )
+                    Ok(self.optional_apply_predicate(
+                        new_input,
+                        local_predicates,
+                        lp_arena,
+                        expr_arena,
+                    ))
                 },
                 DataFrameScan {
                     df,
@@ -351,10 +349,12 @@ impl<'a> PredicatePushDown<'a> {
                             }
                         },
                     };
-                    let predicate = predicate_at_scan(acc_predicates, predicate.clone(), expr_arena);
+                    let predicate =
+                        predicate_at_scan(acc_predicates, predicate.clone(), expr_arena);
 
                     if let (true, Some(predicate)) = (file_info.hive_parts.is_some(), &predicate) {
-                        if let Some(io_expr) = self.hive_partition_eval.unwrap()(predicate, expr_arena)
+                        if let Some(io_expr) =
+                            self.hive_partition_eval.unwrap()(predicate, expr_arena)
                         {
                             if let Some(stats_evaluator) = io_expr.as_stats_evaluator() {
                                 let mut new_paths = Vec::with_capacity(paths.len());
@@ -363,7 +363,9 @@ impl<'a> PredicatePushDown<'a> {
                                     file_info.update_hive_partitions(path)?;
                                     let hive_part_stats = file_info.hive_parts.as_deref().ok_or_else(|| polars_err!(ComputeError: "cannot combine hive partitioned directories with non-hive partitioned ones"))?;
 
-                                    if stats_evaluator.should_read(hive_part_stats.get_statistics())? {
+                                    if stats_evaluator
+                                        .should_read(hive_part_stats.get_statistics())?
+                                    {
                                         new_paths.push(path.clone());
                                     }
                                 }
@@ -379,7 +381,8 @@ impl<'a> PredicatePushDown<'a> {
                                     scan_type.remove_metadata();
                                 }
                                 if paths.is_empty() {
-                                    let schema = output_schema.as_ref().unwrap_or(&file_info.schema);
+                                    let schema =
+                                        output_schema.as_ref().unwrap_or(&file_info.schema);
                                     let df = DataFrame::from(schema.as_ref());
 
                                     return Ok(DataFrameScan {
@@ -399,7 +402,9 @@ impl<'a> PredicatePushDown<'a> {
                     let mut do_optimization = match &scan_type {
                         #[cfg(feature = "csv")]
                         FileScan::Csv { .. } => options.n_rows.is_none(),
-                        FileScan::Anonymous { function, .. } => function.allows_predicate_pushdown(),
+                        FileScan::Anonymous { function, .. } => {
+                            function.allows_predicate_pushdown()
+                        },
                         #[allow(unreachable_patterns)]
                         _ => true,
                     };
@@ -448,7 +453,12 @@ impl<'a> PredicatePushDown<'a> {
 
                         self.pushdown_and_assign(input, acc_predicates, lp_arena, expr_arena)?;
                         let lp = Distinct { input, options };
-                        Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
+                        Ok(self.optional_apply_predicate(
+                            lp,
+                            local_predicates,
+                            lp_arena,
+                            expr_arena,
+                        ))
                     } else {
                         let lp = Distinct { input, options };
                         self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
@@ -519,7 +529,8 @@ impl<'a> PredicatePushDown<'a> {
                                 ))
                             },
                             FunctionNode::Melt { args, .. } => {
-                                let variable_name = args.variable_name.as_deref().unwrap_or("variable");
+                                let variable_name =
+                                    args.variable_name.as_deref().unwrap_or("variable");
                                 let value_name = args.value_name.as_deref().unwrap_or("value");
 
                                 // predicates that will be done at this level
@@ -594,8 +605,13 @@ impl<'a> PredicatePushDown<'a> {
                             true
                         }
                     });
-                    let lp =
-                        self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)?;
+                    let lp = self.pushdown_and_continue(
+                        lp,
+                        acc_predicates,
+                        lp_arena,
+                        expr_arena,
+                        false,
+                    )?;
                     Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
                 },
                 lp @ Sort { .. } => {
@@ -608,8 +624,13 @@ impl<'a> PredicatePushDown<'a> {
                             true
                         }
                     });
-                    let lp =
-                        self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)?;
+                    let lp = self.pushdown_and_continue(
+                        lp,
+                        acc_predicates,
+                        lp_arena,
+                        expr_arena,
+                        false,
+                    )?;
                     Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
                 },
                 // Pushed down passed these nodes

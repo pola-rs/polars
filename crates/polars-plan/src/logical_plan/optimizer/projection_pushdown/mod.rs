@@ -11,8 +11,8 @@ mod semi_anti_join;
 
 use polars_core::datatypes::PlHashSet;
 use polars_core::prelude::*;
-use polars_utils::recursion::with_dynamic_stack;
 use polars_io::RowIndex;
+use polars_utils::recursion::with_dynamic_stack;
 #[cfg(feature = "semi_anti_join")]
 use semi_anti_join::process_semi_anti_join;
 
