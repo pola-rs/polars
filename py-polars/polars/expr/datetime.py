@@ -2100,25 +2100,25 @@ class ExprDateTimeNameSpace:
         ...         )
         ...     }
         ... )
-        >>> df.select(pl.col("dates").dt.month_start())
-        shape: (12, 1)
-        ┌─────────────────────┐
-        │ dates               │
-        │ ---                 │
-        │ datetime[μs]        │
-        ╞═════════════════════╡
-        │ 2000-01-01 02:00:00 │
-        │ 2000-02-01 02:00:00 │
-        │ 2000-03-01 02:00:00 │
-        │ 2000-04-01 02:00:00 │
-        │ 2000-05-01 02:00:00 │
-        │ …                   │
-        │ 2000-08-01 02:00:00 │
-        │ 2000-09-01 02:00:00 │
-        │ 2000-10-01 02:00:00 │
-        │ 2000-11-01 02:00:00 │
-        │ 2000-12-01 02:00:00 │
-        └─────────────────────┘
+        >>> df.with_columns(dates_month_start=pl.col("dates").dt.month_start())
+        shape: (12, 2)
+        ┌─────────────────────┬─────────────────────┐
+        │ dates               ┆ dates_month_start   │
+        │ ---                 ┆ ---                 │
+        │ datetime[μs]        ┆ datetime[μs]        │
+        ╞═════════════════════╪═════════════════════╡
+        │ 2000-01-15 02:00:00 ┆ 2000-01-01 02:00:00 │
+        │ 2000-02-15 02:00:00 ┆ 2000-02-01 02:00:00 │
+        │ 2000-03-15 02:00:00 ┆ 2000-03-01 02:00:00 │
+        │ 2000-04-15 02:00:00 ┆ 2000-04-01 02:00:00 │
+        │ 2000-05-15 02:00:00 ┆ 2000-05-01 02:00:00 │
+        │ …                   ┆ …                   │
+        │ 2000-08-15 02:00:00 ┆ 2000-08-01 02:00:00 │
+        │ 2000-09-15 02:00:00 ┆ 2000-09-01 02:00:00 │
+        │ 2000-10-15 02:00:00 ┆ 2000-10-01 02:00:00 │
+        │ 2000-11-15 02:00:00 ┆ 2000-11-01 02:00:00 │
+        │ 2000-12-15 02:00:00 ┆ 2000-12-01 02:00:00 │
+        └─────────────────────┴─────────────────────┘
         """
         return wrap_expr(self._pyexpr.dt_month_start())
 
@@ -2142,34 +2142,220 @@ class ExprDateTimeNameSpace:
         >>> df = pl.DataFrame(
         ...     {
         ...         "dates": pl.datetime_range(
-        ...             datetime(2000, 1, 1, 2),
-        ...             datetime(2000, 12, 1, 2),
+        ...             datetime(2000, 1, 15, 2),
+        ...             datetime(2000, 12, 15, 2),
         ...             "1mo",
         ...             eager=True,
         ...         )
         ...     }
         ... )
-        >>> df.select(pl.col("dates").dt.month_end())
-        shape: (12, 1)
-        ┌─────────────────────┐
-        │ dates               │
-        │ ---                 │
-        │ datetime[μs]        │
-        ╞═════════════════════╡
-        │ 2000-01-31 02:00:00 │
-        │ 2000-02-29 02:00:00 │
-        │ 2000-03-31 02:00:00 │
-        │ 2000-04-30 02:00:00 │
-        │ 2000-05-31 02:00:00 │
-        │ …                   │
-        │ 2000-08-31 02:00:00 │
-        │ 2000-09-30 02:00:00 │
-        │ 2000-10-31 02:00:00 │
-        │ 2000-11-30 02:00:00 │
-        │ 2000-12-31 02:00:00 │
-        └─────────────────────┘
+        >>> df.with_columns(dates_month_end=pl.col("dates").dt.month_end())
+        shape: (12, 2)
+        ┌─────────────────────┬─────────────────────┐
+        │ dates               ┆ dates_month_end     │
+        │ ---                 ┆ ---                 │
+        │ datetime[μs]        ┆ datetime[μs]        │
+        ╞═════════════════════╪═════════════════════╡
+        │ 2000-01-15 02:00:00 ┆ 2000-01-31 02:00:00 │
+        │ 2000-02-15 02:00:00 ┆ 2000-02-29 02:00:00 │
+        │ 2000-03-15 02:00:00 ┆ 2000-03-31 02:00:00 │
+        │ 2000-04-15 02:00:00 ┆ 2000-04-30 02:00:00 │
+        │ 2000-05-15 02:00:00 ┆ 2000-05-31 02:00:00 │
+        │ …                   ┆ …                   │
+        │ 2000-08-15 02:00:00 ┆ 2000-08-31 02:00:00 │
+        │ 2000-09-15 02:00:00 ┆ 2000-09-30 02:00:00 │
+        │ 2000-10-15 02:00:00 ┆ 2000-10-31 02:00:00 │
+        │ 2000-11-15 02:00:00 ┆ 2000-11-30 02:00:00 │
+        │ 2000-12-15 02:00:00 ┆ 2000-12-31 02:00:00 │
+        └─────────────────────┴─────────────────────┘
         """
         return wrap_expr(self._pyexpr.dt_month_end())
+
+    def quarter_start(self) -> Expr:
+        """
+        Roll backward to the first day of the quarter.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Date` or :class:`Datetime`.
+
+        Notes
+        -----
+        If you're coming from pandas, you can think of this as a vectorised version
+        of `pandas.tseries.offsets.QuarterBegin(startingMonth=1).rollback(datetime)`.
+
+        Examples
+        --------
+        >>> from datetime import datetime
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "dates": pl.datetime_range(
+        ...             datetime(2000, 1, 15, 2),
+        ...             datetime(2000, 12, 15, 2),
+        ...             "1mo",
+        ...             eager=True,
+        ...         )
+        ...     }
+        ... )
+        >>> df.with_columns(dates_quarter_start=pl.col("dates").dt.quarter_start())
+        shape: (12, 2)
+        ┌─────────────────────┬─────────────────────┐
+        │ dates               ┆ dates_quarter_start │
+        │ ---                 ┆ ---                 │
+        │ datetime[μs]        ┆ datetime[μs]        │
+        ╞═════════════════════╪═════════════════════╡
+        │ 2000-01-15 02:00:00 ┆ 2000-01-01 02:00:00 │
+        │ 2000-02-15 02:00:00 ┆ 2000-01-01 02:00:00 │
+        │ 2000-03-15 02:00:00 ┆ 2000-01-01 02:00:00 │
+        │ 2000-04-15 02:00:00 ┆ 2000-04-01 02:00:00 │
+        │ 2000-05-15 02:00:00 ┆ 2000-04-01 02:00:00 │
+        │ …                   ┆ …                   │
+        │ 2000-08-15 02:00:00 ┆ 2000-07-01 02:00:00 │
+        │ 2000-09-15 02:00:00 ┆ 2000-07-01 02:00:00 │
+        │ 2000-10-15 02:00:00 ┆ 2000-10-01 02:00:00 │
+        │ 2000-11-15 02:00:00 ┆ 2000-10-01 02:00:00 │
+        │ 2000-12-15 02:00:00 ┆ 2000-10-01 02:00:00 │
+        └─────────────────────┴─────────────────────┘
+        """
+        return wrap_expr(self._pyexpr.dt_quarter_start())
+
+    def quarter_end(self) -> Expr:
+        """
+        Roll forward to the last day of the quarter.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Date` or :class:`Datetime`.
+
+        Notes
+        -----
+        If you're coming from pandas, you can think of this as a vectorised version
+        of `pandas.tseries.offsets.QuarterEnd().rollforward(datetime)`.
+
+        Examples
+        --------
+        >>> from datetime import datetime
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "dates": pl.datetime_range(
+        ...             datetime(2000, 1, 15, 2),
+        ...             datetime(2000, 12, 15, 2),
+        ...             "1mo",
+        ...             eager=True,
+        ...         )
+        ...     }
+        ... )
+        >>> df.with_columns(dates_quarter_end=pl.col("dates").dt.quarter_end())
+        shape: (12, 2)
+        ┌─────────────────────┬─────────────────────┐
+        │ dates               ┆ dates_quarter_end   │
+        │ ---                 ┆ ---                 │
+        │ datetime[μs]        ┆ datetime[μs]        │
+        ╞═════════════════════╪═════════════════════╡
+        │ 2000-01-15 02:00:00 ┆ 2000-03-31 02:00:00 │
+        │ 2000-02-15 02:00:00 ┆ 2000-03-31 02:00:00 │
+        │ 2000-03-15 02:00:00 ┆ 2000-03-31 02:00:00 │
+        │ 2000-04-15 02:00:00 ┆ 2000-06-30 02:00:00 │
+        │ 2000-05-15 02:00:00 ┆ 2000-06-30 02:00:00 │
+        │ …                   ┆ …                   │
+        │ 2000-08-15 02:00:00 ┆ 2000-09-30 02:00:00 │
+        │ 2000-09-15 02:00:00 ┆ 2000-09-30 02:00:00 │
+        │ 2000-10-15 02:00:00 ┆ 2000-12-31 02:00:00 │
+        │ 2000-11-15 02:00:00 ┆ 2000-12-31 02:00:00 │
+        │ 2000-12-15 02:00:00 ┆ 2000-12-31 02:00:00 │
+        └─────────────────────┴─────────────────────┘
+        """
+        return wrap_expr(self._pyexpr.dt_quarter_end())
+
+    def year_start(self) -> Expr:
+        """
+        Roll backward to the first day of the year.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Date` or :class:`Datetime`.
+
+        Notes
+        -----
+        If you're coming from pandas, you can think of this as a vectorised version
+        of `pandas.tseries.offsets.YearBegin().rollback(datetime)`.
+
+        Examples
+        --------
+        >>> from datetime import datetime
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "dates": pl.datetime_range(
+        ...             datetime(2000, 1, 15, 2),
+        ...             datetime(2002, 12, 15, 2),
+        ...             "6mo",
+        ...             eager=True,
+        ...         )
+        ...     }
+        ... )
+        >>> df.with_columns(dates_year_start=pl.col("dates").dt.year_start())
+        shape: (6, 2)
+        ┌─────────────────────┬─────────────────────┐
+        │ dates               ┆ dates_year_start    │
+        │ ---                 ┆ ---                 │
+        │ datetime[μs]        ┆ datetime[μs]        │
+        ╞═════════════════════╪═════════════════════╡
+        │ 2000-01-15 02:00:00 ┆ 2000-01-01 02:00:00 │
+        │ 2000-07-15 02:00:00 ┆ 2000-01-01 02:00:00 │
+        │ 2001-01-15 02:00:00 ┆ 2001-01-01 02:00:00 │
+        │ 2001-07-15 02:00:00 ┆ 2001-01-01 02:00:00 │
+        │ 2002-01-15 02:00:00 ┆ 2002-01-01 02:00:00 │
+        │ 2002-07-15 02:00:00 ┆ 2002-01-01 02:00:00 │
+        └─────────────────────┴─────────────────────┘
+        """
+        return wrap_expr(self._pyexpr.dt_year_start())
+
+    def year_end(self) -> Expr:
+        """
+        Roll forward to the last day of the year.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Date` or :class:`Datetime`.
+
+        Notes
+        -----
+        If you're coming from pandas, you can think of this as a vectorised version
+        of `pandas.tseries.offsets.YearEnd().rollforward(datetime)`.
+
+        Examples
+        --------
+        >>> from datetime import datetime
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "dates": pl.datetime_range(
+        ...             datetime(2000, 1, 15, 2),
+        ...             datetime(2002, 12, 15, 2),
+        ...             "6mo",
+        ...             eager=True,
+        ...         )
+        ...     }
+        ... )
+        >>> df.with_columns(dates_year_end=pl.col("dates").dt.year_end())
+        shape: (6, 2)
+        ┌─────────────────────┬─────────────────────┐
+        │ dates               ┆ dates_year_end      │
+        │ ---                 ┆ ---                 │
+        │ datetime[μs]        ┆ datetime[μs]        │
+        ╞═════════════════════╪═════════════════════╡
+        │ 2000-01-15 02:00:00 ┆ 2000-12-31 02:00:00 │
+        │ 2000-07-15 02:00:00 ┆ 2000-12-31 02:00:00 │
+        │ 2001-01-15 02:00:00 ┆ 2001-12-31 02:00:00 │
+        │ 2001-07-15 02:00:00 ┆ 2001-12-31 02:00:00 │
+        │ 2002-01-15 02:00:00 ┆ 2002-12-31 02:00:00 │
+        │ 2002-07-15 02:00:00 ┆ 2002-12-31 02:00:00 │
+        └─────────────────────┴─────────────────────┘
+        """
+        return wrap_expr(self._pyexpr.dt_year_end())
 
     def base_utc_offset(self) -> Expr:
         """

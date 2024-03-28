@@ -67,6 +67,21 @@ impl PyExpr {
         self.inner.clone().dt().month_end().into()
     }
 
+    fn dt_quarter_start(&self) -> Self {
+        self.inner.clone().dt().quarter_start().into()
+    }
+
+    fn dt_quarter_end(&self) -> Self {
+        self.inner.clone().dt().quarter_end().into()
+    }
+
+    fn dt_year_start(&self) -> Self {
+        self.inner.clone().dt().year_start().into()
+    }
+
+    fn dt_year_end(&self) -> Self {
+        self.inner.clone().dt().year_end().into()
+    }
     #[cfg(feature = "timezones")]
     fn dt_base_utc_offset(&self) -> Self {
         self.inner.clone().dt().base_utc_offset().into()

@@ -52,6 +52,14 @@ pub enum TemporalFunction {
     MonthStart,
     #[cfg(feature = "date_offset")]
     MonthEnd,
+    #[cfg(feature = "date_offset")]
+    QuarterStart,
+    #[cfg(feature = "date_offset")]
+    QuarterEnd,
+    #[cfg(feature = "date_offset")]
+    YearStart,
+    #[cfg(feature = "date_offset")]
+    YearEnd,
     #[cfg(feature = "timezones")]
     BaseUtcOffset,
     #[cfg(feature = "timezones")]
@@ -102,9 +110,9 @@ impl TemporalFunction {
             }),
             Truncate(_) => mapper.with_same_dtype(),
             #[cfg(feature = "date_offset")]
-            MonthStart => mapper.with_same_dtype(),
-            #[cfg(feature = "date_offset")]
-            MonthEnd => mapper.with_same_dtype(),
+            MonthStart | MonthEnd | QuarterStart | QuarterEnd | YearStart | YearEnd => {
+                mapper.with_same_dtype()
+            },
             #[cfg(feature = "timezones")]
             BaseUtcOffset => mapper.with_dtype(DataType::Duration(TimeUnit::Milliseconds)),
             #[cfg(feature = "timezones")]
@@ -173,6 +181,14 @@ impl Display for TemporalFunction {
             MonthStart => "month_start",
             #[cfg(feature = "date_offset")]
             MonthEnd => "month_end",
+            #[cfg(feature = "date_offset")]
+            QuarterStart => "quarter_start",
+            #[cfg(feature = "date_offset")]
+            QuarterEnd => "quarter_end",
+            #[cfg(feature = "date_offset")]
+            YearStart => "year_start",
+            #[cfg(feature = "date_offset")]
+            YearEnd => "year_end",
             #[cfg(feature = "timezones")]
             BaseUtcOffset => "base_utc_offset",
             #[cfg(feature = "timezones")]
@@ -432,6 +448,73 @@ pub(super) fn month_end(s: &Series) -> PolarsResult<Series> {
     })
 }
 
+#[cfg(feature = "date_offset")]
+pub(super) fn quarter_start(s: &Series) -> PolarsResult<Series> {
+    Ok(match s.dtype() {
+        DataType::Datetime(_, tz) => match tz {
+            #[cfg(feature = "timezones")]
+            Some(tz) => s
+                .datetime()
+                .unwrap()
+                .quarter_start(tz.parse::<Tz>().ok().as_ref())?
+                .into_series(),
+            _ => s.datetime().unwrap().quarter_start(None)?.into_series(),
+        },
+        DataType::Date => s.date().unwrap().quarter_start(None)?.into_series(),
+        dt => polars_bail!(opq = quarter_start, got = dt, expected = "date/datetime"),
+    })
+}
+
+#[cfg(feature = "date_offset")]
+pub(super) fn quarter_end(s: &Series) -> PolarsResult<Series> {
+    Ok(match s.dtype() {
+        DataType::Datetime(_, tz) => match tz {
+            #[cfg(feature = "timezones")]
+            Some(tz) => s
+                .datetime()
+                .unwrap()
+                .quarter_end(tz.parse::<Tz>().ok().as_ref())?
+                .into_series(),
+            _ => s.datetime().unwrap().quarter_end(None)?.into_series(),
+        },
+        DataType::Date => s.date().unwrap().quarter_end(None)?.into_series(),
+        dt => polars_bail!(opq = quarter_end, got = dt, expected = "date/datetime"),
+    })
+}
+
+#[cfg(feature = "date_offset")]
+pub(super) fn year_start(s: &Series) -> PolarsResult<Series> {
+    Ok(match s.dtype() {
+        DataType::Datetime(_, tz) => match tz {
+            #[cfg(feature = "timezones")]
+            Some(tz) => s
+                .datetime()
+                .unwrap()
+                .year_start(tz.parse::<Tz>().ok().as_ref())?
+                .into_series(),
+            _ => s.datetime().unwrap().year_start(None)?.into_series(),
+        },
+        DataType::Date => s.date().unwrap().year_start(None)?.into_series(),
+        dt => polars_bail!(opq = year_start, got = dt, expected = "date/datetime"),
+    })
+}
+
+#[cfg(feature = "date_offset")]
+pub(super) fn year_end(s: &Series) -> PolarsResult<Series> {
+    Ok(match s.dtype() {
+        DataType::Datetime(_, tz) => match tz {
+            #[cfg(feature = "timezones")]
+            Some(tz) => s
+                .datetime()
+                .unwrap()
+                .year_end(tz.parse::<Tz>().ok().as_ref())?
+                .into_series(),
+            _ => s.datetime().unwrap().year_end(None)?.into_series(),
+        },
+        DataType::Date => s.date().unwrap().year_end(None)?.into_series(),
+        dt => polars_bail!(opq = year_end, got = dt, expected = "date/datetime"),
+    })
+}
 #[cfg(feature = "timezones")]
 pub(super) fn base_utc_offset(s: &Series) -> PolarsResult<Series> {
     match s.dtype() {

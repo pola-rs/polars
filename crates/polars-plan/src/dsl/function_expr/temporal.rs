@@ -53,6 +53,14 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             MonthStart => map!(datetime::month_start),
             #[cfg(feature = "date_offset")]
             MonthEnd => map!(datetime::month_end),
+            #[cfg(feature = "date_offset")]
+            QuarterStart => map!(datetime::quarter_start),
+            #[cfg(feature = "date_offset")]
+            QuarterEnd => map!(datetime::quarter_end),
+            #[cfg(feature = "date_offset")]
+            YearStart => map!(datetime::year_start),
+            #[cfg(feature = "date_offset")]
+            YearEnd => map!(datetime::year_end),
             #[cfg(feature = "timezones")]
             BaseUtcOffset => map!(datetime::base_utc_offset),
             #[cfg(feature = "timezones")]
