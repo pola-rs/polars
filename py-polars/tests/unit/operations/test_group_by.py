@@ -675,7 +675,7 @@ def test_group_by_multiple_column_reference() -> None:
         ("mean", [], [1.0, None], pl.Float64),
         ("median", [], [1.0, None], pl.Float64),
         ("min", [], [1, None], pl.Int64),
-        ("n_unique", [], [1, None], pl.UInt32),
+        ("n_unique", [], [1, 0], pl.UInt32),
         ("quantile", [0.5], [1.0, None], pl.Float64),
     ],
 )
