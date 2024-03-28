@@ -70,7 +70,7 @@ def read_csv(
         following format: `column_x`, with `x` being an
         enumeration over every column in the dataset starting at 1.
     columns
-        Columns to select. Accepts a list of column indices (starting
+        Columns in csv to select. Accepts a list of column indices (starting
         at zero) or a list of column names.
     new_columns
         Rename columns right after parsing the CSV file. If the given
@@ -87,11 +87,19 @@ def read_csv(
     skip_rows
         Start reading after `skip_rows` lines.
     dtypes
-        Overwrite dtypes for specific or all columns during schema inference.
+        Overwrite dtypes for specific columns during schema inference. This can be
+
+        - `dict`: a dictionary that maps column names to data types.
+        - `list`: the data types are applied to the columns in the order they appear in
+            the csv or given `columns` parameter. Elements longer than the number of
+            given `columns` or csv columns will be ignored.
+
+        Should not be used together with `schema`.
     schema
         Provide the schema. This means that polars doesn't do schema inference.
         This argument expects the complete schema, whereas `dtypes` can be used
         to partially overwrite a schema.
+        Should not be used together with `dtypes`.
     null_values
         Values to interpret as null values. You can provide a:
 
@@ -299,26 +307,11 @@ def read_csv(
             return _update_columns(df, new_columns)
         return df
 
-    if projection and dtypes and isinstance(dtypes, list):
-        if len(projection) < len(dtypes):
-            msg = "more dtypes overrides are specified than there are selected columns"
-            raise ValueError(msg)
-
-        # Fix list of dtypes when used together with projection as polars CSV reader
-        # wants a list of dtypes for the x first columns before it does the projection.
-        dtypes_list: list[PolarsDataType] = [String] * (max(projection) + 1)
-
-        for idx, column_idx in enumerate(projection):
-            if idx < len(dtypes):
-                dtypes_list[column_idx] = dtypes[idx]
-
-        dtypes = dtypes_list
+    if schema and dtypes:
+        msg = "cannot provide both 'schema' and 'dtypes'"
+        raise ValueError(msg)
 
     if columns and dtypes and isinstance(dtypes, list):
-        if len(columns) < len(dtypes):
-            msg = "more dtypes overrides are specified than there are selected columns"
-            raise ValueError(msg)
-
         # Map list of dtypes when used together with selected columns as a dtypes dict
         # so the dtypes are applied to the correct column instead of the first x
         # columns.

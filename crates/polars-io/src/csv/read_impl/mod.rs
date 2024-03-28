@@ -88,10 +88,10 @@ pub(crate) fn cast_columns(
 /// CSV file reader
 pub(crate) struct CoreReader<'a> {
     reader_bytes: Option<ReaderBytes<'a>>,
-    /// Explicit schema for the CSV file
     schema: SchemaRef,
-    /// Optional projection for which columns to load (zero-based column indices)
-    projection: Option<Vec<usize>>,
+    /// Optional projection for which indices/columns to load (zero-based column indices)
+    projection: Vec<usize>,
+    projection_original_position: Vec<usize>,
     /// Current line number, used in error reporting
     line_number: usize,
     ignore_errors: bool,
@@ -109,10 +109,12 @@ pub(crate) struct CoreReader<'a> {
     comment_prefix: Option<CommentPrefix>,
     quote_char: Option<u8>,
     eol_char: u8,
-    null_values: Option<NullValuesCompiled>,
+    null_values: Option<NullValues>,
     missing_is_null: bool,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     to_cast: Vec<Field>,
+    #[cfg(feature = "dtype-categorical")]
+    has_cat: bool,
     row_index: Option<RowIndex>,
     truncate_ragged_lines: bool,
 }
@@ -133,17 +135,14 @@ impl<'a> CoreReader<'a> {
         reader_bytes: ReaderBytes<'a>,
         n_rows: Option<usize>,
         mut skip_rows: usize,
-        mut projection: Option<Vec<usize>>,
+        projection: Option<ColumnProjectionOptions>,
         max_records: Option<usize>,
         separator: Option<u8>,
         has_header: bool,
         ignore_errors: bool,
-        schema: Option<SchemaRef>,
-        columns: Option<Vec<String>>,
+        schema_options: ReaderSchemaOptions<'a>,
         encoding: CsvEncoding,
         mut n_threads: Option<usize>,
-        schema_overwrite: Option<SchemaRef>,
-        dtype_overwrite: Option<&'a [DataType]>,
         sample_size: usize,
         chunk_size: usize,
         low_memory: bool,
@@ -153,7 +152,6 @@ impl<'a> CoreReader<'a> {
         null_values: Option<NullValues>,
         missing_is_null: bool,
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
-        to_cast: Vec<Field>,
         skip_rows_after_header: usize,
         row_index: Option<RowIndex>,
         try_parse_dates: bool,
@@ -174,10 +172,22 @@ impl<'a> CoreReader<'a> {
         // check if schema should be inferred
         let separator = separator.unwrap_or(b',');
 
-        let mut schema = match schema {
-            Some(schema) => schema,
-            None => {
-                {
+        let PrepareSchemaOverwriteResult {
+            options: schema_options,
+            to_cast,
+            #[cfg(feature = "dtype-categorical")]
+            has_cat,
+        } = schema_options.prepare_schema_overwrite()?;
+
+        let (schema, projection, projection_original_position) = {
+            use InferSchemaOptions::*;
+            use ReaderSchemaOptions::*;
+            match schema_options {
+                Enforce(schema) => {
+                    let (projection, pos) = get_sorted_projection(&projection, schema.as_ref())?;
+                    (schema, projection, pos)
+                },
+                Infer(infer_options) => {
                     // We keep track of the inferred schema bool
                     // In case the file is compressed this schema inference is wrong and has to be done
                     // again after decompression.
@@ -192,56 +202,62 @@ impl<'a> CoreReader<'a> {
                             reader_bytes = ReaderBytes::Owned(b);
                         }
                     }
+                    let mut get_inferred_schema =
+                        |dtypes_map: Option<SchemaRef>| -> PolarsResult<Schema> {
+                            infer_file_schema(
+                                &reader_bytes,
+                                separator,
+                                max_records,
+                                has_header,
+                                dtypes_map.as_deref(),
+                                &mut skip_rows,
+                                skip_rows_after_header,
+                                comment_prefix.as_ref(),
+                                quote_char,
+                                eol_char,
+                                null_values.as_ref(),
+                                try_parse_dates,
+                                raise_if_empty,
+                                &mut n_threads,
+                            )
+                            .map(|(schema, _, _)| schema)
+                        };
 
-                    let (inferred_schema, _, _) = infer_file_schema(
-                        &reader_bytes,
-                        separator,
-                        max_records,
-                        has_header,
-                        schema_overwrite.as_deref(),
-                        &mut skip_rows,
-                        skip_rows_after_header,
-                        comment_prefix.as_ref(),
-                        quote_char,
-                        eol_char,
-                        null_values.as_ref(),
-                        try_parse_dates,
-                        raise_if_empty,
-                        &mut n_threads,
-                    )?;
-                    Arc::new(inferred_schema)
-                }
-            },
+                    match infer_options {
+                        Some(OverwriteDtypesMap(dtypes_map)) => {
+                            let schema = Arc::new(get_inferred_schema(Some(dtypes_map))?);
+                            let (projection, pos) =
+                                get_sorted_projection(&projection, schema.as_ref())?;
+                            (schema, projection, pos)
+                        },
+                        Some(OverwriteDtypesSlice(overwrite_dtypes_slice)) => {
+                            let mut schema = get_inferred_schema(None)?;
+                            let (projection, pos) = get_sorted_projection(&projection, &schema)?;
+                            for (schema_idx, dtypes_idx) in projection.iter().zip(pos.iter()) {
+                                if let Some(dtypes) = overwrite_dtypes_slice.get(*dtypes_idx) {
+                                    schema
+                                        .set_dtype_at_index(*schema_idx, dtypes.clone())
+                                        .unwrap();
+                                }
+                            }
+                            (Arc::new(schema), projection, pos)
+                        },
+                        None => {
+                            let schema = Arc::new(get_inferred_schema(None)?);
+                            let (projection, pos) =
+                                get_sorted_projection(&projection, schema.as_ref())?;
+                            (schema, projection, pos)
+                        },
+                    }
+                },
+            }
         };
-        if let Some(dtypes) = dtype_overwrite {
-            let s = Arc::make_mut(&mut schema);
-            for (index, dt) in dtypes.iter().enumerate() {
-                s.set_dtype_at_index(index, dt.clone()).unwrap();
-            }
-        }
-
-        // create a null value for every column
-        let mut null_values = null_values.map(|nv| nv.compile(&schema)).transpose()?;
-
-        if let Some(cols) = columns {
-            let mut prj = Vec::with_capacity(cols.len());
-            for col in cols {
-                let i = schema.try_index_of(&col)?;
-                prj.push(i);
-            }
-
-            // update null values with projection
-            if let Some(nv) = null_values.as_mut() {
-                nv.apply_projection(&prj);
-            }
-
-            projection = Some(prj);
-        }
 
         Ok(CoreReader {
             reader_bytes: Some(reader_bytes),
             schema,
             projection,
+            projection_original_position,
             line_number: usize::from(has_header),
             ignore_errors,
             skip_rows_before_header: skip_rows,
@@ -261,6 +277,8 @@ impl<'a> CoreReader<'a> {
             missing_is_null,
             predicate,
             to_cast,
+            #[cfg(feature = "dtype-categorical")]
+            has_cat,
             row_index,
             truncate_ragged_lines,
         })
@@ -447,20 +465,6 @@ impl<'a> CoreReader<'a> {
             remaining_bytes,
         ))
     }
-    fn get_projection(&mut self) -> PolarsResult<Vec<usize>> {
-        // we also need to sort the projection to have predictable output.
-        // the `parse_lines` function expects this.
-        self.projection
-            .take()
-            .map(|mut v| {
-                v.sort_unstable();
-                if let Some(idx) = v.last() {
-                    polars_ensure!(*idx < self.schema.len(), OutOfBounds: "projection index: {} is out of bounds for csv schema with length: {}", idx, self.schema.len())
-                }
-                Ok(v)
-            })
-            .unwrap_or_else(|| Ok((0..self.schema.len()).collect()))
-    }
 
     fn parse_csv(
         &mut self,
@@ -471,13 +475,30 @@ impl<'a> CoreReader<'a> {
         let logging = verbose();
         let (file_chunks, chunk_size, total_rows, starting_point_offset, bytes, remaining_bytes) =
             self.determine_file_chunks_and_statistics(&mut n_threads, bytes, logging)?;
-        let projection = self.get_projection()?;
+
+        // create a null value for every column
+        let null_values_compiled = self
+            .null_values
+            .clone()
+            .map(|nv| nv.compile(&self.schema))
+            .transpose()?
+            .map(|mut nv| {
+                nv.apply_projection(&self.projection);
+                nv
+            });
 
         // An empty file with a schema should return an empty DataFrame with that schema
         if bytes.is_empty() {
             let mut df = DataFrame::from(self.schema.as_ref());
             if let Some(ref row_index) = self.row_index {
                 df.insert_column(0, Series::new_empty(&row_index.name, &IDX_DTYPE))?;
+            }
+            unsafe {
+                sort_series_origin_order(
+                    df.get_columns_mut(),
+                    self.projection_original_position.clone(),
+                    self.row_index.is_some(),
+                );
             }
             return Ok(df);
         }
@@ -492,7 +513,7 @@ impl<'a> CoreReader<'a> {
                     .map(|(bytes_offset_thread, stop_at_nbytes)| {
                         let schema = self.schema.as_ref();
                         let ignore_errors = self.ignore_errors;
-                        let projection = &projection;
+                        let projection = &self.projection;
 
                         let mut read = bytes_offset_thread;
                         let mut dfs = Vec::with_capacity(256);
@@ -524,7 +545,7 @@ impl<'a> CoreReader<'a> {
                                 self.missing_is_null,
                                 ignore_errors,
                                 self.truncate_ragged_lines,
-                                self.null_values.as_ref(),
+                                null_values_compiled.as_ref(),
                                 projection,
                                 &mut buffers,
                                 chunk_size,
@@ -579,14 +600,14 @@ impl<'a> CoreReader<'a> {
                             self.separator,
                             self.schema.as_ref(),
                             self.ignore_errors,
-                            &projection,
+                            &self.projection,
                             bytes_offset_thread,
                             self.quote_char,
                             self.eol_char,
                             self.comment_prefix.as_ref(),
                             capacity,
                             self.encoding,
-                            self.null_values.as_ref(),
+                            null_values_compiled.as_ref(),
                             self.missing_is_null,
                             self.truncate_ragged_lines,
                             usize::MAX,
@@ -610,7 +631,7 @@ impl<'a> CoreReader<'a> {
                         let mut df = {
                             let remaining_rows = n_rows - rows_already_read;
                             let mut buffers = init_buffers(
-                                &projection,
+                                &self.projection,
                                 remaining_rows,
                                 self.schema.as_ref(),
                                 self.quote_char,
@@ -627,8 +648,8 @@ impl<'a> CoreReader<'a> {
                                 self.missing_is_null,
                                 self.ignore_errors,
                                 self.truncate_ragged_lines,
-                                self.null_values.as_ref(),
-                                &projection,
+                                null_values_compiled.as_ref(),
+                                &self.projection,
                                 &mut buffers,
                                 remaining_rows - 1,
                                 self.schema.len(),
@@ -654,12 +675,29 @@ impl<'a> CoreReader<'a> {
             if self.row_index.is_some() {
                 update_row_counts(&mut dfs, 0)
             }
-            accumulate_dataframes_vertical(dfs.into_iter().map(|t| t.0))
+            let mut result_df = accumulate_dataframes_vertical(dfs.into_iter().map(|t| t.0))?;
+            unsafe {
+                sort_series_origin_order(
+                    result_df.get_columns_mut(),
+                    self.projection_original_position.clone(),
+                    self.row_index.is_some(),
+                );
+            }
+            Ok(result_df)
         }
     }
 
     /// Read the csv into a DataFrame. The predicate can come from a lazy physical plan.
     pub fn as_df(&mut self) -> PolarsResult<DataFrame> {
+        #[cfg(feature = "dtype-categorical")]
+        let _cat_lock = {
+            if self.has_cat {
+                Some(polars_core::StringCacheHolder::hold())
+            } else {
+                None
+            }
+        };
+
         let predicate = self.predicate.take();
         let n_threads = self.n_threads.unwrap_or_else(|| POOL.current_num_threads());
 

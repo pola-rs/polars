@@ -373,7 +373,8 @@ def test_dtype_overwrite_with_column_name_selection() -> None:
     )
     f = io.StringIO(csv)
     df = pl.read_csv(f, columns=["c", "b", "d"], dtypes=[pl.Int32, pl.String])
-    assert df.dtypes == [pl.String, pl.Int32, pl.Int64]
+    assert df.dtypes == [pl.Int32, pl.String, pl.Int64]
+    assert df.columns == ["c", "b", "d"]
 
 
 def test_dtype_overwrite_with_column_idx_selection() -> None:
@@ -386,11 +387,11 @@ def test_dtype_overwrite_with_column_idx_selection() -> None:
     )
     f = io.StringIO(csv)
     df = pl.read_csv(f, columns=[2, 1, 3], dtypes=[pl.Int32, pl.String])
+    # Projections are sorted.
+    assert df.columns == ["c", "b", "d"]
     # Columns without an explicit dtype set will get pl.String if dtypes is a list
     # if the column selection is done with column indices instead of column names.
-    assert df.dtypes == [pl.String, pl.Int32, pl.String]
-    # Projections are sorted.
-    assert df.columns == ["b", "c", "d"]
+    assert df.dtypes == [pl.Int32, pl.String, pl.Int64]
 
 
 def test_partial_column_rename() -> None:
@@ -1969,3 +1970,10 @@ def test_read_csv_single_column(columns: list[str] | str) -> None:
 def test_csv_invalid_escape_utf8_14960() -> None:
     with pytest.raises(pl.ComputeError, match=r"field is not properly escaped"):
         pl.read_csv('col1\n""•'.encode())
+
+
+def test_read_csv_set_both_schema_dtypes_fail() -> None:
+    with pytest.raises(ValueError, match="cannot provide both 'schema' and 'dtypes'"):
+        pl.read_csv(
+            io.StringIO("a,b\n1,2\n"), schema={"a": pl.Int32}, dtypes={"a": pl.Int64}
+        )

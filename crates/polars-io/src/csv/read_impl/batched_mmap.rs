@@ -104,7 +104,7 @@ impl<'a> Iterator for ChunkOffsetIter<'a> {
 
 impl<'a> CoreReader<'a> {
     /// Create a batched csv reader that uses mmap to load data.
-    pub fn batched_mmap(mut self, _has_cat: bool) -> PolarsResult<BatchedCsvReaderMmap<'a>> {
+    pub fn batched_mmap(mut self) -> PolarsResult<BatchedCsvReaderMmap<'a>> {
         let reader_bytes = self.reader_bytes.take().unwrap();
         let bytes = reader_bytes.as_ref();
         let (bytes, starting_point_offset) =
@@ -129,11 +129,9 @@ impl<'a> CoreReader<'a> {
             eol_char: self.eol_char,
         };
 
-        let projection = self.get_projection()?;
-
         // RAII structure that will ensure we maintain a global stringcache
         #[cfg(feature = "dtype-categorical")]
-        let _cat_lock = if _has_cat {
+        let _cat_lock = if self.has_cat {
             Some(polars_core::StringCacheHolder::hold())
         } else {
             None
@@ -147,7 +145,8 @@ impl<'a> CoreReader<'a> {
             chunk_size: self.chunk_size,
             file_chunks_iter: file_chunks,
             file_chunks: vec![],
-            projection,
+            projection: self.projection,
+            projection_original_position: self.projection_original_position,
             starting_point_offset,
             row_index: self.row_index,
             comment_prefix: self.comment_prefix,
@@ -174,12 +173,13 @@ pub struct BatchedCsvReaderMmap<'a> {
     file_chunks_iter: ChunkOffsetIter<'a>,
     file_chunks: Vec<(usize, usize)>,
     projection: Vec<usize>,
+    projection_original_position: Vec<usize>,
     starting_point_offset: Option<usize>,
     row_index: Option<RowIndex>,
     comment_prefix: Option<CommentPrefix>,
     quote_char: Option<u8>,
     eol_char: u8,
-    null_values: Option<NullValuesCompiled>,
+    null_values: Option<NullValues>,
     missing_is_null: bool,
     truncate_ragged_lines: bool,
     to_cast: Vec<Field>,
@@ -220,6 +220,17 @@ impl<'a> BatchedCsvReaderMmap<'a> {
             bytes = &bytes[pos..];
         }
 
+        // create a null value for every column
+        let null_values_compiled = self
+            .null_values
+            .clone()
+            .map(|nv| nv.compile(&self.schema))
+            .transpose()?
+            .map(|mut nv| {
+                nv.apply_projection(&self.projection);
+                nv
+            });
+
         let mut chunks = POOL.install(|| {
             chunks
                 .into_par_iter()
@@ -237,7 +248,7 @@ impl<'a> BatchedCsvReaderMmap<'a> {
                         self.comment_prefix.as_ref(),
                         self.chunk_size,
                         self.encoding,
-                        self.null_values.as_ref(),
+                        null_values_compiled.as_ref(),
                         self.missing_is_null,
                         self.truncate_ragged_lines,
                         self.chunk_size,
@@ -247,9 +258,18 @@ impl<'a> BatchedCsvReaderMmap<'a> {
 
                     cast_columns(&mut df, &self.to_cast, false, self.ignore_errors)?;
 
+                    unsafe {
+                        sort_series_origin_order(
+                            df.get_columns_mut(),
+                            self.projection_original_position.clone(),
+                            false,
+                        );
+                    }
+
                     if let Some(rc) = &self.row_index {
                         df.with_row_index_mut(&rc.name, Some(rc.offset));
                     }
+
                     Ok(df)
                 })
                 .collect::<PolarsResult<Vec<_>>>()
