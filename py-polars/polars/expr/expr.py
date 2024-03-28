@@ -2131,6 +2131,11 @@ class Expr:
         Expr
             Expression of data type :class:`UInt32`.
 
+        See Also
+        --------
+        Expr.gather: Take values by index.
+        Expr.rank : Get the rank of each row.
+
         Examples
         --------
         >>> df = pl.DataFrame(
