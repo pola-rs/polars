@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -990,3 +990,36 @@ def test_group_by_dynamic_check_sorted_15225() -> None:
     assert_frame_equal(result, expected)
     with pytest.raises(pl.InvalidOperationError, match="not explicitly sorted"):
         result = df.group_by_dynamic("b", every="2d").agg(pl.sum("a"))
+
+
+@pytest.mark.parametrize("start_by", ["window", "friday"])
+def test_earliest_point_included_when_offset_is_set_15241(start_by: StartBy) -> None:
+    df = pl.DataFrame(
+        data={
+            "t": pl.Series(
+                [
+                    datetime(2024, 3, 22, 3, 0, tzinfo=timezone.utc),
+                    datetime(2024, 3, 22, 4, 0, tzinfo=timezone.utc),
+                    datetime(2024, 3, 22, 5, 0, tzinfo=timezone.utc),
+                    datetime(2024, 3, 22, 6, 0, tzinfo=timezone.utc),
+                ]
+            ),
+            "v": [1, 10, 100, 1000],
+        }
+    ).set_sorted("t")
+    result = df.group_by_dynamic(
+        index_column="t",
+        every="1d",
+        offset=timedelta(hours=5),
+        start_by=start_by,
+    ).agg("v")
+    expected = pl.DataFrame(
+        {
+            "t": [
+                datetime(2024, 3, 21, 5, 0, tzinfo=timezone.utc),
+                datetime(2024, 3, 22, 5, 0, tzinfo=timezone.utc),
+            ],
+            "v": [[1, 10], [100, 1000]],
+        }
+    )
+    assert_frame_equal(result, expected)

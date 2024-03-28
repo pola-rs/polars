@@ -63,7 +63,15 @@ impl Bounds {
     pub(crate) fn is_future(&self, t: i64, closed: ClosedWindow) -> bool {
         match closed {
             ClosedWindow::Left | ClosedWindow::None => self.stop <= t,
-            ClosedWindow::Both | ClosedWindow::Right => t > self.stop,
+            ClosedWindow::Both | ClosedWindow::Right => self.stop < t,
+        }
+    }
+
+    #[inline]
+    pub(crate) fn is_past(&self, t: i64, closed: ClosedWindow) -> bool {
+        match closed {
+            ClosedWindow::Left | ClosedWindow::Both => self.start > t,
+            ClosedWindow::None | ClosedWindow::Right => self.start >= t,
         }
     }
 }
