@@ -121,6 +121,20 @@ def read_parquet(
         data will be stored continuously in memory. Set `rechunk=False` if you are
         benchmarking the parquet-reader as `rechunk` can be an expensive operation
         that should not contribute to the timings.
+
+    Examples
+    --------
+    >>> pl.read_parquet("ballondor.parquet")  # doctest: +SKIP
+    shape: (3, 3)
+    ┌──────┬─────────┬──────────┐
+    │ yr   ┆ name    ┆ country  │
+    │ ---  ┆ ---     ┆ ---      │
+    │ i64  ┆ str     ┆ str      │
+    ╞══════╪═════════╪══════════╡
+    │ 1999 ┆ Rivaldo ┆ Brazil   │
+    │ 2000 ┆ Figo    ┆ Portugal │
+    │ 2001 ┆ Owen    ┆ England  │
+    └──────┴─────────┴──────────┘
     """
     # Dispatch to pyarrow if requested
     if use_pyarrow:
@@ -206,6 +220,22 @@ def read_parquet_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, Dat
     -------
     dict
         Dictionary mapping column names to datatypes
+
+    Examples
+    --------
+    >>> pl.read_parquet("ballondor.parquet")  # doctest: +SKIP
+    shape: (3, 3)
+    ┌──────┬─────────┬──────────┐
+    │ yr   ┆ name    ┆ country  │
+    │ ---  ┆ ---     ┆ ---      │
+    │ i64  ┆ str     ┆ str      │
+    ╞══════╪═════════╪══════════╡
+    │ 1999 ┆ Rivaldo ┆ Brazil   │
+    │ 2000 ┆ Figo    ┆ Portugal │
+    │ 2001 ┆ Owen    ┆ England  │
+    └──────┴─────────┴──────────┘
+    >>> pl.read_parquet_schema("ballondor.parquet")  # doctest: +SKIP
+    {'yr': Int64, 'name': String, 'country': String}
     """
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source)
