@@ -1539,7 +1539,11 @@ def arg_sort_by(
     descending: bool | Sequence[bool] = False,
 ) -> Expr:
     """
-    Return the row indices that would sort the columns.
+    Return the row indices that would sort the column(s).
+
+    The first element is the index of the row that would be first if the data
+    frame were sorted by the column(s). The second element is the index of the
+    row that would be second if sorted, and so on.
 
     Parameters
     ----------
@@ -1551,6 +1555,11 @@ def arg_sort_by(
     descending
         Sort in descending order. When sorting by multiple columns, can be specified
         per column by passing a sequence of booleans.
+
+    See Also
+    --------
+    Expr.gather: Take values by index.
+    Expr.rank : Get the rank of each row.
 
     Examples
     --------
