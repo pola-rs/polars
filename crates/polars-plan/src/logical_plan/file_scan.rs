@@ -109,16 +109,6 @@ impl FileScan {
         }
     }
 
-    #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv", feature = "cse"))]
-    pub(crate) fn skip_rows(&self) -> usize {
-        #[allow(unreachable_patterns)]
-        match self {
-            #[cfg(feature = "csv")]
-            Self::Csv { options } => options.skip_rows,
-            _ => 0,
-        }
-    }
-
     pub(crate) fn sort_projection(&self, _file_options: &FileScanOptions) -> bool {
         match self {
             #[cfg(feature = "csv")]

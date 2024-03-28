@@ -70,3 +70,9 @@ def test_upcast_primitive_and_strings(
     values: list[Any], dtype: pl.PolarsDataType, expected_dtype: pl.PolarsDataType
 ) -> None:
     assert pl.Series(values, dtype=dtype).dtype == expected_dtype
+
+
+def test_preserve_decimal_precision() -> None:
+    dtype = pl.Decimal(None, 1)
+    s = pl.Series(dtype=dtype)
+    assert s.dtype == dtype

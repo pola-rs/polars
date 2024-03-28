@@ -4,6 +4,7 @@ pub(crate) mod series;
 mod supertype;
 use std::borrow::Cow;
 use std::ops::{Deref, DerefMut};
+mod schema;
 
 pub use any_value::*;
 use arrow::bitmap::bitmask::BitMask;
@@ -13,6 +14,7 @@ pub use arrow::trusted_len::TrustMyLength;
 use flatten::*;
 use num_traits::{One, Zero};
 use rayon::prelude::*;
+pub use schema::*;
 pub use series::*;
 use smartstring::alias::String as SmartString;
 pub use supertype::*;

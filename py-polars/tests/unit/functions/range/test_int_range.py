@@ -252,3 +252,19 @@ def test_int_ranges_broadcasting() -> None:
         }
     )
     assert_frame_equal(result, expected)
+
+
+# https://github.com/pola-rs/polars/issues/15307
+def test_int_range_non_int_dtype() -> None:
+    with pytest.raises(
+        pl.ComputeError, match="non-integer `dtype` passed to `int_range`: String"
+    ):
+        pl.int_range(0, 3, dtype=pl.String, eager=True)  # type: ignore[arg-type]
+
+
+# https://github.com/pola-rs/polars/issues/15307
+def test_int_ranges_non_int_dtype() -> None:
+    with pytest.raises(
+        pl.ComputeError, match="non-integer `dtype` passed to `int_ranges`: String"
+    ):
+        pl.int_ranges(0, 3, dtype=pl.String, eager=True)  # type: ignore[arg-type]

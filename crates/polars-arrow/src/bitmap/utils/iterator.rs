@@ -1,3 +1,5 @@
+use polars_utils::slice::load_padded_le_u64;
+
 use super::get_bit_unchecked;
 use crate::trusted_len::TrustedLen;
 
@@ -6,29 +8,43 @@ use crate::trusted_len::TrustedLen;
 #[derive(Debug, Clone)]
 pub struct BitmapIter<'a> {
     bytes: &'a [u8],
-    index: usize,
-    end: usize,
+    word: u64,
+    word_len: usize,
+    rest_len: usize,
 }
 
 impl<'a> BitmapIter<'a> {
     /// Creates a new [`BitmapIter`].
-    pub fn new(slice: &'a [u8], offset: usize, len: usize) -> Self {
-        // example:
-        // slice.len() = 4
-        // offset = 9
-        // len = 23
-        // result:
-        let bytes = &slice[offset / 8..];
-        // bytes.len() = 3
-        let index = offset % 8;
-        // index = 9 % 8 = 1
-        let end = len + index;
-        // end = 23 + 1 = 24
-        assert!(end <= bytes.len() * 8);
-        // maximum read before UB in bits: bytes.len() * 8 = 24
-        // the first read from the end is `end - 1`, thus, end = 24 is ok
+    pub fn new(bytes: &'a [u8], offset: usize, len: usize) -> Self {
+        if len == 0 {
+            return Self {
+                bytes,
+                word: 0,
+                word_len: 0,
+                rest_len: 0,
+            };
+        }
 
-        Self { bytes, index, end }
+        assert!(bytes.len() * 8 >= offset + len);
+        let first_byte_idx = offset / 8;
+        let bytes = &bytes[first_byte_idx..];
+        let offset = offset % 8;
+
+        // Make sure during our hot loop all our loads are full 8-byte loads
+        // by loading the remainder now if it exists.
+        let word = load_padded_le_u64(bytes) >> offset;
+        let mod8 = bytes.len() % 8;
+        let first_word_bytes = if mod8 > 0 { mod8 } else { 8 };
+        let bytes = &bytes[first_word_bytes..];
+
+        let word_len = (first_word_bytes * 8 - offset).min(len);
+        let rest_len = len - word_len;
+        Self {
+            bytes,
+            word,
+            word_len,
+            rest_len,
+        }
     }
 }
 
@@ -37,43 +53,49 @@ impl<'a> Iterator for BitmapIter<'a> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        if self.index == self.end {
-            return None;
+        if self.word_len != 0 {
+            let ret = self.word & 1 != 0;
+            self.word >>= 1;
+            self.word_len -= 1;
+            return Some(ret);
         }
-        let old = self.index;
-        self.index += 1;
-        // See comment in `new`
-        Some(unsafe { get_bit_unchecked(self.bytes, old) })
+
+        if self.rest_len != 0 {
+            self.word_len = self.rest_len.min(64);
+            self.rest_len -= self.word_len;
+            unsafe {
+                let chunk = self.bytes.get_unchecked(..8).try_into().unwrap();
+                self.word = u64::from_le_bytes(chunk);
+                self.bytes = self.bytes.get_unchecked(8..);
+            }
+
+            let ret = self.word & 1 != 0;
+            self.word >>= 1;
+            self.word_len -= 1;
+            return Some(ret);
+        }
+
+        None
     }
 
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        let exact = self.end - self.index;
+        let exact = self.word_len + self.rest_len;
         (exact, Some(exact))
-    }
-
-    #[inline]
-    fn nth(&mut self, n: usize) -> Option<Self::Item> {
-        let new_index = self.index + n;
-        if new_index > self.end {
-            self.index = self.end;
-            None
-        } else {
-            self.index = new_index;
-            self.next()
-        }
     }
 }
 
 impl<'a> DoubleEndedIterator for BitmapIter<'a> {
     #[inline]
     fn next_back(&mut self) -> Option<bool> {
-        if self.index == self.end {
-            None
+        if self.rest_len > 0 {
+            self.rest_len -= 1;
+            Some(unsafe { get_bit_unchecked(self.bytes, self.rest_len) })
+        } else if self.word_len > 0 {
+            self.word_len -= 1;
+            Some(self.word & (1 << self.word_len) != 0)
         } else {
-            self.end -= 1;
-            // See comment in `new`; end was first decreased
-            Some(unsafe { get_bit_unchecked(self.bytes, self.end) })
+            None
         }
     }
 }

@@ -76,6 +76,14 @@ pub trait ArrayNameSpace: AsArray {
         ca.try_apply_amortized_to_list(|s| s.as_ref().unique_stable())
     }
 
+    fn array_n_unique(&self) -> PolarsResult<IdxCa> {
+        let ca = self.as_array();
+        ca.try_apply_amortized_generic(|opt_s| {
+            let opt_v = opt_s.map(|s| s.as_ref().n_unique()).transpose()?;
+            Ok(opt_v.map(|idx| idx as IdxSize))
+        })
+    }
+
     #[cfg(feature = "array_any_all")]
     fn array_any(&self) -> PolarsResult<Series> {
         let ca = self.as_array();

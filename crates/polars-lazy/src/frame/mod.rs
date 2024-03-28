@@ -633,37 +633,11 @@ impl LazyFrame {
         mut self,
         check_sink: bool,
     ) -> PolarsResult<(ExecutionState, Box<dyn Executor>, bool)> {
-        let file_caching = self.opt_state.file_caching && !self.opt_state.streaming;
         let mut expr_arena = Arena::with_capacity(256);
         let mut lp_arena = Arena::with_capacity(128);
         let mut scratch = vec![];
         let lp_top =
             self.optimize_with_scratch(&mut lp_arena, &mut expr_arena, &mut scratch, false)?;
-
-        let finger_prints = if file_caching {
-            #[cfg(any(
-                feature = "ipc",
-                feature = "parquet",
-                feature = "csv",
-                feature = "json"
-            ))]
-            {
-                let mut fps = Vec::with_capacity(8);
-                collect_fingerprints(lp_top, &mut fps, &lp_arena, &expr_arena);
-                Some(fps)
-            }
-            #[cfg(not(any(
-                feature = "ipc",
-                feature = "parquet",
-                feature = "csv",
-                feature = "json"
-            )))]
-            {
-                None
-            }
-        } else {
-            None
-        };
 
         // sink should be replaced
         let no_file_sink = if check_sink {
@@ -673,7 +647,7 @@ impl LazyFrame {
         };
         let physical_plan = create_physical_plan(lp_top, &mut lp_arena, &mut expr_arena)?;
 
-        let state = ExecutionState::with_finger_prints(finger_prints);
+        let state = ExecutionState::new();
         Ok((state, physical_plan, no_file_sink))
     }
 
@@ -696,13 +670,7 @@ impl LazyFrame {
     /// ```
     pub fn collect(self) -> PolarsResult<DataFrame> {
         let (mut state, mut physical_plan, _) = self.prepare_collect(false)?;
-        let out = physical_plan.execute(&mut state);
-        #[cfg(debug_assertions)]
-        {
-            #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv"))]
-            state.file_cache.assert_empty();
-        }
-        out
+        physical_plan.execute(&mut state)
     }
 
     /// Profile a LazyFrame.

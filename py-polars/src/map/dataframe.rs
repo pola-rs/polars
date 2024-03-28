@@ -289,7 +289,7 @@ pub fn apply_lambda_with_rows_output<'a>(
         buf.push(v?.clone());
     }
 
-    let schema = rows_to_schema_first_non_null(&buf, Some(50));
+    let schema = rows_to_schema_first_non_null(&buf, Some(50))?;
 
     if init_null_count > 0 {
         // SAFETY: we know the iterators size
