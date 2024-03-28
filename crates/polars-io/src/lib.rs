@@ -24,8 +24,7 @@ mod options;
 pub mod parquet;
 pub mod predicates;
 pub mod prelude;
-#[cfg(all(test, feature = "csv"))]
-mod tests;
+
 pub mod utils;
 use once_cell::sync::Lazy;
 use regex::Regex;
@@ -101,14 +100,38 @@ pub(crate) fn finish_reader<R: ArrowReader>(
     let mut num_rows = 0;
     let mut parsed_dfs = Vec::with_capacity(1024);
 
-    while let Some(batch) = reader.next_record_batch()? {
-        let current_num_rows = num_rows as IdxSize;
-        num_rows += batch.len();
+    loop {
+        let remaining = match n_rows {
+            Some(limit) => match limit.checked_sub(num_rows) {
+                // We still need to read `remaining` rows.
+                Some(remaining) => Some(remaining),
+                // We have read enough since `num_rows >= limit`.
+                None => break,
+            },
+            // Read until the end.
+            None => None,
+        };
+
+        let Some(batch) = reader.next_record_batch()? else {
+            break;
+        };
+
         let mut df = DataFrame::try_from((batch, arrow_schema.fields.as_slice()))?;
 
         if let Some(rc) = &row_index {
-            df.with_row_index_mut(&rc.name, Some(current_num_rows + rc.offset));
+            df.with_row_index_mut(
+                &rc.name,
+                Some(IdxSize::try_from(num_rows).unwrap() + rc.offset),
+            );
         }
+
+        if let Some(remaining) = remaining {
+            if remaining < df.height() {
+                df = df.slice(0, remaining);
+            }
+        }
+
+        num_rows += df.height();
 
         if let Some(predicate) = &predicate {
             let s = predicate.evaluate_io(&df)?;
@@ -116,19 +139,6 @@ pub(crate) fn finish_reader<R: ArrowReader>(
             df = df.filter(mask)?;
         }
 
-        if let Some(n) = n_rows {
-            if num_rows >= n {
-                let len = n - parsed_dfs
-                    .iter()
-                    .map(|df: &DataFrame| df.height())
-                    .sum::<usize>();
-                if polars_core::config::verbose() {
-                    eprintln!("sliced off {} rows of the 'DataFrame'. These lines were read because they were in a single chunk.", df.height().saturating_sub(n))
-                }
-                parsed_dfs.push(df.slice(0, len));
-                break;
-            }
-        }
         parsed_dfs.push(df);
     }
 
@@ -160,5 +170,79 @@ pub fn is_cloud_url<P: AsRef<Path>>(p: P) -> bool {
     match p.as_ref().as_os_str().to_str() {
         Some(s) => CLOUD_URL.is_match(s),
         _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use polars_core::assert_df_eq;
+
+    use super::*;
+
+    /// An implementation of [`ArrowReader`] for use in testing. It wraps any
+    /// iterator that produces [`PolarsResult<ArrowChunk>`].
+    struct TestReader<T>(T);
+
+    impl<T> TestReader<T> {
+        fn new<U>(t: U) -> Self
+        where
+            U: IntoIterator<Item = PolarsResult<ArrowChunk>, IntoIter = T>,
+        {
+            Self(t.into_iter())
+        }
+    }
+
+    impl<T> ArrowReader for TestReader<T>
+    where
+        T: Iterator<Item = PolarsResult<ArrowChunk>>,
+    {
+        fn next_record_batch(&mut self) -> PolarsResult<Option<ArrowChunk>> {
+            self.0.next().transpose()
+        }
+    }
+
+    #[cfg(any(feature = "ipc", feature = "avro", feature = "ipc_streaming",))]
+    #[test]
+    fn finish_reader_works_with_n_rows_and_predicate() {
+        let reader = TestReader::new([
+            Ok(ArrowChunk::new(vec![Box::new(
+                arrow::array::PrimitiveArray::from_vec(vec![10, 200, 30, 400]),
+            )])),
+            Ok(ArrowChunk::new(vec![Box::new(
+                arrow::array::PrimitiveArray::from_vec(vec![50, 600, 15, 250, 35, 450, 60]),
+            )])),
+            Ok(ArrowChunk::new(vec![Box::new(
+                arrow::array::PrimitiveArray::from_vec(vec![11, 22, 33, 77, 66, 100, 300]),
+            )])),
+        ]);
+
+        let schema = ArrowSchema::from(vec![arrow::datatypes::Field::new(
+            "calories",
+            <i32 as arrow::types::NativeType>::PRIMITIVE.into(),
+            false,
+        )]);
+
+        // NOTE: Implementing the [`PhysicalIoExpr`] trait here because as of
+        // Mar 2024 we do not have access to the `polars_lazy` crate.
+        struct CaloriesLt100;
+
+        impl PhysicalIoExpr for CaloriesLt100 {
+            fn evaluate_io(&self, df: &DataFrame) -> PolarsResult<Series> {
+                df.column("calories")
+                    .map(|x| x.lt(100).unwrap().into_series())
+            }
+        }
+
+        let df = finish_reader(
+            reader,
+            false,
+            Some(10),
+            Some(Arc::new(CaloriesLt100)),
+            &schema,
+            None,
+        )
+        .unwrap();
+
+        assert_df_eq!(df, df!("calories" => [10i32, 30, 50, 15, 35]).unwrap());
     }
 }

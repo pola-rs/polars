@@ -71,3 +71,23 @@ use crate::mmap::MmapBytesReader;
 use crate::predicates::PhysicalIoExpr;
 use crate::utils::{get_reader_bytes, resolve_homedir};
 use crate::{RowIndex, SerReader, SerWriter};
+
+#[cfg(test)]
+mod tests {
+    use polars_core::prelude::*;
+
+    use super::*;
+
+    #[test]
+    fn test_filter() -> PolarsResult<()> {
+        let path = "../../examples/datasets/foods1.csv";
+        let df = CsvReader::from_path(path)?.finish()?;
+
+        let out = df.filter(&df.column("fats_g")?.gt(4)?)?;
+
+        // this fails if all columns are not equal.
+        println!("{out}");
+
+        Ok(())
+    }
+}
