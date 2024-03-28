@@ -1,0 +1,74 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Performance"><title>polars::docs::performance - Rust</title><script> if (window.location.protocol !== "file:") document.write(`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/SourceSerif4-Regular-46f98efaafac5295.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/FiraSans-Regular-018c141bf0843ffd.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/FiraSans-Medium-8f9a781e4970d388.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2">`)</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-e935ef01ae1c1829.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="polars" data-themes="" data-resource-suffix="" data-rustdoc-version="1.79.0-nightly (c9f8f3438 2024-03-27)" data-channel="nightly" data-search-js="search-42d8da7a6b9792c2.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-4c98445ec4002617.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../static.files/main-12cf3b4f4f9dc36d.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-04d5337699b92874.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-16x16-8b506e7a72182f1c.png"><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button></nav><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../../polars/index.html">polars</a><span class="version">0.38.3</span></h2></div><h2 class="location"><a href="#">Module performance</a></h2><div class="sidebar-elems"><h2><a href="../index.html">In polars::docs</a></h2></div></nav><div class="sidebar-resizer"></div>
+    <main><div class="width-limiter"><nav class="sub"><form class="search-form"><span></span><div id="sidebar-button" tabindex="-1"><a href="../../../polars/all.html" title="show sidebar"></a></div><input class="search-input" name="search" aria-label="Run search in the documentation" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"><div id="help-button" tabindex="-1"><a href="../../../help.html" title="help">?</a></div><div id="settings-menu" tabindex="-1"><a href="../../../settings.html" title="settings"><img width="22" height="22" alt="Change settings" src="../../../static.files/wheel-7b819b6101059cd0.svg"></a></div></form></nav><section id="main-content" class="content"><div class="main-heading"><h1>Module <a href="../../index.html">polars</a>::<wbr><a href="../index.html">docs</a>::<wbr><a class="mod" href="#">performance</a><button id="copy-path" title="Copy item path to clipboard"><img src="../../../static.files/clipboard-7571035ce49a181d.svg" width="19" height="18" alt="Copy item path"></button></h1><span class="out-of-band"><a class="src" href="../../../src/polars/docs/performance.rs.html#1-101">source</a> · <button id="toggle-all-docs" title="collapse all docs">[<span>&#x2212;</span>]</button></span></div><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><h2 id="performance"><a class="doc-anchor" href="#performance">§</a>Performance</h2>
+<p>Understanding the memory format used by Arrow/Polars can really increase performance of your
+queries. This is especially true for large string data. The figure below shows how an Arrow UTF8
+array is laid out in memory.</p>
+<p>The array <code>[&quot;foo&quot;, &quot;bar&quot;, &quot;ham&quot;]</code> is encoded by</p>
+<ul>
+<li>a concatenated string <code>&quot;foobarham&quot;</code></li>
+<li>an offset array indicating the start (and end) of each string <code>[0, 2, 5, 8]</code></li>
+<li>a null bitmap, indicating null values</li>
+</ul>
+<p><img src="https://raw.githubusercontent.com/pola-rs/polars-static/master/docs/arrow-string.svg" alt="" /></p>
+<p>This memory structure is very cache efficient if we are to read the string values. Especially if
+we compare it to a <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html" title="struct alloc::vec::Vec"><code>Vec&lt;String&gt;</code></a>.</p>
+<p><img src="https://raw.githubusercontent.com/pola-rs/polars-static/master/docs/pandas-string.svg" alt="" /></p>
+<p>However, if we need to reorder the Arrow UTF8 array, we need to swap around all the bytes of the
+string values, which can become very expensive when we’re dealing with large strings. On the
+other hand, for the <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html" title="struct alloc::vec::Vec"><code>Vec&lt;String&gt;</code></a>, we only need to swap pointers around which is only 8 bytes data
+that have to be moved.</p>
+<p>If you have a <a href="../../frame/struct.DataFrame.html" title="struct polars::frame::DataFrame"><code>DataFrame</code></a> with a large number of
+<a href="../../datatypes/type.StringChunked.html" title="type polars::datatypes::StringChunked"><code>StringChunked</code></a> columns and you need to reorder them due to an
+operation like a FILTER, JOIN, GROUPBY, etc. than this can become quite expensive.</p>
+<h3 id="categorical-type"><a class="doc-anchor" href="#categorical-type">§</a>Categorical type</h3>
+<p>For this reason Polars has a <a href="../../datatypes/struct.CategoricalType.html" title="struct polars::datatypes::CategoricalType"><code>CategoricalType</code></a>.
+A <a href="../../datatypes/struct.CategoricalChunked.html" title="struct polars::datatypes::CategoricalChunked"><code>CategoricalChunked</code></a> is an array filled with <code>u32</code> values that each represent a unique string value.
+Thereby maintaining cache-efficiency, whilst also making it cheap to move values around.</p>
+<h4 id="example-single-dataframe"><a class="doc-anchor" href="#example-single-dataframe">§</a>Example: Single DataFrame</h4>
+<p>In the example below we show how you can cast a <a href="../../datatypes/type.StringChunked.html" title="type polars::datatypes::StringChunked"><code>StringChunked</code></a> column to a <a href="../../datatypes/struct.CategoricalChunked.html" title="struct polars::datatypes::CategoricalChunked"><code>CategoricalChunked</code></a>.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>polars::prelude::<span class="kw-2">*</span>;
+
+<span class="kw">fn </span>example(path: <span class="kw-2">&amp;</span>str) -&gt; PolarsResult&lt;DataFrame&gt; {
+    <span class="kw">let </span><span class="kw-2">mut </span>df = CsvReader::from_path(path)<span class="question-mark">?
+                </span>.finish()<span class="question-mark">?</span>;
+
+    df.try_apply(<span class="string">"string-column"</span>, |s| s.categorical().cloned())<span class="question-mark">?</span>;
+    <span class="prelude-val">Ok</span>(df)
+}
+</code></pre></div>
+<h4 id="example-eager-join-multiple-dataframes-on-a-categorical"><a class="doc-anchor" href="#example-eager-join-multiple-dataframes-on-a-categorical">§</a>Example: Eager join multiple DataFrames on a Categorical</h4>
+<p>When the strings of one column need to be joined with the string data from another <a href="../../frame/struct.DataFrame.html" title="struct polars::frame::DataFrame"><code>DataFrame</code></a>.
+The <a href="../../datatypes/struct.CategoricalChunked.html" title="struct polars::datatypes::CategoricalChunked"><code>Categorical</code></a> data needs to be synchronized (Categories in df A need to point to the same
+underlying string data as Categories in df B). You can do that by turning the global string cache
+on.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>polars::prelude::<span class="kw-2">*</span>;
+<span class="kw">use </span>polars::enable_string_cache;
+
+<span class="kw">fn </span>example(<span class="kw-2">mut </span>df_a: DataFrame, <span class="kw-2">mut </span>df_b: DataFrame) -&gt; PolarsResult&lt;DataFrame&gt; {
+    <span class="comment">// Set a global string cache
+    </span>enable_string_cache();
+
+    df_a.try_apply(<span class="string">"a"</span>, |s| s.categorical().cloned())<span class="question-mark">?</span>;
+    df_b.try_apply(<span class="string">"b"</span>, |s| s.categorical().cloned())<span class="question-mark">?</span>;
+    df_a.join(<span class="kw-2">&amp;</span>df_b, [<span class="string">"a"</span>], [<span class="string">"b"</span>], JoinArgs::new(JoinType::Inner))
+}</code></pre></div>
+<h4 id="example-lazy-join-multiple-dataframes-on-a-categorical"><a class="doc-anchor" href="#example-lazy-join-multiple-dataframes-on-a-categorical">§</a>Example: Lazy join multiple DataFrames on a Categorical</h4>
+<p>A lazy Query always has a global string cache (unless you opt-out) for the duration of that query (until <a href="../../prelude/struct.LazyFrame.html#method.collect" title="method polars::prelude::LazyFrame::collect"><code>collect</code></a> is called).
+The example below shows how you could join two <a href="../../frame/struct.DataFrame.html" title="struct polars::frame::DataFrame"><code>DataFrame</code></a>s with <a href="../../datatypes/struct.CategoricalChunked.html" title="struct polars::datatypes::CategoricalChunked"><code>Categorical</code></a> types.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>polars::prelude::<span class="kw-2">*</span>;
+
+<span class="kw">fn </span>lazy_example(<span class="kw-2">mut </span>df_a: LazyFrame, <span class="kw-2">mut </span>df_b: LazyFrame) -&gt; PolarsResult&lt;DataFrame&gt; {
+
+    <span class="kw">let </span>q1 = df_a.with_columns(<span class="macro">vec!</span>[
+        col(<span class="string">"a"</span>).cast(DataType::Categorical(<span class="prelude-val">None</span>)),
+    ]);
+
+    <span class="kw">let </span>q2 = df_b.with_columns(<span class="macro">vec!</span>[
+        col(<span class="string">"b"</span>).cast(DataType::Categorical(<span class="prelude-val">None</span>))
+    ]);
+    q1.inner_join(q2, col(<span class="string">"a"</span>), col(<span class="string">"b"</span>)).collect()
+}</code></pre></div>
+</div></details></section></div></main></body></html>

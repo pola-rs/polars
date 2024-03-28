@@ -1,0 +1,37 @@
+﻿polars.Int32
+============
+
+.. currentmodule:: polars
+
+.. autoclass:: Int32
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~Int32.__init__
+      ~Int32.base_type
+      ~Int32.is_
+      ~Int32.is_float
+      ~Int32.is_integer
+      ~Int32.is_not
+      ~Int32.is_numeric
+      ~Int32.is_signed_integer
+      ~Int32.is_temporal
+      ~Int32.is_unsigned_integer
+   
+   
+
+   
+   
+   .. rubric:: Attributes
+
+   .. autosummary::
+   
+      ~Int32.is_nested
+   
+   

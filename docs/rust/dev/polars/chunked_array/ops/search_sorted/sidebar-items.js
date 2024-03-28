@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["SearchSortedSide"],"fn":["binary_search_array","slice_sorted_non_null_and_offset"]};

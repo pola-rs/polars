@@ -1,0 +1,6 @@
+﻿polars.scan\_parquet
+====================
+
+.. currentmodule:: polars
+
+.. autofunction:: scan_parquet

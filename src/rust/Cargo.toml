@@ -1,0 +1,160 @@
+[package]
+name = "polars-doc-examples"
+version = { workspace = true }
+authors = { workspace = true }
+edition = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+description = "Code examples included in the Polars documentation website"
+
+[dependencies]
+aws-config = { version = "1" }
+aws-sdk-s3 = { version = "1" }
+chrono = { workspace = true }
+rand = { workspace = true }
+reqwest = { workspace = true, features = ["blocking"] }
+tokio = { workspace = true }
+
+[dependencies.polars]
+workspace = true
+
+[[bin]]
+name = "home"
+path = "home/example.rs"
+required-features = ["polars/lazy"]
+
+[[bin]]
+name = "user-guide-getting-started-expressions"
+path = "user-guide/getting-started/expressions.rs"
+required-features = ["polars/lazy"]
+[[bin]]
+name = "user-guide-getting-started-joins"
+path = "user-guide/getting-started/joins.rs"
+[[bin]]
+name = "user-guide-getting-started-reading-writing"
+path = "user-guide/getting-started/reading-writing.rs"
+required-features = ["polars/json"]
+[[bin]]
+name = "user-guide-concepts-data-structures"
+path = "user-guide/concepts/data-structures.rs"
+
+[[bin]]
+name = "user-guide-concepts-contexts"
+path = "user-guide/concepts/contexts.rs"
+required-features = ["polars/lazy"]
+[[bin]]
+name = "user-guide-concepts-expressions"
+path = "user-guide/concepts/expressions.rs"
+required-features = ["polars/lazy"]
+[[bin]]
+name = "user-guide-concepts-lazy-vs-eager"
+path = "user-guide/concepts/lazy-vs-eager.rs"
+required-features = ["polars/lazy"]
+[[bin]]
+name = "user-guide-concepts-streaming"
+path = "user-guide/concepts/streaming.rs"
+required-features = ["polars/lazy"]
+
+[[bin]]
+name = "user-guide-expressions-aggregation"
+path = "user-guide/expressions/aggregation.rs"
+required-features = ["polars/lazy"]
+[[bin]]
+name = "user-guide-expressions-casting"
+path = "user-guide/expressions/casting.rs"
+required-features = ["polars/lazy"]
+[[bin]]
+name = "user-guide-expressions-column-selections"
+path = "user-guide/expressions/column-selections.rs"
+required-features = ["polars/lazy"]
+[[bin]]
+name = "user-guide-expressions-folds"
+path = "user-guide/expressions/folds.rs"
+required-features = ["polars/lazy"]
+[[bin]]
+name = "user-guide-expressions-functions"
+path = "user-guide/expressions/functions.rs"
+required-features = ["polars/lazy"]
+[[bin]]
+name = "user-guide-expressions-lists"
+path = "user-guide/expressions/lists.rs"
+required-features = ["polars/lazy"]
+[[bin]]
+name = "user-guide-expressions-missing-data"
+path = "user-guide/expressions/missing-data.rs"
+required-features = ["polars/lazy"]
+[[bin]]
+name = "user-guide-expressions-operators"
+path = "user-guide/expressions/operators.rs"
+required-features = ["polars/lazy"]
+[[bin]]
+name = "user-guide-expressions-strings"
+path = "user-guide/expressions/strings.rs"
+required-features = ["polars/lazy"]
+[[bin]]
+name = "user-guide-expressions-structs"
+path = "user-guide/expressions/structs.rs"
+required-features = ["polars/lazy"]
+[[bin]]
+name = "user-guide-expressions-user-defined-functions"
+path = "user-guide/expressions/user-defined-functions.rs"
+required-features = ["polars/lazy"]
+[[bin]]
+name = "user-guide-expressions-window"
+path = "user-guide/expressions/window.rs"
+required-features = ["polars/lazy"]
+
+[[bin]]
+name = "user-guide-io-cloud-storage"
+path = "user-guide/io/cloud-storage.rs"
+required-features = ["polars/csv"]
+[[bin]]
+name = "user-guide-io-csv"
+path = "user-guide/io/csv.rs"
+required-features = ["polars/csv"]
+[[bin]]
+name = "user-guide-io-json"
+path = "user-guide/io/json.rs"
+required-features = ["polars/json"]
+[[bin]]
+name = "user-guide-io-parquet"
+path = "user-guide/io/parquet.rs"
+required-features = ["polars/parquet"]
+
+[[bin]]
+name = "user-guide-transformations-concatenation"
+path = "user-guide/transformations/concatenation.rs"
+required-features = ["polars/lazy"]
+[[bin]]
+name = "user-guide-transformations-joins"
+path = "user-guide/transformations/joins.rs"
+required-features = ["polars/lazy"]
+[[bin]]
+name = "user-guide-transformations-melt"
+path = "user-guide/transformations/melt.rs"
+[[bin]]
+name = "user-guide-transformations-pivot"
+path = "user-guide/transformations/pivot.rs"
+required-features = ["polars/lazy"]
+
+[[bin]]
+name = "user-guide-transformations-time-series-filter"
+path = "user-guide/transformations/time-series/filter.rs"
+required-features = ["polars/lazy"]
+[[bin]]
+name = "user-guide-transformations-time-series-parsing"
+path = "user-guide/transformations/time-series/parsing.rs"
+required-features = ["polars/lazy"]
+[[bin]]
+name = "user-guide-transformations-time-series-resampling"
+path = "user-guide/transformations/time-series/resampling.rs"
+required-features = ["polars/lazy"]
+[[bin]]
+name = "user-guide-transformations-time-series-rolling"
+path = "user-guide/transformations/time-series/rolling.rs"
+required-features = ["polars/lazy"]
+[[bin]]
+name = "user-guide-transformations-time-series-timezones"
+path = "user-guide/transformations/time-series/timezones.rs"
+required-features = ["polars/lazy"]

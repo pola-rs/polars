@@ -1,0 +1,377 @@
+python:
+  DataFrame: https://docs.pola.rs/py-polars/html/reference/dataframe/index.html
+  Categorical: https://docs.pola.rs/py-polars/html/reference/api/polars.Categorical.html
+  Series: https://docs.pola.rs/py-polars/html/reference/series/index.html
+  select: https://docs.pola.rs/py-polars/html/reference/dataframe/api/polars.DataFrame.select.html
+  filter: https://docs.pola.rs/py-polars/html/reference/dataframe/api/polars.DataFrame.filter.html
+  with_columns: https://docs.pola.rs/py-polars/html/reference/dataframe/api/polars.DataFrame.with_columns.html
+  group_by: https://docs.pola.rs/py-polars/html/reference/dataframe/api/polars.DataFrame.group_by.html
+  join: https://docs.pola.rs/py-polars/html/reference/dataframe/api/polars.DataFrame.join.html
+  hstack: https://docs.pola.rs/py-polars/html/reference/dataframe/api/polars.DataFrame.hstack.html
+  read_csv: https://docs.pola.rs/py-polars/html/reference/api/polars.read_csv.html
+  write_csv: https://docs.pola.rs/py-polars/html/reference/api/polars.DataFrame.write_csv.html
+  read_excel: https://docs.pola.rs/py-polars/html/reference/api/polars.read_excel.html
+  write_excel: https://docs.pola.rs/py-polars/html/reference/api/polars.DataFrame.write_excel.html
+  read_json: https://docs.pola.rs/py-polars/html/reference/api/polars.read_json.html
+  write_json: https://docs.pola.rs/py-polars/html/reference/api/polars.DataFrame.write_json.html
+  read_ipc: https://docs.pola.rs/py-polars/html/reference/api/polars.read_ipc.html
+  min: https://docs.pola.rs/py-polars/html/reference/series/api/polars.Series.min.html
+  max: https://docs.pola.rs/py-polars/html/reference/series/api/polars.Series.max.html
+  value_counts: https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.Expr.value_counts.html
+  unnest: https://docs.pola.rs/py-polars/html/reference/dataframe/api/polars.DataFrame.unnest.html
+  struct: https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.struct.html
+  is_duplicated: https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.Expr.is_duplicated.html
+  sample: https://docs.pola.rs/py-polars/html/reference/dataframe/api/polars.DataFrame.sample.html
+  head: https://docs.pola.rs/py-polars/html/reference/dataframe/api/polars.DataFrame.head.html
+  tail: https://docs.pola.rs/py-polars/html/reference/dataframe/api/polars.DataFrame.tail.html
+  describe: https://docs.pola.rs/py-polars/html/reference/dataframe/api/polars.DataFrame.describe.html
+  col: https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.col.html
+  sort: https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.Expr.sort.html
+  scan_csv: https://docs.pola.rs/py-polars/html/reference/api/polars.scan_csv.html
+  collect: https://docs.pola.rs/py-polars/html/reference/lazyframe/api/polars.LazyFrame.collect.html
+  fold: https://docs.pola.rs/py-polars/html/reference/dataframe/api/polars.DataFrame.fold.html
+  concat_str: https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.concat_str.html
+  str.split: https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.Expr.str.split.html
+  Expr.list: https://docs.pola.rs/py-polars/html/reference/expressions/list.html
+  element: https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.element.html
+  all: https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.all.html
+  exclude: https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.exclude.html
+  alias: https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.Expr.alias.html
+  prefix: https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.Expr.prefix.html
+  suffix: https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.Expr.suffix.html
+  map_alias: https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.Expr.map_alias.html
+  n_unique: https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.Expr.n_unique.html
+  approx_n_unique: https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.approx_n_unique.html
+  when: https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.when.html
+  concat_list: https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.concat_list.html
+  list.eval: https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.Expr.list.eval.html
+  null_count: https://docs.pola.rs/py-polars/html/reference/dataframe/api/polars.DataFrame.null_count.html
+  is_null: https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.Expr.is_null.html
+  fill_null: https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.Expr.fill_null.html
+  interpolate: https://docs.pola.rs/py-polars/html/reference/dataframe/api/polars.DataFrame.interpolate.html
+  fill_nan: https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.Expr.fill_nan.html
+  operators: https://docs.pola.rs/py-polars/html/reference/expressions/operators.html
+  over: https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.Expr.over.html
+  implode: https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.Expr.implode.html
+  DataFrame.explode: https://docs.pola.rs/py-polars/html/reference/dataframe/api/polars.DataFrame.explode.html
+  read_database_connectorx:
+    name: read_database
+    link: https://docs.pola.rs/py-polars/html/reference/api/polars.read_database.html
+    feature_flags: ['connectorx']
+  read_database:
+    name: read_database
+    link: https://docs.pola.rs/py-polars/html/reference/api/polars.read_database.html
+  write_database:
+    name: write_database
+    link: https://docs.pola.rs/py-polars/html/reference/api/polars.DataFrame.write_database.html
+  read_database_uri: https://docs.pola.rs/py-polars/html/reference/api/polars.read_database_uri.html
+  read_parquet: https://docs.pola.rs/py-polars/html/reference/api/polars.read_parquet.html
+  write_parquet: https://docs.pola.rs/py-polars/html/reference/api/polars.DataFrame.write_parquet.html
+  scan_parquet: https://docs.pola.rs/py-polars/html/reference/api/polars.scan_parquet.html
+  read_json: https://docs.pola.rs/py-polars/html/reference/api/polars.read_json.html
+  read_ndjson: https://docs.pola.rs/py-polars/html/reference/api/polars.read_ndjson.html
+  write_ndjson: https://docs.pola.rs/py-polars/html/reference/api/polars.DataFrame.write_ndjson.html
+  write_json: https://docs.pola.rs/py-polars/html/reference/api/polars.DataFrame.write_json.html
+  scan_ndjson: https://docs.pola.rs/py-polars/html/reference/api/polars.scan_ndjson.html
+  scan_pyarrow_dataset: https://docs.pola.rs/py-polars/html/reference/api/polars.scan_pyarrow_dataset.html
+  from_arrow:
+    name: from_arrow
+    link: https://docs.pola.rs/py-polars/html/reference/api/polars.from_arrow.html
+    feature_flags: ['fsspec','pyarrow']
+  show_graph: https://docs.pola.rs/py-polars/html/reference/lazyframe/api/polars.LazyFrame.show_graph.html
+  lazy: https://docs.pola.rs/py-polars/html/reference/dataframe/api/polars.DataFrame.lazy.html
+  explain: https://docs.pola.rs/py-polars/html/reference/lazyframe/api/polars.LazyFrame.explain.html
+  fetch: https://docs.pola.rs/py-polars/html/reference/lazyframe/api/polars.LazyFrame.fetch.html
+  SQLContext: https://docs.pola.rs/py-polars/html/reference/sql
+  SQLregister:
+    name: register
+    link: https://docs.pola.rs/py-polars/html/reference/api/polars.SQLContext.register.html#polars.SQLContext.register
+  SQLregister_many:
+    name: register_many
+    link: https://docs.pola.rs/py-polars/html/reference/api/polars.SQLContext.register_many.html
+  SQLquery:
+    name: query
+    link: https://docs.pola.rs/py-polars/html/reference/api/polars.SQLContext.query.html
+  SQLexecute:
+    name: execute
+    link: https://docs.pola.rs/py-polars/html/reference/api/polars.SQLContext.execute.html
+  join_asof: https://docs.pola.rs/py-polars/html/reference/dataframe/api/polars.DataFrame.join_asof.html
+  concat: https://docs.pola.rs/py-polars/html/reference/api/polars.concat.html
+  pivot: https://docs.pola.rs/py-polars/html/reference/dataframe/api/polars.DataFrame.pivot.html
+  melt: https://docs.pola.rs/py-polars/html/reference/dataframe/api/polars.DataFrame.melt.html
+  is_between: https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.Expr.is_between.html
+
+  date_range: https://docs.pola.rs/py-polars/html/reference/api/polars.date_range.html
+  upsample: https://docs.pola.rs/py-polars/html/reference/dataframe/api/polars.DataFrame.upsample.html
+  group_by_dynamic: https://docs.pola.rs/py-polars/html/reference/dataframe/api/polars.DataFrame.group_by_dynamic.html
+  cast: https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.Expr.cast.html
+  np.log:
+    name: log
+    link: https://numpy.org/doc/stable/reference/generated/numpy.log.html
+    feature_flags: ['numpy']
+  Array: https://docs.pola.rs/py-polars/html/reference/api/polars.Array.html
+  Series.arr: https://docs.pola.rs/py-polars/html/reference/series/array.html
+  Series.dt.day: https://docs.pola.rs/py-polars/html/reference/series/api/polars.Series.dt.day.html
+
+  selectors: https://docs.pola.rs/py-polars/html/reference/selectors.html
+  cs.numeric: https://docs.pola.rs/py-polars/html/reference/selectors.html#polars.selectors.numeric
+  cs.by_name: https://docs.pola.rs/py-polars/html/reference/selectors.html#polars.selectors.by_name
+  cs.first: https://docs.pola.rs/py-polars/html/reference/selectors.html#polars.selectors.first
+  cs.temporal: https://docs.pola.rs/py-polars/html/reference/selectors.html#polars.selectors.temporal
+  cs.contains: https://docs.pola.rs/py-polars/html/reference/selectors.html#polars.selectors.contains
+  cs.matches: https://docs.pola.rs/py-polars/html/reference/selectors.html#polars.selectors.matches
+  is_selector: https://docs.pola.rs/py-polars/html/reference/selectors.html#polars.selectors.is_selector
+  expand_selector: https://docs.pola.rs/py-polars/html/reference/selectors.html#polars.selectors.expand_selector
+
+  dt.convert_time_zone:
+    name: dt.convert_time_zone
+    link: https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.Expr.dt.convert_time_zone.html
+    feature_flags: ['timezone']
+  dt.replace_time_zone:
+    name: dt.replace_time_zone
+    link: https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.Expr.dt.replace_time_zone.html
+    feature_flags: ['timezone']
+  dt.to_string: https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.Expr.dt.to_string.html
+  dt.year: https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.Expr.dt.year.html
+
+  str.starts_with: https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.Expr.str.starts_with.html
+  str.ends_with: https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.Expr.str.ends_with.html
+  str.extract: https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.Expr.str.extract.html
+  str.extract_all: https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.Expr.str.extract_all.html
+  str.contains: https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.Expr.str.contains.html
+  str.replace: https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.Expr.str.replace.html
+  str.replace_all: https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.Expr.str.replace_all.html
+  str.to_datetime: https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.Expr.str.to_datetime.html
+  str.to_date: https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.Expr.str.to_date.html
+  str.len_chars: https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.Expr.str.len_chars.html
+  str.len_bytes: https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.Expr.str.len_bytes.html
+
+  struct.field: https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.Expr.struct.field.html
+  struct.rename_fields: https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.Expr.struct.rename_fields.html
+
+rust:
+  DataFrame: https://docs.pola.rs/docs/rust/dev/polars/frame/struct.DataFrame.html
+  Series: https://docs.pola.rs/docs/rust/dev/polars/series/struct.Series.html
+  Categorical:
+    name: Categorical
+    link: https://docs.pola.rs/docs/rust/dev/polars/prelude/enum.DataType.html#variant.Categorical
+    feature_flags: ['dtype-categorical']
+  select: https://docs.pola.rs/docs/rust/dev/polars_lazy/frame/struct.LazyFrame.html#method.select
+  filter: https://docs.pola.rs/docs/rust/dev/polars_lazy/frame/struct.LazyFrame.html#method.filter
+  with_columns: https://docs.pola.rs/docs/rust/dev/polars_lazy/frame/struct.LazyFrame.html#method.with_columns
+  group_by: https://docs.pola.rs/docs/rust/dev/polars_lazy/frame/struct.LazyFrame.html#method.group_by
+  group_by_dynamic:
+    name: group_by_dynamic
+    link: https://docs.pola.rs/docs/rust/dev/polars_lazy/frame/struct.LazyFrame.html#method.group_by_dynamic
+    feature_flags: [dynamic_group_by]
+  join: https://docs.pola.rs/docs/rust/dev/polars_core/frame/hash_join/index.html
+  hstack: https://docs.pola.rs/docs/rust/dev/polars_core/frame/struct.DataFrame.html#method.hstack
+  concat: https://docs.pola.rs/docs/rust/dev/polars_lazy/dsl/functions/fn.concat.html
+  SQLContext: https://docs.pola.rs/py-polars/html/reference/sql.html
+
+  explain: https://docs.rs/polars/latest/polars/prelude/struct.LazyFrame.html#method.explain
+
+  operators: https://docs.pola.rs/docs/rust/dev/polars_lazy/dsl/enum.Operator.html
+
+  Array: https://docs.pola.rs/docs/rust/dev/polars/datatypes/enum.DataType.html#variant.Array
+
+  DataFrame.explode: https://docs.pola.rs/docs/rust/dev/polars/frame/struct.DataFrame.html#method.explode
+  pivot: https://docs.pola.rs/docs/rust/dev/polars_lazy/frame/pivot/fn.pivot.html
+  melt: https://docs.pola.rs/docs/rust/dev/polars/frame/struct.DataFrame.html#method.melt
+  upsample: https://docs.pola.rs/docs/rust/dev/polars/frame/struct.DataFrame.html#method.upsample
+  join_asof: https://docs.pola.rs/docs/rust/dev/polars/prelude/trait.AsofJoin.html#method.join_asof
+  unnest: https://docs.pola.rs/docs/rust/dev/polars/frame/struct.DataFrame.html#method.unnest
+
+  read_csv:
+    name: CsvReader
+    link: https://docs.pola.rs/docs/rust/dev/polars_io/csv/struct.CsvReader.html
+    feature_flags: ['csv']
+  scan_csv:
+    name: LazyCsvReader
+    link: https://docs.pola.rs/docs/rust/dev/polars/prelude/struct.LazyCsvReader.html
+    feature_flags: ['csv']
+  write_csv:
+    name: CsvWriter
+    link: https://docs.pola.rs/docs/rust/dev/polars_io/csv/struct.CsvWriter.html
+    feature_flags: ['csv']
+  read_json:
+    name: JsonReader
+    link: https://docs.pola.rs/docs/rust/dev/polars_io/json/struct.JsonReader.html
+    feature_flags: ['json']
+  read_ndjson:
+    name: JsonLineReader
+    link: https://docs.pola.rs/docs/rust/dev/polars_io/ndjson/core/struct.JsonLineReader.html
+    feature_flags: ['json']
+  write_json:
+    name: JsonWriter
+    link: https://docs.pola.rs/docs/rust/dev/polars_io/json/struct.JsonWriter.html
+    feature_flags: ['json']
+  write_ndjson:
+    name: JsonWriter
+    link: https://docs.pola.rs/docs/rust/dev/polars_io/json/struct.JsonWriter.html
+    feature_flags: ['json']
+  scan_ndjson:
+    name: LazyJsonLineReader
+    link: https://docs.pola.rs/docs/rust/dev/polars_lazy/frame/struct.LazyJsonLineReader.html
+    feature_flags: ['json']
+  read_parquet:
+    name: ParquetReader
+    link: https://docs.pola.rs/docs/rust/dev/polars_io/parquet/struct.ParquetReader.html
+    feature_flags: ['parquet']
+  write_parquet:
+    name: ParquetWriter
+    link: https://docs.pola.rs/docs/rust/dev/polars_io/parquet/struct.ParquetWriter.html
+    feature_flags: ['parquet']
+  scan_parquet:
+    name: scan_parquet
+    link: https://docs.pola.rs/docs/rust/dev/polars/prelude/struct.LazyFrame.html#method.scan_parquet
+    feature_flags: ['parquet']
+  read_ipc:
+    name: IpcReader
+    link: https://docs.pola.rs/docs/rust/dev/polars_io/prelude/struct.IpcReader.html
+    feature_flags: ['ipc']
+  scan_pyarrow_dataset: https://docs.pola.rs/py-polars/html/reference/api/polars.scan_pyarrow_dataset.html
+
+  min: https://docs.pola.rs/docs/rust/dev/polars/series/struct.Series.html#method.min
+  max: https://docs.pola.rs/docs/rust/dev/polars/series/struct.Series.html#method.max
+  struct:
+    name: Struct
+    link: https://docs.pola.rs/docs/rust/dev/polars/datatypes/enum.DataType.html#variant.Struct
+    feature_flags: ['dtype-struct']
+  implode: https://docs.pola.rs/docs/rust/dev/polars_lazy/dsl/enum.Expr.html#method.implode
+  sample:
+    name: sample_n
+    link: https://docs.pola.rs/docs/rust/dev/polars/frame/struct.DataFrame.html#method.sample_n
+  head: https://docs.pola.rs/docs/rust/dev/polars/frame/struct.DataFrame.html#method.head
+  tail: https://docs.pola.rs/docs/rust/dev/polars/frame/struct.DataFrame.html#method.tail
+  describe:
+    name: describe
+    link: https://docs.pola.rs/docs/rust/dev/polars/frame/struct.DataFrame.html#method.describe
+    feature_flags: ['describe']
+  collect:
+    name: collect
+    link: https://docs.pola.rs/docs/rust/dev/polars/prelude/struct.LazyFrame.html#method.collect
+    feature_flags: ['streaming']
+
+  col: https://docs.pola.rs/docs/rust/dev/polars_lazy/dsl/fn.col.html
+  element: https://docs.pola.rs/docs/rust/dev/polars_lazy/dsl/fn.col.html
+  all: https://docs.pola.rs/docs/rust/dev/polars_lazy/dsl/functions/fn.all.html
+  when: https://docs.pola.rs/docs/rust/dev/polars_lazy/dsl/fn.when.html
+
+  sort: https://docs.pola.rs/docs/rust/dev/polars_lazy/dsl/enum.Expr.html#method.sort
+  arr.eval:
+    name: arr
+    link: https://docs.pola.rs/docs/rust/dev/polars_lazy/dsl/enum.Expr.html#method.arr
+    feature_flags: ['list_eval','rank']
+  fold:
+    name: fold_exprs
+    link: https://docs.pola.rs/docs/rust/dev/polars_lazy/dsl/fn.fold_exprs.html
+  concat_str:
+    name: concat_str
+    link: https://docs.pola.rs/docs/rust/dev/polars_lazy/dsl/fn.concat_str.html
+    feature_flags: ['concat_str']
+  concat_list:
+    name: concat_lst
+    link: https://docs.pola.rs/docs/rust/dev/polars_lazy/dsl/fn.concat_lst.html
+  over: https://docs.pola.rs/docs/rust/dev/polars_lazy/dsl/enum.Expr.html#method.over
+
+  alias: https://docs.pola.rs/docs/rust/dev/polars_lazy/dsl/enum.Expr.html#method.alias
+  approx_n_unique: https://docs.pola.rs/docs/rust/dev/polars_lazy/dsl/enum.Expr.html#method.approx_n_unique
+  cast: https://docs.pola.rs/docs/rust/dev/polars_lazy/dsl/enum.Expr.html#method.cast
+  exclude: https://docs.pola.rs/docs/rust/dev/polars_lazy/dsl/enum.Expr.html#method.exclude
+  fill_nan: https://docs.pola.rs/docs/rust/dev/polars_lazy/dsl/enum.Expr.html#method.fill_nan
+  fill_null: https://docs.pola.rs/docs/rust/dev/polars_lazy/dsl/enum.Expr.html#method.fill_null
+  n_unique: https://docs.pola.rs/docs/rust/dev/polars_lazy/dsl/enum.Expr.html#method.n_unique
+  null_count: https://docs.pola.rs/docs/rust/dev/polars_lazy/dsl/enum.Expr.html#method.null_count
+  interpolate: https://docs.pola.rs/docs/rust/dev/polars_lazy/dsl/enum.Expr.html#method.interpolate
+  is_between: https://github.com/pola-rs/polars/issues/11285
+  is_duplicated: https://docs.pola.rs/docs/rust/dev/polars_lazy/dsl/enum.Expr.html#method.is_duplicated
+  is_null: https://docs.pola.rs/docs/rust/dev/polars/prelude/enum.Expr.html#method.is_null
+  value_counts:
+    name: value_counts
+    link: https://docs.pola.rs/docs/rust/dev/polars_lazy/dsl/enum.Expr.html#method.value_counts
+    feature_flags: [dtype-struct]
+
+  Expr.list: https://docs.pola.rs/docs/rust/dev/polars_lazy/dsl/struct.ListNameSpace.html
+  Series.arr: https://docs.pola.rs/docs/rust/dev/polars_lazy/dsl/struct.ArrayNameSpace.html
+
+  date_range:
+    name: date_range
+    link: https://docs.pola.rs/docs/rust/dev/polars_lazy/dsl/functions/fn.date_range.html
+    feature_flags: [range, dtype-date]
+
+  selectors: https://github.com/pola-rs/polars/issues/10594
+  cs.numeric: https://github.com/pola-rs/polars/issues/10594
+  cs.by_name: https://github.com/pola-rs/polars/issues/10594
+  cs.first: https://github.com/pola-rs/polars/issues/10594
+  cs.temporal: https://github.com/pola-rs/polars/issues/10594
+  cs.contains: https://github.com/pola-rs/polars/issues/10594
+  cs.matches: https://github.com/pola-rs/polars/issues/10594
+  is_selector: https://github.com/pola-rs/polars/issues/10594
+  expand_selector: https://github.com/pola-rs/polars/issues/10594
+
+  dt.convert_time_zone:
+    name: dt.convert_time_zone
+    link: https://docs.pola.rs/docs/rust/dev/polars_lazy/dsl/dt/struct.DateLikeNameSpace.html#method.convert_time_zone
+    feature_flags: [timezones]
+  dt.replace_time_zone:
+    name: dt.replace_time_zone
+    link: https://docs.pola.rs/docs/rust/dev/polars_lazy/dsl/dt/struct.DateLikeNameSpace.html#method.replace_time_zone
+    feature_flags: [timezones]
+  dt.to_string:
+    name: dt.to_string
+    link: https://docs.pola.rs/docs/rust/dev/polars_lazy/dsl/dt/struct.DateLikeNameSpace.html#method.to_string
+    feature_flags: [temporal]
+  dt.year: https://docs.pola.rs/docs/rust/dev/polars_lazy/dsl/dt/struct.DateLikeNameSpace.html#method.year
+  Series.dt.day:
+    name: dt.day
+    link: https://docs.pola.rs/docs/rust/dev/polars_lazy/dsl/dt/struct.DateLikeNameSpace.html#method.day
+    feature_flags: [temporal]
+
+  list.eval: 
+    name: list.eval
+    link: https://docs.pola.rs/docs/rust/dev/polars_lazy/dsl/trait.ListNameSpaceExtension.html#method.eval
+    feature_flags: [list_eval]
+    
+  str.contains:
+    name: str.contains
+    link: https://docs.pola.rs/docs/rust/dev/polars_lazy/dsl/string/struct.StringNameSpace.html#method.contains
+    feature_flags: [regex]
+  str.extract:
+    name: str.extract
+    link: https://docs.pola.rs/docs/rust/dev/polars_lazy/dsl/string/struct.StringNameSpace.html#method.extract
+  str.extract_all:
+    name: str.extract_all
+    link: https://docs.pola.rs/docs/rust/dev/polars_lazy/dsl/string/struct.StringNameSpace.html#method.extract_all
+  str.replace:
+    name: str.replace
+    link: https://docs.pola.rs/docs/rust/dev/polars_lazy/dsl/string/struct.StringNameSpace.html#method.replace
+    feature_flags: [regex]
+  str.replace_all:
+    name: str.replace_all
+    link: https://docs.pola.rs/docs/rust/dev/polars_lazy/dsl/string/struct.StringNameSpace.html#method.replace_all
+    feature_flags: [regex]
+  str.starts_with: https://docs.pola.rs/docs/rust/dev/polars_lazy/dsl/string/struct.StringNameSpace.html#method.starts_with
+  str.ends_with: https://docs.pola.rs/docs/rust/dev/polars_lazy/dsl/string/struct.StringNameSpace.html#method.ends_with
+  str.split:
+    name: str.split
+    link: https://docs.pola.rs/docs/rust/dev/polars_lazy/dsl/string/struct.StringNameSpace.html#method.split
+  str.to_date:
+    name: str.replace_all
+    link: https://docs.pola.rs/docs/rust/dev/polars_lazy/dsl/string/struct.StringNameSpace.html#method.to_date
+    feature_flags: [dtype-date]
+  str.to_datetime:
+    name: str.replace_all
+    link: https://docs.pola.rs/docs/rust/dev/polars_lazy/dsl/string/struct.StringNameSpace.html#method.to_datetime
+    feature_flags: [dtype-datetime]
+  str.len_chars:
+    name: str.len_chars
+    link: https://docs.pola.rs/docs/rust/dev/polars_lazy/dsl/string/struct.StringNameSpace.html#method.len_chars
+  str.len_bytes:
+    name: str.len_bytes
+    link: https://docs.pola.rs/docs/rust/dev/polars_lazy/dsl/string/struct.StringNameSpace.html#method.len_bytes
+
+  struct.rename_fields: https://docs.pola.rs/docs/rust/dev/polars_lazy/dsl/struct.StructNameSpace.html#method.rename_fields
+  struct.field:
+    name: struct.field_by_name
+    link: https://docs.pola.rs/docs/rust/dev/polars_lazy/dsl/struct.StructNameSpace.html#method.field_by_name

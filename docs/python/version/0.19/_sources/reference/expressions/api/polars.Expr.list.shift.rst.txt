@@ -1,0 +1,6 @@
+﻿polars.Expr.list.shift
+======================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.list.shift

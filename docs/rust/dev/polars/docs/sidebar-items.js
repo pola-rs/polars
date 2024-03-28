@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["eager","lazy","performance"]};

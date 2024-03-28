@@ -1,0 +1,49 @@
+html[data-theme="light"] {
+    @import "https://cdn.jsdelivr.net/npm/highlightjs-themes@1.0.0/tomorrow.css"
+}
+
+html[data-theme="dark"] {
+    @import "https://cdn.jsdelivr.net/npm/highlightjs-themes@1.0.0/tomorrow-night-blue.min.css"
+}
+
+
+.ace_gutter {
+    z-index: 1;
+}
+
+.pyodide-editor {
+    width: 100%;
+    min-height: 200px;
+    max-height: 400px;
+    font-size: .85em;
+}
+
+.pyodide-editor-bar {
+    color: var(--md-primary-bg-color);
+    background-color: var(--md-primary-fg-color);
+    width: 100%;
+    font: monospace;
+    font-size: 0.75em;
+    padding: 2px 0 2px;
+}
+
+.pyodide-bar-item {
+    padding: 0 18px 0;
+    display: inline-block;
+    width: 50%;
+}
+
+.pyodide pre {
+    margin: 0;
+}
+
+.pyodide-output {
+    width: 100%;
+    margin-bottom: -15px;
+    max-height: 400px
+}
+
+.pyodide-clickable {
+    cursor: pointer;
+    text-align: right;
+}

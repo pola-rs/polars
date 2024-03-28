@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["IsSorted"],"mod":["arithmetic","implementations","ops","unstable"],"struct":["Series","SeriesIter"],"trait":["IntoSeries","SeriesTrait"],"type":["SeriesPhysIter"]};
