@@ -1974,8 +1974,9 @@ def test_csv_invalid_escape_utf8_14960() -> None:
 
 @pytest.mark.slow()
 @pytest.mark.write_disk()
-def test_read_csv_only_loads_selected_columns_15098(
-    memory_usage_without_pyarrow: MemoryUsage, tmp_path: Path
+def test_read_csv_only_loads_selected_columns(
+    memory_usage_without_pyarrow: MemoryUsage,
+    tmp_path: Path,
 ) -> None:
     """Only requested columns are loaded by ``read_csv()``."""
     tmp_path.mkdir(exist_ok=True)
@@ -2002,9 +2003,45 @@ def test_read_csv_only_loads_selected_columns_15098(
     # 16_000_000 at least, but there's some overhead.
     assert 8_000_000 < memory_usage_without_pyarrow.get_peak() < 13_000_000
 
-    # Globs use a different code path for reading:
+    # Globs use a different code path for reading
+    memory_usage_without_pyarrow.reset_tracking()
     df = pl.read_csv(str(tmp_path / "*.csv"), columns=["b"], rechunk=False)
     del df
     # Only one column's worth of memory should be used; 2 columns would be
     # 16_000_000 at least, but there's some overhead.
     assert 8_000_000 < memory_usage_without_pyarrow.get_peak() < 13_000_000
+
+
+@pytest.mark.slow()
+@pytest.mark.write_disk()
+def test_read_csv_batched_only_loads_selected_columns(
+    memory_usage_without_pyarrow: MemoryUsage,
+    tmp_path: Path,
+) -> None:
+    """Only requested columns are loaded by ``read_csv_batched()``."""
+    tmp_path.mkdir(exist_ok=True)
+
+    # Each column will be about 80MB of RAM. We need to do a bigger file
+    # because each thread does a minimum of 32MB allocation.
+    series = pl.arange(0, 1_000_000, dtype=pl.Int64, eager=True)
+
+    file_path = tmp_path / "multicolumn.csv"
+    df = pl.DataFrame({"a": series, "b": series})
+    df.write_csv(file_path)
+    del df, series
+
+    memory_usage_without_pyarrow.reset_tracking()
+
+    result = []
+    while sum(df.height for df in result) < 1_000_000:
+        result += pl.read_csv_batched(
+            str(file_path),
+            columns=["b"],
+            rechunk=False,
+            n_threads=1,
+        ).next_batches(3)
+
+    del result
+
+    # Only one column's worth of memory should be used:
+    assert 8_000_000 < memory_usage_without_pyarrow.get_peak() < 15_000_000
