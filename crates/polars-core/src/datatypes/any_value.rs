@@ -94,7 +94,7 @@ pub enum AnyValue<'a> {
     StringOwned(smartstring::alias::String),
     Binary(&'a [u8]),
     BinaryOwned(Vec<u8>),
-    /// A 128-bit fixed point decimal number.
+    /// A 128-bit fixed point decimal number with a scale.
     #[cfg(feature = "dtype-decimal")]
     Decimal(i128, usize),
 }
@@ -602,6 +602,34 @@ impl<'a> AnyValue<'a> {
                 },
                 *tu_r,
             ),
+
+            // to decimal
+            (av, DataType::Decimal(prec, scale)) if av.is_integer() => {
+                let value = av.try_extract::<i128>().unwrap();
+                let scale = scale.unwrap_or(0);
+                let factor = 10_i128.pow(scale as _); // Conversion to u32 is safe, max value is 38.
+                let Some(converted) = value.checked_mul(factor) else {
+                    polars_bail!(ComputeError: "overflow while converting to decimal scale {}", scale)
+                };
+                AnyValue::Decimal(converted, scale)
+            },
+            (AnyValue::Decimal(value, scale_av), DataType::Decimal(_, scale)) => {
+                let Some(scale) = scale else {
+                    return Ok(self.clone());
+                };
+                let Some(scale_diff) = scale.checked_sub(*scale_av) else {
+                    // TODO: Allow lossy conversion?
+                    polars_bail!(
+                        ComputeError:
+                        "unable to losslessly convert any-value of scale {scale_av} to scale {scale}"
+                    );
+                };
+                let factor = 10_i128.pow(scale_diff as _); // Conversion is safe, max value is 38.
+                let Some(converted) = value.checked_mul(factor) else {
+                    polars_bail!(ComputeError: "overflow while converting to decimal scale {}", scale)
+                };
+                AnyValue::Decimal(converted, *scale)
+            },
 
             // to self
             (av, dtype) if av.dtype() == *dtype => self.clone(),

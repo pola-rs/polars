@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
+from decimal import Decimal as D
 from typing import Any
 
 import pytest
@@ -26,6 +27,7 @@ from polars.polars import PySeries
         (pl.Duration, [timedelta(hours=0), timedelta(seconds=100), None]),
         (pl.Categorical, ["a", "b", "a", None]),
         (pl.Enum(["a", "b"]), ["a", "b", "a", None]),
+        (pl.Decimal(10, 3), [D("12.345"), D("0.789"), None]),
         (
             pl.Struct({"a": pl.Int8, "b": pl.String}),
             [{"a": 1, "b": "foo"}, {"a": -1, "b": "bar"}],
@@ -60,6 +62,9 @@ def test_fallback_with_dtype_strict(
         (pl.Duration("ns"), [timedelta(hours=0), timedelta(seconds=100)]),
         (pl.Categorical, [0, 1, 0]),
         (pl.Enum(["a", "b"]), [0, 1, 0]),
+        (pl.Decimal(10, 3), [100, 200]),
+        (pl.Decimal(5, 3), [D("1.2345")]),
+        (pl.Decimal(3, 0), [D("12345")]),
         (
             pl.Struct({"a": pl.Int8, "b": pl.String}),
             [{"a": 1, "b": "foo"}, {"a": 2.0, "b": "bar"}],
@@ -200,6 +205,37 @@ def test_fallback_with_dtype_strict_failure(
             ["a", "b", None, None, None, None],
         ),
         (
+            pl.Decimal(5, 3),
+            [
+                D("12"),
+                D("123456"),
+                D("1.2345"),
+                False,
+                True,
+                0,
+                -1,
+                0.0,
+                2.5,
+                date(1970, 1, 2),
+                "5",
+                "xyz",
+            ],
+            [
+                D("12.000"),
+                None,
+                D("1.234"),
+                D("0.000"),
+                D("1.000"),
+                D("0.000"),
+                D("-1.000"),
+                D("0.000"),
+                D("2.500"),
+                D("1.000"),
+                D("5.000"),
+                None,
+            ],
+        ),
+        (
             pl.Struct({"a": pl.Int8, "b": pl.String}),
             [{"a": 1, "b": "foo"}, {"a": 1_000, "b": 2.0}],
             [{"a": 1, "b": "foo"}, {"a": None, "b": "2.0"}],
@@ -230,6 +266,9 @@ def test_fallback_with_dtype_nonstrict(
             [datetime(1970, 1, 1), datetime(2020, 12, 31, 23, 59, 59), None],
         ),
         (pl.Duration("us"), [timedelta(hours=0), timedelta(seconds=100), None]),
+        (pl.Decimal(None, 3), [D("12.345"), D("0.789"), None]),
+        (pl.Decimal(None, 0), [D("12"), D("56789"), None]),
+        (pl.Decimal(None, 5), [D("0.12345"), D("6789.0"), None]),
         (
             pl.Struct({"a": pl.Int64, "b": pl.String, "c": pl.Float64}),
             [{"a": 1, "b": "foo", "c": None}, {"a": -1, "b": "bar", "c": 3.0}],
@@ -257,6 +296,8 @@ def test_fallback_without_dtype(
         [time(0, 0), 1_000],
         [datetime(1970, 1, 1), date(2020, 12, 31)],
         [timedelta(hours=0), 1_000],
+        [D("12.345"), 100],
+        [D("12.345"), 3.14],
         [{"a": 1, "b": "foo"}, {"a": -1, "b": date(2020, 12, 31)}],
         [{"a": None}, {"a": 1.0}, {"a": 1}],
     ],
@@ -277,6 +318,8 @@ def test_fallback_without_dtype_strict_failure(values: list[Any]) -> None:
             [datetime(1970, 1, 1), datetime(2022, 12, 31)],
             pl.Datetime("us"),
         ),
+        ([D("3.1415"), 2.51], [3.1415, 2.51], pl.Float64),
+        ([D("3.1415"), 100], [D("3.1415"), D("100")], pl.Decimal(None, 4)),
         ([1, 2.0, b"d", date(2022, 1, 1)], [1, 2.0, b"d", date(2022, 1, 1)], pl.Object),
         (
             [
