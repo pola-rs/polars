@@ -162,7 +162,9 @@ impl Series {
         } else {
             match self.dtype() {
                 #[cfg(feature = "object")]
-                DataType::Object(_, _) => self.take(&UInt32Chunked::new_vec("", vec![])).unwrap(),
+                DataType::Object(_, _) => self
+                    .take(&ChunkedArray::<IdxType>::new_vec("", vec![]))
+                    .unwrap(),
                 dt => Series::new_empty(self.name(), dt),
             }
         }
