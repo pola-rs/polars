@@ -194,15 +194,15 @@ fn apply_offsets_to_datetime(
 ) -> PolarsResult<Int64Chunked> {
     match (datetime.len(), offsets.len()) {
         (1, _) => match datetime.0.get(0) {
-            Some(dt) => offsets.try_apply_values_generic(|offset| {
+            Some(dt) => offsets.try_apply_nonnull_values_generic(|offset| {
                 offset_fn(&Duration::parse(offset), dt, time_zone)
             }),
             _ => Ok(Int64Chunked::full_null(datetime.0.name(), offsets.len())),
         },
         (_, 1) => match offsets.get(0) {
-            Some(offset) => datetime
-                .0
-                .try_apply_values(|v| offset_fn(&Duration::parse(offset), v, time_zone)),
+            Some(offset) => datetime.0.try_apply_nonnull_values_generic(|v| {
+                offset_fn(&Duration::parse(offset), v, time_zone)
+            }),
             _ => Ok(datetime.0.apply(|_| None)),
         },
         _ => try_binary_elementwise(datetime, offsets, |timestamp_opt, offset_opt| {

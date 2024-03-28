@@ -82,7 +82,7 @@ impl PolarsMonthStart for DatetimeChunked {
         };
         Ok(self
             .0
-            .try_apply_values(|t| {
+            .try_apply_nonnull_values_generic(|t| {
                 roll_backward(t, tz, timestamp_to_datetime, datetime_to_timestamp)
             })?
             .into_datetime(self.time_unit(), self.time_zone().clone()))
@@ -92,16 +92,15 @@ impl PolarsMonthStart for DatetimeChunked {
 impl PolarsMonthStart for DateChunked {
     fn month_start(&self, _tz: Option<&Tz>) -> PolarsResult<Self> {
         const MSECS_IN_DAY: i64 = MILLISECONDS * SECONDS_IN_DAY;
-        Ok(self
-            .0
-            .try_apply_values(|t| {
-                Ok((roll_backward(
-                    MSECS_IN_DAY * t as i64,
-                    None,
-                    timestamp_ms_to_datetime,
-                    datetime_to_timestamp_ms,
-                )? / MSECS_IN_DAY) as i32)
-            })?
-            .into_date())
+        let ret = self.0.try_apply_nonnull_values_generic(|t| {
+            let bwd = roll_backward(
+                MSECS_IN_DAY * t as i64,
+                None,
+                timestamp_ms_to_datetime,
+                datetime_to_timestamp_ms,
+            )?;
+            PolarsResult::Ok((bwd / MSECS_IN_DAY) as i32)
+        })?;
+        Ok(ret.into_date())
     }
 }
