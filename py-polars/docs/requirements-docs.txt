@@ -1,6 +1,7 @@
 numpy
 pandas
 pyarrow
+numba
 
 hypothesis==6.97.4
 

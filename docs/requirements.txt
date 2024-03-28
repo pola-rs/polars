@@ -2,6 +2,7 @@ pandas
 pyarrow
 graphviz
 matplotlib
+numba
 seaborn
 plotly
 altair
