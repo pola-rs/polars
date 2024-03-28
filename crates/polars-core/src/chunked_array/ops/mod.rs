@@ -29,6 +29,7 @@ mod interpolate;
 pub(crate) mod min_max_binary;
 pub(crate) mod nulls;
 mod reverse;
+#[cfg(feature = "rolling_window")]
 pub(crate) mod rolling_window;
 pub mod search_sorted;
 mod set;
