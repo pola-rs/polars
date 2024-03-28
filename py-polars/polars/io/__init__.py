@@ -1,6 +1,7 @@
 """Functions for reading data."""
 
 from polars.io.avro import read_avro
+from polars.io.clipboard import read_clipboard
 from polars.io.csv import read_csv, read_csv_batched, scan_csv
 from polars.io.database import read_database, read_database_uri
 from polars.io.delta import read_delta, scan_delta
@@ -35,4 +36,5 @@ __all__ = [
     "scan_ndjson",
     "scan_parquet",
     "scan_pyarrow_dataset",
+    "read_clipboard",
 ]

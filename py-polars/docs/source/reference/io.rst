@@ -11,6 +11,14 @@ Avro
    read_avro
    DataFrame.write_avro
 
+Clipboard
+~~~~~~~~~
+.. autosummary::
+   :toctree: api/
+
+   read_clipboard
+   DataFrame.write_clipboard
+
 CSV
 ~~~
 .. autosummary::
