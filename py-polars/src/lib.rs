@@ -28,6 +28,7 @@ mod gil_once_cell;
 mod lazyframe;
 mod lazygroupby;
 mod map;
+mod memory;
 #[cfg(feature = "object")]
 mod object;
 #[cfg(feature = "object")]
@@ -62,16 +63,26 @@ use crate::expr::PyExpr;
 use crate::functions::PyStringCacheHolder;
 use crate::lazyframe::{PyInProcessQuery, PyLazyFrame};
 use crate::lazygroupby::PyLazyGroupBy;
+#[cfg(debug_assertions)]
+use crate::memory::TracemallocAllocator;
 use crate::series::PySeries;
 #[cfg(feature = "sql")]
 use crate::sql::PySQLContext;
 
+// On Windows tracemalloc does work. However, we build abi3 wheels, and the
+// relevant C APIs are not part of the limited stable CPython API. As a result,
+// linking breaks on Windows if we use tracemalloc C APIs. So we only use this
+// on Windows for now.
 #[global_allocator]
-#[cfg(all(target_family = "unix", not(use_mimalloc)))]
+#[cfg(all(target_family = "unix", debug_assertions))]
+static ALLOC: TracemallocAllocator<Jemalloc> = TracemallocAllocator::new(Jemalloc);
+
+#[global_allocator]
+#[cfg(all(target_family = "unix", not(use_mimalloc), not(debug_assertions)))]
 static ALLOC: Jemalloc = Jemalloc;
 
 #[global_allocator]
-#[cfg(any(not(target_family = "unix"), use_mimalloc))]
+#[cfg(all(any(not(target_family = "unix"), use_mimalloc), not(debug_assertions)))]
 static ALLOC: MiMalloc = MiMalloc;
 
 #[pymodule]
