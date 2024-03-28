@@ -1541,9 +1541,10 @@ def arg_sort_by(
     """
     Return the row indices that would sort the column(s).
 
-    The first element is the index of the row that would be first if the data
-    frame were sorted by the column(s). The second element is the index of the
-    row that would be second if sorted, and so on.
+    The returned expression's first element is the index of the row with the
+    lowest value of `exprs` (or highest value if `descending=True`). This row
+    would be first if the dataframe were sorted on `exprs`. The second element
+    is the index of the row that would be second if sorted, and so on.
 
     Parameters
     ----------
