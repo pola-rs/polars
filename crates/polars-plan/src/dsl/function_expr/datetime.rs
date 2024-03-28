@@ -381,21 +381,27 @@ pub(super) fn truncate(s: &[Series], offset: &str) -> PolarsResult<Series> {
             #[cfg(feature = "timezones")]
             Some(tz) => time_series
                 .datetime()?
-                .truncate(tz.parse::<Tz>().ok().as_ref(), every, offset)?
-                .into_series(),
+                .truncate(tz.parse::<Tz>().ok().as_ref(), every, offset)
+                .map(|ca| ca.into_series()),
             _ => time_series
                 .datetime()?
-                .truncate(None, every, offset)?
-                .into_series(),
+                .truncate(None, every, offset)
+                .map(|ca| ca.into_series()),
         },
         DataType::Date => time_series
             .date()?
-            .truncate(None, every, offset)?
-            .into_series(),
-        dt => polars_bail!(opq = round, got = dt, expected = "date/datetime"),
+            .truncate(None, every, offset)
+            .map(|ca| ca.into_series()),
+        DataType::Duration(_) => time_series
+            .duration()?
+            .truncate(None, every, offset)
+            .map(|ca| ca.into_series()),
+        dt => polars_bail!(opq = round, got = dt, expected = "date/datetime/duration"),
     };
-    out.set_sorted_flag(time_series.is_sorted_flag());
-    Ok(out)
+    if let Ok(series) = &mut out {
+        series.set_sorted_flag(time_series.is_sorted_flag());
+    }
+    out
 }
 
 #[cfg(feature = "date_offset")]
@@ -471,27 +477,32 @@ pub(super) fn round(s: &[Series], every: &str, offset: &str) -> PolarsResult<Ser
 
     let time_series = &s[0];
 
-    Ok(match time_series.dtype() {
+    match time_series.dtype() {
         DataType::Datetime(_, tz) => match tz {
             #[cfg(feature = "timezones")]
             Some(tz) => time_series
                 .datetime()
                 .unwrap()
-                .round(every, offset, tz.parse::<Tz>().ok().as_ref())?
-                .into_series(),
+                .round(every, offset, tz.parse::<Tz>().ok().as_ref())
+                .map(|ca| ca.into_series()),
             _ => time_series
                 .datetime()
                 .unwrap()
-                .round(every, offset, None)?
-                .into_series(),
+                .round(every, offset, None)
+                .map(|ca| ca.into_series()),
         },
         DataType::Date => time_series
             .date()
             .unwrap()
-            .round(every, offset, None)?
-            .into_series(),
-        dt => polars_bail!(opq = round, got = dt, expected = "date/datetime"),
-    })
+            .round(every, offset, None)
+            .map(|ca| ca.into_series()),
+        DataType::Duration(_) => time_series
+            .duration()
+            .unwrap()
+            .round(every, offset, None)
+            .map(|ca| ca.into_series()),
+        dt => polars_bail!(opq = round, got = dt, expected = "date/datetime/duration"),
+    }
 }
 
 pub(super) fn duration(s: &[Series], time_unit: TimeUnit) -> PolarsResult<Series> {

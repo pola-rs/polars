@@ -372,7 +372,8 @@ impl Duration {
         self.nsecs
     }
 
-    /// Estimated duration of the window duration. Not a very good one if months != 0.
+    /// Estimated unsigned duration of the window duration.
+    /// Not a very good one if months != 0.
     #[doc(hidden)]
     pub const fn duration_ns(&self) -> i64 {
         self.months * 28 * 24 * 3600 * NANOSECONDS
@@ -381,12 +382,16 @@ impl Duration {
             + self.nsecs
     }
 
+    /// Estimated unsigned duration of the window duration.
+    /// Not a very good one if months != 0.
     #[doc(hidden)]
     pub const fn duration_us(&self) -> i64 {
         self.months * 28 * 24 * 3600 * MICROSECONDS
             + (self.weeks * NS_WEEK / 1000 + self.nsecs / 1000 + self.days * NS_DAY / 1000)
     }
 
+    /// Estimated unsigned duration of the window duration.
+    /// Not a very good one if months != 0.
     #[doc(hidden)]
     pub const fn duration_ms(&self) -> i64 {
         self.months * 28 * 24 * 3600 * MILLISECONDS
