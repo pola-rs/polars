@@ -2,8 +2,6 @@ use std::iter::Enumerate;
 
 use crate::array::BooleanArray;
 use crate::bitmap::utils::BitChunks;
-#[cfg(feature = "simd")]
-pub mod agg_mean;
 pub mod atan2;
 pub mod concatenate;
 pub mod ewm;
