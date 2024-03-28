@@ -610,6 +610,11 @@ class LazyFrame:
         """
         Read a logical plan from a JSON file to construct a LazyFrame.
 
+        .. warning::
+            This function uses :mod:`pickle` under some circumstances, and as
+            such inherits the security implications. Deserializing can execute
+            arbitrary code so it should only be attempted on trusted data.
+
         Parameters
         ----------
         source
