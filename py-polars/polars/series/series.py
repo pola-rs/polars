@@ -3459,6 +3459,11 @@ class Series:
         nulls_last
             Place null values last instead of first.
 
+        See Also
+        --------
+        Series.gather: Take values by index.
+        Series.rank : Get the rank of each row.
+
         Examples
         --------
         >>> s = pl.Series("a", [5, 3, 4, 1, 2])
