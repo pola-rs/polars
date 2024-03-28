@@ -9724,8 +9724,8 @@ class DataFrame:
             if not index_idxs:
                 msg = f"no columns found for key: {key_tuple!r}"
                 raise ValueError(msg)
-            get_data = itemgetter(*data_idxs)  # type: ignore[assignment]
-            get_key = itemgetter(*index_idxs)  # type: ignore[assignment]
+            get_data = itemgetter(*data_idxs)  # type: ignore[arg-type]
+            get_key = itemgetter(*index_idxs)  # type: ignore[arg-type]
 
         # if unique, we expect to write just one entry per key; otherwise, we're
         # returning a list of rows for each key, so append into a defaultdict.
