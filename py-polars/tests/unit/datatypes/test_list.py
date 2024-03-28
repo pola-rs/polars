@@ -790,3 +790,65 @@ def test_list_of_series_with_nulls() -> None:
     inner_series = pl.Series("inner", [1, 2, 3])
     s = pl.Series("a", [inner_series, None])
     assert_series_equal(s, pl.Series("a", [[1, 2, 3], None]))
+
+
+def test_list_product_and_dtypes() -> None:
+    for dt_in, dt_out in [
+        (pl.Int8, pl.Int64),
+        (pl.Int16, pl.Int64),
+        (pl.Int32, pl.Int64),
+        (pl.Int64, pl.Int64),
+        (pl.UInt8, pl.Int64),
+        (pl.UInt16, pl.Int64),
+        (pl.UInt32, pl.Int64),
+        (pl.UInt64, pl.UInt64),
+        (pl.Float32, pl.Float32),
+        (pl.Float64, pl.Float64),
+    ]:
+        df = pl.DataFrame(
+            {"a": [[1], [None, 2, 3], [1, 2, 3, 4], [1, 2, 3, 4, 5]]},
+            schema={"a": pl.List(dt_in)},
+        )
+        assert df.select(pl.col("a").list.product()).dtypes == [dt_out]
+
+    # Lists of numerics
+    assert pl.DataFrame(
+        {"a": [[1], [2, 3], [1, 2, 3, 4], [1, 2, 3, 4, 5]]},
+    ).select(pl.col("a").list.product()).to_dict(as_series=False) == {
+        "a": [1, 6, 24, 120]
+    }
+
+    # Lists of numerics with nulls
+    assert pl.DataFrame(
+        {"a": [[1], [None, 2, 3], [1, 2, 3, 4, None], [1, 2, 3, 4, 5]]},
+    ).select(pl.col("a").list.product()).to_dict(as_series=False) == {
+        "a": [1, 6, 24, 120]
+    }
+
+    # List of booleans
+    assert pl.DataFrame(
+        {"a": [[True], [True, True], [True, False], [False, False]]},
+    ).select(pl.col("a").list.product()).to_dict(as_series=False) == {"a": [1, 1, 0, 0]}
+
+    # List of booleans with nulls
+    assert pl.DataFrame(
+        {
+            "a": [
+                [True],
+                [True, True],
+                [True, False],
+                [True, True, None],
+                [False, False],
+            ]
+        },
+    ).select(pl.col("a").list.product()).to_dict(as_series=False) == {
+        "a": [1, 1, 0, 1, 0]
+    }
+
+
+def test_list_product_invalid_type_raises() -> None:
+    with pytest.raises(
+        pl.InvalidOperationError,
+        match="`list.product` operation not supported for dtype",
+    ):
+        pl.Series("a", [["a", "b"]]).list.product()
