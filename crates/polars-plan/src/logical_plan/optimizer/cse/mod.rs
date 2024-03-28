@@ -1,8 +1,6 @@
-mod cache;
 mod cse_expr;
 mod cse_lp;
 
-pub(super) use cache::decrement_file_counters_by_cache_hits;
 pub(super) use cse_expr::CommonSubExprOptimizer;
 pub(super) use cse_lp::{elim_cmn_subplans, prune_unused_caches};
 

@@ -55,14 +55,6 @@ use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 
 use self::tree_format::{TreeFmtNode, TreeFmtVisitor};
-#[cfg(any(
-    feature = "ipc",
-    feature = "parquet",
-    feature = "csv",
-    feature = "cse",
-    feature = "json"
-))]
-pub use crate::logical_plan::optimizer::file_caching::FileFingerPrint;
 
 pub type ColumnName = Arc<str>;
 
