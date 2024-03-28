@@ -48,8 +48,6 @@ def test_series_from_pydecimal_and_ints(
 def test_frame_from_pydecimal_and_ints(
     permutations_int_dec_none: list[tuple[D | int | None, ...]], monkeypatch: Any
 ) -> None:
-    monkeypatch.setenv("POLARS_ACTIVATE_DECIMAL", "1")
-
     class X(NamedTuple):
         a: int | D | None
 
@@ -148,7 +146,6 @@ def test_decimal_cast_no_scale() -> None:
 
 
 def test_decimal_scale_precision_roundtrip(monkeypatch: Any) -> None:
-    monkeypatch.setenv("POLARS_ACTIVATE_DECIMAL", "1")
     assert pl.from_arrow(pl.Series("dec", [D("10.0")]).to_arrow()).item() == D("10.0")
 
 
@@ -180,7 +177,6 @@ def test_string_to_decimal() -> None:
 
 
 def test_read_csv_decimal(monkeypatch: Any) -> None:
-    monkeypatch.setenv("POLARS_ACTIVATE_DECIMAL", "1")
     csv = """a,b
 123.12,a
 1.1,a
@@ -403,9 +399,7 @@ def test_decimal_write_parquet_12375() -> None:
 
 
 def test_decimal_list_get_13847() -> None:
-    with pl.Config() as cfg:
-        cfg.activate_decimals()
-        df = pl.DataFrame({"a": [[D("1.1"), D("1.2")], [D("2.1")]]})
-        out = df.select(pl.col("a").list.get(0))
-        expected = pl.DataFrame({"a": [D("1.1"), D("2.1")]})
-        assert_frame_equal(out, expected)
+    df = pl.DataFrame({"a": [[D("1.1"), D("1.2")], [D("2.1")]]})
+    out = df.select(pl.col("a").list.get(0))
+    expected = pl.DataFrame({"a": [D("1.1"), D("2.1")]})
+    assert_frame_equal(out, expected)
