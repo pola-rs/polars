@@ -10,14 +10,6 @@ mod collect_members;
 mod count_star;
 #[cfg(feature = "cse")]
 mod cse;
-#[cfg(any(
-    feature = "ipc",
-    feature = "parquet",
-    feature = "csv",
-    feature = "cse",
-    feature = "json"
-))]
-pub(crate) mod file_caching;
 mod flatten_union;
 #[cfg(feature = "fused")]
 mod fused;
@@ -33,22 +25,6 @@ mod type_coercion;
 
 use delay_rechunk::DelayRechunk;
 use drop_nulls::ReplaceDropNulls;
-#[cfg(any(
-    feature = "ipc",
-    feature = "parquet",
-    feature = "csv",
-    feature = "cse",
-    feature = "json"
-))]
-use file_caching::cache_shared_files;
-#[cfg(any(
-    feature = "ipc",
-    feature = "parquet",
-    feature = "csv",
-    feature = "cse",
-    feature = "json"
-))]
-pub use file_caching::collect_fingerprints;
 use polars_core::config::verbose;
 use polars_io::predicates::PhysicalIoExpr;
 pub use predicate_pushdown::PredicatePushDown;
@@ -224,28 +200,7 @@ pub fn optimize(
         .node()
     }
 
-    // Make sure that we do that once slice pushdowd and predicate pushdown are done.
-    // At that moment the file fingerprints are finished.
-    #[cfg(any(feature = "cse", feature = "parquet", feature = "ipc", feature = "csv"))]
-    if agg_scan_projection && !_cse_plan_changed {
-        // We do this so that expressions, created by the pushdown optimizations, are simplified .
-        // We must clean up the predicates, because the agg_scan_projection
-        // uses them in the hashtable to determine duplicates.
-        let simplify_bools = &mut [Box::new(SimplifyBooleanRule {}) as Box<dyn OptimizationRule>];
-        lp_top = opt.optimize_loop(simplify_bools, expr_arena, lp_arena, lp_top)?;
-
-        // Scan the LP to aggregate all the column used in scans.
-        // These columns will be added to the state of the AggScanProjection rule.
-        cache_shared_files(lp_top, lp_arena, expr_arena, scratch);
-    }
-
-    #[cfg(feature = "cse")]
-    if _cse_plan_changed {
-        // this must run after cse
-        cse::decrement_file_counters_by_cache_hits(lp_top, lp_arena, expr_arena, 0, scratch);
-    }
-
-    // during debug we check if the optimizations have not modified the final schema
+    // During debug we check if the optimizations have not modified the final schema.
     #[cfg(debug_assertions)]
     {
         // only check by names because we may supercast types.
