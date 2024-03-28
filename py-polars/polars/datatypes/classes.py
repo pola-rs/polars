@@ -238,7 +238,7 @@ class DataTypeGroup(frozenset):  # type: ignore[type-arg]
             if not isinstance(it, (DataType, DataTypeClass)):
                 msg = f"DataTypeGroup items must be dtypes; found {type(it).__name__!r}"
                 raise TypeError(msg)
-        dtype_group = super().__new__(cls, items)  # type: ignore[arg-type]
+        dtype_group = super().__new__(cls, items)
         dtype_group._match_base_type = match_base_type
         return dtype_group
 
