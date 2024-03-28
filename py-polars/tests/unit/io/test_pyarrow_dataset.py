@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 import pyarrow.dataset as ds
 import pytest
@@ -18,11 +18,14 @@ def helper_dataset_test(
     query: Callable[[pl.LazyFrame], pl.DataFrame],
     batch_size: int | None = None,
     n_expected: int | None = None,
+    pyarrow_options: dict[str, Any] | None = None,
 ) -> None:
     dset = ds.dataset(file_path, format="ipc")
     expected = query(pl.scan_ipc(file_path))
     out = query(
-        pl.scan_pyarrow_dataset(dset, batch_size=batch_size),
+        pl.scan_pyarrow_dataset(
+            dset, batch_size=batch_size, pyarrow_options=pyarrow_options
+        ),
     )
     assert_frame_equal(out, expected)
     if n_expected is not None:
@@ -199,3 +202,34 @@ def test_pyarrow_dataset_comm_subplan_elim(tmp_path: Path) -> None:
     assert lf0.join(lf1, on="a", how="inner").collect().to_dict(as_series=False) == {
         "a": [1, 2]
     }
+
+
+def test_pyarrow_dataset_with_pyarrow_options(tmp_path: Path) -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+
+    file_path_0 = tmp_path / "0.parquet"
+
+    df.write_parquet(file_path_0)
+
+    pa_ds = ds.dataset(file_path_0, format="parquet")
+    lf = pl.scan_pyarrow_dataset(pa_ds, pyarrow_options={"use_threads": False})
+    assert lf.collect().to_dict(as_series=False) == {"a": [1, 2, 3]}
+
+
+def test_pyarrow_dataset_with_conflicting_pyarrow_options(tmp_path: Path) -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+
+    file_path_0 = tmp_path / "0.parquet"
+
+    df.write_parquet(file_path_0)
+
+    pa_ds = ds.dataset(file_path_0, format="parquet")
+    with pytest.raises(pl.ComputeError) as exc_info:
+        pl.scan_pyarrow_dataset(
+            pa_ds, batch_size=200, pyarrow_options={"batch_size": 500}
+        ).collect()
+
+    assert (
+        str(exc_info.value)
+        == "ValueError: Tried to overwrite already set pyarrow parameter batch_size"
+    )

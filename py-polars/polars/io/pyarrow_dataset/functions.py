@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from polars._utils.unstable import unstable
 from polars.io.pyarrow_dataset.anonymous_scan import _scan_pyarrow_dataset
@@ -16,6 +16,7 @@ def scan_pyarrow_dataset(
     *,
     allow_pyarrow_filter: bool = True,
     batch_size: int | None = None,
+    pyarrow_options: dict[str, Any] | None = None,
 ) -> LazyFrame:
     """
     Scan a pyarrow dataset.
@@ -36,6 +37,8 @@ def scan_pyarrow_dataset(
         different than polars does.
     batch_size
         The maximum row count for scanned pyarrow record batches.
+    pyarrow_options
+        Keyword arguments for pyarrow.dataset.Dataset.to_table.
 
     Warnings
     --------
@@ -73,4 +76,5 @@ def scan_pyarrow_dataset(
         source,
         allow_pyarrow_filter=allow_pyarrow_filter,
         batch_size=batch_size,
+        pyarrow_options=pyarrow_options,
     )
