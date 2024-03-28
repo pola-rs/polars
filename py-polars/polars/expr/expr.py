@@ -2141,6 +2141,7 @@ class Expr:
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [20, 10, 30],
+        ...         "b": [1, 2, 3],
         ...     }
         ... )
         >>> df.select(pl.col("a").arg_sort())
@@ -2153,6 +2154,20 @@ class Expr:
         │ 1   │
         │ 0   │
         │ 2   │
+        └─────┘
+
+        Use gather to apply the arg sort to other columns.
+
+        >>> df.select(pl.col("b").gather(pl.col("a").arg_sort()))
+        shape: (3, 1)
+        ┌─────┐
+        │ b   │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 2   │
+        │ 1   │
+        │ 3   │
         └─────┘
         """
         return self._from_pyexpr(self._pyexpr.arg_sort(descending, nulls_last))

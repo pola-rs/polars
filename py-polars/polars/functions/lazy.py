@@ -1541,11 +1541,6 @@ def arg_sort_by(
     """
     Return the row indices that would sort the column(s).
 
-    The returned expression's first element is the index of the row with the
-    lowest value of `exprs` (or highest value if `descending=True`). This row
-    would be first if the dataframe were sorted on `exprs`. The second element
-    is the index of the row that would be second if sorted, and so on.
-
     Parameters
     ----------
     exprs
@@ -1570,6 +1565,7 @@ def arg_sort_by(
     ...     {
     ...         "a": [0, 1, 1, 0],
     ...         "b": [3, 2, 3, 2],
+    ...         "c": [1, 2, 3, 4],
     ...     }
     ... )
     >>> df.select(pl.arg_sort_by("a"))
@@ -1598,6 +1594,21 @@ def arg_sort_by(
     │ 2   │
     │ 1   │
     │ 0   │
+    │ 3   │
+    └─────┘
+
+    Use gather to apply the arg sort to other columns.
+
+    >>> df.select(pl.col("c").gather(pl.arg_sort_by("a")))
+    shape: (4, 1)
+    ┌─────┐
+    │ c   │
+    │ --- │
+    │ i64 │
+    ╞═════╡
+    │ 1   │
+    │ 4   │
+    │ 2   │
     │ 3   │
     └─────┘
     """
