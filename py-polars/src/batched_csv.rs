@@ -137,14 +137,18 @@ impl PyBatchedCsv {
         })
     }
 
-    fn next_batches(&mut self, py: Python, n: usize) -> PyResult<Option<Vec<PyDataFrame>>> {
-        let reader = self.reader.get_mut().map_err(|e| PyPolarsErr::Other(e.to_string()))?;
-        let batches = py
-            .allow_threads(move || match reader {
+    fn next_batches(&self, py: Python, n: usize) -> PyResult<Option<Vec<PyDataFrame>>> {
+        let reader = &self.reader;
+        let batches = py.allow_threads(move || {
+            let reader = &mut *reader
+                .lock()
+                .map_err(|e| PyPolarsErr::Other(e.to_string()))?;
+            match reader {
                 BatchedReader::MMap(reader) => reader.next_batches(n),
                 BatchedReader::Read(reader) => reader.next_batches(n),
-            })
-            .map_err(PyPolarsErr::from)?;
+            }
+            .map_err(PyPolarsErr::from)
+        })?;
 
         // SAFETY: same memory layout
         let batches = unsafe {
