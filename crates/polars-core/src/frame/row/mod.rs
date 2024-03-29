@@ -4,11 +4,13 @@ mod transpose;
 
 use std::borrow::Borrow;
 use std::fmt::Debug;
+#[cfg(feature = "object")]
 use std::hash::{Hash, Hasher};
 use std::hint::unreachable_unchecked;
 
 use arrow::bitmap::Bitmap;
 pub use av_buffer::*;
+#[cfg(feature = "object")]
 use polars_utils::total_ord::TotalHash;
 use rayon::prelude::*;
 
@@ -16,13 +18,16 @@ use crate::prelude::*;
 use crate::utils::{dtypes_to_schema, dtypes_to_supertype, try_get_supertype};
 use crate::POOL;
 
+#[cfg(feature = "object")]
 pub(crate) struct AnyValueRows<'a> {
     vals: Vec<AnyValue<'a>>,
     width: usize,
 }
 
+#[cfg(feature = "object")]
 pub(crate) struct AnyValueRow<'a>(&'a [AnyValue<'a>]);
 
+#[cfg(feature = "object")]
 impl<'a> AnyValueRows<'a> {
     pub(crate) fn get(&'a self, i: usize) -> AnyValueRow<'a> {
         let start = i * self.width;
@@ -31,6 +36,7 @@ impl<'a> AnyValueRows<'a> {
     }
 }
 
+#[cfg(feature = "object")]
 impl TotalEq for AnyValueRow<'_> {
     fn tot_eq(&self, other: &Self) -> bool {
         let lhs = self.0;
@@ -42,6 +48,7 @@ impl TotalEq for AnyValueRow<'_> {
     }
 }
 
+#[cfg(feature = "object")]
 impl TotalHash for AnyValueRow<'_> {
     fn tot_hash<H>(&self, state: &mut H)
     where
@@ -52,6 +59,7 @@ impl TotalHash for AnyValueRow<'_> {
 }
 
 impl DataFrame {
+    #[cfg(feature = "object")]
     #[allow(clippy::wrong_self_convention)]
     // Create indexable rows in a single allocation.
     pub(crate) fn to_av_rows(&mut self) -> AnyValueRows<'_> {
