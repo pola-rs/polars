@@ -117,9 +117,7 @@ impl LiteralValue {
             DateTime(v, tu, tz) => AnyValue::Datetime(*v, *tu, tz),
             #[cfg(feature = "dtype-time")]
             Time(v) => AnyValue::Time(*v),
-            Series(s) => {
-                AnyValue::List(s.0.clone().into_series())
-            },
+            Series(s) => AnyValue::List(s.0.clone().into_series()),
             Range {
                 low,
                 high,
