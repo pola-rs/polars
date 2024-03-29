@@ -1,8 +1,10 @@
 ==========
 Data types
 ==========
-.. currentmodule:: polars
+.. currentmodule:: polars.datatypes
 
+DataType
+~~~~~~~~
 .. autosummary::
     :toctree: api/
     :nosignatures:
@@ -47,6 +49,17 @@ Nested
     List
     Struct
 
+String
+~~~~~~
+.. autosummary::
+    :toctree: api/
+    :nosignatures:
+
+    String
+    Categorical
+    Enum
+    Utf8
+
 Other
 ~~~~~
 .. autosummary::
@@ -55,10 +68,6 @@ Other
 
     Binary
     Boolean
-    Categorical
-    Enum
     Null
     Object
-    String
-    Utf8
     Unknown
