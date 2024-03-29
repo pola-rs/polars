@@ -1,6 +1,6 @@
-use std::hash::Hash;
+use std::hash::{BuildHasher, Hash, Hasher};
 
-use hashbrown::hash_map::{Entry, RawEntryMut};
+use hashbrown::hash_map::RawEntryMut;
 use polars_utils::hashing::{hash_to_partition, DirtyHash};
 use polars_utils::idx_vec::IdxVec;
 use polars_utils::sync::SyncPtr;
@@ -75,25 +75,31 @@ fn finish_group_order(mut out: Vec<Vec<IdxItem>>, sorted: bool) -> GroupsProxy {
 
 pub(crate) fn group_by<T>(a: impl Iterator<Item = T>, sorted: bool) -> GroupsProxy
 where
-    T: TotalHash + TotalEq + ToTotalOrd,
-    <T as ToTotalOrd>::TotalOrdItem: Hash + Eq,
+    T: TotalHash + TotalEq,
 {
     let init_size = get_init_size();
-    let mut hash_tbl: PlHashMap<T::TotalOrdItem, (IdxSize, IdxVec)> =
-        PlHashMap::with_capacity(init_size);
+    let mut hash_tbl: PlHashMap<T, (IdxSize, IdxVec)> = PlHashMap::with_capacity(init_size);
+    let hasher = hash_tbl.hasher().clone();
     let mut cnt = 0;
     a.for_each(|k| {
-        let k = k.to_total_ord();
         let idx = cnt;
         cnt += 1;
-        let entry = hash_tbl.entry(k);
+
+        let mut state = hasher.build_hasher();
+        k.tot_hash(&mut state);
+        let h = state.finish();
+        let entry = hash_tbl.raw_entry_mut().from_hash(h, |k_| k.tot_eq(k_));
 
         match entry {
-            Entry::Vacant(entry) => {
+            RawEntryMut::Vacant(entry) => {
                 let tuples = unitvec![idx];
-                entry.insert((idx, tuples));
+                entry.insert_with_hasher(h, k, (idx, tuples), |k| {
+                    let mut state = hasher.build_hasher();
+                    k.tot_hash(&mut state);
+                    state.finish()
+                });
             },
-            Entry::Occupied(mut entry) => {
+            RawEntryMut::Occupied(mut entry) => {
                 let v = entry.get_mut();
                 v.1.push(idx);
             },

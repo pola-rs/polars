@@ -4,10 +4,12 @@ mod transpose;
 
 use std::borrow::Borrow;
 use std::fmt::Debug;
+use std::hash::{Hash, Hasher};
 use std::hint::unreachable_unchecked;
 
 use arrow::bitmap::Bitmap;
 pub use av_buffer::*;
+use polars_utils::total_ord::TotalHash;
 use rayon::prelude::*;
 
 use crate::prelude::*;
@@ -16,6 +18,24 @@ use crate::POOL;
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Row<'a>(pub Vec<AnyValue<'a>>);
+
+impl TotalEq for Row<'_> {
+    fn tot_eq(&self, other: &Self) -> bool {
+        let lhs = &self.0;
+        let rhs = &other.0;
+
+        lhs.iter().zip(rhs.iter()).all(|(l, r)| l == r)
+    }
+}
+
+impl TotalHash for Row<'_> {
+    fn tot_hash<H>(&self, state: &mut H)
+    where
+        H: Hasher,
+    {
+        self.0.iter().for_each(|av| av.hash(state))
+    }
+}
 
 impl<'a> Row<'a> {
     pub fn new(values: Vec<AnyValue<'a>>) -> Self {

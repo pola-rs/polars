@@ -33,6 +33,14 @@ pub trait PolarsObjectSafe: Any + Debug + Send + Sync + Display {
     fn as_any(&self) -> &dyn Any;
 
     fn to_boxed(&self) -> Box<dyn PolarsObjectSafe>;
+
+    fn equal(&self, other: &dyn PolarsObjectSafe) -> bool;
+}
+
+impl PartialEq for &dyn PolarsObjectSafe {
+    fn eq(&self, other: &Self) -> bool {
+        self.equal(*other)
+    }
 }
 
 /// Values need to implement this so that they can be stored into a Series and DataFrame
@@ -54,6 +62,13 @@ impl<T: PolarsObject> PolarsObjectSafe for T {
 
     fn to_boxed(&self) -> Box<dyn PolarsObjectSafe> {
         Box::new(self.clone())
+    }
+
+    fn equal(&self, other: &dyn PolarsObjectSafe) -> bool {
+        let Some(other) = other.as_any().downcast_ref::<T>() else {
+            return false;
+        };
+        self == other
     }
 }
 

@@ -57,14 +57,31 @@ impl DataFrame {
         let groups = if by.len() == 1 {
             let series = &by[0];
             series.group_tuples(multithreaded, sorted)
+        } else if by.iter().any(|s| s.dtype().is_object()) {
+            let df = DataFrame::new(by.clone()).unwrap();
+            let iter = (0..df.height()).map(|i| df.get_row(i).unwrap());
+            Ok(group_by(iter, sorted))
         } else {
-            let rows = if multithreaded {
-                encode_rows_vertical_par_default(&by)
+            // Skip null dtype.
+            let by = by
+                .iter()
+                .filter(|s| !s.dtype().is_null())
+                .cloned()
+                .collect::<Vec<_>>();
+            if by.is_empty() {
+                Ok(GroupsProxy::Slice {
+                    groups: vec![[0, self.height() as IdxSize]],
+                    rolling: false,
+                })
             } else {
-                encode_rows_default(&by)
-            }?
-            .into_series();
-            rows.group_tuples(multithreaded, sorted)
+                let rows = if multithreaded {
+                    encode_rows_vertical_par_default(&by)
+                } else {
+                    encode_rows_default(&by)
+                }?
+                .into_series();
+                rows.group_tuples(multithreaded, sorted)
+            }
         };
         Ok(GroupBy::new(self, by, groups?, None))
     }
