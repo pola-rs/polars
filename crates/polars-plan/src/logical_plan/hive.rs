@@ -30,11 +30,14 @@ fn separator(_url: &Path) -> char {
 }
 
 impl HivePartitions {
-    pub fn get_statistics(&self) -> &BatchStats {
-        &self.stats
+    /// Constructs a new [`HivePartitions`] from a schema reference.
+    pub fn from_schema_ref(schema: SchemaRef) -> Self {
+        let column_stats = schema.iter_fields().map(ColumnStats::from_field).collect();
+        let stats = BatchStats::new(schema, column_stats, None);
+        Self { stats }
     }
 
-    /// Parse a url and optionally return HivePartitions
+    /// Parse a url and optionally return [`HivePartitions`].
     pub(crate) fn parse_url(url: &Path) -> Option<Self> {
         let sep = separator(url);
 
@@ -101,6 +104,10 @@ impl HivePartitions {
 
             Some(HivePartitions { stats })
         }
+    }
+
+    pub fn get_statistics(&self) -> &BatchStats {
+        &self.stats
     }
 
     pub(crate) fn schema(&self) -> &SchemaRef {

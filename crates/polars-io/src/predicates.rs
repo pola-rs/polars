@@ -56,6 +56,7 @@ pub struct ColumnStats {
 }
 
 impl ColumnStats {
+    /// Constructs a new [`ColumnStats`].
     pub fn new(
         field: Field,
         null_count: Option<Series>,
@@ -67,6 +68,16 @@ impl ColumnStats {
             null_count,
             min_value,
             max_value,
+        }
+    }
+
+    /// Constructs a new [`ColumnStats`] with only name and data type information.
+    pub fn from_field(field: Field) -> Self {
+        Self {
+            field,
+            null_count: None,
+            min_value: None,
+            max_value: None,
         }
     }
 
