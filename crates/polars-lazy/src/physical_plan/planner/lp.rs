@@ -431,11 +431,11 @@ pub fn create_physical_plan(
                 let input = create_physical_plan(input, lp_arena, expr_arena)?;
                 let keys = keys
                     .iter()
-                    .map(|e| node_to_expr(e.node(), expr_arena))
+                    .map(|e| e.to_expr(expr_arena))
                     .collect::<Vec<_>>();
                 let aggs = aggs
                     .iter()
-                    .map(|e| node_to_expr(e.node(), expr_arena))
+                    .map(|e| e.to_expr(expr_arena))
                     .collect::<Vec<_>>();
                 Ok(Box::new(executors::PartitionGroupByExec::new(
                     input,

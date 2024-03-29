@@ -386,7 +386,7 @@ pub(crate) fn insert_streaming_nodes(
                 aggs,
                 maintain_order: false,
                 apply: None,
-                schema,
+                schema: output_schema,
                 options,
                 ..
             } => {
@@ -435,17 +435,15 @@ pub(crate) fn insert_streaming_nodes(
 
                 let valid_key = || {
                     keys.iter().all(|e| {
-                        expr_arena
-                            .get(e.node())
-                            .get_type(schema, Context::Default, expr_arena)
-                            // ensure we don't group_by list
+                        output_schema
+                            .get(e.output_name())
                             .map(|dt| !matches!(dt, DataType::List(_)))
                             .unwrap_or(false)
                     })
                 };
 
                 let valid_types = || {
-                    schema
+                    output_schema
                         .iter_dtypes()
                         .all(|dt| allowed_dtype(dt, string_cache))
                 };
