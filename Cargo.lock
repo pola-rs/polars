@@ -2955,6 +2955,7 @@ dependencies = [
  "polars-utils",
  "pyo3",
  "rayon",
+ "recursive",
  "regex",
  "serde",
  "smartstring",
@@ -3331,6 +3332,26 @@ checksum = "1465873a3dfdaa8ae7cb14b4383657caab0b3e8a0aa9ae8e04b044854c8dfce2"
 dependencies = [
  "crossbeam-deque",
  "crossbeam-utils",
+]
+
+[[package]]
+name = "recursive"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "11e2368fb7f6b4a62aab303ee5c24e79e0a0d120e52348457d41a4cbf21ed2e0"
+dependencies = [
+ "recursive-proc-macro-impl",
+ "stacker",
+]
+
+[[package]]
+name = "recursive-proc-macro-impl"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ad4a66026ca69c02b6807af930ac445871e9af1b1037e7a37064842851fc4233"
+dependencies = [
+ "quote",
+ "syn 2.0.55",
 ]
 
 [[package]]

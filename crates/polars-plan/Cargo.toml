@@ -33,6 +33,7 @@ once_cell = { workspace = true }
 percent-encoding = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 rayon = { workspace = true }
+recursive = { workspace = true }
 regex = { workspace = true, optional = true }
 serde = { workspace = true, features = ["derive", "rc"], optional = true }
 smartstring = { workspace = true }
