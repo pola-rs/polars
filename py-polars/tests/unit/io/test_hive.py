@@ -1,4 +1,5 @@
 import warnings
+from collections import OrderedDict
 from pathlib import Path
 from typing import Any
 
@@ -207,3 +208,37 @@ def test_hive_partitioned_projection_skip_files(
         .collect()
     )
     assert_frame_equal(df, test_df)
+
+
+@pytest.fixture()
+def dataset_path(tmp_path: Path) -> Path:
+    tmp_path.mkdir(exist_ok=True)
+
+    # Set up Hive partitioned Parquet file
+    root = tmp_path / "dataset"
+    part1 = root / "c=1"
+    part2 = root / "c=2"
+    root.mkdir()
+    part1.mkdir()
+    part2.mkdir()
+    df1 = pl.DataFrame({"a": [1, 2], "b": [11.0, 12.0]})
+    df2 = pl.DataFrame({"a": [3, 4], "b": [13.0, 14.0]})
+    df3 = pl.DataFrame({"a": [5, 6], "b": [15.0, 16.0]})
+    df1.write_parquet(part1 / "one.parquet")
+    df2.write_parquet(part1 / "two.parquet")
+    df3.write_parquet(part2 / "three.parquet")
+
+    return root
+
+
+@pytest.mark.write_disk()
+def test_read_parquet_hive_schema(dataset_path: Path) -> None:
+    result = pl.read_parquet(dataset_path / "**/*.parquet", hive_partitioning=True)
+    assert result.schema == OrderedDict({"a": pl.Int64, "b": pl.Float64, "c": pl.Int64})
+
+    result = pl.read_parquet(
+        dataset_path / "**/*.parquet",
+        hive_partitioning=True,
+        hive_schema={"c": pl.Int32},
+    )
+    assert result.schema == OrderedDict({"a": pl.Int64, "b": pl.Float64, "c": pl.Int64})
