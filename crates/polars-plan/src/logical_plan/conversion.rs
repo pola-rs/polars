@@ -264,6 +264,7 @@ fn to_aexpr_impl(expr: Expr, arena: &mut Arena<AExpr>, state: &mut ConversionSta
 /// converts LogicalPlan to ALogicalPlan
 /// it adds expressions & lps to the respective arenas as it traverses the plan
 /// finally it returns the top node of the logical plan
+#[recursive]
 pub fn to_alp(
     lp: LogicalPlan,
     expr_arena: &mut Arena<AExpr>,
@@ -477,6 +478,7 @@ pub fn to_alp(
 }
 
 /// converts a node from the AExpr arena to Expr
+#[recursive]
 pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
     let expr = expr_arena.get(node).clone();
 
@@ -708,6 +710,7 @@ fn expr_irs_to_exprs(expr_irs: Vec<ExprIR>, expr_arena: &Arena<AExpr>) -> Vec<Ex
 }
 
 impl ALogicalPlan {
+    #[recursive]
     fn into_lp<F, LPA>(
         self,
         conversion_fn: &F,
