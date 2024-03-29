@@ -186,7 +186,7 @@ pub(super) fn all(s: &Series) -> PolarsResult<Series> {
 }
 
 pub(super) fn sort(s: &Series, options: SortOptions) -> PolarsResult<Series> {
-    Ok(s.array()?.array_sort(options).into_series())
+    Ok(s.array()?.array_sort(options)?.into_series())
 }
 
 pub(super) fn reverse(s: &Series) -> PolarsResult<Series> {

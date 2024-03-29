@@ -285,7 +285,7 @@ impl Series {
         Ok(self)
     }
 
-    pub fn sort(&self, descending: bool, nulls_last: bool) -> Self {
+    pub fn sort(&self, descending: bool, nulls_last: bool) -> PolarsResult<Self> {
         self.sort_with(SortOptions {
             descending,
             nulls_last,

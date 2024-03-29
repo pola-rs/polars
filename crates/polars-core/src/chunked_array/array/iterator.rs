@@ -124,6 +124,29 @@ impl ArrayChunked {
             .collect_ca_with_dtype(self.name(), self.dtype().clone())
     }
 
+    /// Try apply a closure `F` to each array.
+    ///
+    /// # Safety
+    /// Return series of `F` must has the same dtype and number of elements as input if it is Ok.
+    pub unsafe fn try_apply_amortized_same_type<'a, F>(&'a self, mut f: F) -> PolarsResult<Self>
+    where
+        F: FnMut(UnstableSeries<'a>) -> PolarsResult<Series>,
+    {
+        if self.is_empty() {
+            return Ok(self.clone());
+        }
+        self.amortized_iter()
+            .map(|opt_v| {
+                opt_v
+                    .map(|v| {
+                        let out = f(v)?;
+                        Ok(to_arr(&out))
+                    })
+                    .transpose()
+            })
+            .try_collect_ca_with_dtype(self.name(), self.dtype().clone())
+    }
+
     /// Zip with a `ChunkedArray` then apply a binary function `F` elementwise.
     ///
     /// # Safety
