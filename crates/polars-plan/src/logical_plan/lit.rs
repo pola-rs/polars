@@ -3,6 +3,7 @@ use std::hash::{Hash, Hasher};
 #[cfg(feature = "temporal")]
 use polars_core::export::chrono::{Duration as ChronoDuration, NaiveDate, NaiveDateTime};
 use polars_core::prelude::*;
+use polars_core::utils::NoNull;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -116,7 +117,45 @@ impl LiteralValue {
             DateTime(v, tu, tz) => AnyValue::Datetime(*v, *tu, tz),
             #[cfg(feature = "dtype-time")]
             Time(v) => AnyValue::Time(*v),
-            _ => return None,
+            Series(s) => {
+                AnyValue::List(s.0.clone().into_series())
+            },
+            Range {
+                low,
+                high,
+                data_type,
+            } => {
+                let s = match data_type {
+                    DataType::Int32 => {
+                        if *low < i32::MIN as i64 || *high > i32::MAX as i64 {
+                            return None;
+                        }
+
+                        let low = *low as i32;
+                        let high = *high as i32;
+                        let ca: NoNull<Int32Chunked> = (low..high).collect();
+                        ca.into_inner().into_series()
+                    },
+                    DataType::Int64 => {
+                        let low = *low;
+                        let high = *high;
+                        let ca: NoNull<Int64Chunked> = (low..high).collect();
+                        ca.into_inner().into_series()
+                    },
+                    DataType::UInt32 => {
+                        if *low < 0 || *high > u32::MAX as i64 {
+                            return None;
+                        }
+                        let low = *low as u32;
+                        let high = *high as u32;
+                        let ca: NoNull<UInt32Chunked> = (low..high).collect();
+                        ca.into_inner().into_series()
+                    },
+                    _ => return None,
+                };
+                AnyValue::List(s)
+            },
+            Binary(v) => AnyValue::Binary(v),
         };
         Some(av)
     }
