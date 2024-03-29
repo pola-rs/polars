@@ -18,6 +18,7 @@ pub struct ScanArgsParquet {
     pub cloud_options: Option<CloudOptions>,
     pub use_statistics: bool,
     pub hive_partitioning: bool,
+    pub hive_schema: Option<SchemaRef>,
 }
 
 impl Default for ScanArgsParquet {
@@ -32,6 +33,7 @@ impl Default for ScanArgsParquet {
             cloud_options: None,
             use_statistics: true,
             hive_partitioning: false,
+            hive_schema: None,
         }
     }
 }
@@ -84,6 +86,7 @@ impl LazyFileListReader for LazyParquetReader {
             self.args.cloud_options,
             self.args.use_statistics,
             self.args.hive_partitioning,
+            self.args.hive_schema,
         )?
         .build()
         .into();

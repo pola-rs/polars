@@ -148,6 +148,7 @@ impl LogicalPlanBuilder {
         cloud_options: Option<CloudOptions>,
         use_statistics: bool,
         hive_partitioning: bool,
+        hive_schema: Option<SchemaRef>,
     ) -> PolarsResult<Self> {
         use polars_io::{is_cloud_url, SerReader as _};
 
@@ -197,10 +198,13 @@ impl LogicalPlanBuilder {
             (num_rows, num_rows.unwrap_or(0)),
         );
 
-        // We set the hive partitions of the first path to determine the schema.
-        // On iteration the partition values will be re-set per file.
         if hive_partitioning {
-            file_info.init_hive_partitions(path.as_path())?;
+            match hive_schema {
+                Some(schema) => file_info.init_hive_partitions_from_schema(schema)?,
+                // We set the hive partitions of the first path to determine the schema.
+                // On iteration the partition values will be re-set per file.
+                None => file_info.init_hive_partitions(path.as_path())?,
+            }
         }
 
         let options = FileScanOptions {

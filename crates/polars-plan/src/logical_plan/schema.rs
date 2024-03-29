@@ -7,6 +7,7 @@ use polars_utils::format_smartstring;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+use super::hive::HivePartitions;
 use crate::prelude::*;
 
 impl LogicalPlan {
@@ -53,7 +54,7 @@ pub struct FileInfo {
     /// - known size
     /// - estimated size
     pub row_estimation: (Option<usize>, usize),
-    pub hive_parts: Option<Arc<hive::HivePartitions>>,
+    pub hive_parts: Option<Arc<HivePartitions>>,
 }
 
 impl FileInfo {
@@ -69,15 +70,32 @@ impl FileInfo {
             hive_parts: None,
         }
     }
+    /// Updates the statistics and merges the hive partitions schema with the file one.
+    pub fn init_hive_partitions_from_schema(&mut self, schema: SchemaRef) -> PolarsResult<()> {
+        let expected_len = self.schema.len() + schema.len();
+        let file_schema = Arc::make_mut(&mut self.schema);
+        file_schema.merge((*schema).clone());
+
+        polars_ensure!(
+            file_schema.len() == expected_len,
+            Duplicate: "invalid Hive partition schema\n\n\
+            Extending the schema with the Hive partition schema creates duplicate fields."
+        );
+
+        let hp = HivePartitions::from_schema_ref(schema);
+        self.hive_parts = Some(Arc::new(hp));
+
+        Ok(())
+    }
 
     /// Updates the statistics and merges the hive partitions schema with the file one.
     pub fn init_hive_partitions(&mut self, url: &Path) -> PolarsResult<()> {
-        self.hive_parts = hive::HivePartitions::parse_url(url).map(|hive_parts| {
-            let hive_schema = hive_parts.get_statistics().schema().clone();
+        self.hive_parts = HivePartitions::parse_url(url).map(|hive_parts| {
+            let hive_schema = hive_parts.schema().clone();
             let expected_len = self.schema.len() + hive_schema.len();
 
             let schema = Arc::make_mut(&mut self.schema);
-            schema.merge((**hive_parts.get_statistics().schema()).clone());
+            schema.merge((**hive_parts.schema()).clone());
 
             polars_ensure!(schema.len() == expected_len, ComputeError: "invalid hive partitions\n\n\
             Extending the schema with the hive partitioned columns creates duplicate fields.");

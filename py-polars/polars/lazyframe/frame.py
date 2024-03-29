@@ -430,6 +430,7 @@ class LazyFrame:
         low_memory: bool = False,
         use_statistics: bool = True,
         hive_partitioning: bool = True,
+        hive_schema: SchemaDict | None = None,
         retries: int = 0,
     ) -> Self:
         """
@@ -481,6 +482,7 @@ class LazyFrame:
             cloud_options=storage_options,
             use_statistics=use_statistics,
             hive_partitioning=hive_partitioning,
+            hive_schema=hive_schema,
             retries=retries,
         )
         return self
