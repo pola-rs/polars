@@ -66,7 +66,7 @@ fn to_aexprs(input: Vec<Expr>, arena: &mut Arena<AExpr>, state: &mut ConversionS
 /// Converts expression to AExpr and adds it to the arena, which uses an arena (Vec) for allocation.
 #[recursive]
 fn to_aexpr_impl(expr: Expr, arena: &mut Arena<AExpr>, state: &mut ConversionState) -> Node {
-    let owned = |expr| Arc::unwrap_or_clone(expr);
+    let owned = Arc::unwrap_or_clone;
     let v = match expr {
         Expr::Explode(expr) => AExpr::Explode(to_aexpr_impl(owned(expr), arena, state)),
         Expr::Alias(e, name) => {
