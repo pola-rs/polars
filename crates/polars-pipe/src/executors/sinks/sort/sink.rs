@@ -188,7 +188,7 @@ impl Sink for SortSink {
                 nulls_last: self.sort_args.nulls_last,
                 multithreaded: true,
                 maintain_order: self.sort_args.maintain_order,
-            });
+            })?;
 
             let instant = self.ooc_start.unwrap();
             if context.verbose {

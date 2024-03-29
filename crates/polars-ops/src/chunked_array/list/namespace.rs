@@ -242,11 +242,10 @@ pub trait ListNameSpaceImpl: AsList {
         }
     }
 
-    #[must_use]
-    fn lst_sort(&self, options: SortOptions) -> ListChunked {
+    fn lst_sort(&self, options: SortOptions) -> PolarsResult<ListChunked> {
         let ca = self.as_list();
-        let out = ca.apply_amortized(|s| s.as_ref().sort_with(options));
-        self.same_type(out)
+        let out = ca.try_apply_amortized(|s| s.as_ref().sort_with(options))?;
+        Ok(self.same_type(out))
     }
 
     #[must_use]

@@ -333,8 +333,8 @@ pub trait SeriesTrait:
         invalid_operation_panic!(get_unchecked, self)
     }
 
-    fn sort_with(&self, _options: SortOptions) -> Series {
-        invalid_operation_panic!(sort_with, self)
+    fn sort_with(&self, _options: SortOptions) -> PolarsResult<Series> {
+        polars_bail!(opq = sort_with, self._dtype());
     }
 
     /// Retrieve the indexes needed for a sort.
