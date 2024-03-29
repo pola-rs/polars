@@ -197,24 +197,12 @@ You can also install a subset of all optional dependencies.
 ```sh
 pip install 'polars[numpy,pandas,pyarrow]'
 ```
+See the [User Guide](https://docs.pola.rs/user-guide/installation/#feature-flags) for more details on optional dependencies
 
-| Tag        | Description                                                                  |
-| ---------- | ---------------------------------------------------------------------------- |
-| **all**    | Install all optional dependencies (all of the following)                     |
-| adbc       | Support for reading Arrow data from SQL databases                            |
-| connectorx | Support for reading Arrow data from SQL databases                            |
-| deltalake  | Support for reading and writing Delta Lake Tables                            |
-| fastexcel  | Support for reading data from Excel files with the Calamine engine           |
-| fsspec     | Support for reading data from remote file systems                            |
-| numpy      | Install with NumPy for converting data to and from NumPy arrays              |
-| openpyxl   | Support for reading data from Excel files                                    |
-| pandas     | Install with pandas for converting data to and from pandas DataFrames/Series |
-| plot       | Support for plotting functions on DataFrames                                 |
-| pyarrow    | Reading data formats using PyArrow                                           |
-| pyiceberg  | Support for reading data from Apache Iceberg tables                          |
-| sqlalchemy | Support for reading Python data from SQL databases                           |
-| timezone   | Timezone support, only needed if you are on Python<3.9 or Windows            |
-| xlsx2csv   | Support for reading data from Excel files                                    |
+To see the current Polars version and a full list of its optional dependencies, run:
+```python
+pl.show_versions()
+```
 
 Releases happen quite often (weekly / every few days) at the moment, so updating Polars regularly
 to get the latest bugfixes / features might not be a bad idea.
