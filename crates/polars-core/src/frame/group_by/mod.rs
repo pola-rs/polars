@@ -58,8 +58,10 @@ impl DataFrame {
             let series = &by[0];
             series.group_tuples(multithreaded, sorted)
         } else if by.iter().any(|s| s.dtype().is_object()) {
-            let df = DataFrame::new(by.clone()).unwrap();
-            let iter = (0..df.height()).map(|i| df.get_row(i).unwrap());
+            let mut df = DataFrame::new(by.clone()).unwrap();
+            let n = df.height();
+            let rows = df.to_av_rows();
+            let iter = (0..n).map(|i| rows.get(i));
             Ok(group_by(iter, sorted))
         } else {
             // Skip null dtype.
@@ -74,7 +76,6 @@ impl DataFrame {
                     rolling: false,
                 })
             } else {
-                assert!(sorted);
                 let rows = if multithreaded {
                     encode_rows_vertical_par_default(&by)
                 } else {

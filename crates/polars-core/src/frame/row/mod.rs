@@ -16,19 +16,33 @@ use crate::prelude::*;
 use crate::utils::{dtypes_to_schema, dtypes_to_supertype, try_get_supertype};
 use crate::POOL;
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct Row<'a>(pub Vec<AnyValue<'a>>);
+pub(crate) struct AnyValueRows<'a> {
+    vals: Vec<AnyValue<'a>>,
+    width: usize,
+}
 
-impl TotalEq for Row<'_> {
+pub(crate) struct AnyValueRow<'a>(&'a [AnyValue<'a>]);
+
+impl<'a> AnyValueRows<'a> {
+    pub(crate) fn get(&'a self, i: usize) -> AnyValueRow<'a> {
+        let start = i * self.width;
+        let end = (i + 1) * self.width;
+        AnyValueRow(&self.vals[start..end])
+    }
+}
+
+impl TotalEq for AnyValueRow<'_> {
     fn tot_eq(&self, other: &Self) -> bool {
-        let lhs = &self.0;
-        let rhs = &other.0;
+        let lhs = self.0;
+        let rhs = other.0;
 
+        // Should only be used in that context.
+        debug_assert_eq!(lhs.len(), rhs.len());
         lhs.iter().zip(rhs.iter()).all(|(l, r)| l == r)
     }
 }
 
-impl TotalHash for Row<'_> {
+impl TotalHash for AnyValueRow<'_> {
     fn tot_hash<H>(&self, state: &mut H)
     where
         H: Hasher,
@@ -36,6 +50,37 @@ impl TotalHash for Row<'_> {
         self.0.iter().for_each(|av| av.hash(state))
     }
 }
+
+impl DataFrame {
+    #[allow(clippy::wrong_self_convention)]
+    // Create indexable rows in a single allocation.
+    pub(crate) fn to_av_rows(&mut self) -> AnyValueRows<'_> {
+        self.as_single_chunk_par();
+        let width = self.width();
+        let size = width * self.height();
+        let mut buf = vec![AnyValue::Null; size];
+        for (col_i, s) in self.columns.iter().enumerate() {
+            match s.dtype() {
+                #[cfg(feature = "object")]
+                DataType::Object(_, _) => {
+                    for row_i in 0..s.len() {
+                        let av = s.get(row_i).unwrap();
+                        buf[row_i * width + col_i] = av
+                    }
+                },
+                _ => {
+                    for (row_i, av) in s.iter().enumerate() {
+                        buf[row_i * width + col_i] = av
+                    }
+                },
+            }
+        }
+        AnyValueRows { vals: buf, width }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Row<'a>(pub Vec<AnyValue<'a>>);
 
 impl<'a> Row<'a> {
     pub fn new(values: Vec<AnyValue<'a>>) -> Self {
