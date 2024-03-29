@@ -3,8 +3,8 @@ use std::sync::Arc;
 use polars_core::error::PolarsResult;
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::unitvec;
-
 use visitor::{RewritingVisitor, TreeWalker};
+
 use crate::prelude::*;
 
 macro_rules! push_expr {
@@ -117,9 +117,8 @@ impl<'a> Iterator for ExprIter<'a> {
 }
 
 pub struct ExprMapper<F> {
-    f: F
+    f: F,
 }
-
 
 impl<F: FnMut(Expr) -> PolarsResult<Expr>> RewritingVisitor for ExprMapper<F> {
     type Node = Expr;
@@ -140,11 +139,11 @@ impl Expr {
         let push_owned = |c: &mut UnitVec<Expr>, e: Expr| c.push(e);
         push_expr!(self, container, push_arc, push_owned, into_iter);
     }
-    
+
     pub fn map_expr<F: FnMut(Self) -> Self>(self, mut f: F) -> Self {
         self.rewrite(&mut ExprMapper { f: |e| Ok(f(e)) }).unwrap()
     }
-    
+
     pub fn try_map_expr<F: FnMut(Self) -> PolarsResult<Self>>(self, f: F) -> PolarsResult<Self> {
         self.rewrite(&mut ExprMapper { f })
     }

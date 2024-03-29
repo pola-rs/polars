@@ -45,9 +45,7 @@ impl MetaNameSpace {
         self.0.map_expr(|e| match e {
             Expr::Alias(input, _)
             | Expr::KeepName(input)
-            | Expr::RenameAlias { expr: input, .. } => {
-                Arc::unwrap_or_clone(input)
-            },
+            | Expr::RenameAlias { expr: input, .. } => Arc::unwrap_or_clone(input),
             e => e,
         })
     }

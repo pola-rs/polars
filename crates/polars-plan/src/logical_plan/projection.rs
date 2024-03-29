@@ -6,12 +6,10 @@ use super::*;
 /// This replace the wildcard Expr with a Column Expr. It also removes the Exclude Expr from the
 /// expression chain.
 pub(super) fn replace_wildcard_with_column(expr: Expr, column_name: Arc<str>) -> Expr {
-    expr.map_expr(|e| {
-        match e {
-            Expr::Wildcard => Expr::Column(column_name.clone()),
-            Expr::Exclude(input, _) => Arc::unwrap_or_clone(input),
-            e => e,
-        }
+    expr.map_expr(|e| match e {
+        Expr::Wildcard => Expr::Column(column_name.clone()),
+        Expr::Exclude(input, _) => Arc::unwrap_or_clone(input),
+        e => e,
     })
 }
 
@@ -69,19 +67,21 @@ fn replace_wildcard(
 }
 
 fn replace_nth(expr: Expr, schema: &Schema) -> Expr {
-    expr.map_expr(|e| if let Expr::Nth(i) =  e {
-        match i.negative_to_usize(schema.len()) {
-            None => {
-                let name = if i == 0 { "first" } else { "last" };
-                Expr::Column(ColumnName::from(name))
-            },
-            Some(idx) => {
-                let (name, _dtype) = schema.get_at_index(idx).unwrap();
-                Expr::Column(ColumnName::from(&**name))
-            },
+    expr.map_expr(|e| {
+        if let Expr::Nth(i) = e {
+            match i.negative_to_usize(schema.len()) {
+                None => {
+                    let name = if i == 0 { "first" } else { "last" };
+                    Expr::Column(ColumnName::from(name))
+                },
+                Some(idx) => {
+                    let (name, _dtype) = schema.get_at_index(idx).unwrap();
+                    Expr::Column(ColumnName::from(&**name))
+                },
+            }
+        } else {
+            e
         }
-    } else {
-        e
     })
 }
 
@@ -191,13 +191,9 @@ fn expand_columns(
 /// expression chain.
 pub(super) fn replace_dtype_with_column(expr: Expr, column_name: Arc<str>) -> Expr {
     expr.map_expr(|e| match e {
-        Expr::DtypeColumn(_) => {
-            Expr::Column(column_name.clone())
-        },
-        Expr::Exclude(input, _) => {
-            Arc::unwrap_or_clone(input)
-        },
-        e => e
+        Expr::DtypeColumn(_) => Expr::Column(column_name.clone()),
+        Expr::Exclude(input, _) => Arc::unwrap_or_clone(input),
+        e => e,
     })
 }
 
@@ -219,9 +215,7 @@ pub(super) fn replace_columns_with_column(
                 Expr::Columns(members)
             }
         },
-        Expr::Exclude(input, _) => {
-            Arc::unwrap_or_clone(input)
-        },
+        Expr::Exclude(input, _) => Arc::unwrap_or_clone(input),
         e => e,
     });
     (expr, is_valid)
@@ -596,7 +590,7 @@ fn replace_selector(expr: Expr, schema: &Schema, keys: &[Expr]) -> PolarsResult<
                     })
                     .collect(),
             ))
-        }
+        },
         e => Ok(e),
     })
 }

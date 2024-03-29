@@ -130,7 +130,7 @@ impl<'a> PredicatePushDown<'a> {
                                 } else {
                                     Expr::Column(name)
                                 }
-                            }
+                            },
                             e => e,
                         });
                         let predicate = to_aexpr(new_expr, expr_arena);

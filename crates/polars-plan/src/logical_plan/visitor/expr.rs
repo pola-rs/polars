@@ -26,8 +26,8 @@ impl TreeWalker for Expr {
 
     fn map_children(self, mut f: &mut dyn FnMut(Self) -> PolarsResult<Self>) -> PolarsResult<Self> {
         use polars_utils::functions::try_arc_map as am;
-        use Expr::*;
         use AggExpr::*;
+        use Expr::*;
         #[rustfmt::skip]
         let ret = match self {
             Alias(l, r) => Alias(am(l, f)?, r),
@@ -74,7 +74,7 @@ impl TreeWalker for Expr {
             Nth(_) => self,
             RenameAlias { function, expr } => RenameAlias { function, expr: am(expr, f)? },
             AnonymousFunction { input, function, output_type, options } => {
-                AnonymousFunction { input: input.into_iter().map(f).collect::<Result<_, _>>()?, function, output_type, options } 
+                AnonymousFunction { input: input.into_iter().map(f).collect::<Result<_, _>>()?, function, output_type, options }
             },
             SubPlan(_, _) => self,
             Selector(_) => self,

@@ -156,11 +156,15 @@ fn to_aexpr_impl(expr: Expr, arena: &mut Arena<AExpr>, state: &mut ConversionSta
                     propagate_nans,
                 },
                 AggExpr::Median(expr) => AAggExpr::Median(to_aexpr_impl(owned(expr), arena, state)),
-                AggExpr::NUnique(expr) => AAggExpr::NUnique(to_aexpr_impl(owned(expr), arena, state)),
+                AggExpr::NUnique(expr) => {
+                    AAggExpr::NUnique(to_aexpr_impl(owned(expr), arena, state))
+                },
                 AggExpr::First(expr) => AAggExpr::First(to_aexpr_impl(owned(expr), arena, state)),
                 AggExpr::Last(expr) => AAggExpr::Last(to_aexpr_impl(owned(expr), arena, state)),
                 AggExpr::Mean(expr) => AAggExpr::Mean(to_aexpr_impl(owned(expr), arena, state)),
-                AggExpr::Implode(expr) => AAggExpr::Implode(to_aexpr_impl(owned(expr), arena, state)),
+                AggExpr::Implode(expr) => {
+                    AAggExpr::Implode(to_aexpr_impl(owned(expr), arena, state))
+                },
                 AggExpr::Count(expr, include_nulls) => {
                     AAggExpr::Count(to_aexpr_impl(owned(expr), arena, state), include_nulls)
                 },
@@ -174,9 +178,15 @@ fn to_aexpr_impl(expr: Expr, arena: &mut Arena<AExpr>, state: &mut ConversionSta
                     interpol,
                 },
                 AggExpr::Sum(expr) => AAggExpr::Sum(to_aexpr_impl(owned(expr), arena, state)),
-                AggExpr::Std(expr, ddof) => AAggExpr::Std(to_aexpr_impl(owned(expr), arena, state), ddof),
-                AggExpr::Var(expr, ddof) => AAggExpr::Var(to_aexpr_impl(owned(expr), arena, state), ddof),
-                AggExpr::AggGroups(expr) => AAggExpr::AggGroups(to_aexpr_impl(owned(expr), arena, state)),
+                AggExpr::Std(expr, ddof) => {
+                    AAggExpr::Std(to_aexpr_impl(owned(expr), arena, state), ddof)
+                },
+                AggExpr::Var(expr, ddof) => {
+                    AAggExpr::Var(to_aexpr_impl(owned(expr), arena, state), ddof)
+                },
+                AggExpr::AggGroups(expr) => {
+                    AAggExpr::AggGroups(to_aexpr_impl(owned(expr), arena, state))
+                },
             };
             AExpr::Agg(a_agg)
         },
