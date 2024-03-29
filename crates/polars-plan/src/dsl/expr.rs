@@ -12,30 +12,30 @@ use crate::prelude::*;
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum AggExpr {
     Min {
-        input: Box<Expr>,
+        input: Arc<Expr>,
         propagate_nans: bool,
     },
     Max {
-        input: Box<Expr>,
+        input: Arc<Expr>,
         propagate_nans: bool,
     },
-    Median(Box<Expr>),
-    NUnique(Box<Expr>),
-    First(Box<Expr>),
-    Last(Box<Expr>),
-    Mean(Box<Expr>),
-    Implode(Box<Expr>),
+    Median(Arc<Expr>),
+    NUnique(Arc<Expr>),
+    First(Arc<Expr>),
+    Last(Arc<Expr>),
+    Mean(Arc<Expr>),
+    Implode(Arc<Expr>),
     // include_nulls
-    Count(Box<Expr>, bool),
+    Count(Arc<Expr>, bool),
     Quantile {
-        expr: Box<Expr>,
-        quantile: Box<Expr>,
+        expr: Arc<Expr>,
+        quantile: Arc<Expr>,
         interpol: QuantileInterpolOptions,
     },
-    Sum(Box<Expr>),
-    AggGroups(Box<Expr>),
-    Std(Box<Expr>, u8),
-    Var(Box<Expr>, u8),
+    Sum(Arc<Expr>),
+    AggGroups(Arc<Expr>),
+    Std(Arc<Expr>, u8),
+    Var(Arc<Expr>, u8),
 }
 
 impl AsRef<Expr> for AggExpr {
@@ -67,32 +67,32 @@ impl AsRef<Expr> for AggExpr {
 #[must_use]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum Expr {
-    Alias(Box<Expr>, Arc<str>),
+    Alias(Arc<Expr>, Arc<str>),
     Column(Arc<str>),
     Columns(Vec<String>),
     DtypeColumn(Vec<DataType>),
     Literal(LiteralValue),
     BinaryExpr {
-        left: Box<Expr>,
+        left: Arc<Expr>,
         op: Operator,
-        right: Box<Expr>,
+        right: Arc<Expr>,
     },
     Cast {
-        expr: Box<Expr>,
+        expr: Arc<Expr>,
         data_type: DataType,
         strict: bool,
     },
     Sort {
-        expr: Box<Expr>,
+        expr: Arc<Expr>,
         options: SortOptions,
     },
     Gather {
-        expr: Box<Expr>,
-        idx: Box<Expr>,
+        expr: Arc<Expr>,
+        idx: Arc<Expr>,
         returns_scalar: bool,
     },
     SortBy {
-        expr: Box<Expr>,
+        expr: Arc<Expr>,
         by: Vec<Expr>,
         descending: Vec<bool>,
     },
@@ -100,9 +100,9 @@ pub enum Expr {
     /// A ternary operation
     /// if true then "foo" else "bar"
     Ternary {
-        predicate: Box<Expr>,
-        truthy: Box<Expr>,
-        falsy: Box<Expr>,
+        predicate: Arc<Expr>,
+        truthy: Arc<Expr>,
+        falsy: Arc<Expr>,
     },
     Function {
         /// function arguments
@@ -111,29 +111,29 @@ pub enum Expr {
         function: FunctionExpr,
         options: FunctionOptions,
     },
-    Explode(Box<Expr>),
+    Explode(Arc<Expr>),
     Filter {
-        input: Box<Expr>,
-        by: Box<Expr>,
+        input: Arc<Expr>,
+        by: Arc<Expr>,
     },
     /// See postgres window functions
     Window {
         /// Also has the input. i.e. avg("foo")
-        function: Box<Expr>,
+        function: Arc<Expr>,
         partition_by: Vec<Expr>,
         options: WindowType,
     },
     Wildcard,
     Slice {
-        input: Box<Expr>,
+        input: Arc<Expr>,
         /// length is not yet known so we accept negative offsets
-        offset: Box<Expr>,
-        length: Box<Expr>,
+        offset: Arc<Expr>,
+        length: Arc<Expr>,
     },
     /// Can be used in a select statement to exclude a column from selection
-    Exclude(Box<Expr>, Vec<Excluded>),
+    Exclude(Arc<Expr>, Vec<Excluded>),
     /// Set root name as Alias
-    KeepName(Box<Expr>),
+    KeepName(Arc<Expr>),
     Len,
     /// Take the nth column in the `DataFrame`
     Nth(i64),
@@ -141,7 +141,7 @@ pub enum Expr {
     #[cfg_attr(feature = "serde", serde(skip))]
     RenameAlias {
         function: SpecialEq<Arc<dyn RenameAliasFn>>,
-        expr: Box<Expr>,
+        expr: Arc<Expr>,
     },
     AnonymousFunction {
         /// function arguments

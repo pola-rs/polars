@@ -3,18 +3,18 @@ use super::*;
 impl Expr {
     /// Standard deviation of the values of the Series.
     pub fn std(self, ddof: u8) -> Self {
-        AggExpr::Std(Box::new(self), ddof).into()
+        AggExpr::Std(Arc::new(self), ddof).into()
     }
 
     /// Variance of the values of the Series.
     pub fn var(self, ddof: u8) -> Self {
-        AggExpr::Var(Box::new(self), ddof).into()
+        AggExpr::Var(Arc::new(self), ddof).into()
     }
 
     /// Reduce groups to minimal value.
     pub fn min(self) -> Self {
         AggExpr::Min {
-            input: Box::new(self),
+            input: Arc::new(self),
             propagate_nans: false,
         }
         .into()
@@ -23,7 +23,7 @@ impl Expr {
     /// Reduce groups to maximum value.
     pub fn max(self) -> Self {
         AggExpr::Max {
-            input: Box::new(self),
+            input: Arc::new(self),
             propagate_nans: false,
         }
         .into()
@@ -32,7 +32,7 @@ impl Expr {
     /// Reduce groups to minimal value.
     pub fn nan_min(self) -> Self {
         AggExpr::Min {
-            input: Box::new(self),
+            input: Arc::new(self),
             propagate_nans: true,
         }
         .into()
@@ -41,7 +41,7 @@ impl Expr {
     /// Reduce groups to maximum value.
     pub fn nan_max(self) -> Self {
         AggExpr::Max {
-            input: Box::new(self),
+            input: Arc::new(self),
             propagate_nans: true,
         }
         .into()
@@ -49,17 +49,17 @@ impl Expr {
 
     /// Reduce groups to the mean value.
     pub fn mean(self) -> Self {
-        AggExpr::Mean(Box::new(self)).into()
+        AggExpr::Mean(Arc::new(self)).into()
     }
 
     /// Reduce groups to the median value.
     pub fn median(self) -> Self {
-        AggExpr::Median(Box::new(self)).into()
+        AggExpr::Median(Arc::new(self)).into()
     }
 
     /// Reduce groups to the sum of all the values.
     pub fn sum(self) -> Self {
-        AggExpr::Sum(Box::new(self)).into()
+        AggExpr::Sum(Arc::new(self)).into()
     }
 
     /// Compute the histogram of a dataset.
