@@ -8,6 +8,7 @@ import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
+from polars.testing._constants import PARTITION_LIMIT
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -480,3 +481,10 @@ def test_streaming_groupby_binary_15116() -> None:
         "str": [b"A", b"BB", b"CCCC", b"DDDDDDDD", b"EEEEEEEEEEEEEEEE"],
         "count": [3, 2, 2, 2, 1],
     }
+
+
+def test_streaming_group_by_convert_15380() -> None:
+    assert (
+        pl.DataFrame({"a": [1] * PARTITION_LIMIT}).group_by(b="a").len()["len"].item()
+        == PARTITION_LIMIT
+    )
