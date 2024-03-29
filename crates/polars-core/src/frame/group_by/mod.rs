@@ -22,37 +22,9 @@ mod proxy;
 pub use into_groups::*;
 pub use proxy::*;
 
-#[cfg(feature = "dtype-struct")]
-use crate::prelude::sort::arg_sort_multiple::encode_rows_vertical;
-
-// This will remove the sorted flag on signed integers
-fn prepare_dataframe_unsorted(by: &[Series]) -> DataFrame {
-    let columns = by
-        .iter()
-        .map(|s| match s.dtype() {
-            #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(_, _) | DataType::Enum(_, _) => {
-                s.cast(&DataType::UInt32).unwrap()
-            },
-            _ => {
-                if s.dtype().to_physical().is_numeric() {
-                    let s = s.to_physical_repr();
-
-                    if s.dtype().is_float() {
-                        s.into_owned().into_series()
-                    } else if s.bit_repr_is_large() {
-                        s.bit_repr_large().into_series()
-                    } else {
-                        s.bit_repr_small().into_series()
-                    }
-                } else {
-                    s.clone()
-                }
-            },
-        })
-        .collect();
-    unsafe { DataFrame::new_no_checks(columns) }
-}
+use crate::prelude::sort::arg_sort_multiple::{
+    encode_rows_default, encode_rows_vertical_par_default,
+};
 
 impl DataFrame {
     pub fn group_by_with_series(
@@ -82,26 +54,17 @@ impl DataFrame {
             }
         };
 
-        let n_partitions = _set_partition_size();
-
         let groups = if by.len() == 1 {
             let series = &by[0];
             series.group_tuples(multithreaded, sorted)
         } else {
-            #[cfg(feature = "dtype-struct")]
-            {
-                if by.iter().any(|s| matches!(s.dtype(), DataType::Struct(_))) {
-                    let rows = encode_rows_vertical(&by)?;
-                    let groups = rows.group_tuples(multithreaded, sorted)?;
-                    return Ok(GroupBy::new(self, by, groups, None));
-                }
-            }
-            let keys_df = prepare_dataframe_unsorted(&by);
-            if multithreaded {
-                group_by_threaded_multiple_keys_flat(keys_df, n_partitions, sorted)
+            let rows = if multithreaded {
+                encode_rows_vertical_par_default(&by)
             } else {
-                group_by_multiple_keys(keys_df, sorted)
-            }
+                encode_rows_default(&by)
+            }?
+            .into_series();
+            rows.group_tuples(multithreaded, sorted)
         };
         Ok(GroupBy::new(self, by, groups?, None))
     }
