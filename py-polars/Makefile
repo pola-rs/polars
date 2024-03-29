@@ -86,15 +86,15 @@ doctest: .venv build  ## Run doctests
 
 .PHONY: docs
 docs: .venv build  ## Build Python docs (incremental)
-	@cd docs && $(MAKE) html
+	@$(MAKE) -s -C docs html
 
 .PHONY: docs-clean
 docs-clean: .venv  ## Build Python docs (full rebuild)
-	@cd docs && $(MAKE) clean
-	@cd docs && $(MAKE) html
+	@$(MAKE) -s -C docs clean
+	@$(MAKE) docs
 
 .PHONY: test-all
-test-all: .venv  ## Run all tests
+test-all: .venv build  ## Run all tests
 	$(VENV_BIN)/pytest -n auto --dist loadgroup -m "slow or not slow"
 	$(VENV_BIN)/python tests/docs/run_doctest.py
 
