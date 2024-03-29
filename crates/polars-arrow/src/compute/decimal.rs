@@ -112,6 +112,12 @@ pub struct FormatBuffer {
     len: usize,
 }
 
+impl Default for FormatBuffer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FormatBuffer {
     #[inline]
     pub const fn new() -> Self {

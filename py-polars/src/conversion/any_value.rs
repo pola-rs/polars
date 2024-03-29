@@ -2,7 +2,7 @@
 use polars::chunked_array::object::PolarsObjectSafe;
 use polars::datatypes::{DataType, Field, OwnedObject, PlHashMap, TimeUnit};
 use polars::prelude::{AnyValue, Series};
-use polars_core::frame::row::any_values_to_dtype;
+use polars_core::utils::any_values_to_supertype_and_n_dtypes;
 use pyo3::exceptions::{PyOverflowError, PyTypeError};
 use pyo3::intern;
 use pyo3::prelude::*;
@@ -282,11 +282,11 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
                 avs.push(av)
             }
 
-            let (dtype, n_types) =
-                any_values_to_dtype(&avs).map_err(|e| PyTypeError::new_err(e.to_string()))?;
+            let (dtype, n_dtypes) = any_values_to_supertype_and_n_dtypes(&avs)
+                .map_err(|e| PyTypeError::new_err(e.to_string()))?;
 
             // This path is only taken if there is no question about the data type.
-            if dtype.is_primitive() && n_types == 1 {
+            if dtype.is_primitive() && n_dtypes == 1 {
                 get_list_with_constructor(ob)
             } else {
                 // Push the rest.

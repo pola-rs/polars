@@ -94,7 +94,7 @@ def test_replace_enum_to_new_enum() -> None:
     new_dtype = pl.Enum(["a", "b", "c", "d", "e"])
     new = pl.Series(["c", "e"], dtype=new_dtype)
 
-    result = s.replace(old, new)
+    result = s.replace(old, new, return_dtype=new_dtype)
 
     expected = pl.Series(["c", "e", "c"], dtype=new_dtype)
     assert_series_equal(result, expected)

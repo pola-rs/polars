@@ -268,6 +268,14 @@ def from_records(
     │ 3   ┆ 6   │
     └─────┴─────┘
     """
+    if not isinstance(data, Sequence):
+        msg = (
+            f"expected data of type Sequence, got {type(data).__name__!r}"
+            "\n\nHint: Try passing your data to the DataFrame constructor instead,"
+            " e.g. `pl.DataFrame(data)`."
+        )
+        raise TypeError(msg)
+
     return wrap_df(
         sequence_to_pydf(
             data,

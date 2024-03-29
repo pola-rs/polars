@@ -1110,30 +1110,16 @@ def test_quantile_filtered_agg() -> None:
 
 
 def test_lazy_schema() -> None:
-    ldf = pl.LazyFrame(
+    lf = pl.LazyFrame(
         {
             "foo": [1, 2, 3],
             "bar": [6.0, 7.0, 8.0],
             "ham": ["a", "b", "c"],
         }
     )
-    assert ldf.schema == {"foo": pl.Int64, "bar": pl.Float64, "ham": pl.String}
+    assert lf.schema == {"foo": pl.Int64, "bar": pl.Float64, "ham": pl.String}
 
-    ldf = pl.LazyFrame(
-        {
-            "foo": [1, 2, 3],
-            "bar": [6.0, 7.0, 8.0],
-            "ham": ["a", "b", "c"],
-        }
-    )
-    assert ldf.dtypes == [pl.Int64, pl.Float64, pl.String]
-
-    ldfe = ldf.clear()
-    assert ldfe.schema == ldf.schema
-
-    ldfe = ldf.clear(2)
-    assert ldfe.schema == ldf.schema
-    assert ldfe.collect().rows() == [(None, None, None), (None, None, None)]
+    assert lf.dtypes == [pl.Int64, pl.Float64, pl.String]
 
 
 def test_predicate_count_vstack() -> None:

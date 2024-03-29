@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU8, Ordering};
 use std::sync::{Mutex, RwLock};
 
 use bitflags::bitflags;
@@ -7,21 +7,7 @@ use once_cell::sync::OnceCell;
 use polars_core::config::verbose;
 use polars_core::prelude::*;
 use polars_ops::prelude::ChunkJoinOptIds;
-#[cfg(any(
-    feature = "parquet",
-    feature = "csv",
-    feature = "ipc",
-    feature = "json"
-))]
-use polars_plan::logical_plan::FileFingerPrint;
 
-#[cfg(any(
-    feature = "ipc",
-    feature = "parquet",
-    feature = "csv",
-    feature = "json"
-))]
-use super::file_cache::FileCache;
 use crate::physical_plan::node_timer::NodeTimer;
 
 pub type JoinTuplesCache = Arc<Mutex<PlHashMap<String, ChunkJoinOptIds>>>;
@@ -69,18 +55,12 @@ impl From<u8> for StateFlags {
     }
 }
 
+type CachedValue = Arc<(AtomicI64, OnceCell<DataFrame>)>;
+
 /// State/ cache that is maintained during the Execution of the physical plan.
 pub struct ExecutionState {
     // cached by a `.cache` call and kept in memory for the duration of the plan.
-    df_cache: Arc<Mutex<PlHashMap<usize, Arc<OnceCell<DataFrame>>>>>,
-    // cache file reads until all branches got there file, then we delete it
-    #[cfg(any(
-        feature = "ipc",
-        feature = "parquet",
-        feature = "csv",
-        feature = "json"
-    ))]
-    pub(crate) file_cache: FileCache,
+    df_cache: Arc<Mutex<PlHashMap<usize, CachedValue>>>,
     pub(super) schema_cache: RwLock<Option<SchemaRef>>,
     /// Used by Window Expression to prevent redundant grouping
     pub(super) group_tuples: GroupsProxyCache,
@@ -103,13 +83,6 @@ impl ExecutionState {
         Self {
             df_cache: Default::default(),
             schema_cache: Default::default(),
-            #[cfg(any(
-                feature = "ipc",
-                feature = "parquet",
-                feature = "csv",
-                feature = "json"
-            ))]
-            file_cache: FileCache::new(None),
             group_tuples: Default::default(),
             join_tuples: Default::default(),
             branch_idx: 0,
@@ -161,13 +134,6 @@ impl ExecutionState {
     pub(super) fn split(&self) -> Self {
         Self {
             df_cache: self.df_cache.clone(),
-            #[cfg(any(
-                feature = "ipc",
-                feature = "parquet",
-                feature = "csv",
-                feature = "json"
-            ))]
-            file_cache: self.file_cache.clone(),
             schema_cache: Default::default(),
             group_tuples: Default::default(),
             join_tuples: Default::default(),
@@ -183,13 +149,6 @@ impl ExecutionState {
     pub(super) fn clone(&self) -> Self {
         Self {
             df_cache: self.df_cache.clone(),
-            #[cfg(any(
-                feature = "ipc",
-                feature = "parquet",
-                feature = "csv",
-                feature = "json"
-            ))]
-            file_cache: self.file_cache.clone(),
             schema_cache: self.schema_cache.read().unwrap().clone().into(),
             group_tuples: self.group_tuples.clone(),
             join_tuples: self.join_tuples.clone(),
@@ -199,27 +158,6 @@ impl ExecutionState {
             node_timer: self.node_timer.clone(),
             stop: self.stop.clone(),
         }
-    }
-
-    #[cfg(not(any(
-        feature = "parquet",
-        feature = "csv",
-        feature = "ipc",
-        feature = "json"
-    )))]
-    pub(crate) fn with_finger_prints(_finger_prints: Option<usize>) -> Self {
-        Self::new()
-    }
-    #[cfg(any(
-        feature = "parquet",
-        feature = "csv",
-        feature = "ipc",
-        feature = "json"
-    ))]
-    pub(crate) fn with_finger_prints(finger_prints: Option<Vec<FileFingerPrint>>) -> Self {
-        let mut new = Self::new();
-        new.file_cache = FileCache::new(finger_prints);
-        new
     }
 
     pub(crate) fn set_schema(&self, schema: SchemaRef) {
@@ -239,12 +177,17 @@ impl ExecutionState {
         lock.clone()
     }
 
-    pub(crate) fn get_df_cache(&self, key: usize) -> Arc<OnceCell<DataFrame>> {
+    pub(crate) fn get_df_cache(&self, key: usize, cache_hits: u32) -> CachedValue {
         let mut guard = self.df_cache.lock().unwrap();
         guard
             .entry(key)
-            .or_insert_with(|| Arc::new(OnceCell::new()))
+            .or_insert_with(|| Arc::new((AtomicI64::new(cache_hits as i64), OnceCell::new())))
             .clone()
+    }
+
+    pub(crate) fn remove_df_cache(&self, key: usize) {
+        let mut guard = self.df_cache.lock().unwrap();
+        let _ = guard.remove(&key).unwrap();
     }
 
     /// Clear the cache used by the Window expressions

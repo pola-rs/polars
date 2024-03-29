@@ -61,7 +61,7 @@ where
                     groups.iter().for_each(|(_, idx)| {
                         for i in idx.as_slice() {
                             if !old_validity.get_bit_unchecked(*i as usize) {
-                                validity.set_bit_unchecked(count, false)
+                                validity.set_unchecked(count, false);
                             }
                             count += 1;
                         }
@@ -124,7 +124,7 @@ where
                     groups.iter().for_each(|[first, len]| {
                         for i in *first..(*first + *len) {
                             if !old_validity.get_bit_unchecked(i as usize) {
-                                validity.set_bit_unchecked(count, false)
+                                validity.set_unchecked(count, false)
                             }
                             count += 1;
                         }

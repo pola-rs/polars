@@ -18,7 +18,7 @@ pub type ChunkJoinIds = Vec<IdxSize>;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct JoinArgs {
     pub how: JoinType,
@@ -56,7 +56,7 @@ impl JoinArgs {
     }
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum JoinType {
     Left,
@@ -116,7 +116,7 @@ impl Debug for JoinType {
     }
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, Default)]
+#[derive(Copy, Clone, PartialEq, Eq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum JoinValidation {
     /// No unique checks

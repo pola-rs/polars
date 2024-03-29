@@ -733,11 +733,11 @@ def _read_spreadsheet_ods(
         row_data = row_data[1 : -1 if trailing_null_row else None]
 
         if schema_overrides:
-            for nm, dtype in schema_overrides.items():
+            for name, dtype in schema_overrides.items():
                 if dtype in (Datetime, Date):
-                    strptime_cols[nm] = dtype
+                    strptime_cols[name] = dtype
                 else:
-                    overrides[nm] = dtype
+                    overrides[name] = dtype
 
         df = pl.DataFrame(
             row_data,

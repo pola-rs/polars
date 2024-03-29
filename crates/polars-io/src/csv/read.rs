@@ -5,7 +5,7 @@ use crate::csv::read_impl::{
 };
 use crate::csv::utils::infer_file_schema;
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum CsvEncoding {
     /// Utf8 encoding
@@ -14,7 +14,7 @@ pub enum CsvEncoding {
     LossyUtf8,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum NullValues {
     /// A single value that's used for all columns
@@ -25,7 +25,7 @@ pub enum NullValues {
     Named(Vec<(String, String)>),
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum CommentPrefix {
     /// A single byte character that indicates the start of a comment line.

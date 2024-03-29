@@ -4,8 +4,8 @@ use std::io::Write;
 use std::sync::Mutex;
 
 use arrow::array::Array;
-use arrow::chunk::Chunk;
 use arrow::datatypes::PhysicalType;
+use arrow::record_batch::RecordBatch;
 use polars_core::prelude::*;
 use polars_core::utils::{accumulate_dataframes_vertical_unchecked, split_df_as_ref};
 use polars_core::POOL;
@@ -343,7 +343,7 @@ impl<W: Write> BatchedWriter<W> {
 }
 
 fn create_serializer(
-    batch: Chunk<Box<dyn Array>>,
+    batch: RecordBatch<Box<dyn Array>>,
     fields: &[ParquetType],
     encodings: &[Vec<Encoding>],
     options: WriteOptions,
@@ -432,7 +432,7 @@ impl FallibleStreamingIterator for CompressedPages {
 /// This serializer encodes and compresses all eagerly in memory.
 /// Used for separating compute from IO.
 fn create_eager_serializer(
-    batch: Chunk<Box<dyn Array>>,
+    batch: RecordBatch<Box<dyn Array>>,
     fields: &[ParquetType],
     encodings: &[Vec<Encoding>],
     options: WriteOptions,

@@ -27,6 +27,7 @@ use polars_io::{
 };
 
 use super::builder_functions::*;
+use crate::constants::UNLIMITED_CACHE;
 use crate::dsl::functions::horizontal::all_horizontal;
 use crate::logical_plan::projection::{is_regex_projection, rewrite_projections};
 #[cfg(feature = "python")]
@@ -237,7 +238,7 @@ impl LogicalPlanBuilder {
         cache: bool,
         row_index: Option<RowIndex>,
         rechunk: bool,
-        #[cfg(feature = "cloud")] cloud_options: Option<CloudOptions>,
+        cloud_options: Option<CloudOptions>,
     ) -> PolarsResult<Self> {
         use polars_io::is_cloud_url;
 
@@ -289,7 +290,6 @@ impl LogicalPlanBuilder {
             predicate: None,
             scan_type: FileScan::Ipc {
                 options,
-                #[cfg(feature = "cloud")]
                 cloud_options,
                 metadata: Some(metadata),
             },
@@ -429,7 +429,7 @@ impl LogicalPlanBuilder {
         LogicalPlan::Cache {
             input,
             id,
-            count: usize::MAX,
+            cache_hits: UNLIMITED_CACHE,
         }
         .into()
     }

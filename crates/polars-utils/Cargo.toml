@@ -20,6 +20,7 @@ once_cell = { workspace = true }
 raw-cpuid = { workspace = true }
 rayon = { workspace = true }
 smartstring = { workspace = true }
+stacker = { workspace = true }
 sysinfo = { version = "0.30", default-features = false, optional = true }
 
 [dev-dependencies]

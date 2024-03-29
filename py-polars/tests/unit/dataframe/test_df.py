@@ -1620,8 +1620,8 @@ def test_extension() -> None:
             return f"foo({self.value})"
 
     foos = [Foo(1), Foo(2), Foo(3)]
-    # I believe foos, stack, and sys.getrefcount have a ref
-    base_count = 3
+    # foos and sys.getrefcount have a reference.
+    base_count = 2
     assert sys.getrefcount(foos[0]) == base_count
 
     df = pl.DataFrame({"groups": [1, 1, 2], "a": foos})
@@ -1699,19 +1699,6 @@ def test_df_schema_unique() -> None:
 
     with pytest.raises(pl.DuplicateError):
         df.rename({"b": "a"})
-
-
-def test_cleared() -> None:
-    df = pl.DataFrame(
-        {"a": [1, 2], "b": [True, False]}, schema_overrides={"a": pl.UInt32}
-    )
-    dfc = df.clear()
-    assert dfc.schema == df.schema
-    assert dfc.rows() == []
-
-    dfc = df.clear(3)
-    assert dfc.schema == df.schema
-    assert dfc.rows() == [(None, None), (None, None), (None, None)]
 
 
 def test_empty_projection() -> None:

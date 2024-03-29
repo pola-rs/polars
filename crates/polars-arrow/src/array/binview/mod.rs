@@ -120,7 +120,7 @@ pub struct BinaryViewArrayGeneric<T: ViewType + ?Sized> {
 
 impl<T: ViewType + ?Sized> PartialEq for BinaryViewArrayGeneric<T> {
     fn eq(&self, other: &Self) -> bool {
-        self.into_iter().zip(other).all(|(l, r)| l == r)
+        self.len() == other.len() && self.into_iter().zip(other).all(|(l, r)| l == r)
     }
 }
 

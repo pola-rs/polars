@@ -236,11 +236,37 @@ class ListNameSpace:
     def median(self) -> Series:
         """Compute the median value of the arrays in the list."""
 
-    def std(self) -> Series:
-        """Compute the std value of the arrays in the list."""
+    def std(self, ddof: int = 1) -> Series:
+        """
+        Compute the std value of the arrays in the list.
 
-    def var(self) -> Series:
-        """Compute the var value of the arrays in the list."""
+        Examples
+        --------
+        >>> s = pl.Series("values", [[-1, 0, 1], [1, 10]])
+        >>> s.list.std()
+        shape: (2,)
+        Series: 'values' [f64]
+        [
+                1.0
+                6.363961
+        ]
+        """
+
+    def var(self, ddof: int = 1) -> Series:
+        """
+        Compute the var value of the arrays in the list.
+
+        Examples
+        --------
+        >>> s = pl.Series("values", [[-1, 0, 1], [1, 10]])
+        >>> s.list.var()
+        shape: (2,)
+        Series: 'values' [f64]
+        [
+                1.0
+                40.5
+        ]
+        """
 
     def sort(self, *, descending: bool = False, nulls_last: bool = False) -> Series:
         """

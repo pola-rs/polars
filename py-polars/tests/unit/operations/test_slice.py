@@ -88,10 +88,13 @@ def test_python_slicing_lazy_frame() -> None:
         slice(None, 2, 2),
         slice(3, None, -1),
         slice(1, None, -2),
+        slice(0, None, -1),
     ):
         # confirm frame slice matches python slice
         assert ldf[py_slice].collect().rows() == ldf.collect().rows()[py_slice]
 
+    assert_frame_equal(ldf[0::-1], ldf.head(1))
+    assert_frame_equal(ldf[2::-1], ldf.head(3).reverse())
     assert_frame_equal(ldf[::-1], ldf.reverse())
     assert_frame_equal(ldf[::-2], ldf.reverse().gather_every(2))
 
@@ -219,3 +222,21 @@ def test_slice_pushdown_literal_projection_14349() -> None:
     plan = q.explain()
     assert plan.index("WITH_COLUMNS") < plan.index("SLICE")
     assert q.collect().height == 0
+
+
+@pytest.mark.parametrize(
+    "input_slice",
+    [
+        (-1, None, -1),
+        (None, 0, -1),
+        (1, -1, 1),
+        (None, -1, None),
+        (1, 2, -1),
+        (-1, 1, 1),
+    ],
+)
+def test_slice_lazy_frame_raises_proper(input_slice: tuple[int | None]) -> None:
+    ldf = pl.LazyFrame({"a": [1, 2, 3]})
+    s = slice(*input_slice)
+    with pytest.raises(ValueError, match="not supported"):
+        ldf[s].collect()

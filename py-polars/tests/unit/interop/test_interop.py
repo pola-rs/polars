@@ -308,7 +308,9 @@ def test_from_dicts() -> None:
 def test_from_dict_no_inference() -> None:
     schema = {"a": pl.String}
     data = [{"a": "aa"}]
-    pl.from_dicts(data, schema_overrides=schema, infer_schema_length=0)
+    df = pl.from_dicts(data, schema_overrides=schema, infer_schema_length=0)
+    assert df.schema == schema
+    assert df.to_dicts() == data
 
 
 def test_from_dicts_schema_override() -> None:
@@ -373,6 +375,20 @@ def test_from_records() -> None:
     df = pl.from_records(data, schema=["a", "b"])
     assert df.shape == (3, 2)
     assert df.rows() == [(1, 4), (2, 5), (3, 6)]
+
+
+# https://github.com/pola-rs/polars/issues/15195
+@pytest.mark.parametrize(
+    "input",
+    [
+        pl.Series([1, 2]),
+        pl.Series([{"a": 1, "b": 2}]),
+        pl.DataFrame({"a": [1, 2], "b": [3, 4]}),
+    ],
+)
+def test_from_records_non_sequence_input(input: Any) -> None:
+    with pytest.raises(TypeError, match="expected data of type Sequence"):
+        pl.from_records(input)
 
 
 def test_from_arrow() -> None:

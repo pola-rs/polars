@@ -1,7 +1,7 @@
-use arrow::chunk::Chunk;
 use arrow::io::ipc::read;
 use arrow::io::ipc::read::{Dictionaries, FileMetadata};
 use arrow::mmap::{mmap_dictionaries_unchecked, mmap_unchecked};
+use arrow::record_batch::RecordBatch;
 use memmap::Mmap;
 
 use super::*;
@@ -57,7 +57,7 @@ impl ArrowReader for MMapChunkIter<'_> {
                 Some(proj) => {
                     let cols = chunk.into_arrays();
                     let arrays = proj.iter().map(|i| cols[*i].clone()).collect();
-                    Chunk::new(arrays)
+                    RecordBatch::new(arrays)
                 },
             };
             Ok(Some(chunk))

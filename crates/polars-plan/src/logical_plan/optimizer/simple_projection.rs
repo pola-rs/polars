@@ -96,20 +96,20 @@ impl OptimizationRule for SimpleProjectionAndCollapse {
             // if there are 2 subsequent caches, flatten them and only take the inner
             Cache {
                 input,
-                count: outer_count,
+                cache_hits: outer_cache_hits,
                 ..
             } if !self.eager => {
                 if let Cache {
                     input: prev_input,
                     id,
-                    count,
+                    cache_hits,
                 } = lp_arena.get(*input)
                 {
                     Some(Cache {
                         input: *prev_input,
                         id: *id,
                         // ensure the counts are updated
-                        count: count.saturating_add(*outer_count),
+                        cache_hits: cache_hits.saturating_add(*outer_cache_hits),
                     })
                 } else {
                     None

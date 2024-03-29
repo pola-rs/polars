@@ -1,4 +1,4 @@
-//! Contains [`Chunk`], a container of [`Array`] where every array has the
+//! Contains [`RecordBatch`], a container of [`Array`] where every array has the
 //! same length.
 
 use polars_error::{polars_bail, PolarsResult};
@@ -6,21 +6,21 @@ use polars_error::{polars_bail, PolarsResult};
 use crate::array::Array;
 
 /// A vector of trait objects of [`Array`] where every item has
-/// the same length, [`Chunk::len`].
+/// the same length, [`RecordBatch::len`].
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Chunk<A: AsRef<dyn Array>> {
+pub struct RecordBatch<A: AsRef<dyn Array>> {
     arrays: Vec<A>,
 }
 
-impl<A: AsRef<dyn Array>> Chunk<A> {
-    /// Creates a new [`Chunk`].
+impl<A: AsRef<dyn Array>> RecordBatch<A> {
+    /// Creates a new [`RecordBatch`].
     /// # Panic
     /// Iff the arrays do not have the same length
     pub fn new(arrays: Vec<A>) -> Self {
         Self::try_new(arrays).unwrap()
     }
 
-    /// Creates a new [`Chunk`].
+    /// Creates a new [`RecordBatch`].
     /// # Error
     /// Iff the arrays do not have the same length
     pub fn try_new(arrays: Vec<A>) -> PolarsResult<Self> {
@@ -39,12 +39,12 @@ impl<A: AsRef<dyn Array>> Chunk<A> {
         Ok(Self { arrays })
     }
 
-    /// returns the [`Array`]s in [`Chunk`]
+    /// returns the [`Array`]s in [`RecordBatch`]
     pub fn arrays(&self) -> &[A] {
         &self.arrays
     }
 
-    /// returns the [`Array`]s in [`Chunk`]
+    /// returns the [`Array`]s in [`RecordBatch`]
     pub fn columns(&self) -> &[A] {
         &self.arrays
     }
@@ -62,20 +62,20 @@ impl<A: AsRef<dyn Array>> Chunk<A> {
         self.len() == 0
     }
 
-    /// Consumes [`Chunk`] into its underlying arrays.
+    /// Consumes [`RecordBatch`] into its underlying arrays.
     /// The arrays are guaranteed to have the same length
     pub fn into_arrays(self) -> Vec<A> {
         self.arrays
     }
 }
 
-impl<A: AsRef<dyn Array>> From<Chunk<A>> for Vec<A> {
-    fn from(c: Chunk<A>) -> Self {
+impl<A: AsRef<dyn Array>> From<RecordBatch<A>> for Vec<A> {
+    fn from(c: RecordBatch<A>) -> Self {
         c.into_arrays()
     }
 }
 
-impl<A: AsRef<dyn Array>> std::ops::Deref for Chunk<A> {
+impl<A: AsRef<dyn Array>> std::ops::Deref for RecordBatch<A> {
     type Target = [A];
 
     #[inline]

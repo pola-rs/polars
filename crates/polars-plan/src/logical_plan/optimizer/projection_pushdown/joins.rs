@@ -41,6 +41,7 @@ pub(super) fn process_asof_join(
     projections_seen: usize,
     lp_arena: &mut Arena<ALogicalPlan>,
     expr_arena: &mut Arena<AExpr>,
+    join_schema: &Schema,
 ) -> PolarsResult<ALogicalPlan> {
     // n = 0 if no projections, so we don't allocate unneeded
     let n = acc_projections.len() * 2;
@@ -152,6 +153,7 @@ pub(super) fn process_asof_join(
                 &mut local_projection,
                 add_local,
                 &options,
+                join_schema,
             );
         }
     }
@@ -198,6 +200,7 @@ pub(super) fn process_join(
     projections_seen: usize,
     lp_arena: &mut Arena<ALogicalPlan>,
     expr_arena: &mut Arena<AExpr>,
+    join_schema: &Schema,
 ) -> PolarsResult<ALogicalPlan> {
     #[cfg(feature = "asof_join")]
     if matches!(options.args.how, JoinType::AsOf(_)) {
@@ -213,6 +216,7 @@ pub(super) fn process_join(
             projections_seen,
             lp_arena,
             expr_arena,
+            join_schema,
         );
     }
 
@@ -299,6 +303,7 @@ pub(super) fn process_join(
                 &mut local_projection,
                 add_local,
                 &options,
+                join_schema,
             );
         }
     }
@@ -345,6 +350,7 @@ fn process_projection(
     local_projection: &mut Vec<ColumnNode>,
     add_local: bool,
     options: &JoinOptions,
+    join_schema: &Schema,
 ) {
     // Path for renamed columns due to the join. The column name of the left table
     // stays as is, the column of the right will have the "_right" suffix.
@@ -373,7 +379,7 @@ fn process_projection(
         let suffix = options.args.suffix();
         // If _right suffix exists we need to push a projection down without this
         // suffix.
-        if leaf_column_name.ends_with(suffix) {
+        if leaf_column_name.ends_with(suffix) && join_schema.contains(leaf_column_name.as_ref()) {
             // downwards name is the name without the _right i.e. "foo".
             let (downwards_name, _) =
                 leaf_column_name.split_at(leaf_column_name.len() - suffix.len());

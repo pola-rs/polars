@@ -49,27 +49,3 @@ impl<'a, O: Offset> ListArray<O> {
         NonNullValuesIter::new(self, self.validity())
     }
 }
-
-struct Iter<T, I: Iterator<Item = Option<T>>> {
-    current: i32,
-    offsets: std::vec::IntoIter<i32>,
-    values: I,
-}
-
-impl<T, I: Iterator<Item = Option<T>> + Clone> Iterator for Iter<T, I> {
-    type Item = Option<std::iter::Take<std::iter::Skip<I>>>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let next = self.offsets.next();
-        next.map(|next| {
-            let length = next - self.current;
-            let iter = self
-                .values
-                .clone()
-                .skip(self.current as usize)
-                .take(length as usize);
-            self.current = next;
-            Some(iter)
-        })
-    }
-}

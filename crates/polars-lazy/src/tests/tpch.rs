@@ -85,6 +85,15 @@ fn test_q2() -> PolarsResult<()> {
         .limit(100)
         .with_comm_subplan_elim(true);
 
+    let (node, lp_arena, _) = q.clone().to_alp_optimized().unwrap();
+    assert_eq!(
+        (&lp_arena)
+            .iter(node)
+            .filter(|(_, alp)| matches!(alp, ALogicalPlan::Cache { .. }))
+            .count(),
+        2
+    );
+
     let out = q.collect()?;
     let schema = Schema::from_iter([
         Field::new("s_acctbal", DataType::Float64),

@@ -16,6 +16,7 @@ The following methods are available under the `expr.arr` attribute.
     Expr.arr.std
     Expr.arr.to_list
     Expr.arr.unique
+    Expr.arr.n_unique
     Expr.arr.var
     Expr.arr.all
     Expr.arr.any

@@ -86,7 +86,7 @@ pub fn impl_replace_time_zone_fast(
     to_tz: &chrono_tz::Tz,
 ) -> PolarsResult<Int64Chunked> {
     match ambiguous {
-        Some(ambiguous) => datetime.0.try_apply_values(|timestamp| {
+        Some(ambiguous) => datetime.0.try_apply_nonnull_values_generic(|timestamp| {
             let ndt = timestamp_to_datetime(timestamp);
             Ok(datetime_to_timestamp(
                 convert_to_naive_local(

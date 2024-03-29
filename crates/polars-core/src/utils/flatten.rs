@@ -106,7 +106,7 @@ pub fn flatten_nullable<S: AsRef<[NullableIdxSize]> + Send + Sync>(
 
             for id in s {
                 if id.is_null_idx() {
-                    unsafe { validity.set_bit_unchecked(count, false) };
+                    unsafe { validity.set_unchecked(count, false) };
                 }
 
                 count += 1;

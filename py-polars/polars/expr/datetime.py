@@ -1434,12 +1434,12 @@ class ExprDateTimeNameSpace:
         ...     .to_frame()
         ... )
         >>> df.with_columns(
-        ...     pl.col("date").dt.timestamp().alias("timestamp_ns"),
+        ...     pl.col("date").dt.timestamp().alias("timestamp_us"),
         ...     pl.col("date").dt.timestamp("ms").alias("timestamp_ms"),
         ... )
         shape: (3, 3)
         ┌────────────┬─────────────────┬──────────────┐
-        │ date       ┆ timestamp_ns    ┆ timestamp_ms │
+        │ date       ┆ timestamp_us    ┆ timestamp_ms │
         │ ---        ┆ ---             ┆ ---          │
         │ date       ┆ i64             ┆ i64          │
         ╞════════════╪═════════════════╪══════════════╡

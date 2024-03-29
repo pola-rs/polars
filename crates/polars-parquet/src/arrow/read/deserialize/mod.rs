@@ -127,7 +127,7 @@ fn is_primitive(data_type: &ArrowDataType) -> bool {
     )
 }
 
-fn columns_to_iter_recursive<'a, I: 'a>(
+fn columns_to_iter_recursive<'a, I>(
     mut columns: Vec<I>,
     mut types: Vec<&PrimitiveType>,
     field: Field,
@@ -136,7 +136,7 @@ fn columns_to_iter_recursive<'a, I: 'a>(
     chunk_size: Option<usize>,
 ) -> PolarsResult<NestedArrayIter<'a>>
 where
-    I: PagesIter,
+    I: 'a + PagesIter,
 {
     if init.is_empty() && is_primitive(&field.data_type) {
         return Ok(Box::new(
@@ -197,7 +197,7 @@ pub fn n_columns(data_type: &ArrowDataType) -> usize {
 /// For nested types, `columns` must be composed by all parquet columns with associated types `types`.
 ///
 /// The arrays are guaranteed to be at most of size `chunk_size` and data type `field.data_type`.
-pub fn column_iter_to_arrays<'a, I: 'a>(
+pub fn column_iter_to_arrays<'a, I>(
     columns: Vec<I>,
     types: Vec<&PrimitiveType>,
     field: Field,
@@ -205,7 +205,7 @@ pub fn column_iter_to_arrays<'a, I: 'a>(
     num_rows: usize,
 ) -> PolarsResult<ArrayIter<'a>>
 where
-    I: PagesIter,
+    I: 'a + PagesIter,
 {
     Ok(Box::new(
         columns_to_iter_recursive(columns, types, field, vec![], num_rows, chunk_size)?

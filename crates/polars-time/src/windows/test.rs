@@ -148,8 +148,8 @@ fn test_groups_large_interval() {
         false,
         Default::default(),
     );
-    assert_eq!(groups.len(), 2);
-    assert_eq!(groups[1], [2, 2]);
+    assert_eq!(groups.len(), 3);
+    assert_eq!(groups[1], [1, 1]);
 }
 
 #[test]
@@ -167,7 +167,9 @@ fn test_offset() {
         Duration::parse("-2m"),
     );
 
-    let b = w.get_earliest_bounds_ns(t, None).unwrap();
+    let b = w
+        .get_earliest_bounds_ns(t, ClosedWindow::Left, None)
+        .unwrap();
     let start = NaiveDate::from_ymd_opt(2020, 1, 1)
         .unwrap()
         .and_hms_opt(23, 58, 0)
@@ -209,7 +211,9 @@ fn test_boundaries() {
     );
 
     // earliest bound is first datapoint: 2021-12-16 00:00:00
-    let b = w.get_earliest_bounds_ns(ts[0], None).unwrap();
+    let b = w
+        .get_earliest_bounds_ns(ts[0], ClosedWindow::Both, None)
+        .unwrap();
     assert_eq!(b.start, start.and_utc().timestamp_nanos_opt().unwrap());
 
     // test closed: "both" (includes both ends of the interval)
@@ -340,9 +344,10 @@ fn test_boundaries() {
         false,
         Default::default(),
     );
-    assert_eq!(groups[0], [1, 2]); // 00:00:00 -> 00:30:00
-    assert_eq!(groups[1], [3, 2]); // 01:00:00 -> 01:30:00
-    assert_eq!(groups[2], [5, 2]); // 02:00:00 -> 02:30:00
+    assert_eq!(groups[0], [0, 1]); // (2021-12-15 23:30, 2021-12-16 00:00]
+    assert_eq!(groups[1], [1, 2]); // (2021-12-16 00:00, 2021-12-16 00:30]
+    assert_eq!(groups[2], [3, 2]); // (2021-12-16 00:30, 2021-12-16 01:00]
+    assert_eq!(groups[3], [5, 2]); // (2021-12-16 01:00, 2021-12-16 01:30]
 
     // test closed: "none" (should not include left or right end of interval)
     let (groups, _, _) = group_by_windows(
@@ -388,14 +393,18 @@ fn test_boundaries_2() {
     // period 1h
     // offset 30m
     let offset = Duration::parse("30m");
-    let w = Window::new(Duration::parse("2h"), Duration::parse("1h"), offset);
+    let every = Duration::parse("2h");
+    let w = Window::new(every, Duration::parse("1h"), offset);
 
     // earliest bound is first datapoint: 2021-12-16 00:00:00 + 30m offset: 2021-12-16 00:30:00
-    let b = w.get_earliest_bounds_ns(ts[0], None).unwrap();
+    // We then shift back by `every` (2h): 2021-12-15 22:30:00
+    let b = w
+        .get_earliest_bounds_ns(ts[0], ClosedWindow::Both, None)
+        .unwrap();
 
     assert_eq!(
         b.start,
-        start.and_utc().timestamp_nanos_opt().unwrap() + offset.duration_ns()
+        start.and_utc().timestamp_nanos_opt().unwrap() + offset.duration_ns() - every.duration_ns()
     );
 
     let (groups, lower, higher) = group_by_windows(
@@ -520,7 +529,9 @@ fn test_boundaries_ms() {
     );
 
     // earliest bound is first datapoint: 2021-12-16 00:00:00
-    let b = w.get_earliest_bounds_ms(ts[0], None).unwrap();
+    let b = w
+        .get_earliest_bounds_ms(ts[0], ClosedWindow::Both, None)
+        .unwrap();
     assert_eq!(b.start, start.and_utc().timestamp_millis());
 
     // test closed: "both" (includes both ends of the interval)
@@ -651,9 +662,10 @@ fn test_boundaries_ms() {
         false,
         Default::default(),
     );
-    assert_eq!(groups[0], [1, 2]); // 00:00:00 -> 00:30:00
-    assert_eq!(groups[1], [3, 2]); // 01:00:00 -> 01:30:00
-    assert_eq!(groups[2], [5, 2]); // 02:00:00 -> 02:30:00
+    assert_eq!(groups[0], [0, 1]); // (2021-12-15 23:30, 2021-12-16 00:00]
+    assert_eq!(groups[1], [1, 2]); // (2021-12-16 00:00, 2021-12-16 00:30]
+    assert_eq!(groups[2], [3, 2]); // (2021-12-16 00:30, 2021-12-16 01:00]
+    assert_eq!(groups[3], [5, 2]); // (2021-12-16 01:00, 2021-12-16 01:30]
 
     // test closed: "none" (should not include left or right end of interval)
     let (groups, _, _) = group_by_windows(

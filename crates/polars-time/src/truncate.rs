@@ -30,7 +30,8 @@ impl PolarsTruncate for DatetimeChunked {
                     }
 
                     let w = Window::new(every, every, offset);
-                    self.0.try_apply_values(|timestamp| func(&w, timestamp, tz))
+                    self.0
+                        .try_apply_nonnull_values_generic(|timestamp| func(&w, timestamp, tz))
                 } else {
                     Ok(Int64Chunked::full_null(self.name(), self.len()))
                 }
@@ -71,7 +72,7 @@ impl PolarsTruncate for DateChunked {
                     }
 
                     let w = Window::new(every, every, offset);
-                    self.try_apply_values(|t| {
+                    self.try_apply_nonnull_values_generic(|t| {
                         const MSECS_IN_DAY: i64 = MILLISECONDS * SECONDS_IN_DAY;
                         Ok((w.truncate_ms(MSECS_IN_DAY * t as i64, None)? / MSECS_IN_DAY) as i32)
                     })

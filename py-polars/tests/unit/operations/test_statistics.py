@@ -177,3 +177,10 @@ def test_count() -> None:
     ).cast(pl.UInt32)
     assert_frame_equal(lf_result, expected)
     assert_frame_equal(df_result, expected.collect())
+
+
+def test_kurtosis_same_vals() -> None:
+    df = pl.DataFrame({"a": [1.0042855193121334] * 11})
+    assert_frame_equal(
+        df.select(pl.col("a").kurtosis()), pl.select(a=pl.lit(float("nan")))
+    )

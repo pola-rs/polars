@@ -4,7 +4,6 @@ use std::sync::RwLock;
 
 use polars_core::config;
 use polars_core::utils::accumulate_dataframes_vertical;
-#[cfg(feature = "cloud")]
 use polars_io::cloud::CloudOptions;
 use polars_io::predicates::apply_predicate;
 use polars_io::{is_cloud_url, RowIndex};
@@ -18,7 +17,6 @@ pub struct IpcExec {
     pub(crate) predicate: Option<Arc<dyn PhysicalExpr>>,
     pub(crate) options: IpcScanOptions,
     pub(crate) file_options: FileScanOptions,
-    #[cfg(feature = "cloud")]
     pub(crate) cloud_options: Option<CloudOptions>,
     pub(crate) metadata: Option<arrow::io::ipc::read::FileMetadata>,
 }
@@ -270,16 +268,6 @@ fn finish_index_and_dfs(
 
 impl Executor for IpcExec {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
-        let finger_print = FileFingerPrint {
-            paths: Arc::clone(&self.paths),
-            #[allow(clippy::useless_asref)]
-            predicate: self
-                .predicate
-                .as_ref()
-                .map(|ae| ae.as_expression().unwrap().clone()),
-            slice: (0, self.file_options.n_rows),
-        };
-
         let profile_name = if state.has_node_timer() {
             let mut ids = vec![self.paths[0].to_string_lossy().into()];
             if self.predicate.is_some() {
@@ -291,15 +279,6 @@ impl Executor for IpcExec {
             Cow::Borrowed("")
         };
 
-        state.record(
-            || {
-                state
-                    .file_cache
-                    .read(finger_print, self.file_options.file_counter, &mut || {
-                        self.read(state.verbose())
-                    })
-            },
-            profile_name,
-        )
+        state.record(|| self.read(state.verbose()), profile_name)
     }
 }

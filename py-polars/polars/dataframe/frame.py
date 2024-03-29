@@ -3475,7 +3475,7 @@ class DataFrame:
                 )
                 raise ModuleNotFoundError(msg) from exc
 
-            from polars.io.database._uri import _open_adbc_connection
+            from polars.io.database._utils import _open_adbc_connection
 
             if if_table_exists == "fail":
                 # if the table exists, 'create' will raise an error,
@@ -5554,8 +5554,8 @@ class DataFrame:
         - [start + 2*every, start + 2*every + period)
         - ...
 
-        where `start` is determined by `start_by`, `offset`, and `every` (see parameter
-        descriptions below).
+        where `start` is determined by `start_by`, `offset`, `every`, and the earliest
+        datapoint. See the `start_by` argument description for details.
 
         .. warning::
             The index column must be sorted in ascending order. If `by` is passed, then
@@ -5577,7 +5577,7 @@ class DataFrame:
         period
             length of the window, if None it will equal 'every'
         offset
-            offset of the window, only takes effect if `start_by` is `'window'`.
+            offset of the window, does not take effect if `start_by` is 'datapoint'.
             Defaults to negative `every`.
         truncate
             truncate the time value to the window lower bound
@@ -5613,6 +5613,9 @@ class DataFrame:
               * 'tuesday': Start the window on the Tuesday before the first data point.
               * ...
               * 'sunday': Start the window on the Sunday before the first data point.
+
+              The resulting window is then shifted back until the earliest datapoint
+              is in or in front of it.
         check_sorted
             Check whether `index_column` is sorted (or, if `group_by` is given,
             check whether it's sorted within each group).
@@ -9724,8 +9727,8 @@ class DataFrame:
             if not index_idxs:
                 msg = f"no columns found for key: {key_tuple!r}"
                 raise ValueError(msg)
-            get_data = itemgetter(*data_idxs)  # type: ignore[assignment]
-            get_key = itemgetter(*index_idxs)  # type: ignore[assignment]
+            get_data = itemgetter(*data_idxs)  # type: ignore[arg-type]
+            get_key = itemgetter(*index_idxs)  # type: ignore[arg-type]
 
         # if unique, we expect to write just one entry per key; otherwise, we're
         # returning a list of rows for each key, so append into a defaultdict.
@@ -10694,6 +10697,9 @@ class DataFrame:
               * 'tuesday': Start the window on the Tuesday before the first data point.
               * ...
               * 'sunday': Start the window on the Sunday before the first data point.
+
+              The resulting window is then shifted back until the earliest datapoint
+              is in or in front of it.
         check_sorted
             Check whether `index_column` is sorted (or, if `by` is given,
             check whether it's sorted within each group).
