@@ -3,7 +3,6 @@ use std::hash::{Hash, Hasher};
 #[cfg(feature = "temporal")]
 use polars_core::export::chrono::{Duration as ChronoDuration, NaiveDate, NaiveDateTime};
 use polars_core::prelude::*;
-use polars_core::utils::NoNull;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -123,7 +122,7 @@ impl LiteralValue {
                 high,
                 data_type,
             } => {
-                let s = match data_type {
+                let opt_s = match data_type {
                     DataType::Int32 => {
                         if *low < i32::MIN as i64 || *high > i32::MAX as i64 {
                             return None;
@@ -131,14 +130,12 @@ impl LiteralValue {
 
                         let low = *low as i32;
                         let high = *high as i32;
-                        let ca: NoNull<Int32Chunked> = (low..high).collect();
-                        ca.into_inner().into_series()
+                        new_int_range::<Int32Type>(low, high, 1, "range").ok()
                     },
                     DataType::Int64 => {
                         let low = *low;
                         let high = *high;
-                        let ca: NoNull<Int64Chunked> = (low..high).collect();
-                        ca.into_inner().into_series()
+                        new_int_range::<Int64Type>(low, high, 1, "range").ok()
                     },
                     DataType::UInt32 => {
                         if *low < 0 || *high > u32::MAX as i64 {
@@ -146,12 +143,14 @@ impl LiteralValue {
                         }
                         let low = *low as u32;
                         let high = *high as u32;
-                        let ca: NoNull<UInt32Chunked> = (low..high).collect();
-                        ca.into_inner().into_series()
+                        new_int_range::<UInt32Type>(low, high, 1, "range").ok()
                     },
                     _ => return None,
                 };
-                AnyValue::List(s)
+                match opt_s {
+                    Some(s) => AnyValue::List(s),
+                    None => return None,
+                }
             },
             Binary(v) => AnyValue::Binary(v),
         };
