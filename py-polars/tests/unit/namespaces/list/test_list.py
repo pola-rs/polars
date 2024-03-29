@@ -21,7 +21,7 @@ def test_list_arr_get() -> None:
     assert_series_equal(out, expected)
     out = pl.select(pl.lit(a).list.first()).to_series()
     assert_series_equal(out, expected)
-    
+
     out = a.list.get(-1)
     expected = pl.Series("a", [3, 5, 9])
     assert_series_equal(out, expected)
@@ -32,10 +32,6 @@ def test_list_arr_get() -> None:
 
     with pytest.raises(pl.ComputeError, match="get index is out of bounds"):
         a.list.get(3)
-        
-    b = pl.Series("b", [[1, 2, 3], [4], []])
-    with pytest.raises(pl.ComputeError, match="get index is out of bounds"):
-        b.list.first()
 
     # Null index.
     out_df = a.to_frame().select(pl.col.a.list.get(pl.lit(None)))
@@ -43,7 +39,7 @@ def test_list_arr_get() -> None:
     assert_frame_equal(out_df, expected_df)
 
     a = pl.Series("a", [[1, 2, 3], [4, 5], [6, 7, 8, 9]])
-    
+
     with pytest.raises(pl.ComputeError, match="get index is out of bounds"):
         a.list.get(-3)
 
@@ -59,7 +55,7 @@ def test_list_arr_get() -> None:
 
     with pytest.raises(pl.ComputeError, match="get index is out of bounds"):
         df.select([pl.col("cars").list.get("indexes")]).to_dict(as_series=False)
-        
+
     # exact on oob boundary
     df = pl.DataFrame(
         {
@@ -69,17 +65,15 @@ def test_list_arr_get() -> None:
     )
 
     with pytest.raises(pl.ComputeError, match="get index is out of bounds"):
-        df.select(pl.col("lists").list.get(3)).to_dict(as_series=False) == {
-            "lists": [None, None, 4]
-        }
-        df.select(pl.col("lists").list.get(pl.col("index"))).to_dict(
-            as_series=False
-        )
-    
+        df.select(pl.col("lists").list.get(3)).to_dict(as_series=False)
+
+    with pytest.raises(pl.ComputeError, match="get index is out of bounds"):
+        df.select(pl.col("lists").list.get(pl.col("index"))).to_dict(as_series=False)
+
 
 def test_list_arr_get_null_on_oob() -> None:
     a = pl.Series("a", [[1, 2, 3], [4, 5], [6, 7, 8, 9]])
-    out = a.list.get(0, null_on_oob=True)
+    out = a.list.first()
     expected = pl.Series("a", [1, 4, 6])
     assert_series_equal(out, expected)
     out = a.list[0]
@@ -128,9 +122,9 @@ def test_list_arr_get_null_on_oob() -> None:
     # get by indexes where some are out of bounds
     df = pl.DataFrame({"cars": [[1, 2, 3], [2, 3], [4], []], "indexes": [-2, 1, -3, 0]})
 
-    assert df.select([pl.col("cars").list.get("indexes", null_on_oob=True)]).to_dict(as_series=False) == {
-        "cars": [2, 3, None, None]
-    }
+    assert df.select([pl.col("cars").list.get("indexes", null_on_oob=True)]).to_dict(
+        as_series=False
+    ) == {"cars": [2, 3, None, None]}
     # exact on oob boundary
     df = pl.DataFrame(
         {
@@ -139,12 +133,12 @@ def test_list_arr_get_null_on_oob() -> None:
         }
     )
 
-    assert df.select(pl.col("lists").list.get(3, null_on_oob=True)).to_dict(as_series=False) == {
-        "lists": [None, None, 4]
-    }
-    assert df.select(pl.col("lists").list.get(pl.col("index"), null_on_oob=True)).to_dict(
+    assert df.select(pl.col("lists").list.get(3, null_on_oob=True)).to_dict(
         as_series=False
     ) == {"lists": [None, None, 4]}
+    assert df.select(
+        pl.col("lists").list.get(pl.col("index"), null_on_oob=True)
+    ).to_dict(as_series=False) == {"lists": [None, None, 4]}
 
 
 def test_list_categorical_get() -> None:
@@ -156,7 +150,9 @@ def test_list_categorical_get() -> None:
         }
     )
     expected = pl.Series("actions", ["a", "c", None, None], dtype=pl.Categorical)
-    assert_series_equal(df["actions"].list.get(0, null_on_oob=True), expected, categorical_as_str=True)
+    assert_series_equal(
+        df["actions"].list.get(0, null_on_oob=True), expected, categorical_as_str=True
+    )
 
 
 def test_contains() -> None:
@@ -224,8 +220,8 @@ def test_list_arr_empty() -> None:
 
     out = df.select(
         [
-            pl.col("cars").list.get(0, null_on_oob=True).alias("cars_first"),
-            pl.when(pl.col("cars").list.get(0, null_on_oob=True) == 2)
+            pl.col("cars").list.first().alias("cars_first"),
+            pl.when(pl.col("cars").list.first() == 2)
             .then(1)
             .when(pl.col("cars").list.contains(2))
             .then(2)

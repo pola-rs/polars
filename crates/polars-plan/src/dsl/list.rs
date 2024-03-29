@@ -187,12 +187,12 @@ impl ListNameSpace {
 
     /// Get first item of every sublist.
     pub fn first(self) -> Expr {
-        self.get(lit(0i64), false)
+        self.get(lit(0i64), true)
     }
 
     /// Get last item of every sublist.
     pub fn last(self) -> Expr {
-        self.get(lit(-1i64), false)
+        self.get(lit(-1i64), true)
     }
 
     /// Join all string items in a sublist and place a separator between them.
