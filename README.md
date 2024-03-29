@@ -197,9 +197,11 @@ You can also install a subset of all optional dependencies.
 ```sh
 pip install 'polars[numpy,pandas,pyarrow]'
 ```
+
 See the [User Guide](https://docs.pola.rs/user-guide/installation/#feature-flags) for more details on optional dependencies
 
 To see the current Polars version and a full list of its optional dependencies, run:
+
 ```python
 pl.show_versions()
 ```
