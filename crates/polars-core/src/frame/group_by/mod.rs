@@ -74,6 +74,7 @@ impl DataFrame {
                     rolling: false,
                 })
             } else {
+                assert!(sorted);
                 let rows = if multithreaded {
                     encode_rows_vertical_par_default(&by)
                 } else {

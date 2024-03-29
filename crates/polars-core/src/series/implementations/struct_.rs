@@ -272,9 +272,8 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         if self.len() == 1 {
             return Ok(IdxCa::new_vec(self.name(), vec![0 as IdxSize]));
         }
-        // TODO! try row encoding
         let main_thread = POOL.current_thread_index().is_none();
-        let groups = self.group_tuples(main_thread, false)?;
+        let groups = self.group_tuples(main_thread, true)?;
         let first = groups.take_group_firsts();
         Ok(IdxCa::from_vec(self.name(), first))
     }
