@@ -1,3 +1,5 @@
+use recursive::recursive;
+
 use polars_core::prelude::*;
 use polars_utils::vec::ConvertVec;
 
@@ -62,7 +64,8 @@ fn to_aexprs(input: Vec<Expr>, arena: &mut Arena<AExpr>, state: &mut ConversionS
         .collect()
 }
 
-/// converts expression to AExpr and adds it to the arena, which uses an arena (Vec) for allocation
+/// Converts expression to AExpr and adds it to the arena, which uses an arena (Vec) for allocation.
+#[recursive]
 fn to_aexpr_impl(expr: Expr, arena: &mut Arena<AExpr>, state: &mut ConversionState) -> Node {
     let v = match expr {
         Expr::Explode(expr) => AExpr::Explode(to_aexpr_impl(*expr, arena, state)),
