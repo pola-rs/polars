@@ -1,7 +1,6 @@
-use recursive::recursive;
-
 use polars_core::prelude::*;
 use polars_utils::vec::ConvertVec;
+use recursive::recursive;
 
 use crate::constants::get_len_name;
 use crate::prelude::*;
