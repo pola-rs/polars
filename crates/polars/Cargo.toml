@@ -159,6 +159,7 @@ extract_jsonpath = [
   "polars-lazy?/extract_jsonpath",
 ]
 find_many = ["polars-plan/find_many"]
+flight = ["arrow/io_flight", "polars-io/ipc_streaming"]
 fused = ["polars-ops/fused", "polars-lazy?/fused"]
 interpolate = ["polars-ops/interpolate", "polars-lazy?/interpolate"]
 is_between = ["polars-lazy?/is_between", "polars-ops/is_between"]

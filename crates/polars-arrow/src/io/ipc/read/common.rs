@@ -1,7 +1,8 @@
 use std::collections::VecDeque;
-use std::io::{Read, Seek};
+use std::io::{Read, Seek, SeekFrom};
 
 use ahash::AHashMap;
+use arrow_format::ipc::planus::ReadAsRoot;
 use polars_error::{polars_bail, polars_err, PolarsResult};
 
 use super::deserialize::{read, skip};
@@ -68,6 +69,47 @@ impl<'a, A, I: Iterator<Item = A>> Iterator for ProjectionIter<'a, A, I> {
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.iter.size_hint()
     }
+}
+
+pub(super) fn read_ipc_message_from_block<'a, R: Read + Seek>(
+    reader: &mut R,
+    block: &arrow_format::ipc::Block,
+    scratch: &'a mut Vec<u8>,
+) -> PolarsResult<arrow_format::ipc::MessageRef<'a>> {
+    let offset: u64 = block
+        .offset
+        .try_into()
+        .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?;
+    reader.seek(SeekFrom::Start(offset))?;
+    read_ipc_message(reader, scratch)
+}
+
+/// Read an encapsulated IPC Message from the reader
+pub(super) fn read_ipc_message<'a, R: Read>(
+    reader: &mut R,
+    scratch: &'a mut Vec<u8>,
+) -> PolarsResult<arrow_format::ipc::MessageRef<'a>> {
+    let mut message_size: [u8; 4] = [0; 4];
+
+    reader.read_exact(&mut message_size)?;
+    if message_size == crate::io::ipc::CONTINUATION_MARKER {
+        reader.read_exact(&mut message_size)?;
+    };
+    let message_length = i32::from_le_bytes(message_size);
+
+    let message_length: usize = message_length
+        .try_into()
+        .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?;
+
+    scratch.clear();
+    scratch.try_reserve(message_length)?;
+    reader
+        .by_ref()
+        .take(message_length as u64)
+        .read_to_end(scratch)?;
+
+    arrow_format::ipc::MessageRef::read_as_root(scratch)
+        .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferMessage(err)))
 }
 
 /// Returns a [`RecordBatch`] from a reader.

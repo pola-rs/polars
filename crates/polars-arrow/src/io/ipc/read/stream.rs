@@ -28,30 +28,9 @@ pub struct StreamMetadata {
 
 /// Reads the metadata of the stream
 pub fn read_stream_metadata<R: Read>(reader: &mut R) -> PolarsResult<StreamMetadata> {
-    // determine metadata length
-    let mut meta_size: [u8; 4] = [0; 4];
-    reader.read_exact(&mut meta_size)?;
-    let meta_length = {
-        // If a continuation marker is encountered, skip over it and read
-        // the size from the next four bytes.
-        if meta_size == CONTINUATION_MARKER {
-            reader.read_exact(&mut meta_size)?;
-        }
-        i32::from_le_bytes(meta_size)
-    };
-
-    let length: usize = meta_length
-        .try_into()
-        .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?;
-
     let mut buffer = vec![];
-    buffer.try_reserve(length)?;
-    reader
-        .by_ref()
-        .take(length as u64)
-        .read_to_end(&mut buffer)?;
-
-    deserialize_stream_metadata(&buffer)
+    let message = read_ipc_message(reader, &mut buffer)?;
+    deserialize_stream_metadata(&message)
 }
 
 /// Encodes the stream's status after each read.

@@ -35,6 +35,8 @@ pub use file::{
 };
 use polars_utils::aliases::PlHashMap;
 pub use reader::FileReader;
+#[cfg(feature = "io_flight")]
+pub use reader::FlightFileReader;
 pub use schema::deserialize_schema;
 pub use stream::{read_stream_metadata, StreamMetadata, StreamReader, StreamState};
 
