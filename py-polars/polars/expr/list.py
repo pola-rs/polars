@@ -505,7 +505,11 @@ class ExprListNameSpace:
         other_list.insert(0, wrap_expr(self._pyexpr))
         return F.concat_list(other_list)
 
-    def get(self, index: int | Expr | str) -> Expr:
+    def get(self,
+            index: int | Expr | str,
+            *,
+            null_on_oob: bool = False,
+        ) -> Expr:
         """
         Get the value by index in the sublists.
 
@@ -534,7 +538,7 @@ class ExprListNameSpace:
         └───────────┴──────┘
         """
         index = parse_as_expression(index)
-        return wrap_expr(self._pyexpr.list_get(index))
+        return wrap_expr(self._pyexpr.list_get(index, null_on_oob))
 
     def gather(
         self,

@@ -151,9 +151,9 @@ impl ListNameSpace {
     }
 
     /// Get items in every sublist by index.
-    pub fn get(self, index: Expr) -> Expr {
+    pub fn get(self, index: Expr, null_on_oob: bool) -> Expr {
         self.0.map_many_private(
-            FunctionExpr::ListExpr(ListFunction::Get),
+            FunctionExpr::ListExpr(ListFunction::Get(null_on_oob)),
             &[index],
             false,
             false,
@@ -187,12 +187,12 @@ impl ListNameSpace {
 
     /// Get first item of every sublist.
     pub fn first(self) -> Expr {
-        self.get(lit(0i64))
+        self.get(lit(0i64), false)
     }
 
     /// Get last item of every sublist.
     pub fn last(self) -> Expr {
-        self.get(lit(-1i64))
+        self.get(lit(-1i64), false)
     }
 
     /// Join all string items in a sublist and place a separator between them.

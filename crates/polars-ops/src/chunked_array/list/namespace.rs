@@ -342,8 +342,16 @@ pub trait ListNameSpaceImpl: AsList {
     /// So index `0` would return the first item of every sublist
     /// and index `-1` would return the last item of every sublist
     /// if an index is out of bounds, it will return a `None`.
-    fn lst_get(&self, idx: i64) -> PolarsResult<Series> {
+    fn lst_get(&self, idx: i64, null_on_oob: bool) -> PolarsResult<Series> {
         let ca = self.as_list();
+        if !null_on_oob && ca
+            .iter()
+            .any(|sublist| {
+                sublist.and_then(|s| idx.negative_to_usize(s.len()).map(|idx| idx as IdxSize)).is_none()
+            }) {
+            polars_bail!(ComputeError: "get index is out of bounds");
+        }
+
         let chunks = ca
             .downcast_iter()
             .map(|arr| sublist_get(arr, idx))

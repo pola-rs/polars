@@ -21,7 +21,7 @@ def test_list_arr_get() -> None:
     assert_series_equal(out, expected)
     out = pl.select(pl.lit(a).list.first()).to_series()
     assert_series_equal(out, expected)
-
+    
     out = a.list.get(-1)
     expected = pl.Series("a", [3, 5, 9])
     assert_series_equal(out, expected)
@@ -30,10 +30,12 @@ def test_list_arr_get() -> None:
     out = pl.select(pl.lit(a).list.last()).to_series()
     assert_series_equal(out, expected)
 
-    # Out of bounds index.
-    out = a.list.get(3)
-    expected = pl.Series("a", [None, None, 9])
-    assert_series_equal(out, expected)
+    with pytest.raises(pl.ComputeError, match="get index is out of bounds"):
+        a.list.get(3)
+        
+    b = pl.Series("b", [[1, 2, 3], [4], []])
+    with pytest.raises(pl.ComputeError, match="get index is out of bounds"):
+        b.list.first()
 
     # Null index.
     out_df = a.to_frame().select(pl.col.a.list.get(pl.lit(None)))
@@ -41,14 +43,80 @@ def test_list_arr_get() -> None:
     assert_frame_equal(out_df, expected_df)
 
     a = pl.Series("a", [[1, 2, 3], [4, 5], [6, 7, 8, 9]])
-    out = a.list.get(-3)
+    
+    with pytest.raises(pl.ComputeError, match="get index is out of bounds"):
+        a.list.get(-3)
+
+    with pytest.raises(pl.ComputeError, match="get index is out of bounds"):
+        pl.DataFrame(
+            {"a": [[1], [2], [3], [4, 5, 6], [7, 8, 9], [None, 11]]}
+        ).with_columns(
+            [pl.col("a").list.get(i).alias(f"get_{i}") for i in range(4)]
+        ).to_dict(as_series=False)
+
+    # get by indexes where some are out of bounds
+    df = pl.DataFrame({"cars": [[1, 2, 3], [2, 3], [4], []], "indexes": [-2, 1, -3, 0]})
+
+    with pytest.raises(pl.ComputeError, match="get index is out of bounds"):
+        df.select([pl.col("cars").list.get("indexes")]).to_dict(as_series=False)
+        
+    # exact on oob boundary
+    df = pl.DataFrame(
+        {
+            "index": [3, 3, 3],
+            "lists": [[3, 4, 5], [4, 5, 6], [7, 8, 9, 4]],
+        }
+    )
+
+    with pytest.raises(pl.ComputeError, match="get index is out of bounds"):
+        df.select(pl.col("lists").list.get(3)).to_dict(as_series=False) == {
+            "lists": [None, None, 4]
+        }
+        df.select(pl.col("lists").list.get(pl.col("index"))).to_dict(
+            as_series=False
+        )
+    
+
+def test_list_arr_get_null_on_oob() -> None:
+    a = pl.Series("a", [[1, 2, 3], [4, 5], [6, 7, 8, 9]])
+    out = a.list.get(0, null_on_oob=True)
+    expected = pl.Series("a", [1, 4, 6])
+    assert_series_equal(out, expected)
+    out = a.list[0]
+    expected = pl.Series("a", [1, 4, 6])
+    assert_series_equal(out, expected)
+    out = a.list.first()
+    assert_series_equal(out, expected)
+    out = pl.select(pl.lit(a).list.first()).to_series()
+    assert_series_equal(out, expected)
+
+    out = a.list.get(-1, null_on_oob=True)
+    expected = pl.Series("a", [3, 5, 9])
+    assert_series_equal(out, expected)
+    out = a.list.last()
+    assert_series_equal(out, expected)
+    out = pl.select(pl.lit(a).list.last()).to_series()
+    assert_series_equal(out, expected)
+
+    # Out of bounds index.
+    out = a.list.get(3, null_on_oob=True)
+    expected = pl.Series("a", [None, None, 9])
+    assert_series_equal(out, expected)
+
+    # Null index.
+    out_df = a.to_frame().select(pl.col.a.list.get(pl.lit(None), null_on_oob=True))
+    expected_df = pl.Series("a", [None, None, None], dtype=pl.Int64).to_frame()
+    assert_frame_equal(out_df, expected_df)
+
+    a = pl.Series("a", [[1, 2, 3], [4, 5], [6, 7, 8, 9]])
+    out = a.list.get(-3, null_on_oob=True)
     expected = pl.Series("a", [1, None, 7])
     assert_series_equal(out, expected)
 
     assert pl.DataFrame(
         {"a": [[1], [2], [3], [4, 5, 6], [7, 8, 9], [None, 11]]}
     ).with_columns(
-        [pl.col("a").list.get(i).alias(f"get_{i}") for i in range(4)]
+        [pl.col("a").list.get(i, null_on_oob=True).alias(f"get_{i}") for i in range(4)]
     ).to_dict(as_series=False) == {
         "a": [[1], [2], [3], [4, 5, 6], [7, 8, 9], [None, 11]],
         "get_0": [1, 2, 3, 4, 7, None],
@@ -60,7 +128,7 @@ def test_list_arr_get() -> None:
     # get by indexes where some are out of bounds
     df = pl.DataFrame({"cars": [[1, 2, 3], [2, 3], [4], []], "indexes": [-2, 1, -3, 0]})
 
-    assert df.select([pl.col("cars").list.get("indexes")]).to_dict(as_series=False) == {
+    assert df.select([pl.col("cars").list.get("indexes", null_on_oob=True)]).to_dict(as_series=False) == {
         "cars": [2, 3, None, None]
     }
     # exact on oob boundary
@@ -71,10 +139,10 @@ def test_list_arr_get() -> None:
         }
     )
 
-    assert df.select(pl.col("lists").list.get(3)).to_dict(as_series=False) == {
+    assert df.select(pl.col("lists").list.get(3, null_on_oob=True)).to_dict(as_series=False) == {
         "lists": [None, None, 4]
     }
-    assert df.select(pl.col("lists").list.get(pl.col("index"))).to_dict(
+    assert df.select(pl.col("lists").list.get(pl.col("index"), null_on_oob=True)).to_dict(
         as_series=False
     ) == {"lists": [None, None, 4]}
 
@@ -88,7 +156,7 @@ def test_list_categorical_get() -> None:
         }
     )
     expected = pl.Series("actions", ["a", "c", None, None], dtype=pl.Categorical)
-    assert_series_equal(df["actions"].list.get(0), expected, categorical_as_str=True)
+    assert_series_equal(df["actions"].list.get(0, null_on_oob=True), expected, categorical_as_str=True)
 
 
 def test_contains() -> None:
@@ -156,8 +224,8 @@ def test_list_arr_empty() -> None:
 
     out = df.select(
         [
-            pl.col("cars").list.first().alias("cars_first"),
-            pl.when(pl.col("cars").list.first() == 2)
+            pl.col("cars").list.get(0, null_on_oob=True).alias("cars_first"),
+            pl.when(pl.col("cars").list.get(0, null_on_oob=True) == 2)
             .then(1)
             .when(pl.col("cars").list.contains(2))
             .then(2)
@@ -597,7 +665,7 @@ def test_select_from_list_to_struct_11143() -> None:
 
 def test_list_arr_get_8810() -> None:
     assert pl.DataFrame(pl.Series("a", [None], pl.List(pl.Int64))).select(
-        pl.col("a").list.get(0)
+        pl.col("a").list.get(0, null_on_oob=True)
     ).to_dict(as_series=False) == {"a": [None]}
 
 
