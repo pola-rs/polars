@@ -198,23 +198,23 @@ You can also install a subset of all optional dependencies.
 pip install 'polars[numpy,pandas,pyarrow]'
 ```
 
-| Tag          | Description                                                                  |
-|--------------|------------------------------------------------------------------------------|
-| **all**      | Install all optional dependencies (all of the following)                     |
-| adbc         | Support for reading Arrow data from SQL databases                            |
-| connectorx   | Support for reading Arrow data from SQL databases                            |
-| deltalake    | Support for reading and writing Delta Lake Tables                            |
-| fastexcel    | Support for reading data from Excel files with the Calamine engine           |
-| fsspec       | Support for reading data from remote file systems                            |
-| numpy        | Install with NumPy for converting data to and from NumPy arrays              |
-| openpyxl     | Support for reading data from Excel files                                    |
-| pandas       | Install with pandas for converting data to and from pandas DataFrames/Series |
-| plot         | Support for plotting functions on DataFrames                                 |
-| pyarrow      | Reading data formats using PyArrow                                           |
-| pyiceberg    | Support for reading data from Apache Iceberg tables                          |
-| sqlalchemy   | Support for reading Python data from SQL databases                           |
-| timezone     | Timezone support, only needed if you are on Python<3.9 or Windows            |
-| xlsx2csv     | Support for reading data from Excel files                                    |
+| Tag        | Description                                                                  |
+| ---------- | ---------------------------------------------------------------------------- |
+| **all**    | Install all optional dependencies (all of the following)                     |
+| adbc       | Support for reading Arrow data from SQL databases                            |
+| connectorx | Support for reading Arrow data from SQL databases                            |
+| deltalake  | Support for reading and writing Delta Lake Tables                            |
+| fastexcel  | Support for reading data from Excel files with the Calamine engine           |
+| fsspec     | Support for reading data from remote file systems                            |
+| numpy      | Install with NumPy for converting data to and from NumPy arrays              |
+| openpyxl   | Support for reading data from Excel files                                    |
+| pandas     | Install with pandas for converting data to and from pandas DataFrames/Series |
+| plot       | Support for plotting functions on DataFrames                                 |
+| pyarrow    | Reading data formats using PyArrow                                           |
+| pyiceberg  | Support for reading data from Apache Iceberg tables                          |
+| sqlalchemy | Support for reading Python data from SQL databases                           |
+| timezone   | Timezone support, only needed if you are on Python<3.9 or Windows            |
+| xlsx2csv   | Support for reading data from Excel files                                    |
 
 Releases happen quite often (weekly / every few days) at the moment, so updating Polars regularly
 to get the latest bugfixes / features might not be a bad idea.
@@ -262,10 +262,10 @@ data structures. See more in https://github.com/pola-rs/pyo3-polars.
 
 ## Going big...
 
-Do you expect more than 2^32 (~4.2 billion) rows? Compile Polars with the `bigidx` feature 
+Do you expect more than 2^32 (~4.2 billion) rows? Compile Polars with the `bigidx` feature
 flag or, for Python users, install `pip install polars-u64-idx`.
 
-(Don't use this unless you hit the row boundary; the default build of Polars is faster 
+(Don't use this unless you hit the row boundary; the default build of Polars is faster
 and consumes less memory).
 
 ## Legacy
