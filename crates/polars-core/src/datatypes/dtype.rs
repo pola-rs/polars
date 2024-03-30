@@ -241,6 +241,21 @@ impl DataType {
         matches!(self, DataType::Binary)
     }
 
+    pub fn is_object(&self) -> bool {
+        #[cfg(feature = "object")]
+        {
+            matches!(self, DataType::Object(_, _))
+        }
+        #[cfg(not(feature = "object"))]
+        {
+            false
+        }
+    }
+
+    pub fn is_null(&self) -> bool {
+        matches!(self, DataType::Null)
+    }
+
     pub fn contains_views(&self) -> bool {
         use DataType::*;
         match self {

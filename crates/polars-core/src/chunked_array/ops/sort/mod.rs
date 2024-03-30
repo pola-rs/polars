@@ -15,9 +15,7 @@ use rayon::prelude::*;
 pub use slice::*;
 
 use crate::prelude::compare_inner::TotalOrdInner;
-#[cfg(feature = "dtype-struct")]
-use crate::prelude::sort::arg_sort_multiple::_get_rows_encoded_ca;
-use crate::prelude::sort::arg_sort_multiple::{arg_sort_multiple_impl, args_validate};
+use crate::prelude::sort::arg_sort_multiple::*;
 use crate::prelude::*;
 use crate::series::IsSorted;
 use crate::utils::NoNull;
