@@ -1,7 +1,7 @@
 use std::fmt::Write;
 
 use arrow::array::ValueSize;
-use arrow::legacy::kernels::list::sublist_get;
+use arrow::legacy::kernels::list::{index_is_oob, sublist_get};
 use polars_core::chunked_array::builder::get_list_builder;
 #[cfg(feature = "list_gather")]
 use polars_core::export::num::ToPrimitive;
@@ -344,13 +344,7 @@ pub trait ListNameSpaceImpl: AsList {
     /// if an index is out of bounds, it will return a `None`.
     fn lst_get(&self, idx: i64, null_on_oob: bool) -> PolarsResult<Series> {
         let ca = self.as_list();
-        if !null_on_oob
-            && ca.iter().any(|sublist| {
-                sublist
-                    .and_then(|s| idx.negative_to_usize(s.len()).map(|idx| idx as IdxSize))
-                    .is_none()
-            })
-        {
+        if !null_on_oob && ca.downcast_iter().any(|arr| index_is_oob(arr, idx)) {
             polars_bail!(ComputeError: "get index is out of bounds");
         }
 
