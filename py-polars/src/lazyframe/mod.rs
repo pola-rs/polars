@@ -260,6 +260,7 @@ impl PyLazyFrame {
         hive_schema: Option<Wrap<Schema>>,
         retries: usize,
     ) -> PyResult<Self> {
+        let parallel = parallel.0;
         let hive_schema = hive_schema.map(|s| Arc::new(s.0));
 
         let first_path = if let Some(path) = &path {
@@ -287,7 +288,7 @@ impl PyLazyFrame {
         let args = ScanArgsParquet {
             n_rows,
             cache,
-            parallel: parallel.0,
+            parallel,
             rechunk,
             row_index,
             low_memory,
