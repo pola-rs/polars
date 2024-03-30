@@ -1446,6 +1446,7 @@ def test_reproducible_hash_with_seeds() -> None:
     "e",
     [
         pl.int_range(1_000_000),
+        # Test code path for null_count > 0
         pl.when(pl.int_range(1_000_000) != 0).then(pl.int_range(1_000_000)),
     ],
 )
@@ -1453,9 +1454,7 @@ def test_hash_collision_multiple_columns_equal_values_15390(e: pl.Expr) -> None:
     df = pl.select(e.alias("a"))
 
     for n_columns in (1, 2, 3, 4):
-        s = df.with_columns(
-            pl.col("a").alias(f"x{i}") for i in range(n_columns)
-        ).hash_rows()
+        s = df.select(pl.col("a").alias(f"x{i}") for i in range(n_columns)).hash_rows()
 
         vc = s.sort().value_counts(sort=True)
         max_bucket_size = vc["count"][0]
