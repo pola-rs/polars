@@ -112,8 +112,8 @@ where
                 .iter()
                 .zip(&mut hashes[offset..])
                 .for_each(|(v, h)| {
+                    // Inlined from ahash. This ensures we combine with the previous state.
                     *h = folded_multiply(
-                        // Inlined from ahash. This ensures we combine with the previous state.
                         // Be careful not to xor the hash directly with the existing hash,
                         // it would lead to 0-hashes for 2 columns containing equal values.
                         random_state.hash_one(v.to_total_ord()) ^ folded_multiply(*h, MULTIPLE),
