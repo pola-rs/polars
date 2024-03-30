@@ -123,13 +123,15 @@ impl<'a> PredicatePushDown<'a> {
                     if needs_rename {
                         // TODO! Do this directly on AExpr.
                         let mut new_expr = node_to_expr(e.node(), expr_arena);
-                        new_expr.mutate().apply(|e| {
-                            if let Expr::Column(name) = e {
-                                if let Some(rename_to) = alias_rename_map.get(name) {
-                                    *name = rename_to.clone();
-                                };
-                            };
-                            true
+                        new_expr = new_expr.map_expr(|e| match e {
+                            Expr::Column(name) => {
+                                if let Some(rename_to) = alias_rename_map.get(&*name) {
+                                    Expr::Column(rename_to.clone())
+                                } else {
+                                    Expr::Column(name)
+                                }
+                            },
+                            e => e,
                         });
                         let predicate = to_aexpr(new_expr, expr_arena);
                         e.set_node(predicate);

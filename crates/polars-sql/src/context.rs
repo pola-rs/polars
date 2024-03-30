@@ -525,15 +525,16 @@ impl SQLContext {
     fn process_subqueries(&self, lf: LazyFrame, exprs: Vec<&mut Expr>) -> LazyFrame {
         let mut contexts = vec![];
         for expr in exprs {
-            expr.mutate().apply(|e| {
-                if let Expr::SubPlan(lp, names) = e {
-                    contexts.push(<LazyFrame>::from((***lp).clone()));
-
+            *expr = expr.clone().map_expr(|e| match e {
+                Expr::SubPlan(lp, names) => {
+                    contexts.push(<LazyFrame>::from((**lp).clone()));
                     if names.len() == 1 {
-                        *e = Expr::Column(names[0].as_str().into());
+                        Expr::Column(names[0].as_str().into())
+                    } else {
+                        Expr::SubPlan(lp, names)
                     }
-                };
-                true
+                },
+                e => e,
             })
         }
 

@@ -21,7 +21,7 @@ impl ExprNameNameSpace {
     /// }
     /// ```
     pub fn keep(self) -> Expr {
-        Expr::KeepName(Box::new(self.0))
+        Expr::KeepName(Arc::new(self.0))
     }
 
     /// Define an alias by mapping a function over the original root column name.
@@ -31,7 +31,7 @@ impl ExprNameNameSpace {
     {
         let function = SpecialEq::new(Arc::new(function) as Arc<dyn RenameAliasFn>);
         Expr::RenameAlias {
-            expr: Box::new(self.0),
+            expr: Arc::new(self.0),
             function,
         }
     }

@@ -4,19 +4,12 @@ use crate::physical_plan::planner::create_physical_expr;
 use crate::prelude::*;
 
 #[cfg(feature = "pivot")]
-pub(crate) fn prepare_eval_expr(mut expr: Expr) -> Expr {
-    expr.mutate().apply(|e| match e {
-        Expr::Column(name) => {
-            *name = Arc::from("");
-            true
-        },
-        Expr::Nth(_) => {
-            *e = Expr::Column(Arc::from(""));
-            true
-        },
-        _ => true,
-    });
-    expr
+pub(crate) fn prepare_eval_expr(expr: Expr) -> Expr {
+    expr.map_expr(|e| match e {
+        Expr::Column(_) => Expr::Column(Arc::from("")),
+        Expr::Nth(_) => Expr::Column(Arc::from("")),
+        e => e,
+    })
 }
 
 pub(crate) fn prepare_expression_for_context(

@@ -24,8 +24,62 @@ impl TreeWalker for Expr {
         Ok(VisitRecursion::Continue)
     }
 
-    fn map_children(self, _op: &mut dyn FnMut(Self) -> PolarsResult<Self>) -> PolarsResult<Self> {
-        todo!()
+    fn map_children(self, mut f: &mut dyn FnMut(Self) -> PolarsResult<Self>) -> PolarsResult<Self> {
+        use polars_utils::functions::try_arc_map as am;
+        use AggExpr::*;
+        use Expr::*;
+        #[rustfmt::skip]
+        let ret = match self {
+            Alias(l, r) => Alias(am(l, f)?, r),
+            Column(_) => self,
+            Columns(_) => self,
+            DtypeColumn(_) => self,
+            Literal(_) => self,
+            BinaryExpr { left, op, right } => {
+                BinaryExpr { left: am(left, &mut f)? , op, right: am(right, f)?}
+            },
+            Cast { expr, data_type, strict } => Cast { expr: am(expr, f)?, data_type, strict },
+            Sort { expr, options } => Sort { expr: am(expr, f)?, options },
+            Gather { expr, idx, returns_scalar } => Gather { expr: am(expr, &mut f)?, idx: am(idx, f)?, returns_scalar },
+            SortBy { expr, by, descending } => SortBy { expr: am(expr, &mut f)?, by: by.into_iter().map(f).collect::<Result<_, _>>()?, descending },
+            Agg(agg_expr) => Agg(match agg_expr {
+                Min { input, propagate_nans } => Min { input: am(input, f)?, propagate_nans },
+                Max { input, propagate_nans } => Max { input: am(input, f)?, propagate_nans },
+                Median(x) => Median(am(x, f)?),
+                NUnique(x) => NUnique(am(x, f)?),
+                First(x) => First(am(x, f)?),
+                Last(x) => Last(am(x, f)?),
+                Mean(x) => Mean(am(x, f)?),
+                Implode(x) => Implode(am(x, f)?),
+                Count(x, nulls) => Count(am(x, f)?, nulls),
+                Quantile { expr, quantile, interpol } => Quantile { expr: am(expr, &mut f)?, quantile: am(quantile, f)?, interpol },
+                Sum(x) => Sum(am(x, f)?),
+                AggGroups(x) => AggGroups(am(x, f)?),
+                Std(x, ddf) => Std(am(x, f)?, ddf),
+                Var(x, ddf) => Var(am(x, f)?, ddf),
+            }),
+            Ternary { predicate, truthy, falsy } => Ternary { predicate: am(predicate, &mut f)?, truthy: am(truthy, &mut f)?, falsy: am(falsy, f)? },
+            Function { input, function, options } => Function { input: input.into_iter().map(f).collect::<Result<_, _>>()?, function, options },
+            Explode(expr) => Explode(am(expr, f)?),
+            Filter { input, by } => Filter { input: am(input, &mut f)?, by: am(by, f)? },
+            Window { function, partition_by, options } => {
+                let partition_by = partition_by.into_iter().map(&mut f).collect::<Result<_, _>>()?;
+                Window { function: am(function, f)?, partition_by, options }
+            },
+            Wildcard => Wildcard,
+            Slice { input, offset, length } => Slice { input: am(input, &mut f)?, offset: am(offset, &mut f)?, length: am(length, f)? },
+            Exclude(expr, excluded) => Exclude(am(expr, f)?, excluded),
+            KeepName(expr) => KeepName(am(expr, f)?),
+            Len => Len,
+            Nth(_) => self,
+            RenameAlias { function, expr } => RenameAlias { function, expr: am(expr, f)? },
+            AnonymousFunction { input, function, output_type, options } => {
+                AnonymousFunction { input: input.into_iter().map(f).collect::<Result<_, _>>()?, function, output_type, options }
+            },
+            SubPlan(_, _) => self,
+            Selector(_) => self,
+        };
+        Ok(ret)
     }
 }
 
