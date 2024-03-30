@@ -3245,8 +3245,11 @@ class Expr:
                 Join the groups as 'List<group_dtype>' to the row positions.
                 warning: this can be memory intensive.
             - explode
-                Don't do any mapping, but simply flatten the group.
-                This only makes sense if the input data is sorted.
+                Explodes the grouped data into new rows, similar to the results of
+                `group_by` + `agg` + `explode`. Sorting of the given groups is required
+                if the groups are not part of the window operation for the operation,
+                otherwise the result would not make sense. This operation changes the
+                number of rows.
 
         Examples
         --------
@@ -3328,6 +3331,26 @@ class Expr:
         │ b   ┆ 5   ┆ 2   ┆ 1     │
         │ b   ┆ 3   ┆ 1   ┆ 1     │
         └─────┴─────┴─────┴───────┘
+
+        Aggregate values from each group using `mapping_strategy="explode"`.
+
+        >>> df.select(
+        ...     pl.col("a").head(2).over("a", mapping_strategy="explode"),
+        ...     pl.col("b").sort_by("b").head(2).over("a", mapping_strategy="explode"),
+        ...     pl.col("c").sort_by("b").head(2).over("a", mapping_strategy="explode"),
+        ... )
+        shape: (4, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ a   ┆ 1   ┆ 5   │
+        │ a   ┆ 2   ┆ 4   │
+        │ b   ┆ 3   ┆ 3   │
+        │ b   ┆ 3   ┆ 1   │
+        └─────┴─────┴─────┘
+
         """
         exprs = parse_as_list_of_expressions(expr, *more_exprs)
         return self._from_pyexpr(self._pyexpr.over(exprs, mapping_strategy))
