@@ -116,7 +116,9 @@ impl LogicalPlanBuilder {
             row_index: None,
             rechunk: false,
             file_counter: Default::default(),
+            // TODO: Support Hive partitioning.
             hive_partitioning: false,
+            hive_schema: None,
         };
 
         Ok(LogicalPlan::Scan {
@@ -215,6 +217,7 @@ impl LogicalPlanBuilder {
             row_index,
             file_counter: Default::default(),
             hive_partitioning,
+            hive_schema: None,
         };
         Ok(LogicalPlan::Scan {
             paths,
@@ -289,7 +292,9 @@ impl LogicalPlanBuilder {
                 rechunk,
                 row_index,
                 file_counter: Default::default(),
+                // TODO: Support Hive partitioning.
                 hive_partitioning: false,
+                hive_schema: None,
             },
             predicate: None,
             scan_type: FileScan::Ipc {
@@ -397,8 +402,9 @@ impl LogicalPlanBuilder {
             rechunk,
             row_index,
             file_counter: Default::default(),
-            // TODO! add
+            // TODO: Support Hive partitioning.
             hive_partitioning: false,
+            hive_schema: None,
         };
         Ok(LogicalPlan::Scan {
             paths,
