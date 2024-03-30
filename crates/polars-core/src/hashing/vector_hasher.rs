@@ -112,7 +112,10 @@ where
                 .iter()
                 .zip(&mut hashes[offset..])
                 .for_each(|(v, h)| {
-                    *h = folded_multiply(random_state.hash_one(v.to_total_ord()) ^ *h, MULTIPLE);
+                    *h = folded_multiply(
+                        random_state.hash_one(v.to_total_ord()) ^ folded_multiply(*h, MULTIPLE),
+                        MULTIPLE,
+                    );
                 }),
             _ => {
                 let validity = arr.validity().unwrap();
@@ -126,7 +129,7 @@ where
                         let to_hash = [null_h, lh][valid as usize];
 
                         // inlined from ahash. This ensures we combine with the previous state
-                        *h = folded_multiply(to_hash ^ *h, MULTIPLE);
+                        *h = folded_multiply(to_hash ^ folded_multiply(*h, MULTIPLE), MULTIPLE);
                     });
             },
         }
