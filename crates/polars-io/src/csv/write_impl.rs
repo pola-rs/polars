@@ -9,7 +9,7 @@ use arrow::legacy::time_zone::Tz;
 use arrow::temporal_conversions;
 #[cfg(feature = "timezones")]
 use chrono::TimeZone;
-use memchr::{memchr, memchr2};
+use memchr::{memchr3, memmem};
 use polars_core::prelude::*;
 use polars_core::series::SeriesIter;
 use polars_core::POOL;
@@ -20,7 +20,15 @@ use serde::{Deserialize, Serialize};
 
 use super::write::QuoteStyle;
 
-fn fmt_and_escape_str(f: &mut Vec<u8>, v: &str, options: &SerializeOptions) -> std::io::Result<()> {
+const LF: u8 = b'\n';
+const CR: u8 = b'\r';
+
+fn fmt_and_escape_str(
+    f: &mut Vec<u8>,
+    v: &str,
+    options: &SerializeOptions,
+    find_quotes: &memmem::Finder,
+) -> std::io::Result<()> {
     if options.quote_style == QuoteStyle::Never {
         return write!(f, "{v}");
     }
@@ -28,7 +36,7 @@ fn fmt_and_escape_str(f: &mut Vec<u8>, v: &str, options: &SerializeOptions) -> s
     if v.is_empty() {
         return write!(f, "{quote}{quote}");
     }
-    let needs_escaping = memchr(options.quote_char, v.as_bytes()).is_some();
+    let needs_escaping = find_quotes.find(v.as_bytes()).is_some();
     if needs_escaping {
         let replaced = unsafe {
             // Replace from single quote " to double quote "".
@@ -41,7 +49,7 @@ fn fmt_and_escape_str(f: &mut Vec<u8>, v: &str, options: &SerializeOptions) -> s
     }
     let surround_with_quotes = match options.quote_style {
         QuoteStyle::Always | QuoteStyle::NonNumeric => true,
-        QuoteStyle::Necessary => memchr2(options.separator, b'\n', v.as_bytes()).is_some(),
+        QuoteStyle::Necessary => memchr3(options.separator, LF, CR, v.as_bytes()).is_some(),
         QuoteStyle::Never => false,
     };
 
@@ -72,17 +80,18 @@ unsafe fn write_any_value(
     datetime_formats: &[&str],
     time_zones: &[Option<Tz>],
     i: usize,
+    find_quotes: &memmem::Finder,
 ) -> PolarsResult<()> {
     match value {
         // First do the string-like types as they know how to deal with quoting.
         AnyValue::String(v) => {
-            fmt_and_escape_str(f, v, options)?;
+            fmt_and_escape_str(f, v, options, find_quotes)?;
             Ok(())
         },
         #[cfg(feature = "dtype-categorical")]
         AnyValue::Categorical(idx, rev_map, _) | AnyValue::Enum(idx, rev_map, _) => {
             let v = rev_map.get(idx);
-            fmt_and_escape_str(f, v, options)?;
+            fmt_and_escape_str(f, v, options, find_quotes)?;
             Ok(())
         },
         _ => {
@@ -410,6 +419,8 @@ pub(crate) fn write<W: Write>(
 
             let last_ptr = &col_iters[col_iters.len() - 1] as *const SeriesIter;
             let mut finished = false;
+            let binding = &[options.quote_char];
+            let find_quotes = memmem::Finder::new(binding);
             // loop rows
             while !finished {
                 for (i, col) in &mut col_iters.iter_mut().enumerate() {
@@ -422,6 +433,7 @@ pub(crate) fn write<W: Write>(
                                 &datetime_formats,
                                 &time_zones,
                                 i,
+                                &find_quotes,
                             )?;
                         },
                         None => {
@@ -475,8 +487,10 @@ pub(crate) fn write_header<W: Write>(
     let mut escaped_names: Vec<String> = Vec::with_capacity(names.len());
     let mut nm: Vec<u8> = vec![];
 
+    let binding = &[options.quote_char];
+    let find_quotes = memmem::Finder::new(binding);
     for name in names {
-        fmt_and_escape_str(&mut nm, name, options)?;
+        fmt_and_escape_str(&mut nm, name, options, &find_quotes)?;
         unsafe {
             // SAFETY: we know headers will be valid UTF-8 at this point
             escaped_names.push(std::str::from_utf8_unchecked(&nm).to_string());
