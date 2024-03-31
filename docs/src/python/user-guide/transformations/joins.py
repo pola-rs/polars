@@ -42,7 +42,9 @@ print(df_outer_join)
 # --8<-- [end:outer]
 
 # --8<-- [start:outer_coalesce]
-df_outer_coalesce_join = df_customers.join(df_orders, on="customer_id", how="outer_coalesce")
+df_outer_coalesce_join = df_customers.join(
+    df_orders, on="customer_id", how="outer_coalesce"
+)
 print(df_outer_coalesce_join)
 # --8<-- [end:outer_coalesce]
 
