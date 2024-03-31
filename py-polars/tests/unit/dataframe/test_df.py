@@ -1558,6 +1558,46 @@ def test_group_by_agg_n_unique_floats() -> None:
         assert out["b"].to_list() == [2, 1]
 
 
+def test_group_by_agg_n_unique_empty_group_idx_path() -> None:
+    df = pl.DataFrame(
+        {
+            "key": [1, 1, 1, 2, 2, 2],
+            "value": [1, 2, 3, 4, 5, 6],
+            "filt": [True, True, True, False, False, False],
+        }
+    )
+    out = df.group_by("key", maintain_order=True).agg(
+        pl.col("value").filter("filt").n_unique().alias("n_unique")
+    )
+    expected = pl.DataFrame(
+        {
+            "key": [1, 2],
+            "n_unique": pl.Series([3, 0], dtype=pl.UInt32),
+        }
+    )
+    assert_frame_equal(out, expected)
+
+
+def test_group_by_agg_n_unique_empty_group_slice_path() -> None:
+    df = pl.DataFrame(
+        {
+            "key": [1, 1, 1, 2, 2, 2],
+            "value": [1, 2, 3, 4, 5, 6],
+            "filt": [False, False, False, False, False, False],
+        }
+    )
+    out = df.group_by("key", maintain_order=True).agg(
+        pl.col("value").filter("filt").n_unique().alias("n_unique")
+    )
+    expected = pl.DataFrame(
+        {
+            "key": [1, 2],
+            "n_unique": pl.Series([0, 0], dtype=pl.UInt32),
+        }
+    )
+    assert_frame_equal(out, expected)
+
+
 def test_select_by_dtype(df: pl.DataFrame) -> None:
     out = df.select(pl.col(pl.String))
     assert out.columns == ["strings", "strings_nulls"]
