@@ -116,7 +116,43 @@ impl LiteralValue {
             DateTime(v, tu, tz) => AnyValue::Datetime(*v, *tu, tz),
             #[cfg(feature = "dtype-time")]
             Time(v) => AnyValue::Time(*v),
-            _ => return None,
+            Series(s) => AnyValue::List(s.0.clone().into_series()),
+            Range {
+                low,
+                high,
+                data_type,
+            } => {
+                let opt_s = match data_type {
+                    DataType::Int32 => {
+                        if *low < i32::MIN as i64 || *high > i32::MAX as i64 {
+                            return None;
+                        }
+
+                        let low = *low as i32;
+                        let high = *high as i32;
+                        new_int_range::<Int32Type>(low, high, 1, "range").ok()
+                    },
+                    DataType::Int64 => {
+                        let low = *low;
+                        let high = *high;
+                        new_int_range::<Int64Type>(low, high, 1, "range").ok()
+                    },
+                    DataType::UInt32 => {
+                        if *low < 0 || *high > u32::MAX as i64 {
+                            return None;
+                        }
+                        let low = *low as u32;
+                        let high = *high as u32;
+                        new_int_range::<UInt32Type>(low, high, 1, "range").ok()
+                    },
+                    _ => return None,
+                };
+                match opt_s {
+                    Some(s) => AnyValue::List(s),
+                    None => return None,
+                }
+            },
+            Binary(v) => AnyValue::Binary(v),
         };
         Some(av)
     }
