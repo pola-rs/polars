@@ -638,3 +638,8 @@ def test_literal_subtract_schema_13284() -> None:
 def test_schema_boolean_sum_horizontal() -> None:
     lf = pl.LazyFrame({"a": [True, False]}).select(pl.sum_horizontal("a"))
     assert lf.schema == OrderedDict([("a", pl.UInt32)])
+
+
+def test_struct_alias_prune_15401() -> None:
+    df = pl.DataFrame({"a": []}, schema={"a": pl.Struct({"b": pl.Int8})})
+    assert df.select(pl.col("a").alias("c").struct.field("b")).columns == ["b"]

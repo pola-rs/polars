@@ -221,13 +221,7 @@ fn to_aexpr_impl(expr: Expr, arena: &mut Arena<AExpr>, state: &mut ConversionSta
             function,
             options,
         } => {
-            match function {
-                #[cfg(feature = "dtype-struct")]
-                FunctionExpr::AsStruct => {
-                    state.prune_alias = false;
-                },
-                _ => {},
-            }
+            state.prune_alias = false;
             AExpr::Function {
                 input: to_aexprs(input, arena, state),
                 function,
