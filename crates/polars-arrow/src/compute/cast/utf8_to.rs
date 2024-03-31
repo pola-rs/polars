@@ -146,7 +146,7 @@ pub fn binary_to_binview<O: Offset>(arr: &BinaryArray<O>) -> BinaryViewArray {
 
                 // And add the (truncated) one to the buffers
                 buffers.push(truncate_buffer(&base_buffer));
-                buffer_idx = buffer_idx.checked_add(1).unwrap();
+                buffer_idx = buffer_idx.checked_add(1).expect("max buffers exceeded");
 
                 let offset = 0u32;
                 payload[12..16].copy_from_slice(&offset.to_le_bytes());
