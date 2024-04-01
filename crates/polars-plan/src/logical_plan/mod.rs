@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use polars_core::prelude::*;
-use polars_utils::recursion::with_dynamic_stack;
+use recursive::recursive;
 
 use crate::logical_plan::LogicalPlan::DataFrameScan;
 use crate::prelude::*;
@@ -135,12 +135,12 @@ pub enum LogicalPlan {
     PythonScan { options: PythonOptions },
     /// Filter on a boolean mask
     Selection {
-        input: Box<LogicalPlan>,
+        input: Arc<LogicalPlan>,
         predicate: Expr,
     },
     /// Cache the input at this point in the LP
     Cache {
-        input: Box<LogicalPlan>,
+        input: Arc<LogicalPlan>,
         id: usize,
         cache_hits: u32,
     },
@@ -164,13 +164,13 @@ pub enum LogicalPlan {
     /// Column selection
     Projection {
         expr: Vec<Expr>,
-        input: Box<LogicalPlan>,
+        input: Arc<LogicalPlan>,
         schema: SchemaRef,
         options: ProjectionOptions,
     },
     /// Groupby aggregation
     Aggregate {
-        input: Box<LogicalPlan>,
+        input: Arc<LogicalPlan>,
         keys: Arc<Vec<Expr>>,
         aggs: Vec<Expr>,
         schema: SchemaRef,
@@ -181,8 +181,8 @@ pub enum LogicalPlan {
     },
     /// Join operation
     Join {
-        input_left: Box<LogicalPlan>,
-        input_right: Box<LogicalPlan>,
+        input_left: Arc<LogicalPlan>,
+        input_right: Arc<LogicalPlan>,
         schema: SchemaRef,
         left_on: Vec<Expr>,
         right_on: Vec<Expr>,
@@ -190,31 +190,31 @@ pub enum LogicalPlan {
     },
     /// Adding columns to the table without a Join
     HStack {
-        input: Box<LogicalPlan>,
+        input: Arc<LogicalPlan>,
         exprs: Vec<Expr>,
         schema: SchemaRef,
         options: ProjectionOptions,
     },
     /// Remove duplicates from the table
     Distinct {
-        input: Box<LogicalPlan>,
+        input: Arc<LogicalPlan>,
         options: DistinctOptions,
     },
     /// Sort the table
     Sort {
-        input: Box<LogicalPlan>,
+        input: Arc<LogicalPlan>,
         by_column: Vec<Expr>,
         args: SortArguments,
     },
     /// Slice the table
     Slice {
-        input: Box<LogicalPlan>,
+        input: Arc<LogicalPlan>,
         offset: i64,
         len: IdxSize,
     },
     /// A (User Defined) Function
     MapFunction {
-        input: Box<LogicalPlan>,
+        input: Arc<LogicalPlan>,
         function: FunctionNode,
     },
     Union {
@@ -230,17 +230,17 @@ pub enum LogicalPlan {
     /// Catches errors and throws them later
     #[cfg_attr(feature = "serde", serde(skip))]
     Error {
-        input: Box<LogicalPlan>,
+        input: Arc<LogicalPlan>,
         err: ErrorState,
     },
     /// This allows expressions to access other tables
     ExtContext {
-        input: Box<LogicalPlan>,
+        input: Arc<LogicalPlan>,
         contexts: Vec<LogicalPlan>,
         schema: SchemaRef,
     },
     Sink {
-        input: Box<LogicalPlan>,
+        input: Arc<LogicalPlan>,
         payload: SinkType,
     },
 }
@@ -250,30 +250,29 @@ impl Clone for LogicalPlan {
     // calls clone on every member of every enum variant.
     #[rustfmt::skip]
     #[allow(clippy::clone_on_copy)]
+    #[recursive]
     fn clone(&self) -> Self {
-        with_dynamic_stack(|| {
-            match self {
-                #[cfg(feature = "python")]
-                Self::PythonScan { options } => Self::PythonScan { options: options.clone() },
-                Self::Selection { input, predicate } => Self::Selection { input: input.clone(), predicate: predicate.clone() },
-                Self::Cache { input, id, cache_hits } => Self::Cache { input: input.clone(), id: id.clone(), cache_hits: cache_hits.clone() },
-                Self::Scan { paths, file_info, predicate, file_options, scan_type } => Self::Scan { paths: paths.clone(), file_info: file_info.clone(), predicate: predicate.clone(), file_options: file_options.clone(), scan_type: scan_type.clone() },
-                Self::DataFrameScan { df, schema, output_schema, projection, selection } => Self::DataFrameScan { df: df.clone(), schema: schema.clone(), output_schema: output_schema.clone(), projection: projection.clone(), selection: selection.clone() },
-                Self::Projection { expr, input, schema, options } => Self::Projection { expr: expr.clone(), input: input.clone(), schema: schema.clone(), options: options.clone() },
-                Self::Aggregate { input, keys, aggs, schema, apply, maintain_order, options } => Self::Aggregate { input: input.clone(), keys: keys.clone(), aggs: aggs.clone(), schema: schema.clone(), apply: apply.clone(), maintain_order: maintain_order.clone(), options: options.clone() },
-                Self::Join { input_left, input_right, schema, left_on, right_on, options } => Self::Join { input_left: input_left.clone(), input_right: input_right.clone(), schema: schema.clone(), left_on: left_on.clone(), right_on: right_on.clone(), options: options.clone() },
-                Self::HStack { input, exprs, schema, options } => Self::HStack { input: input.clone(), exprs: exprs.clone(), schema: schema.clone(), options: options.clone() },
-                Self::Distinct { input, options } => Self::Distinct { input: input.clone(), options: options.clone() },
-                Self::Sort { input, by_column, args } => Self::Sort { input: input.clone(), by_column: by_column.clone(), args: args.clone() },
-                Self::Slice { input, offset, len } => Self::Slice { input: input.clone(), offset: offset.clone(), len: len.clone() },
-                Self::MapFunction { input, function } => Self::MapFunction { input: input.clone(), function: function.clone() },
-                Self::Union { inputs, options } => Self::Union { inputs: inputs.clone(), options: options.clone() },
-                Self::HConcat { inputs, schema, options } => Self::HConcat { inputs: inputs.clone(), schema: schema.clone(), options: options.clone() },
-                Self::Error { input, err } => Self::Error { input: input.clone(), err: err.clone() },
-                Self::ExtContext { input, contexts, schema } => Self::ExtContext { input: input.clone(), contexts: contexts.clone(), schema: schema.clone() },
-                Self::Sink { input, payload } => Self::Sink { input: input.clone(), payload: payload.clone() },
-            }
-        })
+        match self {
+            #[cfg(feature = "python")]
+            Self::PythonScan { options } => Self::PythonScan { options: options.clone() },
+            Self::Selection { input, predicate } => Self::Selection { input: input.clone(), predicate: predicate.clone() },
+            Self::Cache { input, id, cache_hits } => Self::Cache { input: input.clone(), id: id.clone(), cache_hits: cache_hits.clone() },
+            Self::Scan { paths, file_info, predicate, file_options, scan_type } => Self::Scan { paths: paths.clone(), file_info: file_info.clone(), predicate: predicate.clone(), file_options: file_options.clone(), scan_type: scan_type.clone() },
+            Self::DataFrameScan { df, schema, output_schema, projection, selection } => Self::DataFrameScan { df: df.clone(), schema: schema.clone(), output_schema: output_schema.clone(), projection: projection.clone(), selection: selection.clone() },
+            Self::Projection { expr, input, schema, options } => Self::Projection { expr: expr.clone(), input: input.clone(), schema: schema.clone(), options: options.clone() },
+            Self::Aggregate { input, keys, aggs, schema, apply, maintain_order, options } => Self::Aggregate { input: input.clone(), keys: keys.clone(), aggs: aggs.clone(), schema: schema.clone(), apply: apply.clone(), maintain_order: maintain_order.clone(), options: options.clone() },
+            Self::Join { input_left, input_right, schema, left_on, right_on, options } => Self::Join { input_left: input_left.clone(), input_right: input_right.clone(), schema: schema.clone(), left_on: left_on.clone(), right_on: right_on.clone(), options: options.clone() },
+            Self::HStack { input, exprs, schema, options } => Self::HStack { input: input.clone(), exprs: exprs.clone(), schema: schema.clone(), options: options.clone() },
+            Self::Distinct { input, options } => Self::Distinct { input: input.clone(), options: options.clone() },
+            Self::Sort { input, by_column, args } => Self::Sort { input: input.clone(), by_column: by_column.clone(), args: args.clone() },
+            Self::Slice { input, offset, len } => Self::Slice { input: input.clone(), offset: offset.clone(), len: len.clone() },
+            Self::MapFunction { input, function } => Self::MapFunction { input: input.clone(), function: function.clone() },
+            Self::Union { inputs, options } => Self::Union { inputs: inputs.clone(), options: options.clone() },
+            Self::HConcat { inputs, schema, options } => Self::HConcat { inputs: inputs.clone(), schema: schema.clone(), options: options.clone() },
+            Self::Error { input, err } => Self::Error { input: input.clone(), err: err.clone() },
+            Self::ExtContext { input, contexts, schema } => Self::ExtContext { input: input.clone(), contexts: contexts.clone(), schema: schema.clone() },
+            Self::Sink { input, payload } => Self::Sink { input: input.clone(), payload: payload.clone() },
+        }
     }
 }
 

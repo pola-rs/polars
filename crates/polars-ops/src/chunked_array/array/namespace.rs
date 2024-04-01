@@ -96,10 +96,10 @@ pub trait ArrayNameSpace: AsArray {
         array_all(ca)
     }
 
-    fn array_sort(&self, options: SortOptions) -> ArrayChunked {
+    fn array_sort(&self, options: SortOptions) -> PolarsResult<ArrayChunked> {
         let ca = self.as_array();
         // SAFETY: Sort only changes the order of the elements in each subarray.
-        unsafe { ca.apply_amortized_same_type(|s| s.as_ref().sort_with(options)) }
+        unsafe { ca.try_apply_amortized_same_type(|s| s.as_ref().sort_with(options)) }
     }
 
     fn array_reverse(&self) -> ArrayChunked {

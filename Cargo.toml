@@ -65,6 +65,7 @@ rayon = "1.9"
 regex = "1.9"
 reqwest = { version = "0.11", default-features = false }
 ryu = "1.0.13"
+recursive = "0.1"
 serde = "1.0.188"
 serde_json = "1"
 simd-json = { version = "0.13", features = ["known-key"] }
@@ -84,6 +85,7 @@ version_check = "0.9.4"
 xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
 zstd = "0.13"
 uuid = { version = "1.7.0", features = ["v4"] }
+arboard = { version = "3.3.2", default-features = false }
 
 polars = { version = "0.38.3", path = "crates/polars", default-features = false }
 polars-compute = { version = "0.38.3", path = "crates/polars-compute", default-features = false }

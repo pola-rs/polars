@@ -2029,3 +2029,11 @@ def test_read_csv_only_loads_selected_columns(
         result += next_batch
     del result
     assert 8_000_000 < memory_usage_without_pyarrow.get_peak() < 13_000_000
+
+
+def test_csv_escape_cf_15349() -> None:
+    f = io.BytesIO()
+    df = pl.DataFrame({"test": ["normal", "with\rcr"]})
+    df.write_csv(f)
+    f.seek(0)
+    assert f.read() == b'test\nnormal\n"with\rcr"\n'

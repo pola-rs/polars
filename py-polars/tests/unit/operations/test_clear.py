@@ -65,7 +65,6 @@ def test_clear_lf() -> None:
     assert ldfe.collect().rows() == [(None, None, None), (None, None, None)]
 
 
-@pytest.mark.skip("Currently bugged: https://github.com/pola-rs/polars/issues/15303")
 def test_clear_series_object_starting_with_null() -> None:
     s = pl.Series([None, object()])
 

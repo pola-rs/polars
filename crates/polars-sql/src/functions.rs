@@ -987,7 +987,7 @@ impl SQLFunctionVisitor<'_> {
             // Array functions
             // ----
             ArrayContains => self.visit_binary::<Expr>(|e, s| e.list().contains(s)),
-            ArrayGet => self.visit_binary(|e, i| e.list().get(i)),
+            ArrayGet => self.visit_binary(|e, i| e.list().get(i, true)),
             ArrayLength => self.visit_unary(|e| e.list().len()),
             ArrayMax => self.visit_unary(|e| e.list().max()),
             ArrayMean => self.visit_unary(|e| e.list().mean()),

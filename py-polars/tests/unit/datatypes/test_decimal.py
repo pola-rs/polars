@@ -409,3 +409,32 @@ def test_decimal_list_get_13847() -> None:
         out = df.select(pl.col("a").list.get(0))
         expected = pl.DataFrame({"a": [D("1.1"), D("2.1")]})
         assert_frame_equal(out, expected)
+
+
+def test_decimal_explode() -> None:
+    with pl.Config() as cfg:
+        cfg.activate_decimals()
+
+        nested_decimal_df = pl.DataFrame(
+            {
+                "bar": [[D("3.4"), D("3.4")], [D("4.5")]],
+            }
+        )
+        df = nested_decimal_df.explode("bar")
+        expected_df = pl.DataFrame(
+            {
+                "bar": [D("3.4"), D("3.4"), D("4.5")],
+            }
+        )
+        assert_frame_equal(df, expected_df)
+
+        # test group-by head #15330
+        df = pl.DataFrame(
+            {
+                "foo": [1, 1, 2],
+                "bar": [D("3.4"), D("3.4"), D("4.5")],
+            }
+        )
+        head_df = df.group_by("foo", maintain_order=True).head(1)
+        expected_df = pl.DataFrame({"foo": [1, 2], "bar": [D("3.4"), D("4.5")]})
+        assert_frame_equal(head_df, expected_df)

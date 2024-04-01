@@ -781,7 +781,7 @@ def test_list_gather_null_struct_14927() -> None:
         {"index": [1], "col_0": [None], "field_0": [None]},
         schema={**df.schema, "field_0": pl.Float64},
     )
-    expr = pl.col("col_0").list.get(0).struct.field("field_0")
+    expr = pl.col("col_0").list.get(0, null_on_oob=True).struct.field("field_0")
     out = df.filter(pl.col("index") > 0).with_columns(expr)
     assert_frame_equal(out, expected)
 

@@ -283,8 +283,12 @@ impl PySeries {
         }
     }
 
-    fn sort(&mut self, descending: bool, nulls_last: bool) -> Self {
-        self.series.sort(descending, nulls_last).into()
+    fn sort(&mut self, descending: bool, nulls_last: bool) -> PyResult<Self> {
+        Ok(self
+            .series
+            .sort(descending, nulls_last)
+            .map_err(PyPolarsErr::from)?
+            .into())
     }
 
     fn take_with_series(&self, indices: &PySeries) -> PyResult<Self> {

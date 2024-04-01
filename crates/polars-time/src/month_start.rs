@@ -30,7 +30,7 @@ pub(crate) fn roll_backward(
         ts.hour(),
         ts.minute(),
         ts.second(),
-        ts.timestamp_subsec_nanos(),
+        ts.and_utc().timestamp_subsec_nanos(),
     )
     .ok_or_else(|| {
         polars_err!(
@@ -40,7 +40,7 @@ pub(crate) fn roll_backward(
                     ts.hour(),
                     ts.minute(),
                     ts.second(),
-                    ts.timestamp_subsec_nanos()
+                    ts.and_utc().timestamp_subsec_nanos()
                 )
         )
     })?;

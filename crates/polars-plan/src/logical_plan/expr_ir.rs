@@ -94,11 +94,11 @@ impl ExprIR {
         self.output_name.unwrap()
     }
 
-    pub(crate) fn output_name(&self) -> &str {
+    pub fn output_name(&self) -> &str {
         self.output_name_arc().as_ref()
     }
 
-    pub(crate) fn to_expr(&self, expr_arena: &Arena<AExpr>) -> Expr {
+    pub fn to_expr(&self, expr_arena: &Arena<AExpr>) -> Expr {
         let out = node_to_expr(self.node, expr_arena);
 
         match &self.output_name {

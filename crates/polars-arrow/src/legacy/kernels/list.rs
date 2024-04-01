@@ -75,6 +75,13 @@ pub fn sublist_get(arr: &ListArray<i64>, index: i64) -> ArrayRef {
     unsafe { take_unchecked(&**values, &take_by) }
 }
 
+/// Check if an index is out of bounds for at least one sublist.
+pub fn index_is_oob(arr: &ListArray<i64>, index: i64) -> bool {
+    arr.offsets()
+        .lengths()
+        .any(|len| index.negative_to_usize(len).is_none())
+}
+
 /// Convert a list `[1, 2, 3]` to a list type of `[[1], [2], [3]]`
 pub fn array_to_unit_list(array: ArrayRef) -> ListArray<i64> {
     let len = array.len();

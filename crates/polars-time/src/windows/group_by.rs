@@ -180,6 +180,7 @@ pub fn group_by_windows(
                 window
                     .get_overlapping_bounds_iter(
                         boundary,
+                        closed_window,
                         tu,
                         tz.parse::<Tz>().ok().as_ref(),
                         start_by,
@@ -198,7 +199,7 @@ pub fn group_by_windows(
         _ => {
             update_groups_and_bounds(
                 window
-                    .get_overlapping_bounds_iter(boundary, tu, None, start_by)
+                    .get_overlapping_bounds_iter(boundary, closed_window, tu, None, start_by)
                     .unwrap(),
                 start_offset,
                 time,
