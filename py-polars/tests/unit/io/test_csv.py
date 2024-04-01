@@ -2011,36 +2011,21 @@ def test_read_csv_only_loads_selected_columns(
     # 16_000_000 at least, but there's some overhead.
     assert 8_000_000 < memory_usage_without_pyarrow.get_peak() < 13_000_000
 
-
-@pytest.mark.slow()
-@pytest.mark.write_disk()
-def test_read_csv_batched_only_loads_selected_columns(
-    memory_usage_without_pyarrow: MemoryUsage,
-    tmp_path: Path,
-) -> None:
-    """Only requested columns are loaded by ``read_csv_batched()``."""
-    tmp_path.mkdir(exist_ok=True)
-
-    # Each column will be about 80MB of RAM. We need to do a bigger file
-    # because each thread does a minimum of 32MB allocation.
-    series = pl.arange(0, 1_000_000, dtype=pl.Int64, eager=True)
-
-    file_path = tmp_path / "multicolumn.csv"
-    df = pl.DataFrame({"a": series, "b": series})
-    df.write_csv(file_path)
-    del df, series
-
+    # read_csv_batched() test:
     memory_usage_without_pyarrow.reset_tracking()
     result = []
     batched = pl.read_csv_batched(
-        str(file_path), columns=["b"], rechunk=False, n_threads=1, low_memory=True
+        str(file_path),
+        columns=["b"],
+        rechunk=False,
+        n_threads=1,
+        low_memory=True,
+        batch_size=10_000,
     )
     while sum(df.height for df in result) < 1_000_000:
-        next_batch = batched.next_batches(3)
+        next_batch = batched.next_batches(1)
         if next_batch is None:
             break
         result += next_batch
     del result
-
-    # Only one column's worth of memory should be used:
-    assert 8_000_000 < memory_usage_without_pyarrow.get_peak() < 15_000_000
+    assert 8_000_000 < memory_usage_without_pyarrow.get_peak() < 13_000_000
