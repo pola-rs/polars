@@ -203,7 +203,7 @@ where
                 TimeUnit::Microsecond => timestamp_us_to_datetime,
                 TimeUnit::Nanosecond => timestamp_ns_to_datetime,
             };
-            Ok(PrimitiveArray::<O>::from_iter(
+            Ok(PrimitiveArray::<O>::from_trusted_len_iter(
                 array.iter().map(|v| v.map(|x| op(func(*x)))),
             ))
         },
