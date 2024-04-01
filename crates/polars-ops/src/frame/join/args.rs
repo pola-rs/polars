@@ -26,6 +26,36 @@ pub struct JoinArgs {
     pub suffix: Option<String>,
     pub slice: Option<(i64, usize)>,
     pub join_nulls: bool,
+    pub coalesce: JoinCoalesce,
+}
+
+#[derive(Clone, PartialEq, Eq, Debug, Hash, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub enum JoinCoalesce {
+    #[default]
+    JoinSpecific,
+    CoalesceColumns,
+    KeepColumns,
+}
+
+impl JoinCoalesce {
+    pub fn coalesce(&self, join_type: &JoinType) -> bool {
+        use JoinCoalesce::*;
+        use JoinType::*;
+        match join_type {
+            Left | Inner => {
+                matches!(self, JoinSpecific | CoalesceColumns)
+            },
+            Outer { .. } => {
+                matches!(self, CoalesceColumns)
+            },
+            #[cfg(feature = "asof_join")]
+            AsOf(_) => false,
+            Cross => false,
+            #[cfg(feature = "semi_anti_join")]
+            Semi | Anti => false,
+        }
+    }
 }
 
 impl Default for JoinArgs {
@@ -36,6 +66,7 @@ impl Default for JoinArgs {
             suffix: None,
             slice: None,
             join_nulls: false,
+            coalesce: Default::default(),
         }
     }
 }
@@ -48,7 +79,13 @@ impl JoinArgs {
             suffix: None,
             slice: None,
             join_nulls: false,
+            coalesce: Default::default(),
         }
+    }
+
+    pub fn with_coalesce(mut self, coalesce: JoinCoalesce) -> Self {
+        self.coalesce = coalesce;
+        self
     }
 
     pub fn suffix(&self) -> &str {
@@ -61,9 +98,7 @@ impl JoinArgs {
 pub enum JoinType {
     Left,
     Inner,
-    Outer {
-        coalesce: bool,
-    },
+    Outer,
     #[cfg(feature = "asof_join")]
     AsOf(AsOfOptions),
     Cross,
@@ -71,18 +106,6 @@ pub enum JoinType {
     Semi,
     #[cfg(feature = "semi_anti_join")]
     Anti,
-}
-
-impl JoinType {
-    pub fn merges_join_keys(&self) -> bool {
-        match self {
-            Self::Outer { coalesce } => *coalesce,
-            // Merges them if they are equal
-            #[cfg(feature = "asof_join")]
-            Self::AsOf(_) => false,
-            _ => true,
-        }
-    }
 }
 
 impl From<JoinType> for JoinArgs {

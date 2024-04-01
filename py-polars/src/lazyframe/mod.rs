@@ -878,7 +878,13 @@ impl PyLazyFrame {
         how: Wrap<JoinType>,
         suffix: String,
         validate: Wrap<JoinValidation>,
+        coalesce: Option<bool>,
     ) -> PyResult<Self> {
+        let coalesce = match coalesce {
+            None => JoinCoalesce::JoinSpecific,
+            Some(true) => JoinCoalesce::CoalesceColumns,
+            Some(false) => JoinCoalesce::KeepColumns,
+        };
         let ldf = self.ldf.clone();
         let other = other.ldf;
         let left_on = left_on
@@ -899,6 +905,7 @@ impl PyLazyFrame {
             .force_parallel(force_parallel)
             .join_nulls(join_nulls)
             .how(how.0)
+            .coalesce(coalesce)
             .validate(validate.0)
             .suffix(suffix)
             .finish()

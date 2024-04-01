@@ -278,13 +278,14 @@ pub trait DataFrameJoinOps: IntoDf {
             JoinType::Cross => {
                 unreachable!()
             },
-            JoinType::Outer { coalesce } => {
+            JoinType::Outer  => {
                 let names_left = selected_left.iter().map(|s| s.name()).collect::<Vec<_>>();
-                args.how = JoinType::Outer { coalesce: false };
+                let coalesce = args.coalesce;
+                args.coalesce = JoinCoalesce::KeepColumns;
                 let suffix = args.suffix.clone();
                 let out = left_df._outer_join_from_series(other, &lhs_keys, &rhs_keys, args);
 
-                if coalesce {
+                if matches!(coalesce, JoinCoalesce::CoalesceColumns) {
                     Ok(_coalesce_outer_join(
                         out?,
                         &names_left,
@@ -411,12 +412,7 @@ pub trait DataFrameJoinOps: IntoDf {
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
-        self.join(
-            other,
-            left_on,
-            right_on,
-            JoinArgs::new(JoinType::Outer { coalesce: false }),
-        )
+        self.join(other, left_on, right_on, JoinArgs::new(JoinType::Outer))
     }
 }
 
