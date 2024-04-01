@@ -2013,7 +2013,7 @@ def test_read_csv_only_loads_selected_columns(
 
     # read_csv_batched() test:
     memory_usage_without_pyarrow.reset_tracking()
-    result = []
+    result: list[pl.DataFrame] = []
     batched = pl.read_csv_batched(
         str(file_path),
         columns=["b"],
