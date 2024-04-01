@@ -7,7 +7,7 @@ use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_plan::prelude::*;
 use polars_row::decode::decode_rows_from_binary;
-use polars_row::SortField;
+use polars_row::EncodingField;
 
 use super::*;
 use crate::operators::{
@@ -15,15 +15,12 @@ use crate::operators::{
 };
 const POLARS_SORT_COLUMN: &str = "__POLARS_SORT_COLUMN";
 
-fn get_sort_fields(sort_idx: &[usize], sort_args: &SortArguments) -> Vec<SortField> {
+fn get_sort_fields(sort_idx: &[usize], sort_args: &SortArguments) -> Vec<EncodingField> {
     let mut descending = sort_args.descending.clone();
     _broadcast_descending(sort_idx.len(), &mut descending);
     descending
         .into_iter()
-        .map(|descending| SortField {
-            descending,
-            nulls_last: sort_args.nulls_last,
-        })
+        .map(|descending| EncodingField::new_sorted(descending, sort_args.nulls_last))
         .collect()
 }
 
@@ -61,7 +58,7 @@ fn finalize_dataframe(
     can_decode: bool,
     sort_dtypes: Option<&[ArrowDataType]>,
     rows: &mut Vec<&'static [u8]>,
-    sort_fields: &[SortField],
+    sort_fields: &[EncodingField],
     schema: &Schema,
 ) {
     unsafe {
@@ -126,7 +123,7 @@ pub struct SortSinkMultiple {
     sort_sink: Box<dyn Sink>,
     sort_args: SortArguments,
     // Needed for encoding
-    sort_fields: Arc<[SortField]>,
+    sort_fields: Arc<[EncodingField]>,
     sort_dtypes: Option<Arc<[DataType]>>,
     // amortize allocs
     sort_column: Vec<ArrayRef>,
@@ -320,7 +317,7 @@ struct DropEncoded {
     can_decode: bool,
     sort_dtypes: Option<Vec<ArrowDataType>>,
     rows: Vec<&'static [u8]>,
-    sort_fields: Arc<[SortField]>,
+    sort_fields: Arc<[EncodingField]>,
     output_schema: SchemaRef,
 }
 
