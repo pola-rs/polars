@@ -2683,6 +2683,19 @@ def test_infer_iso8601_date(iso8601_format_date: str) -> None:
     assert parsed.dt.day().item() == 13
 
 
+def test_year_null_backed_by_out_of_range_15313() -> None:
+    # Create a Series where the null value is backed by a value which would
+    # be out-of-range for Datetime('us')
+    s = pl.Series([None, 2**63 - 1])
+    s -= 2**63 - 1
+    result = s.cast(pl.Datetime).dt.year()
+    expected = pl.Series([None, 1970], dtype=pl.Int32)
+    assert_series_equal(result, expected)
+    result = s.cast(pl.Date).dt.year()
+    expected = pl.Series([None, 1970], dtype=pl.Int32)
+    assert_series_equal(result, expected)
+
+
 def test_series_is_temporal() -> None:
     for tp in TEMPORAL_DTYPES | {
         pl.Datetime("ms", "UTC"),
