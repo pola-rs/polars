@@ -1,5 +1,5 @@
 use compare_inner::NullOrderCmp;
-use polars_row::{convert_columns, RowsEncoded, SortField};
+use polars_row::{convert_columns, EncodingField, RowsEncoded};
 use polars_utils::iter::EnumerateIdxTrait;
 
 use super::*;
@@ -87,18 +87,19 @@ pub fn _get_rows_encoded_compat_array(by: &Series) -> PolarsResult<ArrayRef> {
     Ok(out)
 }
 
-pub(crate) fn encode_rows_vertical_par_default(by: &[Series]) -> PolarsResult<BinaryOffsetChunked> {
+pub(crate) fn encode_rows_vertical_par_unordered(
+    by: &[Series],
+) -> PolarsResult<BinaryOffsetChunked> {
     let n_threads = POOL.current_num_threads();
     let len = by[0].len();
     let splits = _split_offsets(len, n_threads);
-    let descending = vec![false; by.len()];
 
     let chunks = splits.into_par_iter().map(|(offset, len)| {
         let sliced = by
             .iter()
             .map(|s| s.slice(offset as i64, len))
             .collect::<Vec<_>>();
-        let rows = _get_rows_encoded(&sliced, &descending, false)?;
+        let rows = _get_rows_encoded_unordered(&sliced)?;
         Ok(rows.into_array())
     });
     let chunks = POOL.install(|| chunks.collect::<PolarsResult<Vec<_>>>());
@@ -106,10 +107,33 @@ pub(crate) fn encode_rows_vertical_par_default(by: &[Series]) -> PolarsResult<Bi
     Ok(BinaryOffsetChunked::from_chunk_iter("", chunks?))
 }
 
-pub(crate) fn encode_rows_default(by: &[Series]) -> PolarsResult<BinaryOffsetChunked> {
-    let descending = vec![false; by.len()];
-    let rows = _get_rows_encoded(by, &descending, false)?;
+pub(crate) fn encode_rows_unordered(by: &[Series]) -> PolarsResult<BinaryOffsetChunked> {
+    let rows = _get_rows_encoded_unordered(by)?;
     Ok(BinaryOffsetChunked::with_chunk("", rows.into_array()))
+}
+
+pub fn _get_rows_encoded_unordered(by: &[Series]) -> PolarsResult<RowsEncoded> {
+    let mut cols = Vec::with_capacity(by.len());
+    let mut fields = Vec::with_capacity(by.len());
+    for by in by {
+        let arr = _get_rows_encoded_compat_array(by)?;
+        let field = EncodingField::new_unsorted();
+        match arr.data_type() {
+            // Flatten the struct fields.
+            ArrowDataType::Struct(_) => {
+                let arr = arr.as_any().downcast_ref::<StructArray>().unwrap();
+                for arr in arr.values() {
+                    cols.push(arr.clone() as ArrayRef);
+                    fields.push(field)
+                }
+            },
+            _ => {
+                cols.push(arr);
+                fields.push(field)
+            },
+        }
+    }
+    Ok(convert_columns(&cols, &fields))
 }
 
 pub fn _get_rows_encoded(
@@ -123,9 +147,10 @@ pub fn _get_rows_encoded(
     for (by, descending) in by.iter().zip(descending) {
         let arr = _get_rows_encoded_compat_array(by)?;
 
-        let sort_field = SortField {
+        let sort_field = EncodingField {
             descending: *descending,
             nulls_last,
+            no_order: false,
         };
         match arr.data_type() {
             // Flatten the struct fields.
@@ -133,7 +158,7 @@ pub fn _get_rows_encoded(
                 let arr = arr.as_any().downcast_ref::<StructArray>().unwrap();
                 for arr in arr.values() {
                     cols.push(arr.clone() as ArrayRef);
-                    fields.push(sort_field.clone())
+                    fields.push(sort_field)
                 }
             },
             _ => {
@@ -152,6 +177,14 @@ pub fn _get_rows_encoded_ca(
     nulls_last: bool,
 ) -> PolarsResult<BinaryOffsetChunked> {
     _get_rows_encoded(by, descending, nulls_last)
+        .map(|rows| BinaryOffsetChunked::with_chunk(name, rows.into_array()))
+}
+
+pub fn _get_rows_encoded_ca_unordered(
+    name: &str,
+    by: &[Series],
+) -> PolarsResult<BinaryOffsetChunked> {
+    _get_rows_encoded_unordered(by)
         .map(|rows| BinaryOffsetChunked::with_chunk(name, rows.into_array()))
 }
 

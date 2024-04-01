@@ -1,7 +1,7 @@
 use std::cell::UnsafeCell;
 
 use polars_core::export::ahash::RandomState;
-use polars_row::{RowsEncoded, SortField};
+use polars_row::{EncodingField, RowsEncoded};
 
 use super::*;
 use crate::executors::sinks::group_by::utils::prepare_key;
@@ -18,7 +18,7 @@ pub(super) struct Eval {
     aggregation_series: UnsafeCell<Vec<Series>>,
     keys_columns: UnsafeCell<Vec<ArrayRef>>,
     hashes: Vec<u64>,
-    key_fields: Vec<SortField>,
+    key_fields: Vec<EncodingField>,
     // amortizes the encoding buffers
     rows_encoded: RowsEncoded,
 }

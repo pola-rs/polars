@@ -23,7 +23,7 @@ pub use into_groups::*;
 pub use proxy::*;
 
 use crate::prelude::sort::arg_sort_multiple::{
-    encode_rows_default, encode_rows_vertical_par_default,
+    encode_rows_unordered, encode_rows_vertical_par_unordered,
 };
 
 impl DataFrame {
@@ -84,9 +84,9 @@ impl DataFrame {
                 })
             } else {
                 let rows = if multithreaded {
-                    encode_rows_vertical_par_default(&by)
+                    encode_rows_vertical_par_unordered(&by)
                 } else {
-                    encode_rows_default(&by)
+                    encode_rows_unordered(&by)
                 }?
                 .into_series();
                 rows.group_tuples(multithreaded, sorted)

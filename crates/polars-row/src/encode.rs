@@ -10,10 +10,10 @@ use polars_utils::slice::GetSaferUnchecked;
 use polars_utils::vec::PushUnchecked;
 
 use crate::fixed::FixedLengthEncoding;
-use crate::row::{RowsEncoded, SortField};
+use crate::row::{EncodingField, RowsEncoded};
 use crate::{with_match_arrow_primitive_type, ArrayRef};
 
-pub fn convert_columns(columns: &[ArrayRef], fields: &[SortField]) -> RowsEncoded {
+pub fn convert_columns(columns: &[ArrayRef], fields: &[EncodingField]) -> RowsEncoded {
     let mut rows = RowsEncoded::new(vec![], vec![]);
     convert_columns_amortized(columns, fields, &mut rows);
     rows
@@ -28,7 +28,7 @@ pub fn convert_columns_no_order(columns: &[ArrayRef]) -> RowsEncoded {
 pub fn convert_columns_amortized_no_order(columns: &[ArrayRef], rows: &mut RowsEncoded) {
     convert_columns_amortized(
         columns,
-        std::iter::repeat(&SortField::default()).take(columns.len()),
+        std::iter::repeat(&EncodingField::default()).take(columns.len()),
         rows,
     );
 }
@@ -41,7 +41,7 @@ enum Encoder {
         enc: Vec<Encoder>,
         rows: Option<LargeBinaryArray>,
         original: LargeListArray,
-        field: SortField,
+        field: EncodingField,
     },
     Leaf(ArrayRef),
 }
@@ -112,7 +112,7 @@ impl Encoder {
     }
 }
 
-fn get_encoders(arr: &dyn Array, encoders: &mut Vec<Encoder>, field: &SortField) -> usize {
+fn get_encoders(arr: &dyn Array, encoders: &mut Vec<Encoder>, field: &EncodingField) -> usize {
     let mut added = 0;
     match arr.data_type() {
         ArrowDataType::Struct(_) => {
@@ -134,7 +134,7 @@ fn get_encoders(arr: &dyn Array, encoders: &mut Vec<Encoder>, field: &SortField)
                 enc: inner,
                 original: arr.clone(),
                 rows: None,
-                field: field.clone(),
+                field: *field,
             });
             added += 1;
         },
@@ -146,7 +146,7 @@ fn get_encoders(arr: &dyn Array, encoders: &mut Vec<Encoder>, field: &SortField)
     added
 }
 
-pub fn convert_columns_amortized<'a, I: IntoIterator<Item = &'a SortField>>(
+pub fn convert_columns_amortized<'a, I: IntoIterator<Item = &'a EncodingField>>(
     columns: &'a [ArrayRef],
     fields: I,
     rows: &mut RowsEncoded,
@@ -165,11 +165,15 @@ pub fn convert_columns_amortized<'a, I: IntoIterator<Item = &'a SortField>>(
         for (arr, field) in columns.iter().zip(fields) {
             let added = get_encoders(arr.as_ref(), &mut flattened_columns, field);
             for _ in 0..added {
-                flattened_fields.push(field.clone());
+                flattened_fields.push(*field);
             }
         }
-        let values_size =
-            allocate_rows_buf(&mut flattened_columns, &mut rows.values, &mut rows.offsets);
+        let values_size = allocate_rows_buf(
+            &mut flattened_columns,
+            &flattened_fields,
+            &mut rows.values,
+            &mut rows.offsets,
+        );
         for (arr, field) in flattened_columns.iter().zip(flattened_fields.iter()) {
             // SAFETY:
             // we allocated rows with enough bytes.
@@ -182,11 +186,13 @@ pub fn convert_columns_amortized<'a, I: IntoIterator<Item = &'a SortField>>(
             .iter()
             .map(|arr| Encoder::Leaf(arr.clone()))
             .collect::<Vec<_>>();
-        let values_size = allocate_rows_buf(&mut encoders, &mut rows.values, &mut rows.offsets);
+        let fields = fields.cloned().collect::<Vec<_>>();
+        let values_size =
+            allocate_rows_buf(&mut encoders, &fields, &mut rows.values, &mut rows.offsets);
         for (enc, field) in encoders.iter().zip(fields) {
             // SAFETY:
             // we allocated rows with enough bytes.
-            unsafe { encode_array(enc, field, rows) }
+            unsafe { encode_array(enc, &field, rows) }
         }
         // SAFETY: values are initialized
         unsafe { rows.values.set_len(values_size) }
@@ -195,7 +201,7 @@ pub fn convert_columns_amortized<'a, I: IntoIterator<Item = &'a SortField>>(
 
 fn encode_primitive<T: NativeType + FixedLengthEncoding>(
     arr: &PrimitiveArray<T>,
-    field: &SortField,
+    field: &EncodingField,
     out: &mut RowsEncoded,
 ) {
     if arr.null_count() == 0 {
@@ -211,11 +217,11 @@ fn encode_primitive<T: NativeType + FixedLengthEncoding>(
 ///
 /// # Safety
 /// `out` must have enough bytes allocated otherwise it will be out of bounds.
-unsafe fn encode_array(encoder: &Encoder, field: &SortField, out: &mut RowsEncoded) {
+unsafe fn encode_array(encoder: &Encoder, field: &EncodingField, out: &mut RowsEncoded) {
     match encoder {
         Encoder::List { .. } => {
             let iter = encoder.list_iter();
-            crate::variable::encode_iter(iter, out, &Default::default())
+            crate::variable::encode_iter(iter, out, &EncodingField::new_unsorted())
         },
         Encoder::Leaf(array) => {
             match array.data_type() {
@@ -279,6 +285,7 @@ pub fn encoded_size(data_type: &ArrowDataType) -> usize {
 // are initialized.
 fn allocate_rows_buf(
     columns: &mut [Encoder],
+    fields: &[EncodingField],
     values: &mut Vec<u8>,
     offsets: &mut Vec<usize>,
 ) -> usize {
@@ -307,7 +314,7 @@ fn allocate_rows_buf(
 
         // for the variable length columns we must iterate to determine the length per row location
         let mut processed_count = 0;
-        for enc in columns.iter_mut() {
+        for (enc, enc_field) in columns.iter_mut().zip(fields) {
             match enc {
                 Encoder::List {
                     enc: inner_enc,
@@ -315,6 +322,8 @@ fn allocate_rows_buf(
                     field,
                     original,
                 } => {
+                    let field = *field;
+                    let fields = inner_enc.iter().map(|_| field).collect::<Vec<_>>();
                     // Nested lists don't yet work as that requires the leaves not only allocating, but also
                     // encoding. To make that work we must add a flag `in_list` that tell the leaves to immediately
                     // encode the rows instead of only setting the length.
@@ -332,6 +341,7 @@ fn allocate_rows_buf(
                     // Allocate and immediately row-encode the inner types recursively.
                     let values_size = allocate_rows_buf(
                         inner_enc,
+                        &fields,
                         &mut values_rows.values,
                         &mut values_rows.offsets,
                     );
@@ -339,7 +349,7 @@ fn allocate_rows_buf(
                     // For single nested it does work as we encode here.
                     unsafe {
                         for enc in inner_enc {
-                            encode_array(enc, field, &mut values_rows)
+                            encode_array(enc, &field, &mut values_rows)
                         }
                         values_rows.values.set_len(values_size)
                     };
@@ -352,13 +362,20 @@ fn allocate_rows_buf(
                         for opt_val in iter {
                             unsafe {
                                 lengths.push_unchecked(
-                                    row_size_fixed + crate::variable::encoded_len(opt_val),
+                                    row_size_fixed
+                                        + crate::variable::encoded_len(
+                                            opt_val,
+                                            &EncodingField::new_unsorted(),
+                                        ),
                                 );
                             }
                         }
                     } else {
                         for (opt_val, row_length) in iter.zip(lengths.iter_mut()) {
-                            *row_length += crate::variable::encoded_len(opt_val)
+                            *row_length += crate::variable::encoded_len(
+                                opt_val,
+                                &EncodingField::new_unsorted(),
+                            )
                         }
                     }
                     processed_count += 1;
@@ -371,7 +388,8 @@ fn allocate_rows_buf(
                                 for opt_val in array.into_iter() {
                                     unsafe {
                                         lengths.push_unchecked(
-                                            row_size_fixed + crate::variable::encoded_len(opt_val),
+                                            row_size_fixed
+                                                + crate::variable::encoded_len(opt_val, enc_field),
                                         );
                                     }
                                 }
@@ -379,7 +397,7 @@ fn allocate_rows_buf(
                                 for (opt_val, row_length) in
                                     array.into_iter().zip(lengths.iter_mut())
                                 {
-                                    *row_length += crate::variable::encoded_len(opt_val)
+                                    *row_length += crate::variable::encoded_len(opt_val, enc_field)
                                 }
                             }
                             processed_count += 1;
@@ -390,7 +408,8 @@ fn allocate_rows_buf(
                                 for opt_val in array.into_iter() {
                                     unsafe {
                                         lengths.push_unchecked(
-                                            row_size_fixed + crate::variable::encoded_len(opt_val),
+                                            row_size_fixed
+                                                + crate::variable::encoded_len(opt_val, enc_field),
                                         );
                                     }
                                 }
@@ -398,7 +417,7 @@ fn allocate_rows_buf(
                                 for (opt_val, row_length) in
                                     array.into_iter().zip(lengths.iter_mut())
                                 {
-                                    *row_length += crate::variable::encoded_len(opt_val)
+                                    *row_length += crate::variable::encoded_len(opt_val, enc_field)
                                 }
                             }
                             processed_count += 1;
@@ -416,13 +435,14 @@ fn allocate_rows_buf(
                                 for opt_val in iter {
                                     unsafe {
                                         lengths.push_unchecked(
-                                            row_size_fixed + crate::variable::encoded_len(opt_val),
+                                            row_size_fixed
+                                                + crate::variable::encoded_len(opt_val, enc_field),
                                         )
                                     }
                                 }
                             } else {
                                 for (opt_val, row_length) in iter.zip(lengths.iter_mut()) {
-                                    *row_length += crate::variable::encoded_len(opt_val)
+                                    *row_length += crate::variable::encoded_len(opt_val, enc_field)
                                 }
                             }
                             processed_count += 1;
@@ -514,10 +534,7 @@ mod test {
         let arr =
             BinaryViewArray::from_slice([Some("a"), Some(""), Some("meep"), Some(sentence), None]);
 
-        let field = SortField {
-            descending: false,
-            nulls_last: false,
-        };
+        let field = EncodingField::new_sorted(false, false);
         let arr = arrow::compute::cast::cast(&arr, &ArrowDataType::BinaryView, Default::default())
             .unwrap();
         let rows_encoded = convert_columns(&[arr], &[field]);
@@ -567,10 +584,7 @@ mod test {
 
         let a = [val.as_str(), val.as_str(), val.as_str()];
 
-        let field = SortField {
-            descending: false,
-            nulls_last: false,
-        };
+        let field = EncodingField::new_sorted(false, false);
         let arr = BinaryViewArray::from_slice_values(a);
         let rows_encoded = convert_columns_no_order(&[arr.clone().boxed()]);
 
@@ -583,10 +597,7 @@ mod test {
     fn test_reverse_variable() {
         let a = Utf8ViewArray::from_slice_values(["one", "two", "three", "four", "five", "six"]);
 
-        let fields = &[SortField {
-            descending: true,
-            nulls_last: false,
-        }];
+        let fields = &[EncodingField::new_sorted(true, false)];
 
         let dtypes = [ArrowDataType::Utf8View];
 
@@ -614,10 +625,7 @@ mod test {
             values.boxed(),
             None,
         );
-        let fields = &[SortField {
-            descending: true,
-            nulls_last: false,
-        }];
+        let fields = &[EncodingField::new_sorted(true, false)];
 
         let out = convert_columns(&[array.boxed()], fields);
         let out = out.into_array();
