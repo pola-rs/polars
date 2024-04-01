@@ -7,13 +7,6 @@ use polars_core::utils::align_chunks_binary;
 use super::*;
 
 fn array_get_literal(ca: &ArrayChunked, idx: i64, null_on_oob: bool) -> PolarsResult<Series> {
-    if !null_on_oob
-        && idx
-            .negative_to_usize(ca.downcast_iter().next().unwrap().len())
-            .is_none()
-    {
-        polars_bail!(ComputeError: "get index is out of bounds");
-    }
     let chunks = ca
         .downcast_iter()
         .map(|arr| sub_fixed_size_list_get_literal(arr, idx, null_on_oob))
