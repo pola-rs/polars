@@ -718,6 +718,14 @@ macro_rules! wrap {
     ($e:expr) => {
         SpecialEq::new(Arc::new($e))
     };
+
+    ($e:expr, $($args:expr),*) => {{
+        let f = move |s: &mut [Series]| {
+            $e(s, $($args),*)
+        };
+
+        SpecialEq::new(Arc::new(f))
+    }};
 }
 
 // Fn(&[Series], args)
