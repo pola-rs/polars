@@ -58,6 +58,7 @@ pub struct FileInfo {
 }
 
 impl FileInfo {
+    /// Constructs a new [`FileInfo`].
     pub fn new(
         schema: SchemaRef,
         reader_schema: Option<ArrowSchemaRef>,
@@ -70,6 +71,7 @@ impl FileInfo {
             hive_parts: None,
         }
     }
+
     /// Updates the statistics and merges the hive partitions schema with the file one.
     pub fn init_hive_partitions_from_schema(&mut self, schema: SchemaRef) -> PolarsResult<()> {
         let expected_len = self.schema.len() + schema.len();
