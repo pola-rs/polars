@@ -751,7 +751,7 @@ impl LazyFrame {
     ) -> PolarsResult<()> {
         self.opt_state.streaming = true;
         self.logical_plan = LogicalPlan::Sink {
-            input: Box::new(self.logical_plan),
+            input: Arc::new(self.logical_plan),
             payload: SinkType::Cloud {
                 uri: Arc::new(uri),
                 cloud_options,
@@ -806,7 +806,7 @@ impl LazyFrame {
     fn sink(mut self, payload: SinkType, msg_alternative: &str) -> Result<(), PolarsError> {
         self.opt_state.streaming = true;
         self.logical_plan = LogicalPlan::Sink {
-            input: Box::new(self.logical_plan),
+            input: Arc::new(self.logical_plan),
             payload,
         };
         let (mut state, mut physical_plan, is_streaming) = self.prepare_collect(true)?;
@@ -1846,7 +1846,7 @@ impl LazyGroupBy {
         let options = GroupbyOptions { slice: None };
 
         let lp = LogicalPlan::Aggregate {
-            input: Box::new(self.logical_plan),
+            input: Arc::new(self.logical_plan),
             keys: Arc::new(self.keys),
             aggs: vec![],
             schema,
