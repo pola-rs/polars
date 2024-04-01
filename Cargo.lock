@@ -2648,7 +2648,7 @@ dependencies = [
  "regex-syntax 0.8.3",
  "ryu",
  "sample-arrow2",
- "sample-std 0.1.1",
+ "sample-std",
  "sample-test",
  "serde",
  "simdutf8",
@@ -3620,20 +3620,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "502b30097ae5cc57ee8359bb59d8af349db022492de04596119d83f561ab8977"
 dependencies = [
  "arrow2",
- "sample-std 0.2.1",
-]
-
-[[package]]
-name = "sample-std"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "567a153dc3302ce838920fb095c025a6d0529fff0290d25deeec2136e41a57c8"
-dependencies = [
- "casey",
- "quickcheck",
- "rand",
- "rand_regex",
- "regex",
+ "sample-std",
 ]
 
 [[package]]
@@ -3656,7 +3643,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e8b253ca516416756b09b582e2b7275de8f51f35e5d5711e20712b9377c7d5bf"
 dependencies = [
  "quickcheck",
- "sample-std 0.2.1",
+ "sample-std",
  "sample-test-macros",
 ]
 
@@ -3668,7 +3655,7 @@ checksum = "5cc6439a7589bb4581fdadb6391700ce4d26f8bffd34e2a75acb320822e9b5ef"
 dependencies = [
  "proc-macro2",
  "quote",
- "sample-std 0.2.1",
+ "sample-std",
  "syn 1.0.109",
 ]
 
