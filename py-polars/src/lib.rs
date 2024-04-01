@@ -217,6 +217,12 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     #[cfg(feature = "parquet")]
     m.add_wrapped(wrap_pyfunction!(functions::read_parquet_schema))
         .unwrap();
+    #[cfg(feature = "clipboard")]
+    m.add_wrapped(wrap_pyfunction!(functions::read_clipboard_string))
+        .unwrap();
+    #[cfg(feature = "clipboard")]
+    m.add_wrapped(wrap_pyfunction!(functions::write_clipboard_string))
+        .unwrap();
 
     // Functions - meta
     m.add_wrapped(wrap_pyfunction!(functions::get_index_type))
