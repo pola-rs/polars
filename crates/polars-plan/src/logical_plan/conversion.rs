@@ -274,6 +274,7 @@ pub fn to_alp(
     expr_arena: &mut Arena<AExpr>,
     lp_arena: &mut Arena<ALogicalPlan>,
 ) -> PolarsResult<Node> {
+    let owned = Arc::unwrap_or_clone;
     let v = match lp {
         LogicalPlan::Scan {
             file_info,
@@ -317,7 +318,7 @@ pub fn to_alp(
             }
         },
         LogicalPlan::Selection { input, predicate } => {
-            let i = to_alp(*input, expr_arena, lp_arena)?;
+            let i = to_alp(owned(input), expr_arena, lp_arena)?;
             let p = to_expr_ir(predicate, expr_arena);
             ALogicalPlan::Selection {
                 input: i,
@@ -325,7 +326,7 @@ pub fn to_alp(
             }
         },
         LogicalPlan::Slice { input, offset, len } => {
-            let input = to_alp(*input, expr_arena, lp_arena)?;
+            let input = to_alp(owned(input), expr_arena, lp_arena)?;
             ALogicalPlan::Slice { input, offset, len }
         },
         LogicalPlan::DataFrameScan {
@@ -349,7 +350,7 @@ pub fn to_alp(
         } => {
             let eirs = to_expr_irs(expr, expr_arena);
             let expr = eirs.into();
-            let i = to_alp(*input, expr_arena, lp_arena)?;
+            let i = to_alp(owned(input), expr_arena, lp_arena)?;
             ALogicalPlan::Projection {
                 expr,
                 input: i,
@@ -362,7 +363,7 @@ pub fn to_alp(
             by_column,
             args,
         } => {
-            let input = to_alp(*input, expr_arena, lp_arena)?;
+            let input = to_alp(owned(input), expr_arena, lp_arena)?;
             let by_column = to_expr_irs(by_column, expr_arena);
             ALogicalPlan::Sort {
                 input,
@@ -375,7 +376,7 @@ pub fn to_alp(
             id,
             cache_hits,
         } => {
-            let input = to_alp(*input, expr_arena, lp_arena)?;
+            let input = to_alp(owned(input), expr_arena, lp_arena)?;
             ALogicalPlan::Cache {
                 input,
                 id,
@@ -391,7 +392,7 @@ pub fn to_alp(
             maintain_order,
             options,
         } => {
-            let i = to_alp(*input, expr_arena, lp_arena)?;
+            let i = to_alp(owned(input), expr_arena, lp_arena)?;
             let aggs = to_expr_irs(aggs, expr_arena);
             let keys = keys.convert(|e| to_expr_ir(e.clone(), expr_arena));
 
@@ -413,8 +414,8 @@ pub fn to_alp(
             right_on,
             options,
         } => {
-            let input_left = to_alp(*input_left, expr_arena, lp_arena)?;
-            let input_right = to_alp(*input_right, expr_arena, lp_arena)?;
+            let input_left = to_alp(owned(input_left), expr_arena, lp_arena)?;
+            let input_right = to_alp(owned(input_right), expr_arena, lp_arena)?;
 
             let left_on = to_expr_irs_ignore_alias(left_on, expr_arena);
             let right_on = to_expr_irs_ignore_alias(right_on, expr_arena);
@@ -436,7 +437,7 @@ pub fn to_alp(
         } => {
             let eirs = to_expr_irs(exprs, expr_arena);
             let exprs = eirs.into();
-            let input = to_alp(*input, expr_arena, lp_arena)?;
+            let input = to_alp(owned(input), expr_arena, lp_arena)?;
             ALogicalPlan::HStack {
                 input,
                 exprs,
@@ -445,11 +446,11 @@ pub fn to_alp(
             }
         },
         LogicalPlan::Distinct { input, options } => {
-            let input = to_alp(*input, expr_arena, lp_arena)?;
+            let input = to_alp(owned(input), expr_arena, lp_arena)?;
             ALogicalPlan::Distinct { input, options }
         },
         LogicalPlan::MapFunction { input, function } => {
-            let input = to_alp(*input, expr_arena, lp_arena)?;
+            let input = to_alp(owned(input), expr_arena, lp_arena)?;
             ALogicalPlan::MapFunction { input, function }
         },
         LogicalPlan::Error { err, .. } => {
@@ -462,7 +463,7 @@ pub fn to_alp(
             contexts,
             schema,
         } => {
-            let input = to_alp(*input, expr_arena, lp_arena)?;
+            let input = to_alp(owned(input), expr_arena, lp_arena)?;
             let contexts = contexts
                 .into_iter()
                 .map(|lp| to_alp(lp, expr_arena, lp_arena))
@@ -474,7 +475,7 @@ pub fn to_alp(
             }
         },
         LogicalPlan::Sink { input, payload } => {
-            let input = to_alp(*input, expr_arena, lp_arena)?;
+            let input = to_alp(owned(input), expr_arena, lp_arena)?;
             ALogicalPlan::Sink { input, payload }
         },
     };
@@ -770,7 +771,7 @@ impl ALogicalPlan {
             ALogicalPlan::Slice { input, offset, len } => {
                 let lp = convert_to_lp(input, lp_arena);
                 LogicalPlan::Slice {
-                    input: Box::new(lp),
+                    input: Arc::new(lp),
                     offset,
                     len,
                 }
@@ -779,7 +780,7 @@ impl ALogicalPlan {
                 let lp = convert_to_lp(input, lp_arena);
                 let predicate = predicate.to_expr(expr_arena);
                 LogicalPlan::Selection {
-                    input: Box::new(lp),
+                    input: Arc::new(lp),
                     predicate,
                 }
             },
@@ -806,7 +807,7 @@ impl ALogicalPlan {
                 let expr = expr_irs_to_exprs(expr.all_exprs(), expr_arena);
                 LogicalPlan::Projection {
                     expr,
-                    input: Box::new(i),
+                    input: Arc::new(i),
                     schema,
                     options,
                 }
@@ -819,7 +820,7 @@ impl ALogicalPlan {
                     .collect::<Vec<_>>();
                 LogicalPlan::Projection {
                     expr,
-                    input: Box::new(input),
+                    input: Arc::new(input),
                     schema: columns.clone(),
                     options: Default::default(),
                 }
@@ -829,7 +830,7 @@ impl ALogicalPlan {
                 by_column,
                 args,
             } => {
-                let input = Box::new(convert_to_lp(input, lp_arena));
+                let input = Arc::new(convert_to_lp(input, lp_arena));
                 let by_column = expr_irs_to_exprs(by_column, expr_arena);
                 LogicalPlan::Sort {
                     input,
@@ -842,7 +843,7 @@ impl ALogicalPlan {
                 id,
                 cache_hits,
             } => {
-                let input = Box::new(convert_to_lp(input, lp_arena));
+                let input = Arc::new(convert_to_lp(input, lp_arena));
                 LogicalPlan::Cache {
                     input,
                     id,
@@ -863,7 +864,7 @@ impl ALogicalPlan {
                 let aggs = expr_irs_to_exprs(aggs, expr_arena);
 
                 LogicalPlan::Aggregate {
-                    input: Box::new(i),
+                    input: Arc::new(i),
                     keys,
                     aggs,
                     schema,
@@ -887,8 +888,8 @@ impl ALogicalPlan {
                 let right_on = expr_irs_to_exprs(right_on, expr_arena);
 
                 LogicalPlan::Join {
-                    input_left: Box::new(i_l),
-                    input_right: Box::new(i_r),
+                    input_left: Arc::new(i_l),
+                    input_right: Arc::new(i_r),
                     schema,
                     left_on,
                     right_on,
@@ -905,7 +906,7 @@ impl ALogicalPlan {
                 let exprs = expr_irs_to_exprs(exprs.all_exprs(), expr_arena);
 
                 LogicalPlan::HStack {
-                    input: Box::new(i),
+                    input: Arc::new(i),
                     exprs,
                     schema,
                     options,
@@ -914,12 +915,12 @@ impl ALogicalPlan {
             ALogicalPlan::Distinct { input, options } => {
                 let i = convert_to_lp(input, lp_arena);
                 LogicalPlan::Distinct {
-                    input: Box::new(i),
+                    input: Arc::new(i),
                     options,
                 }
             },
             ALogicalPlan::MapFunction { input, function } => {
-                let input = Box::new(convert_to_lp(input, lp_arena));
+                let input = Arc::new(convert_to_lp(input, lp_arena));
                 LogicalPlan::MapFunction { input, function }
             },
             ALogicalPlan::ExtContext {
@@ -927,7 +928,7 @@ impl ALogicalPlan {
                 contexts,
                 schema,
             } => {
-                let input = Box::new(convert_to_lp(input, lp_arena));
+                let input = Arc::new(convert_to_lp(input, lp_arena));
                 let contexts = contexts
                     .into_iter()
                     .map(|node| convert_to_lp(node, lp_arena))
@@ -939,7 +940,7 @@ impl ALogicalPlan {
                 }
             },
             ALogicalPlan::Sink { input, payload } => {
-                let input = Box::new(convert_to_lp(input, lp_arena));
+                let input = Arc::new(convert_to_lp(input, lp_arena));
                 LogicalPlan::Sink { input, payload }
             },
             ALogicalPlan::Invalid => unreachable!(),

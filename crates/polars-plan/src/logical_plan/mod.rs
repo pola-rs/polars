@@ -135,12 +135,12 @@ pub enum LogicalPlan {
     PythonScan { options: PythonOptions },
     /// Filter on a boolean mask
     Selection {
-        input: Box<LogicalPlan>,
+        input: Arc<LogicalPlan>,
         predicate: Expr,
     },
     /// Cache the input at this point in the LP
     Cache {
-        input: Box<LogicalPlan>,
+        input: Arc<LogicalPlan>,
         id: usize,
         cache_hits: u32,
     },
@@ -164,13 +164,13 @@ pub enum LogicalPlan {
     /// Column selection
     Projection {
         expr: Vec<Expr>,
-        input: Box<LogicalPlan>,
+        input: Arc<LogicalPlan>,
         schema: SchemaRef,
         options: ProjectionOptions,
     },
     /// Groupby aggregation
     Aggregate {
-        input: Box<LogicalPlan>,
+        input: Arc<LogicalPlan>,
         keys: Arc<Vec<Expr>>,
         aggs: Vec<Expr>,
         schema: SchemaRef,
@@ -181,8 +181,8 @@ pub enum LogicalPlan {
     },
     /// Join operation
     Join {
-        input_left: Box<LogicalPlan>,
-        input_right: Box<LogicalPlan>,
+        input_left: Arc<LogicalPlan>,
+        input_right: Arc<LogicalPlan>,
         schema: SchemaRef,
         left_on: Vec<Expr>,
         right_on: Vec<Expr>,
@@ -190,31 +190,31 @@ pub enum LogicalPlan {
     },
     /// Adding columns to the table without a Join
     HStack {
-        input: Box<LogicalPlan>,
+        input: Arc<LogicalPlan>,
         exprs: Vec<Expr>,
         schema: SchemaRef,
         options: ProjectionOptions,
     },
     /// Remove duplicates from the table
     Distinct {
-        input: Box<LogicalPlan>,
+        input: Arc<LogicalPlan>,
         options: DistinctOptions,
     },
     /// Sort the table
     Sort {
-        input: Box<LogicalPlan>,
+        input: Arc<LogicalPlan>,
         by_column: Vec<Expr>,
         args: SortArguments,
     },
     /// Slice the table
     Slice {
-        input: Box<LogicalPlan>,
+        input: Arc<LogicalPlan>,
         offset: i64,
         len: IdxSize,
     },
     /// A (User Defined) Function
     MapFunction {
-        input: Box<LogicalPlan>,
+        input: Arc<LogicalPlan>,
         function: FunctionNode,
     },
     Union {
@@ -230,17 +230,17 @@ pub enum LogicalPlan {
     /// Catches errors and throws them later
     #[cfg_attr(feature = "serde", serde(skip))]
     Error {
-        input: Box<LogicalPlan>,
+        input: Arc<LogicalPlan>,
         err: ErrorState,
     },
     /// This allows expressions to access other tables
     ExtContext {
-        input: Box<LogicalPlan>,
+        input: Arc<LogicalPlan>,
         contexts: Vec<LogicalPlan>,
         schema: SchemaRef,
     },
     Sink {
-        input: Box<LogicalPlan>,
+        input: Arc<LogicalPlan>,
         payload: SinkType,
     },
 }
