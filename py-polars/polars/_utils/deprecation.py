@@ -92,7 +92,7 @@ def deprecate_parameter_as_positional(
         @wraps(function)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
             try:
-                param_args = kwargs.pop(old_name)
+                param_args = kwargs.pop(old_name, None)
             except KeyError:
                 return function(*args, **kwargs)
 
