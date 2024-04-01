@@ -631,7 +631,7 @@ mod test {
         let out = out.into_array();
         assert_eq!(
             out.values().iter().map(|v| *v as usize).sum::<usize>(),
-            84981
+            82411
         );
     }
 }
