@@ -203,11 +203,8 @@ where
                 TimeUnit::Microsecond => timestamp_us_to_datetime,
                 TimeUnit::Nanosecond => timestamp_ns_to_datetime,
             };
-            Ok(PrimitiveArray::<O>::from(
-                array
-                    .iter()
-                    .map(|v| v.map(|x| op(func(*x))))
-                    .collect::<Vec<_>>(),
+            Ok(PrimitiveArray::<O>::from_iter(
+                array.iter().map(|v| v.map(|x| op(func(*x)))),
             ))
         },
         _ => unreachable!(),
