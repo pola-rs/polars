@@ -90,7 +90,7 @@ impl FileInfo {
 
     /// Updates the statistics and merges the hive partitions schema with the file one.
     pub fn init_hive_partitions(&mut self, url: &Path) -> PolarsResult<()> {
-        self.hive_parts = HivePartitions::parse_url(url).map(|hive_parts| {
+        self.hive_parts = HivePartitions::parse_url(url, None).map(|hive_parts| {
             let hive_schema = hive_parts.schema().clone();
             let expected_len = self.schema.len() + hive_schema.len();
 
@@ -107,12 +107,20 @@ impl FileInfo {
 
     /// Updates the statistics, but not the schema.
     pub fn update_hive_partitions(&mut self, url: &Path) -> PolarsResult<()> {
+        dbg!(url.clone());
+
+        dbg!(self.clone());
+
         if let Some(current) = &mut self.hive_parts {
-            let new = hive::HivePartitions::parse_url(url).ok_or_else(|| polars_err!(
-                    ComputeError: "expected hive partitioned path, got {}\n\n\
+            // TODO: Split creating new hive partition from updating existing one
+            let new = hive::HivePartitions::parse_url(url, Some(current.schema().clone())).ok_or_else(|| polars_err!(
+                    ComputeError: "expected Hive partitioned path, got {}\n\n\
                     This error occurs if `hive_partitioning=true` while some paths are Hive partitioned and some paths are not.",
                     url.display()
             ))?;
+
+            dbg!(&new);
+
             match Arc::get_mut(current) {
                 Some(current) => {
                     *current = new;

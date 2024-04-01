@@ -202,7 +202,7 @@ impl LogicalPlanBuilder {
 
         if hive_partitioning {
             match hive_schema {
-                Some(schema) => file_info.init_hive_partitions_from_schema(schema)?,
+                Some(ref schema) => file_info.init_hive_partitions_from_schema(schema.clone())?,
                 // We set the hive partitions of the first path to determine the schema.
                 // On iteration the partition values will be re-set per file.
                 None => file_info.init_hive_partitions(path.as_path())?,
@@ -217,7 +217,7 @@ impl LogicalPlanBuilder {
             row_index,
             file_counter: Default::default(),
             hive_partitioning,
-            hive_schema: None,
+            hive_schema,
         };
         Ok(LogicalPlan::Scan {
             paths,

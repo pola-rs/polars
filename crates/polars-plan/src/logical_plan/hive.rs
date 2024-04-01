@@ -38,7 +38,7 @@ impl HivePartitions {
     }
 
     /// Parse a url and optionally return [`HivePartitions`].
-    pub(crate) fn parse_url(url: &Path) -> Option<Self> {
+    pub(crate) fn parse_url(url: &Path, schema: Option<SchemaRef>) -> Option<Self> {
         let sep = separator(url);
 
         let url_string = url.display().to_string();
@@ -50,42 +50,11 @@ impl HivePartitions {
         let partitions = pre_filt
             .enumerate()
             .filter_map(|(index, part)| {
-                let mut it = part.split('=');
-                let name = it.next()?;
-                let value = it.next()?;
-
-                // Don't see files `foo=1.parquet` as hive partitions.
-                // So we return globs and paths with extensions.
-                if value.contains('*') {
-                    return None;
-                }
-
                 // Identify file by index location
                 if index == split_count_m1 {
                     return None;
                 }
-
-                // Having multiple '=' doesn't seem like valid hive partition,
-                // continue as url.
-                if it.next().is_some() {
-                    return None;
-                }
-
-                let s = if INTEGER_RE.is_match(value) {
-                    let value = value.parse::<i64>().ok()?;
-                    Series::new(name, &[value])
-                } else if BOOLEAN_RE.is_match(value) {
-                    let value = value.parse::<bool>().ok()?;
-                    Series::new(name, &[value])
-                } else if FLOAT_RE.is_match(value) {
-                    let value = value.parse::<f64>().ok()?;
-                    Series::new(name, &[value])
-                } else if value == "__HIVE_DEFAULT_PARTITION__" {
-                    Series::new_null(name, 1)
-                } else {
-                    Series::new(name, &[percent_decode_str(value).decode_utf8().ok()?])
-                };
-                Some(s)
+                hive_part_to_series(part, schema.clone())
             })
             .collect::<Vec<_>>();
 
@@ -121,4 +90,57 @@ impl HivePartitions {
             .map(|cs| cs.get_min_state().unwrap().clone())
             .collect()
     }
+}
+
+/// Convert a Hive partition (e.g. "column=1.5") to a single-value [`Series`].
+fn hive_part_to_series(part: &str, schema: Option<SchemaRef>) -> Option<Series> {
+    let mut it = part.split('=');
+    let name = it.next()?;
+    let value = it.next()?;
+
+    // Having multiple '=' doesn't seem like valid hive partition,
+    // continue as url.
+    if it.next().is_some() {
+        return None;
+    }
+
+    // Don't see files `foo=1.parquet` as hive partitions.
+    // So we return globs and paths with extensions.
+    if value.contains('*') {
+        return None;
+    }
+
+    let dtype = match schema {
+        Some(ref s) => {
+            let dtype = s.get(name)?;
+            Some(dtype)
+        },
+        None => None,
+    };
+
+    value_to_series(name, value, dtype)
+}
+
+fn value_to_series(name: &str, value: &str, dtype: Option<&DataType>) -> Option<Series> {
+    let mut s = if INTEGER_RE.is_match(value) {
+        let value = value.parse::<i64>().ok()?;
+        Series::new(name, &[value])
+    } else if BOOLEAN_RE.is_match(value) {
+        let value = value.parse::<bool>().ok()?;
+        Series::new(name, &[value])
+    } else if FLOAT_RE.is_match(value) {
+        let value = value.parse::<f64>().ok()?;
+        Series::new(name, &[value])
+    } else if value == "__HIVE_DEFAULT_PARTITION__" {
+        Series::new_null(name, 1)
+    } else {
+        Series::new(name, &[percent_decode_str(value).decode_utf8().ok()?])
+    };
+
+    // TODO: Avoid logic above when dtype is known
+    if let Some(dt) = dtype {
+        s = s.strict_cast(dt).ok()?;
+    }
+
+    Some(s)
 }

@@ -179,8 +179,7 @@ impl ColumnStats {
 pub struct BatchStats {
     schema: SchemaRef,
     stats: Vec<ColumnStats>,
-    // This might not be available,
-    // as when prunnign hive partitions.
+    // This might not be available, as when pruning hive partitions.
     num_rows: Option<usize>,
 }
 
