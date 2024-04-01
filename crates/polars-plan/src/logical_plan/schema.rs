@@ -74,15 +74,7 @@ impl FileInfo {
 
     /// Updates the statistics and merges the hive partitions schema with the file one.
     pub fn init_hive_partitions_from_schema(&mut self, schema: SchemaRef) -> PolarsResult<()> {
-        let expected_len = self.schema.len() + schema.len();
-        let file_schema = Arc::make_mut(&mut self.schema);
-        file_schema.merge((*schema).clone());
-
-        polars_ensure!(
-            file_schema.len() == expected_len,
-            Duplicate: "invalid Hive partition schema\n\n\
-            Extending the schema with the Hive partition schema creates duplicate fields."
-        );
+        self.update_schema_with_hive_schema(schema.clone())?;
 
         let hp = HivePartitions::from_schema_ref(schema);
         self.hive_parts = Some(Arc::new(hp));
@@ -91,31 +83,41 @@ impl FileInfo {
     }
 
     /// Updates the statistics and merges the hive partitions schema with the file one.
-    pub fn init_hive_partitions(&mut self, url: &Path) -> PolarsResult<()> {
-        self.hive_parts = HivePartitions::parse_url(url, None).map(|hive_parts| {
-            let hive_schema = hive_parts.schema().clone();
-            let expected_len = self.schema.len() + hive_schema.len();
+    pub fn init_hive_partitions(&mut self, path: &Path) -> PolarsResult<()> {
+        match HivePartitions::try_from_path(path, None) {
+            Ok(hp) => {
+                let hive_schema = hp.schema().clone();
+                self.update_schema_with_hive_schema(hive_schema)?;
+                self.hive_parts = Some(Arc::new(hp))
+            },
+            Err(_) => self.hive_parts = None,
+        };
+        Ok(())
+    }
 
-            let schema = Arc::make_mut(&mut self.schema);
-            schema.merge((**hive_parts.schema()).clone());
+    fn update_schema_with_hive_schema(&mut self, hive_schema: SchemaRef) -> PolarsResult<()> {
+        let expected_len = self.schema.len() + hive_schema.len();
 
-            polars_ensure!(schema.len() == expected_len, ComputeError: "invalid hive partitions\n\n\
-            Extending the schema with the hive partitioned columns creates duplicate fields.");
+        let file_schema = Arc::make_mut(&mut self.schema);
+        file_schema.merge((*hive_schema).clone());
 
-            Ok(Arc::new(hive_parts))
-        }).transpose()?;
+        polars_ensure!(
+            file_schema.len() == expected_len,
+            Duplicate: "invalid Hive partition schema\n\n\
+            Extending the schema with the Hive partition schema would create duplicate fields."
+        );
         Ok(())
     }
 
     /// Updates the statistics, but not the schema.
     pub fn update_hive_partitions(&mut self, url: &Path) -> PolarsResult<()> {
-        dbg!(url.clone());
-
+        dbg!("HELLO");
+        dbg!(url);
         dbg!(self.clone());
 
         if let Some(current) = &mut self.hive_parts {
             // TODO: Split creating new hive partition from updating existing one
-            let new = hive::HivePartitions::parse_url(url, Some(current.schema().clone())).ok_or_else(|| polars_err!(
+            let new = HivePartitions::try_from_path(url, Some(current.schema().clone())).map_err(|_| polars_err!(
                     ComputeError: "expected Hive partitioned path, got {}\n\n\
                     This error occurs if `hive_partitioning=true` while some paths are Hive partitioned and some paths are not.",
                     url.display()

@@ -37,13 +37,16 @@ impl HivePartitions {
         Self { stats }
     }
 
-    /// Parse a url and optionally return [`HivePartitions`].
-    pub(crate) fn parse_url(url: &Path, schema: Option<SchemaRef>) -> Option<Self> {
-        let sep = separator(url);
+    /// Constructs a new [`HivePartitions`] from a path.
+    ///
+    /// Fails if the path does not contain any Hive partitions.
+    /// TODO: Read multiple paths, infer schema from first X paths.
+    pub fn try_from_path(path: &Path, schema: Option<SchemaRef>) -> PolarsResult<Self> {
+        let sep = separator(path);
 
-        let url_string = url.display().to_string();
+        let path_string = path.display().to_string();
 
-        let pre_filt = url_string.split(sep);
+        let pre_filt = path_string.split(sep);
 
         let split_count_m1 = pre_filt.clone().count() - 1;
 
@@ -58,21 +61,22 @@ impl HivePartitions {
             })
             .collect::<Vec<_>>();
 
-        if partitions.is_empty() {
-            None
-        } else {
-            let schema: Schema = partitions.as_slice().into();
-            let stats = BatchStats::new(
-                Arc::new(schema),
-                partitions
-                    .into_iter()
-                    .map(ColumnStats::from_column_literal)
-                    .collect(),
-                None,
-            );
+        polars_ensure!(
+            !partitions.is_empty(),
+            ComputeError: "path does not contain Hive partition information"
+        );
 
-            Some(HivePartitions { stats })
-        }
+        let schema: Schema = partitions.as_slice().into();
+        let stats = BatchStats::new(
+            Arc::new(schema),
+            partitions
+                .into_iter()
+                .map(ColumnStats::from_column_literal)
+                .collect(),
+            None,
+        );
+
+        Ok(HivePartitions { stats })
     }
 
     pub fn get_statistics(&self) -> &BatchStats {
@@ -92,7 +96,7 @@ impl HivePartitions {
     }
 }
 
-/// Convert a Hive partition (e.g. "column=1.5") to a single-value [`Series`].
+/// Convert a Hive partition string (e.g. "column=1.5") to a single-value [`Series`].
 fn hive_part_to_series(part: &str, schema: Option<SchemaRef>) -> Option<Series> {
     let mut it = part.split('=');
     let name = it.next()?;
