@@ -40,7 +40,6 @@ impl HivePartitions {
     /// Constructs a new [`HivePartitions`] from a path.
     ///
     /// Fails if the path does not contain any Hive partitions.
-    /// TODO: Read multiple paths, infer schema from first X paths.
     pub fn try_from_path(path: &Path, schema: Option<SchemaRef>) -> PolarsResult<Self> {
         let sep = separator(path);
 
