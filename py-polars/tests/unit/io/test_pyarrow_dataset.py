@@ -67,13 +67,6 @@ def test_dataset_foo(df: pl.DataFrame, tmp_path: Path) -> None:
         .collect(),
         n_expected=0,
     )
-    helper_dataset_test(
-        file_path,
-        lambda lf: lf.filter(pl.col("int").is_between(2, 3))
-        .select(["bools", "floats", "date"])
-        .collect(),
-        n_expected=2,
-    )
     # this equality on a column with nulls fails as pyarrow has different
     # handling kleene logic. We leave it for now and document it in the function.
     helper_dataset_test(
@@ -89,6 +82,13 @@ def test_dataset_foo(df: pl.DataFrame, tmp_path: Path) -> None:
         .select(["bools", "floats", "int_nulls"])
         .collect(),
         n_expected=3,
+    )
+    helper_dataset_test(
+        file_path,
+        lambda lf: lf.filter(pl.col("int").is_between(9, 11))
+        .select(["bools", "floats", "date"])
+        .collect(),
+        n_expected=0,
     )
     # this predicate is not supported by pyarrow
     # check if we still do it on our side
