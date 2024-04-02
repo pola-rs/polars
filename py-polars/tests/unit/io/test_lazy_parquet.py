@@ -427,7 +427,7 @@ def test_scan_deadlock_rayon_spawn_from_async_15172(
     def scan_collect() -> None:
         results[0] = pl.collect_all([pl.scan_parquet(path)])[0]
 
-    # Make sure we don't sit there hanging for hours on the broken case
+    # Make sure we don't sit there hanging forever on the broken case
     t = Thread(target=scan_collect, daemon=True)
     t.start()
     t.join(5)
