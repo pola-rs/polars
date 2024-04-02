@@ -109,7 +109,7 @@ impl FileInfo {
 
     /// Update the [`HivePartitions`] statistics for this [`FileInfo`].
     ///
-    /// If the Hive partitions were not yet intialized, this function has no effect.
+    /// If the Hive partitions were not yet initialized, this function has no effect.
     pub fn update_hive_partitions(&mut self, path: &Path) -> PolarsResult<()> {
         if let Some(current) = &mut self.hive_parts {
             let schema = current.schema().clone();
