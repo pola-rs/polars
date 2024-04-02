@@ -198,7 +198,7 @@ fn use_min_max(dtype: &DataType) -> bool {
 #[derive(Debug)]
 pub struct BatchStats {
     schema: SchemaRef,
-    stats: Vec<ColumnStats>, // TODO: This should probably be a Map of some kind rather than a Vec.
+    stats: Vec<ColumnStats>,
     // This might not be available, as when pruning hive partitions.
     num_rows: Option<usize>,
 }
