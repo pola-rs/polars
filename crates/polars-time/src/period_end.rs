@@ -67,7 +67,7 @@ impl PolarsDateEnd for DatetimeChunked {
             get_timestamp_closures(self.time_unit());
         Ok(self
             .0
-            .try_apply_values(|t| {
+            .try_apply_nonnull_values_generic(|t| {
                 roll_month_forward(
                     t,
                     time_zone,
@@ -84,7 +84,7 @@ impl PolarsDateEnd for DatetimeChunked {
             get_timestamp_closures(self.time_unit());
         Ok(self
             .0
-            .try_apply_values(|t| {
+            .try_apply_nonnull_values_generic(|t| {
                 roll_quarter_forward(
                     t,
                     time_zone,
@@ -101,7 +101,7 @@ impl PolarsDateEnd for DatetimeChunked {
             get_timestamp_closures(self.time_unit());
         Ok(self
             .0
-            .try_apply_values(|t| {
+            .try_apply_nonnull_values_generic(|t| {
                 roll_year_forward(
                     t,
                     time_zone,
@@ -117,47 +117,44 @@ impl PolarsDateEnd for DatetimeChunked {
 impl PolarsDateEnd for DateChunked {
     fn month_end(&self, _time_zone: Option<&Tz>) -> PolarsResult<Self> {
         const MSECS_IN_DAY: i64 = MILLISECONDS * SECONDS_IN_DAY;
-        Ok(self
-            .0
-            .try_apply_values(|t| {
-                Ok((roll_month_forward(
-                    MSECS_IN_DAY * t as i64,
-                    None,
-                    timestamp_ms_to_datetime,
-                    datetime_to_timestamp_ms,
-                    Duration::add_ms,
-                )? / MSECS_IN_DAY) as i32)
-            })?
-            .into_date())
+        let ret = self.0.try_apply_nonnull_values_generic(|t| {
+            let fwd = roll_month_forward(
+                MSECS_IN_DAY * t as i64,
+                None,
+                timestamp_ms_to_datetime,
+                datetime_to_timestamp_ms,
+                Duration::add_ms,
+            )?;
+            PolarsResult::Ok((fwd / MSECS_IN_DAY) as i32)
+        })?;
+        Ok(ret.into_date())
     }
     fn quarter_end(&self, _time_zone: Option<&Tz>) -> PolarsResult<Self> {
         const MSECS_IN_DAY: i64 = MILLISECONDS * SECONDS_IN_DAY;
-        Ok(self
-            .0
-            .try_apply_values(|t| {
-                Ok((roll_quarter_forward(
-                    MSECS_IN_DAY * t as i64,
-                    None,
-                    timestamp_ms_to_datetime,
-                    datetime_to_timestamp_ms,
-                    Duration::add_ms,
-                )? / MSECS_IN_DAY) as i32)
-            })?
-            .into_date())
+        let ret = self.0.try_apply_nonnull_values_generic(|t| {
+            let fwd = roll_quarter_forward(
+                MSECS_IN_DAY * t as i64,
+                None,
+                timestamp_ms_to_datetime,
+                datetime_to_timestamp_ms,
+                Duration::add_ms,
+            )?;
+            PolarsResult::Ok((fwd / MSECS_IN_DAY) as i32)
+        })?;
+        Ok(ret.into_date())
     }
     fn year_end(&self, _time_zone: Option<&Tz>) -> PolarsResult<Self> {
         const MSECS_IN_DAY: i64 = MILLISECONDS * SECONDS_IN_DAY;
-        Ok(self
-            .0
-            .try_apply_values(|t| {
-                Ok((roll_year_forward(
-                    MSECS_IN_DAY * t as i64,
-                    None,
-                    timestamp_ms_to_datetime,
-                    datetime_to_timestamp_ms,
-                    Duration::add_ms,
-                )? / MSECS_IN_DAY) as i32)
-            })?
-            .into_date())
+        let ret = self.0.try_apply_nonnull_values_generic(|t| {
+            let fwd = roll_year_forward(
+                MSECS_IN_DAY * t as i64,
+                None,
+                timestamp_ms_to_datetime,
+                datetime_to_timestamp_ms,
+                Duration::add_ms,
+            )?;
+            PolarsResult::Ok((fwd / MSECS_IN_DAY) as i32)
+        })?;
+        Ok(ret.into_date())
     }
 }
