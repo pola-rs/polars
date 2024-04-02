@@ -164,7 +164,6 @@ impl AggList for NullChunked {
             GroupsProxy::Idx(groups) => {
                 let mut builder = ListNullChunkedBuilder::new(self.name(), groups.len());
                 for idx in groups.all().iter() {
-                    dbg!(idx.len());
                     builder.append_with_len(idx.len());
                 }
                 builder.finish().into_series()
