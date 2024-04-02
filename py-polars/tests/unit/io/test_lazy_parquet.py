@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from pathlib import Path
+from threading import Thread
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
@@ -413,8 +414,6 @@ def test_nested_slice_12480(tmp_path: Path) -> None:
 def test_scan_deadlock_rayon_spawn_from_async_15172(
     monkeypatch: Any, tmp_path: Path
 ) -> None:
-    from threading import Thread
-
     monkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
     monkeypatch.setenv("POLARS_MAX_THREADS", "1")
     path = tmp_path / "data.parquet"
