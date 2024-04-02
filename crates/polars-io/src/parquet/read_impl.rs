@@ -670,7 +670,10 @@ impl BatchedParquetReader {
                     let projection = self.projection.clone();
                     let use_statistics = self.use_statistics;
                     let hive_partition_columns = self.hive_partition_columns.clone();
-                    POOL.spawn(move || {
+
+                    // This is a synchronous blocking operation so we run it in a way
+                    // that makes sure we don't block the polling of async tasks.
+                    let f = move || {
                         let dfs = rg_to_dfs(
                             &store,
                             &mut rows_read,
@@ -687,8 +690,24 @@ impl BatchedParquetReader {
                             hive_partition_columns.as_deref(),
                         );
                         tx.send((dfs, rows_read, limit)).unwrap();
-                    });
-                    let (dfs, rows_read, limit) = rx.await.unwrap();
+                    };
+
+                    let (dfs, rows_read, limit) = if POOL.current_thread_index().is_some() {
+                        // We are a rayon thread, so we must actively participate in driving rayon tasks, thus we use POOL.install.
+                        // Using POOL.spawn as a rayon thread essentially means that a rayon thread is spawning a task that it refuses to run,
+                        // and if every rayon thread did this then we would deadlock.
+                        //
+                        // POOL.install blocks the current thread, so we activate another tokio thread using tokio::spawn.
+                        // This (should) ensure that futures continue to be polled in a timely manner, since the new
+                        // tokio thread would be able to work-steal async tasks from threads that are blocking for too long.
+                        let handle = tokio::spawn(async { rx.await.unwrap() });
+                        POOL.install(f);
+                        handle.await.unwrap()
+                    } else {
+                        POOL.spawn(f);
+                        rx.await.unwrap()
+                    };
+
                     self.rows_read = rows_read;
                     self.limit = limit;
                     dfs
