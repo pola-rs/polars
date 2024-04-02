@@ -106,6 +106,11 @@ impl PrivateSeries for NullChunked {
         })
     }
 
+    #[cfg(feature = "algorithm_group_by")]
+    unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
+        AggList::agg_list(self, groups)
+    }
+
     fn _get_flags(&self) -> Settings {
         Settings::empty()
     }
@@ -181,6 +186,10 @@ impl SeriesTrait for NullChunked {
 
     fn rechunk(&self) -> Series {
         NullChunked::new(self.name.clone(), self.len()).into_series()
+    }
+
+    fn drop_nulls(&self) -> Series {
+        NullChunked::new(self.name.clone(), 0).into_series()
     }
 
     fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {

@@ -5,6 +5,8 @@ use polars_utils::unwrap::UnwrapUncheckedRelease;
 use super::*;
 #[cfg(feature = "dtype-struct")]
 use crate::chunked_array::builder::AnonymousOwnedListBuilder;
+use crate::chunked_array::builder::ListNullChunkedBuilder;
+use crate::series::implementations::null::NullChunked;
 
 pub trait AggList {
     /// # Safety
@@ -151,6 +153,27 @@ where
                     ca.set_fast_explode()
                 }
                 ca.into()
+            },
+        }
+    }
+}
+
+impl AggList for NullChunked {
+    unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
+        match groups {
+            GroupsProxy::Idx(groups) => {
+                let mut builder = ListNullChunkedBuilder::new(self.name(), groups.len());
+                for idx in groups.all().iter() {
+                    builder.append_with_len(idx.len());
+                }
+                builder.finish().into_series()
+            },
+            GroupsProxy::Slice { groups, .. } => {
+                let mut builder = ListNullChunkedBuilder::new(self.name(), groups.len());
+                for [_, len] in groups {
+                    builder.append_with_len(*len as usize);
+                }
+                builder.finish().into_series()
             },
         }
     }

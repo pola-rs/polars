@@ -442,3 +442,10 @@ def test_window_13173() -> None:
         "val": ["2", "3"],
         "min_val_per_color": ["2", "3"],
     }
+
+
+def test_window_agg_list_null_15437() -> None:
+    df = pl.DataFrame({"a": [None]})
+    output = df.select(pl.concat_list("a").over(1))
+    expected = pl.DataFrame({"a": [[None]]})
+    assert_frame_equal(output, expected)
