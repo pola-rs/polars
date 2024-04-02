@@ -424,10 +424,8 @@ def test_scan_deadlock_rayon_nested_spawn_15172(
 
     results = [pl.DataFrame()]
 
-    lfs = [pl.scan_parquet(path)]
-
     def scan_collect() -> pl.DataFrame:
-        results[0] = pl.collect_all(lfs)[0]
+        results[0] = pl.collect_all([pl.scan_parquet(path)])[0]
 
     # Make sure we don't sit there hanging for hours on the broken case
     t = Thread(target=scan_collect, daemon=True)
