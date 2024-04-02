@@ -95,7 +95,7 @@ impl FileInfo {
         let expected_len = self.schema.len() + hive_schema.len();
 
         let file_schema = Arc::make_mut(&mut self.schema);
-        file_schema.merge((*hive_schema).clone());
+        file_schema.merge(Arc::unwrap_or_clone(hive_schema));
 
         polars_ensure!(
             file_schema.len() == expected_len,
