@@ -8,7 +8,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from io import BytesIO
 from operator import floordiv, truediv
-from typing import TYPE_CHECKING, Any, Callable, Iterator, Sequence, cast
+from typing import TYPE_CHECKING, Any, Callable, Iterator, NamedTuple, Sequence, cast
 
 import numpy as np
 import pyarrow as pa
@@ -3184,3 +3184,40 @@ def test_iter_columns() -> None:
     iter_columns = df.iter_columns()
     assert_series_equal(next(iter_columns), pl.Series("a", [1, 1, 2]))
     assert_series_equal(next(iter_columns), pl.Series("b", [4, 5, 6]))
+
+
+def test_named_tuples() -> None:
+    class Event(NamedTuple):
+        name: str
+        description: str
+
+    def event_table(num) -> list[Event]:
+        return [Event("name", "desc") for _ in range(num)]
+
+    data = {"events": [0, 1, 2]}
+    df = pl.DataFrame(data).select(
+        events=pl.col("events").map_elements(
+            event_table,
+            return_dtype=pl.List(
+                pl.Struct({"name": pl.String, "description": pl.String})
+            ),
+        )
+    )
+    expected = pl.DataFrame(
+        [
+            pl.Series(
+                "events",
+                [
+                    [],
+                    [{"name": "name", "description": "desc"}],
+                    [
+                        {"name": "name", "description": "desc"},
+                        {"name": "name", "description": "desc"},
+                    ],
+                ],
+                dtype=pl.List(pl.Struct({"name": pl.String, "description": pl.String})),
+            ),
+        ]
+    )
+
+    assert_frame_equal(df, expected)
