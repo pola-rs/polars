@@ -181,7 +181,7 @@ def test_hive_partitioned_err(io_files_path: Path, tmp_path: Path) -> None:
     root.mkdir()
     df.write_parquet(root / "file.parquet")
 
-    with pytest.raises(pl.ComputeError, match="invalid hive partitions"):
+    with pytest.raises(pl.DuplicateError, match="invalid Hive partition schema"):
         pl.scan_parquet(root / "**/*.parquet", hive_partitioning=True)
 
 
@@ -241,4 +241,4 @@ def test_read_parquet_hive_schema(dataset_path: Path) -> None:
         hive_partitioning=True,
         hive_schema={"c": pl.Int32},
     )
-    assert result.schema == OrderedDict({"a": pl.Int64, "b": pl.Float64, "c": pl.Int64})
+    assert result.schema == OrderedDict({"a": pl.Int64, "b": pl.Float64, "c": pl.Int32})
