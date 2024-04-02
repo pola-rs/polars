@@ -98,6 +98,13 @@ impl From<avro_schema::error::Error> for PolarsError {
     }
 }
 
+#[cfg(feature = "capnp")]
+impl From<capnp::Error> for PolarsError {
+    fn from(value: capnp::Error) -> Self {
+        polars_err!(ComputeError: "capnp-error: {}", value)
+    }
+}
+
 #[cfg(feature = "parquet2")]
 impl From<PolarsError> for parquet2::error::Error {
     fn from(value: PolarsError) -> Self {

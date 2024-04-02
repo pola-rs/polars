@@ -1,0 +1,29 @@
+{
+  "union0": {
+    "bar": 0
+  },
+  "listOuter": [
+    {
+      "union1": {
+        "listInner": [
+          {"baz": 1}
+        ]
+      },
+      "primitiveList": [2, 3]
+    },
+    {
+      "union1": {"qux": 4},
+      "corge": {"baz": 5}
+    },
+    {
+      "union1": {
+        "listInner": [
+          {"baz": 6},
+          {"baz": 7}
+        ]
+      },
+      "primitiveList": [8]
+    }
+  ],
+  "garply": "first"
+}

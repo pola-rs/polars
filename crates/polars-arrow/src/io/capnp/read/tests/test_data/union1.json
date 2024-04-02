@@ -1,0 +1,14 @@
+{
+  "union0": {
+    "foo": 9
+  },
+  "listOuter": [
+    {
+      "union1": {
+        "qux": 10
+      },
+      "primitiveList": [11, 12]
+    }
+  ],
+  "garply": "second"
+}

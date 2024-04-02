@@ -60,6 +60,9 @@ async-stream = { version = "0.3.2", optional = true }
 # avro support
 avro-schema = { workspace = true, optional = true }
 
+# capnp support
+capnp = { workspace = true, optional = true }
+
 # for division/remainder optimization at runtime
 strength_reduce = { workspace = true, optional = true }
 
@@ -94,6 +97,7 @@ tokio-util = { workspace = true, features = ["compat"] }
 
 [build-dependencies]
 version_check = { workspace = true }
+capnpc = { version = "0.19.0", optional = true }
 
 [target.wasm32-unknown-unknown.dependencies]
 getrandom = { version = "0.2", features = ["js"] }
@@ -127,6 +131,8 @@ io_avro_compression = [
   "avro-schema/compression",
 ]
 io_avro_async = ["avro-schema/async"]
+
+io_capnp = ["capnp", "capnpc", "polars-error/capnp"]
 
 # the compute kernels. Disabling this significantly reduces compile time.
 compute_aggregate = ["multiversion"]
