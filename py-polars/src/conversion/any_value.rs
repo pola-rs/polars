@@ -1,3 +1,5 @@
+use std::ops::Not;
+
 #[cfg(feature = "object")]
 use polars::chunked_array::object::PolarsObjectSafe;
 use polars::datatypes::{DataType, Field, OwnedObject, PlHashMap, TimeUnit};
@@ -257,6 +259,7 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
     }
 
     fn get_list(ob: &PyAny, strict: bool) -> PyResult<AnyValue> {
+
         fn get_list_with_constructor(ob: &PyAny) -> PyResult<AnyValue> {
             // Use the dedicated constructor.
             // This constructor is able to go via dedicated type constructors
@@ -269,7 +272,7 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
 
         if ob.is_empty()? {
             Ok(AnyValue::List(Series::new_empty("", &DataType::Null)))
-        } else if ob.is_instance_of::<PyList>() | ob.is_instance_of::<PyTuple>() {
+        } else if ob.is_instance_of::<PyList>() | ob.is_instance_of::<PyTuple>() {            
             const INFER_SCHEMA_LENGTH: usize = 25;
 
             let list = ob.downcast::<PySequence>().unwrap();
@@ -305,6 +308,7 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
                 Ok(AnyValue::List(s))
             }
         } else {
+
             // range will take this branch
             get_list_with_constructor(ob)
         }
@@ -316,7 +320,15 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
     }
 
     fn get_struct(ob: &PyAny, strict: bool) -> PyResult<AnyValue<'_>> {
-        let dict = ob.downcast::<PyDict>().unwrap();
+        let dict = if ob.hasattr(intern!(ob.py(), "_asdict")).unwrap() {
+            // let ob_dict: &PyAny = Python::with_gil(|py| {
+            let convert: &PyAny = ob.getattr(intern!(ob.py(), "_asdict")).unwrap();
+            let ob_dict = convert.call0().unwrap();
+            // });
+            ob_dict.downcast::<PyDict>().unwrap()
+        } else {
+            ob.downcast::<PyDict>().unwrap()
+        };
         let len = dict.len();
         let mut keys = Vec::with_capacity(len);
         let mut vals = Vec::with_capacity(len);
@@ -346,6 +358,7 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
     /// Note: This function is only ran if the object's type is not already in the
     /// lookup table.
     fn get_conversion_function(ob: &PyAny, py: Python) -> InitFn {
+        let ob_as_dict = ob.hasattr(intern!(ob.py(), "_asdict")).unwrap();
         if ob.is_none() {
             get_null
         }
@@ -360,9 +373,9 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
             get_str
         } else if ob.is_instance_of::<PyBytes>() {
             get_bytes
-        } else if ob.is_instance_of::<PyList>() || ob.is_instance_of::<PyTuple>() {
+        } else if ob.is_instance_of::<PyList>() || (ob.is_instance_of::<PyTuple>() & ob_as_dict.not()) {
             get_list
-        } else if ob.is_instance_of::<PyDict>() {
+        } else if ob.is_instance_of::<PyDict>() || ob_as_dict {
             get_struct
         } else if ob.hasattr(intern!(py, "_s")).unwrap() {
             get_list_from_series
