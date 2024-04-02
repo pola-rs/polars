@@ -25,8 +25,10 @@ impl HivePartitions {
 
     /// Constructs a new [`HivePartitions`] from a path.
     ///
-    /// Fails if the path does not contain any Hive partitions.
-    pub fn try_from_path(path: &Path, schema: Option<SchemaRef>) -> PolarsResult<Self> {
+    /// Returns `None` if the path does not contain any Hive partitions.
+    /// Returns `Err` if the Hive partitions cannot be parsed correctly or do not match the given
+    /// [`Schema`].
+    pub fn try_from_path(path: &Path, schema: Option<SchemaRef>) -> PolarsResult<Option<Self>> {
         let sep = separator(path);
 
         let path_string = path.display().to_string();
@@ -46,10 +48,9 @@ impl HivePartitions {
             .map(|(name, value)| hive_info_to_series(name, value, schema.clone()))
             .collect::<PolarsResult<Vec<_>>>()?;
 
-        polars_ensure!(
-            !partitions.is_empty(),
-            ComputeError: "path does not contain Hive partition information"
-        );
+        if partitions.is_empty() {
+            return Ok(None);
+        }
 
         let schema = match schema {
             Some(s) => {
@@ -71,7 +72,7 @@ impl HivePartitions {
             None,
         );
 
-        Ok(HivePartitions { stats })
+        Ok(Some(HivePartitions { stats }))
     }
 
     pub fn get_statistics(&self) -> &BatchStats {

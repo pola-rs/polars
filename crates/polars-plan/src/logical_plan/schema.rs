@@ -80,11 +80,11 @@ impl FileInfo {
         schema: Option<SchemaRef>,
     ) -> PolarsResult<()> {
         let hp = HivePartitions::try_from_path(path, schema)?;
-
-        let hive_schema = hp.schema().clone();
-        self.update_schema_with_hive_schema(hive_schema)?;
-        self.hive_parts = Some(Arc::new(hp));
-
+        if let Some(hp) = hp {
+            let hive_schema = hp.schema().clone();
+            self.update_schema_with_hive_schema(hive_schema)?;
+            self.hive_parts = Some(Arc::new(hp));
+        }
         Ok(())
     }
 
@@ -111,13 +111,14 @@ impl FileInfo {
     pub fn update_hive_partitions(&mut self, path: &Path) -> PolarsResult<()> {
         if let Some(current) = &mut self.hive_parts {
             let schema = current.schema().clone();
-            let new = HivePartitions::try_from_path(path, Some(schema)).map_err(|_| {
-                polars_err!(
+            let hp = HivePartitions::try_from_path(path, Some(schema))?;
+            let Some(new) = hp else {
+                polars_bail!(
                     ComputeError: "expected Hive partitioned path, got {}\n\n\
                     This error occurs if `hive_partitioning=true` while some paths are Hive partitioned and some paths are not.",
                     path.display()
                 )
-            })?;
+            };
 
             match Arc::get_mut(current) {
                 Some(hp) => *hp = new,
