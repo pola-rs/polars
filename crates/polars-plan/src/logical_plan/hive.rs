@@ -109,6 +109,8 @@ fn separator(_url: &Path) -> char {
 }
 
 /// Parse a Hive partition string (e.g. "column=1.5") into a name and value part.
+///
+/// Returns `None` if the string is not a Hive partition string.
 fn parse_hive_string(part: &'_ str) -> Option<(&'_ str, &'_ str)> {
     let mut it = part.split('=');
     let name = it.next()?;
@@ -142,29 +144,35 @@ fn hive_info_to_series(name: &str, value: &str, schema: Option<SchemaRef>) -> Po
         None => None,
     };
 
-    value_to_series(name, value, dtype).ok_or_else(|| polars_err!(ComputeError: "..."))
+    value_to_series(name, value, dtype)
 }
 
-fn value_to_series(name: &str, value: &str, dtype: Option<&DataType>) -> Option<Series> {
+/// Parse a string value into a single-value [`Series`].
+fn value_to_series(name: &str, value: &str, dtype: Option<&DataType>) -> PolarsResult<Series> {
+    let fn_err = || polars_err!(ComputeError: "unable to parse Hive partition value: {:?}", value);
+
     let mut s = if INTEGER_RE.is_match(value) {
-        let value = value.parse::<i64>().ok()?;
+        let value = value.parse::<i64>().map_err(|_| fn_err())?;
         Series::new(name, &[value])
     } else if BOOLEAN_RE.is_match(value) {
-        let value = value.parse::<bool>().ok()?;
+        let value = value.parse::<bool>().map_err(|_| fn_err())?;
         Series::new(name, &[value])
     } else if FLOAT_RE.is_match(value) {
-        let value = value.parse::<f64>().ok()?;
+        let value = value.parse::<f64>().map_err(|_| fn_err())?;
         Series::new(name, &[value])
     } else if value == "__HIVE_DEFAULT_PARTITION__" {
         Series::new_null(name, 1)
     } else {
-        Series::new(name, &[percent_decode_str(value).decode_utf8().ok()?])
+        let value = percent_decode_str(value)
+            .decode_utf8()
+            .map_err(|_| fn_err())?;
+        Series::new(name, &[value])
     };
 
     // TODO: Avoid expensive logic above when dtype is known
     if let Some(dt) = dtype {
-        s = s.strict_cast(dt).ok()?;
+        s = s.strict_cast(dt)?;
     }
 
-    Some(s)
+    Ok(s)
 }
