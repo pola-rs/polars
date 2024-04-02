@@ -89,12 +89,7 @@ fn truncate_buffer(buf: &Buffer<u8>) -> Buffer<u8> {
 pub fn binary_to_binview<O: Offset>(arr: &BinaryArray<O>) -> BinaryViewArray {
     // Ensure we didn't accidentally set wrong type
     #[cfg(not(debug_assertions))]
-    {
-        assert_eq!(
-            std::mem::size_of::<u32>(),
-            std::mem::size_of::<OffsetType>()
-        );
-    }
+    let _ = std::mem::transmute::<OffsetType, u32>;
 
     let mut views = Vec::with_capacity(arr.len());
     let mut uses_buffer = false;
