@@ -16,13 +16,11 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.sql.expression import cast as alchemy_cast
 
 import polars as pl
-from polars.datatypes.convert import _infer_dtype_from_database_typename
-from polars.exceptions import ComputeError, UnsuitableSQLError
-from polars.io.database import _ARROW_DRIVER_REGISTRY_
+from polars.exceptions import UnsuitableSQLError
+from polars.io.database._arrow_registry import ARROW_DRIVER_REGISTRY
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
-    from polars.datatypes import PolarsDataType
     from polars.type_aliases import (
         ConnectionOrCursor,
         DbReadEngine,
@@ -37,86 +35,6 @@ def adbc_sqlite_connect(*args: Any, **kwargs: Any) -> Any:
 
         args = tuple(str(a) if isinstance(a, Path) else a for a in args)
         return connect(*args, **kwargs)
-
-
-@pytest.fixture()
-def tmp_sqlite_db(tmp_path: Path) -> Path:
-    test_db = tmp_path / "test.db"
-    test_db.unlink(missing_ok=True)
-
-    def convert_date(val: bytes) -> date:
-        """Convert ISO 8601 date to datetime.date object."""
-        return date.fromisoformat(val.decode())
-
-    # NOTE: at the time of writing adcb/connectorx have weak SQLite support (poor or
-    # no bool/date/datetime dtypes, for example) and there is a bug in connectorx that
-    # causes float rounding < py 3.11, hence we are only testing/storing simple values
-    # in this test db for now. as support improves, we can add/test additional dtypes).
-    sqlite3.register_converter("date", convert_date)
-    conn = sqlite3.connect(test_db)
-
-    # ┌─────┬───────┬───────┬────────────┐
-    # │ id  ┆ name  ┆ value ┆ date       │
-    # │ --- ┆ ---   ┆ ---   ┆ ---        │
-    # │ i64 ┆ str   ┆ f64   ┆ date       │
-    # ╞═════╪═══════╪═══════╪════════════╡
-    # │ 1   ┆ misc  ┆ 100.0 ┆ 2020-01-01 │
-    # │ 2   ┆ other ┆ -99.0 ┆ 2021-12-31 │
-    # └─────┴───────┴───────┴────────────┘
-    conn.executescript(
-        """
-        CREATE TABLE IF NOT EXISTS test_data (
-            id    INTEGER PRIMARY KEY,
-            name  TEXT NOT NULL,
-            value FLOAT,
-            date  DATE
-        );
-        REPLACE INTO test_data(name,value,date)
-          VALUES ('misc',100.0,'2020-01-01'),
-                 ('other',-99.5,'2021-12-31');
-        """
-    )
-    conn.close()
-    return test_db
-
-
-@pytest.fixture()
-def tmp_sqlite_inference_db(tmp_path: Path) -> Path:
-    test_db = tmp_path / "test_inference.db"
-    test_db.unlink(missing_ok=True)
-    conn = sqlite3.connect(test_db)
-    conn.executescript(
-        """
-        CREATE TABLE IF NOT EXISTS test_data (name TEXT, value FLOAT);
-        REPLACE INTO test_data(name,value) VALUES (NULL,NULL), ('foo',0);
-        """
-    )
-    conn.close()
-    return test_db
-
-
-class DatabaseReadTestParams(NamedTuple):
-    """Clarify read test params."""
-
-    read_method: str
-    connect_using: Any
-    expected_dtypes: SchemaDefinition
-    expected_dates: list[date | str]
-    schema_overrides: SchemaDict | None = None
-    batch_size: int | None = None
-
-
-class ExceptionTestParams(NamedTuple):
-    """Clarify exception test params."""
-
-    read_method: str
-    query: str | list[str]
-    protocol: Any
-    errclass: type[Exception]
-    errmsg: str
-    engine: str | None = None
-    execute_options: dict[str, Any] | None = None
-    kwargs: dict[str, Any] | None = None
 
 
 class MockConnection:
@@ -188,6 +106,30 @@ class MockResultSet:
         else:
             res = iter((self.test_data,))
         return res
+
+
+class DatabaseReadTestParams(NamedTuple):
+    """Clarify read test params."""
+
+    read_method: str
+    connect_using: Any
+    expected_dtypes: SchemaDefinition
+    expected_dates: list[date | str]
+    schema_overrides: SchemaDict | None = None
+    batch_size: int | None = None
+
+
+class ExceptionTestParams(NamedTuple):
+    """Clarify exception test params."""
+
+    read_method: str
+    query: str | list[str]
+    protocol: Any
+    errclass: type[Exception]
+    errmsg: str
+    engine: str | None = None
+    execute_options: dict[str, Any] | None = None
+    kwargs: dict[str, Any] | None = None
 
 
 @pytest.mark.write_disk()
@@ -527,7 +469,7 @@ def test_read_database_mocked(
         driver,
         batch_size,
         test_data=arrow,
-        repeat_batch_calls=_ARROW_DRIVER_REGISTRY_.get(driver, {}).get(  # type: ignore[call-overload]
+        repeat_batch_calls=ARROW_DRIVER_REGISTRY.get(driver, {}).get(  # type: ignore[call-overload]
             "repeat_batch_calls", False
         ),
     )
@@ -617,7 +559,7 @@ def test_read_database_mocked(
                 query="SELECT * FROM imaginary_table",
                 protocol=sys.getsizeof,  # not a connection
                 errclass=TypeError,
-                errmsg="Unrecognised connection .* unable to find 'execute' method",
+                errmsg="Unrecognised connection .* no 'execute' or 'cursor' method",
             ),
             id="Invalid read DB kwargs",
         ),
@@ -721,28 +663,6 @@ def test_read_database_cx_credentials(uri: str) -> None:
         pl.read_database_uri("SELECT * FROM data", uri=uri)
 
 
-def test_database_infer_schema_length(tmp_sqlite_inference_db: Path) -> None:
-    # note: first row of this test database contains only NULL values
-    conn = sqlite3.connect(tmp_sqlite_inference_db)
-    for infer_len in (2, 100, None):
-        df = pl.read_database(
-            connection=conn,
-            query="SELECT * FROM test_data",
-            infer_schema_length=infer_len,
-        )
-        assert df.schema == {"name": pl.String, "value": pl.Float64}
-
-    with pytest.raises(
-        ComputeError,
-        match='could not append value: "foo" of type: str.*`infer_schema_length`',
-    ):
-        pl.read_database(
-            connection=conn,
-            query="SELECT * FROM test_data",
-            infer_schema_length=1,
-        )
-
-
 @pytest.mark.write_disk()
 def test_read_kuzu_graph_database(tmp_path: Path, io_files_path: Path) -> None:
     import kuzu
@@ -784,6 +704,7 @@ def test_read_kuzu_graph_database(tmp_path: Path, io_files_path: Path) -> None:
     df2 = pl.read_database(
         query="MATCH (a:User)-[f:Follows]->(b:User) RETURN a.name, f.since, b.name",
         connection=conn,
+        schema_overrides={"f.since": pl.Int16},
     )
     assert_frame_equal(
         df2,
@@ -793,7 +714,7 @@ def test_read_kuzu_graph_database(tmp_path: Path, io_files_path: Path) -> None:
                 "f.since": [2020, 2020, 2021, 2022],
                 "b.name": ["Karissa", "Zhang", "Zhang", "Noura"],
             },
-            schema={"a.name": pl.Utf8, "f.since": pl.Int64, "b.name": pl.Utf8},
+            schema={"a.name": pl.Utf8, "f.since": pl.Int16, "b.name": pl.Utf8},
         ),
     )
 
@@ -808,84 +729,3 @@ def test_read_kuzu_graph_database(tmp_path: Path, io_files_path: Path) -> None:
             schema={"a.name": pl.Utf8, "f.since": pl.Int64, "b.name": pl.Utf8}
         ),
     )
-
-
-@pytest.mark.parametrize(
-    ("value", "expected_dtype"),
-    [
-        # string types
-        ("UTF16", pl.String),
-        ("char(8)", pl.String),
-        ("nchar[128]", pl.String),
-        ("varchar", pl.String),
-        ("CHARACTER VARYING(64)", pl.String),
-        ("nvarchar(32)", pl.String),
-        ("TEXT", pl.String),
-        # array types
-        ("float32[]", pl.List(pl.Float32)),
-        ("double array", pl.List(pl.Float64)),
-        ("array[bool]", pl.List(pl.Boolean)),
-        ("array of nchar(8)", pl.List(pl.String)),
-        ("array[array[int8]]", pl.List(pl.List(pl.Int64))),
-        # numeric types
-        ("numeric[10,5]", pl.Decimal(10, 5)),
-        ("bigdecimal", pl.Decimal),
-        ("decimal128(10,5)", pl.Decimal(10, 5)),
-        ("double precision", pl.Float64),
-        ("floating point", pl.Float64),
-        ("numeric", pl.Float64),
-        ("real", pl.Float64),
-        ("boolean", pl.Boolean),
-        ("tinyint", pl.Int8),
-        ("smallint", pl.Int16),
-        ("int", pl.Int64),
-        ("int4", pl.Int32),
-        ("int2", pl.Int16),
-        ("int(16)", pl.Int16),
-        ("ROWID", pl.UInt64),
-        ("mediumint", pl.Int32),
-        ("unsigned mediumint", pl.UInt32),
-        ("smallserial", pl.Int16),
-        ("serial", pl.Int32),
-        ("bigserial", pl.Int64),
-        # temporal types
-        ("timestamp(3)", pl.Datetime("ms")),
-        ("timestamp(5)", pl.Datetime("us")),
-        ("timestamp(7)", pl.Datetime("ns")),
-        ("datetime without tz", pl.Datetime("us")),
-        ("date", pl.Date),
-        ("time", pl.Time),
-        ("date32", pl.Date),
-        ("time64", pl.Time),
-        # binary types
-        ("BYTEA", pl.Binary),
-        ("BLOB", pl.Binary),
-    ],
-)
-def test_database_dtype_inference_from_string(
-    value: str,
-    expected_dtype: PolarsDataType,
-) -> None:
-    inferred_dtype = _infer_dtype_from_database_typename(value)
-    assert inferred_dtype == expected_dtype  # type: ignore[operator]
-
-
-@pytest.mark.parametrize(
-    "value",
-    [
-        "FooType",
-        "Unknown",
-        "MISSING",
-        "XML",  # note: we deliberately exclude "number" as it is ambiguous.
-        "Number",  # (could refer to any size of int, float, or decimal dtype)
-    ],
-)
-def test_database_dtype_inference_from_invalid_string(value: str) -> None:
-    with pytest.raises(ValueError, match="cannot infer dtype"):
-        _infer_dtype_from_database_typename(value)
-
-    inferred_dtype = _infer_dtype_from_database_typename(
-        value=value,
-        raise_unmatched=False,
-    )
-    assert inferred_dtype is None

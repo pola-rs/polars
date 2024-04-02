@@ -1023,12 +1023,12 @@ def test_fill_nan() -> None:
 def test_map_elements() -> None:
     with pytest.warns(PolarsInefficientMapWarning):
         a = pl.Series("a", [1, 2, None])
-        b = a.map_elements(lambda x: x**2)
+        b = a.map_elements(lambda x: x**2, return_dtype=pl.Int64)
         assert list(b) == [1, 4, None]
 
     with pytest.warns(PolarsInefficientMapWarning):
         a = pl.Series("a", ["foo", "bar", None])
-        b = a.map_elements(lambda x: x + "py")
+        b = a.map_elements(lambda x: x + "py", return_dtype=pl.String)
         assert list(b) == ["foopy", "barpy", None]
 
     b = a.map_elements(lambda x: len(x), return_dtype=pl.Int32)
@@ -1089,15 +1089,8 @@ def test_empty() -> None:
         pl.Series(dtype=pl.Int32), pl.Series(dtype=pl.Int64), check_dtype=False
     )
 
-    a = pl.Series(name="a", values=[1, 2, 3], dtype=pl.Int16)
-    for n in (0, 2, 5):
-        empty_a = a.clear(n)
-        assert a.dtype == empty_a.dtype
-        assert a.name == empty_a.name
-        assert len(empty_a) == n
-
     with pytest.raises(TypeError, match="ambiguous"):
-        not empty_a
+        not pl.Series()
 
 
 def test_round() -> None:

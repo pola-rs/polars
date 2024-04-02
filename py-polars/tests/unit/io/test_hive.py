@@ -88,6 +88,12 @@ def test_hive_partitioned_predicate_pushdown_skips_correct_number_of_files(
     assert q.filter(pl.col("a").is_in([1, 4])).collect().shape == (2, 2)
     assert "hive partitioning: skipped 3 files" in capfd.readouterr().err
 
+    # Ensure the CSE can work with hive partitions.
+    q = q.filter(pl.col("a").gt(2))
+    assert q.join(q, on="a", how="left").collect(comm_subplan_elim=True).to_dict(
+        as_series=False
+    ) == {"d": [3, 4], "a": [3, 4], "d_right": [3, 4]}
+
 
 @pytest.mark.skip(
     reason="Broken by pyarrow 15 release: https://github.com/pola-rs/polars/issues/13892"

@@ -303,6 +303,9 @@ impl<T: PolarsObject> FromIterator<Option<T>> for ObjectChunked<T> {
         let size = iter.size_hint().0;
         let mut null_mask_builder = MutableBitmap::with_capacity(size);
 
+        // TODO: Clippy lint is broken, remove attr once fixed.
+        // https://github.com/rust-lang/rust-clippy/issues/12580
+        #[cfg_attr(feature = "nightly", allow(clippy::manual_unwrap_or_default))]
         let values: Vec<T> = iter
             .map(|value| match value {
                 Some(value) => {

@@ -146,6 +146,9 @@ impl Sink for SortSink {
 
     fn combine(&mut self, other: &mut dyn Sink) {
         let other = other.as_any().downcast_mut::<Self>().unwrap();
+        if let Some(ooc_start) = other.ooc_start {
+            self.ooc_start = Some(ooc_start);
+        }
         self.chunks.extend(std::mem::take(&mut other.chunks));
         self.ooc |= other.ooc;
         self.dist_sample
@@ -185,7 +188,7 @@ impl Sink for SortSink {
                 nulls_last: self.sort_args.nulls_last,
                 multithreaded: true,
                 maintain_order: self.sort_args.maintain_order,
-            });
+            })?;
 
             let instant = self.ooc_start.unwrap();
             if context.verbose {

@@ -1,67 +1,49 @@
-use polars::frame::row::{rows_to_schema_supertypes, Row};
+use polars::frame::row::{rows_to_schema_supertypes, rows_to_supertypes, Row};
 use pyo3::prelude::*;
 
 use super::*;
 use crate::arrow_interop;
-use crate::conversion::Wrap;
+use crate::conversion::any_value::py_object_to_any_value;
+use crate::conversion::{vec_extract_wrapped, Wrap};
 
 #[pymethods]
 impl PyDataFrame {
     #[staticmethod]
     pub fn from_rows(
         py: Python,
-        rows: Vec<Wrap<Row>>,
-        infer_schema_length: Option<usize>,
+        data: Vec<Wrap<Row>>,
         schema: Option<Wrap<Schema>>,
+        infer_schema_length: Option<usize>,
     ) -> PyResult<Self> {
-        // SAFETY: Wrap<T> is transparent.
-        let rows = unsafe { std::mem::transmute::<Vec<Wrap<Row>>, Vec<Row>>(rows) };
-        py.allow_threads(move || {
-            finish_from_rows(rows, infer_schema_length, schema.map(|wrap| wrap.0), None)
-        })
+        let data = vec_extract_wrapped(data);
+        let schema = schema.map(|wrap| wrap.0);
+        py.allow_threads(move || finish_from_rows(data, schema, None, infer_schema_length))
     }
 
     #[staticmethod]
+    #[pyo3(signature = (data, schema=None, schema_overrides=None, strict=true, infer_schema_length=None))]
     pub fn from_dicts(
         py: Python,
-        dicts: &PyAny,
-        infer_schema_length: Option<usize>,
+        data: &PyAny,
         schema: Option<Wrap<Schema>>,
         schema_overrides: Option<Wrap<Schema>>,
+        strict: bool,
+        infer_schema_length: Option<usize>,
     ) -> PyResult<Self> {
-        // If given, read dict fields in schema order.
-        let mut schema_columns = PlIndexSet::new();
-        if let Some(s) = &schema {
-            schema_columns.extend(s.0.iter_names().map(|n| n.to_string()))
-        }
-        let (rows, names) = dicts_to_rows(dicts, infer_schema_length, schema_columns)?;
-        py.allow_threads(move || {
-            let mut schema_overrides_by_idx: Vec<(usize, DataType)> = Vec::new();
-            if let Some(overrides) = schema_overrides {
-                for (idx, name) in names.iter().enumerate() {
-                    if let Some(dtype) = overrides.0.get(name) {
-                        schema_overrides_by_idx.push((idx, dtype.clone()));
-                    }
-                }
-            }
-            let mut pydf = finish_from_rows(
-                rows,
-                infer_schema_length,
-                schema.map(|wrap| wrap.0),
-                Some(schema_overrides_by_idx),
-            )?;
-            unsafe {
-                for (s, name) in pydf.df.get_columns_mut().iter_mut().zip(&names) {
-                    s.rename(name);
-                }
-            }
-            let length = names.len();
-            if names.into_iter().collect::<PlHashSet<_>>().len() != length {
-                let err = PolarsError::Duplicate("duplicate column names found".into());
-                Err(PyPolarsErr::Polars(err))?;
-            }
+        let schema = schema.map(|wrap| wrap.0);
+        let schema_overrides = schema_overrides.map(|wrap| wrap.0);
 
-            Ok(pydf)
+        let names = get_schema_names(data, schema.as_ref(), infer_schema_length)?;
+        let rows = dicts_to_rows(data, &names, strict)?;
+
+        let schema = schema.or_else(|| {
+            Some(columns_names_to_empty_schema(
+                names.iter().map(String::as_str),
+            ))
+        });
+
+        py.allow_threads(move || {
+            finish_from_rows(rows, schema, schema_overrides, infer_schema_length)
         })
     }
 
@@ -74,92 +56,140 @@ impl PyDataFrame {
 
 fn finish_from_rows(
     rows: Vec<Row>,
-    infer_schema_length: Option<usize>,
     schema: Option<Schema>,
-    schema_overrides_by_idx: Option<Vec<(usize, DataType)>>,
+    schema_overrides: Option<Schema>,
+    infer_schema_length: Option<usize>,
 ) -> PyResult<PyDataFrame> {
-    // Object builder must be registered, this is done on import.
-    let mut final_schema =
-        rows_to_schema_supertypes(&rows, infer_schema_length.map(|n| std::cmp::max(1, n)))
-            .map_err(PyPolarsErr::from)?;
+    let mut schema = if let Some(mut schema) = schema {
+        resolve_schema_overrides(&mut schema, schema_overrides)?;
+        update_schema_from_rows(&mut schema, &rows, infer_schema_length)?;
+        schema
+    } else {
+        rows_to_schema_supertypes(&rows, infer_schema_length).map_err(PyPolarsErr::from)?
+    };
 
-    // Erase scale from inferred decimals.
-    for dtype in final_schema.iter_dtypes_mut() {
+    // TODO: Remove this step when Decimals are supported properly.
+    // Erasing the decimal precision/scale here will just require us to infer it again later.
+    // https://github.com/pola-rs/polars/issues/14427
+    erase_decimal_precision_scale(&mut schema);
+
+    let df = DataFrame::from_rows_and_schema(&rows, &schema).map_err(PyPolarsErr::from)?;
+    Ok(df.into())
+}
+
+fn update_schema_from_rows(
+    schema: &mut Schema,
+    rows: &[Row],
+    infer_schema_length: Option<usize>,
+) -> PyResult<()> {
+    let schema_is_complete = schema.iter_dtypes().all(|dtype| dtype.is_known());
+    if schema_is_complete {
+        return Ok(());
+    }
+
+    // TODO: Only infer dtypes for columns with an unknown dtype
+    let inferred_dtypes =
+        rows_to_supertypes(rows, infer_schema_length).map_err(PyPolarsErr::from)?;
+    let inferred_dtypes_slice = inferred_dtypes.as_slice();
+
+    for (i, dtype) in schema.iter_dtypes_mut().enumerate() {
+        if !dtype.is_known() {
+            *dtype = inferred_dtypes_slice.get(i).ok_or_else(|| {
+                polars_err!(SchemaMismatch: "the number of columns in the schema does not match the data")
+            })
+            .map_err(PyPolarsErr::from)?
+            .clone();
+        }
+    }
+    Ok(())
+}
+
+/// Override the data type of certain schema fields.
+fn resolve_schema_overrides(schema: &mut Schema, schema_overrides: Option<Schema>) -> PyResult<()> {
+    if let Some(overrides) = schema_overrides {
+        for (name, dtype) in overrides.into_iter() {
+            schema.set_dtype(name.as_str(), dtype).ok_or_else(|| {
+                polars_err!(SchemaMismatch: "nonexistent column specified in `schema_overrides`: {name}")
+            }).map_err(PyPolarsErr::from)?;
+        }
+    }
+    Ok(())
+}
+
+/// Erase precision/scale information from Decimal types.
+fn erase_decimal_precision_scale(schema: &mut Schema) {
+    for dtype in schema.iter_dtypes_mut() {
         if let DataType::Decimal(_, _) = dtype {
             *dtype = DataType::Decimal(None, None)
         }
     }
-
-    // Integrate explicit/inferred schema.
-    if let Some(schema) = schema {
-        for (i, (name, dtype)) in schema.into_iter().enumerate() {
-            if let Some((name_, dtype_)) = final_schema.get_at_index_mut(i) {
-                *name_ = name;
-
-                // If schema dtype is Unknown, overwrite with inferred datatype.
-                if !matches!(dtype, DataType::Unknown) {
-                    *dtype_ = dtype;
-                }
-            } else {
-                final_schema.with_column(name, dtype);
-            }
-        }
-    }
-
-    // Optional per-field overrides; these supersede default/inferred dtypes.
-    if let Some(overrides) = schema_overrides_by_idx {
-        for (i, dtype) in overrides {
-            if let Some((_, dtype_)) = final_schema.get_at_index_mut(i) {
-                if !matches!(dtype, DataType::Unknown) {
-                    *dtype_ = dtype;
-                }
-            }
-        }
-    }
-    let df = DataFrame::from_rows_and_schema(&rows, &final_schema).map_err(PyPolarsErr::from)?;
-    Ok(df.into())
 }
 
-fn dicts_to_rows(
-    records: &PyAny,
-    infer_schema_len: Option<usize>,
-    schema_columns: PlIndexSet<String>,
-) -> PyResult<(Vec<Row>, Vec<String>)> {
-    let infer_schema_len = infer_schema_len.map(|n| std::cmp::max(1, n));
-    let len = records.len()?;
+fn columns_names_to_empty_schema<'a, I>(column_names: I) -> Schema
+where
+    I: IntoIterator<Item = &'a str>,
+{
+    let fields = column_names
+        .into_iter()
+        .map(|c| Field::new(c, DataType::Unknown));
+    Schema::from_iter(fields)
+}
 
-    let key_names = {
-        if !schema_columns.is_empty() {
-            schema_columns
-        } else {
-            let mut inferred_keys = PlIndexSet::new();
-            for d in records.iter()?.take(infer_schema_len.unwrap_or(usize::MAX)) {
-                let d = d?;
-                let d = d.downcast::<PyDict>()?;
-                let keys = d.keys();
-                for name in keys {
-                    let name = name.extract::<String>()?;
-                    inferred_keys.insert(name);
-                }
-            }
-            inferred_keys
-        }
-    };
+fn dicts_to_rows<'a>(data: &'a PyAny, names: &'a [String], strict: bool) -> PyResult<Vec<Row<'a>>> {
+    let len = data.len()?;
     let mut rows = Vec::with_capacity(len);
-
-    for d in records.iter()? {
+    for d in data.iter()? {
         let d = d?;
         let d = d.downcast::<PyDict>()?;
 
-        let mut row = Vec::with_capacity(key_names.len());
-        for k in key_names.iter() {
+        let mut row = Vec::with_capacity(names.len());
+        for k in names.iter() {
             let val = match d.get_item(k)? {
                 None => AnyValue::Null,
-                Some(val) => val.extract::<Wrap<AnyValue>>()?.0,
+                Some(val) => py_object_to_any_value(val, strict)?,
             };
             row.push(val)
         }
         rows.push(Row(row))
     }
-    Ok((rows, key_names.into_iter().collect()))
+    Ok(rows)
+}
+
+/// Either read the given schema, or infer the schema names from the data.
+fn get_schema_names(
+    data: &PyAny,
+    schema: Option<&Schema>,
+    infer_schema_length: Option<usize>,
+) -> PyResult<Vec<String>> {
+    if let Some(schema) = schema {
+        Ok(schema.iter_names().map(|n| n.to_string()).collect())
+    } else {
+        infer_schema_names_from_data(data, infer_schema_length)
+    }
+}
+
+/// Infer schema names from an iterable of dictionaries.
+///
+/// The resulting schema order is determined by the order in which the names are encountered in
+/// the data.
+fn infer_schema_names_from_data(
+    data: &PyAny,
+    infer_schema_length: Option<usize>,
+) -> PyResult<Vec<String>> {
+    let data_len = data.len()?;
+    let infer_schema_length = infer_schema_length
+        .map(|n| std::cmp::max(1, n))
+        .unwrap_or(data_len);
+
+    let mut names = PlIndexSet::new();
+    for d in data.iter()?.take(infer_schema_length) {
+        let d = d?;
+        let d = d.downcast::<PyDict>()?;
+        let keys = d.keys();
+        for name in keys {
+            let name = name.extract::<String>()?;
+            names.insert(name);
+        }
+    }
+    Ok(names.into_iter().collect())
 }

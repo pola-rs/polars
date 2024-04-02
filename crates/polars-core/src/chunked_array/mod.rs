@@ -853,7 +853,7 @@ pub(crate) mod test {
         assert_slice_equal(&first.slice(-3, 3), &[3, 4, 5]);
         assert_slice_equal(&first.slice(-6, 6), &[0, 1, 2, 3, 4, 5]);
 
-        assert_eq!(first.slice(-7, 2).len(), 2);
+        assert_eq!(first.slice(-7, 2).len(), 1);
         assert_eq!(first.slice(-3, 4).len(), 3);
         assert_eq!(first.slice(3, 4).len(), 3);
         assert_eq!(first.slice(10, 4).len(), 0);

@@ -27,6 +27,7 @@ use polars_io::{
 };
 
 use super::builder_functions::*;
+use crate::constants::UNLIMITED_CACHE;
 use crate::dsl::functions::horizontal::all_horizontal;
 use crate::logical_plan::projection::{is_regex_projection, rewrite_projections};
 #[cfg(feature = "python")]
@@ -67,7 +68,7 @@ macro_rules! raise_err {
                 let err = $err.wrap_msg(&format_err_outer);
 
                 LogicalPlan::Error {
-                    input: Box::new(input),
+                    input: Arc::new(input),
                     err: err.into(), // PolarsError -> ErrorState
                 }
             },
@@ -230,20 +231,25 @@ impl LogicalPlanBuilder {
     }
 
     #[cfg(feature = "ipc")]
-    pub fn scan_ipc<P: Into<std::path::PathBuf>>(
-        path: P,
+    pub fn scan_ipc<P: Into<Arc<[std::path::PathBuf]>>>(
+        paths: P,
         options: IpcScanOptions,
         n_rows: Option<usize>,
         cache: bool,
         row_index: Option<RowIndex>,
         rechunk: bool,
-        #[cfg(feature = "cloud")] cloud_options: Option<CloudOptions>,
+        cloud_options: Option<CloudOptions>,
     ) -> PolarsResult<Self> {
         use polars_io::is_cloud_url;
 
-        let path = path.into();
+        let paths = paths.into();
 
-        let metadata = if is_cloud_url(&path) {
+        // Use first path to get schema.
+        let path = paths
+            .first()
+            .ok_or_else(|| polars_err!(ComputeError: "expected at least 1 path"))?;
+
+        let metadata = if is_cloud_url(path) {
             #[cfg(not(feature = "cloud"))]
             panic!(
                 "One or more of the cloud storage features ('aws', 'gcp', ...) must be enabled."
@@ -261,12 +267,12 @@ impl LogicalPlanBuilder {
             }
         } else {
             arrow::io::ipc::read::read_file_metadata(&mut std::io::BufReader::new(
-                polars_utils::open_file(&path)?,
+                polars_utils::open_file(path)?,
             ))?
         };
 
         Ok(LogicalPlan::Scan {
-            paths: Arc::new([path]),
+            paths,
             file_info: FileInfo::new(
                 prepare_schema(metadata.schema.as_ref().into(), row_index.as_ref()),
                 Some(Arc::clone(&metadata.schema)),
@@ -284,7 +290,6 @@ impl LogicalPlanBuilder {
             predicate: None,
             scan_type: FileScan::Ipc {
                 options,
-                #[cfg(feature = "cloud")]
                 cloud_options,
                 metadata: Some(metadata),
             },
@@ -419,12 +424,12 @@ impl LogicalPlanBuilder {
     }
 
     pub fn cache(self) -> Self {
-        let input = Box::new(self.0);
+        let input = Arc::new(self.0);
         let id = input.as_ref() as *const LogicalPlan as usize;
         LogicalPlan::Cache {
             input,
             id,
-            count: usize::MAX,
+            cache_hits: UNLIMITED_CACHE,
         }
         .into()
     }
@@ -456,7 +461,7 @@ impl LogicalPlanBuilder {
         } else {
             LogicalPlan::Projection {
                 expr: columns,
-                input: Box::new(self.0),
+                input: Arc::new(self.0),
                 schema: Arc::new(output_schema),
                 options: ProjectionOptions {
                     run_parallel: false,
@@ -481,7 +486,7 @@ impl LogicalPlanBuilder {
         } else {
             LogicalPlan::Projection {
                 expr: exprs,
-                input: Box::new(self.0),
+                input: Arc::new(self.0),
                 schema: Arc::new(schema),
                 options,
             }
@@ -571,7 +576,7 @@ impl LogicalPlanBuilder {
         }
 
         LogicalPlan::HStack {
-            input: Box::new(self.0),
+            input: Arc::new(self.0),
             exprs,
             schema: Arc::new(new_schema),
             options,
@@ -581,7 +586,7 @@ impl LogicalPlanBuilder {
 
     pub fn add_err(self, err: PolarsError) -> Self {
         LogicalPlan::Error {
-            input: Box::new(self.0),
+            input: Arc::new(self.0),
             err: err.into(),
         }
         .into()
@@ -603,7 +608,7 @@ impl LogicalPlanBuilder {
             }
         }
         LogicalPlan::ExtContext {
-            input: Box::new(self.0),
+            input: Arc::new(self.0),
             contexts,
             schema: Arc::new(schema),
         }
@@ -687,7 +692,7 @@ impl LogicalPlanBuilder {
 
         LogicalPlan::Selection {
             predicate,
-            input: Box::new(self.0),
+            input: Arc::new(self.0),
         }
         .into()
     }
@@ -772,7 +777,7 @@ impl LogicalPlanBuilder {
         };
 
         LogicalPlan::Aggregate {
-            input: Box::new(self.0),
+            input: Arc::new(self.0),
             keys: Arc::new(keys),
             aggs,
             schema: Arc::new(schema),
@@ -809,7 +814,7 @@ impl LogicalPlanBuilder {
         let schema = try_delayed!(self.0.schema(), &self.0, into);
         let by_column = try_delayed!(rewrite_projections(by_column, &schema, &[]), &self.0, into);
         LogicalPlan::Sort {
-            input: Box::new(self.0),
+            input: Arc::new(self.0),
             by_column,
             args: SortArguments {
                 descending,
@@ -841,7 +846,7 @@ impl LogicalPlanBuilder {
         try_delayed!(explode_schema(&mut schema, &columns), &self.0, into);
 
         LogicalPlan::MapFunction {
-            input: Box::new(self.0),
+            input: Arc::new(self.0),
             function: FunctionNode::Explode {
                 columns,
                 schema: Arc::new(schema),
@@ -854,7 +859,7 @@ impl LogicalPlanBuilder {
         let schema = try_delayed!(self.0.schema(), &self.0, into);
         let schema = det_melt_schema(&args, &schema);
         LogicalPlan::MapFunction {
-            input: Box::new(self.0),
+            input: Arc::new(self.0),
             function: FunctionNode::Melt { args, schema },
         }
         .into()
@@ -866,9 +871,9 @@ impl LogicalPlanBuilder {
         row_index_schema(schema_mut, name);
 
         LogicalPlan::MapFunction {
-            input: Box::new(self.0),
+            input: Arc::new(self.0),
             function: FunctionNode::RowIndex {
-                name: Arc::from(name),
+                name: ColumnName::from(name),
                 offset,
                 schema,
             },
@@ -878,7 +883,7 @@ impl LogicalPlanBuilder {
 
     pub fn distinct(self, options: DistinctOptions) -> Self {
         LogicalPlan::Distinct {
-            input: Box::new(self.0),
+            input: Arc::new(self.0),
             options,
         }
         .into()
@@ -886,7 +891,7 @@ impl LogicalPlanBuilder {
 
     pub fn slice(self, offset: i64, len: IdxSize) -> Self {
         LogicalPlan::Slice {
-            input: Box::new(self.0),
+            input: Arc::new(self.0),
             offset,
             len,
         }
@@ -903,7 +908,7 @@ impl LogicalPlanBuilder {
         for e in left_on.iter().chain(right_on.iter()) {
             if has_expr(e, |e| matches!(e, Expr::Alias(_, _))) {
                 return LogicalPlan::Error {
-                    input: Box::new(self.0),
+                    input: Arc::new(self.0),
                     err: polars_err!(
                         ComputeError:
                         "'alias' is not allowed in a join key, use 'with_columns' first",
@@ -924,8 +929,8 @@ impl LogicalPlanBuilder {
         );
 
         LogicalPlan::Join {
-            input_left: Box::new(self.0),
-            input_right: Box::new(other),
+            input_left: Arc::new(self.0),
+            input_right: Arc::new(other),
             schema,
             left_on,
             right_on,
@@ -935,7 +940,7 @@ impl LogicalPlanBuilder {
     }
     pub fn map_private(self, function: FunctionNode) -> Self {
         LogicalPlan::MapFunction {
-            input: Box::new(self.0),
+            input: Arc::new(self.0),
             function,
         }
         .into()
@@ -950,7 +955,7 @@ impl LogicalPlanBuilder {
         validate_output: bool,
     ) -> Self {
         LogicalPlan::MapFunction {
-            input: Box::new(self.0),
+            input: Arc::new(self.0),
             function: FunctionNode::OpaquePython {
                 function,
                 schema,
@@ -976,7 +981,7 @@ impl LogicalPlanBuilder {
         let function = Arc::new(function);
 
         LogicalPlan::MapFunction {
-            input: Box::new(self.0),
+            input: Arc::new(self.0),
             function: FunctionNode::Opaque {
                 function,
                 schema,

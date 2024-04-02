@@ -1,17 +1,18 @@
+#[cfg(feature = "cse")]
 mod hash;
 mod schema;
 
 use std::hash::{Hash, Hasher};
 
+#[cfg(feature = "cse")]
+pub(super) use hash::traverse_and_hash_aexpr;
 use polars_core::prelude::*;
 use polars_core::utils::{get_time_units, try_get_supertype};
 use polars_utils::arena::{Arena, Node};
 use strum_macros::IntoStaticStr;
 
-#[cfg(feature = "cse")]
-use crate::logical_plan::visitor::AexprNode;
+use crate::constants::LEN;
 use crate::logical_plan::Context;
-use crate::prelude::consts::LEN;
 use crate::prelude::*;
 
 #[derive(Clone, Debug, IntoStaticStr)]
@@ -122,8 +123,8 @@ impl From<AAggExpr> for GroupByMethod {
 #[derive(Clone, Debug, Default)]
 pub enum AExpr {
     Explode(Node),
-    Alias(Node, Arc<str>),
-    Column(Arc<str>),
+    Alias(Node, ColumnName),
+    Column(ColumnName),
     Literal(LiteralValue),
     BinaryExpr {
         left: Node,
@@ -190,20 +191,8 @@ pub enum AExpr {
 
 impl AExpr {
     #[cfg(feature = "cse")]
-    pub(crate) fn is_equal(l: Node, r: Node, arena: &Arena<AExpr>) -> bool {
-        let arena = arena as *const Arena<AExpr> as *mut Arena<AExpr>;
-        // SAFETY: we can pass a *mut pointer
-        // the equality operation will not access mutable
-        unsafe {
-            let ae_node_l = AexprNode::from_raw(l, arena);
-            let ae_node_r = AexprNode::from_raw(r, arena);
-            ae_node_l == ae_node_r
-        }
-    }
-
-    #[cfg(feature = "cse")]
     pub(crate) fn col(name: &str) -> Self {
-        AExpr::Column(Arc::from(name))
+        AExpr::Column(ColumnName::from(name))
     }
     /// Any expression that is sensitive to the number of elements in a group
     /// - Aggregations

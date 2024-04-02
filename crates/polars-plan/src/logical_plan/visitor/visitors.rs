@@ -1,3 +1,5 @@
+use recursive::recursive;
+
 use super::*;
 
 /// An implementor of this trait decides how and in which order its nodes get traversed
@@ -11,6 +13,7 @@ pub trait TreeWalker: Sized {
     fn map_children(self, op: &mut dyn FnMut(Self) -> PolarsResult<Self>) -> PolarsResult<Self>;
 
     /// Walks all nodes in depth-first-order.
+    #[recursive]
     fn visit(&self, visitor: &mut dyn Visitor<Node = Self>) -> PolarsResult<VisitRecursion> {
         match visitor.pre_visit(self)? {
             VisitRecursion::Continue => {},
@@ -30,6 +33,7 @@ pub trait TreeWalker: Sized {
         visitor.post_visit(self)
     }
 
+    #[recursive]
     fn rewrite(self, rewriter: &mut dyn RewritingVisitor<Node = Self>) -> PolarsResult<Self> {
         let mutate_this_node = match rewriter.pre_visit(&self)? {
             RewriteRecursion::MutateAndStop => return rewriter.mutate(self),

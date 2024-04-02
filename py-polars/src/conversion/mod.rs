@@ -33,20 +33,12 @@ use crate::series::PySeries;
 use crate::{PyDataFrame, PyLazyFrame};
 
 pub(crate) fn slice_to_wrapped<T>(slice: &[T]) -> &[Wrap<T>] {
-    // SAFETY:
-    // Wrap is transparent.
-    unsafe { std::mem::transmute(slice) }
-}
-
-pub(crate) fn slice_extract_wrapped<T>(slice: &[Wrap<T>]) -> &[T] {
-    // SAFETY:
-    // Wrap is transparent.
+    // SAFETY: Wrap is transparent.
     unsafe { std::mem::transmute(slice) }
 }
 
 pub(crate) fn vec_extract_wrapped<T>(buf: Vec<Wrap<T>>) -> Vec<T> {
-    // SAFETY:
-    // Wrap is transparent.
+    // SAFETY: Wrap is transparent.
     unsafe { std::mem::transmute(buf) }
 }
 
@@ -435,8 +427,7 @@ impl ToPyObject for Wrap<TimeUnit> {
 impl<'s> FromPyObject<'s> for Wrap<Row<'s>> {
     fn extract(ob: &'s PyAny) -> PyResult<Self> {
         let vals = ob.extract::<Vec<Wrap<AnyValue<'s>>>>()?;
-        // SAFETY. Wrap is repr transparent.
-        let vals: Vec<AnyValue> = unsafe { std::mem::transmute(vals) };
+        let vals = vec_extract_wrapped(vals);
         Ok(Wrap(Row(vals)))
     }
 }

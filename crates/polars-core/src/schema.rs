@@ -1,4 +1,5 @@
 use std::fmt::{Debug, Formatter};
+use std::hash::{Hash, Hasher};
 
 use arrow::datatypes::ArrowSchemaRef;
 use indexmap::map::MutableKeys;
@@ -15,6 +16,12 @@ use crate::utils::try_get_supertype;
 #[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
 pub struct Schema {
     inner: PlIndexMap<SmartString, DataType>,
+}
+
+impl Hash for Schema {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.inner.iter().for_each(|v| v.hash(state))
+    }
 }
 
 // Schemas will only compare equal if they have the same fields in the same order. We can't use `self.inner ==

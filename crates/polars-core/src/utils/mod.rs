@@ -1,9 +1,12 @@
+mod any_value;
 pub mod flatten;
 pub(crate) mod series;
 mod supertype;
 use std::borrow::Cow;
 use std::ops::{Deref, DerefMut};
+mod schema;
 
+pub use any_value::*;
 use arrow::bitmap::bitmask::BitMask;
 use arrow::bitmap::Bitmap;
 pub use arrow::legacy::utils::*;
@@ -11,6 +14,7 @@ pub use arrow::trusted_len::TrustMyLength;
 use flatten::*;
 use num_traits::{One, Zero};
 use rayon::prelude::*;
+pub use schema::*;
 pub use series::*;
 use smartstring::alias::String as SmartString;
 pub use supertype::*;
@@ -190,24 +194,22 @@ pub fn slice_slice<T>(vals: &[T], offset: i64, len: usize) -> &[T] {
 #[inline]
 #[doc(hidden)]
 pub fn slice_offsets(offset: i64, length: usize, array_len: usize) -> (usize, usize) {
-    let abs_offset = offset.unsigned_abs() as usize;
-
-    // The offset counted from the start of the array
-    // negative index
-    if offset < 0 {
-        if abs_offset <= array_len {
-            (array_len - abs_offset, std::cmp::min(length, abs_offset))
-            // negative index larger that array: slice from start
-        } else {
-            (0, std::cmp::min(length, array_len))
-        }
-        // positive index
-    } else if abs_offset <= array_len {
-        (abs_offset, std::cmp::min(length, array_len - abs_offset))
-        // empty slice
+    let signed_start_offset = if offset < 0 {
+        offset.saturating_add_unsigned(array_len as u64)
     } else {
-        (array_len, 0)
-    }
+        offset
+    };
+    let signed_stop_offset = signed_start_offset.saturating_add_unsigned(length as u64);
+
+    let signed_array_len: i64 = array_len
+        .try_into()
+        .expect("array length larger than i64::MAX");
+    let clamped_start_offset = signed_start_offset.clamp(0, signed_array_len);
+    let clamped_stop_offset = signed_stop_offset.clamp(0, signed_array_len);
+
+    let slice_start_idx = clamped_start_offset as usize;
+    let slice_len = (clamped_stop_offset - clamped_start_offset) as usize;
+    (slice_start_idx, slice_len)
 }
 
 /// Apply a macro on the Series

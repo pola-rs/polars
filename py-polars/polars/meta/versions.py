@@ -28,6 +28,7 @@ def show_versions() -> None:
     gevent:               24.2.1
     hvplot:               0.9.2
     matplotlib:           3.8.3
+    nest_asyncio:         1.6.0
     numpy:                1.26.4
     openpyxl:             3.1.2
     pandas:               2.2.1
@@ -70,6 +71,7 @@ def _get_dependency_info() -> dict[str, str]:
         "gevent",
         "hvplot",
         "matplotlib",
+        "nest_asyncio",
         "numpy",
         "openpyxl",
         "pandas",

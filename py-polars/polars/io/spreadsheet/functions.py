@@ -733,11 +733,11 @@ def _read_spreadsheet_ods(
         row_data = row_data[1 : -1 if trailing_null_row else None]
 
         if schema_overrides:
-            for nm, dtype in schema_overrides.items():
+            for name, dtype in schema_overrides.items():
                 if dtype in (Datetime, Date):
-                    strptime_cols[nm] = dtype
+                    strptime_cols[name] = dtype
                 else:
-                    overrides[nm] = dtype
+                    overrides[name] = dtype
 
         df = pl.DataFrame(
             row_data,
@@ -899,7 +899,7 @@ def _read_spreadsheet_pyxlsb(
     if schema_overrides:
         for idx, s in enumerate(series_data):
             if schema_overrides.get(s.name) in (Datetime, Date):
-                series_data[idx] = s.map_elements(convert_date)
+                series_data[idx] = s.map_elements(convert_date, return_dtype=Datetime)
 
     df = pl.DataFrame(
         {s.name: s for s in series_data},

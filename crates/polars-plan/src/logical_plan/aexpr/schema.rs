@@ -1,3 +1,5 @@
+use recursive::recursive;
+
 use super::*;
 
 fn float_type(field: &mut Field) {
@@ -10,6 +12,7 @@ fn float_type(field: &mut Field) {
 
 impl AExpr {
     /// Get Field result of the expression. The schema is the input data.
+    #[recursive]
     pub fn to_field(
         &self,
         schema: &Schema,
@@ -40,7 +43,7 @@ impl AExpr {
             Column(name) => {
                 let field = schema
                     .get_field(name)
-                    .ok_or_else(|| polars_err!(ColumnNotFound: "{}", name));
+                    .ok_or_else(|| PolarsError::ColumnNotFound(name.to_string().into()));
 
                 match ctxt {
                     Context::Default => field,
@@ -53,7 +56,7 @@ impl AExpr {
             },
             Literal(sv) => Ok(match sv {
                 LiteralValue::Series(s) => s.field().into_owned(),
-                _ => Field::new("literal", sv.get_datatype()),
+                _ => Field::new(sv.output_name(), sv.get_datatype()),
             }),
             BinaryExpr { left, right, op } => {
                 use DataType::*;

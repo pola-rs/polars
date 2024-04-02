@@ -1539,7 +1539,7 @@ def arg_sort_by(
     descending: bool | Sequence[bool] = False,
 ) -> Expr:
     """
-    Return the row indices that would sort the columns.
+    Return the row indices that would sort the column(s).
 
     Parameters
     ----------
@@ -1552,6 +1552,11 @@ def arg_sort_by(
         Sort in descending order. When sorting by multiple columns, can be specified
         per column by passing a sequence of booleans.
 
+    See Also
+    --------
+    Expr.gather: Take values by index.
+    Expr.rank : Get the rank of each row.
+
     Examples
     --------
     Pass a single column name to compute the arg sort by that column.
@@ -1560,6 +1565,7 @@ def arg_sort_by(
     ...     {
     ...         "a": [0, 1, 1, 0],
     ...         "b": [3, 2, 3, 2],
+    ...         "c": [1, 2, 3, 4],
     ...     }
     ... )
     >>> df.select(pl.arg_sort_by("a"))
@@ -1588,6 +1594,21 @@ def arg_sort_by(
     │ 2   │
     │ 1   │
     │ 0   │
+    │ 3   │
+    └─────┘
+
+    Use gather to apply the arg sort to other columns.
+
+    >>> df.select(pl.col("c").gather(pl.arg_sort_by("a")))
+    shape: (4, 1)
+    ┌─────┐
+    │ c   │
+    │ --- │
+    │ i64 │
+    ╞═════╡
+    │ 1   │
+    │ 4   │
+    │ 2   │
     │ 3   │
     └─────┘
     """

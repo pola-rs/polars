@@ -24,8 +24,62 @@ impl TreeWalker for Expr {
         Ok(VisitRecursion::Continue)
     }
 
-    fn map_children(self, _op: &mut dyn FnMut(Self) -> PolarsResult<Self>) -> PolarsResult<Self> {
-        todo!()
+    fn map_children(self, mut f: &mut dyn FnMut(Self) -> PolarsResult<Self>) -> PolarsResult<Self> {
+        use polars_utils::functions::try_arc_map as am;
+        use AggExpr::*;
+        use Expr::*;
+        #[rustfmt::skip]
+        let ret = match self {
+            Alias(l, r) => Alias(am(l, f)?, r),
+            Column(_) => self,
+            Columns(_) => self,
+            DtypeColumn(_) => self,
+            Literal(_) => self,
+            BinaryExpr { left, op, right } => {
+                BinaryExpr { left: am(left, &mut f)? , op, right: am(right, f)?}
+            },
+            Cast { expr, data_type, strict } => Cast { expr: am(expr, f)?, data_type, strict },
+            Sort { expr, options } => Sort { expr: am(expr, f)?, options },
+            Gather { expr, idx, returns_scalar } => Gather { expr: am(expr, &mut f)?, idx: am(idx, f)?, returns_scalar },
+            SortBy { expr, by, descending } => SortBy { expr: am(expr, &mut f)?, by: by.into_iter().map(f).collect::<Result<_, _>>()?, descending },
+            Agg(agg_expr) => Agg(match agg_expr {
+                Min { input, propagate_nans } => Min { input: am(input, f)?, propagate_nans },
+                Max { input, propagate_nans } => Max { input: am(input, f)?, propagate_nans },
+                Median(x) => Median(am(x, f)?),
+                NUnique(x) => NUnique(am(x, f)?),
+                First(x) => First(am(x, f)?),
+                Last(x) => Last(am(x, f)?),
+                Mean(x) => Mean(am(x, f)?),
+                Implode(x) => Implode(am(x, f)?),
+                Count(x, nulls) => Count(am(x, f)?, nulls),
+                Quantile { expr, quantile, interpol } => Quantile { expr: am(expr, &mut f)?, quantile: am(quantile, f)?, interpol },
+                Sum(x) => Sum(am(x, f)?),
+                AggGroups(x) => AggGroups(am(x, f)?),
+                Std(x, ddf) => Std(am(x, f)?, ddf),
+                Var(x, ddf) => Var(am(x, f)?, ddf),
+            }),
+            Ternary { predicate, truthy, falsy } => Ternary { predicate: am(predicate, &mut f)?, truthy: am(truthy, &mut f)?, falsy: am(falsy, f)? },
+            Function { input, function, options } => Function { input: input.into_iter().map(f).collect::<Result<_, _>>()?, function, options },
+            Explode(expr) => Explode(am(expr, f)?),
+            Filter { input, by } => Filter { input: am(input, &mut f)?, by: am(by, f)? },
+            Window { function, partition_by, options } => {
+                let partition_by = partition_by.into_iter().map(&mut f).collect::<Result<_, _>>()?;
+                Window { function: am(function, f)?, partition_by, options }
+            },
+            Wildcard => Wildcard,
+            Slice { input, offset, length } => Slice { input: am(input, &mut f)?, offset: am(offset, &mut f)?, length: am(length, f)? },
+            Exclude(expr, excluded) => Exclude(am(expr, f)?, excluded),
+            KeepName(expr) => KeepName(am(expr, f)?),
+            Len => Len,
+            Nth(_) => self,
+            RenameAlias { function, expr } => RenameAlias { function, expr: am(expr, f)? },
+            AnonymousFunction { input, function, output_type, options } => {
+                AnonymousFunction { input: input.into_iter().map(f).collect::<Result<_, _>>()?, function, output_type, options }
+            },
+            SubPlan(_, _) => self,
+            Selector(_) => self,
+        };
+        Ok(ret)
     }
 }
 
@@ -125,14 +179,14 @@ impl AexprNode {
         })
     }
 
-    // traverses all nodes and does a full equality check
-    fn is_equal(&self, other: &Self, scratch1: &mut Vec<Node>, scratch2: &mut Vec<Node>) -> bool {
+    // Check single node on equality
+    fn is_equal(&self, other: &Self) -> bool {
         self.with_arena(|arena| {
             let self_ae = self.to_aexpr();
             let other_ae = arena.get(other.node());
 
             use AExpr::*;
-            let this_node_equal = match (self_ae, other_ae) {
+            match (self_ae, other_ae) {
                 (Alias(_, l), Alias(_, r)) => l == r,
                 (Column(l), Column(r)) => l == r,
                 (Literal(l), Literal(r)) => l == r,
@@ -174,30 +228,6 @@ impl AexprNode {
                 (AnonymousFunction { .. }, AnonymousFunction { .. }) => false,
                 (BinaryExpr { op: l, .. }, BinaryExpr { op: r, .. }) => l == r,
                 _ => false,
-            };
-
-            if !this_node_equal {
-                return false;
-            }
-
-            self_ae.nodes(scratch1);
-            other_ae.nodes(scratch2);
-
-            loop {
-                match (scratch1.pop(), scratch2.pop()) {
-                    (Some(l), Some(r)) => {
-                        // SAFETY: we can pass a *mut pointer
-                        // the equality operation will not access mutable
-                        let l = unsafe { AexprNode::from_raw(l, self.arena) };
-                        let r = unsafe { AexprNode::from_raw(r, self.arena) };
-
-                        if !l.is_equal(&r, scratch1, scratch2) {
-                            return false;
-                        }
-                    },
-                    (None, None) => return true,
-                    _ => return false,
-                }
             }
         })
     }
@@ -212,7 +242,29 @@ impl PartialEq for AexprNode {
     fn eq(&self, other: &Self) -> bool {
         let mut scratch1 = vec![];
         let mut scratch2 = vec![];
-        self.is_equal(other, &mut scratch1, &mut scratch2)
+
+        scratch1.push(self.node);
+        scratch2.push(other.node);
+
+        loop {
+            match (scratch1.pop(), scratch2.pop()) {
+                (Some(l), Some(r)) => {
+                    // SAFETY: we can pass a *mut pointer
+                    // the equality operation will not access mutable
+                    let l = unsafe { AexprNode::from_raw(l, self.arena) };
+                    let r = unsafe { AexprNode::from_raw(r, self.arena) };
+
+                    if !l.is_equal(&r) {
+                        return false;
+                    }
+
+                    l.to_aexpr().nodes(&mut scratch1);
+                    r.to_aexpr().nodes(&mut scratch2);
+                },
+                (None, None) => return true,
+                _ => return false,
+            }
+        }
     }
 }
 

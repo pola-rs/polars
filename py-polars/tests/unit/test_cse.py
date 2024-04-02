@@ -37,7 +37,7 @@ def test_union_duplicates() -> None:
 
     result = len(
         re.findall(
-            r".*CACHE\[id: .*, count: 9].*",
+            r".*CACHE\[id: .*, cache_hits: 9].*",
             pl.concat(lazy_dfs).explain(),
             flags=re.MULTILINE,
         )
@@ -172,6 +172,7 @@ Gr1,B
     assert_frame_equal(result, expected)
 
 
+@pytest.mark.debug()
 def test_cse_expr_selection_context(monkeypatch: Any, capfd: Any) -> None:
     monkeypatch.setenv("POLARS_VERBOSE", "1")
     q = pl.LazyFrame(

@@ -10,7 +10,7 @@ import polars as pl
 def test_series_mixed_dtypes_list() -> None:
     values = [[0.1, 1]]
 
-    with pytest.raises(pl.SchemaError, match="unexpected value"):
+    with pytest.raises(TypeError, match="unexpected value"):
         pl.Series(values)
 
     s = pl.Series(values, strict=False)
@@ -21,7 +21,7 @@ def test_series_mixed_dtypes_list() -> None:
 def test_series_mixed_dtypes_string() -> None:
     values = [[12], "foo", 9]
 
-    with pytest.raises(pl.SchemaError, match="unexpected value"):
+    with pytest.raises(TypeError, match="unexpected value"):
         pl.Series(values)
 
     s = pl.Series(values, strict=False)
@@ -33,7 +33,7 @@ def test_series_mixed_dtypes_string() -> None:
 def test_series_mixed_dtypes_object() -> None:
     values = [[12], b"foo", 9]
 
-    with pytest.raises(pl.SchemaError, match="unexpected value"):
+    with pytest.raises(TypeError, match="unexpected value"):
         pl.Series(values)
 
     s = pl.Series(values, strict=False)
@@ -70,3 +70,9 @@ def test_upcast_primitive_and_strings(
     values: list[Any], dtype: pl.PolarsDataType, expected_dtype: pl.PolarsDataType
 ) -> None:
     assert pl.Series(values, dtype=dtype).dtype == expected_dtype
+
+
+def test_preserve_decimal_precision() -> None:
+    dtype = pl.Decimal(None, 1)
+    s = pl.Series(dtype=dtype)
+    assert s.dtype == dtype

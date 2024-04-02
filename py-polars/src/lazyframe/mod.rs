@@ -85,11 +85,11 @@ impl PyLazyFrame {
             .unwrap();
 
         // SAFETY:
-        // we skipped the serializing/deserializing of the static in lifetime in `DataType`
+        // We skipped the serializing/deserializing of the static in lifetime in `DataType`
         // so we actually don't have a lifetime at all when serializing.
 
         // &str still has a lifetime. But it's ok, because we drop it immediately
-        // in this scope
+        // in this scope.
         let json = unsafe { std::mem::transmute::<&'_ str, &'static str>(json.as_str()) };
 
         let lp = serde_json::from_str::<LogicalPlan>(json)
@@ -727,7 +727,7 @@ impl PyLazyFrame {
             .into_iter()
             .map(|pyexpr| pyexpr.inner)
             .collect::<Vec<_>>();
-        let lazy_gb = ldf.group_by_rolling(
+        let lazy_gb = ldf.rolling(
             index_column.inner,
             by,
             RollingGroupOptions {
@@ -751,19 +751,19 @@ impl PyLazyFrame {
         label: Wrap<Label>,
         include_boundaries: bool,
         closed: Wrap<ClosedWindow>,
-        by: Vec<PyExpr>,
+        group_by: Vec<PyExpr>,
         start_by: Wrap<StartBy>,
         check_sorted: bool,
     ) -> PyLazyGroupBy {
         let closed_window = closed.0;
-        let by = by
+        let group_by = group_by
             .into_iter()
             .map(|pyexpr| pyexpr.inner)
             .collect::<Vec<_>>();
         let ldf = self.ldf.clone();
         let lazy_gb = ldf.group_by_dynamic(
             index_column.inner,
-            by,
+            group_by,
             DynamicGroupOptions {
                 every: Duration::parse(every),
                 period: Duration::parse(period),

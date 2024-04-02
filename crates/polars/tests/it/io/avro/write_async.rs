@@ -1,7 +1,7 @@
 use arrow::array::*;
-use arrow::chunk::Chunk;
 use arrow::datatypes::*;
 use arrow::io::avro::write;
+use arrow::record_batch::RecordBatch;
 use avro_schema::file::Compression;
 use avro_schema::write_async::{write_block, write_metadata};
 use polars_error::PolarsResult;
@@ -10,7 +10,7 @@ use super::read::read_avro;
 use super::write::{data, schema, serialize_to_block};
 
 async fn write_avro<R: AsRef<dyn Array>>(
-    columns: &Chunk<R>,
+    columns: &RecordBatch<R>,
     schema: &ArrowSchema,
     compression: Option<Compression>,
 ) -> PolarsResult<Vec<u8>> {

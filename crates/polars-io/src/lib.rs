@@ -149,10 +149,7 @@ pub(crate) fn finish_reader<R: ArrowReader>(
         }
     };
 
-    match rechunk {
-        true => Ok(df.agg_chunks()),
-        false => Ok(df),
-    }
+    Ok(if rechunk { df.agg_chunks() } else { df })
 }
 
 static CLOUD_URL: Lazy<Regex> =

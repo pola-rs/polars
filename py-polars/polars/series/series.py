@@ -607,8 +607,12 @@ class Series:
     def __bool__(self) -> NoReturn:
         msg = (
             "the truth value of a Series is ambiguous"
-            "\n\nHint: use '&' or '|' to chain Series boolean results together, not and/or."
-            " To check if a Series contains any values, use `is_empty()`."
+            "\n\n"
+            "Here are some things you might want to try:\n"
+            "- instead of `if s`, use `if not s.is_empty()`\n"
+            "- instead of `s1 and s2`, use `s1 & s2`\n"
+            "- instead of `s1 or s2`, use `s1 | s2`\n"
+            "- instead of `s in [y, z]`, use `s.is_in([y, z])`\n"
         )
         raise TypeError(msg)
 
@@ -735,8 +739,7 @@ class Series:
         return self._from_pyseries(f(other))
 
     @overload  # type: ignore[override]
-    def __eq__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def __eq__(self, other: Expr) -> Expr: ...  # type: ignore[overload-overlap]
 
     @overload
     def __eq__(self, other: Any) -> Series: ...
@@ -2557,16 +2560,16 @@ class Series:
 
     def rle(self) -> Series:
         """
-        Get the lengths and values of runs of identical values.
+        Compress the Series data using run-length encoding.
+
+        Run-length encoding (RLE) encodes data by storing each *run* of identical values
+        as a single value and its length.
 
         Returns
         -------
         Series
-            Series of data type :class:`Struct` with Fields "lengths" and "values".
-
-        See Also
-        --------
-        rle_id
+            Series of data type `Struct` with fields `lengths` of data type `Int32`
+            and `values` of the original data type.
 
         Examples
         --------
@@ -2591,19 +2594,22 @@ class Series:
         """
         Get a distinct integer ID for each run of identical values.
 
-        The ID increases by one each time the value of a column (which can be a
-        :class:`Struct`) changes.
-
-        This is especially useful when you want to define a new group for every time a
-        column's value changes, rather than for every distinct value of that column.
+        The ID starts at 0 and increases by one each time the value of the column
+        changes.
 
         Returns
         -------
         Series
+            Series of data type `UInt32`.
 
         See Also
         --------
         rle
+
+        Notes
+        -----
+        This functionality is especially useful for defining a new group for every time
+        a column's value changes, rather than for every distinct value of that column.
 
         Examples
         --------
@@ -3457,6 +3463,11 @@ class Series:
         nulls_last
             Place null values last instead of first.
 
+        See Also
+        --------
+        Series.gather: Take values by index.
+        Series.rank : Get the rank of each row.
+
         Examples
         --------
         >>> s = pl.Series("a", [5, 3, 4, 1, 2])
@@ -3555,6 +3566,40 @@ class Series:
             If 'any', the index of the first suitable location found is given.
             If 'left', the index of the leftmost suitable location found is given.
             If 'right', return the rightmost suitable location found is given.
+
+        Examples
+        --------
+        >>> s = pl.Series("set", [1, 2, 3, 4, 4, 5, 6, 7])
+        >>> s.search_sorted(4)
+        4
+        >>> s.search_sorted(4, "left")
+        3
+        >>> s.search_sorted(4, "right")
+        5
+        >>> s.search_sorted([1, 4, 5])
+        shape: (3,)
+        Series: 'set' [u32]
+        [
+                0
+                4
+                5
+        ]
+        >>> s.search_sorted([1, 4, 5], "left")
+        shape: (3,)
+        Series: 'set' [u32]
+        [
+                0
+                3
+                5
+        ]
+        >>> s.search_sorted([1, 4, 5], "right")
+        shape: (3,)
+        Series: 'set' [u32]
+        [
+                1
+                5
+                6
+        ]
         """
         if isinstance(element, (int, float)):
             return F.select(F.lit(self).search_sorted(element, side)).item()
@@ -4199,6 +4244,11 @@ class Series:
             (including strings) are parsed as literals.
         closed : {'both', 'left', 'right', 'none'}
             Define which sides of the interval are closed (inclusive).
+
+        Notes
+        -----
+        If the value of the `lower_bound` is greater than that of the `upper_bound`
+        then the result will be False, as no value can satisfy the condition.
 
         Examples
         --------
@@ -5253,7 +5303,7 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
-        >>> s.map_elements(lambda x: x + 10)  # doctest: +SKIP
+        >>> s.map_elements(lambda x: x + 10, return_dtype=pl.Int64)  # doctest: +SKIP
         shape: (3,)
         Series: 'a' [i64]
         [
@@ -6448,7 +6498,7 @@ class Series:
         >>> s.kurtosis(fisher=False)
         1.9477376373212048
         >>> s.kurtosis(fisher=False, bias=False)
-        2.104036180264273
+        2.1040361802642726
         """
         return self._s.kurtosis(fisher, bias)
 
