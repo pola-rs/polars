@@ -122,12 +122,8 @@ impl FileInfo {
             })?;
 
             match Arc::get_mut(current) {
-                Some(current) => {
-                    *current = new;
-                },
-                None => {
-                    *current = Arc::new(new);
-                },
+                Some(hp) => *hp = new,
+                None => *current = Arc::new(new),
             }
         }
         Ok(())
