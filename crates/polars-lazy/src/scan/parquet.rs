@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
 use polars_io::parquet::ParallelStrategy;
-use polars_io::RowIndex;
+use polars_io::{HiveOptions, RowIndex};
 
 use crate::prelude::*;
 
@@ -17,8 +17,7 @@ pub struct ScanArgsParquet {
     pub low_memory: bool,
     pub cloud_options: Option<CloudOptions>,
     pub use_statistics: bool,
-    pub hive_partitioning: bool,
-    pub hive_schema: Option<SchemaRef>,
+    pub hive_options: HiveOptions,
 }
 
 impl Default for ScanArgsParquet {
@@ -32,8 +31,7 @@ impl Default for ScanArgsParquet {
             low_memory: false,
             cloud_options: None,
             use_statistics: true,
-            hive_partitioning: false,
-            hive_schema: None,
+            hive_options: Default::default(),
         }
     }
 }
@@ -85,8 +83,7 @@ impl LazyFileListReader for LazyParquetReader {
             self.args.low_memory,
             self.args.cloud_options,
             self.args.use_statistics,
-            self.args.hive_partitioning,
-            self.args.hive_schema,
+            self.args.hive_options,
         )?
         .build()
         .into();

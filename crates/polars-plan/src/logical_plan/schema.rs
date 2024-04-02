@@ -115,7 +115,7 @@ impl FileInfo {
             let Some(new) = hp else {
                 polars_bail!(
                     ComputeError: "expected Hive partitioned path, got {}\n\n\
-                    This error occurs if `hive_partitioning=true` while some paths are Hive partitioned and some paths are not.",
+                    This error occurs if some paths are Hive partitioned and some paths are not.",
                     path.display()
                 )
             };

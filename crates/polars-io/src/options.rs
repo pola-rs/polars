@@ -1,3 +1,4 @@
+use polars_core::schema::SchemaRef;
 use polars_utils::IdxSize;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -7,4 +8,21 @@ use serde::{Deserialize, Serialize};
 pub struct RowIndex {
     pub name: String,
     pub offset: IdxSize,
+}
+
+/// Options for Hive partitioning.
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct HiveOptions {
+    pub enabled: bool,
+    pub schema: Option<SchemaRef>,
+}
+
+impl Default for HiveOptions {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            schema: None,
+        }
+    }
 }

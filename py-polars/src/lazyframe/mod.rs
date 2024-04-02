@@ -6,10 +6,10 @@ use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
 pub use exitable::PyInProcessQuery;
-use polars::io::RowIndex;
+use polars::io::cloud::CloudOptions;
+use polars::io::{HiveOptions, RowIndex};
 use polars::time::*;
 use polars_core::prelude::*;
-use polars_rs::io::cloud::CloudOptions;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyList};
@@ -285,6 +285,11 @@ impl PyLazyFrame {
                     });
         }
         let row_index = row_index.map(|(name, offset)| RowIndex { name, offset });
+        let hive_options = HiveOptions {
+            enabled: hive_partitioning,
+            schema: hive_schema,
+        };
+
         let args = ScanArgsParquet {
             n_rows,
             cache,
@@ -294,8 +299,7 @@ impl PyLazyFrame {
             low_memory,
             cloud_options,
             use_statistics,
-            hive_partitioning,
-            hive_schema,
+            hive_options,
         };
 
         let lf = if path.is_some() {
