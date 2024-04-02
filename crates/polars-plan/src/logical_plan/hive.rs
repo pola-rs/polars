@@ -53,11 +53,11 @@ impl HivePartitions {
         let partitions = pre_filt
             .enumerate()
             .filter_map(|(index, part)| {
-                // Identify file by index location
+                // Identify file by index location.
                 if index == split_count_m1 {
                     return None;
                 }
-                hive_part_to_series(part, schema.clone())
+                hive_string_to_series(part, schema.clone())
             })
             .collect::<Vec<_>>();
 
@@ -66,9 +66,9 @@ impl HivePartitions {
             ComputeError: "path does not contain Hive partition information"
         );
 
-        let schema: Schema = partitions.as_slice().into();
+        let schema = schema.unwrap_or_else(|| Arc::new(partitions.as_slice().into()));
         let stats = BatchStats::new(
-            Arc::new(schema),
+            schema,
             partitions
                 .into_iter()
                 .map(ColumnStats::from_column_literal)
@@ -97,28 +97,23 @@ impl HivePartitions {
 }
 
 /// Convert a Hive partition string (e.g. "column=1.5") to a single-value [`Series`].
-fn hive_part_to_series(part: &str, schema: Option<SchemaRef>) -> Option<Series> {
+fn hive_string_to_series(part: &str, schema: Option<SchemaRef>) -> Option<Series> {
     let mut it = part.split('=');
     let name = it.next()?;
     let value = it.next()?;
 
-    // Having multiple '=' doesn't seem like valid hive partition,
-    // continue as url.
+    // Having multiple '=' doesn't seem like a valid Hive partition.
     if it.next().is_some() {
         return None;
     }
 
-    // Don't see files `foo=1.parquet` as hive partitions.
-    // So we return globs and paths with extensions.
+    // Files are not Hive partitions, so globs are not valid.
     if value.contains('*') {
         return None;
     }
 
     let dtype = match schema {
-        Some(ref s) => {
-            let dtype = s.get(name)?;
-            Some(dtype)
-        },
+        Some(ref s) => s.get(name),
         None => None,
     };
 
