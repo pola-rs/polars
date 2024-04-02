@@ -72,19 +72,14 @@ impl FileInfo {
         }
     }
 
-    /// Updates the statistics and merges the hive partitions schema with the file one.
-    pub fn init_hive_partitions_from_schema(&mut self, schema: SchemaRef) -> PolarsResult<()> {
-        self.update_schema_with_hive_schema(schema.clone())?;
-
-        let hp = HivePartitions::from_schema_ref(schema);
-        self.hive_parts = Some(Arc::new(hp));
-
-        Ok(())
-    }
-
-    /// Updates the statistics and merges the hive partitions schema with the file one.
-    pub fn init_hive_partitions(&mut self, path: &Path) -> PolarsResult<()> {
-        match HivePartitions::try_from_path(path, None) {
+    /// Set the [`HivePartitions`] information for this [`FileInfo`] from a path and an
+    /// optional schema.
+    pub fn init_hive_partitions(
+        &mut self,
+        path: &Path,
+        schema: Option<SchemaRef>,
+    ) -> PolarsResult<()> {
+        match HivePartitions::try_from_path(path, schema) {
             Ok(hp) => {
                 let hive_schema = hp.schema().clone();
                 self.update_schema_with_hive_schema(hive_schema)?;
@@ -95,6 +90,9 @@ impl FileInfo {
         Ok(())
     }
 
+    /// Merge the [`Schema`] of a [`HivePartitions`] with the schema of this [`FileInfo`].
+    ///
+    /// Returns an `Err` if any of the columns in either schema overlap.
     fn update_schema_with_hive_schema(&mut self, hive_schema: SchemaRef) -> PolarsResult<()> {
         let expected_len = self.schema.len() + hive_schema.len();
 
@@ -109,27 +107,25 @@ impl FileInfo {
         Ok(())
     }
 
-    /// Updates the statistics, but not the schema.
-    pub fn update_hive_partitions(&mut self, url: &Path) -> PolarsResult<()> {
-        dbg!("HELLO");
-        dbg!(url);
-        dbg!(self.clone());
-
+    /// Update the [`HivePartitions`] statistics for this [`FileInfo`].
+    ///
+    /// If the Hive partitions were not yet intialized, this function has no effect.
+    pub fn update_hive_partitions(&mut self, path: &Path) -> PolarsResult<()> {
         if let Some(current) = &mut self.hive_parts {
-            // TODO: Split creating new hive partition from updating existing one
-            let new = HivePartitions::try_from_path(url, Some(current.schema().clone())).map_err(|_| polars_err!(
+            let schema = current.schema().clone();
+            let new = HivePartitions::try_from_path(path, Some(schema)).map_err(|_| {
+                polars_err!(
                     ComputeError: "expected Hive partitioned path, got {}\n\n\
                     This error occurs if `hive_partitioning=true` while some paths are Hive partitioned and some paths are not.",
-                    url.display()
-            ))?;
-
-            dbg!(&new);
+                    path.display()
+                )
+            })?;
 
             match Arc::get_mut(current) {
                 Some(current) => {
                     *current = new;
                 },
-                _ => {
+                None => {
                     *current = Arc::new(new);
                 },
             }
