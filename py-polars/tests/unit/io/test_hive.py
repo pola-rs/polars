@@ -236,9 +236,12 @@ def test_read_parquet_hive_schema(dataset_path: Path) -> None:
     result = pl.read_parquet(dataset_path / "**/*.parquet", hive_partitioning=True)
     assert result.schema == OrderedDict({"a": pl.Int64, "b": pl.Float64, "c": pl.Int64})
 
-    result = pl.read_parquet(
+    result = pl.scan_parquet(
         dataset_path / "**/*.parquet",
         hive_partitioning=True,
         hive_schema={"c": pl.Int32},
     )
-    assert result.schema == OrderedDict({"a": pl.Int64, "b": pl.Float64, "c": pl.Int32})
+
+    expected_schema = OrderedDict({"a": pl.Int64, "b": pl.Float64, "c": pl.Int32})
+    assert result.schema == expected_schema
+    assert result.collect().schema == expected_schema
