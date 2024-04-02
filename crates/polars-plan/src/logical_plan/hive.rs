@@ -46,8 +46,6 @@ impl HivePartitions {
             .map(|(name, value)| hive_info_to_series(name, value, schema.clone()))
             .collect::<PolarsResult<Vec<_>>>()?;
 
-        dbg!(partitions.clone());
-
         polars_ensure!(
             !partitions.is_empty(),
             ComputeError: "path does not contain Hive partition information"
@@ -55,7 +53,6 @@ impl HivePartitions {
 
         let schema = match schema {
             Some(s) => {
-                dbg!(s.clone());
                 polars_ensure!(
                     s.len() == partitions.len(),
                     SchemaMismatch: "path does not match the provided Hive schema"
