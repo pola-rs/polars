@@ -3191,7 +3191,7 @@ def test_named_tuples() -> None:
         name: str
         description: str
 
-    def event_table(num) -> list[Event]:
+    def event_table(num: int) -> list[Event]:
         return [Event("name", "desc") for _ in range(num)]
 
     data = {"events": [0, 1, 2]}
