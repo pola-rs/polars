@@ -259,7 +259,6 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
     }
 
     fn get_list(ob: &PyAny, strict: bool) -> PyResult<AnyValue> {
-
         fn get_list_with_constructor(ob: &PyAny) -> PyResult<AnyValue> {
             // Use the dedicated constructor.
             // This constructor is able to go via dedicated type constructors
@@ -272,7 +271,7 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
 
         if ob.is_empty()? {
             Ok(AnyValue::List(Series::new_empty("", &DataType::Null)))
-        } else if ob.is_instance_of::<PyList>() | ob.is_instance_of::<PyTuple>() {            
+        } else if ob.is_instance_of::<PyList>() | ob.is_instance_of::<PyTuple>() {
             const INFER_SCHEMA_LENGTH: usize = 25;
 
             let list = ob.downcast::<PySequence>().unwrap();
@@ -308,7 +307,6 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
                 Ok(AnyValue::List(s))
             }
         } else {
-
             // range will take this branch
             get_list_with_constructor(ob)
         }
@@ -373,7 +371,9 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
             get_str
         } else if ob.is_instance_of::<PyBytes>() {
             get_bytes
-        } else if ob.is_instance_of::<PyList>() || (ob.is_instance_of::<PyTuple>() & ob_as_dict.not()) {
+        } else if ob.is_instance_of::<PyList>()
+            || (ob.is_instance_of::<PyTuple>() & ob_as_dict.not())
+        {
             get_list
         } else if ob.is_instance_of::<PyDict>() || ob_as_dict {
             get_struct
