@@ -1,9 +1,13 @@
 use std::path::Path;
 
+#[cfg(feature = "dtype-date")]
+use chrono::NaiveDate;
+#[cfg(feature = "dtype-datetime")]
+use chrono::NaiveDateTime;
 use percent_encoding::percent_decode_str;
 use polars_core::prelude::*;
 use polars_io::predicates::{BatchStats, ColumnStats};
-use polars_io::utils::{BOOLEAN_RE, FLOAT_RE, INTEGER_RE};
+use polars_io::utils::{BOOLEAN_RE, DATETIME_RE, DATE_RE, FLOAT_RE, INTEGER_RE};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -68,19 +72,71 @@ impl HivePartitions {
                     return None;
                 }
 
-                let s = if INTEGER_RE.is_match(value) {
-                    let value = value.parse::<i64>().ok()?;
-                    Series::new(name, &[value])
+                let data_type = if INTEGER_RE.is_match(value) {
+                    DataType::Int64
                 } else if BOOLEAN_RE.is_match(value) {
-                    let value = value.parse::<bool>().ok()?;
-                    Series::new(name, &[value])
+                    DataType::Boolean
                 } else if FLOAT_RE.is_match(value) {
-                    let value = value.parse::<f64>().ok()?;
-                    Series::new(name, &[value])
+                    DataType::Float64
                 } else if value == "__HIVE_DEFAULT_PARTITION__" {
-                    Series::new_null(name, 1)
+                    DataType::Null
+                } else if DATE_RE.is_match(value) {
+                    DataType::Date
+                } else if DATETIME_RE.is_match(value) {
+                    let tz = value.ends_with('Z').then_some(TimeZone::from("UTC"));
+                    let time_unit = match value
+                        .chars()
+                        .rev()
+                        .position(|c| c == '.')
+                        .unwrap_or_default()
+                        / 3
+                    {
+                        2 => TimeUnit::Microseconds,
+                        3 => TimeUnit::Nanoseconds,
+                        // Matches both seconds (no '.' found in the path) and milliseconds (3 digits after '.')
+                        _ => TimeUnit::Milliseconds,
+                    };
+                    DataType::Datetime(time_unit, tz)
                 } else {
-                    Series::new(name, &[percent_decode_str(value).decode_utf8().ok()?])
+                    DataType::String
+                };
+
+                let s = match data_type {
+                    DataType::Int64 => {
+                        let value = value.parse::<i64>().ok()?;
+                        Series::new(name, &[value])
+                    },
+                    DataType::Boolean => {
+                        let value = value.parse::<bool>().ok()?;
+                        Series::new(name, &[value])
+                    },
+                    DataType::Float64 => {
+                        let value = value.parse::<f64>().ok()?;
+                        Series::new(name, &[value])
+                    },
+                    DataType::Null => Series::new_null(name, 1),
+                    #[cfg(feature = "dtype-date")]
+                    DataType::Date => {
+                        let value = value.parse::<NaiveDate>().ok()?;
+                        Series::new(name, &[value])
+                    },
+                    #[cfg(feature = "dtype-datetime")]
+                    DataType::Datetime(time_unit, tz) => {
+                        let value = percent_decode_str(value).decode_utf8().ok()?;
+                        let fmt = if tz.is_some() {
+                            "%Y-%m-%d %H:%M:%S%.fZ"
+                        } else {
+                            "%Y-%m-%d %H:%M:%S%.f"
+                        };
+                        let value = NaiveDateTime::parse_from_str(value.as_ref(), fmt).ok()?;
+                        let mut datetime_chunked =
+                            DatetimeChunked::from_naive_datetime(name, [value], time_unit);
+                        if let Some(tz) = tz {
+                            datetime_chunked.set_time_zone(tz).ok()?;
+                        }
+                        datetime_chunked.into_series()
+                    },
+                    _ => Series::new(name, &[percent_decode_str(value).decode_utf8().ok()?]),
                 };
                 Some(s)
             })
