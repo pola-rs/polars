@@ -319,10 +319,8 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
 
     fn get_struct(ob: &PyAny, strict: bool) -> PyResult<AnyValue<'_>> {
         let dict = if ob.hasattr(intern!(ob.py(), "_asdict")).unwrap() {
-            // let ob_dict: &PyAny = Python::with_gil(|py| {
             let convert: &PyAny = ob.getattr(intern!(ob.py(), "_asdict")).unwrap();
             let ob_dict = convert.call0().unwrap();
-            // });
             ob_dict.downcast::<PyDict>().unwrap()
         } else {
             ob.downcast::<PyDict>().unwrap()
