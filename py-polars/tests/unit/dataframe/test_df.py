@@ -3191,16 +3191,12 @@ def test_named_tuples() -> None:
         name: str
         description: str
 
-    def some_func(num: int) -> list[Event]:
-        return [Event("name", "desc") for _ in range(num)]
-
+    this_dtype = pl.List(pl.Struct({"name": pl.String, "description": pl.String}))
     data = {"events": [0, 1, 2]}
     df = pl.DataFrame(data).select(
         events=pl.col("events").map_elements(
-            some_func,
-            return_dtype=pl.List(
-                pl.Struct({"name": pl.String, "description": pl.String})
-            ),
+            lambda num: [Event("name", "desc") for _ in range(num)],
+            return_dtype=this_dtype,
         )
     )
     expected = pl.DataFrame(
@@ -3215,7 +3211,7 @@ def test_named_tuples() -> None:
                         {"name": "name", "description": "desc"},
                     ],
                 ],
-                dtype=pl.List(pl.Struct({"name": pl.String, "description": pl.String})),
+                dtype=this_dtype,
             ),
         ]
     )
