@@ -4759,6 +4759,10 @@ class Series:
             null
         ]
         """
+        if n < 0:
+            msg = "n should be greater than or equal to 0."
+            raise ValueError(msg)
+        # faster path
         if n == 0:
             return self._from_pyseries(self._s.clear())
         s = (
