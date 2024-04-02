@@ -11,7 +11,7 @@ use polars_io::csv::{CommentPrefix, CsvEncoding, NullValues};
 use polars_io::ipc::IpcCompression;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::ParquetCompression;
-use polars_io::RowIndex;
+use polars_io::{HiveOptions, RowIndex};
 #[cfg(feature = "dynamic_group_by")]
 use polars_time::{DynamicGroupOptions, RollingGroupOptions};
 #[cfg(feature = "serde")]
@@ -117,7 +117,7 @@ pub struct IpcScanOptions {
 
 #[derive(Clone, Debug, PartialEq, Eq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-/// Generic options for all file types
+/// Generic options for all file types.
 pub struct FileScanOptions {
     pub n_rows: Option<usize>,
     pub with_columns: Option<Arc<Vec<String>>>,
@@ -125,7 +125,7 @@ pub struct FileScanOptions {
     pub row_index: Option<RowIndex>,
     pub rechunk: bool,
     pub file_counter: FileCount,
-    pub hive_partitioning: bool,
+    pub hive_options: HiveOptions,
 }
 
 #[derive(Clone, Debug, Copy, Default, Eq, PartialEq, Hash)]

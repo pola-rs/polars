@@ -10,6 +10,7 @@ use polars_io::parquet::ParquetAsyncReader;
 use polars_io::parquet::ParquetReader;
 #[cfg(all(feature = "cloud", feature = "parquet"))]
 use polars_io::pl_async::get_runtime;
+use polars_io::HiveOptions;
 #[cfg(any(
     feature = "parquet",
     feature = "parquet_async",
@@ -116,7 +117,11 @@ impl LogicalPlanBuilder {
             row_index: None,
             rechunk: false,
             file_counter: Default::default(),
-            hive_partitioning: false,
+            // TODO: Support Hive partitioning.
+            hive_options: HiveOptions {
+                enabled: false,
+                ..Default::default()
+            },
         };
 
         Ok(LogicalPlan::Scan {
@@ -147,7 +152,7 @@ impl LogicalPlanBuilder {
         low_memory: bool,
         cloud_options: Option<CloudOptions>,
         use_statistics: bool,
-        hive_partitioning: bool,
+        hive_options: HiveOptions,
     ) -> PolarsResult<Self> {
         use polars_io::{is_cloud_url, SerReader as _};
 
@@ -197,10 +202,8 @@ impl LogicalPlanBuilder {
             (num_rows, num_rows.unwrap_or(0)),
         );
 
-        // We set the hive partitions of the first path to determine the schema.
-        // On iteration the partition values will be re-set per file.
-        if hive_partitioning {
-            file_info.init_hive_partitions(path.as_path())?;
+        if hive_options.enabled {
+            file_info.init_hive_partitions(path.as_path(), hive_options.schema.clone())?
         }
 
         let options = FileScanOptions {
@@ -210,7 +213,7 @@ impl LogicalPlanBuilder {
             rechunk,
             row_index,
             file_counter: Default::default(),
-            hive_partitioning,
+            hive_options,
         };
         Ok(LogicalPlan::Scan {
             paths,
@@ -285,7 +288,11 @@ impl LogicalPlanBuilder {
                 rechunk,
                 row_index,
                 file_counter: Default::default(),
-                hive_partitioning: false,
+                // TODO: Support Hive partitioning.
+                hive_options: HiveOptions {
+                    enabled: false,
+                    ..Default::default()
+                },
             },
             predicate: None,
             scan_type: FileScan::Ipc {
@@ -393,8 +400,11 @@ impl LogicalPlanBuilder {
             rechunk,
             row_index,
             file_counter: Default::default(),
-            // TODO! add
-            hive_partitioning: false,
+            // TODO: Support Hive partitioning.
+            hive_options: HiveOptions {
+                enabled: false,
+                ..Default::default()
+            },
         };
         Ok(LogicalPlan::Scan {
             paths,

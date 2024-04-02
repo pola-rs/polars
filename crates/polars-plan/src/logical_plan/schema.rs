@@ -7,6 +7,7 @@ use polars_utils::format_smartstring;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+use super::hive::HivePartitions;
 use crate::prelude::*;
 
 impl LogicalPlan {
@@ -53,10 +54,11 @@ pub struct FileInfo {
     /// - known size
     /// - estimated size
     pub row_estimation: (Option<usize>, usize),
-    pub hive_parts: Option<Arc<hive::HivePartitions>>,
+    pub hive_parts: Option<Arc<HivePartitions>>,
 }
 
 impl FileInfo {
+    /// Constructs a new [`FileInfo`].
     pub fn new(
         schema: SchemaRef,
         reader_schema: Option<ArrowSchemaRef>,
@@ -70,35 +72,57 @@ impl FileInfo {
         }
     }
 
-    /// Updates the statistics and merges the hive partitions schema with the file one.
-    pub fn init_hive_partitions(&mut self, url: &Path) -> PolarsResult<()> {
-        self.hive_parts = hive::HivePartitions::parse_url(url).map(|hive_parts| {
-            let hive_schema = hive_parts.get_statistics().schema().clone();
-            let expected_len = self.schema.len() + hive_schema.len();
-
-            let schema = Arc::make_mut(&mut self.schema);
-            schema.merge((**hive_parts.get_statistics().schema()).clone());
-
-            polars_ensure!(schema.len() == expected_len, ComputeError: "invalid hive partitions\n\n\
-            Extending the schema with the hive partitioned columns creates duplicate fields.");
-
-            Ok(Arc::new(hive_parts))
-        }).transpose()?;
+    /// Set the [`HivePartitions`] information for this [`FileInfo`] from a path and an
+    /// optional schema.
+    pub fn init_hive_partitions(
+        &mut self,
+        path: &Path,
+        schema: Option<SchemaRef>,
+    ) -> PolarsResult<()> {
+        let hp = HivePartitions::try_from_path(path, schema)?;
+        if let Some(hp) = hp {
+            let hive_schema = hp.schema().clone();
+            self.update_schema_with_hive_schema(hive_schema)?;
+            self.hive_parts = Some(Arc::new(hp));
+        }
         Ok(())
     }
 
-    /// Updates the statistics, but not the schema.
-    pub fn update_hive_partitions(&mut self, url: &Path) -> PolarsResult<()> {
+    /// Merge the [`Schema`] of a [`HivePartitions`] with the schema of this [`FileInfo`].
+    ///
+    /// Returns an `Err` if any of the columns in either schema overlap.
+    fn update_schema_with_hive_schema(&mut self, hive_schema: SchemaRef) -> PolarsResult<()> {
+        let expected_len = self.schema.len() + hive_schema.len();
+
+        let file_schema = Arc::make_mut(&mut self.schema);
+        file_schema.merge(Arc::unwrap_or_clone(hive_schema));
+
+        polars_ensure!(
+            file_schema.len() == expected_len,
+            Duplicate: "invalid Hive partition schema\n\n\
+            Extending the schema with the Hive partition schema would create duplicate fields."
+        );
+        Ok(())
+    }
+
+    /// Update the [`HivePartitions`] statistics for this [`FileInfo`].
+    ///
+    /// If the Hive partitions were not yet initialized, this function has no effect.
+    pub fn update_hive_partitions(&mut self, path: &Path) -> PolarsResult<()> {
         if let Some(current) = &mut self.hive_parts {
-            let new = hive::HivePartitions::parse_url(url).ok_or_else(|| polars_err!(ComputeError: "expected hive partitioned path, got {}\n\n\
-            This error occurs if 'hive_partitioning=true' some paths are hive partitioned and some paths are not.", url.display()))?;
+            let schema = current.schema().clone();
+            let hp = HivePartitions::try_from_path(path, Some(schema))?;
+            let Some(new) = hp else {
+                polars_bail!(
+                    ComputeError: "expected Hive partitioned path, got {}\n\n\
+                    This error occurs if some paths are Hive partitioned and some paths are not.",
+                    path.display()
+                )
+            };
+
             match Arc::get_mut(current) {
-                Some(current) => {
-                    *current = new;
-                },
-                _ => {
-                    *current = Arc::new(new);
-                },
+                Some(hp) => *hp = new,
+                None => *current = Arc::new(new),
             }
         }
         Ok(())

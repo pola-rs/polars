@@ -17,7 +17,7 @@ with contextlib.suppress(ImportError):
 
 if TYPE_CHECKING:
     from polars import DataFrame, DataType, LazyFrame
-    from polars.type_aliases import ParallelStrategy
+    from polars.type_aliases import ParallelStrategy, SchemaDict
 
 
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
@@ -32,6 +32,7 @@ def read_parquet(
     parallel: ParallelStrategy = "auto",
     use_statistics: bool = True,
     hive_partitioning: bool = True,
+    hive_schema: SchemaDict | None = None,
     rechunk: bool = True,
     low_memory: bool = False,
     storage_options: dict[str, Any] | None = None,
@@ -69,8 +70,11 @@ def read_parquet(
         Use statistics in the parquet to determine if pages
         can be skipped from reading.
     hive_partitioning
-        Infer statistics and schema from hive partitioned URL and use them
+        Infer statistics and schema from Hive partitioned URL and use them
         to prune reads.
+    hive_schema
+        The column names and data types of the columns by which the data is partitioned.
+        If set to `None` (default), the schema of the Hive partitions is inferred.
     rechunk
         Make sure that all columns are contiguous in memory by
         aggregating the chunks into a single array.
@@ -113,9 +117,6 @@ def read_parquet(
 
     Notes
     -----
-    * Partitioned files:
-        If you have a directory-nested (hive-style) partitioned dataset, you should
-        use the :func:`scan_pyarrow_dataset` method instead.
     * When benchmarking:
         This operation defaults to a `rechunk` operation at the end, meaning that all
         data will be stored continuously in memory. Set `rechunk=False` if you are
@@ -132,6 +133,12 @@ def read_parquet(
         if n_rows is not None:
             msg = "`n_rows` cannot be used with `use_pyarrow=True`"
             raise ValueError(msg)
+        if hive_schema is not None:
+            msg = (
+                "cannot use `hive_partitions` with `use_pyarrow=True`"
+                "\n\nHint: Pass `pyarrow_options` instead with a 'partitioning' entry."
+            )
+            raise TypeError(msg)
 
         import pyarrow as pa
         import pyarrow.parquet
@@ -176,6 +183,7 @@ def read_parquet(
         parallel=parallel,
         use_statistics=use_statistics,
         hive_partitioning=hive_partitioning,
+        hive_schema=hive_schema,
         rechunk=rechunk,
         low_memory=low_memory,
         cache=False,
@@ -224,6 +232,7 @@ def scan_parquet(
     parallel: ParallelStrategy = "auto",
     use_statistics: bool = True,
     hive_partitioning: bool = True,
+    hive_schema: SchemaDict | None = None,
     rechunk: bool = False,
     low_memory: bool = False,
     cache: bool = True,
@@ -257,6 +266,9 @@ def scan_parquet(
     hive_partitioning
         Infer statistics and schema from hive partitioned URL and use them
         to prune reads.
+    hive_schema
+        The column names and data types of the columns by which the data is partitioned.
+        If set to `None` (default), the schema of the Hive partitions is inferred.
     rechunk
         In case of reading multiple files via a glob pattern rechunk the final DataFrame
         into contiguous memory chunks.
@@ -320,5 +332,6 @@ def scan_parquet(
         low_memory=low_memory,
         use_statistics=use_statistics,
         hive_partitioning=hive_partitioning,
+        hive_schema=hive_schema,
         retries=retries,
     )
