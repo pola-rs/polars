@@ -79,14 +79,12 @@ impl FileInfo {
         path: &Path,
         schema: Option<SchemaRef>,
     ) -> PolarsResult<()> {
-        match HivePartitions::try_from_path(path, schema) {
-            Ok(hp) => {
-                let hive_schema = hp.schema().clone();
-                self.update_schema_with_hive_schema(hive_schema)?;
-                self.hive_parts = Some(Arc::new(hp))
-            },
-            Err(_) => self.hive_parts = None,
-        };
+        let hp = HivePartitions::try_from_path(path, schema)?;
+
+        let hive_schema = hp.schema().clone();
+        self.update_schema_with_hive_schema(hive_schema)?;
+        self.hive_parts = Some(Arc::new(hp));
+
         Ok(())
     }
 

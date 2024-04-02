@@ -245,3 +245,16 @@ def test_scan_parquet_hive_schema(dataset_path: Path) -> None:
     expected_schema = OrderedDict({"a": pl.Int64, "b": pl.Float64, "c": pl.Int32})
     assert result.schema == expected_schema
     assert result.collect().schema == expected_schema
+
+
+@pytest.mark.write_disk()
+def test_read_parquet_hive_schema_invalid(dataset_path: Path) -> None:
+    with pytest.raises(
+        pl.SchemaFieldNotFoundError,
+        match='path contains column not present in the given Hive schema: "c"',
+    ):
+        pl.read_parquet(
+            dataset_path / "**/*.parquet",
+            hive_partitioning=True,
+            hive_schema={"nonexistent": pl.Int32},
+        )
