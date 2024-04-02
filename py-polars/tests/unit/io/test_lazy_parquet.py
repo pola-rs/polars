@@ -410,7 +410,7 @@ def test_nested_slice_12480(tmp_path: Path) -> None:
 
 
 @pytest.mark.write_disk()
-def test_scan_deadlock_rayon_nested_spawn_15172(
+def test_scan_deadlock_rayon_spawn_from_async_15172(
     monkeypatch: Any, tmp_path: Path
 ) -> None:
     from threading import Thread
