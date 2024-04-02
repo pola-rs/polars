@@ -248,7 +248,7 @@ def test_scan_parquet_hive_schema(dataset_path: Path) -> None:
 
 
 @pytest.mark.write_disk()
-def test_read_parquet_hive_schema_invalid(dataset_path: Path) -> None:
+def test_read_parquet_invalid_hive_schema(dataset_path: Path) -> None:
     with pytest.raises(
         pl.SchemaFieldNotFoundError,
         match='path contains column not present in the given Hive schema: "c"',
@@ -258,3 +258,11 @@ def test_read_parquet_hive_schema_invalid(dataset_path: Path) -> None:
             hive_partitioning=True,
             hive_schema={"nonexistent": pl.Int32},
         )
+
+
+def test_read_parquet_hive_schema_with_pyarrow() -> None:
+    with pytest.raises(
+        TypeError,
+        match="cannot use `hive_partitions` with `use_pyarrow=True`",
+    ):
+        pl.read_parquet("test.parquet", hive_schema={"c": pl.Int32}, use_pyarrow=True)
