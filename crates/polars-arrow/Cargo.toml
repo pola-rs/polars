@@ -86,7 +86,7 @@ proptest = { version = "1", default_features = false, features = ["std"] }
 rand = { workspace = true }
 # use for generating and testing random data samples
 sample-arrow2 = "0.17"
-sample-std = "0.1"
+sample-std = "0.2"
 sample-test = "0.2"
 # used to test async readers
 tokio = { workspace = true, features = ["macros", "rt", "fs", "io-util"] }
