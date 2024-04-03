@@ -206,8 +206,7 @@ To see the current Polars version and a full list of its optional dependencies, 
 pl.show_versions()
 ```
 
-Releases happen quite often (weekly / every few days) at the moment, so updating Polars regularly
-to get the latest bugfixes / features might not be a bad idea.
+Releases happen quite often (weekly / every few days) at the moment, so updating Polars regularly to get the latest bugfixes / features might not be a bad idea.
 
 ### Rust
 
@@ -255,8 +254,7 @@ data structures. See more in https://github.com/pola-rs/pyo3-polars.
 Do you expect more than 2^32 (~4.2 billion) rows? Compile Polars with the `bigidx` feature
 flag or, for Python users, install `pip install polars-u64-idx`.
 
-(Don't use this unless you hit the row boundary; the default build of Polars is faster
-and consumes less memory).
+Don't use this unless you hit the row boundary as the default build of Polars is faster and consumes less memory.
 
 ## Legacy
 
