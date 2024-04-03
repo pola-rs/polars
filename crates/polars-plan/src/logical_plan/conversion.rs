@@ -210,11 +210,14 @@ fn to_aexpr_impl(expr: Expr, arena: &mut Arena<AExpr>, state: &mut ConversionSta
             function,
             output_type,
             options,
-        } => AExpr::AnonymousFunction {
-            input: to_aexprs(input, arena, state),
-            function,
-            output_type,
-            options,
+        } => {
+            state.prune_alias = false;
+            AExpr::AnonymousFunction {
+                input: to_aexprs(input, arena, state),
+                function,
+                output_type,
+                options,
+            }
         },
         Expr::Function {
             input,
