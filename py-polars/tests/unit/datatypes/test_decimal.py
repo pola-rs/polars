@@ -79,14 +79,22 @@ def test_frame_from_pydecimal_and_ints(
         ("0.0100", False, "0.0100"),
         ("0.010000000000000000000000000", False, "0.010000000000000000000000000"),
         ("-1.123801239123981293891283123", True, "-1.123801239123981293891283123"),
-        ("12345678901.234567890123458390192857685", True, "12345678901.234567890123458390192857685"),
-        ("-99999999999.999999999999999999999999999", True, "-99999999999.999999999999999999999999999"),
+        (
+            "12345678901.234567890123458390192857685",
+            True,
+            "12345678901.234567890123458390192857685",
+        ),
+        (
+            "-99999999999.999999999999999999999999999",
+            True,
+            "-99999999999.999999999999999999999999999",
+        ),
     ],
 )
 def test_decimal_format(input: str, trim_zeros: bool, expected: str) -> None:
     with pl.Config(trim_decimal_zeros=trim_zeros):
         series = pl.Series([input]).str.to_decimal()
-        formatted = str(series).split('\n')[-2].strip()
+        formatted = str(series).split("\n")[-2].strip()
         assert formatted == expected
 
 
