@@ -831,3 +831,15 @@ def test_take_list_15719() -> None:
     )
 
     assert_frame_equal(df, expected)
+
+
+@pytest.mark.parametrize(
+    ("values", "dtype", "full_dtype"),
+    [
+        ([["a"], [], [None], None], pl.List, pl.List(pl.String)),
+        ([[1], [], [None], None], pl.List, pl.List(pl.Int64)),
+    ],
+)
+def test_list_anyvalue_empty_list(values, dtype, full_dtype) -> None:
+    s = pl.Series("a", values, dtype=dtype)
+    assert_series_equal(s, pl.Series("a", values, dtype=full_dtype))
