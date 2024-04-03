@@ -6912,17 +6912,18 @@ class DataFrame:
         │ null ┆ null ┆ null │
         └──────┴──────┴──────┘
         """
+        if n < 0:
+            msg = f"`n` should be greater than or equal to 0, got {n}"
+            raise ValueError(msg)
         # faster path
         if n == 0:
             return self._from_pydf(self._df.clear())
-        if n > 0 or len(self) > 0:
-            return self.__class__(
-                {
-                    nm: pl.Series(name=nm, dtype=tp).extend_constant(None, n)
-                    for nm, tp in self.schema.items()
-                }
-            )
-        return self.clone()
+        return self.__class__(
+            {
+                nm: pl.Series(name=nm, dtype=tp).extend_constant(None, n)
+                for nm, tp in self.schema.items()
+            }
+        )
 
     def clone(self) -> Self:
         """

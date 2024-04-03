@@ -73,3 +73,13 @@ def test_clear_series_object_starting_with_null() -> None:
     assert result.dtype == s.dtype
     assert result.name == s.name
     assert result.is_empty()
+
+
+def test_clear_raise_negative_n() -> None:
+    s = pl.Series([1, 2, 3])
+
+    msg = "`n` should be greater than or equal to 0, got -1"
+    with pytest.raises(ValueError, match=msg):
+        s.clear(-1)
+    with pytest.raises(ValueError, match=msg):
+        s.to_frame().clear(-1)
