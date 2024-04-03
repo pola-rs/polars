@@ -55,7 +55,7 @@ build-release-native: .venv  ## Same as build-release, except with native CPU op
 	@$(MAKE) -s -C .. $@
 
 .PHONY: lint
-lint: .venv  ## Run lint checks
+lint: .venv  ## Run lint checks (only)
 	$(VENV_BIN)/ruff check
 	-$(VENV_BIN)/mypy
 
@@ -83,6 +83,15 @@ test: .venv build  ## Run fast unittests
 doctest: .venv build  ## Run doctests
 	$(VENV_BIN)/python tests/docs/run_doctest.py
 	$(VENV_BIN)/pytest tests/docs/test_user_guide.py -m docs
+
+.PHONY: docs
+docs: .venv build  ## Build Python docs (incremental)
+	@$(MAKE) -s -C docs html
+
+.PHONY: docs-clean
+docs-clean: .venv  ## Build Python docs (full rebuild)
+	@$(MAKE) -s -C docs clean
+	@$(MAKE) docs
 
 .PHONY: test-all
 test-all: .venv build  ## Run all tests
