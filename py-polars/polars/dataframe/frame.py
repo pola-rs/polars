@@ -6913,7 +6913,7 @@ class DataFrame:
         └──────┴──────┴──────┘
         """
         if n < 0:
-            msg = "n should be greater than or equal to 0."
+            msg = f"`n` should be greater than or equal to 0, got {n}"
             raise ValueError(msg)
         # faster path
         if n == 0:
