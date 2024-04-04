@@ -610,7 +610,7 @@ def test_upsample(time_zone: str | None, tzinfo: ZoneInfo | timezone | None) -> 
     assert_frame_equal(up, expected)
 
 
-def test_offset_deprecated(offset: str | None) -> None:
+def test_offset_deprecated() -> None:
     df = pl.DataFrame(
         {
             "time": [
@@ -622,7 +622,7 @@ def test_offset_deprecated(offset: str | None) -> None:
             "admin": ["Åland", "Netherlands", "Åland", "Netherlands"],
             "test2": [0, 1, 2, 3],
         }
-    )
+    ).sort("time")
 
     # upsample
     with pytest.warns(
@@ -696,7 +696,14 @@ def test_upsample_crossing_dst(
             "values": [1, 2, 3],
         }
     )
-    result = df.upsample(time_column="time", every="1d", offset=offset)
+    if offset is not None:
+        with pytest.warns(
+            DeprecationWarning,
+            match="`offset` is deprecated and will be removed in the next breaking release.",
+        ):
+            result = df.upsample(time_column="time", every="1d", offset=offset)
+    else:
+        result = df.upsample(time_column="time", every="1d", offset=offset)
     expected = pl.DataFrame(
         {
             "time": expected_time,
