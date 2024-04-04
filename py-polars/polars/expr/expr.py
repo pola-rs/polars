@@ -2181,7 +2181,7 @@ class Expr:
             elif descending is True:
                 return self._from_pyexpr(self._pyexpr.bottom_k(k))
             else:
-                msg = "descending should be a boolean if no `by` is provided"
+                msg = "`descending` should be a boolean if no `by` is provided"
                 raise ValueError(msg)
 
     def bottom_k(
@@ -2333,7 +2333,7 @@ class Expr:
             elif descending is True:
                 return self._from_pyexpr(self._pyexpr.top_k(k))
             else:
-                msg = "descending should be a boolean if no `by` is provided"
+                msg = "`descending` should be a boolean if no `by` is provided"
                 raise ValueError(msg)
 
     def arg_sort(self, *, descending: bool = False, nulls_last: bool = False) -> Self:
