@@ -79,11 +79,11 @@ fn run_partitions(
     let keys = &exec.phys_keys;
 
     let mut keys = DataFrame::from_iter(compute_keys(keys, df, state)?);
-    let splited_keys = split_df(&mut keys, n_threads)?;
+    let splitted_keys = split_df(&mut keys, n_threads)?;
 
     POOL.install(|| {
         dfs.into_par_iter()
-            .zip(splited_keys)
+            .zip(splitted_keys)
             .map(|(df, keys)| {
                 let gb = df.group_by_with_series(keys.into(), false, maintain_order)?;
                 let groups = gb.get_groups();
@@ -302,7 +302,7 @@ impl PartitionGroupByExec {
         state: &mut ExecutionState,
         mut original_df: DataFrame,
     ) -> PolarsResult<DataFrame> {
-        let (splited_dfs, splited_keys) = {
+        let (splitted_dfs, splitted_keys) = {
             // already get the keys. This is the very last minute decision which group_by method we choose.
             // If the column is a categorical, we know the number of groups we have and can decide to continue
             // partitioned or go for the standard group_by. The partitioned is likely to be faster on a small number
@@ -344,8 +344,8 @@ impl PartitionGroupByExec {
             )?
         };
 
-        let df = accumulate_dataframes_vertical(splited_dfs)?;
-        let keys = splited_keys
+        let df = accumulate_dataframes_vertical(splitted_dfs)?;
+        let keys = splitted_keys
             .into_iter()
             .reduce(|mut acc, e| {
                 acc.iter_mut().zip(e).for_each(|(acc, e)| {
