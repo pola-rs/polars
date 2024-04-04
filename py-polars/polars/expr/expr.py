@@ -2051,6 +2051,7 @@ class Expr:
         by
             Column(s) included in sort order. Accepts expression input.
             Strings are parsed as column names.
+            If not provided, each column will be treated induvidually.
         descending
             Return the k smallest. Top-k by multiple columns can be specified per
             column by passing a sequence of booleans.
@@ -2184,6 +2185,7 @@ class Expr:
         by
             Column(s) included in sort order.
             Accepts expression input. Strings are parsed as column names.
+            If not provided, each column will be treated induvidually.
         descending
             Return the k largest. Bottom-k by multiple columns can be specified per
             column by passing a sequence of booleans.
