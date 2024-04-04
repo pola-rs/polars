@@ -2126,6 +2126,26 @@ class Expr:
         │ 5          ┆ 2          ┆ Banana     ┆ 2          ┆ 5          ┆ Orange     │
         └────────────┴────────────┴────────────┴────────────┴────────────┴────────────┘
 
+        Get the top 2 rows by multiple columns with given order.
+
+        >>> df2.select(
+        ...     pl.all()
+        ...     .top_k(2, by=["c", "a"], descending=[False, True])
+        ...     .name.suffix("_by_ca"),
+        ...     pl.all()
+        ...     .top_k(2, by=["c", "b"], descending=[False, True])
+        ...     .name.suffix("_by_cb"),
+        ... )
+        shape: (2, 6)
+        ┌─────────┬─────────┬─────────┬─────────┬─────────┬─────────┐
+        │ a_by_ca ┆ b_by_ca ┆ c_by_ca ┆ a_by_cb ┆ b_by_cb ┆ c_by_cb │
+        │ ---     ┆ ---     ┆ ---     ┆ ---     ┆ ---     ┆ ---     │
+        │ i64     ┆ i64     ┆ str     ┆ i64     ┆ i64     ┆ str     │
+        ╞═════════╪═════════╪═════════╪═════════╪═════════╪═════════╡
+        │ 2       ┆ 5       ┆ Orange  ┆ 2       ┆ 5       ┆ Orange  │
+        │ 5       ┆ 2       ┆ Banana  ┆ 6       ┆ 1       ┆ Banana  │
+        └─────────┴─────────┴─────────┴─────────┴─────────┴─────────┘
+
         Get the top 2 rows by column `a` in each group.
 
         >>> (
@@ -2257,6 +2277,26 @@ class Expr:
         │ 1          ┆ 6          ┆ Apple      ┆ 6          ┆ 1          ┆ Banana     │
         │ 2          ┆ 5          ┆ Orange     ┆ 5          ┆ 2          ┆ Banana     │
         └────────────┴────────────┴────────────┴────────────┴────────────┴────────────┘
+
+        Get the bottom 2 rows by multiple columns with given order.
+
+        >>> df2.select(
+        ...     pl.all()
+        ...     .bottom_k(2, by=["c", "a"], descending=[False, True])
+        ...     .name.suffix("_by_ca"),
+        ...     pl.all()
+        ...     .bottom_k(2, by=["c", "b"], descending=[False, True])
+        ...     .name.suffix("_by_cb"),
+        ... )
+        shape: (2, 6)
+        ┌─────────┬─────────┬─────────┬─────────┬─────────┬─────────┐
+        │ a_by_ca ┆ b_by_ca ┆ c_by_ca ┆ a_by_cb ┆ b_by_cb ┆ c_by_cb │
+        │ ---     ┆ ---     ┆ ---     ┆ ---     ┆ ---     ┆ ---     │
+        │ i64     ┆ i64     ┆ str     ┆ i64     ┆ i64     ┆ str     │
+        ╞═════════╪═════════╪═════════╪═════════╪═════════╪═════════╡
+        │ 4       ┆ 3       ┆ Apple   ┆ 1       ┆ 6       ┆ Apple   │
+        │ 3       ┆ 4       ┆ Apple   ┆ 3       ┆ 4       ┆ Apple   │
+        └─────────┴─────────┴─────────┴─────────┴─────────┴─────────┘
 
         Get the bottom 2 rows by column `a` in each group.
 
