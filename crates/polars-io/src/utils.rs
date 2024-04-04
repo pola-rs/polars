@@ -1,8 +1,12 @@
+#[cfg(any(feature = "avro", feature = "parquet"))]
+use std::borrow::Cow;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use once_cell::sync::Lazy;
 use polars_core::prelude::*;
+#[cfg(any(feature = "avro", feature = "parquet"))]
+use polars_core::utils::{accumulate_dataframes_vertical_unchecked, split_df_as_ref};
 use regex::{Regex, RegexBuilder};
 
 use crate::mmap::{MmapBytesReader, ReaderBytes};
@@ -254,6 +258,40 @@ pub fn check_projected_schema(
     msg: &str,
 ) -> PolarsResult<()> {
     check_projected_schema_impl(a, b, projected_names, msg)
+}
+
+/// Split DataFrame into chunks in preparation for writing. The chunks have a
+/// maximum number of rows per chunk to ensure reasonable memory efficiency when
+/// reading the resulting file, and a minimum size per chunk to ensure
+/// reasonable performance when writing.
+#[cfg(any(feature = "avro", feature = "parquet"))]
+pub(crate) fn chunk_df_for_writing(
+    df: &mut DataFrame,
+    row_group_size: usize,
+) -> PolarsResult<Cow<DataFrame>> {
+    // ensures all chunks are aligned.
+    df.align_chunks();
+
+    let n_splits = 1 + df.height() / row_group_size;
+    let result = if n_splits > 0 {
+        Cow::Owned(accumulate_dataframes_vertical_unchecked(
+            split_df_as_ref(df, n_splits, false)?
+                .into_iter()
+                .map(|mut df| {
+                    // If the chunks are small enough, writing many small chunks
+                    // leads to slow writing performance, so in that case we
+                    // merge them.
+                    let n_chunks = df.n_chunks();
+                    if n_chunks > 1 && (df.estimated_size() / n_chunks < 128 * 1024) {
+                        df.as_single_chunk_par();
+                    }
+                    df
+                }),
+        ))
+    } else {
+        Cow::Borrowed(df)
+    };
+    Ok(result)
 }
 
 #[cfg(test)]
