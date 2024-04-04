@@ -57,6 +57,10 @@ class ExprDateTimeNameSpace:
             Every interval start and period length
         offset
             Offset the window
+
+            .. deprecated:: 0.20.19
+                This argument is deprecated and will be removed in the next breaking
+                release.
         use_earliest
             Determine how to deal with ambiguous datetimes:
 
@@ -182,6 +186,11 @@ class ExprDateTimeNameSpace:
         """
         every = deprecate_saturating(every)
         offset = deprecate_saturating(offset)
+        if offset is not None:
+            issue_deprecation_warning(
+                "`offset` is deprecated and will be removed in the next breaking release.",
+                version="0.20.19",
+            )
         if not isinstance(every, pl.Expr):
             every = parse_as_duration_string(every)
 
@@ -237,6 +246,10 @@ class ExprDateTimeNameSpace:
             Every interval start and period length
         offset
             Offset the window
+
+            .. deprecated:: 0.20.19
+                This argument is deprecated and will be removed in the next breaking
+                release.
         ambiguous
             Determine how to deal with ambiguous datetimes:
 
@@ -329,6 +342,11 @@ class ExprDateTimeNameSpace:
         """
         every = deprecate_saturating(every)
         offset = deprecate_saturating(offset)
+        if offset is not None:
+            issue_deprecation_warning(
+                "`offset` is deprecated and will be removed in the next breaking release.",
+                version="0.20.19",
+            )
         if offset is None:
             offset = "0ns"
 

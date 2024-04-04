@@ -610,6 +610,63 @@ def test_upsample(time_zone: str | None, tzinfo: ZoneInfo | timezone | None) -> 
     assert_frame_equal(up, expected)
 
 
+def test_offset_deprecated(offset: str | None) -> None:
+    df = pl.DataFrame(
+        {
+            "time": [
+                datetime(2021, 2, 1),
+                datetime(2021, 4, 1),
+                datetime(2021, 5, 1),
+                datetime(2021, 6, 1),
+            ],
+            "admin": ["Åland", "Netherlands", "Åland", "Netherlands"],
+            "test2": [0, 1, 2, 3],
+        }
+    )
+
+    # upsample
+    with pytest.warns(
+        DeprecationWarning,
+        match="`offset` is deprecated and will be removed in the next breaking release.",
+    ):
+        df.upsample(
+            time_column="time",
+            every="1mo",
+            group_by="admin",
+            maintain_order=True,
+            offset="1d",
+        )
+
+    # truncate
+    with pytest.warns(
+        DeprecationWarning,
+        match="`offset` is deprecated and will be removed in the next breaking release.",
+    ):
+        df.select(pl.col("time").dt.truncate(every="1mo", offset="1d"))
+
+    # round
+    with pytest.warns(
+        DeprecationWarning,
+        match="`offset` is deprecated and will be removed in the next breaking release.",
+    ):
+        df.select(pl.col("time").dt.round(every="1mo", offset="1d"))
+
+    ser = df.to_series(0)
+    # truncate
+    with pytest.warns(
+        DeprecationWarning,
+        match="`offset` is deprecated and will be removed in the next breaking release.",
+    ):
+        ser.dt.truncate(every="1mo", offset="1d")
+
+    # round
+    with pytest.warns(
+        DeprecationWarning,
+        match="`offset` is deprecated and will be removed in the next breaking release.",
+    ):
+        ser.dt.round(every="1mo", offset="1d")
+
+
 @pytest.mark.parametrize("time_zone", [None, "US/Central"])
 @pytest.mark.parametrize(
     ("offset", "expected_time", "expected_values"),
