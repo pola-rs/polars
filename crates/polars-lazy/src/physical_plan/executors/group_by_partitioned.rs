@@ -345,14 +345,15 @@ impl PartitionGroupByExec {
         };
 
         let df = accumulate_dataframes_vertical(splited_dfs)?;
-        let keys = splited_keys.into_iter().reduce(|mut acc, e| {
-            acc.iter_mut().zip(e)
-            .for_each(|(acc, e)| {
-                let _ = acc.append(&e);
-            });
-            acc
-        })
-        .unwrap();
+        let keys = splited_keys
+            .into_iter()
+            .reduce(|mut acc, e| {
+                acc.iter_mut().zip(e).for_each(|(acc, e)| {
+                    let _ = acc.append(&e);
+                });
+                acc
+            })
+            .unwrap();
 
         // the partitioned group_by has added columns so we must update the schema.
         state.set_schema(self.output_schema.clone());

@@ -767,11 +767,13 @@ def test_group_by_partitioned_ending_cast(monkeypatch: Any) -> None:
     expected = pl.DataFrame({"a": [1], "b": [1], "num": [5]})
     assert_frame_equal(out, expected)
 
+
 def test_group_by_series_partitioned() -> None:
     # test 15354
-    df = pl.DataFrame([0]*1000)
-    groups = pl.Series([0]*1000)
+    df = pl.DataFrame([0] * 1000)
+    groups = pl.Series([0] * 1000)
     df.group_by(groups).agg(pl.all().is_not_null().sum())
+
 
 def test_groupby_deprecated() -> None:
     df = pl.DataFrame({"a": [1, 1, 2], "b": [3, 4, 5]})
