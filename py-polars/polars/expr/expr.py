@@ -2128,11 +2128,8 @@ class Expr:
         Get the top 2 rows by column `a` in each group.
 
         >>> (
-        ...     df2
-        ...     .group_by('c', maintain_order=True)
-        ...     .agg(
-        ...         pl.all().top_k(2, by="a")
-        ...     )
+        ...     df2.group_by("c", maintain_order=True)
+        ...     .agg(pl.all().top_k(2, by="a"))
         ...     .explode(pl.all().exclude("c"))
         ... )
         shape: (5, 3)
@@ -2222,11 +2219,11 @@ class Expr:
         └───────┴──────────┘
 
         >>> df2 = pl.DataFrame(
-        ...    {
-        ...        "a": [1, 2, 2, 3, 4, 5],
-        ...        "b": [5.5, 0.5, 4, 10, 17, 13],
-        ...        "c": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
-        ...    }
+        ...     {
+        ...         "a": [1, 2, 2, 3, 4, 5],
+        ...         "b": [5.5, 0.5, 4, 10, 17, 13],
+        ...         "c": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
+        ...     }
         ... )
         >>> df2
         shape: (6, 3)
@@ -2262,11 +2259,8 @@ class Expr:
         Get the bottom 2 rows by column `a` in each group.
 
         >>> (
-        ...     df2
-        ...     .group_by('c', maintain_order=True)
-        ...     .agg(
-        ...         pl.all().bottom_k(2, by="a")
-        ...     )
+        ...     df2.group_by("c", maintain_order=True)
+        ...     .agg(pl.all().bottom_k(2, by="a"))
         ...     .explode(pl.all().exclude("c"))
         ... )
         shape: (5, 3)

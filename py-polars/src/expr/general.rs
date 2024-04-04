@@ -308,7 +308,10 @@ impl PyExpr {
     #[cfg(feature = "top_k")]
     fn bottom_k_by(&self, k: Self, by: Vec<Self>, descending: Vec<bool>) -> Self {
         let by = by.into_iter().map(|e| e.inner).collect::<Vec<_>>();
-        self.inner.clone().bottom_k_by(k.inner, by, descending).into()
+        self.inner
+            .clone()
+            .bottom_k_by(k.inner, by, descending)
+            .into()
     }
 
     #[cfg(feature = "peaks")]
