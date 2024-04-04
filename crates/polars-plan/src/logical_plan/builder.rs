@@ -632,6 +632,7 @@ impl LogicalPlanBuilder {
         let predicate = if has_expr(&predicate, |e| match e {
             Expr::Column(name) => is_regex_projection(name),
             Expr::Wildcard
+            | Expr::Selector(_)
             | Expr::RenameAlias { .. }
             | Expr::Columns(_)
             | Expr::DtypeColumn(_)
