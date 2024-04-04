@@ -624,6 +624,38 @@ def test_top_k() -> None:
         ),
     )
 
+    with pytest.raises(
+        ValueError,
+        match=r"the length of `descending` \(2\) does not match the length of `by` \(1\)"
+    ):
+        df2.select(
+            pl.all().top_k(2, by="a", descending=[True, False])
+        )
+
+    with pytest.raises(
+        ValueError,
+        match=r"the length of `descending` \(2\) does not match the length of `by` \(1\)",
+    ):
+        df2.select(
+            pl.all().bottom_k(2, by="a", descending=[True, False])
+        )
+
+    with pytest.raises(
+        ValueError,
+        match=r"`descending` should be a boolean if no `by` is provided",
+    ):
+        df2.select(
+            pl.all().top_k(2, descending=[True, False])
+        )
+
+    with pytest.raises(
+        ValueError,
+        match=r"`descending` should be a boolean if no `by` is provided",
+    ):
+        df2.select(
+            pl.all().bottom_k(2, descending=[True, False])
+        )
+
 
 def test_sorted_flag_unset_by_arithmetic_4937() -> None:
     df = pl.DataFrame(
