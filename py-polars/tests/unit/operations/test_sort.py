@@ -351,6 +351,11 @@ def test_top_k() -> None:
     )
 
     assert_frame_equal(
+        df.select(pl.col("test").bottom_k(10, descending=True)),
+        pl.DataFrame({"test": [4, 3, 2, 1]}),
+    )
+
+    assert_frame_equal(
         df.select(
             top_k=pl.col("test").top_k(pl.col("val").min()),
             bottom_k=pl.col("test").bottom_k(pl.col("val").min()),
