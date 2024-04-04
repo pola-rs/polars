@@ -454,6 +454,8 @@ impl Expr {
     }
 
     /// Returns the `k` largest rows by given column.
+    ///
+    /// For single column, use [`Expr::top_k`].
     #[cfg(feature = "top_k")]
     pub fn top_k_by<K: Into<Expr>, E: AsRef<[IE]>, IE: Into<Expr> + Clone, G: AsRef<[bool]>>(
         self,
@@ -476,7 +478,9 @@ impl Expr {
         self.apply_many_private(FunctionExpr::TopK(true), &[k], false, false)
     }
 
-    /// Returns the `k` largest rows by given column.
+    /// Returns the `k` smallest rows by given column.
+    ///
+    /// For single column, use [`Expr::bottom_k`].
     #[cfg(feature = "top_k")]
     pub fn bottom_k_by<K: Into<Expr>, E: AsRef<[IE]>, IE: Into<Expr> + Clone, G: AsRef<[bool]>>(
         self,
