@@ -8,8 +8,6 @@ use polars_core::prelude::*;
 use polars_core::utils::CustomIterTools;
 use polars_utils::total_ord::TotalOrd;
 
-use crate::prelude::SeriesMethods;
-
 fn arg_partition<T, C: Fn(&T, &T) -> Ordering>(
     v: &mut [T],
     k: usize,
