@@ -5937,7 +5937,7 @@ class DataFrame:
 
             .. deprecated:: 0.20.19
                 This argument is deprecated and will be removed in the next breaking
-                release.
+                release. Instead, chain `upsample` with `.dt.offset`.
         group_by
             First group by these columns and then upsample for every group.
         maintain_order
@@ -5987,7 +5987,8 @@ class DataFrame:
         every = deprecate_saturating(every)
         if offset is not None:
             issue_deprecation_warning(
-                "`offset` is deprecated and will be removed in the next breaking release.",
+                "`offset` is deprecated and will be removed in the next breaking release. "
+                "Instead, chain `upsample` with `.dt.offset`.",
                 version="0.20.19",
             )
         offset = deprecate_saturating(offset)

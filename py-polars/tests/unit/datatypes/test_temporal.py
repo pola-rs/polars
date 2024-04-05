@@ -627,7 +627,8 @@ def test_offset_deprecated() -> None:
     # upsample
     with pytest.warns(
         DeprecationWarning,
-        match="`offset` is deprecated and will be removed in the next breaking release.",
+        match="`offset` is deprecated and will be removed in the next breaking release. "
+        "Instead, chain `upsample` with `.dt.offset`.",
     ):
         df.upsample(
             time_column="time",
@@ -640,14 +641,16 @@ def test_offset_deprecated() -> None:
     # truncate
     with pytest.warns(
         DeprecationWarning,
-        match="`offset` is deprecated and will be removed in the next breaking release.",
+        match="`offset` is deprecated and will be removed in the next breaking release. "
+        "Instead, chain `dt.truncate` with `.dt.offset`.",
     ):
         df.select(pl.col("time").dt.truncate(every="1mo", offset="1d"))
 
     # round
     with pytest.warns(
         DeprecationWarning,
-        match="`offset` is deprecated and will be removed in the next breaking release.",
+        match="`offset` is deprecated and will be removed in the next breaking release. "
+        "Instead, chain `dt.round` with `.dt.offset`.",
     ):
         df.select(pl.col("time").dt.round(every="1mo", offset="1d"))
 
@@ -655,14 +658,16 @@ def test_offset_deprecated() -> None:
     # truncate
     with pytest.warns(
         DeprecationWarning,
-        match="`offset` is deprecated and will be removed in the next breaking release.",
+        match="`offset` is deprecated and will be removed in the next breaking release. "
+        "Instead, chain `dt.truncate` with `.dt.offset`.",
     ):
         ser.dt.truncate(every="1mo", offset="1d")
 
     # round
     with pytest.warns(
         DeprecationWarning,
-        match="`offset` is deprecated and will be removed in the next breaking release.",
+        match="`offset` is deprecated and will be removed in the next breaking release. "
+        "Instead, chain `dt.round` with `.dt.offset`.",
     ):
         ser.dt.round(every="1mo", offset="1d")
 
@@ -699,7 +704,8 @@ def test_upsample_crossing_dst(
     if offset is not None:
         with pytest.warns(
             DeprecationWarning,
-            match="`offset` is deprecated and will be removed in the next breaking release.",
+            match="`offset` is deprecated and will be removed in the next breaking release. "
+            "Instead, chain `upsample` with `.dt.offset`.",
         ):
             result = df.upsample(time_column="time", every="1d", offset=offset)
     else:
