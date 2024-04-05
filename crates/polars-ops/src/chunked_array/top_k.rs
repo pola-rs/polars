@@ -1,25 +1,153 @@
+use std::cmp::Ordering;
+
+use arrow::array::BooleanArray;
+use arrow::bitmap;
+use arrow::bitmap::MutableBitmap;
+use either::Either;
+use polars_core::downcast_as_macro_arg_physical;
 use polars_core::prelude::*;
+use polars_core::utils::CustomIterTools;
+use polars_utils::total_ord::TotalOrd;
+
+use crate::prelude::SeriesMethods;
+
+fn arg_partition<T, C: Fn(&T, &T) -> Ordering>(
+    v: &mut [T],
+    k: usize,
+    descending: bool,
+    cmp: C,
+) -> &[T] {
+    let (lower, _el, upper) = v.select_nth_unstable_by(k, &cmp);
+    if descending {
+        lower.sort_unstable_by(cmp);
+        lower
+    } else {
+        upper.sort_unstable_by(|a, b| cmp(a, b).reverse());
+        upper
+    }
+}
+
+fn top_k_num_impl<T>(ca: &ChunkedArray<T>, k: usize, descending: bool) -> ChunkedArray<T>
+where
+    T: PolarsNumericType,
+    ChunkedArray<T>: ChunkSort<T>,
+{
+    if k >= ca.len() {
+        return ca.sort(!descending);
+    }
+
+    // descending is opposite from sort as top-k returns largest
+    let k = if descending {
+        std::cmp::min(k, ca.len())
+    } else {
+        ca.len().saturating_sub(k + 1)
+    };
+
+    match ca.to_vec_null_aware() {
+        Either::Left(mut v) => {
+            let values = arg_partition(&mut v, k, descending, TotalOrd::tot_cmp);
+            ChunkedArray::from_slice(ca.name(), values)
+        },
+        Either::Right(mut v) => {
+            let values = arg_partition(&mut v, k, descending, TotalOrd::tot_cmp);
+            let mut out = ChunkedArray::from_iter(values.iter().copied());
+            out.rename(ca.name());
+            out
+        },
+    }
+}
+
+fn top_k_bool_impl(
+    ca: &ChunkedArray<BooleanType>,
+    k: usize,
+    descending: bool,
+) -> ChunkedArray<BooleanType> {
+    if ca.null_count() == 0 {
+        let true_count = ca.sum().unwrap() as usize;
+        let mut bitmap = MutableBitmap::with_capacity(k);
+        if !descending {
+            // true first
+            bitmap.extend_constant(std::cmp::min(k, true_count), true);
+            bitmap.extend_constant(k.saturating_sub(true_count), false);
+        } else {
+            bitmap.extend_constant(k.saturating_sub(true_count), false);
+            bitmap.extend_constant(std::cmp::min(k, true_count), true);
+        }
+        let arr = BooleanArray::from_data_default(bitmap.into(), None);
+        unsafe {
+            ChunkedArray::from_chunks_and_dtype(ca.name(), vec![Box::new(arr)], DataType::Boolean)
+        }
+    } else {
+        let null_count = ca.null_count();
+        let true_count = ca.sum().unwrap() as usize;
+        use std::iter;
+        if !descending {
+            // Null -> True -> False
+            let mut new_ca: BooleanChunked = iter::repeat(None)
+                .take(null_count)
+                .chain(iter::repeat(Some(true)).take(true_count))
+                .chain(iter::repeat(Some(false)).take(ca.len() - true_count - null_count))
+                .take(k)
+                .collect_trusted();
+            new_ca.rename(ca.name());
+            new_ca
+        } else {
+            // False -> True -> Null
+            let mut new_ca: BooleanChunked = iter::repeat(Some(false))
+                .take(null_count)
+                .chain(iter::repeat(Some(true)).take(true_count))
+                .chain(iter::repeat(None).take(ca.len() - true_count - null_count))
+                .take(k)
+                .collect_trusted();
+            new_ca.rename(ca.name());
+            new_ca
+        }
+    }
+}
 
 pub fn top_k(s: &[Series], descending: bool) -> PolarsResult<Series> {
-    let src = &s[0];
     let k_s = &s[1];
-
-    if src.is_empty() {
-        return Ok(src.clone());
-    }
 
     polars_ensure!(
         k_s.len() == 1,
         ComputeError: "`k` must be a single value for `top_k`."
     );
 
-    let k_s = k_s.cast(&IDX_DTYPE)?;
-    let k = k_s.idx()?;
-
-    if let Some(k) = k.get(0) {
-        let s = src.to_physical_repr();
-        Ok(s.sort(!descending, false)?.head(Some(k as usize)))
-    } else {
+    let Some(k) = k_s.cast(&IDX_DTYPE)?.idx()?.get(0) else {
         polars_bail!(ComputeError: "`k` must be set for `top_k`")
+    };
+
+    let src = &s[0];
+
+    if src.is_empty() {
+        return Ok(src.clone());
     }
+
+    if src.is_sorted(SortOptions {
+        descending,
+        ..Default::default()
+    })? {
+        return Ok(src.slice(0, k as usize));
+    };
+
+    let origin_dtype = src.dtype();
+
+    let s = src.to_physical_repr();
+
+    match s.dtype() {
+        DataType::Boolean => top_k_bool_impl(s.bool().unwrap(), k as usize, descending),
+        DataType::String => todo!(),
+        DataType::Binary => todo!(),
+        DataType::BinaryOffset => todo!(),
+        _dt => {
+            macro_rules! dispatch {
+                ($ca:expr) => {{
+                    top_k_num_impl($ca, k as usize, descending).into_series()
+                }};
+            }
+
+            downcast_as_macro_arg_physical!(&s, dispatch)
+        },
+    }
+    .cast(origin_dtype)
 }
