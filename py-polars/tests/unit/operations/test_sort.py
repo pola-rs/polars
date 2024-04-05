@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -288,6 +289,8 @@ def test_top_k() -> None:
         {
             "test": [2, 4, 1, 3],
             "val": [2, 4, 9, 3],
+            "bool_val": [False, True, True, False],
+            "str_value": ["d", "b", "a", "c"],
         }
     )
     assert_frame_equal(
@@ -302,6 +305,30 @@ def test_top_k() -> None:
         ),
         pl.DataFrame({"top_k": [4, 3], "bottom_k": [1, 2]}),
     )
+
+    assert_frame_equal(
+        df.select(
+            pl.col("bool_val").top_k(2).alias("top_k"),
+            pl.col("bool_val").bottom_k(2).alias("bottom_k"),
+        ),
+        pl.DataFrame({"top_k": [True, True], "bottom_k": [False, False]}),
+    )
+
+    assert_frame_equal(
+        df.select(
+            pl.col("str_value").top_k(2).alias("top_k"),
+            pl.col("str_value").bottom_k(2).alias("bottom_k"),
+        ),
+        pl.DataFrame({"top_k": ["d", "c"], "bottom_k": ["a", "b"]}),
+    )
+
+    with pytest.raises(ComputeError, match="`k` must be set for `top_k`"):
+        df.select(
+            pl.col("bool_val").top_k(pl.lit(None)),
+        )
+
+    with pytest.raises(ComputeError, match="`k` must be a single value for `top_k`."):
+        df.select(pl.col("test").top_k(pl.lit(pl.Series("s", [1, 2]))))
 
     # dataframe
     df = pl.DataFrame(
