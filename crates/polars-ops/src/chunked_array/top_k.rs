@@ -1,7 +1,6 @@
 use std::cmp::Ordering;
 
 use arrow::array::BooleanArray;
-use arrow::bitmap;
 use arrow::bitmap::MutableBitmap;
 use either::Either;
 use polars_core::downcast_as_macro_arg_physical;
@@ -70,8 +69,9 @@ fn top_k_bool_impl(
             bitmap.extend_constant(std::cmp::min(k, true_count), true);
             bitmap.extend_constant(k.saturating_sub(true_count), false);
         } else {
-            bitmap.extend_constant(k.saturating_sub(true_count), false);
-            bitmap.extend_constant(std::cmp::min(k, true_count), true);
+            let false_count = ca.len().saturating_sub(true_count);
+            bitmap.extend_constant(std::cmp::min(k, false_count), false);
+            bitmap.extend_constant(k.saturating_sub(false_count), true);
         }
         let arr = BooleanArray::from_data_default(bitmap.into(), None);
         unsafe {
@@ -105,6 +105,38 @@ fn top_k_bool_impl(
     }
 }
 
+fn top_k_binary_impl(
+    ca: &ChunkedArray<BinaryType>,
+    k: usize,
+    descending: bool,
+) -> ChunkedArray<BinaryType> {
+    if k >= ca.len() {
+        return ca.sort(!descending);
+    }
+
+    // descending is opposite from sort as top-k returns largest
+    let k = if descending {
+        std::cmp::min(k, ca.len())
+    } else {
+        ca.len().saturating_sub(k + 1)
+    };
+
+    if ca.null_count() == 0 {
+        let mut v: Vec<&[u8]> = Vec::with_capacity(ca.len());
+        for arr in ca.downcast_iter() {
+            v.extend(arr.non_null_values_iter());
+        }
+        let values = arg_partition(&mut v, k, descending, TotalOrd::tot_cmp);
+        ChunkedArray::from_slice(ca.name(), values)
+    } else {
+        let mut v = ca.iter().collect::<Vec<_>>();
+        let values = arg_partition(&mut v, k, descending, TotalOrd::tot_cmp);
+        let mut out = ChunkedArray::from_iter(values.iter().copied());
+        out.rename(ca.name());
+        out
+    }
+}
+
 pub fn top_k(s: &[Series], descending: bool) -> PolarsResult<Series> {
     let k_s = &s[1];
 
@@ -123,22 +155,35 @@ pub fn top_k(s: &[Series], descending: bool) -> PolarsResult<Series> {
         return Ok(src.clone());
     }
 
-    if src.is_sorted(SortOptions {
-        descending,
-        ..Default::default()
-    })? {
-        return Ok(src.slice(0, k as usize));
-    };
+    match src.is_sorted_flag() {
+        polars_core::series::IsSorted::Ascending => {
+            // TopK is the k element in the bottom of ascending sorted array
+            return Ok(src
+                .slice((src.len() - k as usize) as i64, k as usize)
+                .reverse());
+        },
+        polars_core::series::IsSorted::Descending => {
+            return Ok(src.slice(0, k as usize));
+        },
+        _ => {},
+    }
 
     let origin_dtype = src.dtype();
 
     let s = src.to_physical_repr();
 
     match s.dtype() {
-        DataType::Boolean => top_k_bool_impl(s.bool().unwrap(), k as usize, descending),
-        DataType::String => todo!(),
-        DataType::Binary => todo!(),
-        DataType::BinaryOffset => todo!(),
+        DataType::Boolean => {
+            Ok(top_k_bool_impl(s.bool().unwrap(), k as usize, descending).into_series())
+        },
+        DataType::String => {
+            top_k_binary_impl(&s.str().unwrap().as_binary(), k as usize, descending)
+                .into_series()
+                .cast(origin_dtype)
+        },
+        DataType::Binary => {
+            Ok(top_k_binary_impl(s.binary().unwrap(), k as usize, descending).into_series())
+        },
         _dt => {
             macro_rules! dispatch {
                 ($ca:expr) => {{
@@ -146,8 +191,7 @@ pub fn top_k(s: &[Series], descending: bool) -> PolarsResult<Series> {
                 }};
             }
 
-            downcast_as_macro_arg_physical!(&s, dispatch)
+            downcast_as_macro_arg_physical!(&s, dispatch).cast(origin_dtype)
         },
     }
-    .cast(origin_dtype)
 }
