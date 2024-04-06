@@ -9,7 +9,6 @@ import pytest
 import polars as pl
 import polars.selectors as cs
 from polars.testing import assert_frame_equal, assert_series_equal
-
 from polars.testing._constants import PARTITION_LIMIT
 
 if TYPE_CHECKING:
