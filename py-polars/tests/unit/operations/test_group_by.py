@@ -10,6 +10,8 @@ import polars as pl
 import polars.selectors as cs
 from polars.testing import assert_frame_equal, assert_series_equal
 
+from polars.testing._constants import PARTITION_LIMIT
+
 if TYPE_CHECKING:
     from polars.type_aliases import PolarsDataType
 
@@ -770,8 +772,8 @@ def test_group_by_partitioned_ending_cast(monkeypatch: Any) -> None:
 
 def test_group_by_series_partitioned() -> None:
     # test 15354
-    df = pl.DataFrame([0] * 1000)
-    groups = pl.Series([0] * 1000)
+    df = pl.DataFrame([0, 0] * PARTITION_LIMIT)
+    groups = pl.Series([0, 1] * PARTITION_LIMIT)
     df.group_by(groups).agg(pl.all().is_not_null().sum())
 
 
