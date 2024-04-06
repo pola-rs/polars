@@ -60,7 +60,7 @@ def test_ewm_mean() -> None:
             1.0,
             3.6666666666666665,
             5.571428571428571,
-            5.571428571428571,
+            None,
             3.6666666666666665,
             4.354838709677419,
             4.174603174603175,
@@ -73,7 +73,7 @@ def test_ewm_mean() -> None:
             1.0,
             3.666666666666667,
             5.571428571428571,
-            5.571428571428571,
+            None,
             3.08695652173913,
             4.2,
             4.092436974789916,
@@ -83,12 +83,12 @@ def test_ewm_mean() -> None:
         s.ewm_mean(alpha=0.5, adjust=True, ignore_nulls=False), expected
     )
 
-    expected = pl.Series([None, 1.0, 3.0, 5.0, 5.0, 3.5, 4.25, 4.125])
+    expected = pl.Series([None, 1.0, 3.0, 5.0, None, 3.5, 4.25, 4.125])
     assert_series_equal(
         s.ewm_mean(alpha=0.5, adjust=False, ignore_nulls=True), expected
     )
 
-    expected = pl.Series([None, 1.0, 3.0, 5.0, 5.0, 3.0, 4.0, 4.0])
+    expected = pl.Series([None, 1.0, 3.0, 5.0, None, 3.0, 4.0, 4.0])
     assert_series_equal(
         s.ewm_mean(alpha=0.5, adjust=False, ignore_nulls=False), expected
     )
@@ -114,7 +114,7 @@ def test_ewm_mean_min_periods() -> None:
     series = pl.Series([1.0, None, None, None])
 
     ewm_mean = series.ewm_mean(alpha=0.5, min_periods=1, ignore_nulls=True)
-    assert ewm_mean.to_list() == [1.0, 1.0, 1.0, 1.0]
+    assert ewm_mean.to_list() == [1.0, None, None, None]
     ewm_mean = series.ewm_mean(alpha=0.5, min_periods=2, ignore_nulls=True)
     assert ewm_mean.to_list() == [None, None, None, None]
 
@@ -126,9 +126,9 @@ def test_ewm_mean_min_periods() -> None:
         pl.Series(
             [
                 1.0,
-                1.0,
+                None,
                 1.6666666666666665,
-                1.6666666666666665,
+                None,
                 2.4285714285714284,
             ]
         ),
@@ -141,7 +141,7 @@ def test_ewm_mean_min_periods() -> None:
                 None,
                 None,
                 1.6666666666666665,
-                1.6666666666666665,
+                None,
                 2.4285714285714284,
             ]
         ),
@@ -153,8 +153,25 @@ def test_ewm_std_var() -> None:
 
     var = series.ewm_var(alpha=0.5, ignore_nulls=False)
     std = series.ewm_std(alpha=0.5, ignore_nulls=False)
-
+    expected = pl.Series("a", [0, 4.5, 1.9285714285714288])
     assert np.allclose(var, std**2, rtol=1e-16)
+    assert_series_equal(var, expected)
+
+
+def test_ewm_std_var_with_nulls() -> None:
+    series = pl.Series("a", [2, 5, None, 3])
+
+    var = series.ewm_var(alpha=0.5, ignore_nulls=True)
+    std = series.ewm_std(alpha=0.5, ignore_nulls=True)
+    expected = pl.Series("a", [0, 4.5, None, 1.9285714285714288])
+    assert_series_equal(var, expected)
+    assert_series_equal(std**2, expected)
+
+    var = series.ewm_var(alpha=0.5, ignore_nulls=False)
+    std = series.ewm_std(alpha=0.5, ignore_nulls=False)
+    expected = pl.Series("a", [0, 4.5, None, 1.7307692307692308])
+    assert_series_equal(var, expected)
+    assert_series_equal(std**2, expected)
 
 
 def test_ewm_param_validation() -> None:
