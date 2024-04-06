@@ -19,7 +19,7 @@ fn arg_partition<T, C: Fn(&T, &T) -> Ordering>(
         lower.sort_unstable_by(cmp);
         lower
     } else {
-        upper.sort_unstable_by(|a, b| cmp(a, b).reverse());
+        upper.sort_unstable_by(|a, b| cmp(b, a));
         upper
     }
 }
