@@ -1954,12 +1954,12 @@ class Series:
         >>> s = pl.Series("foo", [1, 2, 3, 4])
         >>> s.pow(3)
         shape: (4,)
-        Series: 'foo' [f64]
+        Series: 'foo' [i64]
         [
-                1.0
-                8.0
-                27.0
-                64.0
+            1
+            8
+            27
+            64
         ]
         """
         if _check_for_numpy(exponent) and isinstance(exponent, np.ndarray):
@@ -2822,13 +2822,13 @@ class Series:
         >>> s = pl.Series("values", [1, 2, 3, 4, 5])
         >>> s.cumulative_eval(pl.element().first() - pl.element().last() ** 2)
         shape: (5,)
-        Series: 'values' [f64]
+        Series: 'values' [i64]
         [
-            0.0
-            -3.0
-            -8.0
-            -15.0
-            -24.0
+            0
+            -3
+            -8
+            -15
+            -24
         ]
         """
 
