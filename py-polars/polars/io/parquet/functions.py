@@ -7,6 +7,7 @@ from typing import IO, TYPE_CHECKING, Any
 
 import polars._reexport as pl
 from polars._utils.deprecation import deprecate_renamed_parameter
+from polars._utils.unstable import issue_unstable_warning
 from polars._utils.various import is_int_sequence, normalize_filepath
 from polars.convert import from_arrow
 from polars.dependencies import _PYARROW_AVAILABLE
@@ -75,6 +76,10 @@ def read_parquet(
     hive_schema
         The column names and data types of the columns by which the data is partitioned.
         If set to `None` (default), the schema of the Hive partitions is inferred.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
     rechunk
         Make sure that all columns are contiguous in memory by
         aggregating the chunks into a single array.
@@ -123,6 +128,10 @@ def read_parquet(
         benchmarking the parquet-reader as `rechunk` can be an expensive operation
         that should not contribute to the timings.
     """
+    if hive_schema is not None:
+        msg = "The `hive_schema` parameter of `read_parquet` is considered unstable."
+        issue_unstable_warning(msg)
+
     # Dispatch to pyarrow if requested
     if use_pyarrow:
         if not _PYARROW_AVAILABLE:
@@ -269,6 +278,10 @@ def scan_parquet(
     hive_schema
         The column names and data types of the columns by which the data is partitioned.
         If set to `None` (default), the schema of the Hive partitions is inferred.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
     rechunk
         In case of reading multiple files via a glob pattern rechunk the final DataFrame
         into contiguous memory chunks.
@@ -315,6 +328,10 @@ def scan_parquet(
     ... }
     >>> pl.scan_parquet(source, storage_options=storage_options)  # doctest: +SKIP
     """
+    if hive_schema is not None:
+        msg = "The `hive_schema` parameter of `scan_parquet` is considered unstable."
+        issue_unstable_warning(msg)
+
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source)
     else:
