@@ -867,8 +867,9 @@ impl LogicalPlanBuilder {
     }
 
     pub fn melt(self, args: Arc<MeltArgs>) -> Self {
-        let schema = try_delayed!(self.0.schema(), &self.0, into);
-        let schema = det_melt_schema(&args, &schema);
+        let input_schema = try_delayed!(self.0.schema(), &self.0, into);
+        try_delayed!(args.is_valid_schema(&input_schema), &self.0, into);
+        let schema = det_melt_schema(&args, &input_schema);
         LogicalPlan::MapFunction {
             input: Arc::new(self.0),
             function: FunctionNode::Melt { args, schema },

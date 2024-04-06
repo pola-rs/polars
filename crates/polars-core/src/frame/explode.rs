@@ -34,6 +34,22 @@ pub struct MeltArgs {
     pub streamable: bool,
 }
 
+impl MeltArgs {
+    pub fn is_valid_schema(&self, schema: &Schema) -> PolarsResult<()> {
+        let mut provided = PlHashSet::new();
+        for name in self.id_vars.iter().chain(self.value_vars.iter()) {
+            if !schema.contains(name) {
+                polars_bail!(ColumnNotFound: "{}", name)
+            }
+
+            if !provided.insert(name) {
+                polars_bail!(Duplicate: "column name '{}' provided more than once in melt", name)
+            }
+        }
+        Ok(())
+    }
+}
+
 impl DataFrame {
     pub fn explode_impl(&self, mut columns: Vec<Series>) -> PolarsResult<DataFrame> {
         polars_ensure!(!columns.is_empty(), InvalidOperation: "no columns provided in explode");
