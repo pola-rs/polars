@@ -1407,6 +1407,18 @@ def test_dot_product() -> None:
     assert df["a"].dot(df["b"]) == 20
     assert typing.cast(int, df.select([pl.col("a").dot("b")])[0, "a"]) == 20
 
+    result = pl.Series([1, 2, 3]) @ pl.Series([4, 5, 6])
+    assert isinstance(result, int)
+    assert result == 32
+
+    result = pl.Series([1, 2, 3]) @ pl.Series([4.0, 5.0, 6.0])
+    assert isinstance(result, float)
+    assert result == 32.0
+
+    result = pl.Series([1.0, 2.0, 3.0]) @ pl.Series([4.0, 5.0, 6.0])
+    assert isinstance(result, float)
+    assert result == 32.0
+
 
 def test_hash_rows() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [2, 2, 2, 2]})
