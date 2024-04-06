@@ -793,7 +793,6 @@ where
         }
         // SAFETY: we have written all slots
         unsafe { values.set_len(len) }
-        unsafe { validity.set_len(len) }
         let validity = Bitmap::from(validity);
         let arr = PrimitiveArray::new(
             T::get_dtype().to_physical().to_arrow(true),
