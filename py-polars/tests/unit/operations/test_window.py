@@ -405,7 +405,9 @@ def test_window_filtered_false_15483() -> None:
             "value": [1, 2],
         }
     )
-    out = df.with_columns(pl.col("value").filter(False).arg_max().over("group"))
+    out = df.with_columns(
+        pl.col("value").filter(pl.col("group") != "A").arg_max().over("group")
+    )
     expected = pl.DataFrame(
         {
             "group": ["A", "A"],
