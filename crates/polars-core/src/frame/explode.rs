@@ -272,6 +272,9 @@ impl DataFrame {
     /// Similar to melt, but without generics. This may be easier if you want to pass
     /// an empty `id_vars` or empty `value_vars`.
     pub fn melt2(&self, args: MeltArgs) -> PolarsResult<Self> {
+        let schema = self.schema();
+        args.is_valid_schema(&schema)?;
+
         let id_vars = args.id_vars;
         let mut value_vars = args.value_vars;
 
@@ -309,7 +312,6 @@ impl DataFrame {
         }
 
         // values will all be placed in single column, so we must find their supertype
-        let schema = self.schema();
         let mut iter = value_vars.iter().map(|v| {
             schema
                 .get(v)
