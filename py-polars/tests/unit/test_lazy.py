@@ -1058,7 +1058,7 @@ def test_self_join() -> None:
                 pl.col("employee_name_right").alias("manager_name"),
             ]
         )
-        .fetch()
+        .collect()
     )
     assert set(out.rows()) == {
         (100, "James", None),
