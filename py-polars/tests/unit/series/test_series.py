@@ -447,9 +447,7 @@ def test_arithmetic_datetime() -> None:
         a * 2
     with pytest.raises(TypeError):
         a % 2
-    with pytest.raises(
-        pl.InvalidOperationError,
-    ):
+    with pytest.raises(TypeError):
         a**2
     with pytest.raises(TypeError):
         2 / a
@@ -459,9 +457,7 @@ def test_arithmetic_datetime() -> None:
         2 * a
     with pytest.raises(TypeError):
         2 % a
-    with pytest.raises(
-        pl.InvalidOperationError,
-    ):
+    with pytest.raises(TypeError):
         2**a
 
 
@@ -480,11 +476,12 @@ def test_power() -> None:
     m = pl.Series([2**33, 2**33], dtype=UInt64)
 
     # pow
-    assert_series_equal(a**2, pl.Series([1, 4], dtype=Int64))
+    assert_series_equal(a**2, pl.Series([1.0, 4.0], dtype=Float64))
     assert_series_equal(b**3, pl.Series([None, 8.0], dtype=Float64))
-    assert_series_equal(a**a, pl.Series([1, 4], dtype=Int64))
+    assert_series_equal(a**a, pl.Series([1.0, 4.0], dtype=Float64))
     assert_series_equal(b**b, pl.Series([None, 4.0], dtype=Float64))
     assert_series_equal(a**b, pl.Series([None, 4.0], dtype=Float64))
+    assert_series_equal(a**None, pl.Series([None] * len(a), dtype=Float64))  # type: ignore[operator]
     assert_series_equal(d**d, pl.Series([1, 4], dtype=UInt8))
     assert_series_equal(e**d, pl.Series([1, 4], dtype=Int8))
     assert_series_equal(f**d, pl.Series([1, 4], dtype=UInt16))
@@ -493,24 +490,8 @@ def test_power() -> None:
     assert_series_equal(i**d, pl.Series([1, 4], dtype=Int32))
     assert_series_equal(j**d, pl.Series([1, 4], dtype=UInt64))
     assert_series_equal(k**d, pl.Series([1, 4], dtype=Int64))
-
-    with pytest.raises(
-        pl.InvalidOperationError,
-        match="`pow` operation not supported for dtype `null` as exponent"
-    ):
-        a**None
-
-    with pytest.raises(
-        pl.InvalidOperationError,
-        match="`pow` operation not supported for dtype `date` as base"
-    ):
+    with pytest.raises(TypeError):
         c**2
-    with pytest.raises(
-        pl.InvalidOperationError,
-        match="`pow` operation not supported for dtype `date` as exponent"
-    ):
-        2**c
-
     with pytest.raises(pl.ColumnNotFoundError):
         a ** "hi"  # type: ignore[operator]
 
@@ -523,12 +504,13 @@ def test_power() -> None:
     # rpow
     assert_series_equal(2.0**a, pl.Series("literal", [2.0, 4.0], dtype=Float64))
     assert_series_equal(2**b, pl.Series("literal", [None, 4.0], dtype=Float64))
-
+    with pytest.raises(TypeError):
+        2**c
     with pytest.raises(pl.ColumnNotFoundError):
         "hi" ** a
 
     # Series.pow() method
-    assert_series_equal(a.pow(2), pl.Series([1, 4], dtype=Int64))
+    assert_series_equal(a.pow(2), pl.Series([1.0, 4.0], dtype=Float64))
 
 
 def test_add_string() -> None:
@@ -2004,13 +1986,13 @@ def test_cumulative_eval() -> None:
     expr2 = pl.element().last() ** 2
 
     expected1 = pl.Series("values", [1, 1, 1, 1, 1])
-    expected2 = pl.Series("values", [1, 4, 9, 16, 25])
+    expected2 = pl.Series("values", [1.0, 4.0, 9.0, 16.0, 25.0])
     assert_series_equal(s.cumulative_eval(expr1), expected1)
     assert_series_equal(s.cumulative_eval(expr2), expected2)
 
     # evaluate combined expressions and validate
     expr3 = expr1 - expr2
-    expected3 = pl.Series("values", [0, -3, -8, -15, -24])
+    expected3 = pl.Series("values", [0.0, -3.0, -8.0, -15.0, -24.0])
     assert_series_equal(s.cumulative_eval(expr3), expected3)
 
 
