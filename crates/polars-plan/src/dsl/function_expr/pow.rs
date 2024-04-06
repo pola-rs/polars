@@ -2,10 +2,7 @@ use arrow::legacy::kernels::pow::pow as pow_kernel;
 use num::pow::Pow;
 use polars_core::export::num;
 use polars_core::export::num::{Float, ToPrimitive};
-use polars_core::{
-    with_match_physical_float_polars_type, with_match_physical_float_type,
-    with_match_physical_integer_type,
-};
+use polars_core::with_match_physical_integer_type;
 
 use super::*;
 

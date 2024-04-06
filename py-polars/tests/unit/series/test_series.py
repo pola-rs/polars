@@ -498,7 +498,7 @@ def test_power() -> None:
         pl.InvalidOperationError,
         match="`pow` operation not supported for dtype `null` as exponent",
     ):
-        a**None
+        a ** pl.lit(None)
 
     with pytest.raises(
         pl.InvalidOperationError,
