@@ -398,6 +398,26 @@ def test_window_filtered_aggregation() -> None:
     assert_frame_equal(out, expected)
 
 
+def test_window_filtered_false() -> None:
+    df = pl.DataFrame(
+        {
+            "group": ["A", "A"],
+            "value": [1, 2],
+        }
+    )
+    out = df.with_columns(
+        pl.col("value").filter(False).arg_max().over("group")
+    )
+    expected = pl.DataFrame(
+        {
+            "group": ["A", "A"],
+            "value": [None, None],
+        },
+        schema_overrides={"value": pl.UInt32},
+    )
+    assert_frame_equal(out, expected)
+
+
 def test_window_and_cse_10152() -> None:
     q = pl.LazyFrame(
         {
