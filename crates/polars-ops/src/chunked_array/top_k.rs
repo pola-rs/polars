@@ -1,11 +1,10 @@
 use std::cmp::Ordering;
 
-use arrow::array::BooleanArray;
+use arrow::array::{BooleanArray, MutableBooleanArray};
 use arrow::bitmap::MutableBitmap;
 use either::Either;
 use polars_core::downcast_as_macro_arg_physical;
 use polars_core::prelude::*;
-use polars_core::utils::CustomIterTools;
 use polars_utils::total_ord::TotalOrd;
 
 fn arg_partition<T, C: Fn(&T, &T) -> Ordering>(
@@ -78,28 +77,34 @@ fn top_k_bool_impl(
     } else {
         let null_count = ca.null_count();
         let true_count = ca.sum().unwrap() as usize;
-        use std::iter;
+        let false_count = ca.len() - true_count - null_count;
+        let mut remaining = k;
+
+        fn extend_constant_check_remaining(
+            array: &mut MutableBooleanArray,
+            remaining: &mut usize,
+            additional: usize,
+            value: Option<bool>,
+        ) {
+            array.extend_constant(std::cmp::min(additional, *remaining), value);
+            *remaining = remaining.saturating_sub(additional);
+        }
+
+        let mut array = MutableBooleanArray::with_capacity(k);
         if !descending {
             // Null -> True -> False
-            let mut new_ca: BooleanChunked = iter::repeat(None)
-                .take(null_count)
-                .chain(iter::repeat(Some(true)).take(true_count))
-                .chain(iter::repeat(Some(false)).take(ca.len() - true_count - null_count))
-                .take(k)
-                .collect_trusted();
-            new_ca.rename(ca.name());
-            new_ca
+            extend_constant_check_remaining(&mut array, &mut remaining, null_count, None);
+            extend_constant_check_remaining(&mut array, &mut remaining, true_count, Some(true));
+            extend_constant_check_remaining(&mut array, &mut remaining, false_count, Some(false));
         } else {
             // False -> True -> Null
-            let mut new_ca: BooleanChunked = iter::repeat(Some(false))
-                .take(null_count)
-                .chain(iter::repeat(Some(true)).take(true_count))
-                .chain(iter::repeat(None).take(ca.len() - true_count - null_count))
-                .take(k)
-                .collect_trusted();
-            new_ca.rename(ca.name());
-            new_ca
+            extend_constant_check_remaining(&mut array, &mut remaining, false_count, Some(false));
+            extend_constant_check_remaining(&mut array, &mut remaining, true_count, Some(true));
+            extend_constant_check_remaining(&mut array, &mut remaining, null_count, None);
         }
+        let mut new_ca: ChunkedArray<BooleanType> = BooleanArray::from(array).into();
+        new_ca.rename(ca.name());
+        new_ca
     }
 }
 
