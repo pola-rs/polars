@@ -4953,7 +4953,7 @@ class Series:
         ]
         """
 
-    def dot(self, other: Series | ArrayLike) -> float | None:
+    def dot(self, other: Series | ArrayLike) -> int | float:
         """
         Compute the dot/inner product between two Series.
 
