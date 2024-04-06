@@ -344,6 +344,8 @@ impl PartitionGroupByExec {
             )?
         };
 
+        // MERGE phase
+
         let df = accumulate_dataframes_vertical(splitted_dfs)?;
         let keys = splitted_keys
             .into_iter()
@@ -358,7 +360,6 @@ impl PartitionGroupByExec {
         // the partitioned group_by has added columns so we must update the schema.
         state.set_schema(self.output_schema.clone());
 
-        // MERGE phase
         // merge and hash aggregate again
 
         // first get mutable access and optionally sort
