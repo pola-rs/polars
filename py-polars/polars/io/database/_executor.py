@@ -276,7 +276,7 @@ class ConnectionExecutor:
                         orient="row",
                     )
                     for rows in (
-                        list(self._fetchmany_rows(self.result, batch_size))
+                        self._fetchmany_rows(self.result, batch_size)
                         if iter_batches
                         else [self._fetchall_rows(self.result)]  # type: ignore[list-item]
                     )
