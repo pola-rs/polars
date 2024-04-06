@@ -197,6 +197,22 @@ fn replace_dtype_with_column(expr: Expr, column_name: Arc<str>) -> Expr {
     })
 }
 
+fn set_null_st(e: Expr, schema: &Schema) -> Expr {
+    e.map_expr(|mut e| {
+        if let Expr::Function {
+            input,
+            function: FunctionExpr::FillNull { super_type },
+            ..
+        } = &mut e
+        {
+            if let Some(new_st) = early_supertype(input, schema) {
+                *super_type = new_st;
+            }
+        }
+        e
+    })
+}
+
 #[cfg(feature = "dtype-struct")]
 fn struct_index_to_field(expr: Expr, schema: &Schema) -> PolarsResult<Expr> {
     expr.try_map_expr(|e| match e {
@@ -469,7 +485,7 @@ pub(crate) fn rewrite_projections(
     for mut expr in exprs {
         let result_offset = result.len();
 
-        // functions can have col(["a", "b"]) or col(String) as inputs
+        // Functions can have col(["a", "b"]) or col(String) as inputs.
         expr = expand_function_inputs(expr, schema);
 
         let mut flags = find_flags(&expr);
@@ -481,27 +497,23 @@ pub(crate) fn rewrite_projections(
 
         replace_and_add_to_results(expr, flags, &mut result, schema, keys)?;
 
-        // this is done after all expansion (wildcard, column, dtypes)
+        // This is done after all expansion (wildcard, column, dtypes)
         // have been done. This will ensure the conversion to aexpr does
         // not panic because of an unexpected wildcard etc.
 
-        // the expanded expressions are written to result, so we pick
+        // The expanded expressions are written to result, so we pick
         // them up there.
         if flags.replace_fill_null_type {
             for e in &mut result[result_offset..] {
-                *e = e.clone().map_expr(|mut e| {
-                    if let Expr::Function {
-                        input,
-                        function: FunctionExpr::FillNull { super_type },
-                        ..
-                    } = &mut e
-                    {
-                        if let Some(new_st) = early_supertype(input, schema) {
-                            *super_type = new_st;
-                        }
-                    }
-                    e
-                });
+                let mut tmp = std::mem::take(e);
+                tmp = set_null_st(tmp, schema);
+
+                #[cfg(feature = "dtype-struct")]
+                if flags.has_struct_field_by_index {
+                    tmp = struct_index_to_field(tmp, schema)?;
+                }
+
+                *e = tmp;
             }
         }
     }
@@ -517,10 +529,6 @@ fn replace_and_add_to_results(
 ) -> PolarsResult<()> {
     if flags.has_nth {
         expr = replace_nth(expr, schema);
-    }
-    #[cfg(feature = "dtype-struct")]
-    if flags.has_struct_field_by_index {
-        expr = struct_index_to_field(expr, schema)?;
     }
 
     // has multiple column names
