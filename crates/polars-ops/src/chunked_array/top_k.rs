@@ -1,6 +1,6 @@
 use std::cmp::Ordering;
 
-use arrow::array::{BooleanArray, MutableBooleanArray};
+use arrow::array::{BooleanArray, MutableBooleanArray, StaticArray};
 use arrow::bitmap::MutableBitmap;
 use either::Either;
 use polars_core::downcast_as_macro_arg_physical;
@@ -132,7 +132,10 @@ fn top_k_binary_impl(
         let values = arg_partition(&mut v, k, descending, TotalOrd::tot_cmp);
         ChunkedArray::from_slice(ca.name(), values)
     } else {
-        let mut v = ca.iter().collect::<Vec<_>>();
+        let mut v = Vec::with_capacity(ca.len());
+        for arr in ca.downcast_iter() {
+            v.extend(arr.iter());
+        }
         let values = arg_partition(&mut v, k, descending, TotalOrd::tot_cmp);
         let mut out = ChunkedArray::from_iter(values.iter().copied());
         out.rename(ca.name());
