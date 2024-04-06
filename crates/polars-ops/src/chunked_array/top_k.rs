@@ -1,6 +1,6 @@
 use std::cmp::Ordering;
 
-use arrow::array::{BooleanArray, MutableBooleanArray, StaticArray};
+use arrow::array::{BooleanArray, MutableBooleanArray};
 use arrow::bitmap::MutableBitmap;
 use either::Either;
 use polars_core::downcast_as_macro_arg_physical;
