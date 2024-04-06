@@ -1167,9 +1167,6 @@ class Series:
         return self.pow(exponent)
 
     def __rpow__(self, other: Any) -> Series:
-        if self.dtype.is_temporal():
-            msg = "first cast to integer before raising datelike dtypes to a power"
-            raise TypeError(msg)
         return self.to_frame().select_seq(other ** F.col(self.name)).to_series()
 
     def __matmul__(self, other: Any) -> float | Series | None:
@@ -1965,9 +1962,6 @@ class Series:
                 64.0
         ]
         """
-        if self.dtype.is_temporal():
-            msg = "first cast to integer before raising datelike dtypes to a power"
-            raise TypeError(msg)
         if _check_for_numpy(exponent) and isinstance(exponent, np.ndarray):
             exponent = Series(exponent)
         return self.to_frame().select_seq(F.col(self.name).pow(exponent)).to_series()
