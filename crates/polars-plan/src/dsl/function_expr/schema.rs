@@ -301,6 +301,14 @@ impl FunctionExpr {
             ExtendConstant => mapper.with_same_dtype(),
         }
     }
+
+    pub(crate) fn output_name(&self) -> Option<&ColumnName> {
+        match self {
+            #[cfg(feature = "dtype-struct")]
+            FunctionExpr::StructExpr(StructFunction::FieldByName(name)) => Some(name),
+            _ => None,
+        }
+    }
 }
 
 pub struct FieldsMapper<'a> {
