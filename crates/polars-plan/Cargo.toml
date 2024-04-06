@@ -110,6 +110,7 @@ is_between = ["polars-ops/is_between"]
 cross_join = ["polars-ops/cross_join"]
 asof_join = ["polars-time", "polars-ops/asof_join"]
 concat_str = []
+business = ["polars-ops/business"]
 range = []
 mode = ["polars-ops/mode"]
 cum_agg = ["polars-ops/cum_agg"]
@@ -252,6 +253,7 @@ features = [
   "ciborium",
   "dtype-decimal",
   "arg_where",
+  "business",
   "range",
   "meta",
   "hive_partitions",

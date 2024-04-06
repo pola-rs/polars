@@ -25,6 +25,7 @@ from polars.functions.as_datatype import (
 from polars.functions.as_datatype import date_ as date
 from polars.functions.as_datatype import datetime_ as datetime
 from polars.functions.as_datatype import time_ as time
+from polars.functions.business import business_day_count
 from polars.functions.col import col
 from polars.functions.eager import align_frames, concat
 from polars.functions.lazy import (
@@ -124,6 +125,7 @@ __all__ = [
     "arctan2",
     "arctan2d",
     "arg_sort_by",
+    "business_day_count",
     "coalesce",
     "col",
     "collect_all",

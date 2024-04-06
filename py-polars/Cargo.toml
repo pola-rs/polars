@@ -38,6 +38,7 @@ features = [
   "abs",
   "approx_unique",
   "arg_where",
+  "business",
   "concat_str",
   "cum_agg",
   "cumulative_eval",

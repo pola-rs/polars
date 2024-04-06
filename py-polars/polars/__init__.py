@@ -106,6 +106,7 @@ from polars.functions import (
     arctan2d,
     arg_sort_by,
     arg_where,
+    business_day_count,
     coalesce,
     col,
     collect_all,
@@ -330,6 +331,7 @@ __all__ = [
     # polars.functions
     "align_frames",
     "arg_where",
+    "business_day_count",
     "concat",
     "date_range",
     "date_ranges",
