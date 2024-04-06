@@ -189,11 +189,45 @@ fn expand_columns(
 
 /// This replaces the dtypes Expr with a Column Expr. It also removes the Exclude Expr from the
 /// expression chain.
-pub(super) fn replace_dtype_with_column(expr: Expr, column_name: Arc<str>) -> Expr {
+fn replace_dtype_with_column(expr: Expr, column_name: Arc<str>) -> Expr {
     expr.map_expr(|e| match e {
         Expr::DtypeColumn(_) => Expr::Column(column_name.clone()),
         Expr::Exclude(input, _) => Arc::unwrap_or_clone(input),
         e => e,
+    })
+}
+
+#[cfg(feature = "dtype-struct")]
+fn struct_index_to_field(expr: Expr, schema: &Schema) -> PolarsResult<Expr> {
+    expr.try_map_expr(|e| match e {
+        Expr::Function {
+            input,
+            function: FunctionExpr::StructExpr(sf),
+            options,
+        } => {
+            if let StructFunction::FieldByIndex(index) = sf {
+                let dtype = input[0].to_field(schema, Context::Default)?.dtype;
+                let DataType::Struct(fields) = dtype else {
+                    polars_bail!(InvalidOperation: "expected 'struct' dtype, got {:?}", dtype)
+                };
+                let index = index.try_negative_to_usize(fields.len())?;
+                let name = fields[index].name.as_str();
+                Ok(Expr::Function {
+                    input,
+                    function: FunctionExpr::StructExpr(StructFunction::FieldByName(
+                        ColumnName::from(name),
+                    )),
+                    options,
+                })
+            } else {
+                Ok(Expr::Function {
+                    input,
+                    function: FunctionExpr::StructExpr(sf),
+                    options,
+                })
+            }
+        },
+        e => Ok(e),
     })
 }
 
@@ -374,6 +408,8 @@ struct ExpansionFlags {
     replace_fill_null_type: bool,
     has_selector: bool,
     has_exclude: bool,
+    #[cfg(feature = "dtype-struct")]
+    has_struct_field_by_index: bool,
 }
 
 fn find_flags(expr: &Expr) -> ExpansionFlags {
@@ -383,9 +419,11 @@ fn find_flags(expr: &Expr) -> ExpansionFlags {
     let mut replace_fill_null_type = false;
     let mut has_selector = false;
     let mut has_exclude = false;
+    #[cfg(feature = "dtype-struct")]
+    let mut has_struct_field_by_index = false;
 
-    // do a single pass and collect all flags at once.
-    // supertypes/modification that can be done in place are also don e in that pass
+    // Do a single pass and collect all flags at once.
+    // Supertypes/modification that can be done in place are also done in that pass
     for expr in expr {
         match expr {
             Expr::Columns(_) | Expr::DtypeColumn(_) => multiple_columns = true,
@@ -396,6 +434,13 @@ fn find_flags(expr: &Expr) -> ExpansionFlags {
                 function: FunctionExpr::FillNull { .. },
                 ..
             } => replace_fill_null_type = true,
+            #[cfg(feature = "dtype-struct")]
+            Expr::Function {
+                function: FunctionExpr::StructExpr(StructFunction::FieldByIndex(_)),
+                ..
+            } => {
+                has_struct_field_by_index = true;
+            },
             Expr::Exclude(_, _) => has_exclude = true,
             _ => {},
         }
@@ -407,6 +452,8 @@ fn find_flags(expr: &Expr) -> ExpansionFlags {
         replace_fill_null_type,
         has_selector,
         has_exclude,
+        #[cfg(feature = "dtype-struct")]
+        has_struct_field_by_index,
     }
 }
 
@@ -470,6 +517,10 @@ fn replace_and_add_to_results(
 ) -> PolarsResult<()> {
     if flags.has_nth {
         expr = replace_nth(expr, schema);
+    }
+    #[cfg(feature = "dtype-struct")]
+    if flags.has_struct_field_by_index {
+        expr = struct_index_to_field(expr, schema)?;
     }
 
     // has multiple column names

@@ -221,6 +221,11 @@ fn to_aexpr_impl(expr: Expr, arena: &mut Arena<AExpr>, state: &mut ConversionSta
             function,
             options,
         } => {
+            if state.output_name.is_none() {
+                if let Some(name) = function.output_name() {
+                    state.output_name = OutputName::ColumnLhs(name.clone())
+                }
+            }
             state.prune_alias = false;
             AExpr::Function {
                 input: to_aexprs(input, arena, state),
