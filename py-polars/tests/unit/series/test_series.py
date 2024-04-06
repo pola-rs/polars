@@ -496,18 +496,18 @@ def test_power() -> None:
 
     with pytest.raises(
         pl.InvalidOperationError,
-        match="`pow` operation not supported for dtype `null` as exponent"
+        match="`pow` operation not supported for dtype `null` as exponent",
     ):
         a**None
 
     with pytest.raises(
         pl.InvalidOperationError,
-        match="`pow` operation not supported for dtype `date` as base"
+        match="`pow` operation not supported for dtype `date` as base",
     ):
         c**2
     with pytest.raises(
         pl.InvalidOperationError,
-        match="`pow` operation not supported for dtype `date` as exponent"
+        match="`pow` operation not supported for dtype `date` as exponent",
     ):
         2**c
 
