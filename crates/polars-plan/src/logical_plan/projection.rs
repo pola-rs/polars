@@ -505,15 +505,14 @@ pub(crate) fn rewrite_projections(
         // them up there.
         if flags.replace_fill_null_type {
             for e in &mut result[result_offset..] {
-                let mut tmp = std::mem::take(e);
-                tmp = set_null_st(tmp, schema);
+                *e = set_null_st(std::mem::take(e), schema);
+            }
+        }
 
-                #[cfg(feature = "dtype-struct")]
-                if flags.has_struct_field_by_index {
-                    tmp = struct_index_to_field(tmp, schema)?;
-                }
-
-                *e = tmp;
+        #[cfg(feature = "dtype-struct")]
+        if flags.has_struct_field_by_index {
+            for e in &mut result[result_offset..] {
+                *e = struct_index_to_field(std::mem::take(e), schema)?;
             }
         }
     }
