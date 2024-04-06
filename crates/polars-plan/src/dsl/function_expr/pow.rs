@@ -2,6 +2,7 @@ use arrow::legacy::kernels::pow::pow as pow_kernel;
 use num::pow::Pow;
 use polars_core::export::num;
 use polars_core::export::num::{Float, ToPrimitive};
+use polars_core::{with_match_physical_float_type, with_match_physical_integer_type, with_match_physical_float_polars_type};
 
 use super::*;
 
@@ -128,65 +129,53 @@ where
 
 fn pow_on_series(base: &Series, exponent: &Series) -> PolarsResult<Option<Series>> {
     use DataType::*;
-    match (base.dtype(), exponent.dtype()) {
-        #[cfg(feature = "dtype-u8")]
-        (UInt8, UInt8 | UInt16 | UInt32 | UInt64) => {
-            let ca = base.u8().unwrap();
-            let exponent = exponent.strict_cast(&DataType::UInt32)?;
-            pow_to_uint_dtype(ca, exponent.u32().unwrap())
-        },
-        #[cfg(feature = "dtype-i8")]
-        (Int8, UInt8 | UInt16 | UInt32 | UInt64) => {
-            let ca = base.i8().unwrap();
-            let exponent = exponent.strict_cast(&DataType::UInt32)?;
-            pow_to_uint_dtype(ca, exponent.u32().unwrap())
-        },
-        #[cfg(feature = "dtype-u16")]
-        (UInt16, UInt8 | UInt16 | UInt32 | UInt64) => {
-            let ca = base.u16().unwrap();
-            let exponent = exponent.strict_cast(&DataType::UInt32)?;
-            pow_to_uint_dtype(ca, exponent.u32().unwrap())
-        },
-        #[cfg(feature = "dtype-i16")]
-        (Int16, UInt8 | UInt16 | UInt32 | UInt64) => {
-            let ca = base.i16().unwrap();
-            let exponent = exponent.strict_cast(&DataType::UInt32)?;
-            pow_to_uint_dtype(ca, exponent.u32().unwrap())
-        },
-        (UInt32, UInt8 | UInt16 | UInt32 | UInt64) => {
-            let ca = base.u32().unwrap();
-            let exponent = exponent.strict_cast(&DataType::UInt32)?;
-            pow_to_uint_dtype(ca, exponent.u32().unwrap())
-        },
-        (Int32, UInt8 | UInt16 | UInt32 | UInt64) => {
-            let ca = base.i32().unwrap();
-            let exponent = exponent.strict_cast(&DataType::UInt32)?;
-            pow_to_uint_dtype(ca, exponent.u32().unwrap())
-        },
-        (UInt64, UInt8 | UInt16 | UInt32 | UInt64) => {
-            let ca = base.u64().unwrap();
-            let exponent = exponent.strict_cast(&DataType::UInt32)?;
-            pow_to_uint_dtype(ca, exponent.u32().unwrap())
-        },
-        (Int64, UInt8 | UInt16 | UInt32 | UInt64) => {
-            let ca = base.i64().unwrap();
-            let exponent = exponent.strict_cast(&DataType::UInt32)?;
-            pow_to_uint_dtype(ca, exponent.u32().unwrap())
-        },
-        (Float32, _) => {
-            let ca = base.f32().unwrap();
-            let exponent = exponent.strict_cast(&DataType::Float32)?;
-            pow_on_floats(ca, exponent.f32().unwrap())
-        },
-        (Float64, _) => {
-            let ca = base.f64().unwrap();
-            let exponent = exponent.strict_cast(&DataType::Float64)?;
-            pow_on_floats(ca, exponent.f64().unwrap())
-        },
-        _ => {
-            let base = base.cast(&DataType::Float64)?;
-            pow_on_series(&base, exponent)
-        },
+
+    let base_dtype = base.dtype();
+    polars_ensure!(
+        base_dtype.is_numeric(),
+        InvalidOperation: "`pow` operation not supported for dtype `{}` as base", base_dtype
+    );
+    let expoent_dtype = exponent.dtype();
+    polars_ensure!(
+        expoent_dtype.is_numeric(),
+        InvalidOperation: "`pow` operation not supported for dtype `{}` as exponent", expoent_dtype
+    );
+
+    // if false, dtype is float
+    if base_dtype.is_integer() {
+        with_match_physical_integer_type!(base_dtype, |$native_type| {
+            if expoent_dtype.is_float() {
+                match expoent_dtype {
+                    Float32 => {
+                        let ca = base.cast(&DataType::Float32)?;
+                        pow_on_floats(ca.f32().unwrap(), exponent.f32().unwrap())
+                    },
+                    Float64 => {
+                        let ca = base.cast(&DataType::Float64)?;
+                        pow_on_floats(ca.f64().unwrap(), exponent.f64().unwrap())
+                    },
+                    _ => unreachable!(),
+                }
+            } else {
+                let ca = base.$native_type().unwrap();
+                let exponent = exponent.strict_cast(&DataType::UInt32)?;
+                pow_to_uint_dtype(ca, exponent.u32().unwrap())
+            }
+        })
+    } else {
+        match base_dtype {
+            Float32 => {
+                let ca = base.f32().unwrap();
+                let exponent = exponent.strict_cast(&DataType::Float32)?;
+                pow_on_floats(ca, exponent.f32().unwrap())
+            },
+            Float64 => {
+                let ca = base.f64().unwrap();
+                let exponent = exponent.strict_cast(&DataType::Float64)?;
+                pow_on_floats(ca, exponent.f64().unwrap())
+            },
+            _ => unreachable!(),
+        }
     }
 }
 
