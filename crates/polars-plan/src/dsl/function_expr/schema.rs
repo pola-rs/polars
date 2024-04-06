@@ -466,14 +466,16 @@ impl<'a> FieldsMapper<'a> {
     }
 
     pub(super) fn pow_dtype(&self) -> PolarsResult<Field> {
-        // base, exponent
-        match (self.fields[0].data_type(), self.fields[1].data_type()) {
-            (
-                base_dtype,
-                DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64,
-            ) => Ok(Field::new(self.fields[0].name(), base_dtype.clone())),
-            (DataType::Float32, _) => Ok(Field::new(self.fields[0].name(), DataType::Float32)),
-            (_, _) => Ok(Field::new(self.fields[0].name(), DataType::Float64)),
+        let base_dtype = self.fields[0].data_type();
+        let exponent_dtype = self.fields[1].data_type();
+        if base_dtype.is_integer() {
+            if exponent_dtype.is_float() {
+                Ok(Field::new(self.fields[0].name(), exponent_dtype.clone()))
+            } else {
+                Ok(Field::new(self.fields[0].name(), base_dtype.clone()))
+            }
+        } else {
+            Ok(Field::new(self.fields[0].name(), base_dtype.clone()))
         }
     }
 
