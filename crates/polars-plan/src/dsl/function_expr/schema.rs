@@ -467,10 +467,10 @@ impl<'a> FieldsMapper<'a> {
 
     pub(super) fn pow_dtype(&self) -> PolarsResult<Field> {
         let base_dtype = self.fields[0].data_type();
-        let expoent_dtype = self.fields[1].data_type();
+        let exponent_dtype = self.fields[1].data_type();
         if base_dtype.is_integer() {
-            if expoent_dtype.is_float() {
-                Ok(Field::new(self.fields[0].name(), expoent_dtype.clone()))
+            if exponent_dtype.is_float() {
+                Ok(Field::new(self.fields[0].name(), exponent_dtype.clone()))
             } else {
                 Ok(Field::new(self.fields[0].name(), base_dtype.clone()))
             }

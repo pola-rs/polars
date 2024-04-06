@@ -135,17 +135,17 @@ fn pow_on_series(base: &Series, exponent: &Series) -> PolarsResult<Option<Series
         base_dtype.is_numeric(),
         InvalidOperation: "`pow` operation not supported for dtype `{}` as base", base_dtype
     );
-    let expoent_dtype = exponent.dtype();
+    let exponent_dtype = exponent.dtype();
     polars_ensure!(
-        expoent_dtype.is_numeric(),
-        InvalidOperation: "`pow` operation not supported for dtype `{}` as exponent", expoent_dtype
+        exponent_dtype.is_numeric(),
+        InvalidOperation: "`pow` operation not supported for dtype `{}` as exponent", exponent_dtype
     );
 
     // if false, dtype is float
     if base_dtype.is_integer() {
         with_match_physical_integer_type!(base_dtype, |$native_type| {
-            if expoent_dtype.is_float() {
-                match expoent_dtype {
+            if exponent_dtype.is_float() {
+                match exponent_dtype {
                     Float32 => {
                         let ca = base.cast(&DataType::Float32)?;
                         pow_on_floats(ca.f32().unwrap(), exponent.f32().unwrap())
