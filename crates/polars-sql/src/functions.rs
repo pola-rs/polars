@@ -2,7 +2,7 @@ use polars_core::prelude::{polars_bail, polars_err, DataType, PolarsResult};
 use polars_lazy::dsl::Expr;
 #[cfg(feature = "list_eval")]
 use polars_lazy::dsl::ListNameSpaceExtension;
-use polars_plan::dsl::{coalesce, concat_str, len, when};
+use polars_plan::dsl::{coalesce, concat_str, len, max_horizontal, min_horizontal, when};
 use polars_plan::logical_plan::LiteralValue;
 #[cfg(feature = "list_eval")]
 use polars_plan::prelude::col;
@@ -389,6 +389,12 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT COALESCE(column_1, ...) from df;
     /// ```
     Coalesce,
+    /// SQL 'greatest' function
+    /// Returns the greatest value in the list of expressions.
+    /// ```sql
+    /// SELECT GREATEST(column_1, column_2, ...) from df;
+    /// ```
+    Greatest,
     /// SQL 'if' function
     /// Returns expr1 if the boolean condition provided as the first
     /// parameter evaluates to true, and expr2 otherwise.
@@ -402,6 +408,12 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT IFNULL(string_col, 'n/a') from df;
     /// ```
     IfNull,
+    /// SQL 'least' function
+    /// Returns the smallest value in the list of expressions.
+    /// ```sql
+    /// SELECT LEAST(column_1, column_2, ...) from df;
+    /// ```
+    Least,
     /// SQL 'nullif' function
     /// Returns NULL if two expressions are equal, otherwise returns the first.
     /// ```sql
@@ -580,7 +592,9 @@ impl PolarsSQLFunctions {
             "exp",
             "first",
             "floor",
+            "greatest",
             "last",
+            "least",
             "len",
             "length",
             "ln",
@@ -666,9 +680,11 @@ impl PolarsSQLFunctions {
             // ----
             // Conditional functions
             // ----
-            "if" => Self::If,
             "coalesce" => Self::Coalesce,
+            "greatest" => Self::Greatest,
+            "if" => Self::If,
             "ifnull" => Self::IfNull,
+            "least" => Self::Least,
             "nullif" => Self::NullIf,
 
             // ----
@@ -807,6 +823,7 @@ impl SQLFunctionVisitor<'_> {
             // Conditional functions
             // ----
             Coalesce => self.visit_variadic(coalesce),
+            Greatest => self.visit_variadic(|exprs: &[Expr]| max_horizontal(exprs).unwrap()),
             If => match function.args.len() {
                 3 => self.try_visit_ternary(|cond: Expr, expr1: Expr, expr2: Expr| {
                     Ok(when(cond).then(expr1).otherwise(expr2))
@@ -818,6 +835,7 @@ impl SQLFunctionVisitor<'_> {
                 2 => self.visit_variadic(coalesce),
                 _ => polars_bail!(InvalidOperation:"Invalid number of arguments for IfNull: {}", function.args.len())
             },
+            Least => self.visit_variadic(|exprs: &[Expr]| min_horizontal(exprs).unwrap()),
             NullIf => self.visit_binary(|l: Expr, r: Expr| when(l.clone().eq(r)).then(lit(LiteralValue::Null)).otherwise(l)),
 
             // ----
