@@ -398,7 +398,7 @@ def test_window_filtered_aggregation() -> None:
     assert_frame_equal(out, expected)
 
 
-def test_window_filtered_false() -> None:
+def test_window_filtered_false_15483() -> None:
     df = pl.DataFrame(
         {
             "group": ["A", "A"],
