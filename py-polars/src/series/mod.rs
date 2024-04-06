@@ -609,16 +609,22 @@ impl PySeries {
         let rhs_dtype = other.series.dtype();
 
         if !lhs_dtype.is_numeric() {
-            return Err(PyPolarsErr::from(polars_err!(opq=dot, lhs_dtype)).into())
+            return Err(PyPolarsErr::from(polars_err!(opq = dot, lhs_dtype)).into());
         };
         if !rhs_dtype.is_numeric() {
-            return Err(PyPolarsErr::from(polars_err!(opq=dot, rhs_dtype)).into())
+            return Err(PyPolarsErr::from(polars_err!(opq = dot, rhs_dtype)).into());
         }
 
         let result: AnyValue = if lhs_dtype.is_float() || rhs_dtype.is_float() {
-            (&self.series * &other.series).sum::<f64>().map_err(PyPolarsErr::from)?.into()
+            (&self.series * &other.series)
+                .sum::<f64>()
+                .map_err(PyPolarsErr::from)?
+                .into()
         } else {
-            (&self.series * &other.series).sum::<i64>().map_err(PyPolarsErr::from)?.into()
+            (&self.series * &other.series)
+                .sum::<i64>()
+                .map_err(PyPolarsErr::from)?
+                .into()
         };
 
         Ok(Wrap(result).into_py(py))
