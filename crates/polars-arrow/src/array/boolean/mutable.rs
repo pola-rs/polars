@@ -195,11 +195,15 @@ impl MutableBooleanArray {
         }
     }
 
+    /// Extends `MutableBooleanArray` by additional values of constant value.
     #[inline]
     pub fn extend_constant(&mut self, additional: usize, value: Option<bool>) {
         match value {
             Some(value) => {
                 self.values.extend_constant(additional, value);
+                if let Some(validity) = self.validity.as_mut() {
+                    validity.extend_constant(additional, true);
+                }
             },
             None => {
                 self.values.extend_constant(additional, false);
