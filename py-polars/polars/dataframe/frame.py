@@ -56,9 +56,6 @@ from polars._utils.deprecation import (
 from polars._utils.parse_expr_input import parse_as_expression
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
-    _prepare_row_index_args,
-    _process_null_values,
-    handle_projection_columns,
     is_bool_sequence,
     is_int_sequence,
     is_str_sequence,
@@ -78,7 +75,6 @@ from polars.datatypes import (
     Float64,
     Object,
     String,
-    py_type_to_dtype,
 )
 from polars.dependencies import (
     _HVPLOT_AVAILABLE,
@@ -99,7 +95,6 @@ from polars.exceptions import (
     TooManyRowsReturnedError,
 )
 from polars.functions import col, lit
-from polars.io._utils import _is_glob_pattern, _is_local_file
 from polars.io.csv._utils import _check_arg_is_1byte
 from polars.io.spreadsheet._write_utils import (
     _unpack_multi_column_dict,
@@ -116,7 +111,6 @@ from polars.slice import PolarsSlice
 from polars.type_aliases import DbWriteMode
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import PyDataFrame
     from polars.polars import dtype_str_repr as _dtype_str_repr
     from polars.polars import write_clipboard_string as _write_clipboard_string
 
@@ -132,6 +126,7 @@ if TYPE_CHECKING:
 
     from polars import DataType, Expr, LazyFrame, Series
     from polars.interchange.dataframe import PolarsDataFrame
+    from polars.polars import PyDataFrame
     from polars.type_aliases import (
         AsofJoinStrategy,
         AvroCompression,
@@ -142,7 +137,6 @@ if TYPE_CHECKING:
         ColumnWidthsDefinition,
         ComparisonOperator,
         ConditionalFormatDict,
-        CsvEncoding,
         CsvQuoteStyle,
         DbWriteEngine,
         FillNullStrategy,
@@ -157,7 +151,6 @@ if TYPE_CHECKING:
         NullStrategy,
         OneOrMoreDataTypes,
         Orientation,
-        ParallelStrategy,
         ParquetCompression,
         PivotAgg,
         PolarsDataType,
@@ -534,450 +527,6 @@ class DataFrame:
                 include_index=include_index,
             )
         )
-
-    @classmethod
-    def _read_csv(
-        cls,
-        source: str | Path | IO[bytes] | bytes,
-        *,
-        has_header: bool = True,
-        columns: Sequence[int] | Sequence[str] | None = None,
-        separator: str = ",",
-        comment_prefix: str | None = None,
-        quote_char: str | None = '"',
-        skip_rows: int = 0,
-        dtypes: None | (SchemaDict | Sequence[PolarsDataType]) = None,
-        schema: None | SchemaDict = None,
-        null_values: str | Sequence[str] | dict[str, str] | None = None,
-        missing_utf8_is_empty_string: bool = False,
-        ignore_errors: bool = False,
-        try_parse_dates: bool = False,
-        n_threads: int | None = None,
-        infer_schema_length: int | None = N_INFER_DEFAULT,
-        batch_size: int = 8192,
-        n_rows: int | None = None,
-        encoding: CsvEncoding = "utf8",
-        low_memory: bool = False,
-        rechunk: bool = True,
-        skip_rows_after_header: int = 0,
-        row_index_name: str | None = None,
-        row_index_offset: int = 0,
-        sample_size: int = 1024,
-        eol_char: str = "\n",
-        raise_if_empty: bool = True,
-        truncate_ragged_lines: bool = False,
-    ) -> DataFrame:
-        """
-        Read a CSV file into a DataFrame.
-
-        Use `pl.read_csv` to dispatch to this method.
-
-        See Also
-        --------
-        polars.io.read_csv
-        """
-        self = cls.__new__(cls)
-
-        path: str | None
-        if isinstance(source, (str, Path)):
-            path = normalize_filepath(source)
-        else:
-            path = None
-            if isinstance(source, BytesIO):
-                source = source.getvalue()
-            if isinstance(source, StringIO):
-                source = source.getvalue().encode()
-
-        dtype_list: Sequence[tuple[str, PolarsDataType]] | None = None
-        dtype_slice: Sequence[PolarsDataType] | None = None
-        if dtypes is not None:
-            if isinstance(dtypes, dict):
-                dtype_list = []
-                for k, v in dtypes.items():
-                    dtype_list.append((k, py_type_to_dtype(v)))
-            elif isinstance(dtypes, Sequence):
-                dtype_slice = dtypes
-            else:
-                msg = f"`dtypes` should be of type list or dict, got {type(dtypes).__name__!r}"
-                raise TypeError(msg)
-
-        processed_null_values = _process_null_values(null_values)
-
-        if isinstance(columns, str):
-            columns = [columns]
-        if isinstance(source, str) and _is_glob_pattern(source):
-            dtypes_dict = None
-            if dtype_list is not None:
-                dtypes_dict = dict(dtype_list)
-            if dtype_slice is not None:
-                msg = (
-                    "cannot use glob patterns and unnamed dtypes as `dtypes` argument"
-                    "\n\nUse `dtypes`: Mapping[str, Type[DataType]]"
-                )
-                raise ValueError(msg)
-            from polars import scan_csv
-
-            scan = scan_csv(
-                source,
-                has_header=has_header,
-                separator=separator,
-                comment_prefix=comment_prefix,
-                quote_char=quote_char,
-                skip_rows=skip_rows,
-                dtypes=dtypes_dict,
-                schema=schema,
-                null_values=null_values,
-                missing_utf8_is_empty_string=missing_utf8_is_empty_string,
-                ignore_errors=ignore_errors,
-                infer_schema_length=infer_schema_length,
-                n_rows=n_rows,
-                low_memory=low_memory,
-                rechunk=rechunk,
-                skip_rows_after_header=skip_rows_after_header,
-                row_index_name=row_index_name,
-                row_index_offset=row_index_offset,
-                eol_char=eol_char,
-                raise_if_empty=raise_if_empty,
-                truncate_ragged_lines=truncate_ragged_lines,
-            )
-            if columns is None:
-                return scan.collect()
-            elif is_str_sequence(columns, allow_str=False):
-                return scan.select(columns).collect()
-            else:
-                msg = (
-                    "cannot use glob patterns and integer based projection as `columns` argument"
-                    "\n\nUse columns: List[str]"
-                )
-                raise ValueError(msg)
-
-        projection, columns = handle_projection_columns(columns)
-
-        self._df = PyDataFrame.read_csv(
-            source,
-            infer_schema_length,
-            batch_size,
-            has_header,
-            ignore_errors,
-            n_rows,
-            skip_rows,
-            projection,
-            separator,
-            rechunk,
-            columns,
-            encoding,
-            n_threads,
-            path,
-            dtype_list,
-            dtype_slice,
-            low_memory,
-            comment_prefix,
-            quote_char,
-            processed_null_values,
-            missing_utf8_is_empty_string,
-            try_parse_dates,
-            skip_rows_after_header,
-            _prepare_row_index_args(row_index_name, row_index_offset),
-            sample_size=sample_size,
-            eol_char=eol_char,
-            raise_if_empty=raise_if_empty,
-            truncate_ragged_lines=truncate_ragged_lines,
-            schema=schema,
-        )
-        return self
-
-    @classmethod
-    def _read_parquet(
-        cls,
-        source: str | Path | IO[bytes] | bytes,
-        *,
-        columns: Sequence[int] | Sequence[str] | None = None,
-        n_rows: int | None = None,
-        parallel: ParallelStrategy = "auto",
-        row_index_name: str | None = None,
-        row_index_offset: int = 0,
-        low_memory: bool = False,
-        use_statistics: bool = True,
-        rechunk: bool = True,
-    ) -> DataFrame:
-        """
-        Read into a DataFrame from a parquet file.
-
-        Use `pl.read_parquet` to dispatch to this method.
-
-        See Also
-        --------
-        polars.io.read_parquet
-        """
-        if isinstance(source, (str, Path)):
-            source = normalize_filepath(source)
-        if isinstance(columns, str):
-            columns = [columns]
-
-        if isinstance(source, str) and _is_glob_pattern(source):
-            from polars import scan_parquet
-
-            scan = scan_parquet(
-                source,
-                n_rows=n_rows,
-                rechunk=True,
-                parallel=parallel,
-                row_index_name=row_index_name,
-                row_index_offset=row_index_offset,
-                low_memory=low_memory,
-            )
-
-            if columns is None:
-                return scan.collect()
-            elif is_str_sequence(columns, allow_str=False):
-                return scan.select(columns).collect()
-            else:
-                msg = (
-                    "cannot use glob patterns and integer based projection as `columns` argument"
-                    "\n\nUse columns: List[str]"
-                )
-                raise TypeError(msg)
-
-        projection, columns = handle_projection_columns(columns)
-        self = cls.__new__(cls)
-        self._df = PyDataFrame.read_parquet(
-            source,
-            columns,
-            projection,
-            n_rows,
-            parallel,
-            _prepare_row_index_args(row_index_name, row_index_offset),
-            low_memory=low_memory,
-            use_statistics=use_statistics,
-            rechunk=rechunk,
-        )
-        return self
-
-    @classmethod
-    def _read_avro(
-        cls,
-        source: str | Path | IO[bytes] | bytes,
-        *,
-        columns: Sequence[int] | Sequence[str] | None = None,
-        n_rows: int | None = None,
-    ) -> Self:
-        """
-        Read into a DataFrame from Apache Avro format.
-
-        Parameters
-        ----------
-        source
-            Path to a file or a file-like object (by file-like object, we refer to
-            objects that have a `read()` method, such as a file handler (e.g.
-            via builtin `open` function) or `BytesIO`).
-        columns
-            Columns.
-        n_rows
-            Stop reading from Apache Avro file after reading `n_rows`.
-        """
-        if isinstance(source, (str, Path)):
-            source = normalize_filepath(source)
-        projection, columns = handle_projection_columns(columns)
-        self = cls.__new__(cls)
-        self._df = PyDataFrame.read_avro(source, columns, projection, n_rows)
-        return self
-
-    @classmethod
-    def _read_ipc(
-        cls,
-        source: str | Path | IO[bytes] | bytes,
-        *,
-        columns: Sequence[int] | Sequence[str] | None = None,
-        n_rows: int | None = None,
-        row_index_name: str | None = None,
-        row_index_offset: int = 0,
-        rechunk: bool = True,
-        memory_map: bool = True,
-    ) -> Self:
-        """
-        Read into a DataFrame from Arrow IPC file format.
-
-        See "File or Random Access format" on https://arrow.apache.org/docs/python/ipc.html.
-        Arrow IPC files are also known as Feather (v2) files.
-
-        Parameters
-        ----------
-        source
-            Path to a file or a file-like object (by file-like object, we refer to
-            objects that have a `read()` method, such as a file handler (e.g.
-            via builtin `open` function) or `BytesIO`).
-        columns
-            Columns to select. Accepts a list of column indices (starting at zero) or a
-            list of column names.
-        n_rows
-            Stop reading from IPC file after reading `n_rows`.
-        row_index_name
-            Row index name.
-        row_index_offset
-            Row index offset.
-        rechunk
-            Make sure that all data is contiguous.
-        memory_map
-            Memory map the file
-        """
-        if isinstance(source, (str, Path)):
-            source = normalize_filepath(source)
-        if isinstance(columns, str):
-            columns = [columns]
-
-        if (
-            isinstance(source, str)
-            and _is_glob_pattern(source)
-            and _is_local_file(source)
-        ):
-            from polars import scan_ipc
-
-            scan = scan_ipc(
-                source,
-                n_rows=n_rows,
-                rechunk=rechunk,
-                row_index_name=row_index_name,
-                row_index_offset=row_index_offset,
-                memory_map=memory_map,
-            )
-            if columns is None:
-                df = scan.collect()
-            elif is_str_sequence(columns, allow_str=False):
-                df = scan.select(columns).collect()
-            else:
-                msg = (
-                    "cannot use glob patterns and integer based projection as `columns` argument"
-                    "\n\nUse columns: List[str]"
-                )
-                raise TypeError(msg)
-            return cls._from_pydf(df._df)
-
-        projection, columns = handle_projection_columns(columns)
-        self = cls.__new__(cls)
-        self._df = PyDataFrame.read_ipc(
-            source,
-            columns,
-            projection,
-            n_rows,
-            _prepare_row_index_args(row_index_name, row_index_offset),
-            memory_map=memory_map,
-        )
-        return self
-
-    @classmethod
-    def _read_ipc_stream(
-        cls,
-        source: str | Path | IO[bytes] | bytes,
-        *,
-        columns: Sequence[int] | Sequence[str] | None = None,
-        n_rows: int | None = None,
-        row_index_name: str | None = None,
-        row_index_offset: int = 0,
-        rechunk: bool = True,
-    ) -> Self:
-        """
-        Read into a DataFrame from Arrow IPC record batch stream format.
-
-        See "Streaming format" on https://arrow.apache.org/docs/python/ipc.html.
-
-        Parameters
-        ----------
-        source
-            Path to a file or a file-like object (by file-like object, we refer to
-            objects that have a `read()` method, such as a file handler (e.g.
-            via builtin `open` function) or `BytesIO`).
-        columns
-            Columns to select. Accepts a list of column indices (starting at zero) or a
-            list of column names.
-        n_rows
-            Stop reading from IPC stream after reading `n_rows`.
-        row_index_name
-            Row index name.
-        row_index_offset
-            Row index offset.
-        rechunk
-            Make sure that all data is contiguous.
-        """
-        if isinstance(source, (str, Path)):
-            source = normalize_filepath(source)
-        if isinstance(columns, str):
-            columns = [columns]
-
-        projection, columns = handle_projection_columns(columns)
-        self = cls.__new__(cls)
-        self._df = PyDataFrame.read_ipc_stream(
-            source,
-            columns,
-            projection,
-            n_rows,
-            _prepare_row_index_args(row_index_name, row_index_offset),
-            rechunk,
-        )
-        return self
-
-    @classmethod
-    def _read_json(
-        cls,
-        source: str | Path | IOBase | bytes,
-        *,
-        schema: SchemaDefinition | None = None,
-        schema_overrides: SchemaDefinition | None = None,
-        infer_schema_length: int | None = N_INFER_DEFAULT,
-    ) -> Self:
-        """
-        Read into a DataFrame from a JSON file.
-
-        Use `pl.read_json` to dispatch to this method.
-
-        See Also
-        --------
-        polars.io.read_json
-        """
-        if isinstance(source, StringIO):
-            source = BytesIO(source.getvalue().encode())
-        elif isinstance(source, (str, Path)):
-            source = normalize_filepath(source)
-
-        self = cls.__new__(cls)
-        self._df = PyDataFrame.read_json(
-            source,
-            infer_schema_length=infer_schema_length,
-            schema=schema,
-            schema_overrides=schema_overrides,
-        )
-        return self
-
-    @classmethod
-    def _read_ndjson(
-        cls,
-        source: str | Path | IOBase | bytes,
-        *,
-        schema: SchemaDefinition | None = None,
-        schema_overrides: SchemaDefinition | None = None,
-        ignore_errors: bool = False,
-    ) -> Self:
-        """
-        Read into a DataFrame from a newline delimited JSON file.
-
-        Use `pl.read_ndjson` to dispatch to this method.
-
-        See Also
-        --------
-        polars.io.read_ndjson
-        """
-        if isinstance(source, StringIO):
-            source = BytesIO(source.getvalue().encode())
-        elif isinstance(source, (str, Path)):
-            source = normalize_filepath(source)
-
-        self = cls.__new__(cls)
-        self._df = PyDataFrame.read_ndjson(
-            source,
-            ignore_errors=ignore_errors,
-            schema=schema,
-            schema_overrides=schema_overrides,
-        )
-        return self
 
     def _replace(self, column: str, new_column: Series) -> Self:
         """Replace a column by a new Series (in place)."""

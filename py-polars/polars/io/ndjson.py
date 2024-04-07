@@ -1,14 +1,20 @@
 from __future__ import annotations
 
+import contextlib
+from io import BytesIO, StringIO
+from pathlib import Path
 from typing import TYPE_CHECKING
 
-import polars._reexport as pl
 from polars._utils.deprecation import deprecate_renamed_parameter
+from polars._utils.various import _prepare_row_index_args, normalize_filepath
+from polars._utils.wrap import wrap_df, wrap_ldf
 from polars.datatypes import N_INFER_DEFAULT
+
+with contextlib.suppress(ImportError):  # Module not available when building docs
+    from polars.polars import PyDataFrame, PyLazyFrame
 
 if TYPE_CHECKING:
     from io import IOBase
-    from pathlib import Path
 
     from polars import DataFrame, LazyFrame
     from polars.type_aliases import SchemaDefinition
@@ -46,12 +52,18 @@ def read_ndjson(
     ignore_errors
         Return `Null` if parsing fails because of schema mismatches.
     """
-    return pl.DataFrame._read_ndjson(
+    if isinstance(source, StringIO):
+        source = BytesIO(source.getvalue().encode())
+    elif isinstance(source, (str, Path)):
+        source = normalize_filepath(source)
+
+    pydf = PyDataFrame.read_ndjson(
         source,
+        ignore_errors=ignore_errors,
         schema=schema,
         schema_overrides=schema_overrides,
-        ignore_errors=ignore_errors,
     )
+    return wrap_df(pydf)
 
 
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
@@ -108,15 +120,23 @@ def scan_ndjson(
     ignore_errors
         Return `Null` if parsing fails because of schema mismatches.
     """
-    return pl.LazyFrame._scan_ndjson(
+    if isinstance(source, (str, Path)):
+        source = normalize_filepath(source)
+        sources = []
+    else:
+        sources = [normalize_filepath(source) for source in source]
+        source = None  # type: ignore[assignment]
+
+    pylf = PyLazyFrame.new_from_ndjson(
         source,
-        infer_schema_length=infer_schema_length,
-        schema=schema,
-        batch_size=batch_size,
-        n_rows=n_rows,
-        low_memory=low_memory,
-        rechunk=rechunk,
-        row_index_name=row_index_name,
-        row_index_offset=row_index_offset,
-        ignore_errors=ignore_errors,
+        sources,
+        infer_schema_length,
+        schema,
+        batch_size,
+        n_rows,
+        low_memory,
+        rechunk,
+        _prepare_row_index_args(row_index_name, row_index_offset),
+        ignore_errors,
     )
+    return wrap_ldf(pylf)

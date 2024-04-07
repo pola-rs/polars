@@ -3,17 +3,30 @@ from __future__ import annotations
 import contextlib
 import io
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, Any
+from typing import IO, TYPE_CHECKING, Any, Sequence
 
-import polars._reexport as pl
 from polars._utils.deprecation import deprecate_renamed_parameter
 from polars._utils.unstable import issue_unstable_warning
-from polars._utils.various import is_int_sequence, normalize_filepath
+from polars._utils.various import (
+    _prepare_row_index_args,
+    is_int_sequence,
+    is_str_sequence,
+    normalize_filepath,
+)
+from polars._utils.wrap import wrap_df, wrap_ldf
 from polars.convert import from_arrow
 from polars.dependencies import _PYARROW_AVAILABLE
-from polars.io._utils import _prepare_file_arg
+from polars.io._utils import (
+    _is_glob_pattern,
+    _is_local_file,
+    _is_supported_cloud,
+    _prepare_file_arg,
+    handle_projection_columns,
+)
+from polars.io.parquet.anonymous_scan import _scan_parquet_fsspec
 
 with contextlib.suppress(ImportError):
+    from polars.polars import PyDataFrame, PyLazyFrame
     from polars.polars import read_parquet_schema as _read_parquet_schema
 
 if TYPE_CHECKING:
@@ -171,7 +184,7 @@ def read_parquet(
     # Read binary types using `read_parquet`
     elif isinstance(source, (io.BufferedIOBase, io.RawIOBase, bytes)):
         with _prepare_file_arg(source, use_pyarrow=False) as source_prep:
-            return pl.DataFrame._read_parquet(
+            return _read_parquet_binary(
                 source_prep,
                 columns=columns,
                 n_rows=n_rows,
@@ -206,6 +219,63 @@ def read_parquet(
         lf = lf.select(columns)
 
     return lf.collect()
+
+
+def _read_parquet_binary(
+    source: str | Path | IO[bytes] | bytes,
+    *,
+    columns: Sequence[int] | Sequence[str] | None = None,
+    n_rows: int | None = None,
+    parallel: ParallelStrategy = "auto",
+    row_index_name: str | None = None,
+    row_index_offset: int = 0,
+    low_memory: bool = False,
+    use_statistics: bool = True,
+    rechunk: bool = True,
+) -> DataFrame:
+    if isinstance(source, (str, Path)):
+        source = normalize_filepath(source)
+    if isinstance(columns, str):
+        columns = [columns]
+
+    if isinstance(source, str) and _is_glob_pattern(source):
+        from polars import scan_parquet
+
+        scan = scan_parquet(
+            source,
+            n_rows=n_rows,
+            rechunk=True,
+            parallel=parallel,
+            row_index_name=row_index_name,
+            row_index_offset=row_index_offset,
+            low_memory=low_memory,
+        )
+
+        if columns is None:
+            return scan.collect()
+        elif is_str_sequence(columns, allow_str=False):
+            return scan.select(columns).collect()
+        else:
+            msg = (
+                "cannot use glob patterns and integer based projection as `columns` argument"
+                "\n\nUse columns: List[str]"
+            )
+            raise TypeError(msg)
+
+    projection, columns = handle_projection_columns(columns)
+
+    pydf = PyDataFrame.read_parquet(
+        source,
+        columns,
+        projection,
+        n_rows,
+        parallel,
+        _prepare_row_index_args(row_index_name, row_index_offset),
+        low_memory=low_memory,
+        use_statistics=use_statistics,
+        rechunk=rechunk,
+    )
+    return wrap_df(pydf)
 
 
 def read_parquet_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, DataType]:
@@ -337,7 +407,7 @@ def scan_parquet(
     else:
         source = [normalize_filepath(source) for source in source]
 
-    return pl.LazyFrame._scan_parquet(
+    return _scan_parquet_impl(
         source,
         n_rows=n_rows,
         cache=cache,
@@ -352,3 +422,64 @@ def scan_parquet(
         hive_schema=hive_schema,
         retries=retries,
     )
+
+
+def _scan_parquet_impl(
+    source: str | list[str] | list[Path],
+    *,
+    n_rows: int | None = None,
+    cache: bool = True,
+    parallel: ParallelStrategy = "auto",
+    rechunk: bool = True,
+    row_index_name: str | None = None,
+    row_index_offset: int = 0,
+    storage_options: dict[str, object] | None = None,
+    low_memory: bool = False,
+    use_statistics: bool = True,
+    hive_partitioning: bool = True,
+    hive_schema: SchemaDict | None = None,
+    retries: int = 0,
+) -> LazyFrame:
+    if isinstance(source, list):
+        sources = source
+        source = None  # type: ignore[assignment]
+        can_use_fsspec = False
+    else:
+        can_use_fsspec = True
+        sources = []
+
+    # try fsspec scanner
+    if (
+        can_use_fsspec
+        and not _is_local_file(source)  # type: ignore[arg-type]
+        and not _is_supported_cloud(source)  # type: ignore[arg-type]
+    ):
+        scan = _scan_parquet_fsspec(source, storage_options)  # type: ignore[arg-type]
+        if n_rows:
+            scan = scan.head(n_rows)
+        if row_index_name is not None:
+            scan = scan.with_row_index(row_index_name, row_index_offset)
+        return scan
+
+    if storage_options:
+        storage_options = list(storage_options.items())  # type: ignore[assignment]
+    else:
+        # Handle empty dict input
+        storage_options = None
+
+    pylf = PyLazyFrame.new_from_parquet(
+        source,
+        sources,
+        n_rows,
+        cache,
+        parallel,
+        rechunk,
+        _prepare_row_index_args(row_index_name, row_index_offset),
+        low_memory,
+        cloud_options=storage_options,
+        use_statistics=use_statistics,
+        hive_partitioning=hive_partitioning,
+        hive_schema=hive_schema,
+        retries=retries,
+    )
+    return wrap_ldf(pylf)

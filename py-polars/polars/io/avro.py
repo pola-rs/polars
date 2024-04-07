@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import contextlib
+from pathlib import Path
 from typing import IO, TYPE_CHECKING
 
-import polars._reexport as pl
+from polars._utils.various import normalize_filepath
+from polars._utils.wrap import wrap_df
+from polars.io._utils import handle_projection_columns
+
+with contextlib.suppress(ImportError):  # Module not available when building docs
+    from polars.polars import PyDataFrame
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from polars import DataFrame
 
 
@@ -35,4 +40,9 @@ def read_avro(
     -------
     DataFrame
     """
-    return pl.DataFrame._read_avro(source, n_rows=n_rows, columns=columns)
+    if isinstance(source, (str, Path)):
+        source = normalize_filepath(source)
+    projection, parsed_columns = handle_projection_columns(columns)
+
+    pydf = PyDataFrame.read_avro(source, parsed_columns, projection, n_rows)
+    return wrap_df(pydf)
