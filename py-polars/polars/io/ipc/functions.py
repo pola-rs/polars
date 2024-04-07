@@ -2,13 +2,20 @@ from __future__ import annotations
 
 import contextlib
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, Any
+from typing import IO, TYPE_CHECKING, Any, Sequence
 
 import polars._reexport as pl
 from polars._utils.deprecation import deprecate_renamed_parameter
-from polars._utils.various import normalize_filepath
+from polars._utils.various import (
+    _prepare_row_index_args,
+    handle_projection_columns,
+    is_str_sequence,
+    normalize_filepath,
+)
+from polars._utils.wrap import wrap_df
 from polars.dependencies import _PYARROW_AVAILABLE
-from polars.io._utils import _prepare_file_arg
+from polars.io._utils import _is_glob_pattern, _is_local_file, _prepare_file_arg
+from polars.polars import PyDataFrame
 
 with contextlib.suppress(ImportError):
     from polars.polars import read_ipc_schema as _read_ipc_schema
@@ -33,6 +40,9 @@ def read_ipc(
 ) -> DataFrame:
     """
     Read into a DataFrame from Arrow IPC (Feather v2) file.
+
+    See "File or Random Access format" on https://arrow.apache.org/docs/python/ipc.html.
+    Arrow IPC files are also known as Feather (v2) files.
 
     Parameters
     ----------
@@ -98,7 +108,7 @@ def read_ipc(
                 df = df.slice(0, n_rows)
             return df
 
-        return pl.DataFrame._read_ipc(
+        return _read_ipc_impl(
             data,
             columns=columns,
             n_rows=n_rows,
@@ -107,6 +117,54 @@ def read_ipc(
             rechunk=rechunk,
             memory_map=memory_map,
         )
+
+
+def _read_ipc_impl(
+    source: str | Path | IO[bytes] | bytes,
+    *,
+    columns: Sequence[int] | Sequence[str] | None = None,
+    n_rows: int | None = None,
+    row_index_name: str | None = None,
+    row_index_offset: int = 0,
+    rechunk: bool = True,
+    memory_map: bool = True,
+) -> DataFrame:
+    if isinstance(source, (str, Path)):
+        source = normalize_filepath(source)
+    if isinstance(columns, str):
+        columns = [columns]
+
+    if isinstance(source, str) and _is_glob_pattern(source) and _is_local_file(source):
+        scan = scan_ipc(
+            source,
+            n_rows=n_rows,
+            rechunk=rechunk,
+            row_index_name=row_index_name,
+            row_index_offset=row_index_offset,
+            memory_map=memory_map,
+        )
+        if columns is None:
+            df = scan.collect()
+        elif is_str_sequence(columns, allow_str=False):
+            df = scan.select(columns).collect()
+        else:
+            msg = (
+                "cannot use glob patterns and integer based projection as `columns` argument"
+                "\n\nUse columns: List[str]"
+            )
+            raise TypeError(msg)
+        return df
+
+    projection, columns = handle_projection_columns(columns)
+    pydf = PyDataFrame.read_ipc(
+        source,
+        columns,
+        projection,
+        n_rows,
+        _prepare_row_index_args(row_index_name, row_index_offset),
+        memory_map=memory_map,
+    )
+    return wrap_df(pydf)
 
 
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
@@ -124,6 +182,8 @@ def read_ipc_stream(
 ) -> DataFrame:
     """
     Read into a DataFrame from Arrow IPC record batch stream.
+
+    See "Streaming format" on https://arrow.apache.org/docs/python/ipc.html.
 
     Parameters
     ----------
