@@ -2761,7 +2761,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "c": [True, True, False, None],
         ...     }
         ... )
-        >>> lf.clear().fetch()
+        >>> lf.clear().collect()
         shape: (0, 3)
         ┌─────┬─────┬──────┐
         │ a   ┆ b   ┆ c    │
@@ -2770,7 +2770,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ╞═════╪═════╪══════╡
         └─────┴─────┴──────┘
 
-        >>> lf.clear(2).fetch()
+        >>> lf.clear(2).collect()
         shape: (2, 3)
         ┌──────┬──────┬──────┐
         │ a    ┆ b    ┆ c    │
