@@ -1,3 +1,5 @@
+import pytest
+
 import polars as pl
 import polars.selectors as cs
 from polars.testing import assert_frame_equal
@@ -48,6 +50,34 @@ def test_melt() -> None:
         ]
 
 
+def test_melt_duplicates() -> None:
+    df = pl.DataFrame({"A": ["a", "b", "c"], "B": [1, 3, 5], "C": [2, 4, 6]})
+
+    with pytest.raises(pl.DuplicateError):
+        df.melt(id_vars=["B", "B"])
+    with pytest.raises(pl.DuplicateError):
+        df.lazy().melt(id_vars=["B", "B"]).collect()
+
+    with pytest.raises(pl.DuplicateError):
+        df.melt(id_vars=["A", "B"], value_vars=["C", "A"])
+    with pytest.raises(pl.DuplicateError):
+        df.lazy().melt(id_vars=["A", "B"], value_vars=["C", "A"]).collect()
+
+
+def test_melt_missing_columns() -> None:
+    df = pl.DataFrame({"A": ["a", "b", "c"], "B": [1, 3, 5], "C": [2, 4, 6]})
+
+    with pytest.raises(pl.ColumnNotFoundError):
+        df.melt(id_vars=["A", "D"])
+    with pytest.raises(pl.ColumnNotFoundError):
+        df.melt(id_vars=["A"], value_vars=["D"])
+
+    with pytest.raises(pl.ColumnNotFoundError):
+        df.lazy().melt(id_vars=["A", "D"]).collect()
+    with pytest.raises(pl.ColumnNotFoundError):
+        df.lazy().melt(id_vars=["A"], value_vars=["D"]).collect()
+
+
 def test_melt_projection_pd_7747() -> None:
     df = pl.LazyFrame(
         {
@@ -81,3 +111,14 @@ def test_melt_no_value_vars() -> None:
         schema={"a": pl.Int64, "variable": pl.String, "value": pl.Null}
     )
     assert_frame_equal(result, expected)
+
+
+# https://github.com/pola-rs/polars/issues/13493
+def test_melt_missing_column_13493() -> None:
+    with pytest.raises(pl.ColumnNotFoundError):
+        (
+            pl.DataFrame({"col0": [0], "col1": ["a"], "col2": ["b"]})
+            .lazy()
+            .melt(id_vars="row_nr")
+            .collect()
+        )
