@@ -409,6 +409,8 @@ pub(crate) fn insert_streaming_nodes(
                             .all(|fld| allowed_dtype(fld.data_type(), string_cache)),
                         // We need to be able to sink to disk or produce the aggregate return dtype.
                         DataType::Unknown => false,
+                        #[cfg(feature = "dtype-decimal")]
+                        DataType::Decimal(_, _) => false,
                         _ => true,
                     }
                 }
