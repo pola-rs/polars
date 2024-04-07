@@ -5464,8 +5464,8 @@ class DataFrame:
         index_column
             Column used to group based on the time window.
             Often of type Date/Datetime.
-            This column must be sorted in ascending order (or, if `by` is specified,
-            then it must be sorted in ascending order within each group).
+            This column must be sorted in ascending order (or, if `group_by` is
+            specified, then it must be sorted in ascending order within each group).
 
             In case of a rolling operation on indices, dtype needs to be one of
             {UInt32, UInt64, Int32, Int64}. Note that the first three get temporarily
@@ -5491,8 +5491,8 @@ class DataFrame:
         -------
         RollingGroupBy
             Object you can call `.agg` on to aggregate by groups, the result
-            of which will be sorted by `index_column` (but note that if `by` columns are
-            passed, it will only be sorted within each `by` group).
+            of which will be sorted by `index_column` (but note that if `group_by`
+            columns are passed, it will only be sorted within each group).
 
         See Also
         --------
@@ -5580,7 +5580,7 @@ class DataFrame:
         datapoint. See the `start_by` argument description for details.
 
         .. warning::
-            The index column must be sorted in ascending order. If `by` is passed, then
+            The index column must be sorted in ascending order. If `group_by` is passed, then
             the index column must be sorted in ascending order within each group.
 
         Parameters
@@ -5588,7 +5588,7 @@ class DataFrame:
         index_column
             Column used to group based on the time window.
             Often of type Date/Datetime.
-            This column must be sorted in ascending order (or, if `by` is specified,
+            This column must be sorted in ascending order (or, if `group_by` is specified,
             then it must be sorted in ascending order within each group).
 
             In case of a dynamic group by on indices, dtype needs to be one of
@@ -5651,8 +5651,8 @@ class DataFrame:
         -------
         DynamicGroupBy
             Object you can call `.agg` on to aggregate by groups, the result
-            of which will be sorted by `index_column` (but note that if `by` columns are
-            passed, it will only be sorted within each `by` group).
+            of which will be sorted by `index_column` (but note that if `group_by` columns are
+            passed, it will only be sorted within each group).
 
         See Also
         --------
@@ -5942,8 +5942,8 @@ class DataFrame:
         Returns
         -------
         DataFrame
-            Result will be sorted by `time_column` (but note that if `by` columns are
-            passed, it will only be sorted within each `by` group).
+            Result will be sorted by `time_column` (but note that if `group_by` columns
+            are passed, it will only be sorted within each group).
 
         Examples
         --------
