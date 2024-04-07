@@ -81,7 +81,6 @@ from polars.datatypes import (
 from polars.dependencies import subprocess
 from polars.io._utils import _is_local_file, _is_supported_cloud
 from polars.io.csv._utils import _check_arg_is_1byte
-from polars.io.ipc.anonymous_scan import _scan_ipc_fsspec
 from polars.io.parquet.anonymous_scan import _scan_parquet_fsspec
 from polars.lazyframe.group_by import LazyGroupBy
 from polars.lazyframe.in_process import InProcessQuery
@@ -483,61 +482,6 @@ class LazyFrame:
             use_statistics=use_statistics,
             hive_partitioning=hive_partitioning,
             hive_schema=hive_schema,
-            retries=retries,
-        )
-        return self
-
-    @classmethod
-    def _scan_ipc(
-        cls,
-        source: str | Path | list[str] | list[Path],
-        *,
-        n_rows: int | None = None,
-        cache: bool = True,
-        rechunk: bool = True,
-        row_index_name: str | None = None,
-        row_index_offset: int = 0,
-        storage_options: dict[str, object] | None = None,
-        memory_map: bool = True,
-        retries: int = 0,
-    ) -> Self:
-        """
-        Lazily read from an Arrow IPC (Feather v2) file.
-
-        Use `pl.scan_ipc` to dispatch to this method.
-
-        See Also
-        --------
-        polars.io.scan_ipc
-        """
-        if isinstance(source, (str, Path)):
-            can_use_fsspec = True
-            source = normalize_filepath(source)
-            sources = []
-        else:
-            can_use_fsspec = False
-            sources = [normalize_filepath(source) for source in source]
-            source = None  # type: ignore[assignment]
-
-        # try fsspec scanner
-        if can_use_fsspec and not _is_local_file(source):  # type: ignore[arg-type]
-            scan = _scan_ipc_fsspec(source, storage_options)  # type: ignore[arg-type]
-            if n_rows:
-                scan = scan.head(n_rows)
-            if row_index_name is not None:
-                scan = scan.with_row_index(row_index_name, row_index_offset)
-            return scan  # type: ignore[return-value]
-
-        self = cls.__new__(cls)
-        self._ldf = PyLazyFrame.new_from_ipc(
-            source,
-            sources,
-            n_rows,
-            cache,
-            rechunk,
-            _prepare_row_index_args(row_index_name, row_index_offset),
-            memory_map=memory_map,
-            cloud_options=storage_options,
             retries=retries,
         )
         return self

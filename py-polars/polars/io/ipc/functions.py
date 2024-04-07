@@ -11,7 +11,7 @@ from polars._utils.various import (
     is_str_sequence,
     normalize_filepath,
 )
-from polars._utils.wrap import wrap_df
+from polars._utils.wrap import wrap_df, wrap_ldf
 from polars.dependencies import _PYARROW_AVAILABLE
 from polars.io._utils import (
     _is_glob_pattern,
@@ -19,9 +19,10 @@ from polars.io._utils import (
     _prepare_file_arg,
     handle_projection_columns,
 )
+from polars.io.ipc.anonymous_scan import _scan_ipc_fsspec
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import PyDataFrame
+    from polars.polars import PyDataFrame, PyLazyFrame
     from polars.polars import read_ipc_schema as _read_ipc_schema
 
 if TYPE_CHECKING:
@@ -347,14 +348,33 @@ def scan_ipc(
         Number of retries if accessing a cloud instance fails.
 
     """
-    return pl.LazyFrame._scan_ipc(
+    if isinstance(source, (str, Path)):
+        can_use_fsspec = True
+        source = normalize_filepath(source)
+        sources = []
+    else:
+        can_use_fsspec = False
+        sources = [normalize_filepath(source) for source in source]
+        source = None  # type: ignore[assignment]
+
+    # try fsspec scanner
+    if can_use_fsspec and not _is_local_file(source):  # type: ignore[arg-type]
+        scan = _scan_ipc_fsspec(source, storage_options)  # type: ignore[arg-type]
+        if n_rows:
+            scan = scan.head(n_rows)
+        if row_index_name is not None:
+            scan = scan.with_row_index(row_index_name, row_index_offset)
+        return scan
+
+    pylf = PyLazyFrame.new_from_ipc(
         source,
-        n_rows=n_rows,
-        cache=cache,
-        rechunk=rechunk,
-        row_index_name=row_index_name,
-        row_index_offset=row_index_offset,
-        storage_options=storage_options,
+        sources,
+        n_rows,
+        cache,
+        rechunk,
+        _prepare_row_index_args(row_index_name, row_index_offset),
         memory_map=memory_map,
+        cloud_options=storage_options,
         retries=retries,
     )
+    return wrap_ldf(pylf)
