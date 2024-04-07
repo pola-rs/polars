@@ -70,10 +70,10 @@ def test_melt_missing_columns() -> None:
     with pytest.raises(pl.ColumnNotFoundError):
         df.melt(id_vars=["A", "D"])
     with pytest.raises(pl.ColumnNotFoundError):
-        df.melt(id_vars=["A"], value_vars=["D"])
+        df.lazy().melt(id_vars=["A", "D"]).collect()
 
     with pytest.raises(pl.ColumnNotFoundError):
-        df.lazy().melt(id_vars=["A", "D"]).collect()
+        df.melt(id_vars=["A"], value_vars=["D"])
     with pytest.raises(pl.ColumnNotFoundError):
         df.lazy().melt(id_vars=["A"], value_vars=["D"]).collect()
 
