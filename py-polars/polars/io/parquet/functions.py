@@ -239,8 +239,6 @@ def _read_parquet_binary(
         columns = [columns]
 
     if isinstance(source, str) and is_glob_pattern(source):
-        from polars import scan_parquet
-
         scan = scan_parquet(
             source,
             n_rows=n_rows,
