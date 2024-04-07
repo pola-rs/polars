@@ -5,8 +5,7 @@ import re
 from contextlib import contextmanager
 from io import BytesIO, StringIO
 from pathlib import Path
-from tempfile import NamedTemporaryFile
-from typing import IO, Any, ContextManager, Iterator, Sequence, cast, overload
+from typing import IO, Any, ContextManager, Iterator, Sequence, overload
 
 from polars._utils.various import is_int_sequence, is_str_sequence, normalize_filepath
 from polars.dependencies import _FSSPEC_AVAILABLE, fsspec
@@ -69,23 +68,6 @@ def parse_row_index_args(
         return None
     else:
         return (row_index_name, row_index_offset)
-
-
-def is_glob_pattern(file: str) -> bool:
-    return any(char in file for char in ["*", "?", "["])
-
-
-def is_supported_cloud(file: str) -> bool:
-    return bool(re.match("^(s3a?|gs|gcs|file|abfss?|azure|az|adl|https?)://", file))
-
-
-def is_local_file(file: str) -> bool:
-    try:
-        next(glob.iglob(file, recursive=True))  # noqa: PTH207
-    except StopIteration:
-        return False
-    else:
-        return True
 
 
 @overload
@@ -292,42 +274,18 @@ def process_file_url(path: str, encoding: str | None = None) -> BytesIO:
             return BytesIO(f.read().decode(encoding).encode("utf8"))
 
 
-@contextmanager
-def PortableTemporaryFile(
-    mode: str = "w+b",
-    *,
-    buffering: int = -1,
-    encoding: str | None = None,
-    newline: str | None = None,
-    suffix: str | None = None,
-    prefix: str | None = None,
-    dir: str | Path | None = None,
-    delete: bool = True,
-    errors: str | None = None,
-) -> Iterator[Any]:
-    """
-    Slightly more resilient version of the standard `NamedTemporaryFile`.
+def is_glob_pattern(file: str) -> bool:
+    return any(char in file for char in ["*", "?", "["])
 
-    Plays better with Windows when using the 'delete' option.
-    """
-    params = cast(
-        Any,
-        {
-            "mode": mode,
-            "buffering": buffering,
-            "encoding": encoding,
-            "newline": newline,
-            "suffix": suffix,
-            "prefix": prefix,
-            "dir": dir,
-            "delete": False,
-            "errors": errors,
-        },
-    )
-    tmp = NamedTemporaryFile(**params)
+
+def is_supported_cloud(file: str) -> bool:
+    return bool(re.match("^(s3a?|gs|gcs|file|abfss?|azure|az|adl|https?)://", file))
+
+
+def is_local_file(file: str) -> bool:
     try:
-        yield tmp
-    finally:
-        tmp.close()
-        if delete:
-            Path(tmp.name).unlink(missing_ok=True)
+        next(glob.iglob(file, recursive=True))  # noqa: PTH207
+    except StopIteration:
+        return False
+    else:
+        return True

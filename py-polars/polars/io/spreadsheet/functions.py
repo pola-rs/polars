@@ -22,8 +22,9 @@ from polars.datatypes import (
 )
 from polars.dependencies import import_optional
 from polars.exceptions import NoDataError, ParameterCollisionError
-from polars.io._utils import PortableTemporaryFile, looks_like_url, process_file_url
+from polars.io._utils import looks_like_url, process_file_url
 from polars.io.csv.functions import read_csv
+from polars.io.spreadsheet._utils import PortableTemporaryFile
 
 if TYPE_CHECKING:
     from typing import Literal
