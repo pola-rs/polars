@@ -64,7 +64,7 @@ impl ExprIR {
                     }
                     break;
                 },
-                AExpr::Alias(node, name) => {
+                AExpr::Alias(_, name) => {
                     out.output_name = OutputName::Alias(name.clone());
                     break;
                 },
