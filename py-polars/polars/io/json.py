@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+from io import BytesIO, StringIO
+from pathlib import Path
 from typing import TYPE_CHECKING
 
-import polars._reexport as pl
+from polars._utils.various import normalize_filepath
+from polars._utils.wrap import wrap_df
 from polars.datatypes import N_INFER_DEFAULT
+from polars.polars import PyDataFrame
 
 if TYPE_CHECKING:
     from io import IOBase
-    from pathlib import Path
 
     from polars import DataFrame
     from polars.type_aliases import SchemaDefinition
@@ -50,9 +53,15 @@ def read_json(
     --------
     read_ndjson
     """
-    return pl.DataFrame._read_json(
+    if isinstance(source, StringIO):
+        source = BytesIO(source.getvalue().encode())
+    elif isinstance(source, (str, Path)):
+        source = normalize_filepath(source)
+
+    pydf = PyDataFrame.read_json(
         source,
+        infer_schema_length=infer_schema_length,
         schema=schema,
         schema_overrides=schema_overrides,
-        infer_schema_length=infer_schema_length,
     )
+    return wrap_df(pydf)
