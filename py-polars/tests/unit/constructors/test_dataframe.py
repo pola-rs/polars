@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from collections import OrderedDict
 from typing import Any
 
 import pytest
@@ -123,9 +124,16 @@ def test_df_init_from_series_strict() -> None:
     assert df["a"].dtype == pl.UInt8
 
 
+# https://github.com/pola-rs/polars/issues/15471
 def test_df_init_rows_overrides_non_existing() -> None:
-    with pytest.raises(pl.SchemaError, match="nonexistent column"):
-        pl.DataFrame([{"a": 1, "b": 2}], schema_overrides={"c": pl.Int8})
+    df = pl.DataFrame([{"a": 1}], schema_overrides={"a": pl.Int8(), "b": pl.Boolean()})
+    assert df.schema == OrderedDict({"a": pl.Int8})
+
+    df = pl.DataFrame(
+        [{"a": 3, "b": 1.0}],
+        schema_overrides={"a": pl.Int8, "c": pl.Utf8},
+    )
+    assert df.schema == OrderedDict({"a": pl.Int8, "b": pl.Float64})
 
 
 # https://github.com/pola-rs/polars/issues/15245
