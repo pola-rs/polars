@@ -10,14 +10,17 @@ from polars._utils.deprecation import deprecate_renamed_parameter
 from polars._utils.various import (
     _prepare_row_index_args,
     _process_null_values,
-    handle_projection_columns,
     is_str_sequence,
     normalize_filepath,
 )
 from polars._utils.wrap import wrap_df
 from polars.datatypes import N_INFER_DEFAULT, String
 from polars.datatypes.convert import py_type_to_dtype
-from polars.io._utils import _is_glob_pattern, _prepare_file_arg
+from polars.io._utils import (
+    _is_glob_pattern,
+    _prepare_file_arg,
+    handle_projection_columns,
+)
 from polars.io.csv._utils import _check_arg_is_1byte, _update_columns
 from polars.io.csv.batched_reader import BatchedCsvReader
 

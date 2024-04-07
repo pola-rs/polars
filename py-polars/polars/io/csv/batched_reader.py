@@ -6,11 +6,11 @@ from typing import TYPE_CHECKING, Sequence
 from polars._utils.various import (
     _prepare_row_index_args,
     _process_null_values,
-    handle_projection_columns,
     normalize_filepath,
 )
 from polars._utils.wrap import wrap_df
 from polars.datatypes import N_INFER_DEFAULT, py_type_to_dtype
+from polars.io._utils import handle_projection_columns
 from polars.io.csv._utils import _update_columns
 
 with contextlib.suppress(ImportError):  # Module not available when building docs

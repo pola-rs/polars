@@ -8,13 +8,17 @@ import polars._reexport as pl
 from polars._utils.deprecation import deprecate_renamed_parameter
 from polars._utils.various import (
     _prepare_row_index_args,
-    handle_projection_columns,
     is_str_sequence,
     normalize_filepath,
 )
 from polars._utils.wrap import wrap_df
 from polars.dependencies import _PYARROW_AVAILABLE
-from polars.io._utils import _is_glob_pattern, _is_local_file, _prepare_file_arg
+from polars.io._utils import (
+    _is_glob_pattern,
+    _is_local_file,
+    _prepare_file_arg,
+    handle_projection_columns,
+)
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyDataFrame

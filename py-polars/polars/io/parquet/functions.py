@@ -10,7 +10,6 @@ from polars._utils.deprecation import deprecate_renamed_parameter
 from polars._utils.unstable import issue_unstable_warning
 from polars._utils.various import (
     _prepare_row_index_args,
-    handle_projection_columns,
     is_int_sequence,
     is_str_sequence,
     normalize_filepath,
@@ -18,7 +17,11 @@ from polars._utils.various import (
 from polars._utils.wrap import wrap_df
 from polars.convert import from_arrow
 from polars.dependencies import _PYARROW_AVAILABLE
-from polars.io._utils import _is_glob_pattern, _prepare_file_arg
+from polars.io._utils import (
+    _is_glob_pattern,
+    _prepare_file_arg,
+    handle_projection_columns,
+)
 
 with contextlib.suppress(ImportError):
     from polars.polars import PyDataFrame
