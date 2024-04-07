@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 from typing import IO, TYPE_CHECKING
 
 from polars._utils.various import handle_projection_columns, normalize_filepath
 from polars._utils.wrap import wrap_df
-from polars.polars import PyDataFrame
+
+with contextlib.suppress(ImportError):  # Module not available when building docs
+    from polars.polars import PyDataFrame
 
 if TYPE_CHECKING:
     from polars import DataFrame

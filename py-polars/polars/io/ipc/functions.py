@@ -15,9 +15,9 @@ from polars._utils.various import (
 from polars._utils.wrap import wrap_df
 from polars.dependencies import _PYARROW_AVAILABLE
 from polars.io._utils import _is_glob_pattern, _is_local_file, _prepare_file_arg
-from polars.polars import PyDataFrame
 
-with contextlib.suppress(ImportError):
+with contextlib.suppress(ImportError):  # Module not available when building docs
+    from polars.polars import PyDataFrame
     from polars.polars import read_ipc_schema as _read_ipc_schema
 
 if TYPE_CHECKING:

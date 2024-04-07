@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 from io import BytesIO, StringIO
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any, Callable, Mapping, Sequence
@@ -19,7 +20,9 @@ from polars.datatypes.convert import py_type_to_dtype
 from polars.io._utils import _is_glob_pattern, _prepare_file_arg
 from polars.io.csv._utils import _check_arg_is_1byte, _update_columns
 from polars.io.csv.batched_reader import BatchedCsvReader
-from polars.polars import PyDataFrame
+
+with contextlib.suppress(ImportError):  # Module not available when building docs
+    from polars.polars import PyDataFrame
 
 if TYPE_CHECKING:
     from polars import DataFrame, LazyFrame

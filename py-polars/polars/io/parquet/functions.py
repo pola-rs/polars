@@ -19,9 +19,9 @@ from polars._utils.wrap import wrap_df
 from polars.convert import from_arrow
 from polars.dependencies import _PYARROW_AVAILABLE
 from polars.io._utils import _is_glob_pattern, _prepare_file_arg
-from polars.polars import PyDataFrame
 
 with contextlib.suppress(ImportError):
+    from polars.polars import PyDataFrame
     from polars.polars import read_parquet_schema as _read_parquet_schema
 
 if TYPE_CHECKING:
