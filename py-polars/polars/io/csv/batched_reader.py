@@ -9,7 +9,7 @@ from polars._utils.various import (
 )
 from polars._utils.wrap import wrap_df
 from polars.datatypes import N_INFER_DEFAULT, py_type_to_dtype
-from polars.io._utils import handle_projection_columns, prepare_row_index_args
+from polars.io._utils import parse_columns_arg, prepare_row_index_args
 from polars.io.csv._utils import _update_columns
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -72,7 +72,7 @@ class BatchedCsvReader:
                 raise TypeError(msg)
 
         processed_null_values = _process_null_values(null_values)
-        projection, columns = handle_projection_columns(columns)
+        projection, columns = parse_columns_arg(columns)
 
         self._reader = PyBatchedCsv.new(
             infer_schema_length=infer_schema_length,

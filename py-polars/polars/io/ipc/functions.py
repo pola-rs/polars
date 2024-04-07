@@ -13,9 +13,9 @@ from polars._utils.various import (
 from polars._utils.wrap import wrap_df, wrap_ldf
 from polars.dependencies import _PYARROW_AVAILABLE
 from polars.io._utils import (
-    handle_projection_columns,
     is_glob_pattern,
     is_local_file,
+    parse_columns_arg,
     prepare_file_arg,
     prepare_row_index_args,
 )
@@ -160,7 +160,7 @@ def _read_ipc_impl(
             raise TypeError(msg)
         return df
 
-    projection, columns = handle_projection_columns(columns)
+    projection, columns = parse_columns_arg(columns)
     pydf = PyDataFrame.read_ipc(
         source,
         columns,
@@ -267,7 +267,7 @@ def _read_ipc_stream_impl(
     if isinstance(columns, str):
         columns = [columns]
 
-    projection, columns = handle_projection_columns(columns)
+    projection, columns = parse_columns_arg(columns)
     pydf = PyDataFrame.read_ipc_stream(
         source,
         columns,

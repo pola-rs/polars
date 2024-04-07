@@ -16,10 +16,10 @@ from polars._utils.wrap import wrap_df, wrap_ldf
 from polars.convert import from_arrow
 from polars.dependencies import _PYARROW_AVAILABLE
 from polars.io._utils import (
-    handle_projection_columns,
     is_glob_pattern,
     is_local_file,
     is_supported_cloud,
+    parse_columns_arg,
     prepare_file_arg,
     prepare_row_index_args,
 )
@@ -260,7 +260,7 @@ def _read_parquet_binary(
             )
             raise TypeError(msg)
 
-    projection, columns = handle_projection_columns(columns)
+    projection, columns = parse_columns_arg(columns)
 
     pydf = PyDataFrame.read_parquet(
         source,

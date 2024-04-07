@@ -16,8 +16,8 @@ from polars._utils.wrap import wrap_df, wrap_ldf
 from polars.datatypes import N_INFER_DEFAULT, String
 from polars.datatypes.convert import py_type_to_dtype
 from polars.io._utils import (
-    handle_projection_columns,
     is_glob_pattern,
+    parse_columns_arg,
     prepare_file_arg,
     prepare_row_index_args,
 )
@@ -235,7 +235,7 @@ def read_csv(
     _check_arg_is_1byte("quote_char", quote_char, can_be_empty=True)
     _check_arg_is_1byte("eol_char", eol_char, can_be_empty=False)
 
-    projection, columns = handle_projection_columns(columns)
+    projection, columns = parse_columns_arg(columns)
     storage_options = storage_options or {}
 
     if columns and not has_header:
@@ -548,7 +548,7 @@ def _read_csv_impl(
             )
             raise ValueError(msg)
 
-    projection, columns = handle_projection_columns(columns)
+    projection, columns = parse_columns_arg(columns)
 
     pydf = PyDataFrame.read_csv(
         source,
@@ -758,7 +758,7 @@ def read_csv_batched(
     ...
     ...     batches = reader.next_batches(100)
     """
-    projection, columns = handle_projection_columns(columns)
+    projection, columns = parse_columns_arg(columns)
 
     if columns and not has_header:
         for column in columns:

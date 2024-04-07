@@ -13,34 +13,47 @@ from polars.dependencies import _FSSPEC_AVAILABLE, fsspec
 from polars.exceptions import NoDataError
 
 
-def handle_projection_columns(
-    columns: Sequence[str] | Sequence[int] | str | None,
-) -> tuple[list[int] | None, Sequence[str] | None]:
-    """Disambiguates between columns specified as integers vs. strings."""
+def parse_columns_arg(
+    columns: Sequence[str] | Sequence[int] | str | int | None,
+) -> tuple[Sequence[int] | None, Sequence[str] | None]:
+    """
+    Parse the `columns` argument of an I/O function.
+
+    Disambiguates between column names and column indices input.
+
+    Returns
+    -------
+    tuple
+        A tuple containing the columns as a projection and a list of column names.
+        Only one will be specified, the other will be `None`.
+    """
     if columns is None:
         return None, None
 
-    projection: list[int] | None = None
-    new_columns: Sequence[str] | None = None
+    projection: Sequence[int] | None = None
+    column_names: Sequence[str] | None = None
 
     if isinstance(columns, str):
-        new_columns = [columns]
+        column_names = [columns]
+    elif isinstance(columns, int):
+        projection = [columns]
     elif is_str_sequence(columns):
-        new_columns = columns
+        _ensure_columns_are_unique(columns)
+        column_names = columns
     elif is_int_sequence(columns):
-        projection = list(columns)
+        _ensure_columns_are_unique(columns)
+        projection = columns
     else:
-        msg = "`columns` arg should contain a list of all integers or all string values"
+        msg = "the `columns` argument should contain a list of all integers or all string values"
         raise TypeError(msg)
 
-    if columns and len(set(columns)) != len(columns):
+    return projection, column_names
+
+
+def _ensure_columns_are_unique(columns: Sequence[str] | Sequence[int]) -> None:
+    if len(columns) != len(set(columns)):
         msg = f"`columns` arg should only have unique values, got {columns!r}"
         raise ValueError(msg)
-    if projection and len(set(projection)) != len(projection):
-        msg = f"`columns` arg should only have unique values, got {projection!r}"
-        raise ValueError(msg)
-
-    return projection, new_columns
 
 
 def prepare_row_index_args(
