@@ -158,16 +158,6 @@ def range_to_slice(rng: range) -> slice:
     return slice(rng.start, rng.stop, rng.step)
 
 
-def _prepare_row_index_args(
-    row_index_name: str | None = None,
-    row_index_offset: int = 0,
-) -> tuple[str, int] | None:
-    if row_index_name is not None:
-        return (row_index_name, row_index_offset)
-    else:
-        return None
-
-
 def _in_notebook() -> bool:
     try:
         from IPython import get_ipython

@@ -8,7 +8,6 @@ from typing import IO, TYPE_CHECKING, Any, Callable, Mapping, Sequence
 import polars._reexport as pl
 from polars._utils.deprecation import deprecate_renamed_parameter
 from polars._utils.various import (
-    _prepare_row_index_args,
     _process_null_values,
     is_str_sequence,
     normalize_filepath,
@@ -17,9 +16,10 @@ from polars._utils.wrap import wrap_df, wrap_ldf
 from polars.datatypes import N_INFER_DEFAULT, String
 from polars.datatypes.convert import py_type_to_dtype
 from polars.io._utils import (
-    _is_glob_pattern,
-    _prepare_file_arg,
     handle_projection_columns,
+    is_glob_pattern,
+    prepare_file_arg,
+    prepare_row_index_args,
 )
 from polars.io.csv._utils import _check_arg_is_1byte, _update_columns
 from polars.io.csv.batched_reader import BatchedCsvReader
@@ -269,7 +269,7 @@ def read_csv(
             # for pyarrow.
             include_columns = [f"f{column_idx}" for column_idx in projection]
 
-        with _prepare_file_arg(
+        with prepare_file_arg(
             source,
             encoding=None,
             use_pyarrow=True,
@@ -403,7 +403,7 @@ def read_csv(
                 for column_name, column_dtype in dtypes.items()
             }
 
-    with _prepare_file_arg(
+    with prepare_file_arg(
         source,
         encoding=encoding,
         use_pyarrow=False,
@@ -502,7 +502,7 @@ def _read_csv_impl(
 
     if isinstance(columns, str):
         columns = [columns]
-    if isinstance(source, str) and _is_glob_pattern(source):
+    if isinstance(source, str) and is_glob_pattern(source):
         dtypes_dict = None
         if dtype_list is not None:
             dtypes_dict = dict(dtype_list)
@@ -574,7 +574,7 @@ def _read_csv_impl(
         missing_utf8_is_empty_string,
         try_parse_dates,
         skip_rows_after_header,
-        _prepare_row_index_args(row_index_name, row_index_offset),
+        prepare_row_index_args(row_index_name, row_index_offset),
         sample_size=sample_size,
         eol_char=eol_char,
         raise_if_empty=raise_if_empty,
@@ -1189,7 +1189,7 @@ def _scan_csv_impl(
         rechunk,
         skip_rows_after_header,
         encoding,
-        _prepare_row_index_args(row_index_name, row_index_offset),
+        prepare_row_index_args(row_index_name, row_index_offset),
         try_parse_dates,
         eol_char=eol_char,
         raise_if_empty=raise_if_empty,

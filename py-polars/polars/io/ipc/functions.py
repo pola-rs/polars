@@ -7,17 +7,17 @@ from typing import IO, TYPE_CHECKING, Any, Sequence
 import polars._reexport as pl
 from polars._utils.deprecation import deprecate_renamed_parameter
 from polars._utils.various import (
-    _prepare_row_index_args,
     is_str_sequence,
     normalize_filepath,
 )
 from polars._utils.wrap import wrap_df, wrap_ldf
 from polars.dependencies import _PYARROW_AVAILABLE
 from polars.io._utils import (
-    _is_glob_pattern,
-    _is_local_file,
-    _prepare_file_arg,
     handle_projection_columns,
+    is_glob_pattern,
+    is_local_file,
+    prepare_file_arg,
+    prepare_row_index_args,
 )
 from polars.io.ipc.anonymous_scan import _scan_ipc_fsspec
 
@@ -94,7 +94,7 @@ def read_ipc(
         msg = "`n_rows` cannot be used with `use_pyarrow=True` and `memory_map=False`"
         raise ValueError(msg)
 
-    with _prepare_file_arg(
+    with prepare_file_arg(
         source, use_pyarrow=use_pyarrow, storage_options=storage_options
     ) as data:
         if use_pyarrow:
@@ -139,7 +139,7 @@ def _read_ipc_impl(
     if isinstance(columns, str):
         columns = [columns]
 
-    if isinstance(source, str) and _is_glob_pattern(source) and _is_local_file(source):
+    if isinstance(source, str) and is_glob_pattern(source) and is_local_file(source):
         scan = scan_ipc(
             source,
             n_rows=n_rows,
@@ -166,7 +166,7 @@ def _read_ipc_impl(
         columns,
         projection,
         n_rows,
-        _prepare_row_index_args(row_index_name, row_index_offset),
+        prepare_row_index_args(row_index_name, row_index_offset),
         memory_map=memory_map,
     )
     return wrap_df(pydf)
@@ -221,7 +221,7 @@ def read_ipc_stream(
     -------
     DataFrame
     """
-    with _prepare_file_arg(
+    with prepare_file_arg(
         source, use_pyarrow=use_pyarrow, storage_options=storage_options
     ) as data:
         if use_pyarrow:
@@ -273,7 +273,7 @@ def _read_ipc_stream_impl(
         columns,
         projection,
         n_rows,
-        _prepare_row_index_args(row_index_name, row_index_offset),
+        prepare_row_index_args(row_index_name, row_index_offset),
         rechunk,
     )
     return wrap_df(pydf)
@@ -358,7 +358,7 @@ def scan_ipc(
         source = None  # type: ignore[assignment]
 
     # try fsspec scanner
-    if can_use_fsspec and not _is_local_file(source):  # type: ignore[arg-type]
+    if can_use_fsspec and not is_local_file(source):  # type: ignore[arg-type]
         scan = _scan_ipc_fsspec(source, storage_options)  # type: ignore[arg-type]
         if n_rows:
             scan = scan.head(n_rows)
@@ -372,7 +372,7 @@ def scan_ipc(
         n_rows,
         cache,
         rechunk,
-        _prepare_row_index_args(row_index_name, row_index_offset),
+        prepare_row_index_args(row_index_name, row_index_offset),
         memory_map=memory_map,
         cloud_options=storage_options,
         retries=retries,

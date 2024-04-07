@@ -38,15 +38,25 @@ def handle_projection_columns(
     return projection, new_columns
 
 
-def _is_glob_pattern(file: str) -> bool:
+def prepare_row_index_args(
+    row_index_name: str | None = None,
+    row_index_offset: int = 0,
+) -> tuple[str, int] | None:
+    if row_index_name is not None:
+        return (row_index_name, row_index_offset)
+    else:
+        return None
+
+
+def is_glob_pattern(file: str) -> bool:
     return any(char in file for char in ["*", "?", "["])
 
 
-def _is_supported_cloud(file: str) -> bool:
+def is_supported_cloud(file: str) -> bool:
     return bool(re.match("^(s3a?|gs|gcs|file|abfss?|azure|az|adl|https?)://", file))
 
 
-def _is_local_file(file: str) -> bool:
+def is_local_file(file: str) -> bool:
     try:
         next(glob.iglob(file, recursive=True))  # noqa: PTH207
     except StopIteration:
@@ -56,7 +66,7 @@ def _is_local_file(file: str) -> bool:
 
 
 @overload
-def _prepare_file_arg(
+def prepare_file_arg(
     file: str | Path | list[str] | IO[bytes] | bytes,
     encoding: str | None = ...,
     *,
@@ -67,7 +77,7 @@ def _prepare_file_arg(
 
 
 @overload
-def _prepare_file_arg(
+def prepare_file_arg(
     file: str | Path | IO[str] | IO[bytes] | bytes,
     encoding: str | None = ...,
     *,
@@ -78,7 +88,7 @@ def _prepare_file_arg(
 
 
 @overload
-def _prepare_file_arg(
+def prepare_file_arg(
     file: str | Path | list[str] | IO[str] | IO[bytes] | bytes,
     encoding: str | None = ...,
     *,
@@ -88,7 +98,7 @@ def _prepare_file_arg(
 ) -> ContextManager[str | list[str] | BytesIO | list[BytesIO]]: ...
 
 
-def _prepare_file_arg(
+def prepare_file_arg(
     file: str | Path | list[str] | IO[str] | IO[bytes] | bytes,
     encoding: str | None = None,
     *,
@@ -181,8 +191,8 @@ def _prepare_file_arg(
         # make sure that this is before fsspec
         # as fsspec needs requests to be installed
         # to read from http
-        if _looks_like_url(file):
-            return _process_file_url(file, encoding_str)
+        if looks_like_url(file):
+            return process_file_url(file, encoding_str)
         if _FSSPEC_AVAILABLE:
             from fsspec.utils import infer_storage_options
 
@@ -245,11 +255,11 @@ def _check_empty(
     return b
 
 
-def _looks_like_url(path: str) -> bool:
+def looks_like_url(path: str) -> bool:
     return re.match("^(ht|f)tps?://", path, re.IGNORECASE) is not None
 
 
-def _process_file_url(path: str, encoding: str | None = None) -> BytesIO:
+def process_file_url(path: str, encoding: str | None = None) -> BytesIO:
     from urllib.request import urlopen
 
     with urlopen(path) as f:

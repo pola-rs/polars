@@ -23,7 +23,7 @@ from polars._utils.various import (
     parse_percentiles,
     parse_version,
 )
-from polars.io._utils import _looks_like_url
+from polars.io._utils import looks_like_url
 
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
@@ -309,4 +309,4 @@ def test_is_str_sequence_check(
     ],
 )
 def test_looks_like_url(url: str, result: bool) -> None:
-    assert _looks_like_url(url) == result
+    assert looks_like_url(url) == result
