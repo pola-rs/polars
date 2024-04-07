@@ -38,7 +38,7 @@ def read_avro(
     """
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source)
-    projection, columns = handle_projection_columns(columns)
+    projection, parsed_columns = handle_projection_columns(columns)
 
-    pydf = PyDataFrame.read_avro(source, columns, projection, n_rows)
+    pydf = PyDataFrame.read_avro(source, parsed_columns, projection, n_rows)
     return wrap_df(pydf)
