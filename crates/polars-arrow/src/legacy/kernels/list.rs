@@ -132,7 +132,7 @@ pub fn array_to_unit_list(array: ArrayRef) -> ListArray<i64> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::array::{Array, Int32Array, PrimitiveArray};
+    use crate::array::{Int32Array, PrimitiveArray};
     use crate::datatypes::ArrowDataType;
 
     fn get_array() -> ListArray<i64> {
