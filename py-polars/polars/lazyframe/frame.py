@@ -543,52 +543,6 @@ class LazyFrame:
         return self
 
     @classmethod
-    def _scan_ndjson(
-        cls,
-        source: str | Path | list[str] | list[Path],
-        *,
-        infer_schema_length: int | None = N_INFER_DEFAULT,
-        schema: SchemaDefinition | None = None,
-        batch_size: int | None = None,
-        n_rows: int | None = None,
-        low_memory: bool = False,
-        rechunk: bool = False,
-        row_index_name: str | None = None,
-        row_index_offset: int = 0,
-        ignore_errors: bool = False,
-    ) -> Self:
-        """
-        Lazily read from a newline delimited JSON file.
-
-        Use `pl.scan_ndjson` to dispatch to this method.
-
-        See Also
-        --------
-        polars.io.scan_ndjson
-        """
-        if isinstance(source, (str, Path)):
-            source = normalize_filepath(source)
-            sources = []
-        else:
-            sources = [normalize_filepath(source) for source in source]
-            source = None  # type: ignore[assignment]
-
-        self = cls.__new__(cls)
-        self._ldf = PyLazyFrame.new_from_ndjson(
-            source,
-            sources,
-            infer_schema_length,
-            schema,
-            batch_size,
-            n_rows,
-            low_memory,
-            rechunk,
-            _prepare_row_index_args(row_index_name, row_index_offset),
-            ignore_errors,
-        )
-        return self
-
-    @classmethod
     def _scan_python_function(
         cls,
         schema: pa.schema | Mapping[str, PolarsDataType],

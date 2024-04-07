@@ -5,14 +5,13 @@ from io import BytesIO, StringIO
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import polars._reexport as pl
 from polars._utils.deprecation import deprecate_renamed_parameter
-from polars._utils.various import normalize_filepath
-from polars._utils.wrap import wrap_df
+from polars._utils.various import _prepare_row_index_args, normalize_filepath
+from polars._utils.wrap import wrap_df, wrap_ldf
 from polars.datatypes import N_INFER_DEFAULT
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import PyDataFrame
+    from polars.polars import PyDataFrame, PyLazyFrame
 
 if TYPE_CHECKING:
     from io import IOBase
@@ -121,15 +120,23 @@ def scan_ndjson(
     ignore_errors
         Return `Null` if parsing fails because of schema mismatches.
     """
-    return pl.LazyFrame._scan_ndjson(
+    if isinstance(source, (str, Path)):
+        source = normalize_filepath(source)
+        sources = []
+    else:
+        sources = [normalize_filepath(source) for source in source]
+        source = None  # type: ignore[assignment]
+
+    pylf = PyLazyFrame.new_from_ndjson(
         source,
-        infer_schema_length=infer_schema_length,
-        schema=schema,
-        batch_size=batch_size,
-        n_rows=n_rows,
-        low_memory=low_memory,
-        rechunk=rechunk,
-        row_index_name=row_index_name,
-        row_index_offset=row_index_offset,
-        ignore_errors=ignore_errors,
+        sources,
+        infer_schema_length,
+        schema,
+        batch_size,
+        n_rows,
+        low_memory,
+        rechunk,
+        _prepare_row_index_args(row_index_name, row_index_offset),
+        ignore_errors,
     )
+    return wrap_ldf(pylf)
