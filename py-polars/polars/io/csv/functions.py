@@ -13,7 +13,7 @@ from polars._utils.various import (
     is_str_sequence,
     normalize_filepath,
 )
-from polars._utils.wrap import wrap_df
+from polars._utils.wrap import wrap_df, wrap_ldf
 from polars.datatypes import N_INFER_DEFAULT, String
 from polars.datatypes.convert import py_type_to_dtype
 from polars.io._utils import (
@@ -25,7 +25,7 @@ from polars.io.csv._utils import _check_arg_is_1byte, _update_columns
 from polars.io.csv.batched_reader import BatchedCsvReader
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import PyDataFrame
+    from polars.polars import PyDataFrame, PyLazyFrame
 
 if TYPE_CHECKING:
     from polars import DataFrame, LazyFrame
@@ -1099,7 +1099,7 @@ def scan_csv(
     else:
         source = [normalize_filepath(source) for source in source]
 
-    return pl.LazyFrame._scan_csv(
+    return _scan_csv_impl(
         source,
         has_header=has_header,
         separator=separator,
@@ -1126,3 +1126,74 @@ def scan_csv(
         raise_if_empty=raise_if_empty,
         truncate_ragged_lines=truncate_ragged_lines,
     )
+
+
+def _scan_csv_impl(
+    source: str | list[str] | list[Path],
+    *,
+    has_header: bool = True,
+    separator: str = ",",
+    comment_prefix: str | None = None,
+    quote_char: str | None = '"',
+    skip_rows: int = 0,
+    dtypes: SchemaDict | None = None,
+    schema: SchemaDict | None = None,
+    null_values: str | Sequence[str] | dict[str, str] | None = None,
+    missing_utf8_is_empty_string: bool = False,
+    ignore_errors: bool = False,
+    cache: bool = True,
+    with_column_names: Callable[[list[str]], list[str]] | None = None,
+    infer_schema_length: int | None = N_INFER_DEFAULT,
+    n_rows: int | None = None,
+    encoding: CsvEncoding = "utf8",
+    low_memory: bool = False,
+    rechunk: bool = True,
+    skip_rows_after_header: int = 0,
+    row_index_name: str | None = None,
+    row_index_offset: int = 0,
+    try_parse_dates: bool = False,
+    eol_char: str = "\n",
+    raise_if_empty: bool = True,
+    truncate_ragged_lines: bool = True,
+) -> LazyFrame:
+    dtype_list: list[tuple[str, PolarsDataType]] | None = None
+    if dtypes is not None:
+        dtype_list = []
+        for k, v in dtypes.items():
+            dtype_list.append((k, py_type_to_dtype(v)))
+    processed_null_values = _process_null_values(null_values)
+
+    if isinstance(source, list):
+        sources = source
+        source = None  # type: ignore[assignment]
+    else:
+        sources = []
+
+    pylf = PyLazyFrame.new_from_csv(
+        source,
+        sources,
+        separator,
+        has_header,
+        ignore_errors,
+        skip_rows,
+        n_rows,
+        cache,
+        dtype_list,
+        low_memory,
+        comment_prefix,
+        quote_char,
+        processed_null_values,
+        missing_utf8_is_empty_string,
+        infer_schema_length,
+        with_column_names,
+        rechunk,
+        skip_rows_after_header,
+        encoding,
+        _prepare_row_index_args(row_index_name, row_index_offset),
+        try_parse_dates,
+        eol_char=eol_char,
+        raise_if_empty=raise_if_empty,
+        truncate_ragged_lines=truncate_ragged_lines,
+        schema=schema,
+    )
+    return wrap_ldf(pylf)
