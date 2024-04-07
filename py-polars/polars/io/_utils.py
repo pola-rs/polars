@@ -25,14 +25,12 @@ def handle_projection_columns(
 
     if isinstance(columns, str):
         new_columns = [columns]
-    elif is_int_sequence(columns):
-        projection = list(columns)
     elif is_str_sequence(columns):
         new_columns = columns
+    elif is_int_sequence(columns):
+        projection = list(columns)
     else:
-        msg = (
-            "`columns` arg should contain a list of all integers or all strings values"
-        )
+        msg = "`columns` arg should contain a list of all integers or all string values"
         raise TypeError(msg)
 
     if columns and len(set(columns)) != len(columns):
