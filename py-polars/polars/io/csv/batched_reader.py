@@ -9,7 +9,7 @@ from polars._utils.various import (
 )
 from polars._utils.wrap import wrap_df
 from polars.datatypes import N_INFER_DEFAULT, py_type_to_dtype
-from polars.io._utils import parse_columns_arg, prepare_row_index_args
+from polars.io._utils import parse_columns_arg, parse_row_index_args
 from polars.io.csv._utils import _update_columns
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -97,7 +97,7 @@ class BatchedCsvReader:
             missing_utf8_is_empty_string=missing_utf8_is_empty_string,
             try_parse_dates=try_parse_dates,
             skip_rows_after_header=skip_rows_after_header,
-            row_index=prepare_row_index_args(row_index_name, row_index_offset),
+            row_index=parse_row_index_args(row_index_name, row_index_offset),
             sample_size=sample_size,
             eol_char=eol_char,
             raise_if_empty=raise_if_empty,

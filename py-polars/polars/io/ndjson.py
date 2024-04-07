@@ -9,7 +9,7 @@ from polars._utils.deprecation import deprecate_renamed_parameter
 from polars._utils.various import normalize_filepath
 from polars._utils.wrap import wrap_df, wrap_ldf
 from polars.datatypes import N_INFER_DEFAULT
-from polars.io._utils import prepare_row_index_args
+from polars.io._utils import parse_row_index_args
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyDataFrame, PyLazyFrame
@@ -137,7 +137,7 @@ def scan_ndjson(
         n_rows,
         low_memory,
         rechunk,
-        prepare_row_index_args(row_index_name, row_index_offset),
+        parse_row_index_args(row_index_name, row_index_offset),
         ignore_errors,
     )
     return wrap_ldf(pylf)

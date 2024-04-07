@@ -20,8 +20,8 @@ from polars.io._utils import (
     is_local_file,
     is_supported_cloud,
     parse_columns_arg,
+    parse_row_index_args,
     prepare_file_arg,
-    prepare_row_index_args,
 )
 from polars.io.parquet.anonymous_scan import _scan_parquet_fsspec
 
@@ -268,7 +268,7 @@ def _read_parquet_binary(
         projection,
         n_rows,
         parallel,
-        prepare_row_index_args(row_index_name, row_index_offset),
+        parse_row_index_args(row_index_name, row_index_offset),
         low_memory=low_memory,
         use_statistics=use_statistics,
         rechunk=rechunk,
@@ -472,7 +472,7 @@ def _scan_parquet_impl(
         cache,
         parallel,
         rechunk,
-        prepare_row_index_args(row_index_name, row_index_offset),
+        parse_row_index_args(row_index_name, row_index_offset),
         low_memory,
         cloud_options=storage_options,
         use_statistics=use_statistics,

@@ -56,14 +56,19 @@ def _ensure_columns_are_unique(columns: Sequence[str] | Sequence[int]) -> None:
         raise ValueError(msg)
 
 
-def prepare_row_index_args(
+def parse_row_index_args(
     row_index_name: str | None = None,
     row_index_offset: int = 0,
 ) -> tuple[str, int] | None:
-    if row_index_name is not None:
-        return (row_index_name, row_index_offset)
-    else:
+    """
+    Parse the `row_index_name` and `row_index_offset` arguments of an I/O function.
+
+    The Rust functions take a single tuple rather than two separate arguments.
+    """
+    if row_index_name is None:
         return None
+    else:
+        return (row_index_name, row_index_offset)
 
 
 def is_glob_pattern(file: str) -> bool:

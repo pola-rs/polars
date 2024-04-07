@@ -16,8 +16,8 @@ from polars.io._utils import (
     is_glob_pattern,
     is_local_file,
     parse_columns_arg,
+    parse_row_index_args,
     prepare_file_arg,
-    prepare_row_index_args,
 )
 from polars.io.ipc.anonymous_scan import _scan_ipc_fsspec
 
@@ -166,7 +166,7 @@ def _read_ipc_impl(
         columns,
         projection,
         n_rows,
-        prepare_row_index_args(row_index_name, row_index_offset),
+        parse_row_index_args(row_index_name, row_index_offset),
         memory_map=memory_map,
     )
     return wrap_df(pydf)
@@ -273,7 +273,7 @@ def _read_ipc_stream_impl(
         columns,
         projection,
         n_rows,
-        prepare_row_index_args(row_index_name, row_index_offset),
+        parse_row_index_args(row_index_name, row_index_offset),
         rechunk,
     )
     return wrap_df(pydf)
@@ -372,7 +372,7 @@ def scan_ipc(
         n_rows,
         cache,
         rechunk,
-        prepare_row_index_args(row_index_name, row_index_offset),
+        parse_row_index_args(row_index_name, row_index_offset),
         memory_map=memory_map,
         cloud_options=storage_options,
         retries=retries,

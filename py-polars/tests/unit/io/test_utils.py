@@ -4,7 +4,7 @@ from typing import Sequence
 
 import pytest
 
-from polars.io._utils import parse_columns_arg
+from polars.io._utils import parse_columns_arg, parse_row_index_args
 
 
 @pytest.mark.parametrize(
@@ -33,3 +33,8 @@ def test_parse_columns_arg_mixed_types() -> None:
 def test_parse_columns_arg_duplicates(columns: Sequence[str] | Sequence[int]) -> None:
     with pytest.raises(ValueError):
         parse_columns_arg(columns)
+
+
+def test_parse_row_index_args() -> None:
+    assert parse_row_index_args("idx", 5) == ("idx", 5)
+    assert parse_row_index_args(None, 5) is None

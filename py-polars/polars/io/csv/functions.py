@@ -18,8 +18,8 @@ from polars.datatypes.convert import py_type_to_dtype
 from polars.io._utils import (
     is_glob_pattern,
     parse_columns_arg,
+    parse_row_index_args,
     prepare_file_arg,
-    prepare_row_index_args,
 )
 from polars.io.csv._utils import _check_arg_is_1byte, _update_columns
 from polars.io.csv.batched_reader import BatchedCsvReader
@@ -574,7 +574,7 @@ def _read_csv_impl(
         missing_utf8_is_empty_string,
         try_parse_dates,
         skip_rows_after_header,
-        prepare_row_index_args(row_index_name, row_index_offset),
+        parse_row_index_args(row_index_name, row_index_offset),
         sample_size=sample_size,
         eol_char=eol_char,
         raise_if_empty=raise_if_empty,
@@ -1189,7 +1189,7 @@ def _scan_csv_impl(
         rechunk,
         skip_rows_after_header,
         encoding,
-        prepare_row_index_args(row_index_name, row_index_offset),
+        parse_row_index_args(row_index_name, row_index_offset),
         try_parse_dates,
         eol_char=eol_char,
         raise_if_empty=raise_if_empty,
