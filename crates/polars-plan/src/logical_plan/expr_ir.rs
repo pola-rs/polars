@@ -65,8 +65,7 @@ impl ExprIR {
                     break;
                 },
                 AExpr::Alias(node, name) => {
-                    out.output_name = OutputName::ColumnLhs(name.clone());
-                    out.node = *node;
+                    out.output_name = OutputName::Alias(name.clone());
                     break;
                 },
                 _ => {},
