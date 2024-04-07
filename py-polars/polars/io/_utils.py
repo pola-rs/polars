@@ -117,15 +117,15 @@ def prepare_file_arg(
     Utility for read_[csv, parquet]. (not to be used by scan_[csv, parquet]).
     Returned value is always usable as a context.
 
-    A :class:`StringIO`, :class:`BytesIO` file is returned as a :class:`BytesIO`.
+    A `StringIO`, `BytesIO` file is returned as a `BytesIO`.
     A local path is returned as a string.
-    An http URL is read into a buffer and returned as a :class:`BytesIO`.
+    An http URL is read into a buffer and returned as a `BytesIO`.
 
     When `encoding` is not `utf8` or `utf8-lossy`, the whole file is
-    first read in python and decoded using the specified encoding and
-    returned as a :class:`BytesIO` (for usage with `read_csv`).
+    first read in Python and decoded using the specified encoding and
+    returned as a `BytesIO` (for usage with `read_csv`).
 
-    A `bytes` file is returned as a :class:`BytesIO` if `use_pyarrow=True`.
+    A `bytes` file is returned as a `BytesIO` if `use_pyarrow=True`.
 
     When fsspec is installed, remote file(s) is (are) opened with
     `fsspec.open(file, **kwargs)` or `fsspec.open_files(file, **kwargs)`.
