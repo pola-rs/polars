@@ -238,7 +238,7 @@ def read_ipc_stream(
                     df = df.slice(0, n_rows)
                 return df
 
-        return pl.DataFrame._read_ipc_stream(
+        return _read_ipc_stream_impl(
             data,
             columns=columns,
             n_rows=n_rows,
@@ -246,6 +246,32 @@ def read_ipc_stream(
             row_index_offset=row_index_offset,
             rechunk=rechunk,
         )
+
+
+def _read_ipc_stream_impl(
+    source: str | Path | IO[bytes] | bytes,
+    *,
+    columns: Sequence[int] | Sequence[str] | None = None,
+    n_rows: int | None = None,
+    row_index_name: str | None = None,
+    row_index_offset: int = 0,
+    rechunk: bool = True,
+) -> DataFrame:
+    if isinstance(source, (str, Path)):
+        source = normalize_filepath(source)
+    if isinstance(columns, str):
+        columns = [columns]
+
+    projection, columns = handle_projection_columns(columns)
+    pydf = PyDataFrame.read_ipc_stream(
+        source,
+        columns,
+        projection,
+        n_rows,
+        _prepare_row_index_args(row_index_name, row_index_offset),
+        rechunk,
+    )
+    return wrap_df(pydf)
 
 
 def read_ipc_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, DataType]:

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import IO, TYPE_CHECKING
 
-import polars._reexport as pl
+from polars._utils.various import handle_projection_columns, normalize_filepath
+from polars._utils.wrap import wrap_df
+from polars.polars import PyDataFrame
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from polars import DataFrame
 
 
@@ -35,4 +36,9 @@ def read_avro(
     -------
     DataFrame
     """
-    return pl.DataFrame._read_avro(source, n_rows=n_rows, columns=columns)
+    if isinstance(source, (str, Path)):
+        source = normalize_filepath(source)
+    projection, columns = handle_projection_columns(columns)
+
+    pydf = PyDataFrame.read_avro(source, columns, projection, n_rows)
+    return wrap_df(pydf)

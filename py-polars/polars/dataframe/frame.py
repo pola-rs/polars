@@ -56,8 +56,6 @@ from polars._utils.deprecation import (
 from polars._utils.parse_expr_input import parse_as_expression
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
-    _prepare_row_index_args,
-    handle_projection_columns,
     is_bool_sequence,
     is_int_sequence,
     is_str_sequence,
@@ -113,7 +111,6 @@ from polars.slice import PolarsSlice
 from polars.type_aliases import DbWriteMode
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import PyDataFrame
     from polars.polars import dtype_str_repr as _dtype_str_repr
     from polars.polars import write_clipboard_string as _write_clipboard_string
 
@@ -129,6 +126,7 @@ if TYPE_CHECKING:
 
     from polars import DataType, Expr, LazyFrame, Series
     from polars.interchange.dataframe import PolarsDataFrame
+    from polars.polars import PyDataFrame
     from polars.type_aliases import (
         AsofJoinStrategy,
         AvroCompression,
@@ -529,86 +527,6 @@ class DataFrame:
                 include_index=include_index,
             )
         )
-
-    @classmethod
-    def _read_avro(
-        cls,
-        source: str | Path | IO[bytes] | bytes,
-        *,
-        columns: Sequence[int] | Sequence[str] | None = None,
-        n_rows: int | None = None,
-    ) -> Self:
-        """
-        Read into a DataFrame from Apache Avro format.
-
-        Parameters
-        ----------
-        source
-            Path to a file or a file-like object (by file-like object, we refer to
-            objects that have a `read()` method, such as a file handler (e.g.
-            via builtin `open` function) or `BytesIO`).
-        columns
-            Columns.
-        n_rows
-            Stop reading from Apache Avro file after reading `n_rows`.
-        """
-        if isinstance(source, (str, Path)):
-            source = normalize_filepath(source)
-        projection, columns = handle_projection_columns(columns)
-        self = cls.__new__(cls)
-        self._df = PyDataFrame.read_avro(source, columns, projection, n_rows)
-        return self
-
-    @classmethod
-    def _read_ipc_stream(
-        cls,
-        source: str | Path | IO[bytes] | bytes,
-        *,
-        columns: Sequence[int] | Sequence[str] | None = None,
-        n_rows: int | None = None,
-        row_index_name: str | None = None,
-        row_index_offset: int = 0,
-        rechunk: bool = True,
-    ) -> Self:
-        """
-        Read into a DataFrame from Arrow IPC record batch stream format.
-
-        See "Streaming format" on https://arrow.apache.org/docs/python/ipc.html.
-
-        Parameters
-        ----------
-        source
-            Path to a file or a file-like object (by file-like object, we refer to
-            objects that have a `read()` method, such as a file handler (e.g.
-            via builtin `open` function) or `BytesIO`).
-        columns
-            Columns to select. Accepts a list of column indices (starting at zero) or a
-            list of column names.
-        n_rows
-            Stop reading from IPC stream after reading `n_rows`.
-        row_index_name
-            Row index name.
-        row_index_offset
-            Row index offset.
-        rechunk
-            Make sure that all data is contiguous.
-        """
-        if isinstance(source, (str, Path)):
-            source = normalize_filepath(source)
-        if isinstance(columns, str):
-            columns = [columns]
-
-        projection, columns = handle_projection_columns(columns)
-        self = cls.__new__(cls)
-        self._df = PyDataFrame.read_ipc_stream(
-            source,
-            columns,
-            projection,
-            n_rows,
-            _prepare_row_index_args(row_index_name, row_index_offset),
-            rechunk,
-        )
-        return self
 
     def _replace(self, column: str, new_column: Series) -> Self:
         """Replace a column by a new Series (in place)."""
