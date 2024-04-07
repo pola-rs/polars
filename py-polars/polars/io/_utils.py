@@ -17,24 +17,31 @@ def handle_projection_columns(
     columns: Sequence[str] | Sequence[int] | str | None,
 ) -> tuple[list[int] | None, Sequence[str] | None]:
     """Disambiguates between columns specified as integers vs. strings."""
+    if columns is None:
+        return None, None
+
     projection: list[int] | None = None
     new_columns: Sequence[str] | None = None
-    if columns is not None:
-        if isinstance(columns, str):
-            new_columns = [columns]
-        elif is_int_sequence(columns):
-            projection = list(columns)
-        elif not is_str_sequence(columns):
-            msg = "`columns` arg should contain a list of all integers or all strings values"
-            raise TypeError(msg)
-        else:
-            new_columns = columns
-        if columns and len(set(columns)) != len(columns):
-            msg = f"`columns` arg should only have unique values, got {columns!r}"
-            raise ValueError(msg)
-        if projection and len(set(projection)) != len(projection):
-            msg = f"`columns` arg should only have unique values, got {projection!r}"
-            raise ValueError(msg)
+
+    if isinstance(columns, str):
+        new_columns = [columns]
+    elif is_int_sequence(columns):
+        projection = list(columns)
+    elif is_str_sequence(columns):
+        new_columns = columns
+    else:
+        msg = (
+            "`columns` arg should contain a list of all integers or all strings values"
+        )
+        raise TypeError(msg)
+
+    if columns and len(set(columns)) != len(columns):
+        msg = f"`columns` arg should only have unique values, got {columns!r}"
+        raise ValueError(msg)
+    if projection and len(set(projection)) != len(projection):
+        msg = f"`columns` arg should only have unique values, got {projection!r}"
+        raise ValueError(msg)
+
     return projection, new_columns
 
 
