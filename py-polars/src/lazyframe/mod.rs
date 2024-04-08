@@ -6,10 +6,10 @@ use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
 pub use exitable::PyInProcessQuery;
-use polars::io::RowIndex;
+use polars::io::cloud::CloudOptions;
+use polars::io::{HiveOptions, RowIndex};
 use polars::time::*;
 use polars_core::prelude::*;
-use polars_rs::io::cloud::CloudOptions;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyList};
@@ -85,11 +85,11 @@ impl PyLazyFrame {
             .unwrap();
 
         // SAFETY:
-        // we skipped the serializing/deserializing of the static in lifetime in `DataType`
+        // We skipped the serializing/deserializing of the static in lifetime in `DataType`
         // so we actually don't have a lifetime at all when serializing.
 
         // &str still has a lifetime. But it's ok, because we drop it immediately
-        // in this scope
+        // in this scope.
         let json = unsafe { std::mem::transmute::<&'_ str, &'static str>(json.as_str()) };
 
         let lp = serde_json::from_str::<LogicalPlan>(json)
@@ -243,7 +243,7 @@ impl PyLazyFrame {
     #[cfg(feature = "parquet")]
     #[staticmethod]
     #[pyo3(signature = (path, paths, n_rows, cache, parallel, rechunk, row_index,
-        low_memory, cloud_options, use_statistics, hive_partitioning, retries)
+        low_memory, cloud_options, use_statistics, hive_partitioning, hive_schema, retries)
     )]
     fn new_from_parquet(
         path: Option<PathBuf>,
@@ -257,8 +257,12 @@ impl PyLazyFrame {
         cloud_options: Option<Vec<(String, String)>>,
         use_statistics: bool,
         hive_partitioning: bool,
+        hive_schema: Option<Wrap<Schema>>,
         retries: usize,
     ) -> PyResult<Self> {
+        let parallel = parallel.0;
+        let hive_schema = hive_schema.map(|s| Arc::new(s.0));
+
         let first_path = if let Some(path) = &path {
             path
         } else {
@@ -281,16 +285,21 @@ impl PyLazyFrame {
                     });
         }
         let row_index = row_index.map(|(name, offset)| RowIndex { name, offset });
+        let hive_options = HiveOptions {
+            enabled: hive_partitioning,
+            schema: hive_schema,
+        };
+
         let args = ScanArgsParquet {
             n_rows,
             cache,
-            parallel: parallel.0,
+            parallel,
             rechunk,
             row_index,
             low_memory,
             cloud_options,
             use_statistics,
-            hive_partitioning,
+            hive_options,
         };
 
         let lf = if path.is_some() {
@@ -304,7 +313,7 @@ impl PyLazyFrame {
 
     #[cfg(feature = "ipc")]
     #[staticmethod]
-    #[pyo3(signature = (path, paths, n_rows, cache, rechunk, row_index, memory_map))]
+    #[pyo3(signature = (path, paths, n_rows, cache, rechunk, row_index, memory_map, cloud_options, retries))]
     fn new_from_ipc(
         path: Option<PathBuf>,
         paths: Vec<PathBuf>,
@@ -313,14 +322,45 @@ impl PyLazyFrame {
         rechunk: bool,
         row_index: Option<(String, IdxSize)>,
         memory_map: bool,
+        cloud_options: Option<Vec<(String, String)>>,
+        retries: usize,
     ) -> PyResult<Self> {
         let row_index = row_index.map(|(name, offset)| RowIndex { name, offset });
+
+        #[cfg(feature = "cloud")]
+        let cloud_options = {
+            let first_path = if let Some(path) = &path {
+                path
+            } else {
+                paths
+                    .first()
+                    .ok_or_else(|| PyValueError::new_err("expected a path argument"))?
+            };
+
+            let first_path_url = first_path.to_string_lossy();
+            let mut cloud_options = cloud_options
+                .map(|kv| parse_cloud_options(&first_path_url, kv))
+                .transpose()?;
+            if retries > 0 {
+                cloud_options =
+                    cloud_options
+                        .or_else(|| Some(CloudOptions::default()))
+                        .map(|mut options| {
+                            options.max_retries = retries;
+                            options
+                        });
+            }
+            cloud_options
+        };
+
         let args = ScanArgsIpc {
             n_rows,
             cache,
             rechunk,
             row_index,
             memmap: memory_map,
+            #[cfg(feature = "cloud")]
+            cloud_options,
         };
 
         let lf = if let Some(path) = &path {
@@ -696,7 +736,7 @@ impl PyLazyFrame {
             .into_iter()
             .map(|pyexpr| pyexpr.inner)
             .collect::<Vec<_>>();
-        let lazy_gb = ldf.group_by_rolling(
+        let lazy_gb = ldf.rolling(
             index_column.inner,
             by,
             RollingGroupOptions {
@@ -720,19 +760,19 @@ impl PyLazyFrame {
         label: Wrap<Label>,
         include_boundaries: bool,
         closed: Wrap<ClosedWindow>,
-        by: Vec<PyExpr>,
+        group_by: Vec<PyExpr>,
         start_by: Wrap<StartBy>,
         check_sorted: bool,
     ) -> PyLazyGroupBy {
         let closed_window = closed.0;
-        let by = by
+        let group_by = group_by
             .into_iter()
             .map(|pyexpr| pyexpr.inner)
             .collect::<Vec<_>>();
         let ldf = self.ldf.clone();
         let lazy_gb = ldf.group_by_dynamic(
             index_column.inner,
-            by,
+            group_by,
             DynamicGroupOptions {
                 every: Duration::parse(every),
                 period: Duration::parse(period),

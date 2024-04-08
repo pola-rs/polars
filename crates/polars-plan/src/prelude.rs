@@ -5,7 +5,6 @@ pub(crate) use polars_time::in_nanoseconds_window;
     feature = "temporal",
     feature = "dtype-duration",
     feature = "dtype-date",
-    feature = "dtype-date",
     feature = "dtype-time"
 ))]
 pub(crate) use polars_time::prelude::*;

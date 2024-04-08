@@ -9,12 +9,12 @@ use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{DataChunk, Operator, OperatorResult, PExecutionContext};
 
 #[derive(Clone)]
-pub(crate) struct FastProjectionOperator {
+pub(crate) struct SimpleProjectionOperator {
     columns: Arc<[SmartString]>,
     input_schema: SchemaRef,
 }
 
-impl FastProjectionOperator {
+impl SimpleProjectionOperator {
     pub(crate) fn new(columns: Arc<[SmartString]>, input_schema: SchemaRef) -> Self {
         Self {
             columns,
@@ -23,7 +23,7 @@ impl FastProjectionOperator {
     }
 }
 
-impl Operator for FastProjectionOperator {
+impl Operator for SimpleProjectionOperator {
     fn execute(
         &mut self,
         _context: &PExecutionContext,

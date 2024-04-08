@@ -10,4 +10,5 @@ __all__ = [
     "assert_frame_not_equal",
     "assert_series_equal",
     "assert_series_not_equal",
+    "_constants",
 ]

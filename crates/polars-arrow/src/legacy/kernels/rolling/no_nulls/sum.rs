@@ -20,7 +20,7 @@ impl<'a, T: NativeType + IsFloat + std::iter::Sum + AddAssign + SubAssign>
         }
     }
 
-    unsafe fn update(&mut self, start: usize, end: usize) -> T {
+    unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
         // if we exceed the end, we have a completely new window
         // so we recompute
         let recompute_sum = if start >= self.last_end {
@@ -60,7 +60,7 @@ impl<'a, T: NativeType + IsFloat + std::iter::Sum + AddAssign + SubAssign>
             }
         }
         self.last_end = end;
-        self.sum
+        Some(self.sum)
     }
 }
 
@@ -73,7 +73,14 @@ pub fn rolling_sum<T>(
     _params: DynArgs,
 ) -> PolarsResult<ArrayRef>
 where
-    T: NativeType + std::iter::Sum + NumCast + Mul<Output = T> + AddAssign + SubAssign + IsFloat,
+    T: NativeType
+        + std::iter::Sum
+        + NumCast
+        + Mul<Output = T>
+        + AddAssign
+        + SubAssign
+        + IsFloat
+        + Num,
 {
     match (center, weights) {
         (true, None) => rolling_apply_agg_window::<SumWindow<_>, _, _>(

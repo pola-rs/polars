@@ -40,6 +40,7 @@ Changelog = "https://github.com/pola-rs/polars/releases"
 [project.optional-dependencies]
 # NOTE: keep this list in sync with show_versions() and requirements-dev.txt
 adbc = ["adbc_driver_manager", "adbc_driver_sqlite"]
+async = ["nest_asyncio"]
 cloudpickle = ["cloudpickle"]
 connectorx = ["connectorx >= 0.3.2"]
 deltalake = ["deltalake >= 0.14.0"]
@@ -60,7 +61,7 @@ timezone = ["backports.zoneinfo; python_version < '3.9'", "tzdata; platform_syst
 xlsx2csv = ["xlsx2csv >= 0.8.0"]
 xlsxwriter = ["xlsxwriter"]
 all = [
-  "polars[adbc,cloudpickle,connectorx,deltalake,fastexcel,fsspec,gevent,numpy,pandas,plot,pyarrow,pydantic,pyiceberg,sqlalchemy,timezone,xlsx2csv,xlsxwriter]",
+  "polars[adbc,async,cloudpickle,connectorx,deltalake,fastexcel,fsspec,gevent,numpy,pandas,plot,pyarrow,pydantic,pyiceberg,sqlalchemy,timezone,xlsx2csv,xlsxwriter]",
 ]
 
 [tool.maturin]
@@ -94,6 +95,7 @@ module = [
   "kuzu",
   "matplotlib.*",
   "moto.server",
+  "nest_asyncio",
   "openpyxl",
   "polars.polars",
   "pyarrow.*",
@@ -205,12 +207,13 @@ addopts = [
   "--strict-markers",
   "--import-mode=importlib",
   # Default to running fast tests only. To run ALL tests, run: pytest -m ""
-  "-m not slow and not hypothesis and not benchmark and not write_disk and not docs",
+  "-m not slow and not hypothesis and not release and not write_disk and not docs",
 ]
 markers = [
   "write_disk: Tests that write to disk",
   "slow: Tests with a longer than average runtime.",
-  "benchmark: Tests that should be run on a Polars release build.",
+  "release: Tests that should be run on a Polars release build.",
+  "debug: Tests that should be run on a Polars debug build.",
   "docs: Documentation code snippets",
 ]
 filterwarnings = [

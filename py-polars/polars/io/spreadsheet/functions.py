@@ -22,8 +22,9 @@ from polars.datatypes import (
 )
 from polars.dependencies import import_optional
 from polars.exceptions import NoDataError, ParameterCollisionError
-from polars.io._utils import PortableTemporaryFile, _looks_like_url, _process_file_url
+from polars.io._utils import looks_like_url, process_file_url
 from polars.io.csv.functions import read_csv
+from polars.io.spreadsheet._utils import PortableTemporaryFile
 
 if TYPE_CHECKING:
     from typing import Literal
@@ -447,8 +448,8 @@ def _read_spreadsheet(
 ) -> pl.DataFrame | dict[str, pl.DataFrame]:
     if is_file := isinstance(source, (str, Path)):
         source = normalize_filepath(source)
-        if _looks_like_url(source):
-            source = _process_file_url(source)
+        if looks_like_url(source):
+            source = process_file_url(source)
 
     if engine is None:
         if is_file and str(source).lower().endswith(".ods"):
@@ -733,11 +734,11 @@ def _read_spreadsheet_ods(
         row_data = row_data[1 : -1 if trailing_null_row else None]
 
         if schema_overrides:
-            for nm, dtype in schema_overrides.items():
+            for name, dtype in schema_overrides.items():
                 if dtype in (Datetime, Date):
-                    strptime_cols[nm] = dtype
+                    strptime_cols[name] = dtype
                 else:
-                    overrides[nm] = dtype
+                    overrides[name] = dtype
 
         df = pl.DataFrame(
             row_data,
@@ -899,7 +900,7 @@ def _read_spreadsheet_pyxlsb(
     if schema_overrides:
         for idx, s in enumerate(series_data):
             if schema_overrides.get(s.name) in (Datetime, Date):
-                series_data[idx] = s.map_elements(convert_date)
+                series_data[idx] = s.map_elements(convert_date, return_dtype=Datetime)
 
     df = pl.DataFrame(
         {s.name: s for s in series_data},

@@ -5,6 +5,7 @@ use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;
 use polars_error::PolarsResult;
+use polars_utils::iter::FallibleIterator;
 
 use super::super::nested_utils::*;
 use super::super::utils::MaybeNext;
@@ -129,21 +130,17 @@ where
                 values.push(value.unwrap_or_default());
             },
             State::RequiredDictionary(page) => {
-                let value = page
-                    .values
-                    .next()
-                    .map(|index| page.dict[index.unwrap() as usize]);
+                let value = page.values.next().map(|index| page.dict[index as usize]);
 
                 values.push(value.unwrap_or_default());
+                page.values.get_result()?;
             },
             State::OptionalDictionary(page) => {
-                let value = page
-                    .values
-                    .next()
-                    .map(|index| page.dict[index.unwrap() as usize]);
+                let value = page.values.next().map(|index| page.dict[index as usize]);
 
                 values.push(value.unwrap_or_default());
                 validity.push(true);
+                page.values.get_result()?;
             },
         }
         Ok(())

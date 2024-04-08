@@ -11,6 +11,7 @@ pub enum ArrayFunction {
     Sum,
     ToList,
     Unique(bool),
+    NUnique,
     Std(u8),
     Var(u8),
     Median,
@@ -39,6 +40,7 @@ impl ArrayFunction {
             Sum => mapper.nested_sum_type(),
             ToList => mapper.try_map_dtype(map_array_dtype_to_list_dtype),
             Unique(_) => mapper.try_map_dtype(map_array_dtype_to_list_dtype),
+            NUnique => mapper.with_dtype(IDX_DTYPE),
             Std(_) => mapper.map_to_float_dtype(),
             Var(_) => mapper.map_to_float_dtype(),
             Median => mapper.map_to_float_dtype(),
@@ -75,6 +77,7 @@ impl Display for ArrayFunction {
             Sum => "sum",
             ToList => "to_list",
             Unique(_) => "unique",
+            NUnique => "n_unique",
             Std(_) => "std",
             Var(_) => "var",
             Median => "median",
@@ -107,6 +110,7 @@ impl From<ArrayFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Sum => map!(sum),
             ToList => map!(to_list),
             Unique(stable) => map!(unique, stable),
+            NUnique => map!(n_unique),
             Std(ddof) => map!(std, ddof),
             Var(ddof) => map!(var, ddof),
             Median => map!(median),
@@ -162,6 +166,10 @@ pub(super) fn unique(s: &Series, stable: bool) -> PolarsResult<Series> {
     out.map(|ca| ca.into_series())
 }
 
+pub(super) fn n_unique(s: &Series) -> PolarsResult<Series> {
+    Ok(s.array()?.array_n_unique()?.into_series())
+}
+
 pub(super) fn to_list(s: &Series) -> PolarsResult<Series> {
     let list_dtype = map_array_dtype_to_list_dtype(s.dtype())?;
     s.cast(&list_dtype)
@@ -178,7 +186,7 @@ pub(super) fn all(s: &Series) -> PolarsResult<Series> {
 }
 
 pub(super) fn sort(s: &Series, options: SortOptions) -> PolarsResult<Series> {
-    Ok(s.array()?.array_sort(options).into_series())
+    Ok(s.array()?.array_sort(options)?.into_series())
 }
 
 pub(super) fn reverse(s: &Series) -> PolarsResult<Series> {

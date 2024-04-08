@@ -21,11 +21,13 @@ import sphinx_autosummary_accessors
 # Add py-polars directory
 sys.path.insert(0, str(Path("../..").resolve()))
 
+
 # -- Project information -----------------------------------------------------
 
 project = "Polars"
 author = "Ritchie Vink"
 copyright = f"2020, {author}"
+
 
 # -- General configuration ---------------------------------------------------
 
@@ -44,6 +46,7 @@ extensions = [
     "sphinx_copybutton",
     "sphinx_design",
     "sphinx_favicon",
+    "sphinx_reredirects",
     "sphinx_toolbox.more_autodoc.overloads",
 ]
 
@@ -67,6 +70,7 @@ exclude_patterns = ["Thumbs.db", ".DS_Store"]
 # https://sphinx-toolbox.readthedocs.io/en/latest/
 overloads_location = ["bottom"]
 
+
 # -- Extension settings  -----------------------------------------------------
 
 # sphinx.ext.intersphinx - link to other projects' documentation
@@ -88,6 +92,10 @@ numpydoc_show_class_members = False
 # strip the '>>>' and '...' prompt/continuation prefixes.
 copybutton_prompt_text = r">>> |\.\.\. "
 copybutton_prompt_is_regexp = True
+
+# redirect empty root to the actual landing page
+redirects = {"index": "reference/index.html"}
+
 
 # -- Options for HTML output -------------------------------------------------
 

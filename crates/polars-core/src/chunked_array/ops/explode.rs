@@ -1,7 +1,7 @@
 use arrow::array::*;
+use arrow::bitmap::utils::set_bit_unchecked;
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::legacy::array::list::AnonymousBuilder;
-use arrow::legacy::bit_util::unset_bit_raw;
 #[cfg(feature = "dtype-array")]
 use arrow::legacy::is_valid::IsValid;
 use arrow::legacy::prelude::*;
@@ -143,13 +143,13 @@ where
 
         let mut validity = MutableBitmap::with_capacity(new_values.len());
         validity.extend_constant(new_values.len(), true);
-        let validity_slice = validity.as_slice().as_ptr() as *mut u8;
+        let validity_slice = validity.as_mut_slice();
 
         for i in empty_row_idx {
-            unsafe { unset_bit_raw(validity_slice, i) }
+            unsafe { set_bit_unchecked(validity_slice, i, false) }
         }
         for i in nulls {
-            unsafe { unset_bit_raw(validity_slice, i) }
+            unsafe { set_bit_unchecked(validity_slice, i, false) }
         }
         let arr = PrimitiveArray::new(
             T::get_dtype().to_arrow(true),

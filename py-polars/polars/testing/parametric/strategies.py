@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from datetime import datetime, timedelta
 from itertools import chain
 from random import choice, randint, shuffle
@@ -273,13 +272,10 @@ scalar_strategies: StrategyLookup = StrategyLookup(
         Categorical: strategy_categorical,
         String: strategy_string,
         Binary: strategy_binary,
+        Decimal: strategy_decimal(),
     }
 )
 nested_strategies: StrategyLookup = StrategyLookup()
-
-# note: decimal support is in early development and requires activation
-if os.environ.get("POLARS_ACTIVATE_DECIMAL") == "1":
-    scalar_strategies[Decimal] = strategy_decimal()
 
 
 def _get_strategy_dtypes(

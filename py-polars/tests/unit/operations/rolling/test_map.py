@@ -32,7 +32,7 @@ def test_rolling_map_clear_reuse_series_state_10681() -> None:
     df = pl.DataFrame(
         {
             "a": [1, 1, 1, 1, 2, 2, 2, 2],
-            "b": [0, 1, 11.0, 7, 4, 2, 3, 8],
+            "b": [0.0, 1.0, 11.0, 7.0, 4.0, 2.0, 3.0, 8.0],
         }
     )
 

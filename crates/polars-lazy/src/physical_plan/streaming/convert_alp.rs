@@ -178,7 +178,7 @@ pub(crate) fn insert_streaming_nodes(
         execution_id += 1;
         match lp_arena.get(root) {
             Selection { input, predicate }
-                if is_streamable(*predicate, expr_arena, Context::Default) =>
+                if is_streamable(predicate.node(), expr_arena, Context::Default) =>
             {
                 state.streamable = true;
                 state.operators_sinks.push(PipelineNode::Operator(root));
@@ -211,6 +211,11 @@ pub(crate) fn insert_streaming_nodes(
             Projection { input, expr, .. }
                 if all_streamable(expr, expr_arena, Context::Default) =>
             {
+                state.streamable = true;
+                state.operators_sinks.push(PipelineNode::Operator(root));
+                stack.push(StackFrame::new(*input, state, current_idx))
+            },
+            SimpleProjection { input, .. } => {
                 state.streamable = true;
                 state.operators_sinks.push(PipelineNode::Operator(root));
                 stack.push(StackFrame::new(*input, state, current_idx))
@@ -287,15 +292,15 @@ pub(crate) fn insert_streaming_nodes(
                 };
                 let mut state_left = state.split();
 
-                // rhs is second, so that is first on the stack
+                // Rhs is second, so that is first on the stack.
                 let mut state_right = state;
                 state_right.join_count = 0;
                 state_right
                     .operators_sinks
                     .push(PipelineNode::RhsJoin(root));
 
-                // we want to traverse lhs last, so push it first on the stack
-                // rhs is a new pipeline
+                // We want to traverse lhs last, so push it first on the stack
+                // rhs is a new pipeline.
                 state_left.operators_sinks.push(PipelineNode::Sink(root));
                 stack.push(StackFrame::new(input_left, state_left, current_idx));
                 stack.push(StackFrame::new(input_right, state_right, current_idx));
@@ -331,7 +336,7 @@ pub(crate) fn insert_streaming_nodes(
                 };
                 for (i, input) in inputs.iter().enumerate() {
                     let mut state = if i == 0 {
-                        // note the clone!
+                        // Note the clone!
                         let mut state = state.clone();
                         state.join_count += inputs.len() as u32 - 1;
                         state
@@ -381,7 +386,7 @@ pub(crate) fn insert_streaming_nodes(
                 aggs,
                 maintain_order: false,
                 apply: None,
-                schema,
+                schema: output_schema,
                 options,
                 ..
             } => {
@@ -404,6 +409,8 @@ pub(crate) fn insert_streaming_nodes(
                             .all(|fld| allowed_dtype(fld.data_type(), string_cache)),
                         // We need to be able to sink to disk or produce the aggregate return dtype.
                         DataType::Unknown => false,
+                        #[cfg(feature = "dtype-decimal")]
+                        DataType::Decimal(_, _) => false,
                         _ => true,
                     }
                 }
@@ -419,9 +426,9 @@ pub(crate) fn insert_streaming_nodes(
                 }
 
                 let valid_agg = || {
-                    aggs.iter().all(|node| {
+                    aggs.iter().all(|e| {
                         polars_pipe::pipeline::can_convert_to_hash_agg(
-                            *node,
+                            e.node(),
                             expr_arena,
                             &input_schema,
                         )
@@ -429,18 +436,16 @@ pub(crate) fn insert_streaming_nodes(
                 };
 
                 let valid_key = || {
-                    keys.iter().all(|node| {
-                        expr_arena
-                            .get(*node)
-                            .get_type(schema, Context::Default, expr_arena)
-                            // ensure we don't group_by list
+                    keys.iter().all(|e| {
+                        output_schema
+                            .get(e.output_name())
                             .map(|dt| !matches!(dt, DataType::List(_)))
                             .unwrap_or(false)
                     })
                 };
 
                 let valid_types = || {
-                    schema
+                    output_schema
                         .iter_dtypes()
                         .all(|dt| allowed_dtype(dt, string_cache))
                 };

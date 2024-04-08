@@ -72,17 +72,6 @@ pub trait TotalOrdKernel: Sized + Array {
     }
 }
 
-// Trait to enable the scalar blanket implementation.
-trait NotSimdPrimitive {}
-
-#[cfg(not(feature = "simd"))]
-impl<T> NotSimdPrimitive for T {}
-
-#[cfg(feature = "simd")]
-impl NotSimdPrimitive for u128 {}
-#[cfg(feature = "simd")]
-impl NotSimdPrimitive for i128 {}
-
 mod scalar;
 mod view;
 

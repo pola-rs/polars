@@ -4,6 +4,7 @@ use arrow::array::{ArrayRef, MutableBinaryViewArray};
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
 use polars_error::PolarsResult;
+use polars_utils::iter::FallibleIterator;
 
 use crate::parquet::page::{DataPage, DictPage};
 use crate::read::deserialize::binary::decoders::{
@@ -60,19 +61,21 @@ impl<'a> NestedDecoder<'a> for BinViewDecoder {
                 let item = page
                     .values
                     .next()
-                    .map(|index| dict_values.value(index.unwrap() as usize))
+                    .map(|index| dict_values.value(index as usize))
                     .unwrap_or_default();
                 values.push_value_ignore_validity(item);
+                page.values.get_result()?;
             },
             BinaryNestedState::OptionalDictionary(page) => {
                 let dict_values = &page.dict;
                 let item = page
                     .values
                     .next()
-                    .map(|index| dict_values.value(index.unwrap() as usize))
+                    .map(|index| dict_values.value(index as usize))
                     .unwrap_or_default();
                 values.push_value_ignore_validity(item);
                 validity.push(true);
+                page.values.get_result()?;
             },
         }
         Ok(())

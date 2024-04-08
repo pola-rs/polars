@@ -49,6 +49,7 @@ impl SQLContext {
     pub fn new() -> Self {
         Self::default()
     }
+
     /// Get the names of all registered tables, in sorted order.
     pub fn get_tables(&self) -> Vec<String> {
         let mut tables = Vec::from_iter(self.table_map.keys().cloned());
@@ -164,6 +165,7 @@ impl SQLContext {
                 ..
             } => self.execute_drop_table(stmt)?,
             stmt @ Statement::Explain { .. } => self.execute_explain(stmt)?,
+            stmt @ Statement::Truncate { .. } => self.execute_truncate_table(stmt)?,
             _ => polars_bail!(
                 ComputeError: "SQL statement type {:?} is not supported", ast,
             ),
@@ -262,19 +264,43 @@ impl SQLContext {
     fn execute_drop_table(&mut self, stmt: &Statement) -> PolarsResult<LazyFrame> {
         match stmt {
             Statement::Drop { names, .. } => {
-                for name in names {
+                names.iter().for_each(|name| {
                     self.table_map.remove(&name.to_string());
-                }
+                });
                 Ok(DataFrame::empty().lazy())
             },
             _ => unreachable!(),
         }
     }
 
+    fn execute_truncate_table(&mut self, stmt: &Statement) -> PolarsResult<LazyFrame> {
+        if let Statement::Truncate {
+            table_name,
+            partitions,
+            ..
+        } = stmt
+        {
+            match partitions {
+                None => {
+                    let tbl = table_name.to_string();
+                    if let Some(lf) = self.table_map.get_mut(&tbl) {
+                        *lf = DataFrame::from(lf.schema().unwrap().as_ref()).lazy();
+                        Ok(lf.clone())
+                    } else {
+                        polars_bail!(ComputeError: "table '{}' does not exist", tbl);
+                    }
+                },
+                _ => polars_bail!(ComputeError: "TRUNCATE does not support use of 'partitions'"),
+            }
+        } else {
+            unreachable!()
+        }
+    }
+
     fn register_ctes(&mut self, query: &Query) -> PolarsResult<()> {
         if let Some(with) = &query.with {
             if with.recursive {
-                polars_bail!(ComputeError: "Recursive CTEs are not supported")
+                polars_bail!(ComputeError: "recursive CTEs are not supported")
             }
             for cte in &with.cte_tables {
                 let cte_name = cte.alias.name.to_string();
@@ -525,15 +551,16 @@ impl SQLContext {
     fn process_subqueries(&self, lf: LazyFrame, exprs: Vec<&mut Expr>) -> LazyFrame {
         let mut contexts = vec![];
         for expr in exprs {
-            expr.mutate().apply(|e| {
-                if let Expr::SubPlan(lp, names) = e {
-                    contexts.push(<LazyFrame>::from((***lp).clone()));
-
+            *expr = expr.clone().map_expr(|e| match e {
+                Expr::SubPlan(lp, names) => {
+                    contexts.push(<LazyFrame>::from((**lp).clone()));
                     if names.len() == 1 {
-                        *e = Expr::Column(names[0].as_str().into());
+                        Expr::Column(names[0].as_str().into())
+                    } else {
+                        Expr::SubPlan(lp, names)
                     }
-                };
-                true
+                },
+                e => e,
             })
         }
 

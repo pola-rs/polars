@@ -160,8 +160,7 @@ pub(crate) fn align(bitmap: &Bitmap, new_offset: usize) -> Bitmap {
     bitmap.sliced(new_offset, length)
 }
 
-#[inline]
-/// Compute bitwise AND operation
+/// Compute bitwise A AND B operation.
 pub fn and(lhs: &Bitmap, rhs: &Bitmap) -> Bitmap {
     if lhs.unset_bits() == lhs.len() || rhs.unset_bits() == rhs.len() {
         assert_eq!(lhs.len(), rhs.len());
@@ -171,8 +170,12 @@ pub fn and(lhs: &Bitmap, rhs: &Bitmap) -> Bitmap {
     }
 }
 
-#[inline]
-/// Compute bitwise OR operation
+/// Compute bitwise A AND NOT B operation.
+pub fn and_not(lhs: &Bitmap, rhs: &Bitmap) -> Bitmap {
+    binary(lhs, rhs, |x, y| x & !y)
+}
+
+/// Compute bitwise A OR B operation.
 pub fn or(lhs: &Bitmap, rhs: &Bitmap) -> Bitmap {
     if lhs.unset_bits() == 0 || rhs.unset_bits() == 0 {
         assert_eq!(lhs.len(), rhs.len());
@@ -184,8 +187,12 @@ pub fn or(lhs: &Bitmap, rhs: &Bitmap) -> Bitmap {
     }
 }
 
-#[inline]
-/// Compute bitwise XOR operation
+/// Compute bitwise A OR NOT B operation.
+pub fn or_not(lhs: &Bitmap, rhs: &Bitmap) -> Bitmap {
+    binary(lhs, rhs, |x, y| x | !y)
+}
+
+/// Compute bitwise XOR operation.
 pub fn xor(lhs: &Bitmap, rhs: &Bitmap) -> Bitmap {
     let lhs_nulls = lhs.unset_bits();
     let rhs_nulls = rhs.unset_bits();
@@ -208,6 +215,7 @@ pub fn xor(lhs: &Bitmap, rhs: &Bitmap) -> Bitmap {
     }
 }
 
+/// Compute bitwise equality (not XOR) operation.
 fn eq(lhs: &Bitmap, rhs: &Bitmap) -> bool {
     if lhs.len() != rhs.len() {
         return false;

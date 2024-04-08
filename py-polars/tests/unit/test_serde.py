@@ -188,7 +188,7 @@ def test_serde_array_dtype() -> None:
     assert_series_equal(pickle.loads(pickle.dumps(s)), s)
 
     nested_s = pl.Series(
-        [[[1, 2, 3], [4, None]], None, [[None, None, 2]]],
+        [[[1, 2, 3], [4, None, 5]], None, [[None, None, 2]]],
         dtype=pl.List(pl.Array(pl.Int32(), width=3)),
     )
     assert_series_equal(pickle.loads(pickle.dumps(nested_s)), nested_s)

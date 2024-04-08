@@ -161,7 +161,7 @@ impl BitAnd for &BooleanChunked {
             (1, 1) => {},
             (1, _) => {
                 return match self.get(0) {
-                    Some(true) => rhs.clone(),
+                    Some(true) => rhs.clone().with_name(self.name()),
                     Some(false) => BooleanChunked::full(self.name(), false, rhs.len()),
                     None => &self.new_from_index(0, rhs.len()) & rhs,
                 };

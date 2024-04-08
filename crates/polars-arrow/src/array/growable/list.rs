@@ -64,7 +64,7 @@ impl<'a, O: Offset> GrowableList<'a, O> {
         }
     }
 
-    fn to(&mut self) -> ListArray<O> {
+    pub fn to(&mut self) -> ListArray<O> {
         let validity = std::mem::take(&mut self.validity);
         let offsets = std::mem::take(&mut self.offsets);
         let values = self.values.as_box();

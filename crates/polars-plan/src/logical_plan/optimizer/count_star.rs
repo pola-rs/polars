@@ -103,9 +103,14 @@ fn visit_logical_plan_for_scan_paths(
             node,
             alias: None,
         }),
+        // A union can insert a simple projection to ensure all projections align.
+        // We can ignore that if we are inside a count star.
+        ALogicalPlan::SimpleProjection { input, .. } if inside_union => {
+            visit_logical_plan_for_scan_paths(*input, lp_arena, expr_arena, false)
+        },
         ALogicalPlan::Projection { input, expr, .. } => {
             if expr.len() == 1 {
-                let (valid, alias) = is_valid_count_expr(expr[0], expr_arena);
+                let (valid, alias) = is_valid_count_expr(&expr[0], expr_arena);
                 if valid || inside_union {
                     return visit_logical_plan_for_scan_paths(*input, lp_arena, expr_arena, false)
                         .map(|mut expr| {
@@ -121,13 +126,9 @@ fn visit_logical_plan_for_scan_paths(
     }
 }
 
-fn is_valid_count_expr(node: Node, expr_arena: &Arena<AExpr>) -> (bool, Option<Arc<str>>) {
-    match expr_arena.get(node) {
-        AExpr::Alias(node, alias) => {
-            let (valid, _) = is_valid_count_expr(*node, expr_arena);
-            (valid, Some(alias.clone()))
-        },
-        AExpr::Len => (true, None),
+fn is_valid_count_expr(e: &ExprIR, expr_arena: &Arena<AExpr>) -> (bool, Option<Arc<str>>) {
+    match expr_arena.get(e.node()) {
+        AExpr::Len => (true, e.get_alias().cloned()),
         _ => (false, None),
     }
 }

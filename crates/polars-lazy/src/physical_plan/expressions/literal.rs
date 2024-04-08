@@ -3,7 +3,7 @@ use std::ops::Deref;
 
 use polars_core::prelude::*;
 use polars_core::utils::NoNull;
-use polars_plan::dsl::consts::LITERAL_NAME;
+use polars_plan::constants::LITERAL_NAME;
 
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;

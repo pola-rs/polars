@@ -93,7 +93,7 @@ impl ColumnExpr {
                 && _state.ext_contexts.is_empty()
                 && std::env::var("POLARS_NO_SCHEMA_CHECK").is_err()
             {
-                panic!("invalid schema: df {:?}; column: {}", df, &self.name)
+                panic!("invalid schema: df {:?};\ncolumn: {}", df, &self.name)
             }
         }
         // in release we fallback to linear search

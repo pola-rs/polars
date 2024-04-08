@@ -4,14 +4,15 @@
 
 Polars supports the following join strategies by specifying the `how` argument:
 
-| Strategy | Description                                                                                                                                                                                                |
-| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `inner`  | Returns row with matching keys in _both_ frames. Non-matching rows in either the left or right frame are discarded.                                                                                        |
-| `left`   | Returns all rows in the left dataframe, whether or not a match in the right-frame is found. Non-matching rows have their right columns null-filled.                                                        |
-| `outer`  | Returns all rows from both the left and right dataframe. If no match is found in one frame, columns from the other frame are null-filled.                                                                  |
-| `cross`  | Returns the Cartesian product of all rows from the left frame with all rows from the right frame. Duplicates rows are retained; the table length of `A` cross-joined with `B` is always `len(A) × len(B)`. |
-| `semi`   | Returns all rows from the left frame in which the join key is also present in the right frame.                                                                                                             |
-| `anti`   | Returns all rows from the left frame in which the join key is _not_ present in the right frame.                                                                                                            |
+| Strategy         | Description                                                                                                                                                                                                |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `inner`          | Returns row with matching keys in _both_ frames. Non-matching rows in either the left or right frame are discarded.                                                                                        |
+| `left`           | Returns all rows in the left dataframe, whether or not a match in the right-frame is found. Non-matching rows have their right columns null-filled.                                                        |
+| `outer`          | Returns all rows from both the left and right dataframe. If no match is found in one frame, columns from the other frame are null-filled.                                                                  |
+| `outer_coalesce` | Returns all rows from both the left and right dataframe. This is similar to `outer`, but with the key columns being merged.                                                                                |
+| `cross`          | Returns the Cartesian product of all rows from the left frame with all rows from the right frame. Duplicates rows are retained; the table length of `A` cross-joined with `B` is always `len(A) × len(B)`. |
+| `semi`           | Returns all rows from the left frame in which the join key is also present in the right frame.                                                                                                             |
+| `anti`           | Returns all rows from the left frame in which the join key is _not_ present in the right frame.                                                                                                            |
 
 ### Inner join
 
@@ -61,6 +62,18 @@ The `outer` join produces a `DataFrame` that contains all the rows from both `Da
 ```python exec="on" result="text" session="user-guide/transformations/joins"
 --8<-- "python/user-guide/transformations/joins.py:outer"
 ```
+
+### Outer coalesce join
+
+The `outer_coalesce` join combines all rows from both `DataFrames` like an `outer` join, but it merges the join keys into a single column by coalescing the values. This ensures a unified view of the join key, avoiding nulls in key columns whenever possible. Let's compare it with the outer join using the two `DataFrames` we used above:
+
+{{code_block('user-guide/transformations/joins','outer_coalesce',['join'])}}
+
+```python exec="on" result="text" session="user-guide/transformations/joins"
+--8<-- "python/user-guide/transformations/joins.py:outer_coalesce"
+```
+
+In contrast to an `outer` join, where `customer_id` and `customer_id_right` columns would remain separate, the `outer_coalesce` join merges these columns into a single `customer_id` column.
 
 ### Cross join
 

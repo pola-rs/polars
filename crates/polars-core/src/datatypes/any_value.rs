@@ -946,6 +946,8 @@ impl AnyValue<'_> {
                 // 1.2 at scale 1, and 1.20 at scale 2, are not equal.
                 *v_l == *v_r && *scale_l == *scale_r
             },
+            #[cfg(feature = "object")]
+            (Object(l), Object(r)) => l == r,
             _ => false,
         }
     }

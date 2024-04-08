@@ -101,6 +101,9 @@ where
                 unsafe { agg_window.update(start as usize, end as usize) }
             };
 
+            // TODO: Clippy lint is broken, remove attr once fixed.
+            // https://github.com/rust-lang/rust-clippy/issues/12580
+            #[cfg_attr(feature = "nightly", allow(clippy::manual_unwrap_or_default))]
             match agg {
                 Some(val) => val,
                 None => {
@@ -142,7 +145,7 @@ where
                 None
             } else {
                 // SAFETY: we are in bounds.
-                Some(unsafe { agg_window.update(start as usize, end as usize) })
+                unsafe { agg_window.update(start as usize, end as usize) }
             }
         })
         .collect::<PrimitiveArray<T>>()
@@ -187,6 +190,18 @@ where
 {
     let ca: ChunkedArray<T> = POOL.install(|| groups.all().into_par_iter().map(f).collect());
     ca.into_series()
+}
+
+/// Same as `agg_helper_idx_on_all` but for aggregations that don't return an Option.
+fn agg_helper_idx_on_all_no_null<T, F>(groups: &GroupsIdx, f: F) -> Series
+where
+    F: Fn(&IdxVec) -> T::Native + Send + Sync,
+    T: PolarsNumericType,
+    ChunkedArray<T>: IntoSeries,
+{
+    let ca: NoNull<ChunkedArray<T>> =
+        POOL.install(|| groups.all().into_par_iter().map(f).collect());
+    ca.into_inner().into_series()
 }
 
 pub fn _agg_helper_slice<T, F>(groups: &[[IdxSize; 2]], f: F) -> Series
@@ -799,7 +814,13 @@ where
                         debug_assert!(len <= self.len() as IdxSize);
                         match len {
                             0 => None,
-                            1 => NumCast::from(0),
+                            1 => {
+                                if ddof == 0 {
+                                    NumCast::from(0)
+                                } else {
+                                    None
+                                }
+                            },
                             _ => {
                                 let arr_group = _slice_from_offsets(self, first, len);
                                 arr_group.var(ddof).map(|flt| NumCast::from(flt).unwrap())
@@ -861,7 +882,13 @@ where
                         debug_assert!(len <= self.len() as IdxSize);
                         match len {
                             0 => None,
-                            1 => NumCast::from(0),
+                            1 => {
+                                if ddof == 0 {
+                                    NumCast::from(0)
+                                } else {
+                                    None
+                                }
+                            },
                             _ => {
                                 let arr_group = _slice_from_offsets(self, first, len);
                                 arr_group.std(ddof).map(|flt| NumCast::from(flt).unwrap())
@@ -1012,7 +1039,13 @@ where
                         debug_assert!(first + len <= self.len() as IdxSize);
                         match len {
                             0 => None,
-                            1 => NumCast::from(0),
+                            1 => {
+                                if ddof == 0 {
+                                    NumCast::from(0)
+                                } else {
+                                    None
+                                }
+                            },
                             _ => {
                                 let arr_group = _slice_from_offsets(self, first, len);
                                 arr_group.var(ddof)
@@ -1054,7 +1087,13 @@ where
                         debug_assert!(first + len <= self.len() as IdxSize);
                         match len {
                             0 => None,
-                            1 => NumCast::from(0),
+                            1 => {
+                                if ddof == 0 {
+                                    NumCast::from(0)
+                                } else {
+                                    None
+                                }
+                            },
                             _ => {
                                 let arr_group = _slice_from_offsets(self, first, len);
                                 arr_group.std(ddof)

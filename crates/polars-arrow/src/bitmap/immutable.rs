@@ -7,6 +7,7 @@ use polars_error::{polars_bail, PolarsResult};
 
 use super::utils::{count_zeros, fmt, get_bit, get_bit_unchecked, BitChunk, BitChunks, BitmapIter};
 use super::{chunk_iter_to_vec, IntoIter, MutableBitmap};
+use crate::bitmap::aligned::AlignedBitmapSlice;
 use crate::bitmap::iterator::{
     FastU32BitmapIter, FastU56BitmapIter, FastU64BitmapIter, TrueIdxIter,
 };
@@ -33,7 +34,7 @@ const UNKNOWN_BIT_COUNT: u64 = u64::MAX;
 /// // we can also get the slice:
 /// assert_eq!(bitmap.as_slice(), ([0b00001101u8].as_ref(), 0, 5));
 /// // debug helps :)
-/// assert_eq!(format!("{:?}", bitmap), "[0b___01101]".to_string());
+/// assert_eq!(format!("{:?}", bitmap), "Bitmap { len: 5, offset: 0, bytes: [0b___01101] }");
 ///
 /// // it supports copy-on-write semantics (to a `MutableBitmap`)
 /// let bitmap: MutableBitmap = bitmap.into_mut().right().unwrap();
@@ -44,7 +45,7 @@ const UNKNOWN_BIT_COUNT: u64 = u64::MAX;
 /// let mut sliced = bitmap.clone();
 /// sliced.slice(1, 4);
 /// assert_eq!(sliced.as_slice(), ([0b00001101u8].as_ref(), 1, 4)); // 1 here is the offset:
-/// assert_eq!(format!("{:?}", sliced), "[0b___0110_]".to_string());
+/// assert_eq!(format!("{:?}", sliced), "Bitmap { len: 4, offset: 1, bytes: [0b___0110_] }");
 /// // when sliced (or cloned), it is no longer possible to `into_mut`.
 /// let same: Bitmap = sliced.into_mut().left().unwrap();
 /// ```
@@ -165,6 +166,11 @@ impl Bitmap {
     /// Returns an iterator that only iterates over the set bits.
     pub fn true_idx_iter(&self) -> TrueIdxIter<'_> {
         TrueIdxIter::new(self.len(), Some(self))
+    }
+
+    /// Returns the bits of this [`Bitmap`] as a [`AlignedBitmapSlice`].
+    pub fn aligned<T: BitChunk>(&self) -> AlignedBitmapSlice<'_, T> {
+        AlignedBitmapSlice::new(&self.bytes, self.offset, self.length)
     }
 
     /// Returns the byte slice of this [`Bitmap`].

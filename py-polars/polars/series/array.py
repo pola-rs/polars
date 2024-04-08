@@ -61,20 +61,14 @@ class ArrayNameSpace:
 
         Examples
         --------
-        >>> df = pl.DataFrame(
-        ...     data={"a": [[1, 2], [4, 3]]},
-        ...     schema={"a": pl.Array(pl.Int64, 2)},
-        ... )
-        >>> df.select(pl.col("a").arr.sum())
-        shape: (2, 1)
-        ┌─────┐
-        │ a   │
-        │ --- │
-        │ i64 │
-        ╞═════╡
-        │ 3   │
-        │ 7   │
-        └─────┘
+        >>> s = pl.Series([[1, 2], [4, 3]], dtype=pl.Array(pl.Int64, 2))
+        >>> s.arr.sum()
+        shape: (2,)
+        Series: '' [i64]
+        [
+            3
+            7
+        ]
         """
 
     def std(self, ddof: int = 1) -> Series:
@@ -134,23 +128,37 @@ class ArrayNameSpace:
         maintain_order
             Maintain order of data. This requires more work.
 
+        Returns
+        -------
+        Series
+            Series of data type :class:`List`.
+
         Examples
         --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [[1, 1, 2]],
-        ...     },
-        ...     schema_overrides={"a": pl.Array(pl.Int64, 3)},
-        ... )
-        >>> df.select(pl.col("a").arr.unique())
-        shape: (1, 1)
-        ┌───────────┐
-        │ a         │
-        │ ---       │
-        │ list[i64] │
-        ╞═══════════╡
-        │ [1, 2]    │
-        └───────────┘
+        >>> s = pl.Series([[1, 1, 2], [3, 4, 5]], dtype=pl.Array(pl.Int64, 3))
+        >>> s.arr.unique()
+        shape: (2,)
+        Series: '' [list[i64]]
+        [
+            [1, 2]
+            [3, 4, 5]
+        ]
+        """
+
+    def n_unique(self) -> Series:
+        """
+        Count the number of unique values in every sub-arrays.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [[1, 2], [4, 4]], dtype=pl.Array(pl.Int64, 2))
+        >>> s.arr.n_unique()
+        shape: (2,)
+        Series: 'a' [u32]
+        [
+            2
+            1
+        ]
         """
 
     def to_list(self) -> Series:

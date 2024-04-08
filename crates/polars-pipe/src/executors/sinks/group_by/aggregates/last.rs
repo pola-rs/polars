@@ -52,7 +52,7 @@ impl AggregateFn for LastAgg {
     fn combine(&mut self, other: &dyn Any) {
         let other = unsafe { other.downcast_ref::<Self>().unwrap_unchecked_release() };
         if other.last.is_some() && other.chunk_idx >= self.chunk_idx {
-            self.last = other.last.clone();
+            self.last.clone_from(&other.last);
             self.chunk_idx = other.chunk_idx;
         };
     }

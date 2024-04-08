@@ -192,12 +192,14 @@ def test_rolling_dynamic_sortedness_check() -> None:
     )
 
     with pytest.raises(pl.ComputeError, match=r"input data is not sorted"):
-        df.rolling("idx", period="2i", by="group").agg(pl.col("idx").alias("idx1"))
+        df.rolling("idx", period="2i", group_by="group").agg(
+            pl.col("idx").alias("idx1")
+        )
 
-    # no `by` argument
+    # no `group_by` argument
     with pytest.raises(
         pl.InvalidOperationError,
-        match=r"argument in operation 'group_by_rolling' is not explicitly sorted",
+        match="argument in operation 'rolling' is not explicitly sorted",
     ):
         df.rolling("idx", period="2i").agg(pl.col("idx").alias("idx1"))
 
@@ -231,7 +233,7 @@ def test_rolling_empty_groups_9973() -> None:
 
     out = data.rolling(
         index_column="date",
-        by="id",
+        group_by="id",
         period="2d",
         offset="1d",
         closed="left",
@@ -258,6 +260,34 @@ def test_rolling_duplicates_11281() -> None:
     result = df.rolling("ts", period="1d", closed="left").agg(pl.col("val"))
     expected = df.with_columns(val=pl.Series([[], [1], [1], [1], [2, 2, 2], [3]]))
     assert_frame_equal(result, expected)
+
+
+def test_rolling_check_sorted_15225() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3],
+            "b": [date(2020, 1, 1), date(2020, 1, 2), date(2020, 1, 3)],
+            "c": [1, 1, 2],
+        }
+    )
+    result = df.rolling("b", period="2d", check_sorted=False).agg(pl.sum("a"))
+    expected = pl.DataFrame(
+        {"b": [date(2020, 1, 1), date(2020, 1, 2), date(2020, 1, 3)], "a": [1, 3, 5]}
+    )
+    assert_frame_equal(result, expected)
+    result = df.rolling("b", period="2d", group_by="c", check_sorted=False).agg(
+        pl.sum("a")
+    )
+    expected = pl.DataFrame(
+        {
+            "c": [1, 1, 2],
+            "b": [date(2020, 1, 1), date(2020, 1, 2), date(2020, 1, 3)],
+            "a": [1, 3, 3],
+        }
+    )
+    assert_frame_equal(result, expected)
+    with pytest.raises(pl.InvalidOperationError, match="not explicitly sorted"):
+        result = df.rolling("b", period="2d").agg(pl.sum("a"))
 
 
 def test_multiple_rolling_in_single_expression() -> None:

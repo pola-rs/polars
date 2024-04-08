@@ -443,6 +443,7 @@ pub fn cast(
             Int64 => primitive_to_boolean_dyn::<i64>(array, to_type.clone()),
             Float32 => primitive_to_boolean_dyn::<f32>(array, to_type.clone()),
             Float64 => primitive_to_boolean_dyn::<f64>(array, to_type.clone()),
+            Decimal(_, _) => primitive_to_boolean_dyn::<i128>(array, to_type.clone()),
             _ => polars_bail!(InvalidOperation:
                 "casting from {from_type:?} to {to_type:?} not supported",
             ),

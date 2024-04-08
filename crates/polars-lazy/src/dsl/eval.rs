@@ -55,9 +55,9 @@ pub trait ExprEvalExtension: IntoExpr + Sized {
 
             let expr = expr.clone();
             let mut arena = Arena::with_capacity(10);
-            let aexpr = to_aexpr(expr, &mut arena);
+            let aexpr = to_expr_ir(expr, &mut arena);
             let phys_expr = create_physical_expr(
-                aexpr,
+                &aexpr,
                 Context::Default,
                 &arena,
                 None,

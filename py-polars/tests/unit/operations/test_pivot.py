@@ -501,3 +501,24 @@ def test_multi_index_containing_struct() -> None:
         {"b": [{"a": 1}, {"a": 2}], "d": [1, 3], "x": [1, None], "y": [2, 1]}
     )
     assert_frame_equal(result, expected)
+
+
+def test_list_pivot() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3, 1],
+            "b": [[1, 2], [3, 4], [5, 6], [1, 2]],
+            "c": ["x", "x", "y", "y"],
+            "d": [1, 2, 3, 4],
+        }
+    )
+    assert df.pivot(
+        index=["a", "b"],
+        columns="c",
+        values="d",
+    ).to_dict(as_series=False) == {
+        "a": [1, 2, 3],
+        "b": [[1, 2], [3, 4], [5, 6]],
+        "x": [1, 2, None],
+        "y": [4, None, 3],
+    }

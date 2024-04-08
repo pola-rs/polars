@@ -3,21 +3,33 @@ from __future__ import annotations
 import contextlib
 import io
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, Any
+from typing import IO, TYPE_CHECKING, Any, Sequence
 
-import polars._reexport as pl
 from polars._utils.deprecation import deprecate_renamed_parameter
-from polars._utils.various import is_int_sequence, normalize_filepath
+from polars._utils.unstable import issue_unstable_warning
+from polars._utils.various import (
+    is_int_sequence,
+    normalize_filepath,
+)
+from polars._utils.wrap import wrap_df, wrap_ldf
 from polars.convert import from_arrow
 from polars.dependencies import _PYARROW_AVAILABLE
-from polars.io._utils import _prepare_file_arg
+from polars.io._utils import (
+    is_local_file,
+    is_supported_cloud,
+    parse_columns_arg,
+    parse_row_index_args,
+    prepare_file_arg,
+)
+from polars.io.parquet.anonymous_scan import _scan_parquet_fsspec
 
 with contextlib.suppress(ImportError):
+    from polars.polars import PyDataFrame, PyLazyFrame
     from polars.polars import read_parquet_schema as _read_parquet_schema
 
 if TYPE_CHECKING:
     from polars import DataFrame, DataType, LazyFrame
-    from polars.type_aliases import ParallelStrategy
+    from polars.type_aliases import ParallelStrategy, SchemaDict
 
 
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
@@ -32,6 +44,7 @@ def read_parquet(
     parallel: ParallelStrategy = "auto",
     use_statistics: bool = True,
     hive_partitioning: bool = True,
+    hive_schema: SchemaDict | None = None,
     rechunk: bool = True,
     low_memory: bool = False,
     storage_options: dict[str, Any] | None = None,
@@ -69,8 +82,15 @@ def read_parquet(
         Use statistics in the parquet to determine if pages
         can be skipped from reading.
     hive_partitioning
-        Infer statistics and schema from hive partitioned URL and use them
+        Infer statistics and schema from Hive partitioned URL and use them
         to prune reads.
+    hive_schema
+        The column names and data types of the columns by which the data is partitioned.
+        If set to `None` (default), the schema of the Hive partitions is inferred.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
     rechunk
         Make sure that all columns are contiguous in memory by
         aggregating the chunks into a single array.
@@ -93,7 +113,7 @@ def read_parquet(
     retries
         Number of retries if accessing a cloud instance fails.
     use_pyarrow
-        Use pyarrow instead of the Rust native parquet reader. The pyarrow reader is
+        Use PyArrow instead of the Rust-native Parquet reader. The PyArrow reader is
         more stable.
     pyarrow_options
         Keyword arguments for `pyarrow.parquet.read_table
@@ -113,59 +133,48 @@ def read_parquet(
 
     Notes
     -----
-    * Partitioned files:
-        If you have a directory-nested (hive-style) partitioned dataset, you should
-        use the :func:`scan_pyarrow_dataset` method instead.
     * When benchmarking:
         This operation defaults to a `rechunk` operation at the end, meaning that all
         data will be stored continuously in memory. Set `rechunk=False` if you are
         benchmarking the parquet-reader as `rechunk` can be an expensive operation
         that should not contribute to the timings.
     """
+    if hive_schema is not None:
+        msg = "The `hive_schema` parameter of `read_parquet` is considered unstable."
+        issue_unstable_warning(msg)
+
     # Dispatch to pyarrow if requested
     if use_pyarrow:
-        if not _PYARROW_AVAILABLE:
-            msg = (
-                "'pyarrow' is required when using `read_parquet(..., use_pyarrow=True)`"
-            )
-            raise ModuleNotFoundError(msg)
         if n_rows is not None:
             msg = "`n_rows` cannot be used with `use_pyarrow=True`"
             raise ValueError(msg)
-
-        import pyarrow as pa
-        import pyarrow.parquet
-
-        pyarrow_options = pyarrow_options or {}
-
-        with _prepare_file_arg(
-            source,  # type: ignore[arg-type]
-            use_pyarrow=True,
-            storage_options=storage_options,
-        ) as source_prep:
-            return from_arrow(  # type: ignore[return-value]
-                pa.parquet.read_table(
-                    source_prep,
-                    memory_map=memory_map,
-                    columns=columns,
-                    **pyarrow_options,
-                )
+        if hive_schema is not None:
+            msg = (
+                "cannot use `hive_partitions` with `use_pyarrow=True`"
+                "\n\nHint: Pass `pyarrow_options` instead with a 'partitioning' entry."
             )
+            raise TypeError(msg)
+        return _read_parquet_with_pyarrow(
+            source,
+            columns=columns,
+            storage_options=storage_options,
+            pyarrow_options=pyarrow_options,
+            memory_map=memory_map,
+        )
 
     # Read binary types using `read_parquet`
     elif isinstance(source, (io.BufferedIOBase, io.RawIOBase, bytes)):
-        with _prepare_file_arg(source, use_pyarrow=False) as source_prep:
-            return pl.DataFrame._read_parquet(
-                source_prep,
-                columns=columns,
-                n_rows=n_rows,
-                parallel=parallel,
-                row_index_name=row_index_name,
-                row_index_offset=row_index_offset,
-                low_memory=low_memory,
-                use_statistics=use_statistics,
-                rechunk=rechunk,
-            )
+        return _read_parquet_binary(
+            source,
+            columns=columns,
+            n_rows=n_rows,
+            parallel=parallel,
+            row_index_name=row_index_name,
+            row_index_offset=row_index_offset,
+            low_memory=low_memory,
+            use_statistics=use_statistics,
+            rechunk=rechunk,
+        )
 
     # For other inputs, defer to `scan_parquet`
     lf = scan_parquet(
@@ -176,6 +185,7 @@ def read_parquet(
         parallel=parallel,
         use_statistics=use_statistics,
         hive_partitioning=hive_partitioning,
+        hive_schema=hive_schema,
         rechunk=rechunk,
         low_memory=low_memory,
         cache=False,
@@ -188,7 +198,68 @@ def read_parquet(
             columns = [lf.columns[i] for i in columns]
         lf = lf.select(columns)
 
-    return lf.collect(no_optimization=True)
+    return lf.collect()
+
+
+def _read_parquet_with_pyarrow(
+    source: str | Path | list[str] | list[Path] | IO[bytes] | bytes,
+    *,
+    columns: list[int] | list[str] | None = None,
+    storage_options: dict[str, Any] | None = None,
+    pyarrow_options: dict[str, Any] | None = None,
+    memory_map: bool = True,
+) -> DataFrame:
+    if not _PYARROW_AVAILABLE:
+        msg = "'pyarrow' is required when using `read_parquet(..., use_pyarrow=True)`"
+        raise ModuleNotFoundError(msg)
+
+    import pyarrow as pa
+    import pyarrow.parquet
+
+    pyarrow_options = pyarrow_options or {}
+
+    with prepare_file_arg(
+        source,  # type: ignore[arg-type]
+        use_pyarrow=True,
+        storage_options=storage_options,
+    ) as source_prep:
+        pa_table = pa.parquet.read_table(
+            source_prep,
+            memory_map=memory_map,
+            columns=columns,
+            **pyarrow_options,
+        )
+    return from_arrow(pa_table)  # type: ignore[return-value]
+
+
+def _read_parquet_binary(
+    source: IO[bytes] | bytes,
+    *,
+    columns: Sequence[int] | Sequence[str] | None = None,
+    n_rows: int | None = None,
+    row_index_name: str | None = None,
+    row_index_offset: int = 0,
+    parallel: ParallelStrategy = "auto",
+    use_statistics: bool = True,
+    rechunk: bool = True,
+    low_memory: bool = False,
+) -> DataFrame:
+    projection, columns = parse_columns_arg(columns)
+    row_index = parse_row_index_args(row_index_name, row_index_offset)
+
+    with prepare_file_arg(source) as source_prep:
+        pydf = PyDataFrame.read_parquet(
+            source_prep,
+            columns=columns,
+            projection=projection,
+            n_rows=n_rows,
+            row_index=row_index,
+            parallel=parallel,
+            use_statistics=use_statistics,
+            rechunk=rechunk,
+            low_memory=low_memory,
+        )
+    return wrap_df(pydf)
 
 
 def read_parquet_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, DataType]:
@@ -224,6 +295,7 @@ def scan_parquet(
     parallel: ParallelStrategy = "auto",
     use_statistics: bool = True,
     hive_partitioning: bool = True,
+    hive_schema: SchemaDict | None = None,
     rechunk: bool = False,
     low_memory: bool = False,
     cache: bool = True,
@@ -257,6 +329,13 @@ def scan_parquet(
     hive_partitioning
         Infer statistics and schema from hive partitioned URL and use them
         to prune reads.
+    hive_schema
+        The column names and data types of the columns by which the data is partitioned.
+        If set to `None` (default), the schema of the Hive partitions is inferred.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
     rechunk
         In case of reading multiple files via a glob pattern rechunk the final DataFrame
         into contiguous memory chunks.
@@ -303,12 +382,16 @@ def scan_parquet(
     ... }
     >>> pl.scan_parquet(source, storage_options=storage_options)  # doctest: +SKIP
     """
+    if hive_schema is not None:
+        msg = "The `hive_schema` parameter of `scan_parquet` is considered unstable."
+        issue_unstable_warning(msg)
+
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source)
     else:
         source = [normalize_filepath(source) for source in source]
 
-    return pl.LazyFrame._scan_parquet(
+    return _scan_parquet_impl(
         source,
         n_rows=n_rows,
         cache=cache,
@@ -320,5 +403,67 @@ def scan_parquet(
         low_memory=low_memory,
         use_statistics=use_statistics,
         hive_partitioning=hive_partitioning,
+        hive_schema=hive_schema,
         retries=retries,
     )
+
+
+def _scan_parquet_impl(
+    source: str | list[str] | list[Path],
+    *,
+    n_rows: int | None = None,
+    cache: bool = True,
+    parallel: ParallelStrategy = "auto",
+    rechunk: bool = True,
+    row_index_name: str | None = None,
+    row_index_offset: int = 0,
+    storage_options: dict[str, object] | None = None,
+    low_memory: bool = False,
+    use_statistics: bool = True,
+    hive_partitioning: bool = True,
+    hive_schema: SchemaDict | None = None,
+    retries: int = 0,
+) -> LazyFrame:
+    if isinstance(source, list):
+        sources = source
+        source = None  # type: ignore[assignment]
+        can_use_fsspec = False
+    else:
+        can_use_fsspec = True
+        sources = []
+
+    # try fsspec scanner
+    if (
+        can_use_fsspec
+        and not is_local_file(source)  # type: ignore[arg-type]
+        and not is_supported_cloud(source)  # type: ignore[arg-type]
+    ):
+        scan = _scan_parquet_fsspec(source, storage_options)  # type: ignore[arg-type]
+        if n_rows:
+            scan = scan.head(n_rows)
+        if row_index_name is not None:
+            scan = scan.with_row_index(row_index_name, row_index_offset)
+        return scan
+
+    if storage_options:
+        storage_options = list(storage_options.items())  # type: ignore[assignment]
+    else:
+        # Handle empty dict input
+        storage_options = None
+
+    pylf = PyLazyFrame.new_from_parquet(
+        source,
+        sources,
+        n_rows,
+        cache,
+        parallel,
+        rechunk,
+        parse_row_index_args(row_index_name, row_index_offset),
+        low_memory,
+        cloud_options=storage_options,
+        use_statistics=use_statistics,
+        hive_partitioning=hive_partitioning,
+        hive_schema=hive_schema,
+        retries=retries,
+    )
+    return wrap_ldf(pylf)

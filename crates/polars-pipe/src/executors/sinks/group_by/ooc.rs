@@ -85,7 +85,7 @@ impl Source for GroupBySource {
                 let mut pipe =
                     PipeLine::new_simple(sources, vec![], self.group_by_sink.split(0), verbose());
 
-                let out = match pipe.run_pipeline(context, Default::default())?.unwrap() {
+                let out = match pipe.run_pipeline(context, &mut vec![])?.unwrap() {
                     FinalizedSink::Finished(mut df) => {
                         if let Some(slice) = &mut self.slice {
                             let height = df.height();

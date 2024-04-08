@@ -1158,7 +1158,7 @@ impl Series {
 #[inline]
 #[cfg(feature = "dtype-decimal")]
 pub fn fmt_decimal(f: &mut Formatter<'_>, v: i128, scale: usize) -> fmt::Result {
-    use arrow::legacy::compute::decimal::format_decimal;
+    use arrow::compute::decimal::format_decimal;
 
     let trim_zeros = get_trim_decimal_zeros();
     let repr = format_decimal(v, scale, trim_zeros);

@@ -1,3 +1,5 @@
+use polars_utils::slice::GetSaferUnchecked;
+
 use super::super::pages::Nested;
 use super::to_length;
 
@@ -16,6 +18,9 @@ fn iter<'a>(nested: &'a [Nested]) -> Vec<Box<dyn DebugIter + 'a>> {
             Nested::LargeList(nested) => {
                 Some(Box::new(to_length(&nested.offsets)) as Box<dyn DebugIter>)
             },
+            Nested::FixedSizeList { width, len, .. } => {
+                Some(Box::new(std::iter::repeat(*width).take(*len)) as Box<dyn DebugIter>)
+            },
             Nested::Struct(_, _, _) => None,
         })
         .collect()
@@ -25,13 +30,12 @@ fn iter<'a>(nested: &'a [Nested]) -> Vec<Box<dyn DebugIter + 'a>> {
 pub fn num_values(nested: &[Nested]) -> usize {
     let pr = match nested.last().unwrap() {
         Nested::Primitive(_, _, len) => *len,
-        _ => todo!(),
+        _ => unreachable!(),
     };
 
     iter(nested)
         .into_iter()
-        .enumerate()
-        .map(|(_, lengths)| {
+        .map(|lengths| {
             lengths
                 .map(|length| if length == 0 { 1 } else { 0 })
                 .sum::<usize>()
@@ -113,14 +117,16 @@ impl<'a> Iterator for RepLevelsIter<'a> {
         let r = Some((self.current_level - self.total) as u32);
 
         // update
-        for index in (1..self.current_level).rev() {
-            if self.remaining[index] == 0 {
-                self.current_level -= 1;
-                self.remaining[index - 1] -= 1;
+        unsafe {
+            for index in (1..self.current_level).rev() {
+                if *self.remaining.get_unchecked_release(index) == 0 {
+                    self.current_level -= 1;
+                    *self.remaining.get_unchecked_release_mut(index - 1) -= 1;
+                }
             }
-        }
-        if self.remaining[0] == 0 {
-            self.current_level = self.current_level.saturating_sub(1);
+            if *self.remaining.get_unchecked_release(0) == 0 {
+                self.current_level = self.current_level.saturating_sub(1);
+            }
         }
         self.total = 0;
         self.remaining_values -= 1;

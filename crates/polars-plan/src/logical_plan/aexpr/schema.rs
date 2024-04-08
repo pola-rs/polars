@@ -1,3 +1,5 @@
+use recursive::recursive;
+
 use super::*;
 
 fn float_type(field: &mut Field) {
@@ -10,6 +12,7 @@ fn float_type(field: &mut Field) {
 
 impl AExpr {
     /// Get Field result of the expression. The schema is the input data.
+    #[recursive]
     pub fn to_field(
         &self,
         schema: &Schema,
@@ -40,7 +43,7 @@ impl AExpr {
             Column(name) => {
                 let field = schema
                     .get_field(name)
-                    .ok_or_else(|| polars_err!(ColumnNotFound: "{}", name));
+                    .ok_or_else(|| PolarsError::ColumnNotFound(name.to_string().into()));
 
                 match ctxt {
                     Context::Default => field,
@@ -53,7 +56,7 @@ impl AExpr {
             },
             Literal(sv) => Ok(match sv {
                 LiteralValue::Series(s) => s.field().into_owned(),
-                _ => Field::new("literal", sv.get_datatype()),
+                _ => Field::new(sv.output_name(), sv.get_datatype()),
             }),
             BinaryExpr { left, right, op } => {
                 use DataType::*;
@@ -203,22 +206,14 @@ impl AExpr {
             } => {
                 let tmp = function.get_output();
                 let output_type = tmp.as_ref().unwrap_or(output_type);
-                let fields = input
-                    .iter()
-                    // default context because `col()` would return a list in aggregation context
-                    .map(|node| arena.get(*node).to_field(schema, Context::Default, arena))
-                    .collect::<PolarsResult<Vec<_>>>()?;
+                let fields = func_args_to_fields(input, schema, arena)?;
                 polars_ensure!(!fields.is_empty(), ComputeError: "expression: '{}' didn't get any inputs", options.fmt_str);
                 Ok(output_type.get_field(schema, ctxt, &fields))
             },
             Function {
                 function, input, ..
             } => {
-                let fields = input
-                    .iter()
-                    // default context because `col()` would return a list in aggregation context
-                    .map(|node| arena.get(*node).to_field(schema, Context::Default, arena))
-                    .collect::<PolarsResult<Vec<_>>>()?;
+                let fields = func_args_to_fields(input, schema, arena)?;
                 polars_ensure!(!fields.is_empty(), ComputeError: "expression: '{}' didn't get any inputs", function);
                 function.get_field(schema, ctxt, &fields)
             },
@@ -231,6 +226,26 @@ impl AExpr {
             },
         }
     }
+}
+
+fn func_args_to_fields(
+    input: &[ExprIR],
+    schema: &Schema,
+    arena: &Arena<AExpr>,
+) -> PolarsResult<Vec<Field>> {
+    input
+        .iter()
+        // Default context because `col()` would return a list in aggregation context
+        .map(|e| {
+            arena
+                .get(e.node())
+                .to_field(schema, Context::Default, arena)
+                .map(|mut field| {
+                    field.name = e.output_name().into();
+                    field
+                })
+        })
+        .collect()
 }
 
 fn get_arithmetic_field(

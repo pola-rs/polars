@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::Mutex;
 
 use polars::io::mmap::MmapBytesReader;
 use polars::io::RowIndex;
@@ -17,8 +18,7 @@ enum BatchedReader {
 #[pyclass]
 #[repr(transparent)]
 pub struct PyBatchedCsv {
-    // option because we cannot get a self by value in pyo3
-    reader: BatchedReader,
+    reader: Mutex<BatchedReader>,
 }
 
 #[pymethods]
@@ -132,15 +132,23 @@ impl PyBatchedCsv {
             BatchedReader::MMap(reader)
         };
 
-        Ok(PyBatchedCsv { reader })
+        Ok(PyBatchedCsv {
+            reader: Mutex::new(reader),
+        })
     }
 
-    fn next_batches(&mut self, n: usize) -> PyResult<Option<Vec<PyDataFrame>>> {
-        let batches = match &mut self.reader {
-            BatchedReader::MMap(reader) => reader.next_batches(n),
-            BatchedReader::Read(reader) => reader.next_batches(n),
-        }
-        .map_err(PyPolarsErr::from)?;
+    fn next_batches(&self, py: Python, n: usize) -> PyResult<Option<Vec<PyDataFrame>>> {
+        let reader = &self.reader;
+        let batches = py.allow_threads(move || {
+            let reader = &mut *reader
+                .lock()
+                .map_err(|e| PyPolarsErr::Other(e.to_string()))?;
+            match reader {
+                BatchedReader::MMap(reader) => reader.next_batches(n),
+                BatchedReader::Read(reader) => reader.next_batches(n),
+            }
+            .map_err(PyPolarsErr::from)
+        })?;
 
         // SAFETY: same memory layout
         let batches = unsafe {

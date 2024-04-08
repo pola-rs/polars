@@ -16,12 +16,14 @@ import zstandard
 import polars as pl
 from polars._utils.various import normalize_filepath
 from polars.exceptions import ComputeError, NoDataError
+from polars.io.csv import BatchedCsvReader
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from pathlib import Path
 
     from polars.type_aliases import TimeUnit
+    from tests.unit.conftest import MemoryUsage
 
 
 @pytest.fixture()
@@ -1414,8 +1416,9 @@ def test_csv_categorical_categorical_merge() -> None:
 
 def test_batched_csv_reader(foods_file_path: Path) -> None:
     reader = pl.read_csv_batched(foods_file_path, batch_size=4)
-    batches = reader.next_batches(5)
+    assert isinstance(reader, BatchedCsvReader)
 
+    batches = reader.next_batches(5)
     assert batches is not None
     assert len(batches) == 5
     assert batches[0].to_dict(as_series=False) == {
@@ -1431,10 +1434,12 @@ def test_batched_csv_reader(foods_file_path: Path) -> None:
         "sugars_g": [25, 0, 5, 11],
     }
     assert_frame_equal(pl.concat(batches), pl.read_csv(foods_file_path))
+
     # the final batch of the low-memory variant is different
     reader = pl.read_csv_batched(foods_file_path, batch_size=4, low_memory=True)
     batches = reader.next_batches(5)
     assert len(batches) == 5  # type: ignore[arg-type]
+
     batches += reader.next_batches(5)  # type: ignore[operator]
     assert_frame_equal(pl.concat(batches), pl.read_csv(foods_file_path))
 
@@ -1959,4 +1964,92 @@ def test_read_csv_single_column(columns: list[str] | str) -> None:
     f = io.StringIO(csv)
     df = pl.read_csv(f, columns=columns)
     expected = pl.DataFrame({"b": [2, 5]})
+    assert_frame_equal(df, expected)
+
+
+def test_csv_invalid_escape_utf8_14960() -> None:
+    with pytest.raises(pl.ComputeError, match=r"field is not properly escaped"):
+        pl.read_csv('col1\n""•'.encode())
+
+
+@pytest.mark.slow()
+@pytest.mark.write_disk()
+def test_read_csv_only_loads_selected_columns(
+    memory_usage_without_pyarrow: MemoryUsage,
+    tmp_path: Path,
+) -> None:
+    """Only requested columns are loaded by ``read_csv()``."""
+    tmp_path.mkdir(exist_ok=True)
+
+    # Each column will be about 8MB of RAM
+    series = pl.arange(0, 1_000_000, dtype=pl.Int64, eager=True)
+
+    file_path = tmp_path / "multicolumn.csv"
+    df = pl.DataFrame(
+        {
+            "a": series,
+            "b": series,
+        }
+    )
+    df.write_csv(file_path)
+    del df, series
+
+    memory_usage_without_pyarrow.reset_tracking()
+
+    # Only load one column:
+    df = pl.read_csv(str(file_path), columns=["b"], rechunk=False)
+    del df
+    # Only one column's worth of memory should be used; 2 columns would be
+    # 16_000_000 at least, but there's some overhead.
+    assert 8_000_000 < memory_usage_without_pyarrow.get_peak() < 13_000_000
+
+    # Globs use a different code path for reading
+    memory_usage_without_pyarrow.reset_tracking()
+    df = pl.read_csv(str(tmp_path / "*.csv"), columns=["b"], rechunk=False)
+    del df
+    # Only one column's worth of memory should be used; 2 columns would be
+    # 16_000_000 at least, but there's some overhead.
+    assert 8_000_000 < memory_usage_without_pyarrow.get_peak() < 13_000_000
+
+    # read_csv_batched() test:
+    memory_usage_without_pyarrow.reset_tracking()
+    result: list[pl.DataFrame] = []
+    batched = pl.read_csv_batched(
+        str(file_path),
+        columns=["b"],
+        rechunk=False,
+        n_threads=1,
+        low_memory=True,
+        batch_size=10_000,
+    )
+    while sum(df.height for df in result) < 1_000_000:
+        next_batch = batched.next_batches(1)
+        if next_batch is None:
+            break
+        result += next_batch
+    del result
+    assert 8_000_000 < memory_usage_without_pyarrow.get_peak() < 13_000_000
+
+
+def test_csv_escape_cf_15349() -> None:
+    f = io.BytesIO()
+    df = pl.DataFrame({"test": ["normal", "with\rcr"]})
+    df.write_csv(f)
+    f.seek(0)
+    assert f.read() == b'test\nnormal\n"with\rcr"\n'
+
+
+@pytest.mark.parametrize("use_pyarrow", [True, False])
+def test_skip_rows_after_header_pyarrow(use_pyarrow: bool) -> None:
+    csv = textwrap.dedent(
+        """\
+        foo,bar
+        1,2
+        3,4
+        5,6
+        """
+    )
+    f = io.StringIO(csv)
+    df = pl.read_csv(f, skip_rows_after_header=1, use_pyarrow=use_pyarrow)
+    expected = pl.DataFrame({"foo": [3, 5], "bar": [4, 6]})
     assert_frame_equal(df, expected)

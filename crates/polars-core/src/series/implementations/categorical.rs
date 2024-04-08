@@ -226,8 +226,8 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         self.0.get_any_value_unchecked(index)
     }
 
-    fn sort_with(&self, options: SortOptions) -> Series {
-        self.0.sort_with(options).into_series()
+    fn sort_with(&self, options: SortOptions) -> PolarsResult<Series> {
+        Ok(self.0.sort_with(options).into_series())
     }
 
     fn arg_sort(&self, options: SortOptions) -> IdxCa {

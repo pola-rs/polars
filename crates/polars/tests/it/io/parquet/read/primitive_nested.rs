@@ -21,11 +21,7 @@ fn read_buffer<T: NativeType>(values: &[u8]) -> impl Iterator<Item = T> + '_ {
 }
 
 // todo: generalize i64 -> T
-fn compose_array<
-    I: Iterator<Item = Result<u32, Error>>,
-    F: Iterator<Item = Result<u32, Error>>,
-    G: Iterator<Item = i64>,
->(
+fn compose_array<I: Iterator<Item = u32>, F: Iterator<Item = u32>, G: Iterator<Item = i64>>(
     rep_levels: I,
     def_levels: F,
     max_rep: u32,
@@ -42,8 +38,6 @@ fn compose_array<
         .into_iter()
         .zip(def_levels.into_iter())
         .try_for_each(|(rep, def)| {
-            let rep = rep?;
-            let def = def?;
             match rep {
                 1 => {},
                 0 => {
@@ -84,8 +78,8 @@ fn read_array_impl<I: Iterator<Item = i64>>(
         (def_level_encoding.0, max_def_level == 0),
     ) {
         ((Encoding::Rle, true), (Encoding::Rle, true)) => compose_array(
-            std::iter::repeat(Ok(0)).take(length),
-            std::iter::repeat(Ok(0)).take(length),
+            std::iter::repeat(0).take(length),
+            std::iter::repeat(0).take(length),
             max_rep_level,
             max_def_level,
             values,
@@ -95,7 +89,7 @@ fn read_array_impl<I: Iterator<Item = i64>>(
             let rep_levels = HybridRleDecoder::try_new(rep_levels, num_bits, length)?;
             compose_array(
                 rep_levels,
-                std::iter::repeat(Ok(0)).take(length),
+                std::iter::repeat(0).take(length),
                 max_rep_level,
                 max_def_level,
                 values,
@@ -105,7 +99,7 @@ fn read_array_impl<I: Iterator<Item = i64>>(
             let num_bits = get_bit_width(def_level_encoding.1);
             let def_levels = HybridRleDecoder::try_new(def_levels, num_bits, length)?;
             compose_array(
-                std::iter::repeat(Ok(0)).take(length),
+                std::iter::repeat(0).take(length),
                 def_levels,
                 max_rep_level,
                 max_def_level,

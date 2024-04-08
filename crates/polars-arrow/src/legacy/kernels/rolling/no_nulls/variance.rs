@@ -26,7 +26,7 @@ impl<'a, T: NativeType + IsFloat + std::iter::Sum + AddAssign + SubAssign + Mul<
         }
     }
 
-    unsafe fn update(&mut self, start: usize, end: usize) -> T {
+    unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
         // if we exceed the end, we have a completely new window
         // so we recompute
         let recompute_sum = if start >= self.last_end || self.last_recompute > 128 {
@@ -68,7 +68,7 @@ impl<'a, T: NativeType + IsFloat + std::iter::Sum + AddAssign + SubAssign + Mul<
             }
         }
         self.last_end = end;
-        self.sum_of_squares
+        Some(self.sum_of_squares)
     }
 }
 
@@ -108,25 +108,24 @@ impl<
         }
     }
 
-    unsafe fn update(&mut self, start: usize, end: usize) -> T {
+    unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
         let count: T = NumCast::from(end - start).unwrap();
-        let sum_of_squares = self.sum_of_squares.update(start, end);
-        let mean = self.mean.update(start, end);
+        let sum_of_squares = self.sum_of_squares.update(start, end).unwrap_unchecked();
+        let mean = self.mean.update(start, end).unwrap_unchecked();
 
         let denom = count - NumCast::from(self.ddof).unwrap();
-        if end - start == 1 {
-            T::zero()
-        } else if denom <= T::zero() {
-            //ddof would be greater than # of observations
-            T::infinity()
+        if denom <= T::zero() {
+            None
+        } else if end - start == 1 {
+            Some(T::zero())
         } else {
             let out = (sum_of_squares - count * mean * mean) / denom;
             // variance cannot be negative.
             // if it is negative it is due to numeric instability
             if out < T::zero() {
-                T::zero()
+                Some(T::zero())
             } else {
-                out
+                Some(out)
             }
         }
     }
@@ -208,14 +207,11 @@ mod test {
 
         let out = rolling_var(values, 2, 1, false, None, None).unwrap();
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out = out
-            .into_iter()
-            .map(|v| v.copied().unwrap())
-            .collect::<Vec<_>>();
+        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         // we cannot compare nans, so we compare the string values
         assert_eq!(
             format!("{:?}", out.as_slice()),
-            format!("{:?}", &[0.0, 8.0, 2.0, 0.5])
+            format!("{:?}", &[None, Some(8.0), Some(2.0), Some(0.5)])
         );
         // test nan handling.
         let values = &[-10.0, 2.0, 3.0, f64::nan(), 5.0, 6.0, 7.0];

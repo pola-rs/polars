@@ -195,6 +195,31 @@ impl MutableBooleanArray {
         }
     }
 
+    /// Extends `MutableBooleanArray` by additional values of constant value.
+    #[inline]
+    pub fn extend_constant(&mut self, additional: usize, value: Option<bool>) {
+        match value {
+            Some(value) => {
+                self.values.extend_constant(additional, value);
+                if let Some(validity) = self.validity.as_mut() {
+                    validity.extend_constant(additional, true);
+                }
+            },
+            None => {
+                self.values.extend_constant(additional, false);
+                if let Some(validity) = self.validity.as_mut() {
+                    validity.extend_constant(additional, false)
+                } else {
+                    self.init_validity();
+                    self.validity
+                        .as_mut()
+                        .unwrap()
+                        .extend_constant(additional, false)
+                };
+            },
+        };
+    }
+
     fn init_validity(&mut self) {
         let mut validity = MutableBitmap::with_capacity(self.values.capacity());
         validity.extend_constant(self.len(), true);

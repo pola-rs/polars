@@ -30,7 +30,9 @@ pub mod file_async;
 pub(crate) use common::first_dict_field;
 #[cfg(feature = "io_flight")]
 pub(crate) use common::{read_dictionary, read_record_batch};
-pub use file::{read_batch, read_file_dictionaries, read_file_metadata, FileMetadata};
+pub use file::{
+    deserialize_footer, read_batch, read_file_dictionaries, read_file_metadata, FileMetadata,
+};
 use polars_utils::aliases::PlHashMap;
 pub use reader::FileReader;
 pub use schema::deserialize_schema;

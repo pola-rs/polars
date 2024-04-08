@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use arrow::array::{Array, ListArray, MapArray, StructArray};
+use arrow::array::{Array, FixedSizeListArray, ListArray, MapArray, StructArray};
 use arrow::bitmap::Bitmap;
 use arrow::datatypes::PhysicalType;
 use arrow::offset::{Offset, OffsetsBuffer};
@@ -41,6 +41,13 @@ pub enum Nested {
     List(ListNested<i32>),
     /// a list
     LargeList(ListNested<i64>),
+    /// Width
+    FixedSizeList {
+        validity: Option<Bitmap>,
+        is_optional: bool,
+        width: usize,
+        len: usize,
+    },
     /// a struct
     /// - validity
     /// - is_optional
@@ -56,6 +63,7 @@ impl Nested {
             Nested::List(nested) => nested.offsets.len_proxy(),
             Nested::LargeList(nested) => nested.offsets.len_proxy(),
             Nested::Struct(_, _, len) => *len,
+            Nested::FixedSizeList { len, .. } => *len,
         }
     }
 }
@@ -97,6 +105,30 @@ fn to_nested_recursive(
             for (type_, array) in fields.iter().zip(array.values()) {
                 to_nested_recursive(array.as_ref(), type_, nested, parents.clone())?;
             }
+        },
+        FixedSizeList => {
+            let array = array.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
+            let type_ = if let ParquetType::GroupType { fields, .. } = type_ {
+                if let ParquetType::GroupType { fields, .. } = &fields[0] {
+                    &fields[0]
+                } else {
+                    polars_bail!(InvalidOperation:
+                        "Parquet type must be a group for a list array".to_string(),
+                    )
+                }
+            } else {
+                polars_bail!(InvalidOperation:
+                    "Parquet type must be a group for a list array".to_string(),
+                )
+            };
+
+            parents.push(Nested::FixedSizeList {
+                validity: array.validity().cloned(),
+                len: array.len(),
+                width: array.size(),
+                is_optional,
+            });
+            to_nested_recursive(array.values().as_ref(), type_, nested, parents)?;
         },
         List => {
             let array = array.as_any().downcast_ref::<ListArray<i32>>().unwrap();
@@ -202,6 +234,10 @@ fn to_leaves_recursive<'a>(array: &'a dyn Array, leaves: &mut Vec<&'a dyn Array>
         },
         LargeList => {
             let array = array.as_any().downcast_ref::<ListArray<i64>>().unwrap();
+            to_leaves_recursive(array.values().as_ref(), leaves);
+        },
+        FixedSizeList => {
+            let array = array.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
             to_leaves_recursive(array.values().as_ref(), leaves);
         },
         Map => {

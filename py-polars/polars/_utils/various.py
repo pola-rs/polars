@@ -158,41 +158,6 @@ def range_to_slice(rng: range) -> slice:
     return slice(rng.start, rng.stop, rng.step)
 
 
-def handle_projection_columns(
-    columns: Sequence[str] | Sequence[int] | str | None,
-) -> tuple[list[int] | None, Sequence[str] | None]:
-    """Disambiguates between columns specified as integers vs. strings."""
-    projection: list[int] | None = None
-    new_columns: Sequence[str] | None = None
-    if columns is not None:
-        if isinstance(columns, str):
-            new_columns = [columns]
-        elif is_int_sequence(columns):
-            projection = list(columns)
-        elif not is_str_sequence(columns):
-            msg = "`columns` arg should contain a list of all integers or all strings values"
-            raise TypeError(msg)
-        else:
-            new_columns = columns
-        if columns and len(set(columns)) != len(columns):
-            msg = f"`columns` arg should only have unique values, got {columns!r}"
-            raise ValueError(msg)
-        if projection and len(set(projection)) != len(projection):
-            msg = f"`columns` arg should only have unique values, got {projection!r}"
-            raise ValueError(msg)
-    return projection, new_columns
-
-
-def _prepare_row_index_args(
-    row_index_name: str | None = None,
-    row_index_offset: int = 0,
-) -> tuple[str, int] | None:
-    if row_index_name is not None:
-        return (row_index_name, row_index_offset)
-    else:
-        return None
-
-
 def _in_notebook() -> bool:
     try:
         from IPython import get_ipython
@@ -207,9 +172,9 @@ def _in_notebook() -> bool:
 
 
 def arrlen(obj: Any) -> int | None:
-    """Return length of (non-string) sequence object; returns None for non-sequences."""
+    """Return length of (non-string/dict) sequence; returns None for non-sequences."""
     try:
-        return None if isinstance(obj, str) else len(obj)
+        return None if isinstance(obj, (str, dict)) else len(obj)
     except TypeError:
         return None
 

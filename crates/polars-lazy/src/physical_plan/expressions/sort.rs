@@ -51,7 +51,7 @@ impl PhysicalExpr for SortExpr {
     }
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
         let series = self.physical_expr.evaluate(df, state)?;
-        Ok(series.sort_with(self.options))
+        series.sort_with(self.options)
     }
 
     #[allow(clippy::ptr_arg)]
@@ -65,7 +65,7 @@ impl PhysicalExpr for SortExpr {
         match ac.agg_state() {
             AggState::AggregatedList(s) => {
                 let ca = s.list().unwrap();
-                let out = ca.lst_sort(self.options);
+                let out = ca.lst_sort(self.options)?;
                 ac.with_series(out.into_series(), true, Some(&self.expr))?;
             },
             _ => {

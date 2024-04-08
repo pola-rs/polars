@@ -50,8 +50,7 @@ pub(crate) trait ToSeries {
 
 impl ToSeries for Vec<PySeries> {
     fn to_series(self) -> Vec<Series> {
-        // SAFETY:
-        // repr is transparent
+        // SAFETY: repr is transparent.
         unsafe { std::mem::transmute(self) }
     }
 }
@@ -62,8 +61,7 @@ pub(crate) trait ToPySeries {
 
 impl ToPySeries for Vec<Series> {
     fn to_pyseries(self) -> Vec<PySeries> {
-        // SAFETY:
-        // repr is transparent
+        // SAFETY: repr is transparent.
         unsafe { std::mem::transmute(self) }
     }
 }
@@ -285,8 +283,12 @@ impl PySeries {
         }
     }
 
-    fn sort(&mut self, descending: bool, nulls_last: bool) -> Self {
-        self.series.sort(descending, nulls_last).into()
+    fn sort(&mut self, descending: bool, nulls_last: bool) -> PyResult<Self> {
+        Ok(self
+            .series
+            .sort(descending, nulls_last)
+            .map_err(PyPolarsErr::from)?
+            .into())
     }
 
     fn take_with_series(&self, indices: &PySeries) -> PyResult<Self> {
@@ -341,6 +343,13 @@ impl PySeries {
         skip_nulls: bool,
     ) -> PyResult<PySeries> {
         let series = &self.series;
+
+        if output_type.is_none() {
+            polars_warn!(
+                MapWithoutReturnDtypeWarning,
+                "Calling `map_elements` without specifying `return_dtype` can lead to unpredictable results. \
+                Specify `return_dtype` to silence this warning.")
+        }
 
         if skip_nulls && (series.null_count() == series.len()) {
             if let Some(output_type) = output_type {

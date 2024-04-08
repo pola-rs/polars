@@ -130,18 +130,18 @@ impl CategoricalChunked {
         }
     }
 
-    // Convert to fixed enum. In case a value is not in the categories return Error
-    pub fn to_enum(&self, categories: &Utf8ViewArray, hash: u128) -> PolarsResult<Self> {
+    // Convert to fixed enum. Values not in categories are mapped to None.
+    pub fn to_enum(&self, categories: &Utf8ViewArray, hash: u128) -> Self {
         // Fast paths
         match self.get_rev_map().as_ref() {
             RevMapping::Local(_, cur_hash) if hash == *cur_hash => {
                 return unsafe {
-                    Ok(CategoricalChunked::from_cats_and_rev_map_unchecked(
+                    CategoricalChunked::from_cats_and_rev_map_unchecked(
                         self.physical().clone(),
                         self.get_rev_map().clone(),
                         true,
                         self.get_ordering(),
-                    ))
+                    )
                 };
             },
             _ => (),
@@ -159,34 +159,18 @@ impl CategoricalChunked {
         let new_phys: UInt32Chunked = self
             .physical()
             .into_iter()
-            .map(|opt_v: Option<u32>| {
-                let Some(v) = opt_v else {
-                    return Ok(None);
-                };
+            .map(|opt_v: Option<u32>| opt_v.and_then(|v| idx_map.get(&v).copied()))
+            .collect();
 
-                let Some(idx) = idx_map.get(&v) else {
-                    polars_bail!(
-                        not_in_enum,
-                        value = old_rev_map.get(v),
-                        categories = &categories
-                    );
-                };
-
-                Ok(Some(*idx))
-            })
-            .collect::<PolarsResult<_>>()?;
-
-        Ok(
-            // SAFETY: we created the physical from the enum categories
-            unsafe {
-                CategoricalChunked::from_cats_and_rev_map_unchecked(
-                    new_phys,
-                    Arc::new(RevMapping::Local(categories.clone(), hash)),
-                    true,
-                    self.get_ordering(),
-                )
-            },
-        )
+        // SAFETY: we created the physical from the enum categories
+        unsafe {
+            CategoricalChunked::from_cats_and_rev_map_unchecked(
+                new_phys,
+                Arc::new(RevMapping::Local(categories.clone(), hash)),
+                true,
+                self.get_ordering(),
+            )
+        }
     }
 
     pub(crate) fn get_flags(&self) -> Settings {
@@ -373,7 +357,7 @@ impl LogicalType for CategoricalChunked {
                     polars_bail!(ComputeError: "can not cast to enum with global mapping")
                 };
                 Ok(self
-                    .to_enum(categories, *hash)?
+                    .to_enum(categories, *hash)
                     .set_ordering(*ordering, true)
                     .into_series()
                     .with_name(self.name()))

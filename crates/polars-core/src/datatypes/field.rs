@@ -173,6 +173,7 @@ impl DataType {
                     DataType::BinaryOffset
                 }
             },
+            ArrowDataType::FixedSizeBinary(_) => DataType::Binary,
             dt => panic!("Arrow datatype {dt:?} not supported by Polars. You probably need to activate that data-type feature."),
         }
     }

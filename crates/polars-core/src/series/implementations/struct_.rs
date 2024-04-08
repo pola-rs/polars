@@ -272,9 +272,8 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         if self.len() == 1 {
             return Ok(IdxCa::new_vec(self.name(), vec![0 as IdxSize]));
         }
-        // TODO! try row encoding
         let main_thread = POOL.current_thread_index().is_none();
-        let groups = self.group_tuples(main_thread, false)?;
+        let groups = self.group_tuples(main_thread, true)?;
         let first = groups.take_group_firsts();
         Ok(IdxCa::from_vec(self.name(), first))
     }
@@ -313,7 +312,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         &self.0
     }
 
-    fn sort_with(&self, options: SortOptions) -> Series {
+    fn sort_with(&self, options: SortOptions) -> PolarsResult<Series> {
         let df = self.0.clone().unnest();
 
         let desc = if options.descending {
@@ -321,17 +320,15 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         } else {
             vec![false; df.width()]
         };
-        let out = df
-            .sort_impl(
-                df.columns.clone(),
-                desc,
-                options.nulls_last,
-                options.maintain_order,
-                None,
-                options.multithreaded,
-            )
-            .unwrap();
-        StructChunked::new_unchecked(self.name(), &out.columns).into_series()
+        let out = df.sort_impl(
+            df.columns.clone(),
+            desc,
+            options.nulls_last,
+            options.maintain_order,
+            None,
+            options.multithreaded,
+        )?;
+        Ok(StructChunked::new_unchecked(self.name(), &out.columns).into_series())
     }
 
     fn arg_sort(&self, options: SortOptions) -> IdxCa {

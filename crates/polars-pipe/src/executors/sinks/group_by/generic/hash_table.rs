@@ -131,11 +131,11 @@ impl<const FIXED: bool> AggHashTable<FIXED> {
     pub(super) unsafe fn insert(
         &mut self,
         hash: u64,
-        row: &[u8],
+        key: &[u8],
         agg_iters: &mut [SeriesPhysIter],
         chunk_index: IdxSize,
     ) -> bool {
-        let agg_idx = match self.insert_key(hash, row) {
+        let agg_idx = match self.insert_key(hash, key) {
             // overflow
             None => return true,
             Some(agg_idx) => agg_idx,

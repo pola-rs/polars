@@ -37,7 +37,10 @@ fn debug() {
     let b = Bitmap::from([true, true, false, true, true, true, true, true, true]);
     let b = b.sliced(2, 7);
 
-    assert_eq!(format!("{b:?}"), "[0b111110__, 0b_______1]");
+    assert_eq!(
+        format!("{b:?}"),
+        "Bitmap { len: 7, offset: 2, bytes: [0b111110__, 0b_______1] }"
+    );
 }
 
 #[test]

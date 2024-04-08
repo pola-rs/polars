@@ -238,7 +238,7 @@ class DataTypeGroup(frozenset):  # type: ignore[type-arg]
             if not isinstance(it, (DataType, DataTypeClass)):
                 msg = f"DataTypeGroup items must be dtypes; found {type(it).__name__!r}"
                 raise TypeError(msg)
-        dtype_group = super().__new__(cls, items)  # type: ignore[arg-type]
+        dtype_group = super().__new__(cls, items)
         dtype_group._match_base_type = match_base_type
         return dtype_group
 
@@ -422,8 +422,8 @@ class Datetime(TemporalType):
     time_zone
         Time zone string, as defined in zoneinfo (to see valid strings run
         `import zoneinfo; zoneinfo.available_timezones()` for a full list).
-        When using to match dtypes, can use "*" to check for Datetime columns
-        that have any timezone.
+        When used to match dtypes, can set this to "*" to check for Datetime
+        columns that have any (non-null) timezone.
 
     Notes
     -----

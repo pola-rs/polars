@@ -5,6 +5,7 @@ mod encoder;
 pub use bitmap::{encode_bool as bitpacked_encode, BitmapIter};
 pub use decoder::Decoder;
 pub use encoder::{encode_bool, encode_u32};
+use polars_utils::iter::FallibleIterator;
 
 use super::bitpacked;
 use crate::parquet::error::Error;
@@ -35,6 +36,7 @@ pub struct HybridRleDecoder<'a> {
     decoder: Decoder<'a>,
     state: State<'a>,
     remaining: usize,
+    result: Result<(), Error>,
 }
 
 #[inline]
@@ -72,12 +74,13 @@ impl<'a> HybridRleDecoder<'a> {
             decoder,
             state,
             remaining: num_values,
+            result: Ok(()),
         })
     }
 }
 
 impl<'a> Iterator for HybridRleDecoder<'a> {
-    type Item = Result<u32, Error>;
+    type Item = u32;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.remaining == 0 {
@@ -96,18 +99,28 @@ impl<'a> Iterator for HybridRleDecoder<'a> {
                 State::None => Some(0),
             } {
                 self.remaining -= 1;
-                return Some(Ok(result));
+                return Some(result);
             }
 
             self.state = match read_next(&mut self.decoder, self.remaining) {
                 Ok(state) => state,
-                Err(e) => return Some(Err(e)),
+                Err(e) => {
+                    self.result = Err(e);
+                    return None;
+                },
             }
         }
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
         (self.remaining, Some(self.remaining))
+    }
+}
+
+impl<'a> FallibleIterator<Error> for HybridRleDecoder<'a> {
+    #[inline]
+    fn get_result(&mut self) -> Result<(), Error> {
+        std::mem::replace(&mut self.result, Ok(()))
     }
 }
 
@@ -128,7 +141,7 @@ mod tests {
 
         let decoder = HybridRleDecoder::try_new(&buffer, num_bits, data.len())?;
 
-        let result = decoder.collect::<Result<Vec<_>, _>>()?;
+        let result = decoder.collect::<Vec<_>>();
 
         assert_eq!(result, data);
         Ok(())
@@ -212,7 +225,7 @@ mod tests {
 
         let decoder = HybridRleDecoder::try_new(&data, num_bits, 1000)?;
 
-        let result = decoder.collect::<Result<Vec<_>, _>>()?;
+        let result = decoder.collect::<Vec<_>>();
 
         assert_eq!(result, (0..1000).collect::<Vec<_>>());
         Ok(())
@@ -226,7 +239,7 @@ mod tests {
 
         let decoder = HybridRleDecoder::try_new(&data, num_bits, 1)?;
 
-        let result = decoder.collect::<Result<Vec<_>, _>>()?;
+        let result = decoder.collect::<Vec<_>>();
 
         assert_eq!(result, &[2]);
         Ok(())
@@ -240,7 +253,7 @@ mod tests {
 
         let decoder = HybridRleDecoder::try_new(&data, num_bits, 2)?;
 
-        let result = decoder.collect::<Result<Vec<_>, _>>()?;
+        let result = decoder.collect::<Vec<_>>();
 
         assert_eq!(result, &[0, 0]);
         Ok(())
@@ -254,7 +267,7 @@ mod tests {
 
         let decoder = HybridRleDecoder::try_new(&data, num_bits, 100)?;
 
-        let result = decoder.collect::<Result<Vec<_>, _>>()?;
+        let result = decoder.collect::<Vec<_>>();
 
         assert_eq!(result, vec![0; 100]);
         Ok(())

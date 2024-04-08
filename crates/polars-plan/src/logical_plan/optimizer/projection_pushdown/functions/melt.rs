@@ -6,7 +6,7 @@ pub(super) fn process_melt(
     lp: ALogicalPlan,
     args: &Arc<MeltArgs>,
     input: Node,
-    acc_projections: Vec<Node>,
+    acc_projections: Vec<ColumnNode>,
     projections_seen: usize,
     lp_arena: &mut Arena<ALogicalPlan>,
     expr_arena: &mut Arena<AExpr>,
@@ -53,7 +53,8 @@ pub(super) fn process_melt(
             Ok(lp)
         } else {
             Ok(ALogicalPlanBuilder::from_lp(lp, expr_arena, lp_arena)
-                .project(local_projections, Default::default())
+                .project_simple_nodes(local_projections)
+                .unwrap()
                 .build())
         }
     }

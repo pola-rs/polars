@@ -120,8 +120,8 @@ pub(super) fn predicate_to_pa(
             input,
             ..
         } => {
-            let input = input.first().unwrap();
-            let input = predicate_to_pa(*input, expr_arena, args)?;
+            let input = input.first().unwrap().node();
+            let input = predicate_to_pa(input, expr_arena, args)?;
             Some(format!("~({input})"))
         },
         AExpr::Function {
@@ -129,8 +129,8 @@ pub(super) fn predicate_to_pa(
             input,
             ..
         } => {
-            let input = input.first().unwrap();
-            let input = predicate_to_pa(*input, expr_arena, args)?;
+            let input = input.first().unwrap().node();
+            let input = predicate_to_pa(input, expr_arena, args)?;
             Some(format!("({input}).is_null()"))
         },
         AExpr::Function {
@@ -138,8 +138,8 @@ pub(super) fn predicate_to_pa(
             input,
             ..
         } => {
-            let input = input.first().unwrap();
-            let input = predicate_to_pa(*input, expr_arena, args)?;
+            let input = input.first().unwrap().node();
+            let input = predicate_to_pa(input, expr_arena, args)?;
             Some(format!("~({input}).is_null()"))
         },
         #[cfg(feature = "is_in")]
@@ -148,10 +148,10 @@ pub(super) fn predicate_to_pa(
             input,
             ..
         } => {
-            let col = predicate_to_pa(*input.first()?, expr_arena, args)?;
+            let col = predicate_to_pa(input.first()?.node(), expr_arena, args)?;
             let mut args = args;
             args.allow_literal_series = true;
-            let values = predicate_to_pa(*input.get(1)?, expr_arena, args)?;
+            let values = predicate_to_pa(input.get(1)?.node(), expr_arena, args)?;
 
             Some(format!("({col}).isin({values})"))
         },

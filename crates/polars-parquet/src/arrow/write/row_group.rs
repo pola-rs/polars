@@ -1,6 +1,6 @@
 use arrow::array::Array;
-use arrow::chunk::Chunk;
 use arrow::datatypes::ArrowSchema;
+use arrow::record_batch::RecordBatch;
 use polars_error::{polars_bail, to_compute_err, PolarsError, PolarsResult};
 
 use super::{
@@ -12,14 +12,14 @@ use crate::parquet::schema::types::ParquetType;
 use crate::parquet::write::Compressor;
 use crate::parquet::FallibleStreamingIterator;
 
-/// Maps a [`Chunk`] and parquet-specific options to an [`RowGroupIter`] used to
+/// Maps a [`RecordBatch`] and parquet-specific options to an [`RowGroupIter`] used to
 /// write to parquet
 /// # Panics
 /// Iff
 /// * `encodings.len() != fields.len()` or
 /// * `encodings.len() != chunk.arrays().len()`
 pub fn row_group_iter<A: AsRef<dyn Array> + 'static + Send + Sync>(
-    chunk: Chunk<A>,
+    chunk: RecordBatch<A>,
     encodings: Vec<Vec<Encoding>>,
     fields: Vec<ParquetType>,
     options: WriteOptions,
@@ -54,12 +54,12 @@ pub fn row_group_iter<A: AsRef<dyn Array> + 'static + Send + Sync>(
     )
 }
 
-/// An iterator adapter that converts an iterator over [`Chunk`] into an iterator
+/// An iterator adapter that converts an iterator over [`RecordBatch`] into an iterator
 /// of row groups.
 /// Use it to create an iterator consumable by the parquet's API.
 pub struct RowGroupIterator<
     A: AsRef<dyn Array> + 'static,
-    I: Iterator<Item = PolarsResult<Chunk<A>>>,
+    I: Iterator<Item = PolarsResult<RecordBatch<A>>>,
 > {
     iter: I,
     options: WriteOptions,
@@ -67,10 +67,10 @@ pub struct RowGroupIterator<
     encodings: Vec<Vec<Encoding>>,
 }
 
-impl<A: AsRef<dyn Array> + 'static, I: Iterator<Item = PolarsResult<Chunk<A>>>>
+impl<A: AsRef<dyn Array> + 'static, I: Iterator<Item = PolarsResult<RecordBatch<A>>>>
     RowGroupIterator<A, I>
 {
-    /// Creates a new [`RowGroupIterator`] from an iterator over [`Chunk`].
+    /// Creates a new [`RowGroupIterator`] from an iterator over [`RecordBatch`].
     ///
     /// # Errors
     /// Iff
@@ -103,8 +103,10 @@ impl<A: AsRef<dyn Array> + 'static, I: Iterator<Item = PolarsResult<Chunk<A>>>>
     }
 }
 
-impl<A: AsRef<dyn Array> + 'static + Send + Sync, I: Iterator<Item = PolarsResult<Chunk<A>>>>
-    Iterator for RowGroupIterator<A, I>
+impl<
+        A: AsRef<dyn Array> + 'static + Send + Sync,
+        I: Iterator<Item = PolarsResult<RecordBatch<A>>>,
+    > Iterator for RowGroupIterator<A, I>
 {
     type Item = PolarsResult<RowGroupIter<'static, PolarsError>>;
 

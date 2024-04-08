@@ -94,6 +94,11 @@ create_exception!(
     CategoricalRemappingWarning,
     PolarsBaseWarning
 );
+create_exception!(
+    polars.exceptions,
+    MapWithoutReturnDtypeWarning,
+    PolarsBaseWarning
+);
 
 #[macro_export]
 macro_rules! raise_err(
@@ -108,6 +113,9 @@ impl IntoPy<PyObject> for Wrap<PolarsWarning> {
         match self.0 {
             PolarsWarning::CategoricalRemappingWarning => {
                 CategoricalRemappingWarning::type_object(py).to_object(py)
+            },
+            PolarsWarning::MapWithoutReturnDtypeWarning => {
+                MapWithoutReturnDtypeWarning::type_object(py).to_object(py)
             },
             PolarsWarning::UserWarning => PyUserWarning::type_object(py).to_object(py),
         }

@@ -28,6 +28,8 @@ mod gil_once_cell;
 mod lazyframe;
 mod lazygroupby;
 mod map;
+#[cfg(debug_assertions)]
+mod memory;
 #[cfg(feature = "object")]
 mod object;
 #[cfg(feature = "object")]
@@ -54,23 +56,34 @@ use crate::conversion::Wrap;
 use crate::dataframe::PyDataFrame;
 use crate::error::{
     CategoricalRemappingWarning, ColumnNotFoundError, ComputeError, DuplicateError,
-    InvalidOperationError, NoDataError, OutOfBoundsError, PolarsBaseError, PolarsBaseWarning,
-    PyPolarsErr, SchemaError, SchemaFieldNotFoundError, StructFieldNotFoundError,
+    InvalidOperationError, MapWithoutReturnDtypeWarning, NoDataError, OutOfBoundsError,
+    PolarsBaseError, PolarsBaseWarning, PyPolarsErr, SchemaError, SchemaFieldNotFoundError,
+    StructFieldNotFoundError,
 };
 use crate::expr::PyExpr;
 use crate::functions::PyStringCacheHolder;
 use crate::lazyframe::{PyInProcessQuery, PyLazyFrame};
 use crate::lazygroupby::PyLazyGroupBy;
+#[cfg(debug_assertions)]
+use crate::memory::TracemallocAllocator;
 use crate::series::PySeries;
 #[cfg(feature = "sql")]
 use crate::sql::PySQLContext;
 
+// On Windows tracemalloc does work. However, we build abi3 wheels, and the
+// relevant C APIs are not part of the limited stable CPython API. As a result,
+// linking breaks on Windows if we use tracemalloc C APIs. So we only use this
+// on Windows for now.
 #[global_allocator]
-#[cfg(all(target_family = "unix", not(use_mimalloc)))]
+#[cfg(all(target_family = "unix", debug_assertions))]
+static ALLOC: TracemallocAllocator<Jemalloc> = TracemallocAllocator::new(Jemalloc);
+
+#[global_allocator]
+#[cfg(all(target_family = "unix", not(use_mimalloc), not(debug_assertions)))]
 static ALLOC: Jemalloc = Jemalloc;
 
 #[global_allocator]
-#[cfg(any(not(target_family = "unix"), use_mimalloc))]
+#[cfg(all(any(not(target_family = "unix"), use_mimalloc), not(debug_assertions)))]
 static ALLOC: MiMalloc = MiMalloc;
 
 #[pymodule]
@@ -97,11 +110,11 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::concat_df_horizontal))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::eager_int_range))
-        .unwrap();
 
     // Functions - range
     m.add_wrapped(wrap_pyfunction!(functions::int_range))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::eager_int_range))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::int_ranges))
         .unwrap();
@@ -204,6 +217,12 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     #[cfg(feature = "parquet")]
     m.add_wrapped(wrap_pyfunction!(functions::read_parquet_schema))
         .unwrap();
+    #[cfg(feature = "clipboard")]
+    m.add_wrapped(wrap_pyfunction!(functions::read_clipboard_string))
+        .unwrap();
+    #[cfg(feature = "clipboard")]
+    m.add_wrapped(wrap_pyfunction!(functions::write_clipboard_string))
+        .unwrap();
 
     // Functions - meta
     m.add_wrapped(wrap_pyfunction!(functions::get_index_type))
@@ -296,6 +315,11 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         py.get_type::<CategoricalRemappingWarning>(),
     )
     .unwrap();
+    m.add(
+        "MapWithoutReturnDtypeWarning",
+        py.get_type::<MapWithoutReturnDtypeWarning>(),
+    )
+    .unwrap();
 
     // Build info
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
@@ -304,6 +328,10 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         "__build__",
         pyo3_built!(py, build, "build", "time", "deps", "features", "host", "target", "git"),
     )?;
+
+    // Plugins
+    m.add_wrapped(wrap_pyfunction!(functions::register_plugin_function))
+        .unwrap();
 
     Ok(())
 }

@@ -124,7 +124,7 @@ def test_stddev_variance() -> None:
             "v1": [-1.0, 0.0, 1.0],
             "v2": [5.5, 0.0, 3.0],
             "v3": [-10, None, 10],
-            "v4": [-100, 0.0, -50.0],
+            "v4": [-100.0, 0.0, -50.0],
         }
     )
     with pl.SQLContext(df=df) as ctx:

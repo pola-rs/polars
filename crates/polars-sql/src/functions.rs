@@ -2,7 +2,7 @@ use polars_core::prelude::{polars_bail, polars_err, DataType, PolarsResult};
 use polars_lazy::dsl::Expr;
 #[cfg(feature = "list_eval")]
 use polars_lazy::dsl::ListNameSpaceExtension;
-use polars_plan::dsl::{coalesce, concat_str, len, when};
+use polars_plan::dsl::{coalesce, concat_str, len, max_horizontal, min_horizontal, when};
 use polars_plan::logical_plan::LiteralValue;
 #[cfg(feature = "list_eval")]
 use polars_plan::prelude::col;
@@ -389,6 +389,12 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT COALESCE(column_1, ...) from df;
     /// ```
     Coalesce,
+    /// SQL 'greatest' function
+    /// Returns the greatest value in the list of expressions.
+    /// ```sql
+    /// SELECT GREATEST(column_1, column_2, ...) from df;
+    /// ```
+    Greatest,
     /// SQL 'if' function
     /// Returns expr1 if the boolean condition provided as the first
     /// parameter evaluates to true, and expr2 otherwise.
@@ -402,6 +408,12 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT IFNULL(string_col, 'n/a') from df;
     /// ```
     IfNull,
+    /// SQL 'least' function
+    /// Returns the smallest value in the list of expressions.
+    /// ```sql
+    /// SELECT LEAST(column_1, column_2, ...) from df;
+    /// ```
+    Least,
     /// SQL 'nullif' function
     /// Returns NULL if two expressions are equal, otherwise returns the first.
     /// ```sql
@@ -412,6 +424,12 @@ pub(crate) enum PolarsSQLFunctions {
     // ----
     // Aggregate functions
     // ----
+    /// SQL 'avg' function
+    /// Returns the average (mean) of all the elements in the grouping.
+    /// ```sql
+    /// SELECT AVG(column_1) from df;
+    /// ```
+    Avg,
     /// SQL 'count' function
     /// Returns the amount of elements in the grouping.
     /// ```sql
@@ -421,42 +439,6 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT COUNT(DISTINCT *) from df;
     /// ```
     Count,
-    /// SQL 'sum' function
-    /// Returns the sum of all the elements in the grouping.
-    /// ```sql
-    /// SELECT SUM(column_1) from df;
-    /// ```
-    Sum,
-    /// SQL 'min' function
-    /// Returns the smallest (minimum) of all the elements in the grouping.
-    /// ```sql
-    /// SELECT MIN(column_1) from df;
-    /// ```
-    Min,
-    /// SQL 'max' function
-    /// Returns the greatest (maximum) of all the elements in the grouping.
-    /// ```sql
-    /// SELECT MAX(column_1) from df;
-    /// ```
-    Max,
-    /// SQL 'avg' function
-    /// Returns the average (mean) of all the elements in the grouping.
-    /// ```sql
-    /// SELECT AVG(column_1) from df;
-    /// ```
-    Avg,
-    /// SQL 'stddev' function
-    /// Returns the standard deviation of all the elements in the grouping.
-    /// ```sql
-    /// SELECT STDDEV(column_1) from df;
-    /// ```
-    StdDev,
-    /// SQL 'variance' function
-    /// Returns the variance of all the elements in the grouping.
-    /// ```sql
-    /// SELECT VARIANCE(column_1) from df;
-    /// ```
-    Variance,
     /// SQL 'first' function
     /// Returns the first element of the grouping.
     /// ```sql
@@ -469,6 +451,42 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT LAST(column_1) from df;
     /// ```
     Last,
+    /// SQL 'max' function
+    /// Returns the greatest (maximum) of all the elements in the grouping.
+    /// ```sql
+    /// SELECT MAX(column_1) from df;
+    /// ```
+    Max,
+    /// SQL 'median' function
+    /// Returns the median element from the grouping.
+    /// ```sql
+    /// SELECT MEDIAN(column_1) from df;
+    /// ```
+    Median,
+    /// SQL 'min' function
+    /// Returns the smallest (minimum) of all the elements in the grouping.
+    /// ```sql
+    /// SELECT MIN(column_1) from df;
+    /// ```
+    Min,
+    /// SQL 'stddev' function
+    /// Returns the standard deviation of all the elements in the grouping.
+    /// ```sql
+    /// SELECT STDDEV(column_1) from df;
+    /// ```
+    StdDev,
+    /// SQL 'sum' function
+    /// Returns the sum of all the elements in the grouping.
+    /// ```sql
+    /// SELECT SUM(column_1) from df;
+    /// ```
+    Sum,
+    /// SQL 'variance' function
+    /// Returns the variance of all the elements in the grouping.
+    /// ```sql
+    /// SELECT VARIANCE(column_1) from df;
+    /// ```
+    Variance,
 
     // ----
     // Array functions
@@ -556,6 +574,7 @@ impl PolarsSQLFunctions {
             "array_mean",
             "array_reverse",
             "array_sum",
+            "array_to_string",
             "array_unique",
             "array_upper",
             "asin",
@@ -565,23 +584,34 @@ impl PolarsSQLFunctions {
             "atan2d",
             "atand",
             "avg",
+            "bit_length",
             "cbrt",
             "ceil",
             "ceiling",
+            "char_length",
+            "character_length",
             "coalesce",
+            "concat",
+            "concat_ws",
             "cos",
             "cosd",
             "cot",
             "cotd",
             "count",
             "date",
+            "date_part",
             "degrees",
             "ends_with",
             "exp",
             "first",
             "floor",
+            "greatest",
+            "if",
+            "ifnull",
+            "initcap",
             "last",
-            "len",
+            "least",
+            "left",
             "length",
             "ln",
             "log",
@@ -591,28 +621,40 @@ impl PolarsSQLFunctions {
             "lower",
             "ltrim",
             "max",
+            "median",
             "min",
+            "mod",
             "nullif",
             "octet_length",
             "pi",
             "pow",
             "power",
             "radians",
+            "regexp_like",
+            "replace",
+            "reverse",
+            "right",
             "round",
             "rtrim",
+            "sign",
             "sin",
             "sind",
             "sqrt",
             "starts_with",
+            "stdev",
             "stddev",
+            "stdev_samp",
+            "stddev_samp",
+            "strpos",
+            "substr",
             "sum",
             "tan",
-            "tan",
-            "tand",
             "tand",
             "unnest",
             "upper",
+            "var",
             "variance",
+            "var_samp",
         ]
     }
 }
@@ -666,9 +708,11 @@ impl PolarsSQLFunctions {
             // ----
             // Conditional functions
             // ----
-            "if" => Self::If,
             "coalesce" => Self::Coalesce,
+            "greatest" => Self::Greatest,
+            "if" => Self::If,
             "ifnull" => Self::IfNull,
+            "least" => Self::Least,
             "nullif" => Self::NullIf,
 
             // ----
@@ -709,6 +753,7 @@ impl PolarsSQLFunctions {
             "first" => Self::First,
             "last" => Self::Last,
             "max" => Self::Max,
+            "median" => Self::Median,
             "min" => Self::Min,
             "stdev" | "stddev" | "stdev_samp" | "stddev_samp" => Self::StdDev,
             "sum" => Self::Sum,
@@ -807,6 +852,7 @@ impl SQLFunctionVisitor<'_> {
             // Conditional functions
             // ----
             Coalesce => self.visit_variadic(coalesce),
+            Greatest => self.visit_variadic(|exprs: &[Expr]| max_horizontal(exprs).unwrap()),
             If => match function.args.len() {
                 3 => self.try_visit_ternary(|cond: Expr, expr1: Expr, expr2: Expr| {
                     Ok(when(cond).then(expr1).otherwise(expr2))
@@ -818,6 +864,7 @@ impl SQLFunctionVisitor<'_> {
                 2 => self.visit_variadic(coalesce),
                 _ => polars_bail!(InvalidOperation:"Invalid number of arguments for IfNull: {}", function.args.len())
             },
+            Least => self.visit_variadic(|exprs: &[Expr]| min_horizontal(exprs).unwrap()),
             NullIf => self.visit_binary(|l: Expr, r: Expr| when(l.clone().eq(r)).then(lit(LiteralValue::Null)).otherwise(l)),
 
             // ----
@@ -971,6 +1018,7 @@ impl SQLFunctionVisitor<'_> {
                 _ => polars_bail!(InvalidOperation: "invalid number of arguments for Substring: {}", function.args.len()),
             }
             Upper => self.visit_unary(|e| e.str().to_uppercase()),
+
             // ----
             // Aggregate functions
             // ----
@@ -979,15 +1027,17 @@ impl SQLFunctionVisitor<'_> {
             First => self.visit_unary(Expr::first),
             Last => self.visit_unary(Expr::last),
             Max => self.visit_unary_with_opt_cumulative(Expr::max, Expr::cum_max),
+            Median => self.visit_unary(Expr::median),
             Min => self.visit_unary_with_opt_cumulative(Expr::min, Expr::cum_min),
             StdDev => self.visit_unary(|e| e.std(1)),
             Sum => self.visit_unary_with_opt_cumulative(Expr::sum, Expr::cum_sum),
             Variance => self.visit_unary(|e| e.var(1)),
+
             // ----
             // Array functions
             // ----
             ArrayContains => self.visit_binary::<Expr>(|e, s| e.list().contains(s)),
-            ArrayGet => self.visit_binary(|e, i| e.list().get(i)),
+            ArrayGet => self.visit_binary(|e, i| e.list().get(i, true)),
             ArrayLength => self.visit_unary(|e| e.list().len()),
             ArrayMax => self.visit_unary(|e| e.list().max()),
             ArrayMean => self.visit_unary(|e| e.list().mean()),

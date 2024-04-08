@@ -16,7 +16,7 @@ pub use boolean::*;
 #[cfg(feature = "dtype-categorical")]
 use categorical::*;
 use dtypes::*;
-use null::*;
+pub use null::*;
 pub use primitive::*;
 
 use super::*;

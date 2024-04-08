@@ -398,6 +398,26 @@ def test_window_filtered_aggregation() -> None:
     assert_frame_equal(out, expected)
 
 
+def test_window_filtered_false_15483() -> None:
+    df = pl.DataFrame(
+        {
+            "group": ["A", "A"],
+            "value": [1, 2],
+        }
+    )
+    out = df.with_columns(
+        pl.col("value").filter(pl.col("group") != "A").arg_max().over("group")
+    )
+    expected = pl.DataFrame(
+        {
+            "group": ["A", "A"],
+            "value": [None, None],
+        },
+        schema_overrides={"value": pl.UInt32},
+    )
+    assert_frame_equal(out, expected)
+
+
 def test_window_and_cse_10152() -> None:
     q = pl.LazyFrame(
         {
@@ -442,3 +462,10 @@ def test_window_13173() -> None:
         "val": ["2", "3"],
         "min_val_per_color": ["2", "3"],
     }
+
+
+def test_window_agg_list_null_15437() -> None:
+    df = pl.DataFrame({"a": [None]})
+    output = df.select(pl.concat_list("a").over(1))
+    expected = pl.DataFrame({"a": [[None]]})
+    assert_frame_equal(output, expected)

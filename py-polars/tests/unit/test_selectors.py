@@ -1,11 +1,21 @@
+import sys
+from datetime import datetime
 from typing import Any
 
 import pytest
 
 import polars as pl
 import polars.selectors as cs
+from polars.dependencies import _ZONEINFO_AVAILABLE
 from polars.selectors import expand_selector, is_selector
 from polars.testing import assert_frame_equal
+
+if sys.version_info >= (3, 9):
+    from zoneinfo import ZoneInfo
+elif _ZONEINFO_AVAILABLE:
+    # Import from submodule due to typing issue with backports.zoneinfo package:
+    # https://github.com/pganssle/zoneinfo/issues/125
+    from backports.zoneinfo._zoneinfo import ZoneInfo
 
 
 def assert_repr_equals(item: Any, expected: str) -> None:
@@ -354,6 +364,33 @@ def test_selector_temporal(df: pl.DataFrame) -> None:
     )
     assert df.select(cs.time()).schema == {"ghi": pl.Time}
     assert df.select(cs.date() | cs.time()).schema == {"ghi": pl.Time, "JJK": pl.Date}
+
+
+def test_selector_temporal_13665() -> None:
+    df = pl.DataFrame(
+        data={"utc": [datetime(1950, 7, 5), datetime(2099, 12, 31)]},
+        schema={"utc": pl.Datetime(time_zone="UTC")},
+    ).with_columns(
+        idx=pl.int_range(0, 2),
+        utc=pl.col("utc").dt.replace_time_zone(None),
+        tokyo=pl.col("utc").dt.convert_time_zone("Asia/Tokyo"),
+        hawaii=pl.col("utc").dt.convert_time_zone("US/Hawaii"),
+    )
+    for selector in (cs.datetime(), cs.datetime("us"), cs.temporal()):
+        assert df.select(selector).to_dict(as_series=False) == {
+            "utc": [
+                datetime(1950, 7, 5, 0, 0),
+                datetime(2099, 12, 31, 0, 0),
+            ],
+            "tokyo": [
+                datetime(1950, 7, 5, 10, 0, tzinfo=ZoneInfo(key="Asia/Tokyo")),
+                datetime(2099, 12, 31, 9, 0, tzinfo=ZoneInfo(key="Asia/Tokyo")),
+            ],
+            "hawaii": [
+                datetime(1950, 7, 4, 14, 0, tzinfo=ZoneInfo(key="US/Hawaii")),
+                datetime(2099, 12, 30, 14, 0, tzinfo=ZoneInfo(key="US/Hawaii")),
+            ],
+        }
 
 
 def test_selector_expansion() -> None:

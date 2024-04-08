@@ -1,4 +1,5 @@
 use polars_core::prelude::*;
+use recursive::recursive;
 
 use crate::logical_plan::projection_expr::ProjectionExprs;
 use crate::prelude::*;
@@ -25,7 +26,7 @@ fn can_pushdown_slice_past_projections(
     arena: &Arena<AExpr>,
 ) -> (bool, bool) {
     let mut all_elementwise_and_any_expr_has_column = false;
-    for node in exprs.iter() {
+    for expr_ir in exprs.iter() {
         // `select(c = Literal([1, 2, 3])).slice(0, 0)` must block slice pushdown,
         // because `c` projects to a height independent from the input height. We check
         // this by observing that `c` does not have any columns in its input notes.
@@ -36,7 +37,7 @@ fn can_pushdown_slice_past_projections(
         // but the output height is not dependent on it.
         let mut has_column = false;
         let mut literals_all_scalar = true;
-        let is_elementwise = arena.iter(*node).all(|(_node, ae)| {
+        let is_elementwise = arena.iter(expr_ir.node()).all(|(_node, ae)| {
             has_column |= matches!(ae, AExpr::Column(_));
             literals_all_scalar &= if let AExpr::Literal(v) = ae {
                 v.projects_as_scalar()
@@ -138,6 +139,7 @@ impl SlicePushDown {
         Ok(lp.with_exprs_and_input(exprs, new_inputs))
     }
 
+    #[recursive]
     fn pushdown(
         &self,
         lp: ALogicalPlan,
@@ -358,8 +360,8 @@ impl SlicePushDown {
             }
             // [Pushdown]
             // these nodes will be pushed down.
-             // State is None, we can continue
-             m @(Projection{..}, None)
+            // State is None, we can continue
+            m @(Projection{..}, None)
             => {
                 let (lp, state) = m;
                 self.pushdown_and_continue(lp, state, lp_arena, expr_arena)
@@ -403,7 +405,6 @@ impl SlicePushDown {
             (catch_all, state) => {
                 self.no_pushdown_finish_opt(catch_all, state, lp_arena)
             }
-
         }
     }
 

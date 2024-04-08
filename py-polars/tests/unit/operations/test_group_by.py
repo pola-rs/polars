@@ -9,6 +9,7 @@ import pytest
 import polars as pl
 import polars.selectors as cs
 from polars.testing import assert_frame_equal, assert_series_equal
+from polars.testing._constants import PARTITION_LIMIT
 
 if TYPE_CHECKING:
     from polars.type_aliases import PolarsDataType
@@ -675,7 +676,7 @@ def test_group_by_multiple_column_reference() -> None:
         ("mean", [], [1.0, None], pl.Float64),
         ("median", [], [1.0, None], pl.Float64),
         ("min", [], [1, None], pl.Int64),
-        ("n_unique", [], [1, None], pl.UInt32),
+        ("n_unique", [], [1, 0], pl.UInt32),
         ("quantile", [0.5], [1.0, None], pl.Float64),
     ],
 )
@@ -766,6 +767,13 @@ def test_group_by_partitioned_ending_cast(monkeypatch: Any) -> None:
     out = df.group_by(["a", "b"]).agg(pl.len().cast(pl.Int64).alias("num"))
     expected = pl.DataFrame({"a": [1], "b": [1], "num": [5]})
     assert_frame_equal(out, expected)
+
+
+def test_group_by_series_partitioned() -> None:
+    # test 15354
+    df = pl.DataFrame([0, 0] * PARTITION_LIMIT)
+    groups = pl.Series([0, 1] * PARTITION_LIMIT)
+    df.group_by(groups).agg(pl.all().is_not_null().sum())
 
 
 def test_groupby_deprecated() -> None:
@@ -949,3 +957,21 @@ def test_group_by_with_null() -> None:
     )
     output = df.group_by(["a", "b"], maintain_order=True).agg(pl.col("c"))
     assert_frame_equal(expected, output)
+
+
+def test_partitioned_group_by_14954(monkeypatch: Any) -> None:
+    monkeypatch.setenv("POLARS_FORCE_PARTITION", "1")
+    assert (
+        pl.DataFrame({"a": range(20)})
+        .select(pl.col("a") % 2)
+        .group_by("a")
+        .agg(
+            (pl.col("a") > 1000).alias("a > 1000"),
+        )
+    ).sort("a").to_dict(as_series=False) == {
+        "a": [0, 1],
+        "a > 1000": [
+            [False, False, False, False, False, False, False, False, False, False],
+            [False, False, False, False, False, False, False, False, False, False],
+        ],
+    }

@@ -8,18 +8,20 @@ use arrow::compute;
 use arrow::types::simd::Simd;
 use arrow::types::NativeType;
 use num_traits::{Float, One, ToPrimitive, Zero};
+use polars_compute::float_sum;
 use polars_compute::min_max::MinMaxKernel;
 use polars_utils::min_max::MinMax;
 pub use quantile::*;
 pub use var::*;
 
+use super::float_sorted_arg_max::{
+    float_arg_max_sorted_ascending, float_arg_max_sorted_descending,
+};
 use crate::chunked_array::ChunkedArray;
 use crate::datatypes::{BooleanChunked, PolarsNumericType};
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 use crate::series::IsSorted;
-
-pub mod float_sum;
 
 /// Aggregations that return [`Series`] of unit length. Those can be used in broadcasting operations.
 pub trait ChunkAggSeries {
@@ -41,7 +43,7 @@ pub trait ChunkAggSeries {
     }
 }
 
-fn sum<T: NumericNative + NativeType>(array: &PrimitiveArray<T>) -> T
+fn sum<T>(array: &PrimitiveArray<T>) -> T
 where
     T: NumericNative + NativeType,
     <T as Simd>::Simd: Add<Output = <T as Simd>::Simd> + compute::aggregate::Sum<T>,
@@ -51,26 +53,20 @@ where
     }
 
     if T::is_float() {
-        let values = array.values().as_slice();
-        let validity = array.validity().filter(|_| array.null_count() > 0);
-        if T::is_f32() {
-            let f32_values = unsafe { std::mem::transmute::<&[T], &[f32]>(values) };
-            let sum: f32 = if let Some(bitmap) = validity {
-                float_sum::f32::sum_with_validity(f32_values, bitmap) as f32 // TODO: f64?
+        unsafe {
+            if T::is_f32() {
+                let f32_arr =
+                    std::mem::transmute::<&PrimitiveArray<T>, &PrimitiveArray<f32>>(array);
+                let sum = float_sum::sum_arr_as_f32(f32_arr);
+                std::mem::transmute_copy::<f32, T>(&sum)
+            } else if T::is_f64() {
+                let f64_arr =
+                    std::mem::transmute::<&PrimitiveArray<T>, &PrimitiveArray<f64>>(array);
+                let sum = float_sum::sum_arr_as_f64(f64_arr);
+                std::mem::transmute_copy::<f64, T>(&sum)
             } else {
-                float_sum::f32::sum(f32_values) as f32 // TODO: f64?
-            };
-            unsafe { std::mem::transmute_copy::<f32, T>(&sum) }
-        } else if T::is_f64() {
-            let f64_values = unsafe { std::mem::transmute::<&[T], &[f64]>(values) };
-            let sum: f64 = if let Some(bitmap) = validity {
-                float_sum::f64::sum_with_validity(f64_values, bitmap)
-            } else {
-                float_sum::f64::sum(f64_values)
-            };
-            unsafe { std::mem::transmute_copy::<f64, T>(&sum) }
-        } else {
-            unreachable!("only supported float types are f32 and f64");
+                unreachable!("only supported float types are f32 and f64");
+            }
         }
     } else {
         compute::aggregate::sum_primitive(array).unwrap_or(T::zero())
@@ -93,21 +89,18 @@ where
     }
 
     fn min(&self) -> Option<T::Native> {
-        if self.is_empty() {
+        if self.null_count() == self.len() {
             return None;
         }
+        // There is at least one non-null value.
         match self.is_sorted_flag() {
             IsSorted::Ascending => {
-                self.first_non_null().and_then(|idx| {
-                    // SAFETY: first_non_null returns in bound index.
-                    unsafe { self.get_unchecked(idx) }
-                })
+                let idx = self.first_non_null().unwrap();
+                unsafe { self.get_unchecked(idx) }
             },
             IsSorted::Descending => {
-                self.last_non_null().and_then(|idx| {
-                    // SAFETY: last returns in bound index.
-                    unsafe { self.get_unchecked(idx) }
-                })
+                let idx = self.last_non_null().unwrap();
+                unsafe { self.get_unchecked(idx) }
             },
             IsSorted::Not => self
                 .downcast_iter()
@@ -117,23 +110,28 @@ where
     }
 
     fn max(&self) -> Option<T::Native> {
-        if self.is_empty() {
+        if self.null_count() == self.len() {
             return None;
         }
+        // There is at least one non-null value.
         match self.is_sorted_flag() {
             IsSorted::Ascending => {
-                self.last_non_null().and_then(|idx| {
-                    // SAFETY:
-                    // last_non_null returns in bound index
-                    unsafe { self.get_unchecked(idx) }
-                })
+                let idx = if T::get_dtype().is_float() {
+                    float_arg_max_sorted_ascending(self)
+                } else {
+                    self.last_non_null().unwrap()
+                };
+
+                unsafe { self.get_unchecked(idx) }
             },
             IsSorted::Descending => {
-                self.first_non_null().and_then(|idx| {
-                    // SAFETY:
-                    // first_non_null returns in bound index
-                    unsafe { self.get_unchecked(idx) }
-                })
+                let idx = if T::get_dtype().is_float() {
+                    float_arg_max_sorted_descending(self)
+                } else {
+                    self.first_non_null().unwrap()
+                };
+
+                unsafe { self.get_unchecked(idx) }
             },
             IsSorted::Not => self
                 .downcast_iter()
@@ -143,30 +141,36 @@ where
     }
 
     fn min_max(&self) -> Option<(T::Native, T::Native)> {
-        if self.is_empty() {
+        if self.null_count() == self.len() {
             return None;
         }
+        // There is at least one non-null value.
         match self.is_sorted_flag() {
             IsSorted::Ascending => {
-                let min = self.first_non_null().and_then(|idx| {
-                    // SAFETY: first_non_null returns in bound index.
+                let min = unsafe { self.get_unchecked(self.first_non_null().unwrap()) };
+                let max = {
+                    let idx = if T::get_dtype().is_float() {
+                        float_arg_max_sorted_ascending(self)
+                    } else {
+                        self.last_non_null().unwrap()
+                    };
+
                     unsafe { self.get_unchecked(idx) }
-                });
-                let max = self.last_non_null().and_then(|idx| {
-                    // SAFETY: last_non_null returns in bound index.
-                    unsafe { self.get_unchecked(idx) }
-                });
+                };
                 min.zip(max)
             },
             IsSorted::Descending => {
-                let max = self.first_non_null().and_then(|idx| {
-                    // SAFETY: first_non_null returns in bound index.
+                let min = unsafe { self.get_unchecked(self.last_non_null().unwrap()) };
+                let max = {
+                    let idx = if T::get_dtype().is_float() {
+                        float_arg_max_sorted_descending(self)
+                    } else {
+                        self.first_non_null().unwrap()
+                    };
+
                     unsafe { self.get_unchecked(idx) }
-                });
-                let min = self.last_non_null().and_then(|idx| {
-                    // SAFETY: last_non_null returns in bound index.
-                    unsafe { self.get_unchecked(idx) }
-                });
+                };
+
                 min.zip(max)
             },
             IsSorted::Not => self
@@ -182,61 +186,13 @@ where
     }
 
     fn mean(&self) -> Option<f64> {
-        if self.is_empty() || self.null_count() == self.len() {
+        if self.null_count() == self.len() {
             return None;
         }
-        match self.dtype() {
-            DataType::Float64 => {
-                let len = (self.len() - self.null_count()) as f64;
-                self.sum().map(|v| v.to_f64().unwrap() / len)
-            },
-            _ => {
-                let null_count = self.null_count();
-                let len = self.len();
-                match null_count {
-                    nc if nc == len => None,
-                    #[cfg(feature = "simd")]
-                    _ => {
-                        // TODO: investigate if we need a stable mean
-                        // because of SIMD memory locations and associativity.
-                        // similar to sum
-                        let mut sum = 0.0;
-                        for arr in self.downcast_iter() {
-                            sum += arrow::legacy::kernels::agg_mean::sum_as_f64(arr);
-                        }
-                        Some(sum / (len - null_count) as f64)
-                    },
-                    #[cfg(not(feature = "simd"))]
-                    _ => {
-                        let mut acc = 0.0;
-                        let len = (len - null_count) as f64;
 
-                        for arr in self.downcast_iter() {
-                            if arr.null_count() > 0 {
-                                for v in arr.into_iter().flatten() {
-                                    // SAFETY:
-                                    // all these types can be coerced to f64
-                                    unsafe {
-                                        let val = v.to_f64().unwrap_unchecked();
-                                        acc += val
-                                    }
-                                }
-                            } else {
-                                for v in arr.values().as_slice() {
-                                    // SAFETY:
-                                    // all these types can be coerced to f64
-                                    unsafe {
-                                        let val = v.to_f64().unwrap_unchecked();
-                                        acc += val
-                                    }
-                                }
-                            }
-                        }
-                        Some(acc / len)
-                    },
-                }
-            },
-        }
+        let len = (self.len() - self.null_count()) as f64;
+        let sum: f64 = self.downcast_iter().map(float_sum::sum_arr_as_f64).sum();
+        Some(sum / len)
     }
 }
 

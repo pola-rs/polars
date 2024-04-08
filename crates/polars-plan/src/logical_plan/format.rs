@@ -105,8 +105,16 @@ impl LogicalPlan {
                 }
                 write!(f, "\n{:indent$}END HCONCAT", "")
             },
-            Cache { input, id, count } => {
-                write!(f, "{:indent$}CACHE[id: {:x}, count: {}]", "", *id, *count)?;
+            Cache {
+                input,
+                id,
+                cache_hits,
+            } => {
+                write!(
+                    f,
+                    "{:indent$}CACHE[id: {:x}, cache_hits: {}]",
+                    "", *id, *cache_hits
+                )?;
                 input._format(f, sub_indent)
             },
             Scan {

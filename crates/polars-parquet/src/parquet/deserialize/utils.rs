@@ -25,6 +25,7 @@ pub(super) fn dict_indices_decoder(page: &DataPage) -> Result<hybrid_rle::Hybrid
 
 /// Decoder of definition levels.
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum DefLevelsDecoder<'a> {
     /// When the maximum definition level is 1, the definition levels are RLE-encoded and
     /// the bitpacked runs are bitmaps. This variant contains [`HybridDecoderBitmapIter`]
@@ -57,27 +58,25 @@ impl<'a> DefLevelsDecoder<'a> {
 /// Iterator adapter to convert an iterator of non-null values and an iterator over validity
 /// into an iterator of optional values.
 #[derive(Debug, Clone)]
-pub struct OptionalValues<T, V: Iterator<Item = Result<bool, Error>>, I: Iterator<Item = T>> {
+pub struct OptionalValues<T, V: Iterator<Item = bool>, I: Iterator<Item = T>> {
     validity: V,
     values: I,
 }
 
-impl<T, V: Iterator<Item = Result<bool, Error>>, I: Iterator<Item = T>> OptionalValues<T, V, I> {
+impl<T, V: Iterator<Item = bool>, I: Iterator<Item = T>> OptionalValues<T, V, I> {
     pub fn new(validity: V, values: I) -> Self {
         Self { validity, values }
     }
 }
 
-impl<T, V: Iterator<Item = Result<bool, Error>>, I: Iterator<Item = T>> Iterator
-    for OptionalValues<T, V, I>
-{
-    type Item = Result<Option<T>, Error>;
+impl<T, V: Iterator<Item = bool>, I: Iterator<Item = T>> Iterator for OptionalValues<T, V, I> {
+    type Item = Option<T>;
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         self.validity
             .next()
-            .map(|x| x.map(|x| if x { self.values.next() } else { None }))
+            .map(|x| if x { self.values.next() } else { None })
     }
 
     #[inline]
@@ -93,7 +92,7 @@ impl<T, V: Iterator<Item = Result<bool, Error>>, I: Iterator<Item = T>> Iterator
 /// allows this iterator to skip sequences of items without having to call each of them.
 #[derive(Debug, Clone)]
 pub struct SliceFilteredIter<I> {
-    iter: I,
+    pub(crate) iter: I,
     selected_rows: VecDeque<Interval>,
     current_remaining: usize,
     current: usize, // position in the slice

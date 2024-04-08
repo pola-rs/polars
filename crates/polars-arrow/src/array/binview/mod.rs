@@ -26,6 +26,7 @@ mod private {
 }
 pub use iterator::BinaryViewValueIter;
 pub use mutable::MutableBinaryViewArray;
+use polars_utils::slice::GetSaferUnchecked;
 use private::Sealed;
 
 use crate::array::binview::view::{validate_binary_view, validate_utf8_only, validate_utf8_view};
@@ -109,8 +110,6 @@ pub struct BinaryViewArrayGeneric<T: ViewType + ?Sized> {
     data_type: ArrowDataType,
     views: Buffer<View>,
     buffers: Arc<[Buffer<u8>]>,
-    // Raw buffer access. (pointer, len).
-    raw_buffers: Arc<[(*const u8, usize)]>,
     validity: Option<Bitmap>,
     phantom: PhantomData<T>,
     /// Total bytes length if we would concatenate them all.
@@ -121,7 +120,7 @@ pub struct BinaryViewArrayGeneric<T: ViewType + ?Sized> {
 
 impl<T: ViewType + ?Sized> PartialEq for BinaryViewArrayGeneric<T> {
     fn eq(&self, other: &Self) -> bool {
-        self.into_iter().zip(other).all(|(l, r)| l == r)
+        self.len() == other.len() && self.into_iter().zip(other).all(|(l, r)| l == r)
     }
 }
 
@@ -131,7 +130,6 @@ impl<T: ViewType + ?Sized> Clone for BinaryViewArrayGeneric<T> {
             data_type: self.data_type.clone(),
             views: self.views.clone(),
             buffers: self.buffers.clone(),
-            raw_buffers: self.raw_buffers.clone(),
             validity: self.validity.clone(),
             phantom: Default::default(),
             total_bytes_len: AtomicU64::new(self.total_bytes_len.load(Ordering::Relaxed)),
@@ -143,12 +141,6 @@ impl<T: ViewType + ?Sized> Clone for BinaryViewArrayGeneric<T> {
 unsafe impl<T: ViewType + ?Sized> Send for BinaryViewArrayGeneric<T> {}
 unsafe impl<T: ViewType + ?Sized> Sync for BinaryViewArrayGeneric<T> {}
 
-fn buffers_into_raw<T>(buffers: &[Buffer<T>]) -> Arc<[(*const T, usize)]> {
-    buffers
-        .iter()
-        .map(|buf| (buf.storage_ptr(), buf.len()))
-        .collect()
-}
 const UNKNOWN_LEN: u64 = u64::MAX;
 
 impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
@@ -164,12 +156,10 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         total_bytes_len: usize,
         total_buffer_len: usize,
     ) -> Self {
-        let raw_buffers = buffers_into_raw(&buffers);
         Self {
             data_type,
             views,
             buffers,
-            raw_buffers,
             validity,
             phantom: Default::default(),
             total_bytes_len: AtomicU64::new(total_bytes_len as u64),
@@ -273,7 +263,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     /// Assumes that the `i < self.len`.
     #[inline]
     pub unsafe fn value_unchecked(&self, i: usize) -> &T {
-        let v = *self.views.get_unchecked(i);
+        let v = *self.views.get_unchecked_release(i);
         let len = v.length;
 
         // view layout:
@@ -290,10 +280,9 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
             let ptr = self.views.as_ptr() as *const u8;
             std::slice::from_raw_parts(ptr.add(i * 16 + 4), len as usize)
         } else {
-            let (data_ptr, data_len) = *self.raw_buffers.get_unchecked(v.buffer_idx as usize);
-            let data = std::slice::from_raw_parts(data_ptr, data_len);
+            let data = self.buffers.get_unchecked_release(v.buffer_idx as usize);
             let offset = v.offset as usize;
-            data.get_unchecked(offset..offset + len as usize)
+            data.get_unchecked_release(offset..offset + len as usize)
         };
         T::from_bytes_unchecked(bytes)
     }
@@ -367,7 +356,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
             return self;
         }
         let mut mutable = MutableBinaryViewArray::with_capacity(self.len());
-        let buffers = self.raw_buffers.as_ref();
+        let buffers = self.buffers.as_ref();
 
         for view in self.views.as_ref() {
             unsafe { mutable.push_view(*view, buffers) }

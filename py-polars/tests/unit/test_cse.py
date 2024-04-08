@@ -37,7 +37,7 @@ def test_union_duplicates() -> None:
 
     result = len(
         re.findall(
-            r".*CACHE\[id: .*, count: 9].*",
+            r".*CACHE\[id: .*, cache_hits: 9].*",
             pl.concat(lazy_dfs).explain(),
             flags=re.MULTILINE,
         )
@@ -172,6 +172,7 @@ Gr1,B
     assert_frame_equal(result, expected)
 
 
+@pytest.mark.debug()
 def test_cse_expr_selection_context(monkeypatch: Any, capfd: Any) -> None:
     monkeypatch.setenv("POLARS_VERBOSE", "1")
     q = pl.LazyFrame(
@@ -644,3 +645,16 @@ def test_cse_14047() -> None:
     assert_frame_equal(
         ldf.collect(comm_subexpr_elim=True), ldf.collect(comm_subexpr_elim=False)
     )
+
+
+def test_cse_15536() -> None:
+    source = pl.DataFrame({"a": range(10)})
+
+    data = source.lazy().filter(pl.col("a") >= 5)
+
+    assert pl.concat(
+        [
+            data.filter(pl.lit(True) & (pl.col("a") == 6) | (pl.col("a") == 9)),
+            data.filter(pl.lit(True) & (pl.col("a") == 7) | (pl.col("a") == 8)),
+        ]
+    ).collect()["a"].to_list() == [6, 9, 7, 8]

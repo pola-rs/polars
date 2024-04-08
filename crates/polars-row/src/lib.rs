@@ -279,4 +279,4 @@ pub use encode::{
     convert_columns, convert_columns_amortized, convert_columns_amortized_no_order,
     convert_columns_no_order,
 };
-pub use row::{RowsEncoded, SortField};
+pub use row::{EncodingField, RowsEncoded};

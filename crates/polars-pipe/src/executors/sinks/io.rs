@@ -114,9 +114,11 @@ fn gc_thread(operation_name: &'static str, rx: Receiver<PathBuf>) {
         // Clean on receive
         while let Ok(path) = rx.recv() {
             if path.is_file() {
-                let _ = std::fs::remove_file(path);
+                let res = std::fs::remove_file(path);
+                debug_assert!(res.is_ok());
             } else {
-                let _ = std::fs::remove_dir_all(path);
+                let res = std::fs::remove_dir_all(path);
+                debug_assert!(res.is_ok());
             }
         }
     });
@@ -166,7 +168,8 @@ impl IOThread {
             //    This will dump to `dir/partition/count.ipc`
             while let Ok((partitions, iter)) = rx.recv() {
                 if let Some(partitions) = partitions {
-                    for (part, df) in partitions.into_no_null_iter().zip(iter) {
+                    for (part, mut df) in partitions.into_no_null_iter().zip(iter) {
+                        df.shrink_to_fit();
                         let mut path = dir2.clone();
                         path.push(format!("{part}"));
 
@@ -182,13 +185,14 @@ impl IOThread {
                     }
                 } else {
                     let mut path = dir2.clone();
-                    path.push(format!("{count}.ipc"));
+                    path.push(format!("{count}_0_pass.ipc"));
 
                     let file = File::create(path).unwrap();
                     let writer = IpcWriter::new(file).with_pl_flavor(true);
                     let mut writer = writer.batched(&schema).unwrap();
 
-                    for df in iter {
+                    for mut df in iter {
+                        df.shrink_to_fit();
                         writer.write_batch(&df).unwrap();
                     }
                     writer.finish().unwrap();
@@ -215,11 +219,12 @@ impl IOThread {
         // if IO thread is blocked
         // we write locally on this thread
         if self.payload_tx.is_full() {
+            df.shrink_to_fit();
             let mut path = self.dir.clone();
             let count = self.thread_local_count.fetch_add(1, Ordering::Relaxed);
             // thread local name we start with an underscore to ensure we don't get
             // duplicates
-            path.push(format!("_{count}.ipc"));
+            path.push(format!("_{count}_full.ipc"));
 
             let file = File::create(path).unwrap();
             let mut writer = IpcWriter::new(file).with_pl_flavor(true);
@@ -243,8 +248,9 @@ impl IOThread {
     pub(in crate::executors::sinks) fn dump_partition_local(
         &self,
         partition_no: IdxSize,
-        df: DataFrame,
+        mut df: DataFrame,
     ) {
+        df.shrink_to_fit();
         let count = self.thread_local_count.fetch_add(1, Ordering::Relaxed);
         let mut path = self.dir.clone();
         path.push(format!("{partition_no}"));

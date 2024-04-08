@@ -100,6 +100,7 @@ impl ApplyExpr {
             ac.with_agg_state(AggState::AggregatedScalar(
                 ca.explode().unwrap().into_series(),
             ));
+            ac.with_update_groups(UpdateGroups::No);
         } else {
             ac.with_series(ca.into_series(), true, Some(&self.expr))?;
             ac.with_update_groups(UpdateGroups::WithSeriesLen);

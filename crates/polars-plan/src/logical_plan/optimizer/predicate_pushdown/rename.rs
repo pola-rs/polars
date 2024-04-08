@@ -5,8 +5,8 @@ use crate::prelude::optimizer::predicate_pushdown::keys::{key_has_name, predicat
 
 fn remove_any_key_referencing_renamed(
     new: &str,
-    acc_predicates: &mut PlHashMap<Arc<str>, Node>,
-    local_predicates: &mut Vec<Node>,
+    acc_predicates: &mut PlHashMap<Arc<str>, ExprIR>,
+    local_predicates: &mut Vec<ExprIR>,
 ) {
     let mut move_to_local = vec![];
     for key in acc_predicates.keys() {
@@ -21,11 +21,11 @@ fn remove_any_key_referencing_renamed(
 }
 
 pub(super) fn process_rename(
-    acc_predicates: &mut PlHashMap<Arc<str>, Node>,
+    acc_predicates: &mut PlHashMap<Arc<str>, ExprIR>,
     expr_arena: &mut Arena<AExpr>,
     existing: &[SmartString],
     new: &[SmartString],
-) -> PolarsResult<Vec<Node>> {
+) -> PolarsResult<Vec<ExprIR>> {
     let mut local_predicates = vec![];
     for (existing, new) in existing.iter().zip(new.iter()) {
         let has_existing = acc_predicates.contains_key(existing.as_str());
@@ -49,9 +49,11 @@ pub(super) fn process_rename(
         else {
             // Find the key and update the predicate as well as the key
             // This ensure the optimization is pushed down.
-            if let Some(node) = acc_predicates.remove(new.as_str()) {
-                let new_node = rename_matching_aexpr_leaf_names(node, expr_arena, new, existing);
-                acc_predicates.insert(predicate_to_key(new_node, expr_arena), new_node);
+            if let Some(mut e) = acc_predicates.remove(new.as_str()) {
+                let new_node =
+                    rename_matching_aexpr_leaf_names(e.node(), expr_arena, new, existing);
+                e.set_node(new_node);
+                acc_predicates.insert(predicate_to_key(new_node, expr_arena), e);
             } else {
                 // The keys can be combined eg. `a AND b AND c` in this case replacing/finding
                 // the key that should be renamed is more complicated, so for now

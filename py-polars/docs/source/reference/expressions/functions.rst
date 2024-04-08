@@ -2,7 +2,7 @@
 Functions
 =========
 
-These functions are available from the polars module root and can be used as expressions, and sometimes also in eager contexts.
+These functions are available from the Polars module root and can be used as expressions, and sometimes also in eager contexts.
 
 ----
 

@@ -4,12 +4,32 @@ use arrow::datatypes::ArrowDataType;
 use arrow::ffi::mmap;
 use arrow::offset::{Offsets, OffsetsBuffer};
 
-#[derive(Clone, Default)]
-pub struct SortField {
+#[derive(Clone, Default, Copy)]
+pub struct EncodingField {
     /// Whether to sort in descending order
     pub descending: bool,
     /// Whether to sort nulls first
     pub nulls_last: bool,
+    /// Ignore all order-related flags and don't encode order-preserving.
+    /// This is faster for variable encoding as we can just memcopy all the bytes.
+    pub no_order: bool,
+}
+
+impl EncodingField {
+    pub fn new_sorted(descending: bool, nulls_last: bool) -> Self {
+        EncodingField {
+            descending,
+            nulls_last,
+            no_order: false,
+        }
+    }
+
+    pub fn new_unsorted() -> Self {
+        EncodingField {
+            no_order: true,
+            ..Default::default()
+        }
+    }
 }
 
 #[derive(Default, Clone)]

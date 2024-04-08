@@ -421,6 +421,7 @@ pub fn list_set_operation(
     b.prune_empty_chunks();
 
     // Make categoricals compatible
+    #[cfg(feature = "dtype-categorical")]
     if let (DataType::Categorical(_, _), DataType::Categorical(_, _)) =
         (&a.inner_dtype(), &b.inner_dtype())
     {

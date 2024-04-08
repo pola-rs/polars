@@ -491,3 +491,30 @@ def test_filter_eq_missing_13861() -> None:
         pl.col("a").is_null(),
     ):
         assert lf.collect().filter(filter_expr).rows() == [(None, "yy")]
+
+
+@pytest.mark.parametrize("how", ["left", "inner"])
+def test_predicate_pushdown_block_join(how: Any) -> None:
+    q = (
+        pl.LazyFrame({"a": [1]})
+        .join(
+            pl.LazyFrame({"a": [2], "b": [1]}), left_on=["a"], right_on=["b"], how=how
+        )
+        .filter(pl.col("a") == 1)
+    )
+
+    assert_frame_equal(q.collect(no_optimization=True), q.collect())
+
+
+def test_predicate_push_down_with_alias_15442() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1],
+        }
+    )
+    output = (
+        df.lazy()
+        .filter(pl.col("a").alias("x").drop_nulls() > 0)
+        .collect(predicate_pushdown=True)
+    )
+    assert output.to_dict(as_series=False) == {"a": [1]}

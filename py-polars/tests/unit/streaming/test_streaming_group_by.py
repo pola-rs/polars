@@ -8,6 +8,7 @@ import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
+from polars.testing._constants import PARTITION_LIMIT
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -445,4 +446,45 @@ def test_group_by_multiple_keys_one_literal(streaming: bool) -> None:
         .collect(streaming=streaming)
         .to_dict(as_series=False)
         == expected
+    )
+
+
+def test_streaming_group_null_count() -> None:
+    df = pl.DataFrame({"g": [1] * 6, "a": ["yes", None] * 3}).lazy()
+    assert df.group_by("g").agg(pl.col("a").count()).collect(streaming=True).to_dict(
+        as_series=False
+    ) == {"g": [1], "a": [3]}
+
+
+def test_streaming_groupby_binary_15116() -> None:
+    assert (
+        pl.LazyFrame(
+            {
+                "str": [
+                    "A",
+                    "A",
+                    "BB",
+                    "BB",
+                    "CCCC",
+                    "CCCC",
+                    "DDDDDDDD",
+                    "DDDDDDDD",
+                    "EEEEEEEEEEEEEEEE",
+                    "A",
+                ]
+            }
+        )
+        .select([pl.col("str").cast(pl.Binary)])
+        .group_by(["str"])
+        .agg([pl.len().alias("count")])
+    ).sort("str").collect(streaming=True).to_dict(as_series=False) == {
+        "str": [b"A", b"BB", b"CCCC", b"DDDDDDDD", b"EEEEEEEEEEEEEEEE"],
+        "count": [3, 2, 2, 2, 1],
+    }
+
+
+def test_streaming_group_by_convert_15380() -> None:
+    assert (
+        pl.DataFrame({"a": [1] * PARTITION_LIMIT}).group_by(b="a").len()["len"].item()
+        == PARTITION_LIMIT
     )

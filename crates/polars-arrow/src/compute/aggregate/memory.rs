@@ -24,9 +24,9 @@ macro_rules! dyn_binary {
 }
 
 fn binview_size<T: ViewType + ?Sized>(array: &BinaryViewArrayGeneric<T>) -> usize {
-    array.views().len() * std::mem::size_of::<u128>()
-        + array.data_buffers().iter().map(|b| b.len()).sum::<usize>()
-        + validity_size(array.validity())
+    // We choose the optimal usage as data can be shared across buffers.
+    // If we would sum all buffers we overestimate memory usage and trigger OOC when not needed.
+    array.total_bytes_len()
 }
 
 /// Returns the total (heap) allocated size of the array in bytes.

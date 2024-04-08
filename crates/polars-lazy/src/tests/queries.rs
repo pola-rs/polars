@@ -437,9 +437,9 @@ fn test_lazy_query_10() {
     let z: Series = DurationChunked::from_duration(
         "z",
         [
-            ChronoDuration::hours(1),
-            ChronoDuration::hours(2),
-            ChronoDuration::hours(3),
+            ChronoDuration::try_hours(1).unwrap(),
+            ChronoDuration::try_hours(2).unwrap(),
+            ChronoDuration::try_hours(3).unwrap(),
         ],
         TimeUnit::Nanoseconds,
     )
@@ -1011,6 +1011,7 @@ fn test_group_by_sort_slice() -> PolarsResult<()> {
 }
 
 #[test]
+#[cfg(feature = "cum_agg")]
 fn test_group_by_cum_sum() -> PolarsResult<()> {
     let df = df![
         "groups" => [1, 2, 2, 3, 3, 3],
@@ -1556,6 +1557,7 @@ fn test_fill_nan() -> PolarsResult<()> {
 }
 
 #[test]
+#[cfg(feature = "regex")]
 fn test_exclude_regex() -> PolarsResult<()> {
     let df = fruits_cars();
     let out = df

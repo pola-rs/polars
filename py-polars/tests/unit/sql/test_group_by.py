@@ -21,10 +21,11 @@ def test_group_by(foods_ipc_path: Path) -> None:
     out = ctx.execute(
         """
         SELECT
-            category,
             count(category) as n,
-            max(calories),
-            min(fats_g)
+            category,
+            max(calories) as max_cal,
+            median(calories) as median_cal,
+            min(fats_g) as min_fats
         FROM foods
         GROUP BY category
         HAVING n > 5
@@ -32,10 +33,11 @@ def test_group_by(foods_ipc_path: Path) -> None:
         """
     )
     assert out.to_dict(as_series=False) == {
-        "category": ["vegetables", "fruit", "seafood"],
         "n": [7, 7, 8],
-        "calories": [45, 130, 200],
-        "fats_g": [0.0, 0.0, 1.5],
+        "category": ["vegetables", "fruit", "seafood"],
+        "max_cal": [45, 130, 200],
+        "median_cal": [25.0, 50.0, 145.0],
+        "min_fats": [0.0, 0.0, 1.5],
     }
 
     lf = pl.LazyFrame(

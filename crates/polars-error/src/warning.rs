@@ -14,6 +14,7 @@ pub unsafe fn set_warning_function(function: WarningFunction) {
 pub enum PolarsWarning {
     UserWarning,
     CategoricalRemappingWarning,
+    MapWithoutReturnDtypeWarning,
 }
 
 fn eprintln(fmt: &str, warning: PolarsWarning) {

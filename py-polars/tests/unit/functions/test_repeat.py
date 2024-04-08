@@ -28,6 +28,8 @@ from polars.testing import assert_frame_equal, assert_series_equal
         (8, 2, pl.UInt8, pl.UInt8),
         (date(2023, 2, 2), 3, pl.Datetime, pl.Datetime),
         (7.5, 5, pl.UInt16, pl.UInt16),
+        ([1, 2, 3], 2, pl.List(pl.Int64), pl.List(pl.Int64)),
+        (b"ab12", 3, pl.Binary, pl.Binary),
     ],
 )
 def test_repeat(

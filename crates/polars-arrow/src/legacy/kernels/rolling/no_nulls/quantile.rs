@@ -35,7 +35,7 @@ impl<
         }
     }
 
-    unsafe fn update(&mut self, start: usize, end: usize) -> T {
+    unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
         let vals = self.sorted.update(start, end);
         let length = vals.len();
 
@@ -48,13 +48,13 @@ impl<
                 let float_idx_top = (length_f - 1.0) * self.prob;
                 let top_idx = float_idx_top.ceil() as usize;
                 return if idx == top_idx {
-                    unsafe { *vals.get_unchecked_release(idx) }
+                    Some(unsafe { *vals.get_unchecked_release(idx) })
                 } else {
                     let proportion = T::from(float_idx_top - idx as f64).unwrap();
                     let vi = unsafe { *vals.get_unchecked_release(idx) };
                     let vj = unsafe { *vals.get_unchecked_release(top_idx) };
 
-                    proportion * (vj - vi) + vi
+                    Some(proportion * (vj - vi) + vi)
                 };
             },
             Midpoint => {
@@ -66,7 +66,7 @@ impl<
                 return if top_idx == idx {
                     // SAFETY:
                     // we are in bounds
-                    unsafe { *vals.get_unchecked_release(idx) }
+                    Some(unsafe { *vals.get_unchecked_release(idx) })
                 } else {
                     // SAFETY:
                     // we are in bounds
@@ -77,7 +77,7 @@ impl<
                         )
                     };
 
-                    (mid + mid_plus_1) / (T::one() + T::one())
+                    Some((mid + mid_plus_1) / (T::one() + T::one()))
                 };
             },
             Nearest => {
@@ -93,7 +93,7 @@ impl<
 
         // SAFETY:
         // we are in bounds
-        unsafe { *vals.get_unchecked_release(idx) }
+        Some(unsafe { *vals.get_unchecked_release(idx) })
     }
 }
 

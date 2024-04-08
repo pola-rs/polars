@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -620,3 +621,22 @@ def test_cast_time_to_date() -> None:
     msg = "cannot cast `Time` to `Date`"
     with pytest.raises(pl.ComputeError, match=msg):
         s.cast(pl.Date)
+
+
+def test_cast_decimal() -> None:
+    s = pl.Series("s", [Decimal(0), Decimal(1.5), Decimal(-1.5)])
+    assert_series_equal(s.cast(pl.Boolean), pl.Series("s", [False, True, True]))
+
+    df = s.to_frame()
+    assert_frame_equal(
+        df.select(pl.col("s").cast(pl.Boolean)),
+        pl.DataFrame({"s": [False, True, True]}),
+    )
+
+
+def test_cast_array_to_different_width() -> None:
+    s = pl.Series([[1, 2], [3, 4]], dtype=pl.Array(pl.Int8, 2))
+    with pytest.raises(
+        pl.InvalidOperationError, match="cannot cast Array to a different width"
+    ):
+        s.cast(pl.Array(pl.Int16, 3))

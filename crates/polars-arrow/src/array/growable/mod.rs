@@ -37,8 +37,18 @@ pub trait Growable<'a> {
     /// a slice starting at `start` and length `len`.
     ///
     /// # Safety
-    /// Doesn't do any bound checks
+    /// Doesn't do any bound checks.
     unsafe fn extend(&mut self, index: usize, start: usize, len: usize);
+
+    /// Same as extend, except it repeats the extension `copies` times.
+    ///
+    /// # Safety
+    /// Doesn't do any bound checks.
+    unsafe fn extend_copies(&mut self, index: usize, start: usize, len: usize, copies: usize) {
+        for _ in 0..copies {
+            self.extend(index, start, len)
+        }
+    }
 
     /// Extends this [`Growable`] with null elements, disregarding the bound arrays
     ///

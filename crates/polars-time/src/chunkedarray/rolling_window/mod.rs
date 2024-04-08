@@ -80,15 +80,22 @@ pub struct RollingOptionsImpl<'a> {
     pub fn_params: DynArgs,
 }
 
-impl From<RollingOptions> for RollingOptionsImpl<'static> {
-    fn from(options: RollingOptions) -> Self {
+impl TryFrom<RollingOptions> for RollingOptionsImpl<'static> {
+    type Error = PolarsError;
+
+    fn try_from(options: RollingOptions) -> PolarsResult<Self> {
         let window_size = options.window_size;
         assert!(
             window_size.parsed_int,
             "should be fixed integer window size at this point"
         );
+        polars_ensure!(
+            options.closed_window.is_none(),
+            InvalidOperation: "`closed_window` is not supported for fixed window size rolling aggregations, \
+            consider using DataFrame.rolling for greater flexibility",
+        );
 
-        RollingOptionsImpl {
+        Ok(RollingOptionsImpl {
             window_size,
             min_periods: options.min_periods,
             weights: options.weights,
@@ -98,25 +105,7 @@ impl From<RollingOptions> for RollingOptionsImpl<'static> {
             tz: None,
             closed_window: None,
             fn_params: options.fn_params,
-        }
-    }
-}
-
-impl From<RollingOptions> for RollingOptionsFixedWindow {
-    fn from(options: RollingOptions) -> Self {
-        let window_size = options.window_size;
-        assert!(
-            window_size.parsed_int,
-            "should be fixed integer window size at this point"
-        );
-
-        RollingOptionsFixedWindow {
-            window_size: window_size.nanoseconds() as usize,
-            min_periods: options.min_periods,
-            weights: options.weights,
-            center: options.center,
-            fn_params: options.fn_params,
-        }
+        })
     }
 }
 
@@ -136,21 +125,29 @@ impl Default for RollingOptionsImpl<'static> {
     }
 }
 
-impl<'a> From<RollingOptionsImpl<'a>> for RollingOptionsFixedWindow {
-    fn from(options: RollingOptionsImpl<'a>) -> Self {
+impl<'a> TryFrom<RollingOptionsImpl<'a>> for RollingOptionsFixedWindow {
+    type Error = PolarsError;
+    fn try_from(options: RollingOptionsImpl<'a>) -> PolarsResult<Self> {
         let window_size = options.window_size;
         assert!(
             window_size.parsed_int,
             "should be fixed integer window size at this point"
         );
+        polars_ensure!(
+            options.closed_window.is_none(),
+            InvalidOperation: "`closed_window` is not supported for fixed window size rolling aggregations, \
+            consider using DataFrame.rolling for greater flexibility",
+        );
+        let window_size = window_size.nanoseconds() as usize;
+        check_input(window_size, options.min_periods)?;
 
-        RollingOptionsFixedWindow {
-            window_size: window_size.nanoseconds() as usize,
+        Ok(RollingOptionsFixedWindow {
+            window_size,
             min_periods: options.min_periods,
             weights: options.weights,
             center: options.center,
             fn_params: options.fn_params,
-        }
+        })
     }
 }
 

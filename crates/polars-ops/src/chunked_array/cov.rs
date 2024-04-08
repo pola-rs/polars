@@ -1,4 +1,5 @@
 use num_traits::{ToPrimitive, Zero};
+use polars_compute::float_sum::FloatSum;
 use polars_core::prelude::*;
 use polars_core::utils::align_chunks_binary;
 
@@ -8,7 +9,7 @@ const COV_BUF_SIZE: usize = 64;
 fn multiply_sum(x: &[f64; COV_BUF_SIZE], y: &[f64; COV_BUF_SIZE], k: usize) -> f64 {
     assert!(k <= COV_BUF_SIZE);
     let tmp: [f64; COV_BUF_SIZE] = std::array::from_fn(|i| x[i] * y[i]);
-    float_sum::f64::sum(&tmp[..k])
+    FloatSum::sum(&tmp[..k])
 }
 
 /// Compute the covariance between two columns.
@@ -79,8 +80,8 @@ where
             }
 
             // TODO: combine these all in one SIMD'ized pass.
-            let xsum = float_sum::f64::sum(&x_tmp[..k]);
-            let ysum = float_sum::f64::sum(&y_tmp[..k]);
+            let xsum: f64 = FloatSum::sum(&x_tmp[..k]);
+            let ysum: f64 = FloatSum::sum(&y_tmp[..k]);
             let xysum = multiply_sum(&x_tmp, &y_tmp, k);
 
             let old_mean_x = mean_x;
@@ -162,8 +163,8 @@ where
             }
 
             // TODO: combine these all in one SIMD'ized pass.
-            let xsum = float_sum::f64::sum(&x_tmp[..k]);
-            let ysum = float_sum::f64::sum(&y_tmp[..k]);
+            let xsum: f64 = FloatSum::sum(&x_tmp[..k]);
+            let ysum: f64 = FloatSum::sum(&y_tmp[..k]);
             let xxsum = multiply_sum(&x_tmp, &x_tmp, k);
             let xysum = multiply_sum(&x_tmp, &y_tmp, k);
             let yysum = multiply_sum(&y_tmp, &y_tmp, k);
