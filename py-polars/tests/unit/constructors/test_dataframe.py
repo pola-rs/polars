@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from collections import OrderedDict
 from typing import Any
 
 import pytest
@@ -11,7 +12,7 @@ import polars as pl
 def test_df_mixed_dtypes_string() -> None:
     data = {"x": [["abc", 12, 34.5]], "y": [1]}
 
-    with pytest.raises(pl.SchemaError, match="unexpected value"):
+    with pytest.raises(TypeError, match="unexpected value"):
         pl.DataFrame(data, strict=True)
 
     df = pl.DataFrame(data, strict=False)
@@ -21,8 +22,8 @@ def test_df_mixed_dtypes_string() -> None:
 
 def test_df_mixed_dtypes_object() -> None:
     data = {"x": [[b"abc", 12, 34.5]], "y": [1]}
-    # with pytest.raises(pl.SchemaError, match="unexpected value"):
-    with pytest.raises(pl.ComputeError, match="failed to determine supertype"):
+
+    with pytest.raises(TypeError, match="failed to determine supertype"):
         pl.DataFrame(data, strict=True)
 
     df = pl.DataFrame(data, strict=False)
@@ -55,7 +56,7 @@ def test_df_init_from_generator_dict_view() -> None:
         "vals": d.values(),
         "itms": d.items(),
     }
-    with pytest.raises(pl.SchemaError, match="unexpected value"):
+    with pytest.raises(TypeError, match="unexpected value"):
         pl.DataFrame(data, strict=True)
 
     df = pl.DataFrame(data, strict=False)
@@ -121,3 +122,28 @@ def test_df_init_from_series_strict() -> None:
 
     assert df["a"].to_list() == [None, 0, 1]
     assert df["a"].dtype == pl.UInt8
+
+
+# https://github.com/pola-rs/polars/issues/15471
+def test_df_init_rows_overrides_non_existing() -> None:
+    df = pl.DataFrame([{"a": 1}], schema_overrides={"a": pl.Int8(), "b": pl.Boolean()})
+    assert df.schema == OrderedDict({"a": pl.Int8})
+
+    df = pl.DataFrame(
+        [{"a": 3, "b": 1.0}],
+        schema_overrides={"a": pl.Int8, "c": pl.Utf8},
+    )
+    assert df.schema == OrderedDict({"a": pl.Int8, "b": pl.Float64})
+
+
+# https://github.com/pola-rs/polars/issues/15245
+def test_df_init_nested_mixed_types() -> None:
+    data = [{"key": [{"value": 1}, {"value": 1.0}]}]
+
+    with pytest.raises(TypeError, match="unexpected value"):
+        pl.DataFrame(data, strict=True)
+
+    df = pl.DataFrame(data, strict=False)
+
+    assert df.schema == {"key": pl.List(pl.Struct({"value": pl.Float64}))}
+    assert df.to_dicts() == [{"key": [{"value": 1.0}, {"value": 1.0}]}]

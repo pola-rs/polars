@@ -1,16 +1,18 @@
 use std::mem::MaybeUninit;
 
 use arrow::array::{Array, PrimitiveArray};
-use arrow::bitmap::utils::{align_bitslice_start_u8, SlicesIterator};
+use arrow::bitmap::utils::SlicesIterator;
 use arrow::bitmap::{self, Bitmap};
 use arrow::datatypes::ArrowDataType;
-use arrow::types::NativeType;
-use polars_utils::slice::load_padded_le_u64;
+
+use crate::NotSimdPrimitive;
 
 mod array;
 mod boolean;
 mod list;
 mod scalar;
+#[cfg(feature = "simd")]
+mod simd;
 mod view;
 
 pub trait IfThenElseKernel: Sized + Array {
@@ -35,7 +37,7 @@ pub trait IfThenElseKernel: Sized + Array {
     ) -> Self;
 }
 
-impl<T: NativeType> IfThenElseKernel for PrimitiveArray<T> {
+impl<T: NotSimdPrimitive> IfThenElseKernel for PrimitiveArray<T> {
     type Scalar<'a> = T;
 
     fn if_then_else(mask: &Bitmap, if_true: &Self, if_false: &Self) -> Self {
@@ -144,18 +146,18 @@ where
 {
     assert_eq!(mask.len(), if_true.len());
     assert_eq!(mask.len(), if_false.len());
-    let (mask_slice, offset, len) = mask.as_slice();
 
     let mut ret = Vec::with_capacity(mask.len());
     let out = &mut ret.spare_capacity_mut()[..mask.len()];
 
-    // Handle offset.
-    let (start_byte, num_start_bits, bulk_mask, bulk_len) =
-        align_bitslice_start_u8(mask_slice, offset, len);
-    let (start_true, rest_true) = if_true.split_at(num_start_bits);
-    let (start_false, rest_false) = if_false.split_at(num_start_bits);
-    let (start_out, rest_out) = out.split_at_mut(num_start_bits);
-    process_var(start_byte as u64, start_true, start_false, start_out);
+    // Handle prefix.
+    let aligned = mask.aligned::<u64>();
+    let (start_true, rest_true) = if_true.split_at(aligned.prefix_bitlen());
+    let (start_false, rest_false) = if_false.split_at(aligned.prefix_bitlen());
+    let (start_out, rest_out) = out.split_at_mut(aligned.prefix_bitlen());
+    if aligned.prefix_bitlen() > 0 {
+        process_var(aligned.prefix(), start_true, start_false, start_out);
+    }
 
     // Handle bulk.
     let mut true_chunks = rest_true.chunks_exact(64);
@@ -166,14 +168,7 @@ where
         .zip(false_chunks.by_ref())
         .zip(out_chunks.by_ref());
     for (i, ((tc, fc), oc)) in combined.enumerate() {
-        let m = unsafe {
-            u64::from_le_bytes(
-                bulk_mask
-                    .get_unchecked(8 * i..8 * i + 8)
-                    .try_into()
-                    .unwrap(),
-            )
-        };
+        let m = unsafe { *aligned.bulk().get_unchecked(i) };
         process_chunk(
             m,
             tc.try_into().unwrap(),
@@ -182,12 +177,10 @@ where
         );
     }
 
-    // Handle remainder.
-    if !true_chunks.remainder().is_empty() {
-        let rest_mask_byte_offset = bulk_len / 64 * 8;
-        let rest_mask = load_padded_le_u64(&bulk_mask[rest_mask_byte_offset..]);
+    // Handle suffix.
+    if aligned.suffix_bitlen() > 0 {
         process_var(
-            rest_mask,
+            aligned.suffix(),
             true_chunks.remainder(),
             false_chunks.remainder(),
             out_chunks.into_remainder(),
@@ -212,7 +205,6 @@ where
     F64: Fn(u64, &[T; 64], T, &mut [MaybeUninit<T>; 64]),
 {
     assert_eq!(mask.len(), if_true.len());
-    let (mask_slice, offset, len) = mask.as_slice();
 
     let mut ret = Vec::with_capacity(mask.len());
     let out = &mut ret.spare_capacity_mut()[..mask.len()];
@@ -220,45 +212,32 @@ where
     // XOR with all 1's inverts the mask.
     let xor_inverter = if invert_mask { u64::MAX } else { 0 };
 
-    // Handle offset.
-    let (start_byte, num_start_bits, bulk_mask, bulk_len) =
-        align_bitslice_start_u8(mask_slice, offset, len);
-    let (start_true, rest_true) = if_true.split_at(num_start_bits);
-    let (start_out, rest_out) = out.split_at_mut(num_start_bits);
-    scalar::if_then_else_broadcast_false_scalar_rest(
-        start_byte as u64 ^ xor_inverter,
-        start_true,
-        if_false,
-        start_out,
-    );
+    // Handle prefix.
+    let aligned = mask.aligned::<u64>();
+    let (start_true, rest_true) = if_true.split_at(aligned.prefix_bitlen());
+    let (start_out, rest_out) = out.split_at_mut(aligned.prefix_bitlen());
+    if aligned.prefix_bitlen() > 0 {
+        scalar::if_then_else_broadcast_false_scalar_rest(
+            aligned.prefix() ^ xor_inverter,
+            start_true,
+            if_false,
+            start_out,
+        );
+    }
 
     // Handle bulk.
     let mut true_chunks = rest_true.chunks_exact(64);
     let mut out_chunks = rest_out.chunks_exact_mut(64);
     let combined = true_chunks.by_ref().zip(out_chunks.by_ref());
     for (i, (tc, oc)) in combined.enumerate() {
-        let m = unsafe {
-            u64::from_le_bytes(
-                bulk_mask
-                    .get_unchecked(8 * i..8 * i + 8)
-                    .try_into()
-                    .unwrap(),
-            )
-        };
-        process_chunk(
-            m ^ xor_inverter,
-            tc.try_into().unwrap(),
-            if_false,
-            oc.try_into().unwrap(),
-        );
+        let m = unsafe { *aligned.bulk().get_unchecked(i) } ^ xor_inverter;
+        process_chunk(m, tc.try_into().unwrap(), if_false, oc.try_into().unwrap());
     }
 
-    // Handle remainder.
-    if !true_chunks.remainder().is_empty() {
-        let rest_mask_byte_offset = bulk_len / 64 * 8;
-        let rest_mask = load_padded_le_u64(&bulk_mask[rest_mask_byte_offset..]);
+    // Handle suffix.
+    if aligned.suffix_bitlen() > 0 {
         scalar::if_then_else_broadcast_false_scalar_rest(
-            rest_mask ^ xor_inverter,
+            aligned.suffix() ^ xor_inverter,
             true_chunks.remainder(),
             if_false,
             out_chunks.into_remainder(),
@@ -281,42 +260,29 @@ where
     T: Copy,
     F64: Fn(u64, T, T, &mut [MaybeUninit<T>; 64]),
 {
-    let (mask_slice, offset, len) = mask.as_slice();
-
     let mut ret = Vec::with_capacity(mask.len());
     let out = &mut ret.spare_capacity_mut()[..mask.len()];
 
-    // Handle offset.
-    let (start_byte, num_start_bits, bulk_mask, bulk_len) =
-        align_bitslice_start_u8(mask_slice, offset, len);
-    let (start_out, rest_out) = out.split_at_mut(num_start_bits);
-    scalar::if_then_else_broadcast_both_scalar_rest(
-        start_byte as u64,
-        if_true,
-        if_false,
-        start_out,
-    );
+    // Handle prefix.
+    let aligned = mask.aligned::<u64>();
+    let (start_out, rest_out) = out.split_at_mut(aligned.prefix_bitlen());
+    scalar::if_then_else_broadcast_both_scalar_rest(aligned.prefix(), if_true, if_false, start_out);
 
     // Handle bulk.
     let mut out_chunks = rest_out.chunks_exact_mut(64);
     for (i, oc) in out_chunks.by_ref().enumerate() {
-        let m = unsafe {
-            u64::from_le_bytes(
-                bulk_mask
-                    .get_unchecked(8 * i..8 * i + 8)
-                    .try_into()
-                    .unwrap(),
-            )
-        };
+        let m = unsafe { *aligned.bulk().get_unchecked(i) };
         generate_chunk(m, if_true, if_false, oc.try_into().unwrap());
     }
 
-    // Handle remainder.
-    let out_chunk = out_chunks.into_remainder();
-    if !out_chunk.is_empty() {
-        let rest_mask_byte_offset = bulk_len / 64 * 8;
-        let rest_mask = load_padded_le_u64(&bulk_mask[rest_mask_byte_offset..]);
-        scalar::if_then_else_broadcast_both_scalar_rest(rest_mask, if_true, if_false, out_chunk);
+    // Handle suffix.
+    if aligned.suffix_bitlen() > 0 {
+        scalar::if_then_else_broadcast_both_scalar_rest(
+            aligned.suffix(),
+            if_true,
+            if_false,
+            out_chunks.into_remainder(),
+        );
     }
 
     unsafe {

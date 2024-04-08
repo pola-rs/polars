@@ -52,16 +52,6 @@ impl CsvExec {
 
 impl Executor for CsvExec {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
-        #[allow(clippy::useless_asref)]
-        let finger_print = FileFingerPrint {
-            paths: Arc::new([self.path.clone()]),
-            predicate: self
-                .predicate
-                .as_ref()
-                .map(|ae| ae.as_expression().unwrap().clone()),
-            slice: (self.options.skip_rows, self.file_options.n_rows),
-        };
-
         let profile_name = if state.has_node_timer() {
             let mut ids = vec![self.path.to_string_lossy().into()];
             if self.predicate.is_some() {
@@ -73,15 +63,6 @@ impl Executor for CsvExec {
             Cow::Borrowed("")
         };
 
-        state.record(
-            || {
-                state
-                    .file_cache
-                    .read(finger_print, self.file_options.file_counter, &mut || {
-                        self.read()
-                    })
-            },
-            profile_name,
-        )
+        state.record(|| self.read(), profile_name)
     }
 }

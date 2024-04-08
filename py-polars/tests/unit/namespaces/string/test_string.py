@@ -168,6 +168,22 @@ def test_str_tail_expr() -> None:
     assert_frame_equal(out, expected)
 
 
+def test_str_slice_multibyte() -> None:
+    ref = "你好世界"
+    s = pl.Series([ref])
+
+    # Pad the string to simplify (negative) offsets starting before/after the string.
+    npad = 20
+    padref = "_" * npad + ref + "_" * npad
+    for start in range(-5, 6):
+        for length in range(6):
+            offset = npad + start if start >= 0 else npad + start + len(ref)
+            correct = padref[offset : offset + length].strip("_")
+            result = s.str.slice(start, length)
+            expected = pl.Series([correct])
+            assert_series_equal(result, expected)
+
+
 def test_str_len_bytes() -> None:
     s = pl.Series(["Café", None, "345", "東京"])
     result = s.str.len_bytes()

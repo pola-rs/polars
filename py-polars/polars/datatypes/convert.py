@@ -135,7 +135,7 @@ def _map_py_type_to_dtype(
                 dtype if nested is None else dtype(_map_py_type_to_dtype(nested))  # type: ignore[operator]
             )
 
-    msg = "invalid type"
+    msg = f"unrecognised Python type: {python_dtype!r}"
     raise TypeError(msg)
 
 
@@ -415,10 +415,10 @@ def py_type_to_dtype(
     try:
         return _map_py_type_to_dtype(data_type)
     except (KeyError, TypeError):  # pragma: no cover
-        if not raise_unmatched:
-            return None
-        msg = f"cannot infer dtype from {data_type!r} (type: {type(data_type).__name__!r})"
-        raise ValueError(msg) from None
+        if raise_unmatched:
+            msg = f"cannot infer dtype from {data_type!r} (type: {type(data_type).__name__!r})"
+            raise ValueError(msg) from None
+        return None
 
 
 def py_type_to_arrow_type(dtype: PythonDataType) -> pa.lib.DataType:

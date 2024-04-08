@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from polars.type_aliases import TimeUnit
+    from tests.unit.conftest import MemoryUsage
 
 
 @pytest.fixture()
@@ -1969,3 +1970,86 @@ def test_read_csv_single_column(columns: list[str] | str) -> None:
 def test_csv_invalid_escape_utf8_14960() -> None:
     with pytest.raises(pl.ComputeError, match=r"field is not properly escaped"):
         pl.read_csv('col1\n""•'.encode())
+
+
+@pytest.mark.slow()
+@pytest.mark.write_disk()
+def test_read_csv_only_loads_selected_columns(
+    memory_usage_without_pyarrow: MemoryUsage,
+    tmp_path: Path,
+) -> None:
+    """Only requested columns are loaded by ``read_csv()``."""
+    tmp_path.mkdir(exist_ok=True)
+
+    # Each column will be about 8MB of RAM
+    series = pl.arange(0, 1_000_000, dtype=pl.Int64, eager=True)
+
+    file_path = tmp_path / "multicolumn.csv"
+    df = pl.DataFrame(
+        {
+            "a": series,
+            "b": series,
+        }
+    )
+    df.write_csv(file_path)
+    del df, series
+
+    memory_usage_without_pyarrow.reset_tracking()
+
+    # Only load one column:
+    df = pl.read_csv(str(file_path), columns=["b"], rechunk=False)
+    del df
+    # Only one column's worth of memory should be used; 2 columns would be
+    # 16_000_000 at least, but there's some overhead.
+    assert 8_000_000 < memory_usage_without_pyarrow.get_peak() < 13_000_000
+
+    # Globs use a different code path for reading
+    memory_usage_without_pyarrow.reset_tracking()
+    df = pl.read_csv(str(tmp_path / "*.csv"), columns=["b"], rechunk=False)
+    del df
+    # Only one column's worth of memory should be used; 2 columns would be
+    # 16_000_000 at least, but there's some overhead.
+    assert 8_000_000 < memory_usage_without_pyarrow.get_peak() < 13_000_000
+
+    # read_csv_batched() test:
+    memory_usage_without_pyarrow.reset_tracking()
+    result: list[pl.DataFrame] = []
+    batched = pl.read_csv_batched(
+        str(file_path),
+        columns=["b"],
+        rechunk=False,
+        n_threads=1,
+        low_memory=True,
+        batch_size=10_000,
+    )
+    while sum(df.height for df in result) < 1_000_000:
+        next_batch = batched.next_batches(1)
+        if next_batch is None:
+            break
+        result += next_batch
+    del result
+    assert 8_000_000 < memory_usage_without_pyarrow.get_peak() < 13_000_000
+
+
+def test_csv_escape_cf_15349() -> None:
+    f = io.BytesIO()
+    df = pl.DataFrame({"test": ["normal", "with\rcr"]})
+    df.write_csv(f)
+    f.seek(0)
+    assert f.read() == b'test\nnormal\n"with\rcr"\n'
+
+
+@pytest.mark.parametrize("use_pyarrow", [True, False])
+def test_skip_rows_after_header_pyarrow(use_pyarrow: bool) -> None:
+    csv = textwrap.dedent(
+        """\
+        foo,bar
+        1,2
+        3,4
+        5,6
+        """
+    )
+    f = io.StringIO(csv)
+    df = pl.read_csv(f, skip_rows_after_header=1, use_pyarrow=use_pyarrow)
+    expected = pl.DataFrame({"foo": [3, 5], "bar": [4, 6]})
+    assert_frame_equal(df, expected)

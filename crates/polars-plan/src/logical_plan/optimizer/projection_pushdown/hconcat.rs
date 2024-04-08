@@ -6,7 +6,7 @@ pub(super) fn process_hconcat(
     inputs: Vec<Node>,
     schema: SchemaRef,
     options: HConcatOptions,
-    acc_projections: Vec<Node>,
+    acc_projections: Vec<ColumnNode>,
     projections_seen: usize,
     lp_arena: &mut Arena<ALogicalPlan>,
     expr_arena: &mut Arena<AExpr>,
@@ -18,14 +18,14 @@ pub(super) fn process_hconcat(
     let schema = if acc_projections.is_empty() {
         schema
     } else {
-        let mut remaining_projections: PlHashSet<Node> = acc_projections.into_iter().collect();
+        let mut remaining_projections: PlHashSet<_> = acc_projections.into_iter().collect();
 
         for input in inputs.iter() {
             let mut input_pushdown = Vec::new();
             let input_schema = lp_arena.get(*input).schema(lp_arena);
 
             for proj in remaining_projections.iter() {
-                if check_input_node(*proj, input_schema.as_ref(), expr_arena) {
+                if check_input_column_node(*proj, input_schema.as_ref(), expr_arena) {
                     input_pushdown.push(*proj);
                 }
             }
@@ -33,7 +33,7 @@ pub(super) fn process_hconcat(
             let mut input_names = PlHashSet::new();
             for proj in &input_pushdown {
                 remaining_projections.remove(proj);
-                for name in aexpr_to_leaf_names(*proj, expr_arena) {
+                for name in aexpr_to_leaf_names(proj.0, expr_arena) {
                     input_names.insert(name);
                 }
             }

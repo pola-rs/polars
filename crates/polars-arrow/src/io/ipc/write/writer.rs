@@ -8,9 +8,9 @@ use super::common::{DictionaryTracker, EncodedData, WriteOptions};
 use super::common_sync::{write_continuation, write_message};
 use super::{default_ipc_fields, schema, schema_to_bytes};
 use crate::array::Array;
-use crate::chunk::Chunk;
 use crate::datatypes::*;
 use crate::io::ipc::write::common::encode_chunk_amortized;
+use crate::record_batch::RecordBatch;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum State {
@@ -126,10 +126,10 @@ impl<W: Write> FileWriter<W> {
         Ok(())
     }
 
-    /// Writes [`Chunk`] to the file
+    /// Writes [`RecordBatch`] to the file
     pub fn write(
         &mut self,
-        chunk: &Chunk<Box<dyn Array>>,
+        chunk: &RecordBatch<Box<dyn Array>>,
         ipc_fields: Option<&[IpcField]>,
     ) -> PolarsResult<()> {
         if self.state != State::Started {

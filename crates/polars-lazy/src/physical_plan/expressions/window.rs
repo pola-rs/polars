@@ -725,7 +725,7 @@ where
     } else {
         // We don't use a mutable bitmap as bits will have have race conditions!
         // A single byte might alias if we write from single threads.
-        let mut validity: Vec<bool> = Vec::with_capacity(len);
+        let mut validity: Vec<bool> = vec![false; len];
         let validity_ptr = validity.as_mut_ptr();
         let sync_ptr_validity = unsafe { SyncPtr::new(validity_ptr) };
 
@@ -793,7 +793,6 @@ where
         }
         // SAFETY: we have written all slots
         unsafe { values.set_len(len) }
-        unsafe { validity.set_len(len) }
         let validity = Bitmap::from(validity);
         let arr = PrimitiveArray::new(
             T::get_dtype().to_physical().to_arrow(true),

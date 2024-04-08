@@ -1,7 +1,7 @@
 use std::fmt::Write;
 
 use arrow::array::ValueSize;
-use arrow::legacy::kernels::list::sublist_get;
+use arrow::legacy::kernels::list::{index_is_oob, sublist_get};
 use polars_core::chunked_array::builder::get_list_builder;
 #[cfg(feature = "list_gather")]
 use polars_core::export::num::ToPrimitive;
@@ -242,11 +242,10 @@ pub trait ListNameSpaceImpl: AsList {
         }
     }
 
-    #[must_use]
-    fn lst_sort(&self, options: SortOptions) -> ListChunked {
+    fn lst_sort(&self, options: SortOptions) -> PolarsResult<ListChunked> {
         let ca = self.as_list();
-        let out = ca.apply_amortized(|s| s.as_ref().sort_with(options));
-        self.same_type(out)
+        let out = ca.try_apply_amortized(|s| s.as_ref().sort_with(options))?;
+        Ok(self.same_type(out))
     }
 
     #[must_use]
@@ -342,8 +341,12 @@ pub trait ListNameSpaceImpl: AsList {
     /// So index `0` would return the first item of every sublist
     /// and index `-1` would return the last item of every sublist
     /// if an index is out of bounds, it will return a `None`.
-    fn lst_get(&self, idx: i64) -> PolarsResult<Series> {
+    fn lst_get(&self, idx: i64, null_on_oob: bool) -> PolarsResult<Series> {
         let ca = self.as_list();
+        if !null_on_oob && ca.downcast_iter().any(|arr| index_is_oob(arr, idx)) {
+            polars_bail!(ComputeError: "get index is out of bounds");
+        }
+
         let chunks = ca
             .downcast_iter()
             .map(|arr| sublist_get(arr, idx))

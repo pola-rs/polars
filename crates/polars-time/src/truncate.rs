@@ -25,8 +25,13 @@ impl PolarsTruncate for DatetimeChunked {
             1 => {
                 if let Some(every) = every.get(0) {
                     let every = Duration::parse(every);
+                    if every.negative {
+                        polars_bail!(ComputeError: "cannot truncate a Datetime to a negative duration")
+                    }
+
                     let w = Window::new(every, every, offset);
-                    self.0.try_apply(|timestamp| func(&w, timestamp, tz))
+                    self.0
+                        .try_apply_nonnull_values_generic(|timestamp| func(&w, timestamp, tz))
                 } else {
                     Ok(Int64Chunked::full_null(self.name(), self.len()))
                 }
@@ -35,6 +40,10 @@ impl PolarsTruncate for DatetimeChunked {
                 match (opt_timestamp, opt_every) {
                     (Some(timestamp), Some(every)) => {
                         let every = Duration::parse(every);
+                        if every.negative {
+                            polars_bail!(ComputeError: "cannot truncate a Datetime to a negative duration")
+                        }
+
                         let w = Window::new(every, every, offset);
                         func(&w, timestamp, tz).map(Some)
                     },
@@ -58,8 +67,12 @@ impl PolarsTruncate for DateChunked {
             1 => {
                 if let Some(every) = every.get(0) {
                     let every = Duration::parse(every);
+                    if every.negative {
+                        polars_bail!(ComputeError: "cannot truncate a Date to a negative duration")
+                    }
+
                     let w = Window::new(every, every, offset);
-                    self.try_apply(|t| {
+                    self.try_apply_nonnull_values_generic(|t| {
                         const MSECS_IN_DAY: i64 = MILLISECONDS * SECONDS_IN_DAY;
                         Ok((w.truncate_ms(MSECS_IN_DAY * t as i64, None)? / MSECS_IN_DAY) as i32)
                     })
@@ -72,6 +85,10 @@ impl PolarsTruncate for DateChunked {
                     (Some(t), Some(every)) => {
                         const MSECS_IN_DAY: i64 = MILLISECONDS * SECONDS_IN_DAY;
                         let every = Duration::parse(every);
+                        if every.negative {
+                            polars_bail!(ComputeError: "cannot truncate a Date to a negative duration")
+                        }
+
                         let w = Window::new(every, every, offset);
                         Ok(Some(
                             (w.truncate_ms(MSECS_IN_DAY * t as i64, None)? / MSECS_IN_DAY) as i32,

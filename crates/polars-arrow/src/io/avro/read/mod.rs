@@ -17,10 +17,10 @@ mod util;
 pub use schema::infer_schema;
 
 use crate::array::Array;
-use crate::chunk::Chunk;
 use crate::datatypes::Field;
+use crate::record_batch::RecordBatch;
 
-/// Single threaded, blocking reader of Avro; [`Iterator`] of [`Chunk`].
+/// Single threaded, blocking reader of Avro; [`Iterator`] of [`RecordBatch`].
 pub struct Reader<R: Read> {
     iter: BlockStreamingIterator<R>,
     avro_fields: Vec<AvroField>,
@@ -53,7 +53,7 @@ impl<R: Read> Reader<R> {
 }
 
 impl<R: Read> Iterator for Reader<R> {
-    type Item = PolarsResult<Chunk<Box<dyn Array>>>;
+    type Item = PolarsResult<RecordBatch<Box<dyn Array>>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let fields = &self.fields[..];

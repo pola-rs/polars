@@ -157,17 +157,17 @@ impl Series {
     }
 
     pub fn clear(&self) -> Series {
-        // Only the inner of objects know their type, so use this hack.
-        #[cfg(feature = "object")]
-        if matches!(self.dtype(), DataType::Object(_, _)) {
-            return if self.is_empty() {
-                self.clone()
-            } else {
-                let av = self.get(0).unwrap();
-                Series::new(self.name(), [av]).slice(0, 0)
-            };
+        if self.is_empty() {
+            self.clone()
+        } else {
+            match self.dtype() {
+                #[cfg(feature = "object")]
+                DataType::Object(_, _) => self
+                    .take(&ChunkedArray::<IdxType>::new_vec("", vec![]))
+                    .unwrap(),
+                dt => Series::new_empty(self.name(), dt),
+            }
         }
-        Series::new_empty(self.name(), self.dtype())
     }
 
     #[doc(hidden)]
@@ -285,7 +285,7 @@ impl Series {
         Ok(self)
     }
 
-    pub fn sort(&self, descending: bool, nulls_last: bool) -> Self {
+    pub fn sort(&self, descending: bool, nulls_last: bool) -> PolarsResult<Self> {
         self.sort_with(SortOptions {
             descending,
             nulls_last,

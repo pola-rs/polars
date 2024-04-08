@@ -4,9 +4,9 @@ use polars_error::PolarsResult;
 use crate::array::*;
 use crate::compute::cast::binary_to::Parse;
 use crate::compute::cast::CastOptions;
-use crate::datatypes::{ArrowDataType, TimeUnit};
 #[cfg(feature = "dtype-decimal")]
-use crate::legacy::compute::decimal::deserialize_decimal;
+use crate::compute::decimal::deserialize_decimal;
+use crate::datatypes::{ArrowDataType, TimeUnit};
 use crate::offset::Offset;
 use crate::temporal_conversions::EPOCH_DAYS_FROM_CE;
 use crate::types::NativeType;

@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "0.20.16-rc.1"
+version = "0.20.18"
 edition = "2021"
 
 [lib]
@@ -17,6 +17,7 @@ polars-plan = { workspace = true }
 polars-utils = { workspace = true }
 
 ahash = { workspace = true }
+arboard = { workspace = true, optional = true }
 ciborium = { workspace = true }
 either = { workspace = true }
 itoa = { workspace = true }
@@ -126,6 +127,7 @@ search_sorted = ["polars/search_sorted"]
 decompress = ["polars/decompress-fast"]
 regex = ["polars/regex"]
 csv = ["polars/csv"]
+clipboard = ["arboard"]
 object = ["polars/object"]
 extract_jsonpath = ["polars/extract_jsonpath"]
 pivot = ["polars/pivot"]
@@ -204,6 +206,7 @@ io = [
   "avro",
   "csv",
   "cloud",
+  "clipboard",
 ]
 
 optimizations = [

@@ -140,13 +140,8 @@ impl ChunkFull<&Series> for ArrayChunked {
             Box::new(ArrowField::new("item", dtype.to_arrow(true), true)),
             width,
         );
-        let arr = if value.dtype().is_numeric() {
-            let values = value.tile(length);
-            FixedSizeListArray::new(arrow_dtype, values.chunks()[0].clone(), None)
-        } else {
-            let value = value.rechunk().chunks()[0].clone();
-            FixedSizeListArray::full(length, value, arrow_dtype)
-        };
+        let value = value.rechunk().chunks()[0].clone();
+        let arr = FixedSizeListArray::full(length, value, arrow_dtype);
         ChunkedArray::with_chunk(name, arr)
     }
 }

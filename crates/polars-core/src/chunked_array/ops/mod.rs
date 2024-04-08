@@ -29,12 +29,12 @@ mod interpolate;
 pub(crate) mod min_max_binary;
 pub(crate) mod nulls;
 mod reverse;
+#[cfg(feature = "rolling_window")]
 pub(crate) mod rolling_window;
 pub mod search_sorted;
 mod set;
 mod shift;
 pub mod sort;
-mod tile;
 #[cfg(feature = "algorithm_group_by")]
 pub(crate) mod unique;
 #[cfg(feature = "zip_with")]
@@ -224,11 +224,6 @@ pub trait ChunkApply<'a, T> {
     where
         F: Fn(T) -> Self::FuncRet + Copy;
 
-    fn try_apply<F>(&'a self, f: F) -> PolarsResult<Self>
-    where
-        F: Fn(T) -> PolarsResult<Self::FuncRet> + Copy,
-        Self: Sized;
-
     /// Apply a closure elementwise including null values.
     #[must_use]
     fn apply<F>(&'a self, f: F) -> Self
@@ -376,6 +371,7 @@ pub struct SortOptions {
 pub struct SortMultipleOptions {
     pub other: Vec<Series>,
     pub descending: Vec<bool>,
+    pub nulls_last: bool,
     pub multithreaded: bool,
 }
 

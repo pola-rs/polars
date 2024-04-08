@@ -8,7 +8,7 @@ use pyo3::class::basic::CompareOp;
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 
-use crate::conversion::{parse_fill_null_strategy, Wrap};
+use crate::conversion::{parse_fill_null_strategy, vec_extract_wrapped, Wrap};
 use crate::error::PyPolarsErr;
 use crate::map::lazy::map_single;
 use crate::PyExpr;
@@ -685,9 +685,7 @@ impl PyExpr {
         self.inner.clone().exclude(columns).into()
     }
     fn exclude_dtype(&self, dtypes: Vec<Wrap<DataType>>) -> Self {
-        // SAFETY:
-        // Wrap is transparent.
-        let dtypes: Vec<DataType> = unsafe { std::mem::transmute(dtypes) };
+        let dtypes = vec_extract_wrapped(dtypes);
         self.inner.clone().exclude_dtype(&dtypes).into()
     }
     fn interpolate(&self, method: Wrap<InterpolationMethod>) -> Self {

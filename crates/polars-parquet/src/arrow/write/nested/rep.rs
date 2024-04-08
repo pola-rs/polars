@@ -35,8 +35,7 @@ pub fn num_values(nested: &[Nested]) -> usize {
 
     iter(nested)
         .into_iter()
-        .enumerate()
-        .map(|(_, lengths)| {
+        .map(|lengths| {
             lengths
                 .map(|length| if length == 0 { 1 } else { 0 })
                 .sum::<usize>()

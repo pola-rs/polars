@@ -2,9 +2,9 @@ use std::io::{Cursor, Read, Seek};
 
 use arrow::array::*;
 use arrow::bitmap::Bitmap;
-use arrow::chunk::Chunk;
 use arrow::datatypes::*;
 use arrow::legacy::prelude::LargeListArray;
+use arrow::record_batch::RecordBatch;
 use arrow::types::{i256, NativeType};
 use ethnum::AsI256;
 use polars_error::PolarsResult;
@@ -1259,7 +1259,7 @@ pub fn pyarrow_struct_statistics(column: &str) -> Statistics {
 
 fn integration_write(
     schema: &ArrowSchema,
-    chunks: &[Chunk<Box<dyn Array>>],
+    chunks: &[RecordBatch<Box<dyn Array>>],
 ) -> PolarsResult<Vec<u8>> {
     let options = WriteOptions {
         write_statistics: true,
@@ -1297,7 +1297,7 @@ fn integration_write(
     Ok(writer.into_inner().into_inner())
 }
 
-type IntegrationRead = (ArrowSchema, Vec<Chunk<Box<dyn Array>>>);
+type IntegrationRead = (ArrowSchema, Vec<RecordBatch<Box<dyn Array>>>);
 
 fn integration_read(data: &[u8], limit: Option<usize>) -> PolarsResult<IntegrationRead> {
     let mut reader = Cursor::new(data);
@@ -1322,7 +1322,7 @@ fn integration_read(data: &[u8], limit: Option<usize>) -> PolarsResult<Integrati
     Ok((schema, batches))
 }
 
-fn generic_data() -> PolarsResult<(ArrowSchema, Chunk<Box<dyn Array>>)> {
+fn generic_data() -> PolarsResult<(ArrowSchema, RecordBatch<Box<dyn Array>>)> {
     let array1 = PrimitiveArray::<i64>::from([Some(1), None, Some(2)])
         .to(ArrowDataType::Duration(TimeUnit::Second));
     let array2 = Utf8ViewArray::from_slice([Some("a"), None, Some("bb")]);
@@ -1376,7 +1376,7 @@ fn generic_data() -> PolarsResult<(ArrowSchema, Chunk<Box<dyn Array>>)> {
         Field::new("a12", array12.data_type().clone(), true),
         Field::new("a13", array13.data_type().clone(), true),
     ]);
-    let chunk = Chunk::try_new(vec![
+    let chunk = RecordBatch::try_new(vec![
         array1.boxed(),
         array2.boxed(),
         array3.boxed(),
@@ -1396,7 +1396,7 @@ fn generic_data() -> PolarsResult<(ArrowSchema, Chunk<Box<dyn Array>>)> {
 
 fn assert_roundtrip(
     schema: ArrowSchema,
-    chunk: Chunk<Box<dyn Array>>,
+    chunk: RecordBatch<Box<dyn Array>>,
     limit: Option<usize>,
 ) -> PolarsResult<()> {
     let r = integration_write(&schema, &[chunk.clone()])?;
@@ -1409,7 +1409,7 @@ fn assert_roundtrip(
             .into_iter()
             .map(|x| x.sliced(0, limit))
             .collect::<Vec<_>>();
-        Chunk::new(expected)
+        RecordBatch::new(expected)
     } else {
         chunk
     };
@@ -1473,7 +1473,7 @@ fn assert_array_roundtrip(
         array.data_type().clone(),
         is_nullable,
     )]);
-    let chunk = Chunk::try_new(vec![array])?;
+    let chunk = RecordBatch::try_new(vec![array])?;
 
     assert_roundtrip(schema, chunk, limit)
 }
@@ -1581,7 +1581,7 @@ fn limit_list() -> PolarsResult<()> {
 
 fn nested_dict_data(
     data_type: ArrowDataType,
-) -> PolarsResult<(ArrowSchema, Chunk<Box<dyn Array>>)> {
+) -> PolarsResult<(ArrowSchema, RecordBatch<Box<dyn Array>>)> {
     let values = match data_type {
         ArrowDataType::Float32 => PrimitiveArray::from_slice([1.0f32, 3.0]).boxed(),
         ArrowDataType::Utf8View => Utf8ViewArray::from_slice([Some("a"), Some("b")]).boxed(),
@@ -1602,7 +1602,7 @@ fn nested_dict_data(
     )?;
 
     let schema = ArrowSchema::from(vec![Field::new("c1", values.data_type().clone(), true)]);
-    let chunk = Chunk::try_new(vec![values.boxed()])?;
+    let chunk = RecordBatch::try_new(vec![values.boxed()])?;
 
     Ok((schema, chunk))
 }
@@ -1630,8 +1630,8 @@ fn nested_dict_limit() -> PolarsResult<()> {
 
 #[test]
 fn filter_chunk() -> PolarsResult<()> {
-    let chunk1 = Chunk::new(vec![PrimitiveArray::from_slice([1i16, 3]).boxed()]);
-    let chunk2 = Chunk::new(vec![PrimitiveArray::from_slice([2i16, 4]).boxed()]);
+    let chunk1 = RecordBatch::new(vec![PrimitiveArray::from_slice([1i16, 3]).boxed()]);
+    let chunk2 = RecordBatch::new(vec![PrimitiveArray::from_slice([2i16, 4]).boxed()]);
     let schema = ArrowSchema::from(vec![Field::new("c1", ArrowDataType::Int16, true)]);
 
     let r = integration_write(&schema, &[chunk1.clone(), chunk2.clone()])?;

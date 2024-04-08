@@ -577,7 +577,7 @@ def test_upsample(time_zone: str | None, tzinfo: ZoneInfo | timezone | None) -> 
     ).with_columns(pl.col("time").dt.replace_time_zone(time_zone).set_sorted())
 
     up = df.upsample(
-        time_column="time", every="1mo", by="admin", maintain_order=True
+        time_column="time", every="1mo", group_by="admin", maintain_order=True
     ).select(pl.all().forward_fill())
     # this print will panic if timezones feature is not activated
     # don't remove
@@ -751,7 +751,7 @@ def test_asof_join_tolerance_grouper() -> None:
 def test_rolling_group_by_by_argument() -> None:
     df = pl.DataFrame({"times": range(10), "groups": [1] * 4 + [2] * 6})
 
-    out = df.rolling("times", period="5i", by=["groups"]).agg(
+    out = df.rolling("times", period="5i", group_by=["groups"]).agg(
         pl.col("times").alias("agg_list")
     )
 
@@ -961,14 +961,26 @@ def test_temporal_dtypes_map_elements(
                 [
                     # don't actually do this; native expressions are MUCH faster ;)
                     pl.col("timestamp")
-                    .map_elements(lambda x: const_dtm, skip_nulls=skip_nulls)
+                    .map_elements(
+                        lambda x: const_dtm,
+                        skip_nulls=skip_nulls,
+                        return_dtype=pl.Datetime,
+                    )
                     .alias("const_dtm"),
                     # note: the below now trigger a PolarsInefficientMapWarning
                     pl.col("timestamp")
-                    .map_elements(lambda x: x and x.date(), skip_nulls=skip_nulls)
+                    .map_elements(
+                        lambda x: x and x.date(),
+                        skip_nulls=skip_nulls,
+                        return_dtype=pl.Date,
+                    )
                     .alias("date"),
                     pl.col("timestamp")
-                    .map_elements(lambda x: x and x.time(), skip_nulls=skip_nulls)
+                    .map_elements(
+                        lambda x: x and x.time(),
+                        skip_nulls=skip_nulls,
+                        return_dtype=pl.Time,
+                    )
                     .alias("time"),
                 ]
             ),
@@ -1210,7 +1222,7 @@ def test_rolling_by_ordering() -> None:
         period="2m",
         closed="both",
         offset="-1m",
-        by="key",
+        group_by="key",
     ).agg(
         [
             pl.col("val").sum().alias("sum val"),
@@ -1243,13 +1255,13 @@ def test_rolling_by_() -> None:
     )
     out = (
         df.sort("datetime")
-        .rolling(index_column="datetime", by="group", period=timedelta(days=3))
+        .rolling(index_column="datetime", group_by="group", period=timedelta(days=3))
         .agg([pl.len().alias("count")])
     )
 
     expected = (
         df.sort(["group", "datetime"])
-        .rolling(index_column="datetime", by="group", period="3d")
+        .rolling(index_column="datetime", group_by="group", period="3d")
         .agg([pl.len().alias("count")])
     )
     assert_frame_equal(out.sort(["group", "datetime"]), expected)
@@ -2584,7 +2596,7 @@ def test_rolling_group_by_empty_groups_by_take_6330() -> None:
     df = df1.join(df2, how="cross").set_sorted("Date")
 
     result = df.rolling(
-        index_column="Date", period="2i", offset="-2i", by="Event", closed="left"
+        index_column="Date", period="2i", offset="-2i", group_by="Event", closed="left"
     ).agg(pl.len())
 
     assert result.to_dict(as_series=False) == {
@@ -2669,6 +2681,19 @@ def test_infer_iso8601_date(iso8601_format_date: str) -> None:
     assert parsed.dt.year().item() == 2134
     assert parsed.dt.month().item() == 12
     assert parsed.dt.day().item() == 13
+
+
+def test_year_null_backed_by_out_of_range_15313() -> None:
+    # Create a Series where the null value is backed by a value which would
+    # be out-of-range for Datetime('us')
+    s = pl.Series([None, 2**63 - 1])
+    s -= 2**63 - 1
+    result = s.cast(pl.Datetime).dt.year()
+    expected = pl.Series([None, 1970], dtype=pl.Int32)
+    assert_series_equal(result, expected)
+    result = s.cast(pl.Date).dt.year()
+    expected = pl.Series([None, 1970], dtype=pl.Int32)
+    assert_series_equal(result, expected)
 
 
 def test_series_is_temporal() -> None:

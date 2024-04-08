@@ -113,7 +113,7 @@ impl From<StructFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
     fn from(func: StructFunction) -> Self {
         use StructFunction::*;
         match func {
-            FieldByIndex(index) => map!(struct_::get_by_index, index),
+            FieldByIndex(_) => panic!("should be replaced"),
             FieldByName(name) => map!(struct_::get_by_name, name.clone()),
             RenameFields(names) => map!(struct_::rename_fields, names.clone()),
             PrefixFields(prefix) => map!(struct_::prefix_fields, prefix.clone()),
@@ -124,14 +124,6 @@ impl From<StructFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
     }
 }
 
-pub(super) fn get_by_index(s: &Series, index: i64) -> PolarsResult<Series> {
-    let s = s.struct_()?;
-    let (index, _) = slice_offsets(index, 0, s.fields().len());
-    s.fields()
-        .get(index)
-        .cloned()
-        .ok_or_else(|| polars_err!(ComputeError: "struct field index out of bounds"))
-}
 pub(super) fn get_by_name(s: &Series, name: Arc<str>) -> PolarsResult<Series> {
     let ca = s.struct_()?;
     ca.field_by_name(name.as_ref())

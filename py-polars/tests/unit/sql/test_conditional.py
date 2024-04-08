@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 
 import pytest
 
 import polars as pl
 from polars.exceptions import InvalidOperationError
+from polars.testing import assert_frame_equal
 
 
 @pytest.fixture()
@@ -70,3 +72,86 @@ def test_control_flow(foods_ipc_path: Path) -> None:
         # both functions expect only 2 arguments
         with pytest.raises(InvalidOperationError):
             pl.SQLContext(df=nums).execute(f"SELECT {null_func}(x,y,z) FROM df")
+
+
+def test_greatest_least() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [-100, None, 200, 99],
+            "b": [None, -0.1, 99.0, 100.0],
+            "c": ["bb", "aa", "dd", "cc"],
+            "d": ["cc", "bb", "aa", "dd"],
+            "e": [date(1969, 12, 31), date(2021, 1, 2), None, date(2021, 1, 4)],
+            "f": [date(1970, 1, 1), date(2000, 10, 20), date(2077, 7, 5), None],
+        }
+    )
+    with pl.SQLContext(df=df) as ctx:
+        df_max_horizontal = ctx.execute(
+            """
+            SELECT
+              GREATEST("a", 0, "b") AS max_ab_zero,
+              GREATEST("a", "b") AS max_ab,
+              GREATEST("c", "d", ) AS max_cd,
+              GREATEST("e", "f") AS max_ef,
+              GREATEST('1999-12-31'::date, "e", "f") AS max_efx
+            FROM df
+            """
+        ).collect()
+
+        assert_frame_equal(
+            df_max_horizontal,
+            pl.DataFrame(
+                {
+                    "max_ab_zero": [0.0, 0.0, 200.0, 100.0],
+                    "max_ab": [-100.0, -0.1, 200.0, 100.0],
+                    "max_cd": ["cc", "bb", "dd", "dd"],
+                    "max_ef": [
+                        date(1970, 1, 1),
+                        date(2021, 1, 2),
+                        date(2077, 7, 5),
+                        date(2021, 1, 4),
+                    ],
+                    "max_efx": [
+                        date(1999, 12, 31),
+                        date(2021, 1, 2),
+                        date(2077, 7, 5),
+                        date(2021, 1, 4),
+                    ],
+                }
+            ),
+        )
+
+        df_min_horizontal = ctx.execute(
+            """
+            SELECT
+              LEAST("b", "a", 0) AS min_ab_zero,
+              LEAST("a", "b") AS min_ab,
+              LEAST("c", "d") AS min_cd,
+              LEAST("e", "f") AS min_ef,
+              LEAST("f", "e", '1999-12-31'::date) AS min_efx
+            FROM df
+            """
+        ).collect()
+
+        assert_frame_equal(
+            df_min_horizontal,
+            pl.DataFrame(
+                {
+                    "min_ab_zero": [-100.0, -0.1, 0.0, 0.0],
+                    "min_ab": [-100.0, -0.1, 99.0, 99.0],
+                    "min_cd": ["bb", "aa", "aa", "cc"],
+                    "min_ef": [
+                        date(1969, 12, 31),
+                        date(2000, 10, 20),
+                        date(2077, 7, 5),
+                        date(2021, 1, 4),
+                    ],
+                    "min_efx": [
+                        date(1969, 12, 31),
+                        date(1999, 12, 31),
+                        date(1999, 12, 31),
+                        date(1999, 12, 31),
+                    ],
+                }
+            ),
+        )

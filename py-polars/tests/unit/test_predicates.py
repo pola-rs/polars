@@ -504,3 +504,17 @@ def test_predicate_pushdown_block_join(how: Any) -> None:
     )
 
     assert_frame_equal(q.collect(no_optimization=True), q.collect())
+
+
+def test_predicate_push_down_with_alias_15442() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1],
+        }
+    )
+    output = (
+        df.lazy()
+        .filter(pl.col("a").alias("x").drop_nulls() > 0)
+        .collect(predicate_pushdown=True)
+    )
+    assert output.to_dict(as_series=False) == {"a": [1]}
