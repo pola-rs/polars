@@ -64,9 +64,9 @@ impl ExprIR {
                     }
                     break;
                 },
-                AExpr::Alias(_, name) => {
-                    out.output_name = OutputName::Alias(name.clone());
-                    break;
+                AExpr::Alias(_, _) => {
+                    // Should be removed during conversion.
+                    unreachable!()
                 },
                 _ => {},
             }
@@ -87,6 +87,10 @@ impl ExprIR {
     #[cfg(feature = "cse")]
     pub(crate) fn set_alias(&mut self, name: ColumnName) {
         self.output_name = OutputName::Alias(name)
+    }
+
+    pub(crate) fn output_name_inner(&self) -> &OutputName {
+        &self.output_name
     }
 
     pub(crate) fn output_name_arc(&self) -> &Arc<str> {

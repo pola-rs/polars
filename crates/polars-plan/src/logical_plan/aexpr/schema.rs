@@ -206,22 +206,14 @@ impl AExpr {
             } => {
                 let tmp = function.get_output();
                 let output_type = tmp.as_ref().unwrap_or(output_type);
-                let fields = input
-                    .iter()
-                    // default context because `col()` would return a list in aggregation context
-                    .map(|node| arena.get(*node).to_field(schema, Context::Default, arena))
-                    .collect::<PolarsResult<Vec<_>>>()?;
+                let fields = func_args_to_fields(input, schema, arena)?;
                 polars_ensure!(!fields.is_empty(), ComputeError: "expression: '{}' didn't get any inputs", options.fmt_str);
                 Ok(output_type.get_field(schema, ctxt, &fields))
             },
             Function {
                 function, input, ..
             } => {
-                let fields = input
-                    .iter()
-                    // default context because `col()` would return a list in aggregation context
-                    .map(|node| arena.get(*node).to_field(schema, Context::Default, arena))
-                    .collect::<PolarsResult<Vec<_>>>()?;
+                let fields = func_args_to_fields(input, schema, arena)?;
                 polars_ensure!(!fields.is_empty(), ComputeError: "expression: '{}' didn't get any inputs", function);
                 function.get_field(schema, ctxt, &fields)
             },
@@ -234,6 +226,18 @@ impl AExpr {
             },
         }
     }
+}
+
+fn func_args_to_fields(input: &[ExprIR], schema: &Schema, arena: &Arena<AExpr>) -> PolarsResult<Vec<Field>> {
+    input
+        .iter()
+        // Default context because `col()` would return a list in aggregation context
+        .map(|e| {
+            arena.get(e.node()).to_field(schema, Context::Default, arena).map(|mut field| {
+                field.name = e.output_name().into();
+                field
+            })
+        }).collect()
 }
 
 fn get_arithmetic_field(

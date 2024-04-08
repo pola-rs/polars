@@ -215,16 +215,24 @@ impl AexprNode {
                 (Agg(l), Agg(r)) => l.equal_nodes(r),
                 (
                     Function {
+                        input: il,
                         function: fl,
                         options: ol,
                         ..
                     },
                     Function {
+                        input: ir,
                         function: fr,
                         options: or,
-                        ..
                     },
-                ) => fl == fr && ol == or,
+                ) => fl == fr && ol == or && {
+                    let mut all_same_name = true;
+                    for (l,r) in il.iter().zip(ir) {
+                        all_same_name &= l.output_name() == r.output_name()
+                    }
+
+                    all_same_name
+                },
                 (AnonymousFunction { .. }, AnonymousFunction { .. }) => false,
                 (BinaryExpr { op: l, .. }, BinaryExpr { op: r, .. }) => l == r,
                 _ => false,

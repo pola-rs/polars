@@ -232,8 +232,8 @@ impl OptimizationRule for SimplifyBooleanRule {
                 function: FunctionExpr::Negate,
                 ..
             } if input.len() == 1 => {
-                let input = input[0];
-                let ae = expr_arena.get(input);
+                let input = &input[0];
+                let ae = expr_arena.get(input.node());
                 eval_negate(ae)
             },
             // Flatten Aliases.
@@ -290,8 +290,8 @@ fn string_addition_to_linear_concat(
     lp_arena: &Arena<ALogicalPlan>,
     lp_node: Node,
     expr_arena: &Arena<AExpr>,
-    left_ae: Node,
-    right_ae: Node,
+    left_node: Node,
+    right_node: Node,
     left_aexpr: &AExpr,
     right_aexpr: &AExpr,
 ) -> Option<AExpr> {
@@ -299,6 +299,8 @@ fn string_addition_to_linear_concat(
         let lp = lp_arena.get(lp_node);
         let input = lp.get_input()?;
         let schema = lp_arena.get(input).schema(lp_arena);
+        let left_e = ExprIR::from_node(left_node, expr_arena);
+        let right_e = ExprIR::from_node(right_node, expr_arena);
 
         let get_type = |ae: &AExpr| ae.get_type(&schema, Context::Default, expr_arena).ok();
         let type_a = get_type(left_aexpr).or_else(|| get_type(right_aexpr))?;
@@ -359,7 +361,7 @@ fn string_addition_to_linear_concat(
                 ) => {
                     if sep.is_empty() && !ignore_nulls {
                         let mut input = input.clone();
-                        input.push(right_ae);
+                        input.push(right_e);
                         Some(AExpr::Function {
                             input,
                             function: fun.clone(),
@@ -384,7 +386,7 @@ fn string_addition_to_linear_concat(
                 ) => {
                     if sep.is_empty() && !ignore_nulls {
                         let mut input = Vec::with_capacity(1 + input_right.len());
-                        input.push(left_ae);
+                        input.push(left_e);
                         input.extend_from_slice(input_right);
                         Some(AExpr::Function {
                             input,
@@ -396,7 +398,7 @@ fn string_addition_to_linear_concat(
                     }
                 },
                 _ => Some(AExpr::Function {
-                    input: vec![left_ae, right_ae],
+                    input: vec![left_e, right_e],
                     function: StringFunction::ConcatHorizontal {
                         delimiter: "".to_string(),
                         ignore_nulls: false,
