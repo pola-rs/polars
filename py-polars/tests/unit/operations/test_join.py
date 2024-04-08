@@ -815,3 +815,23 @@ def test_join_projection_invalid_name_contains_suffix_15243() -> None:
             .select(pl.col("b").filter(pl.col("b") == pl.col("foo_right")))
             .collect()
         )
+
+
+def test_join_list_non_numeric() -> None:
+    assert (
+        pl.DataFrame(
+            {
+                "lists": [
+                    ["a", "b", "c"],
+                    ["a", "c", "b"],
+                    ["a", "c", "b"],
+                    ["a", "c", "d"],
+                ]
+            }
+        )
+    ).group_by("lists", maintain_order=True).agg(pl.len().alias("count")).to_dict(
+        as_series=False
+    ) == {
+        "lists": [["a", "b", "c"], ["a", "c", "b"], ["a", "c", "d"]],
+        "count": [1, 2, 1],
+    }

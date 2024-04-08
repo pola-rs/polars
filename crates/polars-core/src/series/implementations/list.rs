@@ -44,22 +44,6 @@ impl private::PrivateSeries for SeriesWrap<ListChunked> {
         IntoGroupsProxy::group_tuples(&self.0, multithreaded, sorted)
     }
 
-    #[cfg(feature = "group_by_list")]
-    fn vec_hash(&self, _build_hasher: RandomState, _buf: &mut Vec<u64>) -> PolarsResult<()> {
-        self.0.vec_hash(_build_hasher, _buf)?;
-        Ok(())
-    }
-
-    #[cfg(feature = "group_by_list")]
-    fn vec_hash_combine(
-        &self,
-        _build_hasher: RandomState,
-        _hashes: &mut [u64],
-    ) -> PolarsResult<()> {
-        self.0.vec_hash_combine(_build_hasher, _hashes)?;
-        Ok(())
-    }
-
     fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
         (&self.0).into_total_eq_inner()
     }
@@ -154,7 +138,6 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
         self.0.has_validity()
     }
 
-    #[cfg(feature = "group_by_list")]
     #[cfg(feature = "algorithm_group_by")]
     fn unique(&self) -> PolarsResult<Series> {
         if !self.inner_dtype().is_numeric() {
@@ -171,7 +154,6 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
         Ok(unsafe { self.0.clone().into_series().agg_first(&groups?) })
     }
 
-    #[cfg(feature = "group_by_list")]
     #[cfg(feature = "algorithm_group_by")]
     fn n_unique(&self) -> PolarsResult<usize> {
         if !self.inner_dtype().is_numeric() {
@@ -189,7 +171,6 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
         }
     }
 
-    #[cfg(feature = "group_by_list")]
     #[cfg(feature = "algorithm_group_by")]
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
         if !self.inner_dtype().is_numeric() {

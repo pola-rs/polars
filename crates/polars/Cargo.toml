@@ -160,7 +160,6 @@ extract_jsonpath = [
 ]
 find_many = ["polars-plan/find_many"]
 fused = ["polars-ops/fused", "polars-lazy?/fused"]
-group_by_list = ["polars-core/group_by_list", "polars-ops/group_by_list"]
 interpolate = ["polars-ops/interpolate", "polars-lazy?/interpolate"]
 is_between = ["polars-lazy?/is_between", "polars-ops/is_between"]
 is_first_distinct = ["polars-lazy?/is_first_distinct", "polars-ops/is_first_distinct"]

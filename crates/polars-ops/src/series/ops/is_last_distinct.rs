@@ -40,7 +40,6 @@ pub fn is_last_distinct(s: &Series) -> PolarsResult<BooleanChunked> {
         },
         #[cfg(feature = "dtype-struct")]
         Struct(_) => return is_last_distinct_struct(&s),
-        #[cfg(feature = "group_by_list")]
         List(inner) if inner.is_numeric() => {
             let ca = s.list().unwrap();
             return is_last_distinct_list(ca);
@@ -157,7 +156,6 @@ fn is_last_distinct_struct(s: &Series) -> PolarsResult<BooleanChunked> {
     Ok(BooleanChunked::with_chunk(s.name(), arr))
 }
 
-#[cfg(feature = "group_by_list")]
 fn is_last_distinct_list(ca: &ListChunked) -> PolarsResult<BooleanChunked> {
     let groups = ca.group_tuples(true, false)?;
     // SAFETY: all groups have at least a single member
