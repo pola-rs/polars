@@ -189,7 +189,7 @@ class ExprDateTimeNameSpace:
         if offset is not None:
             issue_deprecation_warning(
                 "`offset` is deprecated and will be removed in the next breaking release. "
-                "Instead, chain `dt.truncate` with `.dt.offset`.",
+                "Instead, chain `dt.truncate` with `.dt.offset_by`.",
                 version="0.20.19",
             )
         if not isinstance(every, pl.Expr):
@@ -250,7 +250,7 @@ class ExprDateTimeNameSpace:
 
             .. deprecated:: 0.20.19
                 This argument is deprecated and will be removed in the next breaking
-                release. Instead, chain `dt.round` with `.dt.offset`.
+                release. Instead, chain `dt.round` with `.dt.offset_by`.
         ambiguous
             Determine how to deal with ambiguous datetimes:
 
@@ -346,7 +346,7 @@ class ExprDateTimeNameSpace:
         if offset is not None:
             issue_deprecation_warning(
                 "`offset` is deprecated and will be removed in the next breaking release. "
-                "Instead, chain `dt.round` with `.dt.offset`.",
+                "Instead, chain `dt.round` with `.dt.offset_by`.",
                 version="0.20.19",
             )
         if offset is None:

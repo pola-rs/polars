@@ -562,7 +562,10 @@ def test_rolling() -> None:
         ("Europe/Warsaw", ZoneInfo("Europe/Warsaw")),
     ],
 )
-def test_upsample(time_zone: str | None, tzinfo: ZoneInfo | timezone | None) -> None:
+@pytest.mark.parametrize("offset", [None, "1mo"])
+def test_upsample(
+    time_zone: str | None, tzinfo: ZoneInfo | timezone | None, offset: None | str
+) -> None:
     df = pl.DataFrame(
         {
             "time": [
@@ -576,36 +579,69 @@ def test_upsample(time_zone: str | None, tzinfo: ZoneInfo | timezone | None) -> 
         }
     ).with_columns(pl.col("time").dt.replace_time_zone(time_zone).set_sorted())
 
-    up = df.upsample(
-        time_column="time", every="1mo", group_by="admin", maintain_order=True
-    ).select(pl.all().forward_fill())
+    if offset is not None:
+        with pytest.warns(
+            DeprecationWarning,
+            match="`offset` is deprecated and will be removed in the next breaking release. "
+            "Instead, chain `upsample` with `.dt.offset_by`.",
+        ):
+            up = df.upsample(
+                time_column="time",
+                every="1mo",
+                group_by="admin",
+                maintain_order=True,
+                offset=offset,
+            ).select(pl.all().forward_fill())
+    else:
+        up = df.upsample(
+            time_column="time",
+            every="1mo",
+            group_by="admin",
+            maintain_order=True,
+        ).select(pl.all().forward_fill())
     # this print will panic if timezones feature is not activated
     # don't remove
     print(up)
 
-    expected = pl.DataFrame(
-        {
-            "time": [
-                datetime(2021, 2, 1, 0, 0),
-                datetime(2021, 3, 1, 0, 0),
-                datetime(2021, 4, 1, 0, 0),
-                datetime(2021, 5, 1, 0, 0),
-                datetime(2021, 4, 1, 0, 0),
-                datetime(2021, 5, 1, 0, 0),
-                datetime(2021, 6, 1, 0, 0),
-            ],
-            "admin": [
-                "Åland",
-                "Åland",
-                "Åland",
-                "Åland",
-                "Netherlands",
-                "Netherlands",
-                "Netherlands",
-            ],
-            "test2": [0, 0, 0, 2, 1, 1, 3],
-        }
-    ).with_columns(pl.col("time").dt.replace_time_zone(time_zone))
+    if offset is not None:
+        expected = pl.DataFrame(
+            {
+                "time": [
+                    datetime(2021, 3, 1, 0, 0),
+                    datetime(2021, 4, 1, 0, 0),
+                    datetime(2021, 5, 1, 0, 0),
+                    datetime(2021, 5, 1, 0, 0),
+                    datetime(2021, 6, 1, 0, 0),
+                ],
+                "admin": [None, None, "Åland", "Åland", "Netherlands"],
+                "test2": [None, None, 2, 2, 3],
+            }
+        )
+    else:
+        expected = pl.DataFrame(
+            {
+                "time": [
+                    datetime(2021, 2, 1, 0, 0),
+                    datetime(2021, 3, 1, 0, 0),
+                    datetime(2021, 4, 1, 0, 0),
+                    datetime(2021, 5, 1, 0, 0),
+                    datetime(2021, 4, 1, 0, 0),
+                    datetime(2021, 5, 1, 0, 0),
+                    datetime(2021, 6, 1, 0, 0),
+                ],
+                "admin": [
+                    "Åland",
+                    "Åland",
+                    "Åland",
+                    "Åland",
+                    "Netherlands",
+                    "Netherlands",
+                    "Netherlands",
+                ],
+                "test2": [0, 0, 0, 2, 1, 1, 3],
+            }
+        )
+    expected = expected.with_columns(pl.col("time").dt.replace_time_zone(time_zone))
 
     assert_frame_equal(up, expected)
 
@@ -624,25 +660,11 @@ def test_offset_deprecated() -> None:
         }
     ).sort("time")
 
-    # upsample
-    with pytest.warns(
-        DeprecationWarning,
-        match="`offset` is deprecated and will be removed in the next breaking release. "
-        "Instead, chain `upsample` with `.dt.offset`.",
-    ):
-        df.upsample(
-            time_column="time",
-            every="1mo",
-            group_by="admin",
-            maintain_order=True,
-            offset="1d",
-        )
-
     # truncate
     with pytest.warns(
         DeprecationWarning,
         match="`offset` is deprecated and will be removed in the next breaking release. "
-        "Instead, chain `dt.truncate` with `.dt.offset`.",
+        "Instead, chain `dt.truncate` with `.dt.offset_by`.",
     ):
         df.select(pl.col("time").dt.truncate(every="1mo", offset="1d"))
 
@@ -650,7 +672,7 @@ def test_offset_deprecated() -> None:
     with pytest.warns(
         DeprecationWarning,
         match="`offset` is deprecated and will be removed in the next breaking release. "
-        "Instead, chain `dt.round` with `.dt.offset`.",
+        "Instead, chain `dt.round` with `.dt.offset_by`.",
     ):
         df.select(pl.col("time").dt.round(every="1mo", offset="1d"))
 
@@ -659,7 +681,7 @@ def test_offset_deprecated() -> None:
     with pytest.warns(
         DeprecationWarning,
         match="`offset` is deprecated and will be removed in the next breaking release. "
-        "Instead, chain `dt.truncate` with `.dt.offset`.",
+        "Instead, chain `dt.truncate` with `.dt.offset_by`.",
     ):
         ser.dt.truncate(every="1mo", offset="1d")
 
@@ -667,7 +689,7 @@ def test_offset_deprecated() -> None:
     with pytest.warns(
         DeprecationWarning,
         match="`offset` is deprecated and will be removed in the next breaking release. "
-        "Instead, chain `dt.round` with `.dt.offset`.",
+        "Instead, chain `dt.round` with `.dt.offset_by`.",
     ):
         ser.dt.round(every="1mo", offset="1d")
 
@@ -705,7 +727,7 @@ def test_upsample_crossing_dst(
         with pytest.warns(
             DeprecationWarning,
             match="`offset` is deprecated and will be removed in the next breaking release. "
-            "Instead, chain `upsample` with `.dt.offset`.",
+            "Instead, chain `upsample` with `.dt.offset_by`.",
         ):
             result = df.upsample(time_column="time", every="1d", offset=offset)
     else:

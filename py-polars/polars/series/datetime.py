@@ -1592,7 +1592,7 @@ class DateTimeNameSpace:
 
             .. deprecated:: 0.20.19
                 This argument is deprecated and will be removed in the next breaking
-                release. Instead, chain `dt.truncate` with `.dt.offset`.
+                release. Instead, chain `dt.truncate` with `.dt.offset_by`.
         use_earliest
             Determine how to deal with ambiguous datetimes:
 
@@ -1743,7 +1743,7 @@ class DateTimeNameSpace:
 
             .. deprecated:: 0.20.19
                 This argument is deprecated and will be removed in the next breaking
-                release. Instead, chain `dt.round` with `.dt.offset`.
+                release. Instead, chain `dt.round` with `.dt.offset_by`.
         ambiguous
             Determine how to deal with ambiguous datetimes:
 
