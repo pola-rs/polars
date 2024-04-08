@@ -113,7 +113,7 @@ def read_parquet(
     retries
         Number of retries if accessing a cloud instance fails.
     use_pyarrow
-        Use pyarrow instead of the Rust native parquet reader. The pyarrow reader is
+        Use PyArrow instead of the Rust-native Parquet reader. The PyArrow reader is
         more stable.
     pyarrow_options
         Keyword arguments for `pyarrow.parquet.read_table
@@ -145,11 +145,6 @@ def read_parquet(
 
     # Dispatch to pyarrow if requested
     if use_pyarrow:
-        if not _PYARROW_AVAILABLE:
-            msg = (
-                "'pyarrow' is required when using `read_parquet(..., use_pyarrow=True)`"
-            )
-            raise ModuleNotFoundError(msg)
         if n_rows is not None:
             msg = "`n_rows` cannot be used with `use_pyarrow=True`"
             raise ValueError(msg)
@@ -159,25 +154,13 @@ def read_parquet(
                 "\n\nHint: Pass `pyarrow_options` instead with a 'partitioning' entry."
             )
             raise TypeError(msg)
-
-        import pyarrow as pa
-        import pyarrow.parquet
-
-        pyarrow_options = pyarrow_options or {}
-
-        with prepare_file_arg(
-            source,  # type: ignore[arg-type]
-            use_pyarrow=True,
+        return _read_parquet_with_pyarrow(
+            source,
+            columns=columns,
             storage_options=storage_options,
-        ) as source_prep:
-            return from_arrow(  # type: ignore[return-value]
-                pa.parquet.read_table(
-                    source_prep,
-                    memory_map=memory_map,
-                    columns=columns,
-                    **pyarrow_options,
-                )
-            )
+            pyarrow_options=pyarrow_options,
+            memory_map=memory_map,
+        )
 
     # Read binary types using `read_parquet`
     elif isinstance(source, (io.BufferedIOBase, io.RawIOBase, bytes)):
@@ -218,31 +201,63 @@ def read_parquet(
     return lf.collect()
 
 
+def _read_parquet_with_pyarrow(
+    source: str | Path | list[str] | list[Path] | IO[bytes] | bytes,
+    *,
+    columns: list[int] | list[str] | None = None,
+    storage_options: dict[str, Any] | None = None,
+    pyarrow_options: dict[str, Any] | None = None,
+    memory_map: bool = True,
+) -> DataFrame:
+    if not _PYARROW_AVAILABLE:
+        msg = "'pyarrow' is required when using `read_parquet(..., use_pyarrow=True)`"
+        raise ModuleNotFoundError(msg)
+
+    import pyarrow as pa
+    import pyarrow.parquet
+
+    pyarrow_options = pyarrow_options or {}
+
+    with prepare_file_arg(
+        source,  # type: ignore[arg-type]
+        use_pyarrow=True,
+        storage_options=storage_options,
+    ) as source_prep:
+        pa_table = pa.parquet.read_table(
+            source_prep,
+            memory_map=memory_map,
+            columns=columns,
+            **pyarrow_options,
+        )
+    return from_arrow(pa_table)  # type: ignore[return-value]
+
+
 def _read_parquet_binary(
     source: IO[bytes] | bytes,
     *,
     columns: Sequence[int] | Sequence[str] | None = None,
     n_rows: int | None = None,
-    parallel: ParallelStrategy = "auto",
     row_index_name: str | None = None,
     row_index_offset: int = 0,
-    low_memory: bool = False,
+    parallel: ParallelStrategy = "auto",
     use_statistics: bool = True,
     rechunk: bool = True,
+    low_memory: bool = False,
 ) -> DataFrame:
     projection, columns = parse_columns_arg(columns)
+    row_index = parse_row_index_args(row_index_name, row_index_offset)
 
     with prepare_file_arg(source) as source_prep:
         pydf = PyDataFrame.read_parquet(
             source_prep,
-            columns,
-            projection,
-            n_rows,
-            parallel,
-            parse_row_index_args(row_index_name, row_index_offset),
-            low_memory=low_memory,
+            columns=columns,
+            projection=projection,
+            n_rows=n_rows,
+            row_index=row_index,
+            parallel=parallel,
             use_statistics=use_statistics,
             rechunk=rechunk,
+            low_memory=low_memory,
         )
     return wrap_df(pydf)
 
