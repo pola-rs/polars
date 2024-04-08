@@ -61,7 +61,7 @@ fn finish_from_rows(
     infer_schema_length: Option<usize>,
 ) -> PyResult<PyDataFrame> {
     let mut schema = if let Some(mut schema) = schema {
-        resolve_schema_overrides(&mut schema, schema_overrides)?;
+        resolve_schema_overrides(&mut schema, schema_overrides);
         update_schema_from_rows(&mut schema, &rows, infer_schema_length)?;
         schema
     } else {
@@ -105,15 +105,14 @@ fn update_schema_from_rows(
 }
 
 /// Override the data type of certain schema fields.
-fn resolve_schema_overrides(schema: &mut Schema, schema_overrides: Option<Schema>) -> PyResult<()> {
+///
+/// Overrides for nonexistent columns are ignored.
+fn resolve_schema_overrides(schema: &mut Schema, schema_overrides: Option<Schema>) {
     if let Some(overrides) = schema_overrides {
         for (name, dtype) in overrides.into_iter() {
-            schema.set_dtype(name.as_str(), dtype).ok_or_else(|| {
-                polars_err!(SchemaMismatch: "nonexistent column specified in `schema_overrides`: {name}")
-            }).map_err(PyPolarsErr::from)?;
+            schema.set_dtype(name.as_str(), dtype);
         }
     }
-    Ok(())
 }
 
 /// Erase precision/scale information from Decimal types.
