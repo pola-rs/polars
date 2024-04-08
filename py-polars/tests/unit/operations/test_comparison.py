@@ -303,6 +303,7 @@ INTERESTING_FLOAT_VALUES = [
 ]
 
 
+@pytest.mark.slow()
 @pytest.mark.parametrize("lhs", INTERESTING_FLOAT_VALUES)
 @pytest.mark.parametrize("rhs", INTERESTING_FLOAT_VALUES)
 def test_total_ordering_float_series(lhs: float | None, rhs: float | None) -> None:
@@ -330,6 +331,7 @@ INTERESTING_STRING_VALUES = [
 ]
 
 
+@pytest.mark.slow()
 @pytest.mark.parametrize("lhs", INTERESTING_STRING_VALUES)
 @pytest.mark.parametrize("rhs", INTERESTING_STRING_VALUES)
 def test_total_ordering_string_series(lhs: str | None, rhs: str | None) -> None:
@@ -341,6 +343,7 @@ def test_total_ordering_string_series(lhs: str | None, rhs: str | None) -> None:
         verify_total_ordering_broadcast(lhs, rhs, "", pl.String)
 
 
+@pytest.mark.slow()
 @pytest.mark.parametrize("str_lhs", INTERESTING_STRING_VALUES)
 @pytest.mark.parametrize("str_rhs", INTERESTING_STRING_VALUES)
 def test_total_ordering_binary_series(str_lhs: str | None, str_rhs: str | None) -> None:
