@@ -158,6 +158,15 @@ ConcatMethod = Literal[
     "horizontal",
     "align",
 ]
+DayOfWeek = Literal[
+    "Mon",
+    "Tue",
+    "Wed",
+    "Thu",
+    "Fri",
+    "Sat",
+    "Sun",
+]
 EpochTimeUnit = Literal["ns", "us", "ms", "s", "d"]
 Orientation: TypeAlias = Literal["col", "row"]
 SearchSortedSide: TypeAlias = Literal["any", "left", "right"]

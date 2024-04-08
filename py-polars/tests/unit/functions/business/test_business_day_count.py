@@ -1,5 +1,7 @@
 from datetime import date
 
+import pytest
+
 import polars as pl
 from polars.testing import assert_series_equal
 
@@ -48,6 +50,40 @@ def test_business_day_count() -> None:
     )["business_day_count"]
     expected = pl.Series("business_day_count", [7], pl.Int32)
     assert_series_equal(result, expected)
+
+
+def test_business_day_count_w_weekend() -> None:
+    df = pl.DataFrame(
+        {
+            "start": [date(2020, 1, 1), date(2020, 1, 2)],
+            "end": [date(2020, 1, 2), date(2020, 1, 10)],
+        }
+    )
+    result = df.select(
+        business_day_count=pl.business_day_count("start", "end", weekend="Sun"),
+    )["business_day_count"]
+    expected = pl.Series("business_day_count", [1, 7], pl.Int32)
+    assert_series_equal(result, expected)
+    result = df.select(
+        business_day_count=pl.business_day_count(
+            "start", "end", weekend=("Thu", "Fri", "Sat")
+        ),
+    )["business_day_count"]
+    expected = pl.Series("business_day_count", [1, 4], pl.Int32)
+    assert_series_equal(result, expected)
+    result = df.select(
+        business_day_count=pl.business_day_count("start", "end", weekend=None),
+    )["business_day_count"]
+    expected = pl.Series("business_day_count", [1, 8], pl.Int32)
+    assert_series_equal(result, expected)
+
+
+def test_business_day_count_w_weekend_invalid() -> None:
+    msg = r"Expected one of \('Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'\), got: cabbage"
+    with pytest.raises(ValueError, match=msg):
+        pl.business_day_count("start", "end", weekend="cabbage")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match=msg):
+        pl.business_day_count("start", "end", weekend=("Sat", "cabbage"))  # type: ignore[arg-type]
 
 
 def test_business_day_count_schema() -> None:
