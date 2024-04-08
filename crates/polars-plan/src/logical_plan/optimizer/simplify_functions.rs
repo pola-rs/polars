@@ -1,7 +1,7 @@
 use super::*;
 
 pub(super) fn optimize_functions(
-    input: &[Node],
+    input: &[ExprIR],
     function: &FunctionExpr,
     options: &FunctionOptions,
     expr_arena: &mut Arena<AExpr>,
@@ -10,7 +10,7 @@ pub(super) fn optimize_functions(
         // sort().reverse() -> sort(reverse)
         // sort_by().reverse() -> sort_by(reverse)
         FunctionExpr::Reverse => {
-            let input = expr_arena.get(input[0]);
+            let input = expr_arena.get(input[0].node());
             match input {
                 AExpr::Sort { expr, options } => {
                     let mut options = *options;
@@ -41,14 +41,14 @@ pub(super) fn optimize_functions(
         }) if sep.is_empty() => {
             if input
                 .iter()
-                .any(|node| is_string_concat(expr_arena.get(*node), *ignore_nulls))
+                .any(|e| is_string_concat(expr_arena.get(e.node()), *ignore_nulls))
             {
                 let mut new_inputs = Vec::with_capacity(input.len() * 2);
 
-                for node in input {
-                    match get_string_concat_input(*node, expr_arena, *ignore_nulls) {
+                for e in input {
+                    match get_string_concat_input(e.node(), expr_arena, *ignore_nulls) {
                         Some(inp) => new_inputs.extend_from_slice(inp),
-                        None => new_inputs.push(*node),
+                        None => new_inputs.push(e.clone()),
                     }
                 }
                 Some(AExpr::Function {
@@ -63,7 +63,7 @@ pub(super) fn optimize_functions(
         FunctionExpr::Boolean(BooleanFunction::AllHorizontal | BooleanFunction::AnyHorizontal) => {
             if input.len() == 1 {
                 Some(AExpr::Cast {
-                    expr: input[0],
+                    expr: input[0].node(),
                     data_type: DataType::Boolean,
                     strict: false,
                 })
@@ -72,7 +72,7 @@ pub(super) fn optimize_functions(
             }
         },
         FunctionExpr::Boolean(BooleanFunction::Not) => {
-            let y = expr_arena.get(input[0]).clone();
+            let y = expr_arena.get(input[0].node());
 
             match y {
                 // not(a and b) => not(a) or not(b)
@@ -80,43 +80,51 @@ pub(super) fn optimize_functions(
                     left,
                     op: Operator::And | Operator::LogicalAnd,
                     right,
-                } => Some(AExpr::BinaryExpr {
-                    left: expr_arena.add(AExpr::Function {
-                        input: vec![left],
-                        function: FunctionExpr::Boolean(BooleanFunction::Not),
-                        options: *options,
-                    }),
-                    op: Operator::Or,
-                    right: expr_arena.add(AExpr::Function {
-                        input: vec![right],
-                        function: FunctionExpr::Boolean(BooleanFunction::Not),
-                        options: *options,
-                    }),
-                }),
+                } => {
+                    let left = *left;
+                    let right = *right;
+                    Some(AExpr::BinaryExpr {
+                        left: expr_arena.add(AExpr::Function {
+                            input: vec![ExprIR::from_node(left, expr_arena)],
+                            function: FunctionExpr::Boolean(BooleanFunction::Not),
+                            options: *options,
+                        }),
+                        op: Operator::Or,
+                        right: expr_arena.add(AExpr::Function {
+                            input: vec![ExprIR::from_node(right, expr_arena)],
+                            function: FunctionExpr::Boolean(BooleanFunction::Not),
+                            options: *options,
+                        }),
+                    })
+                },
                 // not(a or b) => not(a) and not(b)
                 AExpr::BinaryExpr {
                     left,
                     op: Operator::Or | Operator::LogicalOr,
                     right,
-                } => Some(AExpr::BinaryExpr {
-                    left: expr_arena.add(AExpr::Function {
-                        input: vec![left],
-                        function: FunctionExpr::Boolean(BooleanFunction::Not),
-                        options: *options,
-                    }),
-                    op: Operator::And,
-                    right: expr_arena.add(AExpr::Function {
-                        input: vec![right],
-                        function: FunctionExpr::Boolean(BooleanFunction::Not),
-                        options: *options,
-                    }),
-                }),
+                } => {
+                    let left = *left;
+                    let right = *right;
+                    Some(AExpr::BinaryExpr {
+                        left: expr_arena.add(AExpr::Function {
+                            input: vec![ExprIR::from_node(left, expr_arena)],
+                            function: FunctionExpr::Boolean(BooleanFunction::Not),
+                            options: *options,
+                        }),
+                        op: Operator::And,
+                        right: expr_arena.add(AExpr::Function {
+                            input: vec![ExprIR::from_node(right, expr_arena)],
+                            function: FunctionExpr::Boolean(BooleanFunction::Not),
+                            options: *options,
+                        }),
+                    })
+                },
                 // not(not x) => x
                 AExpr::Function {
                     input,
                     function: FunctionExpr::Boolean(BooleanFunction::Not),
                     ..
-                } => Some(expr_arena.get(input[0]).clone()),
+                } => Some(expr_arena.get(input[0].node()).clone()),
                 // not(lit x) => !x
                 AExpr::Literal(LiteralValue::Boolean(b)) => {
                     Some(AExpr::Literal(LiteralValue::Boolean(!b)))
@@ -129,7 +137,7 @@ pub(super) fn optimize_functions(
                 } => Some(AExpr::Function {
                     input: input.clone(),
                     function: FunctionExpr::Boolean(BooleanFunction::IsNotNull),
-                    options,
+                    options: *options,
                 }),
                 // not(x.is_not_null) => x.is_null
                 AExpr::Function {
@@ -139,7 +147,7 @@ pub(super) fn optimize_functions(
                 } => Some(AExpr::Function {
                     input: input.clone(),
                     function: FunctionExpr::Boolean(BooleanFunction::IsNull),
-                    options,
+                    options: *options,
                 }),
                 // not(a == b) => a != b
                 AExpr::BinaryExpr {
@@ -147,9 +155,9 @@ pub(super) fn optimize_functions(
                     op: Operator::Eq,
                     right,
                 } => Some(AExpr::BinaryExpr {
-                    left,
+                    left: *left,
                     op: Operator::NotEq,
-                    right,
+                    right: *right,
                 }),
                 // not(a != b) => a == b
                 AExpr::BinaryExpr {
@@ -157,9 +165,9 @@ pub(super) fn optimize_functions(
                     op: Operator::NotEq,
                     right,
                 } => Some(AExpr::BinaryExpr {
-                    left,
+                    left: *left,
                     op: Operator::Eq,
-                    right,
+                    right: *right,
                 }),
                 // not(a < b) => a >= b
                 AExpr::BinaryExpr {
@@ -167,9 +175,9 @@ pub(super) fn optimize_functions(
                     op: Operator::Lt,
                     right,
                 } => Some(AExpr::BinaryExpr {
-                    left,
+                    left: *left,
                     op: Operator::GtEq,
-                    right,
+                    right: *right,
                 }),
                 // not(a <= b) => a > b
                 AExpr::BinaryExpr {
@@ -177,9 +185,9 @@ pub(super) fn optimize_functions(
                     op: Operator::LtEq,
                     right,
                 } => Some(AExpr::BinaryExpr {
-                    left,
+                    left: *left,
                     op: Operator::Gt,
-                    right,
+                    right: *right,
                 }),
                 // not(a > b) => a <= b
                 AExpr::BinaryExpr {
@@ -187,9 +195,9 @@ pub(super) fn optimize_functions(
                     op: Operator::Gt,
                     right,
                 } => Some(AExpr::BinaryExpr {
-                    left,
+                    left: *left,
                     op: Operator::LtEq,
-                    right,
+                    right: *right,
                 }),
                 // not(a >= b) => a < b
                 AExpr::BinaryExpr {
@@ -197,9 +205,9 @@ pub(super) fn optimize_functions(
                     op: Operator::GtEq,
                     right,
                 } => Some(AExpr::BinaryExpr {
-                    left,
+                    left: *left,
                     op: Operator::Lt,
-                    right,
+                    right: *right,
                 }),
                 #[cfg(feature = "is_between")]
                 // not(col('x').is_between(a,b)) => col('x') < a || col('x') > b
@@ -208,7 +216,7 @@ pub(super) fn optimize_functions(
                     function: FunctionExpr::Boolean(BooleanFunction::IsBetween { closed }),
                     ..
                 } => {
-                    if !matches!(expr_arena.get(input[0]), AExpr::Column(_)) {
+                    if !matches!(expr_arena.get(input[0].node()), AExpr::Column(_)) {
                         None
                     } else {
                         let left_cmp_op = match closed {
@@ -219,21 +227,27 @@ pub(super) fn optimize_functions(
                             ClosedInterval::Both | ClosedInterval::Right => Operator::Gt,
                             ClosedInterval::None | ClosedInterval::Left => Operator::GtEq,
                         };
+                        let left_left = input[0].node();
+                        let right_left = input[1].node();
+
+                        let left_right = left_left;
+                        let right_right = input[2].node();
+
                         // input[0] is between input[1] and input[2]
                         Some(AExpr::BinaryExpr {
                             // input[0] (<,<=) input[1]
                             left: expr_arena.add(AExpr::BinaryExpr {
-                                left: input[0],
+                                left: left_left,
                                 op: left_cmp_op,
-                                right: input[1],
+                                right: right_left,
                             }),
                             // OR
                             op: Operator::Or,
                             // input[0] (>,>=) input[2]
                             right: expr_arena.add(AExpr::BinaryExpr {
-                                left: input[0],
+                                left: left_right,
                                 op: right_cmp_op,
-                                right: input[2],
+                                right: right_right,
                             }),
                         })
                     }
@@ -261,7 +275,7 @@ fn get_string_concat_input(
     node: Node,
     expr_arena: &Arena<AExpr>,
     ignore_nulls: bool,
-) -> Option<&[Node]> {
+) -> Option<&[ExprIR]> {
     match expr_arena.get(node) {
         AExpr::Function {
             input,

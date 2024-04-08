@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from datetime import timedelta
 
     from polars import Expr
-    from polars.type_aliases import Ambiguous, EpochTimeUnit, TimeUnit
+    from polars.type_aliases import Ambiguous, EpochTimeUnit, NonExistent, TimeUnit
 
 
 class ExprDateTimeNameSpace:
@@ -1434,12 +1434,12 @@ class ExprDateTimeNameSpace:
         ...     .to_frame()
         ... )
         >>> df.with_columns(
-        ...     pl.col("date").dt.timestamp().alias("timestamp_ns"),
+        ...     pl.col("date").dt.timestamp().alias("timestamp_us"),
         ...     pl.col("date").dt.timestamp("ms").alias("timestamp_ms"),
         ... )
         shape: (3, 3)
         ┌────────────┬─────────────────┬──────────────┐
-        │ date       ┆ timestamp_ns    ┆ timestamp_ms │
+        │ date       ┆ timestamp_us    ┆ timestamp_ms │
         │ ---        ┆ ---             ┆ ---          │
         │ date       ┆ i64             ┆ i64          │
         ╞════════════╪═════════════════╪══════════════╡
@@ -1594,6 +1594,7 @@ class ExprDateTimeNameSpace:
         *,
         use_earliest: bool | None = None,
         ambiguous: Ambiguous | Expr = "raise",
+        non_existent: NonExistent = "raise",
     ) -> Expr:
         """
         Replace time zone for an expression of type Datetime.
@@ -1620,6 +1621,12 @@ class ExprDateTimeNameSpace:
             - `'raise'` (default): raise
             - `'earliest'`: use the earliest datetime
             - `'latest'`: use the latest datetime
+            - `'null'`: set to null
+        non_existent
+            Determine how to deal with non-existent datetimes:
+
+            - `'raise'` (default): raise
+            - `'null'`: set to null
 
         Examples
         --------
@@ -1691,7 +1698,9 @@ class ExprDateTimeNameSpace:
         if not isinstance(ambiguous, pl.Expr):
             ambiguous = F.lit(ambiguous)
         return wrap_expr(
-            self._pyexpr.dt_replace_time_zone(time_zone, ambiguous._pyexpr)
+            self._pyexpr.dt_replace_time_zone(
+                time_zone, ambiguous._pyexpr, non_existent
+            )
         )
 
     def total_days(self) -> Expr:

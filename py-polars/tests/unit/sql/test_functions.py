@@ -25,7 +25,7 @@ def test_sql_expr() -> None:
     )
     result = df.select(*sql_exprs)
     expected = pl.DataFrame(
-        {"a": [1, 1, 1], "aa": [1.0, 4.0, 27.0], "b2": ["yz", "bc", None]}
+        {"a": [1, 1, 1], "aa": [1, 4, 27], "b2": ["yz", "bc", None]}
     )
     assert_frame_equal(result, expected)
 

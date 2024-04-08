@@ -8,11 +8,9 @@ authors = [
 ]
 edition = { workspace = true }
 homepage = { workspace = true }
-license-file = "./LICENSE"
+license = "MIT AND Apache-2.0"
 repository = { workspace = true }
-description = "Minimal implementation of the Arrow specification forked from arrow2."
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+description = "Minimal implementation of the Arrow specification forked from arrow2"
 
 [dependencies]
 atoi = { workspace = true, optional = true }
@@ -88,8 +86,8 @@ proptest = { version = "1", default_features = false, features = ["std"] }
 rand = { workspace = true }
 # use for generating and testing random data samples
 sample-arrow2 = "0.17"
-sample-std = "0.1"
-sample-test = "0.1"
+sample-std = "0.2"
+sample-test = "0.2"
 # used to test async readers
 tokio = { workspace = true, features = ["macros", "rt", "fs", "io-util"] }
 tokio-util = { workspace = true, features = ["compat"] }
@@ -140,7 +138,6 @@ compute_boolean_kleene = []
 compute_cast = ["compute_take", "ryu", "atoi_simd", "itoa", "fast-float"]
 compute_comparison = ["compute_take", "compute_boolean"]
 compute_hash = ["multiversion"]
-compute_if_then_else = []
 compute_take = []
 compute_temporal = []
 compute = [
@@ -152,7 +149,6 @@ compute = [
   "compute_cast",
   "compute_comparison",
   "compute_hash",
-  "compute_if_then_else",
   "compute_take",
   "compute_temporal",
 ]

@@ -37,7 +37,15 @@ class StructNameSpace:
 
     @property
     def fields(self) -> list[str]:
-        """Get the names of the fields."""
+        """
+        Get the names of the fields.
+
+        Examples
+        --------
+        >>> s = pl.Series([{"a": 1, "b": 2}, {"a": 3, "b": 4}])
+        >>> s.struct.fields
+        ['a', 'b']
+        """
         if getattr(self, "_s", None) is None:
             return []
         return self._s.struct_fields()
@@ -49,7 +57,18 @@ class StructNameSpace:
         Parameters
         ----------
         name
-            Name of the field
+            Name of the field.
+
+        Examples
+        --------
+        >>> s = pl.Series([{"a": 1, "b": 2}, {"a": 3, "b": 4}])
+        >>> s.struct.field("a")
+        shape: (2,)
+        Series: 'a' [i64]
+        [
+            1
+            3
+        ]
         """
 
     def rename_fields(self, names: Sequence[str]) -> Series:
@@ -59,12 +78,29 @@ class StructNameSpace:
         Parameters
         ----------
         names
-            New names in the order of the struct's fields
+            New names in the order of the struct's fields.
+
+        Examples
+        --------
+        >>> s = pl.Series([{"a": 1, "b": 2}, {"a": 3, "b": 4}])
+        >>> s.struct.fields
+        ['a', 'b']
+        >>> s = s.struct.rename_fields(["c", "d"])
+        >>> s.struct.fields
+        ['c', 'd']
         """
 
     @property
     def schema(self) -> OrderedDict[str, DataType]:
-        """Get the struct definition as a name/dtype schema dict."""
+        """
+        Get the struct definition as a name/dtype schema dict.
+
+        Examples
+        --------
+        >>> s = pl.Series([{"a": 1, "b": 2}, {"a": 3, "b": 4}])
+        >>> s.struct.schema
+        OrderedDict({'a': Int64, 'b': Int64})
+        """
         if getattr(self, "_s", None) is None:
             return OrderedDict()
         return OrderedDict(self._s.dtype().to_schema())

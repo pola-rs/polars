@@ -33,20 +33,12 @@ use crate::series::PySeries;
 use crate::{PyDataFrame, PyLazyFrame};
 
 pub(crate) fn slice_to_wrapped<T>(slice: &[T]) -> &[Wrap<T>] {
-    // SAFETY:
-    // Wrap is transparent.
-    unsafe { std::mem::transmute(slice) }
-}
-
-pub(crate) fn slice_extract_wrapped<T>(slice: &[Wrap<T>]) -> &[T] {
-    // SAFETY:
-    // Wrap is transparent.
+    // SAFETY: Wrap is transparent.
     unsafe { std::mem::transmute(slice) }
 }
 
 pub(crate) fn vec_extract_wrapped<T>(buf: Vec<Wrap<T>>) -> Vec<T> {
-    // SAFETY:
-    // Wrap is transparent.
+    // SAFETY: Wrap is transparent.
     unsafe { std::mem::transmute(buf) }
 }
 
@@ -435,8 +427,7 @@ impl ToPyObject for Wrap<TimeUnit> {
 impl<'s> FromPyObject<'s> for Wrap<Row<'s>> {
     fn extract(ob: &'s PyAny) -> PyResult<Self> {
         let vals = ob.extract::<Vec<Wrap<AnyValue<'s>>>>()?;
-        // SAFETY. Wrap is repr transparent.
-        let vals: Vec<AnyValue> = unsafe { std::mem::transmute(vals) };
+        let vals = vec_extract_wrapped(vals);
         Ok(Wrap(Row(vals)))
     }
 }
@@ -563,50 +554,6 @@ impl<'a, T: NativeType + FromPyObject<'a>> FromPyObject<'a> for Wrap<Vec<T>> {
         }
         Ok(Wrap(v))
     }
-}
-
-pub(crate) fn dicts_to_rows(
-    records: &PyAny,
-    infer_schema_len: Option<usize>,
-    schema_columns: PlIndexSet<String>,
-) -> PyResult<(Vec<Row>, Vec<String>)> {
-    let infer_schema_len = infer_schema_len.map(|n| std::cmp::max(1, n));
-    let len = records.len()?;
-
-    let key_names = {
-        if !schema_columns.is_empty() {
-            schema_columns
-        } else {
-            let mut inferred_keys = PlIndexSet::new();
-            for d in records.iter()?.take(infer_schema_len.unwrap_or(usize::MAX)) {
-                let d = d?;
-                let d = d.downcast::<PyDict>()?;
-                let keys = d.keys();
-                for name in keys {
-                    let name = name.extract::<String>()?;
-                    inferred_keys.insert(name);
-                }
-            }
-            inferred_keys
-        }
-    };
-    let mut rows = Vec::with_capacity(len);
-
-    for d in records.iter()? {
-        let d = d?;
-        let d = d.downcast::<PyDict>()?;
-
-        let mut row = Vec::with_capacity(key_names.len());
-        for k in key_names.iter() {
-            let val = match d.get_item(k)? {
-                None => AnyValue::Null,
-                Some(val) => val.extract::<Wrap<AnyValue>>()?.0,
-            };
-            row.push(val)
-        }
-        rows.push(Row(row))
-    }
-    Ok((rows, key_names.into_iter().collect()))
 }
 
 #[cfg(feature = "asof_join")]
@@ -790,6 +737,21 @@ impl FromPyObject<'_> for Wrap<ListToStructWidthStrategy> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "`n_field_strategy` must be one of {{'first_non_null', 'max_width'}}, got {v}",
+                )))
+            },
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
+impl FromPyObject<'_> for Wrap<NonExistent> {
+    fn extract(ob: &PyAny) -> PyResult<Self> {
+        let parsed = match ob.extract::<&str>()? {
+            "null" => NonExistent::Null,
+            "raise" => NonExistent::Raise,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "`non_existent` must be one of {{'null', 'raise'}}, got {v}",
                 )))
             },
         };

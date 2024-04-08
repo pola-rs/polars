@@ -128,22 +128,38 @@ def test_array_arg_min_max() -> None:
 
 
 def test_array_get() -> None:
-    # test index literal
     s = pl.Series(
         "a",
         [[1, 2, 3, 4], [5, 6, None, None], [7, 8, 9, 10]],
         dtype=pl.Array(pl.Int64, 4),
     )
+
+    # Test index literal.
     out = s.arr.get(1)
     expected = pl.Series("a", [2, 6, 8], dtype=pl.Int64)
     assert_series_equal(out, expected)
 
-    # test index expr
-    out = s.arr.get(pl.Series([1, -2, 4]))
+    # Null index literal.
+    out_df = s.to_frame().select(pl.col.a.arr.get(pl.lit(None)))
+    expected_df = pl.Series("a", [None, None, None], dtype=pl.Int64).to_frame()
+    assert_frame_equal(out_df, expected_df)
+
+    # Out-of-bounds index literal.
+    out = s.arr.get(100)
+    expected = pl.Series("a", [None, None, None], dtype=pl.Int64)
+    assert_series_equal(out, expected)
+
+    # Negative index literal.
+    out = s.arr.get(-2)
+    expected = pl.Series("a", [3, None, 9], dtype=pl.Int64)
+    assert_series_equal(out, expected)
+
+    # Test index expr.
+    out = s.arr.get(pl.Series([1, -2, 100]))
     expected = pl.Series("a", [2, None, None], dtype=pl.Int64)
     assert_series_equal(out, expected)
 
-    # test logical type
+    # Test logical type.
     s = pl.Series(
         "a",
         [
@@ -364,5 +380,20 @@ def test_array_shift() -> None:
             "expr": [None, None, [None, 4, 5], [9, None, None]],
         },
         schema={"lit": pl.Array(pl.Int64, 3), "expr": pl.Array(pl.Int64, 3)},
+    )
+    assert_frame_equal(out, expected)
+
+
+def test_array_n_unique() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [[1, 1, 2], [3, 3, 3], [None, None, None], None],
+        },
+        schema={"a": pl.Array(pl.Int64, 3)},
+    )
+
+    out = df.select(n_unique=pl.col("a").arr.n_unique())
+    expected = pl.DataFrame(
+        {"n_unique": [2, 1, 1, None]}, schema={"n_unique": pl.UInt32}
     )
     assert_frame_equal(out, expected)

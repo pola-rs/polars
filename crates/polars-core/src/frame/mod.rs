@@ -17,7 +17,7 @@ pub mod explode;
 mod from;
 #[cfg(feature = "algorithm_group_by")]
 pub mod group_by;
-#[cfg(feature = "rows")]
+#[cfg(any(feature = "rows", feature = "object"))]
 pub mod row;
 mod top_k;
 mod upstream_traits;
@@ -41,7 +41,7 @@ pub enum NullStrategy {
     Propagate,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum UniqueKeepStrategy {
     /// Keep the first unique row.
@@ -933,7 +933,7 @@ impl DataFrame {
                 "unable to append to a DataFrame of width {} with a DataFrame of width {}",
                 self.width(), other.width(),
             );
-            self.columns = other.columns.clone();
+            self.columns.clone_from(&other.columns);
             return Ok(self);
         }
 
@@ -1843,7 +1843,7 @@ impl DataFrame {
                 // no need to compute the sort indices and then take by these indices
                 // simply sort and return as frame
                 if df.width() == 1 && df.check_name_to_idx(s.name()).is_ok() {
-                    let mut out = s.sort_with(options);
+                    let mut out = s.sort_with(options)?;
                     if let Some((offset, len)) = slice {
                         out = out.slice(offset, len);
                     }
@@ -1860,6 +1860,7 @@ impl DataFrame {
                     let options = SortMultipleOptions {
                         other,
                         descending,
+                        nulls_last,
                         multithreaded: parallel,
                     };
                     first.arg_sort_multiple(&options)?
@@ -2527,7 +2528,11 @@ impl DataFrame {
                 }
             },
             1 => Ok(Some(apply_null_strategy(
-                non_null_cols[0].clone(),
+                if non_null_cols[0].dtype() == &DataType::Boolean {
+                    non_null_cols[0].cast(&DataType::UInt32)?
+                } else {
+                    non_null_cols[0].clone()
+                },
                 null_strategy,
             )?)),
             2 => sum_fn(

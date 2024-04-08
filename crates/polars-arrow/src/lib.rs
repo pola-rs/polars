@@ -19,10 +19,10 @@ extern crate core;
 pub mod array;
 pub mod bitmap;
 pub mod buffer;
-pub mod chunk;
 #[cfg(feature = "io_ipc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "io_ipc")))]
 pub mod mmap;
+pub mod record_batch;
 
 pub mod offset;
 pub mod scalar;

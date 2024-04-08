@@ -1168,34 +1168,6 @@ def test_from_generator_or_iterable() -> None:
         pl.DataFrame(schema=["a", "b", "c", "d"]),
     )
 
-    # dict-related generator-views
-    d = {0: "x", 1: "y", 2: "z"}
-    df = pl.DataFrame(
-        {
-            "keys": d.keys(),
-            "vals": d.values(),
-            "itms": d.items(),
-        }
-    )
-    assert df.to_dict(as_series=False) == {
-        "keys": [0, 1, 2],
-        "vals": ["x", "y", "z"],
-        "itms": [(0, "x"), (1, "y"), (2, "z")],
-    }
-    if sys.version_info >= (3, 11):
-        df = pl.DataFrame(
-            {
-                "rev_keys": reversed(d.keys()),
-                "rev_vals": reversed(d.values()),
-                "rev_itms": reversed(d.items()),
-            }
-        )
-        assert df.to_dict(as_series=False) == {
-            "rev_keys": [2, 1, 0],
-            "rev_vals": ["z", "y", "x"],
-            "rev_itms": [(2, "z"), (1, "y"), (0, "x")],
-        }
-
 
 def test_from_rows() -> None:
     df = pl.from_records([[1, 2, "foo"], [2, 3, "bar"]])
@@ -1458,7 +1430,7 @@ def test_reproducible_hash_with_seeds() -> None:
     if platform.mac_ver()[-1] != "arm64":
         expected = pl.Series(
             "s",
-            [13736875168471412002, 6161148964772490034, 9489472896993257669],
+            [8661293245726181094, 9565952849861441858, 2921274555702885622],
             dtype=pl.UInt64,
         )
         result = df.hash_rows(*seeds)
@@ -1469,28 +1441,25 @@ def test_reproducible_hash_with_seeds() -> None:
         assert_series_equal(expected, result, check_names=False, check_exact=True)
 
 
-def test_create_df_from_object() -> None:
-    class Foo:
-        def __init__(self, value: int) -> None:
-            self._value = value
+@pytest.mark.slow()
+@pytest.mark.parametrize(
+    "e",
+    [
+        pl.int_range(1_000_000),
+        # Test code path for null_count > 0
+        pl.when(pl.int_range(1_000_000) != 0).then(pl.int_range(1_000_000)),
+    ],
+)
+def test_hash_collision_multiple_columns_equal_values_15390(e: pl.Expr) -> None:
+    df = pl.select(e.alias("a"))
 
-        def __eq__(self, other: Any) -> bool:
-            return issubclass(other.__class__, self.__class__) and (
-                self._value == other._value
-            )
+    for n_columns in (1, 2, 3, 4):
+        s = df.select(pl.col("a").alias(f"x{i}") for i in range(n_columns)).hash_rows()
 
-        def __repr__(self) -> str:
-            return f"{self.__class__.__name__}({self._value})"
+        vc = s.sort().value_counts(sort=True)
+        max_bucket_size = vc["count"][0]
 
-    # from miscellaneous object
-    df = pl.DataFrame({"a": [Foo(1), Foo(2)]})
-    assert df["a"].dtype == pl.Object
-    assert df.rows() == [(Foo(1),), (Foo(2),)]
-
-    # from mixed-type input
-    df = pl.DataFrame({"x": [["abc", 12, 34.5]], "y": [1]})
-    assert df.schema == {"x": pl.Object, "y": pl.Int64}
-    assert df.rows() == [(["abc", 12, 34.5], 1)]
+        assert max_bucket_size == 1
 
 
 def test_hashing_on_python_objects() -> None:
@@ -1589,6 +1558,46 @@ def test_group_by_agg_n_unique_floats() -> None:
         assert out["b"].to_list() == [2, 1]
 
 
+def test_group_by_agg_n_unique_empty_group_idx_path() -> None:
+    df = pl.DataFrame(
+        {
+            "key": [1, 1, 1, 2, 2, 2],
+            "value": [1, 2, 3, 4, 5, 6],
+            "filt": [True, True, True, False, False, False],
+        }
+    )
+    out = df.group_by("key", maintain_order=True).agg(
+        pl.col("value").filter("filt").n_unique().alias("n_unique")
+    )
+    expected = pl.DataFrame(
+        {
+            "key": [1, 2],
+            "n_unique": pl.Series([3, 0], dtype=pl.UInt32),
+        }
+    )
+    assert_frame_equal(out, expected)
+
+
+def test_group_by_agg_n_unique_empty_group_slice_path() -> None:
+    df = pl.DataFrame(
+        {
+            "key": [1, 1, 1, 2, 2, 2],
+            "value": [1, 2, 3, 4, 5, 6],
+            "filt": [False, False, False, False, False, False],
+        }
+    )
+    out = df.group_by("key", maintain_order=True).agg(
+        pl.col("value").filter("filt").n_unique().alias("n_unique")
+    )
+    expected = pl.DataFrame(
+        {
+            "key": [1, 2],
+            "n_unique": pl.Series([0, 0], dtype=pl.UInt32),
+        }
+    )
+    assert_frame_equal(out, expected)
+
+
 def test_select_by_dtype(df: pl.DataFrame) -> None:
     out = df.select(pl.col(pl.String))
     assert out.columns == ["strings", "strings_nulls"]
@@ -1672,8 +1681,8 @@ def test_extension() -> None:
             return f"foo({self.value})"
 
     foos = [Foo(1), Foo(2), Foo(3)]
-    # I believe foos, stack, and sys.getrefcount have a ref
-    base_count = 3
+    # foos and sys.getrefcount have a reference.
+    base_count = 2
     assert sys.getrefcount(foos[0]) == base_count
 
     df = pl.DataFrame({"groups": [1, 1, 2], "a": foos})
@@ -1699,14 +1708,21 @@ def test_extension() -> None:
     assert sys.getrefcount(foos[0]) == base_count
 
 
-def test_group_by_order_dispatch() -> None:
+@pytest.mark.parametrize("name", [None, "n", ""])
+def test_group_by_order_dispatch(name: str | None) -> None:
     df = pl.DataFrame({"x": list("bab"), "y": range(3)})
+    lf = df.lazy()
 
-    result = df.group_by("x", maintain_order=True).len()
+    result = df.group_by("x", maintain_order=True).len(name=name)
+    lazy_result = lf.group_by("x").len(name=name).sort(by="x", descending=True)
+
+    name = "len" if name is None else name
     expected = pl.DataFrame(
-        {"x": ["b", "a"], "len": [2, 1]}, schema_overrides={"len": pl.UInt32}
+        data={"x": ["b", "a"], name: [2, 1]},
+        schema_overrides={name: pl.UInt32},
     )
     assert_frame_equal(result, expected)
+    assert_frame_equal(lazy_result.collect(), expected)
 
     result = df.group_by("x", maintain_order=True).all()
     expected = pl.DataFrame({"x": ["b", "a"], "y": [[0, 2], [1]]})
@@ -1744,19 +1760,6 @@ def test_df_schema_unique() -> None:
 
     with pytest.raises(pl.DuplicateError):
         df.rename({"b": "a"})
-
-
-def test_cleared() -> None:
-    df = pl.DataFrame(
-        {"a": [1, 2], "b": [True, False]}, schema_overrides={"a": pl.UInt32}
-    )
-    dfc = df.clear()
-    assert dfc.schema == df.schema
-    assert dfc.rows() == []
-
-    dfc = df.clear(3)
-    assert dfc.schema == df.schema
-    assert dfc.rows() == [(None, None), (None, None), (None, None)]
 
 
 def test_empty_projection() -> None:

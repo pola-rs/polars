@@ -176,23 +176,21 @@ fn struct_serializer<'a>(
         .map(|x| x.as_ref())
         .map(|arr| new_serializer(arr, offset, take))
         .collect::<Vec<_>>();
-    let names = array.fields().iter().map(|f| f.name.as_str());
 
     Box::new(BufStreamingIterator::new(
         ZipValidity::new_with_validity(0..array.len(), array.validity()),
         move |maybe, buf| {
             if maybe.is_some() {
-                let names = names.clone();
-                let mut record: Vec<(&str, &[u8])> = Default::default();
-                serializers
-                    .iter_mut()
-                    .zip(names)
-                    // `unwrap` is infalible because `array.len()` equals `len` on `Chunk`
-                    .for_each(|(iter, name)| {
-                        let item = iter.next().unwrap();
-                        record.push((name, item));
-                    });
-                serialize_item(buf, &record, true);
+                let names = array.fields().iter().map(|f| f.name.as_str());
+                serialize_item(
+                    buf,
+                    names.zip(
+                        serializers
+                            .iter_mut()
+                            .map(|serializer| serializer.next().unwrap()),
+                    ),
+                    true,
+                );
             } else {
                 serializers.iter_mut().for_each(|iter| {
                     let _ = iter.next();
@@ -495,7 +493,11 @@ pub(crate) fn new_serializer<'a>(
     }
 }
 
-fn serialize_item(buffer: &mut Vec<u8>, record: &[(&str, &[u8])], is_first_row: bool) {
+fn serialize_item<'a>(
+    buffer: &mut Vec<u8>,
+    record: impl Iterator<Item = (&'a str, &'a [u8])>,
+    is_first_row: bool,
+) {
     if !is_first_row {
         buffer.push(b',');
     }
@@ -508,7 +510,7 @@ fn serialize_item(buffer: &mut Vec<u8>, record: &[(&str, &[u8])], is_first_row: 
         first_item = false;
         utf8::write_str(buffer, key).unwrap();
         buffer.push(b':');
-        buffer.extend(*value);
+        buffer.extend(value);
     }
     buffer.push(b'}');
 }

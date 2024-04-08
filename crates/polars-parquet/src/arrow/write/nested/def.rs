@@ -1,5 +1,6 @@
 use arrow::bitmap::Bitmap;
 use arrow::offset::Offset;
+use polars_utils::slice::GetSaferUnchecked;
 
 use super::super::pages::{ListNested, Nested};
 use super::rep::num_values;
@@ -50,6 +51,34 @@ fn single_list_iter<'a, O: Offset>(nested: &'a ListNested<O>) -> Box<dyn DebugIt
     }
 }
 
+fn single_fixed_list_iter<'a>(
+    width: usize,
+    is_optional: bool,
+    validity: Option<&'a Bitmap>,
+    len: usize,
+) -> Box<dyn DebugIter + 'a> {
+    let lengths = std::iter::repeat(width).take(len);
+    match (is_optional, validity) {
+        (false, _) => Box::new(
+            std::iter::repeat(0u32)
+                .zip(lengths)
+                .map(|(a, b)| (a + (b != 0) as u32, b)),
+        ) as Box<dyn DebugIter>,
+        (true, None) => Box::new(
+            std::iter::repeat(1u32)
+                .zip(lengths)
+                .map(|(a, b)| (a + (b != 0) as u32, b)),
+        ) as Box<dyn DebugIter>,
+        (true, Some(validity)) => Box::new(
+            validity
+                .iter()
+                .map(|x| (x as u32))
+                .zip(lengths)
+                .map(|(a, b)| (a + (b != 0) as u32, b)),
+        ) as Box<dyn DebugIter>,
+    }
+}
+
 fn iter<'a>(nested: &'a [Nested]) -> Vec<Box<dyn DebugIter + 'a>> {
     nested
         .iter()
@@ -62,6 +91,13 @@ fn iter<'a>(nested: &'a [Nested]) -> Vec<Box<dyn DebugIter + 'a>> {
             Nested::Struct(validity, is_optional, length) => {
                 single_iter(validity, *is_optional, *length)
             },
+            Nested::FixedSizeList {
+                validity,
+                is_optional,
+                len,
+                width,
+                ..
+            } => single_fixed_list_iter(*width, *is_optional, validity.as_ref(), *len),
         })
         .collect()
 }
@@ -150,15 +186,17 @@ impl<'a> Iterator for DefLevelsIter<'a> {
         let r = Some(self.total + empty_contrib);
 
         for index in (1..self.current_level).rev() {
-            if self.remaining[index] == 0 {
-                self.current_level -= 1;
-                self.remaining[index - 1] -= 1;
-                self.total -= self.validity[index];
+            unsafe {
+                if *self.remaining.get_unchecked_release(index) == 0 {
+                    self.current_level -= 1;
+                    *self.remaining.get_unchecked_release_mut(index - 1) -= 1;
+                    self.total -= *self.validity.get_unchecked_release(index);
+                }
             }
         }
         if self.remaining[0] == 0 {
             self.current_level = self.current_level.saturating_sub(1);
-            self.total -= self.validity[0];
+            self.total -= unsafe { self.validity.get_unchecked_release(0) };
         }
         self.remaining_values -= 1;
         r

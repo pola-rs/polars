@@ -18,8 +18,6 @@ use object_store::gcp::GoogleCloudStorageBuilder;
 pub use object_store::gcp::GoogleConfigKey;
 #[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
 use object_store::ClientOptions;
-#[cfg(feature = "cloud")]
-use object_store::ObjectStore;
 #[cfg(any(feature = "aws", feature = "gcp", feature = "azure"))]
 use object_store::{BackoffConfig, RetryConfig};
 #[cfg(feature = "aws")]
@@ -54,7 +52,7 @@ static BUCKET_REGION: Lazy<std::sync::Mutex<FastFixedCache<SmartString, SmartStr
 #[allow(dead_code)]
 type Configs<T> = Vec<(T, String)>;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Hash, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 /// Options to connect to various cloud providers.
 pub struct CloudOptions {
@@ -125,21 +123,21 @@ impl CloudType {
 }
 
 #[cfg(feature = "cloud")]
-pub(crate) fn parse_url(url: &str) -> std::result::Result<Url, url::ParseError> {
-    match Url::parse(url) {
-        Err(err) => match err {
-            url::ParseError::RelativeUrlWithoutBase => {
-                let parsed = Url::parse(&format!(
-                    "file://{}/",
-                    std::env::current_dir().unwrap().to_string_lossy()
-                ))
-                .unwrap();
-                parsed.join(url)
-            },
-            err => Err(err),
-        },
-        parsed => parsed,
-    }
+pub(crate) fn parse_url(input: &str) -> std::result::Result<url::Url, url::ParseError> {
+    Ok(if input.contains("://") {
+        url::Url::parse(input)?
+    } else {
+        let path = std::path::Path::new(input);
+        let mut tmp;
+        url::Url::from_file_path(if path.is_relative() {
+            tmp = std::env::current_dir().unwrap();
+            tmp.push(path);
+            tmp.as_path()
+        } else {
+            path
+        })
+        .unwrap()
+    })
 }
 
 impl FromStr for CloudType {
@@ -226,9 +224,9 @@ impl CloudOptions {
         self
     }
 
-    /// Build the [`ObjectStore`] implementation for AWS.
+    /// Build the [`object_store::ObjectStore`] implementation for AWS.
     #[cfg(feature = "aws")]
-    pub async fn build_aws(&self, url: &str) -> PolarsResult<impl ObjectStore> {
+    pub async fn build_aws(&self, url: &str) -> PolarsResult<impl object_store::ObjectStore> {
         let options = self.aws.as_ref();
         let mut builder = AmazonS3Builder::from_env().with_url(url);
         if let Some(options) = options {
@@ -329,9 +327,9 @@ impl CloudOptions {
         self
     }
 
-    /// Build the [`ObjectStore`] implementation for Azure.
+    /// Build the [`object_store::ObjectStore`] implementation for Azure.
     #[cfg(feature = "azure")]
-    pub fn build_azure(&self, url: &str) -> PolarsResult<impl ObjectStore> {
+    pub fn build_azure(&self, url: &str) -> PolarsResult<impl object_store::ObjectStore> {
         let options = self.azure.as_ref();
         let mut builder = MicrosoftAzureBuilder::from_env();
         if let Some(options) = options {
@@ -363,9 +361,9 @@ impl CloudOptions {
         self
     }
 
-    /// Build the [`ObjectStore`] implementation for GCP.
+    /// Build the [`object_store::ObjectStore`] implementation for GCP.
     #[cfg(feature = "gcp")]
-    pub fn build_gcp(&self, url: &str) -> PolarsResult<impl ObjectStore> {
+    pub fn build_gcp(&self, url: &str) -> PolarsResult<impl object_store::ObjectStore> {
         let options = self.gcp.as_ref();
         let mut builder = GoogleCloudStorageBuilder::from_env();
         if let Some(options) = options {
@@ -424,6 +422,86 @@ impl CloudOptions {
                     polars_bail!(ComputeError: "'gcp' feature is not enabled");
                 }
             },
+        }
+    }
+}
+
+#[cfg(feature = "cloud")]
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_path() {
+        assert_eq!(
+            parse_url(r"http://Users/Jane Doe/data.csv")
+                .unwrap()
+                .as_str(),
+            "http://users/Jane%20Doe/data.csv"
+        );
+        assert_eq!(
+            parse_url(r"http://Users/Jane Doe/data.csv")
+                .unwrap()
+                .as_str(),
+            "http://users/Jane%20Doe/data.csv"
+        );
+        #[cfg(target_os = "windows")]
+        {
+            assert_eq!(
+                parse_url(r"file:///c:/Users/Jane Doe/data.csv")
+                    .unwrap()
+                    .as_str(),
+                "file:///c:/Users/Jane%20Doe/data.csv"
+            );
+            assert_eq!(
+                parse_url(r"file://\c:\Users\Jane Doe\data.csv")
+                    .unwrap()
+                    .as_str(),
+                "file:///c:/Users/Jane%20Doe/data.csv"
+            );
+            assert_eq!(
+                parse_url(r"c:\Users\Jane Doe\data.csv").unwrap().as_str(),
+                "file:///C:/Users/Jane%20Doe/data.csv"
+            );
+            assert_eq!(
+                parse_url(r"data.csv").unwrap().as_str(),
+                url::Url::from_file_path(
+                    [
+                        std::env::current_dir().unwrap().as_path(),
+                        std::path::Path::new("data.csv")
+                    ]
+                    .into_iter()
+                    .collect::<std::path::PathBuf>()
+                )
+                .unwrap()
+                .as_str()
+            );
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            assert_eq!(
+                parse_url(r"file:///home/Jane Doe/data.csv")
+                    .unwrap()
+                    .as_str(),
+                "file:///home/Jane%20Doe/data.csv"
+            );
+            assert_eq!(
+                parse_url(r"/home/Jane Doe/data.csv").unwrap().as_str(),
+                "file:///home/Jane%20Doe/data.csv"
+            );
+            assert_eq!(
+                parse_url(r"data.csv").unwrap().as_str(),
+                url::Url::from_file_path(
+                    [
+                        std::env::current_dir().unwrap().as_path(),
+                        std::path::Path::new("data.csv")
+                    ]
+                    .into_iter()
+                    .collect::<std::path::PathBuf>()
+                )
+                .unwrap()
+                .as_str()
+            );
         }
     }
 }

@@ -1,13 +1,16 @@
 use std::borrow::Cow;
+use std::collections::VecDeque;
 use std::io::Write;
+use std::sync::Mutex;
 
 use arrow::array::Array;
-use arrow::chunk::Chunk;
 use arrow::datatypes::PhysicalType;
+use arrow::record_batch::RecordBatch;
 use polars_core::prelude::*;
 use polars_core::utils::{accumulate_dataframes_vertical_unchecked, split_df_as_ref};
 use polars_core::POOL;
 use polars_parquet::read::ParquetError;
+pub use polars_parquet::write::RowGroupIter;
 use polars_parquet::write::{self, *};
 use rayon::prelude::*;
 #[cfg(feature = "serde")]
@@ -175,7 +178,7 @@ where
         let parquet_schema = to_parquet_schema(&schema)?;
         let encodings = get_encodings(&schema);
         let options = self.materialize_options();
-        let writer = FileWriter::try_new(self.writer, schema, options)?;
+        let writer = Mutex::new(FileWriter::try_new(self.writer, schema, options)?);
 
         Ok(BatchedWriter {
             writer,
@@ -223,7 +226,7 @@ fn prepare_rg_iter<'a>(
     encodings: &'a [Vec<Encoding>],
     options: WriteOptions,
     parallel: bool,
-) -> impl Iterator<Item = PolarsResult<RowGroupIter<'a, PolarsError>>> + 'a {
+) -> impl Iterator<Item = PolarsResult<RowGroupIter<'static, PolarsError>>> + 'a {
     let rb_iter = df.iter_chunks(true);
     rb_iter.filter_map(move |batch| match batch.len() {
         0 => None,
@@ -265,7 +268,9 @@ fn encoding_map(data_type: &ArrowDataType) -> Encoding {
 }
 
 pub struct BatchedWriter<W: Write> {
-    writer: FileWriter<W>,
+    // A mutex so that streaming engine can get concurrent read access to
+    // compress pages.
+    writer: Mutex<FileWriter<W>>,
     parquet_schema: SchemaDescriptor,
     encodings: Vec<Vec<Encoding>>,
     options: WriteOptions,
@@ -273,6 +278,26 @@ pub struct BatchedWriter<W: Write> {
 }
 
 impl<W: Write> BatchedWriter<W> {
+    pub fn encode_and_compress<'a>(
+        &'a self,
+        df: &'a DataFrame,
+    ) -> impl Iterator<Item = PolarsResult<RowGroupIter<'static, PolarsError>>> + 'a {
+        let rb_iter = df.iter_chunks(true);
+        rb_iter.filter_map(move |batch| match batch.len() {
+            0 => None,
+            _ => {
+                let row_group = create_eager_serializer(
+                    batch,
+                    self.parquet_schema.fields(),
+                    self.encodings.as_ref(),
+                    self.options,
+                );
+
+                Some(row_group)
+            },
+        })
+    }
+
     /// Write a batch to the parquet writer.
     ///
     /// # Panics
@@ -285,26 +310,45 @@ impl<W: Write> BatchedWriter<W> {
             self.options,
             self.parallel,
         );
+        // Lock before looping so that order is maintained under contention.
+        let mut writer = self.writer.lock().unwrap();
         for group in row_group_iter {
-            self.writer.write(group?)?;
+            writer.write(group?)?;
+        }
+        Ok(())
+    }
+
+    pub fn get_writer(&self) -> &Mutex<FileWriter<W>> {
+        &self.writer
+    }
+
+    pub fn write_row_groups(
+        &self,
+        rgs: Vec<RowGroupIter<'static, PolarsError>>,
+    ) -> PolarsResult<()> {
+        // Lock before looping so that order is maintained.
+        let mut writer = self.writer.lock().unwrap();
+        for group in rgs {
+            writer.write(group)?;
         }
         Ok(())
     }
 
     /// Writes the footer of the parquet file. Returns the total size of the file.
-    pub fn finish(&mut self) -> PolarsResult<u64> {
-        let size = self.writer.end(None)?;
+    pub fn finish(&self) -> PolarsResult<u64> {
+        let mut writer = self.writer.lock().unwrap();
+        let size = writer.end(None)?;
         Ok(size)
     }
 }
 
-fn create_serializer<'a>(
-    batch: Chunk<Box<dyn Array>>,
+fn create_serializer(
+    batch: RecordBatch<Box<dyn Array>>,
     fields: &[ParquetType],
     encodings: &[Vec<Encoding>],
     options: WriteOptions,
     parallel: bool,
-) -> PolarsResult<RowGroupIter<'a, PolarsError>> {
+) -> PolarsResult<RowGroupIter<'static, PolarsError>> {
     let func = move |((array, type_), encoding): ((&ArrayRef, &ParquetType), &Vec<Encoding>)| {
         let encoded_columns = array_to_columns(array, type_.clone(), options, encoding).unwrap();
 
@@ -351,6 +395,77 @@ fn create_serializer<'a>(
             .flat_map(func)
             .collect::<Vec<_>>()
     };
+
+    let row_group = DynIter::new(columns.into_iter());
+
+    Ok(row_group)
+}
+
+struct CompressedPages {
+    pages: VecDeque<PolarsResult<CompressedPage>>,
+    current: Option<CompressedPage>,
+}
+
+impl CompressedPages {
+    fn new(pages: VecDeque<PolarsResult<CompressedPage>>) -> Self {
+        Self {
+            pages,
+            current: None,
+        }
+    }
+}
+
+impl FallibleStreamingIterator for CompressedPages {
+    type Item = CompressedPage;
+    type Error = PolarsError;
+
+    fn advance(&mut self) -> Result<(), Self::Error> {
+        self.current = self.pages.pop_front().transpose()?;
+        Ok(())
+    }
+
+    fn get(&self) -> Option<&Self::Item> {
+        self.current.as_ref()
+    }
+}
+
+/// This serializer encodes and compresses all eagerly in memory.
+/// Used for separating compute from IO.
+fn create_eager_serializer(
+    batch: RecordBatch<Box<dyn Array>>,
+    fields: &[ParquetType],
+    encodings: &[Vec<Encoding>],
+    options: WriteOptions,
+) -> PolarsResult<RowGroupIter<'static, PolarsError>> {
+    let func = move |((array, type_), encoding): ((&ArrayRef, &ParquetType), &Vec<Encoding>)| {
+        let encoded_columns = array_to_columns(array, type_.clone(), options, encoding).unwrap();
+
+        encoded_columns
+            .into_iter()
+            .map(|encoded_pages| {
+                let compressed_pages = encoded_pages
+                    .into_iter()
+                    .map(|page| {
+                        let page = page?;
+                        let page = compress(page, vec![], options.compression)?;
+                        Ok(Ok(page))
+                    })
+                    .collect::<PolarsResult<VecDeque<_>>>()?;
+
+                Ok(DynStreamingIterator::new(CompressedPages::new(
+                    compressed_pages,
+                )))
+            })
+            .collect::<Vec<_>>()
+    };
+
+    let columns = batch
+        .columns()
+        .iter()
+        .zip(fields)
+        .zip(encodings)
+        .flat_map(func)
+        .collect::<Vec<_>>();
 
     let row_group = DynIter::new(columns.into_iter());
 

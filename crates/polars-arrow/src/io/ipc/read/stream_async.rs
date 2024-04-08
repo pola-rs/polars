@@ -10,7 +10,7 @@ use super::common::{read_dictionary, read_record_batch};
 use super::schema::deserialize_stream_metadata;
 use super::{Dictionaries, OutOfSpecKind, StreamMetadata};
 use crate::array::*;
-use crate::chunk::Chunk;
+use crate::record_batch::RecordBatch;
 
 /// A (private) state of stream messages
 struct ReadState<R> {
@@ -28,7 +28,7 @@ enum StreamState<R> {
     /// The stream does not contain new chunks (and it has not been closed)
     Waiting(ReadState<R>),
     /// The stream contain a new chunk
-    Some((ReadState<R>, Chunk<Box<dyn Array>>)),
+    Some((ReadState<R>, RecordBatch<Box<dyn Array>>)),
 }
 
 /// Reads the [`StreamMetadata`] of the Arrow stream asynchronously
@@ -177,7 +177,7 @@ async fn maybe_next<R: AsyncRead + Unpin + Send>(
     }
 }
 
-/// A [`Stream`] over an Arrow IPC stream that asynchronously yields [`Chunk`]s.
+/// A [`Stream`] over an Arrow IPC stream that asynchronously yields [`RecordBatch`]s.
 pub struct AsyncStreamReader<'a, R: AsyncRead + Unpin + Send + 'a> {
     metadata: StreamMetadata,
     future: Option<BoxFuture<'a, PolarsResult<Option<StreamState<R>>>>>,
@@ -204,7 +204,7 @@ impl<'a, R: AsyncRead + Unpin + Send + 'a> AsyncStreamReader<'a, R> {
 }
 
 impl<'a, R: AsyncRead + Unpin + Send> Stream for AsyncStreamReader<'a, R> {
-    type Item = PolarsResult<Chunk<Box<dyn Array>>>;
+    type Item = PolarsResult<RecordBatch<Box<dyn Array>>>;
 
     fn poll_next(
         self: std::pin::Pin<&mut Self>,

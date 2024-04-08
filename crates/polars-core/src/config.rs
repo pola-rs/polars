@@ -54,3 +54,9 @@ pub fn get_rg_prefetch_size() -> usize {
         // Set it to something big, but not unlimited.
         .unwrap_or_else(|_| std::cmp::max(get_file_prefetch_size(), 128))
 }
+
+pub fn force_async() -> bool {
+    std::env::var("POLARS_FORCE_ASYNC")
+        .map(|value| value == "1")
+        .unwrap_or_default()
+}

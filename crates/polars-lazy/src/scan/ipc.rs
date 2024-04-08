@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use polars_core::prelude::*;
+use polars_io::cloud::CloudOptions;
 use polars_io::RowIndex;
 
 use crate::prelude::*;
@@ -12,6 +13,7 @@ pub struct ScanArgsIpc {
     pub rechunk: bool,
     pub row_index: Option<RowIndex>,
     pub memmap: bool,
+    pub cloud_options: Option<CloudOptions>,
 }
 
 impl Default for ScanArgsIpc {
@@ -22,6 +24,7 @@ impl Default for ScanArgsIpc {
             rechunk: false,
             row_index: None,
             memmap: true,
+            cloud_options: Default::default(),
         }
     }
 }
@@ -44,29 +47,41 @@ impl LazyIpcReader {
 }
 
 impl LazyFileListReader for LazyIpcReader {
+    fn finish(mut self) -> PolarsResult<LazyFrame> {
+        if let Some(paths) = self.iter_paths()? {
+            let paths = paths
+                .into_iter()
+                .collect::<PolarsResult<Arc<[PathBuf]>>>()?;
+            self.paths = paths;
+        }
+        self.finish_no_glob()
+    }
+
     fn finish_no_glob(self) -> PolarsResult<LazyFrame> {
         let args = self.args;
-        let path = self.path;
+
+        let paths = if self.paths.is_empty() {
+            Arc::new([self.path]) as Arc<[PathBuf]>
+        } else {
+            self.paths
+        };
 
         let options = IpcScanOptions {
             memmap: args.memmap,
         };
+
         let mut lf: LazyFrame = LogicalPlanBuilder::scan_ipc(
-            path,
+            paths,
             options,
             args.n_rows,
             args.cache,
-            args.row_index.clone(),
+            args.row_index,
             args.rechunk,
+            args.cloud_options,
         )?
         .build()
         .into();
         lf.opt_state.file_caching = true;
-
-        // it is a bit hacky, but this `with_row_index` function updates the schema
-        if let Some(row_index) = args.row_index {
-            lf = lf.with_row_index(&row_index.name, Some(row_index.offset))
-        }
 
         Ok(lf)
     }
@@ -86,6 +101,16 @@ impl LazyFileListReader for LazyIpcReader {
 
     fn with_paths(mut self, paths: Arc<[PathBuf]>) -> Self {
         self.paths = paths;
+        self
+    }
+
+    fn with_n_rows(mut self, n_rows: impl Into<Option<usize>>) -> Self {
+        self.args.n_rows = n_rows.into();
+        self
+    }
+
+    fn with_row_index(mut self, row_index: impl Into<Option<RowIndex>>) -> Self {
+        self.args.row_index = row_index.into();
         self
     }
 

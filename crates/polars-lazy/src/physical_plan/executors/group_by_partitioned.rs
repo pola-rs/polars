@@ -1,3 +1,4 @@
+use polars_core::series::IsSorted;
 use polars_core::utils::{accumulate_dataframes_vertical, split_df};
 use rayon::prelude::*;
 
@@ -68,7 +69,7 @@ fn run_partitions(
     state: &ExecutionState,
     n_threads: usize,
     maintain_order: bool,
-) -> PolarsResult<Vec<DataFrame>> {
+) -> PolarsResult<(Vec<DataFrame>, Vec<Vec<Series>>)> {
     // We do a partitioned group_by.
     // Meaning that we first do the group_by operation arbitrarily
     // split on several threads. Than the final result we apply the same group_by again.
@@ -76,11 +77,15 @@ fn run_partitions(
 
     let phys_aggs = &exec.phys_aggs;
     let keys = &exec.phys_keys;
+
+    let mut keys = DataFrame::from_iter(compute_keys(keys, df, state)?);
+    let splitted_keys = split_df(&mut keys, n_threads)?;
+
     POOL.install(|| {
         dfs.into_par_iter()
-            .map(|df| {
-                let keys = compute_keys(keys, &df, state)?;
-                let gb = df.group_by_with_series(keys, false, maintain_order)?;
+            .zip(splitted_keys)
+            .map(|(df, keys)| {
+                let gb = df.group_by_with_series(keys.into(), false, maintain_order)?;
                 let groups = gb.get_groups();
 
                 let mut columns = gb.keys();
@@ -105,7 +110,8 @@ fn run_partitions(
 
                 columns.extend_from_slice(&agg_columns);
 
-                DataFrame::new(columns)
+                let df = DataFrame::new(columns)?;
+                Ok((df, gb.keys()))
             })
             .collect()
     })
@@ -155,6 +161,12 @@ fn estimate_unique_count(keys: &[Series], mut sample_size: usize) -> PolarsResul
     }
 }
 
+// Lower this at debug builds so that we hit this in the test suite.
+#[cfg(debug_assertions)]
+const PARTITION_LIMIT: usize = 15;
+#[cfg(not(debug_assertions))]
+const PARTITION_LIMIT: usize = 1000;
+
 // Checks if we should run normal or default aggregation
 // by sampling data.
 fn can_run_partitioned(
@@ -163,7 +175,16 @@ fn can_run_partitioned(
     state: &ExecutionState,
     from_partitioned_ds: bool,
 ) -> PolarsResult<bool> {
-    if std::env::var("POLARS_NO_PARTITION").is_ok() {
+    if !keys
+        .iter()
+        .take(1)
+        .all(|s| matches!(s.is_sorted_flag(), IsSorted::Not))
+    {
+        if state.verbose() {
+            eprintln!("FOUND SORTED KEY: running default HASH AGGREGATION")
+        }
+        Ok(false)
+    } else if std::env::var("POLARS_NO_PARTITION").is_ok() {
         if state.verbose() {
             eprintln!("POLARS_NO_PARTITION set: running default HASH AGGREGATION")
         }
@@ -173,9 +194,9 @@ fn can_run_partitioned(
             eprintln!("POLARS_FORCE_PARTITION set: running partitioned HASH AGGREGATION")
         }
         Ok(true)
-    } else if original_df.height() < 1000 && !cfg!(test) {
+    } else if original_df.height() < PARTITION_LIMIT && !cfg!(test) {
         if state.verbose() {
-            eprintln!("DATAFRAME < 1000 rows: running default HASH AGGREGATION")
+            eprintln!("DATAFRAME < {PARTITION_LIMIT} rows: running default HASH AGGREGATION")
         }
         Ok(false)
     } else {
@@ -206,10 +227,14 @@ fn can_run_partitioned(
         if from_partitioned_ds {
             let estimated_cardinality = unique_estimate as f32 / original_df.height() as f32;
             if estimated_cardinality < 0.4 {
-                eprintln!("PARTITIONED DS");
+                if state.verbose() {
+                    eprintln!("PARTITIONED DS");
+                }
                 Ok(true)
             } else {
-                eprintln!("PARTITIONED DS: estimated cardinality: {estimated_cardinality} exceeded the boundary: 0.4, running default HASH AGGREGATION");
+                if state.verbose() {
+                    eprintln!("PARTITIONED DS: estimated cardinality: {estimated_cardinality} exceeded the boundary: 0.4, running default HASH AGGREGATION");
+                }
                 Ok(false)
             }
         } else if unique_estimate > unique_count_boundary {
@@ -237,7 +262,7 @@ impl PartitionGroupByExec {
         }
         .into();
         let lp = LogicalPlan::Aggregate {
-            input: Box::new(original_df.lazy().logical_plan),
+            input: Arc::new(original_df.lazy().logical_plan),
             keys: Arc::new(std::mem::take(&mut self.keys)),
             aggs: std::mem::take(&mut self.aggs),
             schema: self.output_schema.clone(),
@@ -277,7 +302,7 @@ impl PartitionGroupByExec {
         state: &mut ExecutionState,
         mut original_df: DataFrame,
     ) -> PolarsResult<DataFrame> {
-        let dfs = {
+        let (splitted_dfs, splitted_keys) = {
             // already get the keys. This is the very last minute decision which group_by method we choose.
             // If the column is a categorical, we know the number of groups we have and can decide to continue
             // partitioned or go for the standard group_by. The partitioned is likely to be faster on a small number
@@ -297,7 +322,7 @@ impl PartitionGroupByExec {
             }
 
             #[cfg(feature = "streaming")]
-            if !self.maintain_order {
+            if !self.maintain_order && std::env::var("POLARS_NO_STREAMING_GROUPBY").is_err() {
                 if let Some(out) = self.run_streaming(state, original_df.clone()) {
                     return out;
                 }
@@ -319,12 +344,23 @@ impl PartitionGroupByExec {
             )?
         };
 
-        state.set_schema(self.output_schema.clone());
         // MERGE phase
-        // merge and hash aggregate again
-        let df = accumulate_dataframes_vertical(dfs)?;
+
+        let df = accumulate_dataframes_vertical(splitted_dfs)?;
+        let keys = splitted_keys
+            .into_iter()
+            .reduce(|mut acc, e| {
+                acc.iter_mut().zip(e).for_each(|(acc, e)| {
+                    let _ = acc.append(&e);
+                });
+                acc
+            })
+            .unwrap();
+
         // the partitioned group_by has added columns so we must update the schema.
-        let keys = self.keys(&df, state)?;
+        state.set_schema(self.output_schema.clone());
+
+        // merge and hash aggregate again
 
         // first get mutable access and optionally sort
         let gb = df.group_by_with_series(keys, true, self.maintain_order)?;

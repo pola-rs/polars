@@ -14,7 +14,13 @@ if TYPE_CHECKING:
 
     from polars import Expr, Series
     from polars.polars import PySeries
-    from polars.type_aliases import Ambiguous, EpochTimeUnit, TemporalLiteral, TimeUnit
+    from polars.type_aliases import (
+        Ambiguous,
+        EpochTimeUnit,
+        NonExistent,
+        TemporalLiteral,
+        TimeUnit,
+    )
 
 
 @expr_dispatch
@@ -1131,6 +1137,7 @@ class DateTimeNameSpace:
         *,
         use_earliest: bool | None = None,
         ambiguous: Ambiguous | Series = "raise",
+        non_existent: NonExistent = "raise",
     ) -> Series:
         """
         Replace time zone for a Series of type Datetime.
@@ -1157,6 +1164,12 @@ class DateTimeNameSpace:
             - `'raise'` (default): raise
             - `'earliest'`: use the earliest datetime
             - `'latest'`: use the latest datetime
+            - `'null'`: set to null
+        non_existent
+            Determine how to deal with non-existent datetimes:
+
+            - `'raise'` (default): raise
+            - `'null'`: set to null
 
         Examples
         --------

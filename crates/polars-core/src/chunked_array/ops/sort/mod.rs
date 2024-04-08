@@ -10,13 +10,12 @@ pub(crate) use arg_sort_multiple::argsort_multiple_row_fmt;
 use arrow::bitmap::MutableBitmap;
 use arrow::buffer::Buffer;
 use arrow::legacy::trusted_len::TrustedLenPush;
+use compare_inner::NonNull;
 use rayon::prelude::*;
 pub use slice::*;
 
 use crate::prelude::compare_inner::TotalOrdInner;
-#[cfg(feature = "dtype-struct")]
-use crate::prelude::sort::arg_sort_multiple::_get_rows_encoded_ca;
-use crate::prelude::sort::arg_sort_multiple::{arg_sort_multiple_impl, args_validate};
+use crate::prelude::sort::arg_sort_multiple::*;
 use crate::prelude::*;
 use crate::series::IsSorted;
 use crate::utils::NoNull;
@@ -221,7 +220,7 @@ fn arg_sort_multiple_numeric<T: PolarsNumericType>(
             vals.extend_trusted_len(arr.values().as_slice().iter().map(|v| {
                 let i = count;
                 count += 1;
-                (i, *v)
+                (i, NonNull(*v))
             }))
         }
         arg_sort_multiple_impl(vals, options)
@@ -269,13 +268,14 @@ where
 fn ordering_other_columns<'a>(
     compare_inner: &'a [Box<dyn TotalOrdInner + 'a>],
     descending: &[bool],
+    nulls_last: bool,
     idx_a: usize,
     idx_b: usize,
 ) -> Ordering {
     for (cmp, descending) in compare_inner.iter().zip(descending) {
         // SAFETY:
         // indices are in bounds
-        let ordering = unsafe { cmp.cmp_element_unchecked(idx_a, idx_b) };
+        let ordering = unsafe { cmp.cmp_element_unchecked(idx_a, idx_b, nulls_last ^ descending) };
         match (ordering, descending) {
             (Ordering::Equal, _) => continue,
             (_, true) => return ordering.reverse(),
@@ -632,6 +632,7 @@ pub(crate) fn convert_sort_column_multi_sort(s: &Series) -> PolarsResult<Series>
         // we could fallback to default branch, but decimal is not numeric dtype for now, so explicit here
         #[cfg(feature = "dtype-decimal")]
         Decimal(_, _) => s.clone(),
+        List(inner) if !inner.is_nested() => s.clone(),
         _ => {
             let phys = s.to_physical_repr().into_owned();
             polars_ensure!(

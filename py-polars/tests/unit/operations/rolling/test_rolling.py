@@ -8,11 +8,11 @@ import pytest
 from numpy import nan
 
 import polars as pl
-from polars.exceptions import ComputeError
+from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from polars.type_aliases import ClosedInterval, TimeUnit
+    from polars.type_aliases import ClosedInterval, PolarsDataType, TimeUnit
 
 
 @pytest.fixture()
@@ -188,18 +188,21 @@ def test_rolling_skew() -> None:
 
 @pytest.mark.parametrize("time_zone", [None, "US/Central"])
 @pytest.mark.parametrize(
-    ("rolling_fn", "expected_values"),
+    ("rolling_fn", "expected_values", "expected_dtype"),
     [
-        ("rolling_mean", [None, 1.0, 2.0, 3.0, 4.0, 5.0]),
-        ("rolling_sum", [None, 1, 2, 3, 4, 5]),
-        ("rolling_min", [None, 1, 2, 3, 4, 5]),
-        ("rolling_max", [None, 1, 2, 3, 4, 5]),
-        ("rolling_std", [None, 0.0, 0.0, 0.0, 0.0, 0.0]),
-        ("rolling_var", [None, 0.0, 0.0, 0.0, 0.0, 0.0]),
+        ("rolling_mean", [None, 1.0, 2.0, 3.0, 4.0, 5.0], pl.Float64),
+        ("rolling_sum", [None, 1, 2, 3, 4, 5], pl.Int64),
+        ("rolling_min", [None, 1, 2, 3, 4, 5], pl.Int64),
+        ("rolling_max", [None, 1, 2, 3, 4, 5], pl.Int64),
+        ("rolling_std", [None, None, None, None, None, None], pl.Float64),
+        ("rolling_var", [None, None, None, None, None, None], pl.Float64),
     ],
 )
 def test_rolling_crossing_dst(
-    time_zone: str | None, rolling_fn: str, expected_values: list[int | None | float]
+    time_zone: str | None,
+    rolling_fn: str,
+    expected_values: list[int | None | float],
+    expected_dtype: PolarsDataType,
 ) -> None:
     ts = pl.datetime_range(
         datetime(2021, 11, 5), datetime(2021, 11, 10), "1d", time_zone="UTC", eager=True
@@ -208,8 +211,16 @@ def test_rolling_crossing_dst(
     result = df.with_columns(
         getattr(pl.col("value"), rolling_fn)("1d", by="ts", closed="left")
     )
-    expected = pl.DataFrame({"ts": ts, "value": expected_values})
+    expected = pl.DataFrame(
+        {"ts": ts, "value": expected_values}, schema_overrides={"value": expected_dtype}
+    )
     assert_frame_equal(result, expected)
+
+
+def test_rolling_by_invalid() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]}).sort("a")
+    with pytest.raises(InvalidOperationError, match="`rolling_min` operation"):
+        df.select(pl.col("b").rolling_min(2, by="a"))
 
 
 def test_rolling_infinity() -> None:
@@ -217,6 +228,16 @@ def test_rolling_infinity() -> None:
     s = s.rolling_mean(2)
     expected = pl.Series("col", [None, "-inf", "5"]).cast(pl.Float64)
     assert_series_equal(s, expected)
+
+
+def test_rolling_invalid_closed_option() -> None:
+    df = pl.DataFrame(
+        {"a": [4, 5, 6], "b": [date(2020, 1, 1), date(2020, 1, 2), date(2020, 1, 3)]}
+    ).sort("a", "b")
+    with pytest.raises(InvalidOperationError, match="consider using DataFrame.rolling"):
+        df.with_columns(pl.col("a").rolling_sum(2, closed="left"))
+    with pytest.raises(InvalidOperationError, match="consider using DataFrame.rolling"):
+        df.with_columns(pl.col("a").rolling_sum(2, by="b", closed="left"))
 
 
 def test_rolling_extrema() -> None:
@@ -388,7 +409,7 @@ def test_rolling_slice_pushdown() -> None:
         df.sort("a")
         .rolling(
             "a",
-            by="b",
+            group_by="b",
             period="2i",
         )
         .agg([(pl.col("c") - pl.col("c").shift(fill_value=0)).sum().alias("c")])
@@ -498,7 +519,7 @@ def test_rolling_iter() -> None:
     # With 'by' argument
     result2 = [
         (name, data.shape)
-        for name, data in df.rolling(index_column="date", period="2d", by="a")
+        for name, data in df.rolling(index_column="date", period="2d", group_by="a")
     ]
     expected2 = [
         ((1, date(2020, 1, 1)), (1, 3)),

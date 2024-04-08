@@ -50,3 +50,23 @@ def test_exclude_selection() -> None:
     assert ldf.select(pl.all().exclude(pl.Boolean)).columns == ["a", "b"]
     assert ldf.select(pl.all().exclude([pl.Boolean])).columns == ["a", "b"]
     assert ldf.select(pl.all().exclude(NUMERIC_DTYPES)).columns == ["c"]
+
+
+def test_struct_name_resolving_15430() -> None:
+    q = pl.LazyFrame([{"a": {"b": "c"}}])
+    a = (
+        q.with_columns(pl.col("a").struct.field("b"))
+        .drop("a")
+        .collect(projection_pushdown=True)
+    )
+
+    b = (
+        q.with_columns(pl.col("a").struct[0])
+        .drop("a")
+        .collect(projection_pushdown=True)
+    )
+
+    assert a["b"].item() == "c"
+    assert b["b"].item() == "c"
+    assert a.columns == ["b"]
+    assert b.columns == ["b"]

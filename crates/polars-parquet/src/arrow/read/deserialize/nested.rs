@@ -34,7 +34,7 @@ where
     }))
 }
 
-pub fn columns_to_iter_recursive<'a, I: 'a>(
+pub fn columns_to_iter_recursive<'a, I>(
     mut columns: Vec<I>,
     mut types: Vec<&PrimitiveType>,
     field: Field,
@@ -43,7 +43,7 @@ pub fn columns_to_iter_recursive<'a, I: 'a>(
     chunk_size: Option<usize>,
 ) -> PolarsResult<NestedArrayIter<'a>>
 where
-    I: PagesIter,
+    I: 'a + PagesIter,
 {
     use arrow::datatypes::PhysicalType::*;
     use arrow::datatypes::PrimitiveType::*;
@@ -404,7 +404,7 @@ where
                     },
                     PhysicalType::FixedLenByteArray(n) => {
                         polars_bail!(ComputeError:
-                            "Can't decode Decimal256 type from from `FixedLenByteArray` of len {n}"
+                            "Can't decode Decimal256 type from `FixedLenByteArray` of len {n}"
                         )
                     },
                     _ => {

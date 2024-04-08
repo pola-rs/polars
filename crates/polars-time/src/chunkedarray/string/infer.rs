@@ -465,16 +465,24 @@ pub(crate) fn to_datetime(
                 Pattern::DatetimeYMDZ => infer.coerce_string(ca).datetime().map(|ca| {
                     let mut ca = ca.clone();
                     ca.set_time_unit(tu);
-                    polars_ops::prelude::replace_time_zone(&ca, Some("UTC"), _ambiguous)
+                    polars_ops::prelude::replace_time_zone(
+                        &ca,
+                        Some("UTC"),
+                        _ambiguous,
+                        NonExistent::Raise,
+                    )
                 })?,
                 _ => infer.coerce_string(ca).datetime().map(|ca| {
                     let mut ca = ca.clone();
                     ca.set_time_unit(tu);
                     match tz {
                         #[cfg(feature = "timezones")]
-                        Some(tz) => {
-                            polars_ops::prelude::replace_time_zone(&ca, Some(tz), _ambiguous)
-                        },
+                        Some(tz) => polars_ops::prelude::replace_time_zone(
+                            &ca,
+                            Some(tz),
+                            _ambiguous,
+                            NonExistent::Raise,
+                        ),
                         _ => Ok(ca),
                     }
                 })?,

@@ -92,12 +92,18 @@ def test_ooc_sort(tmp_path: Path, monkeypatch: Any) -> None:
         assert_series_equal(out, s.sort(descending=descending))
 
 
+@pytest.mark.debug()
 @pytest.mark.write_disk()
-def test_streaming_sort(tmp_path: Path, monkeypatch: Any, capfd: Any) -> None:
+@pytest.mark.parametrize("spill_source", [True, False])
+def test_streaming_sort(
+    tmp_path: Path, monkeypatch: Any, capfd: Any, spill_source: bool
+) -> None:
     tmp_path.mkdir(exist_ok=True)
     monkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
     monkeypatch.setenv("POLARS_FORCE_OOC", "1")
     monkeypatch.setenv("POLARS_VERBOSE", "1")
+    if spill_source:
+        monkeypatch.setenv("POLARS_SPILL_SORT_PARTITIONS", "1")
     # this creates a lot of duplicate partitions and triggers: #7568
     assert (
         pl.Series(np.random.randint(0, 100, 100))
@@ -109,13 +115,20 @@ def test_streaming_sort(tmp_path: Path, monkeypatch: Any, capfd: Any) -> None:
     )
     (_, err) = capfd.readouterr()
     assert "df -> sort" in err
+    if spill_source:
+        assert "PARTITIONED FORCE SPILLED" in err
 
 
 @pytest.mark.write_disk()
-def test_out_of_core_sort_9503(tmp_path: Path, monkeypatch: Any) -> None:
+@pytest.mark.parametrize("spill_source", [True, False])
+def test_out_of_core_sort_9503(
+    tmp_path: Path, monkeypatch: Any, spill_source: bool
+) -> None:
     tmp_path.mkdir(exist_ok=True)
     monkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
     monkeypatch.setenv("POLARS_FORCE_OOC", "1")
+    if spill_source:
+        monkeypatch.setenv("POLARS_SPILL_SORT_PARTITIONS", "1")
     np.random.seed(0)
 
     num_rows = 100_000
@@ -246,3 +259,35 @@ def test_reverse_variable_sort_13573() -> None:
     assert df.sort("a", "b", descending=[True, False]).collect(streaming=True).to_dict(
         as_series=False
     ) == {"a": ["two", "three", "one"], "b": ["five", "six", "four"]}
+
+
+def test_nulls_last_streaming_sort() -> None:
+    assert pl.LazyFrame({"x": [1, None]}).sort("x", nulls_last=True).collect(
+        streaming=True
+    ).to_dict(as_series=False) == {"x": [1, None]}
+
+
+@pytest.mark.parametrize("descending", [True, False])
+@pytest.mark.parametrize("nulls_last", [True, False])
+def test_sort_descending_nulls_last(descending: bool, nulls_last: bool) -> None:
+    df = pl.DataFrame({"x": [1, 3, None, 2, None], "y": [1, 3, 0, 2, 0]})
+
+    null_sentinel = 100 if descending ^ nulls_last else -100
+    ref_x = [1, 3, None, 2, None]
+    ref_x.sort(key=lambda k: null_sentinel if k is None else k, reverse=descending)
+    ref_y = [1, 3, 0, 2, 0]
+    ref_y.sort(key=lambda k: null_sentinel if k == 0 else k, reverse=descending)
+
+    assert_frame_equal(
+        df.lazy()
+        .sort("x", descending=descending, nulls_last=nulls_last)
+        .collect(streaming=True),
+        pl.DataFrame({"x": ref_x, "y": ref_y}),
+    )
+
+    assert_frame_equal(
+        df.lazy()
+        .sort(["x", "y"], descending=descending, nulls_last=nulls_last)
+        .collect(streaming=True),
+        pl.DataFrame({"x": ref_x, "y": ref_y}),
+    )

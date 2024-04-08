@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import gc
 import random
 import string
-from typing import List, cast
+import sys
+import tracemalloc
+from typing import Any, Generator, List, cast
 
 import numpy as np
 import pytest
@@ -138,3 +141,62 @@ for date_sep in ("/", "-"):
 @pytest.fixture(params=ISO8601_FORMATS_DATE)
 def iso8601_format_date(request: pytest.FixtureRequest) -> list[str]:
     return cast(List[str], request.param)
+
+
+class MemoryUsage:
+    """
+    Provide an API for measuring peak memory usage.
+
+    Memory from PyArrow is not tracked at the moment.
+    """
+
+    def reset_tracking(self) -> None:
+        """Reset tracking to zero."""
+        gc.collect()
+        tracemalloc.stop()
+        tracemalloc.start()
+        assert self.get_peak() < 100_000
+
+    def get_current(self) -> int:
+        """
+        Return currently allocated memory, in bytes.
+
+        This only tracks allocations since this object was created or
+        ``reset_tracking()`` was called, whichever is later.
+        """
+        return tracemalloc.get_traced_memory()[0]
+
+    def get_peak(self) -> int:
+        """
+        Return peak allocated memory, in bytes.
+
+        This returns peak allocations since this object was created or
+        ``reset_tracking()`` was called, whichever is later.
+        """
+        return tracemalloc.get_traced_memory()[1]
+
+
+@pytest.fixture()
+def memory_usage_without_pyarrow() -> Generator[MemoryUsage, Any, Any]:
+    """
+    Provide an API for measuring peak memory usage.
+
+    Not thread-safe: there should only be one instance of MemoryUsage at any
+    given time.
+
+    Memory usage from PyArrow is not tracked.
+    """
+    if not pl.build_info()["build"]["debug"]:
+        pytest.skip("Memory usage only available in debug/dev builds.")
+
+    if sys.platform == "win32":
+        # abi3 wheels don't have the tracemalloc C APIs, which breaks linking
+        # on Windows.
+        pytest.skip("Windows not supported at the moment.")
+
+    gc.collect()
+    tracemalloc.start()
+    try:
+        yield MemoryUsage()
+    finally:
+        tracemalloc.stop()

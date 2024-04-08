@@ -40,6 +40,10 @@ impl PyExpr {
         }
     }
 
+    fn arr_n_unique(&self) -> Self {
+        self.inner.clone().arr().n_unique().into()
+    }
+
     fn arr_to_list(&self) -> Self {
         self.inner.clone().arr().to_list().into()
     }

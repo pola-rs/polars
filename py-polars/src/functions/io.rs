@@ -56,3 +56,27 @@ fn fields_to_pydict(fields: &Vec<Field>, dict: &PyDict, py: Python) -> PyResult<
     }
     Ok(())
 }
+
+#[cfg(feature = "clipboard")]
+#[pyfunction]
+pub fn read_clipboard_string() -> PyResult<String> {
+    use arboard;
+    let mut clipboard =
+        arboard::Clipboard::new().map_err(|e| PyPolarsErr::Other(format!("{e}")))?;
+    let result = clipboard
+        .get_text()
+        .map_err(|e| PyPolarsErr::Other(format!("{e}")))?;
+    Ok(result)
+}
+
+#[cfg(feature = "clipboard")]
+#[pyfunction]
+pub fn write_clipboard_string(s: &str) -> PyResult<()> {
+    use arboard;
+    let mut clipboard =
+        arboard::Clipboard::new().map_err(|e| PyPolarsErr::Other(format!("{e}")))?;
+    clipboard
+        .set_text(s)
+        .map_err(|e| PyPolarsErr::Other(format!("{e}")))?;
+    Ok(())
+}

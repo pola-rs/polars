@@ -2,8 +2,6 @@ use std::iter::Enumerate;
 
 use crate::array::BooleanArray;
 use crate::bitmap::utils::BitChunks;
-#[cfg(feature = "simd")]
-pub mod agg_mean;
 pub mod atan2;
 pub mod concatenate;
 pub mod ewm;
@@ -24,9 +22,9 @@ pub mod string;
 pub mod take_agg;
 mod time;
 
-pub use time::Ambiguous;
 #[cfg(feature = "timezones")]
 pub use time::{convert_to_naive_local, convert_to_naive_local_opt};
+pub use time::{Ambiguous, NonExistent};
 
 /// Internal state of [SlicesIterator]
 #[derive(Debug, PartialEq)]

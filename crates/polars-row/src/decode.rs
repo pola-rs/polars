@@ -10,7 +10,7 @@ use crate::variable::{decode_binary, decode_binview};
 /// encodings.
 pub unsafe fn decode_rows_from_binary<'a>(
     arr: &'a BinaryArray<i64>,
-    fields: &[SortField],
+    fields: &[EncodingField],
     data_types: &[ArrowDataType],
     rows: &mut Vec<&'a [u8]>,
 ) -> Vec<ArrayRef> {
@@ -27,7 +27,7 @@ pub unsafe fn decode_rows_from_binary<'a>(
 pub unsafe fn decode_rows(
     // the rows will be updated while the data is decoded
     rows: &mut [&[u8]],
-    fields: &[SortField],
+    fields: &[EncodingField],
     data_types: &[ArrowDataType],
 ) -> Vec<ArrayRef> {
     assert_eq!(fields.len(), data_types.len());
@@ -38,13 +38,13 @@ pub unsafe fn decode_rows(
         .collect()
 }
 
-unsafe fn decode(rows: &mut [&[u8]], field: &SortField, data_type: &ArrowDataType) -> ArrayRef {
-    // not yet supported for fixed types
-    assert!(!field.nulls_last, "not yet supported");
+unsafe fn decode(rows: &mut [&[u8]], field: &EncodingField, data_type: &ArrowDataType) -> ArrayRef {
     match data_type {
         ArrowDataType::Null => NullArray::new(ArrowDataType::Null, rows.len()).to_boxed(),
         ArrowDataType::Boolean => decode_bool(rows, field).to_boxed(),
-        ArrowDataType::LargeBinary => decode_binview(rows, field).to_boxed(),
+        ArrowDataType::BinaryView | ArrowDataType::LargeBinary => {
+            decode_binview(rows, field).to_boxed()
+        },
         ArrowDataType::Utf8View => {
             let arr = decode_binview(rows, field);
             arr.to_utf8view_unchecked().boxed()

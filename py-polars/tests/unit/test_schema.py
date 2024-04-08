@@ -181,13 +181,14 @@ def test_group_schema_err() -> None:
 
 def test_schema_inference_from_rows() -> None:
     # these have to upcast to float
-    assert pl.from_records([[1, 2.1, 3], [4, 5, 6.4]]).to_dict(as_series=False) == {
+    result = pl.from_records([[1, 2.1, 3], [4, 5, 6.4]])
+    assert result.to_dict(as_series=False) == {
         "column_0": [1.0, 2.1, 3.0],
         "column_1": [4.0, 5.0, 6.4],
     }
-    assert pl.from_dicts([{"a": 1, "b": 2}, {"a": 3.1, "b": 4.5}]).to_dict(
-        as_series=False
-    ) == {
+
+    result = pl.from_dicts([{"a": 1, "b": 2}, {"a": 3.1, "b": 4.5}])
+    assert result.to_dict(as_series=False) == {
         "a": [1.0, 3.1],
         "b": [2.0, 4.5],
     }
@@ -632,3 +633,50 @@ def test_literal_subtract_schema_13284() -> None:
         .group_by("a")
         .len()
     ).schema == OrderedDict([("a", pl.UInt8), ("len", pl.UInt32)])
+
+
+def test_schema_boolean_sum_horizontal() -> None:
+    lf = pl.LazyFrame({"a": [True, False]}).select(pl.sum_horizontal("a"))
+    assert lf.schema == OrderedDict([("a", pl.UInt32)])
+
+
+def test_struct_alias_prune_15401() -> None:
+    df = pl.DataFrame({"a": []}, schema={"a": pl.Struct({"b": pl.Int8})})
+    assert df.select(pl.col("a").alias("c").struct.field("b")).columns == ["b"]
+
+
+def test_alias_prune_in_fold_15438() -> None:
+    df = pl.DataFrame({"x": [1, 2], "expected_result": ["first", "second"]}).select(
+        actual_result=pl.fold(
+            acc=pl.lit("other", dtype=pl.Utf8),
+            function=lambda acc, x: pl.when(x).then(pl.lit(x.name)).otherwise(acc),  # type: ignore[arg-type, return-value]
+            exprs=[
+                (pl.col("x") == 1).alias("first"),
+                (pl.col("x") == 2).alias("second"),
+            ],
+        )
+    )
+    expected = pl.DataFrame(
+        {
+            "actual_result": ["first", "second"],
+        }
+    )
+    assert_frame_equal(df, expected)
+
+
+def test_resolved_names_15442() -> None:
+    df = pl.DataFrame(
+        {
+            "x": [206.0],
+            "y": [225.0],
+        }
+    )
+    center = pl.struct(
+        x=pl.col("x"),
+        y=pl.col("y"),
+    )
+
+    left = 0
+    right = 1000
+    in_x = (left < center.struct.field("x")) & (center.struct.field("x") <= right)
+    assert df.lazy().filter(in_x).collect().shape == (1, 2)

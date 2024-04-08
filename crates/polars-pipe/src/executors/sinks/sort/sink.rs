@@ -1,5 +1,6 @@
 use std::any::Any;
 use std::sync::{Arc, RwLock};
+use std::time::Instant;
 
 use polars_core::config::verbose;
 use polars_core::error::PolarsResult;
@@ -35,6 +36,8 @@ pub struct SortSink {
     current_chunk_rows: usize,
     // total bytes of tables in current chunks
     current_chunks_size: usize,
+    // Start time of OOC phase.
+    ooc_start: Option<Instant>,
 }
 
 impl SortSink {
@@ -54,9 +57,12 @@ impl SortSink {
             dist_sample: vec![],
             current_chunk_rows: 0,
             current_chunks_size: 0,
+            ooc_start: None,
         };
         if ooc {
-            eprintln!("OOC sort forced");
+            if verbose() {
+                eprintln!("OOC sort forced");
+            }
             out.init_ooc().unwrap();
         }
         out
@@ -66,6 +72,7 @@ impl SortSink {
         if verbose() {
             eprintln!("OOC sort started");
         }
+        self.ooc_start = Some(Instant::now());
         self.ooc = true;
 
         // start IO thread
@@ -99,10 +106,8 @@ impl SortSink {
     }
 
     fn dump(&mut self, force: bool) -> PolarsResult<()> {
-        let larger_than_32_mb = self.current_chunks_size > 1 << 25;
-        if (force || larger_than_32_mb || self.current_chunk_rows > 50_000)
-            && !self.chunks.is_empty()
-        {
+        let larger_than_32_mb = self.current_chunks_size > (1 << 25);
+        if (force || larger_than_32_mb) && !self.chunks.is_empty() {
             // into a single chunk because multiple file IO's is expensive
             // and may lead to many smaller files in ooc-sort later, which is exponentially
             // expensive
@@ -141,6 +146,9 @@ impl Sink for SortSink {
 
     fn combine(&mut self, other: &mut dyn Sink) {
         let other = other.as_any().downcast_mut::<Self>().unwrap();
+        if let Some(ooc_start) = other.ooc_start {
+            self.ooc_start = Some(ooc_start);
+        }
         self.chunks.extend(std::mem::take(&mut other.chunks));
         self.ooc |= other.ooc;
         self.dist_sample
@@ -163,6 +171,7 @@ impl Sink for SortSink {
             dist_sample: vec![],
             current_chunk_rows: 0,
             current_chunks_size: 0,
+            ooc_start: self.ooc_start,
         })
     }
 
@@ -179,17 +188,27 @@ impl Sink for SortSink {
                 nulls_last: self.sort_args.nulls_last,
                 multithreaded: true,
                 maintain_order: self.sort_args.maintain_order,
-            });
+            })?;
 
+            let instant = self.ooc_start.unwrap();
+            if context.verbose {
+                eprintln!("finished sinking into OOC sort in {:?}", instant.elapsed());
+            }
             block_thread_until_io_thread_done(&io_thread);
+            if context.verbose {
+                eprintln!("full file dump of OOC sort took {:?}", instant.elapsed());
+            }
 
             sort_ooc(
                 io_thread,
                 dist,
                 self.sort_idx,
                 self.sort_args.descending[0],
+                self.sort_args.nulls_last,
                 self.sort_args.slice,
                 context.verbose,
+                self.mem_track.clone(),
+                instant,
             )
         } else {
             let chunks = std::mem::take(&mut self.chunks);
@@ -199,6 +218,7 @@ impl Sink for SortSink {
                 self.sort_idx,
                 self.sort_args.descending[0],
                 self.sort_args.slice,
+                self.sort_args.nulls_last,
             )?;
             Ok(FinalizedSink::Finished(df))
         }
@@ -218,6 +238,7 @@ pub(super) fn sort_accumulated(
     sort_idx: usize,
     descending: bool,
     slice: Option<(i64, usize)>,
+    nulls_last: bool,
 ) -> PolarsResult<DataFrame> {
     // This is needed because we can have empty blocks and we require chunks to have single chunks.
     df.as_single_chunk_par();
@@ -225,7 +246,7 @@ pub(super) fn sort_accumulated(
     df.sort_impl(
         vec![sort_column],
         vec![descending],
-        false,
+        nulls_last,
         false,
         slice,
         true,

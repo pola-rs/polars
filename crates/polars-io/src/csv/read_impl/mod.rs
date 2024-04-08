@@ -699,7 +699,12 @@ fn read_chunk(
     starting_point_offset: Option<usize>,
 ) -> PolarsResult<DataFrame> {
     let mut read = bytes_offset_thread;
-    let mut buffers = init_buffers(projection, capacity, schema, quote_char, encoding)?;
+    // There's an off-by-one error somewhere in the reading code, where it reads
+    // one more item than the requested capacity. Given the batch sizes are
+    // approximate (sometimes they're smaller), this isn't broken, but it does
+    // mean a bunch of extra allocation and copying. So we allocate a
+    // larger-by-one buffer so the size is more likely to be accurate.
+    let mut buffers = init_buffers(projection, capacity + 1, schema, quote_char, encoding)?;
 
     let mut last_read = usize::MAX;
     loop {

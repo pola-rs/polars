@@ -64,7 +64,7 @@ pub enum PolarsError {
     OutOfBounds(ErrString),
     #[error("field not found: {0}")]
     SchemaFieldNotFound(ErrString),
-    #[error("data types don't match: {0}")]
+    #[error("{0}")]
     SchemaMismatch(ErrString),
     #[error("lengths don't match: {0}")]
     ShapeMismatch(ErrString),
@@ -274,7 +274,7 @@ macro_rules! polars_bail {
 macro_rules! polars_ensure {
     ($cond:expr, $($tt:tt)+) => {
         if !$cond {
-            polars_bail!($($tt)+);
+            $crate::polars_bail!($($tt)+);
         }
     };
 }

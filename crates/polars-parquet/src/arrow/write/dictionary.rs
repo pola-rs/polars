@@ -149,13 +149,11 @@ fn serialize_levels(
 fn normalized_validity<K: DictionaryKey>(array: &DictionaryArray<K>) -> Option<Bitmap> {
     match (array.keys().validity(), array.values().validity()) {
         (None, None) => None,
-        (None, rhs) => rhs.cloned(),
-        (lhs, None) => lhs.cloned(),
-        (Some(_), Some(rhs)) => {
-            let projected_validity = array
-                .keys_iter()
-                .map(|x| x.map(|x| rhs.get_bit(x)).unwrap_or(false));
-            MutableBitmap::from_trusted_len_iter(projected_validity).into()
+        (keys, None) => keys.cloned(),
+        // The values can have a different length than the keys
+        (_, Some(_values)) => {
+            let iter = (0..array.len()).map(|i| unsafe { !array.is_null_unchecked(i) });
+            MutableBitmap::from_trusted_len_iter(iter).into()
         },
     }
 }
@@ -169,9 +167,6 @@ fn serialize_keys<K: DictionaryKey>(
 ) -> PolarsResult<Page> {
     let mut buffer = vec![];
 
-    // parquet only accepts a single validity - we "&" the validities into a single one
-    // and ignore keys whole _value_ is null.
-    let validity = normalized_validity(array);
     let (start, len) = slice_nested_leaf(nested);
 
     let mut nested = nested.to_vec();
@@ -181,6 +176,10 @@ fn serialize_keys<K: DictionaryKey>(
     } else {
         unreachable!("")
     }
+    // Parquet only accepts a single validity - we "&" the validities into a single one
+    // and ignore keys whose _value_ is null.
+    // It's important that we slice before normalizing.
+    let validity = normalized_validity(&array);
 
     let (repetition_levels_byte_length, definition_levels_byte_length) = serialize_levels(
         validity.as_ref(),

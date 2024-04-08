@@ -20,9 +20,10 @@ fn cum_fold_dtype() -> GetOutput {
 }
 
 /// Accumulate over multiple columns horizontally / row wise.
-pub fn fold_exprs<F: 'static, E: AsRef<[Expr]>>(acc: Expr, f: F, exprs: E) -> Expr
+pub fn fold_exprs<F, E>(acc: Expr, f: F, exprs: E) -> Expr
 where
-    F: Fn(Series, Series) -> PolarsResult<Option<Series>> + Send + Sync + Clone,
+    F: 'static + Fn(Series, Series) -> PolarsResult<Option<Series>> + Send + Sync + Clone,
+    E: AsRef<[Expr]>,
 {
     let mut exprs = exprs.as_ref().to_vec();
     exprs.push(acc);
@@ -58,9 +59,10 @@ where
 /// An accumulator is initialized to the series given by the first expression in `exprs`, and then each subsequent value
 /// of the accumulator is computed from `f(acc, next_expr_series)`. If `exprs` is empty, an error is returned when
 /// `collect` is called.
-pub fn reduce_exprs<F: 'static, E: AsRef<[Expr]>>(f: F, exprs: E) -> Expr
+pub fn reduce_exprs<F, E>(f: F, exprs: E) -> Expr
 where
-    F: Fn(Series, Series) -> PolarsResult<Option<Series>> + Send + Sync + Clone,
+    F: 'static + Fn(Series, Series) -> PolarsResult<Option<Series>> + Send + Sync + Clone,
+    E: AsRef<[Expr]>,
 {
     let exprs = exprs.as_ref().to_vec();
 
@@ -98,9 +100,10 @@ where
 
 /// Accumulate over multiple columns horizontally / row wise.
 #[cfg(feature = "dtype-struct")]
-pub fn cum_reduce_exprs<F: 'static, E: AsRef<[Expr]>>(f: F, exprs: E) -> Expr
+pub fn cum_reduce_exprs<F, E>(f: F, exprs: E) -> Expr
 where
-    F: Fn(Series, Series) -> PolarsResult<Option<Series>> + Send + Sync + Clone,
+    F: 'static + Fn(Series, Series) -> PolarsResult<Option<Series>> + Send + Sync + Clone,
+    E: AsRef<[Expr]>,
 {
     let exprs = exprs.as_ref().to_vec();
 
@@ -143,14 +146,10 @@ where
 
 /// Accumulate over multiple columns horizontally / row wise.
 #[cfg(feature = "dtype-struct")]
-pub fn cum_fold_exprs<F: 'static, E: AsRef<[Expr]>>(
-    acc: Expr,
-    f: F,
-    exprs: E,
-    include_init: bool,
-) -> Expr
+pub fn cum_fold_exprs<F, E>(acc: Expr, f: F, exprs: E, include_init: bool) -> Expr
 where
-    F: Fn(Series, Series) -> PolarsResult<Option<Series>> + Send + Sync + Clone,
+    F: 'static + Fn(Series, Series) -> PolarsResult<Option<Series>> + Send + Sync + Clone,
+    E: AsRef<[Expr]>,
 {
     let mut exprs = exprs.as_ref().to_vec();
     exprs.push(acc);

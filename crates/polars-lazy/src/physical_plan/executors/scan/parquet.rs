@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use polars_core::config;
 #[cfg(feature = "cloud")]
 use polars_core::config::{get_file_prefetch_size, verbose};
 use polars_core::utils::accumulate_dataframes_vertical;
@@ -311,6 +312,17 @@ impl ParquetExec {
     }
 
     fn read(&mut self) -> PolarsResult<DataFrame> {
+        // FIXME: The row index implementation is incorrect when a predicate is
+        // applied. This code mitigates that by applying the predicate after the
+        // collection of the entire dataframe if a row index is requested. This is
+        // inefficient.
+        let post_predicate = self
+            .file_options
+            .row_index
+            .as_ref()
+            .and_then(|_| self.predicate.take())
+            .map(phys_expr_to_io_expr);
+
         let is_cloud = match self.paths.first() {
             Some(p) => is_cloud_url(p.as_path()),
             None => {
@@ -334,7 +346,7 @@ impl ParquetExec {
                 ));
             },
         };
-        let force_async = std::env::var("POLARS_FORCE_ASYNC").as_deref().unwrap_or("") == "1";
+        let force_async = config::force_async();
 
         let out = if is_cloud || force_async {
             #[cfg(not(feature = "cloud"))]
@@ -344,6 +356,10 @@ impl ParquetExec {
 
             #[cfg(feature = "cloud")]
             {
+                if !is_cloud && config::verbose() {
+                    eprintln!("ASYNC READING FORCED");
+                }
+
                 polars_io::pl_async::get_runtime().block_on_potential_spawn(self.read_async())?
             }
         } else {
@@ -351,6 +367,9 @@ impl ParquetExec {
         };
 
         let mut out = accumulate_dataframes_vertical(out)?;
+
+        polars_io::predicates::apply_predicate(&mut out, post_predicate.as_deref(), true)?;
+
         if self.file_options.rechunk {
             out.as_single_chunk_par();
         }
@@ -360,16 +379,6 @@ impl ParquetExec {
 
 impl Executor for ParquetExec {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
-        let finger_print = FileFingerPrint {
-            paths: self.paths.clone(),
-            #[allow(clippy::useless_asref)]
-            predicate: self
-                .predicate
-                .as_ref()
-                .map(|ae| ae.as_expression().unwrap().clone()),
-            slice: (0, self.file_options.n_rows),
-        };
-
         let profile_name = if state.has_node_timer() {
             let mut ids = vec![self.paths[0].to_string_lossy().into()];
             if self.predicate.is_some() {
@@ -381,15 +390,6 @@ impl Executor for ParquetExec {
             Cow::Borrowed("")
         };
 
-        state.record(
-            || {
-                state
-                    .file_cache
-                    .read(finger_print, self.file_options.file_counter, &mut || {
-                        self.read()
-                    })
-            },
-            profile_name,
-        )
+        state.record(|| self.read(), profile_name)
     }
 }

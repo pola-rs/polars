@@ -176,10 +176,22 @@ class Series:
         One-dimensional data in various forms. Supported are: Sequence, Series,
         pyarrow Array, and numpy ndarray.
     dtype : DataType, default None
-        Polars dtype of the Series data. If not specified, the dtype is inferred.
-    strict
-        Throw error on numeric overflow.
-    nan_to_null
+        Data type of the resulting Series. If set to `None` (default), the data type is
+        inferred from the `values` input. The strategy for data type inference depends
+        on the `strict` parameter:
+
+        - If `strict` is set to True (default), the inferred data type is equal to the
+          first non-null value, or `Null` if all values are null.
+        - If `strict` is set to False, the inferred data type is the supertype of the
+          values, or :class:`Object` if no supertype can be found. **WARNING**: A full
+          pass over the values is required to determine the supertype.
+        - If no values were passed, the resulting data type is :class:`Null`.
+
+    strict : bool, default True
+        Throw an error if any value does not exactly match the given or inferred data
+        type. If set to `False`, values that do not match the data type are cast to
+        that data type or, if casting is not possible, set to null instead.
+    nan_to_null : bool, default False
         In case a numpy array is used to create this Series, indicate how to deal
         with np.nan values. (This parameter is a no-op on non-numpy data).
     dtype_if_empty : DataType, default Null
@@ -366,11 +378,6 @@ class Series:
         return series
 
     @classmethod
-    def _from_arrow(cls, name: str, values: pa.Array, *, rechunk: bool = True) -> Self:
-        """Construct a Series from an Arrow Array."""
-        return cls._from_pyseries(arrow_to_pyseries(name, values, rechunk=rechunk))
-
-    @classmethod
     def _import_from_c(cls, name: str, pointers: list[tuple[int, int]]) -> Self:
         """
         Construct a Series from Arrows C interface.
@@ -381,19 +388,6 @@ class Series:
         garbage collect the heap pointer, but not its contents.
         """
         return cls._from_pyseries(PySeries._import_from_c(name, pointers))
-
-    @classmethod
-    def _from_pandas(
-        cls,
-        name: str,
-        values: pd.Series[Any] | pd.Index[Any] | pd.DatetimeIndex,
-        *,
-        nan_to_null: bool = True,
-    ) -> Self:
-        """Construct a Series from a pandas Series or DatetimeIndex."""
-        return cls._from_pyseries(
-            pandas_to_pyseries(name, values, nan_to_null=nan_to_null)
-        )
 
     def _get_buffer_info(self) -> BufferInfo:
         """
@@ -613,8 +607,12 @@ class Series:
     def __bool__(self) -> NoReturn:
         msg = (
             "the truth value of a Series is ambiguous"
-            "\n\nHint: use '&' or '|' to chain Series boolean results together, not and/or."
-            " To check if a Series contains any values, use `is_empty()`."
+            "\n\n"
+            "Here are some things you might want to try:\n"
+            "- instead of `if s`, use `if not s.is_empty()`\n"
+            "- instead of `s1 and s2`, use `s1 & s2`\n"
+            "- instead of `s1 or s2`, use `s1 | s2`\n"
+            "- instead of `s in [y, z]`, use `s.is_in([y, z])`\n"
         )
         raise TypeError(msg)
 
@@ -741,8 +739,7 @@ class Series:
         return self._from_pyseries(f(other))
 
     @overload  # type: ignore[override]
-    def __eq__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def __eq__(self, other: Expr) -> Expr: ...  # type: ignore[overload-overlap]
 
     @overload
     def __eq__(self, other: Any) -> Series: ...
@@ -1170,9 +1167,6 @@ class Series:
         return self.pow(exponent)
 
     def __rpow__(self, other: Any) -> Series:
-        if self.dtype.is_temporal():
-            msg = "first cast to integer before raising datelike dtypes to a power"
-            raise TypeError(msg)
         return self.to_frame().select_seq(other ** F.col(self.name)).to_series()
 
     def __matmul__(self, other: Any) -> float | Series | None:
@@ -1960,17 +1954,14 @@ class Series:
         >>> s = pl.Series("foo", [1, 2, 3, 4])
         >>> s.pow(3)
         shape: (4,)
-        Series: 'foo' [f64]
+        Series: 'foo' [i64]
         [
-                1.0
-                8.0
-                27.0
-                64.0
+            1
+            8
+            27
+            64
         ]
         """
-        if self.dtype.is_temporal():
-            msg = "first cast to integer before raising datelike dtypes to a power"
-            raise TypeError(msg)
         if _check_for_numpy(exponent) and isinstance(exponent, np.ndarray):
             exponent = Series(exponent)
         return self.to_frame().select_seq(F.col(self.name).pow(exponent)).to_series()
@@ -2108,7 +2099,9 @@ class Series:
         """
         return self._s.quantile(quantile, interpolation)
 
-    def to_dummies(self, separator: str = "_") -> DataFrame:
+    def to_dummies(
+        self, *, separator: str = "_", drop_first: bool = False
+    ) -> DataFrame:
         """
         Get dummy/indicator variables.
 
@@ -2116,6 +2109,8 @@ class Series:
         ----------
         separator
             Separator/delimiter used when generating column names.
+        drop_first
+            Remove the first category from the variable being encoded.
 
         Examples
         --------
@@ -2131,8 +2126,20 @@ class Series:
         │ 0   ┆ 1   ┆ 0   │
         │ 0   ┆ 0   ┆ 1   │
         └─────┴─────┴─────┘
+
+        >>> s.to_dummies(drop_first=True)
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ a_2 ┆ a_3 │
+        │ --- ┆ --- │
+        │ u8  ┆ u8  │
+        ╞═════╪═════╡
+        │ 0   ┆ 0   │
+        │ 1   ┆ 0   │
+        │ 0   ┆ 1   │
+        └─────┴─────┘
         """
-        return wrap_df(self._s.to_dummies(separator))
+        return wrap_df(self._s.to_dummies(separator, drop_first))
 
     @overload
     def cut(
@@ -2547,16 +2554,16 @@ class Series:
 
     def rle(self) -> Series:
         """
-        Get the lengths and values of runs of identical values.
+        Compress the Series data using run-length encoding.
+
+        Run-length encoding (RLE) encodes data by storing each *run* of identical values
+        as a single value and its length.
 
         Returns
         -------
         Series
-            Series of data type :class:`Struct` with Fields "lengths" and "values".
-
-        See Also
-        --------
-        rle_id
+            Series of data type `Struct` with fields `lengths` of data type `Int32`
+            and `values` of the original data type.
 
         Examples
         --------
@@ -2581,19 +2588,22 @@ class Series:
         """
         Get a distinct integer ID for each run of identical values.
 
-        The ID increases by one each time the value of a column (which can be a
-        :class:`Struct`) changes.
-
-        This is especially useful when you want to define a new group for every time a
-        column's value changes, rather than for every distinct value of that column.
+        The ID starts at 0 and increases by one each time the value of the column
+        changes.
 
         Returns
         -------
         Series
+            Series of data type `UInt32`.
 
         See Also
         --------
         rle
+
+        Notes
+        -----
+        This functionality is especially useful for defining a new group for every time
+        a column's value changes, rather than for every distinct value of that column.
 
         Examples
         --------
@@ -2812,13 +2822,13 @@ class Series:
         >>> s = pl.Series("values", [1, 2, 3, 4, 5])
         >>> s.cumulative_eval(pl.element().first() - pl.element().last() ** 2)
         shape: (5,)
-        Series: 'values' [f64]
+        Series: 'values' [i64]
         [
-            0.0
-            -3.0
-            -8.0
-            -15.0
-            -24.0
+            0
+            -3
+            -8
+            -15
+            -24
         ]
         """
 
@@ -3447,6 +3457,11 @@ class Series:
         nulls_last
             Place null values last instead of first.
 
+        See Also
+        --------
+        Series.gather: Take values by index.
+        Series.rank : Get the rank of each row.
+
         Examples
         --------
         >>> s = pl.Series("a", [5, 3, 4, 1, 2])
@@ -3545,6 +3560,40 @@ class Series:
             If 'any', the index of the first suitable location found is given.
             If 'left', the index of the leftmost suitable location found is given.
             If 'right', return the rightmost suitable location found is given.
+
+        Examples
+        --------
+        >>> s = pl.Series("set", [1, 2, 3, 4, 4, 5, 6, 7])
+        >>> s.search_sorted(4)
+        4
+        >>> s.search_sorted(4, "left")
+        3
+        >>> s.search_sorted(4, "right")
+        5
+        >>> s.search_sorted([1, 4, 5])
+        shape: (3,)
+        Series: 'set' [u32]
+        [
+                0
+                4
+                5
+        ]
+        >>> s.search_sorted([1, 4, 5], "left")
+        shape: (3,)
+        Series: 'set' [u32]
+        [
+                0
+                3
+                5
+        ]
+        >>> s.search_sorted([1, 4, 5], "right")
+        shape: (3,)
+        Series: 'set' [u32]
+        [
+                1
+                5
+                6
+        ]
         """
         if isinstance(element, (int, float)):
             return F.select(F.lit(self).search_sorted(element, side)).item()
@@ -4190,6 +4239,11 @@ class Series:
         closed : {'both', 'left', 'right', 'none'}
             Define which sides of the interval are closed (inclusive).
 
+        Notes
+        -----
+        If the value of the `lower_bound` is greater than that of the `upper_bound`
+        then the result will be False, as no value can satisfy the condition.
+
         Examples
         --------
         >>> s = pl.Series("num", [1, 2, 3, 4, 5])
@@ -4699,6 +4753,10 @@ class Series:
             null
         ]
         """
+        if n < 0:
+            msg = f"`n` should be greater than or equal to 0, got {n}"
+            raise ValueError(msg)
+        # faster path
         if n == 0:
             return self._from_pyseries(self._s.clear())
         s = (
@@ -5243,7 +5301,7 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
-        >>> s.map_elements(lambda x: x + 10)  # doctest: +SKIP
+        >>> s.map_elements(lambda x: x + 10, return_dtype=pl.Int64)  # doctest: +SKIP
         shape: (3,)
         Series: 'a' [i64]
         [
@@ -6438,7 +6496,7 @@ class Series:
         >>> s.kurtosis(fisher=False)
         1.9477376373212048
         >>> s.kurtosis(fisher=False, bias=False)
-        2.104036180264273
+        2.1040361802642726
         """
         return self._s.kurtosis(fisher, bias)
 
@@ -6568,7 +6626,7 @@ class Series:
         old
             Value or sequence of values to replace.
             Also accepts a mapping of values to their replacement as syntactic sugar for
-            `replace(new=Series(mapping.keys()), old=Series(mapping.values()))`.
+            `replace(old=Series(mapping.keys()), new=Series(mapping.values()))`.
         new
             Value or sequence of values to replace by.
             Length must match the length of `old` or have length 1.

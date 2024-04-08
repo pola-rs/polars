@@ -59,8 +59,8 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             DSTOffset => map!(datetime::dst_offset),
             Round(every, offset) => map_as_slice!(datetime::round, &every, &offset),
             #[cfg(feature = "timezones")]
-            ReplaceTimeZone(tz) => {
-                map_as_slice!(dispatch::replace_time_zone, tz.as_deref())
+            ReplaceTimeZone(tz, non_existent) => {
+                map_as_slice!(dispatch::replace_time_zone, tz.as_deref(), non_existent)
             },
             Combine(tu) => map_as_slice!(temporal::combine, tu),
             DatetimeFunction {
@@ -154,9 +154,9 @@ pub(super) fn datetime(
                 NaiveDate::from_ymd_opt(y, m, d)
                     .and_then(|nd| nd.and_hms_micro_opt(h, mnt, s, us))
                     .map(|ndt| match time_unit {
-                        TimeUnit::Milliseconds => ndt.timestamp_millis(),
-                        TimeUnit::Microseconds => ndt.timestamp_micros(),
-                        TimeUnit::Nanoseconds => ndt.timestamp_nanos_opt().unwrap(),
+                        TimeUnit::Milliseconds => ndt.and_utc().timestamp_millis(),
+                        TimeUnit::Microseconds => ndt.and_utc().timestamp_micros(),
+                        TimeUnit::Nanoseconds => ndt.and_utc().timestamp_nanos_opt().unwrap(),
                     })
             } else {
                 None
@@ -168,7 +168,7 @@ pub(super) fn datetime(
         #[cfg(feature = "timezones")]
         Some(_) => {
             let mut ca = ca.into_datetime(*time_unit, None);
-            ca = replace_time_zone(&ca, time_zone, _ambiguous)?;
+            ca = replace_time_zone(&ca, time_zone, _ambiguous, NonExistent::Raise)?;
             ca
         },
         _ => {
@@ -194,15 +194,18 @@ fn apply_offsets_to_datetime(
 ) -> PolarsResult<Int64Chunked> {
     match (datetime.len(), offsets.len()) {
         (1, _) => match datetime.0.get(0) {
-            Some(dt) => offsets.try_apply_values_generic(|offset| {
+            Some(dt) => offsets.try_apply_nonnull_values_generic(|offset| {
                 offset_fn(&Duration::parse(offset), dt, time_zone)
             }),
             _ => Ok(Int64Chunked::full_null(datetime.0.name(), offsets.len())),
         },
         (_, 1) => match offsets.get(0) {
-            Some(offset) => datetime
-                .0
-                .try_apply(|v| offset_fn(&Duration::parse(offset), v, time_zone)),
+            Some(offset) => {
+                let offset = &Duration::parse(offset);
+                datetime
+                    .0
+                    .try_apply_nonnull_values_generic(|v| offset_fn(offset, v, time_zone))
+            },
             _ => Ok(datetime.0.apply(|_| None)),
         },
         _ => try_binary_elementwise(datetime, offsets, |timestamp_opt, offset_opt| {
@@ -314,6 +317,7 @@ pub(super) fn combine(s: &[Series], tu: TimeUnit) -> PolarsResult<Series> {
             result_naive.datetime().unwrap(),
             Some(tz),
             &StringChunked::from_iter(std::iter::once("raise")),
+            NonExistent::Raise,
         )?
         .into()),
         _ => Ok(result_naive),

@@ -425,7 +425,7 @@ impl LazyFrame {
         let mut existing_vec: Vec<SmartString> = Vec::with_capacity(cap);
         let mut new_vec: Vec<SmartString> = Vec::with_capacity(cap);
 
-        // todo! should this error if `existing` and `new` have different lengths?
+        // TODO! should this error if `existing` and `new` have different lengths?
         // Currently, the longer of the two is truncated.
         for (existing, new) in iter.zip(new) {
             let existing = existing.as_ref();
@@ -593,9 +593,9 @@ impl LazyFrame {
             lp_arena,
             expr_arena,
             scratch,
-            Some(&|node, expr_arena| {
+            Some(&|expr, expr_arena| {
                 let phys_expr = create_physical_expr(
-                    node,
+                    expr,
                     Context::Default,
                     expr_arena,
                     None,
@@ -633,37 +633,11 @@ impl LazyFrame {
         mut self,
         check_sink: bool,
     ) -> PolarsResult<(ExecutionState, Box<dyn Executor>, bool)> {
-        let file_caching = self.opt_state.file_caching;
         let mut expr_arena = Arena::with_capacity(256);
         let mut lp_arena = Arena::with_capacity(128);
         let mut scratch = vec![];
         let lp_top =
             self.optimize_with_scratch(&mut lp_arena, &mut expr_arena, &mut scratch, false)?;
-
-        let finger_prints = if file_caching {
-            #[cfg(any(
-                feature = "ipc",
-                feature = "parquet",
-                feature = "csv",
-                feature = "json"
-            ))]
-            {
-                let mut fps = Vec::with_capacity(8);
-                collect_fingerprints(lp_top, &mut fps, &lp_arena, &expr_arena);
-                Some(fps)
-            }
-            #[cfg(not(any(
-                feature = "ipc",
-                feature = "parquet",
-                feature = "csv",
-                feature = "json"
-            )))]
-            {
-                None
-            }
-        } else {
-            None
-        };
 
         // sink should be replaced
         let no_file_sink = if check_sink {
@@ -673,7 +647,7 @@ impl LazyFrame {
         };
         let physical_plan = create_physical_plan(lp_top, &mut lp_arena, &mut expr_arena)?;
 
-        let state = ExecutionState::with_finger_prints(finger_prints);
+        let state = ExecutionState::new();
         Ok((state, physical_plan, no_file_sink))
     }
 
@@ -696,13 +670,7 @@ impl LazyFrame {
     /// ```
     pub fn collect(self) -> PolarsResult<DataFrame> {
         let (mut state, mut physical_plan, _) = self.prepare_collect(false)?;
-        let out = physical_plan.execute(&mut state);
-        #[cfg(debug_assertions)]
-        {
-            #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv"))]
-            state.file_cache.assert_empty();
-        }
-        out
+        physical_plan.execute(&mut state)
     }
 
     /// Profile a LazyFrame.
@@ -783,7 +751,7 @@ impl LazyFrame {
     ) -> PolarsResult<()> {
         self.opt_state.streaming = true;
         self.logical_plan = LogicalPlan::Sink {
-            input: Box::new(self.logical_plan),
+            input: Arc::new(self.logical_plan),
             payload: SinkType::Cloud {
                 uri: Arc::new(uri),
                 cloud_options,
@@ -838,7 +806,7 @@ impl LazyFrame {
     fn sink(mut self, payload: SinkType, msg_alternative: &str) -> Result<(), PolarsError> {
         self.opt_state.streaming = true;
         self.logical_plan = LogicalPlan::Sink {
-            input: Box::new(self.logical_plan),
+            input: Arc::new(self.logical_plan),
             payload,
         };
         let (mut state, mut physical_plan, is_streaming) = self.prepare_collect(true)?;
@@ -980,16 +948,16 @@ impl LazyFrame {
 
     /// Create rolling groups based on a time column.
     ///
-    /// Also works for index values of type Int32 or Int64.
+    /// Also works for index values of type UInt32, UInt64, Int32, or Int64.
     ///
     /// Different from a [`group_by_dynamic`][`Self::group_by_dynamic`], the windows are now determined by the
     /// individual values and are not of constant intervals. For constant intervals use
     /// *group_by_dynamic*
     #[cfg(feature = "dynamic_group_by")]
-    pub fn group_by_rolling<E: AsRef<[Expr]>>(
+    pub fn rolling<E: AsRef<[Expr]>>(
         self,
         index_column: Expr,
-        by: E,
+        group_by: E,
         mut options: RollingGroupOptions,
     ) -> LazyGroupBy {
         if let Expr::Column(name) = index_column {
@@ -998,9 +966,9 @@ impl LazyFrame {
             let output_field = index_column
                 .to_field(&self.schema().unwrap(), Context::Default)
                 .unwrap();
-            return self.with_column(index_column).group_by_rolling(
+            return self.with_column(index_column).rolling(
                 Expr::Column(Arc::from(output_field.name().as_str())),
-                by,
+                group_by,
                 options,
             );
         }
@@ -1008,7 +976,7 @@ impl LazyFrame {
         LazyGroupBy {
             logical_plan: self.logical_plan,
             opt_state,
-            keys: by.as_ref().to_vec(),
+            keys: group_by.as_ref().to_vec(),
             maintain_order: true,
             dynamic_options: None,
             rolling_options: Some(options),
@@ -1028,13 +996,13 @@ impl LazyFrame {
     /// - period: length of the window
     /// - offset: offset of the window
     ///
-    /// The `by` argument should be empty `[]` if you don't want to combine this
+    /// The `group_by` argument should be empty `[]` if you don't want to combine this
     /// with a ordinary group_by on these keys.
     #[cfg(feature = "dynamic_group_by")]
     pub fn group_by_dynamic<E: AsRef<[Expr]>>(
         self,
         index_column: Expr,
-        by: E,
+        group_by: E,
         mut options: DynamicGroupOptions,
     ) -> LazyGroupBy {
         if let Expr::Column(name) = index_column {
@@ -1045,7 +1013,7 @@ impl LazyFrame {
                 .unwrap();
             return self.with_column(index_column).group_by_dynamic(
                 Expr::Column(Arc::from(output_field.name().as_str())),
-                by,
+                group_by,
                 options,
             );
         }
@@ -1053,7 +1021,7 @@ impl LazyFrame {
         LazyGroupBy {
             logical_plan: self.logical_plan,
             opt_state,
-            keys: by.as_ref().to_vec(),
+            keys: group_by.as_ref().to_vec(),
             maintain_order: true,
             dynamic_options: Some(options),
             rolling_options: None,
@@ -1884,7 +1852,7 @@ impl LazyGroupBy {
         let options = GroupbyOptions { slice: None };
 
         let lp = LogicalPlan::Aggregate {
-            input: Box::new(self.logical_plan),
+            input: Arc::new(self.logical_plan),
             keys: Arc::new(self.keys),
             aggs: vec![],
             schema,
@@ -1948,7 +1916,7 @@ impl JoinBuilder {
     /// The passed expressions must be valid in both `LazyFrame`s in the join.
     pub fn on<E: AsRef<[Expr]>>(mut self, on: E) -> Self {
         let on = on.as_ref().to_vec();
-        self.left_on = on.clone();
+        self.left_on.clone_from(&on);
         self.right_on = on;
         self
     }

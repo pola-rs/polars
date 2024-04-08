@@ -185,6 +185,14 @@ where
                 };
                 num_groups_proxy(ca, multithreaded, sorted)
             },
+            #[cfg(feature = "dtype-decimal")]
+            DataType::Decimal(_, _) => {
+                // convince the compiler that we are this type.
+                let ca: &Int128Chunked = unsafe {
+                    &*(self as *const ChunkedArray<T> as *const ChunkedArray<Int128Type>)
+                };
+                num_groups_proxy(ca, multithreaded, sorted)
+            },
             #[cfg(all(feature = "performant", feature = "dtype-i8", feature = "dtype-u8"))]
             DataType::Int8 => {
                 // convince the compiler that we are this type.
@@ -291,7 +299,6 @@ impl IntoGroupsProxy for BinaryChunked {
                     })
                     .collect::<Vec<_>>()
             });
-            let byte_hashes = byte_hashes.iter().collect::<Vec<_>>();
             group_by_threaded_slice(byte_hashes, n_partitions, sorted)
         } else {
             let byte_hashes = fill_bytes_hashes(self, null_h, hb.clone());

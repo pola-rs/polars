@@ -157,17 +157,17 @@ impl Series {
     }
 
     pub fn clear(&self) -> Series {
-        // Only the inner of objects know their type, so use this hack.
-        #[cfg(feature = "object")]
-        if matches!(self.dtype(), DataType::Object(_, _)) {
-            return if self.is_empty() {
-                self.clone()
-            } else {
-                let av = self.get(0).unwrap();
-                Series::new(self.name(), [av]).slice(0, 0)
-            };
+        if self.is_empty() {
+            self.clone()
+        } else {
+            match self.dtype() {
+                #[cfg(feature = "object")]
+                DataType::Object(_, _) => self
+                    .take(&ChunkedArray::<IdxType>::new_vec("", vec![]))
+                    .unwrap(),
+                dt => Series::new_empty(self.name(), dt),
+            }
         }
-        Series::new_empty(self.name(), self.dtype())
     }
 
     #[doc(hidden)]
@@ -285,7 +285,7 @@ impl Series {
         Ok(self)
     }
 
-    pub fn sort(&self, descending: bool, nulls_last: bool) -> Self {
+    pub fn sort(&self, descending: bool, nulls_last: bool) -> PolarsResult<Self> {
         self.sort_with(SortOptions {
             descending,
             nulls_last,
@@ -448,7 +448,10 @@ impl Series {
             Date => Cow::Owned(self.cast(&Int32).unwrap()),
             Datetime(_, _) | Duration(_) | Time => Cow::Owned(self.cast(&Int64).unwrap()),
             #[cfg(feature = "dtype-categorical")]
-            Categorical(_, _) | Enum(_, _) => Cow::Owned(self.cast(&UInt32).unwrap()),
+            Categorical(_, _) | Enum(_, _) => {
+                let ca = self.categorical().unwrap();
+                Cow::Owned(ca.physical().clone().into_series())
+            },
             List(inner) => Cow::Owned(self.cast(&List(Box::new(inner.to_physical()))).unwrap()),
             #[cfg(feature = "dtype-struct")]
             Struct(_) => {
@@ -596,7 +599,7 @@ impl Series {
     ///
     /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
     /// first cast to `Int64` to prevent overflow issues.
-    pub fn product(&self) -> Series {
+    pub fn product(&self) -> PolarsResult<Series> {
         #[cfg(feature = "product")]
         {
             use DataType::*;
@@ -606,11 +609,13 @@ impl Series {
                     let s = self.cast(&Int64).unwrap();
                     s.product()
                 },
-                Int64 => self.i64().unwrap().prod_as_series(),
-                UInt64 => self.u64().unwrap().prod_as_series(),
-                Float32 => self.f32().unwrap().prod_as_series(),
-                Float64 => self.f64().unwrap().prod_as_series(),
-                dt => panic!("product not supported for dtype: {dt:?}"),
+                Int64 => Ok(self.i64().unwrap().prod_as_series()),
+                UInt64 => Ok(self.u64().unwrap().prod_as_series()),
+                Float32 => Ok(self.f32().unwrap().prod_as_series()),
+                Float64 => Ok(self.f64().unwrap().prod_as_series()),
+                dt => {
+                    polars_bail!(InvalidOperation: "`product` operation not supported for dtype `{dt}`")
+                },
             }
         }
         #[cfg(not(feature = "product"))]
@@ -875,9 +880,17 @@ where
     T: 'static + PolarsDataType,
 {
     fn as_ref(&self) -> &ChunkedArray<T> {
+        #[cfg(feature = "dtype-array")]
+        let is_array = matches!(T::get_dtype(), DataType::Array(_, _))
+            && matches!(self.dtype(), DataType::Array(_, _));
+        #[cfg(not(feature = "dtype-array"))]
+        let is_array = false;
+
         if &T::get_dtype() == self.dtype() ||
             // Needed because we want to get ref of List no matter what the inner type is.
             (matches!(T::get_dtype(), DataType::List(_)) && matches!(self.dtype(), DataType::List(_)))
+            // Similarly for arrays.
+            || is_array
         {
             unsafe { &*(self as *const dyn SeriesTrait as *const ChunkedArray<T>) }
         } else {

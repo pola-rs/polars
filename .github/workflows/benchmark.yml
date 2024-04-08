@@ -23,6 +23,7 @@ concurrency:
 env:
   SCCACHE_GHA_ENABLED: 'true'
   RUSTC_WRAPPER: sccache
+  RUST_BACKTRACE: 1
 
 jobs:
   main:
@@ -34,6 +35,9 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+
+      - name: Set up Graphviz
+        uses: ts-graphviz/setup-graphviz@v2
 
       - name: Create virtual environment
         run: |
@@ -99,4 +103,8 @@ jobs:
 
       - name: Run various benchmark tests
         working-directory: py-polars
-        run: pytest -m benchmark --durations 0 -v
+        run: pytest -m release --durations 0 -v
+
+      - name: Run non-benchmark tests
+        working-directory: py-polars
+        run: pytest -m 'not release and not debug' -n auto --dist loadgroup

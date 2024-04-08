@@ -48,8 +48,7 @@ where
     let arr = ca.downcast_iter().next().unwrap();
     // "5i" is a window size of 5, e.g. fixed
     let arr = if options.window_size.parsed_int {
-        let options: RollingOptionsFixedWindow = options.into();
-        check_input(options.window_size, options.min_periods)?;
+        let options: RollingOptionsFixedWindow = options.try_into()?;
 
         Ok(match ca.null_count() {
             0 => rolling_agg_fn(
@@ -71,7 +70,7 @@ where
         })
     } else {
         if arr.null_count() > 0 {
-            panic!("'rolling by' not yet supported for series with null values, consider using 'group_by_rolling'")
+            polars_bail!(InvalidOperation: "'Expr.rolling_*(..., by=...)' not yet supported for series with null values, consider using 'DataFrame.rolling' or 'Expr.rolling'")
         }
         let values = arr.values().as_slice();
         let duration = options.window_size;
@@ -80,7 +79,7 @@ where
         let by = options.by.unwrap();
         let closed_window = options.closed_window.expect("closed window  must be set");
         let func = rolling_agg_fn_dynamic.expect(
-            "'rolling by' not yet supported for this expression, consider using 'group_by_rolling'",
+            "'Expr.rolling_*(..., by=...)' not yet supported for this expression, consider using 'DataFrame.rolling' or 'Expr.rolling'",
         );
 
         func(

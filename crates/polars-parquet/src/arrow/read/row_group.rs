@@ -1,8 +1,8 @@
 use std::io::{Read, Seek};
 
 use arrow::array::Array;
-use arrow::chunk::Chunk;
 use arrow::datatypes::Field;
+use arrow::record_batch::RecordBatch;
 use polars_error::PolarsResult;
 
 use super::{ArrayIter, RowGroupMetaData};
@@ -11,11 +11,11 @@ use crate::parquet::indexes::FilteredPage;
 use crate::parquet::metadata::ColumnChunkMetaData;
 use crate::parquet::read::{BasicDecompressor, IndexedPageReader, PageMetaData, PageReader};
 
-/// An [`Iterator`] of [`Chunk`] that (dynamically) adapts a vector of iterators of [`Array`] into
-/// an iterator of [`Chunk`].
+/// An [`Iterator`] of [`RecordBatch`] that (dynamically) adapts a vector of iterators of [`Array`] into
+/// an iterator of [`RecordBatch`].
 ///
 /// This struct tracks advances each of the iterators individually and combines the
-/// result in a single [`Chunk`].
+/// result in a single [`RecordBatch`].
 ///
 /// # Implementation
 /// This iterator is single-threaded and advancing it is CPU-bounded.
@@ -50,7 +50,7 @@ impl RowGroupDeserializer {
 }
 
 impl Iterator for RowGroupDeserializer {
-    type Item = PolarsResult<Chunk<Box<dyn Array>>>;
+    type Item = PolarsResult<RecordBatch<Box<dyn Array>>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.remaining_rows == 0 {
@@ -61,7 +61,7 @@ impl Iterator for RowGroupDeserializer {
             .iter_mut()
             .map(|iter| iter.next().unwrap())
             .collect::<PolarsResult<Vec<_>>>()
-            .and_then(Chunk::try_new);
+            .and_then(RecordBatch::try_new);
         self.remaining_rows = self.remaining_rows.saturating_sub(
             chunk
                 .as_ref()

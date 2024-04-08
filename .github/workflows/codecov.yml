@@ -34,9 +34,6 @@ jobs:
       CARGO_LLVM_COV: 1
       CARGO_LLVM_COV_SHOW_ENV: 1
       CARGO_LLVM_COV_TARGET_DIR: '/Users/runner/work/polars/polars/target'
-      # Workaround for issue compiling libz-ng-sys crate on macOS (resource temporarily unavailable)
-      # See: https://github.com/pola-rs/polars/pull/14715
-      CMAKE_BUILD_PARALLEL_LEVEL: 10
 
     steps:
       - uses: actions/checkout@v4
@@ -59,7 +56,8 @@ jobs:
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
 
-      - uses: Swatinem/rust-cache@v2
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref_name == 'main' }}
 
@@ -88,13 +86,13 @@ jobs:
         run: maturin develop
 
       - name: Run Python tests
-        run: pytest --cov -n auto --dist loadgroup -m "not benchmark and not docs" --cov-report xml:main.xml
+        run: pytest --cov -n auto --dist loadgroup -m "not release and not docs" --cov-report xml:main.xml
         continue-on-error: true
 
       - name: Run Python tests - async reader
         env:
           POLARS_FORCE_ASYNC: 1
-        run: pytest --cov -m "not benchmark and not docs" tests/unit/io/ --cov-report xml:async.xml
+        run: pytest --cov -m "not release and not docs" tests/unit/io/ --cov-report xml:async.xml
         continue-on-error: true
 
       - name: Report coverage

@@ -12,13 +12,13 @@ use super::common::{apply_projection, prepare_projection, read_dictionary, read_
 use super::file::{deserialize_footer, get_record_batch};
 use super::{Dictionaries, FileMetadata, OutOfSpecKind};
 use crate::array::*;
-use crate::chunk::Chunk;
 use crate::datatypes::{ArrowSchema, Field};
 use crate::io::ipc::{IpcSchema, ARROW_MAGIC_V2, CONTINUATION_MARKER};
+use crate::record_batch::RecordBatch;
 
 /// Async reader for Arrow IPC files
 pub struct FileStream<'a> {
-    stream: BoxStream<'a, PolarsResult<Chunk<Box<dyn Array>>>>,
+    stream: BoxStream<'a, PolarsResult<RecordBatch<Box<dyn Array>>>>,
     schema: Option<ArrowSchema>,
     metadata: FileMetadata,
 }
@@ -72,7 +72,7 @@ impl<'a> FileStream<'a> {
         metadata: FileMetadata,
         projection: Option<(Vec<usize>, AHashMap<usize, usize>)>,
         limit: Option<usize>,
-    ) -> BoxStream<'a, PolarsResult<Chunk<Box<dyn Array>>>>
+    ) -> BoxStream<'a, PolarsResult<RecordBatch<Box<dyn Array>>>>
     where
         R: AsyncRead + AsyncSeek + Unpin + Send + 'a,
     {
@@ -113,7 +113,7 @@ impl<'a> FileStream<'a> {
 }
 
 impl<'a> Stream for FileStream<'a> {
-    type Item = PolarsResult<Chunk<Box<dyn Array>>>;
+    type Item = PolarsResult<RecordBatch<Box<dyn Array>>>;
 
     fn poll_next(
         self: std::pin::Pin<&mut Self>,
@@ -170,7 +170,7 @@ async fn read_batch<R>(
     meta_buffer: &mut Vec<u8>,
     block_buffer: &mut Vec<u8>,
     scratch: &mut Vec<u8>,
-) -> PolarsResult<Chunk<Box<dyn Array>>>
+) -> PolarsResult<RecordBatch<Box<dyn Array>>>
 where
     R: AsyncRead + AsyncSeek + Unpin,
 {
