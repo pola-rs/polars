@@ -1420,14 +1420,12 @@ def test_dot_product() -> None:
     assert result == 32.0
 
     with pytest.raises(
-        pl.InvalidOperationError,
-        match="`dot` operation not supported for dtype `bool`"
+        pl.InvalidOperationError, match="`dot` operation not supported for dtype `bool`"
     ):
         pl.Series([True, False, False, True]) @ pl.Series([4, 5, 6, 7])
 
     with pytest.raises(
-        pl.InvalidOperationError,
-        match="`dot` operation not supported for dtype `str`"
+        pl.InvalidOperationError, match="`dot` operation not supported for dtype `str`"
     ):
         pl.Series([1, 2, 3, 4]) @ pl.Series(["True", "False", "False", "True"])
 
