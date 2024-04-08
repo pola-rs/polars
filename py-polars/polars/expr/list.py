@@ -505,7 +505,12 @@ class ExprListNameSpace:
         other_list.insert(0, wrap_expr(self._pyexpr))
         return F.concat_list(other_list)
 
-    def get(self, index: int | Expr | str) -> Expr:
+    def get(
+        self,
+        index: int | Expr | str,
+        *,
+        null_on_oob: bool = True,
+    ) -> Expr:
         """
         Get the value by index in the sublists.
 
@@ -517,6 +522,10 @@ class ExprListNameSpace:
         ----------
         index
             Index to return per sublist
+        null_on_oob
+            Behavior if an index is out of bounds:
+            True -> set as null
+            False -> raise an error
 
         Examples
         --------
@@ -534,7 +543,7 @@ class ExprListNameSpace:
         └───────────┴──────┘
         """
         index = parse_as_expression(index)
-        return wrap_expr(self._pyexpr.list_get(index))
+        return wrap_expr(self._pyexpr.list_get(index, null_on_oob))
 
     def gather(
         self,
@@ -1376,7 +1385,7 @@ class ExprListNameSpace:
         Return the number of elements in each list.
 
         .. deprecated:: 0.19.8
-            This method has been renamed to :func:`len`.
+            This method has been renamed to :meth:`.len`.
         """
         return self.len()
 

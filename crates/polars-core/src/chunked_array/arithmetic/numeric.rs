@@ -56,6 +56,7 @@ pub trait ArithmeticChunked {
     type Out;
     type TrueDivOut;
 
+    fn wrapping_abs(self) -> Self::Out;
     fn wrapping_neg(self) -> Self::Out;
     fn wrapping_add(self, rhs: Self) -> Self::Out;
     fn wrapping_sub(self, rhs: Self) -> Self::Out;
@@ -90,6 +91,10 @@ impl<T: PolarsNumericType> ArithmeticChunked for ChunkedArray<T> {
     type Scalar = T::Native;
     type Out = ChunkedArray<T>;
     type TrueDivOut = ChunkedArray<<T::Native as NumericNative>::TrueDivPolarsType>;
+
+    fn wrapping_abs(self) -> Self::Out {
+        unary_kernel_owned(self, ArithmeticKernel::wrapping_abs)
+    }
 
     fn wrapping_neg(self) -> Self::Out {
         unary_kernel_owned(self, ArithmeticKernel::wrapping_neg)
@@ -244,6 +249,10 @@ impl<T: PolarsNumericType> ArithmeticChunked for &ChunkedArray<T> {
     type Scalar = T::Native;
     type Out = ChunkedArray<T>;
     type TrueDivOut = ChunkedArray<<T::Native as NumericNative>::TrueDivPolarsType>;
+
+    fn wrapping_abs(self) -> Self::Out {
+        unary_kernel(self, |a| ArithmeticKernel::wrapping_abs(a.clone()))
+    }
 
     fn wrapping_neg(self) -> Self::Out {
         unary_kernel(self, |a| ArithmeticKernel::wrapping_neg(a.clone()))

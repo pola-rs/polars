@@ -27,7 +27,7 @@ use super::*;
 pub fn col(name: &str) -> Expr {
     match name {
         "*" => Expr::Wildcard,
-        _ => Expr::Column(Arc::from(name)),
+        _ => Expr::Column(ColumnName::from(name)),
     }
 }
 

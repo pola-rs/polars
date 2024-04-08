@@ -348,11 +348,17 @@ impl OptimizationRule for TypeCoercionRule {
                 options,
             } => {
                 let input_schema = get_schema(lp_arena, lp_node);
-                let other_node = input[1];
-                let (_, type_left) =
-                    unpack!(get_aexpr_and_type(expr_arena, input[0], &input_schema));
-                let (_, type_other) =
-                    unpack!(get_aexpr_and_type(expr_arena, other_node, &input_schema));
+                let other_e = &input[1];
+                let (_, type_left) = unpack!(get_aexpr_and_type(
+                    expr_arena,
+                    input[0].node(),
+                    &input_schema
+                ));
+                let (_, type_other) = unpack!(get_aexpr_and_type(
+                    expr_arena,
+                    other_e.node(),
+                    &input_schema
+                ));
 
                 unpack!(early_escape(&type_left, &type_other));
 
@@ -361,7 +367,7 @@ impl OptimizationRule for TypeCoercionRule {
                     (a, b) if a == b => return Ok(None),
                     // all-null can represent anything (and/or empty list), so cast to target dtype
                     (_, DataType::Null) => AExpr::Cast {
-                        expr: other_node,
+                        expr: other_e.node(),
                         data_type: type_left,
                         strict: false,
                     },
@@ -428,7 +434,7 @@ impl OptimizationRule for TypeCoercionRule {
                 };
                 let mut input = input.clone();
                 let other_input = expr_arena.add(casted_expr);
-                input[1] = other_input;
+                input[1].set_node(other_input);
 
                 Some(AExpr::Function {
                     function: FunctionExpr::Boolean(BooleanFunction::IsIn),
@@ -445,8 +451,8 @@ impl OptimizationRule for TypeCoercionRule {
                 let mut input = input.clone();
 
                 let input_schema = get_schema(lp_arena, lp_node);
-                let left_node = input[0];
-                let fill_value_node = input[2];
+                let left_node = input[0].node();
+                let fill_value_node = input[2].node();
                 let (left, type_left) =
                     unpack!(get_aexpr_and_type(expr_arena, left_node, &input_schema));
                 let (fill_value, type_fill_value) = unpack!(get_aexpr_and_type(
@@ -481,8 +487,8 @@ impl OptimizationRule for TypeCoercionRule {
                     fill_value_node
                 };
 
-                input[0] = new_node_left;
-                input[2] = new_node_fill_value;
+                input[0].set_node(new_node_left);
+                input[2].set_node(new_node_fill_value);
 
                 Some(AExpr::Function {
                     function: FunctionExpr::ShiftAndFill,
@@ -498,9 +504,12 @@ impl OptimizationRule for TypeCoercionRule {
                 options,
             } => {
                 let input_schema = get_schema(lp_arena, lp_node);
-                let other_node = input[1];
-                let (left, type_left) =
-                    unpack!(get_aexpr_and_type(expr_arena, input[0], &input_schema));
+                let other_node = input[1].node();
+                let (left, type_left) = unpack!(get_aexpr_and_type(
+                    expr_arena,
+                    input[0].node(),
+                    &input_schema
+                ));
                 let (fill_value, type_fill_value) =
                     unpack!(get_aexpr_and_type(expr_arena, other_node, &input_schema));
 
@@ -529,16 +538,16 @@ impl OptimizationRule for TypeCoercionRule {
                 let input = input.clone();
 
                 let input_schema = get_schema(lp_arena, lp_node);
-                let self_node = input[0];
+                let mut self_e = input[0].clone();
                 let (self_ae, type_self) =
-                    unpack!(get_aexpr_and_type(expr_arena, self_node, &input_schema));
+                    unpack!(get_aexpr_and_type(expr_arena, self_e.node(), &input_schema));
 
                 // TODO remove: false positive
                 #[allow(clippy::redundant_clone)]
                 let mut super_type = type_self.clone();
                 for other in &input[1..] {
                     let (other, type_other) =
-                        unpack!(get_aexpr_and_type(expr_arena, *other, &input_schema));
+                        unpack!(get_aexpr_and_type(expr_arena, other.node(), &input_schema));
 
                     // early return until Unknown is set
                     if matches!(type_other, DataType::Unknown) {
@@ -559,35 +568,35 @@ impl OptimizationRule for TypeCoercionRule {
                 // this can prevent an expensive flattening and subsequent aggregation
                 // in a group_by context. To be able to cast the groups need to be
                 // flattened
-                let new_node_self = if type_self != super_type {
-                    expr_arena.add(AExpr::Cast {
-                        expr: self_node,
+                if type_self != super_type {
+                    let n = expr_arena.add(AExpr::Cast {
+                        expr: self_e.node(),
                         data_type: super_type.clone(),
                         strict: false,
-                    })
-                } else {
-                    self_node
+                    });
+                    self_e.set_node(n);
                 };
+
                 let mut new_nodes = Vec::with_capacity(input.len());
-                new_nodes.push(new_node_self);
+                new_nodes.push(self_e);
 
                 for other_node in &input[1..] {
                     let type_other =
-                        match get_aexpr_and_type(expr_arena, *other_node, &input_schema) {
+                        match get_aexpr_and_type(expr_arena, other_node.node(), &input_schema) {
                             Some((_, type_other)) => type_other,
                             None => return Ok(None),
                         };
-                    let new_node_other = if type_other != super_type {
-                        expr_arena.add(AExpr::Cast {
-                            expr: *other_node,
+                    let mut other_node = other_node.clone();
+                    if type_other != super_type {
+                        let n = expr_arena.add(AExpr::Cast {
+                            expr: other_node.node(),
                             data_type: super_type.clone(),
                             strict: false,
-                        })
-                    } else {
-                        *other_node
-                    };
+                        });
+                        other_node.set_node(n);
+                    }
 
-                    new_nodes.push(new_node_other)
+                    new_nodes.push(other_node)
                 }
                 // ensure we don't go through this on next iteration
                 options.cast_to_supertypes = false;

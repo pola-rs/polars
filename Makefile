@@ -83,7 +83,7 @@ build-release-native: .venv  ## Same as build-release, except with native CPU op
 
 .PHONY: check
 check:  ## Run cargo check with all features
-	cargo clippy --workspace --all-targets --all-features
+	cargo check --workspace --all-targets --all-features
 
 .PHONY: clippy
 clippy:  ## Run clippy with all features

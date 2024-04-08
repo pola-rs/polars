@@ -670,7 +670,8 @@ impl BatchedParquetReader {
                     let projection = self.projection.clone();
                     let use_statistics = self.use_statistics;
                     let hive_partition_columns = self.hive_partition_columns.clone();
-                    POOL.spawn(move || {
+
+                    let f = move || {
                         let dfs = rg_to_dfs(
                             &store,
                             &mut rows_read,
@@ -687,8 +688,20 @@ impl BatchedParquetReader {
                             hive_partition_columns.as_deref(),
                         );
                         tx.send((dfs, rows_read, limit)).unwrap();
-                    });
+                    };
+
+                    // Spawn the task and wait on it asynchronously.
+                    if POOL.current_thread_index().is_some() {
+                        // We are a rayon thread, so we can't use POOL.spawn as it would mean we spawn a task and block until
+                        // another rayon thread executes it - we would deadlock if all rayon threads did this.
+                        // Safety: The tokio runtime flavor is multi-threaded.
+                        tokio::task::block_in_place(f);
+                    } else {
+                        POOL.spawn(f);
+                    };
+
                     let (dfs, rows_read, limit) = rx.await.unwrap();
+
                     self.rows_read = rows_read;
                     self.limit = limit;
                     dfs

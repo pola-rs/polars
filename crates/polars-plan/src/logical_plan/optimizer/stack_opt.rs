@@ -50,10 +50,10 @@ impl StackOptimizer {
                 // that we first do constant folding on operands
                 // before we decide that multiple binary expression
                 // can be replaced with a fused operator
-                while let Some(expr_node) = scratch.pop() {
-                    exprs.push(expr_node);
+                while let Some(expr_ir) = scratch.pop() {
+                    exprs.push(expr_ir.node());
                     // traverse all subexpressions and add to the stack
-                    let expr = unsafe { expr_arena.get_unchecked(expr_node) };
+                    let expr = unsafe { expr_arena.get_unchecked(expr_ir.node()) };
                     expr.nodes(&mut exprs);
                 }
 

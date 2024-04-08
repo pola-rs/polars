@@ -41,8 +41,6 @@ from polars._utils.parse_expr_input import (
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
     _in_notebook,
-    _prepare_row_index_args,
-    _process_null_values,
     is_bool_sequence,
     is_sequence,
     normalize_filepath,
@@ -79,10 +77,7 @@ from polars.datatypes import (
     py_type_to_dtype,
 )
 from polars.dependencies import subprocess
-from polars.io._utils import _is_local_file, _is_supported_cloud
 from polars.io.csv._utils import _check_arg_is_1byte
-from polars.io.ipc.anonymous_scan import _scan_ipc_fsspec
-from polars.io.parquet.anonymous_scan import _scan_parquet_fsspec
 from polars.lazyframe.group_by import LazyGroupBy
 from polars.lazyframe.in_process import InProcessQuery
 from polars.selectors import _expand_selectors, by_dtype, expand_selector
@@ -104,7 +99,6 @@ if TYPE_CHECKING:
         AsofJoinStrategy,
         ClosedInterval,
         ColumnNameOrSelector,
-        CsvEncoding,
         CsvQuoteStyle,
         FillNullStrategy,
         FrameInitTypes,
@@ -114,7 +108,6 @@ if TYPE_CHECKING:
         JoinValidation,
         Label,
         Orientation,
-        ParallelStrategy,
         PolarsDataType,
         RollingInterpolationMethod,
         SchemaDefinition,
@@ -332,259 +325,6 @@ class LazyFrame:
     def __setstate__(self, state: bytes) -> None:
         self._ldf = LazyFrame()._ldf  # Initialize with a dummy
         self._ldf.__setstate__(state)
-
-    @classmethod
-    def _scan_csv(
-        cls,
-        source: str | list[str] | list[Path],
-        *,
-        has_header: bool = True,
-        separator: str = ",",
-        comment_prefix: str | None = None,
-        quote_char: str | None = '"',
-        skip_rows: int = 0,
-        dtypes: SchemaDict | None = None,
-        schema: SchemaDict | None = None,
-        null_values: str | Sequence[str] | dict[str, str] | None = None,
-        missing_utf8_is_empty_string: bool = False,
-        ignore_errors: bool = False,
-        cache: bool = True,
-        with_column_names: Callable[[list[str]], list[str]] | None = None,
-        infer_schema_length: int | None = N_INFER_DEFAULT,
-        n_rows: int | None = None,
-        encoding: CsvEncoding = "utf8",
-        low_memory: bool = False,
-        rechunk: bool = True,
-        skip_rows_after_header: int = 0,
-        row_index_name: str | None = None,
-        row_index_offset: int = 0,
-        try_parse_dates: bool = False,
-        eol_char: str = "\n",
-        raise_if_empty: bool = True,
-        truncate_ragged_lines: bool = True,
-    ) -> Self:
-        """
-        Lazily read from a CSV file or multiple files via glob patterns.
-
-        Use `pl.scan_csv` to dispatch to this method.
-
-        See Also
-        --------
-        polars.io.scan_csv
-        """
-        dtype_list: list[tuple[str, PolarsDataType]] | None = None
-        if dtypes is not None:
-            dtype_list = []
-            for k, v in dtypes.items():
-                dtype_list.append((k, py_type_to_dtype(v)))
-        processed_null_values = _process_null_values(null_values)
-
-        if isinstance(source, list):
-            sources = source
-            source = None  # type: ignore[assignment]
-        else:
-            sources = []
-
-        self = cls.__new__(cls)
-        self._ldf = PyLazyFrame.new_from_csv(
-            source,
-            sources,
-            separator,
-            has_header,
-            ignore_errors,
-            skip_rows,
-            n_rows,
-            cache,
-            dtype_list,
-            low_memory,
-            comment_prefix,
-            quote_char,
-            processed_null_values,
-            missing_utf8_is_empty_string,
-            infer_schema_length,
-            with_column_names,
-            rechunk,
-            skip_rows_after_header,
-            encoding,
-            _prepare_row_index_args(row_index_name, row_index_offset),
-            try_parse_dates,
-            eol_char=eol_char,
-            raise_if_empty=raise_if_empty,
-            truncate_ragged_lines=truncate_ragged_lines,
-            schema=schema,
-        )
-        return self
-
-    @classmethod
-    def _scan_parquet(
-        cls,
-        source: str | list[str] | list[Path],
-        *,
-        n_rows: int | None = None,
-        cache: bool = True,
-        parallel: ParallelStrategy = "auto",
-        rechunk: bool = True,
-        row_index_name: str | None = None,
-        row_index_offset: int = 0,
-        storage_options: dict[str, object] | None = None,
-        low_memory: bool = False,
-        use_statistics: bool = True,
-        hive_partitioning: bool = True,
-        retries: int = 0,
-    ) -> Self:
-        """
-        Lazily read from a parquet file or multiple files via glob patterns.
-
-        Use `pl.scan_parquet` to dispatch to this method.
-
-        See Also
-        --------
-        polars.io.scan_parquet
-        """
-        if isinstance(source, list):
-            sources = source
-            source = None  # type: ignore[assignment]
-            can_use_fsspec = False
-        else:
-            can_use_fsspec = True
-            sources = []
-
-        # try fsspec scanner
-        if (
-            can_use_fsspec
-            and not _is_local_file(source)  # type: ignore[arg-type]
-            and not _is_supported_cloud(source)  # type: ignore[arg-type]
-        ):
-            scan = _scan_parquet_fsspec(source, storage_options)  # type: ignore[arg-type]
-            if n_rows:
-                scan = scan.head(n_rows)
-            if row_index_name is not None:
-                scan = scan.with_row_index(row_index_name, row_index_offset)
-            return scan  # type: ignore[return-value]
-
-        if storage_options:
-            storage_options = list(storage_options.items())  # type: ignore[assignment]
-        else:
-            # Handle empty dict input
-            storage_options = None
-
-        self = cls.__new__(cls)
-        self._ldf = PyLazyFrame.new_from_parquet(
-            source,
-            sources,
-            n_rows,
-            cache,
-            parallel,
-            rechunk,
-            _prepare_row_index_args(row_index_name, row_index_offset),
-            low_memory,
-            cloud_options=storage_options,
-            use_statistics=use_statistics,
-            hive_partitioning=hive_partitioning,
-            retries=retries,
-        )
-        return self
-
-    @classmethod
-    def _scan_ipc(
-        cls,
-        source: str | Path | list[str] | list[Path],
-        *,
-        n_rows: int | None = None,
-        cache: bool = True,
-        rechunk: bool = True,
-        row_index_name: str | None = None,
-        row_index_offset: int = 0,
-        storage_options: dict[str, object] | None = None,
-        memory_map: bool = True,
-        retries: int = 0,
-    ) -> Self:
-        """
-        Lazily read from an Arrow IPC (Feather v2) file.
-
-        Use `pl.scan_ipc` to dispatch to this method.
-
-        See Also
-        --------
-        polars.io.scan_ipc
-        """
-        if isinstance(source, (str, Path)):
-            can_use_fsspec = True
-            source = normalize_filepath(source)
-            sources = []
-        else:
-            can_use_fsspec = False
-            sources = [normalize_filepath(source) for source in source]
-            source = None  # type: ignore[assignment]
-
-        # try fsspec scanner
-        if can_use_fsspec and not _is_local_file(source):  # type: ignore[arg-type]
-            scan = _scan_ipc_fsspec(source, storage_options)  # type: ignore[arg-type]
-            if n_rows:
-                scan = scan.head(n_rows)
-            if row_index_name is not None:
-                scan = scan.with_row_index(row_index_name, row_index_offset)
-            return scan  # type: ignore[return-value]
-
-        self = cls.__new__(cls)
-        self._ldf = PyLazyFrame.new_from_ipc(
-            source,
-            sources,
-            n_rows,
-            cache,
-            rechunk,
-            _prepare_row_index_args(row_index_name, row_index_offset),
-            memory_map=memory_map,
-            cloud_options=storage_options,
-            retries=retries,
-        )
-        return self
-
-    @classmethod
-    def _scan_ndjson(
-        cls,
-        source: str | Path | list[str] | list[Path],
-        *,
-        infer_schema_length: int | None = N_INFER_DEFAULT,
-        schema: SchemaDefinition | None = None,
-        batch_size: int | None = None,
-        n_rows: int | None = None,
-        low_memory: bool = False,
-        rechunk: bool = False,
-        row_index_name: str | None = None,
-        row_index_offset: int = 0,
-        ignore_errors: bool = False,
-    ) -> Self:
-        """
-        Lazily read from a newline delimited JSON file.
-
-        Use `pl.scan_ndjson` to dispatch to this method.
-
-        See Also
-        --------
-        polars.io.scan_ndjson
-        """
-        if isinstance(source, (str, Path)):
-            source = normalize_filepath(source)
-            sources = []
-        else:
-            sources = [normalize_filepath(source) for source in source]
-            source = None  # type: ignore[assignment]
-
-        self = cls.__new__(cls)
-        self._ldf = PyLazyFrame.new_from_ndjson(
-            source,
-            sources,
-            infer_schema_length,
-            schema,
-            batch_size,
-            n_rows,
-            low_memory,
-            rechunk,
-            _prepare_row_index_args(row_index_name, row_index_offset),
-            ignore_errors,
-        )
-        return self
 
     @classmethod
     def _scan_python_function(
@@ -1995,12 +1735,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
 
-        Collects into a DataFrame (like :func:`collect`), but instead of returning
-        DataFrame directly, they are scheduled to be collected inside thread pool,
+        Collects into a DataFrame (like :func:`collect`) but, instead of returning
+        a DataFrame directly, it is scheduled to be collected inside a thread pool,
         while this method returns almost instantly.
 
-        May be useful if you use gevent or asyncio and want to release control to other
-        greenlets/tasks while LazyFrames are being collected.
+        This can be useful if you use `gevent` or `asyncio` and want to release
+        control to other greenlets/tasks while LazyFrames are being collected.
 
         Parameters
         ----------
@@ -2032,20 +1772,20 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 at any point without it being considered a breaking change.
 
             .. note::
-                Use :func:`explain` to see if Polars can process the query in streaming
-                mode.
+                Use :func:`explain` to see if Polars can process the query in
+                streaming mode.
 
         Returns
         -------
-        If `gevent=False` (default) then returns awaitable.
+        If `gevent=False` (default) then returns an awaitable.
 
-        If `gevent=True` then returns wrapper that has
+        If `gevent=True` then returns wrapper that has a
         `.get(block=True, timeout=None)` method.
 
         See Also
         --------
         polars.collect_all : Collect multiple LazyFrames at the same time.
-        polars.collect_all_async: Collect multiple LazyFrames at the same time lazily.
+        polars.collect_all_async : Collect multiple LazyFrames at the same time lazily.
 
         Notes
         -----
@@ -2759,7 +2499,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "c": [True, True, False, None],
         ...     }
         ... )
-        >>> lf.clear().fetch()
+        >>> lf.clear().collect()
         shape: (0, 3)
         ┌─────┬─────┬──────┐
         │ a   ┆ b   ┆ c    │
@@ -2768,7 +2508,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ╞═════╪═════╪══════╡
         └─────┴─────┴──────┘
 
-        >>> lf.clear(2).fetch()
+        >>> lf.clear(2).collect()
         shape: (2, 3)
         ┌──────┬──────┬──────┐
         │ a    ┆ b    ┆ c    │
@@ -3226,6 +2966,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         lgb = self._ldf.group_by(exprs, maintain_order)
         return LazyGroupBy(lgb)
 
+    @deprecate_renamed_parameter("by", "group_by", version="0.20.14")
     def rolling(
         self,
         index_column: IntoExpr,
@@ -3233,13 +2974,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         period: str | timedelta,
         offset: str | timedelta | None = None,
         closed: ClosedInterval = "right",
-        by: IntoExpr | Iterable[IntoExpr] | None = None,
+        group_by: IntoExpr | Iterable[IntoExpr] | None = None,
         check_sorted: bool = True,
     ) -> LazyGroupBy:
         """
         Create rolling groups based on a temporal or integer column.
 
-        Different from a `dynamic_group_by` the windows are now determined by the
+        Different from a `group_by_dynamic` the windows are now determined by the
         individual values and are not of constant intervals. For constant intervals
         use :func:`LazyFrame.group_by_dynamic`.
 
@@ -3286,33 +3027,35 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         index_column
             Column used to group based on the time window.
             Often of type Date/Datetime.
-            This column must be sorted in ascending order (or, if `by` is specified,
-            then it must be sorted in ascending order within each group).
+            This column must be sorted in ascending order (or, if `group_by` is
+            specified, then it must be sorted in ascending order within each group).
 
             In case of a rolling group by on indices, dtype needs to be one of
             {UInt32, UInt64, Int32, Int64}. Note that the first three get temporarily
             cast to Int64, so if performance matters use an Int64 column.
         period
-            length of the window - must be non-negative
+            Length of the window - must be non-negative.
         offset
-            offset of the window. Default is -period
+            Offset of the window. Default is `-period`.
         closed : {'right', 'left', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive).
-        by
+        group_by
             Also group by this column/these columns
         check_sorted
-            When the `by` argument is given, polars can not check sortedness
+            Check whether `index_column` is sorted (or, if `group_by` is given,
+            check whether it's sorted within each group).
+            When the `group_by` argument is given, polars can not check sortedness
             by the metadata and has to do a full scan on the index column to
             verify data is sorted. This is expensive. If you are sure the
-            data within the by groups is sorted, you can set this to `False`.
+            data within the groups is sorted, you can set this to `False`.
             Doing so incorrectly will lead to incorrect output
 
         Returns
         -------
         LazyGroupBy
             Object you can call `.agg` on to aggregate by groups, the result
-            of which will be sorted by `index_column` (but note that if `by` columns are
-            passed, it will only be sorted within each `by` group).
+            of which will be sorted by `index_column` (but note that if `group_by`
+            columns are passed, it will only be sorted within each group).
 
         See Also
         --------
@@ -3361,7 +3104,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if offset is None:
             offset = negate_duration_string(parse_as_duration_string(period))
 
-        pyexprs_by = parse_as_list_of_expressions(by) if by is not None else []
+        pyexprs_by = (
+            parse_as_list_of_expressions(group_by) if group_by is not None else []
+        )
         period = parse_as_duration_string(period)
         offset = parse_as_duration_string(offset)
 
@@ -3370,6 +3115,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
         return LazyGroupBy(lgb)
 
+    @deprecate_renamed_parameter("by", "group_by", version="0.20.14")
     def group_by_dynamic(
         self,
         index_column: IntoExpr,
@@ -3381,7 +3127,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         include_boundaries: bool = False,
         closed: ClosedInterval = "left",
         label: Label = "left",
-        by: IntoExpr | Iterable[IntoExpr] | None = None,
+        group_by: IntoExpr | Iterable[IntoExpr] | None = None,
         start_by: StartBy = "window",
         check_sorted: bool = True,
     ) -> LazyGroupBy:
@@ -3397,11 +3143,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         - [start + 2*every, start + 2*every + period)
         - ...
 
-        where `start` is determined by `start_by`, `offset`, and `every` (see parameter
-        descriptions below).
+        where `start` is determined by `start_by`, `offset`, `every`, and the earliest
+        datapoint. See the `start_by` argument description for details.
 
         .. warning::
-            The index column must be sorted in ascending order. If `by` is passed, then
+            The index column must be sorted in ascending order. If `group_by` is passed, then
             the index column must be sorted in ascending order within each group.
 
         Parameters
@@ -3409,7 +3155,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         index_column
             Column used to group based on the time window.
             Often of type Date/Datetime.
-            This column must be sorted in ascending order (or, if `by` is specified,
+            This column must be sorted in ascending order (or, if `group_by` is specified,
             then it must be sorted in ascending order within each group).
 
             In case of a dynamic group by on indices, dtype needs to be one of
@@ -3420,7 +3166,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         period
             length of the window, if None it will equal 'every'
         offset
-            offset of the window, only takes effect if `start_by` is `'window'`.
+            offset of the window, does not take effect if `start_by` is 'datapoint'.
             Defaults to negative `every`.
         truncate
             truncate the time value to the window lower bound
@@ -3441,7 +3187,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             - 'datapoint': the first value of the index column in the given window.
               If you don't need the label to be at one of the boundaries, choose this
               option for maximum performance
-        by
+        group_by
             Also group by this column/these columns
         start_by : {'window', 'datapoint', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'}
             The strategy to determine the start of the first window by.
@@ -3456,19 +3202,24 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
               * 'tuesday': Start the window on the Tuesday before the first data point.
               * ...
               * 'sunday': Start the window on the Sunday before the first data point.
+
+              The resulting window is then shifted back until the earliest datapoint
+              is in or in front of it.
         check_sorted
-            When the `by` argument is given, polars can not check sortedness
+            Check whether `index_column` is sorted (or, if `group_by` is given,
+            check whether it's sorted within each group).
+            When the `group_by` argument is given, polars can not check sortedness
             by the metadata and has to do a full scan on the index column to
             verify data is sorted. This is expensive. If you are sure the
-            data within the by groups is sorted, you can set this to `False`.
+            data within the groups is sorted, you can set this to `False`.
             Doing so incorrectly will lead to incorrect output
 
         Returns
         -------
         LazyGroupBy
             Object you can call `.agg` on to aggregate by groups, the result
-            of which will be sorted by `index_column` (but note that if `by` columns are
-            passed, it will only be sorted within each `by` group).
+            of which will be sorted by `index_column` (but note that if `group_by` columns are
+            passed, it will only be sorted within each group).
 
         See Also
         --------
@@ -3644,7 +3395,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     "time",
         ...     every="1h",
         ...     closed="both",
-        ...     by="groups",
+        ...     group_by="groups",
         ...     include_boundaries=True,
         ... ).agg(pl.col("n")).collect()
         shape: (7, 5)
@@ -3714,7 +3465,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         offset = parse_as_duration_string(offset)
         every = parse_as_duration_string(every)
 
-        pyexprs_by = parse_as_list_of_expressions(by) if by is not None else []
+        pyexprs_by = (
+            parse_as_list_of_expressions(group_by) if group_by is not None else []
+        )
         lgb = self._ldf.group_by_dynamic(
             index_column,
             every,
@@ -4149,16 +3902,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ... )
         >>> lf.with_columns((pl.col("a") ** 2).alias("a^2")).collect()
         shape: (4, 4)
-        ┌─────┬──────┬───────┬──────┐
-        │ a   ┆ b    ┆ c     ┆ a^2  │
-        │ --- ┆ ---  ┆ ---   ┆ ---  │
-        │ i64 ┆ f64  ┆ bool  ┆ f64  │
-        ╞═════╪══════╪═══════╪══════╡
-        │ 1   ┆ 0.5  ┆ true  ┆ 1.0  │
-        │ 2   ┆ 4.0  ┆ true  ┆ 4.0  │
-        │ 3   ┆ 10.0 ┆ false ┆ 9.0  │
-        │ 4   ┆ 13.0 ┆ true  ┆ 16.0 │
-        └─────┴──────┴───────┴──────┘
+        ┌─────┬──────┬───────┬─────┐
+        │ a   ┆ b    ┆ c     ┆ a^2 │
+        │ --- ┆ ---  ┆ ---   ┆ --- │
+        │ i64 ┆ f64  ┆ bool  ┆ i64 │
+        ╞═════╪══════╪═══════╪═════╡
+        │ 1   ┆ 0.5  ┆ true  ┆ 1   │
+        │ 2   ┆ 4.0  ┆ true  ┆ 4   │
+        │ 3   ┆ 10.0 ┆ false ┆ 9   │
+        │ 4   ┆ 13.0 ┆ true  ┆ 16  │
+        └─────┴──────┴───────┴─────┘
 
         Added columns will replace existing columns with the same name.
 
@@ -4185,16 +3938,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     ]
         ... ).collect()
         shape: (4, 6)
-        ┌─────┬──────┬───────┬──────┬──────┬───────┐
-        │ a   ┆ b    ┆ c     ┆ a^2  ┆ b/2  ┆ not c │
-        │ --- ┆ ---  ┆ ---   ┆ ---  ┆ ---  ┆ ---   │
-        │ i64 ┆ f64  ┆ bool  ┆ f64  ┆ f64  ┆ bool  │
-        ╞═════╪══════╪═══════╪══════╪══════╪═══════╡
-        │ 1   ┆ 0.5  ┆ true  ┆ 1.0  ┆ 0.25 ┆ false │
-        │ 2   ┆ 4.0  ┆ true  ┆ 4.0  ┆ 2.0  ┆ false │
-        │ 3   ┆ 10.0 ┆ false ┆ 9.0  ┆ 5.0  ┆ true  │
-        │ 4   ┆ 13.0 ┆ true  ┆ 16.0 ┆ 6.5  ┆ false │
-        └─────┴──────┴───────┴──────┴──────┴───────┘
+        ┌─────┬──────┬───────┬─────┬──────┬───────┐
+        │ a   ┆ b    ┆ c     ┆ a^2 ┆ b/2  ┆ not c │
+        │ --- ┆ ---  ┆ ---   ┆ --- ┆ ---  ┆ ---   │
+        │ i64 ┆ f64  ┆ bool  ┆ i64 ┆ f64  ┆ bool  │
+        ╞═════╪══════╪═══════╪═════╪══════╪═══════╡
+        │ 1   ┆ 0.5  ┆ true  ┆ 1   ┆ 0.25 ┆ false │
+        │ 2   ┆ 4.0  ┆ true  ┆ 4   ┆ 2.0  ┆ false │
+        │ 3   ┆ 10.0 ┆ false ┆ 9   ┆ 5.0  ┆ true  │
+        │ 4   ┆ 13.0 ┆ true  ┆ 16  ┆ 6.5  ┆ false │
+        └─────┴──────┴───────┴─────┴──────┴───────┘
 
         Multiple columns also can be added using positional arguments instead of a list.
 
@@ -4204,16 +3957,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     (pl.col("c").not_()).alias("not c"),
         ... ).collect()
         shape: (4, 6)
-        ┌─────┬──────┬───────┬──────┬──────┬───────┐
-        │ a   ┆ b    ┆ c     ┆ a^2  ┆ b/2  ┆ not c │
-        │ --- ┆ ---  ┆ ---   ┆ ---  ┆ ---  ┆ ---   │
-        │ i64 ┆ f64  ┆ bool  ┆ f64  ┆ f64  ┆ bool  │
-        ╞═════╪══════╪═══════╪══════╪══════╪═══════╡
-        │ 1   ┆ 0.5  ┆ true  ┆ 1.0  ┆ 0.25 ┆ false │
-        │ 2   ┆ 4.0  ┆ true  ┆ 4.0  ┆ 2.0  ┆ false │
-        │ 3   ┆ 10.0 ┆ false ┆ 9.0  ┆ 5.0  ┆ true  │
-        │ 4   ┆ 13.0 ┆ true  ┆ 16.0 ┆ 6.5  ┆ false │
-        └─────┴──────┴───────┴──────┴──────┴───────┘
+        ┌─────┬──────┬───────┬─────┬──────┬───────┐
+        │ a   ┆ b    ┆ c     ┆ a^2 ┆ b/2  ┆ not c │
+        │ --- ┆ ---  ┆ ---   ┆ --- ┆ ---  ┆ ---   │
+        │ i64 ┆ f64  ┆ bool  ┆ i64 ┆ f64  ┆ bool  │
+        ╞═════╪══════╪═══════╪═════╪══════╪═══════╡
+        │ 1   ┆ 0.5  ┆ true  ┆ 1   ┆ 0.25 ┆ false │
+        │ 2   ┆ 4.0  ┆ true  ┆ 4   ┆ 2.0  ┆ false │
+        │ 3   ┆ 10.0 ┆ false ┆ 9   ┆ 5.0  ┆ true  │
+        │ 4   ┆ 13.0 ┆ true  ┆ 16  ┆ 6.5  ┆ false │
+        └─────┴──────┴───────┴─────┴──────┴───────┘
 
         Use keyword arguments to easily name your expression inputs.
 
@@ -6315,10 +6068,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         by
             Also group by this column/these columns
         check_sorted
+            Check whether `index_column` is sorted (or, if `by` is given,
+            check whether it's sorted within each group).
             When the `by` argument is given, polars can not check sortedness
             by the metadata and has to do a full scan on the index column to
             verify data is sorted. This is expensive. If you are sure the
-            data within the by groups is sorted, you can set this to `False`.
+            data within the groups is sorted, you can set this to `False`.
             Doing so incorrectly will lead to incorrect output
 
         Returns
@@ -6333,7 +6088,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             period=period,
             offset=offset,
             closed=closed,
-            by=by,
+            group_by=by,
             check_sorted=check_sorted,
         )
 
@@ -6374,10 +6129,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         by
             Also group by this column/these columns
         check_sorted
+            Check whether `index_column` is sorted (or, if `by` is given,
+            check whether it's sorted within each group).
             When the `by` argument is given, polars can not check sortedness
             by the metadata and has to do a full scan on the index column to
             verify data is sorted. This is expensive. If you are sure the
-            data within the by groups is sorted, you can set this to `False`.
+            data within the groups is sorted, you can set this to `False`.
             Doing so incorrectly will lead to incorrect output
 
         Returns
@@ -6392,7 +6149,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             period=period,
             offset=offset,
             closed=closed,
-            by=by,
+            group_by=by,
             check_sorted=check_sorted,
         )
 
@@ -6433,7 +6190,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         period
             length of the window, if None it will equal 'every'
         offset
-            offset of the window, only takes effect if `start_by` is `'window'`.
+            offset of the window, does not take effect if `start_by` is 'datapoint'.
             Defaults to negative `every`.
         truncate
             truncate the time value to the window lower bound
@@ -6458,11 +6215,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
               * 'tuesday': Start the window on the Tuesday before the first data point.
               * ...
               * 'sunday': Start the window on the Sunday before the first data point.
+
+              The resulting window is then shifted back until the earliest datapoint
+              is in or in front of it.
         check_sorted
+            Check whether `index_column` is sorted (or, if `by` is given,
+            check whether it's sorted within each group).
             When the `by` argument is given, polars can not check sortedness
             by the metadata and has to do a full scan on the index column to
             verify data is sorted. This is expensive. If you are sure the
-            data within the by groups is sorted, you can set this to `False`.
+            data within the groups is sorted, you can set this to `False`.
             Doing so incorrectly will lead to incorrect output
 
         Returns
@@ -6480,7 +6242,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             truncate=truncate,
             include_boundaries=include_boundaries,
             closed=closed,
-            by=by,
+            group_by=by,
             start_by=start_by,
             check_sorted=check_sorted,
         )

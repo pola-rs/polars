@@ -59,7 +59,7 @@ out = df.group_by_dynamic(
     "time",
     every="1h",
     closed="both",
-    by="groups",
+    group_by="groups",
     include_boundaries=True,
 ).agg(pl.len())
 print(out)

@@ -27,15 +27,14 @@ pub(super) fn rename_schema<'a>(
     existing: &[SmartString],
     new: &[SmartString],
 ) -> PolarsResult<Cow<'a, SchemaRef>> {
-    let mut new_schema = (**input_schema).clone();
+    let mut new_schema = input_schema.iter_fields().collect::<Vec<_>>();
+
     for (old, new) in existing.iter().zip(new.iter()) {
-        // the column might be removed due to projection pushdown
+        // The column might be removed due to projection pushdown
         // so we only update if we can find it.
-        if let Some(dtype) = input_schema.get(old) {
-            if new_schema.with_column(new.clone(), dtype.clone()).is_none() {
-                new_schema.remove(old);
-            }
+        if let Some((idx, _, _)) = input_schema.get_full(old) {
+            new_schema[idx].name = new.as_str().into();
         }
     }
-    Ok(Cow::Owned(Arc::new(new_schema)))
+    Ok(Cow::Owned(Arc::new(new_schema.into_iter().collect())))
 }

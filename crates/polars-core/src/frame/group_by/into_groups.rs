@@ -299,7 +299,6 @@ impl IntoGroupsProxy for BinaryChunked {
                     })
                     .collect::<Vec<_>>()
             });
-            let byte_hashes = byte_hashes.iter().collect::<Vec<_>>();
             group_by_threaded_slice(byte_hashes, n_partitions, sorted)
         } else {
             let byte_hashes = fill_bytes_hashes(self, null_h, hb.clone());

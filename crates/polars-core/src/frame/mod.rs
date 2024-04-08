@@ -17,7 +17,7 @@ pub mod explode;
 mod from;
 #[cfg(feature = "algorithm_group_by")]
 pub mod group_by;
-#[cfg(feature = "rows")]
+#[cfg(any(feature = "rows", feature = "object"))]
 pub mod row;
 mod top_k;
 mod upstream_traits;
@@ -41,7 +41,7 @@ pub enum NullStrategy {
     Propagate,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum UniqueKeepStrategy {
     /// Keep the first unique row.
@@ -1843,7 +1843,7 @@ impl DataFrame {
                 // no need to compute the sort indices and then take by these indices
                 // simply sort and return as frame
                 if df.width() == 1 && df.check_name_to_idx(s.name()).is_ok() {
-                    let mut out = s.sort_with(options);
+                    let mut out = s.sort_with(options)?;
                     if let Some((offset, len)) = slice {
                         out = out.slice(offset, len);
                     }
@@ -1860,6 +1860,7 @@ impl DataFrame {
                     let options = SortMultipleOptions {
                         other,
                         descending,
+                        nulls_last,
                         multithreaded: parallel,
                     };
                     first.arg_sort_multiple(&options)?

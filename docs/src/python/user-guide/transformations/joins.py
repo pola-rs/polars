@@ -41,6 +41,13 @@ df_outer_join = df_customers.join(df_orders, on="customer_id", how="outer")
 print(df_outer_join)
 # --8<-- [end:outer]
 
+# --8<-- [start:outer_coalesce]
+df_outer_coalesce_join = df_customers.join(
+    df_orders, on="customer_id", how="outer_coalesce"
+)
+print(df_outer_coalesce_join)
+# --8<-- [end:outer_coalesce]
+
 # --8<-- [start:df3]
 df_colors = pl.DataFrame(
     {

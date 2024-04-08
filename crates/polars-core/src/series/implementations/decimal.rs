@@ -153,6 +153,17 @@ impl private::PrivateSeries for SeriesWrap<DecimalChunked> {
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
         self.0.group_tuples(multithreaded, sorted)
     }
+
+    fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
+        self.0
+            .explode_by_offsets(offsets)
+            .decimal()
+            .unwrap()
+            .as_ref()
+            .clone()
+            .into_decimal_unchecked(self.0.precision(), self.0.scale())
+            .into_series()
+    }
 }
 
 impl SeriesTrait for SeriesWrap<DecimalChunked> {
@@ -261,11 +272,12 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
         self.0.get_any_value_unchecked(index)
     }
 
-    fn sort_with(&self, options: SortOptions) -> Series {
-        self.0
+    fn sort_with(&self, options: SortOptions) -> PolarsResult<Series> {
+        Ok(self
+            .0
             .sort_with(options)
             .into_decimal_unchecked(self.0.precision(), self.0.scale())
-            .into_series()
+            .into_series())
     }
 
     fn arg_sort(&self, options: SortOptions) -> IdxCa {

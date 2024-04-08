@@ -180,7 +180,7 @@ def test_join_asof_floats() -> None:
     )
     df2 = pl.DataFrame(
         {
-            "val": [0, 2.5, 2.6, 2.7, 3.4, 4, 5],
+            "val": [0.0, 2.5, 2.6, 2.7, 3.4, 4.0, 5.0],
             "c": ["x", "x", "x", "y", "y", "y", "y"],
         }
     ).with_columns(pl.col("val").alias("b"))
@@ -550,7 +550,7 @@ def test_asof_join_nearest_with_tolerance() -> None:
     ).set_sorted("asof_key")
     df2 = pl.DataFrame(
         {
-            "asof_key": [0, 2, 2.4, 3.4, 10],
+            "asof_key": [0.0, 2.0, 2.4, 3.4, 10.0],
             "b": b,
         }
     ).set_sorted("asof_key")
@@ -564,7 +564,7 @@ def test_asof_join_nearest_with_tolerance() -> None:
     ).set_sorted("asof_key")
     df2 = pl.DataFrame(
         {
-            "asof_key": [0, 2, 2.4, 3.4, 10],
+            "asof_key": [0.0, 2.0, 2.4, 3.4, 10.0],
             "b": b,
         }
     ).set_sorted("asof_key")

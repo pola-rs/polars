@@ -5,6 +5,7 @@ import itertools
 import operator
 from dataclasses import dataclass
 from decimal import Decimal as D
+from random import choice, randrange, seed
 from typing import Any, Callable, NamedTuple
 
 import pytest
@@ -390,12 +391,15 @@ def test_decimal_unique() -> None:
 
 
 def test_decimal_write_parquet_12375() -> None:
-    f = io.BytesIO()
     df = pl.DataFrame(
-        {"hi": [True, False, True, False], "bye": [1, 2, 3, D(47283957238957239875)]}
+        {
+            "hi": [True, False, True, False],
+            "bye": [1, 2, 3, D(47283957238957239875)],
+        }
     )
     assert df["bye"].dtype == pl.Decimal
 
+    f = io.BytesIO()
     df.write_parquet(f)
 
 
@@ -406,3 +410,51 @@ def test_decimal_list_get_13847() -> None:
         out = df.select(pl.col("a").list.get(0))
         expected = pl.DataFrame({"a": [D("1.1"), D("2.1")]})
         assert_frame_equal(out, expected)
+
+
+def test_decimal_explode() -> None:
+    with pl.Config() as cfg:
+        cfg.activate_decimals()
+
+        nested_decimal_df = pl.DataFrame(
+            {
+                "bar": [[D("3.4"), D("3.4")], [D("4.5")]],
+            }
+        )
+        df = nested_decimal_df.explode("bar")
+        expected_df = pl.DataFrame(
+            {
+                "bar": [D("3.4"), D("3.4"), D("4.5")],
+            }
+        )
+        assert_frame_equal(df, expected_df)
+
+        # test group-by head #15330
+        df = pl.DataFrame(
+            {
+                "foo": [1, 1, 2],
+                "bar": [D("3.4"), D("3.4"), D("4.5")],
+            }
+        )
+        head_df = df.group_by("foo", maintain_order=True).head(1)
+        expected_df = pl.DataFrame({"foo": [1, 2], "bar": [D("3.4"), D("4.5")]})
+        assert_frame_equal(head_df, expected_df)
+
+
+def test_decimal_streaming() -> None:
+    seed(1)
+    scale = D("1e18")
+    data = [
+        {"group": choice("abc"), "value": randrange(10**32) / scale} for _ in range(20)
+    ]
+    lf = pl.LazyFrame(data, schema_overrides={"value": pl.Decimal(scale=18)})
+    assert lf.group_by("group").agg(pl.sum("value")).collect(streaming=True).sort(
+        "group"
+    ).to_dict(as_series=False) == {
+        "group": ["a", "b", "c"],
+        "value": [
+            D("244215083629512.120161049441284000"),
+            D("510640422312378.070344831471216000"),
+            D("161102921617598.363263936811563000"),
+        ],
+    }

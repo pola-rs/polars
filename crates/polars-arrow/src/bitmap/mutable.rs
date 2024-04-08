@@ -33,11 +33,11 @@ use crate::trusted_len::TrustedLen;
 /// // we can also get the slice:
 /// assert_eq!(bitmap.as_slice(), [0b00001101u8].as_ref());
 /// // debug helps :)
-/// assert_eq!(format!("{:?}", bitmap), "[0b___01101]".to_string());
+/// assert_eq!(format!("{:?}", bitmap), "Bitmap { len: 5, offset: 0, bytes: [0b___01101] }");
 ///
 /// // It supports mutation in place
 /// bitmap.set(0, false);
-/// assert_eq!(format!("{:?}", bitmap), "[0b___01100]".to_string());
+/// assert_eq!(format!("{:?}", bitmap), "Bitmap { len: 5, offset: 0, bytes: [0b___01100] }");
 /// // and `O(1)` random access
 /// assert_eq!(bitmap.get(0), false);
 /// ```
@@ -758,6 +758,14 @@ impl MutableBitmap {
     pub fn as_slice(&self) -> &[u8] {
         let len = (self.length).saturating_add(7) / 8;
         &self.buffer[..len]
+    }
+
+    /// Returns the slice of bytes of this [`MutableBitmap`].
+    /// Note that the last byte may not be fully used.
+    #[inline]
+    pub fn as_mut_slice(&mut self) -> &mut [u8] {
+        let len = (self.length).saturating_add(7) / 8;
+        &mut self.buffer[..len]
     }
 }
 

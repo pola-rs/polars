@@ -198,27 +198,20 @@ You can also install a subset of all optional dependencies.
 pip install 'polars[numpy,pandas,pyarrow]'
 ```
 
-| Tag        | Description                                                                  |
-| ---------- | ---------------------------------------------------------------------------- |
-| **all**    | Install all optional dependencies (all of the following)                     |
-| pandas     | Install with pandas for converting data to and from pandas DataFrames/Series |
-| numpy      | Install with NumPy for converting data to and from NumPy arrays              |
-| pyarrow    | Reading data formats using PyArrow                                           |
-| fsspec     | Support for reading from remote file systems                                 |
-| connectorx | Support for reading from SQL databases                                       |
-| xlsx2csv   | Support for reading from Excel files                                         |
-| openpyxl   | Support for reading from Excel files with native types                       |
-| deltalake  | Support for reading and writing Delta Lake Tables                            |
-| pyiceberg  | Support for reading from Apache Iceberg tables                               |
-| plot       | Support for plot functions on DataFrames                                     |
-| timezone   | Timezone support, only needed if you are on Python<3.9 or Windows            |
+See the [User Guide](https://docs.pola.rs/user-guide/installation/#feature-flags) for more details on optional dependencies
+
+To see the current Polars version and a full list of its optional dependencies, run:
+
+```python
+pl.show_versions()
+```
 
 Releases happen quite often (weekly / every few days) at the moment, so updating Polars regularly to get the latest bugfixes / features might not be a bad idea.
 
 ### Rust
 
-You can take latest release from `crates.io`, or if you want to use the latest features / performance improvements
-point to the `main` branch of this repo.
+You can take latest release from `crates.io`, or if you want to use the latest features / performance
+improvements point to the `main` branch of this repo.
 
 ```toml
 polars = { git = "https://github.com/pola-rs/polars", rev = "<optional git tag>" }
@@ -251,18 +244,17 @@ Note that the Rust crate implementing the Python bindings is called `py-polars` 
 Rust crate `polars` itself. However, both the Python package and the Python module are named `polars`, so you
 can `pip install polars` and `import polars`.
 
-## Use custom Rust function in Python?
+## Using custom Rust functions in Python
 
 Extending Polars with UDFs compiled in Rust is easy. We expose PyO3 extensions for `DataFrame` and `Series`
 data structures. See more in https://github.com/pola-rs/pyo3-polars.
 
 ## Going big...
 
-Do you expect more than 2^32 (~4.2 billion) rows? Compile Polars with the `bigidx` feature flag.
+Do you expect more than 2^32 (~4.2 billion) rows? Compile Polars with the `bigidx` feature
+flag or, for Python users, install `pip install polars-u64-idx`.
 
-Or for Python users, install `pip install polars-u64-idx`.
-
-Don't use this unless you hit the row boundary, as the default build of Polars is faster and consumes less memory.
+Don't use this unless you hit the row boundary as the default build of Polars is faster and consumes less memory.
 
 ## Legacy
 

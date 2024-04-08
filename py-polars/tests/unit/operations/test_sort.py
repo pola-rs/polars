@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -288,6 +289,8 @@ def test_top_k() -> None:
         {
             "test": [2, 4, 1, 3],
             "val": [2, 4, 9, 3],
+            "bool_val": [False, True, True, False],
+            "str_value": ["d", "b", "a", "c"],
         }
     )
     assert_frame_equal(
@@ -302,6 +305,30 @@ def test_top_k() -> None:
         ),
         pl.DataFrame({"top_k": [4, 3], "bottom_k": [1, 2]}),
     )
+
+    assert_frame_equal(
+        df.select(
+            pl.col("bool_val").top_k(2).alias("top_k"),
+            pl.col("bool_val").bottom_k(2).alias("bottom_k"),
+        ),
+        pl.DataFrame({"top_k": [True, True], "bottom_k": [False, False]}),
+    )
+
+    assert_frame_equal(
+        df.select(
+            pl.col("str_value").top_k(2).alias("top_k"),
+            pl.col("str_value").bottom_k(2).alias("bottom_k"),
+        ),
+        pl.DataFrame({"top_k": ["d", "c"], "bottom_k": ["a", "b"]}),
+    )
+
+    with pytest.raises(ComputeError, match="`k` must be set for `top_k`"):
+        df.select(
+            pl.col("bool_val").top_k(pl.lit(None)),
+        )
+
+    with pytest.raises(ComputeError, match="`k` must be a single value for `top_k`."):
+        df.select(pl.col("test").top_k(pl.lit(pl.Series("s", [1, 2]))))
 
     # dataframe
     df = pl.DataFrame(
@@ -982,3 +1009,25 @@ def test_sorted_flag_concat_unit(unit_descending: bool) -> None:
     out = pl.concat((b, a))
     assert out.to_list() == [3, 2, 1, None]
     assert out.flags["SORTED_DESC"]
+
+
+@pytest.mark.parametrize("descending", [True, False])
+@pytest.mark.parametrize("nulls_last", [True, False])
+def test_sort_descending_nulls_last(descending: bool, nulls_last: bool) -> None:
+    df = pl.DataFrame({"x": [1, 3, None, 2, None], "y": [1, 3, 0, 2, 0]})
+
+    null_sentinel = 100 if descending ^ nulls_last else -100
+    ref_x = [1, 3, None, 2, None]
+    ref_x.sort(key=lambda k: null_sentinel if k is None else k, reverse=descending)
+    ref_y = [1, 3, 0, 2, 0]
+    ref_y.sort(key=lambda k: null_sentinel if k == 0 else k, reverse=descending)
+
+    assert_frame_equal(
+        df.sort("x", descending=descending, nulls_last=nulls_last),
+        pl.DataFrame({"x": ref_x, "y": ref_y}),
+    )
+
+    assert_frame_equal(
+        df.sort(["x", "y"], descending=descending, nulls_last=nulls_last),
+        pl.DataFrame({"x": ref_x, "y": ref_y}),
+    )

@@ -2,15 +2,15 @@ use std::io::Cursor;
 use std::sync::Arc;
 
 use arrow::array::*;
-use arrow::chunk::Chunk;
 use arrow::datatypes::{ArrowSchema, ArrowSchemaRef, Field};
 use arrow::io::ipc::read::{read_file_metadata, FileReader};
 use arrow::io::ipc::write::*;
 use arrow::io::ipc::IpcField;
+use arrow::record_batch::RecordBatch;
 use polars_error::*;
 
 pub(crate) fn write(
-    batches: &[Chunk<Box<dyn Array>>],
+    batches: &[RecordBatch<Box<dyn Array>>],
     schema: &ArrowSchemaRef,
     ipc_fields: Option<Vec<IpcField>>,
     compression: Option<Compression>,
@@ -26,7 +26,7 @@ pub(crate) fn write(
 }
 
 fn round_trip(
-    columns: Chunk<Box<dyn Array>>,
+    columns: RecordBatch<Box<dyn Array>>,
     schema: ArrowSchemaRef,
     ipc_fields: Option<Vec<IpcField>>,
     compression: Option<Compression>,
@@ -57,7 +57,7 @@ fn prep_schema(array: &dyn Array) -> ArrowSchemaRef {
 fn write_boolean() -> PolarsResult<()> {
     let array = BooleanArray::from([Some(true), Some(false), None, Some(true)]).boxed();
     let schema = prep_schema(array.as_ref());
-    let columns = Chunk::try_new(vec![array])?;
+    let columns = RecordBatch::try_new(vec![array])?;
     round_trip(columns, schema, None, Some(Compression::ZSTD))
 }
 
@@ -67,7 +67,7 @@ fn write_sliced_utf8() -> PolarsResult<()> {
         .sliced(1, 1)
         .boxed();
     let schema = prep_schema(array.as_ref());
-    let columns = Chunk::try_new(vec![array])?;
+    let columns = RecordBatch::try_new(vec![array])?;
     round_trip(columns, schema, None, Some(Compression::ZSTD))
 }
 
@@ -75,6 +75,6 @@ fn write_sliced_utf8() -> PolarsResult<()> {
 fn write_binview() -> PolarsResult<()> {
     let array = Utf8ViewArray::from_slice([Some("foo"), Some("bar"), None, Some("hamlet")]).boxed();
     let schema = prep_schema(array.as_ref());
-    let columns = Chunk::try_new(vec![array])?;
+    let columns = RecordBatch::try_new(vec![array])?;
     round_trip(columns, schema, None, Some(Compression::ZSTD))
 }

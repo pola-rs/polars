@@ -3,12 +3,20 @@ use std::fmt::Write;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::registry::ObjectRegistry;
 use crate::prelude::*;
-use crate::utils::try_get_supertype;
+use crate::utils::any_values_to_supertype;
 
 impl<'a, T: AsRef<[AnyValue<'a>]>> NamedFrom<T, [AnyValue<'a>]> for Series {
-    fn new(name: &str, v: T) -> Self {
-        let av = v.as_ref();
-        Series::from_any_values(name, av, true).unwrap()
+    /// Construct a new [`Series`] from a collection of [`AnyValue`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if the values do not all share the same data type (with the exception
+    /// of [`DataType::Null`], which is always allowed).
+    ///
+    /// [`AnyValue`]: crate::datatypes::AnyValue
+    fn new(name: &str, values: T) -> Self {
+        let values = values.as_ref();
+        Series::from_any_values(name, values, true).expect("data types of values should match")
     }
 }
 
@@ -40,50 +48,36 @@ impl Series {
                         DataType::Null
                     } else {
                         // Second pass to check for the nested null value that
-                        // toggled `all_flat_null` to false, e.g. a List(Null)
+                        // toggled `all_flat_null` to false, e.g. a List(Null).
                         let first_nested_null = values.iter().find(|av| !av.is_null()).unwrap();
                         first_nested_null.dtype()
                     }
                 },
             }
         }
-        fn get_any_values_supertype(values: &[AnyValue]) -> PolarsResult<DataType> {
-            let mut supertype = DataType::Null;
-            let mut dtypes = PlHashSet::<DataType>::new();
-            for av in values {
-                if dtypes.insert(av.dtype()) {
-                    supertype = try_get_supertype(&supertype, &av.dtype()).map_err(|_| {
-                            polars_err!(
-                                SchemaMismatch:
-                                "failed to infer supertype of values; partial supertype is {:?}, found value of type {:?}: {}",
-                                supertype, av.dtype(), av
-                            )
-                        }
-                    )?;
-                }
-            }
-            Ok(supertype)
-        }
-
         let dtype = if strict {
             get_first_non_null_dtype(values)
         } else {
-            get_any_values_supertype(values)?
+            any_values_to_supertype(values)?
         };
         Self::from_any_values_and_dtype(name, values, &dtype, strict)
     }
 
-    /// Construct a new [`Series`]` with the given `dtype` from a slice of AnyValues.
+    /// Construct a new [`Series`] with the given `dtype` from a slice of AnyValues.
     ///
     /// If `strict` is `true`, an error is returned if the values do not match the given
     /// data type. If `strict` is `false`, values that do not match the given data type
-    /// are cast. If casting is not possible, the values are set to null instead.`
+    /// are cast. If casting is not possible, the values are set to null instead.
     pub fn from_any_values_and_dtype(
         name: &str,
         values: &[AnyValue],
         dtype: &DataType,
         strict: bool,
     ) -> PolarsResult<Self> {
+        if values.is_empty() {
+            return Ok(Self::new_empty(name, dtype));
+        }
+
         let mut s = match dtype {
             #[cfg(feature = "dtype-i8")]
             DataType::Int8 => any_values_to_integer::<Int8Type>(values, strict)?.into_series(),
@@ -103,21 +97,15 @@ impl Series {
             DataType::String => any_values_to_string(values, strict)?.into_series(),
             DataType::Binary => any_values_to_binary(values, strict)?.into_series(),
             #[cfg(feature = "dtype-date")]
-            DataType::Date => any_values_to_primitive_nonstrict::<Int32Type>(values)
-                .into_date()
-                .into_series(),
-            #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime(tu, tz) => any_values_to_primitive_nonstrict::<Int64Type>(values)
-                .into_datetime(*tu, (*tz).clone())
-                .into_series(),
+            DataType::Date => any_values_to_date(values, strict)?.into_series(),
             #[cfg(feature = "dtype-time")]
-            DataType::Time => any_values_to_primitive_nonstrict::<Int64Type>(values)
-                .into_time()
-                .into_series(),
+            DataType::Time => any_values_to_time(values, strict)?.into_series(),
+            #[cfg(feature = "dtype-datetime")]
+            DataType::Datetime(tu, tz) => {
+                any_values_to_datetime(values, *tu, (*tz).clone(), strict)?.into_series()
+            },
             #[cfg(feature = "dtype-duration")]
-            DataType::Duration(tu) => any_values_to_primitive_nonstrict::<Int64Type>(values)
-                .into_duration(*tu)
-                .into_series(),
+            DataType::Duration(tu) => any_values_to_duration(values, *tu, strict)?.into_series(),
             #[cfg(feature = "dtype-categorical")]
             dt @ (DataType::Categorical(_, _) | DataType::Enum(_, _)) => {
                 any_values_to_categorical(values, dt, strict)?
@@ -225,33 +213,23 @@ fn any_values_to_f64(values: &[AnyValue], strict: bool) -> PolarsResult<Float64C
 }
 
 fn any_values_to_bool(values: &[AnyValue], strict: bool) -> PolarsResult<BooleanChunked> {
-    fn any_values_to_bool_strict(values: &[AnyValue]) -> PolarsResult<BooleanChunked> {
-        let mut builder = BooleanChunkedBuilder::new("", values.len());
-        for av in values {
-            match av {
-                AnyValue::Boolean(b) => builder.append_value(*b),
-                AnyValue::Null => builder.append_null(),
-                av => return Err(invalid_value_error(&DataType::Boolean, av)),
-            }
-        }
-        Ok(builder.finish())
-    }
-    fn any_values_to_bool_nonstrict(values: &[AnyValue]) -> BooleanChunked {
-        let mapper = |av: &AnyValue| match av {
-            AnyValue::Boolean(b) => Some(*b),
-            AnyValue::Null => None,
-            av => match av.cast(&DataType::Boolean) {
-                AnyValue::Boolean(b) => Some(b),
-                _ => None,
+    let mut builder = BooleanChunkedBuilder::new("", values.len());
+    for av in values {
+        match av {
+            AnyValue::Boolean(b) => builder.append_value(*b),
+            AnyValue::Null => builder.append_null(),
+            av => {
+                if strict {
+                    return Err(invalid_value_error(&DataType::Boolean, av));
+                }
+                match av.cast(&DataType::Boolean) {
+                    AnyValue::Boolean(b) => builder.append_value(b),
+                    _ => builder.append_null(),
+                }
             },
-        };
-        values.iter().map(mapper).collect_trusted()
+        }
     }
-    if strict {
-        any_values_to_bool_strict(values)
-    } else {
-        Ok(any_values_to_bool_nonstrict(values))
-    }
+    Ok(builder.finish())
 }
 
 fn any_values_to_string(values: &[AnyValue], strict: bool) -> PolarsResult<StringChunked> {
@@ -269,7 +247,7 @@ fn any_values_to_string(values: &[AnyValue], strict: bool) -> PolarsResult<Strin
     }
     fn any_values_to_string_nonstrict(values: &[AnyValue]) -> StringChunked {
         let mut builder = StringChunkedBuilder::new("", values.len());
-        let mut owned = String::new(); // Amortize allocations
+        let mut owned = String::new(); // Amortize allocations.
         for av in values {
             match av {
                 AnyValue::String(s) => builder.append_value(s),
@@ -324,44 +302,131 @@ fn any_values_to_binary(values: &[AnyValue], strict: bool) -> PolarsResult<Binar
     }
 }
 
+#[cfg(feature = "dtype-date")]
+fn any_values_to_date(values: &[AnyValue], strict: bool) -> PolarsResult<DateChunked> {
+    let mut builder = PrimitiveChunkedBuilder::<Int32Type>::new("", values.len());
+    for av in values {
+        match av {
+            AnyValue::Date(i) => builder.append_value(*i),
+            AnyValue::Null => builder.append_null(),
+            av => {
+                if strict {
+                    return Err(invalid_value_error(&DataType::Date, av));
+                }
+                match av.cast(&DataType::Date) {
+                    AnyValue::Date(i) => builder.append_value(i),
+                    _ => builder.append_null(),
+                }
+            },
+        }
+    }
+    Ok(builder.finish().into())
+}
+
+#[cfg(feature = "dtype-time")]
+fn any_values_to_time(values: &[AnyValue], strict: bool) -> PolarsResult<TimeChunked> {
+    let mut builder = PrimitiveChunkedBuilder::<Int64Type>::new("", values.len());
+    for av in values {
+        match av {
+            AnyValue::Time(i) => builder.append_value(*i),
+            AnyValue::Null => builder.append_null(),
+            av => {
+                if strict {
+                    return Err(invalid_value_error(&DataType::Time, av));
+                }
+                match av.cast(&DataType::Time) {
+                    AnyValue::Time(i) => builder.append_value(i),
+                    _ => builder.append_null(),
+                }
+            },
+        }
+    }
+    Ok(builder.finish().into())
+}
+
+#[cfg(feature = "dtype-datetime")]
+fn any_values_to_datetime(
+    values: &[AnyValue],
+    time_unit: TimeUnit,
+    time_zone: Option<TimeZone>,
+    strict: bool,
+) -> PolarsResult<DatetimeChunked> {
+    let mut builder = PrimitiveChunkedBuilder::<Int64Type>::new("", values.len());
+    let target_dtype = DataType::Datetime(time_unit, time_zone.clone());
+    for av in values {
+        match av {
+            AnyValue::Datetime(i, tu, _) if *tu == time_unit => builder.append_value(*i),
+            AnyValue::Null => builder.append_null(),
+            av => {
+                if strict {
+                    return Err(invalid_value_error(&target_dtype, av));
+                }
+                match av.cast(&target_dtype) {
+                    AnyValue::Datetime(i, _, _) => builder.append_value(i),
+                    _ => builder.append_null(),
+                }
+            },
+        }
+    }
+    Ok(builder.finish().into_datetime(time_unit, time_zone))
+}
+
+#[cfg(feature = "dtype-duration")]
+fn any_values_to_duration(
+    values: &[AnyValue],
+    time_unit: TimeUnit,
+    strict: bool,
+) -> PolarsResult<DurationChunked> {
+    let mut builder = PrimitiveChunkedBuilder::<Int64Type>::new("", values.len());
+    let target_dtype = DataType::Duration(time_unit);
+    for av in values {
+        match av {
+            AnyValue::Duration(i, tu) if *tu == time_unit => builder.append_value(*i),
+            AnyValue::Null => builder.append_null(),
+            av => {
+                if strict {
+                    return Err(invalid_value_error(&target_dtype, av));
+                }
+                match av.cast(&target_dtype) {
+                    AnyValue::Duration(i, _) => builder.append_value(i),
+                    _ => builder.append_null(),
+                }
+            },
+        }
+    }
+    Ok(builder.finish().into_duration(time_unit))
+}
+
 #[cfg(feature = "dtype-categorical")]
 fn any_values_to_categorical(
     values: &[AnyValue],
     dtype: &DataType,
     strict: bool,
 ) -> PolarsResult<Series> {
-    let ca = if let Some(single_av) = values.first() {
-        match single_av {
-            AnyValue::String(_) | AnyValue::StringOwned(_) | AnyValue::Null => {
-                any_values_to_string(values, strict)?
-            },
-            _ => polars_bail!(
-                 ComputeError:
-                 "categorical dtype with any-values of dtype {} not supported",
-                 single_av.dtype()
-            ),
-        }
+    // TODO: Handle AnyValues of type Categorical/Enum.
+    // TODO: Avoid materializing to String before casting to Categorical/Enum.
+    let ca = any_values_to_string(values, strict)?;
+    if strict {
+        ca.into_series().strict_cast(dtype)
     } else {
-        StringChunked::full("", "", 0)
-    };
-
-    ca.cast(dtype)
+        ca.cast(dtype)
+    }
 }
 
 #[cfg(feature = "dtype-decimal")]
 fn any_values_to_decimal(
-    avs: &[AnyValue],
+    values: &[AnyValue],
     precision: Option<usize>,
-    scale: Option<usize>, // if None, we're inferring the scale
+    scale: Option<usize>, // If None, we're inferring the scale.
 ) -> PolarsResult<DecimalChunked> {
-    // two-pass approach, first we scan and record the scales, then convert (or not)
+    // Two-pass approach, first we scan and record the scales, then convert (or not).
     let mut scale_range: Option<(usize, usize)> = None;
-    for av in avs {
-        let s_av = if av.is_signed_integer() || av.is_unsigned_integer() {
-            0 // integers are treated as decimals with scale of zero
+    for av in values {
+        let s_av = if av.is_integer() {
+            0 // Integers are treated as decimals with scale of zero.
         } else if let AnyValue::Decimal(_, scale) = av {
             *scale
-        } else if matches!(av, AnyValue::Null) {
+        } else if av.is_null() {
             continue;
         } else {
             polars_bail!(
@@ -374,23 +439,24 @@ fn any_values_to_decimal(
         };
     }
     let Some((s_min, s_max)) = scale_range else {
-        // empty array or all nulls, return a decimal array with given scale (or 0 if inferring)
-        return Ok(Int128Chunked::full_null("", avs.len())
+        // Empty array or all nulls, return a decimal array with given scale (or 0 if inferring).
+        return Ok(Int128Chunked::full_null("", values.len())
             .into_decimal_unchecked(precision, scale.unwrap_or(0)));
     };
     let scale = scale.unwrap_or(s_max);
     if s_max > scale {
-        // scale is provided but is lower than actual
-        // TODO: do we want lossy conversions here or not?
+        // Scale is provided but is lower than actual.
+        // TODO: Do we want lossy conversions here or not?
         polars_bail!(
             ComputeError:
             "unable to losslessly convert any-value of scale {s_max} to scale {}", scale,
         );
     }
-    let mut builder = PrimitiveChunkedBuilder::<Int128Type>::new("", avs.len());
+
+    let mut builder = PrimitiveChunkedBuilder::<Int128Type>::new("", values.len());
     let is_equally_scaled = s_min == s_max && s_max == scale;
-    for av in avs {
-        let (v, s_av) = if av.is_signed_integer() || av.is_unsigned_integer() {
+    for av in values {
+        let (v, s_av) = if av.is_integer() {
             (
                 av.try_extract::<i128>().unwrap_or_else(|_| unreachable!()),
                 0,
@@ -398,7 +464,7 @@ fn any_values_to_decimal(
         } else if let AnyValue::Decimal(v, scale) = av {
             (*v, *scale)
         } else {
-            // it has to be a null because we've already checked it
+            // It has to be a null because we've already checked it.
             builder.append_null();
             continue;
         };
@@ -411,7 +477,8 @@ fn any_values_to_decimal(
             })?);
         }
     }
-    // build the array and do a precision check if needed
+
+    // Build the array and do a precision check if needed.
     builder.finish().into_decimal(precision, scale)
 }
 
@@ -422,7 +489,7 @@ fn any_values_to_list(
 ) -> PolarsResult<ListChunked> {
     let target_dtype = DataType::List(Box::new(inner_type.clone()));
 
-    // this is handled downstream. The builder will choose the first non null type
+    // This is handled downstream. The builder will choose the first non null type.
     let mut valid = true;
     #[allow(unused_mut)]
     let mut out: ListChunked = if inner_type == &DataType::Null {
@@ -437,7 +504,7 @@ fn any_values_to_list(
             })
             .collect_trusted()
     }
-    // make sure that wrongly inferred AnyValues don't deviate from the datatype
+    // Make sure that wrongly inferred AnyValues don't deviate from the datatype.
     else {
         avs.iter()
             .map(|av| match av {
@@ -464,7 +531,7 @@ fn any_values_to_list(
         polars_bail!(SchemaMismatch: "unexpected value while building Series of type {:?}", target_dtype);
     }
 
-    // Ensure the logical type is correct for nested types
+    // Ensure the logical type is correct for nested types.
     #[cfg(feature = "dtype-struct")]
     if !matches!(inner_type, DataType::Null) && out.inner_dtype().is_nested() {
         unsafe {
@@ -493,7 +560,7 @@ fn any_values_to_array(
 
     let target_dtype = DataType::Array(Box::new(inner_type.clone()), width);
 
-    // this is handled downstream. The builder will choose the first non null type
+    // This is handled downstream. The builder will choose the first non null type.
     let mut valid = true;
     #[allow(unused_mut)]
     let mut out: ArrayChunked = if inner_type == &DataType::Null {
@@ -508,7 +575,7 @@ fn any_values_to_array(
             })
             .collect_ca_with_dtype("", target_dtype.clone())
     }
-    // make sure that wrongly inferred AnyValues don't deviate from the datatype
+    // Make sure that wrongly inferred AnyValues don't deviate from the datatype.
     else {
         avs.iter()
             .map(|av| match av {
@@ -540,7 +607,7 @@ fn any_values_to_array(
         SchemaMismatch: "got mixed size array widths where width {} was expected", width
     );
 
-    // Ensure the logical type is correct for nested types
+    // Ensure the logical type is correct for nested types.
     #[cfg(feature = "dtype-struct")]
     if !matches!(inner_type, DataType::Null) && out.inner_dtype().is_nested() {
         unsafe {
@@ -557,7 +624,7 @@ fn any_values_to_struct(
     fields: &[Field],
     strict: bool,
 ) -> PolarsResult<Series> {
-    // Fast path for empty structs.
+    // Fast path for structs with no fields.
     if fields.is_empty() {
         return Ok(StructChunked::full_null("", values.len()).into_series());
     }
@@ -616,7 +683,7 @@ fn any_values_to_struct(
         }
         // If the inferred dtype is null, we let auto inference work.
         let s = if matches!(field.dtype, DataType::Null) {
-            Series::new(field.name(), &field_avs)
+            Series::from_any_values(field.name(), &field_avs, strict)?
         } else {
             Series::from_any_values_and_dtype(field.name(), &field_avs, &field.dtype, strict)?
         };

@@ -6,6 +6,7 @@ mod python_udf;
 mod rename;
 use std::borrow::Cow;
 use std::fmt::{Debug, Display, Formatter};
+use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -61,10 +62,6 @@ pub enum FunctionNode {
     Unnest {
         columns: Arc<[Arc<str>]>,
     },
-    FastProjection {
-        columns: Arc<[SmartString]>,
-        duplicate_check: bool,
-    },
     DropNulls {
         subset: Arc<[Arc<str>]>,
     },
@@ -99,20 +96,12 @@ pub enum FunctionNode {
     },
 }
 
+impl Eq for FunctionNode {}
+
 impl PartialEq for FunctionNode {
     fn eq(&self, other: &Self) -> bool {
         use FunctionNode::*;
         match (self, other) {
-            (
-                FastProjection {
-                    columns: l,
-                    duplicate_check: dl,
-                },
-                FastProjection {
-                    columns: r,
-                    duplicate_check: dr,
-                },
-            ) => l == r && dl == dr,
             (DropNulls { subset: l }, DropNulls { subset: r }) => l == r,
             (Rechunk, Rechunk) => true,
             (Count { paths: paths_l, .. }, Count { paths: paths_r, .. }) => paths_l == paths_r,
@@ -131,7 +120,53 @@ impl PartialEq for FunctionNode {
             (Explode { columns: l, .. }, Explode { columns: r, .. }) => l == r,
             (Melt { args: l, .. }, Melt { args: r, .. }) => l == r,
             (RowIndex { name: l, .. }, RowIndex { name: r, .. }) => l == r,
+            #[cfg(feature = "merge_sorted")]
+            (MergeSorted { column: l }, MergeSorted { column: r }) => l == r,
             _ => false,
+        }
+    }
+}
+
+impl Hash for FunctionNode {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        std::mem::discriminant(self).hash(state);
+        match self {
+            #[cfg(feature = "python")]
+            FunctionNode::OpaquePython { .. } => {},
+            FunctionNode::Opaque { fmt_str, .. } => fmt_str.hash(state),
+            FunctionNode::Count {
+                paths,
+                scan_type,
+                alias,
+            } => {
+                paths.hash(state);
+                scan_type.hash(state);
+                alias.hash(state);
+            },
+            FunctionNode::Pipeline { .. } => {},
+            FunctionNode::Unnest { columns } => columns.hash(state),
+            FunctionNode::DropNulls { subset } => subset.hash(state),
+            FunctionNode::Rechunk => {},
+            #[cfg(feature = "merge_sorted")]
+            FunctionNode::MergeSorted { column } => column.hash(state),
+            FunctionNode::Rename {
+                existing,
+                new,
+                swapping: _,
+            } => {
+                existing.hash(state);
+                new.hash(state);
+            },
+            FunctionNode::Explode { columns, schema: _ } => columns.hash(state),
+            FunctionNode::Melt { args, schema: _ } => args.hash(state),
+            FunctionNode::RowIndex {
+                name,
+                schema: _,
+                offset,
+            } => {
+                name.hash(state);
+                offset.hash(state);
+            },
         }
     }
 }
@@ -144,12 +179,9 @@ impl FunctionNode {
             Rechunk | Pipeline { .. } => false,
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => false,
-            DropNulls { .. }
-            | FastProjection { .. }
-            | Count { .. }
-            | Unnest { .. }
-            | Rename { .. }
-            | Explode { .. } => true,
+            DropNulls { .. } | Count { .. } | Unnest { .. } | Rename { .. } | Explode { .. } => {
+                true
+            },
             Melt { args, .. } => args.streamable,
             Opaque { streamable, .. } => *streamable,
             #[cfg(feature = "python")]
@@ -188,21 +220,15 @@ impl FunctionNode {
                 .map(|schema| Cow::Owned(schema.clone()))
                 .unwrap_or_else(|| Cow::Borrowed(input_schema))),
             Pipeline { schema, .. } => Ok(Cow::Owned(schema.clone())),
-            FastProjection { columns, .. } => {
-                let schema = columns
-                    .iter()
-                    .map(|name| {
-                        let name = name.as_ref();
-                        input_schema.try_get_field(name)
-                    })
-                    .collect::<PolarsResult<Schema>>()?;
-                Ok(Cow::Owned(Arc::new(schema)))
-            },
             DropNulls { .. } => Ok(Cow::Borrowed(input_schema)),
             Count { alias, .. } => {
                 let mut schema: Schema = Schema::with_capacity(1);
-                let name =
-                    SmartString::from(alias.as_ref().map(|alias| alias.as_ref()).unwrap_or("len"));
+                let name = SmartString::from(
+                    alias
+                        .as_ref()
+                        .map(|alias| alias.as_ref())
+                        .unwrap_or(crate::constants::LEN),
+                );
                 schema.insert_at_index(0, name, IDX_DTYPE)?;
                 Ok(Cow::Owned(Arc::new(schema)))
             },
@@ -258,8 +284,7 @@ impl FunctionNode {
             Opaque { predicate_pd, .. } => *predicate_pd,
             #[cfg(feature = "python")]
             OpaquePython { predicate_pd, .. } => *predicate_pd,
-            FastProjection { .. }
-            | DropNulls { .. }
+            DropNulls { .. }
             | Rechunk
             | Unnest { .. }
             | Rename { .. }
@@ -278,8 +303,7 @@ impl FunctionNode {
             Opaque { projection_pd, .. } => *projection_pd,
             #[cfg(feature = "python")]
             OpaquePython { projection_pd, .. } => *projection_pd,
-            FastProjection { .. }
-            | DropNulls { .. }
+            DropNulls { .. }
             | Rechunk
             | Count { .. }
             | Unnest { .. }
@@ -315,16 +339,6 @@ impl FunctionNode {
                 schema,
                 ..
             } => python_udf::call_python_udf(function, df, *validate_output, schema.as_deref()),
-            FastProjection {
-                columns,
-                duplicate_check,
-            } => {
-                if *duplicate_check {
-                    df._select_impl(columns.as_ref())
-                } else {
-                    df._select_impl_unchecked(columns.as_ref())
-                }
-            },
             DropNulls { subset } => df.drop_nulls(Some(subset.as_ref())),
             Count {
                 paths, scan_type, ..
@@ -382,11 +396,6 @@ impl Display for FunctionNode {
             Opaque { fmt_str, .. } => write!(f, "{fmt_str}"),
             #[cfg(feature = "python")]
             OpaquePython { .. } => write!(f, "python dataframe udf"),
-            FastProjection { columns, .. } => {
-                write!(f, "FAST_PROJECT: ")?;
-                let columns = columns.as_ref();
-                fmt_column_delimited(f, columns, "[", "]")
-            },
             DropNulls { subset } => {
                 write!(f, "DROP_NULLS by: ")?;
                 let subset = subset.as_ref();

@@ -37,3 +37,27 @@ pub fn has_fast_bmi2() -> bool {
 
     false
 }
+
+#[inline]
+pub fn is_avx512_enabled() -> bool {
+    #[cfg(target_arch = "x86_64")]
+    {
+        static CACHE: OnceLock<bool> = OnceLock::new();
+        return *CACHE.get_or_init(|| {
+            if !std::arch::is_x86_feature_detected!("avx512f") {
+                return false;
+            }
+
+            if std::env::var("POLARS_DISABLE_AVX512")
+                .map(|var| var == "1")
+                .unwrap_or(false)
+            {
+                return false;
+            }
+
+            true
+        });
+    }
+
+    false
+}

@@ -6,6 +6,7 @@ use polars_utils::unitvec;
 use super::*;
 use crate::prelude::*;
 
+#[derive(Copy, Clone, Debug)]
 pub struct ALogicalPlanNode {
     node: Node,
     arena: *mut Arena<ALogicalPlan>,
@@ -24,6 +25,11 @@ impl ALogicalPlanNode {
     /// This will keep a pointer to `arena`. The caller must ensure it stays alive.
     pub(crate) unsafe fn from_raw(node: Node, arena: *mut Arena<ALogicalPlan>) -> Self {
         Self { node, arena }
+    }
+
+    #[cfg(feature = "cse")]
+    pub(crate) fn get_arena_raw(&self) -> *mut Arena<ALogicalPlan> {
+        self.arena
     }
 
     /// Safe interface. Take the `&mut Arena` only for the duration of `op`.
@@ -61,6 +67,10 @@ impl ALogicalPlanNode {
     pub fn assign(&mut self, ae: ALogicalPlan) {
         let node = self.with_arena_mut(|arena| arena.add(ae));
         self.node = node
+    }
+
+    pub fn replace_node(&mut self, node: Node) {
+        self.node = node;
     }
 
     /// Replace the current `Node` with a new `ALogicalPlan`.

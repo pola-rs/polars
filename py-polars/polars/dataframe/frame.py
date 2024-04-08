@@ -56,9 +56,6 @@ from polars._utils.deprecation import (
 from polars._utils.parse_expr_input import parse_as_expression
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
-    _prepare_row_index_args,
-    _process_null_values,
-    handle_projection_columns,
     is_bool_sequence,
     is_int_sequence,
     is_str_sequence,
@@ -78,7 +75,6 @@ from polars.datatypes import (
     Float64,
     Object,
     String,
-    py_type_to_dtype,
 )
 from polars.dependencies import (
     _HVPLOT_AVAILABLE,
@@ -99,7 +95,6 @@ from polars.exceptions import (
     TooManyRowsReturnedError,
 )
 from polars.functions import col, lit
-from polars.io._utils import _is_glob_pattern, _is_local_file
 from polars.io.csv._utils import _check_arg_is_1byte
 from polars.io.spreadsheet._write_utils import (
     _unpack_multi_column_dict,
@@ -116,8 +111,8 @@ from polars.slice import PolarsSlice
 from polars.type_aliases import DbWriteMode
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import PyDataFrame
     from polars.polars import dtype_str_repr as _dtype_str_repr
+    from polars.polars import write_clipboard_string as _write_clipboard_string
 
 if TYPE_CHECKING:
     import sys
@@ -131,6 +126,7 @@ if TYPE_CHECKING:
 
     from polars import DataType, Expr, LazyFrame, Series
     from polars.interchange.dataframe import PolarsDataFrame
+    from polars.polars import PyDataFrame
     from polars.type_aliases import (
         AsofJoinStrategy,
         AvroCompression,
@@ -141,7 +137,6 @@ if TYPE_CHECKING:
         ColumnWidthsDefinition,
         ComparisonOperator,
         ConditionalFormatDict,
-        CsvEncoding,
         CsvQuoteStyle,
         DbWriteEngine,
         FillNullStrategy,
@@ -156,7 +151,6 @@ if TYPE_CHECKING:
         NullStrategy,
         OneOrMoreDataTypes,
         Orientation,
-        ParallelStrategy,
         ParquetCompression,
         PivotAgg,
         PolarsDataType,
@@ -442,107 +436,6 @@ class DataFrame:
         return df
 
     @classmethod
-    def _from_dict(
-        cls,
-        data: Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | Series],
-        schema: SchemaDefinition | None = None,
-        *,
-        schema_overrides: SchemaDict | None = None,
-    ) -> Self:
-        """
-        Construct a DataFrame from a dictionary of sequences.
-
-        Parameters
-        ----------
-        data : dict of sequences
-          Two-dimensional data represented as a dictionary. dict must contain
-          Sequences.
-        schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
-            The DataFrame schema may be declared in several ways:
-
-            * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
-            * As a list of column names; in this case types are automatically inferred.
-            * As a list of (name,type) pairs; this is equivalent to the dictionary form.
-
-            If you supply a list of column names that does not match the names in the
-            underlying data, the names given here will overwrite them. The number
-            of names given in the schema should match the underlying data dimensions.
-        schema_overrides : dict, default None
-          Support type specification or override of one or more columns; note that
-          any dtypes inferred from the columns param will be overridden.
-        """
-        return cls._from_pydf(
-            dict_to_pydf(data, schema=schema, schema_overrides=schema_overrides)
-        )
-
-    @classmethod
-    def _from_records(
-        cls,
-        data: Sequence[Any],
-        schema: SchemaDefinition | None = None,
-        *,
-        schema_overrides: SchemaDict | None = None,
-        orient: Orientation | None = None,
-        infer_schema_length: int | None = N_INFER_DEFAULT,
-    ) -> Self:
-        """
-        Construct a DataFrame from a sequence of sequences.
-
-        See Also
-        --------
-        polars.io.from_records
-        """
-        return cls._from_pydf(
-            sequence_to_pydf(
-                data,
-                schema=schema,
-                schema_overrides=schema_overrides,
-                orient=orient,
-                infer_schema_length=infer_schema_length,
-            )
-        )
-
-    @classmethod
-    def _from_numpy(
-        cls,
-        data: np.ndarray[Any, Any],
-        schema: SchemaDefinition | None = None,
-        *,
-        schema_overrides: SchemaDict | None = None,
-        orient: Orientation | None = None,
-    ) -> Self:
-        """
-        Construct a DataFrame from a numpy ndarray.
-
-        Parameters
-        ----------
-        data : numpy ndarray
-            Two-dimensional data represented as a numpy ndarray.
-        schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
-            The DataFrame schema may be declared in several ways:
-
-            * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
-            * As a list of column names; in this case types are automatically inferred.
-            * As a list of (name,type) pairs; this is equivalent to the dictionary form.
-
-            If you supply a list of column names that does not match the names in the
-            underlying data, the names given here will overwrite them. The number
-            of names given in the schema should match the underlying data dimensions.
-        schema_overrides : dict, default None
-            Support type specification or override of one or more columns; note that
-            any dtypes inferred from the columns param will be overridden.
-        orient : {'col', 'row'}, default None
-            Whether to interpret two-dimensional data as columns or as rows. If None,
-            the orientation is inferred by matching the columns and data dimensions. If
-            this does not yield conclusive results, column orientation is used.
-        """
-        return cls._from_pydf(
-            numpy_to_pydf(
-                data, schema=schema, schema_overrides=schema_overrides, orient=orient
-            )
-        )
-
-    @classmethod
     def _from_arrow(
         cls,
         data: pa.Table | pa.RecordBatch,
@@ -634,450 +527,6 @@ class DataFrame:
                 include_index=include_index,
             )
         )
-
-    @classmethod
-    def _read_csv(
-        cls,
-        source: str | Path | IO[bytes] | bytes,
-        *,
-        has_header: bool = True,
-        columns: Sequence[int] | Sequence[str] | None = None,
-        separator: str = ",",
-        comment_prefix: str | None = None,
-        quote_char: str | None = '"',
-        skip_rows: int = 0,
-        dtypes: None | (SchemaDict | Sequence[PolarsDataType]) = None,
-        schema: None | SchemaDict = None,
-        null_values: str | Sequence[str] | dict[str, str] | None = None,
-        missing_utf8_is_empty_string: bool = False,
-        ignore_errors: bool = False,
-        try_parse_dates: bool = False,
-        n_threads: int | None = None,
-        infer_schema_length: int | None = N_INFER_DEFAULT,
-        batch_size: int = 8192,
-        n_rows: int | None = None,
-        encoding: CsvEncoding = "utf8",
-        low_memory: bool = False,
-        rechunk: bool = True,
-        skip_rows_after_header: int = 0,
-        row_index_name: str | None = None,
-        row_index_offset: int = 0,
-        sample_size: int = 1024,
-        eol_char: str = "\n",
-        raise_if_empty: bool = True,
-        truncate_ragged_lines: bool = False,
-    ) -> DataFrame:
-        """
-        Read a CSV file into a DataFrame.
-
-        Use `pl.read_csv` to dispatch to this method.
-
-        See Also
-        --------
-        polars.io.read_csv
-        """
-        self = cls.__new__(cls)
-
-        path: str | None
-        if isinstance(source, (str, Path)):
-            path = normalize_filepath(source)
-        else:
-            path = None
-            if isinstance(source, BytesIO):
-                source = source.getvalue()
-            if isinstance(source, StringIO):
-                source = source.getvalue().encode()
-
-        dtype_list: Sequence[tuple[str, PolarsDataType]] | None = None
-        dtype_slice: Sequence[PolarsDataType] | None = None
-        if dtypes is not None:
-            if isinstance(dtypes, dict):
-                dtype_list = []
-                for k, v in dtypes.items():
-                    dtype_list.append((k, py_type_to_dtype(v)))
-            elif isinstance(dtypes, Sequence):
-                dtype_slice = dtypes
-            else:
-                msg = f"`dtypes` should be of type list or dict, got {type(dtypes).__name__!r}"
-                raise TypeError(msg)
-
-        processed_null_values = _process_null_values(null_values)
-
-        if isinstance(columns, str):
-            columns = [columns]
-        if isinstance(source, str) and _is_glob_pattern(source):
-            dtypes_dict = None
-            if dtype_list is not None:
-                dtypes_dict = dict(dtype_list)
-            if dtype_slice is not None:
-                msg = (
-                    "cannot use glob patterns and unnamed dtypes as `dtypes` argument"
-                    "\n\nUse `dtypes`: Mapping[str, Type[DataType]]"
-                )
-                raise ValueError(msg)
-            from polars import scan_csv
-
-            scan = scan_csv(
-                source,
-                has_header=has_header,
-                separator=separator,
-                comment_prefix=comment_prefix,
-                quote_char=quote_char,
-                skip_rows=skip_rows,
-                dtypes=dtypes_dict,
-                schema=schema,
-                null_values=null_values,
-                missing_utf8_is_empty_string=missing_utf8_is_empty_string,
-                ignore_errors=ignore_errors,
-                infer_schema_length=infer_schema_length,
-                n_rows=n_rows,
-                low_memory=low_memory,
-                rechunk=rechunk,
-                skip_rows_after_header=skip_rows_after_header,
-                row_index_name=row_index_name,
-                row_index_offset=row_index_offset,
-                eol_char=eol_char,
-                raise_if_empty=raise_if_empty,
-                truncate_ragged_lines=truncate_ragged_lines,
-            )
-            if columns is None:
-                return scan.collect()
-            elif is_str_sequence(columns, allow_str=False):
-                return scan.select(columns).collect()
-            else:
-                msg = (
-                    "cannot use glob patterns and integer based projection as `columns` argument"
-                    "\n\nUse columns: List[str]"
-                )
-                raise ValueError(msg)
-
-        projection, columns = handle_projection_columns(columns)
-
-        self._df = PyDataFrame.read_csv(
-            source,
-            infer_schema_length,
-            batch_size,
-            has_header,
-            ignore_errors,
-            n_rows,
-            skip_rows,
-            projection,
-            separator,
-            rechunk,
-            columns,
-            encoding,
-            n_threads,
-            path,
-            dtype_list,
-            dtype_slice,
-            low_memory,
-            comment_prefix,
-            quote_char,
-            processed_null_values,
-            missing_utf8_is_empty_string,
-            try_parse_dates,
-            skip_rows_after_header,
-            _prepare_row_index_args(row_index_name, row_index_offset),
-            sample_size=sample_size,
-            eol_char=eol_char,
-            raise_if_empty=raise_if_empty,
-            truncate_ragged_lines=truncate_ragged_lines,
-            schema=schema,
-        )
-        return self
-
-    @classmethod
-    def _read_parquet(
-        cls,
-        source: str | Path | IO[bytes] | bytes,
-        *,
-        columns: Sequence[int] | Sequence[str] | None = None,
-        n_rows: int | None = None,
-        parallel: ParallelStrategy = "auto",
-        row_index_name: str | None = None,
-        row_index_offset: int = 0,
-        low_memory: bool = False,
-        use_statistics: bool = True,
-        rechunk: bool = True,
-    ) -> DataFrame:
-        """
-        Read into a DataFrame from a parquet file.
-
-        Use `pl.read_parquet` to dispatch to this method.
-
-        See Also
-        --------
-        polars.io.read_parquet
-        """
-        if isinstance(source, (str, Path)):
-            source = normalize_filepath(source)
-        if isinstance(columns, str):
-            columns = [columns]
-
-        if isinstance(source, str) and _is_glob_pattern(source):
-            from polars import scan_parquet
-
-            scan = scan_parquet(
-                source,
-                n_rows=n_rows,
-                rechunk=True,
-                parallel=parallel,
-                row_index_name=row_index_name,
-                row_index_offset=row_index_offset,
-                low_memory=low_memory,
-            )
-
-            if columns is None:
-                return scan.collect()
-            elif is_str_sequence(columns, allow_str=False):
-                return scan.select(columns).collect()
-            else:
-                msg = (
-                    "cannot use glob patterns and integer based projection as `columns` argument"
-                    "\n\nUse columns: List[str]"
-                )
-                raise TypeError(msg)
-
-        projection, columns = handle_projection_columns(columns)
-        self = cls.__new__(cls)
-        self._df = PyDataFrame.read_parquet(
-            source,
-            columns,
-            projection,
-            n_rows,
-            parallel,
-            _prepare_row_index_args(row_index_name, row_index_offset),
-            low_memory=low_memory,
-            use_statistics=use_statistics,
-            rechunk=rechunk,
-        )
-        return self
-
-    @classmethod
-    def _read_avro(
-        cls,
-        source: str | Path | IO[bytes] | bytes,
-        *,
-        columns: Sequence[int] | Sequence[str] | None = None,
-        n_rows: int | None = None,
-    ) -> Self:
-        """
-        Read into a DataFrame from Apache Avro format.
-
-        Parameters
-        ----------
-        source
-            Path to a file or a file-like object (by file-like object, we refer to
-            objects that have a `read()` method, such as a file handler (e.g.
-            via builtin `open` function) or `BytesIO`).
-        columns
-            Columns.
-        n_rows
-            Stop reading from Apache Avro file after reading `n_rows`.
-        """
-        if isinstance(source, (str, Path)):
-            source = normalize_filepath(source)
-        projection, columns = handle_projection_columns(columns)
-        self = cls.__new__(cls)
-        self._df = PyDataFrame.read_avro(source, columns, projection, n_rows)
-        return self
-
-    @classmethod
-    def _read_ipc(
-        cls,
-        source: str | Path | IO[bytes] | bytes,
-        *,
-        columns: Sequence[int] | Sequence[str] | None = None,
-        n_rows: int | None = None,
-        row_index_name: str | None = None,
-        row_index_offset: int = 0,
-        rechunk: bool = True,
-        memory_map: bool = True,
-    ) -> Self:
-        """
-        Read into a DataFrame from Arrow IPC file format.
-
-        See "File or Random Access format" on https://arrow.apache.org/docs/python/ipc.html.
-        Arrow IPC files are also known as Feather (v2) files.
-
-        Parameters
-        ----------
-        source
-            Path to a file or a file-like object (by file-like object, we refer to
-            objects that have a `read()` method, such as a file handler (e.g.
-            via builtin `open` function) or `BytesIO`).
-        columns
-            Columns to select. Accepts a list of column indices (starting at zero) or a
-            list of column names.
-        n_rows
-            Stop reading from IPC file after reading `n_rows`.
-        row_index_name
-            Row index name.
-        row_index_offset
-            Row index offset.
-        rechunk
-            Make sure that all data is contiguous.
-        memory_map
-            Memory map the file
-        """
-        if isinstance(source, (str, Path)):
-            source = normalize_filepath(source)
-        if isinstance(columns, str):
-            columns = [columns]
-
-        if (
-            isinstance(source, str)
-            and _is_glob_pattern(source)
-            and _is_local_file(source)
-        ):
-            from polars import scan_ipc
-
-            scan = scan_ipc(
-                source,
-                n_rows=n_rows,
-                rechunk=rechunk,
-                row_index_name=row_index_name,
-                row_index_offset=row_index_offset,
-                memory_map=memory_map,
-            )
-            if columns is None:
-                df = scan.collect()
-            elif is_str_sequence(columns, allow_str=False):
-                df = scan.select(columns).collect()
-            else:
-                msg = (
-                    "cannot use glob patterns and integer based projection as `columns` argument"
-                    "\n\nUse columns: List[str]"
-                )
-                raise TypeError(msg)
-            return cls._from_pydf(df._df)
-
-        projection, columns = handle_projection_columns(columns)
-        self = cls.__new__(cls)
-        self._df = PyDataFrame.read_ipc(
-            source,
-            columns,
-            projection,
-            n_rows,
-            _prepare_row_index_args(row_index_name, row_index_offset),
-            memory_map=memory_map,
-        )
-        return self
-
-    @classmethod
-    def _read_ipc_stream(
-        cls,
-        source: str | Path | IO[bytes] | bytes,
-        *,
-        columns: Sequence[int] | Sequence[str] | None = None,
-        n_rows: int | None = None,
-        row_index_name: str | None = None,
-        row_index_offset: int = 0,
-        rechunk: bool = True,
-    ) -> Self:
-        """
-        Read into a DataFrame from Arrow IPC record batch stream format.
-
-        See "Streaming format" on https://arrow.apache.org/docs/python/ipc.html.
-
-        Parameters
-        ----------
-        source
-            Path to a file or a file-like object (by file-like object, we refer to
-            objects that have a `read()` method, such as a file handler (e.g.
-            via builtin `open` function) or `BytesIO`).
-        columns
-            Columns to select. Accepts a list of column indices (starting at zero) or a
-            list of column names.
-        n_rows
-            Stop reading from IPC stream after reading `n_rows`.
-        row_index_name
-            Row index name.
-        row_index_offset
-            Row index offset.
-        rechunk
-            Make sure that all data is contiguous.
-        """
-        if isinstance(source, (str, Path)):
-            source = normalize_filepath(source)
-        if isinstance(columns, str):
-            columns = [columns]
-
-        projection, columns = handle_projection_columns(columns)
-        self = cls.__new__(cls)
-        self._df = PyDataFrame.read_ipc_stream(
-            source,
-            columns,
-            projection,
-            n_rows,
-            _prepare_row_index_args(row_index_name, row_index_offset),
-            rechunk,
-        )
-        return self
-
-    @classmethod
-    def _read_json(
-        cls,
-        source: str | Path | IOBase | bytes,
-        *,
-        schema: SchemaDefinition | None = None,
-        schema_overrides: SchemaDefinition | None = None,
-        infer_schema_length: int | None = N_INFER_DEFAULT,
-    ) -> Self:
-        """
-        Read into a DataFrame from a JSON file.
-
-        Use `pl.read_json` to dispatch to this method.
-
-        See Also
-        --------
-        polars.io.read_json
-        """
-        if isinstance(source, StringIO):
-            source = BytesIO(source.getvalue().encode())
-        elif isinstance(source, (str, Path)):
-            source = normalize_filepath(source)
-
-        self = cls.__new__(cls)
-        self._df = PyDataFrame.read_json(
-            source,
-            infer_schema_length=infer_schema_length,
-            schema=schema,
-            schema_overrides=schema_overrides,
-        )
-        return self
-
-    @classmethod
-    def _read_ndjson(
-        cls,
-        source: str | Path | IOBase | bytes,
-        *,
-        schema: SchemaDefinition | None = None,
-        schema_overrides: SchemaDefinition | None = None,
-        ignore_errors: bool = False,
-    ) -> Self:
-        """
-        Read into a DataFrame from a newline delimited JSON file.
-
-        Use `pl.read_ndjson` to dispatch to this method.
-
-        See Also
-        --------
-        polars.io.read_ndjson
-        """
-        if isinstance(source, StringIO):
-            source = BytesIO(source.getvalue().encode())
-        elif isinstance(source, (str, Path)):
-            source = normalize_filepath(source)
-
-        self = cls.__new__(cls)
-        self._df = PyDataFrame.read_ndjson(
-            source,
-            ignore_errors=ignore_errors,
-            schema=schema,
-            schema_overrides=schema_overrides,
-        )
-        return self
 
     def _replace(self, column: str, new_column: Series) -> Self:
         """Replace a column by a new Series (in place)."""
@@ -2696,6 +2145,27 @@ class DataFrame:
 
         return None
 
+    def write_clipboard(self, *, separator: str = "\t", **kwargs: Any) -> None:
+        """
+        Copy `DataFrame` in csv format to the system clipboard with `write_csv`.
+
+        Useful for pasting into Excel or other similar spreadsheet software.
+
+        Parameters
+        ----------
+        separator
+            Separate CSV fields with this symbol.
+        kwargs
+            Additional arguments to pass to `write_csv`.
+
+        See Also
+        --------
+        polars.read_clipboard: Read a DataFrame from the clipboard.
+        write_csv: Write to comma-separated values (CSV) file.
+        """
+        result: str = self.write_csv(file=None, separator=separator, **kwargs)
+        _write_clipboard_string(result)
+
     def write_avro(
         self,
         file: str | Path | IO[bytes],
@@ -3546,8 +3016,6 @@ class DataFrame:
             The number of rows affected, if the driver provides this information.
             Otherwise, returns -1.
         """
-        from polars.io.database import _open_adbc_connection
-
         if if_table_exists not in (valid_write_modes := get_args(DbWriteMode)):
             allowed = ", ".join(repr(m) for m in valid_write_modes)
             msg = f"write_database `if_table_exists` must be one of {{{allowed}}}, got {if_table_exists!r}"
@@ -3577,6 +3045,8 @@ class DataFrame:
                     "\n\nInstall Polars with: pip install adbc_driver_manager"
                 )
                 raise ModuleNotFoundError(msg) from exc
+
+            from polars.io.database._utils import _open_adbc_connection
 
             if if_table_exists == "fail":
                 # if the table exists, 'create' will raise an error,
@@ -5482,6 +4952,7 @@ class DataFrame:
         """
         return GroupBy(self, *by, **named_by, maintain_order=maintain_order)
 
+    @deprecate_renamed_parameter("by", "group_by", version="0.20.14")
     def rolling(
         self,
         index_column: IntoExpr,
@@ -5489,7 +4960,7 @@ class DataFrame:
         period: str | timedelta,
         offset: str | timedelta | None = None,
         closed: ClosedInterval = "right",
-        by: IntoExpr | Iterable[IntoExpr] | None = None,
+        group_by: IntoExpr | Iterable[IntoExpr] | None = None,
         check_sorted: bool = True,
     ) -> RollingGroupBy:
         """
@@ -5542,33 +5013,35 @@ class DataFrame:
         index_column
             Column used to group based on the time window.
             Often of type Date/Datetime.
-            This column must be sorted in ascending order (or, if `by` is specified,
-            then it must be sorted in ascending order within each group).
+            This column must be sorted in ascending order (or, if `group_by` is
+            specified, then it must be sorted in ascending order within each group).
 
             In case of a rolling operation on indices, dtype needs to be one of
             {UInt32, UInt64, Int32, Int64}. Note that the first three get temporarily
             cast to Int64, so if performance matters use an Int64 column.
         period
-            length of the window - must be non-negative
+            Length of the window - must be non-negative.
         offset
-            offset of the window. Default is -period
+            Offset of the window. Default is `-period`.
         closed : {'right', 'left', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive).
-        by
+        group_by
             Also group by this column/these columns
         check_sorted
-            When the `by` argument is given, polars can not check sortedness
+            Check whether `index_column` is sorted (or, if `group_by` is given,
+            check whether it's sorted within each group).
+            When the `group_by` argument is given, polars can not check sortedness
             by the metadata and has to do a full scan on the index column to
             verify data is sorted. This is expensive. If you are sure the
-            data within the by groups is sorted, you can set this to `False`.
+            data within the groups is sorted, you can set this to `False`.
             Doing so incorrectly will lead to incorrect output
 
         Returns
         -------
         RollingGroupBy
             Object you can call `.agg` on to aggregate by groups, the result
-            of which will be sorted by `index_column` (but note that if `by` columns are
-            passed, it will only be sorted within each `by` group).
+            of which will be sorted by `index_column` (but note that if `group_by`
+            columns are passed, it will only be sorted within each group).
 
         See Also
         --------
@@ -5620,10 +5093,11 @@ class DataFrame:
             period=period,
             offset=offset,
             closed=closed,
-            by=by,
+            group_by=group_by,
             check_sorted=check_sorted,
         )
 
+    @deprecate_renamed_parameter("by", "group_by", version="0.20.14")
     def group_by_dynamic(
         self,
         index_column: IntoExpr,
@@ -5635,7 +5109,7 @@ class DataFrame:
         include_boundaries: bool = False,
         closed: ClosedInterval = "left",
         label: Label = "left",
-        by: IntoExpr | Iterable[IntoExpr] | None = None,
+        group_by: IntoExpr | Iterable[IntoExpr] | None = None,
         start_by: StartBy = "window",
         check_sorted: bool = True,
     ) -> DynamicGroupBy:
@@ -5651,11 +5125,11 @@ class DataFrame:
         - [start + 2*every, start + 2*every + period)
         - ...
 
-        where `start` is determined by `start_by`, `offset`, and `every` (see parameter
-        descriptions below).
+        where `start` is determined by `start_by`, `offset`, `every`, and the earliest
+        datapoint. See the `start_by` argument description for details.
 
         .. warning::
-            The index column must be sorted in ascending order. If `by` is passed, then
+            The index column must be sorted in ascending order. If `group_by` is passed, then
             the index column must be sorted in ascending order within each group.
 
         Parameters
@@ -5663,7 +5137,7 @@ class DataFrame:
         index_column
             Column used to group based on the time window.
             Often of type Date/Datetime.
-            This column must be sorted in ascending order (or, if `by` is specified,
+            This column must be sorted in ascending order (or, if `group_by` is specified,
             then it must be sorted in ascending order within each group).
 
             In case of a dynamic group by on indices, dtype needs to be one of
@@ -5674,7 +5148,7 @@ class DataFrame:
         period
             length of the window, if None it will equal 'every'
         offset
-            offset of the window, only takes effect if `start_by` is `'window'`.
+            offset of the window, does not take effect if `start_by` is 'datapoint'.
             Defaults to negative `every`.
         truncate
             truncate the time value to the window lower bound
@@ -5695,7 +5169,7 @@ class DataFrame:
             - 'datapoint': the first value of the index column in the given window.
               If you don't need the label to be at one of the boundaries, choose this
               option for maximum performance
-        by
+        group_by
             Also group by this column/these columns
         start_by : {'window', 'datapoint', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'}
             The strategy to determine the start of the first window by.
@@ -5710,19 +5184,24 @@ class DataFrame:
               * 'tuesday': Start the window on the Tuesday before the first data point.
               * ...
               * 'sunday': Start the window on the Sunday before the first data point.
+
+              The resulting window is then shifted back until the earliest datapoint
+              is in or in front of it.
         check_sorted
-            When the `by` argument is given, polars can not check sortedness
+            Check whether `index_column` is sorted (or, if `group_by` is given,
+            check whether it's sorted within each group).
+            When the `group_by` argument is given, polars can not check sortedness
             by the metadata and has to do a full scan on the index column to
             verify data is sorted. This is expensive. If you are sure the
-            data within the by groups is sorted, you can set this to `False`.
+            data within the groups is sorted, you can set this to `False`.
             Doing so incorrectly will lead to incorrect output
 
         Returns
         -------
         DynamicGroupBy
             Object you can call `.agg` on to aggregate by groups, the result
-            of which will be sorted by `index_column` (but note that if `by` columns are
-            passed, it will only be sorted within each `by` group).
+            of which will be sorted by `index_column` (but note that if `group_by` columns are
+            passed, it will only be sorted within each group).
 
         See Also
         --------
@@ -5892,7 +5371,7 @@ class DataFrame:
         ...     "time",
         ...     every="1h",
         ...     closed="both",
-        ...     by="groups",
+        ...     group_by="groups",
         ...     include_boundaries=True,
         ... ).agg(pl.col("n"))
         shape: (7, 5)
@@ -5952,18 +5431,19 @@ class DataFrame:
             label=label,
             include_boundaries=include_boundaries,
             closed=closed,
-            by=by,
+            group_by=group_by,
             start_by=start_by,
             check_sorted=check_sorted,
         )
 
+    @deprecate_renamed_parameter("by", "group_by", version="0.20.14")
     def upsample(
         self,
         time_column: str,
         *,
         every: str | timedelta,
         offset: str | timedelta | None = None,
-        by: str | Sequence[str] | None = None,
+        group_by: str | Sequence[str] | None = None,
         maintain_order: bool = False,
     ) -> Self:
         """
@@ -6003,7 +5483,7 @@ class DataFrame:
             Interval will start 'every' duration.
         offset
             Change the start of the date_range by this offset.
-        by
+        group_by
             First group by these columns and then upsample for every group.
         maintain_order
             Keep the ordering predictable. This is slower.
@@ -6011,8 +5491,8 @@ class DataFrame:
         Returns
         -------
         DataFrame
-            Result will be sorted by `time_column` (but note that if `by` columns are
-            passed, it will only be sorted within each `by` group).
+            Result will be sorted by `time_column` (but note that if `group_by` columns
+            are passed, it will only be sorted within each group).
 
         Examples
         --------
@@ -6032,7 +5512,7 @@ class DataFrame:
         ...     }
         ... ).set_sorted("time")
         >>> df.upsample(
-        ...     time_column="time", every="1mo", by="groups", maintain_order=True
+        ...     time_column="time", every="1mo", group_by="groups", maintain_order=True
         ... ).select(pl.all().forward_fill())
         shape: (7, 3)
         ┌─────────────────────┬────────┬────────┐
@@ -6051,10 +5531,10 @@ class DataFrame:
         """
         every = deprecate_saturating(every)
         offset = deprecate_saturating(offset)
-        if by is None:
-            by = []
-        if isinstance(by, str):
-            by = [by]
+        if group_by is None:
+            group_by = []
+        if isinstance(group_by, str):
+            group_by = [group_by]
         if offset is None:
             offset = "0ns"
 
@@ -6062,7 +5542,7 @@ class DataFrame:
         offset = parse_as_duration_string(offset)
 
         return self._from_pydf(
-            self._df.upsample(by, time_column, every, offset, maintain_order)
+            self._df.upsample(group_by, time_column, every, offset, maintain_order)
         )
 
     def join_asof(
@@ -6981,17 +6461,18 @@ class DataFrame:
         │ null ┆ null ┆ null │
         └──────┴──────┴──────┘
         """
+        if n < 0:
+            msg = f"`n` should be greater than or equal to 0, got {n}"
+            raise ValueError(msg)
         # faster path
         if n == 0:
             return self._from_pydf(self._df.clear())
-        if n > 0 or len(self) > 0:
-            return self.__class__(
-                {
-                    nm: pl.Series(name=nm, dtype=tp).extend_constant(None, n)
-                    for nm, tp in self.schema.items()
-                }
-            )
-        return self.clone()
+        return self.__class__(
+            {
+                nm: pl.Series(name=nm, dtype=tp).extend_constant(None, n)
+                for nm, tp in self.schema.items()
+            }
+        )
 
     def clone(self) -> Self:
         """
@@ -8260,16 +7741,16 @@ class DataFrame:
         ... )
         >>> df.with_columns((pl.col("a") ** 2).alias("a^2"))
         shape: (4, 4)
-        ┌─────┬──────┬───────┬──────┐
-        │ a   ┆ b    ┆ c     ┆ a^2  │
-        │ --- ┆ ---  ┆ ---   ┆ ---  │
-        │ i64 ┆ f64  ┆ bool  ┆ f64  │
-        ╞═════╪══════╪═══════╪══════╡
-        │ 1   ┆ 0.5  ┆ true  ┆ 1.0  │
-        │ 2   ┆ 4.0  ┆ true  ┆ 4.0  │
-        │ 3   ┆ 10.0 ┆ false ┆ 9.0  │
-        │ 4   ┆ 13.0 ┆ true  ┆ 16.0 │
-        └─────┴──────┴───────┴──────┘
+        ┌─────┬──────┬───────┬─────┐
+        │ a   ┆ b    ┆ c     ┆ a^2 │
+        │ --- ┆ ---  ┆ ---   ┆ --- │
+        │ i64 ┆ f64  ┆ bool  ┆ i64 │
+        ╞═════╪══════╪═══════╪═════╡
+        │ 1   ┆ 0.5  ┆ true  ┆ 1   │
+        │ 2   ┆ 4.0  ┆ true  ┆ 4   │
+        │ 3   ┆ 10.0 ┆ false ┆ 9   │
+        │ 4   ┆ 13.0 ┆ true  ┆ 16  │
+        └─────┴──────┴───────┴─────┘
 
         Added columns will replace existing columns with the same name.
 
@@ -8296,16 +7777,16 @@ class DataFrame:
         ...     ]
         ... )
         shape: (4, 6)
-        ┌─────┬──────┬───────┬──────┬──────┬───────┐
-        │ a   ┆ b    ┆ c     ┆ a^2  ┆ b/2  ┆ not c │
-        │ --- ┆ ---  ┆ ---   ┆ ---  ┆ ---  ┆ ---   │
-        │ i64 ┆ f64  ┆ bool  ┆ f64  ┆ f64  ┆ bool  │
-        ╞═════╪══════╪═══════╪══════╪══════╪═══════╡
-        │ 1   ┆ 0.5  ┆ true  ┆ 1.0  ┆ 0.25 ┆ false │
-        │ 2   ┆ 4.0  ┆ true  ┆ 4.0  ┆ 2.0  ┆ false │
-        │ 3   ┆ 10.0 ┆ false ┆ 9.0  ┆ 5.0  ┆ true  │
-        │ 4   ┆ 13.0 ┆ true  ┆ 16.0 ┆ 6.5  ┆ false │
-        └─────┴──────┴───────┴──────┴──────┴───────┘
+        ┌─────┬──────┬───────┬─────┬──────┬───────┐
+        │ a   ┆ b    ┆ c     ┆ a^2 ┆ b/2  ┆ not c │
+        │ --- ┆ ---  ┆ ---   ┆ --- ┆ ---  ┆ ---   │
+        │ i64 ┆ f64  ┆ bool  ┆ i64 ┆ f64  ┆ bool  │
+        ╞═════╪══════╪═══════╪═════╪══════╪═══════╡
+        │ 1   ┆ 0.5  ┆ true  ┆ 1   ┆ 0.25 ┆ false │
+        │ 2   ┆ 4.0  ┆ true  ┆ 4   ┆ 2.0  ┆ false │
+        │ 3   ┆ 10.0 ┆ false ┆ 9   ┆ 5.0  ┆ true  │
+        │ 4   ┆ 13.0 ┆ true  ┆ 16  ┆ 6.5  ┆ false │
+        └─────┴──────┴───────┴─────┴──────┴───────┘
 
         Multiple columns also can be added using positional arguments instead of a list.
 
@@ -8315,16 +7796,16 @@ class DataFrame:
         ...     (pl.col("c").not_()).alias("not c"),
         ... )
         shape: (4, 6)
-        ┌─────┬──────┬───────┬──────┬──────┬───────┐
-        │ a   ┆ b    ┆ c     ┆ a^2  ┆ b/2  ┆ not c │
-        │ --- ┆ ---  ┆ ---   ┆ ---  ┆ ---  ┆ ---   │
-        │ i64 ┆ f64  ┆ bool  ┆ f64  ┆ f64  ┆ bool  │
-        ╞═════╪══════╪═══════╪══════╪══════╪═══════╡
-        │ 1   ┆ 0.5  ┆ true  ┆ 1.0  ┆ 0.25 ┆ false │
-        │ 2   ┆ 4.0  ┆ true  ┆ 4.0  ┆ 2.0  ┆ false │
-        │ 3   ┆ 10.0 ┆ false ┆ 9.0  ┆ 5.0  ┆ true  │
-        │ 4   ┆ 13.0 ┆ true  ┆ 16.0 ┆ 6.5  ┆ false │
-        └─────┴──────┴───────┴──────┴──────┴───────┘
+        ┌─────┬──────┬───────┬─────┬──────┬───────┐
+        │ a   ┆ b    ┆ c     ┆ a^2 ┆ b/2  ┆ not c │
+        │ --- ┆ ---  ┆ ---   ┆ --- ┆ ---  ┆ ---   │
+        │ i64 ┆ f64  ┆ bool  ┆ i64 ┆ f64  ┆ bool  │
+        ╞═════╪══════╪═══════╪═════╪══════╪═══════╡
+        │ 1   ┆ 0.5  ┆ true  ┆ 1   ┆ 0.25 ┆ false │
+        │ 2   ┆ 4.0  ┆ true  ┆ 4   ┆ 2.0  ┆ false │
+        │ 3   ┆ 10.0 ┆ false ┆ 9   ┆ 5.0  ┆ true  │
+        │ 4   ┆ 13.0 ┆ true  ┆ 16  ┆ 6.5  ┆ false │
+        └─────┴──────┴───────┴─────┴──────┴───────┘
 
         Use keyword arguments to easily name your expression inputs.
 
@@ -9818,8 +9299,8 @@ class DataFrame:
             if not index_idxs:
                 msg = f"no columns found for key: {key_tuple!r}"
                 raise ValueError(msg)
-            get_data = itemgetter(*data_idxs)  # type: ignore[assignment]
-            get_key = itemgetter(*index_idxs)  # type: ignore[assignment]
+            get_data = itemgetter(*data_idxs)  # type: ignore[arg-type]
+            get_key = itemgetter(*index_idxs)  # type: ignore[arg-type]
 
         # if unique, we expect to write just one entry per key; otherwise, we're
         # returning a list of rows for each key, so append into a defaultdict.
@@ -10655,10 +10136,12 @@ class DataFrame:
         by
             Also group by this column/these columns
         check_sorted
+            Check whether the `index` column is sorted (or, if `by` is given,
+            check whether it's sorted within each group).
             When the `by` argument is given, polars can not check sortedness
             by the metadata and has to do a full scan on the index column to
             verify data is sorted. This is expensive. If you are sure the
-            data within the by groups is sorted, you can set this to `False`.
+            data within the groups is sorted, you can set this to `False`.
             Doing so incorrectly will lead to incorrect output
         """
         return self.rolling(
@@ -10666,7 +10149,7 @@ class DataFrame:
             period=period,
             offset=offset,
             closed=closed,
-            by=by,
+            group_by=by,
             check_sorted=check_sorted,
         )
 
@@ -10707,10 +10190,12 @@ class DataFrame:
         by
             Also group by this column/these columns
         check_sorted
+            Check whether `index_column` is sorted (or, if `by` is given,
+            check whether it's sorted within each group).
             When the `by` argument is given, polars can not check sortedness
             by the metadata and has to do a full scan on the index column to
             verify data is sorted. This is expensive. If you are sure the
-            data within the by groups is sorted, you can set this to `False`.
+            data within the groups is sorted, you can set this to `False`.
             Doing so incorrectly will lead to incorrect output
         """
         return self.rolling(
@@ -10718,7 +10203,7 @@ class DataFrame:
             period=period,
             offset=offset,
             closed=closed,
-            by=by,
+            group_by=by,
             check_sorted=check_sorted,
         )
 
@@ -10784,11 +10269,16 @@ class DataFrame:
               * 'tuesday': Start the window on the Tuesday before the first data point.
               * ...
               * 'sunday': Start the window on the Sunday before the first data point.
+
+              The resulting window is then shifted back until the earliest datapoint
+              is in or in front of it.
         check_sorted
+            Check whether `index_column` is sorted (or, if `by` is given,
+            check whether it's sorted within each group).
             When the `by` argument is given, polars can not check sortedness
             by the metadata and has to do a full scan on the index column to
             verify data is sorted. This is expensive. If you are sure the
-            data within the by groups is sorted, you can set this to `False`.
+            data within the groups is sorted, you can set this to `False`.
             Doing so incorrectly will lead to incorrect output
 
         Returns
@@ -10806,7 +10296,7 @@ class DataFrame:
             truncate=truncate,
             include_boundaries=include_boundaries,
             closed=closed,
-            by=by,
+            group_by=by,
             start_by=start_by,
             check_sorted=check_sorted,
         )
