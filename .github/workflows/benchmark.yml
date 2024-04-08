@@ -96,8 +96,8 @@ jobs:
       - name: Run benchmark tests
         uses: CodSpeedHQ/action@v2
         with:
-          run: pytest --codspeed -v
           working-directory: py-polars
+          run: pytest -m benchmark --codspeed -v
 
       - name: Run non-benchmark tests
         working-directory: py-polars
