@@ -162,7 +162,6 @@ dtypes = [
   "dtype-i16",
   "dtype-u8",
   "dtype-u16",
-  "polars/group_by_list",
   "object",
 ]
 

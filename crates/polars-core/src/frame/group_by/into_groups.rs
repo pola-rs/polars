@@ -1,10 +1,9 @@
-#[cfg(feature = "group_by_list")]
-use arrow::legacy::kernels::list_bytes_iter::numeric_list_bytes_iter;
 use arrow::legacy::kernels::sort_partition::{create_clean_partitions, partition_to_groups};
 use polars_utils::total_ord::{ToTotalOrd, TotalHash};
 
 use super::*;
 use crate::config::verbose;
+use crate::prelude::sort::arg_sort_multiple::_get_rows_encoded_ca_unordered;
 use crate::utils::_split_offsets;
 use crate::utils::flatten::flatten_par;
 
@@ -368,63 +367,14 @@ impl IntoGroupsProxy for ListChunked {
     #[allow(clippy::needless_lifetimes)]
     #[allow(unused_variables)]
     fn group_tuples<'a>(&'a self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
-        #[cfg(feature = "group_by_list")]
-        {
-            polars_ensure!(
-                self.inner_dtype().to_physical().is_numeric(),
-                ComputeError: "grouping on list type is only allowed if the inner type is numeric"
-            );
+        let by = &[self.clone().into_series()];
+        let ca = if multithreaded {
+            encode_rows_vertical_par_unordered(by).unwrap()
+        } else {
+            _get_rows_encoded_ca_unordered("", by).unwrap()
+        };
 
-            let hb = RandomState::default();
-            let null_h = get_null_hash_value(&hb);
-
-            let arr_to_hashes = |ca: &ListChunked| {
-                let mut out = Vec::with_capacity(ca.len());
-
-                for arr in ca.downcast_iter() {
-                    out.extend(numeric_list_bytes_iter(arr)?.map(|opt_bytes| {
-                        let hash = match opt_bytes {
-                            Some(s) => hb.hash_one(s),
-                            None => null_h,
-                        };
-
-                        // SAFETY:
-                        // the underlying data is tied to self
-                        unsafe {
-                            std::mem::transmute::<BytesHash<'_>, BytesHash<'a>>(BytesHash::new(
-                                opt_bytes, hash,
-                            ))
-                        }
-                    }))
-                }
-                Ok(out)
-            };
-
-            if multithreaded {
-                let n_partitions = _set_partition_size();
-                let split = _split_offsets(self.len(), n_partitions);
-
-                let groups: PolarsResult<_> = POOL.install(|| {
-                    let bytes_hashes = split
-                        .into_par_iter()
-                        .map(|(offset, len)| {
-                            let ca = self.slice(offset as i64, len);
-                            arr_to_hashes(&ca)
-                        })
-                        .collect::<PolarsResult<Vec<_>>>()?;
-                    let bytes_hashes = bytes_hashes.iter().collect::<Vec<_>>();
-                    Ok(group_by_threaded_slice(bytes_hashes, n_partitions, sorted))
-                });
-                groups
-            } else {
-                let hashes = arr_to_hashes(self)?;
-                Ok(group_by(hashes.iter(), sorted))
-            }
-        }
-        #[cfg(not(feature = "group_by_list"))]
-        {
-            panic!("activate 'group_by_list' feature")
-        }
+        ca.group_tuples(multithreaded, sorted)
     }
 }
 
