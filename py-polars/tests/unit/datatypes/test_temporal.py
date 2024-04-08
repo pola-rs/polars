@@ -579,25 +579,26 @@ def test_upsample(
         }
     ).with_columns(pl.col("time").dt.replace_time_zone(time_zone).set_sorted())
 
+    context_manager: contextlib.AbstractContextManager[pytest.WarningsRecorder | None]
+    msg = (
+        "`offset` is deprecated and will be removed in the next breaking release. "
+        "Instead, chain `upsample` with `dt.offset_by`."
+    )
     if offset is not None:
-        with pytest.warns(
+        context_manager = pytest.warns(
             DeprecationWarning,
-            match="`offset` is deprecated and will be removed in the next breaking release. "
-            "Instead, chain `upsample` with `.dt.offset_by`.",
-        ):
-            up = df.upsample(
-                time_column="time",
-                every="1mo",
-                group_by="admin",
-                maintain_order=True,
-                offset=offset,
-            ).select(pl.all().forward_fill())
+            match=msg,
+        )
     else:
+        context_manager = contextlib.nullcontext()
+
+    with context_manager:
         up = df.upsample(
             time_column="time",
             every="1mo",
             group_by="admin",
             maintain_order=True,
+            offset=offset,
         ).select(pl.all().forward_fill())
     # this print will panic if timezones feature is not activated
     # don't remove
@@ -661,36 +662,20 @@ def test_offset_deprecated() -> None:
     ).sort("time")
 
     # truncate
-    with pytest.warns(
-        DeprecationWarning,
-        match="`offset` is deprecated and will be removed in the next breaking release. "
-        "Instead, chain `dt.truncate` with `.dt.offset_by`.",
-    ):
+    with pytest.deprecated_call():
         df.select(pl.col("time").dt.truncate(every="1mo", offset="1d"))
 
     # round
-    with pytest.warns(
-        DeprecationWarning,
-        match="`offset` is deprecated and will be removed in the next breaking release. "
-        "Instead, chain `dt.round` with `.dt.offset_by`.",
-    ):
+    with pytest.deprecated_call():
         df.select(pl.col("time").dt.round(every="1mo", offset="1d"))
 
     ser = df.to_series(0)
     # truncate
-    with pytest.warns(
-        DeprecationWarning,
-        match="`offset` is deprecated and will be removed in the next breaking release. "
-        "Instead, chain `dt.truncate` with `.dt.offset_by`.",
-    ):
+    with pytest.deprecated_call():
         ser.dt.truncate(every="1mo", offset="1d")
 
     # round
-    with pytest.warns(
-        DeprecationWarning,
-        match="`offset` is deprecated and will be removed in the next breaking release. "
-        "Instead, chain `dt.round` with `.dt.offset_by`.",
-    ):
+    with pytest.deprecated_call():
         ser.dt.round(every="1mo", offset="1d")
 
 
@@ -723,14 +708,20 @@ def test_upsample_crossing_dst(
             "values": [1, 2, 3],
         }
     )
+    context_manager: contextlib.AbstractContextManager[pytest.WarningsRecorder | None]
+    msg = (
+        "`offset` is deprecated and will be removed in the next breaking release. "
+        "Instead, chain `upsample` with `dt.offset_by`."
+    )
     if offset is not None:
-        with pytest.warns(
+        context_manager = pytest.warns(
             DeprecationWarning,
-            match="`offset` is deprecated and will be removed in the next breaking release. "
-            "Instead, chain `upsample` with `.dt.offset_by`.",
-        ):
-            result = df.upsample(time_column="time", every="1d", offset=offset)
+            match=msg,
+        )
     else:
+        context_manager = contextlib.nullcontext()
+
+    with context_manager:
         result = df.upsample(time_column="time", every="1d", offset=offset)
     expected = pl.DataFrame(
         {
@@ -1843,10 +1834,7 @@ def test_replace_time_zone_ambiguous_null() -> None:
 
 def test_use_earliest_deprecation() -> None:
     # strptime
-    with pytest.warns(
-        DeprecationWarning,
-        match="Please replace `use_earliest=True` with `ambiguous='earliest'`",
-    ):
+    with pytest.deprecated_call():
         result = pl.Series(["2020-10-25 01:00"]).str.strptime(
             pl.Datetime("us", "Europe/London"), use_earliest=True
         )
@@ -1854,10 +1842,7 @@ def test_use_earliest_deprecation() -> None:
         pl.Datetime("us", "Europe/London"), ambiguous="earliest"
     )
     assert_series_equal(result, expected)
-    with pytest.warns(
-        DeprecationWarning,
-        match="Please replace `use_earliest=False` with `ambiguous='latest'`",
-    ):
+    with pytest.deprecated_call():
         result = pl.Series(["2020-10-25 01:00"]).str.strptime(
             pl.Datetime("us", "Europe/London"), use_earliest=False
         )
@@ -1870,48 +1855,32 @@ def test_use_earliest_deprecation() -> None:
     ser = pl.Series(["2020-10-25 01:00"]).str.to_datetime(
         time_zone="Europe/London", ambiguous="latest"
     )
-    with pytest.warns(
-        DeprecationWarning,
-    ):
+    with pytest.deprecated_call():
         result = ser.dt.truncate("1h", use_earliest=True)
     expected = ser.dt.truncate("1h")
     assert_series_equal(result, expected)
-    with pytest.warns(
-        DeprecationWarning,
-    ):
+    with pytest.deprecated_call():
         result = ser.dt.truncate("1h", use_earliest=True)
     expected = ser.dt.truncate("1h")
     assert_series_equal(result, expected)
 
     # replace_time_zone
     ser = pl.Series([datetime(2020, 10, 25, 1)])
-    with pytest.warns(
-        DeprecationWarning,
-        match="Please replace `use_earliest=True` with `ambiguous='earliest'`",
-    ):
+    with pytest.deprecated_call():
         result = ser.dt.replace_time_zone("Europe/London", use_earliest=True)
     expected = ser.dt.replace_time_zone("Europe/London", ambiguous="earliest")
     assert_series_equal(result, expected)
-    with pytest.warns(
-        DeprecationWarning,
-        match="Please replace `use_earliest=False` with `ambiguous='latest'`",
-    ):
+    with pytest.deprecated_call():
         result = ser.dt.replace_time_zone("Europe/London", use_earliest=False)
     expected = ser.dt.replace_time_zone("Europe/London", ambiguous="latest")
     assert_series_equal(result, expected)
 
     # pl.datetime
-    with pytest.warns(
-        DeprecationWarning,
-        match="Please replace `use_earliest=True` with `ambiguous='earliest'`",
-    ):
+    with pytest.deprecated_call():
         result = pl.select(pl.datetime(2020, 10, 25, 1, use_earliest=True))["datetime"]
     expected = pl.select(pl.datetime(2020, 10, 25, 1, ambiguous="earliest"))["datetime"]
     assert_series_equal(result, expected)
-    with pytest.warns(
-        DeprecationWarning,
-        match="Please replace `use_earliest=False` with `ambiguous='latest'`",
-    ):
+    with pytest.deprecated_call():
         result = pl.select(pl.datetime(2020, 10, 25, 1, use_earliest=False))["datetime"]
     expected = pl.select(pl.datetime(2020, 10, 25, 1, ambiguous="latest"))["datetime"]
     assert_series_equal(result, expected)
