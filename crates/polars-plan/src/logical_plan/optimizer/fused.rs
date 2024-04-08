@@ -3,7 +3,11 @@ use super::*;
 pub struct FusedArithmetic {}
 
 fn get_expr(input: &[Node], op: FusedOperator, expr_arena: &Arena<AExpr>) -> AExpr {
-    let input = input.iter().copied().map(|n| ExprIR::from_node(n, expr_arena)).collect();
+    let input = input
+        .iter()
+        .copied()
+        .map(|n| ExprIR::from_node(n, expr_arena))
+        .collect();
     let mut options = FunctionOptions {
         collect_groups: ApplyOptions::ElementWise,
         cast_to_supertypes: true,
@@ -111,7 +115,11 @@ impl OptimizationRule for FusedArithmetic {
                             (None, _) | (Some(false), _) => Ok(None),
                             (Some(true), _) => {
                                 let input = &[*left, *a, *b];
-                                Ok(Some(get_expr(input, FusedOperator::MultiplyAdd, expr_arena)))
+                                Ok(Some(get_expr(
+                                    input,
+                                    FusedOperator::MultiplyAdd,
+                                    expr_arena,
+                                )))
                             },
                         },
                         _ => Ok(None),
@@ -137,7 +145,11 @@ impl OptimizationRule for FusedArithmetic {
                         (None, _) | (Some(false), _) => Ok(None),
                         (Some(true), _) => {
                             let input = &[*left, *a, *b];
-                            Ok(Some(get_expr(input, FusedOperator::SubMultiply, expr_arena)))
+                            Ok(Some(get_expr(
+                                input,
+                                FusedOperator::SubMultiply,
+                                expr_arena,
+                            )))
                         },
                     },
                     _ => {
@@ -155,7 +167,11 @@ impl OptimizationRule for FusedArithmetic {
                                     (None, _) | (Some(false), _) => Ok(None),
                                     (Some(true), _) => {
                                         let input = &[*a, *b, *right];
-                                        Ok(Some(get_expr(input, FusedOperator::MultiplySub, expr_arena)))
+                                        Ok(Some(get_expr(
+                                            input,
+                                            FusedOperator::MultiplySub,
+                                            expr_arena,
+                                        )))
                                     },
                                 }
                             },

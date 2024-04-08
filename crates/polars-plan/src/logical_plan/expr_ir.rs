@@ -3,7 +3,7 @@ use std::hash::Hash;
 use std::hash::Hasher;
 
 use super::*;
-use crate::constants::LITERAL_NAME;
+use crate::constants::{get_len_name, LITERAL_NAME};
 
 #[derive(Default, Debug, Clone, Hash, PartialEq, Eq)]
 pub enum OutputName {
@@ -64,9 +64,32 @@ impl ExprIR {
                     }
                     break;
                 },
+                AExpr::Function {
+                    input, function, ..
+                } => {
+                    if input.is_empty() {
+                        out.output_name =
+                            OutputName::LiteralLhs(ColumnName::from(format!("{}", function)));
+                    } else {
+                        out.output_name = input[0].output_name.clone();
+                    }
+                    break;
+                },
+                AExpr::AnonymousFunction { input, options, .. } => {
+                    if input.is_empty() {
+                        out.output_name = OutputName::LiteralLhs(ColumnName::from(options.fmt_str));
+                    } else {
+                        out.output_name = input[0].output_name.clone();
+                    }
+                    break;
+                },
+                AExpr::Len => out.output_name = OutputName::LiteralLhs(get_len_name()),
                 AExpr::Alias(_, _) => {
                     // Should be removed during conversion.
-                    unreachable!()
+                    #[cfg(debug_assertions)]
+                    {
+                        unreachable!()
+                    }
                 },
                 _ => {},
             }

@@ -1,7 +1,6 @@
 use polars_utils::floor_divmod::FloorDivMod;
 use polars_utils::total_ord::ToTotalOrd;
 
-use crate::constants::get_literal_name;
 use crate::logical_plan::*;
 use crate::prelude::optimizer::simplify_functions::optimize_functions;
 
@@ -108,10 +107,12 @@ impl OptimizationRule for SimplifyBooleanRule {
         &mut self,
         expr_arena: &mut Arena<AExpr>,
         expr_node: Node,
-        _: &Arena<ALogicalPlan>,
-        _: Node,
+        lp_arena: &Arena<ALogicalPlan>,
+        lp_node: Node,
     ) -> PolarsResult<Option<AExpr>> {
         let expr = expr_arena.get(expr_node);
+        let in_filter = matches!(lp_arena.get(lp_node), ALogicalPlan::Selection { .. });
+
         let out = match expr {
             // true AND x => x
             AExpr::BinaryExpr {
@@ -121,10 +122,11 @@ impl OptimizationRule for SimplifyBooleanRule {
             } if matches!(
                 expr_arena.get(*left),
                 AExpr::Literal(LiteralValue::Boolean(true))
-            ) =>
+            ) && in_filter =>
             {
-                // We alias because of the left-hand naming rule.
-                Some(AExpr::Alias(*right, get_literal_name()))
+                // Only in filter as we we might change the name from "literal"
+                // to whatever lhs columns is.
+                return Ok(Some(expr_arena.get(*right).clone()));
             },
             // x AND true => x
             AExpr::BinaryExpr {
@@ -178,10 +180,11 @@ impl OptimizationRule for SimplifyBooleanRule {
             } if matches!(
                 expr_arena.get(*left),
                 AExpr::Literal(LiteralValue::Boolean(false))
-            ) =>
+            ) && in_filter =>
             {
-                // We alias because of the left-hand naming rule.
-                Some(AExpr::Alias(*right, get_literal_name()))
+                // Only in filter as we we might change the name from "literal"
+                // to whatever lhs columns is.
+                return Ok(Some(expr_arena.get(*right).clone()));
             },
             // x or false => x
             AExpr::BinaryExpr {
@@ -235,16 +238,6 @@ impl OptimizationRule for SimplifyBooleanRule {
                 let input = &input[0];
                 let ae = expr_arena.get(input.node());
                 eval_negate(ae)
-            },
-            // Flatten Aliases.
-            AExpr::Alias(inner, name) => {
-                let input = expr_arena.get(*inner);
-
-                if let AExpr::Alias(input, _) = input {
-                    Some(AExpr::Alias(*input, name.clone()))
-                } else {
-                    None
-                }
             },
             _ => None,
         };

@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+
 use polars_core::prelude::*;
 use polars_utils::vec::ConvertVec;
 use recursive::recursive;
@@ -64,12 +65,9 @@ fn to_aexprs(input: Vec<Expr>, arena: &mut Arena<AExpr>, state: &mut ConversionS
         .collect()
 }
 
-fn set_function_output_name<F>(
-    e: &[ExprIR],
-    state: &mut ConversionState,
-    function_fmt: F
-)
-where F: FnOnce() -> Cow<'static, str>
+fn set_function_output_name<F>(e: &[ExprIR], state: &mut ConversionState, function_fmt: F)
+where
+    F: FnOnce() -> Cow<'static, str>,
 {
     if state.output_name.is_none() {
         if e.is_empty() {
@@ -243,7 +241,15 @@ fn to_aexpr_impl(expr: Expr, arena: &mut Arena<AExpr>, state: &mut ConversionSta
             options,
         } => {
             let e = to_expr_irs(input, arena);
-            set_function_output_name(&e, state, || Cow::Owned(format!("{}", &function)));
+
+            if state.output_name.is_none() {
+                // Handles special case functions like `struct.field`.
+                if let Some(name) = function.output_name() {
+                    state.output_name = OutputName::ColumnLhs(name.clone())
+                } else {
+                    set_function_output_name(&e, state, || Cow::Owned(format!("{}", &function)));
+                }
+            }
             AExpr::Function {
                 input: e,
                 function,

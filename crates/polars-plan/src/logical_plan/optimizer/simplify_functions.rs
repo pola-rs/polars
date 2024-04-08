@@ -137,7 +137,7 @@ pub(super) fn optimize_functions(
                 } => Some(AExpr::Function {
                     input: input.clone(),
                     function: FunctionExpr::Boolean(BooleanFunction::IsNotNull),
-                    options: options.clone(),
+                    options: *options,
                 }),
                 // not(x.is_not_null) => x.is_null
                 AExpr::Function {
@@ -147,7 +147,7 @@ pub(super) fn optimize_functions(
                 } => Some(AExpr::Function {
                     input: input.clone(),
                     function: FunctionExpr::Boolean(BooleanFunction::IsNull),
-                    options: options.clone(),
+                    options: *options,
                 }),
                 // not(a == b) => a != b
                 AExpr::BinaryExpr {
@@ -239,7 +239,7 @@ pub(super) fn optimize_functions(
                             left: expr_arena.add(AExpr::BinaryExpr {
                                 left: left_left,
                                 op: left_cmp_op,
-                                right: right_left
+                                right: right_left,
                             }),
                             // OR
                             op: Operator::Or,
@@ -247,7 +247,7 @@ pub(super) fn optimize_functions(
                             right: expr_arena.add(AExpr::BinaryExpr {
                                 left: left_right,
                                 op: right_cmp_op,
-                                right: right_right
+                                right: right_right,
                             }),
                         })
                     }

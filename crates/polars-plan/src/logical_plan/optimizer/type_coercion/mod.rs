@@ -349,10 +349,16 @@ impl OptimizationRule for TypeCoercionRule {
             } => {
                 let input_schema = get_schema(lp_arena, lp_node);
                 let other_e = &input[1];
-                let (_, type_left) =
-                    unpack!(get_aexpr_and_type(expr_arena, input[0].node(), &input_schema));
-                let (_, type_other) =
-                    unpack!(get_aexpr_and_type(expr_arena, other_e.node(), &input_schema));
+                let (_, type_left) = unpack!(get_aexpr_and_type(
+                    expr_arena,
+                    input[0].node(),
+                    &input_schema
+                ));
+                let (_, type_other) = unpack!(get_aexpr_and_type(
+                    expr_arena,
+                    other_e.node(),
+                    &input_schema
+                ));
 
                 unpack!(early_escape(&type_left, &type_other));
 
@@ -499,8 +505,11 @@ impl OptimizationRule for TypeCoercionRule {
             } => {
                 let input_schema = get_schema(lp_arena, lp_node);
                 let other_node = input[1].node();
-                let (left, type_left) =
-                    unpack!(get_aexpr_and_type(expr_arena, input[0].node(), &input_schema));
+                let (left, type_left) = unpack!(get_aexpr_and_type(
+                    expr_arena,
+                    input[0].node(),
+                    &input_schema
+                ));
                 let (fill_value, type_fill_value) =
                     unpack!(get_aexpr_and_type(expr_arena, other_node, &input_schema));
 
@@ -579,7 +588,7 @@ impl OptimizationRule for TypeCoercionRule {
                         };
                     let mut other_node = other_node.clone();
                     if type_other != super_type {
-                        let n= expr_arena.add(AExpr::Cast {
+                        let n = expr_arena.add(AExpr::Cast {
                             expr: other_node.node(),
                             data_type: super_type.clone(),
                             strict: false,

@@ -228,16 +228,24 @@ impl AExpr {
     }
 }
 
-fn func_args_to_fields(input: &[ExprIR], schema: &Schema, arena: &Arena<AExpr>) -> PolarsResult<Vec<Field>> {
+fn func_args_to_fields(
+    input: &[ExprIR],
+    schema: &Schema,
+    arena: &Arena<AExpr>,
+) -> PolarsResult<Vec<Field>> {
     input
         .iter()
         // Default context because `col()` would return a list in aggregation context
         .map(|e| {
-            arena.get(e.node()).to_field(schema, Context::Default, arena).map(|mut field| {
-                field.name = e.output_name().into();
-                field
-            })
-        }).collect()
+            arena
+                .get(e.node())
+                .to_field(schema, Context::Default, arena)
+                .map(|mut field| {
+                    field.name = e.output_name().into();
+                    field
+                })
+        })
+        .collect()
 }
 
 fn get_arithmetic_field(
