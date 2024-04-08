@@ -268,6 +268,7 @@ def read_csv(
                     data,
                     pa.csv.ReadOptions(
                         skip_rows=skip_rows,
+                        skip_rows_after_names=skip_rows_after_header,
                         autogenerate_column_names=not has_header,
                         encoding=encoding,
                     ),
