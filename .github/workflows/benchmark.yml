@@ -94,16 +94,22 @@ jobs:
         run: maturin develop --release -- -C codegen-units=8 -C lto=thin -C target-cpu=native
 
       - name: Run H2O AI database benchmark - on strings
-        working-directory: py-polars/tests/benchmark
-        run: python run_h2oai_benchmark.py on_strings
+        uses: CodSpeedHQ/action@v2
+        with:
+          run: python run_h2oai_benchmark.py on_strings
+          working-directory: py-polars/tests/benchmark
 
       - name: Run H2O AI database benchmark - on categoricals
-        working-directory: py-polars/tests/benchmark
-        run: python run_h2oai_benchmark.py
+        uses: CodSpeedHQ/action@v2
+        with:
+          run: python run_h2oai_benchmark.py
+          working-directory: py-polars/tests/benchmark
 
       - name: Run various benchmark tests
-        working-directory: py-polars
-        run: pytest -m release --durations 0 -v
+        uses: CodSpeedHQ/action@v2
+        with:
+          run: pytest -m release --durations 0 -v
+          working-directory: py-polars
 
       - name: Run non-benchmark tests
         working-directory: py-polars
