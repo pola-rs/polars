@@ -6,7 +6,7 @@ from typing import IO, TYPE_CHECKING
 
 from polars._utils.various import normalize_filepath
 from polars._utils.wrap import wrap_df
-from polars.io._utils import handle_projection_columns
+from polars.io._utils import parse_columns_arg
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyDataFrame
@@ -42,7 +42,7 @@ def read_avro(
     """
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source)
-    projection, parsed_columns = handle_projection_columns(columns)
+    projection, column_names = parse_columns_arg(columns)
 
-    pydf = PyDataFrame.read_avro(source, parsed_columns, projection, n_rows)
+    pydf = PyDataFrame.read_avro(source, column_names, projection, n_rows)
     return wrap_df(pydf)

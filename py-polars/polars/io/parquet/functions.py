@@ -8,7 +8,6 @@ from typing import IO, TYPE_CHECKING, Any, Sequence
 from polars._utils.deprecation import deprecate_renamed_parameter
 from polars._utils.unstable import issue_unstable_warning
 from polars._utils.various import (
-    _prepare_row_index_args,
     is_int_sequence,
     is_str_sequence,
     normalize_filepath,
@@ -17,11 +16,12 @@ from polars._utils.wrap import wrap_df, wrap_ldf
 from polars.convert import from_arrow
 from polars.dependencies import _PYARROW_AVAILABLE
 from polars.io._utils import (
-    _is_glob_pattern,
-    _is_local_file,
-    _is_supported_cloud,
-    _prepare_file_arg,
-    handle_projection_columns,
+    is_glob_pattern,
+    is_local_file,
+    is_supported_cloud,
+    parse_columns_arg,
+    parse_row_index_args,
+    prepare_file_arg,
 )
 from polars.io.parquet.anonymous_scan import _scan_parquet_fsspec
 
@@ -167,7 +167,7 @@ def read_parquet(
 
         pyarrow_options = pyarrow_options or {}
 
-        with _prepare_file_arg(
+        with prepare_file_arg(
             source,  # type: ignore[arg-type]
             use_pyarrow=True,
             storage_options=storage_options,
@@ -183,7 +183,7 @@ def read_parquet(
 
     # Read binary types using `read_parquet`
     elif isinstance(source, (io.BufferedIOBase, io.RawIOBase, bytes)):
-        with _prepare_file_arg(source, use_pyarrow=False) as source_prep:
+        with prepare_file_arg(source, use_pyarrow=False) as source_prep:
             return _read_parquet_binary(
                 source_prep,
                 columns=columns,
@@ -238,9 +238,7 @@ def _read_parquet_binary(
     if isinstance(columns, str):
         columns = [columns]
 
-    if isinstance(source, str) and _is_glob_pattern(source):
-        from polars import scan_parquet
-
+    if isinstance(source, str) and is_glob_pattern(source):
         scan = scan_parquet(
             source,
             n_rows=n_rows,
@@ -262,7 +260,7 @@ def _read_parquet_binary(
             )
             raise TypeError(msg)
 
-    projection, columns = handle_projection_columns(columns)
+    projection, columns = parse_columns_arg(columns)
 
     pydf = PyDataFrame.read_parquet(
         source,
@@ -270,7 +268,7 @@ def _read_parquet_binary(
         projection,
         n_rows,
         parallel,
-        _prepare_row_index_args(row_index_name, row_index_offset),
+        parse_row_index_args(row_index_name, row_index_offset),
         low_memory=low_memory,
         use_statistics=use_statistics,
         rechunk=rechunk,
@@ -451,8 +449,8 @@ def _scan_parquet_impl(
     # try fsspec scanner
     if (
         can_use_fsspec
-        and not _is_local_file(source)  # type: ignore[arg-type]
-        and not _is_supported_cloud(source)  # type: ignore[arg-type]
+        and not is_local_file(source)  # type: ignore[arg-type]
+        and not is_supported_cloud(source)  # type: ignore[arg-type]
     ):
         scan = _scan_parquet_fsspec(source, storage_options)  # type: ignore[arg-type]
         if n_rows:
@@ -474,7 +472,7 @@ def _scan_parquet_impl(
         cache,
         parallel,
         rechunk,
-        _prepare_row_index_args(row_index_name, row_index_offset),
+        parse_row_index_args(row_index_name, row_index_offset),
         low_memory,
         cloud_options=storage_options,
         use_statistics=use_statistics,

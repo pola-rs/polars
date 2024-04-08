@@ -5,58 +5,73 @@ import re
 from contextlib import contextmanager
 from io import BytesIO, StringIO
 from pathlib import Path
-from tempfile import NamedTemporaryFile
-from typing import IO, Any, ContextManager, Iterator, Sequence, cast, overload
+from typing import IO, Any, ContextManager, Iterator, Sequence, overload
 
 from polars._utils.various import is_int_sequence, is_str_sequence, normalize_filepath
 from polars.dependencies import _FSSPEC_AVAILABLE, fsspec
 from polars.exceptions import NoDataError
 
 
-def handle_projection_columns(
-    columns: Sequence[str] | Sequence[int] | str | None,
-) -> tuple[list[int] | None, Sequence[str] | None]:
-    """Disambiguates between columns specified as integers vs. strings."""
-    projection: list[int] | None = None
-    new_columns: Sequence[str] | None = None
-    if columns is not None:
-        if isinstance(columns, str):
-            new_columns = [columns]
-        elif is_int_sequence(columns):
-            projection = list(columns)
-        elif not is_str_sequence(columns):
-            msg = "`columns` arg should contain a list of all integers or all strings values"
-            raise TypeError(msg)
-        else:
-            new_columns = columns
-        if columns and len(set(columns)) != len(columns):
-            msg = f"`columns` arg should only have unique values, got {columns!r}"
-            raise ValueError(msg)
-        if projection and len(set(projection)) != len(projection):
-            msg = f"`columns` arg should only have unique values, got {projection!r}"
-            raise ValueError(msg)
-    return projection, new_columns
+def parse_columns_arg(
+    columns: Sequence[str] | Sequence[int] | str | int | None,
+) -> tuple[Sequence[int] | None, Sequence[str] | None]:
+    """
+    Parse the `columns` argument of an I/O function.
 
+    Disambiguates between column names and column indices input.
 
-def _is_glob_pattern(file: str) -> bool:
-    return any(char in file for char in ["*", "?", "["])
+    Returns
+    -------
+    tuple
+        A tuple containing the columns as a projection and a list of column names.
+        Only one will be specified, the other will be `None`.
+    """
+    if columns is None:
+        return None, None
 
+    projection: Sequence[int] | None = None
+    column_names: Sequence[str] | None = None
 
-def _is_supported_cloud(file: str) -> bool:
-    return bool(re.match("^(s3a?|gs|gcs|file|abfss?|azure|az|adl|https?)://", file))
-
-
-def _is_local_file(file: str) -> bool:
-    try:
-        next(glob.iglob(file, recursive=True))  # noqa: PTH207
-    except StopIteration:
-        return False
+    if isinstance(columns, str):
+        column_names = [columns]
+    elif isinstance(columns, int):
+        projection = [columns]
+    elif is_str_sequence(columns):
+        _ensure_columns_are_unique(columns)
+        column_names = columns
+    elif is_int_sequence(columns):
+        _ensure_columns_are_unique(columns)
+        projection = columns
     else:
-        return True
+        msg = "the `columns` argument should contain a list of all integers or all string values"
+        raise TypeError(msg)
+
+    return projection, column_names
+
+
+def _ensure_columns_are_unique(columns: Sequence[str] | Sequence[int]) -> None:
+    if len(columns) != len(set(columns)):
+        msg = f"`columns` arg should only have unique values, got {columns!r}"
+        raise ValueError(msg)
+
+
+def parse_row_index_args(
+    row_index_name: str | None = None,
+    row_index_offset: int = 0,
+) -> tuple[str, int] | None:
+    """
+    Parse the `row_index_name` and `row_index_offset` arguments of an I/O function.
+
+    The Rust functions take a single tuple rather than two separate arguments.
+    """
+    if row_index_name is None:
+        return None
+    else:
+        return (row_index_name, row_index_offset)
 
 
 @overload
-def _prepare_file_arg(
+def prepare_file_arg(
     file: str | Path | list[str] | IO[bytes] | bytes,
     encoding: str | None = ...,
     *,
@@ -67,7 +82,7 @@ def _prepare_file_arg(
 
 
 @overload
-def _prepare_file_arg(
+def prepare_file_arg(
     file: str | Path | IO[str] | IO[bytes] | bytes,
     encoding: str | None = ...,
     *,
@@ -78,7 +93,7 @@ def _prepare_file_arg(
 
 
 @overload
-def _prepare_file_arg(
+def prepare_file_arg(
     file: str | Path | list[str] | IO[str] | IO[bytes] | bytes,
     encoding: str | None = ...,
     *,
@@ -88,7 +103,7 @@ def _prepare_file_arg(
 ) -> ContextManager[str | list[str] | BytesIO | list[BytesIO]]: ...
 
 
-def _prepare_file_arg(
+def prepare_file_arg(
     file: str | Path | list[str] | IO[str] | IO[bytes] | bytes,
     encoding: str | None = None,
     *,
@@ -102,15 +117,15 @@ def _prepare_file_arg(
     Utility for read_[csv, parquet]. (not to be used by scan_[csv, parquet]).
     Returned value is always usable as a context.
 
-    A :class:`StringIO`, :class:`BytesIO` file is returned as a :class:`BytesIO`.
+    A `StringIO`, `BytesIO` file is returned as a `BytesIO`.
     A local path is returned as a string.
-    An http URL is read into a buffer and returned as a :class:`BytesIO`.
+    An http URL is read into a buffer and returned as a `BytesIO`.
 
     When `encoding` is not `utf8` or `utf8-lossy`, the whole file is
-    first read in python and decoded using the specified encoding and
-    returned as a :class:`BytesIO` (for usage with `read_csv`).
+    first read in Python and decoded using the specified encoding and
+    returned as a `BytesIO` (for usage with `read_csv`).
 
-    A `bytes` file is returned as a :class:`BytesIO` if `use_pyarrow=True`.
+    A `bytes` file is returned as a `BytesIO` if `use_pyarrow=True`.
 
     When fsspec is installed, remote file(s) is (are) opened with
     `fsspec.open(file, **kwargs)` or `fsspec.open_files(file, **kwargs)`.
@@ -181,8 +196,8 @@ def _prepare_file_arg(
         # make sure that this is before fsspec
         # as fsspec needs requests to be installed
         # to read from http
-        if _looks_like_url(file):
-            return _process_file_url(file, encoding_str)
+        if looks_like_url(file):
+            return process_file_url(file, encoding_str)
         if _FSSPEC_AVAILABLE:
             from fsspec.utils import infer_storage_options
 
@@ -234,7 +249,7 @@ def _prepare_file_arg(
 def _check_empty(
     b: BytesIO, *, context: str, raise_if_empty: bool, read_position: int | None = None
 ) -> BytesIO:
-    if raise_if_empty and not b.getbuffer().nbytes:
+    if raise_if_empty and b.getbuffer().nbytes == 0:
         hint = (
             f" (buffer position = {read_position}; try seek(0) before reading?)"
             if context in ("StringIO", "BytesIO") and read_position
@@ -245,11 +260,11 @@ def _check_empty(
     return b
 
 
-def _looks_like_url(path: str) -> bool:
+def looks_like_url(path: str) -> bool:
     return re.match("^(ht|f)tps?://", path, re.IGNORECASE) is not None
 
 
-def _process_file_url(path: str, encoding: str | None = None) -> BytesIO:
+def process_file_url(path: str, encoding: str | None = None) -> BytesIO:
     from urllib.request import urlopen
 
     with urlopen(path) as f:
@@ -259,42 +274,18 @@ def _process_file_url(path: str, encoding: str | None = None) -> BytesIO:
             return BytesIO(f.read().decode(encoding).encode("utf8"))
 
 
-@contextmanager
-def PortableTemporaryFile(
-    mode: str = "w+b",
-    *,
-    buffering: int = -1,
-    encoding: str | None = None,
-    newline: str | None = None,
-    suffix: str | None = None,
-    prefix: str | None = None,
-    dir: str | Path | None = None,
-    delete: bool = True,
-    errors: str | None = None,
-) -> Iterator[Any]:
-    """
-    Slightly more resilient version of the standard `NamedTemporaryFile`.
+def is_glob_pattern(file: str) -> bool:
+    return any(char in file for char in ["*", "?", "["])
 
-    Plays better with Windows when using the 'delete' option.
-    """
-    params = cast(
-        Any,
-        {
-            "mode": mode,
-            "buffering": buffering,
-            "encoding": encoding,
-            "newline": newline,
-            "suffix": suffix,
-            "prefix": prefix,
-            "dir": dir,
-            "delete": False,
-            "errors": errors,
-        },
-    )
-    tmp = NamedTemporaryFile(**params)
+
+def is_supported_cloud(file: str) -> bool:
+    return bool(re.match("^(s3a?|gs|gcs|file|abfss?|azure|az|adl|https?)://", file))
+
+
+def is_local_file(file: str) -> bool:
     try:
-        yield tmp
-    finally:
-        tmp.close()
-        if delete:
-            Path(tmp.name).unlink(missing_ok=True)
+        next(glob.iglob(file, recursive=True))  # noqa: PTH207
+    except StopIteration:
+        return False
+    else:
+        return True
