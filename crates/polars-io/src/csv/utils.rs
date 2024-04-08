@@ -139,6 +139,7 @@ pub fn infer_file_schema_inner(
     separator: u8,
     max_read_rows: Option<usize>,
     has_header: bool,
+    truncate_ragged_rows: bool,
     schema_overwrite: Option<&Schema>,
     // we take &mut because we maybe need to skip more rows dependent
     // on the schema inference
@@ -195,7 +196,8 @@ pub fn infer_file_schema_inner(
             }
         }
 
-        let byterecord = SplitFields::new(header_line, separator, quote_char, eol_char);
+        let mut byterecord = SplitFields::new(header_line, separator, quote_char, eol_char);
+
         if has_header {
             let headers = byterecord
                 .map(|(slice, needs_escaping)| {
@@ -224,6 +226,21 @@ pub fn infer_file_schema_inner(
             }
             final_headers
         } else {
+            // if columns length is non uniform we need to find row with highest column length and
+            // truncate_ragged_rows is false we need to find the row with the most columns
+            if !truncate_ragged_rows {
+                let mut line_with_max_columns: &[u8] = header_line;
+                for line in &mut lines {
+                    if !is_comment_line(line, comment_prefix)
+                        && line.len() > line_with_max_columns.len()
+                    {
+                        line_with_max_columns = line
+                    }
+                }
+                byterecord =
+                    SplitFields::new(line_with_max_columns, separator, quote_char, eol_char);
+            }
+
             byterecord
                 .enumerate()
                 .map(|(i, _s)| format!("column_{}", i + 1))
@@ -241,6 +258,7 @@ pub fn infer_file_schema_inner(
             separator,
             max_read_rows,
             has_header,
+            truncate_ragged_rows,
             schema_overwrite,
             skip_rows,
             skip_rows_after_header,
@@ -444,6 +462,7 @@ pub fn infer_file_schema_inner(
             separator,
             max_read_rows,
             has_header,
+            truncate_ragged_rows,
             schema_overwrite,
             skip_rows,
             skip_rows_after_header,
@@ -476,6 +495,7 @@ pub fn infer_file_schema(
     separator: u8,
     max_read_rows: Option<usize>,
     has_header: bool,
+    truncate_ragged_rows: bool,
     schema_overwrite: Option<&Schema>,
     // we take &mut because we maybe need to skip more rows dependent
     // on the schema inference
@@ -494,6 +514,7 @@ pub fn infer_file_schema(
         separator,
         max_read_rows,
         has_header,
+        truncate_ragged_rows,
         schema_overwrite,
         skip_rows,
         skip_rows_after_header,
