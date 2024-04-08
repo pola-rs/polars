@@ -196,9 +196,7 @@ pub fn top_k(s: &[Series], descending: bool) -> PolarsResult<Series> {
                     top_k_num_impl($ca, k as usize, descending).into_series()
                 }};
             }
-            unsafe {
-                downcast_as_macro_arg_physical!(&s, dispatch).cast_unchecked(origin_dtype)
-            }
+            unsafe { downcast_as_macro_arg_physical!(&s, dispatch).cast_unchecked(origin_dtype) }
         },
     }
 }
