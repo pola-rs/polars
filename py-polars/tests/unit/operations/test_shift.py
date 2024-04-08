@@ -72,9 +72,7 @@ def test_shift_expr() -> None:
         "a": [None, None, None, 1, 2],
         "b": [None, None, None, 1, 2],
     }
-    print(ldf.collect(), ldf.shift(pl.lit(2), fill_value=pl.col("b").max()).explain(comm_subexpr_elim=True))
     out = ldf.shift(pl.lit(2), fill_value=pl.col("b").max()).collect()
-    print(out)
     assert out.to_dict(as_series=False) == {"a": [5, 5, 1, 2, 3], "b": [5, 5, 1, 2, 3]}
 
 

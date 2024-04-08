@@ -373,7 +373,8 @@ impl AExpr {
             AnonymousFunction { input, .. } | Function { input, .. } => {
                 debug_assert_eq!(input.len(), inputs.len());
 
-                for (e, node) in input.iter_mut().zip(inputs) {
+                // Assign in reverse order as that was the order in which nodes were extracted.
+                for (e, node) in input.iter_mut().zip(inputs.iter().rev()) {
                     e.set_node(*node);
                 }
                 return self;
