@@ -31,7 +31,7 @@ df = pl.read_csv(
 ON_STRINGS = sys.argv.pop() == "on_strings"
 
 if not ON_STRINGS:
-    df = df.with_columns([pl.col(["id1", "id2", "id3"]).cast(pl.Categorical)])
+    df = df.with_columns(pl.col(["id1", "id2", "id3"]).cast(pl.Categorical))
 df = df.clone()
 x = df.lazy()
 
@@ -164,7 +164,7 @@ print("q1")
 out = x.group_by("id1").agg(pl.sum("v1").alias("v1_sum")).collect()
 print(time.time() - t0)
 assert out.shape == (96, 2)
-assert out["v1_sum"].sum() == 28501451
+assert out["v1_sum"].sum() == 28498857
 
 t0easy = time.time()
 t0 = time.time()
@@ -172,7 +172,7 @@ print("q2")
 out = x.group_by(["id1", "id2"]).agg(pl.sum("v1").alias("v1_sum")).collect()
 print(time.time() - t0)
 assert out.shape == (9216, 3)
-assert out["v1_sum"].sum() == 28501451
+assert out["v1_sum"].sum() == 28498857
 
 t0 = time.time()
 print("q3")
@@ -183,8 +183,8 @@ out = (
 )
 print(time.time() - t0)
 assert out.shape == (95001, 3)
-assert out["v1_sum"].sum() == 28501451
-assert np.isclose(out["v3_mean"].sum(), 4751358.825104358)
+assert out["v1_sum"].sum() == 28498857
+assert np.isclose(out["v3_mean"].sum(), 4749467.631946707)
 
 t0 = time.time()
 print("q4")
@@ -201,9 +201,9 @@ out = (
 )
 print(time.time() - t0)
 assert out.shape == (96, 4)
-assert np.isclose(out["v1_mean"].sum(), 288.0192364601018)
-assert np.isclose(out["v2_mean"].sum(), 767.9422306545811)
-assert np.isclose(out["v3_mean"].sum(), 4801.784316931509)
+assert np.isclose(out["v1_mean"].sum(), 287.9894309270617)
+assert np.isclose(out["v2_mean"].sum(), 767.8529216923456)
+assert np.isclose(out["v3_mean"].sum(), 4799.873270453374)
 
 t0 = time.time()
 print("q5")
@@ -220,11 +220,11 @@ out = (
 )
 print(time.time() - t0)
 assert out.shape == (95001, 4)
-assert out["v1_sum"].sum() == 28501451
-assert out["v2_sum"].sum() == 75998165
+assert out["v1_sum"].sum() == 28498857
+assert out["v2_sum"].sum() == 75988394
 easy_time = time.time() - t0easy
-t0advanced = time.time()
 
+t0advanced = time.time()
 t0 = time.time()
 print("q6")
 out = (
@@ -234,8 +234,9 @@ out = (
 )
 print(time.time() - t0)
 assert out.shape == (9216, 4)
-assert np.isclose(out["v3_median"].sum(), 460892.5487690001)
-assert np.isclose(out["v3_std"].sum(), 266052.20492321637)
+assert np.isclose(out["v3_median"].sum(), 460771.216444)
+assert np.isclose(out["v3_std"].sum(), 266006.9046221104)
+
 
 t0 = time.time()
 print("q7")
@@ -252,7 +253,7 @@ out = (
 )
 print(time.time() - t0)
 assert out.shape == (95001, 2)
-assert out["range_v1_v2"].sum() == 379846
+assert out["range_v1_v2"].sum() == 379850
 
 t0 = time.time()
 print("q8")
@@ -273,7 +274,7 @@ print("q9")
 out = x.group_by(["id2", "id4"]).agg((pl.corr("v1", "v2") ** 2).alias("r2")).collect()
 print(time.time() - t0)
 assert out.shape == (9216, 3)
-assert np.isclose(out["r2"].sum(), 9.902706276948825)
+assert np.isclose(out["r2"].sum(), 9.940515516534335)
 
 t0 = time.time()
 print("q10")
@@ -283,11 +284,14 @@ out = (
     .collect()
 )
 print(time.time() - t0)
-print("easy took:", easy_time, "s")
-print("advanced took:", time.time() - t0advanced, "s")
+assert out.shape == (9999993, 8)
+
+advanced_time = time.time() - t0advanced
 total_time = time.time() - t00
+
+print("easy took:", easy_time, "s")
+print("advanced took:", advanced_time, "s")
 print("total took:", total_time, "s")
-assert out.shape == (9999995, 8)
 
 # Additional tests
 # the code below, does not belong to the db-benchmark
@@ -295,19 +299,22 @@ assert out.shape == (9999995, 8)
 # are a sort of integration tests
 out = (
     x.filter(pl.col("id1").eq_missing(pl.lit("id046")))
-    .select([pl.sum("id6"), pl.sum("v3")])
+    .select(
+        pl.col("id6").cast(pl.Int64).sum(),
+        pl.col("v3").sum(),
+    )
     .collect()
 )
-assert out["id6"].to_list() == [430957682]
-assert np.isclose(out["v3"].to_list(), 4.724150165888001e6).all()
-print(out)
+assert out["id6"].item() == 4_762_459_723
+assert np.isclose(out["v3"].item(), 4766795.205196999)
 
 out = (
     x.filter(~(pl.col("id1").eq_missing(pl.lit("id046"))))
-    .select([pl.sum("id6"), pl.sum("v3")])
+    .select(
+        pl.col("id6").cast(pl.Int64).sum(),
+        pl.col("v3").sum(),
+    )
     .collect()
 )
-print(out)
-
-assert out["id6"].to_list() == [2137755425]
-assert np.isclose(out["v3"].to_list(), 4.7040828499563754e8).all()
+assert out["id6"].item() == 470_453_297_090
+assert np.isclose(out["v3"].item(), 470202778.84258103)
