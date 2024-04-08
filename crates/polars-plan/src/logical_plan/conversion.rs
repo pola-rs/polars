@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use polars_core::prelude::*;
 use polars_utils::vec::ConvertVec;
 use recursive::recursive;
@@ -61,6 +63,19 @@ fn to_aexprs(input: Vec<Expr>, arena: &mut Arena<AExpr>, state: &mut ConversionS
         .into_iter()
         .map(|e| to_aexpr_impl(e, arena, state))
         .collect()
+}
+
+fn set_function_output_name<F>(e: &[ExprIR], state: &mut ConversionState, function_fmt: F)
+where
+    F: FnOnce() -> Cow<'static, str>,
+{
+    if state.output_name.is_none() {
+        if e.is_empty() {
+            state.output_name = OutputName::LiteralLhs(ColumnName::from(function_fmt().as_ref()));
+        } else {
+            state.output_name = e[0].output_name_inner().clone();
+        }
+    }
 }
 
 /// Converts expression to AExpr and adds it to the arena, which uses an arena (Vec) for allocation.
@@ -211,9 +226,10 @@ fn to_aexpr_impl(expr: Expr, arena: &mut Arena<AExpr>, state: &mut ConversionSta
             output_type,
             options,
         } => {
-            state.prune_alias = false;
+            let e = to_expr_irs(input, arena);
+            set_function_output_name(&e, state, || Cow::Borrowed(options.fmt_str));
             AExpr::AnonymousFunction {
-                input: to_aexprs(input, arena, state),
+                input: e,
                 function,
                 output_type,
                 options,
@@ -224,14 +240,18 @@ fn to_aexpr_impl(expr: Expr, arena: &mut Arena<AExpr>, state: &mut ConversionSta
             function,
             options,
         } => {
+            let e = to_expr_irs(input, arena);
+
             if state.output_name.is_none() {
+                // Handles special case functions like `struct.field`.
                 if let Some(name) = function.output_name() {
                     state.output_name = OutputName::ColumnLhs(name.clone())
+                } else {
+                    set_function_output_name(&e, state, || Cow::Owned(format!("{}", &function)));
                 }
             }
-            state.prune_alias = false;
             AExpr::Function {
-                input: to_aexprs(input, arena, state),
+                input: e,
                 function,
                 options,
             }
@@ -672,7 +692,7 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             output_type,
             options,
         } => Expr::AnonymousFunction {
-            input: nodes_to_exprs(&input, expr_arena),
+            input: expr_irs_to_exprs(input, expr_arena),
             function,
             output_type,
             options,
@@ -682,7 +702,7 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             function,
             options,
         } => Expr::Function {
-            input: nodes_to_exprs(&input, expr_arena),
+            input: expr_irs_to_exprs(input, expr_arena),
             function,
             options,
         },

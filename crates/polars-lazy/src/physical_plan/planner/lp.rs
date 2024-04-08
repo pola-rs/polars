@@ -81,7 +81,7 @@ fn partitionable_gb(
                         },
                         Function {input, options, ..} => {
                             matches!(options.collect_groups, ApplyOptions::ElementWise) && input.len() == 1 &&
-                                !has_aggregation(input[0])
+                                !has_aggregation(input[0].node())
                         }
                         BinaryExpr {left, right, ..} => {
                             !has_aggregation(*left) && !has_aggregation(*right)

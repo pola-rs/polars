@@ -533,7 +533,7 @@ fn create_physical_expr_inner(
                 options.returns_scalar && matches!(options.collect_groups, ApplyOptions::GroupWise);
             // will be reset in the function so get that here
             let has_window = state.local.has_window;
-            let input = create_physical_expressions_from_nodes_check_state(
+            let input = create_physical_expressions_check_state(
                 &input,
                 ctxt,
                 expr_arena,
@@ -564,7 +564,7 @@ fn create_physical_expr_inner(
                 options.returns_scalar && matches!(options.collect_groups, ApplyOptions::GroupWise);
             // will be reset in the function so get that here
             let has_window = state.local.has_window;
-            let input = create_physical_expressions_from_nodes_check_state(
+            let input = create_physical_expressions_check_state(
                 &input,
                 ctxt,
                 expr_arena,

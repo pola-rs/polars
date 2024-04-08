@@ -161,14 +161,17 @@ pub enum AExpr {
         falsy: Node,
     },
     AnonymousFunction {
-        input: Vec<Node>,
+        input: Vec<ExprIR>,
         function: SpecialEq<Arc<dyn SeriesUdf>>,
         output_type: GetOutput,
         options: FunctionOptions,
     },
     Function {
-        /// function arguments
-        input: Vec<Node>,
+        /// Function arguments
+        /// Some functions rely on aliases,
+        /// for instance assignment of struct fields.
+        /// Therefore we need `[ExprIr]`.
+        input: Vec<ExprIR>,
         /// function to apply
         function: FunctionExpr,
         options: FunctionOptions,
@@ -292,8 +295,7 @@ impl AExpr {
                 input
                     .iter()
                     .rev()
-                    .copied()
-                    .for_each(|node| container.push_node(node))
+                    .for_each(|e| container.push_node(e.node()))
             },
             Explode(e) => container.push_node(*e),
             Window {
@@ -372,8 +374,12 @@ impl AExpr {
                 return self;
             },
             AnonymousFunction { input, .. } | Function { input, .. } => {
-                input.clear();
-                input.extend(inputs.iter().rev().copied());
+                debug_assert_eq!(input.len(), inputs.len());
+
+                // Assign in reverse order as that was the order in which nodes were extracted.
+                for (e, node) in input.iter_mut().zip(inputs.iter().rev()) {
+                    e.set_node(*node);
+                }
                 return self;
             },
             Slice {

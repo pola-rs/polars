@@ -3,7 +3,7 @@ use std::hash::Hash;
 use std::hash::Hasher;
 
 use super::*;
-use crate::constants::LITERAL_NAME;
+use crate::constants::{get_len_name, LITERAL_NAME};
 
 #[derive(Default, Debug, Clone, Hash, PartialEq, Eq)]
 pub enum OutputName {
@@ -64,10 +64,32 @@ impl ExprIR {
                     }
                     break;
                 },
-                AExpr::Alias(node, name) => {
-                    out.output_name = OutputName::ColumnLhs(name.clone());
-                    out.node = *node;
+                AExpr::Function {
+                    input, function, ..
+                } => {
+                    if input.is_empty() {
+                        out.output_name =
+                            OutputName::LiteralLhs(ColumnName::from(format!("{}", function)));
+                    } else {
+                        out.output_name = input[0].output_name.clone();
+                    }
                     break;
+                },
+                AExpr::AnonymousFunction { input, options, .. } => {
+                    if input.is_empty() {
+                        out.output_name = OutputName::LiteralLhs(ColumnName::from(options.fmt_str));
+                    } else {
+                        out.output_name = input[0].output_name.clone();
+                    }
+                    break;
+                },
+                AExpr::Len => out.output_name = OutputName::LiteralLhs(get_len_name()),
+                AExpr::Alias(_, _) => {
+                    // Should be removed during conversion.
+                    #[cfg(debug_assertions)]
+                    {
+                        unreachable!()
+                    }
                 },
                 _ => {},
             }
@@ -88,6 +110,10 @@ impl ExprIR {
     #[cfg(feature = "cse")]
     pub(crate) fn set_alias(&mut self, name: ColumnName) {
         self.output_name = OutputName::Alias(name)
+    }
+
+    pub(crate) fn output_name_inner(&self) -> &OutputName {
+        &self.output_name
     }
 
     pub(crate) fn output_name_arc(&self) -> &Arc<str> {
