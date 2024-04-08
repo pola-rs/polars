@@ -58,7 +58,7 @@ nest_asyncio
 # TOOLING
 # -------
 
-hypothesis==6.97.4
+hypothesis==6.100.1
 pytest==8.1.1
 pytest-codspeed==2.2.1
 pytest-cov==5.0.0
