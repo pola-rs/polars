@@ -311,9 +311,3 @@ print(out)
 
 assert out["id6"].to_list() == [2137755425]
 assert np.isclose(out["v3"].to_list(), 4.7040828499563754e8).all()
-
-# Fail or pass the benchmark based on runtime. Used in the Benchmark CI workflow.
-# threshold = 18 if ON_STRINGS else 12
-# if total_time > threshold:
-#     print(f"query took longer than {threshold}s, may be noise")
-#     exit(1)
