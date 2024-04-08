@@ -85,7 +85,7 @@ doctest: .venv build  ## Run doctests
 	$(VENV_BIN)/pytest tests/docs/test_user_guide.py -m docs
 
 .PHONY: docs
-docs: .venv build  ## Build Python docs (incremental)
+docs: .venv  ## Build Python docs (incremental)
 	@$(MAKE) -s -C docs html
 
 .PHONY: docs-clean

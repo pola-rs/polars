@@ -1,6 +1,6 @@
 use polars_utils::IdxSize;
 
-use crate::array::{ArrayRef, ListArray};
+use crate::array::{Array, ArrayRef, ListArray};
 use crate::compute::take::take_unchecked;
 use crate::legacy::prelude::*;
 use crate::legacy::trusted_len::TrustedLenPush;
@@ -39,8 +39,8 @@ fn sublist_get_indexes(arr: &ListArray<i64>, index: i64) -> IdxArr {
     let mut cum_offset = (*offsets.first().unwrap_or(&0)) as IdxSize;
 
     if let Some(mut previous) = iter.next().copied() {
-        let a: IdxArr = iter
-            .map(|&offset| {
+        if arr.null_count() == 0 {
+            iter.map(|&offset| {
                 let len = offset - previous;
                 previous = offset;
                 // make sure that empty lists don't get accessed
@@ -59,9 +59,34 @@ fn sublist_get_indexes(arr: &ListArray<i64>, index: i64) -> IdxArr {
                 cum_offset += len as IdxSize;
                 out
             })
-            .collect_trusted();
+            .collect_trusted()
+        } else {
+            // we can ensure that validity is not none as we have null value.
+            let validity = arr.validity().unwrap();
+            iter.enumerate()
+                .map(|(i, &offset)| {
+                    let len = offset - previous;
+                    previous = offset;
+                    // make sure that empty and null lists don't get accessed and return null.
+                    // SAFETY, we are within bounds
+                    if len == 0 || !unsafe { validity.get_bit_unchecked(i) } {
+                        return None;
+                    }
 
-        a
+                    // make sure that out of bounds return null
+                    if index >= len {
+                        cum_offset += len as IdxSize;
+                        return None;
+                    }
+
+                    let out = index
+                        .negative_to_usize(len as usize)
+                        .map(|idx| idx as IdxSize + cum_offset);
+                    cum_offset += len as IdxSize;
+                    out
+                })
+                .collect_trusted()
+        }
     } else {
         IdxArr::from_slice([])
     }
@@ -107,7 +132,7 @@ pub fn array_to_unit_list(array: ArrayRef) -> ListArray<i64> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::array::{Array, Int32Array, PrimitiveArray};
+    use crate::array::{Int32Array, PrimitiveArray};
     use crate::datatypes::ArrowDataType;
 
     fn get_array() -> ListArray<i64> {

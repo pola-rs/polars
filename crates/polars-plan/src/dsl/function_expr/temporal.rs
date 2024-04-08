@@ -200,9 +200,12 @@ fn apply_offsets_to_datetime(
             _ => Ok(Int64Chunked::full_null(datetime.0.name(), offsets.len())),
         },
         (_, 1) => match offsets.get(0) {
-            Some(offset) => datetime.0.try_apply_nonnull_values_generic(|v| {
-                offset_fn(&Duration::parse(offset), v, time_zone)
-            }),
+            Some(offset) => {
+                let offset = &Duration::parse(offset);
+                datetime
+                    .0
+                    .try_apply_nonnull_values_generic(|v| offset_fn(offset, v, time_zone))
+            },
             _ => Ok(datetime.0.apply(|_| None)),
         },
         _ => try_binary_elementwise(datetime, offsets, |timestamp_opt, offset_opt| {

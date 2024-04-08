@@ -189,11 +189,61 @@ fn expand_columns(
 
 /// This replaces the dtypes Expr with a Column Expr. It also removes the Exclude Expr from the
 /// expression chain.
-pub(super) fn replace_dtype_with_column(expr: Expr, column_name: Arc<str>) -> Expr {
+fn replace_dtype_with_column(expr: Expr, column_name: Arc<str>) -> Expr {
     expr.map_expr(|e| match e {
         Expr::DtypeColumn(_) => Expr::Column(column_name.clone()),
         Expr::Exclude(input, _) => Arc::unwrap_or_clone(input),
         e => e,
+    })
+}
+
+fn set_null_st(e: Expr, schema: &Schema) -> Expr {
+    e.map_expr(|mut e| {
+        if let Expr::Function {
+            input,
+            function: FunctionExpr::FillNull { super_type },
+            ..
+        } = &mut e
+        {
+            if let Some(new_st) = early_supertype(input, schema) {
+                *super_type = new_st;
+            }
+        }
+        e
+    })
+}
+
+#[cfg(feature = "dtype-struct")]
+fn struct_index_to_field(expr: Expr, schema: &Schema) -> PolarsResult<Expr> {
+    expr.try_map_expr(|e| match e {
+        Expr::Function {
+            input,
+            function: FunctionExpr::StructExpr(sf),
+            options,
+        } => {
+            if let StructFunction::FieldByIndex(index) = sf {
+                let dtype = input[0].to_field(schema, Context::Default)?.dtype;
+                let DataType::Struct(fields) = dtype else {
+                    polars_bail!(InvalidOperation: "expected 'struct' dtype, got {:?}", dtype)
+                };
+                let index = index.try_negative_to_usize(fields.len())?;
+                let name = fields[index].name.as_str();
+                Ok(Expr::Function {
+                    input,
+                    function: FunctionExpr::StructExpr(StructFunction::FieldByName(
+                        ColumnName::from(name),
+                    )),
+                    options,
+                })
+            } else {
+                Ok(Expr::Function {
+                    input,
+                    function: FunctionExpr::StructExpr(sf),
+                    options,
+                })
+            }
+        },
+        e => Ok(e),
     })
 }
 
@@ -374,6 +424,8 @@ struct ExpansionFlags {
     replace_fill_null_type: bool,
     has_selector: bool,
     has_exclude: bool,
+    #[cfg(feature = "dtype-struct")]
+    has_struct_field_by_index: bool,
 }
 
 fn find_flags(expr: &Expr) -> ExpansionFlags {
@@ -383,9 +435,11 @@ fn find_flags(expr: &Expr) -> ExpansionFlags {
     let mut replace_fill_null_type = false;
     let mut has_selector = false;
     let mut has_exclude = false;
+    #[cfg(feature = "dtype-struct")]
+    let mut has_struct_field_by_index = false;
 
-    // do a single pass and collect all flags at once.
-    // supertypes/modification that can be done in place are also don e in that pass
+    // Do a single pass and collect all flags at once.
+    // Supertypes/modification that can be done in place are also done in that pass
     for expr in expr {
         match expr {
             Expr::Columns(_) | Expr::DtypeColumn(_) => multiple_columns = true,
@@ -396,6 +450,13 @@ fn find_flags(expr: &Expr) -> ExpansionFlags {
                 function: FunctionExpr::FillNull { .. },
                 ..
             } => replace_fill_null_type = true,
+            #[cfg(feature = "dtype-struct")]
+            Expr::Function {
+                function: FunctionExpr::StructExpr(StructFunction::FieldByIndex(_)),
+                ..
+            } => {
+                has_struct_field_by_index = true;
+            },
             Expr::Exclude(_, _) => has_exclude = true,
             _ => {},
         }
@@ -407,6 +468,8 @@ fn find_flags(expr: &Expr) -> ExpansionFlags {
         replace_fill_null_type,
         has_selector,
         has_exclude,
+        #[cfg(feature = "dtype-struct")]
+        has_struct_field_by_index,
     }
 }
 
@@ -422,7 +485,7 @@ pub(crate) fn rewrite_projections(
     for mut expr in exprs {
         let result_offset = result.len();
 
-        // functions can have col(["a", "b"]) or col(String) as inputs
+        // Functions can have col(["a", "b"]) or col(String) as inputs.
         expr = expand_function_inputs(expr, schema);
 
         let mut flags = find_flags(&expr);
@@ -434,27 +497,22 @@ pub(crate) fn rewrite_projections(
 
         replace_and_add_to_results(expr, flags, &mut result, schema, keys)?;
 
-        // this is done after all expansion (wildcard, column, dtypes)
+        // This is done after all expansion (wildcard, column, dtypes)
         // have been done. This will ensure the conversion to aexpr does
         // not panic because of an unexpected wildcard etc.
 
-        // the expanded expressions are written to result, so we pick
+        // The expanded expressions are written to result, so we pick
         // them up there.
         if flags.replace_fill_null_type {
             for e in &mut result[result_offset..] {
-                *e = e.clone().map_expr(|mut e| {
-                    if let Expr::Function {
-                        input,
-                        function: FunctionExpr::FillNull { super_type },
-                        ..
-                    } = &mut e
-                    {
-                        if let Some(new_st) = early_supertype(input, schema) {
-                            *super_type = new_st;
-                        }
-                    }
-                    e
-                });
+                *e = set_null_st(std::mem::take(e), schema);
+            }
+        }
+
+        #[cfg(feature = "dtype-struct")]
+        if flags.has_struct_field_by_index {
+            for e in &mut result[result_offset..] {
+                *e = struct_index_to_field(std::mem::take(e), schema)?;
             }
         }
     }
