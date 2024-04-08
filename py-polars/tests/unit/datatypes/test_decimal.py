@@ -5,6 +5,7 @@ import itertools
 import operator
 from dataclasses import dataclass
 from decimal import Decimal as D
+from random import choice, randrange, seed
 from typing import Any, Callable, NamedTuple
 
 import pytest
@@ -438,3 +439,22 @@ def test_decimal_explode() -> None:
         head_df = df.group_by("foo", maintain_order=True).head(1)
         expected_df = pl.DataFrame({"foo": [1, 2], "bar": [D("3.4"), D("4.5")]})
         assert_frame_equal(head_df, expected_df)
+
+
+def test_decimal_streaming() -> None:
+    seed(1)
+    scale = D("1e18")
+    data = [
+        {"group": choice("abc"), "value": randrange(10**32) / scale} for _ in range(20)
+    ]
+    lf = pl.LazyFrame(data, schema_overrides={"value": pl.Decimal(scale=18)})
+    assert lf.group_by("group").agg(pl.sum("value")).collect(streaming=True).sort(
+        "group"
+    ).to_dict(as_series=False) == {
+        "group": ["a", "b", "c"],
+        "value": [
+            D("244215083629512.120161049441284000"),
+            D("510640422312378.070344831471216000"),
+            D("161102921617598.363263936811563000"),
+        ],
+    }
