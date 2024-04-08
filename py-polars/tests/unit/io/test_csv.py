@@ -2037,3 +2037,19 @@ def test_csv_escape_cf_15349() -> None:
     df.write_csv(f)
     f.seek(0)
     assert f.read() == b'test\nnormal\n"with\rcr"\n'
+
+
+@pytest.mark.parametrize("use_pyarrow", [True, False])
+def test_skip_rows_after_header_pyarrow(use_pyarrow: bool) -> None:
+    csv = textwrap.dedent(
+        """\
+        foo,bar
+        1,2
+        3,4
+        5,6
+        """
+    )
+    f = io.StringIO(csv)
+    df = pl.read_csv(f, skip_rows_after_header=1, use_pyarrow=use_pyarrow)
+    expected = pl.DataFrame({"foo": [3, 5], "bar": [4, 6]})
+    assert_frame_equal(df, expected)
