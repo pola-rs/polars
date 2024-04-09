@@ -17,21 +17,19 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 # Mark all tests in this module as benchmark tests
-pytestmark = pytest.mark.release()
+pytestmark = pytest.mark.benchmark()
 
 
-@pytest.mark.skipif(
-    not (Path(__file__).parent / "G1_1e7_1e2_5_0.csv").is_file(),
-    reason="Dataset must be generated before running this test.",
-)
-def test_read_scan_large_csv() -> None:
-    filename = "G1_1e7_1e2_5_0.csv"
-    path = Path(__file__).parent / filename
+def test_read_scan_large_csv(h2aoi_groupby_data_path: Path) -> None:
+    if not h2aoi_groupby_data_path.is_file():
+        pytest.skip("Dataset must be generated before running this test.")
 
     predicate = pl.col("v2") < 5
 
-    shape_eager = pl.read_csv(path).filter(predicate).shape
-    shape_lazy = (pl.scan_csv(path).filter(predicate)).collect().shape
+    shape_eager = pl.read_csv(h2aoi_groupby_data_path).filter(predicate).shape
+    shape_lazy = (
+        (pl.scan_csv(h2aoi_groupby_data_path).filter(predicate)).collect().shape
+    )
 
     assert shape_lazy == shape_eager
 
