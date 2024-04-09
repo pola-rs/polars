@@ -223,7 +223,14 @@ impl DataType {
 
     /// Check if this [`DataType`] is a array
     pub fn is_array(&self) -> bool {
-        matches!(self, DataType::Array(_, _))
+        #[cfg(feature = "dtype-array")]
+        {
+            matches!(self, DataType::Array(_, _))
+        }
+        #[cfg(not(feature = "dtype-array"))]
+        {
+            false
+        }
     }
 
     pub fn is_nested(&self) -> bool {
