@@ -1,4 +1,3 @@
-pub(super) mod multiple_keys;
 pub(super) mod single_keys;
 mod single_keys_dispatch;
 mod single_keys_inner;
@@ -170,6 +169,7 @@ pub trait JoinDispatch: IntoDf {
         s_right: &Series,
         args: JoinArgs,
         verbose: bool,
+        drop_names: Option<&[&str]>,
     ) -> PolarsResult<DataFrame> {
         let df_self = self.to_df();
         #[cfg(feature = "dtype-categorical")]
@@ -200,7 +200,12 @@ pub trait JoinDispatch: IntoDf {
         }
 
         let ids = sort_or_hash_left(&s_left, &s_right, verbose, args.validation, args.join_nulls)?;
-        left._finish_left_join(ids, &right.drop(s_right.name()).unwrap(), args)
+        let right = if let Some(drop_names) = drop_names {
+            right.drop_many(drop_names)
+        } else {
+            right.drop(s_right.name()).unwrap()
+        };
+        left._finish_left_join(ids, &right, args)
     }
 
     #[cfg(feature = "semi_anti_join")]

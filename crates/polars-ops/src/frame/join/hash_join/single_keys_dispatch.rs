@@ -27,7 +27,7 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                 let rhs = rhs.cast(&Binary).unwrap();
                 let lhs = lhs.binary().unwrap();
                 let rhs = rhs.binary().unwrap();
-                let (lhs, rhs, _, _) = prepare_binary(lhs, rhs, false);
+                let (lhs, rhs, _, _) = prepare_binary::<BinaryType>(lhs, rhs, false);
                 let lhs = lhs.iter().map(|v| v.as_slice()).collect::<Vec<_>>();
                 let rhs = rhs.iter().map(|v| v.as_slice()).collect::<Vec<_>>();
                 hash_join_tuples_left(lhs, rhs, None, None, validate, join_nulls)
@@ -35,7 +35,7 @@ pub trait SeriesJoin: SeriesSealed + Sized {
             BinaryOffset => {
                 let lhs = lhs.binary_offset().unwrap();
                 let rhs = rhs.binary_offset().unwrap();
-                let (lhs, rhs, _, _) = prepare_binary(lhs, rhs, false);
+                let (lhs, rhs, _, _) = prepare_binary::<BinaryOffsetType>(lhs, rhs, false);
                 // Take slices so that vecs are not copied
                 let lhs = lhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
                 let rhs = rhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
@@ -74,7 +74,7 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                 let rhs = rhs.cast(&Binary).unwrap();
                 let lhs = lhs.binary().unwrap();
                 let rhs = rhs.binary().unwrap();
-                let (lhs, rhs, _, _) = prepare_binary(lhs, rhs, false);
+                let (lhs, rhs, _, _) = prepare_binary::<BinaryType>(lhs, rhs, false);
                 // Take slices so that vecs are not copied
                 let lhs = lhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
                 let rhs = rhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
@@ -87,7 +87,7 @@ pub trait SeriesJoin: SeriesSealed + Sized {
             BinaryOffset => {
                 let lhs = lhs.binary_offset().unwrap();
                 let rhs = rhs.binary_offset().unwrap();
-                let (lhs, rhs, _, _) = prepare_binary(lhs, rhs, false);
+                let (lhs, rhs, _, _) = prepare_binary::<BinaryOffsetType>(lhs, rhs, false);
                 // Take slices so that vecs are not copied
                 let lhs = lhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
                 let rhs = rhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
@@ -135,7 +135,7 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                 let rhs = rhs.cast(&Binary).unwrap();
                 let lhs = lhs.binary().unwrap();
                 let rhs = rhs.binary().unwrap();
-                let (lhs, rhs, swapped, _) = prepare_binary(lhs, rhs, true);
+                let (lhs, rhs, swapped, _) = prepare_binary::<BinaryType>(lhs, rhs, true);
                 // Take slices so that vecs are not copied
                 let lhs = lhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
                 let rhs = rhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
@@ -147,7 +147,7 @@ pub trait SeriesJoin: SeriesSealed + Sized {
             BinaryOffset => {
                 let lhs = lhs.binary_offset().unwrap();
                 let rhs = rhs.binary_offset()?;
-                let (lhs, rhs, swapped, _) = prepare_binary(lhs, rhs, true);
+                let (lhs, rhs, swapped, _) = prepare_binary::<BinaryOffsetType>(lhs, rhs, true);
                 // Take slices so that vecs are not copied
                 let lhs = lhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
                 let rhs = rhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
@@ -193,7 +193,7 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                 let rhs = rhs.cast(&Binary).unwrap();
                 let lhs = lhs.binary().unwrap();
                 let rhs = rhs.binary().unwrap();
-                let (lhs, rhs, swapped, _) = prepare_binary(lhs, rhs, true);
+                let (lhs, rhs, swapped, _) = prepare_binary::<BinaryType>(lhs, rhs, true);
                 // Take slices so that vecs are not copied
                 let lhs = lhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
                 let rhs = rhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
@@ -202,7 +202,7 @@ pub trait SeriesJoin: SeriesSealed + Sized {
             BinaryOffset => {
                 let lhs = lhs.binary_offset().unwrap();
                 let rhs = rhs.binary_offset()?;
-                let (lhs, rhs, swapped, _) = prepare_binary(lhs, rhs, true);
+                let (lhs, rhs, swapped, _) = prepare_binary::<BinaryOffsetType>(lhs, rhs, true);
                 // Take slices so that vecs are not copied
                 let lhs = lhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
                 let rhs = rhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
@@ -434,6 +434,7 @@ where
     }
 }
 
+#[cfg(feature = "asof_join")]
 pub fn prepare_bytes<'a>(
     been_split: &'a [BinaryChunked],
     hb: &RandomState,
