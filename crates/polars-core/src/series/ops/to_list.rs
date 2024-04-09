@@ -50,8 +50,8 @@ impl Series {
         Ok(ca)
     }
 
-    pub fn reshape(&self, dims: &[i64]) -> PolarsResult<Series> {
-        if dims.is_empty() {
+    pub fn reshape(&self, dimensions: &[i64]) -> PolarsResult<Series> {
+        if dimensions.is_empty() {
             polars_bail!(ComputeError: "reshape `dimensions` cannot be empty")
         }
         let s = if let DataType::List(_) = self.dtype() {
@@ -61,35 +61,35 @@ impl Series {
         };
 
         // No rows.
-        if dims[0] == 0 {
+        if dimensions[0] == 0 {
             let s = reshape_fast_path(self.name(), &s);
             return Ok(s);
         }
 
         let s_ref = s.as_ref();
 
-        let mut dims = dims.to_vec();
-        if let Some(idx) = dims.iter().position(|i| *i == -1) {
+        let mut dimensions = dimensions.to_vec();
+        if let Some(idx) = dimensions.iter().position(|i| *i == -1) {
             let mut product = 1;
 
-            for (cnt, dim) in dims.iter().enumerate() {
+            for (cnt, dim) in dimensions.iter().enumerate() {
                 if cnt != idx {
                     product *= *dim
                 }
             }
-            dims[idx] = s_ref.len() as i64 / product;
+            dimensions[idx] = s_ref.len() as i64 / product;
         }
 
-        let prod = dims.iter().product::<i64>() as usize;
+        let prod = dimensions.iter().product::<i64>() as usize;
         polars_ensure!(
             prod == s_ref.len(),
-            ComputeError: "cannot reshape len {} into shape {:?}", s_ref.len(), dims,
+            ComputeError: "cannot reshape len {} into shape {:?}", s_ref.len(), dimensions,
         );
-        match dims.len() {
-            1 => Ok(s_ref.slice(0, dims[0] as usize)),
+        match dimensions.len() {
+            1 => Ok(s_ref.slice(0, dimensions[0] as usize)),
             2 => {
-                let mut rows = dims[0];
-                let mut cols = dims[1];
+                let mut rows = dimensions[0];
+                let mut cols = dimensions[1];
 
                 // Infer dimension.
                 if rows == -1 {

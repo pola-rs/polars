@@ -1483,9 +1483,9 @@ impl Expr {
         self.map_private(FunctionExpr::LowerBound)
     }
 
-    pub fn reshape(self, dims: &[i64]) -> Self {
-        let dims = dims.to_vec();
-        self.apply_private(FunctionExpr::Reshape(dims))
+    pub fn reshape(self, dimensions: &[i64]) -> Self {
+        let dimensions = dimensions.to_vec();
+        self.apply_private(FunctionExpr::Reshape(dimensions))
     }
 
     #[cfg(feature = "ewma")]

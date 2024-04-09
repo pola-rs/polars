@@ -57,8 +57,8 @@ pub(super) fn unique_counts(s: &Series) -> PolarsResult<Series> {
     polars_ops::prelude::unique_counts(s)
 }
 
-pub(super) fn reshape(s: &Series, dims: Vec<i64>) -> PolarsResult<Series> {
-    s.reshape(&dims)
+pub(super) fn reshape(s: &Series, dimensions: Vec<i64>) -> PolarsResult<Series> {
+    s.reshape(&dimensions)
 }
 
 #[cfg(feature = "repeat_by")]
