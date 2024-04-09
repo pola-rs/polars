@@ -39,10 +39,10 @@ pub(super) fn process_asof_join(
     acc_projections: Vec<ColumnNode>,
     _projected_names: PlHashSet<Arc<str>>,
     projections_seen: usize,
-    lp_arena: &mut Arena<ALogicalPlan>,
+    lp_arena: &mut Arena<FullAccessIR>,
     expr_arena: &mut Arena<AExpr>,
     join_schema: &Schema,
-) -> PolarsResult<ALogicalPlan> {
+) -> PolarsResult<FullAccessIR> {
     // n = 0 if no projections, so we don't allocate unneeded
     let n = acc_projections.len() * 2;
     let mut pushdown_left = Vec::with_capacity(n);
@@ -198,10 +198,10 @@ pub(super) fn process_join(
     acc_projections: Vec<ColumnNode>,
     _projected_names: PlHashSet<Arc<str>>,
     projections_seen: usize,
-    lp_arena: &mut Arena<ALogicalPlan>,
+    lp_arena: &mut Arena<FullAccessIR>,
     expr_arena: &mut Arena<AExpr>,
     join_schema: &Schema,
-) -> PolarsResult<ALogicalPlan> {
+) -> PolarsResult<FullAccessIR> {
     #[cfg(feature = "asof_join")]
     if matches!(options.args.how, JoinType::AsOf(_)) {
         return process_asof_join(
@@ -427,12 +427,12 @@ fn resolve_join_suffixes(
     left_on: Vec<ExprIR>,
     right_on: Vec<ExprIR>,
     options: Arc<JoinOptions>,
-    lp_arena: &mut Arena<ALogicalPlan>,
+    lp_arena: &mut Arena<FullAccessIR>,
     expr_arena: &mut Arena<AExpr>,
     local_projection: &[ColumnNode],
-) -> ALogicalPlan {
+) -> FullAccessIR {
     let suffix = options.args.suffix();
-    let alp = ALogicalPlanBuilder::new(input_left, expr_arena, lp_arena)
+    let alp = FullAccessIRBuilder::new(input_left, expr_arena, lp_arena)
         .join(input_right, left_on, right_on, options.clone())
         .build();
     let schema_after_join = alp.schema(lp_arena);
@@ -452,7 +452,7 @@ fn resolve_join_suffixes(
         })
         .collect::<Vec<_>>();
 
-    ALogicalPlanBuilder::from_lp(alp, expr_arena, lp_arena)
+    FullAccessIRBuilder::from_lp(alp, expr_arena, lp_arena)
         .project(projections, Default::default())
         .build()
 }

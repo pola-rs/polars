@@ -2,7 +2,7 @@ use polars_core::utils::try_get_supertype;
 
 use super::*;
 
-// Has functions that create schema's for both the `LogicalPlan` and the `AlogicalPlan` builders.
+// Has functions that create schema's for both the `LogicalPlan` and the `FullAccessIR` builders.
 
 pub(super) fn explode_schema(schema: &mut Schema, columns: &[Arc<str>]) -> PolarsResult<()> {
     // columns to string

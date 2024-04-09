@@ -22,9 +22,9 @@ impl LogicalPlan {
             Cache { input, .. } => input.schema(),
             Sort { input, .. } => input.schema(),
             DataFrameScan { schema, .. } => Ok(Cow::Borrowed(schema)),
-            Selection { input, .. } => input.schema(),
-            Projection { schema, .. } => Ok(Cow::Borrowed(schema)),
-            Aggregate { schema, .. } => Ok(Cow::Borrowed(schema)),
+            Filter { input, .. } => input.schema(),
+            Select { schema, .. } => Ok(Cow::Borrowed(schema)),
+            GroupBy { schema, .. } => Ok(Cow::Borrowed(schema)),
             Join { schema, .. } => Ok(Cow::Borrowed(schema)),
             HStack { schema, .. } => Ok(Cow::Borrowed(schema)),
             Distinct { input, .. } | Sink { input, .. } => input.schema(),
@@ -148,12 +148,12 @@ fn estimate_sizes(
 #[cfg(feature = "streaming")]
 pub fn set_estimated_row_counts(
     root: Node,
-    lp_arena: &mut Arena<ALogicalPlan>,
+    lp_arena: &mut Arena<FullAccessIR>,
     expr_arena: &Arena<AExpr>,
     mut _filter_count: usize,
     scratch: &mut Vec<Node>,
 ) -> (Option<usize>, usize, usize) {
-    use ALogicalPlan::*;
+    use FullAccessIR::*;
 
     fn apply_slice(out: &mut (Option<usize>, usize, usize), slice: Option<(i64, usize)>) {
         if let Some((_, len)) = slice {
@@ -163,7 +163,7 @@ pub fn set_estimated_row_counts(
     }
 
     match lp_arena.get(root) {
-        Selection { predicate, input } => {
+        Filter { predicate, input } => {
             _filter_count += expr_arena
                 .iter(predicate.node())
                 .filter(|(_, ae)| matches!(ae, AExpr::BinaryExpr { .. }))

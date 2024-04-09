@@ -39,7 +39,7 @@ where
 
 #[allow(unused_variables)]
 fn get_source<F>(
-    source: ALogicalPlan,
+    source: FullAccessIR,
     operator_objects: &mut Vec<Box<dyn Operator>>,
     expr_arena: &Arena<AExpr>,
     to_physical: &F,
@@ -49,7 +49,7 @@ fn get_source<F>(
 where
     F: Fn(&ExprIR, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
 {
-    use ALogicalPlan::*;
+    use FullAccessIR::*;
     match source {
         DataFrameScan {
             df,
@@ -161,7 +161,7 @@ where
 
 pub fn get_sink<F>(
     node: Node,
-    lp_arena: &Arena<ALogicalPlan>,
+    lp_arena: &Arena<FullAccessIR>,
     expr_arena: &mut Arena<AExpr>,
     to_physical: &F,
     callbacks: &mut CallBacks,
@@ -169,7 +169,7 @@ pub fn get_sink<F>(
 where
     F: Fn(&ExprIR, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
 {
-    use ALogicalPlan::*;
+    use FullAccessIR::*;
     let out = match lp_arena.get(node) {
         Sink { input, payload } => {
             let input_schema = lp_arena.get(*input).schema(lp_arena);
@@ -461,7 +461,7 @@ where
 
             Box::new(ReProjectSink::new(input_schema, group_by_sink))
         },
-        Aggregate {
+        GroupBy {
             input,
             keys,
             aggs,
@@ -567,14 +567,14 @@ where
 
 pub fn get_operator<F>(
     node: Node,
-    lp_arena: &Arena<ALogicalPlan>,
+    lp_arena: &Arena<FullAccessIR>,
     expr_arena: &Arena<AExpr>,
     to_physical: &F,
 ) -> PolarsResult<Box<dyn Operator>>
 where
     F: Fn(&ExprIR, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
 {
-    use ALogicalPlan::*;
+    use FullAccessIR::*;
     let op = match lp_arena.get(node) {
         SimpleProjection { input, columns, .. } => {
             let input_schema = lp_arena.get(*input).schema(lp_arena);
@@ -582,7 +582,7 @@ where
             let op = operators::SimpleProjectionOperator::new(columns, input_schema.into_owned());
             Box::new(op) as Box<dyn Operator>
         },
-        Projection { expr, input, .. } => {
+        Select { expr, input, .. } => {
             let input_schema = lp_arena.get(*input).schema(lp_arena);
 
             let cse_exprs = expr.cse_exprs();
@@ -637,7 +637,7 @@ where
 
             Box::new(op) as Box<dyn Operator>
         },
-        Selection { predicate, input } => {
+        Filter { predicate, input } => {
             let input_schema = lp_arena.get(*input).schema(lp_arena);
             let predicate = to_physical(predicate, expr_arena, Some(input_schema.as_ref()))?;
             let op = operators::FilterOperator { predicate };
@@ -664,7 +664,7 @@ pub fn create_pipeline<F>(
     sources: &[Node],
     operators: Vec<Box<dyn Operator>>,
     sink_nodes: Vec<(usize, Node, Rc<RefCell<u32>>)>,
-    lp_arena: &Arena<ALogicalPlan>,
+    lp_arena: &Arena<FullAccessIR>,
     expr_arena: &mut Arena<AExpr>,
     to_physical: F,
     verbose: bool,
@@ -676,7 +676,7 @@ pub fn create_pipeline<F>(
 where
     F: Fn(&ExprIR, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
 {
-    use ALogicalPlan::*;
+    use FullAccessIR::*;
 
     let mut source_objects = Vec::with_capacity(sources.len());
     let mut operator_objects = Vec::with_capacity(operators.len() + 1);

@@ -4,11 +4,11 @@ use std::sync::Arc;
 use polars_utils::arena::Arena;
 
 use super::*;
-use crate::logical_plan::{AExpr, ALogicalPlan};
+use crate::logical_plan::{AExpr, FullAccessIR};
 use crate::prelude::aexpr::traverse_and_hash_aexpr;
 use crate::prelude::ExprIR;
 
-impl ALogicalPlanNode {
+impl FullAccessIRNode {
     pub(crate) fn hashable_and_cmp<'a>(&'a self, expr_arena: &'a Arena<AExpr>) -> HashableEqLP<'a> {
         HashableEqLP {
             node: self,
@@ -19,7 +19,7 @@ impl ALogicalPlanNode {
 }
 
 pub(crate) struct HashableEqLP<'a> {
-    node: &'a ALogicalPlanNode,
+    node: &'a FullAccessIRNode,
     expr_arena: &'a Arena<AExpr>,
     ignore_cache: bool,
 }
@@ -52,8 +52,8 @@ impl Hash for HashableEqLP<'_> {
         std::mem::discriminant(alp).hash(state);
         match alp {
             #[cfg(feature = "python")]
-            ALogicalPlan::PythonScan { .. } => {},
-            ALogicalPlan::Slice {
+            FullAccessIR::PythonScan { .. } => {},
+            FullAccessIR::Slice {
                 offset,
                 len,
                 input: _,
@@ -61,13 +61,13 @@ impl Hash for HashableEqLP<'_> {
                 len.hash(state);
                 offset.hash(state);
             },
-            ALogicalPlan::Selection {
+            FullAccessIR::Filter {
                 input: _,
                 predicate,
             } => {
                 predicate.traverse_and_hash(self.expr_arena, state);
             },
-            ALogicalPlan::Scan {
+            FullAccessIR::Scan {
                 paths,
                 file_info: _,
                 predicate,
@@ -81,7 +81,7 @@ impl Hash for HashableEqLP<'_> {
                 hash_option_expr(predicate, self.expr_arena, state);
                 file_options.hash(state);
             },
-            ALogicalPlan::DataFrameScan {
+            FullAccessIR::DataFrameScan {
                 df,
                 schema: _,
                 output_schema: _,
@@ -92,7 +92,7 @@ impl Hash for HashableEqLP<'_> {
                 projection.hash(state);
                 hash_option_expr(selection, self.expr_arena, state);
             },
-            ALogicalPlan::SimpleProjection {
+            FullAccessIR::SimpleProjection {
                 columns,
                 duplicate_check,
                 input: _,
@@ -100,7 +100,7 @@ impl Hash for HashableEqLP<'_> {
                 columns.hash(state);
                 duplicate_check.hash(state);
             },
-            ALogicalPlan::Projection {
+            FullAccessIR::Select {
                 input: _,
                 expr,
                 schema: _,
@@ -109,7 +109,7 @@ impl Hash for HashableEqLP<'_> {
                 hash_exprs(expr.default_exprs(), self.expr_arena, state);
                 options.hash(state);
             },
-            ALogicalPlan::Sort {
+            FullAccessIR::Sort {
                 input: _,
                 by_column,
                 args,
@@ -117,7 +117,7 @@ impl Hash for HashableEqLP<'_> {
                 hash_exprs(by_column, self.expr_arena, state);
                 args.hash(state);
             },
-            ALogicalPlan::Aggregate {
+            FullAccessIR::GroupBy {
                 input: _,
                 keys,
                 aggs,
@@ -132,7 +132,7 @@ impl Hash for HashableEqLP<'_> {
                 maintain_order.hash(state);
                 options.hash(state);
             },
-            ALogicalPlan::Join {
+            FullAccessIR::Join {
                 input_left: _,
                 input_right: _,
                 schema: _,
@@ -144,7 +144,7 @@ impl Hash for HashableEqLP<'_> {
                 hash_exprs(right_on, self.expr_arena, state);
                 options.hash(state);
             },
-            ALogicalPlan::HStack {
+            FullAccessIR::HStack {
                 input: _,
                 exprs,
                 schema: _,
@@ -153,21 +153,21 @@ impl Hash for HashableEqLP<'_> {
                 hash_exprs(exprs.default_exprs(), self.expr_arena, state);
                 options.hash(state);
             },
-            ALogicalPlan::Distinct { input: _, options } => {
+            FullAccessIR::Distinct { input: _, options } => {
                 options.hash(state);
             },
-            ALogicalPlan::MapFunction { input: _, function } => {
+            FullAccessIR::MapFunction { input: _, function } => {
                 function.hash(state);
             },
-            ALogicalPlan::Union { inputs: _, options } => options.hash(state),
-            ALogicalPlan::HConcat {
+            FullAccessIR::Union { inputs: _, options } => options.hash(state),
+            FullAccessIR::HConcat {
                 inputs: _,
                 schema: _,
                 options,
             } => {
                 options.hash(state);
             },
-            ALogicalPlan::ExtContext {
+            FullAccessIR::ExtContext {
                 input: _,
                 contexts,
                 schema: _,
@@ -176,10 +176,10 @@ impl Hash for HashableEqLP<'_> {
                     traverse_and_hash_aexpr(*node, self.expr_arena, state);
                 }
             },
-            ALogicalPlan::Sink { input: _, payload } => {
+            FullAccessIR::Sink { input: _, payload } => {
                 payload.hash(state);
             },
-            ALogicalPlan::Cache {
+            FullAccessIR::Cache {
                 input: _,
                 id,
                 cache_hits,
@@ -187,7 +187,7 @@ impl Hash for HashableEqLP<'_> {
                 id.hash(state);
                 cache_hits.hash(state);
             },
-            ALogicalPlan::Invalid => unreachable!(),
+            FullAccessIR::Invalid => unreachable!(),
         }
     }
 }
@@ -224,29 +224,29 @@ impl HashableEqLP<'_> {
         }
         match (alp_l, alp_r) {
             (
-                ALogicalPlan::Slice {
+                FullAccessIR::Slice {
                     input: _,
                     offset: ol,
                     len: ll,
                 },
-                ALogicalPlan::Slice {
+                FullAccessIR::Slice {
                     input: _,
                     offset: or,
                     len: lr,
                 },
             ) => ol == or && ll == lr,
             (
-                ALogicalPlan::Selection {
+                FullAccessIR::Filter {
                     input: _,
                     predicate: l,
                 },
-                ALogicalPlan::Selection {
+                FullAccessIR::Filter {
                     input: _,
                     predicate: r,
                 },
             ) => expr_ir_eq(l, r, self.expr_arena),
             (
-                ALogicalPlan::Scan {
+                FullAccessIR::Scan {
                     paths: pl,
                     file_info: _,
                     predicate: pred_l,
@@ -254,7 +254,7 @@ impl HashableEqLP<'_> {
                     scan_type: stl,
                     file_options: ol,
                 },
-                ALogicalPlan::Scan {
+                FullAccessIR::Scan {
                     paths: pr,
                     file_info: _,
                     predicate: pred_r,
@@ -269,14 +269,14 @@ impl HashableEqLP<'_> {
                     && opt_expr_ir_eq(pred_l, pred_r, self.expr_arena)
             },
             (
-                ALogicalPlan::DataFrameScan {
+                FullAccessIR::DataFrameScan {
                     df: dfl,
                     schema: _,
                     output_schema: _,
                     projection: pl,
                     selection: sl,
                 },
-                ALogicalPlan::DataFrameScan {
+                FullAccessIR::DataFrameScan {
                     df: dfr,
                     schema: _,
                     output_schema: _,
@@ -289,25 +289,25 @@ impl HashableEqLP<'_> {
                     && opt_expr_ir_eq(sl, sr, self.expr_arena)
             },
             (
-                ALogicalPlan::SimpleProjection {
+                FullAccessIR::SimpleProjection {
                     input: _,
                     columns: cl,
                     duplicate_check: dl,
                 },
-                ALogicalPlan::SimpleProjection {
+                FullAccessIR::SimpleProjection {
                     input: _,
                     columns: cr,
                     duplicate_check: dr,
                 },
             ) => dl == dr && cl == cr,
             (
-                ALogicalPlan::Projection {
+                FullAccessIR::Select {
                     input: _,
                     expr: el,
                     options: ol,
                     schema: _,
                 },
-                ALogicalPlan::Projection {
+                FullAccessIR::Select {
                     input: _,
                     expr: er,
                     options: or,
@@ -315,19 +315,19 @@ impl HashableEqLP<'_> {
                 },
             ) => ol == or && expr_irs_eq(el.default_exprs(), er.default_exprs(), self.expr_arena),
             (
-                ALogicalPlan::Sort {
+                FullAccessIR::Sort {
                     input: _,
                     by_column: cl,
                     args: al,
                 },
-                ALogicalPlan::Sort {
+                FullAccessIR::Sort {
                     input: _,
                     by_column: cr,
                     args: ar,
                 },
             ) => al == ar && expr_irs_eq(cl, cr, self.expr_arena),
             (
-                ALogicalPlan::Aggregate {
+                FullAccessIR::GroupBy {
                     input: _,
                     keys: keys_l,
                     aggs: aggs_l,
@@ -336,7 +336,7 @@ impl HashableEqLP<'_> {
                     maintain_order: maintain_l,
                     options: ol,
                 },
-                ALogicalPlan::Aggregate {
+                FullAccessIR::GroupBy {
                     input: _,
                     keys: keys_r,
                     aggs: aggs_r,
@@ -354,7 +354,7 @@ impl HashableEqLP<'_> {
                     && expr_irs_eq(aggs_l, aggs_r, self.expr_arena)
             },
             (
-                ALogicalPlan::Join {
+                FullAccessIR::Join {
                     input_left: _,
                     input_right: _,
                     schema: _,
@@ -362,7 +362,7 @@ impl HashableEqLP<'_> {
                     right_on: rl,
                     options: ol,
                 },
-                ALogicalPlan::Join {
+                FullAccessIR::Join {
                     input_left: _,
                     input_right: _,
                     schema: _,
@@ -376,13 +376,13 @@ impl HashableEqLP<'_> {
                     && expr_irs_eq(rl, rr, self.expr_arena)
             },
             (
-                ALogicalPlan::HStack {
+                FullAccessIR::HStack {
                     input: _,
                     exprs: el,
                     schema: _,
                     options: ol,
                 },
-                ALogicalPlan::HStack {
+                FullAccessIR::HStack {
                     input: _,
                     exprs: er,
                     schema: _,
@@ -390,54 +390,54 @@ impl HashableEqLP<'_> {
                 },
             ) => ol == or && expr_irs_eq(el.default_exprs(), er.default_exprs(), self.expr_arena),
             (
-                ALogicalPlan::Distinct {
+                FullAccessIR::Distinct {
                     input: _,
                     options: ol,
                 },
-                ALogicalPlan::Distinct {
+                FullAccessIR::Distinct {
                     input: _,
                     options: or,
                 },
             ) => ol == or,
             (
-                ALogicalPlan::MapFunction {
+                FullAccessIR::MapFunction {
                     input: _,
                     function: l,
                 },
-                ALogicalPlan::MapFunction {
+                FullAccessIR::MapFunction {
                     input: _,
                     function: r,
                 },
             ) => l == r,
             (
-                ALogicalPlan::Union {
+                FullAccessIR::Union {
                     inputs: _,
                     options: l,
                 },
-                ALogicalPlan::Union {
+                FullAccessIR::Union {
                     inputs: _,
                     options: r,
                 },
             ) => l == r,
             (
-                ALogicalPlan::HConcat {
+                FullAccessIR::HConcat {
                     inputs: _,
                     schema: _,
                     options: l,
                 },
-                ALogicalPlan::HConcat {
+                FullAccessIR::HConcat {
                     inputs: _,
                     schema: _,
                     options: r,
                 },
             ) => l == r,
             (
-                ALogicalPlan::ExtContext {
+                FullAccessIR::ExtContext {
                     input: _,
                     contexts: l,
                     schema: _,
                 },
-                ALogicalPlan::ExtContext {
+                FullAccessIR::ExtContext {
                     input: _,
                     contexts: r,
                     schema: _,
@@ -471,27 +471,27 @@ impl PartialEq for HashableEqLP<'_> {
                 (Some(l), Some(r)) => {
                     // SAFETY: we can pass a *mut pointer
                     // the equality operation will not access mutable
-                    let l = unsafe { ALogicalPlanNode::from_raw(l, self.node.get_arena_raw()) };
-                    let r = unsafe { ALogicalPlanNode::from_raw(r, self.node.get_arena_raw()) };
+                    let l = unsafe { FullAccessIRNode::from_raw(l, self.node.get_arena_raw()) };
+                    let r = unsafe { FullAccessIRNode::from_raw(r, self.node.get_arena_raw()) };
                     let l_alp = l.to_alp();
                     let r_alp = r.to_alp();
 
                     if self.ignore_cache {
                         match (l_alp, r_alp) {
                             (
-                                ALogicalPlan::Cache { input: l, .. },
-                                ALogicalPlan::Cache { input: r, .. },
+                                FullAccessIR::Cache { input: l, .. },
+                                FullAccessIR::Cache { input: r, .. },
                             ) => {
                                 scratch_1.push(*l);
                                 scratch_2.push(*r);
                                 continue;
                             },
-                            (ALogicalPlan::Cache { input: l, .. }, _) => {
+                            (FullAccessIR::Cache { input: l, .. }, _) => {
                                 scratch_1.push(*l);
                                 scratch_2.push(r.node());
                                 continue;
                             },
-                            (_, ALogicalPlan::Cache { input: r, .. }) => {
+                            (_, FullAccessIR::Cache { input: r, .. }) => {
                                 scratch_1.push(l.node());
                                 scratch_2.push(*r);
                                 continue;

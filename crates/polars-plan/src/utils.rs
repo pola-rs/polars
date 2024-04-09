@@ -64,10 +64,10 @@ impl PushNode for UnitVec<Node> {
     }
 }
 
-pub(crate) fn is_scan(plan: &ALogicalPlan) -> bool {
+pub(crate) fn is_scan(plan: &FullAccessIR) -> bool {
     matches!(
         plan,
-        ALogicalPlan::Scan { .. } | ALogicalPlan::DataFrameScan { .. }
+        FullAccessIR::Scan { .. } | FullAccessIR::DataFrameScan { .. }
     )
 }
 

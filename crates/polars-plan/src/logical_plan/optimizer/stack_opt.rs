@@ -1,7 +1,7 @@
 use polars_core::prelude::PolarsResult;
 
 use crate::logical_plan::aexpr::AExpr;
-use crate::logical_plan::alp::ALogicalPlan;
+use crate::logical_plan::alp::FullAccessIR;
 use crate::prelude::{Arena, Node};
 
 /// Optimizer that uses a stack and memory arenas in favor of recursion
@@ -12,7 +12,7 @@ impl StackOptimizer {
         &self,
         rules: &mut [Box<dyn OptimizationRule>],
         expr_arena: &mut Arena<AExpr>,
-        lp_arena: &mut Arena<ALogicalPlan>,
+        lp_arena: &mut Arena<FullAccessIR>,
         lp_top: Node,
     ) -> PolarsResult<Node> {
         let mut changed = true;
@@ -97,17 +97,17 @@ pub trait OptimizationRule {
     /// * `node` - node of the current LogicalPlan node
     fn optimize_plan(
         &mut self,
-        _lp_arena: &mut Arena<ALogicalPlan>,
+        _lp_arena: &mut Arena<FullAccessIR>,
         _expr_arena: &mut Arena<AExpr>,
         _node: Node,
-    ) -> Option<ALogicalPlan> {
+    ) -> Option<FullAccessIR> {
         None
     }
     fn optimize_expr(
         &mut self,
         _expr_arena: &mut Arena<AExpr>,
         _expr_node: Node,
-        _lp_arena: &Arena<ALogicalPlan>,
+        _lp_arena: &Arena<FullAccessIR>,
         _lp_node: Node,
     ) -> PolarsResult<Option<AExpr>> {
         Ok(None)

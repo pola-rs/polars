@@ -89,7 +89,7 @@ fn test_q2() -> PolarsResult<()> {
     assert_eq!(
         (&lp_arena)
             .iter(node)
-            .filter(|(_, alp)| matches!(alp, ALogicalPlan::Cache { .. }))
+            .filter(|(_, alp)| matches!(alp, FullAccessIR::Cache { .. }))
             .count(),
         2
     );

@@ -128,10 +128,10 @@ fn partitionable_gb(
 
 pub fn create_physical_plan(
     root: Node,
-    lp_arena: &mut Arena<ALogicalPlan>,
+    lp_arena: &mut Arena<FullAccessIR>,
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<Box<dyn Executor>> {
-    use ALogicalPlan::*;
+    use FullAccessIR::*;
 
     let logical_plan = lp_arena.take(root);
     match logical_plan {
@@ -171,7 +171,7 @@ pub fn create_physical_plan(
             let input = create_physical_plan(input, lp_arena, expr_arena)?;
             Ok(Box::new(executors::SliceExec { input, offset, len }))
         },
-        Selection { input, predicate } => {
+        Filter { input, predicate } => {
             let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
             let input = create_physical_plan(input, lp_arena, expr_arena)?;
             let mut state = ExpressionConversionState::default();
@@ -266,7 +266,7 @@ pub fn create_physical_plan(
                 },
             }
         },
-        Projection {
+        Select {
             expr,
             input,
             schema: _schema,
@@ -363,7 +363,7 @@ pub fn create_physical_plan(
             let input = create_physical_plan(input, lp_arena, expr_arena)?;
             Ok(Box::new(executors::UniqueExec { input, options }))
         },
-        Aggregate {
+        GroupBy {
             input,
             keys,
             aggs,

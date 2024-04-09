@@ -41,16 +41,16 @@ impl<'a> PredicatePushDown<'a> {
 
     fn optional_apply_predicate(
         &self,
-        lp: ALogicalPlan,
+        lp: FullAccessIR,
         local_predicates: Vec<ExprIR>,
-        lp_arena: &mut Arena<ALogicalPlan>,
+        lp_arena: &mut Arena<FullAccessIR>,
         expr_arena: &mut Arena<AExpr>,
-    ) -> ALogicalPlan {
+    ) -> FullAccessIR {
         if !local_predicates.is_empty() {
             let predicate = combine_predicates(local_predicates.into_iter(), expr_arena);
             let input = lp_arena.add(lp);
 
-            ALogicalPlan::Selection { input, predicate }
+            FullAccessIR::Filter { input, predicate }
         } else {
             lp
         }
@@ -60,7 +60,7 @@ impl<'a> PredicatePushDown<'a> {
         &self,
         input: Node,
         acc_predicates: PlHashMap<Arc<str>, ExprIR>,
-        lp_arena: &mut Arena<ALogicalPlan>,
+        lp_arena: &mut Arena<FullAccessIR>,
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<()> {
         let alp = lp_arena.take(input);
@@ -72,12 +72,12 @@ impl<'a> PredicatePushDown<'a> {
     /// Filter will be pushed down.
     fn pushdown_and_continue(
         &self,
-        lp: ALogicalPlan,
+        lp: FullAccessIR,
         mut acc_predicates: PlHashMap<Arc<str>, ExprIR>,
-        lp_arena: &mut Arena<ALogicalPlan>,
+        lp_arena: &mut Arena<FullAccessIR>,
         expr_arena: &mut Arena<AExpr>,
         has_projections: bool,
-    ) -> PolarsResult<ALogicalPlan> {
+    ) -> PolarsResult<FullAccessIR> {
         let inputs = lp.get_inputs();
         let exprs = lp.get_exprs();
 
@@ -85,7 +85,7 @@ impl<'a> PredicatePushDown<'a> {
             // projections should only have a single input.
             if inputs.len() > 1 {
                 // except for ExtContext
-                assert!(matches!(lp, ALogicalPlan::ExtContext { .. }));
+                assert!(matches!(lp, FullAccessIR::ExtContext { .. }));
             }
             let input = inputs[inputs.len() - 1];
 
@@ -187,11 +187,11 @@ impl<'a> PredicatePushDown<'a> {
     /// Filter will be done at this node, but we continue optimization
     fn no_pushdown_restart_opt(
         &self,
-        lp: ALogicalPlan,
+        lp: FullAccessIR,
         acc_predicates: PlHashMap<Arc<str>, ExprIR>,
-        lp_arena: &mut Arena<ALogicalPlan>,
+        lp_arena: &mut Arena<FullAccessIR>,
         expr_arena: &mut Arena<AExpr>,
-    ) -> PolarsResult<ALogicalPlan> {
+    ) -> PolarsResult<FullAccessIR> {
         let inputs = lp.get_inputs();
         let exprs = lp.get_exprs();
 
@@ -218,11 +218,11 @@ impl<'a> PredicatePushDown<'a> {
 
     fn no_pushdown(
         &self,
-        lp: ALogicalPlan,
+        lp: FullAccessIR,
         acc_predicates: PlHashMap<Arc<str>, ExprIR>,
-        lp_arena: &mut Arena<ALogicalPlan>,
+        lp_arena: &mut Arena<FullAccessIR>,
         expr_arena: &mut Arena<AExpr>,
-    ) -> PolarsResult<ALogicalPlan> {
+    ) -> PolarsResult<FullAccessIR> {
         // all predicates are done locally
         let local_predicates = acc_predicates.into_values().collect::<Vec<_>>();
         Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
@@ -232,7 +232,7 @@ impl<'a> PredicatePushDown<'a> {
     ///
     /// # Arguments
     ///
-    /// * `AlogicalPlan` - Arena based logical plan tree representing the query.
+    /// * `FullAccessIR` - Arena based logical plan tree representing the query.
     /// * `acc_predicates` - The predicates we accumulate during tree traversal.
     ///                      The hashmap maps from leaf-column name to predicates on that column.
     ///                      If the key is already taken we combine the predicate with a bitand operation.
@@ -242,15 +242,15 @@ impl<'a> PredicatePushDown<'a> {
     #[recursive]
     fn push_down(
         &self,
-        lp: ALogicalPlan,
+        lp: FullAccessIR,
         mut acc_predicates: PlHashMap<Arc<str>, ExprIR>,
-        lp_arena: &mut Arena<ALogicalPlan>,
+        lp_arena: &mut Arena<FullAccessIR>,
         expr_arena: &mut Arena<AExpr>,
-    ) -> PolarsResult<ALogicalPlan> {
-        use ALogicalPlan::*;
+    ) -> PolarsResult<FullAccessIR> {
+        use FullAccessIR::*;
 
         match lp {
-            Selection {
+            Filter {
                 ref predicate,
                 input,
             } => {
@@ -432,7 +432,7 @@ impl<'a> PredicatePushDown<'a> {
                     };
                     if let Some(predicate) = predicate {
                         let input = lp_arena.add(lp);
-                        Selection { input, predicate }
+                        Filter { input, predicate }
                     } else {
                         lp
                     }
@@ -568,7 +568,7 @@ impl<'a> PredicatePushDown<'a> {
                     self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
                 }
             },
-            Aggregate {
+            GroupBy {
                 input,
                 keys,
                 aggs,
@@ -624,7 +624,7 @@ impl<'a> PredicatePushDown<'a> {
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
             },
             lp @ HStack { .. }
-            | lp @ Projection { .. }
+            | lp @ Select { .. }
             | lp @ SimpleProjection { .. }
             | lp @ ExtContext { .. } => {
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, true)
@@ -716,10 +716,10 @@ impl<'a> PredicatePushDown<'a> {
 
     pub(crate) fn optimize(
         &self,
-        logical_plan: ALogicalPlan,
-        lp_arena: &mut Arena<ALogicalPlan>,
+        logical_plan: FullAccessIR,
+        lp_arena: &mut Arena<FullAccessIR>,
         expr_arena: &mut Arena<AExpr>,
-    ) -> PolarsResult<ALogicalPlan> {
+    ) -> PolarsResult<FullAccessIR> {
         let acc_predicates = PlHashMap::new();
         self.push_down(logical_plan, acc_predicates, lp_arena, expr_arena)
     }

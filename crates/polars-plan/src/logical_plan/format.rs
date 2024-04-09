@@ -141,7 +141,7 @@ impl LogicalPlan {
                     file_options.n_rows,
                 )
             },
-            Selection { predicate, input } => {
+            Filter { predicate, input } => {
                 // this one is writeln because we don't increase indent (which inserts a line)
                 writeln!(f, "{:indent$}FILTER {predicate:?} FROM", "")?;
                 input._format(f, indent)
@@ -171,7 +171,7 @@ impl LogicalPlan {
                     selection,
                 )
             },
-            Projection { expr, input, .. } => {
+            Select { expr, input, .. } => {
                 write!(f, "{:indent$} SELECT {expr:?} FROM", "")?;
                 input._format(f, sub_indent)
             },
@@ -181,7 +181,7 @@ impl LogicalPlan {
                 write!(f, "{:indent$}SORT BY {by_column:?}", "")?;
                 input._format(f, sub_indent)
             },
-            Aggregate {
+            GroupBy {
                 input, keys, aggs, ..
             } => {
                 write!(f, "{:indent$}AGGREGATE", "")?;

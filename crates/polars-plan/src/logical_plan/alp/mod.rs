@@ -11,9 +11,10 @@ use polars_utils::unitvec;
 use super::projection_expr::*;
 use crate::prelude::*;
 
-/// [`ALogicalPlan`] is a representation of [`LogicalPlan`] with [`Node`]s which are allocated in an [`Arena`]
+/// [`FullAccessIR`] is a representation of [`LogicalPlan`] with [`Node`]s which are allocated in an [`Arena`]
+/// In this IR the logical plan has access to the full dataset.
 #[derive(Clone, Debug, Default)]
-pub enum ALogicalPlan {
+pub enum FullAccessIR {
     #[cfg(feature = "python")]
     PythonScan {
         options: PythonOptions,
@@ -24,7 +25,7 @@ pub enum ALogicalPlan {
         offset: i64,
         len: IdxSize,
     },
-    Selection {
+    Filter {
         input: Node,
         predicate: ExprIR,
     },
@@ -46,13 +47,15 @@ pub enum ALogicalPlan {
         projection: Option<Arc<Vec<String>>>,
         selection: Option<ExprIR>,
     },
-    // Only selects columns
+    // Only selects columns (semantically only has row access).
+    // This is a more restricted operation than `Select`.
     SimpleProjection {
         input: Node,
         columns: SchemaRef,
         duplicate_check: bool,
     },
-    Projection {
+    // Polars' `select` operation. This may access full data.
+    Select {
         input: Node,
         expr: ProjectionExprs,
         schema: SchemaRef,
@@ -70,7 +73,7 @@ pub enum ALogicalPlan {
         /// How many hits the cache must be saved in memory.
         cache_hits: u32,
     },
-    Aggregate {
+    GroupBy {
         input: Node,
         keys: Vec<ExprIR>,
         aggs: Vec<ExprIR>,
@@ -131,6 +134,6 @@ mod test {
     #[ignore]
     #[test]
     fn test_alp_size() {
-        assert!(std::mem::size_of::<ALogicalPlan>() <= 152);
+        assert!(std::mem::size_of::<FullAccessIR>() <= 152);
     }
 }

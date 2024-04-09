@@ -16,20 +16,20 @@ impl DelayRechunk {
 impl OptimizationRule for DelayRechunk {
     fn optimize_plan(
         &mut self,
-        lp_arena: &mut Arena<ALogicalPlan>,
+        lp_arena: &mut Arena<FullAccessIR>,
         _expr_arena: &mut Arena<AExpr>,
         node: Node,
-    ) -> Option<ALogicalPlan> {
+    ) -> Option<FullAccessIR> {
         match lp_arena.get(node) {
             // An aggregation can be partitioned, its wasteful to rechunk before that partition.
             #[allow(unused_mut)]
-            ALogicalPlan::Aggregate { input, keys, .. } => {
+            FullAccessIR::GroupBy { input, keys, .. } => {
                 // Multiple keys on multiple chunks is much slower, so rechunk.
                 if !self.processed.insert(node.0) || keys.len() > 1 {
                     return None;
                 };
 
-                use ALogicalPlan::*;
+                use FullAccessIR::*;
                 let mut input_node = None;
                 for (node, lp) in (&*lp_arena).iter(*input) {
                     match lp {

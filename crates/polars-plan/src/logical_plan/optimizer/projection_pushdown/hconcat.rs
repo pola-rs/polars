@@ -8,9 +8,9 @@ pub(super) fn process_hconcat(
     options: HConcatOptions,
     acc_projections: Vec<ColumnNode>,
     projections_seen: usize,
-    lp_arena: &mut Arena<ALogicalPlan>,
+    lp_arena: &mut Arena<FullAccessIR>,
     expr_arena: &mut Arena<AExpr>,
-) -> PolarsResult<ALogicalPlan> {
+) -> PolarsResult<FullAccessIR> {
     // When applying projection pushdown to horizontal concatenation,
     // we apply pushdown to all of the inputs using the subset of accumulated projections relevant to each input,
     // then rebuild the concatenated schema.
@@ -56,7 +56,7 @@ pub(super) fn process_hconcat(
         Arc::new(new_schema)
     };
 
-    Ok(ALogicalPlan::HConcat {
+    Ok(FullAccessIR::HConcat {
         inputs,
         schema,
         options,

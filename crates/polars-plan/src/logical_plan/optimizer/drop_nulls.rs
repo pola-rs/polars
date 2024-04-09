@@ -9,15 +9,15 @@ pub(super) struct ReplaceDropNulls {}
 impl OptimizationRule for ReplaceDropNulls {
     fn optimize_plan(
         &mut self,
-        lp_arena: &mut Arena<ALogicalPlan>,
+        lp_arena: &mut Arena<FullAccessIR>,
         expr_arena: &mut Arena<AExpr>,
         node: Node,
-    ) -> Option<ALogicalPlan> {
+    ) -> Option<FullAccessIR> {
         let lp = lp_arena.get(node);
 
-        use ALogicalPlan::*;
+        use FullAccessIR::*;
         match lp {
-            Selection { input, predicate } => {
+            Filter { input, predicate } => {
                 // We want to make sure we find this pattern
                 // A != null AND B != null AND C != null .. etc.
                 // the outer expression always is a binary and operation and the inner
@@ -69,7 +69,7 @@ impl OptimizationRule for ReplaceDropNulls {
                 if not_null_count == column_count && binary_and_count < column_count {
                     let subset = Arc::from(aexpr_to_leaf_names(predicate.node(), expr_arena));
 
-                    Some(ALogicalPlan::MapFunction {
+                    Some(FullAccessIR::MapFunction {
                         input: *input,
                         function: FunctionNode::DropNulls { subset },
                     })

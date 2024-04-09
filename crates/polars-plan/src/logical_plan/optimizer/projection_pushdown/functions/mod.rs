@@ -12,9 +12,9 @@ pub(super) fn process_functions(
     mut acc_projections: Vec<ColumnNode>,
     mut projected_names: PlHashSet<Arc<str>>,
     projections_seen: usize,
-    lp_arena: &mut Arena<ALogicalPlan>,
+    lp_arena: &mut Arena<FullAccessIR>,
     expr_arena: &mut Arena<AExpr>,
-) -> PolarsResult<ALogicalPlan> {
+) -> PolarsResult<FullAccessIR> {
     use FunctionNode::*;
     match function {
         Rename {
@@ -39,7 +39,7 @@ pub(super) fn process_functions(
                 expr_arena,
             )?;
 
-            let lp = ALogicalPlan::MapFunction {
+            let lp = FullAccessIR::MapFunction {
                 input,
                 function: function.clone(),
             };
@@ -57,12 +57,12 @@ pub(super) fn process_functions(
                 lp_arena,
                 expr_arena,
             )?;
-            Ok(ALogicalPlanBuilder::new(input, expr_arena, lp_arena)
+            Ok(FullAccessIRBuilder::new(input, expr_arena, lp_arena)
                 .explode(columns.clone())
                 .build())
         },
         Melt { args, .. } => {
-            let lp = ALogicalPlan::MapFunction {
+            let lp = FullAccessIR::MapFunction {
                 input,
                 function: function.clone(),
             };
@@ -79,7 +79,7 @@ pub(super) fn process_functions(
             )
         },
         _ => {
-            let lp = ALogicalPlan::MapFunction {
+            let lp = FullAccessIR::MapFunction {
                 input,
                 function: function.clone(),
             };
@@ -111,12 +111,12 @@ pub(super) fn process_functions(
                 } else {
                     // if we would project, we would remove pushed down predicates
                     if local_projections.len() < original_acc_projection_len {
-                        Ok(ALogicalPlanBuilder::from_lp(lp, expr_arena, lp_arena)
+                        Ok(FullAccessIRBuilder::from_lp(lp, expr_arena, lp_arena)
                             .with_columns_simple(local_projections, Default::default())
                             .build())
                         // all projections are local
                     } else {
-                        Ok(ALogicalPlanBuilder::from_lp(lp, expr_arena, lp_arena)
+                        Ok(FullAccessIRBuilder::from_lp(lp, expr_arena, lp_arena)
                             .project_simple_nodes(local_projections)
                             .unwrap()
                             .build())

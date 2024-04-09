@@ -200,7 +200,7 @@ fn err_date_str_compare() -> PolarsResult<()> {
 
 pub(super) fn process_binary(
     expr_arena: &mut Arena<AExpr>,
-    lp_arena: &Arena<ALogicalPlan>,
+    lp_arena: &Arena<FullAccessIR>,
     lp_node: Node,
     node_left: Node,
     op: Operator,
