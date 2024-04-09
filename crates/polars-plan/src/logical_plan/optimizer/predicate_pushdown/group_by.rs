@@ -3,7 +3,7 @@ use super::*;
 #[allow(clippy::too_many_arguments)]
 pub(super) fn process_group_by(
     opt: &PredicatePushDown,
-    lp_arena: &mut Arena<ALogicalPlan>,
+    lp_arena: &mut Arena<FullAccessIR>,
     expr_arena: &mut Arena<AExpr>,
     input: Node,
     keys: Vec<ExprIR>,
@@ -13,8 +13,8 @@ pub(super) fn process_group_by(
     apply: Option<Arc<dyn DataFrameUdf>>,
     options: Arc<GroupbyOptions>,
     acc_predicates: PlHashMap<Arc<str>, ExprIR>,
-) -> PolarsResult<ALogicalPlan> {
-    use ALogicalPlan::*;
+) -> PolarsResult<FullAccessIR> {
+    use FullAccessIR::*;
 
     #[cfg(feature = "dynamic_group_by")]
     let no_push = { options.rolling.is_some() || options.dynamic.is_some() };

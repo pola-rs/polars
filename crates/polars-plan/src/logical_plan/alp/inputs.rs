@@ -1,13 +1,13 @@
 use super::*;
 
-impl ALogicalPlan {
+impl FullAccessIR {
     /// Takes the expressions of an LP node and the inputs of that node and reconstruct
     pub fn with_exprs_and_input(
         &self,
         mut exprs: Vec<ExprIR>,
         mut inputs: Vec<Node>,
-    ) -> ALogicalPlan {
-        use ALogicalPlan::*;
+    ) -> FullAccessIR {
+        use FullAccessIR::*;
 
         match self {
             #[cfg(feature = "python")]
@@ -165,7 +165,7 @@ impl ALogicalPlan {
 
     /// Copy the exprs in this LP node to an existing container.
     pub fn copy_exprs(&self, container: &mut Vec<ExprIR>) {
-        use ALogicalPlan::*;
+        use FullAccessIR::*;
         match self {
             Slice { .. } | Cache { .. } | Distinct { .. } | Union { .. } | MapFunction { .. } => {},
             Sort { by_column, .. } => container.extend_from_slice(by_column),
@@ -214,7 +214,7 @@ impl ALogicalPlan {
     where
         T: PushNode,
     {
-        use ALogicalPlan::*;
+        use FullAccessIR::*;
         let input = match self {
             Union { inputs, .. } => {
                 for node in inputs {

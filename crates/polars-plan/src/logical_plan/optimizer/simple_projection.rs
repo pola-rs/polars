@@ -30,11 +30,11 @@ impl SimpleProjectionAndCollapse {
 impl OptimizationRule for SimpleProjectionAndCollapse {
     fn optimize_plan(
         &mut self,
-        lp_arena: &mut Arena<ALogicalPlan>,
+        lp_arena: &mut Arena<FullAccessIR>,
         expr_arena: &mut Arena<AExpr>,
         node: Node,
-    ) -> Option<ALogicalPlan> {
-        use ALogicalPlan::*;
+    ) -> Option<FullAccessIR> {
+        use FullAccessIR::*;
         let lp = lp_arena.get(node);
 
         match lp {
@@ -52,7 +52,7 @@ impl OptimizationRule for SimpleProjectionAndCollapse {
                         .iter()
                         .map(|e| e.output_name_arc().clone())
                         .collect::<Vec<_>>();
-                    let alp = ALogicalPlanBuilder::new(*input, expr_arena, lp_arena)
+                    let alp = FullAccessIRBuilder::new(*input, expr_arena, lp_arena)
                         .project_simple(exprs.iter().map(|s| s.as_ref()))
                         .ok()?
                         .build();

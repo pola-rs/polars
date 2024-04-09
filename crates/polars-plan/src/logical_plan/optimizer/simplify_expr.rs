@@ -107,11 +107,11 @@ impl OptimizationRule for SimplifyBooleanRule {
         &mut self,
         expr_arena: &mut Arena<AExpr>,
         expr_node: Node,
-        lp_arena: &Arena<ALogicalPlan>,
+        lp_arena: &Arena<FullAccessIR>,
         lp_node: Node,
     ) -> PolarsResult<Option<AExpr>> {
         let expr = expr_arena.get(expr_node);
-        let in_filter = matches!(lp_arena.get(lp_node), ALogicalPlan::Selection { .. });
+        let in_filter = matches!(lp_arena.get(lp_node), FullAccessIR::Selection { .. });
 
         let out = match expr {
             // true AND x => x
@@ -280,7 +280,7 @@ where
 
 #[cfg(all(feature = "strings", feature = "concat_str"))]
 fn string_addition_to_linear_concat(
-    lp_arena: &Arena<ALogicalPlan>,
+    lp_arena: &Arena<FullAccessIR>,
     lp_node: Node,
     expr_arena: &Arena<AExpr>,
     left_node: Node,
@@ -419,7 +419,7 @@ impl OptimizationRule for SimplifyExprRule {
         &mut self,
         expr_arena: &mut Arena<AExpr>,
         expr_node: Node,
-        _lp_arena: &Arena<ALogicalPlan>,
+        _lp_arena: &Arena<FullAccessIR>,
         _lp_node: Node,
     ) -> PolarsResult<Option<AExpr>> {
         let expr = expr_arena.get(expr_node).clone();

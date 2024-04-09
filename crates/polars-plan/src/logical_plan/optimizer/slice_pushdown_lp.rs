@@ -70,15 +70,15 @@ impl SlicePushDown {
     // we also stop optimization
     fn no_pushdown_finish_opt(
         &self,
-        lp: ALogicalPlan,
+        lp: FullAccessIR,
         state: Option<State>,
-        lp_arena: &mut Arena<ALogicalPlan>,
-    ) -> PolarsResult<ALogicalPlan> {
+        lp_arena: &mut Arena<FullAccessIR>,
+    ) -> PolarsResult<FullAccessIR> {
         match state {
             Some(state) => {
                 let input = lp_arena.add(lp);
 
-                let lp = ALogicalPlan::Slice {
+                let lp = FullAccessIR::Slice {
                     input,
                     offset: state.offset,
                     len: state.len,
@@ -92,11 +92,11 @@ impl SlicePushDown {
     /// slice will be done at this node, but we continue optimization
     fn no_pushdown_restart_opt(
         &self,
-        lp: ALogicalPlan,
+        lp: FullAccessIR,
         state: Option<State>,
-        lp_arena: &mut Arena<ALogicalPlan>,
+        lp_arena: &mut Arena<FullAccessIR>,
         expr_arena: &mut Arena<AExpr>,
-    ) -> PolarsResult<ALogicalPlan> {
+    ) -> PolarsResult<FullAccessIR> {
         let inputs = lp.get_inputs();
         let exprs = lp.get_exprs();
 
@@ -119,11 +119,11 @@ impl SlicePushDown {
     /// slice will be pushed down.
     fn pushdown_and_continue(
         &self,
-        lp: ALogicalPlan,
+        lp: FullAccessIR,
         state: Option<State>,
-        lp_arena: &mut Arena<ALogicalPlan>,
+        lp_arena: &mut Arena<FullAccessIR>,
         expr_arena: &mut Arena<AExpr>,
-    ) -> PolarsResult<ALogicalPlan> {
+    ) -> PolarsResult<FullAccessIR> {
         let inputs = lp.get_inputs();
         let exprs = lp.get_exprs();
 
@@ -142,12 +142,12 @@ impl SlicePushDown {
     #[recursive]
     fn pushdown(
         &self,
-        lp: ALogicalPlan,
+        lp: FullAccessIR,
         state: Option<State>,
-        lp_arena: &mut Arena<ALogicalPlan>,
+        lp_arena: &mut Arena<FullAccessIR>,
         expr_arena: &mut Arena<AExpr>,
-    ) -> PolarsResult<ALogicalPlan> {
-        use ALogicalPlan::*;
+    ) -> PolarsResult<FullAccessIR> {
+        use FullAccessIR::*;
 
         match (lp, state) {
             #[cfg(feature = "python")]
@@ -410,10 +410,10 @@ impl SlicePushDown {
 
     pub fn optimize(
         &self,
-        logical_plan: ALogicalPlan,
-        lp_arena: &mut Arena<ALogicalPlan>,
+        logical_plan: FullAccessIR,
+        lp_arena: &mut Arena<FullAccessIR>,
         expr_arena: &mut Arena<AExpr>,
-    ) -> PolarsResult<ALogicalPlan> {
+    ) -> PolarsResult<FullAccessIR> {
         self.pushdown(logical_plan, None, lp_arena, expr_arena)
     }
 }

@@ -243,7 +243,7 @@ fn modify_supertype(
     st
 }
 
-fn get_input(lp_arena: &Arena<ALogicalPlan>, lp_node: Node) -> UnitVec<Node> {
+fn get_input(lp_arena: &Arena<FullAccessIR>, lp_node: Node) -> UnitVec<Node> {
     let plan = lp_arena.get(lp_node);
     let mut inputs: UnitVec<Node> = unitvec!();
 
@@ -256,7 +256,7 @@ fn get_input(lp_arena: &Arena<ALogicalPlan>, lp_node: Node) -> UnitVec<Node> {
     inputs
 }
 
-fn get_schema(lp_arena: &Arena<ALogicalPlan>, lp_node: Node) -> Cow<'_, SchemaRef> {
+fn get_schema(lp_arena: &Arena<FullAccessIR>, lp_node: Node) -> Cow<'_, SchemaRef> {
     let inputs = get_input(lp_arena, lp_node);
     if inputs.is_empty() {
         // Files don't have an input, so we must take their schema.
@@ -285,7 +285,7 @@ impl OptimizationRule for TypeCoercionRule {
         &mut self,
         expr_arena: &mut Arena<AExpr>,
         expr_node: Node,
-        lp_arena: &Arena<ALogicalPlan>,
+        lp_arena: &Arena<FullAccessIR>,
         lp_node: Node,
     ) -> PolarsResult<Option<AExpr>> {
         let expr = expr_arena.get(expr_node);

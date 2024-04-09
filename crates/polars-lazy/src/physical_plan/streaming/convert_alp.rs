@@ -54,7 +54,7 @@ fn process_non_streamable_node(
     stack: &mut Vec<StackFrame>,
     scratch: &mut Vec<Node>,
     pipeline_trees: &mut Vec<Vec<Branch>>,
-    lp: &ALogicalPlan,
+    lp: &FullAccessIR,
 ) {
     lp.copy_inputs(scratch);
     while let Some(input) = scratch.pop() {
@@ -69,11 +69,11 @@ fn process_non_streamable_node(
     state.streamable = false;
 }
 
-fn insert_file_sink(mut root: Node, lp_arena: &mut Arena<ALogicalPlan>) -> Node {
+fn insert_file_sink(mut root: Node, lp_arena: &mut Arena<FullAccessIR>) -> Node {
     // The pipelines need a final sink, we insert that here.
     // this allows us to split at joins/unions and share a sink
-    if !matches!(lp_arena.get(root), ALogicalPlan::Sink { .. }) {
-        root = lp_arena.add(ALogicalPlan::Sink {
+    if !matches!(lp_arena.get(root), FullAccessIR::Sink { .. }) {
+        root = lp_arena.add(FullAccessIR::Sink {
             input: root,
             payload: SinkType::Memory,
         })
@@ -85,10 +85,10 @@ fn insert_slice(
     root: Node,
     offset: i64,
     len: IdxSize,
-    lp_arena: &mut Arena<ALogicalPlan>,
+    lp_arena: &mut Arena<FullAccessIR>,
     state: &mut Branch,
 ) {
-    let node = lp_arena.add(ALogicalPlan::Slice {
+    let node = lp_arena.add(FullAccessIR::Slice {
         input: root,
         offset,
         len: len as IdxSize,
@@ -98,7 +98,7 @@ fn insert_slice(
 
 pub(crate) fn insert_streaming_nodes(
     root: Node,
-    lp_arena: &mut Arena<ALogicalPlan>,
+    lp_arena: &mut Arena<FullAccessIR>,
     expr_arena: &mut Arena<AExpr>,
     scratch: &mut Vec<Node>,
     fmt: bool,
@@ -163,7 +163,7 @@ pub(crate) fn insert_streaming_nodes(
     // keep the counter global so that the order will match traversal order
     let mut execution_id = 0;
 
-    use ALogicalPlan::*;
+    use FullAccessIR::*;
     while let Some(StackFrame {
         node: mut root,
         mut state,

@@ -14,14 +14,14 @@ impl OptimizationRule for CountStar {
     // Replace select count(*) from datasource with specialized map function.
     fn optimize_plan(
         &mut self,
-        lp_arena: &mut Arena<ALogicalPlan>,
+        lp_arena: &mut Arena<FullAccessIR>,
         expr_arena: &mut Arena<AExpr>,
         node: Node,
-    ) -> Option<ALogicalPlan> {
+    ) -> Option<FullAccessIR> {
         visit_logical_plan_for_scan_paths(node, lp_arena, expr_arena, false).map(
             |count_star_expr| {
                 // MapFunction needs a leaf node, hence we create a dummy placeholder node
-                let placeholder = ALogicalPlan::DataFrameScan {
+                let placeholder = FullAccessIR::DataFrameScan {
                     df: Arc::new(Default::default()),
                     schema: Arc::new(Default::default()),
                     output_schema: None,
@@ -30,7 +30,7 @@ impl OptimizationRule for CountStar {
                 };
                 let placeholder_node = lp_arena.add(placeholder);
 
-                let alp = ALogicalPlan::MapFunction {
+                let alp = FullAccessIR::MapFunction {
                     input: placeholder_node,
                     function: FunctionNode::Count {
                         paths: count_star_expr.paths,
@@ -61,12 +61,12 @@ struct CountStarExpr {
 // Return None if query is not a simple COUNT(*) FROM SOURCE
 fn visit_logical_plan_for_scan_paths(
     node: Node,
-    lp_arena: &Arena<ALogicalPlan>,
+    lp_arena: &Arena<FullAccessIR>,
     expr_arena: &Arena<AExpr>,
     inside_union: bool, // Inside union's we do not check for COUNT(*) expression
 ) -> Option<CountStarExpr> {
     match lp_arena.get(node) {
-        ALogicalPlan::Union { inputs, .. } => {
+        FullAccessIR::Union { inputs, .. } => {
             let mut scan_type: Option<FileScan> = None;
             let mut paths = Vec::with_capacity(inputs.len());
             for input in inputs {
@@ -95,7 +95,7 @@ fn visit_logical_plan_for_scan_paths(
                 alias: None,
             })
         },
-        ALogicalPlan::Scan {
+        FullAccessIR::Scan {
             scan_type, paths, ..
         } if !matches!(scan_type, FileScan::Anonymous { .. }) => Some(CountStarExpr {
             paths: paths.clone(),
@@ -105,10 +105,10 @@ fn visit_logical_plan_for_scan_paths(
         }),
         // A union can insert a simple projection to ensure all projections align.
         // We can ignore that if we are inside a count star.
-        ALogicalPlan::SimpleProjection { input, .. } if inside_union => {
+        FullAccessIR::SimpleProjection { input, .. } if inside_union => {
             visit_logical_plan_for_scan_paths(*input, lp_arena, expr_arena, false)
         },
-        ALogicalPlan::Projection { input, expr, .. } => {
+        FullAccessIR::Projection { input, expr, .. } => {
             if expr.len() == 1 {
                 let (valid, alias) = is_valid_count_expr(&expr[0], expr_arena);
                 if valid || inside_union {

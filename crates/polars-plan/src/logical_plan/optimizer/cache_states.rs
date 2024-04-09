@@ -4,12 +4,12 @@ use super::*;
 
 fn get_upper_projections(
     parent: Node,
-    lp_arena: &Arena<ALogicalPlan>,
+    lp_arena: &Arena<FullAccessIR>,
     names_scratch: &mut Vec<ColumnName>,
 ) -> bool {
     let parent = lp_arena.get(parent);
 
-    use ALogicalPlan::*;
+    use FullAccessIR::*;
     // During projection pushdown all accumulated.
     match parent {
         SimpleProjection { columns, .. } => {
@@ -25,13 +25,13 @@ fn get_upper_projections(
 
 fn get_upper_predicates(
     parent: Node,
-    lp_arena: &Arena<ALogicalPlan>,
+    lp_arena: &Arena<FullAccessIR>,
     expr_arena: &mut Arena<AExpr>,
     predicate_scratch: &mut Vec<Expr>,
 ) -> bool {
     let parent = lp_arena.get(parent);
 
-    use ALogicalPlan::*;
+    use FullAccessIR::*;
     match parent {
         Selection { predicate, .. } => {
             let expr = predicate.to_expr(expr_arena);
@@ -111,7 +111,7 @@ type TwoParents = [Option<Node>; 2];
 /// - The predicates above the cache nodes are all different -> remove the cache nodes -> finish
 pub(super) fn set_cache_states(
     root: Node,
-    lp_arena: &mut Arena<ALogicalPlan>,
+    lp_arena: &mut Arena<FullAccessIR>,
     expr_arena: &mut Arena<AExpr>,
     scratch: &mut Vec<Node>,
     hive_partition_eval: HiveEval<'_>,
@@ -159,7 +159,7 @@ pub(super) fn set_cache_states(
         let lp = lp_arena.get(frame.current);
         lp.copy_inputs(scratch);
 
-        use ALogicalPlan::*;
+        use FullAccessIR::*;
         match lp {
             // don't allow parallelism as caches need each others work
             // also self-referencing plans can deadlock on the files they lock
@@ -285,7 +285,7 @@ pub(super) fn set_cache_states(
                     for p_node in parents.into_iter().flatten() {
                         if matches!(
                             lp_arena.get(p_node),
-                            ALogicalPlan::Selection { .. } | ALogicalPlan::SimpleProjection { .. }
+                            FullAccessIR::Selection { .. } | FullAccessIR::SimpleProjection { .. }
                         ) {
                             node = p_node
                         } else {
@@ -319,15 +319,15 @@ pub(super) fn set_cache_states(
 
                     let new_child = lp_arena.add(child_lp);
 
-                    let lp = ALogicalPlanBuilder::new(new_child, expr_arena, lp_arena)
+                    let lp = FullAccessIRBuilder::new(new_child, expr_arena, lp_arena)
                         .project_simple(projection.iter().copied())
                         .unwrap()
                         .build();
 
                     let lp = proj_pd.optimize(lp, lp_arena, expr_arena)?;
                     // Remove the projection added by the optimization.
-                    let lp = if let ALogicalPlan::Projection { input, .. }
-                    | ALogicalPlan::SimpleProjection { input, .. } = lp
+                    let lp = if let FullAccessIR::Projection { input, .. }
+                    | FullAccessIR::SimpleProjection { input, .. } = lp
                     {
                         lp_arena.take(input)
                     } else {
@@ -372,9 +372,9 @@ pub(super) fn set_cache_states(
     Ok(())
 }
 
-fn get_filter_node(parents: TwoParents, lp_arena: &Arena<ALogicalPlan>) -> Option<Node> {
+fn get_filter_node(parents: TwoParents, lp_arena: &Arena<FullAccessIR>) -> Option<Node> {
     parents
         .into_iter()
         .flatten()
-        .find(|&parent| matches!(lp_arena.get(parent), ALogicalPlan::Selection { .. }))
+        .find(|&parent| matches!(lp_arena.get(parent), FullAccessIR::Selection { .. }))
 }

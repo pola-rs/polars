@@ -7,35 +7,35 @@ use super::*;
 use crate::prelude::*;
 
 #[derive(Copy, Clone, Debug)]
-pub struct ALogicalPlanNode {
+pub struct FullAccessIRNode {
     node: Node,
-    arena: *mut Arena<ALogicalPlan>,
+    arena: *mut Arena<FullAccessIR>,
 }
 
-impl ALogicalPlanNode {
+impl FullAccessIRNode {
     /// Don't use this directly, use [`Self::with_context`]
     ///
     /// # Safety
     /// This will keep a pointer to `arena`. The caller must ensure it stays alive.
-    unsafe fn new(node: Node, arena: &mut Arena<ALogicalPlan>) -> Self {
+    unsafe fn new(node: Node, arena: &mut Arena<FullAccessIR>) -> Self {
         Self { node, arena }
     }
 
     /// # Safety
     /// This will keep a pointer to `arena`. The caller must ensure it stays alive.
-    pub(crate) unsafe fn from_raw(node: Node, arena: *mut Arena<ALogicalPlan>) -> Self {
+    pub(crate) unsafe fn from_raw(node: Node, arena: *mut Arena<FullAccessIR>) -> Self {
         Self { node, arena }
     }
 
     #[cfg(feature = "cse")]
-    pub(crate) fn get_arena_raw(&self) -> *mut Arena<ALogicalPlan> {
+    pub(crate) fn get_arena_raw(&self) -> *mut Arena<FullAccessIR> {
         self.arena
     }
 
     /// Safe interface. Take the `&mut Arena` only for the duration of `op`.
-    pub fn with_context<F, T>(node: Node, arena: &mut Arena<ALogicalPlan>, mut op: F) -> T
+    pub fn with_context<F, T>(node: Node, arena: &mut Arena<FullAccessIR>, mut op: F) -> T
     where
-        F: FnMut(ALogicalPlanNode) -> T,
+        F: FnMut(FullAccessIRNode) -> T,
     {
         // SAFETY: we drop this context before arena is out of scope
         unsafe { op(Self::new(node, arena)) }
@@ -47,7 +47,7 @@ impl ALogicalPlanNode {
 
     pub fn with_arena<'a, F, T>(&self, op: F) -> T
     where
-        F: Fn(&'a Arena<ALogicalPlan>) -> T,
+        F: Fn(&'a Arena<FullAccessIR>) -> T,
     {
         let arena = unsafe { &(*self.arena) };
 
@@ -56,15 +56,15 @@ impl ALogicalPlanNode {
 
     pub fn with_arena_mut<'a, F, T>(&mut self, op: F) -> T
     where
-        F: FnOnce(&'a mut Arena<ALogicalPlan>) -> T,
+        F: FnOnce(&'a mut Arena<FullAccessIR>) -> T,
     {
         let arena = unsafe { &mut (*self.arena) };
 
         op(arena)
     }
 
-    /// Add a new `ALogicalPlan` to the arena and set that node to `Self`.
-    pub fn assign(&mut self, ae: ALogicalPlan) {
+    /// Add a new `FullAccessIR` to the arena and set that node to `Self`.
+    pub fn assign(&mut self, ae: FullAccessIR) {
         let node = self.with_arena_mut(|arena| arena.add(ae));
         self.node = node
     }
@@ -73,17 +73,17 @@ impl ALogicalPlanNode {
         self.node = node;
     }
 
-    /// Replace the current `Node` with a new `ALogicalPlan`.
-    pub fn replace(&mut self, ae: ALogicalPlan) {
+    /// Replace the current `Node` with a new `FullAccessIR`.
+    pub fn replace(&mut self, ae: FullAccessIR) {
         let node = self.node;
         self.with_arena_mut(|arena| arena.replace(node, ae));
     }
 
-    pub fn to_alp(&self) -> &ALogicalPlan {
+    pub fn to_alp(&self) -> &FullAccessIR {
         self.with_arena(|arena| arena.get(self.node))
     }
 
-    pub fn to_alp_mut(&mut self) -> &mut ALogicalPlan {
+    pub fn to_alp_mut(&mut self) -> &mut FullAccessIR {
         let node = self.node;
         self.with_arena_mut(|arena| arena.get_mut(node))
     }
@@ -92,19 +92,19 @@ impl ALogicalPlanNode {
         self.with_arena(|arena| arena.get(self.node).schema(arena))
     }
 
-    /// Take a [`Node`] and convert it an [`ALogicalPlanNode`] and call
-    /// `F` with `self` and the new created [`ALogicalPlanNode`]
+    /// Take a [`Node`] and convert it an [`FullAccessIRNode`] and call
+    /// `F` with `self` and the new created [`FullAccessIRNode`]
     pub fn binary<F, T>(&self, other: Node, op: F) -> T
     where
-        F: FnOnce(&ALogicalPlanNode, &ALogicalPlanNode) -> T,
+        F: FnOnce(&FullAccessIRNode, &FullAccessIRNode) -> T,
     {
         // this is safe as we remain in context
-        let other = unsafe { ALogicalPlanNode::from_raw(other, self.arena) };
+        let other = unsafe { FullAccessIRNode::from_raw(other, self.arena) };
         op(self, &other)
     }
 }
 
-impl TreeWalker for ALogicalPlanNode {
+impl TreeWalker for FullAccessIRNode {
     fn apply_children<'a>(
         &'a self,
         op: &mut dyn FnMut(&Self) -> PolarsResult<VisitRecursion>,
@@ -113,7 +113,7 @@ impl TreeWalker for ALogicalPlanNode {
 
         self.to_alp().copy_inputs(&mut scratch);
         for &node in scratch.as_slice() {
-            let lp_node = ALogicalPlanNode {
+            let lp_node = FullAccessIRNode {
                 node,
                 arena: self.arena,
             };
@@ -140,7 +140,7 @@ impl TreeWalker for ALogicalPlanNode {
 
         // rewrite the nodes
         for node in &mut inputs {
-            let lp_node = ALogicalPlanNode {
+            let lp_node = FullAccessIRNode {
                 node: *node,
                 arena: self.arena,
             };

@@ -11,9 +11,10 @@ use polars_utils::unitvec;
 use super::projection_expr::*;
 use crate::prelude::*;
 
-/// [`ALogicalPlan`] is a representation of [`LogicalPlan`] with [`Node`]s which are allocated in an [`Arena`]
+/// [`FullAccessIR`] is a representation of [`LogicalPlan`] with [`Node`]s which are allocated in an [`Arena`]
+/// In this IR the logical plan has access to the full dataset.
 #[derive(Clone, Debug, Default)]
-pub enum ALogicalPlan {
+pub enum FullAccessIR {
     #[cfg(feature = "python")]
     PythonScan {
         options: PythonOptions,
@@ -131,6 +132,6 @@ mod test {
     #[ignore]
     #[test]
     fn test_alp_size() {
-        assert!(std::mem::size_of::<ALogicalPlan>() <= 152);
+        assert!(std::mem::size_of::<FullAccessIR>() <= 152);
     }
 }

@@ -690,10 +690,10 @@ impl<'a> CommonSubExprOptimizer<'a> {
 }
 
 impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
-    type Node = ALogicalPlanNode;
+    type Node = FullAccessIRNode;
 
     fn pre_visit(&mut self, node: &Self::Node) -> PolarsResult<RewriteRecursion> {
-        use ALogicalPlan::*;
+        use FullAccessIR::*;
         Ok(match node.to_alp() {
             Projection { .. } | HStack { .. } | Aggregate { .. } => {
                 RewriteRecursion::MutateAndContinue
@@ -717,7 +717,7 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
             let alp = lp_arena.get(arena_idx);
 
             match alp {
-                ALogicalPlan::Projection {
+                FullAccessIR::Projection {
                     input,
                     expr,
                     schema,
@@ -731,7 +731,7 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
                         false,
                         input_schema.as_ref().as_ref(),
                     )? {
-                        let lp = ALogicalPlan::Projection {
+                        let lp = FullAccessIR::Projection {
                             input: *input,
                             expr,
                             schema: schema.clone(),
@@ -740,7 +740,7 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
                         lp_arena.replace(arena_idx, lp);
                     }
                 },
-                ALogicalPlan::HStack {
+                FullAccessIR::HStack {
                     input,
                     exprs,
                     schema,
@@ -754,7 +754,7 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
                         false,
                         input_schema.as_ref().as_ref(),
                     )? {
-                        let lp = ALogicalPlan::HStack {
+                        let lp = FullAccessIR::HStack {
                             input: *input,
                             exprs,
                             schema: schema.clone(),
@@ -763,7 +763,7 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
                         lp_arena.replace(arena_idx, lp);
                     }
                 },
-                ALogicalPlan::Aggregate {
+                FullAccessIR::Aggregate {
                     input,
                     keys,
                     aggs,
@@ -787,12 +787,12 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
                         let maintain_order = *maintain_order;
                         let input = *input;
 
-                        let lp = ALogicalPlanBuilder::new(input, &mut expr_arena, lp_arena)
+                        let lp = FullAccessIRBuilder::new(input, &mut expr_arena, lp_arena)
                             .with_columns(aggs.cse_exprs().to_vec(), Default::default())
                             .build();
                         let input = lp_arena.add(lp);
 
-                        let lp = ALogicalPlan::Aggregate {
+                        let lp = FullAccessIR::Aggregate {
                             input,
                             keys,
                             aggs: aggs.default_exprs().to_vec(),
@@ -876,12 +876,12 @@ mod test {
         let (node, mut lp_arena, mut expr_arena) = lp.to_alp().unwrap();
         let mut optimizer = CommonSubExprOptimizer::new(&mut expr_arena);
 
-        let out = ALogicalPlanNode::with_context(node, &mut lp_arena, |alp_node| {
+        let out = FullAccessIRNode::with_context(node, &mut lp_arena, |alp_node| {
             alp_node.rewrite(&mut optimizer)
         })
         .unwrap();
 
-        let ALogicalPlan::Projection { expr, .. } = out.to_alp() else {
+        let FullAccessIR::Projection { expr, .. } = out.to_alp() else {
             unreachable!()
         };
 

@@ -128,10 +128,10 @@ fn partitionable_gb(
 
 pub fn create_physical_plan(
     root: Node,
-    lp_arena: &mut Arena<ALogicalPlan>,
+    lp_arena: &mut Arena<FullAccessIR>,
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<Box<dyn Executor>> {
-    use ALogicalPlan::*;
+    use FullAccessIR::*;
 
     let logical_plan = lp_arena.take(root);
     match logical_plan {

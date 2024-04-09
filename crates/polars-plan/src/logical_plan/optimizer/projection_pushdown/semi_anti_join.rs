@@ -11,9 +11,9 @@ pub(super) fn process_semi_anti_join(
     acc_projections: Vec<ColumnNode>,
     _projected_names: PlHashSet<Arc<str>>,
     projections_seen: usize,
-    lp_arena: &mut Arena<ALogicalPlan>,
+    lp_arena: &mut Arena<FullAccessIR>,
     expr_arena: &mut Arena<AExpr>,
-) -> PolarsResult<ALogicalPlan> {
+) -> PolarsResult<FullAccessIR> {
     // n = 0 if no projections, so we don't allocate unneeded
     let n = acc_projections.len() * 2;
     let mut pushdown_left = Vec::with_capacity(n);
@@ -72,12 +72,12 @@ pub(super) fn process_semi_anti_join(
         expr_arena,
     )?;
 
-    let alp = ALogicalPlanBuilder::new(input_left, expr_arena, lp_arena)
+    let alp = FullAccessIRBuilder::new(input_left, expr_arena, lp_arena)
         .join(input_right, left_on, right_on, options)
         .build();
 
     let root = lp_arena.add(alp);
-    let builder = ALogicalPlanBuilder::new(root, expr_arena, lp_arena);
+    let builder = FullAccessIRBuilder::new(root, expr_arena, lp_arena);
 
     Ok(proj_pd.finish_node(vec![], builder))
 }
