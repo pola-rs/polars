@@ -31,7 +31,7 @@ impl FullAccessIR {
                 offset: *offset,
                 len: *len,
             },
-            Selection { .. } => Selection {
+            Filter { .. } => Filter {
                 input: inputs[0],
                 predicate: exprs.pop().unwrap(),
             },
@@ -169,7 +169,7 @@ impl FullAccessIR {
         match self {
             Slice { .. } | Cache { .. } | Distinct { .. } | Union { .. } | MapFunction { .. } => {},
             Sort { by_column, .. } => container.extend_from_slice(by_column),
-            Selection { predicate, .. } => container.push(predicate.clone()),
+            Filter { predicate, .. } => container.push(predicate.clone()),
             Projection { expr, .. } => container.extend_from_slice(expr),
             Aggregate { keys, aggs, .. } => {
                 let iter = keys.iter().cloned().chain(aggs.iter().cloned());
@@ -229,7 +229,7 @@ impl FullAccessIR {
                 return;
             },
             Slice { input, .. } => *input,
-            Selection { input, .. } => *input,
+            Filter { input, .. } => *input,
             Projection { input, .. } => *input,
             SimpleProjection { input, .. } => *input,
             Sort { input, .. } => *input,

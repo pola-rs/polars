@@ -17,7 +17,7 @@ fn get_upper_projections(
             names_scratch.extend(iter);
             false
         },
-        Selection { .. } => true,
+        Filter { .. } => true,
         // Only filter and projection nodes are allowed, any other node we stop.
         _ => false,
     }
@@ -33,7 +33,7 @@ fn get_upper_predicates(
 
     use FullAccessIR::*;
     match parent {
-        Selection { predicate, .. } => {
+        Filter { predicate, .. } => {
             let expr = predicate.to_expr(expr_arena);
             predicate_scratch.push(expr);
             false
@@ -285,7 +285,7 @@ pub(super) fn set_cache_states(
                     for p_node in parents.into_iter().flatten() {
                         if matches!(
                             lp_arena.get(p_node),
-                            FullAccessIR::Selection { .. } | FullAccessIR::SimpleProjection { .. }
+                            FullAccessIR::Filter { .. } | FullAccessIR::SimpleProjection { .. }
                         ) {
                             node = p_node
                         } else {
@@ -376,5 +376,5 @@ fn get_filter_node(parents: TwoParents, lp_arena: &Arena<FullAccessIR>) -> Optio
     parents
         .into_iter()
         .flatten()
-        .find(|&parent| matches!(lp_arena.get(parent), FullAccessIR::Selection { .. }))
+        .find(|&parent| matches!(lp_arena.get(parent), FullAccessIR::Filter { .. }))
 }

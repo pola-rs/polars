@@ -111,7 +111,7 @@ impl OptimizationRule for SimplifyBooleanRule {
         lp_node: Node,
     ) -> PolarsResult<Option<AExpr>> {
         let expr = expr_arena.get(expr_node);
-        let in_filter = matches!(lp_arena.get(lp_node), FullAccessIR::Selection { .. });
+        let in_filter = matches!(lp_arena.get(lp_node), FullAccessIR::Filter { .. });
 
         let out = match expr {
             // true AND x => x

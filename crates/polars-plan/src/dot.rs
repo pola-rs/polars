@@ -179,7 +179,7 @@ impl LogicalPlan {
                 self.write_dot(acc_str, prev_node, current_node, id_map)?;
                 input.dot(acc_str, (cache_id, cache_id + 1), current_node, id_map)
             },
-            Selection { predicate, input } => {
+            Filter { predicate, input } => {
                 let pred = fmt_predicate(Some(predicate));
                 let fmt = format!("FILTER BY {pred}");
 

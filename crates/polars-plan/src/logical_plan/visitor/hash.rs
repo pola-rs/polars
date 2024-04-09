@@ -61,7 +61,7 @@ impl Hash for HashableEqLP<'_> {
                 len.hash(state);
                 offset.hash(state);
             },
-            FullAccessIR::Selection {
+            FullAccessIR::Filter {
                 input: _,
                 predicate,
             } => {
@@ -236,11 +236,11 @@ impl HashableEqLP<'_> {
                 },
             ) => ol == or && ll == lr,
             (
-                FullAccessIR::Selection {
+                FullAccessIR::Filter {
                     input: _,
                     predicate: l,
                 },
-                FullAccessIR::Selection {
+                FullAccessIR::Filter {
                     input: _,
                     predicate: r,
                 },

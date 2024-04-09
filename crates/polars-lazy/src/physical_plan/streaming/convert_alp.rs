@@ -177,7 +177,7 @@ pub(crate) fn insert_streaming_nodes(
         state.execution_id = execution_id;
         execution_id += 1;
         match lp_arena.get(root) {
-            Selection { input, predicate }
+            Filter { input, predicate }
                 if is_streamable(predicate.node(), expr_arena, Context::Default) =>
             {
                 state.streamable = true;

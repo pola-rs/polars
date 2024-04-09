@@ -50,7 +50,7 @@ impl<'a> PredicatePushDown<'a> {
             let predicate = combine_predicates(local_predicates.into_iter(), expr_arena);
             let input = lp_arena.add(lp);
 
-            FullAccessIR::Selection { input, predicate }
+            FullAccessIR::Filter { input, predicate }
         } else {
             lp
         }
@@ -250,7 +250,7 @@ impl<'a> PredicatePushDown<'a> {
         use FullAccessIR::*;
 
         match lp {
-            Selection {
+            Filter {
                 ref predicate,
                 input,
             } => {
@@ -432,7 +432,7 @@ impl<'a> PredicatePushDown<'a> {
                     };
                     if let Some(predicate) = predicate {
                         let input = lp_arena.add(lp);
-                        Selection { input, predicate }
+                        Filter { input, predicate }
                     } else {
                         lp
                     }

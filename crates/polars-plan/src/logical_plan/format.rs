@@ -141,7 +141,7 @@ impl LogicalPlan {
                     file_options.n_rows,
                 )
             },
-            Selection { predicate, input } => {
+            Filter { predicate, input } => {
                 // this one is writeln because we don't increase indent (which inserts a line)
                 writeln!(f, "{:indent$}FILTER {predicate:?} FROM", "")?;
                 input._format(f, indent)

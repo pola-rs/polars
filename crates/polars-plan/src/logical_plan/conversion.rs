@@ -345,10 +345,10 @@ pub fn to_alp(
                 options,
             }
         },
-        LogicalPlan::Selection { input, predicate } => {
+        LogicalPlan::Filter { input, predicate } => {
             let i = to_alp(owned(input), expr_arena, lp_arena)?;
             let p = to_expr_ir(predicate, expr_arena);
-            FullAccessIR::Selection {
+            FullAccessIR::Filter {
                 input: i,
                 predicate: p,
             }
@@ -804,10 +804,10 @@ impl FullAccessIR {
                     len,
                 }
             },
-            FullAccessIR::Selection { input, predicate } => {
+            FullAccessIR::Filter { input, predicate } => {
                 let lp = convert_to_lp(input, lp_arena);
                 let predicate = predicate.to_expr(expr_arena);
-                LogicalPlan::Selection {
+                LogicalPlan::Filter {
                     input: Arc::new(lp),
                     predicate,
                 }

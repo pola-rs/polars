@@ -637,7 +637,7 @@ where
 
             Box::new(op) as Box<dyn Operator>
         },
-        Selection { predicate, input } => {
+        Filter { predicate, input } => {
             let input_schema = lp_arena.get(*input).schema(lp_arena);
             let predicate = to_physical(predicate, expr_arena, Some(input_schema.as_ref()))?;
             let op = operators::FilterOperator { predicate };

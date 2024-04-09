@@ -25,7 +25,7 @@ pub enum FullAccessIR {
         offset: i64,
         len: IdxSize,
     },
-    Selection {
+    Filter {
         input: Node,
         predicate: ExprIR,
     },

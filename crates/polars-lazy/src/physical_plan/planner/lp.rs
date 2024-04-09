@@ -171,7 +171,7 @@ pub fn create_physical_plan(
             let input = create_physical_plan(input, lp_arena, expr_arena)?;
             Ok(Box::new(executors::SliceExec { input, offset, len }))
         },
-        Selection { input, predicate } => {
+        Filter { input, predicate } => {
             let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
             let input = create_physical_plan(input, lp_arena, expr_arena)?;
             let mut state = ExpressionConversionState::default();

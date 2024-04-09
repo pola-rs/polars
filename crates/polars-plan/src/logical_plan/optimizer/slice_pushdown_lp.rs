@@ -333,7 +333,7 @@ impl SlicePushDown {
             // [Do not pushdown] boundary
             // here we do not pushdown.
             // we reset the state and then start the optimization again
-            m @ (Selection { .. }, _)
+            m @ (Filter { .. }, _)
             // other blocking nodes
             | m @ (DataFrameScan {..}, _)
             | m @ (Sort {..}, _)

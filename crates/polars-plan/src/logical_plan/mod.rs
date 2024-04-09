@@ -134,7 +134,7 @@ pub enum LogicalPlan {
     #[cfg(feature = "python")]
     PythonScan { options: PythonOptions },
     /// Filter on a boolean mask
-    Selection {
+    Filter {
         input: Arc<LogicalPlan>,
         predicate: Expr,
     },
@@ -255,7 +255,7 @@ impl Clone for LogicalPlan {
         match self {
             #[cfg(feature = "python")]
             Self::PythonScan { options } => Self::PythonScan { options: options.clone() },
-            Self::Selection { input, predicate } => Self::Selection { input: input.clone(), predicate: predicate.clone() },
+            Self::Filter { input, predicate } => Self::Filter { input: input.clone(), predicate: predicate.clone() },
             Self::Cache { input, id, cache_hits } => Self::Cache { input: input.clone(), id: id.clone(), cache_hits: cache_hits.clone() },
             Self::Scan { paths, file_info, predicate, file_options, scan_type } => Self::Scan { paths: paths.clone(), file_info: file_info.clone(), predicate: predicate.clone(), file_options: file_options.clone(), scan_type: scan_type.clone() },
             Self::DataFrameScan { df, schema, output_schema, projection, selection } => Self::DataFrameScan { df: df.clone(), schema: schema.clone(), output_schema: output_schema.clone(), projection: projection.clone(), selection: selection.clone() },

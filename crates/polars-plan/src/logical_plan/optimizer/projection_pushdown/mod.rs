@@ -519,7 +519,7 @@ impl ProjectionPushDown {
                 )?;
                 Ok(Distinct { input, options })
             },
-            Selection { predicate, input } => {
+            Filter { predicate, input } => {
                 if !acc_projections.is_empty() {
                     // make sure that the filter column is projected
                     add_expr_to_accumulated(
@@ -537,8 +537,8 @@ impl ProjectionPushDown {
                     lp_arena,
                     expr_arena,
                 )?;
-                Ok(Selection { predicate, input })
-            },
+                Ok(Filter { predicate, input })
+            }
             Aggregate {
                 input,
                 keys,

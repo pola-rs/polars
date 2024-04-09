@@ -701,7 +701,7 @@ impl LogicalPlanBuilder {
             into
         );
 
-        LogicalPlan::Selection {
+        LogicalPlan::Filter {
             predicate,
             input: Arc::new(self.0),
         }

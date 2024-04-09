@@ -22,7 +22,7 @@ impl LogicalPlan {
             Cache { input, .. } => input.schema(),
             Sort { input, .. } => input.schema(),
             DataFrameScan { schema, .. } => Ok(Cow::Borrowed(schema)),
-            Selection { input, .. } => input.schema(),
+            Filter { input, .. } => input.schema(),
             Projection { schema, .. } => Ok(Cow::Borrowed(schema)),
             Aggregate { schema, .. } => Ok(Cow::Borrowed(schema)),
             Join { schema, .. } => Ok(Cow::Borrowed(schema)),
@@ -163,7 +163,7 @@ pub fn set_estimated_row_counts(
     }
 
     match lp_arena.get(root) {
-        Selection { predicate, input } => {
+        Filter { predicate, input } => {
             _filter_count += expr_arena
                 .iter(predicate.node())
                 .filter(|(_, ae)| matches!(ae, AExpr::BinaryExpr { .. }))

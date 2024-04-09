@@ -195,7 +195,7 @@ impl<'a> TreeFmtNode<'a> {
                 ),
                 vec![NL(None, input)],
             ),
-            NL(h, Selection { input, predicate }) => ND(
+            NL(h, Filter { input, predicate }) => ND(
                 wh(h, "FILTER"),
                 vec![
                     NE(Some("predicate:".to_string()), predicate),

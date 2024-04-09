@@ -17,7 +17,7 @@ impl OptimizationRule for ReplaceDropNulls {
 
         use FullAccessIR::*;
         match lp {
-            Selection { input, predicate } => {
+            Filter { input, predicate } => {
                 // We want to make sure we find this pattern
                 // A != null AND B != null AND C != null .. etc.
                 // the outer expression always is a binary and operation and the inner

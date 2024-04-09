@@ -20,7 +20,7 @@ impl FullAccessIR {
             #[cfg(feature = "python")]
             PythonScan { .. } => "python_scan",
             Slice { .. } => "slice",
-            Selection { .. } => "selection",
+            Filter { .. } => "selection",
             DataFrameScan { .. } => "df",
             Projection { .. } => "projection",
             Sort { .. } => "sort",
@@ -64,7 +64,7 @@ impl FullAccessIR {
                 output_schema,
                 ..
             } => output_schema.as_ref().unwrap_or(schema),
-            Selection { input, .. } => return arena.get(*input).schema(arena),
+            Filter { input, .. } => return arena.get(*input).schema(arena),
             Projection { schema, .. } => schema,
             SimpleProjection { columns, .. } => columns,
             Aggregate { schema, .. } => schema,
