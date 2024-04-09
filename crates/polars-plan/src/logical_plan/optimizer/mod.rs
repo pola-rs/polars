@@ -113,21 +113,24 @@ pub fn optimize(
     }
 
     #[cfg(feature = "cse")]
-    let _cse_plan_changed =
-        if comm_subplan_elim && members.has_joins_or_unions && members.has_duplicate_scans() {
-            if verbose {
-                eprintln!("found multiple sources; run comm_subplan_elim")
-            }
-            let (lp, changed, cid2c) = cse::elim_cmn_subplans(lp_top, lp_arena, expr_arena);
+    let _cse_plan_changed = if comm_subplan_elim
+        && members.has_joins_or_unions
+        && members.has_duplicate_scans()
+        && !members.has_cache
+    {
+        if verbose {
+            eprintln!("found multiple sources; run comm_subplan_elim")
+        }
+        let (lp, changed, cid2c) = cse::elim_cmn_subplans(lp_top, lp_arena, expr_arena);
 
-            prune_unused_caches(lp_arena, cid2c);
+        prune_unused_caches(lp_arena, cid2c);
 
-            lp_top = lp;
-            members.has_cache |= changed;
-            changed
-        } else {
-            false
-        };
+        lp_top = lp;
+        members.has_cache |= changed;
+        changed
+    } else {
+        false
+    };
     #[cfg(not(feature = "cse"))]
     let _cse_plan_changed = false;
 
