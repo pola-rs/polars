@@ -174,25 +174,25 @@ impl<'a> CoreReader<'a> {
         // check if schema should be inferred
         let separator = separator.unwrap_or(b',');
 
+        // We keep track of the inferred schema bool
+        // In case the file is compressed this schema inference is wrong and has to be done
+        // again after decompression.
+        #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
+        {
+            let total_n_rows = n_rows.map(|n| {
+                skip_rows + (has_header as usize) + skip_rows_after_header + n
+            });
+            if let Some(b) =
+                decompress(&reader_bytes, total_n_rows, separator, quote_char, eol_char)
+            {
+                reader_bytes = ReaderBytes::Owned(b);
+            }
+        }
+
         let mut schema = match schema {
             Some(schema) => schema,
             None => {
                 {
-                    // We keep track of the inferred schema bool
-                    // In case the file is compressed this schema inference is wrong and has to be done
-                    // again after decompression.
-                    #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
-                    {
-                        let total_n_rows = n_rows.map(|n| {
-                            skip_rows + (has_header as usize) + skip_rows_after_header + n
-                        });
-                        if let Some(b) =
-                            decompress(&reader_bytes, total_n_rows, separator, quote_char, eol_char)
-                        {
-                            reader_bytes = ReaderBytes::Owned(b);
-                        }
-                    }
-
                     let (inferred_schema, _, _) = infer_file_schema(
                         &reader_bytes,
                         separator,
