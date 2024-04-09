@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import functools
 from typing import TYPE_CHECKING, Iterable
 
 from polars._utils.parse_expr_input import parse_as_expression
@@ -15,15 +16,18 @@ if TYPE_CHECKING:
     from polars import Expr
     from polars.type_aliases import DayOfWeek, IntoExprColumn
 
-DAY_NAMES = (
-    "Mon",
-    "Tue",
-    "Wed",
-    "Thu",
-    "Fri",
-    "Sat",
-    "Sun",
-)
+
+@functools.lru_cache
+def _day_names() -> tuple[str, ...]:
+    return (
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+        "Fri",
+        "Sat",
+        "Sun",
+    )
 
 
 def _make_week_mask(
@@ -36,13 +40,13 @@ def _make_week_mask(
     else:
         weekend_set = set(weekend)
     for day in weekend_set:
-        if day not in DAY_NAMES:
-            msg = f"Expected one of {DAY_NAMES}, got: {day}"
+        if day not in _day_names():
+            msg = f"Expected one of {_day_names()}, got: {day}"
             raise ValueError(msg)
     return tuple(
         [
             False if v in weekend else True  # noqa: SIM211
-            for v in DAY_NAMES
+            for v in _day_names()
         ]
     )
 
