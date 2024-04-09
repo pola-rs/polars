@@ -36,10 +36,10 @@ def _make_week_mask(
     if weekend is None:
         return tuple([True] * 7)
     if isinstance(weekend, str):
-        weekend_set = {weekend}
+        weekend = {weekend}
     else:
-        weekend_set = set(weekend)
-    for day in weekend_set:
+        weekend = set(weekend)
+    for day in weekend:
         if day not in _day_names():
             msg = f"Expected one of {_day_names()}, got: {day}"
             raise ValueError(msg)

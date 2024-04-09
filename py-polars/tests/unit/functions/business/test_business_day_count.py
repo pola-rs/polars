@@ -64,6 +64,13 @@ def test_business_day_count_w_weekend() -> None:
     )["business_day_count"]
     expected = pl.Series("business_day_count", [1, 7], pl.Int32)
     assert_series_equal(result, expected)
+
+    result = df.select(
+        business_day_count=pl.business_day_count("start", "end", weekend=("Sun",)),
+    )["business_day_count"]
+    expected = pl.Series("business_day_count", [1, 7], pl.Int32)
+    assert_series_equal(result, expected)
+
     result = df.select(
         business_day_count=pl.business_day_count(
             "start", "end", weekend=("Thu", "Fri", "Sat")
