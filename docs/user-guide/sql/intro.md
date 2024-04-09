@@ -28,7 +28,7 @@ There are several ways to register DataFrames during `SQLContext` initialization
 - register all `LazyFrame` and `DataFrame` objects in the global namespace.
 - register explicitly via a dictionary mapping, or kwargs.
 
-{{code_block('user-guide/sql/intro','register_context_init',['SQLContext'])}}
+{{code_block('user-guide/sql/intro','register_context',['SQLContext'])}}
 
 ```python exec="on" session="user-guide/sql"
 --8<-- "python/user-guide/sql/intro.py:register_context"
@@ -55,7 +55,7 @@ Once the `SQLContext` is initialized, we can register additional Dataframes or u
 
 ## Execute queries and collect results
 
-SQL queries are always executed in lazy mode to take advanatage of the full set of query planning optimizations, so we
+SQL queries are always executed in lazy mode to take advantage of the full set of query planning optimizations, so we
 have two options to collect the result:
 
 - Set the parameter `eager_execution` to True in `SQLContext`; this ensures that Polars automatically collects the
