@@ -303,7 +303,7 @@ impl SQLContext {
                 polars_bail!(ComputeError: "recursive CTEs are not supported")
             }
             for cte in &with.cte_tables {
-                let cte_name = cte.alias.name.to_string();
+                let cte_name = cte.alias.name.value.clone();
                 let cte_lf = self.execute_query(&cte.query)?;
                 self.register_cte(&cte_name, cte_lf);
             }

@@ -448,15 +448,15 @@ fn test_ctes() -> PolarsResult<()> {
     let mut context = SQLContext::new();
     context.register("df", df.lazy());
 
-    let sql = r#"
-    with df0 as (
-        SELECT * FROM df
-    )
-    select * from df0 "#;
-    assert!(context.execute(sql).is_ok());
+    // note: confirm correct behaviour of quoted/unquoted CTE identifiers
+    let sql0 = r#"WITH "df0" AS (SELECT * FROM "df") SELECT * FROM df0 "#;
+    assert!(context.execute(sql0).is_ok());
 
-    let sql = r#"select * from df0"#;
-    assert!(context.execute(sql).is_err());
+    let sql1 = r#"WITH df0 AS (SELECT * FROM df) SELECT * FROM "df0" "#;
+    assert!(context.execute(sql1).is_ok());
+
+    let sql2 = r#"SELECT * FROM df0"#;
+    assert!(context.execute(sql2).is_err());
 
     Ok(())
 }
