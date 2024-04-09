@@ -24,6 +24,7 @@ pub(crate) mod ndarray;
 
 #[cfg(feature = "dtype-array")]
 pub(crate) mod array;
+mod binary;
 mod bitwise;
 #[cfg(feature = "object")]
 mod drop;

@@ -8,8 +8,6 @@ mod single_keys_outer;
 mod single_keys_semi_anti;
 pub(super) mod sort_merge;
 use arrow::array::ArrayRef;
-pub use multiple_keys::private_left_join_multiple_keys;
-pub(super) use multiple_keys::*;
 use polars_core::utils::{_set_partition_size, split_ca};
 use polars_core::POOL;
 use polars_utils::index::ChunkId;
@@ -22,7 +20,7 @@ use single_keys_left::*;
 use single_keys_outer::*;
 #[cfg(feature = "semi_anti_join")]
 use single_keys_semi_anti::*;
-pub use sort_merge::*;
+pub(crate) use sort_merge::*;
 
 pub use super::*;
 #[cfg(feature = "chunked_ids")]

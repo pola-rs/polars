@@ -87,9 +87,7 @@ pub fn _get_rows_encoded_compat_array(by: &Series) -> PolarsResult<ArrayRef> {
     Ok(out)
 }
 
-pub(crate) fn encode_rows_vertical_par_unordered(
-    by: &[Series],
-) -> PolarsResult<BinaryOffsetChunked> {
+pub fn encode_rows_vertical_par_unordered(by: &[Series]) -> PolarsResult<BinaryOffsetChunked> {
     let n_threads = POOL.current_num_threads();
     let len = by[0].len();
     let splits = _split_offsets(len, n_threads);
