@@ -179,9 +179,8 @@ impl<'a> CoreReader<'a> {
         // again after decompression.
         #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
         {
-            let total_n_rows = n_rows.map(|n| {
-                skip_rows + (has_header as usize) + skip_rows_after_header + n
-            });
+            let total_n_rows =
+                n_rows.map(|n| skip_rows + (has_header as usize) + skip_rows_after_header + n);
             if let Some(b) =
                 decompress(&reader_bytes, total_n_rows, separator, quote_char, eol_char)
             {
@@ -192,25 +191,23 @@ impl<'a> CoreReader<'a> {
         let mut schema = match schema {
             Some(schema) => schema,
             None => {
-                {
-                    let (inferred_schema, _, _) = infer_file_schema(
-                        &reader_bytes,
-                        separator,
-                        max_records,
-                        has_header,
-                        schema_overwrite.as_deref(),
-                        &mut skip_rows,
-                        skip_rows_after_header,
-                        comment_prefix.as_ref(),
-                        quote_char,
-                        eol_char,
-                        null_values.as_ref(),
-                        try_parse_dates,
-                        raise_if_empty,
-                        &mut n_threads,
-                    )?;
-                    Arc::new(inferred_schema)
-                }
+                let (inferred_schema, _, _) = infer_file_schema(
+                    &reader_bytes,
+                    separator,
+                    max_records,
+                    has_header,
+                    schema_overwrite.as_deref(),
+                    &mut skip_rows,
+                    skip_rows_after_header,
+                    comment_prefix.as_ref(),
+                    quote_char,
+                    eol_char,
+                    null_values.as_ref(),
+                    try_parse_dates,
+                    raise_if_empty,
+                    &mut n_threads,
+                )?;
+                Arc::new(inferred_schema)
             },
         };
         if let Some(dtypes) = dtype_overwrite {
