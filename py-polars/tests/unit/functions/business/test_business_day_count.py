@@ -52,7 +52,7 @@ def test_business_day_count() -> None:
     assert_series_equal(result, expected)
 
 
-def test_business_day_count_w_weekend() -> None:
+def test_business_day_count_w_week_mask() -> None:
     df = pl.DataFrame(
         {
             "start": [date(2020, 1, 1), date(2020, 1, 2)],
@@ -60,37 +60,35 @@ def test_business_day_count_w_weekend() -> None:
         }
     )
     result = df.select(
-        business_day_count=pl.business_day_count("start", "end", weekend="Sun"),
-    )["business_day_count"]
-    expected = pl.Series("business_day_count", [1, 7], pl.Int32)
-    assert_series_equal(result, expected)
-
-    result = df.select(
-        business_day_count=pl.business_day_count("start", "end", weekend=("Sun",)),
+        business_day_count=pl.business_day_count(
+            "start", "end", week_mask=(True, True, True, True, True, True, False)
+        ),
     )["business_day_count"]
     expected = pl.Series("business_day_count", [1, 7], pl.Int32)
     assert_series_equal(result, expected)
 
     result = df.select(
         business_day_count=pl.business_day_count(
-            "start", "end", weekend=("Thu", "Fri", "Sat")
+            "start", "end", week_mask=(True, True, True, False, False, False, True)
         ),
     )["business_day_count"]
     expected = pl.Series("business_day_count", [1, 4], pl.Int32)
     assert_series_equal(result, expected)
-    result = df.select(
-        business_day_count=pl.business_day_count("start", "end", weekend=None),
-    )["business_day_count"]
-    expected = pl.Series("business_day_count", [1, 8], pl.Int32)
-    assert_series_equal(result, expected)
 
 
-def test_business_day_count_w_weekend_invalid() -> None:
-    msg = r"Expected one of \('Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'\), got: cabbage"
-    with pytest.raises(ValueError, match=msg):
-        pl.business_day_count("start", "end", weekend="cabbage")  # type: ignore[arg-type]
-    with pytest.raises(ValueError, match=msg):
-        pl.business_day_count("start", "end", weekend=("Sat", "cabbage"))  # type: ignore[arg-type]
+def test_business_day_count_w_week_mask_invalid() -> None:
+    with pytest.raises(ValueError, match=r"expected a sequence of length 7 \(got 2\)"):
+        pl.business_day_count("start", "end", week_mask=(False, 0))  # type: ignore[arg-type]
+    df = pl.DataFrame(
+        {
+            "start": [date(2020, 1, 1), date(2020, 1, 2)],
+            "end": [date(2020, 1, 2), date(2020, 1, 10)],
+        }
+    )
+    with pytest.raises(
+        pl.ComputeError, match="`week_mask` must have at least one business day"
+    ):
+        df.select(pl.business_day_count("start", "end", week_mask=[False] * 7))
 
 
 def test_business_day_count_schema() -> None:

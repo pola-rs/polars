@@ -12,6 +12,9 @@ pub fn business_day_count(
     end: &Series,
     week_mask: [bool; 7],
 ) -> PolarsResult<Series> {
+    if !week_mask.iter().any(|&x| x) {
+        polars_bail!(ComputeError:"`week_mask` must have at least one business day");
+    }
     let start_dates = start.date()?;
     let end_dates = end.date()?;
     let n_business_days_in_week_mask = week_mask.iter().filter(|&x| *x).count() as i32;

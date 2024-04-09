@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import contextlib
-import functools
 from typing import TYPE_CHECKING, Iterable
 
 from polars._utils.parse_expr_input import parse_as_expression
@@ -14,47 +13,13 @@ if TYPE_CHECKING:
     from datetime import date
 
     from polars import Expr
-    from polars.type_aliases import DayOfWeek, IntoExprColumn
-
-
-@functools.lru_cache
-def _day_names() -> tuple[str, ...]:
-    return (
-        "Mon",
-        "Tue",
-        "Wed",
-        "Thu",
-        "Fri",
-        "Sat",
-        "Sun",
-    )
-
-
-def _make_week_mask(
-    weekend: Iterable[str] | None,
-) -> tuple[bool, ...]:
-    if weekend is None:
-        return tuple([True] * 7)
-    if isinstance(weekend, str):
-        weekend = {weekend}
-    else:
-        weekend = set(weekend)
-    for day in weekend:
-        if day not in _day_names():
-            msg = f"Expected one of {_day_names()}, got: {day}"
-            raise ValueError(msg)
-    return tuple(
-        [
-            False if v in weekend else True  # noqa: SIM211
-            for v in _day_names()
-        ]
-    )
+    from polars.type_aliases import IntoExprColumn
 
 
 def business_day_count(
     start: date | IntoExprColumn,
     end: date | IntoExprColumn,
-    weekend: DayOfWeek | Iterable[DayOfWeek] | None = ("Sat", "Sun"),
+    week_mask: Iterable[bool] = (True, True, True, True, True, False, False),
 ) -> Expr:
     """
     Count the number of business days between `start` and `end` (not including `end`).
@@ -65,13 +30,10 @@ def business_day_count(
         Start dates.
     end
         End dates.
-    weekend
-        Which days of the week to exclude. The default is `('Sat', 'Sun')`, but you
-        can also pass, for example, `weekend=('Fri', 'Sat')`, `weekend='Sun'`,
-        or `weekend=None`.
-
-        Allowed values in the tuple are 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat',
-        and 'Sun'.
+    week_mask
+        Which days of the week to count. The default is Monday to Friday.
+        If you wanted to count only Monday to Thursday, you would pass
+        `(True, True, True, True, False, False, False)`.
 
     Returns
     -------
@@ -105,9 +67,10 @@ def business_day_count(
 
     You can pass a custom weekend - for example, if you only take Sunday off:
 
+    >>> week_mask = (True, True, True, True, True, True, False)
     >>> df.with_columns(
     ...     total_day_count=(pl.col("end") - pl.col("start")).dt.total_days(),
-    ...     business_day_count=pl.business_day_count("start", "end", weekend="Sun"),
+    ...     business_day_count=pl.business_day_count("start", "end", week_mask),
     ... )
     shape: (2, 4)
     ┌────────────┬────────────┬─────────────────┬────────────────────┐
@@ -121,5 +84,4 @@ def business_day_count(
     """
     start_pyexpr = parse_as_expression(start)
     end_pyexpr = parse_as_expression(end)
-    week_mask = _make_week_mask(weekend)
     return wrap_expr(plr.business_day_count(start_pyexpr, end_pyexpr, week_mask))
