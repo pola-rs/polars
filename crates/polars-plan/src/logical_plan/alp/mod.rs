@@ -71,7 +71,7 @@ pub enum FullAccessIR {
         /// How many hits the cache must be saved in memory.
         cache_hits: u32,
     },
-    Aggregate {
+    GroupBy {
         input: Node,
         keys: Vec<ExprIR>,
         aggs: Vec<ExprIR>,

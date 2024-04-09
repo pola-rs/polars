@@ -181,7 +181,7 @@ impl LogicalPlan {
                 write!(f, "{:indent$}SORT BY {by_column:?}", "")?;
                 input._format(f, sub_indent)
             },
-            Aggregate {
+            GroupBy {
                 input, keys, aggs, ..
             } => {
                 write!(f, "{:indent$}AGGREGATE", "")?;

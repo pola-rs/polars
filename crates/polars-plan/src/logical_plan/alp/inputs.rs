@@ -43,14 +43,14 @@ impl FullAccessIR {
                 schema: schema.clone(),
                 options: *options,
             },
-            Aggregate {
+            GroupBy {
                 keys,
                 schema,
                 apply,
                 maintain_order,
                 options: dynamic_options,
                 ..
-            } => Aggregate {
+            } => GroupBy {
                 input: inputs[0],
                 keys: exprs[..keys.len()].to_vec(),
                 aggs: exprs[keys.len()..].to_vec(),
@@ -171,7 +171,7 @@ impl FullAccessIR {
             Sort { by_column, .. } => container.extend_from_slice(by_column),
             Filter { predicate, .. } => container.push(predicate.clone()),
             Projection { expr, .. } => container.extend_from_slice(expr),
-            Aggregate { keys, aggs, .. } => {
+            GroupBy { keys, aggs, .. } => {
                 let iter = keys.iter().cloned().chain(aggs.iter().cloned());
                 container.extend(iter)
             },
@@ -234,7 +234,7 @@ impl FullAccessIR {
             SimpleProjection { input, .. } => *input,
             Sort { input, .. } => *input,
             Cache { input, .. } => *input,
-            Aggregate { input, .. } => *input,
+            GroupBy { input, .. } => *input,
             Join {
                 input_left,
                 input_right,

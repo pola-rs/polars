@@ -233,7 +233,7 @@ impl LogicalPlan {
                 self.write_dot(acc_str, prev_node, current_node, id_map)?;
                 input.dot(acc_str, (branch, id + 1), current_node, id_map)
             },
-            Aggregate {
+            GroupBy {
                 input, keys, aggs, ..
             } => {
                 let mut s_keys = String::with_capacity(128);

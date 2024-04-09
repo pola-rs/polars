@@ -20,7 +20,7 @@ pub(super) fn process_group_by(
 
     // the custom function may need all columns so we do the projections here.
     if let Some(f) = apply {
-        let lp = Aggregate {
+        let lp = GroupBy {
             input,
             keys,
             aggs,

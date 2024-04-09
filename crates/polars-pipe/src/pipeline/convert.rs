@@ -461,7 +461,7 @@ where
 
             Box::new(ReProjectSink::new(input_schema, group_by_sink))
         },
-        Aggregate {
+        GroupBy {
             input,
             keys,
             aggs,

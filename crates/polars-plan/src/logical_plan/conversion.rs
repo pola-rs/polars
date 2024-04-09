@@ -411,7 +411,7 @@ pub fn to_alp(
                 cache_hits,
             }
         },
-        LogicalPlan::Aggregate {
+        LogicalPlan::GroupBy {
             input,
             keys,
             aggs,
@@ -424,7 +424,7 @@ pub fn to_alp(
             let aggs = to_expr_irs(aggs, expr_arena);
             let keys = keys.convert(|e| to_expr_ir(e.clone(), expr_arena));
 
-            FullAccessIR::Aggregate {
+            FullAccessIR::GroupBy {
                 input: i,
                 keys,
                 aggs,
@@ -878,7 +878,7 @@ impl FullAccessIR {
                     cache_hits,
                 }
             },
-            FullAccessIR::Aggregate {
+            FullAccessIR::GroupBy {
                 input,
                 keys,
                 aggs,
@@ -891,7 +891,7 @@ impl FullAccessIR {
                 let keys = Arc::new(expr_irs_to_exprs(keys, expr_arena));
                 let aggs = expr_irs_to_exprs(aggs, expr_arena);
 
-                LogicalPlan::Aggregate {
+                LogicalPlan::GroupBy {
                     input: Arc::new(i),
                     keys,
                     aggs,

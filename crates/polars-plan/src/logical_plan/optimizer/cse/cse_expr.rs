@@ -695,7 +695,7 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
     fn pre_visit(&mut self, node: &Self::Node) -> PolarsResult<RewriteRecursion> {
         use FullAccessIR::*;
         Ok(match node.to_alp() {
-            Projection { .. } | HStack { .. } | Aggregate { .. } => {
+            Projection { .. } | HStack { .. } | GroupBy { .. } => {
                 RewriteRecursion::MutateAndContinue
             },
             _ => RewriteRecursion::NoMutateAndContinue,
@@ -763,7 +763,7 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
                         lp_arena.replace(arena_idx, lp);
                     }
                 },
-                FullAccessIR::Aggregate {
+                FullAccessIR::GroupBy {
                     input,
                     keys,
                     aggs,
@@ -792,7 +792,7 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
                             .build();
                         let input = lp_arena.add(lp);
 
-                        let lp = FullAccessIR::Aggregate {
+                        let lp = FullAccessIR::GroupBy {
                             input,
                             keys,
                             aggs: aggs.default_exprs().to_vec(),

@@ -1845,7 +1845,7 @@ impl LazyGroupBy {
         #[cfg(not(feature = "dynamic_group_by"))]
         let options = GroupbyOptions { slice: None };
 
-        let lp = LogicalPlan::Aggregate {
+        let lp = LogicalPlan::GroupBy {
             input: Arc::new(self.logical_plan),
             keys: Arc::new(self.keys),
             aggs: vec![],

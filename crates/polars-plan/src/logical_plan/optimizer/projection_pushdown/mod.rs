@@ -538,8 +538,8 @@ impl ProjectionPushDown {
                     expr_arena,
                 )?;
                 Ok(Filter { predicate, input })
-            }
-            Aggregate {
+            },
+            GroupBy {
                 input,
                 keys,
                 aggs,

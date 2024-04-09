@@ -380,7 +380,7 @@ pub(crate) fn insert_streaming_nodes(
                 stack.push(StackFrame::new(*input, state, current_idx))
             },
             #[allow(unused_variables)]
-            lp @ Aggregate {
+            lp @ GroupBy {
                 input,
                 keys,
                 aggs,

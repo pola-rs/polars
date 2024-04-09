@@ -261,7 +261,7 @@ impl PartitionGroupByExec {
             ..Default::default()
         }
         .into();
-        let lp = LogicalPlan::Aggregate {
+        let lp = LogicalPlan::GroupBy {
             input: Arc::new(original_df.lazy().logical_plan),
             keys: Arc::new(std::mem::take(&mut self.keys)),
             aggs: std::mem::take(&mut self.aggs),

@@ -363,7 +363,7 @@ pub fn create_physical_plan(
             let input = create_physical_plan(input, lp_arena, expr_arena)?;
             Ok(Box::new(executors::UniqueExec { input, options }))
         },
-        Aggregate {
+        GroupBy {
             input,
             keys,
             aggs,

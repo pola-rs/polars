@@ -787,7 +787,7 @@ impl LogicalPlanBuilder {
             slice: None,
         };
 
-        LogicalPlan::Aggregate {
+        LogicalPlan::GroupBy {
             input: Arc::new(self.0),
             keys: Arc::new(keys),
             aggs,

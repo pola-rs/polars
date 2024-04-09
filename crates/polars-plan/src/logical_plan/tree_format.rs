@@ -224,7 +224,7 @@ impl<'a> TreeFmtNode<'a> {
             ),
             NL(
                 h,
-                Aggregate {
+                GroupBy {
                     input, keys, aggs, ..
                 },
             ) => ND(

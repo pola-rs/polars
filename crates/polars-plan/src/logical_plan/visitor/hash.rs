@@ -117,7 +117,7 @@ impl Hash for HashableEqLP<'_> {
                 hash_exprs(by_column, self.expr_arena, state);
                 args.hash(state);
             },
-            FullAccessIR::Aggregate {
+            FullAccessIR::GroupBy {
                 input: _,
                 keys,
                 aggs,
@@ -327,7 +327,7 @@ impl HashableEqLP<'_> {
                 },
             ) => al == ar && expr_irs_eq(cl, cr, self.expr_arena),
             (
-                FullAccessIR::Aggregate {
+                FullAccessIR::GroupBy {
                     input: _,
                     keys: keys_l,
                     aggs: aggs_l,
@@ -336,7 +336,7 @@ impl HashableEqLP<'_> {
                     maintain_order: maintain_l,
                     options: ol,
                 },
-                FullAccessIR::Aggregate {
+                FullAccessIR::GroupBy {
                     input: _,
                     keys: keys_r,
                     aggs: aggs_r,

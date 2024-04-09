@@ -206,7 +206,7 @@ impl Expr {
         AggExpr::Last(Arc::new(self)).into()
     }
 
-    /// Aggregate the group to a Series.
+    /// GroupBy the group to a Series.
     pub fn implode(self) -> Self {
         AggExpr::Implode(Arc::new(self)).into()
     }

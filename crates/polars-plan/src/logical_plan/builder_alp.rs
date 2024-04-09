@@ -256,7 +256,7 @@ impl<'a> FullAccessIRBuilder<'a> {
         );
         schema.merge(agg_schema);
 
-        let lp = FullAccessIR::Aggregate {
+        let lp = FullAccessIR::GroupBy {
             input: self.root,
             keys,
             aggs,

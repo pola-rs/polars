@@ -250,7 +250,7 @@ impl SlicePushDown {
                     options
                 })
             }
-            (Aggregate { input, keys, aggs, schema, apply, maintain_order, mut options }, Some(state)) => {
+            (GroupBy { input, keys, aggs, schema, apply, maintain_order, mut options }, Some(state)) => {
                 // first restart optimization in inputs and get the updated LP
                 let input_lp = lp_arena.take(input);
                 let input_lp = self.pushdown(input_lp, None, lp_arena, expr_arena)?;
@@ -259,7 +259,7 @@ impl SlicePushDown {
                 let mut_options= Arc::make_mut(&mut options);
                 mut_options.slice = Some((state.offset, state.len as usize));
 
-                Ok(Aggregate {
+                Ok(GroupBy {
                     input,
                     keys,
                     aggs,
@@ -341,7 +341,7 @@ impl SlicePushDown {
             | m @ (MapFunction {function: FunctionNode::Melt {..}, ..}, _)
             | m @ (Cache {..}, _)
             | m @ (Distinct {..}, _)
-            | m @ (Aggregate{..},_)
+            | m @ (GroupBy{..},_)
             // blocking in streaming
             | m @ (Join{..},_)
             => {

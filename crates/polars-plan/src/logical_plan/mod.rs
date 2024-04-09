@@ -169,7 +169,7 @@ pub enum LogicalPlan {
         options: ProjectionOptions,
     },
     /// Groupby aggregation
-    Aggregate {
+    GroupBy {
         input: Arc<LogicalPlan>,
         keys: Arc<Vec<Expr>>,
         aggs: Vec<Expr>,
@@ -260,7 +260,7 @@ impl Clone for LogicalPlan {
             Self::Scan { paths, file_info, predicate, file_options, scan_type } => Self::Scan { paths: paths.clone(), file_info: file_info.clone(), predicate: predicate.clone(), file_options: file_options.clone(), scan_type: scan_type.clone() },
             Self::DataFrameScan { df, schema, output_schema, projection, selection } => Self::DataFrameScan { df: df.clone(), schema: schema.clone(), output_schema: output_schema.clone(), projection: projection.clone(), selection: selection.clone() },
             Self::Projection { expr, input, schema, options } => Self::Projection { expr: expr.clone(), input: input.clone(), schema: schema.clone(), options: options.clone() },
-            Self::Aggregate { input, keys, aggs, schema, apply, maintain_order, options } => Self::Aggregate { input: input.clone(), keys: keys.clone(), aggs: aggs.clone(), schema: schema.clone(), apply: apply.clone(), maintain_order: maintain_order.clone(), options: options.clone() },
+            Self::GroupBy { input, keys, aggs, schema, apply, maintain_order, options } => Self::GroupBy { input: input.clone(), keys: keys.clone(), aggs: aggs.clone(), schema: schema.clone(), apply: apply.clone(), maintain_order: maintain_order.clone(), options: options.clone() },
             Self::Join { input_left, input_right, schema, left_on, right_on, options } => Self::Join { input_left: input_left.clone(), input_right: input_right.clone(), schema: schema.clone(), left_on: left_on.clone(), right_on: right_on.clone(), options: options.clone() },
             Self::HStack { input, exprs, schema, options } => Self::HStack { input: input.clone(), exprs: exprs.clone(), schema: schema.clone(), options: options.clone() },
             Self::Distinct { input, options } => Self::Distinct { input: input.clone(), options: options.clone() },

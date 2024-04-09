@@ -245,7 +245,7 @@ pub fn test_slice_pushdown_group_by() -> PolarsResult<()> {
     assert!((&lp_arena).iter(lp).all(|(_, lp)| {
         use FullAccessIR::*;
         match lp {
-            Aggregate { options, .. } => options.slice == Some((1, 3)),
+            GroupBy { options, .. } => options.slice == Some((1, 3)),
             Slice { .. } => false,
             _ => true,
         }

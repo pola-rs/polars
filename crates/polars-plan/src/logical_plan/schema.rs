@@ -24,7 +24,7 @@ impl LogicalPlan {
             DataFrameScan { schema, .. } => Ok(Cow::Borrowed(schema)),
             Filter { input, .. } => input.schema(),
             Projection { schema, .. } => Ok(Cow::Borrowed(schema)),
-            Aggregate { schema, .. } => Ok(Cow::Borrowed(schema)),
+            GroupBy { schema, .. } => Ok(Cow::Borrowed(schema)),
             Join { schema, .. } => Ok(Cow::Borrowed(schema)),
             HStack { schema, .. } => Ok(Cow::Borrowed(schema)),
             Distinct { input, .. } | Sink { input, .. } => input.schema(),
