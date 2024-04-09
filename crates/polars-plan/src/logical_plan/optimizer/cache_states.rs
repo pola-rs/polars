@@ -326,7 +326,7 @@ pub(super) fn set_cache_states(
 
                     let lp = proj_pd.optimize(lp, lp_arena, expr_arena)?;
                     // Remove the projection added by the optimization.
-                    let lp = if let FullAccessIR::Projection { input, .. }
+                    let lp = if let FullAccessIR::Select { input, .. }
                     | FullAccessIR::SimpleProjection { input, .. } = lp
                     {
                         lp_arena.take(input)

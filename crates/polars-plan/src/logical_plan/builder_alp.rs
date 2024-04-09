@@ -50,7 +50,7 @@ impl<'a> FullAccessIRBuilder<'a> {
             let schema =
                 expr_irs_to_schema(&exprs, &input_schema, Context::Default, self.expr_arena);
 
-            let lp = FullAccessIR::Projection {
+            let lp = FullAccessIR::Select {
                 expr: exprs.into(),
                 input: self.root,
                 schema: Arc::new(schema),

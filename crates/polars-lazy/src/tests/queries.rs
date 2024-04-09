@@ -564,7 +564,7 @@ fn test_simplify_expr() {
         .unwrap();
     let plan = node_to_lp(lp_top, &expr_arena, &mut lp_arena);
     assert!(
-        matches!(plan, LogicalPlan::Projection{ expr, ..} if matches!(&expr[0], Expr::BinaryExpr{left, ..} if **left == Expr::Literal(LiteralValue::Float32(2.0))))
+        matches!(plan, LogicalPlan::Select{ expr, ..} if matches!(&expr[0], Expr::BinaryExpr{left, ..} if **left == Expr::Literal(LiteralValue::Float32(2.0))))
     );
 }
 
@@ -649,7 +649,7 @@ fn test_type_coercion() {
         .unwrap();
     let lp = node_to_lp(lp_top, &expr_arena, &mut lp_arena);
 
-    if let LogicalPlan::Projection { expr, .. } = lp {
+    if let LogicalPlan::Select { expr, .. } = lp {
         if let Expr::BinaryExpr { left, right, .. } = &expr[0] {
             assert!(matches!(&**left, Expr::Cast { .. }));
             // bar is already float, does not have to be coerced

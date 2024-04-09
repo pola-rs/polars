@@ -205,7 +205,7 @@ impl LogicalPlan {
                 id,
                 id_map,
             ),
-            Projection { expr, input, .. } => {
+            Select { expr, input, .. } => {
                 let schema = input.schema().map_err(|_| {
                     eprintln!("could not determine schema");
                     std::fmt::Error

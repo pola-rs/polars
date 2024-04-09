@@ -100,7 +100,7 @@ impl Hash for HashableEqLP<'_> {
                 columns.hash(state);
                 duplicate_check.hash(state);
             },
-            FullAccessIR::Projection {
+            FullAccessIR::Select {
                 input: _,
                 expr,
                 schema: _,
@@ -301,13 +301,13 @@ impl HashableEqLP<'_> {
                 },
             ) => dl == dr && cl == cr,
             (
-                FullAccessIR::Projection {
+                FullAccessIR::Select {
                     input: _,
                     expr: el,
                     options: ol,
                     schema: _,
                 },
-                FullAccessIR::Projection {
+                FullAccessIR::Select {
                     input: _,
                     expr: er,
                     options: or,

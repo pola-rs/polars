@@ -22,7 +22,7 @@ impl FullAccessIR {
             Slice { .. } => "slice",
             Filter { .. } => "selection",
             DataFrameScan { .. } => "df",
-            Projection { .. } => "projection",
+            Select { .. } => "projection",
             Sort { .. } => "sort",
             Cache { .. } => "cache",
             GroupBy { .. } => "aggregate",
@@ -65,7 +65,7 @@ impl FullAccessIR {
                 ..
             } => output_schema.as_ref().unwrap_or(schema),
             Filter { input, .. } => return arena.get(*input).schema(arena),
-            Projection { schema, .. } => schema,
+            Select { schema, .. } => schema,
             SimpleProjection { columns, .. } => columns,
             GroupBy { schema, .. } => schema,
             Join { schema, .. } => schema,

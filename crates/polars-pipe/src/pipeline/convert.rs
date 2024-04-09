@@ -582,7 +582,7 @@ where
             let op = operators::SimpleProjectionOperator::new(columns, input_schema.into_owned());
             Box::new(op) as Box<dyn Operator>
         },
-        Projection { expr, input, .. } => {
+        Select { expr, input, .. } => {
             let input_schema = lp_arena.get(*input).schema(lp_arena);
 
             let cse_exprs = expr.cse_exprs();

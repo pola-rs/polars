@@ -171,7 +171,7 @@ impl LogicalPlan {
                     selection,
                 )
             },
-            Projection { expr, input, .. } => {
+            Select { expr, input, .. } => {
                 write!(f, "{:indent$} SELECT {expr:?} FROM", "")?;
                 input._format(f, sub_indent)
             },

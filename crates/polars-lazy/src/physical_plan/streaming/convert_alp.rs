@@ -208,9 +208,7 @@ pub(crate) fn insert_streaming_nodes(
                 state.operators_sinks.push(PipelineNode::Sink(root));
                 stack.push(StackFrame::new(*input, state, current_idx))
             },
-            Projection { input, expr, .. }
-                if all_streamable(expr, expr_arena, Context::Default) =>
-            {
+            Select { input, expr, .. } if all_streamable(expr, expr_arena, Context::Default) => {
                 state.streamable = true;
                 state.operators_sinks.push(PipelineNode::Operator(root));
                 stack.push(StackFrame::new(*input, state, current_idx))

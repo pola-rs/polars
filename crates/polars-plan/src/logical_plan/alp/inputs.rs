@@ -35,9 +35,9 @@ impl FullAccessIR {
                 input: inputs[0],
                 predicate: exprs.pop().unwrap(),
             },
-            Projection {
+            Select {
                 schema, options, ..
-            } => Projection {
+            } => Select {
                 input: inputs[0],
                 expr: ProjectionExprs::new(exprs),
                 schema: schema.clone(),
@@ -170,7 +170,7 @@ impl FullAccessIR {
             Slice { .. } | Cache { .. } | Distinct { .. } | Union { .. } | MapFunction { .. } => {},
             Sort { by_column, .. } => container.extend_from_slice(by_column),
             Filter { predicate, .. } => container.push(predicate.clone()),
-            Projection { expr, .. } => container.extend_from_slice(expr),
+            Select { expr, .. } => container.extend_from_slice(expr),
             GroupBy { keys, aggs, .. } => {
                 let iter = keys.iter().cloned().chain(aggs.iter().cloned());
                 container.extend(iter)
@@ -230,7 +230,7 @@ impl FullAccessIR {
             },
             Slice { input, .. } => *input,
             Filter { input, .. } => *input,
-            Projection { input, .. } => *input,
+            Select { input, .. } => *input,
             SimpleProjection { input, .. } => *input,
             Sort { input, .. } => *input,
             Cache { input, .. } => *input,

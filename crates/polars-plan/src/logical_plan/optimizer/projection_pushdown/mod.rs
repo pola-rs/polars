@@ -329,7 +329,7 @@ impl ProjectionPushDown {
         use FullAccessIR::*;
 
         match logical_plan {
-            Projection { expr, input, .. } => process_projection(
+            Select { expr, input, .. } => process_projection(
                 self,
                 input,
                 expr.exprs(),

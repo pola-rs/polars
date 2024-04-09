@@ -47,13 +47,15 @@ pub enum FullAccessIR {
         projection: Option<Arc<Vec<String>>>,
         selection: Option<ExprIR>,
     },
-    // Only selects columns
+    // Only selects columns (semantically only has row access).
+    // This is a more restricted operation than `Select`.
     SimpleProjection {
         input: Node,
         columns: SchemaRef,
         duplicate_check: bool,
     },
-    Projection {
+    // Polars' `select` operation. This may access full data.
+    Select {
         input: Node,
         expr: ProjectionExprs,
         schema: SchemaRef,

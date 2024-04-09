@@ -202,7 +202,7 @@ impl<'a> TreeFmtNode<'a> {
                     NL(Some("FROM:".to_string()), input),
                 ],
             ),
-            NL(h, Projection { expr, input, .. }) => ND(
+            NL(h, Select { expr, input, .. }) => ND(
                 wh(h, "SELECT"),
                 expr.iter()
                     .map(|expr| NE(Some("expression:".to_string()), expr))

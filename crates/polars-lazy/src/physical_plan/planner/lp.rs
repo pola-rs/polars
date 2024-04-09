@@ -266,7 +266,7 @@ pub fn create_physical_plan(
                 },
             }
         },
-        Projection {
+        Select {
             expr,
             input,
             schema: _schema,

@@ -361,20 +361,20 @@ impl SlicePushDown {
             // [Pushdown]
             // these nodes will be pushed down.
             // State is None, we can continue
-            m @(Projection{..}, None)
+            m @(Select {..}, None)
             => {
                 let (lp, state) = m;
                 self.pushdown_and_continue(lp, state, lp_arena, expr_arena)
             }
             // there is state, inspect the projection to determine how to deal with it
-            (Projection {input, expr, schema, options}, Some(_)) => {
+            (Select {input, expr, schema, options}, Some(_)) => {
                 if can_pushdown_slice_past_projections(&expr, expr_arena).1 {
-                    let lp = Projection {input, expr, schema, options};
+                    let lp = Select {input, expr, schema, options};
                     self.pushdown_and_continue(lp, state, lp_arena, expr_arena)
                 }
                 // don't push down slice, but restart optimization
                 else {
-                    let lp = Projection {input, expr, schema, options};
+                    let lp = Select {input, expr, schema, options};
                     self.no_pushdown_restart_opt(lp, state, lp_arena, expr_arena)
                 }
             }

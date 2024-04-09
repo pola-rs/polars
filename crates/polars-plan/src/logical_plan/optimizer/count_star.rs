@@ -108,7 +108,7 @@ fn visit_logical_plan_for_scan_paths(
         FullAccessIR::SimpleProjection { input, .. } if inside_union => {
             visit_logical_plan_for_scan_paths(*input, lp_arena, expr_arena, false)
         },
-        FullAccessIR::Projection { input, expr, .. } => {
+        FullAccessIR::Select { input, expr, .. } => {
             if expr.len() == 1 {
                 let (valid, alias) = is_valid_count_expr(&expr[0], expr_arena);
                 if valid || inside_union {

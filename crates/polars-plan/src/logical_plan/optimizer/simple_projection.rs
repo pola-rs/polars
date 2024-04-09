@@ -38,7 +38,7 @@ impl OptimizationRule for SimpleProjectionAndCollapse {
         let lp = lp_arena.get(node);
 
         match lp {
-            Projection { input, expr, .. } => {
+            Select { input, expr, .. } => {
                 if !matches!(lp_arena.get(*input), ExtContext { .. }) && self.processed.insert(node)
                 {
                     // First check if we can apply the optimization before we allocate.

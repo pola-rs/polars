@@ -370,7 +370,7 @@ pub fn to_alp(
             projection,
             selection: selection.map(|expr| to_expr_ir(expr, expr_arena)),
         },
-        LogicalPlan::Projection {
+        LogicalPlan::Select {
             expr,
             input,
             schema,
@@ -379,7 +379,7 @@ pub fn to_alp(
             let eirs = to_expr_irs(expr, expr_arena);
             let expr = eirs.into();
             let i = to_alp(owned(input), expr_arena, lp_arena)?;
-            FullAccessIR::Projection {
+            FullAccessIR::Select {
                 expr,
                 input: i,
                 schema,
@@ -825,7 +825,7 @@ impl FullAccessIR {
                 projection,
                 selection: selection.map(|e| e.to_expr(expr_arena)),
             },
-            FullAccessIR::Projection {
+            FullAccessIR::Select {
                 expr,
                 input,
                 schema,
@@ -833,7 +833,7 @@ impl FullAccessIR {
             } => {
                 let i = convert_to_lp(input, lp_arena);
                 let expr = expr_irs_to_exprs(expr.all_exprs(), expr_arena);
-                LogicalPlan::Projection {
+                LogicalPlan::Select {
                     expr,
                     input: Arc::new(i),
                     schema,
@@ -846,7 +846,7 @@ impl FullAccessIR {
                     .iter_names()
                     .map(|name| Expr::Column(ColumnName::from(name.as_str())))
                     .collect::<Vec<_>>();
-                LogicalPlan::Projection {
+                LogicalPlan::Select {
                     expr,
                     input: Arc::new(input),
                     schema: columns.clone(),
