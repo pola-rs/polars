@@ -1,3 +1,4 @@
+use ahash::HashSet;
 use polars_core::prelude::arity::binary_elementwise_values;
 use polars_core::prelude::*;
 
@@ -7,14 +8,28 @@ use polars_core::prelude::*;
 /// - `start`: Series holding start dates.
 /// - `end`: Series holding end dates.
 /// - `week_mask`: A boolean array of length 7, where `true` indicates that the day is a business day.
+/// - `holidays`: timestamps that are holidays. Must be provided as i32, i.e. the number of
+///   days since the UNIX epoch.
 pub fn business_day_count(
     start: &Series,
     end: &Series,
     week_mask: [bool; 7],
+    holidays: &[i32],
 ) -> PolarsResult<Series> {
     if !week_mask.iter().any(|&x| x) {
         polars_bail!(ComputeError:"`week_mask` must have at least one business day");
     }
+
+    // De-dupe and sort holidays, and exclude non-business days.
+    let mut holidays: Vec<i32> = holidays
+        .iter()
+        .filter(|&x| *unsafe { week_mask.get_unchecked(weekday(*x)) })
+        .cloned()
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect();
+    holidays.sort_unstable();
+
     let start_dates = start.date()?;
     let end_dates = end.date()?;
     let n_business_days_in_week_mask = week_mask.iter().filter(|&x| *x).count() as i32;
@@ -28,6 +43,7 @@ pub fn business_day_count(
                         end_date,
                         &week_mask,
                         n_business_days_in_week_mask,
+                        &holidays,
                     )
                 })
             } else {
@@ -42,6 +58,7 @@ pub fn business_day_count(
                         end_date,
                         &week_mask,
                         n_business_days_in_week_mask,
+                        &holidays,
                     )
                 })
             } else {
@@ -54,6 +71,7 @@ pub fn business_day_count(
                 end_date,
                 &week_mask,
                 n_business_days_in_week_mask,
+                &holidays,
             )
         }),
     };
@@ -67,6 +85,7 @@ fn business_day_count_impl(
     mut end_date: i32,
     week_mask: &[bool; 7],
     n_business_days_in_week_mask: i32,
+    holidays: &[i32],
 ) -> i32 {
     let swapped = start_date > end_date;
     if swapped {
@@ -75,10 +94,19 @@ fn business_day_count_impl(
         end_date += 1;
     }
 
+    let holidays_begin = match holidays.binary_search(&start_date) {
+        Ok(x) => x,
+        Err(x) => x,
+    } as i32;
+    let holidays_end = match holidays.binary_search(&end_date) {
+        Ok(x) => x,
+        Err(x) => x,
+    } as i32;
+
     let mut start_weekday = weekday(start_date);
     let diff = end_date - start_date;
     let whole_weeks = diff / 7;
-    let mut count = 0;
+    let mut count = -(holidays_end - holidays_begin);
     count += whole_weeks * n_business_days_in_week_mask;
     start_date += whole_weeks * 7;
     while start_date < end_date {
