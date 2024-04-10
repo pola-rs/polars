@@ -38,7 +38,8 @@ pub trait NativeType:
         + std::ops::IndexMut<usize, Output = u8>
         + for<'a> TryFrom<&'a [u8]>
         + std::fmt::Debug
-        + Default;
+        + Default
+        + IntoIterator<Item = u8>;
 
     /// To bytes in little endian
     fn to_le_bytes(&self) -> Self::Bytes;

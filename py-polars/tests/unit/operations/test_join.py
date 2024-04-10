@@ -835,3 +835,25 @@ def test_join_list_non_numeric() -> None:
         "lists": [["a", "b", "c"], ["a", "c", "b"], ["a", "c", "d"]],
         "count": [1, 2, 1],
     }
+
+
+@pytest.mark.slow()
+def test_join_4_columns_with_validity() -> None:
+    # join on 4 columns so we trigger combine validities
+    # use 138 as that is 2 u64 and a remainder
+    a = pl.DataFrame(
+        {"a": [None if a % 6 == 0 else a for a in range(138)]}
+    ).with_columns(
+        b=pl.col("a"),
+        c=pl.col("a"),
+        d=pl.col("a"),
+    )
+
+    assert a.join(a, on=["a", "b", "c", "d"], how="inner", join_nulls=True).shape == (
+        644,
+        4,
+    )
+    assert a.join(a, on=["a", "b", "c", "d"], how="inner", join_nulls=False).shape == (
+        115,
+        4,
+    )
