@@ -211,7 +211,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             get_person().last().alias("oldest"),
             get_person().sort(false).first().alias("alphabetical_first"),
             col("gender")
-                .sort_by(["first_name"], [false])
+                .sort_by(["first_name"], SortMultipleOptions::default())
                 .first()
                 .alias("gender"),
         ])
