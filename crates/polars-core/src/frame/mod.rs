@@ -1858,12 +1858,12 @@ impl DataFrame {
                 } else {
                     let (first, other, descending) = prepare_arg_sort(by_column, descending)?;
                     let options = SortMultipleOptions {
-                        other,
                         descending,
                         nulls_last,
                         multithreaded: parallel,
+                        maintain_order
                     };
-                    first.arg_sort_multiple(&options)?
+                    first.arg_sort_multiple(&other, &options)?
                 }
             },
         };

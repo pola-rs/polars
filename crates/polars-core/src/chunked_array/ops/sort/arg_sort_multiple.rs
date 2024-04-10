@@ -24,12 +24,12 @@ pub(crate) fn args_validate<T: PolarsDataType>(
 
 pub(crate) fn arg_sort_multiple_impl<T: NullOrderCmp + Send + Copy>(
     mut vals: Vec<(IdxSize, T)>,
+    by: &[Series],
     options: &SortMultipleOptions,
 ) -> PolarsResult<IdxCa> {
     let descending = &options.descending;
-    debug_assert_eq!(descending.len() - 1, options.other.len());
-    let compare_inner: Vec<_> = options
-        .other
+    debug_assert_eq!(descending.len() - 1, by.len());
+    let compare_inner: Vec<_> = by
         .iter()
         .map(|s| s.into_total_ord_inner())
         .collect_trusted();

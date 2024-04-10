@@ -85,8 +85,8 @@ impl private::PrivateSeries for SeriesWrap<StringChunked> {
         IntoGroupsProxy::group_tuples(&self.0, multithreaded, sorted)
     }
 
-    fn arg_sort_multiple(&self, options: &SortMultipleOptions) -> PolarsResult<IdxCa> {
-        self.0.arg_sort_multiple(options)
+    fn arg_sort_multiple(&self, by: &[Series], options: &SortMultipleOptions) -> PolarsResult<IdxCa> {
+        self.0.arg_sort_multiple(by, options)
     }
 }
 

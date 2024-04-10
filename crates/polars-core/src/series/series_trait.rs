@@ -163,7 +163,8 @@ pub(crate) mod private {
             invalid_operation_panic!(zip_with_same_type, self)
         }
 
-        fn arg_sort_multiple(&self, _options: &SortMultipleOptions) -> PolarsResult<IdxCa> {
+        #[allow(unused_variables)]
+        fn arg_sort_multiple(&self, by: &[Series], _options: &SortMultipleOptions) -> PolarsResult<IdxCa> {
             polars_bail!(opq = arg_sort_multiple, self._dtype());
         }
     }

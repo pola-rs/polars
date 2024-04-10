@@ -79,9 +79,9 @@ impl CategoricalChunked {
 
     /// Retrieve the indexes need to sort this and the other arrays.
 
-    pub(crate) fn arg_sort_multiple(&self, options: &SortMultipleOptions) -> PolarsResult<IdxCa> {
+    pub(crate) fn arg_sort_multiple(&self, by: &[Series], options: &SortMultipleOptions) -> PolarsResult<IdxCa> {
         if self.uses_lexical_ordering() {
-            args_validate(self.physical(), &options.other, &options.descending)?;
+            args_validate(self.physical(), by, &options.descending)?;
             let mut count: IdxSize = 0;
 
             // we use bytes to save a monomorphisized str impl
@@ -95,9 +95,9 @@ impl CategoricalChunked {
                 })
                 .collect_trusted();
 
-            arg_sort_multiple_impl(vals, options)
+            arg_sort_multiple_impl(vals, by, options)
         } else {
-            self.physical().arg_sort_multiple(options)
+            self.physical().arg_sort_multiple(by, options)
         }
     }
 }
