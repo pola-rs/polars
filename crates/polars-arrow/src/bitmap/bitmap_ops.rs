@@ -5,40 +5,33 @@ use super::Bitmap;
 use crate::bitmap::MutableBitmap;
 use crate::trusted_len::TrustedLen;
 
-/// Creates a [`Vec<u8>`] from a [`TrustedLen`] of [`BitChunk`].
-pub fn chunk_iter_to_vec<T: BitChunk, I: TrustedLen<Item = T>>(iter: I) -> Vec<u8> {
-    let buffer = iter.collect::<Vec<_>>();
-    bitchunk_vec_to_bytes(buffer)
+#[inline(always)]
+pub(crate) fn push_bitchunk<T: BitChunk>(buffer: &mut Vec<u8>, value: T) {
+    buffer.extend(value.to_ne_bytes())
 }
 
-pub(crate) fn bitchunk_vec_to_bytes<T: BitChunk>(mut buffer: Vec<T>) -> Vec<u8> {
-    // Reinterpret as bytes
-    // SAFETY:
-    // This is safe as the alignment of u8 is 1 and fits in all alignments.
-    // The other reason this is safe is that T is POD.
-    unsafe {
-        let bytes = std::mem::size_of::<T>() / std::mem::size_of::<u8>();
-
-        let length = buffer.len() * bytes;
-        let capacity = buffer.capacity() * bytes;
-        let ptr = buffer.as_mut_ptr() as *mut u8;
-
-        std::mem::forget(buffer);
-
-        Vec::from_raw_parts(ptr, length, capacity)
+/// Creates a [`Vec<u8>`] from a [`TrustedLen`] of [`BitChunk`].
+pub fn chunk_iter_to_vec<T: BitChunk, I: TrustedLen<Item = T>>(iter: I) -> Vec<u8> {
+    let cap = iter.size_hint().0 * std::mem::size_of::<T>();
+    let mut buffer = Vec::with_capacity(cap);
+    for v in iter {
+        push_bitchunk(&mut buffer, v)
     }
+    buffer
 }
 
 fn chunk_iter_to_vec_and_remainder<T: BitChunk, I: TrustedLen<Item = T>>(
     iter: I,
     remainder: T,
 ) -> Vec<u8> {
-    let cap = iter.size_hint().0 + 1;
+    let cap = (iter.size_hint().0 + 1) * std::mem::size_of::<T>();
     let mut buffer = Vec::with_capacity(cap);
-    buffer.extend(iter);
-    buffer.push(remainder);
+    for v in iter {
+        push_bitchunk(&mut buffer, v)
+    }
+    push_bitchunk(&mut buffer, remainder);
     debug_assert_eq!(buffer.len(), cap);
-    bitchunk_vec_to_bytes(buffer)
+    buffer
 }
 
 /// Apply a bitwise operation `op` to four inputs and return the result as a [`Bitmap`].

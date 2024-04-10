@@ -4,7 +4,7 @@ use std::ops::{BitAnd, BitOr};
 use polars_error::{polars_ensure, PolarsResult};
 
 use crate::array::Array;
-use crate::bitmap::{and_not, bitchunk_vec_to_bytes, ternary, Bitmap};
+use crate::bitmap::{and_not, push_bitchunk, ternary, Bitmap};
 
 pub fn combine_validities_and3(
     opt1: Option<&Bitmap>,
@@ -79,7 +79,7 @@ pub fn combine_validities_and_many<B: Borrow<Bitmap>>(bitmaps: &[Option<B>]) -> 
                         break 'rows;
                     }
                 }
-                buffer.push(out)
+                push_bitchunk(&mut buffer, out);
             }
 
             // All ones so as identity for & operation
@@ -93,12 +93,11 @@ pub fn combine_validities_and_many<B: Borrow<Bitmap>>(bitmaps: &[Option<B>]) -> 
                     *out &= rem;
                 }
             }
-            buffer.push(out[0]);
+            push_bitchunk(&mut buffer, out[0]);
             if len > 64 {
-                buffer.push(out[1]);
+                push_bitchunk(&mut buffer, out[1]);
             }
-            let bytes = bitchunk_vec_to_bytes(buffer);
-            let bitmap = Bitmap::from_u8_vec(bytes, bitmaps[0].len());
+            let bitmap = Bitmap::from_u8_vec(buffer, bitmaps[0].len());
             if bitmap.unset_bits() == bitmap.len() {
                 None
             } else {
