@@ -1769,7 +1769,11 @@ impl DataFrame {
         let by_column = self.select_series(by_column)?;
         let descending = descending.into_vec();
         self.columns = self
-            .sort_impl(by_column, descending, false, maintain_order, None, true)?
+            .sort_impl(by_column, SortMultipleOptions {
+                descending,
+                maintain_order,
+                ..Default::default()
+            }, None)?
             .columns;
         Ok(self)
     }
@@ -1778,18 +1782,15 @@ impl DataFrame {
     pub fn sort_impl(
         &self,
         by_column: Vec<Series>,
-        descending: Vec<bool>,
-        nulls_last: bool,
-        maintain_order: bool,
+        mut sort_options: SortMultipleOptions,
         slice: Option<(i64, usize)>,
-        parallel: bool,
     ) -> PolarsResult<Self> {
         // note that the by_column argument also contains evaluated expression from polars-lazy
         // that may not even be present in this dataframe.
 
         // therefore when we try to set the first columns as sorted, we ignore the error
         // as expressions are not present (they are renamed to _POLARS_SORT_COLUMN_i.
-        let first_descending = descending[0];
+        let first_descending = sort_options.descending[0];
         let first_by_column = by_column[0].name().to_string();
 
         let set_sorted = |df: &mut DataFrame| {
@@ -1815,7 +1816,7 @@ impl DataFrame {
         }
 
         if let Some((0, k)) = slice {
-            return self.top_k_impl(k, descending, by_column, nulls_last, maintain_order);
+            return self.top_k_impl(k, by_column, sort_options);
         }
 
         #[cfg(feature = "dtype-struct")]
@@ -1834,10 +1835,10 @@ impl DataFrame {
             (1, false) => {
                 let s = &by_column[0];
                 let options = SortOptions {
-                    descending: descending[0],
-                    nulls_last,
-                    multithreaded: parallel,
-                    maintain_order,
+                    descending: sort_options.descending[0],
+                    nulls_last: sort_options.nulls_last,
+                    multithreaded: sort_options.multithreaded,
+                    maintain_order: sort_options.maintain_order,
                 };
                 // fast path for a frame with a single series
                 // no need to compute the sort indices and then take by these indices
@@ -1850,24 +1851,18 @@ impl DataFrame {
                 s.arg_sort(options)
             },
             _ => {
-                if nulls_last || has_struct || std::env::var("POLARS_ROW_FMT_SORT").is_ok() {
-                    argsort_multiple_row_fmt(&by_column, descending, nulls_last, parallel)?
+                if sort_options.nulls_last || has_struct || std::env::var("POLARS_ROW_FMT_SORT").is_ok() {
+                    argsort_multiple_row_fmt(&by_column, sort_options.descending, sort_options.nulls_last, sort_options.multithreaded)?
                 } else {
-                    let (first, other, descending) = prepare_arg_sort(by_column, descending)?;
-                    let options = SortMultipleOptions {
-                        descending,
-                        nulls_last,
-                        multithreaded: parallel,
-                        maintain_order
-                    };
-                    first.arg_sort_multiple(&other, &options)?
+                    let (first, other) = prepare_arg_sort(by_column, &mut sort_options)?;
+                    first.arg_sort_multiple(&other, &sort_options)?
                 }
             },
         };
 
         // SAFETY:
         // the created indices are in bounds
-        let mut df = unsafe { df.take_unchecked_impl(&take, parallel) };
+        let mut df = unsafe { df.take_unchecked_impl(&take, sort_options.multithreaded) };
         set_sorted(&mut df);
         Ok(df)
     }
@@ -1901,15 +1896,11 @@ impl DataFrame {
     pub fn sort_with_options(&self, by_column: &str, options: SortOptions) -> PolarsResult<Self> {
         let mut df = self.clone();
         let by_column = vec![df.column(by_column)?.clone()];
-        let descending = vec![options.descending];
         df.columns = df
             .sort_impl(
                 by_column,
-                descending,
-                options.nulls_last,
-                options.maintain_order,
+                SortMultipleOptions::from(options),
                 None,
-                options.multithreaded,
             )?
             .columns;
         Ok(df)

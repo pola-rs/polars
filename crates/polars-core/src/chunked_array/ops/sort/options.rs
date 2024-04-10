@@ -50,3 +50,14 @@ impl SortMultipleOptions {
         self
     }
 }
+
+impl From<SortOptions> for SortMultipleOptions {
+    fn from(value: SortOptions) -> Self {
+        SortMultipleOptions {
+            descending: vec![value.descending],
+            nulls_last: value.nulls_last,
+            multithreaded: value.multithreaded,
+            maintain_order: value.maintain_order,
+        }
+    }
+}

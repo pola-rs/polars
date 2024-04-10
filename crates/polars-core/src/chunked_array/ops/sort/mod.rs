@@ -675,8 +675,8 @@ pub fn _broadcast_descending(n_cols: usize, descending: &mut Vec<bool>) {
 
 pub(crate) fn prepare_arg_sort(
     columns: Vec<Series>,
-    mut descending: Vec<bool>,
-) -> PolarsResult<(Series, Vec<Series>, Vec<bool>)> {
+    sort_options: &mut SortMultipleOptions,
+) -> PolarsResult<(Series, Vec<Series>)> {
     let n_cols = columns.len();
 
     let mut columns = columns
@@ -687,8 +687,8 @@ pub(crate) fn prepare_arg_sort(
     let first = columns.remove(0);
 
     // broadcast ordering
-    _broadcast_descending(n_cols, &mut descending);
-    Ok((first, columns, descending))
+    _broadcast_descending(n_cols, &mut sort_options.descending);
+    Ok((first, columns))
 }
 
 #[cfg(test)]

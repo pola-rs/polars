@@ -3,11 +3,9 @@ use std::cmp::Ordering;
 use polars_utils::iter::EnumerateIdxTrait;
 use smartstring::alias::String as SmartString;
 
+use super::*;
 use crate::prelude::sort::_broadcast_descending;
 use crate::prelude::sort::arg_sort_multiple::_get_rows_encoded;
-use crate::prelude::*;
-use crate::series::IsSorted;
-use crate::utils::NoNull;
 
 #[derive(Eq)]
 struct CompareRow<'a> {
@@ -37,24 +35,25 @@ impl DataFrame {
     pub fn top_k(
         &self,
         k: usize,
-        descending: impl IntoVec<bool>,
         by_column: impl IntoVec<SmartString>,
+        sort_options: SortMultipleOptions,
     ) -> PolarsResult<DataFrame> {
         let by_column = self.select_series(by_column)?;
-        let descending = descending.into_vec();
-        self.top_k_impl(k, descending, by_column, false, false)
+        self.top_k_impl(k, by_column, sort_options)
     }
 
     pub(crate) fn top_k_impl(
         &self,
         k: usize,
-        mut descending: Vec<bool>,
         by_column: Vec<Series>,
-        nulls_last: bool,
-        maintain_order: bool,
+        mut sort_options: SortMultipleOptions,
     ) -> PolarsResult<DataFrame> {
-        _broadcast_descending(by_column.len(), &mut descending);
-        let encoded = _get_rows_encoded(&by_column, &descending, nulls_last)?;
+        _broadcast_descending(by_column.len(), &mut sort_options.descending);
+        let encoded = _get_rows_encoded(
+            &by_column,
+            &sort_options.descending,
+            sort_options.nulls_last,
+        )?;
         let arr = encoded.into_array();
         let mut rows = arr
             .values_iter()
@@ -63,19 +62,37 @@ impl DataFrame {
             .collect::<Vec<_>>();
 
         let sorted = if k >= self.height() {
-            if maintain_order {
-                rows.sort();
-            } else {
-                rows.sort_unstable();
+            match (sort_options.multithreaded, sort_options.maintain_order) {
+                (true, true) => POOL.install(|| {
+                    rows.par_sort();
+                }),
+                (true, false) => POOL.install(|| {
+                    rows.par_sort_unstable();
+                }),
+                (false, true) => rows.sort(),
+                (false, false) => rows.sort_unstable(),
             }
             &rows
-        } else if maintain_order {
+        } else if sort_options.maintain_order {
             // todo: maybe there is some more efficient method, comparable to select_nth_unstable
-            rows.sort();
+            if sort_options.multithreaded {
+                POOL.install(|| {
+                    rows.par_sort();
+                })
+            } else {
+                rows.sort();
+            }
             &rows[..k]
         } else {
+            // todo: possible multi threaded `select_nth_unstable`?
             let (lower, _el, _upper) = rows.select_nth_unstable(k);
-            lower.sort_unstable();
+            if sort_options.multithreaded {
+                POOL.install(|| {
+                    lower.par_sort_unstable();
+                })
+            } else {
+                lower.sort_unstable();
+            }
             &*lower
         };
 
@@ -83,7 +100,7 @@ impl DataFrame {
 
         let mut df = unsafe { self.take_unchecked(&idx.into_inner()) };
 
-        let first_descending = descending[0];
+        let first_descending = sort_options.descending[0];
         let first_by_column = by_column[0].name().to_string();
 
         // Mark the first sort column as sorted
