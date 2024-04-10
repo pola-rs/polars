@@ -48,7 +48,6 @@ pub fn array_get(
     }
 }
 
-#[inline]
 pub fn binary_to_series_arr_get<T, U, F>(
     lhs: &ChunkedArray<T>,
     rhs: &ChunkedArray<U>,
