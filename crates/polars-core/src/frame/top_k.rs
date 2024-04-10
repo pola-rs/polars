@@ -21,7 +21,7 @@ impl DataFrame {
         mut sort_options: SortMultipleOptions,
     ) -> PolarsResult<DataFrame> {
         // Top k is reversed bottom k
-        sort_options = sort_options.reverse_order();
+        sort_options = sort_options.with_order_reversed();
 
         let first_descending = sort_options.descending[0];
         let first_by_column = by_column[0].name().to_string();

@@ -45,53 +45,60 @@ impl Default for SortMultipleOptions {
 }
 
 impl SortMultipleOptions {
-    pub fn with_order(mut self, descending: Vec<bool>) -> Self {
-        self.descending = descending;
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Specify order for each columns
+    pub fn with_orders(mut self, descending: impl IntoIterator<Item = bool>) -> Self {
+        self.descending = descending.into_iter().collect();
         self
     }
 
-    pub fn descending(self, descending: bool) -> Self {
-        self.with_order(vec![descending])
+    /// Implement order for all columns
+    pub fn with_order(mut self, descending: bool) -> Self {
+        self.descending = vec![descending];
+        self
     }
 
-    pub fn nulls_last(mut self, enabled: bool) -> Self {
+    pub fn with_nulls_last(mut self, enabled: bool) -> Self {
         self.nulls_last = enabled;
         self
     }
 
-    pub fn multithreaded(mut self, enabled: bool) -> Self {
+    pub fn with_multithreaded(mut self, enabled: bool) -> Self {
         self.multithreaded = enabled;
         self
     }
 
-    pub fn maintain_order(mut self, enabled: bool) -> Self {
+    pub fn with_maintain_order(mut self, enabled: bool) -> Self {
         self.maintain_order = enabled;
         self
     }
 
-    pub fn reverse_order(mut self) -> Self {
+    pub fn with_order_reversed(mut self) -> Self {
         self.descending.iter_mut().for_each(|x| *x = !*x);
         self
     }
 }
 
 impl SortOptions {
-    pub fn descending(mut self, enabled: bool) -> Self {
+    pub fn with_order(mut self, enabled: bool) -> Self {
         self.descending = enabled;
         self
     }
 
-    pub fn nulls_last(mut self, enabled: bool) -> Self {
+    pub fn with_nulls_last(mut self, enabled: bool) -> Self {
         self.nulls_last = enabled;
         self
     }
 
-    pub fn multithreaded(mut self, enabled: bool) -> Self {
+    pub fn with_multithreaded(mut self, enabled: bool) -> Self {
         self.multithreaded = enabled;
         self
     }
 
-    pub fn maintain_order(mut self, enabled: bool) -> Self {
+    pub fn with_maintain_order(mut self, enabled: bool) -> Self {
         self.maintain_order = enabled;
         self
     }

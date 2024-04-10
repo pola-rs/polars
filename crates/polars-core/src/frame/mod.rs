@@ -1820,7 +1820,7 @@ impl DataFrame {
         }
 
         if let Some((0, k)) = slice {
-            return self.top_k_impl(k, by_column, sort_options.reverse_order());
+            return self.top_k_impl(k, by_column, sort_options.with_order_reversed());
         }
 
         #[cfg(feature = "dtype-struct")]

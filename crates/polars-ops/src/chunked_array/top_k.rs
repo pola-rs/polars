@@ -214,7 +214,7 @@ pub fn top_k_by(
     mut sort_options: SortMultipleOptions,
 ) -> PolarsResult<Series> {
     // Top k is reversed bottom k
-    sort_options = sort_options.reverse_order();
+    sort_options = sort_options.with_order_reversed();
 
     let (k, src) = extract_target_and_k(s)?;
 

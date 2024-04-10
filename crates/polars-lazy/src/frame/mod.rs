@@ -320,7 +320,7 @@ impl LazyFrame {
         sort_options: SortMultipleOptions,
     ) -> Self {
         // this will optimize to top-k
-        self.sort_by_exprs(by_exprs, sort_options.reverse_order()).slice(0, k)
+        self.sort_by_exprs(by_exprs, sort_options.with_order_reversed()).slice(0, k)
     }
 
     pub fn bottom_k<E: AsRef<[Expr]>>(
