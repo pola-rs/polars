@@ -491,10 +491,7 @@ fn test_with_column_prune() -> PolarsResult<()> {
     assert!((&lp_arena).iter(lp).all(|(_, lp)| {
         use IR::*;
 
-        matches!(
-            lp,
-            IR::SimpleProjection { .. } | DataFrameScan { .. }
-        )
+        matches!(lp, IR::SimpleProjection { .. } | DataFrameScan { .. })
     }));
     assert_eq!(
         q.schema().unwrap().as_ref(),

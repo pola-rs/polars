@@ -201,11 +201,7 @@ impl ProjectionPushDown {
         }
     }
 
-    fn finish_node(
-        &mut self,
-        local_projections: Vec<ExprIR>,
-        builder: IRBuilder,
-    ) -> IR {
+    fn finish_node(&mut self, local_projections: Vec<ExprIR>, builder: IRBuilder) -> IR {
         if !local_projections.is_empty() {
             builder
                 .project(local_projections, Default::default())
@@ -705,12 +701,10 @@ impl ProjectionPushDown {
                 if acc_projections.is_empty() {
                     Ok(logical_plan)
                 } else {
-                    Ok(
-                        IRBuilder::from_lp(logical_plan, expr_arena, lp_arena)
-                            .project_simple_nodes(acc_projections)
-                            .unwrap()
-                            .build(),
-                    )
+                    Ok(IRBuilder::from_lp(logical_plan, expr_arena, lp_arena)
+                        .project_simple_nodes(acc_projections)
+                        .unwrap()
+                        .build())
                 }
             },
             Invalid => unreachable!(),

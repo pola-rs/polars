@@ -2,11 +2,7 @@ use super::*;
 
 impl IR {
     /// Takes the expressions of an LP node and the inputs of that node and reconstruct
-    pub fn with_exprs_and_input(
-        &self,
-        mut exprs: Vec<ExprIR>,
-        mut inputs: Vec<Node>,
-    ) -> IR {
+    pub fn with_exprs_and_input(&self, mut exprs: Vec<ExprIR>, mut inputs: Vec<Node>) -> IR {
         use IR::*;
 
         match self {

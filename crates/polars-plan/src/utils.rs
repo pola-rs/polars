@@ -65,10 +65,7 @@ impl PushNode for UnitVec<Node> {
 }
 
 pub(crate) fn is_scan(plan: &IR) -> bool {
-    matches!(
-        plan,
-        IR::Scan { .. } | IR::DataFrameScan { .. }
-    )
+    matches!(plan, IR::Scan { .. } | IR::DataFrameScan { .. })
 }
 
 /// A projection that only takes a column or a column + alias.

@@ -95,11 +95,7 @@ impl<'a> IRBuilder<'a> {
                 duplicate_check: false,
             };
             let node = self.lp_arena.add(lp);
-            Ok(IRBuilder::new(
-                node,
-                self.expr_arena,
-                self.lp_arena,
-            ))
+            Ok(IRBuilder::new(node, self.expr_arena, self.lp_arena))
         }
     }
 
@@ -131,11 +127,7 @@ impl<'a> IRBuilder<'a> {
                 duplicate_check: false,
             };
             let node = self.lp_arena.add(lp);
-            Ok(IRBuilder::new(
-                node,
-                self.expr_arena,
-                self.lp_arena,
-            ))
+            Ok(IRBuilder::new(node, self.expr_arena, self.lp_arena))
         }
     }
 

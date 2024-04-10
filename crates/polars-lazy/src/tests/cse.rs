@@ -216,10 +216,7 @@ fn test_cse_joins_4954() -> PolarsResult<()> {
                     ..
                 } => {
                     assert_eq!(*cache_hits, 1);
-                    assert!(matches!(
-                        lp_arena.get(*input),
-                        IR::DataFrameScan { .. }
-                    ));
+                    assert!(matches!(lp_arena.get(*input), IR::DataFrameScan { .. }));
 
                     Some(*id)
                 },

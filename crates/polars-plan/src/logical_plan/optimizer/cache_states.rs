@@ -326,13 +326,12 @@ pub(super) fn set_cache_states(
 
                     let lp = proj_pd.optimize(lp, lp_arena, expr_arena)?;
                     // Remove the projection added by the optimization.
-                    let lp = if let IR::Select { input, .. }
-                    | IR::SimpleProjection { input, .. } = lp
-                    {
-                        lp_arena.take(input)
-                    } else {
-                        lp
-                    };
+                    let lp =
+                        if let IR::Select { input, .. } | IR::SimpleProjection { input, .. } = lp {
+                            lp_arena.take(input)
+                        } else {
+                            lp
+                        };
                     lp_arena.replace(child, lp);
                 }
             } else {

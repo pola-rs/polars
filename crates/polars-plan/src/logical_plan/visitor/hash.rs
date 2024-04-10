@@ -478,10 +478,7 @@ impl PartialEq for HashableEqLP<'_> {
 
                     if self.ignore_cache {
                         match (l_alp, r_alp) {
-                            (
-                                IR::Cache { input: l, .. },
-                                IR::Cache { input: r, .. },
-                            ) => {
+                            (IR::Cache { input: l, .. }, IR::Cache { input: r, .. }) => {
                                 scratch_1.push(*l);
                                 scratch_2.push(*r);
                                 continue;

@@ -40,12 +40,7 @@ impl MemberCollector {
             scans: UniqueScans::default(),
         }
     }
-    pub(super) fn collect(
-        &mut self,
-        root: Node,
-        lp_arena: &Arena<IR>,
-        _expr_arena: &Arena<AExpr>,
-    ) {
+    pub(super) fn collect(&mut self, root: Node, lp_arena: &Arena<IR>, _expr_arena: &Arena<AExpr>) {
         use IR::*;
         for (_node, alp) in lp_arena.iter(root) {
             match alp {

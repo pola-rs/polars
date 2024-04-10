@@ -993,11 +993,7 @@ pub fn node_to_lp_cloned(
 }
 
 /// converts a node from the IR arena to a LogicalPlan
-pub fn node_to_lp(
-    node: Node,
-    expr_arena: &Arena<AExpr>,
-    lp_arena: &mut Arena<IR>,
-) -> LogicalPlan {
+pub fn node_to_lp(node: Node, expr_arena: &Arena<AExpr>, lp_arena: &mut Arena<IR>) -> LogicalPlan {
     let alp = lp_arena.get_mut(node);
     let alp = std::mem::take(alp);
     alp.into_lp(
