@@ -2264,6 +2264,9 @@ class Expr:
         by: IntoExpr | Iterable[IntoExpr],
         *more_by: IntoExpr,
         descending: bool | Sequence[bool] = False,
+        nulls_last: bool = False,
+        multithreaded: bool = True,
+        maintain_order: bool = False,
     ) -> Self:
         """
         Sort this column by the ordering of other columns.
@@ -2388,7 +2391,11 @@ class Expr:
         elif len(by) != len(descending):
             msg = f"the length of `descending` ({len(descending)}) does not match the length of `by` ({len(by)})"
             raise ValueError(msg)
-        return self._from_pyexpr(self._pyexpr.sort_by(by, descending))
+        return self._from_pyexpr(
+            self._pyexpr.sort_by(
+                by, descending, nulls_last, multithreaded, maintain_order
+            )
+        )
 
     def gather(
         self, indices: int | list[int] | Expr | Series | np.ndarray[Any, Any]

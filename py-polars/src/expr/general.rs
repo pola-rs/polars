@@ -332,9 +332,27 @@ impl PyExpr {
         self.inner.clone().get(idx.inner).into()
     }
 
-    fn sort_by(&self, by: Vec<Self>, descending: Vec<bool>) -> Self {
+    fn sort_by(
+        &self,
+        by: Vec<Self>,
+        descending: Vec<bool>,
+        nulls_last: bool,
+        multithreaded: bool,
+        maintain_order: bool,
+    ) -> Self {
         let by = by.into_iter().map(|e| e.inner).collect::<Vec<_>>();
-        self.inner.clone().sort_by(by, descending).into()
+        self.inner
+            .clone()
+            .sort_by(
+                by,
+                SortMultipleOptions {
+                    descending,
+                    nulls_last,
+                    multithreaded,
+                    maintain_order,
+                },
+            )
+            .into()
     }
 
     fn backward_fill(&self, limit: FillNullLimit) -> Self {

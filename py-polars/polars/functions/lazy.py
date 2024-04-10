@@ -1537,6 +1537,9 @@ def arg_sort_by(
     exprs: IntoExpr | Iterable[IntoExpr],
     *more_exprs: IntoExpr,
     descending: bool | Sequence[bool] = False,
+    nulls_last: bool = False,
+    multithreaded: bool = True,
+    maintain_order: bool = False,
 ) -> Expr:
     """
     Return the row indices that would sort the column(s).
@@ -1619,7 +1622,7 @@ def arg_sort_by(
     elif len(exprs) != len(descending):
         msg = f"the length of `descending` ({len(descending)}) does not match the length of `exprs` ({len(exprs)})"
         raise ValueError(msg)
-    return wrap_expr(plr.arg_sort_by(exprs, descending))
+    return wrap_expr(plr.arg_sort_by(exprs, descending, nulls_last, multithreaded, maintain_order))
 
 
 def collect_all(
