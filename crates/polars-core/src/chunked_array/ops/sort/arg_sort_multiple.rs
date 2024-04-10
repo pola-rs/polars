@@ -1,3 +1,4 @@
+use arrow::compute::utils::combine_validities_and;
 use compare_inner::NullOrderCmp;
 use polars_row::{convert_columns, EncodingField, RowsEncoded};
 use polars_utils::iter::EnumerateIdxTrait;
@@ -87,7 +88,26 @@ pub fn _get_rows_encoded_compat_array(by: &Series) -> PolarsResult<ArrayRef> {
     Ok(out)
 }
 
-pub(crate) fn encode_rows_vertical_par_unordered(
+pub fn encode_rows_vertical_par_unordered(by: &[Series]) -> PolarsResult<BinaryOffsetChunked> {
+    let n_threads = POOL.current_num_threads();
+    let len = by[0].len();
+    let splits = _split_offsets(len, n_threads);
+
+    let chunks = splits.into_par_iter().map(|(offset, len)| {
+        let sliced = by
+            .iter()
+            .map(|s| s.slice(offset as i64, len))
+            .collect::<Vec<_>>();
+        let rows = _get_rows_encoded_unordered(&sliced)?;
+        Ok(rows.into_array())
+    });
+    let chunks = POOL.install(|| chunks.collect::<PolarsResult<Vec<_>>>());
+
+    Ok(BinaryOffsetChunked::from_chunk_iter("", chunks?))
+}
+
+// Almost the same but broadcast nulls to the row-encoded array.
+pub fn encode_rows_vertical_par_unordered_broadcast_nulls(
     by: &[Series],
 ) -> PolarsResult<BinaryOffsetChunked> {
     let n_threads = POOL.current_num_threads();
@@ -100,7 +120,19 @@ pub(crate) fn encode_rows_vertical_par_unordered(
             .map(|s| s.slice(offset as i64, len))
             .collect::<Vec<_>>();
         let rows = _get_rows_encoded_unordered(&sliced)?;
-        Ok(rows.into_array())
+
+        let validity = sliced
+            .iter()
+            .flat_map(|s| {
+                let s = s.rechunk();
+                #[allow(clippy::unnecessary_to_owned)]
+                s.chunks()
+                    .to_vec()
+                    .into_iter()
+                    .map(|arr| arr.validity().cloned())
+            })
+            .fold(None, |l, r| combine_validities_and(l.as_ref(), r.as_ref()));
+        Ok(rows.into_array().with_validity_typed(validity))
     });
     let chunks = POOL.install(|| chunks.collect::<PolarsResult<Vec<_>>>());
 
