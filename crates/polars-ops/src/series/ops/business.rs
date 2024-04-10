@@ -2,12 +2,21 @@ use polars_core::prelude::arity::binary_elementwise_values;
 use polars_core::prelude::*;
 
 /// Count the number of business days between `start` and `end`, excluding `end`.
-pub fn business_day_count(start: &Series, end: &Series) -> PolarsResult<Series> {
+///
+/// # Arguments
+/// - `start`: Series holding start dates.
+/// - `end`: Series holding end dates.
+/// - `week_mask`: A boolean array of length 7, where `true` indicates that the day is a business day.
+pub fn business_day_count(
+    start: &Series,
+    end: &Series,
+    week_mask: [bool; 7],
+) -> PolarsResult<Series> {
+    if !week_mask.iter().any(|&x| x) {
+        polars_bail!(ComputeError:"`week_mask` must have at least one business day");
+    }
     let start_dates = start.date()?;
     let end_dates = end.date()?;
-
-    // TODO: support customising weekdays
-    let week_mask: [bool; 7] = [true, true, true, true, true, false, false];
     let n_business_days_in_week_mask = week_mask.iter().filter(|&x| *x).count() as i32;
 
     let out = match (start_dates.len(), end_dates.len()) {

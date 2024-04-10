@@ -12,7 +12,7 @@ use crate::prelude::SeriesUdf;
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
 pub enum BusinessFunction {
     #[cfg(feature = "business")]
-    BusinessDayCount,
+    BusinessDayCount { week_mask: [bool; 7] },
 }
 
 impl Display for BusinessFunction {
@@ -20,7 +20,7 @@ impl Display for BusinessFunction {
         use BusinessFunction::*;
         let s = match self {
             #[cfg(feature = "business")]
-            &BusinessDayCount => "business_day_count",
+            &BusinessDayCount { .. } => "business_day_count",
         };
         write!(f, "{s}")
     }
@@ -30,16 +30,16 @@ impl From<BusinessFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
         use BusinessFunction::*;
         match func {
             #[cfg(feature = "business")]
-            BusinessDayCount => {
-                map_as_slice!(business_day_count)
+            BusinessDayCount { week_mask } => {
+                map_as_slice!(business_day_count, week_mask)
             },
         }
     }
 }
 
 #[cfg(feature = "business")]
-pub(super) fn business_day_count(s: &[Series]) -> PolarsResult<Series> {
+pub(super) fn business_day_count(s: &[Series], week_mask: [bool; 7]) -> PolarsResult<Series> {
     let start = &s[0];
     let end = &s[1];
-    polars_ops::prelude::business_day_count(start, end)
+    polars_ops::prelude::business_day_count(start, end, week_mask)
 }
