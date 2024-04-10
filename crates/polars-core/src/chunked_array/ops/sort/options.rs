@@ -16,6 +16,15 @@ pub struct SortOptions {
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
 pub struct SortMultipleOptions {
+    /// Order of the columns.
+    ///
+    /// If only one value is given, it will boardcast to all columns.
+    ///
+    /// Use [`SortMultipleOptions::with_orders`] or [`SortMultipleOptions::with_order`] to modify.
+    ///
+    /// # Safety
+    ///
+    /// Len must matches the number of columns or equal to 1.
     pub descending: Vec<bool>,
     pub nulls_last: bool,
     pub multithreaded: bool,
@@ -50,6 +59,10 @@ impl SortMultipleOptions {
     }
 
     /// Specify order for each columns
+    ///
+    /// # Safety
+    ///
+    /// Len must matches the number of columns or equal to 1.
     pub fn with_orders(mut self, descending: impl IntoIterator<Item = bool>) -> Self {
         self.descending = descending.into_iter().collect();
         self

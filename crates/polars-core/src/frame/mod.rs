@@ -1763,22 +1763,10 @@ impl DataFrame {
     pub fn sort_in_place(
         &mut self,
         by_column: impl IntoVec<SmartString>,
-        descending: impl IntoVec<bool>,
-        maintain_order: bool,
+        sort_options: SortMultipleOptions,
     ) -> PolarsResult<&mut Self> {
         let by_column = self.select_series(by_column)?;
-        let descending = descending.into_vec();
-        self.columns = self
-            .sort_impl(
-                by_column,
-                SortMultipleOptions {
-                    descending,
-                    maintain_order,
-                    ..Default::default()
-                },
-                None,
-            )?
-            .columns;
+        self.columns = self.sort_impl(by_column, sort_options, None)?.columns;
         Ok(self)
     }
 
@@ -1892,22 +1880,25 @@ impl DataFrame {
     ///
     /// ```
     /// # use polars_core::prelude::*;
-    /// fn sort_example(df: &DataFrame, descending: bool) -> PolarsResult<DataFrame> {
-    ///     df.sort(["a"], descending, false)
+    /// fn sort_by_a(df: &DataFrame) -> PolarsResult<DataFrame> {
+    ///     df.sort(["a"], Default::default())
     /// }
     ///
-    /// fn sort_by_multiple_columns_example(df: &DataFrame) -> PolarsResult<DataFrame> {
-    ///     df.sort(&["a", "b"], vec![false, true], false)
+    /// fn sort_with_specific_order(df: &DataFrame, descending: bool) -> PolarsResult<DataFrame> {
+    ///     df.sort(["a"], SortMultipleOptions::new().with_order(descending))
+    /// }
+    ///
+    /// fn sort_by_multiple_columns_with_specific_order(df: &DataFrame) -> PolarsResult<DataFrame> {
+    ///     df.sort(&["a", "b"], SortMultipleOptions::new().with_orders([false, true]))
     /// }
     /// ```
     pub fn sort(
         &self,
         by_column: impl IntoVec<SmartString>,
-        descending: impl IntoVec<bool>,
-        maintain_order: bool,
+        sort_options: SortMultipleOptions,
     ) -> PolarsResult<Self> {
         let mut df = self.clone();
-        df.sort_in_place(by_column, descending, maintain_order)?;
+        df.sort_in_place(by_column, sort_options)?;
         Ok(df)
     }
 
@@ -3177,7 +3168,7 @@ mod test {
         let df = df
             .unique_stable(None, UniqueKeepStrategy::First, None)
             .unwrap()
-            .sort(["flt"], false, false)
+            .sort(["flt"], SortMultipleOptions::default())
             .unwrap();
         let valid = df! {
             "flt" => [1., 2., 3.],

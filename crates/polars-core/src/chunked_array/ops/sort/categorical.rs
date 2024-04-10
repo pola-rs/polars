@@ -79,7 +79,11 @@ impl CategoricalChunked {
 
     /// Retrieve the indexes need to sort this and the other arrays.
 
-    pub(crate) fn arg_sort_multiple(&self, by: &[Series], options: &SortMultipleOptions) -> PolarsResult<IdxCa> {
+    pub(crate) fn arg_sort_multiple(
+        &self,
+        by: &[Series],
+        options: &SortMultipleOptions,
+    ) -> PolarsResult<IdxCa> {
         if self.uses_lexical_ordering() {
             args_validate(self.physical(), by, &options.descending)?;
             let mut count: IdxSize = 0;
@@ -171,12 +175,18 @@ mod test {
                 "vals" => [1, 1, 2, 2]
             ]?;
 
-            let out = df.sort(["cat", "vals"], vec![false, false], false)?;
+            let out = df.sort(
+                ["cat", "vals"],
+                SortMultipleOptions::default().with_orders([false, false]),
+            )?;
             let out = out.column("cat")?;
             let cat = out.categorical()?;
             assert_order(cat, &["a", "a", "b", "c"]);
 
-            let out = df.sort(["vals", "cat"], vec![false, false], false)?;
+            let out = df.sort(
+                ["vals", "cat"],
+                SortMultipleOptions::default().with_orders([false, false]),
+            )?;
             let out = out.column("cat")?;
             let cat = out.categorical()?;
             assert_order(cat, &["b", "c", "a", "a"]);

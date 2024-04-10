@@ -102,10 +102,9 @@ fn test_streaming_multiple_keys_aggregate() -> PolarsResult<()> {
         ])
         .sort_by_exprs(
             [col("sugars_g"), col("calories")],
-            [false, false],
-            false,
-            false,
-            true,
+            SortMultipleOptions::default()
+                .with_orders([false, false])
+                .with_maintain_order(true),
         );
 
     assert_streaming_with_default(q, true, false);
@@ -138,10 +137,7 @@ fn test_streaming_unique() -> PolarsResult<()> {
         .unique(None, Default::default())
         .sort_by_exprs(
             [cols(["sugars_g", "calories"])],
-            [false],
-            false,
-            false,
-            true,
+            SortMultipleOptions::default().with_maintain_order(true),
         );
 
     assert_streaming_with_default(q, true, false);
@@ -386,7 +382,12 @@ fn test_sort_maintain_order_streaming() -> PolarsResult<()> {
     .lazy();
 
     let res = q
-        .sort_by_exprs([col("A")], [false], false, true, true)
+        .sort_by_exprs(
+            [col("A")],
+            SortMultipleOptions::default()
+                .with_nulls_last(true)
+                .with_maintain_order(true),
+        )
         .slice(0, 3)
         .with_streaming(true)
         .collect()?;
@@ -413,7 +414,10 @@ fn test_streaming_outer_join() -> PolarsResult<()> {
 
     let q = lf_left
         .outer_join(lf_right, col("a"), col("a"))
-        .sort_by_exprs([all()], [false], false, false, true);
+        .sort_by_exprs(
+            [all()],
+            SortMultipleOptions::default().with_maintain_order(true),
+        );
 
     // Toggle so that the join order is swapped.
     for toggle in [true, true] {

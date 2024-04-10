@@ -145,10 +145,7 @@ fn test_sort_by_in_groups() -> PolarsResult<()> {
             col("fruits"),
             col("cars"),
             col("A")
-                .sort_by([col("B")], SortMultipleOptions {
-                    descending: vec![false],
-                    ..Default::default()
-                })
+                .sort_by([col("B")], SortMultipleOptions::default())
                 .implode()
                 .over([col("cars")])
                 .explode()

@@ -796,7 +796,7 @@ fn test_lazy_group_by_sort() {
         .agg([col("b").sort(false).first()])
         .collect()
         .unwrap()
-        .sort(["a"], false, false)
+        .sort(["a"], Default::default())
         .unwrap();
 
     assert_eq!(
@@ -810,7 +810,7 @@ fn test_lazy_group_by_sort() {
         .agg([col("b").sort(false).last()])
         .collect()
         .unwrap()
-        .sort(["a"], false, false)
+        .sort(["a"], Default::default())
         .unwrap();
 
     assert_eq!(
@@ -832,17 +832,11 @@ fn test_lazy_group_by_sort_by() {
         .lazy()
         .group_by([col("a")])
         .agg([col("b")
-            .sort_by(
-                [col("c")],
-                SortMultipleOptions {
-                    descending: vec![true],
-                    ..Default::default()
-                },
-            )
+            .sort_by([col("c")], SortMultipleOptions::default().with_order(true))
             .first()])
         .collect()
         .unwrap()
-        .sort(["a"], false, false)
+        .sort(["a"], Default::default())
         .unwrap();
 
     assert_eq!(
@@ -1059,10 +1053,7 @@ fn test_arg_sort_multiple() -> PolarsResult<()> {
         .lazy()
         .select([arg_sort_by(
             [col("int"), col("flt")],
-            SortMultipleOptions {
-                descending: vec![true, false],
-                ..Default::default()
-            },
+            SortMultipleOptions::default().with_orders([true, false]),
         )])
         .collect()?;
 
@@ -1080,10 +1071,7 @@ fn test_arg_sort_multiple() -> PolarsResult<()> {
         .lazy()
         .select([arg_sort_by(
             [col("str"), col("flt")],
-            SortMultipleOptions {
-                descending: vec![true, false],
-                ..Default::default()
-            },
+            SortMultipleOptions::default().with_orders([true, false]),
         )])
         .collect()?;
     Ok(())
@@ -1285,13 +1273,7 @@ fn test_sort_by() -> PolarsResult<()> {
     let out = df
         .clone()
         .lazy()
-        .select([col("a").sort_by(
-            [col("b"), col("c")],
-            SortMultipleOptions {
-                descending: vec![false],
-                ..Default::default()
-            },
-        )])
+        .select([col("a").sort_by([col("b"), col("c")], SortMultipleOptions::default())])
         .collect()?;
 
     let a = out.column("a")?;
@@ -1305,13 +1287,7 @@ fn test_sort_by() -> PolarsResult<()> {
         .clone()
         .lazy()
         .group_by_stable([col("b")])
-        .agg([col("a").sort_by(
-            [col("b"), col("c")],
-            SortMultipleOptions {
-                descending: vec![false],
-                ..Default::default()
-            },
-        )])
+        .agg([col("a").sort_by([col("b"), col("c")], SortMultipleOptions::default())])
         .collect()?;
     let a = out.column("a")?.explode()?;
     assert_eq!(
@@ -1323,13 +1299,7 @@ fn test_sort_by() -> PolarsResult<()> {
     let out = df
         .lazy()
         .group_by_stable([col("b")])
-        .agg([col("a").sort_by(
-            [col("b"), col("c")],
-            SortMultipleOptions {
-                descending: vec![false],
-                ..Default::default()
-            },
-        )])
+        .agg([col("a").sort_by([col("b"), col("c")], SortMultipleOptions::default())])
         .collect()?;
 
     let a = out.column("a")?.explode()?;
@@ -1952,7 +1922,12 @@ fn test_sort_maintain_order_true() -> PolarsResult<()> {
     .lazy();
 
     let res = q
-        .sort_by_exprs([col("A")], [false], false, true, true)
+        .sort_by_exprs(
+            [col("A")],
+            SortMultipleOptions::default()
+                .with_maintain_order(true)
+                .with_nulls_last(true),
+        )
         .slice(0, 3)
         .collect()?;
     println!("{:?}", res);

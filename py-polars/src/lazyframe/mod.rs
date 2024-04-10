@@ -483,8 +483,16 @@ impl PyLazyFrame {
     ) -> Self {
         let ldf = self.ldf.clone();
         let exprs = by.to_exprs();
-        ldf.sort_by_exprs(exprs, descending, nulls_last, maintain_order, multithreaded)
-            .into()
+        ldf.sort_by_exprs(
+            exprs,
+            SortMultipleOptions {
+                descending,
+                nulls_last,
+                maintain_order,
+                multithreaded,
+            },
+        )
+        .into()
     }
 
     fn top_k(
@@ -501,10 +509,12 @@ impl PyLazyFrame {
         ldf.top_k(
             k,
             exprs,
-            descending,
-            nulls_last,
-            maintain_order,
-            multithreaded,
+            SortMultipleOptions {
+                descending,
+                nulls_last,
+                maintain_order,
+                multithreaded,
+            },
         )
         .into()
     }
@@ -516,12 +526,21 @@ impl PyLazyFrame {
         descending: Vec<bool>,
         nulls_last: bool,
         maintain_order: bool,
-        multithreaded: bool
+        multithreaded: bool,
     ) -> Self {
         let ldf = self.ldf.clone();
         let exprs = by.to_exprs();
-        ldf.bottom_k(k, exprs, descending, nulls_last, maintain_order, multithreaded)
-            .into()
+        ldf.bottom_k(
+            k,
+            exprs,
+            SortMultipleOptions {
+                descending,
+                nulls_last,
+                maintain_order,
+                multithreaded,
+            },
+        )
+        .into()
     }
 
     fn cache(&self) -> Self {

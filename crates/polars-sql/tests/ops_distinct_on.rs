@@ -1,4 +1,4 @@
-use polars_core::df;
+use polars_core::{chunked_array::ops::SortMultipleOptions, df};
 use polars_lazy::prelude::*;
 use polars_sql::*;
 
@@ -29,10 +29,9 @@ fn test_distinct_on() {
     let expected = df
         .sort_by_exprs(
             vec![col("Name"), col("Record Date")],
-            vec![false, true],
-            true,
-            false,
-            true
+            SortMultipleOptions::default()
+            .with_orders([false, true])
+            .with_maintain_order(true)
         )
         .group_by_stable(vec![col("Name")])
         .agg(vec![col("*").first()]);
