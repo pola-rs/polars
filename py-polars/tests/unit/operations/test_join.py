@@ -384,7 +384,7 @@ def test_jit_sort_joins() -> None:
         pd_result.columns = pd.Index(["a", "b", "b_right"])
 
         # left key sorted right is not
-        pl_result = dfa_pl.join(dfb_pl, on="a", how=how).sort(["a", "b"])
+        pl_result = dfa_pl.join(dfb_pl, on="a", how=how).sort(["a", "b"], maintain_order=True)
 
         a = pl.from_pandas(pd_result).with_columns(pl.all().cast(int)).sort(["a", "b"], maintain_order=True)
         assert_frame_equal(a, pl_result)
@@ -393,7 +393,7 @@ def test_jit_sort_joins() -> None:
         # left key sorted right is not
         pd_result = dfb.merge(dfa, on="a", how=how)
         pd_result.columns = pd.Index(["a", "b", "b_right"])
-        pl_result = dfb_pl.join(dfa_pl, on="a", how=how).sort(["a", "b"])
+        pl_result = dfb_pl.join(dfa_pl, on="a", how=how).sort(["a", "b"], maintain_order=True)
 
         a = pl.from_pandas(pd_result).with_columns(pl.all().cast(int)).sort(["a", "b"], maintain_order=True)
         assert_frame_equal(a, pl_result)
