@@ -53,6 +53,7 @@ fn test_nested_expr() -> PolarsResult<()> {
     assert_eq!(df_sql, df_pl);
     Ok(())
 }
+
 #[test]
 fn test_group_by_simple() -> PolarsResult<()> {
     let df = create_sample_df()?;
@@ -76,6 +77,7 @@ fn test_group_by_simple() -> PolarsResult<()> {
             },
         )
         .collect()?;
+
     let df_pl = df
         .lazy()
         .group_by(&[col("a")])
@@ -249,7 +251,7 @@ fn test_null_exprs_in_where() {
 }
 
 #[test]
-fn binary_functions() {
+fn test_binary_functions() {
     let df = create_sample_df().unwrap();
     let mut context = SQLContext::new();
     context.register("df", df.clone().lazy());

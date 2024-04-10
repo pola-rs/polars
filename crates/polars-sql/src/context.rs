@@ -411,7 +411,7 @@ impl SQLContext {
             })
             .collect::<PolarsResult<_>>()?;
 
-        // Check for group by (after projections since there might be numbers).
+        // Check for group by (after projections as there may be ordinal/position ints).
         let group_by_keys: Vec<Expr>;
         if let GroupByExpr::Expressions(group_by_exprs) = &select_stmt.group_by {
             group_by_keys = group_by_exprs.iter()
@@ -425,7 +425,8 @@ impl SQLContext {
                             )),
                             Ok(idx) => Ok(idx),
                         }?;
-                        Ok(projections[idx].clone())
+                        // note: sql queries are 1-indexed
+                        Ok(projections[idx - 1].clone())
                     },
                     SQLExpr::Value(_) => Err(polars_err!(
                         ComputeError:
@@ -694,7 +695,6 @@ impl SQLContext {
             ComputeError: "group_by error: can't process wildcard in group_by"
         );
         let schema_before = lf.schema()?;
-
         let group_by_keys_schema =
             expressions_to_schema(group_by_keys, &schema_before, Context::Default)?;
 
@@ -703,24 +703,21 @@ impl SQLContext {
         let mut aliases: BTreeSet<&str> = BTreeSet::new();
 
         for mut e in projections {
-            // If it is a simple expression & has alias,
-            // we must defer the aliasing until after the group_by.
+            // If simple aliased expression we defer aliasing until after the group_by.
             if e.clone().meta().is_simple_projection() {
                 if let Expr::Alias(expr, name) = e {
                     aliases.insert(name);
                     e = expr
                 }
             }
-
             let field = e.to_field(&schema_before, Context::Default)?;
             if group_by_keys_schema.get(&field.name).is_none() {
                 aggregation_projection.push(e.clone())
             }
         }
-
-        let aggregated = lf.group_by(group_by_keys).agg(&aggregation_projection);
         let projection_schema =
             expressions_to_schema(projections, &schema_before, Context::Default)?;
+
         // A final projection to get the proper order.
         let final_projection = projection_schema
             .iter_names()
@@ -734,6 +731,7 @@ impl SQLContext {
             })
             .collect::<Vec<_>>();
 
+        let aggregated = lf.group_by(group_by_keys).agg(&aggregation_projection);
         Ok(aggregated.select(&final_projection))
     }
 

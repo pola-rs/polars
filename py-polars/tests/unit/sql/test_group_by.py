@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 @pytest.fixture()
@@ -62,3 +63,36 @@ def test_group_by(foods_ipc_path: Path) -> None:
         """
     )
     assert out.to_dict(as_series=False) == {"grp": ["c"], "n_dist_attr": [2]}
+
+
+def test_group_by_ordinal_position() -> None:
+    df = pl.DataFrame(
+        {
+            "a": ["xx", "yy", "xx", "yy", "xx", "zz"],
+            "b": [1, 2, 3, 4, 5, 6],
+            "c": [99, 99, 66, 66, 66, 66],
+        }
+    )
+    expected = pl.LazyFrame({"c": [66, 99], "total_b": [18, 3]})
+
+    with pl.SQLContext(frame=df) as ctx:
+        res1 = ctx.execute(
+            """
+            SELECT c, SUM(b) AS total_b
+            FROM frame
+            GROUP BY 1
+            ORDER BY c
+            """
+        )
+        assert_frame_equal(res1, expected)
+
+        res2 = ctx.execute(
+            """
+            WITH "grp" AS (
+              SELECT NULL::date as dt, c, SUM(b) AS total_b
+              FROM frame
+              GROUP BY 2, 1
+            )
+            SELECT c, total_b FROM grp ORDER BY c"""
+        )
+        assert_frame_equal(res2, expected)

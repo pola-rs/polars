@@ -83,7 +83,7 @@ fn test_string_functions() {
 }
 
 #[test]
-fn array_to_string() {
+fn test_array_to_string() {
     let df = df! {
         "a" => &["first", "first", "third"],
         "b" => &[1, 1, 42],
