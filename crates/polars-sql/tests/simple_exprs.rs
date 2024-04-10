@@ -505,6 +505,7 @@ fn test_group_by_2() -> PolarsResult<()> {
             vec![false, true],
             false,
             false,
+            true
         )
         .limit(2);
     let expected = expected.collect()?;

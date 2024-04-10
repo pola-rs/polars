@@ -32,6 +32,7 @@ fn test_distinct_on() {
             vec![false, true],
             true,
             false,
+            true
         )
         .group_by_stable(vec![col("Name")])
         .agg(vec![col("*").first()]);

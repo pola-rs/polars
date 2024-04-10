@@ -1285,10 +1285,13 @@ fn test_sort_by() -> PolarsResult<()> {
     let out = df
         .clone()
         .lazy()
-        .select([col("a").sort_by([col("b"), col("c")], SortMultipleOptions {
-            descending: vec![false],
-            ..Default::default()
-        })])
+        .select([col("a").sort_by(
+            [col("b"), col("c")],
+            SortMultipleOptions {
+                descending: vec![false],
+                ..Default::default()
+            },
+        )])
         .collect()?;
 
     let a = out.column("a")?;
@@ -1949,7 +1952,7 @@ fn test_sort_maintain_order_true() -> PolarsResult<()> {
     .lazy();
 
     let res = q
-        .sort_by_exprs([col("A")], [false], false, true)
+        .sort_by_exprs([col("A")], [false], false, true, true)
         .slice(0, 3)
         .collect()?;
     println!("{:?}", res);

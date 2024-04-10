@@ -105,6 +105,7 @@ fn test_streaming_multiple_keys_aggregate() -> PolarsResult<()> {
             [false, false],
             false,
             false,
+            true,
         );
 
     assert_streaming_with_default(q, true, false);
@@ -135,7 +136,13 @@ fn test_streaming_unique() -> PolarsResult<()> {
     let q = q
         .select([col("sugars_g"), col("calories")])
         .unique(None, Default::default())
-        .sort_by_exprs([cols(["sugars_g", "calories"])], [false], false, false);
+        .sort_by_exprs(
+            [cols(["sugars_g", "calories"])],
+            [false],
+            false,
+            false,
+            true,
+        );
 
     assert_streaming_with_default(q, true, false);
     Ok(())
@@ -379,7 +386,7 @@ fn test_sort_maintain_order_streaming() -> PolarsResult<()> {
     .lazy();
 
     let res = q
-        .sort_by_exprs([col("A")], [false], false, true)
+        .sort_by_exprs([col("A")], [false], false, true, true)
         .slice(0, 3)
         .with_streaming(true)
         .collect()?;
@@ -406,7 +413,7 @@ fn test_streaming_outer_join() -> PolarsResult<()> {
 
     let q = lf_left
         .outer_join(lf_right, col("a"), col("a"))
-        .sort_by_exprs([all()], [false], false, false);
+        .sort_by_exprs([all()], [false], false, false, true);
 
     // Toggle so that the join order is swapped.
     for toggle in [true, true] {

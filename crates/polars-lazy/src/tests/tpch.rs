@@ -81,6 +81,7 @@ fn test_q2() -> PolarsResult<()> {
             [true, false, false, false],
             false,
             false,
+            true,
         )
         .limit(100)
         .with_comm_subplan_elim(true);
