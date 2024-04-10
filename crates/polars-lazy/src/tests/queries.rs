@@ -831,7 +831,15 @@ fn test_lazy_group_by_sort_by() {
     let out = df
         .lazy()
         .group_by([col("a")])
-        .agg([col("b").sort_by([col("c")], [true]).first()])
+        .agg([col("b")
+            .sort_by(
+                [col("c")],
+                SortMultipleOptions {
+                    descending: [true],
+                    ..Default::default()
+                },
+            )
+            .first()])
         .collect()
         .unwrap()
         .sort(["a"], false, false)
@@ -1049,7 +1057,13 @@ fn test_arg_sort_multiple() -> PolarsResult<()> {
     let out = df
         .clone()
         .lazy()
-        .select([arg_sort_by([col("int"), col("flt")], &[true, false])])
+        .select([arg_sort_by(
+            [col("int"), col("flt")],
+            SortMultipleOptions {
+                descending: vec![true, false],
+                ..Default::default()
+            },
+        )])
         .collect()?;
 
     assert_eq!(
@@ -1064,7 +1078,13 @@ fn test_arg_sort_multiple() -> PolarsResult<()> {
     // check if this runs
     let _out = df
         .lazy()
-        .select([arg_sort_by([col("str"), col("flt")], &[true, false])])
+        .select([arg_sort_by(
+            [col("str"), col("flt")],
+            SortMultipleOptions {
+                descending: vec![true, false],
+                ..Default::default()
+            },
+        )])
         .collect()?;
     Ok(())
 }

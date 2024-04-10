@@ -13,7 +13,7 @@ pub struct SortOptions {
     pub maintain_order: bool,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
 pub struct SortMultipleOptions {
     pub descending: Vec<bool>,
@@ -41,5 +41,12 @@ impl Default for SortMultipleOptions {
             multithreaded: true,
             maintain_order: false,
         }
+    }
+}
+
+impl SortMultipleOptions {
+    pub fn with_order(&mut self, descending: Vec<bool>) -> &mut Self {
+        self.descending = descending;
+        self
     }
 }

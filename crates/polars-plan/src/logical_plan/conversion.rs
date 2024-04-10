@@ -141,14 +141,14 @@ fn to_aexpr_impl(expr: Expr, arena: &mut Arena<AExpr>, state: &mut ConversionSta
         Expr::SortBy {
             expr,
             by,
-            descending,
+            sort_options,
         } => AExpr::SortBy {
             expr: to_aexpr_impl(owned(expr), arena, state),
             by: by
                 .into_iter()
                 .map(|e| to_aexpr_impl(e, arena, state))
                 .collect(),
-            descending,
+            sort_options,
         },
         Expr::Filter { input, by } => AExpr::Filter {
             input: to_aexpr_impl(owned(input), arena, state),
@@ -567,7 +567,7 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
         AExpr::SortBy {
             expr,
             by,
-            descending,
+            sort_options,
         } => {
             let expr = node_to_expr(expr, expr_arena);
             let by = by
@@ -577,7 +577,7 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             Expr::SortBy {
                 expr: Arc::new(expr),
                 by,
-                descending,
+                sort_options,
             }
         },
         AExpr::Filter { input, by } => {

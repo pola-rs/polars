@@ -37,11 +37,16 @@ impl UpperExp for AExpr {
                 )
             },
             AExpr::Gather { .. } => "gather",
-            AExpr::SortBy { descending, .. } => {
+            AExpr::SortBy { sort_options, .. } => {
                 write!(f, "sort_by:")?;
-                for i in descending {
+                for i in &sort_options.descending {
                     write!(f, "{}", *i as u8)?;
                 }
+                write!(
+                    f,
+                    "{}{}",
+                    sort_options.nulls_last as u8, sort_options.multithreaded as u8
+                )?;
                 return Ok(());
             },
             AExpr::Filter { .. } => "filter",

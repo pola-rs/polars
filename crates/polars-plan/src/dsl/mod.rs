@@ -1073,17 +1073,16 @@ impl Expr {
 
     /// Sort this column by the ordering of another column.
     /// Can also be used in a group_by context to sort the groups.
-    pub fn sort_by<E: AsRef<[IE]>, IE: Into<Expr> + Clone, R: AsRef<[bool]>>(
+    pub fn sort_by<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(
         self,
         by: E,
-        descending: R,
+        sort_options: SortMultipleOptions
     ) -> Expr {
         let by = by.as_ref().iter().map(|e| e.clone().into()).collect();
-        let descending = descending.as_ref().to_vec();
         Expr::SortBy {
             expr: Arc::new(self),
             by,
-            descending,
+            sort_options,
         }
     }
 

@@ -272,7 +272,7 @@ fn create_physical_expr_inner(
         SortBy {
             expr,
             by,
-            descending,
+            sort_options,
         } => {
             polars_ensure!(!by.is_empty(), InvalidOperation: "'sort_by' got an empty set");
             let phys_expr = create_physical_expr_inner(expr, ctxt, expr_arena, schema, state)?;
@@ -281,8 +281,8 @@ fn create_physical_expr_inner(
             Ok(Arc::new(SortByExpr::new(
                 phys_expr,
                 phys_by,
-                descending,
                 node_to_expr(expression, expr_arena),
+                sort_options,
             )))
         },
         Filter { input, by } => {

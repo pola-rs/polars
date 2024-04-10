@@ -5,11 +5,14 @@ use super::*;
 /// until duplicates are found. Once duplicates are found, the next `Series` will
 /// be used and so on.
 #[cfg(feature = "range")]
-pub fn arg_sort_by<E: AsRef<[Expr]>>(by: E, descending: &[bool]) -> Expr {
+pub fn arg_sort_by<E: AsRef<[Expr]>>(
+    by: E,
+    sort_options: SortMultipleOptions
+) -> Expr {
     let e = &by.as_ref()[0];
     let name = expr_output_name(e).unwrap();
     int_range(lit(0 as IdxSize), len().cast(IDX_DTYPE), 1, IDX_DTYPE)
-        .sort_by(by, descending)
+        .sort_by(by, sort_options)
         .alias(name.as_ref())
 }
 

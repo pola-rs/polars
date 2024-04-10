@@ -25,7 +25,7 @@ impl Hash for AExpr {
                 options.hash(state);
             },
             AExpr::Agg(agg) => agg.hash(state),
-            AExpr::SortBy { descending, .. } => descending.hash(state),
+            AExpr::SortBy { sort_options, .. } => sort_options.hash(state),
             AExpr::Cast { strict, .. } => strict.hash(state),
             AExpr::Window { options, .. } => options.hash(state),
             AExpr::BinaryExpr { op, .. } => op.hash(state),

@@ -1,3 +1,4 @@
+use polars_core::chunked_array::ops::SortMultipleOptions;
 use polars_core::prelude::{polars_bail, polars_err, DataType, PolarsResult};
 use polars_lazy::dsl::Expr;
 #[cfg(feature = "list_eval")]
@@ -1137,7 +1138,18 @@ impl SQLFunctionVisitor<'_> {
                 .collect::<PolarsResult<Vec<_>>>()?
                 .into_iter()
                 .unzip();
-            self.visit_unary_no_window(|e| cumulative_f(e.sort_by(&order_by, &desc), false))
+            self.visit_unary_no_window(|e| {
+                cumulative_f(
+                    e.sort_by(
+                        &order_by,
+                        SortMultipleOptions {
+                            descending: desc.clone(),
+                            ..Default::default()
+                        },
+                    ),
+                    false,
+                )
+            })
         } else {
             self.visit_unary(f)
         }

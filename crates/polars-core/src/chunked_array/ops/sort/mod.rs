@@ -532,7 +532,7 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
         by: &[Series],
         options: &SortMultipleOptions,
     ) -> PolarsResult<IdxCa> {
-        args_validate(self, &by, &options.descending)?;
+        args_validate(self, by, &options.descending)?;
 
         let mut count: IdxSize = 0;
 

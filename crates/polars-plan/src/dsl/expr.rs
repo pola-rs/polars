@@ -94,7 +94,7 @@ pub enum Expr {
     SortBy {
         expr: Arc<Expr>,
         by: Vec<Expr>,
-        descending: Vec<bool>,
+        sort_options: SortMultipleOptions
     },
     Agg(AggExpr),
     /// A ternary operation
@@ -234,11 +234,11 @@ impl Hash for Expr {
             Expr::SortBy {
                 expr,
                 by,
-                descending,
+                sort_options,
             } => {
                 expr.hash(state);
                 by.hash(state);
-                descending.hash(state);
+                sort_options.hash(state);
             },
             Expr::Agg(input) => input.hash(state),
             Expr::Explode(input) => input.hash(state),
