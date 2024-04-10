@@ -92,7 +92,17 @@ impl SortSource {
         let current_slice = self.slice;
 
         let mut df = match &mut self.slice {
-            None => sort_accumulated(df, self.sort_idx, self.descending, None, self.nulls_last),
+            None => sort_accumulated(
+                df,
+                self.sort_idx,
+                None,
+                SortOptions {
+                    descending: self.descending,
+                    nulls_last: self.nulls_last,
+                    multithreaded: true,
+                    maintain_order: false,
+                },
+            ),
             Some((offset, len)) => {
                 let df_len = df.height();
                 debug_assert!(*offset >= 0);
@@ -103,9 +113,13 @@ impl SortSource {
                     let out = sort_accumulated(
                         df,
                         self.sort_idx,
-                        self.descending,
                         current_slice,
-                        self.nulls_last,
+                        SortOptions {
+                            descending: self.descending,
+                            nulls_last: self.nulls_last,
+                            multithreaded: true,
+                            maintain_order: false,
+                        },
                     );
                     *len = len.saturating_sub(df_len);
                     *offset = 0;

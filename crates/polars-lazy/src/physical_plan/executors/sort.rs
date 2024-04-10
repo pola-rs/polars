@@ -34,11 +34,8 @@ impl SortExec {
 
         df.sort_impl(
             by_columns,
-            std::mem::take(&mut self.args.descending),
-            self.args.nulls_last,
-            self.args.maintain_order,
+            SortMultipleOptions::from(&self.args),
             self.args.slice,
-            true,
         )
     }
 }

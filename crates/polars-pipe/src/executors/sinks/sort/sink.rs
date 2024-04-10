@@ -2,6 +2,7 @@ use std::any::Any;
 use std::sync::{Arc, RwLock};
 use std::time::Instant;
 
+use polars_core::chunked_array::ops::SortMultipleOptions;
 use polars_core::config::verbose;
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
@@ -216,9 +217,13 @@ impl Sink for SortSink {
             let df = sort_accumulated(
                 df,
                 self.sort_idx,
-                self.sort_args.descending[0],
                 self.sort_args.slice,
-                self.sort_args.nulls_last,
+                SortOptions {
+                    descending: self.sort_args.descending[0],
+                    nulls_last: self.sort_args.nulls_last,
+                    multithreaded: true,
+                    maintain_order: self.sort_args.maintain_order,
+                },
             )?;
             Ok(FinalizedSink::Finished(df))
         }
@@ -236,19 +241,15 @@ impl Sink for SortSink {
 pub(super) fn sort_accumulated(
     mut df: DataFrame,
     sort_idx: usize,
-    descending: bool,
     slice: Option<(i64, usize)>,
-    nulls_last: bool,
+    sort_options: SortOptions,
 ) -> PolarsResult<DataFrame> {
     // This is needed because we can have empty blocks and we require chunks to have single chunks.
     df.as_single_chunk_par();
     let sort_column = df.get_columns()[sort_idx].clone();
     df.sort_impl(
         vec![sort_column],
-        vec![descending],
-        nulls_last,
-        false,
+        SortMultipleOptions::from(sort_options),
         slice,
-        true,
     )
 }

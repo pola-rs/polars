@@ -320,14 +320,10 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         } else {
             vec![false; df.width()]
         };
-        let out = df.sort_impl(
-            df.columns.clone(),
-            desc,
-            options.nulls_last,
-            options.maintain_order,
-            None,
-            options.multithreaded,
-        )?;
+
+        let multi_options = SortMultipleOptions::from(options).with_order(desc);
+
+        let out = df.sort_impl(df.columns.clone(), multi_options, None)?;
         Ok(StructChunked::new_unchecked(self.name(), &out.columns).into_series())
     }
 

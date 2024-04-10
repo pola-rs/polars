@@ -45,8 +45,49 @@ impl Default for SortMultipleOptions {
 }
 
 impl SortMultipleOptions {
-    pub fn with_order(&mut self, descending: Vec<bool>) -> &mut Self {
+    pub fn with_order(mut self, descending: Vec<bool>) -> Self {
         self.descending = descending;
+        self
+    }
+
+    pub fn descending(self, descending: bool) -> Self {
+        self.with_order(vec![descending])
+    }
+
+    pub fn nulls_last(mut self, enabled: bool) -> Self {
+        self.nulls_last = enabled;
+        self
+    }
+
+    pub fn multithreaded(mut self, enabled: bool) -> Self {
+        self.multithreaded = enabled;
+        self
+    }
+
+    pub fn maintain_order(mut self, enabled: bool) -> Self {
+        self.maintain_order = enabled;
+        self
+    }
+}
+
+impl SortOptions {
+    pub fn descending(mut self, enabled: bool) -> Self {
+        self.descending = enabled;
+        self
+    }
+
+    pub fn nulls_last(mut self, enabled: bool) -> Self {
+        self.nulls_last = enabled;
+        self
+    }
+
+    pub fn multithreaded(mut self, enabled: bool) -> Self {
+        self.multithreaded = enabled;
+        self
+    }
+
+    pub fn maintain_order(mut self, enabled: bool) -> Self {
+        self.maintain_order = enabled;
         self
     }
 }
