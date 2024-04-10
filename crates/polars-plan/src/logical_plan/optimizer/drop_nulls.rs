@@ -9,13 +9,13 @@ pub(super) struct ReplaceDropNulls {}
 impl OptimizationRule for ReplaceDropNulls {
     fn optimize_plan(
         &mut self,
-        lp_arena: &mut Arena<FullAccessIR>,
+        lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
         node: Node,
-    ) -> Option<FullAccessIR> {
+    ) -> Option<IR> {
         let lp = lp_arena.get(node);
 
-        use FullAccessIR::*;
+        use IR::*;
         match lp {
             Filter { input, predicate } => {
                 // We want to make sure we find this pattern
@@ -69,7 +69,7 @@ impl OptimizationRule for ReplaceDropNulls {
                 if not_null_count == column_count && binary_and_count < column_count {
                     let subset = Arc::from(aexpr_to_leaf_names(predicate.node(), expr_arena));
 
-                    Some(FullAccessIR::MapFunction {
+                    Some(IR::MapFunction {
                         input: *input,
                         function: FunctionNode::DropNulls { subset },
                     })

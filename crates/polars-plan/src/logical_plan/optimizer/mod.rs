@@ -61,7 +61,7 @@ pub(crate) fn init_hashmap<K, V>(max_len: Option<usize>) -> PlHashMap<K, V> {
 pub fn optimize(
     logical_plan: LogicalPlan,
     opt_state: OptState,
-    lp_arena: &mut Arena<FullAccessIR>,
+    lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     scratch: &mut Vec<Node>,
     hive_partition_eval: HiveEval<'_>,
@@ -204,7 +204,7 @@ pub fn optimize(
     #[cfg(feature = "cse")]
     if comm_subexpr_elim && !members.has_ext_context {
         let mut optimizer = CommonSubExprOptimizer::new(expr_arena);
-        lp_top = FullAccessIRNode::with_context(lp_top, lp_arena, |alp_node| {
+        lp_top = IRNode::with_context(lp_top, lp_arena, |alp_node| {
             alp_node.rewrite(&mut optimizer)
         })?
         .node()

@@ -293,14 +293,14 @@ fn to_aexpr_impl(expr: Expr, arena: &mut Arena<AExpr>, state: &mut ConversionSta
     arena.add(v)
 }
 
-/// converts LogicalPlan to FullAccessIR
+/// converts LogicalPlan to IR
 /// it adds expressions & lps to the respective arenas as it traverses the plan
 /// finally it returns the top node of the logical plan
 #[recursive]
 pub fn to_alp(
     lp: LogicalPlan,
     expr_arena: &mut Arena<AExpr>,
-    lp_arena: &mut Arena<FullAccessIR>,
+    lp_arena: &mut Arena<IR>,
 ) -> PolarsResult<Node> {
     let owned = Arc::unwrap_or_clone;
     let v = match lp {
@@ -310,7 +310,7 @@ pub fn to_alp(
             predicate,
             scan_type,
             file_options: options,
-        } => FullAccessIR::Scan {
+        } => IR::Scan {
             file_info,
             paths,
             output_schema: None,
@@ -319,7 +319,7 @@ pub fn to_alp(
             file_options: options,
         },
         #[cfg(feature = "python")]
-        LogicalPlan::PythonScan { options } => FullAccessIR::PythonScan {
+        LogicalPlan::PythonScan { options } => IR::PythonScan {
             options,
             predicate: None,
         },
@@ -328,7 +328,7 @@ pub fn to_alp(
                 .into_iter()
                 .map(|lp| to_alp(lp, expr_arena, lp_arena))
                 .collect::<PolarsResult<_>>()?;
-            FullAccessIR::Union { inputs, options }
+            IR::Union { inputs, options }
         },
         LogicalPlan::HConcat {
             inputs,
@@ -339,7 +339,7 @@ pub fn to_alp(
                 .into_iter()
                 .map(|lp| to_alp(lp, expr_arena, lp_arena))
                 .collect::<PolarsResult<_>>()?;
-            FullAccessIR::HConcat {
+            IR::HConcat {
                 inputs,
                 schema,
                 options,
@@ -348,14 +348,14 @@ pub fn to_alp(
         LogicalPlan::Filter { input, predicate } => {
             let i = to_alp(owned(input), expr_arena, lp_arena)?;
             let p = to_expr_ir(predicate, expr_arena);
-            FullAccessIR::Filter {
+            IR::Filter {
                 input: i,
                 predicate: p,
             }
         },
         LogicalPlan::Slice { input, offset, len } => {
             let input = to_alp(owned(input), expr_arena, lp_arena)?;
-            FullAccessIR::Slice { input, offset, len }
+            IR::Slice { input, offset, len }
         },
         LogicalPlan::DataFrameScan {
             df,
@@ -363,7 +363,7 @@ pub fn to_alp(
             output_schema,
             projection,
             selection,
-        } => FullAccessIR::DataFrameScan {
+        } => IR::DataFrameScan {
             df,
             schema,
             output_schema,
@@ -379,7 +379,7 @@ pub fn to_alp(
             let eirs = to_expr_irs(expr, expr_arena);
             let expr = eirs.into();
             let i = to_alp(owned(input), expr_arena, lp_arena)?;
-            FullAccessIR::Select {
+            IR::Select {
                 expr,
                 input: i,
                 schema,
@@ -393,7 +393,7 @@ pub fn to_alp(
         } => {
             let input = to_alp(owned(input), expr_arena, lp_arena)?;
             let by_column = to_expr_irs(by_column, expr_arena);
-            FullAccessIR::Sort {
+            IR::Sort {
                 input,
                 by_column,
                 args,
@@ -405,7 +405,7 @@ pub fn to_alp(
             cache_hits,
         } => {
             let input = to_alp(owned(input), expr_arena, lp_arena)?;
-            FullAccessIR::Cache {
+            IR::Cache {
                 input,
                 id,
                 cache_hits,
@@ -424,7 +424,7 @@ pub fn to_alp(
             let aggs = to_expr_irs(aggs, expr_arena);
             let keys = keys.convert(|e| to_expr_ir(e.clone(), expr_arena));
 
-            FullAccessIR::GroupBy {
+            IR::GroupBy {
                 input: i,
                 keys,
                 aggs,
@@ -448,7 +448,7 @@ pub fn to_alp(
             let left_on = to_expr_irs_ignore_alias(left_on, expr_arena);
             let right_on = to_expr_irs_ignore_alias(right_on, expr_arena);
 
-            FullAccessIR::Join {
+            IR::Join {
                 input_left,
                 input_right,
                 schema,
@@ -466,7 +466,7 @@ pub fn to_alp(
             let eirs = to_expr_irs(exprs, expr_arena);
             let exprs = eirs.into();
             let input = to_alp(owned(input), expr_arena, lp_arena)?;
-            FullAccessIR::HStack {
+            IR::HStack {
                 input,
                 exprs,
                 schema,
@@ -475,11 +475,11 @@ pub fn to_alp(
         },
         LogicalPlan::Distinct { input, options } => {
             let input = to_alp(owned(input), expr_arena, lp_arena)?;
-            FullAccessIR::Distinct { input, options }
+            IR::Distinct { input, options }
         },
         LogicalPlan::MapFunction { input, function } => {
             let input = to_alp(owned(input), expr_arena, lp_arena)?;
-            FullAccessIR::MapFunction { input, function }
+            IR::MapFunction { input, function }
         },
         LogicalPlan::Error { err, .. } => {
             // We just take the error. The LogicalPlan should not be used anymore once this
@@ -496,7 +496,7 @@ pub fn to_alp(
                 .into_iter()
                 .map(|lp| to_alp(lp, expr_arena, lp_arena))
                 .collect::<PolarsResult<_>>()?;
-            FullAccessIR::ExtContext {
+            IR::ExtContext {
                 input,
                 contexts,
                 schema,
@@ -504,7 +504,7 @@ pub fn to_alp(
         },
         LogicalPlan::Sink { input, payload } => {
             let input = to_alp(owned(input), expr_arena, lp_arena)?;
-            FullAccessIR::Sink { input, payload }
+            IR::Sink { input, payload }
         },
     };
     Ok(lp_arena.add(v))
@@ -742,7 +742,7 @@ fn expr_irs_to_exprs(expr_irs: Vec<ExprIR>, expr_arena: &Arena<AExpr>) -> Vec<Ex
     expr_irs.convert_owned(|e| e.to_expr(expr_arena))
 }
 
-impl FullAccessIR {
+impl IR {
     #[recursive]
     fn into_lp<F, LPA>(
         self,
@@ -751,14 +751,14 @@ impl FullAccessIR {
         expr_arena: &Arena<AExpr>,
     ) -> LogicalPlan
     where
-        F: Fn(Node, &mut LPA) -> FullAccessIR,
+        F: Fn(Node, &mut LPA) -> IR,
     {
         let lp = self;
         let convert_to_lp = |node: Node, lp_arena: &mut LPA| {
             conversion_fn(node, lp_arena).into_lp(conversion_fn, lp_arena, expr_arena)
         };
         match lp {
-            FullAccessIR::Scan {
+            IR::Scan {
                 paths,
                 file_info,
                 predicate,
@@ -773,15 +773,15 @@ impl FullAccessIR {
                 file_options: options,
             },
             #[cfg(feature = "python")]
-            FullAccessIR::PythonScan { options, .. } => LogicalPlan::PythonScan { options },
-            FullAccessIR::Union { inputs, options } => {
+            IR::PythonScan { options, .. } => LogicalPlan::PythonScan { options },
+            IR::Union { inputs, options } => {
                 let inputs = inputs
                     .into_iter()
                     .map(|node| convert_to_lp(node, lp_arena))
                     .collect();
                 LogicalPlan::Union { inputs, options }
             },
-            FullAccessIR::HConcat {
+            IR::HConcat {
                 inputs,
                 schema,
                 options,
@@ -796,7 +796,7 @@ impl FullAccessIR {
                     options,
                 }
             },
-            FullAccessIR::Slice { input, offset, len } => {
+            IR::Slice { input, offset, len } => {
                 let lp = convert_to_lp(input, lp_arena);
                 LogicalPlan::Slice {
                     input: Arc::new(lp),
@@ -804,7 +804,7 @@ impl FullAccessIR {
                     len,
                 }
             },
-            FullAccessIR::Filter { input, predicate } => {
+            IR::Filter { input, predicate } => {
                 let lp = convert_to_lp(input, lp_arena);
                 let predicate = predicate.to_expr(expr_arena);
                 LogicalPlan::Filter {
@@ -812,7 +812,7 @@ impl FullAccessIR {
                     predicate,
                 }
             },
-            FullAccessIR::DataFrameScan {
+            IR::DataFrameScan {
                 df,
                 schema,
                 output_schema,
@@ -825,7 +825,7 @@ impl FullAccessIR {
                 projection,
                 selection: selection.map(|e| e.to_expr(expr_arena)),
             },
-            FullAccessIR::Select {
+            IR::Select {
                 expr,
                 input,
                 schema,
@@ -840,7 +840,7 @@ impl FullAccessIR {
                     options,
                 }
             },
-            FullAccessIR::SimpleProjection { input, columns, .. } => {
+            IR::SimpleProjection { input, columns, .. } => {
                 let input = convert_to_lp(input, lp_arena);
                 let expr = columns
                     .iter_names()
@@ -853,7 +853,7 @@ impl FullAccessIR {
                     options: Default::default(),
                 }
             },
-            FullAccessIR::Sort {
+            IR::Sort {
                 input,
                 by_column,
                 args,
@@ -866,7 +866,7 @@ impl FullAccessIR {
                     args,
                 }
             },
-            FullAccessIR::Cache {
+            IR::Cache {
                 input,
                 id,
                 cache_hits,
@@ -878,7 +878,7 @@ impl FullAccessIR {
                     cache_hits,
                 }
             },
-            FullAccessIR::GroupBy {
+            IR::GroupBy {
                 input,
                 keys,
                 aggs,
@@ -901,7 +901,7 @@ impl FullAccessIR {
                     options: dynamic_options,
                 }
             },
-            FullAccessIR::Join {
+            IR::Join {
                 input_left,
                 input_right,
                 schema,
@@ -924,7 +924,7 @@ impl FullAccessIR {
                     options,
                 }
             },
-            FullAccessIR::HStack {
+            IR::HStack {
                 input,
                 exprs,
                 schema,
@@ -940,18 +940,18 @@ impl FullAccessIR {
                     options,
                 }
             },
-            FullAccessIR::Distinct { input, options } => {
+            IR::Distinct { input, options } => {
                 let i = convert_to_lp(input, lp_arena);
                 LogicalPlan::Distinct {
                     input: Arc::new(i),
                     options,
                 }
             },
-            FullAccessIR::MapFunction { input, function } => {
+            IR::MapFunction { input, function } => {
                 let input = Arc::new(convert_to_lp(input, lp_arena));
                 LogicalPlan::MapFunction { input, function }
             },
-            FullAccessIR::ExtContext {
+            IR::ExtContext {
                 input,
                 contexts,
                 schema,
@@ -967,11 +967,11 @@ impl FullAccessIR {
                     schema,
                 }
             },
-            FullAccessIR::Sink { input, payload } => {
+            IR::Sink { input, payload } => {
                 let input = Arc::new(convert_to_lp(input, lp_arena));
                 LogicalPlan::Sink { input, payload }
             },
-            FullAccessIR::Invalid => unreachable!(),
+            IR::Invalid => unreachable!(),
         }
     }
 }
@@ -979,29 +979,25 @@ impl FullAccessIR {
 pub fn node_to_lp_cloned(
     node: Node,
     expr_arena: &Arena<AExpr>,
-    mut lp_arena: &Arena<FullAccessIR>,
+    mut lp_arena: &Arena<IR>,
 ) -> LogicalPlan {
     // we borrow again mutably only to make the types happy
     // we want to initialize `to_lp` from a mutable and a immutable lp_arena
     // by borrowing an immutable mutably, we still are immutable down the line.
     let alp = lp_arena.get(node).clone();
     alp.into_lp(
-        &|node, lp_arena: &mut &Arena<FullAccessIR>| lp_arena.get(node).clone(),
+        &|node, lp_arena: &mut &Arena<IR>| lp_arena.get(node).clone(),
         &mut lp_arena,
         expr_arena,
     )
 }
 
-/// converts a node from the FullAccessIR arena to a LogicalPlan
-pub fn node_to_lp(
-    node: Node,
-    expr_arena: &Arena<AExpr>,
-    lp_arena: &mut Arena<FullAccessIR>,
-) -> LogicalPlan {
+/// converts a node from the IR arena to a LogicalPlan
+pub fn node_to_lp(node: Node, expr_arena: &Arena<AExpr>, lp_arena: &mut Arena<IR>) -> LogicalPlan {
     let alp = lp_arena.get_mut(node);
     let alp = std::mem::take(alp);
     alp.into_lp(
-        &|node, lp_arena: &mut Arena<FullAccessIR>| {
+        &|node, lp_arena: &mut Arena<IR>| {
             let lp = lp_arena.get_mut(node);
             std::mem::take(lp)
         },

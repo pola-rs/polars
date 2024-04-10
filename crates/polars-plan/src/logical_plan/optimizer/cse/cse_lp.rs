@@ -1,5 +1,5 @@
 use super::*;
-use crate::prelude::visitor::FullAccessIRNode;
+use crate::prelude::visitor::IRNode;
 
 mod identifier_impl {
     use std::fmt::{Debug, Formatter};
@@ -17,7 +17,7 @@ mod identifier_impl {
     #[derive(Clone)]
     pub(super) struct Identifier {
         inner: Option<u64>,
-        last_node: Option<FullAccessIRNode>,
+        last_node: Option<IRNode>,
         hb: RandomState,
         expr_arena: *const Arena<AExpr>,
     }
@@ -81,7 +81,7 @@ mod identifier_impl {
             self.inner = Some(inner);
         }
 
-        pub fn add_alp_node(&self, alp: &FullAccessIRNode) -> Self {
+        pub fn add_alp_node(&self, alp: &IRNode) -> Self {
             let expr_arena = unsafe { &*self.expr_arena };
             let hashed = self.hb.hash_one(alp.hashable_and_cmp(expr_arena));
             let inner = Some(
@@ -157,7 +157,7 @@ impl LpIdentifierVisitor<'_> {
 }
 
 impl Visitor for LpIdentifierVisitor<'_> {
-    type Node = FullAccessIRNode;
+    type Node = IRNode;
 
     fn pre_visit(&mut self, _node: &Self::Node) -> PolarsResult<VisitRecursion> {
         self.visit_stack
@@ -225,7 +225,7 @@ impl<'a> CommonSubPlanRewriter<'a> {
 }
 
 impl RewritingVisitor for CommonSubPlanRewriter<'_> {
-    type Node = FullAccessIRNode;
+    type Node = IRNode;
 
     fn pre_visit(&mut self, _lp_node: &Self::Node) -> PolarsResult<RewriteRecursion> {
         if self.visited_idx >= self.identifier_array.len()
@@ -276,7 +276,7 @@ impl RewritingVisitor for CommonSubPlanRewriter<'_> {
         let cache_id = *self.cache_id.entry(id.clone()).or_insert(cache_id);
         let cache_count = self.sp_count.get(id).unwrap().1;
 
-        let cache_node = FullAccessIR::Cache {
+        let cache_node = IR::Cache {
             input: node.node(),
             id: cache_id,
             cache_hits: cache_count - 1,
@@ -294,13 +294,13 @@ impl RewritingVisitor for CommonSubPlanRewriter<'_> {
 
 pub(crate) fn elim_cmn_subplans(
     root: Node,
-    lp_arena: &mut Arena<FullAccessIR>,
+    lp_arena: &mut Arena<IR>,
     expr_arena: &Arena<AExpr>,
 ) -> (Node, bool, CacheId2Caches) {
     let mut sp_count = Default::default();
     let mut id_array = Default::default();
 
-    let (changed, cache_id_to_caches) = FullAccessIRNode::with_context(root, lp_arena, |lp_node| {
+    let (changed, cache_id_to_caches) = IRNode::with_context(root, lp_arena, |lp_node| {
         let mut visitor = LpIdentifierVisitor::new(&mut sp_count, &mut id_array, expr_arena);
 
         lp_node.visit(&mut visitor).map(|_| ()).unwrap();
@@ -321,14 +321,14 @@ pub(crate) fn elim_cmn_subplans(
 ///
 /// `conctat([lf.select(), lf.select(), lf])`
 ///
-pub(crate) fn prune_unused_caches(lp_arena: &mut Arena<FullAccessIR>, cid2c: CacheId2Caches) {
+pub(crate) fn prune_unused_caches(lp_arena: &mut Arena<IR>, cid2c: CacheId2Caches) {
     for (count, nodes) in cid2c.values() {
         if *count == nodes.len() as u32 {
             continue;
         }
 
         for node in nodes {
-            let FullAccessIR::Cache { input, .. } = lp_arena.get(*node) else {
+            let IR::Cache { input, .. } = lp_arena.get(*node) else {
                 unreachable!()
             };
             lp_arena.swap(*input, *node)

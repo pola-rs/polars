@@ -1,10 +1,10 @@
 use super::*;
 
-impl FullAccessIR {
+impl IR {
     /// Get the schema of the logical plan node but don't take projections into account at the scan
     /// level. This ensures we can apply the predicate
     pub(crate) fn scan_schema(&self) -> &SchemaRef {
-        use FullAccessIR::*;
+        use IR::*;
         match self {
             Scan { file_info, .. } => &file_info.schema,
             #[cfg(feature = "python")]
@@ -14,7 +14,7 @@ impl FullAccessIR {
     }
 
     pub fn name(&self) -> &'static str {
-        use FullAccessIR::*;
+        use IR::*;
         match self {
             Scan { scan_type, .. } => scan_type.into(),
             #[cfg(feature = "python")]
@@ -45,8 +45,8 @@ impl FullAccessIR {
     }
 
     /// Get the schema of the logical plan node.
-    pub fn schema<'a>(&'a self, arena: &'a Arena<FullAccessIR>) -> Cow<'a, SchemaRef> {
-        use FullAccessIR::*;
+    pub fn schema<'a>(&'a self, arena: &'a Arena<IR>) -> Cow<'a, SchemaRef> {
+        use IR::*;
         let schema = match self {
             #[cfg(feature = "python")]
             PythonScan { options, .. } => options.output_schema.as_ref().unwrap_or(&options.schema),

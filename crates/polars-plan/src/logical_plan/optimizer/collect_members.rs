@@ -11,8 +11,8 @@ struct UniqueScans {
 
 #[cfg(feature = "cse")]
 impl UniqueScans {
-    fn insert(&mut self, node: Node, lp_arena: &Arena<FullAccessIR>, expr_arena: &Arena<AExpr>) {
-        let alp_node = unsafe { FullAccessIRNode::from_raw(node, lp_arena as *const _ as *mut _) };
+    fn insert(&mut self, node: Node, lp_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) {
+        let alp_node = unsafe { IRNode::from_raw(node, lp_arena as *const _ as *mut _) };
         self.ids.insert(
             self.ids
                 .hasher()
@@ -40,13 +40,8 @@ impl MemberCollector {
             scans: UniqueScans::default(),
         }
     }
-    pub(super) fn collect(
-        &mut self,
-        root: Node,
-        lp_arena: &Arena<FullAccessIR>,
-        _expr_arena: &Arena<AExpr>,
-    ) {
-        use FullAccessIR::*;
+    pub(super) fn collect(&mut self, root: Node, lp_arena: &Arena<IR>, _expr_arena: &Arena<AExpr>) {
+        use IR::*;
         for (_node, alp) in lp_arena.iter(root) {
             match alp {
                 Join { .. } | Union { .. } => self.has_joins_or_unions = true,

@@ -196,14 +196,14 @@ impl<'a> ArenaExprIter<'a> for &'a Arena<AExpr> {
 
 pub struct AlpIter<'a> {
     stack: UnitVec<Node>,
-    arena: &'a Arena<FullAccessIR>,
+    arena: &'a Arena<IR>,
 }
 
 pub trait ArenaLpIter<'a> {
     fn iter(&self, root: Node) -> AlpIter<'a>;
 }
 
-impl<'a> ArenaLpIter<'a> for &'a Arena<FullAccessIR> {
+impl<'a> ArenaLpIter<'a> for &'a Arena<IR> {
     fn iter(&self, root: Node) -> AlpIter<'a> {
         let stack = unitvec![root];
         AlpIter { stack, arena: self }
@@ -211,7 +211,7 @@ impl<'a> ArenaLpIter<'a> for &'a Arena<FullAccessIR> {
 }
 
 impl<'a> Iterator for AlpIter<'a> {
-    type Item = (Node, &'a FullAccessIR);
+    type Item = (Node, &'a IR);
 
     fn next(&mut self) -> Option<Self::Item> {
         self.stack.pop().map(|node| {

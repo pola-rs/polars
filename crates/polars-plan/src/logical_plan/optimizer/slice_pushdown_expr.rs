@@ -13,7 +13,7 @@ impl OptimizationRule for SlicePushDown {
         &mut self,
         expr_arena: &mut Arena<AExpr>,
         expr_node: Node,
-        _lp_arena: &Arena<FullAccessIR>,
+        _lp_arena: &Arena<IR>,
         _lp_node: Node,
     ) -> PolarsResult<Option<AExpr>> {
         if let AExpr::Slice {

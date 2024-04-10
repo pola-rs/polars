@@ -301,7 +301,7 @@ impl LogicalPlan {
         format!("{visitor:#?}")
     }
 
-    pub fn to_alp(self) -> PolarsResult<(Node, Arena<FullAccessIR>, Arena<AExpr>)> {
+    pub fn to_alp(self) -> PolarsResult<(Node, Arena<IR>, Arena<AExpr>)> {
         let mut lp_arena = Arena::with_capacity(16);
         let mut expr_arena = Arena::with_capacity(16);
 

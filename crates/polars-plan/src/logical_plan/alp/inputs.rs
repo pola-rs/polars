@@ -1,13 +1,9 @@
 use super::*;
 
-impl FullAccessIR {
+impl IR {
     /// Takes the expressions of an LP node and the inputs of that node and reconstruct
-    pub fn with_exprs_and_input(
-        &self,
-        mut exprs: Vec<ExprIR>,
-        mut inputs: Vec<Node>,
-    ) -> FullAccessIR {
-        use FullAccessIR::*;
+    pub fn with_exprs_and_input(&self, mut exprs: Vec<ExprIR>, mut inputs: Vec<Node>) -> IR {
+        use IR::*;
 
         match self {
             #[cfg(feature = "python")]
@@ -165,7 +161,7 @@ impl FullAccessIR {
 
     /// Copy the exprs in this LP node to an existing container.
     pub fn copy_exprs(&self, container: &mut Vec<ExprIR>) {
-        use FullAccessIR::*;
+        use IR::*;
         match self {
             Slice { .. } | Cache { .. } | Distinct { .. } | Union { .. } | MapFunction { .. } => {},
             Sort { by_column, .. } => container.extend_from_slice(by_column),
@@ -214,7 +210,7 @@ impl FullAccessIR {
     where
         T: PushNode,
     {
-        use FullAccessIR::*;
+        use IR::*;
         let input = match self {
             Union { inputs, .. } => {
                 for node in inputs {

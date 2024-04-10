@@ -393,11 +393,11 @@ fn test_scan_parquet_limit_9001() {
     let q = LazyFrame::scan_parquet(path, args).unwrap().limit(3);
     let (node, lp_arena, _) = q.to_alp_optimized().unwrap();
     (&lp_arena).iter(node).all(|(_, lp)| match lp {
-        FullAccessIR::Union { options, .. } => {
+        IR::Union { options, .. } => {
             let sliced = options.slice.unwrap();
             sliced.1 == 3
         },
-        FullAccessIR::Scan { file_options, .. } => file_options.n_rows == Some(3),
+        IR::Scan { file_options, .. } => file_options.n_rows == Some(3),
         _ => true,
     });
 }
@@ -428,9 +428,9 @@ fn test_ipc_globbing() -> PolarsResult<()> {
     Ok(())
 }
 
-fn slice_at_union(lp_arena: &Arena<FullAccessIR>, lp: Node) -> bool {
+fn slice_at_union(lp_arena: &Arena<IR>, lp: Node) -> bool {
     (&lp_arena).iter(lp).all(|(_, lp)| {
-        if let FullAccessIR::Union { options, .. } = lp {
+        if let IR::Union { options, .. } = lp {
             options.slice.is_some()
         } else {
             true
