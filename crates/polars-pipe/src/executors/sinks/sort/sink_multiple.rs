@@ -170,7 +170,11 @@ impl SortSinkMultiple {
             // we will set the last column as sort column
             schema.len() - 1,
             slice,
-            sort_options.clone(),
+            sort_options
+                .clone()
+                .with_order(false)
+                .with_nulls_last(false)
+                .with_maintain_order(false),
             Arc::new(schema),
         ));
 
