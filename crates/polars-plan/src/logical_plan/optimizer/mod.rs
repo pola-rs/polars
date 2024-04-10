@@ -6,6 +6,7 @@ mod cache_states;
 mod delay_rechunk;
 mod drop_nulls;
 
+mod collapse_and_project;
 mod collect_members;
 mod count_star;
 #[cfg(feature = "cse")]
@@ -15,7 +16,6 @@ mod flatten_union;
 mod fused;
 mod predicate_pushdown;
 mod projection_pushdown;
-mod simple_projection;
 mod simplify_expr;
 mod simplify_functions;
 mod slice_pushdown_expr;
@@ -23,13 +23,13 @@ mod slice_pushdown_lp;
 mod stack_opt;
 mod type_coercion;
 
+use collapse_and_project::SimpleProjectionAndCollapse;
 use delay_rechunk::DelayRechunk;
 use drop_nulls::ReplaceDropNulls;
 use polars_core::config::verbose;
 use polars_io::predicates::PhysicalIoExpr;
 pub use predicate_pushdown::PredicatePushDown;
 pub use projection_pushdown::ProjectionPushDown;
-use simple_projection::SimpleProjectionAndCollapse;
 pub use simplify_expr::{SimplifyBooleanRule, SimplifyExprRule};
 use slice_pushdown_lp::SlicePushDown;
 pub use stack_opt::{OptimizationRule, StackOptimizer};

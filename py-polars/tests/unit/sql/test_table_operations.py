@@ -45,7 +45,7 @@ def test_explain_query(test_frame: pl.LazyFrame) -> None:
         )
         assert (
             re.search(
-                pattern=r'SELECT.+?"x".+?"y".+?"z".+?FROM.+?PROJECT.+?COLUMNS',
+                pattern=r"PROJECT.+?COLUMNS",
                 string=plan,
                 flags=re.IGNORECASE,
             )

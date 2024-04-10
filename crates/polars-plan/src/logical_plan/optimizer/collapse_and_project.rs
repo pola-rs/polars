@@ -62,13 +62,13 @@ impl OptimizationRule for SimpleProjectionAndCollapse {
                     None
                 }
             },
-            // If there are 2 subsequent fast projections, flatten them and only take the last
             SimpleProjection {
                 columns,
                 input,
                 duplicate_check,
             } if !self.eager => {
                 match lp_arena.get(*input) {
+                    // If there are 2 subsequent fast projections, flatten them and only take the last
                     SimpleProjection {
                         input: prev_input, ..
                     } => Some(SimpleProjection {
@@ -90,7 +90,16 @@ impl OptimizationRule for SimpleProjectionAndCollapse {
                             None
                         }
                     },
-                    _ => None,
+                    // If a projection does nothing, remove it.
+                    other => {
+                        let input_schema = other.schema(lp_arena);
+                        // This will fail fast if lengths are not equal
+                        if *input_schema.as_ref() == *columns {
+                            Some(other.clone())
+                        } else {
+                            None
+                        }
+                    },
                 }
             },
             // if there are 2 subsequent caches, flatten them and only take the inner
@@ -114,6 +123,19 @@ impl OptimizationRule for SimpleProjectionAndCollapse {
                 } else {
                     None
                 }
+            },
+            // Remove double sorts
+            Sort {
+                input,
+                by_column,
+                args,
+            } => match lp_arena.get(*input) {
+                Sort { input: inner, .. } => Some(Sort {
+                    input: *inner,
+                    by_column: by_column.clone(),
+                    args: args.clone(),
+                }),
+                _ => None,
             },
             _ => None,
         }
