@@ -23,7 +23,7 @@ pub enum ArrayFunction {
     Reverse,
     ArgMin,
     ArgMax,
-    Get,
+    Get(bool),
     Join(bool),
     #[cfg(feature = "is_in")]
     Contains,
@@ -49,7 +49,7 @@ impl ArrayFunction {
             Sort(_) => mapper.with_same_dtype(),
             Reverse => mapper.with_same_dtype(),
             ArgMin | ArgMax => mapper.with_dtype(IDX_DTYPE),
-            Get => mapper.map_to_list_and_array_inner_dtype(),
+            Get(_) => mapper.map_to_list_and_array_inner_dtype(),
             Join(_) => mapper.with_dtype(DataType::String),
             #[cfg(feature = "is_in")]
             Contains => mapper.with_dtype(DataType::Boolean),
@@ -89,7 +89,7 @@ impl Display for ArrayFunction {
             Reverse => "reverse",
             ArgMin => "arg_min",
             ArgMax => "arg_max",
-            Get => "get",
+            Get(_) => "get",
             Join(_) => "join",
             #[cfg(feature = "is_in")]
             Contains => "contains",
@@ -122,7 +122,7 @@ impl From<ArrayFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Reverse => map!(reverse),
             ArgMin => map!(arg_min),
             ArgMax => map!(arg_max),
-            Get => map_as_slice!(get),
+            Get(null_on_oob) => map_as_slice!(get, null_on_oob),
             Join(ignore_nulls) => map_as_slice!(join, ignore_nulls),
             #[cfg(feature = "is_in")]
             Contains => map_as_slice!(contains),
@@ -201,11 +201,11 @@ pub(super) fn arg_max(s: &Series) -> PolarsResult<Series> {
     Ok(s.array()?.array_arg_max().into_series())
 }
 
-pub(super) fn get(s: &[Series]) -> PolarsResult<Series> {
+pub(super) fn get(s: &[Series], null_on_oob: bool) -> PolarsResult<Series> {
     let ca = s[0].array()?;
     let index = s[1].cast(&DataType::Int64)?;
     let index = index.i64().unwrap();
-    ca.array_get(index)
+    ca.array_get(index, null_on_oob)
 }
 
 pub(super) fn join(s: &[Series], ignore_nulls: bool) -> PolarsResult<Series> {

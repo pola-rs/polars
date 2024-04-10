@@ -330,7 +330,7 @@ class ArrayNameSpace:
 
         """
 
-    def get(self, index: int | IntoExprColumn) -> Series:
+    def get(self, index: int | IntoExprColumn, *, null_on_oob: bool = True) -> Series:
         """
         Get the value by index in the sub-arrays.
 
@@ -342,6 +342,10 @@ class ArrayNameSpace:
         ----------
         index
             Index to return per sublist
+        null_on_oob
+            Behavior if an index is out of bounds:
+            True -> set as null
+            False -> raise an error
 
         Returns
         -------
@@ -353,13 +357,13 @@ class ArrayNameSpace:
         >>> s = pl.Series(
         ...     "a", [[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=pl.Array(pl.Int32, 3)
         ... )
-        >>> s.arr.get(pl.Series([1, -2, 4]))
+        >>> s.arr.get(pl.Series([1, -2, 0]), null_on_oob=True)
         shape: (3,)
         Series: 'a' [i32]
         [
             2
             5
-            null
+            7
         ]
 
         """
