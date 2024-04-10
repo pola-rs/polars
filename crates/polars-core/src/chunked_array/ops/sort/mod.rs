@@ -3,6 +3,7 @@ mod arg_sort;
 pub mod arg_sort_multiple;
 
 pub mod options;
+pub mod arg_bottom_k;
 
 #[cfg(feature = "dtype-categorical")]
 mod categorical;

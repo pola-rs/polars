@@ -3,6 +3,7 @@ use std::cmp::Ordering;
 use arrow::array::{BooleanArray, MutableBooleanArray};
 use arrow::bitmap::MutableBitmap;
 use either::Either;
+use polars_core::chunked_array::ops::sort::arg_bottom_k::_arg_bottom_k;
 use polars_core::downcast_as_macro_arg_physical;
 use polars_core::prelude::*;
 use polars_utils::total_ord::TotalOrd;
@@ -21,6 +22,23 @@ fn arg_partition<T, C: Fn(&T, &T) -> Ordering>(
         upper.sort_unstable_by(|a, b| cmp(b, a));
         upper
     }
+}
+
+fn extract_target_and_k(s: &[Series]) -> PolarsResult<(u64, &Series)> {
+    let k_s = &s[1];
+
+    polars_ensure!(
+        k_s.len() == 1,
+        ComputeError: "`k` must be a single value for `top_k`."
+    );
+
+    let Some(k) = k_s.cast(&IDX_DTYPE)?.idx()?.get(0) else {
+        polars_bail!(ComputeError: "`k` must be set for `top_k`")
+    };
+
+    let src = &s[0];
+
+    Ok((k, src))
 }
 
 fn top_k_num_impl<T>(ca: &ChunkedArray<T>, k: usize, descending: bool) -> ChunkedArray<T>
@@ -144,18 +162,7 @@ fn top_k_binary_impl(
 }
 
 pub fn top_k(s: &[Series], descending: bool) -> PolarsResult<Series> {
-    let k_s = &s[1];
-
-    polars_ensure!(
-        k_s.len() == 1,
-        ComputeError: "`k` must be a single value for `top_k`."
-    );
-
-    let Some(k) = k_s.cast(&IDX_DTYPE)?.idx()?.get(0) else {
-        polars_bail!(ComputeError: "`k` must be set for `top_k`")
-    };
-
-    let src = &s[0];
+    let (k, src) = extract_target_and_k(s)?;
 
     if src.is_empty() {
         return Ok(src.clone());
@@ -199,4 +206,30 @@ pub fn top_k(s: &[Series], descending: bool) -> PolarsResult<Series> {
             unsafe { downcast_as_macro_arg_physical!(&s, dispatch).cast_unchecked(origin_dtype) }
         },
     }
+}
+
+pub fn top_k_by(
+    s: &[Series],
+    by: &[Series],
+    mut sort_options: SortMultipleOptions,
+) -> PolarsResult<Series> {
+    // Top k is reversed bottom k
+    sort_options = sort_options.reverse_order();
+
+    let (k, src) = extract_target_and_k(s)?;
+
+    if src.is_empty() {
+        return Ok(src.clone());
+    }
+
+    let idx = _arg_bottom_k(k as usize, src.len(), by, &mut sort_options)?;
+
+    let result = unsafe {
+        if sort_options.multithreaded {
+            src.take_unchecked_threaded(&idx.into_inner(), false)
+        } else {
+            src.take_unchecked(&idx.into_inner())
+        }
+    };
+    Ok(result)
 }

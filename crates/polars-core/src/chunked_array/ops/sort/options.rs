@@ -68,6 +68,11 @@ impl SortMultipleOptions {
         self.maintain_order = enabled;
         self
     }
+
+    pub fn reverse_order(mut self) -> Self {
+        self.descending.iter_mut().for_each(|x| *x = !*x);
+        self
+    }
 }
 
 impl SortOptions {
