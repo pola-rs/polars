@@ -1,6 +1,8 @@
 use std::io::Cursor;
+use std::num::NonZeroUsize;
 
 use polars::io::RowIndex;
+use polars_core::export::chrono;
 
 use super::*;
 
@@ -13,6 +15,7 @@ fn write_csv() {
 
     CsvWriter::new(&mut buf)
         .include_header(true)
+        .with_batch_size(NonZeroUsize::new(1).unwrap())
         .finish(&mut df)
         .expect("csv written");
     let csv = std::str::from_utf8(&buf).unwrap();
@@ -34,6 +37,91 @@ fn write_csv() {
         .expect("csv written");
     let csv = std::str::from_utf8(&buf).unwrap();
     assert_eq!("0,22.1\r\n1,19.9\r\n2,7.0\r\n3,2.0\r\n4,3.0\r\n", csv);
+}
+
+#[test]
+fn write_dates() {
+    let s0 = Series::new("date", [chrono::NaiveDate::from_yo_opt(2024, 33), None]);
+    let s1 = Series::new("time", [None, chrono::NaiveTime::from_hms_opt(19, 50, 0)]);
+    let s2 = Series::new(
+        "datetime",
+        [
+            Some(chrono::NaiveDateTime::new(
+                chrono::NaiveDate::from_ymd_opt(2000, 12, 1).unwrap(),
+                chrono::NaiveTime::from_num_seconds_from_midnight_opt(99, 49575634).unwrap(),
+            )),
+            None,
+        ],
+    );
+    let mut df = DataFrame::new(vec![s0, s1, s2.clone()]).unwrap();
+
+    let mut buf: Vec<u8> = Vec::new();
+    CsvWriter::new(&mut buf)
+        .include_header(true)
+        .with_batch_size(NonZeroUsize::new(1).unwrap())
+        .finish(&mut df)
+        .expect("csv written");
+    let csv = std::str::from_utf8(&buf).unwrap();
+    assert_eq!(
+        "date,time,datetime\n2024-02-02,,2000-12-01T00:01:39.049\n,19:50:00.000000000,\n",
+        csv,
+    );
+
+    buf.clear();
+    CsvWriter::new(&mut buf)
+        .include_header(true)
+        .with_batch_size(NonZeroUsize::new(1).unwrap())
+        .with_date_format(Some("%d/%m/%Y".into()))
+        .with_time_format(Some("%H%M%S".into()))
+        .with_datetime_format(Some("%Y-%m-%d %H:%M:%S".into()))
+        .finish(&mut df)
+        .expect("csv written");
+    let csv = std::str::from_utf8(&buf).unwrap();
+    assert_eq!(
+        "date,time,datetime\n02/02/2024,,2000-12-01 00:01:39\n,195000,\n",
+        csv,
+    );
+
+    buf.clear();
+    CsvWriter::new(&mut buf)
+        .include_header(true)
+        .with_batch_size(NonZeroUsize::new(1).unwrap())
+        .with_date_format(Some("%<invalid format>".into()))
+        .finish(&mut df)
+        .expect_err("invalid date/time format should err");
+
+    buf.clear();
+    CsvWriter::new(&mut buf)
+        .include_header(true)
+        .with_batch_size(NonZeroUsize::new(1).unwrap())
+        .with_date_format(Some("%H".into()))
+        .finish(&mut df)
+        .expect_err("invalid date/time format should err");
+
+    buf.clear();
+    CsvWriter::new(&mut buf)
+        .include_header(true)
+        .with_batch_size(NonZeroUsize::new(1).unwrap())
+        .with_datetime_format(Some("%Z".into()))
+        .finish(&mut df)
+        .expect_err("invalid date/time format should err");
+
+    let with_timezone = polars_ops::chunked_array::replace_time_zone(
+        s2.slice(0, 1).datetime().unwrap(),
+        Some("America/New_York"),
+        &StringChunked::new("", ["raise"]),
+        NonExistent::Raise,
+    )
+    .unwrap()
+    .into_series();
+    let mut with_timezone_df = DataFrame::new(vec![with_timezone]).unwrap();
+    buf.clear();
+    CsvWriter::new(&mut buf)
+        .include_header(false)
+        .finish(&mut with_timezone_df)
+        .expect("csv written");
+    let csv = std::str::from_utf8(&buf).unwrap();
+    assert_eq!("2000-12-01T00:01:39.049-0500\n", csv);
 }
 
 #[test]
