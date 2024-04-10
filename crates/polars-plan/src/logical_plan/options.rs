@@ -302,6 +302,7 @@ pub struct SortArguments {
     pub nulls_last: bool,
     pub slice: Option<(i64, usize)>,
     pub maintain_order: bool,
+    pub multithreaded: bool
 }
 
 
@@ -311,7 +312,7 @@ impl From<&SortArguments> for SortMultipleOptions {
             descending: value.descending.clone(),
             nulls_last: value.nulls_last,
             maintain_order: value.maintain_order,
-            multithreaded: true
+            multithreaded: value.multithreaded
         }
     }
 }

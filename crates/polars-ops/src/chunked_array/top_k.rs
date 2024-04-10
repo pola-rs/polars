@@ -24,7 +24,7 @@ fn arg_partition<T, C: Fn(&T, &T) -> Ordering>(
     }
 }
 
-fn extract_target_and_k(s: &[Series]) -> PolarsResult<(u64, &Series)> {
+fn extract_target_and_k(s: &[Series]) -> PolarsResult<(usize, &Series)> {
     let k_s = &s[1];
 
     polars_ensure!(
@@ -38,7 +38,7 @@ fn extract_target_and_k(s: &[Series]) -> PolarsResult<(u64, &Series)> {
 
     let src = &s[0];
 
-    Ok((k, src))
+    Ok((k as usize, src))
 }
 
 fn top_k_num_impl<T>(ca: &ChunkedArray<T>, k: usize, descending: bool) -> ChunkedArray<T>

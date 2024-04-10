@@ -819,8 +819,9 @@ impl LogicalPlanBuilder {
         self,
         by_column: Vec<Expr>,
         descending: Vec<bool>,
-        null_last: bool,
+        nulls_last: bool,
         maintain_order: bool,
+        multithreaded: bool,
     ) -> Self {
         let schema = try_delayed!(self.0.schema(), &self.0, into);
         let by_column = try_delayed!(rewrite_projections(by_column, &schema, &[]), &self.0, into);
@@ -829,9 +830,10 @@ impl LogicalPlanBuilder {
             by_column,
             args: SortArguments {
                 descending,
-                nulls_last: null_last,
+                nulls_last,
                 slice: None,
                 maintain_order,
+                multithreaded,
             },
         }
         .into()

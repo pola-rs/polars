@@ -1769,11 +1769,15 @@ impl DataFrame {
         let by_column = self.select_series(by_column)?;
         let descending = descending.into_vec();
         self.columns = self
-            .sort_impl(by_column, SortMultipleOptions {
-                descending,
-                maintain_order,
-                ..Default::default()
-            }, None)?
+            .sort_impl(
+                by_column,
+                SortMultipleOptions {
+                    descending,
+                    maintain_order,
+                    ..Default::default()
+                },
+                None,
+            )?
             .columns;
         Ok(self)
     }
@@ -1816,7 +1820,7 @@ impl DataFrame {
         }
 
         if let Some((0, k)) = slice {
-            return self.top_k_impl(k, by_column, sort_options);
+            return self.top_k_impl(k, by_column, sort_options.reverse_order());
         }
 
         #[cfg(feature = "dtype-struct")]
@@ -1854,8 +1858,16 @@ impl DataFrame {
                 s.arg_sort(options)
             },
             _ => {
-                if sort_options.nulls_last || has_struct || std::env::var("POLARS_ROW_FMT_SORT").is_ok() {
-                    argsort_multiple_row_fmt(&by_column, sort_options.descending, sort_options.nulls_last, sort_options.multithreaded)?
+                if sort_options.nulls_last
+                    || has_struct
+                    || std::env::var("POLARS_ROW_FMT_SORT").is_ok()
+                {
+                    argsort_multiple_row_fmt(
+                        &by_column,
+                        sort_options.descending,
+                        sort_options.nulls_last,
+                        sort_options.multithreaded,
+                    )?
                 } else {
                     let (first, other) = prepare_arg_sort(by_column, &mut sort_options)?;
                     first.arg_sort_multiple(&other, &sort_options)?
@@ -1904,11 +1916,7 @@ impl DataFrame {
         let mut df = self.clone();
         let by_column = vec![df.column(by_column)?.clone()];
         df.columns = df
-            .sort_impl(
-                by_column,
-                SortMultipleOptions::from(&options),
-                None,
-            )?
+            .sort_impl(by_column, SortMultipleOptions::from(&options), None)?
             .columns;
         Ok(df)
     }

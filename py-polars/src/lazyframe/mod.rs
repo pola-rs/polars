@@ -458,6 +458,7 @@ impl PyLazyFrame {
         descending: bool,
         nulls_last: bool,
         maintain_order: bool,
+        multithreaded: bool,
     ) -> Self {
         let ldf = self.ldf.clone();
         ldf.sort(
@@ -465,7 +466,7 @@ impl PyLazyFrame {
             SortOptions {
                 descending,
                 nulls_last,
-                multithreaded: true,
+                multithreaded,
                 maintain_order,
             },
         )
@@ -478,10 +479,11 @@ impl PyLazyFrame {
         descending: Vec<bool>,
         nulls_last: bool,
         maintain_order: bool,
+        multithreaded: bool,
     ) -> Self {
         let ldf = self.ldf.clone();
         let exprs = by.to_exprs();
-        ldf.sort_by_exprs(exprs, descending, nulls_last, maintain_order)
+        ldf.sort_by_exprs(exprs, descending, nulls_last, maintain_order, multithreaded)
             .into()
     }
 
@@ -492,11 +494,19 @@ impl PyLazyFrame {
         descending: Vec<bool>,
         nulls_last: bool,
         maintain_order: bool,
+        multithreaded: bool,
     ) -> Self {
         let ldf = self.ldf.clone();
         let exprs = by.to_exprs();
-        ldf.top_k(k, exprs, descending, nulls_last, maintain_order)
-            .into()
+        ldf.top_k(
+            k,
+            exprs,
+            descending,
+            nulls_last,
+            maintain_order,
+            multithreaded,
+        )
+        .into()
     }
 
     fn bottom_k(
@@ -506,10 +516,11 @@ impl PyLazyFrame {
         descending: Vec<bool>,
         nulls_last: bool,
         maintain_order: bool,
+        multithreaded: bool
     ) -> Self {
         let ldf = self.ldf.clone();
         let exprs = by.to_exprs();
-        ldf.bottom_k(k, exprs, descending, nulls_last, maintain_order)
+        ldf.bottom_k(k, exprs, descending, nulls_last, maintain_order, multithreaded)
             .into()
     }
 

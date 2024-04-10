@@ -36,7 +36,7 @@ pub(crate) fn arg_sort_multiple_impl<T: NullOrderCmp + Send + Copy>(
 
     let first_descending = descending[0];
 
-    let compare = |tpl_a: &(u64, T), tpl_b: &(u64, T)| {
+    let compare = |tpl_a: &(_, T), tpl_b: &(_, T)| -> Ordering {
         match (
             first_descending,
             tpl_a

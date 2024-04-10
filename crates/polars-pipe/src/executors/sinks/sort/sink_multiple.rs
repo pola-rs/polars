@@ -173,6 +173,7 @@ impl SortSinkMultiple {
                 nulls_last: false,
                 slice: sort_args.slice,
                 maintain_order: false,
+                multithreaded: true
             },
             Arc::new(schema),
         ));

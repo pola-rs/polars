@@ -678,7 +678,7 @@ impl SQLContext {
             );
         }
 
-        Ok(lf.sort_by_exprs(&by, descending, false, false))
+        Ok(lf.sort_by_exprs(&by, descending, false, false, true))
     }
 
     fn process_group_by(

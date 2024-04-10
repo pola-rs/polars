@@ -221,7 +221,7 @@ impl Sink for SortSink {
                 SortOptions {
                     descending: self.sort_args.descending[0],
                     nulls_last: self.sort_args.nulls_last,
-                    multithreaded: true,
+                    multithreaded: self.sort_args.multithreaded,
                     maintain_order: self.sort_args.maintain_order,
                 },
             )?;

@@ -4021,6 +4021,8 @@ class DataFrame:
         *more_by: IntoExpr,
         descending: bool | Sequence[bool] = False,
         nulls_last: bool = False,
+        multithreaded: bool = True,
+        maintain_order: bool = False,
     ) -> DataFrame:
         """
         Sort the dataframe by the given columns.
@@ -4105,7 +4107,14 @@ class DataFrame:
         """
         return (
             self.lazy()
-            .sort(by, *more_by, descending=descending, nulls_last=nulls_last)
+            .sort(
+                by,
+                *more_by,
+                descending=descending,
+                nulls_last=nulls_last,
+                multithreaded=multithreaded,
+                maintain_order=maintain_order,
+            )
             .collect(_eager=True)
         )
 
