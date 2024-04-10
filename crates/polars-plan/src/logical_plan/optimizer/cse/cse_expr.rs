@@ -4,6 +4,7 @@ use super::*;
 use crate::constants::CSE_REPLACED;
 use crate::logical_plan::projection_expr::ProjectionExprs;
 use crate::prelude::visitor::AexprNode;
+use hashbrown::hash_map::RawEntryMut;
 
 // We use hashes to get an Identifier
 // but this is very hard to debug, so we also have a version that
@@ -93,20 +94,6 @@ mod identifier_impl {
         hb: RandomState,
     }
 
-    impl PartialEq<Self> for Identifier {
-        fn eq(&self, other: &Self) -> bool {
-            self.inner == other.inner && self.last_node == other.last_node
-        }
-    }
-
-    impl Eq for Identifier {}
-
-    impl Hash for Identifier {
-        fn hash<H: Hasher>(&self, state: &mut H) {
-            state.write_u64(self.inner.unwrap_or(0))
-        }
-    }
-
     impl Identifier {
         pub fn new() -> Self {
             Self {
@@ -116,8 +103,16 @@ mod identifier_impl {
             }
         }
 
+        pub fn hash(&self) -> u64 {
+            self.inner.unwrap_or(0)
+        }
+
         pub fn ae_node(&self) -> AexprNode {
             self.last_node.unwrap()
+        }
+
+        pub fn is_equal(&self, other: &Self, arena: &Arena<AExpr>) -> bool {
+            self.inner == other.inner && self.last_node.map(|v| v.hashable_and_cmp(arena)) == other.last_node.map(|v| v.hashable_and_cmp(arena))
         }
 
         pub fn is_valid(&self) -> bool {
@@ -138,8 +133,8 @@ mod identifier_impl {
             self.inner = Some(inner);
         }
 
-        pub fn add_ae_node(&self, ae: &AexprNode) -> Self {
-            let hashed = self.hb.hash_one(ae.to_aexpr());
+        pub fn add_ae_node(&self, ae: &AexprNode, arena: &Arena<AExpr>) -> Self {
+            let hashed = self.hb.hash_one(ae.to_aexpr(arena));
             let inner = Some(
                 self.inner
                     .map_or(hashed, |l| _boost_hash_combine(l, hashed)),
@@ -154,8 +149,36 @@ mod identifier_impl {
 }
 use identifier_impl::*;
 
+#[derive(Default)]
+struct IdentifierMap<V> {
+    inner: PlHashMap<Identifier, V>
+}
+
+impl<V> IdentifierMap<V> {
+    fn get(&self, id: &Identifier, arena: &Arena<AExpr>) -> Option<&V> {
+        self.inner.raw_entry().from_hash(id.hash(), |k| k.is_equal(&id, arena)).map(|(_k, v)| v)
+    }
+
+    fn entry<F: FnOnce() -> V>(&mut self, id: Identifier, v: F, arena: &Arena<AExpr>) -> &mut V{
+        let h = id.hash();
+        match self.inner.raw_entry_mut().from_hash(h, |k| k.is_equal(&id, arena)) {
+            RawEntryMut::Occupied(mut entry) => {
+                let (_k, v) = entry.get_key_value_mut();
+                v
+            },
+            RawEntryMut::Vacant(entry) => {
+                let (_, v) = entry.insert_with_hasher(h, id, v(), |id| id.hash());
+                v
+            },
+        }
+    }
+    fn insert(&mut self, id: Identifier, v: V, arena: &Arena<AExpr>) {
+        self.entry(id, || v, arena);
+    }
+}
+
 /// Identifier maps to Expr Node and count.
-type SubExprCount = PlHashMap<Identifier, (Node, usize)>;
+type SubExprCount = IdentifierMap<(Node, usize)>;
 /// (post_visit_idx, identifier);
 type IdentifierArray = Vec<(usize, Identifier)>;
 
@@ -347,9 +370,10 @@ impl ExprIdentifierVisitor<'_> {
 
 impl Visitor for ExprIdentifierVisitor<'_> {
     type Node = AexprNode;
+    type Arena = Arena<AExpr>;
 
-    fn pre_visit(&mut self, node: &Self::Node) -> PolarsResult<VisitRecursion> {
-        if skip_pre_visit(node.to_aexpr(), self.is_group_by) {
+    fn pre_visit(&mut self, node: &Self::Node, arena: &mut Self::Arena) -> PolarsResult<VisitRecursion> {
+        if skip_pre_visit(node.to_aexpr(arena), self.is_group_by) {
             // Still add to the stack so that a parent becomes invalidated.
             self.visit_stack
                 .push(VisitRecord::SubExprId(Identifier::new(), false));
@@ -367,13 +391,13 @@ impl Visitor for ExprIdentifierVisitor<'_> {
         Ok(VisitRecursion::Continue)
     }
 
-    fn post_visit(&mut self, node: &Self::Node) -> PolarsResult<VisitRecursion> {
-        let ae = node.to_aexpr();
+    fn post_visit(&mut self, node: &Self::Node, arena: &mut Self::Arena) -> PolarsResult<VisitRecursion> {
+        let ae = node.to_aexpr(arena);
         self.post_visit_idx += 1;
 
         let (pre_visit_idx, sub_expr_id, is_valid_accumulated) = self.pop_until_entered();
         // Create the Id of this node.
-        let id: Identifier = sub_expr_id.add_ae_node(node);
+        let id: Identifier = sub_expr_id.add_ae_node(node, arena);
 
         if !is_valid_accumulated {
             self.identifier_array[pre_visit_idx + self.id_array_offset].0 = self.post_visit_idx;
@@ -400,10 +424,11 @@ impl Visitor for ExprIdentifierVisitor<'_> {
         self.visit_stack
             .push(VisitRecord::SubExprId(id.clone(), true));
 
-        let (_, se_count) = self.se_count.entry(id).or_insert_with(|| (node.node(), 0));
+        let (_, se_count) = self.se_count.entry(id, || (node.node(), 0), arena);
 
         *se_count += 1;
         self.has_sub_expr |= *se_count > 1;
+
 
         Ok(VisitRecursion::Continue)
     }
@@ -413,7 +438,7 @@ struct CommonSubExprRewriter<'a> {
     sub_expr_map: &'a SubExprCount,
     identifier_array: &'a IdentifierArray,
     /// keep track of the replaced identifiers.
-    replaced_identifiers: &'a mut PlHashSet<Identifier>,
+    replaced_identifiers: &'a mut IdentifierMap<()>,
 
     max_post_visit_idx: usize,
     /// index in traversal order in which `identifier_array`
@@ -431,7 +456,7 @@ impl<'a> CommonSubExprRewriter<'a> {
     fn new(
         sub_expr_map: &'a SubExprCount,
         identifier_array: &'a IdentifierArray,
-        replaced_identifiers: &'a mut PlHashSet<Identifier>,
+        replaced_identifiers: &'a mut IdentifierMap<()>,
         id_array_offset: usize,
         is_group_by: bool,
     ) -> Self {
@@ -483,9 +508,10 @@ impl<'a> CommonSubExprRewriter<'a> {
 // post-visit   [7,5]           -> skip index to end
 impl RewritingVisitor for CommonSubExprRewriter<'_> {
     type Node = AexprNode;
+    type Arena = Arena<AExpr>;
 
-    fn pre_visit(&mut self, ae_node: &Self::Node) -> PolarsResult<RewriteRecursion> {
-        let ae = ae_node.to_aexpr();
+    fn pre_visit(&mut self, ae_node: &Self::Node, arena: &mut Self::Arena) -> PolarsResult<RewriteRecursion> {
+        let ae = ae_node.to_aexpr(arena);
         if self.visited_idx + self.id_array_offset >= self.identifier_array.len()
             || self.max_post_visit_idx
                 > self.identifier_array[self.visited_idx + self.id_array_offset].0
@@ -499,7 +525,7 @@ impl RewritingVisitor for CommonSubExprRewriter<'_> {
         // Id placeholder not overwritten, so we can skip this sub-expression.
         if !id.is_valid() {
             self.visited_idx += 1;
-            let recurse = if ae_node.is_leaf() {
+            let recurse = if ae_node.is_leaf(arena) {
                 RewriteRecursion::Stop
             } else {
                 // continue visit its children to see
@@ -511,12 +537,12 @@ impl RewritingVisitor for CommonSubExprRewriter<'_> {
 
         // Because some expressions don't have hash / equality guarantee (e.g. floats)
         // we can get none here. This must be changed later.
-        let Some((_, count)) = self.sub_expr_map.get(id) else {
+        let Some((_, count)) = self.sub_expr_map.get(id, arena) else {
             self.visited_idx += 1;
             return Ok(RewriteRecursion::NoMutateAndContinue);
         };
         if *count > 1 {
-            self.replaced_identifiers.insert(id.clone());
+            self.replaced_identifiers.insert(id.clone(), (), arena);
             // rewrite this sub-expression, don't visit its children
             Ok(RewriteRecursion::MutateAndStop)
         } else {
@@ -527,7 +553,7 @@ impl RewritingVisitor for CommonSubExprRewriter<'_> {
         }
     }
 
-    fn mutate(&mut self, mut node: Self::Node) -> PolarsResult<Self::Node> {
+    fn mutate(&mut self, mut node: Self::Node, arena: &mut Self::Arena) -> PolarsResult<Self::Node> {
         let (post_visit_count, id) =
             &self.identifier_array[self.visited_idx + self.id_array_offset];
         self.visited_idx += 1;
@@ -549,10 +575,10 @@ impl RewritingVisitor for CommonSubExprRewriter<'_> {
             self.visited_idx += 1;
         }
         // If this is not true, the traversal order in the visitor was different from the rewriter.
-        debug_assert!(node.binary(id.ae_node().node(), |l, r| l == r));
+        debug_assert_eq!(node.hashable_and_cmp(arena), id.ae_node().hashable_and_cmp(arena));
 
         let name = id.materialize();
-        node.assign(AExpr::col(name.as_ref()));
+        node.assign(AExpr::col(name.as_ref()), arena);
         self.rewritten = true;
 
         Ok(node)
@@ -566,7 +592,7 @@ pub(crate) struct CommonSubExprOptimizer<'a> {
     se_count: SubExprCount,
     id_array: IdentifierArray,
     id_array_offsets: Vec<u32>,
-    replaced_identifiers: PlHashSet<Identifier>,
+    replaced_identifiers: IdentifierMap<()>,
     // these are cleared per expr node
     visit_stack: Vec<VisitRecord>,
 }
@@ -594,7 +620,7 @@ impl<'a> CommonSubExprOptimizer<'a> {
             &mut self.visit_stack,
             is_group_by,
         );
-        ae_node.visit(&mut visitor).map(|_| ())?;
+        ae_node.visit(&mut visitor, self.expr_arena).map(|_| ())?;
         Ok((visitor.id_array_offset, visitor.has_sub_expr))
     }
 
@@ -614,7 +640,7 @@ impl<'a> CommonSubExprOptimizer<'a> {
             is_group_by,
         );
         ae_node
-            .rewrite(&mut rewriter)
+            .rewrite(&mut rewriter, self.expr_arena)
             .map(|out| (out, rewriter.rewritten))
     }
 
@@ -635,10 +661,8 @@ impl<'a> CommonSubExprOptimizer<'a> {
             self.visit_stack.clear();
 
             // Visit expressions and collect sub-expression counts.
-            let (id_array_offset, this_expr_has_se) =
-                AexprNode::with_context(e.node(), expr_arena, |ae_node| {
-                    self.visit_expression(ae_node, is_group_by)
-                })?;
+            let ae_node = AexprNode::new(e.node());
+            let (id_array_offset, this_expr_has_se) = self.visit_expression(ae_node, is_group_by)?;
             id_array_offsets.push(id_array_offset as u32);
             has_sub_expr |= this_expr_has_se;
         }
@@ -648,40 +672,37 @@ impl<'a> CommonSubExprOptimizer<'a> {
 
             // Then rewrite the expressions that have a cse count > 1.
             for (e, offset) in expr.iter().zip(id_array_offsets.iter()) {
-                let new_node = AexprNode::with_context_and_arena(
-                    e.node(),
-                    expr_arena,
-                    |ae_node, _expr_arena| {
-                        let (out, rewritten) =
-                            self.mutate_expression(ae_node, *offset as usize, is_group_by)?;
+                let ae_node = AexprNode::new(e.node());
 
-                        let out_node = out.node();
-                        let mut out_e = e.clone();
-                        if !rewritten {
-                            return Ok(out_e);
-                        }
-                        out_e.set_node(out_node);
+                let (out, rewritten) =
+                    self.mutate_expression(ae_node, *offset as usize, is_group_by)?;
 
-                        // If we don't end with an alias we add an alias. Because the normal left-hand
-                        // rule we apply for determining the name will not work we now refer to
-                        // intermediate temporary names starting with the `CSE_REPLACED` constant.
-                        if !e.has_alias() {
-                            let name = ae_node.to_field(schema)?.name;
-                            out_e.set_alias(ColumnName::from(name.as_str()));
-                        }
-                        PolarsResult::Ok(out_e)
-                    },
-                )?;
+                let out_node = out.node();
+                let mut out_e = e.clone();
+                let new_node = if !rewritten {
+                    out_e
+                } else {
+                    out_e.set_node(out_node);
+
+                    // If we don't end with an alias we add an alias. Because the normal left-hand
+                    // rule we apply for determining the name will not work we now refer to
+                    // intermediate temporary names starting with the `CSE_REPLACED` constant.
+                    if !e.has_alias() {
+                        let name = ae_node.to_field(schema, expr_arena)?.name;
+                        out_e.set_alias(ColumnName::from(name.as_str()));
+                    }
+                    out_e
+                };
                 new_expr.push(new_node)
             }
             // Add the tmp columns
-            for id in &self.replaced_identifiers {
-                let (node, _count) = self.se_count.get(id).unwrap();
+            for id in self.replaced_identifiers.inner.keys() {
+                let (node, _count) = self.se_count.get(id, expr_arena).unwrap();
                 let name = id.materialize();
                 let out_e = ExprIR::new(*node, OutputName::Alias(ColumnName::from(name)));
                 new_expr.push(out_e)
             }
-            let expr = ProjectionExprs::new_with_cse(new_expr, self.replaced_identifiers.len());
+            let expr = ProjectionExprs::new_with_cse(new_expr, self.replaced_identifiers.inner.len());
             Ok(Some(expr))
         } else {
             Ok(None)
@@ -691,27 +712,27 @@ impl<'a> CommonSubExprOptimizer<'a> {
 
 impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
     type Node = IRNode;
+    type Arena = Arena<IR>;
 
-    fn pre_visit(&mut self, node: &Self::Node) -> PolarsResult<RewriteRecursion> {
+    fn pre_visit(&mut self, node: &Self::Node, arena: &mut Self::Arena) -> PolarsResult<RewriteRecursion> {
         use IR::*;
-        Ok(match node.to_alp() {
+        Ok(match node.to_alp(arena) {
             Select { .. } | HStack { .. } | GroupBy { .. } => RewriteRecursion::MutateAndContinue,
             _ => RewriteRecursion::NoMutateAndContinue,
         })
     }
 
-    fn mutate(&mut self, mut node: Self::Node) -> PolarsResult<Self::Node> {
+    fn mutate(&mut self, mut node: Self::Node, lp_arena: &mut Self::Arena) -> PolarsResult<Self::Node> {
         let mut expr_arena = Arena::new();
         std::mem::swap(self.expr_arena, &mut expr_arena);
         let mut id_array_offsets = std::mem::take(&mut self.id_array_offsets);
 
-        self.se_count.clear();
+        self.se_count.inner.clear();
         self.id_array.clear();
         id_array_offsets.clear();
-        self.replaced_identifiers.clear();
+        self.replaced_identifiers.inner.clear();
 
         let arena_idx = node.node();
-        node.with_arena_mut(|lp_arena| {
             let alp = lp_arena.get(arena_idx);
 
             match alp {
@@ -804,8 +825,6 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
                 },
                 _ => {},
             }
-            PolarsResult::Ok(())
-        })?;
 
         std::mem::swap(self.expr_arena, &mut expr_arena);
         self.id_array_offsets = id_array_offsets;

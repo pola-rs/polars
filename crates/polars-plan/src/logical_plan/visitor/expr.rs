@@ -98,7 +98,7 @@ pub struct AexprNode {
 }
 
 impl AexprNode {
-    fn new(node: Node) -> Self {
+    pub fn new(node: Node) -> Self {
         Self { node  }
     }
 
@@ -121,14 +121,27 @@ impl AexprNode {
         aexpr.to_field(schema, Context::Default, arena)
     }
 
+    pub fn assign(&mut self, ae: AExpr, arena: &mut Arena<AExpr>) {
+        let node = arena.add(ae);
+        self.node = node;
+    }
+
 
     #[cfg(feature = "cse")]
     pub(crate) fn is_leaf(&self, arena: &Arena<AExpr>) -> bool {
         matches!(self.to_aexpr(arena), AExpr::Column(_) | AExpr::Literal(_))
     }
+
+    pub(crate) fn hashable_and_cmp<'a>(&'a self, arena: &'a Arena<AExpr>) -> AExprArena<'a> {
+        AExprArena {
+            node: self.node,
+            arena
+        }
+    }
 }
 
 
+#[derive(Debug)]
 pub struct AExprArena<'a> {
     node: Node,
     arena: &'a Arena<AExpr>
@@ -190,9 +203,7 @@ impl AExpr {
             (BinaryExpr { op: l, .. }, BinaryExpr { op: r, .. }) => l == r,
             _ => false,
         }
-
     }
-
 }
 
 impl<'a> AExprArena<'a> {

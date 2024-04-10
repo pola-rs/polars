@@ -12,11 +12,11 @@ struct UniqueScans {
 #[cfg(feature = "cse")]
 impl UniqueScans {
     fn insert(&mut self, node: Node, lp_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) {
-        let alp_node = unsafe { IRNode::from_raw(node, lp_arena as *const _ as *mut _) };
+        let alp_node = IRNode::new(node);
         self.ids.insert(
             self.ids
                 .hasher()
-                .hash_one(alp_node.hashable_and_cmp(expr_arena)),
+                .hash_one(alp_node.hashable_and_cmp(lp_arena, expr_arena)),
         );
         self.count += 1;
     }

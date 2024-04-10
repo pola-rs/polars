@@ -128,7 +128,9 @@ impl MetaNameSpace {
         let mut arena = Default::default();
         let node = to_aexpr(self.0, &mut arena);
         let mut visitor = TreeFmtVisitor::default();
-        AexprNode::with_context(node, &mut arena, |ae_node| ae_node.visit(&mut visitor, &mut arena))?;
+
+        AexprNode::new(node).visit(&mut visitor, &mut arena)?;
+
         Ok(visitor)
     }
 }

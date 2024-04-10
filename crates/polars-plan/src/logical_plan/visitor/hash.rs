@@ -9,9 +9,10 @@ use crate::prelude::aexpr::traverse_and_hash_aexpr;
 use crate::prelude::ExprIR;
 
 impl IRNode {
-    pub(crate) fn hashable_and_cmp<'a>(&'a self, expr_arena: &'a Arena<AExpr>) -> HashableEqLP<'a> {
+    pub(crate) fn hashable_and_cmp<'a>(&'a self, lp_arena: &'a Arena<IR>, expr_arena: &'a Arena<AExpr>) -> HashableEqLP<'a> {
         HashableEqLP {
-            node: self,
+            node: *self,
+            lp_arena,
             expr_arena,
             ignore_cache: false,
         }
@@ -19,7 +20,8 @@ impl IRNode {
 }
 
 pub(crate) struct HashableEqLP<'a> {
-    node: &'a IRNode,
+    node: IRNode,
+    lp_arena: &'a Arena<IR>,
     expr_arena: &'a Arena<AExpr>,
     ignore_cache: bool,
 }

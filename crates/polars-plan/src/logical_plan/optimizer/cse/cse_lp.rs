@@ -158,8 +158,9 @@ impl LpIdentifierVisitor<'_> {
 
 impl Visitor for LpIdentifierVisitor<'_> {
     type Node = IRNode;
+    type Arena = Arena<IR>;
 
-    fn pre_visit(&mut self, _node: &Self::Node) -> PolarsResult<VisitRecursion> {
+    fn pre_visit(&mut self, _node: &Self::Node, arena: &mut Self::Arena) -> PolarsResult<VisitRecursion> {
         self.visit_stack
             .push(VisitRecord::Entered(self.pre_visit_idx));
         self.pre_visit_idx += 1;
@@ -171,7 +172,7 @@ impl Visitor for LpIdentifierVisitor<'_> {
         Ok(VisitRecursion::Continue)
     }
 
-    fn post_visit(&mut self, node: &Self::Node) -> PolarsResult<VisitRecursion> {
+    fn post_visit(&mut self, node: &Self::Node, arena: &mut Self::Arena) -> PolarsResult<VisitRecursion> {
         self.post_visit_idx += 1;
 
         let (pre_visit_idx, sub_plan_id) = self.pop_until_entered();
@@ -226,8 +227,9 @@ impl<'a> CommonSubPlanRewriter<'a> {
 
 impl RewritingVisitor for CommonSubPlanRewriter<'_> {
     type Node = IRNode;
+    type Arena = Arena<IR>;
 
-    fn pre_visit(&mut self, _lp_node: &Self::Node) -> PolarsResult<RewriteRecursion> {
+    fn pre_visit(&mut self, _lp_node: &Self::Node, arena: &mut Self::Arena) -> PolarsResult<RewriteRecursion> {
         if self.visited_idx >= self.identifier_array.len()
             || self.max_post_visit_idx > self.identifier_array[self.visited_idx].0
         {
@@ -258,7 +260,7 @@ impl RewritingVisitor for CommonSubPlanRewriter<'_> {
         }
     }
 
-    fn mutate(&mut self, mut node: Self::Node) -> PolarsResult<Self::Node> {
+    fn mutate(&mut self, mut node: Self::Node, arena: &mut Self::Arena) -> PolarsResult<Self::Node> {
         let (post_visit_count, id) = &self.identifier_array[self.visited_idx];
         self.visited_idx += 1;
 

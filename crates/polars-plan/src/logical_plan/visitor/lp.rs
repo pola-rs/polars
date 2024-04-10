@@ -12,7 +12,7 @@ pub struct IRNode {
 }
 
 impl IRNode {
-    fn new(node: Node) -> Self {
+    pub fn new(node: Node) -> Self {
         Self { node }
     }
 
