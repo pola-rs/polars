@@ -1,19 +1,40 @@
-use std::sync::{RwLock};
-use pyo3::prelude::*;
+use std::sync::RwLock;
 
-use polars_plan::logical_plan::{Context, IR};
-use polars_plan::prelude::{AExpr, PythonOptions};
+use polars_plan::logical_plan::{to_aexpr, Context, IR};
 use polars_plan::prelude::expr_ir::ExprIR;
+use polars_plan::prelude::{AExpr, PythonOptions};
 use polars_utils::arena::{Arena, Node};
+use pyo3::prelude::*;
+use visitor::{expr_nodes, nodes};
+
 use super::*;
+use crate::raise_err;
 
 #[derive(Clone)]
 #[pyclass]
-struct PyExprIR {
+pub(crate) struct PyExprIR {
     #[pyo3(get)]
     node: usize,
     #[pyo3(get)]
-    output_name: String
+    output_name: String,
+}
+
+impl From<ExprIR> for PyExprIR {
+    fn from(value: ExprIR) -> Self {
+        Self {
+            node: value.node().0,
+            output_name: value.output_name().into(),
+        }
+    }
+}
+
+impl From<&ExprIR> for PyExprIR {
+    fn from(value: &ExprIR) -> Self {
+        Self {
+            node: value.node().0,
+            output_name: value.output_name().into(),
+        }
+    }
 }
 
 #[pyclass]
@@ -22,7 +43,7 @@ struct NodeTraverser {
     lp_arena: Arc<RwLock<Arena<IR>>>,
     expr_arena: Arc<RwLock<Arena<AExpr>>>,
     scratch: Vec<Node>,
-    expr_scratch: Vec<ExprIR>
+    expr_scratch: Vec<ExprIR>,
 }
 
 impl NodeTraverser {
@@ -30,7 +51,7 @@ impl NodeTraverser {
         let lp_arena = self.lp_arena.read().unwrap();
         let this_node = lp_arena.get(self.root);
         self.scratch.clear();
-        this_node.copy_exprs(&mut self.expr_scratch);
+        this_node.copy_inputs(&mut self.scratch);
     }
 
     fn fill_expressions(&mut self) {
@@ -48,12 +69,13 @@ impl NodeTraverser {
 
     fn expr_to_list(&mut self) -> PyObject {
         Python::with_gil(|py| {
-            PyList::new(py, self.expr_scratch.drain(..).map(|e| {
-                PyExprIR {
-                    node: e.node().0,
-                    output_name: e.output_name().into()
-                }.into_py(py)
-            })).to_object(py)
+            PyList::new(
+                py,
+                self.expr_scratch
+                    .drain(..)
+                    .map(|e| PyExprIR::from(e).into_py(py)),
+            )
+            .to_object(py)
         })
     }
 }
@@ -85,7 +107,10 @@ impl NodeTraverser {
         let lp_arena = self.lp_arena.read().unwrap();
         let schema = lp_arena.get(self.root).schema(&lp_arena).into_owned();
         let expr_arena = self.expr_arena.read().unwrap();
-        let field = expr_arena.get(expr_node).to_field(&schema, Context::Default, &expr_arena).map_err(PyPolarsErr::from)?;
+        let field = expr_arena
+            .get(expr_node)
+            .to_field(&schema, Context::Default, &expr_arena)
+            .map_err(PyPolarsErr::from)?;
         Ok(Wrap(field.dtype).to_object(py))
     }
 
@@ -97,7 +122,7 @@ impl NodeTraverser {
     /// Set a python UDF that will replace the subtree location with this function src.
     fn set_udf(&mut self, function: PyObject, schema: Wrap<Schema>) {
         let ir = IR::PythonScan {
-            options: PythonOptions{
+            options: PythonOptions {
                 scan_fn: Some(function.into()),
                 schema: Arc::new(schema.0),
                 output_schema: None,
@@ -106,22 +131,48 @@ impl NodeTraverser {
                 predicate: None,
                 n_rows: None,
             },
-            predicate: None
+            predicate: None,
         };
         let mut lp_arena = self.lp_arena.write().unwrap();
         lp_arena.replace(self.root, ir);
     }
 
-    fn view_current_node(&self) -> PyObject {
-        // Insert Python objects/struct that map to our plan here
-        todo!()
+    fn view_current_node(&self, py: Python<'_>) -> PyResult<PyObject> {
+        self.view_node(py, self.root.0)
     }
 
-    fn view_expression(&self, node: usize) -> PyObject {
+    fn view_node(&self, py: Python<'_>, node: usize) -> PyResult<PyObject> {
+        let lp_arena = self.lp_arena.read().unwrap();
+        let lp_node = lp_arena.get(Node(node));
+        nodes::into_py(py, lp_node)
+    }
+
+    fn view_expression(&self, py: Python<'_>, node: usize) -> PyResult<PyObject> {
         let expr_arena = self.expr_arena.read().unwrap();
-        let _expr = expr_arena.get(Node(node));
-        // Insert Python objects/struct that map to our expr here
-        todo!()
+        let expr = expr_arena.get(Node(node));
+        expr_nodes::into_py(py, expr)
+    }
+
+    fn replace_expressions(&self, expressions: Vec<(usize, PyExpr)>) -> PyResult<Self> {
+        let mut expr_arena = self.expr_arena.read().unwrap().to_owned();
+        let nexprs = expr_arena.len();
+        for (idx, pyexpr) in expressions.iter() {
+            if *idx >= nexprs {
+                raise_err!(
+                    format!("Attempting to replace out of bounds index {}", *idx),
+                    OutOfBounds
+                );
+            }
+            let expr = to_aexpr(pyexpr.inner.clone(), &mut expr_arena);
+            expr_arena.swap(Node(*idx), expr);
+        }
+        Ok(NodeTraverser {
+            root: self.root,
+            lp_arena: self.lp_arena.clone(),
+            expr_arena: Arc::new(RwLock::new(expr_arena)),
+            scratch: vec![],
+            expr_scratch: vec![],
+        })
     }
 }
 
@@ -141,7 +192,7 @@ impl PyLazyFrame {
             lp_arena: Arc::new(RwLock::new(lp_arena)),
             expr_arena: Arc::new(RwLock::new(expr_arena)),
             scratch: vec![],
-            expr_scratch: vec![]
+            expr_scratch: vec![],
         })
     }
 }

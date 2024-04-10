@@ -1,6 +1,6 @@
 mod exitable;
 mod visit;
-mod visitor;
+pub(crate) mod visitor;
 
 use std::collections::HashMap;
 use std::io::BufWriter;

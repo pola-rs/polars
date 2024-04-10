@@ -48,7 +48,7 @@ use jemallocator::Jemalloc;
 use mimalloc::MiMalloc;
 use pyo3::panic::PanicException;
 use pyo3::prelude::*;
-use pyo3::wrap_pyfunction;
+use pyo3::{wrap_pyfunction, wrap_pymodule};
 
 #[cfg(feature = "csv")]
 use crate::batched_csv::PyBatchedCsv;
@@ -96,6 +96,56 @@ static ALLOC: Jemalloc = Jemalloc;
 static ALLOC: MiMalloc = MiMalloc;
 
 #[pymodule]
+fn nodes(_py: Python, m: &PyModule) -> PyResult<()> {
+    use crate::lazyframe::visitor::nodes::*;
+    m.add_class::<PythonScan>().unwrap();
+    m.add_class::<Slice>().unwrap();
+    m.add_class::<Filter>().unwrap();
+    m.add_class::<Scan>().unwrap();
+    m.add_class::<DataFrameScan>().unwrap();
+    m.add_class::<SimpleProjection>().unwrap();
+    m.add_class::<Select>().unwrap();
+    m.add_class::<Sort>().unwrap();
+    m.add_class::<Cache>().unwrap();
+    m.add_class::<GroupBy>().unwrap();
+    m.add_class::<Join>().unwrap();
+    m.add_class::<HStack>().unwrap();
+    m.add_class::<Distinct>().unwrap();
+    m.add_class::<MapFunction>().unwrap();
+    m.add_class::<Union>().unwrap();
+    m.add_class::<HConcat>().unwrap();
+    m.add_class::<ExtContext>().unwrap();
+    m.add_class::<Sink>().unwrap();
+    Ok(())
+}
+
+#[pymodule]
+fn expr_nodes(_py: Python, m: &PyModule) -> PyResult<()> {
+    use crate::lazyframe::visitor::expr_nodes::*;
+    // Expressions
+    m.add_class::<Alias>().unwrap();
+    m.add_class::<Column>().unwrap();
+    m.add_class::<Literal>().unwrap();
+    m.add_class::<BinaryExpr>().unwrap();
+    m.add_class::<Cast>().unwrap();
+    m.add_class::<Sort>().unwrap();
+    m.add_class::<Gather>().unwrap();
+    m.add_class::<Filter>().unwrap();
+    m.add_class::<SortBy>().unwrap();
+    m.add_class::<Agg>().unwrap();
+    m.add_class::<Ternary>().unwrap();
+    m.add_class::<Function>().unwrap();
+    m.add_class::<Len>().unwrap();
+    m.add_class::<Window>().unwrap();
+    m.add_class::<PyOperator>().unwrap();
+    // Options
+    m.add_class::<PyWindowMapping>().unwrap();
+    m.add_class::<PyRollingGroupOptions>().unwrap();
+    m.add_class::<PyGroupbyOptions>().unwrap();
+    Ok(())
+}
+
+#[pymodule]
 fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     // Classes
     m.add_class::<PySeries>().unwrap();
@@ -110,6 +160,11 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     #[cfg(feature = "sql")]
     m.add_class::<PySQLContext>().unwrap();
 
+    // Submodules
+    // LogicalPlan objects
+    m.add_wrapped(wrap_pymodule!(nodes))?;
+    // Expr objects
+    m.add_wrapped(wrap_pymodule!(expr_nodes))?;
     // Functions - eager
     m.add_wrapped(wrap_pyfunction!(functions::concat_df))
         .unwrap();

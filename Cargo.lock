@@ -3248,6 +3248,7 @@ dependencies = [
  "polars-ops",
  "polars-parquet",
  "polars-plan",
+ "polars-time",
  "polars-utils",
  "pyo3",
  "pyo3-built",
