@@ -1830,7 +1830,7 @@ impl DataFrame {
         // a lot of indirection in both sorting and take
         let mut df = self.clone();
         let df = df.as_single_chunk_par();
-        let mut take = match (by_column.len(), has_struct) {
+        let take = match (by_column.len(), has_struct) {
             (1, false) => {
                 let s = &by_column[0];
                 let options = SortOptions {
@@ -1843,10 +1843,7 @@ impl DataFrame {
                 // no need to compute the sort indices and then take by these indices
                 // simply sort and return as frame
                 if df.width() == 1 && df.check_name_to_idx(s.name()).is_ok() {
-                    let mut out = s.sort_with(options)?;
-                    if let Some((offset, len)) = slice {
-                        out = out.slice(offset, len);
-                    }
+                    let out = s.sort_with(options)?;
 
                     return Ok(out.into_frame());
                 }
@@ -1867,10 +1864,6 @@ impl DataFrame {
                 }
             },
         };
-
-        if let Some((offset, len)) = slice {
-            take = take.slice(offset, len);
-        }
 
         // SAFETY:
         // the created indices are in bounds
