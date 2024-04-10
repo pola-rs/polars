@@ -10,6 +10,7 @@ mod optimization_checks;
 mod predicate_queries;
 mod projection_queries;
 mod queries;
+mod schema;
 #[cfg(feature = "streaming")]
 mod streaming;
 #[cfg(all(feature = "strings", feature = "cse"))]
