@@ -416,3 +416,31 @@ def test_df_explode_with_array() -> None:
         },
     )
     assert_frame_equal(df.explode("arr", "list"), expected_by_arr_and_list)
+
+
+def test_explode_nullable_list() -> None:
+    df = pl.DataFrame({"layout1": [None, [1, 2]], "b": [False, True]}).with_columns(
+        layout2=pl.when(pl.col("b")).then([1, 2]),
+    )
+
+    explode_df = df.explode("layout1", "layout2")
+    expected_df = pl.DataFrame(
+        {
+            "layout1": [None, 1, 2],
+            "b": [False, True, True],
+            "layout2": [None, 1, 2],
+        }
+    )
+    assert_frame_equal(explode_df, expected_df)
+
+    explode_expr = df.select(
+        pl.col("layout1").explode(),
+        pl.col("layout2").explode(),
+    )
+    expected_df = pl.DataFrame(
+        {
+            "layout1": [None, 1, 2],
+            "layout2": [None, 1, 2],
+        }
+    )
+    assert_frame_equal(explode_expr, expected_df)
