@@ -1906,7 +1906,7 @@ impl DataFrame {
         df.columns = df
             .sort_impl(
                 by_column,
-                SortMultipleOptions::from(options),
+                SortMultipleOptions::from(&options),
                 None,
             )?
             .columns;

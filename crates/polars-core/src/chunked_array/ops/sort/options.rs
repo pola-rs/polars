@@ -92,8 +92,8 @@ impl SortOptions {
     }
 }
 
-impl From<SortOptions> for SortMultipleOptions {
-    fn from(value: SortOptions) -> Self {
+impl From<&SortOptions> for SortMultipleOptions {
+    fn from(value: &SortOptions) -> Self {
         SortMultipleOptions {
             descending: vec![value.descending],
             nulls_last: value.nulls_last,

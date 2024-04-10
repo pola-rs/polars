@@ -249,7 +249,7 @@ pub(super) fn sort_accumulated(
     let sort_column = df.get_columns()[sort_idx].clone();
     df.sort_impl(
         vec![sort_column],
-        SortMultipleOptions::from(sort_options),
+        SortMultipleOptions::from(&sort_options),
         slice,
     )
 }
