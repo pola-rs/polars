@@ -9,7 +9,7 @@ pub(super) fn is_streamable_sort(
 ) -> bool {
     // check if slice is positive or maintain order is true
     if sort_options.maintain_order {
-        true
+        false
     } else if let Some((offset, _)) = slice {
         *offset >= 0
     } else {

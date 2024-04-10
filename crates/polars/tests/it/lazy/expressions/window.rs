@@ -247,7 +247,7 @@ fn test_window_mapping() -> PolarsResult<()> {
 
     // now sorted
     // this will trigger a fast path
-    let df = df.sort(["fruits"], vec![false], false)?;
+    let df = df.sort(["fruits"], Default::default())?;
 
     let out = df
         .clone()
