@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use arrow::array::{ArrayRef, BinaryArray, StaticArray};
-use arrow::compute::utils::combine_validities_and;
+use arrow::compute::utils::combine_validities_and_many;
 use polars_core::error::PolarsResult;
 use polars_row::RowsEncoded;
 
@@ -80,11 +80,12 @@ impl RowValues {
         Ok(if join_nulls {
             array
         } else {
-            let validity = self
+            let validities = self
                 .join_columns_material
                 .iter()
-                .map(|arr| arr.validity().cloned())
-                .fold(None, |l, r| combine_validities_and(l.as_ref(), r.as_ref()));
+                .map(|arr| arr.validity())
+                .collect::<Vec<_>>();
+            let validity = combine_validities_and_many(&validities);
             array.with_validity_typed(validity)
         })
     }

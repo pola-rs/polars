@@ -45,8 +45,6 @@ use polars_utils::hashing::BytesHash;
 use rayon::prelude::*;
 
 use super::IntoDf;
-const LHS_NAME: &str = "POLARS_K_L";
-const RHS_NAME: &str = "POLARS_K_R";
 
 pub trait DataFrameJoinOps: IntoDf {
     /// Generic join method. Can be used to join on multiple columns.
@@ -260,12 +258,8 @@ pub trait DataFrameJoinOps: IntoDf {
             };
         }
 
-        let lhs_keys = prepare_keys_multiple(&selected_left, args.join_nulls)?
-            .into_series()
-            .with_name(LHS_NAME);
-        let rhs_keys = prepare_keys_multiple(&selected_right, args.join_nulls)?
-            .into_series()
-            .with_name(RHS_NAME);
+        let lhs_keys = prepare_keys_multiple(&selected_left, args.join_nulls)?.into_series();
+        let rhs_keys = prepare_keys_multiple(&selected_right, args.join_nulls)?.into_series();
         let names_right = selected_right.iter().map(|s| s.name()).collect::<Vec<_>>();
 
         // Multiple keys.

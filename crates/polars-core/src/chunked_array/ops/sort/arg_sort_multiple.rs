@@ -1,4 +1,4 @@
-use arrow::compute::utils::combine_validities_and;
+use arrow::compute::utils::combine_validities_and_many;
 use compare_inner::NullOrderCmp;
 use polars_row::{convert_columns, EncodingField, RowsEncoded};
 use polars_utils::iter::EnumerateIdxTrait;
@@ -121,7 +121,7 @@ pub fn encode_rows_vertical_par_unordered_broadcast_nulls(
             .collect::<Vec<_>>();
         let rows = _get_rows_encoded_unordered(&sliced)?;
 
-        let validity = sliced
+        let validities = sliced
             .iter()
             .flat_map(|s| {
                 let s = s.rechunk();
@@ -131,7 +131,9 @@ pub fn encode_rows_vertical_par_unordered_broadcast_nulls(
                     .into_iter()
                     .map(|arr| arr.validity().cloned())
             })
-            .fold(None, |l, r| combine_validities_and(l.as_ref(), r.as_ref()));
+            .collect::<Vec<_>>();
+
+        let validity = combine_validities_and_many(&validities);
         Ok(rows.into_array().with_validity_typed(validity))
     });
     let chunks = POOL.install(|| chunks.collect::<PolarsResult<Vec<_>>>());
