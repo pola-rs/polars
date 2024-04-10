@@ -1,4 +1,3 @@
-use ahash::HashSet;
 use polars_core::prelude::arity::binary_elementwise_values;
 use polars_core::prelude::*;
 
@@ -20,16 +19,7 @@ pub fn business_day_count(
         polars_bail!(ComputeError:"`week_mask` must have at least one business day");
     }
 
-    // De-dupe and sort holidays, and exclude non-business days.
-    let mut holidays: Vec<i32> = holidays
-        .iter()
-        .filter(|&x| *unsafe { week_mask.get_unchecked(weekday(*x)) })
-        .cloned()
-        .collect::<HashSet<_>>()
-        .into_iter()
-        .collect();
-    holidays.sort_unstable();
-
+    let holidays = normalise_holidays(holidays, &week_mask);
     let start_dates = start.date()?;
     let end_dates = end.date()?;
     let n_business_days_in_week_mask = week_mask.iter().filter(|&x| *x).count() as i32;
@@ -98,10 +88,10 @@ fn business_day_count_impl(
         Ok(x) => x,
         Err(x) => x,
     } as i32;
-    let holidays_end = match holidays.binary_search(&end_date) {
-        Ok(x) => x,
-        Err(x) => x,
-    } as i32;
+    let holidays_end = match holidays[(holidays_begin as usize)..].binary_search(&end_date) {
+        Ok(x) => x as i32 + holidays_begin,
+        Err(x) => x as i32 + holidays_begin,
+    };
 
     let mut start_weekday = weekday(start_date);
     let diff = end_date - start_date;
@@ -124,6 +114,21 @@ fn business_day_count_impl(
     } else {
         count
     }
+}
+
+/// Sort and deduplicate holidays and remove holidays that are not business days.
+fn normalise_holidays(holidays: &[i32], week_mask: &[bool; 7]) -> Vec<i32> {
+    let mut holidays: Vec<i32> = holidays.to_vec();
+    holidays.sort_unstable();
+    let mut previous_holiday: Option<i32> = None;
+    holidays.retain(|&x| {
+        if (Some(x) == previous_holiday) || !unsafe { *week_mask.get_unchecked(weekday(x)) } {
+            return false;
+        }
+        previous_holiday = Some(x);
+        true
+    });
+    holidays
 }
 
 fn weekday(x: i32) -> usize {
