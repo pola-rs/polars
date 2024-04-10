@@ -29,7 +29,7 @@ fn check_eligible(
     right: &Node,
     lp_node: Node,
     expr_arena: &Arena<AExpr>,
-    lp_arena: &Arena<FullAccessIR>,
+    lp_arena: &Arena<IR>,
 ) -> PolarsResult<(Option<bool>, Option<Field>)> {
     let Some(input_node) = lp_arena.get(lp_node).get_input() else {
         return Ok((None, None));
@@ -62,7 +62,7 @@ impl OptimizationRule for FusedArithmetic {
         &mut self,
         expr_arena: &mut Arena<AExpr>,
         expr_node: Node,
-        lp_arena: &Arena<FullAccessIR>,
+        lp_arena: &Arena<IR>,
         lp_node: Node,
     ) -> PolarsResult<Option<AExpr>> {
         let expr = expr_arena.get(expr_node);

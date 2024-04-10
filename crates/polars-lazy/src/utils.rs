@@ -7,10 +7,10 @@ use polars_plan::prelude::*;
 pub(crate) fn agg_source_paths(
     root_lp: Node,
     acc_paths: &mut PlHashSet<PathBuf>,
-    lp_arena: &Arena<FullAccessIR>,
+    lp_arena: &Arena<IR>,
 ) {
     lp_arena.iter(root_lp).for_each(|(_, lp)| {
-        use FullAccessIR::*;
+        use IR::*;
         if let Scan { paths, .. } = lp {
             for path in paths.as_ref() {
                 acc_paths.insert(path.clone());

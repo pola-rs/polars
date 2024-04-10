@@ -148,12 +148,12 @@ fn estimate_sizes(
 #[cfg(feature = "streaming")]
 pub fn set_estimated_row_counts(
     root: Node,
-    lp_arena: &mut Arena<FullAccessIR>,
+    lp_arena: &mut Arena<IR>,
     expr_arena: &Arena<AExpr>,
     mut _filter_count: usize,
     scratch: &mut Vec<Node>,
 ) -> (Option<usize>, usize, usize) {
-    use FullAccessIR::*;
+    use IR::*;
 
     fn apply_slice(out: &mut (Option<usize>, usize, usize), slice: Option<(i64, usize)>) {
         if let Some((_, len)) = slice {

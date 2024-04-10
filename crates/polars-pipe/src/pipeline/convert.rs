@@ -39,7 +39,7 @@ where
 
 #[allow(unused_variables)]
 fn get_source<F>(
-    source: FullAccessIR,
+    source: IR,
     operator_objects: &mut Vec<Box<dyn Operator>>,
     expr_arena: &Arena<AExpr>,
     to_physical: &F,
@@ -49,7 +49,7 @@ fn get_source<F>(
 where
     F: Fn(&ExprIR, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
 {
-    use FullAccessIR::*;
+    use IR::*;
     match source {
         DataFrameScan {
             df,
@@ -161,7 +161,7 @@ where
 
 pub fn get_sink<F>(
     node: Node,
-    lp_arena: &Arena<FullAccessIR>,
+    lp_arena: &Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     to_physical: &F,
     callbacks: &mut CallBacks,
@@ -169,7 +169,7 @@ pub fn get_sink<F>(
 where
     F: Fn(&ExprIR, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
 {
-    use FullAccessIR::*;
+    use IR::*;
     let out = match lp_arena.get(node) {
         Sink { input, payload } => {
             let input_schema = lp_arena.get(*input).schema(lp_arena);
@@ -567,14 +567,14 @@ where
 
 pub fn get_operator<F>(
     node: Node,
-    lp_arena: &Arena<FullAccessIR>,
+    lp_arena: &Arena<IR>,
     expr_arena: &Arena<AExpr>,
     to_physical: &F,
 ) -> PolarsResult<Box<dyn Operator>>
 where
     F: Fn(&ExprIR, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
 {
-    use FullAccessIR::*;
+    use IR::*;
     let op = match lp_arena.get(node) {
         SimpleProjection { input, columns, .. } => {
             let input_schema = lp_arena.get(*input).schema(lp_arena);
@@ -664,7 +664,7 @@ pub fn create_pipeline<F>(
     sources: &[Node],
     operators: Vec<Box<dyn Operator>>,
     sink_nodes: Vec<(usize, Node, Rc<RefCell<u32>>)>,
-    lp_arena: &Arena<FullAccessIR>,
+    lp_arena: &Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     to_physical: F,
     verbose: bool,
@@ -676,7 +676,7 @@ pub fn create_pipeline<F>(
 where
     F: Fn(&ExprIR, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
 {
-    use FullAccessIR::*;
+    use IR::*;
 
     let mut source_objects = Vec::with_capacity(sources.len());
     let mut operator_objects = Vec::with_capacity(operators.len() + 1);

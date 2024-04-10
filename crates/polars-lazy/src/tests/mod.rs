@@ -15,7 +15,7 @@ mod streaming;
 #[cfg(all(feature = "strings", feature = "cse"))]
 mod tpch;
 
-fn get_arenas() -> (Arena<AExpr>, Arena<FullAccessIR>) {
+fn get_arenas() -> (Arena<AExpr>, Arena<IR>) {
     let expr_arena = Arena::with_capacity(16);
     let lp_arena = Arena::with_capacity(8);
     (expr_arena, lp_arena)

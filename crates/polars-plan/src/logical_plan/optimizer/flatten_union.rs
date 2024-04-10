@@ -1,14 +1,14 @@
 use polars_utils::arena::{Arena, Node};
-use FullAccessIR::*;
+use IR::*;
 
 use super::OptimizationRule;
-use crate::prelude::FullAccessIR;
+use crate::prelude::IR;
 
 pub struct FlattenUnionRule {}
 
-fn get_union_inputs(node: Node, lp_arena: &Arena<FullAccessIR>) -> Option<&[Node]> {
+fn get_union_inputs(node: Node, lp_arena: &Arena<IR>) -> Option<&[Node]> {
     match lp_arena.get(node) {
-        FullAccessIR::Union { inputs, .. } => Some(inputs),
+        IR::Union { inputs, .. } => Some(inputs),
         _ => None,
     }
 }
@@ -16,10 +16,10 @@ fn get_union_inputs(node: Node, lp_arena: &Arena<FullAccessIR>) -> Option<&[Node
 impl OptimizationRule for FlattenUnionRule {
     fn optimize_plan(
         &mut self,
-        lp_arena: &mut polars_utils::arena::Arena<FullAccessIR>,
+        lp_arena: &mut polars_utils::arena::Arena<IR>,
         _expr_arena: &mut polars_utils::arena::Arena<crate::prelude::AExpr>,
         node: polars_utils::arena::Node,
-    ) -> Option<FullAccessIR> {
+    ) -> Option<IR> {
         let lp = lp_arena.get(node);
 
         match lp {

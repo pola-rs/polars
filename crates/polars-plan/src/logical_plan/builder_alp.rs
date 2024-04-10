@@ -4,19 +4,19 @@ use super::builder_functions::*;
 use super::*;
 use crate::logical_plan::projection_expr::ProjectionExprs;
 
-pub struct FullAccessIRBuilder<'a> {
+pub struct IRBuilder<'a> {
     root: Node,
     expr_arena: &'a mut Arena<AExpr>,
-    lp_arena: &'a mut Arena<FullAccessIR>,
+    lp_arena: &'a mut Arena<IR>,
 }
 
-impl<'a> FullAccessIRBuilder<'a> {
+impl<'a> IRBuilder<'a> {
     pub(crate) fn new(
         root: Node,
         expr_arena: &'a mut Arena<AExpr>,
-        lp_arena: &'a mut Arena<FullAccessIR>,
+        lp_arena: &'a mut Arena<IR>,
     ) -> Self {
-        FullAccessIRBuilder {
+        IRBuilder {
             root,
             expr_arena,
             lp_arena,
@@ -24,21 +24,21 @@ impl<'a> FullAccessIRBuilder<'a> {
     }
 
     pub(crate) fn from_lp(
-        lp: FullAccessIR,
+        lp: IR,
         expr_arena: &'a mut Arena<AExpr>,
-        lp_arena: &'a mut Arena<FullAccessIR>,
+        lp_arena: &'a mut Arena<IR>,
     ) -> Self {
         let root = lp_arena.add(lp);
-        FullAccessIRBuilder {
+        IRBuilder {
             root,
             expr_arena,
             lp_arena,
         }
     }
 
-    fn add_alp(self, lp: FullAccessIR) -> Self {
+    fn add_alp(self, lp: IR) -> Self {
         let node = self.lp_arena.add(lp);
-        FullAccessIRBuilder::new(node, self.expr_arena, self.lp_arena)
+        IRBuilder::new(node, self.expr_arena, self.lp_arena)
     }
 
     pub fn project(self, exprs: Vec<ExprIR>, options: ProjectionOptions) -> Self {
@@ -50,14 +50,14 @@ impl<'a> FullAccessIRBuilder<'a> {
             let schema =
                 expr_irs_to_schema(&exprs, &input_schema, Context::Default, self.expr_arena);
 
-            let lp = FullAccessIR::Select {
+            let lp = IR::Select {
                 expr: exprs.into(),
                 input: self.root,
                 schema: Arc::new(schema),
                 options,
             };
             let node = self.lp_arena.add(lp);
-            FullAccessIRBuilder::new(node, self.expr_arena, self.lp_arena)
+            IRBuilder::new(node, self.expr_arena, self.lp_arena)
         }
     }
 
@@ -89,13 +89,13 @@ impl<'a> FullAccessIRBuilder<'a> {
 
             polars_ensure!(count == schema.len(), Duplicate: "found duplicate columns");
 
-            let lp = FullAccessIR::SimpleProjection {
+            let lp = IR::SimpleProjection {
                 input: self.root,
                 columns: Arc::new(schema),
                 duplicate_check: false,
             };
             let node = self.lp_arena.add(lp);
-            Ok(FullAccessIRBuilder::new(
+            Ok(IRBuilder::new(
                 node,
                 self.expr_arena,
                 self.lp_arena,
@@ -125,13 +125,13 @@ impl<'a> FullAccessIRBuilder<'a> {
 
             polars_ensure!(count == schema.len(), Duplicate: "found duplicate columns");
 
-            let lp = FullAccessIR::SimpleProjection {
+            let lp = IR::SimpleProjection {
                 input: self.root,
                 columns: Arc::new(schema),
                 duplicate_check: false,
             };
             let node = self.lp_arena.add(lp);
-            Ok(FullAccessIRBuilder::new(
+            Ok(IRBuilder::new(
                 node,
                 self.expr_arena,
                 self.lp_arena,
@@ -139,7 +139,7 @@ impl<'a> FullAccessIRBuilder<'a> {
         }
     }
 
-    pub fn build(self) -> FullAccessIR {
+    pub fn build(self) -> IR {
         if self.root.0 == self.lp_arena.len() {
             self.lp_arena.pop().unwrap()
         } else {
@@ -158,7 +158,7 @@ impl<'a> FullAccessIRBuilder<'a> {
         let hstack_schema = expr_irs_to_schema(&exprs, &schema, Context::Default, self.expr_arena);
         new_schema.merge(hstack_schema);
 
-        let lp = FullAccessIR::HStack {
+        let lp = IR::HStack {
             input: self.root,
             exprs: ProjectionExprs::new(exprs),
             schema: Arc::new(new_schema),
@@ -195,7 +195,7 @@ impl<'a> FullAccessIRBuilder<'a> {
             new_schema.with_column(field.name().clone(), field.data_type().clone());
         }
 
-        let lp = FullAccessIR::HStack {
+        let lp = IR::HStack {
             input: self.root,
             exprs: ProjectionExprs::new(expr_irs),
             schema: Arc::new(new_schema),
@@ -209,7 +209,7 @@ impl<'a> FullAccessIRBuilder<'a> {
         let mut schema = (*self.schema().into_owned()).clone();
         explode_schema(&mut schema, &columns).unwrap();
 
-        let lp = FullAccessIR::MapFunction {
+        let lp = IR::MapFunction {
             input: self.root,
             function: FunctionNode::Explode {
                 columns,
@@ -256,7 +256,7 @@ impl<'a> FullAccessIRBuilder<'a> {
         );
         schema.merge(agg_schema);
 
-        let lp = FullAccessIR::GroupBy {
+        let lp = IR::GroupBy {
             input: self.root,
             keys,
             aggs,
@@ -296,7 +296,7 @@ impl<'a> FullAccessIRBuilder<'a> {
         )
         .unwrap();
 
-        let lp = FullAccessIR::Join {
+        let lp = IR::Join {
             input_left: self.root,
             input_right: other,
             schema,
@@ -311,7 +311,7 @@ impl<'a> FullAccessIRBuilder<'a> {
     pub fn melt(self, args: Arc<MeltArgs>) -> Self {
         let schema = self.schema();
         let schema = det_melt_schema(&args, &schema);
-        let lp = FullAccessIR::MapFunction {
+        let lp = IR::MapFunction {
             input: self.root,
             function: FunctionNode::Melt { args, schema },
         };
@@ -323,7 +323,7 @@ impl<'a> FullAccessIRBuilder<'a> {
         let schema_mut = Arc::make_mut(&mut schema);
         row_index_schema(schema_mut, name.as_ref());
 
-        let lp = FullAccessIR::MapFunction {
+        let lp = IR::MapFunction {
             input: self.root,
             function: FunctionNode::RowIndex {
                 name,

@@ -690,10 +690,10 @@ impl<'a> CommonSubExprOptimizer<'a> {
 }
 
 impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
-    type Node = FullAccessIRNode;
+    type Node = IRNode;
 
     fn pre_visit(&mut self, node: &Self::Node) -> PolarsResult<RewriteRecursion> {
-        use FullAccessIR::*;
+        use IR::*;
         Ok(match node.to_alp() {
             Select { .. } | HStack { .. } | GroupBy { .. } => RewriteRecursion::MutateAndContinue,
             _ => RewriteRecursion::NoMutateAndContinue,
@@ -715,7 +715,7 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
             let alp = lp_arena.get(arena_idx);
 
             match alp {
-                FullAccessIR::Select {
+                IR::Select {
                     input,
                     expr,
                     schema,
@@ -729,7 +729,7 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
                         false,
                         input_schema.as_ref().as_ref(),
                     )? {
-                        let lp = FullAccessIR::Select {
+                        let lp = IR::Select {
                             input: *input,
                             expr,
                             schema: schema.clone(),
@@ -738,7 +738,7 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
                         lp_arena.replace(arena_idx, lp);
                     }
                 },
-                FullAccessIR::HStack {
+                IR::HStack {
                     input,
                     exprs,
                     schema,
@@ -752,7 +752,7 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
                         false,
                         input_schema.as_ref().as_ref(),
                     )? {
-                        let lp = FullAccessIR::HStack {
+                        let lp = IR::HStack {
                             input: *input,
                             exprs,
                             schema: schema.clone(),
@@ -761,7 +761,7 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
                         lp_arena.replace(arena_idx, lp);
                     }
                 },
-                FullAccessIR::GroupBy {
+                IR::GroupBy {
                     input,
                     keys,
                     aggs,
@@ -785,12 +785,12 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
                         let maintain_order = *maintain_order;
                         let input = *input;
 
-                        let lp = FullAccessIRBuilder::new(input, &mut expr_arena, lp_arena)
+                        let lp = IRBuilder::new(input, &mut expr_arena, lp_arena)
                             .with_columns(aggs.cse_exprs().to_vec(), Default::default())
                             .build();
                         let input = lp_arena.add(lp);
 
-                        let lp = FullAccessIR::GroupBy {
+                        let lp = IR::GroupBy {
                             input,
                             keys,
                             aggs: aggs.default_exprs().to_vec(),
@@ -874,12 +874,12 @@ mod test {
         let (node, mut lp_arena, mut expr_arena) = lp.to_alp().unwrap();
         let mut optimizer = CommonSubExprOptimizer::new(&mut expr_arena);
 
-        let out = FullAccessIRNode::with_context(node, &mut lp_arena, |alp_node| {
+        let out = IRNode::with_context(node, &mut lp_arena, |alp_node| {
             alp_node.rewrite(&mut optimizer)
         })
         .unwrap();
 
-        let FullAccessIR::Select { expr, .. } = out.to_alp() else {
+        let IR::Select { expr, .. } = out.to_alp() else {
             unreachable!()
         };
 

@@ -13,10 +13,10 @@ pub(super) fn process_group_by(
     acc_projections: Vec<ColumnNode>,
     projected_names: PlHashSet<Arc<str>>,
     projections_seen: usize,
-    lp_arena: &mut Arena<FullAccessIR>,
+    lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
-) -> PolarsResult<FullAccessIR> {
-    use FullAccessIR::*;
+) -> PolarsResult<IR> {
+    use IR::*;
 
     // the custom function may need all columns so we do the projections here.
     if let Some(f) = apply {
@@ -31,7 +31,7 @@ pub(super) fn process_group_by(
         };
         let input = lp_arena.add(lp);
 
-        let builder = FullAccessIRBuilder::new(input, expr_arena, lp_arena);
+        let builder = IRBuilder::new(input, expr_arena, lp_arena);
         Ok(proj_pd.finish_node_simple_projection(&acc_projections, builder))
     } else {
         let has_pushed_down = !acc_projections.is_empty();
@@ -91,7 +91,7 @@ pub(super) fn process_group_by(
             expr_arena,
         )?;
 
-        let builder = FullAccessIRBuilder::new(input, expr_arena, lp_arena).group_by(
+        let builder = IRBuilder::new(input, expr_arena, lp_arena).group_by(
             keys,
             projected_aggs,
             apply,
