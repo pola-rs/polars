@@ -271,21 +271,10 @@ impl LazyFrame {
     /// }
     /// ```
     pub fn sort(self, by_column: &str, options: SortOptions) -> Self {
-        let descending = options.descending;
-        let nulls_last = options.nulls_last;
-        let maintain_order = options.maintain_order;
-        let multithreaded = options.multithreaded;
-
         let opt_state = self.get_opt_state();
         let lp = self
             .get_plan_builder()
-            .sort(
-                vec![col(by_column)],
-                vec![descending],
-                nulls_last,
-                maintain_order,
-                multithreaded,
-            )
+            .sort(vec![col(by_column)], SortMultipleOptions::from(&options))
             .build();
         Self::from_logical_plan(lp, opt_state)
     }
@@ -309,76 +298,41 @@ impl LazyFrame {
     ///         .sort_by_exprs(vec![col("sepal.width")], vec![false], false, false, true)
     /// }
     /// ```
-    pub fn sort_by_exprs<E: AsRef<[Expr]>, B: AsRef<[bool]>>(
+    pub fn sort_by_exprs<E: AsRef<[Expr]>>(
         self,
         by_exprs: E,
-        descending: B,
-        nulls_last: bool,
-        maintain_order: bool,
-        multithreaded: bool,
+        sort_options: SortMultipleOptions,
     ) -> Self {
         let by_exprs = by_exprs.as_ref().to_vec();
-        let descending = descending.as_ref().to_vec();
         if by_exprs.is_empty() {
             self
         } else {
             let opt_state = self.get_opt_state();
-            let lp = self
-                .get_plan_builder()
-                .sort(
-                    by_exprs,
-                    descending,
-                    nulls_last,
-                    maintain_order,
-                    multithreaded,
-                )
-                .build();
+            let lp = self.get_plan_builder().sort(by_exprs, sort_options).build();
             Self::from_logical_plan(lp, opt_state)
         }
     }
 
-    pub fn top_k<E: AsRef<[Expr]>, B: AsRef<[bool]>>(
+    pub fn top_k<E: AsRef<[Expr]>>(
         self,
         k: IdxSize,
         by_exprs: E,
-        descending: B,
-        nulls_last: bool,
-        maintain_order: bool,
-        multithreaded: bool,
+        sort_options: SortMultipleOptions,
     ) -> Self {
-        let mut descending = descending.as_ref().to_vec();
-        // top-k is reverse from sort
-        for v in &mut descending {
-            *v = !*v;
-        }
         // this will optimize to top-k
-        self.sort_by_exprs(
-            by_exprs,
-            descending,
-            nulls_last,
-            maintain_order,
-            multithreaded,
-        )
-        .slice(0, k)
+        self.sort_by_exprs(by_exprs, sort_options.reverse_order()).slice(0, k)
     }
 
-    pub fn bottom_k<E: AsRef<[Expr]>, B: AsRef<[bool]>>(
+    pub fn bottom_k<E: AsRef<[Expr]>>(
         self,
         k: IdxSize,
         by_exprs: E,
-        descending: B,
-        nulls_last: bool,
-        maintain_order: bool,
-        multithreaded: bool,
+        sort_options: SortMultipleOptions,
     ) -> Self {
-        let descending = descending.as_ref().to_vec();
         // this will optimize to bottom-k
         self.sort_by_exprs(
             by_exprs,
-            descending,
-            nulls_last,
-            maintain_order,
-            multithreaded,
+            sort_options
         )
         .slice(0, k)
     }

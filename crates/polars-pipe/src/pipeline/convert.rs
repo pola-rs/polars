@@ -341,7 +341,8 @@ where
         Sort {
             input,
             by_column,
-            args,
+            slice,
+            sort_options,
         } => {
             let input_schema = lp_arena.get(*input).schema(lp_arena).into_owned();
 
@@ -351,7 +352,8 @@ where
                     .unwrap();
                 let index = input_schema.try_index_of(by_column.as_ref())?;
 
-                let sort_sink = SortSink::new(index, args.clone(), input_schema);
+                let sort_sink =
+                    SortSink::new(index, slice.clone(), sort_options.clone(), input_schema);
                 Box::new(sort_sink) as Box<dyn SinkTrait>
             } else {
                 let sort_idx = by_column
@@ -364,7 +366,12 @@ where
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
 
-                let sort_sink = SortSinkMultiple::new(args.clone(), input_schema, sort_idx)?;
+                let sort_sink = SortSinkMultiple::new(
+                    slice.clone(),
+                    sort_options.clone(),
+                    input_schema,
+                    sort_idx,
+                )?;
                 Box::new(sort_sink) as Box<dyn SinkTrait>
             }
         },

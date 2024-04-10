@@ -295,28 +295,6 @@ pub struct LogicalPlanUdfOptions {
     pub fmt_str: &'static str,
 }
 
-#[derive(Clone, PartialEq, Eq, Debug, Default, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct SortArguments {
-    pub descending: Vec<bool>,
-    pub nulls_last: bool,
-    pub slice: Option<(i64, usize)>,
-    pub maintain_order: bool,
-    pub multithreaded: bool
-}
-
-
-impl From<&SortArguments> for SortMultipleOptions {
-    fn from(value: &SortArguments) -> Self {
-        SortMultipleOptions {
-            descending: value.descending.clone(),
-            nulls_last: value.nulls_last,
-            maintain_order: value.maintain_order,
-            multithreaded: value.multithreaded
-        }
-    }
-}
-
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg(feature = "python")]

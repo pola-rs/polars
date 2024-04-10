@@ -389,14 +389,16 @@ pub fn to_alp(
         LogicalPlan::Sort {
             input,
             by_column,
-            args,
+            slice,
+            sort_options,
         } => {
             let input = to_alp(owned(input), expr_arena, lp_arena)?;
             let by_column = to_expr_irs(by_column, expr_arena);
             IR::Sort {
                 input,
                 by_column,
-                args,
+                slice,
+                sort_options,
             }
         },
         LogicalPlan::Cache {
@@ -856,14 +858,16 @@ impl IR {
             IR::Sort {
                 input,
                 by_column,
-                args,
+                slice,
+                sort_options,
             } => {
                 let input = Arc::new(convert_to_lp(input, lp_arena));
                 let by_column = expr_irs_to_exprs(by_column, expr_arena);
                 LogicalPlan::Sort {
                     input,
                     by_column,
-                    args,
+                    slice,
+                    sort_options,
                 }
             },
             IR::Cache {

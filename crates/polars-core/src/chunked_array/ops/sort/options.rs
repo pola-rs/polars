@@ -107,3 +107,14 @@ impl From<&SortOptions> for SortMultipleOptions {
         }
     }
 }
+
+impl From<&SortMultipleOptions> for SortOptions {
+    fn from(value: &SortMultipleOptions) -> Self {
+        SortOptions {
+            descending: value.descending.first().copied().unwrap_or(false),
+            nulls_last: value.nulls_last,
+            multithreaded: value.multithreaded,
+            maintain_order: value.maintain_order,
+        }
+    }
+}

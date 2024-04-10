@@ -330,7 +330,8 @@ pub fn create_physical_plan(
         Sort {
             input,
             by_column,
-            args,
+            slice,
+            sort_options,
         } => {
             let input_schema = lp_arena.get(input).schema(lp_arena);
             let by_column = create_physical_expressions_from_irs(
@@ -344,7 +345,8 @@ pub fn create_physical_plan(
             Ok(Box::new(executors::SortExec {
                 input,
                 by_column,
-                args,
+                slice,
+                sort_options,
             }))
         },
         Cache {

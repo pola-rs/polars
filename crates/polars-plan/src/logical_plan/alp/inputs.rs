@@ -69,11 +69,15 @@ impl IR {
                 options: options.clone(),
             },
             Sort {
-                by_column, args, ..
+                by_column,
+                slice,
+                sort_options,
+                ..
             } => Sort {
                 input: inputs[0],
                 by_column: by_column.clone(),
-                args: args.clone(),
+                slice: slice.clone(),
+                sort_options: sort_options.clone(),
             },
             Cache { id, cache_hits, .. } => Cache {
                 input: inputs[0],

@@ -204,7 +204,8 @@ pub enum LogicalPlan {
     Sort {
         input: Arc<LogicalPlan>,
         by_column: Vec<Expr>,
-        args: SortArguments,
+        slice: Option<(i64, usize)>,
+        sort_options: SortMultipleOptions,
     },
     /// Slice the table
     Slice {
@@ -264,7 +265,7 @@ impl Clone for LogicalPlan {
             Self::Join { input_left, input_right, schema, left_on, right_on, options } => Self::Join { input_left: input_left.clone(), input_right: input_right.clone(), schema: schema.clone(), left_on: left_on.clone(), right_on: right_on.clone(), options: options.clone() },
             Self::HStack { input, exprs, schema, options } => Self::HStack { input: input.clone(), exprs: exprs.clone(), schema: schema.clone(), options: options.clone() },
             Self::Distinct { input, options } => Self::Distinct { input: input.clone(), options: options.clone() },
-            Self::Sort { input, by_column, args } => Self::Sort { input: input.clone(), by_column: by_column.clone(), args: args.clone() },
+            Self::Sort {input,by_column, slice, sort_options } => Self::Sort { input: input.clone(), by_column: by_column.clone(), slice: slice.clone(), sort_options: sort_options.clone() },
             Self::Slice { input, offset, len } => Self::Slice { input: input.clone(), offset: offset.clone(), len: len.clone() },
             Self::MapFunction { input, function } => Self::MapFunction { input: input.clone(), function: function.clone() },
             Self::Union { inputs, options } => Self::Union { inputs: inputs.clone(), options: options.clone() },

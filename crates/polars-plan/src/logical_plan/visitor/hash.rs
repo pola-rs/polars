@@ -118,10 +118,12 @@ impl Hash for HashableEqLP<'_> {
             IR::Sort {
                 input: _,
                 by_column,
-                args,
+                slice,
+                sort_options,
             } => {
                 hash_exprs(by_column, self.expr_arena, state);
-                args.hash(state);
+                slice.hash(state);
+                sort_options.hash(state);
             },
             IR::GroupBy {
                 input: _,
@@ -321,14 +323,19 @@ impl HashableEqLP<'_> {
                 IR::Sort {
                     input: _,
                     by_column: cl,
-                    args: al,
+                    slice: l_slice,
+                    sort_options: l_options,
                 },
                 IR::Sort {
                     input: _,
                     by_column: cr,
-                    args: ar,
+                    slice: r_slice,
+                    sort_options: r_options,
                 },
-            ) => al == ar && expr_irs_eq(cl, cr, self.expr_arena),
+            ) => {
+                (l_slice == r_slice && l_options == r_options)
+                    && expr_irs_eq(cl, cr, self.expr_arena)
+            },
             (
                 IR::GroupBy {
                     input: _,
