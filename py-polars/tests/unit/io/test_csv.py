@@ -541,6 +541,11 @@ def test_compressed_csv(io_files_path: Path) -> None:
     out = pl.read_csv(str(csv_file), truncate_ragged_lines=True)
     assert_frame_equal(out, expected)
 
+    # now with schema defined
+    schema = {"a": pl.Int64, "b": pl.Utf8, "c": pl.Float64}
+    out = pl.read_csv(str(csv_file), schema=schema, truncate_ragged_lines=True)
+    assert_frame_equal(out, expected)
+
     # now with column projection
     out = pl.read_csv(csv_bytes, columns=["a", "b"])
     expected = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]})
