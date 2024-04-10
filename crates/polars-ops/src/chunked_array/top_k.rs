@@ -211,21 +211,25 @@ pub fn top_k(s: &[Series], descending: bool) -> PolarsResult<Series> {
 pub fn top_k_by(
     s: &[Series],
     by: &[Series],
-    mut sort_options: SortMultipleOptions,
+    sort_options: SortMultipleOptions,
 ) -> PolarsResult<Series> {
-    // Top k is reversed bottom k
-    sort_options = sort_options.with_order_reversed();
-
     let (k, src) = extract_target_and_k(s)?;
 
     if src.is_empty() {
         return Ok(src.clone());
     }
 
-    let idx = _arg_bottom_k(k as usize, src.len(), by, &mut sort_options)?;
+    let multithreaded = sort_options.multithreaded;
+
+    let idx = _arg_bottom_k(
+        k as usize,
+        src.len(),
+        by,
+        &mut sort_options.with_order_reversed(),
+    )?;
 
     let result = unsafe {
-        if sort_options.multithreaded {
+        if multithreaded {
             src.take_unchecked_threaded(&idx.into_inner(), false)
         } else {
             src.take_unchecked(&idx.into_inner())

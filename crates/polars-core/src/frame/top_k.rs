@@ -11,18 +11,15 @@ impl DataFrame {
         sort_options: SortMultipleOptions,
     ) -> PolarsResult<DataFrame> {
         let by_column = self.select_series(by_column)?;
-        self.top_k_impl(k, by_column, sort_options)
+        self.bottom_k_impl(k, by_column, sort_options.with_order_reversed())
     }
 
-    pub(crate) fn top_k_impl(
+    pub(crate) fn bottom_k_impl(
         &self,
         k: usize,
         by_column: Vec<Series>,
         mut sort_options: SortMultipleOptions,
     ) -> PolarsResult<DataFrame> {
-        // Top k is reversed bottom k
-        sort_options = sort_options.with_order_reversed();
-
         let first_descending = sort_options.descending[0];
         let first_by_column = by_column[0].name().to_string();
 
