@@ -122,8 +122,9 @@ pub struct ExprMapper<F> {
 
 impl<F: FnMut(Expr) -> PolarsResult<Expr>> RewritingVisitor for ExprMapper<F> {
     type Node = Expr;
+    type Arena = ();
 
-    fn mutate(&mut self, node: Self::Node) -> PolarsResult<Self::Node> {
+    fn mutate(&mut self, node: Self::Node, _arena: &mut Self::Arena) -> PolarsResult<Self::Node> {
         (self.f)(node)
     }
 }
@@ -141,11 +142,11 @@ impl Expr {
     }
 
     pub fn map_expr<F: FnMut(Self) -> Self>(self, mut f: F) -> Self {
-        self.rewrite(&mut ExprMapper { f: |e| Ok(f(e)) }).unwrap()
+        self.rewrite(&mut ExprMapper { f: |e| Ok(f(e)) }, &mut ()).unwrap()
     }
 
     pub fn try_map_expr<F: FnMut(Self) -> PolarsResult<Self>>(self, f: F) -> PolarsResult<Self> {
-        self.rewrite(&mut ExprMapper { f })
+        self.rewrite(&mut ExprMapper { f }, &mut ())
     }
 }
 

@@ -315,10 +315,11 @@ pub(crate) struct TreeFmtVisitor {
 
 impl Visitor for TreeFmtVisitor {
     type Node = AexprNode;
+    type Arena = Arena<AExpr>;
 
     /// Invoked before any children of `node` are visited.
-    fn pre_visit(&mut self, node: &Self::Node) -> PolarsResult<VisitRecursion> {
-        let ae = node.to_aexpr();
+    fn pre_visit(&mut self, node: &Self::Node, arena: &mut Self::Arena) -> PolarsResult<VisitRecursion> {
+        let ae = node.to_aexpr(arena);
         let repr = format!("{:E}", ae);
 
         if self.levels.len() <= self.depth {
@@ -342,7 +343,7 @@ impl Visitor for TreeFmtVisitor {
         Ok(VisitRecursion::Continue)
     }
 
-    fn post_visit(&mut self, _node: &Self::Node) -> PolarsResult<VisitRecursion> {
+    fn post_visit(&mut self, _node: &Self::Node, _arena: &mut Self::Arena) -> PolarsResult<VisitRecursion> {
         // we finished this branch so we decrease in depth, back the caller node
         self.depth -= 1;
 

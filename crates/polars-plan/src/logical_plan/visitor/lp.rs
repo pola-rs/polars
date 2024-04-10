@@ -9,115 +9,65 @@ use crate::prelude::*;
 #[derive(Copy, Clone, Debug)]
 pub struct IRNode {
     node: Node,
-    arena: *mut Arena<IR>,
 }
 
 impl IRNode {
-    /// Don't use this directly, use [`Self::with_context`]
-    ///
-    /// # Safety
-    /// This will keep a pointer to `arena`. The caller must ensure it stays alive.
-    unsafe fn new(node: Node, arena: &mut Arena<IR>) -> Self {
-        Self { node, arena }
+    fn new(node: Node) -> Self {
+        Self { node }
     }
 
-    /// # Safety
-    /// This will keep a pointer to `arena`. The caller must ensure it stays alive.
-    pub(crate) unsafe fn from_raw(node: Node, arena: *mut Arena<IR>) -> Self {
-        Self { node, arena }
-    }
-
-    #[cfg(feature = "cse")]
-    pub(crate) fn get_arena_raw(&self) -> *mut Arena<IR> {
-        self.arena
-    }
-
-    /// Safe interface. Take the `&mut Arena` only for the duration of `op`.
-    pub fn with_context<F, T>(node: Node, arena: &mut Arena<IR>, mut op: F) -> T
-    where
-        F: FnMut(IRNode) -> T,
-    {
-        // SAFETY: we drop this context before arena is out of scope
-        unsafe { op(Self::new(node, arena)) }
-    }
 
     pub fn node(&self) -> Node {
         self.node
     }
 
-    pub fn with_arena<'a, F, T>(&self, op: F) -> T
-    where
-        F: Fn(&'a Arena<IR>) -> T,
-    {
-        let arena = unsafe { &(*self.arena) };
-
-        op(arena)
-    }
-
-    pub fn with_arena_mut<'a, F, T>(&mut self, op: F) -> T
-    where
-        F: FnOnce(&'a mut Arena<IR>) -> T,
-    {
-        let arena = unsafe { &mut (*self.arena) };
-
-        op(arena)
-    }
-
-    /// Add a new `IR` to the arena and set that node to `Self`.
-    pub fn assign(&mut self, ae: IR) {
-        let node = self.with_arena_mut(|arena| arena.add(ae));
-        self.node = node
-    }
 
     pub fn replace_node(&mut self, node: Node) {
         self.node = node;
     }
 
     /// Replace the current `Node` with a new `IR`.
-    pub fn replace(&mut self, ae: IR) {
+    pub fn replace(&mut self, ae: IR, arena: &mut Arena<IR>) {
         let node = self.node;
-        self.with_arena_mut(|arena| arena.replace(node, ae));
+        arena.replace(node, ae)
     }
 
-    pub fn to_alp(&self) -> &IR {
-        self.with_arena(|arena| arena.get(self.node))
+    pub fn to_alp<'a>(&self, arena: &'a Arena<IR>) -> &'a IR {
+         arena.get(self.node)
     }
 
-    pub fn to_alp_mut(&mut self) -> &mut IR {
-        let node = self.node;
-        self.with_arena_mut(|arena| arena.get_mut(node))
+    pub fn to_alp_mut<'a>(&mut self, arena: &'a mut Arena<IR>) -> &'a mut IR {
+        arena.get_mut(self.node)
     }
 
-    pub fn schema(&self) -> Cow<SchemaRef> {
-        self.with_arena(|arena| arena.get(self.node).schema(arena))
-    }
-
-    /// Take a [`Node`] and convert it an [`IRNode`] and call
-    /// `F` with `self` and the new created [`IRNode`]
-    pub fn binary<F, T>(&self, other: Node, op: F) -> T
-    where
-        F: FnOnce(&IRNode, &IRNode) -> T,
-    {
-        // this is safe as we remain in context
-        let other = unsafe { IRNode::from_raw(other, self.arena) };
-        op(self, &other)
-    }
+    // /// Take a [`Node`] and convert it an [`IRNode`] and call
+    // /// `F` with `self` and the new created [`IRNode`]
+    // pub fn binary<F, T>(&self, other: Node, op: F) -> T
+    // where
+    //     F: FnOnce(&IRNode, &IRNode) -> T,
+    // {
+    //     // this is safe as we remain in context
+    //     let other = unsafe { IRNode::from_raw(other, self.arena) };
+    //     op(self, &other)
+    // }
 }
 
 impl TreeWalker for IRNode {
-    fn apply_children<'a>(
-        &'a self,
-        op: &mut dyn FnMut(&Self) -> PolarsResult<VisitRecursion>,
+    type Arena = Arena<IR>;
+
+    fn apply_children(
+        &self,
+        op: &mut dyn FnMut(&Self, &mut Self::Arena) -> PolarsResult<VisitRecursion>,
+        arena: &mut Self::Arena
     ) -> PolarsResult<VisitRecursion> {
         let mut scratch = unitvec![];
 
-        self.to_alp().copy_inputs(&mut scratch);
+        self.to_alp(arena).copy_inputs(&mut scratch);
         for &node in scratch.as_slice() {
-            let lp_node = IRNode {
-                node,
-                arena: self.arena,
-            };
-            match op(&lp_node)? {
+            let lp_node = IRNode::new(
+                node
+            );
+            match op(&lp_node, arena)? {
                 // let the recursion continue
                 VisitRecursion::Continue | VisitRecursion::Skip => {},
                 // early stop
@@ -129,26 +79,26 @@ impl TreeWalker for IRNode {
 
     fn map_children(
         mut self,
-        op: &mut dyn FnMut(Self) -> PolarsResult<Self>,
+        op: &mut dyn FnMut(Self, &mut Self::Arena) -> PolarsResult<Self>,
+        arena: &mut Self::Arena
     ) -> PolarsResult<Self> {
         let mut inputs = vec![];
         let mut exprs = vec![];
 
-        let lp = self.to_alp();
+        let lp = arena.take(self.node);
         lp.copy_inputs(&mut inputs);
         lp.copy_exprs(&mut exprs);
 
         // rewrite the nodes
         for node in &mut inputs {
-            let lp_node = IRNode {
-                node: *node,
-                arena: self.arena,
-            };
-            *node = op(lp_node)?.node;
+            let lp_node = IRNode::new(
+                *node,
+            );
+            *node = op(lp_node, arena)?.node;
         }
 
         let lp = lp.with_exprs_and_input(exprs, inputs);
-        self.with_arena_mut(move |arena| arena.replace(self.node, lp));
+        arena.replace(self.node, lp);
         Ok(self)
     }
 }
