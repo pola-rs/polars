@@ -40,7 +40,11 @@ pub fn is_last_distinct(s: &Series) -> PolarsResult<BooleanChunked> {
         },
         #[cfg(feature = "dtype-struct")]
         Struct(_) => return is_last_distinct_struct(&s),
-        List(inner) if inner.is_numeric() => {
+        List(inner) => {
+            polars_ensure!(
+                !inner.is_nested(),
+                InvalidOperation: "`is_last_distinct` on list type is only allowed if the inner type is not nested."
+            );
             let ca = s.list().unwrap();
             return is_last_distinct_list(ca);
         },

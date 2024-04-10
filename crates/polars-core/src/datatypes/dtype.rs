@@ -221,8 +221,20 @@ impl DataType {
         matches!(self, DataType::List(_))
     }
 
+    /// Check if this [`DataType`] is a array
+    pub fn is_array(&self) -> bool {
+        #[cfg(feature = "dtype-array")]
+        {
+            matches!(self, DataType::Array(_, _))
+        }
+        #[cfg(not(feature = "dtype-array"))]
+        {
+            false
+        }
+    }
+
     pub fn is_nested(&self) -> bool {
-        self.is_list() || self.is_struct()
+        self.is_list() || self.is_struct() || self.is_array()
     }
 
     /// Check if this [`DataType`] is a struct
