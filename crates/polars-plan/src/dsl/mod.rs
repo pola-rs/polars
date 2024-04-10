@@ -21,7 +21,7 @@ pub mod dt;
 mod expr;
 mod expr_dyn_fn;
 mod from;
-pub(crate) mod function_expr;
+pub mod function_expr;
 pub mod functions;
 mod list;
 #[cfg(feature = "meta")]
