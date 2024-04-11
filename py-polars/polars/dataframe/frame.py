@@ -3302,7 +3302,7 @@ class DataFrame:
         *,
         compression: ParquetCompression = "zstd",
         compression_level: int | None = None,
-        statistics: bool = False,
+        statistics: bool = True,
         row_group_size: int | None = None,
         data_page_size: int | None = None,
         use_pyarrow: bool = False,
@@ -3329,7 +3329,7 @@ class DataFrame:
             - "zstd" : min-level: 1, max-level: 22.
 
         statistics
-            Write statistics to the parquet headers. This requires extra compute.
+            Write statistics to the parquet headers. This is the default behavior.
         row_group_size
             Size of the row groups in number of rows. Defaults to 512^2 rows.
         data_page_size

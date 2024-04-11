@@ -2116,7 +2116,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *,
         compression: str = "zstd",
         compression_level: int | None = None,
-        statistics: bool = False,
+        statistics: bool = True,
         row_group_size: int | None = None,
         data_pagesize_limit: int | None = None,
         maintain_order: bool = True,
@@ -2126,7 +2126,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         simplify_expression: bool = True,
         slice_pushdown: bool = True,
         no_optimization: bool = False,
-    ) -> DataFrame:
+    ) -> None:
         """
         Evaluate the query in streaming mode and write to a Parquet file.
 
@@ -2153,7 +2153,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             - "brotli" : min-level: 0, max-level: 11.
             - "zstd" : min-level: 1, max-level: 22.
         statistics
-            Write statistics to the parquet headers. This requires extra compute.
+            Write statistics to the parquet headers. This is the default behavior.
         row_group_size
             Size of the row groups in number of rows.
             If None (default), the chunks of the `DataFrame` are
