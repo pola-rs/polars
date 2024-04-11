@@ -8,8 +8,8 @@ import pytest
 import polars as pl
 from polars._utils.parse_expr_input import parse_as_expression
 from polars._utils.wrap import wrap_expr
-from polars.testing import assert_frame_equal
 from polars.exceptions import InvalidOperationError
+from polars.testing import assert_frame_equal
 
 
 def assert_expr_equal(result: pl.Expr, expected: pl.Expr) -> None:
