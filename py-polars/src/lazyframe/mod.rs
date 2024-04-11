@@ -462,9 +462,9 @@ impl PyLazyFrame {
     ) -> Self {
         let ldf = self.ldf.clone();
         ldf.sort(
-            by_column,
-            SortOptions {
-                descending,
+            [by_column],
+            SortMultipleOptions {
+                descending: vec![descending],
                 nulls_last,
                 multithreaded,
                 maintain_order,
