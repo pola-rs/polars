@@ -409,6 +409,34 @@ impl Expr {
     }
 
     /// Sort with given options.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use polars_core::prelude::*;
+    /// # use polars_lazy::prelude::*;
+    /// # fn main() -> PolarsResult<()> {
+    /// let lf = df! {
+    ///    "a" => [Some(5), Some(4), Some(3), Some(2), None]
+    /// }?
+    /// .lazy();
+    ///
+    /// let sorted = lf
+    ///     .select(
+    ///         vec![col("a").sort(SortOptions::default())],
+    ///     )
+    ///     .collect()?;
+    ///
+    /// assert_eq!(
+    ///     sorted,
+    ///     df! {
+    ///         "a" => [None, Some(2), Some(3), Some(4), Some(5)]
+    ///     }?
+    /// );
+    /// # Ok(())
+    /// # }
+    /// ```
+    /// See [`SortOptions`] for more options.
     pub fn sort(self, options: SortOptions) -> Self {
         Expr::Sort {
             expr: Arc::new(self),
@@ -1060,8 +1088,10 @@ impl Expr {
         }
     }
 
-    /// Sort this column by the ordering of another column.
+    /// Sort this column by the ordering of another column evaluated from given expr.
     /// Can also be used in a group_by context to sort the groups.
+    ///
+    /// # Example
     pub fn sort_by<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(
         self,
         by: E,

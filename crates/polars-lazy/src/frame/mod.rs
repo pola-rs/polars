@@ -308,9 +308,9 @@ impl LazyFrame {
     /// Add a sort operation to the logical plan.
     ///
     /// Sorts the LazyFrame by the provided list of expressions, which will be turned into
-    /// concrete columns before sorting. `reverse` is a list of `bool`, the same length as
-    /// `by_exprs`, that specifies whether each corresponding expression will be sorted
-    /// ascending (`false`) or descending (`true`).
+    /// concrete columns before sorting.
+    ///
+    /// See [`SortMultipleOptions`] for more options.
     ///
     /// # Example
     ///
