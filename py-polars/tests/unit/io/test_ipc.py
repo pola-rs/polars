@@ -280,8 +280,10 @@ def test_read_ipc_only_loads_selected_columns(
     """Only requested columns are loaded by ``read_ipc()``/``read_ipc_stream()``."""
     tmp_path.mkdir(exist_ok=True)
 
-    # Each column will be about 8MB of RAM
-    series = pl.arange(0, 1_000_000, dtype=pl.Int64, eager=True)
+    # Each column will be about 16MB of RAM. There's a fixed overhead tied to
+    # block size so smaller file sizes can be misleading in terms of memory
+    # usage.
+    series = pl.arange(0, 2_000_000, dtype=pl.Int64, eager=True)
 
     file_path = tmp_path / "multicolumn.ipc"
     df = pl.DataFrame(
@@ -302,5 +304,5 @@ def test_read_ipc_only_loads_selected_columns(
     df = read_ipc(stream, str(file_path), columns=["b"], rechunk=False, **kwargs)
     del df
     # Only one column's worth of memory should be used; 2 columns would be
-    # 16_000_000 at least, but there's some overhead.
-    assert 8_000_000 < memory_usage_without_pyarrow.get_peak() < 13_000_000
+    # 32_000_000 at least, but there's some overhead.
+    assert 16_000_000 < memory_usage_without_pyarrow.get_peak() < 23_000_000
