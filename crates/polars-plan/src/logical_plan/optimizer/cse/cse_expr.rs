@@ -1,3 +1,4 @@
+use std::marker::PhantomData;
 use polars_utils::vec::CapacityByFactor;
 
 use super::*;
@@ -159,12 +160,11 @@ impl<V> IdentifierMap<V> {
         self.inner.raw_entry().from_hash(id.hash(), |k| k.is_equal(&id, arena)).map(|(_k, v)| v)
     }
 
-    fn entry<F: FnOnce() -> V>(&mut self, id: Identifier, v: F, arena: &Arena<AExpr>) -> &mut V{
+    fn entry<'a, F: FnOnce() -> V>(&'a mut self, id: Identifier, v: F, arena: &Arena<AExpr>) -> &'a mut V{
         let h = id.hash();
         match self.inner.raw_entry_mut().from_hash(h, |k| k.is_equal(&id, arena)) {
             RawEntryMut::Occupied(mut entry) => {
-                let (_k, v) = entry.get_key_value_mut();
-                v
+                entry.into_mut()
             },
             RawEntryMut::Vacant(entry) => {
                 let (_, v) = entry.insert_with_hasher(h, id, v(), |id| id.hash());
@@ -372,7 +372,7 @@ impl Visitor for ExprIdentifierVisitor<'_> {
     type Node = AexprNode;
     type Arena = Arena<AExpr>;
 
-    fn pre_visit(&mut self, node: &Self::Node, arena: &mut Self::Arena) -> PolarsResult<VisitRecursion> {
+    fn pre_visit(&mut self, node: &Self::Node, arena: &Self::Arena) -> PolarsResult<VisitRecursion> {
         if skip_pre_visit(node.to_aexpr(arena), self.is_group_by) {
             // Still add to the stack so that a parent becomes invalidated.
             self.visit_stack
@@ -391,7 +391,7 @@ impl Visitor for ExprIdentifierVisitor<'_> {
         Ok(VisitRecursion::Continue)
     }
 
-    fn post_visit(&mut self, node: &Self::Node, arena: &mut Self::Arena) -> PolarsResult<VisitRecursion> {
+    fn post_visit(&mut self, node: &Self::Node, arena: &Self::Arena) -> PolarsResult<VisitRecursion> {
         let ae = node.to_aexpr(arena);
         self.post_visit_idx += 1;
 
@@ -586,7 +586,6 @@ impl RewritingVisitor for CommonSubExprRewriter<'_> {
 }
 
 pub(crate) struct CommonSubExprOptimizer<'a> {
-    expr_arena: &'a mut Arena<AExpr>,
     // amortize allocations
     // these are cleared per lp node
     se_count: SubExprCount,
@@ -595,17 +594,18 @@ pub(crate) struct CommonSubExprOptimizer<'a> {
     replaced_identifiers: IdentifierMap<()>,
     // these are cleared per expr node
     visit_stack: Vec<VisitRecord>,
+    lifetime: PhantomData<&'a ()>
 }
 
 impl<'a> CommonSubExprOptimizer<'a> {
-    pub(crate) fn new(expr_arena: &'a mut Arena<AExpr>) -> Self {
+    pub(crate) fn new() -> Self {
         Self {
-            expr_arena,
             se_count: Default::default(),
             id_array: Default::default(),
             visit_stack: Default::default(),
             id_array_offsets: Default::default(),
             replaced_identifiers: Default::default(),
+            lifetime: PhantomData::default()
         }
     }
 
@@ -613,6 +613,7 @@ impl<'a> CommonSubExprOptimizer<'a> {
         &mut self,
         ae_node: AexprNode,
         is_group_by: bool,
+        expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<(usize, bool)> {
         let mut visitor = ExprIdentifierVisitor::new(
             &mut self.se_count,
@@ -620,7 +621,7 @@ impl<'a> CommonSubExprOptimizer<'a> {
             &mut self.visit_stack,
             is_group_by,
         );
-        ae_node.visit(&mut visitor, self.expr_arena).map(|_| ())?;
+        ae_node.visit(&mut visitor, expr_arena).map(|_| ())?;
         Ok((visitor.id_array_offset, visitor.has_sub_expr))
     }
 
@@ -631,6 +632,7 @@ impl<'a> CommonSubExprOptimizer<'a> {
         ae_node: AexprNode,
         id_array_offset: usize,
         is_group_by: bool,
+        expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<(AexprNode, bool)> {
         let mut rewriter = CommonSubExprRewriter::new(
             &self.se_count,
@@ -640,7 +642,7 @@ impl<'a> CommonSubExprOptimizer<'a> {
             is_group_by,
         );
         ae_node
-            .rewrite(&mut rewriter, self.expr_arena)
+            .rewrite(&mut rewriter, expr_arena)
             .map(|out| (out, rewriter.rewritten))
     }
 
@@ -662,7 +664,7 @@ impl<'a> CommonSubExprOptimizer<'a> {
 
             // Visit expressions and collect sub-expression counts.
             let ae_node = AexprNode::new(e.node());
-            let (id_array_offset, this_expr_has_se) = self.visit_expression(ae_node, is_group_by)?;
+            let (id_array_offset, this_expr_has_se) = self.visit_expression(ae_node, is_group_by, expr_arena)?;
             id_array_offsets.push(id_array_offset as u32);
             has_sub_expr |= this_expr_has_se;
         }
@@ -675,7 +677,7 @@ impl<'a> CommonSubExprOptimizer<'a> {
                 let ae_node = AexprNode::new(e.node());
 
                 let (out, rewritten) =
-                    self.mutate_expression(ae_node, *offset as usize, is_group_by)?;
+                    self.mutate_expression(ae_node, *offset as usize, is_group_by, expr_arena)?;
 
                 let out_node = out.node();
                 let mut out_e = e.clone();
@@ -712,19 +714,17 @@ impl<'a> CommonSubExprOptimizer<'a> {
 
 impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
     type Node = IRNode;
-    type Arena = Arena<IR>;
+    type Arena = IRNodeArena;
 
     fn pre_visit(&mut self, node: &Self::Node, arena: &mut Self::Arena) -> PolarsResult<RewriteRecursion> {
         use IR::*;
-        Ok(match node.to_alp(arena) {
+        Ok(match node.to_alp(&arena.0) {
             Select { .. } | HStack { .. } | GroupBy { .. } => RewriteRecursion::MutateAndContinue,
             _ => RewriteRecursion::NoMutateAndContinue,
         })
     }
 
-    fn mutate(&mut self, mut node: Self::Node, lp_arena: &mut Self::Arena) -> PolarsResult<Self::Node> {
-        let mut expr_arena = Arena::new();
-        std::mem::swap(self.expr_arena, &mut expr_arena);
+    fn mutate(&mut self, mut node: Self::Node, arena: &mut Self::Arena) -> PolarsResult<Self::Node> {
         let mut id_array_offsets = std::mem::take(&mut self.id_array_offsets);
 
         self.se_count.inner.clear();
@@ -733,7 +733,7 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
         self.replaced_identifiers.inner.clear();
 
         let arena_idx = node.node();
-            let alp = lp_arena.get(arena_idx);
+            let alp = arena.0.get(arena_idx);
 
             match alp {
                 IR::Select {
@@ -742,10 +742,10 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
                     schema,
                     options,
                 } => {
-                    let input_schema = lp_arena.get(*input).schema(lp_arena);
+                    let input_schema = arena.0.get(*input).schema(&arena.0);
                     if let Some(expr) = self.find_cse(
                         expr,
-                        &mut expr_arena,
+                        &mut arena.1,
                         &mut id_array_offsets,
                         false,
                         input_schema.as_ref().as_ref(),
@@ -756,7 +756,7 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
                             schema: schema.clone(),
                             options: *options,
                         };
-                        lp_arena.replace(arena_idx, lp);
+                        arena.0.replace(arena_idx, lp);
                     }
                 },
                 IR::HStack {
@@ -765,10 +765,10 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
                     schema,
                     options,
                 } => {
-                    let input_schema = lp_arena.get(*input).schema(lp_arena);
+                    let input_schema = arena.0.get(*input).schema(&arena.0);
                     if let Some(exprs) = self.find_cse(
                         exprs,
-                        &mut expr_arena,
+                        &mut arena.1,
                         &mut id_array_offsets,
                         false,
                         input_schema.as_ref().as_ref(),
@@ -779,7 +779,7 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
                             schema: schema.clone(),
                             options: *options,
                         };
-                        lp_arena.replace(arena_idx, lp);
+                        arena.0.replace(arena_idx, lp);
                     }
                 },
                 IR::GroupBy {
@@ -791,10 +791,10 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
                     apply,
                     schema,
                 } => {
-                    let input_schema = lp_arena.get(*input).schema(lp_arena);
+                    let input_schema = arena.0.get(*input).schema(&arena.0);
                     if let Some(aggs) = self.find_cse(
                         aggs,
-                        &mut expr_arena,
+                        &mut arena.1,
                         &mut id_array_offsets,
                         true,
                         input_schema.as_ref().as_ref(),
@@ -806,10 +806,10 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
                         let maintain_order = *maintain_order;
                         let input = *input;
 
-                        let lp = IRBuilder::new(input, &mut expr_arena, lp_arena)
+                        let lp = IRBuilder::new(input, &mut arena.1, &mut arena.0)
                             .with_columns(aggs.cse_exprs().to_vec(), Default::default())
                             .build();
-                        let input = lp_arena.add(lp);
+                        let input = arena.0.add(lp);
 
                         let lp = IR::GroupBy {
                             input,
@@ -820,13 +820,12 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
                             maintain_order,
                             apply,
                         };
-                        lp_arena.replace(arena_idx, lp);
+                        arena.0.replace(arena_idx, lp);
                     }
                 },
                 _ => {},
             }
 
-        std::mem::swap(self.expr_arena, &mut expr_arena);
         self.id_array_offsets = id_array_offsets;
         Ok(node)
     }
@@ -891,7 +890,7 @@ mod test {
             .build();
 
         let (node, mut lp_arena, mut expr_arena) = lp.to_alp().unwrap();
-        let mut optimizer = CommonSubExprOptimizer::new(&mut expr_arena);
+        let mut optimizer = CommonSubExprOptimizer::new();
 
         let out = IRNode::with_context(node, &mut lp_arena, |alp_node| {
             alp_node.rewrite(&mut optimizer)

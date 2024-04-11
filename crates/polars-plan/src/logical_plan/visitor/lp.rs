@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::marker::PhantomData;
 
 use polars_core::schema::SchemaRef;
 use polars_utils::unitvec;
@@ -13,7 +14,7 @@ pub struct IRNode {
 
 impl IRNode {
     pub fn new(node: Node) -> Self {
-        Self { node }
+        Self { node}
     }
 
 
@@ -40,29 +41,25 @@ impl IRNode {
         arena.get_mut(self.node)
     }
 
-    // /// Take a [`Node`] and convert it an [`IRNode`] and call
-    // /// `F` with `self` and the new created [`IRNode`]
-    // pub fn binary<F, T>(&self, other: Node, op: F) -> T
-    // where
-    //     F: FnOnce(&IRNode, &IRNode) -> T,
-    // {
-    //     // this is safe as we remain in context
-    //     let other = unsafe { IRNode::from_raw(other, self.arena) };
-    //     op(self, &other)
-    // }
+    pub fn assign(&mut self, ir_node: IR, arena: &mut Arena<IR>) {
+        let node = arena.add(ir_node);
+        self.node = node;
+    }
 }
 
+pub type IRNodeArena = (Arena<IR>, Arena<AExpr>);
+
 impl TreeWalker for IRNode {
-    type Arena = Arena<IR>;
+    type Arena = IRNodeArena;
 
     fn apply_children(
         &self,
-        op: &mut dyn FnMut(&Self, &mut Self::Arena) -> PolarsResult<VisitRecursion>,
-        arena: &mut Self::Arena
+        op: &mut dyn FnMut(&Self, &Self::Arena) -> PolarsResult<VisitRecursion>,
+        arena: &Self::Arena
     ) -> PolarsResult<VisitRecursion> {
         let mut scratch = unitvec![];
 
-        self.to_alp(arena).copy_inputs(&mut scratch);
+        self.to_alp(&arena.0).copy_inputs(&mut scratch);
         for &node in scratch.as_slice() {
             let lp_node = IRNode::new(
                 node
@@ -85,7 +82,7 @@ impl TreeWalker for IRNode {
         let mut inputs = vec![];
         let mut exprs = vec![];
 
-        let lp = arena.take(self.node);
+        let lp = arena.0.take(self.node);
         lp.copy_inputs(&mut inputs);
         lp.copy_exprs(&mut exprs);
 
@@ -98,7 +95,25 @@ impl TreeWalker for IRNode {
         }
 
         let lp = lp.with_exprs_and_input(exprs, inputs);
-        arena.replace(self.node, lp);
+        arena.0.replace(self.node, lp);
         Ok(self)
     }
+}
+
+pub(crate) fn with_ir_arena<F: FnOnce(&mut IRNodeArena) -> T, T>(lp_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>,
+                                                                 func: F,
+) -> T {
+    try_with_ir_arena(lp_arena, expr_arena, |a| Ok(func(a))).unwrap()
+}
+pub(crate) fn try_with_ir_arena<F: FnOnce(&mut IRNodeArena) -> PolarsResult<T>, T>(lp_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>,
+                                                                 func: F,
+) -> PolarsResult<T> {
+    let owned_lp_arena = std::mem::take(lp_arena);
+    let owned_expr_arena = std::mem::take(expr_arena);
+
+    let mut arena = (owned_lp_arena, owned_expr_arena);
+    let out = func(&mut arena);
+    std::mem::swap(lp_arena, &mut arena.0);
+    std::mem::swap(expr_arena, &mut arena.1);
+    out
 }

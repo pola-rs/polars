@@ -10,8 +10,8 @@ pub trait TreeWalker: Sized {
     type Arena;
     fn apply_children(
         &self,
-        op: &mut dyn FnMut(&Self, &mut Self::Arena) -> PolarsResult<VisitRecursion>,
-        arena: &mut Self::Arena
+        op: &mut dyn FnMut(&Self, &Self::Arena) -> PolarsResult<VisitRecursion>,
+        arena: &Self::Arena
     ) -> PolarsResult<VisitRecursion>;
 
     fn map_children(self,
@@ -22,7 +22,7 @@ pub trait TreeWalker: Sized {
     /// Walks all nodes in depth-first-order.
     #[recursive]
     fn visit(&self, visitor: &mut dyn Visitor<Node = Self, Arena=Self::Arena>,
-             arena: &mut Self::Arena
+             arena: &Self::Arena
     ) -> PolarsResult<VisitRecursion>
     {
         match visitor.pre_visit(self, arena)? {
@@ -69,13 +69,13 @@ pub trait Visitor {
     type Arena;
 
     /// Invoked before any children of `node` are visited.
-    fn pre_visit(&mut self, _node: &Self::Node, _arena: &mut Self::Arena) -> PolarsResult<VisitRecursion> {
+    fn pre_visit(&mut self, _node: &Self::Node, _arena: &Self::Arena) -> PolarsResult<VisitRecursion> {
         Ok(VisitRecursion::Continue)
     }
 
     /// Invoked after all children of `node` are visited. Default
     /// implementation does nothing.
-    fn post_visit(&mut self, _node: &Self::Node, _arena: &mut Self::Arena) -> PolarsResult<VisitRecursion> {
+    fn post_visit(&mut self, _node: &Self::Node, _arena: &Self::Arena) -> PolarsResult<VisitRecursion> {
         Ok(VisitRecursion::Continue)
     }
 }

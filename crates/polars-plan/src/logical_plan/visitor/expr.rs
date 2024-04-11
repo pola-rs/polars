@@ -1,3 +1,4 @@
+use std::fmt::{Debug, Formatter};
 use polars_core::prelude::{Field, Schema};
 use polars_utils::unitvec;
 
@@ -9,8 +10,8 @@ impl TreeWalker for Expr {
 
     fn apply_children(
         &self,
-        op: &mut dyn FnMut(&Self, &mut Self::Arena) -> PolarsResult<VisitRecursion>,
-        arena: &mut Self::Arena
+        op: &mut dyn FnMut(&Self, &Self::Arena) -> PolarsResult<VisitRecursion>,
+        arena: &Self::Arena
     ) -> PolarsResult<VisitRecursion> {
         let mut scratch = unitvec![];
 
@@ -132,7 +133,7 @@ impl AexprNode {
         matches!(self.to_aexpr(arena), AExpr::Column(_) | AExpr::Literal(_))
     }
 
-    pub(crate) fn hashable_and_cmp<'a>(&'a self, arena: &'a Arena<AExpr>) -> AExprArena<'a> {
+    pub(crate) fn hashable_and_cmp<'a>(&self, arena: &'a Arena<AExpr>) -> AExprArena<'a> {
         AExprArena {
             node: self.node,
             arena
@@ -141,10 +142,15 @@ impl AexprNode {
 }
 
 
-#[derive(Debug)]
 pub struct AExprArena<'a> {
     node: Node,
     arena: &'a Arena<AExpr>
+}
+
+impl Debug for AExprArena<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "AexprArena: {}", self.node.0)
+    }
 }
 
 impl AExpr {
@@ -259,8 +265,8 @@ impl TreeWalker for AexprNode {
     type Arena = Arena<AExpr>;
     fn apply_children(
         &self,
-        op: &mut dyn FnMut(&Self, &mut Self::Arena) -> PolarsResult<VisitRecursion>,
-        arena: &mut Self::Arena
+        op: &mut dyn FnMut(&Self, &Self::Arena) -> PolarsResult<VisitRecursion>,
+        arena: &Self::Arena
     ) -> PolarsResult<VisitRecursion> {
         let mut scratch = vec![];
 
