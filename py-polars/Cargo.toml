@@ -28,6 +28,7 @@ numpy = { version = "0.20", default-features = false }
 once_cell = { workspace = true }
 pyo3 = { workspace = true, features = ["abi3-py38", "extension-module", "multiple-pymethods"] }
 pyo3-built = { version = "0.4", optional = true }
+recursive = { workspace = true }
 serde_json = { workspace = true, optional = true }
 smartstring = { workspace = true }
 thiserror = { workspace = true }
