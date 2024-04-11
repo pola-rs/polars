@@ -838,6 +838,7 @@ def test_take_list_15719() -> None:
     [
         ([["a"], [], [None], None], pl.List, pl.List(pl.String)),
         ([[1], [], [None], None], pl.List, pl.List(pl.Int64)),
+        ([[], None, ["a"]], pl.List, pl.List(pl.String)),
     ],
 )
 def test_list_anyvalue_empty_list(

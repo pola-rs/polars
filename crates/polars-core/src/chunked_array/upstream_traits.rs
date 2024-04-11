@@ -234,23 +234,15 @@ impl FromIterator<Option<Series>> for ListChunked {
                                 builder.append_null();
                             }
                             builder.append_series(first_s).unwrap();
+
                             for opt_s in it {
-                                match opt_s {
-                                    Some(ref s) => {
-                                        // Empty AnyValue lists (or lists of nulls) have dtype Null.
-                                        // To append them, we cast them to the first value's inner dtype.
-                                        if s.is_empty() || s.null_count() == s.len() {
-                                            builder
-                                                .append_opt_series(
-                                                    s.cast(first_s.dtype()).ok().as_ref(),
-                                                )
-                                                .unwrap()
-                                        } else {
-                                            builder.append_opt_series(opt_s.as_ref()).unwrap()
-                                        }
-                                    },
-                                    None => builder.append_null(),
+                                if opt_s.is_some() {
+                                    debug_assert_eq!(
+                                        opt_s.clone().unwrap().dtype(),
+                                        first_s.dtype()
+                                    );
                                 }
+                                builder.append_opt_series(opt_s.as_ref()).unwrap();
                             }
                             builder.finish()
                         },

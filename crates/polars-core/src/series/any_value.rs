@@ -493,9 +493,18 @@ fn any_values_to_list(
     let mut valid = true;
     #[allow(unused_mut)]
     let mut out: ListChunked = if inner_type == &DataType::Null {
+        let mut first_value_dtype = DataType::Null;
         avs.iter()
             .map(|av| match av {
-                AnyValue::List(b) => Some(b.clone()),
+                AnyValue::List(b) => {
+                    if !b.is_empty() && matches!(first_value_dtype, DataType::Null) {
+                        first_value_dtype = b.dtype().clone();
+                    }
+                    if b.is_empty() || b.null_count() == b.len() {
+                        return b.cast(&first_value_dtype).ok();
+                    }
+                    Some(b.clone())
+                },
                 AnyValue::Null => None,
                 _ => {
                     valid = false;
