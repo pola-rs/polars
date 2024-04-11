@@ -73,7 +73,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .sum()
                 .alias("pro"),
         ])
-        .sort(["pro"], SortMultipleOptions::default().with_order_descending(true))
+        .sort(
+            ["pro"],
+            SortMultipleOptions::default().with_order_descending(true),
+        )
         .limit(5)
         .collect()?;
 

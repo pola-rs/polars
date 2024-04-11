@@ -186,7 +186,10 @@ fn test_power_in_agg_list1() -> PolarsResult<()> {
                 .pow(2.0)
                 .alias("foo"),
         ])
-        .sort(["fruits"], SortMultipleOptions::default().with_order_descending(true))
+        .sort(
+            ["fruits"],
+            SortMultipleOptions::default().with_order_descending(true),
+        )
         .collect()?;
 
     let agg = out.column("foo")?.list()?;
@@ -216,7 +219,10 @@ fn test_power_in_agg_list2() -> PolarsResult<()> {
             .pow(2.0)
             .sum()
             .alias("foo")])
-        .sort(["fruits"], SortMultipleOptions::default().with_order_descending(true))
+        .sort(
+            ["fruits"],
+            SortMultipleOptions::default().with_order_descending(true),
+        )
         .collect()?;
 
     let agg = out.column("foo")?.f64()?;

@@ -54,7 +54,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out = filtered
         .lazy()
         .with_columns([cols(["Name", "Speed"])
-            .sort_by(["Speed"], SortMultipleOptions::default().with_order_descending(true))
+            .sort_by(
+                ["Speed"],
+                SortMultipleOptions::default().with_order_descending(true),
+            )
             .over(["Type 1"])])
         .collect()?;
     println!("{}", out);
@@ -94,13 +97,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .select([
             col("Type 1").head(Some(3)).over(["Type 1"]).flatten(),
             col("Name")
-                .sort_by(["Speed"], SortMultipleOptions::default().with_order_descending(true))
+                .sort_by(
+                    ["Speed"],
+                    SortMultipleOptions::default().with_order_descending(true),
+                )
                 .head(Some(3))
                 .over(["Type 1"])
                 .flatten()
                 .alias("fastest/group"),
             col("Name")
-                .sort_by(["Attack"], SortMultipleOptions::default().with_order_descending(true))
+                .sort_by(
+                    ["Attack"],
+                    SortMultipleOptions::default().with_order_descending(true),
+                )
                 .head(Some(3))
                 .over(["Type 1"])
                 .flatten()
