@@ -889,8 +889,7 @@ mod test {
             id_array_offset,
             false,
         );
-        let ae_node = AexprNode::new(node);
-        ae_node.rewrite(&mut rewriter, &mut arena).unwrap();
+        let ae_node = ae_node.rewrite(&mut rewriter, &mut arena).unwrap();
 
         let e = node_to_expr(ae_node.node(), &arena);
         assert_eq!(
