@@ -1200,27 +1200,38 @@ class Config(contextlib.ContextDecorator):
         --------
         >>> df = pl.DataFrame(
         ...     {
-        ...         "x": [1234567, -987654, 10101],
-        ...         "y": [1234.5, 100000.0, -7654321.25],
+        ...         "id": ["SEQ1", "SEQ2"],
+        ...         "seq": ["ATGATAAAGGAG", "GCAACGCATATA"],
         ...     }
         ... )
-        >>> pl.Config.set_tbl_width_chars(16)  # doctest: +SKIP
-        # ...
-        # shape: (3, 2)               shape: (3, 2)
-        # ┌─────────┬───────────┐     ┌─────┬────────┐
-        # │ x       ┆ y         │     │ x   ┆ y      │
-        # │ ---     ┆ ---       │     │ --- ┆ ---    │
-        # │ i64     ┆ f64       │     │ i64 ┆ f64    │
-        # ╞═════════╪═══════════╡ >>  ╞═════╪════════╡
-        # │ 1234567 ┆ 1234.5    │     │ 123 ┆ 1234.5 │
-        # │ -987654 ┆ 100000.0  │     │ 456 ┆        │
-        # │ 10101   ┆ -7.6543e6 │     │ 7   ┆        │
-        # └─────────┴───────────┘     │ -98 ┆ 100000 │
-        #                             │ 765 ┆ .0     │
-        #                             │ 4   ┆        │
-        #                             │ 101 ┆ -7.654 │
-        #                             │ 01  ┆ 3e6    │
-        #                             └─────┴────────┘
+        >>> df
+        shape: (2, 2)
+        ┌──────┬──────────────┐
+        │ id   ┆ seq          │
+        │ ---  ┆ ---          │
+        │ str  ┆ str          │
+        ╞══════╪══════════════╡
+        │ SEQ1 ┆ ATGATAAAGGAG │
+        │ SEQ2 ┆ GCAACGCATATA │
+        └──────┴──────────────┘
+        >>> pl.Config.set_tbl_width_chars(12)
+        <class 'polars.config.Config'>
+        >>> df
+        shape: (2, 2)
+        ┌─────┬─────┐
+        │ id  ┆ seq │
+        │ --- ┆ --- │
+        │ str ┆ str │
+        ╞═════╪═════╡
+        │ SEQ ┆ ATG │
+        │ 1   ┆ ATA │
+        │     ┆ AAG │
+        │     ┆ GAG │
+        │ SEQ ┆ GCA │
+        │ 2   ┆ ACG │
+        │     ┆ CAT │
+        │     ┆ ATA │
+        └─────┴─────┘
         """
         if width is None:
             os.environ.pop("POLARS_TABLE_WIDTH", None)
