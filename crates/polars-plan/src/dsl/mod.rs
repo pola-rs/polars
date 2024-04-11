@@ -1092,6 +1092,28 @@ impl Expr {
     /// Can also be used in a group_by context to sort the groups.
     ///
     /// # Example
+    ///
+    /// ```rust
+    /// # use polars_core::prelude::*;
+    /// # use polars_lazy::prelude::*;
+    /// # fn main() -> PolarsResult<()> {
+    /// let lf = df! {
+    ///     "a" => [1, 2, 3, 4, 5],
+    ///     "b" => [5, 4, 3, 2, 1]
+    /// }?.lazy();
+    ///
+    /// let sorted = lf
+    ///     .select(
+    ///         vec![col("a").sort_by(col("b"), SortOptions::default())],
+    ///     )
+    ///     .collect()?;
+    ///
+    /// assert_eq!(
+    ///     sorted,
+    ///     df! { "a" => [5, 4, 3, 2, 1] }?
+    /// );
+    /// # Ok(())
+    /// # }
     pub fn sort_by<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(
         self,
         by: E,
