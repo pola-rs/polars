@@ -9,6 +9,7 @@ import polars as pl
 from polars._utils.parse_expr_input import parse_as_expression
 from polars._utils.wrap import wrap_expr
 from polars.testing import assert_frame_equal
+from polars.exceptions import InvalidOperationError
 
 
 def assert_expr_equal(result: pl.Expr, expected: pl.Expr) -> None:
@@ -78,3 +79,13 @@ def test_parse_as_expression_structify_multiple_outputs() -> None:
     result = wrap_expr(parse_as_expression(pl.col("*"), structify=True))
     expected = pl.struct("a", "b")
     assert_expr_equal(result, expected)
+
+
+def test_raise_with_df_in_context() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    df2 = pl.DataFrame({"b": [2, 3, 4]})
+    with pytest.raises(InvalidOperationError):
+        df.with_columns(df2)
+
+    with pytest.raises(InvalidOperationError):
+        df.select([df2])
