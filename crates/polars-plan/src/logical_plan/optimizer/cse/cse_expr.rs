@@ -13,6 +13,7 @@ use hashbrown::hash_map::RawEntryMut;
 #[cfg(test)]
 mod identifier_impl {
     use std::hash::{Hash, Hasher};
+    use ahash::RandomState;
 
     use super::*;
     /// Identifier that shows the sub-expression path.
@@ -26,21 +27,15 @@ mod identifier_impl {
         last_node: Option<AexprNode>,
     }
 
-    impl PartialEq for Identifier {
-        fn eq(&self, other: &Self) -> bool {
-            self.inner == other.inner && self.last_node == other.last_node
-        }
-    }
-
-    impl Eq for Identifier {}
-
-    impl Hash for Identifier {
-        fn hash<H: Hasher>(&self, state: &mut H) {
-            self.inner.hash(state)
-        }
-    }
-
     impl Identifier {
+        pub fn hash(&self) -> u64 {
+            RandomState::with_seed(0).hash_one(&self.inner)
+        }
+
+        pub fn is_equal(&self, other: &Self, arena: &Arena<AExpr>) -> bool {
+            self.inner == other.inner && self.last_node.map(|v| v.hashable_and_cmp(arena)) == other.last_node.map(|v| v.hashable_and_cmp(arena))
+        }
+
         pub fn new() -> Self {
             Self {
                 inner: String::new(),
@@ -65,8 +60,8 @@ mod identifier_impl {
             self.inner.push_str(&other.inner);
         }
 
-        pub fn add_ae_node(&self, ae: &AexprNode) -> Self {
-            let inner = format!("{:E}{}", ae.to_aexpr(), self.inner);
+        pub fn add_ae_node(&self, ae: &AexprNode, arena: &Arena<AExpr>) -> Self {
+            let inner = format!("{:E}{}", ae.to_aexpr(arena), self.inner);
             Self {
                 inner,
                 last_node: Some(*ae),
@@ -851,7 +846,8 @@ mod test {
         let mut visitor =
             ExprIdentifierVisitor::new(&mut se_count, &mut id_array, &mut visit_stack, false);
 
-        AexprNode::with_context(node, &mut arena, |ae_node| ae_node.visit(&mut visitor)).unwrap();
+        let ae_node = AexprNode::new(node);
+        ae_node.visit(&mut visitor, &arena).unwrap();
 
         let mut replaced_ids = Default::default();
         let mut rewriter = CommonSubExprRewriter::new(
@@ -861,9 +857,8 @@ mod test {
             id_array_offset,
             false,
         );
-        let ae_node =
-            AexprNode::with_context(node, &mut arena, |ae_node| ae_node.rewrite(&mut rewriter))
-                .unwrap();
+        let ae_node = AexprNode::new(node);
+        ae_node.rewrite(&mut rewriter, &mut arena);
 
         let e = node_to_expr(ae_node.node(), &arena);
         assert_eq!(
@@ -892,12 +887,12 @@ mod test {
         let (node, mut lp_arena, mut expr_arena) = lp.to_alp().unwrap();
         let mut optimizer = CommonSubExprOptimizer::new();
 
-        let out = IRNode::with_context(node, &mut lp_arena, |alp_node| {
-            alp_node.rewrite(&mut optimizer)
-        })
-        .unwrap();
+        let alp_node = IRNode::new(node);
+        let out = with_ir_arena(&mut lp_arena, &mut expr_arena, |arena| {
+            alp_node.rewrite(&mut optimizer, arena).unwrap()
+        });
 
-        let IR::Select { expr, .. } = out.to_alp() else {
+        let IR::Select { expr, .. } = out.to_alp(&lp_arena) else {
             unreachable!()
         };
 

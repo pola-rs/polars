@@ -812,7 +812,8 @@ mod test {
 
         let mut visitor = TreeFmtVisitor::default();
 
-        AexprNode::with_context(node, &mut arena, |ae_node| ae_node.visit(&mut visitor)).unwrap();
+        let ae_node = AexprNode::new(node);
+        ae_node.visit(&mut visitor, &arena);
         let expected: &[&[&str]] = &[
             &["sum"],
             &["binary: +"],
@@ -832,7 +833,7 @@ mod test {
 
         let mut visitor = TreeFmtVisitor::default();
 
-        AexprNode::with_context(node, &mut arena, |ae_node| ae_node.visit(&mut visitor)).unwrap();
+        AexprNode::new(node).visit(&mut visitor, &arena).unwrap();
 
         let expected_lines = vec![
             "            0            1               2                3            4",
@@ -881,8 +882,8 @@ mod test {
         let node = to_aexpr(e, &mut arena);
 
         let mut visitor = TreeFmtVisitor::default();
-
-        AexprNode::with_context(node, &mut arena, |ae_node| ae_node.visit(&mut visitor)).unwrap();
+        let ae_node = AexprNode::new(node);
+        ae_node.visit(&mut Visitor).unwrap();
 
         let expected_lines = vec![
             "                 0                 1               2                3            4",
