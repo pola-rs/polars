@@ -1122,6 +1122,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Whether the order should be maintained if elements are equal.
             Note that if `true` streaming is not possible and performance might be
             worse since this requires a stable search.
+        multithreaded
+            Sort using multiple threads.
 
         Examples
         --------
@@ -1191,7 +1193,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         # Fast path for sorting by a single existing column
         if isinstance(by, str) and not more_by:
             return self._from_pyldf(
-                self._ldf.sort(by, descending, nulls_last, maintain_order, multithreaded)
+                self._ldf.sort(
+                    by, descending, nulls_last, maintain_order, multithreaded
+                )
             )
 
         by = parse_as_list_of_expressions(by, *more_by)
@@ -1238,6 +1242,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Whether the order should be maintained if elements are equal.
             Note that if `true` streaming is not possible and performance might
             be worse since this requires a stable search.
+        multithreaded
+            Sort using multiple threads.
 
         See Also
         --------
@@ -1289,7 +1295,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             msg = f"the length of `descending` ({len(descending)}) does not match the length of `by` ({len(by)})"
             raise ValueError(msg)
         return self._from_pyldf(
-            self._ldf.top_k(k, by, descending, nulls_last, maintain_order, multithreaded)
+            self._ldf.top_k(
+                k, by, descending, nulls_last, maintain_order, multithreaded
+            )
         )
 
     def bottom_k(
@@ -1323,6 +1331,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Whether the order should be maintained if elements are equal.
             Note that if `true` streaming is not possible and performance might be
             worse since this requires a stable search.
+        multithreaded
+            Sort using multiple threads.
 
         See Also
         --------
@@ -1371,7 +1381,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if isinstance(descending, bool):
             descending = [descending]
         return self._from_pyldf(
-            self._ldf.bottom_k(k, by, descending, nulls_last, maintain_order, multithreaded)
+            self._ldf.bottom_k(
+                k, by, descending, nulls_last, maintain_order, multithreaded
+            )
         )
 
     def profile(

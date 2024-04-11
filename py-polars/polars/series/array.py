@@ -252,6 +252,8 @@ class ArrayNameSpace:
             Sort in descending order.
         nulls_last
             Place null values last.
+        multithreaded
+            Sort using multiple threads.
 
         Examples
         --------

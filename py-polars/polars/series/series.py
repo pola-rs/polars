@@ -3356,6 +3356,8 @@ class Series:
             Sort in descending order.
         nulls_last
             Place null values last instead of first.
+        multithreaded
+            Sort using multiple threads.
         in_place
             Sort in-place.
 
