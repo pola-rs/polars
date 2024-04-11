@@ -3216,6 +3216,7 @@ dependencies = [
  "polars-utils",
  "pyo3",
  "pyo3-built",
+ "recursive",
  "serde_json",
  "smartstring",
  "thiserror",
