@@ -106,7 +106,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .flatten()
                 .alias("strongest/group"),
             col("Name")
-                .sort(false)
+                .sort(Default::default())
                 .head(Some(3))
                 .over(["Type 1"])
                 .flatten()

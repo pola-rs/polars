@@ -1759,17 +1759,20 @@ impl DataFrame {
         Ok(self)
     }
 
-    /// Sort [`DataFrame`] in place by a column.
+    /// Sort [`DataFrame`] in place.
+    ///
+    /// See [`DataFrame::sort`] for more instruction.
     pub fn sort_in_place(
         &mut self,
-        by_column: impl IntoVec<SmartString>,
+        by: impl IntoVec<SmartString>,
         sort_options: SortMultipleOptions,
     ) -> PolarsResult<&mut Self> {
-        let by_column = self.select_series(by_column)?;
+        let by_column = self.select_series(by)?;
         self.columns = self.sort_impl(by_column, sort_options, None)?.columns;
         Ok(self)
     }
 
+    #[doc(hidden)]
     /// This is the dispatch of Self::sort, and exists to reduce compile bloat by monomorphization.
     pub fn sort_impl(
         &self,
@@ -1892,23 +1895,15 @@ impl DataFrame {
     ///     df.sort(&["a", "b"], SortMultipleOptions::new().with_orders([false, true]))
     /// }
     /// ```
+    ///
+    /// Also see [`DataFrame::sort_in_place`].
     pub fn sort(
         &self,
-        by_column: impl IntoVec<SmartString>,
+        by: impl IntoVec<SmartString>,
         sort_options: SortMultipleOptions,
     ) -> PolarsResult<Self> {
         let mut df = self.clone();
-        df.sort_in_place(by_column, sort_options)?;
-        Ok(df)
-    }
-
-    /// Sort the [`DataFrame`] by a single column with extra options.
-    pub fn sort_with_options(&self, by_column: &str, options: SortOptions) -> PolarsResult<Self> {
-        let mut df = self.clone();
-        let by_column = vec![df.column(by_column)?.clone()];
-        df.columns = df
-            .sort_impl(by_column, SortMultipleOptions::from(&options), None)?
-            .columns;
+        df.sort_in_place(by, sort_options)?;
         Ok(df)
     }
 

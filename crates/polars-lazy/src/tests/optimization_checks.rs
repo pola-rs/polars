@@ -262,7 +262,7 @@ pub fn test_slice_pushdown_sort() -> PolarsResult<()> {
     let _guard = SINGLE_LOCK.lock().unwrap();
     let q = scan_foods_parquet(false).limit(100);
 
-    let q = q.sort("category", SortOptions::default()).slice(1, 3);
+    let q = q.sort(["category"], SortMultipleOptions::default()).slice(1, 3);
 
     // test if optimization continued beyond the sort node
     assert!(slice_at_scan(q.clone()));

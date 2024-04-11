@@ -65,7 +65,7 @@ fn test_lazy_arithmetic() {
     let lf = df
         .lazy()
         .select(&[((col("sepal.width") * lit(100)).alias("super_wide"))])
-        .sort("super_wide", SortOptions::default());
+        .sort(["super_wide"], SortMultipleOptions::default());
 
     print_plans(&lf);
 

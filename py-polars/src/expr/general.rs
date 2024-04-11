@@ -268,7 +268,7 @@ impl PyExpr {
     fn sort_with(&self, descending: bool, nulls_last: bool) -> Self {
         self.inner
             .clone()
-            .sort_with(SortOptions {
+            .sort(SortOptions {
                 descending,
                 nulls_last,
                 multithreaded: true,

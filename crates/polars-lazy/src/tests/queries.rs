@@ -21,7 +21,7 @@ fn test_lazy_exec() {
         .clone()
         .lazy()
         .select([col("sepal.width"), col("variety")])
-        .sort("sepal.width", Default::default())
+        .sort(["sepal.width"], Default::default())
         .collect();
 
     let new = df
@@ -387,7 +387,7 @@ fn test_lazy_query_9() -> PolarsResult<()> {
         )
         .group_by([col("Cities.Country")])
         .agg([col("Sales.Amount").sum().alias("sum")])
-        .sort("sum", Default::default())
+        .sort(["sum"], Default::default())
         .collect()?;
     let vals = out
         .column("sum")?
@@ -673,7 +673,7 @@ fn test_lazy_partition_agg() {
         .lazy()
         .group_by([col("foo")])
         .agg([col("bar").mean()])
-        .sort("foo", Default::default())
+        .sort(["foo"], Default::default())
         .collect()
         .unwrap();
 
@@ -685,7 +685,7 @@ fn test_lazy_partition_agg() {
     let out = scan_foods_csv()
         .group_by([col("category")])
         .agg([col("calories")])
-        .sort("category", Default::default())
+        .sort(["category"], Default::default())
         .collect()
         .unwrap();
     let cat_agg_list = out.select_at_idx(1).unwrap();
@@ -763,7 +763,7 @@ fn test_lazy_group_by() {
         .lazy()
         .group_by([col("groups")])
         .agg([col("a").mean()])
-        .sort("a", Default::default())
+        .sort(["a"], Default::default())
         .collect()
         .unwrap();
 
@@ -793,7 +793,7 @@ fn test_lazy_group_by_sort() {
         .clone()
         .lazy()
         .group_by([col("a")])
-        .agg([col("b").sort(false).first()])
+        .agg([col("b").sort(Default::default()).first()])
         .collect()
         .unwrap()
         .sort(["a"], Default::default())
@@ -807,7 +807,7 @@ fn test_lazy_group_by_sort() {
     let out = df
         .lazy()
         .group_by([col("a")])
-        .agg([col("b").sort(false).last()])
+        .agg([col("b").sort(Default::default()).last()])
         .collect()
         .unwrap()
         .sort(["a"], Default::default())
@@ -878,7 +878,7 @@ fn test_lazy_group_by_binary_expr() {
         .lazy()
         .group_by([col("a")])
         .agg([col("b").mean() * lit(2)])
-        .sort("a", Default::default())
+        .sort(["a"], Default::default())
         .collect()
         .unwrap();
     assert_eq!(
@@ -915,15 +915,7 @@ fn test_lazy_group_by_filter() -> PolarsResult<()> {
                 .last()
                 .alias("b_last"),
         ])
-        .sort(
-            "a",
-            SortOptions {
-                descending: false,
-                nulls_last: false,
-                multithreaded: true,
-                maintain_order: false,
-            },
-        )
+        .sort(["a"], SortMultipleOptions::default())
         .collect()?;
 
     assert_eq!(
@@ -989,23 +981,20 @@ fn test_group_by_sort_slice() -> PolarsResult<()> {
     let out1 = df
         .clone()
         .lazy()
-        .sort(
-            "vals",
-            SortOptions {
-                descending: true,
-                ..Default::default()
-            },
-        )
+        .sort(["vals"], SortMultipleOptions::default().with_order(true))
         .group_by([col("groups")])
         .agg([col("vals").head(Some(2)).alias("foo")])
-        .sort("groups", SortOptions::default())
+        .sort(["groups"], Default::default())
         .collect()?;
 
     let out2 = df
         .lazy()
         .group_by([col("groups")])
-        .agg([col("vals").sort(true).head(Some(2)).alias("foo")])
-        .sort("groups", SortOptions::default())
+        .agg([col("vals")
+            .sort(SortOptions::default().with_order(true))
+            .head(Some(2))
+            .alias("foo")])
+        .sort(["groups"], Default::default())
         .collect()?;
 
     assert!(out1.column("foo")?.equals(out2.column("foo")?));
@@ -1024,7 +1013,7 @@ fn test_group_by_cum_sum() -> PolarsResult<()> {
         .lazy()
         .group_by([col("groups")])
         .agg([col("vals").cum_sum(false)])
-        .sort("groups", Default::default())
+        .sort(["groups"], Default::default())
         .collect()?;
 
     assert_eq!(
@@ -1433,13 +1422,7 @@ fn test_group_by_small_ints() -> PolarsResult<()> {
         .lazy()
         .group_by([col("id_16"), col("id_32")])
         .agg([col("id_16").sum().alias("foo")])
-        .sort(
-            "foo",
-            SortOptions {
-                descending: true,
-                ..Default::default()
-            },
-        )
+        .sort(["foo"], SortMultipleOptions::default().with_order(true))
         .collect()?;
 
     assert_eq!(Vec::from(out.column("foo")?.i64()?), &[Some(2), Some(1)]);
@@ -1792,7 +1775,7 @@ fn test_partitioned_gb_1() -> PolarsResult<()> {
         (col("vals").eq(lit("a"))).sum().alias("eq_a"),
         (col("vals").eq(lit("b"))).sum().alias("eq_b"),
     ])
-    .sort("keys", Default::default())
+    .sort(["keys"], Default::default())
     .collect()?;
 
     assert!(out.equals(&df![

@@ -39,7 +39,7 @@ fn test_streaming_parquet() -> PolarsResult<()> {
     let q = q
         .group_by([col("sugars_g")])
         .agg([((lit(1) - col("fats_g")) + col("calories")).sum()])
-        .sort("sugars_g", Default::default());
+        .sort(["sugars_g"], Default::default());
 
     assert_streaming_with_default(q, true, false);
     Ok(())
@@ -53,7 +53,7 @@ fn test_streaming_csv() -> PolarsResult<()> {
         .select([col("sugars_g"), col("calories")])
         .group_by([col("sugars_g")])
         .agg([col("calories").sum()])
-        .sort("sugars_g", Default::default());
+        .sort(["sugars_g"], Default::default());
 
     assert_streaming_with_default(q, true, false);
     Ok(())
@@ -62,7 +62,7 @@ fn test_streaming_csv() -> PolarsResult<()> {
 #[test]
 fn test_streaming_glob() -> PolarsResult<()> {
     let q = get_csv_glob();
-    let q = q.sort("sugars_g", Default::default());
+    let q = q.sort(["sugars_g"], Default::default());
 
     assert_streaming_with_default(q, true, false);
     Ok(())
@@ -104,7 +104,6 @@ fn test_streaming_multiple_keys_aggregate() -> PolarsResult<()> {
             [col("sugars_g"), col("calories")],
             SortMultipleOptions::default()
                 .with_orders([false, false])
-                .with_maintain_order(true),
         );
 
     assert_streaming_with_default(q, true, false);
@@ -122,7 +121,7 @@ fn test_streaming_first_sum() -> PolarsResult<()> {
             col("calories").sum(),
             col("calories").first().alias("calories_first"),
         ])
-        .sort("sugars_g", Default::default());
+        .sort(["sugars_g"], Default::default());
 
     assert_streaming_with_default(q, true, false);
     Ok(())
@@ -137,7 +136,7 @@ fn test_streaming_unique() -> PolarsResult<()> {
         .unique(None, Default::default())
         .sort_by_exprs(
             [cols(["sugars_g", "calories"])],
-            SortMultipleOptions::default().with_maintain_order(true),
+            SortMultipleOptions::default(),
         );
 
     assert_streaming_with_default(q, true, false);
@@ -416,7 +415,7 @@ fn test_streaming_outer_join() -> PolarsResult<()> {
         .outer_join(lf_right, col("a"), col("a"))
         .sort_by_exprs(
             [all()],
-            SortMultipleOptions::default().with_maintain_order(true),
+            SortMultipleOptions::default(),
         );
 
     // Toggle so that the join order is swapped.

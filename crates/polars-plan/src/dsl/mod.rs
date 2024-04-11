@@ -408,19 +408,8 @@ impl Expr {
         }
     }
 
-    /// Sort in increasing order. See [the eager implementation](Series::sort).
-    pub fn sort(self, descending: bool) -> Self {
-        Expr::Sort {
-            expr: Arc::new(self),
-            options: SortOptions {
-                descending,
-                ..Default::default()
-            },
-        }
-    }
-
     /// Sort with given options.
-    pub fn sort_with(self, options: SortOptions) -> Self {
+    pub fn sort(self, options: SortOptions) -> Self {
         Expr::Sort {
             expr: Arc::new(self),
             options,

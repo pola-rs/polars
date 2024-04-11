@@ -267,14 +267,17 @@ impl LazyFrame {
     /// /// Sort DataFrame by 'sepal.width' column
     /// fn example(df: DataFrame) -> LazyFrame {
     ///       df.lazy()
-    ///         .sort("sepal.width", Default::default())
+    ///         .sort(["sepal.width"], Default::default())
     /// }
     /// ```
-    pub fn sort(self, by_column: &str, options: SortOptions) -> Self {
+    pub fn sort(self, by: impl IntoVec<SmartString>, sort_options: SortMultipleOptions) -> Self {
         let opt_state = self.get_opt_state();
         let lp = self
             .get_plan_builder()
-            .sort(vec![col(by_column)], SortMultipleOptions::from(&options))
+            .sort(
+                by.into_vec().into_iter().map(|x| col(&x)).collect(),
+                sort_options,
+            )
             .build();
         Self::from_logical_plan(lp, opt_state)
     }

@@ -281,7 +281,7 @@ class ListNameSpace:
         ]
         """
 
-    def sort(self, *, descending: bool = False, nulls_last: bool = False) -> Series:
+    def sort(self, *, descending: bool = False, nulls_last: bool = False, multithreaded: bool = True) -> Series:
         """
         Sort the arrays in this column.
 

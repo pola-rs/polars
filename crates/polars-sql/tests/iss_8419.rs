@@ -18,11 +18,11 @@ fn iss_8419() {
             col("Country"),
             col("Sales"),
             col("Sales")
-                .sort(true)
+                .sort(SortOptions::default().with_order(true))
                 .cum_sum(false)
                 .alias("SalesCumulative"),
         ])
-        .sort("SalesCumulative", SortOptions::default())
+        .sort(["SalesCumulative"], Default::default())
         .collect()
         .unwrap();
     let mut ctx = SQLContext::new();

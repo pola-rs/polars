@@ -49,12 +49,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .group_by(["first_name"])
         .agg([len(), col("gender"), col("last_name").first()])
         .sort(
-            "len",
-            SortOptions {
-                descending: true,
-                nulls_last: true,
-                ..Default::default()
-            },
+            ["len"],
+            SortMultipleOptions::default()
+            .with_order(true)
+            .with_nulls_last(true),
         )
         .limit(5)
         .collect()?;
@@ -76,12 +74,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .alias("pro"),
         ])
         .sort(
-            "pro",
-            SortOptions {
-                descending: true,
-                nulls_last: false,
-                ..Default::default()
-            },
+            ["pro"],
+            SortMultipleOptions::default()
+            .with_order(true)
         )
         .limit(5)
         .collect()?;
@@ -101,12 +96,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .or(col("party").eq(lit("Pro-Administration"))),
         )
         .sort(
-            "count",
-            SortOptions {
-                descending: true,
-                nulls_last: true,
-                ..Default::default()
-            },
+            ["count"],
+            SortMultipleOptions::default()
+                .with_order(true)
+                .with_nulls_last(true),
         )
         .limit(5)
         .collect()?;
@@ -151,12 +144,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .clone()
         .lazy()
         .sort(
-            "birthday",
-            SortOptions {
-                descending: true,
-                nulls_last: true,
-                ..Default::default()
-            },
+            ["birthday"],
+            SortMultipleOptions::default()
+                .with_order(true)
+                .with_nulls_last(true),
         )
         .group_by(["state"])
         .agg([
@@ -174,18 +165,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .clone()
         .lazy()
         .sort(
-            "birthday",
-            SortOptions {
-                descending: true,
-                nulls_last: true,
-                ..Default::default()
-            },
+            ["birthday"],
+            SortMultipleOptions::default()
+                .with_order(true)
+                .with_nulls_last(true),
         )
         .group_by(["state"])
         .agg([
             get_person().first().alias("youngest"),
             get_person().last().alias("oldest"),
-            get_person().sort(false).first().alias("alphabetical_first"),
+            get_person()
+                .sort(Default::default())
+                .first()
+                .alias("alphabetical_first"),
         ])
         .limit(5)
         .collect()?;
@@ -198,24 +190,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .clone()
         .lazy()
         .sort(
-            "birthday",
-            SortOptions {
-                descending: true,
-                nulls_last: true,
-                ..Default::default()
-            },
+            ["birthday"],
+            SortMultipleOptions::default()
+                .with_order(true)
+                .with_nulls_last(true),
         )
         .group_by(["state"])
         .agg([
             get_person().first().alias("youngest"),
             get_person().last().alias("oldest"),
-            get_person().sort(false).first().alias("alphabetical_first"),
+            get_person()
+                .sort(Default::default())
+                .first()
+                .alias("alphabetical_first"),
             col("gender")
                 .sort_by(["first_name"], SortMultipleOptions::default())
                 .first()
                 .alias("gender"),
         ])
-        .sort("state", SortOptions::default())
+        .sort(["state"], SortMultipleOptions::default())
         .limit(5)
         .collect()?;
 

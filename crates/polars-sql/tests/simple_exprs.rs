@@ -69,12 +69,8 @@ fn test_group_by_simple() -> PolarsResult<()> {
     "#,
         )?
         .sort(
-            "a",
-            SortOptions {
-                descending: false,
-                nulls_last: false,
-                ..Default::default()
-            },
+            ["a"],
+            Default::default(),
         )
         .collect()?;
 
@@ -88,12 +84,8 @@ fn test_group_by_simple() -> PolarsResult<()> {
         ])
         .limit(100)
         .sort(
-            "a",
-            SortOptions {
-                descending: false,
-                nulls_last: false,
-                ..Default::default()
-            },
+            ["a"],
+            Default::default(),
         )
         .collect()?;
     assert_eq!(df_sql, df_pl);
