@@ -109,14 +109,14 @@ def test_business_day_count_schema() -> None:
 def test_business_day_count_w_holidays() -> None:
     df = pl.DataFrame(
         {
-            "start": [date(2020, 1, 1), date(2020, 1, 2)],
-            "end": [date(2020, 1, 2), date(2020, 1, 10)],
+            "start": [date(2020, 1, 1), date(2020, 1, 2), date(2020, 1, 2)],
+            "end": [date(2020, 1, 2), date(2020, 1, 10), date(2020, 1, 9)],
         }
     )
     result = df.select(
         business_day_count=pl.business_day_count(
-            "start", "end", holidays=[date(2020, 1, 1)]
+            "start", "end", holidays=[date(2020, 1, 1), date(2020, 1, 9)]
         ),
     )["business_day_count"]
-    expected = pl.Series("business_day_count", [0, 6], pl.Int32)
+    expected = pl.Series("business_day_count", [0, 5, 5], pl.Int32)
     assert_series_equal(result, expected)
