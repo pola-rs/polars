@@ -32,7 +32,7 @@ pub struct SortOptions {
     /// If true sort in descending order.
     /// Default `false`.
     pub descending: bool,
-    /// If true nulls are sorted last.
+    /// Whether place null values last.
     /// Default `false`.
     pub nulls_last: bool,
     /// If true sort in multiple threads.
@@ -90,7 +90,7 @@ pub struct SortMultipleOptions {
     ///
     /// Len must matches the number of columns or equal to 1.
     pub descending: Vec<bool>,
-    /// Whether treat nulls as largest. Default `false`.
+    /// Whether place null values last. Default `false`.
     pub nulls_last: bool,
     /// Whether sort in multiple threads. Default `true`.
     pub multithreaded: bool,
@@ -142,7 +142,7 @@ impl SortMultipleOptions {
         self
     }
 
-    /// Whether treat nulls as largest. Default `false`.
+    /// Whether place null values last. Default `false`.
     pub fn with_nulls_last(mut self, enabled: bool) -> Self {
         self.nulls_last = enabled;
         self
@@ -179,7 +179,7 @@ impl SortOptions {
         self
     }
 
-    /// Whether treat nulls as largest. Default `false`.
+    /// Whether place null values last. Default `false`.
     pub fn with_nulls_last(mut self, enabled: bool) -> Self {
         self.nulls_last = enabled;
         self

@@ -2285,7 +2285,7 @@ class Expr:
             Sort in descending order. When sorting by multiple columns, can be specified
             per column by passing a sequence of booleans.
         nulls_last
-            Treat null values largest.
+            Place null values last.
         multithreaded
             Sort using multiple threads.
         maintain_order
