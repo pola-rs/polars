@@ -81,7 +81,7 @@ pub struct SortOptions {
 pub struct SortMultipleOptions {
     /// Order of the columns. Default all `false``.
     ///
-    /// If only one value is given, it will boardcast to all columns.
+    /// If only one value is given, it will broadcast to all columns.
     ///
     /// Use [`SortMultipleOptions::with_orders`] or [`SortMultipleOptions::with_order`] to modify.
     ///
