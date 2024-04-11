@@ -83,7 +83,8 @@ pub struct SortMultipleOptions {
     ///
     /// If only one value is given, it will broadcast to all columns.
     ///
-    /// Use [`SortMultipleOptions::with_orders`] or [`SortMultipleOptions::with_order`] to modify.
+    /// Use [`SortMultipleOptions::with_order_descendings`]
+    /// or [`SortMultipleOptions::with_order_descending`] to modify.
     ///
     /// # Safety
     ///
