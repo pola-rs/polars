@@ -1049,7 +1049,7 @@ fn test_arg_sort_multiple() -> PolarsResult<()> {
     let out = df
         .clone()
         .lazy()
-        .select([arg_sort_by([col("int"), col("flt")], &[true, false])])
+        .select([arg_sort_by([col("int"), col("flt")], &[true, false]).unwrap()])
         .collect()?;
 
     assert_eq!(
@@ -1064,7 +1064,7 @@ fn test_arg_sort_multiple() -> PolarsResult<()> {
     // check if this runs
     let _out = df
         .lazy()
-        .select([arg_sort_by([col("str"), col("flt")], &[true, false])])
+        .select([arg_sort_by([col("str"), col("flt")], &[true, false]).unwrap()])
         .collect()?;
     Ok(())
 }
