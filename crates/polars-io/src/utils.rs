@@ -272,7 +272,7 @@ pub(crate) fn chunk_df_for_writing(
     // ensures all chunks are aligned.
     df.align_chunks();
 
-    let n_splits = 1 + df.height() / row_group_size;
+    let n_splits = df.height() / row_group_size;
     let result = if n_splits > 0 {
         Cow::Owned(accumulate_dataframes_vertical_unchecked(
             split_df_as_ref(df, n_splits, false)?
