@@ -122,8 +122,9 @@ pub struct ExprMapper<F> {
 
 impl<F: FnMut(Expr) -> PolarsResult<Expr>> RewritingVisitor for ExprMapper<F> {
     type Node = Expr;
+    type Arena = ();
 
-    fn mutate(&mut self, node: Self::Node) -> PolarsResult<Self::Node> {
+    fn mutate(&mut self, node: Self::Node, _arena: &mut Self::Arena) -> PolarsResult<Self::Node> {
         (self.f)(node)
     }
 }
@@ -141,11 +142,12 @@ impl Expr {
     }
 
     pub fn map_expr<F: FnMut(Self) -> Self>(self, mut f: F) -> Self {
-        self.rewrite(&mut ExprMapper { f: |e| Ok(f(e)) }).unwrap()
+        self.rewrite(&mut ExprMapper { f: |e| Ok(f(e)) }, &mut ())
+            .unwrap()
     }
 
     pub fn try_map_expr<F: FnMut(Self) -> PolarsResult<Self>>(self, f: F) -> PolarsResult<Self> {
-        self.rewrite(&mut ExprMapper { f })
+        self.rewrite(&mut ExprMapper { f }, &mut ())
     }
 }
 
@@ -196,14 +198,14 @@ impl<'a> ArenaExprIter<'a> for &'a Arena<AExpr> {
 
 pub struct AlpIter<'a> {
     stack: UnitVec<Node>,
-    arena: &'a Arena<ALogicalPlan>,
+    arena: &'a Arena<IR>,
 }
 
 pub trait ArenaLpIter<'a> {
     fn iter(&self, root: Node) -> AlpIter<'a>;
 }
 
-impl<'a> ArenaLpIter<'a> for &'a Arena<ALogicalPlan> {
+impl<'a> ArenaLpIter<'a> for &'a Arena<IR> {
     fn iter(&self, root: Node) -> AlpIter<'a> {
         let stack = unitvec![root];
         AlpIter { stack, arena: self }
@@ -211,7 +213,7 @@ impl<'a> ArenaLpIter<'a> for &'a Arena<ALogicalPlan> {
 }
 
 impl<'a> Iterator for AlpIter<'a> {
-    type Item = (Node, &'a ALogicalPlan);
+    type Item = (Node, &'a IR);
 
     fn next(&mut self) -> Option<Self::Item> {
         self.stack.pop().map(|node| {

@@ -126,7 +126,7 @@ pub(super) fn is_valid_tree(tree: TreeRef) -> bool {
 
 #[cfg(debug_assertions)]
 #[allow(unused)]
-pub(super) fn dbg_branch(b: &Branch, lp_arena: &Arena<ALogicalPlan>) {
+pub(super) fn dbg_branch(b: &Branch, lp_arena: &Arena<IR>) {
     // streamable: bool,
     // sources: Vec<Node>,
     // // joins seen in whole branch (we count a union as joins with multiple counts)
@@ -158,7 +158,7 @@ pub(super) fn dbg_branch(b: &Branch, lp_arena: &Arena<ALogicalPlan>) {
 
 #[cfg(debug_assertions)]
 #[allow(unused)]
-pub(super) fn dbg_tree(tree: Tree, lp_arena: &Arena<ALogicalPlan>, expr_arena: &Arena<AExpr>) {
+pub(super) fn dbg_tree(tree: Tree, lp_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) {
     if tree.is_empty() {
         println!("EMPTY TREE");
         return;

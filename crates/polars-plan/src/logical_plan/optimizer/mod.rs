@@ -6,6 +6,7 @@ mod cache_states;
 mod delay_rechunk;
 mod drop_nulls;
 
+mod collapse_and_project;
 mod collect_members;
 mod count_star;
 #[cfg(feature = "cse")]
@@ -15,7 +16,6 @@ mod flatten_union;
 mod fused;
 mod predicate_pushdown;
 mod projection_pushdown;
-mod simple_projection;
 mod simplify_expr;
 mod simplify_functions;
 mod slice_pushdown_expr;
@@ -23,13 +23,13 @@ mod slice_pushdown_lp;
 mod stack_opt;
 mod type_coercion;
 
+use collapse_and_project::SimpleProjectionAndCollapse;
 use delay_rechunk::DelayRechunk;
 use drop_nulls::ReplaceDropNulls;
 use polars_core::config::verbose;
 use polars_io::predicates::PhysicalIoExpr;
 pub use predicate_pushdown::PredicatePushDown;
 pub use projection_pushdown::ProjectionPushDown;
-use simple_projection::SimpleProjectionAndCollapse;
 pub use simplify_expr::{SimplifyBooleanRule, SimplifyExprRule};
 use slice_pushdown_lp::SlicePushDown;
 pub use stack_opt::{OptimizationRule, StackOptimizer};
@@ -61,7 +61,7 @@ pub(crate) fn init_hashmap<K, V>(max_len: Option<usize>) -> PlHashMap<K, V> {
 pub fn optimize(
     logical_plan: LogicalPlan,
     opt_state: OptState,
-    lp_arena: &mut Arena<ALogicalPlan>,
+    lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     scratch: &mut Vec<Node>,
     hive_partition_eval: HiveEval<'_>,
@@ -113,21 +113,24 @@ pub fn optimize(
     }
 
     #[cfg(feature = "cse")]
-    let _cse_plan_changed =
-        if comm_subplan_elim && members.has_joins_or_unions && members.has_duplicate_scans() {
-            if verbose {
-                eprintln!("found multiple sources; run comm_subplan_elim")
-            }
-            let (lp, changed, cid2c) = cse::elim_cmn_subplans(lp_top, lp_arena, expr_arena);
+    let _cse_plan_changed = if comm_subplan_elim
+        && members.has_joins_or_unions
+        && members.has_duplicate_scans()
+        && !members.has_cache
+    {
+        if verbose {
+            eprintln!("found multiple sources; run comm_subplan_elim")
+        }
+        let (lp, changed, cid2c) = cse::elim_cmn_subplans(lp_top, lp_arena, expr_arena);
 
-            prune_unused_caches(lp_arena, cid2c);
+        prune_unused_caches(lp_arena, cid2c);
 
-            lp_top = lp;
-            members.has_cache |= changed;
-            changed
-        } else {
-            false
-        };
+        lp_top = lp;
+        members.has_cache |= changed;
+        changed
+    } else {
+        false
+    };
     #[cfg(not(feature = "cse"))]
     let _cse_plan_changed = false;
 
@@ -200,11 +203,13 @@ pub fn optimize(
     // This one should run (nearly) last as this modifies the projections
     #[cfg(feature = "cse")]
     if comm_subexpr_elim && !members.has_ext_context {
-        let mut optimizer = CommonSubExprOptimizer::new(expr_arena);
-        lp_top = ALogicalPlanNode::with_context(lp_top, lp_arena, |alp_node| {
-            alp_node.rewrite(&mut optimizer)
-        })?
-        .node()
+        let mut optimizer = CommonSubExprOptimizer::new();
+        let alp_node = IRNode::new(lp_top);
+
+        lp_top = try_with_ir_arena(lp_arena, expr_arena, |arena| {
+            let rewritten = alp_node.rewrite(&mut optimizer, arena)?;
+            Ok(rewritten.node())
+        })?;
     }
 
     // During debug we check if the optimizations have not modified the final schema.

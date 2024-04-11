@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use polars_core::prelude::*;
 use polars_utils::vec::ConvertVec;
 use recursive::recursive;
@@ -61,6 +63,19 @@ fn to_aexprs(input: Vec<Expr>, arena: &mut Arena<AExpr>, state: &mut ConversionS
         .into_iter()
         .map(|e| to_aexpr_impl(e, arena, state))
         .collect()
+}
+
+fn set_function_output_name<F>(e: &[ExprIR], state: &mut ConversionState, function_fmt: F)
+where
+    F: FnOnce() -> Cow<'static, str>,
+{
+    if state.output_name.is_none() {
+        if e.is_empty() {
+            state.output_name = OutputName::LiteralLhs(ColumnName::from(function_fmt().as_ref()));
+        } else {
+            state.output_name = e[0].output_name_inner().clone();
+        }
+    }
 }
 
 /// Converts expression to AExpr and adds it to the arena, which uses an arena (Vec) for allocation.
@@ -211,9 +226,10 @@ fn to_aexpr_impl(expr: Expr, arena: &mut Arena<AExpr>, state: &mut ConversionSta
             output_type,
             options,
         } => {
-            state.prune_alias = false;
+            let e = to_expr_irs(input, arena);
+            set_function_output_name(&e, state, || Cow::Borrowed(options.fmt_str));
             AExpr::AnonymousFunction {
-                input: to_aexprs(input, arena, state),
+                input: e,
                 function,
                 output_type,
                 options,
@@ -224,9 +240,18 @@ fn to_aexpr_impl(expr: Expr, arena: &mut Arena<AExpr>, state: &mut ConversionSta
             function,
             options,
         } => {
-            state.prune_alias = false;
+            let e = to_expr_irs(input, arena);
+
+            if state.output_name.is_none() {
+                // Handles special case functions like `struct.field`.
+                if let Some(name) = function.output_name() {
+                    state.output_name = OutputName::ColumnLhs(name.clone())
+                } else {
+                    set_function_output_name(&e, state, || Cow::Owned(format!("{}", &function)));
+                }
+            }
             AExpr::Function {
-                input: to_aexprs(input, arena, state),
+                input: e,
                 function,
                 options,
             }
@@ -268,14 +293,14 @@ fn to_aexpr_impl(expr: Expr, arena: &mut Arena<AExpr>, state: &mut ConversionSta
     arena.add(v)
 }
 
-/// converts LogicalPlan to ALogicalPlan
+/// converts LogicalPlan to IR
 /// it adds expressions & lps to the respective arenas as it traverses the plan
 /// finally it returns the top node of the logical plan
 #[recursive]
 pub fn to_alp(
     lp: LogicalPlan,
     expr_arena: &mut Arena<AExpr>,
-    lp_arena: &mut Arena<ALogicalPlan>,
+    lp_arena: &mut Arena<IR>,
 ) -> PolarsResult<Node> {
     let owned = Arc::unwrap_or_clone;
     let v = match lp {
@@ -285,7 +310,7 @@ pub fn to_alp(
             predicate,
             scan_type,
             file_options: options,
-        } => ALogicalPlan::Scan {
+        } => IR::Scan {
             file_info,
             paths,
             output_schema: None,
@@ -294,7 +319,7 @@ pub fn to_alp(
             file_options: options,
         },
         #[cfg(feature = "python")]
-        LogicalPlan::PythonScan { options } => ALogicalPlan::PythonScan {
+        LogicalPlan::PythonScan { options } => IR::PythonScan {
             options,
             predicate: None,
         },
@@ -303,7 +328,7 @@ pub fn to_alp(
                 .into_iter()
                 .map(|lp| to_alp(lp, expr_arena, lp_arena))
                 .collect::<PolarsResult<_>>()?;
-            ALogicalPlan::Union { inputs, options }
+            IR::Union { inputs, options }
         },
         LogicalPlan::HConcat {
             inputs,
@@ -314,23 +339,23 @@ pub fn to_alp(
                 .into_iter()
                 .map(|lp| to_alp(lp, expr_arena, lp_arena))
                 .collect::<PolarsResult<_>>()?;
-            ALogicalPlan::HConcat {
+            IR::HConcat {
                 inputs,
                 schema,
                 options,
             }
         },
-        LogicalPlan::Selection { input, predicate } => {
+        LogicalPlan::Filter { input, predicate } => {
             let i = to_alp(owned(input), expr_arena, lp_arena)?;
             let p = to_expr_ir(predicate, expr_arena);
-            ALogicalPlan::Selection {
+            IR::Filter {
                 input: i,
                 predicate: p,
             }
         },
         LogicalPlan::Slice { input, offset, len } => {
             let input = to_alp(owned(input), expr_arena, lp_arena)?;
-            ALogicalPlan::Slice { input, offset, len }
+            IR::Slice { input, offset, len }
         },
         LogicalPlan::DataFrameScan {
             df,
@@ -338,14 +363,14 @@ pub fn to_alp(
             output_schema,
             projection,
             selection,
-        } => ALogicalPlan::DataFrameScan {
+        } => IR::DataFrameScan {
             df,
             schema,
             output_schema,
             projection,
             selection: selection.map(|expr| to_expr_ir(expr, expr_arena)),
         },
-        LogicalPlan::Projection {
+        LogicalPlan::Select {
             expr,
             input,
             schema,
@@ -354,7 +379,7 @@ pub fn to_alp(
             let eirs = to_expr_irs(expr, expr_arena);
             let expr = eirs.into();
             let i = to_alp(owned(input), expr_arena, lp_arena)?;
-            ALogicalPlan::Projection {
+            IR::Select {
                 expr,
                 input: i,
                 schema,
@@ -368,7 +393,7 @@ pub fn to_alp(
         } => {
             let input = to_alp(owned(input), expr_arena, lp_arena)?;
             let by_column = to_expr_irs(by_column, expr_arena);
-            ALogicalPlan::Sort {
+            IR::Sort {
                 input,
                 by_column,
                 args,
@@ -380,13 +405,13 @@ pub fn to_alp(
             cache_hits,
         } => {
             let input = to_alp(owned(input), expr_arena, lp_arena)?;
-            ALogicalPlan::Cache {
+            IR::Cache {
                 input,
                 id,
                 cache_hits,
             }
         },
-        LogicalPlan::Aggregate {
+        LogicalPlan::GroupBy {
             input,
             keys,
             aggs,
@@ -399,7 +424,7 @@ pub fn to_alp(
             let aggs = to_expr_irs(aggs, expr_arena);
             let keys = keys.convert(|e| to_expr_ir(e.clone(), expr_arena));
 
-            ALogicalPlan::Aggregate {
+            IR::GroupBy {
                 input: i,
                 keys,
                 aggs,
@@ -423,7 +448,7 @@ pub fn to_alp(
             let left_on = to_expr_irs_ignore_alias(left_on, expr_arena);
             let right_on = to_expr_irs_ignore_alias(right_on, expr_arena);
 
-            ALogicalPlan::Join {
+            IR::Join {
                 input_left,
                 input_right,
                 schema,
@@ -441,7 +466,7 @@ pub fn to_alp(
             let eirs = to_expr_irs(exprs, expr_arena);
             let exprs = eirs.into();
             let input = to_alp(owned(input), expr_arena, lp_arena)?;
-            ALogicalPlan::HStack {
+            IR::HStack {
                 input,
                 exprs,
                 schema,
@@ -450,11 +475,11 @@ pub fn to_alp(
         },
         LogicalPlan::Distinct { input, options } => {
             let input = to_alp(owned(input), expr_arena, lp_arena)?;
-            ALogicalPlan::Distinct { input, options }
+            IR::Distinct { input, options }
         },
         LogicalPlan::MapFunction { input, function } => {
             let input = to_alp(owned(input), expr_arena, lp_arena)?;
-            ALogicalPlan::MapFunction { input, function }
+            IR::MapFunction { input, function }
         },
         LogicalPlan::Error { err, .. } => {
             // We just take the error. The LogicalPlan should not be used anymore once this
@@ -471,7 +496,7 @@ pub fn to_alp(
                 .into_iter()
                 .map(|lp| to_alp(lp, expr_arena, lp_arena))
                 .collect::<PolarsResult<_>>()?;
-            ALogicalPlan::ExtContext {
+            IR::ExtContext {
                 input,
                 contexts,
                 schema,
@@ -479,7 +504,7 @@ pub fn to_alp(
         },
         LogicalPlan::Sink { input, payload } => {
             let input = to_alp(owned(input), expr_arena, lp_arena)?;
-            ALogicalPlan::Sink { input, payload }
+            IR::Sink { input, payload }
         },
     };
     Ok(lp_arena.add(v))
@@ -667,7 +692,7 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             output_type,
             options,
         } => Expr::AnonymousFunction {
-            input: nodes_to_exprs(&input, expr_arena),
+            input: expr_irs_to_exprs(input, expr_arena),
             function,
             output_type,
             options,
@@ -677,7 +702,7 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             function,
             options,
         } => Expr::Function {
-            input: nodes_to_exprs(&input, expr_arena),
+            input: expr_irs_to_exprs(input, expr_arena),
             function,
             options,
         },
@@ -717,7 +742,7 @@ fn expr_irs_to_exprs(expr_irs: Vec<ExprIR>, expr_arena: &Arena<AExpr>) -> Vec<Ex
     expr_irs.convert_owned(|e| e.to_expr(expr_arena))
 }
 
-impl ALogicalPlan {
+impl IR {
     #[recursive]
     fn into_lp<F, LPA>(
         self,
@@ -726,14 +751,14 @@ impl ALogicalPlan {
         expr_arena: &Arena<AExpr>,
     ) -> LogicalPlan
     where
-        F: Fn(Node, &mut LPA) -> ALogicalPlan,
+        F: Fn(Node, &mut LPA) -> IR,
     {
         let lp = self;
         let convert_to_lp = |node: Node, lp_arena: &mut LPA| {
             conversion_fn(node, lp_arena).into_lp(conversion_fn, lp_arena, expr_arena)
         };
         match lp {
-            ALogicalPlan::Scan {
+            IR::Scan {
                 paths,
                 file_info,
                 predicate,
@@ -748,15 +773,15 @@ impl ALogicalPlan {
                 file_options: options,
             },
             #[cfg(feature = "python")]
-            ALogicalPlan::PythonScan { options, .. } => LogicalPlan::PythonScan { options },
-            ALogicalPlan::Union { inputs, options } => {
+            IR::PythonScan { options, .. } => LogicalPlan::PythonScan { options },
+            IR::Union { inputs, options } => {
                 let inputs = inputs
                     .into_iter()
                     .map(|node| convert_to_lp(node, lp_arena))
                     .collect();
                 LogicalPlan::Union { inputs, options }
             },
-            ALogicalPlan::HConcat {
+            IR::HConcat {
                 inputs,
                 schema,
                 options,
@@ -771,7 +796,7 @@ impl ALogicalPlan {
                     options,
                 }
             },
-            ALogicalPlan::Slice { input, offset, len } => {
+            IR::Slice { input, offset, len } => {
                 let lp = convert_to_lp(input, lp_arena);
                 LogicalPlan::Slice {
                     input: Arc::new(lp),
@@ -779,15 +804,15 @@ impl ALogicalPlan {
                     len,
                 }
             },
-            ALogicalPlan::Selection { input, predicate } => {
+            IR::Filter { input, predicate } => {
                 let lp = convert_to_lp(input, lp_arena);
                 let predicate = predicate.to_expr(expr_arena);
-                LogicalPlan::Selection {
+                LogicalPlan::Filter {
                     input: Arc::new(lp),
                     predicate,
                 }
             },
-            ALogicalPlan::DataFrameScan {
+            IR::DataFrameScan {
                 df,
                 schema,
                 output_schema,
@@ -800,7 +825,7 @@ impl ALogicalPlan {
                 projection,
                 selection: selection.map(|e| e.to_expr(expr_arena)),
             },
-            ALogicalPlan::Projection {
+            IR::Select {
                 expr,
                 input,
                 schema,
@@ -808,27 +833,27 @@ impl ALogicalPlan {
             } => {
                 let i = convert_to_lp(input, lp_arena);
                 let expr = expr_irs_to_exprs(expr.all_exprs(), expr_arena);
-                LogicalPlan::Projection {
+                LogicalPlan::Select {
                     expr,
                     input: Arc::new(i),
                     schema,
                     options,
                 }
             },
-            ALogicalPlan::SimpleProjection { input, columns, .. } => {
+            IR::SimpleProjection { input, columns, .. } => {
                 let input = convert_to_lp(input, lp_arena);
                 let expr = columns
                     .iter_names()
                     .map(|name| Expr::Column(ColumnName::from(name.as_str())))
                     .collect::<Vec<_>>();
-                LogicalPlan::Projection {
+                LogicalPlan::Select {
                     expr,
                     input: Arc::new(input),
                     schema: columns.clone(),
                     options: Default::default(),
                 }
             },
-            ALogicalPlan::Sort {
+            IR::Sort {
                 input,
                 by_column,
                 args,
@@ -841,7 +866,7 @@ impl ALogicalPlan {
                     args,
                 }
             },
-            ALogicalPlan::Cache {
+            IR::Cache {
                 input,
                 id,
                 cache_hits,
@@ -853,7 +878,7 @@ impl ALogicalPlan {
                     cache_hits,
                 }
             },
-            ALogicalPlan::Aggregate {
+            IR::GroupBy {
                 input,
                 keys,
                 aggs,
@@ -866,7 +891,7 @@ impl ALogicalPlan {
                 let keys = Arc::new(expr_irs_to_exprs(keys, expr_arena));
                 let aggs = expr_irs_to_exprs(aggs, expr_arena);
 
-                LogicalPlan::Aggregate {
+                LogicalPlan::GroupBy {
                     input: Arc::new(i),
                     keys,
                     aggs,
@@ -876,7 +901,7 @@ impl ALogicalPlan {
                     options: dynamic_options,
                 }
             },
-            ALogicalPlan::Join {
+            IR::Join {
                 input_left,
                 input_right,
                 schema,
@@ -899,7 +924,7 @@ impl ALogicalPlan {
                     options,
                 }
             },
-            ALogicalPlan::HStack {
+            IR::HStack {
                 input,
                 exprs,
                 schema,
@@ -915,18 +940,18 @@ impl ALogicalPlan {
                     options,
                 }
             },
-            ALogicalPlan::Distinct { input, options } => {
+            IR::Distinct { input, options } => {
                 let i = convert_to_lp(input, lp_arena);
                 LogicalPlan::Distinct {
                     input: Arc::new(i),
                     options,
                 }
             },
-            ALogicalPlan::MapFunction { input, function } => {
+            IR::MapFunction { input, function } => {
                 let input = Arc::new(convert_to_lp(input, lp_arena));
                 LogicalPlan::MapFunction { input, function }
             },
-            ALogicalPlan::ExtContext {
+            IR::ExtContext {
                 input,
                 contexts,
                 schema,
@@ -942,11 +967,11 @@ impl ALogicalPlan {
                     schema,
                 }
             },
-            ALogicalPlan::Sink { input, payload } => {
+            IR::Sink { input, payload } => {
                 let input = Arc::new(convert_to_lp(input, lp_arena));
                 LogicalPlan::Sink { input, payload }
             },
-            ALogicalPlan::Invalid => unreachable!(),
+            IR::Invalid => unreachable!(),
         }
     }
 }
@@ -954,29 +979,25 @@ impl ALogicalPlan {
 pub fn node_to_lp_cloned(
     node: Node,
     expr_arena: &Arena<AExpr>,
-    mut lp_arena: &Arena<ALogicalPlan>,
+    mut lp_arena: &Arena<IR>,
 ) -> LogicalPlan {
     // we borrow again mutably only to make the types happy
     // we want to initialize `to_lp` from a mutable and a immutable lp_arena
     // by borrowing an immutable mutably, we still are immutable down the line.
     let alp = lp_arena.get(node).clone();
     alp.into_lp(
-        &|node, lp_arena: &mut &Arena<ALogicalPlan>| lp_arena.get(node).clone(),
+        &|node, lp_arena: &mut &Arena<IR>| lp_arena.get(node).clone(),
         &mut lp_arena,
         expr_arena,
     )
 }
 
-/// converts a node from the ALogicalPlan arena to a LogicalPlan
-pub fn node_to_lp(
-    node: Node,
-    expr_arena: &Arena<AExpr>,
-    lp_arena: &mut Arena<ALogicalPlan>,
-) -> LogicalPlan {
+/// converts a node from the IR arena to a LogicalPlan
+pub fn node_to_lp(node: Node, expr_arena: &Arena<AExpr>, lp_arena: &mut Arena<IR>) -> LogicalPlan {
     let alp = lp_arena.get_mut(node);
     let alp = std::mem::take(alp);
     alp.into_lp(
-        &|node, lp_arena: &mut Arena<ALogicalPlan>| {
+        &|node, lp_arena: &mut Arena<IR>| {
             let lp = lp_arena.get_mut(node);
             std::mem::take(lp)
         },

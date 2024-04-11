@@ -124,7 +124,6 @@ where
 // have the code duplication
 pub(crate) fn group_by_threaded_slice<T, IntoSlice>(
     keys: Vec<IntoSlice>,
-    n_partitions: usize,
     sorted: bool,
 ) -> GroupsProxy
 where
@@ -132,6 +131,7 @@ where
     <T as ToTotalOrd>::TotalOrdItem: Send + Hash + Eq + Sync + Copy + DirtyHash,
     IntoSlice: AsRef<[T]> + Send + Sync,
 {
+    let n_partitions = keys.len();
     let init_size = get_init_size();
 
     // We will create a hashtable in every thread.

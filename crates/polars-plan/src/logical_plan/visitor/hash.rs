@@ -4,14 +4,19 @@ use std::sync::Arc;
 use polars_utils::arena::Arena;
 
 use super::*;
-use crate::logical_plan::{AExpr, ALogicalPlan};
+use crate::logical_plan::{AExpr, IR};
 use crate::prelude::aexpr::traverse_and_hash_aexpr;
 use crate::prelude::ExprIR;
 
-impl ALogicalPlanNode {
-    pub(crate) fn hashable_and_cmp<'a>(&'a self, expr_arena: &'a Arena<AExpr>) -> HashableEqLP<'a> {
+impl IRNode {
+    pub(crate) fn hashable_and_cmp<'a>(
+        &'a self,
+        lp_arena: &'a Arena<IR>,
+        expr_arena: &'a Arena<AExpr>,
+    ) -> HashableEqLP<'a> {
         HashableEqLP {
-            node: self,
+            node: *self,
+            lp_arena,
             expr_arena,
             ignore_cache: false,
         }
@@ -19,7 +24,8 @@ impl ALogicalPlanNode {
 }
 
 pub(crate) struct HashableEqLP<'a> {
-    node: &'a ALogicalPlanNode,
+    node: IRNode,
+    lp_arena: &'a Arena<IR>,
     expr_arena: &'a Arena<AExpr>,
     ignore_cache: bool,
 }
@@ -48,12 +54,12 @@ fn hash_exprs<H: Hasher>(exprs: &[ExprIR], expr_arena: &Arena<AExpr>, state: &mu
 impl Hash for HashableEqLP<'_> {
     // This hashes the variant, not the whole plan
     fn hash<H: Hasher>(&self, state: &mut H) {
-        let alp = self.node.to_alp();
+        let alp = self.node.to_alp(self.lp_arena);
         std::mem::discriminant(alp).hash(state);
         match alp {
             #[cfg(feature = "python")]
-            ALogicalPlan::PythonScan { .. } => {},
-            ALogicalPlan::Slice {
+            IR::PythonScan { .. } => {},
+            IR::Slice {
                 offset,
                 len,
                 input: _,
@@ -61,13 +67,13 @@ impl Hash for HashableEqLP<'_> {
                 len.hash(state);
                 offset.hash(state);
             },
-            ALogicalPlan::Selection {
+            IR::Filter {
                 input: _,
                 predicate,
             } => {
                 predicate.traverse_and_hash(self.expr_arena, state);
             },
-            ALogicalPlan::Scan {
+            IR::Scan {
                 paths,
                 file_info: _,
                 predicate,
@@ -81,7 +87,7 @@ impl Hash for HashableEqLP<'_> {
                 hash_option_expr(predicate, self.expr_arena, state);
                 file_options.hash(state);
             },
-            ALogicalPlan::DataFrameScan {
+            IR::DataFrameScan {
                 df,
                 schema: _,
                 output_schema: _,
@@ -92,7 +98,7 @@ impl Hash for HashableEqLP<'_> {
                 projection.hash(state);
                 hash_option_expr(selection, self.expr_arena, state);
             },
-            ALogicalPlan::SimpleProjection {
+            IR::SimpleProjection {
                 columns,
                 duplicate_check,
                 input: _,
@@ -100,7 +106,7 @@ impl Hash for HashableEqLP<'_> {
                 columns.hash(state);
                 duplicate_check.hash(state);
             },
-            ALogicalPlan::Projection {
+            IR::Select {
                 input: _,
                 expr,
                 schema: _,
@@ -109,7 +115,7 @@ impl Hash for HashableEqLP<'_> {
                 hash_exprs(expr.default_exprs(), self.expr_arena, state);
                 options.hash(state);
             },
-            ALogicalPlan::Sort {
+            IR::Sort {
                 input: _,
                 by_column,
                 args,
@@ -117,7 +123,7 @@ impl Hash for HashableEqLP<'_> {
                 hash_exprs(by_column, self.expr_arena, state);
                 args.hash(state);
             },
-            ALogicalPlan::Aggregate {
+            IR::GroupBy {
                 input: _,
                 keys,
                 aggs,
@@ -132,7 +138,7 @@ impl Hash for HashableEqLP<'_> {
                 maintain_order.hash(state);
                 options.hash(state);
             },
-            ALogicalPlan::Join {
+            IR::Join {
                 input_left: _,
                 input_right: _,
                 schema: _,
@@ -144,7 +150,7 @@ impl Hash for HashableEqLP<'_> {
                 hash_exprs(right_on, self.expr_arena, state);
                 options.hash(state);
             },
-            ALogicalPlan::HStack {
+            IR::HStack {
                 input: _,
                 exprs,
                 schema: _,
@@ -153,21 +159,21 @@ impl Hash for HashableEqLP<'_> {
                 hash_exprs(exprs.default_exprs(), self.expr_arena, state);
                 options.hash(state);
             },
-            ALogicalPlan::Distinct { input: _, options } => {
+            IR::Distinct { input: _, options } => {
                 options.hash(state);
             },
-            ALogicalPlan::MapFunction { input: _, function } => {
+            IR::MapFunction { input: _, function } => {
                 function.hash(state);
             },
-            ALogicalPlan::Union { inputs: _, options } => options.hash(state),
-            ALogicalPlan::HConcat {
+            IR::Union { inputs: _, options } => options.hash(state),
+            IR::HConcat {
                 inputs: _,
                 schema: _,
                 options,
             } => {
                 options.hash(state);
             },
-            ALogicalPlan::ExtContext {
+            IR::ExtContext {
                 input: _,
                 contexts,
                 schema: _,
@@ -176,10 +182,10 @@ impl Hash for HashableEqLP<'_> {
                     traverse_and_hash_aexpr(*node, self.expr_arena, state);
                 }
             },
-            ALogicalPlan::Sink { input: _, payload } => {
+            IR::Sink { input: _, payload } => {
                 payload.hash(state);
             },
-            ALogicalPlan::Cache {
+            IR::Cache {
                 input: _,
                 id,
                 cache_hits,
@@ -187,7 +193,7 @@ impl Hash for HashableEqLP<'_> {
                 id.hash(state);
                 cache_hits.hash(state);
             },
-            ALogicalPlan::Invalid => unreachable!(),
+            IR::Invalid => unreachable!(),
         }
     }
 }
@@ -198,12 +204,9 @@ fn expr_irs_eq(l: &[ExprIR], r: &[ExprIR], expr_arena: &Arena<AExpr>) -> bool {
 
 fn expr_ir_eq(l: &ExprIR, r: &ExprIR, expr_arena: &Arena<AExpr>) -> bool {
     l.get_alias() == r.get_alias() && {
-        let expr_arena = expr_arena as *const _ as *mut _;
-        unsafe {
-            let l = AexprNode::from_raw(l.node(), expr_arena);
-            let r = AexprNode::from_raw(r.node(), expr_arena);
-            l == r
-        }
+        let l = AexprNode::new(l.node());
+        let r = AexprNode::new(r.node());
+        l.hashable_and_cmp(expr_arena) == r.hashable_and_cmp(expr_arena)
     }
 }
 
@@ -217,36 +220,36 @@ fn opt_expr_ir_eq(l: &Option<ExprIR>, r: &Option<ExprIR>, expr_arena: &Arena<AEx
 
 impl HashableEqLP<'_> {
     fn is_equal(&self, other: &Self) -> bool {
-        let alp_l = self.node.to_alp();
-        let alp_r = other.node.to_alp();
+        let alp_l = self.node.to_alp(self.lp_arena);
+        let alp_r = other.node.to_alp(self.lp_arena);
         if std::mem::discriminant(alp_l) != std::mem::discriminant(alp_r) {
             return false;
         }
         match (alp_l, alp_r) {
             (
-                ALogicalPlan::Slice {
+                IR::Slice {
                     input: _,
                     offset: ol,
                     len: ll,
                 },
-                ALogicalPlan::Slice {
+                IR::Slice {
                     input: _,
                     offset: or,
                     len: lr,
                 },
             ) => ol == or && ll == lr,
             (
-                ALogicalPlan::Selection {
+                IR::Filter {
                     input: _,
                     predicate: l,
                 },
-                ALogicalPlan::Selection {
+                IR::Filter {
                     input: _,
                     predicate: r,
                 },
             ) => expr_ir_eq(l, r, self.expr_arena),
             (
-                ALogicalPlan::Scan {
+                IR::Scan {
                     paths: pl,
                     file_info: _,
                     predicate: pred_l,
@@ -254,7 +257,7 @@ impl HashableEqLP<'_> {
                     scan_type: stl,
                     file_options: ol,
                 },
-                ALogicalPlan::Scan {
+                IR::Scan {
                     paths: pr,
                     file_info: _,
                     predicate: pred_r,
@@ -269,14 +272,14 @@ impl HashableEqLP<'_> {
                     && opt_expr_ir_eq(pred_l, pred_r, self.expr_arena)
             },
             (
-                ALogicalPlan::DataFrameScan {
+                IR::DataFrameScan {
                     df: dfl,
                     schema: _,
                     output_schema: _,
                     projection: pl,
                     selection: sl,
                 },
-                ALogicalPlan::DataFrameScan {
+                IR::DataFrameScan {
                     df: dfr,
                     schema: _,
                     output_schema: _,
@@ -289,25 +292,25 @@ impl HashableEqLP<'_> {
                     && opt_expr_ir_eq(sl, sr, self.expr_arena)
             },
             (
-                ALogicalPlan::SimpleProjection {
+                IR::SimpleProjection {
                     input: _,
                     columns: cl,
                     duplicate_check: dl,
                 },
-                ALogicalPlan::SimpleProjection {
+                IR::SimpleProjection {
                     input: _,
                     columns: cr,
                     duplicate_check: dr,
                 },
             ) => dl == dr && cl == cr,
             (
-                ALogicalPlan::Projection {
+                IR::Select {
                     input: _,
                     expr: el,
                     options: ol,
                     schema: _,
                 },
-                ALogicalPlan::Projection {
+                IR::Select {
                     input: _,
                     expr: er,
                     options: or,
@@ -315,19 +318,19 @@ impl HashableEqLP<'_> {
                 },
             ) => ol == or && expr_irs_eq(el.default_exprs(), er.default_exprs(), self.expr_arena),
             (
-                ALogicalPlan::Sort {
+                IR::Sort {
                     input: _,
                     by_column: cl,
                     args: al,
                 },
-                ALogicalPlan::Sort {
+                IR::Sort {
                     input: _,
                     by_column: cr,
                     args: ar,
                 },
             ) => al == ar && expr_irs_eq(cl, cr, self.expr_arena),
             (
-                ALogicalPlan::Aggregate {
+                IR::GroupBy {
                     input: _,
                     keys: keys_l,
                     aggs: aggs_l,
@@ -336,7 +339,7 @@ impl HashableEqLP<'_> {
                     maintain_order: maintain_l,
                     options: ol,
                 },
-                ALogicalPlan::Aggregate {
+                IR::GroupBy {
                     input: _,
                     keys: keys_r,
                     aggs: aggs_r,
@@ -354,7 +357,7 @@ impl HashableEqLP<'_> {
                     && expr_irs_eq(aggs_l, aggs_r, self.expr_arena)
             },
             (
-                ALogicalPlan::Join {
+                IR::Join {
                     input_left: _,
                     input_right: _,
                     schema: _,
@@ -362,7 +365,7 @@ impl HashableEqLP<'_> {
                     right_on: rl,
                     options: ol,
                 },
-                ALogicalPlan::Join {
+                IR::Join {
                     input_left: _,
                     input_right: _,
                     schema: _,
@@ -376,13 +379,13 @@ impl HashableEqLP<'_> {
                     && expr_irs_eq(rl, rr, self.expr_arena)
             },
             (
-                ALogicalPlan::HStack {
+                IR::HStack {
                     input: _,
                     exprs: el,
                     schema: _,
                     options: ol,
                 },
-                ALogicalPlan::HStack {
+                IR::HStack {
                     input: _,
                     exprs: er,
                     schema: _,
@@ -390,54 +393,54 @@ impl HashableEqLP<'_> {
                 },
             ) => ol == or && expr_irs_eq(el.default_exprs(), er.default_exprs(), self.expr_arena),
             (
-                ALogicalPlan::Distinct {
+                IR::Distinct {
                     input: _,
                     options: ol,
                 },
-                ALogicalPlan::Distinct {
+                IR::Distinct {
                     input: _,
                     options: or,
                 },
             ) => ol == or,
             (
-                ALogicalPlan::MapFunction {
+                IR::MapFunction {
                     input: _,
                     function: l,
                 },
-                ALogicalPlan::MapFunction {
+                IR::MapFunction {
                     input: _,
                     function: r,
                 },
             ) => l == r,
             (
-                ALogicalPlan::Union {
+                IR::Union {
                     inputs: _,
                     options: l,
                 },
-                ALogicalPlan::Union {
+                IR::Union {
                     inputs: _,
                     options: r,
                 },
             ) => l == r,
             (
-                ALogicalPlan::HConcat {
+                IR::HConcat {
                     inputs: _,
                     schema: _,
                     options: l,
                 },
-                ALogicalPlan::HConcat {
+                IR::HConcat {
                     inputs: _,
                     schema: _,
                     options: r,
                 },
             ) => l == r,
             (
-                ALogicalPlan::ExtContext {
+                IR::ExtContext {
                     input: _,
                     contexts: l,
                     schema: _,
                 },
-                ALogicalPlan::ExtContext {
+                IR::ExtContext {
                     input: _,
                     contexts: r,
                     schema: _,
@@ -445,12 +448,9 @@ impl HashableEqLP<'_> {
             ) => {
                 l.len() == r.len()
                     && l.iter().zip(r.iter()).all(|(l, r)| {
-                        let expr_arena = self.expr_arena as *const _ as *mut _;
-                        unsafe {
-                            let l = AexprNode::from_raw(*l, expr_arena);
-                            let r = AexprNode::from_raw(*r, expr_arena);
-                            l == r
-                        }
+                        let l = AexprNode::new(*l).hashable_and_cmp(self.expr_arena);
+                        let r = AexprNode::new(*r).hashable_and_cmp(self.expr_arena);
+                        l == r
                     })
             },
             _ => false,
@@ -469,29 +469,24 @@ impl PartialEq for HashableEqLP<'_> {
         loop {
             match (scratch_1.pop(), scratch_2.pop()) {
                 (Some(l), Some(r)) => {
-                    // SAFETY: we can pass a *mut pointer
-                    // the equality operation will not access mutable
-                    let l = unsafe { ALogicalPlanNode::from_raw(l, self.node.get_arena_raw()) };
-                    let r = unsafe { ALogicalPlanNode::from_raw(r, self.node.get_arena_raw()) };
-                    let l_alp = l.to_alp();
-                    let r_alp = r.to_alp();
+                    let l = IRNode::new(l);
+                    let r = IRNode::new(r);
+                    let l_alp = l.to_alp(self.lp_arena);
+                    let r_alp = r.to_alp(self.lp_arena);
 
                     if self.ignore_cache {
                         match (l_alp, r_alp) {
-                            (
-                                ALogicalPlan::Cache { input: l, .. },
-                                ALogicalPlan::Cache { input: r, .. },
-                            ) => {
+                            (IR::Cache { input: l, .. }, IR::Cache { input: r, .. }) => {
                                 scratch_1.push(*l);
                                 scratch_2.push(*r);
                                 continue;
                             },
-                            (ALogicalPlan::Cache { input: l, .. }, _) => {
+                            (IR::Cache { input: l, .. }, _) => {
                                 scratch_1.push(*l);
                                 scratch_2.push(r.node());
                                 continue;
                             },
-                            (_, ALogicalPlan::Cache { input: r, .. }) => {
+                            (_, IR::Cache { input: r, .. }) => {
                                 scratch_1.push(l.node());
                                 scratch_2.push(*r);
                                 continue;
@@ -501,14 +496,14 @@ impl PartialEq for HashableEqLP<'_> {
                     }
 
                     if !l
-                        .hashable_and_cmp(self.expr_arena)
-                        .is_equal(&r.hashable_and_cmp(self.expr_arena))
+                        .hashable_and_cmp(self.lp_arena, self.expr_arena)
+                        .is_equal(&r.hashable_and_cmp(self.lp_arena, self.expr_arena))
                     {
                         return false;
                     }
 
-                    l.to_alp().copy_inputs(&mut scratch_1);
-                    r.to_alp().copy_inputs(&mut scratch_2);
+                    l_alp.copy_inputs(&mut scratch_1);
+                    r_alp.copy_inputs(&mut scratch_2);
                 },
                 (None, None) => return true,
                 _ => return false,

@@ -11,12 +11,12 @@ struct UniqueScans {
 
 #[cfg(feature = "cse")]
 impl UniqueScans {
-    fn insert(&mut self, node: Node, lp_arena: &Arena<ALogicalPlan>, expr_arena: &Arena<AExpr>) {
-        let alp_node = unsafe { ALogicalPlanNode::from_raw(node, lp_arena as *const _ as *mut _) };
+    fn insert(&mut self, node: Node, lp_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) {
+        let alp_node = IRNode::new(node);
         self.ids.insert(
             self.ids
                 .hasher()
-                .hash_one(alp_node.hashable_and_cmp(expr_arena)),
+                .hash_one(alp_node.hashable_and_cmp(lp_arena, expr_arena)),
         );
         self.count += 1;
     }
@@ -40,13 +40,8 @@ impl MemberCollector {
             scans: UniqueScans::default(),
         }
     }
-    pub(super) fn collect(
-        &mut self,
-        root: Node,
-        lp_arena: &Arena<ALogicalPlan>,
-        _expr_arena: &Arena<AExpr>,
-    ) {
-        use ALogicalPlan::*;
+    pub(super) fn collect(&mut self, root: Node, lp_arena: &Arena<IR>, _expr_arena: &Arena<AExpr>) {
+        use IR::*;
         for (_node, alp) in lp_arena.iter(root) {
             match alp {
                 Join { .. } | Union { .. } => self.has_joins_or_unions = true,

@@ -1,6 +1,7 @@
 use arrow::legacy::kernels::float::*;
 use arrow::legacy::kernels::set::set_at_nulls;
 use num_traits::Float;
+use polars_utils::total_ord::{canonical_f32, canonical_f64};
 
 use crate::prelude::*;
 
@@ -29,5 +30,33 @@ where
             .downcast_iter()
             .map(|arr| set_at_nulls(arr, T::Native::nan()));
         ChunkedArray::from_chunk_iter(self.name(), chunks)
+    }
+}
+
+pub trait Canonical {
+    fn canonical(self) -> Self;
+}
+
+impl Canonical for f32 {
+    #[inline]
+    fn canonical(self) -> Self {
+        canonical_f32(self)
+    }
+}
+
+impl Canonical for f64 {
+    #[inline]
+    fn canonical(self) -> Self {
+        canonical_f64(self)
+    }
+}
+
+impl<T> ChunkedArray<T>
+where
+    T: PolarsFloatType,
+    T::Native: Float + Canonical,
+{
+    pub fn to_canonical(&self) -> Self {
+        self.apply_values_generic(|v| v.canonical())
     }
 }

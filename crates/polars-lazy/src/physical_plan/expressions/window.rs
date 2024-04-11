@@ -557,17 +557,16 @@ impl PhysicalExpr for WindowExpr {
                             if group_by_columns.len() == 1 {
                                 // group key from right column
                                 let right = &keys[0];
-                                group_by_columns[0]
-                                    .hash_join_left(right, JoinValidation::ManyToMany, true)
-                                    .unwrap()
-                                    .1
+                                PolarsResult::Ok(
+                                    group_by_columns[0]
+                                        .hash_join_left(right, JoinValidation::ManyToMany, true)
+                                        .unwrap()
+                                        .1,
+                                )
                             } else {
                                 let df_right = unsafe { DataFrame::new_no_checks(keys) };
                                 let df_left = unsafe { DataFrame::new_no_checks(group_by_columns) };
-                                private_left_join_multiple_keys(
-                                    &df_left, &df_right, None, None, true,
-                                )
-                                .1
+                                Ok(private_left_join_multiple_keys(&df_left, &df_right, true)?.1)
                             }
                         };
 
@@ -580,10 +579,10 @@ impl PhysicalExpr for WindowExpr {
                             if let Some(opt_join_tuples) = jt_map.get_mut(&cache_key) {
                                 std::mem::replace(opt_join_tuples, default_join_ids())
                             } else {
-                                get_join_tuples()
+                                get_join_tuples()?
                             }
                         } else {
-                            get_join_tuples()
+                            get_join_tuples()?
                         };
 
                         let mut out = materialize_column(&join_opt_ids, &out_column);
@@ -725,7 +724,7 @@ where
     } else {
         // We don't use a mutable bitmap as bits will have have race conditions!
         // A single byte might alias if we write from single threads.
-        let mut validity: Vec<bool> = Vec::with_capacity(len);
+        let mut validity: Vec<bool> = vec![false; len];
         let validity_ptr = validity.as_mut_ptr();
         let sync_ptr_validity = unsafe { SyncPtr::new(validity_ptr) };
 
@@ -793,7 +792,6 @@ where
         }
         // SAFETY: we have written all slots
         unsafe { values.set_len(len) }
-        unsafe { validity.set_len(len) }
         let validity = Bitmap::from(validity);
         let arr = PrimitiveArray::new(
             T::get_dtype().to_physical().to_arrow(true),

@@ -1167,9 +1167,6 @@ class Series:
         return self.pow(exponent)
 
     def __rpow__(self, other: Any) -> Series:
-        if self.dtype.is_temporal():
-            msg = "first cast to integer before raising datelike dtypes to a power"
-            raise TypeError(msg)
         return self.to_frame().select_seq(other ** F.col(self.name)).to_series()
 
     def __matmul__(self, other: Any) -> float | Series | None:
@@ -1957,17 +1954,14 @@ class Series:
         >>> s = pl.Series("foo", [1, 2, 3, 4])
         >>> s.pow(3)
         shape: (4,)
-        Series: 'foo' [f64]
+        Series: 'foo' [i64]
         [
-                1.0
-                8.0
-                27.0
-                64.0
+            1
+            8
+            27
+            64
         ]
         """
-        if self.dtype.is_temporal():
-            msg = "first cast to integer before raising datelike dtypes to a power"
-            raise TypeError(msg)
         if _check_for_numpy(exponent) and isinstance(exponent, np.ndarray):
             exponent = Series(exponent)
         return self.to_frame().select_seq(F.col(self.name).pow(exponent)).to_series()
@@ -2828,13 +2822,13 @@ class Series:
         >>> s = pl.Series("values", [1, 2, 3, 4, 5])
         >>> s.cumulative_eval(pl.element().first() - pl.element().last() ** 2)
         shape: (5,)
-        Series: 'values' [f64]
+        Series: 'values' [i64]
         [
-            0.0
-            -3.0
-            -8.0
-            -15.0
-            -24.0
+            0
+            -3
+            -8
+            -15
+            -24
         ]
         """
 
@@ -4953,7 +4947,7 @@ class Series:
         ]
         """
 
-    def dot(self, other: Series | ArrayLike) -> float | None:
+    def dot(self, other: Series | ArrayLike) -> int | float | None:
         """
         Compute the dot/inner product between two Series.
 

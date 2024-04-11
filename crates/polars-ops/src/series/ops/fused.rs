@@ -1,5 +1,5 @@
 use arrow::array::PrimitiveArray;
-use arrow::compute::utils::combine_validities_and;
+use arrow::compute::utils::combine_validities_and3;
 use polars_core::prelude::*;
 use polars_core::utils::align_chunks_ternary;
 use polars_core::with_match_physical_numeric_polars_type;
@@ -11,10 +11,7 @@ fn fma_arr<T: NumericNative>(
     c: &PrimitiveArray<T>,
 ) -> PrimitiveArray<T> {
     assert_eq!(a.len(), b.len());
-    let validity = combine_validities_and(
-        combine_validities_and(a.validity(), b.validity()).as_ref(),
-        c.validity(),
-    );
+    let validity = combine_validities_and3(a.validity(), b.validity(), c.validity());
     let a = a.values().as_slice();
     let b = b.values().as_slice();
     let c = c.values().as_slice();
@@ -65,10 +62,7 @@ fn fsm_arr<T: NumericNative>(
     c: &PrimitiveArray<T>,
 ) -> PrimitiveArray<T> {
     assert_eq!(a.len(), b.len());
-    let validity = combine_validities_and(
-        combine_validities_and(a.validity(), b.validity()).as_ref(),
-        c.validity(),
-    );
+    let validity = combine_validities_and3(a.validity(), b.validity(), c.validity());
     let a = a.values().as_slice();
     let b = b.values().as_slice();
     let c = c.values().as_slice();
@@ -118,10 +112,7 @@ fn fms_arr<T: NumericNative>(
     c: &PrimitiveArray<T>,
 ) -> PrimitiveArray<T> {
     assert_eq!(a.len(), b.len());
-    let validity = combine_validities_and(
-        combine_validities_and(a.validity(), b.validity()).as_ref(),
-        c.validity(),
-    );
+    let validity = combine_validities_and3(a.validity(), b.validity(), c.validity());
     let a = a.values().as_slice();
     let b = b.values().as_slice();
     let c = c.values().as_slice();

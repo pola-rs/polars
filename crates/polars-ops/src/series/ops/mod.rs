@@ -5,6 +5,8 @@ mod approx_algo;
 #[cfg(feature = "approx_unique")]
 mod approx_unique;
 mod arg_min_max;
+#[cfg(feature = "business")]
+mod business;
 mod clip;
 #[cfg(feature = "cum_agg")]
 mod cum_agg;
@@ -65,6 +67,8 @@ pub use approx_algo::*;
 #[cfg(feature = "approx_unique")]
 pub use approx_unique::*;
 pub use arg_min_max::ArgAgg;
+#[cfg(feature = "business")]
+pub use business::*;
 pub use clip::*;
 #[cfg(feature = "cum_agg")]
 pub use cum_agg::*;

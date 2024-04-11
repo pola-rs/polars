@@ -11,10 +11,13 @@ ctx = pl.SQLContext()
 df = pl.DataFrame({"a": [1, 2, 3]})
 lf = pl.LazyFrame({"b": [4, 5, 6]})
 
-# Register all dataframes in the global namespace: registers both df and lf
+# Register all dataframes in the global namespace: registers both "df" and "lf"
 ctx = pl.SQLContext(register_globals=True)
 
-# Other option: register DataFrame df as "df" and lazyframe lf as "lf"
+# Register an explicit mapping of identifier name to frame
+ctx = pl.SQLContext(frames={"table_one": df, "table_two": lf})
+
+# Register frames using kwargs; dataframe df as "df" and lazyframe lf as "lf"
 ctx = pl.SQLContext(df=df, lf=lf)
 # --8<-- [end:register_context]
 
@@ -30,9 +33,9 @@ ctx = pl.SQLContext(df_pandas=pl.from_pandas(df_pandas))
 pokemon = pl.read_csv(
     "https://gist.githubusercontent.com/ritchie46/cac6b337ea52281aa23c049250a4ff03/raw/89a957ff3919d90e6ef2d34235e6bf22304f3366/pokemon.csv"
 )
-ctx = pl.SQLContext(register_globals=True, eager_execution=True)
-df_small = ctx.execute("SELECT * from pokemon LIMIT 5")
-print(df_small)
+with pl.SQLContext(register_globals=True, eager_execution=True) as ctx:
+    df_small = ctx.execute("SELECT * from pokemon LIMIT 5")
+    print(df_small)
 # --8<-- [end:execute]
 
 # --8<-- [start:prepare_multiple_sources]
@@ -69,26 +72,24 @@ sales_data = pd.DataFrame(
 # products_categories.json with schema {'product_id': Int64, 'category': String}
 # sales_data is a Pandas DataFrame with schema {'product_id': Int64, 'sales': Int64}
 
-ctx = pl.SQLContext(
+with pl.SQLContext(
     products_masterdata=pl.scan_csv("docs/data/products_masterdata.csv"),
     products_categories=pl.scan_ndjson("docs/data/products_categories.json"),
     sales_data=pl.from_pandas(sales_data),
     eager_execution=True,
-)
-
-query = """
-SELECT
-    product_id,
-    product_name,
-    category,
-    sales
-FROM
-    products_masterdata
-LEFT JOIN products_categories USING (product_id)
-LEFT JOIN sales_data USING (product_id)
-"""
-
-print(ctx.execute(query))
+) as ctx:
+    query = """
+    SELECT
+        product_id,
+        product_name,
+        category,
+        sales
+    FROM
+        products_masterdata
+    LEFT JOIN products_categories USING (product_id)
+    LEFT JOIN sales_data USING (product_id)
+    """
+    print(ctx.execute(query))
 # --8<-- [end:execute_multiple_sources]
 
 # --8<-- [start:clean_multiple_sources]

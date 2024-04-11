@@ -7,6 +7,8 @@ mod array;
 mod binary;
 mod boolean;
 mod bounds;
+#[cfg(feature = "business")]
+mod business;
 #[cfg(feature = "dtype-categorical")]
 mod cat;
 #[cfg(feature = "round_series")]
@@ -81,6 +83,8 @@ use serde::{Deserialize, Serialize};
 
 pub(crate) use self::binary::BinaryFunction;
 pub use self::boolean::BooleanFunction;
+#[cfg(feature = "business")]
+pub(super) use self::business::BusinessFunction;
 #[cfg(feature = "dtype-categorical")]
 pub(crate) use self::cat::CategoricalFunction;
 #[cfg(feature = "temporal")]
@@ -93,7 +97,7 @@ pub(super) use self::rolling::RollingFunction;
 #[cfg(feature = "strings")]
 pub(crate) use self::strings::StringFunction;
 #[cfg(feature = "dtype-struct")]
-pub(super) use self::struct_::StructFunction;
+pub(crate) use self::struct_::StructFunction;
 #[cfg(feature = "trigonometry")]
 pub(super) use self::trigonometry::TrigonometricFunction;
 use super::*;
@@ -117,6 +121,8 @@ pub enum FunctionExpr {
 
     // Other expressions
     Boolean(BooleanFunction),
+    #[cfg(feature = "business")]
+    Business(BusinessFunction),
     #[cfg(feature = "abs")]
     Abs,
     Negate,
@@ -349,6 +355,8 @@ impl Hash for FunctionExpr {
 
             // Other expressions
             Boolean(f) => f.hash(state),
+            #[cfg(feature = "business")]
+            Business(f) => f.hash(state),
             Pow(f) => f.hash(state),
             #[cfg(feature = "search_sorted")]
             SearchSorted(f) => f.hash(state),
@@ -557,6 +565,8 @@ impl Display for FunctionExpr {
 
             // Other expressions
             Boolean(func) => return write!(f, "{func}"),
+            #[cfg(feature = "business")]
+            Business(func) => return write!(f, "{func}"),
             #[cfg(feature = "abs")]
             Abs => "abs",
             Negate => "negate",
@@ -815,6 +825,8 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
 
             // Other expressions
             Boolean(func) => func.into(),
+            #[cfg(feature = "business")]
+            Business(func) => func.into(),
             #[cfg(feature = "abs")]
             Abs => map!(abs::abs),
             Negate => map!(dispatch::negate),

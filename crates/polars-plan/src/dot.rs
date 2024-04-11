@@ -179,7 +179,7 @@ impl LogicalPlan {
                 self.write_dot(acc_str, prev_node, current_node, id_map)?;
                 input.dot(acc_str, (cache_id, cache_id + 1), current_node, id_map)
             },
-            Selection { predicate, input } => {
+            Filter { predicate, input } => {
                 let pred = fmt_predicate(Some(predicate));
                 let fmt = format!("FILTER BY {pred}");
 
@@ -205,7 +205,7 @@ impl LogicalPlan {
                 id,
                 id_map,
             ),
-            Projection { expr, input, .. } => {
+            Select { expr, input, .. } => {
                 let schema = input.schema().map_err(|_| {
                     eprintln!("could not determine schema");
                     std::fmt::Error
@@ -233,7 +233,7 @@ impl LogicalPlan {
                 self.write_dot(acc_str, prev_node, current_node, id_map)?;
                 input.dot(acc_str, (branch, id + 1), current_node, id_map)
             },
-            Aggregate {
+            GroupBy {
                 input, keys, aggs, ..
             } => {
                 let mut s_keys = String::with_capacity(128);

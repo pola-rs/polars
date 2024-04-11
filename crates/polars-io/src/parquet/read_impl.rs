@@ -691,21 +691,16 @@ impl BatchedParquetReader {
                     };
 
                     // Spawn the task and wait on it asynchronously.
-                    let (dfs, rows_read, limit) = if POOL.current_thread_index().is_some() {
+                    if POOL.current_thread_index().is_some() {
                         // We are a rayon thread, so we can't use POOL.spawn as it would mean we spawn a task and block until
                         // another rayon thread executes it - we would deadlock if all rayon threads did this.
-
-                        // Activate another tokio thread to poll futures. There should be at least 1 tokio thread that is
-                        // not a rayon thread.
-                        let handle = tokio::spawn(async { rx.await.unwrap() });
-                        // Now spawn the task onto rayon and participate in executing it. The current thread will no longer
-                        // poll async futures until this rayon task is complete.
-                        POOL.install(f);
-                        handle.await.unwrap()
+                        // Safety: The tokio runtime flavor is multi-threaded.
+                        tokio::task::block_in_place(f);
                     } else {
                         POOL.spawn(f);
-                        rx.await.unwrap()
                     };
+
+                    let (dfs, rows_read, limit) = rx.await.unwrap();
 
                     self.rows_read = rows_read;
                     self.limit = limit;

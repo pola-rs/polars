@@ -1,13 +1,9 @@
 use super::*;
 
-impl ALogicalPlan {
+impl IR {
     /// Takes the expressions of an LP node and the inputs of that node and reconstruct
-    pub fn with_exprs_and_input(
-        &self,
-        mut exprs: Vec<ExprIR>,
-        mut inputs: Vec<Node>,
-    ) -> ALogicalPlan {
-        use ALogicalPlan::*;
+    pub fn with_exprs_and_input(&self, mut exprs: Vec<ExprIR>, mut inputs: Vec<Node>) -> IR {
+        use IR::*;
 
         match self {
             #[cfg(feature = "python")]
@@ -31,26 +27,26 @@ impl ALogicalPlan {
                 offset: *offset,
                 len: *len,
             },
-            Selection { .. } => Selection {
+            Filter { .. } => Filter {
                 input: inputs[0],
                 predicate: exprs.pop().unwrap(),
             },
-            Projection {
+            Select {
                 schema, options, ..
-            } => Projection {
+            } => Select {
                 input: inputs[0],
                 expr: ProjectionExprs::new(exprs),
                 schema: schema.clone(),
                 options: *options,
             },
-            Aggregate {
+            GroupBy {
                 keys,
                 schema,
                 apply,
                 maintain_order,
                 options: dynamic_options,
                 ..
-            } => Aggregate {
+            } => GroupBy {
                 input: inputs[0],
                 keys: exprs[..keys.len()].to_vec(),
                 aggs: exprs[keys.len()..].to_vec(),
@@ -165,13 +161,13 @@ impl ALogicalPlan {
 
     /// Copy the exprs in this LP node to an existing container.
     pub fn copy_exprs(&self, container: &mut Vec<ExprIR>) {
-        use ALogicalPlan::*;
+        use IR::*;
         match self {
             Slice { .. } | Cache { .. } | Distinct { .. } | Union { .. } | MapFunction { .. } => {},
             Sort { by_column, .. } => container.extend_from_slice(by_column),
-            Selection { predicate, .. } => container.push(predicate.clone()),
-            Projection { expr, .. } => container.extend_from_slice(expr),
-            Aggregate { keys, aggs, .. } => {
+            Filter { predicate, .. } => container.push(predicate.clone()),
+            Select { expr, .. } => container.extend_from_slice(expr),
+            GroupBy { keys, aggs, .. } => {
                 let iter = keys.iter().cloned().chain(aggs.iter().cloned());
                 container.extend(iter)
             },
@@ -214,7 +210,7 @@ impl ALogicalPlan {
     where
         T: PushNode,
     {
-        use ALogicalPlan::*;
+        use IR::*;
         let input = match self {
             Union { inputs, .. } => {
                 for node in inputs {
@@ -229,12 +225,12 @@ impl ALogicalPlan {
                 return;
             },
             Slice { input, .. } => *input,
-            Selection { input, .. } => *input,
-            Projection { input, .. } => *input,
+            Filter { input, .. } => *input,
+            Select { input, .. } => *input,
             SimpleProjection { input, .. } => *input,
             Sort { input, .. } => *input,
             Cache { input, .. } => *input,
-            Aggregate { input, .. } => *input,
+            GroupBy { input, .. } => *input,
             Join {
                 input_left,
                 input_right,

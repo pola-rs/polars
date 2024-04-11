@@ -9,9 +9,9 @@ pub(super) fn process_hstack(
     mut acc_projections: Vec<ColumnNode>,
     mut projected_names: PlHashSet<Arc<str>>,
     projections_seen: usize,
-    lp_arena: &mut Arena<ALogicalPlan>,
+    lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
-) -> PolarsResult<ALogicalPlan> {
+) -> PolarsResult<IR> {
     if !acc_projections.is_empty() {
         let mut pruned_with_cols = Vec::with_capacity(exprs.len());
 
@@ -75,7 +75,7 @@ pub(super) fn process_hstack(
         expr_arena,
     )?;
 
-    let lp = ALogicalPlanBuilder::new(input, expr_arena, lp_arena)
+    let lp = IRBuilder::new(input, expr_arena, lp_arena)
         .with_columns(exprs, options)
         .build();
     Ok(lp)

@@ -118,16 +118,16 @@ impl PyDataFrame {
 
     #[staticmethod]
     #[cfg(feature = "parquet")]
-    #[pyo3(signature = (py_f, columns, projection, n_rows, parallel, row_index, low_memory, use_statistics, rechunk))]
+    #[pyo3(signature = (py_f, columns, projection, n_rows, row_index, low_memory, parallel, use_statistics, rechunk))]
     pub fn read_parquet(
         py: Python,
         py_f: PyObject,
         columns: Option<Vec<String>>,
         projection: Option<Vec<usize>>,
         n_rows: Option<usize>,
-        parallel: Wrap<ParallelStrategy>,
         row_index: Option<(String, IdxSize)>,
         low_memory: bool,
+        parallel: Wrap<ParallelStrategy>,
         use_statistics: bool,
         rechunk: bool,
     ) -> PyResult<Self> {

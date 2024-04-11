@@ -4,7 +4,7 @@ pub use super::parquet_bridge::{
 };
 use crate::parquet::error::{Error, Result};
 
-#[cfg(any(feature = "snappy", feature = "l4z"))]
+#[cfg(any(feature = "snappy", feature = "lz4"))]
 fn inner_compress<G: Fn(usize) -> Result<usize>, F: Fn(&[u8], &mut [u8]) -> Result<usize>>(
     input: &[u8],
     output: &mut Vec<u8>,

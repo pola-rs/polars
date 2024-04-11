@@ -95,26 +95,27 @@ In addition to the [regular options](https://docs.python.org/3/library/doctest.h
 
 ## Benchmark tests
 
-The `benchmark` folder contains code for running the [H2O AI database benchmark](https://github.com/h2oai/db-benchmark).
-It also contains various other benchmark tests.
-
+The `benchmark` folder contains code for running various benchmark tests.
 The aim of this part of the test suite is to spot performance regressions in the code, and to verify that Polars functionality works as expected when run on a release build or at a larger scale.
 
-### Running the H2O AI database benchmark
+Polars uses [CodSpeed](https://codspeed.io/pola-rs/polars) for tracking the performance of the benchmark tests.
 
-The benchmark is somewhat cumbersome to run locally. You must first generate the dataset using the R script provided in the `benchmark` folder. Afterwards, you can simply run the Python script to run the benchmark.
+### Generating data
 
-Make sure to install a release build of Polars before running the benchmark to guarantee the best results.
+For many tests, a relatively large dataset must be generated first.
+We use an [R](https://www.r-project.org/) script to generate this data.
+The script was taken from the [H2O AI database benchmark](https://github.com/h2oai/db-benchmark), which is the foundation for many of the benchmark tests.
 
-Refer to the [benchmark workflow](https://github.com/pola-rs/polars/blob/main/.github/workflows/benchmark.yml) for detailed steps.
+For the exact steps to generate the data, please refer to the [benchmark workflow](https://github.com/pola-rs/polars/blob/main/.github/workflows/benchmark.yml).
+It involves [installing R](https://cran.r-project.org/), installing the [data.table](https://cran.r-project.org/web/packages/data.table/) dependency, and executing a data generation script.
 
-### Running other benchmark tests
+### Running the benchmark tests
 
-The other benchmark tests are run using pytest.
-Run `pytest -m release --durations 0 -v` to run these tests and report run duration.
+The benchmark tests can be run using pytest.
+Run `pytest -m benchmark --durations 0 -v` to run these tests and report run duration.
 
 Note that benchmark tests are excluded by default when running `pytest`.
-You must explicitly specify `-m release` to run them.
+You must explicitly specify `-m benchmark` to run them.
 They will also be excluded when calculating test coverage.
 
 These tests _will_ be run as part of the `make test-all` make command.

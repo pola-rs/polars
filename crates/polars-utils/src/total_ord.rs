@@ -8,6 +8,7 @@ use crate::nulls::IsNull;
 
 /// Converts an f32 into a canonical form, where -0 == 0 and all NaNs map to
 /// the same value.
+#[inline]
 pub fn canonical_f32(x: f32) -> f32 {
     // -0.0 + 0.0 becomes 0.0.
     let convert_zero = x + 0.0;
@@ -20,6 +21,7 @@ pub fn canonical_f32(x: f32) -> f32 {
 
 /// Converts an f64 into a canonical form, where -0 == 0 and all NaNs map to
 /// the same value.
+#[inline]
 pub fn canonical_f64(x: f64) -> f64 {
     // -0.0 + 0.0 becomes 0.0.
     let convert_zero = x + 0.0;

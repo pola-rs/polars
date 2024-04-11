@@ -319,14 +319,31 @@ macro_rules! with_match_physical_integer_type {(
     macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
     use $crate::datatypes::DataType::*;
     match $dtype {
+        #[cfg(feature = "dtype-i8")]
         Int8 => __with_ty__! { i8 },
+        #[cfg(feature = "dtype-i16")]
         Int16 => __with_ty__! { i16 },
         Int32 => __with_ty__! { i32 },
         Int64 => __with_ty__! { i64 },
+        #[cfg(feature = "dtype-u8")]
         UInt8 => __with_ty__! { u8 },
+        #[cfg(feature = "dtype-u16")]
         UInt16 => __with_ty__! { u16 },
         UInt32 => __with_ty__! { u32 },
         UInt64 => __with_ty__! { u64 },
+        dt => panic!("not implemented for dtype {:?}", dt),
+    }
+})}
+
+#[macro_export]
+macro_rules! with_match_physical_float_type {(
+    $dtype:expr, | $_:tt $T:ident | $($body:tt)*
+) => ({
+    macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
+    use $crate::datatypes::DataType::*;
+    match $dtype {
+        Float32 => __with_ty__! { f32 },
+        Float64 => __with_ty__! { f64 },
         dt => panic!("not implemented for dtype {:?}", dt),
     }
 })}

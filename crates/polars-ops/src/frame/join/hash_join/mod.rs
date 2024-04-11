@@ -1,4 +1,3 @@
-pub(super) mod multiple_keys;
 pub(super) mod single_keys;
 mod single_keys_dispatch;
 mod single_keys_inner;
@@ -8,8 +7,6 @@ mod single_keys_outer;
 mod single_keys_semi_anti;
 pub(super) mod sort_merge;
 use arrow::array::ArrayRef;
-pub use multiple_keys::private_left_join_multiple_keys;
-pub(super) use multiple_keys::*;
 use polars_core::utils::{_set_partition_size, split_ca};
 use polars_core::POOL;
 use polars_utils::index::ChunkId;
@@ -22,7 +19,7 @@ use single_keys_left::*;
 use single_keys_outer::*;
 #[cfg(feature = "semi_anti_join")]
 use single_keys_semi_anti::*;
-pub use sort_merge::*;
+pub(crate) use sort_merge::*;
 
 pub use super::*;
 #[cfg(feature = "chunked_ids")]
@@ -172,6 +169,7 @@ pub trait JoinDispatch: IntoDf {
         s_right: &Series,
         args: JoinArgs,
         verbose: bool,
+        drop_names: Option<&[&str]>,
     ) -> PolarsResult<DataFrame> {
         let df_self = self.to_df();
         #[cfg(feature = "dtype-categorical")]
@@ -202,7 +200,12 @@ pub trait JoinDispatch: IntoDf {
         }
 
         let ids = sort_or_hash_left(&s_left, &s_right, verbose, args.validation, args.join_nulls)?;
-        left._finish_left_join(ids, &right.drop(s_right.name()).unwrap(), args)
+        let right = if let Some(drop_names) = drop_names {
+            right.drop_many(drop_names)
+        } else {
+            right.drop(s_right.name()).unwrap()
+        };
+        left._finish_left_join(ids, &right, args)
     }
 
     #[cfg(feature = "semi_anti_join")]

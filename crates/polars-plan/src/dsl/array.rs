@@ -105,9 +105,9 @@ impl ArrayNameSpace {
     }
 
     /// Get items in every sub-array by index.
-    pub fn get(self, index: Expr) -> Expr {
+    pub fn get(self, index: Expr, null_on_oob: bool) -> Expr {
         self.0.map_many_private(
-            FunctionExpr::ArrayExpr(ArrayFunction::Get),
+            FunctionExpr::ArrayExpr(ArrayFunction::Get(null_on_oob)),
             &[index],
             false,
             false,

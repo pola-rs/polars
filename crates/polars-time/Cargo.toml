@@ -24,6 +24,9 @@ regex = { workspace = true }
 serde = { workspace = true, features = ["derive"], optional = true }
 smartstring = { workspace = true }
 
+[dev-dependencies]
+polars-ops = { workspace = true, features = ["abs"] }
+
 [features]
 dtype-date = ["polars-core/dtype-date", "temporal"]
 dtype-datetime = ["polars-core/dtype-datetime", "temporal"]
@@ -31,6 +34,7 @@ dtype-time = ["polars-core/dtype-time", "temporal"]
 dtype-duration = ["polars-core/dtype-duration", "temporal"]
 rolling_window = ["polars-core/rolling_window", "dtype-duration"]
 fmt = ["polars-core/fmt"]
+serde = ["dep:serde", "smartstring/serde"]
 temporal = ["polars-core/temporal"]
 timezones = ["chrono-tz", "dtype-datetime", "polars-core/timezones", "arrow/timezones", "polars-ops/timezones"]
 

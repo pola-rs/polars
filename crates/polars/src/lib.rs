@@ -225,7 +225,6 @@
 //!     - `asof_join` - Join ASOF, to join on nearest keys instead of exact equality match.
 //!     - `cross_join` - Create the Cartesian product of two [`DataFrame`]s.
 //!     - `semi_anti_join` - SEMI and ANTI joins.
-//!     - `group_by_list` - Allow group_by operation on keys of type List.
 //!     - `row_hash` - Utility to hash [`DataFrame`] rows to [`UInt64Chunked`]
 //!     - `diagonal_concat` - Concat diagonally thereby combining different schemas.
 //!     - `dataframe_arithmetic` - Arithmetic on ([`Dataframe`] and [`DataFrame`]s) and ([`DataFrame`] on [`Series`])

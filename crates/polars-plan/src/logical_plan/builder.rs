@@ -469,7 +469,7 @@ impl LogicalPlanBuilder {
                 "EMPTY PROJECTION",
             )
         } else {
-            LogicalPlan::Projection {
+            LogicalPlan::Select {
                 expr: columns,
                 input: Arc::new(self.0),
                 schema: Arc::new(output_schema),
@@ -494,7 +494,7 @@ impl LogicalPlanBuilder {
                 "EMPTY PROJECTION",
             )
         } else {
-            LogicalPlan::Projection {
+            LogicalPlan::Select {
                 expr: exprs,
                 input: Arc::new(self.0),
                 schema: Arc::new(schema),
@@ -701,7 +701,7 @@ impl LogicalPlanBuilder {
             into
         );
 
-        LogicalPlan::Selection {
+        LogicalPlan::Filter {
             predicate,
             input: Arc::new(self.0),
         }
@@ -787,7 +787,7 @@ impl LogicalPlanBuilder {
             slice: None,
         };
 
-        LogicalPlan::Aggregate {
+        LogicalPlan::GroupBy {
             input: Arc::new(self.0),
             keys: Arc::new(keys),
             aggs,

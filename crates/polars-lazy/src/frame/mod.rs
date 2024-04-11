@@ -552,13 +552,13 @@ impl LazyFrame {
 
     pub fn optimize(
         self,
-        lp_arena: &mut Arena<ALogicalPlan>,
+        lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<Node> {
         self.optimize_with_scratch(lp_arena, expr_arena, &mut vec![], false)
     }
 
-    pub fn to_alp_optimized(self) -> PolarsResult<(Node, Arena<ALogicalPlan>, Arena<AExpr>)> {
+    pub fn to_alp_optimized(self) -> PolarsResult<(Node, Arena<IR>, Arena<AExpr>)> {
         let mut lp_arena = Arena::with_capacity(16);
         let mut expr_arena = Arena::with_capacity(16);
         let node =
@@ -566,13 +566,13 @@ impl LazyFrame {
         Ok((node, lp_arena, expr_arena))
     }
 
-    pub fn to_alp(self) -> PolarsResult<(Node, Arena<ALogicalPlan>, Arena<AExpr>)> {
+    pub fn to_alp(self) -> PolarsResult<(Node, Arena<IR>, Arena<AExpr>)> {
         self.logical_plan.to_alp()
     }
 
     pub(crate) fn optimize_with_scratch(
         self,
-        lp_arena: &mut Arena<ALogicalPlan>,
+        lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
         scratch: &mut Vec<Node>,
         _fmt: bool,
@@ -641,7 +641,7 @@ impl LazyFrame {
 
         // sink should be replaced
         let no_file_sink = if check_sink {
-            !matches!(lp_arena.get(lp_top), ALogicalPlan::Sink { .. })
+            !matches!(lp_arena.get(lp_top), IR::Sink { .. })
         } else {
             true
         };
@@ -1845,7 +1845,7 @@ impl LazyGroupBy {
         #[cfg(not(feature = "dynamic_group_by"))]
         let options = GroupbyOptions { slice: None };
 
-        let lp = LogicalPlan::Aggregate {
+        let lp = LogicalPlan::GroupBy {
             input: Arc::new(self.logical_plan),
             keys: Arc::new(self.keys),
             aggs: vec![],
