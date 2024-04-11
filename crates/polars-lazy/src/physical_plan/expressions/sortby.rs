@@ -10,7 +10,7 @@ pub struct SortByExpr {
     pub(crate) input: Arc<dyn PhysicalExpr>,
     pub(crate) by: Vec<Arc<dyn PhysicalExpr>>,
     pub(crate) expr: Expr,
-    pub(crate) sort_options: SortMultipleOptions
+    pub(crate) sort_options: SortMultipleOptions,
 }
 
 impl SortByExpr {
@@ -18,13 +18,13 @@ impl SortByExpr {
         input: Arc<dyn PhysicalExpr>,
         by: Vec<Arc<dyn PhysicalExpr>>,
         expr: Expr,
-        sort_options: SortMultipleOptions
+        sort_options: SortMultipleOptions,
     ) -> Self {
         Self {
             input,
             by,
             expr,
-            sort_options
+            sort_options,
         }
     }
 }
@@ -178,10 +178,7 @@ impl PhysicalExpr for SortByExpr {
         let (series, sorted_idx) = if self.by.len() == 1 {
             let sorted_idx_f = || {
                 let s_sort_by = self.by[0].evaluate(df, state)?;
-                Ok(s_sort_by.arg_sort(SortOptions {
-                    descending: descending[0],
-                    ..Default::default()
-                }))
+                Ok(s_sort_by.arg_sort(SortOptions::from(&self.sort_options)))
             };
             POOL.install(|| rayon::join(series_f, sorted_idx_f))
         } else {
@@ -198,12 +195,7 @@ impl PhysicalExpr for SortByExpr {
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
 
-                let options = SortMultipleOptions {
-                    descending,
-                    nulls_last: self.sort_options.nulls_last,
-                    multithreaded: self.sort_options.multithreaded,
-                    maintain_order: self.sort_options.maintain_order,
-                };
+                let options = self.sort_options.clone().with_orders(descending);
                 s_sort_by[0].arg_sort_multiple(&s_sort_by[1..], &options)
             };
             POOL.install(|| rayon::join(series_f, sorted_idx_f))
@@ -297,8 +289,15 @@ impl PhysicalExpr for SortByExpr {
             let groups = POOL.install(|| {
                 groups
                     .par_iter()
-                    .map(|indicator| sort_by_groups_multiple_by(indicator, &sort_by_s, &descending, self.sort_options.multithreaded,
-                        self.sort_options.maintain_order))
+                    .map(|indicator| {
+                        sort_by_groups_multiple_by(
+                            indicator,
+                            &sort_by_s,
+                            &descending,
+                            self.sort_options.multithreaded,
+                            self.sort_options.maintain_order,
+                        )
+                    })
                     .collect::<PolarsResult<_>>()
             });
             GroupsProxy::Idx(groups?)
