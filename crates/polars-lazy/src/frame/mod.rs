@@ -260,16 +260,39 @@ impl LazyFrame {
     ///
     /// # Example
     ///
+    /// Sort DataFrame by 'sepal.width' column:
     /// ```rust
-    /// use polars_core::prelude::*;
-    /// use polars_lazy::prelude::*;
-    ///
-    /// /// Sort DataFrame by 'sepal.width' column
-    /// fn example(df: DataFrame) -> LazyFrame {
-    ///       df.lazy()
-    ///         .sort(["sepal.width"], Default::default())
+    /// # use polars_core::prelude::*;
+    /// # use polars_lazy::prelude::*;
+    /// fn sort_by_a(df: DataFrame) -> LazyFrame {
+    ///     df.lazy().sort(["a"], Default::default())
     /// }
     /// ```
+    /// Sort by a single column with specific order:
+    /// ```
+    /// # use polars_core::prelude::*;
+    /// # use polars_lazy::prelude::*;
+    /// fn sort_with_specific_order(df: DataFrame, descending: bool) -> LazyFrame {
+    ///     df.lazy().sort(
+    ///         ["a"],
+    ///         SortMultipleOptions::new()
+    ///             .with_order_descending(descending)
+    ///     )
+    /// }
+    /// ```
+    /// Sort by multiple columns with specifying order for each column:
+    /// ```
+    /// # use polars_core::prelude::*;
+    /// # use polars_lazy::prelude::*;
+    /// fn sort_by_multiple_columns_with_specific_order(df: DataFrame) -> LazyFrame {
+    ///     df.lazy().sort(
+    ///         &["a", "b"],
+    ///         SortMultipleOptions::new()
+    ///             .with_order_descendings([false, true])
+    ///     )
+    /// }
+    /// ```
+    /// See [`SortMultipleOptions`] for more options.
     pub fn sort(self, by: impl IntoVec<SmartString>, sort_options: SortMultipleOptions) -> Self {
         let opt_state = self.get_opt_state();
         let lp = self
