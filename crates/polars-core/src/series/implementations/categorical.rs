@@ -119,7 +119,11 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
         }
     }
 
-    fn arg_sort_multiple(&self, by: &[Series], options: &SortMultipleOptions) -> PolarsResult<IdxCa> {
+    fn arg_sort_multiple(
+        &self,
+        by: &[Series],
+        options: &SortMultipleOptions,
+    ) -> PolarsResult<IdxCa> {
         self.0.arg_sort_multiple(by, options)
     }
 }

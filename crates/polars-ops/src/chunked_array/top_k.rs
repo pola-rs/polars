@@ -171,12 +171,10 @@ pub fn top_k(s: &[Series], descending: bool) -> PolarsResult<Series> {
     match src.is_sorted_flag() {
         polars_core::series::IsSorted::Ascending => {
             // TopK is the k element in the bottom of ascending sorted array
-            return Ok(src
-                .slice((src.len() - k as usize) as i64, k as usize)
-                .reverse());
+            return Ok(src.slice((src.len() - k) as i64, k).reverse());
         },
         polars_core::series::IsSorted::Descending => {
-            return Ok(src.slice(0, k as usize));
+            return Ok(src.slice(0, k));
         },
         _ => {},
     }
@@ -186,21 +184,17 @@ pub fn top_k(s: &[Series], descending: bool) -> PolarsResult<Series> {
     let s = src.to_physical_repr();
 
     match s.dtype() {
-        DataType::Boolean => {
-            Ok(top_k_bool_impl(s.bool().unwrap(), k as usize, descending).into_series())
-        },
+        DataType::Boolean => Ok(top_k_bool_impl(s.bool().unwrap(), k, descending).into_series()),
         DataType::String => {
-            let ca = top_k_binary_impl(&s.str().unwrap().as_binary(), k as usize, descending);
+            let ca = top_k_binary_impl(&s.str().unwrap().as_binary(), k, descending);
             let ca = unsafe { ca.to_string() };
             Ok(ca.into_series())
         },
-        DataType::Binary => {
-            Ok(top_k_binary_impl(s.binary().unwrap(), k as usize, descending).into_series())
-        },
+        DataType::Binary => Ok(top_k_binary_impl(s.binary().unwrap(), k, descending).into_series()),
         _dt => {
             macro_rules! dispatch {
                 ($ca:expr) => {{
-                    top_k_num_impl($ca, k as usize, descending).into_series()
+                    top_k_num_impl($ca, k, descending).into_series()
                 }};
             }
             unsafe { downcast_as_macro_arg_physical!(&s, dispatch).cast_unchecked(origin_dtype) }
@@ -221,12 +215,7 @@ pub fn top_k_by(
 
     let multithreaded = sort_options.multithreaded;
 
-    let idx = _arg_bottom_k(
-        k as usize,
-        src.len(),
-        by,
-        &mut sort_options.with_order_reversed(),
-    )?;
+    let idx = _arg_bottom_k(k, src.len(), by, &mut sort_options.with_order_reversed())?;
 
     let result = unsafe {
         if multithreaded {

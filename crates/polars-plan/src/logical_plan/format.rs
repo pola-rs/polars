@@ -309,7 +309,10 @@ impl Debug for Expr {
                 by,
                 sort_options,
             } => {
-                write!(f, "{expr:?}.sort_by(by={by:?}, sort_option={sort_options:?})",)
+                write!(
+                    f,
+                    "{expr:?}.sort_by(by={by:?}, sort_option={sort_options:?})",
+                )
             },
             Filter { input, by } => {
                 write!(f, "{input:?}.filter({by:?})")

@@ -79,8 +79,8 @@ fn test_q2() -> PolarsResult<()> {
         .sort_by_exprs(
             [cols(["s_acctbal", "n_name", "s_name", "p_partkey"])],
             SortMultipleOptions::default()
-            .with_orders([true, false, false, false])
-            .with_maintain_order(true)
+                .with_orders([true, false, false, false])
+                .with_maintain_order(true),
         )
         .limit(100)
         .with_comm_subplan_elim(true);

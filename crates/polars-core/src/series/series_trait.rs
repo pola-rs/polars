@@ -164,7 +164,11 @@ pub(crate) mod private {
         }
 
         #[allow(unused_variables)]
-        fn arg_sort_multiple(&self, by: &[Series], _options: &SortMultipleOptions) -> PolarsResult<IdxCa> {
+        fn arg_sort_multiple(
+            &self,
+            by: &[Series],
+            _options: &SortMultipleOptions,
+        ) -> PolarsResult<IdxCa> {
             polars_bail!(opq = arg_sort_multiple, self._dtype());
         }
     }

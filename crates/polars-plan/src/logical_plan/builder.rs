@@ -815,18 +815,14 @@ impl LogicalPlanBuilder {
         .into()
     }
 
-    pub fn sort(
-        self,
-        by_column: Vec<Expr>,
-        sort_options: SortMultipleOptions
-    ) -> Self {
+    pub fn sort(self, by_column: Vec<Expr>, sort_options: SortMultipleOptions) -> Self {
         let schema = try_delayed!(self.0.schema(), &self.0, into);
         let by_column = try_delayed!(rewrite_projections(by_column, &schema, &[]), &self.0, into);
         LogicalPlan::Sort {
             input: Arc::new(self.0),
             by_column,
             slice: None,
-            sort_options
+            sort_options,
         }
         .into()
     }

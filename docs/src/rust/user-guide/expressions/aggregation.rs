@@ -51,8 +51,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .sort(
             ["len"],
             SortMultipleOptions::default()
-            .with_order(true)
-            .with_nulls_last(true),
+                .with_order(true)
+                .with_nulls_last(true),
         )
         .limit(5)
         .collect()?;
@@ -73,11 +73,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .sum()
                 .alias("pro"),
         ])
-        .sort(
-            ["pro"],
-            SortMultipleOptions::default()
-            .with_order(true)
-        )
+        .sort(["pro"], SortMultipleOptions::default().with_order(true))
         .limit(5)
         .collect()?;
 

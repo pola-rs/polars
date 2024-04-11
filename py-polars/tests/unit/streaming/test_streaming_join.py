@@ -71,7 +71,11 @@ def test_streaming_joins() -> None:
             .collect(streaming=True)
         )
 
-        a = pl.from_pandas(pd_result).with_columns(pl.all().cast(int)).sort(["a", "b"], maintain_order=True)
+        a = (
+            pl.from_pandas(pd_result)
+            .with_columns(pl.all().cast(int))
+            .sort(["a", "b"], maintain_order=True)
+        )
         assert_frame_equal(a, pl_result, check_dtype=False)
 
         pd_result = dfa.merge(dfb, on=["a", "b"], how=how)

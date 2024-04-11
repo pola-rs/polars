@@ -94,7 +94,7 @@ pub enum Expr {
     SortBy {
         expr: Arc<Expr>,
         by: Vec<Expr>,
-        sort_options: SortMultipleOptions
+        sort_options: SortMultipleOptions,
     },
     Agg(AggExpr),
     /// A ternary operation

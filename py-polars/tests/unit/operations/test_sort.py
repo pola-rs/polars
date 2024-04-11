@@ -139,7 +139,11 @@ def test_expr_arg_sort_nulls_last() -> None:
         {"a": [1, 2, None, None, 5], "b": [None, 1, 2, 1, None], "c": [2, 3, 1, 2, 1]}
     )
 
-    out = df.select(pl.arg_sort_by("a", "b", nulls_last=True, maintain_order=True)).to_series().to_list()
+    out = (
+        df.select(pl.arg_sort_by("a", "b", nulls_last=True, maintain_order=True))
+        .to_series()
+        .to_list()
+    )
 
     expected = [0, 1, 4, 3, 2]
 

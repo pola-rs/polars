@@ -174,7 +174,7 @@ impl Sink for SortSink {
             ooc: self.ooc,
             io_thread: self.io_thread.clone(),
             sort_idx: self.sort_idx,
-            slice: self.slice.clone(),
+            slice: self.slice,
             sort_options: self.sort_options.clone(),
             dist_sample: vec![],
             current_chunk_rows: 0,

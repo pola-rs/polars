@@ -68,10 +68,7 @@ fn test_group_by_simple() -> PolarsResult<()> {
         LIMIT 100
     "#,
         )?
-        .sort(
-            ["a"],
-            Default::default(),
-        )
+        .sort(["a"], Default::default())
         .collect()?;
 
     let df_pl = df
@@ -83,10 +80,7 @@ fn test_group_by_simple() -> PolarsResult<()> {
             col("a").count().alias("total_count"),
         ])
         .limit(100)
-        .sort(
-            ["a"],
-            Default::default(),
-        )
+        .sort(["a"], Default::default())
         .collect()?;
     assert_eq!(df_sql, df_pl);
     Ok(())

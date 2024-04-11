@@ -256,7 +256,7 @@ impl Sink for SortSinkMultiple {
             sort_idx: self.sort_idx.clone(),
             sort_sink,
             sort_fields: self.sort_fields.clone(),
-            slice: self.slice.clone(),
+            slice: self.slice,
             sort_options: self.sort_options.clone(),
             sort_column: vec![],
             can_decode: self.can_decode,

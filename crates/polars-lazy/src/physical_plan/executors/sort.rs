@@ -33,11 +33,7 @@ impl SortExec {
             })
             .collect::<PolarsResult<Vec<_>>>()?;
 
-        df.sort_impl(
-            by_columns,
-            self.sort_options.clone(),
-            self.slice,
-        )
+        df.sort_impl(by_columns, self.sort_options.clone(), self.slice)
     }
 }
 

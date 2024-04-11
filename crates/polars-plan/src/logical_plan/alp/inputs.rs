@@ -76,7 +76,7 @@ impl IR {
             } => Sort {
                 input: inputs[0],
                 by_column: by_column.clone(),
-                slice: slice.clone(),
+                slice: *slice,
                 sort_options: sort_options.clone(),
             },
             Cache { id, cache_hits, .. } => Cache {

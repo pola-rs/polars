@@ -203,7 +203,7 @@ pub(crate) fn insert_streaming_nodes(
                 input,
                 by_column,
                 slice,
-                sort_options
+                sort_options,
             } if is_streamable_sort(slice, sort_options) && all_column(by_column, expr_arena) => {
                 state.streamable = true;
                 state.operators_sinks.push(PipelineNode::Sink(root));

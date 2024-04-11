@@ -148,7 +148,7 @@ pub enum AExpr {
     SortBy {
         expr: Node,
         by: Vec<Node>,
-        sort_options: SortMultipleOptions
+        sort_options: SortMultipleOptions,
     },
     Filter {
         input: Node,

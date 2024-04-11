@@ -1065,7 +1065,7 @@ impl Expr {
     pub fn sort_by<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(
         self,
         by: E,
-        sort_options: SortMultipleOptions
+        sort_options: SortMultipleOptions,
     ) -> Expr {
         let by = by.as_ref().iter().map(|e| e.clone().into()).collect();
         Expr::SortBy {
