@@ -128,12 +128,14 @@ impl OptimizationRule for SimpleProjectionAndCollapse {
             Sort {
                 input,
                 by_column,
-                args,
+                slice,
+                sort_options,
             } => match lp_arena.get(*input) {
                 Sort { input: inner, .. } => Some(Sort {
                     input: *inner,
                     by_column: by_column.clone(),
-                    args: args.clone(),
+                    slice: *slice,
+                    sort_options: sort_options.clone(),
                 }),
                 _ => None,
             },
