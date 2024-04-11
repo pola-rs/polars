@@ -1,7 +1,3 @@
-use std::borrow::Cow;
-use std::marker::PhantomData;
-
-use polars_core::schema::SchemaRef;
 use polars_utils::unitvec;
 
 use super::*;
@@ -14,14 +10,12 @@ pub struct IRNode {
 
 impl IRNode {
     pub fn new(node: Node) -> Self {
-        Self { node}
+        Self { node }
     }
-
 
     pub fn node(&self) -> Node {
         self.node
     }
-
 
     pub fn replace_node(&mut self, node: Node) {
         self.node = node;
@@ -34,7 +28,7 @@ impl IRNode {
     }
 
     pub fn to_alp<'a>(&self, arena: &'a Arena<IR>) -> &'a IR {
-         arena.get(self.node)
+        arena.get(self.node)
     }
 
     pub fn to_alp_mut<'a>(&mut self, arena: &'a mut Arena<IR>) -> &'a mut IR {
@@ -55,15 +49,13 @@ impl TreeWalker for IRNode {
     fn apply_children(
         &self,
         op: &mut dyn FnMut(&Self, &Self::Arena) -> PolarsResult<VisitRecursion>,
-        arena: &Self::Arena
+        arena: &Self::Arena,
     ) -> PolarsResult<VisitRecursion> {
         let mut scratch = unitvec![];
 
         self.to_alp(&arena.0).copy_inputs(&mut scratch);
         for &node in scratch.as_slice() {
-            let lp_node = IRNode::new(
-                node
-            );
+            let lp_node = IRNode::new(node);
             match op(&lp_node, arena)? {
                 // let the recursion continue
                 VisitRecursion::Continue | VisitRecursion::Skip => {},
@@ -75,9 +67,9 @@ impl TreeWalker for IRNode {
     }
 
     fn map_children(
-        mut self,
+        self,
         op: &mut dyn FnMut(Self, &mut Self::Arena) -> PolarsResult<Self>,
-        arena: &mut Self::Arena
+        arena: &mut Self::Arena,
     ) -> PolarsResult<Self> {
         let mut inputs = vec![];
         let mut exprs = vec![];
@@ -88,9 +80,7 @@ impl TreeWalker for IRNode {
 
         // rewrite the nodes
         for node in &mut inputs {
-            let lp_node = IRNode::new(
-                *node,
-            );
+            let lp_node = IRNode::new(*node);
             *node = op(lp_node, arena)?.node;
         }
 
@@ -100,13 +90,20 @@ impl TreeWalker for IRNode {
     }
 }
 
-pub(crate) fn with_ir_arena<F: FnOnce(&mut IRNodeArena) -> T, T>(lp_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>,
-                                                                 func: F,
+#[cfg(feature = "cse")]
+pub(crate) fn with_ir_arena<F: FnOnce(&mut IRNodeArena) -> T, T>(
+    lp_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+    func: F,
 ) -> T {
     try_with_ir_arena(lp_arena, expr_arena, |a| Ok(func(a))).unwrap()
 }
-pub(crate) fn try_with_ir_arena<F: FnOnce(&mut IRNodeArena) -> PolarsResult<T>, T>(lp_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>,
-                                                                 func: F,
+
+#[cfg(feature = "cse")]
+pub(crate) fn try_with_ir_arena<F: FnOnce(&mut IRNodeArena) -> PolarsResult<T>, T>(
+    lp_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+    func: F,
 ) -> PolarsResult<T> {
     let owned_lp_arena = std::mem::take(lp_arena);
     let owned_expr_arena = std::mem::take(expr_arena);

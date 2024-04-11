@@ -142,7 +142,8 @@ impl Expr {
     }
 
     pub fn map_expr<F: FnMut(Self) -> Self>(self, mut f: F) -> Self {
-        self.rewrite(&mut ExprMapper { f: |e| Ok(f(e)) }, &mut ()).unwrap()
+        self.rewrite(&mut ExprMapper { f: |e| Ok(f(e)) }, &mut ())
+            .unwrap()
     }
 
     pub fn try_map_expr<F: FnMut(Self) -> PolarsResult<Self>>(self, f: F) -> PolarsResult<Self> {

@@ -1,18 +1,16 @@
-use std::marker::PhantomData;
+use hashbrown::hash_map::RawEntryMut;
 use polars_utils::vec::CapacityByFactor;
 
 use super::*;
 use crate::constants::CSE_REPLACED;
 use crate::logical_plan::projection_expr::ProjectionExprs;
 use crate::prelude::visitor::AexprNode;
-use hashbrown::hash_map::RawEntryMut;
 
 // We use hashes to get an Identifier
 // but this is very hard to debug, so we also have a version that
 // uses a string trail.
 #[cfg(test)]
 mod identifier_impl {
-    use std::hash::{Hash, Hasher};
     use ahash::RandomState;
 
     use super::*;
@@ -33,7 +31,9 @@ mod identifier_impl {
         }
 
         pub fn is_equal(&self, other: &Self, arena: &Arena<AExpr>) -> bool {
-            self.inner == other.inner && self.last_node.map(|v| v.hashable_and_cmp(arena)) == other.last_node.map(|v| v.hashable_and_cmp(arena))
+            self.inner == other.inner
+                && self.last_node.map(|v| v.hashable_and_cmp(arena))
+                    == other.last_node.map(|v| v.hashable_and_cmp(arena))
         }
 
         pub fn new() -> Self {
@@ -72,8 +72,6 @@ mod identifier_impl {
 
 #[cfg(not(test))]
 mod identifier_impl {
-    use std::hash::{Hash, Hasher};
-
     use ahash::RandomState;
     use polars_core::hashing::_boost_hash_combine;
 
@@ -108,7 +106,9 @@ mod identifier_impl {
         }
 
         pub fn is_equal(&self, other: &Self, arena: &Arena<AExpr>) -> bool {
-            self.inner == other.inner && self.last_node.map(|v| v.hashable_and_cmp(arena)) == other.last_node.map(|v| v.hashable_and_cmp(arena))
+            self.inner == other.inner
+                && self.last_node.map(|v| v.hashable_and_cmp(arena))
+                    == other.last_node.map(|v| v.hashable_and_cmp(arena))
         }
 
         pub fn is_valid(&self) -> bool {
@@ -147,20 +147,30 @@ use identifier_impl::*;
 
 #[derive(Default)]
 struct IdentifierMap<V> {
-    inner: PlHashMap<Identifier, V>
+    inner: PlHashMap<Identifier, V>,
 }
 
 impl<V> IdentifierMap<V> {
     fn get(&self, id: &Identifier, arena: &Arena<AExpr>) -> Option<&V> {
-        self.inner.raw_entry().from_hash(id.hash(), |k| k.is_equal(&id, arena)).map(|(_k, v)| v)
+        self.inner
+            .raw_entry()
+            .from_hash(id.hash(), |k| k.is_equal(id, arena))
+            .map(|(_k, v)| v)
     }
 
-    fn entry<'a, F: FnOnce() -> V>(&'a mut self, id: Identifier, v: F, arena: &Arena<AExpr>) -> &'a mut V{
+    fn entry<'a, F: FnOnce() -> V>(
+        &'a mut self,
+        id: Identifier,
+        v: F,
+        arena: &Arena<AExpr>,
+    ) -> &'a mut V {
         let h = id.hash();
-        match self.inner.raw_entry_mut().from_hash(h, |k| k.is_equal(&id, arena)) {
-            RawEntryMut::Occupied(mut entry) => {
-                entry.into_mut()
-            },
+        match self
+            .inner
+            .raw_entry_mut()
+            .from_hash(h, |k| k.is_equal(&id, arena))
+        {
+            RawEntryMut::Occupied(entry) => entry.into_mut(),
             RawEntryMut::Vacant(entry) => {
                 let (_, v) = entry.insert_with_hasher(h, id, v(), |id| id.hash());
                 v
@@ -367,7 +377,11 @@ impl Visitor for ExprIdentifierVisitor<'_> {
     type Node = AexprNode;
     type Arena = Arena<AExpr>;
 
-    fn pre_visit(&mut self, node: &Self::Node, arena: &Self::Arena) -> PolarsResult<VisitRecursion> {
+    fn pre_visit(
+        &mut self,
+        node: &Self::Node,
+        arena: &Self::Arena,
+    ) -> PolarsResult<VisitRecursion> {
         if skip_pre_visit(node.to_aexpr(arena), self.is_group_by) {
             // Still add to the stack so that a parent becomes invalidated.
             self.visit_stack
@@ -386,7 +400,11 @@ impl Visitor for ExprIdentifierVisitor<'_> {
         Ok(VisitRecursion::Continue)
     }
 
-    fn post_visit(&mut self, node: &Self::Node, arena: &Self::Arena) -> PolarsResult<VisitRecursion> {
+    fn post_visit(
+        &mut self,
+        node: &Self::Node,
+        arena: &Self::Arena,
+    ) -> PolarsResult<VisitRecursion> {
         let ae = node.to_aexpr(arena);
         self.post_visit_idx += 1;
 
@@ -423,7 +441,6 @@ impl Visitor for ExprIdentifierVisitor<'_> {
 
         *se_count += 1;
         self.has_sub_expr |= *se_count > 1;
-
 
         Ok(VisitRecursion::Continue)
     }
@@ -505,7 +522,11 @@ impl RewritingVisitor for CommonSubExprRewriter<'_> {
     type Node = AexprNode;
     type Arena = Arena<AExpr>;
 
-    fn pre_visit(&mut self, ae_node: &Self::Node, arena: &mut Self::Arena) -> PolarsResult<RewriteRecursion> {
+    fn pre_visit(
+        &mut self,
+        ae_node: &Self::Node,
+        arena: &mut Self::Arena,
+    ) -> PolarsResult<RewriteRecursion> {
         let ae = ae_node.to_aexpr(arena);
         if self.visited_idx + self.id_array_offset >= self.identifier_array.len()
             || self.max_post_visit_idx
@@ -548,7 +569,11 @@ impl RewritingVisitor for CommonSubExprRewriter<'_> {
         }
     }
 
-    fn mutate(&mut self, mut node: Self::Node, arena: &mut Self::Arena) -> PolarsResult<Self::Node> {
+    fn mutate(
+        &mut self,
+        mut node: Self::Node,
+        arena: &mut Self::Arena,
+    ) -> PolarsResult<Self::Node> {
         let (post_visit_count, id) =
             &self.identifier_array[self.visited_idx + self.id_array_offset];
         self.visited_idx += 1;
@@ -570,7 +595,10 @@ impl RewritingVisitor for CommonSubExprRewriter<'_> {
             self.visited_idx += 1;
         }
         // If this is not true, the traversal order in the visitor was different from the rewriter.
-        debug_assert_eq!(node.hashable_and_cmp(arena), id.ae_node().hashable_and_cmp(arena));
+        debug_assert_eq!(
+            node.hashable_and_cmp(arena),
+            id.ae_node().hashable_and_cmp(arena)
+        );
 
         let name = id.materialize();
         node.assign(AExpr::col(name.as_ref()), arena);
@@ -580,7 +608,7 @@ impl RewritingVisitor for CommonSubExprRewriter<'_> {
     }
 }
 
-pub(crate) struct CommonSubExprOptimizer<'a> {
+pub(crate) struct CommonSubExprOptimizer {
     // amortize allocations
     // these are cleared per lp node
     se_count: SubExprCount,
@@ -589,10 +617,9 @@ pub(crate) struct CommonSubExprOptimizer<'a> {
     replaced_identifiers: IdentifierMap<()>,
     // these are cleared per expr node
     visit_stack: Vec<VisitRecord>,
-    lifetime: PhantomData<&'a ()>
 }
 
-impl<'a> CommonSubExprOptimizer<'a> {
+impl CommonSubExprOptimizer {
     pub(crate) fn new() -> Self {
         Self {
             se_count: Default::default(),
@@ -600,7 +627,6 @@ impl<'a> CommonSubExprOptimizer<'a> {
             visit_stack: Default::default(),
             id_array_offsets: Default::default(),
             replaced_identifiers: Default::default(),
-            lifetime: PhantomData::default()
         }
     }
 
@@ -659,7 +685,8 @@ impl<'a> CommonSubExprOptimizer<'a> {
 
             // Visit expressions and collect sub-expression counts.
             let ae_node = AexprNode::new(e.node());
-            let (id_array_offset, this_expr_has_se) = self.visit_expression(ae_node, is_group_by, expr_arena)?;
+            let (id_array_offset, this_expr_has_se) =
+                self.visit_expression(ae_node, is_group_by, expr_arena)?;
             id_array_offsets.push(id_array_offset as u32);
             has_sub_expr |= this_expr_has_se;
         }
@@ -699,7 +726,8 @@ impl<'a> CommonSubExprOptimizer<'a> {
                 let out_e = ExprIR::new(*node, OutputName::Alias(ColumnName::from(name)));
                 new_expr.push(out_e)
             }
-            let expr = ProjectionExprs::new_with_cse(new_expr, self.replaced_identifiers.inner.len());
+            let expr =
+                ProjectionExprs::new_with_cse(new_expr, self.replaced_identifiers.inner.len());
             Ok(Some(expr))
         } else {
             Ok(None)
@@ -707,11 +735,15 @@ impl<'a> CommonSubExprOptimizer<'a> {
     }
 }
 
-impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
+impl RewritingVisitor for CommonSubExprOptimizer {
     type Node = IRNode;
     type Arena = IRNodeArena;
 
-    fn pre_visit(&mut self, node: &Self::Node, arena: &mut Self::Arena) -> PolarsResult<RewriteRecursion> {
+    fn pre_visit(
+        &mut self,
+        node: &Self::Node,
+        arena: &mut Self::Arena,
+    ) -> PolarsResult<RewriteRecursion> {
         use IR::*;
         Ok(match node.to_alp(&arena.0) {
             Select { .. } | HStack { .. } | GroupBy { .. } => RewriteRecursion::MutateAndContinue,
@@ -719,7 +751,7 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
         })
     }
 
-    fn mutate(&mut self, mut node: Self::Node, arena: &mut Self::Arena) -> PolarsResult<Self::Node> {
+    fn mutate(&mut self, node: Self::Node, arena: &mut Self::Arena) -> PolarsResult<Self::Node> {
         let mut id_array_offsets = std::mem::take(&mut self.id_array_offsets);
 
         self.se_count.inner.clear();
@@ -728,98 +760,98 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
         self.replaced_identifiers.inner.clear();
 
         let arena_idx = node.node();
-            let alp = arena.0.get(arena_idx);
+        let alp = arena.0.get(arena_idx);
 
-            match alp {
-                IR::Select {
-                    input,
+        match alp {
+            IR::Select {
+                input,
+                expr,
+                schema,
+                options,
+            } => {
+                let input_schema = arena.0.get(*input).schema(&arena.0);
+                if let Some(expr) = self.find_cse(
                     expr,
-                    schema,
-                    options,
-                } => {
-                    let input_schema = arena.0.get(*input).schema(&arena.0);
-                    if let Some(expr) = self.find_cse(
+                    &mut arena.1,
+                    &mut id_array_offsets,
+                    false,
+                    input_schema.as_ref().as_ref(),
+                )? {
+                    let lp = IR::Select {
+                        input: *input,
                         expr,
-                        &mut arena.1,
-                        &mut id_array_offsets,
-                        false,
-                        input_schema.as_ref().as_ref(),
-                    )? {
-                        let lp = IR::Select {
-                            input: *input,
-                            expr,
-                            schema: schema.clone(),
-                            options: *options,
-                        };
-                        arena.0.replace(arena_idx, lp);
-                    }
-                },
-                IR::HStack {
-                    input,
+                        schema: schema.clone(),
+                        options: *options,
+                    };
+                    arena.0.replace(arena_idx, lp);
+                }
+            },
+            IR::HStack {
+                input,
+                exprs,
+                schema,
+                options,
+            } => {
+                let input_schema = arena.0.get(*input).schema(&arena.0);
+                if let Some(exprs) = self.find_cse(
                     exprs,
-                    schema,
-                    options,
-                } => {
-                    let input_schema = arena.0.get(*input).schema(&arena.0);
-                    if let Some(exprs) = self.find_cse(
+                    &mut arena.1,
+                    &mut id_array_offsets,
+                    false,
+                    input_schema.as_ref().as_ref(),
+                )? {
+                    let lp = IR::HStack {
+                        input: *input,
                         exprs,
-                        &mut arena.1,
-                        &mut id_array_offsets,
-                        false,
-                        input_schema.as_ref().as_ref(),
-                    )? {
-                        let lp = IR::HStack {
-                            input: *input,
-                            exprs,
-                            schema: schema.clone(),
-                            options: *options,
-                        };
-                        arena.0.replace(arena_idx, lp);
-                    }
-                },
-                IR::GroupBy {
-                    input,
-                    keys,
+                        schema: schema.clone(),
+                        options: *options,
+                    };
+                    arena.0.replace(arena_idx, lp);
+                }
+            },
+            IR::GroupBy {
+                input,
+                keys,
+                aggs,
+                options,
+                maintain_order,
+                apply,
+                schema,
+            } => {
+                let input_schema = arena.0.get(*input).schema(&arena.0);
+                if let Some(aggs) = self.find_cse(
                     aggs,
-                    options,
-                    maintain_order,
-                    apply,
-                    schema,
-                } => {
-                    let input_schema = arena.0.get(*input).schema(&arena.0);
-                    if let Some(aggs) = self.find_cse(
-                        aggs,
-                        &mut arena.1,
-                        &mut id_array_offsets,
-                        true,
-                        input_schema.as_ref().as_ref(),
-                    )? {
-                        let keys = keys.clone();
-                        let options = options.clone();
-                        let schema = schema.clone();
-                        let apply = apply.clone();
-                        let maintain_order = *maintain_order;
-                        let input = *input;
+                    &mut arena.1,
+                    &mut id_array_offsets,
+                    true,
+                    input_schema.as_ref().as_ref(),
+                )? {
+                    let keys = keys.clone();
+                    let options = options.clone();
+                    let schema = schema.clone();
+                    let apply = apply.clone();
+                    let maintain_order = *maintain_order;
+                    let input = *input;
 
-                        let lp = IRBuilder::new(input, &mut arena.1, &mut arena.0)
-                            .with_columns(aggs.cse_exprs().to_vec(), Default::default())
-                            .build();
-                        let input = arena.0.add(lp);
+                    let lp = IRBuilder::new(input, &mut arena.1, &mut arena.0)
+                        .with_columns(aggs.cse_exprs().to_vec(), Default::default())
+                        .build();
+                    let input = arena.0.add(lp);
 
-                        let lp = IR::GroupBy {
-                            input,
-                            keys,
-                            aggs: aggs.default_exprs().to_vec(),
-                            options,
-                            schema,
-                            maintain_order,
-                            apply,
-                        };
-                        arena.0.replace(arena_idx, lp);
-                    }
-                },
-                _ => {},
-            }
+                    let lp = IR::GroupBy {
+                        input,
+                        keys,
+                        aggs: aggs.default_exprs().to_vec(),
+                        options,
+                        schema,
+                        maintain_order,
+                        apply,
+                    };
+                    arena.0.replace(arena_idx, lp);
+                }
+            },
+            _ => {},
+        }
 
         self.id_array_offsets = id_array_offsets;
         Ok(node)
@@ -858,7 +890,7 @@ mod test {
             false,
         );
         let ae_node = AexprNode::new(node);
-        ae_node.rewrite(&mut rewriter, &mut arena);
+        ae_node.rewrite(&mut rewriter, &mut arena).unwrap();
 
         let e = node_to_expr(ae_node.node(), &arena);
         assert_eq!(

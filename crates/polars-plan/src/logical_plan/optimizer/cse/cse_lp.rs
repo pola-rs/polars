@@ -1,11 +1,9 @@
-use super::*;
-use crate::prelude::visitor::IRNode;
 use hashbrown::hash_map::RawEntryMut;
 
-mod identifier_impl {
-    use std::fmt::{Debug, Formatter};
-    use std::hash::{Hash, Hasher};
+use super::*;
+use crate::prelude::visitor::IRNode;
 
+mod identifier_impl {
     use ahash::RandomState;
     use polars_core::hashing::_boost_hash_combine;
 
@@ -27,19 +25,24 @@ mod identifier_impl {
             self.inner.unwrap_or(0)
         }
 
-        pub fn is_equal(&self, other: &Self, lp_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> bool {
+        pub fn is_equal(
+            &self,
+            other: &Self,
+            lp_arena: &Arena<IR>,
+            expr_arena: &Arena<AExpr>,
+        ) -> bool {
             self.inner == other.inner
                 && match (self.last_node, other.last_node) {
-                (None, None) => true,
-                (Some(l), Some(r)) => {
-                    // We ignore caches as they are inserted on the node locations.
-                    // In that case we don't want to cmp the cache (as we just inserted it),
-                    // but the input node of the cache.
-                    l.hashable_and_cmp(lp_arena, expr_arena).ignore_caches()
-                        == r.hashable_and_cmp(lp_arena, expr_arena).ignore_caches()
-                },
-                _ => false,
-            }
+                    (None, None) => true,
+                    (Some(l), Some(r)) => {
+                        // We ignore caches as they are inserted on the node locations.
+                        // In that case we don't want to cmp the cache (as we just inserted it),
+                        // but the input node of the cache.
+                        l.hashable_and_cmp(lp_arena, expr_arena).ignore_caches()
+                            == r.hashable_and_cmp(lp_arena, expr_arena).ignore_caches()
+                    },
+                    _ => false,
+                }
         }
         pub fn new() -> Self {
             Self {
@@ -63,7 +66,12 @@ mod identifier_impl {
             self.inner = Some(inner);
         }
 
-        pub fn add_alp_node(&self, alp: &IRNode, lp_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Self {
+        pub fn add_alp_node(
+            &self,
+            alp: &IRNode,
+            lp_arena: &Arena<IR>,
+            expr_arena: &Arena<AExpr>,
+        ) -> Self {
             let hashed = self.hb.hash_one(alp.hashable_and_cmp(lp_arena, expr_arena));
             let inner = Some(
                 self.inner
@@ -81,28 +89,36 @@ use identifier_impl::*;
 
 #[derive(Default)]
 struct IdentifierMap<V> {
-    inner: PlHashMap<Identifier, V>
+    inner: PlHashMap<Identifier, V>,
 }
 
 impl<V> IdentifierMap<V> {
     fn get(&self, id: &Identifier, lp_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Option<&V> {
-        self.inner.raw_entry().from_hash(id.hash(), |k| k.is_equal(&id, lp_arena, expr_arena)).map(|(_k, v)| v)
+        self.inner
+            .raw_entry()
+            .from_hash(id.hash(), |k| k.is_equal(id, lp_arena, expr_arena))
+            .map(|(_k, v)| v)
     }
 
-    fn entry<F: FnOnce() -> V>(&mut self, id: Identifier, v: F, lp_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> &mut V{
+    fn entry<F: FnOnce() -> V>(
+        &mut self,
+        id: Identifier,
+        v: F,
+        lp_arena: &Arena<IR>,
+        expr_arena: &Arena<AExpr>,
+    ) -> &mut V {
         let h = id.hash();
-        match self.inner.raw_entry_mut().from_hash(h, |k| k.is_equal(&id, lp_arena, expr_arena)) {
-            RawEntryMut::Occupied(mut entry) => {
-                entry.into_mut()
-            },
+        match self
+            .inner
+            .raw_entry_mut()
+            .from_hash(h, |k| k.is_equal(&id, lp_arena, expr_arena))
+        {
+            RawEntryMut::Occupied(entry) => entry.into_mut(),
             RawEntryMut::Vacant(entry) => {
                 let (_, v) = entry.insert_with_hasher(h, id, v(), |id| id.hash());
                 v
             },
         }
-    }
-    fn insert(&mut self, id: Identifier, v: V, lp_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) {
-        self.entry(id, || v, lp_arena, expr_arena);
     }
 }
 
@@ -126,14 +142,12 @@ struct LpIdentifierVisitor<'a> {
     post_visit_idx: usize,
     visit_stack: Vec<VisitRecord>,
     has_subplan: bool,
-    expr_arena: &'a Arena<AExpr>,
 }
 
 impl LpIdentifierVisitor<'_> {
     fn new<'a>(
         sp_count: &'a mut SubPlanCount,
         identifier_array: &'a mut IdentifierArray,
-        expr_arena: &'a Arena<AExpr>,
     ) -> LpIdentifierVisitor<'a> {
         LpIdentifierVisitor {
             sp_count,
@@ -142,14 +156,11 @@ impl LpIdentifierVisitor<'_> {
             post_visit_idx: 0,
             visit_stack: vec![],
             has_subplan: false,
-            expr_arena,
         }
     }
 
     fn pop_until_entered(&mut self) -> (usize, Identifier) {
-        // SAFETY:
-        // we keep pointer valid and will not create mutable refs.
-        let mut id = unsafe { Identifier::new() };
+        let mut id = Identifier::new();
 
         while let Some(item) = self.visit_stack.pop() {
             match item {
@@ -167,19 +178,24 @@ impl<'a> Visitor for LpIdentifierVisitor<'a> {
     type Node = IRNode;
     type Arena = IRNodeArena;
 
-    fn pre_visit(&mut self, _node: &Self::Node, arena: &Self::Arena) -> PolarsResult<VisitRecursion> {
+    fn pre_visit(
+        &mut self,
+        _node: &Self::Node,
+        _arena: &Self::Arena,
+    ) -> PolarsResult<VisitRecursion> {
         self.visit_stack
             .push(VisitRecord::Entered(self.pre_visit_idx));
         self.pre_visit_idx += 1;
 
-        // SAFETY:
-        // we keep pointer valid and will not create mutable refs.
-        self.identifier_array
-            .push((0, unsafe { Identifier::new() }));
+        self.identifier_array.push((0, Identifier::new()));
         Ok(VisitRecursion::Continue)
     }
 
-    fn post_visit(&mut self, node: &Self::Node, arena: &Self::Arena) -> PolarsResult<VisitRecursion> {
+    fn post_visit(
+        &mut self,
+        node: &Self::Node,
+        arena: &Self::Arena,
+    ) -> PolarsResult<VisitRecursion> {
         self.post_visit_idx += 1;
 
         let (pre_visit_idx, sub_plan_id) = self.pop_until_entered();
@@ -194,7 +210,9 @@ impl<'a> Visitor for LpIdentifierVisitor<'a> {
         // is available for the parent plan.
         self.visit_stack.push(VisitRecord::SubPlanId(id.clone()));
 
-        let (_, sp_count) = self.sp_count.entry(id, || (node.node(), 0), &arena.0, &arena.1);
+        let (_, sp_count) = self
+            .sp_count
+            .entry(id, || (node.node(), 0), &arena.0, &arena.1);
         *sp_count += 1;
         self.has_subplan |= *sp_count > 1;
         Ok(VisitRecursion::Continue)
@@ -236,7 +254,11 @@ impl<'a> RewritingVisitor for CommonSubPlanRewriter<'a> {
     type Node = IRNode;
     type Arena = IRNodeArena;
 
-    fn pre_visit(&mut self, _lp_node: &Self::Node, arena: &mut Self::Arena) -> PolarsResult<RewriteRecursion> {
+    fn pre_visit(
+        &mut self,
+        _lp_node: &Self::Node,
+        arena: &mut Self::Arena,
+    ) -> PolarsResult<RewriteRecursion> {
         if self.visited_idx >= self.identifier_array.len()
             || self.max_post_visit_idx > self.identifier_array[self.visited_idx].0
         {
@@ -267,7 +289,11 @@ impl<'a> RewritingVisitor for CommonSubPlanRewriter<'a> {
         }
     }
 
-    fn mutate(&mut self, mut node: Self::Node, arena: &mut Self::Arena) -> PolarsResult<Self::Node> {
+    fn mutate(
+        &mut self,
+        mut node: Self::Node,
+        arena: &mut Self::Arena,
+    ) -> PolarsResult<Self::Node> {
         let (post_visit_count, id) = &self.identifier_array[self.visited_idx];
         self.visited_idx += 1;
 
@@ -282,7 +308,9 @@ impl<'a> RewritingVisitor for CommonSubPlanRewriter<'a> {
         }
 
         let cache_id = self.cache_id.inner.len();
-        let cache_id = *self.cache_id.entry(id.clone(), || cache_id, &arena.0, &arena.1);
+        let cache_id = *self
+            .cache_id
+            .entry(id.clone(), || cache_id, &arena.0, &arena.1);
         let cache_count = self.sp_count.get(id, &arena.0, &arena.1).unwrap().1;
 
         let cache_node = IR::Cache {
@@ -309,10 +337,9 @@ pub(crate) fn elim_cmn_subplans(
     let mut sp_count = Default::default();
     let mut id_array = Default::default();
 
-
     with_ir_arena(lp_arena, expr_arena, |arena| {
         let lp_node = IRNode::new(root);
-        let mut visitor = LpIdentifierVisitor::new(&mut sp_count, &mut id_array, &arena.1);
+        let mut visitor = LpIdentifierVisitor::new(&mut sp_count, &mut id_array);
 
         lp_node.visit(&mut visitor, arena).map(|_| ()).unwrap();
 
@@ -321,7 +348,6 @@ pub(crate) fn elim_cmn_subplans(
 
         (root, rewriter.rewritten, rewriter.cache_id_to_caches)
     })
-
 }
 
 /// Prune unused caches.

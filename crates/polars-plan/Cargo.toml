@@ -29,6 +29,7 @@ chrono = { workspace = true, optional = true }
 chrono-tz = { workspace = true, optional = true }
 ciborium = { workspace = true, optional = true }
 futures = { workspace = true, optional = true }
+hashbrown = { workspace = true }
 once_cell = { workspace = true }
 percent-encoding = { workspace = true }
 pyo3 = { workspace = true, optional = true }
@@ -38,7 +39,6 @@ regex = { workspace = true, optional = true }
 serde = { workspace = true, features = ["derive", "rc"], optional = true }
 smartstring = { workspace = true }
 strum_macros = { workspace = true }
-hashbrown = {workspace = true}
 
 [build-dependencies]
 version_check = { workspace = true }

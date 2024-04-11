@@ -318,7 +318,11 @@ impl Visitor for TreeFmtVisitor {
     type Arena = Arena<AExpr>;
 
     /// Invoked before any children of `node` are visited.
-    fn pre_visit(&mut self, node: &Self::Node, arena: &Self::Arena) -> PolarsResult<VisitRecursion> {
+    fn pre_visit(
+        &mut self,
+        node: &Self::Node,
+        arena: &Self::Arena,
+    ) -> PolarsResult<VisitRecursion> {
         let ae = node.to_aexpr(arena);
         let repr = format!("{:E}", ae);
 
@@ -343,7 +347,11 @@ impl Visitor for TreeFmtVisitor {
         Ok(VisitRecursion::Continue)
     }
 
-    fn post_visit(&mut self, _node: &Self::Node, _arena: &Self::Arena) -> PolarsResult<VisitRecursion> {
+    fn post_visit(
+        &mut self,
+        _node: &Self::Node,
+        _arena: &Self::Arena,
+    ) -> PolarsResult<VisitRecursion> {
         // we finished this branch so we decrease in depth, back the caller node
         self.depth -= 1;
 
@@ -813,7 +821,7 @@ mod test {
         let mut visitor = TreeFmtVisitor::default();
 
         let ae_node = AexprNode::new(node);
-        ae_node.visit(&mut visitor, &arena);
+        ae_node.visit(&mut visitor, &arena).unwrap();
         let expected: &[&[&str]] = &[
             &["sum"],
             &["binary: +"],
@@ -883,7 +891,7 @@ mod test {
 
         let mut visitor = TreeFmtVisitor::default();
         let ae_node = AexprNode::new(node);
-        ae_node.visit(&mut Visitor).unwrap();
+        ae_node.visit(&mut visitor, &arena).unwrap();
 
         let expected_lines = vec![
             "                 0                 1               2                3            4",

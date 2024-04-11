@@ -210,7 +210,6 @@ pub fn optimize(
             let rewritten = alp_node.rewrite(&mut optimizer, arena)?;
             Ok(rewritten.node())
         })?;
-
     }
 
     // During debug we check if the optimizations have not modified the final schema.

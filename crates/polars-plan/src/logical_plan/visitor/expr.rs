@@ -1,4 +1,5 @@
 use std::fmt::{Debug, Formatter};
+
 use polars_core::prelude::{Field, Schema};
 use polars_utils::unitvec;
 
@@ -11,7 +12,7 @@ impl TreeWalker for Expr {
     fn apply_children(
         &self,
         op: &mut dyn FnMut(&Self, &Self::Arena) -> PolarsResult<VisitRecursion>,
-        arena: &Self::Arena
+        arena: &Self::Arena,
     ) -> PolarsResult<VisitRecursion> {
         let mut scratch = unitvec![];
 
@@ -28,14 +29,13 @@ impl TreeWalker for Expr {
         Ok(VisitRecursion::Continue)
     }
 
-    fn map_children(self,
-                    mut f: &mut dyn FnMut(Self, &mut Self::Arena) -> PolarsResult<Self>,
-        arena: &mut Self::Arena
+    fn map_children(
+        self,
+        f: &mut dyn FnMut(Self, &mut Self::Arena) -> PolarsResult<Self>,
+        _arena: &mut Self::Arena,
     ) -> PolarsResult<Self> {
         use polars_utils::functions::try_arc_map as am;
-        let mut f = |expr| {
-            f(expr, &mut ())
-        };
+        let mut f = |expr| f(expr, &mut ());
         use AggExpr::*;
         use Expr::*;
         #[rustfmt::skip]
@@ -100,14 +100,13 @@ pub struct AexprNode {
 
 impl AexprNode {
     pub fn new(node: Node) -> Self {
-        Self { node  }
+        Self { node }
     }
 
     /// Get the `Node`.
     pub fn node(&self) -> Node {
         self.node
     }
-
 
     pub fn to_aexpr<'a>(&self, arena: &'a Arena<AExpr>) -> &'a AExpr {
         arena.get(self.node)
@@ -127,24 +126,23 @@ impl AexprNode {
         self.node = node;
     }
 
-
     #[cfg(feature = "cse")]
     pub(crate) fn is_leaf(&self, arena: &Arena<AExpr>) -> bool {
         matches!(self.to_aexpr(arena), AExpr::Column(_) | AExpr::Literal(_))
     }
 
+    #[cfg(feature = "cse")]
     pub(crate) fn hashable_and_cmp<'a>(&self, arena: &'a Arena<AExpr>) -> AExprArena<'a> {
         AExprArena {
             node: self.node,
-            arena
+            arena,
         }
     }
 }
 
-
 pub struct AExprArena<'a> {
     node: Node,
-    arena: &'a Arena<AExpr>
+    arena: &'a Arena<AExpr>,
 }
 
 impl Debug for AExprArena<'_> {
@@ -214,10 +212,7 @@ impl AExpr {
 
 impl<'a> AExprArena<'a> {
     fn new(node: Node, arena: &'a Arena<AExpr>) -> Self {
-        Self {
-            node,
-            arena
-        }
+        Self { node, arena }
     }
     fn to_aexpr(&self) -> &'a AExpr {
         self.arena.get(self.node)
@@ -242,10 +237,8 @@ impl PartialEq for AExprArena<'_> {
         loop {
             match (scratch1.pop(), scratch2.pop()) {
                 (Some(l), Some(r)) => {
-                    // SAFETY: we can pass a *mut pointer
-                    // the equality operation will not access mutable
-                    let l = unsafe { Self::new(l, self.arena) };
-                    let r = unsafe { Self::new(r, self.arena) };
+                    let l = Self::new(l, self.arena);
+                    let r = Self::new(r, self.arena);
 
                     if !l.is_equal(&r) {
                         return false;
@@ -266,13 +259,13 @@ impl TreeWalker for AexprNode {
     fn apply_children(
         &self,
         op: &mut dyn FnMut(&Self, &Self::Arena) -> PolarsResult<VisitRecursion>,
-        arena: &Self::Arena
+        arena: &Self::Arena,
     ) -> PolarsResult<VisitRecursion> {
-        let mut scratch = vec![];
+        let mut scratch = unitvec![];
 
         self.to_aexpr(arena).nodes(&mut scratch);
-        for node in scratch {
-            let aenode = AexprNode::new(node);
+        for node in scratch.as_slice() {
+            let aenode = AexprNode::new(*node);
             match op(&aenode, arena)? {
                 // let the recursion continue
                 VisitRecursion::Continue | VisitRecursion::Skip => {},
@@ -286,23 +279,21 @@ impl TreeWalker for AexprNode {
     fn map_children(
         mut self,
         op: &mut dyn FnMut(Self, &mut Self::Arena) -> PolarsResult<Self>,
-        arena: &mut Self::Arena
+        arena: &mut Self::Arena,
     ) -> PolarsResult<Self> {
-        let mut scratch = vec![];
+        let mut scratch = unitvec![];
 
-        let ae = arena.take(self.node);
+        let ae = arena.get(self.node).clone();
         ae.nodes(&mut scratch);
 
         // rewrite the nodes
-        for node in &mut scratch {
-            let aenode = AexprNode::new(
-                *node
-            );
+        for node in scratch.as_mut_slice() {
+            let aenode = AexprNode::new(*node);
             *node = op(aenode, arena)?.node;
         }
 
         let ae = ae.replace_inputs(&scratch);
-        arena.replace(self.node, ae);
+        self.node = arena.add(ae);
         Ok(self)
     }
 }

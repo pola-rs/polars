@@ -129,7 +129,7 @@ impl MetaNameSpace {
         let node = to_aexpr(self.0, &mut arena);
         let mut visitor = TreeFmtVisitor::default();
 
-        AexprNode::new(node).visit(&mut visitor, &mut arena)?;
+        AexprNode::new(node).visit(&mut visitor, &arena)?;
 
         Ok(visitor)
     }

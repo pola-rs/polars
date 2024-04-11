@@ -1,6 +1,4 @@
 use recursive::recursive;
-use polars_utils::arena::Arena;
-use crate::prelude::{AExpr, IR};
 
 use super::*;
 
@@ -11,20 +9,22 @@ pub trait TreeWalker: Sized {
     fn apply_children(
         &self,
         op: &mut dyn FnMut(&Self, &Self::Arena) -> PolarsResult<VisitRecursion>,
-        arena: &Self::Arena
+        arena: &Self::Arena,
     ) -> PolarsResult<VisitRecursion>;
 
-    fn map_children(self,
-                    op: &mut dyn FnMut(Self, &mut Self::Arena) -> PolarsResult<Self>,
-                    arena: &mut Self::Arena
+    fn map_children(
+        self,
+        op: &mut dyn FnMut(Self, &mut Self::Arena) -> PolarsResult<Self>,
+        arena: &mut Self::Arena,
     ) -> PolarsResult<Self>;
 
     /// Walks all nodes in depth-first-order.
     #[recursive]
-    fn visit(&self, visitor: &mut dyn Visitor<Node = Self, Arena=Self::Arena>,
-             arena: &Self::Arena
-    ) -> PolarsResult<VisitRecursion>
-    {
+    fn visit(
+        &self,
+        visitor: &mut dyn Visitor<Node = Self, Arena = Self::Arena>,
+        arena: &Self::Arena,
+    ) -> PolarsResult<VisitRecursion> {
         match visitor.pre_visit(self, arena)? {
             VisitRecursion::Continue => {},
             // If the recursion should skip, do not apply to its children. And let the recursion continue
@@ -44,8 +44,10 @@ pub trait TreeWalker: Sized {
     }
 
     #[recursive]
-    fn rewrite(self, rewriter: &mut dyn RewritingVisitor<Node = Self, Arena=Self::Arena>,
-               arena: &mut Self::Arena
+    fn rewrite(
+        self,
+        rewriter: &mut dyn RewritingVisitor<Node = Self, Arena = Self::Arena>,
+        arena: &mut Self::Arena,
     ) -> PolarsResult<Self> {
         let mutate_this_node = match rewriter.pre_visit(&self, arena)? {
             RewriteRecursion::MutateAndStop => return rewriter.mutate(self, arena),
@@ -54,7 +56,8 @@ pub trait TreeWalker: Sized {
             RewriteRecursion::NoMutateAndContinue => false,
         };
 
-        let after_applied_children = self.map_children(&mut |node, arena| node.rewrite(rewriter, arena), arena)?;
+        let after_applied_children =
+            self.map_children(&mut |node, arena| node.rewrite(rewriter, arena), arena)?;
 
         if mutate_this_node {
             rewriter.mutate(after_applied_children, arena)
@@ -69,13 +72,21 @@ pub trait Visitor {
     type Arena;
 
     /// Invoked before any children of `node` are visited.
-    fn pre_visit(&mut self, _node: &Self::Node, _arena: &Self::Arena) -> PolarsResult<VisitRecursion> {
+    fn pre_visit(
+        &mut self,
+        _node: &Self::Node,
+        _arena: &Self::Arena,
+    ) -> PolarsResult<VisitRecursion> {
         Ok(VisitRecursion::Continue)
     }
 
     /// Invoked after all children of `node` are visited. Default
     /// implementation does nothing.
-    fn post_visit(&mut self, _node: &Self::Node, _arena: &Self::Arena) -> PolarsResult<VisitRecursion> {
+    fn post_visit(
+        &mut self,
+        _node: &Self::Node,
+        _arena: &Self::Arena,
+    ) -> PolarsResult<VisitRecursion> {
         Ok(VisitRecursion::Continue)
     }
 }
@@ -85,7 +96,11 @@ pub trait RewritingVisitor {
     type Arena;
 
     /// Invoked before any children of `node` are visited.
-    fn pre_visit(&mut self, _node: &Self::Node, _arena: &mut Self::Arena) -> PolarsResult<RewriteRecursion> {
+    fn pre_visit(
+        &mut self,
+        _node: &Self::Node,
+        _arena: &mut Self::Arena,
+    ) -> PolarsResult<RewriteRecursion> {
         Ok(RewriteRecursion::MutateAndContinue)
     }
 
