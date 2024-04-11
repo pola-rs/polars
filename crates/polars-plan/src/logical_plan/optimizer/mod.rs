@@ -203,11 +203,13 @@ pub fn optimize(
     // This one should run (nearly) last as this modifies the projections
     #[cfg(feature = "cse")]
     if comm_subexpr_elim && !members.has_ext_context {
-        let mut optimizer = CommonSubExprOptimizer::new(expr_arena);
-        lp_top = IRNode::with_context(lp_top, lp_arena, |alp_node| {
-            alp_node.rewrite(&mut optimizer)
-        })?
-        .node()
+        let mut optimizer = CommonSubExprOptimizer::new();
+        let alp_node = IRNode::new(lp_top);
+
+        lp_top = try_with_ir_arena(lp_arena, expr_arena, |arena| {
+            let rewritten = alp_node.rewrite(&mut optimizer, arena)?;
+            Ok(rewritten.node())
+        })?;
     }
 
     // During debug we check if the optimizations have not modified the final schema.

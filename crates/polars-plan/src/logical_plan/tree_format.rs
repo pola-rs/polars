@@ -315,10 +315,15 @@ pub(crate) struct TreeFmtVisitor {
 
 impl Visitor for TreeFmtVisitor {
     type Node = AexprNode;
+    type Arena = Arena<AExpr>;
 
     /// Invoked before any children of `node` are visited.
-    fn pre_visit(&mut self, node: &Self::Node) -> PolarsResult<VisitRecursion> {
-        let ae = node.to_aexpr();
+    fn pre_visit(
+        &mut self,
+        node: &Self::Node,
+        arena: &Self::Arena,
+    ) -> PolarsResult<VisitRecursion> {
+        let ae = node.to_aexpr(arena);
         let repr = format!("{:E}", ae);
 
         if self.levels.len() <= self.depth {
@@ -342,7 +347,11 @@ impl Visitor for TreeFmtVisitor {
         Ok(VisitRecursion::Continue)
     }
 
-    fn post_visit(&mut self, _node: &Self::Node) -> PolarsResult<VisitRecursion> {
+    fn post_visit(
+        &mut self,
+        _node: &Self::Node,
+        _arena: &Self::Arena,
+    ) -> PolarsResult<VisitRecursion> {
         // we finished this branch so we decrease in depth, back the caller node
         self.depth -= 1;
 
@@ -811,7 +820,8 @@ mod test {
 
         let mut visitor = TreeFmtVisitor::default();
 
-        AexprNode::with_context(node, &mut arena, |ae_node| ae_node.visit(&mut visitor)).unwrap();
+        let ae_node = AexprNode::new(node);
+        ae_node.visit(&mut visitor, &arena).unwrap();
         let expected: &[&[&str]] = &[
             &["sum"],
             &["binary: +"],
@@ -831,7 +841,7 @@ mod test {
 
         let mut visitor = TreeFmtVisitor::default();
 
-        AexprNode::with_context(node, &mut arena, |ae_node| ae_node.visit(&mut visitor)).unwrap();
+        AexprNode::new(node).visit(&mut visitor, &arena).unwrap();
 
         let expected_lines = vec![
             "            0            1               2                3            4",
@@ -880,8 +890,8 @@ mod test {
         let node = to_aexpr(e, &mut arena);
 
         let mut visitor = TreeFmtVisitor::default();
-
-        AexprNode::with_context(node, &mut arena, |ae_node| ae_node.visit(&mut visitor)).unwrap();
+        let ae_node = AexprNode::new(node);
+        ae_node.visit(&mut visitor, &arena).unwrap();
 
         let expected_lines = vec![
             "                 0                 1               2                3            4",

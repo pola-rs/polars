@@ -9,9 +9,14 @@ use crate::prelude::aexpr::traverse_and_hash_aexpr;
 use crate::prelude::ExprIR;
 
 impl IRNode {
-    pub(crate) fn hashable_and_cmp<'a>(&'a self, expr_arena: &'a Arena<AExpr>) -> HashableEqLP<'a> {
+    pub(crate) fn hashable_and_cmp<'a>(
+        &'a self,
+        lp_arena: &'a Arena<IR>,
+        expr_arena: &'a Arena<AExpr>,
+    ) -> HashableEqLP<'a> {
         HashableEqLP {
-            node: self,
+            node: *self,
+            lp_arena,
             expr_arena,
             ignore_cache: false,
         }
@@ -19,7 +24,8 @@ impl IRNode {
 }
 
 pub(crate) struct HashableEqLP<'a> {
-    node: &'a IRNode,
+    node: IRNode,
+    lp_arena: &'a Arena<IR>,
     expr_arena: &'a Arena<AExpr>,
     ignore_cache: bool,
 }
@@ -48,7 +54,7 @@ fn hash_exprs<H: Hasher>(exprs: &[ExprIR], expr_arena: &Arena<AExpr>, state: &mu
 impl Hash for HashableEqLP<'_> {
     // This hashes the variant, not the whole plan
     fn hash<H: Hasher>(&self, state: &mut H) {
-        let alp = self.node.to_alp();
+        let alp = self.node.to_alp(self.lp_arena);
         std::mem::discriminant(alp).hash(state);
         match alp {
             #[cfg(feature = "python")]
@@ -198,12 +204,9 @@ fn expr_irs_eq(l: &[ExprIR], r: &[ExprIR], expr_arena: &Arena<AExpr>) -> bool {
 
 fn expr_ir_eq(l: &ExprIR, r: &ExprIR, expr_arena: &Arena<AExpr>) -> bool {
     l.get_alias() == r.get_alias() && {
-        let expr_arena = expr_arena as *const _ as *mut _;
-        unsafe {
-            let l = AexprNode::from_raw(l.node(), expr_arena);
-            let r = AexprNode::from_raw(r.node(), expr_arena);
-            l == r
-        }
+        let l = AexprNode::new(l.node());
+        let r = AexprNode::new(r.node());
+        l.hashable_and_cmp(expr_arena) == r.hashable_and_cmp(expr_arena)
     }
 }
 
@@ -217,8 +220,8 @@ fn opt_expr_ir_eq(l: &Option<ExprIR>, r: &Option<ExprIR>, expr_arena: &Arena<AEx
 
 impl HashableEqLP<'_> {
     fn is_equal(&self, other: &Self) -> bool {
-        let alp_l = self.node.to_alp();
-        let alp_r = other.node.to_alp();
+        let alp_l = self.node.to_alp(self.lp_arena);
+        let alp_r = other.node.to_alp(self.lp_arena);
         if std::mem::discriminant(alp_l) != std::mem::discriminant(alp_r) {
             return false;
         }
@@ -445,12 +448,9 @@ impl HashableEqLP<'_> {
             ) => {
                 l.len() == r.len()
                     && l.iter().zip(r.iter()).all(|(l, r)| {
-                        let expr_arena = self.expr_arena as *const _ as *mut _;
-                        unsafe {
-                            let l = AexprNode::from_raw(*l, expr_arena);
-                            let r = AexprNode::from_raw(*r, expr_arena);
-                            l == r
-                        }
+                        let l = AexprNode::new(*l).hashable_and_cmp(self.expr_arena);
+                        let r = AexprNode::new(*r).hashable_and_cmp(self.expr_arena);
+                        l == r
                     })
             },
             _ => false,
@@ -469,12 +469,10 @@ impl PartialEq for HashableEqLP<'_> {
         loop {
             match (scratch_1.pop(), scratch_2.pop()) {
                 (Some(l), Some(r)) => {
-                    // SAFETY: we can pass a *mut pointer
-                    // the equality operation will not access mutable
-                    let l = unsafe { IRNode::from_raw(l, self.node.get_arena_raw()) };
-                    let r = unsafe { IRNode::from_raw(r, self.node.get_arena_raw()) };
-                    let l_alp = l.to_alp();
-                    let r_alp = r.to_alp();
+                    let l = IRNode::new(l);
+                    let r = IRNode::new(r);
+                    let l_alp = l.to_alp(self.lp_arena);
+                    let r_alp = r.to_alp(self.lp_arena);
 
                     if self.ignore_cache {
                         match (l_alp, r_alp) {
@@ -498,14 +496,14 @@ impl PartialEq for HashableEqLP<'_> {
                     }
 
                     if !l
-                        .hashable_and_cmp(self.expr_arena)
-                        .is_equal(&r.hashable_and_cmp(self.expr_arena))
+                        .hashable_and_cmp(self.lp_arena, self.expr_arena)
+                        .is_equal(&r.hashable_and_cmp(self.lp_arena, self.expr_arena))
                     {
                         return false;
                     }
 
-                    l.to_alp().copy_inputs(&mut scratch_1);
-                    r.to_alp().copy_inputs(&mut scratch_2);
+                    l_alp.copy_inputs(&mut scratch_1);
+                    r_alp.copy_inputs(&mut scratch_2);
                 },
                 (None, None) => return true,
                 _ => return false,

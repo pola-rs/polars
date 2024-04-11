@@ -29,6 +29,7 @@ chrono = { workspace = true, optional = true }
 chrono-tz = { workspace = true, optional = true }
 ciborium = { workspace = true, optional = true }
 futures = { workspace = true, optional = true }
+hashbrown = { workspace = true }
 once_cell = { workspace = true }
 percent-encoding = { workspace = true }
 pyo3 = { workspace = true, optional = true }

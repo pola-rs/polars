@@ -3026,6 +3026,7 @@ dependencies = [
  "chrono-tz",
  "ciborium",
  "futures",
+ "hashbrown 0.14.3",
  "libloading",
  "once_cell",
  "percent-encoding",
