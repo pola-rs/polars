@@ -832,7 +832,7 @@ fn test_lazy_group_by_sort_by() {
         .lazy()
         .group_by([col("a")])
         .agg([col("b")
-            .sort_by([col("c")], SortMultipleOptions::default().with_order(true))
+            .sort_by([col("c")], SortMultipleOptions::default().with_order_descending(true))
             .first()])
         .collect()
         .unwrap()
@@ -981,7 +981,7 @@ fn test_group_by_sort_slice() -> PolarsResult<()> {
     let out1 = df
         .clone()
         .lazy()
-        .sort(["vals"], SortMultipleOptions::default().with_order(true))
+        .sort(["vals"], SortMultipleOptions::default().with_order_descending(true))
         .group_by([col("groups")])
         .agg([col("vals").head(Some(2)).alias("foo")])
         .sort(["groups"], Default::default())
@@ -991,7 +991,7 @@ fn test_group_by_sort_slice() -> PolarsResult<()> {
         .lazy()
         .group_by([col("groups")])
         .agg([col("vals")
-            .sort(SortOptions::default().with_order(true))
+            .sort(SortOptions::default().with_order_descending(true))
             .head(Some(2))
             .alias("foo")])
         .sort(["groups"], Default::default())
@@ -1042,7 +1042,7 @@ fn test_arg_sort_multiple() -> PolarsResult<()> {
         .lazy()
         .select([arg_sort_by(
             [col("int"), col("flt")],
-            SortMultipleOptions::default().with_orders([true, false]),
+            SortMultipleOptions::default().with_order_descendings([true, false]),
         )])
         .collect()?;
 
@@ -1060,7 +1060,7 @@ fn test_arg_sort_multiple() -> PolarsResult<()> {
         .lazy()
         .select([arg_sort_by(
             [col("str"), col("flt")],
-            SortMultipleOptions::default().with_orders([true, false]),
+            SortMultipleOptions::default().with_order_descendings([true, false]),
         )])
         .collect()?;
     Ok(())
@@ -1422,7 +1422,7 @@ fn test_group_by_small_ints() -> PolarsResult<()> {
         .lazy()
         .group_by([col("id_16"), col("id_32")])
         .agg([col("id_16").sum().alias("foo")])
-        .sort(["foo"], SortMultipleOptions::default().with_order(true))
+        .sort(["foo"], SortMultipleOptions::default().with_order_descending(true))
         .collect()?;
 
     assert_eq!(Vec::from(out.column("foo")?.i64()?), &[Some(2), Some(1)]);

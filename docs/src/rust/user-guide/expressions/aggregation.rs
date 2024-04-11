@@ -51,7 +51,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .sort(
             ["len"],
             SortMultipleOptions::default()
-                .with_order(true)
+                .with_order_descending(true)
                 .with_nulls_last(true),
         )
         .limit(5)
@@ -73,7 +73,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .sum()
                 .alias("pro"),
         ])
-        .sort(["pro"], SortMultipleOptions::default().with_order(true))
+        .sort(["pro"], SortMultipleOptions::default().with_order_descending(true))
         .limit(5)
         .collect()?;
 
@@ -94,7 +94,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .sort(
             ["count"],
             SortMultipleOptions::default()
-                .with_order(true)
+                .with_order_descending(true)
                 .with_nulls_last(true),
         )
         .limit(5)
@@ -142,7 +142,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .sort(
             ["birthday"],
             SortMultipleOptions::default()
-                .with_order(true)
+                .with_order_descending(true)
                 .with_nulls_last(true),
         )
         .group_by(["state"])
@@ -163,7 +163,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .sort(
             ["birthday"],
             SortMultipleOptions::default()
-                .with_order(true)
+                .with_order_descending(true)
                 .with_nulls_last(true),
         )
         .group_by(["state"])
@@ -188,7 +188,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .sort(
             ["birthday"],
             SortMultipleOptions::default()
-                .with_order(true)
+                .with_order_descending(true)
                 .with_nulls_last(true),
         )
         .group_by(["state"])

@@ -24,7 +24,7 @@ pub trait SeriesMethods: SeriesSealed {
             df.sort(
                 ["count"],
                 SortMultipleOptions::default()
-                    .with_order(true)
+                    .with_order_descending(true)
                     .with_multithreaded(parallel),
             )
         } else {

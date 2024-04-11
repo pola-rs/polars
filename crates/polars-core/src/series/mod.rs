@@ -285,6 +285,21 @@ impl Series {
         Ok(self)
     }
 
+    /// Sort the series with specific options.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use polars_core::prelude::*;
+    /// # fn main() -> PolarsResult<()> {
+    /// let s = Series::new("foo", [2, 1, 3]);
+    /// let sorted = s.sort(SortOptions::default())?;
+    /// assert_eq!(sorted, Series::new("foo", [1, 2, 3]));
+    /// # Ok(())
+    /// }
+    /// ```
+    ///
+    /// See [`SortOptions`] for more options.
     pub fn sort(&self, sort_options: SortOptions) -> PolarsResult<Self> {
         self.sort_with(sort_options)
     }

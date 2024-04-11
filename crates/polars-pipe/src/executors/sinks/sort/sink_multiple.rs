@@ -172,7 +172,7 @@ impl SortSinkMultiple {
             slice,
             sort_options
                 .clone()
-                .with_order(false)
+                .with_order_descending(false)
                 .with_nulls_last(false)
                 .with_maintain_order(false),
             Arc::new(schema),

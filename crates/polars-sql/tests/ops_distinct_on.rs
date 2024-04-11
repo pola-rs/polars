@@ -31,7 +31,7 @@ fn test_distinct_on() {
         .sort_by_exprs(
             vec![col("Name"), col("Record Date")],
             SortMultipleOptions::default()
-                .with_orders([false, true])
+                .with_order_descendings([false, true])
                 .with_maintain_order(true),
         )
         .group_by_stable(vec![col("Name")])

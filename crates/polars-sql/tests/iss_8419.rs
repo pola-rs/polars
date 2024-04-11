@@ -18,7 +18,7 @@ fn iss_8419() {
             col("Country"),
             col("Sales"),
             col("Sales")
-                .sort(SortOptions::default().with_order(true))
+                .sort(SortOptions::default().with_order_descending(true))
                 .cum_sum(false)
                 .alias("SalesCumulative"),
         ])

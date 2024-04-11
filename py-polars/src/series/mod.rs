@@ -288,7 +288,7 @@ impl PySeries {
             .series
             .sort(
                 SortOptions::default()
-                    .with_order(descending)
+                    .with_order_descending(descending)
                     .with_nulls_last(nulls_last)
                     .with_multithreaded(multithreaded),
             )

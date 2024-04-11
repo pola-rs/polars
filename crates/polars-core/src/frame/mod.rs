@@ -1881,20 +1881,36 @@ impl DataFrame {
     ///
     /// # Example
     ///
+    /// Sort by a single column with default options:
     /// ```
     /// # use polars_core::prelude::*;
     /// fn sort_by_a(df: &DataFrame) -> PolarsResult<DataFrame> {
     ///     df.sort(["a"], Default::default())
     /// }
-    ///
+    /// ```
+    /// Sort by a single column with specific order:
+    /// ```
+    /// # use polars_core::prelude::*;
     /// fn sort_with_specific_order(df: &DataFrame, descending: bool) -> PolarsResult<DataFrame> {
-    ///     df.sort(["a"], SortMultipleOptions::new().with_order(descending))
-    /// }
-    ///
-    /// fn sort_by_multiple_columns_with_specific_order(df: &DataFrame) -> PolarsResult<DataFrame> {
-    ///     df.sort(&["a", "b"], SortMultipleOptions::new().with_orders([false, true]))
+    ///     df.sort(
+    ///         ["a"],
+    ///         SortMultipleOptions::new()
+    ///             .with_order_descending(descending)
+    ///     )
     /// }
     /// ```
+    /// Sort by multiple columns with specifying order for each column:
+    /// ```
+    /// # use polars_core::prelude::*;
+    /// fn sort_by_multiple_columns_with_specific_order(df: &DataFrame) -> PolarsResult<DataFrame> {
+    ///     df.sort(
+    ///         &["a", "b"],
+    ///         SortMultipleOptions::new()
+    ///             .with_order_descendings([false, true])
+    ///     )
+    /// }
+    /// ```
+    /// See [`SortMultipleOptions`] for more options.
     ///
     /// Also see [`DataFrame::sort_in_place`].
     pub fn sort(

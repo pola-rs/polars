@@ -831,7 +831,7 @@ mod test {
 
         let out = df.sort(
             ["groups", "values"],
-            SortMultipleOptions::default().with_orders([true, false]),
+            SortMultipleOptions::default().with_order_descendings([true, false]),
         )?;
         let expected = df!(
             "groups" => [3, 2, 1],
@@ -841,7 +841,7 @@ mod test {
 
         let out = df.sort(
             ["values", "groups"],
-            SortMultipleOptions::default().with_orders([false, true]),
+            SortMultipleOptions::default().with_order_descendings([false, true]),
         )?;
         let expected = df!(
             "groups" => [2, 1, 3],

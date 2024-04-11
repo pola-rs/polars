@@ -1142,7 +1142,7 @@ impl SQLFunctionVisitor<'_> {
                 cumulative_f(
                     e.sort_by(
                         &order_by,
-                        SortMultipleOptions::default().with_orders(desc.clone()),
+                        SortMultipleOptions::default().with_order_descendings(desc.clone()),
                     ),
                     false,
                 )
@@ -1268,7 +1268,7 @@ impl SQLFunctionVisitor<'_> {
                         .map(|o| {
                             let e = parse_sql_expr(&o.expr, self.ctx)?;
                             Ok(o.asc.map_or(e.clone(), |b| {
-                                e.sort(SortOptions::default().with_order(!b))
+                                e.sort(SortOptions::default().with_order_descending(!b))
                             }))
                         })
                         .collect::<PolarsResult<Vec<_>>>()?;

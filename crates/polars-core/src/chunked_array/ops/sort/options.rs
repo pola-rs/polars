@@ -4,19 +4,82 @@ pub use slice::*;
 
 use crate::prelude::*;
 
+/// Options for single series sorting.
+///
+/// Indicating the order of sorting, nulls position, multithreading, and maintaining order.
+///
+/// # Example
+///
+/// ```
+/// # use polars_core::prelude::*;
+/// let s = Series::new("a", [Some(5), Some(2), Some(3), Some(4), None].as_ref());
+/// let sorted = s
+///     .sort(
+///         SortOptions::default()
+///             .with_order_descending(true)
+///             .with_nulls_last(true)
+///             .with_multithreaded(false),
+///     )
+///     .unwrap();
+/// assert_eq!(
+///     sorted,
+///     Series::new("a", [Some(5), Some(4), Some(3), Some(2), None].as_ref())
+/// );
+/// ```
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
 #[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
 pub struct SortOptions {
+    /// If true sort in descending order.
+    /// Default `false`.
     pub descending: bool,
+    /// If true nulls are sorted last.
+    /// Default `false`.
     pub nulls_last: bool,
+    /// If true sort in multiple threads.
+    /// Default `true`.
     pub multithreaded: bool,
+    /// If true maintain the order of equal elements.
+    /// Default `false`.
     pub maintain_order: bool,
 }
 
+/// Sort options for multi-series sorting.
+///
+/// Indicating the order of sorting, nulls position, multithreading, and maintaining order.
+///
+/// # Example
+/// ```
+/// # use polars_core::prelude::*;
+///
+/// # fn main() -> PolarsResult<()> {
+/// let df = df! {
+///     "a" => [Some(1), Some(2), None, Some(4), None],
+///     "b" => [Some(5), None, Some(3), Some(2), Some(1)]
+/// }?;
+///
+/// let out = df
+///     .sort(
+///         ["a", "b"],
+///         SortMultipleOptions::default()
+///             .with_maintain_order(true)
+///             .with_multithreaded(false)
+///             .with_order_descendings([false, true])
+///             .with_nulls_last(true),
+///     )?;
+///
+/// let expected = df! {
+///     "a" => [Some(1), Some(2), Some(4), None, None],
+///     "b" => [Some(5), None, Some(2), Some(3), Some(1)]
+/// }?;
+///
+/// assert_eq!(out, expected);
+///
+/// # Ok(())
+/// # }
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
 pub struct SortMultipleOptions {
-    /// Order of the columns.
+    /// Order of the columns. Default all `false``.
     ///
     /// If only one value is given, it will boardcast to all columns.
     ///
@@ -26,8 +89,11 @@ pub struct SortMultipleOptions {
     ///
     /// Len must matches the number of columns or equal to 1.
     pub descending: Vec<bool>,
+    /// Whether treat nulls as largest. Default `false`.
     pub nulls_last: bool,
+    /// Whether sort in multiple threads. Default `true`.
     pub multithreaded: bool,
+    /// Whether maintain the order of equal elements. Default `false`.
     pub maintain_order: bool,
 }
 
@@ -54,41 +120,46 @@ impl Default for SortMultipleOptions {
 }
 
 impl SortMultipleOptions {
+    /// Create `SortMultipleOptions` with default values.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Specify order for each columns
+    /// Specify order for each columns. Default all `false`.
     ///
     /// # Safety
     ///
     /// Len must matches the number of columns or equal to 1.
-    pub fn with_orders(mut self, descending: impl IntoIterator<Item = bool>) -> Self {
+    pub fn with_order_descendings(mut self, descending: impl IntoIterator<Item = bool>) -> Self {
         self.descending = descending.into_iter().collect();
         self
     }
 
-    /// Implement order for all columns
-    pub fn with_order(mut self, descending: bool) -> Self {
+    /// Implement order for all columns. Default `false`.
+    pub fn with_order_descending(mut self, descending: bool) -> Self {
         self.descending = vec![descending];
         self
     }
 
+    /// Whether treat nulls as largest. Default `false`.
     pub fn with_nulls_last(mut self, enabled: bool) -> Self {
         self.nulls_last = enabled;
         self
     }
 
+    /// Whether sort in multiple threads. Default `true`.
     pub fn with_multithreaded(mut self, enabled: bool) -> Self {
         self.multithreaded = enabled;
         self
     }
 
+    /// Whether maintain the order of equal elements. Default `false`.
     pub fn with_maintain_order(mut self, enabled: bool) -> Self {
         self.maintain_order = enabled;
         self
     }
 
+    /// Reverse the order of sorting for each column.
     pub fn with_order_reversed(mut self) -> Self {
         self.descending.iter_mut().for_each(|x| *x = !*x);
         self
@@ -96,21 +167,30 @@ impl SortMultipleOptions {
 }
 
 impl SortOptions {
-    pub fn with_order(mut self, enabled: bool) -> Self {
+    /// Create `SortOptions` with default values.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Specify sorting order for the column. Default `false`.
+    pub fn with_order_descending(mut self, enabled: bool) -> Self {
         self.descending = enabled;
         self
     }
 
+    /// Whether treat nulls as largest. Default `false`.
     pub fn with_nulls_last(mut self, enabled: bool) -> Self {
         self.nulls_last = enabled;
         self
     }
 
+    /// Whether sort in multiple threads. Default `true`.
     pub fn with_multithreaded(mut self, enabled: bool) -> Self {
         self.multithreaded = enabled;
         self
     }
 
+    /// Whether maintain the order of equal elements. Default `false`.
     pub fn with_maintain_order(mut self, enabled: bool) -> Self {
         self.maintain_order = enabled;
         self

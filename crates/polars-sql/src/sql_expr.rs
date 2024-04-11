@@ -638,7 +638,7 @@ impl SQLExprVisitor<'_> {
             let (order_by, descending) = self.visit_order_by(order_by)?;
             base = base.sort_by(
                 order_by,
-                SortMultipleOptions::default().with_orders(descending),
+                SortMultipleOptions::default().with_order_descendings(descending),
             );
         }
         if let Some(limit) = &expr.limit {
