@@ -2058,6 +2058,12 @@ class Expr:
         descending
             Return the k smallest. Top-k by multiple columns can be specified per
             column by passing a sequence of booleans.
+        nulls_last
+            Place null values last.
+        maintain_order
+            Whether the order should be maintained if elements are equal.
+        multithreaded
+            Sort using multiple threads.
 
         See Also
         --------
@@ -2218,6 +2224,12 @@ class Expr:
         descending
             Return the k largest. Bottom-k by multiple columns can be specified per
             column by passing a sequence of booleans.
+        nulls_last
+            Place null values last.
+        maintain_order
+            Whether the order should be maintained if elements are equal.
+        multithreaded
+            Sort using multiple threads.
 
         See Also
         --------
