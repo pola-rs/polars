@@ -143,6 +143,10 @@ pub fn split_df_as_ref(
     extend_sub_chunks: bool,
 ) -> PolarsResult<Vec<DataFrame>> {
     let total_len = df.height();
+    if total_len == 0 {
+        return Ok(vec![df.clone()]);
+    }
+
     let chunk_size = std::cmp::max(total_len / n, 1);
 
     if df.n_chunks() == n

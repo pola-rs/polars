@@ -248,8 +248,7 @@ where
         );
 
         ipc_stream_writer.start(&df.schema().to_arrow(self.pl_flavor), None)?;
-
-        df.align_chunks();
+        let df = chunk_df_for_writing(df, 512 * 512)?;
         let iter = df.iter_chunks(self.pl_flavor);
 
         for batch in iter {
