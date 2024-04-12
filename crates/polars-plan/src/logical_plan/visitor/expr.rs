@@ -179,7 +179,16 @@ impl AExpr {
             | (Len, Len)
             | (Slice { .. }, Slice { .. })
             | (Explode(_), Explode(_)) => true,
-            (SortBy { descending: l, .. }, SortBy { descending: r, .. }) => l == r,
+            (
+                SortBy {
+                    sort_options: l_sort_options,
+                    ..
+                },
+                SortBy {
+                    sort_options: r_sort_options,
+                    ..
+                },
+            ) => l_sort_options == r_sort_options,
             (Agg(l), Agg(r)) => l.equal_nodes(r),
             (
                 Function {
