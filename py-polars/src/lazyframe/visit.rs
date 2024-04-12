@@ -1,10 +1,9 @@
-use std::sync::RwLock;
+use std::sync::{RwLock};
 use pyo3::prelude::*;
 
-use polars_plan::logical_plan::IR;
-use polars_plan::prelude::{AExpr, FunctionNode, PythonOptions};
+use polars_plan::logical_plan::{Context, IR};
+use polars_plan::prelude::{AExpr, PythonOptions};
 use polars_plan::prelude::expr_ir::ExprIR;
-use polars_plan::prelude::python_udf::PythonFunction;
 use polars_utils::arena::{Arena, Node};
 use super::*;
 
@@ -71,6 +70,23 @@ impl NodeTraverser {
     fn get_inputs(&mut self) -> PyObject {
         self.fill_inputs();
         self.scratch_to_list()
+    }
+
+    /// Get Schema as python dict<str, pl.DataType>
+    fn get_schema(&self, py: Python<'_>) -> PyObject {
+        let lp_arena = self.lp_arena.read().unwrap();
+        let schema = lp_arena.get(self.root).schema(&lp_arena).into_owned();
+        Wrap(schema.as_ref()).into_py(py)
+    }
+
+    /// Get expression dtype.
+    fn get_dtype(&self, expr_node: usize, py: Python<'_>) -> PyResult<PyObject> {
+        let expr_node = Node(expr_node);
+        let lp_arena = self.lp_arena.read().unwrap();
+        let schema = lp_arena.get(self.root).schema(&lp_arena).into_owned();
+        let expr_arena = self.expr_arena.read().unwrap();
+        let field = expr_arena.get(expr_node).to_field(&schema, Context::Default, &expr_arena).map_err(PyPolarsErr::from)?;
+        Ok(Wrap(field.dtype).to_object(py))
     }
 
     /// Set the current node in the plan.
