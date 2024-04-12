@@ -107,6 +107,7 @@ PivotAgg: TypeAlias = Literal[
     "min", "max", "first", "last", "sum", "mean", "median", "len"
 ]
 RankMethod: TypeAlias = Literal["average", "min", "max", "dense", "ordinal", "random"]
+Roll: TypeAlias = Literal["raise", "forward", "backward"]
 SizeUnit: TypeAlias = Literal[
     "b",
     "kb",

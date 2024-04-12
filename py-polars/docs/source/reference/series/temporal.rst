@@ -9,6 +9,7 @@ The following methods are available under the `Series.dt` attribute.
    :toctree: api/
    :template: autosummary/accessor_method.rst
 
+    Series.dt.add_business_days
     Series.dt.base_utc_offset
     Series.dt.cast_time_unit
     Series.dt.century

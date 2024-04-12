@@ -1,6 +1,7 @@
 use std::fmt::{Display, Formatter};
 
 use polars_core::prelude::*;
+use polars_ops::prelude::Roll;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -16,6 +17,12 @@ pub enum BusinessFunction {
         week_mask: [bool; 7],
         holidays: Vec<i32>,
     },
+    #[cfg(feature = "business")]
+    AddBusinessDay {
+        week_mask: [bool; 7],
+        holidays: Vec<i32>,
+        roll: Roll,
+    },
 }
 
 impl Display for BusinessFunction {
@@ -24,6 +31,8 @@ impl Display for BusinessFunction {
         let s = match self {
             #[cfg(feature = "business")]
             &BusinessDayCount { .. } => "business_day_count",
+            #[cfg(feature = "business")]
+            &AddBusinessDay { .. } => "add_business_days",
         };
         write!(f, "{s}")
     }
@@ -39,6 +48,14 @@ impl From<BusinessFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             } => {
                 map_as_slice!(business_day_count, week_mask, &holidays)
             },
+            #[cfg(feature = "business")]
+            AddBusinessDay {
+                week_mask,
+                holidays,
+                roll,
+            } => {
+                map_as_slice!(add_business_days, week_mask, &holidays, roll)
+            },
         }
     }
 }
@@ -52,4 +69,16 @@ pub(super) fn business_day_count(
     let start = &s[0];
     let end = &s[1];
     polars_ops::prelude::business_day_count(start, end, week_mask, holidays)
+}
+
+#[cfg(feature = "business")]
+pub(super) fn add_business_days(
+    s: &[Series],
+    week_mask: [bool; 7],
+    holidays: &[i32],
+    roll: Roll,
+) -> PolarsResult<Series> {
+    let start = &s[0];
+    let n = &s[1];
+    polars_ops::prelude::add_business_days(start, n, week_mask, holidays, roll)
 }

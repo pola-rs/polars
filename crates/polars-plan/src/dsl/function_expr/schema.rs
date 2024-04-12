@@ -28,7 +28,10 @@ impl FunctionExpr {
             // Other expressions
             Boolean(func) => func.get_field(mapper),
             #[cfg(feature = "business")]
-            Business(_) => mapper.with_dtype(DataType::Int32),
+            Business(func) => match func {
+                BusinessFunction::BusinessDayCount { .. } => mapper.with_dtype(DataType::Int32),
+                BusinessFunction::AddBusinessDay { .. } => mapper.with_same_dtype(),
+            },
             #[cfg(feature = "abs")]
             Abs => mapper.with_same_dtype(),
             Negate => mapper.with_same_dtype(),
