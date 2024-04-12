@@ -1,5 +1,12 @@
 use super::*;
 
+fn has_series_or_range(ae: &AExpr) -> bool {
+    matches!(
+        ae,
+        AExpr::Literal(LiteralValue::Series(_) | LiteralValue::Range { .. })
+    )
+}
+
 pub fn is_streamable(node: Node, expr_arena: &Arena<AExpr>, context: Context) -> bool {
     // check whether leaf column is Col or Lit
     let mut seen_column = false;
@@ -21,10 +28,20 @@ pub fn is_streamable(node: Node, expr_arena: &Arena<AExpr>, context: Context) ->
             seen_column = true;
             true
         },
-        AExpr::Ternary { .. }
-        | AExpr::BinaryExpr { .. }
-        | AExpr::Alias(_, _)
-        | AExpr::Cast { .. } => true,
+        AExpr::BinaryExpr { left, right, .. } => {
+            !has_aexpr(*left, expr_arena, has_series_or_range)
+                && !has_aexpr(*right, expr_arena, has_series_or_range)
+        },
+        AExpr::Ternary {
+            truthy,
+            falsy,
+            predicate,
+        } => {
+            !has_aexpr(*truthy, expr_arena, has_series_or_range)
+                && !has_aexpr(*falsy, expr_arena, has_series_or_range)
+                && !has_aexpr(*predicate, expr_arena, has_series_or_range)
+        },
+        AExpr::Alias(_, _) | AExpr::Cast { .. } => true,
         AExpr::Literal(lv) => match lv {
             LiteralValue::Series(_) | LiteralValue::Range { .. } => {
                 seen_lit_range = true;
@@ -43,6 +60,7 @@ pub fn is_streamable(node: Node, expr_arena: &Arena<AExpr>, context: Context) ->
         // that means that IFF we seen a lit_range, we only allow if we also seen a `column`.
         return if seen_lit_range { seen_column } else { true };
     }
+
     false
 }
 
