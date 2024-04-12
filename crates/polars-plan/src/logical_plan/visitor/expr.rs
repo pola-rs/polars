@@ -9,9 +9,9 @@ use crate::prelude::*;
 impl TreeWalker for Expr {
     type Arena = ();
 
-    fn apply_children(
+    fn apply_children<F: FnMut(&Self, &Self::Arena) -> PolarsResult<VisitRecursion>>(
         &self,
-        op: &mut dyn FnMut(&Self, &Self::Arena) -> PolarsResult<VisitRecursion>,
+        op: &mut F,
         arena: &Self::Arena,
     ) -> PolarsResult<VisitRecursion> {
         let mut scratch = unitvec![];
@@ -29,9 +29,9 @@ impl TreeWalker for Expr {
         Ok(VisitRecursion::Continue)
     }
 
-    fn map_children(
+    fn map_children<F: FnMut(Self, &mut Self::Arena) -> PolarsResult<Self>>(
         self,
-        f: &mut dyn FnMut(Self, &mut Self::Arena) -> PolarsResult<Self>,
+        f: &mut F,
         _arena: &mut Self::Arena,
     ) -> PolarsResult<Self> {
         use polars_utils::functions::try_arc_map as am;
@@ -256,9 +256,9 @@ impl PartialEq for AExprArena<'_> {
 
 impl TreeWalker for AexprNode {
     type Arena = Arena<AExpr>;
-    fn apply_children(
+    fn apply_children<F: FnMut(&Self, &Self::Arena) -> PolarsResult<VisitRecursion>>(
         &self,
-        op: &mut dyn FnMut(&Self, &Self::Arena) -> PolarsResult<VisitRecursion>,
+        op: &mut F,
         arena: &Self::Arena,
     ) -> PolarsResult<VisitRecursion> {
         let mut scratch = unitvec![];
@@ -276,9 +276,9 @@ impl TreeWalker for AexprNode {
         Ok(VisitRecursion::Continue)
     }
 
-    fn map_children(
+    fn map_children<F: FnMut(Self, &mut Self::Arena) -> PolarsResult<Self>>(
         mut self,
-        op: &mut dyn FnMut(Self, &mut Self::Arena) -> PolarsResult<Self>,
+        op: &mut F,
         arena: &mut Self::Arena,
     ) -> PolarsResult<Self> {
         let mut scratch = unitvec![];

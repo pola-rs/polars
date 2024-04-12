@@ -46,9 +46,9 @@ pub type IRNodeArena = (Arena<IR>, Arena<AExpr>);
 impl TreeWalker for IRNode {
     type Arena = IRNodeArena;
 
-    fn apply_children(
+    fn apply_children<F: FnMut(&Self, &Self::Arena) -> PolarsResult<VisitRecursion>>(
         &self,
-        op: &mut dyn FnMut(&Self, &Self::Arena) -> PolarsResult<VisitRecursion>,
+        op: &mut F,
         arena: &Self::Arena,
     ) -> PolarsResult<VisitRecursion> {
         let mut scratch = unitvec![];
@@ -66,9 +66,9 @@ impl TreeWalker for IRNode {
         Ok(VisitRecursion::Continue)
     }
 
-    fn map_children(
+    fn map_children<F: FnMut(Self, &mut Self::Arena) -> PolarsResult<Self>>(
         self,
-        op: &mut dyn FnMut(Self, &mut Self::Arena) -> PolarsResult<Self>,
+        op: &mut F,
         arena: &mut Self::Arena,
     ) -> PolarsResult<Self> {
         let mut inputs = vec![];
