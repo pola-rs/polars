@@ -170,11 +170,17 @@ def test_map_elements_skip_nulls() -> None:
     some_map = {None: "a", 1: "b"}
     s = pl.Series([None, 1])
 
-    assert s.map_elements(lambda x: some_map[x]).to_list() == [None, "b"]
-    assert s.map_elements(lambda x: some_map[x], skip_nulls=False).to_list() == [
-        "a",
-        "b",
-    ]
+    with pytest.warns(
+        PolarsInefficientMapWarning,
+        match=r"(?s)Replace this expression.*s\.map_elements\(lambda x:",
+    ):
+        assert s.map_elements(
+            lambda x: some_map[x], return_dtype=pl.String
+        ).to_list() == [None, "b"]
+
+        assert s.map_elements(
+            lambda x: some_map[x], return_dtype=pl.String, skip_nulls=False
+        ).to_list() == ["a", "b"]
 
 
 def test_map_elements_object_dtypes() -> None:
@@ -318,7 +324,12 @@ def test_map_elements_on_empty_col_10639() -> None:
 def test_map_elements_chunked_14390() -> None:
     s = pl.concat(2 * [pl.Series([1])], rechunk=False)
     assert s.n_chunks() > 1
-    assert_series_equal(s.map_elements(str), pl.Series(["1", "1"]), check_names=False)
+    with pytest.warns(PolarsInefficientMapWarning):
+        assert_series_equal(
+            s.map_elements(str, return_dtype=pl.String),
+            pl.Series(["1", "1"]),
+            check_names=False,
+        )
 
 
 def test_apply_deprecated() -> None:
