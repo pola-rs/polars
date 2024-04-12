@@ -285,7 +285,7 @@ impl FromPyObject<'_> for Wrap<Field> {
 impl FromPyObject<'_> for Wrap<DataType> {
     fn extract(ob: &PyAny) -> PyResult<Self> {
         let py = ob.py();
-        let type_name = ob.get_type().name()?;
+        let type_name = ob.get_type().qualname()?;
 
         let dtype = match &*type_name {
             "DataTypeClass" => {
