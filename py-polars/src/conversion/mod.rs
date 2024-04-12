@@ -472,7 +472,7 @@ impl PartialEq for ObjectValue {
                 .as_ref(py)
                 .rich_compare(other.inner.as_ref(py), CompareOp::Eq)
             {
-                Ok(result) => result.is_true().unwrap(),
+                Ok(result) => result.is_truthy().unwrap(),
                 Err(_) => false,
             }
         })
