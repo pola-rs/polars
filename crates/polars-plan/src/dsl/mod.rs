@@ -487,6 +487,7 @@ impl Expr {
     ///
     /// For single column, use [`Expr::bottom_k`].
     // #[cfg(feature = "top_k")]
+    #[cfg(feature = "top_k")]
     pub fn bottom_k_by<K: Into<Expr>, E: AsRef<[IE]>, IE: Into<Expr> + Clone>(
         self,
         k: K,

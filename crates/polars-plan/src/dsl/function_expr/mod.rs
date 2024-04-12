@@ -557,6 +557,7 @@ impl Hash for FunctionExpr {
             #[cfg(feature = "reinterpret")]
             Reinterpret(signed) => signed.hash(state),
             ExtendConstant => {},
+            #[cfg(feature = "top_k")]
             TopKBy { sort_options } => sort_options.hash(state),
         }
     }
