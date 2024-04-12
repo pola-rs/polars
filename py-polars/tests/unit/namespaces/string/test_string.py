@@ -305,7 +305,22 @@ def test_str_to_integer() -> None:
         hex.str.to_integer(base=16)
 
 
-def test_str_to_integer_df() -> None:
+def test_str_to_integer_base_expr() -> None:
+    df = pl.DataFrame(
+        {"str": ["110", "ff00", "234", None, "130"], "base": [2, 16, 10, 8, None]}
+    )
+    out = df.select(base_expr=pl.col("str").str.to_integer(base="base"))
+    expected = pl.DataFrame({"base_expr": [6, 65280, 234, None, None]})
+    assert_frame_equal(out, expected)
+
+    # test strict raise
+    df = pl.DataFrame({"str": ["110", "ff00", "cafe", None], "base": [2, 10, 10, 8]})
+
+    with pytest.raises(pl.ComputeError, match="failed for 2 value"):
+        df.select(pl.col("str").str.to_integer(base="base"))
+
+
+def test_str_to_integer_base_literal() -> None:
     df = pl.DataFrame(
         {
             "bin": ["110", "101", "-010", "invalid", None],
