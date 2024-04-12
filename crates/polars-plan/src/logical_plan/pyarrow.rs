@@ -161,10 +161,10 @@ pub(super) fn predicate_to_pa(
             input,
             ..
         } => {
-            if !matches!(expr_arena.get(input[0]), AExpr::Column(_)) {
+            if !matches!(expr_arena.get(input.first()?.node()), AExpr::Column(_)) {
                 None
             } else {
-                let col = predicate_to_pa(*input.first()?, expr_arena, args)?;
+                let col = predicate_to_pa(input.first()?.node(), expr_arena, args)?;
                 let left_cmp_op = match closed {
                     ClosedInterval::Both | ClosedInterval::Left => Operator::Lt,
                     ClosedInterval::None | ClosedInterval::Right => Operator::LtEq,
@@ -174,8 +174,8 @@ pub(super) fn predicate_to_pa(
                     ClosedInterval::None | ClosedInterval::Left => Operator::GtEq,
                 };
 
-                let lower = predicate_to_pa(*input.get(1)?, expr_arena, args)?;
-                let upper = predicate_to_pa(*input.get(2)?, expr_arena, args)?;
+                let lower = predicate_to_pa(input.get(1)?.node(), expr_arena, args)?;
+                let upper = predicate_to_pa(input.get(2)?.node(), expr_arena, args)?;
 
                 Some(format!(
                     "(({col} {left_cmp_op} {lower}) & ({col} {right_cmp_op} {upper}))"
