@@ -121,7 +121,7 @@ where
         ParquetWriter {
             writer,
             compression: ParquetCompression::default().into(),
-            statistics: false,
+            statistics: true,
             row_group_size: None,
             data_page_size: None,
             parallel: true,
