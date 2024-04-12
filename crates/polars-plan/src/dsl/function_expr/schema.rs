@@ -95,6 +95,8 @@ impl FunctionExpr {
             )),
             #[cfg(feature = "top_k")]
             TopK { .. } => mapper.with_same_dtype(),
+            #[cfg(feature = "top_k")]
+            TopKBy { .. } => mapper.with_same_dtype(),
             #[cfg(feature = "dtype-struct")]
             ValueCounts { .. } => mapper.map_dtype(|dt| {
                 DataType::Struct(vec![

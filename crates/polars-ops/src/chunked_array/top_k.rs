@@ -41,23 +41,6 @@ fn arg_partition<T: Send, C: Fn(&T, &T) -> Ordering + Sync>(
     to_sort
 }
 
-fn extract_target_and_k(s: &[Series]) -> PolarsResult<(usize, &Series)> {
-    let k_s = &s[1];
-
-    polars_ensure!(
-        k_s.len() == 1,
-        ComputeError: "`k` must be a single value for `top_k`."
-    );
-
-    let Some(k) = k_s.cast(&IDX_DTYPE)?.idx()?.get(0) else {
-        polars_bail!(ComputeError: "`k` must be set for `top_k`")
-    };
-
-    let src = &s[0];
-
-    Ok((k as usize, src))
-}
-
 fn top_k_num_impl<T>(ca: &ChunkedArray<T>, k: usize, sort_options: SortOptions) -> ChunkedArray<T>
 where
     T: PolarsNumericType,
@@ -215,6 +198,23 @@ fn top_k_binary_impl(
 }
 
 pub fn top_k(s: &[Series], sort_options: SortOptions) -> PolarsResult<Series> {
+    fn extract_target_and_k(s: &[Series]) -> PolarsResult<(usize, &Series)> {
+        let k_s = &s[1];
+
+        polars_ensure!(
+            k_s.len() == 1,
+            ComputeError: "`k` must be a single value for `top_k`."
+        );
+
+        let Some(k) = k_s.cast(&IDX_DTYPE)?.idx()?.get(0) else {
+            polars_bail!(ComputeError: "`k` must be set for `top_k`")
+        };
+
+        let src = &s[0];
+
+        Ok((k as usize, src))
+    }
+
     let (k, src) = extract_target_and_k(s)?;
 
     if src.is_empty() {
@@ -257,13 +257,52 @@ pub fn top_k(s: &[Series], sort_options: SortOptions) -> PolarsResult<Series> {
     }
 }
 
-pub fn top_k_by(
-    s: &[Series],
+pub fn top_k_by(s: &[Series], sort_options: SortMultipleOptions) -> PolarsResult<Series> {
+    /// Return (k, src, by)
+    fn extract_parameters(s: &[Series]) -> PolarsResult<(usize, &Series, &[Series])> {
+        let k_s = &s[1];
+
+        polars_ensure!(
+            k_s.len() == 1,
+            ComputeError: "`k` must be a single value for `top_k`."
+        );
+
+        let Some(k) = k_s.cast(&IDX_DTYPE)?.idx()?.get(0) else {
+            polars_bail!(ComputeError: "`k` must be set for `top_k`")
+        };
+
+        let src = &s[0];
+
+        let by = &s[2..];
+
+        Ok((k as usize, src, by))
+    }
+
+    let (k, src, by) = extract_parameters(s)?;
+
+    if src.is_empty() {
+        return Ok(src.clone());
+    }
+
+    if by.first().map(|x| x.is_empty()).unwrap_or(false) {
+        return Ok(src.clone());
+    }
+
+    for s in by {
+        if s.len() != src.len() {
+            polars_bail!(ComputeError: "`by` column's ({}) length ({}) should have the same length as the source column length ({}) in `top_k`", s.name(), s.len(), src.len())
+        }
+    }
+
+    top_k_by_impl(k, src, by, sort_options)
+}
+
+fn top_k_by_impl(
+    k: usize,
+    src: &Series,
     by: &[Series],
     sort_options: SortMultipleOptions,
 ) -> PolarsResult<Series> {
-    let (k, src) = extract_target_and_k(s)?;
-
     if src.is_empty() {
         return Ok(src.clone());
     }

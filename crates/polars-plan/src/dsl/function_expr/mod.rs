@@ -186,6 +186,10 @@ pub enum FunctionExpr {
     TopK {
         sort_options: SortOptions,
     },
+    #[cfg(feature = "top_k")]
+    TopKBy {
+        sort_options: SortMultipleOptions,
+    },
     #[cfg(feature = "cum_agg")]
     CumCount {
         reverse: bool,
@@ -553,6 +557,7 @@ impl Hash for FunctionExpr {
             #[cfg(feature = "reinterpret")]
             Reinterpret(signed) => signed.hash(state),
             ExtendConstant => {},
+            TopKBy { sort_options } => sort_options.hash(state),
         }
     }
 }
@@ -634,6 +639,8 @@ impl Display for FunctionExpr {
                     "top_k"
                 }
             },
+            #[cfg(feature = "top_k")]
+            TopKBy { .. } => "top_k_by",
             Shift => "shift",
             #[cfg(feature = "cum_agg")]
             CumCount { .. } => "cum_count",
@@ -957,6 +964,8 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             TopK { sort_options } => {
                 map_as_slice!(top_k, sort_options)
             },
+            #[cfg(feature = "top_k")]
+            TopKBy { sort_options } => map_as_slice!(top_k_by, sort_options.clone()),
             Shift => map_as_slice!(shift_and_fill::shift),
             #[cfg(feature = "cum_agg")]
             CumCount { reverse } => map!(cum::cum_count, reverse),
