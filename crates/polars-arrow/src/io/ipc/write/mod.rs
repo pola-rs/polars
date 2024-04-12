@@ -24,6 +24,8 @@ pub mod stream_async;
 #[cfg_attr(docsrs, doc(cfg(feature = "io_ipc_write_async")))]
 pub mod file_async;
 
+pub use common::EncodedData;
+
 use super::IpcField;
 use crate::datatypes::{ArrowDataType, Field};
 

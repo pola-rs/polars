@@ -26,6 +26,8 @@ pub mod stream_async;
 #[cfg(feature = "io_ipc_read_async")]
 #[cfg_attr(docsrs, doc(cfg(feature = "io_ipc_read_async")))]
 pub mod file_async;
+#[cfg(feature = "io_flight")]
+mod flight_reader;
 
 pub(crate) use common::first_dict_field;
 #[cfg(feature = "io_flight")]
@@ -33,10 +35,12 @@ pub(crate) use common::{read_dictionary, read_record_batch};
 pub use file::{
     deserialize_footer, read_batch, read_file_dictionaries, read_file_metadata, FileMetadata,
 };
+#[cfg(feature = "io_flight")]
+pub use file_async::FlightAsyncRawReader;
+#[cfg(feature = "io_flight")]
+pub use flight_reader::FlightStreamReader;
 use polars_utils::aliases::PlHashMap;
 pub use reader::FileReader;
-#[cfg(feature = "io_flight")]
-pub use reader::FlightFileReader;
 pub use schema::deserialize_schema;
 pub use stream::{read_stream_metadata, StreamMetadata, StreamReader, StreamState};
 

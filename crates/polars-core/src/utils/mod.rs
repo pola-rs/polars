@@ -21,7 +21,7 @@ pub use supertype::*;
 pub use {arrow, rayon};
 
 use crate::prelude::*;
-use crate::POOL;
+pub use crate::POOL;
 
 #[repr(transparent)]
 pub struct Wrap<T>(pub T);

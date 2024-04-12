@@ -1,10 +1,10 @@
 use std::io::{Read, Seek};
 
 use ahash::AHashMap;
-use polars_error::{polars_err, PolarsResult};
+use polars_error::PolarsResult;
 
 use super::common::*;
-use super::{read_batch, read_file_dictionaries, Dictionaries, FileMetadata, OutOfSpecKind};
+use super::{read_batch, read_file_dictionaries, Dictionaries, FileMetadata};
 use crate::array::Array;
 use crate::datatypes::ArrowSchema;
 use crate::io::ipc::read::file;
