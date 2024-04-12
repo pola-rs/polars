@@ -975,3 +975,13 @@ def test_partitioned_group_by_14954(monkeypatch: Any) -> None:
             [False, False, False, False, False, False, False, False, False, False],
         ],
     }
+
+
+def test_aggregated_scalar_elementwise_15602() -> None:
+    df = pl.DataFrame({"group": [1, 2, 1]})
+
+    out = df.group_by("group", maintain_order=True).agg(
+        foo=pl.col("group").is_between(1, pl.max("group"))
+    )
+    expected = pl.DataFrame({"group": [1, 2], "foo": [[True, True], [True]]})
+    assert_frame_equal(out, expected)
