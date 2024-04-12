@@ -100,14 +100,12 @@ fn business_day_count_impl(
     count += whole_weeks * n_business_days_in_week_mask;
     start_date += whole_weeks * 7;
     while start_date < end_date {
+        // SAFETY: week_mask is length 7, start_weekday is between 0 and 6
         if unsafe { *week_mask.get_unchecked(start_weekday) } {
             count += 1;
         }
         start_date += 1;
-        start_weekday += 1;
-        if start_weekday >= 7 {
-            start_weekday = 0;
-        }
+        start_weekday = increment_weekday(start_weekday);
     }
     if swapped {
         -count
@@ -122,6 +120,7 @@ fn normalise_holidays(holidays: &[i32], week_mask: &[bool; 7]) -> Vec<i32> {
     holidays.sort_unstable();
     let mut previous_holiday: Option<i32> = None;
     holidays.retain(|&x| {
+        // SAFETY: week_mask is length 7, start_weekday is between 0 and 6
         if (Some(x) == previous_holiday) || !unsafe { *week_mask.get_unchecked(weekday(x)) } {
             return false;
         }
@@ -136,4 +135,20 @@ fn weekday(x: i32) -> usize {
     // the modulo again so we're sure we have something between 0 (Monday)
     // and 6 (Sunday)
     (((x - 4) % 7 + 7) % 7) as usize
+}
+
+fn increment_weekday(x: usize) -> usize {
+    if x == 6 {
+        0
+    } else {
+        x + 1
+    }
+}
+
+fn decrement_weekday(x: usize) -> usize {
+    if x == 0 {
+        6
+    } else {
+        x - 1
+    }
 }
