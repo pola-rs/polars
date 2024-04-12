@@ -76,10 +76,10 @@ def lit(
     >>> pl.lit(pl.Series("y", [[1, 2], [3, 4]]))  # doctest: +IGNORE_RESULT
     """
     time_unit: TimeUnit
-    if isinstance(input, pl.DataFrame):
+    if isinstance(value, pl.DataFrame):
         msg = "a DataFrame is an invalid input"
         raise InvalidOperationError(msg)
-    elif isinstance(input, pl.LazyFrame):
+    elif isinstance(value, pl.LazyFrame):
         msg = "a LazyFrame is an invalid input"
         raise InvalidOperationError(msg)
     elif isinstance(value, datetime):
