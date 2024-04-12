@@ -2036,6 +2036,8 @@ class Expr:
         *,
         by: IntoExpr | Iterable[IntoExpr] | None = None,
         descending: bool | Sequence[bool] = False,
+        nulls_last: bool = False,
+        maintain_order: bool = False,
     ) -> Self:
         r"""
         Return the `k` largest elements.
@@ -2177,9 +2179,11 @@ class Expr:
             return self._from_pyexpr(self._pyexpr.top_k_by(k, by, descending))
         else:
             if descending is False:
-                return self._from_pyexpr(self._pyexpr.top_k(k))
+                return self._from_pyexpr(self._pyexpr.top_k(k, descending, nulls_last))
             elif descending is True:
-                return self._from_pyexpr(self._pyexpr.bottom_k(k))
+                return self._from_pyexpr(
+                    self._pyexpr.bottom_k(k, descending, nulls_last)
+                )
             else:
                 msg = "`descending` should be a boolean if no `by` is provided"
                 raise ValueError(msg)

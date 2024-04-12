@@ -290,29 +290,45 @@ impl PyExpr {
     }
 
     #[cfg(feature = "top_k")]
-    fn top_k(&self, k: Self) -> Self {
-        self.inner.clone().top_k(k.inner).into()
-    }
-
-    #[cfg(feature = "top_k")]
-    fn top_k_by(&self, k: Self, by: Vec<Self>, descending: Vec<bool>) -> Self {
-        let by = by.into_iter().map(|e| e.inner).collect::<Vec<_>>();
-        self.inner.clone().top_k_by(k.inner, by, descending).into()
-    }
-
-    #[cfg(feature = "top_k")]
-    fn bottom_k(&self, k: Self) -> Self {
-        self.inner.clone().bottom_k(k.inner).into()
-    }
-
-    #[cfg(feature = "top_k")]
-    fn bottom_k_by(&self, k: Self, by: Vec<Self>, descending: Vec<bool>) -> Self {
-        let by = by.into_iter().map(|e| e.inner).collect::<Vec<_>>();
+    fn top_k(&self, k: Self, descending: bool, nulls_last: bool) -> Self {
         self.inner
             .clone()
-            .bottom_k_by(k.inner, by, descending)
+            .top_k(
+                k.inner,
+                SortOptions::default()
+                    .with_order_descending(descending)
+                    .with_nulls_last(nulls_last),
+            )
             .into()
     }
+
+    // #[cfg(feature = "top_k")]
+    // fn top_k_by(&self, k: Self, by: Vec<Self>, descending: Vec<bool>) -> Self {
+    //     let by = by.into_iter().map(|e| e.inner).collect::<Vec<_>>();
+    //     self.inner.clone().top_k_by(k.inner, by, descending).into()
+    // }
+
+    #[cfg(feature = "top_k")]
+    fn bottom_k(&self, k: Self, descending: bool, nulls_last: bool) -> Self {
+        self.inner
+            .clone()
+            .bottom_k(
+                k.inner,
+                SortOptions::default()
+                    .with_order_descending(descending)
+                    .with_nulls_last(nulls_last),
+            )
+            .into()
+    }
+
+    // #[cfg(feature = "top_k")]
+    // fn bottom_k_by(&self, k: Self, by: Vec<Self>, descending: Vec<bool>) -> Self {
+    //     let by = by.into_iter().map(|e| e.inner).collect::<Vec<_>>();
+    //     self.inner
+    //         .clone()
+    //         .bottom_k_by(k.inner, by, descending)
+    //         .into()
+    // }
 
     #[cfg(feature = "peaks")]
     fn peak_min(&self) -> Self {

@@ -449,47 +449,54 @@ impl Expr {
     ///
     /// This has time complexity `O(n + k log(n))`.
     #[cfg(feature = "top_k")]
-    pub fn top_k(self, k: Expr) -> Self {
-        self.apply_many_private(FunctionExpr::TopK(false), &[k], false, false)
+    pub fn top_k(self, k: Expr, sort_options: SortOptions) -> Self {
+        self.apply_many_private(FunctionExpr::TopK { sort_options }, &[k], false, false)
     }
 
     /// Returns the `k` largest rows by given column.
     ///
     /// For single column, use [`Expr::top_k`].
-    #[cfg(feature = "top_k")]
-    pub fn top_k_by<K: Into<Expr>, E: AsRef<[IE]>, IE: Into<Expr> + Clone, G: AsRef<[bool]>>(
-        self,
-        k: K,
-        by: E,
-        descending: G,
-    ) -> Self {
-        self.sort_by(
-            by,
-            descending.as_ref().iter().map(|x| !x).collect::<Vec<_>>(),
-        )
-        .slice(lit(0), k)
-    }
+    // #[cfg(feature = "top_k")]
+    // pub fn top_k_by<K: Into<Expr>, E: AsRef<[IE]>, IE: Into<Expr> + Clone, G: AsRef<[bool]>>(
+    //     self,
+    //     k: K,
+    //     by: E,
+    //     descending: G,
+    // ) -> Self {
+    //     self.sort_by(
+    //         by,
+    //         descending.as_ref().iter().map(|x| !x).collect::<Vec<_>>(),
+    //     )
+    //     .slice(lit(0), k)
+    // }
 
     /// Returns the `k` smallest elements.
     ///
     /// This has time complexity `O(n + k log(n))`.
     #[cfg(feature = "top_k")]
-    pub fn bottom_k(self, k: Expr) -> Self {
-        self.apply_many_private(FunctionExpr::TopK(true), &[k], false, false)
+    pub fn bottom_k(self, k: Expr, sort_options: SortOptions) -> Self {
+        self.apply_many_private(
+            FunctionExpr::TopK {
+                sort_options: sort_options.with_order_reversed(),
+            },
+            &[k],
+            false,
+            false,
+        )
     }
 
     /// Returns the `k` smallest rows by given column.
     ///
     /// For single column, use [`Expr::bottom_k`].
-    #[cfg(feature = "top_k")]
-    pub fn bottom_k_by<K: Into<Expr>, E: AsRef<[IE]>, IE: Into<Expr> + Clone, G: AsRef<[bool]>>(
-        self,
-        k: K,
-        by: E,
-        descending: G,
-    ) -> Self {
-        self.sort_by(by, descending).slice(lit(0), k)
-    }
+    // #[cfg(feature = "top_k")]
+    // pub fn bottom_k_by<K: Into<Expr>, E: AsRef<[IE]>, IE: Into<Expr> + Clone, G: AsRef<[bool]>>(
+    //     self,
+    //     k: K,
+    //     by: E,
+    //     descending: G,
+    // ) -> Self {
+    //     self.sort_by(by, descending).slice(lit(0), k)
+    // }
 
     /// Reverse column
     pub fn reverse(self) -> Self {
