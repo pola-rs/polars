@@ -266,7 +266,7 @@ pub fn apply_lambda_with_rows_output<'a>(
         if return_val.is_none() {
             Ok(&null_row)
         } else {
-            let tuple = return_val.downcast::<PyTuple>().map_err(|_| polars_err!(ComputeError: format!("expected tuple, got {}", return_val.get_type().name().unwrap())))?;
+            let tuple = return_val.downcast::<PyTuple>().map_err(|_| polars_err!(ComputeError: format!("expected tuple, got {}", return_val.get_type().qualname().unwrap())))?;
             row_buf.0.clear();
             for v in tuple {
                 let v = v.extract::<Wrap<AnyValue>>().unwrap().0;
