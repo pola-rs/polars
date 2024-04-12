@@ -6,23 +6,23 @@ use super::*;
 /// Implemented for [`crate::dsl::Expr`] and [`AexprNode`].
 pub trait TreeWalker: Sized {
     type Arena;
-    fn apply_children(
+    fn apply_children<F: FnMut(&Self, &Self::Arena) -> PolarsResult<VisitRecursion>>(
         &self,
-        op: &mut dyn FnMut(&Self, &Self::Arena) -> PolarsResult<VisitRecursion>,
+        op: &mut F,
         arena: &Self::Arena,
     ) -> PolarsResult<VisitRecursion>;
 
-    fn map_children(
+    fn map_children<F: FnMut(Self, &mut Self::Arena) -> PolarsResult<Self>>(
         self,
-        op: &mut dyn FnMut(Self, &mut Self::Arena) -> PolarsResult<Self>,
+        op: &mut F,
         arena: &mut Self::Arena,
     ) -> PolarsResult<Self>;
 
     /// Walks all nodes in depth-first-order.
     #[recursive]
-    fn visit(
+    fn visit<V: Visitor<Node = Self, Arena = Self::Arena>>(
         &self,
-        visitor: &mut dyn Visitor<Node = Self, Arena = Self::Arena>,
+        visitor: &mut V,
         arena: &Self::Arena,
     ) -> PolarsResult<VisitRecursion> {
         match visitor.pre_visit(self, arena)? {
@@ -44,9 +44,9 @@ pub trait TreeWalker: Sized {
     }
 
     #[recursive]
-    fn rewrite(
+    fn rewrite<R: RewritingVisitor<Node = Self, Arena = Self::Arena>>(
         self,
-        rewriter: &mut dyn RewritingVisitor<Node = Self, Arena = Self::Arena>,
+        rewriter: &mut R,
         arena: &mut Self::Arena,
     ) -> PolarsResult<Self> {
         let mutate_this_node = match rewriter.pre_visit(&self, arena)? {
