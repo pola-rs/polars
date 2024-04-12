@@ -491,7 +491,7 @@ def test_streaming_group_by_convert_15380() -> None:
 
 
 @pytest.mark.parametrize("streaming", [True, False])
-@pytest.mark.parametrize("n_rows", [PARTITION_LIMIT - 1, PARTITION_LIMIT])
+@pytest.mark.parametrize("n_rows", [PARTITION_LIMIT - 1, PARTITION_LIMIT + 3])
 def test_streaming_group_by_boolean_mean_15610(n_rows: int, streaming: bool) -> None:
     # Also test non-streaming because it sometimes dispatched to streaming agg.
     expect = pl.DataFrame({"a": [False, True], "c": [0.0, 0.5]})
