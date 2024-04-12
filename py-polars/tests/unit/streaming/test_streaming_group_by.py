@@ -101,7 +101,7 @@ def test_streaming_group_by_types() -> None:
             "str_sum": [None],
             "bool_first": [True],
             "bool_last": [False],
-            "bool_mean": [None],
+            "bool_mean": [0.5],
             "bool_sum": [1],
             "date_sum": [date(2074, 1, 1)],
             "date_mean": [date(2022, 1, 1)],
@@ -493,6 +493,7 @@ def test_streaming_group_by_convert_15380() -> None:
 @pytest.mark.parametrize("streaming", [True, False])
 @pytest.mark.parametrize("n_rows", [PARTITION_LIMIT - 1, PARTITION_LIMIT])
 def test_streaming_group_by_boolean_mean_15610(n_rows: int, streaming: bool) -> None:
+    # Also test non-streaming because it sometimes dispatched to streaming agg.
     expect = pl.DataFrame({"a": [False, True], "c": [0.0, 0.5]})
 
     n_repeats = n_rows // 3
