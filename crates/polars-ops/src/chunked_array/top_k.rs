@@ -215,7 +215,7 @@ pub fn top_k_by(
 
     let multithreaded = sort_options.multithreaded;
 
-    let idx = _arg_bottom_k(k, src.len(), by, &mut sort_options.with_order_reversed())?;
+    let idx = _arg_bottom_k(k, by, &mut sort_options.with_order_reversed())?;
 
     let result = unsafe {
         if multithreaded {

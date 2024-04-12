@@ -28,10 +28,10 @@ impl PartialOrd for CompareRow<'_> {
 
 pub fn _arg_bottom_k(
     k: usize,
-    from_n_rows: usize,
     by_column: &[Series],
     sort_options: &mut SortMultipleOptions,
 ) -> PolarsResult<NoNull<IdxCa>> {
+    let from_n_rows = by_column[0].len();
     _broadcast_descending(by_column.len(), &mut sort_options.descending);
     let encoded = _get_rows_encoded(by_column, &sort_options.descending, sort_options.nulls_last)?;
     let arr = encoded.into_array();
