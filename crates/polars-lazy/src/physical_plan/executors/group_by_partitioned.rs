@@ -3,8 +3,6 @@ use polars_core::utils::{accumulate_dataframes_vertical, split_df};
 use rayon::prelude::*;
 
 use super::*;
-#[cfg(feature = "streaming")]
-use crate::physical_plan::planner::create_physical_plan;
 
 /// Take an input Executor and a multiple expressions
 pub struct PartitionGroupByExec {
@@ -249,54 +247,6 @@ fn can_run_partitioned(
 }
 
 impl PartitionGroupByExec {
-    #[cfg(feature = "streaming")]
-    fn run_streaming(
-        &mut self,
-        state: &mut ExecutionState,
-        original_df: DataFrame,
-    ) -> Option<PolarsResult<DataFrame>> {
-        #[allow(clippy::needless_update)]
-        let group_by_options = GroupbyOptions {
-            slice: self.slice,
-            ..Default::default()
-        }
-        .into();
-        let lp = LogicalPlan::GroupBy {
-            input: Arc::new(original_df.lazy().logical_plan),
-            keys: Arc::new(std::mem::take(&mut self.keys)),
-            aggs: std::mem::take(&mut self.aggs),
-            schema: self.output_schema.clone(),
-            apply: None,
-            maintain_order: false,
-            options: group_by_options,
-        };
-        let mut expr_arena = Default::default();
-        let mut lp_arena = Default::default();
-        let node = to_alp(lp, &mut expr_arena, &mut lp_arena).unwrap();
-
-        let inserted = streaming::insert_streaming_nodes(
-            node,
-            &mut lp_arena,
-            &mut expr_arena,
-            &mut vec![],
-            false,
-            false,
-            true,
-        )
-        .unwrap();
-
-        if inserted {
-            let mut phys_plan = create_physical_plan(node, &mut lp_arena, &mut expr_arena).unwrap();
-
-            if state.verbose() {
-                eprintln!("run STREAMING HASH AGGREGATION")
-            }
-            Some(phys_plan.execute(state))
-        } else {
-            None
-        }
-    }
-
     fn execute_impl(
         &mut self,
         state: &mut ExecutionState,
@@ -319,13 +269,6 @@ impl PartitionGroupByExec {
                     self.maintain_order,
                     self.slice,
                 );
-            }
-
-            #[cfg(feature = "streaming")]
-            if !self.maintain_order && std::env::var("POLARS_NO_STREAMING_GROUPBY").is_err() {
-                if let Some(out) = self.run_streaming(state, original_df.clone()) {
-                    return out;
-                }
             }
 
             if state.verbose() {
