@@ -1690,7 +1690,8 @@ class StringNameSpace:
         Parameters
         ----------
         base
-            Positive integer which is the base of the string we are parsing.
+            Positive integer or expression which is the base of the string
+            we are parsing.
             Default: 10.
         strict
             Bool, Default=True will raise any ParseError or overflow as ComputeError.

@@ -483,11 +483,13 @@ impl StringNameSpace {
 
     #[cfg(feature = "string_to_integer")]
     /// Parse string in base radix into decimal.
-    pub fn to_integer(self, base: u32, strict: bool) -> Expr {
-        self.0
-            .map_private(FunctionExpr::StringExpr(StringFunction::ToInteger(
-                base, strict,
-            )))
+    pub fn to_integer(self, base: Expr, strict: bool) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::StringExpr(StringFunction::ToInteger(strict)),
+            &[base],
+            false,
+            false,
+        )
     }
 
     /// Return the length of each string as the number of bytes.

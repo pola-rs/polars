@@ -2234,14 +2234,17 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_explode())
 
-    def to_integer(self, *, base: int = 10, strict: bool = True) -> Expr:
+    def to_integer(
+        self, *, base: int | IntoExprColumn = 10, strict: bool = True
+    ) -> Expr:
         """
         Convert a String column into an Int64 column with base radix.
 
         Parameters
         ----------
         base
-            Positive integer which is the base of the string we are parsing.
+            Positive integer or expression which is the base of the string
+            we are parsing.
             Default: 10.
         strict
             Bool, Default=True will raise any ParseError or overflow as ComputeError.
@@ -2282,6 +2285,7 @@ class ExprStringNameSpace:
         │ null ┆ null   │
         └──────┴────────┘
         """
+        base = parse_as_expression(base, str_as_lit=False)
         return wrap_expr(self._pyexpr.str_to_integer(base, strict))
 
     @deprecate_renamed_function("to_integer", version="0.19.14")
