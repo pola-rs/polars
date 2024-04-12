@@ -1,3 +1,4 @@
+#![allow(deprecated)]  // This will be removed as part of #15215
 use std::ffi::{c_int, c_void};
 
 use ndarray::{Dim, Dimension, IntoDimension};

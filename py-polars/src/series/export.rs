@@ -165,6 +165,7 @@ impl PySeries {
     /// be handled on the Python side in a zero-copy manner.
     ///
     /// This method will cast integers to floats so that `null = np.nan`.
+    #[allow(deprecated)]  // This will be removed as part of #15215
     fn to_numpy(&self, py: Python) -> PyResult<PyObject> {
         use DataType::*;
         let s = &self.series;
@@ -249,6 +250,7 @@ where
         Some(v) => NumCast::from(v).unwrap(),
         None => U::nan(),
     };
+    #[allow(deprecated)]  // This will be removed as part of #15215
     let np_arr = PyArray1::from_iter(py, ca.iter().map(mapper));
     np_arr.into_py(py)
 }
@@ -260,6 +262,7 @@ fn date_series_to_numpy(py: Python, s: &Series) -> PyObject {
         Some(v) => v as i64,
         None => i64::MIN,
     };
+    #[allow(deprecated)]  // This will be removed as part of #15215
     let np_arr = PyArray1::from_iter(py, ca.iter().map(mapper));
     np_arr.into_py(py)
 }
@@ -267,6 +270,7 @@ fn date_series_to_numpy(py: Python, s: &Series) -> PyObject {
 fn temporal_series_to_numpy(py: Python, s: &Series) -> PyObject {
     let s_phys = s.to_physical_repr();
     let ca = s_phys.i64().unwrap();
+    #[allow(deprecated)]  // This will be removed as part of #15215
     let np_arr = PyArray1::from_iter(py, ca.iter().map(|v| v.unwrap_or(i64::MIN)));
     np_arr.into_py(py)
 }
