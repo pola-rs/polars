@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any, Iterable
 import polars._reexport as pl
 from polars import functions as F
 from polars._utils.deprecation import issue_deprecation_warning
-from polars.exceptions import ComputeError, InvalidOperationError
+from polars.exceptions import ComputeError
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -121,12 +121,6 @@ def parse_as_expression(
     elif isinstance(input, list) and not list_as_lit:
         expr = F.lit(pl.Series(input), dtype=dtype)
         structify = False
-    elif isinstance(input, pl.DataFrame):
-        msg = "A DataFrame is an invalid input"
-        raise InvalidOperationError(msg)
-    elif isinstance(input, pl.LazyFrame):
-        msg = "A LazyFrame is an invalid input"
-        raise InvalidOperationError(msg)
     else:
         expr = F.lit(input, dtype=dtype)
         structify = False

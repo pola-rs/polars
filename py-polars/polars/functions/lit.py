@@ -15,6 +15,7 @@ from polars._utils.wrap import wrap_expr
 from polars.datatypes import Date, Datetime, Duration, Time
 from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
+from polars.exceptions import InvalidOperationError
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -75,8 +76,13 @@ def lit(
     >>> pl.lit(pl.Series("y", [[1, 2], [3, 4]]))  # doctest: +IGNORE_RESULT
     """
     time_unit: TimeUnit
-
-    if isinstance(value, datetime):
+    if isinstance(input, pl.DataFrame):
+        msg = "a DataFrame is an invalid input"
+        raise InvalidOperationError(msg)
+    elif isinstance(input, pl.LazyFrame):
+        msg = "a LazyFrame is an invalid input"
+        raise InvalidOperationError(msg)
+    elif isinstance(value, datetime):
         if dtype is not None and (tu := getattr(dtype, "time_unit", "us")) is not None:
             time_unit = tu  # type: ignore[assignment]
         else:
