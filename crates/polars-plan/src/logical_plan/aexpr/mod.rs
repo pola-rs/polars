@@ -1,6 +1,7 @@
 #[cfg(feature = "cse")]
 mod hash;
 mod schema;
+mod utils;
 
 use std::hash::{Hash, Hasher};
 
@@ -10,6 +11,7 @@ use polars_core::prelude::*;
 use polars_core::utils::{get_time_units, try_get_supertype};
 use polars_utils::arena::{Arena, Node};
 use strum_macros::IntoStaticStr;
+pub use utils::*;
 
 use crate::constants::LEN;
 use crate::logical_plan::Context;

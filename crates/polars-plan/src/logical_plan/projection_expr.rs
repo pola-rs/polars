@@ -45,7 +45,7 @@ impl ProjectionExprs {
         }
     }
 
-    pub(crate) fn has_sub_exprs(&self) -> bool {
+    pub fn has_sub_exprs(&self) -> bool {
         self.common_sub_offset != 0
     }
 
