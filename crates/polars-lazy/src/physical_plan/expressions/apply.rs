@@ -96,9 +96,7 @@ impl ApplyExpr {
         ca: ListChunked,
     ) -> PolarsResult<AggregationContext<'a>> {
         let all_unit_len = all_unit_length(&ca);
-        if all_unit_len
-            && (self.returns_scalar || matches!(ac.state, AggState::AggregatedScalar(_)))
-        {
+        if all_unit_len && self.returns_scalar {
             ac.with_agg_state(AggState::AggregatedScalar(
                 ca.explode().unwrap().into_series(),
             ));
@@ -356,12 +354,20 @@ impl PhysicalExpr for ApplyExpr {
                 },
                 ApplyOptions::GroupWise => self.apply_multiple_group_aware(acs, df),
                 ApplyOptions::ElementWise => {
-                    if acs.iter().any(|ac| {
-                        matches!(
-                            ac.agg_state(),
-                            AggState::AggregatedList(_) | AggState::AggregatedScalar(_)
-                        )
-                    }) {
+                    let mut has_agg_list = false;
+                    let mut has_agg_scalar = false;
+                    let mut has_not_agg = false;
+                    for ac in &acs {
+                        match ac.state {
+                            AggState::AggregatedList(_) => has_agg_list = true,
+                            AggState::AggregatedScalar(_) => has_agg_scalar = true,
+                            AggState::NotAggregated(_) => has_not_agg = true,
+                            _ => {},
+                        }
+                    }
+                    if has_agg_list {
+                        return self.apply_multiple_group_aware(acs, df);
+                    } else if has_agg_scalar && has_not_agg {
                         self.apply_multiple_group_aware(acs, df)
                     } else {
                         apply_multiple_elementwise(
