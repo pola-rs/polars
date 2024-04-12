@@ -636,7 +636,10 @@ impl SQLExprVisitor<'_> {
         let mut base = self.visit_expr(&expr.expr)?;
         if let Some(order_by) = expr.order_by.as_ref() {
             let (order_by, descending) = self.visit_order_by(order_by)?;
-            base = base.sort_by(order_by, descending);
+            base = base.sort_by(
+                order_by,
+                SortMultipleOptions::default().with_order_descendings(descending),
+            );
         }
         if let Some(limit) = &expr.limit {
             let limit = match self.visit_expr(limit)? {

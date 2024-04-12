@@ -1,19 +1,19 @@
+use polars_core::chunked_array::ops::SortMultipleOptions;
 use polars_ops::prelude::*;
 use polars_plan::logical_plan::expr_ir::ExprIR;
 use polars_plan::prelude::*;
 
-pub(super) fn is_streamable_sort(args: &SortArguments) -> bool {
+pub(super) fn is_streamable_sort(
+    slice: &Option<(i64, usize)>,
+    sort_options: &SortMultipleOptions,
+) -> bool {
     // check if slice is positive or maintain order is true
-    match args {
-        SortArguments {
-            maintain_order: true,
-            ..
-        } => false,
-        SortArguments {
-            slice: Some((offset, _)),
-            ..
-        } => *offset >= 0,
-        SortArguments { slice: None, .. } => true,
+    if sort_options.maintain_order {
+        false
+    } else if let Some((offset, _)) = slice {
+        *offset >= 0
+    } else {
+        true
     }
 }
 

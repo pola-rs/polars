@@ -3344,6 +3344,7 @@ class Series:
         *,
         descending: bool = False,
         nulls_last: bool = False,
+        multithreaded: bool = True,
         in_place: bool = False,
     ) -> Self:
         """
@@ -3355,6 +3356,8 @@ class Series:
             Sort in descending order.
         nulls_last
             Place null values last instead of first.
+        multithreaded
+            Sort using multiple threads.
         in_place
             Sort in-place.
 
@@ -3381,10 +3384,12 @@ class Series:
         ]
         """
         if in_place:
-            self._s = self._s.sort(descending, nulls_last)
+            self._s = self._s.sort(descending, nulls_last, multithreaded)
             return self
         else:
-            return self._from_pyseries(self._s.sort(descending, nulls_last))
+            return self._from_pyseries(
+                self._s.sort(descending, nulls_last, multithreaded)
+            )
 
     def top_k(self, k: int | IntoExprColumn = 5) -> Series:
         r"""

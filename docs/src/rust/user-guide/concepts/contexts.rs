@@ -23,7 +23,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .lazy()
         .select([
             sum("nrs"),
-            col("names").sort(false),
+            col("names").sort(Default::default()),
             col("names").first().alias("first name"),
             (mean("nrs") * lit(10)).alias("10xnrs"),
         ])

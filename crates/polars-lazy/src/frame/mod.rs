@@ -260,29 +260,46 @@ impl LazyFrame {
     ///
     /// # Example
     ///
+    /// Sort DataFrame by 'sepal.width' column:
     /// ```rust
-    /// use polars_core::prelude::*;
-    /// use polars_lazy::prelude::*;
-    ///
-    /// /// Sort DataFrame by 'sepal.width' column
-    /// fn example(df: DataFrame) -> LazyFrame {
-    ///       df.lazy()
-    ///         .sort("sepal.width", Default::default())
+    /// # use polars_core::prelude::*;
+    /// # use polars_lazy::prelude::*;
+    /// fn sort_by_a(df: DataFrame) -> LazyFrame {
+    ///     df.lazy().sort(["a"], Default::default())
     /// }
     /// ```
-    pub fn sort(self, by_column: &str, options: SortOptions) -> Self {
-        let descending = options.descending;
-        let nulls_last = options.nulls_last;
-        let maintain_order = options.maintain_order;
-
+    /// Sort by a single column with specific order:
+    /// ```
+    /// # use polars_core::prelude::*;
+    /// # use polars_lazy::prelude::*;
+    /// fn sort_with_specific_order(df: DataFrame, descending: bool) -> LazyFrame {
+    ///     df.lazy().sort(
+    ///         ["a"],
+    ///         SortMultipleOptions::new()
+    ///             .with_order_descending(descending)
+    ///     )
+    /// }
+    /// ```
+    /// Sort by multiple columns with specifying order for each column:
+    /// ```
+    /// # use polars_core::prelude::*;
+    /// # use polars_lazy::prelude::*;
+    /// fn sort_by_multiple_columns_with_specific_order(df: DataFrame) -> LazyFrame {
+    ///     df.lazy().sort(
+    ///         &["a", "b"],
+    ///         SortMultipleOptions::new()
+    ///             .with_order_descendings([false, true])
+    ///     )
+    /// }
+    /// ```
+    /// See [`SortMultipleOptions`] for more options.
+    pub fn sort(self, by: impl IntoVec<SmartString>, sort_options: SortMultipleOptions) -> Self {
         let opt_state = self.get_opt_state();
         let lp = self
             .get_plan_builder()
             .sort(
-                vec![col(by_column)],
-                vec![descending],
-                nulls_last,
-                maintain_order,
+                by.into_vec().into_iter().map(|x| col(&x)).collect(),
+                sort_options,
             )
             .build();
         Self::from_logical_plan(lp, opt_state)
@@ -291,9 +308,9 @@ impl LazyFrame {
     /// Add a sort operation to the logical plan.
     ///
     /// Sorts the LazyFrame by the provided list of expressions, which will be turned into
-    /// concrete columns before sorting. `reverse` is a list of `bool`, the same length as
-    /// `by_exprs`, that specifies whether each corresponding expression will be sorted
-    /// ascending (`false`) or descending (`true`).
+    /// concrete columns before sorting.
+    ///
+    /// See [`SortMultipleOptions`] for more options.
     ///
     /// # Example
     ///
@@ -304,60 +321,43 @@ impl LazyFrame {
     /// /// Sort DataFrame by 'sepal.width' column
     /// fn example(df: DataFrame) -> LazyFrame {
     ///       df.lazy()
-    ///         .sort_by_exprs(vec![col("sepal.width")], vec![false], false, false)
+    ///         .sort_by_exprs(vec![col("sepal.width")], Default::default())
     /// }
     /// ```
-    pub fn sort_by_exprs<E: AsRef<[Expr]>, B: AsRef<[bool]>>(
+    pub fn sort_by_exprs<E: AsRef<[Expr]>>(
         self,
         by_exprs: E,
-        descending: B,
-        nulls_last: bool,
-        maintain_order: bool,
+        sort_options: SortMultipleOptions,
     ) -> Self {
         let by_exprs = by_exprs.as_ref().to_vec();
-        let descending = descending.as_ref().to_vec();
         if by_exprs.is_empty() {
             self
         } else {
             let opt_state = self.get_opt_state();
-            let lp = self
-                .get_plan_builder()
-                .sort(by_exprs, descending, nulls_last, maintain_order)
-                .build();
+            let lp = self.get_plan_builder().sort(by_exprs, sort_options).build();
             Self::from_logical_plan(lp, opt_state)
         }
     }
 
-    pub fn top_k<E: AsRef<[Expr]>, B: AsRef<[bool]>>(
+    pub fn top_k<E: AsRef<[Expr]>>(
         self,
         k: IdxSize,
         by_exprs: E,
-        descending: B,
-        nulls_last: bool,
-        maintain_order: bool,
+        sort_options: SortMultipleOptions,
     ) -> Self {
-        let mut descending = descending.as_ref().to_vec();
-        // top-k is reverse from sort
-        for v in &mut descending {
-            *v = !*v;
-        }
         // this will optimize to top-k
-        self.sort_by_exprs(by_exprs, descending, nulls_last, maintain_order)
+        self.sort_by_exprs(by_exprs, sort_options.with_order_reversed())
             .slice(0, k)
     }
 
-    pub fn bottom_k<E: AsRef<[Expr]>, B: AsRef<[bool]>>(
+    pub fn bottom_k<E: AsRef<[Expr]>>(
         self,
         k: IdxSize,
         by_exprs: E,
-        descending: B,
-        nulls_last: bool,
-        maintain_order: bool,
+        sort_options: SortMultipleOptions,
     ) -> Self {
-        let descending = descending.as_ref().to_vec();
         // this will optimize to bottom-k
-        self.sort_by_exprs(by_exprs, descending, nulls_last, maintain_order)
-            .slice(0, k)
+        self.sort_by_exprs(by_exprs, sort_options).slice(0, k)
     }
 
     /// Reverse the `DataFrame` from top to bottom.

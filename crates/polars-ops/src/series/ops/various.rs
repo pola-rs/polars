@@ -21,7 +21,12 @@ pub trait SeriesMethods: SeriesSealed {
         let cols = vec![values, counts.into_series()];
         let df = unsafe { DataFrame::new_no_checks(cols) };
         if sort {
-            df.sort(["count"], true, false)
+            df.sort(
+                ["count"],
+                SortMultipleOptions::default()
+                    .with_order_descending(true)
+                    .with_multithreaded(parallel),
+            )
         } else {
             Ok(df)
         }

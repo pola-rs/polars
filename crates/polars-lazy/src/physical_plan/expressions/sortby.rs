@@ -9,22 +9,22 @@ use crate::prelude::*;
 pub struct SortByExpr {
     pub(crate) input: Arc<dyn PhysicalExpr>,
     pub(crate) by: Vec<Arc<dyn PhysicalExpr>>,
-    pub(crate) descending: Vec<bool>,
     pub(crate) expr: Expr,
+    pub(crate) sort_options: SortMultipleOptions,
 }
 
 impl SortByExpr {
     pub fn new(
         input: Arc<dyn PhysicalExpr>,
         by: Vec<Arc<dyn PhysicalExpr>>,
-        descending: Vec<bool>,
         expr: Expr,
+        sort_options: SortMultipleOptions,
     ) -> Self {
         Self {
             input,
             by,
-            descending,
             expr,
+            sort_options,
         }
     }
 }
@@ -123,6 +123,8 @@ fn sort_by_groups_multiple_by(
     indicator: GroupsIndicator,
     sort_by_s: &[Series],
     descending: &[bool],
+    multithreaded: bool,
+    maintain_order: bool,
 ) -> PolarsResult<(IdxSize, IdxVec)> {
     let new_idx = match indicator {
         GroupsIndicator::Idx((_first, idx)) => {
@@ -133,13 +135,13 @@ fn sort_by_groups_multiple_by(
                 .collect::<Vec<_>>();
 
             let options = SortMultipleOptions {
-                other: groups[1..].to_vec(),
                 descending: descending.to_owned(),
                 nulls_last: false,
-                multithreaded: false,
+                multithreaded,
+                maintain_order,
             };
 
-            let sorted_idx = groups[0].arg_sort_multiple(&options).unwrap();
+            let sorted_idx = groups[0].arg_sort_multiple(&groups[1..], &options).unwrap();
             map_sorted_indices_to_group_idx(&sorted_idx, idx)
         },
         GroupsIndicator::Slice([first, len]) => {
@@ -149,12 +151,12 @@ fn sort_by_groups_multiple_by(
                 .collect::<Vec<_>>();
 
             let options = SortMultipleOptions {
-                other: groups[1..].to_vec(),
                 descending: descending.to_owned(),
                 nulls_last: false,
-                multithreaded: false,
+                multithreaded,
+                maintain_order,
             };
-            let sorted_idx = groups[0].arg_sort_multiple(&options).unwrap();
+            let sorted_idx = groups[0].arg_sort_multiple(&groups[1..], &options).unwrap();
             map_sorted_indices_to_group_slice(&sorted_idx, first)
         },
     };
@@ -171,15 +173,12 @@ impl PhysicalExpr for SortByExpr {
     }
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
         let series_f = || self.input.evaluate(df, state);
-        let descending = prepare_descending(&self.descending, self.by.len());
+        let descending = prepare_descending(&self.sort_options.descending, self.by.len());
 
         let (series, sorted_idx) = if self.by.len() == 1 {
             let sorted_idx_f = || {
                 let s_sort_by = self.by[0].evaluate(df, state)?;
-                Ok(s_sort_by.arg_sort(SortOptions {
-                    descending: descending[0],
-                    ..Default::default()
-                }))
+                Ok(s_sort_by.arg_sort(SortOptions::from(&self.sort_options)))
             };
             POOL.install(|| rayon::join(series_f, sorted_idx_f))
         } else {
@@ -196,13 +195,8 @@ impl PhysicalExpr for SortByExpr {
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
 
-                let options = SortMultipleOptions {
-                    other: s_sort_by[1..].to_vec(),
-                    descending,
-                    nulls_last: false,
-                    multithreaded: true,
-                };
-                s_sort_by[0].arg_sort_multiple(&options)
+                let options = self.sort_options.clone().with_order_descendings(descending);
+                s_sort_by[0].arg_sort_multiple(&s_sort_by[1..], &options)
             };
             POOL.install(|| rayon::join(series_f, sorted_idx_f))
         };
@@ -226,7 +220,7 @@ impl PhysicalExpr for SortByExpr {
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let mut ac_in = self.input.evaluate_on_groups(df, groups, state)?;
-        let descending = prepare_descending(&self.descending, self.by.len());
+        let descending = prepare_descending(&self.sort_options.descending, self.by.len());
 
         let mut ac_sort_by = self
             .by
@@ -267,7 +261,7 @@ impl PhysicalExpr for SortByExpr {
                 return sort_by_groups_no_match_single(
                     ac_in,
                     ac_sort_by,
-                    self.descending[0],
+                    self.sort_options.descending[0],
                     &self.expr,
                 );
             };
@@ -295,7 +289,15 @@ impl PhysicalExpr for SortByExpr {
             let groups = POOL.install(|| {
                 groups
                     .par_iter()
-                    .map(|indicator| sort_by_groups_multiple_by(indicator, &sort_by_s, &descending))
+                    .map(|indicator| {
+                        sort_by_groups_multiple_by(
+                            indicator,
+                            &sort_by_s,
+                            &descending,
+                            self.sort_options.multithreaded,
+                            self.sort_options.maintain_order,
+                        )
+                    })
                     .collect::<PolarsResult<_>>()
             });
             GroupsProxy::Idx(groups?)

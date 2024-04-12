@@ -68,14 +68,7 @@ fn test_group_by_simple() -> PolarsResult<()> {
         LIMIT 100
     "#,
         )?
-        .sort(
-            "a",
-            SortOptions {
-                descending: false,
-                nulls_last: false,
-                ..Default::default()
-            },
-        )
+        .sort(["a"], Default::default())
         .collect()?;
 
     let df_pl = df
@@ -87,14 +80,7 @@ fn test_group_by_simple() -> PolarsResult<()> {
             col("a").count().alias("total_count"),
         ])
         .limit(100)
-        .sort(
-            "a",
-            SortOptions {
-                descending: false,
-                nulls_last: false,
-                ..Default::default()
-            },
-        )
+        .sort(["a"], Default::default())
         .collect()?;
     assert_eq!(df_sql, df_pl);
     Ok(())
@@ -417,7 +403,7 @@ fn test_arr_agg() {
         (
             "SELECT ARRAY_AGG(a ORDER BY a) AS a FROM df",
             vec![col("a")
-                .sort_by(vec![col("a")], vec![false])
+                .sort_by(vec![col("a")], SortMultipleOptions::default())
                 .implode()
                 .alias("a")],
         ),
@@ -432,7 +418,7 @@ fn test_arr_agg() {
         (
             "SELECT ARRAY_AGG(a ORDER BY b LIMIT 2) FROM df",
             vec![col("a")
-                .sort_by(vec![col("b")], vec![false])
+                .sort_by(vec![col("b")], SortMultipleOptions::default())
                 .head(Some(2))
                 .implode()],
         ),
@@ -496,9 +482,7 @@ fn test_group_by_2() -> PolarsResult<()> {
         ])
         .sort_by_exprs(
             vec![col("count"), col("category")],
-            vec![false, true],
-            false,
-            false,
+            SortMultipleOptions::default().with_order_descendings([false, true]),
         )
         .limit(2);
     let expected = expected.collect()?;

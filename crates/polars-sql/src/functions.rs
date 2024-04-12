@@ -1,3 +1,4 @@
+use polars_core::chunked_array::ops::{SortMultipleOptions, SortOptions};
 use polars_core::prelude::{polars_bail, polars_err, DataType, PolarsResult};
 use polars_lazy::dsl::Expr;
 #[cfg(feature = "list_eval")]
@@ -1137,7 +1138,15 @@ impl SQLFunctionVisitor<'_> {
                 .collect::<PolarsResult<Vec<_>>>()?
                 .into_iter()
                 .unzip();
-            self.visit_unary_no_window(|e| cumulative_f(e.sort_by(&order_by, &desc), false))
+            self.visit_unary_no_window(|e| {
+                cumulative_f(
+                    e.sort_by(
+                        &order_by,
+                        SortMultipleOptions::default().with_order_descendings(desc.clone()),
+                    ),
+                    false,
+                )
+            })
         } else {
             self.visit_unary(f)
         }
@@ -1258,7 +1267,9 @@ impl SQLFunctionVisitor<'_> {
                         .iter()
                         .map(|o| {
                             let e = parse_sql_expr(&o.expr, self.ctx)?;
-                            Ok(o.asc.map_or(e.clone(), |b| e.sort(!b)))
+                            Ok(o.asc.map_or(e.clone(), |b| {
+                                e.sort(SortOptions::default().with_order_descending(!b))
+                            }))
                         })
                         .collect::<PolarsResult<Vec<_>>>()?;
                     expr.over(exprs)

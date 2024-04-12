@@ -74,6 +74,37 @@ def test_sort_by() -> None:
     assert out["a"].to_list() == [1, 2, 3, 4, 5]
 
 
+def test_expr_sort_by_nulls_last() -> None:
+    # nulls last
+    df = pl.DataFrame(
+        {"a": [1, 2, None, None, 5], "b": [None, 1, 1, 2, None], "c": [2, 3, 1, 2, 1]}
+    )
+
+    out = df.select(pl.all().sort_by("a", nulls_last=True, maintain_order=True))
+
+    excepted = pl.DataFrame(
+        {
+            "a": [1, 2, 5, None, None],
+            "b": [None, 1, None, 1, 2],
+            "c": [2, 3, 1, 1, 2],
+        }
+    )
+
+    assert_frame_equal(out, excepted)
+
+    # nulls first
+
+    out = df.select(pl.all().sort_by("a", nulls_last=False, maintain_order=True))
+
+    excepted = pl.DataFrame(
+        {
+            "a": [None, None, 1, 2, 5],
+            "b": [1, 2, None, 1, None],
+            "c": [1, 2, 2, 3, 1],
+        }
+    )
+
+
 def test_sort_by_exprs() -> None:
     # make sure that the expression does not overwrite columns in the dataframe
     df = pl.DataFrame({"a": [1, 2, -1, -2]})
@@ -101,6 +132,22 @@ def test_arg_sort_nulls() -> None:
         None,
         None,
     ]
+
+
+def test_expr_arg_sort_nulls_last() -> None:
+    df = pl.DataFrame(
+        {"a": [1, 2, None, None, 5], "b": [None, 1, 2, 1, None], "c": [2, 3, 1, 2, 1]}
+    )
+
+    out = (
+        df.select(pl.arg_sort_by("a", "b", nulls_last=True, maintain_order=True))
+        .to_series()
+        .to_list()
+    )
+
+    expected = [0, 1, 4, 3, 2]
+
+    assert out == expected
 
 
 def test_arg_sort_window_functions() -> None:

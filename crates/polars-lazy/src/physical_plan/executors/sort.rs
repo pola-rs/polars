@@ -3,7 +3,8 @@ use super::*;
 pub(crate) struct SortExec {
     pub(crate) input: Box<dyn Executor>,
     pub(crate) by_column: Vec<Arc<dyn PhysicalExpr>>,
-    pub(crate) args: SortArguments,
+    pub(crate) slice: Option<(i64, usize)>,
+    pub(crate) sort_options: SortMultipleOptions,
 }
 
 impl SortExec {
@@ -32,14 +33,7 @@ impl SortExec {
             })
             .collect::<PolarsResult<Vec<_>>>()?;
 
-        df.sort_impl(
-            by_columns,
-            std::mem::take(&mut self.args.descending),
-            self.args.nulls_last,
-            self.args.maintain_order,
-            self.args.slice,
-            true,
-        )
+        df.sort_impl(by_columns, self.sort_options.clone(), self.slice)
     }
 }
 

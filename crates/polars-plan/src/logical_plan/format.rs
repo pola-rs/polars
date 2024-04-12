@@ -307,9 +307,12 @@ impl Debug for Expr {
             SortBy {
                 expr,
                 by,
-                descending,
+                sort_options,
             } => {
-                write!(f, "{expr:?}.sort_by(by={by:?}, descending={descending:?})",)
+                write!(
+                    f,
+                    "{expr:?}.sort_by(by={by:?}, sort_option={sort_options:?})",
+                )
             },
             Filter { input, by } => {
                 write!(f, "{input:?}.filter({by:?})")

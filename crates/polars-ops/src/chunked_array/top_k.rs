@@ -3,6 +3,7 @@ use std::cmp::Ordering;
 use arrow::array::{BooleanArray, MutableBooleanArray};
 use arrow::bitmap::MutableBitmap;
 use either::Either;
+use polars_core::chunked_array::ops::sort::arg_bottom_k::_arg_bottom_k;
 use polars_core::downcast_as_macro_arg_physical;
 use polars_core::prelude::*;
 use polars_utils::total_ord::TotalOrd;
@@ -21,6 +22,23 @@ fn arg_partition<T, C: Fn(&T, &T) -> Ordering>(
         upper.sort_unstable_by(|a, b| cmp(b, a));
         upper
     }
+}
+
+fn extract_target_and_k(s: &[Series]) -> PolarsResult<(usize, &Series)> {
+    let k_s = &s[1];
+
+    polars_ensure!(
+        k_s.len() == 1,
+        ComputeError: "`k` must be a single value for `top_k`."
+    );
+
+    let Some(k) = k_s.cast(&IDX_DTYPE)?.idx()?.get(0) else {
+        polars_bail!(ComputeError: "`k` must be set for `top_k`")
+    };
+
+    let src = &s[0];
+
+    Ok((k as usize, src))
 }
 
 fn top_k_num_impl<T>(ca: &ChunkedArray<T>, k: usize, descending: bool) -> ChunkedArray<T>
@@ -144,18 +162,7 @@ fn top_k_binary_impl(
 }
 
 pub fn top_k(s: &[Series], descending: bool) -> PolarsResult<Series> {
-    let k_s = &s[1];
-
-    polars_ensure!(
-        k_s.len() == 1,
-        ComputeError: "`k` must be a single value for `top_k`."
-    );
-
-    let Some(k) = k_s.cast(&IDX_DTYPE)?.idx()?.get(0) else {
-        polars_bail!(ComputeError: "`k` must be set for `top_k`")
-    };
-
-    let src = &s[0];
+    let (k, src) = extract_target_and_k(s)?;
 
     if src.is_empty() {
         return Ok(src.clone());
@@ -164,12 +171,10 @@ pub fn top_k(s: &[Series], descending: bool) -> PolarsResult<Series> {
     match src.is_sorted_flag() {
         polars_core::series::IsSorted::Ascending => {
             // TopK is the k element in the bottom of ascending sorted array
-            return Ok(src
-                .slice((src.len() - k as usize) as i64, k as usize)
-                .reverse());
+            return Ok(src.slice((src.len() - k) as i64, k).reverse());
         },
         polars_core::series::IsSorted::Descending => {
-            return Ok(src.slice(0, k as usize));
+            return Ok(src.slice(0, k));
         },
         _ => {},
     }
@@ -179,24 +184,45 @@ pub fn top_k(s: &[Series], descending: bool) -> PolarsResult<Series> {
     let s = src.to_physical_repr();
 
     match s.dtype() {
-        DataType::Boolean => {
-            Ok(top_k_bool_impl(s.bool().unwrap(), k as usize, descending).into_series())
-        },
+        DataType::Boolean => Ok(top_k_bool_impl(s.bool().unwrap(), k, descending).into_series()),
         DataType::String => {
-            let ca = top_k_binary_impl(&s.str().unwrap().as_binary(), k as usize, descending);
+            let ca = top_k_binary_impl(&s.str().unwrap().as_binary(), k, descending);
             let ca = unsafe { ca.to_string() };
             Ok(ca.into_series())
         },
-        DataType::Binary => {
-            Ok(top_k_binary_impl(s.binary().unwrap(), k as usize, descending).into_series())
-        },
+        DataType::Binary => Ok(top_k_binary_impl(s.binary().unwrap(), k, descending).into_series()),
         _dt => {
             macro_rules! dispatch {
                 ($ca:expr) => {{
-                    top_k_num_impl($ca, k as usize, descending).into_series()
+                    top_k_num_impl($ca, k, descending).into_series()
                 }};
             }
             unsafe { downcast_as_macro_arg_physical!(&s, dispatch).cast_unchecked(origin_dtype) }
         },
     }
+}
+
+pub fn top_k_by(
+    s: &[Series],
+    by: &[Series],
+    sort_options: SortMultipleOptions,
+) -> PolarsResult<Series> {
+    let (k, src) = extract_target_and_k(s)?;
+
+    if src.is_empty() {
+        return Ok(src.clone());
+    }
+
+    let multithreaded = sort_options.multithreaded;
+
+    let idx = _arg_bottom_k(k, by, &mut sort_options.with_order_reversed())?;
+
+    let result = unsafe {
+        if multithreaded {
+            src.take_unchecked_threaded(&idx.into_inner(), false)
+        } else {
+            src.take_unchecked(&idx.into_inner())
+        }
+    };
+    Ok(result)
 }

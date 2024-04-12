@@ -1079,7 +1079,7 @@ mod test {
         // Use of deprecated `sum()` for testing purposes
         #[allow(deprecated)]
         let res = df.group_by(["flt"]).unwrap().sum().unwrap();
-        let res = res.sort(["flt"], false, false).unwrap();
+        let res = res.sort(["flt"], SortMultipleOptions::default()).unwrap();
         assert_eq!(
             Vec::from(res.column("val_sum").unwrap().i32().unwrap()),
             &[Some(2), Some(2), Some(1)]

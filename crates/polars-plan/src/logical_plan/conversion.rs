@@ -141,14 +141,14 @@ fn to_aexpr_impl(expr: Expr, arena: &mut Arena<AExpr>, state: &mut ConversionSta
         Expr::SortBy {
             expr,
             by,
-            descending,
+            sort_options,
         } => AExpr::SortBy {
             expr: to_aexpr_impl(owned(expr), arena, state),
             by: by
                 .into_iter()
                 .map(|e| to_aexpr_impl(e, arena, state))
                 .collect(),
-            descending,
+            sort_options,
         },
         Expr::Filter { input, by } => AExpr::Filter {
             input: to_aexpr_impl(owned(input), arena, state),
@@ -389,14 +389,16 @@ pub fn to_alp(
         LogicalPlan::Sort {
             input,
             by_column,
-            args,
+            slice,
+            sort_options,
         } => {
             let input = to_alp(owned(input), expr_arena, lp_arena)?;
             let by_column = to_expr_irs(by_column, expr_arena);
             IR::Sort {
                 input,
                 by_column,
-                args,
+                slice,
+                sort_options,
             }
         },
         LogicalPlan::Cache {
@@ -567,7 +569,7 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
         AExpr::SortBy {
             expr,
             by,
-            descending,
+            sort_options,
         } => {
             let expr = node_to_expr(expr, expr_arena);
             let by = by
@@ -577,7 +579,7 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             Expr::SortBy {
                 expr: Arc::new(expr),
                 by,
-                descending,
+                sort_options,
             }
         },
         AExpr::Filter { input, by } => {
@@ -856,14 +858,16 @@ impl IR {
             IR::Sort {
                 input,
                 by_column,
-                args,
+                slice,
+                sort_options,
             } => {
                 let input = Arc::new(convert_to_lp(input, lp_arena));
                 let by_column = expr_irs_to_exprs(by_column, expr_arena);
                 LogicalPlan::Sort {
                     input,
                     by_column,
-                    args,
+                    slice,
+                    sort_options,
                 }
             },
             IR::Cache {

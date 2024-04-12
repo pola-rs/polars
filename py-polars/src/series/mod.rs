@@ -283,10 +283,15 @@ impl PySeries {
         }
     }
 
-    fn sort(&mut self, descending: bool, nulls_last: bool) -> PyResult<Self> {
+    fn sort(&mut self, descending: bool, nulls_last: bool, multithreaded: bool) -> PyResult<Self> {
         Ok(self
             .series
-            .sort(descending, nulls_last)
+            .sort(
+                SortOptions::default()
+                    .with_order_descending(descending)
+                    .with_nulls_last(nulls_last)
+                    .with_multithreaded(multithreaded),
+            )
             .map_err(PyPolarsErr::from)?
             .into())
     }

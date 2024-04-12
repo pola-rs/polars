@@ -42,6 +42,7 @@ pub mod zip;
 
 #[cfg(feature = "serde-lazy")]
 use serde::{Deserialize, Serialize};
+pub use sort::options::*;
 
 use crate::series::IsSorted;
 
@@ -357,35 +358,6 @@ pub trait ChunkUnique<T: PolarsDataType> {
     }
 }
 
-#[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
-#[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
-pub struct SortOptions {
-    pub descending: bool,
-    pub nulls_last: bool,
-    pub multithreaded: bool,
-    pub maintain_order: bool,
-}
-
-#[derive(Clone)]
-#[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
-pub struct SortMultipleOptions {
-    pub other: Vec<Series>,
-    pub descending: Vec<bool>,
-    pub nulls_last: bool,
-    pub multithreaded: bool,
-}
-
-impl Default for SortOptions {
-    fn default() -> Self {
-        Self {
-            descending: false,
-            nulls_last: false,
-            multithreaded: true,
-            maintain_order: false,
-        }
-    }
-}
-
 /// Sort operations on `ChunkedArray`.
 pub trait ChunkSort<T: PolarsDataType> {
     #[allow(unused_variables)]
@@ -398,7 +370,12 @@ pub trait ChunkSort<T: PolarsDataType> {
     fn arg_sort(&self, options: SortOptions) -> IdxCa;
 
     /// Retrieve the indexes need to sort this and the other arrays.
-    fn arg_sort_multiple(&self, _options: &SortMultipleOptions) -> PolarsResult<IdxCa> {
+    #[allow(unused_variables)]
+    fn arg_sort_multiple(
+        &self,
+        by: &[Series],
+        _options: &SortMultipleOptions,
+    ) -> PolarsResult<IdxCa> {
         polars_bail!(opq = arg_sort_multiple, T::get_dtype());
     }
 }
