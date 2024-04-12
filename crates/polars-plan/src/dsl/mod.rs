@@ -456,19 +456,17 @@ impl Expr {
     /// Returns the `k` largest rows by given column.
     ///
     /// For single column, use [`Expr::top_k`].
-    // #[cfg(feature = "top_k")]
-    // pub fn top_k_by<K: Into<Expr>, E: AsRef<[IE]>, IE: Into<Expr> + Clone, G: AsRef<[bool]>>(
-    //     self,
-    //     k: K,
-    //     by: E,
-    //     descending: G,
-    // ) -> Self {
-    //     self.sort_by(
-    //         by,
-    //         descending.as_ref().iter().map(|x| !x).collect::<Vec<_>>(),
-    //     )
-    //     .slice(lit(0), k)
-    // }
+    #[cfg(feature = "top_k")]
+    pub fn top_k_by<K: Into<Expr>, E: AsRef<[IE]>, IE: Into<Expr> + Clone>(
+        self,
+        k: K,
+        by: E,
+        sort_options: SortMultipleOptions,
+    ) -> Self {
+        let mut args = vec![k.into()];
+        args.extend(by.as_ref().iter().map(|e| -> Expr { e.clone().into() }));
+        self.apply_many_private(FunctionExpr::TopKBy { sort_options }, &args, false, false)
+    }
 
     /// Returns the `k` smallest elements.
     ///
@@ -489,14 +487,23 @@ impl Expr {
     ///
     /// For single column, use [`Expr::bottom_k`].
     // #[cfg(feature = "top_k")]
-    // pub fn bottom_k_by<K: Into<Expr>, E: AsRef<[IE]>, IE: Into<Expr> + Clone, G: AsRef<[bool]>>(
-    //     self,
-    //     k: K,
-    //     by: E,
-    //     descending: G,
-    // ) -> Self {
-    //     self.sort_by(by, descending).slice(lit(0), k)
-    // }
+    pub fn bottom_k_by<K: Into<Expr>, E: AsRef<[IE]>, IE: Into<Expr> + Clone>(
+        self,
+        k: K,
+        by: E,
+        sort_options: SortMultipleOptions,
+    ) -> Self {
+        let mut args = vec![k.into()];
+        args.extend(by.as_ref().iter().map(|e| -> Expr { e.clone().into() }));
+        self.apply_many_private(
+            FunctionExpr::TopKBy {
+                sort_options: sort_options.with_order_reversed(),
+            },
+            &args,
+            false,
+            false,
+        )
+    }
 
     /// Reverse column
     pub fn reverse(self) -> Self {

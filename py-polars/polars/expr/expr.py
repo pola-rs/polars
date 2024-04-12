@@ -2038,6 +2038,7 @@ class Expr:
         descending: bool | Sequence[bool] = False,
         nulls_last: bool = False,
         maintain_order: bool = False,
+        multithreaded: bool = True,
     ) -> Self:
         r"""
         Return the `k` largest elements.
@@ -2176,17 +2177,18 @@ class Expr:
             elif len(by) != len(descending):
                 msg = f"the length of `descending` ({len(descending)}) does not match the length of `by` ({len(by)})"
                 raise ValueError(msg)
-            return self._from_pyexpr(self._pyexpr.top_k_by(k, by, descending))
-        else:
-            if descending is False:
-                return self._from_pyexpr(self._pyexpr.top_k(k, descending, nulls_last))
-            elif descending is True:
-                return self._from_pyexpr(
-                    self._pyexpr.bottom_k(k, descending, nulls_last)
+            return self._from_pyexpr(
+                self._pyexpr.top_k_by(
+                    k, by, descending, nulls_last, maintain_order, multithreaded
                 )
-            else:
+            )
+        else:
+            if not isinstance(descending, bool):
                 msg = "`descending` should be a boolean if no `by` is provided"
                 raise ValueError(msg)
+            return self._from_pyexpr(
+                self._pyexpr.top_k(k, descending, nulls_last, multithreaded)
+            )
 
     def bottom_k(
         self,
@@ -2194,6 +2196,9 @@ class Expr:
         *,
         by: IntoExpr | Iterable[IntoExpr] | None = None,
         descending: bool | Sequence[bool] = False,
+        nulls_last: bool = False,
+        maintain_order: bool = False,
+        multithreaded: bool = True,
     ) -> Self:
         r"""
         Return the `k` smallest elements.
@@ -2330,15 +2335,18 @@ class Expr:
             elif len(by) != len(descending):
                 msg = f"the length of `descending` ({len(descending)}) does not match the length of `by` ({len(by)})"
                 raise ValueError(msg)
-            return self._from_pyexpr(self._pyexpr.bottom_k_by(k, by, descending))
+            return self._from_pyexpr(
+                self._pyexpr.bottom_k_by(
+                    k, by, descending, nulls_last, maintain_order, multithreaded
+                )
+            )
         else:
-            if descending is False:
-                return self._from_pyexpr(self._pyexpr.bottom_k(k))
-            elif descending is True:
-                return self._from_pyexpr(self._pyexpr.top_k(k))
-            else:
+            if not isinstance(descending, bool):
                 msg = "`descending` should be a boolean if no `by` is provided"
                 raise ValueError(msg)
+            return self._from_pyexpr(
+                self._pyexpr.bottom_k(k, descending, nulls_last, multithreaded)
+            )
 
     def arg_sort(self, *, descending: bool = False, nulls_last: bool = False) -> Self:
         """

@@ -290,45 +290,84 @@ impl PyExpr {
     }
 
     #[cfg(feature = "top_k")]
-    fn top_k(&self, k: Self, descending: bool, nulls_last: bool) -> Self {
+    fn top_k(&self, k: Self, descending: bool, nulls_last: bool, multithreaded: bool) -> Self {
         self.inner
             .clone()
             .top_k(
                 k.inner,
                 SortOptions::default()
                     .with_order_descending(descending)
-                    .with_nulls_last(nulls_last),
+                    .with_nulls_last(nulls_last)
+                    .with_maintain_order(multithreaded),
             )
             .into()
     }
 
-    // #[cfg(feature = "top_k")]
-    // fn top_k_by(&self, k: Self, by: Vec<Self>, descending: Vec<bool>) -> Self {
-    //     let by = by.into_iter().map(|e| e.inner).collect::<Vec<_>>();
-    //     self.inner.clone().top_k_by(k.inner, by, descending).into()
-    // }
+    #[cfg(feature = "top_k")]
+    fn top_k_by(
+        &self,
+        k: Self,
+        by: Vec<Self>,
+        descending: Vec<bool>,
+        nulls_last: bool,
+        maintain_order: bool,
+        multithreaded: bool,
+    ) -> Self {
+        let by = by.into_iter().map(|e| e.inner).collect::<Vec<_>>();
+        self.inner
+            .clone()
+            .top_k_by(
+                k.inner,
+                by,
+                SortMultipleOptions {
+                    descending,
+                    nulls_last,
+                    multithreaded,
+                    maintain_order,
+                },
+            )
+            .into()
+    }
 
     #[cfg(feature = "top_k")]
-    fn bottom_k(&self, k: Self, descending: bool, nulls_last: bool) -> Self {
+    fn bottom_k(&self, k: Self, descending: bool, nulls_last: bool, multithreaded: bool) -> Self {
         self.inner
             .clone()
             .bottom_k(
                 k.inner,
                 SortOptions::default()
                     .with_order_descending(descending)
-                    .with_nulls_last(nulls_last),
+                    .with_nulls_last(nulls_last)
+                    .with_maintain_order(multithreaded),
             )
             .into()
     }
 
-    // #[cfg(feature = "top_k")]
-    // fn bottom_k_by(&self, k: Self, by: Vec<Self>, descending: Vec<bool>) -> Self {
-    //     let by = by.into_iter().map(|e| e.inner).collect::<Vec<_>>();
-    //     self.inner
-    //         .clone()
-    //         .bottom_k_by(k.inner, by, descending)
-    //         .into()
-    // }
+    #[cfg(feature = "top_k")]
+    fn bottom_k_by(
+        &self,
+        k: Self,
+        by: Vec<Self>,
+        descending: Vec<bool>,
+        nulls_last: bool,
+        maintain_order: bool,
+        multithreaded: bool,
+    ) -> Self {
+        let by = by.into_iter().map(|e| e.inner).collect::<Vec<_>>();
+        self.inner
+            .clone()
+            .bottom_k_by(
+                k.inner,
+                by,
+                SortMultipleOptions {
+                    descending,
+                    nulls_last,
+                    multithreaded,
+                    maintain_order,
+                },
+            )
+            .into()
+    }
 
     #[cfg(feature = "peaks")]
     fn peak_min(&self) -> Self {
