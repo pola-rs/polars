@@ -96,7 +96,9 @@ impl ApplyExpr {
         ca: ListChunked,
     ) -> PolarsResult<AggregationContext<'a>> {
         let all_unit_len = all_unit_length(&ca);
-        if all_unit_len && self.returns_scalar {
+        if all_unit_len
+            && (self.returns_scalar || matches!(ac.state, AggState::AggregatedScalar(_)))
+        {
             ac.with_agg_state(AggState::AggregatedScalar(
                 ca.explode().unwrap().into_series(),
             ));
