@@ -499,8 +499,7 @@ fn any_values_to_list(
                 AnyValue::List(b) => {
                     if !b.is_empty() && matches!(first_value_dtype, DataType::Null) {
                         first_value_dtype = b.dtype().clone();
-                    }
-                    if b.is_empty() || b.null_count() == b.len() {
+                    } else if b.is_empty() || b.null_count() == b.len() {
                         return b.cast(&first_value_dtype).ok();
                     }
                     Some(b.clone())
