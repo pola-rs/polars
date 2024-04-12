@@ -144,11 +144,3 @@ fn increment_weekday(x: usize) -> usize {
         x + 1
     }
 }
-
-fn decrement_weekday(x: usize) -> usize {
-    if x == 0 {
-        6
-    } else {
-        x - 1
-    }
-}
