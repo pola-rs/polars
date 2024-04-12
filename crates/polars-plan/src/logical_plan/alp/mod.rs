@@ -54,7 +54,7 @@ pub enum IR {
         columns: SchemaRef,
         duplicate_check: bool,
     },
-    // Polars' `select` operation. This may access full data.
+    // Polars' `select` operation. This may access full materialized data.
     Select {
         input: Node,
         expr: ProjectionExprs,
