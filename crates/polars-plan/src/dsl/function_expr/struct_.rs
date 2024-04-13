@@ -43,24 +43,25 @@ impl StructFunction {
                     polars_bail!(StructFieldNotFound: "{}", name.as_ref());
                 }
             }),
-            RenameFields(names) => mapper.map_dtype(|dt| match dt {
+            RenameFields(names) => mapper.try_map_dtype(|dt| match dt {
                 DataType::Struct(fields) => {
+                    polars_ensure!(fields.len() == names.len(), ComputeError: "expected {} names, got {}", fields.len(), names.len());
                     let fields = fields
                         .iter()
                         .zip(names.as_ref())
                         .map(|(fld, name)| Field::new(name, fld.data_type().clone()))
                         .collect();
-                    DataType::Struct(fields)
+                    Ok(DataType::Struct(fields))
                 },
                 // The types will be incorrect, but its better than nothing
                 // we can get an incorrect type with python lambdas, because we only know return type when running
                 // the query
-                dt => DataType::Struct(
+                dt => Ok(DataType::Struct(
                     names
                         .iter()
                         .map(|name| Field::new(name, dt.clone()))
                         .collect(),
-                ),
+                )),
             }),
             PrefixFields(prefix) => mapper.try_map_dtype(|dt| match dt {
                 DataType::Struct(fields) => {
@@ -131,8 +132,9 @@ pub(super) fn get_by_name(s: &Series, name: Arc<str>) -> PolarsResult<Series> {
 
 pub(super) fn rename_fields(s: &Series, names: Arc<Vec<String>>) -> PolarsResult<Series> {
     let ca = s.struct_()?;
-    let fields = ca
-        .fields()
+    let fields = ca.fields();
+    polars_ensure!(fields.len() == names.len(), ComputeError: "expected {} names, got {}", fields.len(), names.len());
+    let fields = fields
         .iter()
         .zip(names.as_ref())
         .map(|(s, name)| {
