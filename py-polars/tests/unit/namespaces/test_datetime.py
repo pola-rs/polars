@@ -982,6 +982,9 @@ def test_weekday(time_unit: TimeUnit) -> None:
         ([timedelta(days=1)], timedelta(days=1)),
         ([timedelta(days=1), timedelta(days=2), timedelta(days=3)], timedelta(days=2)),
         ([timedelta(days=1), timedelta(days=2), timedelta(days=15)], timedelta(days=2)),
+        ([time(hour=1)], time(hour=1)),
+        ([time(hour=1), time(hour=2), time(hour=3)], time(hour=2)),
+        ([time(hour=1), time(hour=2), time(hour=15)], time(hour=2)),
     ],
     ids=[
         "empty",
@@ -995,6 +998,9 @@ def test_weekday(time_unit: TimeUnit) -> None:
         "single_dur",
         "spread_even_dur",
         "spread_skewed_dur",
+        "single_time",
+        "spread_even_time",
+        "spread_skewed_time",
     ],
 )
 def test_median(
@@ -1003,7 +1009,7 @@ def test_median(
     s = pl.Series(values)
     assert s.dt.median() == expected_median
 
-    if s.dtype == pl.Datetime:
+    if s.dtype in (pl.Datetime, pl.Duration, pl.Time):
         assert s.median() == expected_median
 
 
@@ -1027,6 +1033,9 @@ def test_median(
         ([timedelta(days=1)], timedelta(days=1)),
         ([timedelta(days=1), timedelta(days=2), timedelta(days=3)], timedelta(days=2)),
         ([timedelta(days=1), timedelta(days=2), timedelta(days=15)], timedelta(days=6)),
+        ([time(hour=1)], time(hour=1)),
+        ([time(hour=1), time(hour=2), time(hour=3)], time(hour=2)),
+        ([time(hour=1), time(hour=2), time(hour=15)], time(hour=6)),
     ],
     ids=[
         "empty",
@@ -1040,6 +1049,9 @@ def test_median(
         "single_duration",
         "spread_even_duration",
         "spread_skewed_duration",
+        "single_time",
+        "spread_even_time",
+        "spread_skewed_time",
     ],
 )
 def test_mean(
@@ -1048,62 +1060,91 @@ def test_mean(
     s = pl.Series(values)
     assert s.dt.mean() == expected_mean
 
-    if s.dtype == pl.Datetime:
+    if s.dtype in (pl.Datetime, pl.Duration, pl.Time):
         assert s.mean() == expected_mean
 
 
 @pytest.mark.parametrize(
     ("values", "expected_mean"),
     [
+        ([None], None),
         (
             [datetime(2022, 1, 1), datetime(2022, 1, 2), datetime(2024, 5, 15)],
             datetime(2022, 10, 16, 16, 0, 0),
         ),
     ],
-    ids=["spread_skewed_dt"],
+    ids=["None_dt", "spread_skewed_dt"],
 )
-def test_datetime_mean_with_tu(values: list[datetime], expected_mean: datetime) -> None:
-    assert pl.Series(values, dtype=pl.Duration("ms")).mean() == expected_mean
-    assert pl.Series(values, dtype=pl.Duration("ms")).dt.mean() == expected_mean
-    assert pl.Series(values, dtype=pl.Duration("us")).mean() == expected_mean
-    assert pl.Series(values, dtype=pl.Duration("us")).dt.mean() == expected_mean
-    assert pl.Series(values, dtype=pl.Duration("ns")).mean() == expected_mean
-    assert pl.Series(values, dtype=pl.Duration("ns")).dt.mean() == expected_mean
-
-
-@pytest.mark.parametrize(
-    ("values", "expected_mean"),
-    [([timedelta(days=1), timedelta(days=2), timedelta(days=15)], timedelta(days=6))],
-    ids=["spread_skewed_dur"],
-)
-def test_duration_mean_with_tu(
-    values: list[timedelta], expected_mean: timedelta
+@pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
+def test_datetime_mean_with_tu(
+    values: list[datetime], expected_mean: datetime, time_unit: TimeUnit
 ) -> None:
-    assert pl.Series(values, dtype=pl.Duration("ms")).mean() == expected_mean
-    assert pl.Series(values, dtype=pl.Duration("ms")).dt.mean() == expected_mean
-    assert pl.Series(values, dtype=pl.Duration("us")).mean() == expected_mean
-    assert pl.Series(values, dtype=pl.Duration("us")).dt.mean() == expected_mean
-    assert pl.Series(values, dtype=pl.Duration("ns")).mean() == expected_mean
-    assert pl.Series(values, dtype=pl.Duration("ns")).dt.mean() == expected_mean
+    assert pl.Series(values, dtype=pl.Duration(time_unit)).mean() == expected_mean
+    assert pl.Series(values, dtype=pl.Duration(time_unit)).dt.mean() == expected_mean
 
 
 @pytest.mark.parametrize(
     ("values", "expected_median"),
-    [([timedelta(days=1), timedelta(days=2), timedelta(days=15)], timedelta(days=2))],
-    ids=["spread_skewed_dur"],
+    [
+        ([None], None),
+        (
+            [datetime(2022, 1, 1), datetime(2022, 1, 2), datetime(2024, 5, 15)],
+            datetime(2022, 1, 2),
+        ),
+    ],
+    ids=["None_dt", "spread_skewed_dt"],
 )
-def test_duration_median_with_tu(
-    values: list[timedelta], expected_median: timedelta
+@pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
+def test_datetime_median_with_tu(
+    values: list[datetime], expected_median: datetime, time_unit: TimeUnit
 ) -> None:
-    assert pl.Series(values, dtype=pl.Duration("ms")).median() == expected_median
-    assert pl.Series(values, dtype=pl.Duration("ms")).dt.median() == expected_median
-    assert pl.Series(values, dtype=pl.Duration("us")).median() == expected_median
-    assert pl.Series(values, dtype=pl.Duration("us")).dt.median() == expected_median
-    assert pl.Series(values, dtype=pl.Duration("ns")).median() == expected_median
-    assert pl.Series(values, dtype=pl.Duration("ns")).dt.median() == expected_median
+    assert pl.Series(values, dtype=pl.Duration(time_unit)).median() == expected_median
+    assert (
+        pl.Series(values, dtype=pl.Duration(time_unit)).dt.median() == expected_median
+    )
 
 
-def test_agg_expr() -> None:
+@pytest.mark.parametrize(
+    ("values", "expected_mean"),
+    [
+        ([None], None),
+        (
+            [timedelta(days=1), timedelta(days=2), timedelta(days=15)],
+            timedelta(days=6),
+        ),
+    ],
+    ids=["None_dur", "spread_skewed_dur"],
+)
+@pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
+def test_duration_mean_with_tu(
+    values: list[timedelta], expected_mean: timedelta, time_unit: TimeUnit
+) -> None:
+    assert pl.Series(values, dtype=pl.Duration(time_unit)).mean() == expected_mean
+    assert pl.Series(values, dtype=pl.Duration(time_unit)).dt.mean() == expected_mean
+
+
+@pytest.mark.parametrize(
+    ("values", "expected_median"),
+    [
+        ([None], None),
+        (
+            [timedelta(days=1), timedelta(days=2), timedelta(days=15)],
+            timedelta(days=2),
+        ),
+    ],
+    ids=["None_dur", "spread_skewed_dur"],
+)
+@pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
+def test_duration_median_with_tu(
+    values: list[timedelta], expected_median: timedelta, time_unit: TimeUnit
+) -> None:
+    assert pl.Series(values, dtype=pl.Duration(time_unit)).median() == expected_median
+    assert (
+        pl.Series(values, dtype=pl.Duration(time_unit)).dt.median() == expected_median
+    )
+
+
+def test_agg_mean_expr() -> None:
     df = pl.DataFrame(
         {
             "datetime_ms": pl.Series(
@@ -1130,6 +1171,10 @@ def test_agg_expr() -> None:
                 [timedelta(days=1), timedelta(days=2), timedelta(days=4)],
                 dtype=pl.Duration("ns"),
             ),
+            "time": pl.Series(
+                [time(hour=1), time(hour=2), time(hour=4)],
+                dtype=pl.Time,
+            ),
         }
     )
 
@@ -1153,7 +1198,57 @@ def test_agg_expr() -> None:
             "duration_ns": pl.Series(
                 [timedelta(days=2, hours=8)], dtype=pl.Duration("ns")
             ),
+            "time": pl.Series([time(hour=2, minute=20)], dtype=pl.Time),
         }
     )
 
     assert_frame_equal(df.select(pl.all().mean()), expected)
+
+
+def test_agg_median_expr() -> None:
+    df = pl.DataFrame(
+        {
+            "datetime_ms": pl.Series(
+                [datetime(2023, 1, 1), datetime(2023, 1, 2), datetime(2023, 1, 4)],
+                dtype=pl.Datetime("ms"),
+            ),
+            "datetime_us": pl.Series(
+                [datetime(2023, 1, 1), datetime(2023, 1, 2), datetime(2023, 1, 4)],
+                dtype=pl.Datetime("us"),
+            ),
+            "datetime_ns": pl.Series(
+                [datetime(2023, 1, 1), datetime(2023, 1, 2), datetime(2023, 1, 4)],
+                dtype=pl.Datetime("ns"),
+            ),
+            "duration_ms": pl.Series(
+                [timedelta(days=1), timedelta(days=2), timedelta(days=4)],
+                dtype=pl.Duration("ms"),
+            ),
+            "duration_us": pl.Series(
+                [timedelta(days=1), timedelta(days=2), timedelta(days=4)],
+                dtype=pl.Duration("us"),
+            ),
+            "duration_ns": pl.Series(
+                [timedelta(days=1), timedelta(days=2), timedelta(days=4)],
+                dtype=pl.Duration("ns"),
+            ),
+            "time": pl.Series(
+                [time(hour=1), time(hour=2), time(hour=4)],
+                dtype=pl.Time,
+            ),
+        }
+    )
+
+    expected = pl.DataFrame(
+        {
+            "datetime_ms": pl.Series([datetime(2023, 1, 2)], dtype=pl.Datetime("ms")),
+            "datetime_us": pl.Series([datetime(2023, 1, 2)], dtype=pl.Datetime("us")),
+            "datetime_ns": pl.Series([datetime(2023, 1, 2)], dtype=pl.Datetime("ns")),
+            "duration_ms": pl.Series([timedelta(days=2)], dtype=pl.Duration("ms")),
+            "duration_us": pl.Series([timedelta(days=2)], dtype=pl.Duration("us")),
+            "duration_ns": pl.Series([timedelta(days=2)], dtype=pl.Duration("ns")),
+            "time": pl.Series([time(hour=2)], dtype=pl.Time),
+        }
+    )
+
+    assert_frame_equal(df.select(pl.all().median()), expected)

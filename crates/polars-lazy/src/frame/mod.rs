@@ -1402,7 +1402,10 @@ impl LazyFrame {
                 dt.is_numeric()
                     || matches!(
                         dt,
-                        DataType::Boolean | DataType::Duration(_) | DataType::Datetime(_, _)
+                        DataType::Boolean
+                            | DataType::Duration(_)
+                            | DataType::Datetime(_, _)
+                            | DataType::Time
                     )
             },
             |name| col(name).mean(),
@@ -1420,7 +1423,10 @@ impl LazyFrame {
                 dt.is_numeric()
                     || matches!(
                         dt,
-                        DataType::Boolean | DataType::Duration(_) | DataType::Datetime(_, _)
+                        DataType::Boolean
+                            | DataType::Duration(_)
+                            | DataType::Datetime(_, _)
+                            | DataType::Time
                     )
             },
             |name| col(name).median(),

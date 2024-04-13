@@ -327,6 +327,9 @@ macro_rules! impl_dyn_series {
             fn min_as_series(&self) -> PolarsResult<Series> {
                 Ok(self.0.min_as_series().$into_logical())
             }
+            fn median_as_series(&self) -> PolarsResult<Series> {
+                Series::new(self.name(), &[self.median().map(|v| v as i64)]).cast(self.dtype())
+            }
 
             fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
                 Arc::new(SeriesWrap(Clone::clone(&self.0)))

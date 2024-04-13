@@ -789,6 +789,10 @@ impl Series {
                     .cast(dt)
                     .unwrap()
             },
+            #[cfg(feature = "dtype-time")]
+            dt @ DataType::Time => Series::new(self.name(), &[self.mean().map(|v| v as i64)])
+                .cast(dt)
+                .unwrap(),
             _ => return Series::full_null(self.name(), 1, self.dtype()),
         }
     }
