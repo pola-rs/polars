@@ -823,7 +823,7 @@ def test_upsample_index(
         }
     ).with_columns(pl.col("index").cast(dtype))
     result = (
-        df.upsample(time_column="index", by="groups", every=every, offset=offset)
+        df.upsample(time_column="index", group_by="groups", every=every, offset=offset)
         .fill_null(strategy=fill)
         .sort(["groups", "index"])
     )
