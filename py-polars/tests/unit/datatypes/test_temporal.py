@@ -30,6 +30,7 @@ if TYPE_CHECKING:
     from polars.type_aliases import (
         Ambiguous,
         FillNullStrategy,
+        PolarsIntegerType,
         PolarsTemporalType,
         TimeUnit,
     )
@@ -772,39 +773,29 @@ def test_upsample_time_zones(
 
 
 @pytest.mark.parametrize(
-    ("every", "offset", "fill", "expected_index", "expected_groups"),
+    ("every", "fill", "expected_index", "expected_groups"),
     [
         (
             "1i",
-            "0i",
             "forward",
             [1, 2, 3, 4] + [5, 6, 7],
             ["a"] * 4 + ["b"] * 3,
         ),
         (
-            "1i",
-            "0h",
-            "forward",
-            [1, 2, 3, 4] + [5, 6, 7],
-            ["a"] * 4 + ["b"] * 3,
-        ),
-        (
-            "1i",
             "1i",
             "backward",
-            [2, 3, 4] + [6, 7],
-            ["a"] * 3 + ["b"] * 2,
+            [1, 2, 3, 4] + [5, 6, 7],
+            ["a"] * 4 + ["b"] * 3,
         ),
     ],
 )
 @pytest.mark.parametrize("dtype", [pl.Int32, pl.Int64, pl.UInt32, pl.UInt64])
 def test_upsample_index(
     every: str,
-    offset: str,
     fill: FillNullStrategy | None,
     expected_index: list[int],
     expected_groups: list[str],
-    dtype: pl.datatypes.DataTypeClass,
+    dtype: PolarsIntegerType,
 ) -> None:
     df = (
         pl.DataFrame(
@@ -823,7 +814,7 @@ def test_upsample_index(
         }
     ).with_columns(pl.col("index").cast(dtype))
     result = (
-        df.upsample(time_column="index", group_by="groups", every=every, offset=offset)
+        df.upsample(time_column="index", group_by="groups", every=every)
         .fill_null(strategy=fill)
         .sort(["groups", "index"])
     )
@@ -831,27 +822,23 @@ def test_upsample_index(
 
 
 @pytest.mark.parametrize(
-    ("every", "offset", "fill"),
+    ("every", "offset"),
     [
         (
             "1i",
             "1h",
-            "forward",
         ),
         (
             "1h",
             "1i",
-            "forward",
         ),
         (
             "1h",
             "0i",
-            "forward",
         ),
         (
             "0i",
             "1h",
-            "forward",
         ),
     ],
 )
@@ -859,7 +846,6 @@ def test_upsample_index_invalid(
     df: pl.DataFrame,
     every: str,
     offset: str,
-    fill: FillNullStrategy | None,
 ) -> None:
     df = pl.DataFrame(
         {
@@ -867,7 +853,10 @@ def test_upsample_index_invalid(
             "groups": ["a"] * 3 + ["b"] * 2,
         }
     ).set_sorted("index")
-    with pytest.raises(ComputeError, match=r"cannot combine time .* integer"):
+    with (
+        pytest.raises(ComputeError, match=r"cannot combine time .* integer"),
+        pytest.deprecated_call(match="`offset` is deprecated"),
+    ):
         df.upsample(time_column="index", every=every, offset=offset)
 
 
