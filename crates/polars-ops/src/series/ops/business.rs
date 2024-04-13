@@ -231,16 +231,16 @@ pub fn add_business_days(
             if let Some(start_date) = start_dates.get(0) {
                 let (start_date, day_of_week) =
                     roll_start_date(start_date, roll, &week_mask, &holidays)?;
-                n.try_apply_nonnull_values_generic(|n| {
-                    Ok::<i32, PolarsError>(add_business_days_impl(
+                n.apply_values(|n| {
+                    add_business_days_impl(
                         start_date,
                         day_of_week,
                         n,
                         &week_mask,
                         n_business_days_in_week_mask,
                         &holidays,
-                    ))
-                })?
+                    )
+                })
             } else {
                 Int32Chunked::full_null(start_dates.name(), n.len())
             }
