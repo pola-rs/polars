@@ -349,7 +349,7 @@ class Expr:
             This function uses :mod:`pickle` under some circumstances, and as
             such inherits the security implications. Deserializing can execute
             arbitrary code so it should only be attempted on trusted data.
-            Currently, pickle will be used when serializing UDF.
+            pickle is only used when the logical plan contains python UDFs.
 
         See Also
         --------
