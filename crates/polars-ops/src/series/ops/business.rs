@@ -274,11 +274,9 @@ fn add_business_days_impl(
         let holidays_begin = find_first_ge_index(holidays, date);
         date += (n / n_business_days_in_week_mask) * 7;
         n %= n_business_days_in_week_mask;
-
         let holidays_temp = find_first_gt_index(&holidays[holidays_begin..], date) + holidays_begin;
         n += (holidays_temp - holidays_begin) as i32;
         let holidays_begin = holidays_temp;
-
         while n > 0 {
             date += 1;
             day_of_week = increment_day_of_week(day_of_week);
@@ -296,10 +294,8 @@ fn add_business_days_impl(
         date += (n / n_business_days_in_week_mask) * 7;
         n %= n_business_days_in_week_mask;
         let holidays_temp = find_first_ge_index(&holidays[..holidays_end], date);
-
         n -= (holidays_end - holidays_temp) as i32;
         let holidays_end = holidays_temp;
-
         while n < 0 {
             date -= 1;
             day_of_week = decrement_day_of_week(day_of_week);
