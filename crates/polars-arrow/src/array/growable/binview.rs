@@ -1,7 +1,7 @@
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
-use polars_utils::aliases::PlIndexSet;
+use polars_utils::aliases::{InitHashMaps, PlHashSet, PlIndexSet};
 use polars_utils::slice::GetSaferUnchecked;
 use polars_utils::unwrap::UnwrapUncheckedRelease;
 
@@ -62,16 +62,18 @@ impl<'a, T: ViewType + ?Sized> GrowableBinaryViewArray<'a, T> {
             use_validity = true;
         };
 
-        let buffers = arrays
-            .iter()
-            .flat_map(|array| {
-                array
-                    .data_buffers()
-                    .as_ref()
-                    .iter()
-                    .map(|buf| BufferKey { inner: buf })
-            })
-            .collect::<PlIndexSet<_>>();
+        // We deduplicate the individual buffers in `buffers`.
+        // and the `data_buffers` in processed. As a `data_buffer` can hold M buffers, we  prevent
+        // having N * M complexity. #15615
+        let mut processed_buffer_groups = PlHashSet::new();
+        let mut buffers = PlIndexSet::new();
+
+        for array in arrays.iter() {
+            let data_buffers = array.data_buffers();
+            if processed_buffer_groups.insert(data_buffers.as_ptr() as usize) {
+                buffers.extend(data_buffers.iter().map(|buf| BufferKey { inner: buf }))
+            }
+        }
 
         Self {
             arrays,
