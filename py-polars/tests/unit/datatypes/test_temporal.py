@@ -27,7 +27,12 @@ from polars.testing import (
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
 
-    from polars.type_aliases import Ambiguous, PolarsTemporalType, TimeUnit
+    from polars.type_aliases import (
+        Ambiguous,
+        FillNullStrategy,
+        PolarsTemporalType,
+        TimeUnit,
+    )
 else:
     from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
@@ -764,6 +769,106 @@ def test_upsample_time_zones(
     expected = expected.with_columns(pl.col("time").dt.replace_time_zone(time_zone))
     result = df.upsample(time_column="time", every="60m").fill_null(strategy="forward")
     assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    ("every", "offset", "fill", "expected_index", "expected_groups"),
+    [
+        (
+            "1i",
+            "0i",
+            "forward",
+            [1, 2, 3, 4] + [5, 6, 7],
+            ["a"] * 4 + ["b"] * 3,
+        ),
+        (
+            "1i",
+            "0h",
+            "forward",
+            [1, 2, 3, 4] + [5, 6, 7],
+            ["a"] * 4 + ["b"] * 3,
+        ),
+        (
+            "1i",
+            "1i",
+            "backward",
+            [2, 3, 4] + [6, 7],
+            ["a"] * 3 + ["b"] * 2,
+        ),
+    ],
+)
+@pytest.mark.parametrize("dtype", [pl.Int32, pl.Int64, pl.UInt32, pl.UInt64])
+def test_upsample_index(
+    every: str,
+    offset: str,
+    fill: FillNullStrategy | None,
+    expected_index: list[int],
+    expected_groups: list[str],
+    dtype: pl.datatypes.DataTypeClass,
+) -> None:
+    df = (
+        pl.DataFrame(
+            {
+                "index": [1, 2, 4] + [5, 7],
+                "groups": ["a"] * 3 + ["b"] * 2,
+            }
+        )
+        .with_columns(pl.col("index").cast(dtype))
+        .set_sorted("index")
+    )
+    expected = pl.DataFrame(
+        {
+            "index": expected_index,
+            "groups": expected_groups,
+        }
+    ).with_columns(pl.col("index").cast(dtype))
+    result = (
+        df.upsample(time_column="index", by="groups", every=every, offset=offset)
+        .fill_null(strategy=fill)
+        .sort(["groups", "index"])
+    )
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    ("every", "offset", "fill"),
+    [
+        (
+            "1i",
+            "1h",
+            "forward",
+        ),
+        (
+            "1h",
+            "1i",
+            "forward",
+        ),
+        (
+            "1h",
+            "0i",
+            "forward",
+        ),
+        (
+            "0i",
+            "1h",
+            "forward",
+        ),
+    ],
+)
+def test_upsample_index_invalid(
+    df: pl.DataFrame,
+    every: str,
+    offset: str,
+    fill: FillNullStrategy | None,
+) -> None:
+    df = pl.DataFrame(
+        {
+            "index": [1, 2, 4] + [5, 7],
+            "groups": ["a"] * 3 + ["b"] * 2,
+        }
+    ).set_sorted("index")
+    with pytest.raises(ComputeError, match=r"cannot combine time .* integer"):
+        df.upsample(time_column="index", every=every, offset=offset)
 
 
 def test_microseconds_accuracy() -> None:
