@@ -55,6 +55,36 @@ def read_json(
     See Also
     --------
     read_ndjson
+
+    Examples
+    --------
+    >>> from io import StringIO
+    >>> json_str = '[{"foo":1,"bar":6},{"foo":2,"bar":7},{"foo":3,"bar":8}]'
+    >>> pl.read_json(StringIO(json_str))
+    shape: (3, 2)
+    ┌─────┬─────┐
+    │ foo ┆ bar │
+    │ --- ┆ --- │
+    │ i64 ┆ i64 │
+    ╞═════╪═════╡
+    │ 1   ┆ 6   │
+    │ 2   ┆ 7   │
+    │ 3   ┆ 8   │
+    └─────┴─────┘
+
+    With the schema defined.
+
+    >>> pl.read_json(StringIO(json_str), schema={"foo": pl.Int64, "bar": pl.Float64})
+    shape: (3, 2)
+    ┌─────┬─────┐
+    │ foo ┆ bar │
+    │ --- ┆ --- │
+    │ i64 ┆ f64 │
+    ╞═════╪═════╡
+    │ 1   ┆ 6.0 │
+    │ 2   ┆ 7.0 │
+    │ 3   ┆ 8.0 │
+    └─────┴─────┘
     """
     if isinstance(source, StringIO):
         source = BytesIO(source.getvalue().encode())
