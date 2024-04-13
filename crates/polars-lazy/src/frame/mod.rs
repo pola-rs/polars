@@ -36,7 +36,6 @@ pub use polars_plan::frame::{AllowedOptimizations, OptState};
 use polars_plan::global::FETCH_ROWS;
 use smartstring::alias::String as SmartString;
 
-use crate::fallible;
 use crate::physical_plan::executors::Executor;
 use crate::physical_plan::planner::{create_physical_expr, create_physical_plan};
 use crate::physical_plan::state::ExecutionState;
@@ -1688,15 +1687,10 @@ impl LazyFrame {
         };
 
         if add_row_index_in_map {
-            let schema = fallible!(self.schema(), &self);
-            let schema = schema
-                .new_inserting_at_index(0, name.into(), IDX_DTYPE)
-                .unwrap();
-
             self.map_private(FunctionNode::RowIndex {
                 name: Arc::from(name),
                 offset,
-                schema: Arc::new(schema),
+                schema: Default::default(),
             })
         } else {
             self

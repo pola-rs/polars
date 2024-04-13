@@ -1189,8 +1189,8 @@ def test_lazy_cache_hit(monkeypatch: Any, capfd: Any) -> None:
     expected = pl.LazyFrame({"a": [0, 0, 0], "c": ["x", "y", "z"]})
     assert_frame_equal(result, expected)
 
-    (out, _) = capfd.readouterr()
-    assert "CACHE HIT" in out
+    (_, err) = capfd.readouterr()
+    assert "CACHE HIT" in err
 
 
 def test_lazy_cache_parallel() -> None:

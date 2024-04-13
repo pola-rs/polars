@@ -867,16 +867,12 @@ impl LogicalPlanBuilder {
     }
 
     pub fn row_index(self, name: &str, offset: Option<IdxSize>) -> Self {
-        let mut schema = try_delayed!(self.0.schema(), &self.0, into).into_owned();
-        let schema_mut = Arc::make_mut(&mut schema);
-        row_index_schema(schema_mut, name);
-
         LogicalPlan::MapFunction {
             input: Arc::new(self.0),
             function: FunctionNode::RowIndex {
                 name: ColumnName::from(name),
                 offset,
-                schema,
+                schema: Default::default(),
             },
         }
         .into()

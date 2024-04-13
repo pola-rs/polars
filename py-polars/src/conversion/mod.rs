@@ -285,9 +285,9 @@ impl FromPyObject<'_> for Wrap<Field> {
 impl FromPyObject<'_> for Wrap<DataType> {
     fn extract(ob: &PyAny) -> PyResult<Self> {
         let py = ob.py();
-        let type_name = ob.get_type().name()?;
+        let type_name = ob.get_type().qualname()?;
 
-        let dtype = match type_name {
+        let dtype = match &*type_name {
             "DataTypeClass" => {
                 // just the class, not an object
                 let name = ob.getattr(intern!(py, "__name__"))?.str()?.to_str()?;
@@ -472,7 +472,7 @@ impl PartialEq for ObjectValue {
                 .as_ref(py)
                 .rich_compare(other.inner.as_ref(py), CompareOp::Eq)
             {
-                Ok(result) => result.is_true().unwrap(),
+                Ok(result) => result.is_truthy().unwrap(),
                 Err(_) => false,
             }
         })
@@ -547,7 +547,7 @@ impl Default for ObjectValue {
 
 impl<'a, T: NativeType + FromPyObject<'a>> FromPyObject<'a> for Wrap<Vec<T>> {
     fn extract(obj: &'a PyAny) -> PyResult<Self> {
-        let seq = <PySequence as PyTryFrom>::try_from(obj)?;
+        let seq = obj.downcast::<PySequence>()?;
         let mut v = Vec::with_capacity(seq.len().unwrap_or(0));
         for item in seq.iter()? {
             v.push(item?.extract::<T>()?);

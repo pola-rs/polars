@@ -42,7 +42,7 @@ impl Executor for SortExec {
         #[cfg(debug_assertions)]
         {
             if state.verbose() {
-                println!("run SortExec")
+                eprintln!("run SortExec")
             }
         }
         let df = self.input.execute(state)?;

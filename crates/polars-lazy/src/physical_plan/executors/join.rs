@@ -38,7 +38,7 @@ impl Executor for JoinExec {
         #[cfg(debug_assertions)]
         {
             if state.verbose() {
-                println!("run JoinExec")
+                eprintln!("run JoinExec")
             }
         }
         if state.verbose() {

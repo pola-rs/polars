@@ -1,3 +1,5 @@
+use polars_core::utils::accumulate_dataframes_vertical_unchecked;
+
 use super::*;
 
 /// Take an input Executor (creates the input DataFrame)
@@ -11,6 +13,8 @@ pub struct ProjectionExec {
     #[cfg(test)]
     pub(crate) schema: SchemaRef,
     pub(crate) options: ProjectionOptions,
+    // Can run all operations elementwise
+    pub(crate) streamable: bool,
 }
 
 impl ProjectionExec {
@@ -19,17 +23,47 @@ impl ProjectionExec {
         state: &ExecutionState,
         mut df: DataFrame,
     ) -> PolarsResult<DataFrame> {
-        #[allow(clippy::let_and_return)]
-        let selected_cols = evaluate_physical_expressions(
-            &mut df,
-            &self.cse_exprs,
-            &self.expr,
-            state,
-            self.has_windows,
-            self.options.run_parallel,
-        )?;
-        #[allow(unused_mut)]
-        let mut df = check_expand_literals(selected_cols, df.height() == 0)?;
+        // Vertical and horizontal parallelism.
+        let df =
+            if self.streamable && df.n_chunks() > 1 && df.height() > 0 && self.options.run_parallel
+            {
+                let chunks = df.split_chunks().collect::<Vec<_>>();
+                let iter = chunks.into_par_iter().map(|mut df| {
+                    let selected_cols = evaluate_physical_expressions(
+                        &mut df,
+                        &self.cse_exprs,
+                        &self.expr,
+                        state,
+                        self.has_windows,
+                        self.options.run_parallel,
+                    )?;
+                    check_expand_literals(
+                        selected_cols,
+                        df.height() == 0,
+                        self.options.duplicate_check,
+                    )
+                });
+
+                let df = POOL.install(|| iter.collect::<PolarsResult<Vec<_>>>())?;
+                accumulate_dataframes_vertical_unchecked(df)
+            }
+            // Only horizontal parallelism.
+            else {
+                #[allow(clippy::let_and_return)]
+                let selected_cols = evaluate_physical_expressions(
+                    &mut df,
+                    &self.cse_exprs,
+                    &self.expr,
+                    state,
+                    self.has_windows,
+                    self.options.run_parallel,
+                )?;
+                check_expand_literals(
+                    selected_cols,
+                    df.height() == 0,
+                    self.options.duplicate_check,
+                )?
+            };
 
         // this only runs during testing and check if the runtime type matches the predicted schema
         #[cfg(test)]
@@ -52,9 +86,9 @@ impl Executor for ProjectionExec {
         {
             if state.verbose() {
                 if self.cse_exprs.is_empty() {
-                    println!("run ProjectionExec");
+                    eprintln!("run ProjectionExec");
                 } else {
-                    println!("run ProjectionExec with {} CSE", self.cse_exprs.len())
+                    eprintln!("run ProjectionExec with {} CSE", self.cse_exprs.len())
                 };
             }
         }

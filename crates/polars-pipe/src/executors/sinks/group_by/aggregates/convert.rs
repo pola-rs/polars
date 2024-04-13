@@ -250,7 +250,9 @@ where
                     );
                 }
                 let agg_fn = match logical_dtype.to_physical() {
-                    dt if dt.is_integer() => AggregateFunction::MeanF64(MeanAgg::<f64>::new()),
+                    dt if dt.is_integer() | dt.is_bool() => {
+                        AggregateFunction::MeanF64(MeanAgg::<f64>::new())
+                    },
                     DataType::Float32 => AggregateFunction::MeanF32(MeanAgg::<f32>::new()),
                     DataType::Float64 => AggregateFunction::MeanF64(MeanAgg::<f64>::new()),
                     dt => AggregateFunction::Null(NullAgg::new(dt)),

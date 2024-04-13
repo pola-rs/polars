@@ -100,7 +100,7 @@ impl Executor for GroupByRollingExec {
         #[cfg(debug_assertions)]
         {
             if state.verbose() {
-                println!("run GroupbyRollingExec")
+                eprintln!("run GroupbyRollingExec")
             }
         }
         let df = self.input.execute(state)?;
