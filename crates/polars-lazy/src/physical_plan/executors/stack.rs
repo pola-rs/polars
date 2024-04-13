@@ -69,9 +69,9 @@ impl Executor for StackExec {
         {
             if state.verbose() {
                 if self.cse_exprs.is_empty() {
-                    println!("run StackExec");
+                    eprintln!("run StackExec");
                 } else {
-                    println!("run StackExec with {} CSE", self.cse_exprs.len());
+                    eprintln!("run StackExec with {} CSE", self.cse_exprs.len());
                 };
             }
         }

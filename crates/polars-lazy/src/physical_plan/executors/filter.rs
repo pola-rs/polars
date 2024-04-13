@@ -68,7 +68,7 @@ impl Executor for FilterExec {
         #[cfg(debug_assertions)]
         {
             if state.verbose() {
-                println!("run FilterExec")
+                eprintln!("run FilterExec")
             }
         }
         let df = self.input.execute(state)?;

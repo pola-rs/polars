@@ -106,6 +106,10 @@ pub(super) fn process_functions(
                     expr_arena,
                     expands_schema,
                 )?;
+
+                // Remove the cached schema
+                function.clear_cached_schema();
+
                 if local_projections.is_empty() {
                     Ok(lp)
                 } else {

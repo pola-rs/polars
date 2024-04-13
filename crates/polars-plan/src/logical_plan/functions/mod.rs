@@ -4,11 +4,13 @@ mod merge_sorted;
 #[cfg(feature = "python")]
 mod python_udf;
 mod rename;
+mod schema;
+
 use std::borrow::Cow;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use polars_core::prelude::*;
 #[cfg(feature = "serde")]
@@ -20,6 +22,8 @@ use crate::dsl::python_udf::PythonFunction;
 #[cfg(feature = "merge_sorted")]
 use crate::logical_plan::functions::merge_sorted::merge_sorted;
 use crate::prelude::*;
+
+type CachedSchema = Arc<Mutex<Option<SchemaRef>>>;
 
 #[derive(Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -91,7 +95,8 @@ pub enum FunctionNode {
     },
     RowIndex {
         name: Arc<str>,
-        schema: SchemaRef,
+        // Might be cached.
+        schema: CachedSchema,
         offset: Option<IdxSize>,
     },
 }
@@ -198,83 +203,6 @@ impl FunctionNode {
             MergeSorted { .. } => true,
             Explode { .. } | Melt { .. } => true,
             _ => false,
-        }
-    }
-
-    pub(crate) fn schema<'a>(
-        &self,
-        input_schema: &'a SchemaRef,
-    ) -> PolarsResult<Cow<'a, SchemaRef>> {
-        use FunctionNode::*;
-        match self {
-            Opaque { schema, .. } => match schema {
-                None => Ok(Cow::Borrowed(input_schema)),
-                Some(schema_fn) => {
-                    let output_schema = schema_fn.get_schema(input_schema)?;
-                    Ok(Cow::Owned(output_schema))
-                },
-            },
-            #[cfg(feature = "python")]
-            OpaquePython { schema, .. } => Ok(schema
-                .as_ref()
-                .map(|schema| Cow::Owned(schema.clone()))
-                .unwrap_or_else(|| Cow::Borrowed(input_schema))),
-            Pipeline { schema, .. } => Ok(Cow::Owned(schema.clone())),
-            DropNulls { .. } => Ok(Cow::Borrowed(input_schema)),
-            Count { alias, .. } => {
-                let mut schema: Schema = Schema::with_capacity(1);
-                let name = SmartString::from(
-                    alias
-                        .as_ref()
-                        .map(|alias| alias.as_ref())
-                        .unwrap_or(crate::constants::LEN),
-                );
-                schema.insert_at_index(0, name, IDX_DTYPE)?;
-                Ok(Cow::Owned(Arc::new(schema)))
-            },
-            Rechunk => Ok(Cow::Borrowed(input_schema)),
-            Unnest { columns: _columns } => {
-                #[cfg(feature = "dtype-struct")]
-                {
-                    let mut new_schema = Schema::with_capacity(input_schema.len() * 2);
-                    for (name, dtype) in input_schema.iter() {
-                        if _columns.iter().any(|item| item.as_ref() == name.as_str()) {
-                            match dtype {
-                                DataType::Struct(flds) => {
-                                    for fld in flds {
-                                        new_schema.with_column(
-                                            fld.name().clone(),
-                                            fld.data_type().clone(),
-                                        );
-                                    }
-                                },
-                                DataType::Unknown => {
-                                    // pass through unknown
-                                },
-                                _ => {
-                                    polars_bail!(
-                                        SchemaMismatch: "expected struct dtype, got: `{}`", dtype
-                                    );
-                                },
-                            }
-                        } else {
-                            new_schema.with_column(name.clone(), dtype.clone());
-                        }
-                    }
-
-                    Ok(Cow::Owned(Arc::new(new_schema)))
-                }
-                #[cfg(not(feature = "dtype-struct"))]
-                {
-                    panic!("activate feature 'dtype-struct'")
-                }
-            },
-            #[cfg(feature = "merge_sorted")]
-            MergeSorted { .. } => Ok(Cow::Borrowed(input_schema)),
-            Rename { existing, new, .. } => rename::rename_schema(input_schema, existing, new),
-            Explode { schema, .. } | RowIndex { schema, .. } | Melt { schema, .. } => {
-                Ok(Cow::Owned(schema.clone()))
-            },
         }
     }
 

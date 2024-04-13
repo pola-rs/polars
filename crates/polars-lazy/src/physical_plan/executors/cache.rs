@@ -27,9 +27,9 @@ impl Executor for CacheExec {
 
         if state.verbose() {
             if cache_hit {
-                println!("CACHE HIT: cache id: {:x}", self.id);
+                eprintln!("CACHE HIT: cache id: {:x}", self.id);
             } else {
-                println!("CACHE SET: cache id: {:x}", self.id);
+                eprintln!("CACHE SET: cache id: {:x}", self.id);
             }
         }
 
