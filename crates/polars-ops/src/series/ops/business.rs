@@ -4,6 +4,7 @@ use polars_core::prelude::arity::{binary_elementwise_values, try_binary_elementw
 use polars_core::prelude::*;
 #[cfg(feature = "dtype-date")]
 use polars_core::utils::arrow::temporal_conversions::SECONDS_IN_DAY;
+use polars_utils::binary_search::{find_first_ge_index, find_first_gt_index};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -101,19 +102,12 @@ fn business_day_count_impl(
         end_date += 1;
     }
 
-    let holidays_begin = match holidays.binary_search(&start_date) {
-        Ok(x) => x,
-        Err(x) => x,
-    } as i32;
-    let holidays_end = match holidays[(holidays_begin as usize)..].binary_search(&end_date) {
-        Ok(x) => x as i32 + holidays_begin,
-        Err(x) => x as i32 + holidays_begin,
-    };
-
+    let holidays_begin = find_first_ge_index(holidays, start_date);
+    let holidays_end = find_first_ge_index(&holidays[holidays_begin..], end_date) + holidays_begin;
     let mut start_day_of_week = get_day_of_week(start_date);
     let diff = end_date - start_date;
     let whole_weeks = diff / 7;
-    let mut count = -(holidays_end - holidays_begin);
+    let mut count = -((holidays_end - holidays_begin) as i32);
     count += whole_weeks * n_business_days_in_week_mask;
     start_date += whole_weeks * 7;
     while start_date < end_date {
@@ -277,21 +271,11 @@ fn add_business_days_impl(
     holidays: &[i32],
 ) -> i32 {
     if n > 0 {
-        let holidays_begin = match holidays.binary_search(&date) {
-            Ok(_) => {
-                unreachable!("`add_business_days` would have errored if `date` was a holiday.")
-            },
-            Err(x) => x,
-        };
-
+        let holidays_begin = find_first_ge_index(holidays, date);
         date += (n / n_business_days_in_week_mask) * 7;
         n %= n_business_days_in_week_mask;
 
-        let holidays_temp = match holidays[holidays_begin..].binary_search(&date) {
-            Ok(x) => x + 1,
-            Err(x) => x,
-        } + holidays_begin;
-
+        let holidays_temp = find_first_gt_index(&holidays[holidays_begin..], date) + holidays_begin;
         n += (holidays_temp - holidays_begin) as i32;
         let holidays_begin = holidays_temp;
 
@@ -308,18 +292,10 @@ fn add_business_days_impl(
         }
         date
     } else {
-        let holidays_end = match holidays.binary_search(&date) {
-            Ok(x) => x + 1,
-            Err(x) => x,
-        };
-
+        let holidays_end = find_first_gt_index(holidays, date);
         date += (n / n_business_days_in_week_mask) * 7;
         n %= n_business_days_in_week_mask;
-
-        let holidays_temp = match holidays[..holidays_end].binary_search(&date) {
-            Ok(x) => x,
-            Err(x) => x,
-        };
+        let holidays_temp = find_first_ge_index(&holidays[..holidays_end], date);
 
         n -= (holidays_end - holidays_temp) as i32;
         let holidays_end = holidays_temp;
