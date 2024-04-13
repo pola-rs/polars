@@ -218,7 +218,7 @@ def test_cse_expr_selection_context(monkeypatch: Any, capfd: Any) -> None:
     )
     assert_frame_equal(result, expected)
 
-    out = capfd.readouterr().out
+    out = capfd.readouterr().err
     assert "run ProjectionExec with 2 CSE" in out
     assert "run StackExec with 2 CSE" in out
 
@@ -667,3 +667,20 @@ def test_cse_15548() -> None:
 
     assert len(ldf3.collect(comm_subplan_elim=False)) == 4
     assert len(ldf3.collect(comm_subplan_elim=True)) == 4
+
+
+@pytest.mark.debug()
+def test_cse_and_schema_update_projection_pd(capfd: Any, monkeypatch: Any) -> None:
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    df = pl.LazyFrame({"a": [1, 2], "b": [99, 99]})
+
+    assert df.lazy().with_row_index().select(
+        pl.when(pl.col("b") < 10)
+        .then(0.1 * pl.col("b"))
+        .when(pl.col("b") < 100)
+        .then(0.2 * pl.col("b"))
+    ).collect(comm_subplan_elim=False).to_dict(as_series=False) == {
+        "literal": [19.8, 19.8]
+    }
+    captured = capfd.readouterr().err
+    assert "1 CSE" in captured

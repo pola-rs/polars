@@ -11,7 +11,7 @@ impl Executor for SliceExec {
         #[cfg(debug_assertions)]
         {
             if state.verbose() {
-                println!("run SliceExec")
+                eprintln!("run SliceExec")
             }
         }
         let df = self.input.execute(state)?;

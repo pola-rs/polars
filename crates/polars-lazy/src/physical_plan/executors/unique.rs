@@ -11,7 +11,7 @@ impl Executor for UniqueExec {
         #[cfg(debug_assertions)]
         {
             if state.verbose() {
-                println!("run UniqueExec")
+                eprintln!("run UniqueExec")
             }
         }
         let df = self.input.execute(state)?;

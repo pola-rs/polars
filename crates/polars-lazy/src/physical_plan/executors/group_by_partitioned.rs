@@ -348,7 +348,7 @@ impl Executor for PartitionGroupByExec {
         #[cfg(debug_assertions)]
         {
             if state.verbose() {
-                println!("run PartitionGroupbyExec")
+                eprintln!("run PartitionGroupbyExec")
             }
         }
         let original_df = self.input.execute(state)?;

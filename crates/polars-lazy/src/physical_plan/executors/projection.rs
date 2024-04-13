@@ -86,9 +86,9 @@ impl Executor for ProjectionExec {
         {
             if state.verbose() {
                 if self.cse_exprs.is_empty() {
-                    println!("run ProjectionExec");
+                    eprintln!("run ProjectionExec");
                 } else {
-                    println!("run ProjectionExec with {} CSE", self.cse_exprs.len())
+                    eprintln!("run ProjectionExec with {} CSE", self.cse_exprs.len())
                 };
             }
         }

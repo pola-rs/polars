@@ -13,7 +13,7 @@ impl Executor for PythonScanExec {
         #[cfg(debug_assertions)]
         {
             if state.verbose() {
-                println!("run PythonScanExec")
+                eprintln!("run PythonScanExec")
             }
         }
         let with_columns = self.options.with_columns.take();

@@ -311,16 +311,12 @@ impl<'a> IRBuilder<'a> {
     }
 
     pub fn row_index(self, name: Arc<str>, offset: Option<IdxSize>) -> Self {
-        let mut schema = self.schema().into_owned();
-        let schema_mut = Arc::make_mut(&mut schema);
-        row_index_schema(schema_mut, name.as_ref());
-
         let lp = IR::MapFunction {
             input: self.root,
             function: FunctionNode::RowIndex {
                 name,
                 offset,
-                schema,
+                schema: Default::default(),
             },
         };
         self.add_alp(lp)
