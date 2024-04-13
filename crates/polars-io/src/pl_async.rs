@@ -252,6 +252,15 @@ impl RuntimeManager {
     {
         self.rt.block_on(future)
     }
+
+    /// Spawns a future onto the Tokio runtime (see [`tokio::runtime::Runtime::spawn`]).
+    pub fn spawn<F>(&self, future: F) -> tokio::task::JoinHandle<F::Output>
+    where
+        F: Future + Send + 'static,
+        F::Output: Send + 'static,
+    {
+        self.rt.spawn(future)
+    }
 }
 
 static RUNTIME: Lazy<RuntimeManager> = Lazy::new(RuntimeManager::new);
