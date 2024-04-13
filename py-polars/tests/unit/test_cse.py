@@ -682,4 +682,5 @@ def test_cse_and_schema_update_projection_pd(capfd: Any, monkeypatch: Any) -> No
         "literal": [19.8, 19.8]
     }
     captured = capfd.readouterr().err
+    print(captured)
     assert "1 CSE" in captured
