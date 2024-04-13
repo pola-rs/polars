@@ -12,6 +12,8 @@ from polars.testing import assert_frame_equal
 if TYPE_CHECKING:
     import numpy.typing as npt
 
+    from polars.type_aliases import PolarsDataType
+
 
 def test_quantile_expr_input() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 4, 5], "b": [0.0, 0.0, 0.3, 0.2, 0.0]})
@@ -471,3 +473,60 @@ def test_grouping_hash_14749() -> None:
         .select(pl.col("x").max().over("grp"))["x"]
         .value_counts()
     ).to_dict(as_series=False) == {"x": [3], "count": [1004]}
+
+
+@pytest.mark.parametrize(
+    ("in_dtype", "out_dtype"),
+    [
+        (pl.Boolean, pl.Float64),
+        (pl.UInt8, pl.Float64),
+        (pl.UInt16, pl.Float64),
+        (pl.UInt32, pl.Float64),
+        (pl.UInt64, pl.Float64),
+        (pl.Int8, pl.Float64),
+        (pl.Int16, pl.Float64),
+        (pl.Int32, pl.Float64),
+        (pl.Int64, pl.Float64),
+        (pl.Float32, pl.Float32),
+        (pl.Float64, pl.Float64),
+    ],
+)
+def test_horizontal_mean_single_column(
+    in_dtype: PolarsDataType,
+    out_dtype: PolarsDataType,
+) -> None:
+    out = (
+        pl.LazyFrame({"a": pl.Series([1, 0], dtype=in_dtype)})
+        .select(pl.mean_horizontal(pl.all()))
+        .collect()
+    )
+
+    assert_frame_equal(out, pl.DataFrame({"a": pl.Series([1.0, 0.0], dtype=out_dtype)}))
+
+
+def test_horizontal_mean_in_groupby_15115() -> None:
+    nbr_records = 1000
+    out = (
+        pl.LazyFrame(
+            {
+                "w": [None, "one", "two", "three"] * nbr_records,
+                "x": [None, None, "two", "three"] * nbr_records,
+                "y": [None, None, None, "three"] * nbr_records,
+                "z": [None, None, None, None] * nbr_records,
+            }
+        )
+        .select(pl.mean_horizontal(pl.all().is_null()).alias("mean_null"))
+        .group_by("mean_null")
+        .len()
+        .sort(by="mean_null")
+        .collect()
+    )
+    assert_frame_equal(
+        out,
+        pl.DataFrame(
+            {
+                "mean_null": pl.Series([0.25, 0.5, 0.75, 1.0], dtype=pl.Float64),
+                "len": pl.Series([nbr_records] * 4, dtype=pl.UInt32),
+            }
+        ),
+    )
