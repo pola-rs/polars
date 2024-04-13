@@ -1,9 +1,8 @@
-#![allow(deprecated)] // This will be removed as part of #15215
 use std::ffi::{c_int, c_void};
 
 use ndarray::{Dim, Dimension, IntoDimension};
 use numpy::npyffi::{flags, PyArrayObject};
-use numpy::{npyffi, Element, IntoPyArray, ToNpyDims, PY_ARRAY_API};
+use numpy::{npyffi, Element, IntoPyArray, PyArrayDescrMethods, ToNpyDims, PY_ARRAY_API};
 use polars_core::prelude::*;
 use polars_core::utils::try_get_supertype;
 use polars_core::with_match_physical_numeric_polars_type;
@@ -27,7 +26,7 @@ where
     let array = PY_ARRAY_API.PyArray_NewFromDescr(
         py,
         PY_ARRAY_API.get_type_object(py, npyffi::NpyTypes::PyArray_Type),
-        T::get_dtype(py).into_dtype_ptr(),
+        T::get_dtype_bound(py).into_dtype_ptr(),
         shape.ndim_cint(),
         shape.as_dims_ptr(),
         // We don't provide strides, but provide flags that tell c/f-order
@@ -173,16 +172,16 @@ impl PyDataFrame {
 
         #[rustfmt::skip]
             let pyarray = match st {
-            DataType::UInt8 => self.df.to_ndarray::<UInt8Type>(order.0).ok()?.into_pyarray(py).into_py(py),
-            DataType::Int8 => self.df.to_ndarray::<Int8Type>(order.0).ok()?.into_pyarray(py).into_py(py),
-            DataType::UInt16 => self.df.to_ndarray::<UInt16Type>(order.0).ok()?.into_pyarray(py).into_py(py),
-            DataType::Int16 => self.df.to_ndarray::<Int16Type>(order.0).ok()?.into_pyarray(py).into_py(py),
-            DataType::UInt32 => self.df.to_ndarray::<UInt32Type>(order.0).ok()?.into_pyarray(py).into_py(py),
-            DataType::UInt64 => self.df.to_ndarray::<UInt64Type>(order.0).ok()?.into_pyarray(py).into_py(py),
-            DataType::Int32 => self.df.to_ndarray::<Int32Type>(order.0).ok()?.into_pyarray(py).into_py(py),
-            DataType::Int64 => self.df.to_ndarray::<Int64Type>(order.0).ok()?.into_pyarray(py).into_py(py),
-            DataType::Float32 => self.df.to_ndarray::<Float32Type>(order.0).ok()?.into_pyarray(py).into_py(py),
-            DataType::Float64 => self.df.to_ndarray::<Float64Type>(order.0).ok()?.into_pyarray(py).into_py(py),
+            DataType::UInt8 => self.df.to_ndarray::<UInt8Type>(order.0).ok()?.into_pyarray_bound(py).into_py(py),
+            DataType::Int8 => self.df.to_ndarray::<Int8Type>(order.0).ok()?.into_pyarray_bound(py).into_py(py),
+            DataType::UInt16 => self.df.to_ndarray::<UInt16Type>(order.0).ok()?.into_pyarray_bound(py).into_py(py),
+            DataType::Int16 => self.df.to_ndarray::<Int16Type>(order.0).ok()?.into_pyarray_bound(py).into_py(py),
+            DataType::UInt32 => self.df.to_ndarray::<UInt32Type>(order.0).ok()?.into_pyarray_bound(py).into_py(py),
+            DataType::UInt64 => self.df.to_ndarray::<UInt64Type>(order.0).ok()?.into_pyarray_bound(py).into_py(py),
+            DataType::Int32 => self.df.to_ndarray::<Int32Type>(order.0).ok()?.into_pyarray_bound(py).into_py(py),
+            DataType::Int64 => self.df.to_ndarray::<Int64Type>(order.0).ok()?.into_pyarray_bound(py).into_py(py),
+            DataType::Float32 => self.df.to_ndarray::<Float32Type>(order.0).ok()?.into_pyarray_bound(py).into_py(py),
+            DataType::Float64 => self.df.to_ndarray::<Float64Type>(order.0).ok()?.into_pyarray_bound(py).into_py(py),
             _ => return None,
         };
         Some(pyarray)
