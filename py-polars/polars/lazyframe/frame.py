@@ -357,6 +357,14 @@ class LazyFrame:
             objects that have a `read()` method, such as a file handler (e.g.
             via builtin `open` function) or `BytesIO`).
 
+        Warnings
+        --------
+            This function uses :mod:`pickle` under some circumstances, and as
+            such inherits the security implications. Deserializing can execute
+            arbitrary code so it should only be attempted on trusted data.
+            pickle is only used when the logical plan contains python UDFs.
+
+
         See Also
         --------
         LazyFrame.serialize
