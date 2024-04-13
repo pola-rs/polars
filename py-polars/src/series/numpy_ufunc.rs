@@ -35,6 +35,7 @@ unsafe fn aligned_array<T: Element + NativeType>(
     let ptr = PY_ARRAY_API.PyArray_NewFromDescr(
         py,
         PY_ARRAY_API.get_type_object(py, npyffi::NpyTypes::PyArray_Type),
+        #[allow(deprecated)] // This will be removed as part of #15215
         T::get_dtype(py).into_dtype_ptr(),
         dims.ndim_cint(),
         dims.as_dims_ptr(),
@@ -43,7 +44,11 @@ unsafe fn aligned_array<T: Element + NativeType>(
         flags::NPY_ARRAY_OUT_ARRAY, // flag
         ptr::null_mut(),            //obj
     );
-    (PyArray1::from_owned_ptr(py, ptr), buf)
+    (
+        #[allow(deprecated)] // This will be removed as part of #15215
+        PyArray1::from_owned_ptr(py, ptr),
+        buf,
+    )
 }
 
 /// Get reference counter for numpy arrays.

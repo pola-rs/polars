@@ -367,8 +367,8 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
         } else if ob.hasattr(intern!(py, "_s")).unwrap() {
             get_list_from_series
         } else {
-            let type_name = ob.get_type().name().unwrap();
-            match type_name {
+            let type_name = ob.get_type().qualname().unwrap();
+            match &*type_name {
                 // Can't use pyo3::types::PyDateTime with abi3-py37 feature,
                 // so need this workaround instead of `isinstance(ob, datetime)`.
                 "date" => get_date,
