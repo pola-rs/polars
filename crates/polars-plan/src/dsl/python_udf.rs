@@ -5,8 +5,8 @@ use polars_core::datatypes::{DataType, Field};
 use polars_core::error::*;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::Series;
-use pyo3::types::{PyBytes, PyModule};
-use pyo3::{PyErr, PyObject, Python};
+use pyo3::prelude::*;
+use pyo3::types::PyBytes;
 #[cfg(feature = "serde")]
 use serde::ser::Error;
 #[cfg(feature = "serde")]
@@ -56,8 +56,8 @@ impl Serialize for PythonFunction {
         S: Serializer,
     {
         Python::with_gil(|py| {
-            let pickle = PyModule::import(py, "cloudpickle")
-                .or(PyModule::import(py, "pickle"))
+            let pickle = PyModule::import_bound(py, "cloudpickle")
+                .or_else(|_| PyModule::import_bound(py, "pickle"))
                 .expect("Unable to import 'cloudpickle' or 'pickle'")
                 .getattr("dumps")
                 .unwrap();
@@ -84,12 +84,12 @@ impl<'a> Deserialize<'a> for PythonFunction {
         let bytes = Vec::<u8>::deserialize(deserializer)?;
 
         Python::with_gil(|py| {
-            let pickle = PyModule::import(py, "cloudpickle")
-                .or(PyModule::import(py, "pickle"))
+            let pickle = PyModule::import_bound(py, "cloudpickle")
+                .or_else(|_| PyModule::import_bound(py, "pickle"))
                 .expect("Unable to import 'pickle'")
                 .getattr("loads")
                 .unwrap();
-            let arg = (PyBytes::new(py, &bytes),);
+            let arg = (PyBytes::new_bound(py, &bytes),);
             let python_function = pickle
                 .call1(arg)
                 .map_err(|s| D::Error::custom(format!("cannot pickle {s}")))?;
@@ -126,12 +126,12 @@ impl PythonUdfExpression {
         let remainder = &buf[reader.position() as usize..];
 
         Python::with_gil(|py| {
-            let pickle = PyModule::import(py, "cloudpickle")
-                .or(PyModule::import(py, "pickle"))
+            let pickle = PyModule::import_bound(py, "cloudpickle")
+                .or_else(|_| PyModule::import_bound(py, "pickle"))
                 .expect("Unable to import 'pickle'")
                 .getattr("loads")
                 .unwrap();
-            let arg = (PyBytes::new(py, remainder),);
+            let arg = (PyBytes::new_bound(py, remainder),);
             let python_function = pickle.call1(arg).map_err(from_pyerr)?;
             Ok(Arc::new(PythonUdfExpression::new(
                 python_function.into(),
@@ -176,8 +176,8 @@ impl SeriesUdf for PythonUdfExpression {
             .unwrap();
 
         Python::with_gil(|py| {
-            let pickle = PyModule::import(py, "cloudpickle")
-                .or(PyModule::import(py, "pickle"))
+            let pickle = PyModule::import_bound(py, "cloudpickle")
+                .or_else(|_| PyModule::import_bound(py, "pickle"))
                 .expect("Unable to import 'pickle'")
                 .getattr("dumps")
                 .unwrap();
