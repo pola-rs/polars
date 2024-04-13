@@ -2,6 +2,7 @@
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:dataframe]
     use std::fs::File;
+
     use chrono::prelude::*;
     use polars::prelude::*;
 
