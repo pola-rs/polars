@@ -3,7 +3,7 @@ use std::{mem, ptr};
 use ndarray::IntoDimension;
 use numpy::npyffi::types::npy_intp;
 use numpy::npyffi::{self, flags};
-use numpy::{Element, PyArray1, ToNpyDims, PY_ARRAY_API};
+use numpy::{Element, PyArray1, PyArrayDescrMethods, ToNpyDims, PY_ARRAY_API};
 use polars_core::prelude::*;
 use polars_core::utils::arrow::types::NativeType;
 use pyo3::prelude::*;
@@ -35,8 +35,7 @@ unsafe fn aligned_array<T: Element + NativeType>(
     let ptr = PY_ARRAY_API.PyArray_NewFromDescr(
         py,
         PY_ARRAY_API.get_type_object(py, npyffi::NpyTypes::PyArray_Type),
-        #[allow(deprecated)] // This will be removed as part of #15215
-        T::get_dtype(py).into_dtype_ptr(),
+        T::get_dtype_bound(py).into_dtype_ptr(),
         dims.ndim_cint(),
         dims.as_dims_ptr(),
         strides.as_ptr() as *mut _, // strides
