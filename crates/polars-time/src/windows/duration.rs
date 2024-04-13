@@ -32,7 +32,7 @@ pub struct Duration {
     months: i64,
     // the number of weeks for the duration
     weeks: i64,
-    // the number of nanoseconds for the duration
+    // the number of days for the duration
     days: i64,
     // the number of nanoseconds for the duration
     nsecs: i64,
@@ -363,8 +363,14 @@ impl Duration {
         self.nsecs == 0
     }
 
-    pub fn is_constant_duration(&self) -> bool {
-        self.months == 0 && self.weeks == 0 && self.days == 0
+    pub fn is_constant_duration(&self, time_zone: Option<&str>) -> bool {
+        if time_zone.is_none() || time_zone == Some("UTC") {
+            self.months == 0
+        } else {
+            // For non-native, non-UTC time zones, 1 calendar day is not
+            // necessarily 24 hours due to daylight savings time.
+            self.months == 0 && self.weeks == 0 && self.days == 0
+        }
     }
 
     /// Returns the nanoseconds from the `Duration` without the weeks or months part.
@@ -372,7 +378,7 @@ impl Duration {
         self.nsecs
     }
 
-    /// Estimated duration of the window duration. Not a very good one if months != 0.
+    /// Estimated duration of the window duration. Not a very good one if not a constant duration.
     #[doc(hidden)]
     pub const fn duration_ns(&self) -> i64 {
         self.months * 28 * 24 * 3600 * NANOSECONDS
