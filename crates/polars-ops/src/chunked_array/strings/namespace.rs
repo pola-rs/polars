@@ -612,6 +612,29 @@ pub trait StringNameSpaceImpl: AsString {
 
         Ok(substring::substring(ca, offset.i64()?, length.u64()?))
     }
+
+    /// Slice the first `n` values of the string.
+    ///
+    /// Determines a substring starting at the beginning of the string up to offset `n` of each
+    /// element in `array`. `n` can be negative, in which case the slice ends `n` characters from
+    /// the end of the string.
+    fn str_head(&self, n: &Series) -> PolarsResult<StringChunked> {
+        let ca = self.as_string();
+        let n = n.strict_cast(&DataType::Int64)?;
+
+        Ok(substring::head(ca, n.i64()?))
+    }
+
+    /// Slice the last `n` values of the string.
+    ///
+    /// Determines a substring starting at offset `n` of each element in `array`. `n` can be
+    /// negative, in which case the slice begins `n` characters from the start of the string.
+    fn str_tail(&self, n: &Series) -> PolarsResult<StringChunked> {
+        let ca = self.as_string();
+        let n = n.strict_cast(&DataType::Int64)?;
+
+        Ok(substring::tail(ca, n.i64()?))
+    }
 }
 
 impl StringNameSpaceImpl for StringChunked {}
