@@ -314,55 +314,53 @@ impl FetchRowGroupsFromObjectStore {
         let (snd, rcv) = channel(msg_limit);
         let snd = Arc::new(snd);
 
-        let _ = std::thread::spawn(move || {
-            get_runtime().block_on(async {
-                let chunk_len = msg_limit;
-                let mut handles = Vec::with_capacity(chunk_len.clamp(0, row_groups.len()));
-                for chunk in row_groups.chunks_mut(chunk_len) {
-                    // Start downloads concurrently
-                    for (i, rg) in chunk {
-                        let rg = std::mem::take(rg);
+        get_runtime().spawn(async move {
+            let chunk_len = msg_limit;
+            let mut handles = Vec::with_capacity(chunk_len.clamp(0, row_groups.len()));
+            for chunk in row_groups.chunks_mut(chunk_len) {
+                // Start downloads concurrently
+                for (i, rg) in chunk {
+                    let rg = std::mem::take(rg);
 
-                        match &projected_fields {
-                            Some(projected_fields) => {
-                                let handle = tokio::spawn(download_projection(
-                                    projected_fields.clone(),
-                                    rg,
-                                    reader.clone(),
-                                    snd.clone(),
-                                    *i,
-                                ));
-                                handles.push(handle)
-                            },
-                            None => {
-                                let handle = tokio::spawn(download_row_group(
-                                    rg,
-                                    reader.clone(),
-                                    snd.clone(),
-                                    *i,
-                                ));
-                                handles.push(handle)
-                            },
-                        }
-                    }
-
-                    // Wait n - 3 tasks, so we already start the next downloads earlier.
-                    for task in handles.drain(..handles.len().saturating_sub(3)) {
-                        let succeeded = task.await.unwrap();
-                        if !succeeded {
-                            return;
-                        }
+                    match &projected_fields {
+                        Some(projected_fields) => {
+                            let handle = tokio::spawn(download_projection(
+                                projected_fields.clone(),
+                                rg,
+                                reader.clone(),
+                                snd.clone(),
+                                *i,
+                            ));
+                            handles.push(handle)
+                        },
+                        None => {
+                            let handle = tokio::spawn(download_row_group(
+                                rg,
+                                reader.clone(),
+                                snd.clone(),
+                                *i,
+                            ));
+                            handles.push(handle)
+                        },
                     }
                 }
 
-                // Drain remaining tasks.
-                for task in handles.drain(..) {
+                // Wait n - 3 tasks, so we already start the next downloads earlier.
+                for task in handles.drain(..handles.len().saturating_sub(3)) {
                     let succeeded = task.await.unwrap();
                     if !succeeded {
                         return;
                     }
                 }
-            })
+            }
+
+            // Drain remaining tasks.
+            for task in handles.drain(..) {
+                let succeeded = task.await.unwrap();
+                if !succeeded {
+                    return;
+                }
+            }
         });
 
         Ok(FetchRowGroupsFromObjectStore {
