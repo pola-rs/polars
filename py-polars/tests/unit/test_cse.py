@@ -669,6 +669,7 @@ def test_cse_15548() -> None:
     assert len(ldf3.collect(comm_subplan_elim=True)) == 4
 
 
+@pytest.mark.debug()
 def test_cse_and_schema_update_projection_pd(capfd: Any, monkeypatch: Any) -> None:
     monkeypatch.setenv("POLARS_VERBOSE", "1")
     df = pl.LazyFrame({"a": [1, 2], "b": [99, 99]})
@@ -682,5 +683,4 @@ def test_cse_and_schema_update_projection_pd(capfd: Any, monkeypatch: Any) -> No
         "literal": [19.8, 19.8]
     }
     captured = capfd.readouterr().err
-    print(captured)
     assert "1 CSE" in captured
