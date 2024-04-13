@@ -164,11 +164,12 @@ fn check_and_extend_predicate_pd_nodes(
                 // being projected.
                 let mut transferred_local_nodes = false;
                 if let Some(rhs) = input.get(1) {
-                    if matches!(expr_arena.get(*rhs), AExpr::Literal { .. }) {
+                    let rhs = rhs.node();
+                    if matches!(expr_arena.get(rhs), AExpr::Literal { .. }) {
                         let mut local_nodes = Vec::<Node>::with_capacity(4);
                         ae.nodes(&mut local_nodes);
 
-                        stack.extend(local_nodes.into_iter().filter(|node| node != rhs));
+                        stack.extend(local_nodes.into_iter().filter(|node| *node != rhs));
                         transferred_local_nodes = true;
                     }
                 };

@@ -645,3 +645,25 @@ def test_cse_14047() -> None:
     assert_frame_equal(
         ldf.collect(comm_subexpr_elim=True), ldf.collect(comm_subexpr_elim=False)
     )
+
+
+def test_cse_15536() -> None:
+    source = pl.DataFrame({"a": range(10)})
+
+    data = source.lazy().filter(pl.col("a") >= 5)
+
+    assert pl.concat(
+        [
+            data.filter(pl.lit(True) & (pl.col("a") == 6) | (pl.col("a") == 9)),
+            data.filter(pl.lit(True) & (pl.col("a") == 7) | (pl.col("a") == 8)),
+        ]
+    ).collect()["a"].to_list() == [6, 9, 7, 8]
+
+
+def test_cse_15548() -> None:
+    ldf = pl.LazyFrame({"a": [1, 2, 3]})
+    ldf2 = ldf.filter(pl.col("a") == 1).cache()
+    ldf3 = pl.concat([ldf, ldf2])
+
+    assert len(ldf3.collect(comm_subplan_elim=False)) == 4
+    assert len(ldf3.collect(comm_subplan_elim=True)) == 4

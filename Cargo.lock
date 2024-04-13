@@ -3026,6 +3026,7 @@ dependencies = [
  "chrono-tz",
  "ciborium",
  "futures",
+ "hashbrown 0.14.3",
  "libloading",
  "once_cell",
  "percent-encoding",
@@ -3190,7 +3191,7 @@ dependencies = [
 
 [[package]]
 name = "py-polars"
-version = "0.20.18"
+version = "0.20.19"
 dependencies = [
  "ahash",
  "arboard",
@@ -3215,6 +3216,7 @@ dependencies = [
  "polars-utils",
  "pyo3",
  "pyo3-built",
+ "recursive",
  "serde_json",
  "smartstring",
  "thiserror",

@@ -11,7 +11,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_try_parse_dates(true)
         .finish()
         .unwrap()
-        .sort(["Date"], false, true)?;
+        .sort(
+            ["Date"],
+            SortMultipleOptions::default().with_maintain_order(true),
+        )?;
     println!("{}", &df);
     // --8<-- [end:df]
 

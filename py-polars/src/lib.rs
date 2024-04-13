@@ -131,6 +131,10 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(functions::time_ranges))
         .unwrap();
 
+    // Functions - business
+    m.add_wrapped(wrap_pyfunction!(functions::business_day_count))
+        .unwrap();
+
     // Functions - aggregation
     m.add_wrapped(wrap_pyfunction!(functions::all_horizontal))
         .unwrap();

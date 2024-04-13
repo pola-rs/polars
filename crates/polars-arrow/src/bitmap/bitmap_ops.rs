@@ -5,38 +5,33 @@ use super::Bitmap;
 use crate::bitmap::MutableBitmap;
 use crate::trusted_len::TrustedLen;
 
-/// Creates a [Vec<u8>] from an [`Iterator`] of [`BitChunk`].
-/// # Safety
-/// The iterator must be [`TrustedLen`].
-pub unsafe fn from_chunk_iter_unchecked<T: BitChunk, I: Iterator<Item = T>>(
-    iterator: I,
-) -> Vec<u8> {
-    let (_, upper) = iterator.size_hint();
-    let upper = upper.expect("try_from_trusted_len_iter requires an upper limit");
-    let len = upper * std::mem::size_of::<T>();
-
-    let mut buffer = Vec::with_capacity(len);
-
-    let mut dst = buffer.as_mut_ptr();
-    for item in iterator {
-        let bytes = item.to_ne_bytes();
-        for i in 0..std::mem::size_of::<T>() {
-            std::ptr::write(dst, bytes[i]);
-            dst = dst.add(1);
-        }
-    }
-    assert_eq!(
-        dst.offset_from(buffer.as_ptr()) as usize,
-        len,
-        "Trusted iterator length was not accurately reported"
-    );
-    buffer.set_len(len);
-    buffer
+#[inline(always)]
+pub(crate) fn push_bitchunk<T: BitChunk>(buffer: &mut Vec<u8>, value: T) {
+    buffer.extend(value.to_ne_bytes())
 }
 
 /// Creates a [`Vec<u8>`] from a [`TrustedLen`] of [`BitChunk`].
 pub fn chunk_iter_to_vec<T: BitChunk, I: TrustedLen<Item = T>>(iter: I) -> Vec<u8> {
-    unsafe { from_chunk_iter_unchecked(iter) }
+    let cap = iter.size_hint().0 * std::mem::size_of::<T>();
+    let mut buffer = Vec::with_capacity(cap);
+    for v in iter {
+        push_bitchunk(&mut buffer, v)
+    }
+    buffer
+}
+
+fn chunk_iter_to_vec_and_remainder<T: BitChunk, I: TrustedLen<Item = T>>(
+    iter: I,
+    remainder: T,
+) -> Vec<u8> {
+    let cap = (iter.size_hint().0 + 1) * std::mem::size_of::<T>();
+    let mut buffer = Vec::with_capacity(cap);
+    for v in iter {
+        push_bitchunk(&mut buffer, v)
+    }
+    push_bitchunk(&mut buffer, remainder);
+    debug_assert_eq!(buffer.len(), cap);
+    buffer
 }
 
 /// Apply a bitwise operation `op` to four inputs and return the result as a [`Bitmap`].
@@ -62,9 +57,8 @@ where
         .zip(a3_chunks)
         .zip(a4_chunks)
         .map(|(((a1, a2), a3), a4)| op(a1, a2, a3, a4));
-    let buffer =
-        chunk_iter_to_vec(chunks.chain(std::iter::once(op(rem_a1, rem_a2, rem_a3, rem_a4))));
 
+    let buffer = chunk_iter_to_vec_and_remainder(chunks, op(rem_a1, rem_a2, rem_a3, rem_a4));
     let length = a1.len();
 
     Bitmap::from_u8_vec(buffer, length)
@@ -90,8 +84,7 @@ where
         .zip(a3_chunks)
         .map(|((a1, a2), a3)| op(a1, a2, a3));
 
-    let buffer = chunk_iter_to_vec(chunks.chain(std::iter::once(op(rem_a1, rem_a2, rem_a3))));
-
+    let buffer = chunk_iter_to_vec_and_remainder(chunks, op(rem_a1, rem_a2, rem_a3));
     let length = a1.len();
 
     Bitmap::from_u8_vec(buffer, length)
@@ -112,8 +105,7 @@ where
         .zip(rhs_chunks)
         .map(|(left, right)| op(left, right));
 
-    let buffer = chunk_iter_to_vec(chunks.chain(std::iter::once(op(rem_lhs, rem_rhs))));
-
+    let buffer = chunk_iter_to_vec_and_remainder(chunks, op(rem_lhs, rem_rhs));
     let length = lhs.len();
 
     Bitmap::from_u8_vec(buffer, length)
@@ -125,10 +117,7 @@ where
     F: Fn(u64) -> u64,
 {
     let rem = op(iter.remainder());
-
-    let iterator = iter.map(op).chain(std::iter::once(rem));
-
-    let buffer = chunk_iter_to_vec(iterator);
+    let buffer = chunk_iter_to_vec_and_remainder(iter.map(op), rem);
 
     Bitmap::from_u8_vec(buffer, length)
 }

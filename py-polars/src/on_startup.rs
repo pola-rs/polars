@@ -71,6 +71,13 @@ fn warning_function(msg: &str, warning: PolarsWarning) {
 #[pyfunction]
 pub fn __register_startup_deps() {
     if !registry::is_object_builder_registered() {
+        // Stack frames can get really large in debug mode.
+        #[cfg(debug_assertions)]
+        {
+            recursive::set_minimum_stack_size(1024 * 1024);
+            recursive::set_stack_allocation_size(1024 * 1024 * 16);
+        }
+
         // register object type builder
         let object_builder = Box::new(|name: &str, capacity: usize| {
             Box::new(ObjectChunkedBuilder::<ObjectValue>::new(name, capacity))

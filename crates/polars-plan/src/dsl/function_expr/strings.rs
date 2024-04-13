@@ -53,7 +53,7 @@ pub enum StringFunction {
         strict: bool,
     },
     #[cfg(feature = "string_to_integer")]
-    ToInteger(u32, bool),
+    ToInteger(bool),
     LenBytes,
     LenChars,
     Lowercase,
@@ -343,7 +343,7 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             StripPrefix => map_as_slice!(strings::strip_prefix),
             StripSuffix => map_as_slice!(strings::strip_suffix),
             #[cfg(feature = "string_to_integer")]
-            ToInteger(base, strict) => map!(strings::to_integer, base, strict),
+            ToInteger(strict) => map_as_slice!(strings::to_integer, strict),
             Slice => map_as_slice!(strings::str_slice),
             #[cfg(feature = "string_encoding")]
             HexEncode => map!(strings::hex_encode),
@@ -888,9 +888,11 @@ pub(super) fn reverse(s: &Series) -> PolarsResult<Series> {
 }
 
 #[cfg(feature = "string_to_integer")]
-pub(super) fn to_integer(s: &Series, base: u32, strict: bool) -> PolarsResult<Series> {
-    let ca = s.str()?;
-    ca.to_integer(base, strict).map(|ok| ok.into_series())
+pub(super) fn to_integer(s: &[Series], strict: bool) -> PolarsResult<Series> {
+    let ca = s[0].str()?;
+    let base = s[1].strict_cast(&DataType::UInt32)?;
+    ca.to_integer(base.u32()?, strict)
+        .map(|ok| ok.into_series())
 }
 pub(super) fn str_slice(s: &[Series]) -> PolarsResult<Series> {
     // Calculate the post-broadcast length and ensure everything is consistent.

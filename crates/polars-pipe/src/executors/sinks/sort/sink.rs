@@ -2,12 +2,12 @@ use std::any::Any;
 use std::sync::{Arc, RwLock};
 use std::time::Instant;
 
+use polars_core::chunked_array::ops::SortMultipleOptions;
 use polars_core::config::verbose;
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{AnyValue, SchemaRef, Series, SortOptions};
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
-use polars_plan::prelude::SortArguments;
 
 use crate::executors::sinks::io::{block_thread_until_io_thread_done, IOThread};
 use crate::executors::sinks::memory::MemTracker;
@@ -28,7 +28,8 @@ pub struct SortSink {
     io_thread: Arc<RwLock<Option<IOThread>>>,
     // location in the dataframe of the columns to sort by
     sort_idx: usize,
-    sort_args: SortArguments,
+    slice: Option<(i64, usize)>,
+    sort_options: SortMultipleOptions,
     // Statistics
     // sampled values so we can find the distribution.
     dist_sample: Vec<AnyValue<'static>>,
@@ -41,7 +42,12 @@ pub struct SortSink {
 }
 
 impl SortSink {
-    pub(crate) fn new(sort_idx: usize, sort_args: SortArguments, schema: SchemaRef) -> Self {
+    pub(crate) fn new(
+        sort_idx: usize,
+        slice: Option<(i64, usize)>,
+        sort_options: SortMultipleOptions,
+        schema: SchemaRef,
+    ) -> Self {
         // for testing purposes
         let ooc = std::env::var(FORCE_OOC).is_ok();
         let n_morsels_per_sink = morsels_per_sink();
@@ -53,7 +59,8 @@ impl SortSink {
             ooc,
             io_thread: Default::default(),
             sort_idx,
-            sort_args,
+            slice,
+            sort_options,
             dist_sample: vec![],
             current_chunk_rows: 0,
             current_chunks_size: 0,
@@ -167,7 +174,8 @@ impl Sink for SortSink {
             ooc: self.ooc,
             io_thread: self.io_thread.clone(),
             sort_idx: self.sort_idx,
-            sort_args: self.sort_args.clone(),
+            slice: self.slice,
+            sort_options: self.sort_options.clone(),
             dist_sample: vec![],
             current_chunk_rows: 0,
             current_chunks_size: 0,
@@ -183,12 +191,7 @@ impl Sink for SortSink {
             let io_thread = lock.take().unwrap();
 
             let dist = Series::from_any_values("", &self.dist_sample, true).unwrap();
-            let dist = dist.sort_with(SortOptions {
-                descending: self.sort_args.descending[0],
-                nulls_last: self.sort_args.nulls_last,
-                multithreaded: true,
-                maintain_order: self.sort_args.maintain_order,
-            })?;
+            let dist = dist.sort_with(SortOptions::from(&self.sort_options))?;
 
             let instant = self.ooc_start.unwrap();
             if context.verbose {
@@ -203,9 +206,9 @@ impl Sink for SortSink {
                 io_thread,
                 dist,
                 self.sort_idx,
-                self.sort_args.descending[0],
-                self.sort_args.nulls_last,
-                self.sort_args.slice,
+                self.sort_options.descending[0],
+                self.sort_options.nulls_last,
+                self.slice,
                 context.verbose,
                 self.mem_track.clone(),
                 instant,
@@ -216,9 +219,8 @@ impl Sink for SortSink {
             let df = sort_accumulated(
                 df,
                 self.sort_idx,
-                self.sort_args.descending[0],
-                self.sort_args.slice,
-                self.sort_args.nulls_last,
+                self.slice,
+                SortOptions::from(&self.sort_options),
             )?;
             Ok(FinalizedSink::Finished(df))
         }
@@ -236,19 +238,15 @@ impl Sink for SortSink {
 pub(super) fn sort_accumulated(
     mut df: DataFrame,
     sort_idx: usize,
-    descending: bool,
     slice: Option<(i64, usize)>,
-    nulls_last: bool,
+    sort_options: SortOptions,
 ) -> PolarsResult<DataFrame> {
     // This is needed because we can have empty blocks and we require chunks to have single chunks.
     df.as_single_chunk_par();
     let sort_column = df.get_columns()[sort_idx].clone();
     df.sort_impl(
         vec![sort_column],
-        vec![descending],
-        nulls_last,
-        false,
+        SortMultipleOptions::from(&sort_options),
         slice,
-        true,
     )
 }

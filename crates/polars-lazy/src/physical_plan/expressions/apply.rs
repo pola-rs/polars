@@ -354,11 +354,19 @@ impl PhysicalExpr for ApplyExpr {
                 },
                 ApplyOptions::GroupWise => self.apply_multiple_group_aware(acs, df),
                 ApplyOptions::ElementWise => {
-                    if acs
-                        .iter()
-                        .any(|ac| matches!(ac.agg_state(), AggState::AggregatedList(_)))
-                    {
-                        self.apply_multiple_group_aware(acs, df)
+                    let mut has_agg_list = false;
+                    let mut has_agg_scalar = false;
+                    let mut has_not_agg = false;
+                    for ac in &acs {
+                        match ac.state {
+                            AggState::AggregatedList(_) => has_agg_list = true,
+                            AggState::AggregatedScalar(_) => has_agg_scalar = true,
+                            AggState::NotAggregated(_) => has_not_agg = true,
+                            _ => {},
+                        }
+                    }
+                    if has_agg_list || (has_agg_scalar && has_not_agg) {
+                        return self.apply_multiple_group_aware(acs, df);
                     } else {
                         apply_multiple_elementwise(
                             acs,

@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::collections::VecDeque;
 use std::io::Write;
 use std::sync::Mutex;
@@ -7,7 +6,6 @@ use arrow::array::Array;
 use arrow::datatypes::PhysicalType;
 use arrow::record_batch::RecordBatch;
 use polars_core::prelude::*;
-use polars_core::utils::{accumulate_dataframes_vertical_unchecked, split_df_as_ref};
 use polars_core::POOL;
 use polars_parquet::read::ParquetError;
 pub use polars_parquet::write::RowGroupIter;
@@ -18,6 +16,8 @@ use serde::{Deserialize, Serialize};
 use write::{
     BrotliLevel as BrotliLevelParquet, GzipLevel as GzipLevelParquet, ZstdLevel as ZstdLevelParquet,
 };
+
+use crate::prelude::chunk_df_for_writing;
 
 #[derive(Debug, Eq, PartialEq, Hash, Clone, Copy)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -121,7 +121,7 @@ where
         ParquetWriter {
             writer,
             compression: ParquetCompression::default().into(),
-            statistics: false,
+            statistics: true,
             row_group_size: None,
             data_page_size: None,
             parallel: true,
@@ -191,29 +191,8 @@ where
 
     /// Write the given DataFrame in the writer `W`. Returns the total size of the file.
     pub fn finish(self, df: &mut DataFrame) -> PolarsResult<u64> {
-        // ensures all chunks are aligned.
-        df.align_chunks();
-
-        let n_splits = df.height() / self.row_group_size.unwrap_or(512 * 512);
-        let chunked_df = if n_splits > 0 {
-            Cow::Owned(accumulate_dataframes_vertical_unchecked(
-                split_df_as_ref(df, n_splits, false)?
-                    .into_iter()
-                    .map(|mut df| {
-                        // If the chunks are small enough, writing many small chunks
-                        // leads to slow writing performance, so in that case we
-                        // merge them.
-                        let n_chunks = df.n_chunks();
-                        if n_chunks > 1 && (df.estimated_size() / n_chunks < 128 * 1024) {
-                            df.as_single_chunk_par();
-                        }
-                        df
-                    }),
-            ))
-        } else {
-            Cow::Borrowed(df)
-        };
-        let mut batched = self.batched(&df.schema())?;
+        let chunked_df = chunk_df_for_writing(df, self.row_group_size.unwrap_or(512 * 512))?;
+        let mut batched = self.batched(&chunked_df.schema())?;
         batched.write_batch(&chunked_df)?;
         batched.finish()
     }

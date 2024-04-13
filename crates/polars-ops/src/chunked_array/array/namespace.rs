@@ -122,9 +122,9 @@ pub trait ArrayNameSpace: AsArray {
         })
     }
 
-    fn array_get(&self, index: &Int64Chunked) -> PolarsResult<Series> {
+    fn array_get(&self, index: &Int64Chunked, null_on_oob: bool) -> PolarsResult<Series> {
         let ca = self.as_array();
-        array_get(ca, index)
+        array_get(ca, index, null_on_oob)
     }
 
     fn array_join(&self, separator: &StringChunked, ignore_nulls: bool) -> PolarsResult<Series> {

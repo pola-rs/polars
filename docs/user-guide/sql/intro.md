@@ -1,14 +1,18 @@
 # Introduction
 
-While Polars does support writing queries in SQL, it's recommended that users familiarize themselves with the [expression syntax](../concepts/expressions.md) for more readable and expressive code. As a primarily DataFrame library, new features will typically be added to the expression API first. However, if you already have an existing SQL codebase or prefer to use SQL, Polars also offers support for SQL queries.
+While Polars supports interaction with SQL, it's recommended that users familiarize themselves with
+the [expression syntax](../concepts/expressions.md) to produce more readable and expressive code. As the DataFrame
+interface is primary, new features are typically added to the expression API first. However, if you already have an
+existing SQL codebase or prefer the use of SQL, Polars does offers support for this.
 
 !!! note Execution
 
-    In Polars, there is no separate SQL engine because Polars translates SQL queries into [expressions](../concepts/expressions.md), which are then executed using its built-in execution engine. This approach ensures that Polars maintains its performance and scalability advantages as a native DataFrame library while still providing users with the ability to work with SQL queries.
+    There is no separate SQL engine because Polars translates SQL queries into [expressions](../concepts/expressions.md), which are then executed using its own engine. This approach ensures that Polars maintains its performance and scalability advantages as a native DataFrame library, while still providing users with the ability to work with SQL.
 
 ## Context
 
-Polars uses the `SQLContext` to manage SQL queries . The context contains a dictionary mapping `DataFrames` and `LazyFrames` names to their corresponding datasets[^1]. The example below starts a `SQLContext`:
+Polars uses the `SQLContext` object to manage SQL queries. The context contains a mapping of `DataFrame` and `LazyFrame`
+identifier names to their corresponding datasets[^1]. The example below starts a `SQLContext`:
 
 {{code_block('user-guide/sql/intro','context',['SQLContext'])}}
 
@@ -19,10 +23,10 @@ Polars uses the `SQLContext` to manage SQL queries . The context contains a dict
 
 ## Register Dataframes
 
-There are 2 ways to register DataFrames in the `SQLContext`:
+There are several ways to register DataFrames during `SQLContext` initialization.
 
-- register all `LazyFrames` and `DataFrames` in the global namespace
-- register them one by one
+- register all `LazyFrame` and `DataFrame` objects in the global namespace.
+- register explicitly via a dictionary mapping, or kwargs.
 
 {{code_block('user-guide/sql/intro','register_context',['SQLContext'])}}
 
@@ -40,7 +44,7 @@ We can also register Pandas DataFrames by converting them to Polars first.
 
 !!! note Pandas
 
-    Converting a Pandas DataFrame backed by Numpy to Polars triggers a conversion to the Arrow format. This conversion has a computation cost. Converting a Pandas DataFrame backed by Arrow on the other hand will be free or almost free.
+    Converting a Pandas DataFrame backed by Numpy will trigger a potentially expensive conversion; however, if the Pandas DataFrame is already backed by Arrow then the conversion will be significantly cheaper (and in some cases close to free).
 
 Once the `SQLContext` is initialized, we can register additional Dataframes or unregister existing Dataframes with:
 
@@ -51,10 +55,13 @@ Once the `SQLContext` is initialized, we can register additional Dataframes or u
 
 ## Execute queries and collect results
 
-SQL queries are always executed in lazy mode to benefit from lazy optimizations, so we have 2 options to collect the result:
+SQL queries are always executed in lazy mode to take advantage of the full set of query planning optimizations, so we
+have two options to collect the result:
 
-- Set the parameter `eager_execution` to True in `SQLContext`. With this parameter, Polars will automatically collect SQL results
-- Set the parameter `eager` to True when executing a query with `execute`, or collect the result with `collect`.
+- Set the parameter `eager_execution` to True in `SQLContext`; this ensures that Polars automatically collects the
+  LazyFrame results from `execute` calls.
+- Set the parameter `eager` to True when executing a query with `execute`, or explicitly collect the result
+  using `collect`.
 
 We execute SQL queries by calling `execute` on a `SQLContext`.
 
@@ -67,16 +74,17 @@ We execute SQL queries by calling `execute` on a `SQLContext`.
 ## Execute queries from multiple sources
 
 SQL queries can be executed just as easily from multiple sources.
-In the example below, we register :
+In the example below, we register:
 
-- a CSV file loaded lazily
-- a NDJSON file loaded lazily
+- a CSV file (loaded lazily)
+- a NDJSON file (loaded lazily)
 - a Pandas DataFrame
 
-And we join them together with SQL.
+And join them together using SQL.
 Lazy reading allows to only load the necessary rows and columns from the files.
 
-In the same way, it's possible to register cloud datalakes (S3, Azure Data Lake). A PyArrow dataset can point to the datalake, then Polars can read it with `scan_pyarrow_dataset`.
+In the same way, it's possible to register cloud datalakes (S3, Azure Data Lake). A PyArrow dataset can point to the
+datalake, then Polars can read it with `scan_pyarrow_dataset`.
 
 {{code_block('user-guide/sql/intro','execute_multiple_sources',['SQLregister','SQLexecute'])}}
 
@@ -90,17 +98,25 @@ In the same way, it's possible to register cloud datalakes (S3, Azure Data Lake)
 
 ## Compatibility
 
-Polars does not support the full SQL language, in Polars you are allowed to:
+Polars does not support the complete SQL specification, but it does support a subset of the most common statement types.
 
-- Write a `CREATE` statements `CREATE TABLE xxx AS ...`
-- Write a `SELECT` statements with all generic elements (`GROUP BY`, `WHERE`,`ORDER`,`LIMIT`,`JOIN`, ...)
-- Write Common Table Expressions (CTE's) (`WITH tablename AS`)
-- Show an overview of all tables `SHOW TABLES`
+!!! note Dialect
 
-The following is not yet supported:
+    Where possible, Polars aims to follow PostgreSQL syntax definitions and function behaviour.
+
+For example, here is a non-exhaustive list of some of the supported functionality:
+
+- Write a `CREATE` statements: `CREATE TABLE xxx AS ...`
+- Write a `SELECT` statements containing:`WHERE`,`ORDER`,`LIMIT`,`GROUP BY`,`UNION` and `JOIN` clauses ...
+- Write Common Table Expressions (CTE's) such as: `WITH tablename AS`
+- Explain a query: `EXPLAIN SELECT ...`
+- List registered tables: `SHOW TABLES`
+- Drop a table: `DROP TABLE tablename`
+- Truncate a table: `TRUNCATE TABLE tablename`
+
+The following are some features that are not yet supported:
 
 - `INSERT`, `UPDATE` or `DELETE` statements
-- Table aliasing (e.g. `SELECT p.Name from pokemon AS p`)
-- Meta queries such as `ANALYZE`, `EXPLAIN`
+- Meta queries such as `ANALYZE`
 
-In the upcoming sections we will cover each of the statements in more details.
+In the upcoming sections we will cover each of the statements in more detail.

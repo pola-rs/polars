@@ -272,7 +272,7 @@ fn create_physical_expr_inner(
         SortBy {
             expr,
             by,
-            descending,
+            sort_options,
         } => {
             polars_ensure!(!by.is_empty(), InvalidOperation: "'sort_by' got an empty set");
             let phys_expr = create_physical_expr_inner(expr, ctxt, expr_arena, schema, state)?;
@@ -281,8 +281,8 @@ fn create_physical_expr_inner(
             Ok(Arc::new(SortByExpr::new(
                 phys_expr,
                 phys_by,
-                descending,
                 node_to_expr(expression, expr_arena),
+                sort_options,
             )))
         },
         Filter { input, by } => {
@@ -533,7 +533,7 @@ fn create_physical_expr_inner(
                 options.returns_scalar && matches!(options.collect_groups, ApplyOptions::GroupWise);
             // will be reset in the function so get that here
             let has_window = state.local.has_window;
-            let input = create_physical_expressions_from_nodes_check_state(
+            let input = create_physical_expressions_check_state(
                 &input,
                 ctxt,
                 expr_arena,
@@ -564,7 +564,7 @@ fn create_physical_expr_inner(
                 options.returns_scalar && matches!(options.collect_groups, ApplyOptions::GroupWise);
             // will be reset in the function so get that here
             let has_window = state.local.has_window;
-            let input = create_physical_expressions_from_nodes_check_state(
+            let input = create_physical_expressions_check_state(
                 &input,
                 ctxt,
                 expr_arena,

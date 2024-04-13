@@ -285,12 +285,23 @@ impl Series {
         Ok(self)
     }
 
-    pub fn sort(&self, descending: bool, nulls_last: bool) -> PolarsResult<Self> {
-        self.sort_with(SortOptions {
-            descending,
-            nulls_last,
-            ..Default::default()
-        })
+    /// Sort the series with specific options.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use polars_core::prelude::*;
+    /// # fn main() -> PolarsResult<()> {
+    /// let s = Series::new("foo", [2, 1, 3]);
+    /// let sorted = s.sort(SortOptions::default())?;
+    /// assert_eq!(sorted, Series::new("foo", [1, 2, 3]));
+    /// # Ok(())
+    /// }
+    /// ```
+    ///
+    /// See [`SortOptions`] for more options.
+    pub fn sort(&self, sort_options: SortOptions) -> PolarsResult<Self> {
+        self.sort_with(sort_options)
     }
 
     /// Only implemented for numeric types

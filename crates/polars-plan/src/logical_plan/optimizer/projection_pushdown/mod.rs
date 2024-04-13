@@ -155,12 +155,12 @@ impl ProjectionPushDown {
     /// Projection will be done at this node, but we continue optimization
     fn no_pushdown_restart_opt(
         &mut self,
-        lp: ALogicalPlan,
+        lp: IR,
         acc_projections: Vec<ColumnNode>,
         projections_seen: usize,
-        lp_arena: &mut Arena<ALogicalPlan>,
+        lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
-    ) -> PolarsResult<ALogicalPlan> {
+    ) -> PolarsResult<IR> {
         let inputs = lp.get_inputs();
         let exprs = lp.get_exprs();
 
@@ -182,15 +182,15 @@ impl ProjectionPushDown {
             .collect::<PolarsResult<Vec<_>>>()?;
         let lp = lp.with_exprs_and_input(exprs, new_inputs);
 
-        let builder = ALogicalPlanBuilder::from_lp(lp, expr_arena, lp_arena);
+        let builder = IRBuilder::from_lp(lp, expr_arena, lp_arena);
         Ok(self.finish_node_simple_projection(&acc_projections, builder))
     }
 
     fn finish_node_simple_projection(
         &mut self,
         local_projections: &[ColumnNode],
-        builder: ALogicalPlanBuilder,
-    ) -> ALogicalPlan {
+        builder: IRBuilder,
+    ) -> IR {
         if !local_projections.is_empty() {
             builder
                 .project_simple_nodes(local_projections.iter().map(|node| node.0))
@@ -201,11 +201,7 @@ impl ProjectionPushDown {
         }
     }
 
-    fn finish_node(
-        &mut self,
-        local_projections: Vec<ExprIR>,
-        builder: ALogicalPlanBuilder,
-    ) -> ALogicalPlan {
+    fn finish_node(&mut self, local_projections: Vec<ExprIR>, builder: IRBuilder) -> IR {
         if !local_projections.is_empty() {
             builder
                 .project(local_projections, Default::default())
@@ -257,7 +253,7 @@ impl ProjectionPushDown {
         acc_projections: Vec<ColumnNode>,
         names: PlHashSet<Arc<str>>,
         projections_seen: usize,
-        lp_arena: &mut Arena<ALogicalPlan>,
+        lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<()> {
         let alp = lp_arena.take(input);
@@ -283,7 +279,7 @@ impl ProjectionPushDown {
         input: Node,
         acc_projections: Vec<ColumnNode>,
         projections_seen: usize,
-        lp_arena: &mut Arena<ALogicalPlan>,
+        lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
         // an unnest changes/expands the schema
         expands_schema: bool,
@@ -310,7 +306,7 @@ impl ProjectionPushDown {
     ///
     /// # Arguments
     ///
-    /// * `AlogicalPlan` - Arena based logical plan tree representing the query.
+    /// * `IR` - Arena based logical plan tree representing the query.
     /// * `acc_projections` - The projections we accumulate during tree traversal.
     /// * `names` - We keep track of the names to ensure we don't do duplicate projections.
     /// * `projections_seen` - Count the number of projection operations during tree traversal.
@@ -319,17 +315,17 @@ impl ProjectionPushDown {
     #[recursive]
     fn push_down(
         &mut self,
-        logical_plan: ALogicalPlan,
+        logical_plan: IR,
         mut acc_projections: Vec<ColumnNode>,
         mut projected_names: PlHashSet<Arc<str>>,
         projections_seen: usize,
-        lp_arena: &mut Arena<ALogicalPlan>,
+        lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
-    ) -> PolarsResult<ALogicalPlan> {
-        use ALogicalPlan::*;
+    ) -> PolarsResult<IR> {
+        use IR::*;
 
         match logical_plan {
-            Projection { expr, input, .. } => process_projection(
+            Select { expr, input, .. } => process_projection(
                 self,
                 input,
                 expr.exprs(),
@@ -455,7 +451,8 @@ impl ProjectionPushDown {
             Sort {
                 input,
                 by_column,
-                args,
+                slice,
+                sort_options,
             } => {
                 if !acc_projections.is_empty() {
                     // Make sure that the column(s) used for the sort is projected
@@ -480,7 +477,8 @@ impl ProjectionPushDown {
                 Ok(Sort {
                     input,
                     by_column,
-                    args,
+                    slice,
+                    sort_options,
                 })
             },
             Distinct { input, options } => {
@@ -519,7 +517,7 @@ impl ProjectionPushDown {
                 )?;
                 Ok(Distinct { input, options })
             },
-            Selection { predicate, input } => {
+            Filter { predicate, input } => {
                 if !acc_projections.is_empty() {
                     // make sure that the filter column is projected
                     add_expr_to_accumulated(
@@ -537,9 +535,9 @@ impl ProjectionPushDown {
                     lp_arena,
                     expr_arena,
                 )?;
-                Ok(Selection { predicate, input })
+                Ok(Filter { predicate, input })
             },
-            Aggregate {
+            GroupBy {
                 input,
                 keys,
                 aggs,
@@ -705,12 +703,10 @@ impl ProjectionPushDown {
                 if acc_projections.is_empty() {
                     Ok(logical_plan)
                 } else {
-                    Ok(
-                        ALogicalPlanBuilder::from_lp(logical_plan, expr_arena, lp_arena)
-                            .project_simple_nodes(acc_projections)
-                            .unwrap()
-                            .build(),
-                    )
+                    Ok(IRBuilder::from_lp(logical_plan, expr_arena, lp_arena)
+                        .project_simple_nodes(acc_projections)
+                        .unwrap()
+                        .build())
                 }
             },
             Invalid => unreachable!(),
@@ -719,10 +715,10 @@ impl ProjectionPushDown {
 
     pub fn optimize(
         &mut self,
-        logical_plan: ALogicalPlan,
-        lp_arena: &mut Arena<ALogicalPlan>,
+        logical_plan: IR,
+        lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
-    ) -> PolarsResult<ALogicalPlan> {
+    ) -> PolarsResult<IR> {
         let acc_projections = init_vec();
         let names = init_set();
         self.push_down(

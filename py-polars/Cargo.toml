@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "0.20.18"
+version = "0.20.19"
 edition = "2021"
 
 [lib]
@@ -28,6 +28,7 @@ numpy = { version = "0.20", default-features = false }
 once_cell = { workspace = true }
 pyo3 = { workspace = true, features = ["abi3-py38", "extension-module", "multiple-pymethods"] }
 pyo3-built = { version = "0.4", optional = true }
+recursive = { workspace = true }
 serde_json = { workspace = true, optional = true }
 smartstring = { workspace = true }
 thiserror = { workspace = true }
@@ -38,6 +39,7 @@ features = [
   "abs",
   "approx_unique",
   "arg_where",
+  "business",
   "concat_str",
   "cum_agg",
   "cumulative_eval",
@@ -162,7 +164,6 @@ dtypes = [
   "dtype-i16",
   "dtype-u8",
   "dtype-u16",
-  "polars/group_by_list",
   "object",
 ]
 

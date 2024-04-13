@@ -103,7 +103,7 @@ pub fn qcut(
     include_breaks: bool,
 ) -> PolarsResult<Series> {
     let s = s.cast(&DataType::Float64)?;
-    let s2 = s.sort(false, false)?;
+    let s2 = s.sort(SortOptions::default())?;
     let ca = s2.f64()?;
 
     if ca.null_count() == ca.len() {

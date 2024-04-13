@@ -37,11 +37,16 @@ impl UpperExp for AExpr {
                 )
             },
             AExpr::Gather { .. } => "gather",
-            AExpr::SortBy { descending, .. } => {
+            AExpr::SortBy { sort_options, .. } => {
                 write!(f, "sort_by:")?;
-                for i in descending {
+                for i in &sort_options.descending {
                     write!(f, "{}", *i as u8)?;
                 }
+                write!(
+                    f,
+                    "{}{}",
+                    sort_options.nulls_last as u8, sort_options.multithreaded as u8
+                )?;
                 return Ok(());
             },
             AExpr::Filter { .. } => "filter",
@@ -195,14 +200,14 @@ impl<'a> TreeFmtNode<'a> {
                 ),
                 vec![NL(None, input)],
             ),
-            NL(h, Selection { input, predicate }) => ND(
+            NL(h, Filter { input, predicate }) => ND(
                 wh(h, "FILTER"),
                 vec![
                     NE(Some("predicate:".to_string()), predicate),
                     NL(Some("FROM:".to_string()), input),
                 ],
             ),
-            NL(h, Projection { expr, input, .. }) => ND(
+            NL(h, Select { expr, input, .. }) => ND(
                 wh(h, "SELECT"),
                 expr.iter()
                     .map(|expr| NE(Some("expression:".to_string()), expr))
@@ -224,7 +229,7 @@ impl<'a> TreeFmtNode<'a> {
             ),
             NL(
                 h,
-                Aggregate {
+                GroupBy {
                     input, keys, aggs, ..
                 },
             ) => ND(
@@ -315,10 +320,15 @@ pub(crate) struct TreeFmtVisitor {
 
 impl Visitor for TreeFmtVisitor {
     type Node = AexprNode;
+    type Arena = Arena<AExpr>;
 
     /// Invoked before any children of `node` are visited.
-    fn pre_visit(&mut self, node: &Self::Node) -> PolarsResult<VisitRecursion> {
-        let ae = node.to_aexpr();
+    fn pre_visit(
+        &mut self,
+        node: &Self::Node,
+        arena: &Self::Arena,
+    ) -> PolarsResult<VisitRecursion> {
+        let ae = node.to_aexpr(arena);
         let repr = format!("{:E}", ae);
 
         if self.levels.len() <= self.depth {
@@ -342,7 +352,11 @@ impl Visitor for TreeFmtVisitor {
         Ok(VisitRecursion::Continue)
     }
 
-    fn post_visit(&mut self, _node: &Self::Node) -> PolarsResult<VisitRecursion> {
+    fn post_visit(
+        &mut self,
+        _node: &Self::Node,
+        _arena: &Self::Arena,
+    ) -> PolarsResult<VisitRecursion> {
         // we finished this branch so we decrease in depth, back the caller node
         self.depth -= 1;
 
@@ -811,7 +825,8 @@ mod test {
 
         let mut visitor = TreeFmtVisitor::default();
 
-        AexprNode::with_context(node, &mut arena, |ae_node| ae_node.visit(&mut visitor)).unwrap();
+        let ae_node = AexprNode::new(node);
+        ae_node.visit(&mut visitor, &arena).unwrap();
         let expected: &[&[&str]] = &[
             &["sum"],
             &["binary: +"],
@@ -831,7 +846,7 @@ mod test {
 
         let mut visitor = TreeFmtVisitor::default();
 
-        AexprNode::with_context(node, &mut arena, |ae_node| ae_node.visit(&mut visitor)).unwrap();
+        AexprNode::new(node).visit(&mut visitor, &arena).unwrap();
 
         let expected_lines = vec![
             "            0            1               2                3            4",
@@ -880,8 +895,8 @@ mod test {
         let node = to_aexpr(e, &mut arena);
 
         let mut visitor = TreeFmtVisitor::default();
-
-        AexprNode::with_context(node, &mut arena, |ae_node| ae_node.visit(&mut visitor)).unwrap();
+        let ae_node = AexprNode::new(node);
+        ae_node.visit(&mut visitor, &arena).unwrap();
 
         let expected_lines = vec![
             "                 0                 1               2                3            4",

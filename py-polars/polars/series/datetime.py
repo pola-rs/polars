@@ -1589,6 +1589,10 @@ class DateTimeNameSpace:
             Every interval start and period length
         offset
             Offset the window
+
+            .. deprecated:: 0.20.19
+                This argument is deprecated and will be removed in the next breaking
+                release. Instead, chain `dt.truncate` with `dt.offset_by`.
         use_earliest
             Determine how to deal with ambiguous datetimes:
 
@@ -1736,6 +1740,10 @@ class DateTimeNameSpace:
             Every interval start and period length
         offset
             Offset the window
+
+            .. deprecated:: 0.20.19
+                This argument is deprecated and will be removed in the next breaking
+                release. Instead, chain `dt.round` with `dt.offset_by`.
         ambiguous
             Determine how to deal with ambiguous datetimes:
 

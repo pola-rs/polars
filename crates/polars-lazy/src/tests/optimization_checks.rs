@@ -6,7 +6,7 @@ pub(crate) fn row_index_at_scan(q: LazyFrame) -> bool {
     let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
 
     (&lp_arena).iter(lp).any(|(_, lp)| {
-        use ALogicalPlan::*;
+        use IR::*;
         matches!(
             lp,
             Scan {
@@ -25,7 +25,7 @@ pub(crate) fn predicate_at_scan(q: LazyFrame) -> bool {
     let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
 
     (&lp_arena).iter(lp).any(|(_, lp)| {
-        use ALogicalPlan::*;
+        use IR::*;
         matches!(
             lp,
             DataFrameScan {
@@ -44,7 +44,7 @@ pub(crate) fn predicate_at_all_scans(q: LazyFrame) -> bool {
     let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
 
     (&lp_arena).iter(lp).all(|(_, lp)| {
-        use ALogicalPlan::*;
+        use IR::*;
         matches!(
             lp,
             DataFrameScan {
@@ -64,7 +64,7 @@ pub(crate) fn is_pipeline(q: LazyFrame) -> bool {
     let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
     matches!(
         lp_arena.get(lp),
-        ALogicalPlan::MapFunction {
+        IR::MapFunction {
             function: FunctionNode::Pipeline { .. },
             ..
         }
@@ -78,7 +78,7 @@ pub(crate) fn has_pipeline(q: LazyFrame) -> bool {
     (&lp_arena).iter(lp).any(|(_, lp)| {
         matches!(
             lp,
-            ALogicalPlan::MapFunction {
+            IR::MapFunction {
                 function: FunctionNode::Pipeline { .. },
                 ..
             }
@@ -91,7 +91,7 @@ fn slice_at_scan(q: LazyFrame) -> bool {
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
     (&lp_arena).iter(lp).any(|(_, lp)| {
-        use ALogicalPlan::*;
+        use IR::*;
         match lp {
             Scan { file_options, .. } => file_options.n_rows.is_some(),
             _ => false,
@@ -213,7 +213,7 @@ pub fn test_slice_pushdown_join() -> PolarsResult<()> {
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let lp = q.clone().optimize(&mut lp_arena, &mut expr_arena).unwrap();
     assert!((&lp_arena).iter(lp).all(|(_, lp)| {
-        use ALogicalPlan::*;
+        use IR::*;
         match lp {
             Join { options, .. } => options.args.slice == Some((1, 3)),
             Slice { .. } => false,
@@ -243,9 +243,9 @@ pub fn test_slice_pushdown_group_by() -> PolarsResult<()> {
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let lp = q.clone().optimize(&mut lp_arena, &mut expr_arena).unwrap();
     assert!((&lp_arena).iter(lp).all(|(_, lp)| {
-        use ALogicalPlan::*;
+        use IR::*;
         match lp {
-            Aggregate { options, .. } => options.slice == Some((1, 3)),
+            GroupBy { options, .. } => options.slice == Some((1, 3)),
             Slice { .. } => false,
             _ => true,
         }
@@ -262,7 +262,9 @@ pub fn test_slice_pushdown_sort() -> PolarsResult<()> {
     let _guard = SINGLE_LOCK.lock().unwrap();
     let q = scan_foods_parquet(false).limit(100);
 
-    let q = q.sort("category", SortOptions::default()).slice(1, 3);
+    let q = q
+        .sort(["category"], SortMultipleOptions::default())
+        .slice(1, 3);
 
     // test if optimization continued beyond the sort node
     assert!(slice_at_scan(q.clone()));
@@ -270,9 +272,9 @@ pub fn test_slice_pushdown_sort() -> PolarsResult<()> {
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let lp = q.clone().optimize(&mut lp_arena, &mut expr_arena).unwrap();
     assert!((&lp_arena).iter(lp).all(|(_, lp)| {
-        use ALogicalPlan::*;
+        use IR::*;
         match lp {
-            Sort { args, .. } => args.slice == Some((1, 3)),
+            Sort { slice, .. } => *slice == Some((1, 3)),
             Slice { .. } => false,
             _ => true,
         }
@@ -466,7 +468,7 @@ fn test_with_column_prune() -> PolarsResult<()> {
         .select([col("c1"), col("c4")]);
     let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
     (&lp_arena).iter(lp).for_each(|(_, lp)| {
-        use ALogicalPlan::*;
+        use IR::*;
         match lp {
             DataFrameScan { projection, .. } => {
                 let projection = projection.as_ref().unwrap();
@@ -489,12 +491,9 @@ fn test_with_column_prune() -> PolarsResult<()> {
 
     // check if with_column is pruned
     assert!((&lp_arena).iter(lp).all(|(_, lp)| {
-        use ALogicalPlan::*;
+        use IR::*;
 
-        matches!(
-            lp,
-            ALogicalPlan::SimpleProjection { .. } | DataFrameScan { .. }
-        )
+        matches!(lp, IR::SimpleProjection { .. } | DataFrameScan { .. })
     }));
     assert_eq!(
         q.schema().unwrap().as_ref(),
@@ -541,7 +540,7 @@ fn test_flatten_unions() -> PolarsResult<()> {
     let root = lf4.optimize(&mut lp_arena, &mut expr_arena).unwrap();
     let lp = lp_arena.get(root);
     match lp {
-        ALogicalPlan::Union { inputs, .. } => {
+        IR::Union { inputs, .. } => {
             // we make sure that the nested unions are flattened into a single union
             assert_eq!(inputs.len(), 5);
         },

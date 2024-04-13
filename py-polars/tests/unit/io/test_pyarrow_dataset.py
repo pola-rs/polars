@@ -83,6 +83,13 @@ def test_dataset_foo(df: pl.DataFrame, tmp_path: Path) -> None:
         .collect(),
         n_expected=3,
     )
+    helper_dataset_test(
+        file_path,
+        lambda lf: lf.filter(pl.col("int").is_between(9, 11))
+        .select(["bools", "floats", "date"])
+        .collect(),
+        n_expected=0,
+    )
     # this predicate is not supported by pyarrow
     # check if we still do it on our side
     helper_dataset_test(

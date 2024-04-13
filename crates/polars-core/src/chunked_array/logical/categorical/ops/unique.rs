@@ -66,6 +66,9 @@ impl CategoricalChunked {
         counts.rename("counts");
         let cols = vec![values.into_series(), counts.into_series()];
         let df = unsafe { DataFrame::new_no_checks(cols) };
-        df.sort(["counts"], true, false)
+        df.sort(
+            ["counts"],
+            SortMultipleOptions::default().with_order_descending(true),
+        )
     }
 }

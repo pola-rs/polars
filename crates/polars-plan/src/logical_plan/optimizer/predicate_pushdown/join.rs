@@ -99,7 +99,7 @@ fn all_pred_cols_in_left_on(
 #[allow(clippy::too_many_arguments)]
 pub(super) fn process_join(
     opt: &PredicatePushDown,
-    lp_arena: &mut Arena<ALogicalPlan>,
+    lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     input_left: Node,
     input_right: Node,
@@ -108,8 +108,8 @@ pub(super) fn process_join(
     schema: SchemaRef,
     options: Arc<JoinOptions>,
     acc_predicates: PlHashMap<Arc<str>, ExprIR>,
-) -> PolarsResult<ALogicalPlan> {
-    use ALogicalPlan::*;
+) -> PolarsResult<IR> {
+    use IR::*;
     let schema_left = lp_arena.get(input_left).schema(lp_arena);
     let schema_right = lp_arena.get(input_right).schema(lp_arena);
 

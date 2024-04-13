@@ -53,6 +53,7 @@ fn test_nested_expr() -> PolarsResult<()> {
     assert_eq!(df_sql, df_pl);
     Ok(())
 }
+
 #[test]
 fn test_group_by_simple() -> PolarsResult<()> {
     let df = create_sample_df()?;
@@ -67,15 +68,9 @@ fn test_group_by_simple() -> PolarsResult<()> {
         LIMIT 100
     "#,
         )?
-        .sort(
-            "a",
-            SortOptions {
-                descending: false,
-                nulls_last: false,
-                ..Default::default()
-            },
-        )
+        .sort(["a"], Default::default())
         .collect()?;
+
     let df_pl = df
         .lazy()
         .group_by(&[col("a")])
@@ -85,14 +80,7 @@ fn test_group_by_simple() -> PolarsResult<()> {
             col("a").count().alias("total_count"),
         ])
         .limit(100)
-        .sort(
-            "a",
-            SortOptions {
-                descending: false,
-                nulls_last: false,
-                ..Default::default()
-            },
-        )
+        .sort(["a"], Default::default())
         .collect()?;
     assert_eq!(df_sql, df_pl);
     Ok(())
@@ -249,7 +237,7 @@ fn test_null_exprs_in_where() {
 }
 
 #[test]
-fn binary_functions() {
+fn test_binary_functions() {
     let df = create_sample_df().unwrap();
     let mut context = SQLContext::new();
     context.register("df", df.clone().lazy());
@@ -415,7 +403,7 @@ fn test_arr_agg() {
         (
             "SELECT ARRAY_AGG(a ORDER BY a) AS a FROM df",
             vec![col("a")
-                .sort_by(vec![col("a")], vec![false])
+                .sort_by(vec![col("a")], SortMultipleOptions::default())
                 .implode()
                 .alias("a")],
         ),
@@ -430,7 +418,7 @@ fn test_arr_agg() {
         (
             "SELECT ARRAY_AGG(a ORDER BY b LIMIT 2) FROM df",
             vec![col("a")
-                .sort_by(vec![col("b")], vec![false])
+                .sort_by(vec![col("b")], SortMultipleOptions::default())
                 .head(Some(2))
                 .implode()],
         ),
@@ -448,15 +436,15 @@ fn test_ctes() -> PolarsResult<()> {
     let mut context = SQLContext::new();
     context.register("df", df.lazy());
 
-    let sql = r#"
-    with df0 as (
-        SELECT * FROM df
-    )
-    select * from df0 "#;
-    assert!(context.execute(sql).is_ok());
+    // note: confirm correct behaviour of quoted/unquoted CTE identifiers
+    let sql0 = r#"WITH "df0" AS (SELECT * FROM "df") SELECT * FROM df0 "#;
+    assert!(context.execute(sql0).is_ok());
 
-    let sql = r#"select * from df0"#;
-    assert!(context.execute(sql).is_err());
+    let sql1 = r#"WITH df0 AS (SELECT * FROM df) SELECT * FROM "df0" "#;
+    assert!(context.execute(sql1).is_ok());
+
+    let sql2 = r#"SELECT * FROM df0"#;
+    assert!(context.execute(sql2).is_err());
 
     Ok(())
 }
@@ -494,9 +482,7 @@ fn test_group_by_2() -> PolarsResult<()> {
         ])
         .sort_by_exprs(
             vec![col("count"), col("category")],
-            vec![false, true],
-            false,
-            false,
+            SortMultipleOptions::default().with_order_descendings([false, true]),
         )
         .limit(2);
     let expected = expected.collect()?;

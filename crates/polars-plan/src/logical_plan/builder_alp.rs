@@ -4,19 +4,19 @@ use super::builder_functions::*;
 use super::*;
 use crate::logical_plan::projection_expr::ProjectionExprs;
 
-pub struct ALogicalPlanBuilder<'a> {
+pub struct IRBuilder<'a> {
     root: Node,
     expr_arena: &'a mut Arena<AExpr>,
-    lp_arena: &'a mut Arena<ALogicalPlan>,
+    lp_arena: &'a mut Arena<IR>,
 }
 
-impl<'a> ALogicalPlanBuilder<'a> {
+impl<'a> IRBuilder<'a> {
     pub(crate) fn new(
         root: Node,
         expr_arena: &'a mut Arena<AExpr>,
-        lp_arena: &'a mut Arena<ALogicalPlan>,
+        lp_arena: &'a mut Arena<IR>,
     ) -> Self {
-        ALogicalPlanBuilder {
+        IRBuilder {
             root,
             expr_arena,
             lp_arena,
@@ -24,21 +24,21 @@ impl<'a> ALogicalPlanBuilder<'a> {
     }
 
     pub(crate) fn from_lp(
-        lp: ALogicalPlan,
+        lp: IR,
         expr_arena: &'a mut Arena<AExpr>,
-        lp_arena: &'a mut Arena<ALogicalPlan>,
+        lp_arena: &'a mut Arena<IR>,
     ) -> Self {
         let root = lp_arena.add(lp);
-        ALogicalPlanBuilder {
+        IRBuilder {
             root,
             expr_arena,
             lp_arena,
         }
     }
 
-    fn add_alp(self, lp: ALogicalPlan) -> Self {
+    fn add_alp(self, lp: IR) -> Self {
         let node = self.lp_arena.add(lp);
-        ALogicalPlanBuilder::new(node, self.expr_arena, self.lp_arena)
+        IRBuilder::new(node, self.expr_arena, self.lp_arena)
     }
 
     pub fn project(self, exprs: Vec<ExprIR>, options: ProjectionOptions) -> Self {
@@ -50,14 +50,14 @@ impl<'a> ALogicalPlanBuilder<'a> {
             let schema =
                 expr_irs_to_schema(&exprs, &input_schema, Context::Default, self.expr_arena);
 
-            let lp = ALogicalPlan::Projection {
+            let lp = IR::Select {
                 expr: exprs.into(),
                 input: self.root,
                 schema: Arc::new(schema),
                 options,
             };
             let node = self.lp_arena.add(lp);
-            ALogicalPlanBuilder::new(node, self.expr_arena, self.lp_arena)
+            IRBuilder::new(node, self.expr_arena, self.lp_arena)
         }
     }
 
@@ -89,17 +89,13 @@ impl<'a> ALogicalPlanBuilder<'a> {
 
             polars_ensure!(count == schema.len(), Duplicate: "found duplicate columns");
 
-            let lp = ALogicalPlan::SimpleProjection {
+            let lp = IR::SimpleProjection {
                 input: self.root,
                 columns: Arc::new(schema),
                 duplicate_check: false,
             };
             let node = self.lp_arena.add(lp);
-            Ok(ALogicalPlanBuilder::new(
-                node,
-                self.expr_arena,
-                self.lp_arena,
-            ))
+            Ok(IRBuilder::new(node, self.expr_arena, self.lp_arena))
         }
     }
 
@@ -125,21 +121,17 @@ impl<'a> ALogicalPlanBuilder<'a> {
 
             polars_ensure!(count == schema.len(), Duplicate: "found duplicate columns");
 
-            let lp = ALogicalPlan::SimpleProjection {
+            let lp = IR::SimpleProjection {
                 input: self.root,
                 columns: Arc::new(schema),
                 duplicate_check: false,
             };
             let node = self.lp_arena.add(lp);
-            Ok(ALogicalPlanBuilder::new(
-                node,
-                self.expr_arena,
-                self.lp_arena,
-            ))
+            Ok(IRBuilder::new(node, self.expr_arena, self.lp_arena))
         }
     }
 
-    pub fn build(self) -> ALogicalPlan {
+    pub fn build(self) -> IR {
         if self.root.0 == self.lp_arena.len() {
             self.lp_arena.pop().unwrap()
         } else {
@@ -158,7 +150,7 @@ impl<'a> ALogicalPlanBuilder<'a> {
         let hstack_schema = expr_irs_to_schema(&exprs, &schema, Context::Default, self.expr_arena);
         new_schema.merge(hstack_schema);
 
-        let lp = ALogicalPlan::HStack {
+        let lp = IR::HStack {
             input: self.root,
             exprs: ProjectionExprs::new(exprs),
             schema: Arc::new(new_schema),
@@ -195,7 +187,7 @@ impl<'a> ALogicalPlanBuilder<'a> {
             new_schema.with_column(field.name().clone(), field.data_type().clone());
         }
 
-        let lp = ALogicalPlan::HStack {
+        let lp = IR::HStack {
             input: self.root,
             exprs: ProjectionExprs::new(expr_irs),
             schema: Arc::new(new_schema),
@@ -209,7 +201,7 @@ impl<'a> ALogicalPlanBuilder<'a> {
         let mut schema = (*self.schema().into_owned()).clone();
         explode_schema(&mut schema, &columns).unwrap();
 
-        let lp = ALogicalPlan::MapFunction {
+        let lp = IR::MapFunction {
             input: self.root,
             function: FunctionNode::Explode {
                 columns,
@@ -256,7 +248,7 @@ impl<'a> ALogicalPlanBuilder<'a> {
         );
         schema.merge(agg_schema);
 
-        let lp = ALogicalPlan::Aggregate {
+        let lp = IR::GroupBy {
             input: self.root,
             keys,
             aggs,
@@ -296,7 +288,7 @@ impl<'a> ALogicalPlanBuilder<'a> {
         )
         .unwrap();
 
-        let lp = ALogicalPlan::Join {
+        let lp = IR::Join {
             input_left: self.root,
             input_right: other,
             schema,
@@ -311,7 +303,7 @@ impl<'a> ALogicalPlanBuilder<'a> {
     pub fn melt(self, args: Arc<MeltArgs>) -> Self {
         let schema = self.schema();
         let schema = det_melt_schema(&args, &schema);
-        let lp = ALogicalPlan::MapFunction {
+        let lp = IR::MapFunction {
             input: self.root,
             function: FunctionNode::Melt { args, schema },
         };
@@ -323,7 +315,7 @@ impl<'a> ALogicalPlanBuilder<'a> {
         let schema_mut = Arc::make_mut(&mut schema);
         row_index_schema(schema_mut, name.as_ref());
 
-        let lp = ALogicalPlan::MapFunction {
+        let lp = IR::MapFunction {
             input: self.root,
             function: FunctionNode::RowIndex {
                 name,

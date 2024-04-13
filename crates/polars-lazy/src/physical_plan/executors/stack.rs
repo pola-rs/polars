@@ -1,3 +1,5 @@
+use polars_core::utils::accumulate_dataframes_vertical_unchecked;
+
 use super::*;
 
 pub struct StackExec {
@@ -7,6 +9,8 @@ pub struct StackExec {
     pub(crate) exprs: Vec<Arc<dyn PhysicalExpr>>,
     pub(crate) input_schema: SchemaRef,
     pub(crate) options: ProjectionOptions,
+    // Can run all operations elementwise
+    pub(crate) streamable: bool,
 }
 
 impl StackExec {
@@ -15,18 +19,44 @@ impl StackExec {
         state: &ExecutionState,
         mut df: DataFrame,
     ) -> PolarsResult<DataFrame> {
-        let res = evaluate_physical_expressions(
-            &mut df,
-            &self.cse_exprs,
-            &self.exprs,
-            state,
-            self.has_windows,
-            self.options.run_parallel,
-        )?;
-        state.clear_window_expr_cache();
-
         let schema = &*self.input_schema;
-        df._add_columns(res, schema)?;
+
+        // Vertical and horizontal parallelism.
+        let df =
+            if self.streamable && df.n_chunks() > 1 && df.height() > 0 && self.options.run_parallel
+            {
+                let chunks = df.split_chunks().collect::<Vec<_>>();
+                let iter = chunks.into_par_iter().map(|mut df| {
+                    let res = evaluate_physical_expressions(
+                        &mut df,
+                        &self.cse_exprs,
+                        &self.exprs,
+                        state,
+                        self.has_windows,
+                        self.options.run_parallel,
+                    )?;
+                    df._add_columns(res, schema)?;
+                    Ok(df)
+                });
+
+                let df = POOL.install(|| iter.collect::<PolarsResult<Vec<_>>>())?;
+                accumulate_dataframes_vertical_unchecked(df)
+            }
+            // Only horizontal parallelism
+            else {
+                let res = evaluate_physical_expressions(
+                    &mut df,
+                    &self.cse_exprs,
+                    &self.exprs,
+                    state,
+                    self.has_windows,
+                    self.options.run_parallel,
+                )?;
+                df._add_columns(res, schema)?;
+                df
+            };
+
+        state.clear_window_expr_cache();
 
         Ok(df)
     }

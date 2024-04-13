@@ -1,76 +1,20 @@
+use polars_core::chunked_array::ops::SortMultipleOptions;
 use polars_ops::prelude::*;
 use polars_plan::logical_plan::expr_ir::ExprIR;
 use polars_plan::prelude::*;
 
-pub(super) fn is_streamable_sort(args: &SortArguments) -> bool {
-    // check if slice is positive or maintain order is true
-    match args {
-        SortArguments {
-            maintain_order: true,
-            ..
-        } => false,
-        SortArguments {
-            slice: Some((offset, _)),
-            ..
-        } => *offset >= 0,
-        SortArguments { slice: None, .. } => true,
-    }
-}
-
-pub(super) fn is_streamable(node: Node, expr_arena: &Arena<AExpr>, context: Context) -> bool {
-    // check whether leaf column is Col or Lit
-    let mut seen_column = false;
-    let mut seen_lit_range = false;
-    let all = expr_arena.iter(node).all(|(_, ae)| match ae {
-        AExpr::Function {
-            function: FunctionExpr::SetSortedFlag(_),
-            ..
-        } => true,
-        AExpr::Function { options, .. } | AExpr::AnonymousFunction { options, .. } => match context
-        {
-            Context::Default => matches!(
-                options.collect_groups,
-                ApplyOptions::ElementWise | ApplyOptions::ApplyList
-            ),
-            Context::Aggregation => matches!(options.collect_groups, ApplyOptions::ElementWise),
-        },
-        AExpr::Column(_) => {
-            seen_column = true;
-            true
-        },
-        AExpr::Ternary { .. }
-        | AExpr::BinaryExpr { .. }
-        | AExpr::Alias(_, _)
-        | AExpr::Cast { .. } => true,
-        AExpr::Literal(lv) => match lv {
-            LiteralValue::Series(_) | LiteralValue::Range { .. } => {
-                seen_lit_range = true;
-                true
-            },
-            _ => true,
-        },
-        _ => false,
-    });
-
-    if all {
-        // adding a range or literal series to chunks will fail because sizes don't match
-        // if column is a leaf column then it is ok
-        // - so we want to block `with_column(lit(Series))`
-        // - but we want to allow `with_column(col("foo").is_in(Series))`
-        // that means that IFF we seen a lit_range, we only allow if we also seen a `column`.
-        return if seen_lit_range { seen_column } else { true };
-    }
-    false
-}
-
-pub(super) fn all_streamable(
-    exprs: &[ExprIR],
-    expr_arena: &Arena<AExpr>,
-    context: Context,
+pub(super) fn is_streamable_sort(
+    slice: &Option<(i64, usize)>,
+    sort_options: &SortMultipleOptions,
 ) -> bool {
-    exprs
-        .iter()
-        .all(|e| is_streamable(e.node(), expr_arena, context))
+    // check if slice is positive or maintain order is true
+    if sort_options.maintain_order {
+        false
+    } else if let Some((offset, _)) = slice {
+        *offset >= 0
+    } else {
+        true
+    }
 }
 
 /// check if all expressions are a simple column projection

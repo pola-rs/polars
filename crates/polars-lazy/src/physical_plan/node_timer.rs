@@ -59,6 +59,6 @@ impl NodeTimer {
 
         let columns = vec![nodes_s, start.into_series(), end.into_series()];
         let df = unsafe { DataFrame::new_no_checks(columns) };
-        df.sort(vec!["start"], vec![false], false)
+        df.sort(vec!["start"], SortMultipleOptions::default())
     }
 }

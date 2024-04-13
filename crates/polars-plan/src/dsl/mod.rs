@@ -206,7 +206,7 @@ impl Expr {
         AggExpr::Last(Arc::new(self)).into()
     }
 
-    /// Aggregate the group to a Series.
+    /// GroupBy the group to a Series.
     pub fn implode(self) -> Self {
         AggExpr::Implode(Arc::new(self)).into()
     }
@@ -408,19 +408,36 @@ impl Expr {
         }
     }
 
-    /// Sort in increasing order. See [the eager implementation](Series::sort).
-    pub fn sort(self, descending: bool) -> Self {
-        Expr::Sort {
-            expr: Arc::new(self),
-            options: SortOptions {
-                descending,
-                ..Default::default()
-            },
-        }
-    }
-
     /// Sort with given options.
-    pub fn sort_with(self, options: SortOptions) -> Self {
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use polars_core::prelude::*;
+    /// # use polars_lazy::prelude::*;
+    /// # fn main() -> PolarsResult<()> {
+    /// let lf = df! {
+    ///    "a" => [Some(5), Some(4), Some(3), Some(2), None]
+    /// }?
+    /// .lazy();
+    ///
+    /// let sorted = lf
+    ///     .select(
+    ///         vec![col("a").sort(SortOptions::default())],
+    ///     )
+    ///     .collect()?;
+    ///
+    /// assert_eq!(
+    ///     sorted,
+    ///     df! {
+    ///         "a" => [None, Some(2), Some(3), Some(4), Some(5)]
+    ///     }?
+    /// );
+    /// # Ok(())
+    /// # }
+    /// ```
+    /// See [`SortOptions`] for more options.
+    pub fn sort(self, options: SortOptions) -> Self {
         Expr::Sort {
             expr: Arc::new(self),
             options,
@@ -1071,19 +1088,42 @@ impl Expr {
         }
     }
 
-    /// Sort this column by the ordering of another column.
+    /// Sort this column by the ordering of another column evaluated from given expr.
     /// Can also be used in a group_by context to sort the groups.
-    pub fn sort_by<E: AsRef<[IE]>, IE: Into<Expr> + Clone, R: AsRef<[bool]>>(
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use polars_core::prelude::*;
+    /// # use polars_lazy::prelude::*;
+    /// # fn main() -> PolarsResult<()> {
+    /// let lf = df! {
+    ///     "a" => [1, 2, 3, 4, 5],
+    ///     "b" => [5, 4, 3, 2, 1]
+    /// }?.lazy();
+    ///
+    /// let sorted = lf
+    ///     .select(
+    ///         vec![col("a").sort_by(col("b"), SortOptions::default())],
+    ///     )
+    ///     .collect()?;
+    ///
+    /// assert_eq!(
+    ///     sorted,
+    ///     df! { "a" => [5, 4, 3, 2, 1] }?
+    /// );
+    /// # Ok(())
+    /// # }
+    pub fn sort_by<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(
         self,
         by: E,
-        descending: R,
+        sort_options: SortMultipleOptions,
     ) -> Expr {
         let by = by.as_ref().iter().map(|e| e.clone().into()).collect();
-        let descending = descending.as_ref().to_vec();
         Expr::SortBy {
             expr: Arc::new(self),
             by,
-            descending,
+            sort_options,
         }
     }
 
@@ -1483,9 +1523,9 @@ impl Expr {
         self.map_private(FunctionExpr::LowerBound)
     }
 
-    pub fn reshape(self, dims: &[i64]) -> Self {
-        let dims = dims.to_vec();
-        self.apply_private(FunctionExpr::Reshape(dims))
+    pub fn reshape(self, dimensions: &[i64]) -> Self {
+        let dimensions = dimensions.to_vec();
+        self.apply_private(FunctionExpr::Reshape(dimensions))
     }
 
     #[cfg(feature = "ewma")]

@@ -1,13 +1,11 @@
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
 
-use ahash::RandomState;
 use num_traits::NumCast;
-use polars_utils::hashing::{BytesHash, DirtyHash};
+use polars_utils::hashing::DirtyHash;
 use rayon::prelude::*;
 
 use self::hashing::*;
-use crate::hashing::get_null_hash_value;
 use crate::prelude::*;
 use crate::utils::{_set_partition_size, accumulate_dataframes_vertical};
 use crate::POOL;
@@ -1081,7 +1079,7 @@ mod test {
         // Use of deprecated `sum()` for testing purposes
         #[allow(deprecated)]
         let res = df.group_by(["flt"]).unwrap().sum().unwrap();
-        let res = res.sort(["flt"], false, false).unwrap();
+        let res = res.sort(["flt"], SortMultipleOptions::default()).unwrap();
         assert_eq!(
             Vec::from(res.column("val_sum").unwrap().i32().unwrap()),
             &[Some(2), Some(2), Some(1)]

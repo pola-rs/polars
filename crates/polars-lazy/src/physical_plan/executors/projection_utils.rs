@@ -269,6 +269,7 @@ pub(super) fn evaluate_physical_expressions(
 pub(super) fn check_expand_literals(
     mut selected_columns: Vec<Series>,
     zero_length: bool,
+    duplicate_check: bool,
 ) -> PolarsResult<DataFrame> {
     let Some(first_len) = selected_columns.first().map(|s| s.len()) else {
         return Ok(DataFrame::empty());
@@ -285,7 +286,7 @@ pub(super) fn check_expand_literals(
             }
             let name = s.name();
 
-            if !names.insert(name) {
+            if duplicate_check && !names.insert(name) {
                 let msg = format!(
                     "the name: '{}' is duplicate\n\n\
                     It's possible that multiple expressions are returning the same default column \

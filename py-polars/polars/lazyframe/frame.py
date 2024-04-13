@@ -41,8 +41,6 @@ from polars._utils.parse_expr_input import (
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
     _in_notebook,
-    _prepare_row_index_args,
-    _process_null_values,
     is_bool_sequence,
     is_sequence,
     normalize_filepath,
@@ -79,10 +77,7 @@ from polars.datatypes import (
     py_type_to_dtype,
 )
 from polars.dependencies import subprocess
-from polars.io._utils import _is_local_file, _is_supported_cloud
 from polars.io.csv._utils import _check_arg_is_1byte
-from polars.io.ipc.anonymous_scan import _scan_ipc_fsspec
-from polars.io.parquet.anonymous_scan import _scan_parquet_fsspec
 from polars.lazyframe.group_by import LazyGroupBy
 from polars.lazyframe.in_process import InProcessQuery
 from polars.selectors import _expand_selectors, by_dtype, expand_selector
@@ -104,7 +99,6 @@ if TYPE_CHECKING:
         AsofJoinStrategy,
         ClosedInterval,
         ColumnNameOrSelector,
-        CsvEncoding,
         CsvQuoteStyle,
         FillNullStrategy,
         FrameInitTypes,
@@ -114,7 +108,6 @@ if TYPE_CHECKING:
         JoinValidation,
         Label,
         Orientation,
-        ParallelStrategy,
         PolarsDataType,
         RollingInterpolationMethod,
         SchemaDefinition,
@@ -332,261 +325,6 @@ class LazyFrame:
     def __setstate__(self, state: bytes) -> None:
         self._ldf = LazyFrame()._ldf  # Initialize with a dummy
         self._ldf.__setstate__(state)
-
-    @classmethod
-    def _scan_csv(
-        cls,
-        source: str | list[str] | list[Path],
-        *,
-        has_header: bool = True,
-        separator: str = ",",
-        comment_prefix: str | None = None,
-        quote_char: str | None = '"',
-        skip_rows: int = 0,
-        dtypes: SchemaDict | None = None,
-        schema: SchemaDict | None = None,
-        null_values: str | Sequence[str] | dict[str, str] | None = None,
-        missing_utf8_is_empty_string: bool = False,
-        ignore_errors: bool = False,
-        cache: bool = True,
-        with_column_names: Callable[[list[str]], list[str]] | None = None,
-        infer_schema_length: int | None = N_INFER_DEFAULT,
-        n_rows: int | None = None,
-        encoding: CsvEncoding = "utf8",
-        low_memory: bool = False,
-        rechunk: bool = True,
-        skip_rows_after_header: int = 0,
-        row_index_name: str | None = None,
-        row_index_offset: int = 0,
-        try_parse_dates: bool = False,
-        eol_char: str = "\n",
-        raise_if_empty: bool = True,
-        truncate_ragged_lines: bool = True,
-    ) -> Self:
-        """
-        Lazily read from a CSV file or multiple files via glob patterns.
-
-        Use `pl.scan_csv` to dispatch to this method.
-
-        See Also
-        --------
-        polars.io.scan_csv
-        """
-        dtype_list: list[tuple[str, PolarsDataType]] | None = None
-        if dtypes is not None:
-            dtype_list = []
-            for k, v in dtypes.items():
-                dtype_list.append((k, py_type_to_dtype(v)))
-        processed_null_values = _process_null_values(null_values)
-
-        if isinstance(source, list):
-            sources = source
-            source = None  # type: ignore[assignment]
-        else:
-            sources = []
-
-        self = cls.__new__(cls)
-        self._ldf = PyLazyFrame.new_from_csv(
-            source,
-            sources,
-            separator,
-            has_header,
-            ignore_errors,
-            skip_rows,
-            n_rows,
-            cache,
-            dtype_list,
-            low_memory,
-            comment_prefix,
-            quote_char,
-            processed_null_values,
-            missing_utf8_is_empty_string,
-            infer_schema_length,
-            with_column_names,
-            rechunk,
-            skip_rows_after_header,
-            encoding,
-            _prepare_row_index_args(row_index_name, row_index_offset),
-            try_parse_dates,
-            eol_char=eol_char,
-            raise_if_empty=raise_if_empty,
-            truncate_ragged_lines=truncate_ragged_lines,
-            schema=schema,
-        )
-        return self
-
-    @classmethod
-    def _scan_parquet(
-        cls,
-        source: str | list[str] | list[Path],
-        *,
-        n_rows: int | None = None,
-        cache: bool = True,
-        parallel: ParallelStrategy = "auto",
-        rechunk: bool = True,
-        row_index_name: str | None = None,
-        row_index_offset: int = 0,
-        storage_options: dict[str, object] | None = None,
-        low_memory: bool = False,
-        use_statistics: bool = True,
-        hive_partitioning: bool = True,
-        hive_schema: SchemaDict | None = None,
-        retries: int = 0,
-    ) -> Self:
-        """
-        Lazily read from a parquet file or multiple files via glob patterns.
-
-        Use `pl.scan_parquet` to dispatch to this method.
-
-        See Also
-        --------
-        polars.io.scan_parquet
-        """
-        if isinstance(source, list):
-            sources = source
-            source = None  # type: ignore[assignment]
-            can_use_fsspec = False
-        else:
-            can_use_fsspec = True
-            sources = []
-
-        # try fsspec scanner
-        if (
-            can_use_fsspec
-            and not _is_local_file(source)  # type: ignore[arg-type]
-            and not _is_supported_cloud(source)  # type: ignore[arg-type]
-        ):
-            scan = _scan_parquet_fsspec(source, storage_options)  # type: ignore[arg-type]
-            if n_rows:
-                scan = scan.head(n_rows)
-            if row_index_name is not None:
-                scan = scan.with_row_index(row_index_name, row_index_offset)
-            return scan  # type: ignore[return-value]
-
-        if storage_options:
-            storage_options = list(storage_options.items())  # type: ignore[assignment]
-        else:
-            # Handle empty dict input
-            storage_options = None
-
-        self = cls.__new__(cls)
-        self._ldf = PyLazyFrame.new_from_parquet(
-            source,
-            sources,
-            n_rows,
-            cache,
-            parallel,
-            rechunk,
-            _prepare_row_index_args(row_index_name, row_index_offset),
-            low_memory,
-            cloud_options=storage_options,
-            use_statistics=use_statistics,
-            hive_partitioning=hive_partitioning,
-            hive_schema=hive_schema,
-            retries=retries,
-        )
-        return self
-
-    @classmethod
-    def _scan_ipc(
-        cls,
-        source: str | Path | list[str] | list[Path],
-        *,
-        n_rows: int | None = None,
-        cache: bool = True,
-        rechunk: bool = True,
-        row_index_name: str | None = None,
-        row_index_offset: int = 0,
-        storage_options: dict[str, object] | None = None,
-        memory_map: bool = True,
-        retries: int = 0,
-    ) -> Self:
-        """
-        Lazily read from an Arrow IPC (Feather v2) file.
-
-        Use `pl.scan_ipc` to dispatch to this method.
-
-        See Also
-        --------
-        polars.io.scan_ipc
-        """
-        if isinstance(source, (str, Path)):
-            can_use_fsspec = True
-            source = normalize_filepath(source)
-            sources = []
-        else:
-            can_use_fsspec = False
-            sources = [normalize_filepath(source) for source in source]
-            source = None  # type: ignore[assignment]
-
-        # try fsspec scanner
-        if can_use_fsspec and not _is_local_file(source):  # type: ignore[arg-type]
-            scan = _scan_ipc_fsspec(source, storage_options)  # type: ignore[arg-type]
-            if n_rows:
-                scan = scan.head(n_rows)
-            if row_index_name is not None:
-                scan = scan.with_row_index(row_index_name, row_index_offset)
-            return scan  # type: ignore[return-value]
-
-        self = cls.__new__(cls)
-        self._ldf = PyLazyFrame.new_from_ipc(
-            source,
-            sources,
-            n_rows,
-            cache,
-            rechunk,
-            _prepare_row_index_args(row_index_name, row_index_offset),
-            memory_map=memory_map,
-            cloud_options=storage_options,
-            retries=retries,
-        )
-        return self
-
-    @classmethod
-    def _scan_ndjson(
-        cls,
-        source: str | Path | list[str] | list[Path],
-        *,
-        infer_schema_length: int | None = N_INFER_DEFAULT,
-        schema: SchemaDefinition | None = None,
-        batch_size: int | None = None,
-        n_rows: int | None = None,
-        low_memory: bool = False,
-        rechunk: bool = False,
-        row_index_name: str | None = None,
-        row_index_offset: int = 0,
-        ignore_errors: bool = False,
-    ) -> Self:
-        """
-        Lazily read from a newline delimited JSON file.
-
-        Use `pl.scan_ndjson` to dispatch to this method.
-
-        See Also
-        --------
-        polars.io.scan_ndjson
-        """
-        if isinstance(source, (str, Path)):
-            source = normalize_filepath(source)
-            sources = []
-        else:
-            sources = [normalize_filepath(source) for source in source]
-            source = None  # type: ignore[assignment]
-
-        self = cls.__new__(cls)
-        self._ldf = PyLazyFrame.new_from_ndjson(
-            source,
-            sources,
-            infer_schema_length,
-            schema,
-            batch_size,
-            n_rows,
-            low_memory,
-            rechunk,
-            _prepare_row_index_args(row_index_name, row_index_offset),
-            ignore_errors,
-        )
-        return self
 
     @classmethod
     def _scan_python_function(
@@ -836,7 +574,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf = pl.LazyFrame({"a": [1, 2, 3]}).sum()
         >>> json = lf.serialize()
         >>> json
-        '{"Projection":{"expr":[{"Agg":{"Sum":{"Column":"a"}}}],"input":{"DataFrameScan":{"df":{"columns":[{"name":"a","datatype":"Int64","bit_settings":"","values":[1,2,3]}]},"schema":{"inner":{"a":"Int64"}},"output_schema":null,"projection":null,"selection":null}},"schema":{"inner":{"a":"Int64"}},"options":{"run_parallel":true,"duplicate_check":true}}}'
+        '{"Select":{"expr":[{"Agg":{"Sum":{"Column":"a"}}}],"input":{"DataFrameScan":{"df":{"columns":[{"name":"a","datatype":"Int64","bit_settings":"","values":[1,2,3]}]},"schema":{"inner":{"a":"Int64"}},"output_schema":null,"projection":null,"selection":null}},"schema":{"inner":{"a":"Int64"}},"options":{"run_parallel":true,"duplicate_check":true}}}'
 
         The logical plan can later be deserialized back into a LazyFrame.
 
@@ -1363,6 +1101,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         descending: bool | Sequence[bool] = False,
         nulls_last: bool = False,
         maintain_order: bool = False,
+        multithreaded: bool = True,
     ) -> Self:
         """
         Sort the LazyFrame by the given columns.
@@ -1383,6 +1122,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Whether the order should be maintained if elements are equal.
             Note that if `true` streaming is not possible and performance might be
             worse since this requires a stable search.
+        multithreaded
+            Sort using multiple threads.
 
         Examples
         --------
@@ -1452,7 +1193,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         # Fast path for sorting by a single existing column
         if isinstance(by, str) and not more_by:
             return self._from_pyldf(
-                self._ldf.sort(by, descending, nulls_last, maintain_order)
+                self._ldf.sort(
+                    by, descending, nulls_last, maintain_order, multithreaded
+                )
             )
 
         by = parse_as_list_of_expressions(by, *more_by)
@@ -1463,7 +1206,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             msg = f"the length of `descending` ({len(descending)}) does not match the length of `by` ({len(by)})"
             raise ValueError(msg)
         return self._from_pyldf(
-            self._ldf.sort_by_exprs(by, descending, nulls_last, maintain_order)
+            self._ldf.sort_by_exprs(
+                by, descending, nulls_last, maintain_order, multithreaded
+            )
         )
 
     def top_k(
@@ -1474,6 +1219,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         descending: bool | Sequence[bool] = False,
         nulls_last: bool = False,
         maintain_order: bool = False,
+        multithreaded: bool = True,
     ) -> Self:
         """
         Return the `k` largest elements.
@@ -1496,6 +1242,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Whether the order should be maintained if elements are equal.
             Note that if `true` streaming is not possible and performance might
             be worse since this requires a stable search.
+        multithreaded
+            Sort using multiple threads.
 
         See Also
         --------
@@ -1547,7 +1295,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             msg = f"the length of `descending` ({len(descending)}) does not match the length of `by` ({len(by)})"
             raise ValueError(msg)
         return self._from_pyldf(
-            self._ldf.top_k(k, by, descending, nulls_last, maintain_order)
+            self._ldf.top_k(
+                k, by, descending, nulls_last, maintain_order, multithreaded
+            )
         )
 
     def bottom_k(
@@ -1558,6 +1308,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         descending: bool | Sequence[bool] = False,
         nulls_last: bool = False,
         maintain_order: bool = False,
+        multithreaded: bool = True,
     ) -> Self:
         """
         Return the `k` smallest elements.
@@ -1580,6 +1331,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Whether the order should be maintained if elements are equal.
             Note that if `true` streaming is not possible and performance might be
             worse since this requires a stable search.
+        multithreaded
+            Sort using multiple threads.
 
         See Also
         --------
@@ -1628,7 +1381,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if isinstance(descending, bool):
             descending = [descending]
         return self._from_pyldf(
-            self._ldf.bottom_k(k, by, descending, nulls_last, maintain_order)
+            self._ldf.bottom_k(
+                k, by, descending, nulls_last, maintain_order, multithreaded
+            )
         )
 
     def profile(
@@ -2116,7 +1871,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *,
         compression: str = "zstd",
         compression_level: int | None = None,
-        statistics: bool = False,
+        statistics: bool = True,
         row_group_size: int | None = None,
         data_pagesize_limit: int | None = None,
         maintain_order: bool = True,
@@ -2126,7 +1881,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         simplify_expression: bool = True,
         slice_pushdown: bool = True,
         no_optimization: bool = False,
-    ) -> DataFrame:
+    ) -> None:
         """
         Evaluate the query in streaming mode and write to a Parquet file.
 
@@ -2153,7 +1908,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             - "brotli" : min-level: 0, max-level: 11.
             - "zstd" : min-level: 1, max-level: 22.
         statistics
-            Write statistics to the parquet headers. This requires extra compute.
+            Write statistics to the parquet headers. This is the default behavior.
         row_group_size
             Size of the row groups in number of rows.
             If None (default), the chunks of the `DataFrame` are
@@ -2633,7 +2388,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         return self
 
     def cache(self) -> Self:
-        """Cache the result once the execution of the physical plan hits this node."""
+        """
+        Cache the result once the execution of the physical plan hits this node.
+
+        It is not recommended using this as the optimizer likely can do a better job.
+        """
         return self._from_pyldf(self._ldf.cache())
 
     def cast(
@@ -2761,7 +2520,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "c": [True, True, False, None],
         ...     }
         ... )
-        >>> lf.clear().fetch()
+        >>> lf.clear().collect()
         shape: (0, 3)
         ┌─────┬─────┬──────┐
         │ a   ┆ b   ┆ c    │
@@ -2770,7 +2529,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ╞═════╪═════╪══════╡
         └─────┴─────┴──────┘
 
-        >>> lf.clear(2).fetch()
+        >>> lf.clear(2).collect()
         shape: (2, 3)
         ┌──────┬──────┬──────┐
         │ a    ┆ b    ┆ c    │
@@ -3242,7 +3001,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Create rolling groups based on a temporal or integer column.
 
-        Different from a `dynamic_group_by` the windows are now determined by the
+        Different from a `group_by_dynamic` the windows are now determined by the
         individual values and are not of constant intervals. For constant intervals
         use :func:`LazyFrame.group_by_dynamic`.
 
@@ -3289,8 +3048,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         index_column
             Column used to group based on the time window.
             Often of type Date/Datetime.
-            This column must be sorted in ascending order (or, if `by` is specified,
-            then it must be sorted in ascending order within each group).
+            This column must be sorted in ascending order (or, if `group_by` is
+            specified, then it must be sorted in ascending order within each group).
 
             In case of a rolling group by on indices, dtype needs to be one of
             {UInt32, UInt64, Int32, Int64}. Note that the first three get temporarily
@@ -3316,8 +3075,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         -------
         LazyGroupBy
             Object you can call `.agg` on to aggregate by groups, the result
-            of which will be sorted by `index_column` (but note that if `by` columns are
-            passed, it will only be sorted within each `by` group).
+            of which will be sorted by `index_column` (but note that if `group_by`
+            columns are passed, it will only be sorted within each group).
 
         See Also
         --------
@@ -3409,7 +3168,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         datapoint. See the `start_by` argument description for details.
 
         .. warning::
-            The index column must be sorted in ascending order. If `by` is passed, then
+            The index column must be sorted in ascending order. If `group_by` is passed, then
             the index column must be sorted in ascending order within each group.
 
         Parameters
@@ -3417,7 +3176,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         index_column
             Column used to group based on the time window.
             Often of type Date/Datetime.
-            This column must be sorted in ascending order (or, if `by` is specified,
+            This column must be sorted in ascending order (or, if `group_by` is specified,
             then it must be sorted in ascending order within each group).
 
             In case of a dynamic group by on indices, dtype needs to be one of
@@ -3480,8 +3239,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         -------
         LazyGroupBy
             Object you can call `.agg` on to aggregate by groups, the result
-            of which will be sorted by `index_column` (but note that if `by` columns are
-            passed, it will only be sorted within each `by` group).
+            of which will be sorted by `index_column` (but note that if `group_by` columns are
+            passed, it will only be sorted within each group).
 
         See Also
         --------

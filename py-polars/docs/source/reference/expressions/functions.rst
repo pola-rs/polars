@@ -23,6 +23,7 @@ These functions are available from the Polars module root and can be used as exp
    arctan2d
    arg_sort_by
    arg_where
+   business_day_count
    coalesce
    concat_list
    concat_str

@@ -76,7 +76,7 @@ fn test_exploded_window_function() -> PolarsResult<()> {
     let out = df
         .clone()
         .lazy()
-        .sort("fruits", Default::default())
+        .sort(["fruits"], Default::default())
         .select([
             col("fruits"),
             col("B")
@@ -95,7 +95,7 @@ fn test_exploded_window_function() -> PolarsResult<()> {
     // we implicitly also test that a literal does not upcast a column
     let out = df
         .lazy()
-        .sort("fruits", Default::default())
+        .sort(["fruits"], Default::default())
         .select([
             col("fruits"),
             col("B")
@@ -119,7 +119,7 @@ fn test_reverse_in_groups() -> PolarsResult<()> {
 
     let out = df
         .lazy()
-        .sort("fruits", Default::default())
+        .sort(["fruits"], Default::default())
         .select([
             col("B"),
             col("fruits"),
@@ -140,12 +140,12 @@ fn test_sort_by_in_groups() -> PolarsResult<()> {
 
     let out = df
         .lazy()
-        .sort("cars", Default::default())
+        .sort(["cars"], Default::default())
         .select([
             col("fruits"),
             col("cars"),
             col("A")
-                .sort_by([col("B")], [false])
+                .sort_by([col("B")], SortMultipleOptions::default())
                 .implode()
                 .over([col("cars")])
                 .explode()
@@ -247,7 +247,7 @@ fn test_window_mapping() -> PolarsResult<()> {
 
     // now sorted
     // this will trigger a fast path
-    let df = df.sort(["fruits"], vec![false], false)?;
+    let df = df.sort(["fruits"], Default::default())?;
 
     let out = df
         .clone()

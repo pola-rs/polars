@@ -10,7 +10,6 @@ pub mod fixed_size_list;
 pub mod float;
 #[cfg(feature = "compute_take")]
 pub mod list;
-pub mod list_bytes_iter;
 pub mod pow;
 pub mod rolling;
 pub mod set;

@@ -283,10 +283,15 @@ impl PySeries {
         }
     }
 
-    fn sort(&mut self, descending: bool, nulls_last: bool) -> PyResult<Self> {
+    fn sort(&mut self, descending: bool, nulls_last: bool, multithreaded: bool) -> PyResult<Self> {
         Ok(self
             .series
-            .sort(descending, nulls_last)
+            .sort(
+                SortOptions::default()
+                    .with_order_descending(descending)
+                    .with_nulls_last(nulls_last)
+                    .with_multithreaded(multithreaded),
+            )
             .map_err(PyPolarsErr::from)?
             .into())
     }
@@ -604,9 +609,30 @@ impl PySeries {
         self.series.shrink_to_fit();
     }
 
-    fn dot(&self, other: &PySeries) -> PyResult<f64> {
-        let out = self.series.dot(&other.series).map_err(PyPolarsErr::from)?;
-        Ok(out)
+    fn dot(&self, other: &PySeries, py: Python) -> PyResult<PyObject> {
+        let lhs_dtype = self.series.dtype();
+        let rhs_dtype = other.series.dtype();
+
+        if !lhs_dtype.is_numeric() {
+            return Err(PyPolarsErr::from(polars_err!(opq = dot, lhs_dtype)).into());
+        };
+        if !rhs_dtype.is_numeric() {
+            return Err(PyPolarsErr::from(polars_err!(opq = dot, rhs_dtype)).into());
+        }
+
+        let result: AnyValue = if lhs_dtype.is_float() || rhs_dtype.is_float() {
+            (&self.series * &other.series)
+                .sum::<f64>()
+                .map_err(PyPolarsErr::from)?
+                .into()
+        } else {
+            (&self.series * &other.series)
+                .sum::<i64>()
+                .map_err(PyPolarsErr::from)?
+                .into()
+        };
+
+        Ok(Wrap(result).into_py(py))
     }
 
     #[cfg(feature = "ipc_streaming")]

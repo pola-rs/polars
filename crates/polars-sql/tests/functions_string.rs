@@ -83,7 +83,7 @@ fn test_string_functions() {
 }
 
 #[test]
-fn array_to_string() {
+fn test_array_to_string() {
     let df = df! {
         "a" => &["first", "first", "third"],
         "b" => &[1, 1, 42],
@@ -118,7 +118,10 @@ fn array_to_string() {
         .group_by([col("b")])
         .agg([col("a")])
         .select(&[col("b"), col("a").list().join(lit(", "), true).alias("as")])
-        .sort_by_exprs(vec![col("b"), col("as")], vec![false, false], false, true)
+        .sort_by_exprs(
+            vec![col("b"), col("as")],
+            SortMultipleOptions::default().with_maintain_order(true),
+        )
         .collect()
         .unwrap();
 

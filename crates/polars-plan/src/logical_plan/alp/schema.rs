@@ -1,10 +1,10 @@
 use super::*;
 
-impl ALogicalPlan {
+impl IR {
     /// Get the schema of the logical plan node but don't take projections into account at the scan
     /// level. This ensures we can apply the predicate
     pub(crate) fn scan_schema(&self) -> &SchemaRef {
-        use ALogicalPlan::*;
+        use IR::*;
         match self {
             Scan { file_info, .. } => &file_info.schema,
             #[cfg(feature = "python")]
@@ -14,18 +14,18 @@ impl ALogicalPlan {
     }
 
     pub fn name(&self) -> &'static str {
-        use ALogicalPlan::*;
+        use IR::*;
         match self {
             Scan { scan_type, .. } => scan_type.into(),
             #[cfg(feature = "python")]
             PythonScan { .. } => "python_scan",
             Slice { .. } => "slice",
-            Selection { .. } => "selection",
+            Filter { .. } => "selection",
             DataFrameScan { .. } => "df",
-            Projection { .. } => "projection",
+            Select { .. } => "projection",
             Sort { .. } => "sort",
             Cache { .. } => "cache",
-            Aggregate { .. } => "aggregate",
+            GroupBy { .. } => "aggregate",
             Join { .. } => "join",
             HStack { .. } => "hstack",
             Distinct { .. } => "distinct",
@@ -45,8 +45,8 @@ impl ALogicalPlan {
     }
 
     /// Get the schema of the logical plan node.
-    pub fn schema<'a>(&'a self, arena: &'a Arena<ALogicalPlan>) -> Cow<'a, SchemaRef> {
-        use ALogicalPlan::*;
+    pub fn schema<'a>(&'a self, arena: &'a Arena<IR>) -> Cow<'a, SchemaRef> {
+        use IR::*;
         let schema = match self {
             #[cfg(feature = "python")]
             PythonScan { options, .. } => options.output_schema.as_ref().unwrap_or(&options.schema),
@@ -64,10 +64,10 @@ impl ALogicalPlan {
                 output_schema,
                 ..
             } => output_schema.as_ref().unwrap_or(schema),
-            Selection { input, .. } => return arena.get(*input).schema(arena),
-            Projection { schema, .. } => schema,
+            Filter { input, .. } => return arena.get(*input).schema(arena),
+            Select { schema, .. } => schema,
             SimpleProjection { columns, .. } => columns,
-            Aggregate { schema, .. } => schema,
+            GroupBy { schema, .. } => schema,
             Join { schema, .. } => schema,
             HStack { schema, .. } => schema,
             Distinct { input, .. } | Sink { input, .. } => return arena.get(*input).schema(arena),

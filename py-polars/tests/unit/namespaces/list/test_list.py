@@ -882,3 +882,25 @@ def test_list_n_unique() -> None:
         {"n_unique": [2, 1, 1, None, 0]}, schema={"n_unique": pl.UInt32}
     )
     assert_frame_equal(out, expected)
+
+
+def test_list_get_with_null() -> None:
+    df = pl.DataFrame({"a": [None, [1, 2]], "b": [False, True]})
+
+    # We allow two layouts of null in ListArray:
+    # 1. null element are stored as arbitrary values in `value` array.
+    # 2. null element are not stored in `value` array.
+    out = df.select(
+        # For performance reasons, when-then-otherwise produces the list with layout-1.
+        layout1=pl.when(pl.col("b")).then([1, 2]).list.get(0),
+        layout2=pl.col("a").list.get(0),
+    )
+
+    expected = pl.DataFrame(
+        {
+            "layout1": [None, 1],
+            "layout2": [None, 1],
+        }
+    )
+
+    assert_frame_equal(out, expected)

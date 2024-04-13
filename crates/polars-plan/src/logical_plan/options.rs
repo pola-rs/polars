@@ -295,15 +295,6 @@ pub struct LogicalPlanUdfOptions {
     pub fmt_str: &'static str,
 }
 
-#[derive(Clone, PartialEq, Eq, Debug, Default, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct SortArguments {
-    pub descending: Vec<bool>,
-    pub nulls_last: bool,
-    pub slice: Option<(i64, usize)>,
-    pub maintain_order: bool,
-}
-
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg(feature = "python")]

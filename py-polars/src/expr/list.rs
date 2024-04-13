@@ -132,11 +132,11 @@ impl PyExpr {
         self.inner
             .clone()
             .list()
-            .sort(SortOptions {
-                descending,
-                nulls_last,
-                ..Default::default()
-            })
+            .sort(
+                SortOptions::default()
+                    .with_order_descending(descending)
+                    .with_nulls_last(nulls_last),
+            )
             .into()
     }
 

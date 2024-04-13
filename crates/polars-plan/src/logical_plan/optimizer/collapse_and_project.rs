@@ -30,15 +30,15 @@ impl SimpleProjectionAndCollapse {
 impl OptimizationRule for SimpleProjectionAndCollapse {
     fn optimize_plan(
         &mut self,
-        lp_arena: &mut Arena<ALogicalPlan>,
+        lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
         node: Node,
-    ) -> Option<ALogicalPlan> {
-        use ALogicalPlan::*;
+    ) -> Option<IR> {
+        use IR::*;
         let lp = lp_arena.get(node);
 
         match lp {
-            Projection { input, expr, .. } => {
+            Select { input, expr, .. } => {
                 if !matches!(lp_arena.get(*input), ExtContext { .. }) && self.processed.insert(node)
                 {
                     // First check if we can apply the optimization before we allocate.
@@ -52,7 +52,7 @@ impl OptimizationRule for SimpleProjectionAndCollapse {
                         .iter()
                         .map(|e| e.output_name_arc().clone())
                         .collect::<Vec<_>>();
-                    let alp = ALogicalPlanBuilder::new(*input, expr_arena, lp_arena)
+                    let alp = IRBuilder::new(*input, expr_arena, lp_arena)
                         .project_simple(exprs.iter().map(|s| s.as_ref()))
                         .ok()?
                         .build();
@@ -62,13 +62,13 @@ impl OptimizationRule for SimpleProjectionAndCollapse {
                     None
                 }
             },
-            // If there are 2 subsequent fast projections, flatten them and only take the last
             SimpleProjection {
                 columns,
                 input,
                 duplicate_check,
             } if !self.eager => {
                 match lp_arena.get(*input) {
+                    // If there are 2 subsequent fast projections, flatten them and only take the last
                     SimpleProjection {
                         input: prev_input, ..
                     } => Some(SimpleProjection {
@@ -90,7 +90,16 @@ impl OptimizationRule for SimpleProjectionAndCollapse {
                             None
                         }
                     },
-                    _ => None,
+                    // If a projection does nothing, remove it.
+                    other => {
+                        let input_schema = other.schema(lp_arena);
+                        // This will fail fast if lengths are not equal
+                        if *input_schema.as_ref() == *columns {
+                            Some(other.clone())
+                        } else {
+                            None
+                        }
+                    },
                 }
             },
             // if there are 2 subsequent caches, flatten them and only take the inner
@@ -114,6 +123,21 @@ impl OptimizationRule for SimpleProjectionAndCollapse {
                 } else {
                     None
                 }
+            },
+            // Remove double sorts
+            Sort {
+                input,
+                by_column,
+                slice,
+                sort_options,
+            } => match lp_arena.get(*input) {
+                Sort { input: inner, .. } => Some(Sort {
+                    input: *inner,
+                    by_column: by_column.clone(),
+                    slice: *slice,
+                    sort_options: sort_options.clone(),
+                }),
+                _ => None,
             },
             _ => None,
         }

@@ -2,7 +2,12 @@ use super::*;
 
 pub struct FusedArithmetic {}
 
-fn get_expr(input: Vec<Node>, op: FusedOperator) -> AExpr {
+fn get_expr(input: &[Node], op: FusedOperator, expr_arena: &Arena<AExpr>) -> AExpr {
+    let input = input
+        .iter()
+        .copied()
+        .map(|n| ExprIR::from_node(n, expr_arena))
+        .collect();
     let mut options = FunctionOptions {
         collect_groups: ApplyOptions::ElementWise,
         cast_to_supertypes: true,
@@ -24,7 +29,7 @@ fn check_eligible(
     right: &Node,
     lp_node: Node,
     expr_arena: &Arena<AExpr>,
-    lp_arena: &Arena<ALogicalPlan>,
+    lp_arena: &Arena<IR>,
 ) -> PolarsResult<(Option<bool>, Option<Field>)> {
     let Some(input_node) = lp_arena.get(lp_node).get_input() else {
         return Ok((None, None));
@@ -57,7 +62,7 @@ impl OptimizationRule for FusedArithmetic {
         &mut self,
         expr_arena: &mut Arena<AExpr>,
         expr_node: Node,
-        lp_arena: &Arena<ALogicalPlan>,
+        lp_arena: &Arena<IR>,
         lp_node: Node,
     ) -> PolarsResult<Option<AExpr>> {
         let expr = expr_arena.get(expr_node);
@@ -86,8 +91,8 @@ impl OptimizationRule for FusedArithmetic {
                     } => match check_eligible(left, right, lp_node, expr_arena, lp_arena)? {
                         (None, _) | (Some(false), _) => Ok(None),
                         (Some(true), Some(output_field)) => {
-                            let input = vec![*right, *a, *b];
-                            let fma = get_expr(input, FusedOperator::MultiplyAdd);
+                            let input = &[*right, *a, *b];
+                            let fma = get_expr(input, FusedOperator::MultiplyAdd, expr_arena);
                             let node = expr_arena.add(fma);
                             // we reordered the arguments, so we don't obey the left expression output name
                             // rule anymore, that's why we alias
@@ -109,8 +114,12 @@ impl OptimizationRule for FusedArithmetic {
                         } => match check_eligible(left, right, lp_node, expr_arena, lp_arena)? {
                             (None, _) | (Some(false), _) => Ok(None),
                             (Some(true), _) => {
-                                let input = vec![*left, *a, *b];
-                                Ok(Some(get_expr(input, FusedOperator::MultiplyAdd)))
+                                let input = &[*left, *a, *b];
+                                Ok(Some(get_expr(
+                                    input,
+                                    FusedOperator::MultiplyAdd,
+                                    expr_arena,
+                                )))
                             },
                         },
                         _ => Ok(None),
@@ -135,8 +144,12 @@ impl OptimizationRule for FusedArithmetic {
                     } => match check_eligible(left, right, lp_node, expr_arena, lp_arena)? {
                         (None, _) | (Some(false), _) => Ok(None),
                         (Some(true), _) => {
-                            let input = vec![*left, *a, *b];
-                            Ok(Some(get_expr(input, FusedOperator::SubMultiply)))
+                            let input = &[*left, *a, *b];
+                            Ok(Some(get_expr(
+                                input,
+                                FusedOperator::SubMultiply,
+                                expr_arena,
+                            )))
                         },
                     },
                     _ => {
@@ -153,8 +166,12 @@ impl OptimizationRule for FusedArithmetic {
                                 match check_eligible(left, right, lp_node, expr_arena, lp_arena)? {
                                     (None, _) | (Some(false), _) => Ok(None),
                                     (Some(true), _) => {
-                                        let input = vec![*a, *b, *right];
-                                        Ok(Some(get_expr(input, FusedOperator::MultiplySub)))
+                                        let input = &[*a, *b, *right];
+                                        Ok(Some(get_expr(
+                                            input,
+                                            FusedOperator::MultiplySub,
+                                            expr_arena,
+                                        )))
                                     },
                                 }
                             },

@@ -52,9 +52,9 @@ pub(super) fn process_projection(
     mut acc_projections: Vec<ColumnNode>,
     mut projected_names: PlHashSet<Arc<str>>,
     projections_seen: usize,
-    lp_arena: &mut Arena<ALogicalPlan>,
+    lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
-) -> PolarsResult<ALogicalPlan> {
+) -> PolarsResult<IR> {
     let mut local_projection = Vec::with_capacity(exprs.len());
 
     // path for `SELECT count(*) FROM`
@@ -117,7 +117,7 @@ pub(super) fn process_projection(
         expr_arena,
     )?;
 
-    let builder = ALogicalPlanBuilder::new(input, expr_arena, lp_arena);
+    let builder = IRBuilder::new(input, expr_arena, lp_arena);
     let lp = proj_pd.finish_node(local_projection, builder);
 
     Ok(lp)
