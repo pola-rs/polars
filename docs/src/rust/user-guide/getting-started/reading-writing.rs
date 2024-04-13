@@ -1,8 +1,9 @@
-use polars::prelude::*;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:dataframe]
     use std::fs::File;
+    
+    use polars::prelude::*;
 
     use chrono::prelude::*;
 
