@@ -853,11 +853,11 @@ def test_upsample_index_invalid(
             "groups": ["a"] * 3 + ["b"] * 2,
         }
     ).set_sorted("index")
-    with (
-        pytest.raises(ComputeError, match=r"cannot combine time .* integer"),
-        pytest.deprecated_call(match="`offset` is deprecated"),
-    ):
-        df.upsample(time_column="index", every=every, offset=offset)
+    # On Python3.8, mypy complains about combining two context managers into a
+    # tuple, so we nest them instead.
+    with pytest.raises(ComputeError, match=r"cannot combine time .* integer"):  # noqa: SIM117
+        with pytest.deprecated_call():
+            df.upsample(time_column="index", every=every, offset=offset)
 
 
 def test_microseconds_accuracy() -> None:
