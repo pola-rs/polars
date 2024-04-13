@@ -859,6 +859,22 @@ impl FromPyObject<'_> for Wrap<RankMethod> {
     }
 }
 
+impl FromPyObject<'_> for Wrap<Roll> {
+    fn extract(ob: &PyAny) -> PyResult<Self> {
+        let parsed = match ob.extract::<&str>()? {
+            "raise" => Roll::Raise,
+            "forward" => Roll::Forward,
+            "backward" => Roll::Backward,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "`roll` must be one of {{'raise', 'forward', 'backward'}}, got {v}",
+                )))
+            },
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
 impl FromPyObject<'_> for Wrap<TimeUnit> {
     fn extract(ob: &PyAny) -> PyResult<Self> {
         let parsed = match ob.extract::<&str>()? {

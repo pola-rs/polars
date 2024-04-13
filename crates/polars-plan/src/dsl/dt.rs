@@ -4,6 +4,27 @@ use super::*;
 pub struct DateLikeNameSpace(pub(crate) Expr);
 
 impl DateLikeNameSpace {
+    /// Add a given number of business days.
+    #[cfg(feature = "business")]
+    pub fn add_business_days(
+        self,
+        n: Expr,
+        week_mask: [bool; 7],
+        holidays: Vec<i32>,
+        roll: Roll,
+    ) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::Business(BusinessFunction::AddBusinessDay {
+                week_mask,
+                holidays,
+                roll,
+            }),
+            &[n],
+            false,
+            false,
+        )
+    }
+
     /// Convert from Date/Time/Datetime into String with the given format.
     /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
     pub fn to_string(self, format: &str) -> Expr {

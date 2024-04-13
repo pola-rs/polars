@@ -2,6 +2,7 @@
 pub mod abs_diff;
 pub mod arena;
 pub mod atomic;
+pub mod binary_search;
 pub mod cache;
 pub mod cell;
 pub mod clmul;
