@@ -2,10 +2,10 @@
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:dataframe]
     use std::fs::File;
+ 
+    use chrono::prelude::*;
 
     use polars::prelude::*;
-
-    use chrono::prelude::*;
 
     let mut df: DataFrame = df!(
         "integer" => &[1, 2, 3],
