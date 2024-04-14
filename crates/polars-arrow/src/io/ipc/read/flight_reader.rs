@@ -5,12 +5,11 @@ use polars_error::{polars_bail, polars_err, PolarsResult};
 
 use super::OutOfSpecKind;
 use crate::array::Array;
-use crate::chunk::Chunk;
 use crate::datatypes::ArrowSchema;
 use crate::io::ipc::read::schema::deserialize_stream_metadata;
 use crate::io::ipc::read::{read_dictionary, read_record_batch, Dictionaries, StreamMetadata};
 use crate::io::ipc::write::common::EncodedData;
-
+use crate::record_batch::RecordBatch;
 pub struct FlightStreamReader {
     metadata: Option<StreamMetadata>,
     dictionaries: Dictionaries,
@@ -33,7 +32,10 @@ impl FlightStreamReader {
             .map(|metadata| &metadata.schema)
     }
 
-    pub fn parse(&mut self, data: EncodedData) -> PolarsResult<Option<Chunk<Box<dyn Array>>>> {
+    pub fn parse(
+        &mut self,
+        data: EncodedData,
+    ) -> PolarsResult<Option<RecordBatch<Box<dyn Array>>>> {
         // First message should be the schema
         if self.metadata.is_none() {
             let message = arrow_format::ipc::MessageRef::read_as_root(data.ipc_message.as_ref())
@@ -63,7 +65,7 @@ fn convert_to_arrow_chunk(
     metadata: &StreamMetadata,
     dictionaries: &mut Dictionaries,
     flight_data: EncodedData,
-) -> PolarsResult<Option<Chunk<Box<dyn Array>>>> {
+) -> PolarsResult<Option<RecordBatch<Box<dyn Array>>>> {
     let EncodedData {
         ipc_message,
         arrow_data,

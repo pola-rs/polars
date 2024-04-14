@@ -75,9 +75,6 @@ fn read_dictionary_block<R: Read + Seek>(
     message_scratch: &mut Vec<u8>,
     dictionary_scratch: &mut Vec<u8>,
 ) -> PolarsResult<()> {
-    let message = read_ipc_message_from_block(reader, block, message_scratch)?;
-    let batch = get_dictionary_batch(&message)?;
-
     let offset: u64 = block
         .offset
         .try_into()
