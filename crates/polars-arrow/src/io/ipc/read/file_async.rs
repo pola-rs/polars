@@ -181,6 +181,7 @@ async fn read_ipc_message_from_block<'a, R: AsyncRead + AsyncSeek + Unpin>(
     read_ipc_message(reader, scratch).await
 }
 
+#[allow(clippy::needless_lifetimes)]
 async fn read_ipc_message<'a, R>(
     mut reader: R,
     data: &'a mut Vec<u8>,

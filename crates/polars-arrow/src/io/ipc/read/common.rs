@@ -85,6 +85,8 @@ pub(super) fn read_ipc_message_from_block<'a, R: Read + Seek>(
 }
 
 /// Read an encapsulated IPC Message from the reader
+
+#[allow(clippy::needless_lifetimes)]
 pub(super) fn read_ipc_message<'a, R: Read>(
     reader: &mut R,
     scratch: &'a mut Vec<u8>,

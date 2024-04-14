@@ -10,18 +10,10 @@ use crate::io::ipc::read::schema::deserialize_stream_metadata;
 use crate::io::ipc::read::{read_dictionary, read_record_batch, Dictionaries, StreamMetadata};
 use crate::io::ipc::write::common::EncodedData;
 use crate::record_batch::RecordBatch;
+#[derive(Default)]
 pub struct FlightStreamReader {
     metadata: Option<StreamMetadata>,
     dictionaries: Dictionaries,
-}
-
-impl Default for FlightStreamReader {
-    fn default() -> Self {
-        Self {
-            metadata: None,
-            dictionaries: Default::default(),
-        }
-    }
 }
 
 impl FlightStreamReader {
