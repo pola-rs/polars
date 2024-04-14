@@ -71,16 +71,16 @@ pub struct IpcReader<R: MmapBytesReader> {
     pub(super) projection: Option<Vec<usize>>,
     pub(crate) columns: Option<Vec<String>>,
     pub(super) row_index: Option<RowIndex>,
-    memmap: bool,
+    memory_map: bool,
     metadata: Option<read::FileMetadata>,
     schema: Option<ArrowSchemaRef>,
 }
 
 fn check_mmap_err(err: PolarsError) -> PolarsResult<()> {
     if let PolarsError::ComputeError(s) = &err {
-        if s.as_ref() == "mmap can only be done on uncompressed IPC files" {
+        if s.as_ref() == "memory_map can only be done on uncompressed IPC files" {
             eprintln!(
-                "Could not mmap compressed IPC file, defaulting to normal read. \
+                "Could not memory_map compressed IPC file, defaulting to normal read. \
                 Toggle off 'memory_map' to silence this warning."
             );
             return Ok(());
@@ -131,7 +131,7 @@ impl<R: MmapBytesReader> IpcReader<R> {
 
     /// Set if the file is to be memory_mapped. Only works with uncompressed files.
     pub fn memory_mapped(mut self, toggle: bool) -> Self {
-        self.memmap = toggle;
+        self.memory_map = toggle;
         self
     }
 
@@ -142,7 +142,7 @@ impl<R: MmapBytesReader> IpcReader<R> {
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
         verbose: bool,
     ) -> PolarsResult<DataFrame> {
-        if self.memmap && self.reader.to_file().is_some() {
+        if self.memory_map && self.reader.to_file().is_some() {
             if verbose {
                 eprintln!("memory map ipc file")
             }
@@ -191,7 +191,7 @@ impl<R: MmapBytesReader> SerReader<R> for IpcReader<R> {
             columns: None,
             projection: None,
             row_index: None,
-            memmap: true,
+            memory_map: true,
             metadata: None,
             schema: None,
         }
@@ -203,7 +203,7 @@ impl<R: MmapBytesReader> SerReader<R> for IpcReader<R> {
     }
 
     fn finish(mut self) -> PolarsResult<DataFrame> {
-        if self.memmap && self.reader.to_file().is_some() {
+        if self.memory_map && self.reader.to_file().is_some() {
             match self.finish_memmapped(None) {
                 Ok(df) => return Ok(df),
                 Err(err) => check_mmap_err(err)?,

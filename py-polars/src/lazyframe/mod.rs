@@ -358,7 +358,7 @@ impl PyLazyFrame {
             cache,
             rechunk,
             row_index,
-            memmap: memory_map,
+            memory_map,
             #[cfg(feature = "cloud")]
             cloud_options,
         };

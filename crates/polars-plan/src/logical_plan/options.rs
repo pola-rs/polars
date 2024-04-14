@@ -112,7 +112,7 @@ pub struct JsonWriterOptions {
 #[derive(Clone, Debug, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct IpcScanOptions {
-    pub memmap: bool,
+    pub memory_map: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Default, Hash)]
