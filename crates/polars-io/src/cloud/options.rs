@@ -170,8 +170,8 @@ pub(super) fn get_client_options() -> ClientOptions {
         // but starts from the moment we start downloading a body.
         // https://docs.rs/reqwest/latest/reqwest/struct.ClientBuilder.html#method.timeout
         .with_timeout_disabled()
-        // Concurrency can increase connection latency, so set to None, similar to default.
-        .with_connect_timeout_disabled()
+        // Note: Don't set this to None otherwise we hang forever.
+        .with_connect_timeout(std::time::Duration::from_secs(7 * 60))
         .with_allow_http(true)
 }
 
