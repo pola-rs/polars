@@ -107,7 +107,7 @@ impl IpcExec {
                     )
                     .with_row_index(self.file_options.row_index.clone())
                     .with_projection(projection.clone())
-                    .memory_mapped(self.options.memmap)
+                    .memory_mapped(self.options.memory_map)
                     .finish()?;
 
                 row_counter

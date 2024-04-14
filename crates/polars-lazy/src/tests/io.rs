@@ -415,7 +415,7 @@ fn test_ipc_globbing() -> PolarsResult<()> {
             cache: true,
             rechunk: false,
             row_index: None,
-            memmap: true,
+            memory_map: true,
             cloud_options: None,
         },
     )?

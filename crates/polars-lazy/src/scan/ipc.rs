@@ -12,7 +12,7 @@ pub struct ScanArgsIpc {
     pub cache: bool,
     pub rechunk: bool,
     pub row_index: Option<RowIndex>,
-    pub memmap: bool,
+    pub memory_map: bool,
     pub cloud_options: Option<CloudOptions>,
 }
 
@@ -23,7 +23,7 @@ impl Default for ScanArgsIpc {
             cache: true,
             rechunk: false,
             row_index: None,
-            memmap: true,
+            memory_map: true,
             cloud_options: Default::default(),
         }
     }
@@ -67,7 +67,7 @@ impl LazyFileListReader for LazyIpcReader {
         };
 
         let options = IpcScanOptions {
-            memmap: args.memmap,
+            memory_map: args.memory_map,
         };
 
         let mut lf: LazyFrame = LogicalPlanBuilder::scan_ipc(
