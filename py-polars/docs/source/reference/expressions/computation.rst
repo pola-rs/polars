@@ -35,6 +35,7 @@ Computation
     Expr.dot
     Expr.entropy
     Expr.ewm_mean
+    Expr.ewm_mean_by
     Expr.ewm_std
     Expr.ewm_var
     Expr.exp

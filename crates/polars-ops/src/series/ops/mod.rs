@@ -16,6 +16,8 @@ mod cut;
 mod diff;
 #[cfg(feature = "ewma")]
 mod ewm;
+#[cfg(feature = "ewma_by")]
+mod ewm_by;
 #[cfg(feature = "round_series")]
 mod floor_divide;
 #[cfg(feature = "fused")]
@@ -78,6 +80,8 @@ pub use cut::*;
 pub use diff::*;
 #[cfg(feature = "ewma")]
 pub use ewm::*;
+#[cfg(feature = "ewma_by")]
+pub use ewm_by::*;
 #[cfg(feature = "round_series")]
 pub use floor_divide::*;
 #[cfg(feature = "fused")]

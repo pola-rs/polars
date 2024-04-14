@@ -7,6 +7,7 @@ use arrow::legacy::kernels::{Ambiguous, NonExistent};
 use arrow::legacy::time_zone::Tz;
 use arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime, MILLISECONDS,
+    NANOSECONDS,
 };
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use polars_core::export::arrow::temporal_conversions::MICROSECONDS;
@@ -14,7 +15,6 @@ use polars_core::prelude::{
     datetime_to_timestamp_ms, datetime_to_timestamp_ns, datetime_to_timestamp_us, polars_bail,
     PolarsResult,
 };
-use polars_core::utils::arrow::temporal_conversions::NANOSECONDS;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -376,6 +376,11 @@ impl Duration {
     /// Returns the nanoseconds from the `Duration` without the weeks or months part.
     pub fn nanoseconds(&self) -> i64 {
         self.nsecs
+    }
+
+    /// Returns whether duration is negative.
+    pub fn negative(&self) -> bool {
+        self.negative
     }
 
     /// Estimated duration of the window duration. Not a very good one if not a constant duration.
