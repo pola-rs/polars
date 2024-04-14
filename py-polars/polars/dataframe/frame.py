@@ -2748,6 +2748,8 @@ class DataFrame:
             written. If set to `None`, the output is returned as a BytesIO object.
         compression : {'uncompressed', 'lz4', 'zstd'}
             Compression method. Defaults to "uncompressed".
+            Choose "zstd" for good compression performance.
+            Choose "lz4" for fast compression/decompression.
         future
             Setting this to `True` will write Polars' internal data structures that
             might not be available by other Arrow implementations.

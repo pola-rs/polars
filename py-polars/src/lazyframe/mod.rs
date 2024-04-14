@@ -630,11 +630,11 @@ impl PyLazyFrame {
         &self,
         py: Python,
         path: PathBuf,
-        compression: Option<Wrap<IpcCompression>>,
+        compression: Wrap<Option<IpcCompression>>,
         maintain_order: bool,
     ) -> PyResult<()> {
         let options = IpcWriterOptions {
-            compression: compression.map(|c| c.0),
+            compression: compression.0,
             maintain_order,
         };
 

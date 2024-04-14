@@ -1996,7 +1996,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ----------
         path
             File path to which the file should be written.
-        compression : {'lz4', 'zstd'}
+        compression : {'uncompressed', 'lz4', 'zstd'}
+            Compression method. Defaults to "zstd".
             Choose "zstd" for good compression performance.
             Choose "lz4" for fast compression/decompression.
         maintain_order
@@ -2024,6 +2025,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf = pl.scan_csv("/path/to/my_larger_than_ram_file.csv")  # doctest: +SKIP
         >>> lf.sink_ipc("out.arrow")  # doctest: +SKIP
         """
+        if compression is None:
+            compression = "uncompressed"
+
         lf = self._set_sink_optimizations(
             type_coercion=type_coercion,
             predicate_pushdown=predicate_pushdown,
