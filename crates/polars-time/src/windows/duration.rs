@@ -72,8 +72,8 @@ impl Display for Duration {
             write!(f, "{}d", self.days)?
         }
         if self.nsecs > 0 {
-            let secs = self.nsecs / 1_000_000;
-            if secs * 1_000_000 == self.nsecs {
+            let secs = self.nsecs / NANOSECONDS;
+            if secs * NANOSECONDS == self.nsecs {
                 write!(f, "{}s", secs)?
             } else {
                 let us = self.nsecs / 1_000;
@@ -979,5 +979,18 @@ mod test {
             seven_days_negative.add_ns(t, None).unwrap(),
             one_week_negative.add_ns(t, None).unwrap()
         );
+    }
+
+    #[test]
+    fn test_display() {
+        let duration = Duration::parse("1h");
+        let expected = "3600s";
+        assert_eq!(format!("{duration}"), expected);
+        let duration = Duration::parse("1h5ns");
+        let expected = "3600000000005ns";
+        assert_eq!(format!("{duration}"), expected);
+        let duration = Duration::parse("1h5000ns");
+        let expected = "3600000005us";
+        assert_eq!(format!("{duration}"), expected);
     }
 }
