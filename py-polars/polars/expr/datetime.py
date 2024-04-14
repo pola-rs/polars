@@ -193,7 +193,7 @@ class ExprDateTimeNameSpace:
             - `False`: use the latest datetime
 
             .. deprecated:: 0.19.0
-                Use `ambiguous` instead
+                This is now auto-inferred, you can safely remove this argument.
         ambiguous
             Determine how to deal with ambiguous datetimes:
 
