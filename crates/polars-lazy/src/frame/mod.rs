@@ -264,7 +264,7 @@ impl LazyFrame {
     /// # use polars_core::prelude::*;
     /// # use polars_lazy::prelude::*;
     /// fn sort_by_a(df: DataFrame) -> LazyFrame {
-    ///     df.lazy().sort(["a"], Default::default())
+    ///     df.lazy().sort(["sepal.width"], Default::default())
     /// }
     /// ```
     /// Sort by a single column with specific order:
@@ -273,7 +273,7 @@ impl LazyFrame {
     /// # use polars_lazy::prelude::*;
     /// fn sort_with_specific_order(df: DataFrame, descending: bool) -> LazyFrame {
     ///     df.lazy().sort(
-    ///         ["a"],
+    ///         ["sepal.width"],
     ///         SortMultipleOptions::new()
     ///             .with_order_descending(descending)
     ///     )
