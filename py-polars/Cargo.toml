@@ -53,6 +53,7 @@ features = [
   "dtype-full",
   "dynamic_group_by",
   "ewma",
+  "ewma_by",
   "fmt",
   "interpolate",
   "is_first_distinct",

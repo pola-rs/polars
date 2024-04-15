@@ -1534,6 +1534,20 @@ impl Expr {
         self.apply_private(FunctionExpr::EwmMean { options })
     }
 
+    #[cfg(feature = "ewma_by")]
+    /// Calculate the exponentially-weighted moving average by a time column.
+    pub fn ewm_mean_by(self, times: Expr, half_life: Duration, check_sorted: bool) -> Self {
+        self.apply_many_private(
+            FunctionExpr::EwmMeanBy {
+                half_life,
+                check_sorted,
+            },
+            &[times],
+            false,
+            false,
+        )
+    }
+
     #[cfg(feature = "ewma")]
     /// Calculate the exponentially-weighted moving standard deviation.
     pub fn ewm_std(self, options: EWMOptions) -> Self {
