@@ -205,3 +205,18 @@ def test_ewma_by_invalid() -> None:
         df.with_row_index().select(
             pl.col("values").ewm_mean_by("index", half_life="2i"),
         )
+
+
+def test_ewma_by_warn_two_chunks() -> None:
+    df = pl.DataFrame({"values": [3.0, 2.0], "by": [3, 1]})
+    df = pl.concat([df, df], rechunk=False)
+
+    result = df.with_columns(
+        pl.col("values").ewm_mean_by("by", half_life="2i"),
+    )
+    expected = pl.DataFrame({"values": [2.5, 2.0, 2.5, 2], "by": [3, 1, 3, 1]})
+    assert_frame_equal(result, expected)
+    result = df.sort("by").with_columns(
+        pl.col("values").ewm_mean_by("by", half_life="2i"),
+    )
+    assert_frame_equal(result, expected.sort("by"))

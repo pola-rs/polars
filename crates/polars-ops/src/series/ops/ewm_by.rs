@@ -63,6 +63,9 @@ where
     let sorting_indices = times.arg_sort(Default::default());
     let values = unsafe { values.take_unchecked(&sorting_indices) };
     let times = unsafe { times.take_unchecked(&sorting_indices) };
+    let sorting_indices = sorting_indices
+        .cont_slice()
+        .expect("`arg_sort` should have returned a single chunk");
 
     let mut out = vec![None; times.len()];
 
@@ -74,8 +77,8 @@ where
             prev_time = time;
             prev_result = value;
             unsafe {
-                let out_idx = sorting_indices.get_unchecked(idx).unwrap();
-                *out.get_unchecked_mut(out_idx as usize) = Some(prev_result);
+                let out_idx = sorting_indices.get_unchecked(idx);
+                *out.get_unchecked_mut(*out_idx as usize) = Some(prev_result);
             }
             skip_rows = idx + 1;
             break;
@@ -97,8 +100,8 @@ where
                 _ => None,
             };
             unsafe {
-                let out_idx = sorting_indices.get_unchecked(idx).unwrap();
-                *out.get_unchecked_mut(out_idx as usize) = result_opt;
+                let out_idx = sorting_indices.get_unchecked(idx);
+                *out.get_unchecked_mut(*out_idx as usize) = result_opt;
             }
         });
     ChunkedArray::<T>::from_iter_options(values.name(), out.into_iter())
