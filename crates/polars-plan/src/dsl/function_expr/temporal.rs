@@ -269,7 +269,7 @@ pub(super) fn date_offset(s: &[Series]) -> PolarsResult<Series> {
                         let offset = Duration::parse(offset);
                         tz.is_none()
                             || tz.as_deref() == Some("UTC")
-                            || offset.is_constant_duration()
+                            || offset.is_constant_duration(tz.as_deref())
                     },
                     None => false,
                 },
