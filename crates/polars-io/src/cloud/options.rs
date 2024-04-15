@@ -165,13 +165,20 @@ fn get_retry_config(max_retries: usize) -> RetryConfig {
 
 #[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
 pub(super) fn get_client_options() -> ClientOptions {
+    let timeout = std::env::var("POLARS_ASYNC_TIMEOUT")
+        .unwrap_or_else(|_| "3".to_string())
+        .parse::<u64>()
+        .expect("integer");
+    eprintln!("async client timeout (minutes): {}", timeout);
+    let timeout = std::time::Duration::from_secs(timeout * 60);
+
     ClientOptions::default()
         // We set request timeout super high as the timeout isn't reset at ACK,
         // but starts from the moment we start downloading a body.
         // https://docs.rs/reqwest/latest/reqwest/struct.ClientBuilder.html#method.timeout
-        .with_timeout_disabled()
+        .with_timeout(timeout)
         // Note: Don't set this to None otherwise we hang forever.
-        .with_connect_timeout(std::time::Duration::from_secs(7 * 60))
+        .with_connect_timeout(timeout)
         .with_allow_http(true)
 }
 
