@@ -12,6 +12,7 @@ type Result<T> = std::result::Result<T, Error>;
 enum Error {
     Capnp(CapnpError),
     EmptyStruct,
+    VoidType,
     RecursionLimitExceeded,
 }
 
@@ -45,6 +46,10 @@ fn make_arrow_fields(
             Err(e) => match e {
                 Error::EmptyStruct => eprintln!(
                     "Cannot convert empty struct '{}' from capnp to arrow. Arrow requires at least one field.", 
+                    field_name(field).unwrap()
+                ),
+                Error::VoidType => eprintln!(
+                    "Serialized columnar data (e.g. delta lake, parquet readers) do not support Null type '{}'.", 
                     field_name(field).unwrap()
                 ),
                 Error::RecursionLimitExceeded => eprintln!(
@@ -95,7 +100,7 @@ fn capnp_dtype_to_arrow_dtype(
     recursion_depth: &mut HashMap<String, i8>,
 ) -> Result<ArrowDataType> {
     let arrow_dtype = match capnp_dtype {
-        TypeVariant::Void => ArrowDataType::Null,
+        TypeVariant::Void => return Err(Error::VoidType),
         TypeVariant::Bool => ArrowDataType::Boolean,
         TypeVariant::Int8 => ArrowDataType::Int8,
         TypeVariant::Int16 => ArrowDataType::Int16,
@@ -126,6 +131,9 @@ fn capnp_dtype_to_arrow_dtype(
                     panic!("{}", e)
                 }
             };
+            if fields.is_empty() {
+                return Err(Error::EmptyStruct);
+            }
             ArrowDataType::Struct(fields)
         }
         TypeVariant::List(l) => {

@@ -49,7 +49,6 @@ fn get_union_fields() -> Vec<ZippedField> {
 fn test_primitives() {
     let fields = get_fields();
     let field_names = vec![
-        "voidField",
         "boolField",
         "int8Field",
         "int16Field",
@@ -69,11 +68,21 @@ fn test_primitives() {
 }
 
 #[test]
+fn test_no_void_field() {
+    let fields = get_fields();
+    let field_name = "voidField";
+    for field in fields {
+        if field.arrow_field().name == field_name {
+            panic!("Expect to drop voidField")
+        }
+    }
+}
+
+#[test]
 #[should_panic]
 fn test_primitives_inner_fields() {
     let fields = get_fields();
     let field_names = vec![
-        "voidField",
         "boolField",
         "int8Field",
         "int16Field",
@@ -95,39 +104,39 @@ fn test_primitives_inner_fields() {
 #[test]
 fn test_struct_field() {
     let fields = get_fields();
-    assert_eq!(&fields[14].arrow_field().name, "structField");
-    let children = &fields[14].inner_fields();
-    assert_eq!(children.len(), 31);
-    let void_field = &children[0];
-    assert_eq!(void_field.arrow_field().name, "voidField");
+    assert_eq!(&fields[13].arrow_field().name, "structField");
+    let children = &fields[13].inner_fields();
+    assert_eq!(children.len(), 29);
+    let bool_field = &children[0];
+    assert_eq!(bool_field.arrow_field().name, "boolField");
     assert_eq!(
-        void_field
+        bool_field
             .capnp_field()
             .get_proto()
             .get_name()
             .unwrap()
             .to_string()
             .unwrap(),
-        "voidField"
+        "boolField"
     );
 }
 
 #[test]
 fn test_list_field() {
     let fields = get_fields();
-    let children = &fields[16].inner_fields();
+    let children = &fields[15].inner_fields();
     assert_eq!(children.len(), 1);
-    let inner_field = &fields[16].inner_field();
+    let inner_field = &fields[15].inner_field();
     assert_eq!(inner_field.arrow_field().name, "item");
     assert_eq!(
-        fields[16]
+        fields[15]
             .capnp_field()
             .get_proto()
             .get_name()
             .unwrap()
             .to_string()
             .unwrap(),
-        "voidList"
+        "boolList"
     );
 }
 
@@ -149,16 +158,16 @@ fn test_struct_field_singular_inner_field_panic() {
 #[test]
 fn test_nested_struct_field() {
     let fields = get_fields();
-    let struct0 = &fields[14].inner_fields();
-    assert_eq!(&struct0[14].arrow_field().name, "structField");
-    let struct1 = &struct0[14].inner_fields();
-    assert_eq!(&struct1[14].arrow_field().name, "structField");
-    let struct2 = &struct1[14].inner_fields();
+    let struct0 = &fields[13].inner_fields();
+    assert_eq!(&struct0[13].arrow_field().name, "structField");
+    let struct1 = &struct0[13].inner_fields();
+    assert_eq!(&struct1[13].arrow_field().name, "structField");
+    let struct2 = &struct1[13].inner_fields();
     // We cut off `structField` to limit the depth of recursion
-    assert_eq!(struct2[14].arrow_field().name, "enumField");
-    assert_eq!(struct2.len(), 31);
+    assert_eq!(struct2[13].arrow_field().name, "enumField");
+    assert_eq!(struct2.len(), 29);
     let primitive_child = &struct2[1];
-    assert_eq!(primitive_child.arrow_field().name, "boolField");
+    assert_eq!(primitive_child.arrow_field().name, "int8Field");
     assert_eq!(
         primitive_child
             .capnp_field()
@@ -167,14 +176,14 @@ fn test_nested_struct_field() {
             .unwrap()
             .to_string()
             .unwrap(),
-        "boolField"
+        "int8Field"
     );
     // The nested structs continue in the structList field
-    let list_child = &struct2[29];
+    let list_child = &struct2[27];
     assert_eq!(list_child.arrow_field().name, "structList");
-    let list_struct_item0 = struct2[29].inner_field();
+    let list_struct_item0 = struct2[27].inner_field();
     let list_struct0 = list_struct_item0.inner_fields();
-    assert_eq!(&list_struct0[0].arrow_field().name, "voidField");
+    assert_eq!(&list_struct0[0].arrow_field().name, "boolField");
 }
 
 #[test]
