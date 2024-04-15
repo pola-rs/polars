@@ -297,6 +297,7 @@ __all__ = [
     "PolarsDataType",
     # polars.io
     "read_avro",
+    "read_clipboard",
     "read_csv",
     "read_csv_batched",
     "read_database",
@@ -318,7 +319,6 @@ __all__ = [
     "scan_ndjson",
     "scan_parquet",
     "scan_pyarrow_dataset",
-    "read_clipboard",
     # polars.stringcache
     "StringCache",
     "disable_string_cache",
