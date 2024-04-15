@@ -7,10 +7,11 @@ impl<T: PolarsDataType> Drop for ChunkedArray<T> {
             // SAFETY:
             // guarded by the type system
             // the transmute only convinces the type system that we are a list
-            // (which we are)
             #[allow(clippy::transmute_undefined_repr)]
             unsafe {
-                drop_list(std::mem::transmute(self))
+                drop_list(std::mem::transmute::<&mut ChunkedArray<T>, &ListChunked>(
+                    self,
+                ))
             }
         }
     }

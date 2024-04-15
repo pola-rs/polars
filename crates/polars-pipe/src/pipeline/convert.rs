@@ -18,7 +18,7 @@ use crate::executors::{operators, sources};
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{Operator, Sink as SinkTrait, Source};
 use crate::pipeline::dispatcher::ThreadedSink;
-use crate::pipeline::PipeLine;
+use crate::pipeline::{PhysOperator, PipeLine};
 
 pub type CallBacks = PlHashMap<Node, PlaceHolder>;
 
@@ -758,7 +758,9 @@ where
 
     Ok(PipeLine::new(
         source_objects,
-        unsafe { std::mem::transmute(operator_objects) },
+        unsafe {
+            std::mem::transmute::<Vec<Box<dyn Operator>>, Vec<PhysOperator>>(operator_objects)
+        },
         sinks,
         verbose,
     ))

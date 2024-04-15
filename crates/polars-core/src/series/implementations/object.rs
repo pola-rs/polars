@@ -229,6 +229,7 @@ mod test {
 
     #[test]
     fn test_downcast_object() -> PolarsResult<()> {
+        #[allow(non_local_definitions)]
         impl PolarsObject for i32 {
             fn type_name() -> &'static str {
                 "i32"
