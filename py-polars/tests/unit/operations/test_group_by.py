@@ -985,3 +985,8 @@ def test_aggregated_scalar_elementwise_15602() -> None:
     )
     expected = pl.DataFrame({"group": [1, 2], "foo": [[True, True], [True]]})
     assert_frame_equal(out, expected)
+
+
+def test_group_by_multiple_null_cols_15623() -> None:
+    df = pl.DataFrame(schema={"a": pl.Null, "b": pl.Null}).group_by(pl.all()).len()
+    assert df.is_empty()

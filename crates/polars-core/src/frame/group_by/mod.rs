@@ -76,9 +76,16 @@ impl DataFrame {
                 .cloned()
                 .collect::<Vec<_>>();
             if by.is_empty() {
-                Ok(GroupsProxy::Slice {
-                    groups: vec![[0, self.height() as IdxSize]],
-                    rolling: false,
+                Ok(if self.height() == 0 {
+                    GroupsProxy::Slice {
+                        groups: vec![],
+                        rolling: false,
+                    }
+                } else {
+                    GroupsProxy::Slice {
+                        groups: vec![[0, self.height() as IdxSize]],
+                        rolling: false,
+                    }
                 })
             } else {
                 let rows = if multithreaded {
