@@ -9,10 +9,12 @@ mod schema;
 use std::borrow::Cow;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
+use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use polars_core::prelude::*;
+use schema::CachedSchema;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use smartstring::alias::String as SmartString;
@@ -22,8 +24,6 @@ use crate::dsl::python_udf::PythonFunction;
 #[cfg(feature = "merge_sorted")]
 use crate::logical_plan::functions::merge_sorted::merge_sorted;
 use crate::prelude::*;
-
-type CachedSchema = Arc<Mutex<Option<SchemaRef>>>;
 
 #[derive(Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -96,6 +96,7 @@ pub enum FunctionNode {
     RowIndex {
         name: Arc<str>,
         // Might be cached.
+        #[cfg_attr(feature = "serde", serde(skip))]
         schema: CachedSchema,
         offset: Option<IdxSize>,
     },
