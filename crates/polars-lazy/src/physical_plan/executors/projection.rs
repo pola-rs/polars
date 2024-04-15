@@ -106,7 +106,7 @@ impl Executor for ProjectionExec {
                     )
                 })
                 .collect::<PolarsResult<Vec<_>>>()?;
-            let name = comma_delimited("projection".to_string(), &by);
+            let name = comma_delimited("select".to_string(), &by);
             Cow::Owned(name)
         } else {
             Cow::Borrowed("")
