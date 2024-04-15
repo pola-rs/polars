@@ -76,8 +76,13 @@ impl DataFrame {
                 .cloned()
                 .collect::<Vec<_>>();
             if by.is_empty() {
+                let groups = if self.height() == 0 {
+                    vec![]
+                } else {
+                    vec![[0, self.height() as IdxSize]]
+                };
                 Ok(GroupsProxy::Slice {
-                    groups: vec![[0, self.height() as IdxSize]],
+                    groups,
                     rolling: false,
                 })
             } else {
