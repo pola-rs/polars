@@ -8,7 +8,7 @@ use polars_parquet::parquet::types::NativeType;
 use polars_parquet::parquet::write::WriteOptions;
 
 fn unzip_option<T: NativeType>(array: &[Option<T>]) -> Result<(Vec<u8>, Vec<u8>)> {
-    // leave the first 4 bytes anouncing the length of the def level
+    // leave the first 4 bytes announcing the length of the def level
     // this will be overwritten at the end, once the length is known.
     // This is unknown at this point because of the uleb128 encoding,
     // whose length is variable.

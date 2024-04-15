@@ -214,7 +214,7 @@ pub(super) fn flush_operators(
                         }
                     },
                     // The branch for pushing data in the operators.
-                    // This is the same as the default stack exectuor, except now it pushes
+                    // This is the same as the default stack executor, except now it pushes
                     // `Some(chunk)` instead of `chunk`.
                     Some(chunk) => {
                         match operators.get_mut(op_i) {
