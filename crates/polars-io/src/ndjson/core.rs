@@ -259,8 +259,7 @@ impl<'a> CoreJsonReader<'a> {
 
         let iter = file_chunks.par_iter().map(|(start_pos, stop_at_nbytes)| {
             let bytes = &bytes[*start_pos..*stop_at_nbytes];
-            let iter = serde_json::Deserializer::from_slice(bytes)
-                .into_iter::<Box<serde_json::value::RawValue>>();
+            let iter = json_lines(bytes);
             iter.count()
         });
         Ok(POOL.install(|| iter.sum()))
@@ -406,23 +405,25 @@ struct Scratch {
     buffers: simd_json::Buffers,
 }
 
+fn json_lines(bytes: &[u8]) -> impl Iterator<Item = &[u8]> {
+    // This previously used `serde_json`'s `RawValue` to deserialize chunks without really deserializing them.
+    // However, this convenience comes at a cost. serde_json allocates and parses and does UTF-8 validation, all
+    // things we don't need since we use simd_json for them. Also, `serde_json::StreamDeserializer` has a more
+    // ambitious goal: it wants to parse potentially *non-delimited* sequences of JSON values, while we know
+    // our values are line-delimited. Turns out, custom splitting is very easy, and gives a very nice performance boost.
+    bytes.split(|&byte| byte == b'\n').filter(|&bytes| {
+        bytes
+            .iter()
+            .any(|&byte| !matches!(byte, b' ' | b'\t' | b'\r'))
+    })
+}
+
 fn parse_lines(bytes: &[u8], buffers: &mut PlIndexMap<BufferKey, Buffer>) -> PolarsResult<()> {
     let mut scratch = Scratch::default();
 
-    // The `RawValue` is a pointer to the original JSON string and does not perform any deserialization.
-    // It is used to properly iterate over the lines without re-implementing the splitlines logic when this does the same thing.
-    let iter =
-        serde_json::Deserializer::from_slice(bytes).into_iter::<Box<serde_json::value::RawValue>>();
-    for value_result in iter {
-        match value_result {
-            Ok(value) => {
-                let bytes = value.get().as_bytes();
-                parse_impl(bytes, buffers, &mut scratch)?;
-            },
-            Err(e) => {
-                polars_bail!(ComputeError: "error parsing ndjson {}", e)
-            },
-        }
+    let iter = json_lines(bytes);
+    for bytes in iter {
+        parse_impl(bytes, buffers, &mut scratch)?;
     }
     Ok(())
 }
