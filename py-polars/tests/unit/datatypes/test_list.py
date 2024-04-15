@@ -443,6 +443,16 @@ def test_list_min_max() -> None:
     }
 
 
+def test_list_mean_fast_path_empty() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [[], [1, 2, 3]],
+        }
+    )
+    output = df.select(pl.col("a").list.mean())
+    assert output.to_dict(as_series=False) == {"a": [None, 2.0]}
+
+
 def test_list_min_max_13978() -> None:
     df = pl.DataFrame(
         {

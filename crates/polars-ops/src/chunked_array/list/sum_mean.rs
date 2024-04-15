@@ -119,10 +119,10 @@ pub(super) fn sum_with_nulls(ca: &ListChunked, inner_dtype: &DataType) -> Polars
     Ok(out)
 }
 
-fn mean_between_offsets<T, S>(values: &[T], offset: &[i64]) -> Vec<S>
+fn mean_between_offsets<T, S>(values: &[T], offset: &[i64]) -> PrimitiveArray<S>
 where
     T: NativeType + ToPrimitive,
-    S: NumCast + std::iter::Sum + Div<Output = S>,
+    S: NativeType + NumCast + std::iter::Sum + Div<Output = S>,
 {
     let mut running_offset = offset[0];
 
@@ -131,10 +131,15 @@ where
         .map(|end| {
             let current_offset = running_offset;
             running_offset = *end;
-
+            if current_offset == *end {
+                return None;
+            }
             let slice = unsafe { values.get_unchecked(current_offset as usize..*end as usize) };
             unsafe {
-                sum_slice::<_, S>(slice) / NumCast::from(slice.len()).unwrap_unchecked_release()
+                Some(
+                    sum_slice::<_, S>(slice)
+                        / NumCast::from(slice.len()).unwrap_unchecked_release(),
+                )
             }
         })
         .collect_trusted()
@@ -147,10 +152,15 @@ where
 {
     let values = arr.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();
     let values = values.values().as_slice();
-    Box::new(PrimitiveArray::from_data_default(
-        mean_between_offsets::<_, S>(values, offsets).into(),
-        validity.cloned(),
-    )) as ArrayRef
+    let mut out = mean_between_offsets::<_, S>(values, offsets);
+    if let Some(validity) = validity {
+        if out.has_validity() {
+            out.apply_validity(|other_validity| validity & &other_validity)
+        } else {
+            out = out.with_validity(Some(validity.clone()));
+        }
+    }
+    Box::new(out)
 }
 
 pub(super) fn mean_list_numerical(ca: &ListChunked, inner_type: &DataType) -> Series {
