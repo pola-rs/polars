@@ -30,7 +30,7 @@ pub(crate) fn prepare_expression_for_context(
         .without_optimizations()
         .with_simplify_expr(true)
         .select([expr.clone()]);
-    let optimized = lf.optimize(&mut lp_arena, &mut expr_arena).unwrap();
+    let optimized = lf.optimize(&mut lp_arena, &mut expr_arena)?;
     let lp = lp_arena.get(optimized);
     let aexpr = lp.get_exprs().pop().unwrap();
 
