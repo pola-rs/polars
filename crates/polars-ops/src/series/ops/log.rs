@@ -1,4 +1,5 @@
 use polars_core::prelude::*;
+use polars_core::with_match_physical_integer_polars_type;
 
 use crate::series::ops::SeriesSealed;
 
@@ -22,10 +23,12 @@ pub trait LogSeries: SeriesSealed {
 
         use DataType::*;
         match s.dtype() {
-            Int32 => log(s.i32().unwrap(), base).into_series(),
-            Int64 => log(s.i64().unwrap(), base).into_series(),
-            UInt32 => log(s.u32().unwrap(), base).into_series(),
-            UInt64 => log(s.u64().unwrap(), base).into_series(),
+            dt if dt.is_integer() => {
+                with_match_physical_integer_polars_type!(s.dtype(), |$T| {
+                    let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
+                    log(ca, base).into_series()
+                })
+            },
             Float32 => s
                 .f32()
                 .unwrap()
@@ -43,10 +46,12 @@ pub trait LogSeries: SeriesSealed {
 
         use DataType::*;
         match s.dtype() {
-            Int32 => log1p(s.i32().unwrap()).into_series(),
-            Int64 => log1p(s.i64().unwrap()).into_series(),
-            UInt32 => log1p(s.u32().unwrap()).into_series(),
-            UInt64 => log1p(s.u64().unwrap()).into_series(),
+            dt if dt.is_integer() => {
+                with_match_physical_integer_polars_type!(s.dtype(), |$T| {
+                    let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
+                    log1p(ca).into_series()
+                })
+            },
             Float32 => s.f32().unwrap().apply_values(|v| v.ln_1p()).into_series(),
             Float64 => s.f64().unwrap().apply_values(|v| v.ln_1p()).into_series(),
             _ => s.cast(&DataType::Float64).unwrap().log1p(),
@@ -60,10 +65,12 @@ pub trait LogSeries: SeriesSealed {
 
         use DataType::*;
         match s.dtype() {
-            Int32 => exp(s.i32().unwrap()).into_series(),
-            Int64 => exp(s.i64().unwrap()).into_series(),
-            UInt32 => exp(s.u32().unwrap()).into_series(),
-            UInt64 => exp(s.u64().unwrap()).into_series(),
+            dt if dt.is_integer() => {
+                with_match_physical_integer_polars_type!(s.dtype(), |$T| {
+                    let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
+                    exp(ca).into_series()
+                })
+            },
             Float32 => s.f32().unwrap().apply_values(|v| v.exp()).into_series(),
             Float64 => s.f64().unwrap().apply_values(|v| v.exp()).into_series(),
             _ => s.cast(&DataType::Float64).unwrap().exp(),
