@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 #[cfg(feature = "object")]
 use polars::chunked_array::object::PolarsObjectSafe;
 use polars::datatypes::{DataType, Field, OwnedObject, PlHashMap, TimeUnit};
@@ -28,13 +30,13 @@ impl ToPyObject for Wrap<AnyValue<'_>> {
 }
 
 impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
-    fn extract(ob: &'s PyAny) -> PyResult<Self> {
+    fn extract_bound(ob: &Bound<'s, PyAny>) -> PyResult<Self> {
         py_object_to_any_value(ob, true).map(Wrap)
     }
 }
 
 pub(crate) fn any_value_into_py_object(av: AnyValue, py: Python) -> PyObject {
-    let utils = UTILS.as_ref(py);
+    let utils = UTILS.bind(py);
     match av {
         AnyValue::UInt8(v) => v.into_py(py),
         AnyValue::UInt16(v) => v.into_py(py),
@@ -105,7 +107,7 @@ pub(crate) fn any_value_into_py_object(av: AnyValue, py: Python) -> PyObject {
                     N * std::mem::size_of::<u128>(),
                 )
             };
-            let digits = PyTuple::new(py, buf.iter().take(n_digits));
+            let digits = PyTuple::new_bound(py, buf.iter().take(n_digits));
             convert
                 .call1((v.is_negative() as u8, digits, n_digits, -(scale as i32)))
                 .unwrap()
@@ -115,22 +117,22 @@ pub(crate) fn any_value_into_py_object(av: AnyValue, py: Python) -> PyObject {
 }
 
 type TypeObjectPtr = usize;
-type InitFn = fn(&PyAny, bool) -> PyResult<AnyValue>;
+type InitFn<'a> = fn(&'a Bound<'a, PyAny>, bool) -> PyResult<AnyValue<'a>>;
 pub(crate) static LUT: crate::gil_once_cell::GILOnceCell<PlHashMap<TypeObjectPtr, InitFn>> =
     crate::gil_once_cell::GILOnceCell::new();
 
-pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyValue> {
+pub(crate) fn py_object_to_any_value<'a>(ob: &'a Bound<'a, PyAny>, strict: bool) -> PyResult<AnyValue<'a>> {
     // Conversion functions.
-    fn get_null(_ob: &PyAny, _strict: bool) -> PyResult<AnyValue> {
+    fn get_null<'b>(_ob: &'b Bound<'b, PyAny>, _strict: bool) -> PyResult<AnyValue<'b>> {
         Ok(AnyValue::Null)
     }
 
-    fn get_bool(ob: &PyAny, _strict: bool) -> PyResult<AnyValue> {
+    fn get_bool<'b>(ob: &'b Bound<'b, PyAny>, _strict: bool) -> PyResult<AnyValue<'b>> {
         let b = ob.extract::<bool>().unwrap();
         Ok(AnyValue::Boolean(b))
     }
 
-    fn get_int(ob: &PyAny, strict: bool) -> PyResult<AnyValue> {
+    fn get_int<'b>(ob: &'b Bound<'b, PyAny>, strict: bool) -> PyResult<AnyValue<'b>> {
         if let Ok(v) = ob.extract::<i64>() {
             Ok(AnyValue::Int64(v))
         } else if let Ok(v) = ob.extract::<u64>() {
@@ -145,24 +147,34 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
         }
     }
 
-    fn get_float(ob: &PyAny, _strict: bool) -> PyResult<AnyValue> {
+    fn get_float<'b>(ob: &'b Bound<'b, PyAny>, _strict: bool) -> PyResult<AnyValue<'b>> {
         Ok(AnyValue::Float64(ob.extract::<f64>().unwrap()))
     }
 
-    fn get_str(ob: &PyAny, _strict: bool) -> PyResult<AnyValue> {
-        let value = ob.extract::<&str>().unwrap();
-        Ok(AnyValue::String(value))
+    fn get_str<'b>(ob: &'b Bound<'b, PyAny>, _strict: bool) -> PyResult<AnyValue<'b>> {
+        // Ideally we'd be returning an AnyValue::String(&str) instead, as was
+        // the case in previous versions of this function. However, if compiling
+        // with abi3 for versions older than Python 3.10, the APIs that purport
+        // to return &str actually just encode to UTF-8 as a newly allocated
+        // PyBytes object, and then return reference to that. So what we're
+        // doing here isn't any different fundamantelly, and the APIs to for
+        // converting to &str are deprecated in PyO3 0.21.
+        //
+        // Once Python 3.10 is the minimum supported version, converting to &str
+        // will be cheaper, and we should do that. Python 3.9 security updates
+        // end-of-life is Oct 31, 2025.
+        Ok(AnyValue::StringOwned(ob.extract::<String>().unwrap().into()))
     }
 
-    fn get_bytes(ob: &PyAny, _strict: bool) -> PyResult<AnyValue> {
+    fn get_bytes<'b>(ob: &'b Bound<'b, PyAny>, _strict: bool) -> PyResult<AnyValue<'b>> {
         let value = ob.extract::<&[u8]>().unwrap();
         Ok(AnyValue::Binary(value))
     }
 
-    fn get_date(ob: &PyAny, _strict: bool) -> PyResult<AnyValue> {
+    fn get_date<'b>(ob: &'b Bound<'b, PyAny>, _strict: bool) -> PyResult<AnyValue<'b>> {
         Python::with_gil(|py| {
             let date = UTILS
-                .as_ref(py)
+                .bind(py)
                 .getattr(intern!(py, "date_to_int"))
                 .unwrap()
                 .call1((ob,))
@@ -172,10 +184,10 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
         })
     }
 
-    fn get_datetime(ob: &PyAny, _strict: bool) -> PyResult<AnyValue> {
+    fn get_datetime<'b>(ob: &'b Bound<'b, PyAny>, _strict: bool) -> PyResult<AnyValue<'b>> {
         Python::with_gil(|py| {
             let date = UTILS
-                .as_ref(py)
+                .bind(py)
                 .getattr(intern!(py, "datetime_to_int"))
                 .unwrap()
                 .call1((ob, intern!(py, "us")))
@@ -185,10 +197,10 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
         })
     }
 
-    fn get_timedelta(ob: &PyAny, _strict: bool) -> PyResult<AnyValue> {
+    fn get_timedelta<'b>(ob: &'b Bound<'b, PyAny>, _strict: bool) -> PyResult<AnyValue<'b>> {
         Python::with_gil(|py| {
             let td = UTILS
-                .as_ref(py)
+                .bind(py)
                 .getattr(intern!(py, "timedelta_to_int"))
                 .unwrap()
                 .call1((ob, intern!(py, "us")))
@@ -198,10 +210,10 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
         })
     }
 
-    fn get_time(ob: &PyAny, _strict: bool) -> PyResult<AnyValue> {
+    fn get_time<'b>(ob: &'b Bound<'b, PyAny>, _strict: bool) -> PyResult<AnyValue<'b>> {
         Python::with_gil(|py| {
             let time = UTILS
-                .as_ref(py)
+                .bind(py)
                 .getattr(intern!(py, "time_to_int"))
                 .unwrap()
                 .call1((ob,))
@@ -211,7 +223,7 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
         })
     }
 
-    fn get_decimal(ob: &PyAny, _strict: bool) -> PyResult<AnyValue> {
+    fn get_decimal<'b>(ob: &'b Bound<'b, PyAny>, _strict: bool) -> PyResult<AnyValue<'b>> {
         fn abs_decimal_from_digits(
             digits: impl IntoIterator<Item = u8>,
             exp: i32,
@@ -256,14 +268,14 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
         Ok(AnyValue::Decimal(v, scale))
     }
 
-    fn get_list(ob: &PyAny, strict: bool) -> PyResult<AnyValue> {
-        fn get_list_with_constructor(ob: &PyAny) -> PyResult<AnyValue> {
+    fn get_list<'b>(ob: &'b Bound<'b, PyAny>, strict: bool) -> PyResult<AnyValue<'b>> {
+        fn get_list_with_constructor<'c>(ob: &'c Bound<'c, PyAny>) -> PyResult<AnyValue<'c>> {
             // Use the dedicated constructor.
             // This constructor is able to go via dedicated type constructors
             // so it can be much faster.
             Python::with_gil(|py| {
                 let s = SERIES.call1(py, (ob,))?;
-                get_list_from_series(s.as_ref(py), true)
+                get_list_from_series(s.bind(py), true)
             })
         }
 
@@ -278,7 +290,7 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
             let mut iter = list.iter()?;
 
             for item in (&mut iter).take(INFER_SCHEMA_LENGTH) {
-                let av = py_object_to_any_value(item?, strict)?;
+                let av = py_object_to_any_value(&(item?), strict)?;
                 avs.push(av)
             }
 
@@ -292,7 +304,7 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
                 // Push the rest.
                 avs.reserve(list.len()?);
                 for item in iter {
-                    let av = py_object_to_any_value(item?, strict)?;
+                    let av = py_object_to_any_value(&(item?), strict)?;
                     avs.push(av)
                 }
 
@@ -310,31 +322,31 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
         }
     }
 
-    fn get_list_from_series(ob: &PyAny, _strict: bool) -> PyResult<AnyValue<'static>> {
+    fn get_list_from_series<'b>(ob: &'b Bound<'b, PyAny>, _strict: bool) -> PyResult<AnyValue<'b>> {
         let s = super::get_series(ob)?;
         Ok(AnyValue::List(s))
     }
 
-    fn get_struct(ob: &PyAny, strict: bool) -> PyResult<AnyValue<'_>> {
+    fn get_struct<'b>(ob: &'b Bound<'b, PyAny>, strict: bool) -> PyResult<AnyValue<'b>> {
         let dict = ob.downcast::<PyDict>().unwrap();
         let len = dict.len();
         let mut keys = Vec::with_capacity(len);
         let mut vals = Vec::with_capacity(len);
         for (k, v) in dict.into_iter() {
-            let key = k.extract::<&str>()?;
-            let val = py_object_to_any_value(v, strict)?;
+            let key = k.extract::<Cow<str>>()?;
+            let val = py_object_to_any_value(&v, strict)?;
             let dtype = val.dtype();
-            keys.push(Field::new(key, dtype));
+            keys.push(Field::new(&*key, dtype));
             vals.push(val)
         }
         Ok(AnyValue::StructOwned(Box::new((vals, keys))))
     }
 
-    fn get_object(ob: &PyAny, _strict: bool) -> PyResult<AnyValue> {
+    fn get_object<'b>(ob: &'b Bound<'b, PyAny>, _strict: bool) -> PyResult<AnyValue<'b>> {
         #[cfg(feature = "object")]
         {
             // This is slow, but hey don't use objects.
-            let v = &ObjectValue { inner: ob.into() };
+            let v = &ObjectValue { inner: ob.clone().unbind() };
             Ok(AnyValue::ObjectOwned(OwnedObject(v.to_boxed())))
         }
         #[cfg(not(feature = "object"))]
@@ -345,7 +357,7 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
     ///
     /// Note: This function is only ran if the object's type is not already in the
     /// lookup table.
-    fn get_conversion_function(ob: &PyAny, py: Python) -> InitFn {
+    fn get_conversion_function<'b>(ob: &'b Bound<'b, PyAny>, py: Python<'b>) -> InitFn<'b> {
         if ob.is_none() {
             get_null
         }
@@ -390,9 +402,9 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
                     let ancestors_str_iter = ancestors
                         .iter()
                         .unwrap()
-                        .map(|b| b.unwrap().str().unwrap().to_str().unwrap());
+                        .map(|b| b.unwrap().str().unwrap().to_cow().unwrap());
                     for c in ancestors_str_iter {
-                        match c {
+                        match &*c {
                             // datetime must be checked before date because
                             // Python datetime is an instance of date.
                             "<class 'datetime.datetime'>" => return get_datetime,
@@ -415,7 +427,7 @@ pub(crate) fn py_object_to_any_value(ob: &PyAny, strict: bool) -> PyResult<AnyVa
                 .entry(type_object_ptr)
                 .or_insert_with(|| get_conversion_function(ob, py));
 
-            convert_fn(ob, strict)
+            convert_fn(&ob, strict)
         })
     })
 }

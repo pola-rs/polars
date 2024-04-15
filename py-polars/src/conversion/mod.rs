@@ -70,13 +70,13 @@ pub(crate) fn get_lf(obj: &PyAny) -> PyResult<LazyFrame> {
     Ok(pydf.extract::<PyLazyFrame>()?.ldf)
 }
 
-pub(crate) fn get_series(obj: &PyAny) -> PyResult<Series> {
+pub(crate) fn get_series(obj: &Bound<PyAny>) -> PyResult<Series> {
     let pydf = obj.getattr(intern!(obj.py(), "_s"))?;
     Ok(pydf.extract::<PySeries>()?.series)
 }
 
 pub(crate) fn to_series(py: Python, s: PySeries) -> PyObject {
-    let series = SERIES.as_ref(py);
+    let series = SERIES.bind(py);
     let constructor = series
         .getattr(intern!(series.py(), "_from_pyseries"))
         .unwrap();
@@ -85,7 +85,7 @@ pub(crate) fn to_series(py: Python, s: PySeries) -> PyObject {
 
 #[cfg(feature = "csv")]
 impl<'a> FromPyObject<'a> for Wrap<NullValues> {
-    fn extract(ob: &'a PyAny) -> PyResult<Self> {
+    fn extract_bound(ob: &Bound<'a, PyAny>) -> PyResult<Self> {
         if let Ok(s) = ob.extract::<String>() {
             Ok(Wrap(NullValues::AllColumnsSingle(s)))
         } else if let Ok(s) = ob.extract::<Vec<String>>() {
@@ -106,7 +106,7 @@ fn struct_dict<'a>(
     vals: impl Iterator<Item = AnyValue<'a>>,
     flds: &[Field],
 ) -> PyObject {
-    let dict = PyDict::new(py);
+    let dict = PyDict::new_bound(py);
     for (fld, val) in flds.iter().zip(vals) {
         dict.set_item(fld.name().as_str(), Wrap(val)).unwrap()
     }
