@@ -1,6 +1,5 @@
 use std::ops::Deref;
 use std::sync::Arc;
-use std::usize;
 
 use either::Either;
 use num_traits::Zero;
