@@ -1208,7 +1208,7 @@ impl Expr {
             self.apply_many_private(
                 FunctionExpr::RollingExpr(rolling_function_by(options)),
                 &[col(&name)],
-                true,
+                false,
                 false,
             )
         } else {
