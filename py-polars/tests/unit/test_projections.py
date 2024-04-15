@@ -408,3 +408,14 @@ def test_projection_drop_with_series_lit_14382() -> None:
         "b_name": ["b"],
         "b_old": [7],
     }
+
+
+def test_cached_schema_15651() -> None:
+    q = pl.LazyFrame({"col1": [1], "col2": [2], "col3": [3]})
+    q = q.with_row_index()
+    q = q.filter(~pl.col("col1").is_null())
+    # create a subplan diverging from q
+    _ = q.select(pl.len()).collect(projection_pushdown=True)
+
+    # ensure that q's "cached" columns are still correct
+    assert q.columns == q.collect().columns
