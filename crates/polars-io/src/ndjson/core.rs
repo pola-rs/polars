@@ -366,18 +366,19 @@ impl<'a> CoreJsonReader<'a> {
 fn parse_impl(
     bytes: &[u8],
     buffers: &mut PlIndexMap<BufferKey, Buffer>,
-    scratch: &mut Vec<u8>,
+    scratch: &mut Scratch,
 ) -> PolarsResult<usize> {
-    scratch.clear();
-    scratch.extend_from_slice(bytes);
-    let n = scratch.len();
+    scratch.json.clear();
+    scratch.json.extend_from_slice(bytes);
+    let n = scratch.json.len();
     let all_good = match n {
         0 => true,
-        1 => scratch[0] == NEWLINE,
-        2 => scratch[0] == NEWLINE && scratch[1] == RETURN,
+        1 => scratch.json[0] == NEWLINE,
+        2 => scratch.json[0] == NEWLINE && scratch.json[1] == RETURN,
         _ => {
-            let value: simd_json::BorrowedValue = simd_json::to_borrowed_value(scratch)
-                .map_err(|e| polars_err!(ComputeError: "error parsing line: {}", e))?;
+            let value =
+                simd_json::to_borrowed_value_with_buffers(&mut scratch.json, &mut scratch.buffers)
+                    .map_err(|e| polars_err!(ComputeError: "error parsing line: {}", e))?;
             match value {
                 simd_json::BorrowedValue::Object(value) => {
                     buffers.iter_mut().try_for_each(|(s, inner)| {
@@ -399,8 +400,14 @@ fn parse_impl(
     Ok(n)
 }
 
+#[derive(Default)]
+struct Scratch {
+    json: Vec<u8>,
+    buffers: simd_json::Buffers,
+}
+
 fn parse_lines(bytes: &[u8], buffers: &mut PlIndexMap<BufferKey, Buffer>) -> PolarsResult<()> {
-    let mut buf = vec![];
+    let mut scratch = Scratch::default();
 
     // The `RawValue` is a pointer to the original JSON string and does not perform any deserialization.
     // It is used to properly iterate over the lines without re-implementing the splitlines logic when this does the same thing.
@@ -410,7 +417,7 @@ fn parse_lines(bytes: &[u8], buffers: &mut PlIndexMap<BufferKey, Buffer>) -> Pol
         match value_result {
             Ok(value) => {
                 let bytes = value.get().as_bytes();
-                parse_impl(bytes, buffers, &mut buf)?;
+                parse_impl(bytes, buffers, &mut scratch)?;
             },
             Err(e) => {
                 polars_bail!(ComputeError: "error parsing ndjson {}", e)
