@@ -328,7 +328,15 @@ macro_rules! impl_dyn_series {
                 Ok(self.0.min_as_series().$into_logical())
             }
             fn median_as_series(&self) -> PolarsResult<Series> {
-                Series::new(self.name(), &[self.median().map(|v| v as i64)]).cast(self.dtype())
+                match self.dtype() {
+                    #[cfg(feature = "dtype-date")]
+                    DataType::Date => {
+                        let ms = MS_IN_DAY as f64;
+                        Series::new(self.name(), &[self.median().map(|v| (v * ms) as i64)])
+                            .cast(&DataType::Datetime(TimeUnit::Milliseconds, None))
+                    },
+                    dt => Series::new(self.name(), &[self.median().map(|v| v as i64)]).cast(dt),
+                }
             }
 
             fn clone_inner(&self) -> Arc<dyn SeriesTrait> {

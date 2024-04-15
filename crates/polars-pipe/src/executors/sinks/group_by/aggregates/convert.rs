@@ -238,26 +238,36 @@ where
                 .unwrap();
 
                 let logical_dtype = phys_expr.field(schema).unwrap().dtype;
-                #[cfg(feature = "dtype-categorical")]
-                if matches!(
-                    logical_dtype,
-                    DataType::Categorical(_, _) | DataType::Enum(_, _)
-                ) {
-                    return (
+
+                match &logical_dtype {
+                    #[cfg(feature = "dtype-categorical")]
+                    &DataType::Categorical(_, _) | DataType::Enum(_, _) => (
                         logical_dtype.clone(),
                         phys_expr,
                         AggregateFunction::Null(NullAgg::new(logical_dtype)),
-                    );
-                }
-                let agg_fn = match logical_dtype.to_physical() {
-                    dt if dt.is_integer() | dt.is_bool() => {
-                        AggregateFunction::MeanF64(MeanAgg::<f64>::new())
+                    ),
+                    &DataType::Date => (
+                        logical_dtype,
+                        to_physical(
+                            &ExprIR::from_node(*input, expr_arena),
+                            expr_arena,
+                            Some(schema),
+                        )
+                        .unwrap(),
+                        AggregateFunction::MeanDate(MeanAgg::<i64>::new_date()),
+                    ),
+                    dt => {
+                        let agg_fn = match dt.to_physical() {
+                            dt if dt.is_integer() | dt.is_bool() => {
+                                AggregateFunction::MeanF64(MeanAgg::<f64>::new())
+                            },
+                            DataType::Float32 => AggregateFunction::MeanF32(MeanAgg::<f32>::new()),
+                            DataType::Float64 => AggregateFunction::MeanF64(MeanAgg::<f64>::new()),
+                            dt => AggregateFunction::Null(NullAgg::new(dt)),
+                        };
+                        (logical_dtype, phys_expr, agg_fn)
                     },
-                    DataType::Float32 => AggregateFunction::MeanF32(MeanAgg::<f32>::new()),
-                    DataType::Float64 => AggregateFunction::MeanF64(MeanAgg::<f64>::new()),
-                    dt => AggregateFunction::Null(NullAgg::new(dt)),
-                };
-                (logical_dtype, phys_expr, agg_fn)
+                }
             },
             AAggExpr::First(input) => {
                 let phys_expr = to_physical(

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -87,7 +87,7 @@ def test_streaming_group_by_types() -> None:
             "bool_mean": pl.Float64,
             "bool_sum": pl.UInt32,
             "date_sum": pl.Date,
-            "date_mean": pl.Date,
+            "date_mean": pl.Datetime,
             "date_first": pl.Date,
             "date_last": pl.Date,
             "date_min": pl.Date,
@@ -104,7 +104,7 @@ def test_streaming_group_by_types() -> None:
             "bool_mean": [0.5],
             "bool_sum": [1],
             "date_sum": [date(2074, 1, 1)],
-            "date_mean": [date(2022, 1, 1)],
+            "date_mean": [datetime(2022, 1, 1)],
             "date_first": [date(2022, 1, 1)],
             "date_last": [date(2022, 1, 1)],
             "date_min": [date(2022, 1, 1)],
@@ -503,6 +503,41 @@ def test_streaming_group_by_boolean_mean_15610(n_rows: int, streaming: bool) -> 
         pl.select(
             a=pl.repeat([True, False, True], n_repeats).explode(),
             b=pl.repeat([True, False, False], n_repeats).explode(),
+        )
+        .lazy()
+        .group_by("a")
+        .agg(c=pl.mean("b"))
+        .sort("a")
+        .collect(streaming=streaming)
+    )
+
+    assert_frame_equal(out, expect)
+
+
+@pytest.mark.parametrize("streaming", [True, False])
+@pytest.mark.parametrize("n_rows", [PARTITION_LIMIT - 1, PARTITION_LIMIT + 3])
+def test_streaming_group_by_date_mean(n_rows: int, streaming: bool) -> None:
+    # Also test non-streaming because it sometimes dispatched to streaming agg.
+    expect = pl.DataFrame(
+        {
+            "a": [False, True],
+            "c": pl.Series(
+                [datetime(2024, 1, 1), datetime(2024, 1, 1, 12)],
+                dtype=pl.Datetime("ms"),
+            ),
+        }
+    )
+
+    n_repeats = n_rows // 3
+    assert n_repeats > 0
+
+    out = (
+        pl.select(
+            a=pl.repeat([True, False, True], n_repeats).explode(),
+            b=pl.repeat(
+                [date(2024, 1, 1), date(2024, 1, 1), date(2024, 1, 2)],
+                n_repeats,
+            ).explode(),
         )
         .lazy()
         .group_by("a")

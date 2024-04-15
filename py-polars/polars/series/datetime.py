@@ -2,11 +2,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Iterable
 
-from polars._utils.convert import to_py_date, to_py_datetime
 from polars._utils.deprecation import deprecate_function, deprecate_renamed_function
 from polars._utils.unstable import unstable
 from polars._utils.wrap import wrap_s
-from polars.datatypes import Date, Datetime, Duration, Time
 from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
@@ -155,9 +153,24 @@ class DateTimeNameSpace:
         """
         return wrap_s(self._s).max()  # type: ignore[return-value]
 
-    def median(self) -> TemporalLiteral | float | None:
+    def mean(self) -> TemporalLiteral | None:
         """
-        Return median as python DateTime.
+        Return mean of temporal Series.
+
+        Examples
+        --------
+        >>> from datetime import datetime
+        >>> s = pl.Series(
+        ...     [datetime(2001, 1, 1), datetime(2001, 1, 2), datetime(2001, 1, 3)]
+        ... )
+        >>> s.dt.mean()
+        datetime.datetime(2001, 1, 2, 0, 0)
+        """
+        return self._s.mean()
+
+    def median(self) -> TemporalLiteral | None:
+        """
+        Return median of temporal Series.
 
         Examples
         --------
@@ -176,40 +189,7 @@ class DateTimeNameSpace:
         >>> date.dt.median()
         datetime.datetime(2001, 1, 2, 0, 0)
         """
-        s = wrap_s(self._s)
-        out = s.median()
-        if out is not None:
-            if s.dtype == Date:
-                return to_py_date(int(out))  # type: ignore[arg-type]
-            elif s.dtype in (Datetime, Duration, Time):
-                return out  # type: ignore[return-value]
-            else:
-                return to_py_datetime(int(out), s.dtype.time_unit)  # type: ignore[arg-type, attr-defined]
-        return None
-
-    def mean(self) -> TemporalLiteral | float | None:
-        """
-        Return mean as python DateTime.
-
-        Examples
-        --------
-        >>> from datetime import datetime
-        >>> s = pl.Series(
-        ...     [datetime(2001, 1, 1), datetime(2001, 1, 2), datetime(2001, 1, 3)]
-        ... )
-        >>> s.dt.mean()
-        datetime.datetime(2001, 1, 2, 0, 0)
-        """
-        s = wrap_s(self._s)
-        out = s.mean()
-        if out is not None:
-            if s.dtype == Date:
-                return to_py_date(int(out))  # type: ignore[arg-type]
-            elif s.dtype in (Datetime, Duration, Time):
-                return out  # type: ignore[return-value]
-            else:
-                return to_py_datetime(int(out), s.dtype.time_unit)  # type: ignore[arg-type, attr-defined]
-        return None
+        return self._s.median()
 
     def to_string(self, format: str) -> Series:
         """

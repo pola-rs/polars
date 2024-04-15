@@ -768,6 +768,12 @@ impl Series {
     }
 
     pub fn mean_as_series(&self) -> Series {
+        fn temporal_mean(s: &Series, dt: &DataType) -> Series {
+            Series::new(s.name(), &[s.mean().map(|v| v as i64)])
+                .cast(dt)
+                .unwrap()
+        }
+
         match self.dtype() {
             DataType::Float32 => {
                 let val = &[self.mean().map(|m| m as f32)];
@@ -777,23 +783,20 @@ impl Series {
                 let val = &[self.mean()];
                 Series::new(self.name(), val)
             },
+            #[cfg(feature = "dtype-date")]
+            DataType::Date => Series::new(
+                self.name(),
+                &[self.mean().map(|v| (v * (MS_IN_DAY as f64)) as i64)],
+            )
+            .cast(&DataType::Datetime(TimeUnit::Milliseconds, None))
+            .unwrap(),
             #[cfg(feature = "dtype-datetime")]
-            dt @ DataType::Datetime(_, _) => {
-                Series::new(self.name(), &[self.mean().map(|v| v as i64)])
-                    .cast(dt)
-                    .unwrap()
-            },
+            dt @ DataType::Datetime(_, _) => temporal_mean(self, dt),
             #[cfg(feature = "dtype-duration")]
-            dt @ DataType::Duration(_) => {
-                Series::new(self.name(), &[self.mean().map(|v| v as i64)])
-                    .cast(dt)
-                    .unwrap()
-            },
+            dt @ DataType::Duration(_) => temporal_mean(self, dt),
             #[cfg(feature = "dtype-time")]
-            dt @ DataType::Time => Series::new(self.name(), &[self.mean().map(|v| v as i64)])
-                .cast(dt)
-                .unwrap(),
-            _ => return Series::full_null(self.name(), 1, self.dtype()),
+            dt @ DataType::Time => temporal_mean(self, dt),
+            dt => return Series::full_null(self.name(), 1, dt),
         }
     }
 

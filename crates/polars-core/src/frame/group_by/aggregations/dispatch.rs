@@ -1,3 +1,5 @@
+use DataType::*;
+
 use super::*;
 
 // implemented on the series because we don't need types
@@ -107,35 +109,6 @@ impl Series {
     }
 
     #[doc(hidden)]
-    pub unsafe fn agg_median(&self, groups: &GroupsProxy) -> Series {
-        use DataType::*;
-
-        match self.dtype() {
-            Boolean => self.cast(&Float64).unwrap().agg_median(groups),
-            Float32 => SeriesWrap(self.f32().unwrap().clone()).agg_median(groups),
-            Float64 => SeriesWrap(self.f64().unwrap().clone()).agg_median(groups),
-            dt if dt.is_numeric() => apply_method_physical_integer!(self, agg_median, groups),
-            #[cfg(feature = "dtype-datetime")]
-            dt @ (Datetime(_, _) | Duration(_) | Time) => self
-                .to_physical_repr()
-                .agg_median(groups)
-                .cast(&Int64)
-                .unwrap()
-                .cast(dt)
-                .unwrap(),
-            dt @ Date => {
-                let ca = self.to_physical_repr();
-                let physical_type = ca.dtype();
-                let s = apply_method_physical_integer!(ca, agg_median, groups);
-                // back to physical and then
-                // back to logical type
-                s.cast(physical_type).unwrap().cast(dt).unwrap()
-            },
-            _ => Series::full_null("", groups.len(), self.dtype()),
-        }
-    }
-
-    #[doc(hidden)]
     pub unsafe fn agg_quantile(
         &self,
         groups: &GroupsProxy,
@@ -166,29 +139,66 @@ impl Series {
 
     #[doc(hidden)]
     pub unsafe fn agg_mean(&self, groups: &GroupsProxy) -> Series {
-        use DataType::*;
+        #[cfg(any(
+            feature = "dtype-date",
+            feature = "dtype-datetime",
+            feature = "dtype-duration",
+            feature = "dtype-time"
+        ))]
+        unsafe fn temporal_mean(s: &Series, groups: &GroupsProxy, dt: &DataType) -> Series {
+            s.agg_mean(groups).cast(&Int64).unwrap().cast(dt).unwrap()
+        }
 
         match self.dtype() {
             Boolean => self.cast(&Float64).unwrap().agg_mean(groups),
             Float32 => SeriesWrap(self.f32().unwrap().clone()).agg_mean(groups),
             Float64 => SeriesWrap(self.f64().unwrap().clone()).agg_mean(groups),
             dt if dt.is_numeric() => apply_method_physical_integer!(self, agg_mean, groups),
+            #[cfg(feature = "dtype-date")]
+            Date => temporal_mean(
+                &(self.cast(&Int64).unwrap() * (MS_IN_DAY as f64)),
+                groups,
+                &Datetime(TimeUnit::Milliseconds, None),
+            ),
             #[cfg(feature = "dtype-datetime")]
-            dt @ (Datetime(_, _) | Duration(_) | Time) => self
-                .to_physical_repr()
-                .agg_mean(groups)
-                .cast(&Int64)
-                .unwrap()
-                .cast(dt)
-                .unwrap(),
-            dt @ Date => {
-                let ca = self.to_physical_repr();
-                let physical_type = ca.dtype();
-                let s = apply_method_physical_integer!(ca, agg_mean, groups);
-                // back to physical and then
-                // back to logical type
-                s.cast(physical_type).unwrap().cast(dt).unwrap()
-            },
+            dt @ Datetime(_, _) => temporal_mean(&self.to_physical_repr(), groups, dt),
+            #[cfg(feature = "dtype-duration")]
+            dt @ Duration(_) => temporal_mean(&self.to_physical_repr(), groups, dt),
+            #[cfg(feature = "dtype-time")]
+            dt @ Time => temporal_mean(&self.to_physical_repr(), groups, dt),
+            _ => Series::full_null("", groups.len(), self.dtype()),
+        }
+    }
+
+    #[doc(hidden)]
+    pub unsafe fn agg_median(&self, groups: &GroupsProxy) -> Series {
+        #[cfg(any(
+            feature = "dtype-date",
+            feature = "dtype-datetime",
+            feature = "dtype-duration",
+            feature = "dtype-time"
+        ))]
+        unsafe fn temporal_median(s: &Series, groups: &GroupsProxy, dt: &DataType) -> Series {
+            s.agg_median(groups).cast(&Int64).unwrap().cast(dt).unwrap()
+        }
+
+        match self.dtype() {
+            Boolean => self.cast(&Float64).unwrap().agg_median(groups),
+            Float32 => SeriesWrap(self.f32().unwrap().clone()).agg_median(groups),
+            Float64 => SeriesWrap(self.f64().unwrap().clone()).agg_median(groups),
+            dt if dt.is_numeric() => apply_method_physical_integer!(self, agg_median, groups),
+            #[cfg(feature = "dtype-date")]
+            Date => temporal_median(
+                &(self.cast(&Int64).unwrap() * (MS_IN_DAY as f64)),
+                groups,
+                &Datetime(TimeUnit::Milliseconds, None),
+            ),
+            #[cfg(feature = "dtype-datetime")]
+            dt @ Datetime(_, _) => temporal_median(&self.to_physical_repr(), groups, dt),
+            #[cfg(feature = "dtype-duration")]
+            dt @ Duration(_) => temporal_median(&self.to_physical_repr(), groups, dt),
+            #[cfg(feature = "dtype-time")]
+            dt @ Time => temporal_median(&self.to_physical_repr(), groups, dt),
             _ => Series::full_null("", groups.len(), self.dtype()),
         }
     }
