@@ -171,16 +171,25 @@ def test_ewma_by_empty() -> None:
 
 
 def test_ewma_by_warn_if_unsorted() -> None:
-    df = pl.DataFrame({"values": [2.0, 3.0], "by": [1, 3]})
+    df = pl.DataFrame({"values": [3.0, 2.0], "by": [3, 1]})
+
+    # Check that with `check_sorted=False`, the user can get incorrect results
+    # if they really want to.
     result = df.select(
         pl.col("values").ewm_mean_by("by", half_life="2i", check_sorted=False),
     )
-    expected = pl.DataFrame({"values": [2.0, 2.5]})
+    expected = pl.DataFrame({"values": [3.0, 4.0]})
     assert_frame_equal(result, expected)
-    result = df.sort("by").select(
+
+    result = df.with_columns(
         pl.col("values").ewm_mean_by("by", half_life="2i"),
     )
+    expected = pl.DataFrame({"values": [2.5, 2.0], "by": [3, 1]})
     assert_frame_equal(result, expected)
+    result = df.sort("by").with_columns(
+        pl.col("values").ewm_mean_by("by", half_life="2i"),
+    )
+    assert_frame_equal(result, expected.sort("by"))
 
 
 def test_ewma_by_invalid() -> None:
