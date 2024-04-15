@@ -4353,6 +4353,10 @@ class DataFrame:
         """
         Replace a column by a new Series.
 
+        .. deprecated:: 0.19.0
+            Use :meth:`with_columns` instead, e.g.
+            `df = df.with_columns(new_column.alias(column_name))`.
+
         Parameters
         ----------
         column
