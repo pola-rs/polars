@@ -461,20 +461,20 @@ impl FlightAsyncRawReader {
         R: AsyncRead + AsyncSeek + Unpin + Send,
     {
         async_stream::try_stream! {
-            let (schema, mut record_batch_blocks, dictionary_blocks) = read_footer_raw(&mut reader).await?;
+            let (schema, record_batch_blocks, dictionary_blocks) = read_footer_raw(&mut reader).await?;
 
             // Schema as the first message
             yield schema_to_raw_message(schema);
 
             // Second send all the dictionaries
-            if let Some(mut iter) = dictionary_blocks {
-                if let Some(block) = iter.next() {
+            if let Some(iter) = dictionary_blocks {
+                for block in iter{
                     yield block_to_raw_message(&mut reader, block).await?;
                 }
             }
 
             // Send the record batches
-            if let Some(block) = record_batch_blocks.next() {
+            for block in record_batch_blocks{
                 yield block_to_raw_message(&mut reader, block).await?
             }
         }
