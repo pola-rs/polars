@@ -36,7 +36,7 @@ where
                 .downcast_iter()
                 .map(|arr| arr.values().as_slice())
                 .collect::<Vec<_>>();
-            group_by_threaded_slice(keys, sorted)
+            group_by_threaded_slice(keys, n_partitions, sorted)
         } else {
             let keys = ca
                 .downcast_iter()
@@ -261,9 +261,10 @@ impl IntoGroupsProxy for BinaryChunked {
         let bh = self.to_bytes_hashes(multithreaded, Default::default());
 
         let out = if multithreaded {
+            let n_partitions = bh.len();
             // Take slices so that the vecs are not cloned.
             let bh = bh.iter().map(|v| v.as_slice()).collect::<Vec<_>>();
-            group_by_threaded_slice(bh, sorted)
+            group_by_threaded_slice(bh, n_partitions, sorted)
         } else {
             group_by(bh[0].iter(), sorted)
         };
@@ -277,9 +278,10 @@ impl IntoGroupsProxy for BinaryOffsetChunked {
         let bh = self.to_bytes_hashes(multithreaded, Default::default());
 
         let out = if multithreaded {
+            let n_partitions = bh.len();
             // Take slices so that the vecs are not cloned.
             let bh = bh.iter().map(|v| v.as_slice()).collect::<Vec<_>>();
-            group_by_threaded_slice(bh, sorted)
+            group_by_threaded_slice(bh, n_partitions, sorted)
         } else {
             group_by(bh[0].iter(), sorted)
         };
