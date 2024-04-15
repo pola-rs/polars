@@ -15,6 +15,10 @@ def test_arr_min_max() -> None:
     assert s.arr.max().to_list() == [2, 4]
     assert s.arr.min().to_list() == [1, 3]
 
+    s_with_null = pl.Series("a", [[None, 2], None, [3, 4]], dtype=pl.Array(pl.Int64, 2))
+    assert s_with_null.arr.max().to_list() == [2, None, 4]
+    assert s_with_null.arr.min().to_list() == [2, None, 3]
+
 
 def test_array_min_max_dtype_12123() -> None:
     df = pl.LazyFrame(
