@@ -158,14 +158,19 @@ impl SeriesUdf for PythonUdfExpression {
         let func = unsafe { CALL_SERIES_UDF_PYTHON.unwrap() };
 
         let output_type = self.output_type.clone().unwrap_or(DataType::Unknown);
-        let out = func(s[0].clone(), &self.python_function)?;
+        let mut out = func(s[0].clone(), &self.python_function)?;
+        if output_type != DataType::Unknown {
+            let must_cast = out.dtype().matches_schema_type(&output_type).map_err(|_| {
+                polars_err!(
+                    SchemaMismatch: "expected output type '{:?}', got '{:?}'; set `return_dtype` to the proper datatype",
+                    output_type, out.dtype(),
+                )
+            })?;
+            if must_cast {
+                out = out.cast(&output_type)?;
+            }
+        }
 
-        polars_ensure!(
-            matches!(output_type, DataType::Unknown) || out.dtype() == &output_type,
-            SchemaMismatch:
-            "expected output type '{:?}', got '{:?}'; set `return_dtype` to the proper datatype",
-            output_type, out.dtype(),
-        );
         Ok(Some(out))
     }
 

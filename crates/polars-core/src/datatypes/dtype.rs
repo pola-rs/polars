@@ -504,6 +504,36 @@ impl DataType {
             _ => false,
         }
     }
+
+    // Answers if this type matches the given type of a schema.
+    //
+    // Allows (nested) Null types in this type to match any type in the schema,
+    // but not vice versa. In such a case Ok(true) is returned, because a cast
+    // is necessary. If no cast is necessary Ok(false) is returned, and an
+    // error is returned if the types are incompatible.
+    pub fn matches_schema_type(&self, schema_type: &DataType) -> PolarsResult<bool> {
+        match (self, schema_type) {
+            (DataType::List(l), DataType::List(r)) => l.matches_schema_type(r),
+            #[cfg(feature = "dtype-struct")]
+            (DataType::Struct(l), DataType::Struct(r)) => {
+                let mut must_cast = false;
+                for (l, r) in l.iter().zip(r.iter()) {
+                    must_cast |= l.dtype.matches_schema_type(&r.dtype)?;
+                }
+                Ok(must_cast)
+            },
+            (DataType::Null, DataType::Null) => Ok(false),
+            #[cfg(feature = "dtype-decimal")]
+            (DataType::Decimal(_, s1), DataType::Decimal(_, s2)) => Ok(s1 != s2),
+            // We don't allow the other way around, only if our current type is
+            // null and the schema isn't we allow it.
+            (DataType::Null, _) => Ok(true),
+            (l, r) if l == r => Ok(false),
+            (l, r) => {
+                polars_bail!(SchemaMismatch: "type {:?} is incompatible with expected type {:?}", l, r)
+            },
+        }
+    }
 }
 
 impl PartialEq<ArrowDataType> for DataType {
@@ -608,34 +638,6 @@ pub fn merge_dtypes(left: &DataType, right: &DataType) -> PolarsResult<DataType>
         (left, right) if left == right => left.clone(),
         _ => polars_bail!(ComputeError: "unable to merge datatypes"),
     })
-}
-
-// if returns
-// `Ok(true)`: can extend, but must cast
-// `Ok(false)`: can extend as is
-// Error: cannot extend.
-pub(crate) fn can_extend_dtype(left: &DataType, right: &DataType) -> PolarsResult<bool> {
-    match (left, right) {
-        (DataType::List(l), DataType::List(r)) => can_extend_dtype(l, r),
-        #[cfg(feature = "dtype-struct")]
-        (DataType::Struct(l), DataType::Struct(r)) => {
-            let mut must_cast = false;
-            for (l, r) in l.iter().zip(r.iter()) {
-                must_cast |= can_extend_dtype(&l.dtype, &r.dtype)?;
-            }
-            Ok(must_cast)
-        },
-        (DataType::Null, DataType::Null) => Ok(false),
-        #[cfg(feature = "dtype-decimal")]
-        (DataType::Decimal(_, s1), DataType::Decimal(_, s2)) => Ok(s1 != s2),
-        // Other way around we don't allow because we keep left dtype as is.
-        // We don't go to supertype, and we certainly don't want to cast self to null type.
-        (_, DataType::Null) => Ok(true),
-        (l, r) => {
-            polars_ensure!(l == r, SchemaMismatch: "cannot extend/append {:?} with {:?}", left, right);
-            Ok(false)
-        },
-    }
 }
 
 #[cfg(feature = "dtype-categorical")]
