@@ -558,6 +558,9 @@ impl LogicalPlanBuilder {
     }
 
     pub fn with_columns(self, exprs: Vec<Expr>, options: ProjectionOptions) -> Self {
+        if exprs.is_empty() {
+            return self;
+        }
         // current schema
         let schema = try_delayed!(self.0.schema(), &self.0, into);
         let mut new_schema = (**schema).clone();
