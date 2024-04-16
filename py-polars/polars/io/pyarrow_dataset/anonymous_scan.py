@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from functools import partial
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import polars._reexport as pl
 from polars.dependencies import pyarrow as pa
@@ -15,6 +15,7 @@ def _scan_pyarrow_dataset(
     *,
     allow_pyarrow_filter: bool = True,
     batch_size: int | None = None,
+    pyarrow_options: dict[str, Any] | None = None,
 ) -> LazyFrame:
     """
     Pickle the partially applied function `_scan_pyarrow_dataset_impl`.
@@ -32,8 +33,16 @@ def _scan_pyarrow_dataset(
         different than polars does.
     batch_size
         The maximum row count for scanned pyarrow record batches.
+    pyarrow_options
+        Keyword arguments for pyarrow.dataset.Dataset.to_table.
+
     """
-    func = partial(_scan_pyarrow_dataset_impl, ds, batch_size=batch_size)
+    func = partial(
+        _scan_pyarrow_dataset_impl,
+        ds,
+        batch_size=batch_size,
+        pyarrow_options=pyarrow_options,
+    )
     return pl.LazyFrame._scan_python_function(
         ds.schema, func, pyarrow=allow_pyarrow_filter
     )
@@ -45,6 +54,7 @@ def _scan_pyarrow_dataset_impl(
     predicate: str | None,
     n_rows: int | None,
     batch_size: int | None,
+    pyarrow_options: dict[str, Any] | None = None,
 ) -> DataFrame:
     """
     Take the projected columns and materialize an arrow table.
@@ -61,10 +71,13 @@ def _scan_pyarrow_dataset_impl(
         Materialize only n rows from the arrow dataset
     batch_size
         The maximum row count for scanned pyarrow record batches.
+    pyarrow_options
+        Keyword arguments for pyarrow.dataset.Dataset.to_table.
 
     Returns
     -------
     DataFrame
+
     """
     from polars import from_arrow
 
@@ -96,6 +109,12 @@ def _scan_pyarrow_dataset_impl(
     common_params = {"columns": with_columns, "filter": _filter}
     if batch_size is not None:
         common_params["batch_size"] = batch_size
+    if pyarrow_options:
+        for pyarrow_option_name, pyarrow_option in pyarrow_options.items():
+            if pyarrow_option_name in common_params:
+                error = f"Tried to overwrite already set pyarrow parameter {pyarrow_option_name}"
+                raise ValueError(error)
+            common_params[pyarrow_option_name] = pyarrow_option
 
     if n_rows:
         return from_arrow(ds.head(n_rows, **common_params))  # type: ignore[return-value]
