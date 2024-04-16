@@ -34,6 +34,22 @@ pub struct MeltArgs {
     pub streamable: bool,
 }
 
+impl MeltArgs {
+    pub fn is_valid_schema(&self, schema: &Schema) -> PolarsResult<()> {
+        let mut provided = PlHashSet::new();
+        for name in self.id_vars.iter().chain(self.value_vars.iter()) {
+            if !schema.contains(name) {
+                polars_bail!(ColumnNotFound: "{}", name)
+            }
+
+            if !provided.insert(name) {
+                polars_bail!(Duplicate: "column name '{}' provided more than once in melt", name)
+            }
+        }
+        Ok(())
+    }
+}
+
 impl DataFrame {
     pub fn explode_impl(&self, mut columns: Vec<Series>) -> PolarsResult<DataFrame> {
         polars_ensure!(!columns.is_empty(), InvalidOperation: "no columns provided in explode");
@@ -256,6 +272,9 @@ impl DataFrame {
     /// Similar to melt, but without generics. This may be easier if you want to pass
     /// an empty `id_vars` or empty `value_vars`.
     pub fn melt2(&self, args: MeltArgs) -> PolarsResult<Self> {
+        let schema = self.schema();
+        args.is_valid_schema(&schema)?;
+
         let id_vars = args.id_vars;
         let mut value_vars = args.value_vars;
 
@@ -293,7 +312,6 @@ impl DataFrame {
         }
 
         // values will all be placed in single column, so we must find their supertype
-        let schema = self.schema();
         let mut iter = value_vars.iter().map(|v| {
             schema
                 .get(v)
