@@ -285,7 +285,7 @@ impl LazyFrame {
     /// # use polars_lazy::prelude::*;
     /// fn sort_by_multiple_columns_with_specific_order(df: DataFrame) -> LazyFrame {
     ///     df.lazy().sort(
-    ///         &["a", "b"],
+    ///         &["sepal.width", "sepal_length"],
     ///         SortMultipleOptions::new()
     ///             .with_order_descendings([false, true])
     ///     )
