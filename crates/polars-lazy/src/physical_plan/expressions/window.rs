@@ -577,7 +577,7 @@ impl PhysicalExpr for WindowExpr {
                             let mut jt_map_guard = state.join_tuples.lock().unwrap();
                             // we run sequential and partitioned
                             // and every partition run the cache should be empty so we expect a max of 1.
-                            debug_assert!(jt_map.len() <= 1);
+                            debug_assert!(jt_map_guard.len() <= 1);
                             if let Some(opt_join_tuples) = jt_map_guard.get_mut(&cache_key) {
                                 std::mem::replace(opt_join_tuples, default_join_ids())
                             } else {
