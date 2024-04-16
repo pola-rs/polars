@@ -283,6 +283,36 @@ impl DataType {
         }
     }
 
+    pub fn contains_categoricals(&self) -> bool {
+        use DataType::*;
+        match self {
+            #[cfg(feature = "dtype-categorical")]
+            Categorical(_, _) | Enum(_, _) => true,
+            List(inner) => inner.contains_categoricals(),
+            #[cfg(feature = "dtype-array")]
+            Array(inner, _) => inner.contains_categoricals(),
+            #[cfg(feature = "dtype-struct")]
+            Struct(fields) => fields
+                .iter()
+                .any(|field| field.dtype.contains_categoricals()),
+            _ => false,
+        }
+    }
+
+    pub fn contains_objects(&self) -> bool {
+        use DataType::*;
+        match self {
+            #[cfg(feature = "object")]
+            Object(_, _) => true,
+            List(inner) => inner.contains_objects(),
+            #[cfg(feature = "dtype-array")]
+            Array(inner, _) => inner.contains_objects(),
+            #[cfg(feature = "dtype-struct")]
+            Struct(fields) => fields.iter().any(|field| field.dtype.contains_objects()),
+            _ => false,
+        }
+    }
+
     /// Check if type is sortable
     pub fn is_ord(&self) -> bool {
         #[cfg(feature = "dtype-categorical")]
