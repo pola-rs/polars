@@ -79,10 +79,6 @@ pub(super) fn process_functions(
             )
         },
         _ => {
-            let lp = IR::MapFunction {
-                input,
-                function: function.clone(),
-            };
             if function.allow_projection_pd() && !acc_projections.is_empty() {
                 let original_acc_projection_len = acc_projections.len();
 
@@ -109,6 +105,10 @@ pub(super) fn process_functions(
 
                 // Remove the cached schema
                 function.clear_cached_schema();
+                let lp = IR::MapFunction {
+                    input,
+                    function: function.clone(),
+                };
 
                 if local_projections.is_empty() {
                     Ok(lp)
@@ -127,6 +127,10 @@ pub(super) fn process_functions(
                     }
                 }
             } else {
+                let lp = IR::MapFunction {
+                    input,
+                    function: function.clone(),
+                };
                 // restart projection pushdown
                 proj_pd.no_pushdown_restart_opt(
                     lp,

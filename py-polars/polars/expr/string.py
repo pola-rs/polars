@@ -2586,7 +2586,7 @@ class ExprStringNameSpace:
         """
         return self.pad_start(length, fill_char)
 
-    @deprecate_renamed_function("json_decode", version="0.19.12")
+    @deprecate_renamed_function("json_decode", version="0.19.15")
     def json_extract(
         self,
         dtype: PolarsDataType | None = None,

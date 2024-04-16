@@ -286,6 +286,8 @@ impl FunctionExpr {
             MeanHorizontal => mapper.map_to_float_dtype(),
             #[cfg(feature = "ewma")]
             EwmMean { .. } => mapper.map_to_float_dtype(),
+            #[cfg(feature = "ewma_by")]
+            EwmMeanBy { .. } => mapper.map_to_float_dtype(),
             #[cfg(feature = "ewma")]
             EwmStd { .. } => mapper.map_to_float_dtype(),
             #[cfg(feature = "ewma")]

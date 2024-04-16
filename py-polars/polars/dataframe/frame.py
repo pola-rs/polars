@@ -4353,6 +4353,10 @@ class DataFrame:
         """
         Replace a column by a new Series.
 
+        .. deprecated:: 0.19.0
+            Use :meth:`with_columns` instead, e.g.
+            `df = df.with_columns(new_column.alias(column_name))`.
+
         Parameters
         ----------
         column
@@ -4792,7 +4796,7 @@ class DataFrame:
         """
         Add a column at index 0 that counts the rows.
 
-        .. deprecated::
+        .. deprecated:: 0.20.4
             Use :meth:`with_row_index` instead.
             Note that the default column name has changed from 'row_nr' to 'index'.
 

@@ -2,10 +2,8 @@ use std::ops::Div;
 
 use arrow::array::{Array, PrimitiveArray};
 use arrow::bitmap::Bitmap;
-use arrow::legacy::utils::CustomIterTools;
 use arrow::types::NativeType;
 use polars_core::export::num::{NumCast, ToPrimitive};
-use polars_utils::unwrap::UnwrapUncheckedRelease;
 
 use super::*;
 use crate::chunked_array::sum::sum_slice;
@@ -15,18 +13,15 @@ where
     T: NativeType + ToPrimitive,
     S: NumCast + std::iter::Sum,
 {
-    let mut running_offset = offset[0];
-
-    (offset[1..])
-        .iter()
-        .map(|end| {
-            let current_offset = running_offset;
-            running_offset = *end;
-
-            let slice = unsafe { values.get_unchecked(current_offset as usize..*end as usize) };
-            sum_slice(slice)
+    offset
+        .windows(2)
+        .map(|w| {
+            values
+                .get(w[0] as usize..w[1] as usize)
+                .map(sum_slice)
+                .unwrap_or(S::from(0).unwrap())
         })
-        .collect_trusted()
+        .collect()
 }
 
 fn dispatch_sum<T, S>(arr: &dyn Array, offsets: &[i64], validity: Option<&Bitmap>) -> ArrayRef
@@ -124,25 +119,15 @@ where
     T: NativeType + ToPrimitive,
     S: NativeType + NumCast + std::iter::Sum + Div<Output = S>,
 {
-    let mut running_offset = offset[0];
-
-    (offset[1..])
-        .iter()
-        .map(|end| {
-            let current_offset = running_offset;
-            running_offset = *end;
-            if current_offset == *end {
-                return None;
-            }
-            let slice = unsafe { values.get_unchecked(current_offset as usize..*end as usize) };
-            unsafe {
-                Some(
-                    sum_slice::<_, S>(slice)
-                        / NumCast::from(slice.len()).unwrap_unchecked_release(),
-                )
-            }
+    offset
+        .windows(2)
+        .map(|w| {
+            values
+                .get(w[0] as usize..w[1] as usize)
+                .filter(|sl| !sl.is_empty())
+                .map(|sl| sum_slice::<_, S>(sl) / NumCast::from(sl.len()).unwrap())
         })
-        .collect_trusted()
+        .collect()
 }
 
 fn dispatch_mean<T, S>(arr: &dyn Array, offsets: &[i64], validity: Option<&Bitmap>) -> ArrayRef

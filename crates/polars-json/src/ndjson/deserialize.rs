@@ -20,8 +20,7 @@ pub fn deserialize_iter<'a>(
     count: usize,
 ) -> PolarsResult<ArrayRef> {
     let mut arr: Vec<Box<dyn Array>> = Vec::new();
-    let mut buf =
-        String::with_capacity(std::cmp::min(buf_size + count + 2, std::u32::MAX as usize));
+    let mut buf = String::with_capacity(std::cmp::min(buf_size + count + 2, u32::MAX as usize));
     buf.push('[');
 
     fn _deserializer(s: &mut str, data_type: ArrowDataType) -> PolarsResult<Box<dyn Array>> {
@@ -41,7 +40,7 @@ pub fn deserialize_iter<'a>(
         buf.push(',');
 
         let next_row_length = row_iter.peek().map(|row| row.len()).unwrap_or(0);
-        if buf.len() + next_row_length >= std::u32::MAX as usize {
+        if buf.len() + next_row_length >= u32::MAX as usize {
             let _ = buf.pop();
             buf.push(']');
             arr.push(_deserializer(&mut buf, data_type.clone())?);

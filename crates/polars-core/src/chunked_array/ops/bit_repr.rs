@@ -112,7 +112,7 @@ where
             if matches!(self.dtype(), DataType::UInt64) {
                 let ca = self.clone();
                 // Convince the compiler we are this type. This keeps flags.
-                return unsafe { std::mem::transmute(ca) };
+                return unsafe { std::mem::transmute::<ChunkedArray<T>, UInt64Chunked>(ca) };
             }
             reinterpret_chunked_array(self)
         } else {
@@ -125,7 +125,7 @@ where
             if matches!(self.dtype(), DataType::UInt32) {
                 let ca = self.clone();
                 // Convince the compiler we are this type. This preserves flags.
-                return unsafe { std::mem::transmute(ca) };
+                return unsafe { std::mem::transmute::<ChunkedArray<T>, UInt32Chunked>(ca) };
             }
             reinterpret_chunked_array(self)
         } else {

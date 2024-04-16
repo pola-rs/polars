@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "0.20.20"
+version = "0.20.21"
 edition = "2021"
 
 [lib]
@@ -53,6 +53,7 @@ features = [
   "dtype-full",
   "dynamic_group_by",
   "ewma",
+  "ewma_by",
   "fmt",
   "interpolate",
   "is_first_distinct",

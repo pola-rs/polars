@@ -313,6 +313,11 @@ pub enum FunctionExpr {
     EwmMean {
         options: EWMOptions,
     },
+    #[cfg(feature = "ewma_by")]
+    EwmMeanBy {
+        half_life: Duration,
+        check_sorted: bool,
+    },
     #[cfg(feature = "ewma")]
     EwmStd {
         options: EWMOptions,
@@ -520,6 +525,11 @@ impl Hash for FunctionExpr {
             BackwardFill { limit } | ForwardFill { limit } => limit.hash(state),
             #[cfg(feature = "ewma")]
             EwmMean { options } => options.hash(state),
+            #[cfg(feature = "ewma_by")]
+            EwmMeanBy {
+                half_life,
+                check_sorted,
+            } => (half_life, check_sorted).hash(state),
             #[cfg(feature = "ewma")]
             EwmStd { options } => options.hash(state),
             #[cfg(feature = "ewma")]
@@ -705,6 +715,8 @@ impl Display for FunctionExpr {
             MeanHorizontal => "mean_horizontal",
             #[cfg(feature = "ewma")]
             EwmMean { .. } => "ewm_mean",
+            #[cfg(feature = "ewma_by")]
+            EwmMeanBy { .. } => "ewm_mean_by",
             #[cfg(feature = "ewma")]
             EwmStd { .. } => "ewm_std",
             #[cfg(feature = "ewma")]
@@ -1073,6 +1085,11 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             MeanHorizontal => wrap!(dispatch::mean_horizontal),
             #[cfg(feature = "ewma")]
             EwmMean { options } => map!(ewm::ewm_mean, options),
+            #[cfg(feature = "ewma_by")]
+            EwmMeanBy {
+                half_life,
+                check_sorted,
+            } => map_as_slice!(ewm::ewm_mean_by, half_life, check_sorted),
             #[cfg(feature = "ewma")]
             EwmStd { options } => map!(ewm::ewm_std, options),
             #[cfg(feature = "ewma")]

@@ -80,7 +80,7 @@ def deprecate_parameter_as_positional(
     old_name: str, *, version: str
 ) -> Callable[[Callable[P, T]], Callable[P, T]]:
     """
-    Decorator to mark a function argument as deprecated due to being made positinoal.
+    Decorator to mark a function argument as deprecated due to being made positional.
 
     Use as follows::
 

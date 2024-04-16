@@ -1208,7 +1208,7 @@ impl Expr {
             self.apply_many_private(
                 FunctionExpr::RollingExpr(rolling_function_by(options)),
                 &[col(&name)],
-                true,
+                false,
                 false,
             )
         } else {
@@ -1532,6 +1532,20 @@ impl Expr {
     /// Calculate the exponentially-weighted moving average.
     pub fn ewm_mean(self, options: EWMOptions) -> Self {
         self.apply_private(FunctionExpr::EwmMean { options })
+    }
+
+    #[cfg(feature = "ewma_by")]
+    /// Calculate the exponentially-weighted moving average by a time column.
+    pub fn ewm_mean_by(self, times: Expr, half_life: Duration, check_sorted: bool) -> Self {
+        self.apply_many_private(
+            FunctionExpr::EwmMeanBy {
+                half_life,
+                check_sorted,
+            },
+            &[times],
+            false,
+            false,
+        )
     }
 
     #[cfg(feature = "ewma")]

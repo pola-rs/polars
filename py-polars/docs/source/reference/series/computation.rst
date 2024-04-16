@@ -32,6 +32,7 @@ Computation
     Series.dot
     Series.entropy
     Series.ewm_mean
+    Series.ewm_mean_by
     Series.ewm_std
     Series.ewm_var
     Series.exp

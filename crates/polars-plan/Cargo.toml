@@ -130,6 +130,7 @@ abs = ["polars-ops/abs"]
 random = ["polars-core/random"]
 dynamic_group_by = ["polars-core/dynamic_group_by"]
 ewma = ["polars-ops/ewma"]
+ewma_by = ["polars-ops/ewma_by"]
 dot_diagram = []
 unique_counts = ["polars-ops/unique_counts"]
 log = ["polars-ops/log"]
@@ -205,6 +206,7 @@ features = [
   "cutqcut",
   "async",
   "ewma",
+  "ewma_by",
   "random",
   "chunked_ids",
   "repeat_by",
