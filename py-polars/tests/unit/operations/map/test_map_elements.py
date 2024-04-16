@@ -24,8 +24,12 @@ def test_map_elements_infer_list() -> None:
 
 def test_map_elements_upcast_null_dtype_empty_list() -> None:
     df = pl.DataFrame({"a": [1, 2]})
-    out = df.select(pl.col("a").map_elements(lambda _: [], return_dtype=pl.List(pl.Int64)))
-    assert_frame_equal(out, pl.DataFrame({"a": [[], []]}, schema={"a": pl.List(pl.Int64)}))
+    out = df.select(
+        pl.col("a").map_elements(lambda _: [], return_dtype=pl.List(pl.Int64))
+    )
+    assert_frame_equal(
+        out, pl.DataFrame({"a": [[], []]}, schema={"a": pl.List(pl.Int64)})
+    )
 
 
 def test_map_elements_arithmetic_consistency() -> None:
