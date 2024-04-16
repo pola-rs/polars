@@ -254,8 +254,7 @@ impl Series {
     ///
     /// See [`ChunkedArray::append`] and [`ChunkedArray::extend`].
     pub fn append(&mut self, other: &Series) -> PolarsResult<&mut Self> {
-        let must_cast = can_extend_dtype(self.dtype(), other.dtype())?;
-
+        let must_cast = other.dtype().matches_schema_type(self.dtype())?;
         if must_cast {
             let other = other.cast(self.dtype())?;
             self._get_inner_mut().append(&other)?;
@@ -274,8 +273,7 @@ impl Series {
     ///
     /// See [`ChunkedArray::extend`] and [`ChunkedArray::append`].
     pub fn extend(&mut self, other: &Series) -> PolarsResult<&mut Self> {
-        let must_cast = can_extend_dtype(self.dtype(), other.dtype())?;
-
+        let must_cast = other.dtype().matches_schema_type(self.dtype())?;
         if must_cast {
             let other = other.cast(self.dtype())?;
             self._get_inner_mut().extend(&other)?;
