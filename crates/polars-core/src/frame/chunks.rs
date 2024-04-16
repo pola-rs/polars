@@ -1,6 +1,9 @@
 use arrow::record_batch::RecordBatch;
+use rayon::prelude::*;
 
 use crate::prelude::*;
+use crate::utils::_split_offsets;
+use crate::POOL;
 
 pub type ArrowChunk = RecordBatch<ArrayRef>;
 
@@ -39,5 +42,18 @@ impl DataFrame {
 
             DataFrame::new_no_checks(columns)
         })
+    }
+
+    pub fn split_chunks_by_n(self, n: usize, parallel: bool) -> Vec<DataFrame> {
+        let split = _split_offsets(self.height(), n);
+
+        let split_fn = |(offset, len)| self.slice(offset as i64, len);
+
+        if parallel {
+            // Parallel so that null_counts run in parallel
+            POOL.install(|| split.into_par_iter().map(split_fn).collect())
+        } else {
+            split.into_iter().map(split_fn).collect()
+        }
     }
 }
