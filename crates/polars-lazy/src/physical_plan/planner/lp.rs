@@ -172,8 +172,25 @@ pub fn create_physical_plan(
             Ok(Box::new(executors::SliceExec { input, offset, len }))
         },
         Filter { input, predicate } => {
-            let streamable = is_streamable(predicate.node(), expr_arena, Context::Default);
+            let mut streamable = is_streamable(predicate.node(), expr_arena, Context::Default);
             let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
+            if streamable {
+                // This can cause problems with string caches
+                streamable = !input_schema
+                    .iter_dtypes()
+                    .any(|dt| dt.contains_categoricals())
+                    || {
+                        #[cfg(feature = "dtype-categorical")]
+                        {
+                            polars_core::using_string_cache()
+                        }
+
+                        #[cfg(not(feature = "dtype-categorical"))]
+                        {
+                            false
+                        }
+                    }
+            }
             let input = create_physical_plan(input, lp_arena, expr_arena)?;
             let mut state = ExpressionConversionState::default();
             let predicate = create_physical_expr(
