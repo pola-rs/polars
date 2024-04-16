@@ -582,7 +582,7 @@ impl PhysicalExpr for WindowExpr {
                                 std::mem::replace(opt_join_tuples, default_join_ids())
                             } else {
                                 // Drop guard as we go into rayon when grabbing join tuples.
-                                drop(jt_map_guard); 
+                                drop(jt_map_guard);
                                 get_join_tuples()?
                             }
                         } else {
