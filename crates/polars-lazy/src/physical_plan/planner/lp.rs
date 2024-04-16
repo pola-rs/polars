@@ -176,9 +176,23 @@ pub fn create_physical_plan(
             let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
             if streamable {
                 // This can cause problems with string caches
-                streamable = !input_schema
-                    .iter_dtypes()
-                    .any(|dt| matches!(dt, DataType::Categorical(_, _)))
+                streamable = input_schema.iter_dtypes().all(|dt| match dt {
+                    #[cfg(feature = "dtype-categorical")]
+                    DataType::Categorical(_, _) => false,
+                    #[cfg(feature = "object")]
+                    DataType::Object(_, _) => false,
+                    _ => true,
+                }) || {
+                    #[cfg(feature = "dtype-categorical")]
+                    {
+                        polars_core::using_string_cache()
+                    }
+
+                    #[cfg(not(feature = "dtype-categorical"))]
+                    {
+                        false
+                    }
+                }
             }
             let input = create_physical_plan(input, lp_arena, expr_arena)?;
             let mut state = ExpressionConversionState::default();
