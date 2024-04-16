@@ -344,7 +344,7 @@ impl FromPyObject<'_> for Wrap<DataType> {
             },
             "Enum" => {
                 let categories = ob.getattr(intern!(py, "categories")).unwrap();
-                let s = get_series(categories)?;
+                let s = get_series(&categories.as_borrowed())?;
                 let ca = s.str().map_err(PyPolarsErr::from)?;
                 let categories = ca.downcast_iter().next().unwrap().clone();
                 create_enum_data_type(categories)
