@@ -25,6 +25,8 @@ mod datetime;
 mod dispatch;
 #[cfg(feature = "ewma")]
 mod ewm;
+#[cfg(feature = "ewma_by")]
+mod ewm_by;
 mod fill_null;
 #[cfg(feature = "fused")]
 mod fused;
@@ -1089,7 +1091,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             EwmMeanBy {
                 half_life,
                 check_sorted,
-            } => map_as_slice!(ewm::ewm_mean_by, half_life, check_sorted),
+            } => map_as_slice!(ewm_by::ewm_mean_by, half_life, check_sorted),
             #[cfg(feature = "ewma")]
             EwmStd { options } => map!(ewm::ewm_std, options),
             #[cfg(feature = "ewma")]
