@@ -909,4 +909,4 @@ def test_list_get_with_null() -> None:
 def test_list_eval_err_raise_15653() -> None:
     df = pl.DataFrame({"foo": [[]]})
     with pytest.raises(pl.StructFieldNotFoundError):
-        df.with_columns(bar = pl.col("foo").list.eval(pl.element().struct.field("baz")))
+        df.with_columns(bar=pl.col("foo").list.eval(pl.element().struct.field("baz")))
