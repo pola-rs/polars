@@ -212,7 +212,7 @@ To stay up to date with the Polars repository, it is useful to periodically sync
 ```bash
 git checkout shiny-new-feature
 git fetch upstream
-git merge upstream/main
+git rebase upstream/main
 ```
 
 If the changes in both branches are incompatible, merge conflicts appear which need to be resolved before you can continue.
@@ -228,6 +228,31 @@ source .venv/bin/activate
 When you are finished with making updates to your pull request, follow the steps under "Pushing your changes to GitHub" (see above).
 
 Your changes will appear on your pull request on GitHub and automatically trigger the Continuous Integration pipeline.
+
+## Updating the development environment
+
+For repeatedly contributing to Polars, the development environment needs to be updated periodically.
+
+To keep your fork in sync with the Polars repository run:
+
+```bash
+git checkout main
+git fetch upstream
+git rebase upstream/main
+git push origin main
+```
+
+For updating the project's dependencies run:
+
+```bash
+make requirements
+```
+
+In order to avoid running out of memory (how often depends on your machine), you should occasionally run:
+
+```bash
+cargo clean
+```
 
 ## Contributing to documentation
 
