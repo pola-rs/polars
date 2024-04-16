@@ -684,3 +684,17 @@ def test_cse_and_schema_update_projection_pd(capfd: Any, monkeypatch: Any) -> No
     }
     captured = capfd.readouterr().err
     assert "1 CSE" in captured
+
+
+@pytest.mark.debug()
+def test_cse_predicate_self_join(capfd: Any, monkeypatch: Any) -> None:
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    y = pl.LazyFrame({"a": [1], "b": [2], "y": [3]})
+
+    xf = y.filter(pl.col("y") == 2).select(["a", "b"])
+    y_xf = y.join(xf, on=["a", "b"], how="left")
+
+    y_xf_c = y_xf.select("a", "b")
+    assert y_xf_c.collect().to_dict(as_series=False) == {"a": [1], "b": [2]}
+    captured = capfd.readouterr().err
+    assert "CACHE HIT" in captured
