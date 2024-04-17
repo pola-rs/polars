@@ -57,7 +57,7 @@ impl PyLazyFrame {
         // Used in pickle/pickling
         match state.extract::<&PyBytes>(py) {
             Ok(s) => {
-                let lp: LogicalPlan = ciborium::de::from_reader(s.as_bytes())
+                let lp: DslPlan = ciborium::de::from_reader(s.as_bytes())
                     .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
                 self.ldf = LazyFrame::from(lp);
                 Ok(())
@@ -92,7 +92,7 @@ impl PyLazyFrame {
         // in this scope.
         let json = unsafe { std::mem::transmute::<&'_ str, &'static str>(json.as_str()) };
 
-        let lp = serde_json::from_str::<LogicalPlan>(json)
+        let lp = serde_json::from_str::<DslPlan>(json)
             .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
         Ok(LazyFrame::from(lp).into())
     }

@@ -282,7 +282,7 @@ impl<'a> LazyCsvReader<'a> {
 
 impl LazyFileListReader for LazyCsvReader<'_> {
     fn finish_no_glob(self) -> PolarsResult<LazyFrame> {
-        let mut lf: LazyFrame = LogicalPlanBuilder::scan_csv(
+        let mut lf: LazyFrame = DslBuilder::scan_csv(
             self.path,
             self.separator,
             self.has_header,

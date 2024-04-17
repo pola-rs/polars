@@ -71,7 +71,7 @@ pub struct DotNode<'a> {
     pub fmt: &'a str,
 }
 
-impl LogicalPlan {
+impl DslPlan {
     fn write_single_node(&self, acc_str: &mut String, node: DotNode) -> std::fmt::Result {
         let fmt_node = node.fmt.replace('"', r#"\""#);
         writeln!(acc_str, "graph  polars_query {{\n\"[{fmt_node}]\"")?;
@@ -128,7 +128,7 @@ impl LogicalPlan {
         prev_node: DotNode,
         id_map: &mut PlHashMap<String, String>,
     ) -> std::fmt::Result {
-        use LogicalPlan::*;
+        use DslPlan::*;
         let (mut branch, id) = id;
 
         match self {

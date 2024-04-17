@@ -908,7 +908,7 @@ mod test {
 
         let e = col("a").sum();
 
-        let lp = LogicalPlanBuilder::from_existing_df(df)
+        let lp = DslBuilder::from_existing_df(df)
             .project(
                 vec![e.clone() * col("b"), e.clone() * col("b") + e, col("b")],
                 Default::default(),

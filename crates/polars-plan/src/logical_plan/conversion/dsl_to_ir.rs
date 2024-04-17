@@ -59,8 +59,8 @@ fn to_aexprs(input: Vec<Expr>, arena: &mut Arena<AExpr>, state: &mut ConversionS
 }
 
 fn set_function_output_name<F>(e: &[ExprIR], state: &mut ConversionState, function_fmt: F)
-    where
-        F: FnOnce() -> Cow<'static, str>,
+where
+    F: FnOnce() -> Cow<'static, str>,
 {
     if state.output_name.is_none() {
         if e.is_empty() {
@@ -291,13 +291,13 @@ fn to_aexpr_impl(expr: Expr, arena: &mut Arena<AExpr>, state: &mut ConversionSta
 /// finally it returns the top node of the logical plan
 #[recursive]
 pub fn to_alp(
-    lp: LogicalPlan,
+    lp: DslPlan,
     expr_arena: &mut Arena<AExpr>,
     lp_arena: &mut Arena<IR>,
 ) -> PolarsResult<Node> {
     let owned = Arc::unwrap_or_clone;
     let v = match lp {
-        LogicalPlan::Scan {
+        DslPlan::Scan {
             file_info,
             paths,
             predicate,
@@ -312,18 +312,18 @@ pub fn to_alp(
             file_options: options,
         },
         #[cfg(feature = "python")]
-        LogicalPlan::PythonScan { options } => IR::PythonScan {
+        DslPlan::PythonScan { options } => IR::PythonScan {
             options,
             predicate: None,
         },
-        LogicalPlan::Union { inputs, options } => {
+        DslPlan::Union { inputs, options } => {
             let inputs = inputs
                 .into_iter()
                 .map(|lp| to_alp(lp, expr_arena, lp_arena))
                 .collect::<PolarsResult<_>>()?;
             IR::Union { inputs, options }
         },
-        LogicalPlan::HConcat {
+        DslPlan::HConcat {
             inputs,
             schema,
             options,
@@ -338,7 +338,7 @@ pub fn to_alp(
                 options,
             }
         },
-        LogicalPlan::Filter { input, predicate } => {
+        DslPlan::Filter { input, predicate } => {
             let i = to_alp(owned(input), expr_arena, lp_arena)?;
             let p = to_expr_ir(predicate, expr_arena);
             IR::Filter {
@@ -346,11 +346,11 @@ pub fn to_alp(
                 predicate: p,
             }
         },
-        LogicalPlan::Slice { input, offset, len } => {
+        DslPlan::Slice { input, offset, len } => {
             let input = to_alp(owned(input), expr_arena, lp_arena)?;
             IR::Slice { input, offset, len }
         },
-        LogicalPlan::DataFrameScan {
+        DslPlan::DataFrameScan {
             df,
             schema,
             output_schema,
@@ -363,7 +363,7 @@ pub fn to_alp(
             projection,
             selection: selection.map(|expr| to_expr_ir(expr, expr_arena)),
         },
-        LogicalPlan::Select {
+        DslPlan::Select {
             expr,
             input,
             schema,
@@ -379,7 +379,7 @@ pub fn to_alp(
                 options,
             }
         },
-        LogicalPlan::Sort {
+        DslPlan::Sort {
             input,
             by_column,
             slice,
@@ -394,7 +394,7 @@ pub fn to_alp(
                 sort_options,
             }
         },
-        LogicalPlan::Cache {
+        DslPlan::Cache {
             input,
             id,
             cache_hits,
@@ -406,7 +406,7 @@ pub fn to_alp(
                 cache_hits,
             }
         },
-        LogicalPlan::GroupBy {
+        DslPlan::GroupBy {
             input,
             keys,
             aggs,
@@ -429,7 +429,7 @@ pub fn to_alp(
                 options,
             }
         },
-        LogicalPlan::Join {
+        DslPlan::Join {
             input_left,
             input_right,
             schema,
@@ -452,7 +452,7 @@ pub fn to_alp(
                 options,
             }
         },
-        LogicalPlan::HStack {
+        DslPlan::HStack {
             input,
             exprs,
             schema,
@@ -468,20 +468,20 @@ pub fn to_alp(
                 options,
             }
         },
-        LogicalPlan::Distinct { input, options } => {
+        DslPlan::Distinct { input, options } => {
             let input = to_alp(owned(input), expr_arena, lp_arena)?;
             IR::Distinct { input, options }
         },
-        LogicalPlan::MapFunction { input, function } => {
+        DslPlan::MapFunction { input, function } => {
             let input = to_alp(owned(input), expr_arena, lp_arena)?;
             IR::MapFunction { input, function }
         },
-        LogicalPlan::Error { err, .. } => {
+        DslPlan::Error { err, .. } => {
             // We just take the error. The LogicalPlan should not be used anymore once this
             // is taken.
             return Err(err.take());
         },
-        LogicalPlan::ExtContext {
+        DslPlan::ExtContext {
             input,
             contexts,
             schema,
@@ -497,7 +497,7 @@ pub fn to_alp(
                 schema,
             }
         },
-        LogicalPlan::Sink { input, payload } => {
+        DslPlan::Sink { input, payload } => {
             let input = to_alp(owned(input), expr_arena, lp_arena)?;
             IR::Sink { input, payload }
         },

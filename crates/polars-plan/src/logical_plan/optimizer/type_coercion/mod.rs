@@ -644,7 +644,7 @@ mod test {
         .unwrap();
 
         let expr_in = vec![col("fruits").eq(lit("somestr"))];
-        let lp = LogicalPlanBuilder::from_existing_df(df.clone())
+        let lp = DslBuilder::from_existing_df(df.clone())
             .project(expr_in.clone(), Default::default())
             .build();
 
@@ -655,12 +655,12 @@ mod test {
         let lp = node_to_lp(lp_top, &expr_arena, &mut lp_arena);
 
         // we test that the fruits column is not cast to string for the comparison
-        if let LogicalPlan::Select { expr, .. } = lp {
+        if let DslPlan::Select { expr, .. } = lp {
             assert_eq!(expr, expr_in);
         };
 
         let expr_in = vec![col("fruits") + (lit("somestr"))];
-        let lp = LogicalPlanBuilder::from_existing_df(df)
+        let lp = DslBuilder::from_existing_df(df)
             .project(expr_in, Default::default())
             .build();
         let mut lp_top = to_alp(lp, &mut expr_arena, &mut lp_arena).unwrap();
@@ -671,7 +671,7 @@ mod test {
 
         // we test that the fruits column is cast to string for the addition
         let expected = vec![col("fruits").cast(DataType::String) + lit("somestr")];
-        if let LogicalPlan::Select { expr, .. } = lp {
+        if let DslPlan::Select { expr, .. } = lp {
             assert_eq!(expr, expected);
         };
     }

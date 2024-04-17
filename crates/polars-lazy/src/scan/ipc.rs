@@ -70,7 +70,7 @@ impl LazyFileListReader for LazyIpcReader {
             memory_map: args.memory_map,
         };
 
-        let mut lf: LazyFrame = LogicalPlanBuilder::scan_ipc(
+        let mut lf: LazyFrame = DslBuilder::scan_ipc(
             paths,
             options,
             args.n_rows,

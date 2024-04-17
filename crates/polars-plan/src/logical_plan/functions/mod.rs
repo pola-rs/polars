@@ -61,7 +61,7 @@ pub enum FunctionNode {
     Pipeline {
         function: Arc<dyn DataFrameUdfMut>,
         schema: SchemaRef,
-        original: Option<Arc<LogicalPlan>>,
+        original: Option<Arc<DslPlan>>,
     },
     Unnest {
         columns: Arc<[Arc<str>]>,

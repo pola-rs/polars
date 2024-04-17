@@ -3,16 +3,14 @@ mod ir_to_dsl;
 
 use std::borrow::Cow;
 
+pub use dsl_to_ir::*;
+pub use ir_to_dsl::*;
 use polars_core::prelude::*;
 use polars_utils::vec::ConvertVec;
 use recursive::recursive;
 
 use crate::constants::get_len_name;
 use crate::prelude::*;
-pub use dsl_to_ir::*;
-pub use ir_to_dsl::*;
-
-
 
 fn expr_irs_to_exprs(expr_irs: Vec<ExprIR>, expr_arena: &Arena<AExpr>) -> Vec<Expr> {
     expr_irs.convert_owned(|e| e.to_expr(expr_arena))
@@ -25,9 +23,9 @@ impl IR {
         conversion_fn: &F,
         lp_arena: &mut LPA,
         expr_arena: &Arena<AExpr>,
-    ) -> LogicalPlan
-        where
-            F: Fn(Node, &mut LPA) -> IR,
+    ) -> DslPlan
+    where
+        F: Fn(Node, &mut LPA) -> IR,
     {
         let lp = self;
         let convert_to_lp = |node: Node, lp_arena: &mut LPA| {
@@ -41,7 +39,7 @@ impl IR {
                 scan_type,
                 output_schema: _,
                 file_options: options,
-            } => LogicalPlan::Scan {
+            } => DslPlan::Scan {
                 paths,
                 file_info,
                 predicate: predicate.map(|e| e.to_expr(expr_arena)),
@@ -49,13 +47,13 @@ impl IR {
                 file_options: options,
             },
             #[cfg(feature = "python")]
-            IR::PythonScan { options, .. } => LogicalPlan::PythonScan { options },
+            IR::PythonScan { options, .. } => DslPlan::PythonScan { options },
             IR::Union { inputs, options } => {
                 let inputs = inputs
                     .into_iter()
                     .map(|node| convert_to_lp(node, lp_arena))
                     .collect();
-                LogicalPlan::Union { inputs, options }
+                DslPlan::Union { inputs, options }
             },
             IR::HConcat {
                 inputs,
@@ -66,7 +64,7 @@ impl IR {
                     .into_iter()
                     .map(|node| convert_to_lp(node, lp_arena))
                     .collect();
-                LogicalPlan::HConcat {
+                DslPlan::HConcat {
                     inputs,
                     schema: schema.clone(),
                     options,
@@ -74,7 +72,7 @@ impl IR {
             },
             IR::Slice { input, offset, len } => {
                 let lp = convert_to_lp(input, lp_arena);
-                LogicalPlan::Slice {
+                DslPlan::Slice {
                     input: Arc::new(lp),
                     offset,
                     len,
@@ -83,7 +81,7 @@ impl IR {
             IR::Filter { input, predicate } => {
                 let lp = convert_to_lp(input, lp_arena);
                 let predicate = predicate.to_expr(expr_arena);
-                LogicalPlan::Filter {
+                DslPlan::Filter {
                     input: Arc::new(lp),
                     predicate,
                 }
@@ -94,7 +92,7 @@ impl IR {
                 output_schema,
                 projection,
                 selection,
-            } => LogicalPlan::DataFrameScan {
+            } => DslPlan::DataFrameScan {
                 df,
                 schema,
                 output_schema,
@@ -109,7 +107,7 @@ impl IR {
             } => {
                 let i = convert_to_lp(input, lp_arena);
                 let expr = expr_irs_to_exprs(expr.all_exprs(), expr_arena);
-                LogicalPlan::Select {
+                DslPlan::Select {
                     expr,
                     input: Arc::new(i),
                     schema,
@@ -122,7 +120,7 @@ impl IR {
                     .iter_names()
                     .map(|name| Expr::Column(ColumnName::from(name.as_str())))
                     .collect::<Vec<_>>();
-                LogicalPlan::Select {
+                DslPlan::Select {
                     expr,
                     input: Arc::new(input),
                     schema: columns.clone(),
@@ -137,7 +135,7 @@ impl IR {
             } => {
                 let input = Arc::new(convert_to_lp(input, lp_arena));
                 let by_column = expr_irs_to_exprs(by_column, expr_arena);
-                LogicalPlan::Sort {
+                DslPlan::Sort {
                     input,
                     by_column,
                     slice,
@@ -150,7 +148,7 @@ impl IR {
                 cache_hits,
             } => {
                 let input = Arc::new(convert_to_lp(input, lp_arena));
-                LogicalPlan::Cache {
+                DslPlan::Cache {
                     input,
                     id,
                     cache_hits,
@@ -169,7 +167,7 @@ impl IR {
                 let keys = Arc::new(expr_irs_to_exprs(keys, expr_arena));
                 let aggs = expr_irs_to_exprs(aggs, expr_arena);
 
-                LogicalPlan::GroupBy {
+                DslPlan::GroupBy {
                     input: Arc::new(i),
                     keys,
                     aggs,
@@ -193,7 +191,7 @@ impl IR {
                 let left_on = expr_irs_to_exprs(left_on, expr_arena);
                 let right_on = expr_irs_to_exprs(right_on, expr_arena);
 
-                LogicalPlan::Join {
+                DslPlan::Join {
                     input_left: Arc::new(i_l),
                     input_right: Arc::new(i_r),
                     schema,
@@ -211,7 +209,7 @@ impl IR {
                 let i = convert_to_lp(input, lp_arena);
                 let exprs = expr_irs_to_exprs(exprs.all_exprs(), expr_arena);
 
-                LogicalPlan::HStack {
+                DslPlan::HStack {
                     input: Arc::new(i),
                     exprs,
                     schema,
@@ -220,14 +218,14 @@ impl IR {
             },
             IR::Distinct { input, options } => {
                 let i = convert_to_lp(input, lp_arena);
-                LogicalPlan::Distinct {
+                DslPlan::Distinct {
                     input: Arc::new(i),
                     options,
                 }
             },
             IR::MapFunction { input, function } => {
                 let input = Arc::new(convert_to_lp(input, lp_arena));
-                LogicalPlan::MapFunction { input, function }
+                DslPlan::MapFunction { input, function }
             },
             IR::ExtContext {
                 input,
@@ -239,7 +237,7 @@ impl IR {
                     .into_iter()
                     .map(|node| convert_to_lp(node, lp_arena))
                     .collect();
-                LogicalPlan::ExtContext {
+                DslPlan::ExtContext {
                     input,
                     contexts,
                     schema,
@@ -247,7 +245,7 @@ impl IR {
             },
             IR::Sink { input, payload } => {
                 let input = Arc::new(convert_to_lp(input, lp_arena));
-                LogicalPlan::Sink { input, payload }
+                DslPlan::Sink { input, payload }
             },
             IR::Invalid => unreachable!(),
         }

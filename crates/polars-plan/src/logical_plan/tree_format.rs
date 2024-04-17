@@ -72,7 +72,7 @@ impl UpperExp for AExpr {
 
 pub enum TreeFmtNode<'a> {
     Expression(Option<String>, &'a Expr),
-    LogicalPlan(Option<String>, &'a LogicalPlan),
+    LogicalPlan(Option<String>, &'a DslPlan),
 }
 
 struct TreeFmtNodeData<'a>(String, Vec<TreeFmtNode<'a>>);
@@ -92,7 +92,7 @@ fn multiline_expression(expr: &str) -> Cow<'_, str> {
 }
 
 impl<'a> TreeFmtNode<'a> {
-    pub fn root_logical_plan(lp: &'a LogicalPlan) -> Self {
+    pub fn root_logical_plan(lp: &'a DslPlan) -> Self {
         Self::LogicalPlan(None, lp)
     }
 
@@ -123,7 +123,7 @@ impl<'a> TreeFmtNode<'a> {
     }
 
     fn node_data(&self) -> TreeFmtNodeData<'_> {
-        use LogicalPlan::*;
+        use DslPlan::*;
         use TreeFmtNode::{Expression as NE, LogicalPlan as NL};
         use {with_header as wh, TreeFmtNodeData as ND};
 
@@ -216,7 +216,7 @@ impl<'a> TreeFmtNode<'a> {
             ),
             NL(
                 h,
-                LogicalPlan::Sort {
+                DslPlan::Sort {
                     input, by_column, ..
                 },
             ) => ND(
@@ -285,7 +285,7 @@ impl<'a> TreeFmtNode<'a> {
                 ),
                 vec![NL(None, input)],
             ),
-            NL(h, LogicalPlan::Slice { input, offset, len }) => ND(
+            NL(h, DslPlan::Slice { input, offset, len }) => ND(
                 wh(h, &format!("SLICE[offset: {offset}, len: {len}]")),
                 vec![NL(None, input)],
             ),

@@ -48,13 +48,13 @@ fn write_scan<P: Display>(
     Ok(())
 }
 
-impl LogicalPlan {
+impl DslPlan {
     fn _format(&self, f: &mut Formatter, indent: usize) -> fmt::Result {
         if indent != 0 {
             writeln!(f)?;
         }
         let sub_indent = indent + 2;
-        use LogicalPlan::*;
+        use DslPlan::*;
         match self {
             #[cfg(feature = "python")]
             PythonScan { options } => {
@@ -247,7 +247,7 @@ impl LogicalPlan {
     }
 }
 
-impl Debug for LogicalPlan {
+impl Debug for DslPlan {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         self._format(f, 0)
     }

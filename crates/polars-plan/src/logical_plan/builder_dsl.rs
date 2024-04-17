@@ -44,31 +44,31 @@ pub(crate) fn prepare_projection(
     Ok((exprs, schema))
 }
 
-pub struct LogicalPlanBuilder(pub LogicalPlan);
+pub struct DslBuilder(pub DslPlan);
 
-impl From<LogicalPlan> for LogicalPlanBuilder {
-    fn from(lp: LogicalPlan) -> Self {
-        LogicalPlanBuilder(lp)
+impl From<DslPlan> for DslBuilder {
+    fn from(lp: DslPlan) -> Self {
+        DslBuilder(lp)
     }
 }
 
-fn format_err(msg: &str, input: &LogicalPlan) -> String {
+fn format_err(msg: &str, input: &DslPlan) -> String {
     format!("{msg}\n\nError originated just after this operation:\n{input:?}")
 }
 
 /// Returns every error or msg: &str as `ComputeError`. It also shows the logical plan node where the error originated.
-/// If `input` is already a `LogicalPlan::Error`, then return it as is; errors already keep track of their previous
+/// If `input` is already a `DslPlan::Error`, then return it as is; errors already keep track of their previous
 /// inputs, so we don't have to do it again here.
 macro_rules! raise_err {
     ($err:expr, $input:expr, $convert:ident) => {{
-        let input: LogicalPlan = $input.clone();
+        let input: DslPlan = $input.clone();
         match &input {
-            LogicalPlan::Error { .. } => input,
+            DslPlan::Error { .. } => input,
             _ => {
                 let format_err_outer = |msg: &str| format_err(msg, &input);
                 let err = $err.wrap_msg(&format_err_outer);
 
-                LogicalPlan::Error {
+                DslPlan::Error {
                     input: Arc::new(input),
                     err: err.into(), // PolarsError -> ErrorState
                 }
@@ -95,7 +95,7 @@ fn prepare_schema(mut schema: Schema, row_index: Option<&RowIndex>) -> SchemaRef
     Arc::new(schema)
 }
 
-impl LogicalPlanBuilder {
+impl DslBuilder {
     pub fn anonymous_scan(
         function: Arc<dyn AnonymousScan>,
         schema: Option<SchemaRef>,
@@ -124,7 +124,7 @@ impl LogicalPlanBuilder {
             },
         };
 
-        Ok(LogicalPlan::Scan {
+        Ok(DslPlan::Scan {
             paths: Arc::new([]),
             file_info,
             predicate: None,
@@ -215,7 +215,7 @@ impl LogicalPlanBuilder {
             file_counter: Default::default(),
             hive_options,
         };
-        Ok(LogicalPlan::Scan {
+        Ok(DslPlan::Scan {
             paths,
             file_info,
             file_options: options,
@@ -274,7 +274,7 @@ impl LogicalPlanBuilder {
             ))?
         };
 
-        Ok(LogicalPlan::Scan {
+        Ok(DslPlan::Scan {
             paths,
             file_info: FileInfo::new(
                 prepare_schema(metadata.schema.as_ref().into(), row_index.as_ref()),
@@ -406,7 +406,7 @@ impl LogicalPlanBuilder {
                 ..Default::default()
             },
         };
-        Ok(LogicalPlan::Scan {
+        Ok(DslPlan::Scan {
             paths,
             file_info,
             file_options: options,
@@ -435,8 +435,8 @@ impl LogicalPlanBuilder {
 
     pub fn cache(self) -> Self {
         let input = Arc::new(self.0);
-        let id = input.as_ref() as *const LogicalPlan as usize;
-        LogicalPlan::Cache {
+        let id = input.as_ref() as *const DslPlan as usize;
+        DslPlan::Cache {
             input,
             id,
             cache_hits: UNLIMITED_CACHE,
@@ -469,7 +469,7 @@ impl LogicalPlanBuilder {
                 "EMPTY PROJECTION",
             )
         } else {
-            LogicalPlan::Select {
+            DslPlan::Select {
                 expr: columns,
                 input: Arc::new(self.0),
                 schema: Arc::new(output_schema),
@@ -494,7 +494,7 @@ impl LogicalPlanBuilder {
                 "EMPTY PROJECTION",
             )
         } else {
-            LogicalPlan::Select {
+            DslPlan::Select {
                 expr: exprs,
                 input: Arc::new(self.0),
                 schema: Arc::new(schema),
@@ -588,7 +588,7 @@ impl LogicalPlanBuilder {
             arena.clear();
         }
 
-        LogicalPlan::HStack {
+        DslPlan::HStack {
             input: Arc::new(self.0),
             exprs,
             schema: Arc::new(new_schema),
@@ -598,14 +598,14 @@ impl LogicalPlanBuilder {
     }
 
     pub fn add_err(self, err: PolarsError) -> Self {
-        LogicalPlan::Error {
+        DslPlan::Error {
             input: Arc::new(self.0),
             err: err.into(),
         }
         .into()
     }
 
-    pub fn with_context(self, contexts: Vec<LogicalPlan>) -> Self {
+    pub fn with_context(self, contexts: Vec<DslPlan>) -> Self {
         let mut schema = try_delayed!(self.0.schema(), &self.0, into)
             .as_ref()
             .as_ref()
@@ -620,7 +620,7 @@ impl LogicalPlanBuilder {
                 }
             }
         }
-        LogicalPlan::ExtContext {
+        DslPlan::ExtContext {
             input: Arc::new(self.0),
             contexts,
             schema: Arc::new(schema),
@@ -704,7 +704,7 @@ impl LogicalPlanBuilder {
             into
         );
 
-        LogicalPlan::Filter {
+        DslPlan::Filter {
             predicate,
             input: Arc::new(self.0),
         }
@@ -790,7 +790,7 @@ impl LogicalPlanBuilder {
             slice: None,
         };
 
-        LogicalPlan::GroupBy {
+        DslPlan::GroupBy {
             input: Arc::new(self.0),
             keys: Arc::new(keys),
             aggs,
@@ -802,13 +802,13 @@ impl LogicalPlanBuilder {
         .into()
     }
 
-    pub fn build(self) -> LogicalPlan {
+    pub fn build(self) -> DslPlan {
         self.0
     }
 
     pub fn from_existing_df(df: DataFrame) -> Self {
         let schema = Arc::new(df.schema());
-        LogicalPlan::DataFrameScan {
+        DslPlan::DataFrameScan {
             df: Arc::new(df),
             schema,
             output_schema: None,
@@ -821,7 +821,7 @@ impl LogicalPlanBuilder {
     pub fn sort(self, by_column: Vec<Expr>, sort_options: SortMultipleOptions) -> Self {
         let schema = try_delayed!(self.0.schema(), &self.0, into);
         let by_column = try_delayed!(rewrite_projections(by_column, &schema, &[]), &self.0, into);
-        LogicalPlan::Sort {
+        DslPlan::Sort {
             input: Arc::new(self.0),
             by_column,
             slice: None,
@@ -849,7 +849,7 @@ impl LogicalPlanBuilder {
         let mut schema = (**schema).clone();
         try_delayed!(explode_schema(&mut schema, &columns), &self.0, into);
 
-        LogicalPlan::MapFunction {
+        DslPlan::MapFunction {
             input: Arc::new(self.0),
             function: FunctionNode::Explode {
                 columns,
@@ -862,7 +862,7 @@ impl LogicalPlanBuilder {
     pub fn melt(self, args: Arc<MeltArgs>) -> Self {
         let schema = try_delayed!(self.0.schema(), &self.0, into);
         let schema = det_melt_schema(&args, &schema);
-        LogicalPlan::MapFunction {
+        DslPlan::MapFunction {
             input: Arc::new(self.0),
             function: FunctionNode::Melt { args, schema },
         }
@@ -870,7 +870,7 @@ impl LogicalPlanBuilder {
     }
 
     pub fn row_index(self, name: &str, offset: Option<IdxSize>) -> Self {
-        LogicalPlan::MapFunction {
+        DslPlan::MapFunction {
             input: Arc::new(self.0),
             function: FunctionNode::RowIndex {
                 name: ColumnName::from(name),
@@ -882,7 +882,7 @@ impl LogicalPlanBuilder {
     }
 
     pub fn distinct(self, options: DistinctOptions) -> Self {
-        LogicalPlan::Distinct {
+        DslPlan::Distinct {
             input: Arc::new(self.0),
             options,
         }
@@ -890,7 +890,7 @@ impl LogicalPlanBuilder {
     }
 
     pub fn slice(self, offset: i64, len: IdxSize) -> Self {
-        LogicalPlan::Slice {
+        DslPlan::Slice {
             input: Arc::new(self.0),
             offset,
             len,
@@ -900,14 +900,14 @@ impl LogicalPlanBuilder {
 
     pub fn join(
         self,
-        other: LogicalPlan,
+        other: DslPlan,
         left_on: Vec<Expr>,
         right_on: Vec<Expr>,
         options: Arc<JoinOptions>,
     ) -> Self {
         for e in left_on.iter().chain(right_on.iter()) {
             if has_expr(e, |e| matches!(e, Expr::Alias(_, _))) {
-                return LogicalPlan::Error {
+                return DslPlan::Error {
                     input: Arc::new(self.0),
                     err: polars_err!(
                         ComputeError:
@@ -928,7 +928,7 @@ impl LogicalPlanBuilder {
             into
         );
 
-        LogicalPlan::Join {
+        DslPlan::Join {
             input_left: Arc::new(self.0),
             input_right: Arc::new(other),
             schema,
@@ -939,7 +939,7 @@ impl LogicalPlanBuilder {
         .into()
     }
     pub fn map_private(self, function: FunctionNode) -> Self {
-        LogicalPlan::MapFunction {
+        DslPlan::MapFunction {
             input: Arc::new(self.0),
             function,
         }
@@ -954,7 +954,7 @@ impl LogicalPlanBuilder {
         schema: Option<SchemaRef>,
         validate_output: bool,
     ) -> Self {
-        LogicalPlan::MapFunction {
+        DslPlan::MapFunction {
             input: Arc::new(self.0),
             function: FunctionNode::OpaquePython {
                 function,
@@ -980,7 +980,7 @@ impl LogicalPlanBuilder {
     {
         let function = Arc::new(function);
 
-        LogicalPlan::MapFunction {
+        DslPlan::MapFunction {
             input: Arc::new(self.0),
             function: FunctionNode::Opaque {
                 function,

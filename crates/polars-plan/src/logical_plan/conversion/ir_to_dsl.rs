@@ -88,7 +88,7 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                     input: Arc::new(exp),
                     propagate_nans,
                 }
-                    .into()
+                .into()
             },
             AAggExpr::Max {
                 input,
@@ -99,7 +99,7 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                     input: Arc::new(exp),
                     propagate_nans,
                 }
-                    .into()
+                .into()
             },
 
             AAggExpr::Median(expr) => {
@@ -138,7 +138,7 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                     quantile: Arc::new(quantile),
                     interpol,
                 }
-                    .into()
+                .into()
             },
             AAggExpr::Sum(expr) => {
                 let exp = node_to_expr(expr, expr_arena);
@@ -232,7 +232,7 @@ pub fn node_to_lp_cloned(
     node: Node,
     expr_arena: &Arena<AExpr>,
     mut lp_arena: &Arena<IR>,
-) -> LogicalPlan {
+) -> DslPlan {
     // we borrow again mutably only to make the types happy
     // we want to initialize `to_lp` from a mutable and a immutable lp_arena
     // by borrowing an immutable mutably, we still are immutable down the line.
@@ -245,7 +245,7 @@ pub fn node_to_lp_cloned(
 }
 
 /// converts a node from the IR arena to a LogicalPlan
-pub fn node_to_lp(node: Node, expr_arena: &Arena<AExpr>, lp_arena: &mut Arena<IR>) -> LogicalPlan {
+pub fn node_to_lp(node: Node, expr_arena: &Arena<AExpr>, lp_arena: &mut Arena<IR>) -> DslPlan {
     let alp = lp_arena.get_mut(node);
     let alp = std::mem::take(alp);
     alp.into_lp(

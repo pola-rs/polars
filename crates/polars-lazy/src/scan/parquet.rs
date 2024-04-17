@@ -73,7 +73,7 @@ impl LazyFileListReader for LazyParquetReader {
         } else {
             self.paths
         };
-        let mut lf: LazyFrame = LogicalPlanBuilder::scan_parquet(
+        let mut lf: LazyFrame = DslBuilder::scan_parquet(
             paths,
             self.args.n_rows,
             self.args.cache,
