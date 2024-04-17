@@ -30,7 +30,7 @@ use polars_io::{
 use super::builder_functions::*;
 use crate::constants::UNLIMITED_CACHE;
 use crate::dsl::functions::horizontal::all_horizontal;
-use crate::logical_plan::projection::{is_regex_projection, rewrite_projections};
+use crate::logical_plan::expr_expansion::{is_regex_projection, rewrite_projections};
 #[cfg(feature = "python")]
 use crate::prelude::python_udf::PythonFunction;
 use crate::prelude::*;

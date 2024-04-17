@@ -20,6 +20,7 @@ mod builder_ir;
 pub(crate) mod conversion;
 #[cfg(feature = "debugging")]
 pub(crate) mod debug;
+pub(crate) mod expr_expansion;
 pub mod expr_ir;
 mod file_scan;
 mod format;
@@ -29,7 +30,6 @@ pub(crate) mod iterator;
 mod lit;
 pub(crate) mod optimizer;
 pub(crate) mod options;
-pub(crate) mod projection;
 mod projection_expr;
 #[cfg(feature = "python")]
 mod pyarrow;
