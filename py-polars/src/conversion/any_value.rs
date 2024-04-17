@@ -278,7 +278,8 @@ pub(crate) fn py_object_to_any_value<'a, 'py>(
             // so it can be much faster.
             let py = ob.py();
             let s = SERIES.call1(py, (ob,))?;
-            get_list_from_series(s.bind(py), true)
+            let s = super::get_series(s.bind(py).clone())?;
+            Ok(AnyValue::List(s))
         }
 
         if ob.is_empty()? {
@@ -290,9 +291,10 @@ pub(crate) fn py_object_to_any_value<'a, 'py>(
 
             let mut avs = Vec::with_capacity(INFER_SCHEMA_LENGTH);
             let mut iter = list.iter()?;
-
-            for item in (&mut iter).take(INFER_SCHEMA_LENGTH) {
-                let av = py_object_to_any_value(&(item?), strict)?;
+            let items : PyResult<Vec<_>> = (&mut iter).take(INFER_SCHEMA_LENGTH).collect();
+            let items = items?;
+            for item in &items {
+                let av = py_object_to_any_value(item, strict)?;
                 avs.push(av)
             }
 
@@ -305,8 +307,10 @@ pub(crate) fn py_object_to_any_value<'a, 'py>(
             } else {
                 // Push the rest.
                 avs.reserve(list.len()?);
-                for item in iter {
-                    let av = py_object_to_any_value(&(item?), strict)?;
+                let rest : PyResult<Vec<_>> = iter.collect();
+                let rest = rest?;
+                for item in &rest {
+                    let av = py_object_to_any_value(item, strict)?;
                     avs.push(av)
                 }
 
@@ -328,7 +332,7 @@ pub(crate) fn py_object_to_any_value<'a, 'py>(
         ob: &'b Bound<'py, PyAny>,
         _strict: bool,
     ) -> PyResult<AnyValue<'b>> {
-        let s = super::get_series(ob)?;
+        let s = super::get_series(ob.clone())?;
         Ok(AnyValue::List(s))
     }
 
@@ -367,7 +371,7 @@ pub(crate) fn py_object_to_any_value<'a, 'py>(
     fn get_conversion_function<'b, 'py, 'c, 'd>(
         ob: &'b Bound<'py, PyAny>,
         py: Python<'py>,
-    ) -> InitFn<'c, 'd> {
+    ) -> InitFn<'c,'d> {
         if ob.is_none() {
             get_null
         }
