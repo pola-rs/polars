@@ -107,7 +107,7 @@ fn test_lazy_logical_plan_schema() {
         .group_by([col("variety")])
         .agg([col("sepal_width").min()])
         .logical_plan;
-    assert!(lp.compute_schema().unwrap().get("sepal.width").is_some());
+    assert!(lp.compute_schema().unwrap().get("sepal_width").is_some());
 }
 
 #[test]
