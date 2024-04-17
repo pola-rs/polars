@@ -75,11 +75,11 @@ pub(crate) fn concat_impl<L: AsRef<[LazyFrame]>>(
         else {
             unreachable!()
         };
-        let mut schema = inputs[0].schema()?.as_ref().as_ref().clone();
+        let mut schema = inputs[0].compute_schema()?.as_ref().clone();
 
         let mut changed = false;
         for input in inputs[1..].iter() {
-            changed |= schema.to_supertype(input.schema()?.as_ref().as_ref())?;
+            changed |= schema.to_supertype(input.compute_schema()?.as_ref())?;
         }
 
         let mut placeholder = DslPlan::default();
@@ -87,7 +87,7 @@ pub(crate) fn concat_impl<L: AsRef<[LazyFrame]>>(
             let mut exprs = vec![];
             for input in &mut inputs {
                 std::mem::swap(input, &mut placeholder);
-                let input_schema = placeholder.schema()?;
+                let input_schema = placeholder.compute_schema()?;
 
                 exprs.clear();
                 let to_cast = input_schema.iter().zip(schema.iter_dtypes()).flat_map(

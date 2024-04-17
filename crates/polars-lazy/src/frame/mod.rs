@@ -8,7 +8,6 @@ mod exitable;
 #[cfg(feature = "pivot")]
 pub mod pivot;
 
-use std::borrow::Cow;
 #[cfg(any(
     feature = "parquet",
     feature = "ipc",
@@ -93,7 +92,7 @@ impl LazyFrame {
     /// Returns an `Err` if the logical plan has already encountered an error (i.e., if
     /// `self.collect()` would fail), `Ok` otherwise.
     pub fn schema(&self) -> PolarsResult<SchemaRef> {
-        self.logical_plan.schema().map(|schema| schema.into_owned())
+        self.logical_plan.compute_schema()
     }
 
     pub(crate) fn get_plan_builder(self) -> DslBuilder {

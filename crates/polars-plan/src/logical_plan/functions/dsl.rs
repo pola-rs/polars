@@ -24,7 +24,7 @@ pub enum DslFunction {
     /// FillValue
     FillNan(Expr),
     DropNulls(Option<Vec<Expr>>),
-    Drop(PlHashSet<String>)
+    Drop(PlHashSet<String>),
 }
 
 #[derive(Clone)]
@@ -92,7 +92,10 @@ impl DslFunction {
                     swapping,
                 }
             },
-            DslFunction::Stats(_) | DslFunction::FillNan(_) | DslFunction::DropNulls(_) | DslFunction::Drop(_) => {
+            DslFunction::Stats(_)
+            | DslFunction::FillNan(_)
+            | DslFunction::DropNulls(_)
+            | DslFunction::Drop(_) => {
                 // We should not reach this.
                 panic!("impl error")
             },

@@ -179,7 +179,7 @@ impl IR {
             IR::Join {
                 input_left,
                 input_right,
-                schema,
+                schema: _,
                 left_on,
                 right_on,
                 options,
@@ -193,7 +193,6 @@ impl IR {
                 DslPlan::Join {
                     input_left: Arc::new(i_l),
                     input_right: Arc::new(i_r),
-                    schema,
                     left_on,
                     right_on,
                     options,

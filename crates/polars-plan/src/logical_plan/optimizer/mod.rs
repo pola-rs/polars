@@ -94,11 +94,10 @@ pub fn optimize(
     let opt = StackOptimizer {};
     let mut rules: Vec<Box<dyn OptimizationRule>> = Vec::with_capacity(8);
 
+    let mut lp_top = to_alp(logical_plan, expr_arena, lp_arena)?;
     // During debug we check if the optimizations have not modified the final schema.
     #[cfg(debug_assertions)]
-    let prev_schema = logical_plan.schema()?.into_owned();
-
-    let mut lp_top = to_alp(logical_plan, expr_arena, lp_arena)?;
+    let prev_schema = lp_arena.get(lp_top).schema(lp_arena).into_owned();
 
     // Collect members for optimizations that need it.
     let mut members = MemberCollector::new();

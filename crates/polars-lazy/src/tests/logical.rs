@@ -100,14 +100,14 @@ fn test_lazy_logical_plan_schema() {
         .select(&[col("variety").alias("foo")])
         .logical_plan;
 
-    assert!(lp.schema().unwrap().get("foo").is_some());
+    assert!(lp.compute_schema().unwrap().get("foo").is_some());
 
     let lp = df
         .lazy()
         .group_by([col("variety")])
         .agg([col("sepal_width").min()])
         .logical_plan;
-    assert!(lp.schema().unwrap().get("sepal_width").is_some());
+    assert!(lp.compute_schema().unwrap().get("sepal.width").is_some());
 }
 
 #[test]

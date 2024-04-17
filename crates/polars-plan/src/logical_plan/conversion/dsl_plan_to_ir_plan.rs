@@ -180,13 +180,18 @@ pub fn to_alp(
         DslPlan::Join {
             input_left,
             input_right,
-            schema,
             left_on,
             right_on,
             options,
         } => {
             let input_left = to_alp(owned(input_left), expr_arena, lp_arena)?;
             let input_right = to_alp(owned(input_right), expr_arena, lp_arena)?;
+
+            let schema_left = lp_arena.get(input_left).schema(lp_arena);
+            let schema_right = lp_arena.get(input_right).schema(lp_arena);
+
+            let schema =
+                det_join_schema(&schema_left, &schema_right, &left_on, &right_on, &options)?;
 
             let left_on = to_expr_irs_ignore_alias(left_on, expr_arena);
             let right_on = to_expr_irs_ignore_alias(right_on, expr_arena);
@@ -259,7 +264,8 @@ pub fn to_alp(
                     IR::Filter { predicate, input }
                 },
                 DslFunction::Drop(to_drop) => {
-                    let mut output_schema = Schema::with_capacity(schema.len().saturating_sub(to_drop.len()));
+                    let mut output_schema =
+                        Schema::with_capacity(schema.len().saturating_sub(to_drop.len()));
 
                     for (col_name, dtype) in schema.iter() {
                         if !to_drop.contains(col_name.as_str()) {
@@ -275,9 +281,9 @@ pub fn to_alp(
                     IR::SimpleProjection {
                         input,
                         columns: Arc::new(output_schema),
-                        duplicate_check: false
+                        duplicate_check: false,
                     }
-                }
+                },
                 DslFunction::Stats(sf) => {
                     let exprs = match sf {
                         StatsFunction::Var { ddof } => stats_helper(
@@ -489,7 +495,7 @@ fn resolve_group_by(
     input: Node,
     keys: Vec<Expr>,
     aggs: Vec<Expr>,
-    options: &GroupbyOptions,
+    _options: &GroupbyOptions,
     lp_arena: &Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<(Vec<ExprIR>, Vec<ExprIR>, SchemaRef)> {
@@ -504,11 +510,11 @@ fn resolve_group_by(
     // Add dynamic groupby index column(s)
     #[cfg(feature = "dynamic_group_by")]
     {
-        if let Some(options) = options.rolling.as_ref() {
+        if let Some(options) = _options.rolling.as_ref() {
             let name = &options.index_column;
             let dtype = current_schema.try_get(name)?;
             schema.with_column(name.clone(), dtype.clone());
-        } else if let Some(options) = options.dynamic.as_ref() {
+        } else if let Some(options) = _options.dynamic.as_ref() {
             let name = &options.index_column;
             let dtype = current_schema.try_get(name)?;
             if options.include_boundaries {

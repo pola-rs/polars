@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::ops::Deref;
 use std::path::Path;
 use std::sync::Mutex;
@@ -13,8 +12,9 @@ use super::hive::HivePartitions;
 use crate::prelude::*;
 
 impl DslPlan {
-    pub fn schema(&self) -> PolarsResult<Cow<'_, SchemaRef>> {
-        unimplemented!()
+    pub fn compute_schema(&self) -> PolarsResult<SchemaRef> {
+        let (node, lp_arena, _) = self.clone().to_alp()?;
+        Ok(lp_arena.get(node).schema(&lp_arena).into_owned())
     }
 }
 

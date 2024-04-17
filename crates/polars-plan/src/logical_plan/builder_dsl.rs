@@ -28,7 +28,6 @@ use polars_io::{
 };
 
 use crate::constants::UNLIMITED_CACHE;
-use crate::dsl::functions::horizontal::all_horizontal;
 use crate::logical_plan::expr_expansion::rewrite_projections;
 #[cfg(feature = "python")]
 use crate::prelude::python_udf::PythonFunction;
@@ -49,41 +48,6 @@ impl From<DslPlan> for DslBuilder {
     fn from(lp: DslPlan) -> Self {
         DslBuilder(lp)
     }
-}
-
-fn format_err(msg: &str, input: &DslPlan) -> String {
-    format!("{msg}\n\nError originated just after this operation:\n{input:?}")
-}
-
-/// Returns every error or msg: &str as `ComputeError`. It also shows the logical plan node where the error originated.
-/// If `input` is already a `DslPlan::Error`, then return it as is; errors already keep track of their previous
-/// inputs, so we don't have to do it again here.
-macro_rules! raise_err {
-    ($err:expr, $input:expr, $convert:ident) => {{
-        let input: DslPlan = $input.clone();
-        match &input {
-            DslPlan::Error { .. } => input,
-            _ => {
-                let format_err_outer = |msg: &str| format_err(msg, &input);
-                let err = $err.wrap_msg(&format_err_outer);
-
-                DslPlan::Error {
-                    input: Arc::new(input),
-                    err: err.into(), // PolarsError -> ErrorState
-                }
-            },
-        }
-        .$convert()
-    }};
-}
-
-macro_rules! try_delayed {
-    ($fallible:expr, $input:expr, $convert:ident) => {
-        match $fallible {
-            Ok(success) => success,
-            Err(err) => return raise_err!(err, $input, $convert),
-        }
-    };
 }
 
 #[cfg(any(feature = "parquet", feature = "parquet_async",))]
@@ -453,11 +417,17 @@ impl DslBuilder {
             input: Arc::new(self.0),
             options,
         }
-            .into()
+        .into()
     }
 
     pub fn fill_null(self, fill_value: Expr) -> Self {
-        self.project(vec![all().fill_null(fill_value)], ProjectionOptions{duplicate_check: false, ..Default::default()})
+        self.project(
+            vec![all().fill_null(fill_value)],
+            ProjectionOptions {
+                duplicate_check: false,
+                ..Default::default()
+            },
+        )
     }
 
     pub fn drop_nulls(self, subset: Option<Vec<Expr>>) -> Self {
@@ -626,19 +596,9 @@ impl DslBuilder {
             }
         }
 
-        let schema_left = try_delayed!(self.0.schema(), &self.0, into);
-        let schema_right = try_delayed!(other.schema(), &self.0, into);
-
-        let schema = try_delayed!(
-            det_join_schema(&schema_left, &schema_right, &left_on, &right_on, &options),
-            self.0,
-            into
-        );
-
         DslPlan::Join {
             input_left: Arc::new(self.0),
             input_right: Arc::new(other),
-            schema,
             left_on,
             right_on,
             options,

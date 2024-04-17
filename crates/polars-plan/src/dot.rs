@@ -206,7 +206,7 @@ impl DslPlan {
                 id_map,
             ),
             Select { expr, input, .. } => {
-                let schema = input.schema().map_err(|_| {
+                let schema = input.compute_schema().map_err(|_| {
                     eprintln!("could not determine schema");
                     std::fmt::Error
                 })?;

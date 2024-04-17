@@ -130,7 +130,7 @@ fn explode_schema<'a>(
             schema.with_column(name.as_ref().into(), inner);
         };
         PolarsResult::Ok(())
-    });
+    })?;
     let schema = Arc::new(schema);
     *guard = Some(schema.clone());
     Ok(Cow::Owned(schema))
