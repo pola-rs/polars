@@ -36,6 +36,7 @@ mod pyarrow;
 mod schema;
 pub(crate) mod tree_format;
 pub mod visitor;
+
 pub use aexpr::*;
 pub use alp::*;
 pub use anonymous_scan::*;
