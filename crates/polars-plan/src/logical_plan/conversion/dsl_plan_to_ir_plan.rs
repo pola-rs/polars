@@ -100,15 +100,23 @@ pub fn to_alp(
         DslPlan::Select {
             expr,
             input,
-            schema,
             options,
         } => {
-            let eirs = to_expr_irs(expr, expr_arena);
+            let input = to_alp(owned(input), expr_arena, lp_arena)?;
+            let schema = lp_arena.get(input).schema(lp_arena);
+            let (exprs, schema) = prepare_projection(expr, &schema)?;
+
+            if exprs.is_empty() {
+                // Ensure that input will be the `Default` impl which is an empty DF.
+                let _ = lp_arena.take(input);
+            }
+
+            let schema = Arc::new(schema);
+            let eirs = to_expr_irs(exprs, expr_arena);
             let expr = eirs.into();
-            let i = to_alp(owned(input), expr_arena, lp_arena)?;
             IR::Select {
                 expr,
-                input: i,
+                input,
                 schema,
                 options,
             }
@@ -250,6 +258,26 @@ pub fn to_alp(
                     let predicate = to_expr_ir(predicate, expr_arena);
                     IR::Filter { predicate, input }
                 },
+                DslFunction::Drop(to_drop) => {
+                    let mut output_schema = Schema::with_capacity(schema.len().saturating_sub(to_drop.len()));
+
+                    for (col_name, dtype) in schema.iter() {
+                        if !to_drop.contains(col_name.as_str()) {
+                            output_schema.with_column(col_name.clone(), dtype.clone());
+                        }
+                    }
+
+                    if output_schema.is_empty() {
+                        // Ensure that input will be the `Default` impl which is an empty DF.
+                        let _ = lp_arena.take(input);
+                    }
+
+                    IR::SimpleProjection {
+                        input,
+                        columns: Arc::new(output_schema),
+                        duplicate_check: false
+                    }
+                }
                 DslFunction::Stats(sf) => {
                     let exprs = match sf {
                         StatsFunction::Var { ddof } => stats_helper(

@@ -104,7 +104,7 @@ impl IR {
             IR::Select {
                 expr,
                 input,
-                schema,
+                schema: _,
                 options,
             } => {
                 let i = convert_to_lp(input, lp_arena);
@@ -112,7 +112,6 @@ impl IR {
                 DslPlan::Select {
                     expr,
                     input: Arc::new(i),
-                    schema,
                     options,
                 }
             },
@@ -125,7 +124,6 @@ impl IR {
                 DslPlan::Select {
                     expr,
                     input: Arc::new(input),
-                    schema: columns.clone(),
                     options: Default::default(),
                 }
             },

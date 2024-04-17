@@ -444,72 +444,20 @@ impl DslBuilder {
     }
 
     pub fn drop(self, to_drop: PlHashSet<String>) -> Self {
-        let schema = try_delayed!(self.0.schema(), &self.0, into);
-
-        let mut output_schema = Schema::with_capacity(schema.len().saturating_sub(to_drop.len()));
-        let columns = schema
-            .iter()
-            .filter_map(|(col_name, dtype)| {
-                if to_drop.contains(col_name.as_str()) {
-                    None
-                } else {
-                    let out = Some(col(col_name));
-                    output_schema.with_column(col_name.clone(), dtype.clone());
-                    out
-                }
-            })
-            .collect::<Vec<_>>();
-
-        if columns.is_empty() {
-            self.map(
-                |_| Ok(DataFrame::empty()),
-                AllowedOptimizations::default(),
-                Some(Arc::new(|_: &Schema| Ok(Arc::new(Schema::default())))),
-                "EMPTY PROJECTION",
-            )
-        } else {
-            DslPlan::Select {
-                expr: columns,
-                input: Arc::new(self.0),
-                schema: Arc::new(output_schema),
-                options: ProjectionOptions {
-                    run_parallel: false,
-                    duplicate_check: false,
-                },
-            }
-            .into()
-        }
+        self.map_private(DslFunction::Drop(to_drop))
     }
 
     pub fn project(self, exprs: Vec<Expr>, options: ProjectionOptions) -> Self {
-        let schema = try_delayed!(self.0.schema(), &self.0, into);
-        let (exprs, schema) = try_delayed!(prepare_projection(exprs, &schema), &self.0, into);
-
-        if exprs.is_empty() {
-            self.map(
-                |_| Ok(DataFrame::empty()),
-                AllowedOptimizations::default(),
-                Some(Arc::new(|_: &Schema| Ok(Arc::new(Schema::default())))),
-                "EMPTY PROJECTION",
-            )
-        } else {
-            DslPlan::Select {
-                expr: exprs,
-                input: Arc::new(self.0),
-                schema: Arc::new(schema),
-                options,
-            }
-            .into()
+        DslPlan::Select {
+            expr: exprs,
+            input: Arc::new(self.0),
+            options,
         }
+            .into()
     }
 
     pub fn fill_null(self, fill_value: Expr) -> Self {
-        let schema = try_delayed!(self.0.schema(), &self.0, into);
-        let exprs = schema
-            .iter_names()
-            .map(|name| col(name).fill_null(fill_value.clone()))
-            .collect();
-        self.project(exprs, Default::default())
+        self.project(vec![all().fill_null(fill_value)], ProjectionOptions{duplicate_check: false, ..Default::default()})
     }
 
     pub fn drop_nulls(self, subset: Option<Vec<Expr>>) -> Self {

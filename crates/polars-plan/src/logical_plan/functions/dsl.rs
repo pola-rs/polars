@@ -24,6 +24,7 @@ pub enum DslFunction {
     /// FillValue
     FillNan(Expr),
     DropNulls(Option<Vec<Expr>>),
+    Drop(PlHashSet<String>)
 }
 
 #[derive(Clone)]
@@ -91,7 +92,7 @@ impl DslFunction {
                     swapping,
                 }
             },
-            DslFunction::Stats(_) | DslFunction::FillNan(_) | DslFunction::DropNulls(_) => {
+            DslFunction::Stats(_) | DslFunction::FillNan(_) | DslFunction::DropNulls(_) | DslFunction::Drop(_) => {
                 // We should not reach this.
                 panic!("impl error")
             },
@@ -117,6 +118,7 @@ impl Display for DslFunction {
             Stats(_) => write!(f, "STATS"),
             FillNan(_) => write!(f, "FILL NAN"),
             DropNulls(_) => write!(f, "DROP NULLS"),
+            Drop(_) => write!(f, "DROP"),
             // DropNulls { subset } => {
             //     write!(f, "DROP_NULLS by: ")?;
             //     let subset = subset.as_ref();
