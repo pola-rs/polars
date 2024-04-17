@@ -15,7 +15,6 @@ pub(crate) mod anonymous_scan;
 
 mod apply;
 mod builder_dsl;
-pub mod builder_functions;
 mod builder_ir;
 pub(crate) mod conversion;
 #[cfg(feature = "debugging")]
@@ -215,7 +214,7 @@ pub enum DslPlan {
     /// A (User Defined) Function
     MapFunction {
         input: Arc<DslPlan>,
-        function: FunctionNode,
+        function: DslFunction,
     },
     Union {
         inputs: Vec<DslPlan>,

@@ -27,7 +27,6 @@ use polars_io::{
     utils::get_reader_bytes,
 };
 
-use super::builder_functions::*;
 use crate::constants::UNLIMITED_CACHE;
 use crate::dsl::functions::horizontal::all_horizontal;
 use crate::logical_plan::expr_expansion::{rewrite_projections};
@@ -651,40 +650,17 @@ impl DslBuilder {
     }
 
     pub fn explode(self, columns: Vec<Expr>) -> Self {
-        let schema = try_delayed!(self.0.schema(), &self.0, into);
-        let columns = try_delayed!(rewrite_projections(columns, &schema, &[]), &self.0, into);
-
-        // columns to string
-        let columns = columns
-            .iter()
-            .map(|e| {
-                if let Expr::Column(name) = e {
-                    name.clone()
-                } else {
-                    panic!("expected column expression")
-                }
-            })
-            .collect::<Arc<[Arc<str>]>>();
-
-        let mut schema = (**schema).clone();
-        try_delayed!(explode_schema(&mut schema, &columns), &self.0, into);
-
         DslPlan::MapFunction {
             input: Arc::new(self.0),
-            function: FunctionNode::Explode {
-                columns,
-                schema: Arc::new(schema),
-            },
+            function: DslFunction::Explode{columns}
         }
         .into()
     }
 
-    pub fn melt(self, args: Arc<MeltArgs>) -> Self {
-        let schema = try_delayed!(self.0.schema(), &self.0, into);
-        let schema = det_melt_schema(&args, &schema);
+    pub fn melt(self, args: MeltArgs) -> Self {
         DslPlan::MapFunction {
             input: Arc::new(self.0),
-            function: FunctionNode::Melt { args, schema },
+            function: DslFunction::Melt { args },
         }
         .into()
     }
@@ -692,10 +668,9 @@ impl DslBuilder {
     pub fn row_index(self, name: &str, offset: Option<IdxSize>) -> Self {
         DslPlan::MapFunction {
             input: Arc::new(self.0),
-            function: FunctionNode::RowIndex {
+            function: DslFunction::RowIndex {
                 name: ColumnName::from(name),
                 offset,
-                schema: Default::default(),
             },
         }
         .into()
@@ -761,7 +736,7 @@ impl DslBuilder {
     pub fn map_private(self, function: FunctionNode) -> Self {
         DslPlan::MapFunction {
             input: Arc::new(self.0),
-            function,
+            function: DslFunction::Opaque(function),
         }
         .into()
     }
@@ -776,14 +751,14 @@ impl DslBuilder {
     ) -> Self {
         DslPlan::MapFunction {
             input: Arc::new(self.0),
-            function: FunctionNode::OpaquePython {
+            function: DslFunction::Opaque(FunctionNode::OpaquePython {
                 function,
                 schema,
                 predicate_pd: optimizations.predicate_pushdown,
                 projection_pd: optimizations.projection_pushdown,
                 streamable: optimizations.streaming,
                 validate_output,
-            },
+            }),
         }
         .into()
     }
@@ -802,14 +777,14 @@ impl DslBuilder {
 
         DslPlan::MapFunction {
             input: Arc::new(self.0),
-            function: FunctionNode::Opaque {
+            function: DslFunction::Opaque(FunctionNode::Opaque {
                 function,
                 schema,
                 predicate_pd: optimizations.predicate_pushdown,
                 projection_pd: optimizations.projection_pushdown,
                 streamable: optimizations.streaming,
                 fmt_str: name,
-            },
+            }),
         }
         .into()
     }

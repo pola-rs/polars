@@ -1592,7 +1592,7 @@ impl LazyFrame {
     /// See [`MeltArgs`] for information on how to melt a DataFrame.
     pub fn melt(self, args: MeltArgs) -> LazyFrame {
         let opt_state = self.get_opt_state();
-        let lp = self.get_plan_builder().melt(Arc::new(args)).build();
+        let lp = self.get_plan_builder().melt(args).build();
         Self::from_logical_plan(lp, opt_state)
     }
 

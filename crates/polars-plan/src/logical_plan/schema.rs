@@ -387,7 +387,7 @@ impl Clone for CachedSchema {
 }
 
 impl CachedSchema {
-    fn get(&self) -> Option<SchemaRef> {
+    pub fn get(&self) -> Option<SchemaRef> {
         self.0.lock().unwrap().clone()
     }
 }

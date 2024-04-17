@@ -225,7 +225,7 @@ impl IR {
             },
             IR::MapFunction { input, function } => {
                 let input = Arc::new(convert_to_lp(input, lp_arena));
-                DslPlan::MapFunction { input, function }
+                DslPlan::MapFunction { input, function: function.into() }
             },
             IR::ExtContext {
                 input,

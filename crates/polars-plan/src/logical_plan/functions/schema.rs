@@ -1,3 +1,4 @@
+use polars_core::utils::try_get_supertype;
 use super::*;
 
 impl FunctionNode {
@@ -88,7 +89,8 @@ impl FunctionNode {
             RowIndex { schema, name, .. } => {
                 Ok(Cow::Owned(row_index_schema(schema, input_schema, name)))
             },
-            Explode { schema, .. } | Melt { schema, .. } => Ok(Cow::Owned(schema.clone())),
+            Explode {schema, columns} => explode_schema(schema, input_schema, columns),
+            Melt { schema, args } => melt_schema(args, schema, input_schema),
         }
     }
 }
@@ -109,3 +111,75 @@ fn row_index_schema(
     schema_ref
 }
 
+fn explode_schema<'a>(
+    cached_schema: &CachedSchema,
+    schema: &'a Schema,
+    columns: &[Arc<str>]) -> PolarsResult<Cow<'a, SchemaRef>> {
+    let mut guard = cached_schema.lock().unwrap();
+    if let Some(schema) = &*guard {
+        return Ok(Cow::Owned(schema.clone()))
+    }
+    let mut schema = schema.clone();
+
+    // columns to string
+    columns.iter().try_for_each(|name| {
+        if let DataType::List(inner) = schema.try_get(name)? {
+            let inner = *inner.clone();
+            schema.with_column(name.as_ref().into(), inner);
+        };
+        PolarsResult::Ok(())
+    });
+    let schema = Arc::new(schema);
+    *guard = Some(schema.clone());
+    Ok(Cow::Owned(schema))
+}
+
+
+fn melt_schema<'a>(args: &MeltArgs,
+               cached_schema: &CachedSchema,
+               input_schema: &'a Schema) -> PolarsResult<Cow<'a, SchemaRef>> {
+    let mut guard = cached_schema.lock().unwrap();
+    if let Some(schema) = &*guard {
+        return Ok(Cow::Owned(schema.clone()))
+    }
+
+    let mut new_schema = args
+        .id_vars
+        .iter()
+        .map(|id| Field::new(id, input_schema.get(id).unwrap().clone()))
+        .collect::<Schema>();
+    let variable_name = args
+        .variable_name
+        .as_ref()
+        .cloned()
+        .unwrap_or_else(|| "variable".into());
+    let value_name = args
+        .value_name
+        .as_ref()
+        .cloned()
+        .unwrap_or_else(|| "value".into());
+
+    new_schema.with_column(variable_name, DataType::String);
+
+    // We need to determine the supertype of all value columns.
+    let mut supertype = DataType::Null;
+
+    // take all columns that are not in `id_vars` as `value_var`
+    if args.value_vars.is_empty() {
+        let id_vars = PlHashSet::from_iter(&args.id_vars);
+        for (name, dtype) in input_schema.iter() {
+            if !id_vars.contains(name) {
+                supertype = try_get_supertype(&supertype, dtype).unwrap();
+            }
+        }
+    } else {
+        for name in &args.value_vars {
+            let dtype = input_schema.get(name).unwrap();
+            supertype = try_get_supertype(&supertype, dtype).unwrap();
+        }
+    }
+    new_schema.with_column(value_name, supertype);
+    let schema = Arc::new(new_schema);
+    *guard = Some(schema.clone());
+    Ok(Cow::Owned(schema))
+}

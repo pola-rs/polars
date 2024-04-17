@@ -204,6 +204,8 @@ pub fn to_alp(
         },
         DslPlan::MapFunction { input, function } => {
             let input = to_alp(owned(input), expr_arena, lp_arena)?;
+            let schema = lp_arena.get(input).schema(lp_arena);
+            let function = function.into_function_node(&schema)?;
             IR::MapFunction { input, function }
         },
         DslPlan::Error { err, .. } => {
