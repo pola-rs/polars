@@ -419,8 +419,10 @@ pub fn lit(value: &PyAny, allow_object: bool) -> PyResult<PyExpr> {
         Ok(dsl::lit(s).into())
     } else {
         Err(PyTypeError::new_err(format!(
-            "invalid literal value: {:?}",
-            value.str()?
+            "cannot create expression literal for value of type {}: {}\
+            \n\nHint: Pass `allow_object=True` to accept any value and create a literal of type Object.",
+            value.get_type().qualname()?,
+            value.repr()?
         )))
     }
 }
