@@ -10,9 +10,9 @@ use serde::{Deserialize, Serialize};
 use super::hive::HivePartitions;
 use crate::prelude::*;
 
-impl LogicalPlan {
+impl DslPlan {
     pub fn schema(&self) -> PolarsResult<Cow<'_, SchemaRef>> {
-        use LogicalPlan::*;
+        use DslPlan::*;
         match self {
             Scan { file_info, .. } => Ok(Cow::Borrowed(&file_info.schema)),
             #[cfg(feature = "python")]
