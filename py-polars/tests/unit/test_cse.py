@@ -700,7 +700,7 @@ def test_cse_predicate_self_join(capfd: Any, monkeypatch: Any) -> None:
     assert "CACHE HIT" in captured
 
 
-def test_cse_manual_cache() -> None:
+def test_cse_manual_cache_15688() -> None:
     df = pl.LazyFrame(
         {"a": [1, 2, 3, 1, 2, 3], "b": [1, 1, 1, 1, 1, 1], "id": [1, 1, 1, 2, 2, 2]}
     )
