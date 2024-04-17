@@ -3762,7 +3762,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             .. note::
 
                 - This is currently not supported the streaming engine.
-                - This is only supported when joined by single columns.
         join_nulls
             Join on null values. By default null values will never produce matches.
         allow_parallel
