@@ -13,6 +13,16 @@ fn expand_expressions(
     Ok(to_expr_irs(exprs, expr_arena))
 }
 
+fn empty_df() -> IR {
+    IR::DataFrameScan {
+        df: Arc::new(Default::default()),
+        schema: Arc::new(Default::default()),
+        output_schema: None,
+        projection: None,
+        selection: None,
+    }
+}
+
 /// converts LogicalPlan to IR
 /// it adds expressions & lps to the respective arenas as it traverses the plan
 /// finally it returns the top node of the logical plan
@@ -33,7 +43,7 @@ pub fn to_alp(
         } => {
             if let Some(row_index) = &file_options.row_index {
                 let schema = Arc::make_mut(&mut file_info.schema);
-                schema
+                *schema = schema
                     .new_inserting_at_index(0, row_index.name.as_str().into(), IDX_DTYPE)
                     .unwrap();
             }
@@ -107,8 +117,7 @@ pub fn to_alp(
             let (exprs, schema) = prepare_projection(expr, &schema)?;
 
             if exprs.is_empty() {
-                // Ensure that input will be the `Default` impl which is an empty DF.
-                let _ = lp_arena.take(input);
+                lp_arena.replace(input, empty_df());
             }
 
             let schema = Arc::new(schema);
@@ -184,6 +193,15 @@ pub fn to_alp(
             right_on,
             options,
         } => {
+            for e in left_on.iter().chain(right_on.iter()) {
+                if has_expr(e, |e| matches!(e, Expr::Alias(_, _))) {
+                    polars_bail!(
+                        ComputeError:
+                        "'alias' is not allowed in a join key, use 'with_columns' first",
+                    )
+                }
+            }
+
             let input_left = to_alp(owned(input_left), expr_arena, lp_arena)?;
             let input_right = to_alp(owned(input_right), expr_arena, lp_arena)?;
 
@@ -225,11 +243,11 @@ pub fn to_alp(
         },
         DslPlan::MapFunction { input, function } => {
             let input = to_alp(owned(input), expr_arena, lp_arena)?;
-            let schema = lp_arena.get(input).schema(lp_arena);
+            let input_schema = lp_arena.get(input).schema(lp_arena);
 
             match function {
                 DslFunction::FillNan(fill_value) => {
-                    let exprs = schema
+                    let exprs = input_schema
                         .iter()
                         .filter_map(|(name, dtype)| match dtype {
                             DataType::Float32 | DataType::Float64 => {
@@ -260,22 +278,24 @@ pub fn to_alp(
                                 .collect::<Vec<_>>(),
                         ),
                     }?;
+                    let predicate = rewrite_projections(vec![predicate], &input_schema, &[])?
+                        .pop()
+                        .unwrap();
                     let predicate = to_expr_ir(predicate, expr_arena);
                     IR::Filter { predicate, input }
                 },
                 DslFunction::Drop(to_drop) => {
                     let mut output_schema =
-                        Schema::with_capacity(schema.len().saturating_sub(to_drop.len()));
+                        Schema::with_capacity(input_schema.len().saturating_sub(to_drop.len()));
 
-                    for (col_name, dtype) in schema.iter() {
+                    for (col_name, dtype) in input_schema.iter() {
                         if !to_drop.contains(col_name.as_str()) {
                             output_schema.with_column(col_name.clone(), dtype.clone());
                         }
                     }
 
                     if output_schema.is_empty() {
-                        // Ensure that input will be the `Default` impl which is an empty DF.
-                        let _ = lp_arena.take(input);
+                        lp_arena.replace(input, empty_df());
                     }
 
                     IR::SimpleProjection {
@@ -289,17 +309,17 @@ pub fn to_alp(
                         StatsFunction::Var { ddof } => stats_helper(
                             |dt| dt.is_numeric() || dt.is_bool(),
                             |name| col(name).var(ddof),
-                            &schema,
+                            &input_schema,
                         ),
                         StatsFunction::Std { ddof } => stats_helper(
                             |dt| dt.is_numeric() || dt.is_bool(),
                             |name| col(name).std(ddof),
-                            &schema,
+                            &input_schema,
                         ),
                         StatsFunction::Quantile { quantile, interpol } => stats_helper(
                             |dt| dt.is_numeric(),
                             |name| col(name).quantile(quantile.clone(), interpol),
-                            &schema,
+                            &input_schema,
                         ),
                         StatsFunction::Mean => stats_helper(
                             |dt| {
@@ -313,7 +333,7 @@ pub fn to_alp(
                                     )
                             },
                             |name| col(name).mean(),
-                            &schema,
+                            &input_schema,
                         ),
                         StatsFunction::Sum => stats_helper(
                             |dt| {
@@ -322,13 +342,13 @@ pub fn to_alp(
                                     || matches!(dt, DataType::Boolean | DataType::Duration(_))
                             },
                             |name| col(name).sum(),
-                            &schema,
+                            &input_schema,
                         ),
                         StatsFunction::Min => {
-                            stats_helper(|dt| dt.is_ord(), |name| col(name).min(), &schema)
+                            stats_helper(|dt| dt.is_ord(), |name| col(name).min(), &input_schema)
                         },
                         StatsFunction::Max => {
-                            stats_helper(|dt| dt.is_ord(), |name| col(name).max(), &schema)
+                            stats_helper(|dt| dt.is_ord(), |name| col(name).max(), &input_schema)
                         },
                         StatsFunction::Median => stats_helper(
                             |dt| {
@@ -342,11 +362,14 @@ pub fn to_alp(
                                     )
                             },
                             |name| col(name).median(),
-                            &schema,
+                            &input_schema,
                         ),
                     };
-                    let schema =
-                        Arc::new(expressions_to_schema(&exprs, &schema, Context::Default)?);
+                    let schema = Arc::new(expressions_to_schema(
+                        &exprs,
+                        &input_schema,
+                        Context::Default,
+                    )?);
                     let eirs = to_expr_irs(exprs, expr_arena);
                     let expr = eirs.into();
                     IR::Select {
@@ -360,15 +383,10 @@ pub fn to_alp(
                     }
                 },
                 _ => {
-                    let function = function.into_function_node(&schema)?;
+                    let function = function.into_function_node(&input_schema)?;
                     IR::MapFunction { input, function }
                 },
             }
-        },
-        DslPlan::Error { err, .. } => {
-            // We just take the error. The LogicalPlan should not be used anymore once this
-            // is taken.
-            return Err(err.take());
         },
         DslPlan::ExtContext { input, contexts } => {
             let input = to_alp(owned(input), expr_arena, lp_arena)?;
@@ -502,7 +520,7 @@ fn resolve_group_by(
     let current_schema = lp_arena.get(input).schema(lp_arena);
     let current_schema = current_schema.as_ref();
     let keys = rewrite_projections(keys, current_schema, &[])?;
-    let aggs = rewrite_projections(aggs, current_schema, &[])?;
+    let aggs = rewrite_projections(aggs, current_schema, &keys)?;
 
     // Initialize schema from keys
     let mut schema = expressions_to_schema(&keys, current_schema, Context::Default)?;

@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use polars_core::prelude::*;
 use recursive::recursive;
@@ -64,68 +64,6 @@ pub enum Context {
     Aggregation,
     /// Any operation that is done while projection/ selection of data
     Default,
-}
-
-#[derive(Debug)]
-pub(crate) struct ErrorStateUnsync {
-    n_times: usize,
-    err: PolarsError,
-}
-
-#[derive(Clone)]
-pub struct ErrorState(pub(crate) Arc<Mutex<ErrorStateUnsync>>);
-
-impl std::fmt::Debug for ErrorState {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let this = self.0.lock().unwrap();
-        // Skip over the Arc<Mutex<ErrorStateUnsync>> and just print the fields we care
-        // about. Technically this is misleading, but the insides of ErrorState are not
-        // public, so this only affects authors of polars, not users (and the odds that
-        // this affects authors is slim)
-        f.debug_struct("ErrorState")
-            .field("n_times", &this.n_times)
-            .field("err", &this.err)
-            .finish()
-    }
-}
-
-impl From<PolarsError> for ErrorState {
-    fn from(err: PolarsError) -> Self {
-        Self(Arc::new(Mutex::new(ErrorStateUnsync { n_times: 0, err })))
-    }
-}
-
-impl ErrorState {
-    fn take(&self) -> PolarsError {
-        let mut this = self.0.lock().unwrap();
-
-        let ret_err = if this.n_times == 0 {
-            this.err.wrap_msg(&|msg| msg.to_owned())
-        } else {
-            this.err.wrap_msg(&|msg| {
-                let n_times = this.n_times;
-
-                let plural_s;
-                let was_were;
-
-                if n_times == 1 {
-                    plural_s = "";
-                    was_were = "was"
-                } else {
-                    plural_s = "s";
-                    was_were = "were";
-                };
-                format!(
-                    "{msg}\n\nLogicalPlan had already failed with the above error; \
-                     after failure, {n_times} additional operation{plural_s} \
-                     {was_were} attempted on the LazyFrame",
-                )
-            })
-        };
-        this.n_times += 1;
-
-        ret_err
-    }
 }
 
 // https://stackoverflow.com/questions/1031076/what-are-projection-and-selection
@@ -224,12 +162,6 @@ pub enum DslPlan {
         schema: SchemaRef,
         options: HConcatOptions,
     },
-    /// Catches errors and throws them later
-    #[cfg_attr(feature = "serde", serde(skip))]
-    Error {
-        input: Arc<DslPlan>,
-        err: ErrorState,
-    },
     /// This allows expressions to access other tables
     ExtContext {
         input: Arc<DslPlan>,
@@ -265,7 +197,6 @@ impl Clone for DslPlan {
             Self::MapFunction { input, function } => Self::MapFunction { input: input.clone(), function: function.clone() },
             Self::Union { inputs, options } => Self::Union { inputs: inputs.clone(), options: options.clone() },
             Self::HConcat { inputs, schema, options } => Self::HConcat { inputs: inputs.clone(), schema: schema.clone(), options: options.clone() },
-            Self::Error { input, err } => Self::Error { input: input.clone(), err: err.clone() },
             Self::ExtContext { input, contexts, } => Self::ExtContext { input: input.clone(), contexts: contexts.clone() },
             Self::Sink { input, payload } => Self::Sink { input: input.clone(), payload: payload.clone() },
         }

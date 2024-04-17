@@ -48,10 +48,10 @@ pub enum StatsFunction {
 }
 
 impl DslFunction {
-    pub(crate) fn into_function_node(self, schema: &Schema) -> PolarsResult<FunctionNode> {
+    pub(crate) fn into_function_node(self, input_schema: &Schema) -> PolarsResult<FunctionNode> {
         let function = match self {
             DslFunction::Explode { columns } => {
-                let columns = rewrite_projections(columns, schema, &[])?;
+                let columns = rewrite_projections(columns, input_schema, &[])?;
                 // columns to string
                 let columns = columns
                     .iter()
@@ -79,11 +79,11 @@ impl DslFunction {
                 schema: Default::default(),
             },
             DslFunction::Rename { existing, new } => {
-                let swapping = new.iter().any(|name| schema.get(name).is_some());
+                let swapping = new.iter().any(|name| input_schema.get(name).is_some());
 
                 // Check if the name exists.
-                for name in new.iter() {
-                    let _ = schema.try_get(name)?;
+                for name in existing.iter() {
+                    let _ = input_schema.try_get(name)?;
                 }
 
                 FunctionNode::Rename {

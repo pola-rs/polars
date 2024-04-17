@@ -451,14 +451,6 @@ impl DslBuilder {
         .into()
     }
 
-    pub fn add_err(self, err: PolarsError) -> Self {
-        DslPlan::Error {
-            input: Arc::new(self.0),
-            err: err.into(),
-        }
-        .into()
-    }
-
     pub fn with_context(self, contexts: Vec<DslPlan>) -> Self {
         DslPlan::ExtContext {
             input: Arc::new(self.0),
@@ -582,20 +574,6 @@ impl DslBuilder {
         right_on: Vec<Expr>,
         options: Arc<JoinOptions>,
     ) -> Self {
-        for e in left_on.iter().chain(right_on.iter()) {
-            if has_expr(e, |e| matches!(e, Expr::Alias(_, _))) {
-                return DslPlan::Error {
-                    input: Arc::new(self.0),
-                    err: polars_err!(
-                        ComputeError:
-                        "'alias' is not allowed in a join key, use 'with_columns' first",
-                    )
-                    .into(),
-                }
-                .into();
-            }
-        }
-
         DslPlan::Join {
             input_left: Arc::new(self.0),
             input_right: Arc::new(other),
