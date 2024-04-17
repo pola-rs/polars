@@ -238,7 +238,6 @@ pub enum DslPlan {
     ExtContext {
         input: Arc<DslPlan>,
         contexts: Vec<DslPlan>,
-        schema: SchemaRef,
     },
     Sink {
         input: Arc<DslPlan>,
@@ -263,7 +262,7 @@ impl Clone for DslPlan {
             Self::Select { expr, input, schema, options } => Self::Select { expr: expr.clone(), input: input.clone(), schema: schema.clone(), options: options.clone() },
             Self::GroupBy { input, keys, aggs, schema, apply, maintain_order, options } => Self::GroupBy { input: input.clone(), keys: keys.clone(), aggs: aggs.clone(), schema: schema.clone(), apply: apply.clone(), maintain_order: maintain_order.clone(), options: options.clone() },
             Self::Join { input_left, input_right, schema, left_on, right_on, options } => Self::Join { input_left: input_left.clone(), input_right: input_right.clone(), schema: schema.clone(), left_on: left_on.clone(), right_on: right_on.clone(), options: options.clone() },
-            Self::HStack { input, exprs, schema, options } => Self::HStack { input: input.clone(), exprs: exprs.clone(), schema: schema.clone(), options: options.clone() },
+            Self::HStack { input, exprs, options } => Self::HStack { input: input.clone(), exprs: exprs.clone(),  options: options.clone() },
             Self::Distinct { input, options } => Self::Distinct { input: input.clone(), options: options.clone() },
             Self::Sort {input,by_column, slice, sort_options } => Self::Sort { input: input.clone(), by_column: by_column.clone(), slice: slice.clone(), sort_options: sort_options.clone() },
             Self::Slice { input, offset, len } => Self::Slice { input: input.clone(), offset: offset.clone(), len: len.clone() },
@@ -271,7 +270,7 @@ impl Clone for DslPlan {
             Self::Union { inputs, options } => Self::Union { inputs: inputs.clone(), options: options.clone() },
             Self::HConcat { inputs, schema, options } => Self::HConcat { inputs: inputs.clone(), schema: schema.clone(), options: options.clone() },
             Self::Error { input, err } => Self::Error { input: input.clone(), err: err.clone() },
-            Self::ExtContext { input, contexts, schema } => Self::ExtContext { input: input.clone(), contexts: contexts.clone(), schema: schema.clone() },
+            Self::ExtContext { input, contexts, } => Self::ExtContext { input: input.clone(), contexts: contexts.clone() },
             Self::Sink { input, payload } => Self::Sink { input: input.clone(), payload: payload.clone() },
         }
     }

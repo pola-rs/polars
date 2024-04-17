@@ -209,17 +209,27 @@ pub fn to_alp(
         DslPlan::ExtContext {
             input,
             contexts,
-            schema,
         } => {
             let input = to_alp(owned(input), expr_arena, lp_arena)?;
             let contexts = contexts
                 .into_iter()
                 .map(|lp| to_alp(lp, expr_arena, lp_arena))
-                .collect::<PolarsResult<_>>()?;
+                .collect::<PolarsResult<Vec<_>>>()?;
+
+            let mut schema = (**lp_arena.get(input).schema(lp_arena)).clone();
+            for input in &contexts {
+                let other_schema = lp_arena.get(*input).schema(lp_arena);
+                for fld in other_schema.iter_fields() {
+                    if schema.get(fld.name()).is_none() {
+                        schema.with_column(fld.name, fld.dtype);
+                    }
+                }
+            }
+
             IR::ExtContext {
                 input,
                 contexts,
-                schema,
+                schema: Arc::new(schema),
             }
         },
         DslPlan::Sink { input, payload } => {

@@ -43,7 +43,7 @@ impl DslPlan {
                 }
             },
             Error { err, .. } => Err(err.take()),
-            ExtContext { schema, .. } => Ok(Cow::Borrowed(schema)),
+            ExtContext { .. } => unimplemented!(),
         }
     }
 }

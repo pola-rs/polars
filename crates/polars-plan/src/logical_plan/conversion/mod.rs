@@ -205,8 +205,8 @@ impl IR {
             IR::HStack {
                 input,
                 exprs,
-                schema,
                 options,
+                ..
             } => {
                 let i = convert_to_lp(input, lp_arena);
                 let exprs = expr_irs_to_exprs(exprs.all_exprs(), expr_arena);
@@ -214,7 +214,6 @@ impl IR {
                 DslPlan::HStack {
                     input: Arc::new(i),
                     exprs,
-                    schema,
                     options,
                 }
             },
@@ -232,7 +231,7 @@ impl IR {
             IR::ExtContext {
                 input,
                 contexts,
-                schema,
+                ..
             } => {
                 let input = Arc::new(convert_to_lp(input, lp_arena));
                 let contexts = contexts
@@ -242,7 +241,6 @@ impl IR {
                 DslPlan::ExtContext {
                     input,
                     contexts,
-                    schema,
                 }
             },
             IR::Sink { input, payload } => {

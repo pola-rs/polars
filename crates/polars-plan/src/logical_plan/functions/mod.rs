@@ -14,7 +14,6 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use polars_core::prelude::*;
-use schema::CachedSchema;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use smartstring::alias::String as SmartString;

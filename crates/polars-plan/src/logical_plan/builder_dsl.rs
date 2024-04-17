@@ -579,24 +579,9 @@ impl DslBuilder {
     }
 
     pub fn with_context(self, contexts: Vec<DslPlan>) -> Self {
-        let mut schema = try_delayed!(self.0.schema(), &self.0, into)
-            .as_ref()
-            .as_ref()
-            .clone();
-
-        for lp in &contexts {
-            let other_schema = try_delayed!(lp.schema(), lp, into);
-
-            for fld in other_schema.iter_fields() {
-                if schema.get(fld.name()).is_none() {
-                    schema.with_column(fld.name, fld.dtype);
-                }
-            }
-        }
         DslPlan::ExtContext {
             input: Arc::new(self.0),
             contexts,
-            schema: Arc::new(schema),
         }
         .into()
     }
