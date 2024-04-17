@@ -733,10 +733,10 @@ impl DslBuilder {
         }
         .into()
     }
-    pub fn map_private(self, function: FunctionNode) -> Self {
+    pub fn map_private(self, function: DslFunction) -> Self {
         DslPlan::MapFunction {
             input: Arc::new(self.0),
-            function: DslFunction::Opaque(function),
+            function,
         }
         .into()
     }
@@ -751,7 +751,7 @@ impl DslBuilder {
     ) -> Self {
         DslPlan::MapFunction {
             input: Arc::new(self.0),
-            function: DslFunction::Opaque(FunctionNode::OpaquePython {
+            function: DslFunction::FunctionNode(FunctionNode::OpaquePython {
                 function,
                 schema,
                 predicate_pd: optimizations.predicate_pushdown,
@@ -777,7 +777,7 @@ impl DslBuilder {
 
         DslPlan::MapFunction {
             input: Arc::new(self.0),
-            function: DslFunction::Opaque(FunctionNode::Opaque {
+            function: DslFunction::FunctionNode(FunctionNode::Opaque {
                 function,
                 schema,
                 predicate_pd: optimizations.predicate_pushdown,

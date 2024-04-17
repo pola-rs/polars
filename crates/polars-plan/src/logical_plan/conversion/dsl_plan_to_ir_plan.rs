@@ -25,18 +25,25 @@ pub fn to_alp(
     let owned = Arc::unwrap_or_clone;
     let v = match lp {
         DslPlan::Scan {
-            file_info,
+            mut file_info,
             paths,
             predicate,
             scan_type,
-            file_options: options,
-        } => IR::Scan {
-            file_info,
-            paths,
-            output_schema: None,
-            predicate: predicate.map(|expr| to_expr_ir(expr, expr_arena)),
-            scan_type,
-            file_options: options,
+            file_options
+        } => {
+            if let Some(row_index) = &file_options.row_index  {
+                let schema = Arc::make_mut(&mut file_info.schema);
+                schema.new_inserting_at_index(0, row_index.name.as_str().into(), IDX_DTYPE).unwrap();
+            }
+
+            IR::Scan {
+                file_info,
+                paths,
+                output_schema: None,
+                predicate: predicate.map(|expr| to_expr_ir(expr, expr_arena)),
+                scan_type,
+                file_options
+            }
         },
         #[cfg(feature = "python")]
         DslPlan::PythonScan { options } => IR::PythonScan {

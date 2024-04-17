@@ -85,7 +85,7 @@ impl FunctionNode {
             },
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => Ok(Cow::Borrowed(input_schema)),
-            Rename { existing, new, .. } => rename::rename_schema(input_schema, existing, new),
+            Rename { existing, new, .. } => rename_schema(input_schema, existing, new),
             RowIndex { schema, name, .. } => {
                 Ok(Cow::Owned(row_index_schema(schema, input_schema, name)))
             },
@@ -182,4 +182,21 @@ fn melt_schema<'a>(args: &MeltArgs,
     let schema = Arc::new(new_schema);
     *guard = Some(schema.clone());
     Ok(Cow::Owned(schema))
+}
+
+fn rename_schema<'a>(
+    input_schema: &'a SchemaRef,
+    existing: &[SmartString],
+    new: &[SmartString],
+) -> PolarsResult<Cow<'a, SchemaRef>> {
+    let mut new_schema = input_schema.iter_fields().collect::<Vec<_>>();
+
+    for (old, new) in existing.iter().zip(new.iter()) {
+        // The column might be removed due to projection pushdown
+        // so we only update if we can find it.
+        if let Some((idx, _, _)) = input_schema.get_full(old) {
+            new_schema[idx].name = new.as_str().into();
+        }
+    }
+    Ok(Cow::Owned(Arc::new(new_schema.into_iter().collect())))
 }

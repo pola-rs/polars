@@ -5,7 +5,7 @@ use super::*;
 #[derive(Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum DslFunction {
-    Opaque(FunctionNode),
+    FunctionNode(FunctionNode),
     Explode{
         columns: Vec<Expr>
     },
@@ -16,6 +16,10 @@ pub enum DslFunction {
         name: Arc<str>,
         offset: Option<IdxSize>,
     },
+    Rename {
+        existing: Arc<[SmartString]>,
+        new: Arc<[SmartString]>,
+    }
 }
 
 
@@ -41,8 +45,22 @@ impl DslFunction {
                 }
             },
             DslFunction::Melt {args} => FunctionNode::Melt {args: Arc::new(args), schema: Default::default()},
-            DslFunction::Opaque(func) => func,
-            DslFunction::RowIndex {name, offset} => FunctionNode::RowIndex {name, offset, schema: Default::default()}
+            DslFunction::FunctionNode(func) => func,
+            DslFunction::RowIndex {name, offset} => FunctionNode::RowIndex {name, offset, schema: Default::default()},
+            DslFunction::Rename {existing, new} => {
+                let swapping = new.iter().any(|name| schema.get(name).is_some());
+
+                // Check if the name exists.
+                for name in new.iter() {
+                    let _ = schema.try_get(name)?;
+                }
+
+                FunctionNode::Rename {
+                    existing,
+                    new,
+                    swapping
+                }
+            }
         };
         Ok(function)
     }
@@ -59,7 +77,7 @@ impl Display for DslFunction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use DslFunction::*;
         match self {
-            Opaque(inner) => write!(f, "{inner}"),
+            FunctionNode(inner) => write!(f, "{inner}"),
             Explode { .. } => write!(f, "EXPLODE"),
             Melt { .. } => write!(f, "MELT"),
             RowIndex { .. } => write!(f, "WITH ROW INDEX"),
@@ -87,7 +105,7 @@ impl Display for DslFunction {
             //         writeln!(f, "STREAMING")
             //     }
             // },
-            // Rename { .. } => write!(f, "RENAME"),
+            Rename { .. } => write!(f, "RENAME"),
         }
     }
 }
@@ -95,6 +113,6 @@ impl Display for DslFunction {
 
 impl From<FunctionNode> for DslFunction {
     fn from(value: FunctionNode) -> Self {
-        DslFunction::Opaque(value)
+        DslFunction::FunctionNode(value)
     }
 }

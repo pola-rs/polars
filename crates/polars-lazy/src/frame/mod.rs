@@ -378,34 +378,6 @@ impl LazyFrame {
         self.select(vec![col("*").reverse()])
     }
 
-    /// Check the if the `names` are available in the `schema`, if not
-    /// return a `LogicalPlan` that raises an `Error`.
-    fn check_names(&self, names: &[SmartString], schema: Option<&SchemaRef>) -> Option<Self> {
-        let schema = schema
-            .map(Cow::Borrowed)
-            .unwrap_or_else(|| Cow::Owned(self.schema().unwrap()));
-
-        let mut opt_not_found = None;
-        names.iter().for_each(|name| {
-            let invalid = schema.get(name).is_none();
-
-            if invalid && opt_not_found.is_none() {
-                opt_not_found = Some(name)
-            }
-        });
-
-        if let Some(name) = opt_not_found {
-            let lp = self
-                .clone()
-                .get_plan_builder()
-                .add_err(polars_err!(SchemaFieldNotFound: "{}", name))
-                .build();
-            Some(Self::from_logical_plan(lp, self.opt_state))
-        } else {
-            None
-        }
-    }
-
     /// Rename columns in the DataFrame.
     ///
     /// `existing` and `new` are iterables of the same length containing the old and
@@ -435,19 +407,10 @@ impl LazyFrame {
             }
         }
 
-        // a column gets swapped
-        let schema = &self.schema().unwrap();
-        let swapping = new_vec.iter().any(|name| schema.get(name).is_some());
-
-        if let Some(lp) = self.check_names(&existing_vec, Some(schema)) {
-            lp
-        } else {
-            self.map_private(FunctionNode::Rename {
-                existing: existing_vec.into(),
-                new: new_vec.into(),
-                swapping,
-            })
-        }
+        self.map_private(DslFunction::Rename {
+            existing: existing_vec.into(),
+            new: new_vec.into(),
+        })
     }
 
     /// Removes columns from the DataFrame.
@@ -1655,7 +1618,7 @@ impl LazyFrame {
         Self::from_logical_plan(lp, opt_state)
     }
 
-    pub(crate) fn map_private(self, function: FunctionNode) -> LazyFrame {
+    pub(crate) fn map_private(self, function: DslFunction) -> LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self.get_plan_builder().map_private(function).build();
         Self::from_logical_plan(lp, opt_state)
@@ -1673,7 +1636,6 @@ impl LazyFrame {
         let add_row_index_in_map = match &mut self.logical_plan {
             DslPlan::Scan {
                 file_options: options,
-                file_info,
                 scan_type,
                 ..
             } if !matches!(scan_type, FileScan::Anonymous { .. }) => {
@@ -1681,22 +1643,15 @@ impl LazyFrame {
                     name: name.to_string(),
                     offset: offset.unwrap_or(0),
                 });
-                file_info.schema = Arc::new(
-                    file_info
-                        .schema
-                        .new_inserting_at_index(0, name.into(), IDX_DTYPE)
-                        .unwrap(),
-                );
                 false
             },
             _ => true,
         };
 
         if add_row_index_in_map {
-            self.map_private(FunctionNode::RowIndex {
+            self.map_private(DslFunction::RowIndex {
                 name: Arc::from(name),
                 offset,
-                schema: Default::default(),
             })
         } else {
             self
@@ -1712,9 +1667,9 @@ impl LazyFrame {
     /// inserted as columns.
     #[cfg(feature = "dtype-struct")]
     pub fn unnest<I: IntoIterator<Item = S>, S: AsRef<str>>(self, cols: I) -> Self {
-        self.map_private(FunctionNode::Unnest {
+        self.map_private(DslFunction::FunctionNode(FunctionNode::Unnest {
             columns: cols.into_iter().map(|s| Arc::from(s.as_ref())).collect(),
-        })
+        }))
     }
 
     #[cfg(feature = "merge_sorted")]
@@ -1723,7 +1678,7 @@ impl LazyFrame {
         // this indicates until which chunk the data is from the left df
         // this trick allows us to reuse the `Union` architecture to get map over
         // two DataFrames
-        let left = self.map_private(FunctionNode::Rechunk);
+        let left = self.map_private(DslFunction::FunctionNode(FunctionNode::Rechunk));
         let q = concat(
             &[left, other],
             UnionArgs {
@@ -1732,9 +1687,9 @@ impl LazyFrame {
                 ..Default::default()
             },
         )?;
-        Ok(q.map_private(FunctionNode::MergeSorted {
+        Ok(q.map_private(DslFunction::FunctionNode(FunctionNode::MergeSorted {
             column: Arc::from(key),
-        }))
+        })))
     }
 }
 
