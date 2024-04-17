@@ -1,5 +1,6 @@
 use super::*;
 use crate::logical_plan::expr_expansion::{is_regex_projection, rewrite_projections};
+use crate::logical_plan::projection_expr::ProjectionExprs;
 
 fn expand_expressions(
     input: Node,
@@ -197,9 +198,7 @@ pub fn to_alp(
             options,
         } => {
             let input = to_alp(owned(input), expr_arena, lp_arena)?;
-            let (exprs, schema) = resolve_with_columns(exprs, input, lp_arena)?;
-            let eirs = to_expr_irs(exprs, expr_arena);
-            let exprs = eirs.into();
+            let (exprs, schema) = resolve_with_columns(exprs, input, lp_arena, expr_arena)?;
             IR::HStack {
                 input,
                 exprs,
@@ -216,6 +215,41 @@ pub fn to_alp(
             let schema = lp_arena.get(input).schema(lp_arena);
 
             match function {
+                DslFunction::FillNan(fill_value) => {
+                    let exprs = schema
+                        .iter()
+                        .filter_map(|(name, dtype)| match dtype {
+                            DataType::Float32 | DataType::Float64 => {
+                                Some(col(name).fill_nan(fill_value.clone()).alias(name))
+                            },
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>();
+
+                    let (exprs, schema) = resolve_with_columns(exprs, input, lp_arena, expr_arena)?;
+                    IR::HStack {
+                        input,
+                        exprs,
+                        schema,
+                        options: ProjectionOptions {
+                            duplicate_check: false,
+                            ..Default::default()
+                        },
+                    }
+                },
+                DslFunction::DropNulls(subset) => {
+                    let predicate = match subset {
+                        None => all_horizontal([col("*").is_not_null()]),
+                        Some(subset) => all_horizontal(
+                            subset
+                                .into_iter()
+                                .map(|e| e.is_not_null())
+                                .collect::<Vec<_>>(),
+                        ),
+                    }?;
+                    let predicate = to_expr_ir(predicate, expr_arena);
+                    IR::Filter { predicate, input }
+                },
                 DslFunction::Stats(sf) => {
                     let exprs = match sf {
                         StatsFunction::Var { ddof } => stats_helper(
@@ -391,7 +425,8 @@ fn resolve_with_columns(
     exprs: Vec<Expr>,
     input: Node,
     lp_arena: &Arena<IR>,
-) -> PolarsResult<(Vec<Expr>, SchemaRef)> {
+    expr_arena: &mut Arena<AExpr>,
+) -> PolarsResult<(ProjectionExprs, SchemaRef)> {
     let schema = lp_arena.get(input).schema(lp_arena);
     let mut new_schema = (**schema).clone();
     let (exprs, _) = prepare_projection(exprs, &schema)?;
@@ -417,6 +452,8 @@ fn resolve_with_columns(
         arena.clear();
     }
 
+    let eirs = to_expr_irs(exprs, expr_arena);
+    let exprs = eirs.into();
     Ok((exprs, Arc::new(new_schema)))
 }
 

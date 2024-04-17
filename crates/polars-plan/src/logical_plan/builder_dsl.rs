@@ -513,47 +513,11 @@ impl DslBuilder {
     }
 
     pub fn drop_nulls(self, subset: Option<Vec<Expr>>) -> Self {
-        match subset {
-            None => {
-                let predicate =
-                    try_delayed!(all_horizontal([col("*").is_not_null()]), &self.0, into);
-                self.filter(predicate)
-            },
-            Some(subset) => {
-                let predicate = try_delayed!(
-                    all_horizontal(
-                        subset
-                            .into_iter()
-                            .map(|e| e.is_not_null())
-                            .collect::<Vec<_>>(),
-                    ),
-                    &self.0,
-                    into
-                );
-                self.filter(predicate)
-            },
-        }
+        self.map_private(DslFunction::DropNulls(subset))
     }
 
     pub fn fill_nan(self, fill_value: Expr) -> Self {
-        let schema = try_delayed!(self.0.schema(), &self.0, into);
-
-        let exprs = schema
-            .iter()
-            .filter_map(|(name, dtype)| match dtype {
-                DataType::Float32 | DataType::Float64 => {
-                    Some(col(name).fill_nan(fill_value.clone()).alias(name))
-                },
-                _ => None,
-            })
-            .collect();
-        self.with_columns(
-            exprs,
-            ProjectionOptions {
-                run_parallel: false,
-                duplicate_check: false,
-            },
-        )
+        self.map_private(DslFunction::FillNan(fill_value))
     }
 
     pub fn with_columns(self, exprs: Vec<Expr>, options: ProjectionOptions) -> Self {

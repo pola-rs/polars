@@ -23,7 +23,7 @@ pub fn any_horizontal(s: &[Series]) -> PolarsResult<Series> {
     Ok(out.into_series())
 }
 
-pub fn all_horizontal(s: &[Series]) -> PolarsResult<Series> {
+pub fn all_horizontal_impl(s: &[Series]) -> PolarsResult<Series> {
     let out = POOL
         .install(|| {
             s.par_iter()

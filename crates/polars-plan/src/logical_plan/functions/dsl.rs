@@ -21,6 +21,9 @@ pub enum DslFunction {
         new: Arc<[SmartString]>,
     },
     Stats(StatsFunction),
+    /// FillValue
+    FillNan(Expr),
+    DropNulls(Option<Vec<Expr>>),
 }
 
 #[derive(Clone)]
@@ -88,8 +91,9 @@ impl DslFunction {
                     swapping,
                 }
             },
-            DslFunction::Stats(_) => {
-                polars_bail!(ComputeError: "cannot convert StatsFunction into FunctionNode")
+            DslFunction::Stats(_) | DslFunction::FillNan(_) | DslFunction::DropNulls(_) => {
+                // We should not reach this.
+                panic!("impl error")
             },
         };
         Ok(function)
@@ -111,6 +115,8 @@ impl Display for DslFunction {
             Melt { .. } => write!(f, "MELT"),
             RowIndex { .. } => write!(f, "WITH ROW INDEX"),
             Stats(_) => write!(f, "STATS"),
+            FillNan(_) => write!(f, "FILL NAN"),
+            DropNulls(_) => write!(f, "DROP NULLS"),
             // DropNulls { subset } => {
             //     write!(f, "DROP_NULLS by: ")?;
             //     let subset = subset.as_ref();
