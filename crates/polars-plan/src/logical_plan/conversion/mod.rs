@@ -166,15 +166,14 @@ impl IR {
                 options: dynamic_options,
             } => {
                 let i = convert_to_lp(input, lp_arena);
-                let keys = Arc::new(expr_irs_to_exprs(keys, expr_arena));
+                let keys = expr_irs_to_exprs(keys, expr_arena);
                 let aggs = expr_irs_to_exprs(aggs, expr_arena);
 
                 DslPlan::GroupBy {
                     input: Arc::new(i),
                     keys,
                     aggs,
-                    schema,
-                    apply,
+                    apply: apply.map(|apply| (apply, schema)),
                     maintain_order,
                     options: dynamic_options,
                 }

@@ -599,73 +599,12 @@ impl DslBuilder {
         self,
         keys: Vec<Expr>,
         aggs: E,
-        apply: Option<Arc<dyn DataFrameUdf>>,
+        apply: Option<(Arc<dyn DataFrameUdf>, SchemaRef)>,
         maintain_order: bool,
         #[cfg(feature = "dynamic_group_by")] dynamic_options: Option<DynamicGroupOptions>,
         #[cfg(feature = "dynamic_group_by")] rolling_options: Option<RollingGroupOptions>,
     ) -> Self {
-        let current_schema = try_delayed!(self.0.schema(), &self.0, into);
-        let current_schema = current_schema.as_ref();
-        let keys = try_delayed!(
-            rewrite_projections(keys, current_schema, &[]),
-            &self.0,
-            into
-        );
-        let aggs = try_delayed!(
-            rewrite_projections(aggs.as_ref().to_vec(), current_schema, keys.as_ref()),
-            &self.0,
-            into
-        );
-
-        // Initialize schema from keys
-        let mut schema = try_delayed!(
-            expressions_to_schema(&keys, current_schema, Context::Default),
-            &self.0,
-            into
-        );
-
-        // Add dynamic groupby index column(s)
-        #[cfg(feature = "dynamic_group_by")]
-        {
-            if let Some(options) = rolling_options.as_ref() {
-                let name = &options.index_column;
-                let dtype = try_delayed!(current_schema.try_get(name), self.0, into);
-                schema.with_column(name.clone(), dtype.clone());
-            } else if let Some(options) = dynamic_options.as_ref() {
-                let name = &options.index_column;
-                let dtype = try_delayed!(current_schema.try_get(name), self.0, into);
-                if options.include_boundaries {
-                    schema.with_column("_lower_boundary".into(), dtype.clone());
-                    schema.with_column("_upper_boundary".into(), dtype.clone());
-                }
-                schema.with_column(name.clone(), dtype.clone());
-            }
-        }
-        let keys_index_len = schema.len();
-
-        // Add aggregation column(s)
-        let aggs_schema = try_delayed!(
-            expressions_to_schema(&aggs, current_schema, Context::Aggregation),
-            &self.0,
-            into
-        );
-        schema.merge(aggs_schema);
-
-        // Make sure aggregation columns do not contain keys or index columns
-        if schema.len() < (keys_index_len + aggs.len()) {
-            let check_names = || {
-                let mut names = PlHashSet::with_capacity(schema.len());
-                for expr in aggs.iter().chain(keys.iter()) {
-                    let name = expr_output_name(expr)?;
-                    if !names.insert(name.clone()) {
-                        polars_bail!(duplicate = name);
-                    }
-                }
-                Ok(())
-            };
-            try_delayed!(check_names(), &self.0, into)
-        }
-
+        let aggs = aggs.as_ref().to_vec();
         let options = GroupbyOptions {
             #[cfg(feature = "dynamic_group_by")]
             dynamic: dynamic_options,
@@ -676,9 +615,8 @@ impl DslBuilder {
 
         DslPlan::GroupBy {
             input: Arc::new(self.0),
-            keys: Arc::new(keys),
+            keys,
             aggs,
-            schema: Arc::new(schema),
             apply,
             maintain_order,
             options: Arc::new(options),

@@ -14,37 +14,7 @@ use crate::prelude::*;
 
 impl DslPlan {
     pub fn schema(&self) -> PolarsResult<Cow<'_, SchemaRef>> {
-        use DslPlan::*;
-        match self {
-            Scan { file_info, .. } => Ok(Cow::Borrowed(&file_info.schema)),
-            #[cfg(feature = "python")]
-            PythonScan { options } => Ok(Cow::Borrowed(&options.schema)),
-            Union { inputs, .. } => inputs[0].schema(),
-            HConcat { schema, .. } => Ok(Cow::Borrowed(schema)),
-            Cache { input, .. } => input.schema(),
-            Sort { input, .. } => input.schema(),
-            DataFrameScan { schema, .. } => Ok(Cow::Borrowed(schema)),
-            Filter { input, .. } => input.schema(),
-            Select { schema, .. } => Ok(Cow::Borrowed(schema)),
-            GroupBy { schema, .. } => Ok(Cow::Borrowed(schema)),
-            Join { schema, .. } => Ok(Cow::Borrowed(schema)),
-            HStack { .. } => {
-                unimplemented!()
-            },
-            Distinct { input, .. } | Sink { input, .. } => input.schema(),
-            Slice { input, .. } => input.schema(),
-            MapFunction {
-                input, function, ..
-            } => {
-                let input_schema = input.schema()?;
-                match input_schema {
-                    Cow::Owned(schema) => Ok(Cow::Owned(function.schema(&schema)?.into_owned())),
-                    Cow::Borrowed(schema) => function.schema(schema),
-                }
-            },
-            Error { err, .. } => Err(err.take()),
-            ExtContext { .. } => unimplemented!(),
-        }
+        unimplemented!()
     }
 }
 

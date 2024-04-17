@@ -135,17 +135,22 @@ pub fn to_alp(
             input,
             keys,
             aggs,
-            schema,
             apply,
             maintain_order,
             options,
         } => {
-            let i = to_alp(owned(input), expr_arena, lp_arena)?;
-            let aggs = to_expr_irs(aggs, expr_arena);
-            let keys = keys.convert(|e| to_expr_ir(e.clone(), expr_arena));
+            let input = to_alp(owned(input), expr_arena, lp_arena)?;
+
+            let (keys, aggs, schema) = resolve_group_by(input, keys, aggs, &options, lp_arena, expr_arena)?;
+
+            let (apply, schema) = if let Some((apply, schema)) = apply {
+                (Some(apply), schema)
+            } else {
+                (None, schema)
+            };
 
             IR::GroupBy {
-                input: i,
+                input,
                 keys,
                 aggs,
                 schema,
@@ -325,4 +330,58 @@ fn resolve_with_columns(
     }
 
     Ok((exprs, Arc::new(new_schema)))
+}
+
+
+fn resolve_group_by(
+    input: Node,
+    keys: Vec<Expr>,
+    aggs: Vec<Expr>,
+    options: &GroupbyOptions,
+    lp_arena: &Arena<IR>,
+    expr_arena: &mut Arena<AExpr>
+) -> PolarsResult<(Vec<ExprIR>, Vec<ExprIR>, SchemaRef)>{
+    let current_schema = lp_arena.get(input).schema(lp_arena);
+    let current_schema = current_schema.as_ref();
+    let keys = rewrite_projections(keys, current_schema, &[])?;
+    let aggs = rewrite_projections(aggs, current_schema, &[])?;
+
+    // Initialize schema from keys
+    let mut schema = expressions_to_schema(&keys, current_schema, Context::Default)?;
+
+    // Add dynamic groupby index column(s)
+    #[cfg(feature = "dynamic_group_by")]
+    {
+        if let Some(options) = options.rolling.as_ref() {
+            let name = &options.index_column;
+            let dtype = current_schema.try_get(name)?;
+            schema.with_column(name.clone(), dtype.clone());
+        } else if let Some(options) = options.dynamic.as_ref() {
+            let name = &options.index_column;
+            let dtype = current_schema.try_get(name)?;
+            if options.include_boundaries {
+                schema.with_column("_lower_boundary".into(), dtype.clone());
+                schema.with_column("_upper_boundary".into(), dtype.clone());
+            }
+            schema.with_column(name.clone(), dtype.clone());
+        }
+    }
+    let keys_index_len = schema.len();
+
+    // Add aggregation column(s)
+    let aggs_schema = expressions_to_schema(&aggs, current_schema, Context::Aggregation)?;
+    schema.merge(aggs_schema);
+
+    // Make sure aggregation columns do not contain keys or index columns
+    if schema.len() < (keys_index_len + aggs.len()) {
+            let mut names = PlHashSet::with_capacity(schema.len());
+            for expr in aggs.iter().chain(keys.iter()) {
+                let name = expr_output_name(expr)?;
+                polars_ensure!(names.insert(name.clone()), duplicate = name)
+            }
+    }
+    let aggs = to_expr_irs(aggs, expr_arena);
+    let keys = keys.convert(|e| to_expr_ir(e.clone(), expr_arena));
+
+    Ok((keys, aggs, Arc::new(schema)))
 }

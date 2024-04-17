@@ -1847,10 +1847,9 @@ impl LazyGroupBy {
 
         let lp = DslPlan::GroupBy {
             input: Arc::new(self.logical_plan),
-            keys: Arc::new(self.keys),
+            keys: self.keys,
             aggs: vec![],
-            schema,
-            apply: Some(Arc::new(f)),
+            apply: Some((Arc::new(f), schema)),
             maintain_order: self.maintain_order,
             options: Arc::new(options),
         };
