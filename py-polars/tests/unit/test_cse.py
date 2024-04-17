@@ -698,3 +698,20 @@ def test_cse_predicate_self_join(capfd: Any, monkeypatch: Any) -> None:
     assert y_xf_c.collect().to_dict(as_series=False) == {"a": [1], "b": [2]}
     captured = capfd.readouterr().err
     assert "CACHE HIT" in captured
+
+
+def test_cse_manual_cache_15688() -> None:
+    df = pl.LazyFrame(
+        {"a": [1, 2, 3, 1, 2, 3], "b": [1, 1, 1, 1, 1, 1], "id": [1, 1, 1, 2, 2, 2]}
+    )
+
+    df1 = df.filter(id=1).join(df.filter(id=2), on=["a", "b"], how="semi")
+    df2 = df.filter(id=1).join(df1, on=["a", "b"], how="semi")
+    df2 = df2.cache()
+    res = df2.group_by("b").agg(pl.all().sum())
+    assert res.cache().with_columns(foo=1).collect().to_dict(as_series=False) == {
+        "b": [1],
+        "a": [6],
+        "id": [3],
+        "foo": [1],
+    }
