@@ -59,8 +59,8 @@ fn to_aexprs(input: Vec<Expr>, arena: &mut Arena<AExpr>, state: &mut ConversionS
 }
 
 fn set_function_output_name<F>(e: &[ExprIR], state: &mut ConversionState, function_fmt: F)
-    where
-        F: FnOnce() -> Cow<'static, str>,
+where
+    F: FnOnce() -> Cow<'static, str>,
 {
     if state.output_name.is_none() {
         if e.is_empty() {

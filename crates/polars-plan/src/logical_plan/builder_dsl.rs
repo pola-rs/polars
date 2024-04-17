@@ -29,7 +29,7 @@ use polars_io::{
 
 use crate::constants::UNLIMITED_CACHE;
 use crate::dsl::functions::horizontal::all_horizontal;
-use crate::logical_plan::expr_expansion::{rewrite_projections};
+use crate::logical_plan::expr_expansion::rewrite_projections;
 #[cfg(feature = "python")]
 use crate::prelude::python_udf::PythonFunction;
 use crate::prelude::*;
@@ -652,7 +652,7 @@ impl DslBuilder {
     pub fn explode(self, columns: Vec<Expr>) -> Self {
         DslPlan::MapFunction {
             input: Arc::new(self.0),
-            function: DslFunction::Explode{columns}
+            function: DslFunction::Explode { columns },
         }
         .into()
     }

@@ -299,7 +299,10 @@ impl<'a> IRBuilder<'a> {
     pub fn melt(self, args: Arc<MeltArgs>) -> Self {
         let lp = IR::MapFunction {
             input: self.root,
-            function: FunctionNode::Melt { args, schema: Default::default() },
+            function: FunctionNode::Melt {
+                args,
+                schema: Default::default(),
+            },
         };
         self.add_alp(lp)
     }

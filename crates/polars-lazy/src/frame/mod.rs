@@ -1302,37 +1302,18 @@ impl LazyFrame {
         Self::from_logical_plan(lp, opt_state)
     }
 
-    fn stats_helper<F, E>(self, condition: F, expr: E) -> PolarsResult<LazyFrame>
-    where
-        F: Fn(&DataType) -> bool,
-        E: Fn(&str) -> Expr,
-    {
-        let exprs = self
-            .schema()?
-            .iter()
-            .map(|(name, dt)| {
-                if condition(dt) {
-                    expr(name)
-                } else {
-                    lit(NULL).cast(dt.clone()).alias(name)
-                }
-            })
-            .collect::<Vec<_>>();
-        Ok(self.select(exprs))
-    }
-
     /// Aggregate all the columns as their maximum values.
     ///
     /// Aggregated columns will have the same names as the original columns.
-    pub fn max(self) -> PolarsResult<LazyFrame> {
-        self.stats_helper(|dt| dt.is_ord(), |name| col(name).max())
+    pub fn max(self) -> Self {
+        self.map_private(DslFunction::Stats(StatsFunction::Max))
     }
 
     /// Aggregate all the columns as their minimum values.
     ///
     /// Aggregated columns will have the same names as the original columns.
-    pub fn min(self) -> PolarsResult<LazyFrame> {
-        self.stats_helper(|dt| dt.is_ord(), |name| col(name).min())
+    pub fn min(self) -> Self {
+        self.map_private(DslFunction::Stats(StatsFunction::Min))
     }
 
     /// Aggregate all the columns as their sum values.
@@ -1344,35 +1325,16 @@ impl LazyFrame {
     /// in `debug` mode, overflows will panic, whereas in `release` mode overflows will
     /// silently wrap.
     /// - String columns will sum to None.
-    pub fn sum(self) -> PolarsResult<LazyFrame> {
-        self.stats_helper(
-            |dt| {
-                dt.is_numeric()
-                    || dt.is_decimal()
-                    || matches!(dt, DataType::Boolean | DataType::Duration(_))
-            },
-            |name| col(name).sum(),
-        )
+    pub fn sum(self) -> Self {
+        self.map_private(DslFunction::Stats(StatsFunction::Sum))
     }
 
     /// Aggregate all the columns as their mean values.
     ///
     /// - Boolean and integer columns are converted to `f64` before computing the mean.
     /// - String columns will have a mean of None.
-    pub fn mean(self) -> PolarsResult<LazyFrame> {
-        self.stats_helper(
-            |dt| {
-                dt.is_numeric()
-                    || matches!(
-                        dt,
-                        DataType::Boolean
-                            | DataType::Duration(_)
-                            | DataType::Datetime(_, _)
-                            | DataType::Time
-                    )
-            },
-            |name| col(name).mean(),
-        )
+    pub fn mean(self) -> Self {
+        self.map_private(DslFunction::Stats(StatsFunction::Mean))
     }
 
     /// Aggregate all the columns as their median values.
@@ -1380,32 +1342,16 @@ impl LazyFrame {
     /// - Boolean and integer results are converted to `f64`. However, they are still
     ///   susceptible to overflow before this conversion occurs.
     /// - String columns will sum to None.
-    pub fn median(self) -> PolarsResult<LazyFrame> {
-        self.stats_helper(
-            |dt| {
-                dt.is_numeric()
-                    || matches!(
-                        dt,
-                        DataType::Boolean
-                            | DataType::Duration(_)
-                            | DataType::Datetime(_, _)
-                            | DataType::Time
-                    )
-            },
-            |name| col(name).median(),
-        )
+    pub fn median(self) -> Self {
+        self.map_private(DslFunction::Stats(StatsFunction::Median))
     }
 
     /// Aggregate all the columns as their quantile values.
-    pub fn quantile(
-        self,
-        quantile: Expr,
-        interpol: QuantileInterpolOptions,
-    ) -> PolarsResult<LazyFrame> {
-        self.stats_helper(
-            |dt| dt.is_numeric(),
-            |name| col(name).quantile(quantile.clone(), interpol),
-        )
+    pub fn quantile(self, quantile: Expr, interpol: QuantileInterpolOptions) -> Self {
+        self.map_private(DslFunction::Stats(StatsFunction::Quantile {
+            quantile,
+            interpol,
+        }))
     }
 
     /// Aggregate all the columns as their standard deviation values.
@@ -1420,11 +1366,8 @@ impl LazyFrame {
     /// > standard deviation per se.
     ///
     /// Source: [Numpy](https://numpy.org/doc/stable/reference/generated/numpy.std.html#)
-    pub fn std(self, ddof: u8) -> PolarsResult<LazyFrame> {
-        self.stats_helper(
-            |dt| dt.is_numeric() || dt.is_bool(),
-            |name| col(name).std(ddof),
-        )
+    pub fn std(self, ddof: u8) -> Self {
+        self.map_private(DslFunction::Stats(StatsFunction::Std { ddof }))
     }
 
     /// Aggregate all the columns as their variance values.
@@ -1436,11 +1379,8 @@ impl LazyFrame {
     /// > likelihood estimate of the variance for normally distributed variables.
     ///
     /// Source: [Numpy](https://numpy.org/doc/stable/reference/generated/numpy.var.html#)
-    pub fn var(self, ddof: u8) -> PolarsResult<LazyFrame> {
-        self.stats_helper(
-            |dt| dt.is_numeric() || dt.is_bool(),
-            |name| col(name).var(ddof),
-        )
+    pub fn var(self, ddof: u8) -> Self {
+        self.map_private(DslFunction::Stats(StatsFunction::Var { ddof }))
     }
 
     /// Apply explode operation. [See eager explode](polars_core::frame::DataFrame::explode).
@@ -1687,9 +1627,11 @@ impl LazyFrame {
                 ..Default::default()
             },
         )?;
-        Ok(q.map_private(DslFunction::FunctionNode(FunctionNode::MergeSorted {
-            column: Arc::from(key),
-        })))
+        Ok(
+            q.map_private(DslFunction::FunctionNode(FunctionNode::MergeSorted {
+                column: Arc::from(key),
+            })),
+        )
     }
 }
 

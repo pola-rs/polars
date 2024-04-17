@@ -1,7 +1,6 @@
 use super::*;
 use crate::logical_plan::expr_expansion::{is_regex_projection, rewrite_projections};
 
-
 fn expand_expressions(
     input: Node,
     exprs: Vec<Expr>,
@@ -29,11 +28,13 @@ pub fn to_alp(
             paths,
             predicate,
             scan_type,
-            file_options
+            file_options,
         } => {
-            if let Some(row_index) = &file_options.row_index  {
+            if let Some(row_index) = &file_options.row_index {
                 let schema = Arc::make_mut(&mut file_info.schema);
-                schema.new_inserting_at_index(0, row_index.name.as_str().into(), IDX_DTYPE).unwrap();
+                schema
+                    .new_inserting_at_index(0, row_index.name.as_str().into(), IDX_DTYPE)
+                    .unwrap();
             }
 
             IR::Scan {
@@ -42,7 +43,7 @@ pub fn to_alp(
                 output_schema: None,
                 predicate: predicate.map(|expr| to_expr_ir(expr, expr_arena)),
                 scan_type,
-                file_options
+                file_options,
             }
         },
         #[cfg(feature = "python")]
@@ -148,7 +149,8 @@ pub fn to_alp(
         } => {
             let input = to_alp(owned(input), expr_arena, lp_arena)?;
 
-            let (keys, aggs, schema) = resolve_group_by(input, keys, aggs, &options, lp_arena, expr_arena)?;
+            let (keys, aggs, schema) =
+                resolve_group_by(input, keys, aggs, &options, lp_arena, expr_arena)?;
 
             let (apply, schema) = if let Some((apply, schema)) = apply {
                 (Some(apply), schema)
@@ -212,18 +214,95 @@ pub fn to_alp(
         DslPlan::MapFunction { input, function } => {
             let input = to_alp(owned(input), expr_arena, lp_arena)?;
             let schema = lp_arena.get(input).schema(lp_arena);
-            let function = function.into_function_node(&schema)?;
-            IR::MapFunction { input, function }
+
+            match function {
+                DslFunction::Stats(sf) => {
+                    let exprs = match sf {
+                        StatsFunction::Var { ddof } => stats_helper(
+                            |dt| dt.is_numeric() || dt.is_bool(),
+                            |name| col(name).var(ddof),
+                            &schema,
+                        ),
+                        StatsFunction::Std { ddof } => stats_helper(
+                            |dt| dt.is_numeric() || dt.is_bool(),
+                            |name| col(name).std(ddof),
+                            &schema,
+                        ),
+                        StatsFunction::Quantile { quantile, interpol } => stats_helper(
+                            |dt| dt.is_numeric(),
+                            |name| col(name).quantile(quantile.clone(), interpol),
+                            &schema,
+                        ),
+                        StatsFunction::Mean => stats_helper(
+                            |dt| {
+                                dt.is_numeric()
+                                    || matches!(
+                                        dt,
+                                        DataType::Boolean
+                                            | DataType::Duration(_)
+                                            | DataType::Datetime(_, _)
+                                            | DataType::Time
+                                    )
+                            },
+                            |name| col(name).mean(),
+                            &schema,
+                        ),
+                        StatsFunction::Sum => stats_helper(
+                            |dt| {
+                                dt.is_numeric()
+                                    || dt.is_decimal()
+                                    || matches!(dt, DataType::Boolean | DataType::Duration(_))
+                            },
+                            |name| col(name).sum(),
+                            &schema,
+                        ),
+                        StatsFunction::Min => {
+                            stats_helper(|dt| dt.is_ord(), |name| col(name).min(), &schema)
+                        },
+                        StatsFunction::Max => {
+                            stats_helper(|dt| dt.is_ord(), |name| col(name).max(), &schema)
+                        },
+                        StatsFunction::Median => stats_helper(
+                            |dt| {
+                                dt.is_numeric()
+                                    || matches!(
+                                        dt,
+                                        DataType::Boolean
+                                            | DataType::Duration(_)
+                                            | DataType::Datetime(_, _)
+                                            | DataType::Time
+                                    )
+                            },
+                            |name| col(name).median(),
+                            &schema,
+                        ),
+                    };
+                    let schema =
+                        Arc::new(expressions_to_schema(&exprs, &schema, Context::Default)?);
+                    let eirs = to_expr_irs(exprs, expr_arena);
+                    let expr = eirs.into();
+                    IR::Select {
+                        input,
+                        expr,
+                        schema,
+                        options: ProjectionOptions {
+                            duplicate_check: false,
+                            ..Default::default()
+                        },
+                    }
+                },
+                _ => {
+                    let function = function.into_function_node(&schema)?;
+                    IR::MapFunction { input, function }
+                },
+            }
         },
         DslPlan::Error { err, .. } => {
             // We just take the error. The LogicalPlan should not be used anymore once this
             // is taken.
             return Err(err.take());
         },
-        DslPlan::ExtContext {
-            input,
-            contexts,
-        } => {
+        DslPlan::ExtContext { input, contexts } => {
             let input = to_alp(owned(input), expr_arena, lp_arena)?;
             let contexts = contexts
                 .into_iter()
@@ -311,8 +390,8 @@ fn expand_filter(predicate: Expr, input: Node, lp_arena: &Arena<IR>) -> PolarsRe
 fn resolve_with_columns(
     exprs: Vec<Expr>,
     input: Node,
-    lp_arena: &Arena<IR>
-) -> PolarsResult<(Vec<Expr>, SchemaRef)>{
+    lp_arena: &Arena<IR>,
+) -> PolarsResult<(Vec<Expr>, SchemaRef)> {
     let schema = lp_arena.get(input).schema(lp_arena);
     let mut new_schema = (**schema).clone();
     let (exprs, _) = prepare_projection(exprs, &schema)?;
@@ -341,15 +420,14 @@ fn resolve_with_columns(
     Ok((exprs, Arc::new(new_schema)))
 }
 
-
 fn resolve_group_by(
     input: Node,
     keys: Vec<Expr>,
     aggs: Vec<Expr>,
     options: &GroupbyOptions,
     lp_arena: &Arena<IR>,
-    expr_arena: &mut Arena<AExpr>
-) -> PolarsResult<(Vec<ExprIR>, Vec<ExprIR>, SchemaRef)>{
+    expr_arena: &mut Arena<AExpr>,
+) -> PolarsResult<(Vec<ExprIR>, Vec<ExprIR>, SchemaRef)> {
     let current_schema = lp_arena.get(input).schema(lp_arena);
     let current_schema = current_schema.as_ref();
     let keys = rewrite_projections(keys, current_schema, &[])?;
@@ -383,14 +461,30 @@ fn resolve_group_by(
 
     // Make sure aggregation columns do not contain keys or index columns
     if schema.len() < (keys_index_len + aggs.len()) {
-            let mut names = PlHashSet::with_capacity(schema.len());
-            for expr in aggs.iter().chain(keys.iter()) {
-                let name = expr_output_name(expr)?;
-                polars_ensure!(names.insert(name.clone()), duplicate = name)
-            }
+        let mut names = PlHashSet::with_capacity(schema.len());
+        for expr in aggs.iter().chain(keys.iter()) {
+            let name = expr_output_name(expr)?;
+            polars_ensure!(names.insert(name.clone()), duplicate = name)
+        }
     }
     let aggs = to_expr_irs(aggs, expr_arena);
     let keys = keys.convert(|e| to_expr_ir(e.clone(), expr_arena));
 
     Ok((keys, aggs, Arc::new(schema)))
+}
+fn stats_helper<F, E>(condition: F, expr: E, schema: &Schema) -> Vec<Expr>
+where
+    F: Fn(&DataType) -> bool,
+    E: Fn(&str) -> Expr,
+{
+    schema
+        .iter()
+        .map(|(name, dt)| {
+            if condition(dt) {
+                expr(name)
+            } else {
+                lit(NULL).cast(dt.clone()).alias(name)
+            }
+        })
+        .collect()
 }

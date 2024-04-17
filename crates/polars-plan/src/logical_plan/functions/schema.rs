@@ -1,4 +1,5 @@
 use polars_core::utils::try_get_supertype;
+
 use super::*;
 
 impl FunctionNode {
@@ -89,7 +90,7 @@ impl FunctionNode {
             RowIndex { schema, name, .. } => {
                 Ok(Cow::Owned(row_index_schema(schema, input_schema, name)))
             },
-            Explode {schema, columns} => explode_schema(schema, input_schema, columns),
+            Explode { schema, columns } => explode_schema(schema, input_schema, columns),
             Melt { schema, args } => melt_schema(args, schema, input_schema),
         }
     }
@@ -114,10 +115,11 @@ fn row_index_schema(
 fn explode_schema<'a>(
     cached_schema: &CachedSchema,
     schema: &'a Schema,
-    columns: &[Arc<str>]) -> PolarsResult<Cow<'a, SchemaRef>> {
+    columns: &[Arc<str>],
+) -> PolarsResult<Cow<'a, SchemaRef>> {
     let mut guard = cached_schema.lock().unwrap();
     if let Some(schema) = &*guard {
-        return Ok(Cow::Owned(schema.clone()))
+        return Ok(Cow::Owned(schema.clone()));
     }
     let mut schema = schema.clone();
 
@@ -134,13 +136,14 @@ fn explode_schema<'a>(
     Ok(Cow::Owned(schema))
 }
 
-
-fn melt_schema<'a>(args: &MeltArgs,
-               cached_schema: &CachedSchema,
-               input_schema: &'a Schema) -> PolarsResult<Cow<'a, SchemaRef>> {
+fn melt_schema<'a>(
+    args: &MeltArgs,
+    cached_schema: &CachedSchema,
+    input_schema: &'a Schema,
+) -> PolarsResult<Cow<'a, SchemaRef>> {
     let mut guard = cached_schema.lock().unwrap();
     if let Some(schema) = &*guard {
-        return Ok(Cow::Owned(schema.clone()))
+        return Ok(Cow::Owned(schema.clone()));
     }
 
     let mut new_schema = args

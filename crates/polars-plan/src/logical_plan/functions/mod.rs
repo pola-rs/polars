@@ -1,11 +1,11 @@
 mod count;
+mod dsl;
 #[cfg(feature = "merge_sorted")]
 mod merge_sorted;
 #[cfg(feature = "python")]
 mod python_udf;
 mod rename;
 mod schema;
-mod dsl;
 
 use std::borrow::Cow;
 use std::fmt::{Debug, Display, Formatter};
@@ -14,6 +14,7 @@ use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+pub use dsl::*;
 use polars_core::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -24,7 +25,6 @@ use crate::dsl::python_udf::PythonFunction;
 #[cfg(feature = "merge_sorted")]
 use crate::logical_plan::functions::merge_sorted::merge_sorted;
 use crate::prelude::*;
-pub use dsl::DslFunction;
 
 #[derive(Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]

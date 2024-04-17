@@ -21,4 +21,3 @@ pub(super) fn rename_impl(
     let columns = unsafe { std::mem::take(df.get_columns_mut()) };
     DataFrame::new(columns)
 }
-

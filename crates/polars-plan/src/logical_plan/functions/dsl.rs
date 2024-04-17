@@ -1,16 +1,16 @@
-use crate::logical_plan::expr_expansion::rewrite_projections;
 use super::*;
+use crate::logical_plan::expr_expansion::rewrite_projections;
 
 // Except for Opaque functions, this only has the DSL name of the function.
 #[derive(Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum DslFunction {
     FunctionNode(FunctionNode),
-    Explode{
-        columns: Vec<Expr>
+    Explode {
+        columns: Vec<Expr>,
     },
-    Melt{
-        args: MeltArgs
+    Melt {
+        args: MeltArgs,
     },
     RowIndex {
         name: Arc<str>,
@@ -19,14 +19,34 @@ pub enum DslFunction {
     Rename {
         existing: Arc<[SmartString]>,
         new: Arc<[SmartString]>,
-    }
+    },
+    Stats(StatsFunction),
 }
 
+#[derive(Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub enum StatsFunction {
+    Var {
+        ddof: u8,
+    },
+    Std {
+        ddof: u8,
+    },
+    Quantile {
+        quantile: Expr,
+        interpol: QuantileInterpolOptions,
+    },
+    Median,
+    Mean,
+    Sum,
+    Min,
+    Max,
+}
 
 impl DslFunction {
     pub(crate) fn into_function_node(self, schema: &Schema) -> PolarsResult<FunctionNode> {
         let function = match self {
-            DslFunction::Explode{columns} => {
+            DslFunction::Explode { columns } => {
                 let columns = rewrite_projections(columns, schema, &[])?;
                 // columns to string
                 let columns = columns
@@ -41,13 +61,20 @@ impl DslFunction {
                     .collect::<PolarsResult<Arc<[Arc<str>]>>>()?;
                 FunctionNode::Explode {
                     columns,
-                    schema: Default::default()
+                    schema: Default::default(),
                 }
             },
-            DslFunction::Melt {args} => FunctionNode::Melt {args: Arc::new(args), schema: Default::default()},
+            DslFunction::Melt { args } => FunctionNode::Melt {
+                args: Arc::new(args),
+                schema: Default::default(),
+            },
             DslFunction::FunctionNode(func) => func,
-            DslFunction::RowIndex {name, offset} => FunctionNode::RowIndex {name, offset, schema: Default::default()},
-            DslFunction::Rename {existing, new} => {
+            DslFunction::RowIndex { name, offset } => FunctionNode::RowIndex {
+                name,
+                offset,
+                schema: Default::default(),
+            },
+            DslFunction::Rename { existing, new } => {
                 let swapping = new.iter().any(|name| schema.get(name).is_some());
 
                 // Check if the name exists.
@@ -58,13 +85,15 @@ impl DslFunction {
                 FunctionNode::Rename {
                     existing,
                     new,
-                    swapping
+                    swapping,
                 }
-            }
+            },
+            DslFunction::Stats(_) => {
+                polars_bail!(ComputeError: "cannot convert StatsFunction into FunctionNode")
+            },
         };
         Ok(function)
     }
-
 }
 
 impl Debug for DslFunction {
@@ -81,6 +110,7 @@ impl Display for DslFunction {
             Explode { .. } => write!(f, "EXPLODE"),
             Melt { .. } => write!(f, "MELT"),
             RowIndex { .. } => write!(f, "WITH ROW INDEX"),
+            Stats(_) => write!(f, "STATS"),
             // DropNulls { subset } => {
             //     write!(f, "DROP_NULLS by: ")?;
             //     let subset = subset.as_ref();
@@ -109,7 +139,6 @@ impl Display for DslFunction {
         }
     }
 }
-
 
 impl From<FunctionNode> for DslFunction {
     fn from(value: FunctionNode) -> Self {

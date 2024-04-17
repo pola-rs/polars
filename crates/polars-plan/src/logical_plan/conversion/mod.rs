@@ -1,10 +1,11 @@
 mod dsl_plan_to_ir_plan;
-mod ir_to_dsl;
 mod expr_to_expr_ir;
+mod ir_to_dsl;
 
 use std::borrow::Cow;
 
 pub use dsl_plan_to_ir_plan::*;
+pub use expr_to_expr_ir::*;
 pub use ir_to_dsl::*;
 use polars_core::prelude::*;
 use polars_utils::vec::ConvertVec;
@@ -12,7 +13,6 @@ use recursive::recursive;
 
 use crate::constants::get_len_name;
 use crate::prelude::*;
-pub use expr_to_expr_ir::*;
 
 fn expr_irs_to_exprs(expr_irs: Vec<ExprIR>, expr_arena: &Arena<AExpr>) -> Vec<Expr> {
     expr_irs.convert_owned(|e| e.to_expr(expr_arena))
@@ -225,22 +225,20 @@ impl IR {
             },
             IR::MapFunction { input, function } => {
                 let input = Arc::new(convert_to_lp(input, lp_arena));
-                DslPlan::MapFunction { input, function: function.into() }
+                DslPlan::MapFunction {
+                    input,
+                    function: function.into(),
+                }
             },
             IR::ExtContext {
-                input,
-                contexts,
-                ..
+                input, contexts, ..
             } => {
                 let input = Arc::new(convert_to_lp(input, lp_arena));
                 let contexts = contexts
                     .into_iter()
                     .map(|node| convert_to_lp(node, lp_arena))
                     .collect();
-                DslPlan::ExtContext {
-                    input,
-                    contexts,
-                }
+                DslPlan::ExtContext { input, contexts }
             },
             IR::Sink { input, payload } => {
                 let input = Arc::new(convert_to_lp(input, lp_arena));
