@@ -530,3 +530,11 @@ def test_horizontal_mean_in_groupby_15115() -> None:
             }
         ),
     )
+
+
+def test_group_count_over_null_column_15705() -> None:
+    df = pl.DataFrame(
+        {"a": [1, 1, 2, 2, 3, 3], "c": [None, None, None, None, None, None]}
+    )
+    out = df.group_by("a", maintain_order=True).agg(pl.col("c").count())
+    assert out["c"].to_list() == [0, 0, 0]
