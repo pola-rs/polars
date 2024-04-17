@@ -1666,7 +1666,7 @@ impl DataFrame {
     /// ```
     /// # use polars_core::prelude::*;
     /// fn example(df: &DataFrame) -> PolarsResult<DataFrame> {
-    ///     let mask = df.column("sepal.width")?.is_not_null();
+    ///     let mask = df.column("sepal_width")?.is_not_null();
     ///     df.filter(&mask)
     /// }
     /// ```
@@ -1885,7 +1885,7 @@ impl DataFrame {
     /// ```
     /// # use polars_core::prelude::*;
     /// fn sort_by_sepal_width(df: &DataFrame) -> PolarsResult<DataFrame> {
-    ///     df.sort(["sepal.width"], Default::default())
+    ///     df.sort(["sepal_width"], Default::default())
     /// }
     /// ```
     /// Sort by a single column with specific order:
@@ -1893,7 +1893,7 @@ impl DataFrame {
     /// # use polars_core::prelude::*;
     /// fn sort_with_specific_order(df: &DataFrame, descending: bool) -> PolarsResult<DataFrame> {
     ///     df.sort(
-    ///         ["sepal.width"],
+    ///         ["sepal_width"],
     ///         SortMultipleOptions::new()
     ///             .with_order_descending(descending)
     ///     )
@@ -1904,7 +1904,7 @@ impl DataFrame {
     /// # use polars_core::prelude::*;
     /// fn sort_by_multiple_columns_with_specific_order(df: &DataFrame) -> PolarsResult<DataFrame> {
     ///     df.sort(
-    ///         &["sepal.width", "sepal_length"],
+    ///         &["sepal_width", "sepal_length"],
     ///         SortMultipleOptions::new()
     ///             .with_order_descendings([false, true])
     ///     )

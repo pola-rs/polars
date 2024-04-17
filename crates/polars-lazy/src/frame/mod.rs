@@ -259,12 +259,12 @@ impl LazyFrame {
     ///
     /// # Example
     ///
-    /// Sort DataFrame by 'sepal.width' column:
+    /// Sort DataFrame by 'sepal_width' column:
     /// ```rust
     /// # use polars_core::prelude::*;
     /// # use polars_lazy::prelude::*;
     /// fn sort_by_a(df: DataFrame) -> LazyFrame {
-    ///     df.lazy().sort(["sepal.width"], Default::default())
+    ///     df.lazy().sort(["sepal_width"], Default::default())
     /// }
     /// ```
     /// Sort by a single column with specific order:
@@ -273,7 +273,7 @@ impl LazyFrame {
     /// # use polars_lazy::prelude::*;
     /// fn sort_with_specific_order(df: DataFrame, descending: bool) -> LazyFrame {
     ///     df.lazy().sort(
-    ///         ["sepal.width"],
+    ///         ["sepal_width"],
     ///         SortMultipleOptions::new()
     ///             .with_order_descending(descending)
     ///     )
@@ -285,7 +285,7 @@ impl LazyFrame {
     /// # use polars_lazy::prelude::*;
     /// fn sort_by_multiple_columns_with_specific_order(df: DataFrame) -> LazyFrame {
     ///     df.lazy().sort(
-    ///         &["sepal.width", "sepal_length"],
+    ///         &["sepal_width", "sepal_length"],
     ///         SortMultipleOptions::new()
     ///             .with_order_descendings([false, true])
     ///     )
@@ -317,10 +317,10 @@ impl LazyFrame {
     /// use polars_core::prelude::*;
     /// use polars_lazy::prelude::*;
     ///
-    /// /// Sort DataFrame by 'sepal.width' column
+    /// /// Sort DataFrame by 'sepal_width' column
     /// fn example(df: DataFrame) -> LazyFrame {
     ///       df.lazy()
-    ///         .sort_by_exprs(vec![col("sepal.width")], Default::default())
+    ///         .sort_by_exprs(vec![col("sepal_width")], Default::default())
     /// }
     /// ```
     pub fn sort_by_exprs<E: AsRef<[Expr]>>(
@@ -830,8 +830,8 @@ impl LazyFrame {
     ///
     /// fn example(df: DataFrame) -> LazyFrame {
     ///       df.lazy()
-    ///         .filter(col("sepal.width").is_not_null())
-    ///         .select(&[col("sepal.width"), col("sepal.length")])
+    ///         .filter(col("sepal_width").is_not_null())
+    ///         .select(&[col("sepal_width"), col("sepal_length")])
     /// }
     /// ```
     pub fn filter(self, predicate: Expr) -> Self {
@@ -1263,7 +1263,7 @@ impl LazyFrame {
     /// fn add_column(df: DataFrame) -> LazyFrame {
     ///     df.lazy()
     ///         .with_column(
-    ///             when(col("sepal.length").lt(lit(5.0)))
+    ///             when(col("sepal_length").lt(lit(5.0)))
     ///             .then(lit(10))
     ///             .otherwise(lit(1))
     ///             .alias("new_column_name"),

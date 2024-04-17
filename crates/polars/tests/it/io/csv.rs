@@ -138,7 +138,7 @@ fn test_read_csv_file() {
 #[test]
 fn test_parser() -> PolarsResult<()> {
     let s = r#"
- "sepal.length","sepal.width","petal.length","petal.width","variety"
+ "sepal_length","sepal_width","petal_length","petal_width","variety"
  5.1,3.5,1.4,.2,"Setosa"
  4.9,3,1.4,.2,"Setosa"
  4.7,3.2,1.3,.2,"Setosa"
@@ -157,7 +157,7 @@ fn test_parser() -> PolarsResult<()> {
         .unwrap();
 
     let s = r#"
-         "sepal.length","sepal.width","petal.length","petal.width","variety"
+         "sepal_length","sepal_width","petal_length","petal_width","variety"
          5.1,3.5,1.4,.2,"Setosa"
          5.1,3.5,1.4,.2,"Setosa"
  "#;
@@ -173,7 +173,7 @@ fn test_parser() -> PolarsResult<()> {
         .finish()
         .unwrap();
 
-    let s = r#""sepal.length","sepal.width","petal.length","petal.width","variety"
+    let s = r#""sepal_length","sepal_width","petal_length","petal_width","variety"
         5.1,3.5,1.4,.2,"Setosa"
         4.9,3,1.4,.2,"Setosa"
         4.7,3.2,1.3,.2,"Setosa"
@@ -194,8 +194,8 @@ fn test_parser() -> PolarsResult<()> {
     assert_eq!(col.get(0)?, AnyValue::String("Setosa"));
     assert_eq!(col.get(2)?, AnyValue::String("Setosa"));
 
-    assert_eq!("sepal.length", df.get_columns()[0].name());
-    assert_eq!(1, df.column("sepal.length").unwrap().chunks().len());
+    assert_eq!("sepal_length", df.get_columns()[0].name());
+    assert_eq!(1, df.column("sepal_length").unwrap().chunks().len());
     assert_eq!(df.height(), 7);
 
     // test windows line endings
@@ -427,7 +427,7 @@ id090,id048,id0000067778,24,2,51862,4,9,
 
 #[test]
 fn test_new_line_escape() {
-    let s = r#""sepal.length","sepal.width","petal.length","petal.width","variety"
+    let s = r#""sepal_length","sepal_width","petal_length","petal_width","variety"
  5.1,3.5,1.4,.2,"Setosa
  texts after new line character"
  4.9,3,1.4,.2,"Setosa"
