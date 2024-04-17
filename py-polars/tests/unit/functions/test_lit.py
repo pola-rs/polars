@@ -87,3 +87,11 @@ def test_list_datetime_11571() -> None:
 )
 def test_lit_int_return_type(input: int, dtype: pl.PolarsDataType) -> None:
     assert pl.select(pl.lit(input)).to_series().dtype == dtype
+
+
+def test_lit_unsupported_type() -> None:
+    with pytest.raises(
+        TypeError,
+        match="cannot create expression literal for value of type LazyFrame: ",
+    ):
+        pl.lit(pl.LazyFrame({"a": [1, 2, 3]}))
