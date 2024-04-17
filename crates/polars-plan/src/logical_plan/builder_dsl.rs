@@ -30,7 +30,7 @@ use polars_io::{
 use super::builder_functions::*;
 use crate::constants::UNLIMITED_CACHE;
 use crate::dsl::functions::horizontal::all_horizontal;
-use crate::logical_plan::expr_expansion::{is_regex_projection, rewrite_projections};
+use crate::logical_plan::expr_expansion::{rewrite_projections};
 #[cfg(feature = "python")]
 use crate::prelude::python_udf::PythonFunction;
 use crate::prelude::*;
@@ -630,80 +630,6 @@ impl DslBuilder {
 
     /// Apply a filter
     pub fn filter(self, predicate: Expr) -> Self {
-        let schema = try_delayed!(self.0.schema(), &self.0, into);
-
-        let predicate = if has_expr(&predicate, |e| match e {
-            Expr::Column(name) => is_regex_projection(name),
-            Expr::Wildcard
-            | Expr::Selector(_)
-            | Expr::RenameAlias { .. }
-            | Expr::Columns(_)
-            | Expr::DtypeColumn(_)
-            | Expr::Nth(_) => true,
-            _ => false,
-        }) {
-            let mut rewritten = try_delayed!(
-                rewrite_projections(vec![predicate], &schema, &[]),
-                &self.0,
-                into
-            );
-            match rewritten.len() {
-                1 => {
-                    // all good
-                    rewritten.pop().unwrap()
-                },
-                0 => {
-                    let msg = "The predicate expanded to zero expressions. \
-                        This may for example be caused by a regex not matching column names or \
-                        a column dtype match not hitting any dtypes in the DataFrame";
-                    return raise_err!(polars_err!(ComputeError: msg), &self.0, into);
-                },
-                _ => {
-                    let mut expanded = String::new();
-                    for e in rewritten.iter().take(5) {
-                        expanded.push_str(&format!("\t{e},\n"))
-                    }
-                    // pop latest comma
-                    expanded.pop();
-                    if rewritten.len() > 5 {
-                        expanded.push_str("\t...\n")
-                    }
-
-                    let msg = if cfg!(feature = "python") {
-                        format!("The predicate passed to 'LazyFrame.filter' expanded to multiple expressions: \n\n{expanded}\n\
-                            This is ambiguous. Try to combine the predicates with the 'all' or `any' expression.")
-                    } else {
-                        format!("The predicate passed to 'LazyFrame.filter' expanded to multiple expressions: \n\n{expanded}\n\
-                            This is ambiguous. Try to combine the predicates with the 'all_horizontal' or `any_horizontal' expression.")
-                    };
-                    return raise_err!(polars_err!(ComputeError: msg), &self.0, into);
-                },
-            }
-        } else {
-            predicate
-        };
-
-        // Check predicates refer to valid column names here, as this is not
-        // checked by predicate pushdown and may otherwise lead to incorrect
-        // optimizations. For example:
-        //
-        // (unoptimized)
-        // FILTER [(col("x")) == (1)] FROM
-        //   SELECT [col("x").alias("y")] FROM
-        //     DF ["x"]; PROJECT 1/1 COLUMNS; SELECTION: "None"
-        //
-        // (optimized)
-        // SELECT [col("x").alias("y")] FROM
-        //   DF ["x"]; PROJECT 1/1 COLUMNS; SELECTION: "[(col(\"x\")) == (1)]"
-        //                                             ^^^
-        // "x" is incorrectly pushed down even though it didn't exist after SELECT
-        try_delayed!(
-            expr_to_leaf_column_names_iter(&predicate)
-                .try_for_each(|c| schema.try_index_of(&c).and(Ok(()))),
-            &self.0,
-            into
-        );
-
         DslPlan::Filter {
             predicate,
             input: Arc::new(self.0),
@@ -819,8 +745,6 @@ impl DslBuilder {
     }
 
     pub fn sort(self, by_column: Vec<Expr>, sort_options: SortMultipleOptions) -> Self {
-        let schema = try_delayed!(self.0.schema(), &self.0, into);
-        let by_column = try_delayed!(rewrite_projections(by_column, &schema, &[]), &self.0, into);
         DslPlan::Sort {
             input: Arc::new(self.0),
             by_column,

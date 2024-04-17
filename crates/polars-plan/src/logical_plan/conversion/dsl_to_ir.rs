@@ -1,4 +1,5 @@
 use super::*;
+use crate::logical_plan::expr_expansion::{is_regex_projection, rewrite_projections};
 
 pub fn to_expr_ir(expr: Expr, arena: &mut Arena<AExpr>) -> ExprIR {
     let mut state = ConversionState::new();
@@ -286,6 +287,17 @@ fn to_aexpr_impl(expr: Expr, arena: &mut Arena<AExpr>, state: &mut ConversionSta
     arena.add(v)
 }
 
+fn expand_expressions(
+    input: Node,
+    exprs: Vec<Expr>,
+    lp_arena: &Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+) -> PolarsResult<Vec<ExprIR>> {
+    let schema = lp_arena.get(input).schema(lp_arena);
+    let exprs = rewrite_projections(exprs, &schema, &[])?;
+    Ok(to_expr_irs(exprs, expr_arena))
+}
+
 /// converts LogicalPlan to IR
 /// it adds expressions & lps to the respective arenas as it traverses the plan
 /// finally it returns the top node of the logical plan
@@ -339,12 +351,10 @@ pub fn to_alp(
             }
         },
         DslPlan::Filter { input, predicate } => {
-            let i = to_alp(owned(input), expr_arena, lp_arena)?;
-            let p = to_expr_ir(predicate, expr_arena);
-            IR::Filter {
-                input: i,
-                predicate: p,
-            }
+            let input = to_alp(owned(input), expr_arena, lp_arena)?;
+            let predicate = expand_filter(predicate, input, lp_arena)?;
+            let predicate = to_expr_ir(predicate, expr_arena);
+            IR::Filter { input, predicate }
         },
         DslPlan::Slice { input, offset, len } => {
             let input = to_alp(owned(input), expr_arena, lp_arena)?;
@@ -386,7 +396,7 @@ pub fn to_alp(
             sort_options,
         } => {
             let input = to_alp(owned(input), expr_arena, lp_arena)?;
-            let by_column = to_expr_irs(by_column, expr_arena);
+            let by_column = expand_expressions(input, by_column, lp_arena, expr_arena)?;
             IR::Sort {
                 input,
                 by_column,
@@ -503,4 +513,58 @@ pub fn to_alp(
         },
     };
     Ok(lp_arena.add(v))
+}
+
+fn expand_filter(predicate: Expr, input: Node, lp_arena: &Arena<IR>) -> PolarsResult<Expr> {
+    let schema = lp_arena.get(input).schema(lp_arena);
+    let predicate = if has_expr(&predicate, |e| match e {
+        Expr::Column(name) => is_regex_projection(name),
+        Expr::Wildcard
+        | Expr::Selector(_)
+        | Expr::RenameAlias { .. }
+        | Expr::Columns(_)
+        | Expr::DtypeColumn(_)
+        | Expr::Nth(_) => true,
+        _ => false,
+    }) {
+        let mut rewritten = rewrite_projections(vec![predicate], &schema, &[])?;
+        match rewritten.len() {
+            1 => {
+                // all good
+                rewritten.pop().unwrap()
+            },
+            0 => {
+                let msg = "The predicate expanded to zero expressions. \
+                        This may for example be caused by a regex not matching column names or \
+                        a column dtype match not hitting any dtypes in the DataFrame";
+                polars_bail!(ComputeError: msg);
+            },
+            _ => {
+                let mut expanded = String::new();
+                for e in rewritten.iter().take(5) {
+                    expanded.push_str(&format!("\t{e},\n"))
+                }
+                // pop latest comma
+                expanded.pop();
+                if rewritten.len() > 5 {
+                    expanded.push_str("\t...\n")
+                }
+
+                let msg = if cfg!(feature = "python") {
+                    format!("The predicate passed to 'LazyFrame.filter' expanded to multiple expressions: \n\n{expanded}\n\
+                            This is ambiguous. Try to combine the predicates with the 'all' or `any' expression.")
+                } else {
+                    format!("The predicate passed to 'LazyFrame.filter' expanded to multiple expressions: \n\n{expanded}\n\
+                            This is ambiguous. Try to combine the predicates with the 'all_horizontal' or `any_horizontal' expression.")
+                };
+                polars_bail!(ComputeError: msg)
+            },
+        }
+    } else {
+        predicate
+    };
+    expr_to_leaf_column_names_iter(&predicate)
+        .try_for_each(|c| schema.try_index_of(&c).and(Ok(())))?;
+
+    Ok(predicate)
 }
