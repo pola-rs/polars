@@ -574,13 +574,15 @@ impl PhysicalExpr for WindowExpr {
 
                         // try to get cached join_tuples
                         let join_opt_ids = if state.cache_window() {
-                            let mut jt_map = state.join_tuples.lock().unwrap();
+                            let mut jt_map_guard = state.join_tuples.lock().unwrap();
                             // we run sequential and partitioned
                             // and every partition run the cache should be empty so we expect a max of 1.
-                            debug_assert!(jt_map.len() <= 1);
-                            if let Some(opt_join_tuples) = jt_map.get_mut(&cache_key) {
+                            debug_assert!(jt_map_guard.len() <= 1);
+                            if let Some(opt_join_tuples) = jt_map_guard.get_mut(&cache_key) {
                                 std::mem::replace(opt_join_tuples, default_join_ids())
                             } else {
+                                // Drop guard as we go into rayon when computing join tuples.
+                                drop(jt_map_guard);
                                 get_join_tuples()?
                             }
                         } else {
