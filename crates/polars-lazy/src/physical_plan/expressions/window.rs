@@ -581,7 +581,7 @@ impl PhysicalExpr for WindowExpr {
                             if let Some(opt_join_tuples) = jt_map_guard.get_mut(&cache_key) {
                                 std::mem::replace(opt_join_tuples, default_join_ids())
                             } else {
-                                // Drop guard as we go into rayon when grabbing join tuples.
+                                // Drop guard as we go into rayon when computing join tuples.
                                 drop(jt_map_guard);
                                 get_join_tuples()?
                             }
