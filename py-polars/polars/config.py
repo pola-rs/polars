@@ -1214,8 +1214,7 @@ class Config(contextlib.ContextDecorator):
         │ SEQ1 ┆ ATGATAAAGGAG │
         │ SEQ2 ┆ GCAACGCATATA │
         └──────┴──────────────┘
-        >>> pl.Config.set_tbl_width_chars(12)
-        <class 'polars.config.Config'>
+        >>> pl.Config.set_tbl_width_chars(12)  # doctest: +IGNORE_RESULT
         >>> df
         shape: (2, 2)
         ┌─────┬─────┐
