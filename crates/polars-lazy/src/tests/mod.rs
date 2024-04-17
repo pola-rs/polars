@@ -167,7 +167,7 @@ pub(crate) fn fruits_cars() -> DataFrame {
 
 pub(crate) fn get_df() -> DataFrame {
     let s = r#"
-"sepal.length","sepal.width","petal.length","petal.width","variety"
+"sepal_length","sepal_width","petal_length","petal_width","variety"
 5.1,3.5,1.4,.2,"Setosa"
 4.9,3,1.4,.2,"Setosa"
 4.7,3.2,1.3,.2,"Setosa"
