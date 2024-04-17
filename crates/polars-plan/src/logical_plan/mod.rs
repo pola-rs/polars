@@ -14,9 +14,9 @@ pub(crate) mod alp;
 pub(crate) mod anonymous_scan;
 
 mod apply;
-mod builder_alp;
 mod builder_dsl;
 pub mod builder_functions;
+mod builder_ir;
 pub(crate) mod conversion;
 #[cfg(feature = "debugging")]
 pub(crate) mod debug;
@@ -41,8 +41,8 @@ pub use aexpr::*;
 pub use alp::*;
 pub use anonymous_scan::*;
 pub use apply::*;
-pub use builder_alp::*;
 pub use builder_dsl::*;
+pub use builder_ir::*;
 pub use conversion::*;
 pub(crate) use expr_ir::*;
 pub use file_scan::*;
