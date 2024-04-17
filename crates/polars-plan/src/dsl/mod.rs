@@ -1414,6 +1414,10 @@ impl Expr {
             left_closed,
             include_breaks,
         })
+        .with_function_options(|mut opt| {
+            opt.pass_name_to_apply = true;
+            opt
+        })
     }
 
     #[cfg(feature = "cutqcut")]
@@ -1432,6 +1436,10 @@ impl Expr {
             left_closed,
             allow_duplicates,
             include_breaks,
+        })
+        .with_function_options(|mut opt| {
+            opt.pass_name_to_apply = true;
+            opt
         })
     }
 
@@ -1452,6 +1460,10 @@ impl Expr {
             left_closed,
             allow_duplicates,
             include_breaks,
+        })
+        .with_function_options(|mut opt| {
+            opt.pass_name_to_apply = true;
+            opt
         })
     }
 
