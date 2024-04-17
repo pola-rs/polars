@@ -193,7 +193,6 @@ pub enum DslPlan {
     HStack {
         input: Arc<DslPlan>,
         exprs: Vec<Expr>,
-        schema: SchemaRef,
         options: ProjectionOptions,
     },
     /// Remove duplicates from the table

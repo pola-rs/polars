@@ -1,5 +1,7 @@
 use std::borrow::Cow;
+use std::ops::Deref;
 use std::path::Path;
+use std::sync::Mutex;
 
 use arrow::datatypes::ArrowSchemaRef;
 use polars_core::prelude::*;
@@ -26,7 +28,9 @@ impl DslPlan {
             Select { schema, .. } => Ok(Cow::Borrowed(schema)),
             GroupBy { schema, .. } => Ok(Cow::Borrowed(schema)),
             Join { schema, .. } => Ok(Cow::Borrowed(schema)),
-            HStack { schema, .. } => Ok(Cow::Borrowed(schema)),
+            HStack { .. } => {
+                unimplemented!()
+            },
             Distinct { input, .. } | Sink { input, .. } => input.schema(),
             Slice { input, .. } => input.schema(),
             MapFunction {
@@ -383,5 +387,37 @@ pub(crate) fn det_join_schema(
 
             Ok(Arc::new(new_schema))
         },
+    }
+}
+
+// We don't use an `Arc<Mutex>` because caches should live in different query plans.
+// For that reason we have a specialized deep clone.
+#[derive(Default)]
+pub struct CachedSchema(Mutex<Option<SchemaRef>>);
+
+impl AsRef<Mutex<Option<SchemaRef>>> for CachedSchema {
+    fn as_ref(&self) -> &Mutex<Option<SchemaRef>> {
+        &self.0
+    }
+}
+
+impl Deref for CachedSchema {
+    type Target = Mutex<Option<SchemaRef>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Clone for CachedSchema {
+    fn clone(&self) -> Self {
+        let inner = self.0.lock().unwrap();
+        Self(Mutex::new(inner.clone()))
+    }
+}
+
+impl CachedSchema {
+    fn get(&self) -> Option<SchemaRef> {
+        self.0.lock().unwrap().clone()
     }
 }

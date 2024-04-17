@@ -1,9 +1,10 @@
-mod dsl_to_ir;
+mod dsl_plan_to_ir_plan;
 mod ir_to_dsl;
+mod expr_to_expr_ir;
 
 use std::borrow::Cow;
 
-pub use dsl_to_ir::*;
+pub use dsl_plan_to_ir_plan::*;
 pub use ir_to_dsl::*;
 use polars_core::prelude::*;
 use polars_utils::vec::ConvertVec;
@@ -11,6 +12,7 @@ use recursive::recursive;
 
 use crate::constants::get_len_name;
 use crate::prelude::*;
+pub use expr_to_expr_ir::*;
 
 fn expr_irs_to_exprs(expr_irs: Vec<ExprIR>, expr_arena: &Arena<AExpr>) -> Vec<Expr> {
     expr_irs.convert_owned(|e| e.to_expr(expr_arena))

@@ -561,37 +561,10 @@ impl DslBuilder {
         if exprs.is_empty() {
             return self;
         }
-        // current schema
-        let schema = try_delayed!(self.0.schema(), &self.0, into);
-        let mut new_schema = (**schema).clone();
-        let (exprs, _) = try_delayed!(prepare_projection(exprs, &schema), &self.0, into);
-
-        let mut output_names = PlHashSet::with_capacity(exprs.len());
-
-        let mut arena = Arena::with_capacity(8);
-        for e in &exprs {
-            let field = e
-                .to_field_amortized(&schema, Context::Default, &mut arena)
-                .unwrap();
-
-            if !output_names.insert(field.name().clone()) {
-                let msg = format!(
-                    "the name: '{}' passed to `LazyFrame.with_columns` is duplicate\n\n\
-                    It's possible that multiple expressions are returning the same default column name. \
-                    If this is the case, try renaming the columns with `.alias(\"new_name\")` to avoid \
-                    duplicate column names.",
-                    field.name()
-                );
-                return raise_err!(polars_err!(ComputeError: msg), &self.0, into);
-            }
-            new_schema.with_column(field.name().clone(), field.data_type().clone());
-            arena.clear();
-        }
 
         DslPlan::HStack {
             input: Arc::new(self.0),
             exprs,
-            schema: Arc::new(new_schema),
             options,
         }
         .into()

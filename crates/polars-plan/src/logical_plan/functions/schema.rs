@@ -109,28 +109,3 @@ fn row_index_schema(
     schema_ref
 }
 
-// We don't use an `Arc<Mutex>` because caches should live in different query plans.
-// For that reason we have a specialized deep clone.
-#[derive(Default)]
-pub struct CachedSchema(Mutex<Option<SchemaRef>>);
-
-impl AsRef<Mutex<Option<SchemaRef>>> for CachedSchema {
-    fn as_ref(&self) -> &Mutex<Option<SchemaRef>> {
-        &self.0
-    }
-}
-
-impl Deref for CachedSchema {
-    type Target = Mutex<Option<SchemaRef>>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl Clone for CachedSchema {
-    fn clone(&self) -> Self {
-        let inner = self.0.lock().unwrap();
-        Self(Mutex::new(inner.clone()))
-    }
-}
