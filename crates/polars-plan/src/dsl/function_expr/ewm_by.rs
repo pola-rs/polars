@@ -10,13 +10,7 @@ pub(super) fn ewm_mean_by(
         _ => None,
     };
     polars_ensure!(!half_life.negative(), InvalidOperation: "half_life cannot be negative");
-    polars_ensure!(half_life.is_constant_duration(time_zone),
-        InvalidOperation: "expected `half_life` to be a constant duration \
-        (i.e. one independent of differing month durations or of daylight savings time), got {}.\n\
-        \n\
-        You may want to try:\n\
-        - using `'730h'` instead of `'1mo'`\n\
-        - using `'24h'` instead of `'1d'` if your series is time-zone-aware", half_life);
+    half_life.ensure_is_constant_duration(time_zone, "half_life")?;
     // `half_life` is a constant duration so we can safely use `duration_ns()`.
     let half_life = half_life.duration_ns();
     let values = &s[0];

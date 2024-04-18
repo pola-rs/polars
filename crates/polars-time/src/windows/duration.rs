@@ -373,6 +373,22 @@ impl Duration {
         }
     }
 
+    pub fn ensure_is_constant_duration(
+        &self,
+        time_zone: Option<&str>,
+        variable_name: &str,
+    ) -> PolarsResult<()> {
+        if !self.is_constant_duration(time_zone) {
+            polars_bail!(InvalidOperation: "expected `{}` to be a constant duration \
+                (i.e. one independent of differing month durations or of daylight savings time), got {}.\n\
+                \n\
+                You may want to try:\n\
+                - using `'730h'` instead of `'1mo'`\n\
+                - using `'24h'` instead of `'1d'` if your series is time-zone-aware", variable_name, self)
+        }
+        Ok(())
+    }
+
     /// Returns the nanoseconds from the `Duration` without the weeks or months part.
     pub fn nanoseconds(&self) -> i64 {
         self.nsecs
