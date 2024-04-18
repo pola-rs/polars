@@ -70,7 +70,7 @@ pub(crate) fn get_lf(obj: &PyAny) -> PyResult<LazyFrame> {
     Ok(pydf.extract::<PyLazyFrame>()?.ldf)
 }
 
-pub(crate) fn get_series(obj: Bound<PyAny>) -> PyResult<Series> {
+pub(crate) fn get_series(obj: &Bound<'_, PyAny>) -> PyResult<Series> {
     let pydf = obj.getattr(intern!(obj.py(), "_s"))?;
     Ok(pydf.extract::<PySeries>()?.series)
 }
