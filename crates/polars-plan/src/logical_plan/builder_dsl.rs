@@ -277,7 +277,7 @@ impl DslBuilder {
         mut skip_rows: usize,
         n_rows: Option<usize>,
         cache: bool,
-        mut schema: Option<Arc<Schema>>,
+        schema: Option<Arc<Schema>>,
         schema_overwrite: Option<&Schema>,
         low_memory: bool,
         comment_prefix: Option<CommentPrefix>,
@@ -317,7 +317,7 @@ impl DslBuilder {
 
         // TODO! delay inferring schema until absolutely necessary
         // this needs a way to estimated bytes/rows.
-        let (mut inferred_schema, rows_read, bytes_read) = infer_file_schema(
+        let (inferred_schema, rows_read, bytes_read) = infer_file_schema(
             &reader_bytes,
             separator,
             infer_schema_length,
@@ -333,21 +333,6 @@ impl DslBuilder {
             raise_if_empty,
             &mut n_threads,
         )?;
-
-        if let Some(rc) = &row_index {
-            match schema {
-                None => {
-                    let _ = inferred_schema.insert_at_index(0, rc.name.as_str().into(), IDX_DTYPE);
-                },
-                Some(inner) => {
-                    schema = Some(Arc::new(
-                        inner
-                            .new_inserting_at_index(0, rc.name.as_str().into(), IDX_DTYPE)
-                            .unwrap(),
-                    ));
-                },
-            }
-        }
 
         let schema = schema.unwrap_or_else(|| Arc::new(inferred_schema));
         let n_bytes = reader_bytes.len();
