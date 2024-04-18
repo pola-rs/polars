@@ -277,9 +277,7 @@ pub(crate) fn py_object_to_any_value<'py>(
             // This constructor is able to go via dedicated type constructors
             // so it can be much faster.
             let py = ob.py();
-            let s = SERIES.call1(py, (ob,))?;
-            let s = super::get_series(&s.bind(py))?;
-            Ok(AnyValue::List(s))
+            get_list_from_series(ob, true)
         }
 
         if ob.is_empty()? {
