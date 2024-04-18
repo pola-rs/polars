@@ -76,7 +76,7 @@ pub(super) fn parquet_file_info(
     Ok((file_info, metadata))
 }
 
-// TODO! return metdata arced
+// TODO! return metadata arced
 #[cfg(feature = "ipc")]
 pub(super) fn ipc_file_info(
     paths: &[PathBuf],
