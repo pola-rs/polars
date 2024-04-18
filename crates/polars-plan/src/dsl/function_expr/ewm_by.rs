@@ -10,7 +10,7 @@ pub(super) fn ewm_mean_by(
         _ => None,
     };
     polars_ensure!(!half_life.negative(), InvalidOperation: "half_life cannot be negative");
-    half_life.ensure_is_constant_duration(time_zone, "half_life")?;
+    ensure_is_constant_duration(half_life, time_zone, "half_life")?;
     // `half_life` is a constant duration so we can safely use `duration_ns()`.
     let half_life = half_life.duration_ns();
     let values = &s[0];

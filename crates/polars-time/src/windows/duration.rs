@@ -15,6 +15,7 @@ use polars_core::prelude::{
     datetime_to_timestamp_ms, datetime_to_timestamp_ns, datetime_to_timestamp_us, polars_bail,
     PolarsResult,
 };
+use polars_error::polars_ensure;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -371,22 +372,6 @@ impl Duration {
             // necessarily 24 hours due to daylight savings time.
             self.months == 0 && self.weeks == 0 && self.days == 0
         }
-    }
-
-    pub fn ensure_is_constant_duration(
-        &self,
-        time_zone: Option<&str>,
-        variable_name: &str,
-    ) -> PolarsResult<()> {
-        if !self.is_constant_duration(time_zone) {
-            polars_bail!(InvalidOperation: "expected `{}` to be a constant duration \
-                (i.e. one independent of differing month durations or of daylight savings time), got {}.\n\
-                \n\
-                You may want to try:\n\
-                - using `'730h'` instead of `'1mo'`\n\
-                - using `'24h'` instead of `'1d'` if your series is time-zone-aware", variable_name, self)
-        }
-        Ok(())
     }
 
     /// Returns the nanoseconds from the `Duration` without the weeks or months part.
@@ -961,6 +946,21 @@ fn new_datetime(
     let date = NaiveDate::from_ymd_opt(year, month, days)?;
     let time = NaiveTime::from_hms_nano_opt(hour, min, sec, nano)?;
     Some(NaiveDateTime::new(date, time))
+}
+
+pub fn ensure_is_constant_duration(
+    duration: Duration,
+    time_zone: Option<&str>,
+    variable_name: &str,
+) -> PolarsResult<()> {
+    polars_ensure!(duration.is_constant_duration(time_zone), 
+        InvalidOperation: "expected `{}` to be a constant duration \
+            (i.e. one independent of differing month durations or of daylight savings time), got {}.\n\
+            \n\
+            You may want to try:\n\
+            - using `'730h'` instead of `'1mo'`\n\
+            - using `'24h'` instead of `'1d'` if your series is time-zone-aware", variable_name, duration);
+    Ok(())
 }
 
 #[cfg(test)]
