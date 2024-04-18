@@ -12,7 +12,7 @@ use pyo3::types::{PyBool, PyBytes, PyDict, PyFloat, PyInt, PyList, PySequence, P
 
 use super::{decimal_to_digits, struct_dict, ObjectValue, Wrap};
 use crate::error::PyPolarsErr;
-use crate::py_modules::{SERIES, UTILS};
+use crate::py_modules::UTILS;
 use crate::series::PySeries;
 
 impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
@@ -289,7 +289,7 @@ pub(crate) fn py_object_to_any_value<'py>(
 
             let mut avs = Vec::with_capacity(INFER_SCHEMA_LENGTH);
             let mut iter = list.iter()?;
-            let items : PyResult<Vec<_>> = (&mut iter).take(INFER_SCHEMA_LENGTH).collect();
+            let items: PyResult<Vec<_>> = (&mut iter).take(INFER_SCHEMA_LENGTH).collect();
             let items = items?;
             for item in &items {
                 let av = py_object_to_any_value(item, strict)?;
@@ -305,7 +305,7 @@ pub(crate) fn py_object_to_any_value<'py>(
             } else {
                 // Push the rest.
                 avs.reserve(list.len()?);
-                let rest : PyResult<Vec<_>> = iter.collect();
+                let rest: PyResult<Vec<_>> = iter.collect();
                 let rest = rest?;
                 for item in &rest {
                     let av = py_object_to_any_value(item, strict)?;
@@ -326,10 +326,7 @@ pub(crate) fn py_object_to_any_value<'py>(
         }
     }
 
-    fn get_list_from_series<'py>(
-        ob: &Bound<'py, PyAny>,
-        _strict: bool,
-    ) -> PyResult<AnyValue<'py>> {
+    fn get_list_from_series<'py>(ob: &Bound<'py, PyAny>, _strict: bool) -> PyResult<AnyValue<'py>> {
         let s = super::get_series(ob)?;
         Ok(AnyValue::List(s))
     }
@@ -366,10 +363,7 @@ pub(crate) fn py_object_to_any_value<'py>(
     ///
     /// Note: This function is only ran if the object's type is not already in the
     /// lookup table.
-    fn get_conversion_function<'py, 'a>(
-        ob: &Bound<'py, PyAny>,
-        py: Python<'py>,
-    ) -> InitFn<'a> {
+    fn get_conversion_function<'py, 'a>(ob: &Bound<'py, PyAny>, py: Python<'py>) -> InitFn<'a> {
         if ob.is_none() {
             get_null
         }
