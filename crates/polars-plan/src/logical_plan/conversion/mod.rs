@@ -1,6 +1,8 @@
 mod dsl_plan_to_ir_plan;
 mod expr_to_expr_ir;
 mod ir_to_dsl;
+#[cfg(any(feature = "ipc", feature = "parquet", feature = "csv"))]
+mod scans;
 
 use std::borrow::Cow;
 
@@ -43,7 +45,7 @@ impl IR {
                 file_options: options,
             } => DslPlan::Scan {
                 paths,
-                file_info,
+                file_info: Some(file_info),
                 predicate: predicate.map(|e| e.to_expr(expr_arena)),
                 scan_type,
                 file_options: options,

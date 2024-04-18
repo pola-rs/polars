@@ -570,7 +570,7 @@ def test_compressed_csv(io_files_path: Path) -> None:
         ComputeError,
         match="cannot scan compressed csv; use `read_csv` for compressed data",
     ):
-        pl.scan_csv(csv_file)
+        pl.scan_csv(csv_file).collect()
     out = pl.read_csv(str(csv_file), truncate_ragged_lines=True)
     assert_frame_equal(out, expected)
 

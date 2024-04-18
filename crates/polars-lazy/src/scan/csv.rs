@@ -10,7 +10,7 @@ use crate::prelude::*;
 
 #[derive(Clone)]
 #[cfg(feature = "csv")]
-pub struct LazyCsvReader<'a> {
+pub struct LazyCsvReader {
     path: PathBuf,
     paths: Arc<[PathBuf]>,
     separator: u8,
@@ -20,7 +20,7 @@ pub struct LazyCsvReader<'a> {
     n_rows: Option<usize>,
     cache: bool,
     schema: Option<SchemaRef>,
-    schema_overwrite: Option<&'a Schema>,
+    schema_overwrite: Option<SchemaRef>,
     low_memory: bool,
     comment_prefix: Option<CommentPrefix>,
     quote_char: Option<u8>,
@@ -39,7 +39,7 @@ pub struct LazyCsvReader<'a> {
 }
 
 #[cfg(feature = "csv")]
-impl<'a> LazyCsvReader<'a> {
+impl LazyCsvReader {
     pub fn new_paths(paths: Arc<[PathBuf]>) -> Self {
         Self::new("").with_paths(paths)
     }
@@ -129,7 +129,7 @@ impl<'a> LazyCsvReader<'a> {
     /// Overwrite the schema with the dtypes in this given Schema. The given schema may be a subset
     /// of the total schema.
     #[must_use]
-    pub fn with_dtype_overwrite(mut self, schema: Option<&'a Schema>) -> Self {
+    pub fn with_dtype_overwrite(mut self, schema: Option<SchemaRef>) -> Self {
         self.schema_overwrite = schema;
         self
     }
@@ -270,7 +270,7 @@ impl<'a> LazyCsvReader<'a> {
         let mut schema = f(schema)?;
 
         // the dtypes set may be for the new names, so update again
-        if let Some(overwrite_schema) = self.schema_overwrite {
+        if let Some(overwrite_schema) = &self.schema_overwrite {
             for (name, dtype) in overwrite_schema.iter() {
                 schema.with_column(name.clone(), dtype.clone());
             }
@@ -280,7 +280,7 @@ impl<'a> LazyCsvReader<'a> {
     }
 }
 
-impl LazyFileListReader for LazyCsvReader<'_> {
+impl LazyFileListReader for LazyCsvReader {
     fn finish_no_glob(self) -> PolarsResult<LazyFrame> {
         let mut lf: LazyFrame = DslBuilder::scan_csv(
             self.path,

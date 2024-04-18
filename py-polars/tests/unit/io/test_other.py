@@ -30,8 +30,12 @@ def test_read_missing_file(read_function: Callable[[Any], pl.DataFrame]) -> None
     if sys.platform == "linux":
         match = "No such file or directory " + match
 
-    with pytest.raises(FileNotFoundError, match=match):
-        read_function("fake_file_path")
+    if "scan" in read_function.__name__:
+        with pytest.raises(FileNotFoundError, match=match):
+            read_function("fake_file_path").collect()  # type: ignore[attr-defined]
+    else:
+        with pytest.raises(FileNotFoundError, match=match):
+            read_function("fake_file_path")
 
 
 @pytest.mark.parametrize(

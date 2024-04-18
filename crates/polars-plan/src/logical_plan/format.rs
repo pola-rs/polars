@@ -12,7 +12,7 @@ fn write_scan<P: Display>(
     path: &[PathBuf],
     indent: usize,
     n_columns: i64,
-    total_columns: usize,
+    total_columns: Option<usize>,
     predicate: &Option<P>,
     n_rows: Option<usize>,
 ) -> fmt::Result {
@@ -28,6 +28,9 @@ fn write_scan<P: Display>(
             path[0].to_string_lossy()
         )),
     };
+    let total_columns = total_columns
+        .map(|v| format!("{v}"))
+        .unwrap_or_else(|| "?".to_string());
 
     write!(f, "{:indent$}{name} SCAN {path_fmt}", "")?;
     if n_columns > 0 {
@@ -58,7 +61,7 @@ impl DslPlan {
         match self {
             #[cfg(feature = "python")]
             PythonScan { options } => {
-                let total_columns = options.schema.len();
+                let total_columns = Some(options.schema.len());
                 let n_columns = options
                     .with_columns
                     .as_ref()
@@ -136,7 +139,7 @@ impl DslPlan {
                     paths,
                     sub_indent,
                     n_columns,
-                    file_info.schema.len(),
+                    file_info.as_ref().map(|fi| fi.schema.len()),
                     predicate,
                     file_options.n_rows,
                 )

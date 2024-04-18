@@ -84,7 +84,8 @@ pub enum DslPlan {
     },
     Scan {
         paths: Arc<[PathBuf]>,
-        file_info: FileInfo,
+        // Option as this is mostly materialized on the IR phase.
+        file_info: Option<FileInfo>,
         predicate: Option<Expr>,
         file_options: FileScanOptions,
         scan_type: FileScan,
