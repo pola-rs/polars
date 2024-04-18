@@ -1,15 +1,6 @@
-#[cfg(feature = "csv")]
-use std::io::{Read, Seek};
-
 use polars_core::prelude::*;
 #[cfg(feature = "parquet")]
 use polars_io::cloud::CloudOptions;
-#[cfg(all(feature = "parquet", feature = "async"))]
-use polars_io::parquet::ParquetAsyncReader;
-#[cfg(feature = "parquet")]
-use polars_io::parquet::ParquetReader;
-#[cfg(all(feature = "cloud", feature = "parquet"))]
-use polars_io::pl_async::get_runtime;
 use polars_io::HiveOptions;
 #[cfg(any(
     feature = "parquet",
@@ -19,13 +10,7 @@ use polars_io::HiveOptions;
 ))]
 use polars_io::RowIndex;
 #[cfg(feature = "csv")]
-use polars_io::{
-    csv::utils::{infer_file_schema, is_compressed},
-    csv::CommentPrefix,
-    csv::CsvEncoding,
-    csv::NullValues,
-    utils::get_reader_bytes,
-};
+use polars_io::{csv::CommentPrefix, csv::CsvEncoding, csv::NullValues};
 
 use crate::constants::UNLIMITED_CACHE;
 use crate::logical_plan::expr_expansion::rewrite_projections;
@@ -48,14 +33,6 @@ impl From<DslPlan> for DslBuilder {
     fn from(lp: DslPlan) -> Self {
         DslBuilder(lp)
     }
-}
-
-#[cfg(any(feature = "parquet", feature = "parquet_async",))]
-fn prepare_schema(mut schema: Schema, row_index: Option<&RowIndex>) -> SchemaRef {
-    if let Some(rc) = row_index {
-        let _ = schema.insert_at_index(0, rc.name.as_str().into(), IDX_DTYPE);
-    }
-    Arc::new(schema)
 }
 
 impl DslBuilder {
@@ -89,7 +66,7 @@ impl DslBuilder {
 
         Ok(DslPlan::Scan {
             paths: Arc::new([]),
-            file_info,
+            file_info: Some(file_info),
             predicate: None,
             file_options,
             scan_type: FileScan::Anonymous {
@@ -117,57 +94,7 @@ impl DslBuilder {
         use_statistics: bool,
         hive_options: HiveOptions,
     ) -> PolarsResult<Self> {
-        use polars_io::{is_cloud_url, SerReader as _};
-
         let paths = paths.into();
-        polars_ensure!(paths.len() >= 1, ComputeError: "expected at least 1 path");
-
-        // Use first path to get schema.
-        let path = &paths[0];
-
-        let (schema, reader_schema, num_rows, metadata) = if is_cloud_url(path) {
-            #[cfg(not(feature = "cloud"))]
-            panic!(
-                "One or more of the cloud storage features ('aws', 'gcp', ...) must be enabled."
-            );
-
-            #[cfg(feature = "cloud")]
-            {
-                let uri = path.to_string_lossy();
-                get_runtime().block_on(async {
-                    let mut reader =
-                        ParquetAsyncReader::from_uri(&uri, cloud_options.as_ref(), None, None)
-                            .await?;
-                    let reader_schema = reader.schema().await?;
-                    let num_rows = reader.num_rows().await?;
-                    let metadata = reader.get_metadata().await?.clone();
-
-                    let schema = prepare_schema((&reader_schema).into(), row_index.as_ref());
-                    PolarsResult::Ok((schema, reader_schema, Some(num_rows), Some(metadata)))
-                })?
-            }
-        } else {
-            let file = polars_utils::open_file(path)?;
-            let mut reader = ParquetReader::new(file);
-            let reader_schema = reader.schema()?;
-            let schema = prepare_schema((&reader_schema).into(), row_index.as_ref());
-            (
-                schema,
-                reader_schema,
-                Some(reader.num_rows()?),
-                Some(reader.get_metadata()?.clone()),
-            )
-        };
-
-        let mut file_info = FileInfo::new(
-            schema,
-            Some(reader_schema),
-            (num_rows, num_rows.unwrap_or(0)),
-        );
-
-        if hive_options.enabled {
-            file_info.init_hive_partitions(path.as_path(), hive_options.schema.clone())?
-        }
 
         let options = FileScanOptions {
             with_columns: None,
@@ -180,7 +107,7 @@ impl DslBuilder {
         };
         Ok(DslPlan::Scan {
             paths,
-            file_info,
+            file_info: None,
             file_options: options,
             predicate: None,
             scan_type: FileScan::Parquet {
@@ -190,7 +117,7 @@ impl DslBuilder {
                     use_statistics,
                 },
                 cloud_options,
-                metadata,
+                metadata: None,
             },
         }
         .into())
@@ -206,44 +133,11 @@ impl DslBuilder {
         rechunk: bool,
         cloud_options: Option<CloudOptions>,
     ) -> PolarsResult<Self> {
-        use polars_io::is_cloud_url;
-
         let paths = paths.into();
-
-        // Use first path to get schema.
-        let path = paths
-            .first()
-            .ok_or_else(|| polars_err!(ComputeError: "expected at least 1 path"))?;
-
-        let metadata = if is_cloud_url(path) {
-            #[cfg(not(feature = "cloud"))]
-            panic!(
-                "One or more of the cloud storage features ('aws', 'gcp', ...) must be enabled."
-            );
-
-            #[cfg(feature = "cloud")]
-            {
-                let uri = path.to_string_lossy();
-                get_runtime().block_on(async {
-                    polars_io::ipc::IpcReaderAsync::from_uri(&uri, cloud_options.as_ref())
-                        .await?
-                        .metadata()
-                        .await
-                })?
-            }
-        } else {
-            arrow::io::ipc::read::read_file_metadata(&mut std::io::BufReader::new(
-                polars_utils::open_file(path)?,
-            ))?
-        };
 
         Ok(DslPlan::Scan {
             paths,
-            file_info: FileInfo::new(
-                prepare_schema(metadata.schema.as_ref().into(), row_index.as_ref()),
-                Some(Arc::clone(&metadata.schema)),
-                (None, 0),
-            ),
+            file_info: None,
             file_options: FileScanOptions {
                 with_columns: None,
                 cache,
@@ -261,7 +155,7 @@ impl DslBuilder {
             scan_type: FileScan::Ipc {
                 options,
                 cloud_options,
-                metadata: Some(metadata),
+                metadata: None,
             },
         }
         .into())
@@ -274,11 +168,11 @@ impl DslBuilder {
         separator: u8,
         has_header: bool,
         ignore_errors: bool,
-        mut skip_rows: usize,
+        skip_rows: usize,
         n_rows: Option<usize>,
         cache: bool,
-        mut schema: Option<Arc<Schema>>,
-        schema_overwrite: Option<&Schema>,
+        schema: Option<SchemaRef>,
+        schema_overwrite: Option<SchemaRef>,
         low_memory: bool,
         comment_prefix: Option<CommentPrefix>,
         quote_char: Option<u8>,
@@ -292,69 +186,11 @@ impl DslBuilder {
         try_parse_dates: bool,
         raise_if_empty: bool,
         truncate_ragged_lines: bool,
-        mut n_threads: Option<usize>,
+        n_threads: Option<usize>,
     ) -> PolarsResult<Self> {
         let path = path.into();
-        let mut file = polars_utils::open_file(&path)?;
 
         let paths = Arc::new([path]);
-
-        let mut magic_nr = [0u8; 4];
-        let res_len = file.read(&mut magic_nr)?;
-        if res_len < 2 {
-            if raise_if_empty {
-                polars_bail!(NoData: "empty CSV")
-            }
-        } else {
-            polars_ensure!(
-            !is_compressed(&magic_nr),
-            ComputeError: "cannot scan compressed csv; use `read_csv` for compressed data",
-            );
-        }
-
-        file.rewind()?;
-        let reader_bytes = get_reader_bytes(&mut file).expect("could not mmap file");
-
-        // TODO! delay inferring schema until absolutely necessary
-        // this needs a way to estimated bytes/rows.
-        let (mut inferred_schema, rows_read, bytes_read) = infer_file_schema(
-            &reader_bytes,
-            separator,
-            infer_schema_length,
-            has_header,
-            schema_overwrite,
-            &mut skip_rows,
-            skip_rows_after_header,
-            comment_prefix.as_ref(),
-            quote_char,
-            eol_char,
-            null_values.as_ref(),
-            try_parse_dates,
-            raise_if_empty,
-            &mut n_threads,
-        )?;
-
-        if let Some(rc) = &row_index {
-            match schema {
-                None => {
-                    let _ = inferred_schema.insert_at_index(0, rc.name.as_str().into(), IDX_DTYPE);
-                },
-                Some(inner) => {
-                    schema = Some(Arc::new(
-                        inner
-                            .new_inserting_at_index(0, rc.name.as_str().into(), IDX_DTYPE)
-                            .unwrap(),
-                    ));
-                },
-            }
-        }
-
-        let schema = schema.unwrap_or_else(|| Arc::new(inferred_schema));
-        let n_bytes = reader_bytes.len();
-        let estimated_n_rows = (rows_read as f64 / bytes_read as f64 * n_bytes as f64) as usize;
-
-        skip_rows += skip_rows_after_header;
-        let file_info = FileInfo::new(schema, None, (None, estimated_n_rows));
 
         let options = FileScanOptions {
             with_columns: None,
@@ -371,7 +207,7 @@ impl DslBuilder {
         };
         Ok(DslPlan::Scan {
             paths,
-            file_info,
+            file_info: None,
             file_options: options,
             predicate: None,
             scan_type: FileScan::Csv {
@@ -390,6 +226,10 @@ impl DslBuilder {
                     raise_if_empty,
                     truncate_ragged_lines,
                     n_threads,
+                    schema,
+                    schema_overwrite,
+                    skip_rows_after_header,
+                    infer_schema_length,
                 },
             },
         }

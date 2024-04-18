@@ -35,12 +35,50 @@ pub fn to_alp(
     let owned = Arc::unwrap_or_clone;
     let v = match lp {
         DslPlan::Scan {
-            mut file_info,
+            file_info,
             paths,
             predicate,
-            scan_type,
+            mut scan_type,
             file_options,
         } => {
+            let mut file_info = if let Some(file_info) = file_info {
+                file_info
+            } else {
+                match &mut scan_type {
+                    #[cfg(feature = "parquet")]
+                    FileScan::Parquet {
+                        cloud_options,
+                        metadata,
+                        ..
+                    } => {
+                        let (file_info, md) = scans::parquet_file_info(
+                            &paths,
+                            &file_options,
+                            cloud_options.as_ref(),
+                        )?;
+                        *metadata = md;
+                        file_info
+                    },
+                    #[cfg(feature = "ipc")]
+                    FileScan::Ipc {
+                        cloud_options,
+                        metadata,
+                        ..
+                    } => {
+                        let (file_info, md) =
+                            scans::ipc_file_info(&paths, &file_options, cloud_options.as_ref())?;
+                        *metadata = Some(md);
+                        file_info
+                    },
+                    #[cfg(feature = "csv")]
+                    FileScan::Csv { options, .. } => {
+                        scans::csv_file_info(&paths, &file_options, options)?
+                    },
+                    // FileInfo should be set.
+                    FileScan::Anonymous { .. } => unreachable!(),
+                }
+            };
+
             if let Some(row_index) = &file_options.row_index {
                 let schema = Arc::make_mut(&mut file_info.schema);
                 *schema = schema

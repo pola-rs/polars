@@ -26,20 +26,24 @@ pub type FileCount = u32;
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct CsvParserOptions {
-    pub separator: u8,
     pub comment_prefix: Option<CommentPrefix>,
     pub quote_char: Option<u8>,
-    pub eol_char: u8,
-    pub has_header: bool,
     pub skip_rows: usize,
-    pub low_memory: bool,
-    pub ignore_errors: bool,
-    pub null_values: Option<NullValues>,
     pub encoding: CsvEncoding,
+    pub skip_rows_after_header: usize,
+    pub infer_schema_length: Option<usize>,
+    pub n_threads: Option<usize>,
     pub try_parse_dates: bool,
     pub raise_if_empty: bool,
     pub truncate_ragged_lines: bool,
-    pub n_threads: Option<usize>,
+    pub low_memory: bool,
+    pub ignore_errors: bool,
+    pub has_header: bool,
+    pub eol_char: u8,
+    pub separator: u8,
+    pub schema_overwrite: Option<SchemaRef>,
+    pub schema: Option<SchemaRef>,
+    pub null_values: Option<NullValues>,
 }
 
 #[cfg(feature = "parquet")]

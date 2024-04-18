@@ -199,7 +199,7 @@ impl DslPlan {
                 "PYTHON",
                 &[],
                 options.with_columns.as_ref().map(|s| s.as_slice()),
-                options.schema.len(),
+                Some(options.schema.len()),
                 &options.predicate,
                 branch,
                 id,
@@ -342,7 +342,7 @@ impl DslPlan {
                     name,
                     paths.as_ref(),
                     options.with_columns.as_ref().map(|cols| cols.as_slice()),
-                    file_info.schema.len(),
+                    file_info.as_ref().map(|fi| fi.schema.len()),
                     predicate,
                     branch,
                     id,
@@ -418,7 +418,7 @@ impl DslPlan {
         name: &str,
         path: &[PathBuf],
         with_columns: Option<&[String]>,
-        total_columns: usize,
+        total_columns: Option<usize>,
         predicate: &Option<P>,
         branch: usize,
         id: usize,
@@ -440,6 +440,9 @@ impl DslPlan {
         };
 
         let pred = fmt_predicate(predicate.as_ref());
+        let total_columns = total_columns
+            .map(|v| format!("{v}"))
+            .unwrap_or_else(|| "?".to_string());
         let fmt = format!(
             "{name} SCAN {};\nπ {}/{};\nσ {}",
             path_fmt, n_columns_fmt, total_columns, pred,
