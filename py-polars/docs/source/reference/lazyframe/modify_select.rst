@@ -44,6 +44,7 @@ Manipulation/selection
     LazyFrame.shift_and_fill
     LazyFrame.slice
     LazyFrame.sort
+    LazyFrame.sql
     LazyFrame.tail
     LazyFrame.take_every
     LazyFrame.top_k

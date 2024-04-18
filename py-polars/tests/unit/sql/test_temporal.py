@@ -45,10 +45,9 @@ def test_datetime_to_time(time_unit: Literal["ns", "us", "ms"]) -> None:
         },
         schema={"dtm": pl.Datetime(time_unit)},
     )
-    with pl.SQLContext(df=df, eager_execution=True) as ctx:
-        result = ctx.execute("SELECT dtm::time as tm from df")["tm"].to_list()
 
-    assert result == [
+    res = df.sql("SELECT dtm::time as tm from df")["tm"].to_list()
+    assert res == [
         time(23, 59, 59),
         time(12, 30, 30),
         time(1, 1, 1),

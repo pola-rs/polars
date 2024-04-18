@@ -22,29 +22,28 @@ def test_modulo() -> None:
             "d": [16.5, 17.0, 18.5, None, 20.0],
         }
     )
-    with pl.SQLContext(df=df) as ctx:
-        out = ctx.execute(
-            """
-            SELECT
-              a % 2 AS a2,
-              b % 3 AS b3,
-              MOD(c, 4) AS c4,
-              MOD(d, 5.5) AS d55
-            FROM df
-            """
-        ).collect()
+    out = df.sql(
+        """
+        SELECT
+          a % 2 AS a2,
+          b % 3 AS b3,
+          MOD(c, 4) AS c4,
+          MOD(d, 5.5) AS d55
+        FROM df
+        """
+    )
 
-        assert_frame_equal(
-            out,
-            pl.DataFrame(
-                {
-                    "a2": [1.5, None, 1.0, 1 / 3, 1.0],
-                    "b3": [0, 1, 2, 0, 1],
-                    "c4": [3, 0, 1, 2, 3],
-                    "d55": [0.0, 0.5, 2.0, None, 3.5],
-                }
-            ),
-        )
+    assert_frame_equal(
+        out,
+        pl.DataFrame(
+            {
+                "a2": [1.5, None, 1.0, 1 / 3, 1.0],
+                "b3": [0, 1, 2, 0, 1],
+                "c4": [3, 0, 1, 2, 3],
+                "d55": [0.0, 0.5, 2.0, None, 3.5],
+            }
+        ),
+    )
 
 
 @pytest.mark.parametrize(

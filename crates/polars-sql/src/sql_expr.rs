@@ -54,14 +54,24 @@ pub(crate) fn map_sql_polars_datatype(data_type: &SQLDataType) -> PolarsResult<D
         | SQLDataType::Uuid
         | SQLDataType::Varchar(_) => DataType::String,
         SQLDataType::Date => DataType::Date,
-        SQLDataType::Double | SQLDataType::DoublePrecision => DataType::Float64,
-        SQLDataType::Float(_) => DataType::Float32,
+        SQLDataType::Double
+        | SQLDataType::DoublePrecision
+        | SQLDataType::Float8
+        | SQLDataType::Float64 => DataType::Float64,
+        SQLDataType::Float(n_bytes) => match n_bytes {
+            None => DataType::Float64,
+            Some(4) => DataType::Float32,
+            Some(8) => DataType::Float64,
+            Some(n) => {
+                polars_bail!(ComputeError: "unsupported `float` size; expected 4 or 8, found {}", n)
+            },
+        },
+        SQLDataType::Float4 | SQLDataType::Real => DataType::Float32,
         SQLDataType::Int(_) | SQLDataType::Integer(_) => DataType::Int32,
         SQLDataType::Int2(_) => DataType::Int16,
         SQLDataType::Int4(_) => DataType::Int32,
         SQLDataType::Int8(_) => DataType::Int64,
         SQLDataType::Interval => DataType::Duration(TimeUnit::Microseconds),
-        SQLDataType::Real => DataType::Float32,
         SQLDataType::SmallInt(_) => DataType::Int16,
         SQLDataType::Time(_, tz) => match tz {
             TimezoneInfo::None => DataType::Time,
