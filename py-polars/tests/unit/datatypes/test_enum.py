@@ -509,3 +509,23 @@ def test_category_comparison_subset() -> None:
     assert out["dt1"].dtype == pl.Enum(["a"])
     assert out["dt2"].dtype == pl.Enum(["a", "b"])
     assert out["dt1"].dtype != out["dt2"].dtype
+
+
+@pytest.mark.parametrize(
+    "dt",
+    [
+        pl.UInt8,
+        pl.UInt16,
+        pl.UInt32,
+        pl.UInt64,
+        pl.Int8,
+        pl.Int16,
+        pl.Int32,
+        pl.Int64,
+    ],
+)
+def test_integer_cast_to_enum_15738(dt: pl.DataType) -> None:
+    s = pl.Series([0, 1, 2], dtype=dt).cast(pl.Enum(["a", "b", "c"]))
+    assert s.to_list() == ["a", "b", "c"]
+    expected_s = pl.Series(["a", "b", "c"], dtype=pl.Enum(["a", "b", "c"]))
+    assert_series_equal(s, expected_s)
