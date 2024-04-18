@@ -290,10 +290,10 @@ pub(crate) fn py_object_to_any_value<'py>(
 
             let mut avs = Vec::with_capacity(INFER_SCHEMA_LENGTH);
             let mut iter = list.iter()?;
-            let items: PyResult<Vec<_>> = (&mut iter).take(INFER_SCHEMA_LENGTH).collect();
-            let items = items?;
-            for item in &items {
-                let av = py_object_to_any_value(item, strict)?;
+            let mut items = Vec::with_capacity(INFER_SCHEMA_LENGTH);
+            for item in (&mut iter).take(INFER_SCHEMA_LENGTH) {
+                items.push(item?);
+                let av = py_object_to_any_value(items.last().unwrap(), strict)?;
                 avs.push(av)
             }
             let (dtype, n_dtypes) = any_values_to_supertype_and_n_dtypes(&avs)
@@ -304,11 +304,12 @@ pub(crate) fn py_object_to_any_value<'py>(
                 get_list_with_constructor(ob)
             } else {
                 // Push the rest.
-                avs.reserve(list.len()?);
-                let rest: PyResult<Vec<_>> = iter.collect();
-                let rest = rest?;
-                for item in &rest {
-                    let av = py_object_to_any_value(item, strict)?;
+                let length = list.len()?;
+                avs.reserve(length);
+                let mut rest = Vec::with_capacity(length);
+                for item in iter {
+                    rest.push(item?);
+                    let av = py_object_to_any_value(rest.last().unwrap(), strict)?;
                     avs.push(av)
                 }
 
