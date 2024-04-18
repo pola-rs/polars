@@ -90,6 +90,7 @@ impl DslFunction {
                     existing,
                     new,
                     swapping,
+                    schema: Default::default(),
                 }
             },
             DslFunction::Stats(_)

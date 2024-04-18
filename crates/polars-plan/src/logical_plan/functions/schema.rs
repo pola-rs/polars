@@ -8,7 +8,10 @@ impl FunctionNode {
         // We will likely add more branches later
         #[allow(clippy::single_match)]
         match self {
-            RowIndex { schema, .. } => {
+            RowIndex { schema, .. }
+            | Explode { schema, .. }
+            | Rename { schema, .. }
+            | Melt { schema, .. } => {
                 let mut guard = schema.lock().unwrap();
                 *guard = None;
             },
@@ -86,7 +89,12 @@ impl FunctionNode {
             },
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => Ok(Cow::Borrowed(input_schema)),
-            Rename { existing, new, .. } => rename_schema(input_schema, existing, new),
+            Rename {
+                existing,
+                new,
+                schema,
+                ..
+            } => rename_schema(input_schema, existing, new, schema),
             RowIndex { schema, name, .. } => {
                 Ok(Cow::Owned(row_index_schema(schema, input_schema, name)))
             },
@@ -191,7 +199,12 @@ fn rename_schema<'a>(
     input_schema: &'a SchemaRef,
     existing: &[SmartString],
     new: &[SmartString],
+    cached_schema: &CachedSchema,
 ) -> PolarsResult<Cow<'a, SchemaRef>> {
+    let mut guard = cached_schema.lock().unwrap();
+    if let Some(schema) = &*guard {
+        return Ok(Cow::Owned(schema.clone()));
+    }
     let mut new_schema = input_schema.iter_fields().collect::<Vec<_>>();
 
     for (old, new) in existing.iter().zip(new.iter()) {
@@ -201,5 +214,7 @@ fn rename_schema<'a>(
             new_schema[idx].name = new.as_str().into();
         }
     }
-    Ok(Cow::Owned(Arc::new(new_schema.into_iter().collect())))
+    let schema: SchemaRef = Arc::new(new_schema.into_iter().collect());
+    *guard = Some(schema.clone());
+    Ok(Cow::Owned(schema))
 }

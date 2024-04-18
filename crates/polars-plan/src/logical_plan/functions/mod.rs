@@ -84,6 +84,8 @@ pub enum FunctionNode {
         new: Arc<[SmartString]>,
         // A column name gets swapped with an existing column
         swapping: bool,
+        #[cfg_attr(feature = "serde", serde(skip))]
+        schema: CachedSchema,
     },
     Explode {
         columns: Arc<[Arc<str>]>,
@@ -161,6 +163,7 @@ impl Hash for FunctionNode {
                 existing,
                 new,
                 swapping: _,
+                ..
             } => {
                 existing.hash(state);
                 new.hash(state);
