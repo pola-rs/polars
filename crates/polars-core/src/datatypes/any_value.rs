@@ -429,6 +429,7 @@ impl<'a> AnyValue<'a> {
                     NumCast::from((*v).parse::<f64>().ok()?)
                 }
             },
+            StringOwned(v) => String(v).extract(),
             _ => None,
         }
     }
