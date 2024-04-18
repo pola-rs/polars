@@ -12,7 +12,7 @@ use pyo3::types::{PyBool, PyBytes, PyDict, PyFloat, PyInt, PyList, PySequence, P
 
 use super::{decimal_to_digits, struct_dict, ObjectValue, Wrap};
 use crate::error::PyPolarsErr;
-use crate::py_modules::UTILS;
+use crate::py_modules::{SERIES, UTILS};
 use crate::series::PySeries;
 
 impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
@@ -277,7 +277,8 @@ pub(crate) fn py_object_to_any_value<'py>(
             // This constructor is able to go via dedicated type constructors
             // so it can be much faster.
             let py = ob.py();
-            get_list_from_series(ob, true)
+            let s = SERIES.call1(py, (ob,))?;
+            get_list_from_series(s.bind(py), true)
         }
 
         if ob.is_empty()? {
@@ -295,7 +296,6 @@ pub(crate) fn py_object_to_any_value<'py>(
                 let av = py_object_to_any_value(item, strict)?;
                 avs.push(av)
             }
-
             let (dtype, n_dtypes) = any_values_to_supertype_and_n_dtypes(&avs)
                 .map_err(|e| PyTypeError::new_err(e.to_string()))?;
 
@@ -340,7 +340,7 @@ pub(crate) fn py_object_to_any_value<'py>(
             let key = k.extract::<Cow<str>>()?;
             let val = py_object_to_any_value(&v, strict)?;
             let dtype = val.dtype();
-            keys.push(Field::new(&*key, dtype));
+            keys.push(Field::new(&key, dtype));
             vals.push(val)
         }
         Ok(AnyValue::StructOwned(Box::new((vals, keys))))
