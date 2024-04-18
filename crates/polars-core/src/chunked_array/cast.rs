@@ -136,9 +136,6 @@ where
                         polars_bail!(OutOfBounds: "index {} is bigger than the number of categories {}",m,categories.len());
                     }
                 }
-                // SAFETY:
-                // we are guarded by the type system
-                let ca = unsafe { &*(self as *const ChunkedArray<T> as *const UInt32Chunked) };
                 // SAFETY: indices are in bound
                 unsafe {
                     Ok(CategoricalChunked::from_cats_and_rev_map_unchecked(
