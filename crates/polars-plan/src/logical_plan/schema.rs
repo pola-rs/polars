@@ -1,5 +1,6 @@
-use std::borrow::Cow;
+use std::ops::Deref;
 use std::path::Path;
+use std::sync::Mutex;
 
 use arrow::datatypes::ArrowSchemaRef;
 use polars_core::prelude::*;
@@ -11,36 +12,9 @@ use super::hive::HivePartitions;
 use crate::prelude::*;
 
 impl DslPlan {
-    pub fn schema(&self) -> PolarsResult<Cow<'_, SchemaRef>> {
-        use DslPlan::*;
-        match self {
-            Scan { file_info, .. } => Ok(Cow::Borrowed(&file_info.schema)),
-            #[cfg(feature = "python")]
-            PythonScan { options } => Ok(Cow::Borrowed(&options.schema)),
-            Union { inputs, .. } => inputs[0].schema(),
-            HConcat { schema, .. } => Ok(Cow::Borrowed(schema)),
-            Cache { input, .. } => input.schema(),
-            Sort { input, .. } => input.schema(),
-            DataFrameScan { schema, .. } => Ok(Cow::Borrowed(schema)),
-            Filter { input, .. } => input.schema(),
-            Select { schema, .. } => Ok(Cow::Borrowed(schema)),
-            GroupBy { schema, .. } => Ok(Cow::Borrowed(schema)),
-            Join { schema, .. } => Ok(Cow::Borrowed(schema)),
-            HStack { schema, .. } => Ok(Cow::Borrowed(schema)),
-            Distinct { input, .. } | Sink { input, .. } => input.schema(),
-            Slice { input, .. } => input.schema(),
-            MapFunction {
-                input, function, ..
-            } => {
-                let input_schema = input.schema()?;
-                match input_schema {
-                    Cow::Owned(schema) => Ok(Cow::Owned(function.schema(&schema)?.into_owned())),
-                    Cow::Borrowed(schema) => function.schema(schema),
-                }
-            },
-            Error { err, .. } => Err(err.take()),
-            ExtContext { schema, .. } => Ok(Cow::Borrowed(schema)),
-        }
+    pub fn compute_schema(&self) -> PolarsResult<SchemaRef> {
+        let (node, lp_arena, _) = self.clone().to_alp()?;
+        Ok(lp_arena.get(node).schema(&lp_arena).into_owned())
     }
 }
 
@@ -383,5 +357,37 @@ pub(crate) fn det_join_schema(
 
             Ok(Arc::new(new_schema))
         },
+    }
+}
+
+// We don't use an `Arc<Mutex>` because caches should live in different query plans.
+// For that reason we have a specialized deep clone.
+#[derive(Default)]
+pub struct CachedSchema(Mutex<Option<SchemaRef>>);
+
+impl AsRef<Mutex<Option<SchemaRef>>> for CachedSchema {
+    fn as_ref(&self) -> &Mutex<Option<SchemaRef>> {
+        &self.0
+    }
+}
+
+impl Deref for CachedSchema {
+    type Target = Mutex<Option<SchemaRef>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Clone for CachedSchema {
+    fn clone(&self) -> Self {
+        let inner = self.0.lock().unwrap();
+        Self(Mutex::new(inner.clone()))
+    }
+}
+
+impl CachedSchema {
+    pub fn get(&self) -> Option<SchemaRef> {
+        self.0.lock().unwrap().clone()
     }
 }

@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 
-use super::builder_functions::*;
 use super::*;
 use crate::logical_plan::projection_expr::ProjectionExprs;
 
@@ -198,14 +197,11 @@ impl<'a> IRBuilder<'a> {
 
     // call this if the schema needs to be updated
     pub(crate) fn explode(self, columns: Arc<[Arc<str>]>) -> Self {
-        let mut schema = (*self.schema().into_owned()).clone();
-        explode_schema(&mut schema, &columns).unwrap();
-
         let lp = IR::MapFunction {
             input: self.root,
             function: FunctionNode::Explode {
                 columns,
-                schema: Arc::new(schema),
+                schema: Default::default(),
             },
         };
         self.add_alp(lp)
@@ -301,11 +297,12 @@ impl<'a> IRBuilder<'a> {
     }
 
     pub fn melt(self, args: Arc<MeltArgs>) -> Self {
-        let schema = self.schema();
-        let schema = det_melt_schema(&args, &schema);
         let lp = IR::MapFunction {
             input: self.root,
-            function: FunctionNode::Melt { args, schema },
+            function: FunctionNode::Melt {
+                args,
+                schema: Default::default(),
+            },
         };
         self.add_alp(lp)
     }

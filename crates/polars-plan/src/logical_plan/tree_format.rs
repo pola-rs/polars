@@ -292,7 +292,6 @@ impl<'a> TreeFmtNode<'a> {
             NL(h, MapFunction { input, function }) => {
                 ND(wh(h, &format!("{function}")), vec![NL(None, input)])
             },
-            NL(h, Error { input, err }) => ND(wh(h, &format!("{err:?}")), vec![NL(None, input)]),
             NL(h, ExtContext { input, .. }) => ND(wh(h, "EXTERNAL_CONTEXT"), vec![NL(None, input)]),
             NL(h, Sink { input, payload }) => ND(
                 wh(

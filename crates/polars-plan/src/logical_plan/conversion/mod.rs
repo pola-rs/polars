@@ -1,9 +1,11 @@
-mod dsl_to_ir;
+mod dsl_plan_to_ir_plan;
+mod expr_to_expr_ir;
 mod ir_to_dsl;
 
 use std::borrow::Cow;
 
-pub use dsl_to_ir::*;
+pub use dsl_plan_to_ir_plan::*;
+pub use expr_to_expr_ir::*;
 pub use ir_to_dsl::*;
 use polars_core::prelude::*;
 use polars_utils::vec::ConvertVec;
@@ -102,7 +104,7 @@ impl IR {
             IR::Select {
                 expr,
                 input,
-                schema,
+                schema: _,
                 options,
             } => {
                 let i = convert_to_lp(input, lp_arena);
@@ -110,7 +112,6 @@ impl IR {
                 DslPlan::Select {
                     expr,
                     input: Arc::new(i),
-                    schema,
                     options,
                 }
             },
@@ -123,7 +124,6 @@ impl IR {
                 DslPlan::Select {
                     expr,
                     input: Arc::new(input),
-                    schema: columns.clone(),
                     options: Default::default(),
                 }
             },
@@ -164,15 +164,14 @@ impl IR {
                 options: dynamic_options,
             } => {
                 let i = convert_to_lp(input, lp_arena);
-                let keys = Arc::new(expr_irs_to_exprs(keys, expr_arena));
+                let keys = expr_irs_to_exprs(keys, expr_arena);
                 let aggs = expr_irs_to_exprs(aggs, expr_arena);
 
                 DslPlan::GroupBy {
                     input: Arc::new(i),
                     keys,
                     aggs,
-                    schema,
-                    apply,
+                    apply: apply.map(|apply| (apply, schema)),
                     maintain_order,
                     options: dynamic_options,
                 }
@@ -180,7 +179,7 @@ impl IR {
             IR::Join {
                 input_left,
                 input_right,
-                schema,
+                schema: _,
                 left_on,
                 right_on,
                 options,
@@ -194,7 +193,6 @@ impl IR {
                 DslPlan::Join {
                     input_left: Arc::new(i_l),
                     input_right: Arc::new(i_r),
-                    schema,
                     left_on,
                     right_on,
                     options,
@@ -203,8 +201,8 @@ impl IR {
             IR::HStack {
                 input,
                 exprs,
-                schema,
                 options,
+                ..
             } => {
                 let i = convert_to_lp(input, lp_arena);
                 let exprs = expr_irs_to_exprs(exprs.all_exprs(), expr_arena);
@@ -212,7 +210,6 @@ impl IR {
                 DslPlan::HStack {
                     input: Arc::new(i),
                     exprs,
-                    schema,
                     options,
                 }
             },
@@ -225,23 +222,20 @@ impl IR {
             },
             IR::MapFunction { input, function } => {
                 let input = Arc::new(convert_to_lp(input, lp_arena));
-                DslPlan::MapFunction { input, function }
+                DslPlan::MapFunction {
+                    input,
+                    function: function.into(),
+                }
             },
             IR::ExtContext {
-                input,
-                contexts,
-                schema,
+                input, contexts, ..
             } => {
                 let input = Arc::new(convert_to_lp(input, lp_arena));
                 let contexts = contexts
                     .into_iter()
                     .map(|node| convert_to_lp(node, lp_arena))
                     .collect();
-                DslPlan::ExtContext {
-                    input,
-                    contexts,
-                    schema,
-                }
+                DslPlan::ExtContext { input, contexts }
             },
             IR::Sink { input, payload } => {
                 let input = Arc::new(convert_to_lp(input, lp_arena));

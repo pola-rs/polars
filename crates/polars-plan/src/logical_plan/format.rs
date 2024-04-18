@@ -228,7 +228,6 @@ impl DslPlan {
                 write!(f, "{:indent$}{function_fmt}", "")?;
                 input._format(f, sub_indent)
             },
-            Error { err, .. } => write!(f, "{err:?}"),
             ExtContext { input, .. } => {
                 write!(f, "{:indent$}EXTERNAL_CONTEXT", "")?;
                 input._format(f, sub_indent)

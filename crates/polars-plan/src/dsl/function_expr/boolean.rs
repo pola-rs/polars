@@ -207,7 +207,7 @@ fn any_horizontal(s: &[Series]) -> PolarsResult<Series> {
 }
 
 fn all_horizontal(s: &[Series]) -> PolarsResult<Series> {
-    polars_ops::prelude::all_horizontal(s)
+    polars_ops::prelude::all_horizontal_impl(s)
 }
 
 fn not(s: &Series) -> PolarsResult<Series> {

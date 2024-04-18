@@ -1,4 +1,5 @@
 mod count;
+mod dsl;
 #[cfg(feature = "merge_sorted")]
 mod merge_sorted;
 #[cfg(feature = "python")]
@@ -9,12 +10,11 @@ mod schema;
 use std::borrow::Cow;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
-use std::ops::Deref;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
+pub use dsl::*;
 use polars_core::prelude::*;
-use schema::CachedSchema;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use smartstring::alias::String as SmartString;
@@ -84,14 +84,18 @@ pub enum FunctionNode {
         new: Arc<[SmartString]>,
         // A column name gets swapped with an existing column
         swapping: bool,
+        #[cfg_attr(feature = "serde", serde(skip))]
+        schema: CachedSchema,
     },
     Explode {
         columns: Arc<[Arc<str>]>,
-        schema: SchemaRef,
+        #[cfg_attr(feature = "serde", serde(skip))]
+        schema: CachedSchema,
     },
     Melt {
         args: Arc<MeltArgs>,
-        schema: SchemaRef,
+        #[cfg_attr(feature = "serde", serde(skip))]
+        schema: CachedSchema,
     },
     RowIndex {
         name: Arc<str>,
@@ -159,6 +163,7 @@ impl Hash for FunctionNode {
                 existing,
                 new,
                 swapping: _,
+                ..
             } => {
                 existing.hash(state);
                 new.hash(state);

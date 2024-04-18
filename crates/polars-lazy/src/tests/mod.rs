@@ -2,7 +2,6 @@ mod aggregations;
 mod arity;
 #[cfg(all(feature = "strings", feature = "cse"))]
 mod cse;
-mod err_msg;
 #[cfg(feature = "parquet")]
 mod io;
 mod logical;

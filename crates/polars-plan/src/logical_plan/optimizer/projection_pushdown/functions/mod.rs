@@ -21,6 +21,7 @@ pub(super) fn process_functions(
             existing,
             new,
             swapping,
+            schema: _,
         } => {
             process_rename(
                 &mut acc_projections,

@@ -317,8 +317,7 @@ fn test_window_exprs_in_binary_exprs() -> PolarsResult<()> {
             .cast(DataType::Int32)
             .alias("stdized3"),
     ])
-    .sum()
-    .unwrap();
+    .sum();
 
     let df = q.collect()?;
 

@@ -27,10 +27,8 @@ use polars_io::{
     utils::get_reader_bytes,
 };
 
-use super::builder_functions::*;
 use crate::constants::UNLIMITED_CACHE;
-use crate::dsl::functions::horizontal::all_horizontal;
-use crate::logical_plan::projection::{is_regex_projection, rewrite_projections};
+use crate::logical_plan::expr_expansion::rewrite_projections;
 #[cfg(feature = "python")]
 use crate::prelude::python_udf::PythonFunction;
 use crate::prelude::*;
@@ -50,41 +48,6 @@ impl From<DslPlan> for DslBuilder {
     fn from(lp: DslPlan) -> Self {
         DslBuilder(lp)
     }
-}
-
-fn format_err(msg: &str, input: &DslPlan) -> String {
-    format!("{msg}\n\nError originated just after this operation:\n{input:?}")
-}
-
-/// Returns every error or msg: &str as `ComputeError`. It also shows the logical plan node where the error originated.
-/// If `input` is already a `DslPlan::Error`, then return it as is; errors already keep track of their previous
-/// inputs, so we don't have to do it again here.
-macro_rules! raise_err {
-    ($err:expr, $input:expr, $convert:ident) => {{
-        let input: DslPlan = $input.clone();
-        match &input {
-            DslPlan::Error { .. } => input,
-            _ => {
-                let format_err_outer = |msg: &str| format_err(msg, &input);
-                let err = $err.wrap_msg(&format_err_outer);
-
-                DslPlan::Error {
-                    input: Arc::new(input),
-                    err: err.into(), // PolarsError -> ErrorState
-                }
-            },
-        }
-        .$convert()
-    }};
-}
-
-macro_rules! try_delayed {
-    ($fallible:expr, $input:expr, $convert:ident) => {
-        match $fallible {
-            Ok(success) => success,
-            Err(err) => return raise_err!(err, $input, $convert),
-        }
-    };
 }
 
 #[cfg(any(feature = "parquet", feature = "parquet_async",))]
@@ -445,265 +408,59 @@ impl DslBuilder {
     }
 
     pub fn drop(self, to_drop: PlHashSet<String>) -> Self {
-        let schema = try_delayed!(self.0.schema(), &self.0, into);
-
-        let mut output_schema = Schema::with_capacity(schema.len().saturating_sub(to_drop.len()));
-        let columns = schema
-            .iter()
-            .filter_map(|(col_name, dtype)| {
-                if to_drop.contains(col_name.as_str()) {
-                    None
-                } else {
-                    let out = Some(col(col_name));
-                    output_schema.with_column(col_name.clone(), dtype.clone());
-                    out
-                }
-            })
-            .collect::<Vec<_>>();
-
-        if columns.is_empty() {
-            self.map(
-                |_| Ok(DataFrame::empty()),
-                AllowedOptimizations::default(),
-                Some(Arc::new(|_: &Schema| Ok(Arc::new(Schema::default())))),
-                "EMPTY PROJECTION",
-            )
-        } else {
-            DslPlan::Select {
-                expr: columns,
-                input: Arc::new(self.0),
-                schema: Arc::new(output_schema),
-                options: ProjectionOptions {
-                    run_parallel: false,
-                    duplicate_check: false,
-                },
-            }
-            .into()
-        }
+        self.map_private(DslFunction::Drop(to_drop))
     }
 
     pub fn project(self, exprs: Vec<Expr>, options: ProjectionOptions) -> Self {
-        let schema = try_delayed!(self.0.schema(), &self.0, into);
-        let (exprs, schema) = try_delayed!(prepare_projection(exprs, &schema), &self.0, into);
-
-        if exprs.is_empty() {
-            self.map(
-                |_| Ok(DataFrame::empty()),
-                AllowedOptimizations::default(),
-                Some(Arc::new(|_: &Schema| Ok(Arc::new(Schema::default())))),
-                "EMPTY PROJECTION",
-            )
-        } else {
-            DslPlan::Select {
-                expr: exprs,
-                input: Arc::new(self.0),
-                schema: Arc::new(schema),
-                options,
-            }
-            .into()
+        DslPlan::Select {
+            expr: exprs,
+            input: Arc::new(self.0),
+            options,
         }
+        .into()
     }
 
     pub fn fill_null(self, fill_value: Expr) -> Self {
-        let schema = try_delayed!(self.0.schema(), &self.0, into);
-        let exprs = schema
-            .iter_names()
-            .map(|name| col(name).fill_null(fill_value.clone()))
-            .collect();
-        self.project(exprs, Default::default())
+        self.project(
+            vec![all().fill_null(fill_value)],
+            ProjectionOptions {
+                duplicate_check: false,
+                ..Default::default()
+            },
+        )
     }
 
     pub fn drop_nulls(self, subset: Option<Vec<Expr>>) -> Self {
-        match subset {
-            None => {
-                let predicate =
-                    try_delayed!(all_horizontal([col("*").is_not_null()]), &self.0, into);
-                self.filter(predicate)
-            },
-            Some(subset) => {
-                let predicate = try_delayed!(
-                    all_horizontal(
-                        subset
-                            .into_iter()
-                            .map(|e| e.is_not_null())
-                            .collect::<Vec<_>>(),
-                    ),
-                    &self.0,
-                    into
-                );
-                self.filter(predicate)
-            },
-        }
+        self.map_private(DslFunction::DropNulls(subset))
     }
 
     pub fn fill_nan(self, fill_value: Expr) -> Self {
-        let schema = try_delayed!(self.0.schema(), &self.0, into);
-
-        let exprs = schema
-            .iter()
-            .filter_map(|(name, dtype)| match dtype {
-                DataType::Float32 | DataType::Float64 => {
-                    Some(col(name).fill_nan(fill_value.clone()).alias(name))
-                },
-                _ => None,
-            })
-            .collect();
-        self.with_columns(
-            exprs,
-            ProjectionOptions {
-                run_parallel: false,
-                duplicate_check: false,
-            },
-        )
+        self.map_private(DslFunction::FillNan(fill_value))
     }
 
     pub fn with_columns(self, exprs: Vec<Expr>, options: ProjectionOptions) -> Self {
         if exprs.is_empty() {
             return self;
         }
-        // current schema
-        let schema = try_delayed!(self.0.schema(), &self.0, into);
-        let mut new_schema = (**schema).clone();
-        let (exprs, _) = try_delayed!(prepare_projection(exprs, &schema), &self.0, into);
-
-        let mut output_names = PlHashSet::with_capacity(exprs.len());
-
-        let mut arena = Arena::with_capacity(8);
-        for e in &exprs {
-            let field = e
-                .to_field_amortized(&schema, Context::Default, &mut arena)
-                .unwrap();
-
-            if !output_names.insert(field.name().clone()) {
-                let msg = format!(
-                    "the name: '{}' passed to `LazyFrame.with_columns` is duplicate\n\n\
-                    It's possible that multiple expressions are returning the same default column name. \
-                    If this is the case, try renaming the columns with `.alias(\"new_name\")` to avoid \
-                    duplicate column names.",
-                    field.name()
-                );
-                return raise_err!(polars_err!(ComputeError: msg), &self.0, into);
-            }
-            new_schema.with_column(field.name().clone(), field.data_type().clone());
-            arena.clear();
-        }
 
         DslPlan::HStack {
             input: Arc::new(self.0),
             exprs,
-            schema: Arc::new(new_schema),
             options,
         }
         .into()
     }
 
-    pub fn add_err(self, err: PolarsError) -> Self {
-        DslPlan::Error {
-            input: Arc::new(self.0),
-            err: err.into(),
-        }
-        .into()
-    }
-
     pub fn with_context(self, contexts: Vec<DslPlan>) -> Self {
-        let mut schema = try_delayed!(self.0.schema(), &self.0, into)
-            .as_ref()
-            .as_ref()
-            .clone();
-
-        for lp in &contexts {
-            let other_schema = try_delayed!(lp.schema(), lp, into);
-
-            for fld in other_schema.iter_fields() {
-                if schema.get(fld.name()).is_none() {
-                    schema.with_column(fld.name, fld.dtype);
-                }
-            }
-        }
         DslPlan::ExtContext {
             input: Arc::new(self.0),
             contexts,
-            schema: Arc::new(schema),
         }
         .into()
     }
 
     /// Apply a filter
     pub fn filter(self, predicate: Expr) -> Self {
-        let schema = try_delayed!(self.0.schema(), &self.0, into);
-
-        let predicate = if has_expr(&predicate, |e| match e {
-            Expr::Column(name) => is_regex_projection(name),
-            Expr::Wildcard
-            | Expr::Selector(_)
-            | Expr::RenameAlias { .. }
-            | Expr::Columns(_)
-            | Expr::DtypeColumn(_)
-            | Expr::Nth(_) => true,
-            _ => false,
-        }) {
-            let mut rewritten = try_delayed!(
-                rewrite_projections(vec![predicate], &schema, &[]),
-                &self.0,
-                into
-            );
-            match rewritten.len() {
-                1 => {
-                    // all good
-                    rewritten.pop().unwrap()
-                },
-                0 => {
-                    let msg = "The predicate expanded to zero expressions. \
-                        This may for example be caused by a regex not matching column names or \
-                        a column dtype match not hitting any dtypes in the DataFrame";
-                    return raise_err!(polars_err!(ComputeError: msg), &self.0, into);
-                },
-                _ => {
-                    let mut expanded = String::new();
-                    for e in rewritten.iter().take(5) {
-                        expanded.push_str(&format!("\t{e},\n"))
-                    }
-                    // pop latest comma
-                    expanded.pop();
-                    if rewritten.len() > 5 {
-                        expanded.push_str("\t...\n")
-                    }
-
-                    let msg = if cfg!(feature = "python") {
-                        format!("The predicate passed to 'LazyFrame.filter' expanded to multiple expressions: \n\n{expanded}\n\
-                            This is ambiguous. Try to combine the predicates with the 'all' or `any' expression.")
-                    } else {
-                        format!("The predicate passed to 'LazyFrame.filter' expanded to multiple expressions: \n\n{expanded}\n\
-                            This is ambiguous. Try to combine the predicates with the 'all_horizontal' or `any_horizontal' expression.")
-                    };
-                    return raise_err!(polars_err!(ComputeError: msg), &self.0, into);
-                },
-            }
-        } else {
-            predicate
-        };
-
-        // Check predicates refer to valid column names here, as this is not
-        // checked by predicate pushdown and may otherwise lead to incorrect
-        // optimizations. For example:
-        //
-        // (unoptimized)
-        // FILTER [(col("x")) == (1)] FROM
-        //   SELECT [col("x").alias("y")] FROM
-        //     DF ["x"]; PROJECT 1/1 COLUMNS; SELECTION: "None"
-        //
-        // (optimized)
-        // SELECT [col("x").alias("y")] FROM
-        //   DF ["x"]; PROJECT 1/1 COLUMNS; SELECTION: "[(col(\"x\")) == (1)]"
-        //                                             ^^^
-        // "x" is incorrectly pushed down even though it didn't exist after SELECT
-        try_delayed!(
-            expr_to_leaf_column_names_iter(&predicate)
-                .try_for_each(|c| schema.try_index_of(&c).and(Ok(()))),
-            &self.0,
-            into
-        );
-
         DslPlan::Filter {
             predicate,
             input: Arc::new(self.0),
@@ -715,73 +472,12 @@ impl DslBuilder {
         self,
         keys: Vec<Expr>,
         aggs: E,
-        apply: Option<Arc<dyn DataFrameUdf>>,
+        apply: Option<(Arc<dyn DataFrameUdf>, SchemaRef)>,
         maintain_order: bool,
         #[cfg(feature = "dynamic_group_by")] dynamic_options: Option<DynamicGroupOptions>,
         #[cfg(feature = "dynamic_group_by")] rolling_options: Option<RollingGroupOptions>,
     ) -> Self {
-        let current_schema = try_delayed!(self.0.schema(), &self.0, into);
-        let current_schema = current_schema.as_ref();
-        let keys = try_delayed!(
-            rewrite_projections(keys, current_schema, &[]),
-            &self.0,
-            into
-        );
-        let aggs = try_delayed!(
-            rewrite_projections(aggs.as_ref().to_vec(), current_schema, keys.as_ref()),
-            &self.0,
-            into
-        );
-
-        // Initialize schema from keys
-        let mut schema = try_delayed!(
-            expressions_to_schema(&keys, current_schema, Context::Default),
-            &self.0,
-            into
-        );
-
-        // Add dynamic groupby index column(s)
-        #[cfg(feature = "dynamic_group_by")]
-        {
-            if let Some(options) = rolling_options.as_ref() {
-                let name = &options.index_column;
-                let dtype = try_delayed!(current_schema.try_get(name), self.0, into);
-                schema.with_column(name.clone(), dtype.clone());
-            } else if let Some(options) = dynamic_options.as_ref() {
-                let name = &options.index_column;
-                let dtype = try_delayed!(current_schema.try_get(name), self.0, into);
-                if options.include_boundaries {
-                    schema.with_column("_lower_boundary".into(), dtype.clone());
-                    schema.with_column("_upper_boundary".into(), dtype.clone());
-                }
-                schema.with_column(name.clone(), dtype.clone());
-            }
-        }
-        let keys_index_len = schema.len();
-
-        // Add aggregation column(s)
-        let aggs_schema = try_delayed!(
-            expressions_to_schema(&aggs, current_schema, Context::Aggregation),
-            &self.0,
-            into
-        );
-        schema.merge(aggs_schema);
-
-        // Make sure aggregation columns do not contain keys or index columns
-        if schema.len() < (keys_index_len + aggs.len()) {
-            let check_names = || {
-                let mut names = PlHashSet::with_capacity(schema.len());
-                for expr in aggs.iter().chain(keys.iter()) {
-                    let name = expr_output_name(expr)?;
-                    if !names.insert(name.clone()) {
-                        polars_bail!(duplicate = name);
-                    }
-                }
-                Ok(())
-            };
-            try_delayed!(check_names(), &self.0, into)
-        }
-
+        let aggs = aggs.as_ref().to_vec();
         let options = GroupbyOptions {
             #[cfg(feature = "dynamic_group_by")]
             dynamic: dynamic_options,
@@ -792,9 +488,8 @@ impl DslBuilder {
 
         DslPlan::GroupBy {
             input: Arc::new(self.0),
-            keys: Arc::new(keys),
+            keys,
             aggs,
-            schema: Arc::new(schema),
             apply,
             maintain_order,
             options: Arc::new(options),
@@ -819,8 +514,6 @@ impl DslBuilder {
     }
 
     pub fn sort(self, by_column: Vec<Expr>, sort_options: SortMultipleOptions) -> Self {
-        let schema = try_delayed!(self.0.schema(), &self.0, into);
-        let by_column = try_delayed!(rewrite_projections(by_column, &schema, &[]), &self.0, into);
         DslPlan::Sort {
             input: Arc::new(self.0),
             by_column,
@@ -831,40 +524,17 @@ impl DslBuilder {
     }
 
     pub fn explode(self, columns: Vec<Expr>) -> Self {
-        let schema = try_delayed!(self.0.schema(), &self.0, into);
-        let columns = try_delayed!(rewrite_projections(columns, &schema, &[]), &self.0, into);
-
-        // columns to string
-        let columns = columns
-            .iter()
-            .map(|e| {
-                if let Expr::Column(name) = e {
-                    name.clone()
-                } else {
-                    panic!("expected column expression")
-                }
-            })
-            .collect::<Arc<[Arc<str>]>>();
-
-        let mut schema = (**schema).clone();
-        try_delayed!(explode_schema(&mut schema, &columns), &self.0, into);
-
         DslPlan::MapFunction {
             input: Arc::new(self.0),
-            function: FunctionNode::Explode {
-                columns,
-                schema: Arc::new(schema),
-            },
+            function: DslFunction::Explode { columns },
         }
         .into()
     }
 
-    pub fn melt(self, args: Arc<MeltArgs>) -> Self {
-        let schema = try_delayed!(self.0.schema(), &self.0, into);
-        let schema = det_melt_schema(&args, &schema);
+    pub fn melt(self, args: MeltArgs) -> Self {
         DslPlan::MapFunction {
             input: Arc::new(self.0),
-            function: FunctionNode::Melt { args, schema },
+            function: DslFunction::Melt { args },
         }
         .into()
     }
@@ -872,10 +542,9 @@ impl DslBuilder {
     pub fn row_index(self, name: &str, offset: Option<IdxSize>) -> Self {
         DslPlan::MapFunction {
             input: Arc::new(self.0),
-            function: FunctionNode::RowIndex {
+            function: DslFunction::RowIndex {
                 name: ColumnName::from(name),
                 offset,
-                schema: Default::default(),
             },
         }
         .into()
@@ -905,40 +574,16 @@ impl DslBuilder {
         right_on: Vec<Expr>,
         options: Arc<JoinOptions>,
     ) -> Self {
-        for e in left_on.iter().chain(right_on.iter()) {
-            if has_expr(e, |e| matches!(e, Expr::Alias(_, _))) {
-                return DslPlan::Error {
-                    input: Arc::new(self.0),
-                    err: polars_err!(
-                        ComputeError:
-                        "'alias' is not allowed in a join key, use 'with_columns' first",
-                    )
-                    .into(),
-                }
-                .into();
-            }
-        }
-
-        let schema_left = try_delayed!(self.0.schema(), &self.0, into);
-        let schema_right = try_delayed!(other.schema(), &self.0, into);
-
-        let schema = try_delayed!(
-            det_join_schema(&schema_left, &schema_right, &left_on, &right_on, &options),
-            self.0,
-            into
-        );
-
         DslPlan::Join {
             input_left: Arc::new(self.0),
             input_right: Arc::new(other),
-            schema,
             left_on,
             right_on,
             options,
         }
         .into()
     }
-    pub fn map_private(self, function: FunctionNode) -> Self {
+    pub fn map_private(self, function: DslFunction) -> Self {
         DslPlan::MapFunction {
             input: Arc::new(self.0),
             function,
@@ -956,14 +601,14 @@ impl DslBuilder {
     ) -> Self {
         DslPlan::MapFunction {
             input: Arc::new(self.0),
-            function: FunctionNode::OpaquePython {
+            function: DslFunction::FunctionNode(FunctionNode::OpaquePython {
                 function,
                 schema,
                 predicate_pd: optimizations.predicate_pushdown,
                 projection_pd: optimizations.projection_pushdown,
                 streamable: optimizations.streaming,
                 validate_output,
-            },
+            }),
         }
         .into()
     }
@@ -982,14 +627,14 @@ impl DslBuilder {
 
         DslPlan::MapFunction {
             input: Arc::new(self.0),
-            function: FunctionNode::Opaque {
+            function: DslFunction::FunctionNode(FunctionNode::Opaque {
                 function,
                 schema,
                 predicate_pd: optimizations.predicate_pushdown,
                 projection_pd: optimizations.projection_pushdown,
                 streamable: optimizations.streaming,
                 fmt_str: name,
-            },
+            }),
         }
         .into()
     }
