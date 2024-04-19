@@ -59,12 +59,12 @@ pub(crate) fn map_sql_polars_datatype(data_type: &SQLDataType) -> PolarsResult<D
         | SQLDataType::Float8
         | SQLDataType::Float64 => DataType::Float64,
         SQLDataType::Float(n_bytes) => match n_bytes {
-            None => DataType::Float64,
-            Some(4) => DataType::Float32,
-            Some(8) => DataType::Float64,
+            Some(n) if (1u64..=24u64).contains(&n) => DataType::Float32,
+            Some(n) if (25u64..=53u64).contains(&n) => DataType::Float64,
             Some(n) => {
-                polars_bail!(ComputeError: "unsupported `float` size; expected 4 or 8, found {}", n)
+                polars_bail!(ComputeError: "unsupported `float` size; expected a value between 1 and 53, found {}", n)
             },
+            None => DataType::Float64,
         },
         SQLDataType::Float4 | SQLDataType::Real => DataType::Float32,
         SQLDataType::Int(_) | SQLDataType::Integer(_) => DataType::Int32,
@@ -82,11 +82,11 @@ pub(crate) fn map_sql_polars_datatype(data_type: &SQLDataType) -> PolarsResult<D
         SQLDataType::Timestamp(prec, tz) => {
             let tu = match prec {
                 None => TimeUnit::Microseconds,
-                Some(3) => TimeUnit::Milliseconds,
-                Some(6) => TimeUnit::Microseconds,
-                Some(9) => TimeUnit::Nanoseconds,
+                Some(n) if (1u64..=3u64).contains(&n) => TimeUnit::Milliseconds,
+                Some(n) if (4u64..=6u64).contains(&n) => TimeUnit::Microseconds,
+                Some(n) if (7u64..=9u64).contains(&n) => TimeUnit::Nanoseconds,
                 Some(n) => {
-                    polars_bail!(ComputeError: "unsupported `timestamp` precision; expected 3, 6 or 9, found prec={}", n)
+                    polars_bail!(ComputeError: "unsupported `timestamp` precision; expected a value between 1 and 9, found {}", n)
                 },
             };
             match tz {
