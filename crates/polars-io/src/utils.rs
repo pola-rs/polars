@@ -172,6 +172,10 @@ pub static FLOAT_RE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"^[-+]?((\d*\.\d+)([eE][-+]?\d+)?|inf|NaN|(\d+)[eE][-+]?\d+|\d+\.)$").unwrap()
 });
 
+pub static FLOAT_RE_DECIMAL: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"^[-+]?((\d*,\d+)([eE][-+]?\d+)?|inf|NaN|(\d+)[eE][-+]?\d+|\d+,)$").unwrap()
+});
+
 pub static INTEGER_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^-?(\d+)$").unwrap());
 
 pub static BOOLEAN_RE: Lazy<Regex> = Lazy::new(|| {

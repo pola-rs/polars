@@ -162,6 +162,7 @@ pub(super) fn csv_file_info(
         csv_options.try_parse_dates,
         csv_options.raise_if_empty,
         &mut csv_options.n_threads,
+        csv_options.decimal_float,
     )?;
 
     let mut schema = csv_options

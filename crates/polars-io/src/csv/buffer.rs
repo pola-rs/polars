@@ -7,6 +7,7 @@ use polars_time::chunkedarray::string::Pattern;
 use polars_time::prelude::string::infer::{
     infer_pattern_single, DatetimeInfer, StrpTimeParser, TryFromWithUnit,
 };
+use polars_utils::vec::PushUnchecked;
 
 use crate::csv::parser::{is_whitespace, skip_whitespace};
 use crate::csv::utils::escape_field;
@@ -485,6 +486,7 @@ pub(crate) fn init_buffers(
     schema: &Schema,
     quote_char: Option<u8>,
     encoding: CsvEncoding,
+    decimal_float: bool,
 ) -> PolarsResult<Vec<Buffer>> {
     projection
         .iter()
@@ -504,8 +506,26 @@ pub(crate) fn init_buffers(
                 &DataType::UInt16 => Buffer::UInt16(PrimitiveChunkedBuilder::new(name, capacity)),
                 &DataType::UInt32 => Buffer::UInt32(PrimitiveChunkedBuilder::new(name, capacity)),
                 &DataType::UInt64 => Buffer::UInt64(PrimitiveChunkedBuilder::new(name, capacity)),
-                &DataType::Float32 => Buffer::Float32(PrimitiveChunkedBuilder::new(name, capacity)),
-                &DataType::Float64 => Buffer::Float64(PrimitiveChunkedBuilder::new(name, capacity)),
+                &DataType::Float32 => {
+                    if decimal_float {
+                        Buffer::DecimalFloat32(
+                            PrimitiveChunkedBuilder::new(name, capacity),
+                            Default::default(),
+                        )
+                    } else {
+                        Buffer::Float32(PrimitiveChunkedBuilder::new(name, capacity))
+                    }
+                },
+                &DataType::Float64 => {
+                    if decimal_float {
+                        Buffer::DecimalFloat64(
+                            PrimitiveChunkedBuilder::new(name, capacity),
+                            Default::default(),
+                        )
+                    } else {
+                        Buffer::Float64(PrimitiveChunkedBuilder::new(name, capacity))
+                    }
+                },
                 &DataType::String => {
                     Buffer::Utf8(Utf8Field::new(name, capacity, quote_char, encoding))
                 },
@@ -560,6 +580,8 @@ pub(crate) enum Buffer {
     Date(DatetimeField<Int32Type>),
     #[allow(dead_code)]
     Categorical(CategoricalField),
+    DecimalFloat32(PrimitiveChunkedBuilder<Float32Type>, Vec<u8>),
+    DecimalFloat64(PrimitiveChunkedBuilder<Float64Type>, Vec<u8>),
 }
 
 impl Buffer {
@@ -580,6 +602,8 @@ impl Buffer {
             Buffer::UInt64(v) => v.finish().into_series(),
             Buffer::Float32(v) => v.finish().into_series(),
             Buffer::Float64(v) => v.finish().into_series(),
+            Buffer::DecimalFloat32(v, _) => v.finish().into_series(),
+            Buffer::DecimalFloat64(v, _) => v.finish().into_series(),
             #[cfg(feature = "dtype-datetime")]
             Buffer::Datetime {
                 buf,
@@ -635,6 +659,8 @@ impl Buffer {
             Buffer::UInt64(v) => v.append_null(),
             Buffer::Float32(v) => v.append_null(),
             Buffer::Float64(v) => v.append_null(),
+            Buffer::DecimalFloat32(v, _) => v.append_null(),
+            Buffer::DecimalFloat64(v, _) => v.append_null(),
             Buffer::Utf8(v) => {
                 if valid {
                     v.mutable.push_value("")
@@ -675,8 +701,8 @@ impl Buffer {
             Buffer::UInt16(_) => DataType::UInt16,
             Buffer::UInt32(_) => DataType::UInt32,
             Buffer::UInt64(_) => DataType::UInt64,
-            Buffer::Float32(_) => DataType::Float32,
-            Buffer::Float64(_) => DataType::Float64,
+            Buffer::Float32(_) | Buffer::DecimalFloat32(_, _) => DataType::Float32,
+            Buffer::Float64(_) | Buffer::DecimalFloat64(_, _) => DataType::Float64,
             Buffer::Utf8(_) => DataType::String,
             #[cfg(feature = "dtype-datetime")]
             Buffer::Datetime { time_unit, .. } => DataType::Datetime(*time_unit, None),
@@ -798,6 +824,28 @@ impl Buffer {
                 missing_is_null,
                 None,
             ),
+            DecimalFloat32(buf, scratch) => {
+                prepare_decimal_float(bytes, scratch);
+                <PrimitiveChunkedBuilder<Float32Type> as ParsedBuffer>::parse_bytes(
+                    buf,
+                    scratch,
+                    ignore_errors,
+                    needs_escaping,
+                    missing_is_null,
+                    None,
+                )
+            },
+            DecimalFloat64(buf, scratch) => {
+                prepare_decimal_float(bytes, scratch);
+                <PrimitiveChunkedBuilder<Float64Type> as ParsedBuffer>::parse_bytes(
+                    buf,
+                    scratch,
+                    ignore_errors,
+                    needs_escaping,
+                    missing_is_null,
+                    None,
+                )
+            },
             Utf8(buf) => <Utf8Field as ParsedBuffer>::parse_bytes(
                 buf,
                 bytes,
@@ -838,6 +886,21 @@ impl Buffer {
                     panic!("activate 'dtype-categorical' feature")
                 }
             },
+        }
+    }
+}
+
+#[inline]
+fn prepare_decimal_float(bytes: &[u8], scratch: &mut Vec<u8>) {
+    scratch.clear();
+    scratch.reserve(bytes.len());
+
+    // SAFETY: we pre-allocated.
+    for &byte in bytes {
+        if byte == b',' {
+            unsafe { scratch.push_unchecked(b'.') }
+        } else {
+            unsafe { scratch.push_unchecked(byte) }
         }
     }
 }

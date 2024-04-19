@@ -69,6 +69,7 @@ def read_csv(
     eol_char: str = "\n",
     raise_if_empty: bool = True,
     truncate_ragged_lines: bool = False,
+    decimal_float: bool = False,
 ) -> DataFrame:
     r"""
     Read a CSV file into a DataFrame.
@@ -186,6 +187,8 @@ def read_csv(
         is set to False, an empty DataFrame (with no columns) is returned instead.
     truncate_ragged_lines
         Truncate lines that are longer than the schema.
+    decimal_float
+        Parse floats with decimal signs
 
     Returns
     -------
@@ -439,6 +442,7 @@ def read_csv(
             eol_char=eol_char,
             raise_if_empty=raise_if_empty,
             truncate_ragged_lines=truncate_ragged_lines,
+            decimal_float=decimal_float,
         )
 
     if new_columns:
@@ -475,6 +479,7 @@ def _read_csv_impl(
     eol_char: str = "\n",
     raise_if_empty: bool = True,
     truncate_ragged_lines: bool = False,
+    decimal_float: bool = False,
 ) -> DataFrame:
     path: str | None
     if isinstance(source, (str, Path)):
@@ -537,6 +542,7 @@ def _read_csv_impl(
             eol_char=eol_char,
             raise_if_empty=raise_if_empty,
             truncate_ragged_lines=truncate_ragged_lines,
+            decimal_float=decimal_float,
         )
         if columns is None:
             return scan.collect()
@@ -580,6 +586,7 @@ def _read_csv_impl(
         eol_char=eol_char,
         raise_if_empty=raise_if_empty,
         truncate_ragged_lines=truncate_ragged_lines,
+        decimal_float=decimal_float,
         schema=schema,
     )
     return wrap_df(pydf)
@@ -618,6 +625,7 @@ def read_csv_batched(
     sample_size: int = 1024,
     eol_char: str = "\n",
     raise_if_empty: bool = True,
+    decimal_float: bool = False,
 ) -> BatchedCsvReader:
     r"""
     Read a CSV file in batches.
@@ -719,6 +727,8 @@ def read_csv_batched(
     raise_if_empty
         When there is no data in the source,`NoDataError` is raised. If this parameter
         is set to False, `None` will be returned from `next_batches(n)` instead.
+    decimal_float
+        Parse floats with decimal signs
 
     Returns
     -------
@@ -879,6 +889,7 @@ def read_csv_batched(
         eol_char=eol_char,
         new_columns=new_columns,
         raise_if_empty=raise_if_empty,
+        decimal_float=decimal_float,
     )
 
 
@@ -915,6 +926,7 @@ def scan_csv(
     new_columns: Sequence[str] | None = None,
     raise_if_empty: bool = True,
     truncate_ragged_lines: bool = False,
+    decimal_float: bool = False,
 ) -> LazyFrame:
     r"""
     Lazily read from a CSV file or multiple files via glob patterns.
@@ -1008,6 +1020,8 @@ def scan_csv(
         is set to False, an empty LazyFrame (with no columns) is returned instead.
     truncate_ragged_lines
         Truncate lines that are longer than the schema.
+    decimal_float
+        Parse floats with decimal signs
 
     Returns
     -------
@@ -1126,6 +1140,7 @@ def scan_csv(
         eol_char=eol_char,
         raise_if_empty=raise_if_empty,
         truncate_ragged_lines=truncate_ragged_lines,
+        decimal_float=decimal_float,
     )
 
 
@@ -1156,6 +1171,7 @@ def _scan_csv_impl(
     eol_char: str = "\n",
     raise_if_empty: bool = True,
     truncate_ragged_lines: bool = True,
+    decimal_float: bool = False,
 ) -> LazyFrame:
     dtype_list: list[tuple[str, PolarsDataType]] | None = None
     if dtypes is not None:
@@ -1195,6 +1211,7 @@ def _scan_csv_impl(
         eol_char=eol_char,
         raise_if_empty=raise_if_empty,
         truncate_ragged_lines=truncate_ragged_lines,
+        decimal_float=decimal_float,
         schema=schema,
     )
     return wrap_ldf(pylf)

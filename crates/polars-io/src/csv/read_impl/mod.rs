@@ -106,6 +106,7 @@ pub(crate) struct CoreReader<'a> {
     sample_size: usize,
     chunk_size: usize,
     low_memory: bool,
+    decimal_float: bool,
     comment_prefix: Option<CommentPrefix>,
     quote_char: Option<u8>,
     eol_char: u8,
@@ -159,7 +160,9 @@ impl<'a> CoreReader<'a> {
         try_parse_dates: bool,
         raise_if_empty: bool,
         truncate_ragged_lines: bool,
+        decimal_float: bool,
     ) -> PolarsResult<CoreReader<'a>> {
+        check_decimal_float(decimal_float, separator.unwrap_or(b','))?;
         #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
         let mut reader_bytes = reader_bytes;
 
@@ -206,6 +209,7 @@ impl<'a> CoreReader<'a> {
                     try_parse_dates,
                     raise_if_empty,
                     &mut n_threads,
+                    decimal_float,
                 )?;
                 Arc::new(inferred_schema)
             },
@@ -260,6 +264,7 @@ impl<'a> CoreReader<'a> {
             to_cast,
             row_index,
             truncate_ragged_lines,
+            decimal_float,
         })
     }
 
@@ -505,6 +510,7 @@ impl<'a> CoreReader<'a> {
                                 schema,
                                 self.quote_char,
                                 self.encoding,
+                                self.decimal_float,
                             )?;
 
                             let local_bytes = &bytes[read..stop_at_nbytes];
@@ -589,6 +595,7 @@ impl<'a> CoreReader<'a> {
                             usize::MAX,
                             stop_at_nbytes,
                             starting_point_offset,
+                            self.decimal_float,
                         )?;
 
                         cast_columns(&mut df, &self.to_cast, false, self.ignore_errors)?;
@@ -612,6 +619,7 @@ impl<'a> CoreReader<'a> {
                                 self.schema.as_ref(),
                                 self.quote_char,
                                 self.encoding,
+                                self.decimal_float,
                             )?;
 
                             parse_lines(
@@ -694,6 +702,7 @@ fn read_chunk(
     chunk_size: usize,
     stop_at_nbytes: usize,
     starting_point_offset: Option<usize>,
+    decimal_float: bool,
 ) -> PolarsResult<DataFrame> {
     let mut read = bytes_offset_thread;
     // There's an off-by-one error somewhere in the reading code, where it reads
@@ -701,7 +710,14 @@ fn read_chunk(
     // approximate (sometimes they're smaller), this isn't broken, but it does
     // mean a bunch of extra allocation and copying. So we allocate a
     // larger-by-one buffer so the size is more likely to be accurate.
-    let mut buffers = init_buffers(projection, capacity + 1, schema, quote_char, encoding)?;
+    let mut buffers = init_buffers(
+        projection,
+        capacity + 1,
+        schema,
+        quote_char,
+        encoding,
+        decimal_float,
+    )?;
 
     let mut last_read = usize::MAX;
     loop {

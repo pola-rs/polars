@@ -2058,3 +2058,16 @@ def test_skip_rows_after_header_pyarrow(use_pyarrow: bool) -> None:
     df = pl.read_csv(f, skip_rows_after_header=1, use_pyarrow=use_pyarrow)
     expected = pl.DataFrame({"foo": [3, 5], "bar": [4, 6]})
     assert_frame_equal(df, expected)
+
+
+def test_csv_float_decimal() -> None:
+    floats = b"a;b\n12,239;1,233\n13,908;87,32"
+    read = pl.read_csv(floats, decimal_float=True, separator=";")
+    assert read.dtypes == [pl.Float64] * 2
+    assert read.to_dict(as_series=False) == {"a": [12.239, 13.908], "b": [1.233, 87.32]}
+
+    floats = b"a;b\n12,239;1,233\n13,908;87,32"
+    with pytest.raises(
+        pl.ComputeError, match=r"'decimal_float' argument cannot be combined"
+    ):
+        pl.read_csv(floats, decimal_float=True)
