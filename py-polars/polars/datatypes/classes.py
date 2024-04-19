@@ -203,7 +203,7 @@ class DataType(metaclass=DataTypeClass):
 
     @classmethod
     def is_float(cls) -> bool:
-        """Check whether the data type is a temporal type."""
+        """Check whether the data type is a floating point type."""
         return issubclass(cls, FloatType)
 
     @classmethod
