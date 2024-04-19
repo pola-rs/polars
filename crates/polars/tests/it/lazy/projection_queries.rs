@@ -80,20 +80,6 @@ fn test_outer_join_with_column_2988() -> PolarsResult<()> {
 }
 
 #[test]
-fn test_err_no_found() {
-    let df = df![
-        "a" => [1, 2, 3],
-        "b" => [None, Some("a"), Some("b")]
-    ]
-    .unwrap();
-
-    assert!(matches!(
-        df.lazy().filter(col("nope").gt(lit(2))).collect(),
-        Err(PolarsError::ColumnNotFound(_))
-    ));
-}
-
-#[test]
 fn test_many_aliasing_projections_5070() -> PolarsResult<()> {
     let df = df! {
         "date" => [1, 2, 3],

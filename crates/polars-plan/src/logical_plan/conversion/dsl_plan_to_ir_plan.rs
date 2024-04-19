@@ -23,6 +23,23 @@ fn empty_df() -> IR {
     }
 }
 
+macro_rules! failed_input {
+    ($($t:tt)*) => {
+        failed_input_args!(stringify!($($t)*))
+    }
+}
+macro_rules! failed_input_args {
+    ($name:expr) => {
+        format!("'{}' input failed to resolve", $name).into()
+    };
+}
+
+macro_rules! failed_here {
+    ($($t:tt)*) => {
+        format!("'{}' failed", stringify!($($t)*)).into()
+    }
+}
+
 /// converts LogicalPlan to IR
 /// it adds expressions & lps to the respective arenas as it traverses the plan
 /// finally it returns the top node of the logical plan
@@ -51,11 +68,9 @@ pub fn to_alp(
                         metadata,
                         ..
                     } => {
-                        let (file_info, md) = scans::parquet_file_info(
-                            &paths,
-                            &file_options,
-                            cloud_options.as_ref(),
-                        )?;
+                        let (file_info, md) =
+                            scans::parquet_file_info(&paths, &file_options, cloud_options.as_ref())
+                                .map_err(|e| e.context(failed_here!(parquet scan)))?;
                         *metadata = md;
                         file_info
                     },
@@ -66,13 +81,15 @@ pub fn to_alp(
                         ..
                     } => {
                         let (file_info, md) =
-                            scans::ipc_file_info(&paths, &file_options, cloud_options.as_ref())?;
+                            scans::ipc_file_info(&paths, &file_options, cloud_options.as_ref())
+                                .map_err(|e| e.context(failed_here!(ipc scan)))?;
                         *metadata = Some(md);
                         file_info
                     },
                     #[cfg(feature = "csv")]
                     FileScan::Csv { options, .. } => {
-                        scans::csv_file_info(&paths, &file_options, options)?
+                        scans::csv_file_info(&paths, &file_options, options)
+                            .map_err(|e| e.context(failed_here!(csv scan)))?
                     },
                     // FileInfo should be set.
                     FileScan::Anonymous { .. } => unreachable!(),
@@ -104,7 +121,8 @@ pub fn to_alp(
             let inputs = inputs
                 .into_iter()
                 .map(|lp| to_alp(lp, expr_arena, lp_arena))
-                .collect::<PolarsResult<_>>()?;
+                .collect::<PolarsResult<_>>()
+                .map_err(|e| e.context(failed_input!(vertical concat)))?;
             IR::Union { inputs, options }
         },
         DslPlan::HConcat {
@@ -115,7 +133,8 @@ pub fn to_alp(
             let inputs = inputs
                 .into_iter()
                 .map(|lp| to_alp(lp, expr_arena, lp_arena))
-                .collect::<PolarsResult<_>>()?;
+                .collect::<PolarsResult<_>>()
+                .map_err(|e| e.context(failed_input!(horizontal concat)))?;
             IR::HConcat {
                 inputs,
                 schema,
@@ -123,13 +142,16 @@ pub fn to_alp(
             }
         },
         DslPlan::Filter { input, predicate } => {
-            let input = to_alp(owned(input), expr_arena, lp_arena)?;
-            let predicate = expand_filter(predicate, input, lp_arena)?;
+            let input = to_alp(owned(input), expr_arena, lp_arena)
+                .map_err(|e| e.context(failed_input!(filter)))?;
+            let predicate = expand_filter(predicate, input, lp_arena)
+                .map_err(|e| e.context(failed_here!(filter)))?;
             let predicate = to_expr_ir(predicate, expr_arena);
             IR::Filter { input, predicate }
         },
         DslPlan::Slice { input, offset, len } => {
-            let input = to_alp(owned(input), expr_arena, lp_arena)?;
+            let input = to_alp(owned(input), expr_arena, lp_arena)
+                .map_err(|e| e.context(failed_input!(slice)))?;
             IR::Slice { input, offset, len }
         },
         DslPlan::DataFrameScan {
@@ -150,9 +172,11 @@ pub fn to_alp(
             input,
             options,
         } => {
-            let input = to_alp(owned(input), expr_arena, lp_arena)?;
+            let input = to_alp(owned(input), expr_arena, lp_arena)
+                .map_err(|e| e.context(failed_input!(select)))?;
             let schema = lp_arena.get(input).schema(lp_arena);
-            let (exprs, schema) = prepare_projection(expr, &schema)?;
+            let (exprs, schema) =
+                prepare_projection(expr, &schema).map_err(|e| e.context(failed_here!(select)))?;
 
             if exprs.is_empty() {
                 lp_arena.replace(input, empty_df());
@@ -174,8 +198,10 @@ pub fn to_alp(
             slice,
             sort_options,
         } => {
-            let input = to_alp(owned(input), expr_arena, lp_arena)?;
-            let by_column = expand_expressions(input, by_column, lp_arena, expr_arena)?;
+            let input = to_alp(owned(input), expr_arena, lp_arena)
+                .map_err(|e| e.context(failed_input!(sort)))?;
+            let by_column = expand_expressions(input, by_column, lp_arena, expr_arena)
+                .map_err(|e| e.context(failed_here!(sort)))?;
             IR::Sort {
                 input,
                 by_column,
@@ -188,7 +214,8 @@ pub fn to_alp(
             id,
             cache_hits,
         } => {
-            let input = to_alp(owned(input), expr_arena, lp_arena)?;
+            let input = to_alp(owned(input), expr_arena, lp_arena)
+                .map_err(|e| e.context(failed_input!(cache)))?;
             IR::Cache {
                 input,
                 id,
@@ -203,10 +230,12 @@ pub fn to_alp(
             maintain_order,
             options,
         } => {
-            let input = to_alp(owned(input), expr_arena, lp_arena)?;
+            let input = to_alp(owned(input), expr_arena, lp_arena)
+                .map_err(|e| e.context(failed_input!(group_by)))?;
 
             let (keys, aggs, schema) =
-                resolve_group_by(input, keys, aggs, &options, lp_arena, expr_arena)?;
+                resolve_group_by(input, keys, aggs, &options, lp_arena, expr_arena)
+                    .map_err(|e| e.context(failed_here!(group_by)))?;
 
             let (apply, schema) = if let Some((apply, schema)) = apply {
                 (Some(apply), schema)
@@ -240,14 +269,17 @@ pub fn to_alp(
                 }
             }
 
-            let input_left = to_alp(owned(input_left), expr_arena, lp_arena)?;
-            let input_right = to_alp(owned(input_right), expr_arena, lp_arena)?;
+            let input_left = to_alp(owned(input_left), expr_arena, lp_arena)
+                .map_err(|e| e.context(failed_input!(join left)))?;
+            let input_right = to_alp(owned(input_right), expr_arena, lp_arena)
+                .map_err(|e| e.context(failed_input!(join, right)))?;
 
             let schema_left = lp_arena.get(input_left).schema(lp_arena);
             let schema_right = lp_arena.get(input_right).schema(lp_arena);
 
             let schema =
-                det_join_schema(&schema_left, &schema_right, &left_on, &right_on, &options)?;
+                det_join_schema(&schema_left, &schema_right, &left_on, &right_on, &options)
+                    .map_err(|e| e.context(failed_here!(join schema resolving)))?;
 
             let left_on = to_expr_irs_ignore_alias(left_on, expr_arena);
             let right_on = to_expr_irs_ignore_alias(right_on, expr_arena);
@@ -266,8 +298,10 @@ pub fn to_alp(
             exprs,
             options,
         } => {
-            let input = to_alp(owned(input), expr_arena, lp_arena)?;
-            let (exprs, schema) = resolve_with_columns(exprs, input, lp_arena, expr_arena)?;
+            let input = to_alp(owned(input), expr_arena, lp_arena)
+                .map_err(|e| e.context(failed_input!(with_columns)))?;
+            let (exprs, schema) = resolve_with_columns(exprs, input, lp_arena, expr_arena)
+                .map_err(|e| e.context(failed_here!(with_columns)))?;
             IR::HStack {
                 input,
                 exprs,
@@ -276,11 +310,14 @@ pub fn to_alp(
             }
         },
         DslPlan::Distinct { input, options } => {
-            let input = to_alp(owned(input), expr_arena, lp_arena)?;
+            let input = to_alp(owned(input), expr_arena, lp_arena)
+                .map_err(|e| e.context(failed_input!(unique)))?;
             IR::Distinct { input, options }
         },
         DslPlan::MapFunction { input, function } => {
-            let input = to_alp(owned(input), expr_arena, lp_arena)?;
+            let input = to_alp(owned(input), expr_arena, lp_arena).map_err(|e| {
+                e.context(failed_input_args!(format!("{}", function).to_lowercase()))
+            })?;
             let input_schema = lp_arena.get(input).schema(lp_arena);
 
             match function {
@@ -295,7 +332,8 @@ pub fn to_alp(
                         })
                         .collect::<Vec<_>>();
 
-                    let (exprs, schema) = resolve_with_columns(exprs, input, lp_arena, expr_arena)?;
+                    let (exprs, schema) = resolve_with_columns(exprs, input, lp_arena, expr_arena)
+                        .map_err(|e| e.context(failed_here!(fill_nan)))?;
                     IR::HStack {
                         input,
                         exprs,
@@ -315,8 +353,10 @@ pub fn to_alp(
                                 .map(|e| e.is_not_null())
                                 .collect::<Vec<_>>(),
                         ),
-                    }?;
-                    let predicate = rewrite_projections(vec![predicate], &input_schema, &[])?
+                    }
+                    .map_err(|e| e.context(failed_here!(drop_nulls)))?;
+                    let predicate = rewrite_projections(vec![predicate], &input_schema, &[])
+                        .map_err(|e| e.context(failed_here!(drop_nulls)))?
                         .pop()
                         .unwrap();
                     let predicate = to_expr_ir(predicate, expr_arena);
@@ -427,11 +467,13 @@ pub fn to_alp(
             }
         },
         DslPlan::ExtContext { input, contexts } => {
-            let input = to_alp(owned(input), expr_arena, lp_arena)?;
+            let input = to_alp(owned(input), expr_arena, lp_arena)
+                .map_err(|e| e.context(failed_input!(with_context)))?;
             let contexts = contexts
                 .into_iter()
                 .map(|lp| to_alp(lp, expr_arena, lp_arena))
-                .collect::<PolarsResult<Vec<_>>>()?;
+                .collect::<PolarsResult<Vec<_>>>()
+                .map_err(|e| e.context(failed_here!(with_context)))?;
 
             let mut schema = (**lp_arena.get(input).schema(lp_arena)).clone();
             for input in &contexts {
@@ -450,7 +492,8 @@ pub fn to_alp(
             }
         },
         DslPlan::Sink { input, payload } => {
-            let input = to_alp(owned(input), expr_arena, lp_arena)?;
+            let input = to_alp(owned(input), expr_arena, lp_arena)
+                .map_err(|e| e.context(failed_input!(sink)))?;
             IR::Sink { input, payload }
         },
     };
