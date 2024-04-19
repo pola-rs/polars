@@ -347,6 +347,18 @@ impl CloudOptions {
     }
 
     /// Set the configuration for GCP connections. This is the preferred API from rust.
+    ///
+    /// This method takes an iterator of tuples with the configuration
+    /// keys and values. The keys must be of type [`GoogleConfigKey`].
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use polars::io::cloud::{ CloudOptions, GoogleConfigKey };
+    ///
+    /// let cloud_options = CloudOptions::default()
+    ///     .with_gcp([GoogleConfigKey::ServiceAccountKey, "*********"]);
+    /// ```
     #[cfg(feature = "gcp")]
     pub fn with_gcp<I: IntoIterator<Item = (GoogleConfigKey, impl Into<String>)>>(
         mut self,
