@@ -3587,7 +3587,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 - 1mo   (1 calendar month)
                 - 1q    (1 calendar quarter)
                 - 1y    (1 calendar year)
-                - 1i    (1 index count)
 
                 Or combine them:
                 "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
