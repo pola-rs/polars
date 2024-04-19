@@ -162,8 +162,8 @@ def read_parquet(
             memory_map=memory_map,
         )
 
-    # Read binary types using `read_parquet`
-    elif isinstance(source, (io.BufferedIOBase, io.RawIOBase, bytes)):
+    # Read file and bytes inputs using `read_parquet`
+    elif isinstance(source, (io.IOBase, bytes)):
         return _read_parquet_binary(
             source,
             columns=columns,

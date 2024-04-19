@@ -5,6 +5,7 @@ from datetime import datetime, time, timezone
 from decimal import Decimal
 from typing import TYPE_CHECKING, cast
 
+import fsspec
 import numpy as np
 import pandas as pd
 import pyarrow as pa
@@ -676,6 +677,20 @@ def test_read_parquet_binary_file_io(tmp_path: Path) -> None:
     df.write_parquet(file_path)
 
     with file_path.open("rb", buffering=0) as f:
+        out = pl.read_parquet(f)
+    assert_frame_equal(out, df)
+
+
+# https://github.com/pola-rs/polars/issues/15760
+@pytest.mark.write_disk()
+def test_read_parquet_binary_fsspec(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    file_path = tmp_path / "test.parquet"
+    df.write_parquet(file_path)
+
+    with fsspec.open(file_path) as f:
         out = pl.read_parquet(f)
     assert_frame_equal(out, df)
 
