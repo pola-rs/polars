@@ -133,6 +133,9 @@ def prepare_file_arg(
     fsspec too.
     """
     storage_options = storage_options or {}
+    if storage_options and not _FSSPEC_AVAILABLE:
+        msg = "`fsspec` is required for `storage_options` argument"
+        raise ImportError(msg)
 
     # Small helper to use a variable as context
     @contextmanager

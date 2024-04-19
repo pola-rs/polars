@@ -2071,3 +2071,13 @@ def test_csv_float_decimal() -> None:
         pl.InvalidOperationError, match=r"'decimal_float' argument cannot be combined"
     ):
         pl.read_csv(floats, decimal_float=True)
+
+
+def test_fsspec_not_available(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("polars.io._utils._FSSPEC_AVAILABLE", False)
+    with pytest.raises(
+        ImportError, match=r"`fsspec` is required for `storage_options` argument"
+    ):
+        pl.read_csv(
+            "s3://foods/cabbage.csv", storage_options={"key": "key", "secret": "secret"}
+        )
