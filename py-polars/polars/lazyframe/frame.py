@@ -1083,7 +1083,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     .inspect()  # print the node before the filter
         ...     .filter(pl.col("bar") == pl.col("foo"))
         ... )  # doctest: +ELLIPSIS
-        <LazyFrame [2 cols, {"foo": Int64, "bar": Int64}] at ...>
+        <LazyFrame at ...>
         """
 
         def inspect(s: DataFrame) -> DataFrame:
@@ -2383,7 +2383,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> lf.lazy()  # doctest: +ELLIPSIS
-        <LazyFrame [3 cols, {"a": Int64 … "c": Boolean}] at ...>
+        <LazyFrame at ...>
         """
         return self
 
@@ -2563,7 +2563,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> lf.clone()  # doctest: +ELLIPSIS
-        <LazyFrame [3 cols, {"a": Int64 … "c": Boolean}] at ...>
+        <LazyFrame at ...>
         """
         return self._from_pyldf(self._ldf.clone())
 
