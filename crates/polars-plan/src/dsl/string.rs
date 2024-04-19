@@ -562,8 +562,12 @@ impl StringNameSpace {
     }
 
     #[cfg(feature = "extract_jsonpath")]
-    pub fn json_path_match(self, pat: String) -> Expr {
-        self.0
-            .map_private(FunctionExpr::StringExpr(StringFunction::JsonPathMatch(pat)))
+    pub fn json_path_match(self, pat: Expr) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::StringExpr(StringFunction::JsonPathMatch),
+            &[pat],
+            false,
+            false,
+        )
     }
 }

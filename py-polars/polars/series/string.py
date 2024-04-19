@@ -730,7 +730,7 @@ class StringNameSpace:
         ]
         """
 
-    def json_path_match(self, json_path: str) -> Series:
+    def json_path_match(self, json_path: IntoExprColumn) -> Series:
         """
         Extract the first match of json string with provided JSONPath expression.
 

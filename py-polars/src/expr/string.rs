@@ -237,8 +237,8 @@ impl PyExpr {
     }
 
     #[cfg(feature = "extract_jsonpath")]
-    fn str_json_path_match(&self, pat: String) -> Self {
-        self.inner.clone().str().json_path_match(pat).into()
+    fn str_json_path_match(&self, pat: Self) -> Self {
+        self.inner.clone().str().json_path_match(pat.inner).into()
     }
 
     fn str_extract(&self, pat: Self, group_index: usize) -> Self {

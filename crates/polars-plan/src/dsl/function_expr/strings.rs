@@ -63,7 +63,7 @@ pub enum StringFunction {
         infer_schema_len: Option<usize>,
     },
     #[cfg(feature = "extract_jsonpath")]
-    JsonPathMatch(String),
+    JsonPathMatch,
     #[cfg(feature = "regex")]
     Replace {
         // negative is replace all
@@ -149,7 +149,7 @@ impl StringFunction {
             #[cfg(feature = "extract_jsonpath")]
             JsonDecode { dtype, .. } => mapper.with_opt_dtype(dtype.clone()),
             #[cfg(feature = "extract_jsonpath")]
-            JsonPathMatch(_) => mapper.with_dtype(DataType::String),
+            JsonPathMatch => mapper.with_dtype(DataType::String),
             LenBytes => mapper.with_dtype(DataType::UInt32),
             LenChars => mapper.with_dtype(DataType::UInt32),
             #[cfg(feature = "regex")]
@@ -221,7 +221,7 @@ impl Display for StringFunction {
             #[cfg(feature = "extract_jsonpath")]
             JsonDecode { .. } => "json_decode",
             #[cfg(feature = "extract_jsonpath")]
-            JsonPathMatch(_) => "json_path_match",
+            JsonPathMatch => "json_path_match",
             LenBytes => "len_bytes",
             Lowercase => "lowercase",
             LenChars => "len_chars",
@@ -374,7 +374,7 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
                 infer_schema_len,
             } => map!(strings::json_decode, dtype.clone(), infer_schema_len),
             #[cfg(feature = "extract_jsonpath")]
-            JsonPathMatch(pat) => map!(strings::json_path_match, &pat),
+            JsonPathMatch => map_as_slice!(strings::json_path_match),
             #[cfg(feature = "find_many")]
             ContainsMany {
                 ascii_case_insensitive,
@@ -994,7 +994,8 @@ pub(super) fn json_decode(
 }
 
 #[cfg(feature = "extract_jsonpath")]
-pub(super) fn json_path_match(s: &Series, pat: &str) -> PolarsResult<Series> {
-    let ca = s.str()?;
+pub(super) fn json_path_match(s: &[Series]) -> PolarsResult<Series> {
+    let ca = s[0].str()?;
+    let pat = s[1].str()?;
     Ok(ca.json_path_match(pat)?.into_series())
 }
