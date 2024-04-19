@@ -2068,6 +2068,6 @@ def test_csv_float_decimal() -> None:
 
     floats = b"a;b\n12,239;1,233\n13,908;87,32"
     with pytest.raises(
-        pl.ComputeError, match=r"'decimal_float' argument cannot be combined"
+        pl.InvalidOperationError, match=r"'decimal_float' argument cannot be combined"
     ):
         pl.read_csv(floats, decimal_float=True)

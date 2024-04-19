@@ -468,7 +468,7 @@ pub fn infer_file_schema_inner(
 
 pub(super) fn check_decimal_float(decimal_float: bool, separator: u8) -> PolarsResult<()> {
     if decimal_float {
-        polars_ensure!(b',' != separator, ComputeError: "'decimal_float' argument cannot be combined with ',' quote char")
+        polars_ensure!(b',' != separator, InvalidOperation: "'decimal_float' argument cannot be combined with ',' quote char")
     }
     Ok(())
 }
