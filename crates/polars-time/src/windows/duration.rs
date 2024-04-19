@@ -10,6 +10,7 @@ use arrow::temporal_conversions::{
     NANOSECONDS,
 };
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
+use polars_core::datatypes::DataType;
 use polars_core::export::arrow::temporal_conversions::MICROSECONDS;
 use polars_core::prelude::{
     datetime_to_timestamp_ms, datetime_to_timestamp_ns, datetime_to_timestamp_us, polars_bail,
@@ -960,6 +961,27 @@ pub fn ensure_is_constant_duration(
             You may want to try:\n\
             - using `'730h'` instead of `'1mo'`\n\
             - using `'24h'` instead of `'1d'` if your series is time-zone-aware", variable_name, duration);
+    Ok(())
+}
+
+pub fn ensure_duration_matches_data_type(
+    duration: Duration,
+    data_type: &DataType,
+    variable_name: &str,
+) -> PolarsResult<()> {
+    match data_type {
+        DataType::Int64 | DataType::UInt64 | DataType::Int32 | DataType::UInt32 => {
+            polars_ensure!(duration.parsed_int || duration.is_zero(), 
+                InvalidOperation: "`{}` duration must be a parsed integer (i.e. use '2i', not '2d') when working with a numeric column", variable_name);
+        },
+        DataType::Datetime(_, _) | DataType::Date | DataType::Duration(_) | DataType::Time => {
+            polars_ensure!(!duration.parsed_int, 
+                InvalidOperation: "`{}` duration may not be a parsed integer (i.e. use '2d', not '2i') when working with a temporal column", variable_name);
+        },
+        _ => {
+            polars_bail!(InvalidOperation: "unsupported data type: {} for `{}`, expected UInt64, UInt32, Int64, Int32, Datetime, Date, Duration, or Time", data_type, variable_name)
+        },
+    }
     Ok(())
 }
 

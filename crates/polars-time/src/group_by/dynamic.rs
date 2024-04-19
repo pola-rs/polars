@@ -141,6 +141,8 @@ impl Wrap<&DataFrame> {
         let time_type = time.dtype();
 
         polars_ensure!(time.null_count() == 0, ComputeError: "null values in `rolling` not supported, fill nulls.");
+        ensure_duration_matches_data_type(options.period, time_type, "period")?;
+        ensure_duration_matches_data_type(options.offset, time_type, "offset")?;
 
         use DataType::*;
         let (dt, tu, tz): (Series, TimeUnit, Option<TimeZone>) = match time_type {
@@ -199,15 +201,6 @@ impl Wrap<&DataFrame> {
         group_by: Vec<Series>,
         options: &DynamicGroupOptions,
     ) -> PolarsResult<(Series, Vec<Series>, GroupsProxy)> {
-        if options.offset.parsed_int || options.every.parsed_int || options.period.parsed_int {
-            polars_ensure!(
-                ((options.offset.parsed_int || options.offset.is_zero())
-                    && (options.every.parsed_int || options.every.is_zero())
-                    && (options.period.parsed_int || options.period.is_zero())),
-                ComputeError: "you cannot combine time durations like '2h' with integer durations like '3i'"
-            )
-        }
-
         let time = self.0.column(&options.index_column)?.rechunk();
         if group_by.is_empty() && options.check_sorted {
             // If by is given, the column must be sorted in the 'by' arg, which we can not check now
@@ -217,6 +210,9 @@ impl Wrap<&DataFrame> {
         let time_type = time.dtype();
 
         polars_ensure!(time.null_count() == 0, ComputeError: "null values in dynamic group_by not supported, fill nulls.");
+        ensure_duration_matches_data_type(options.every, time_type, "every")?;
+        ensure_duration_matches_data_type(options.offset, time_type, "offset")?;
+        ensure_duration_matches_data_type(options.period, time_type, "period")?;
 
         use DataType::*;
         let (dt, tu) = match time_type {
