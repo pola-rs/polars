@@ -141,7 +141,7 @@ impl PyLazyFrame {
     #[pyo3(signature = (path, paths, separator, has_header, ignore_errors, skip_rows, n_rows, cache, overwrite_dtype,
         low_memory, comment_prefix, quote_char, null_values, missing_utf8_is_empty_string,
         infer_schema_length, with_schema_modify, rechunk, skip_rows_after_header,
-        encoding, row_index, try_parse_dates, eol_char, raise_if_empty, truncate_ragged_lines, schema
+        encoding, row_index, try_parse_dates, eol_char, raise_if_empty, truncate_ragged_lines, decimal_float, schema
     )
     )]
     fn new_from_csv(
@@ -169,6 +169,7 @@ impl PyLazyFrame {
         eol_char: &str,
         raise_if_empty: bool,
         truncate_ragged_lines: bool,
+        decimal_float: bool,
         schema: Option<Wrap<Schema>>,
     ) -> PyResult<Self> {
         let null_values = null_values.map(|w| w.0);
@@ -212,6 +213,7 @@ impl PyLazyFrame {
             .with_null_values(null_values)
             .with_missing_is_null(!missing_utf8_is_empty_string)
             .truncate_ragged_lines(truncate_ragged_lines)
+            .with_decimal_float(decimal_float)
             .raise_if_empty(raise_if_empty);
 
         if let Some(lambda) = with_schema_modify {

@@ -23,7 +23,7 @@ impl PyDataFrame {
     skip_rows, projection, separator, rechunk, columns, encoding, n_threads, path,
     overwrite_dtype, overwrite_dtype_slice, low_memory, comment_prefix, quote_char,
     null_values, missing_utf8_is_empty_string, try_parse_dates, skip_rows_after_header,
-    row_index, sample_size, eol_char, raise_if_empty, truncate_ragged_lines, schema)
+    row_index, sample_size, eol_char, raise_if_empty, truncate_ragged_lines, decimal_float, schema)
 )]
     pub fn read_csv(
         py: Python,
@@ -55,6 +55,7 @@ impl PyDataFrame {
         eol_char: &str,
         raise_if_empty: bool,
         truncate_ragged_lines: bool,
+        decimal_float: bool,
         schema: Option<Wrap<Schema>>,
     ) -> PyResult<Self> {
         let null_values = null_values.map(|w| w.0);
@@ -110,6 +111,7 @@ impl PyDataFrame {
                 .sample_size(sample_size)
                 .raise_if_empty(raise_if_empty)
                 .truncate_ragged_lines(truncate_ragged_lines)
+                .with_decimal_float(decimal_float)
                 .finish()
                 .map_err(PyPolarsErr::from)
         })?;

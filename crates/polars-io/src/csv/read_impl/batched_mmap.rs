@@ -164,6 +164,7 @@ impl<'a> CoreReader<'a> {
             schema: self.schema,
             rows_read: 0,
             _cat_lock,
+            decimal_float: self.decimal_float,
         })
     }
 }
@@ -193,6 +194,7 @@ pub struct BatchedCsvReaderMmap<'a> {
     _cat_lock: Option<polars_core::StringCacheHolder>,
     #[cfg(not(feature = "dtype-categorical"))]
     _cat_lock: Option<u8>,
+    decimal_float: bool,
 }
 
 impl<'a> BatchedCsvReaderMmap<'a> {
@@ -243,6 +245,7 @@ impl<'a> BatchedCsvReaderMmap<'a> {
                         self.chunk_size,
                         stop_at_nbytes,
                         self.starting_point_offset,
+                        self.decimal_float,
                     )?;
 
                     cast_columns(&mut df, &self.to_cast, false, self.ignore_errors)?;
