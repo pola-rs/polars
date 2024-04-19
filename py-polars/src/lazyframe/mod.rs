@@ -1,7 +1,6 @@
 mod exitable;
 mod visit;
 pub(crate) mod visitor;
-
 use std::collections::HashMap;
 use std::io::BufWriter;
 use std::num::NonZeroUsize;
@@ -15,6 +14,7 @@ use polars_core::prelude::*;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyList};
+pub(crate) use visit::PyExprIR;
 
 use crate::arrow_interop::to_rust::pyarrow_schema_to_rust;
 use crate::error::PyPolarsErr;

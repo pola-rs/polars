@@ -122,7 +122,9 @@ fn nodes(_py: Python, m: &PyModule) -> PyResult<()> {
 #[pymodule]
 fn expr_nodes(_py: Python, m: &PyModule) -> PyResult<()> {
     use crate::lazyframe::visitor::expr_nodes::*;
+    use crate::lazyframe::PyExprIR;
     // Expressions
+    m.add_class::<PyExprIR>().unwrap();
     m.add_class::<Alias>().unwrap();
     m.add_class::<Column>().unwrap();
     m.add_class::<Literal>().unwrap();
