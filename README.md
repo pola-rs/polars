@@ -153,11 +153,7 @@ Refer to the [Polars CLI repository](https://github.com/pola-rs/polars-cli) for 
 
 ### Blazingly fast
 
-Polars is very fast. In fact, it is one of the best performing solutions available.
-See the results in [DuckDB's db-benchmark](https://duckdblabs.github.io/db-benchmark/).
-
-In the [TPC-H benchmarks](https://www.pola.rs/benchmarks.html) Polars is orders of magnitude faster than pandas, dask, modin and vaex
-on full queries (including IO).
+Polars is very fast. In fact, it is one of the best performing solutions available. See the [TPC-H benchmarks](https://www.pola.rs/benchmarks.html) results.
 
 ### Lightweight
 
