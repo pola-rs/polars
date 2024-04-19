@@ -24,7 +24,7 @@ pub fn pyarrow_schema_to_rust(obj: &PyList) -> PyResult<Schema> {
     obj.into_iter().map(field_to_rust).collect()
 }
 
-pub fn array_to_rust(obj: &PyAny) -> PyResult<ArrayRef> {
+pub fn array_to_rust(obj: &Bound<PyAny>) -> PyResult<ArrayRef> {
     // prepare a pointer to receive the Array struct
     let array = Box::new(ffi::ArrowArray::empty());
     let schema = Box::new(ffi::ArrowSchema::empty());
@@ -46,7 +46,7 @@ pub fn array_to_rust(obj: &PyAny) -> PyResult<ArrayRef> {
     }
 }
 
-pub fn to_rust_df(rb: &[&PyAny]) -> PyResult<DataFrame> {
+pub fn to_rust_df(rb: &[Bound<PyAny>]) -> PyResult<DataFrame> {
     let schema = rb
         .first()
         .ok_or_else(|| PyPolarsErr::Other("empty table".into()))?
@@ -61,7 +61,7 @@ pub fn to_rust_df(rb: &[&PyAny]) -> PyResult<DataFrame> {
             let columns = (0..names.len())
                 .map(|i| {
                     let array = rb.call_method1("column", (i,))?;
-                    let arr = array_to_rust(array)?;
+                    let arr = array_to_rust(&array)?;
                     run_parallel |= matches!(
                         arr.data_type(),
                         ArrowDataType::Utf8 | ArrowDataType::Dictionary(_, _, _)

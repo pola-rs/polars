@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use numpy::{Element, PyArray1, PyArrayMethods};
 use polars::export::arrow;
 use polars::export::arrow::array::Array;
@@ -118,7 +120,7 @@ impl PySeries {
     }
 }
 
-fn new_primitive<'a, T>(name: &str, values: &'a PyAny, strict: bool) -> PyResult<PySeries>
+fn new_primitive<'a, T>(name: &str, values: &'a Bound<PyAny>, strict: bool) -> PyResult<PySeries>
 where
     T: PolarsNumericType,
     ChunkedArray<T>: IntoSeries,
@@ -155,7 +157,7 @@ macro_rules! init_method_opt {
         #[pymethods]
         impl PySeries {
             #[staticmethod]
-            fn $name(name: &str, obj: &PyAny, strict: bool) -> PyResult<Self> {
+            fn $name(name: &str, obj: &Bound<PyAny>, strict: bool) -> PyResult<Self> {
                 new_primitive::<$type>(name, obj, strict)
             }
         }
@@ -176,7 +178,7 @@ init_method_opt!(new_opt_f64, Float64Type, f64);
 #[pymethods]
 impl PySeries {
     #[staticmethod]
-    fn new_from_any_values(name: &str, values: &PyAny, strict: bool) -> PyResult<Self> {
+    fn new_from_any_values(name: &str, values: &Bound<PyAny>, strict: bool) -> PyResult<Self> {
         let any_values_result = values
             .iter()?
             .map(|v| py_object_to_any_value(&(v?).as_borrowed(), strict))
@@ -212,7 +214,7 @@ impl PySeries {
     #[staticmethod]
     fn new_from_any_values_and_dtype(
         name: &str,
-        values: &PyAny,
+        values: &Bound<PyAny>,
         dtype: Wrap<DataType>,
         strict: bool,
     ) -> PyResult<Self> {
@@ -230,13 +232,13 @@ impl PySeries {
     }
 
     #[staticmethod]
-    fn new_str(name: &str, values: &PyAny, _strict: bool) -> PyResult<Self> {
+    fn new_str(name: &str, values: &Bound<PyAny>, _strict: bool) -> PyResult<Self> {
         let len = values.len()?;
         let mut builder = StringChunkedBuilder::new(name, len);
 
         for res in values.iter()? {
             let value = res?;
-            match value.extract::<&str>() {
+            match value.extract::<Cow<str>>() {
                 Ok(v) => builder.append_value(v),
                 Err(_) => builder.append_null(),
             }
@@ -266,7 +268,7 @@ impl PySeries {
     }
 
     #[staticmethod]
-    fn new_decimal(name: &str, values: &PyAny, strict: bool) -> PyResult<Self> {
+    fn new_decimal(name: &str, values: &Bound<PyAny>, strict: bool) -> PyResult<Self> {
         // Create a fake dtype with a placeholder "none" scale, to be inferred later.
         let dtype = DataType::Decimal(None, None);
         Self::new_from_any_values_and_dtype(name, values, Wrap(dtype), strict)
@@ -285,7 +287,7 @@ impl PySeries {
     #[pyo3(signature = (name, values, strict, dtype))]
     fn new_array(
         name: &str,
-        values: &PyAny,
+        values: &Bound<PyAny>,
         strict: bool,
         dtype: Wrap<DataType>,
     ) -> PyResult<Self> {
@@ -316,13 +318,13 @@ impl PySeries {
     }
 
     #[staticmethod]
-    fn new_null(name: &str, values: &PyAny, _strict: bool) -> PyResult<Self> {
+    fn new_null(name: &str, values: &Bound<PyAny>, _strict: bool) -> PyResult<Self> {
         let len = values.len()?;
         Ok(Series::new_null(name, len).into())
     }
 
     #[staticmethod]
-    fn from_arrow(name: &str, array: &PyAny) -> PyResult<Self> {
+    fn from_arrow(name: &str, array: &Bound<PyAny>) -> PyResult<Self> {
         let arr = array_to_rust(array)?;
 
         match arr.data_type() {

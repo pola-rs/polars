@@ -48,7 +48,7 @@ impl PyDataFrame {
     }
 
     #[staticmethod]
-    pub fn from_arrow_record_batches(rb: Vec<&PyAny>) -> PyResult<Self> {
+    pub fn from_arrow_record_batches(rb: Vec<Bound<PyAny>>) -> PyResult<Self> {
         let df = arrow_interop::to_rust::to_rust_df(&rb)?;
         Ok(Self::from(df))
     }

@@ -107,7 +107,7 @@ impl ToPyObject for Wrap<&DecimalChunked> {
 pub(crate) fn decimal_to_pyobject_iter<'a>(
     py: Python<'a>,
     ca: &'a DecimalChunked,
-) -> impl ExactSizeIterator<Item = Option<&'a PyAny>> {
+) -> impl ExactSizeIterator<Item = Option<Bound<'a, PyAny>>> {
     let utils = UTILS.bind(py);
     let convert = utils.getattr(intern!(py, "to_py_decimal")).unwrap();
     let py_scale = (-(ca.scale() as i32)).to_object(py);
