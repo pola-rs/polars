@@ -4122,13 +4122,9 @@ class DataFrame:
             .collect(_eager=True)
         )
 
-    def sql(
-        self,
-        query: str,
-        table_name: str | None = None,
-    ) -> Self:
+    def sql(self, query: str, table_name: str | None = None) -> Self:
         """
-        Execute a SQL query on the DataFrame.
+        Execute a SQL query against the DataFrame.
 
         .. warning::
             This functionality is considered **unstable**, although it is close to
@@ -4140,16 +4136,18 @@ class DataFrame:
         query
             SQL query to execute.
         table_name
-            Provide an explicit name for the table representing the calling frame in
-            the query (the name "self" will always be registered/available).
+            Optionally provide an explicit name for the table that represents the
+            calling frame (the alias "self" will always be registered/available).
 
         Notes
         -----
-        The calling frame is automatically registered as a table in the SQL context
-        with the name "self", along with all DataFrames and LazyFrames found in the
-        current set of global variables. Frames found in the global namespace are
-        registered using their variable name. More control over registration and
-        execution behaviour is available by using the :class:`SQLContext` object.
+        * The calling frame is automatically registered as a table in the SQL context
+          under the name "self". All DataFrames and LazyFrames found in the current
+          set of global variables are also registered, using their variable name.
+        * More control over registration and execution behaviour is available by
+          using the :class:`SQLContext` object.
+        * The SQL query executes entirely in lazy mode before being collected and
+          returned as a DataFrame.
 
         See Also
         --------
@@ -4233,8 +4231,8 @@ class DataFrame:
             register_globals=True,
             eager_execution=True,
         ) as ctx:
-            frames = {"self": self, **({table_name: self} if table_name else {})}
-            ctx.register_many(frames)
+            frames = {table_name: self} if table_name else {}
+            frames["self"] = self
             return ctx.execute(query)  # type: ignore[return-value]
 
     def top_k(

@@ -1211,13 +1211,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             )
         )
 
-    def sql(
-        self,
-        query: str,
-        table_name: str | None = None,
-    ) -> Self:
+    def sql(self, query: str, table_name: str | None = None) -> Self:
         """
-        Execute a SQL query on the DataFrame.
+        Execute a SQL query against the LazyFrame.
 
         .. warning::
             This functionality is considered **unstable**, although it is close to
@@ -1230,15 +1226,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             SQL query to execute.
         table_name
             Optionally provide an explicit name for the table that represents the
-            calling frame (the name "self" will always be registered/available).
+            calling frame (the alias "self" will always be registered/available).
 
         Notes
         -----
-        The calling frame is automatically registered as a table in the SQL context
-        with the name "self", along with all DataFrames and LazyFrames found in the
-        current set of global variables. Frames found in the global namespace are
-        registered using their variable name. More control over registration and
-        execution behaviour is available by using the :class:`SQLContext` object.
+        * The calling frame is automatically registered as a table in the SQL context
+          under the name "self". All DataFrames and LazyFrames found in the current
+          set of global variables are also registered, using their variable name.
+        * More control over registration and execution behaviour is available by
+          using the :class:`SQLContext` object.
 
         See Also
         --------
@@ -1315,7 +1311,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             register_globals=True,
             eager_execution=False,
         ) as ctx:
-            frames = {"self": self, **({table_name: self} if table_name else {})}
+            frames = {table_name: self} if table_name else {}
+            frames["self"] = self
             ctx.register_many(frames)
             return ctx.execute(query)  # type: ignore[return-value]
 
