@@ -2300,6 +2300,33 @@ def test_asof_join_by_forward() -> None:
     }
 
 
+def test_truncate_broadcast_left() -> None:
+    df = pl.DataFrame({"every": [None, "1y", "1mo", "1d", "1h"]})
+    out = df.select(
+        date=pl.lit(date(2024, 4, 19)).dt.truncate(pl.col("every")),
+        datetime=pl.lit(datetime(2024, 4, 19, 10, 30, 20)).dt.truncate(pl.col("every")),
+    )
+    expected = pl.DataFrame(
+        {
+            "date": [
+                None,
+                date(2024, 1, 1),
+                date(2024, 4, 1),
+                date(2024, 4, 19),
+                date(2024, 4, 19),
+            ],
+            "datetime": [
+                None,
+                datetime(2024, 1, 1),
+                datetime(2024, 4, 1),
+                datetime(2024, 4, 19),
+                datetime(2024, 4, 19, 10),
+            ],
+        }
+    )
+    assert_frame_equal(out, expected)
+
+
 def test_truncate_expr() -> None:
     df = pl.DataFrame(
         {
