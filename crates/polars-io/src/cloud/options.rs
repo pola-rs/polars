@@ -354,10 +354,13 @@ impl CloudOptions {
     /// # Example
     ///
     /// ```
-    /// use polars::io::cloud::{ CloudOptions, GoogleConfigKey };
+    /// use polars_io::cloud::options::{ CloudOptions, GoogleConfigKey };
     ///
     /// let cloud_options = CloudOptions::default()
-    ///     .with_gcp([GoogleConfigKey::ServiceAccountKey, "*********"]);
+    ///     .with_gcp([
+    ///         (GoogleConfigKey::ServiceAccountKey, "*********"),
+    ///         (GoogleConfigKey::ServiceAccount, "path/to/sa.json"),
+    ///     ]);
     /// ```
     #[cfg(feature = "gcp")]
     pub fn with_gcp<I: IntoIterator<Item = (GoogleConfigKey, impl Into<String>)>>(
