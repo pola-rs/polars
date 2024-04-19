@@ -36,6 +36,63 @@ impl Default for ScanArgsParquet {
     }
 }
 
+impl ScanArgsParquet {
+    /// Setter for the `n_rows` field.
+    #[inline(always)]
+    pub fn n_rows(mut self, n_rows: Option<usize>) -> Self {
+        self.n_rows = n_rows;
+        self
+    }
+    /// Setter for the `cache` field.
+    #[inline(always)]
+    pub fn cache(mut self, cache: bool) -> Self {
+        self.cache = cache;
+        self
+    }
+    /// Setter for the `parallel` field.
+    #[inline(always)]
+    pub fn parallel(mut self, parallel: ParallelStrategy) -> Self {
+        self.parallel = parallel;
+        self
+    }
+    /// Setter for the `rechunk` field.
+    #[inline(always)]
+    pub fn rechunk(mut self, rechunk: bool) -> Self {
+        self.rechunk = rechunk;
+        self
+    }
+    /// Setter for the `row_index` field.
+    #[inline(always)]
+    pub fn row_index(mut self, row_index: Option<RowIndex>) -> Self {
+        self.row_index = row_index;
+        self
+    }
+    /// Setter for the `low_memory` field.
+    #[inline(always)]
+    pub fn low_memory(mut self, low_memory: bool) -> Self {
+        self.low_memory = low_memory;
+        self
+    }
+    /// Setter for the `cloud_options` field.
+    #[inline(always)]
+    pub fn cloud_options(mut self, cloud_options: Option<CloudOptions>) -> Self {
+        self.cloud_options = cloud_options;
+        self
+    }
+    /// Setter for the `use_statistics` field.
+    #[inline(always)]
+    pub fn use_statistics(mut self, use_statistics: bool) -> Self {
+        self.use_statistics = use_statistics;
+        self
+    }
+    /// Setter for the `hive_options` field.
+    #[inline(always)]
+    pub fn hive_options(mut self, hive_options: HiveOptions) -> Self {
+        self.hive_options = hive_options;
+        self
+    }
+}
+
 #[derive(Clone)]
 struct LazyParquetReader {
     args: ScanArgsParquet,
