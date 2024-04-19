@@ -4233,6 +4233,7 @@ class DataFrame:
         ) as ctx:
             frames = {table_name: self} if table_name else {}
             frames["self"] = self
+            ctx.register_many(frames)
             return ctx.execute(query)  # type: ignore[return-value]
 
     def top_k(

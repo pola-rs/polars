@@ -6,7 +6,7 @@ SQL Interface
 Polars provides a SQL interface to query frame data; this is available
 through the :class:`SQLContext` object, detailed below, and the DataFrame
 :meth:`~polars.DataFrame.sql` and LazyFrame :meth:`~polars.LazyFrame.sql`
-methods (which cmake use of SQLContext internally).
+methods (which make use of SQLContext internally).
 
 .. py:class:: SQLContext
     :canonical: polars.sql.SQLContext
