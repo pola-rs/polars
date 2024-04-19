@@ -24,7 +24,7 @@ impl PyDataFrame {
     #[pyo3(signature = (data, schema=None, schema_overrides=None, strict=true, infer_schema_length=None))]
     pub fn from_dicts(
         py: Python,
-        data: &PyAny,
+        data: &Bound<PyAny>,
         schema: Option<Wrap<Schema>>,
         schema_overrides: Option<Wrap<Schema>>,
         strict: bool,
@@ -134,7 +134,7 @@ where
     Schema::from_iter(fields)
 }
 
-fn dicts_to_rows<'a>(data: &'a PyAny, names: &'a [String], strict: bool) -> PyResult<Vec<Row<'a>>> {
+fn dicts_to_rows<'a>(data: &Bound<'a, PyAny>, names: &'a [String], strict: bool) -> PyResult<Vec<Row<'a>>> {
     let len = data.len()?;
     let mut rows = Vec::with_capacity(len);
     for d in data.iter()? {
@@ -156,7 +156,7 @@ fn dicts_to_rows<'a>(data: &'a PyAny, names: &'a [String], strict: bool) -> PyRe
 
 /// Either read the given schema, or infer the schema names from the data.
 fn get_schema_names(
-    data: &PyAny,
+    data: &Bound<PyAny>,
     schema: Option<&Schema>,
     infer_schema_length: Option<usize>,
 ) -> PyResult<Vec<String>> {
@@ -172,7 +172,7 @@ fn get_schema_names(
 /// The resulting schema order is determined by the order in which the names are encountered in
 /// the data.
 fn infer_schema_names_from_data(
-    data: &PyAny,
+    data: &Bound<PyAny>,
     infer_schema_length: Option<usize>,
 ) -> PyResult<Vec<String>> {
     let data_len = data.len()?;
