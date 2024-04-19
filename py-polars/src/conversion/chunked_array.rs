@@ -78,7 +78,7 @@ impl ToPyObject for Wrap<&TimeChunked> {
 pub(crate) fn time_to_pyobject_iter<'a>(
     py: Python<'a>,
     ca: &'a TimeChunked,
-) -> impl ExactSizeIterator<Item = Option<Bound<'a,PyAny>>> {
+) -> impl ExactSizeIterator<Item = Option<Bound<'a, PyAny>>> {
     let utils = UTILS.bind(py);
     let convert = utils.getattr(intern!(py, "to_py_time")).unwrap().clone();
     ca.0.into_iter()

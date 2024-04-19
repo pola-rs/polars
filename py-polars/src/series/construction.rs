@@ -23,7 +23,12 @@ macro_rules! init_method {
         #[pymethods]
         impl PySeries {
             #[staticmethod]
-            fn $name(py: Python, name: &str, array: &Bound<PyArray1<$type>>, _strict: bool) -> Self {
+            fn $name(
+                py: Python,
+                name: &str,
+                array: &Bound<PyArray1<$type>>,
+                _strict: bool,
+            ) -> Self {
                 mmap_numpy_array(py, name, array)
             }
         }

@@ -5,8 +5,8 @@ use polars::prelude::*;
 use polars_core::frame::*;
 #[cfg(feature = "pivot")]
 use polars_lazy::frame::pivot::{pivot, pivot_stable};
-use pyo3::pybacked::PyBackedStr;
 use pyo3::prelude::*;
+use pyo3::pybacked::PyBackedStr;
 use pyo3::types::{PyBytes, PyList};
 
 use super::*;

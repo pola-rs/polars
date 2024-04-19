@@ -134,7 +134,11 @@ where
     Schema::from_iter(fields)
 }
 
-fn dicts_to_rows<'a>(data: &Bound<'a, PyAny>, names: &'a [String], strict: bool) -> PyResult<Vec<Row<'a>>> {
+fn dicts_to_rows<'a>(
+    data: &Bound<'a, PyAny>,
+    names: &'a [String],
+    strict: bool,
+) -> PyResult<Vec<Row<'a>>> {
     let len = data.len()?;
     let mut rows = Vec::with_capacity(len);
     for d in data.iter()? {
