@@ -145,7 +145,7 @@ fn dicts_to_rows<'a>(data: &'a PyAny, names: &'a [String], strict: bool) -> PyRe
         for k in names.iter() {
             let val = match d.get_item(k)? {
                 None => AnyValue::Null,
-                Some(val) => py_object_to_any_value(val, strict)?,
+                Some(val) => py_object_to_any_value(&val.as_borrowed(), strict)?,
             };
             row.push(val)
         }
