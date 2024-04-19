@@ -6,7 +6,7 @@ use pyo3::ffi::Py_uintptr_t;
 use pyo3::prelude::*;
 
 /// Arrow array to Python.
-pub(crate) fn to_py_array(array: ArrayRef, py: Python, pyarrow: &PyModule) -> PyResult<PyObject> {
+pub(crate) fn to_py_array(array: ArrayRef, py: Python, pyarrow: &Bound<PyModule>) -> PyResult<PyObject> {
     let schema = Box::new(ffi::export_field_to_c(&ArrowField::new(
         "",
         array.data_type().clone(),
@@ -30,7 +30,7 @@ pub(crate) fn to_py_rb(
     rb: &ArrowChunk,
     names: &[&str],
     py: Python,
-    pyarrow: &PyModule,
+    pyarrow: &Bound<PyModule>,
 ) -> PyResult<PyObject> {
     let mut arrays = Vec::with_capacity(rb.len());
 

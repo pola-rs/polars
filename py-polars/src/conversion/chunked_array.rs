@@ -108,7 +108,7 @@ pub(crate) fn decimal_to_pyobject_iter<'a>(
     py: Python<'a>,
     ca: &'a DecimalChunked,
 ) -> impl ExactSizeIterator<Item = Option<&'a PyAny>> {
-    let utils = UTILS.as_ref(py);
+    let utils = UTILS.bind(py);
     let convert = utils.getattr(intern!(py, "to_py_decimal")).unwrap();
     let py_scale = (-(ca.scale() as i32)).to_object(py);
     // if we don't know precision, the only safe bet is to set it to 39
@@ -125,7 +125,7 @@ pub(crate) fn decimal_to_pyobject_iter<'a>(
                     N * std::mem::size_of::<u128>(),
                 )
             };
-            let digits = PyTuple::new(py, buf.iter().take(n_digits));
+            let digits = PyTuple::new_bound(py, buf.iter().take(n_digits));
             convert
                 .call1((v.is_negative() as u8, digits, &py_precision, &py_scale))
                 .unwrap()
