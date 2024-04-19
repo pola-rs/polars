@@ -96,7 +96,7 @@ pip install 'polars[numpy,fsspec]'
 ```toml
 # Cargo.toml
 [dependencies]
-polars = { version = "0.39", features = ["lazy", "temporal", "describe", "json", "parquet", "dtype-datetime"] }
+polars = { version = "*", features = ["lazy", "temporal", "describe", "json", "parquet", "dtype-datetime"] }
 ```
 
 The opt-in features are:
