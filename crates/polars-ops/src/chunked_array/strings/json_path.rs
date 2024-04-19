@@ -7,7 +7,7 @@ use serde_json::Value;
 
 use super::*;
 
-pub fn extract_json<'a>(expr: &PathCompiled, json_str: &'a str) -> Option<String> {
+pub fn extract_json(expr: &PathCompiled, json_str: &str) -> Option<String> {
     serde_json::from_str(json_str).ok().and_then(|value| {
         // TODO: a lot of heap allocations here. Improve json path by adding a take?
         let result = expr.select(&value).ok()?;
