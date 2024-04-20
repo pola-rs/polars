@@ -60,16 +60,47 @@ except ImportError:
         """  # noqa: W505
 
     class NoDataError(PolarsError):  # type: ignore[no-redef, misc]
-        """Exception raised when an operation cannot be performed on an empty data structure."""  # noqa: W505
+        """
+        Exception raised when an operation cannot be performed on an empty data structure.
+
+        Example
+        -------
+        >>> pl.from_dicts({})
+        polars.exceptions.NoDataError: no data, cannot infer schema
+        """  # noqa: W505
 
     class OutOfBoundsError(PolarsError):  # type: ignore[no-redef, misc]
-        """Exception raised when the given index is out of bounds."""
+        """
+        Exception raised when the given index is out of bounds.
+
+        Example
+        -------
+        >>> s = pl.Series('a', [1,2,3])
+        >>> s.gather(3)
+        polars.exceptions.OutOfBoundsError: gather indices are out of bounds
+        """  # noqa: W505
 
     class PolarsPanicError(PolarsError):  # type: ignore[no-redef, misc]
-        """Exception raised when an unexpected state causes a panic in the underlying Rust library."""  # noqa: W505
+        """
+        Exception raised when an unexpected state causes a panic in the underlying Rust library.
+
+        Example
+        -------
+        >>> a = pl.Series('a', [1,2,3])
+        >>> b = pl.Series('a', [4,5])
+        >>> a * b
+        pyo3_runtime.PanicException: Cannot apply operation on arrays of different lengths
+        """  # noqa: W505
 
     class SchemaError(PolarsError):  # type: ignore[no-redef, misc]
-        """Exception raised when an unexpected schema mismatch causes an error."""
+        """
+        Exception raised when an unexpected schema mismatch causes an error.
+
+        Example
+        -------
+        >>> pl.Series([0, 1, 0]).any()
+        polars.exceptions.SchemaError: invalid series dtype: expected `Boolean`, got `i64`
+        """
 
     class SchemaFieldNotFoundError(PolarsError):  # type: ignore[no-redef, misc]
         """Exception raised when a specified schema field is not found."""
