@@ -1211,7 +1211,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             )
         )
 
-    def sql(self, query: str, table_name: str | None = None) -> Self:
+    def sql(self, query: str, *, table_name: str | None = None) -> Self:
         """
         Execute a SQL query against the LazyFrame.
 

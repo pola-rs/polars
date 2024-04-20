@@ -4122,7 +4122,7 @@ class DataFrame:
             .collect(_eager=True)
         )
 
-    def sql(self, query: str, table_name: str | None = None) -> Self:
+    def sql(self, query: str, *, table_name: str | None = None) -> Self:
         """
         Execute a SQL query against the DataFrame.
 
