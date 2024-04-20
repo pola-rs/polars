@@ -1,5 +1,7 @@
 #[cfg(feature = "csv")]
 pub use polars_io::csv::CsvWriterOptions;
+#[cfg(feature = "ipc")]
+pub use polars_io::ipc::IpcWriterOptions;
 #[cfg(feature = "parquet")]
 pub use polars_io::parquet::ParquetWriteOptions;
 pub use polars_ops::prelude::{JoinArgs, JoinType, JoinValidation};
@@ -9,8 +11,6 @@ pub use polars_plan::logical_plan::{
     AnonymousScan, AnonymousScanArgs, AnonymousScanOptions, DslPlan, Literal, LiteralValue, Null,
     NULL,
 };
-#[cfg(feature = "ipc")]
-pub use polars_plan::prelude::IpcWriterOptions;
 #[cfg(feature = "json")]
 pub use polars_plan::prelude::JsonWriterOptions;
 pub(crate) use polars_plan::prelude::*;

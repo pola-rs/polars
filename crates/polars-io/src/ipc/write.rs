@@ -10,6 +10,15 @@ use serde::{Deserialize, Serialize};
 use crate::prelude::*;
 use crate::WriterFactory;
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct IpcWriterOptions {
+    /// Data page compression
+    pub compression: Option<IpcCompression>,
+    /// maintain the order the data was processed
+    pub maintain_order: bool,
+}
+
 /// Write a DataFrame to Arrow's IPC format
 ///
 /// # Example
