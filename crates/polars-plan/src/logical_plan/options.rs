@@ -5,6 +5,8 @@ use polars_core::prelude::*;
 use polars_io::csv::CsvWriterOptions;
 #[cfg(feature = "ipc")]
 use polars_io::ipc::IpcWriterOptions;
+#[cfg(feature = "json")]
+use polars_io::json::JsonWriterOptions;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::ParquetWriteOptions;
 use polars_io::{HiveOptions, RowIndex};
@@ -17,14 +19,6 @@ use serde::{Deserialize, Serialize};
 use crate::prelude::python_udf::PythonFunction;
 
 pub type FileCount = u32;
-
-#[cfg(feature = "json")]
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct JsonWriterOptions {
-    /// maintain the order the data was processed
-    pub maintain_order: bool,
-}
 
 #[derive(Clone, Debug, PartialEq, Eq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
