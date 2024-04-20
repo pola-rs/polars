@@ -157,11 +157,9 @@ Polars is very fast. In fact, it is one of the best performing solutions availab
 
 ### Lightweight
 
-Polars is also very lightweight. It comes with zero required dependencies, and this shows in the import times:
+Polars is also very lightweight, as shown by its relatively small package size and low import times.
 
-- polars: 70ms
-- numpy: 104ms
-- pandas: 520ms
+![Comparison of Polars, pandas, NumPy, and PyArrow package sizes and import times - Polars is lowest](https://github.com/pola-rs/polars/assets/33491632/390f9258-734a-4878-ba68-3a1f2d7f639b)
 
 ### Handles larger-than-RAM data
 
