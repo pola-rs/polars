@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
+use polars_io::ipc::IpcScanOptions;
 use polars_io::RowIndex;
 
 use crate::prelude::*;

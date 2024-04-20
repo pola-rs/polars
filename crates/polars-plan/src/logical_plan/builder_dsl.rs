@@ -3,6 +3,8 @@ use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
 #[cfg(feature = "csv")]
 use polars_io::csv::{CommentPrefix, CsvEncoding, CsvParserOptions, NullValues};
+#[cfg(feature = "ipc")]
+use polars_io::ipc::IpcScanOptions;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::ParquetOptions;
 use polars_io::HiveOptions;
