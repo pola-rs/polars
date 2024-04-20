@@ -18,15 +18,6 @@ use crate::prelude::python_udf::PythonFunction;
 
 pub type FileCount = u32;
 
-#[cfg(feature = "parquet")]
-#[derive(Clone, Debug, PartialEq, Eq, Copy, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct ParquetOptions {
-    pub parallel: polars_io::parquet::ParallelStrategy,
-    pub low_memory: bool,
-    pub use_statistics: bool,
-}
-
 #[cfg(feature = "ipc")]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
