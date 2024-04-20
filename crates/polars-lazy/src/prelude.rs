@@ -6,7 +6,7 @@ pub use polars_plan::logical_plan::{
     NULL,
 };
 #[cfg(feature = "csv")]
-pub use polars_plan::prelude::CsvWriterOptions;
+pub use polars_io::csv::CsvWriterOptions;
 #[cfg(feature = "ipc")]
 pub use polars_plan::prelude::IpcWriterOptions;
 #[cfg(feature = "json")]
