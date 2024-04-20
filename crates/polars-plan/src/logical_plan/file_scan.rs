@@ -1,5 +1,6 @@
 use std::hash::{Hash, Hasher};
 
+use polars_io::csv::CsvParserOptions;
 #[cfg(feature = "parquet")]
 use polars_parquet::write::FileMetaData;
 

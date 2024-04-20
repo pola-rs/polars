@@ -1,6 +1,8 @@
 use polars_core::prelude::*;
 #[cfg(feature = "parquet")]
 use polars_io::cloud::CloudOptions;
+#[cfg(feature = "csv")]
+use polars_io::csv::{CommentPrefix, CsvEncoding, CsvParserOptions, NullValues};
 use polars_io::HiveOptions;
 #[cfg(any(
     feature = "parquet",
@@ -9,8 +11,6 @@ use polars_io::HiveOptions;
     feature = "ipc"
 ))]
 use polars_io::RowIndex;
-#[cfg(feature = "csv")]
-use polars_io::{csv::CommentPrefix, csv::CsvEncoding, csv::NullValues};
 
 use crate::constants::UNLIMITED_CACHE;
 use crate::logical_plan::expr_expansion::rewrite_projections;
