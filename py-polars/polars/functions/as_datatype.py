@@ -85,24 +85,24 @@ def datetime_(
     Examples
     --------
     >>> df = pl.DataFrame(
-    >>>     {
-    >>>         "month": [1, 2, 3],
-    >>>         "day": [4, 5, 6],
-    >>>         "hour": [12, 13, 14],
-    >>>         "minute": [15, 30, 45],
-    >>>     }
-    >>> )
+    ...     {
+    ...         "month": [1, 2, 3],
+    ...         "day": [4, 5, 6],
+    ...         "hour": [12, 13, 14],
+    ...         "minute": [15, 30, 45],
+    ...     }
+    ... )
 
     >>> df.with_columns(
-    >>>     pl.datetime(
-    >>>         2024,
-    >>>         pl.col("month"),
-    >>>         pl.col("day"),
-    >>>         pl.col("hour"),
-    >>>         pl.col("minute"),
-    >>>         time_zone="Australia/Sydney",
-    >>>     )
-    >>> )
+    ...     pl.datetime(
+    ...         2024,
+    ...         pl.col("month"),
+    ...         pl.col("day"),
+    ...         pl.col("hour"),
+    ...         pl.col("minute"),
+    ...         time_zone="Australia/Sydney",
+    ...     )
+    ... )
     shape: (3, 5)
     ┌───────┬─────┬──────┬────────┬────────────────────────────────┐
     │ month ┆ day ┆ hour ┆ minute ┆ datetime                       │
@@ -171,15 +171,15 @@ def date_(
     Examples
     --------
     >>> df = pl.DataFrame(
-    >>>     {
-    >>>         "month": [1, 2, 3],
-    >>>         "day": [4, 5, 6],
-    >>>     }
-    >>> )
+    ...     {
+    ...         "month": [1, 2, 3],
+    ...         "day": [4, 5, 6],
+    ...     }
+    ... )
 
     >>> df.with_columns(
-    >>>     pl.date(2024, pl.col("month"), pl.col("day"))
-    >>> )
+    ...     pl.date(2024, pl.col("month"), pl.col("day"))
+    ... )
     shape: (3, 3)
     ┌───────┬─────┬────────────┐
     │ month ┆ day ┆ date       │
