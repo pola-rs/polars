@@ -177,9 +177,7 @@ def date_(
     ...     }
     ... )
 
-    >>> df.with_columns(
-    ...     pl.date(2024, pl.col("month"), pl.col("day"))
-    ... )
+    >>> df.with_columns(pl.date(2024, pl.col("month"), pl.col("day")))
     shape: (3, 3)
     ┌───────┬─────┬────────────┐
     │ month ┆ day ┆ date       │
@@ -227,9 +225,7 @@ def time_(
     >>>         "minute": [15, 30, 45],
     >>>     }
     >>> )
-    >>> df.with_columns(
-    >>>     pl.time(pl.col("hour"), pl.col("minute"))
-    >>> )
+    >>> df.with_columns(pl.time(pl.col("hour"), pl.col("minute")))
     shape: (3, 3)
     ┌──────┬────────┬──────────┐
     │ hour ┆ minute ┆ time     │
