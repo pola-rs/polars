@@ -220,12 +220,12 @@ def time_(
     Examples
     --------
     >>> df = pl.DataFrame(
-    >>>     {
-    >>>         "hour": [12, 13, 14],
-    >>>         "minute": [15, 30, 45],
-    >>>     }
-    >>> )
-    >>> df.with_columns(pl.time(pl.col("hour"), pl.col("minute")))
+    ...     {
+    ...         "hour": [12, 13, 14],
+    ...         "minute": [15, 30, 45],
+    ...     }
+    ... )
+    ... df.with_columns(pl.time(pl.col("hour"), pl.col("minute")))
     shape: (3, 3)
     ┌──────┬────────┬──────────┐
     │ hour ┆ minute ┆ time     │
