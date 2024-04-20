@@ -99,11 +99,11 @@ except ImportError:
         Example
         -------
         >>> pl.DataFrame(
-        >>>     [
-        >>>         pl.Series(["a", "b", "c"], dtype=pl.Categorical),
-        >>>         pl.Series(["b", "b", "c"], dtype=pl.Categorical),
-        >>>     ]
-        >>> ).transpose()
+        ...     [
+        ...         pl.Series(["a", "b", "c"], dtype=pl.Categorical),
+        ...         pl.Series(["b", "b", "c"], dtype=pl.Categorical),
+        ...     ]
+        ... ).transpose()
         polars.exceptions.StringCacheMismatchError: cannot compare categoricals coming from different sources, consider setting a global StringCache.
         """  # noqa: W505
 
@@ -114,8 +114,8 @@ except ImportError:
         Example
         -------
         >>> pl.struct(
-        >>>     [pl.Series("a", [1, 2]), pl.Series("b", ["a", "b"])], eager=True
-        >>> ).struct.field("z")
+        ...     [pl.Series("a", [1, 2]), pl.Series("b", ["a", "b"])], eager=True
+        ... ).struct.field("z")
         polars.exceptions.StructFieldNotFoundError: z
         """
 
