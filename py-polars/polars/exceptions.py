@@ -72,16 +72,52 @@ except ImportError:
         """Exception raised when an unexpected schema mismatch causes an error."""
 
     class SchemaFieldNotFoundError(PolarsError):  # type: ignore[no-redef, misc]
-        """Exception raised when a specified schema field is not found."""
+        """
+        Exception raised when a specified schema field is not found.
+
+        Example
+        -------
+        >>> df = pl.DataFrame({"a": [1, 2, 3]})
+        >>> df.rename({"b": "c"})
+        polars.exceptions.SchemaFieldNotFoundError: b
+        """
 
     class ShapeError(PolarsError):  # type: ignore[no-redef, misc]
-        """Exception raised when trying to perform operations on data structures with incompatible shapes."""  # noqa: W505
+        """
+        Exception raised when trying to perform operations on data structures with incompatible shapes.
+
+        Example
+        -------
+        >>> pl.DataFrame({"a": [1, 2, 3], "b": [4, 5]})
+        polars.exceptions.ShapeError: could not create a new DataFrame: series "a" has length 3 while series "b" has length 2
+        """  # noqa: W505
 
     class StringCacheMismatchError(PolarsError):  # type: ignore[no-redef, misc]
-        """Exception raised when string caches come from different sources."""
+        """
+        Exception raised when string caches come from different sources.
+
+        Example
+        -------
+        >>> pl.DataFrame(
+        >>>     [
+        >>>         pl.Series(["a", "b", "c"], dtype=pl.Categorical),
+        >>>         pl.Series(["b", "b", "c"], dtype=pl.Categorical),
+        >>>     ]
+        >>> ).transpose()
+        polars.exceptions.StringCacheMismatchError: cannot compare categoricals coming from different sources, consider setting a global StringCache.
+        """  # noqa: W505
 
     class StructFieldNotFoundError(PolarsError):  # type: ignore[no-redef, misc]
-        """Exception raised when a specified Struct field is not found."""
+        """
+        Exception raised when a specified Struct field is not found.
+
+        Example
+        -------
+        >>> pl.struct(
+        >>>     [pl.Series("a", [1, 2]), pl.Series("b", ["a", "b"])], eager=True
+        >>> ).struct.field("z")
+        polars.exceptions.StructFieldNotFoundError: z
+        """
 
     class PolarsWarning(Exception):  # type: ignore[no-redef]
         """Base class for all Polars warnings."""
