@@ -1,3 +1,7 @@
+#[cfg(feature = "csv")]
+pub use polars_io::csv::CsvWriterOptions;
+#[cfg(feature = "parquet")]
+pub use polars_io::parquet::ParquetWriteOptions;
 pub use polars_ops::prelude::{JoinArgs, JoinType, JoinValidation};
 #[cfg(feature = "rank")]
 pub use polars_ops::prelude::{RankMethod, RankOptions};
@@ -5,14 +9,10 @@ pub use polars_plan::logical_plan::{
     AnonymousScan, AnonymousScanArgs, AnonymousScanOptions, DslPlan, Literal, LiteralValue, Null,
     NULL,
 };
-#[cfg(feature = "csv")]
-pub use polars_io::csv::CsvWriterOptions;
 #[cfg(feature = "ipc")]
 pub use polars_plan::prelude::IpcWriterOptions;
 #[cfg(feature = "json")]
 pub use polars_plan::prelude::JsonWriterOptions;
-#[cfg(feature = "parquet")]
-pub use polars_plan::prelude::ParquetWriteOptions;
 pub(crate) use polars_plan::prelude::*;
 #[cfg(feature = "rolling_window")]
 pub use polars_time::{prelude::RollingOptions, Duration};

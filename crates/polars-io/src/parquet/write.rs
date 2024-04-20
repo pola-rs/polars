@@ -19,6 +19,21 @@ use write::{
 
 use crate::prelude::chunk_df_for_writing;
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct ParquetWriteOptions {
+    /// Data page compression
+    pub compression: ParquetCompression,
+    /// Compute and write column statistics.
+    pub statistics: bool,
+    /// If `None` will be all written to a single row group.
+    pub row_group_size: Option<usize>,
+    /// if `None` will be 1024^2 bytes
+    pub data_pagesize_limit: Option<usize>,
+    /// maintain the order the data was processed
+    pub maintain_order: bool,
+}
+
 #[derive(Debug, Eq, PartialEq, Hash, Clone, Copy)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct GzipLevel(u8);

@@ -6,7 +6,7 @@ use polars_io::csv::CsvWriterOptions;
 #[cfg(feature = "ipc")]
 use polars_io::ipc::IpcCompression;
 #[cfg(feature = "parquet")]
-use polars_io::parquet::ParquetCompression;
+use polars_io::parquet::ParquetWriteOptions;
 use polars_io::{HiveOptions, RowIndex};
 #[cfg(feature = "dynamic_group_by")]
 use polars_time::{DynamicGroupOptions, RollingGroupOptions};
@@ -25,22 +25,6 @@ pub struct ParquetOptions {
     pub parallel: polars_io::parquet::ParallelStrategy,
     pub low_memory: bool,
     pub use_statistics: bool,
-}
-
-#[cfg(feature = "parquet")]
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct ParquetWriteOptions {
-    /// Data page compression
-    pub compression: ParquetCompression,
-    /// Compute and write column statistics.
-    pub statistics: bool,
-    /// If `None` will be all written to a single row group.
-    pub row_group_size: Option<usize>,
-    /// if `None` will be 1024^2 bytes
-    pub data_pagesize_limit: Option<usize>,
-    /// maintain the order the data was processed
-    pub maintain_order: bool,
 }
 
 #[cfg(feature = "ipc")]

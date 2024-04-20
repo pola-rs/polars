@@ -26,7 +26,7 @@ use std::borrow::Cow;
 
 pub use polars_parquet::write::FileMetaData;
 pub use read::*;
-pub use write::{BrotliLevel, GzipLevel, ZstdLevel, *};
+pub use write::{BrotliLevel, GzipLevel, ParquetWriteOptions, ZstdLevel, *};
 
 use crate::parquet::read_impl::materialize_hive_partitions;
 use crate::utils::apply_projection;
