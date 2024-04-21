@@ -125,6 +125,7 @@ range = ["polars-plan/range"]
 mode = ["polars-plan/mode"]
 cum_agg = ["polars-plan/cum_agg"]
 interpolate = ["polars-plan/interpolate"]
+interpolate_by = ["polars-plan/interpolate_by"]
 rolling_window = [
   "polars-plan/rolling_window",
 ]
@@ -270,6 +271,7 @@ features = [
   "futures",
   "hist",
   "interpolate",
+  "interpolate_by",
   "ipc",
   "is_first_distinct",
   "is_in",

@@ -8,26 +8,7 @@ use polars_core::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-fn linear_itp<T>(low: T, step: T, slope: T) -> T
-where
-    T: Sub<Output = T> + Mul<Output = T> + Add<Output = T> + Div<Output = T>,
-{
-    low + step * slope
-}
-
-fn nearest_itp<T>(low: T, step: T, diff: T, steps_n: T) -> T
-where
-    T: Sub<Output = T> + Mul<Output = T> + Add<Output = T> + Div<Output = T> + PartialOrd + Copy,
-{
-    // 5 - 1 = 5 -> low
-    // 5 - 2 = 3 -> low
-    // 5 - 3 = 2 -> high
-    if (steps_n - step) > step {
-        low
-    } else {
-        low + diff
-    }
-}
+use super::{linear_itp, nearest_itp};
 
 fn near_interp<T>(low: T, high: T, steps: IdxSize, steps_n: T, av: &mut Vec<T>)
 where

@@ -24,6 +24,13 @@ pub(super) fn interpolate(s: &Series, method: InterpolationMethod) -> PolarsResu
     Ok(polars_ops::prelude::interpolate(s, method))
 }
 
+#[cfg(feature = "interpolate_by")]
+pub(super) fn interpolate_by(s: &[Series]) -> PolarsResult<Series> {
+    let times = &s[1];
+    let assume_sorted = times.is_sorted_flag() == IsSorted::Ascending;
+    polars_ops::prelude::interpolate_by(&s[0], times, assume_sorted)
+}
+
 pub(super) fn to_physical(s: &Series) -> PolarsResult<Series> {
     Ok(s.to_physical_repr().into_owned())
 }

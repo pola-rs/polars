@@ -118,6 +118,7 @@ range = []
 mode = ["polars-ops/mode"]
 cum_agg = ["polars-ops/cum_agg"]
 interpolate = ["polars-ops/interpolate"]
+interpolate_by = ["polars-ops/interpolate_by"]
 rolling_window = [
   "polars-core/rolling_window",
   "polars-time/rolling_window",
@@ -253,6 +254,7 @@ features = [
   "peaks",
   "abs",
   "interpolate",
+  "interpolate_by",
   "list_count",
   "cum_agg",
   "top_k",
