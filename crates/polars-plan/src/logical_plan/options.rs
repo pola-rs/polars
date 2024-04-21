@@ -1,16 +1,14 @@
-#[cfg(feature = "csv")]
-use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
 use polars_core::prelude::*;
 #[cfg(feature = "csv")]
-use polars_io::csv::SerializeOptions;
-#[cfg(feature = "csv")]
-use polars_io::csv::{CommentPrefix, CsvEncoding, NullValues};
+use polars_io::csv::CsvWriterOptions;
 #[cfg(feature = "ipc")]
-use polars_io::ipc::IpcCompression;
+use polars_io::ipc::IpcWriterOptions;
+#[cfg(feature = "json")]
+use polars_io::json::JsonWriterOptions;
 #[cfg(feature = "parquet")]
-use polars_io::parquet::ParquetCompression;
+use polars_io::parquet::ParquetWriteOptions;
 use polars_io::{HiveOptions, RowIndex};
 #[cfg(feature = "dynamic_group_by")]
 use polars_time::{DynamicGroupOptions, RollingGroupOptions};
@@ -21,104 +19,6 @@ use serde::{Deserialize, Serialize};
 use crate::prelude::python_udf::PythonFunction;
 
 pub type FileCount = u32;
-
-#[cfg(feature = "csv")]
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct CsvParserOptions {
-    pub comment_prefix: Option<CommentPrefix>,
-    pub quote_char: Option<u8>,
-    pub skip_rows: usize,
-    pub encoding: CsvEncoding,
-    pub skip_rows_after_header: usize,
-    pub infer_schema_length: Option<usize>,
-    pub n_threads: Option<usize>,
-    pub try_parse_dates: bool,
-    pub raise_if_empty: bool,
-    pub truncate_ragged_lines: bool,
-    pub low_memory: bool,
-    pub ignore_errors: bool,
-    pub has_header: bool,
-    pub eol_char: u8,
-    pub separator: u8,
-    pub schema_overwrite: Option<SchemaRef>,
-    pub schema: Option<SchemaRef>,
-    pub null_values: Option<NullValues>,
-    pub decimal_float: bool,
-}
-
-#[cfg(feature = "parquet")]
-#[derive(Clone, Debug, PartialEq, Eq, Copy, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct ParquetOptions {
-    pub parallel: polars_io::parquet::ParallelStrategy,
-    pub low_memory: bool,
-    pub use_statistics: bool,
-}
-
-#[cfg(feature = "parquet")]
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct ParquetWriteOptions {
-    /// Data page compression
-    pub compression: ParquetCompression,
-    /// Compute and write column statistics.
-    pub statistics: bool,
-    /// If `None` will be all written to a single row group.
-    pub row_group_size: Option<usize>,
-    /// if `None` will be 1024^2 bytes
-    pub data_pagesize_limit: Option<usize>,
-    /// maintain the order the data was processed
-    pub maintain_order: bool,
-}
-
-#[cfg(feature = "ipc")]
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct IpcWriterOptions {
-    /// Data page compression
-    pub compression: Option<IpcCompression>,
-    /// maintain the order the data was processed
-    pub maintain_order: bool,
-}
-
-#[cfg(feature = "csv")]
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct CsvWriterOptions {
-    pub include_bom: bool,
-    pub include_header: bool,
-    pub batch_size: NonZeroUsize,
-    pub maintain_order: bool,
-    pub serialize_options: SerializeOptions,
-}
-
-#[cfg(feature = "csv")]
-impl Default for CsvWriterOptions {
-    fn default() -> Self {
-        Self {
-            include_bom: false,
-            include_header: true,
-            batch_size: NonZeroUsize::new(1024).unwrap(),
-            maintain_order: false,
-            serialize_options: SerializeOptions::default(),
-        }
-    }
-}
-
-#[cfg(feature = "json")]
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct JsonWriterOptions {
-    /// maintain the order the data was processed
-    pub maintain_order: bool,
-}
-
-#[derive(Clone, Debug, PartialEq, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct IpcScanOptions {
-    pub memory_map: bool,
-}
 
 #[derive(Clone, Debug, PartialEq, Eq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
