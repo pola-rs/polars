@@ -77,7 +77,7 @@ where
 
     // Fill av with first.
     let mut av = Vec::with_capacity(chunked_arr.len());
-    let mut iter = chunked_arr.into_iter().skip(first);
+    let mut iter = chunked_arr.iter().skip(first);
     for _ in 0..first {
         av.push(Zero::zero())
     }
