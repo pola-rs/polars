@@ -265,8 +265,14 @@ impl IR {
         container.push_node(input)
     }
 
-    pub fn get_inputs(&self) -> Vec<Node> {
-        let mut inputs = Vec::new();
+    pub fn get_inputs(&self) -> UnitVec<Node> {
+        let mut inputs: UnitVec<Node> = unitvec!();
+        self.copy_inputs(&mut inputs);
+        inputs
+    }
+
+    pub fn get_inputs_vec(&self) -> Vec<Node> {
+        let mut inputs = vec![];
         self.copy_inputs(&mut inputs);
         inputs
     }
