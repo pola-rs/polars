@@ -2062,15 +2062,15 @@ def test_skip_rows_after_header_pyarrow(use_pyarrow: bool) -> None:
 
 def test_csv_float_decimal() -> None:
     floats = b"a;b\n12,239;1,233\n13,908;87,32"
-    read = pl.read_csv(floats, decimal_float=True, separator=";")
+    read = pl.read_csv(floats, decimal_comma=True, separator=";")
     assert read.dtypes == [pl.Float64] * 2
     assert read.to_dict(as_series=False) == {"a": [12.239, 13.908], "b": [1.233, 87.32]}
 
     floats = b"a;b\n12,239;1,233\n13,908;87,32"
     with pytest.raises(
-        pl.InvalidOperationError, match=r"'decimal_float' argument cannot be combined"
+        pl.InvalidOperationError, match=r"'decimal_comma' argument cannot be combined"
     ):
-        pl.read_csv(floats, decimal_float=True)
+        pl.read_csv(floats, decimal_comma=True)
 
 
 def test_fsspec_not_available(monkeypatch: pytest.MonkeyPatch) -> None:

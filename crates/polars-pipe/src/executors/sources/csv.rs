@@ -82,7 +82,7 @@ impl CsvSource {
             .with_n_threads(options.n_threads)
             .with_try_parse_dates(options.try_parse_dates)
             .truncate_ragged_lines(options.truncate_ragged_lines)
-            .with_decimal_float(options.decimal_float)
+            .with_decimal_comma(options.decimal_comma)
             .raise_if_empty(options.raise_if_empty);
 
         let reader = Box::new(reader);

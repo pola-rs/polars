@@ -191,7 +191,7 @@ impl DslBuilder {
         raise_if_empty: bool,
         truncate_ragged_lines: bool,
         n_threads: Option<usize>,
-        decimal_float: bool,
+        decimal_comma: bool,
     ) -> PolarsResult<Self> {
         let path = path.into();
 
@@ -235,7 +235,7 @@ impl DslBuilder {
                     schema_overwrite,
                     skip_rows_after_header,
                     infer_schema_length,
-                    decimal_float,
+                    decimal_comma,
                 },
             },
         }
