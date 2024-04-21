@@ -1645,6 +1645,7 @@ def collect_all(
     comm_subplan_elim: bool = True,
     comm_subexpr_elim: bool = True,
     streaming: bool = False,
+    background: bool = False,
 ) -> list[DataFrame]:
     """
     Collect multiple LazyFrames at the same time.
