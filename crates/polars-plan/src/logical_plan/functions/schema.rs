@@ -38,7 +38,6 @@ impl FunctionNode {
                 .map(|schema| Cow::Owned(schema.clone()))
                 .unwrap_or_else(|| Cow::Borrowed(input_schema))),
             Pipeline { schema, .. } => Ok(Cow::Owned(schema.clone())),
-            DropNulls { .. } => Ok(Cow::Borrowed(input_schema)),
             Count { alias, .. } => {
                 let mut schema: Schema = Schema::with_capacity(1);
                 let name = SmartString::from(

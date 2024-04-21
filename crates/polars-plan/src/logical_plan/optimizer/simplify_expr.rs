@@ -419,8 +419,8 @@ impl OptimizationRule for SimplifyExprRule {
         &mut self,
         expr_arena: &mut Arena<AExpr>,
         expr_node: Node,
-        _lp_arena: &Arena<IR>,
-        _lp_node: Node,
+        lp_arena: &Arena<IR>,
+        lp_node: Node,
     ) -> PolarsResult<Option<AExpr>> {
         let expr = expr_arena.get(expr_node).clone();
 
@@ -443,8 +443,8 @@ impl OptimizationRule for SimplifyExprRule {
                                 #[cfg(all(feature = "strings", feature = "concat_str"))]
                                 {
                                     string_addition_to_linear_concat(
-                                        _lp_arena,
-                                        _lp_node,
+                                        lp_arena,
+                                        lp_node,
                                         expr_arena,
                                         *left,
                                         *right,
@@ -595,7 +595,7 @@ impl OptimizationRule for SimplifyExprRule {
                 strict,
             } => {
                 let input = expr_arena.get(*expr);
-                inline_cast(input, data_type, *strict)?
+                inline_or_prune_cast(input, data_type, *strict, lp_node, lp_arena, expr_arena)?
             },
             _ => None,
         };
@@ -603,11 +603,35 @@ impl OptimizationRule for SimplifyExprRule {
     }
 }
 
-fn inline_cast(input: &AExpr, dtype: &DataType, strict: bool) -> PolarsResult<Option<AExpr>> {
+fn inline_or_prune_cast(
+    aexpr: &AExpr,
+    dtype: &DataType,
+    strict: bool,
+    lp_node: Node,
+    lp_arena: &Arena<IR>,
+    expr_arena: &Arena<AExpr>,
+) -> PolarsResult<Option<AExpr>> {
     if !dtype.is_known() {
         return Ok(None);
     }
-    let lv = match (input, dtype) {
+    let lv = match (aexpr, dtype) {
+        // PRUNE
+        (
+            AExpr::BinaryExpr {
+                op: Operator::LogicalOr | Operator::LogicalAnd,
+                ..
+            },
+            _,
+        ) => {
+            if let Some(schema) = lp_arena.get(lp_node).input_schema(lp_arena) {
+                let field = aexpr.to_field(&schema, Context::Default, expr_arena)?;
+                if field.dtype == *dtype {
+                    return Ok(Some(aexpr.clone()));
+                }
+            }
+            return Ok(None);
+        },
+        // INLINE
         (AExpr::Literal(lv), _) => match lv {
             LiteralValue::Series(s) => {
                 let s = if strict {
@@ -622,7 +646,7 @@ fn inline_cast(input: &AExpr, dtype: &DataType, strict: bool) -> PolarsResult<Op
                     return Ok(None);
                 };
                 if dtype == &av.dtype() {
-                    return Ok(Some(input.clone()));
+                    return Ok(Some(aexpr.clone()));
                 }
                 match (av, dtype) {
                     // casting null always remains null

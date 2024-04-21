@@ -58,6 +58,8 @@ if TYPE_CHECKING:
         ("timestamp(5)", pl.Datetime("us")),
         ("timestamp(7)", pl.Datetime("ns")),
         ("datetime without tz", pl.Datetime("us")),
+        ("duration(2)", pl.Duration("ms")),
+        ("interval", pl.Duration("us")),
         ("date", pl.Date),
         ("time", pl.Time),
         ("date32", pl.Date),
@@ -65,6 +67,8 @@ if TYPE_CHECKING:
         # binary types
         ("BYTEA", pl.Binary),
         ("BLOB", pl.Binary),
+        # miscellaneous
+        ("NULL", pl.Null),
     ],
 )
 def test_dtype_inference_from_string(

@@ -2,8 +2,7 @@ use std::path::Path;
 
 use crossbeam_channel::bounded;
 use polars_core::prelude::*;
-use polars_io::json::BatchedWriter;
-use polars_plan::prelude::JsonWriterOptions;
+use polars_io::json::{BatchedWriter, JsonWriterOptions};
 
 use crate::executors::sinks::output::file_sink::{init_writer_thread, FilesSink, SinkWriter};
 use crate::pipeline::morsels_per_sink;

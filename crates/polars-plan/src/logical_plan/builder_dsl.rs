@@ -1,6 +1,12 @@
 use polars_core::prelude::*;
 #[cfg(feature = "parquet")]
 use polars_io::cloud::CloudOptions;
+#[cfg(feature = "csv")]
+use polars_io::csv::{CommentPrefix, CsvEncoding, CsvParserOptions, NullValues};
+#[cfg(feature = "ipc")]
+use polars_io::ipc::IpcScanOptions;
+#[cfg(feature = "parquet")]
+use polars_io::parquet::ParquetOptions;
 use polars_io::HiveOptions;
 #[cfg(any(
     feature = "parquet",
@@ -9,8 +15,6 @@ use polars_io::HiveOptions;
     feature = "ipc"
 ))]
 use polars_io::RowIndex;
-#[cfg(feature = "csv")]
-use polars_io::{csv::CommentPrefix, csv::CsvEncoding, csv::NullValues};
 
 use crate::constants::UNLIMITED_CACHE;
 use crate::logical_plan::expr_expansion::rewrite_projections;
@@ -187,7 +191,7 @@ impl DslBuilder {
         raise_if_empty: bool,
         truncate_ragged_lines: bool,
         n_threads: Option<usize>,
-        decimal_float: bool,
+        decimal_comma: bool,
     ) -> PolarsResult<Self> {
         let path = path.into();
 
@@ -231,7 +235,7 @@ impl DslBuilder {
                     schema_overwrite,
                     skip_rows_after_header,
                     infer_schema_length,
-                    decimal_float,
+                    decimal_comma,
                 },
             },
         }
@@ -273,7 +277,19 @@ impl DslBuilder {
     }
 
     pub fn drop_nulls(self, subset: Option<Vec<Expr>>) -> Self {
-        self.map_private(DslFunction::DropNulls(subset))
+        if let Some(subset) = subset {
+            self.filter(
+                all_horizontal(
+                    subset
+                        .into_iter()
+                        .map(|v| v.is_not_null())
+                        .collect::<Vec<_>>(),
+                )
+                .unwrap(),
+            )
+        } else {
+            self.filter(all_horizontal([all().is_not_null()]).unwrap())
+        }
     }
 
     pub fn fill_nan(self, fill_value: Expr) -> Self {

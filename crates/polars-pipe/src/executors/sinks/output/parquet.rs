@@ -4,8 +4,7 @@ use std::thread::JoinHandle;
 
 use crossbeam_channel::{bounded, Receiver, Sender};
 use polars_core::prelude::*;
-use polars_io::parquet::{BatchedWriter, ParquetWriter, RowGroupIter};
-use polars_plan::prelude::ParquetWriteOptions;
+use polars_io::parquet::{BatchedWriter, ParquetWriteOptions, ParquetWriter, RowGroupIter};
 
 use crate::executors::sinks::output::file_sink::{init_writer_thread, FilesSink, SinkWriter};
 use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult};

@@ -1,5 +1,11 @@
 use std::hash::{Hash, Hasher};
 
+#[cfg(feature = "csv")]
+use polars_io::csv::CsvParserOptions;
+#[cfg(feature = "ipc")]
+use polars_io::ipc::IpcScanOptions;
+#[cfg(feature = "parquet")]
+use polars_io::parquet::ParquetOptions;
 #[cfg(feature = "parquet")]
 use polars_parquet::write::FileMetaData;
 
