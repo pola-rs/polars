@@ -121,6 +121,7 @@ if TYPE_CHECKING:
     from typing import Literal
 
     import deltalake
+    import pyiceberg
     from hvplot.plotting.core import hvPlotTabularPolars
     from xlsxwriter import Workbook
 
@@ -3135,6 +3136,52 @@ class DataFrame:
         else:
             msg = f"engine {engine!r} is not supported"
             raise ValueError(msg)
+
+    def write_iceberg(self, target: str | Path) -> pyiceberg.table.Table:
+        """
+        Write DataFrame to an Iceberg table.
+
+        Parameters
+        ----------
+        target : str | Path
+            The target path or identifier for the Iceberg table.
+
+        Returns
+        -------
+        pyiceberg.Table
+            The Iceberg table object that was written to.
+        """
+        from pyiceberg.catalog.sql import SqlCatalog
+
+        def override_pyarrow_table_schema(arrow_table: pa.Table) -> pa.Table:
+            # Because of schema discrepancy
+            #   self.to_arrow().schema produces large_string
+            #   iceberg_tbl.schema() produces string
+            # Override pyarrow schema: Convert large_string to string
+            modified_fields = []
+            for field in arrow_table.schema:
+                if pa.types.is_large_string(field.type):
+                    modified_fields.append(
+                        pa.field(field.name, pa.string(), nullable=field.nullable)
+                    )
+                else:
+                    modified_fields.append(field)
+            modified_schema = pa.schema(modified_fields)
+            return arrow_table.cast(modified_schema)
+
+        catalog = SqlCatalog(
+            "default", uri="sqlite:///:memory:", warehouse=f"file://{target}"
+        )
+        catalog.create_namespace("default")
+        data = override_pyarrow_table_schema(self.to_arrow())
+
+        table = catalog.create_table(
+            "default.table",
+            schema=data.schema,
+        )
+
+        table.overwrite(data)
+        return table
 
     @overload
     def write_delta(
