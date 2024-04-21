@@ -33,6 +33,7 @@ __all__ = ["generate_group_by_data"]
 def generate_group_by_data(
     n_rows: int, n_groups: int, null_ratio: float = 0.0, *, sort: bool = False
 ) -> pl.DataFrame:
+    """Generate data for benchmarking group-by operations."""
     logging.info("Generating data...")
     df = _generate_data(n_rows, n_groups)
 
@@ -165,9 +166,7 @@ def main() -> None:
 def write_data(df: pl.DataFrame, args: argparse.Namespace) -> None:
     def format_int(i: int) -> str:
         base, exp = f"{i:e}".split("e")
-        base = f"{float(base):g}"
-        exp = int(exp)
-        return f"{base}e{exp}"
+        return f"{float(base):g}e{int(exp)}"
 
     if args.output is not None:
         filename = args.output
