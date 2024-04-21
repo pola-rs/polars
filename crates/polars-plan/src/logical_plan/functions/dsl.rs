@@ -23,7 +23,6 @@ pub enum DslFunction {
     Stats(StatsFunction),
     /// FillValue
     FillNan(Expr),
-    DropNulls(Option<Vec<Expr>>),
     Drop(PlHashSet<String>),
 }
 
@@ -93,10 +92,7 @@ impl DslFunction {
                     schema: Default::default(),
                 }
             },
-            DslFunction::Stats(_)
-            | DslFunction::FillNan(_)
-            | DslFunction::DropNulls(_)
-            | DslFunction::Drop(_) => {
+            DslFunction::Stats(_) | DslFunction::FillNan(_) | DslFunction::Drop(_) => {
                 // We should not reach this.
                 panic!("impl error")
             },
@@ -121,32 +117,7 @@ impl Display for DslFunction {
             RowIndex { .. } => write!(f, "WITH ROW INDEX"),
             Stats(_) => write!(f, "STATS"),
             FillNan(_) => write!(f, "FILL NAN"),
-            DropNulls(_) => write!(f, "DROP NULLS"),
             Drop(_) => write!(f, "DROP"),
-            // DropNulls { subset } => {
-            //     write!(f, "DROP_NULLS by: ")?;
-            //     let subset = subset.as_ref();
-            //     fmt_column_delimited(f, subset, "[", "]")
-            // },
-            // Rechunk => write!(f, "RECHUNK"),
-            // Count { .. } => write!(f, "FAST COUNT(*)"),
-            // Unnest { columns } => {
-            //     write!(f, "UNNEST by:")?;
-            //     let columns = columns.as_ref();
-            //     fmt_column_delimited(f, columns, "[", "]")
-            // },
-            // #[cfg(feature = "merge_sorted")]
-            // MergeSorted { .. } => write!(f, "MERGE SORTED"),
-            // Pipeline { original, .. } => {
-            //     if let Some(original) = original {
-            //         writeln!(f, "--- STREAMING")?;
-            //         write!(f, "{:?}", original.as_ref())?;
-            //         let indent = 2;
-            //         writeln!(f, "{:indent$}--- END STREAMING", "")
-            //     } else {
-            //         writeln!(f, "STREAMING")
-            //     }
-            // },
             Rename { .. } => write!(f, "RENAME"),
         }
     }

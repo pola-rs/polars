@@ -344,24 +344,6 @@ pub fn to_alp(
                         },
                     }
                 },
-                DslFunction::DropNulls(subset) => {
-                    let predicate = match subset {
-                        None => all_horizontal([col("*").is_not_null()]),
-                        Some(subset) => all_horizontal(
-                            subset
-                                .into_iter()
-                                .map(|e| e.is_not_null())
-                                .collect::<Vec<_>>(),
-                        ),
-                    }
-                    .map_err(|e| e.context(failed_here!(drop_nulls)))?;
-                    let predicate = rewrite_projections(vec![predicate], &input_schema, &[])
-                        .map_err(|e| e.context(failed_here!(drop_nulls)))?
-                        .pop()
-                        .unwrap();
-                    let predicate = to_expr_ir(predicate, expr_arena);
-                    IR::Filter { predicate, input }
-                },
                 DslFunction::Drop(to_drop) => {
                     let mut output_schema =
                         Schema::with_capacity(input_schema.len().saturating_sub(to_drop.len()));

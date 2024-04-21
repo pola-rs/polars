@@ -66,9 +66,6 @@ pub enum FunctionNode {
     Unnest {
         columns: Arc<[Arc<str>]>,
     },
-    DropNulls {
-        subset: Arc<[Arc<str>]>,
-    },
     Rechunk,
     // The two DataFrames are temporary concatenated
     // this indicates until which chunk the data is from the left df
@@ -112,7 +109,6 @@ impl PartialEq for FunctionNode {
     fn eq(&self, other: &Self) -> bool {
         use FunctionNode::*;
         match (self, other) {
-            (DropNulls { subset: l }, DropNulls { subset: r }) => l == r,
             (Rechunk, Rechunk) => true,
             (Count { paths: paths_l, .. }, Count { paths: paths_r, .. }) => paths_l == paths_r,
             (
@@ -155,7 +151,6 @@ impl Hash for FunctionNode {
             },
             FunctionNode::Pipeline { .. } => {},
             FunctionNode::Unnest { columns } => columns.hash(state),
-            FunctionNode::DropNulls { subset } => subset.hash(state),
             FunctionNode::Rechunk => {},
             #[cfg(feature = "merge_sorted")]
             FunctionNode::MergeSorted { column } => column.hash(state),
@@ -190,9 +185,7 @@ impl FunctionNode {
             Rechunk | Pipeline { .. } => false,
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => false,
-            DropNulls { .. } | Count { .. } | Unnest { .. } | Rename { .. } | Explode { .. } => {
-                true
-            },
+            Count { .. } | Unnest { .. } | Rename { .. } | Explode { .. } => true,
             Melt { args, .. } => args.streamable,
             Opaque { streamable, .. } => *streamable,
             #[cfg(feature = "python")]
@@ -218,12 +211,7 @@ impl FunctionNode {
             Opaque { predicate_pd, .. } => *predicate_pd,
             #[cfg(feature = "python")]
             OpaquePython { predicate_pd, .. } => *predicate_pd,
-            DropNulls { .. }
-            | Rechunk
-            | Unnest { .. }
-            | Rename { .. }
-            | Explode { .. }
-            | Melt { .. } => true,
+            Rechunk | Unnest { .. } | Rename { .. } | Explode { .. } | Melt { .. } => true,
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => true,
             RowIndex { .. } | Count { .. } => false,
@@ -237,8 +225,7 @@ impl FunctionNode {
             Opaque { projection_pd, .. } => *projection_pd,
             #[cfg(feature = "python")]
             OpaquePython { projection_pd, .. } => *projection_pd,
-            DropNulls { .. }
-            | Rechunk
+            Rechunk
             | Count { .. }
             | Unnest { .. }
             | Rename { .. }
@@ -273,7 +260,6 @@ impl FunctionNode {
                 schema,
                 ..
             } => python_udf::call_python_udf(function, df, *validate_output, schema.as_deref()),
-            DropNulls { subset } => df.drop_nulls(Some(subset.as_ref())),
             Count {
                 paths, scan_type, ..
             } => count::count_rows(paths, scan_type),
@@ -330,11 +316,6 @@ impl Display for FunctionNode {
             Opaque { fmt_str, .. } => write!(f, "{fmt_str}"),
             #[cfg(feature = "python")]
             OpaquePython { .. } => write!(f, "python dataframe udf"),
-            DropNulls { subset } => {
-                write!(f, "DROP_NULLS by: ")?;
-                let subset = subset.as_ref();
-                fmt_column_delimited(f, subset, "[", "]")
-            },
             Rechunk => write!(f, "RECHUNK"),
             Count { .. } => write!(f, "FAST COUNT(*)"),
             Unnest { columns } => {

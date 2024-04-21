@@ -4,7 +4,6 @@ use crate::prelude::*;
 
 mod cache_states;
 mod delay_rechunk;
-mod drop_nulls;
 
 mod collapse_and_project;
 mod collect_members;
@@ -25,7 +24,6 @@ mod type_coercion;
 
 use collapse_and_project::SimpleProjectionAndCollapse;
 use delay_rechunk::DelayRechunk;
-use drop_nulls::ReplaceDropNulls;
 use polars_core::config::verbose;
 use polars_io::predicates::PhysicalIoExpr;
 pub use predicate_pushdown::PredicatePushDown;
@@ -181,7 +179,6 @@ pub fn optimize(
         rules.push(Box::new(SimplifyBooleanRule {}));
     }
 
-    rules.push(Box::new(ReplaceDropNulls {}));
     if !eager {
         rules.push(Box::new(FlattenUnionRule {}));
     }
