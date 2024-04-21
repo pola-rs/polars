@@ -8,11 +8,11 @@ use polars_core::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-fn linear_itp<T>(low: T, step: T, diff: T, steps_n: T) -> T
+fn linear_itp<T>(low: T, step: T, slope: T) -> T
 where
     T: Sub<Output = T> + Mul<Output = T> + Add<Output = T> + Div<Output = T>,
 {
-    low + step * diff / steps_n
+    low + step * slope
 }
 
 fn nearest_itp<T>(low: T, step: T, diff: T, steps_n: T) -> T
@@ -52,10 +52,10 @@ fn signed_interp<T>(low: T, high: T, steps: IdxSize, steps_n: T, av: &mut Vec<T>
 where
     T: Sub<Output = T> + Mul<Output = T> + Add<Output = T> + Div<Output = T> + NumCast + Copy,
 {
-    let diff = high - low;
+    let slope = (high - low) / steps_n;
     for step_i in 1..steps {
         let step_i: T = NumCast::from(step_i).unwrap();
-        let v = linear_itp(low, step_i, diff, steps_n);
+        let v = linear_itp(low, step_i, slope);
         av.push(v)
     }
 }
