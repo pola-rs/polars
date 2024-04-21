@@ -270,7 +270,6 @@ impl IR {
         self.copy_inputs(&mut inputs);
         inputs
     }
-    /// panics if more than one input
     #[cfg(any(
         all(feature = "strings", feature = "concat_str"),
         feature = "streaming",

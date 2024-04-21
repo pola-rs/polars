@@ -233,6 +233,27 @@ fn to_aexpr_impl(expr: Expr, arena: &mut Arena<AExpr>, state: &mut ConversionSta
             function,
             options,
         } => {
+            match function {
+                // Convert to binary expression as the optimizer understands those.
+                FunctionExpr::Boolean(BooleanFunction::AllHorizontal) => {
+                    let expr = input
+                        .into_iter()
+                        .reduce(|l, r| l.logical_and(r))
+                        .unwrap()
+                        .cast(DataType::Boolean);
+                    return to_aexpr_impl(expr, arena, state);
+                },
+                FunctionExpr::Boolean(BooleanFunction::AnyHorizontal) => {
+                    let expr = input
+                        .into_iter()
+                        .reduce(|l, r| l.logical_or(r))
+                        .unwrap()
+                        .cast(DataType::Boolean);
+                    return to_aexpr_impl(expr, arena, state);
+                },
+                _ => {},
+            }
+
             let e = to_expr_irs(input, arena);
 
             if state.output_name.is_none() {
