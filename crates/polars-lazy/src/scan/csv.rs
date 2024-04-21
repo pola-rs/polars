@@ -36,7 +36,7 @@ pub struct LazyCsvReader {
     try_parse_dates: bool,
     raise_if_empty: bool,
     n_threads: Option<usize>,
-    decimal_float: bool,
+    decimal_comma: bool,
 }
 
 #[cfg(feature = "csv")]
@@ -72,7 +72,7 @@ impl LazyCsvReader {
             raise_if_empty: true,
             truncate_ragged_lines: false,
             n_threads: None,
-            decimal_float: false,
+            decimal_comma: false,
         }
     }
 
@@ -234,8 +234,8 @@ impl LazyCsvReader {
     }
 
     #[must_use]
-    pub fn with_decimal_float(mut self, toggle: bool) -> Self {
-        self.decimal_float = toggle;
+    pub fn with_decimal_comma(mut self, toggle: bool) -> Self {
+        self.decimal_comma = toggle;
         self
     }
 
@@ -274,7 +274,7 @@ impl LazyCsvReader {
             self.try_parse_dates,
             self.raise_if_empty,
             &mut self.n_threads,
-            self.decimal_float,
+            self.decimal_comma,
         )?;
         let mut schema = f(schema)?;
 
@@ -315,7 +315,7 @@ impl LazyFileListReader for LazyCsvReader {
             self.raise_if_empty,
             self.truncate_ragged_lines,
             self.n_threads,
-            self.decimal_float,
+            self.decimal_comma,
         )?
         .build()
         .into();

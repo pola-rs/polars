@@ -39,7 +39,7 @@ pub struct CsvParserOptions {
     pub schema_overwrite: Option<SchemaRef>,
     pub schema: Option<SchemaRef>,
     pub null_values: Option<NullValues>,
-    pub decimal_float: bool,
+    pub decimal_comma: bool,
 }
 
 /// Read the number of rows without parsing columns

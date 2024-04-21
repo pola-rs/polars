@@ -60,7 +60,7 @@ pub(crate) fn get_file_chunks(
 }
 
 /// Infer the data type of a record
-fn infer_field_schema(string: &str, try_parse_dates: bool, decimal_float: bool) -> DataType {
+fn infer_field_schema(string: &str, try_parse_dates: bool, decimal_comma: bool) -> DataType {
     // when quoting is enabled in the reader, these quotes aren't escaped, we default to
     // String for them
     if string.starts_with('"') {
@@ -91,8 +91,8 @@ fn infer_field_schema(string: &str, try_parse_dates: bool, decimal_float: bool) 
     // match regex in a particular order
     else if BOOLEAN_RE.is_match(string) {
         DataType::Boolean
-    } else if !decimal_float && FLOAT_RE.is_match(string)
-        || decimal_float && FLOAT_RE_DECIMAL.is_match(string)
+    } else if !decimal_comma && FLOAT_RE.is_match(string)
+        || decimal_comma && FLOAT_RE_DECIMAL.is_match(string)
     {
         DataType::Float64
     } else if INTEGER_RE.is_match(string) {
@@ -154,7 +154,7 @@ pub fn infer_file_schema_inner(
     recursion_count: u8,
     raise_if_empty: bool,
     n_threads: &mut Option<usize>,
-    decimal_float: bool,
+    decimal_comma: bool,
 ) -> PolarsResult<(Schema, usize, usize)> {
     // keep track so that we can determine the amount of bytes read
     let start_ptr = reader_bytes.as_ptr() as usize;
@@ -255,7 +255,7 @@ pub fn infer_file_schema_inner(
             recursion_count + 1,
             raise_if_empty,
             n_threads,
-            decimal_float,
+            decimal_comma,
         );
     } else if !raise_if_empty {
         return Ok((Schema::new(), 0, 0));
@@ -333,17 +333,17 @@ pub fn infer_file_schema_inner(
                     };
                     let s = parse_bytes_with_encoding(slice_escaped, encoding)?;
                     let dtype = match &null_values {
-                        None => Some(infer_field_schema(&s, try_parse_dates, decimal_float)),
+                        None => Some(infer_field_schema(&s, try_parse_dates, decimal_comma)),
                         Some(NullValues::AllColumns(names)) => {
                             if !names.iter().any(|nv| nv == s.as_ref()) {
-                                Some(infer_field_schema(&s, try_parse_dates, decimal_float))
+                                Some(infer_field_schema(&s, try_parse_dates, decimal_comma))
                             } else {
                                 None
                             }
                         },
                         Some(NullValues::AllColumnsSingle(name)) => {
                             if s.as_ref() != name {
-                                Some(infer_field_schema(&s, try_parse_dates, decimal_float))
+                                Some(infer_field_schema(&s, try_parse_dates, decimal_comma))
                             } else {
                                 None
                             }
@@ -356,12 +356,12 @@ pub fn infer_file_schema_inner(
 
                             if let Some(null_name) = null_name {
                                 if null_name.1 != s.as_ref() {
-                                    Some(infer_field_schema(&s, try_parse_dates, decimal_float))
+                                    Some(infer_field_schema(&s, try_parse_dates, decimal_comma))
                                 } else {
                                     None
                                 }
                             } else {
-                                Some(infer_field_schema(&s, try_parse_dates, decimal_float))
+                                Some(infer_field_schema(&s, try_parse_dates, decimal_comma))
                             }
                         },
                     };
@@ -459,16 +459,16 @@ pub fn infer_file_schema_inner(
             recursion_count + 1,
             raise_if_empty,
             n_threads,
-            decimal_float,
+            decimal_comma,
         );
     }
 
     Ok((Schema::from_iter(fields), rows_count, end_ptr - start_ptr))
 }
 
-pub(super) fn check_decimal_float(decimal_float: bool, separator: u8) -> PolarsResult<()> {
-    if decimal_float {
-        polars_ensure!(b',' != separator, InvalidOperation: "'decimal_float' argument cannot be combined with ',' quote char")
+pub(super) fn check_decimal_comma(decimal_comma: bool, separator: u8) -> PolarsResult<()> {
+    if decimal_comma {
+        polars_ensure!(b',' != separator, InvalidOperation: "'decimal_comma' argument cannot be combined with ',' quote char")
     }
     Ok(())
 }
@@ -500,9 +500,9 @@ pub fn infer_file_schema(
     try_parse_dates: bool,
     raise_if_empty: bool,
     n_threads: &mut Option<usize>,
-    decimal_float: bool,
+    decimal_comma: bool,
 ) -> PolarsResult<(Schema, usize, usize)> {
-    check_decimal_float(decimal_float, separator)?;
+    check_decimal_comma(decimal_comma, separator)?;
     infer_file_schema_inner(
         reader_bytes,
         separator,
@@ -519,7 +519,7 @@ pub fn infer_file_schema(
         0,
         raise_if_empty,
         n_threads,
-        decimal_float,
+        decimal_comma,
     )
 }
 

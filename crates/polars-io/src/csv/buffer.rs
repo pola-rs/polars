@@ -486,7 +486,7 @@ pub(crate) fn init_buffers(
     schema: &Schema,
     quote_char: Option<u8>,
     encoding: CsvEncoding,
-    decimal_float: bool,
+    decimal_comma: bool,
 ) -> PolarsResult<Vec<Buffer>> {
     projection
         .iter()
@@ -507,7 +507,7 @@ pub(crate) fn init_buffers(
                 &DataType::UInt32 => Buffer::UInt32(PrimitiveChunkedBuilder::new(name, capacity)),
                 &DataType::UInt64 => Buffer::UInt64(PrimitiveChunkedBuilder::new(name, capacity)),
                 &DataType::Float32 => {
-                    if decimal_float {
+                    if decimal_comma {
                         Buffer::DecimalFloat32(
                             PrimitiveChunkedBuilder::new(name, capacity),
                             Default::default(),
@@ -517,7 +517,7 @@ pub(crate) fn init_buffers(
                     }
                 },
                 &DataType::Float64 => {
-                    if decimal_float {
+                    if decimal_comma {
                         Buffer::DecimalFloat64(
                             PrimitiveChunkedBuilder::new(name, capacity),
                             Default::default(),
@@ -825,7 +825,7 @@ impl Buffer {
                 None,
             ),
             DecimalFloat32(buf, scratch) => {
-                prepare_decimal_float(bytes, scratch);
+                prepare_decimal_comma(bytes, scratch);
                 <PrimitiveChunkedBuilder<Float32Type> as ParsedBuffer>::parse_bytes(
                     buf,
                     scratch,
@@ -836,7 +836,7 @@ impl Buffer {
                 )
             },
             DecimalFloat64(buf, scratch) => {
-                prepare_decimal_float(bytes, scratch);
+                prepare_decimal_comma(bytes, scratch);
                 <PrimitiveChunkedBuilder<Float64Type> as ParsedBuffer>::parse_bytes(
                     buf,
                     scratch,
@@ -891,7 +891,7 @@ impl Buffer {
 }
 
 #[inline]
-fn prepare_decimal_float(bytes: &[u8], scratch: &mut Vec<u8>) {
+fn prepare_decimal_comma(bytes: &[u8], scratch: &mut Vec<u8>) {
     scratch.clear();
     scratch.reserve(bytes.len());
 
