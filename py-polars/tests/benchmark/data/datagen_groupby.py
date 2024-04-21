@@ -8,10 +8,10 @@ https://github.com/h2oai/db-benchmark/blob/master/_data/groupby-datagen.R
 Examples
 --------
 10 million rows, 100 groups, no nulls, random order:
-$ python groupby_datagen.py 1e7 1e2 --null-percentage 0
+$ python datagen_groupby.py 1e7 1e2 --null-percentage 0
 
 100 million rows, 10 groups, 5% nulls, sorted:
-$ python groupby_datagen.py 1e8 1e1 --null-percentage 5 --sorted
+$ python datagen_groupby.py 1e8 1e1 --null-percentage 5 --sorted
 """
 
 import argparse
