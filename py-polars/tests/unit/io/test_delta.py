@@ -33,7 +33,7 @@ def test_scan_delta_version(delta_table_path: Path) -> None:
 
     assert_frame_not_equal(df1, df2)
 
-
+@pytest.mark.write_disk()
 def test_scan_delta_timestamp_version(tmp_path: Path) -> None:
     df_sample = pl.DataFrame({"name": ["Joey"], "age": [14]})
     df_sample.write_delta(tmp_path, mode="append")
@@ -105,7 +105,7 @@ def test_read_delta_version(delta_table_path: Path) -> None:
 
     assert_frame_not_equal(df1, df2)
 
-
+@pytest.mark.write_disk()
 def test_read_delta_timestamp_version(tmp_path: Path) -> None:
     df_sample = pl.DataFrame({"name": ["Joey"], "age": [14]})
     df_sample.write_delta(tmp_path, mode="append")
