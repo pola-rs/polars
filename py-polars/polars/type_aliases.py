@@ -158,14 +158,15 @@ ConcatMethod = Literal[
     "horizontal",
     "align",
 ]
-EpochTimeUnit = Literal["ns", "us", "ms", "s", "d"]
-Orientation: TypeAlias = Literal["col", "row"]
-SearchSortedSide: TypeAlias = Literal["any", "left", "right"]
-TransferEncoding: TypeAlias = Literal["hex", "base64"]
 CorrelationMethod: TypeAlias = Literal["pearson", "spearman"]
 DbReadEngine: TypeAlias = Literal["adbc", "connectorx"]
 DbWriteEngine: TypeAlias = Literal["sqlalchemy", "adbc"]
 DbWriteMode: TypeAlias = Literal["replace", "append", "fail"]
+EpochTimeUnit = Literal["ns", "us", "ms", "s", "d"]
+Orientation: TypeAlias = Literal["col", "row"]
+SearchSortedSide: TypeAlias = Literal["any", "left", "right"]
+TorchExportType: TypeAlias = Literal["tensor", "dataset", "dict"]
+TransferEncoding: TypeAlias = Literal["hex", "base64"]
 WindowMappingStrategy: TypeAlias = Literal["group_to_rows", "join", "explode"]
 
 # type signature for allowed frame init

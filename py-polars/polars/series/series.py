@@ -77,6 +77,7 @@ from polars.datatypes import (
     String,
     Time,
     UInt8,
+    UInt16,
     UInt32,
     UInt64,
     Unknown,
@@ -94,6 +95,7 @@ from polars.dependencies import (
     _check_for_pandas,
     _check_for_pyarrow,
     hvplot,
+    import_optional,
 )
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
@@ -116,6 +118,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 if TYPE_CHECKING:
     import sys
 
+    import torch
     from hvplot.plotting.core import hvPlotTabularPolars
 
     from polars import DataFrame, DataType, Expr
@@ -4436,6 +4439,35 @@ class Series:
             np_array = np_array.copy()
 
         return np_array
+
+    def to_torch(self) -> torch.Tensor:
+        """
+        Convert this Series to a PyTorch tensor.
+
+        Examples
+        --------
+        >>> s = pl.Series("x", [1, 0, 1, 2, 0], dtype=pl.UInt8)
+        >>> s.to_torch()
+        tensor([1, 0, 1, 2, 0], dtype=torch.uint8)
+        """
+        torch = import_optional("torch")
+
+        # PyTorch tensors do not support uint16/32/64
+        if self.dtype in (UInt32, UInt64):
+            srs = self.cast(Int64)
+        elif self.dtype == UInt16:
+            srs = self.cast(Int32)
+        else:
+            srs = self
+
+        # we have to build the tensor from a writable array or PyTorch will complain
+        # about it (as writing to readonly array results in undefined behavior)
+        numpy_array = srs.to_numpy(writable=True, use_pyarrow=False)
+        tensor = torch.from_numpy(numpy_array)
+
+        # note: named tensors are currently experimental
+        # tensor.rename(self.name)
+        return tensor
 
     def to_arrow(self) -> pa.Array:
         """

@@ -117,3 +117,14 @@ Connect to pyarrow datasets.
    :toctree: api/
 
    scan_pyarrow_dataset
+
+PyTorch Tensors / Datasets
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+.. autosummary::
+   :toctree: api/
+
+   DataFrame.to_torch
+
+.. currentmodule:: polars.utils
+
+   ~torch.PolarsDataset

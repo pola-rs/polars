@@ -58,10 +58,11 @@ pyiceberg = ["pyiceberg >= 0.5.0"]
 pyxlsb = ["pyxlsb >= 1.0"]
 sqlalchemy = ["sqlalchemy", "pandas"]
 timezone = ["backports.zoneinfo; python_version < '3.9'", "tzdata; platform_system == 'Windows'"]
+torch = ["torch"]
 xlsx2csv = ["xlsx2csv >= 0.8.0"]
 xlsxwriter = ["xlsxwriter"]
 all = [
-  "polars[adbc,async,cloudpickle,connectorx,deltalake,fastexcel,fsspec,gevent,numpy,pandas,plot,pyarrow,pydantic,pyiceberg,sqlalchemy,timezone,xlsx2csv,xlsxwriter]",
+  "polars[adbc,async,cloudpickle,connectorx,deltalake,fastexcel,fsspec,gevent,numpy,pandas,plot,pyarrow,pydantic,pyiceberg,sqlalchemy,timezone,torch,xlsx2csv,xlsxwriter]",
 ]
 
 [tool.maturin]
