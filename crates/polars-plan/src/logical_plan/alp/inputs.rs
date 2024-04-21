@@ -270,11 +270,7 @@ impl IR {
         self.copy_inputs(&mut inputs);
         inputs
     }
-    #[cfg(any(
-        all(feature = "strings", feature = "concat_str"),
-        feature = "streaming",
-        feature = "fused"
-    ))]
+
     pub(crate) fn get_input(&self) -> Option<Node> {
         let mut inputs: UnitVec<Node> = unitvec!();
         self.copy_inputs(&mut inputs);
