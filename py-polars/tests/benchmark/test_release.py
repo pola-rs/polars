@@ -20,16 +20,16 @@ from polars.testing import assert_frame_equal
 pytestmark = pytest.mark.benchmark()
 
 
-def test_read_scan_large_csv(h2aoi_groupby_data_path: Path) -> None:
-    if not h2aoi_groupby_data_path.is_file():
-        pytest.skip("Dataset must be generated before running this test.")
+def test_read_scan_large_csv(groupby_data: pl.DataFrame, tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    data_path = tmp_path / "data.csv"
+    groupby_data.write_csv(data_path)
 
     predicate = pl.col("v2") < 5
 
-    shape_eager = pl.read_csv(h2aoi_groupby_data_path).filter(predicate).shape
-    shape_lazy = (
-        (pl.scan_csv(h2aoi_groupby_data_path).filter(predicate)).collect().shape
-    )
+    shape_eager = pl.read_csv(data_path).filter(predicate).shape
+    shape_lazy = pl.scan_csv(data_path).filter(predicate).collect().shape
 
     assert shape_lazy == shape_eager
 
@@ -37,7 +37,7 @@ def test_read_scan_large_csv(h2aoi_groupby_data_path: Path) -> None:
 def test_sort_nan_1942() -> None:
     # https://github.com/pola-rs/polars/issues/1942
     t0 = time.time()
-    pl.repeat(float("nan"), 2 << 12, eager=True).sort()
+    pl.repeat(float("nan"), 2**13, eager=True).sort()
     assert (time.time() - t0) < 1
 
 
