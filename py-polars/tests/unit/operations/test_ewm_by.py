@@ -12,7 +12,8 @@ if TYPE_CHECKING:
     from polars.type_aliases import PolarsIntegerType, TimeUnit
 
 
-def test_ewma_by_date() -> None:
+@pytest.mark.parametrize("sort", [True, False])
+def test_ewma_by_date(sort: bool) -> None:
     df = pl.LazyFrame(
         {
             "values": [3.0, 1.0, 2.0, None, 4.0],
@@ -25,6 +26,8 @@ def test_ewma_by_date() -> None:
             ],
         }
     )
+    if sort:
+        df = df.sort("times")
     result = df.select(
         pl.col("values").ewm_mean_by("times", half_life=timedelta(days=2)),
     )
