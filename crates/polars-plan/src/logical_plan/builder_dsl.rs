@@ -277,7 +277,19 @@ impl DslBuilder {
     }
 
     pub fn drop_nulls(self, subset: Option<Vec<Expr>>) -> Self {
-        self.map_private(DslFunction::DropNulls(subset))
+        if let Some(subset) = subset {
+            self.filter(
+                all_horizontal(
+                    subset
+                        .into_iter()
+                        .map(|v| v.is_not_null())
+                        .collect::<Vec<_>>(),
+                )
+                .unwrap(),
+            )
+        } else {
+            self.filter(all_horizontal([all().is_not_null()]).unwrap())
+        }
     }
 
     pub fn fill_nan(self, fill_value: Expr) -> Self {

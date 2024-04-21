@@ -715,3 +715,11 @@ def test_cse_manual_cache_15688() -> None:
         "id": [3],
         "foo": [1],
     }
+
+
+def test_cse_drop_nulls_15795() -> None:
+    A = pl.LazyFrame({"X": 1})
+    B = pl.LazyFrame({"X": 1, "Y": 0}).filter(pl.col("Y").is_not_null())
+    C = A.join(B, on="X").select("X")
+    D = B.select("X")
+    assert C.join(D, on="X").collect().shape == (1, 1)
