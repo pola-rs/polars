@@ -88,7 +88,6 @@ module = [
   "backports",
   "connectorx",
   "deltalake.*",
-  "ezodf.*",
   "fsspec.*",
   "gevent",
   "hvplot.*",
@@ -230,6 +229,7 @@ filterwarnings = [
   # TODO: Excel tests lead to unclosed file warnings
   # https://github.com/pola-rs/polars/issues/14466
   "ignore:unclosed file.*:ResourceWarning",
+  "ignore:the 'pyxlsb' engine is deprecated.*:DeprecationWarning",
 ]
 xfail_strict = true
 

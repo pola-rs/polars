@@ -436,6 +436,29 @@ def test_schema_overrides(path_xlsx: Path, path_xlsb: Path, path_ods: Path) -> N
         assert df["test4"].schema[col] == dtype
 
 
+@pytest.mark.parametrize(
+    ("engine", "read_opts_param"),
+    [
+        ("xlsx2csv", "infer_schema_length"),
+        ("calamine", "schema_sample_rows"),
+    ],
+)
+def test_invalid_parameter_combinations(
+    path_xlsx: Path, engine: str, read_opts_param: str
+) -> None:
+    with pytest.raises(
+        ParameterCollisionError,
+        match=f"cannot specify both `infer_schema_length`.*{read_opts_param}",
+    ):
+        pl.read_excel(  # type: ignore[call-overload]
+            path_xlsx,
+            sheet_id=1,
+            engine=engine,
+            read_options={read_opts_param: 512},
+            infer_schema_length=1024,
+        )
+
+
 def test_unsupported_engine() -> None:
     with pytest.raises(NotImplementedError):
         pl.read_excel(None, engine="foo")  # type: ignore[call-overload]
@@ -572,7 +595,7 @@ def test_excel_round_trip(write_params: dict[str, Any]) -> None:
 
     engine: ExcelSpreadsheetEngine
     for engine in ("calamine", "xlsx2csv"):  # type: ignore[assignment]
-        table_params = (
+        read_options = (
             {}
             if write_params.get("include_header", True)
             else (
@@ -594,7 +617,7 @@ def test_excel_round_trip(write_params: dict[str, Any]) -> None:
             xls,
             sheet_name="data",
             engine=engine,
-            read_options=table_params,
+            read_options=read_options,
         )[:3].select(df.columns[:3])
         if engine == "xlsx2csv":
             xldf = xldf.with_columns(pl.col("dtm").str.strptime(pl.Date, fmt_strptime))

@@ -36,7 +36,6 @@ cloudpickle
 fsspec
 s3fs[boto3]
 # Spreadsheet
-ezodf
 lxml
 fastexcel>=0.9
 openpyxl
