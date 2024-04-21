@@ -77,7 +77,7 @@ where
 
     // Fill av with first.
     let mut av = Vec::with_capacity(chunked_arr.len());
-    let mut iter = chunked_arr.into_iter();
+    let mut iter = chunked_arr.into_iter().skip(first);
     for _ in 0..first {
         av.push(Zero::zero())
     }
@@ -92,7 +92,6 @@ where
             },
             Some(None) => {
                 match low_val {
-                    None => continue, // Not a non-null value encountered yet so we skip.
                     Some(low) => {
                         let mut steps = 1 as IdxSize;
                         loop {
@@ -110,6 +109,7 @@ where
                             }
                         }
                     },
+                    _ => unreachable!(), // we start iterating at `first`
                 }
             },
             None => {
