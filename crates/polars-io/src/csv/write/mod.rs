@@ -1,52 +1,12 @@
+mod options;
 mod write_impl;
 
 use std::num::NonZeroUsize;
 
+pub use options::{CsvWriterOptions, QuoteStyle, SerializeOptions};
 use polars_core::POOL;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
-pub use write_impl::SerializeOptions;
 
 use super::*;
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct CsvWriterOptions {
-    pub include_bom: bool,
-    pub include_header: bool,
-    pub batch_size: NonZeroUsize,
-    pub maintain_order: bool,
-    pub serialize_options: SerializeOptions,
-}
-
-#[cfg(feature = "csv")]
-impl Default for CsvWriterOptions {
-    fn default() -> Self {
-        Self {
-            include_bom: false,
-            include_header: true,
-            batch_size: NonZeroUsize::new(1024).unwrap(),
-            maintain_order: false,
-            serialize_options: SerializeOptions::default(),
-        }
-    }
-}
-
-#[derive(Copy, Clone, Default, Eq, Hash, PartialEq, Debug)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub enum QuoteStyle {
-    /// This puts quotes around every field. Always.
-    Always,
-    /// This puts quotes around fields only when necessary.
-    // They are necessary when fields contain a quote, separator or record terminator. Quotes are also necessary when writing an empty record (which is indistinguishable from a record with one empty field).
-    // This is the default.
-    #[default]
-    Necessary,
-    /// This puts quotes around all fields that are non-numeric. Namely, when writing a field that does not parse as a valid float or integer, then quotes will be used even if they aren’t strictly necessary.
-    NonNumeric,
-    /// Never quote any fields, even if it would produce invalid CSV data.
-    Never,
-}
 
 /// Write a DataFrame to csv.
 ///
@@ -55,7 +15,7 @@ pub enum QuoteStyle {
 pub struct CsvWriter<W: Write> {
     /// File or Stream handler
     buffer: W,
-    options: write_impl::SerializeOptions,
+    options: SerializeOptions,
     header: bool,
     bom: bool,
     batch_size: NonZeroUsize,
@@ -68,7 +28,7 @@ where
 {
     fn new(buffer: W) -> Self {
         // 9f: all nanoseconds
-        let options = write_impl::SerializeOptions {
+        let options = SerializeOptions {
             time_format: Some("%T%.9f".to_string()),
             ..Default::default()
         };

@@ -11,53 +11,10 @@ use polars_core::prelude::*;
 use polars_core::POOL;
 use polars_utils::contention_pool::LowContentionPool;
 use rayon::prelude::*;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
 
 use self::serializer::{serializer_for, string_serializer};
 use super::write::QuoteStyle;
 use super::*;
-
-/// Options to serialize logical types to CSV.
-///
-/// The default is to format times and dates as `chrono` crate formats them.
-#[derive(Debug, PartialEq, Eq, Hash, Clone)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct SerializeOptions {
-    /// Used for [`DataType::Date`].
-    pub date_format: Option<String>,
-    /// Used for [`DataType::Time`].
-    pub time_format: Option<String>,
-    /// Used for [`DataType::Datetime`].
-    pub datetime_format: Option<String>,
-    /// Used for [`DataType::Float64`] and [`DataType::Float32`].
-    pub float_precision: Option<usize>,
-    /// Used as separator.
-    pub separator: u8,
-    /// Quoting character.
-    pub quote_char: u8,
-    /// Null value representation.
-    pub null: String,
-    /// String appended after every row.
-    pub line_terminator: String,
-    pub quote_style: QuoteStyle,
-}
-
-impl Default for SerializeOptions {
-    fn default() -> Self {
-        SerializeOptions {
-            date_format: None,
-            time_format: None,
-            datetime_format: None,
-            float_precision: None,
-            separator: b',',
-            quote_char: b'"',
-            null: String::new(),
-            line_terminator: "\n".into(),
-            quote_style: Default::default(),
-        }
-    }
-}
 
 pub(crate) fn write<W: Write>(
     writer: &mut W,
