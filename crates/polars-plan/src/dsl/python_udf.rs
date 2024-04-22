@@ -157,7 +157,10 @@ impl SeriesUdf for PythonUdfExpression {
     fn call_udf(&self, s: &mut [Series]) -> PolarsResult<Option<Series>> {
         let func = unsafe { CALL_SERIES_UDF_PYTHON.unwrap() };
 
-        let output_type = self.output_type.clone().unwrap_or_else(|| DataType::Unknown(Default::default()));
+        let output_type = self
+            .output_type
+            .clone()
+            .unwrap_or_else(|| DataType::Unknown(Default::default()));
         let mut out = func(s[0].clone(), &self.python_function)?;
         if !matches!(output_type, DataType::Unknown(_)) {
             let must_cast = out.dtype().matches_schema_type(&output_type).map_err(|_| {

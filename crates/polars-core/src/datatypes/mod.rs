@@ -136,8 +136,8 @@ macro_rules! impl_polars_datatype2 {
 
 macro_rules! impl_polars_datatype {
     ($ca:ident, $variant:ident, $arr:ty, $lt:lifetime, $phys:ty, $zerophys:ty) => {
-        impl_polars_datatype2!($ca, DataType::$variant, $arr, $lt, $phys, $zerophys); };
-
+        impl_polars_datatype2!($ca, DataType::$variant, $arr, $lt, $phys, $zerophys);
+    };
 }
 
 impl_polars_num_datatype!(PolarsIntegerType, UInt8Type, UInt8, u8);
@@ -156,7 +156,6 @@ impl_polars_datatype!(StringType, String, Utf8ViewArray, 'a, &'a str, Option<&'a
 impl_polars_datatype!(BinaryType, Binary, BinaryViewArray, 'a, &'a [u8], Option<&'a [u8]>);
 impl_polars_datatype!(BinaryOffsetType, BinaryOffset, BinaryArray<i64>, 'a, &'a [u8], Option<&'a [u8]>);
 impl_polars_datatype!(BooleanType, Boolean, BooleanArray, 'a, bool, bool);
-
 
 #[cfg(feature = "dtype-decimal")]
 impl_polars_datatype2!(DecimalType, DataType::Unknown(UnknownKind::Any), PrimitiveArray<i128>, 'a, i128, i128);

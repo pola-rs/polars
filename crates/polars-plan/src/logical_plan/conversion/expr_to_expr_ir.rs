@@ -79,16 +79,27 @@ fn to_aexpr_impl_outer(expr: Expr, arena: &mut Arena<AExpr>, state: &mut Convers
             let av = lv.to_any_value().unwrap();
             Expr::Literal(LiteralValue::try_from(av).unwrap())
         },
-        Expr::Alias(inner, name) if matches!(&*inner, Expr::Literal(LiteralValue::Int(_) | LiteralValue::Float(_))) => {
-            let Expr::Literal(lv @ LiteralValue::Int(_) | lv @ LiteralValue::Float(_)) = &*inner else { unreachable!() };
+        Expr::Alias(inner, name)
+            if matches!(
+                &*inner,
+                Expr::Literal(LiteralValue::Int(_) | LiteralValue::Float(_))
+            ) =>
+        {
+            let Expr::Literal(lv @ LiteralValue::Int(_) | lv @ LiteralValue::Float(_)) = &*inner
+            else {
+                unreachable!()
+            };
             let av = lv.to_any_value().unwrap();
-            Expr::Alias(Arc::new(Expr::Literal(LiteralValue::try_from(av).unwrap())), name)
-        }
+            Expr::Alias(
+                Arc::new(Expr::Literal(LiteralValue::try_from(av).unwrap())),
+                name,
+            )
+        },
         Expr::Literal(lv @ LiteralValue::Int(_) | lv @ LiteralValue::Float(_)) => {
             let av = lv.to_any_value().unwrap();
             Expr::Literal(LiteralValue::try_from(av).unwrap())
         },
-        e => e
+        e => e,
     };
     to_aexpr_impl_inner(e, arena, state)
 }
@@ -185,19 +196,28 @@ fn to_aexpr_impl_inner(expr: Expr, arena: &mut Arena<AExpr>, state: &mut Convers
                     input: to_aexpr_impl_inner(owned(input), arena, state),
                     propagate_nans,
                 },
-                AggExpr::Median(expr) => AAggExpr::Median(to_aexpr_impl_inner(owned(expr), arena, state)),
+                AggExpr::Median(expr) => {
+                    AAggExpr::Median(to_aexpr_impl_inner(owned(expr), arena, state))
+                },
                 AggExpr::NUnique(expr) => {
                     AAggExpr::NUnique(to_aexpr_impl_inner(owned(expr), arena, state))
                 },
-                AggExpr::First(expr) => AAggExpr::First(to_aexpr_impl_inner(owned(expr), arena, state)),
-                AggExpr::Last(expr) => AAggExpr::Last(to_aexpr_impl_inner(owned(expr), arena, state)),
-                AggExpr::Mean(expr) => AAggExpr::Mean(to_aexpr_impl_inner(owned(expr), arena, state)),
+                AggExpr::First(expr) => {
+                    AAggExpr::First(to_aexpr_impl_inner(owned(expr), arena, state))
+                },
+                AggExpr::Last(expr) => {
+                    AAggExpr::Last(to_aexpr_impl_inner(owned(expr), arena, state))
+                },
+                AggExpr::Mean(expr) => {
+                    AAggExpr::Mean(to_aexpr_impl_inner(owned(expr), arena, state))
+                },
                 AggExpr::Implode(expr) => {
                     AAggExpr::Implode(to_aexpr_impl_inner(owned(expr), arena, state))
                 },
-                AggExpr::Count(expr, include_nulls) => {
-                    AAggExpr::Count(to_aexpr_impl_inner(owned(expr), arena, state), include_nulls)
-                },
+                AggExpr::Count(expr, include_nulls) => AAggExpr::Count(
+                    to_aexpr_impl_inner(owned(expr), arena, state),
+                    include_nulls,
+                ),
                 AggExpr::Quantile {
                     expr,
                     quantile,

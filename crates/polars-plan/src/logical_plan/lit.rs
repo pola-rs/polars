@@ -60,7 +60,7 @@ pub enum LiteralValue {
     // Used for dynamic languages
     Float(f64),
     // Used for dynamic languages
-    Int(i128)
+    Int(i128),
 }
 
 impl LiteralValue {
@@ -82,6 +82,20 @@ impl LiteralValue {
 
     pub(crate) fn is_float(&self) -> bool {
         matches!(self, LiteralValue::Float32(_) | LiteralValue::Float64(_))
+    }
+
+    pub(crate) fn is_dynamic(&self) -> bool {
+        matches!(self, LiteralValue::Int(_) | LiteralValue::Float(_))
+    }
+
+    pub(crate) fn materialize(self) -> Self {
+        match self {
+            LiteralValue::Int(_) | LiteralValue::Float(_) => {
+                let av = self.to_any_value().unwrap();
+                av.try_into().unwrap()
+            },
+            lv => lv
+        }
     }
 
     pub(crate) fn projects_as_scalar(&self) -> bool {
@@ -127,27 +141,18 @@ impl LiteralValue {
                 let v = *v;
                 match i8::try_from(v).ok() {
                     Some(v) => AnyValue::Int8(v),
-                    None => {
-                        match i16::try_from(v).ok() {
-                            Some(v) => AnyValue::Int16(v),
-                            None => {
-                                match i32::try_from(v).ok() {
-                                    Some(v) => AnyValue::Int32(v),
-                                    None => {
-                                        match i64::try_from(v).ok() {
-                                            Some(v) => AnyValue::Int64(v),
-                                            None => {
-                                                match u64::try_from(v).ok() {
-                                                    Some(v) => AnyValue::UInt64(v),
-                                                    None => return None
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-
-                            }
-                        }
+                    None => match i16::try_from(v).ok() {
+                        Some(v) => AnyValue::Int16(v),
+                        None => match i32::try_from(v).ok() {
+                            Some(v) => AnyValue::Int32(v),
+                            None => match i64::try_from(v).ok() {
+                                Some(v) => AnyValue::Int64(v),
+                                None => match u64::try_from(v).ok() {
+                                    Some(v) => AnyValue::UInt64(v),
+                                    None => return None,
+                                },
+                            },
+                        },
                     },
                 }
             },

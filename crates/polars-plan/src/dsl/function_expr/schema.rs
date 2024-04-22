@@ -470,7 +470,11 @@ impl<'a> FieldsMapper<'a> {
     pub fn nested_sum_type(&self) -> PolarsResult<Field> {
         let mut first = self.fields[0].clone();
         use DataType::*;
-        let dt = first.data_type().inner_dtype().cloned().unwrap_or_else(|| Unknown(Default::default()));
+        let dt = first
+            .data_type()
+            .inner_dtype()
+            .cloned()
+            .unwrap_or_else(|| Unknown(Default::default()));
 
         if matches!(dt, UInt8 | Int8 | Int16 | UInt16) {
             first.coerce(Int64);

@@ -3,8 +3,9 @@ use std::fmt;
 use std::fmt::{Debug, Display, Formatter, Write};
 use std::path::PathBuf;
 
-use crate::prelude::*;
 use polars_core::prelude::AnyValue;
+
+use crate::prelude::*;
 
 #[allow(clippy::too_many_arguments)]
 fn write_scan<P: Display>(

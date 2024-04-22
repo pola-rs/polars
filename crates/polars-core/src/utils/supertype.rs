@@ -257,7 +257,7 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
             (dt, Unknown(kind)) => {
                 match kind {
                     UnknownKind::Int if dt.is_integer() => Some(dt.clone()),
-                    UnknownKind::Float if dt.is_float() => Some(dt.clone()),
+                    UnknownKind::Float | UnknownKind::Int if dt.is_float() => Some(dt.clone()),
                     UnknownKind::Float if dt.is_numeric() => Some(Unknown(UnknownKind::Float)),
                     _ => Some(Unknown(UnknownKind::Any))
                 }

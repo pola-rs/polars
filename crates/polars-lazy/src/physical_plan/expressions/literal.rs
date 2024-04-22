@@ -93,7 +93,7 @@ impl PhysicalExpr for LiteralExpr {
                 .into_time()
                 .into_series(),
             Series(series) => series.deref().clone(),
-            Int(_) | Float(_) => unreachable!("should be replaced")
+            Int(_) | Float(_) => unreachable!("should be replaced"),
         };
         Ok(s)
     }

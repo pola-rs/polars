@@ -11,14 +11,14 @@ pub static DTYPE_ENUM_VALUE: &str = "ENUM";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
 #[cfg_attr(
-any(feature = "serde", feature = "serde-lazy"),
-derive(Serialize, Deserialize)
+    any(feature = "serde", feature = "serde-lazy"),
+    derive(Serialize, Deserialize)
 )]
 pub enum UnknownKind {
     Int,
     Float,
     #[default]
-    Any
+    Any,
 }
 
 #[derive(Clone, Debug)]
@@ -225,7 +225,12 @@ impl DataType {
 
     /// Check if this [`DataType`] is a basic numeric type (excludes Decimal).
     pub fn is_numeric(&self) -> bool {
-        self.is_float() || self.is_integer() || matches!(self, DataType::Unknown(UnknownKind::Int | UnknownKind::Float))
+        self.is_float()
+            || self.is_integer()
+            || matches!(
+                self,
+                DataType::Unknown(UnknownKind::Int | UnknownKind::Float)
+            )
     }
 
     /// Check if this [`DataType`] is a boolean
@@ -611,7 +616,7 @@ impl Display for DataType {
             DataType::Unknown(kind) => match kind {
                 UnknownKind::Any => "unknown",
                 UnknownKind::Int => "dynamic int",
-                UnknownKind::Float => "dynamic float"
+                UnknownKind::Float => "dynamic float",
             },
             DataType::BinaryOffset => "binary[offset]",
         };

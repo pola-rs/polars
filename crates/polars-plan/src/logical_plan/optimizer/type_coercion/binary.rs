@@ -271,9 +271,7 @@ pub(super) fn process_binary(
     }
 
     // All early return paths
-    if compare_cat_to_string
-        || datetime_arithmetic
-    {
+    if compare_cat_to_string || datetime_arithmetic {
         Ok(None)
     } else {
         // Coerce types:

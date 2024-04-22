@@ -160,18 +160,19 @@ fn modify_supertype(
     type_left: &DataType,
     type_right: &DataType,
 ) -> DataType {
-    // only interesting on numerical types
-    // other types will always use the supertype.
-    if type_left.is_numeric() && type_right.is_numeric() {
-        // match (type_left, type_right) {
-        //     // Int -> Float
-        //     (DataType::Unknown(UnknownKind::Float), DataType::Unknown(UnknownKind::Int)) => DataType::Unknown(UnknownKind::Float),
-        //     (DataType::Unknown(UnknownKind::Int), DataType::Unknown(UnknownKind::Float)) => DataType::Unknown(UnknownKind::Float),
-        //     (_, DataType::Unknown(UnknownKind::Int)) if type_left.is_integer() => typ
-        // }
-        //
-        use AExpr::*;
-        match (left, right) {
+    use AExpr::*;
+    match (left, right) {
+        (
+            Literal(lv_left @ (LiteralValue::Int(_) | LiteralValue::Float(_) | LiteralValue::Null)),
+            Literal(
+                lv_right @ (LiteralValue::Int(_) | LiteralValue::Float(_) | LiteralValue::Null),
+            ),
+        ) => {
+            let lhs = lv_left.to_any_value().unwrap().dtype();
+            let rhs = lv_right.to_any_value().unwrap().dtype();
+            dbg!(&lhs, &rhs);
+            st = dbg!(get_supertype(&lhs, &rhs).unwrap());
+        },
         //     (Literal(LiteralValue::Float(_)), Literal(LiteralValue::Int(_))) => {
         //         DataType::Unknown(UnknownKind::Float)
         //     }
@@ -203,52 +204,51 @@ fn modify_supertype(
         //     // do nothing and use supertype
         //     (Literal(_), Literal(_)) => {},
 
-            // cast literal to right type if they fit in the range
-            (Literal(value), _) => {
-                if let Some(lit_val) = value.to_any_value() {
-                    if type_right.value_within_range(lit_val) {
-                        st = type_right.clone();
-                    }
+        // cast literal to right type if they fit in the range
+        (Literal(value), _) => {
+            if let Some(lit_val) = value.to_any_value() {
+                if type_right.value_within_range(lit_val) {
+                    st = type_right.clone();
                 }
-            },
-            // cast literal to left type
-            (_, Literal(value)) => {
-                if let Some(lit_val) = value.to_any_value() {
-                    if type_left.value_within_range(lit_val) {
-                        st = type_left.clone();
-                    }
+            }
+        },
+        // cast literal to left type
+        (_, Literal(value)) => {
+            if let Some(lit_val) = value.to_any_value() {
+                if type_left.value_within_range(lit_val) {
+                    st = type_left.clone();
                 }
-            },
-            // do nothing
-            _ => {},
-        }
-    } else {
-        use DataType::*;
-        match (type_left, type_right, left, right) {
-            // if the we compare a categorical to a literal string we want to cast the literal to categorical
-            #[cfg(feature = "dtype-categorical")]
-            (Categorical(_, ordering), String, _, AExpr::Literal(_))
-            | (String, Categorical(_, ordering), AExpr::Literal(_), _) => {
-                st = Categorical(None, *ordering)
-            },
-            #[cfg(feature = "dtype-categorical")]
-            (dt @ Enum(_, _), String, _, AExpr::Literal(_))
-            | (String, dt @ Enum(_, _), AExpr::Literal(_), _) => st = dt.clone(),
-            // when then expression literals can have a different list type.
-            // so we cast the literal to the other hand side.
-            (List(inner), List(other), _, AExpr::Literal(_))
-            | (List(other), List(inner), AExpr::Literal(_), _)
-                if inner != other =>
-            {
-                st = match &**inner {
-                    #[cfg(feature = "dtype-categorical")]
-                    Categorical(_, ordering) => List(Box::new(Categorical(None, *ordering))),
-                    _ => List(inner.clone()),
-                };
-            },
-            // do nothing
-            _ => {},
-        }
+            }
+        },
+        // do nothing
+        _ => {},
+    }
+
+    use DataType::*;
+    match (type_left, type_right, left, right) {
+        // if the we compare a categorical to a literal string we want to cast the literal to categorical
+        #[cfg(feature = "dtype-categorical")]
+        (Categorical(_, ordering), String, _, AExpr::Literal(_))
+        | (String, Categorical(_, ordering), AExpr::Literal(_), _) => {
+            st = Categorical(None, *ordering)
+        },
+        #[cfg(feature = "dtype-categorical")]
+        (dt @ Enum(_, _), String, _, AExpr::Literal(_))
+        | (String, dt @ Enum(_, _), AExpr::Literal(_), _) => st = dt.clone(),
+        // when then expression literals can have a different list type.
+        // so we cast the literal to the other hand side.
+        (List(inner), List(other), _, AExpr::Literal(_))
+        | (List(other), List(inner), AExpr::Literal(_), _)
+            if inner != other =>
+        {
+            st = match &**inner {
+                #[cfg(feature = "dtype-categorical")]
+                Categorical(_, ordering) => List(Box::new(Categorical(None, *ordering))),
+                _ => List(inner.clone()),
+            };
+        },
+        // do nothing
+        _ => {},
     }
     st
 }
@@ -307,7 +307,9 @@ impl OptimizationRule for TypeCoercionRule {
             } => {
                 let input = expr_arena.get(expr);
                 dbg!(data_type);
-                dbg!(inline_or_prune_cast(input, data_type, *strict, lp_node, lp_arena, expr_arena))?
+                dbg!(inline_or_prune_cast(
+                    input, data_type, *strict, lp_node, lp_arena, expr_arena
+                ))?
             },
             AExpr::Ternary {
                 truthy: truthy_node,
@@ -320,8 +322,9 @@ impl OptimizationRule for TypeCoercionRule {
                 let (falsy, type_false) =
                     unpack!(get_aexpr_and_type(expr_arena, falsy_node, &input_schema));
 
-                unpack!(early_escape(&type_true, &type_false));
+
                 let st = unpack!(get_supertype(&type_true, &type_false));
+                unpack!(early_escape(&type_true, &type_false));
                 let st = modify_supertype(st, truthy, falsy, &type_true, &type_false);
 
                 // only cast if the type is not already the super type.
@@ -628,7 +631,6 @@ impl OptimizationRule for TypeCoercionRule {
     }
 }
 
-
 fn inline_or_prune_cast(
     aexpr: &AExpr,
     dtype: &DataType,
@@ -668,8 +670,11 @@ fn inline_or_prune_cast(
                 LiteralValue::Series(SpecialEq::new(s))
             },
             lv @ LiteralValue::Int(_) | lv @ LiteralValue::Float(_) => {
-                let av = lv.to_any_value().ok_or_else(|| polars_bail!("literal value: {:?} too large for Polars", lv))?;
-                av.strict_cast(dtype).and_then(|out| out.try_into())
+                let av = lv.to_any_value().ok_or_else(|| polars_err!(InvalidOperation: "literal value: {:?} too large for Polars", lv))?;
+                av.strict_cast(dtype).and_then(|out| out.try_into())?
+            },
+            LiteralValue::Null => {
+                return Ok(None)
             }
             _ => {
                 let Some(av) = lv.to_any_value() else {
@@ -712,9 +717,13 @@ fn inline_or_prune_cast(
 }
 
 fn early_escape(type_self: &DataType, type_other: &DataType) -> Option<()> {
-    if type_self == type_other
-        || matches!(type_self, DataType::Unknown(UnknownKind::Any))
+    if matches!(type_self, DataType::Unknown(UnknownKind::Any))
         || matches!(type_other, DataType::Unknown(UnknownKind::Any))
+        || type_self == type_other
+            && match (type_self, type_other) {
+                (DataType::Unknown(lhs), DataType::Unknown(rhs)) => lhs != rhs,
+                _ => true,
+            }
     {
         None
     } else {
