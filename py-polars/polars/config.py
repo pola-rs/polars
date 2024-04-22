@@ -775,8 +775,8 @@ class Config(contextlib.ContextDecorator):
         """
         Set table cell alignment.
 
-        This changes the outputs of `print()` (for all users)
-        and `Ipython.display.display()` (for interactive notebook users).
+        This changes the output format of `print()
+        and `Ipython.display.display()` (for display in Jupyter Notebooks).
 
         Parameters
         ----------
@@ -823,8 +823,8 @@ class Config(contextlib.ContextDecorator):
         """
         Set table cell alignment for numeric columns.
 
-        This changes the outputs of `print()` (for all users)
-        and `Ipython.display.display()` (for interactive notebook users).
+        This changes the output format of `print()
+        and `Ipython.display.display()` (for display in Jupyter Notebooks).
 
         Parameters
         ----------

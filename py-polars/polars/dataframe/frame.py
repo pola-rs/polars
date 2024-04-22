@@ -1269,6 +1269,12 @@ class DataFrame:
 
         * POLARS_FMT_MAX_COLS: set the number of columns
         * POLARS_FMT_MAX_ROWS: set the number of rows
+
+        Output format can be modified by setting the following ENVIRONMENT
+        variables:
+
+        * POLARS_FMT_TABLE_CELL_ALIGNMENT: set the table cell alignment
+        * POLARS_FMT_TABLE_CELL_NUMERIC_ALIGNMENT: set the table cell alignment for numeric columns
         """
         max_cols = int(os.environ.get("POLARS_FMT_MAX_COLS", default=75))
         if max_cols < 0:
