@@ -2,7 +2,7 @@
 use polars_core::prelude::*;
 
 #[cfg(feature = "csv")]
-pub use crate::csv::*;
+pub use crate::csv::{read::*, write::*};
 #[cfg(any(feature = "ipc", feature = "ipc_streaming"))]
 pub use crate::ipc::*;
 #[cfg(feature = "json")]

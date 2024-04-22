@@ -7,7 +7,12 @@ use polars_time::prelude::*;
 #[cfg(feature = "temporal")]
 use rayon::prelude::*;
 
-use super::*;
+use super::infer_file_schema;
+use super::options::{CommentPrefix, CsvEncoding, NullValues};
+use super::read_impl::{
+    to_batched_owned_mmap, to_batched_owned_read, BatchedCsvReaderMmap, BatchedCsvReaderRead,
+    CoreReader, OwnedBatchedCsvReader, OwnedBatchedCsvReaderMmap,
+};
 use crate::mmap::MmapBytesReader;
 use crate::predicates::PhysicalIoExpr;
 use crate::utils::{get_reader_bytes, resolve_homedir};
