@@ -92,7 +92,7 @@ def test_df_repl_html_table_cell_alignment() -> None:
                     )
                     assert header in _repr_html
                     # body
-                    body = '<tr><td>str</td><td>i64</td></tr>'
+                    body = "<tr><td>str</td><td>i64</td></tr>"
                     assert body in _repr_html
                 else:
                     # header
