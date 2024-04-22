@@ -47,7 +47,8 @@ class Tag:
 
 
 class HTMLFormatter:
-    """Class for HTML formatting.
+    """
+    Class for HTML formatting.
 
     Table cell alignment will be set by environment variables.
 
@@ -141,7 +142,8 @@ class HTMLFormatter:
                                 )
 
     def get_attributes(self, col_idx: int) -> dict[str, str] | None:
-        """Get HTML td/th attributes of a column.
+        """
+        Get HTML td/th attributes of a column.
 
         Parameters
         ----------
