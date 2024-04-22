@@ -16,10 +16,9 @@ use polars_utils::flatten;
 use rayon::prelude::*;
 
 use crate::csv::read::buffer::*;
+use crate::csv::read::options::{CommentPrefix, CsvEncoding, NullValues, NullValuesCompiled};
 use crate::csv::read::parser::*;
 use crate::csv::read::utils::*;
-use crate::csv::read::{CommentPrefix, NullValuesCompiled};
-use crate::csv::{CsvEncoding, NullValues};
 use crate::mmap::ReaderBytes;
 use crate::predicates::PhysicalIoExpr;
 use crate::utils::update_row_counts;

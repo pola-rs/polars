@@ -9,10 +9,9 @@ use polars_utils::slice::GetSaferUnchecked;
 use rayon::prelude::*;
 
 use crate::csv::read::buffer::*;
+use crate::csv::read::options::{CommentPrefix, NullValuesCompiled};
 use crate::csv::read::splitfields::SplitFields;
 use crate::csv::read::utils::get_file_chunks;
-use crate::csv::read::NullValuesCompiled;
-use crate::csv::CommentPrefix;
 use crate::utils::get_reader_bytes;
 
 /// Read the number of rows without parsing columns

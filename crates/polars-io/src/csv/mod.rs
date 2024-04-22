@@ -42,8 +42,3 @@
 
 pub mod read;
 pub mod write;
-
-pub use read::{
-    utils, BatchedCsvReaderMmap, BatchedCsvReaderRead, CommentPrefix, CsvEncoding,
-    CsvParserOptions, CsvReader, NullValues,
-};

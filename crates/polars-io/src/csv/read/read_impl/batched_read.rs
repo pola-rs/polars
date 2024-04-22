@@ -3,7 +3,7 @@ use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 
 use super::*;
-use crate::csv::CsvReader;
+use crate::csv::read::CsvReader;
 use crate::mmap::MmapBytesReader;
 use crate::prelude::update_row_counts2;
 

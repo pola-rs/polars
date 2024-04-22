@@ -1,6 +1,8 @@
 use std::io::Read;
 use std::path::PathBuf;
 
+#[cfg(feature = "csv")]
+use polars_io::csv::read::CsvParserOptions;
 #[cfg(feature = "cloud")]
 use polars_io::pl_async::get_runtime;
 use polars_io::prelude::*;
@@ -124,7 +126,7 @@ pub(super) fn csv_file_info(
 ) -> PolarsResult<FileInfo> {
     use std::io::Seek;
 
-    use polars_io::csv::read::utils::{infer_file_schema, is_compressed};
+    use polars_io::csv::read::{infer_file_schema, is_compressed};
     use polars_io::utils::get_reader_bytes;
 
     let path = get_path(paths)?;

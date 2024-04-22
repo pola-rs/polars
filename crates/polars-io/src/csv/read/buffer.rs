@@ -11,7 +11,7 @@ use polars_utils::vec::PushUnchecked;
 
 use crate::csv::read::parser::{is_whitespace, skip_whitespace};
 use crate::csv::read::utils::escape_field;
-use crate::csv::CsvEncoding;
+use crate::csv::read::CsvEncoding;
 
 pub(crate) trait PrimitiveParser: PolarsNumericType {
     fn parse(bytes: &[u8]) -> Option<Self::Native>;
