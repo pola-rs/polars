@@ -60,6 +60,44 @@ def test_df_repr_html_max_rows_default() -> None:
     assert html.count("<td>") - 2 == expected_rows
 
 
+def test_df_repl_html_table_cell_alignment() -> None:
+    df = pl.DataFrame(
+        {"a": ["group_id", "group_code", "group_name"], "b": [11, 2, 333]}
+    )
+
+    # default: overall=RIGHT, numeric=RIGHT
+    assert "text-align: right;" in df._repr_html()
+    assert '<thead><tr><th>a</th><th">b</th></tr><tr><td>str</td><td>i64</td></tr></thead>' in df._repr_html_()
+
+    # overall=RIGHT, numeric=LEFT
+    for overall_alignment in ["LEFT", "CENTER", "RIGHT"]:
+        _overall = overall_alignment.lower()
+        for numeric_alignment in ["LEFT", "CENTER", "RIGHT"]:
+            _numeric = numeric_alignment.lower()
+            with pl.Config(
+                tbl_cell_alignment=overall_alignment,
+                tbl_cell_numeric_alignment=numeric_alignment,
+            ):
+                _repr_html = df._repr_html_()
+                assert f"text-align: {_overall};" in _repr_html
+                if _overall == _numeric:
+                    # header
+                    header = f'<thead><tr><th>a</th><th">b</th></tr>'\
+                        '<tr><td>str</td><td">i64</td></tr></thead>'
+                    assert header in _repr_html
+                    # body
+                    body = f'<tr><td>str</td><td">i64</td></tr>'
+                    assert body in _repr_html
+                else:
+                    # header
+                    header = f'<thead><tr><th>a</th><th align="{_numeric}">b</th></tr>'\
+                        '<tr><td>str</td><td align="{_numeric}">i64</td></tr></thead>'
+                    assert header in _repr_html
+                    # body
+                    body = f'<tr><td>str</td><td align="{_numeric}">i64</td></tr>'
+                    assert body in _repr_html
+
+
 def test_df_repr_html_max_rows_odd() -> None:
     df = pl.DataFrame({"a": range(50)})
 
