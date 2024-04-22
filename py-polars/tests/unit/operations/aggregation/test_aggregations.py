@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import pytest
@@ -538,3 +538,35 @@ def test_group_count_over_null_column_15705() -> None:
     )
     out = df.group_by("a", maintain_order=True).agg(pl.col("c").count())
     assert out["c"].to_list() == [0, 0, 0]
+
+
+@pytest.mark.release()
+def test_min_max_2850() -> None:
+    # https://github.com/pola-rs/polars/issues/2850
+    df = pl.DataFrame(
+        {
+            "id": [
+                130352432,
+                130352277,
+                130352611,
+                130352833,
+                130352305,
+                130352258,
+                130352764,
+                130352475,
+                130352368,
+                130352346,
+            ]
+        }
+    )
+
+    minimum = 130352258
+    maximum = 130352833.0
+
+    for _ in range(10):
+        permuted = df.sample(fraction=1.0, seed=0)
+        computed = permuted.select(
+            [pl.col("id").min().alias("min"), pl.col("id").max().alias("max")]
+        )
+        assert cast(int, computed[0, "min"]) == minimum
+        assert cast(float, computed[0, "max"]) == maximum
