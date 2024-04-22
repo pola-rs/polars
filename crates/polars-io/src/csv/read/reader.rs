@@ -9,10 +9,13 @@ use rayon::prelude::*;
 
 use super::infer_file_schema;
 use super::options::{CommentPrefix, CsvEncoding, NullValues};
-use super::read_impl::{
-    to_batched_owned_mmap, to_batched_owned_read, BatchedCsvReaderMmap, BatchedCsvReaderRead,
-    CoreReader, OwnedBatchedCsvReader, OwnedBatchedCsvReaderMmap,
+use super::read_impl::batched_mmap::{
+    to_batched_owned_mmap, BatchedCsvReaderMmap, OwnedBatchedCsvReaderMmap,
 };
+use super::read_impl::batched_read::{
+    to_batched_owned_read, BatchedCsvReaderRead, OwnedBatchedCsvReader,
+};
+use super::read_impl::CoreReader;
 use crate::mmap::MmapBytesReader;
 use crate::predicates::PhysicalIoExpr;
 use crate::utils::{get_reader_bytes, resolve_homedir};

@@ -1,3 +1,6 @@
+pub(super) mod batched_mmap;
+pub(super) mod batched_read;
+
 use std::fmt;
 
 use polars_core::config::verbose;
@@ -80,35 +83,35 @@ pub(crate) fn cast_columns(
 
 /// CSV file reader
 pub(crate) struct CoreReader<'a> {
-    pub(super) reader_bytes: Option<ReaderBytes<'a>>,
+    reader_bytes: Option<ReaderBytes<'a>>,
     /// Explicit schema for the CSV file
-    pub(super) schema: SchemaRef,
+    schema: SchemaRef,
     /// Optional projection for which columns to load (zero-based column indices)
-    pub(super) projection: Option<Vec<usize>>,
+    projection: Option<Vec<usize>>,
     /// Current line number, used in error reporting
-    pub(super) line_number: usize,
-    pub(super) ignore_errors: bool,
-    pub(super) skip_rows_before_header: usize,
+    line_number: usize,
+    ignore_errors: bool,
+    skip_rows_before_header: usize,
     // after the header, we need to take embedded lines into account
-    pub(super) skip_rows_after_header: usize,
-    pub(super) n_rows: Option<usize>,
-    pub(super) encoding: CsvEncoding,
-    pub(super) n_threads: Option<usize>,
-    pub(super) has_header: bool,
-    pub(super) separator: u8,
-    pub(super) sample_size: usize,
-    pub(super) chunk_size: usize,
-    pub(super) low_memory: bool,
-    pub(super) decimal_comma: bool,
-    pub(super) comment_prefix: Option<CommentPrefix>,
-    pub(super) quote_char: Option<u8>,
-    pub(super) eol_char: u8,
-    pub(super) null_values: Option<NullValuesCompiled>,
-    pub(super) missing_is_null: bool,
-    pub(super) predicate: Option<Arc<dyn PhysicalIoExpr>>,
-    pub(super) to_cast: Vec<Field>,
-    pub(super) row_index: Option<RowIndex>,
-    pub(super) truncate_ragged_lines: bool,
+    skip_rows_after_header: usize,
+    n_rows: Option<usize>,
+    encoding: CsvEncoding,
+    n_threads: Option<usize>,
+    has_header: bool,
+    separator: u8,
+    sample_size: usize,
+    chunk_size: usize,
+    low_memory: bool,
+    decimal_comma: bool,
+    comment_prefix: Option<CommentPrefix>,
+    quote_char: Option<u8>,
+    eol_char: u8,
+    null_values: Option<NullValuesCompiled>,
+    missing_is_null: bool,
+    predicate: Option<Arc<dyn PhysicalIoExpr>>,
+    to_cast: Vec<Field>,
+    row_index: Option<RowIndex>,
+    truncate_ragged_lines: bool,
 }
 
 impl<'a> fmt::Debug for CoreReader<'a> {
@@ -261,7 +264,7 @@ impl<'a> CoreReader<'a> {
         })
     }
 
-    pub(super) fn find_starting_point<'b>(
+    fn find_starting_point<'b>(
         &self,
         mut bytes: &'b [u8],
         quote_char: Option<u8>,
@@ -443,7 +446,7 @@ impl<'a> CoreReader<'a> {
         ))
     }
 
-    pub(super) fn get_projection(&mut self) -> PolarsResult<Vec<usize>> {
+    fn get_projection(&mut self) -> PolarsResult<Vec<usize>> {
         // we also need to sort the projection to have predictable output.
         // the `parse_lines` function expects this.
         self.projection
@@ -678,7 +681,7 @@ impl<'a> CoreReader<'a> {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(super) fn read_chunk(
+fn read_chunk(
     bytes: &[u8],
     separator: u8,
     schema: &Schema,

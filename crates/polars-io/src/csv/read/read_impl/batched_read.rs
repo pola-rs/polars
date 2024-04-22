@@ -10,7 +10,7 @@ use polars_error::PolarsResult;
 use polars_utils::IdxSize;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
-use super::core_reader::{cast_columns, read_chunk, CoreReader};
+use super::{cast_columns, read_chunk, CoreReader};
 use crate::csv::read::options::{CommentPrefix, CsvEncoding, NullValuesCompiled};
 use crate::csv::read::parser::next_line_position;
 use crate::csv::read::CsvReader;
