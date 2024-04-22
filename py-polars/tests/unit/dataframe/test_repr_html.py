@@ -68,8 +68,8 @@ def test_df_repl_html_table_cell_alignment() -> None:
     # default: overall=RIGHT, numeric=RIGHT
     assert "text-align: right;" in df._repr_html()
     header = (
-        '<thead><tr><th>a</th><th>b</th></tr>'
-        '<tr><td>str</td><td>i64</td></tr></thead>'
+        "<thead><tr><th>a</th><th>b</th></tr>"
+        "<tr><td>str</td><td>i64</td></tr></thead>"
     )
     assert header in df._repr_html_()
 
