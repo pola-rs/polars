@@ -1274,7 +1274,8 @@ class DataFrame:
         variables:
 
         * POLARS_FMT_TABLE_CELL_ALIGNMENT: set the table cell alignment
-        * POLARS_FMT_TABLE_CELL_NUMERIC_ALIGNMENT: set the table cell alignment for numeric columns
+        * POLARS_FMT_TABLE_CELL_NUMERIC_ALIGNMENT:
+            set the table cell alignment for numeric columns
 
         Raises
         ------
