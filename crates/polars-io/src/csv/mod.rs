@@ -43,9 +43,7 @@
 pub mod read;
 pub mod write;
 
-pub use read::parser::count_rows;
 pub use read::{
     utils, BatchedCsvReaderMmap, BatchedCsvReaderRead, CommentPrefix, CsvEncoding,
     CsvParserOptions, CsvReader, NullValues,
 };
-pub use write::{BatchedWriter, CsvWriter, CsvWriterOptions, QuoteStyle, SerializeOptions};

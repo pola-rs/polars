@@ -5,7 +5,7 @@ use polars_core::error::to_compute_err;
 #[cfg(feature = "parquet")]
 use polars_io::cloud::CloudOptions;
 #[cfg(feature = "csv")]
-use polars_io::csv::count_rows as count_rows_csv;
+use polars_io::csv::read::count_rows as count_rows_csv;
 #[cfg(all(feature = "parquet", feature = "cloud"))]
 use polars_io::parquet::ParquetAsyncReader;
 #[cfg(feature = "parquet")]

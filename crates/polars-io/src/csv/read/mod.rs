@@ -7,6 +7,7 @@ pub(super) mod splitfields;
 pub mod utils;
 
 pub use options::*;
+pub use parser::count_rows;
 use read_impl::{
     to_batched_owned_mmap, to_batched_owned_read, CoreReader, OwnedBatchedCsvReader,
     OwnedBatchedCsvReaderMmap,

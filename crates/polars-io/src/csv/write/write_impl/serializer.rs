@@ -40,7 +40,7 @@ use chrono::TimeZone;
 use memchr::{memchr3, memchr_iter};
 use polars_core::prelude::*;
 
-use super::{QuoteStyle, SerializeOptions};
+use crate::csv::write::{QuoteStyle, SerializeOptions};
 
 const TOO_MANY_MSG: &str = "too many items requested from CSV serializer";
 const ARRAY_MISMATCH_MSG: &str = "wrong array type";
