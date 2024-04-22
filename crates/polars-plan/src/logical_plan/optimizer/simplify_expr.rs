@@ -589,97 +589,12 @@ impl OptimizationRule for SimplifyExprRule {
                 options,
                 ..
             } => return optimize_functions(input, function, options, expr_arena),
-            AExpr::Cast {
-                expr,
-                data_type,
-                strict,
-            } => {
-                let input = expr_arena.get(*expr);
-                inline_or_prune_cast(input, data_type, *strict, lp_node, lp_arena, expr_arena)?
-            },
             _ => None,
         };
         Ok(out)
     }
 }
 
-fn inline_or_prune_cast(
-    aexpr: &AExpr,
-    dtype: &DataType,
-    strict: bool,
-    lp_node: Node,
-    lp_arena: &Arena<IR>,
-    expr_arena: &Arena<AExpr>,
-) -> PolarsResult<Option<AExpr>> {
-    if !dtype.is_known() {
-        return Ok(None);
-    }
-    let lv = match (aexpr, dtype) {
-        // PRUNE
-        (
-            AExpr::BinaryExpr {
-                op: Operator::LogicalOr | Operator::LogicalAnd,
-                ..
-            },
-            _,
-        ) => {
-            if let Some(schema) = lp_arena.get(lp_node).input_schema(lp_arena) {
-                let field = aexpr.to_field(&schema, Context::Default, expr_arena)?;
-                if field.dtype == *dtype {
-                    return Ok(Some(aexpr.clone()));
-                }
-            }
-            return Ok(None);
-        },
-        // INLINE
-        (AExpr::Literal(lv), _) => match lv {
-            LiteralValue::Series(s) => {
-                let s = if strict {
-                    s.strict_cast(dtype)
-                } else {
-                    s.cast(dtype)
-                }?;
-                LiteralValue::Series(SpecialEq::new(s))
-            },
-            _ => {
-                let Some(av) = lv.to_any_value() else {
-                    return Ok(None);
-                };
-                if dtype == &av.dtype() {
-                    return Ok(Some(aexpr.clone()));
-                }
-                match (av, dtype) {
-                    // casting null always remains null
-                    (AnyValue::Null, _) => return Ok(None),
-                    // series cast should do this one
-                    #[cfg(feature = "dtype-datetime")]
-                    (AnyValue::Datetime(_, _, _), DataType::Datetime(_, _)) => return Ok(None),
-                    #[cfg(feature = "dtype-duration")]
-                    (AnyValue::Duration(_, _), _) => return Ok(None),
-                    #[cfg(feature = "dtype-categorical")]
-                    (AnyValue::Categorical(_, _, _), _) | (_, DataType::Categorical(_, _)) => {
-                        return Ok(None)
-                    },
-                    #[cfg(feature = "dtype-categorical")]
-                    (AnyValue::Enum(_, _, _), _) | (_, DataType::Enum(_, _)) => return Ok(None),
-                    #[cfg(feature = "dtype-struct")]
-                    (_, DataType::Struct(_)) => return Ok(None),
-                    (av, _) => {
-                        let out = {
-                            match av.strict_cast(dtype) {
-                                Ok(out) => out,
-                                Err(_) => return Ok(None),
-                            }
-                        };
-                        out.try_into()?
-                    },
-                }
-            },
-        },
-        _ => return Ok(None),
-    };
-    Ok(Some(AExpr::Literal(lv)))
-}
 
 #[test]
 #[cfg(feature = "dtype-i8")]

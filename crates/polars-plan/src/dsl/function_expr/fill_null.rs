@@ -4,7 +4,7 @@ pub(super) fn fill_null(s: &[Series], super_type: &DataType) -> PolarsResult<Ser
     let series = &s[0];
     let fill_value = &s[1];
 
-    let (series, fill_value) = if matches!(super_type, DataType::Unknown) {
+    let (series, fill_value) = if matches!(super_type, DataType::Unknown(_)) {
         let fill_value = fill_value.cast(series.dtype()).map_err(|_| {
             polars_err!(
                 SchemaMismatch:

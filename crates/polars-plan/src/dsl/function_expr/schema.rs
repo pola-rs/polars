@@ -425,7 +425,7 @@ impl<'a> FieldsMapper<'a> {
             .data_type()
             .inner_dtype()
             .cloned()
-            .unwrap_or(DataType::Unknown);
+            .unwrap_or_else(|| DataType::Unknown(Default::default()));
         first.coerce(dt);
         Ok(first)
     }
@@ -470,7 +470,7 @@ impl<'a> FieldsMapper<'a> {
     pub fn nested_sum_type(&self) -> PolarsResult<Field> {
         let mut first = self.fields[0].clone();
         use DataType::*;
-        let dt = first.data_type().inner_dtype().cloned().unwrap_or(Unknown);
+        let dt = first.data_type().inner_dtype().cloned().unwrap_or_else(|| Unknown(Default::default()));
 
         if matches!(dt, UInt8 | Int8 | Int16 | UInt16) {
             first.coerce(Int64);
@@ -496,7 +496,7 @@ impl<'a> FieldsMapper<'a> {
 
     #[cfg(feature = "extract_jsonpath")]
     pub fn with_opt_dtype(&self, dtype: Option<DataType>) -> PolarsResult<Field> {
-        let dtype = dtype.unwrap_or(DataType::Unknown);
+        let dtype = dtype.unwrap_or_else(|| DataType::Unknown(Default::default()));
         self.with_dtype(dtype)
     }
 

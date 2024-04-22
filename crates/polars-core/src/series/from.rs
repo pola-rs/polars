@@ -123,7 +123,7 @@ impl Series {
                 }
             },
             Null => new_null(name, &chunks),
-            Unknown => panic!("uh oh, somehow we don't know the dtype?"),
+            Unknown(_) => panic!("dtype is unknown; consider supplying data-types for all operations"),
             #[allow(unreachable_patterns)]
             _ => unreachable!(),
         }

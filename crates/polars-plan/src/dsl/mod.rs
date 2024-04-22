@@ -946,7 +946,7 @@ impl Expr {
             // super type will be replaced by type coercion
             function: FunctionExpr::FillNull {
                 // will be set by `type_coercion`.
-                super_type: DataType::Unknown,
+                super_type: DataType::Unknown(Default::default()),
             },
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ElementWise,

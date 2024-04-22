@@ -273,14 +273,15 @@ pub(super) fn process_binary(
     // All early return paths
     if compare_cat_to_string
         || datetime_arithmetic
-        || early_escape(&type_left, &type_right).is_none()
     {
         Ok(None)
     } else {
         // Coerce types:
 
         let st = unpack!(get_supertype(&type_left, &type_right));
+        dbg!(&st, &type_left, &type_right);
         let mut st = modify_supertype(st, left, right, &type_left, &type_right);
+        dbg!(&st);
 
         if is_cat_str_binary(&type_left, &type_right) {
             st = String

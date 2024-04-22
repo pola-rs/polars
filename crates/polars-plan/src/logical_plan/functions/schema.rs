@@ -65,7 +65,7 @@ impl FunctionNode {
                                         );
                                     }
                                 },
-                                DataType::Unknown => {
+                                DataType::Unknown(_) => {
                                     // pass through unknown
                                 },
                                 _ => {

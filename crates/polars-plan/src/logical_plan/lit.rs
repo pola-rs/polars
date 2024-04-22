@@ -57,6 +57,10 @@ pub enum LiteralValue {
     #[cfg(feature = "dtype-time")]
     Time(i64),
     Series(SpecialEq<Series>),
+    // Used for dynamic languages
+    Float(f64),
+    // Used for dynamic languages
+    Int(i128)
 }
 
 impl LiteralValue {
@@ -117,6 +121,37 @@ impl LiteralValue {
             #[cfg(feature = "dtype-time")]
             Time(v) => AnyValue::Time(*v),
             Series(s) => AnyValue::List(s.0.clone().into_series()),
+            Int(v) => {
+                // Try to get the smallest fitting value.
+                // Yeah, ugly, I know.
+                let v = *v;
+                match i8::try_from(v).ok() {
+                    Some(v) => AnyValue::Int8(v),
+                    None => {
+                        match i16::try_from(v).ok() {
+                            Some(v) => AnyValue::Int16(v),
+                            None => {
+                                match i32::try_from(v).ok() {
+                                    Some(v) => AnyValue::Int32(v),
+                                    None => {
+                                        match i64::try_from(v).ok() {
+                                            Some(v) => AnyValue::Int64(v),
+                                            None => {
+                                                match u64::try_from(v).ok() {
+                                                    Some(v) => AnyValue::UInt64(v),
+                                                    None => return None
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                            }
+                        }
+                    },
+                }
+            },
+            Float(v) => AnyValue::Float64(*v),
             Range {
                 low,
                 high,
@@ -188,6 +223,8 @@ impl LiteralValue {
             LiteralValue::Null => DataType::Null,
             #[cfg(feature = "dtype-time")]
             LiteralValue::Time(_) => DataType::Time,
+            LiteralValue::Int(_) => DataType::Unknown(UnknownKind::Int),
+            LiteralValue::Float(_) => DataType::Unknown(UnknownKind::Float),
         }
     }
 }

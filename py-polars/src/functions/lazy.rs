@@ -388,17 +388,11 @@ pub fn lit(value: &PyAny, allow_object: bool) -> PyResult<PyExpr> {
         let val = value.extract::<bool>().unwrap();
         Ok(dsl::lit(val).into())
     } else if let Ok(int) = value.downcast::<PyInt>() {
-        if let Ok(val) = int.extract::<i32>() {
-            Ok(dsl::lit(val).into())
-        } else if let Ok(val) = int.extract::<i64>() {
-            Ok(dsl::lit(val).into())
-        } else {
-            let val = int.extract::<u64>().unwrap();
-            Ok(dsl::lit(val).into())
-        }
+        let v = int.extract::<i128>().map_err(|e| polars_err!(InvalidOperation: "integer too large for Polars: {e}")).map_err(PyPolarsErr::from)?;
+        Ok(Expr::Literal(LiteralValue::Int(v)).into())
     } else if let Ok(float) = value.downcast::<PyFloat>() {
         let val = float.extract::<f64>().unwrap();
-        Ok(dsl::lit(val).into())
+        Ok(Expr::Literal(LiteralValue::Float(val)).into())
     } else if let Ok(pystr) = value.downcast::<PyString>() {
         Ok(dsl::lit(
             pystr

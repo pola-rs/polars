@@ -157,9 +157,9 @@ impl SeriesUdf for PythonUdfExpression {
     fn call_udf(&self, s: &mut [Series]) -> PolarsResult<Option<Series>> {
         let func = unsafe { CALL_SERIES_UDF_PYTHON.unwrap() };
 
-        let output_type = self.output_type.clone().unwrap_or(DataType::Unknown);
+        let output_type = self.output_type.clone().unwrap_or_else(|| DataType::Unknown(Default::default()));
         let mut out = func(s[0].clone(), &self.python_function)?;
-        if output_type != DataType::Unknown {
+        if !matches!(output_type, DataType::Unknown(_)) {
             let must_cast = out.dtype().matches_schema_type(&output_type).map_err(|_| {
                 polars_err!(
                     SchemaMismatch: "expected output type '{:?}', got '{:?}'; set `return_dtype` to the proper datatype",
@@ -201,7 +201,7 @@ impl SeriesUdf for PythonUdfExpression {
             Some(ref dt) => Field::new(fld.name(), dt.clone()),
             None => {
                 let mut fld = fld.clone();
-                fld.coerce(DataType::Unknown);
+                fld.coerce(DataType::Unknown(Default::default()));
                 fld
             },
         }))
@@ -223,7 +223,7 @@ impl Expr {
             Some(ref dt) => Field::new(fld.name(), dt.clone()),
             None => {
                 let mut fld = fld.clone();
-                fld.coerce(DataType::Unknown);
+                fld.coerce(DataType::Unknown(Default::default()));
                 fld
             },
         });

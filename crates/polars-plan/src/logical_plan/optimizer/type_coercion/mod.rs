@@ -163,35 +163,45 @@ fn modify_supertype(
     // only interesting on numerical types
     // other types will always use the supertype.
     if type_left.is_numeric() && type_right.is_numeric() {
+        // match (type_left, type_right) {
+        //     // Int -> Float
+        //     (DataType::Unknown(UnknownKind::Float), DataType::Unknown(UnknownKind::Int)) => DataType::Unknown(UnknownKind::Float),
+        //     (DataType::Unknown(UnknownKind::Int), DataType::Unknown(UnknownKind::Float)) => DataType::Unknown(UnknownKind::Float),
+        //     (_, DataType::Unknown(UnknownKind::Int)) if type_left.is_integer() => typ
+        // }
+        //
         use AExpr::*;
         match (left, right) {
-            // don't let the literal f64 coerce the f32 column
-            (
-                Literal(LiteralValue::Float64(_) | LiteralValue::Int32(_) | LiteralValue::Int64(_)),
-                _,
-            ) if matches!(type_right, DataType::Float32) => st = DataType::Float32,
-            (
-                _,
-                Literal(LiteralValue::Float64(_) | LiteralValue::Int32(_) | LiteralValue::Int64(_)),
-            ) if matches!(type_left, DataType::Float32) => st = DataType::Float32,
-            // always make sure that we cast to floats if one of the operands is float
-            (Literal(lv), _) | (_, Literal(lv)) if lv.is_float() => {},
-
-            // TODO: see if we can activate this for columns as well.
-            // shrink the literal value if it fits in the column dtype
-            (Literal(LiteralValue::Series(_)), Literal(lv)) => {
-                if let Some(dtype) = shrink_literal(type_left, lv) {
-                    st = dtype;
-                }
-            },
-            // shrink the literal value if it fits in the column dtype
-            (Literal(lv), Literal(LiteralValue::Series(_))) => {
-                if let Some(dtype) = shrink_literal(type_right, lv) {
-                    st = dtype;
-                }
-            },
-            // do nothing and use supertype
-            (Literal(_), Literal(_)) => {},
+        //     (Literal(LiteralValue::Float(_)), Literal(LiteralValue::Int(_))) => {
+        //         DataType::Unknown(UnknownKind::Float)
+        //     }
+        //     // don't let the literal f64 coerce the f32 column
+        //     (
+        //         Literal(LiteralValue::Float64(_) | LiteralValue::Int32(_) | LiteralValue::Int64(_)),
+        //         _,
+        //     ) if matches!(type_right, DataType::Float32) => st = DataType::Float32,
+        //     (
+        //         _,
+        //         Literal(LiteralValue::Float64(_) | LiteralValue::Int32(_) | LiteralValue::Int64(_)),
+        //     ) if matches!(type_left, DataType::Float32) => st = DataType::Float32,
+        //     // always make sure that we cast to floats if one of the operands is float
+        //     (Literal(lv), _) | (_, Literal(lv)) if lv.is_float() => {},
+        //
+        //     // TODO: see if we can activate this for columns as well.
+        //     // shrink the literal value if it fits in the column dtype
+        //     (Literal(LiteralValue::Series(_)), Literal(lv)) => {
+        //         if let Some(dtype) = shrink_literal(type_left, lv) {
+        //             st = dtype;
+        //         }
+        //     },
+        //     // shrink the literal value if it fits in the column dtype
+        //     (Literal(lv), Literal(LiteralValue::Series(_))) => {
+        //         if let Some(dtype) = shrink_literal(type_right, lv) {
+        //             st = dtype;
+        //         }
+        //     },
+        //     // do nothing and use supertype
+        //     (Literal(_), Literal(_)) => {},
 
             // cast literal to right type if they fit in the range
             (Literal(value), _) => {
@@ -290,6 +300,15 @@ impl OptimizationRule for TypeCoercionRule {
     ) -> PolarsResult<Option<AExpr>> {
         let expr = expr_arena.get(expr_node);
         let out = match *expr {
+            AExpr::Cast {
+                expr,
+                ref data_type,
+                ref strict,
+            } => {
+                let input = expr_arena.get(expr);
+                dbg!(data_type);
+                dbg!(inline_or_prune_cast(input, data_type, *strict, lp_node, lp_arena, expr_arena))?
+            },
             AExpr::Ternary {
                 truthy: truthy_node,
                 falsy: falsy_node,
@@ -340,7 +359,6 @@ impl OptimizationRule for TypeCoercionRule {
                 op,
                 right: node_right,
             } => return process_binary(expr_arena, lp_arena, lp_node, node_left, op, node_right),
-
             #[cfg(feature = "is_in")]
             AExpr::Function {
                 function: FunctionExpr::Boolean(BooleanFunction::IsIn),
@@ -542,15 +560,13 @@ impl OptimizationRule for TypeCoercionRule {
                 let (self_ae, type_self) =
                     unpack!(get_aexpr_and_type(expr_arena, self_e.node(), &input_schema));
 
-                // TODO remove: false positive
-                #[allow(clippy::redundant_clone)]
                 let mut super_type = type_self.clone();
                 for other in &input[1..] {
                     let (other, type_other) =
                         unpack!(get_aexpr_and_type(expr_arena, other.node(), &input_schema));
 
                     // early return until Unknown is set
-                    if matches!(type_other, DataType::Unknown) {
+                    if matches!(type_other, DataType::Unknown(_)) {
                         return Ok(None);
                     }
                     let new_st = unpack!(get_supertype(&super_type, &type_other));
@@ -612,10 +628,93 @@ impl OptimizationRule for TypeCoercionRule {
     }
 }
 
+
+fn inline_or_prune_cast(
+    aexpr: &AExpr,
+    dtype: &DataType,
+    strict: bool,
+    lp_node: Node,
+    lp_arena: &Arena<IR>,
+    expr_arena: &Arena<AExpr>,
+) -> PolarsResult<Option<AExpr>> {
+    if !dtype.is_known() {
+        return Ok(None);
+    }
+    let lv = match (aexpr, dtype) {
+        // PRUNE
+        (
+            AExpr::BinaryExpr {
+                op: Operator::LogicalOr | Operator::LogicalAnd,
+                ..
+            },
+            _,
+        ) => {
+            if let Some(schema) = lp_arena.get(lp_node).input_schema(lp_arena) {
+                let field = aexpr.to_field(&schema, Context::Default, expr_arena)?;
+                if field.dtype == *dtype {
+                    return Ok(Some(aexpr.clone()));
+                }
+            }
+            return Ok(None);
+        },
+        // INLINE
+        (AExpr::Literal(lv), _) => match lv {
+            LiteralValue::Series(s) => {
+                let s = if strict {
+                    s.strict_cast(dtype)
+                } else {
+                    s.cast(dtype)
+                }?;
+                LiteralValue::Series(SpecialEq::new(s))
+            },
+            lv @ LiteralValue::Int(_) | lv @ LiteralValue::Float(_) => {
+                let av = lv.to_any_value().ok_or_else(|| polars_bail!("literal value: {:?} too large for Polars", lv))?;
+                av.strict_cast(dtype).and_then(|out| out.try_into())
+            }
+            _ => {
+                let Some(av) = lv.to_any_value() else {
+                    return Ok(None);
+                };
+                if dtype == &av.dtype() {
+                    return Ok(Some(aexpr.clone()));
+                }
+                match (av, dtype) {
+                    // casting null always remains null
+                    (AnyValue::Null, _) => return Ok(None),
+                    // series cast should do this one
+                    #[cfg(feature = "dtype-datetime")]
+                    (AnyValue::Datetime(_, _, _), DataType::Datetime(_, _)) => return Ok(None),
+                    #[cfg(feature = "dtype-duration")]
+                    (AnyValue::Duration(_, _), _) => return Ok(None),
+                    #[cfg(feature = "dtype-categorical")]
+                    (AnyValue::Categorical(_, _, _), _) | (_, DataType::Categorical(_, _)) => {
+                        return Ok(None)
+                    },
+                    #[cfg(feature = "dtype-categorical")]
+                    (AnyValue::Enum(_, _, _), _) | (_, DataType::Enum(_, _)) => return Ok(None),
+                    #[cfg(feature = "dtype-struct")]
+                    (_, DataType::Struct(_)) => return Ok(None),
+                    (av, _) => {
+                        let out = {
+                            match av.strict_cast(dtype) {
+                                Ok(out) => out,
+                                Err(_) => return Ok(None),
+                            }
+                        };
+                        out.try_into()?
+                    },
+                }
+            },
+        },
+        _ => return Ok(None),
+    };
+    Ok(Some(AExpr::Literal(lv)))
+}
+
 fn early_escape(type_self: &DataType, type_other: &DataType) -> Option<()> {
     if type_self == type_other
-        || matches!(type_self, DataType::Unknown)
-        || matches!(type_other, DataType::Unknown)
+        || matches!(type_self, DataType::Unknown(UnknownKind::Any))
+        || matches!(type_other, DataType::Unknown(UnknownKind::Any))
     {
         None
     } else {

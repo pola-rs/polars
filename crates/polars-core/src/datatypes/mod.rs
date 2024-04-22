@@ -115,8 +115,8 @@ macro_rules! impl_polars_num_datatype {
     };
 }
 
-macro_rules! impl_polars_datatype {
-    ($ca:ident, $variant:ident, $arr:ty, $lt:lifetime, $phys:ty, $zerophys:ty) => {
+macro_rules! impl_polars_datatype2 {
+    ($ca:ident, $dtype:expr, $arr:ty, $lt:lifetime, $phys:ty, $zerophys:ty) => {
         #[derive(Clone, Copy)]
         pub struct $ca {}
 
@@ -128,10 +128,16 @@ macro_rules! impl_polars_datatype {
 
             #[inline]
             fn get_dtype() -> DataType {
-                DataType::$variant
+                $dtype
             }
         }
     };
+}
+
+macro_rules! impl_polars_datatype {
+    ($ca:ident, $variant:ident, $arr:ty, $lt:lifetime, $phys:ty, $zerophys:ty) => {
+        impl_polars_datatype2!($ca, DataType::$variant, $arr, $lt, $phys, $zerophys); };
+
 }
 
 impl_polars_num_datatype!(PolarsIntegerType, UInt8Type, UInt8, u8);
@@ -145,16 +151,18 @@ impl_polars_num_datatype!(PolarsIntegerType, Int64Type, Int64, i64);
 impl_polars_num_datatype!(PolarsFloatType, Float32Type, Float32, f32);
 impl_polars_num_datatype!(PolarsFloatType, Float64Type, Float64, f64);
 impl_polars_datatype!(DateType, Date, PrimitiveArray<i32>, 'a, i32, i32);
-#[cfg(feature = "dtype-decimal")]
-impl_polars_datatype!(DecimalType, Unknown, PrimitiveArray<i128>, 'a, i128, i128);
-impl_polars_datatype!(DatetimeType, Unknown, PrimitiveArray<i64>, 'a, i64, i64);
-impl_polars_datatype!(DurationType, Unknown, PrimitiveArray<i64>, 'a, i64, i64);
-impl_polars_datatype!(CategoricalType, Unknown, PrimitiveArray<u32>, 'a, u32, u32);
 impl_polars_datatype!(TimeType, Time, PrimitiveArray<i64>, 'a, i64, i64);
 impl_polars_datatype!(StringType, String, Utf8ViewArray, 'a, &'a str, Option<&'a str>);
 impl_polars_datatype!(BinaryType, Binary, BinaryViewArray, 'a, &'a [u8], Option<&'a [u8]>);
 impl_polars_datatype!(BinaryOffsetType, BinaryOffset, BinaryArray<i64>, 'a, &'a [u8], Option<&'a [u8]>);
 impl_polars_datatype!(BooleanType, Boolean, BooleanArray, 'a, bool, bool);
+
+
+#[cfg(feature = "dtype-decimal")]
+impl_polars_datatype2!(DecimalType, DataType::Unknown(UnknownKind::Any), PrimitiveArray<i128>, 'a, i128, i128);
+impl_polars_datatype2!(DatetimeType, DataType::Unknown(UnknownKind::Any), PrimitiveArray<i64>, 'a, i64, i64);
+impl_polars_datatype2!(DurationType, DataType::Unknown(UnknownKind::Any), PrimitiveArray<i64>, 'a, i64, i64);
+impl_polars_datatype2!(CategoricalType, DataType::Unknown(UnknownKind::Any), PrimitiveArray<u32>, 'a, u32, u32);
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ListType {}

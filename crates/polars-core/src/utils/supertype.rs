@@ -195,9 +195,9 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
             (Time, Float64) => Some(Float64),
 
             // every known type can be casted to a string except binary
-            (dt, String) if dt != &DataType::Unknown && dt != &DataType::Binary => Some(String),
+            (dt, String) if !matches!(dt, DataType::Unknown(_)) && dt != &DataType::Binary => Some(String),
 
-            (dt, String) if dt != &DataType::Unknown => Some(String),
+            (dt, String) if !matches!(dt, DataType::Unknown(_)) => Some(String),
 
             (dt, Null) => Some(dt.clone()),
 
@@ -253,7 +253,15 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
                 let st = get_supertype(inner_left, inner_right)?;
                 Some(DataType::List(Box::new(st)))
             }
-            (_, Unknown) => Some(Unknown),
+
+            (dt, Unknown(kind)) => {
+                match kind {
+                    UnknownKind::Int if dt.is_integer() => Some(dt.clone()),
+                    UnknownKind::Float if dt.is_float() => Some(dt.clone()),
+                    UnknownKind::Float if dt.is_numeric() => Some(Unknown(UnknownKind::Float)),
+                    _ => Some(Unknown(UnknownKind::Any))
+                }
+            },
             #[cfg(feature = "dtype-struct")]
             (Struct(fields_a), Struct(fields_b)) => {
                 super_type_structs(fields_a, fields_b)

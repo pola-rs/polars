@@ -9,7 +9,19 @@ pub type TimeZone = String;
 pub static DTYPE_ENUM_KEY: &str = "POLARS.CATEGORICAL_TYPE";
 pub static DTYPE_ENUM_VALUE: &str = "ENUM";
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
+#[cfg_attr(
+any(feature = "serde", feature = "serde-lazy"),
+derive(Serialize, Deserialize)
+)]
+pub enum UnknownKind {
+    Int,
+    Float,
+    #[default]
+    Any
+}
+
+#[derive(Clone, Debug)]
 pub enum DataType {
     Boolean,
     UInt8,
@@ -59,8 +71,13 @@ pub enum DataType {
     #[cfg(feature = "dtype-struct")]
     Struct(Vec<Field>),
     // some logical types we cannot know statically, e.g. Datetime
-    #[default]
-    Unknown,
+    Unknown(UnknownKind),
+}
+
+impl Default for DataType {
+    fn default() -> Self {
+        DataType::Unknown(UnknownKind::Any)
+    }
 }
 
 pub trait AsRefDataType {
@@ -144,7 +161,7 @@ impl DataType {
             DataType::List(inner) => inner.is_known(),
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => fields.iter().all(|fld| fld.dtype.is_known()),
-            DataType::Unknown => false,
+            DataType::Unknown(_) => false,
             _ => true,
         }
     }
@@ -208,7 +225,7 @@ impl DataType {
 
     /// Check if this [`DataType`] is a basic numeric type (excludes Decimal).
     pub fn is_numeric(&self) -> bool {
-        self.is_float() || self.is_integer()
+        self.is_float() || self.is_integer() || matches!(self, DataType::Unknown(UnknownKind::Int | UnknownKind::Float))
     }
 
     /// Check if this [`DataType`] is a boolean
@@ -490,7 +507,7 @@ impl DataType {
                 Ok(ArrowDataType::Struct(fields))
             },
             BinaryOffset => Ok(ArrowDataType::LargeBinary),
-            Unknown => Ok(ArrowDataType::Unknown),
+            Unknown(_) => Ok(ArrowDataType::Unknown),
         }
     }
 
@@ -591,7 +608,11 @@ impl Display for DataType {
             DataType::Enum(_, _) => "enum",
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => return write!(f, "struct[{}]", fields.len()),
-            DataType::Unknown => "unknown",
+            DataType::Unknown(kind) => match kind {
+                UnknownKind::Any => "unknown",
+                UnknownKind::Int => "dynamic int",
+                UnknownKind::Float => "dynamic float"
+            },
             DataType::BinaryOffset => "binary[offset]",
         };
         f.write_str(s)
