@@ -2,10 +2,21 @@ use std::collections::VecDeque;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 
-use super::*;
+use polars_core::datatypes::Field;
+use polars_core::frame::DataFrame;
+use polars_core::schema::SchemaRef;
+use polars_core::POOL;
+use polars_error::PolarsResult;
+use polars_utils::IdxSize;
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+
+use super::core_reader::{cast_columns, read_chunk, CoreReader};
+use crate::csv::read::options::{CommentPrefix, CsvEncoding, NullValuesCompiled};
+use crate::csv::read::parser::next_line_position;
 use crate::csv::read::CsvReader;
-use crate::mmap::MmapBytesReader;
+use crate::mmap::{MmapBytesReader, ReaderBytes};
 use crate::prelude::update_row_counts2;
+use crate::RowIndex;
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn get_offsets(
