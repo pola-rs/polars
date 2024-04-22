@@ -82,11 +82,11 @@ def test_df_repl_html_table_cell_alignment() -> None:
                 assert f"text-align: {_overall};" in _repr_html
                 if _overall == _numeric:
                     # header
-                    header = f'<thead><tr><th>a</th><th">b</th></tr>'\
+                    header = '<thead><tr><th>a</th><th">b</th></tr>'\
                         '<tr><td>str</td><td">i64</td></tr></thead>'
                     assert header in _repr_html
                     # body
-                    body = f'<tr><td>str</td><td">i64</td></tr>'
+                    body = '<tr><td>str</td><td">i64</td></tr>'
                     assert body in _repr_html
                 else:
                     # header
