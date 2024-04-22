@@ -4,6 +4,6 @@ import polars as pl
 from tests.benchmark.datagen_groupby import generate_group_by_data
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="session")
 def groupby_data() -> pl.DataFrame:
     return generate_group_by_data(10_000, 100, null_ratio=0.05)
