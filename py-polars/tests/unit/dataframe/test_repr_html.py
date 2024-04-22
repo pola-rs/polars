@@ -87,8 +87,8 @@ def test_df_repl_html_table_cell_alignment() -> None:
                 if _overall == _numeric:
                     # header
                     header = (
-                        '<thead><tr><th>a</th><th>b</th></tr>'
-                        '<tr><td>str</td><td>i64</td></tr></thead>'
+                        "<thead><tr><th>a</th><th>b</th></tr>"
+                        "<tr><td>str</td><td>i64</td></tr></thead>"
                     )
                     assert header in _repr_html
                     # body
