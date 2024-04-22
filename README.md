@@ -231,7 +231,6 @@ This can be done by going through the following steps in sequence:
    - `make build-release`, fastest binary, very long compile times
    - `make build-opt`, fast binary with debug symbols, long compile times
    - `make build-debug-opt`, medium-speed binary with debug assertions and symbols, medium compile times
-   - `make build`, slow binary with debug assertions and symbols, fast compile times
 
    Append `-native` (e.g. `make build-release-native`) to enable further optimizations specific to
    your CPU. This produces a non-portable binary/wheel however.
