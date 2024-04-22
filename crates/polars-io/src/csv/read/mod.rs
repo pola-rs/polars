@@ -13,9 +13,9 @@
 //!
 //! fn example() -> PolarsResult<DataFrame> {
 //!     // Always prefer `from_path` as it is fastest.
-//!     CsvReader::from_path("iris_csv")?
-//!       .has_header(true)
-//!       .finish()
+//!     CsvReader::from_path("example.csv")?
+//!         .has_header(true)
+//!         .finish()
 //! }
 //! ```
 
