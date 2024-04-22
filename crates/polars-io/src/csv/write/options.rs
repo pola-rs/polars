@@ -13,6 +13,7 @@ pub struct CsvWriterOptions {
     pub serialize_options: SerializeOptions,
 }
 
+/// Options for writing CSV files.
 impl Default for CsvWriterOptions {
     fn default() -> Self {
         Self {
@@ -66,17 +67,24 @@ impl Default for SerializeOptions {
     }
 }
 
+/// Quote style indicating when to insert quotes around a field.
 #[derive(Copy, Clone, Default, Eq, Hash, PartialEq, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum QuoteStyle {
-    /// This puts quotes around every field. Always.
-    Always,
-    /// This puts quotes around fields only when necessary.
-    // They are necessary when fields contain a quote, separator or record terminator. Quotes are also necessary when writing an empty record (which is indistinguishable from a record with one empty field).
-    // This is the default.
+    /// Quote fields only when necessary.
+    ///
+    /// Quotes are necessary when fields contain a quote, separator or record terminator.
+    /// Quotes are also necessary when writing an empty record (which is indistinguishable
+    /// from arecord with one empty field).
+    /// This is the default.
     #[default]
     Necessary,
-    /// This puts quotes around all fields that are non-numeric. Namely, when writing a field that does not parse as a valid float or integer, then quotes will be used even if they aren’t strictly necessary.
+    /// Quote every field. Always.
+    Always,
+    /// Quote non-numeric fields.
+    ///
+    /// When writing a field that does not parse as a valid float or integer,
+    /// quotes will be used even if they aren't strictly necessary.
     NonNumeric,
     /// Never quote any fields, even if it would produce invalid CSV data.
     Never,
