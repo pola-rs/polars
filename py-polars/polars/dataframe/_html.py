@@ -47,6 +47,23 @@ class Tag:
 
 
 class HTMLFormatter:
+    """Class for HTML formatting.
+
+    Table cell alignment will be set by environment variables.
+
+    Parameters
+    ----------
+    df: DataFrame
+    max_cols: int
+    max_rows: int
+    from_series: bool
+
+    Raises
+    ------
+    ValueError: if unexpected POLARS_FMT_TABLE_CELL_ALIGNMENT value.
+    ValueError: if unexpected POLARS_FMT_TABLE_CELL_NUMERIC_ALIGNMENT value.
+    """
+
     def __init__(
         self,
         df: DataFrame,
@@ -81,6 +98,17 @@ class HTMLFormatter:
         else:
             self.col_idx = range(df.width)
 
+        _overall_align = os.environ.get("POLARS_FMT_TABLE_CELL_ALIGNMENT", "RIGHT")
+        if _overall_align not in {"LEFT", "CENTER", "RIGHT"}:
+            msg = f"invalid table cell alignment: {_overall_align!r}"
+            raise ValueError(msg)
+        _numeric_align = os.environ.get("POLARS_FMT_TABLE_CELL_NUMERIC_ALIGNMENT", "RIGHT")
+        if _numeric_align not in {"LEFT", "CENTER", "RIGHT"}:
+            msg = f"invalid table cell numeric alignment: {_numeric_align!r}"
+            raise ValueError(msg)
+        self.overall_align_lower: _overall_align.lower()
+        self.numeric_align_lower: _numeric_align.lower()
+
     def write_header(self) -> None:
         """Write the header of an HTML table."""
         with Tag(self.elements, "thead"):
@@ -88,7 +116,7 @@ class HTMLFormatter:
                 with Tag(self.elements, "tr"):
                     columns = self.df.columns
                     for c in self.col_idx:
-                        with Tag(self.elements, "th"):
+                        with Tag(self.elements, "th", attributes=self.get_attributes(col_idx=c)):
                             if c == -1:
                                 self.elements.append("&hellip;")
                             else:
@@ -99,7 +127,7 @@ class HTMLFormatter:
                 with Tag(self.elements, "tr"):
                     dtypes = self.df._df.dtype_strings()
                     for c in self.col_idx:
-                        with Tag(self.elements, "td"):
+                        with Tag(self.elements, "td", attributes=self.get_attributes(col_idx=c)):
                             if c == -1:
                                 self.elements.append("&hellip;")
                             else:
@@ -112,7 +140,7 @@ class HTMLFormatter:
             for r in self.row_idx:
                 with Tag(self.elements, "tr"):
                     for c in self.col_idx:
-                        with Tag(self.elements, "td"):
+                        with Tag(self.elements, "td", attributes=self.get_attributes(col_idx=c)):
                             if r == -1 or c == -1:
                                 self.elements.append("&hellip;")
                             else:
@@ -120,6 +148,20 @@ class HTMLFormatter:
                                 self.elements.append(
                                     html.escape(series._s.get_fmt(r, str_lengths))
                                 )
+
+    def get_attributes(self, col_idx: int) -> dict[str, str] | None:
+        """Get HTML td/th attributes of a column.
+
+        Parameters
+        ----------
+        col_idx: int
+        """
+        if self.numeric_align_lower == self.overall_align_lower:
+            return
+        series = self.df[:, col_idx]
+        if series.dtype.is_numeric():
+            return {"align": self.numeric_align_lower}
+        return
 
     def write(self, inner: str) -> None:
         """Append a raw string to the inner HTML."""
@@ -159,18 +201,16 @@ class NotebookFormatter(HTMLFormatter):
 
     def write_style(self) -> None:
         """Write <style> tag."""
-        cell_alignment = os.environ.get("POLARS_FMT_TABLE_CELL_ALIGNMENT", None)
-        text_align = cell_alignment.lower() if cell_alignment in ["LEFT", "CENTER"] else "right"
         style = """\
             <style>
             .dataframe > thead > tr,
             .dataframe > tbody > tr {
-              text-align: {text_align};
+              text-align: {};
               white-space: pre-wrap;
             }
             </style>
         """
-        self.write(dedent(style.format(text_align)))
+        self.write(dedent(style.format(self.overall_align_lower)))
 
     def render(self) -> list[str]:
         """Return the lines needed to render a HTML table."""
