@@ -58,8 +58,6 @@ pub use read::{
     utils, BatchedCsvReaderMmap, BatchedCsvReaderRead, CommentPrefix, CsvEncoding,
     CsvParserOptions, CsvReader, NullValues,
 };
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
 pub use write::{BatchedWriter, CsvWriter, CsvWriterOptions, QuoteStyle, SerializeOptions};
 
 use crate::mmap::MmapBytesReader;
