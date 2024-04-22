@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from textwrap import dedent
-from typing import TYPE_CHECKING, Iterable
+from typing import TYPE_CHECKING, Iterable, Literal
 
 from polars.dependencies import html
 
@@ -57,11 +57,8 @@ class HTMLFormatter:
     max_cols: int
     max_rows: int
     from_series: bool
-
-    Raises
-    ------
-    ValueError: if unexpected POLARS_FMT_TABLE_CELL_ALIGNMENT value.
-    ValueError: if unexpected POLARS_FMT_TABLE_CELL_NUMERIC_ALIGNMENT value.
+    overall_alignment: Literal["LEFT", "CENTER", "RIGHT"]
+    numeric_alignment: Literal["LEFT", "CENTER", "RIGHT"]
     """
 
     def __init__(
@@ -71,6 +68,8 @@ class HTMLFormatter:
         max_cols: int = 75,
         max_rows: int = 40,
         from_series: bool = False,
+        overall_alignment: Literal["LEFT", "CENTER", "RIGHT"] = "RIGHT",
+        numeric_alignment: Literal["LEFT", "CENTER", "RIGHT"] = "RIGHT",
     ):
         self.df = df
         self.elements: list[str] = []
@@ -98,16 +97,8 @@ class HTMLFormatter:
         else:
             self.col_idx = range(df.width)
 
-        _overall_align = os.environ.get("POLARS_FMT_TABLE_CELL_ALIGNMENT", "RIGHT")
-        if _overall_align not in {"LEFT", "CENTER", "RIGHT"}:
-            msg = f"invalid table cell alignment: {_overall_align!r}"
-            raise ValueError(msg)
-        _numeric_align = os.environ.get("POLARS_FMT_TABLE_CELL_NUMERIC_ALIGNMENT", "RIGHT")
-        if _numeric_align not in {"LEFT", "CENTER", "RIGHT"}:
-            msg = f"invalid table cell numeric alignment: {_numeric_align!r}"
-            raise ValueError(msg)
-        self.overall_align_lower: _overall_align.lower()
-        self.numeric_align_lower: _numeric_align.lower()
+        self.overall_align_lower: overall_alignment.lower()
+        self.numeric_align_lower: numeric_alignment.lower()
 
     def write_header(self) -> None:
         """Write the header of an HTML table."""
