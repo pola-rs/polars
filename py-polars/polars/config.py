@@ -823,6 +823,9 @@ class Config(contextlib.ContextDecorator):
         """
         Set table cell alignment for numeric columns.
 
+        This changes the outputs of `print()` (for all users)
+        and `Ipython.display.display()` (for interactive notebook users).
+
         Parameters
         ----------
         format : str
