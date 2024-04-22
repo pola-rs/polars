@@ -5,6 +5,30 @@ use crate::csv::read_impl::{
 };
 use crate::csv::utils::infer_file_schema;
 
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct CsvParserOptions {
+    pub comment_prefix: Option<CommentPrefix>,
+    pub quote_char: Option<u8>,
+    pub skip_rows: usize,
+    pub encoding: CsvEncoding,
+    pub skip_rows_after_header: usize,
+    pub infer_schema_length: Option<usize>,
+    pub n_threads: Option<usize>,
+    pub try_parse_dates: bool,
+    pub raise_if_empty: bool,
+    pub truncate_ragged_lines: bool,
+    pub low_memory: bool,
+    pub ignore_errors: bool,
+    pub has_header: bool,
+    pub eol_char: u8,
+    pub separator: u8,
+    pub schema_overwrite: Option<SchemaRef>,
+    pub schema: Option<SchemaRef>,
+    pub null_values: Option<NullValues>,
+    pub decimal_comma: bool,
+}
+
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum CsvEncoding {

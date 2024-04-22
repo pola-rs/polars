@@ -7,40 +7,13 @@ use polars_core::POOL;
 use polars_utils::index::Bounded;
 use polars_utils::slice::GetSaferUnchecked;
 use rayon::prelude::*;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
 
 use super::buffer::*;
-use super::read::{CsvEncoding, NullValues};
 use crate::csv::read::NullValuesCompiled;
 use crate::csv::splitfields::SplitFields;
 use crate::csv::utils::get_file_chunks;
 use crate::csv::CommentPrefix;
 use crate::utils::get_reader_bytes;
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct CsvParserOptions {
-    pub comment_prefix: Option<CommentPrefix>,
-    pub quote_char: Option<u8>,
-    pub skip_rows: usize,
-    pub encoding: CsvEncoding,
-    pub skip_rows_after_header: usize,
-    pub infer_schema_length: Option<usize>,
-    pub n_threads: Option<usize>,
-    pub try_parse_dates: bool,
-    pub raise_if_empty: bool,
-    pub truncate_ragged_lines: bool,
-    pub low_memory: bool,
-    pub ignore_errors: bool,
-    pub has_header: bool,
-    pub eol_char: u8,
-    pub separator: u8,
-    pub schema_overwrite: Option<SchemaRef>,
-    pub schema: Option<SchemaRef>,
-    pub null_values: Option<NullValues>,
-    pub decimal_comma: bool,
-}
 
 /// Read the number of rows without parsing columns
 /// useful for count(*) queries

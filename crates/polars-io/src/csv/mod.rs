@@ -54,13 +54,13 @@ use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 
-pub use parser::{count_rows, CsvParserOptions};
+pub use parser::count_rows;
 use polars_core::prelude::*;
 #[cfg(feature = "temporal")]
 use polars_time::prelude::*;
 #[cfg(feature = "temporal")]
 use rayon::prelude::*;
-pub use read::{CommentPrefix, CsvEncoding, CsvReader, NullValues};
+pub use read::{CommentPrefix, CsvEncoding, CsvParserOptions, CsvReader, NullValues};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 pub use write::{BatchedWriter, CsvWriter, CsvWriterOptions, QuoteStyle};
