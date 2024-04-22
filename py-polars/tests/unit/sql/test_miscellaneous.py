@@ -21,7 +21,7 @@ def test_any_all() -> None:
             "y": [1, 0, 0, 1, 2, 3],
         }
     )
-    res = pl.SQLContext(df=df).execute(
+    res = df.sql(
         """
         SELECT
         x >= ALL(df.y) as 'All Geq',
@@ -36,9 +36,7 @@ def test_any_all() -> None:
         x != ANY(df.y) as 'Any Neq',
         FROM df
         """,
-        eager=True,
     )
-
     assert res.to_dict(as_series=False) == {
         "All Geq": [0, 0, 0, 0, 1, 1],
         "All G": [0, 0, 0, 0, 0, 1],
@@ -88,16 +86,16 @@ def test_distinct() -> None:
 
 
 def test_in_no_ops_11946() -> None:
-    df = pl.LazyFrame(
+    lf = pl.LazyFrame(
         [
             {"i1": 1},
             {"i1": 2},
             {"i1": 3},
         ]
     )
-    ctx = pl.SQLContext(frame_data=df, eager_execution=False)
-    out = ctx.execute(
-        "SELECT * FROM frame_data WHERE i1 in (1, 3)", eager=False
+    out = lf.sql(
+        query="SELECT * FROM frame_data WHERE i1 in (1, 3)",
+        table_name="frame_data",
     ).collect()
     assert out.to_dict(as_series=False) == {"i1": [1, 3]}
 
