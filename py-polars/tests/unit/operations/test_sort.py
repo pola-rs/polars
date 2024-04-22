@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time
+from datetime import date, datetime
 from typing import Any
 
 import pytest
@@ -1083,6 +1083,10 @@ def test_sort_descending_nulls_last(descending: bool, nulls_last: bool) -> None:
 @pytest.mark.release()
 def test_sort_nan_1942() -> None:
     # https://github.com/pola-rs/polars/issues/1942
-    t0 = time()
+    import time
+
+    start = time.time()
     pl.repeat(float("nan"), 2**13, eager=True).sort()
-    assert (time() - t0) < 1
+    end = time.time()
+
+    assert (end - start) < 1.0
