@@ -1,5 +1,7 @@
 mod serializer;
 
+use std::io::Write;
+
 use arrow::array::NullArray;
 use arrow::legacy::time_zone::Tz;
 #[cfg(any(

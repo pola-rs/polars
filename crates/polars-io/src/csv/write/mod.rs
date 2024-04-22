@@ -1,12 +1,15 @@
 mod options;
 mod write_impl;
 
+use std::io::Write;
 use std::num::NonZeroUsize;
 
 pub use options::{CsvWriterOptions, QuoteStyle, SerializeOptions};
+use polars_core::prelude::*;
 use polars_core::POOL;
 
 use super::*;
+use crate::SerWriter;
 
 /// Write a DataFrame to csv.
 ///

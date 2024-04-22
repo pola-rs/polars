@@ -14,5 +14,3 @@ use read_impl::{
 pub use read_impl::{BatchedCsvReaderMmap, BatchedCsvReaderRead};
 pub use reader::CsvReader;
 use utils::infer_file_schema;
-
-use super::*;

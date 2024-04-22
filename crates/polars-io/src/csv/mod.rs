@@ -39,28 +39,13 @@
 //!             .finish()
 //! }
 //! ```
-//!
 
 pub mod read;
 pub mod write;
 
-use std::fs::File;
-use std::io::Write;
-use std::path::PathBuf;
-
-use polars_core::prelude::*;
-#[cfg(feature = "temporal")]
-use polars_time::prelude::*;
-#[cfg(feature = "temporal")]
-use rayon::prelude::*;
 pub use read::parser::count_rows;
 pub use read::{
     utils, BatchedCsvReaderMmap, BatchedCsvReaderRead, CommentPrefix, CsvEncoding,
     CsvParserOptions, CsvReader, NullValues,
 };
 pub use write::{BatchedWriter, CsvWriter, CsvWriterOptions, QuoteStyle, SerializeOptions};
-
-use crate::mmap::MmapBytesReader;
-use crate::predicates::PhysicalIoExpr;
-use crate::utils::{get_reader_bytes, resolve_homedir};
-use crate::{RowIndex, SerReader, SerWriter};
