@@ -1298,10 +1298,7 @@ class DataFrame:
             msg = f"invalid table cell numeric alignment: {numeric_alignment!r}"
             raise ValueError(msg)
 
-        overall_alignment = os.environ.get(
-            "POLARS_FMT_TABLE_CELL_ALIGNMENT",
-            "RIGHT"
-        )
+        overall_alignment = os.environ.get("POLARS_FMT_TABLE_CELL_ALIGNMENT", "RIGHT")
         if overall_alignment not in {"LEFT", "CENTER", "RIGHT"}:
             msg = f"invalid table cell alignment: {overall_alignment!r}"
             raise ValueError(msg)

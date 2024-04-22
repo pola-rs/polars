@@ -91,14 +91,18 @@ def test_df_repl_html_table_cell_alignment() -> None:
                     assert body in _repr_html
                 else:
                     # header
-                    header = '<thead><tr><th>a</th>'\
-                        f'<th align="{_numeric}">b</th></tr>'\
-                        '<tr><td>str</td>'\
+                    header = (
+                        '<thead><tr><th>a</th>'
+                        f'<th align="{_numeric}">b</th></tr>'
+                        '<tr><td>str</td>'
                         f'<td align="{_numeric}">i64</td></tr></thead>'
+                    )
                     assert header in _repr_html
                     # body
-                    body = '<tr><td>str</td>'\
+                    body = (
+                        '<tr><td>str</td>'
                         f'<td align="{_numeric}">i64</td></tr>'
+                    )
                     assert body in _repr_html
 
 
