@@ -155,6 +155,7 @@ class HTMLFormatter:
         Parameters
         ----------
         col_idx: int
+            index number of the target column.
         """
         if self.numeric_align_lower == self.overall_align_lower:
             return
