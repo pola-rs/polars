@@ -773,7 +773,7 @@ class Config(contextlib.ContextDecorator):
         cls, format: Literal["LEFT", "CENTER", "RIGHT"] | None
     ) -> type[Config]:
         """
-        Set table cell alignment.
+        Set table cell alignment for `print()` and `Ipython.display.display()` (interactive notebooks) outputs.
 
         Parameters
         ----------
