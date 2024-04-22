@@ -1,10 +1,10 @@
 use numpy::{Element, PyArray1};
 use polars::export::arrow;
 use polars::export::arrow::array::Array;
+use polars::export::arrow::bitmap::MutableBitmap;
 use polars::export::arrow::types::NativeType;
 use polars_core::prelude::*;
 use polars_core::utils::CustomIterTools;
-use polars_rs::export::arrow::bitmap::MutableBitmap;
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 

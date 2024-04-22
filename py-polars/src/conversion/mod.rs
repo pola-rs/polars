@@ -10,12 +10,12 @@ use polars::frame::row::Row;
 use polars::frame::NullStrategy;
 #[cfg(feature = "avro")]
 use polars::io::avro::AvroCompression;
+#[cfg(feature = "cloud")]
+use polars::io::cloud::CloudOptions;
 use polars::series::ops::NullBehavior;
 use polars_core::utils::arrow::array::Array;
 use polars_core::utils::arrow::types::NativeType;
 use polars_lazy::prelude::*;
-#[cfg(feature = "cloud")]
-use polars_rs::io::cloud::CloudOptions;
 use polars_utils::total_ord::{TotalEq, TotalHash};
 use pyo3::basic::CompareOp;
 use pyo3::exceptions::{PyTypeError, PyValueError};
