@@ -154,11 +154,11 @@ class HTMLFormatter:
             index number of the target column.
         """
         if self.numeric_align_lower == self.overall_align_lower:
-            return
+            return None
         series = self.df[:, col_idx]
         if series.dtype.is_numeric():
             return {"align": self.numeric_align_lower}
-        return
+        return None
 
     def write(self, inner: str) -> None:
         """Append a raw string to the inner HTML."""
