@@ -12,10 +12,15 @@ use polars_time::prelude::*;
 use polars_utils::flatten;
 use rayon::prelude::*;
 
-use crate::csv::read::buffer::*;
+use crate::csv::read::buffer::init_buffers;
 use crate::csv::read::options::{CommentPrefix, CsvEncoding, NullValues, NullValuesCompiled};
-use crate::csv::read::parser::*;
-use crate::csv::read::utils::*;
+use crate::csv::read::parser::{
+    get_line_stats, is_comment_line, next_line_position, next_line_position_naive, parse_lines,
+    skip_bom, skip_line_ending, skip_this_line, skip_whitespace_exclude,
+};
+use crate::csv::read::utils::{
+    check_decimal_comma, decompress, get_file_chunks, infer_file_schema,
+};
 use crate::mmap::ReaderBytes;
 use crate::predicates::PhysicalIoExpr;
 use crate::utils::update_row_counts;

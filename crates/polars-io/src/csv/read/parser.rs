@@ -8,7 +8,7 @@ use polars_utils::index::Bounded;
 use polars_utils::slice::GetSaferUnchecked;
 use rayon::prelude::*;
 
-use crate::csv::read::buffer::*;
+use crate::csv::read::buffer::Buffer;
 use crate::csv::read::options::{CommentPrefix, NullValuesCompiled};
 use crate::csv::read::splitfields::SplitFields;
 use crate::csv::read::utils::get_file_chunks;
@@ -75,7 +75,7 @@ pub fn count_rows(
 
 /// Skip the utf-8 Byte Order Mark.
 /// credits to csv-core
-pub(crate) fn skip_bom(input: &[u8]) -> &[u8] {
+pub(super) fn skip_bom(input: &[u8]) -> &[u8] {
     if input.len() >= 3 && &input[0..3] == b"\xef\xbb\xbf" {
         &input[3..]
     } else {
@@ -86,7 +86,7 @@ pub(crate) fn skip_bom(input: &[u8]) -> &[u8] {
 /// Checks if a line in a CSV file is a comment based on the given comment prefix configuration.
 ///
 /// This function is used during CSV parsing to determine whether a line should be ignored based on its starting characters.
-pub(crate) fn is_comment_line(line: &[u8], comment_prefix: Option<&CommentPrefix>) -> bool {
+pub(super) fn is_comment_line(line: &[u8], comment_prefix: Option<&CommentPrefix>) -> bool {
     match comment_prefix {
         Some(CommentPrefix::Single(c)) => line.starts_with(&[*c]),
         Some(CommentPrefix::Multi(s)) => line.starts_with(s.as_bytes()),
@@ -96,7 +96,7 @@ pub(crate) fn is_comment_line(line: &[u8], comment_prefix: Option<&CommentPrefix
 
 /// Find the nearest next line position.
 /// Does not check for new line characters embedded in String fields.
-pub(crate) fn next_line_position_naive(input: &[u8], eol_char: u8) -> Option<usize> {
+pub(super) fn next_line_position_naive(input: &[u8], eol_char: u8) -> Option<usize> {
     let pos = memchr::memchr(eol_char, input)? + 1;
     if input.len() - pos == 0 {
         return None;
@@ -105,7 +105,7 @@ pub(crate) fn next_line_position_naive(input: &[u8], eol_char: u8) -> Option<usi
 }
 
 /// Find the nearest next line position that is not embedded in a String field.
-pub(crate) fn next_line_position(
+pub(super) fn next_line_position(
     mut input: &[u8],
     mut expected_fields: Option<usize>,
     separator: u8,
@@ -202,11 +202,11 @@ pub(crate) fn next_line_position(
     }
 }
 
-pub(crate) fn is_line_ending(b: u8, eol_char: u8) -> bool {
+pub(super) fn is_line_ending(b: u8, eol_char: u8) -> bool {
     b == eol_char || b == b'\r'
 }
 
-pub(crate) fn is_whitespace(b: u8) -> bool {
+pub(super) fn is_whitespace(b: u8) -> bool {
     b == b' ' || b == b'\t'
 }
 
@@ -229,23 +229,23 @@ where
 /// and not with
 ///     '\nfield_1,field_1'
 #[inline]
-pub(crate) fn skip_whitespace(input: &[u8]) -> &[u8] {
+pub(super) fn skip_whitespace(input: &[u8]) -> &[u8] {
     skip_condition(input, is_whitespace)
 }
 
 #[inline]
 /// Can be used to skip whitespace, but exclude the separator
-pub(crate) fn skip_whitespace_exclude(input: &[u8], exclude: u8) -> &[u8] {
+pub(super) fn skip_whitespace_exclude(input: &[u8], exclude: u8) -> &[u8] {
     skip_condition(input, |b| b != exclude && (is_whitespace(b)))
 }
 
 #[inline]
-pub(crate) fn skip_line_ending(input: &[u8], eol_char: u8) -> &[u8] {
+pub(super) fn skip_line_ending(input: &[u8], eol_char: u8) -> &[u8] {
     skip_condition(input, |b| is_line_ending(b, eol_char))
 }
 
 /// Get the mean and standard deviation of length of lines in bytes
-pub(crate) fn get_line_stats(
+pub(super) fn get_line_stats(
     bytes: &[u8],
     n_lines: usize,
     eol_char: u8,
@@ -300,14 +300,14 @@ pub(crate) fn get_line_stats(
 ///
 /// This will fail when strings fields are have embedded end line characters.
 /// For instance: "This is a valid field\nI have multiples lines" is a valid string field, that contains multiple lines.
-pub(crate) struct SplitLines<'a> {
+pub(super) struct SplitLines<'a> {
     v: &'a [u8],
     quote_char: u8,
     end_line_char: u8,
 }
 
 impl<'a> SplitLines<'a> {
-    pub(crate) fn new(slice: &'a [u8], quote_char: u8, end_line_char: u8) -> Self {
+    pub(super) fn new(slice: &'a [u8], quote_char: u8, end_line_char: u8) -> Self {
         Self {
             v: slice,
             quote_char,
@@ -388,7 +388,7 @@ fn find_quoted(bytes: &[u8], quote_char: u8, needle: u8) -> Option<usize> {
 }
 
 #[inline]
-pub(crate) fn skip_this_line(bytes: &[u8], quote: Option<u8>, eol_char: u8) -> &[u8] {
+pub(super) fn skip_this_line(bytes: &[u8], quote: Option<u8>, eol_char: u8) -> &[u8] {
     let pos = match quote {
         Some(quote) => find_quoted(bytes, quote, eol_char),
         None => bytes.iter().position(|x| *x == eol_char),
