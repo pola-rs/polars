@@ -802,8 +802,7 @@ def _read_spreadsheet_calamine(
 ) -> pl.DataFrame:
     # if we have 'schema_overrides' and a more recent version of `fastexcel`
     # we can pass translated dtypes to the engine to refine the initial parse
-    import fastexcel
-
+    fastexcel = import_optional("fastexcel")
     fastexcel_version = parse_version(fastexcel.__version__)
     if fastexcel_version < (0, 9) and "schema_sample_rows" in read_options:
         msg = f"a more recent version of `fastexcel` is required (>= 0.9; found {fastexcel.__version__})"
@@ -839,20 +838,21 @@ def _read_spreadsheet_calamine(
 
     df = _drop_null_data(df, raise_if_empty=raise_if_empty)
 
-    # refine dtypes
+    # further refine dtypes
     type_checks = []
     for c, dtype in df.schema.items():
-        # may read integer data as float; cast back to int where possible.
-        if dtype in FLOAT_DTYPES:
-            check_cast = [F.col(c).floor().eq(F.col(c)), F.col(c).cast(Int64)]
-            type_checks.append(check_cast)
-        # do a similar check for datetime columns that have only 00:00:00 times.
-        elif dtype == Datetime:
-            check_cast = [
-                F.col(c).dt.time().eq(time(0, 0, 0)),
-                F.col(c).cast(Date),
-            ]
-            type_checks.append(check_cast)
+        if c not in schema_overrides:
+            # may read integer data as float; cast back to int where possible.
+            if dtype in FLOAT_DTYPES:
+                check_cast = [F.col(c).floor().eq(F.col(c)), F.col(c).cast(Int64)]
+                type_checks.append(check_cast)
+            # do a similar check for datetime columns that have only 00:00:00 times.
+            elif dtype == Datetime:
+                check_cast = [
+                    F.col(c).dt.time().eq(time(0, 0, 0)),
+                    F.col(c).cast(Date),
+                ]
+                type_checks.append(check_cast)
 
     if type_checks:
         apply_cast = df.select(
