@@ -1309,8 +1309,8 @@ class DataFrame:
                 max_cols=max_cols,
                 max_rows=max_rows,
                 from_series=_from_series,
-                overall_alignment=overall_alignment,
-                numeric_alignment=numeric_alignment,
+                overall_alignment=overall_alignment,  # type: ignore[arg-type]
+                numeric_alignment=numeric_alignment,  # type: ignore[arg-type]
             ).render()
         )
 
