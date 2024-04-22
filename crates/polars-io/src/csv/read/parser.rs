@@ -8,7 +8,7 @@ use polars_utils::index::Bounded;
 use polars_utils::slice::GetSaferUnchecked;
 use rayon::prelude::*;
 
-use super::buffer::*;
+use crate::csv::buffer::*;
 use crate::csv::read::NullValuesCompiled;
 use crate::csv::splitfields::SplitFields;
 use crate::csv::utils::get_file_chunks;

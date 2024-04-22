@@ -3,6 +3,8 @@ use std::num::NonZeroUsize;
 use polars_core::POOL;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+mod write_impl;
+pub use write_impl::SerializeOptions;
 
 use super::*;
 

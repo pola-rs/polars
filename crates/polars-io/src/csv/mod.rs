@@ -41,32 +41,29 @@
 //! ```
 //!
 pub(crate) mod buffer;
-pub(crate) mod parser;
 
 mod read;
 pub(super) mod splitfields;
 pub mod utils;
 mod write;
-pub(super) mod write_impl;
 
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 
-pub use parser::count_rows;
 use polars_core::prelude::*;
 #[cfg(feature = "temporal")]
 use polars_time::prelude::*;
 #[cfg(feature = "temporal")]
 use rayon::prelude::*;
+pub use read::parser::count_rows;
 pub use read::{
     BatchedCsvReaderMmap, BatchedCsvReaderRead, CommentPrefix, CsvEncoding, CsvParserOptions,
     CsvReader, NullValues,
 };
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-pub use write::{BatchedWriter, CsvWriter, CsvWriterOptions, QuoteStyle};
-pub use write_impl::SerializeOptions;
+pub use write::{BatchedWriter, CsvWriter, CsvWriterOptions, QuoteStyle, SerializeOptions};
 
 use crate::mmap::MmapBytesReader;
 use crate::predicates::PhysicalIoExpr;

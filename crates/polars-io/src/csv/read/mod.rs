@@ -1,3 +1,4 @@
+pub(crate) mod parser;
 mod read_impl;
 
 use read_impl::{
