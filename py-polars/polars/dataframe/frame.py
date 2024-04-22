@@ -1291,7 +1291,7 @@ class DataFrame:
             max_rows = self.height
 
         numeric_alignment = os.environ.get("POLARS_FMT_TABLE_CELL_NUMERIC_ALIGNMENT", "RIGHT")
-        if numeric_align not in {"LEFT", "CENTER", "RIGHT"}:
+        if numeric_alignment not in {"LEFT", "CENTER", "RIGHT"}:
             msg = f"invalid table cell numeric alignment: {numeric_alignment!r}"
             raise ValueError(msg)
 
