@@ -40,12 +40,9 @@
 //! }
 //! ```
 //!
-pub(crate) mod buffer;
 
-mod read;
-pub(super) mod splitfields;
-pub mod utils;
-mod write;
+pub mod read;
+pub mod write;
 
 use std::fs::File;
 use std::io::Write;
@@ -58,8 +55,8 @@ use polars_time::prelude::*;
 use rayon::prelude::*;
 pub use read::parser::count_rows;
 pub use read::{
-    BatchedCsvReaderMmap, BatchedCsvReaderRead, CommentPrefix, CsvEncoding, CsvParserOptions,
-    CsvReader, NullValues,
+    utils, BatchedCsvReaderMmap, BatchedCsvReaderRead, CommentPrefix, CsvEncoding,
+    CsvParserOptions, CsvReader, NullValues,
 };
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};

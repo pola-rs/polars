@@ -15,10 +15,10 @@ use polars_time::prelude::*;
 use polars_utils::flatten;
 use rayon::prelude::*;
 
-use crate::csv::buffer::*;
+use crate::csv::read::buffer::*;
 use crate::csv::read::parser::*;
+use crate::csv::read::utils::*;
 use crate::csv::read::{CommentPrefix, NullValuesCompiled};
-use crate::csv::utils::*;
 use crate::csv::{CsvEncoding, NullValues};
 use crate::mmap::ReaderBytes;
 use crate::predicates::PhysicalIoExpr;

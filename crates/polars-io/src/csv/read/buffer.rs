@@ -10,7 +10,7 @@ use polars_time::prelude::string::infer::{
 use polars_utils::vec::PushUnchecked;
 
 use crate::csv::read::parser::{is_whitespace, skip_whitespace};
-use crate::csv::utils::escape_field;
+use crate::csv::read::utils::escape_field;
 use crate::csv::CsvEncoding;
 
 pub(crate) trait PrimitiveParser: PolarsNumericType {

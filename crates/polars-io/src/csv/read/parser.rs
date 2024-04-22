@@ -8,10 +8,10 @@ use polars_utils::index::Bounded;
 use polars_utils::slice::GetSaferUnchecked;
 use rayon::prelude::*;
 
-use crate::csv::buffer::*;
+use crate::csv::read::buffer::*;
+use crate::csv::read::splitfields::SplitFields;
+use crate::csv::read::utils::get_file_chunks;
 use crate::csv::read::NullValuesCompiled;
-use crate::csv::splitfields::SplitFields;
-use crate::csv::utils::get_file_chunks;
 use crate::csv::CommentPrefix;
 use crate::utils::get_reader_bytes;
 

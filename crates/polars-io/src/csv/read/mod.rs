@@ -1,14 +1,17 @@
+pub(crate) mod buffer;
 pub(crate) mod parser;
 mod read_impl;
+pub(super) mod splitfields;
+pub mod utils;
 
 use read_impl::{
     to_batched_owned_mmap, to_batched_owned_read, CoreReader, OwnedBatchedCsvReader,
     OwnedBatchedCsvReaderMmap,
 };
 pub use read_impl::{BatchedCsvReaderMmap, BatchedCsvReaderRead};
+use utils::infer_file_schema;
 
 use super::*;
-use crate::csv::utils::infer_file_schema;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
