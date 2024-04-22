@@ -6,7 +6,7 @@ use chrono::ParseError;
 pub use patterns::Pattern;
 #[cfg(feature = "dtype-time")]
 use polars_core::chunked_array::temporal::time_to_time64ns;
-use polars_utils::cache::CachedFunc;
+use polars_utils::cache::FastCachedFunc;
 
 use super::*;
 #[cfg(feature = "dtype-date")]
@@ -110,7 +110,7 @@ pub trait StringMethods: AsString {
         };
         let use_cache = use_cache && string_ca.len() > 50;
 
-        let mut convert = CachedFunc::new(
+        let mut convert = FastCachedFunc::new(
             |s| {
                 let naive_time = NaiveTime::parse_from_str(s, fmt).ok()?;
                 Some(time_to_time64ns(&naive_time))
@@ -240,7 +240,7 @@ pub trait StringMethods: AsString {
         // We can use the fast parser.
         let ca = if let Some(fmt_len) = strptime::fmt_len(fmt.as_bytes()) {
             let mut strptime_cache = StrpTimeState::default();
-            let mut convert = CachedFunc::new(
+            let mut convert = FastCachedFunc::new(
                 |s: &str| {
                     // SAFETY: fmt_len is correct, it was computed with this `fmt` str.
                     match unsafe { strptime_cache.parse(s.as_bytes(), fmt.as_bytes(), fmt_len) } {
@@ -254,7 +254,7 @@ pub trait StringMethods: AsString {
             );
             string_ca.apply_generic(|val| convert.eval(val?, use_cache))
         } else {
-            let mut convert = CachedFunc::new(
+            let mut convert = FastCachedFunc::new(
                 |s| {
                     let naive_date = NaiveDate::parse_from_str(s, &fmt).ok()?;
                     Some(naive_date_to_date(naive_date))
@@ -295,7 +295,7 @@ pub trait StringMethods: AsString {
         if tz_aware {
             #[cfg(feature = "timezones")]
             {
-                let mut convert = CachedFunc::new(
+                let mut convert = FastCachedFunc::new(
                     |s: &str| {
                         let dt = DateTime::parse_from_str(s, &fmt).ok()?;
                         Some(func(dt.naive_utc()))
@@ -320,7 +320,7 @@ pub trait StringMethods: AsString {
             // We can use the fast parser.
             let ca = if let Some(fmt_len) = self::strptime::fmt_len(fmt.as_bytes()) {
                 let mut strptime_cache = StrpTimeState::default();
-                let mut convert = CachedFunc::new(
+                let mut convert = FastCachedFunc::new(
                     |s: &str| {
                         // SAFETY: fmt_len is correct, it was computed with this `fmt` str.
                         match unsafe { strptime_cache.parse(s.as_bytes(), fmt.as_bytes(), fmt_len) }
@@ -333,7 +333,7 @@ pub trait StringMethods: AsString {
                 );
                 string_ca.apply_generic(|opt_s| convert.eval(opt_s?, use_cache))
             } else {
-                let mut convert = CachedFunc::new(
+                let mut convert = FastCachedFunc::new(
                     |s| transform(s, &fmt),
                     (string_ca.len() as f64).sqrt() as usize,
                 );

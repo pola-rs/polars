@@ -7,12 +7,14 @@ use ahash::RandomState;
 use bytemuck::allocation::zeroed_vec;
 use bytemuck::Zeroable;
 
-pub struct CachedFunc<T, R, F> {
+/// A cached function that use `FastFixedCache` for access speed.
+/// It is important that the key is relatively cheap to compute.
+pub struct FastCachedFunc<T, R, F> {
     func: F,
     cache: FastFixedCache<T, R>,
 }
 
-impl<T, R, F> CachedFunc<T, R, F>
+impl<T, R, F> FastCachedFunc<T, R, F>
 where
     F: FnMut(T) -> R,
     T: std::hash::Hash + Eq + Clone,
