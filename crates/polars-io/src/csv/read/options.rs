@@ -27,6 +27,42 @@ pub struct CsvParserOptions {
     pub low_memory: bool,
 }
 
+impl Default for CsvParserOptions {
+    fn default() -> Self {
+        Self {
+            has_header: true,
+            separator: b',',
+            comment_prefix: None,
+            quote_char: Some(b'"'),
+            eol_char: b'\n',
+            encoding: CsvEncoding::default(),
+            skip_rows: 0,
+            skip_rows_after_header: 0,
+            schema: None,
+            schema_overwrite: None,
+            infer_schema_length: Some(100),
+            try_parse_dates: false,
+            null_values: None,
+            ignore_errors: false,
+            raise_if_empty: true,
+            truncate_ragged_lines: false,
+            decimal_comma: false,
+            n_threads: None,
+            low_memory: false,
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub enum CsvEncoding {
+    /// Utf8 encoding.
+    #[default]
+    Utf8,
+    /// Utf8 encoding and unknown bytes are replaced with �.
+    LossyUtf8,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum CommentPrefix {
@@ -52,15 +88,6 @@ impl CommentPrefix {
             None
         }
     }
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub enum CsvEncoding {
-    /// Utf8 encoding
-    Utf8,
-    /// Utf8 encoding and unknown bytes are replaced with �
-    LossyUtf8,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]

@@ -3,7 +3,7 @@ use std::num::NonZeroUsize;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct CsvWriterOptions {
     pub include_bom: bool,
@@ -29,7 +29,7 @@ impl Default for CsvWriterOptions {
 /// Options to serialize logical types to CSV.
 ///
 /// The default is to format times and dates as `chrono` crate formats them.
-#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct SerializeOptions {
     /// Used for [`DataType::Date`].
@@ -53,7 +53,7 @@ pub struct SerializeOptions {
 
 impl Default for SerializeOptions {
     fn default() -> Self {
-        SerializeOptions {
+        Self {
             date_format: None,
             time_format: None,
             datetime_format: None,
@@ -68,7 +68,7 @@ impl Default for SerializeOptions {
 }
 
 /// Quote style indicating when to insert quotes around a field.
-#[derive(Copy, Clone, Default, Eq, Hash, PartialEq, Debug)]
+#[derive(Copy, Clone, Debug, Default, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum QuoteStyle {
     /// Quote fields only when necessary.
