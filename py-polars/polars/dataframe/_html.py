@@ -159,7 +159,7 @@ class NotebookFormatter(HTMLFormatter):
 
     def write_style(self) -> None:
         """Write <style> tag."""
-        cell_alignment = os.environ["POLARS_FMT_TABLE_CELL_ALIGNMENT"]
+        cell_alignment = os.environ.get("POLARS_FMT_TABLE_CELL_ALIGNMENT", None)
         text_align = cell_alignment.lower() if cell_alignment in ["LEFT", "CENTER"] else "RIGHT"
         style = """\
             <style>
