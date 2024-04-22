@@ -7,11 +7,9 @@ use ahash::RandomState;
 use bytemuck::allocation::zeroed_vec;
 use bytemuck::Zeroable;
 
-use crate::aliases::PlHashMap;
-
 pub struct CachedFunc<T, R, F> {
     func: F,
-    cache: PlHashMap<T, R>,
+    cache: FastFixedCache<T, R>,
 }
 
 impl<T, R, F> CachedFunc<T, R, F>
@@ -20,10 +18,10 @@ where
     T: std::hash::Hash + Eq + Clone,
     R: Copy,
 {
-    pub fn new(func: F) -> Self {
+    pub fn new(func: F, size: usize) -> Self {
         Self {
             func,
-            cache: PlHashMap::with_capacity_and_hasher(0, Default::default()),
+            cache: FastFixedCache::new(size),
         }
     }
 
@@ -31,8 +29,7 @@ where
         if use_cache {
             *self
                 .cache
-                .entry(x)
-                .or_insert_with_key(|xr| (self.func)(xr.clone()))
+                .get_or_insert_with(&x, |xr| (self.func)(xr.clone()))
         } else {
             (self.func)(x)
         }
