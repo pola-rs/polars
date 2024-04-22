@@ -428,7 +428,7 @@ struct ExpansionFlags {
     has_struct_field_by_index: bool,
 }
 
-fn find_flags(expr: &Expr) -> PolarsResult<ExpansionFlags> {
+fn find_flags(expr: &Expr) -> ExpansionFlags {
     let mut multiple_columns = false;
     let mut has_nth = false;
     let mut has_wildcard = false;
@@ -438,10 +438,8 @@ fn find_flags(expr: &Expr) -> PolarsResult<ExpansionFlags> {
     #[cfg(feature = "dtype-struct")]
     let mut has_struct_field_by_index = false;
 
-    // Do a single pass and
-    // - collect all flags at once.
-    // - check correctness
-    // - supertypes/modification that can be done in place
+    // Do a single pass and collect all flags at once.
+    // Supertypes/modification that can be done in place are also done in that pass
     for expr in expr {
         match expr {
             Expr::Columns(_) | Expr::DtypeColumn(_) => multiple_columns = true,
@@ -460,13 +458,10 @@ fn find_flags(expr: &Expr) -> PolarsResult<ExpansionFlags> {
                 has_struct_field_by_index = true;
             },
             Expr::Exclude(_, _) => has_exclude = true,
-            Expr::Ternary {predicate, ..} => {
-                polars_ensure!(!matches!(&**predicate, Expr::Literal(LiteralValue::Int(_) | LiteralValue::Float(_))), InvalidOperation: "expected boolean expression in 'when -> then -> otherwise' predicate");
-            }
             _ => {},
         }
     }
-    Ok(ExpansionFlags {
+    ExpansionFlags {
         multiple_columns,
         has_nth,
         has_wildcard,
@@ -475,7 +470,7 @@ fn find_flags(expr: &Expr) -> PolarsResult<ExpansionFlags> {
         has_exclude,
         #[cfg(feature = "dtype-struct")]
         has_struct_field_by_index,
-    })
+    }
 }
 
 /// In case of single col(*) -> do nothing, no selection is the same as select all
@@ -493,7 +488,7 @@ pub(crate) fn rewrite_projections(
         // Functions can have col(["a", "b"]) or col(String) as inputs.
         expr = expand_function_inputs(expr, schema);
 
-        let mut flags = find_flags(&expr)?;
+        let mut flags = find_flags(&expr);
         if flags.has_selector {
             expr = replace_selector(expr, schema, keys)?;
             // the selector is replaced with Expr::Columns
@@ -590,7 +585,7 @@ fn replace_selector_inner(
 ) -> PolarsResult<()> {
     match s {
         Selector::Root(expr) => {
-            let local_flags = find_flags(&expr)?;
+            let local_flags = find_flags(&expr);
             replace_and_add_to_results(*expr, local_flags, scratch, schema, keys)?;
             members.extend(scratch.drain(..))
         },

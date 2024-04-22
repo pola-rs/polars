@@ -173,6 +173,23 @@ fn modify_supertype(
             dbg!(&lhs, &rhs);
             st = dbg!(get_supertype(&lhs, &rhs).unwrap());
         },
+        (
+            Literal(lv_left @ (LiteralValue::Int(_) | LiteralValue::Float(_))),
+            _
+        ) => {
+            let lhs = lv_left.to_any_value().unwrap().dtype();
+            st = get_supertype(&lhs, type_right).unwrap();
+        },
+        (
+            _,
+            Literal(lv_right @ (LiteralValue::Int(_) | LiteralValue::Float(_))),
+        ) => {
+            let rhs = lv_right.to_any_value().unwrap().dtype();
+            st = get_supertype(type_left, &rhs).unwrap();
+        },
+        // (Literal(_ @ (LiteralValue::Int(_) | LiteralValue::Float(_))),
+        //     _) => {
+        // }
         //     (Literal(LiteralValue::Float(_)), Literal(LiteralValue::Int(_))) => {
         //         DataType::Unknown(UnknownKind::Float)
         //     }
@@ -204,22 +221,22 @@ fn modify_supertype(
         //     // do nothing and use supertype
         //     (Literal(_), Literal(_)) => {},
 
-        // cast literal to right type if they fit in the range
-        (Literal(value), _) => {
-            if let Some(lit_val) = value.to_any_value() {
-                if type_right.value_within_range(lit_val) {
-                    st = type_right.clone();
-                }
-            }
-        },
-        // cast literal to left type
-        (_, Literal(value)) => {
-            if let Some(lit_val) = value.to_any_value() {
-                if type_left.value_within_range(lit_val) {
-                    st = type_left.clone();
-                }
-            }
-        },
+        // // cast literal to right type if they fit in the range
+        // (Literal(value), _) => {
+        //     if let Some(lit_val) = value.to_any_value() {
+        //         if type_right.value_within_range(lit_val) {
+        //             st = type_right.clone();
+        //         }
+        //     }
+        // },
+        // // cast literal to left type
+        // (_, Literal(value)) => {
+        //     if let Some(lit_val) = value.to_any_value() {
+        //         if type_left.value_within_range(lit_val) {
+        //             st = type_left.clone();
+        //         }
+        //     }
+        // },
         // do nothing
         _ => {},
     }

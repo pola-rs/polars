@@ -139,22 +139,35 @@ impl LiteralValue {
                 // Try to get the smallest fitting value.
                 // Yeah, ugly, I know.
                 let v = *v;
-                match i8::try_from(v).ok() {
-                    Some(v) => AnyValue::Int8(v),
-                    None => match i16::try_from(v).ok() {
-                        Some(v) => AnyValue::Int16(v),
-                        None => match i32::try_from(v).ok() {
-                            Some(v) => AnyValue::Int32(v),
-                            None => match i64::try_from(v).ok() {
-                                Some(v) => AnyValue::Int64(v),
-                                None => match u64::try_from(v).ok() {
-                                    Some(v) => AnyValue::UInt64(v),
-                                    None => return None,
-                                },
-                            },
+
+                match i32::try_from(v).ok() {
+                    Some(v) => AnyValue::Int32(v),
+                    None => match i64::try_from(v).ok() {
+                        Some(v) => AnyValue::Int64(v),
+                        None => match u64::try_from(v).ok() {
+                            Some(v) => AnyValue::UInt64(v),
+                            None => return None,
                         },
                     },
                 }
+
+                // Do full smaller types at next PR.
+                // match i8::try_from(v).ok() {
+                //     Some(v) => AnyValue::Int8(v),
+                //     None => match i16::try_from(v).ok() {
+                //         Some(v) => AnyValue::Int16(v),
+                //         None => match i32::try_from(v).ok() {
+                //             Some(v) => AnyValue::Int32(v),
+                //             None => match i64::try_from(v).ok() {
+                //                 Some(v) => AnyValue::Int64(v),
+                //                 None => match u64::try_from(v).ok() {
+                //                     Some(v) => AnyValue::UInt64(v),
+                //                     None => return None,
+                //                 },
+                //             },
+                //         },
+                //     },
+                // }
             },
             Float(v) => AnyValue::Float64(*v),
             Range {
