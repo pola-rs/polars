@@ -1,5 +1,5 @@
 """
-Various benchmark tests.
+Various tests that should be run on a release build.
 
 Tests in this module will be run in the CI using a release build of Polars.
 
@@ -17,7 +17,7 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 # Mark all tests in this module as benchmark tests
-pytestmark = pytest.mark.benchmark()
+pytestmark = pytest.mark.release()
 
 
 def test_read_scan_large_csv(groupby_data: pl.DataFrame, tmp_path: Path) -> None:

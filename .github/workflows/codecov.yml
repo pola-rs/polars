@@ -113,14 +113,14 @@ jobs:
 
       - name: Run Python tests
         working-directory: py-polars
-        run: pytest --cov -n auto --dist loadgroup -m "not benchmark and not docs" --cov-report xml:main.xml
+        run: pytest --cov -n auto --dist loadgroup -m "not benchmark and not release and not docs" --cov-report xml:main.xml
         continue-on-error: true
 
       - name: Run Python tests - async reader
         working-directory: py-polars
         env:
           POLARS_FORCE_ASYNC: 1
-        run: pytest --cov -m "not benchmark and not docs" tests/unit/io/ --cov-report xml:async.xml
+        run: pytest --cov -m "not benchmark and not release and not docs" tests/unit/io/ --cov-report xml:async.xml
         continue-on-error: true
 
       - name: Report Rust coverage
