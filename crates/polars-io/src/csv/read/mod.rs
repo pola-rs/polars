@@ -1,8 +1,12 @@
-use super::*;
-use crate::csv::read_impl::{
-    to_batched_owned_mmap, to_batched_owned_read, BatchedCsvReaderMmap, BatchedCsvReaderRead,
-    OwnedBatchedCsvReader, OwnedBatchedCsvReaderMmap,
+mod read_impl;
+
+use read_impl::{
+    to_batched_owned_mmap, to_batched_owned_read, CoreReader, OwnedBatchedCsvReader,
+    OwnedBatchedCsvReaderMmap,
 };
+pub use read_impl::{BatchedCsvReaderMmap, BatchedCsvReaderRead};
+
+use super::*;
 use crate::csv::utils::infer_file_schema;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]

@@ -42,7 +42,6 @@
 //!
 pub(crate) mod buffer;
 pub(crate) mod parser;
-pub mod read_impl;
 
 mod read;
 pub(super) mod splitfields;
@@ -60,13 +59,15 @@ use polars_core::prelude::*;
 use polars_time::prelude::*;
 #[cfg(feature = "temporal")]
 use rayon::prelude::*;
-pub use read::{CommentPrefix, CsvEncoding, CsvParserOptions, CsvReader, NullValues};
+pub use read::{
+    BatchedCsvReaderMmap, BatchedCsvReaderRead, CommentPrefix, CsvEncoding, CsvParserOptions,
+    CsvReader, NullValues,
+};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 pub use write::{BatchedWriter, CsvWriter, CsvWriterOptions, QuoteStyle};
 pub use write_impl::SerializeOptions;
 
-use crate::csv::read_impl::CoreReader;
 use crate::mmap::MmapBytesReader;
 use crate::predicates::PhysicalIoExpr;
 use crate::utils::{get_reader_bytes, resolve_homedir};
