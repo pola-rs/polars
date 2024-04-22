@@ -158,16 +158,19 @@ class NotebookFormatter(HTMLFormatter):
     """
 
     def write_style(self) -> None:
+        """Write <style> tag."""
+        cell_alignment = os.environ["POLARS_FMT_TABLE_CELL_ALIGNMENT"]
+        text_align = cell_alignment.lower() if cell_alignment in ["LEFT", "CENTER"] else "RIGHT"
         style = """\
             <style>
             .dataframe > thead > tr,
             .dataframe > tbody > tr {
-              text-align: right;
+              text-align: {text_align};
               white-space: pre-wrap;
             }
             </style>
         """
-        self.write(dedent(style))
+        self.write(dedent(style.format(text_align)))
 
     def render(self) -> list[str]:
         """Return the lines needed to render a HTML table."""
