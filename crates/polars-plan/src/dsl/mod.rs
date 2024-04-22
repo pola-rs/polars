@@ -1606,7 +1606,7 @@ impl Expr {
     /// needed to fit the extrema of this [`Series`].
     /// This can be used to reduce memory pressure.
     pub fn shrink_dtype(self) -> Self {
-        self.map_private(FunctionExpr::ShrinkType)
+        self.apply_private(FunctionExpr::ShrinkType)
     }
 
     #[cfg(feature = "dtype-struct")]
