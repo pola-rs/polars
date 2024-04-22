@@ -108,7 +108,8 @@ class HTMLFormatter:
                 with Tag(self.elements, "tr"):
                     columns = self.df.columns
                     for c in self.col_idx:
-                        with Tag(self.elements, "th", attributes=self.get_attributes(col_idx=c)):
+                        _dict = {"attributes": self.get_attributes(col_idx=c)}
+                        with Tag(self.elements, "th", **_dict):
                             if c == -1:
                                 self.elements.append("&hellip;")
                             else:
@@ -119,7 +120,8 @@ class HTMLFormatter:
                 with Tag(self.elements, "tr"):
                     dtypes = self.df._df.dtype_strings()
                     for c in self.col_idx:
-                        with Tag(self.elements, "td", attributes=self.get_attributes(col_idx=c)):
+                        _dict = {"attributes": self.get_attributes(col_idx=c)}
+                        with Tag(self.elements, "td", **_dict):
                             if c == -1:
                                 self.elements.append("&hellip;")
                             else:
@@ -132,7 +134,8 @@ class HTMLFormatter:
             for r in self.row_idx:
                 with Tag(self.elements, "tr"):
                     for c in self.col_idx:
-                        with Tag(self.elements, "td", attributes=self.get_attributes(col_idx=c)):
+                        _dict = {"attributes": self.get_attributes(col_idx=c)}
+                        with Tag(self.elements, "td", **_dict):
                             if r == -1 or c == -1:
                                 self.elements.append("&hellip;")
                             else:
