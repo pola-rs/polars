@@ -98,8 +98,8 @@ class HTMLFormatter:
         else:
             self.col_idx = range(df.width)
 
-        self.overall_align_lower: overall_alignment.lower()
-        self.numeric_align_lower: numeric_alignment.lower()
+        self.overall_align_lower = overall_alignment.lower()
+        self.numeric_align_lower = numeric_alignment.lower()
 
     def write_header(self) -> None:
         """Write the header of an HTML table."""
