@@ -5771,6 +5771,83 @@ class DataFrame:
 
         - date `2016-03-01` from `population` is matched with `2016-01-01` from `gdp`;
         - date `2018-08-01` from `population` is matched with `2019-01-01` from `gdp`.
+
+        They `by` argument allows joining on another column first, before the asof join.
+        In this example we join by `country` first, then asof join by date, as above.
+
+        >>> gdp_dates = pl.date_range(  # fmt: skip
+        ...     date(2016, 1, 1), date(2020, 1, 1), "1y", eager=True
+        ... )
+        >>> gdp2 = pl.DataFrame(
+        ...     {
+        ...         "country": ["Germany"] * 5 + ["Netherlands"] * 5,
+        ...         "date": pl.concat([gdp_dates, gdp_dates]),
+        ...         "gdp": [4164, 4411, 4566, 4696, 4827, 784, 833, 914, 910, 909],
+        ...     }
+        ... ).sort("country", "date")
+        >>>
+        >>> gdp2
+        shape: (10, 3)
+        ┌─────────────┬────────────┬──────┐
+        │ country     ┆ date       ┆ gdp  │
+        │ ---         ┆ ---        ┆ ---  │
+        │ str         ┆ date       ┆ i64  │
+        ╞═════════════╪════════════╪══════╡
+        │ Germany     ┆ 2016-01-01 ┆ 4164 │
+        │ Germany     ┆ 2017-01-01 ┆ 4411 │
+        │ Germany     ┆ 2018-01-01 ┆ 4566 │
+        │ Germany     ┆ 2019-01-01 ┆ 4696 │
+        │ Germany     ┆ 2020-01-01 ┆ 4827 │
+        │ Netherlands ┆ 2016-01-01 ┆ 784  │
+        │ Netherlands ┆ 2017-01-01 ┆ 833  │
+        │ Netherlands ┆ 2018-01-01 ┆ 914  │
+        │ Netherlands ┆ 2019-01-01 ┆ 910  │
+        │ Netherlands ┆ 2020-01-01 ┆ 909  │
+        └─────────────┴────────────┴──────┘
+        >>> pop2 = pl.DataFrame(
+        ...     {
+        ...         "country": ["Germany"] * 3 + ["Netherlands"] * 3,
+        ...         "date": [
+        ...             date(2016, 3, 1),
+        ...             date(2018, 8, 1),
+        ...             date(2019, 1, 1),
+        ...             date(2016, 3, 1),
+        ...             date(2018, 8, 1),
+        ...             date(2019, 1, 1),
+        ...         ],
+        ...         "population": [82.19, 82.66, 83.12, 17.11, 17.32, 17.40],
+        ...     }
+        ... ).sort("country", "date")
+        >>>
+        >>> pop2
+        shape: (6, 3)
+        ┌─────────────┬────────────┬────────────┐
+        │ country     ┆ date       ┆ population │
+        │ ---         ┆ ---        ┆ ---        │
+        │ str         ┆ date       ┆ f64        │
+        ╞═════════════╪════════════╪════════════╡
+        │ Germany     ┆ 2016-03-01 ┆ 82.19      │
+        │ Germany     ┆ 2018-08-01 ┆ 82.66      │
+        │ Germany     ┆ 2019-01-01 ┆ 83.12      │
+        │ Netherlands ┆ 2016-03-01 ┆ 17.11      │
+        │ Netherlands ┆ 2018-08-01 ┆ 17.32      │
+        │ Netherlands ┆ 2019-01-01 ┆ 17.4       │
+        └─────────────┴────────────┴────────────┘
+        >>> pop2.join_asof(gdp2, by="country", on="date", strategy="nearest")
+        shape: (6, 4)
+        ┌─────────────┬────────────┬────────────┬──────┐
+        │ country     ┆ date       ┆ population ┆ gdp  │
+        │ ---         ┆ ---        ┆ ---        ┆ ---  │
+        │ str         ┆ date       ┆ f64        ┆ i64  │
+        ╞═════════════╪════════════╪════════════╪══════╡
+        │ Germany     ┆ 2016-03-01 ┆ 82.19      ┆ 4164 │
+        │ Germany     ┆ 2018-08-01 ┆ 82.66      ┆ 4696 │
+        │ Germany     ┆ 2019-01-01 ┆ 83.12      ┆ 4696 │
+        │ Netherlands ┆ 2016-03-01 ┆ 17.11      ┆ 784  │
+        │ Netherlands ┆ 2018-08-01 ┆ 17.32      ┆ 910  │
+        │ Netherlands ┆ 2019-01-01 ┆ 17.4       ┆ 910  │
+        └─────────────┴────────────┴────────────┴──────┘
+
         """
         tolerance = deprecate_saturating(tolerance)
         if not isinstance(other, DataFrame):
