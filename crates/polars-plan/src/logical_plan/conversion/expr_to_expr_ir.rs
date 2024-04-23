@@ -215,7 +215,7 @@ fn to_aexpr_impl(expr: Expr, arena: &mut Arena<AExpr>, state: &mut ConversionSta
                     AAggExpr::Implode(to_aexpr_impl(owned(expr), arena, state))
                 },
                 AggExpr::Count(expr, include_nulls) => AAggExpr::Count(
-                    to_aexpr_impl(owned(expr), arena, state),
+                    to_aexpr_impl_materialized_lit(owned(expr), arena, state),
                     include_nulls,
                 ),
                 AggExpr::Quantile {

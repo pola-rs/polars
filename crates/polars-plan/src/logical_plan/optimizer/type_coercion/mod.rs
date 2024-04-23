@@ -9,6 +9,7 @@ use polars_utils::unitvec;
 
 use super::*;
 use crate::logical_plan::optimizer::type_coercion::binary::process_binary;
+use crate::prelude::AExpr::Ternary;
 
 pub struct TypeCoercionRule {}
 
@@ -161,6 +162,9 @@ fn modify_supertype(
     type_right: &DataType,
 ) -> DataType {
     use AExpr::*;
+
+    let dynamic_st_or_unknown = matches!(st, DataType::Unknown(_));
+
     match (left, right) {
         (
             Literal(lv_left @ (LiteralValue::Int(_) | LiteralValue::Float(_) | LiteralValue::Null)),
@@ -170,22 +174,20 @@ fn modify_supertype(
         ) => {
             let lhs = lv_left.to_any_value().unwrap().dtype();
             let rhs = lv_right.to_any_value().unwrap().dtype();
-            dbg!(&lhs, &rhs);
             st = dbg!(get_supertype(&lhs, &rhs).unwrap());
         },
+        // Materialize dynamic types
         (
             Literal(lv_left @ (LiteralValue::Int(_) | LiteralValue::Float(_))),
             _
-        ) => {
-            let lhs = lv_left.to_any_value().unwrap().dtype();
-            st = get_supertype(&lhs, type_right).unwrap();
+        ) if dynamic_st_or_unknown => {
+            st = lv_left.to_any_value().unwrap().dtype();
         },
         (
             _,
             Literal(lv_right @ (LiteralValue::Int(_) | LiteralValue::Float(_))),
-        ) => {
-            let rhs = lv_right.to_any_value().unwrap().dtype();
-            st = get_supertype(type_left, &rhs).unwrap();
+        ) if dynamic_st_or_unknown => {
+            st = lv_right.to_any_value().unwrap().dtype();
         },
         // (Literal(_ @ (LiteralValue::Int(_) | LiteralValue::Float(_))),
         //     _) => {
@@ -307,6 +309,15 @@ fn get_aexpr_and_type<'a>(
     ))
 }
 
+fn materialize(aexpr: &AExpr) -> Option<AExpr> {
+    match aexpr {
+        AExpr::Literal(lv) => Some(AExpr::Literal(lv.clone().materialize())),
+        _ => {
+            None
+        }
+    }
+}
+
 impl OptimizationRule for TypeCoercionRule {
     fn optimize_expr(
         &mut self,
@@ -323,7 +334,8 @@ impl OptimizationRule for TypeCoercionRule {
                 ref strict,
             } => {
                 let input = expr_arena.get(expr);
-                dbg!(data_type);
+
+                dbg!(input, data_type);
                 dbg!(inline_or_prune_cast(
                     input, data_type, *strict, lp_node, lp_arena, expr_arena
                 ))?
@@ -339,9 +351,57 @@ impl OptimizationRule for TypeCoercionRule {
                 let (falsy, type_false) =
                     unpack!(get_aexpr_and_type(expr_arena, falsy_node, &input_schema));
 
+                match (&type_true, &type_false)  {
+                    (DataType::Unknown(lhs), DataType::Unknown(rhs)) => {
+                        match (lhs, rhs) {
+                            (UnknownKind::Any, _) | (_, UnknownKind::Any) => return Ok(None),
+                            // continue
+                            (UnknownKind::Int, UnknownKind::Float) | (UnknownKind::Float, UnknownKind::Int) => {},
+                            (lhs, rhs) if lhs == rhs => {
+                                dbg!(&falsy, &truthy);
+                                let falsy = materialize(falsy);
+                                let truthy = materialize(truthy);
 
+                                if falsy.is_none() && truthy.is_none() {
+                                    return Ok(None)
+                                }
+
+                                let falsy = if let Some(falsy) = falsy {
+                                    expr_arena.add(falsy)
+                                } else {
+                                    falsy_node
+                                };
+                                let truthy = if let Some(truthy) = truthy {
+                                    expr_arena.add(truthy)
+                                } else {
+                                    truthy_node
+                                };
+                                return Ok(Some(Ternary {
+                                    truthy,
+                                    falsy,
+                                    predicate
+                                }))
+
+                            },
+                            _ => {}
+                        }
+                    },
+                    (lhs, rhs) if lhs == rhs => return Ok(None),
+                    _ => {}
+                }
+
+                dbg!(truthy, falsy, &type_true, &type_false);
+                // use DataType::*;
+                // match (&type_true, &type_false) {
+                //     (Unknown(UnknownKind::Float), Uknown(UnknownKind::Float)) => {
+                //         materialize()
+                //     }
+                // }
+
+                // unpack!(early_escape(&type_true, &type_false));
                 let st = unpack!(get_supertype(&type_true, &type_false));
-                unpack!(early_escape(&type_true, &type_false));
+                dbg!("try early");
+                dbg!("failed early");
                 let st = modify_supertype(st, truthy, falsy, &type_true, &type_false);
 
                 // only cast if the type is not already the super type.
@@ -687,11 +747,20 @@ fn inline_or_prune_cast(
                 LiteralValue::Series(SpecialEq::new(s))
             },
             lv @ LiteralValue::Int(_) | lv @ LiteralValue::Float(_) => {
-                let av = lv.to_any_value().ok_or_else(|| polars_err!(InvalidOperation: "literal value: {:?} too large for Polars", lv))?;
-                av.strict_cast(dtype).and_then(|out| out.try_into())?
+                let mut av = lv.to_any_value().ok_or_else(|| polars_err!(InvalidOperation: "literal value: {:?} too large for Polars", lv))?;
+
+                // if this fails we use the materialized version.
+                // this happens for instance in the case dyn to struct
+                if let Ok(av_casted) = av.strict_cast(dtype) {
+                    av = av_casted;
+                }
+                return Ok(Some(AExpr::Literal(av.try_into().unwrap())))
             },
             LiteralValue::Null => {
-                return Ok(None)
+                match dtype {
+                    DataType::Unknown(UnknownKind::Float | UnknownKind::Int) => return Ok(Some(AExpr::Literal(LiteralValue::Null))),
+                    _ => return Ok(None)
+                }
             }
             _ => {
                 let Some(av) = lv.to_any_value() else {
@@ -734,17 +803,17 @@ fn inline_or_prune_cast(
 }
 
 fn early_escape(type_self: &DataType, type_other: &DataType) -> Option<()> {
-    if matches!(type_self, DataType::Unknown(UnknownKind::Any))
-        || matches!(type_other, DataType::Unknown(UnknownKind::Any))
-        || type_self == type_other
-            && match (type_self, type_other) {
-                (DataType::Unknown(lhs), DataType::Unknown(rhs)) => lhs != rhs,
-                _ => true,
+    match (type_self, type_other)  {
+        (DataType::Unknown(lhs), DataType::Unknown(rhs)) => {
+            match (lhs, rhs) {
+                (UnknownKind::Any, _) | (_, UnknownKind::Any) => None,
+                (UnknownKind::Int, UnknownKind::Float) | (UnknownKind::Float, UnknownKind::Int) => Some(()),
+                (lhs, rhs) if lhs == rhs => None,
+                _ => Some(())
             }
-    {
-        None
-    } else {
-        Some(())
+        },
+        (lhs, rhs) if lhs == rhs => None,
+        _ => Some(())
     }
 }
 

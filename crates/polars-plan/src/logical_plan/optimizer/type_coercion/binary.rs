@@ -198,6 +198,7 @@ fn err_date_str_compare() -> PolarsResult<()> {
     }
 }
 
+
 pub(super) fn process_binary(
     expr_arena: &mut Arena<AExpr>,
     lp_arena: &Arena<IR>,
@@ -211,7 +212,34 @@ pub(super) fn process_binary(
         unpack!(get_aexpr_and_type(expr_arena, node_left, &input_schema));
     let (right, type_right): (&AExpr, DataType) =
         unpack!(get_aexpr_and_type(expr_arena, node_right, &input_schema));
-    unpack!(early_escape(&type_left, &type_right));
+
+    match (&type_left, &type_right) {
+        (Unknown(UnknownKind::Any), Unknown(UnknownKind::Any)) => return Ok(None),
+        (Unknown(UnknownKind::Any), Unknown(UnknownKind::Int | UnknownKind::Float)) => {
+            let right = unpack!(materialize(right));
+            let right = expr_arena.add(right);
+
+            return Ok(Some(AExpr::BinaryExpr {
+                left: node_left,
+                op,
+                right
+            }))
+        }
+        (Unknown(UnknownKind::Int | UnknownKind::Float), Unknown(UnknownKind::Any)) => {
+            let left = unpack!(materialize(left));
+            let left = expr_arena.add(left);
+
+            return Ok(Some(AExpr::BinaryExpr {
+                left,
+                op,
+                right: node_right
+            }))
+        }
+        _ => {
+            unpack!(early_escape(&type_left, &type_right));
+        }
+    }
+
 
     use DataType::*;
     // don't coerce string with number comparisons. They must error

@@ -195,9 +195,9 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
             (Time, Float64) => Some(Float64),
 
             // every known type can be casted to a string except binary
-            (dt, String) if !matches!(dt, DataType::Unknown(_)) && dt != &DataType::Binary => Some(String),
+            (dt, String) if !matches!(dt, DataType::Unknown(UnknownKind::Any)) && dt != &DataType::Binary => Some(String),
 
-            (dt, String) if !matches!(dt, DataType::Unknown(_)) => Some(String),
+            (dt, String) if !matches!(dt, DataType::Unknown(UnknownKind::Any)) => Some(String),
 
             (dt, Null) => Some(dt.clone()),
 
@@ -253,12 +253,19 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
                 let st = get_supertype(inner_left, inner_right)?;
                 Some(DataType::List(Box::new(st)))
             }
-
+            #[cfg(feature = "dtype-struct")]
+            (Struct(inner), right @ Unknown(UnknownKind::Float | UnknownKind::Int)) => {
+                match inner.get(0) {
+                    Some(inner) => get_supertype(&inner.dtype, right),
+                    None => None
+                }
+            },
             (dt, Unknown(kind)) => {
                 match kind {
                     UnknownKind::Int if dt.is_integer() => Some(dt.clone()),
                     UnknownKind::Float | UnknownKind::Int if dt.is_float() => Some(dt.clone()),
-                    UnknownKind::Float if dt.is_numeric() => Some(Unknown(UnknownKind::Float)),
+                    UnknownKind::Float if dt.is_numeric() | dt.is_null() => Some(Unknown(UnknownKind::Float)),
+                    UnknownKind::Int if dt.is_null() => Some(Unknown(UnknownKind::Int)),
                     _ => Some(Unknown(UnknownKind::Any))
                 }
             },
