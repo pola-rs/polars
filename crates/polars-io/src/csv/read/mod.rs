@@ -1,6 +1,6 @@
 //! Functionality for reading CSV files.
 //!
-//! Note: currently, [`CsvReader::new`] has an extra copy. If you want optimal performance,
+//! Note: currently, `CsvReader::new` has an extra copy. If you want optimal performance,
 //! it is advised to use [`CsvReader::from_path`] instead.
 //!
 //! # Examples
@@ -32,5 +32,3 @@ pub use read_impl::batched_mmap::{BatchedCsvReaderMmap, OwnedBatchedCsvReaderMma
 pub use read_impl::batched_read::{BatchedCsvReaderRead, OwnedBatchedCsvReader};
 pub use reader::CsvReader;
 pub use utils::{infer_file_schema, is_compressed};
-
-use crate::SerReader;

@@ -12,9 +12,11 @@ use polars_time::prelude::string::Pattern;
 use polars_utils::slice::GetSaferUnchecked;
 
 use crate::csv::read::options::{CommentPrefix, CsvEncoding, NullValues};
-use crate::csv::read::parser::{is_comment_line, next_line_position_naive};
 #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
-use crate::csv::read::parser::{next_line_position, skip_bom, skip_line_ending, SplitLines};
+use crate::csv::read::parser::next_line_position_naive;
+use crate::csv::read::parser::{
+    is_comment_line, next_line_position, skip_bom, skip_line_ending, SplitLines,
+};
 use crate::csv::read::splitfields::SplitFields;
 use crate::mmap::ReaderBytes;
 use crate::utils::{BOOLEAN_RE, FLOAT_RE, FLOAT_RE_DECIMAL, INTEGER_RE};

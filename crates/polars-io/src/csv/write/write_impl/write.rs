@@ -2,13 +2,9 @@ use std::io::Write;
 
 use arrow::array::NullArray;
 use arrow::legacy::time_zone::Tz;
-#[cfg(any(
-    feature = "dtype-date",
-    feature = "dtype-time",
-    feature = "dtype-datetime"
-))]
 use polars_core::prelude::*;
 use polars_core::POOL;
+use polars_error::polars_ensure;
 use polars_utils::contention_pool::LowContentionPool;
 use rayon::prelude::*;
 

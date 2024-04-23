@@ -1,4 +1,5 @@
 //! DataFrame module.
+#[cfg(feature = "zip_with")]
 use std::borrow::Cow;
 use std::{mem, ops};
 
