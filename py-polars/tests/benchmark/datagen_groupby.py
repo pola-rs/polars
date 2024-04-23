@@ -73,7 +73,18 @@ def _generate_data(n_rows: int, n_groups: int) -> pl.DataFrame:
             "v1": rng.choice(var_int_small, N),
             "v2": rng.choice(var_int_large, N),
             "v3": np.round(var_float, 6),
-        }
+        },
+        schema={
+            "id1": pl.String,
+            "id2": pl.String,
+            "id3": pl.String,
+            "id4": pl.Int32,
+            "id5": pl.Int32,
+            "id6": pl.Int32,
+            "v1": pl.Int32,
+            "v2": pl.Int32,
+            "v3": pl.Float64,
+        },
     )
 
 
