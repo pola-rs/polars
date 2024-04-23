@@ -1,7 +1,5 @@
 use std::path::PathBuf;
 
-use polars_io::csv::read::{CsvEncoding, CsvParserOptions, CsvReader};
-
 use super::*;
 
 pub struct CsvExec {

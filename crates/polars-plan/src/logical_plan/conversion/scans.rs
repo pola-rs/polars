@@ -1,8 +1,6 @@
 use std::io::Read;
 use std::path::PathBuf;
 
-#[cfg(feature = "csv")]
-use polars_io::csv::read::CsvParserOptions;
 #[cfg(feature = "cloud")]
 use polars_io::pl_async::get_runtime;
 use polars_io::prelude::*;
