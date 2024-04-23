@@ -2,6 +2,10 @@ coverage:
   status:
     project: off
     patch: off
+comment:
+  layout: "header, files, footer"
+  require_changes: true
+  after_n_builds: 4
 ignore:
   - crates/polars-arrow/src/io/flight/*.rs
   - crates/polars-arrow/src/io/ipc/append/*.rs
@@ -16,4 +20,3 @@ ignore:
   - crates/polars-arrow/src/array/union/*.rs
   - crates/polars-arrow/src/array/map/*.rs
   - crates/polars-arrow/src/array/fixed_size_binary/*.rs
-
