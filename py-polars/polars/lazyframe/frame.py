@@ -973,7 +973,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         streaming: bool = False,
     ) -> str | None:
         """
-        Show a plot of the query plan. Note that you should have graphviz installed.
+        Show a plot of the query plan.
+
+        Note that graphviz must be installed to render the visualization (if not
+        already present you can download it here: <https://graphviz.org/download>`_).
 
         Parameters
         ----------
@@ -1042,7 +1045,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 ["dot", "-Nshape=box", "-T" + output_type], input=f"{dot}".encode()
             )
         except (ImportError, FileNotFoundError):
-            msg = "Graphviz dot binary should be on your PATH"
+            msg = (
+                "The graphviz `dot` binary should be on your PATH."
+                "(If not installed you can download here: https://graphviz.org/download/)"
+            )
             raise ImportError(msg) from None
 
         if output_path:
