@@ -102,12 +102,10 @@ Polars uses [CodSpeed](https://codspeed.io/pola-rs/polars) for tracking the perf
 
 ### Generating data
 
-For many tests, a relatively large dataset must be generated first.
-We use an [R](https://www.r-project.org/) script to generate this data.
-The script was taken from the [H2O AI database benchmark](https://github.com/h2oai/db-benchmark), which is the foundation for many of the benchmark tests.
+For most tests, a relatively large dataset must be generated first.
+This is done as part of the `pytest` setup process.
 
-For the exact steps to generate the data, please refer to the [benchmark workflow](https://github.com/pola-rs/polars/blob/main/.github/workflows/benchmark.yml).
-It involves [installing R](https://cran.r-project.org/), installing the [data.table](https://cran.r-project.org/web/packages/data.table/) dependency, and executing a data generation script.
+The data generation logic was taken from the [H2O.ai database benchmark](https://github.com/h2oai/db-benchmark), which is the foundation for many of the benchmark tests.
 
 ### Running the benchmark tests
 

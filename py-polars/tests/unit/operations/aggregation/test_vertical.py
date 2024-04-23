@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import numpy as np
 import pytest
 
 import polars as pl
@@ -54,3 +55,22 @@ def test_alias_for_col_agg(function: str, input: str) -> None:
     expected = getattr(pl.col(input), function)()  # e.g. pl.col(input).min()
     context = pl.DataFrame({"a": [1, 4], "b": [3, 2]})
     assert_expr_equal(result, expected, context)
+
+
+@pytest.mark.release()
+def test_mean_overflow() -> None:
+    np.random.seed(1)
+    expected = 769.5607652
+
+    df = pl.DataFrame(np.random.randint(500, 1040, 5000000), schema=["value"])
+
+    result = df.with_columns(pl.mean("value"))[0, 0]
+    assert np.isclose(result, expected)
+
+    result = df.with_columns(pl.col("value").cast(pl.Int32)).with_columns(
+        pl.mean("value")
+    )[0, 0]
+    assert np.isclose(result, expected)
+
+    result = df.with_columns(pl.col("value").cast(pl.Int32)).get_column("value").mean()
+    assert np.isclose(result, expected)

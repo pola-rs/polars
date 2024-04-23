@@ -100,7 +100,7 @@ test-all: .venv build  ## Run all tests
 
 .PHONY: coverage
 coverage: .venv build  ## Run tests and report coverage
-	$(VENV_BIN)/pytest --cov -n auto --dist loadgroup -m "not benchmark"
+	$(VENV_BIN)/pytest --cov -n auto --dist loadgroup -m "not release and not benchmark"
 
 .PHONY: clean
 clean:  ## Clean up caches and build artifacts
