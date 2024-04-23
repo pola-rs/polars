@@ -496,7 +496,7 @@ impl<'a, R> SerReader<R> for CsvReader<'a, R>
 where
     R: MmapBytesReader + 'a,
 {
-    /// Create a new CsvReader from a file/ stream
+    /// Create a new CsvReader from a file/stream.
     fn new(reader: R) -> Self {
         CsvReader {
             reader,

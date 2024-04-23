@@ -3,6 +3,7 @@ use std::num::NonZeroUsize;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+/// Options for writing CSV files.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct CsvWriterOptions {
@@ -13,7 +14,6 @@ pub struct CsvWriterOptions {
     pub serialize_options: SerializeOptions,
 }
 
-/// Options for writing CSV files.
 impl Default for CsvWriterOptions {
     fn default() -> Self {
         Self {
@@ -32,13 +32,14 @@ impl Default for CsvWriterOptions {
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct SerializeOptions {
-    /// Used for [`DataType::Date`].
+    /// Used for [`DataType::Date`](polars_core::datatypes::DataType::Date).
     pub date_format: Option<String>,
-    /// Used for [`DataType::Time`].
+    /// Used for [`DataType::Time`](polars_core::datatypes::DataType::Time).
     pub time_format: Option<String>,
-    /// Used for [`DataType::Datetime`].
+    /// Used for [`DataType::Datetime`](polars_core::datatypes::DataType::Datetime).
     pub datetime_format: Option<String>,
-    /// Used for [`DataType::Float64`] and [`DataType::Float32`].
+    /// Used for [`DataType::Float64`](polars_core::datatypes::DataType::Float64)
+    /// and [`DataType::Float32`](polars_core::datatypes::DataType::Float32).
     pub float_precision: Option<usize>,
     /// Used as separator.
     pub separator: u8,
@@ -48,6 +49,7 @@ pub struct SerializeOptions {
     pub null: String,
     /// String appended after every row.
     pub line_terminator: String,
+    /// When to insert quotes.
     pub quote_style: QuoteStyle,
 }
 
