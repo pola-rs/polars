@@ -64,6 +64,25 @@ def test_pivot_no_values() -> None:
     assert_frame_equal(result, expected)
 
 
+def test_pivot_no_index() -> None:
+    df = pl.DataFrame(
+        {
+            "foo": ["A", "B", "C"],
+            "N": [1, 2, 3],
+        }
+    )
+    result = df.pivot(index=None, columns="foo", values="N", aggregate_function=None)
+
+    expected = pl.DataFrame(
+        {
+            "A": [1],
+            "B": [2],
+            "C": [3],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
 def test_pivot_list() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [[1, 1], [2, 2], [3, 3]]})
 

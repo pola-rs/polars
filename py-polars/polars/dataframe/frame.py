@@ -7160,7 +7160,8 @@ class DataFrame:
         │ b    ┆ 0.964028 ┆ 0.999954 │
         └──────┴──────────┴──────────┘
         """  # noqa: W505
-        index = _expand_selectors(self, index)
+        if index is not None:
+            index = _expand_selectors(self, index)
         columns = _expand_selectors(self, columns)
         if values is not None:
             values = _expand_selectors(self, values)
