@@ -41,12 +41,14 @@ jobs:
 
       - name: Create virtual environment
         run: |
-          python -m venv .venv
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          uv venv
           echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
+          echo "VIRTUAL_ENV=$GITHUB_WORKSPACE/.venv" >> $GITHUB_ENV
 
       - name: Install Python dependencies
         working-directory: py-polars
-        run: pip install -r requirements-dev.txt
+        run: uv pip install --compile-bytecode -r requirements-dev.txt
 
       - name: Set up Rust
         run: rustup show
