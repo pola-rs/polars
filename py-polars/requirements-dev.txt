@@ -9,6 +9,7 @@
 maturin
 # extra dependency for maturin (linux-only)
 patchelf; platform_system == 'Linux'
+pip
 
 # ------------
 # DEPENDENCIES
