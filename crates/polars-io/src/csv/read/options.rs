@@ -101,6 +101,23 @@ pub enum NullValues {
     Named(Vec<(String, String)>),
 }
 
+impl NullValues {
+    pub(super) fn compile(self, schema: &Schema) -> PolarsResult<NullValuesCompiled> {
+        Ok(match self {
+            NullValues::AllColumnsSingle(v) => NullValuesCompiled::AllColumnsSingle(v),
+            NullValues::AllColumns(v) => NullValuesCompiled::AllColumns(v),
+            NullValues::Named(v) => {
+                let mut null_values = vec!["".to_string(); schema.len()];
+                for (name, null_value) in v {
+                    let i = schema.try_index_of(&name)?;
+                    null_values[i] = null_value;
+                }
+                NullValuesCompiled::Columns(null_values)
+            },
+        })
+    }
+}
+
 pub(super) enum NullValuesCompiled {
     /// A single value that's used for all columns
     AllColumnsSingle(String),
@@ -135,22 +152,5 @@ impl NullValuesCompiled {
                 v.get_unchecked(index).as_bytes() == field
             },
         }
-    }
-}
-
-impl NullValues {
-    pub(super) fn compile(self, schema: &Schema) -> PolarsResult<NullValuesCompiled> {
-        Ok(match self {
-            NullValues::AllColumnsSingle(v) => NullValuesCompiled::AllColumnsSingle(v),
-            NullValues::AllColumns(v) => NullValuesCompiled::AllColumns(v),
-            NullValues::Named(v) => {
-                let mut null_values = vec!["".to_string(); schema.len()];
-                for (name, null_value) in v {
-                    let i = schema.try_index_of(&name)?;
-                    null_values[i] = null_value;
-                }
-                NullValuesCompiled::Columns(null_values)
-            },
-        })
     }
 }

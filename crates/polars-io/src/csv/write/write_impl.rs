@@ -1,3 +1,5 @@
+mod serializer;
+
 use std::io::Write;
 
 use arrow::array::NullArray;
@@ -7,8 +9,8 @@ use polars_core::POOL;
 use polars_error::polars_ensure;
 use polars_utils::contention_pool::LowContentionPool;
 use rayon::prelude::*;
+use serializer::{serializer_for, string_serializer};
 
-use super::serializer::{serializer_for, string_serializer};
 use crate::csv::write::SerializeOptions;
 
 pub(crate) fn write<W: Write>(

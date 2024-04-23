@@ -8,10 +8,10 @@ use polars_utils::index::Bounded;
 use polars_utils::slice::GetSaferUnchecked;
 use rayon::prelude::*;
 
-use crate::csv::read::buffer::Buffer;
-use crate::csv::read::options::{CommentPrefix, NullValuesCompiled};
-use crate::csv::read::splitfields::SplitFields;
-use crate::csv::read::utils::get_file_chunks;
+use super::buffer::Buffer;
+use super::options::{CommentPrefix, NullValuesCompiled};
+use super::splitfields::SplitFields;
+use super::utils::get_file_chunks;
 use crate::utils::get_reader_bytes;
 
 /// Read the number of rows without parsing columns
