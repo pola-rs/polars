@@ -71,7 +71,11 @@ where
     }
 }
 
-fn to_aexpr_impl_materialized_lit(expr: Expr, arena: &mut Arena<AExpr>, state: &mut ConversionState) -> Node {
+fn to_aexpr_impl_materialized_lit(
+    expr: Expr,
+    arena: &mut Arena<AExpr>,
+    state: &mut ConversionState,
+) -> Node {
     // Already convert `Lit Float and Lit Int` expressions that are not used in a binary / function expression.
     // This means they can be materialized immediately
     let e = match expr {
@@ -94,10 +98,6 @@ fn to_aexpr_impl_materialized_lit(expr: Expr, arena: &mut Arena<AExpr>, state: &
                 Arc::new(Expr::Literal(LiteralValue::try_from(av).unwrap())),
                 name,
             )
-        },
-        Expr::Literal(lv @ LiteralValue::Int(_) | lv @ LiteralValue::Float(_)) => {
-            let av = lv.to_any_value().unwrap();
-            Expr::Literal(LiteralValue::try_from(av).unwrap())
         },
         e => e,
     };
@@ -227,13 +227,17 @@ fn to_aexpr_impl(expr: Expr, arena: &mut Arena<AExpr>, state: &mut ConversionSta
                     quantile: to_aexpr_impl_materialized_lit(owned(quantile), arena, state),
                     interpol,
                 },
-                AggExpr::Sum(expr) => AAggExpr::Sum(to_aexpr_impl_materialized_lit(owned(expr), arena, state)),
-                AggExpr::Std(expr, ddof) => {
-                    AAggExpr::Std(to_aexpr_impl_materialized_lit(owned(expr), arena, state), ddof)
+                AggExpr::Sum(expr) => {
+                    AAggExpr::Sum(to_aexpr_impl_materialized_lit(owned(expr), arena, state))
                 },
-                AggExpr::Var(expr, ddof) => {
-                    AAggExpr::Var(to_aexpr_impl_materialized_lit(owned(expr), arena, state), ddof)
-                },
+                AggExpr::Std(expr, ddof) => AAggExpr::Std(
+                    to_aexpr_impl_materialized_lit(owned(expr), arena, state),
+                    ddof,
+                ),
+                AggExpr::Var(expr, ddof) => AAggExpr::Var(
+                    to_aexpr_impl_materialized_lit(owned(expr), arena, state),
+                    ddof,
+                ),
                 AggExpr::AggGroups(expr) => {
                     AAggExpr::AggGroups(to_aexpr_impl_materialized_lit(owned(expr), arena, state))
                 },

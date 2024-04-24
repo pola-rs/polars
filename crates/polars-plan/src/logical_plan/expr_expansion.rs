@@ -1,6 +1,4 @@
 //! this contains code used for rewriting projections, expanding wildcards, regex selection etc.
-use polars_core::utils::get_supertype;
-
 use super::*;
 
 /// This replace the wildcard Expr with a Column Expr. It also removes the Exclude Expr from the
@@ -378,28 +376,6 @@ fn expand_function_inputs(expr: Expr, schema: &Schema) -> Expr {
     })
 }
 
-/// this is determined in type coercion
-/// but checking a few types early can improve type stability (e.g. no need for unknown)
-fn early_supertype(inputs: &[Expr], schema: &Schema) -> Option<DataType> {
-    let mut arena = Arena::with_capacity(8);
-
-    let mut st = None;
-    for e in inputs {
-        let dtype = e
-            .to_field_amortized(schema, Context::Default, &mut arena)
-            .ok()?
-            .dtype;
-        arena.clear();
-        match st {
-            None => {
-                st = Some(dtype);
-            },
-            Some(st_val) => st = get_supertype(&st_val, &dtype),
-        }
-    }
-    st
-}
-
 #[derive(Copy, Clone)]
 struct ExpansionFlags {
     multiple_columns: bool,
@@ -460,6 +436,7 @@ pub(crate) fn rewrite_projections(
     let mut result = Vec::with_capacity(exprs.len() + schema.len());
 
     for mut expr in exprs {
+        #[cfg(feature = "dtype-struct")]
         let result_offset = result.len();
 
         // Functions can have col(["a", "b"]) or col(String) as inputs.

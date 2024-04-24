@@ -1,4 +1,5 @@
 use num_traits::Signed;
+
 use super::*;
 
 /// Given two data types, determine the data type that both types can safely be cast to.
@@ -256,7 +257,7 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
             }
             #[cfg(feature = "dtype-struct")]
             (Struct(inner), right @ Unknown(UnknownKind::Float | UnknownKind::Int(_))) => {
-                match inner.get(0) {
+                match inner.first() {
                     Some(inner) => get_supertype(&inner.dtype, right),
                     None => None
                 }
@@ -266,18 +267,19 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
                     UnknownKind::Float | UnknownKind::Int(_) if dt.is_float() | dt.is_string() => Some(dt.clone()),
                     UnknownKind::Float if dt.is_numeric() => Some(Unknown(UnknownKind::Float)),
                     UnknownKind::Str if dt.is_string() | dt.is_enum() => Some(dt.clone()),
+                    #[cfg(feature = "dtype-categorical")]
                     UnknownKind::Str if dt.is_categorical()  => {
                         let Categorical(_, ord) = dt else { unreachable!()};
                         Some(Categorical(None, *ord))
                     },
-                    dynam @ _ if dt.is_null() => Some(Unknown(*dynam)),
+                    dynam if dt.is_null() => Some(Unknown(*dynam)),
                     UnknownKind::Int(v) if dt.is_numeric() => {
                         let smallest_fitting_dtype = if dt.is_unsigned_integer() && v.is_positive() {
                             materialize_dyn_int_pos(*v).dtype()
                         } else {
                             materialize_smallest_dyn_int(*v).dtype()
                         };
-                        get_supertype(&dt, &smallest_fitting_dtype)
+                        get_supertype(dt, &smallest_fitting_dtype)
                     }
                     _ => Some(Unknown(UnknownKind::Any))
                 }
@@ -395,7 +397,7 @@ fn materialize_dyn_int_pos(v: i128) -> AnyValue<'static> {
                 Some(v) => AnyValue::UInt32(v),
                 None => match u64::try_from(v).ok() {
                     Some(v) => AnyValue::UInt64(v),
-                    None => AnyValue::Null
+                    None => AnyValue::Null,
                 },
             },
         },
@@ -415,7 +417,7 @@ fn materialize_smallest_dyn_int(v: i128) -> AnyValue<'static> {
                         Some(v) => AnyValue::UInt64(v),
                         None => AnyValue::Null,
                     },
-                }
+                },
             },
         },
     }

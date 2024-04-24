@@ -3,9 +3,9 @@ use std::hash::{Hash, Hasher};
 #[cfg(feature = "temporal")]
 use polars_core::export::chrono::{Duration as ChronoDuration, NaiveDate, NaiveDateTime};
 use polars_core::prelude::*;
+use polars_core::utils::materialize_dyn_int;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-use polars_core::utils::materialize_dyn_int;
 
 use crate::constants::{get_literal_name, LITERAL_NAME};
 use crate::prelude::*;
@@ -83,12 +83,11 @@ impl LiteralValue {
         }
     }
 
-    pub(crate) fn is_float(&self) -> bool {
-        matches!(self, LiteralValue::Float32(_) | LiteralValue::Float64(_))
-    }
-
     pub(crate) fn is_dynamic(&self) -> bool {
-        matches!(self, LiteralValue::Int(_) | LiteralValue::Float(_))
+        matches!(
+            self,
+            LiteralValue::Int(_) | LiteralValue::Float(_) | LiteralValue::StrCat(_)
+        )
     }
 
     pub fn materialize(self) -> Self {
@@ -97,7 +96,7 @@ impl LiteralValue {
                 let av = self.to_any_value().unwrap();
                 av.try_into().unwrap()
             },
-            lv => lv
+            lv => lv,
         }
     }
 
@@ -138,11 +137,9 @@ impl LiteralValue {
             #[cfg(feature = "dtype-time")]
             Time(v) => AnyValue::Time(*v),
             Series(s) => AnyValue::List(s.0.clone().into_series()),
-            Int(v) => {
-                materialize_dyn_int(*v)
-            },
+            Int(v) => materialize_dyn_int(*v),
             Float(v) => AnyValue::Float64(*v),
-            StrCat(v) => AnyValue::String(&v),
+            StrCat(v) => AnyValue::String(v),
             Range {
                 low,
                 high,
@@ -216,7 +213,7 @@ impl LiteralValue {
             LiteralValue::Time(_) => DataType::Time,
             LiteralValue::Int(v) => DataType::Unknown(UnknownKind::Int(*v)),
             LiteralValue::Float(_) => DataType::Unknown(UnknownKind::Float),
-            LiteralValue::StrCat(_) => DataType::Unknown(UnknownKind::Str)
+            LiteralValue::StrCat(_) => DataType::Unknown(UnknownKind::Str),
         }
     }
 }
@@ -311,21 +308,31 @@ macro_rules! make_literal {
     };
 }
 
+macro_rules! make_dyn_lit {
+    ($TYPE:ty, $SCALAR:ident) => {
+        impl Literal for $TYPE {
+            fn lit(self) -> Expr {
+                Expr::Literal(LiteralValue::$SCALAR(self.try_into().unwrap()))
+            }
+        }
+    };
+}
+
 make_literal!(bool, Boolean);
-make_literal!(f32, Float32);
-make_literal!(f64, Float64);
+make_dyn_lit!(f32, Float);
+make_dyn_lit!(f64, Float);
 #[cfg(feature = "dtype-i8")]
-make_literal!(i8, Int8);
+make_dyn_lit!(i8, Int);
 #[cfg(feature = "dtype-i16")]
-make_literal!(i16, Int16);
-make_literal!(i32, Int32);
-make_literal!(i64, Int64);
+make_dyn_lit!(i16, Int);
+make_dyn_lit!(i32, Int);
+make_dyn_lit!(i64, Int);
 #[cfg(feature = "dtype-u8")]
-make_literal!(u8, UInt8);
+make_dyn_lit!(u8, Int);
 #[cfg(feature = "dtype-u16")]
-make_literal!(u16, UInt16);
-make_literal!(u32, UInt32);
-make_literal!(u64, UInt64);
+make_dyn_lit!(u16, Int);
+make_dyn_lit!(u32, Int);
+make_dyn_lit!(u64, Int);
 
 /// The literal Null
 pub struct Null {}

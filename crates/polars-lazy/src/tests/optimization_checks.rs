@@ -295,12 +295,12 @@ pub fn test_predicate_block_cast() -> PolarsResult<()> {
     let lf1 = df
         .clone()
         .lazy()
-        .with_column(col("value").cast(DataType::Int16) * lit(0.1f32))
+        .with_column(col("value").cast(DataType::Int16) * lit(0.1).cast(DataType::Float32))
         .filter(col("value").lt(lit(2.5f32)));
 
     let lf2 = df
         .lazy()
-        .select([col("value").cast(DataType::Int16) * lit(0.1f32)])
+        .select([col("value").cast(DataType::Int16) * lit(0.1).cast(DataType::Float32)])
         .filter(col("value").lt(lit(2.5f32)));
 
     for lf in [lf1, lf2] {

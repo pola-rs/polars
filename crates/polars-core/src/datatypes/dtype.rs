@@ -228,16 +228,14 @@ impl DataType {
 
     /// Check if this [`DataType`] is a basic numeric type (excludes Decimal).
     pub fn is_numeric(&self) -> bool {
-        self.is_float()
-            || self.is_integer()
-            || self.is_dynamic()
+        self.is_float() || self.is_integer() || self.is_dynamic()
     }
 
     pub fn is_dynamic(&self) -> bool {
         matches!(
-                self,
-                DataType::Unknown(UnknownKind::Int(_) | UnknownKind::Float | UnknownKind::Str)
-            )
+            self,
+            DataType::Unknown(UnknownKind::Int(_) | UnknownKind::Float | UnknownKind::Str)
+        )
     }
 
     /// Check if this [`DataType`] is a boolean

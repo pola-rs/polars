@@ -13,6 +13,7 @@ use polars::io::avro::AvroCompression;
 use polars::series::ops::NullBehavior;
 use polars_core::utils::arrow::array::Array;
 use polars_core::utils::arrow::types::NativeType;
+use polars_core::utils::materialize_dyn_int;
 use polars_lazy::prelude::*;
 #[cfg(feature = "cloud")]
 use polars_rs::io::cloud::CloudOptions;
@@ -23,7 +24,6 @@ use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList, PySequence};
 use smartstring::alias::String as SmartString;
-use polars_core::utils::materialize_dyn_int;
 
 use crate::error::PyPolarsErr;
 #[cfg(feature = "object")]
@@ -178,7 +178,7 @@ impl ToPyObject for Wrap<DataType> {
                 let class = pl.getattr(intern!(py, "Float32")).unwrap();
                 class.call0().unwrap().into()
             },
-            DataType::Float64 | DataType::Unknown(UnknownKind::Float)=> {
+            DataType::Float64 | DataType::Unknown(UnknownKind::Float) => {
                 let class = pl.getattr(intern!(py, "Float64")).unwrap();
                 class.call0().unwrap().into()
             },

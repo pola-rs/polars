@@ -1,10 +1,10 @@
 mod binary;
 
 use std::borrow::Cow;
-use arrow::legacy::utils::CustomIterTools;
 
+use arrow::legacy::utils::CustomIterTools;
 use polars_core::prelude::*;
-use polars_core::utils::get_supertype;
+use polars_core::utils::{get_supertype, materialize_dyn_int};
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::unitvec;
 
@@ -23,136 +23,6 @@ macro_rules! unpack {
     };
 }
 
-// `dtype_other` comes from a column
-// so we shrink literal so it fits into that column dtype.
-fn shrink_literal(dtype_other: &DataType, literal: &LiteralValue) -> Option<DataType> {
-    match (dtype_other, literal) {
-        (DataType::UInt64, LiteralValue::Int64(v)) => {
-            if *v > 0 {
-                return Some(DataType::UInt64);
-            }
-        },
-        (DataType::UInt64, LiteralValue::Int32(v)) => {
-            if *v > 0 {
-                return Some(DataType::UInt64);
-            }
-        },
-        #[cfg(feature = "dtype-i16")]
-        (DataType::UInt64, LiteralValue::Int16(v)) => {
-            if *v > 0 {
-                return Some(DataType::UInt64);
-            }
-        },
-        #[cfg(feature = "dtype-i8")]
-        (DataType::UInt64, LiteralValue::Int8(v)) => {
-            if *v > 0 {
-                return Some(DataType::UInt64);
-            }
-        },
-        (DataType::UInt32, LiteralValue::Int64(v)) => {
-            if *v > 0 && *v < u32::MAX as i64 {
-                return Some(DataType::UInt32);
-            }
-        },
-        (DataType::UInt32, LiteralValue::Int32(v)) => {
-            if *v > 0 {
-                return Some(DataType::UInt32);
-            }
-        },
-        #[cfg(feature = "dtype-i16")]
-        (DataType::UInt32, LiteralValue::Int16(v)) => {
-            if *v > 0 {
-                return Some(DataType::UInt32);
-            }
-        },
-        #[cfg(feature = "dtype-i8")]
-        (DataType::UInt32, LiteralValue::Int8(v)) => {
-            if *v > 0 {
-                return Some(DataType::UInt32);
-            }
-        },
-        (DataType::UInt16, LiteralValue::Int64(v)) => {
-            if *v > 0 && *v < u16::MAX as i64 {
-                return Some(DataType::UInt16);
-            }
-        },
-        (DataType::UInt16, LiteralValue::Int32(v)) => {
-            if *v > 0 && *v < u16::MAX as i32 {
-                return Some(DataType::UInt16);
-            }
-        },
-        #[cfg(feature = "dtype-i16")]
-        (DataType::UInt16, LiteralValue::Int16(v)) => {
-            if *v > 0 {
-                return Some(DataType::UInt16);
-            }
-        },
-        #[cfg(feature = "dtype-i8")]
-        (DataType::UInt16, LiteralValue::Int8(v)) => {
-            if *v > 0 {
-                return Some(DataType::UInt16);
-            }
-        },
-        (DataType::UInt8, LiteralValue::Int64(v)) => {
-            if *v > 0 && *v < u8::MAX as i64 {
-                return Some(DataType::UInt8);
-            }
-        },
-        (DataType::UInt8, LiteralValue::Int32(v)) => {
-            if *v > 0 && *v < u8::MAX as i32 {
-                return Some(DataType::UInt8);
-            }
-        },
-        #[cfg(feature = "dtype-i16")]
-        (DataType::UInt8, LiteralValue::Int16(v)) => {
-            if *v > 0 && *v < u8::MAX as i16 {
-                return Some(DataType::UInt8);
-            }
-        },
-        #[cfg(feature = "dtype-i8")]
-        (DataType::UInt8, LiteralValue::Int8(v)) => {
-            if *v > 0 && *v < u8::MAX as i8 {
-                return Some(DataType::UInt8);
-            }
-        },
-        (DataType::Int32, LiteralValue::Int64(v)) => {
-            if *v <= i32::MAX as i64 {
-                return Some(DataType::Int32);
-            }
-        },
-        (DataType::Int16, LiteralValue::Int64(v)) => {
-            if *v <= i16::MAX as i64 {
-                return Some(DataType::Int16);
-            }
-        },
-        (DataType::Int16, LiteralValue::Int32(v)) => {
-            if *v <= i16::MAX as i32 {
-                return Some(DataType::Int16);
-            }
-        },
-        (DataType::Int8, LiteralValue::Int64(v)) => {
-            if *v <= i8::MAX as i64 {
-                return Some(DataType::Int8);
-            }
-        },
-        (DataType::Int8, LiteralValue::Int32(v)) => {
-            if *v <= i8::MAX as i32 {
-                return Some(DataType::Int8);
-            }
-        },
-        #[cfg(feature = "dtype-i16")]
-        (DataType::Int8, LiteralValue::Int16(v)) => {
-            if *v <= i8::MAX as i16 {
-                return Some(DataType::Int8);
-            }
-        },
-        _ => {
-            // the rest is done by supertypes.
-        },
-    }
-    None
-}
-
 /// determine if we use the supertype or not. For instance when we have a column Int64 and we compare with literal UInt32
 /// it would be wasteful to cast the column instead of the literal.
 fn modify_supertype(
@@ -168,9 +38,17 @@ fn modify_supertype(
 
     match (left, right) {
         (
-            Literal(lv_left @ (LiteralValue::Int(_) | LiteralValue::Float(_) | LiteralValue::StrCat(_) | LiteralValue::Null)),
             Literal(
-                lv_right @ (LiteralValue::Int(_) | LiteralValue::Float(_) | LiteralValue::StrCat(_) | LiteralValue::Null),
+                lv_left @ (LiteralValue::Int(_)
+                | LiteralValue::Float(_)
+                | LiteralValue::StrCat(_)
+                | LiteralValue::Null),
+            ),
+            Literal(
+                lv_right @ (LiteralValue::Int(_)
+                | LiteralValue::Float(_)
+                | LiteralValue::StrCat(_)
+                | LiteralValue::Null),
             ),
         ) => {
             let lhs = lv_left.to_any_value().unwrap().dtype();
@@ -179,67 +57,22 @@ fn modify_supertype(
         },
         // Materialize dynamic types
         (
-            Literal(lv_left @ (LiteralValue::Int(_) | LiteralValue::Float(_) | LiteralValue::StrCat(_))),
-            _
+            Literal(
+                lv_left @ (LiteralValue::Int(_) | LiteralValue::Float(_) | LiteralValue::StrCat(_)),
+            ),
+            _,
         ) if dynamic_st_or_unknown => {
             st = lv_left.to_any_value().unwrap().dtype();
         },
         (
             _,
-            Literal(lv_right @ (LiteralValue::Int(_) | LiteralValue::Float(_) | LiteralValue::StrCat(_))),
+            Literal(
+                lv_right
+                @ (LiteralValue::Int(_) | LiteralValue::Float(_) | LiteralValue::StrCat(_)),
+            ),
         ) if dynamic_st_or_unknown => {
             st = lv_right.to_any_value().unwrap().dtype();
         },
-        // (Literal(_ @ (LiteralValue::Int(_) | LiteralValue::Float(_))),
-        //     _) => {
-        // }
-        //     (Literal(LiteralValue::Float(_)), Literal(LiteralValue::Int(_))) => {
-        //         DataType::Unknown(UnknownKind::Float)
-        //     }
-        //     // don't let the literal f64 coerce the f32 column
-        //     (
-        //         Literal(LiteralValue::Float64(_) | LiteralValue::Int32(_) | LiteralValue::Int64(_)),
-        //         _,
-        //     ) if matches!(type_right, DataType::Float32) => st = DataType::Float32,
-        //     (
-        //         _,
-        //         Literal(LiteralValue::Float64(_) | LiteralValue::Int32(_) | LiteralValue::Int64(_)),
-        //     ) if matches!(type_left, DataType::Float32) => st = DataType::Float32,
-        //     // always make sure that we cast to floats if one of the operands is float
-        //     (Literal(lv), _) | (_, Literal(lv)) if lv.is_float() => {},
-        //
-        //     // TODO: see if we can activate this for columns as well.
-        //     // shrink the literal value if it fits in the column dtype
-        //     (Literal(LiteralValue::Series(_)), Literal(lv)) => {
-        //         if let Some(dtype) = shrink_literal(type_left, lv) {
-        //             st = dtype;
-        //         }
-        //     },
-        //     // shrink the literal value if it fits in the column dtype
-        //     (Literal(lv), Literal(LiteralValue::Series(_))) => {
-        //         if let Some(dtype) = shrink_literal(type_right, lv) {
-        //             st = dtype;
-        //         }
-        //     },
-        //     // do nothing and use supertype
-        //     (Literal(_), Literal(_)) => {},
-
-        // // cast literal to right type if they fit in the range
-        // (Literal(value), _) => {
-        //     if let Some(lit_val) = value.to_any_value() {
-        //         if type_right.value_within_range(lit_val) {
-        //             st = type_right.clone();
-        //         }
-        //     }
-        // },
-        // // cast literal to left type
-        // (_, Literal(value)) => {
-        //     if let Some(lit_val) = value.to_any_value() {
-        //         if type_left.value_within_range(lit_val) {
-        //             st = type_left.clone();
-        //         }
-        //     }
-        // },
         // do nothing
         _ => {},
     }
@@ -254,7 +87,9 @@ fn modify_supertype(
         },
         #[cfg(feature = "dtype-categorical")]
         (dt @ Enum(_, _), String | Unknown(UnknownKind::Str), _, AExpr::Literal(_))
-        | (String | Unknown(UnknownKind::Str), dt @ Enum(_, _), AExpr::Literal(_), _) => st = dt.clone(),
+        | (String | Unknown(UnknownKind::Str), dt @ Enum(_, _), AExpr::Literal(_), _) => {
+            st = dt.clone()
+        },
         // when then expression literals can have a different list type.
         // so we cast the literal to the other hand side.
         (List(inner), List(other), _, AExpr::Literal(_))
@@ -313,9 +148,7 @@ fn get_aexpr_and_type<'a>(
 fn materialize(aexpr: &AExpr) -> Option<AExpr> {
     match aexpr {
         AExpr::Literal(lv) => Some(AExpr::Literal(lv.clone().materialize())),
-        _ => {
-            None
-        }
+        _ => None,
     }
 }
 
@@ -336,10 +169,7 @@ impl OptimizationRule for TypeCoercionRule {
             } => {
                 let input = expr_arena.get(expr);
 
-                dbg!(input, data_type);
-                dbg!(inline_or_prune_cast(
-                    input, data_type, *strict, lp_node, lp_arena, expr_arena
-                ))?
+                inline_or_prune_cast(input, data_type, *strict, lp_node, lp_arena, expr_arena)?
             },
             AExpr::Ternary {
                 truthy: truthy_node,
@@ -352,20 +182,19 @@ impl OptimizationRule for TypeCoercionRule {
                 let (falsy, type_false) =
                     unpack!(get_aexpr_and_type(expr_arena, falsy_node, &input_schema));
 
-                dbg!(&type_true, &type_false);
-
-                match (&type_true, &type_false)  {
+                match (&type_true, &type_false) {
                     (DataType::Unknown(lhs), DataType::Unknown(rhs)) => {
                         match (lhs, rhs) {
                             (UnknownKind::Any, _) | (_, UnknownKind::Any) => return Ok(None),
                             // continue
-                            (UnknownKind::Int(_), UnknownKind::Float) | (UnknownKind::Float, UnknownKind::Int(_)) => {},
+                            (UnknownKind::Int(_), UnknownKind::Float)
+                            | (UnknownKind::Float, UnknownKind::Int(_)) => {},
                             (lhs, rhs) if lhs == rhs => {
                                 let falsy = materialize(falsy);
                                 let truthy = materialize(truthy);
 
                                 if falsy.is_none() && truthy.is_none() {
-                                    return Ok(None)
+                                    return Ok(None);
                                 }
 
                                 let falsy = if let Some(falsy) = falsy {
@@ -381,15 +210,14 @@ impl OptimizationRule for TypeCoercionRule {
                                 return Ok(Some(Ternary {
                                     truthy,
                                     falsy,
-                                    predicate
-                                }))
-
+                                    predicate,
+                                }));
                             },
-                            _ => {}
+                            _ => {},
                         }
                     },
                     (lhs, rhs) if lhs == rhs => return Ok(None),
-                    _ => {}
+                    _ => {},
                 }
 
                 let st = unpack!(get_supertype(&type_true, &type_false));
@@ -623,36 +451,27 @@ impl OptimizationRule for TypeCoercionRule {
                 ref input,
                 mut options,
             } if options.cast_to_supertypes => {
-
-                dbg!("repalce");
                 let input_schema = get_schema(lp_arena, lp_node);
                 let mut dtypes = Vec::with_capacity(input.len());
                 for e in input {
-                    let (_, dtype) = unpack!(get_aexpr_and_type(expr_arena, e.node(), &input_schema));
+                    let (_, dtype) =
+                        unpack!(get_aexpr_and_type(expr_arena, e.node(), &input_schema));
                     match dtype {
                         DataType::Unknown(UnknownKind::Any) => {
                             options.cast_to_supertypes = false;
-                            return Ok(None)
+                            return Ok(None);
                         },
-                        _ => {
-                            dtypes.push(dtype)
-                        }
+                        _ => dtypes.push(dtype),
                     }
-                };
+                }
 
                 if dtypes.iter().all_equal() {
                     options.cast_to_supertypes = false;
-                    return Ok(None)
+                    return Ok(None);
                 }
 
-                // let super_type = args_to_supertype(&dtypes)?;
-                // // satisfy bchk
-                // let function = function.clone();
-                // let input = input.clone();
-                //
-                // let input_schema = get_schema(lp_arena, lp_node);
-                //
-                let mut self_e = input[0].clone();
+                // TODO! use args_to_supertype.
+                let self_e = input[0].clone();
                 let (self_ae, type_self) =
                     unpack!(get_aexpr_and_type(expr_arena, self_e.node(), &input_schema));
 
@@ -682,67 +501,36 @@ impl OptimizationRule for TypeCoercionRule {
 
                 match super_type {
                     DataType::Unknown(UnknownKind::Float) => super_type = DataType::Float64,
-                    DataType::Unknown(UnknownKind::Int(_)) => super_type = DataType::Int64,
-                    _ => {}
+                    DataType::Unknown(UnknownKind::Int(v)) => {
+                        super_type = materialize_dyn_int(v).dtype()
+                    },
+                    _ => {},
                 }
 
-                let input = input.into_iter().zip(dtypes).map(|(mut e, dtype)| {
-                    match super_type {
-                        #[cfg(feature = "dtype-categorical")]
-                        DataType::Categorical(_, _) if dtype.is_string() => {
-                            // pass
-                        },
-                        _ => {
-                            if dtype != super_type {
-                                let n = expr_arena.add(AExpr::Cast {
-                                    expr: e.node(),
-                                    data_type: super_type.clone(),
-                                    strict: false,
-                                });
-                                e.set_node(n);
-                            }
+                let input = input
+                    .into_iter()
+                    .zip(dtypes)
+                    .map(|(mut e, dtype)| {
+                        match super_type {
+                            #[cfg(feature = "dtype-categorical")]
+                            DataType::Categorical(_, _) if dtype.is_string() => {
+                                // pass
+                            },
+                            _ => {
+                                if dtype != super_type {
+                                    let n = expr_arena.add(AExpr::Cast {
+                                        expr: e.node(),
+                                        data_type: super_type.clone(),
+                                        strict: false,
+                                    });
+                                    e.set_node(n);
+                                }
+                            },
                         }
-                    }
-                    e
-                }).collect::<Vec<_>>();
+                        e
+                    })
+                    .collect::<Vec<_>>();
 
-
-                // }
-                //
-                // // only cast if the type is not already the super type.
-                // // this can prevent an expensive flattening and subsequent aggregation
-                // // in a group_by context. To be able to cast the groups need to be
-                // // flattened
-                // if type_self != super_type {
-                //     let n = expr_arena.add(AExpr::Cast {
-                //         expr: self_e.node(),
-                //         data_type: super_type.clone(),
-                //         strict: false,
-                //     });
-                //     self_e.set_node(n);
-                // };
-                //
-                // let mut new_nodes = Vec::with_capacity(input.len());
-                // new_nodes.push(self_e);
-                //
-                // for other_node in &input[1..] {
-                //     let type_other =
-                //         match get_aexpr_and_type(expr_arena, other_node.node(), &input_schema) {
-                //             Some((_, type_other)) => type_other,
-                //             None => return Ok(None),
-                //         };
-                //     let mut other_node = other_node.clone();
-                //     if type_other != super_type {
-                //         let n = expr_arena.add(AExpr::Cast {
-                //             expr: other_node.node(),
-                //             data_type: super_type.clone(),
-                //             strict: false,
-                //         });
-                //         other_node.set_node(n);
-                //     }
-                //
-                //     new_nodes.push(other_node)
-                // }
                 // ensure we don't go through this on next iteration
                 options.cast_to_supertypes = false;
                 Some(AExpr::Function {
@@ -797,7 +585,7 @@ fn inline_or_prune_cast(
             },
             LiteralValue::StrCat(s) => {
                 let av = AnyValue::String(s).strict_cast(dtype).ok();
-                return Ok(av.map(|av| AExpr::Literal(av.try_into().unwrap())))
+                return Ok(av.map(|av| AExpr::Literal(av.try_into().unwrap())));
             },
             lv @ (LiteralValue::Int(_) | LiteralValue::Float(_)) => {
                 let mut av = lv.to_any_value().ok_or_else(|| polars_err!(InvalidOperation: "literal value: {:?} too large for Polars", lv))?;
@@ -807,14 +595,14 @@ fn inline_or_prune_cast(
                 if let Ok(av_casted) = av.strict_cast(dtype) {
                     av = av_casted;
                 }
-                return Ok(Some(AExpr::Literal(av.try_into().unwrap())))
+                return Ok(Some(AExpr::Literal(av.try_into().unwrap())));
             },
-            LiteralValue::Null => {
-                match dtype {
-                    DataType::Unknown(UnknownKind::Float | UnknownKind::Int(_) | UnknownKind::Str) => return Ok(Some(AExpr::Literal(LiteralValue::Null))),
-                    _ => return Ok(None)
-                }
-            }
+            LiteralValue::Null => match dtype {
+                DataType::Unknown(UnknownKind::Float | UnknownKind::Int(_) | UnknownKind::Str) => {
+                    return Ok(Some(AExpr::Literal(LiteralValue::Null)))
+                },
+                _ => return Ok(None),
+            },
             _ => {
                 let Some(av) = lv.to_any_value() else {
                     return Ok(None);
@@ -856,17 +644,16 @@ fn inline_or_prune_cast(
 }
 
 fn early_escape(type_self: &DataType, type_other: &DataType) -> Option<()> {
-    match (type_self, type_other)  {
-        (DataType::Unknown(lhs), DataType::Unknown(rhs)) => {
-            match (lhs, rhs) {
-                (UnknownKind::Any, _) | (_, UnknownKind::Any) => None,
-                (UnknownKind::Int(_), UnknownKind::Float) | (UnknownKind::Float, UnknownKind::Int(_)) => Some(()),
-                (lhs, rhs) if lhs == rhs => None,
-                _ => Some(())
-            }
+    match (type_self, type_other) {
+        (DataType::Unknown(lhs), DataType::Unknown(rhs)) => match (lhs, rhs) {
+            (UnknownKind::Any, _) | (_, UnknownKind::Any) => None,
+            (UnknownKind::Int(_), UnknownKind::Float)
+            | (UnknownKind::Float, UnknownKind::Int(_)) => Some(()),
+            (lhs, rhs) if lhs == rhs => None,
+            _ => Some(()),
         },
         (lhs, rhs) if lhs == rhs => None,
-        _ => Some(())
+        _ => Some(()),
     }
 }
 

@@ -578,9 +578,9 @@ impl OptimizationRule for SimplifyExprRule {
                                 (LiteralValue::UInt64(x), LiteralValue::UInt64(y)) => Some(
                                     AExpr::Literal(LiteralValue::Float64(*x as f64 / *y as f64)),
                                 ),
-                                (LiteralValue::Int(x), LiteralValue::Int(y)) => Some(
-                                    AExpr::Literal(LiteralValue::Float(*x as f64 / *y as f64)),
-                                ),
+                                (LiteralValue::Int(x), LiteralValue::Int(y)) => {
+                                    Some(AExpr::Literal(LiteralValue::Float(*x as f64 / *y as f64)))
+                                },
                                 _ => None,
                             }
                         } else {

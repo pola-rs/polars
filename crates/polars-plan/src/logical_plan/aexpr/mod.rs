@@ -419,11 +419,10 @@ impl AExpr {
 
     pub(crate) fn is_dynamic_literal(&self) -> bool {
         match self {
-           AExpr::Literal(lv) => lv.is_dynamic(),
-            _ => false
+            AExpr::Literal(lv) => lv.is_dynamic(),
+            _ => false,
         }
     }
-
 }
 
 impl AAggExpr {

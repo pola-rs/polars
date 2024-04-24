@@ -91,10 +91,9 @@ impl StackOptimizer {
                     while let Some(expr) = scratch.pop() {
                         let ae = unsafe { expr_arena.get_unchecked(expr.node()) };
                         match ae {
-                            AExpr::Literal(lv) if lv.is_dynamic() => {
-                                expr_arena.replace(expr.node(), AExpr::Literal(lv.clone().materialize()))
-                            },
-                            _ => {}
+                            AExpr::Literal(lv) if lv.is_dynamic() => expr_arena
+                                .replace(expr.node(), AExpr::Literal(lv.clone().materialize())),
+                            _ => {},
                         }
                     }
                 }

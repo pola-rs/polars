@@ -409,7 +409,7 @@ impl Hash for FunctionExpr {
             Sign => {},
             #[cfg(feature = "row_hash")]
             Hash(a, b, c, d) => (a, b, c, d).hash(state),
-            FillNull  => {},
+            FillNull => {},
             #[cfg(feature = "rolling_window")]
             RollingExpr(f) => {
                 f.hash(state);

@@ -198,7 +198,6 @@ fn err_date_str_compare() -> PolarsResult<()> {
     }
 }
 
-
 pub(super) fn process_binary(
     expr_arena: &mut Arena<AExpr>,
     lp_arena: &Arena<IR>,
@@ -213,29 +212,34 @@ pub(super) fn process_binary(
     let (right, type_right): (&AExpr, DataType) =
         unpack!(get_aexpr_and_type(expr_arena, node_right, &input_schema));
 
-    dbg!(&type_left, &type_right);
     match (&type_left, &type_right) {
         (Unknown(UnknownKind::Any), Unknown(UnknownKind::Any)) => return Ok(None),
-        (Unknown(UnknownKind::Any), Unknown(UnknownKind::Int(_) | UnknownKind::Float | UnknownKind::Str)) => {
+        (
+            Unknown(UnknownKind::Any),
+            Unknown(UnknownKind::Int(_) | UnknownKind::Float | UnknownKind::Str),
+        ) => {
             let right = unpack!(materialize(right));
             let right = expr_arena.add(right);
 
             return Ok(Some(AExpr::BinaryExpr {
                 left: node_left,
                 op,
-                right
-            }))
-        }
-        (Unknown(UnknownKind::Int(_) | UnknownKind::Float | UnknownKind::Str), Unknown(UnknownKind::Any)) => {
+                right,
+            }));
+        },
+        (
+            Unknown(UnknownKind::Int(_) | UnknownKind::Float | UnknownKind::Str),
+            Unknown(UnknownKind::Any),
+        ) => {
             let left = unpack!(materialize(left));
             let left = expr_arena.add(left);
 
             return Ok(Some(AExpr::BinaryExpr {
                 left,
                 op,
-                right: node_right
-            }))
-        }
+                right: node_right,
+            }));
+        },
         (Unknown(lhs), Unknown(rhs)) if lhs == rhs => {
             // Materialize if both are dynamic
             let left = unpack!(materialize(left));
@@ -243,17 +247,12 @@ pub(super) fn process_binary(
             let left = expr_arena.add(left);
             let right = expr_arena.add(right);
 
-            return Ok(Some(AExpr::BinaryExpr {
-                left,
-                op,
-                right
-            }))
-        }
+            return Ok(Some(AExpr::BinaryExpr { left, op, right }));
+        },
         _ => {
             unpack!(early_escape(&type_left, &type_right));
-        }
+        },
     }
-
 
     use DataType::*;
     // don't coerce string with number comparisons. They must error
@@ -265,25 +264,37 @@ pub(super) fn process_binary(
             return Ok(None)
         },
         #[cfg(feature = "dtype-categorical")]
-        (String | Unknown(UnknownKind::Str) | Categorical(_, _), dt, op) | (dt, Unknown(UnknownKind::Str) | String | Categorical(_, _), op)
+        (String | Unknown(UnknownKind::Str) | Categorical(_, _), dt, op)
+        | (dt, Unknown(UnknownKind::Str) | String | Categorical(_, _), op)
             if op.is_comparison() && dt.is_numeric() =>
         {
             return Ok(None)
         },
         #[cfg(feature = "dtype-categorical")]
-        ( Unknown(UnknownKind::Str) | String | Enum(_, _), dt, op) | (dt, Unknown(UnknownKind::Str) | String | Enum(_, _), op)
+        (Unknown(UnknownKind::Str) | String | Enum(_, _), dt, op)
+        | (dt, Unknown(UnknownKind::Str) | String | Enum(_, _), op)
             if op.is_comparison() && dt.is_numeric() =>
         {
             return Ok(None)
         },
         #[cfg(feature = "dtype-date")]
-        (Date, String | Unknown(UnknownKind::Str) , op) | (String | Unknown(UnknownKind::Str), Date, op) if op.is_comparison() => err_date_str_compare()?,
+        (Date, String | Unknown(UnknownKind::Str), op)
+        | (String | Unknown(UnknownKind::Str), Date, op)
+            if op.is_comparison() =>
+        {
+            err_date_str_compare()?
+        },
         #[cfg(feature = "dtype-datetime")]
-        (Datetime(_, _), String| Unknown(UnknownKind::Str), op) | (String| Unknown(UnknownKind::Str), Datetime(_, _), op) if op.is_comparison() => {
+        (Datetime(_, _), String | Unknown(UnknownKind::Str), op)
+        | (String | Unknown(UnknownKind::Str), Datetime(_, _), op)
+            if op.is_comparison() =>
+        {
             err_date_str_compare()?
         },
         #[cfg(feature = "dtype-time")]
-        (Time| Unknown(UnknownKind::Str), String, op) if op.is_comparison() => err_date_str_compare()?,
+        (Time | Unknown(UnknownKind::Str), String, op) if op.is_comparison() => {
+            err_date_str_compare()?
+        },
         // structs can be arbitrarily nested, leave the complexity to the caller for now.
         #[cfg(feature = "dtype-struct")]
         (Struct(_), Struct(_), _op) => return Ok(None),
@@ -319,9 +330,7 @@ pub(super) fn process_binary(
         // Coerce types:
 
         let st = unpack!(get_supertype(&type_left, &type_right));
-        dbg!(&st, &type_left, &type_right);
         let mut st = modify_supertype(st, left, right, &type_left, &type_right);
-        dbg!(&st);
 
         if is_cat_str_binary(&type_left, &type_right) {
             st = String

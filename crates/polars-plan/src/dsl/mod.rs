@@ -47,10 +47,7 @@ pub use arity::*;
 pub use array::*;
 use arrow::legacy::prelude::QuantileInterpolOptions;
 pub use expr::*;
-pub use function_expr::schema::{
-    FieldsMapper
-};
-pub(crate) use function_expr::schema::args_to_supertype;
+pub use function_expr::schema::FieldsMapper;
 pub use function_expr::*;
 pub use functions::*;
 pub use list::*;
@@ -946,8 +943,7 @@ impl Expr {
 
         Expr::Function {
             input,
-            function: FunctionExpr::FillNull
-            ,
+            function: FunctionExpr::FillNull,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ElementWise,
                 cast_to_supertypes: true,
