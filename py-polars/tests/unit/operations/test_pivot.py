@@ -69,15 +69,19 @@ def test_pivot_no_index() -> None:
         {
             "foo": ["A", "B", "C"],
             "N": [1, 2, 3],
+            "M": [4, 5, 6],
         }
     )
     result = df.pivot(index=None, columns="foo", values="N", aggregate_function=None)
 
     expected = pl.DataFrame(
         {
-            "A": [1],
-            "B": [2],
-            "C": [3],
+            "N_foo_A": [1],
+            "N_foo_B": [2],
+            "N_foo_C": [3],
+            "M_foo_A": [4],
+            "M_foo_B": [5],
+            "M_foo_C": [6],
         }
     )
     assert_frame_equal(result, expected)
