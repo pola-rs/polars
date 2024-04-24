@@ -15,7 +15,7 @@ fn test_pivot_date_() -> PolarsResult<()> {
     // Test with date as the `columns` input
     let out = pivot(
         &df,
-        ["index"],
+        Some(["index"]),
         ["values1"],
         Some(["values2"]),
         true,
@@ -33,7 +33,7 @@ fn test_pivot_date_() -> PolarsResult<()> {
     // Test with date as the `values` input.
     let mut out = pivot_stable(
         &df,
-        ["index"],
+        Some(["index"]),
         ["values2"],
         Some(["values1"]),
         true,
@@ -63,7 +63,7 @@ fn test_pivot_old() {
 
     let pvt = pivot(
         &df,
-        ["index"],
+        Some(["index"]),
         ["columns"],
         Some(["values"]),
         false,
@@ -78,7 +78,7 @@ fn test_pivot_old() {
     );
     let pvt = pivot(
         &df,
-        ["index"],
+        Some(["index"]),
         ["columns"],
         Some(["values"]),
         false,
@@ -92,7 +92,7 @@ fn test_pivot_old() {
     );
     let pvt = pivot(
         &df,
-        ["index"],
+        Some(["index"]),
         ["columns"],
         Some(["values"]),
         false,
@@ -106,7 +106,7 @@ fn test_pivot_old() {
     );
     let pvt = pivot(
         &df,
-        ["index"],
+        Some(["index"]),
         ["columns"],
         Some(["values"]),
         false,
@@ -120,7 +120,7 @@ fn test_pivot_old() {
     );
     let pvt = pivot(
         &df,
-        ["index"],
+        Some(["index"]),
         ["columns"],
         Some(["values"]),
         false,
@@ -148,7 +148,7 @@ fn test_pivot_categorical() -> PolarsResult<()> {
 
     let out = pivot(
         &df,
-        ["index"],
+        Some(["index"]),
         ["columns"],
         Some(["values"]),
         true,
@@ -173,7 +173,7 @@ fn test_pivot_new() -> PolarsResult<()> {
 
     let out = (pivot_stable(
         &df,
-        ["index1", "index2"],
+        Some(["index1", "index2"]),
         ["cols1"],
         Some(["values1"]),
         true,
@@ -190,7 +190,7 @@ fn test_pivot_new() -> PolarsResult<()> {
 
     let out = pivot_stable(
         &df,
-        ["index1", "index2"],
+        Some(["index1", "index2"]),
         ["cols1", "cols2"],
         Some(["values1"]),
         true,
@@ -221,7 +221,7 @@ fn test_pivot_2() -> PolarsResult<()> {
 
     let out = pivot_stable(
         &df,
-        ["index"],
+        Some(["index"]),
         ["columns"],
         Some(["values"]),
         false,
@@ -254,7 +254,7 @@ fn test_pivot_datetime() -> PolarsResult<()> {
 
     let out = pivot(
         &df,
-        ["index"],
+        Some(["index"]),
         ["columns"],
         Some(["values"]),
         false,

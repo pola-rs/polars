@@ -14,7 +14,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [end:df]
 
     // --8<-- [start:eager]
-    let out = pivot(&df, ["foo"], ["bar"], Some(["N"]), false, None, None)?;
+    let out = pivot(&df, Some(["foo"]), ["bar"], Some(["N"]), false, None, None)?;
     println!("{}", &out);
     // --8<-- [end:eager]
 
@@ -22,7 +22,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let q = df.lazy();
     let q2 = pivot(
         &q.collect()?,
-        ["foo"],
+        Some(["foo"]),
         ["bar"],
         Some(["N"]),
         false,
