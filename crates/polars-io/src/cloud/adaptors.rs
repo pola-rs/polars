@@ -120,7 +120,7 @@ mod tests {
 
     #[test]
     fn csv_to_local_objectstore_cloudwriter() {
-        use crate::csv::CsvWriter;
+        use crate::csv::write::CsvWriter;
         use crate::prelude::SerWriter;
 
         let mut df = example_dataframe();
@@ -144,7 +144,7 @@ mod tests {
     #[cfg_attr(target_os = "windows", ignore)]
     #[test]
     fn cloudwriter_from_cloudlocation_test() {
-        use crate::csv::CsvWriter;
+        use crate::csv::write::CsvWriter;
         use crate::prelude::SerWriter;
 
         let mut df = example_dataframe();

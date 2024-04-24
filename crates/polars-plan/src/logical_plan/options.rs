@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use polars_core::prelude::*;
 #[cfg(feature = "csv")]
-use polars_io::csv::CsvWriterOptions;
+use polars_io::csv::write::CsvWriterOptions;
 #[cfg(feature = "ipc")]
 use polars_io::ipc::IpcWriterOptions;
 #[cfg(feature = "json")]

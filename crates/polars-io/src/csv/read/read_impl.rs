@@ -1,11 +1,8 @@
-mod batched_mmap;
-mod batched_read;
+pub(super) mod batched_mmap;
+pub(super) mod batched_read;
 
 use std::fmt;
-use std::ops::Deref;
 
-pub use batched_mmap::*;
-pub use batched_read::*;
 use polars_core::config::verbose;
 use polars_core::prelude::*;
 use polars_core::utils::{accumulate_dataframes_vertical, handle_casting_failures};
@@ -15,11 +12,17 @@ use polars_time::prelude::*;
 use polars_utils::flatten;
 use rayon::prelude::*;
 
-use crate::csv::buffer::*;
-use crate::csv::parser::*;
-use crate::csv::read::{CommentPrefix, NullValuesCompiled};
-use crate::csv::utils::*;
-use crate::csv::{CsvEncoding, NullValues};
+use super::buffer::init_buffers;
+use super::options::{CommentPrefix, CsvEncoding, NullValues, NullValuesCompiled};
+use super::parser::{
+    get_line_stats, is_comment_line, next_line_position, next_line_position_naive, parse_lines,
+    skip_bom, skip_line_ending, skip_this_line, skip_whitespace_exclude,
+};
+#[cfg(any(feature = "decompress", feature = "decompress-fast"))]
+use super::utils::decompress;
+#[cfg(not(any(feature = "decompress", feature = "decompress-fast")))]
+use super::utils::is_compressed;
+use super::utils::{check_decimal_comma, get_file_chunks, infer_file_schema};
 use crate::mmap::ReaderBytes;
 use crate::predicates::PhysicalIoExpr;
 use crate::utils::update_row_counts;
@@ -449,6 +452,7 @@ impl<'a> CoreReader<'a> {
             remaining_bytes,
         ))
     }
+
     fn get_projection(&mut self) -> PolarsResult<Vec<usize>> {
         // we also need to sort the projection to have predictable output.
         // the `parse_lines` function expects this.

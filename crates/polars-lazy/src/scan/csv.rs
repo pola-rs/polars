@@ -1,8 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use polars_core::prelude::*;
-use polars_io::csv::utils::infer_file_schema;
-use polars_io::csv::{CommentPrefix, CsvEncoding, NullValues};
+use polars_io::csv::read::{infer_file_schema, CommentPrefix, CsvEncoding, NullValues};
 use polars_io::utils::get_reader_bytes;
 use polars_io::RowIndex;
 

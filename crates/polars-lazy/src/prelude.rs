@@ -1,5 +1,5 @@
 #[cfg(feature = "csv")]
-pub use polars_io::csv::CsvWriterOptions;
+pub use polars_io::csv::write::CsvWriterOptions;
 #[cfg(feature = "ipc")]
 pub use polars_io::ipc::IpcWriterOptions;
 #[cfg(feature = "json")]

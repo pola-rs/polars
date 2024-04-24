@@ -124,7 +124,7 @@ pub(super) fn csv_file_info(
 ) -> PolarsResult<FileInfo> {
     use std::io::Seek;
 
-    use polars_io::csv::utils::{infer_file_schema, is_compressed};
+    use polars_io::csv::read::{infer_file_schema, is_compressed};
     use polars_io::utils::get_reader_bytes;
 
     let path = get_path(paths)?;

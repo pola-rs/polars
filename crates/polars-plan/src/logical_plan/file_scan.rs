@@ -1,7 +1,7 @@
 use std::hash::{Hash, Hasher};
 
 #[cfg(feature = "csv")]
-use polars_io::csv::CsvParserOptions;
+use polars_io::csv::read::CsvParserOptions;
 #[cfg(feature = "ipc")]
 use polars_io::ipc::IpcScanOptions;
 #[cfg(feature = "parquet")]

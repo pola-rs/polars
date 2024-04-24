@@ -11,14 +11,12 @@ use polars_time::chunkedarray::string::infer as date_infer;
 use polars_time::prelude::string::Pattern;
 use polars_utils::slice::GetSaferUnchecked;
 
+use super::options::{CommentPrefix, CsvEncoding, NullValues};
 #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
-use crate::csv::parser::next_line_position_naive;
-use crate::csv::parser::{next_line_position, skip_bom, skip_line_ending, SplitLines};
-use crate::csv::splitfields::SplitFields;
-use crate::csv::CsvEncoding;
+use super::parser::next_line_position_naive;
+use super::parser::{is_comment_line, next_line_position, skip_bom, skip_line_ending, SplitLines};
+use super::splitfields::SplitFields;
 use crate::mmap::ReaderBytes;
-use crate::prelude::parser::is_comment_line;
-use crate::prelude::{CommentPrefix, NullValues};
 use crate::utils::{BOOLEAN_RE, FLOAT_RE, FLOAT_RE_DECIMAL, INTEGER_RE};
 
 pub(crate) fn get_file_chunks(

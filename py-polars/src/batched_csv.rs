@@ -1,13 +1,12 @@
 use std::path::PathBuf;
 use std::sync::Mutex;
 
+use polars::io::csv::read::{OwnedBatchedCsvReader, OwnedBatchedCsvReaderMmap};
 use polars::io::mmap::MmapBytesReader;
 use polars::io::RowIndex;
 use polars::prelude::*;
-use polars_rs::prelude::read_impl::OwnedBatchedCsvReader;
 use pyo3::prelude::*;
 
-use crate::prelude::read_impl::OwnedBatchedCsvReaderMmap;
 use crate::{PyDataFrame, PyPolarsErr, Wrap};
 
 enum BatchedReader {
