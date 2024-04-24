@@ -2710,7 +2710,7 @@ def test_tz_aware_day_weekday() -> None:
 
     df = df.with_columns(
         [
-            pl.col("date").dt.convert_time_zone("Asia/Tokyo").alias("tyo_date"),
+            pl.col("date").dt.convert_time_zone("Asia/Tokyo").alias("tk_date"),
             pl.col("date").dt.convert_time_zone("America/New_York").alias("ny_date"),
         ]
     )
@@ -2718,18 +2718,18 @@ def test_tz_aware_day_weekday() -> None:
     assert df.select(
         [
             pl.col("date").dt.day().alias("day"),
-            pl.col("tyo_date").dt.day().alias("tyo_day"),
+            pl.col("tk_date").dt.day().alias("tk_day"),
             pl.col("ny_date").dt.day().alias("ny_day"),
             pl.col("date").dt.weekday().alias("weekday"),
-            pl.col("tyo_date").dt.weekday().alias("tyo_weekday"),
+            pl.col("tk_date").dt.weekday().alias("tk_weekday"),
             pl.col("ny_date").dt.weekday().alias("ny_weekday"),
         ]
     ).to_dict(as_series=False) == {
         "day": [1, 4, 7],
-        "tyo_day": [1, 4, 7],
+        "tk_day": [1, 4, 7],
         "ny_day": [31, 3, 6],
         "weekday": [1, 4, 7],
-        "tyo_weekday": [1, 4, 7],
+        "tk_weekday": [1, 4, 7],
         "ny_weekday": [7, 3, 6],
     }
 
