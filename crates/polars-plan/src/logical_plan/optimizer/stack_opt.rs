@@ -44,7 +44,7 @@ impl StackOptimizer {
                 plan.copy_exprs(&mut scratch);
                 plan.copy_inputs(&mut plans);
 
-                let mut has_dyn_lits = false;
+                let mut has_dyn_literals = false;
 
                 // first do a single pass to ensure we process
                 // from leaves to root.
@@ -64,7 +64,7 @@ impl StackOptimizer {
                     {
                         let expr = unsafe { expr_arena.get_unchecked(current_expr_node) };
                         if expr.is_leaf() {
-                            has_dyn_lits = expr.is_dynamic_literal();
+                            has_dyn_literals = expr.is_dynamic_literal();
                             continue;
                         }
                     }
@@ -86,7 +86,7 @@ impl StackOptimizer {
                     expr.nodes(&mut exprs)
                 }
 
-                if has_dyn_lits {
+                if has_dyn_literals {
                     plan.copy_exprs(&mut scratch);
                     while let Some(expr) = scratch.pop() {
                         let ae = unsafe { expr_arena.get_unchecked(expr.node()) };
