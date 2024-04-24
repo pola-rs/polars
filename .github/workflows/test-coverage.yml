@@ -142,7 +142,7 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: py-polars/main.xml,py-polars/async.xml
-          root_dir: ${{ github.workspace }}/py-polars
+          root_dir: ${{ github.workspace }}
           flags: python
           fail_ci_if_error: true
 

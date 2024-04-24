@@ -3,9 +3,9 @@ coverage:
     project: off
     patch: off
 comment:
-  layout: "header, files, footer"
-  require_changes: true
-  after_n_builds: 4
+  layout: "header, diff, flags, files, footer"
+  require_changes: false
+  after_n_builds: 3
 ignore:
   - crates/polars-arrow/src/io/flight/*.rs
   - crates/polars-arrow/src/io/ipc/append/*.rs
