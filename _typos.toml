@@ -5,6 +5,7 @@ extend-ignore-identifiers-re = [
 
 [default.extend-identifiers]
 arange = "arange"
+bck = "bck"
 Fo = "Fo"
 ND = "ND"
 ba = "ba"
