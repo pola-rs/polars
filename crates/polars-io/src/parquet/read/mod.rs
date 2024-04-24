@@ -22,5 +22,7 @@ mod read_impl;
 mod reader;
 mod utils;
 
-pub use reader::*;
+pub use reader::{
+    BatchedParquetReader, ParallelStrategy, ParquetAsyncReader, ParquetOptions, ParquetReader,
+};
 pub use utils::materialize_empty_df;
