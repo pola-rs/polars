@@ -65,7 +65,7 @@ all = [
 ]
 
 [tool.maturin]
-include = ["rust-toolchain.toml"]
+include = [{ path = "rust-toolchain.toml", format = "sdist" }]
 
 [tool.mypy]
 files = ["polars", "tests"]
