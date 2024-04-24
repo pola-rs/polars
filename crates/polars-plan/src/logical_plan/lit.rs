@@ -223,6 +223,19 @@ pub trait Literal {
     fn lit(self) -> Expr;
 }
 
+pub trait TypedLiteral: Literal {
+    /// [Literal](Expr::Literal) expression.
+    fn typed_lit(self) -> Expr
+    where
+        Self: Sized,
+    {
+        self.lit()
+    }
+}
+
+impl TypedLiteral for String {}
+impl TypedLiteral for &str {}
+
 impl Literal for String {
     fn lit(self) -> Expr {
         Expr::Literal(LiteralValue::String(self))
@@ -308,6 +321,16 @@ macro_rules! make_literal {
     };
 }
 
+macro_rules! make_literal_typed {
+    ($TYPE:ty, $SCALAR:ident) => {
+        impl TypedLiteral for $TYPE {
+            fn typed_lit(self) -> Expr {
+                Expr::Literal(LiteralValue::$SCALAR(self))
+            }
+        }
+    };
+}
+
 macro_rules! make_dyn_lit {
     ($TYPE:ty, $SCALAR:ident) => {
         impl Literal for $TYPE {
@@ -319,6 +342,21 @@ macro_rules! make_dyn_lit {
 }
 
 make_literal!(bool, Boolean);
+make_literal_typed!(f32, Float32);
+make_literal_typed!(f64, Float64);
+#[cfg(feature = "dtype-i8")]
+make_literal_typed!(i8, Int8);
+#[cfg(feature = "dtype-i16")]
+make_literal_typed!(i16, Int16);
+make_literal_typed!(i32, Int32);
+make_literal_typed!(i64, Int64);
+#[cfg(feature = "dtype-u8")]
+make_literal_typed!(u8, UInt8);
+#[cfg(feature = "dtype-u16")]
+make_literal_typed!(u16, UInt16);
+make_literal_typed!(u32, UInt32);
+make_literal_typed!(u64, UInt64);
+
 make_dyn_lit!(f32, Float);
 make_dyn_lit!(f64, Float);
 #[cfg(feature = "dtype-i8")]
@@ -333,6 +371,7 @@ make_dyn_lit!(u8, Int);
 make_dyn_lit!(u16, Int);
 make_dyn_lit!(u32, Int);
 make_dyn_lit!(u64, Int);
+make_dyn_lit!(i128, Int);
 
 /// The literal Null
 pub struct Null {}
@@ -405,6 +444,10 @@ impl Literal for LiteralValue {
 /// the column is `5`.
 pub fn lit<L: Literal>(t: L) -> Expr {
     t.lit()
+}
+
+pub fn typed_lit<L: TypedLiteral>(t: L) -> Expr {
+    t.typed_lit()
 }
 
 impl Hash for LiteralValue {
