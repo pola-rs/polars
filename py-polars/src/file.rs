@@ -230,7 +230,7 @@ pub fn get_mmap_bytes_reader<'a>(
         let f = polars_utils::open_file(p).map_err(PyPolarsErr::from)?;
         Ok(Box::new(f))
     }
-    // hopfully a normal python file: with open(...) as f:.
+    // hopefully a normal python file: with open(...) as f:.
     else {
         // we can still get a file name, inform the user of possibly wrong API usage.
         if py_f.getattr("read").is_ok() && py_f.getattr("name").is_ok() {
