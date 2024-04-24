@@ -275,7 +275,7 @@ def test_replace_str_to_int_fill_null() -> None:
         .fill_null(999)
     )
 
-    expected = pl.LazyFrame({"a": [1, 999]})
+    expected = pl.LazyFrame({"a": pl.Series([1, 999], dtype=pl.UInt32)})
     assert_frame_equal(result, expected)
 
 

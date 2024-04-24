@@ -42,6 +42,12 @@ macro_rules! eval_binary_same_type {
                 (LiteralValue::UInt64($l), LiteralValue::UInt64($r)) => {
                     Some(AExpr::Literal(LiteralValue::UInt64($ret)))
                 },
+                (LiteralValue::Float($l), LiteralValue::Float($r)) => {
+                    Some(AExpr::Literal(LiteralValue::Float($ret)))
+                },
+                (LiteralValue::Int($l), LiteralValue::Int($r)) => {
+                    Some(AExpr::Literal(LiteralValue::Int($ret)))
+                },
                 _ => None,
             }
         } else {
@@ -303,7 +309,7 @@ fn string_addition_to_linear_concat(
             return None;
         }
 
-        if type_a == DataType::String {
+        if type_a.is_string() {
             match (left_aexpr, right_aexpr) {
                 // concat + concat
                 (

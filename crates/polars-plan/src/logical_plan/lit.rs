@@ -61,6 +61,8 @@ pub enum LiteralValue {
     Float(f64),
     // Used for dynamic languages
     Int(i128),
+    // Dynamic string, still needs to be made concrete.
+    StrCat(String),
 }
 
 impl LiteralValue {
@@ -88,9 +90,9 @@ impl LiteralValue {
         matches!(self, LiteralValue::Int(_) | LiteralValue::Float(_))
     }
 
-    pub(crate) fn materialize(self) -> Self {
+    pub fn materialize(self) -> Self {
         match self {
-            LiteralValue::Int(_) | LiteralValue::Float(_) => {
+            LiteralValue::Int(_) | LiteralValue::Float(_) | LiteralValue::StrCat(_) => {
                 let av = self.to_any_value().unwrap();
                 av.try_into().unwrap()
             },
@@ -170,6 +172,7 @@ impl LiteralValue {
                 // }
             },
             Float(v) => AnyValue::Float64(*v),
+            StrCat(v) => AnyValue::String(&v),
             Range {
                 low,
                 high,
@@ -243,6 +246,7 @@ impl LiteralValue {
             LiteralValue::Time(_) => DataType::Time,
             LiteralValue::Int(_) => DataType::Unknown(UnknownKind::Int),
             LiteralValue::Float(_) => DataType::Unknown(UnknownKind::Float),
+            LiteralValue::StrCat(_) => DataType::Unknown(UnknownKind::Str)
         }
     }
 }
@@ -260,7 +264,7 @@ impl Literal for String {
 
 impl<'a> Literal for &'a str {
     fn lit(self) -> Expr {
-        Expr::Literal(LiteralValue::String(self.to_owned()))
+        Expr::Literal(LiteralValue::String(self.to_string()))
     }
 }
 

@@ -1,6 +1,7 @@
 mod binary;
 
 use std::borrow::Cow;
+use arrow::legacy::utils::CustomIterTools;
 
 use polars_core::prelude::*;
 use polars_core::utils::get_supertype;
@@ -14,12 +15,12 @@ use crate::prelude::AExpr::Ternary;
 pub struct TypeCoercionRule {}
 
 macro_rules! unpack {
-    ($packed:expr) => {{
+    ($packed:expr) => {
         match $packed {
             Some(payload) => payload,
             None => return Ok(None),
         }
-    }};
+    };
 }
 
 // `dtype_other` comes from a column
@@ -167,25 +168,25 @@ fn modify_supertype(
 
     match (left, right) {
         (
-            Literal(lv_left @ (LiteralValue::Int(_) | LiteralValue::Float(_) | LiteralValue::Null)),
+            Literal(lv_left @ (LiteralValue::Int(_) | LiteralValue::Float(_) | LiteralValue::StrCat(_) | LiteralValue::Null)),
             Literal(
-                lv_right @ (LiteralValue::Int(_) | LiteralValue::Float(_) | LiteralValue::Null),
+                lv_right @ (LiteralValue::Int(_) | LiteralValue::Float(_) | LiteralValue::StrCat(_) | LiteralValue::Null),
             ),
         ) => {
             let lhs = lv_left.to_any_value().unwrap().dtype();
             let rhs = lv_right.to_any_value().unwrap().dtype();
-            st = dbg!(get_supertype(&lhs, &rhs).unwrap());
+            st = get_supertype(&lhs, &rhs).unwrap();
         },
         // Materialize dynamic types
         (
-            Literal(lv_left @ (LiteralValue::Int(_) | LiteralValue::Float(_))),
+            Literal(lv_left @ (LiteralValue::Int(_) | LiteralValue::Float(_) | LiteralValue::StrCat(_))),
             _
         ) if dynamic_st_or_unknown => {
             st = lv_left.to_any_value().unwrap().dtype();
         },
         (
             _,
-            Literal(lv_right @ (LiteralValue::Int(_) | LiteralValue::Float(_))),
+            Literal(lv_right @ (LiteralValue::Int(_) | LiteralValue::Float(_) | LiteralValue::StrCat(_))),
         ) if dynamic_st_or_unknown => {
             st = lv_right.to_any_value().unwrap().dtype();
         },
@@ -247,13 +248,13 @@ fn modify_supertype(
     match (type_left, type_right, left, right) {
         // if the we compare a categorical to a literal string we want to cast the literal to categorical
         #[cfg(feature = "dtype-categorical")]
-        (Categorical(_, ordering), String, _, AExpr::Literal(_))
-        | (String, Categorical(_, ordering), AExpr::Literal(_), _) => {
+        (Categorical(_, ordering), String | Unknown(UnknownKind::Str), _, AExpr::Literal(_))
+        | (String | Unknown(UnknownKind::Str), Categorical(_, ordering), AExpr::Literal(_), _) => {
             st = Categorical(None, *ordering)
         },
         #[cfg(feature = "dtype-categorical")]
-        (dt @ Enum(_, _), String, _, AExpr::Literal(_))
-        | (String, dt @ Enum(_, _), AExpr::Literal(_), _) => st = dt.clone(),
+        (dt @ Enum(_, _), String | Unknown(UnknownKind::Str), _, AExpr::Literal(_))
+        | (String | Unknown(UnknownKind::Str), dt @ Enum(_, _), AExpr::Literal(_), _) => st = dt.clone(),
         // when then expression literals can have a different list type.
         // so we cast the literal to the other hand side.
         (List(inner), List(other), _, AExpr::Literal(_))
@@ -351,6 +352,8 @@ impl OptimizationRule for TypeCoercionRule {
                 let (falsy, type_false) =
                     unpack!(get_aexpr_and_type(expr_arena, falsy_node, &input_schema));
 
+                dbg!(&type_true, &type_false);
+
                 match (&type_true, &type_false)  {
                     (DataType::Unknown(lhs), DataType::Unknown(rhs)) => {
                         match (lhs, rhs) {
@@ -358,7 +361,6 @@ impl OptimizationRule for TypeCoercionRule {
                             // continue
                             (UnknownKind::Int, UnknownKind::Float) | (UnknownKind::Float, UnknownKind::Int) => {},
                             (lhs, rhs) if lhs == rhs => {
-                                dbg!(&falsy, &truthy);
                                 let falsy = materialize(falsy);
                                 let truthy = materialize(truthy);
 
@@ -390,18 +392,7 @@ impl OptimizationRule for TypeCoercionRule {
                     _ => {}
                 }
 
-                dbg!(truthy, falsy, &type_true, &type_false);
-                // use DataType::*;
-                // match (&type_true, &type_false) {
-                //     (Unknown(UnknownKind::Float), Uknown(UnknownKind::Float)) => {
-                //         materialize()
-                //     }
-                // }
-
-                // unpack!(early_escape(&type_true, &type_false));
                 let st = unpack!(get_supertype(&type_true, &type_false));
-                dbg!("try early");
-                dbg!("failed early");
                 let st = modify_supertype(st, truthy, falsy, &type_true, &type_false);
 
                 // only cast if the type is not already the super type.
@@ -594,36 +585,37 @@ impl OptimizationRule for TypeCoercionRule {
                     options,
                 })
             },
-            // fill null has a supertype set during projection
-            // to make the schema known before the optimization phase
-            AExpr::Function {
-                function: FunctionExpr::FillNull { ref super_type },
-                ref input,
-                options,
-            } => {
-                let input_schema = get_schema(lp_arena, lp_node);
-                let other_node = input[1].node();
-                let (left, type_left) = unpack!(get_aexpr_and_type(
-                    expr_arena,
-                    input[0].node(),
-                    &input_schema
-                ));
-                let (fill_value, type_fill_value) =
-                    unpack!(get_aexpr_and_type(expr_arena, other_node, &input_schema));
-
-                let new_st = unpack!(get_supertype(&type_left, &type_fill_value));
-                let new_st =
-                    modify_supertype(new_st, left, fill_value, &type_left, &type_fill_value);
-                if &new_st != super_type {
-                    Some(AExpr::Function {
-                        function: FunctionExpr::FillNull { super_type: new_st },
-                        input: input.clone(),
-                        options,
-                    })
-                } else {
-                    None
-                }
-            },
+            // // fill null has a supertype set during projection
+            // // to make the schema known before the optimization phase
+            // AExpr::Function {
+            //     function: FunctionExpr::FillNull { ref super_type },
+            //     ref input,
+            //     options,
+            // } => {
+            //     let input_schema = get_schema(lp_arena, lp_node);
+            //     let other_node = input[1].node();
+            //     let (left, type_left) = unpack!(get_aexpr_and_type(
+            //         expr_arena,
+            //         input[0].node(),
+            //         &input_schema
+            //     ));
+            //     let (fill_value, type_fill_value) =
+            //         unpack!(get_aexpr_and_type(expr_arena, other_node, &input_schema));
+            //
+            //     let new_st = unpack!(get_supertype(&type_left, &type_fill_value));
+            //
+            //     let new_st =
+            //         modify_supertype(new_st, left, fill_value, &type_left, &type_fill_value);
+            //     if &new_st != super_type {
+            //         Some(AExpr::Function {
+            //             function: FunctionExpr::FillNull { super_type: new_st },
+            //             input: input.clone(),
+            //             options,
+            //         })
+            //     } else {
+            //         None
+            //     }
+            // },
             // generic type coercion of any function.
             AExpr::Function {
                 // only for `DataType::Unknown` as it still has to be set.
@@ -631,11 +623,35 @@ impl OptimizationRule for TypeCoercionRule {
                 ref input,
                 mut options,
             } if options.cast_to_supertypes => {
-                // satisfy bchk
-                let function = function.clone();
-                let input = input.clone();
 
+                dbg!("repalce");
                 let input_schema = get_schema(lp_arena, lp_node);
+                let mut dtypes = Vec::with_capacity(input.len());
+                for e in input {
+                    let (_, dtype) = unpack!(get_aexpr_and_type(expr_arena, e.node(), &input_schema));
+                    match dtype {
+                        DataType::Unknown(UnknownKind::Any) => {
+                            options.cast_to_supertypes = false;
+                            return Ok(None)
+                        },
+                        _ => {
+                            dtypes.push(dtype)
+                        }
+                    }
+                };
+
+                if dtypes.iter().all_equal() {
+                    options.cast_to_supertypes = false;
+                    return Ok(None)
+                }
+
+                // let super_type = args_to_supertype(&dtypes)?;
+                // // satisfy bchk
+                // let function = function.clone();
+                // let input = input.clone();
+                //
+                // let input_schema = get_schema(lp_arena, lp_node);
+                //
                 let mut self_e = input[0].clone();
                 let (self_ae, type_self) =
                     unpack!(get_aexpr_and_type(expr_arena, self_e.node(), &input_schema));
@@ -646,7 +662,7 @@ impl OptimizationRule for TypeCoercionRule {
                         unpack!(get_aexpr_and_type(expr_arena, other.node(), &input_schema));
 
                     // early return until Unknown is set
-                    if matches!(type_other, DataType::Unknown(_)) {
+                    if matches!(type_other, DataType::Unknown(UnknownKind::Any)) {
                         return Ok(None);
                     }
                     let new_st = unpack!(get_supertype(&super_type, &type_other));
@@ -660,45 +676,78 @@ impl OptimizationRule for TypeCoercionRule {
                         super_type = new_st
                     }
                 }
-                // only cast if the type is not already the super type.
-                // this can prevent an expensive flattening and subsequent aggregation
-                // in a group_by context. To be able to cast the groups need to be
-                // flattened
-                if type_self != super_type {
-                    let n = expr_arena.add(AExpr::Cast {
-                        expr: self_e.node(),
-                        data_type: super_type.clone(),
-                        strict: false,
-                    });
-                    self_e.set_node(n);
-                };
 
-                let mut new_nodes = Vec::with_capacity(input.len());
-                new_nodes.push(self_e);
+                let function = function.clone();
+                let input = input.clone();
 
-                for other_node in &input[1..] {
-                    let type_other =
-                        match get_aexpr_and_type(expr_arena, other_node.node(), &input_schema) {
-                            Some((_, type_other)) => type_other,
-                            None => return Ok(None),
-                        };
-                    let mut other_node = other_node.clone();
-                    if type_other != super_type {
-                        let n = expr_arena.add(AExpr::Cast {
-                            expr: other_node.node(),
-                            data_type: super_type.clone(),
-                            strict: false,
-                        });
-                        other_node.set_node(n);
-                    }
-
-                    new_nodes.push(other_node)
+                match super_type {
+                    DataType::Unknown(UnknownKind::Float) => super_type = DataType::Float64,
+                    DataType::Unknown(UnknownKind::Int) => super_type = DataType::Int64,
+                    _ => {}
                 }
+
+                let input = input.into_iter().zip(dtypes).map(|(mut e, dtype)| {
+                    match super_type {
+                        #[cfg(feature = "dtype-categorical")]
+                        DataType::Categorical(_, _) if dtype.is_string() => {
+                            // pass
+                        },
+                        _ => {
+                            if dtype != super_type {
+                                let n = expr_arena.add(AExpr::Cast {
+                                    expr: e.node(),
+                                    data_type: super_type.clone(),
+                                    strict: false,
+                                });
+                                e.set_node(n);
+                            }
+                        }
+                    }
+                    e
+                }).collect::<Vec<_>>();
+
+
+                // }
+                //
+                // // only cast if the type is not already the super type.
+                // // this can prevent an expensive flattening and subsequent aggregation
+                // // in a group_by context. To be able to cast the groups need to be
+                // // flattened
+                // if type_self != super_type {
+                //     let n = expr_arena.add(AExpr::Cast {
+                //         expr: self_e.node(),
+                //         data_type: super_type.clone(),
+                //         strict: false,
+                //     });
+                //     self_e.set_node(n);
+                // };
+                //
+                // let mut new_nodes = Vec::with_capacity(input.len());
+                // new_nodes.push(self_e);
+                //
+                // for other_node in &input[1..] {
+                //     let type_other =
+                //         match get_aexpr_and_type(expr_arena, other_node.node(), &input_schema) {
+                //             Some((_, type_other)) => type_other,
+                //             None => return Ok(None),
+                //         };
+                //     let mut other_node = other_node.clone();
+                //     if type_other != super_type {
+                //         let n = expr_arena.add(AExpr::Cast {
+                //             expr: other_node.node(),
+                //             data_type: super_type.clone(),
+                //             strict: false,
+                //         });
+                //         other_node.set_node(n);
+                //     }
+                //
+                //     new_nodes.push(other_node)
+                // }
                 // ensure we don't go through this on next iteration
                 options.cast_to_supertypes = false;
                 Some(AExpr::Function {
                     function,
-                    input: new_nodes,
+                    input,
                     options,
                 })
             },
@@ -746,7 +795,11 @@ fn inline_or_prune_cast(
                 }?;
                 LiteralValue::Series(SpecialEq::new(s))
             },
-            lv @ LiteralValue::Int(_) | lv @ LiteralValue::Float(_) => {
+            LiteralValue::StrCat(s) => {
+                let av = AnyValue::String(s).strict_cast(dtype).ok();
+                return Ok(av.map(|av| AExpr::Literal(av.try_into().unwrap())))
+            },
+            lv @ (LiteralValue::Int(_) | LiteralValue::Float(_)) => {
                 let mut av = lv.to_any_value().ok_or_else(|| polars_err!(InvalidOperation: "literal value: {:?} too large for Polars", lv))?;
 
                 // if this fails we use the materialized version.
@@ -758,7 +811,7 @@ fn inline_or_prune_cast(
             },
             LiteralValue::Null => {
                 match dtype {
-                    DataType::Unknown(UnknownKind::Float | UnknownKind::Int) => return Ok(Some(AExpr::Literal(LiteralValue::Null))),
+                    DataType::Unknown(UnknownKind::Float | UnknownKind::Int | UnknownKind::Str) => return Ok(Some(AExpr::Literal(LiteralValue::Null))),
                     _ => return Ok(None)
                 }
             }

@@ -197,22 +197,6 @@ fn replace_dtype_with_column(expr: Expr, column_name: Arc<str>) -> Expr {
     })
 }
 
-fn set_null_st(e: Expr, schema: &Schema) -> Expr {
-    e.map_expr(|mut e| {
-        if let Expr::Function {
-            input,
-            function: FunctionExpr::FillNull { super_type },
-            ..
-        } = &mut e
-        {
-            if let Some(new_st) = early_supertype(input, schema) {
-                *super_type = new_st;
-            }
-        }
-        e
-    })
-}
-
 #[cfg(feature = "dtype-struct")]
 fn struct_index_to_field(expr: Expr, schema: &Schema) -> PolarsResult<Expr> {
     expr.try_map_expr(|e| match e {
@@ -421,7 +405,6 @@ struct ExpansionFlags {
     multiple_columns: bool,
     has_nth: bool,
     has_wildcard: bool,
-    replace_fill_null_type: bool,
     has_selector: bool,
     has_exclude: bool,
     #[cfg(feature = "dtype-struct")]
@@ -432,7 +415,6 @@ fn find_flags(expr: &Expr) -> ExpansionFlags {
     let mut multiple_columns = false;
     let mut has_nth = false;
     let mut has_wildcard = false;
-    let mut replace_fill_null_type = false;
     let mut has_selector = false;
     let mut has_exclude = false;
     #[cfg(feature = "dtype-struct")]
@@ -446,10 +428,6 @@ fn find_flags(expr: &Expr) -> ExpansionFlags {
             Expr::Nth(_) => has_nth = true,
             Expr::Wildcard => has_wildcard = true,
             Expr::Selector(_) => has_selector = true,
-            Expr::Function {
-                function: FunctionExpr::FillNull { .. },
-                ..
-            } => replace_fill_null_type = true,
             #[cfg(feature = "dtype-struct")]
             Expr::Function {
                 function: FunctionExpr::StructExpr(StructFunction::FieldByIndex(_)),
@@ -465,7 +443,6 @@ fn find_flags(expr: &Expr) -> ExpansionFlags {
         multiple_columns,
         has_nth,
         has_wildcard,
-        replace_fill_null_type,
         has_selector,
         has_exclude,
         #[cfg(feature = "dtype-struct")]
@@ -496,18 +473,6 @@ pub(crate) fn rewrite_projections(
         }
 
         replace_and_add_to_results(expr, flags, &mut result, schema, keys)?;
-
-        // This is done after all expansion (wildcard, column, dtypes)
-        // have been done. This will ensure the conversion to aexpr does
-        // not panic because of an unexpected wildcard etc.
-
-        // The expanded expressions are written to result, so we pick
-        // them up there.
-        if flags.replace_fill_null_type {
-            for e in &mut result[result_offset..] {
-                *e = set_null_st(std::mem::take(e), schema);
-            }
-        }
 
         #[cfg(feature = "dtype-struct")]
         if flags.has_struct_field_by_index {

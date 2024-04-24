@@ -1020,6 +1020,7 @@ def test_fill_null() -> None:
         "u32": [1, 3, 2, 3],
         "u64": [1, 3, 2, 3],
     }
+    print(out)
     assert out.dtypes == [pl.Int64, pl.UInt8, pl.UInt16, pl.UInt32, pl.UInt64]
 
 

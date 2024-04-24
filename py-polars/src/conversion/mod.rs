@@ -153,7 +153,7 @@ impl ToPyObject for Wrap<DataType> {
                 let class = pl.getattr(intern!(py, "Int32")).unwrap();
                 class.call0().unwrap().into()
             },
-            DataType::Int64 => {
+            DataType::Int64 | DataType::Unknown(UnknownKind::Int)=> {
                 let class = pl.getattr(intern!(py, "Int64")).unwrap();
                 class.call0().unwrap().into()
             },
@@ -177,7 +177,7 @@ impl ToPyObject for Wrap<DataType> {
                 let class = pl.getattr(intern!(py, "Float32")).unwrap();
                 class.call0().unwrap().into()
             },
-            DataType::Float64 => {
+            DataType::Float64 | DataType::Unknown(UnknownKind::Float)=> {
                 let class = pl.getattr(intern!(py, "Float64")).unwrap();
                 class.call0().unwrap().into()
             },
@@ -190,7 +190,7 @@ impl ToPyObject for Wrap<DataType> {
                 let class = pl.getattr(intern!(py, "Boolean")).unwrap();
                 class.call0().unwrap().into()
             },
-            DataType::String => {
+            DataType::String | DataType::Unknown(UnknownKind::Str) => {
                 let class = pl.getattr(intern!(py, "String")).unwrap();
                 class.call0().unwrap().into()
             },

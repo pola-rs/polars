@@ -262,10 +262,15 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
             },
             (dt, Unknown(kind)) => {
                 match kind {
-                    UnknownKind::Int if dt.is_integer() => Some(dt.clone()),
-                    UnknownKind::Float | UnknownKind::Int if dt.is_float() => Some(dt.clone()),
-                    UnknownKind::Float if dt.is_numeric() | dt.is_null() => Some(Unknown(UnknownKind::Float)),
-                    UnknownKind::Int if dt.is_null() => Some(Unknown(UnknownKind::Int)),
+                    UnknownKind::Int if dt.is_integer() | dt.is_string() => Some(dt.clone()),
+                    UnknownKind::Float | UnknownKind::Int if dt.is_float() | dt.is_string() => Some(dt.clone()),
+                    UnknownKind::Float if dt.is_numeric() => Some(Unknown(UnknownKind::Float)),
+                    UnknownKind::Str if dt.is_string() | dt.is_enum() => Some(dt.clone()),
+                    UnknownKind::Str if dt.is_categorical()  => {
+                        let Categorical(_, ord) = dt else { unreachable!()};
+                        Some(Categorical(None, *ord))
+                    },
+                    dynam @ _ if dt.is_null() => Some(Unknown(*dynam)),
                     _ => Some(Unknown(UnknownKind::Any))
                 }
             },

@@ -93,7 +93,7 @@ impl PhysicalExpr for LiteralExpr {
                 .into_time()
                 .into_series(),
             Series(series) => series.deref().clone(),
-            Int(_) | Float(_) => unreachable!("should be replaced"),
+            lv @ (Int(_) | Float(_) | StrCat(_)) => polars_core::prelude::Series::from_any_values(LITERAL_NAME, &[lv.to_any_value().unwrap()], false).unwrap(),
         };
         Ok(s)
     }

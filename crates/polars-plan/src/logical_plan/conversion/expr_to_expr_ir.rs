@@ -2,7 +2,7 @@ use super::*;
 
 pub fn to_expr_ir(expr: Expr, arena: &mut Arena<AExpr>) -> ExprIR {
     let mut state = ConversionState::new();
-    let node = to_aexpr_impl_materialized_lit(expr, arena, &mut state);
+    let node = to_aexpr_impl(expr, arena, &mut state);
     ExprIR::new(node, state.output_name)
 }
 
@@ -186,33 +186,33 @@ fn to_aexpr_impl(expr: Expr, arena: &mut Arena<AExpr>, state: &mut ConversionSta
                     input,
                     propagate_nans,
                 } => AAggExpr::Min {
-                    input: to_aexpr_impl(owned(input), arena, state),
+                    input: to_aexpr_impl_materialized_lit(owned(input), arena, state),
                     propagate_nans,
                 },
                 AggExpr::Max {
                     input,
                     propagate_nans,
                 } => AAggExpr::Max {
-                    input: to_aexpr_impl(owned(input), arena, state),
+                    input: to_aexpr_impl_materialized_lit(owned(input), arena, state),
                     propagate_nans,
                 },
                 AggExpr::Median(expr) => {
-                    AAggExpr::Median(to_aexpr_impl(owned(expr), arena, state))
+                    AAggExpr::Median(to_aexpr_impl_materialized_lit(owned(expr), arena, state))
                 },
                 AggExpr::NUnique(expr) => {
-                    AAggExpr::NUnique(to_aexpr_impl(owned(expr), arena, state))
+                    AAggExpr::NUnique(to_aexpr_impl_materialized_lit(owned(expr), arena, state))
                 },
                 AggExpr::First(expr) => {
-                    AAggExpr::First(to_aexpr_impl(owned(expr), arena, state))
+                    AAggExpr::First(to_aexpr_impl_materialized_lit(owned(expr), arena, state))
                 },
                 AggExpr::Last(expr) => {
-                    AAggExpr::Last(to_aexpr_impl(owned(expr), arena, state))
+                    AAggExpr::Last(to_aexpr_impl_materialized_lit(owned(expr), arena, state))
                 },
                 AggExpr::Mean(expr) => {
-                    AAggExpr::Mean(to_aexpr_impl(owned(expr), arena, state))
+                    AAggExpr::Mean(to_aexpr_impl_materialized_lit(owned(expr), arena, state))
                 },
                 AggExpr::Implode(expr) => {
-                    AAggExpr::Implode(to_aexpr_impl(owned(expr), arena, state))
+                    AAggExpr::Implode(to_aexpr_impl_materialized_lit(owned(expr), arena, state))
                 },
                 AggExpr::Count(expr, include_nulls) => AAggExpr::Count(
                     to_aexpr_impl_materialized_lit(owned(expr), arena, state),
@@ -223,19 +223,19 @@ fn to_aexpr_impl(expr: Expr, arena: &mut Arena<AExpr>, state: &mut ConversionSta
                     quantile,
                     interpol,
                 } => AAggExpr::Quantile {
-                    expr: to_aexpr_impl(owned(expr), arena, state),
+                    expr: to_aexpr_impl_materialized_lit(owned(expr), arena, state),
                     quantile: to_aexpr_impl_materialized_lit(owned(quantile), arena, state),
                     interpol,
                 },
-                AggExpr::Sum(expr) => AAggExpr::Sum(to_aexpr_impl(owned(expr), arena, state)),
+                AggExpr::Sum(expr) => AAggExpr::Sum(to_aexpr_impl_materialized_lit(owned(expr), arena, state)),
                 AggExpr::Std(expr, ddof) => {
-                    AAggExpr::Std(to_aexpr_impl(owned(expr), arena, state), ddof)
+                    AAggExpr::Std(to_aexpr_impl_materialized_lit(owned(expr), arena, state), ddof)
                 },
                 AggExpr::Var(expr, ddof) => {
-                    AAggExpr::Var(to_aexpr_impl(owned(expr), arena, state), ddof)
+                    AAggExpr::Var(to_aexpr_impl_materialized_lit(owned(expr), arena, state), ddof)
                 },
                 AggExpr::AggGroups(expr) => {
-                    AAggExpr::AggGroups(to_aexpr_impl(owned(expr), arena, state))
+                    AAggExpr::AggGroups(to_aexpr_impl_materialized_lit(owned(expr), arena, state))
                 },
             };
             AExpr::Agg(a_agg)

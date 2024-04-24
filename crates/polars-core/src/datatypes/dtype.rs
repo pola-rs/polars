@@ -17,6 +17,8 @@ pub static DTYPE_ENUM_VALUE: &str = "ENUM";
 pub enum UnknownKind {
     Int,
     Float,
+    // Can be Categorical or String
+    Str,
     #[default]
     Any,
 }
@@ -227,7 +229,11 @@ impl DataType {
     pub fn is_numeric(&self) -> bool {
         self.is_float()
             || self.is_integer()
-            || matches!(
+            || self.is_dynamic()
+    }
+
+    pub fn is_dynamic(&self) -> bool {
+        matches!(
                 self,
                 DataType::Unknown(UnknownKind::Int | UnknownKind::Float)
             )
@@ -401,6 +407,32 @@ impl DataType {
             #[cfg(feature = "dtype-u16")]
             DataType::UInt16 => true,
             _ => false,
+        }
+    }
+
+    pub fn is_string(&self) -> bool {
+        matches!(self, DataType::String | DataType::Unknown(UnknownKind::Str))
+    }
+
+    pub fn is_categorical(&self) -> bool {
+        #[cfg(feature = "dtype-categorical")]
+        {
+            matches!(self, DataType::Categorical(_, _))
+        }
+        #[cfg(not(feature = "dtype-categorical"))]
+        {
+            false
+        }
+    }
+
+    pub fn is_enum(&self) -> bool {
+        #[cfg(feature = "dtype-categorical")]
+        {
+            matches!(self, DataType::Enum(_, _))
+        }
+        #[cfg(not(feature = "dtype-categorical"))]
+        {
+            false
         }
     }
 
@@ -615,8 +647,9 @@ impl Display for DataType {
             DataType::Struct(fields) => return write!(f, "struct[{}]", fields.len()),
             DataType::Unknown(kind) => match kind {
                 UnknownKind::Any => "unknown",
-                UnknownKind::Int => "dynamic int",
-                UnknownKind::Float => "dynamic float",
+                UnknownKind::Int => "dyn int",
+                UnknownKind::Float => "dyn float",
+                UnknownKind::Str => "dyn str",
             },
             DataType::BinaryOffset => "binary[offset]",
         };
