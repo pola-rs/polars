@@ -30,7 +30,7 @@ arrow-data = { version = ">=41", default-features = false }
 arrow-schema = { version = ">=41", default-features = false }
 atoi = "2"
 avro-schema = { version = "0.3" }
-base64 = "0.21.2"
+base64 = "0.22.0"
 bitflags = "2"
 bytemuck = { version = "1.11", features = ["derive", "extern_crate_alloc"] }
 chrono = { version = "0.4.31", default-features = false, features = ["std"] }
