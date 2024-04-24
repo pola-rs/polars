@@ -506,7 +506,7 @@ impl PyDataFrame {
     #[pyo3(signature = (lambda, output_type, inference_size))]
     pub fn map_rows(
         &mut self,
-        lambda: &PyAny,
+        lambda: Bound<PyAny>,
         output_type: Option<Wrap<DataType>>,
         inference_size: usize,
     ) -> PyResult<(PyObject, bool)> {
@@ -549,7 +549,7 @@ impl PyDataFrame {
     pub fn transpose(
         &mut self,
         keep_names_as: Option<&str>,
-        column_names: &PyAny,
+        column_names: &Bound<PyAny>,
     ) -> PyResult<Self> {
         let new_col_names = if let Ok(name) = column_names.extract::<Vec<String>>() {
             Some(Either::Right(name))
