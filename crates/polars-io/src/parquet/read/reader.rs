@@ -10,6 +10,8 @@ use polars_parquet::read;
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "cloud")]
+use super::async_impl::FetchRowGroupsFromObjectStore;
+#[cfg(feature = "cloud")]
 use super::async_impl::ParquetObjectStore;
 pub use super::read_impl::BatchedParquetReader;
 use super::read_impl::{read_parquet, FetchRowGroupsFromMmapReader};
@@ -17,12 +19,10 @@ use super::utils::materialize_empty_df;
 #[cfg(feature = "cloud")]
 use crate::cloud::CloudOptions;
 use crate::mmap::MmapBytesReader;
-#[cfg(feature = "cloud")]
-use crate::parquet::async_impl::FetchRowGroupsFromObjectStore;
+use crate::parquet::metadata::FileMetaDataRef;
 use crate::predicates::PhysicalIoExpr;
 use crate::prelude::*;
 use crate::RowIndex;
-use crate::parquet::metadata::FileMetaDataRef;
 
 #[derive(Clone, Debug, PartialEq, Eq, Copy, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]

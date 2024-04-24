@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
-use polars_io::parquet::ParallelStrategy;
+use polars_io::parquet::read::ParallelStrategy;
 use polars_io::{HiveOptions, RowIndex};
 
 use crate::prelude::*;

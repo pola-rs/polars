@@ -11,15 +11,14 @@ use polars_parquet::read;
 use polars_parquet::read::{ArrayIter, FileMetaData, RowGroupMetaData};
 use rayon::prelude::*;
 
-use super::mmap::ColumnStore;
-use super::utils::materialize_empty_df;
-use crate::mmap::{MmapBytesReader, ReaderBytes};
 #[cfg(feature = "cloud")]
-use crate::parquet::async_impl::FetchRowGroupsFromObjectStore;
+use super::async_impl::FetchRowGroupsFromObjectStore;
+use super::mmap::{mmap_columns, ColumnStore};
+use super::predicates::read_this_row_group;
+use super::utils::materialize_empty_df;
+use super::{mmap, ParallelStrategy};
+use crate::mmap::{MmapBytesReader, ReaderBytes};
 use crate::parquet::metadata::FileMetaDataRef;
-use crate::parquet::mmap::mmap_columns;
-use crate::parquet::predicates::read_this_row_group;
-use crate::parquet::{mmap, ParallelStrategy};
 use crate::predicates::{apply_predicate, PhysicalIoExpr};
 use crate::utils::get_reader_bytes;
 use crate::RowIndex;

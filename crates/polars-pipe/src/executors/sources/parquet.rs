@@ -10,7 +10,7 @@ use polars_core::prelude::Series;
 use polars_core::POOL;
 use polars_io::cloud::CloudOptions;
 use polars_io::parquet::metadata::FileMetaDataRef;
-use polars_io::parquet::{BatchedParquetReader, ParquetOptions, ParquetReader};
+use polars_io::parquet::read::{BatchedParquetReader, ParquetOptions, ParquetReader};
 use polars_io::pl_async::get_runtime;
 use polars_io::predicates::PhysicalIoExpr;
 use polars_io::prelude::materialize_projection;

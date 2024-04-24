@@ -18,8 +18,6 @@ pub mod metadata;
 pub mod read;
 pub mod write;
 
-pub use read::*;
-
 #[cfg(test)]
 mod test {
     use std::io::Cursor;
