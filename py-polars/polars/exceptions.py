@@ -27,8 +27,8 @@ except ImportError:
         """
         Exception raised when a specified column is not found.
 
-        Example
-        -------
+        Examples
+        --------
         >>> df = pl.DataFrame({"a": [1, 2, 3]})
         >>> df.select("b")
         polars.exceptions.ColumnNotFoundError: b
@@ -41,8 +41,8 @@ except ImportError:
         """
         Exception raised when a column name is duplicated.
 
-        Example
-        -------
+        Examples
+        --------
         >>> df = pl.DataFrame({"a": [1, 1, 1]})
         >>> pl.concat([df, df], how="horizontal")
         polars.exceptions.DuplicateError: unable to hstack, column with name "a" already exists
@@ -52,8 +52,8 @@ except ImportError:
         """
         Exception raised when an operation is not allowed (or possible) against a given object or data structure.
 
-        Example
-        -------
+        Examples
+        --------
         >>> s = pl.Series("a", [1, 2, 3])
         >>> s.is_in(["x", "y"])
         polars.exceptions.InvalidOperationError: `is_in` cannot check for String values in Int64 data
@@ -75,8 +75,8 @@ except ImportError:
         """
         Exception raised when a specified schema field is not found.
 
-        Example
-        -------
+        Examples
+        --------
         >>> df = pl.DataFrame({"a": [1, 2, 3]})
         >>> df.rename({"b": "c"})
         polars.exceptions.SchemaFieldNotFoundError: b
@@ -86,8 +86,8 @@ except ImportError:
         """
         Exception raised when trying to perform operations on data structures with incompatible shapes.
 
-        Example
-        -------
+        Examples
+        --------
         >>> pl.DataFrame({"a": [1, 2, 3], "b": [4, 5]})
         polars.exceptions.ShapeError: could not create a new DataFrame: series "a" has length 3 while series "b" has length 2
         """  # noqa: W505
@@ -96,8 +96,8 @@ except ImportError:
         """
         Exception raised when string caches come from different sources.
 
-        Example
-        -------
+        Examples
+        --------
         >>> pl.DataFrame(
         ...     [
         ...         pl.Series(["a", "b", "c"], dtype=pl.Categorical),
@@ -111,8 +111,8 @@ except ImportError:
         """
         Exception raised when a specified Struct field is not found.
 
-        Example
-        -------
+        Examples
+        --------
         >>> pl.struct(
         ...     [pl.Series("a", [1, 2]), pl.Series("b", ["a", "b"])], eager=True
         ... ).struct.field("z")
