@@ -255,7 +255,7 @@ impl PySeries {
     }
 
     #[staticmethod]
-    fn new_binary(name: &str, values: &PyAny, _strict: bool) -> PyResult<Self> {
+    fn new_binary(name: &str, values: &Bound<PyAny>, _strict: bool) -> PyResult<Self> {
         let len = values.len()?;
         let mut builder = BinaryChunkedBuilder::new(name, len);
 
