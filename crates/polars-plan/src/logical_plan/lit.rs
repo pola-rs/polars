@@ -83,13 +83,6 @@ impl LiteralValue {
         }
     }
 
-    pub(crate) fn is_dynamic(&self) -> bool {
-        matches!(
-            self,
-            LiteralValue::Int(_) | LiteralValue::Float(_) | LiteralValue::StrCat(_)
-        )
-    }
-
     pub fn materialize(self) -> Self {
         match self {
             LiteralValue::Int(_) | LiteralValue::Float(_) | LiteralValue::StrCat(_) => {

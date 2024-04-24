@@ -3,6 +3,7 @@ mod expr_to_expr_ir;
 mod ir_to_dsl;
 #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv"))]
 mod scans;
+mod stack_opt;
 
 use std::borrow::Cow;
 

@@ -279,7 +279,15 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
                         } else {
                             materialize_smallest_dyn_int(*v).dtype()
                         };
-                        get_supertype(dt, &smallest_fitting_dtype)
+                        match dt {
+                            UInt64 if smallest_fitting_dtype.is_signed_integer() => {
+                                // Ensure we don't cast to float when dealing with dynamic literals
+                                Some(Int64)
+                            },
+                            _ => {
+                                get_supertype(dt, &smallest_fitting_dtype)
+                            }
+                        }
                     }
                     _ => Some(Unknown(UnknownKind::Any))
                 }

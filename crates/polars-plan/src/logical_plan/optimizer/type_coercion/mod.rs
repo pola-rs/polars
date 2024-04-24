@@ -10,7 +10,6 @@ use polars_utils::unitvec;
 
 use super::*;
 use crate::logical_plan::optimizer::type_coercion::binary::process_binary;
-use crate::prelude::AExpr::Ternary;
 
 pub struct TypeCoercionRule {}
 
@@ -54,6 +53,7 @@ fn modify_supertype(
             let lhs = lv_left.to_any_value().unwrap().dtype();
             let rhs = lv_right.to_any_value().unwrap().dtype();
             st = get_supertype(&lhs, &rhs).unwrap();
+            return st;
         },
         // Materialize dynamic types
         (
@@ -63,6 +63,7 @@ fn modify_supertype(
             _,
         ) if dynamic_st_or_unknown => {
             st = lv_left.to_any_value().unwrap().dtype();
+            return st;
         },
         (
             _,
@@ -72,6 +73,7 @@ fn modify_supertype(
             ),
         ) if dynamic_st_or_unknown => {
             st = lv_right.to_any_value().unwrap().dtype();
+            return st;
         },
         // do nothing
         _ => {},
@@ -207,7 +209,7 @@ impl OptimizationRule for TypeCoercionRule {
                                 } else {
                                     truthy_node
                                 };
-                                return Ok(Some(Ternary {
+                                return Ok(Some(AExpr::Ternary {
                                     truthy,
                                     falsy,
                                     predicate,
@@ -413,37 +415,6 @@ impl OptimizationRule for TypeCoercionRule {
                     options,
                 })
             },
-            // // fill null has a supertype set during projection
-            // // to make the schema known before the optimization phase
-            // AExpr::Function {
-            //     function: FunctionExpr::FillNull { ref super_type },
-            //     ref input,
-            //     options,
-            // } => {
-            //     let input_schema = get_schema(lp_arena, lp_node);
-            //     let other_node = input[1].node();
-            //     let (left, type_left) = unpack!(get_aexpr_and_type(
-            //         expr_arena,
-            //         input[0].node(),
-            //         &input_schema
-            //     ));
-            //     let (fill_value, type_fill_value) =
-            //         unpack!(get_aexpr_and_type(expr_arena, other_node, &input_schema));
-            //
-            //     let new_st = unpack!(get_supertype(&type_left, &type_fill_value));
-            //
-            //     let new_st =
-            //         modify_supertype(new_st, left, fill_value, &type_left, &type_fill_value);
-            //     if &new_st != super_type {
-            //         Some(AExpr::Function {
-            //             function: FunctionExpr::FillNull { super_type: new_st },
-            //             input: input.clone(),
-            //             options,
-            //         })
-            //     } else {
-            //         None
-            //     }
-            // },
             // generic type coercion of any function.
             AExpr::Function {
                 // only for `DataType::Unknown` as it still has to be set.
@@ -588,14 +559,9 @@ fn inline_or_prune_cast(
                 return Ok(av.map(|av| AExpr::Literal(av.try_into().unwrap())));
             },
             lv @ (LiteralValue::Int(_) | LiteralValue::Float(_)) => {
-                let mut av = lv.to_any_value().ok_or_else(|| polars_err!(InvalidOperation: "literal value: {:?} too large for Polars", lv))?;
-
-                // if this fails we use the materialized version.
-                // this happens for instance in the case dyn to struct
-                if let Ok(av_casted) = av.strict_cast(dtype) {
-                    av = av_casted;
-                }
-                return Ok(Some(AExpr::Literal(av.try_into().unwrap())));
+                let av = lv.to_any_value().ok_or_else(|| polars_err!(InvalidOperation: "literal value: {:?} too large for Polars", lv))?;
+                let av = av.strict_cast(dtype).ok();
+                return Ok(av.map(|av| AExpr::Literal(av.try_into().unwrap())));
             },
             LiteralValue::Null => match dtype {
                 DataType::Unknown(UnknownKind::Float | UnknownKind::Int(_) | UnknownKind::Str) => {
@@ -682,7 +648,7 @@ mod test {
             .project(expr_in.clone(), Default::default())
             .build();
 
-        let mut lp_top = to_alp(lp, &mut expr_arena, &mut lp_arena).unwrap();
+        let mut lp_top = to_alp(lp, &mut expr_arena, &mut lp_arena, true, true).unwrap();
         lp_top = optimizer
             .optimize_loop(rules, &mut expr_arena, &mut lp_arena, lp_top)
             .unwrap();
@@ -697,7 +663,7 @@ mod test {
         let lp = DslBuilder::from_existing_df(df)
             .project(expr_in, Default::default())
             .build();
-        let mut lp_top = to_alp(lp, &mut expr_arena, &mut lp_arena).unwrap();
+        let mut lp_top = to_alp(lp, &mut expr_arena, &mut lp_arena, true, true).unwrap();
         lp_top = optimizer
             .optimize_loop(rules, &mut expr_arena, &mut lp_arena, lp_top)
             .unwrap();
