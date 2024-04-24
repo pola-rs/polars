@@ -1244,7 +1244,7 @@ def test_from_large_uint64_misc() -> None:
         df = pl.DataFrame(
             uint_data,
             orient="row",
-            schema_overrides=overrides,  # type: ignore[arg-type]
+            schema_overrides=overrides,
         )
         assert df.schema == OrderedDict(
             [
