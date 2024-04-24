@@ -4,8 +4,6 @@ mod write;
 pub use read::*;
 pub use write::*;
 
-use super::*;
-
 #[cfg(test)]
 mod test {
     use std::io::Cursor;

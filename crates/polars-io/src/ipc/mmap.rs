@@ -4,8 +4,9 @@ use arrow::mmap::{mmap_dictionaries_unchecked, mmap_unchecked};
 use arrow::record_batch::RecordBatch;
 use memmap::Mmap;
 use polars_core::frame::ArrowChunk;
+use polars_core::prelude::*;
 
-use super::*;
+use super::IpcReader;
 use crate::mmap::MmapBytesReader;
 #[cfg(any(feature = "ipc", feature = "avro", feature = "ipc_streaming",))]
 use crate::predicates::PhysicalIoExpr;

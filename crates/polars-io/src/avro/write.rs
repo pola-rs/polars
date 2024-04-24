@@ -4,9 +4,9 @@ pub use arrow::io::avro::avro_schema::file::Compression;
 use arrow::io::avro::avro_schema::{self};
 use arrow::io::avro::write;
 use polars_core::error::to_compute_err;
+use polars_core::prelude::*;
 pub use Compression as AvroCompression;
 
-use super::*;
 use crate::shared::SerWriter;
 
 /// Write a [`DataFrame`] to [Apache Avro] format

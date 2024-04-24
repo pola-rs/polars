@@ -33,5 +33,4 @@ pub mod utils;
 #[cfg(feature = "cloud")]
 pub use cloud::glob as async_glob;
 pub use options::*;
-use polars_core::prelude::*;
 pub use shared::*;
