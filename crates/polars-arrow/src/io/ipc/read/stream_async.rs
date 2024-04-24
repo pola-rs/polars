@@ -58,7 +58,9 @@ pub async fn read_stream_metadata_async<R: AsyncRead + Unpin + Send>(
         .read_to_end(&mut meta_buffer)
         .await?;
 
-    deserialize_stream_metadata(&meta_buffer)
+    let message = arrow_format::ipc::MessageRef::read_as_root(&meta_buffer)
+        .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferMessage(err)))?;
+    deserialize_stream_metadata(&message)
 }
 
 /// Reads the next item, yielding `None` if the stream has been closed,

@@ -1,5 +1,7 @@
 use arrow_format::ipc::planus::ReadAsRoot;
-use arrow_format::ipc::{FieldRef, FixedSizeListRef, MapRef, TimeRef, TimestampRef, UnionRef};
+use arrow_format::ipc::{
+    FieldRef, FixedSizeListRef, MapRef, MessageRef, TimeRef, TimestampRef, UnionRef,
+};
 use polars_error::{polars_bail, polars_err, PolarsResult};
 
 use super::super::{IpcField, IpcSchema};
@@ -412,9 +414,9 @@ pub(super) fn fb_to_schema(
     ))
 }
 
-pub(super) fn deserialize_stream_metadata(meta: &[u8]) -> PolarsResult<StreamMetadata> {
-    let message = arrow_format::ipc::MessageRef::read_as_root(meta)
-        .map_err(|_err| polars_err!(oos = "Unable to get root as message: {err:?}"))?;
+pub(super) fn deserialize_stream_metadata(
+    message: &MessageRef<'_>,
+) -> PolarsResult<StreamMetadata> {
     let version = message.version()?;
     // message header is a Schema, so read it
     let header = message
