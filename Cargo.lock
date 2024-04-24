@@ -3080,7 +3080,7 @@ dependencies = [
  "regex",
  "serde",
  "smartstring",
- "strum_macros 0.25.3",
+ "strum_macros 0.26.2",
  "version_check",
 ]
 
