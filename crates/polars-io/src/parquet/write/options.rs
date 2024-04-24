@@ -40,7 +40,7 @@ impl Default for ParquetCompression {
     }
 }
 
-/// A valid gzip compression level.
+/// A valid Gzip compression level.
 #[derive(Debug, Eq, PartialEq, Hash, Clone, Copy)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct GzipLevel(u8);

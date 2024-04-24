@@ -15,8 +15,7 @@ use rayon::prelude::*;
 use super::options::ParquetCompression;
 use crate::prelude::chunk_df_for_writing;
 
-/// Write a DataFrame to parquet format
-///
+/// Write a DataFrame to Parquet format.
 #[must_use]
 pub struct ParquetWriter<W> {
     writer: W,
@@ -85,15 +84,6 @@ where
         self
     }
 
-    fn materialize_options(&self) -> WriteOptions {
-        WriteOptions {
-            write_statistics: self.statistics,
-            compression: self.compression,
-            version: Version::V2,
-            data_pagesize_limit: self.data_page_size,
-        }
-    }
-
     pub fn batched(self, schema: &Schema) -> PolarsResult<BatchedWriter<W>> {
         let fields = schema.to_arrow(true).fields;
         let schema = ArrowSchema::from(fields);
@@ -112,6 +102,15 @@ where
         })
     }
 
+    fn materialize_options(&self) -> WriteOptions {
+        WriteOptions {
+            write_statistics: self.statistics,
+            compression: self.compression,
+            version: Version::V2,
+            data_pagesize_limit: self.data_page_size,
+        }
+    }
+
     /// Write the given DataFrame in the writer `W`. Returns the total size of the file.
     pub fn finish(self, df: &mut DataFrame) -> PolarsResult<u64> {
         let chunked_df = chunk_df_for_writing(df, self.row_group_size.unwrap_or(512 * 512))?;
@@ -119,26 +118,6 @@ where
         batched.write_batch(&chunked_df)?;
         batched.finish()
     }
-}
-
-// Note that the df should be rechunked
-fn prepare_rg_iter<'a>(
-    df: &'a DataFrame,
-    parquet_schema: &'a SchemaDescriptor,
-    encodings: &'a [Vec<Encoding>],
-    options: WriteOptions,
-    parallel: bool,
-) -> impl Iterator<Item = PolarsResult<RowGroupIter<'static, PolarsError>>> + 'a {
-    let rb_iter = df.iter_chunks(true);
-    rb_iter.filter_map(move |batch| match batch.len() {
-        0 => None,
-        _ => {
-            let row_group =
-                create_serializer(batch, parquet_schema.fields(), encodings, options, parallel);
-
-            Some(row_group)
-        },
-    })
 }
 
 fn get_encodings(schema: &ArrowSchema) -> Vec<Vec<Encoding>> {
@@ -242,6 +221,26 @@ impl<W: Write> BatchedWriter<W> {
         let size = writer.end(None)?;
         Ok(size)
     }
+}
+
+// Note that the df should be rechunked
+fn prepare_rg_iter<'a>(
+    df: &'a DataFrame,
+    parquet_schema: &'a SchemaDescriptor,
+    encodings: &'a [Vec<Encoding>],
+    options: WriteOptions,
+    parallel: bool,
+) -> impl Iterator<Item = PolarsResult<RowGroupIter<'static, PolarsError>>> + 'a {
+    let rb_iter = df.iter_chunks(true);
+    rb_iter.filter_map(move |batch| match batch.len() {
+        0 => None,
+        _ => {
+            let row_group =
+                create_serializer(batch, parquet_schema.fields(), encodings, options, parallel);
+
+            Some(row_group)
+        },
+    })
 }
 
 fn create_serializer(
