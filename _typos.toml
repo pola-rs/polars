@@ -4,10 +4,11 @@ extend-ignore-identifiers-re = [
 ]
 
 [default.extend-identifiers]
-ba = "ba"
+arange = "arange"
 Fo = "Fo"
-nd = "nd"
 ND = "ND"
+ba = "ba"
+nd = "nd"
 opt_nd = "opt_nd"
 ser = "ser"
 strat = "strat"
