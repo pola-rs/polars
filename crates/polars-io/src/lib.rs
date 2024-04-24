@@ -24,8 +24,6 @@ pub mod pl_async;
 pub mod predicates;
 pub mod prelude;
 mod shared;
-#[cfg(all(test, feature = "csv"))]
-mod tests;
 pub mod utils;
 
 #[cfg(feature = "cloud")]

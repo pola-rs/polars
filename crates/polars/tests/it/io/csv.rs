@@ -136,6 +136,18 @@ fn test_read_csv_file() {
 }
 
 #[test]
+fn test_read_csv_filter() -> PolarsResult<()> {
+    let df = CsvReader::from_path(FOODS_CSV)?.finish()?;
+
+    let out = df.filter(&df.column("fats_g")?.gt(4)?)?;
+
+    // This fails if all columns are not equal.
+    println!("{out}");
+
+    Ok(())
+}
+
+#[test]
 fn test_parser() -> PolarsResult<()> {
     let s = r#"
  "sepal_length","sepal_width","petal_length","petal_width","variety"
