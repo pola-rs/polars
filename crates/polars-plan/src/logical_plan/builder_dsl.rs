@@ -6,7 +6,7 @@ use polars_io::csv::read::{CommentPrefix, CsvEncoding, CsvParserOptions, NullVal
 #[cfg(feature = "ipc")]
 use polars_io::ipc::IpcScanOptions;
 #[cfg(feature = "parquet")]
-use polars_io::parquet::ParquetOptions;
+use polars_io::parquet::read::ParquetOptions;
 use polars_io::HiveOptions;
 #[cfg(any(
     feature = "parquet",
@@ -90,7 +90,7 @@ impl DslBuilder {
         paths: P,
         n_rows: Option<usize>,
         cache: bool,
-        parallel: polars_io::parquet::ParallelStrategy,
+        parallel: polars_io::parquet::read::ParallelStrategy,
         row_index: Option<RowIndex>,
         rechunk: bool,
         low_memory: bool,

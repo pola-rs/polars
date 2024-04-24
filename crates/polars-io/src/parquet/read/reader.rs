@@ -1,48 +1,27 @@
 use std::io::{Read, Seek};
+use std::sync::Arc;
 
 use arrow::datatypes::ArrowSchemaRef;
 use polars_core::prelude::*;
 #[cfg(feature = "cloud")]
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_parquet::read;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "cloud")]
+use super::async_impl::FetchRowGroupsFromObjectStore;
+#[cfg(feature = "cloud")]
+use super::async_impl::ParquetObjectStore;
+pub use super::read_impl::BatchedParquetReader;
 use super::read_impl::{read_parquet, FetchRowGroupsFromMmapReader};
+#[cfg(feature = "cloud")]
+use super::utils::materialize_empty_df;
 #[cfg(feature = "cloud")]
 use crate::cloud::CloudOptions;
 use crate::mmap::MmapBytesReader;
-#[cfg(feature = "cloud")]
-use crate::parquet::async_impl::FetchRowGroupsFromObjectStore;
-#[cfg(feature = "cloud")]
-use crate::parquet::async_impl::ParquetObjectStore;
-pub use crate::parquet::read_impl::BatchedParquetReader;
+use crate::parquet::metadata::FileMetaDataRef;
 use crate::predicates::PhysicalIoExpr;
 use crate::prelude::*;
 use crate::RowIndex;
-
-#[derive(Clone, Debug, PartialEq, Eq, Copy, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct ParquetOptions {
-    pub parallel: ParallelStrategy,
-    pub low_memory: bool,
-    pub use_statistics: bool,
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Default, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub enum ParallelStrategy {
-    /// Don't parallelize
-    None,
-    /// Parallelize over the columns
-    Columns,
-    /// Parallelize over the row groups
-    RowGroups,
-    /// Automatically determine over which unit to parallelize
-    /// This will choose the most occurring unit.
-    #[default]
-    Auto,
-}
 
 /// Read Apache parquet format into a DataFrame.
 #[must_use]
@@ -56,7 +35,7 @@ pub struct ParquetReader<R: Read + Seek> {
     schema: Option<ArrowSchemaRef>,
     row_index: Option<RowIndex>,
     low_memory: bool,
-    metadata: Option<Arc<FileMetaData>>,
+    metadata: Option<FileMetaDataRef>,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     hive_partition_columns: Option<Vec<Series>>,
     use_statistics: bool,
@@ -249,7 +228,7 @@ impl ParquetAsyncReader {
         uri: &str,
         cloud_options: Option<&CloudOptions>,
         schema: Option<ArrowSchemaRef>,
-        metadata: Option<Arc<FileMetaData>>,
+        metadata: Option<FileMetaDataRef>,
     ) -> PolarsResult<ParquetAsyncReader> {
         Ok(ParquetAsyncReader {
             reader: ParquetObjectStore::from_uri(uri, cloud_options, metadata).await?,
@@ -353,7 +332,7 @@ impl ParquetAsyncReader {
         )
     }
 
-    pub async fn get_metadata(&mut self) -> PolarsResult<&Arc<FileMetaData>> {
+    pub async fn get_metadata(&mut self) -> PolarsResult<&FileMetaDataRef> {
         self.reader.get_metadata().await
     }
 

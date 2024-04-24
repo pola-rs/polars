@@ -13,13 +13,13 @@ use smartstring::alias::String as SmartString;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::Mutex;
 
-use super::cloud::{build_object_store, CloudLocation};
 use super::mmap::ColumnStore;
-use crate::cloud::{CloudOptions, PolarsObjectStore};
-use crate::parquet::read_impl::compute_row_group_range;
+use super::predicates::read_this_row_group;
+use super::read_impl::compute_row_group_range;
+use crate::cloud::{build_object_store, CloudLocation, CloudOptions, PolarsObjectStore};
+use crate::parquet::metadata::FileMetaDataRef;
 use crate::pl_async::get_runtime;
 use crate::predicates::PhysicalIoExpr;
-use crate::prelude::predicates::read_this_row_group;
 
 type DownloadedRowGroup = Vec<(u64, Bytes)>;
 type QueuePayload = (usize, DownloadedRowGroup);
@@ -29,14 +29,14 @@ pub struct ParquetObjectStore {
     store: PolarsObjectStore,
     path: ObjectPath,
     length: Option<usize>,
-    metadata: Option<Arc<FileMetaData>>,
+    metadata: Option<FileMetaDataRef>,
 }
 
 impl ParquetObjectStore {
     pub async fn from_uri(
         uri: &str,
         options: Option<&CloudOptions>,
-        metadata: Option<Arc<FileMetaData>>,
+        metadata: Option<FileMetaDataRef>,
     ) -> PolarsResult<Self> {
         let (
             CloudLocation {
@@ -89,7 +89,7 @@ impl ParquetObjectStore {
     }
 
     /// Fetch and memoize the metadata of the parquet file.
-    pub async fn get_metadata(&mut self) -> PolarsResult<&Arc<FileMetaData>> {
+    pub async fn get_metadata(&mut self) -> PolarsResult<&FileMetaDataRef> {
         if self.metadata.is_none() {
             self.metadata = Some(Arc::new(self.fetch_metadata().await?));
         }

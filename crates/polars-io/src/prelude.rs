@@ -10,7 +10,7 @@ pub use crate::json::*;
 #[cfg(feature = "json")]
 pub use crate::ndjson::core::*;
 #[cfg(feature = "parquet")]
-pub use crate::parquet::*;
+pub use crate::parquet::{metadata::*, read::*, write::*};
 pub use crate::utils::*;
 pub use crate::{cloud, SerReader, SerWriter};
 

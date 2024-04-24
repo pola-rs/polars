@@ -8,7 +8,7 @@ use polars_io::ipc::IpcWriterOptions;
 #[cfg(feature = "json")]
 use polars_io::json::JsonWriterOptions;
 #[cfg(feature = "parquet")]
-use polars_io::parquet::ParquetWriteOptions;
+use polars_io::parquet::write::ParquetWriteOptions;
 use polars_io::{HiveOptions, RowIndex};
 #[cfg(feature = "dynamic_group_by")]
 use polars_time::{DynamicGroupOptions, RollingGroupOptions};

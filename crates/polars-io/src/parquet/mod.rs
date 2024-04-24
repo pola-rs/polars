@@ -1,62 +1,8 @@
-//! # Reading Apache parquet files.
-//!
-//! ## Example
-//!
-//! ```rust
-//! use polars_core::prelude::*;
-//! use polars_io::prelude::*;
-//! use std::fs::File;
-//!
-//! fn example() -> PolarsResult<DataFrame> {
-//!     let r = File::open("some_file.parquet").unwrap();
-//!     let reader = ParquetReader::new(r);
-//!     reader.finish()
-//! }
-//! ```
-//!
-#[cfg(feature = "cloud")]
-pub(super) mod async_impl;
-pub(super) mod mmap;
-pub mod predicates;
-mod read;
-mod read_impl;
-mod write;
+//! Functionality for reading and writing Apache Parquet files.
 
-use std::borrow::Cow;
-
-pub use polars_parquet::write::FileMetaData;
-pub use read::*;
-pub use write::{BrotliLevel, GzipLevel, ParquetWriteOptions, ZstdLevel, *};
-
-use crate::parquet::read_impl::materialize_hive_partitions;
-use crate::utils::apply_projection;
-
-pub type FileMetaDataRef = Arc<FileMetaData>;
-
-pub fn materialize_empty_df(
-    projection: Option<&[usize]>,
-    reader_schema: &ArrowSchema,
-    hive_partition_columns: Option<&[Series]>,
-    row_index: Option<&RowIndex>,
-) -> DataFrame {
-    let schema = if let Some(projection) = projection {
-        Cow::Owned(apply_projection(reader_schema, projection))
-    } else {
-        Cow::Borrowed(reader_schema)
-    };
-    let mut df = DataFrame::from(schema.as_ref());
-
-    if let Some(row_index) = row_index {
-        df.insert_column(0, Series::new_empty(&row_index.name, &IDX_DTYPE))
-            .unwrap();
-    }
-
-    materialize_hive_partitions(&mut df, hive_partition_columns, 0);
-
-    df
-}
-
-use super::*;
+pub mod metadata;
+pub mod read;
+pub mod write;
 
 #[cfg(test)]
 mod test {
@@ -79,7 +25,7 @@ mod test {
     }
 
     #[test]
-    #[cfg(all(feature = "dtype-datetime", feature = "parquet"))]
+    #[cfg(feature = "dtype-datetime")]
     fn test_parquet_datetime_round_trip() -> PolarsResult<()> {
         use std::io::{Cursor, Seek, SeekFrom};
 
