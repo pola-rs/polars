@@ -228,14 +228,7 @@ impl DataType {
 
     /// Check if this [`DataType`] is a basic numeric type (excludes Decimal).
     pub fn is_numeric(&self) -> bool {
-        self.is_float() || self.is_integer() || self.is_dynamic()
-    }
-
-    pub fn is_dynamic(&self) -> bool {
-        matches!(
-            self,
-            DataType::Unknown(UnknownKind::Int(_) | UnknownKind::Float | UnknownKind::Str)
-        )
+        self.is_float() || self.is_integer()
     }
 
     /// Check if this [`DataType`] is a boolean
@@ -368,7 +361,10 @@ impl DataType {
 
     /// Check if this [`DataType`] is a basic floating point type (excludes Decimal).
     pub fn is_float(&self) -> bool {
-        matches!(self, DataType::Float32 | DataType::Float64)
+        matches!(
+            self,
+            DataType::Float32 | DataType::Float64 | DataType::Unknown(UnknownKind::Float)
+        )
     }
 
     /// Check if this [`DataType`] is an integer.
@@ -383,6 +379,7 @@ impl DataType {
                 | DataType::UInt16
                 | DataType::UInt32
                 | DataType::UInt64
+                | DataType::Unknown(UnknownKind::Int(_))
         )
     }
 

@@ -40,9 +40,6 @@ use polars_core::prelude::*;
 #[cfg(feature = "parquet")]
 pub(crate) use polars_core::SINGLE_LOCK;
 use polars_io::prelude::*;
-use polars_plan::logical_plan::{
-    OptimizationRule, SimplifyExprRule, StackOptimizer, TypeCoercionRule,
-};
 
 #[cfg(feature = "cov")]
 use crate::dsl::pearson_corr;

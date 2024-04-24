@@ -44,19 +44,12 @@ impl StackOptimizer {
                 plan.copy_exprs(&mut scratch);
                 plan.copy_inputs(&mut plans);
 
-                let mut has_dyn_literals = false;
+                if scratch.is_empty() {
+                    continue;
+                }
 
-                // first do a single pass to ensure we process
-                // from leaves to root.
-                // this ensures for instance
-                // that we first do constant folding on operands
-                // before we decide that multiple binary expression
-                // can be replaced with a fused operator
                 while let Some(expr_ir) = scratch.pop() {
                     exprs.push(expr_ir.node());
-                    // traverse all subexpressions and add to the stack
-                    let expr = unsafe { expr_arena.get_unchecked(expr_ir.node()) };
-                    expr.nodes(&mut exprs);
                 }
 
                 // process the expressions on the stack and apply optimizations.
@@ -64,7 +57,6 @@ impl StackOptimizer {
                     {
                         let expr = unsafe { expr_arena.get_unchecked(current_expr_node) };
                         if expr.is_leaf() {
-                            has_dyn_literals = expr.is_dynamic_literal();
                             continue;
                         }
                     }
@@ -84,18 +76,6 @@ impl StackOptimizer {
                     let expr = unsafe { expr_arena.get_unchecked(current_expr_node) };
                     // traverse subexpressions and add to the stack
                     expr.nodes(&mut exprs)
-                }
-
-                if has_dyn_literals {
-                    plan.copy_exprs(&mut scratch);
-                    while let Some(expr) = scratch.pop() {
-                        let ae = unsafe { expr_arena.get_unchecked(expr.node()) };
-                        match ae {
-                            AExpr::Literal(lv) if lv.is_dynamic() => expr_arena
-                                .replace(expr.node(), AExpr::Literal(lv.clone().materialize())),
-                            _ => {},
-                        }
-                    }
                 }
             }
         }

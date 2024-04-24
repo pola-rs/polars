@@ -1,5 +1,3 @@
-use polars_plan::prelude::typed_lit;
-
 use super::*;
 
 #[test]
@@ -194,7 +192,7 @@ fn test_update_groups_in_cast() -> PolarsResult<()> {
     let out = df
         .lazy()
         .group_by_stable([col("group")])
-        .agg([col("id").unique_counts() * typed_lit(-1)])
+        .agg([col("id").unique_counts() * lit(-1)])
         .collect()?;
 
     let expected = df![
