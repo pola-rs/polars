@@ -96,6 +96,12 @@ macro_rules! eval_binary_cmp_same_type {
             }
             (LiteralValue::Boolean(x), LiteralValue::Boolean(y)) => {
                 Some(AExpr::Literal(LiteralValue::Boolean(x $operand y)))
+            },
+            (LiteralValue::Int(x), LiteralValue::Int(y)) => {
+                Some(AExpr::Literal(LiteralValue::Boolean(x $operand y)))
+            }
+            (LiteralValue::Float(x), LiteralValue::Float(y)) => {
+                Some(AExpr::Literal(LiteralValue::Boolean(x $operand y)))
             }
             _ => None,
         }
@@ -262,6 +268,8 @@ fn eval_negate(ae: &AExpr) -> Option<AExpr> {
             LiteralValue::Int64(v) => LiteralValue::Int64(-*v),
             LiteralValue::Float32(v) => LiteralValue::Float32(-*v),
             LiteralValue::Float64(v) => LiteralValue::Float64(-*v),
+            LiteralValue::Float(v) => LiteralValue::Float(-*v),
+            LiteralValue::Int(v) => LiteralValue::Int(-*v),
             _ => return None,
         },
         _ => return None,
@@ -478,6 +486,9 @@ impl OptimizationRule for SimplifyExprRule {
                                 (LiteralValue::Float64(x), LiteralValue::Float64(y)) => {
                                     Some(AExpr::Literal(LiteralValue::Float64(x / y)))
                                 },
+                                (LiteralValue::Float(x), LiteralValue::Float(y)) => {
+                                    Some(AExpr::Literal(LiteralValue::Float64(x / y)))
+                                },
                                 #[cfg(feature = "dtype-i8")]
                                 (LiteralValue::Int8(x), LiteralValue::Int8(y)) => {
                                     Some(AExpr::Literal(LiteralValue::Int8(
@@ -497,6 +508,11 @@ impl OptimizationRule for SimplifyExprRule {
                                 },
                                 (LiteralValue::Int64(x), LiteralValue::Int64(y)) => {
                                     Some(AExpr::Literal(LiteralValue::Int64(
+                                        x.wrapping_floor_div_mod(*y).0,
+                                    )))
+                                },
+                                (LiteralValue::Int(x), LiteralValue::Int(y)) => {
+                                    Some(AExpr::Literal(LiteralValue::Int(
                                         x.wrapping_floor_div_mod(*y).0,
                                     )))
                                 },
@@ -531,6 +547,9 @@ impl OptimizationRule for SimplifyExprRule {
                                 (LiteralValue::Float64(x), LiteralValue::Float64(y)) => {
                                     Some(AExpr::Literal(LiteralValue::Float64(x / y)))
                                 },
+                                (LiteralValue::Float(x), LiteralValue::Float(y)) => {
+                                    Some(AExpr::Literal(LiteralValue::Float(x / y)))
+                                },
                                 #[cfg(feature = "dtype-i8")]
                                 (LiteralValue::Int8(x), LiteralValue::Int8(y)) => Some(
                                     AExpr::Literal(LiteralValue::Float64(*x as f64 / *y as f64)),
@@ -558,6 +577,9 @@ impl OptimizationRule for SimplifyExprRule {
                                 ),
                                 (LiteralValue::UInt64(x), LiteralValue::UInt64(y)) => Some(
                                     AExpr::Literal(LiteralValue::Float64(*x as f64 / *y as f64)),
+                                ),
+                                (LiteralValue::Int(x), LiteralValue::Int(y)) => Some(
+                                    AExpr::Literal(LiteralValue::Float(*x as f64 / *y as f64)),
                                 ),
                                 _ => None,
                             }

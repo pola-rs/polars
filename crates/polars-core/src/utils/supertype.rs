@@ -1,3 +1,4 @@
+use num_traits::Signed;
 use super::*;
 
 /// Given two data types, determine the data type that both types can safely be cast to.
@@ -254,7 +255,7 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
                 Some(DataType::List(Box::new(st)))
             }
             #[cfg(feature = "dtype-struct")]
-            (Struct(inner), right @ Unknown(UnknownKind::Float | UnknownKind::Int)) => {
+            (Struct(inner), right @ Unknown(UnknownKind::Float | UnknownKind::Int(_))) => {
                 match inner.get(0) {
                     Some(inner) => get_supertype(&inner.dtype, right),
                     None => None
@@ -262,8 +263,7 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
             },
             (dt, Unknown(kind)) => {
                 match kind {
-                    UnknownKind::Int if dt.is_integer() | dt.is_string() => Some(dt.clone()),
-                    UnknownKind::Float | UnknownKind::Int if dt.is_float() | dt.is_string() => Some(dt.clone()),
+                    UnknownKind::Float | UnknownKind::Int(_) if dt.is_float() | dt.is_string() => Some(dt.clone()),
                     UnknownKind::Float if dt.is_numeric() => Some(Unknown(UnknownKind::Float)),
                     UnknownKind::Str if dt.is_string() | dt.is_enum() => Some(dt.clone()),
                     UnknownKind::Str if dt.is_categorical()  => {
@@ -271,6 +271,14 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
                         Some(Categorical(None, *ord))
                     },
                     dynam @ _ if dt.is_null() => Some(Unknown(*dynam)),
+                    UnknownKind::Int(v) if dt.is_numeric() => {
+                        let smallest_fitting_dtype = if dt.is_unsigned_integer() && v.is_positive() {
+                            materialize_dyn_int_pos(*v).dtype()
+                        } else {
+                            materialize_smallest_dyn_int(*v).dtype()
+                        };
+                        get_supertype(&dt, &smallest_fitting_dtype)
+                    }
                     _ => Some(Unknown(UnknownKind::Any))
                 }
             },
@@ -359,5 +367,56 @@ fn super_type_structs(fields_a: &[Field], fields_b: &[Field]) -> Option<DataType
             new_fields.push(Field::new(&a.name, st))
         }
         Some(DataType::Struct(new_fields))
+    }
+}
+
+pub fn materialize_dyn_int(v: i128) -> AnyValue<'static> {
+    // Try to get the "smallest" fitting value.
+    // TODO! next breaking go to true smallest.
+    match i32::try_from(v).ok() {
+        Some(v) => AnyValue::Int32(v),
+        None => match i64::try_from(v).ok() {
+            Some(v) => AnyValue::Int64(v),
+            None => match u64::try_from(v).ok() {
+                Some(v) => AnyValue::UInt64(v),
+                None => AnyValue::Null,
+            },
+        },
+    }
+}
+fn materialize_dyn_int_pos(v: i128) -> AnyValue<'static> {
+    // Try to get the "smallest" fitting value.
+    // TODO! next breaking go to true smallest.
+    match u8::try_from(v).ok() {
+        Some(v) => AnyValue::UInt8(v),
+        None => match u16::try_from(v).ok() {
+            Some(v) => AnyValue::UInt16(v),
+            None => match u32::try_from(v).ok() {
+                Some(v) => AnyValue::UInt32(v),
+                None => match u64::try_from(v).ok() {
+                    Some(v) => AnyValue::UInt64(v),
+                    None => AnyValue::Null
+                },
+            },
+        },
+    }
+}
+
+fn materialize_smallest_dyn_int(v: i128) -> AnyValue<'static> {
+    match i8::try_from(v).ok() {
+        Some(v) => AnyValue::Int8(v),
+        None => match i16::try_from(v).ok() {
+            Some(v) => AnyValue::Int16(v),
+            None => match i32::try_from(v).ok() {
+                Some(v) => AnyValue::Int32(v),
+                None => match i64::try_from(v).ok() {
+                    Some(v) => AnyValue::Int64(v),
+                    None => match u64::try_from(v).ok() {
+                        Some(v) => AnyValue::UInt64(v),
+                        None => AnyValue::Null,
+                    },
+                }
+            },
+        },
     }
 }

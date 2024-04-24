@@ -5,6 +5,7 @@ use polars_core::export::chrono::{Duration as ChronoDuration, NaiveDate, NaiveDa
 use polars_core::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+use polars_core::utils::materialize_dyn_int;
 
 use crate::constants::{get_literal_name, LITERAL_NAME};
 use crate::prelude::*;
@@ -138,38 +139,7 @@ impl LiteralValue {
             Time(v) => AnyValue::Time(*v),
             Series(s) => AnyValue::List(s.0.clone().into_series()),
             Int(v) => {
-                // Try to get the smallest fitting value.
-                // Yeah, ugly, I know.
-                let v = *v;
-
-                match i32::try_from(v).ok() {
-                    Some(v) => AnyValue::Int32(v),
-                    None => match i64::try_from(v).ok() {
-                        Some(v) => AnyValue::Int64(v),
-                        None => match u64::try_from(v).ok() {
-                            Some(v) => AnyValue::UInt64(v),
-                            None => return None,
-                        },
-                    },
-                }
-
-                // Do full smaller types at next PR.
-                // match i8::try_from(v).ok() {
-                //     Some(v) => AnyValue::Int8(v),
-                //     None => match i16::try_from(v).ok() {
-                //         Some(v) => AnyValue::Int16(v),
-                //         None => match i32::try_from(v).ok() {
-                //             Some(v) => AnyValue::Int32(v),
-                //             None => match i64::try_from(v).ok() {
-                //                 Some(v) => AnyValue::Int64(v),
-                //                 None => match u64::try_from(v).ok() {
-                //                     Some(v) => AnyValue::UInt64(v),
-                //                     None => return None,
-                //                 },
-                //             },
-                //         },
-                //     },
-                // }
+                materialize_dyn_int(*v)
             },
             Float(v) => AnyValue::Float64(*v),
             StrCat(v) => AnyValue::String(&v),
@@ -244,7 +214,7 @@ impl LiteralValue {
             LiteralValue::Null => DataType::Null,
             #[cfg(feature = "dtype-time")]
             LiteralValue::Time(_) => DataType::Time,
-            LiteralValue::Int(_) => DataType::Unknown(UnknownKind::Int),
+            LiteralValue::Int(v) => DataType::Unknown(UnknownKind::Int(*v)),
             LiteralValue::Float(_) => DataType::Unknown(UnknownKind::Float),
             LiteralValue::StrCat(_) => DataType::Unknown(UnknownKind::Str)
         }

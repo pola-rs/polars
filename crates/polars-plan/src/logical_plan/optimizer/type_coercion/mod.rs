@@ -359,7 +359,7 @@ impl OptimizationRule for TypeCoercionRule {
                         match (lhs, rhs) {
                             (UnknownKind::Any, _) | (_, UnknownKind::Any) => return Ok(None),
                             // continue
-                            (UnknownKind::Int, UnknownKind::Float) | (UnknownKind::Float, UnknownKind::Int) => {},
+                            (UnknownKind::Int(_), UnknownKind::Float) | (UnknownKind::Float, UnknownKind::Int(_)) => {},
                             (lhs, rhs) if lhs == rhs => {
                                 let falsy = materialize(falsy);
                                 let truthy = materialize(truthy);
@@ -682,7 +682,7 @@ impl OptimizationRule for TypeCoercionRule {
 
                 match super_type {
                     DataType::Unknown(UnknownKind::Float) => super_type = DataType::Float64,
-                    DataType::Unknown(UnknownKind::Int) => super_type = DataType::Int64,
+                    DataType::Unknown(UnknownKind::Int(_)) => super_type = DataType::Int64,
                     _ => {}
                 }
 
@@ -811,7 +811,7 @@ fn inline_or_prune_cast(
             },
             LiteralValue::Null => {
                 match dtype {
-                    DataType::Unknown(UnknownKind::Float | UnknownKind::Int | UnknownKind::Str) => return Ok(Some(AExpr::Literal(LiteralValue::Null))),
+                    DataType::Unknown(UnknownKind::Float | UnknownKind::Int(_) | UnknownKind::Str) => return Ok(Some(AExpr::Literal(LiteralValue::Null))),
                     _ => return Ok(None)
                 }
             }
@@ -860,7 +860,7 @@ fn early_escape(type_self: &DataType, type_other: &DataType) -> Option<()> {
         (DataType::Unknown(lhs), DataType::Unknown(rhs)) => {
             match (lhs, rhs) {
                 (UnknownKind::Any, _) | (_, UnknownKind::Any) => None,
-                (UnknownKind::Int, UnknownKind::Float) | (UnknownKind::Float, UnknownKind::Int) => Some(()),
+                (UnknownKind::Int(_), UnknownKind::Float) | (UnknownKind::Float, UnknownKind::Int(_)) => Some(()),
                 (lhs, rhs) if lhs == rhs => None,
                 _ => Some(())
             }

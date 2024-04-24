@@ -99,6 +99,7 @@ def test_meta_tree_format(namespace_files_path: Path) -> None:
         tree_fmt = "\n".join(test_set.strip().split("\n")[1:])
         e = eval(expression)
         result = e.meta.tree_format(return_as_string=True)
+        print(result)
         result = "\n".join(s.rstrip() for s in result.split("\n"))
         assert result.strip() == tree_fmt.strip()
 

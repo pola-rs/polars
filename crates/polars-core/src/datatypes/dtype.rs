@@ -15,7 +15,8 @@ pub static DTYPE_ENUM_VALUE: &str = "ENUM";
     derive(Serialize, Deserialize)
 )]
 pub enum UnknownKind {
-    Int,
+    // Hold the value to determine the concrete size.
+    Int(i128),
     Float,
     // Can be Categorical or String
     Str,
@@ -235,7 +236,7 @@ impl DataType {
     pub fn is_dynamic(&self) -> bool {
         matches!(
                 self,
-                DataType::Unknown(UnknownKind::Int | UnknownKind::Float)
+                DataType::Unknown(UnknownKind::Int(_) | UnknownKind::Float | UnknownKind::Str)
             )
     }
 
@@ -647,7 +648,7 @@ impl Display for DataType {
             DataType::Struct(fields) => return write!(f, "struct[{}]", fields.len()),
             DataType::Unknown(kind) => match kind {
                 UnknownKind::Any => "unknown",
-                UnknownKind::Int => "dyn int",
+                UnknownKind::Int(_) => "dyn int",
                 UnknownKind::Float => "dyn float",
                 UnknownKind::Str => "dyn str",
             },

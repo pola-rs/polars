@@ -23,6 +23,7 @@ use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList, PySequence};
 use smartstring::alias::String as SmartString;
+use polars_core::utils::materialize_dyn_int;
 
 use crate::error::PyPolarsErr;
 #[cfg(feature = "object")]
@@ -153,7 +154,7 @@ impl ToPyObject for Wrap<DataType> {
                 let class = pl.getattr(intern!(py, "Int32")).unwrap();
                 class.call0().unwrap().into()
             },
-            DataType::Int64 | DataType::Unknown(UnknownKind::Int)=> {
+            DataType::Int64 => {
                 let class = pl.getattr(intern!(py, "Int64")).unwrap();
                 class.call0().unwrap().into()
             },
@@ -259,6 +260,9 @@ impl ToPyObject for Wrap<DataType> {
             DataType::Null => {
                 let class = pl.getattr(intern!(py, "Null")).unwrap();
                 class.call0().unwrap().into()
+            },
+            DataType::Unknown(UnknownKind::Int(v)) => {
+                Wrap(materialize_dyn_int(*v).dtype()).to_object(py)
             },
             DataType::Unknown(_) => {
                 let class = pl.getattr(intern!(py, "Unknown")).unwrap();

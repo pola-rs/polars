@@ -1,3 +1,4 @@
+use polars_core::utils::materialize_dyn_int;
 use super::*;
 
 impl FunctionExpr {
@@ -537,8 +538,8 @@ pub(crate) fn args_to_supertype<D: AsRef<DataType>>(dtypes: &[D]) -> PolarsResul
                         UnknownKind::Float => {
                             st = DataType::Float64
                         },
-                        UnknownKind::Int => {
-                            st = DataType::Int64
+                        UnknownKind::Int(v) => {
+                            st = materialize_dyn_int(v).dtype();
                         },
                         UnknownKind::Str => {
                             st = DataType::String

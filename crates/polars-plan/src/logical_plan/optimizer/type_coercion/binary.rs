@@ -213,9 +213,10 @@ pub(super) fn process_binary(
     let (right, type_right): (&AExpr, DataType) =
         unpack!(get_aexpr_and_type(expr_arena, node_right, &input_schema));
 
+    dbg!(&type_left, &type_right);
     match (&type_left, &type_right) {
         (Unknown(UnknownKind::Any), Unknown(UnknownKind::Any)) => return Ok(None),
-        (Unknown(UnknownKind::Any), Unknown(UnknownKind::Int | UnknownKind::Float | UnknownKind::Str)) => {
+        (Unknown(UnknownKind::Any), Unknown(UnknownKind::Int(_) | UnknownKind::Float | UnknownKind::Str)) => {
             let right = unpack!(materialize(right));
             let right = expr_arena.add(right);
 
@@ -225,7 +226,7 @@ pub(super) fn process_binary(
                 right
             }))
         }
-        (Unknown(UnknownKind::Int | UnknownKind::Float | UnknownKind::Str), Unknown(UnknownKind::Any)) => {
+        (Unknown(UnknownKind::Int(_) | UnknownKind::Float | UnknownKind::Str), Unknown(UnknownKind::Any)) => {
             let left = unpack!(materialize(left));
             let left = expr_arena.add(left);
 
