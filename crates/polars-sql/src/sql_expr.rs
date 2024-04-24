@@ -654,7 +654,7 @@ impl SQLExprVisitor<'_> {
         }
         if let Some(limit) = &expr.limit {
             let limit = match self.visit_expr(limit)? {
-                Expr::Literal(LiteralValue::Int64(n)) => n as usize,
+                Expr::Literal(LiteralValue::Int(n)) if n >= 0 => n as usize,
                 _ => polars_bail!(ComputeError: "limit in ARRAY_AGG must be a positive integer"),
             };
             base = base.head(Some(limit));
