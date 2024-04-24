@@ -18,13 +18,10 @@
 pub mod read;
 pub mod write;
 
-use std::sync::Arc;
 
 pub use polars_parquet::write::FileMetaData;
 pub use read::*;
 pub use write::{BrotliLevel, GzipLevel, ParquetWriteOptions, ZstdLevel, *};
-
-pub type FileMetaDataRef = Arc<FileMetaData>;
 
 #[cfg(test)]
 mod test {

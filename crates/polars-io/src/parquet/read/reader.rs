@@ -1,4 +1,5 @@
 use std::io::{Read, Seek};
+use std::sync::Arc;
 
 use arrow::datatypes::ArrowSchemaRef;
 use polars_core::prelude::*;
@@ -21,6 +22,8 @@ use crate::parquet::async_impl::FetchRowGroupsFromObjectStore;
 use crate::predicates::PhysicalIoExpr;
 use crate::prelude::*;
 use crate::RowIndex;
+
+pub type FileMetaDataRef = Arc<FileMetaData>;
 
 #[derive(Clone, Debug, PartialEq, Eq, Copy, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
