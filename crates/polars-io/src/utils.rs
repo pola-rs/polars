@@ -298,6 +298,17 @@ pub(crate) fn chunk_df_for_writing(
     Ok(result)
 }
 
+static CLOUD_URL: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^(s3a?|gs|gcs|file|abfss?|azure|az|adl|https?)://").unwrap());
+
+/// Check if the path is a cloud url.
+pub fn is_cloud_url<P: AsRef<Path>>(p: P) -> bool {
+    match p.as_ref().as_os_str().to_str() {
+        Some(s) => CLOUD_URL.is_match(s),
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
