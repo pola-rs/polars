@@ -13,7 +13,7 @@
 //!     reader.finish()
 //! }
 //! ```
-//!
+
 pub mod metadata;
 pub mod read;
 pub mod write;
@@ -41,7 +41,7 @@ mod test {
     }
 
     #[test]
-    #[cfg(all(feature = "dtype-datetime", feature = "parquet"))]
+    #[cfg(feature = "dtype-datetime")]
     fn test_parquet_datetime_round_trip() -> PolarsResult<()> {
         use std::io::{Cursor, Seek, SeekFrom};
 
