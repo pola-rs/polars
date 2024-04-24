@@ -581,8 +581,10 @@ def test_round_expr() -> None:
                 datetime(2023, 10, 11),
                 datetime(2022, 3, 20, 5, 7, 18),
                 datetime(2022, 4, 3, 13, 30, 32),
+                None,
+                datetime(2022, 12, 1),
             ],
-            "every": ["1y", "1mo", "1m", "1m"],
+            "every": ["1y", "1mo", "1m", "1m", "1mo", None],
         }
     )
 
@@ -601,18 +603,24 @@ def test_round_expr() -> None:
                 datetime(2023, 10, 1),
                 datetime(2022, 3, 20, 5, 7),
                 datetime(2022, 4, 3, 13, 31),
+                None,
+                None,
             ],
             "date_lit": [
                 datetime(2022, 1, 1),
                 datetime(2022, 4, 1),
                 datetime(2022, 4, 3, 13, 31),
                 datetime(2022, 4, 3, 13, 31),
+                datetime(2022, 4, 1),
+                None,
             ],
             "every_lit": [
                 datetime(2022, 11, 14),
                 datetime(2023, 10, 11),
                 datetime(2022, 3, 20),
                 datetime(2022, 4, 4),
+                None,
+                datetime(2022, 12, 1),
             ],
         }
     )
