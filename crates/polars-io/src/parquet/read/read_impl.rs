@@ -16,9 +16,10 @@ use super::utils::materialize_empty_df;
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 #[cfg(feature = "cloud")]
 use crate::parquet::async_impl::FetchRowGroupsFromObjectStore;
+use crate::parquet::metadata::FileMetaDataRef;
 use crate::parquet::mmap::mmap_columns;
 use crate::parquet::predicates::read_this_row_group;
-use crate::parquet::{mmap, FileMetaDataRef, ParallelStrategy};
+use crate::parquet::{mmap, ParallelStrategy};
 use crate::predicates::{apply_predicate, PhysicalIoExpr};
 use crate::utils::get_reader_bytes;
 use crate::RowIndex;

@@ -22,8 +22,7 @@ use crate::parquet::async_impl::FetchRowGroupsFromObjectStore;
 use crate::predicates::PhysicalIoExpr;
 use crate::prelude::*;
 use crate::RowIndex;
-
-pub type FileMetaDataRef = Arc<FileMetaData>;
+use crate::parquet::metadata::FileMetaDataRef;
 
 #[derive(Clone, Debug, PartialEq, Eq, Copy, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -60,7 +59,7 @@ pub struct ParquetReader<R: Read + Seek> {
     schema: Option<ArrowSchemaRef>,
     row_index: Option<RowIndex>,
     low_memory: bool,
-    metadata: Option<Arc<FileMetaData>>,
+    metadata: Option<FileMetaDataRef>,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     hive_partition_columns: Option<Vec<Series>>,
     use_statistics: bool,
@@ -253,7 +252,7 @@ impl ParquetAsyncReader {
         uri: &str,
         cloud_options: Option<&CloudOptions>,
         schema: Option<ArrowSchemaRef>,
-        metadata: Option<Arc<FileMetaData>>,
+        metadata: Option<FileMetaDataRef>,
     ) -> PolarsResult<ParquetAsyncReader> {
         Ok(ParquetAsyncReader {
             reader: ParquetObjectStore::from_uri(uri, cloud_options, metadata).await?,
@@ -357,7 +356,7 @@ impl ParquetAsyncReader {
         )
     }
 
-    pub async fn get_metadata(&mut self) -> PolarsResult<&Arc<FileMetaData>> {
+    pub async fn get_metadata(&mut self) -> PolarsResult<&FileMetaDataRef> {
         self.reader.get_metadata().await
     }
 

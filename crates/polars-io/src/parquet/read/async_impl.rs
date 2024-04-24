@@ -16,6 +16,7 @@ use tokio::sync::Mutex;
 use super::mmap::ColumnStore;
 use super::read_impl::compute_row_group_range;
 use crate::cloud::{build_object_store, CloudLocation, CloudOptions, PolarsObjectStore};
+use crate::parquet::metadata::FileMetaDataRef;
 use crate::pl_async::get_runtime;
 use crate::predicates::PhysicalIoExpr;
 use crate::prelude::predicates::read_this_row_group;
@@ -28,14 +29,14 @@ pub struct ParquetObjectStore {
     store: PolarsObjectStore,
     path: ObjectPath,
     length: Option<usize>,
-    metadata: Option<Arc<FileMetaData>>,
+    metadata: Option<FileMetaDataRef>,
 }
 
 impl ParquetObjectStore {
     pub async fn from_uri(
         uri: &str,
         options: Option<&CloudOptions>,
-        metadata: Option<Arc<FileMetaData>>,
+        metadata: Option<FileMetaDataRef>,
     ) -> PolarsResult<Self> {
         let (
             CloudLocation {
@@ -88,7 +89,7 @@ impl ParquetObjectStore {
     }
 
     /// Fetch and memoize the metadata of the parquet file.
-    pub async fn get_metadata(&mut self) -> PolarsResult<&Arc<FileMetaData>> {
+    pub async fn get_metadata(&mut self) -> PolarsResult<&FileMetaDataRef> {
         if self.metadata.is_none() {
             self.metadata = Some(Arc::new(self.fetch_metadata().await?));
         }
