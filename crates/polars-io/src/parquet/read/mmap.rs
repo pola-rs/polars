@@ -1,6 +1,7 @@
 use arrow::datatypes::Field;
 #[cfg(feature = "async")]
 use bytes::Bytes;
+#[cfg(feature = "async")]
 use polars_core::datatypes::PlHashMap;
 use polars_error::PolarsResult;
 use polars_parquet::read::{

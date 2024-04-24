@@ -24,5 +24,7 @@ mod reader;
 mod utils;
 
 pub use options::{ParallelStrategy, ParquetOptions};
-pub use reader::{BatchedParquetReader, ParquetAsyncReader, ParquetReader};
+#[cfg(feature = "cloud")]
+pub use reader::ParquetAsyncReader;
+pub use reader::{BatchedParquetReader, ParquetReader};
 pub use utils::materialize_empty_df;

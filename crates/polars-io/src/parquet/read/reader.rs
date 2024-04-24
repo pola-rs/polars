@@ -13,6 +13,7 @@ use super::async_impl::FetchRowGroupsFromObjectStore;
 use super::async_impl::ParquetObjectStore;
 pub use super::read_impl::BatchedParquetReader;
 use super::read_impl::{read_parquet, FetchRowGroupsFromMmapReader};
+#[cfg(feature = "cloud")]
 use super::utils::materialize_empty_df;
 #[cfg(feature = "cloud")]
 use crate::cloud::CloudOptions;
