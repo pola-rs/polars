@@ -241,13 +241,14 @@ impl DateLikeNameSpace {
     }
 
     /// Round the Datetime/Date range into buckets.
-    pub fn round<S: AsRef<str>>(self, every: S, offset: S) -> Expr {
-        let every = every.as_ref().into();
+    pub fn round<S: AsRef<str>>(self, every: Expr, offset: S) -> Expr {
         let offset = offset.as_ref().into();
-        self.0
-            .map_private(FunctionExpr::TemporalExpr(TemporalFunction::Round(
-                every, offset,
-            )))
+        self.0.map_many_private(
+            FunctionExpr::TemporalExpr(TemporalFunction::Round(offset)),
+            &[every],
+            false,
+            false,
+        )
     }
 
     /// Offset this `Date/Datetime` by a given offset [`Duration`].

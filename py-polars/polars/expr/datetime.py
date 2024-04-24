@@ -26,6 +26,7 @@ if TYPE_CHECKING:
         Ambiguous,
         EpochTimeUnit,
         IntoExpr,
+        IntoExprColumn,
         NonExistent,
         Roll,
         TimeUnit,
@@ -344,7 +345,7 @@ class ExprDateTimeNameSpace:
     @unstable()
     def round(
         self,
-        every: str | timedelta,
+        every: str | timedelta | IntoExprColumn,
         offset: str | timedelta | None = None,
         *,
         ambiguous: Ambiguous | Expr | None = None,
@@ -481,10 +482,12 @@ class ExprDateTimeNameSpace:
                 "`ambiguous` is deprecated. It is now automatically inferred; you can safely omit this argument.",
                 version="0.19.13",
             )
-
+        if not isinstance(every, pl.Expr):
+            every = parse_as_duration_string(every)
+        every = parse_as_expression(every, str_as_lit=True)
         return wrap_expr(
             self._pyexpr.dt_round(
-                parse_as_duration_string(every),
+                every,
                 parse_as_duration_string(offset),
             )
         )
