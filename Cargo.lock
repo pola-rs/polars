@@ -2971,7 +2971,7 @@ dependencies = [
  "ahash",
  "aho-corasick",
  "argminmax",
- "base64 0.21.7",
+ "base64 0.22.0",
  "bytemuck",
  "chrono",
  "chrono-tz",
@@ -3005,7 +3005,7 @@ version = "0.39.2"
 dependencies = [
  "ahash",
  "async-stream",
- "base64 0.21.7",
+ "base64 0.22.0",
  "brotli",
  "ethnum",
  "fallible-streaming-iterator",
