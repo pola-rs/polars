@@ -17,12 +17,12 @@
 #[cfg(feature = "cloud")]
 mod async_impl;
 mod mmap;
+mod options;
 mod predicates;
 mod read_impl;
 mod reader;
 mod utils;
 
-pub use reader::{
-    BatchedParquetReader, ParallelStrategy, ParquetAsyncReader, ParquetOptions, ParquetReader,
-};
+pub use options::{ParallelStrategy, ParquetOptions};
+pub use reader::{BatchedParquetReader, ParquetAsyncReader, ParquetReader};
 pub use utils::materialize_empty_df;

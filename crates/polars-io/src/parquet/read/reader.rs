@@ -6,8 +6,6 @@ use polars_core::prelude::*;
 #[cfg(feature = "cloud")]
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_parquet::read;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "cloud")]
 use super::async_impl::FetchRowGroupsFromObjectStore;
@@ -23,29 +21,6 @@ use crate::parquet::metadata::FileMetaDataRef;
 use crate::predicates::PhysicalIoExpr;
 use crate::prelude::*;
 use crate::RowIndex;
-
-#[derive(Clone, Debug, PartialEq, Eq, Copy, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct ParquetOptions {
-    pub parallel: ParallelStrategy,
-    pub low_memory: bool,
-    pub use_statistics: bool,
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Default, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub enum ParallelStrategy {
-    /// Don't parallelize
-    None,
-    /// Parallelize over the columns
-    Columns,
-    /// Parallelize over the row groups
-    RowGroups,
-    /// Automatically determine over which unit to parallelize
-    /// This will choose the most occurring unit.
-    #[default]
-    Auto,
-}
 
 /// Read Apache parquet format into a DataFrame.
 #[must_use]
