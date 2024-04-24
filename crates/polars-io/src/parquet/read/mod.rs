@@ -1,3 +1,19 @@
+//! Functionality for reading Apache Parquet files.
+//!
+//! # Examples
+//!
+//! ```
+//! use polars_core::prelude::*;
+//! use polars_io::prelude::*;
+//! use std::fs::File;
+//!
+//! fn example() -> PolarsResult<DataFrame> {
+//!     let r = File::open("example.parquet").unwrap();
+//!     let reader = ParquetReader::new(r);
+//!     reader.finish()
+//! }
+//! ```
+
 #[cfg(feature = "cloud")]
 pub(crate) mod async_impl;
 pub(crate) mod mmap;

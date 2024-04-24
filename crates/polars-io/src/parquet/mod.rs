@@ -1,18 +1,4 @@
-//! # Reading Apache parquet files.
-//!
-//! ## Example
-//!
-//! ```rust
-//! use polars_core::prelude::*;
-//! use polars_io::prelude::*;
-//! use std::fs::File;
-//!
-//! fn example() -> PolarsResult<DataFrame> {
-//!     let r = File::open("some_file.parquet").unwrap();
-//!     let reader = ParquetReader::new(r);
-//!     reader.finish()
-//! }
-//! ```
+//! Functionality for reading and writing Apache Parquet files.
 
 pub mod metadata;
 pub mod read;

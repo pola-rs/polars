@@ -1,3 +1,5 @@
+//! Functionality for reading and writing Apache Parquet files.
+
 mod batched_writer;
 mod options;
 mod writer;
