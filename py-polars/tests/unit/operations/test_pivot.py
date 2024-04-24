@@ -72,7 +72,9 @@ def test_pivot_no_index() -> None:
             "M": [4, 5, 6],
         }
     )
-    result = df.pivot(index=None, columns="foo", values=["N", "M"], aggregate_function=None)
+    result = df.pivot(
+        index=None, columns="foo", values=["N", "M"], aggregate_function=None
+    )
 
     expected = pl.DataFrame(
         {
