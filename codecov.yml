@@ -3,7 +3,6 @@ coverage:
     project: off
     patch: off
 comment:
-  layout: "condensed_header, condensed_files, condensed_footer"
   require_changes: true
   after_n_builds: 3
 ignore:
