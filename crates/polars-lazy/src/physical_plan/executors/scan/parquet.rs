@@ -6,6 +6,7 @@ use polars_core::config::{get_file_prefetch_size, verbose};
 use polars_core::utils::accumulate_dataframes_vertical;
 use polars_io::cloud::CloudOptions;
 use polars_io::{is_cloud_url, RowIndex};
+use polars_io::parquet::read::materialize_empty_df;
 
 use super::*;
 

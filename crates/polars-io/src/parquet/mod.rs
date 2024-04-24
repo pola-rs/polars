@@ -14,49 +14,17 @@
 //! }
 //! ```
 //!
-#[cfg(feature = "cloud")]
-pub(super) mod async_impl;
-pub(super) mod mmap;
-pub mod predicates;
-mod read;
-mod read_impl;
-mod write;
 
-use std::borrow::Cow;
+pub mod read;
+pub mod write;
+
+use std::sync::Arc;
 
 pub use polars_parquet::write::FileMetaData;
 pub use read::*;
 pub use write::{BrotliLevel, GzipLevel, ParquetWriteOptions, ZstdLevel, *};
 
-use crate::parquet::read_impl::materialize_hive_partitions;
-use crate::utils::apply_projection;
-
 pub type FileMetaDataRef = Arc<FileMetaData>;
-
-pub fn materialize_empty_df(
-    projection: Option<&[usize]>,
-    reader_schema: &ArrowSchema,
-    hive_partition_columns: Option<&[Series]>,
-    row_index: Option<&RowIndex>,
-) -> DataFrame {
-    let schema = if let Some(projection) = projection {
-        Cow::Owned(apply_projection(reader_schema, projection))
-    } else {
-        Cow::Borrowed(reader_schema)
-    };
-    let mut df = DataFrame::from(schema.as_ref());
-
-    if let Some(row_index) = row_index {
-        df.insert_column(0, Series::new_empty(&row_index.name, &IDX_DTYPE))
-            .unwrap();
-    }
-
-    materialize_hive_partitions(&mut df, hive_partition_columns, 0);
-
-    df
-}
-
-use super::*;
 
 #[cfg(test)]
 mod test {

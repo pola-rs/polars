@@ -1,12 +1,12 @@
 use arrow::datatypes::Field;
 #[cfg(feature = "async")]
 use bytes::Bytes;
+use polars_core::datatypes::PlHashMap;
+use polars_error::PolarsResult;
 use polars_parquet::read::{
     column_iter_to_arrays, get_field_columns, ArrayIter, BasicDecompressor, ColumnChunkMetaData,
     PageReader,
 };
-
-use super::*;
 
 /// Store columns data in two scenarios:
 /// 1. a local memory mapped file

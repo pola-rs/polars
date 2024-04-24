@@ -13,10 +13,9 @@ use smartstring::alias::String as SmartString;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::Mutex;
 
-use super::cloud::{build_object_store, CloudLocation};
 use super::mmap::ColumnStore;
-use crate::cloud::{CloudOptions, PolarsObjectStore};
-use crate::parquet::read_impl::compute_row_group_range;
+use super::read_impl::compute_row_group_range;
+use crate::cloud::{build_object_store, CloudLocation, CloudOptions, PolarsObjectStore};
 use crate::pl_async::get_runtime;
 use crate::predicates::PhysicalIoExpr;
 use crate::prelude::predicates::read_this_row_group;
