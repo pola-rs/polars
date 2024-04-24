@@ -7,8 +7,6 @@ pub mod avro;
 pub mod cloud;
 #[cfg(any(feature = "csv", feature = "json"))]
 pub mod csv;
-#[cfg(feature = "parquet")]
-pub mod export;
 #[cfg(any(feature = "ipc", feature = "ipc_streaming"))]
 pub mod ipc;
 #[cfg(feature = "json")]

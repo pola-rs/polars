@@ -1,5 +1,4 @@
 //! tests that require parsing a csv
-//!
 
 use polars_core::prelude::*;
 
