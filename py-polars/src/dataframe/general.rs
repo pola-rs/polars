@@ -398,7 +398,7 @@ impl PyDataFrame {
     #[pyo3(signature = (index, columns, values, maintain_order, sort_columns, aggregate_expr, separator))]
     pub fn pivot_expr(
         &self,
-        index: Vec<String>,
+        index: Option<Vec<String>>,
         columns: Vec<String>,
         values: Option<Vec<String>>,
         maintain_order: bool,

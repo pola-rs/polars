@@ -7026,7 +7026,7 @@ class DataFrame:
         self,
         values: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None,
         index: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None,
-        columns: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None,
+        columns: ColumnNameOrSelector | Sequence[ColumnNameOrSelector],
         aggregate_function: PivotAgg | Expr | None = None,
         *,
         maintain_order: bool = True,
@@ -7046,7 +7046,7 @@ class DataFrame:
             arguments contains multiple columns as well. If None, all remaining columns
             will be used.
         index
-            One or multiple keys to group by.
+            One or multiple keys to group by. If None, a single output row is produced.
         columns
             Name of the column(s) whose values will be used as the header of the output
             DataFrame.
@@ -7136,6 +7136,29 @@ class DataFrame:
         │ a    ┆ 0.998347 ┆ null     │
         │ b    ┆ 0.964028 ┆ 0.999954 │
         └──────┴──────────┴──────────┘
+
+        Set the index to None to output a single row.
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "col1": ["a", "a", "a", "b", "b", "b"],
+        ...         "col2": ["x", "x", "x", "x", "y", "y"],
+        ...         "col3": [6, 7, 3, 2, 5, 7],
+        ...     }
+        ... )
+        >>> df.pivot(
+        ...     index=None,
+        ...     columns="col2",
+        ...     values="col3",
+        ...     aggregate_function=pl.element().tanh().mean(),
+        ... )
+        shape: (1, 2)
+        ┌──────────┬──────────┐
+        │ x        ┆ y        │
+        │ ---      ┆ ---      │
+        │ f64      ┆ f64      │
+        ╞══════════╪══════════╡
+        │ 0.989767 ┆ 0.999954 │
+        └──────────┴──────────┘
 
         Note that `pivot` is only available in eager mode. If you know the unique
         column values in advance, you can use :meth:`polars.LazyFrame.groupby` to

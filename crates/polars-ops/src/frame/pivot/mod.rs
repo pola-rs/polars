@@ -84,7 +84,7 @@ fn restore_logical_type(s: &Series, logical_type: &DataType) -> Series {
 /// If you have a relatively large table, consider using a group_by over a pivot.
 pub fn pivot<I0, I1, I2, S0, S1, S2>(
     pivot_df: &DataFrame,
-    index: I0,
+    index: Option<I0>,
     columns: I1,
     values: Option<I2>,
     sort_columns: bool,
@@ -99,10 +99,10 @@ where
     S1: AsRef<str>,
     S2: AsRef<str>,
 {
-    let index = index
-        .into_iter()
-        .map(|s| s.as_ref().to_string())
-        .collect::<Vec<_>>();
+    let index = match index {
+        Some(i) => i.into_iter().map(|s| s.as_ref().to_string()).collect(),
+        None => Vec::new(),
+    };
     let columns = columns
         .into_iter()
         .map(|s| s.as_ref().to_string())
@@ -127,7 +127,7 @@ where
 /// If you have a relatively large table, consider using a group_by over a pivot.
 pub fn pivot_stable<I0, I1, I2, S0, S1, S2>(
     pivot_df: &DataFrame,
-    index: I0,
+    index: Option<I0>,
     columns: I1,
     values: Option<I2>,
     sort_columns: bool,
@@ -142,10 +142,10 @@ where
     S1: AsRef<str>,
     S2: AsRef<str>,
 {
-    let index = index
-        .into_iter()
-        .map(|s| s.as_ref().to_string())
-        .collect::<Vec<_>>();
+    let index = match index {
+        Some(i) => i.into_iter().map(|s| s.as_ref().to_string()).collect(),
+        None => Vec::new(),
+    };
     let columns = columns
         .into_iter()
         .map(|s| s.as_ref().to_string())
@@ -205,7 +205,6 @@ fn pivot_impl(
     // used as separator/delimiter in generated column names.
     separator: Option<&str>,
 ) -> PolarsResult<DataFrame> {
-    polars_ensure!(!index.is_empty(), ComputeError: "index cannot be zero length");
     polars_ensure!(!columns.is_empty(), ComputeError: "columns cannot be zero length");
     if !stable {
         println!("unstable pivot not yet supported, using stable pivot");
@@ -262,12 +261,24 @@ fn pivot_impl_single_column(
 
         let groups = pivot_df.group_by_stable(group_by)?.take_groups();
 
-        let (col, row) = POOL.join(
-            || positioning::compute_col_idx(pivot_df, column, &groups),
-            || positioning::compute_row_idx(pivot_df, index, &groups, count),
-        );
-        let (col_locations, column_agg) = col?;
-        let (row_locations, n_rows, mut row_index) = row?;
+        let (col, row) = match index.len() {
+            0 => {
+                let col = POOL.install(
+                    || positioning::compute_col_idx(pivot_df, column, &groups)
+                )?;
+                let row = (vec![0; col.0.len()], 1, None);
+                (col, row)
+            },
+            _ => {
+                let (col, row) = POOL.join(
+                    || positioning::compute_col_idx(pivot_df, column, &groups),
+                    || positioning::compute_row_idx(pivot_df, index, &groups, count),
+                );
+                (col?, row?)
+            },
+        };
+        let (col_locations, column_agg) = col;
+        let (row_locations, n_rows, mut row_index) = row;
 
         for value_col_name in values {
             let value_col = pivot_df.column(value_col_name)?;
@@ -347,7 +358,7 @@ fn pivot_impl_single_column(
             }
 
             let cols = if count == 0 {
-                let mut final_cols = row_index.take().unwrap();
+                let mut final_cols = row_index.take().unwrap_or_else(Vec::new);
                 final_cols.extend(cols);
                 final_cols
             } else {
