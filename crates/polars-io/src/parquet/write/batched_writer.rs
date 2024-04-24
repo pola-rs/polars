@@ -7,8 +7,11 @@ use arrow::record_batch::RecordBatch;
 use polars_core::prelude::*;
 use polars_core::POOL;
 use polars_parquet::read::ParquetError;
-pub use polars_parquet::write::RowGroupIter;
-use polars_parquet::write::*;
+use polars_parquet::write::{
+    array_to_columns, compress, CompressedPage, Compressor, DynIter, DynStreamingIterator,
+    Encoding, FallibleStreamingIterator, FileWriter, ParquetType, RowGroupIter, SchemaDescriptor,
+    WriteOptions,
+};
 use rayon::prelude::*;
 
 pub struct BatchedWriter<W: Write> {

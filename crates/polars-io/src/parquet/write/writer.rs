@@ -3,7 +3,9 @@ use std::sync::Mutex;
 
 use arrow::datatypes::PhysicalType;
 use polars_core::prelude::*;
-use polars_parquet::write::*;
+use polars_parquet::write::{
+    to_parquet_schema, transverse, CompressionOptions, Encoding, FileWriter, Version, WriteOptions,
+};
 
 use super::batched_writer::BatchedWriter;
 use super::options::ParquetCompression;
