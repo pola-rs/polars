@@ -13,7 +13,22 @@ use crate::prelude::*;
 
 impl DslPlan {
     pub fn compute_schema(&self) -> PolarsResult<SchemaRef> {
-        let (node, lp_arena, _) = self.clone().to_alp()?;
+        let opt_state = OptState {
+            eager: true,
+            type_coercion: true,
+            simplify_expr: false,
+            ..Default::default()
+        };
+
+        let mut lp_arena = Default::default();
+        let node = optimize(
+            self.clone(),
+            opt_state,
+            &mut lp_arena,
+            &mut Default::default(),
+            &mut Default::default(),
+            Default::default(),
+        )?;
         Ok(lp_arena.get(node).schema(&lp_arena).into_owned())
     }
 }

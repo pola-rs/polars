@@ -9,7 +9,22 @@ pub type TimeZone = String;
 pub static DTYPE_ENUM_KEY: &str = "POLARS.CATEGORICAL_TYPE";
 pub static DTYPE_ENUM_VALUE: &str = "ENUM";
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
+#[cfg_attr(
+    any(feature = "serde", feature = "serde-lazy"),
+    derive(Serialize, Deserialize)
+)]
+pub enum UnknownKind {
+    // Hold the value to determine the concrete size.
+    Int(i128),
+    Float,
+    // Can be Categorical or String
+    Str,
+    #[default]
+    Any,
+}
+
+#[derive(Clone, Debug)]
 pub enum DataType {
     Boolean,
     UInt8,
@@ -59,8 +74,13 @@ pub enum DataType {
     #[cfg(feature = "dtype-struct")]
     Struct(Vec<Field>),
     // some logical types we cannot know statically, e.g. Datetime
-    #[default]
-    Unknown,
+    Unknown(UnknownKind),
+}
+
+impl Default for DataType {
+    fn default() -> Self {
+        DataType::Unknown(UnknownKind::Any)
+    }
 }
 
 pub trait AsRefDataType {
@@ -144,7 +164,7 @@ impl DataType {
             DataType::List(inner) => inner.is_known(),
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => fields.iter().all(|fld| fld.dtype.is_known()),
-            DataType::Unknown => false,
+            DataType::Unknown(_) => false,
             _ => true,
         }
     }
@@ -208,7 +228,14 @@ impl DataType {
 
     /// Check if this [`DataType`] is a basic numeric type (excludes Decimal).
     pub fn is_numeric(&self) -> bool {
-        self.is_float() || self.is_integer()
+        self.is_float() || self.is_integer() || self.is_dynamic()
+    }
+
+    pub fn is_dynamic(&self) -> bool {
+        matches!(
+            self,
+            DataType::Unknown(UnknownKind::Int(_) | UnknownKind::Float | UnknownKind::Str)
+        )
     }
 
     /// Check if this [`DataType`] is a boolean
@@ -382,6 +409,32 @@ impl DataType {
         }
     }
 
+    pub fn is_string(&self) -> bool {
+        matches!(self, DataType::String | DataType::Unknown(UnknownKind::Str))
+    }
+
+    pub fn is_categorical(&self) -> bool {
+        #[cfg(feature = "dtype-categorical")]
+        {
+            matches!(self, DataType::Categorical(_, _))
+        }
+        #[cfg(not(feature = "dtype-categorical"))]
+        {
+            false
+        }
+    }
+
+    pub fn is_enum(&self) -> bool {
+        #[cfg(feature = "dtype-categorical")]
+        {
+            matches!(self, DataType::Enum(_, _))
+        }
+        #[cfg(not(feature = "dtype-categorical"))]
+        {
+            false
+        }
+    }
+
     /// Convert to an Arrow Field
     pub fn to_arrow_field(&self, name: &str, pl_flavor: bool) -> ArrowField {
         let metadata = match self {
@@ -490,7 +543,7 @@ impl DataType {
                 Ok(ArrowDataType::Struct(fields))
             },
             BinaryOffset => Ok(ArrowDataType::LargeBinary),
-            Unknown => Ok(ArrowDataType::Unknown),
+            Unknown(_) => Ok(ArrowDataType::Unknown),
         }
     }
 
@@ -591,7 +644,12 @@ impl Display for DataType {
             DataType::Enum(_, _) => "enum",
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => return write!(f, "struct[{}]", fields.len()),
-            DataType::Unknown => "unknown",
+            DataType::Unknown(kind) => match kind {
+                UnknownKind::Any => "unknown",
+                UnknownKind::Int(_) => "dyn int",
+                UnknownKind::Float => "dyn float",
+                UnknownKind::Str => "dyn str",
+            },
             DataType::BinaryOffset => "binary[offset]",
         };
         f.write_str(s)

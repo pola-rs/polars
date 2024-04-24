@@ -89,6 +89,15 @@ fn test_apply_groups_empty() -> PolarsResult<()> {
         "id" => [1, 1],
         "hi" => ["here", "here"]
     ]?;
+    let out = df
+        .clone()
+        .lazy()
+        .filter(col("id").eq(lit(2)))
+        .group_by([col("id")])
+        .agg([col("hi").drop_nulls().unique()])
+        .explain(true)
+        .unwrap();
+    println!("{}", out);
 
     let out = df
         .lazy()

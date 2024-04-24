@@ -3,6 +3,8 @@ use std::fmt;
 use std::fmt::{Debug, Display, Formatter, Write};
 use std::path::PathBuf;
 
+use polars_core::prelude::AnyValue;
+
 use crate::prelude::*;
 
 #[allow(clippy::too_many_arguments)]
@@ -442,6 +444,11 @@ impl Debug for LiteralValue {
                     write!(f, "Series[{name}]")
                 }
             },
+            Float(v) => {
+                let av = AnyValue::Float64(*v);
+                write!(f, "dyn float: {}", av)
+            },
+            Int(v) => write!(f, "dyn int: {}", v),
             _ => {
                 let av = self.to_any_value().unwrap();
                 write!(f, "{av}")

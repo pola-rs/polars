@@ -13,6 +13,7 @@ use polars::io::avro::AvroCompression;
 use polars::series::ops::NullBehavior;
 use polars_core::utils::arrow::array::Array;
 use polars_core::utils::arrow::types::NativeType;
+use polars_core::utils::materialize_dyn_int;
 use polars_lazy::prelude::*;
 #[cfg(feature = "cloud")]
 use polars_rs::io::cloud::CloudOptions;
@@ -177,7 +178,7 @@ impl ToPyObject for Wrap<DataType> {
                 let class = pl.getattr(intern!(py, "Float32")).unwrap();
                 class.call0().unwrap().into()
             },
-            DataType::Float64 => {
+            DataType::Float64 | DataType::Unknown(UnknownKind::Float) => {
                 let class = pl.getattr(intern!(py, "Float64")).unwrap();
                 class.call0().unwrap().into()
             },
@@ -190,7 +191,7 @@ impl ToPyObject for Wrap<DataType> {
                 let class = pl.getattr(intern!(py, "Boolean")).unwrap();
                 class.call0().unwrap().into()
             },
-            DataType::String => {
+            DataType::String | DataType::Unknown(UnknownKind::Str) => {
                 let class = pl.getattr(intern!(py, "String")).unwrap();
                 class.call0().unwrap().into()
             },
@@ -260,7 +261,10 @@ impl ToPyObject for Wrap<DataType> {
                 let class = pl.getattr(intern!(py, "Null")).unwrap();
                 class.call0().unwrap().into()
             },
-            DataType::Unknown => {
+            DataType::Unknown(UnknownKind::Int(v)) => {
+                Wrap(materialize_dyn_int(*v).dtype()).to_object(py)
+            },
+            DataType::Unknown(_) => {
                 let class = pl.getattr(intern!(py, "Unknown")).unwrap();
                 class.call0().unwrap().into()
             },
@@ -318,7 +322,7 @@ impl FromPyObject<'_> for Wrap<DataType> {
                     "List" => DataType::List(Box::new(DataType::Null)),
                     "Struct" => DataType::Struct(vec![]),
                     "Null" => DataType::Null,
-                    "Unknown" => DataType::Unknown,
+                    "Unknown" => DataType::Unknown(Default::default()),
                     dt => {
                         return Err(PyTypeError::new_err(format!(
                             "'{dt}' is not a Polars data type",
@@ -354,7 +358,7 @@ impl FromPyObject<'_> for Wrap<DataType> {
             "Float32" => DataType::Float32,
             "Float64" => DataType::Float64,
             "Null" => DataType::Null,
-            "Unknown" => DataType::Unknown,
+            "Unknown" => DataType::Unknown(Default::default()),
             "Duration" => {
                 let time_unit = ob.getattr(intern!(py, "time_unit")).unwrap();
                 let time_unit = time_unit.extract::<Wrap<TimeUnit>>()?.0;

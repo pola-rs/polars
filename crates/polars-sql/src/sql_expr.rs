@@ -4,6 +4,7 @@ use polars_core::export::regex;
 use polars_core::prelude::*;
 use polars_error::to_compute_err;
 use polars_lazy::prelude::*;
+use polars_plan::prelude::typed_lit;
 use polars_plan::prelude::LiteralValue::Null;
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
@@ -196,8 +197,8 @@ impl SQLExprVisitor<'_> {
                     .visit_expr(r#in)?
                     .str()
                     .find(self.visit_expr(expr)?, true)
-                    + lit(1u32))
-                .fill_null(0u32),
+                    + typed_lit(1u32))
+                .fill_null(typed_lit(0u32)),
             ),
             SQLExpr::RLike {
                 // note: parses both RLIKE and REGEXP
@@ -409,10 +410,10 @@ impl SQLExprVisitor<'_> {
         let expr = self.visit_expr(expr)?;
         Ok(match (op, expr.clone()) {
             // simplify the parse tree by special-casing common unary +/- ops
-            (UnaryOperator::Plus, Expr::Literal(LiteralValue::Int64(n))) => lit(n),
-            (UnaryOperator::Plus, Expr::Literal(LiteralValue::Float64(n))) => lit(n),
-            (UnaryOperator::Minus, Expr::Literal(LiteralValue::Int64(n))) => lit(-n),
-            (UnaryOperator::Minus, Expr::Literal(LiteralValue::Float64(n))) => lit(-n),
+            (UnaryOperator::Plus, Expr::Literal(LiteralValue::Int(n))) => lit(n),
+            (UnaryOperator::Plus, Expr::Literal(LiteralValue::Float(n))) => lit(n),
+            (UnaryOperator::Minus, Expr::Literal(LiteralValue::Int(n))) => lit(-n),
+            (UnaryOperator::Minus, Expr::Literal(LiteralValue::Float(n))) => lit(-n),
             // general case
             (UnaryOperator::Plus, _) => lit(0) + expr,
             (UnaryOperator::Minus, _) => lit(0) - expr,
@@ -653,7 +654,7 @@ impl SQLExprVisitor<'_> {
         }
         if let Some(limit) = &expr.limit {
             let limit = match self.visit_expr(limit)? {
-                Expr::Literal(LiteralValue::Int64(n)) => n as usize,
+                Expr::Literal(LiteralValue::Int(n)) if n >= 0 => n as usize,
                 _ => polars_bail!(ComputeError: "limit in ARRAY_AGG must be a positive integer"),
             };
             base = base.head(Some(limit));
@@ -976,7 +977,7 @@ fn parse_extract(expr: Expr, field: &DateTimeField) -> PolarsResult<Expr> {
     Ok(match field {
         DateTimeField::Millennium => expr.dt().millennium(),
         DateTimeField::Century => expr.dt().century(),
-        DateTimeField::Decade => expr.dt().year() / lit(10i32),
+        DateTimeField::Decade => expr.dt().year() / typed_lit(10i32),
         DateTimeField::Isoyear => expr.dt().iso_year(),
         DateTimeField::Year => expr.dt().year(),
         DateTimeField::Quarter => expr.dt().quarter(),
@@ -986,7 +987,9 @@ fn parse_extract(expr: Expr, field: &DateTimeField) -> PolarsResult<Expr> {
         DateTimeField::DayOfYear | DateTimeField::Doy => expr.dt().ordinal_day(),
         DateTimeField::DayOfWeek | DateTimeField::Dow => {
             let w = expr.dt().weekday();
-            when(w.clone().eq(lit(7i8))).then(lit(0i8)).otherwise(w)
+            when(w.clone().eq(typed_lit(7i8)))
+                .then(typed_lit(0i8))
+                .otherwise(w)
         },
         DateTimeField::Isodow => expr.dt().weekday(),
         DateTimeField::Day => expr.dt().day(),
@@ -995,14 +998,14 @@ fn parse_extract(expr: Expr, field: &DateTimeField) -> PolarsResult<Expr> {
         DateTimeField::Second => expr.dt().second(),
         DateTimeField::Millisecond | DateTimeField::Milliseconds => {
             (expr.clone().dt().second() * lit(1_000))
-                + expr.dt().nanosecond().div(lit(1_000_000f64))
+                + expr.dt().nanosecond().div(typed_lit(1_000_000f64))
         },
         DateTimeField::Microsecond | DateTimeField::Microseconds => {
             (expr.clone().dt().second() * lit(1_000_000))
-                + expr.dt().nanosecond().div(lit(1_000f64))
+                + expr.dt().nanosecond().div(typed_lit(1_000f64))
         },
         DateTimeField::Nanosecond | DateTimeField::Nanoseconds => {
-            (expr.clone().dt().second() * lit(1_000_000_000f64)) + expr.dt().nanosecond()
+            (expr.clone().dt().second() * typed_lit(1_000_000_000f64)) + expr.dt().nanosecond()
         },
         DateTimeField::Time => expr.dt().time(),
         #[cfg(feature = "timezones")]
@@ -1011,8 +1014,8 @@ fn parse_extract(expr: Expr, field: &DateTimeField) -> PolarsResult<Expr> {
             expr.clone()
                 .dt()
                 .timestamp(TimeUnit::Nanoseconds)
-                .div(lit(1_000_000_000i64))
-                + expr.dt().nanosecond().div(lit(1_000_000_000f64))
+                .div(typed_lit(1_000_000_000i64))
+                + expr.dt().nanosecond().div(typed_lit(1_000_000_000f64))
         },
         _ => {
             polars_bail!(ComputeError: "EXTRACT function does not support {}", field)

@@ -44,6 +44,8 @@ impl StackOptimizer {
                 plan.copy_exprs(&mut scratch);
                 plan.copy_inputs(&mut plans);
 
+                let mut has_dyn_literals = false;
+
                 // first do a single pass to ensure we process
                 // from leaves to root.
                 // this ensures for instance
@@ -61,8 +63,8 @@ impl StackOptimizer {
                 while let Some(current_expr_node) = exprs.pop() {
                     {
                         let expr = unsafe { expr_arena.get_unchecked(current_expr_node) };
-                        // don't apply rules to `col`, `lit` etc.
                         if expr.is_leaf() {
+                            has_dyn_literals = expr.is_dynamic_literal();
                             continue;
                         }
                     }
@@ -82,6 +84,18 @@ impl StackOptimizer {
                     let expr = unsafe { expr_arena.get_unchecked(current_expr_node) };
                     // traverse subexpressions and add to the stack
                     expr.nodes(&mut exprs)
+                }
+
+                if has_dyn_literals {
+                    plan.copy_exprs(&mut scratch);
+                    while let Some(expr) = scratch.pop() {
+                        let ae = unsafe { expr_arena.get_unchecked(expr.node()) };
+                        match ae {
+                            AExpr::Literal(lv) if lv.is_dynamic() => expr_arena
+                                .replace(expr.node(), AExpr::Literal(lv.clone().materialize())),
+                            _ => {},
+                        }
+                    }
                 }
             }
         }

@@ -130,7 +130,7 @@ where
 {
     let fields = column_names
         .into_iter()
-        .map(|c| Field::new(c, DataType::Unknown));
+        .map(|c| Field::new(c, DataType::Unknown(Default::default())));
     Schema::from_iter(fields)
 }
 

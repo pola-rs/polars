@@ -105,7 +105,7 @@ enum SerializableDataType {
     #[cfg(feature = "dtype-struct")]
     Struct(Vec<Field>),
     // some logical types we cannot know statically, e.g. Datetime
-    Unknown,
+    Unknown(UnknownKind),
     #[cfg(feature = "dtype-categorical")]
     Categorical(Option<Wrap<Utf8ViewArray>>, CategoricalOrdering),
     #[cfg(feature = "dtype-decimal")]
@@ -141,7 +141,7 @@ impl From<&DataType> for SerializableDataType {
             #[cfg(feature = "dtype-array")]
             Array(dt, width) => Self::Array(Box::new(dt.as_ref().into()), *width),
             Null => Self::Null,
-            Unknown => Self::Unknown,
+            Unknown(kind) => Self::Unknown(*kind),
             #[cfg(feature = "dtype-struct")]
             Struct(flds) => Self::Struct(flds.clone()),
             #[cfg(feature = "dtype-categorical")]
@@ -185,7 +185,7 @@ impl From<SerializableDataType> for DataType {
             #[cfg(feature = "dtype-array")]
             Array(dt, width) => Self::Array(Box::new((*dt).into()), width),
             Null => Self::Null,
-            Unknown => Self::Unknown,
+            Unknown(kind) => Self::Unknown(kind),
             #[cfg(feature = "dtype-struct")]
             Struct(flds) => Self::Struct(flds),
             #[cfg(feature = "dtype-categorical")]

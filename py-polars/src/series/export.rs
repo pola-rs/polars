@@ -133,7 +133,7 @@ impl PySeries {
 
                         PyList::new_bound(py, NullIter { iter, n })
                     },
-                    DataType::Unknown => {
+                    DataType::Unknown(_) => {
                         panic!("to_list not implemented for unknown")
                     },
                     DataType::BinaryOffset => {

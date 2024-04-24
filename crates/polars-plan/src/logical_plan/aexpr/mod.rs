@@ -416,6 +416,13 @@ impl AExpr {
             AExpr::Column(_) | AExpr::Literal(_) | AExpr::Len | AExpr::Nth(_)
         )
     }
+
+    pub(crate) fn is_dynamic_literal(&self) -> bool {
+        match self {
+            AExpr::Literal(lv) => lv.is_dynamic(),
+            _ => false,
+        }
+    }
 }
 
 impl AAggExpr {
