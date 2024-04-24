@@ -15,9 +15,9 @@
 //! ```
 
 #[cfg(feature = "cloud")]
-pub(crate) mod async_impl;
-pub(crate) mod mmap;
-pub mod predicates;
+mod async_impl;
+mod mmap;
+mod predicates;
 mod read_impl;
 mod reader;
 mod utils;

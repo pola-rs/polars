@@ -14,12 +14,12 @@ use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::Mutex;
 
 use super::mmap::ColumnStore;
+use super::predicates::read_this_row_group;
 use super::read_impl::compute_row_group_range;
 use crate::cloud::{build_object_store, CloudLocation, CloudOptions, PolarsObjectStore};
 use crate::parquet::metadata::FileMetaDataRef;
 use crate::pl_async::get_runtime;
 use crate::predicates::PhysicalIoExpr;
-use crate::prelude::predicates::read_this_row_group;
 
 type DownloadedRowGroup = Vec<(u64, Bytes)>;
 type QueuePayload = (usize, DownloadedRowGroup);
