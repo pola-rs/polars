@@ -3,7 +3,6 @@ use std::sync::Mutex;
 
 use arrow::datatypes::PhysicalType;
 use polars_core::prelude::*;
-pub use polars_parquet::write::RowGroupIter;
 use polars_parquet::write::*;
 
 use super::batched_writer::BatchedWriter;
