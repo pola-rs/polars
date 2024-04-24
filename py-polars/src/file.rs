@@ -201,7 +201,7 @@ pub fn get_file_like(f: PyObject, truncate: bool) -> PyResult<Box<dyn FileLike>>
 }
 
 /// If the give file-like is a BytesIO, read its contents.
-pub fn read_if_bytesio<'a>(py_f: Bound<'a, PyAny>) -> Bound<'a, PyAny> {
+pub fn read_if_bytesio(py_f: Bound<PyAny>) -> Bound<PyAny> {
     if py_f.getattr("read").is_ok() {
         let Ok(bytes) = py_f.call_method0("getvalue") else {
             return py_f;
