@@ -3,9 +3,13 @@ use arrow::io::ipc::read::{Dictionaries, FileMetadata};
 use arrow::mmap::{mmap_dictionaries_unchecked, mmap_unchecked};
 use arrow::record_batch::RecordBatch;
 use memmap::Mmap;
+use polars_core::frame::ArrowChunk;
 
 use super::*;
 use crate::mmap::MmapBytesReader;
+#[cfg(any(feature = "ipc", feature = "avro", feature = "ipc_streaming",))]
+use crate::predicates::PhysicalIoExpr;
+use crate::shared::{finish_reader, ArrowReader};
 use crate::utils::{apply_projection, columns_to_projection};
 
 struct MMapChunkIter<'a> {

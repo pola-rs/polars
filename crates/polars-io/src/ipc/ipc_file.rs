@@ -41,10 +41,10 @@ use polars_core::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-use super::{finish_reader, ArrowReader};
 use crate::mmap::MmapBytesReader;
 use crate::predicates::PhysicalIoExpr;
 use crate::prelude::*;
+use crate::shared::{finish_reader, ArrowReader};
 use crate::RowIndex;
 
 #[derive(Clone, Debug, PartialEq, Hash)]

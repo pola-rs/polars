@@ -8,7 +8,7 @@ use polars_core::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::prelude::*;
-use crate::WriterFactory;
+use crate::shared::WriterFactory;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]

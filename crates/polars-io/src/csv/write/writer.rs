@@ -8,7 +8,7 @@ use polars_error::PolarsResult;
 
 use super::write_impl::{write, write_bom, write_header};
 use super::{QuoteStyle, SerializeOptions};
-use crate::SerWriter;
+use crate::shared::SerWriter;
 
 /// Write a DataFrame to csv.
 ///
