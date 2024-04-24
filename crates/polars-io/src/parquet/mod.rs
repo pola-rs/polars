@@ -18,10 +18,8 @@
 pub mod read;
 pub mod write;
 
-
 pub use polars_parquet::write::FileMetaData;
 pub use read::*;
-pub use write::{BrotliLevel, GzipLevel, ParquetWriteOptions, ZstdLevel, *};
 
 #[cfg(test)]
 mod test {
