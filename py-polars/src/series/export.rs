@@ -19,23 +19,23 @@ impl PySeries {
 
             fn to_list_recursive(py: Python, series: &Series) -> PyObject {
                 let pylist = match series.dtype() {
-                    DataType::Boolean => PyList::new(py, series.bool().unwrap()),
-                    DataType::UInt8 => PyList::new(py, series.u8().unwrap()),
-                    DataType::UInt16 => PyList::new(py, series.u16().unwrap()),
-                    DataType::UInt32 => PyList::new(py, series.u32().unwrap()),
-                    DataType::UInt64 => PyList::new(py, series.u64().unwrap()),
-                    DataType::Int8 => PyList::new(py, series.i8().unwrap()),
-                    DataType::Int16 => PyList::new(py, series.i16().unwrap()),
-                    DataType::Int32 => PyList::new(py, series.i32().unwrap()),
-                    DataType::Int64 => PyList::new(py, series.i64().unwrap()),
-                    DataType::Float32 => PyList::new(py, series.f32().unwrap()),
-                    DataType::Float64 => PyList::new(py, series.f64().unwrap()),
+                    DataType::Boolean => PyList::new_bound(py, series.bool().unwrap()),
+                    DataType::UInt8 => PyList::new_bound(py, series.u8().unwrap()),
+                    DataType::UInt16 => PyList::new_bound(py, series.u16().unwrap()),
+                    DataType::UInt32 => PyList::new_bound(py, series.u32().unwrap()),
+                    DataType::UInt64 => PyList::new_bound(py, series.u64().unwrap()),
+                    DataType::Int8 => PyList::new_bound(py, series.i8().unwrap()),
+                    DataType::Int16 => PyList::new_bound(py, series.i16().unwrap()),
+                    DataType::Int32 => PyList::new_bound(py, series.i32().unwrap()),
+                    DataType::Int64 => PyList::new_bound(py, series.i64().unwrap()),
+                    DataType::Float32 => PyList::new_bound(py, series.f32().unwrap()),
+                    DataType::Float64 => PyList::new_bound(py, series.f64().unwrap()),
                     DataType::Categorical(_, _) | DataType::Enum(_, _) => {
-                        PyList::new(py, series.categorical().unwrap().iter_str())
+                        PyList::new_bound(py, series.categorical().unwrap().iter_str())
                     },
                     #[cfg(feature = "object")]
                     DataType::Object(_, _) => {
-                        let v = PyList::empty(py);
+                        let v = PyList::empty_bound(py);
                         for i in 0..series.len() {
                             let obj: Option<&ObjectValue> =
                                 series.get_object(i).map(|any| any.into());
@@ -46,7 +46,7 @@ impl PySeries {
                         v
                     },
                     DataType::List(_) => {
-                        let v = PyList::empty(py);
+                        let v = PyList::empty_bound(py);
                         let ca = series.list().unwrap();
                         // SAFETY: unstable series never lives longer than the iterator.
                         for opt_s in unsafe { ca.amortized_iter() } {
@@ -63,7 +63,7 @@ impl PySeries {
                         v
                     },
                     DataType::Array(_, _) => {
-                        let v = PyList::empty(py);
+                        let v = PyList::empty_bound(py);
                         let ca = series.array().unwrap();
                         for opt_s in ca.amortized_iter() {
                             match opt_s {
@@ -131,7 +131,7 @@ impl PySeries {
                         }
                         impl ExactSizeIterator for NullIter {}
 
-                        PyList::new(py, NullIter { iter, n })
+                        PyList::new_bound(py, NullIter { iter, n })
                     },
                     DataType::Unknown => {
                         panic!("to_list not implemented for unknown")
@@ -153,9 +153,9 @@ impl PySeries {
     fn to_arrow(&mut self) -> PyResult<PyObject> {
         self.rechunk(true);
         Python::with_gil(|py| {
-            let pyarrow = py.import("pyarrow")?;
+            let pyarrow = py.import_bound("pyarrow")?;
 
-            arrow_interop::to_py::to_py_array(self.series.to_arrow(0, false), py, pyarrow)
+            arrow_interop::to_py::to_py_array(self.series.to_arrow(0, false), py, &pyarrow)
         })
     }
 
