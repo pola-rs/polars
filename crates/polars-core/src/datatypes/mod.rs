@@ -83,7 +83,7 @@ where
         ZeroablePhysical<'a> = Self::Native,
         Array = PrimitiveArray<Self::Native>,
         IsNested = FalseT,
-        HasViews = FalseT
+        HasViews = FalseT,
     >,
 {
     type Native: NumericNative;
@@ -139,13 +139,29 @@ macro_rules! impl_polars_datatype_pass_dtype {
 }
 macro_rules! impl_polars_binview_datatype {
     ($ca:ident, $variant:ident, $arr:ty, $lt:lifetime, $phys:ty, $zerophys:ty) => {
-        impl_polars_datatype_pass_dtype!($ca, DataType::$variant, $arr, $lt, $phys, $zerophys, TrueT);
+        impl_polars_datatype_pass_dtype!(
+            $ca,
+            DataType::$variant,
+            $arr,
+            $lt,
+            $phys,
+            $zerophys,
+            TrueT
+        );
     };
 }
 
 macro_rules! impl_polars_datatype {
     ($ca:ident, $variant:ident, $arr:ty, $lt:lifetime, $phys:ty, $zerophys:ty) => {
-        impl_polars_datatype_pass_dtype!($ca, DataType::$variant, $arr, $lt, $phys, $zerophys, FalseT);
+        impl_polars_datatype_pass_dtype!(
+            $ca,
+            DataType::$variant,
+            $arr,
+            $lt,
+            $phys,
+            $zerophys,
+            FalseT
+        );
     };
 }
 
