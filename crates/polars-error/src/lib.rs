@@ -153,6 +153,10 @@ impl PolarsError {
         use PolarsError::*;
         match self {
             Context { error, msg } => {
+                // If context is 1 level deep, just return error.
+                if !matches!(&*error, PolarsError::Context { .. }) {
+                    return *error;
+                }
                 let mut current_error = &*error;
                 let material_error = error.get_err();
 
@@ -164,14 +168,15 @@ impl PolarsError {
                 }
 
                 let mut bt = String::new();
-                let first_message = messages.pop().unwrap();
 
                 let mut count = 0;
                 while let Some(msg) = messages.pop() {
                     count += 1;
                     writeln!(&mut bt, "\t[{count}] {}", msg).unwrap();
                 }
-                material_error.wrap_msg(move |msg| format!("{first_message}\nThe reason: {msg}:\n\nThis error occurred with the following context stack:\n{bt}"))
+                material_error.wrap_msg(move |msg| {
+                    format!("{msg}:\n\nThis error occurred with the following context stack:\n{bt}")
+                })
             },
             err => err,
         }
