@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct CsvParserOptions {
+pub struct CsvReaderOptions {
     pub has_header: bool,
     pub separator: u8,
     pub comment_prefix: Option<CommentPrefix>,
@@ -27,7 +27,7 @@ pub struct CsvParserOptions {
     pub low_memory: bool,
 }
 
-impl Default for CsvParserOptions {
+impl Default for CsvReaderOptions {
     fn default() -> Self {
         Self {
             has_header: true,

@@ -5,7 +5,7 @@ use super::*;
 pub struct CsvExec {
     pub path: PathBuf,
     pub schema: SchemaRef,
-    pub options: CsvParserOptions,
+    pub options: CsvReaderOptions,
     pub file_options: FileScanOptions,
     pub predicate: Option<Arc<dyn PhysicalExpr>>,
 }

@@ -2,7 +2,7 @@ use polars_core::prelude::*;
 #[cfg(feature = "parquet")]
 use polars_io::cloud::CloudOptions;
 #[cfg(feature = "csv")]
-use polars_io::csv::read::{CommentPrefix, CsvEncoding, CsvParserOptions, NullValues};
+use polars_io::csv::read::{CommentPrefix, CsvEncoding, CsvReaderOptions, NullValues};
 #[cfg(feature = "ipc")]
 use polars_io::ipc::IpcScanOptions;
 #[cfg(feature = "parquet")]
@@ -216,7 +216,7 @@ impl DslBuilder {
             file_options: options,
             predicate: None,
             scan_type: FileScan::Csv {
-                options: CsvParserOptions {
+                options: CsvReaderOptions {
                     has_header,
                     separator,
                     ignore_errors,
