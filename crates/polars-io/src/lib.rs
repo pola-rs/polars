@@ -11,7 +11,7 @@ pub mod csv;
 pub mod ipc;
 #[cfg(feature = "json")]
 pub mod json;
-pub mod mmap;
+mod mmap;
 #[cfg(feature = "json")]
 pub mod ndjson;
 mod options;
