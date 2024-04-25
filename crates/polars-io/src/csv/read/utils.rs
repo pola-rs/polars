@@ -667,28 +667,7 @@ pub(super) unsafe fn escape_field(bytes: &[u8], quote: u8, buf: &mut [MaybeUnini
 
 #[cfg(test)]
 mod test {
-    use super::*;
-
-    #[test]
-    fn test_float_parse() {
-        assert!(FLOAT_RE.is_match("0.1"));
-        assert!(FLOAT_RE.is_match("3.0"));
-        assert!(FLOAT_RE.is_match("3.00001"));
-        assert!(FLOAT_RE.is_match("-9.9990e-003"));
-        assert!(FLOAT_RE.is_match("9.9990e+003"));
-        assert!(FLOAT_RE.is_match("9.9990E+003"));
-        assert!(FLOAT_RE.is_match("9.9990E+003"));
-        assert!(FLOAT_RE.is_match(".5"));
-        assert!(FLOAT_RE.is_match("2.5E-10"));
-        assert!(FLOAT_RE.is_match("2.5e10"));
-        assert!(FLOAT_RE.is_match("NaN"));
-        assert!(FLOAT_RE.is_match("-NaN"));
-        assert!(FLOAT_RE.is_match("-inf"));
-        assert!(FLOAT_RE.is_match("inf"));
-        assert!(FLOAT_RE.is_match("-7e-05"));
-        assert!(FLOAT_RE.is_match("7e-05"));
-        assert!(FLOAT_RE.is_match("+7e+05"));
-    }
+    use super::get_file_chunks;
 
     #[test]
     fn test_get_file_chunks() {

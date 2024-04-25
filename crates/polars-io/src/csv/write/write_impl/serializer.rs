@@ -598,71 +598,80 @@ pub(super) fn serializer_for<'a>(
     Ok(serializer)
 }
 
-// It is the most complex serializer with most edge cases, it definitely needs a comprehensive test.
-#[test]
-fn test_string_serializer() {
-    #[track_caller]
-    fn check_string_serialization(options: &SerializeOptions, s: Option<&str>, expected: &str) {
-        let fake_array = NullArray::new(ArrowDataType::Null, 0);
-        let mut serializer = string_serializer(|s| *s, options, |_| s, &fake_array);
-        let mut buf = Vec::new();
-        serializer.serialize(&mut buf, options);
-        let serialized = std::str::from_utf8(&buf).unwrap();
-        // Don't use `assert_eq!()` because it prints debug format and it's hard to read with all the escapes.
-        if serialized != expected {
-            panic!("CSV string {s:?} wasn't serialized correctly: expected: `{expected}`, got: `{serialized}`");
+#[cfg(test)]
+mod test {
+    use arrow::array::NullArray;
+    use polars_core::prelude::ArrowDataType;
+
+    use super::string_serializer;
+    use crate::csv::write::options::{QuoteStyle, SerializeOptions};
+
+    // It is the most complex serializer with most edge cases, it definitely needs a comprehensive test.
+    #[test]
+    fn test_string_serializer() {
+        #[track_caller]
+        fn check_string_serialization(options: &SerializeOptions, s: Option<&str>, expected: &str) {
+            let fake_array = NullArray::new(ArrowDataType::Null, 0);
+            let mut serializer = string_serializer(|s| *s, options, |_| s, &fake_array);
+            let mut buf = Vec::new();
+            serializer.serialize(&mut buf, options);
+            let serialized = std::str::from_utf8(&buf).unwrap();
+            // Don't use `assert_eq!()` because it prints debug format and it's hard to read with all the escapes.
+            if serialized != expected {
+                panic!("CSV string {s:?} wasn't serialized correctly: expected: `{expected}`, got: `{serialized}`");
+            }
         }
+
+        let always_quote = SerializeOptions {
+            quote_style: QuoteStyle::Always,
+            ..SerializeOptions::default()
+        };
+        check_string_serialization(&always_quote, None, r#""""#);
+        check_string_serialization(&always_quote, Some(""), r#""""#);
+        check_string_serialization(&always_quote, Some("a"), r#""a""#);
+        check_string_serialization(&always_quote, Some("\""), r#""""""#);
+        check_string_serialization(&always_quote, Some("a\"\"b"), r#""a""""b""#);
+
+        let necessary_quote = SerializeOptions {
+            quote_style: QuoteStyle::Necessary,
+            ..SerializeOptions::default()
+        };
+        check_string_serialization(&necessary_quote, None, r#""#);
+        check_string_serialization(&necessary_quote, Some(""), r#""""#);
+        check_string_serialization(&necessary_quote, Some("a"), r#"a"#);
+        check_string_serialization(&necessary_quote, Some("\""), r#""""""#);
+        check_string_serialization(&necessary_quote, Some("a\"\"b"), r#""a""""b""#);
+        check_string_serialization(&necessary_quote, Some("a b"), r#"a b"#);
+        check_string_serialization(&necessary_quote, Some("a,b"), r#""a,b""#);
+        check_string_serialization(&necessary_quote, Some("a\nb"), "\"a\nb\"");
+        check_string_serialization(&necessary_quote, Some("a\rb"), "\"a\rb\"");
+
+        let never_quote = SerializeOptions {
+            quote_style: QuoteStyle::Never,
+            ..SerializeOptions::default()
+        };
+        check_string_serialization(&never_quote, None, "");
+        check_string_serialization(&never_quote, Some(""), "");
+        check_string_serialization(&never_quote, Some("a"), "a");
+        check_string_serialization(&never_quote, Some("\""), "\"");
+        check_string_serialization(&never_quote, Some("a\"\"b"), "a\"\"b");
+        check_string_serialization(&never_quote, Some("a b"), "a b");
+        check_string_serialization(&never_quote, Some("a,b"), "a,b");
+        check_string_serialization(&never_quote, Some("a\nb"), "a\nb");
+        check_string_serialization(&never_quote, Some("a\rb"), "a\rb");
+
+        let non_numeric_quote = SerializeOptions {
+            quote_style: QuoteStyle::NonNumeric,
+            ..SerializeOptions::default()
+        };
+        check_string_serialization(&non_numeric_quote, None, "");
+        check_string_serialization(&non_numeric_quote, Some(""), r#""""#);
+        check_string_serialization(&non_numeric_quote, Some("a"), r#""a""#);
+        check_string_serialization(&non_numeric_quote, Some("\""), r#""""""#);
+        check_string_serialization(&non_numeric_quote, Some("a\"\"b"), r#""a""""b""#);
+        check_string_serialization(&non_numeric_quote, Some("a b"), r#""a b""#);
+        check_string_serialization(&non_numeric_quote, Some("a,b"), r#""a,b""#);
+        check_string_serialization(&non_numeric_quote, Some("a\nb"), "\"a\nb\"");
+        check_string_serialization(&non_numeric_quote, Some("a\rb"), "\"a\rb\"");
     }
-
-    let always_quote = SerializeOptions {
-        quote_style: QuoteStyle::Always,
-        ..SerializeOptions::default()
-    };
-    check_string_serialization(&always_quote, None, r#""""#);
-    check_string_serialization(&always_quote, Some(""), r#""""#);
-    check_string_serialization(&always_quote, Some("a"), r#""a""#);
-    check_string_serialization(&always_quote, Some("\""), r#""""""#);
-    check_string_serialization(&always_quote, Some("a\"\"b"), r#""a""""b""#);
-
-    let necessary_quote = SerializeOptions {
-        quote_style: QuoteStyle::Necessary,
-        ..SerializeOptions::default()
-    };
-    check_string_serialization(&necessary_quote, None, r#""#);
-    check_string_serialization(&necessary_quote, Some(""), r#""""#);
-    check_string_serialization(&necessary_quote, Some("a"), r#"a"#);
-    check_string_serialization(&necessary_quote, Some("\""), r#""""""#);
-    check_string_serialization(&necessary_quote, Some("a\"\"b"), r#""a""""b""#);
-    check_string_serialization(&necessary_quote, Some("a b"), r#"a b"#);
-    check_string_serialization(&necessary_quote, Some("a,b"), r#""a,b""#);
-    check_string_serialization(&necessary_quote, Some("a\nb"), "\"a\nb\"");
-    check_string_serialization(&necessary_quote, Some("a\rb"), "\"a\rb\"");
-
-    let never_quote = SerializeOptions {
-        quote_style: QuoteStyle::Never,
-        ..SerializeOptions::default()
-    };
-    check_string_serialization(&never_quote, None, "");
-    check_string_serialization(&never_quote, Some(""), "");
-    check_string_serialization(&never_quote, Some("a"), "a");
-    check_string_serialization(&never_quote, Some("\""), "\"");
-    check_string_serialization(&never_quote, Some("a\"\"b"), "a\"\"b");
-    check_string_serialization(&never_quote, Some("a b"), "a b");
-    check_string_serialization(&never_quote, Some("a,b"), "a,b");
-    check_string_serialization(&never_quote, Some("a\nb"), "a\nb");
-    check_string_serialization(&never_quote, Some("a\rb"), "a\rb");
-
-    let non_numeric_quote = SerializeOptions {
-        quote_style: QuoteStyle::NonNumeric,
-        ..SerializeOptions::default()
-    };
-    check_string_serialization(&non_numeric_quote, None, "");
-    check_string_serialization(&non_numeric_quote, Some(""), r#""""#);
-    check_string_serialization(&non_numeric_quote, Some("a"), r#""a""#);
-    check_string_serialization(&non_numeric_quote, Some("\""), r#""""""#);
-    check_string_serialization(&non_numeric_quote, Some("a\"\"b"), r#""a""""b""#);
-    check_string_serialization(&non_numeric_quote, Some("a b"), r#""a b""#);
-    check_string_serialization(&non_numeric_quote, Some("a,b"), r#""a,b""#);
-    check_string_serialization(&non_numeric_quote, Some("a\nb"), "\"a\nb\"");
-    check_string_serialization(&non_numeric_quote, Some("a\rb"), "\"a\rb\"");
 }
