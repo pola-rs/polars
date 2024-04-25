@@ -272,9 +272,26 @@ impl ChunkTakeUnchecked<IdxCa> for BinaryChunked {
 
 impl ChunkTakeUnchecked<IdxCa> for StringChunked {
     unsafe fn take_unchecked(&self, indices: &IdxCa) -> Self {
-        self.as_binary().take_unchecked(indices).to_string()
+        self.as_binary()
+            .take_unchecked(indices)
+            .to_string_unchecked()
     }
 }
+
+// impl<I: AsRef<[IdxSize]> + ?Sized> ChunkTakeUnchecked<I> for BinaryChunked {
+//     /// Gather values from ChunkedArray by index.
+//     unsafe fn take_unchecked(&self, indices: &I) -> Self {
+//         let indices = IdxCa::mmap_slice("", indices.as_ref());
+//         self.take_unchecked(&indices)
+//     }
+// }
+//
+// impl<I: AsRef<[IdxSize]> + ?Sized> ChunkTakeUnchecked<I> for StringChunked {
+//     /// Gather values from ChunkedArray by index.
+//     unsafe fn take_unchecked(&self, indices: &I) -> Self {
+//         self.as_binary().take_unchecked(indices).to_string_unchecked()
+//     }
+// }
 
 impl IdxCa {
     pub fn with_nullable_idx<T, F: FnOnce(&IdxCa) -> T>(idx: &[NullableIdxSize], f: F) -> T {

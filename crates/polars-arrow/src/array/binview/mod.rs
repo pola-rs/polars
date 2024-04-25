@@ -156,6 +156,8 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         total_bytes_len: usize,
         total_buffer_len: usize,
     ) -> Self {
+        dbg!(buffers.len());
+        assert!(buffers.len() != 1);
         Self {
             data_type,
             views,
@@ -181,6 +183,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         let total_bytes_len = UNKNOWN_LEN as usize;
         let total_buffer_len =
             total_buffer_len.unwrap_or_else(|| buffers.iter().map(|b| b.len()).sum());
+        dbg!(buffers.len());
         Self::new_unchecked(
             data_type,
             views,
