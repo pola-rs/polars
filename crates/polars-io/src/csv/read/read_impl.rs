@@ -70,7 +70,6 @@ impl<'a> CoreReader<'a> {
         mut options: CsvReaderOptions,
         n_rows: Option<usize>,
         mut projection: Option<Vec<usize>>,
-        max_records: Option<usize>,
         ignore_errors: bool,
         schema: Option<SchemaRef>,
         columns: Option<Vec<String>>,
@@ -128,7 +127,7 @@ impl<'a> CoreReader<'a> {
                 let (inferred_schema, _, _) = infer_file_schema(
                     &reader_bytes,
                     options.separator,
-                    max_records,
+                    options.infer_schema_length,
                     options.has_header,
                     schema_overwrite.as_deref(),
                     &mut options.skip_rows,
