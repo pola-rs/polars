@@ -5264,6 +5264,12 @@ class Series:
             This method is much slower than the native expressions API.
             Only use it if you cannot implement your logic otherwise.
 
+            For mapping elements of columns, consider:
+            `pl.col("colname").something()`.
+
+            For mapping elements of inner lists, consider:
+            `pl.col("colname").list.eval(pl.element().something())`.
+
         If the function returns a different datatype, the return_dtype arg should
         be set, otherwise the method will fail.
 

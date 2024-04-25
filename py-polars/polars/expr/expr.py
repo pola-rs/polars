@@ -4265,6 +4265,12 @@ class Expr:
             This method is much slower than the native expressions API.
             Only use it if you cannot implement your logic otherwise.
 
+            For mapping elements of columns, consider:
+            `pl.col("colname").something()`.
+
+            For mapping elements of inner lists, consider:
+            `pl.col("colname").list.eval(pl.element().something())`.
+
         The UDF is applied to each element of a column. Note that, in a GroupBy
         context, the column will have been pre-aggregated and so each element
         will itself be a Series. Therefore, depending on the context,
