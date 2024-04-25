@@ -1,3 +1,5 @@
+//! Functionality for writing a DataFrame partitioned into multiple files.
+
 use std::fs::File;
 use std::io::BufWriter;
 use std::path::{Path, PathBuf};
@@ -9,22 +11,6 @@ use rayon::prelude::*;
 
 use crate::utils::resolve_homedir;
 use crate::WriterFactory;
-
-/// partition_df must be created by the same way of partition_by
-fn resolve_partition_dir<I, S>(rootdir: &Path, by: I, partition_df: &DataFrame) -> PathBuf
-where
-    I: IntoIterator<Item = S>,
-    S: AsRef<str>,
-{
-    let mut path = PathBuf::new();
-    path.push(resolve_homedir(rootdir));
-
-    for key in by.into_iter() {
-        let value = partition_df[key.as_ref()].get(0).unwrap().to_string();
-        path.push(format!("{}={}", key.as_ref(), value))
-    }
-    path
-}
 
 /// Write a DataFrame with disk partitioning
 ///
@@ -40,7 +26,7 @@ where
 ///         .finish(df)
 /// }
 /// ```
-///
+
 pub struct PartitionedWriter<F> {
     option: F,
     rootdir: PathBuf,
@@ -124,6 +110,22 @@ where
 
         Ok(())
     }
+}
+
+/// `partition_df` must be created in the same way as `partition_by`.
+fn resolve_partition_dir<I, S>(rootdir: &Path, by: I, partition_df: &DataFrame) -> PathBuf
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    let mut path = PathBuf::new();
+    path.push(resolve_homedir(rootdir));
+
+    for key in by.into_iter() {
+        let value = partition_df[key.as_ref()].get(0).unwrap().to_string();
+        path.push(format!("{}={}", key.as_ref(), value))
+    }
+    path
 }
 
 #[cfg(test)]
