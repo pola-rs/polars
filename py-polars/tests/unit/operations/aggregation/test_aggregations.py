@@ -570,3 +570,27 @@ def test_min_max_2850() -> None:
         )
         assert cast(int, computed[0, "min"]) == minimum
         assert cast(float, computed[0, "max"]) == maximum
+
+
+def test_multi_arg_structify_15834() -> None:
+    df = pl.DataFrame(
+        {
+            "group": [1, 2, 1, 2],
+            "value": [
+                0.1973209146402105,
+                0.13380719982405365,
+                0.6152394463707009,
+                0.4558767896005155,
+            ],
+        }
+    )
+
+    assert df.lazy().group_by("group").agg(
+        pl.struct(a=1, value=pl.col("value").sum())
+    ).collect().sort("group").to_dict(as_series=False) == {
+        "group": [1, 2],
+        "a": [
+            [{"a": 1, "value": 0.8125603610109114}],
+            [{"a": 1, "value": 0.5896839894245691}],
+        ],
+    }

@@ -357,15 +357,19 @@ impl PhysicalExpr for ApplyExpr {
                     let mut has_agg_list = false;
                     let mut has_agg_scalar = false;
                     let mut has_not_agg = false;
+                    let mut has_lit = false;
                     for ac in &acs {
                         match ac.state {
                             AggState::AggregatedList(_) => has_agg_list = true,
                             AggState::AggregatedScalar(_) => has_agg_scalar = true,
                             AggState::NotAggregated(_) => has_not_agg = true,
-                            _ => {},
+                            AggState::Literal(_) => has_lit = true,
                         }
                     }
-                    if has_agg_list || (has_agg_scalar && has_not_agg) {
+                    if has_agg_list
+                        || (has_agg_scalar && has_not_agg)
+                        || (has_agg_scalar && has_lit)
+                    {
                         return self.apply_multiple_group_aware(acs, df);
                     } else {
                         apply_multiple_elementwise(
