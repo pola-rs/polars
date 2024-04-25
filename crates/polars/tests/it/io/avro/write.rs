@@ -1,3 +1,5 @@
+use std::io::Cursor;
+
 use arrow::array::*;
 use arrow::datatypes::*;
 use arrow::io::avro::avro_schema::file::{Block, CompressedBlock, Compression};
@@ -5,6 +7,9 @@ use arrow::io::avro::avro_schema::write::{compress, write_block, write_metadata}
 use arrow::io::avro::write;
 use arrow::record_batch::RecordBatch;
 use avro_schema::schema::{Field as AvroField, Record, Schema as AvroSchema};
+use polars::io::avro::{AvroReader, AvroWriter};
+use polars::io::{SerReader, SerWriter};
+use polars::prelude::df;
 use polars_error::PolarsResult;
 
 use super::read::read_avro;
@@ -367,6 +372,85 @@ fn struct_() -> PolarsResult<()> {
     for (c1, c2) in result.columns().iter().zip(expected_data.columns().iter()) {
         assert_eq!(c1.as_ref(), c2.as_ref());
     }
+
+    Ok(())
+}
+
+#[test]
+fn test_write_and_read_with_compression() -> PolarsResult<()> {
+    let mut write_df = df!(
+        "i64" => &[1, 2],
+        "f64" => &[0.1, 0.2],
+        "string" => &["a", "b"]
+    )?;
+
+    let compressions = vec![None, Some(Compression::Deflate), Some(Compression::Snappy)];
+
+    for compression in compressions.into_iter() {
+        let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
+
+        AvroWriter::new(&mut buf)
+            .with_compression(compression)
+            .finish(&mut write_df)?;
+        buf.set_position(0);
+
+        let read_df = AvroReader::new(buf).finish()?;
+        assert!(write_df.equals(&read_df));
+    }
+
+    Ok(())
+}
+
+#[test]
+fn test_with_projection() -> PolarsResult<()> {
+    let mut df = df!(
+        "i64" => &[1, 2],
+        "f64" => &[0.1, 0.2],
+        "string" => &["a", "b"]
+    )?;
+
+    let expected_df = df!(
+        "i64" => &[1, 2],
+        "f64" => &[0.1, 0.2]
+    )?;
+
+    let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
+
+    AvroWriter::new(&mut buf).finish(&mut df)?;
+    buf.set_position(0);
+
+    let read_df = AvroReader::new(buf)
+        .with_projection(Some(vec![0, 1]))
+        .finish()?;
+
+    assert!(expected_df.equals(&read_df));
+
+    Ok(())
+}
+
+#[test]
+fn test_with_columns() -> PolarsResult<()> {
+    let mut df = df!(
+        "i64" => &[1, 2],
+        "f64" => &[0.1, 0.2],
+        "string" => &["a", "b"]
+    )?;
+
+    let expected_df = df!(
+        "i64" => &[1, 2],
+        "string" => &["a", "b"]
+    )?;
+
+    let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
+
+    AvroWriter::new(&mut buf).finish(&mut df)?;
+    buf.set_position(0);
+
+    let read_df = AvroReader::new(buf)
+        .with_columns(Some(vec!["i64".to_string(), "string".to_string()]))
+        .finish()?;
+
+    assert!(expected_df.equals(&read_df));
 
     Ok(())
 }

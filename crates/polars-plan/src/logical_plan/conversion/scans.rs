@@ -4,7 +4,8 @@ use std::path::PathBuf;
 #[cfg(feature = "cloud")]
 use polars_io::pl_async::get_runtime;
 use polars_io::prelude::*;
-use polars_io::{is_cloud_url, RowIndex};
+use polars_io::utils::is_cloud_url;
+use polars_io::RowIndex;
 
 use super::*;
 

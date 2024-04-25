@@ -18,8 +18,9 @@ use super::read_impl::batched_read::{
 use super::read_impl::CoreReader;
 use crate::mmap::MmapBytesReader;
 use crate::predicates::PhysicalIoExpr;
+use crate::shared::SerReader;
 use crate::utils::{get_reader_bytes, resolve_homedir};
-use crate::{RowIndex, SerReader};
+use crate::RowIndex;
 
 /// Create a new DataFrame by reading a csv file.
 ///
