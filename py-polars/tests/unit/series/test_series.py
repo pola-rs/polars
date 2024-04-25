@@ -1685,9 +1685,9 @@ def test_is_finite_is_infinite() -> None:
 
 
 def test_is_nan_is_not_nan() -> None:
-    s = pl.Series("a", [1.0, 2.0, 3.0, np.nan])
-    assert_series_equal(s.is_nan(), pl.Series("a", [False, False, False, True]))
-    assert_series_equal(s.is_not_nan(), pl.Series("a", [True, True, True, False]))
+    s = pl.Series("a", [1.0, 2.0, 3.0, np.nan, None])
+    assert_series_equal(s.is_nan(), pl.Series("a", [False, False, False, True, None]))
+    assert_series_equal(s.is_not_nan(), pl.Series("a", [True, True, True, False, None]))
 
 
 def test_dot() -> None:
