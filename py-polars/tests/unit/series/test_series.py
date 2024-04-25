@@ -1684,11 +1684,14 @@ def test_is_finite_is_infinite() -> None:
     assert_series_equal(s.is_infinite(), pl.Series("a", [False, False, True]))
 
 
-def test_is_nan_is_not_nan() -> None:
-    s = pl.Series("a", [1.0, np.nan, None])
-    assert_series_equal(s.is_nan(), pl.Series("a", [False, True, None]))
-    assert_series_equal(s.is_not_nan(), pl.Series("a", [True, False, None]))
-    assert_series_equal(s.fill_nan(2.0), pl.Series("a", [1.0, 2.0, None]))
+@pytest.mark.parametrize("float_type", [pl.Float32, pl.Float64])
+def test_is_nan_is_not_nan(float_type: pl.PolarsDataType) -> None:
+    s = pl.Series([1.0, np.nan, None], dtype=float_type)
+
+    assert_series_equal(s.is_nan(), pl.Series([False, True, None]))
+    assert_series_equal(s.is_not_nan(), pl.Series([True, False, None]))
+    assert_series_equal(s.fill_nan(2.0), pl.Series([1.0, 2.0, None], dtype=float_type))
+    assert_series_equal(s.drop_nans(), pl.Series([1.0, None], dtype=float_type))
 
 
 def test_dot() -> None:
