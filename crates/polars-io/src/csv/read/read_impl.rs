@@ -65,7 +65,6 @@ impl<'a> CoreReader<'a> {
         mut options: CsvReaderOptions,
         n_rows: Option<usize>,
         mut projection: Option<Vec<usize>>,
-        schema: Option<SchemaRef>,
         columns: Option<Vec<String>>,
         schema_overwrite: Option<SchemaRef>,
         dtype_overwrite: Option<&'a [DataType]>,
@@ -112,7 +111,8 @@ impl<'a> CoreReader<'a> {
             }
         }
 
-        let mut schema = match schema {
+        // We either take the given schema or infer it.
+        let mut schema = match std::mem::take(&mut options.schema) {
             Some(schema) => schema,
             None => {
                 let (inferred_schema, _, _) = infer_file_schema(
