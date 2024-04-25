@@ -6,6 +6,7 @@ use polars::io::mmap::MmapBytesReader;
 use polars::io::RowIndex;
 use polars::prelude::*;
 use pyo3::prelude::*;
+use pyo3::pybacked::PyBackedStr;
 
 use crate::{PyDataFrame, PyPolarsErr, Wrap};
 
@@ -45,7 +46,7 @@ impl PyBatchedCsv {
         encoding: Wrap<CsvEncoding>,
         n_threads: Option<usize>,
         path: PathBuf,
-        overwrite_dtype: Option<Vec<(&str, Wrap<DataType>)>>,
+        overwrite_dtype: Option<Vec<(PyBackedStr, Wrap<DataType>)>>,
         overwrite_dtype_slice: Option<Vec<Wrap<DataType>>>,
         low_memory: bool,
         comment_prefix: Option<&str>,

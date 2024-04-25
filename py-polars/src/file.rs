@@ -200,42 +200,45 @@ pub fn get_file_like(f: PyObject, truncate: bool) -> PyResult<Box<dyn FileLike>>
     }
 }
 
-pub fn get_mmap_bytes_reader<'a>(py_f: &'a PyAny) -> PyResult<Box<dyn MmapBytesReader + 'a>> {
+/// If the give file-like is a BytesIO, read its contents.
+pub fn read_if_bytesio(py_f: Bound<PyAny>) -> Bound<PyAny> {
+    if py_f.getattr("read").is_ok() {
+        let Ok(bytes) = py_f.call_method0("getvalue") else {
+            return py_f;
+        };
+        if bytes.downcast::<PyBytes>().is_ok() {
+            return bytes.clone();
+        }
+    }
+    py_f
+}
+
+/// Create reader from PyBytes or a file-like object. To get BytesIO to have
+/// better performance, use read_if_bytesio() before calling this.
+pub fn get_mmap_bytes_reader<'a>(
+    py_f: &'a Bound<'a, PyAny>,
+) -> PyResult<Box<dyn MmapBytesReader + 'a>> {
     // bytes object
     if let Ok(bytes) = py_f.downcast::<PyBytes>() {
         Ok(Box::new(Cursor::new(bytes.as_bytes())))
     }
     // string so read file
     else if let Ok(pstring) = py_f.downcast::<PyString>() {
-        let s = pstring.to_str()?;
-        let p = std::path::Path::new(&s);
+        let s = pstring.to_cow()?;
+        let p = std::path::Path::new(&*s);
         let p = resolve_homedir(p);
         let f = polars_utils::open_file(p).map_err(PyPolarsErr::from)?;
         Ok(Box::new(f))
     }
-    // a normal python file: with open(...) as f:.
-    else if py_f.getattr("read").is_ok() {
+    // hopefully a normal python file: with open(...) as f:.
+    else {
         // we can still get a file name, inform the user of possibly wrong API usage.
-        if py_f.getattr("name").is_ok() {
+        if py_f.getattr("read").is_ok() && py_f.getattr("name").is_ok() {
             polars_warn!("Polars found a filename. \
             Ensure you pass a path to the file instead of a python file object when possible for best \
             performance.")
         }
-        // a bytesIO
-        if let Ok(bytes) = py_f.call_method0("getvalue") {
-            let bytes = bytes.downcast::<PyBytes>()?;
-            Ok(Box::new(Cursor::new(bytes.as_bytes())))
-        }
         // don't really know what we got here, just read.
-        else {
-            let f = Python::with_gil(|py| {
-                PyFileLikeObject::with_requirements(py_f.to_object(py), true, false, true)
-            })?;
-            Ok(Box::new(f))
-        }
-    }
-    // don't really know what we got here, just read.
-    else {
         let f = Python::with_gil(|py| {
             PyFileLikeObject::with_requirements(py_f.to_object(py), true, false, true)
         })?;
