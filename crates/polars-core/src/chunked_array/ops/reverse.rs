@@ -74,7 +74,7 @@ impl ChunkReverse for BinaryChunked {
 
 impl ChunkReverse for StringChunked {
     fn reverse(&self) -> Self {
-        unsafe { self.as_binary().reverse().to_string() }
+        unsafe { self.as_binary().reverse().to_string_unchecked() }
     }
 }
 

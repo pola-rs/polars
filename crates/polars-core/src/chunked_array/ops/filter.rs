@@ -64,7 +64,7 @@ impl ChunkFilter<BooleanType> for BooleanChunked {
 impl ChunkFilter<StringType> for StringChunked {
     fn filter(&self, filter: &BooleanChunked) -> PolarsResult<ChunkedArray<StringType>> {
         let out = self.as_binary().filter(filter)?;
-        unsafe { Ok(out.to_string()) }
+        unsafe { Ok(out.to_string_unchecked()) }
     }
 }
 

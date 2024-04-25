@@ -131,7 +131,7 @@ where
 
 impl<T> ChunkedArray<T>
 where
-    T: PolarsDataType<Structure = Flat>,
+    T: PolarsDataType<IsNested = FalseT>,
     for<'a> T::Physical<'a>: TotalOrd,
 {
     /// Append in place. This is done by adding the chunks of `other` to this [`ChunkedArray`].

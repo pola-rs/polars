@@ -187,7 +187,7 @@ pub fn top_k(s: &[Series], descending: bool) -> PolarsResult<Series> {
         DataType::Boolean => Ok(top_k_bool_impl(s.bool().unwrap(), k, descending).into_series()),
         DataType::String => {
             let ca = top_k_binary_impl(&s.str().unwrap().as_binary(), k, descending);
-            let ca = unsafe { ca.to_string() };
+            let ca = unsafe { ca.to_string_unchecked() };
             Ok(ca.into_series())
         },
         DataType::Binary => Ok(top_k_binary_impl(s.binary().unwrap(), k, descending).into_series()),
