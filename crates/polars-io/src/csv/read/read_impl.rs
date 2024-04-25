@@ -41,7 +41,6 @@ pub(crate) struct CoreReader<'a> {
     /// Current line number, used in error reporting
     line_number: usize,
     n_rows: Option<usize>,
-    n_threads: Option<usize>,
     sample_size: usize,
     chunk_size: usize,
     null_values: Option<NullValuesCompiled>,
@@ -70,7 +69,6 @@ impl<'a> CoreReader<'a> {
         mut projection: Option<Vec<usize>>,
         schema: Option<SchemaRef>,
         columns: Option<Vec<String>>,
-        mut n_threads: Option<usize>,
         schema_overwrite: Option<SchemaRef>,
         dtype_overwrite: Option<&'a [DataType]>,
         sample_size: usize,
@@ -134,7 +132,7 @@ impl<'a> CoreReader<'a> {
                     null_values.as_ref(),
                     options.try_parse_dates,
                     options.raise_if_empty,
-                    &mut n_threads,
+                    &mut options.n_threads,
                     options.decimal_comma,
                 )?;
                 Arc::new(inferred_schema)
@@ -174,7 +172,6 @@ impl<'a> CoreReader<'a> {
             projection,
             line_number,
             n_rows,
-            n_threads,
             sample_size,
             chunk_size,
             null_values,
@@ -595,7 +592,10 @@ impl<'a> CoreReader<'a> {
     /// Read the csv into a DataFrame. The predicate can come from a lazy physical plan.
     pub fn as_df(&mut self) -> PolarsResult<DataFrame> {
         let predicate = self.predicate.take();
-        let n_threads = self.n_threads.unwrap_or_else(|| POOL.current_num_threads());
+        let n_threads = self
+            .options
+            .n_threads
+            .unwrap_or_else(|| POOL.current_num_threads());
 
         let reader_bytes = self.reader_bytes.take().unwrap();
 

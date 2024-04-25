@@ -307,7 +307,6 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
             std::mem::take(&mut self.projection),
             self.options.schema.clone(),
             std::mem::take(&mut self.columns),
-            self.options.n_threads,
             schema,
             self.dtype_overwrite,
             self.sample_size,
