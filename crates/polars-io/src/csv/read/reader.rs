@@ -302,7 +302,7 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
         let reader_bytes = get_reader_bytes(&mut self.reader)?;
         CoreReader::new(
             reader_bytes,
-            self.options.clone(),
+            std::mem::take(&mut self.options),
             self.n_rows,
             self.options.skip_rows,
             std::mem::take(&mut self.projection),
