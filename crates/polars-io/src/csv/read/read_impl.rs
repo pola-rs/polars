@@ -41,9 +41,6 @@ pub(crate) struct CoreReader<'a> {
     /// Current line number, used in error reporting
     line_number: usize,
     ignore_errors: bool,
-    skip_rows_before_header: usize,
-    // after the header, we need to take embedded lines into account
-    skip_rows_after_header: usize,
     n_rows: Option<usize>,
     encoding: CsvEncoding,
     n_threads: Option<usize>,
@@ -72,9 +69,8 @@ impl<'a> CoreReader<'a> {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         reader_bytes: ReaderBytes<'a>,
-        options: CsvReaderOptions,
+        mut options: CsvReaderOptions,
         n_rows: Option<usize>,
-        mut skip_rows: usize,
         mut projection: Option<Vec<usize>>,
         max_records: Option<usize>,
         ignore_errors: bool,
@@ -92,7 +88,6 @@ impl<'a> CoreReader<'a> {
         missing_is_null: bool,
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
         to_cast: Vec<Field>,
-        skip_rows_after_header: usize,
         row_index: Option<RowIndex>,
     ) -> PolarsResult<CoreReader<'a>> {
         check_decimal_comma(options.decimal_comma, options.separator)?;
@@ -114,8 +109,12 @@ impl<'a> CoreReader<'a> {
         // again after decompression.
         #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
         {
-            let total_n_rows = n_rows
-                .map(|n| skip_rows + (options.has_header as usize) + skip_rows_after_header + n);
+            let total_n_rows = n_rows.map(|n| {
+                options.skip_rows
+                    + (options.has_header as usize)
+                    + options.skip_rows_after_header
+                    + n
+            });
             if let Some(b) = decompress(
                 &reader_bytes,
                 total_n_rows,
@@ -136,8 +135,8 @@ impl<'a> CoreReader<'a> {
                     max_records,
                     options.has_header,
                     schema_overwrite.as_deref(),
-                    &mut skip_rows,
-                    skip_rows_after_header,
+                    &mut options.skip_rows,
+                    options.skip_rows_after_header,
                     comment_prefix.as_ref(),
                     quote_char,
                     options.eol_char,
@@ -184,8 +183,6 @@ impl<'a> CoreReader<'a> {
             projection,
             line_number,
             ignore_errors,
-            skip_rows_before_header: skip_rows,
-            skip_rows_after_header,
             n_rows,
             encoding,
             n_threads,
@@ -218,8 +215,8 @@ impl<'a> CoreReader<'a> {
         }
 
         // skip 'n' leading rows
-        if self.skip_rows_before_header > 0 {
-            for _ in 0..self.skip_rows_before_header {
+        if self.options.skip_rows > 0 {
+            for _ in 0..self.options.skip_rows {
                 let pos = next_line_position_naive(bytes, eol_char)
                     .ok_or_else(|| polars_err!(NoData: "not enough lines to skip"))?;
                 bytes = &bytes[pos..];
@@ -236,8 +233,8 @@ impl<'a> CoreReader<'a> {
             bytes = skip_this_line(bytes, quote_char, eol_char);
         }
         // skip 'n' rows following the header
-        if self.skip_rows_after_header > 0 {
-            for _ in 0..self.skip_rows_after_header {
+        if self.options.skip_rows_after_header > 0 {
+            for _ in 0..self.options.skip_rows_after_header {
                 let pos = if is_comment_line(bytes, self.comment_prefix.as_ref()) {
                     next_line_position_naive(bytes, eol_char)
                 } else {

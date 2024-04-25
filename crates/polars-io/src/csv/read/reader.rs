@@ -304,7 +304,6 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
             reader_bytes,
             std::mem::take(&mut self.options),
             self.n_rows,
-            self.options.skip_rows,
             std::mem::take(&mut self.projection),
             self.options.infer_schema_length,
             self.options.ignore_errors,
@@ -322,7 +321,6 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
             self.missing_is_null,
             std::mem::take(&mut self.predicate),
             to_cast,
-            self.options.skip_rows_after_header,
             std::mem::take(&mut self.row_index),
         )
     }
