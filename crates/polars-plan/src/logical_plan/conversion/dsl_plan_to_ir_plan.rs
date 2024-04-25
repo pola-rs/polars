@@ -69,9 +69,12 @@ pub fn to_alp_impl(
         lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
         convert: &mut ConversionOpt,
+        name: &str,
     ) -> PolarsResult<Node> {
         let lp_node = lp_arena.add(lp);
-        convert.coerce_types(expr_arena, lp_arena, lp_node)?;
+        convert
+            .coerce_types(expr_arena, lp_arena, lp_node)
+            .map_err(|e| e.context(format!("'{name}' failed").into()))?;
 
         Ok(lp_node)
     }
@@ -175,10 +178,9 @@ pub fn to_alp_impl(
             let predicate = to_expr_ir(predicate, expr_arena);
 
             convert.push_scratch(predicate.node(), expr_arena);
-            let lp_node = lp_arena.add(IR::Filter { input, predicate });
-            convert.coerce_types(expr_arena, lp_arena, lp_node)?;
 
-            return Ok(lp_node);
+            let lp = IR::Filter { input, predicate };
+            return run_conversion(lp, lp_arena, expr_arena, convert, "filter");
         },
         DslPlan::Slice { input, offset, len } => {
             let input = to_alp_impl(owned(input), expr_arena, lp_arena, convert)
@@ -225,7 +227,7 @@ pub fn to_alp_impl(
                 options,
             };
 
-            return run_conversion(lp, lp_arena, expr_arena, convert);
+            return run_conversion(lp, lp_arena, expr_arena, convert, "select");
         },
         DslPlan::Sort {
             input,
@@ -246,7 +248,7 @@ pub fn to_alp_impl(
                 sort_options,
             };
 
-            return run_conversion(lp, lp_arena, expr_arena, convert);
+            return run_conversion(lp, lp_arena, expr_arena, convert, "sort");
         },
         DslPlan::Cache {
             input,
@@ -295,7 +297,7 @@ pub fn to_alp_impl(
                 options,
             };
 
-            return run_conversion(lp, lp_arena, expr_arena, convert);
+            return run_conversion(lp, lp_arena, expr_arena, convert, "group_by");
         },
         DslPlan::Join {
             input_left,
@@ -339,7 +341,7 @@ pub fn to_alp_impl(
                 right_on,
                 options,
             };
-            return run_conversion(lp, lp_arena, expr_arena, convert);
+            return run_conversion(lp, lp_arena, expr_arena, convert, "join");
         },
         DslPlan::HStack {
             input,
@@ -358,7 +360,7 @@ pub fn to_alp_impl(
                 schema,
                 options,
             };
-            return run_conversion(lp, lp_arena, expr_arena, convert);
+            return run_conversion(lp, lp_arena, expr_arena, convert, "with_columns");
         },
         DslPlan::Distinct { input, options } => {
             let input = to_alp_impl(owned(input), expr_arena, lp_arena, convert)
@@ -397,7 +399,7 @@ pub fn to_alp_impl(
                             ..Default::default()
                         },
                     };
-                    return run_conversion(lp, lp_arena, expr_arena, convert);
+                    return run_conversion(lp, lp_arena, expr_arena, convert, "fill_nan");
                 },
                 DslFunction::Drop(to_drop) => {
                     let mut output_schema =
@@ -499,7 +501,7 @@ pub fn to_alp_impl(
                             ..Default::default()
                         },
                     };
-                    return run_conversion(lp, lp_arena, expr_arena, convert);
+                    return run_conversion(lp, lp_arena, expr_arena, convert, "stats");
                 },
                 _ => {
                     let function = function.into_function_node(&input_schema)?;
