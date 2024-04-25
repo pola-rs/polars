@@ -51,7 +51,6 @@ pub(crate) struct CoreReader<'a> {
     separator: u8,
     sample_size: usize,
     chunk_size: usize,
-    low_memory: bool,
     decimal_comma: bool,
     comment_prefix: Option<CommentPrefix>,
     quote_char: Option<u8>,
@@ -94,7 +93,6 @@ impl<'a> CoreReader<'a> {
         dtype_overwrite: Option<&'a [DataType]>,
         sample_size: usize,
         chunk_size: usize,
-        low_memory: bool,
         comment_prefix: Option<CommentPrefix>,
         quote_char: Option<u8>,
         eol_char: u8,
@@ -202,7 +200,6 @@ impl<'a> CoreReader<'a> {
             separator,
             sample_size,
             chunk_size,
-            low_memory,
             comment_prefix,
             quote_char,
             eol_char,
@@ -516,7 +513,7 @@ impl<'a> CoreReader<'a> {
             // large final contiguous memory needed at the end.
             let rows_per_thread = total_rows / n_threads;
             let max_proxy = bytes.len() / n_threads / 2;
-            let capacity = if self.low_memory {
+            let capacity = if self.options.low_memory {
                 chunk_size
             } else {
                 std::cmp::min(rows_per_thread, max_proxy)

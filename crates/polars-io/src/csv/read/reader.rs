@@ -318,7 +318,6 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
             self.dtype_overwrite,
             self.sample_size,
             self.chunk_size,
-            self.options.low_memory,
             std::mem::take(&mut self.options.comment_prefix),
             self.options.quote_char,
             self.options.eol_char,
