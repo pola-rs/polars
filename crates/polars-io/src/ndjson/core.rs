@@ -16,7 +16,6 @@ use crate::predicates::PhysicalIoExpr;
 use crate::prelude::*;
 use crate::RowIndex;
 const NEWLINE: u8 = b'\n';
-const RETURN: u8 = b'\r';
 const CLOSING_BRACKET: u8 = b'}';
 
 #[must_use]
@@ -370,32 +369,22 @@ fn parse_impl(
     scratch.json.clear();
     scratch.json.extend_from_slice(bytes);
     let n = scratch.json.len();
-    let all_good = match n {
-        0 => true,
-        1 => scratch.json[0] == NEWLINE,
-        2 => scratch.json[0] == NEWLINE && scratch.json[1] == RETURN,
+    let value = simd_json::to_borrowed_value_with_buffers(&mut scratch.json, &mut scratch.buffers)
+        .map_err(|e| polars_err!(ComputeError: "error parsing line: {}", e))?;
+    match value {
+        simd_json::BorrowedValue::Object(value) => {
+            buffers.iter_mut().try_for_each(|(s, inner)| {
+                match s.0.map_lookup(&value) {
+                    Some(v) => inner.add(v)?,
+                    None => inner.add_null(),
+                }
+                PolarsResult::Ok(())
+            })?;
+        },
         _ => {
-            let value =
-                simd_json::to_borrowed_value_with_buffers(&mut scratch.json, &mut scratch.buffers)
-                    .map_err(|e| polars_err!(ComputeError: "error parsing line: {}", e))?;
-            match value {
-                simd_json::BorrowedValue::Object(value) => {
-                    buffers.iter_mut().try_for_each(|(s, inner)| {
-                        match s.0.map_lookup(&value) {
-                            Some(v) => inner.add(v)?,
-                            None => inner.add_null(),
-                        }
-                        PolarsResult::Ok(())
-                    })?;
-                },
-                _ => {
-                    buffers.iter_mut().for_each(|(_, inner)| inner.add_null());
-                },
-            };
-            true
+            buffers.iter_mut().for_each(|(_, inner)| inner.add_null());
         },
     };
-    polars_ensure!(all_good, ComputeError: "invalid JSON: unexpected end of file");
     Ok(n)
 }
 
