@@ -324,8 +324,6 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
             to_cast,
             self.options.skip_rows_after_header,
             std::mem::take(&mut self.row_index),
-            self.options.try_parse_dates,
-            self.options.raise_if_empty,
         )
     }
 

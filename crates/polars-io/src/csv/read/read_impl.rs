@@ -94,8 +94,6 @@ impl<'a> CoreReader<'a> {
         to_cast: Vec<Field>,
         skip_rows_after_header: usize,
         row_index: Option<RowIndex>,
-        try_parse_dates: bool,
-        raise_if_empty: bool,
     ) -> PolarsResult<CoreReader<'a>> {
         check_decimal_comma(options.decimal_comma, options.separator)?;
         #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
@@ -144,8 +142,8 @@ impl<'a> CoreReader<'a> {
                     quote_char,
                     options.eol_char,
                     null_values.as_ref(),
-                    try_parse_dates,
-                    raise_if_empty,
+                    options.try_parse_dates,
+                    options.raise_if_empty,
                     &mut n_threads,
                     options.decimal_comma,
                 )?;
