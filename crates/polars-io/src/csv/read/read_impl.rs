@@ -49,7 +49,6 @@ pub(crate) struct CoreReader<'a> {
     n_threads: Option<usize>,
     sample_size: usize,
     chunk_size: usize,
-    decimal_comma: bool,
     comment_prefix: Option<CommentPrefix>,
     quote_char: Option<u8>,
     null_values: Option<NullValuesCompiled>,
@@ -97,9 +96,8 @@ impl<'a> CoreReader<'a> {
         row_index: Option<RowIndex>,
         try_parse_dates: bool,
         raise_if_empty: bool,
-        decimal_comma: bool,
     ) -> PolarsResult<CoreReader<'a>> {
-        check_decimal_comma(decimal_comma, options.separator)?;
+        check_decimal_comma(options.decimal_comma, options.separator)?;
         #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
         let mut reader_bytes = reader_bytes;
 
@@ -149,7 +147,7 @@ impl<'a> CoreReader<'a> {
                     try_parse_dates,
                     raise_if_empty,
                     &mut n_threads,
-                    decimal_comma,
+                    options.decimal_comma,
                 )?;
                 Arc::new(inferred_schema)
             },
@@ -202,7 +200,6 @@ impl<'a> CoreReader<'a> {
             predicate,
             to_cast,
             row_index,
-            decimal_comma,
         })
     }
 
@@ -455,7 +452,7 @@ impl<'a> CoreReader<'a> {
                                 schema,
                                 self.quote_char,
                                 self.encoding,
-                                self.decimal_comma,
+                                self.options.decimal_comma,
                             )?;
 
                             let local_bytes = &bytes[read..stop_at_nbytes];
@@ -540,7 +537,7 @@ impl<'a> CoreReader<'a> {
                             usize::MAX,
                             stop_at_nbytes,
                             starting_point_offset,
-                            self.decimal_comma,
+                            self.options.decimal_comma,
                         )?;
 
                         cast_columns(&mut df, &self.to_cast, false, self.ignore_errors)?;
@@ -564,7 +561,7 @@ impl<'a> CoreReader<'a> {
                                 self.schema.as_ref(),
                                 self.quote_char,
                                 self.encoding,
-                                self.decimal_comma,
+                                self.options.decimal_comma,
                             )?;
 
                             parse_lines(

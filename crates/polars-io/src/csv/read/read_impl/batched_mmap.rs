@@ -176,7 +176,7 @@ impl<'a> CoreReader<'a> {
             schema: self.schema,
             rows_read: 0,
             _cat_lock,
-            decimal_comma: self.decimal_comma,
+            decimal_comma: self.options.decimal_comma,
         })
     }
 }
