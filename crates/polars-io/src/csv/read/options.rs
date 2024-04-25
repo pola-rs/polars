@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 pub struct CsvReaderOptions {
     pub has_header: bool,
     pub separator: u8,
-    pub comment_prefix: Option<CommentPrefix>,
     pub quote_char: Option<u8>,
+    pub comment_prefix: Option<CommentPrefix>,
     pub eol_char: u8,
     pub encoding: CsvEncoding,
     pub skip_rows: usize,
@@ -32,8 +32,8 @@ impl Default for CsvReaderOptions {
         Self {
             has_header: true,
             separator: b',',
-            comment_prefix: None,
             quote_char: Some(b'"'),
+            comment_prefix: None,
             eol_char: b'\n',
             encoding: CsvEncoding::default(),
             skip_rows: 0,
