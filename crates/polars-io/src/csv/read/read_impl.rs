@@ -40,7 +40,6 @@ pub(crate) struct CoreReader<'a> {
     projection: Option<Vec<usize>>,
     /// Current line number, used in error reporting
     line_number: usize,
-    ignore_errors: bool,
     n_rows: Option<usize>,
     n_threads: Option<usize>,
     sample_size: usize,
@@ -70,7 +69,6 @@ impl<'a> CoreReader<'a> {
         mut options: CsvReaderOptions,
         n_rows: Option<usize>,
         mut projection: Option<Vec<usize>>,
-        ignore_errors: bool,
         schema: Option<SchemaRef>,
         columns: Option<Vec<String>>,
         mut n_threads: Option<usize>,
@@ -177,7 +175,6 @@ impl<'a> CoreReader<'a> {
             schema,
             projection,
             line_number,
-            ignore_errors,
             n_rows,
             n_threads,
             sample_size,
@@ -423,7 +420,7 @@ impl<'a> CoreReader<'a> {
                     .into_par_iter()
                     .map(|(bytes_offset_thread, stop_at_nbytes)| {
                         let schema = self.schema.as_ref();
-                        let ignore_errors = self.ignore_errors;
+                        let ignore_errors = self.options.ignore_errors;
                         let projection = &projection;
 
                         let mut read = bytes_offset_thread;
@@ -475,7 +472,12 @@ impl<'a> CoreReader<'a> {
                                 local_df.with_row_index_mut(&rc.name, Some(rc.offset));
                             };
 
-                            cast_columns(&mut local_df, &self.to_cast, false, self.ignore_errors)?;
+                            cast_columns(
+                                &mut local_df,
+                                &self.to_cast,
+                                false,
+                                self.options.ignore_errors,
+                            )?;
                             let s = predicate.evaluate_io(&local_df)?;
                             let mask = s.bool()?;
                             local_df = local_df.filter(mask)?;
@@ -511,7 +513,7 @@ impl<'a> CoreReader<'a> {
                             bytes,
                             self.options.separator,
                             self.schema.as_ref(),
-                            self.ignore_errors,
+                            self.options.ignore_errors,
                             &projection,
                             bytes_offset_thread,
                             self.options.quote_char,
@@ -528,7 +530,7 @@ impl<'a> CoreReader<'a> {
                             self.options.decimal_comma,
                         )?;
 
-                        cast_columns(&mut df, &self.to_cast, false, self.ignore_errors)?;
+                        cast_columns(&mut df, &self.to_cast, false, self.options.ignore_errors)?;
                         if let Some(rc) = &self.row_index {
                             df.with_row_index_mut(&rc.name, Some(rc.offset));
                         }
@@ -560,7 +562,7 @@ impl<'a> CoreReader<'a> {
                                 self.options.quote_char,
                                 self.options.eol_char,
                                 self.missing_is_null,
-                                self.ignore_errors,
+                                self.options.ignore_errors,
                                 self.options.truncate_ragged_lines,
                                 self.null_values.as_ref(),
                                 &projection,
@@ -577,7 +579,7 @@ impl<'a> CoreReader<'a> {
                             unsafe { DataFrame::new_no_checks(columns) }
                         };
 
-                        cast_columns(&mut df, &self.to_cast, false, self.ignore_errors)?;
+                        cast_columns(&mut df, &self.to_cast, false, self.options.ignore_errors)?;
                         if let Some(rc) = &self.row_index {
                             df.with_row_index_mut(&rc.name, Some(rc.offset));
                         }
