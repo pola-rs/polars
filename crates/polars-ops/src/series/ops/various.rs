@@ -17,7 +17,7 @@ pub trait SeriesMethods: SeriesSealed {
         // we need to sort here as well in case of `maintain_order` because duplicates behavior is undefined
         let groups = s.group_tuples(parallel, sort)?;
         let values = unsafe { s.agg_first(&groups) };
-        let counts = groups.group_lengths("count");
+        let counts = groups.group_count().with_name("count");
         let cols = vec![values, counts.into_series()];
         let df = unsafe { DataFrame::new_no_checks(cols) };
         if sort {

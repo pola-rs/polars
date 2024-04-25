@@ -3,8 +3,6 @@ use arrow::offset::Offsets;
 use polars_utils::unwrap::UnwrapUncheckedRelease;
 
 use super::*;
-#[cfg(feature = "dtype-struct")]
-use crate::chunked_array::builder::AnonymousOwnedListBuilder;
 use crate::chunked_array::builder::ListNullChunkedBuilder;
 use crate::series::implementations::null::NullChunked;
 
@@ -501,32 +499,27 @@ impl<T: PolarsObject> AggList for ObjectChunked<T> {
 #[cfg(feature = "dtype-struct")]
 impl AggList for StructChunked {
     unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
-        let s = self.clone().into_series();
-        match groups {
-            GroupsProxy::Idx(groups) => {
-                let mut builder = AnonymousOwnedListBuilder::new(
-                    self.name(),
-                    groups.len(),
-                    Some(self.dtype().clone()),
-                );
-                for idx in groups.all().iter() {
-                    let taken = s.take_slice_unchecked(idx);
-                    builder.append_series(&taken).unwrap();
-                }
-                builder.finish().into_series()
-            },
-            GroupsProxy::Slice { groups, .. } => {
-                let mut builder = AnonymousOwnedListBuilder::new(
-                    self.name(),
-                    groups.len(),
-                    Some(self.dtype().clone()),
-                );
-                for [first, len] in groups {
-                    let taken = s.slice(*first as i64, *len as usize);
-                    builder.append_series(&taken).unwrap();
-                }
-                builder.finish().into_series()
-            },
+        let mut ca = self.clone();
+        ca.rechunk();
+        let (gather, offsets, can_fast_explode) = groups.prepare_list_agg(self.len());
+
+        let gathered = if let Some(gather) = gather {
+            let out = ca.into_series().take_unchecked(&gather);
+            out.struct_().unwrap().clone()
+        } else {
+            ca
+        };
+
+        let arr = gathered.chunks()[0].clone();
+        let dtype = LargeListArray::default_datatype(arr.data_type().clone());
+
+        let mut chunk =
+            ListChunked::with_chunk(self.name(), LargeListArray::new(dtype, offsets, arr, None));
+        chunk.set_dtype(DataType::List(Box::new(self.dtype().clone())));
+        if can_fast_explode {
+            chunk.set_fast_explode()
         }
+
+        chunk.into_series()
     }
 }
