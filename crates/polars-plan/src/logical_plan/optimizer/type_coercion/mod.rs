@@ -79,6 +79,7 @@ fn modify_supertype(
         _ => {},
     }
 
+    // TODO! This must be removed and dealt properly with dynamic str.
     use DataType::*;
     match (type_left, type_right, left, right) {
         // if the we compare a categorical to a literal string we want to cast the literal to categorical
@@ -555,12 +556,12 @@ fn inline_or_prune_cast(
                 LiteralValue::Series(SpecialEq::new(s))
             },
             LiteralValue::StrCat(s) => {
-                let av = AnyValue::String(s).strict_cast(dtype).ok();
+                let av = AnyValue::String(s).strict_cast(dtype);
                 return Ok(av.map(|av| AExpr::Literal(av.try_into().unwrap())));
             },
             lv @ (LiteralValue::Int(_) | LiteralValue::Float(_)) => {
                 let av = lv.to_any_value().ok_or_else(|| polars_err!(InvalidOperation: "literal value: {:?} too large for Polars", lv))?;
-                let av = av.strict_cast(dtype).ok();
+                let av = av.strict_cast(dtype);
                 return Ok(av.map(|av| AExpr::Literal(av.try_into().unwrap())));
             },
             LiteralValue::Null => match dtype {
@@ -595,8 +596,8 @@ fn inline_or_prune_cast(
                     (av, _) => {
                         let out = {
                             match av.strict_cast(dtype) {
-                                Ok(out) => out,
-                                Err(_) => return Ok(None),
+                                Some(out) => out,
+                                None => return Ok(None),
                             }
                         };
                         out.try_into()?

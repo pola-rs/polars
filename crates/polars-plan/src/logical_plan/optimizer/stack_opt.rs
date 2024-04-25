@@ -17,19 +17,18 @@ impl StackOptimizer {
     ) -> PolarsResult<Node> {
         let mut changed = true;
 
-        let mut plans = Vec::with_capacity(32);
-
-        // nodes of expressions and lp node from which the expressions are a member of
-        let mut exprs = Vec::with_capacity(32);
+        // Nodes of expressions and lp node from which the expressions are a member of.
+        let mut plans = vec![];
+        let mut exprs = vec![];
         let mut scratch = vec![];
 
-        // run loop until reaching fixed point
+        // Run loop until reaching fixed point.
         while changed {
-            // recurse into sub plans and expressions and apply rules
+            // Recurse into sub plans and expressions and apply rules.
             changed = false;
             plans.push(lp_top);
             while let Some(current_node) = plans.pop() {
-                // apply rules
+                // Apply rules
                 for rule in rules.iter_mut() {
                     // keep iterating over same rule
                     while let Some(x) = rule.optimize_plan(lp_arena, expr_arena, current_node) {

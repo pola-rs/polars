@@ -49,39 +49,34 @@ impl ConversionOpt {
         lp_arena: &Arena<IR>,
         current_node: Node,
     ) -> PolarsResult<()> {
-        let mut changed = true;
-        while changed {
-            changed = false;
+        // Different from the stack-opt in the optimizer phase, this does a single pass until fixed point per expression.
 
-            // process the expressions on the stack and apply optimizations.
-            while let Some(current_expr_node) = self.scratch.pop() {
-                {
-                    let expr = unsafe { expr_arena.get_unchecked(current_expr_node) };
-                    if expr.is_leaf() {
-                        continue;
-                    }
-                }
-                if let Some(rule) = &mut self.simplify {
-                    while let Some(x) =
-                        rule.optimize_expr(expr_arena, current_expr_node, lp_arena, current_node)?
-                    {
-                        expr_arena.replace(current_expr_node, x);
-                        changed = true;
-                    }
-                }
-                if let Some(rule) = &mut self.coerce {
-                    while let Some(x) =
-                        rule.optimize_expr(expr_arena, current_expr_node, lp_arena, current_node)?
-                    {
-                        expr_arena.replace(current_expr_node, x);
-                        changed = true;
-                    }
-                }
-
+        // process the expressions on the stack and apply optimizations.
+        while let Some(current_expr_node) = self.scratch.pop() {
+            {
                 let expr = unsafe { expr_arena.get_unchecked(current_expr_node) };
-                // traverse subexpressions and add to the stack
-                expr.nodes(&mut self.scratch)
+                if expr.is_leaf() {
+                    continue;
+                }
             }
+            if let Some(rule) = &mut self.simplify {
+                while let Some(x) =
+                    rule.optimize_expr(expr_arena, current_expr_node, lp_arena, current_node)?
+                {
+                    expr_arena.replace(current_expr_node, x);
+                }
+            }
+            if let Some(rule) = &mut self.coerce {
+                while let Some(x) =
+                    rule.optimize_expr(expr_arena, current_expr_node, lp_arena, current_node)?
+                {
+                    expr_arena.replace(current_expr_node, x);
+                }
+            }
+
+            let expr = unsafe { expr_arena.get_unchecked(current_expr_node) };
+            // traverse subexpressions and add to the stack
+            expr.nodes(&mut self.scratch)
         }
 
         Ok(())
