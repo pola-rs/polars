@@ -244,7 +244,7 @@ impl<'a> CoreReader<'a> {
             projection,
             starting_point_offset,
             row_index: self.row_index,
-            comment_prefix: self.comment_prefix,
+            comment_prefix: self.options.comment_prefix,
             quote_char: self.options.quote_char,
             eol_char: self.options.eol_char,
             null_values: self.null_values,

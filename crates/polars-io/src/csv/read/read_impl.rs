@@ -44,7 +44,6 @@ pub(crate) struct CoreReader<'a> {
     n_threads: Option<usize>,
     sample_size: usize,
     chunk_size: usize,
-    comment_prefix: Option<CommentPrefix>,
     null_values: Option<NullValuesCompiled>,
     missing_is_null: bool,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
@@ -76,7 +75,6 @@ impl<'a> CoreReader<'a> {
         dtype_overwrite: Option<&'a [DataType]>,
         sample_size: usize,
         chunk_size: usize,
-        comment_prefix: Option<CommentPrefix>,
         null_values: Option<NullValues>,
         missing_is_null: bool,
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
@@ -130,7 +128,7 @@ impl<'a> CoreReader<'a> {
                     schema_overwrite.as_deref(),
                     &mut options.skip_rows,
                     options.skip_rows_after_header,
-                    comment_prefix.as_ref(),
+                    options.comment_prefix.as_ref(),
                     options.quote_char,
                     options.eol_char,
                     null_values.as_ref(),
@@ -179,7 +177,6 @@ impl<'a> CoreReader<'a> {
             n_threads,
             sample_size,
             chunk_size,
-            comment_prefix,
             null_values,
             missing_is_null,
             predicate,
@@ -214,7 +211,7 @@ impl<'a> CoreReader<'a> {
         }
 
         // skip lines that are comments
-        while is_comment_line(bytes, self.comment_prefix.as_ref()) {
+        while is_comment_line(bytes, self.options.comment_prefix.as_ref()) {
             bytes = skip_this_line(bytes, quote_char, eol_char);
         }
 
@@ -225,7 +222,7 @@ impl<'a> CoreReader<'a> {
         // skip 'n' rows following the header
         if self.options.skip_rows_after_header > 0 {
             for _ in 0..self.options.skip_rows_after_header {
-                let pos = if is_comment_line(bytes, self.comment_prefix.as_ref()) {
+                let pos = if is_comment_line(bytes, self.options.comment_prefix.as_ref()) {
                     next_line_position_naive(bytes, eol_char)
                 } else {
                     // we don't pass expected fields
@@ -448,7 +445,7 @@ impl<'a> CoreReader<'a> {
                                 local_bytes,
                                 offset,
                                 self.options.separator,
-                                self.comment_prefix.as_ref(),
+                                self.options.comment_prefix.as_ref(),
                                 self.options.quote_char,
                                 self.options.eol_char,
                                 self.missing_is_null,
@@ -518,7 +515,7 @@ impl<'a> CoreReader<'a> {
                             bytes_offset_thread,
                             self.options.quote_char,
                             self.options.eol_char,
-                            self.comment_prefix.as_ref(),
+                            self.options.comment_prefix.as_ref(),
                             capacity,
                             self.options.encoding,
                             self.null_values.as_ref(),
@@ -558,7 +555,7 @@ impl<'a> CoreReader<'a> {
                                 remaining_bytes,
                                 0,
                                 self.options.separator,
-                                self.comment_prefix.as_ref(),
+                                self.options.comment_prefix.as_ref(),
                                 self.options.quote_char,
                                 self.options.eol_char,
                                 self.missing_is_null,
