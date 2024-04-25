@@ -8,7 +8,7 @@ use polars_time::prelude::*;
 use rayon::prelude::*;
 
 use super::infer_file_schema;
-use super::options::{CommentPrefix, CsvEncoding, NullValues};
+use super::options::{CommentPrefix, CsvEncoding, CsvReaderOptions, NullValues};
 use super::read_impl::batched_mmap::{
     to_batched_owned_mmap, BatchedCsvReaderMmap, OwnedBatchedCsvReaderMmap,
 };
@@ -42,8 +42,10 @@ pub struct CsvReader<'a, R>
 where
     R: MmapBytesReader,
 {
-    /// File or Stream object
+    /// File or Stream object.
     reader: R,
+    /// Options for the CSV reader.
+    options: CsvReaderOptions,
     /// Stop reading from the csv after this number of rows is reached
     n_rows: Option<usize>,
     // used by error ignore logic
@@ -85,6 +87,12 @@ impl<'a, R> CsvReader<'a, R>
 where
     R: 'a + MmapBytesReader,
 {
+    /// Skip these rows after the header
+    pub fn with_options(mut self, options: CsvReaderOptions) -> Self {
+        self.options = options;
+        self
+    }
+
     /// Skip these rows after the header
     pub fn with_skip_rows_after_header(mut self, offset: usize) -> Self {
         self.skip_rows_after_header = offset;
@@ -501,6 +509,7 @@ where
     fn new(reader: R) -> Self {
         CsvReader {
             reader,
+            options: CsvReaderOptions::default(),
             rechunk: true,
             n_rows: None,
             max_records: Some(128),
