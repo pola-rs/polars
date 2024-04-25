@@ -75,17 +75,22 @@ pub enum CommentPrefix {
 
 impl CommentPrefix {
     /// Creates a new `CommentPrefix` for the `Single` variant.
-    pub fn new_single(c: u8) -> Self {
-        CommentPrefix::Single(c)
+    pub fn new_single(prefix: u8) -> Self {
+        CommentPrefix::Single(prefix)
     }
 
-    /// Creates a new `CommentPrefix`. If `Multi` variant is used and the string is longer
-    /// than 5 characters, it will return `None`.
-    pub fn new_multi(s: String) -> Option<Self> {
-        if s.len() <= 5 {
-            Some(CommentPrefix::Multi(s))
+    /// Creates a new `CommentPrefix` for the `Multi` variant.
+    pub fn new_multi(prefix: String) -> Self {
+        CommentPrefix::Multi(prefix)
+    }
+
+    /// Creates a new `CommentPrefix` from a `&str`.
+    pub fn new_from_str(prefix: &str) -> Self {
+        if prefix.len() == 1 && prefix.chars().next().unwrap().is_ascii() {
+            let c = prefix.as_bytes()[0];
+            CommentPrefix::Single(c)
         } else {
-            None
+            CommentPrefix::Multi(prefix.to_string())
         }
     }
 }

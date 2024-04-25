@@ -63,7 +63,6 @@ where
     dtype_overwrite: Option<&'a [DataType]>,
     sample_size: usize,
     chunk_size: usize,
-    comment_prefix: Option<CommentPrefix>,
     null_values: Option<NullValues>,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     quote_char: Option<u8>,
@@ -100,6 +99,12 @@ where
     /// Set the CSV file's column separator as a byte character
     pub fn with_separator(mut self, separator: u8) -> Self {
         self.options.separator = separator;
+        self
+    }
+
+    /// Set the comment prefix for this instance. Lines starting with this prefix will be ignored.
+    pub fn with_comment_prefix(mut self, comment_prefix: Option<&str>) -> Self {
+        self.options.comment_prefix = comment_prefix.map(CommentPrefix::new_from_str);
         self
     }
 
@@ -161,21 +166,9 @@ where
         self
     }
 
-    /// Set the comment prefix for this instance. Lines starting with this prefix will be ignored.
-    pub fn with_comment_prefix(mut self, comment_prefix: Option<&str>) -> Self {
-        self.comment_prefix = comment_prefix.map(|s| {
-            if s.len() == 1 && s.chars().next().unwrap().is_ascii() {
-                CommentPrefix::Single(s.as_bytes()[0])
-            } else {
-                CommentPrefix::Multi(s.to_string())
-            }
-        });
-        self
-    }
-
     /// Sets the comment prefix from `CsvParserOptions` for internal initialization.
     pub fn _with_comment_prefix(mut self, comment_prefix: Option<CommentPrefix>) -> Self {
-        self.comment_prefix = comment_prefix;
+        self.options.comment_prefix = comment_prefix;
         self
     }
 
@@ -339,7 +332,7 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
             self.sample_size,
             self.chunk_size,
             self.low_memory,
-            std::mem::take(&mut self.comment_prefix),
+            std::mem::take(&mut self.options.comment_prefix),
             self.quote_char,
             self.eol_char,
             std::mem::take(&mut self.null_values),
@@ -452,7 +445,7 @@ impl<'a> CsvReader<'a, Box<dyn MmapBytesReader>> {
                     None,
                     &mut self.skip_rows_before_header,
                     self.skip_rows_after_header,
-                    self.comment_prefix.as_ref(),
+                    self.options.comment_prefix.as_ref(),
                     self.quote_char,
                     self.eol_char,
                     self.null_values.as_ref(),
@@ -483,7 +476,7 @@ impl<'a> CsvReader<'a, Box<dyn MmapBytesReader>> {
                     None,
                     &mut self.skip_rows_before_header,
                     self.skip_rows_after_header,
-                    self.comment_prefix.as_ref(),
+                    self.options.comment_prefix.as_ref(),
                     self.quote_char,
                     self.eol_char,
                     self.null_values.as_ref(),
@@ -524,7 +517,6 @@ where
             sample_size: 1024,
             chunk_size: 1 << 18,
             low_memory: false,
-            comment_prefix: None,
             eol_char: b'\n',
             null_values: None,
             missing_is_null: true,
