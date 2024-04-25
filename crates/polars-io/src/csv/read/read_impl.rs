@@ -13,9 +13,7 @@ use polars_utils::flatten;
 use rayon::prelude::*;
 
 use super::buffer::init_buffers;
-use super::options::{
-    CommentPrefix, CsvEncoding, CsvReaderOptions, NullValues, NullValuesCompiled,
-};
+use super::options::{CommentPrefix, CsvEncoding, CsvReaderOptions, NullValuesCompiled};
 use super::parser::{
     get_line_stats, is_comment_line, next_line_position, next_line_position_naive, parse_lines,
     skip_bom, skip_line_ending, skip_this_line, skip_whitespace_exclude,
@@ -73,7 +71,6 @@ impl<'a> CoreReader<'a> {
         dtype_overwrite: Option<&'a [DataType]>,
         sample_size: usize,
         chunk_size: usize,
-        null_values: Option<NullValues>,
         missing_is_null: bool,
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
         to_cast: Vec<Field>,
@@ -129,7 +126,7 @@ impl<'a> CoreReader<'a> {
                     options.comment_prefix.as_ref(),
                     options.quote_char,
                     options.eol_char,
-                    null_values.as_ref(),
+                    options.null_values.as_ref(),
                     options.try_parse_dates,
                     options.raise_if_empty,
                     &mut options.n_threads,
@@ -145,9 +142,12 @@ impl<'a> CoreReader<'a> {
             }
         }
 
-        // create a null value for every column
-        let mut null_values = null_values.map(|nv| nv.compile(&schema)).transpose()?;
+        // We no longer need the original (uncompiled) null values so we can use `mem::take` here.
+        let mut null_values = std::mem::take(&mut options.null_values)
+            .map(|nv| nv.compile(&schema))
+            .transpose()?;
 
+        // create a null value for every column
         if let Some(cols) = columns {
             let mut prj = Vec::with_capacity(cols.len());
             for col in cols {
