@@ -47,7 +47,6 @@ pub(crate) struct CoreReader<'a> {
     n_rows: Option<usize>,
     encoding: CsvEncoding,
     n_threads: Option<usize>,
-    has_header: bool,
     sample_size: usize,
     chunk_size: usize,
     decimal_comma: bool,
@@ -79,7 +78,6 @@ impl<'a> CoreReader<'a> {
         mut skip_rows: usize,
         mut projection: Option<Vec<usize>>,
         max_records: Option<usize>,
-        has_header: bool,
         ignore_errors: bool,
         schema: Option<SchemaRef>,
         columns: Option<Vec<String>>,
@@ -120,8 +118,8 @@ impl<'a> CoreReader<'a> {
         // again after decompression.
         #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
         {
-            let total_n_rows =
-                n_rows.map(|n| skip_rows + (has_header as usize) + skip_rows_after_header + n);
+            let total_n_rows = n_rows
+                .map(|n| skip_rows + (options.has_header as usize) + skip_rows_after_header + n);
             if let Some(b) = decompress(
                 &reader_bytes,
                 total_n_rows,
@@ -140,7 +138,7 @@ impl<'a> CoreReader<'a> {
                     &reader_bytes,
                     options.separator,
                     max_records,
-                    has_header,
+                    options.has_header,
                     schema_overwrite.as_deref(),
                     &mut skip_rows,
                     skip_rows_after_header,
@@ -181,19 +179,20 @@ impl<'a> CoreReader<'a> {
             projection = Some(prj);
         }
 
+        let line_number = usize::from(options.has_header);
+
         Ok(CoreReader {
             reader_bytes: Some(reader_bytes),
             options,
             schema,
             projection,
-            line_number: usize::from(has_header),
+            line_number,
             ignore_errors,
             skip_rows_before_header: skip_rows,
             skip_rows_after_header,
             n_rows,
             encoding,
             n_threads,
-            has_header,
             sample_size,
             chunk_size,
             comment_prefix,
@@ -238,7 +237,7 @@ impl<'a> CoreReader<'a> {
         }
 
         // skip header row
-        if self.has_header {
+        if self.options.has_header {
             bytes = skip_this_line(bytes, quote_char, eol_char);
         }
         // skip 'n' rows following the header
