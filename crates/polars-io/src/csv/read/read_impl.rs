@@ -48,13 +48,11 @@ pub(crate) struct CoreReader<'a> {
     encoding: CsvEncoding,
     n_threads: Option<usize>,
     has_header: bool,
-    separator: u8,
     sample_size: usize,
     chunk_size: usize,
     decimal_comma: bool,
     comment_prefix: Option<CommentPrefix>,
     quote_char: Option<u8>,
-    eol_char: u8,
     null_values: Option<NullValuesCompiled>,
     missing_is_null: bool,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
@@ -82,7 +80,6 @@ impl<'a> CoreReader<'a> {
         mut skip_rows: usize,
         mut projection: Option<Vec<usize>>,
         max_records: Option<usize>,
-        separator: Option<u8>,
         has_header: bool,
         ignore_errors: bool,
         schema: Option<SchemaRef>,
@@ -95,7 +92,6 @@ impl<'a> CoreReader<'a> {
         chunk_size: usize,
         comment_prefix: Option<CommentPrefix>,
         quote_char: Option<u8>,
-        eol_char: u8,
         null_values: Option<NullValues>,
         missing_is_null: bool,
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
@@ -107,7 +103,7 @@ impl<'a> CoreReader<'a> {
         truncate_ragged_lines: bool,
         decimal_comma: bool,
     ) -> PolarsResult<CoreReader<'a>> {
-        check_decimal_comma(decimal_comma, separator.unwrap_or(b','))?;
+        check_decimal_comma(decimal_comma, options.separator)?;
         #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
         let mut reader_bytes = reader_bytes;
 
@@ -120,7 +116,6 @@ impl<'a> CoreReader<'a> {
         }
 
         // check if schema should be inferred
-        let separator = separator.unwrap_or(b',');
 
         // We keep track of the inferred schema bool
         // In case the file is compressed this schema inference is wrong and has to be done
@@ -129,9 +124,13 @@ impl<'a> CoreReader<'a> {
         {
             let total_n_rows =
                 n_rows.map(|n| skip_rows + (has_header as usize) + skip_rows_after_header + n);
-            if let Some(b) =
-                decompress(&reader_bytes, total_n_rows, separator, quote_char, eol_char)
-            {
+            if let Some(b) = decompress(
+                &reader_bytes,
+                total_n_rows,
+                options.separator,
+                quote_char,
+                options.eol_char,
+            ) {
                 reader_bytes = ReaderBytes::Owned(b);
             }
         }
@@ -141,7 +140,7 @@ impl<'a> CoreReader<'a> {
             None => {
                 let (inferred_schema, _, _) = infer_file_schema(
                     &reader_bytes,
-                    separator,
+                    options.separator,
                     max_records,
                     has_header,
                     schema_overwrite.as_deref(),
@@ -149,7 +148,7 @@ impl<'a> CoreReader<'a> {
                     skip_rows_after_header,
                     comment_prefix.as_ref(),
                     quote_char,
-                    eol_char,
+                    options.eol_char,
                     null_values.as_ref(),
                     try_parse_dates,
                     raise_if_empty,
@@ -197,12 +196,10 @@ impl<'a> CoreReader<'a> {
             encoding,
             n_threads,
             has_header,
-            separator,
             sample_size,
             chunk_size,
             comment_prefix,
             quote_char,
-            eol_char,
             null_values,
             missing_is_null,
             predicate,
@@ -222,7 +219,7 @@ impl<'a> CoreReader<'a> {
         let starting_point_offset = bytes.as_ptr() as usize;
 
         // Skip all leading white space and the occasional utf8-bom
-        bytes = skip_whitespace_exclude(skip_bom(bytes), self.separator);
+        bytes = skip_whitespace_exclude(skip_bom(bytes), self.options.separator);
         // \n\n can be a empty string row of a single column
         // in other cases we skip it.
         if self.schema.len() > 1 {
@@ -256,7 +253,13 @@ impl<'a> CoreReader<'a> {
                     // we don't pass expected fields
                     // as we want to skip all rows
                     // no matter the no. of fields
-                    next_line_position(bytes, None, self.separator, self.quote_char, eol_char)
+                    next_line_position(
+                        bytes,
+                        None,
+                        self.options.separator,
+                        self.quote_char,
+                        eol_char,
+                    )
                 }
                 .ok_or_else(|| polars_err!(NoData: "not enough lines to skip"))?;
 
@@ -291,9 +294,9 @@ impl<'a> CoreReader<'a> {
         if let Some((mean, std)) = get_line_stats(
             bytes,
             self.sample_size,
-            self.eol_char,
+            self.options.eol_char,
             Some(self.schema.len()),
-            self.separator,
+            self.options.separator,
             self.quote_char,
         ) {
             if logging {
@@ -317,9 +320,9 @@ impl<'a> CoreReader<'a> {
                     if let Some(pos) = next_line_position(
                         &bytes[n_bytes..],
                         Some(self.schema.len()),
-                        self.separator,
+                        self.options.separator,
                         self.quote_char,
-                        self.eol_char,
+                        self.options.eol_char,
                     ) {
                         if set_upper_bound {
                             (bytes, remaining_bytes) =
@@ -351,7 +354,7 @@ impl<'a> CoreReader<'a> {
     )> {
         // Make the variable mutable so that we can reassign the sliced file to this variable.
         let (bytes, starting_point_offset) =
-            self.find_starting_point(bytes, self.quote_char, self.eol_char)?;
+            self.find_starting_point(bytes, self.quote_char, self.options.eol_char)?;
 
         let (bytes, total_rows, remaining_bytes) =
             self.estimate_rows_and_set_upper_bound(bytes, logging, true);
@@ -373,9 +376,9 @@ impl<'a> CoreReader<'a> {
             bytes,
             n_file_chunks,
             Some(self.schema.len()),
-            self.separator,
+            self.options.separator,
             self.quote_char,
-            self.eol_char,
+            self.options.eol_char,
         );
 
         if logging {
@@ -466,10 +469,10 @@ impl<'a> CoreReader<'a> {
                             read += parse_lines(
                                 local_bytes,
                                 offset,
-                                self.separator,
+                                self.options.separator,
                                 self.comment_prefix.as_ref(),
                                 self.quote_char,
-                                self.eol_char,
+                                self.options.eol_char,
                                 self.missing_is_null,
                                 ignore_errors,
                                 self.truncate_ragged_lines,
@@ -525,13 +528,13 @@ impl<'a> CoreReader<'a> {
                     .map(|(bytes_offset_thread, stop_at_nbytes)| {
                         let mut df = read_chunk(
                             bytes,
-                            self.separator,
+                            self.options.separator,
                             self.schema.as_ref(),
                             self.ignore_errors,
                             &projection,
                             bytes_offset_thread,
                             self.quote_char,
-                            self.eol_char,
+                            self.options.eol_char,
                             self.comment_prefix.as_ref(),
                             capacity,
                             self.encoding,
@@ -571,10 +574,10 @@ impl<'a> CoreReader<'a> {
                             parse_lines(
                                 remaining_bytes,
                                 0,
-                                self.separator,
+                                self.options.separator,
                                 self.comment_prefix.as_ref(),
                                 self.quote_char,
-                                self.eol_char,
+                                self.options.eol_char,
                                 self.missing_is_null,
                                 self.ignore_errors,
                                 self.truncate_ragged_lines,

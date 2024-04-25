@@ -120,7 +120,7 @@ impl<'a> CoreReader<'a> {
         let reader_bytes = self.reader_bytes.take().unwrap();
         let bytes = reader_bytes.as_ref();
         let (bytes, starting_point_offset) =
-            self.find_starting_point(bytes, self.quote_char, self.eol_char)?;
+            self.find_starting_point(bytes, self.quote_char, self.options.eol_char)?;
 
         // this is arbitrarily chosen.
         // we don't want this to depend on the thread pool size
@@ -136,9 +136,9 @@ impl<'a> CoreReader<'a> {
             n_chunks: offset_batch_size,
             rows_per_batch: self.chunk_size,
             expected_fields: self.schema.len(),
-            separator: self.separator,
+            separator: self.options.separator,
             quote_char: self.quote_char,
-            eol_char: self.eol_char,
+            eol_char: self.options.eol_char,
         };
 
         let projection = self.get_projection()?;
@@ -164,7 +164,7 @@ impl<'a> CoreReader<'a> {
             row_index: self.row_index,
             comment_prefix: self.comment_prefix,
             quote_char: self.quote_char,
-            eol_char: self.eol_char,
+            eol_char: self.options.eol_char,
             null_values: self.null_values,
             missing_is_null: self.missing_is_null,
             to_cast: self.to_cast,
@@ -172,7 +172,7 @@ impl<'a> CoreReader<'a> {
             truncate_ragged_lines: self.truncate_ragged_lines,
             n_rows: self.n_rows,
             encoding: self.encoding,
-            separator: self.separator,
+            separator: self.options.separator,
             schema: self.schema,
             rows_read: 0,
             _cat_lock,
