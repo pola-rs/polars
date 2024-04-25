@@ -13,7 +13,9 @@ use polars_utils::flatten;
 use rayon::prelude::*;
 
 use super::buffer::init_buffers;
-use super::options::{CommentPrefix, CsvEncoding, NullValues, NullValuesCompiled};
+use super::options::{
+    CommentPrefix, CsvEncoding, CsvReaderOptions, NullValues, NullValuesCompiled,
+};
 use super::parser::{
     get_line_stats, is_comment_line, next_line_position, next_line_position_naive, parse_lines,
     skip_bom, skip_line_ending, skip_this_line, skip_whitespace_exclude,
@@ -28,69 +30,10 @@ use crate::predicates::PhysicalIoExpr;
 use crate::utils::update_row_counts;
 use crate::RowIndex;
 
-pub(crate) fn cast_columns(
-    df: &mut DataFrame,
-    to_cast: &[Field],
-    parallel: bool,
-    ignore_errors: bool,
-) -> PolarsResult<()> {
-    let cast_fn = |s: &Series, fld: &Field| {
-        let out = match (s.dtype(), fld.data_type()) {
-            #[cfg(feature = "temporal")]
-            (DataType::String, DataType::Date) => s
-                .str()
-                .unwrap()
-                .as_date(None, false)
-                .map(|ca| ca.into_series()),
-            #[cfg(feature = "temporal")]
-            (DataType::String, DataType::Datetime(tu, _)) => s
-                .str()
-                .unwrap()
-                .as_datetime(
-                    None,
-                    *tu,
-                    false,
-                    false,
-                    None,
-                    &StringChunked::from_iter(std::iter::once("raise")),
-                )
-                .map(|ca| ca.into_series()),
-            (_, dt) => s.cast(dt),
-        }?;
-        if !ignore_errors && s.null_count() != out.null_count() {
-            handle_casting_failures(s, &out)?;
-        }
-        Ok(out)
-    };
-
-    if parallel {
-        let cols = df
-            .get_columns()
-            .iter()
-            .map(|s| {
-                if let Some(fld) = to_cast.iter().find(|fld| fld.name().as_str() == s.name()) {
-                    cast_fn(s, fld)
-                } else {
-                    Ok(s.clone())
-                }
-            })
-            .collect::<PolarsResult<Vec<_>>>()?;
-        *df = unsafe { DataFrame::new_no_checks(cols) }
-    } else {
-        // cast to the original dtypes in the schema
-        for fld in to_cast {
-            // field may not be projected
-            if let Some(idx) = df.get_column_index(fld.name()) {
-                df.try_apply_at_idx(idx, |s| cast_fn(s, fld))?;
-            }
-        }
-    }
-    Ok(())
-}
-
 /// CSV file reader
 pub(crate) struct CoreReader<'a> {
     reader_bytes: Option<ReaderBytes<'a>>,
+    options: CsvReaderOptions,
     /// Explicit schema for the CSV file
     schema: SchemaRef,
     /// Optional projection for which columns to load (zero-based column indices)
@@ -135,6 +78,7 @@ impl<'a> CoreReader<'a> {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         reader_bytes: ReaderBytes<'a>,
+        options: CsvReaderOptions,
         n_rows: Option<usize>,
         mut skip_rows: usize,
         mut projection: Option<Vec<usize>>,
@@ -244,6 +188,7 @@ impl<'a> CoreReader<'a> {
 
         Ok(CoreReader {
             reader_bytes: Some(reader_bytes),
+            options,
             schema,
             projection,
             line_number: usize::from(has_header),
@@ -685,6 +630,66 @@ impl<'a> CoreReader<'a> {
         }
         Ok(df)
     }
+}
+
+pub(crate) fn cast_columns(
+    df: &mut DataFrame,
+    to_cast: &[Field],
+    parallel: bool,
+    ignore_errors: bool,
+) -> PolarsResult<()> {
+    let cast_fn = |s: &Series, fld: &Field| {
+        let out = match (s.dtype(), fld.data_type()) {
+            #[cfg(feature = "temporal")]
+            (DataType::String, DataType::Date) => s
+                .str()
+                .unwrap()
+                .as_date(None, false)
+                .map(|ca| ca.into_series()),
+            #[cfg(feature = "temporal")]
+            (DataType::String, DataType::Datetime(tu, _)) => s
+                .str()
+                .unwrap()
+                .as_datetime(
+                    None,
+                    *tu,
+                    false,
+                    false,
+                    None,
+                    &StringChunked::from_iter(std::iter::once("raise")),
+                )
+                .map(|ca| ca.into_series()),
+            (_, dt) => s.cast(dt),
+        }?;
+        if !ignore_errors && s.null_count() != out.null_count() {
+            handle_casting_failures(s, &out)?;
+        }
+        Ok(out)
+    };
+
+    if parallel {
+        let cols = df
+            .get_columns()
+            .iter()
+            .map(|s| {
+                if let Some(fld) = to_cast.iter().find(|fld| fld.name().as_str() == s.name()) {
+                    cast_fn(s, fld)
+                } else {
+                    Ok(s.clone())
+                }
+            })
+            .collect::<PolarsResult<Vec<_>>>()?;
+        *df = unsafe { DataFrame::new_no_checks(cols) }
+    } else {
+        // cast to the original dtypes in the schema
+        for fld in to_cast {
+            // field may not be projected
+            if let Some(idx) = df.get_column_index(fld.name()) {
+                df.try_apply_at_idx(idx, |s| cast_fn(s, fld))?;
+            }
+        }
+    }
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
