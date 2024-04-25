@@ -175,7 +175,7 @@ impl PolarsError {
                     writeln!(&mut bt, "\t[{count}] {}", msg).unwrap();
                 }
                 material_error.wrap_msg(move |msg| {
-                    format!("{msg}:\n\nThis error occurred with the following context stack:\n{bt}")
+                    format!("{msg}\n\nThis error occurred with the following context stack:\n{bt}")
                 })
             },
             err => err,
