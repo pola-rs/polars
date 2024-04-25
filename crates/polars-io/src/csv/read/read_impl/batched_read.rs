@@ -251,7 +251,7 @@ impl<'a> CoreReader<'a> {
             missing_is_null: self.missing_is_null,
             to_cast: self.to_cast,
             ignore_errors: self.ignore_errors,
-            truncate_ragged_lines: self.truncate_ragged_lines,
+            truncate_ragged_lines: self.options.truncate_ragged_lines,
             n_rows: self.n_rows,
             encoding: self.encoding,
             separator: self.options.separator,

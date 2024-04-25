@@ -328,7 +328,6 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
             self.options.try_parse_dates,
             self.options.raise_if_empty,
             self.options.truncate_ragged_lines,
-            self.options.decimal_comma,
         )
     }
 

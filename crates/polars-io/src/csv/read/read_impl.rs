@@ -58,7 +58,6 @@ pub(crate) struct CoreReader<'a> {
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     to_cast: Vec<Field>,
     row_index: Option<RowIndex>,
-    truncate_ragged_lines: bool,
 }
 
 impl<'a> fmt::Debug for CoreReader<'a> {
@@ -100,7 +99,6 @@ impl<'a> CoreReader<'a> {
         row_index: Option<RowIndex>,
         try_parse_dates: bool,
         raise_if_empty: bool,
-        truncate_ragged_lines: bool,
         decimal_comma: bool,
     ) -> PolarsResult<CoreReader<'a>> {
         check_decimal_comma(decimal_comma, options.separator)?;
@@ -205,7 +203,6 @@ impl<'a> CoreReader<'a> {
             predicate,
             to_cast,
             row_index,
-            truncate_ragged_lines,
             decimal_comma,
         })
     }
@@ -475,7 +472,7 @@ impl<'a> CoreReader<'a> {
                                 self.options.eol_char,
                                 self.missing_is_null,
                                 ignore_errors,
-                                self.truncate_ragged_lines,
+                                self.options.truncate_ragged_lines,
                                 self.null_values.as_ref(),
                                 projection,
                                 &mut buffers,
@@ -540,7 +537,7 @@ impl<'a> CoreReader<'a> {
                             self.encoding,
                             self.null_values.as_ref(),
                             self.missing_is_null,
-                            self.truncate_ragged_lines,
+                            self.options.truncate_ragged_lines,
                             usize::MAX,
                             stop_at_nbytes,
                             starting_point_offset,
@@ -580,7 +577,7 @@ impl<'a> CoreReader<'a> {
                                 self.options.eol_char,
                                 self.missing_is_null,
                                 self.ignore_errors,
-                                self.truncate_ragged_lines,
+                                self.options.truncate_ragged_lines,
                                 self.null_values.as_ref(),
                                 &projection,
                                 &mut buffers,
