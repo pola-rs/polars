@@ -352,10 +352,15 @@ impl GroupsProxy {
             },
             GroupsProxy::Slice { groups, .. } => {
                 let mut list_offset = Vec::with_capacity(self.len() + 1);
+                let mut gather_offsets = Vec::with_capacity(total_len);
                 let mut len_so_far = 0i64;
                 list_offset.push(len_so_far);
+
                 for g in groups {
                     let len = g[1];
+                    let offset = g[0];
+                    gather_offsets.extend(offset..offset + len);
+
                     len_so_far += len as i64;
                     list_offset.push(len_so_far);
                     can_fast_explode &= len > 0;
@@ -363,7 +368,7 @@ impl GroupsProxy {
 
                 unsafe {
                     (
-                        None,
+                        Some(IdxCa::from_vec("", gather_offsets)),
                         OffsetsBuffer::new_unchecked(list_offset.into()),
                         can_fast_explode,
                     )
