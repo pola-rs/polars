@@ -3,6 +3,7 @@ use std::num::NonZeroUsize;
 
 use polars::io::RowIndex;
 use polars_core::export::chrono;
+use polars_core::utils::concat_df;
 
 use super::*;
 
@@ -1258,4 +1259,18 @@ fn test_leading_whitespace_with_quote() -> PolarsResult<()> {
     assert_eq!(col_1.get(0)?, AnyValue::Float64(24.5));
     assert_eq!(col_2.get(0)?, AnyValue::String("  4.1"));
     Ok(())
+}
+
+#[test]
+fn test_read_io_reader() {
+    let path = "../../examples/datasets/foods1.csv";
+    let file = std::fs::File::open(path).unwrap();
+    let mut reader = CsvReader::from_path(path).unwrap().with_chunk_size(5);
+
+    let mut reader = reader.batched_borrowed_read().unwrap();
+    let batches = reader.next_batches(5).unwrap().unwrap();
+    assert_eq!(batches.len(), 5);
+    let df = concat_df(&batches).unwrap();
+    let expected = CsvReader::new(file).finish().unwrap();
+    assert!(df.equals(&expected))
 }

@@ -432,25 +432,3 @@ pub fn to_batched_owned_read(
         batched_reader,
     }
 }
-
-#[cfg(test)]
-mod test {
-    use polars_core::utils::concat_df;
-
-    use super::*;
-    use crate::SerReader;
-
-    #[test]
-    fn test_read_io_reader() {
-        let path = "../../examples/datasets/foods1.csv";
-        let file = std::fs::File::open(path).unwrap();
-        let mut reader = CsvReader::from_path(path).unwrap().with_chunk_size(5);
-
-        let mut reader = reader.batched_borrowed_read().unwrap();
-        let batches = reader.next_batches(5).unwrap().unwrap();
-        assert_eq!(batches.len(), 5);
-        let df = concat_df(&batches).unwrap();
-        let expected = CsvReader::new(file).finish().unwrap();
-        assert!(df.equals(&expected))
-    }
-}
