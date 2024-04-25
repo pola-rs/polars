@@ -77,7 +77,6 @@ where
     truncate_ragged_lines: bool,
     missing_is_null: bool,
     low_memory: bool,
-    has_header: bool,
     ignore_errors: bool,
     eol_char: u8,
     decimal_comma: bool,
@@ -90,6 +89,12 @@ where
     /// Skip these rows after the header
     pub fn with_options(mut self, options: CsvReaderOptions) -> Self {
         self.options = options;
+        self
+    }
+
+    /// Set whether the CSV file has headers
+    pub fn has_header(mut self, has_header: bool) -> Self {
+        self.options.has_header = has_header;
         self
     }
 
@@ -148,12 +153,6 @@ where
     /// Rechunk the DataFrame to contiguous memory after the CSV is parsed.
     pub fn with_rechunk(mut self, rechunk: bool) -> Self {
         self.rechunk = rechunk;
-        self
-    }
-
-    /// Set whether the CSV file has headers
-    pub fn has_header(mut self, has_header: bool) -> Self {
-        self.has_header = has_header;
         self
     }
 
@@ -330,7 +329,7 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
             std::mem::take(&mut self.projection),
             self.max_records,
             self.separator,
-            self.has_header,
+            self.options.has_header,
             self.ignore_errors,
             self.schema.clone(),
             std::mem::take(&mut self.columns),
@@ -450,7 +449,7 @@ impl<'a> CsvReader<'a, Box<dyn MmapBytesReader>> {
                     &reader_bytes,
                     self.separator.unwrap_or(b','),
                     self.max_records,
-                    self.has_header,
+                    self.options.has_header,
                     None,
                     &mut self.skip_rows_before_header,
                     self.skip_rows_after_header,
@@ -481,7 +480,7 @@ impl<'a> CsvReader<'a, Box<dyn MmapBytesReader>> {
                     &reader_bytes,
                     self.separator.unwrap_or(b','),
                     self.max_records,
-                    self.has_header,
+                    self.options.has_header,
                     None,
                     &mut self.skip_rows_before_header,
                     self.skip_rows_after_header,
@@ -516,7 +515,6 @@ where
             skip_rows_before_header: 0,
             projection: None,
             separator: None,
-            has_header: true,
             ignore_errors: false,
             schema: None,
             columns: None,
