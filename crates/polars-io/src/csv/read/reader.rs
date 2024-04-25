@@ -55,7 +55,6 @@ where
     projection: Option<Vec<usize>>,
     /// Optional column names to project/ select.
     columns: Option<Vec<String>>,
-    separator: Option<u8>,
     pub(crate) schema: Option<SchemaRef>,
     encoding: CsvEncoding,
     n_threads: Option<usize>,
@@ -95,6 +94,12 @@ where
     /// Set whether the CSV file has headers
     pub fn has_header(mut self, has_header: bool) -> Self {
         self.options.has_header = has_header;
+        self
+    }
+
+    /// Set the CSV file's column separator as a byte character
+    pub fn with_separator(mut self, separator: u8) -> Self {
+        self.options.separator = separator;
         self
     }
 
@@ -153,12 +158,6 @@ where
     /// Rechunk the DataFrame to contiguous memory after the CSV is parsed.
     pub fn with_rechunk(mut self, rechunk: bool) -> Self {
         self.rechunk = rechunk;
-        self
-    }
-
-    /// Set the CSV file's column separator as a byte character
-    pub fn with_separator(mut self, separator: u8) -> Self {
-        self.separator = Some(separator);
         self
     }
 
@@ -328,7 +327,7 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
             self.skip_rows_before_header,
             std::mem::take(&mut self.projection),
             self.max_records,
-            self.separator,
+            Some(self.options.separator),
             self.options.has_header,
             self.ignore_errors,
             self.schema.clone(),
@@ -447,7 +446,7 @@ impl<'a> CsvReader<'a, Box<dyn MmapBytesReader>> {
 
                 let (inferred_schema, _, _) = infer_file_schema(
                     &reader_bytes,
-                    self.separator.unwrap_or(b','),
+                    self.options.separator,
                     self.max_records,
                     self.options.has_header,
                     None,
@@ -478,7 +477,7 @@ impl<'a> CsvReader<'a, Box<dyn MmapBytesReader>> {
 
                 let (inferred_schema, _, _) = infer_file_schema(
                     &reader_bytes,
-                    self.separator.unwrap_or(b','),
+                    self.options.separator,
                     self.max_records,
                     self.options.has_header,
                     None,
@@ -514,7 +513,6 @@ where
             max_records: Some(128),
             skip_rows_before_header: 0,
             projection: None,
-            separator: None,
             ignore_errors: false,
             schema: None,
             columns: None,
