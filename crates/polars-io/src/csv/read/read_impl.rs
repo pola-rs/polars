@@ -42,7 +42,6 @@ pub(crate) struct CoreReader<'a> {
     line_number: usize,
     ignore_errors: bool,
     n_rows: Option<usize>,
-    encoding: CsvEncoding,
     n_threads: Option<usize>,
     sample_size: usize,
     chunk_size: usize,
@@ -75,7 +74,6 @@ impl<'a> CoreReader<'a> {
         ignore_errors: bool,
         schema: Option<SchemaRef>,
         columns: Option<Vec<String>>,
-        encoding: CsvEncoding,
         mut n_threads: Option<usize>,
         schema_overwrite: Option<SchemaRef>,
         dtype_overwrite: Option<&'a [DataType]>,
@@ -182,7 +180,6 @@ impl<'a> CoreReader<'a> {
             line_number,
             ignore_errors,
             n_rows,
-            encoding,
             n_threads,
             sample_size,
             chunk_size,
@@ -443,7 +440,7 @@ impl<'a> CoreReader<'a> {
                                 chunk_size,
                                 schema,
                                 self.options.quote_char,
-                                self.encoding,
+                                self.options.encoding,
                                 self.options.decimal_comma,
                             )?;
 
@@ -522,7 +519,7 @@ impl<'a> CoreReader<'a> {
                             self.options.eol_char,
                             self.comment_prefix.as_ref(),
                             capacity,
-                            self.encoding,
+                            self.options.encoding,
                             self.null_values.as_ref(),
                             self.missing_is_null,
                             self.options.truncate_ragged_lines,
@@ -552,7 +549,7 @@ impl<'a> CoreReader<'a> {
                                 remaining_rows,
                                 self.schema.as_ref(),
                                 self.options.quote_char,
-                                self.encoding,
+                                self.options.encoding,
                                 self.options.decimal_comma,
                             )?;
 

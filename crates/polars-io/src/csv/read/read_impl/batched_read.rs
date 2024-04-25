@@ -253,7 +253,7 @@ impl<'a> CoreReader<'a> {
             ignore_errors: self.ignore_errors,
             truncate_ragged_lines: self.options.truncate_ragged_lines,
             n_rows: self.n_rows,
-            encoding: self.encoding,
+            encoding: self.options.encoding,
             separator: self.options.separator,
             schema: self.schema,
             rows_read: 0,
