@@ -121,7 +121,7 @@ pub(super) fn ipc_file_info(
 pub(super) fn csv_file_info(
     paths: &[PathBuf],
     file_options: &FileScanOptions,
-    csv_options: &mut CsvParserOptions,
+    csv_options: &mut CsvReaderOptions,
 ) -> PolarsResult<FileInfo> {
     use std::io::Seek;
 

@@ -1,7 +1,7 @@
 use std::hash::{Hash, Hasher};
 
 #[cfg(feature = "csv")]
-use polars_io::csv::read::CsvParserOptions;
+use polars_io::csv::read::CsvReaderOptions;
 #[cfg(feature = "ipc")]
 use polars_io::ipc::IpcScanOptions;
 #[cfg(feature = "parquet")]
@@ -15,7 +15,7 @@ use super::*;
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum FileScan {
     #[cfg(feature = "csv")]
-    Csv { options: CsvParserOptions },
+    Csv { options: CsvReaderOptions },
     #[cfg(feature = "parquet")]
     Parquet {
         options: ParquetOptions,

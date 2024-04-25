@@ -26,7 +26,7 @@ mod reader;
 mod splitfields;
 mod utils;
 
-pub use options::{CommentPrefix, CsvEncoding, CsvParserOptions, NullValues};
+pub use options::{CommentPrefix, CsvEncoding, CsvReaderOptions, NullValues};
 pub use parser::count_rows;
 pub use read_impl::batched_mmap::{BatchedCsvReaderMmap, OwnedBatchedCsvReaderMmap};
 pub use read_impl::batched_read::{BatchedCsvReaderRead, OwnedBatchedCsvReader};
