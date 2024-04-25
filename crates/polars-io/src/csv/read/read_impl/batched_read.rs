@@ -207,7 +207,7 @@ impl<'a> CoreReader<'a> {
             unreachable!()
         };
         let (_, starting_point_offset) =
-            self.find_starting_point(bytes, self.quote_char, self.options.eol_char)?;
+            self.find_starting_point(bytes, self.options.quote_char, self.options.eol_char)?;
         if let Some(starting_point_offset) = starting_point_offset {
             file.seek(SeekFrom::Current(starting_point_offset as i64))
                 .unwrap();
@@ -218,7 +218,7 @@ impl<'a> CoreReader<'a> {
             self.chunk_size,
             self.schema.len(),
             self.options.separator,
-            self.quote_char,
+            self.options.quote_char,
             self.options.eol_char,
             4096,
         );
@@ -245,7 +245,7 @@ impl<'a> CoreReader<'a> {
             starting_point_offset,
             row_index: self.row_index,
             comment_prefix: self.comment_prefix,
-            quote_char: self.quote_char,
+            quote_char: self.options.quote_char,
             eol_char: self.options.eol_char,
             null_values: self.null_values,
             missing_is_null: self.missing_is_null,

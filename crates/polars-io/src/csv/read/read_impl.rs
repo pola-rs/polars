@@ -47,7 +47,6 @@ pub(crate) struct CoreReader<'a> {
     sample_size: usize,
     chunk_size: usize,
     comment_prefix: Option<CommentPrefix>,
-    quote_char: Option<u8>,
     null_values: Option<NullValuesCompiled>,
     missing_is_null: bool,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
@@ -83,7 +82,6 @@ impl<'a> CoreReader<'a> {
         sample_size: usize,
         chunk_size: usize,
         comment_prefix: Option<CommentPrefix>,
-        quote_char: Option<u8>,
         null_values: Option<NullValues>,
         missing_is_null: bool,
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
@@ -119,7 +117,7 @@ impl<'a> CoreReader<'a> {
                 &reader_bytes,
                 total_n_rows,
                 options.separator,
-                quote_char,
+                options.quote_char,
                 options.eol_char,
             ) {
                 reader_bytes = ReaderBytes::Owned(b);
@@ -138,7 +136,7 @@ impl<'a> CoreReader<'a> {
                     &mut options.skip_rows,
                     options.skip_rows_after_header,
                     comment_prefix.as_ref(),
-                    quote_char,
+                    options.quote_char,
                     options.eol_char,
                     null_values.as_ref(),
                     options.try_parse_dates,
@@ -189,7 +187,6 @@ impl<'a> CoreReader<'a> {
             sample_size,
             chunk_size,
             comment_prefix,
-            quote_char,
             null_values,
             missing_is_null,
             predicate,
@@ -245,7 +242,7 @@ impl<'a> CoreReader<'a> {
                         bytes,
                         None,
                         self.options.separator,
-                        self.quote_char,
+                        self.options.quote_char,
                         eol_char,
                     )
                 }
@@ -285,7 +282,7 @@ impl<'a> CoreReader<'a> {
             self.options.eol_char,
             Some(self.schema.len()),
             self.options.separator,
-            self.quote_char,
+            self.options.quote_char,
         ) {
             if logging {
                 eprintln!("avg line length: {mean}\nstd. dev. line length: {std}");
@@ -309,7 +306,7 @@ impl<'a> CoreReader<'a> {
                         &bytes[n_bytes..],
                         Some(self.schema.len()),
                         self.options.separator,
-                        self.quote_char,
+                        self.options.quote_char,
                         self.options.eol_char,
                     ) {
                         if set_upper_bound {
@@ -342,7 +339,7 @@ impl<'a> CoreReader<'a> {
     )> {
         // Make the variable mutable so that we can reassign the sliced file to this variable.
         let (bytes, starting_point_offset) =
-            self.find_starting_point(bytes, self.quote_char, self.options.eol_char)?;
+            self.find_starting_point(bytes, self.options.quote_char, self.options.eol_char)?;
 
         let (bytes, total_rows, remaining_bytes) =
             self.estimate_rows_and_set_upper_bound(bytes, logging, true);
@@ -365,7 +362,7 @@ impl<'a> CoreReader<'a> {
             n_file_chunks,
             Some(self.schema.len()),
             self.options.separator,
-            self.quote_char,
+            self.options.quote_char,
             self.options.eol_char,
         );
 
@@ -445,7 +442,7 @@ impl<'a> CoreReader<'a> {
                                 projection,
                                 chunk_size,
                                 schema,
-                                self.quote_char,
+                                self.options.quote_char,
                                 self.encoding,
                                 self.options.decimal_comma,
                             )?;
@@ -459,7 +456,7 @@ impl<'a> CoreReader<'a> {
                                 offset,
                                 self.options.separator,
                                 self.comment_prefix.as_ref(),
-                                self.quote_char,
+                                self.options.quote_char,
                                 self.options.eol_char,
                                 self.missing_is_null,
                                 ignore_errors,
@@ -521,7 +518,7 @@ impl<'a> CoreReader<'a> {
                             self.ignore_errors,
                             &projection,
                             bytes_offset_thread,
-                            self.quote_char,
+                            self.options.quote_char,
                             self.options.eol_char,
                             self.comment_prefix.as_ref(),
                             capacity,
@@ -554,7 +551,7 @@ impl<'a> CoreReader<'a> {
                                 &projection,
                                 remaining_rows,
                                 self.schema.as_ref(),
-                                self.quote_char,
+                                self.options.quote_char,
                                 self.encoding,
                                 self.options.decimal_comma,
                             )?;
@@ -564,7 +561,7 @@ impl<'a> CoreReader<'a> {
                                 0,
                                 self.options.separator,
                                 self.comment_prefix.as_ref(),
-                                self.quote_char,
+                                self.options.quote_char,
                                 self.options.eol_char,
                                 self.missing_is_null,
                                 self.ignore_errors,

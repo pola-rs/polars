@@ -120,7 +120,7 @@ impl<'a> CoreReader<'a> {
         let reader_bytes = self.reader_bytes.take().unwrap();
         let bytes = reader_bytes.as_ref();
         let (bytes, starting_point_offset) =
-            self.find_starting_point(bytes, self.quote_char, self.options.eol_char)?;
+            self.find_starting_point(bytes, self.options.quote_char, self.options.eol_char)?;
 
         // this is arbitrarily chosen.
         // we don't want this to depend on the thread pool size
@@ -137,7 +137,7 @@ impl<'a> CoreReader<'a> {
             rows_per_batch: self.chunk_size,
             expected_fields: self.schema.len(),
             separator: self.options.separator,
-            quote_char: self.quote_char,
+            quote_char: self.options.quote_char,
             eol_char: self.options.eol_char,
         };
 
@@ -163,7 +163,7 @@ impl<'a> CoreReader<'a> {
             starting_point_offset,
             row_index: self.row_index,
             comment_prefix: self.comment_prefix,
-            quote_char: self.quote_char,
+            quote_char: self.options.quote_char,
             eol_char: self.options.eol_char,
             null_values: self.null_values,
             missing_is_null: self.missing_is_null,
