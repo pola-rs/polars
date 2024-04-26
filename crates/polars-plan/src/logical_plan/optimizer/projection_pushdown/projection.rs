@@ -120,7 +120,6 @@ pub(super) fn process_projection(
     )?;
 
     let builder = IRBuilder::new(input, expr_arena, lp_arena);
-    dbg!(&local_projection);
     let lp = proj_pd.finish_node(local_projection, builder);
 
     Ok(lp)
