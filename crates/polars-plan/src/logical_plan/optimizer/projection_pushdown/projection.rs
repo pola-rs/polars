@@ -95,17 +95,19 @@ pub(super) fn process_projection(
 
                 check_double_projection(&e, expr_arena, &mut acc_projections, &mut projected_names);
             }
+            // do local as we still need the effect of the projection
+            // e.g. a projection is more than selecting a column, it can
+            // also be a function/ complicated expression
+            local_projection.push(e);
+        }
+
+        for e in &local_projection {
             add_expr_to_accumulated(
                 e.node(),
                 &mut acc_projections,
                 &mut projected_names,
                 expr_arena,
             );
-
-            // do local as we still need the effect of the projection
-            // e.g. a projection is more than selecting a column, it can
-            // also be a function/ complicated expression
-            local_projection.push(e);
         }
     }
     proj_pd.pushdown_and_assign(
@@ -118,6 +120,7 @@ pub(super) fn process_projection(
     )?;
 
     let builder = IRBuilder::new(input, expr_arena, lp_arena);
+    dbg!(&local_projection);
     let lp = proj_pd.finish_node(local_projection, builder);
 
     Ok(lp)
