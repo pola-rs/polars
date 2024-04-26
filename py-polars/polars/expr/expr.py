@@ -4266,10 +4266,10 @@ class Expr:
             Only use it if you cannot implement your logic otherwise.
 
             For mapping elements of columns, consider:
-            `pl.col("colname").something()`.
+            `pl.col("colname").native_method()`.
 
             For mapping elements of inner lists, consider:
-            `pl.col("colname").list.eval(pl.element().something())`.
+            `pl.col("colname").list.eval(pl.element().native_method())`.
 
         The UDF is applied to each element of a column. Note that, in a GroupBy
         context, the column will have been pre-aggregated and so each element
