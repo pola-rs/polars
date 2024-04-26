@@ -437,6 +437,7 @@ fn apply_multiple_elementwise<'a>(
         },
         first_as => {
             let check_lengths = check_lengths && !matches!(first_as, AggState::Literal(_));
+            let aggregated = acs.iter().all(|ac| ac.is_aggregated() | ac.is_literal());
             let mut s = acs
                 .iter_mut()
                 .enumerate()
@@ -459,7 +460,7 @@ fn apply_multiple_elementwise<'a>(
 
             // Take the first aggregation context that as that is the input series.
             let mut ac = acs.swap_remove(0);
-            ac.with_series_and_args(s, false, None, true)?;
+            ac.with_series_and_args(s, aggregated, None, true)?;
             Ok(ac)
         },
     }
