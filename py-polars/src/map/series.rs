@@ -122,7 +122,11 @@ fn infer_and_finish<'a, A: ApplyLambda<'a>>(
 }
 
 pub trait ApplyLambda<'a> {
-    fn apply_lambda_unknown(&'a self, _py: Python, _lambda: &Bound<'a, PyAny>) -> PyResult<PySeries>;
+    fn apply_lambda_unknown(
+        &'a self,
+        _py: Python,
+        _lambda: &Bound<'a, PyAny>,
+    ) -> PyResult<PySeries>;
 
     // Used to store a struct type
     fn apply_to_struct(
@@ -192,7 +196,11 @@ pub trait ApplyLambda<'a> {
     ) -> PyResult<ObjectChunked<ObjectValue>>;
 }
 
-pub fn call_lambda<'a, T>(py: Python, lambda: &Bound<'a, PyAny>, in_val: T) -> PyResult<Bound<'a, PyAny>>
+pub fn call_lambda<'a, T>(
+    py: Python,
+    lambda: &Bound<'a, PyAny>,
+    in_val: T,
+) -> PyResult<Bound<'a, PyAny>>
 where
     T: ToPyObject,
 {
@@ -365,7 +373,9 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
-                .map(|val| call_lambda_and_extract::<_, pyo3::pybacked::PyBackedStr>(py, lambda, val).ok());
+                .map(|val| {
+                    call_lambda_and_extract::<_, pyo3::pybacked::PyBackedStr>(py, lambda, val).ok()
+                });
 
             Ok(iterator_to_string(
                 it,
@@ -407,7 +417,7 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
-                .map(|val| call_lambda_series_out(py, &lambda, val).ok());
+                .map(|val| call_lambda_series_out(py, lambda, val).ok());
 
             iterator_to_list(
                 dt,
@@ -422,7 +432,7 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
                 .into_iter()
                 .skip(init_null_count + skip)
                 .map(|opt_val| {
-                    opt_val.and_then(|val| call_lambda_series_out(py, &lambda, val).ok())
+                    opt_val.and_then(|val| call_lambda_series_out(py, lambda, val).ok())
                 });
             iterator_to_list(
                 dt,
@@ -1087,7 +1097,11 @@ impl<'a> ApplyLambda<'a> for StringChunked {
     }
 }
 
-fn call_series_lambda(pypolars: &Bound<PyModule>, lambda: &Bound<PyAny>, series: Series) -> Option<Series> {
+fn call_series_lambda(
+    pypolars: &Bound<PyModule>,
+    lambda: &Bound<PyAny>,
+    series: Series,
+) -> Option<Series> {
     // create a PySeries struct/object for Python
     let pyseries = PySeries::new(series);
     // Wrap this PySeries object in the python side Series wrapper
@@ -2357,7 +2371,7 @@ impl<'a> ApplyLambda<'a> for StructChunked {
         let lambda = lambda.bind(py);
         let it = self.into_iter().skip(init_null_count + skip).map(|val| {
             let arg = make_dict_arg(py, &names, val);
-            call_lambda_series_out(py, &lambda, arg).ok()
+            call_lambda_series_out(py, lambda, arg).ok()
         });
         iterator_to_list(
             dt,

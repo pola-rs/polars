@@ -217,7 +217,7 @@ fn iterator_to_object(
     ca.with_name(name)
 }
 
-fn iterator_to_string<'a, S: AsRef<str>>(
+fn iterator_to_string<S: AsRef<str>>(
     it: impl Iterator<Item = Option<S>>,
     init_null_count: usize,
     first_value: Option<S>,
