@@ -41,18 +41,20 @@ where
         .reduce(LinkedList::new, list_append)
 }
 
-fn collect_into_linked_list<I, P, F>(par_iter: I, identity: F) -> LinkedList<P>
+fn collect_into_linked_list<I, P, F>(par_iter: I, identity: F) -> LinkedList<P::Freeze>
 where
     I: IntoParallelIterator,
     P: Pushable<I::Item> + Send + Sync,
     F: Fn() -> P + Sync + Send,
+    P::Freeze: Send,
 {
     let it = par_iter.into_par_iter();
     it.fold(identity, |mut v, item| {
         v.push(item);
         v
     })
-    .map(as_list)
+    // The freeze on this line, ensures the null count is done in parallel
+    .map(|p| as_list(p.freeze()))
     .reduce(LinkedList::new, list_append)
 }
 
@@ -79,21 +81,21 @@ where
 {
     fn from_par_iter<I: IntoParallelIterator<Item = Option<T::Native>>>(iter: I) -> Self {
         let chunks = collect_into_linked_list(iter, MutablePrimitiveArray::new);
-        Self::from_chunk_iter("", chunks.into_iter().map(|mut_arr| mut_arr.freeze()))
+        Self::from_chunk_iter("", chunks)
     }
 }
 
 impl FromParallelIterator<bool> for BooleanChunked {
     fn from_par_iter<I: IntoParallelIterator<Item = bool>>(iter: I) -> Self {
         let chunks = collect_into_linked_list(iter, MutableBooleanArray::new);
-        Self::from_chunk_iter("", chunks.into_iter().map(|mut_arr| mut_arr.freeze()))
+        Self::from_chunk_iter("", chunks)
     }
 }
 
 impl FromParallelIterator<Option<bool>> for BooleanChunked {
     fn from_par_iter<I: IntoParallelIterator<Item = Option<bool>>>(iter: I) -> Self {
         let chunks = collect_into_linked_list(iter, MutableBooleanArray::new);
-        Self::from_chunk_iter("", chunks.into_iter().map(|mut_arr| mut_arr.freeze()))
+        Self::from_chunk_iter("", chunks)
     }
 }
 
@@ -103,7 +105,7 @@ where
 {
     fn from_par_iter<I: IntoParallelIterator<Item = Ptr>>(iter: I) -> Self {
         let chunks = collect_into_linked_list(iter, MutableBinaryViewArray::new);
-        Self::from_chunk_iter("", chunks.into_iter().map(|mut_arr| mut_arr.freeze()))
+        Self::from_chunk_iter("", chunks)
     }
 }
 
@@ -113,7 +115,7 @@ where
 {
     fn from_par_iter<I: IntoParallelIterator<Item = Ptr>>(iter: I) -> Self {
         let chunks = collect_into_linked_list(iter, MutableBinaryViewArray::new);
-        Self::from_chunk_iter("", chunks.into_iter().map(|mut_arr| mut_arr.freeze()))
+        Self::from_chunk_iter("", chunks)
     }
 }
 
@@ -123,7 +125,7 @@ where
 {
     fn from_par_iter<I: IntoParallelIterator<Item = Option<Ptr>>>(iter: I) -> Self {
         let chunks = collect_into_linked_list(iter, MutableBinaryViewArray::new);
-        Self::from_chunk_iter("", chunks.into_iter().map(|mut_arr| mut_arr.freeze()))
+        Self::from_chunk_iter("", chunks)
     }
 }
 
@@ -133,7 +135,7 @@ where
 {
     fn from_par_iter<I: IntoParallelIterator<Item = Option<Ptr>>>(iter: I) -> Self {
         let chunks = collect_into_linked_list(iter, MutableBinaryViewArray::new);
-        Self::from_chunk_iter("", chunks.into_iter().map(|mut_arr| mut_arr.freeze()))
+        Self::from_chunk_iter("", chunks)
     }
 }
 

@@ -152,6 +152,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
         }
     }
 
+    #[inline]
     pub fn push_value_ignore_validity<V: AsRef<T>>(&mut self, value: V) {
         let value = value.as_ref();
         let bytes = value.to_bytes();
@@ -187,6 +188,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
         self.views.push(value);
     }
 
+    #[inline]
     pub fn push_value<V: AsRef<T>>(&mut self, value: V) {
         if let Some(validity) = &mut self.validity {
             validity.push(true)
@@ -194,6 +196,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
         self.push_value_ignore_validity(value)
     }
 
+    #[inline]
     pub fn push<V: AsRef<T>>(&mut self, value: Option<V>) {
         if let Some(value) = value {
             self.push_value(value)
@@ -202,6 +205,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
         }
     }
 
+    #[inline]
     pub fn push_null(&mut self) {
         self.views.push(View::default());
         match &mut self.validity {
