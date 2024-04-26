@@ -236,6 +236,12 @@ impl FromIterator<Option<Series>> for ListChunked {
                             builder.append_series(first_s).unwrap();
 
                             for opt_s in it {
+                                if opt_s.is_some() {
+                                    debug_assert_eq!(
+                                        opt_s.clone().unwrap().dtype(),
+                                        first_s.dtype()
+                                    );
+                                }
                                 builder.append_opt_series(opt_s.as_ref()).unwrap();
                             }
                             builder.finish()
