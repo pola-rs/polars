@@ -101,6 +101,8 @@ pub(super) fn process_projection(
             local_projection.push(e);
         }
 
+        // After we have checked double projections, we add the projections to the accumulated state.
+        // We do this in two passes, otherwise we mutate while checking.
         for e in &local_projection {
             add_expr_to_accumulated(
                 e.node(),
