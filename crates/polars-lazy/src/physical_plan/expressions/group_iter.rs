@@ -34,7 +34,7 @@ impl<'a> AggregationContext<'a> {
                 // SAFETY: dtype is correct
                 unsafe {
                     Box::new(FlatIter::new(
-                        s.array_ref(0).clone(),
+                        s.chunks(),
                         self.groups.len(),
                         s.dtype(),
                         name,
@@ -107,8 +107,10 @@ impl<'a> Iterator for LitIter<'a> {
 }
 
 struct FlatIter<'a> {
-    array: ArrayRef,
+    current_array: ArrayRef,
+    chunks: Vec<ArrayRef>,
     offset: usize,
+    chunk_offset: usize,
     len: usize,
     // UnstableSeries referenced that series
     #[allow(dead_code)]
@@ -119,16 +121,23 @@ struct FlatIter<'a> {
 impl<'a> FlatIter<'a> {
     /// # Safety
     /// Caller must ensure the given `logical` dtype belongs to `array`.
-    unsafe fn new(array: ArrayRef, len: usize, logical: &DataType, name: &str) -> Self {
+    unsafe fn new(chunks: &[ArrayRef], len: usize, logical: &DataType, name: &str) -> Self {
+        let mut stack = Vec::with_capacity(chunks.len());
+        for chunk in chunks.iter().rev() {
+            stack.push(chunk.clone())
+        }
+        let current_array = stack.pop().unwrap();
         let mut series_container = Box::pin(Series::from_chunks_and_dtype_unchecked(
             name,
-            vec![array.clone()],
+            vec![current_array.clone()],
             logical,
         ));
         let ref_s = &mut *series_container as *mut Series;
         Self {
-            array,
+            current_array,
+            chunks: stack,
             offset: 0,
+            chunk_offset: 0,
             len,
             series_container,
             // SAFETY: we pinned the series so the location is still valid
@@ -144,9 +153,21 @@ impl<'a> Iterator for FlatIter<'a> {
         if self.len == self.offset {
             None
         } else {
-            let mut arr = unsafe { self.array.sliced_unchecked(self.offset, 1) };
+            if self.chunk_offset < self.current_array.len() {
+                let mut arr = unsafe { self.current_array.sliced_unchecked(self.chunk_offset, 1) };
+                self.item.swap(&mut arr);
+            } else {
+                match self.chunks.pop() {
+                    Some(arr) => {
+                        self.current_array = arr;
+                        self.chunk_offset = 0;
+                        return self.next();
+                    },
+                    None => return None,
+                }
+            }
             self.offset += 1;
-            self.item.swap(&mut arr);
+            self.chunk_offset += 1;
             Some(Some(self.item))
         }
     }

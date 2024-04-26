@@ -1,8 +1,7 @@
 //! Implementations of upstream traits for [`ChunkedArray<T>`]
 use std::collections::LinkedList;
 
-use arrow::bitmap::{Bitmap, MutableBitmap};
-use polars_utils::sync::SyncPtr;
+use arrow::pushable::{NoOption, Pushable};
 use rayon::prelude::*;
 
 use super::from_iterator::PolarsAsRef;
@@ -29,7 +28,7 @@ fn list_append<T>(mut list1: LinkedList<T>, mut list2: LinkedList<T>) -> LinkedL
     list1
 }
 
-fn collect_into_linked_list<I>(par_iter: I) -> LinkedList<Vec<I::Item>>
+fn collect_into_linked_list_vec<I>(par_iter: I) -> LinkedList<Vec<I::Item>>
 where
     I: IntoParallelIterator,
 {
@@ -42,21 +41,25 @@ where
         .reduce(LinkedList::new, list_append)
 }
 
-fn get_capacity_from_par_results<T>(ll: &LinkedList<Vec<T>>) -> usize {
-    ll.iter().map(|list| list.len()).sum()
+fn collect_into_linked_list<I, P, F>(par_iter: I, identity: F) -> LinkedList<P::Freeze>
+where
+    I: IntoParallelIterator,
+    P: Pushable<I::Item> + Send + Sync,
+    F: Fn() -> P + Sync + Send,
+    P::Freeze: Send,
+{
+    let it = par_iter.into_par_iter();
+    it.fold(identity, |mut v, item| {
+        v.push(item);
+        v
+    })
+    // The freeze on this line, ensures the null count is done in parallel
+    .map(|p| as_list(p.freeze()))
+    .reduce(LinkedList::new, list_append)
 }
 
-fn get_capacity_from_par_results_slice<T>(bufs: &[Vec<T>]) -> usize {
-    bufs.iter().map(|list| list.len()).sum()
-}
-fn get_offsets<T>(bufs: &[Vec<T>]) -> Vec<usize> {
-    bufs.iter()
-        .scan(0usize, |acc, buf| {
-            let out = *acc;
-            *acc += buf.len();
-            Some(out)
-        })
-        .collect()
+fn get_capacity_from_par_results<T>(ll: &LinkedList<Vec<T>>) -> usize {
+    ll.iter().map(|list| list.len()).sum()
 }
 
 impl<T> FromParallelIterator<T::Native> for NoNull<ChunkedArray<T>>
@@ -65,26 +68,10 @@ where
 {
     fn from_par_iter<I: IntoParallelIterator<Item = T::Native>>(iter: I) -> Self {
         // Get linkedlist filled with different vec result from different threads
-        let vectors = collect_into_linked_list(iter);
+        let vectors = collect_into_linked_list_vec(iter);
         let vectors = vectors.into_iter().collect::<Vec<_>>();
         let values = flatten_par(&vectors);
         NoNull::new(ChunkedArray::new_vec("", values))
-    }
-}
-
-fn finish_validities(validities: Vec<(Option<Bitmap>, usize)>, capacity: usize) -> Option<Bitmap> {
-    if validities.iter().any(|(v, _)| v.is_some()) {
-        let mut bitmap = MutableBitmap::with_capacity(capacity);
-        for (valids, len) in validities {
-            if let Some(valids) = valids {
-                bitmap.extend_from_bitmap(&(valids))
-            } else {
-                bitmap.extend_constant(len, true)
-            }
-        }
-        Some(bitmap.into())
-    } else {
-        None
     }
 }
 
@@ -93,127 +80,42 @@ where
     T: PolarsNumericType,
 {
     fn from_par_iter<I: IntoParallelIterator<Item = Option<T::Native>>>(iter: I) -> Self {
-        // Get linkedlist filled with different vec result from different threads
-        let vectors = collect_into_linked_list(iter);
-
-        let vectors = vectors.into_iter().collect::<Vec<_>>();
-        let capacity: usize = get_capacity_from_par_results_slice(&vectors);
-        let offsets = get_offsets(&vectors);
-
-        let mut values_buf: Vec<T::Native> = Vec::with_capacity(capacity);
-        let values_buf_ptr = unsafe { SyncPtr::new(values_buf.as_mut_ptr()) };
-
-        let validities = offsets
-            .into_par_iter()
-            .zip(vectors)
-            .map(|(offset, vector)| {
-                let mut local_validity = None;
-                let local_len = vector.len();
-                let mut latest_validy_written = 0;
-                unsafe {
-                    let values_buf_ptr = values_buf_ptr.get().add(offset);
-
-                    for (i, opt_v) in vector.into_iter().enumerate() {
-                        match opt_v {
-                            Some(v) => {
-                                std::ptr::write(values_buf_ptr.add(i), v);
-                            },
-                            None => {
-                                let validity = match &mut local_validity {
-                                    None => {
-                                        let validity = MutableBitmap::with_capacity(local_len);
-                                        local_validity = Some(validity);
-                                        local_validity.as_mut().unwrap_unchecked()
-                                    },
-                                    Some(validity) => validity,
-                                };
-                                validity.extend_constant(i - latest_validy_written, true);
-                                latest_validy_written = i + 1;
-                                validity.push_unchecked(false);
-                                // initialize value
-                                std::ptr::write(values_buf_ptr.add(i), T::Native::default());
-                            },
-                        }
-                    }
-                }
-                if let Some(validity) = &mut local_validity {
-                    validity.extend_constant(local_len - latest_validy_written, true);
-                }
-                (local_validity.map(|b| b.into()), local_len)
-            })
-            .collect::<Vec<_>>();
-        unsafe { values_buf.set_len(capacity) };
-
-        let validity = finish_validities(validities, capacity);
-
-        let arr = PrimitiveArray::from_data_default(values_buf.into(), validity);
-        arr.into()
+        let chunks = collect_into_linked_list(iter, MutablePrimitiveArray::new);
+        Self::from_chunk_iter("", chunks)
     }
 }
 
 impl FromParallelIterator<bool> for BooleanChunked {
     fn from_par_iter<I: IntoParallelIterator<Item = bool>>(iter: I) -> Self {
-        let vectors = collect_into_linked_list(iter);
-
-        let capacity: usize = get_capacity_from_par_results(&vectors);
-
-        let arr = unsafe {
-            BooleanArray::from_trusted_len_values_iter(
-                vectors.into_iter().flatten().trust_my_length(capacity),
-            )
-        };
-        arr.into()
+        let chunks = collect_into_linked_list(iter, MutableBooleanArray::new);
+        Self::from_chunk_iter("", chunks)
     }
 }
 
 impl FromParallelIterator<Option<bool>> for BooleanChunked {
     fn from_par_iter<I: IntoParallelIterator<Item = Option<bool>>>(iter: I) -> Self {
-        // Get linkedlist filled with different vec result from different threads.
-        let vectors = collect_into_linked_list(iter);
-        let vectors = vectors.into_iter().collect::<Vec<_>>();
-        let chunks: Vec<BooleanArray> = vectors
-            .into_par_iter()
-            .map(|vector| vector.into())
-            .collect();
-        Self::from_chunk_iter("", chunks).rechunk()
+        let chunks = collect_into_linked_list(iter, MutableBooleanArray::new);
+        Self::from_chunk_iter("", chunks)
     }
 }
 
 impl<Ptr> FromParallelIterator<Ptr> for StringChunked
 where
-    Ptr: PolarsAsRef<str> + Send + Sync,
+    Ptr: PolarsAsRef<str> + Send + Sync + NoOption,
 {
     fn from_par_iter<I: IntoParallelIterator<Item = Ptr>>(iter: I) -> Self {
-        let vectors = collect_into_linked_list(iter);
-        let cap = get_capacity_from_par_results(&vectors);
-
-        let mut builder = MutableBinaryViewArray::with_capacity(cap);
-        // TODO! we can do this in parallel ind just combine the buffers.
-        for vec in vectors {
-            for val in vec {
-                builder.push_value_ignore_validity(val.as_ref())
-            }
-        }
-        ChunkedArray::with_chunk("", builder.freeze())
+        let chunks = collect_into_linked_list(iter, MutableBinaryViewArray::new);
+        Self::from_chunk_iter("", chunks)
     }
 }
 
 impl<Ptr> FromParallelIterator<Ptr> for BinaryChunked
 where
-    Ptr: PolarsAsRef<[u8]> + Send + Sync,
+    Ptr: PolarsAsRef<[u8]> + Send + Sync + NoOption,
 {
     fn from_par_iter<I: IntoParallelIterator<Item = Ptr>>(iter: I) -> Self {
-        let vectors = collect_into_linked_list(iter);
-        let cap = get_capacity_from_par_results(&vectors);
-
-        let mut builder = MutableBinaryViewArray::with_capacity(cap);
-        // TODO! we can do this in parallel ind just combine the buffers.
-        for vec in vectors {
-            for val in vec {
-                builder.push_value_ignore_validity(val.as_ref())
-            }
-        }
-        ChunkedArray::with_chunk("", builder.freeze())
+        let chunks = collect_into_linked_list(iter, MutableBinaryViewArray::new);
+        Self::from_chunk_iter("", chunks)
     }
 }
 
@@ -222,29 +124,8 @@ where
     Ptr: AsRef<str> + Send + Sync,
 {
     fn from_par_iter<I: IntoParallelIterator<Item = Option<Ptr>>>(iter: I) -> Self {
-        let vectors = collect_into_linked_list(iter);
-        let vectors = vectors.into_iter().collect::<Vec<_>>();
-
-        let arrays = vectors
-            .into_par_iter()
-            .map(|vector| {
-                let cap = vector.len();
-                let mut mutable = MutableBinaryViewArray::with_capacity(cap);
-                for opt_val in vector {
-                    mutable.push(opt_val)
-                }
-                mutable.freeze()
-            })
-            .collect::<Vec<_>>();
-
-        // TODO!
-        // do this in parallel.
-        let arrays = arrays
-            .iter()
-            .map(|arr| arr as &dyn Array)
-            .collect::<Vec<_>>();
-        let arr = arrow::compute::concatenate::concatenate(&arrays).unwrap();
-        unsafe { StringChunked::from_chunks("", vec![arr]) }
+        let chunks = collect_into_linked_list(iter, MutableBinaryViewArray::new);
+        Self::from_chunk_iter("", chunks)
     }
 }
 
@@ -253,57 +134,8 @@ where
     Ptr: AsRef<[u8]> + Send + Sync,
 {
     fn from_par_iter<I: IntoParallelIterator<Item = Option<Ptr>>>(iter: I) -> Self {
-        let vectors = collect_into_linked_list(iter);
-        let vectors = vectors.into_iter().collect::<Vec<_>>();
-
-        let arrays = vectors
-            .into_par_iter()
-            .map(|vector| {
-                let cap = vector.len();
-                let mut mutable = MutableBinaryViewArray::with_capacity(cap);
-                for opt_val in vector {
-                    mutable.push(opt_val)
-                }
-                mutable.freeze()
-            })
-            .collect::<Vec<_>>();
-
-        // TODO!
-        // do this in parallel.
-        let arrays = arrays
-            .iter()
-            .map(|arr| arr as &dyn Array)
-            .collect::<Vec<_>>();
-        let arr = arrow::compute::concatenate::concatenate(&arrays).unwrap();
-        unsafe { BinaryChunked::from_chunks("", vec![arr]) }
-    }
-}
-
-impl<'a, T> From<&'a ChunkedArray<T>> for Vec<Option<T::Physical<'a>>>
-where
-    T: PolarsDataType,
-{
-    fn from(ca: &'a ChunkedArray<T>) -> Self {
-        let mut out = Vec::with_capacity(ca.len());
-        for arr in ca.downcast_iter() {
-            out.extend(arr.iter())
-        }
-        out
-    }
-}
-impl From<StringChunked> for Vec<Option<String>> {
-    fn from(ca: StringChunked) -> Self {
-        ca.iter().map(|opt| opt.map(|s| s.to_string())).collect()
-    }
-}
-
-impl From<BooleanChunked> for Vec<Option<bool>> {
-    fn from(ca: BooleanChunked) -> Self {
-        let mut out = Vec::with_capacity(ca.len());
-        for arr in ca.downcast_iter() {
-            out.extend(arr.iter())
-        }
-        out
+        let chunks = collect_into_linked_list(iter, MutableBinaryViewArray::new);
+        Self::from_chunk_iter("", chunks)
     }
 }
 
@@ -314,7 +146,7 @@ impl FromParallelIterator<Option<Series>> for ListChunked {
         I: IntoParallelIterator<Item = Option<Series>>,
     {
         let mut dtype = None;
-        let vectors = collect_into_linked_list(iter);
+        let vectors = collect_into_linked_list_vec(iter);
 
         let list_capacity: usize = get_capacity_from_par_results(&vectors);
         let value_capacity = vectors

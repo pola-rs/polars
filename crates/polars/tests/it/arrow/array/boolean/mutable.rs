@@ -19,8 +19,8 @@ fn set() {
 #[test]
 fn push() {
     let mut a = MutableBooleanArray::new();
-    a.push(Some(true));
-    a.push(Some(false));
+    a.push_value(true);
+    a.push_value(false);
     a.push(None);
     a.push_null();
     assert_eq!(
