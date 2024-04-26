@@ -6,15 +6,14 @@ use polars_core::chunked_array::ops::arity::binary_elementwise_for_each;
 use super::*;
 
 #[cfg(feature = "dtype-struct")]
-pub fn split_to_struct<'a, F, I>(
+pub fn split_to_struct<'a, F>(
     ca: &'a StringChunked,
     by: &'a StringChunked,
     n: usize,
     op: F,
 ) -> PolarsResult<StructChunked>
 where
-    F: Fn(&'a str, &'a str) -> I,
-    I: Iterator<Item = &'a str>,
+    F: Fn(&'a str, &'a str) -> Box<dyn Iterator<Item = &'a str> + 'a>,
 {
     let mut arrs = (0..n)
         .map(|_| MutableUtf8Array::<i64>::with_capacity(ca.len()))
@@ -77,10 +76,9 @@ where
     StructChunked::new(ca.name(), &fields)
 }
 
-pub fn split_helper<'a, F, I>(ca: &'a StringChunked, by: &'a StringChunked, op: F) -> ListChunked
+pub fn split_helper<'a, F>(ca: &'a StringChunked, by: &'a StringChunked, op: F) -> ListChunked
 where
-    F: Fn(&'a str, &'a str) -> I,
-    I: Iterator<Item = &'a str>,
+    F: Fn(&'a str, &'a str) -> Box<dyn Iterator<Item = &'a str> + 'a>,
 {
     if by.len() == 1 {
         if let Some(by) = by.get(0) {
@@ -110,5 +108,21 @@ where
         });
 
         builder.finish()
+    }
+}
+
+pub fn split<'a>(s: &'a str, by: &'a str) -> Box<dyn Iterator<Item = &'a str> + 'a> {
+    if by.is_empty() {
+        Box::new(s.split_inclusive(by).skip(1))
+    } else {
+        Box::new(s.split(by))
+    }
+}
+
+pub fn split_inclusive<'a>(s: &'a str, by: &'a str) -> Box<dyn Iterator<Item = &'a str> + 'a> {
+    if by.is_empty() {
+        Box::new(s.split_inclusive(by).skip(1))
+    } else {
+        Box::new(s.split_inclusive(by))
     }
 }
