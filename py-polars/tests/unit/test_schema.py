@@ -403,26 +403,6 @@ def test_schema_true_divide_6643() -> None:
     assert df.lazy().select(a / 2).select(pl.col(pl.Int64)).collect().shape == (0, 0)
 
 
-def test_rename_schema_order_6660() -> None:
-    df = pl.DataFrame(
-        {
-            "a": [],
-            "b": [],
-            "c": [],
-            "d": [],
-        }
-    )
-
-    mapper = {"a": "1", "b": "2", "c": "3", "d": "4"}
-
-    renamed = df.lazy().rename(mapper)
-
-    computed = renamed.select([pl.all(), pl.col("4").alias("computed")])
-
-    assert renamed.schema == renamed.collect().schema
-    assert computed.schema == computed.collect().schema
-
-
 def test_from_dicts_all_cols_6716() -> None:
     dicts = [{"a": None} for _ in range(20)] + [{"a": "crash"}]
 

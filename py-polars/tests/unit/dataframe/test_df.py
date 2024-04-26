@@ -1055,18 +1055,6 @@ def test_literal_series() -> None:
     )
 
 
-def test_rename(df: pl.DataFrame) -> None:
-    out = df.rename({"strings": "bars", "int": "foos"})
-    # check if we can select these new columns
-    _ = out[["foos", "bars"]]
-
-
-def test_rename_lambda() -> None:
-    df = pl.DataFrame({"a": [1], "b": [2], "c": [3]})
-    out = df.rename(lambda col: "foo" if col == "a" else "bar" if col == "b" else col)
-    assert out.columns == ["foo", "bar", "c"]
-
-
 def test_write_csv() -> None:
     df = pl.DataFrame(
         {
@@ -1789,93 +1777,6 @@ def test_empty_projection() -> None:
     assert empty_df.rows() == []
     assert empty_df.schema == {}
     assert empty_df.shape == (0, 0)
-
-
-def test_with_column_renamed() -> None:
-    df = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
-    result = df.rename({"b": "c"})
-    expected = pl.DataFrame({"a": [1, 2], "c": [3, 4]})
-    assert_frame_equal(result, expected)
-
-
-def test_rename_swap() -> None:
-    df = pl.DataFrame(
-        {
-            "a": [1, 2, 3, 4, 5],
-            "b": [5, 4, 3, 2, 1],
-        }
-    )
-
-    out = df.rename({"a": "b", "b": "a"})
-    expected = pl.DataFrame(
-        {
-            "b": [1, 2, 3, 4, 5],
-            "a": [5, 4, 3, 2, 1],
-        }
-    )
-    assert_frame_equal(out, expected)
-
-    # 6195
-    ldf = pl.DataFrame(
-        {
-            "weekday": [
-                1,
-            ],
-            "priority": [
-                2,
-            ],
-            "roundNumber": [
-                3,
-            ],
-            "flag": [
-                4,
-            ],
-        }
-    ).lazy()
-
-    # Rename some columns (note: swapping two columns)
-    rename_dict = {
-        "weekday": "priority",
-        "priority": "weekday",
-        "roundNumber": "round_number",
-    }
-    ldf = ldf.rename(rename_dict)
-
-    # Select some columns
-    ldf = ldf.select(["priority", "weekday", "round_number"])
-
-    assert ldf.collect().to_dict(as_series=False) == {
-        "priority": [1],
-        "weekday": [2],
-        "round_number": [3],
-    }
-
-
-def test_rename_same_name() -> None:
-    df = pl.DataFrame(
-        {
-            "nrs": [1, 2, 3, 4, 5],
-            "groups": ["A", "A", "B", "C", "B"],
-        }
-    ).lazy()
-    df = df.rename({"groups": "groups"})
-    df = df.select(["groups"])
-    assert df.collect().to_dict(as_series=False) == {
-        "groups": ["A", "A", "B", "C", "B"]
-    }
-    df = pl.DataFrame(
-        {
-            "nrs": [1, 2, 3, 4, 5],
-            "groups": ["A", "A", "B", "C", "B"],
-            "test": [1, 2, 3, 4, 5],
-        }
-    ).lazy()
-    df = df.rename({"nrs": "nrs", "groups": "groups"})
-    df = df.select(["groups"])
-    df.collect()
-    assert df.collect().to_dict(as_series=False) == {
-        "groups": ["A", "A", "B", "C", "B"]
-    }
 
 
 def test_fill_null() -> None:
