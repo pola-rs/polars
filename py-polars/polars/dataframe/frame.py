@@ -1269,6 +1269,18 @@ class DataFrame:
 
         * POLARS_FMT_MAX_COLS: set the number of columns
         * POLARS_FMT_MAX_ROWS: set the number of rows
+
+        Output format can be modified by setting the following ENVIRONMENT
+        variables:
+
+        * POLARS_FMT_TABLE_CELL_ALIGNMENT: set the table cell alignment
+        * POLARS_FMT_TABLE_CELL_NUMERIC_ALIGNMENT:
+            set the table cell alignment for numeric columns
+
+        Raises
+        ------
+        ValueError: if unexpected POLARS_FMT_TABLE_CELL_ALIGNMENT value.
+        ValueError: if unexpected POLARS_FMT_TABLE_CELL_NUMERIC_ALIGNMENT value.
         """
         max_cols = int(os.environ.get("POLARS_FMT_MAX_COLS", default=75))
         if max_cols < 0:
@@ -1278,12 +1290,27 @@ class DataFrame:
         if max_rows < 0:
             max_rows = self.height
 
+        overall_alignment = os.environ.get("POLARS_FMT_TABLE_CELL_ALIGNMENT", "RIGHT")
+        if overall_alignment not in {"LEFT", "CENTER", "RIGHT"}:
+            msg = f"invalid table cell alignment: {overall_alignment!r}"
+            raise ValueError(msg)
+
+        numeric_alignment = os.environ.get(
+            "POLARS_FMT_TABLE_CELL_NUMERIC_ALIGNMENT",
+            "RIGHT",
+        )
+        if numeric_alignment not in {"LEFT", "CENTER", "RIGHT"}:
+            msg = f"invalid table cell numeric alignment: {numeric_alignment!r}"
+            raise ValueError(msg)
+
         return "".join(
             NotebookFormatter(
                 self,
                 max_cols=max_cols,
                 max_rows=max_rows,
                 from_series=_from_series,
+                overall_alignment=overall_alignment,  # type: ignore[arg-type]
+                numeric_alignment=numeric_alignment,  # type: ignore[arg-type]
             ).render()
         )
 

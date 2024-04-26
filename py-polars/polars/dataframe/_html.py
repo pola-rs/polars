@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from textwrap import dedent
-from typing import TYPE_CHECKING, Iterable
+from typing import TYPE_CHECKING, Iterable, Literal
 
 from polars.dependencies import html
 
@@ -47,6 +47,21 @@ class Tag:
 
 
 class HTMLFormatter:
+    """
+    Class for HTML formatting.
+
+    Table cell alignment will be set by environment variables.
+
+    Parameters
+    ----------
+    df: DataFrame
+    max_cols: int
+    max_rows: int
+    from_series: bool
+    overall_alignment: Literal["LEFT", "CENTER", "RIGHT"]
+    numeric_alignment: Literal["LEFT", "CENTER", "RIGHT"]
+    """
+
     def __init__(
         self,
         df: DataFrame,
@@ -54,6 +69,8 @@ class HTMLFormatter:
         max_cols: int = 75,
         max_rows: int = 40,
         from_series: bool = False,
+        overall_alignment: Literal["LEFT", "CENTER", "RIGHT"] = "RIGHT",
+        numeric_alignment: Literal["LEFT", "CENTER", "RIGHT"] = "RIGHT",
     ):
         self.df = df
         self.elements: list[str] = []
@@ -62,6 +79,9 @@ class HTMLFormatter:
         self.from_series = from_series
         self.row_idx: Iterable[int]
         self.col_idx: Iterable[int]
+        self.overall_align_lower: str
+        self.numeric_align_lower: str
+        self.attribute_nested_dict: dict[int, dict[str, str] | None]
 
         if max_rows < df.height:
             half, rest = divmod(max_rows, 2)
@@ -81,6 +101,12 @@ class HTMLFormatter:
         else:
             self.col_idx = range(df.width)
 
+        self.overall_align_lower = overall_alignment.lower()
+        self.numeric_align_lower = numeric_alignment.lower()
+        self.attribute_nested_dict = {
+            c: self.get_attributes(col_idx=c) for c in self.col_idx
+        }
+
     def write_header(self) -> None:
         """Write the header of an HTML table."""
         with Tag(self.elements, "thead"):
@@ -88,7 +114,8 @@ class HTMLFormatter:
                 with Tag(self.elements, "tr"):
                     columns = self.df.columns
                     for c in self.col_idx:
-                        with Tag(self.elements, "th"):
+                        _dict = self.attribute_nested_dict[c]
+                        with Tag(self.elements, "th", _dict):
                             if c == -1:
                                 self.elements.append("&hellip;")
                             else:
@@ -99,7 +126,8 @@ class HTMLFormatter:
                 with Tag(self.elements, "tr"):
                     dtypes = self.df._df.dtype_strings()
                     for c in self.col_idx:
-                        with Tag(self.elements, "td"):
+                        _dict = self.attribute_nested_dict[c]
+                        with Tag(self.elements, "td", _dict):
                             if c == -1:
                                 self.elements.append("&hellip;")
                             else:
@@ -112,7 +140,8 @@ class HTMLFormatter:
             for r in self.row_idx:
                 with Tag(self.elements, "tr"):
                     for c in self.col_idx:
-                        with Tag(self.elements, "td"):
+                        _dict = self.attribute_nested_dict[c]
+                        with Tag(self.elements, "td", _dict):
                             if r == -1 or c == -1:
                                 self.elements.append("&hellip;")
                             else:
@@ -120,6 +149,21 @@ class HTMLFormatter:
                                 self.elements.append(
                                     html.escape(series._s.get_fmt(r, str_lengths))
                                 )
+
+    def get_attributes(self, col_idx: int) -> dict[str, str] | None:
+        """
+        Get HTML td/th attributes of a column.
+
+        Parameters
+        ----------
+        col_idx: int
+            index number of the target column.
+        """
+        if self.numeric_align_lower != self.overall_align_lower:
+            series = self.df[:, col_idx]
+            if series.dtype.is_numeric():
+                return {"align": self.numeric_align_lower}
+        return None
 
     def write(self, inner: str) -> None:
         """Append a raw string to the inner HTML."""
@@ -158,16 +202,18 @@ class NotebookFormatter(HTMLFormatter):
     """
 
     def write_style(self) -> None:
-        style = """\
+        """Write <style> tag."""
+        style = """
             <style>
             .dataframe > thead > tr,
-            .dataframe > tbody > tr {
-              text-align: right;
+            .dataframe > tbody > tr {{
+              text-align: {};
               white-space: pre-wrap;
-            }
+            }}
             </style>
         """
-        self.write(dedent(style))
+        style_string = dedent(style.format(self.overall_align_lower)).strip()
+        self.write(style_string)
 
     def render(self) -> list[str]:
         """Return the lines needed to render a HTML table."""

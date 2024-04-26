@@ -775,6 +775,9 @@ class Config(contextlib.ContextDecorator):
         """
         Set table cell alignment.
 
+        This changes the output format of `print()
+        and `Ipython.display.display()` (for display in Jupyter Notebooks).
+
         Parameters
         ----------
         format : str
@@ -819,6 +822,9 @@ class Config(contextlib.ContextDecorator):
     ) -> type[Config]:
         """
         Set table cell alignment for numeric columns.
+
+        This changes the output format of `print()
+        and `Ipython.display.display()` (for display in Jupyter Notebooks).
 
         Parameters
         ----------
