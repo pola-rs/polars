@@ -590,7 +590,7 @@ def test_multi_arg_structify_15834() -> None:
     ).collect().sort("group").to_dict(as_series=False) == {
         "group": [1, 2],
         "a": [
-            [{"a": 1, "value": 0.8125603610109114}],
-            [{"a": 1, "value": 0.5896839894245691}],
+            {"a": 1, "value": 0.8125603610109114},
+            {"a": 1, "value": 0.5896839894245691},
         ],
     }

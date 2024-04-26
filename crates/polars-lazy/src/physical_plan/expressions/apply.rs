@@ -357,19 +357,15 @@ impl PhysicalExpr for ApplyExpr {
                     let mut has_agg_list = false;
                     let mut has_agg_scalar = false;
                     let mut has_not_agg = false;
-                    let mut has_lit = false;
                     for ac in &acs {
                         match ac.state {
                             AggState::AggregatedList(_) => has_agg_list = true,
                             AggState::AggregatedScalar(_) => has_agg_scalar = true,
                             AggState::NotAggregated(_) => has_not_agg = true,
-                            AggState::Literal(_) => has_lit = true,
+                            _ => {},
                         }
                     }
-                    if has_agg_list
-                        || (has_agg_scalar && has_not_agg)
-                        || (has_agg_scalar && has_lit)
-                    {
+                    if has_agg_list || (has_agg_scalar && has_not_agg) {
                         return self.apply_multiple_group_aware(acs, df);
                     } else {
                         apply_multiple_elementwise(
@@ -441,6 +437,7 @@ fn apply_multiple_elementwise<'a>(
         },
         first_as => {
             let check_lengths = check_lengths && !matches!(first_as, AggState::Literal(_));
+            let aggregated = acs.iter().all(|ac| ac.is_aggregated() | ac.is_literal());
             let mut s = acs
                 .iter_mut()
                 .enumerate()
@@ -463,7 +460,7 @@ fn apply_multiple_elementwise<'a>(
 
             // Take the first aggregation context that as that is the input series.
             let mut ac = acs.swap_remove(0);
-            ac.with_series_and_args(s, false, None, true)?;
+            ac.with_series_and_args(s, aggregated, None, true)?;
             Ok(ac)
         },
     }
