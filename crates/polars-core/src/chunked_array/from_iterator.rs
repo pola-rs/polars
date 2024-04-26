@@ -17,6 +17,7 @@ impl<T> FromIterator<Option<T::Native>> for ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
+    #[inline]
     fn from_iter<I: IntoIterator<Item = Option<T::Native>>>(iter: I) -> Self {
         // TODO: eliminate this FromIterator implementation entirely.
         iter.into_iter().collect_ca("")
@@ -30,6 +31,7 @@ where
 {
     // We use Vec because it is way faster than Arrows builder. We can do this because we
     // know we don't have null values.
+    #[inline]
     fn from_iter<I: IntoIterator<Item = T::Native>>(iter: I) -> Self {
         // 2021-02-07: aligned vec was ~2x faster than arrow collect.
         let av = iter.into_iter().collect::<Vec<T::Native>>();
@@ -38,18 +40,21 @@ where
 }
 
 impl FromIterator<Option<bool>> for ChunkedArray<BooleanType> {
+    #[inline]
     fn from_iter<I: IntoIterator<Item = Option<bool>>>(iter: I) -> Self {
         BooleanArray::from_iter(iter).into()
     }
 }
 
 impl FromIterator<bool> for BooleanChunked {
+    #[inline]
     fn from_iter<I: IntoIterator<Item = bool>>(iter: I) -> Self {
         iter.into_iter().collect_ca("")
     }
 }
 
 impl FromIterator<bool> for NoNull<BooleanChunked> {
+    #[inline]
     fn from_iter<I: IntoIterator<Item = bool>>(iter: I) -> Self {
         NoNull::new(iter.into_iter().collect_ca(""))
     }
@@ -61,6 +66,7 @@ impl<Ptr> FromIterator<Option<Ptr>> for StringChunked
 where
     Ptr: AsRef<str>,
 {
+    #[inline]
     fn from_iter<I: IntoIterator<Item = Option<Ptr>>>(iter: I) -> Self {
         let arr = MutableBinaryViewArray::from_iterator(iter.into_iter()).freeze();
         ChunkedArray::with_chunk("", arr)
@@ -86,6 +92,7 @@ impl<Ptr> FromIterator<Ptr> for StringChunked
 where
     Ptr: PolarsAsRef<str>,
 {
+    #[inline]
     fn from_iter<I: IntoIterator<Item = Ptr>>(iter: I) -> Self {
         let arr = MutableBinaryViewArray::from_values_iter(iter.into_iter()).freeze();
         ChunkedArray::with_chunk("", arr)
@@ -97,6 +104,7 @@ impl<Ptr> FromIterator<Option<Ptr>> for BinaryChunked
 where
     Ptr: AsRef<[u8]>,
 {
+    #[inline]
     fn from_iter<I: IntoIterator<Item = Option<Ptr>>>(iter: I) -> Self {
         let arr = MutableBinaryViewArray::from_iter(iter).freeze();
         ChunkedArray::with_chunk("", arr)
@@ -107,6 +115,7 @@ impl<Ptr> FromIterator<Ptr> for BinaryChunked
 where
     Ptr: PolarsAsRef<[u8]>,
 {
+    #[inline]
     fn from_iter<I: IntoIterator<Item = Ptr>>(iter: I) -> Self {
         let arr = MutableBinaryViewArray::from_values_iter(iter.into_iter()).freeze();
         ChunkedArray::with_chunk("", arr)
@@ -117,6 +126,7 @@ impl<Ptr> FromIterator<Ptr> for ListChunked
 where
     Ptr: Borrow<Series>,
 {
+    #[inline]
     fn from_iter<I: IntoIterator<Item = Ptr>>(iter: I) -> Self {
         let mut it = iter.into_iter();
         let capacity = get_iter_capacity(&it);
@@ -139,6 +149,7 @@ where
 }
 
 impl FromIterator<Option<Series>> for ListChunked {
+    #[inline]
     fn from_iter<I: IntoIterator<Item = Option<Series>>>(iter: I) -> Self {
         let mut it = iter.into_iter();
         let capacity = get_iter_capacity(&it);
@@ -225,6 +236,7 @@ impl FromIterator<Option<Series>> for ListChunked {
 }
 
 impl FromIterator<Option<Box<dyn Array>>> for ListChunked {
+    #[inline]
     fn from_iter<I: IntoIterator<Item = Option<Box<dyn Array>>>>(iter: I) -> Self {
         iter.into_iter().collect_ca("collected")
     }
