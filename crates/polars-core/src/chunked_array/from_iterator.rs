@@ -1,7 +1,9 @@
 //! Implementations of upstream traits for [`ChunkedArray<T>`]
 use std::borrow::{Borrow, Cow};
+#[cfg(feature = "object")]
 use std::marker::PhantomData;
 
+#[cfg(feature = "object")]
 use arrow::bitmap::{Bitmap, MutableBitmap};
 
 use crate::chunked_array::builder::{get_list_builder, AnonymousOwnedListBuilder};
