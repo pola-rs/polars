@@ -1,3 +1,4 @@
+use std::borrow::Borrow;
 use std::hash::Hash;
 #[cfg(feature = "cse")]
 use std::hash::Hasher;
@@ -36,6 +37,12 @@ pub struct ExprIR {
     /// Reduced expression.
     /// This expression is pruned from `alias` and already expanded.
     node: Node,
+}
+
+impl Borrow<Node> for ExprIR {
+    fn borrow(&self) -> &Node {
+        &self.node
+    }
 }
 
 impl ExprIR {

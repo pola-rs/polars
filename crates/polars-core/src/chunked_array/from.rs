@@ -331,3 +331,31 @@ impl BooleanChunked {
         Self::with_chunk(name, arr)
     }
 }
+
+impl<'a, T> From<&'a ChunkedArray<T>> for Vec<Option<T::Physical<'a>>>
+where
+    T: PolarsDataType,
+{
+    fn from(ca: &'a ChunkedArray<T>) -> Self {
+        let mut out = Vec::with_capacity(ca.len());
+        for arr in ca.downcast_iter() {
+            out.extend(arr.iter())
+        }
+        out
+    }
+}
+impl From<StringChunked> for Vec<Option<String>> {
+    fn from(ca: StringChunked) -> Self {
+        ca.iter().map(|opt| opt.map(|s| s.to_string())).collect()
+    }
+}
+
+impl From<BooleanChunked> for Vec<Option<bool>> {
+    fn from(ca: BooleanChunked) -> Self {
+        let mut out = Vec::with_capacity(ca.len());
+        for arr in ca.downcast_iter() {
+            out.extend(arr.iter())
+        }
+        out
+    }
+}

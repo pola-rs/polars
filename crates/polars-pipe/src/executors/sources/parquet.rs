@@ -9,14 +9,15 @@ use polars_core::error::*;
 use polars_core::prelude::Series;
 use polars_core::POOL;
 use polars_io::cloud::CloudOptions;
-use polars_io::parquet::{BatchedParquetReader, FileMetaData, ParquetOptions, ParquetReader};
+use polars_io::parquet::metadata::FileMetaDataRef;
+use polars_io::parquet::read::{BatchedParquetReader, ParquetOptions, ParquetReader};
 use polars_io::pl_async::get_runtime;
 use polars_io::predicates::PhysicalIoExpr;
 use polars_io::prelude::materialize_projection;
 #[cfg(feature = "async")]
 use polars_io::prelude::ParquetAsyncReader;
-use polars_io::utils::check_projected_arrow_schema;
-use polars_io::{is_cloud_url, SerReader};
+use polars_io::utils::{check_projected_arrow_schema, is_cloud_url};
+use polars_io::SerReader;
 use polars_plan::logical_plan::FileInfo;
 use polars_plan::prelude::FileScanOptions;
 use polars_utils::iter::EnumerateIdxTrait;
@@ -36,7 +37,7 @@ pub struct ParquetSource {
     file_options: FileScanOptions,
     #[allow(dead_code)]
     cloud_options: Option<CloudOptions>,
-    metadata: Option<Arc<FileMetaData>>,
+    metadata: Option<FileMetaDataRef>,
     file_info: FileInfo,
     verbose: bool,
     run_async: bool,
@@ -190,7 +191,7 @@ impl ParquetSource {
         paths: Arc<[PathBuf]>,
         options: ParquetOptions,
         cloud_options: Option<CloudOptions>,
-        metadata: Option<Arc<FileMetaData>>,
+        metadata: Option<FileMetaDataRef>,
         file_options: FileScanOptions,
         file_info: FileInfo,
         verbose: bool,

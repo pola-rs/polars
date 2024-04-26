@@ -1,49 +1,14 @@
+use std::io::Write;
 use std::num::NonZeroUsize;
 
+use polars_core::frame::DataFrame;
+use polars_core::schema::{IndexOfSchema, Schema};
 use polars_core::POOL;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
+use polars_error::PolarsResult;
 
-use super::*;
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct CsvWriterOptions {
-    pub include_bom: bool,
-    pub include_header: bool,
-    pub batch_size: NonZeroUsize,
-    pub maintain_order: bool,
-    pub serialize_options: SerializeOptions,
-}
-
-#[cfg(feature = "csv")]
-impl Default for CsvWriterOptions {
-    fn default() -> Self {
-        Self {
-            include_bom: false,
-            include_header: true,
-            batch_size: NonZeroUsize::new(1024).unwrap(),
-            maintain_order: false,
-            serialize_options: SerializeOptions::default(),
-        }
-    }
-}
-
-#[derive(Copy, Clone, Default, Eq, Hash, PartialEq, Debug)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub enum QuoteStyle {
-    /// This puts quotes around every field. Always.
-    Always,
-    /// This puts quotes around fields only when necessary.
-    // They are necessary when fields contain a quote, separator or record terminator. Quotes are also necessary when writing an empty record (which is indistinguishable from a record with one empty field).
-    // This is the default.
-    #[default]
-    Necessary,
-    /// This puts quotes around all fields that are non-numeric. Namely, when writing a field that does not parse as a valid float or integer, then quotes will be used even if they aren’t strictly necessary.
-    NonNumeric,
-    /// Never quote any fields, even if it would produce invalid CSV data.
-    Never,
-}
+use super::write_impl::{write, write_bom, write_header};
+use super::{QuoteStyle, SerializeOptions};
+use crate::shared::SerWriter;
 
 /// Write a DataFrame to csv.
 ///
@@ -52,7 +17,7 @@ pub enum QuoteStyle {
 pub struct CsvWriter<W: Write> {
     /// File or Stream handler
     buffer: W,
-    options: write_impl::SerializeOptions,
+    options: SerializeOptions,
     header: bool,
     bom: bool,
     batch_size: NonZeroUsize,
@@ -65,7 +30,7 @@ where
 {
     fn new(buffer: W) -> Self {
         // 9f: all nanoseconds
-        let options = write_impl::SerializeOptions {
+        let options = SerializeOptions {
             time_format: Some("%T%.9f".to_string()),
             ..Default::default()
         };
@@ -82,13 +47,13 @@ where
 
     fn finish(&mut self, df: &mut DataFrame) -> PolarsResult<()> {
         if self.bom {
-            write_impl::write_bom(&mut self.buffer)?;
+            write_bom(&mut self.buffer)?;
         }
         let names = df.get_column_names();
         if self.header {
-            write_impl::write_header(&mut self.buffer, &names, &self.options)?;
+            write_header(&mut self.buffer, &names, &self.options)?;
         }
-        write_impl::write(
+        write(
             &mut self.buffer,
             df,
             self.batch_size.into(),
@@ -215,16 +180,16 @@ impl<W: Write> BatchedWriter<W> {
     pub fn write_batch(&mut self, df: &DataFrame) -> PolarsResult<()> {
         if !self.has_written_bom {
             self.has_written_bom = true;
-            write_impl::write_bom(&mut self.writer.buffer)?;
+            write_bom(&mut self.writer.buffer)?;
         }
 
         if !self.has_written_header {
             self.has_written_header = true;
             let names = df.get_column_names();
-            write_impl::write_header(&mut self.writer.buffer, &names, &self.writer.options)?;
+            write_header(&mut self.writer.buffer, &names, &self.writer.options)?;
         }
 
-        write_impl::write(
+        write(
             &mut self.writer.buffer,
             df,
             self.writer.batch_size.into(),
@@ -238,13 +203,13 @@ impl<W: Write> BatchedWriter<W> {
     pub fn finish(&mut self) -> PolarsResult<()> {
         if !self.has_written_bom {
             self.has_written_bom = true;
-            write_impl::write_bom(&mut self.writer.buffer)?;
+            write_bom(&mut self.writer.buffer)?;
         }
 
         if !self.has_written_header {
             self.has_written_header = true;
             let names = self.schema.get_names();
-            write_impl::write_header(&mut self.writer.buffer, &names, &self.writer.options)?;
+            write_header(&mut self.writer.buffer, &names, &self.writer.options)?;
         };
 
         Ok(())

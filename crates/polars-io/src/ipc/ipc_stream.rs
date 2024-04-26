@@ -42,7 +42,7 @@ use arrow::io::ipc::{read, write};
 use polars_core::prelude::*;
 
 use crate::prelude::*;
-use crate::{finish_reader, ArrowReader, WriterFactory};
+use crate::shared::{finish_reader, ArrowReader, WriterFactory};
 
 /// Read Arrows Stream IPC format into a DataFrame
 ///

@@ -1,13 +1,13 @@
 use std::path::PathBuf;
 use std::sync::Mutex;
 
+use polars::io::csv::read::{OwnedBatchedCsvReader, OwnedBatchedCsvReaderMmap};
 use polars::io::mmap::MmapBytesReader;
 use polars::io::RowIndex;
 use polars::prelude::*;
-use polars_rs::prelude::read_impl::OwnedBatchedCsvReader;
 use pyo3::prelude::*;
+use pyo3::pybacked::PyBackedStr;
 
-use crate::prelude::read_impl::OwnedBatchedCsvReaderMmap;
 use crate::{PyDataFrame, PyPolarsErr, Wrap};
 
 enum BatchedReader {
@@ -46,7 +46,7 @@ impl PyBatchedCsv {
         encoding: Wrap<CsvEncoding>,
         n_threads: Option<usize>,
         path: PathBuf,
-        overwrite_dtype: Option<Vec<(&str, Wrap<DataType>)>>,
+        overwrite_dtype: Option<Vec<(PyBackedStr, Wrap<DataType>)>>,
         overwrite_dtype_slice: Option<Vec<Wrap<DataType>>>,
         low_memory: bool,
         comment_prefix: Option<&str>,

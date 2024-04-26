@@ -649,10 +649,7 @@ impl ProjectionPushDown {
                     schema: Arc::new(new_schema),
                 })
             },
-            MapFunction {
-                input,
-                ref function,
-            } => functions::process_functions(
+            MapFunction { input, function } => functions::process_functions(
                 self,
                 input,
                 function,

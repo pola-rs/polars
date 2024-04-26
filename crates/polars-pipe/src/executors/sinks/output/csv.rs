@@ -2,7 +2,7 @@ use std::path::Path;
 
 use crossbeam_channel::bounded;
 use polars_core::prelude::*;
-use polars_io::csv::{CsvWriter, CsvWriterOptions};
+use polars_io::csv::write::{CsvWriter, CsvWriterOptions};
 use polars_io::SerWriter;
 
 use crate::executors::sinks::output::file_sink::{init_writer_thread, FilesSink, SinkWriter};
@@ -49,7 +49,7 @@ impl CsvSink {
     }
 }
 
-impl SinkWriter for polars_io::csv::BatchedWriter<std::fs::File> {
+impl SinkWriter for polars_io::csv::write::BatchedWriter<std::fs::File> {
     fn _write_batch(&mut self, df: &DataFrame) -> PolarsResult<()> {
         self.write_batch(df)
     }

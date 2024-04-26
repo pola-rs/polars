@@ -1,3 +1,5 @@
+use polars_core::utils::materialize_dyn_int;
+
 use super::*;
 
 impl FunctionExpr {
@@ -57,7 +59,7 @@ impl FunctionExpr {
             Atan2 => mapper.map_to_float_dtype(),
             #[cfg(feature = "sign")]
             Sign => mapper.with_dtype(DataType::Int64),
-            FillNull { super_type, .. } => mapper.with_dtype(super_type.clone()),
+            FillNull { .. } => mapper.map_to_supertype(),
             #[cfg(feature = "rolling_window")]
             RollingExpr(rolling_func, ..) => {
                 use RollingFunction::*;
@@ -409,11 +411,8 @@ impl<'a> FieldsMapper<'a> {
 
     /// Map the dtype to the "supertype" of all fields.
     pub fn map_to_supertype(&self) -> PolarsResult<Field> {
+        let st = args_to_supertype(self.fields)?;
         let mut first = self.fields[0].clone();
-        let mut st = first.data_type().clone();
-        for field in &self.fields[1..] {
-            st = try_get_supertype(&st, field.data_type())?
-        }
         first.coerce(st);
         Ok(first)
     }
@@ -425,7 +424,7 @@ impl<'a> FieldsMapper<'a> {
             .data_type()
             .inner_dtype()
             .cloned()
-            .unwrap_or(DataType::Unknown);
+            .unwrap_or_else(|| DataType::Unknown(Default::default()));
         first.coerce(dt);
         Ok(first)
     }
@@ -470,7 +469,11 @@ impl<'a> FieldsMapper<'a> {
     pub fn nested_sum_type(&self) -> PolarsResult<Field> {
         let mut first = self.fields[0].clone();
         use DataType::*;
-        let dt = first.data_type().inner_dtype().cloned().unwrap_or(Unknown);
+        let dt = first
+            .data_type()
+            .inner_dtype()
+            .cloned()
+            .unwrap_or_else(|| Unknown(Default::default()));
 
         if matches!(dt, UInt8 | Int8 | Int16 | UInt16) {
             first.coerce(Int64);
@@ -496,7 +499,7 @@ impl<'a> FieldsMapper<'a> {
 
     #[cfg(feature = "extract_jsonpath")]
     pub fn with_opt_dtype(&self, dtype: Option<DataType>) -> PolarsResult<Field> {
-        let dtype = dtype.unwrap_or(DataType::Unknown);
+        let dtype = dtype.unwrap_or_else(|| DataType::Unknown(Default::default()));
         self.with_dtype(dtype)
     }
 
@@ -516,4 +519,30 @@ impl<'a> FieldsMapper<'a> {
         };
         self.with_dtype(dtype)
     }
+}
+
+pub(crate) fn args_to_supertype<D: AsRef<DataType>>(dtypes: &[D]) -> PolarsResult<DataType> {
+    let mut st = dtypes[0].as_ref().clone();
+    for dt in &dtypes[1..] {
+        st = try_get_supertype(&st, dt.as_ref())?
+    }
+
+    match (dtypes[0].as_ref(), &st) {
+        #[cfg(feature = "dtype-categorical")]
+        (DataType::Categorical(_, ord), DataType::String) => st = DataType::Categorical(None, *ord),
+        _ => {
+            if let DataType::Unknown(kind) = st {
+                match kind {
+                    UnknownKind::Float => st = DataType::Float64,
+                    UnknownKind::Int(v) => {
+                        st = materialize_dyn_int(v).dtype();
+                    },
+                    UnknownKind::Str => st = DataType::String,
+                    _ => {},
+                }
+            }
+        },
+    }
+
+    Ok(st)
 }

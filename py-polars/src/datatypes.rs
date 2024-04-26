@@ -65,7 +65,7 @@ impl From<&DataType> for PyDataType {
             DataType::Categorical(_, _) => Categorical,
             DataType::Enum(rev_map, _) => Enum(rev_map.as_ref().unwrap().get_categories().clone()),
             DataType::Struct(_) => Struct,
-            DataType::Null | DataType::Unknown | DataType::BinaryOffset => {
+            DataType::Null | DataType::Unknown(_) | DataType::BinaryOffset => {
                 panic!("null or unknown not expected here")
             },
         }

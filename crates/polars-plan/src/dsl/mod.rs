@@ -943,11 +943,7 @@ impl Expr {
 
         Expr::Function {
             input,
-            // super type will be replaced by type coercion
-            function: FunctionExpr::FillNull {
-                // will be set by `type_coercion`.
-                super_type: DataType::Unknown,
-            },
+            function: FunctionExpr::FillNull,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ElementWise,
                 cast_to_supertypes: true,
@@ -970,7 +966,7 @@ impl Expr {
         // we take the not branch so that self is truthy value of `when -> then -> otherwise`
         // and that ensure we keep the name of `self`
 
-        when(self.clone().is_not_nan())
+        when(self.clone().is_not_nan().or(self.clone().is_null()))
             .then(self)
             .otherwise(fill_value.into())
     }

@@ -1,11 +1,11 @@
 #[cfg(feature = "csv")]
-pub use polars_io::csv::CsvWriterOptions;
+pub use polars_io::csv::write::CsvWriterOptions;
 #[cfg(feature = "ipc")]
 pub use polars_io::ipc::IpcWriterOptions;
 #[cfg(feature = "json")]
 pub use polars_io::json::JsonWriterOptions;
 #[cfg(feature = "parquet")]
-pub use polars_io::parquet::ParquetWriteOptions;
+pub use polars_io::parquet::write::ParquetWriteOptions;
 pub use polars_ops::prelude::{JoinArgs, JoinType, JoinValidation};
 #[cfg(feature = "rank")]
 pub use polars_ops::prelude::{RankMethod, RankOptions};

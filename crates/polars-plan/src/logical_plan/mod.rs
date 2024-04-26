@@ -233,7 +233,7 @@ impl DslPlan {
         let mut lp_arena = Arena::with_capacity(16);
         let mut expr_arena = Arena::with_capacity(16);
 
-        let node = to_alp(self, &mut expr_arena, &mut lp_arena)?;
+        let node = to_alp(self, &mut expr_arena, &mut lp_arena, true, true)?;
 
         Ok((node, lp_arena, expr_arena))
     }

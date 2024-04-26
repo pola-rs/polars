@@ -18,6 +18,7 @@ if TYPE_CHECKING:
         Ambiguous,
         EpochTimeUnit,
         IntoExpr,
+        IntoExprColumn,
         NonExistent,
         Roll,
         TemporalLiteral,
@@ -1805,7 +1806,7 @@ class DateTimeNameSpace:
     @unstable()
     def round(
         self,
-        every: str | dt.timedelta,
+        every: str | dt.timedelta | IntoExprColumn,
         offset: str | dt.timedelta | None = None,
         *,
         ambiguous: Ambiguous | Series | None = None,

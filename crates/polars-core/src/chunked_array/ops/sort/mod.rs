@@ -297,7 +297,7 @@ fn ordering_other_columns<'a>(
 
 impl ChunkSort<StringType> for StringChunked {
     fn sort_with(&self, options: SortOptions) -> ChunkedArray<StringType> {
-        unsafe { self.as_binary().sort_with(options).to_string() }
+        unsafe { self.as_binary().sort_with(options).to_string_unchecked() }
     }
 
     fn sort(&self, descending: bool) -> StringChunked {

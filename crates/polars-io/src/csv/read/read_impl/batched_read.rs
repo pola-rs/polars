@@ -2,10 +2,21 @@ use std::collections::VecDeque;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 
-use super::*;
-use crate::csv::CsvReader;
-use crate::mmap::MmapBytesReader;
+use polars_core::datatypes::Field;
+use polars_core::frame::DataFrame;
+use polars_core::schema::SchemaRef;
+use polars_core::POOL;
+use polars_error::PolarsResult;
+use polars_utils::IdxSize;
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+
+use super::{cast_columns, read_chunk, CoreReader};
+use crate::csv::read::options::{CommentPrefix, CsvEncoding, NullValuesCompiled};
+use crate::csv::read::parser::next_line_position;
+use crate::csv::read::CsvReader;
+use crate::mmap::{MmapBytesReader, ReaderBytes};
 use crate::prelude::update_row_counts2;
+use crate::RowIndex;
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn get_offsets(
@@ -419,27 +430,5 @@ pub fn to_batched_owned_read(
         schema,
         reader,
         batched_reader,
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use polars_core::utils::concat_df;
-
-    use super::*;
-    use crate::SerReader;
-
-    #[test]
-    fn test_read_io_reader() {
-        let path = "../../examples/datasets/foods1.csv";
-        let file = std::fs::File::open(path).unwrap();
-        let mut reader = CsvReader::from_path(path).unwrap().with_chunk_size(5);
-
-        let mut reader = reader.batched_borrowed_read().unwrap();
-        let batches = reader.next_batches(5).unwrap().unwrap();
-        assert_eq!(batches.len(), 5);
-        let df = concat_df(&batches).unwrap();
-        let expected = CsvReader::new(file).finish().unwrap();
-        assert!(df.equals(&expected))
     }
 }

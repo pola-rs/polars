@@ -300,7 +300,7 @@ impl ChunkCast for StringChunked {
 impl BinaryChunked {
     /// # Safety
     /// String is not validated
-    pub unsafe fn to_string(&self) -> StringChunked {
+    pub unsafe fn to_string_unchecked(&self) -> StringChunked {
         let chunks = self
             .downcast_iter()
             .map(|arr| arr.to_utf8view_unchecked().boxed())
@@ -334,7 +334,7 @@ impl ChunkCast for BinaryChunked {
 
     unsafe fn cast_unchecked(&self, data_type: &DataType) -> PolarsResult<Series> {
         match data_type {
-            DataType::String => unsafe { Ok(self.to_string().into_series()) },
+            DataType::String => unsafe { Ok(self.to_string_unchecked().into_series()) },
             _ => self.cast(data_type),
         }
     }

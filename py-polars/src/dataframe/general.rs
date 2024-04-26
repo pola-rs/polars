@@ -6,6 +6,7 @@ use polars_core::frame::*;
 #[cfg(feature = "pivot")]
 use polars_lazy::frame::pivot::{pivot, pivot_stable};
 use pyo3::prelude::*;
+use pyo3::pybacked::PyBackedStr;
 use pyo3::types::{PyBytes, PyList};
 
 use super::*;
@@ -35,7 +36,7 @@ impl PyDataFrame {
             .with_pl_flavor(true)
             .finish(&mut self.df.clone())
             .expect("ipc writer");
-        Ok(PyBytes::new(py, &buf).to_object(py))
+        Ok(PyBytes::new_bound(py, &buf).to_object(py))
     }
     #[cfg(feature = "ipc_streaming")]
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
@@ -166,7 +167,7 @@ impl PyDataFrame {
     }
 
     /// set column names
-    pub fn set_column_names(&mut self, names: Vec<&str>) -> PyResult<()> {
+    pub fn set_column_names(&mut self, names: Vec<PyBackedStr>) -> PyResult<()> {
         self.df
             .set_column_names(&names)
             .map_err(PyPolarsErr::from)?;
@@ -179,7 +180,7 @@ impl PyDataFrame {
             .df
             .iter()
             .map(|s| Wrap(s.dtype().clone()).to_object(py));
-        PyList::new(py, iter).to_object(py)
+        PyList::new_bound(py, iter).to_object(py)
     }
 
     pub fn n_chunks(&self) -> usize {
@@ -247,7 +248,7 @@ impl PyDataFrame {
         Ok(series)
     }
 
-    pub fn select(&self, selection: Vec<&str>) -> PyResult<Self> {
+    pub fn select(&self, selection: Vec<PyBackedStr>) -> PyResult<Self> {
         let df = self.df.select(selection).map_err(PyPolarsErr::from)?;
         Ok(PyDataFrame::new(df))
     }
@@ -331,7 +332,7 @@ impl PyDataFrame {
 
     pub fn group_by_map_groups(
         &self,
-        by: Vec<&str>,
+        by: Vec<PyBackedStr>,
         lambda: PyObject,
         maintain_order: bool,
     ) -> PyResult<Self> {
@@ -344,7 +345,7 @@ impl PyDataFrame {
 
         let function = move |df: DataFrame| {
             Python::with_gil(|py| {
-                let pypolars = PyModule::import(py, "polars").unwrap();
+                let pypolars = PyModule::import_bound(py, "polars").unwrap();
                 let pydf = PyDataFrame::new(df);
                 let python_df_wrapper =
                     pypolars.getattr("wrap_df").unwrap().call1((pydf,)).unwrap();
@@ -352,7 +353,7 @@ impl PyDataFrame {
                 // Call the lambda and get a python-side DataFrame wrapper.
                 let result_df_wrapper = match lambda.call1(py, (python_df_wrapper,)) {
                     Ok(pyobj) => pyobj,
-                    Err(e) => panic!("UDF failed: {}", e.value(py)),
+                    Err(e) => panic!("UDF failed: {}", e.value_bound(py)),
                 };
                 let py_pydf = result_df_wrapper.getattr(py, "_df").expect(
                     "Could not get DataFrame attribute '_df'. Make sure that you return a DataFrame object.",
@@ -377,8 +378,8 @@ impl PyDataFrame {
 
     pub fn melt(
         &self,
-        id_vars: Vec<&str>,
-        value_vars: Vec<&str>,
+        id_vars: Vec<PyBackedStr>,
+        value_vars: Vec<PyBackedStr>,
         value_name: Option<&str>,
         variable_name: Option<&str>,
     ) -> PyResult<Self> {
@@ -505,7 +506,7 @@ impl PyDataFrame {
     #[pyo3(signature = (lambda, output_type, inference_size))]
     pub fn map_rows(
         &mut self,
-        lambda: &PyAny,
+        lambda: Bound<PyAny>,
         output_type: Option<Wrap<DataType>>,
         inference_size: usize,
     ) -> PyResult<(PyObject, bool)> {
@@ -548,7 +549,7 @@ impl PyDataFrame {
     pub fn transpose(
         &mut self,
         keep_names_as: Option<&str>,
-        column_names: &PyAny,
+        column_names: &Bound<PyAny>,
     ) -> PyResult<Self> {
         let new_col_names = if let Ok(name) = column_names.extract::<Vec<String>>() {
             Some(Either::Right(name))

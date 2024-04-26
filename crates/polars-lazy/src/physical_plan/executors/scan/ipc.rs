@@ -6,7 +6,8 @@ use polars_core::config;
 use polars_core::utils::accumulate_dataframes_vertical;
 use polars_io::cloud::CloudOptions;
 use polars_io::predicates::apply_predicate;
-use polars_io::{is_cloud_url, RowIndex};
+use polars_io::utils::is_cloud_url;
+use polars_io::RowIndex;
 use rayon::prelude::*;
 
 use super::*;

@@ -1,110 +1,26 @@
-use super::*;
-use crate::csv::read_impl::{
-    to_batched_owned_mmap, to_batched_owned_read, BatchedCsvReaderMmap, BatchedCsvReaderRead,
-    OwnedBatchedCsvReader, OwnedBatchedCsvReaderMmap,
+use std::fs::File;
+use std::path::PathBuf;
+
+use polars_core::prelude::*;
+#[cfg(feature = "temporal")]
+use polars_time::prelude::*;
+#[cfg(feature = "temporal")]
+use rayon::prelude::*;
+
+use super::infer_file_schema;
+use super::options::{CommentPrefix, CsvEncoding, NullValues};
+use super::read_impl::batched_mmap::{
+    to_batched_owned_mmap, BatchedCsvReaderMmap, OwnedBatchedCsvReaderMmap,
 };
-use crate::csv::utils::infer_file_schema;
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub enum CsvEncoding {
-    /// Utf8 encoding
-    Utf8,
-    /// Utf8 encoding and unknown bytes are replaced with �
-    LossyUtf8,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub enum NullValues {
-    /// A single value that's used for all columns
-    AllColumnsSingle(String),
-    /// Multiple values that are used for all columns
-    AllColumns(Vec<String>),
-    /// Tuples that map column names to null value of that column
-    Named(Vec<(String, String)>),
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub enum CommentPrefix {
-    /// A single byte character that indicates the start of a comment line.
-    Single(u8),
-    /// A string that indicates the start of a comment line.
-    /// This allows for multiple characters to be used as a comment identifier.
-    Multi(String),
-}
-
-impl CommentPrefix {
-    /// Creates a new `CommentPrefix` for the `Single` variant.
-    pub fn new_single(c: u8) -> Self {
-        CommentPrefix::Single(c)
-    }
-
-    /// Creates a new `CommentPrefix`. If `Multi` variant is used and the string is longer
-    /// than 5 characters, it will return `None`.
-    pub fn new_multi(s: String) -> Option<Self> {
-        if s.len() <= 5 {
-            Some(CommentPrefix::Multi(s))
-        } else {
-            None
-        }
-    }
-}
-
-pub(super) enum NullValuesCompiled {
-    /// A single value that's used for all columns
-    AllColumnsSingle(String),
-    // Multiple null values that are null for all columns
-    AllColumns(Vec<String>),
-    /// A different null value per column, computed from `NullValues::Named`
-    Columns(Vec<String>),
-}
-
-impl NullValuesCompiled {
-    pub(super) fn apply_projection(&mut self, projections: &[usize]) {
-        if let Self::Columns(nv) = self {
-            let nv = projections
-                .iter()
-                .map(|i| std::mem::take(&mut nv[*i]))
-                .collect::<Vec<_>>();
-
-            *self = NullValuesCompiled::Columns(nv);
-        }
-    }
-
-    /// # Safety
-    ///
-    /// The caller must ensure that `index` is in bounds
-    pub(super) unsafe fn is_null(&self, field: &[u8], index: usize) -> bool {
-        use NullValuesCompiled::*;
-        match self {
-            AllColumnsSingle(v) => v.as_bytes() == field,
-            AllColumns(v) => v.iter().any(|v| v.as_bytes() == field),
-            Columns(v) => {
-                debug_assert!(index < v.len());
-                v.get_unchecked(index).as_bytes() == field
-            },
-        }
-    }
-}
-
-impl NullValues {
-    pub(super) fn compile(self, schema: &Schema) -> PolarsResult<NullValuesCompiled> {
-        Ok(match self {
-            NullValues::AllColumnsSingle(v) => NullValuesCompiled::AllColumnsSingle(v),
-            NullValues::AllColumns(v) => NullValuesCompiled::AllColumns(v),
-            NullValues::Named(v) => {
-                let mut null_values = vec!["".to_string(); schema.len()];
-                for (name, null_value) in v {
-                    let i = schema.try_index_of(&name)?;
-                    null_values[i] = null_value;
-                }
-                NullValuesCompiled::Columns(null_values)
-            },
-        })
-    }
-}
+use super::read_impl::batched_read::{
+    to_batched_owned_read, BatchedCsvReaderRead, OwnedBatchedCsvReader,
+};
+use super::read_impl::CoreReader;
+use crate::mmap::MmapBytesReader;
+use crate::predicates::PhysicalIoExpr;
+use crate::shared::SerReader;
+use crate::utils::{get_reader_bytes, resolve_homedir};
+use crate::RowIndex;
 
 /// Create a new DataFrame by reading a csv file.
 ///
@@ -581,7 +497,7 @@ impl<'a, R> SerReader<R> for CsvReader<'a, R>
 where
     R: MmapBytesReader + 'a,
 {
-    /// Create a new CsvReader from a file/ stream
+    /// Create a new CsvReader from a file/stream.
     fn new(reader: R) -> Self {
         CsvReader {
             reader,

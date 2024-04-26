@@ -13,7 +13,7 @@ import polars as pl
 import polars.selectors as cs
 from polars.exceptions import NoDataError, ParameterCollisionError
 from polars.io.spreadsheet.functions import _identify_workbook
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from polars.type_aliases import ExcelSpreadsheetEngine, SchemaDict, SelectorType
@@ -241,6 +241,30 @@ def test_read_excel_basic_datatypes(
             schema_overrides=schema_overrides,
         )
         assert_frame_equal(df, df)
+
+    # check some additional overrides
+    # (note: xlsx2csv can't currently convert datetime with trailing '00:00:00' to date)
+    dt_override = {"datetime": pl.Date} if engine != "xlsx2csv" else {}
+    df = pl.read_excel(
+        xls,
+        sheet_id=sheet_id,
+        sheet_name=sheet_name,
+        engine=engine,
+        schema_overrides={"A": pl.Float32, **dt_override},
+    )
+    assert_series_equal(
+        df["A"],
+        pl.Series(name="A", values=[1.0, 2.0, 3.0, 4.0, 5.0], dtype=pl.Float32),
+    )
+    if dt_override:
+        assert_series_equal(
+            df["datetime"],
+            pl.Series(
+                name="datetime",
+                values=[date(2023, 1, x) for x in range(1, 6)],
+                dtype=pl.Date,
+            ),
+        )
 
 
 @pytest.mark.parametrize(

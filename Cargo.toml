@@ -30,7 +30,7 @@ arrow-data = { version = ">=41", default-features = false }
 arrow-schema = { version = ">=41", default-features = false }
 atoi = "2"
 avro-schema = { version = "0.3" }
-base64 = "0.21.2"
+base64 = "0.22.0"
 bitflags = "2"
 bytemuck = { version = "1.11", features = ["derive", "extern_crate_alloc"] }
 chrono = { version = "0.4.31", default-features = false, features = ["std"] }
@@ -75,7 +75,7 @@ sqlparser = "0.39"
 stacker = "0.1"
 streaming-iterator = "0.1.9"
 strength_reduce = "0.2"
-strum_macros = "0.25"
+strum_macros = "0.26"
 thiserror = "1"
 tokio = "1.26"
 tokio-util = "0.7.8"

@@ -298,11 +298,43 @@ pub(crate) fn chunk_df_for_writing(
     Ok(result)
 }
 
+static CLOUD_URL: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^(s3a?|gs|gcs|file|abfss?|azure|az|adl|https?)://").unwrap());
+
+/// Check if the path is a cloud url.
+pub fn is_cloud_url<P: AsRef<Path>>(p: P) -> bool {
+    match p.as_ref().as_os_str().to_str() {
+        Some(s) => CLOUD_URL.is_match(s),
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
 
-    use super::resolve_homedir;
+    use super::{resolve_homedir, FLOAT_RE};
+
+    #[test]
+    fn test_float_parse() {
+        assert!(FLOAT_RE.is_match("0.1"));
+        assert!(FLOAT_RE.is_match("3.0"));
+        assert!(FLOAT_RE.is_match("3.00001"));
+        assert!(FLOAT_RE.is_match("-9.9990e-003"));
+        assert!(FLOAT_RE.is_match("9.9990e+003"));
+        assert!(FLOAT_RE.is_match("9.9990E+003"));
+        assert!(FLOAT_RE.is_match("9.9990E+003"));
+        assert!(FLOAT_RE.is_match(".5"));
+        assert!(FLOAT_RE.is_match("2.5E-10"));
+        assert!(FLOAT_RE.is_match("2.5e10"));
+        assert!(FLOAT_RE.is_match("NaN"));
+        assert!(FLOAT_RE.is_match("-NaN"));
+        assert!(FLOAT_RE.is_match("-inf"));
+        assert!(FLOAT_RE.is_match("inf"));
+        assert!(FLOAT_RE.is_match("-7e-05"));
+        assert!(FLOAT_RE.is_match("7e-05"));
+        assert!(FLOAT_RE.is_match("+7e+05"));
+    }
 
     #[cfg(not(target_os = "windows"))]
     #[test]

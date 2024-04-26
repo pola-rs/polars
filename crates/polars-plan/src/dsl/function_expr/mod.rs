@@ -152,9 +152,7 @@ pub enum FunctionExpr {
     Atan2,
     #[cfg(feature = "sign")]
     Sign,
-    FillNull {
-        super_type: DataType,
-    },
+    FillNull,
     FillNullWithStrategy(FillNullStrategy),
     #[cfg(feature = "rolling_window")]
     RollingExpr(RollingFunction),
@@ -411,7 +409,7 @@ impl Hash for FunctionExpr {
             Sign => {},
             #[cfg(feature = "row_hash")]
             Hash(a, b, c, d) => (a, b, c, d).hash(state),
-            FillNull { super_type } => super_type.hash(state),
+            FillNull => {},
             #[cfg(feature = "rolling_window")]
             RollingExpr(f) => {
                 f.hash(state);
@@ -889,8 +887,8 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             Sign => {
                 map!(sign::sign)
             },
-            FillNull { super_type } => {
-                map_as_slice!(fill_null::fill_null, &super_type)
+            FillNull => {
+                map_as_slice!(fill_null::fill_null)
             },
             #[cfg(feature = "rolling_window")]
             RollingExpr(f) => {

@@ -490,20 +490,19 @@ impl<'a> AnyValue<'a> {
 
     /// Cast `AnyValue` to the provided data type and return a new `AnyValue` with type `dtype`,
     /// if possible.
-    ///
-    pub fn strict_cast(&self, dtype: &'a DataType) -> PolarsResult<AnyValue<'a>> {
+    pub fn strict_cast(&self, dtype: &'a DataType) -> Option<AnyValue<'a>> {
         let new_av = match (self, dtype) {
             // to numeric
-            (av, DataType::UInt8) => AnyValue::UInt8(av.try_extract::<u8>()?),
-            (av, DataType::UInt16) => AnyValue::UInt16(av.try_extract::<u16>()?),
-            (av, DataType::UInt32) => AnyValue::UInt32(av.try_extract::<u32>()?),
-            (av, DataType::UInt64) => AnyValue::UInt64(av.try_extract::<u64>()?),
-            (av, DataType::Int8) => AnyValue::Int8(av.try_extract::<i8>()?),
-            (av, DataType::Int16) => AnyValue::Int16(av.try_extract::<i16>()?),
-            (av, DataType::Int32) => AnyValue::Int32(av.try_extract::<i32>()?),
-            (av, DataType::Int64) => AnyValue::Int64(av.try_extract::<i64>()?),
-            (av, DataType::Float32) => AnyValue::Float32(av.try_extract::<f32>()?),
-            (av, DataType::Float64) => AnyValue::Float64(av.try_extract::<f64>()?),
+            (av, DataType::UInt8) => AnyValue::UInt8(av.extract::<u8>()?),
+            (av, DataType::UInt16) => AnyValue::UInt16(av.extract::<u16>()?),
+            (av, DataType::UInt32) => AnyValue::UInt32(av.extract::<u32>()?),
+            (av, DataType::UInt64) => AnyValue::UInt64(av.extract::<u64>()?),
+            (av, DataType::Int8) => AnyValue::Int8(av.extract::<i8>()?),
+            (av, DataType::Int16) => AnyValue::Int16(av.extract::<i16>()?),
+            (av, DataType::Int32) => AnyValue::Int32(av.extract::<i32>()?),
+            (av, DataType::Int64) => AnyValue::Int64(av.extract::<i64>()?),
+            (av, DataType::Float32) => AnyValue::Float32(av.extract::<f32>()?),
+            (av, DataType::Float64) => AnyValue::Float64(av.extract::<f64>()?),
 
             // to boolean
             (AnyValue::UInt8(v), DataType::Boolean) => AnyValue::Boolean(*v != u8::default()),
@@ -519,7 +518,7 @@ impl<'a> AnyValue<'a> {
 
             // to string
             (av, DataType::String) => {
-                AnyValue::StringOwned(format_smartstring!("{}", av.try_extract::<i64>()?))
+                AnyValue::StringOwned(format_smartstring!("{}", av.extract::<i64>()?))
             },
 
             // to binary
@@ -528,7 +527,7 @@ impl<'a> AnyValue<'a> {
             // to datetime
             #[cfg(feature = "dtype-datetime")]
             (av, DataType::Datetime(tu, tz)) if av.is_numeric() => {
-                AnyValue::Datetime(av.try_extract::<i64>()?, *tu, tz)
+                AnyValue::Datetime(av.extract::<i64>()?, *tu, tz)
             },
             #[cfg(all(feature = "dtype-datetime", feature = "dtype-date"))]
             (AnyValue::Date(v), DataType::Datetime(tu, _)) => AnyValue::Datetime(
@@ -557,7 +556,7 @@ impl<'a> AnyValue<'a> {
 
             // to date
             #[cfg(feature = "dtype-date")]
-            (av, DataType::Date) if av.is_numeric() => AnyValue::Date(av.try_extract::<i32>()?),
+            (av, DataType::Date) if av.is_numeric() => AnyValue::Date(av.extract::<i32>()?),
             #[cfg(all(feature = "dtype-date", feature = "dtype-datetime"))]
             (AnyValue::Datetime(v, tu, _), DataType::Date) => AnyValue::Date(match tu {
                 TimeUnit::Nanoseconds => *v / NS_IN_DAY,
@@ -567,7 +566,7 @@ impl<'a> AnyValue<'a> {
 
             // to time
             #[cfg(feature = "dtype-time")]
-            (av, DataType::Time) if av.is_numeric() => AnyValue::Time(av.try_extract::<i64>()?),
+            (av, DataType::Time) if av.is_numeric() => AnyValue::Time(av.extract::<i64>()?),
             #[cfg(all(feature = "dtype-time", feature = "dtype-datetime"))]
             (AnyValue::Datetime(v, tu, _), DataType::Time) => AnyValue::Time(match tu {
                 TimeUnit::Nanoseconds => *v % NS_IN_DAY,
@@ -578,7 +577,7 @@ impl<'a> AnyValue<'a> {
             // to duration
             #[cfg(feature = "dtype-duration")]
             (av, DataType::Duration(tu)) if av.is_numeric() => {
-                AnyValue::Duration(av.try_extract::<i64>()?, *tu)
+                AnyValue::Duration(av.extract::<i64>()?, *tu)
             },
             #[cfg(all(feature = "dtype-duration", feature = "dtype-time"))]
             (AnyValue::Time(v), DataType::Duration(tu)) => AnyValue::Duration(
@@ -607,15 +606,23 @@ impl<'a> AnyValue<'a> {
             // to self
             (av, dtype) if av.dtype() == *dtype => self.clone(),
 
-            av => polars_bail!(ComputeError: "cannot cast any-value {:?} to dtype '{}'", av, dtype),
+            _ => return None,
         };
-        Ok(new_av)
+        Some(new_av)
+    }
+
+    /// Cast `AnyValue` to the provided data type and return a new `AnyValue` with type `dtype`,
+    /// if possible.
+    pub fn try_strict_cast(&self, dtype: &'a DataType) -> PolarsResult<AnyValue<'a>> {
+        self.strict_cast(dtype).ok_or_else(
+            || polars_err!(ComputeError: "cannot cast any-value {:?} to dtype '{}'", self, dtype),
+        )
     }
 
     pub fn cast(&self, dtype: &'a DataType) -> AnyValue<'a> {
         match self.strict_cast(dtype) {
-            Ok(av) => av,
-            Err(_) => AnyValue::Null,
+            Some(av) => av,
+            None => AnyValue::Null,
         }
     }
 }

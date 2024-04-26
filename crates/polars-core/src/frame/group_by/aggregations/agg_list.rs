@@ -1,10 +1,6 @@
-use arrow::legacy::kernels::concatenate::concatenate_owned_unchecked;
 use arrow::offset::Offsets;
-use polars_utils::unwrap::UnwrapUncheckedRelease;
 
 use super::*;
-#[cfg(feature = "dtype-struct")]
-use crate::chunked_array::builder::AnonymousOwnedListBuilder;
 use crate::chunked_array::builder::ListNullChunkedBuilder;
 use crate::series::implementations::null::NullChunked;
 
@@ -181,253 +177,32 @@ impl AggList for NullChunked {
 
 impl AggList for BooleanChunked {
     unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
-        match groups {
-            GroupsProxy::Idx(groups) => {
-                let mut builder =
-                    ListBooleanChunkedBuilder::new(self.name(), groups.len(), self.len());
-                for idx in groups.all().iter() {
-                    let ca = { self.take_unchecked(idx) };
-                    builder.append(&ca)
-                }
-                builder.finish().into_series()
-            },
-            GroupsProxy::Slice { groups, .. } => {
-                let mut builder =
-                    ListBooleanChunkedBuilder::new(self.name(), groups.len(), self.len());
-                for [first, len] in groups {
-                    let ca = self.slice(*first as i64, *len as usize);
-                    builder.append(&ca)
-                }
-                builder.finish().into_series()
-            },
-        }
+        agg_list_by_gather_and_offsets(self, groups)
     }
 }
 
 impl AggList for StringChunked {
     unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
-        // TODO: dispatch via binary
-        match groups {
-            GroupsProxy::Idx(groups) => {
-                let mut builder =
-                    ListStringChunkedBuilder::new(self.name(), groups.len(), self.len());
-                for idx in groups.all().iter() {
-                    let ca = { self.take_unchecked(idx) };
-                    builder.append(&ca)
-                }
-                builder.finish().into_series()
-            },
-            GroupsProxy::Slice { groups, .. } => {
-                let mut builder =
-                    ListStringChunkedBuilder::new(self.name(), groups.len(), self.len());
-                for [first, len] in groups {
-                    let ca = self.slice(*first as i64, *len as usize);
-                    builder.append(&ca)
-                }
-                builder.finish().into_series()
-            },
-        }
+        agg_list_by_gather_and_offsets(self, groups)
     }
 }
 
 impl AggList for BinaryChunked {
     unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
-        match groups {
-            GroupsProxy::Idx(groups) => {
-                let mut builder =
-                    ListBinaryChunkedBuilder::new(self.name(), groups.len(), self.len());
-                for idx in groups.all().iter() {
-                    let ca = { self.take_unchecked(idx) };
-                    builder.append(&ca)
-                }
-                builder.finish().into_series()
-            },
-            GroupsProxy::Slice { groups, .. } => {
-                let mut builder =
-                    ListBinaryChunkedBuilder::new(self.name(), groups.len(), self.len());
-                for [first, len] in groups {
-                    let ca = self.slice(*first as i64, *len as usize);
-                    builder.append(&ca)
-                }
-                builder.finish().into_series()
-            },
-        }
+        agg_list_by_gather_and_offsets(self, groups)
     }
-}
-
-/// This aggregates into a [`ListChunked`] by slicing the array that is aggregated.
-/// Used for [`List`] and [`Array`] data types.
-fn agg_list_by_slicing<
-    A: PolarsDataType,
-    F: Fn(&ChunkedArray<A>, bool, &mut Vec<i64>, &mut i64, &mut Vec<ArrayRef>) -> bool,
->(
-    ca: &ChunkedArray<A>,
-    dtype: DataType,
-    groups_len: usize,
-    func: F,
-) -> Series {
-    let can_fast_explode = true;
-    let mut offsets = Vec::<i64>::with_capacity(groups_len + 1);
-    let mut length_so_far = 0i64;
-    offsets.push(length_so_far);
-
-    let mut list_values = Vec::with_capacity(groups_len);
-
-    let can_fast_explode = func(
-        ca,
-        can_fast_explode,
-        &mut offsets,
-        &mut length_so_far,
-        &mut list_values,
-    );
-    if groups_len == 0 {
-        list_values.push(ca.chunks[0].sliced(0, 0))
-    }
-    let list_values = concatenate_owned_unchecked(&list_values).unwrap();
-    let data_type = ListArray::<i64>::default_datatype(list_values.data_type().clone());
-    // SAFETY:
-    // offsets are monotonically increasing
-    let arr = ListArray::<i64>::new(
-        data_type,
-        unsafe { Offsets::new_unchecked(offsets).into() },
-        list_values,
-        None,
-    );
-    let mut listarr = ListChunked::with_chunk(ca.name(), arr);
-    if can_fast_explode {
-        listarr.set_fast_explode()
-    }
-    unsafe { listarr.to_logical(dtype) };
-    listarr.into_series()
 }
 
 impl AggList for ListChunked {
     unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
-        match groups {
-            GroupsProxy::Idx(groups) => {
-                let func = |ca: &ListChunked,
-                            mut can_fast_explode: bool,
-                            offsets: &mut Vec<i64>,
-                            length_so_far: &mut i64,
-                            list_values: &mut Vec<ArrayRef>| {
-                    assert!(list_values.capacity() >= groups.len());
-                    groups.iter().for_each(|(_, idx)| {
-                        let idx_len = idx.len();
-                        if idx_len == 0 {
-                            can_fast_explode = false;
-                        }
-
-                        *length_so_far += idx_len as i64;
-                        // SAFETY:
-                        // group tuples are in bounds
-                        {
-                            let mut s = ca.take_unchecked(idx);
-                            let arr = s.chunks.pop().unwrap_unchecked_release();
-                            list_values.push_unchecked(arr);
-
-                            // SAFETY:
-                            // we know that offsets has allocated enough slots
-                            offsets.push_unchecked(*length_so_far);
-                        }
-                    });
-                    can_fast_explode
-                };
-
-                agg_list_by_slicing(self, self.dtype().clone(), groups.len(), func)
-            },
-            GroupsProxy::Slice { groups, .. } => {
-                let func = |ca: &ListChunked,
-                            mut can_fast_explode: bool,
-                            offsets: &mut Vec<i64>,
-                            length_so_far: &mut i64,
-                            list_values: &mut Vec<ArrayRef>| {
-                    assert!(list_values.capacity() >= groups.len());
-                    groups.iter().for_each(|&[first, len]| {
-                        if len == 0 {
-                            can_fast_explode = false;
-                        }
-
-                        *length_so_far += len as i64;
-                        let mut s = ca.slice(first as i64, len as usize);
-                        let arr = s.chunks.pop().unwrap_unchecked_release();
-                        list_values.push_unchecked(arr);
-
-                        {
-                            // SAFETY:
-                            // we know that offsets has allocated enough slots
-                            offsets.push_unchecked(*length_so_far);
-                        }
-                    });
-                    can_fast_explode
-                };
-
-                agg_list_by_slicing(self, self.dtype().clone(), groups.len(), func)
-            },
-        }
+        agg_list_by_gather_and_offsets(self, groups)
     }
 }
 
 #[cfg(feature = "dtype-array")]
 impl AggList for ArrayChunked {
     unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
-        match groups {
-            GroupsProxy::Idx(groups) => {
-                let func = |ca: &ArrayChunked,
-                            mut can_fast_explode: bool,
-                            offsets: &mut Vec<i64>,
-                            length_so_far: &mut i64,
-                            list_values: &mut Vec<ArrayRef>| {
-                    assert!(list_values.capacity() >= groups.len());
-                    groups.iter().for_each(|(_, idx)| {
-                        let idx_len = idx.len();
-                        if idx_len == 0 {
-                            can_fast_explode = false;
-                        }
-
-                        *length_so_far += idx_len as i64;
-
-                        // SAFETY: we know that offsets has allocated enough slots
-                        offsets.push_unchecked(*length_so_far);
-
-                        // SAFETY: group tuples are in bounds
-                        {
-                            let mut s = ca.take_unchecked(idx);
-                            let arr = s.chunks.pop().unwrap_unchecked_release();
-                            list_values.push_unchecked(arr);
-                        }
-                    });
-                    can_fast_explode
-                };
-
-                agg_list_by_slicing(self, self.dtype().clone(), groups.len(), func)
-            },
-            GroupsProxy::Slice { groups, .. } => {
-                let func = |ca: &ArrayChunked,
-                            mut can_fast_explode: bool,
-                            offsets: &mut Vec<i64>,
-                            length_so_far: &mut i64,
-                            list_values: &mut Vec<ArrayRef>| {
-                    assert!(list_values.capacity() >= groups.len());
-                    groups.iter().for_each(|&[first, len]| {
-                        if len == 0 {
-                            can_fast_explode = false;
-                        }
-
-                        *length_so_far += len as i64;
-                        // SAFETY:
-                        // we know that offsets has allocated enough slots
-                        offsets.push_unchecked(*length_so_far);
-
-                        let mut s = ca.slice(first as i64, len as usize);
-                        let arr = s.chunks.pop().unwrap_unchecked_release();
-                        list_values.push_unchecked(arr);
-                    });
-                    can_fast_explode
-                };
-
-                agg_list_by_slicing(self, self.dtype().clone(), groups.len(), func)
-            },
-        }
+        agg_list_by_gather_and_offsets(self, groups)
     }
 }
 
@@ -501,32 +276,55 @@ impl<T: PolarsObject> AggList for ObjectChunked<T> {
 #[cfg(feature = "dtype-struct")]
 impl AggList for StructChunked {
     unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
-        let s = self.clone().into_series();
-        match groups {
-            GroupsProxy::Idx(groups) => {
-                let mut builder = AnonymousOwnedListBuilder::new(
-                    self.name(),
-                    groups.len(),
-                    Some(self.dtype().clone()),
-                );
-                for idx in groups.all().iter() {
-                    let taken = s.take_slice_unchecked(idx);
-                    builder.append_series(&taken).unwrap();
-                }
-                builder.finish().into_series()
-            },
-            GroupsProxy::Slice { groups, .. } => {
-                let mut builder = AnonymousOwnedListBuilder::new(
-                    self.name(),
-                    groups.len(),
-                    Some(self.dtype().clone()),
-                );
-                for [first, len] in groups {
-                    let taken = s.slice(*first as i64, *len as usize);
-                    builder.append_series(&taken).unwrap();
-                }
-                builder.finish().into_series()
-            },
+        let mut ca = self.clone();
+        ca.rechunk();
+        let (gather, offsets, can_fast_explode) = groups.prepare_list_agg(self.len());
+
+        let gathered = if let Some(gather) = gather {
+            let out = ca.into_series().take_unchecked(&gather);
+            out.struct_().unwrap().clone()
+        } else {
+            ca
+        };
+
+        let arr = gathered.chunks()[0].clone();
+        let dtype = LargeListArray::default_datatype(arr.data_type().clone());
+
+        let mut chunk =
+            ListChunked::with_chunk(self.name(), LargeListArray::new(dtype, offsets, arr, None));
+        chunk.set_dtype(DataType::List(Box::new(self.dtype().clone())));
+        if can_fast_explode {
+            chunk.set_fast_explode()
         }
+
+        chunk.into_series()
     }
+}
+
+unsafe fn agg_list_by_gather_and_offsets<T: PolarsDataType>(
+    ca: &ChunkedArray<T>,
+    groups: &GroupsProxy,
+) -> Series
+where
+    ChunkedArray<T>: ChunkTakeUnchecked<IdxCa>,
+{
+    let (gather, offsets, can_fast_explode) = groups.prepare_list_agg(ca.len());
+
+    let gathered = if let Some(gather) = gather {
+        ca.take_unchecked(&gather)
+    } else {
+        ca.clone()
+    };
+
+    let arr = gathered.chunks()[0].clone();
+    let dtype = LargeListArray::default_datatype(arr.data_type().clone());
+
+    let mut chunk =
+        ListChunked::with_chunk(ca.name(), LargeListArray::new(dtype, offsets, arr, None));
+    chunk.set_dtype(DataType::List(Box::new(ca.dtype().clone())));
+    if can_fast_explode {
+        chunk.set_fast_explode()
+    }
+
+    chunk.into_series()
 }

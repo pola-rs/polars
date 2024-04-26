@@ -2,6 +2,7 @@ use polars::prelude::*;
 use polars_core::frame::row::{rows_to_schema_first_non_null, Row};
 use polars_core::series::SeriesIter;
 use pyo3::prelude::*;
+use pyo3::pybacked::PyBackedStr;
 use pyo3::types::{PyBool, PyFloat, PyInt, PyList, PyString, PyTuple};
 
 use super::*;
@@ -22,7 +23,7 @@ fn get_iters_skip(df: &DataFrame, skip: usize) -> Vec<std::iter::Skip<SeriesIter
 pub fn apply_lambda_unknown<'a>(
     df: &'a DataFrame,
     py: Python,
-    lambda: &'a PyAny,
+    lambda: Bound<'a, PyAny>,
     inference_size: usize,
 ) -> PyResult<(PyObject, bool)> {
     let mut null_count = 0;
@@ -30,7 +31,7 @@ pub fn apply_lambda_unknown<'a>(
 
     for _ in 0..df.height() {
         let iter = iters.iter_mut().map(|it| Wrap(it.next().unwrap()));
-        let arg = (PyTuple::new(py, iter),);
+        let arg = (PyTuple::new_bound(py, iter),);
         let out = lambda.call1(arg)?;
 
         if out.is_none() {
@@ -80,11 +81,17 @@ pub fn apply_lambda_unknown<'a>(
                 false,
             ));
         } else if out.is_instance_of::<PyString>() {
-            let first_value = out.extract::<&str>().ok();
+            let first_value = out.extract::<PyBackedStr>().ok();
             return Ok((
                 PySeries::new(
-                    apply_lambda_with_string_out_type(df, py, lambda, null_count, first_value)
-                        .into_series(),
+                    apply_lambda_with_string_out_type(
+                        df,
+                        py,
+                        lambda,
+                        null_count,
+                        first_value.as_deref(),
+                    )
+                    .into_series(),
                 )
                 .into_py(py),
                 false,
@@ -135,7 +142,7 @@ Then return a Series object."
 fn apply_iter<'a, T>(
     df: &'a DataFrame,
     py: Python<'a>,
-    lambda: &'a PyAny,
+    lambda: Bound<'a, PyAny>,
     init_null_count: usize,
     skip: usize,
 ) -> impl Iterator<Item = Option<T>> + 'a
@@ -145,7 +152,7 @@ where
     let mut iters = get_iters_skip(df, init_null_count + skip);
     ((init_null_count + skip)..df.height()).map(move |_| {
         let iter = iters.iter_mut().map(|it| Wrap(it.next().unwrap()));
-        let tpl = (PyTuple::new(py, iter),);
+        let tpl = (PyTuple::new_bound(py, iter),);
         match lambda.call1(tpl) {
             Ok(val) => val.extract::<T>().ok(),
             Err(e) => panic!("python function failed {e}"),
@@ -157,7 +164,7 @@ where
 pub fn apply_lambda_with_primitive_out_type<'a, D>(
     df: &'a DataFrame,
     py: Python<'a>,
-    lambda: &'a PyAny,
+    lambda: Bound<'a, PyAny>,
     init_null_count: usize,
     first_value: Option<D::Native>,
 ) -> ChunkedArray<D>
@@ -178,7 +185,7 @@ where
 pub fn apply_lambda_with_bool_out_type<'a>(
     df: &'a DataFrame,
     py: Python,
-    lambda: &'a PyAny,
+    lambda: Bound<'a, PyAny>,
     init_null_count: usize,
     first_value: Option<bool>,
 ) -> ChunkedArray<BooleanType> {
@@ -195,7 +202,7 @@ pub fn apply_lambda_with_bool_out_type<'a>(
 pub fn apply_lambda_with_string_out_type<'a>(
     df: &'a DataFrame,
     py: Python,
-    lambda: &'a PyAny,
+    lambda: Bound<'a, PyAny>,
     init_null_count: usize,
     first_value: Option<&str>,
 ) -> StringChunked {
@@ -203,7 +210,7 @@ pub fn apply_lambda_with_string_out_type<'a>(
     if init_null_count == df.height() {
         ChunkedArray::full_null("map", df.height())
     } else {
-        let iter = apply_iter::<&str>(df, py, lambda, init_null_count, skip);
+        let iter = apply_iter::<Cow<str>>(df, py, lambda, init_null_count, skip);
         iterator_to_string(iter, init_null_count, first_value, "map", df.height())
     }
 }
@@ -212,7 +219,7 @@ pub fn apply_lambda_with_string_out_type<'a>(
 pub fn apply_lambda_with_list_out_type<'a>(
     df: &'a DataFrame,
     py: Python,
-    lambda: &'a PyAny,
+    lambda: Bound<'a, PyAny>,
     init_null_count: usize,
     first_value: Option<&Series>,
     dt: &DataType,
@@ -224,7 +231,7 @@ pub fn apply_lambda_with_list_out_type<'a>(
         let mut iters = get_iters_skip(df, init_null_count + skip);
         let iter = ((init_null_count + skip)..df.height()).map(|_| {
             let iter = iters.iter_mut().map(|it| Wrap(it.next().unwrap()));
-            let tpl = (PyTuple::new(py, iter),);
+            let tpl = (PyTuple::new_bound(py, iter),);
             match lambda.call1(tpl) {
                 Ok(val) => match val.getattr("_s") {
                     Ok(val) => val.extract::<PySeries>().ok().map(|ps| ps.series),
@@ -246,7 +253,7 @@ pub fn apply_lambda_with_list_out_type<'a>(
 pub fn apply_lambda_with_rows_output<'a>(
     df: &'a DataFrame,
     py: Python,
-    lambda: &'a PyAny,
+    lambda: Bound<'a, PyAny>,
     init_null_count: usize,
     first_value: Row<'a>,
     inference_size: usize,
@@ -260,7 +267,7 @@ pub fn apply_lambda_with_rows_output<'a>(
     let mut iters = get_iters_skip(df, init_null_count + skip);
     let mut row_iter = ((init_null_count + skip)..df.height()).map(|_| {
         let iter = iters.iter_mut().map(|it| Wrap(it.next().unwrap()));
-        let tpl = (PyTuple::new(py, iter),);
+        let tpl = (PyTuple::new_bound(py, iter),);
 
         let return_val = lambda.call1(tpl).map_err(|e| polars_err!(ComputeError: format!("{e}")))?;
         if return_val.is_none() {
