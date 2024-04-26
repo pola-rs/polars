@@ -115,8 +115,7 @@ pub trait DataFrameJoinOps: IntoDf {
         _verbose: bool,
     ) -> PolarsResult<DataFrame> {
         let left_df = self.to_df();
-        args.validation
-            .is_valid_join(&args.how, selected_left.len())?;
+        args.validation.is_valid_join(&args.how)?;
 
         #[cfg(feature = "cross_join")]
         if let JoinType::Cross = args.how {
@@ -214,13 +213,21 @@ pub trait DataFrameJoinOps: IntoDf {
                     left_df._outer_join_from_series(other, s_left, s_right, args)
                 },
                 #[cfg(feature = "semi_anti_join")]
-                JoinType::Anti => {
-                    left_df._semi_anti_join_from_series(s_left, s_right, args.slice, true)
-                },
+                JoinType::Anti => left_df._semi_anti_join_from_series(
+                    s_left,
+                    s_right,
+                    args.slice,
+                    true,
+                    args.join_nulls,
+                ),
                 #[cfg(feature = "semi_anti_join")]
-                JoinType::Semi => {
-                    left_df._semi_anti_join_from_series(s_left, s_right, args.slice, false)
-                },
+                JoinType::Semi => left_df._semi_anti_join_from_series(
+                    s_left,
+                    s_right,
+                    args.slice,
+                    false,
+                    args.join_nulls,
+                ),
                 #[cfg(feature = "asof_join")]
                 JoinType::AsOf(options) => {
                     let left_on = selected_left[0].name();

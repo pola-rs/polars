@@ -98,6 +98,9 @@ impl PolarsUpsample for DataFrame {
         offset: Duration,
     ) -> PolarsResult<DataFrame> {
         let by = by.into_vec();
+        let time_type = self.column(time_column)?.dtype();
+        ensure_duration_matches_data_type(offset, time_type, "offset")?;
+        ensure_duration_matches_data_type(every, time_type, "every")?;
         upsample_impl(self, by, time_column, every, offset, false)
     }
 
@@ -109,6 +112,9 @@ impl PolarsUpsample for DataFrame {
         offset: Duration,
     ) -> PolarsResult<DataFrame> {
         let by = by.into_vec();
+        let time_type = self.column(time_column)?.dtype();
+        ensure_duration_matches_data_type(offset, time_type, "offset")?;
+        ensure_duration_matches_data_type(every, time_type, "every")?;
         upsample_impl(self, by, time_column, every, offset, true)
     }
 }
@@ -122,13 +128,6 @@ fn upsample_impl(
     stable: bool,
 ) -> PolarsResult<DataFrame> {
     let s = source.column(index_column)?;
-    if offset.parsed_int || every.parsed_int {
-        polars_ensure!(
-            ((offset.parsed_int || offset.is_zero())
-             && (every.parsed_int || every.is_zero())),
-            ComputeError: "you cannot combine time durations like '2h' with integer durations like '3i'"
-        )
-    }
     ensure_sorted_arg(s, "upsample")?;
     let time_type = s.dtype();
     if matches!(time_type, DataType::Date) {

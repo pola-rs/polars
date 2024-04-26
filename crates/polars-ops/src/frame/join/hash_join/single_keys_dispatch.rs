@@ -62,7 +62,7 @@ pub trait SeriesJoin: SeriesSealed + Sized {
     }
 
     #[cfg(feature = "semi_anti_join")]
-    fn hash_join_semi_anti(&self, other: &Series, anti: bool) -> Vec<IdxSize> {
+    fn hash_join_semi_anti(&self, other: &Series, anti: bool, join_nulls: bool) -> Vec<IdxSize> {
         let s_self = self.as_series();
         let (lhs, rhs) = (s_self.to_physical_repr(), other.to_physical_repr());
 
@@ -79,9 +79,9 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                 let lhs = lhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
                 let rhs = rhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
                 if anti {
-                    hash_join_tuples_left_anti(lhs, rhs)
+                    hash_join_tuples_left_anti(lhs, rhs, join_nulls)
                 } else {
-                    hash_join_tuples_left_semi(lhs, rhs)
+                    hash_join_tuples_left_semi(lhs, rhs, join_nulls)
                 }
             },
             BinaryOffset => {
@@ -92,9 +92,9 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                 let lhs = lhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
                 let rhs = rhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
                 if anti {
-                    hash_join_tuples_left_anti(lhs, rhs)
+                    hash_join_tuples_left_anti(lhs, rhs, join_nulls)
                 } else {
-                    hash_join_tuples_left_semi(lhs, rhs)
+                    hash_join_tuples_left_semi(lhs, rhs, join_nulls)
                 }
             },
             _ => {
@@ -102,16 +102,16 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                     with_match_physical_float_polars_type!(lhs.dtype(), |$T| {
                         let lhs: &ChunkedArray<$T> = lhs.as_ref().as_ref().as_ref();
                         let rhs: &ChunkedArray<$T> = rhs.as_ref().as_ref().as_ref();
-                        num_group_join_anti_semi(lhs, rhs, anti)
+                        num_group_join_anti_semi(lhs, rhs, anti, join_nulls)
                     })
                 } else if s_self.bit_repr_is_large() {
                     let lhs = lhs.bit_repr_large();
                     let rhs = rhs.bit_repr_large();
-                    num_group_join_anti_semi(&lhs, &rhs, anti)
+                    num_group_join_anti_semi(&lhs, &rhs, anti, join_nulls)
                 } else {
                     let lhs = lhs.bit_repr_small();
                     let rhs = rhs.bit_repr_small();
-                    num_group_join_anti_semi(&lhs, &rhs, anti)
+                    num_group_join_anti_semi(&lhs, &rhs, anti, join_nulls)
                 }
             },
         }
@@ -487,12 +487,13 @@ fn num_group_join_anti_semi<T>(
     left: &ChunkedArray<T>,
     right: &ChunkedArray<T>,
     anti: bool,
+    join_nulls: bool,
 ) -> Vec<IdxSize>
 where
     T: PolarsNumericType,
     T::Native: TotalHash + TotalEq + DirtyHash + ToTotalOrd,
-    <T::Native as ToTotalOrd>::TotalOrdItem: Send + Sync + Copy + Hash + Eq + DirtyHash,
-    <Option<T::Native> as ToTotalOrd>::TotalOrdItem: Send + Sync + DirtyHash,
+    <T::Native as ToTotalOrd>::TotalOrdItem: Send + Sync + Copy + Hash + Eq + DirtyHash + IsNull,
+    <Option<T::Native> as ToTotalOrd>::TotalOrdItem: Send + Sync + DirtyHash + IsNull,
 {
     let n_threads = POOL.current_num_threads();
     let splitted_a = split_ca(left, n_threads).unwrap();
@@ -507,27 +508,27 @@ where
             let keys_a = chunks_as_slices(&splitted_a);
             let keys_b = chunks_as_slices(&splitted_b);
             if anti {
-                hash_join_tuples_left_anti(keys_a, keys_b)
+                hash_join_tuples_left_anti(keys_a, keys_b, join_nulls)
             } else {
-                hash_join_tuples_left_semi(keys_a, keys_b)
+                hash_join_tuples_left_semi(keys_a, keys_b, join_nulls)
             }
         },
         (0, 0, _, _) => {
             let keys_a = chunks_as_slices(&splitted_a);
             let keys_b = chunks_as_slices(&splitted_b);
             if anti {
-                hash_join_tuples_left_anti(keys_a, keys_b)
+                hash_join_tuples_left_anti(keys_a, keys_b, join_nulls)
             } else {
-                hash_join_tuples_left_semi(keys_a, keys_b)
+                hash_join_tuples_left_semi(keys_a, keys_b, join_nulls)
             }
         },
         _ => {
             let keys_a = get_arrays(&splitted_a);
             let keys_b = get_arrays(&splitted_b);
             if anti {
-                hash_join_tuples_left_anti(keys_a, keys_b)
+                hash_join_tuples_left_anti(keys_a, keys_b, join_nulls)
             } else {
-                hash_join_tuples_left_semi(keys_a, keys_b)
+                hash_join_tuples_left_semi(keys_a, keys_b, join_nulls)
             }
         },
     }

@@ -114,6 +114,18 @@ impl Field {
     }
 }
 
+impl AsRef<DataType> for Field {
+    fn as_ref(&self) -> &DataType {
+        &self.dtype
+    }
+}
+
+impl AsRef<DataType> for DataType {
+    fn as_ref(&self) -> &DataType {
+        self
+    }
+}
+
 impl DataType {
     pub fn boxed(self) -> Box<DataType> {
         Box::new(self)

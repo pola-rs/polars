@@ -2,6 +2,7 @@ pub mod dataframe;
 pub mod lazy;
 pub mod series;
 
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 use polars::chunked_array::builder::get_list_builder;
@@ -214,19 +215,19 @@ fn iterator_to_object(
 }
 
 fn iterator_to_string<'a>(
-    it: impl Iterator<Item = Option<&'a str>>,
+    it: impl Iterator<Item = Option<Cow<'a, str>>>,
     init_null_count: usize,
     first_value: Option<&'a str>,
     name: &str,
     capacity: usize,
 ) -> StringChunked {
+    let first_value = first_value.map(Cow::Borrowed);
     // SAFETY: we know the iterators len.
     let ca: StringChunked = unsafe {
         if init_null_count > 0 {
             (0..init_null_count)
                 .map(|_| None)
                 .chain(std::iter::once(first_value))
-                .chain(it)
                 .trust_my_length(capacity)
                 .collect_trusted()
         } else if first_value.is_some() {

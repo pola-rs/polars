@@ -3033,19 +3033,10 @@ class DataFrame:
             return catalog, schema, tbl  # type: ignore[return-value]
 
         if engine == "adbc":
-            try:
-                import adbc_driver_manager
-
-                adbc_version = parse_version(
-                    getattr(adbc_driver_manager, "__version__", "0.0")
-                )
-            except ModuleNotFoundError as exc:
-                msg = (
-                    "adbc_driver_manager not found"
-                    "\n\nInstall Polars with: pip install adbc_driver_manager"
-                )
-                raise ModuleNotFoundError(msg) from exc
-
+            adbc_driver_manager = import_optional("adbc_driver_manager")
+            adbc_version = parse_version(
+                getattr(adbc_driver_manager, "__version__", "0.0")
+            )
             from polars.io.database._utils import _open_adbc_connection
 
             if if_table_exists == "fail":
@@ -3110,7 +3101,7 @@ class DataFrame:
             try:
                 from sqlalchemy import create_engine
             except ModuleNotFoundError as exc:
-                msg = "sqlalchemy not found\n\nInstall with: pip install polars[sqlalchemy]"
+                msg = "'sqlalchemy' not found\n\nInstall with: pip install polars[sqlalchemy]"
                 raise ModuleNotFoundError(msg) from exc
 
             # note: the catalog (database) should be a part of the connection string
@@ -4121,6 +4112,120 @@ class DataFrame:
             )
             .collect(_eager=True)
         )
+
+    def sql(self, query: str, *, table_name: str | None = None) -> Self:
+        """
+        Execute a SQL query against the DataFrame.
+
+        .. warning::
+            This functionality is considered **unstable**, although it is close to
+            being considered stable. It may be changed at any point without it being
+            considered a breaking change.
+
+        Parameters
+        ----------
+        query
+            SQL query to execute.
+        table_name
+            Optionally provide an explicit name for the table that represents the
+            calling frame (the alias "self" will always be registered/available).
+
+        Notes
+        -----
+        * The calling frame is automatically registered as a table in the SQL context
+          under the name "self". All DataFrames and LazyFrames found in the current
+          set of global variables are also registered, using their variable name.
+        * More control over registration and execution behaviour is available by
+          using the :class:`SQLContext` object.
+        * The SQL query executes entirely in lazy mode before being collected and
+          returned as a DataFrame.
+
+        See Also
+        --------
+        SQLContext
+
+        Examples
+        --------
+        >>> from datetime import date
+        >>> df1 = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, 3],
+        ...         "b": ["zz", "yy", "xx"],
+        ...         "c": [date(1999, 12, 31), date(2010, 10, 10), date(2077, 8, 8)],
+        ...     }
+        ... )
+
+        Query the DataFrame using SQL:
+
+        >>> df1.sql("SELECT c, b FROM self WHERE a > 1")
+        shape: (2, 2)
+        ┌────────────┬─────┐
+        │ c          ┆ b   │
+        │ ---        ┆ --- │
+        │ date       ┆ str │
+        ╞════════════╪═════╡
+        │ 2010-10-10 ┆ yy  │
+        │ 2077-08-08 ┆ xx  │
+        └────────────┴─────┘
+
+        Join two DataFrames using SQL.
+
+        >>> df2 = pl.DataFrame({"a": [3, 2, 1], "d": [125, -654, 888]})
+        >>> df1.sql(
+        ...     '''
+        ...     SELECT self.*, d
+        ...     FROM self
+        ...     INNER JOIN df2 USING (a)
+        ...     WHERE a > 1 AND EXTRACT(year FROM c) < 2050
+        ...     '''
+        ... )
+        shape: (1, 4)
+        ┌─────┬─────┬────────────┬──────┐
+        │ a   ┆ b   ┆ c          ┆ d    │
+        │ --- ┆ --- ┆ ---        ┆ ---  │
+        │ i64 ┆ str ┆ date       ┆ i64  │
+        ╞═════╪═════╪════════════╪══════╡
+        │ 2   ┆ yy  ┆ 2010-10-10 ┆ -654 │
+        └─────┴─────┴────────────┴──────┘
+
+        Apply transformations to a DataFrame using SQL, aliasing "self" to "frame".
+
+        >>> df1.sql(
+        ...     query='''
+        ...         SELECT
+        ...             a,
+        ...             (a % 2 == 0) AS a_is_even,
+        ...             CONCAT_WS(':', b, b) AS b_b,
+        ...             EXTRACT(year FROM c) AS year,
+        ...             0::float4 AS "zero",
+        ...         FROM frame
+        ...     ''',
+        ...     table_name="frame",
+        ... )
+        shape: (3, 5)
+        ┌─────┬───────────┬───────┬──────┬──────┐
+        │ a   ┆ a_is_even ┆ b_b   ┆ year ┆ zero │
+        │ --- ┆ ---       ┆ ---   ┆ ---  ┆ ---  │
+        │ i64 ┆ bool      ┆ str   ┆ i32  ┆ f32  │
+        ╞═════╪═══════════╪═══════╪══════╪══════╡
+        │ 1   ┆ false     ┆ zz:zz ┆ 1999 ┆ 0.0  │
+        │ 2   ┆ true      ┆ yy:yy ┆ 2010 ┆ 0.0  │
+        │ 3   ┆ false     ┆ xx:xx ┆ 2077 ┆ 0.0  │
+        └─────┴───────────┴───────┴──────┴──────┘
+        """
+        from polars.sql import SQLContext
+
+        issue_unstable_warning(
+            "`sql` is considered **unstable** (although it is close to being considered stable)."
+        )
+        with SQLContext(
+            register_globals=True,
+            eager_execution=True,
+        ) as ctx:
+            frames = {table_name: self} if table_name else {}
+            frames["self"] = self
+            ctx.register_many(frames)
+            return ctx.execute(query)  # type: ignore[return-value]
 
     def top_k(
         self,
@@ -5648,7 +5753,6 @@ class DataFrame:
                 - 1mo   (1 calendar month)
                 - 1q    (1 calendar quarter)
                 - 1y    (1 calendar year)
-                - 1i    (1 index count)
 
                 Or combine them:
                 "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
@@ -5772,6 +5876,83 @@ class DataFrame:
 
         - date `2016-03-01` from `population` is matched with `2016-01-01` from `gdp`;
         - date `2018-08-01` from `population` is matched with `2019-01-01` from `gdp`.
+
+        They `by` argument allows joining on another column first, before the asof join.
+        In this example we join by `country` first, then asof join by date, as above.
+
+        >>> gdp_dates = pl.date_range(  # fmt: skip
+        ...     date(2016, 1, 1), date(2020, 1, 1), "1y", eager=True
+        ... )
+        >>> gdp2 = pl.DataFrame(
+        ...     {
+        ...         "country": ["Germany"] * 5 + ["Netherlands"] * 5,
+        ...         "date": pl.concat([gdp_dates, gdp_dates]),
+        ...         "gdp": [4164, 4411, 4566, 4696, 4827, 784, 833, 914, 910, 909],
+        ...     }
+        ... ).sort("country", "date")
+        >>>
+        >>> gdp2
+        shape: (10, 3)
+        ┌─────────────┬────────────┬──────┐
+        │ country     ┆ date       ┆ gdp  │
+        │ ---         ┆ ---        ┆ ---  │
+        │ str         ┆ date       ┆ i64  │
+        ╞═════════════╪════════════╪══════╡
+        │ Germany     ┆ 2016-01-01 ┆ 4164 │
+        │ Germany     ┆ 2017-01-01 ┆ 4411 │
+        │ Germany     ┆ 2018-01-01 ┆ 4566 │
+        │ Germany     ┆ 2019-01-01 ┆ 4696 │
+        │ Germany     ┆ 2020-01-01 ┆ 4827 │
+        │ Netherlands ┆ 2016-01-01 ┆ 784  │
+        │ Netherlands ┆ 2017-01-01 ┆ 833  │
+        │ Netherlands ┆ 2018-01-01 ┆ 914  │
+        │ Netherlands ┆ 2019-01-01 ┆ 910  │
+        │ Netherlands ┆ 2020-01-01 ┆ 909  │
+        └─────────────┴────────────┴──────┘
+        >>> pop2 = pl.DataFrame(
+        ...     {
+        ...         "country": ["Germany"] * 3 + ["Netherlands"] * 3,
+        ...         "date": [
+        ...             date(2016, 3, 1),
+        ...             date(2018, 8, 1),
+        ...             date(2019, 1, 1),
+        ...             date(2016, 3, 1),
+        ...             date(2018, 8, 1),
+        ...             date(2019, 1, 1),
+        ...         ],
+        ...         "population": [82.19, 82.66, 83.12, 17.11, 17.32, 17.40],
+        ...     }
+        ... ).sort("country", "date")
+        >>>
+        >>> pop2
+        shape: (6, 3)
+        ┌─────────────┬────────────┬────────────┐
+        │ country     ┆ date       ┆ population │
+        │ ---         ┆ ---        ┆ ---        │
+        │ str         ┆ date       ┆ f64        │
+        ╞═════════════╪════════════╪════════════╡
+        │ Germany     ┆ 2016-03-01 ┆ 82.19      │
+        │ Germany     ┆ 2018-08-01 ┆ 82.66      │
+        │ Germany     ┆ 2019-01-01 ┆ 83.12      │
+        │ Netherlands ┆ 2016-03-01 ┆ 17.11      │
+        │ Netherlands ┆ 2018-08-01 ┆ 17.32      │
+        │ Netherlands ┆ 2019-01-01 ┆ 17.4       │
+        └─────────────┴────────────┴────────────┘
+        >>> pop2.join_asof(gdp2, by="country", on="date", strategy="nearest")
+        shape: (6, 4)
+        ┌─────────────┬────────────┬────────────┬──────┐
+        │ country     ┆ date       ┆ population ┆ gdp  │
+        │ ---         ┆ ---        ┆ ---        ┆ ---  │
+        │ str         ┆ date       ┆ f64        ┆ i64  │
+        ╞═════════════╪════════════╪════════════╪══════╡
+        │ Germany     ┆ 2016-03-01 ┆ 82.19      ┆ 4164 │
+        │ Germany     ┆ 2018-08-01 ┆ 82.66      ┆ 4696 │
+        │ Germany     ┆ 2019-01-01 ┆ 83.12      ┆ 4696 │
+        │ Netherlands ┆ 2016-03-01 ┆ 17.11      ┆ 784  │
+        │ Netherlands ┆ 2018-08-01 ┆ 17.32      ┆ 910  │
+        │ Netherlands ┆ 2019-01-01 ┆ 17.4       ┆ 910  │
+        └─────────────┴────────────┴────────────┴──────┘
+
         """
         tolerance = deprecate_saturating(tolerance)
         if not isinstance(other, DataFrame):
@@ -5872,7 +6053,6 @@ class DataFrame:
             .. note::
 
                 - This is currently not supported the streaming engine.
-                - This is only supported when joined by single columns.
         join_nulls
             Join on null values. By default null values will never produce matches.
 
@@ -7594,7 +7774,7 @@ class DataFrame:
         ...     }
         ... )
         >>> df.lazy()  # doctest: +ELLIPSIS
-        <LazyFrame [3 cols, {"a": Int64 … "c": Boolean}] at ...>
+        <LazyFrame at ...>
         """
         return wrap_ldf(self._df.lazy())
 

@@ -129,7 +129,9 @@ where
             out.push(Some(prev_result));
             skip_rows = idx + 1;
             break;
-        };
+        } else {
+            out.push(None)
+        }
     }
     values
         .iter()

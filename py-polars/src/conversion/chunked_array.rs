@@ -9,7 +9,7 @@ use crate::py_modules::UTILS;
 impl ToPyObject for Wrap<&StringChunked> {
     fn to_object(&self, py: Python) -> PyObject {
         let iter = self.0.into_iter();
-        PyList::new(py, iter).into_py(py)
+        PyList::new_bound(py, iter).into_py(py)
     }
 }
 
@@ -18,8 +18,8 @@ impl ToPyObject for Wrap<&BinaryChunked> {
         let iter = self
             .0
             .into_iter()
-            .map(|opt_bytes| opt_bytes.map(|bytes| PyBytes::new(py, bytes)));
-        PyList::new(py, iter).into_py(py)
+            .map(|opt_bytes| opt_bytes.map(|bytes| PyBytes::new_bound(py, bytes)));
+        PyList::new_bound(py, iter).into_py(py)
     }
 }
 
@@ -37,26 +37,26 @@ impl ToPyObject for Wrap<&StructChunked> {
             }
         });
 
-        PyList::new(py, iter).into_py(py)
+        PyList::new_bound(py, iter).into_py(py)
     }
 }
 
 impl ToPyObject for Wrap<&DurationChunked> {
     fn to_object(&self, py: Python) -> PyObject {
-        let utils = UTILS.as_ref(py);
+        let utils = UTILS.bind(py);
         let convert = utils.getattr(intern!(py, "to_py_timedelta")).unwrap();
         let time_unit = self.0.time_unit().to_ascii();
         let iter = self
             .0
             .into_iter()
             .map(|opt_v| opt_v.map(|v| convert.call1((v, time_unit)).unwrap()));
-        PyList::new(py, iter).into_py(py)
+        PyList::new_bound(py, iter).into_py(py)
     }
 }
 
 impl ToPyObject for Wrap<&DatetimeChunked> {
     fn to_object(&self, py: Python) -> PyObject {
-        let utils = UTILS.as_ref(py);
+        let utils = UTILS.bind(py);
         let convert = utils.getattr(intern!(py, "to_py_datetime")).unwrap();
         let time_unit = self.0.time_unit().to_ascii();
         let time_zone = self.0.time_zone().to_object(py);
@@ -64,51 +64,51 @@ impl ToPyObject for Wrap<&DatetimeChunked> {
             .0
             .into_iter()
             .map(|opt_v| opt_v.map(|v| convert.call1((v, time_unit, &time_zone)).unwrap()));
-        PyList::new(py, iter).into_py(py)
+        PyList::new_bound(py, iter).into_py(py)
     }
 }
 
 impl ToPyObject for Wrap<&TimeChunked> {
     fn to_object(&self, py: Python) -> PyObject {
         let iter = time_to_pyobject_iter(py, self.0);
-        PyList::new(py, iter).into_py(py)
+        PyList::new_bound(py, iter).into_py(py)
     }
 }
 
 pub(crate) fn time_to_pyobject_iter<'a>(
     py: Python<'a>,
     ca: &'a TimeChunked,
-) -> impl ExactSizeIterator<Item = Option<&'a PyAny>> {
-    let utils = UTILS.as_ref(py);
-    let convert = utils.getattr(intern!(py, "to_py_time")).unwrap();
+) -> impl ExactSizeIterator<Item = Option<Bound<'a, PyAny>>> {
+    let utils = UTILS.bind(py);
+    let convert = utils.getattr(intern!(py, "to_py_time")).unwrap().clone();
     ca.0.into_iter()
-        .map(|opt_v| opt_v.map(|v| convert.call1((v,)).unwrap()))
+        .map(move |opt_v| opt_v.map(|v| convert.call1((v,)).unwrap()))
 }
 
 impl ToPyObject for Wrap<&DateChunked> {
     fn to_object(&self, py: Python) -> PyObject {
-        let utils = UTILS.as_ref(py);
+        let utils = UTILS.bind(py);
         let convert = utils.getattr(intern!(py, "to_py_date")).unwrap();
         let iter = self
             .0
             .into_iter()
             .map(|opt_v| opt_v.map(|v| convert.call1((v,)).unwrap()));
-        PyList::new(py, iter).into_py(py)
+        PyList::new_bound(py, iter).into_py(py)
     }
 }
 
 impl ToPyObject for Wrap<&DecimalChunked> {
     fn to_object(&self, py: Python) -> PyObject {
         let iter = decimal_to_pyobject_iter(py, self.0);
-        PyList::new(py, iter).into_py(py)
+        PyList::new_bound(py, iter).into_py(py)
     }
 }
 
 pub(crate) fn decimal_to_pyobject_iter<'a>(
     py: Python<'a>,
     ca: &'a DecimalChunked,
-) -> impl ExactSizeIterator<Item = Option<&'a PyAny>> {
-    let utils = UTILS.as_ref(py);
+) -> impl ExactSizeIterator<Item = Option<Bound<'a, PyAny>>> {
+    let utils = UTILS.bind(py);
     let convert = utils.getattr(intern!(py, "to_py_decimal")).unwrap();
     let py_scale = (-(ca.scale() as i32)).to_object(py);
     // if we don't know precision, the only safe bet is to set it to 39
@@ -125,7 +125,7 @@ pub(crate) fn decimal_to_pyobject_iter<'a>(
                     N * std::mem::size_of::<u128>(),
                 )
             };
-            let digits = PyTuple::new(py, buf.iter().take(n_digits));
+            let digits = PyTuple::new_bound(py, buf.iter().take(n_digits));
             convert
                 .call1((v.is_negative() as u8, digits, &py_precision, &py_scale))
                 .unwrap()

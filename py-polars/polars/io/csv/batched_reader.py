@@ -55,6 +55,7 @@ class BatchedCsvReader:
         new_columns: Sequence[str] | None = None,
         raise_if_empty: bool = True,
         truncate_ragged_lines: bool = False,
+        decimal_comma: bool = False,
     ):
         path = normalize_filepath(source)
 
@@ -102,6 +103,7 @@ class BatchedCsvReader:
             eol_char=eol_char,
             raise_if_empty=raise_if_empty,
             truncate_ragged_lines=truncate_ragged_lines,
+            decimal_comma=decimal_comma,
         )
         self.new_columns = new_columns
 

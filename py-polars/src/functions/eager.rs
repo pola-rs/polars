@@ -48,15 +48,15 @@ pub fn concat_df(dfs: &PyAny, py: Python) -> PyResult<PyDataFrame> {
 }
 
 #[pyfunction]
-pub fn concat_series(series: &PyAny) -> PyResult<PySeries> {
+pub fn concat_series(series: &Bound<'_, PyAny>) -> PyResult<PySeries> {
     let mut iter = series.iter()?;
     let first = iter.next().unwrap()?;
 
-    let mut s = get_series(first)?;
+    let mut s = get_series(&first)?;
 
     for res in iter {
         let item = res?;
-        let item = get_series(item)?;
+        let item = get_series(&item)?;
         s.append(&item).map_err(PyPolarsErr::from)?;
     }
     Ok(s.into())

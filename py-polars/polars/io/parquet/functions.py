@@ -13,7 +13,7 @@ from polars._utils.various import (
 )
 from polars._utils.wrap import wrap_df, wrap_ldf
 from polars.convert import from_arrow
-from polars.dependencies import _PYARROW_AVAILABLE
+from polars.dependencies import import_optional
 from polars.io._utils import (
     is_local_file,
     is_supported_cloud,
@@ -59,9 +59,9 @@ def read_parquet(
     Parameters
     ----------
     source
-        Path to a file, or a file-like object (by file-like object, we refer to objects
-        that have a `read()` method, such as a file handler (e.g. via builtin `open`
-        function) or `BytesIO`). If the path is a directory, files in that
+        Path to a file or a file-like object (by "file-like object" we refer to objects
+        that have a `read()` method, such as a file handler like the builtin `open`
+        function, or a `BytesIO` instance). If the path is a directory, files in that
         directory will all be read.
     columns
         Columns to select. Accepts a list of column indices (starting at zero) or a list
@@ -162,8 +162,8 @@ def read_parquet(
             memory_map=memory_map,
         )
 
-    # Read binary types using `read_parquet`
-    elif isinstance(source, (io.BufferedIOBase, io.RawIOBase, bytes)):
+    # Read file and bytes inputs using `read_parquet`
+    elif isinstance(source, (io.IOBase, bytes)):
         return _read_parquet_binary(
             source,
             columns=columns,
@@ -209,13 +209,11 @@ def _read_parquet_with_pyarrow(
     pyarrow_options: dict[str, Any] | None = None,
     memory_map: bool = True,
 ) -> DataFrame:
-    if not _PYARROW_AVAILABLE:
-        msg = "'pyarrow' is required when using `read_parquet(..., use_pyarrow=True)`"
-        raise ModuleNotFoundError(msg)
-
-    import pyarrow as pa
-    import pyarrow.parquet
-
+    pyarrow_parquet = import_optional(
+        "pyarrow.parquet",
+        err_prefix="",
+        err_suffix="is required when using `read_parquet(..., use_pyarrow=True)`",
+    )
     pyarrow_options = pyarrow_options or {}
 
     with prepare_file_arg(
@@ -223,7 +221,7 @@ def _read_parquet_with_pyarrow(
         use_pyarrow=True,
         storage_options=storage_options,
     ) as source_prep:
-        pa_table = pa.parquet.read_table(
+        pa_table = pyarrow_parquet.read_table(
             source_prep,
             memory_map=memory_map,
             columns=columns,
@@ -269,9 +267,9 @@ def read_parquet_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, Dat
     Parameters
     ----------
     source
-        Path to a file or a file-like object (by file-like object, we refer to objects
-        that have a `read()` method, such as a file handler (e.g. via builtin `open`
-        function) or `BytesIO`).
+        Path to a file or a file-like object (by "file-like object" we refer to objects
+        that have a `read()` method, such as a file handler like the builtin `open`
+        function, or a `BytesIO` instance).
 
     Returns
     -------

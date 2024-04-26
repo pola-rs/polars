@@ -95,17 +95,21 @@ pub(super) fn process_projection(
 
                 check_double_projection(&e, expr_arena, &mut acc_projections, &mut projected_names);
             }
+            // do local as we still need the effect of the projection
+            // e.g. a projection is more than selecting a column, it can
+            // also be a function/ complicated expression
+            local_projection.push(e);
+        }
+
+        // After we have checked double projections, we add the projections to the accumulated state.
+        // We do this in two passes, otherwise we mutate while checking.
+        for e in &local_projection {
             add_expr_to_accumulated(
                 e.node(),
                 &mut acc_projections,
                 &mut projected_names,
                 expr_arena,
             );
-
-            // do local as we still need the effect of the projection
-            // e.g. a projection is more than selecting a column, it can
-            // also be a function/ complicated expression
-            local_projection.push(e);
         }
     }
     proj_pd.pushdown_and_assign(

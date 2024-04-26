@@ -62,6 +62,8 @@ pub enum StringFunction {
         dtype: Option<DataType>,
         infer_schema_len: Option<usize>,
     },
+    #[cfg(feature = "extract_jsonpath")]
+    JsonPathMatch,
     #[cfg(feature = "regex")]
     Replace {
         // negative is replace all
@@ -146,6 +148,8 @@ impl StringFunction {
             Find { .. } => mapper.with_dtype(DataType::UInt32),
             #[cfg(feature = "extract_jsonpath")]
             JsonDecode { dtype, .. } => mapper.with_opt_dtype(dtype.clone()),
+            #[cfg(feature = "extract_jsonpath")]
+            JsonPathMatch => mapper.with_dtype(DataType::String),
             LenBytes => mapper.with_dtype(DataType::UInt32),
             LenChars => mapper.with_dtype(DataType::UInt32),
             #[cfg(feature = "regex")]
@@ -216,6 +220,8 @@ impl Display for StringFunction {
             Tail { .. } => "tail",
             #[cfg(feature = "extract_jsonpath")]
             JsonDecode { .. } => "json_decode",
+            #[cfg(feature = "extract_jsonpath")]
+            JsonPathMatch => "json_path_match",
             LenBytes => "len_bytes",
             Lowercase => "lowercase",
             LenChars => "len_chars",
@@ -367,6 +373,8 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
                 dtype,
                 infer_schema_len,
             } => map!(strings::json_decode, dtype.clone(), infer_schema_len),
+            #[cfg(feature = "extract_jsonpath")]
+            JsonPathMatch => map_as_slice!(strings::json_path_match),
             #[cfg(feature = "find_many")]
             ContainsMany {
                 ascii_case_insensitive,
@@ -983,4 +991,11 @@ pub(super) fn json_decode(
 ) -> PolarsResult<Series> {
     let ca = s.str()?;
     ca.json_decode(dtype, infer_schema_len)
+}
+
+#[cfg(feature = "extract_jsonpath")]
+pub(super) fn json_path_match(s: &[Series]) -> PolarsResult<Series> {
+    let ca = s[0].str()?;
+    let pat = s[1].str()?;
+    Ok(ca.json_path_match(pat)?.into_series())
 }

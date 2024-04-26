@@ -68,7 +68,7 @@ def test_fill_null_minimal_upcast_4056() -> None:
     df = pl.DataFrame({"a": [-1, 2, None]})
     df = df.with_columns(pl.col("a").cast(pl.Int8))
     assert df.with_columns(pl.col(pl.Int8).fill_null(-1)).dtypes[0] == pl.Int8
-    assert df.with_columns(pl.col(pl.Int8).fill_null(-1000)).dtypes[0] == pl.Int32
+    assert df.with_columns(pl.col(pl.Int8).fill_null(-1000)).dtypes[0] == pl.Int16
 
 
 def test_fill_enum_upcast() -> None:
@@ -401,26 +401,6 @@ def test_schema_true_divide_6643() -> None:
     df = pl.DataFrame({"a": [1]})
     a = pl.col("a")
     assert df.lazy().select(a / 2).select(pl.col(pl.Int64)).collect().shape == (0, 0)
-
-
-def test_rename_schema_order_6660() -> None:
-    df = pl.DataFrame(
-        {
-            "a": [],
-            "b": [],
-            "c": [],
-            "d": [],
-        }
-    )
-
-    mapper = {"a": "1", "b": "2", "c": "3", "d": "4"}
-
-    renamed = df.lazy().rename(mapper)
-
-    computed = renamed.select([pl.all(), pl.col("4").alias("computed")])
-
-    assert renamed.schema == renamed.collect().schema
-    assert computed.schema == computed.collect().schema
 
 
 def test_from_dicts_all_cols_6716() -> None:

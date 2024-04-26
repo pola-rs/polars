@@ -419,3 +419,18 @@ def test_cached_schema_15651() -> None:
 
     # ensure that q's "cached" columns are still correct
     assert q.columns == q.collect().columns
+
+
+def test_double_projection_pushdown_15895() -> None:
+    df = (
+        pl.LazyFrame({"A": [0], "B": [1]})
+        .select(C="A", A="B")
+        .group_by(1)
+        .all()
+        .collect(projection_pushdown=True)
+    )
+    assert df.to_dict(as_series=False) == {
+        "literal": [1],
+        "C": [[0]],
+        "A": [[1]],
+    }

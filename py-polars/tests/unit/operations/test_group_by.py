@@ -4,6 +4,7 @@ from collections import OrderedDict
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
 import pytest
 
 import polars as pl
@@ -1002,3 +1003,72 @@ def test_aggregated_scalar_elementwise_15602() -> None:
 def test_group_by_multiple_null_cols_15623() -> None:
     df = pl.DataFrame(schema={"a": pl.Null, "b": pl.Null}).group_by(pl.all()).len()
     assert df.is_empty()
+
+
+@pytest.mark.release()
+def test_categorical_vs_str_group_by() -> None:
+    # this triggers the perfect hash table
+    s = pl.Series("a", np.random.randint(0, 50, 100))
+    s_with_nulls = pl.select(
+        pl.when(s < 3).then(None).otherwise(s).alias("a")
+    ).to_series()
+
+    for s_ in [s, s_with_nulls]:
+        s_ = s_.cast(str)
+        cat_out = (
+            s_.cast(pl.Categorical)
+            .to_frame("a")
+            .group_by("a")
+            .agg(pl.first().alias("first"))
+        )
+
+        str_out = s_.to_frame("a").group_by("a").agg(pl.first().alias("first"))
+        cat_out.with_columns(pl.col("a").cast(str))
+        assert_frame_equal(
+            cat_out.with_columns(
+                pl.col("a").cast(str), pl.col("first").cast(pl.List(str))
+            ).sort("a"),
+            str_out.sort("a"),
+        )
+
+
+@pytest.mark.release()
+def test_boolean_min_max_agg() -> None:
+    np.random.seed(0)
+    idx = np.random.randint(0, 500, 1000)
+    c = np.random.randint(0, 500, 1000) > 250
+
+    df = pl.DataFrame({"idx": idx, "c": c})
+    aggs = [pl.col("c").min().alias("c_min"), pl.col("c").max().alias("c_max")]
+
+    result = df.group_by("idx").agg(aggs).sum()
+
+    schema = {"idx": pl.Int64, "c_min": pl.UInt32, "c_max": pl.UInt32}
+    expected = pl.DataFrame(
+        {
+            "idx": [107583],
+            "c_min": [120],
+            "c_max": [321],
+        },
+        schema=schema,
+    )
+    assert_frame_equal(result, expected)
+
+    nulls = np.random.randint(0, 500, 1000) < 100
+
+    result = (
+        df.with_columns(c=pl.when(pl.lit(nulls)).then(None).otherwise(pl.col("c")))
+        .group_by("idx")
+        .agg(aggs)
+        .sum()
+    )
+
+    expected = pl.DataFrame(
+        {
+            "idx": [107583],
+            "c_min": [133],
+            "c_max": [276],
+        },
+        schema=schema,
+    )
+    assert_frame_equal(result, expected)

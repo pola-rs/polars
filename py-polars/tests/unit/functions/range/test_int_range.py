@@ -8,7 +8,14 @@ import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
-def test_arange() -> None:
+def test_int_range() -> None:
+    result = pl.int_range(0, 3)
+    expected = pl.Series("int_range", [0, 1, 2])
+    assert_series_equal(pl.select(int_range=result).to_series(), expected)
+
+
+def test_int_range_alias() -> None:
+    # note: `arange` is an alias for `int_range`
     ldf = pl.LazyFrame({"a": [1, 1, 1]})
     result = ldf.filter(pl.col("a") >= pl.arange(0, 3)).collect()
     expected = pl.DataFrame({"a": [1, 1]})
@@ -29,12 +36,6 @@ def test_int_range_expr() -> None:
     # eager arange
     out2 = pl.arange(0, 10, 2, eager=True)
     assert out2.to_list() == [0, 2, 4, 6, 8]
-
-
-def test_int_range() -> None:
-    result = pl.int_range(0, 3)
-    expected = pl.Series("int_range", [0, 1, 2])
-    assert_series_equal(pl.select(int_range=result).to_series(), expected)
 
 
 def test_int_range_short_syntax() -> None:

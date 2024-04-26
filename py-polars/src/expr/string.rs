@@ -237,19 +237,8 @@ impl PyExpr {
     }
 
     #[cfg(feature = "extract_jsonpath")]
-    fn str_json_path_match(&self, pat: String) -> Self {
-        let function = move |s: Series| {
-            let ca = s.str()?;
-            match ca.json_path_match(&pat) {
-                Ok(ca) => Ok(Some(ca.into_series())),
-                Err(e) => Err(PolarsError::ComputeError(format!("{e:?}").into())),
-            }
-        };
-        self.inner
-            .clone()
-            .map(function, GetOutput::from_type(DataType::String))
-            .with_fmt("str.json_path_match")
-            .into()
+    fn str_json_path_match(&self, pat: Self) -> Self {
+        self.inner.clone().str().json_path_match(pat.inner).into()
     }
 
     fn str_extract(&self, pat: Self, group_index: usize) -> Self {

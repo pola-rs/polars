@@ -240,3 +240,9 @@ def test_slice_lazy_frame_raises_proper(input_slice: tuple[int | None]) -> None:
     s = slice(*input_slice)
     with pytest.raises(ValueError, match="not supported"):
         ldf[s].collect()
+
+
+def test_double_sort_slice_pushdown_15779() -> None:
+    assert (
+        pl.LazyFrame({"foo": [1, 2]}).sort("foo").head(0).sort("foo").collect()
+    ).shape == (0, 1)

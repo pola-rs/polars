@@ -4,8 +4,9 @@ mod warning;
 use std::borrow::Cow;
 use std::collections::TryReserveError;
 use std::error::Error;
-use std::fmt::{self, Display, Formatter};
+use std::fmt::{self, Display, Formatter, Write};
 use std::ops::Deref;
+use std::sync::Arc;
 use std::{env, io};
 
 pub use warning::*;
@@ -56,8 +57,14 @@ pub enum PolarsError {
     Duplicate(ErrString),
     #[error("invalid operation: {0}")]
     InvalidOperation(ErrString),
-    #[error(transparent)]
-    Io(#[from] io::Error),
+    #[error("{}", match msg {
+     Some(msg) => format!("{}", msg),
+     None => format!("{}", error)
+    })]
+    IO {
+        error: Arc<io::Error>,
+        msg: Option<ErrString>,
+    },
     #[error("no data: {0}")]
     NoData(ErrString),
     #[error("{0}")]
@@ -72,6 +79,20 @@ pub enum PolarsError {
     StringCacheMismatch(ErrString),
     #[error("field not found: {0}")]
     StructFieldNotFound(ErrString),
+    #[error("{error}: {msg}")]
+    Context {
+        error: Box<PolarsError>,
+        msg: ErrString,
+    },
+}
+
+impl From<io::Error> for PolarsError {
+    fn from(value: io::Error) -> Self {
+        PolarsError::IO {
+            error: Arc::new(value),
+            msg: None,
+        }
+    }
 }
 
 #[cfg(feature = "regex")]
@@ -84,10 +105,11 @@ impl From<regex::Error> for PolarsError {
 #[cfg(feature = "object_store")]
 impl From<object_store::Error> for PolarsError {
     fn from(err: object_store::Error) -> Self {
-        PolarsError::Io(std::io::Error::new(
+        std::io::Error::new(
             std::io::ErrorKind::Other,
             format!("object-store error: {err:?}"),
-        ))
+        )
+        .into()
     }
 }
 
@@ -127,14 +149,56 @@ impl From<TryReserveError> for PolarsError {
 pub type PolarsResult<T> = Result<T, PolarsError>;
 
 impl PolarsError {
-    pub fn wrap_msg(&self, func: &dyn Fn(&str) -> String) -> Self {
+    pub fn context_trace(self) -> Self {
+        use PolarsError::*;
+        match self {
+            Context { error, msg } => {
+                // If context is 1 level deep, just return error.
+                if !matches!(&*error, PolarsError::Context { .. }) {
+                    return *error;
+                }
+                let mut current_error = &*error;
+                let material_error = error.get_err();
+
+                let mut messages = vec![&msg];
+
+                while let PolarsError::Context { msg, error } = current_error {
+                    current_error = error;
+                    messages.push(msg)
+                }
+
+                let mut bt = String::new();
+
+                let mut count = 0;
+                while let Some(msg) = messages.pop() {
+                    count += 1;
+                    writeln!(&mut bt, "\t[{count}] {}", msg).unwrap();
+                }
+                material_error.wrap_msg(move |msg| {
+                    format!("{msg}\n\nThis error occurred with the following context stack:\n{bt}")
+                })
+            },
+            err => err,
+        }
+    }
+
+    fn wrap_msg<F: FnOnce(&str) -> String>(&self, func: F) -> Self {
         use PolarsError::*;
         match self {
             ColumnNotFound(msg) => ColumnNotFound(func(msg).into()),
             ComputeError(msg) => ComputeError(func(msg).into()),
             Duplicate(msg) => Duplicate(func(msg).into()),
             InvalidOperation(msg) => InvalidOperation(func(msg).into()),
-            Io(err) => ComputeError(func(&format!("IO: {err}")).into()),
+            IO { error, msg } => {
+                let msg = match msg {
+                    Some(msg) => func(msg),
+                    None => func(&format!("{}", error)),
+                };
+                IO {
+                    error: error.clone(),
+                    msg: Some(msg.into()),
+                }
+            },
             NoData(msg) => NoData(func(msg).into()),
             OutOfBounds(msg) => OutOfBounds(func(msg).into()),
             SchemaFieldNotFound(msg) => SchemaFieldNotFound(func(msg).into()),
@@ -142,6 +206,22 @@ impl PolarsError {
             ShapeMismatch(msg) => ShapeMismatch(func(msg).into()),
             StringCacheMismatch(msg) => StringCacheMismatch(func(msg).into()),
             StructFieldNotFound(msg) => StructFieldNotFound(func(msg).into()),
+            _ => unreachable!(),
+        }
+    }
+
+    fn get_err(&self) -> &Self {
+        use PolarsError::*;
+        match self {
+            Context { error, .. } => error.get_err(),
+            err => err,
+        }
+    }
+
+    pub fn context(self, msg: ErrString) -> Self {
+        PolarsError::Context {
+            msg,
+            error: Box::new(self),
         }
     }
 }

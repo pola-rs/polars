@@ -170,42 +170,48 @@ impl PhysicalExpr for AggregationExpr {
                             AggState::NotAggregated(s) => {
                                 let s = s.clone();
                                 let groups = ac.groups();
-                                match groups.as_ref() {
-                                    GroupsProxy::Idx(idx) => {
-                                        let s = s.rechunk();
-                                        let array = &s.chunks()[0];
-                                        let validity = array.validity().unwrap();
-
-                                        let out: IdxCa = idx
-                                            .iter()
-                                            .map(|(_, g)| {
-                                                let mut count = 0 as IdxSize;
-                                                // Count valid values
-                                                g.iter().for_each(|i| {
-                                                    count += validity.get_bit_unchecked(*i as usize)
-                                                        as IdxSize;
-                                                });
-                                                count
-                                            })
-                                            .collect_ca_trusted_with_dtype(&keep_name, IDX_DTYPE);
-                                        AggregatedScalar(out.into_series())
-                                    },
-                                    GroupsProxy::Slice { groups, .. } => {
-                                        // Slice and use computed null count
-                                        let out: IdxCa = groups
-                                            .iter()
-                                            .map(|g| {
-                                                let start = g[0];
-                                                let len = g[1];
-                                                len - s
-                                                    .slice(start as i64, len as usize)
-                                                    .null_count()
-                                                    as IdxSize
-                                            })
-                                            .collect_ca_trusted_with_dtype(&keep_name, IDX_DTYPE);
-                                        AggregatedScalar(out.into_series())
-                                    },
-                                }
+                                let out: IdxCa = if matches!(s.dtype(), &DataType::Null) {
+                                    IdxCa::full(s.name(), 0, groups.len())
+                                } else {
+                                    match groups.as_ref() {
+                                        GroupsProxy::Idx(idx) => {
+                                            let s = s.rechunk();
+                                            let array = &s.chunks()[0];
+                                            let validity = array.validity().unwrap();
+                                            idx.iter()
+                                                .map(|(_, g)| {
+                                                    let mut count = 0 as IdxSize;
+                                                    // Count valid values
+                                                    g.iter().for_each(|i| {
+                                                        count += validity
+                                                            .get_bit_unchecked(*i as usize)
+                                                            as IdxSize;
+                                                    });
+                                                    count
+                                                })
+                                                .collect_ca_trusted_with_dtype(
+                                                    &keep_name, IDX_DTYPE,
+                                                )
+                                        },
+                                        GroupsProxy::Slice { groups, .. } => {
+                                            // Slice and use computed null count
+                                            groups
+                                                .iter()
+                                                .map(|g| {
+                                                    let start = g[0];
+                                                    let len = g[1];
+                                                    len - s
+                                                        .slice(start as i64, len as usize)
+                                                        .null_count()
+                                                        as IdxSize
+                                                })
+                                                .collect_ca_trusted_with_dtype(
+                                                    &keep_name, IDX_DTYPE,
+                                                )
+                                        },
+                                    }
+                                };
+                                AggregatedScalar(out.into_series())
                             },
                         }
                     }

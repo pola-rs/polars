@@ -573,15 +573,73 @@ def test_round(
     assert out.dt[-1] == stop
 
 
+def test_round_expr() -> None:
+    df = pl.DataFrame(
+        {
+            "date": [
+                datetime(2022, 11, 14),
+                datetime(2023, 10, 11),
+                datetime(2022, 3, 20, 5, 7, 18),
+                datetime(2022, 4, 3, 13, 30, 32),
+                None,
+                datetime(2022, 12, 1),
+            ],
+            "every": ["1y", "1mo", "1m", "1m", "1mo", None],
+        }
+    )
+
+    output = df.select(
+        all_expr=pl.col("date").dt.round(every=pl.col("every")),
+        date_lit=pl.lit(datetime(2022, 4, 3, 13, 30, 32)).dt.round(
+            every=pl.col("every")
+        ),
+        every_lit=pl.col("date").dt.round("1d"),
+    )
+
+    expected = pl.DataFrame(
+        {
+            "all_expr": [
+                datetime(2023, 1, 1),
+                datetime(2023, 10, 1),
+                datetime(2022, 3, 20, 5, 7),
+                datetime(2022, 4, 3, 13, 31),
+                None,
+                None,
+            ],
+            "date_lit": [
+                datetime(2022, 1, 1),
+                datetime(2022, 4, 1),
+                datetime(2022, 4, 3, 13, 31),
+                datetime(2022, 4, 3, 13, 31),
+                datetime(2022, 4, 1),
+                None,
+            ],
+            "every_lit": [
+                datetime(2022, 11, 14),
+                datetime(2023, 10, 11),
+                datetime(2022, 3, 20),
+                datetime(2022, 4, 4),
+                None,
+                datetime(2022, 12, 1),
+            ],
+        }
+    )
+
+    assert_frame_equal(output, expected)
+
+    all_lit = pl.select(all_lit=pl.lit(datetime(2022, 3, 20, 5, 7)).dt.round("1h"))
+    assert all_lit.to_dict(as_series=False) == {"all_lit": [datetime(2022, 3, 20, 5)]}
+
+
 def test_round_negative() -> None:
     """Test that rounding to a negative duration gives a helpful error message."""
     with pytest.raises(
-        ComputeError, match="cannot round a Date to a negative duration"
+        ComputeError, match="Cannot round a Date to a negative duration"
     ):
         pl.Series([date(1895, 5, 7)]).dt.round("-1m")
 
     with pytest.raises(
-        ComputeError, match="cannot round a Datetime to a negative duration"
+        ComputeError, match="Cannot round a Datetime to a negative duration"
     ):
         pl.Series([datetime(1895, 5, 7)]).dt.round("-1m")
 

@@ -450,11 +450,11 @@ impl PhysicalExpr for WindowExpr {
                 cache_key.push_str(s.name());
             }
 
-            let mut gt_map = state.group_tuples.write().unwrap();
+            let mut gt_map_guard = state.group_tuples.write().unwrap();
             // we run sequential and partitioned
             // and every partition run the cache should be empty so we expect a max of 1.
-            debug_assert!(gt_map.len() <= 1);
-            if let Some(gt) = gt_map.get_mut(&cache_key) {
+            debug_assert!(gt_map_guard.len() <= 1);
+            if let Some(gt) = gt_map_guard.get_mut(&cache_key) {
                 if df.height() > 0 {
                     assert!(!gt.is_empty());
                 };
@@ -464,6 +464,8 @@ impl PhysicalExpr for WindowExpr {
                 // does not happen
                 (std::mem::take(gt), true, cache_key)
             } else {
+                // Drop guard as we go into rayon when creating groups.
+                drop(gt_map_guard);
                 (create_groups()?, false, cache_key)
             }
         } else {
@@ -572,13 +574,15 @@ impl PhysicalExpr for WindowExpr {
 
                         // try to get cached join_tuples
                         let join_opt_ids = if state.cache_window() {
-                            let mut jt_map = state.join_tuples.lock().unwrap();
+                            let mut jt_map_guard = state.join_tuples.lock().unwrap();
                             // we run sequential and partitioned
                             // and every partition run the cache should be empty so we expect a max of 1.
-                            debug_assert!(jt_map.len() <= 1);
-                            if let Some(opt_join_tuples) = jt_map.get_mut(&cache_key) {
+                            debug_assert!(jt_map_guard.len() <= 1);
+                            if let Some(opt_join_tuples) = jt_map_guard.get_mut(&cache_key) {
                                 std::mem::replace(opt_join_tuples, default_join_ids())
                             } else {
+                                // Drop guard as we go into rayon when computing join tuples.
+                                drop(jt_map_guard);
                                 get_join_tuples()?
                             }
                         } else {

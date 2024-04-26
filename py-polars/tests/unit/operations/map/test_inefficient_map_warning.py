@@ -305,6 +305,7 @@ def test_parse_apply_functions(col: str, func: str, expr_repr: str) -> None:
                 ],
             }
         )
+
         result_frame = df.select(
             x=col,
             y=eval(suggested_expression, EVAL_ENVIRONMENT),

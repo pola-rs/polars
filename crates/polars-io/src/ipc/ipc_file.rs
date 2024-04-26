@@ -38,12 +38,20 @@ use arrow::datatypes::ArrowSchemaRef;
 use arrow::io::ipc::read;
 use polars_core::frame::ArrowChunk;
 use polars_core::prelude::*;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
-use super::{finish_reader, ArrowReader};
 use crate::mmap::MmapBytesReader;
 use crate::predicates::PhysicalIoExpr;
 use crate::prelude::*;
+use crate::shared::{finish_reader, ArrowReader};
 use crate::RowIndex;
+
+#[derive(Clone, Debug, PartialEq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct IpcScanOptions {
+    pub memory_map: bool,
+}
 
 /// Read Arrows IPC format into a DataFrame
 ///

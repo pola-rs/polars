@@ -476,17 +476,7 @@ def test_group_by_dynamic_lazy(every: str | timedelta, tzinfo: ZoneInfo | None) 
     ]
 
 
-@pytest.mark.parametrize(
-    ("every", "match"),
-    [
-        ("-1i", r"'every' argument must be positive"),
-        (
-            "2h",
-            r"you cannot combine time durations like '2h' with integer durations like '3i'",
-        ),
-    ],
-)
-def test_group_by_dynamic_validation(every: str, match: str) -> None:
+def test_group_by_dynamic_validation() -> None:
     df = pl.DataFrame(
         {
             "index": [0, 0, 1, 1],
@@ -495,8 +485,8 @@ def test_group_by_dynamic_validation(every: str, match: str) -> None:
         }
     )
 
-    with pytest.raises(pl.ComputeError, match=match):
-        df.group_by_dynamic("index", group_by="group", every=every, period="2i").agg(
+    with pytest.raises(pl.ComputeError, match="'every' argument must be positive"):
+        df.group_by_dynamic("index", group_by="group", every="-1i", period="2i").agg(
             pl.col("weight")
         )
 
@@ -1023,3 +1013,28 @@ def test_earliest_point_included_when_offset_is_set_15241(start_by: StartBy) -> 
         }
     )
     assert_frame_equal(result, expected)
+
+
+def test_group_by_dynamic_invalid() -> None:
+    df = pl.DataFrame(
+        {
+            "values": [1, 4],
+            "times": [datetime(2020, 1, 3), datetime(2020, 1, 1)],
+        },
+    )
+    with pytest.raises(
+        pl.InvalidOperationError, match="duration may not be a parsed integer"
+    ):
+        (
+            df.sort("times")
+            .group_by_dynamic("times", every="3000i")
+            .agg(pl.col("values").sum().alias("sum"))
+        )
+    with pytest.raises(
+        pl.InvalidOperationError, match="duration must be a parsed integer"
+    ):
+        (
+            df.with_row_index()
+            .group_by_dynamic("index", every="3000d")
+            .agg(pl.col("values").sum().alias("sum"))
+        )

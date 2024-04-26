@@ -1304,7 +1304,7 @@ class ExprStringNameSpace:
             dtype = py_type_to_dtype(dtype)
         return wrap_expr(self._pyexpr.str_json_decode(dtype, infer_schema_length))
 
-    def json_path_match(self, json_path: str) -> Expr:
+    def json_path_match(self, json_path: IntoExprColumn) -> Expr:
         """
         Extract the first match of JSON string with the provided JSONPath expression.
 
@@ -1345,6 +1345,7 @@ class ExprStringNameSpace:
         │ {"a":true} ┆ true    │
         └────────────┴─────────┘
         """
+        json_path = parse_as_expression(json_path, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_json_path_match(json_path))
 
     def decode(self, encoding: TransferEncoding, *, strict: bool = True) -> Expr:

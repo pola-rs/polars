@@ -182,7 +182,7 @@ def test_hive_partitioned_err(io_files_path: Path, tmp_path: Path) -> None:
     df.write_parquet(root / "file.parquet")
 
     with pytest.raises(pl.DuplicateError, match="invalid Hive partition schema"):
-        pl.scan_parquet(root / "**/*.parquet", hive_partitioning=True)
+        pl.scan_parquet(root / "**/*.parquet", hive_partitioning=True).collect()
 
 
 @pytest.mark.write_disk()

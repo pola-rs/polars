@@ -142,7 +142,7 @@ def test_hash() -> None:
     assert s.item(2) == s.item(3)  # hash(float('-nan')) == hash(float('nan'))
 
 
-def test_group_by() -> None:
+def test_group_by_float() -> None:
     # Test num_groups_proxy
     # * -0.0 and 0.0 in same groups
     # * -nan and nan in same groups

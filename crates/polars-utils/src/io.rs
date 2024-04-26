@@ -16,6 +16,6 @@ where
         } else {
             format!("{err}: {path}")
         };
-        PolarsError::Io(Error::new(err.kind(), msg))
+        Error::new(err.kind(), msg).into()
     })
 }

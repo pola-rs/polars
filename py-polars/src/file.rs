@@ -34,11 +34,11 @@ impl PyFileLikeObject {
         let buf = Python::with_gil(|py| {
             let bytes = self
                 .inner
-                .call_method(py, "read", (), None)
+                .call_method_bound(py, "read", (), None)
                 .expect("no read method found");
 
-            let bytes: &PyBytes = bytes
-                .downcast(py)
+            let bytes: &Bound<'_, PyBytes> = bytes
+                .downcast_bound(py)
                 .expect("Expecting to be able to downcast into bytes from read result.");
 
             bytes.as_bytes().to_vec()
@@ -85,7 +85,7 @@ fn pyerr_to_io_err(e: PyErr) -> io::Error {
     Python::with_gil(|py| {
         let e_as_object: PyObject = e.into_py(py);
 
-        match e_as_object.call_method(py, "__str__", (), None) {
+        match e_as_object.call_method_bound(py, "__str__", (), None) {
             Ok(repr) => match repr.extract::<String>(py) {
                 Ok(s) => io::Error::new(io::ErrorKind::Other, s),
                 Err(_e) => io::Error::new(io::ErrorKind::Other, "An unknown error has occurred"),
@@ -100,11 +100,11 @@ impl Read for PyFileLikeObject {
         Python::with_gil(|py| {
             let bytes = self
                 .inner
-                .call_method(py, "read", (buf.len(),), None)
+                .call_method_bound(py, "read", (buf.len(),), None)
                 .map_err(pyerr_to_io_err)?;
 
-            let bytes: &PyBytes = bytes
-                .downcast(py)
+            let bytes: &Bound<'_, PyBytes> = bytes
+                .downcast_bound(py)
                 .expect("Expecting to be able to downcast into bytes from read result.");
 
             buf.write_all(bytes.as_bytes())?;
@@ -117,11 +117,11 @@ impl Read for PyFileLikeObject {
 impl Write for PyFileLikeObject {
     fn write(&mut self, buf: &[u8]) -> Result<usize, io::Error> {
         Python::with_gil(|py| {
-            let pybytes = PyBytes::new(py, buf);
+            let pybytes = PyBytes::new_bound(py, buf);
 
             let number_bytes_written = self
                 .inner
-                .call_method(py, "write", (pybytes,), None)
+                .call_method_bound(py, "write", (pybytes,), None)
                 .map_err(pyerr_to_io_err)?;
 
             number_bytes_written.extract(py).map_err(pyerr_to_io_err)
@@ -131,7 +131,7 @@ impl Write for PyFileLikeObject {
     fn flush(&mut self) -> Result<(), io::Error> {
         Python::with_gil(|py| {
             self.inner
-                .call_method(py, "flush", (), None)
+                .call_method_bound(py, "flush", (), None)
                 .map_err(pyerr_to_io_err)?;
 
             Ok(())
@@ -150,7 +150,7 @@ impl Seek for PyFileLikeObject {
 
             let new_position = self
                 .inner
-                .call_method(py, "seek", (offset, whence), None)
+                .call_method_bound(py, "seek", (offset, whence), None)
                 .map_err(pyerr_to_io_err)?;
 
             new_position.extract(py).map_err(pyerr_to_io_err)
@@ -174,9 +174,9 @@ pub enum EitherRustPythonFile {
 /// * `truncate` - open or create a new file.
 pub fn get_either_file(py_f: PyObject, truncate: bool) -> PyResult<EitherRustPythonFile> {
     Python::with_gil(|py| {
-        if let Ok(pstring) = py_f.downcast::<PyString>(py) {
-            let s = pstring.to_str()?;
-            let file_path = std::path::Path::new(&s);
+        if let Ok(pstring) = py_f.downcast_bound::<PyString>(py) {
+            let s = pstring.to_cow()?;
+            let file_path = std::path::Path::new(&*s);
             let file_path = resolve_homedir(file_path);
             let f = if truncate {
                 File::create(file_path)?
@@ -200,42 +200,45 @@ pub fn get_file_like(f: PyObject, truncate: bool) -> PyResult<Box<dyn FileLike>>
     }
 }
 
-pub fn get_mmap_bytes_reader<'a>(py_f: &'a PyAny) -> PyResult<Box<dyn MmapBytesReader + 'a>> {
+/// If the give file-like is a BytesIO, read its contents.
+pub fn read_if_bytesio(py_f: Bound<PyAny>) -> Bound<PyAny> {
+    if py_f.getattr("read").is_ok() {
+        let Ok(bytes) = py_f.call_method0("getvalue") else {
+            return py_f;
+        };
+        if bytes.downcast::<PyBytes>().is_ok() {
+            return bytes.clone();
+        }
+    }
+    py_f
+}
+
+/// Create reader from PyBytes or a file-like object. To get BytesIO to have
+/// better performance, use read_if_bytesio() before calling this.
+pub fn get_mmap_bytes_reader<'a>(
+    py_f: &'a Bound<'a, PyAny>,
+) -> PyResult<Box<dyn MmapBytesReader + 'a>> {
     // bytes object
     if let Ok(bytes) = py_f.downcast::<PyBytes>() {
         Ok(Box::new(Cursor::new(bytes.as_bytes())))
     }
     // string so read file
     else if let Ok(pstring) = py_f.downcast::<PyString>() {
-        let s = pstring.to_str()?;
-        let p = std::path::Path::new(&s);
+        let s = pstring.to_cow()?;
+        let p = std::path::Path::new(&*s);
         let p = resolve_homedir(p);
         let f = polars_utils::open_file(p).map_err(PyPolarsErr::from)?;
         Ok(Box::new(f))
     }
-    // a normal python file: with open(...) as f:.
-    else if py_f.getattr("read").is_ok() {
+    // hopefully a normal python file: with open(...) as f:.
+    else {
         // we can still get a file name, inform the user of possibly wrong API usage.
-        if py_f.getattr("name").is_ok() {
+        if py_f.getattr("read").is_ok() && py_f.getattr("name").is_ok() {
             polars_warn!("Polars found a filename. \
             Ensure you pass a path to the file instead of a python file object when possible for best \
             performance.")
         }
-        // a bytesIO
-        if let Ok(bytes) = py_f.call_method0("getvalue") {
-            let bytes = bytes.downcast::<PyBytes>()?;
-            Ok(Box::new(Cursor::new(bytes.as_bytes())))
-        }
         // don't really know what we got here, just read.
-        else {
-            let f = Python::with_gil(|py| {
-                PyFileLikeObject::with_requirements(py_f.to_object(py), true, false, true)
-            })?;
-            Ok(Box::new(f))
-        }
-    }
-    // don't really know what we got here, just read.
-    else {
         let f = Python::with_gil(|py| {
             PyFileLikeObject::with_requirements(py_f.to_object(py), true, false, true)
         })?;

@@ -43,7 +43,7 @@ adbc = ["adbc_driver_manager", "adbc_driver_sqlite"]
 async = ["nest_asyncio"]
 cloudpickle = ["cloudpickle"]
 connectorx = ["connectorx >= 0.3.2"]
-deltalake = ["deltalake >= 0.14.0"]
+deltalake = ["deltalake >= 0.15.0"]
 fastexcel = ["fastexcel >= 0.9"]
 fsspec = ["fsspec"]
 gevent = ["gevent"]
@@ -65,7 +65,7 @@ all = [
 ]
 
 [tool.maturin]
-include = ["rust-toolchain.toml"]
+include = [{ path = "rust-toolchain.toml", format = "sdist" }]
 
 [tool.mypy]
 files = ["polars", "tests"]
@@ -88,7 +88,6 @@ module = [
   "backports",
   "connectorx",
   "deltalake.*",
-  "ezodf.*",
   "fsspec.*",
   "gevent",
   "hvplot.*",
@@ -207,12 +206,13 @@ addopts = [
   "--strict-markers",
   "--import-mode=importlib",
   # Default to running fast tests only. To run ALL tests, run: pytest -m ""
-  "-m not slow and not write_disk and not benchmark and not hypothesis and not docs",
+  "-m not slow and not write_disk and not release and not docs and not hypothesis and not benchmark",
 ]
 markers = [
   "slow: Tests with a longer than average runtime.",
   "write_disk: Tests that write to disk",
   "debug: Tests that should be run on a Polars debug build.",
+  "release: Tests that should be run on a Polars release build.",
   "docs: Documentation code snippets",
 ]
 filterwarnings = [
@@ -230,6 +230,7 @@ filterwarnings = [
   # TODO: Excel tests lead to unclosed file warnings
   # https://github.com/pola-rs/polars/issues/14466
   "ignore:unclosed file.*:ResourceWarning",
+  "ignore:the 'pyxlsb' engine is deprecated.*:DeprecationWarning",
 ]
 xfail_strict = true
 

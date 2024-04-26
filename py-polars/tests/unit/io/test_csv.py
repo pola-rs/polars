@@ -570,7 +570,7 @@ def test_compressed_csv(io_files_path: Path) -> None:
         ComputeError,
         match="cannot scan compressed csv; use `read_csv` for compressed data",
     ):
-        pl.scan_csv(csv_file)
+        pl.scan_csv(csv_file).collect()
     out = pl.read_csv(str(csv_file), truncate_ragged_lines=True)
     assert_frame_equal(out, expected)
 
@@ -2058,3 +2058,26 @@ def test_skip_rows_after_header_pyarrow(use_pyarrow: bool) -> None:
     df = pl.read_csv(f, skip_rows_after_header=1, use_pyarrow=use_pyarrow)
     expected = pl.DataFrame({"foo": [3, 5], "bar": [4, 6]})
     assert_frame_equal(df, expected)
+
+
+def test_csv_float_decimal() -> None:
+    floats = b"a;b\n12,239;1,233\n13,908;87,32"
+    read = pl.read_csv(floats, decimal_comma=True, separator=";")
+    assert read.dtypes == [pl.Float64] * 2
+    assert read.to_dict(as_series=False) == {"a": [12.239, 13.908], "b": [1.233, 87.32]}
+
+    floats = b"a;b\n12,239;1,233\n13,908;87,32"
+    with pytest.raises(
+        pl.InvalidOperationError, match=r"'decimal_comma' argument cannot be combined"
+    ):
+        pl.read_csv(floats, decimal_comma=True)
+
+
+def test_fsspec_not_available(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("polars.io._utils._FSSPEC_AVAILABLE", False)
+    with pytest.raises(
+        ImportError, match=r"`fsspec` is required for `storage_options` argument"
+    ):
+        pl.read_csv(
+            "s3://foods/cabbage.csv", storage_options={"key": "key", "secret": "secret"}
+        )

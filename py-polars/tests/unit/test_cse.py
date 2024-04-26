@@ -324,7 +324,7 @@ def test_cse_10401() -> None:
 
     q = df.with_columns(pl.all().fill_null(0).fill_nan(0))
 
-    assert r"""col("clicks").fill_null([0]).alias("__POLARS_CSER""" in q.explain()
+    assert r"""col("clicks").fill_null([0.0]).alias("__POLARS_CSER""" in q.explain()
 
     expected = pl.DataFrame({"clicks": [1.0, 0.0, 0.0]})
     assert_frame_equal(q.collect(comm_subexpr_elim=True), expected)
@@ -684,3 +684,42 @@ def test_cse_and_schema_update_projection_pd(capfd: Any, monkeypatch: Any) -> No
     }
     captured = capfd.readouterr().err
     assert "1 CSE" in captured
+
+
+@pytest.mark.debug()
+def test_cse_predicate_self_join(capfd: Any, monkeypatch: Any) -> None:
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    y = pl.LazyFrame({"a": [1], "b": [2], "y": [3]})
+
+    xf = y.filter(pl.col("y") == 2).select(["a", "b"])
+    y_xf = y.join(xf, on=["a", "b"], how="left")
+
+    y_xf_c = y_xf.select("a", "b")
+    assert y_xf_c.collect().to_dict(as_series=False) == {"a": [1], "b": [2]}
+    captured = capfd.readouterr().err
+    assert "CACHE HIT" in captured
+
+
+def test_cse_manual_cache_15688() -> None:
+    df = pl.LazyFrame(
+        {"a": [1, 2, 3, 1, 2, 3], "b": [1, 1, 1, 1, 1, 1], "id": [1, 1, 1, 2, 2, 2]}
+    )
+
+    df1 = df.filter(id=1).join(df.filter(id=2), on=["a", "b"], how="semi")
+    df2 = df.filter(id=1).join(df1, on=["a", "b"], how="semi")
+    df2 = df2.cache()
+    res = df2.group_by("b").agg(pl.all().sum())
+    assert res.cache().with_columns(foo=1).collect().to_dict(as_series=False) == {
+        "b": [1],
+        "a": [6],
+        "id": [3],
+        "foo": [1],
+    }
+
+
+def test_cse_drop_nulls_15795() -> None:
+    A = pl.LazyFrame({"X": 1})
+    B = pl.LazyFrame({"X": 1, "Y": 0}).filter(pl.col("Y").is_not_null())
+    C = A.join(B, on="X").select("X")
+    D = B.select("X")
+    assert C.join(D, on="X").collect().shape == (1, 1)

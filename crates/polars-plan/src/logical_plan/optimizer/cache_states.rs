@@ -5,6 +5,7 @@ use super::*;
 fn get_upper_projections(
     parent: Node,
     lp_arena: &Arena<IR>,
+    expr_arena: &Arena<AExpr>,
     names_scratch: &mut Vec<ColumnName>,
 ) -> bool {
     let parent = lp_arena.get(parent);
@@ -17,7 +18,12 @@ fn get_upper_projections(
             names_scratch.extend(iter);
             false
         },
-        Filter { .. } => true,
+        Filter { predicate, .. } => {
+            // Also add predicate, as the projection is above the filter node.
+            names_scratch.extend(aexpr_to_leaf_names(predicate.node(), expr_arena));
+
+            true
+        },
         // Only filter and projection nodes are allowed, any other node we stop.
         _ => false,
     }
@@ -198,8 +204,12 @@ pub(super) fn set_cache_states(
                     let mut found_columns = false;
 
                     for parent_node in frame.parent.into_iter().flatten() {
-                        let keep_going =
-                            get_upper_projections(parent_node, lp_arena, &mut names_scratch);
+                        let keep_going = get_upper_projections(
+                            parent_node,
+                            lp_arena,
+                            expr_arena,
+                            &mut names_scratch,
+                        );
                         if !names_scratch.is_empty() {
                             found_columns = true;
                             v.names_union.extend(names_scratch.drain(..));

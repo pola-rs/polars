@@ -93,7 +93,8 @@ fn test_cast_exprs() {
     context.register("df", df.clone().lazy());
     let sql = r#"
         SELECT
-            cast(a as FLOAT) as floats,
+            cast(a as FLOAT) as f64,
+            cast(a as FLOAT(24)) as f32,
             cast(a as INT) as ints,
             cast(a as BIGINT) as bigints,
             cast(a as STRING) as strings,
@@ -103,7 +104,8 @@ fn test_cast_exprs() {
     let df_pl = df
         .lazy()
         .select(&[
-            col("a").cast(DataType::Float32).alias("floats"),
+            col("a").cast(DataType::Float64).alias("f64"),
+            col("a").cast(DataType::Float32).alias("f32"),
             col("a").cast(DataType::Int32).alias("ints"),
             col("a").cast(DataType::Int64).alias("bigints"),
             col("a").cast(DataType::String).alias("strings"),

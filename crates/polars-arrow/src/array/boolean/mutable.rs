@@ -98,23 +98,30 @@ impl MutableBooleanArray {
         }
     }
 
+    #[inline]
+    pub fn push_value(&mut self, value: bool) {
+        self.values.push(value);
+        match &mut self.validity {
+            Some(validity) => validity.push(true),
+            None => {},
+        }
+    }
+
+    #[inline]
+    pub fn push_null(&mut self) {
+        self.values.push(false);
+        match &mut self.validity {
+            Some(validity) => validity.push(false),
+            None => self.init_validity(),
+        }
+    }
+
     /// Pushes a new entry to [`MutableBooleanArray`].
+    #[inline]
     pub fn push(&mut self, value: Option<bool>) {
         match value {
-            Some(value) => {
-                self.values.push(value);
-                match &mut self.validity {
-                    Some(validity) => validity.push(true),
-                    None => {},
-                }
-            },
-            None => {
-                self.values.push(false);
-                match &mut self.validity {
-                    Some(validity) => validity.push(false),
-                    None => self.init_validity(),
-                }
-            },
+            Some(value) => self.push_value(value),
+            None => self.push_null(),
         }
     }
 
@@ -231,6 +238,10 @@ impl MutableBooleanArray {
     pub fn into_arc(self) -> Arc<dyn Array> {
         let a: BooleanArray = self.into();
         Arc::new(a)
+    }
+
+    pub fn freeze(self) -> BooleanArray {
+        self.into()
     }
 }
 

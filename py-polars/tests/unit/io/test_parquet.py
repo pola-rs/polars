@@ -5,6 +5,7 @@ from datetime import datetime, time, timezone
 from decimal import Decimal
 from typing import TYPE_CHECKING, cast
 
+import fsspec
 import numpy as np
 import pandas as pd
 import pyarrow as pa
@@ -680,6 +681,20 @@ def test_read_parquet_binary_file_io(tmp_path: Path) -> None:
     assert_frame_equal(out, df)
 
 
+# https://github.com/pola-rs/polars/issues/15760
+@pytest.mark.write_disk()
+def test_read_parquet_binary_fsspec(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    file_path = tmp_path / "test.parquet"
+    df.write_parquet(file_path)
+
+    with fsspec.open(file_path) as f:
+        out = pl.read_parquet(f)
+    assert_frame_equal(out, df)
+
+
 def test_read_parquet_binary_bytes_io() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
     f = io.BytesIO()
@@ -820,3 +835,23 @@ def test_read_parquet_only_loads_selected_columns_15098(
     # Only one column's worth of memory should be used; 2 columns would be
     # 16_000_000 at least, but there's some overhead.
     assert 8_000_000 < memory_usage_without_pyarrow.get_peak() < 13_000_000
+
+
+@pytest.mark.release()
+@pytest.mark.write_disk()
+def test_max_statistic_parquet_writer(tmp_path: Path) -> None:
+    # this hits the maximal page size
+    # so the row group will be split into multiple pages
+    # the page statistics need to be correctly reduced
+    # for this query to make sense
+    n = 150_000
+
+    tmp_path.mkdir(exist_ok=True)
+
+    # int64 is important to hit the page size
+    df = pl.int_range(0, n, eager=True, dtype=pl.Int64).alias("int").to_frame()
+    f = tmp_path / "tmp.parquet"
+    df.write_parquet(f, statistics=True, use_pyarrow=False, row_group_size=n)
+    result = pl.scan_parquet(f).filter(pl.col("int") > n - 3).collect()
+    expected = pl.DataFrame({"int": [149998, 149999]})
+    assert_frame_equal(result, expected)

@@ -1,7 +1,13 @@
 use std::hash::{Hash, Hasher};
 
+#[cfg(feature = "csv")]
+use polars_io::csv::read::CsvParserOptions;
+#[cfg(feature = "ipc")]
+use polars_io::ipc::IpcScanOptions;
 #[cfg(feature = "parquet")]
-use polars_parquet::write::FileMetaData;
+use polars_io::parquet::metadata::FileMetaDataRef;
+#[cfg(feature = "parquet")]
+use polars_io::parquet::read::ParquetOptions;
 
 use super::*;
 
@@ -15,7 +21,7 @@ pub enum FileScan {
         options: ParquetOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
         #[cfg_attr(feature = "serde", serde(skip))]
-        metadata: Option<Arc<FileMetaData>>,
+        metadata: Option<FileMetaDataRef>,
     },
     #[cfg(feature = "ipc")]
     Ipc {
