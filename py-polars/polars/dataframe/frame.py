@@ -7138,6 +7138,7 @@ class DataFrame:
         └──────┴──────────┴──────────┘
 
         Set the index to None to output a single row.
+
         >>> df = pl.DataFrame(
         ...     {
         ...         "col1": ["a", "a", "a", "b", "b", "b"],
