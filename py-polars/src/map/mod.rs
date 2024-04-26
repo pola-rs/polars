@@ -226,7 +226,6 @@ fn iterator_to_string<S: AsRef<str>>(
     name: &str,
     capacity: usize,
 ) -> StringChunked {
-    //let first_value = first_value.map(Cow::Borrowed);
     // SAFETY: we know the iterators len.
     let ca: StringChunked = unsafe {
         if init_null_count > 0 {
