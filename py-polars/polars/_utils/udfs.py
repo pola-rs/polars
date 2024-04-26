@@ -24,6 +24,7 @@ from typing import (
     Literal,
     NamedTuple,
     Protocol,
+    TypeVar,
     Union,
 )
 
@@ -37,6 +38,8 @@ if TYPE_CHECKING:
     else:
         from typing_extensions import TypeAlias
 
+T = TypeVar("T", bound=Callable[..., Any])
+
 
 class StackValue(NamedTuple):
     operator: str
@@ -46,8 +49,10 @@ class StackValue(NamedTuple):
     from_module: str | None = None
 
 
-class UfuncProtocol(Protocol):
+class UfuncProtocol(Protocol[T]):
     signature: Any
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any: ...
 
 
 MapTarget: TypeAlias = Literal["expr", "frame", "series"]
