@@ -39,6 +39,7 @@ from polars._utils.parse_expr_input import (
     parse_as_list_of_expressions,
     parse_predicates_constraints_as_expression,
 )
+from polars._utils.udfs import UfuncProtocol
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
     BUILDING_SPHINX_DOCS,
@@ -287,7 +288,7 @@ class Expr:
         self._pyexpr.__setstate__(state)
 
     def __array_ufunc__(
-        self, ufunc: Callable[..., Any], method: str, *inputs: Any, **kwargs: Any
+        self, ufunc: UfuncProtocol, method: str, *inputs: Any, **kwargs: Any
     ) -> Self:
         """Numpy universal functions."""
         if method != "__call__":

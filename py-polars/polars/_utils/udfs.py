@@ -23,6 +23,7 @@ from typing import (
     Iterator,
     Literal,
     NamedTuple,
+    Protocol,
     Union,
 )
 
@@ -43,6 +44,10 @@ class StackValue(NamedTuple):
     left_operand: str
     right_operand: str
     from_module: str | None = None
+
+
+class UfuncProtocol(Protocol):
+    signature: Any
 
 
 MapTarget: TypeAlias = Literal["expr", "frame", "series"]
