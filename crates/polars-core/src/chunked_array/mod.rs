@@ -29,6 +29,8 @@ mod bitwise;
 #[cfg(feature = "object")]
 mod drop;
 mod from;
+mod from_iterator;
+pub mod from_iterator_par;
 pub(crate) mod list;
 pub(crate) mod logical;
 #[cfg(feature = "object")]
@@ -43,7 +45,6 @@ mod random;
 pub mod temporal;
 mod to_vec;
 mod trusted_len;
-pub mod upstream_traits;
 
 use std::mem;
 use std::slice::Iter;
@@ -747,6 +748,19 @@ pub(crate) fn to_array<T: PolarsNumericType>(
     validity: Option<Bitmap>,
 ) -> ArrayRef {
     Box::new(to_primitive::<T>(values, validity))
+}
+
+impl<T: PolarsDataType> Default for ChunkedArray<T> {
+    fn default() -> Self {
+        ChunkedArray {
+            field: Arc::new(Field::new("default", DataType::Null)),
+            chunks: Default::default(),
+            phantom: PhantomData,
+            bit_settings: Default::default(),
+            length: 0,
+            null_count: 0,
+        }
+    }
 }
 
 #[cfg(test)]
