@@ -28,7 +28,7 @@ use crate::prelude::*;
 
 // Note: see https://github.com/pola-rs/polars/pull/13699 for the rationale
 // behind choosing 10 as the default value for default number of rows displayed
-const LIMIT: usize = 10;
+const ROW_LIMIT: usize = 10;
 
 #[derive(Copy, Clone)]
 #[repr(u8)]
@@ -166,7 +166,7 @@ fn format_object_array(
 ) -> fmt::Result {
     match object.dtype() {
         DataType::Object(inner_type, _) => {
-            let limit = std::cmp::min(LIMIT, object.len());
+            let limit = std::cmp::min(ROW_LIMIT, object.len());
             write!(
                 f,
                 "shape: ({},)\n{}: '{}' [o][{}]\n[\n",
@@ -232,7 +232,7 @@ where
     T: PolarsObject,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let limit = std::cmp::min(LIMIT, self.len());
+        let limit = std::cmp::min(ROW_LIMIT, self.len());
         let inner_type = T::type_name();
         write!(
             f,
@@ -526,7 +526,7 @@ impl Display for DataFrame {
                 .as_deref()
                 .unwrap_or("")
                 .parse()
-                .map_or(LIMIT, |n: i64| if n < 0 { height } else { n as usize });
+                .map_or(ROW_LIMIT, |n: i64| if n < 0 { height } else { n as usize });
 
             let (n_first, n_last) = if self.width() > max_n_cols {
                 ((max_n_cols + 1) / 2, max_n_cols / 2)
