@@ -39,7 +39,6 @@ from polars._utils.parse_expr_input import (
     parse_as_list_of_expressions,
     parse_predicates_constraints_as_expression,
 )
-from polars._utils.udfs import UfuncProtocol
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
     BUILDING_SPHINX_DOCS,
@@ -79,6 +78,7 @@ if TYPE_CHECKING:
     from io import IOBase
 
     from polars import DataFrame, LazyFrame, Series
+    from polars._utils.udfs import UfuncProtocol
     from polars._utils.various import (
         NoDefault,
     )
