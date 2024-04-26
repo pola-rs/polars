@@ -54,15 +54,13 @@ impl PySeries {
                     .map_err(PyPolarsErr::from)?,
             )
             .into_py(py)),
-            DataType::Date | DataType::Datetime(_, _) | DataType::Duration(_) | DataType::Time => {
-                Ok(Wrap(
-                    self.series
-                        .mean_as_series()
-                        .get(0)
-                        .map_err(PyPolarsErr::from)?,
-                )
-                .into_py(py))
-            },
+            dt if dt.is_temporal() => Ok(Wrap(
+                self.series
+                    .mean_as_series()
+                    .get(0)
+                    .map_err(PyPolarsErr::from)?,
+            )
+            .into_py(py)),
             _ => Ok(self.series.mean().into_py(py)),
         }
     }
@@ -79,16 +77,14 @@ impl PySeries {
                     .map_err(PyPolarsErr::from)?,
             )
             .into_py(py)),
-            DataType::Date | DataType::Datetime(_, _) | DataType::Duration(_) | DataType::Time => {
-                Ok(Wrap(
-                    self.series
-                        .median_as_series()
-                        .map_err(PyPolarsErr::from)?
-                        .get(0)
-                        .map_err(PyPolarsErr::from)?,
-                )
-                .into_py(py))
-            },
+            dt if dt.is_temporal() => Ok(Wrap(
+                self.series
+                    .median_as_series()
+                    .map_err(PyPolarsErr::from)?
+                    .get(0)
+                    .map_err(PyPolarsErr::from)?,
+            )
+            .into_py(py)),
             _ => Ok(self.series.median().into_py(py)),
         }
     }
