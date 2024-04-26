@@ -44,3 +44,29 @@ impl PolarsRound for DateChunked {
             .into_date())
     }
 }
+
+#[cfg(feature = "dtype-duration")]
+impl PolarsRound for DurationChunked {
+    fn round(&self, every: Duration, offset: Duration, _tz: Option<&Tz>) -> PolarsResult<Self> {
+        polars_ensure!(!every.negative, ComputeError: "cannot round a Duration to a negative duration");
+        ensure_is_constant_duration(every, None, "every")?;
+        polars_ensure!(offset.is_zero(), InvalidOperation: "`offset` is not supported for rounding Durations.");
+        let every = match self.time_unit() {
+            TimeUnit::Nanoseconds => every.duration_ns(),
+            TimeUnit::Microseconds => every.duration_us(),
+            TimeUnit::Milliseconds => every.duration_ms(),
+        };
+        polars_ensure!(
+            every != 0,
+            InvalidOperation: "`every` duration cannot be zero."
+        );
+
+        let out = self.apply_values(|duration| {
+            // Round half-way values away from zero
+            let half_away = duration.signum() * every / 2;
+            duration + half_away - (duration + half_away) % every
+        });
+
+        Ok(out.into_duration(self.time_unit()))
+    }
+}
