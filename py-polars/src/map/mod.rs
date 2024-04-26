@@ -89,14 +89,14 @@ fn iterator_to_struct<'a>(
                 // the first item determines the output name.
                 for (key, val) in dict.iter() {
                     let key = key.str().unwrap().extract::<PyBackedStr>().unwrap();
-                    let key: SmartString<LazyCompact> = (&*key).into();
                     let item = val.extract::<Wrap<AnyValue>>()?;
-                    if let Some(buf) = struct_fields.get_mut(&key) {
+                    if let Some(buf) = struct_fields.get_mut(&*key) {
                         buf.push(item.0);
                     } else {
                         let mut buf = Vec::with_capacity(capacity);
                         buf.extend((0..init_null_count + current_len).map(|_| AnyValue::Null));
                         buf.push(item.0);
+                        let key: SmartString<LazyCompact> = (&*key).into();
                         field_names_ordered.push(key.clone());
                         struct_fields.insert(key, buf);
                     };
