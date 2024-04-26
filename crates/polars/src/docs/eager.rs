@@ -323,10 +323,10 @@
 //!
 //! # fn example(df: &DataFrame) -> PolarsResult<()> {
 //! // create a mask to filter out null values
-//! let mask = df.column("sepal.width")?.is_not_null();
+//! let mask = df.column("sepal_width")?.is_not_null();
 //!
 //! // select column
-//! let s = df.column("sepal.length")?;
+//! let s = df.column("sepal_length")?;
 //!
 //! // apply filter on a Series
 //! let filtered_series = s.filter(&mask);

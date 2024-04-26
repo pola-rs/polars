@@ -469,3 +469,24 @@ def test_window_agg_list_null_15437() -> None:
     output = df.select(pl.concat_list("a").over(1))
     expected = pl.DataFrame({"a": [[None]]})
     assert_frame_equal(output, expected)
+
+
+@pytest.mark.release()
+def test_windows_not_cached() -> None:
+    ldf = (
+        pl.DataFrame(
+            [
+                pl.Series("key", ["a", "a", "b", "b"]),
+                pl.Series("val", [2, 2, 1, 3]),
+            ]
+        )
+        .lazy()
+        .filter(
+            (pl.col("key").cum_count().over("key") == 1)
+            | (pl.col("val").shift(1).over("key").is_not_null())
+            | (pl.col("val") != pl.col("val").shift(1).over("key"))
+        )
+    )
+    # this might fail if they are cached
+    for _ in range(1000):
+        ldf.collect()

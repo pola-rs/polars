@@ -57,20 +57,6 @@ def test_implode() -> None:
     )
 
 
-@pytest.mark.parametrize(
-    ("data", "repr_"),
-    [
-        ({}, "0 cols, {}"),
-        ({"a": [1]}, '1 col, {"a": Int64}'),
-        ({"a": [1], "b": ["B"]}, '2 cols, {"a": Int64, "b": String}'),
-        ({"a": [1], "b": ["B"], "c": [0.0]}, '3 cols, {"a": Int64 … "c": Float64}'),
-    ],
-)
-def test_repr(data: dict[str, list[Any]], repr_: str) -> None:
-    ldf = pl.LazyFrame(data)
-    assert repr(ldf).startswith(f"<LazyFrame [{repr_}] at ")
-
-
 def test_lazyframe_membership_operator() -> None:
     ldf = pl.LazyFrame({"name": ["Jane", "John"], "age": [20, 30]})
     assert "name" in ldf
@@ -871,25 +857,6 @@ def test_argminmax() -> None:
     )
     assert out["max"][0] == 1
     assert out["min"][0] == 0
-
-
-def test_rename() -> None:
-    ldf = pl.LazyFrame({"a": [1], "b": [2], "c": [3]})
-    out = ldf.rename({"a": "foo", "b": "bar"}).collect()
-    assert out.columns == ["foo", "bar", "c"]
-
-
-def test_with_column_renamed(fruits_cars: pl.DataFrame) -> None:
-    res = fruits_cars.lazy().rename({"A": "C"}).collect()
-    assert res.columns[0] == "C"
-
-
-def test_rename_lambda() -> None:
-    ldf = pl.LazyFrame({"a": [1], "b": [2], "c": [3]})
-    out = ldf.rename(
-        lambda col: "foo" if col == "a" else "bar" if col == "b" else col
-    ).collect()
-    assert out.columns == ["foo", "bar", "c"]
 
 
 def test_reverse() -> None:

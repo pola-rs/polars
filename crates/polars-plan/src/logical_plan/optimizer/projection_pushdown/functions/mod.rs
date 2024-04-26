@@ -8,7 +8,7 @@ use super::*;
 pub(super) fn process_functions(
     proj_pd: &mut ProjectionPushDown,
     input: Node,
-    function: &FunctionNode,
+    function: FunctionNode,
     mut acc_projections: Vec<ColumnNode>,
     mut projected_names: PlHashSet<Arc<str>>,
     projections_seen: usize,
@@ -18,17 +18,19 @@ pub(super) fn process_functions(
     use FunctionNode::*;
     match function {
         Rename {
-            existing,
-            new,
+            ref existing,
+            ref new,
             swapping,
+            schema: _,
         } => {
+            let clear = !acc_projections.is_empty();
             process_rename(
                 &mut acc_projections,
                 &mut projected_names,
                 expr_arena,
                 existing,
                 new,
-                *swapping,
+                swapping,
             )?;
             proj_pd.pushdown_and_assign(
                 input,
@@ -39,10 +41,11 @@ pub(super) fn process_functions(
                 expr_arena,
             )?;
 
-            let lp = IR::MapFunction {
-                input,
-                function: function.clone(),
-            };
+            if clear {
+                function.clear_cached_schema()
+            }
+
+            let lp = IR::MapFunction { input, function };
             Ok(lp)
         },
         Explode { columns, .. } => {
@@ -61,7 +64,7 @@ pub(super) fn process_functions(
                 .explode(columns.clone())
                 .build())
         },
-        Melt { args, .. } => {
+        Melt { ref args, .. } => {
             let lp = IR::MapFunction {
                 input,
                 function: function.clone(),

@@ -5,7 +5,10 @@ use polars_core::config;
 use polars_core::config::{get_file_prefetch_size, verbose};
 use polars_core::utils::accumulate_dataframes_vertical;
 use polars_io::cloud::CloudOptions;
-use polars_io::{is_cloud_url, RowIndex};
+use polars_io::parquet::metadata::FileMetaDataRef;
+use polars_io::parquet::read::materialize_empty_df;
+use polars_io::utils::is_cloud_url;
+use polars_io::RowIndex;
 
 use super::*;
 
@@ -18,7 +21,7 @@ pub struct ParquetExec {
     cloud_options: Option<CloudOptions>,
     file_options: FileScanOptions,
     #[allow(dead_code)]
-    metadata: Option<Arc<FileMetaData>>,
+    metadata: Option<FileMetaDataRef>,
 }
 
 impl ParquetExec {
@@ -29,7 +32,7 @@ impl ParquetExec {
         options: ParquetOptions,
         cloud_options: Option<CloudOptions>,
         file_options: FileScanOptions,
-        metadata: Option<Arc<FileMetaData>>,
+        metadata: Option<FileMetaDataRef>,
     ) -> Self {
         ParquetExec {
             paths,

@@ -70,20 +70,19 @@ def test_join_anti_semi(sql: str, expected: pl.DataFrame) -> None:
     ],
 )
 def test_join_inner(foods_ipc_path: Path, join_clause: str) -> None:
-    lf = pl.scan_ipc(foods_ipc_path)
+    foods1 = pl.scan_ipc(foods_ipc_path)
+    foods2 = foods1  # noqa: F841
 
-    ctx = pl.SQLContext()
-    ctx.register_many(foods1=lf, foods2=lf)
-
-    out = ctx.execute(
+    out = foods1.sql(
         f"""
         SELECT *
         FROM foods1
         INNER JOIN foods2 {join_clause}
         LIMIT 2
         """
-    )
-    assert out.collect().to_dict(as_series=False) == {
+    ).collect()
+
+    assert out.to_dict(as_series=False) == {
         "category": ["vegetables", "vegetables"],
         "calories": [45, 20],
         "fats_g": [0.5, 0.0],
@@ -171,6 +170,7 @@ def test_join_left_multi_nested() -> None:
                 ORDER BY tbl_x.a ASC
                 """
             ).collect()
+
             assert out.rows() == [
                 (1, 4, "z", 25.5),
                 (2, None, None, None),

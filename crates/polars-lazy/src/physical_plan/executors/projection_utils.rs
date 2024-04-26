@@ -275,11 +275,13 @@ pub(super) fn check_expand_literals(
         return Ok(DataFrame::empty());
     };
     let mut df_height = 0;
+    let mut has_empty = false;
     let mut all_equal_len = true;
     {
         let mut names = PlHashSet::with_capacity(selected_columns.len());
         for s in &selected_columns {
             let len = s.len();
+            has_empty |= len == 0;
             df_height = std::cmp::max(df_height, len);
             if len != first_len {
                 all_equal_len = false;
@@ -303,15 +305,32 @@ pub(super) fn check_expand_literals(
         selected_columns = selected_columns
             .into_iter()
             .map(|series| {
-                Ok(if series.len() == 1 && df_height > 1 {
-                    series.new_from_index(0, df_height)
-                } else if series.len() == df_height || series.len() == 0 {
-                    series
-                } else {
-                    polars_bail!(
+                Ok(match series.len() {
+                    0 if df_height == 1 => series,
+                    1 => {
+                        if has_empty {
+
+                        polars_ensure!(df_height == 1,
                         ComputeError: "Series length {} doesn't match the DataFrame height of {}",
                         series.len(), df_height
                     );
+
+                            series.slice(0, 0)
+                        } else if df_height == 1 {
+                            series
+                        } else {
+                            series.new_from_index(0, df_height)
+                        }
+                    },
+                    len if len == df_height => {
+                        series
+                    },
+                    _ => {
+                        polars_bail!(
+                        ComputeError: "Series length {} doesn't match the DataFrame height of {}",
+                        series.len(), df_height
+                    )
+                    }
                 })
             })
             .collect::<PolarsResult<_>>()?

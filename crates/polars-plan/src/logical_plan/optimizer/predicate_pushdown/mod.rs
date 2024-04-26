@@ -78,7 +78,7 @@ impl<'a> PredicatePushDown<'a> {
         expr_arena: &mut Arena<AExpr>,
         has_projections: bool,
     ) -> PolarsResult<IR> {
-        let inputs = lp.get_inputs();
+        let inputs = lp.get_inputs_vec();
         let exprs = lp.get_exprs();
 
         if has_projections {

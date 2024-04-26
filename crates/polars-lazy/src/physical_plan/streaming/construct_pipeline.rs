@@ -254,7 +254,7 @@ fn get_pipeline_node(
     lp_arena: &mut Arena<IR>,
     mut pipelines: Vec<PipeLine>,
     schema: SchemaRef,
-    original_lp: Option<LogicalPlan>,
+    original_lp: Option<DslPlan>,
 ) -> IR {
     // create a dummy input as the map function will call the input
     // so we just create a scan that returns an empty df

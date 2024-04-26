@@ -100,16 +100,15 @@ test-all: .venv build  ## Run all tests
 
 .PHONY: coverage
 coverage: .venv build  ## Run tests and report coverage
-	$(VENV_BIN)/pytest --cov -n auto --dist loadgroup -m "not benchmark"
+	$(VENV_BIN)/pytest --cov -n auto --dist loadgroup -m "not release and not benchmark"
 
 .PHONY: clean
 clean:  ## Clean up caches and build artifacts
-	@rm -rf docs/build/
-	@rm -rf docs/source/reference/api/
+	@$(MAKE) -s -C docs clean
 	@rm -rf .hypothesis/
 	@rm -rf .mypy_cache/
 	@rm -rf .pytest_cache/
-	@rm -rf .ruff_cache/
+	@$(VENV_BIN)/ruff clean
 	@rm -f .coverage
 	@rm -f coverage.xml
 	@rm -f polars/polars.abi3.so

@@ -1,13 +1,13 @@
 use std::path::PathBuf;
 use std::sync::Mutex;
 
+use polars::io::csv::read::{OwnedBatchedCsvReader, OwnedBatchedCsvReaderMmap};
 use polars::io::mmap::MmapBytesReader;
 use polars::io::RowIndex;
 use polars::prelude::*;
-use polars_rs::prelude::read_impl::OwnedBatchedCsvReader;
 use pyo3::prelude::*;
+use pyo3::pybacked::PyBackedStr;
 
-use crate::prelude::read_impl::OwnedBatchedCsvReaderMmap;
 use crate::{PyDataFrame, PyPolarsErr, Wrap};
 
 enum BatchedReader {
@@ -30,7 +30,7 @@ impl PyBatchedCsv {
         projection, separator, rechunk, columns, encoding, n_threads, path, overwrite_dtype,
         overwrite_dtype_slice, low_memory, comment_prefix, quote_char, null_values,
         missing_utf8_is_empty_string, try_parse_dates, skip_rows_after_header, row_index,
-        sample_size, eol_char, raise_if_empty, truncate_ragged_lines)
+        sample_size, eol_char, raise_if_empty, truncate_ragged_lines, decimal_comma)
     )]
     fn new(
         infer_schema_length: Option<usize>,
@@ -46,7 +46,7 @@ impl PyBatchedCsv {
         encoding: Wrap<CsvEncoding>,
         n_threads: Option<usize>,
         path: PathBuf,
-        overwrite_dtype: Option<Vec<(&str, Wrap<DataType>)>>,
+        overwrite_dtype: Option<Vec<(PyBackedStr, Wrap<DataType>)>>,
         overwrite_dtype_slice: Option<Vec<Wrap<DataType>>>,
         low_memory: bool,
         comment_prefix: Option<&str>,
@@ -60,6 +60,7 @@ impl PyBatchedCsv {
         eol_char: &str,
         raise_if_empty: bool,
         truncate_ragged_lines: bool,
+        decimal_comma: bool,
     ) -> PyResult<PyBatchedCsv> {
         let null_values = null_values.map(|w| w.0);
         let eol_char = eol_char.as_bytes()[0];
@@ -118,6 +119,7 @@ impl PyBatchedCsv {
             .with_row_index(row_index)
             .sample_size(sample_size)
             .truncate_ragged_lines(truncate_ragged_lines)
+            .with_decimal_comma(decimal_comma)
             .raise_if_empty(raise_if_empty);
 
         let reader = if low_memory {

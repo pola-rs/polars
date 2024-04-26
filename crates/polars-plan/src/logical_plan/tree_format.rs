@@ -72,7 +72,7 @@ impl UpperExp for AExpr {
 
 pub enum TreeFmtNode<'a> {
     Expression(Option<String>, &'a Expr),
-    LogicalPlan(Option<String>, &'a LogicalPlan),
+    LogicalPlan(Option<String>, &'a DslPlan),
 }
 
 struct TreeFmtNodeData<'a>(String, Vec<TreeFmtNode<'a>>);
@@ -92,7 +92,7 @@ fn multiline_expression(expr: &str) -> Cow<'_, str> {
 }
 
 impl<'a> TreeFmtNode<'a> {
-    pub fn root_logical_plan(lp: &'a LogicalPlan) -> Self {
+    pub fn root_logical_plan(lp: &'a DslPlan) -> Self {
         Self::LogicalPlan(None, lp)
     }
 
@@ -123,7 +123,7 @@ impl<'a> TreeFmtNode<'a> {
     }
 
     fn node_data(&self) -> TreeFmtNodeData<'_> {
-        use LogicalPlan::*;
+        use DslPlan::*;
         use TreeFmtNode::{Expression as NE, LogicalPlan as NL};
         use {with_header as wh, TreeFmtNodeData as ND};
 
@@ -216,7 +216,7 @@ impl<'a> TreeFmtNode<'a> {
             ),
             NL(
                 h,
-                LogicalPlan::Sort {
+                DslPlan::Sort {
                     input, by_column, ..
                 },
             ) => ND(
@@ -285,14 +285,13 @@ impl<'a> TreeFmtNode<'a> {
                 ),
                 vec![NL(None, input)],
             ),
-            NL(h, LogicalPlan::Slice { input, offset, len }) => ND(
+            NL(h, DslPlan::Slice { input, offset, len }) => ND(
                 wh(h, &format!("SLICE[offset: {offset}, len: {len}]")),
                 vec![NL(None, input)],
             ),
             NL(h, MapFunction { input, function }) => {
                 ND(wh(h, &format!("{function}")), vec![NL(None, input)])
             },
-            NL(h, Error { input, err }) => ND(wh(h, &format!("{err:?}")), vec![NL(None, input)]),
             NL(h, ExtContext { input, .. }) => ND(wh(h, "EXTERNAL_CONTEXT"), vec![NL(None, input)]),
             NL(h, Sink { input, payload }) => ND(
                 wh(
@@ -809,125 +808,5 @@ impl Debug for TreeFmtVisitor {
         write!(f, "{canvas}")?;
 
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-    use crate::logical_plan::visitor::TreeWalker;
-
-    #[test]
-    fn test_tree_fmt_visit() {
-        let e = (col("foo") * lit(2) + lit(3) + lit(43)).sum();
-        let mut arena = Default::default();
-        let node = to_aexpr(e, &mut arena);
-
-        let mut visitor = TreeFmtVisitor::default();
-
-        let ae_node = AexprNode::new(node);
-        ae_node.visit(&mut visitor, &arena).unwrap();
-        let expected: &[&[&str]] = &[
-            &["sum"],
-            &["binary: +"],
-            &["lit(43)", "binary: +"],
-            &["", "lit(3)", "binary: *"],
-            &["", "", "lit(2)", "col(foo)"],
-        ];
-
-        assert_eq!(visitor.levels, expected);
-    }
-
-    #[test]
-    fn test_tree_format_levels() {
-        let e = (col("a") + col("b")).pow(2) + col("c") * col("d");
-        let mut arena = Default::default();
-        let node = to_aexpr(e, &mut arena);
-
-        let mut visitor = TreeFmtVisitor::default();
-
-        AexprNode::new(node).visit(&mut visitor, &arena).unwrap();
-
-        let expected_lines = vec![
-            "            0            1               2                3            4",
-            "   ┌─────────────────────────────────────────────────────────────────────────",
-            "   │",
-            "   │  ╭───────────╮",
-            " 0 │  │ binary: + │",
-            "   │  ╰─────┬┬────╯",
-            "   │        ││",
-            "   │        │╰───────────────────────────╮",
-            "   │        │                            │",
-            "   │  ╭─────┴─────╮              ╭───────┴───────╮",
-            " 1 │  │ binary: * │              │ function: pow │",
-            "   │  ╰─────┬┬────╯              ╰───────┬┬──────╯",
-            "   │        ││                           ││",
-            "   │        │╰───────────╮               │╰───────────────╮",
-            "   │        │            │               │                │",
-            "   │    ╭───┴────╮   ╭───┴────╮      ╭───┴────╮     ╭─────┴─────╮",
-            " 2 │    │ col(d) │   │ col(c) │      │ lit(2) │     │ binary: + │",
-            "   │    ╰────────╯   ╰────────╯      ╰────────╯     ╰─────┬┬────╯",
-            "   │                                                      ││",
-            "   │                                                      │╰───────────╮",
-            "   │                                                      │            │",
-            "   │                                                  ╭───┴────╮   ╭───┴────╮",
-            " 3 │                                                  │ col(b) │   │ col(a) │",
-            "   │                                                  ╰────────╯   ╰────────╯",
-        ];
-        for (i, (line, expected_line)) in
-            format!("{visitor}").lines().zip(expected_lines).enumerate()
-        {
-            assert_eq!(line, expected_line, "Difference at line {}", i + 1);
-        }
-    }
-
-    #[cfg(feature = "range")]
-    #[test]
-    fn test_tree_format_levels_with_range() {
-        let e = (col("a") + col("b")).pow(2)
-            + int_range(
-                Expr::Literal(LiteralValue::Int64(0)),
-                Expr::Literal(LiteralValue::Int64(3)),
-                1,
-                polars_core::datatypes::DataType::Int64,
-            );
-        let mut arena = Default::default();
-        let node = to_aexpr(e, &mut arena);
-
-        let mut visitor = TreeFmtVisitor::default();
-        let ae_node = AexprNode::new(node);
-        ae_node.visit(&mut visitor, &arena).unwrap();
-
-        let expected_lines = vec![
-            "                 0                 1               2                3            4",
-            "   ┌───────────────────────────────────────────────────────────────────────────────────",
-            "   │",
-            "   │       ╭───────────╮",
-            " 0 │       │ binary: + │",
-            "   │       ╰─────┬┬────╯",
-            "   │             ││",
-            "   │             │╰────────────────────────────────╮",
-            "   │             │                                 │",
-            "   │  ╭──────────┴──────────╮              ╭───────┴───────╮",
-            " 1 │  │ function: int_range │              │ function: pow │",
-            "   │  ╰──────────┬┬─────────╯              ╰───────┬┬──────╯",
-            "   │             ││                                ││",
-            "   │             │╰────────────────╮               │╰───────────────╮",
-            "   │             │                 │               │                │",
-            "   │         ╭───┴────╮        ╭───┴────╮      ╭───┴────╮     ╭─────┴─────╮",
-            " 2 │         │ lit(3) │        │ lit(0) │      │ lit(2) │     │ binary: + │",
-            "   │         ╰────────╯        ╰────────╯      ╰────────╯     ╰─────┬┬────╯",
-            "   │                                                                ││",
-            "   │                                                                │╰───────────╮",
-            "   │                                                                │            │",
-            "   │                                                            ╭───┴────╮   ╭───┴────╮",
-            " 3 │                                                            │ col(b) │   │ col(a) │",
-            "   │                                                            ╰────────╯   ╰────────╯",
-        ];
-        for (i, (line, expected_line)) in
-            format!("{visitor}").lines().zip(expected_lines).enumerate()
-        {
-            assert_eq!(line, expected_line, "Difference at line {}", i + 1);
-        }
     }
 }

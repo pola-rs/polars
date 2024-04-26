@@ -44,6 +44,21 @@ impl IR {
         }
     }
 
+    pub fn input_schema<'a>(&'a self, arena: &'a Arena<IR>) -> Option<Cow<'a, SchemaRef>> {
+        use IR::*;
+        let schema = match self {
+            #[cfg(feature = "python")]
+            PythonScan { options, .. } => &options.schema,
+            DataFrameScan { schema, .. } => schema,
+            Scan { file_info, .. } => &file_info.schema,
+            node => {
+                let input = node.get_input()?;
+                return Some(arena.get(input).schema(arena));
+            },
+        };
+        Some(Cow::Borrowed(schema))
+    }
+
     /// Get the schema of the logical plan node.
     pub fn schema<'a>(&'a self, arena: &'a Arena<IR>) -> Cow<'a, SchemaRef> {
         use IR::*;

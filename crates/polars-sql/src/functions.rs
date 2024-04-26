@@ -4,7 +4,7 @@ use polars_lazy::dsl::Expr;
 #[cfg(feature = "list_eval")]
 use polars_lazy::dsl::ListNameSpaceExtension;
 use polars_plan::dsl::{coalesce, concat_str, len, max_horizontal, min_horizontal, when};
-use polars_plan::logical_plan::LiteralValue;
+use polars_plan::logical_plan::{typed_lit, LiteralValue};
 #[cfg(feature = "list_eval")]
 use polars_plan::prelude::col;
 use polars_plan::prelude::LiteralValue::Null;
@@ -814,7 +814,7 @@ impl SQLFunctionVisitor<'_> {
                 1 => self.visit_unary(|e| e.round(0)),
                 2 => self.try_visit_binary(|e, decimals| {
                     Ok(e.round(match decimals {
-                        Expr::Literal(LiteralValue::Int64(n)) => {
+                        Expr::Literal(LiteralValue::Int(n)) => {
                             if n >= 0 { n as u32 } else {
                                 polars_bail!(InvalidOperation: "Round does not (yet) support negative 'decimals': {}", function.args[1])
                             }
@@ -910,8 +910,8 @@ impl SQLFunctionVisitor<'_> {
             Left => self.try_visit_binary(|e, length| {
                 Ok(match length {
                     Expr::Literal(Null) => lit(Null),
-                    Expr::Literal(LiteralValue::Int64(0)) => lit(""),
-                    Expr::Literal(LiteralValue::Int64(n)) => {
+                    Expr::Literal(LiteralValue::Int(0)) => lit(""),
+                    Expr::Literal(LiteralValue::Int(n)) => {
                         let len = if n > 0 { lit(n) } else { (e.clone().str().len_chars() + lit(n)).clip_min(lit(0)) };
                         e.str().slice(lit(0), len)
                     },
@@ -933,7 +933,7 @@ impl SQLFunctionVisitor<'_> {
             OctetLength => self.visit_unary(|e| e.str().len_bytes()),
             StrPos => {
                 // note: 1-indexed, not 0-indexed, and returns zero if match not found
-                self.visit_binary(|expr, substring| (expr.str().find(substring, true) + lit(1u32)).fill_null(0u32))
+                self.visit_binary(|expr, substring| (expr.str().find(substring, true) + typed_lit(1u32)).fill_null(typed_lit(0u32)))
             },
             RegexpLike => match function.args.len() {
                 2 => self.visit_binary(|e, s| e.str().contains(s, true)),
@@ -964,8 +964,9 @@ impl SQLFunctionVisitor<'_> {
             Right => self.try_visit_binary(|e, length| {
                 Ok(match length {
                     Expr::Literal(Null) => lit(Null),
-                    Expr::Literal(LiteralValue::Int64(0)) => lit(""),
-                    Expr::Literal(LiteralValue::Int64(n)) => {
+                    Expr::Literal(LiteralValue::Int(0)) => typed_lit(""),
+                    Expr::Literal(LiteralValue::Int(n)) => {
+                        let n: i64 = n.try_into().unwrap();
                         let offset = if n < 0 { lit(n.abs()) } else { e.clone().str().len_chars().cast(DataType::Int32) - lit(n) };
                         e.str().slice(offset, lit(Null))
                     },
@@ -988,8 +989,8 @@ impl SQLFunctionVisitor<'_> {
                 2 => self.try_visit_binary(|e, start| {
                     Ok(match start {
                         Expr::Literal(Null) => lit(Null),
-                        Expr::Literal(LiteralValue::Int64(n)) if n <= 0 => e,
-                        Expr::Literal(LiteralValue::Int64(n)) => e.str().slice(lit(n - 1), lit(Null)),
+                        Expr::Literal(LiteralValue::Int(n)) if n <= 0 => e,
+                        Expr::Literal(LiteralValue::Int(n)) => e.str().slice(lit(n - 1), lit(Null)),
                         Expr::Literal(_) => polars_bail!(InvalidOperation: "invalid 'start' for Substring: {}", function.args[1]),
                         _ => start.clone() + lit(1),
                     })
@@ -997,15 +998,15 @@ impl SQLFunctionVisitor<'_> {
                 3 => self.try_visit_ternary(|e: Expr, start: Expr, length: Expr| {
                     Ok(match (start.clone(), length.clone()) {
                         (Expr::Literal(Null), _) | (_, Expr::Literal(Null)) => lit(Null),
-                        (_, Expr::Literal(LiteralValue::Int64(n))) if n < 0 => {
+                        (_, Expr::Literal(LiteralValue::Int(n))) if n < 0 => {
                             polars_bail!(InvalidOperation: "Substring does not support negative length: {}", function.args[2])
                         },
-                        (Expr::Literal(LiteralValue::Int64(n)), _) if n > 0 => e.str().slice(lit(n - 1), length.clone()),
-                        (Expr::Literal(LiteralValue::Int64(n)), _) => {
+                        (Expr::Literal(LiteralValue::Int(n)), _) if n > 0 => e.str().slice(lit(n - 1), length.clone()),
+                        (Expr::Literal(LiteralValue::Int(n)), _) => {
                             e.str().slice(lit(0), (length.clone() + lit(n - 1)).clip_min(lit(0)))
                         },
                         (Expr::Literal(_), _) => polars_bail!(InvalidOperation: "invalid 'start' for Substring: {}", function.args[1]),
-                        (_, Expr::Literal(LiteralValue::Float64(_))) => {
+                        (_, Expr::Literal(LiteralValue::Float(_))) => {
                             polars_bail!(InvalidOperation: "invalid 'length' for Substring: {}", function.args[1])
                         },
                         _ => {

@@ -560,4 +560,14 @@ impl StringNameSpace {
                 infer_schema_len,
             }))
     }
+
+    #[cfg(feature = "extract_jsonpath")]
+    pub fn json_path_match(self, pat: Expr) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::StringExpr(StringFunction::JsonPathMatch),
+            &[pat],
+            false,
+            false,
+        )
+    }
 }

@@ -1,7 +1,9 @@
 use super::*;
+use crate::map;
+#[cfg(feature = "is_between")]
+use crate::map_as_slice;
 #[cfg(feature = "is_in")]
 use crate::wrap;
-use crate::{map, map_as_slice};
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
@@ -112,9 +114,8 @@ impl From<BooleanFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             IsBetween { closed } => map_as_slice!(is_between, closed),
             #[cfg(feature = "is_in")]
             IsIn => wrap!(is_in),
-            AllHorizontal => map_as_slice!(all_horizontal),
-            AnyHorizontal => map_as_slice!(any_horizontal),
             Not => map!(not),
+            AllHorizontal | AnyHorizontal => unreachable!(),
         }
     }
 }
@@ -200,14 +201,6 @@ fn is_in(s: &mut [Series]) -> PolarsResult<Option<Series>> {
     let left = &s[0];
     let other = &s[1];
     polars_ops::prelude::is_in(left, other).map(|ca| Some(ca.into_series()))
-}
-
-fn any_horizontal(s: &[Series]) -> PolarsResult<Series> {
-    polars_ops::prelude::any_horizontal(s)
-}
-
-fn all_horizontal(s: &[Series]) -> PolarsResult<Series> {
-    polars_ops::prelude::all_horizontal(s)
 }
 
 fn not(s: &Series) -> PolarsResult<Series> {

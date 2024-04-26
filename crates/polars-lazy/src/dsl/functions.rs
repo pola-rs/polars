@@ -33,7 +33,7 @@ pub(crate) fn concat_impl<L: AsRef<[LazyFrame]>>(
 
     let lf = match &mut lf.logical_plan {
         // reuse the same union
-        LogicalPlan::Union {
+        DslPlan::Union {
             inputs: existing_inputs,
             options: opts,
         } if opts == &options => {
@@ -56,7 +56,7 @@ pub(crate) fn concat_impl<L: AsRef<[LazyFrame]>>(
                 lps.push(lp)
             }
 
-            let lp = LogicalPlan::Union {
+            let lp = DslPlan::Union {
                 inputs: lps,
                 options,
             };
@@ -68,26 +68,26 @@ pub(crate) fn concat_impl<L: AsRef<[LazyFrame]>>(
     };
 
     if convert_supertypes {
-        let LogicalPlan::Union {
+        let DslPlan::Union {
             mut inputs,
             options,
         } = lf.logical_plan
         else {
             unreachable!()
         };
-        let mut schema = inputs[0].schema()?.as_ref().as_ref().clone();
+        let mut schema = inputs[0].compute_schema()?.as_ref().clone();
 
         let mut changed = false;
         for input in inputs[1..].iter() {
-            changed |= schema.to_supertype(input.schema()?.as_ref().as_ref())?;
+            changed |= schema.to_supertype(input.compute_schema()?.as_ref())?;
         }
 
-        let mut placeholder = LogicalPlan::default();
+        let mut placeholder = DslPlan::default();
         if changed {
             let mut exprs = vec![];
             for input in &mut inputs {
                 std::mem::swap(input, &mut placeholder);
-                let input_schema = placeholder.schema()?;
+                let input_schema = placeholder.compute_schema()?;
 
                 exprs.clear();
                 let to_cast = input_schema.iter().zip(schema.iter_dtypes()).flat_map(
@@ -109,7 +109,7 @@ pub(crate) fn concat_impl<L: AsRef<[LazyFrame]>>(
                 std::mem::swap(&mut placeholder, input);
             }
         }
-        Ok(LazyFrame::from(LogicalPlan::Union { inputs, options }))
+        Ok(LazyFrame::from(DslPlan::Union { inputs, options }))
     } else {
         Ok(lf)
     }
@@ -205,7 +205,7 @@ pub fn concat_lf_horizontal<L: AsRef<[LazyFrame]>>(
     let options = HConcatOptions {
         parallel: args.parallel,
     };
-    let lp = LogicalPlan::HConcat {
+    let lp = DslPlan::HConcat {
         inputs: lps,
         schema: Arc::new(combined_schema),
         options,

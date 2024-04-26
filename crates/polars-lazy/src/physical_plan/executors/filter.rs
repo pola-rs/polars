@@ -33,32 +33,54 @@ impl FilterExec {
         }
     }
 
+    fn execute_hor(
+        &mut self,
+        df: DataFrame,
+        state: &mut ExecutionState,
+    ) -> PolarsResult<DataFrame> {
+        if self.has_window {
+            state.insert_has_window_function_flag()
+        }
+        let s = self.predicate.evaluate(&df, state)?;
+        if self.has_window {
+            state.clear_window_expr_cache()
+        }
+        df.filter(series_to_mask(&s)?)
+    }
+
+    fn execute_chunks(
+        &mut self,
+        chunks: Vec<DataFrame>,
+        state: &ExecutionState,
+    ) -> PolarsResult<DataFrame> {
+        let iter = chunks.into_par_iter().map(|df| {
+            let s = self.predicate.evaluate(&df, state)?;
+            df.filter(series_to_mask(&s)?)
+        });
+        let df = POOL.install(|| iter.collect::<PolarsResult<Vec<_>>>())?;
+        Ok(accumulate_dataframes_vertical_unchecked(df))
+    }
+
     fn execute_impl(
         &mut self,
         df: DataFrame,
         state: &mut ExecutionState,
     ) -> PolarsResult<DataFrame> {
+        let n_partitions = POOL.current_num_threads();
         // Vertical parallelism.
-        let df = if self.streamable && df.n_chunks() > 1 && df.height() > 0 {
-            let chunks = df.split_chunks().collect::<Vec<_>>();
-            let iter = chunks.into_par_iter().map(|df| {
-                let s = self.predicate.evaluate(&df, state)?;
-                df.filter(series_to_mask(&s)?)
-            });
-
-            let df = POOL.install(|| iter.collect::<PolarsResult<Vec<_>>>())?;
-            accumulate_dataframes_vertical_unchecked(df)
+        if self.streamable && df.height() > 0 {
+            if df.n_chunks() > 1 {
+                let chunks = df.split_chunks().collect::<Vec<_>>();
+                self.execute_chunks(chunks, state)
+            } else if df.width() < n_partitions {
+                self.execute_hor(df, state)
+            } else {
+                let chunks = df.split_chunks_by_n(n_partitions, true);
+                self.execute_chunks(chunks, state)
+            }
         } else {
-            if self.has_window {
-                state.insert_has_window_function_flag()
-            }
-            let s = self.predicate.evaluate(&df, state)?;
-            if self.has_window {
-                state.clear_window_expr_cache()
-            }
-            df.filter(series_to_mask(&s)?)?
-        };
-        Ok(df)
+            self.execute_hor(df, state)
+        }
     }
 }
 

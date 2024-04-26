@@ -18,6 +18,7 @@ if TYPE_CHECKING:
         Ambiguous,
         EpochTimeUnit,
         IntoExpr,
+        IntoExprColumn,
         NonExistent,
         Roll,
         TemporalLiteral,
@@ -1605,7 +1606,6 @@ class DateTimeNameSpace:
             - 1mo   (1 calendar month)
             - 1q    (1 calendar quarter)
             - 1y    (1 calendar year)
-            - 1i    (1 index count)
 
             By "calendar day", we mean the corresponding time on the next day
             (which may not be 24 hours, due to daylight savings). Similarly for
@@ -1703,7 +1703,7 @@ class DateTimeNameSpace:
             - `'latest'`: use the latest datetime
 
             .. deprecated:: 0.19.3
-                This is now auto-inferred, you can safely remove this argument.
+                This is now automatically inferred; you can safely omit this argument.
 
         Notes
         -----
@@ -1806,7 +1806,7 @@ class DateTimeNameSpace:
     @unstable()
     def round(
         self,
-        every: str | dt.timedelta,
+        every: str | dt.timedelta | IntoExprColumn,
         offset: str | dt.timedelta | None = None,
         *,
         ambiguous: Ambiguous | Series | None = None,
@@ -1845,7 +1845,7 @@ class DateTimeNameSpace:
             - `'latest'`: use the latest datetime
 
             .. deprecated:: 0.19.3
-                This is now auto-inferred, you can safely remove this argument.
+                This is now automatically inferred; you can safely omit this argument.
 
         Returns
         -------

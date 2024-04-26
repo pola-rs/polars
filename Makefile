@@ -21,7 +21,7 @@ FILTER_PIP_WARNINGS=| grep -v "don't match your environment"; test $${PIPESTATUS
 requirements: .venv  ## Install/refresh Python project requirements
 	@unset CONDA_PREFIX \
 	&& $(VENV_BIN)/python -m pip install --upgrade uv \
-	&& $(VENV_BIN)/uv pip install --upgrade -r py-polars/requirements-dev.txt \
+	&& $(VENV_BIN)/uv pip install --upgrade --compile-bytecode -r py-polars/requirements-dev.txt \
 	&& $(VENV_BIN)/uv pip install --upgrade -r py-polars/requirements-lint.txt \
 	&& $(VENV_BIN)/uv pip install --upgrade -r py-polars/docs/requirements-docs.txt \
 	&& $(VENV_BIN)/uv pip install --upgrade -r docs/requirements.txt
@@ -106,10 +106,10 @@ pre-commit: fmt clippy clippy-default  ## Run all code quality checks
 
 .PHONY: clean
 clean:  ## Clean up caches and build artifacts
+	@$(MAKE) -s -C py-polars/ $@
 	@rm -rf .ruff_cache/
 	@rm -rf .venv/
 	@cargo clean
-	@$(MAKE) -s -C py-polars/ $@
 
 .PHONY: help
 help:  ## Display this help screen

@@ -82,7 +82,7 @@ def test_regex_operators_error() -> None:
     df = pl.LazyFrame({"sval": ["ABC", "abc", "000", "A0C", "a0c"]})
     with pl.SQLContext(df=df, eager_execution=True) as ctx:
         with pytest.raises(
-            ComputeError, match="invalid pattern for '~' operator: 12345"
+            ComputeError, match="invalid pattern for '~' operator: dyn .*12345"
         ):
             ctx.execute("SELECT * FROM df WHERE sval ~ 12345")
         with pytest.raises(

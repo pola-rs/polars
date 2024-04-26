@@ -240,7 +240,7 @@ pub fn top_k(s: &[Series], sort_options: SortOptions) -> PolarsResult<Series> {
         DataType::Boolean => Ok(top_k_bool_impl(s.bool().unwrap(), k, sort_options).into_series()),
         DataType::String => {
             let ca = top_k_binary_impl(&s.str().unwrap().as_binary(), k, sort_options);
-            let ca = unsafe { ca.to_string() };
+            let ca = unsafe { ca.to_string_unchecked() };
             Ok(ca.into_series())
         },
         DataType::Binary => {

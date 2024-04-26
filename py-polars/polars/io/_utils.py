@@ -132,7 +132,10 @@ def prepare_file_arg(
     If encoding is not `utf8` or `utf8-lossy`, decoding is handled by
     fsspec too.
     """
-    storage_options = storage_options or {}
+    storage_options = storage_options.copy() if storage_options else {}
+    if storage_options and not _FSSPEC_AVAILABLE:
+        msg = "`fsspec` is required for `storage_options` argument"
+        raise ImportError(msg)
 
     # Small helper to use a variable as context
     @contextmanager

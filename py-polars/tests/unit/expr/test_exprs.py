@@ -693,9 +693,9 @@ def test_repr_long_expression() -> None:
 
 def test_repr_gather() -> None:
     result = repr(pl.col("a").gather(0))
-    assert 'col("a").gather(0)' in result
+    assert 'col("a").gather(dyn int: 0)' in result
     result = repr(pl.col("a").get(0))
-    assert 'col("a").get(0)' in result
+    assert 'col("a").get(dyn int: 0)' in result
 
 
 def test_replace_no_cse() -> None:

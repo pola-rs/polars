@@ -71,7 +71,7 @@ pub struct DotNode<'a> {
     pub fmt: &'a str,
 }
 
-impl LogicalPlan {
+impl DslPlan {
     fn write_single_node(&self, acc_str: &mut String, node: DotNode) -> std::fmt::Result {
         let fmt_node = node.fmt.replace('"', r#"\""#);
         writeln!(acc_str, "graph  polars_query {{\n\"[{fmt_node}]\"")?;
@@ -128,7 +128,7 @@ impl LogicalPlan {
         prev_node: DotNode,
         id_map: &mut PlHashMap<String, String>,
     ) -> std::fmt::Result {
-        use LogicalPlan::*;
+        use DslPlan::*;
         let (mut branch, id) = id;
 
         match self {
@@ -199,14 +199,14 @@ impl LogicalPlan {
                 "PYTHON",
                 &[],
                 options.with_columns.as_ref().map(|s| s.as_slice()),
-                options.schema.len(),
+                Some(options.schema.len()),
                 &options.predicate,
                 branch,
                 id,
                 id_map,
             ),
             Select { expr, input, .. } => {
-                let schema = input.schema().map_err(|_| {
+                let schema = input.compute_schema().map_err(|_| {
                     eprintln!("could not determine schema");
                     std::fmt::Error
                 })?;
@@ -342,7 +342,7 @@ impl LogicalPlan {
                     name,
                     paths.as_ref(),
                     options.with_columns.as_ref().map(|cols| cols.as_slice()),
-                    file_info.schema.len(),
+                    file_info.as_ref().map(|fi| fi.schema.len()),
                     predicate,
                     branch,
                     id,
@@ -407,15 +407,6 @@ impl LogicalPlan {
                 self.write_dot(acc_str, prev_node, current_node, id_map)?;
                 input.dot(acc_str, (branch, id + 1), current_node, id_map)
             },
-            Error { err, .. } => {
-                let fmt = format!("{:?}", &err.0);
-                let current_node = DotNode {
-                    branch,
-                    id,
-                    fmt: &fmt,
-                };
-                self.write_dot(acc_str, prev_node, current_node, id_map)
-            },
         }
     }
 
@@ -427,7 +418,7 @@ impl LogicalPlan {
         name: &str,
         path: &[PathBuf],
         with_columns: Option<&[String]>,
-        total_columns: usize,
+        total_columns: Option<usize>,
         predicate: &Option<P>,
         branch: usize,
         id: usize,
@@ -449,6 +440,9 @@ impl LogicalPlan {
         };
 
         let pred = fmt_predicate(predicate.as_ref());
+        let total_columns = total_columns
+            .map(|v| format!("{v}"))
+            .unwrap_or_else(|| "?".to_string());
         let fmt = format!(
             "{name} SCAN {};\nπ {}/{};\nσ {}",
             path_fmt, n_columns_fmt, total_columns, pred,

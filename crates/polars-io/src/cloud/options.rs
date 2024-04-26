@@ -429,10 +429,10 @@ impl CloudOptions {
 #[cfg(feature = "cloud")]
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::parse_url;
 
     #[test]
-    fn test_parse_path() {
+    fn test_parse_url() {
         assert_eq!(
             parse_url(r"http://Users/Jane Doe/data.csv")
                 .unwrap()

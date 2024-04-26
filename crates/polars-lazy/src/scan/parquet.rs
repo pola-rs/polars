@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
-use polars_io::parquet::ParallelStrategy;
+use polars_io::parquet::read::ParallelStrategy;
 use polars_io::{HiveOptions, RowIndex};
 
 use crate::prelude::*;
@@ -73,7 +73,7 @@ impl LazyFileListReader for LazyParquetReader {
         } else {
             self.paths
         };
-        let mut lf: LazyFrame = LogicalPlanBuilder::scan_parquet(
+        let mut lf: LazyFrame = DslBuilder::scan_parquet(
             paths,
             self.args.n_rows,
             self.args.cache,

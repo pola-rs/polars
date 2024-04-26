@@ -29,11 +29,11 @@ def test_case_when() -> None:
             FROM test_data
             """
         )
-    assert out.to_dict(as_series=False) == {
-        "v1": [None, 2, None, 4],
-        "v2": [101, 202, 303, 404],
-        "v3": ["odd", "even", "odd", "even"],
-    }
+        assert out.to_dict(as_series=False) == {
+            "v1": [None, 2, None, 4],
+            "v2": [101, 202, 303, 404],
+            "v3": ["odd", "even", "odd", "even"],
+        }
 
 
 def test_control_flow(foods_ipc_path: Path) -> None:

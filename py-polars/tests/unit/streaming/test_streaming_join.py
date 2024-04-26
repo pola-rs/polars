@@ -158,17 +158,28 @@ def test_join_null_matches(streaming: bool) -> None:
             "a": [None, 2, 1, None],
         }
     )
+    # Semi
+    assert df_a.join(df_b, on="a", how="semi", join_nulls=True).collect(
+        streaming=streaming
+    )["idx_a"].to_list() == [0, 1, 2]
+    assert df_a.join(df_b, on="a", how="semi", join_nulls=False).collect(
+        streaming=streaming
+    )["idx_a"].to_list() == [1, 2]
 
+    # Inner
     expected = pl.DataFrame({"idx_a": [2, 1], "a": [2, 1], "idx_b": [1, 2]})
     assert_frame_equal(
         df_a.join(df_b, on="a", how="inner").collect(streaming=streaming), expected
     )
+
+    # Left
     expected = pl.DataFrame(
         {"idx_a": [0, 1, 2], "a": [None, 1, 2], "idx_b": [None, 2, 1]}
     )
     assert_frame_equal(
         df_a.join(df_b, on="a", how="left").collect(streaming=streaming), expected
     )
+    # Outer
     expected = pl.DataFrame(
         {
             "idx_a": [None, 2, 1, None, 0],

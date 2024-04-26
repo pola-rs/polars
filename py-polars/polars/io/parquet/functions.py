@@ -59,9 +59,9 @@ def read_parquet(
     Parameters
     ----------
     source
-        Path to a file, or a file-like object (by file-like object, we refer to objects
-        that have a `read()` method, such as a file handler (e.g. via builtin `open`
-        function) or `BytesIO`). If the path is a directory, files in that
+        Path to a file or a file-like object (by "file-like object" we refer to objects
+        that have a `read()` method, such as a file handler like the builtin `open`
+        function, or a `BytesIO` instance). If the path is a directory, files in that
         directory will all be read.
     columns
         Columns to select. Accepts a list of column indices (starting at zero) or a list
@@ -162,8 +162,8 @@ def read_parquet(
             memory_map=memory_map,
         )
 
-    # Read binary types using `read_parquet`
-    elif isinstance(source, (io.BufferedIOBase, io.RawIOBase, bytes)):
+    # Read file and bytes inputs using `read_parquet`
+    elif isinstance(source, (io.IOBase, bytes)):
         return _read_parquet_binary(
             source,
             columns=columns,
@@ -269,9 +269,9 @@ def read_parquet_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, Dat
     Parameters
     ----------
     source
-        Path to a file or a file-like object (by file-like object, we refer to objects
-        that have a `read()` method, such as a file handler (e.g. via builtin `open`
-        function) or `BytesIO`).
+        Path to a file or a file-like object (by "file-like object" we refer to objects
+        that have a `read()` method, such as a file handler like the builtin `open`
+        function, or a `BytesIO` instance).
 
     Returns
     -------

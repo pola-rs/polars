@@ -1,3 +1,5 @@
+use polars_core::utils::try_get_supertype;
+
 use super::*;
 
 impl FunctionNode {
@@ -6,7 +8,10 @@ impl FunctionNode {
         // We will likely add more branches later
         #[allow(clippy::single_match)]
         match self {
-            RowIndex { schema, .. } => {
+            RowIndex { schema, .. }
+            | Explode { schema, .. }
+            | Rename { schema, .. }
+            | Melt { schema, .. } => {
                 let mut guard = schema.lock().unwrap();
                 *guard = None;
             },
@@ -33,7 +38,6 @@ impl FunctionNode {
                 .map(|schema| Cow::Owned(schema.clone()))
                 .unwrap_or_else(|| Cow::Borrowed(input_schema))),
             Pipeline { schema, .. } => Ok(Cow::Owned(schema.clone())),
-            DropNulls { .. } => Ok(Cow::Borrowed(input_schema)),
             Count { alias, .. } => {
                 let mut schema: Schema = Schema::with_capacity(1);
                 let name = SmartString::from(
@@ -61,7 +65,7 @@ impl FunctionNode {
                                         );
                                     }
                                 },
-                                DataType::Unknown => {
+                                DataType::Unknown(_) => {
                                     // pass through unknown
                                 },
                                 _ => {
@@ -84,11 +88,17 @@ impl FunctionNode {
             },
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => Ok(Cow::Borrowed(input_schema)),
-            Rename { existing, new, .. } => rename::rename_schema(input_schema, existing, new),
+            Rename {
+                existing,
+                new,
+                schema,
+                ..
+            } => rename_schema(input_schema, existing, new, schema),
             RowIndex { schema, name, .. } => {
                 Ok(Cow::Owned(row_index_schema(schema, input_schema, name)))
             },
-            Explode { schema, .. } | Melt { schema, .. } => Ok(Cow::Owned(schema.clone())),
+            Explode { schema, columns } => explode_schema(schema, input_schema, columns),
+            Melt { schema, args } => melt_schema(args, schema, input_schema),
         }
     }
 }
@@ -109,28 +119,101 @@ fn row_index_schema(
     schema_ref
 }
 
-// We don't use an `Arc<Mutex>` because caches should live in different query plans.
-// For that reason we have a specialized deep clone.
-#[derive(Default)]
-pub struct CachedSchema(Mutex<Option<SchemaRef>>);
-
-impl AsRef<Mutex<Option<SchemaRef>>> for CachedSchema {
-    fn as_ref(&self) -> &Mutex<Option<SchemaRef>> {
-        &self.0
+fn explode_schema<'a>(
+    cached_schema: &CachedSchema,
+    schema: &'a Schema,
+    columns: &[Arc<str>],
+) -> PolarsResult<Cow<'a, SchemaRef>> {
+    let mut guard = cached_schema.lock().unwrap();
+    if let Some(schema) = &*guard {
+        return Ok(Cow::Owned(schema.clone()));
     }
+    let mut schema = schema.clone();
+
+    // columns to string
+    columns.iter().try_for_each(|name| {
+        if let DataType::List(inner) = schema.try_get(name)? {
+            let inner = *inner.clone();
+            schema.with_column(name.as_ref().into(), inner);
+        };
+        PolarsResult::Ok(())
+    })?;
+    let schema = Arc::new(schema);
+    *guard = Some(schema.clone());
+    Ok(Cow::Owned(schema))
 }
 
-impl Deref for CachedSchema {
-    type Target = Mutex<Option<SchemaRef>>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
+fn melt_schema<'a>(
+    args: &MeltArgs,
+    cached_schema: &CachedSchema,
+    input_schema: &'a Schema,
+) -> PolarsResult<Cow<'a, SchemaRef>> {
+    let mut guard = cached_schema.lock().unwrap();
+    if let Some(schema) = &*guard {
+        return Ok(Cow::Owned(schema.clone()));
     }
+
+    let mut new_schema = args
+        .id_vars
+        .iter()
+        .map(|id| Field::new(id, input_schema.get(id).unwrap().clone()))
+        .collect::<Schema>();
+    let variable_name = args
+        .variable_name
+        .as_ref()
+        .cloned()
+        .unwrap_or_else(|| "variable".into());
+    let value_name = args
+        .value_name
+        .as_ref()
+        .cloned()
+        .unwrap_or_else(|| "value".into());
+
+    new_schema.with_column(variable_name, DataType::String);
+
+    // We need to determine the supertype of all value columns.
+    let mut supertype = DataType::Null;
+
+    // take all columns that are not in `id_vars` as `value_var`
+    if args.value_vars.is_empty() {
+        let id_vars = PlHashSet::from_iter(&args.id_vars);
+        for (name, dtype) in input_schema.iter() {
+            if !id_vars.contains(name) {
+                supertype = try_get_supertype(&supertype, dtype).unwrap();
+            }
+        }
+    } else {
+        for name in &args.value_vars {
+            let dtype = input_schema.get(name).unwrap();
+            supertype = try_get_supertype(&supertype, dtype).unwrap();
+        }
+    }
+    new_schema.with_column(value_name, supertype);
+    let schema = Arc::new(new_schema);
+    *guard = Some(schema.clone());
+    Ok(Cow::Owned(schema))
 }
 
-impl Clone for CachedSchema {
-    fn clone(&self) -> Self {
-        let inner = self.0.lock().unwrap();
-        Self(Mutex::new(inner.clone()))
+fn rename_schema<'a>(
+    input_schema: &'a SchemaRef,
+    existing: &[SmartString],
+    new: &[SmartString],
+    cached_schema: &CachedSchema,
+) -> PolarsResult<Cow<'a, SchemaRef>> {
+    let mut guard = cached_schema.lock().unwrap();
+    if let Some(schema) = &*guard {
+        return Ok(Cow::Owned(schema.clone()));
     }
+    let mut new_schema = input_schema.iter_fields().collect::<Vec<_>>();
+
+    for (old, new) in existing.iter().zip(new.iter()) {
+        // The column might be removed due to projection pushdown
+        // so we only update if we can find it.
+        if let Some((idx, _, _)) = input_schema.get_full(old) {
+            new_schema[idx].name = new.as_str().into();
+        }
+    }
+    let schema: SchemaRef = Arc::new(new_schema.into_iter().collect());
+    *guard = Some(schema.clone());
+    Ok(Cow::Owned(schema))
 }

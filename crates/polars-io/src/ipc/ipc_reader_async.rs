@@ -11,6 +11,7 @@ use polars_error::{polars_bail, polars_err, to_compute_err, PolarsResult};
 use crate::cloud::{build_object_store, CloudLocation, CloudOptions, PolarsObjectStore};
 use crate::predicates::PhysicalIoExpr;
 use crate::prelude::{materialize_projection, IpcReader};
+use crate::shared::SerReader;
 use crate::RowIndex;
 
 /// An Arrow IPC reader implemented on top of PolarsObjectStore.
@@ -171,11 +172,10 @@ impl IpcReaderAsync {
             None => None,
         };
 
-        let reader =
-            <IpcReader<_> as crate::SerReader<_>>::new(std::io::Cursor::new(bytes.as_ref()))
-                .with_row_index(options.row_index)
-                .with_n_rows(options.row_limit)
-                .with_projection(projection);
+        let reader = <IpcReader<_> as SerReader<_>>::new(std::io::Cursor::new(bytes.as_ref()))
+            .with_row_index(options.row_index)
+            .with_n_rows(options.row_limit)
+            .with_projection(projection);
         reader.finish_with_scan_ops(options.predicate, verbose)
     }
 

@@ -4,8 +4,7 @@ use std::thread::JoinHandle;
 
 use crossbeam_channel::{bounded, Receiver, Sender};
 use polars_core::prelude::*;
-use polars_io::parquet::{BatchedWriter, ParquetWriter, RowGroupIter};
-use polars_plan::prelude::ParquetWriteOptions;
+use polars_io::parquet::write::{BatchedWriter, ParquetWriteOptions, ParquetWriter, RowGroupIter};
 
 use crate::executors::sinks::output::file_sink::{init_writer_thread, FilesSink, SinkWriter};
 use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult};
@@ -181,7 +180,7 @@ impl ParquetCloudSink {
     }
 }
 
-impl<W: std::io::Write> SinkWriter for polars_io::parquet::BatchedWriter<W> {
+impl<W: std::io::Write> SinkWriter for polars_io::parquet::write::BatchedWriter<W> {
     fn _write_batch(&mut self, df: &DataFrame) -> PolarsResult<()> {
         self.write_batch(df)
     }

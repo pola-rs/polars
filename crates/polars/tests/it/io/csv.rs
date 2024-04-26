@@ -3,6 +3,7 @@ use std::num::NonZeroUsize;
 
 use polars::io::RowIndex;
 use polars_core::export::chrono;
+use polars_core::utils::concat_df;
 
 use super::*;
 
@@ -136,9 +137,21 @@ fn test_read_csv_file() {
 }
 
 #[test]
+fn test_read_csv_filter() -> PolarsResult<()> {
+    let df = CsvReader::from_path(FOODS_CSV)?.finish()?;
+
+    let out = df.filter(&df.column("fats_g")?.gt(4)?)?;
+
+    // This fails if all columns are not equal.
+    println!("{out}");
+
+    Ok(())
+}
+
+#[test]
 fn test_parser() -> PolarsResult<()> {
     let s = r#"
- "sepal.length","sepal.width","petal.length","petal.width","variety"
+ "sepal_length","sepal_width","petal_length","petal_width","variety"
  5.1,3.5,1.4,.2,"Setosa"
  4.9,3,1.4,.2,"Setosa"
  4.7,3.2,1.3,.2,"Setosa"
@@ -157,7 +170,7 @@ fn test_parser() -> PolarsResult<()> {
         .unwrap();
 
     let s = r#"
-         "sepal.length","sepal.width","petal.length","petal.width","variety"
+         "sepal_length","sepal_width","petal_length","petal_width","variety"
          5.1,3.5,1.4,.2,"Setosa"
          5.1,3.5,1.4,.2,"Setosa"
  "#;
@@ -173,7 +186,7 @@ fn test_parser() -> PolarsResult<()> {
         .finish()
         .unwrap();
 
-    let s = r#""sepal.length","sepal.width","petal.length","petal.width","variety"
+    let s = r#""sepal_length","sepal_width","petal_length","petal_width","variety"
         5.1,3.5,1.4,.2,"Setosa"
         4.9,3,1.4,.2,"Setosa"
         4.7,3.2,1.3,.2,"Setosa"
@@ -194,8 +207,8 @@ fn test_parser() -> PolarsResult<()> {
     assert_eq!(col.get(0)?, AnyValue::String("Setosa"));
     assert_eq!(col.get(2)?, AnyValue::String("Setosa"));
 
-    assert_eq!("sepal.length", df.get_columns()[0].name());
-    assert_eq!(1, df.column("sepal.length").unwrap().chunks().len());
+    assert_eq!("sepal_length", df.get_columns()[0].name());
+    assert_eq!(1, df.column("sepal_length").unwrap().chunks().len());
     assert_eq!(df.height(), 7);
 
     // test windows line endings
@@ -427,7 +440,7 @@ id090,id048,id0000067778,24,2,51862,4,9,
 
 #[test]
 fn test_new_line_escape() {
-    let s = r#""sepal.length","sepal.width","petal.length","petal.width","variety"
+    let s = r#""sepal_length","sepal_width","petal_length","petal_width","variety"
  5.1,3.5,1.4,.2,"Setosa
  texts after new line character"
  4.9,3,1.4,.2,"Setosa"
@@ -1246,4 +1259,18 @@ fn test_leading_whitespace_with_quote() -> PolarsResult<()> {
     assert_eq!(col_1.get(0)?, AnyValue::Float64(24.5));
     assert_eq!(col_2.get(0)?, AnyValue::String("  4.1"));
     Ok(())
+}
+
+#[test]
+fn test_read_io_reader() {
+    let path = "../../examples/datasets/foods1.csv";
+    let file = std::fs::File::open(path).unwrap();
+    let mut reader = CsvReader::from_path(path).unwrap().with_chunk_size(5);
+
+    let mut reader = reader.batched_borrowed_read().unwrap();
+    let batches = reader.next_batches(5).unwrap().unwrap();
+    assert_eq!(batches.len(), 5);
+    let df = concat_df(&batches).unwrap();
+    let expected = CsvReader::new(file).finish().unwrap();
+    assert!(df.equals(&expected))
 }

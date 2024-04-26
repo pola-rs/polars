@@ -110,3 +110,13 @@ def test_cut_deprecated_label_name() -> None:
         s.cut([0.1], category_label="x")
     with pytest.deprecated_call():
         s.cut([0.1], break_point_label="x")
+
+
+def test_cut_bin_name_in_agg_context() -> None:
+    df = pl.DataFrame({"a": [1]}).select(
+        cut=pl.col("a").cut([1, 2], include_breaks=True).over(1),
+        qcut=pl.col("a").qcut([1], include_breaks=True).over(1),
+        qcut_uniform=pl.col("a").qcut(1, include_breaks=True).over(1),
+    )
+    schema = pl.Struct({"brk": pl.Float64, "a_bin": pl.Categorical("physical")})
+    assert df.schema == {"cut": schema, "qcut": schema, "qcut_uniform": schema}

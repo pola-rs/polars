@@ -64,7 +64,7 @@ fn test_lazy_arithmetic() {
     let df = get_df();
     let lf = df
         .lazy()
-        .select(&[((col("sepal.width") * lit(100)).alias("super_wide"))])
+        .select(&[((col("sepal_width") * lit(100)).alias("super_wide"))])
         .sort(["super_wide"], SortMultipleOptions::default());
 
     print_plans(&lf);
@@ -83,7 +83,7 @@ fn test_lazy_logical_plan_filter_and_alias_combined() {
     let df = get_df();
     let lf = df
         .lazy()
-        .filter(col("sepal.width").lt(lit(3.5)))
+        .filter(col("sepal_width").lt(lit(3.5)))
         .select(&[col("variety").alias("foo")]);
 
     print_plans(&lf);
@@ -100,14 +100,14 @@ fn test_lazy_logical_plan_schema() {
         .select(&[col("variety").alias("foo")])
         .logical_plan;
 
-    assert!(lp.schema().unwrap().get("foo").is_some());
+    assert!(lp.compute_schema().unwrap().get("foo").is_some());
 
     let lp = df
         .lazy()
         .group_by([col("variety")])
-        .agg([col("sepal.width").min()])
+        .agg([col("sepal_width").min()])
         .logical_plan;
-    assert!(lp.schema().unwrap().get("sepal.width").is_some());
+    assert!(lp.compute_schema().unwrap().get("sepal_width").is_some());
 }
 
 #[test]

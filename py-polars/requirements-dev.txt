@@ -9,6 +9,7 @@
 maturin
 # extra dependency for maturin (linux-only)
 patchelf; platform_system == 'Linux'
+pip
 
 # ------------
 # DEPENDENCIES
@@ -36,14 +37,13 @@ cloudpickle
 fsspec
 s3fs[boto3]
 # Spreadsheet
-ezodf
 lxml
 fastexcel>=0.9
 openpyxl
 pyxlsb
 xlsx2csv
 XlsxWriter
-deltalake>=0.14.0
+deltalake>=0.15.0
 pyiceberg>=0.5.0
 # Csv
 zstandard

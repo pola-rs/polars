@@ -3,7 +3,6 @@
 #![allow(clippy::transmute_undefined_repr)]
 #![allow(non_local_definitions)]
 #![allow(clippy::too_many_arguments)] // Python functions can have many arguments due to default arguments
-extern crate polars as polars_rs;
 
 #[cfg(feature = "build_info")]
 #[macro_use]

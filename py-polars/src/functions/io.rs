@@ -21,8 +21,8 @@ pub fn read_ipc_schema(py: Python, py_f: PyObject) -> PyResult<PyObject> {
         EitherRustPythonFile::Py(mut r) => read_file_metadata(&mut r).map_err(PyPolarsErr::from)?,
     };
 
-    let dict = PyDict::new(py);
-    fields_to_pydict(&metadata.schema.fields, dict, py)?;
+    let dict = PyDict::new_bound(py);
+    fields_to_pydict(&metadata.schema.fields, &dict, py)?;
     Ok(dict.to_object(py))
 }
 
@@ -37,13 +37,13 @@ pub fn read_parquet_schema(py: Python, py_f: PyObject) -> PyResult<PyObject> {
     };
     let arrow_schema = infer_schema(&metadata).map_err(PyPolarsErr::from)?;
 
-    let dict = PyDict::new(py);
-    fields_to_pydict(&arrow_schema.fields, dict, py)?;
+    let dict = PyDict::new_bound(py);
+    fields_to_pydict(&arrow_schema.fields, &dict, py)?;
     Ok(dict.to_object(py))
 }
 
 #[cfg(any(feature = "ipc", feature = "parquet"))]
-fn fields_to_pydict(fields: &Vec<Field>, dict: &PyDict, py: Python) -> PyResult<()> {
+fn fields_to_pydict(fields: &Vec<Field>, dict: &Bound<'_, PyDict>, py: Python) -> PyResult<()> {
     for field in fields {
         let dt = if field.metadata.get(DTYPE_ENUM_KEY) == Some(&DTYPE_ENUM_VALUE.into()) {
             Wrap(create_enum_data_type(Utf8ViewArray::new_empty(

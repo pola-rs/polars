@@ -125,7 +125,8 @@ class SQLContext(Generic[FrameType]):
                     named_frames[name] = obj
 
         if frames or named_frames:
-            self.register_many(frames, **named_frames)
+            frames.update(named_frames)
+            self.register_many(frames)
 
     def __enter__(self) -> SQLContext[FrameType]:
         """Track currently registered tables on scope entry; supports nested scopes."""

@@ -66,7 +66,7 @@ fn test_lazy_ternary() {
     let df = get_df()
         .lazy()
         .with_column(
-            when(col("sepal.length").lt(lit(5.0)))
+            when(col("sepal_length").lt(lit(5.0)))
                 .then(lit(10))
                 .otherwise(lit(1))
                 .alias("new"),

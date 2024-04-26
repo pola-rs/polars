@@ -745,6 +745,34 @@ def test_jsonpath_single() -> None:
     assert_series_equal(s.str.json_path_match("$.a"), expected)
 
 
+def test_json_path_match() -> None:
+    df = pl.DataFrame(
+        {
+            "str": [
+                '{"a":"1"}',
+                None,
+                '{"b":2}',
+                '{"a":2.1, "b": "hello"}',
+                '{"a":true}',
+            ],
+            "pat": ["$.a", "$.a", "$.b", "$.b", None],
+        }
+    )
+    out = df.select(
+        all_expr=pl.col("str").str.json_path_match(pl.col("pat")),
+        str_expr=pl.col("str").str.json_path_match("$.a"),
+        pat_expr=pl.lit('{"a": 1.1, "b": 10}').str.json_path_match(pl.col("pat")),
+    )
+    expected = pl.DataFrame(
+        {
+            "all_expr": ["1", None, "2", "hello", None],
+            "str_expr": ["1", None, None, "2.1", "true"],
+            "pat_expr": ["1.1", "1.1", "10", "10", None],
+        }
+    )
+    assert_frame_equal(out, expected)
+
+
 def test_extract_regex() -> None:
     s = pl.Series(
         [

@@ -30,7 +30,7 @@ streaming-decompression = "0.1"
 
 async-stream = { version = "0.3.3", optional = true }
 
-brotli = { version = "^3.3", optional = true }
+brotli = { version = "^5.0", optional = true }
 flate2 = { version = "^1.0", optional = true, default-features = false }
 lz4 = { version = "1.24", optional = true }
 serde = { version = "^1.0", optional = true, features = ["derive"] }

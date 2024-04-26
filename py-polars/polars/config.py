@@ -1195,6 +1195,42 @@ class Config(contextlib.ContextDecorator):
         ----------
         width : int
             Maximum table width in characters.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "id": ["SEQ1", "SEQ2"],
+        ...         "seq": ["ATGATAAAGGAG", "GCAACGCATATA"],
+        ...     }
+        ... )
+        >>> df
+        shape: (2, 2)
+        ┌──────┬──────────────┐
+        │ id   ┆ seq          │
+        │ ---  ┆ ---          │
+        │ str  ┆ str          │
+        ╞══════╪══════════════╡
+        │ SEQ1 ┆ ATGATAAAGGAG │
+        │ SEQ2 ┆ GCAACGCATATA │
+        └──────┴──────────────┘
+        >>> pl.Config.set_tbl_width_chars(12)  # doctest: +IGNORE_RESULT
+        >>> df
+        shape: (2, 2)
+        ┌─────┬─────┐
+        │ id  ┆ seq │
+        │ --- ┆ --- │
+        │ str ┆ str │
+        ╞═════╪═════╡
+        │ SEQ ┆ ATG │
+        │ 1   ┆ ATA │
+        │     ┆ AAG │
+        │     ┆ GAG │
+        │ SEQ ┆ GCA │
+        │ 2   ┆ ACG │
+        │     ┆ CAT │
+        │     ┆ ATA │
+        └─────┴─────┘
         """
         if width is None:
             os.environ.pop("POLARS_TABLE_WIDTH", None)
