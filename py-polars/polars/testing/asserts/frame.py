@@ -29,6 +29,9 @@ def assert_frame_equal(
     Raises a detailed `AssertionError` if the frames differ.
     This function is intended for use in unit tests.
 
+    .. versionchanged:: 0.20.31
+        The `check_dtype` parameter was renamed `check_dtypes`.
+
     Parameters
     ----------
     left
@@ -209,6 +212,9 @@ def assert_frame_not_equal(
     Assert that the left and right frame are **not** equal.
 
     This function is intended for use in unit tests.
+
+    .. versionchanged:: 0.20.31
+        The `check_dtype` parameter was renamed `check_dtypes`.
 
     Parameters
     ----------

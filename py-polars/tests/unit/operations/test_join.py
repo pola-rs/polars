@@ -174,7 +174,7 @@ def test_deprecated() -> None:
 def test_deprecated_parameter_join_nulls() -> None:
     df = pl.DataFrame({"a": [1, None]})
     with pytest.deprecated_call(
-        match=r"The argument `join_nulls` for `DataFrame.join` is deprecated. It has been renamed to `nulls_equal`"
+        match=r"the argument `join_nulls` for `DataFrame.join` is deprecated. It was renamed to `nulls_equal`"
     ):
         result = df.join(df, on="a", join_nulls=True)  # type: ignore[call-arg]
     assert_frame_equal(result, df, check_row_order=False)

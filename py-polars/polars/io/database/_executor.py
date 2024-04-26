@@ -528,7 +528,7 @@ class ConnectionExecutor:
         fall back to initialising with row-level data if no other option.
         """
         if self.result is None:
-            msg = "Cannot return a frame before executing a query"
+            msg = "cannot return a frame before executing a query"
             raise RuntimeError(msg)
 
         can_close = self.can_close_cursor
