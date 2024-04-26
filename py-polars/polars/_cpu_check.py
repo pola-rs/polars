@@ -24,6 +24,7 @@
 from __future__ import annotations
 
 import ctypes
+import ctypes.util
 import os
 from ctypes import CFUNCTYPE, POINTER, c_long, c_size_t, c_uint32, c_ulong, c_void_p
 from typing import ClassVar
@@ -159,14 +160,25 @@ class CPUID:
         else:
             import mmap  # Only import if necessary.
 
+            # On some platforms PROT_WRITE + PROT_EXEC is forbidden, so we first
+            # only write and then mprotect into PROT_EXEC.
+            libc = ctypes.CDLL(ctypes.util.find_library("c"), use_errno=True)
+            mprotect = libc.mprotect
+            mprotect.argtypes = (ctypes.c_void_p, ctypes.c_size_t, ctypes.c_int)
+            mprotect.restype = ctypes.c_int
+
             self.mmap = mmap.mmap(
                 -1,
                 size,
                 mmap.MAP_PRIVATE | mmap.MAP_ANONYMOUS,
-                mmap.PROT_READ | mmap.PROT_WRITE | mmap.PROT_EXEC,
+                mmap.PROT_READ | mmap.PROT_WRITE,
             )
             self.addr = ctypes.addressof(ctypes.c_void_p.from_buffer(self.mmap))
             self.mmap.write(code)
+
+            if mprotect(self.addr, size, mmap.PROT_READ | mmap.PROT_EXEC) != 0:
+                msg = "could not execute mprotect for CPUID check"
+                raise RuntimeError(msg)
 
         func_type = CFUNCTYPE(None, POINTER(CPUID_struct), c_uint32, c_uint32)
         self.func_ptr = func_type(self.addr)
