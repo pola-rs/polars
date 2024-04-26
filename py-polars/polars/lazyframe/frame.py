@@ -76,7 +76,7 @@ from polars.datatypes import (
     is_polars_dtype,
     py_type_to_dtype,
 )
-from polars.dependencies import subprocess
+from polars.dependencies import import_optional, subprocess
 from polars.io.csv._utils import _check_arg_is_1byte
 from polars.lazyframe.group_by import LazyGroupBy
 from polars.lazyframe.in_process import InProcessQuery
@@ -1062,12 +1062,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
             return display(SVG(graph))
         else:
-            try:
-                import matplotlib.image as mpimg
-                import matplotlib.pyplot as plt
-            except ImportError:
-                msg = "matplotlib should be installed to show graph"
-                raise ModuleNotFoundError(msg) from None
+            import_optional(
+                "matplotlib",
+                err_prefix="",
+                err_suffix="should be installed to show graphs",
+            )
+            import matplotlib.image as mpimg
+            import matplotlib.pyplot as plt
+
             plt.figure(figsize=figsize)
             img = mpimg.imread(BytesIO(graph))
             plt.imshow(img)
@@ -1604,44 +1606,41 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         (df, timings) = wrap_df(df), wrap_df(timings)
 
         if show_plot:
-            try:
-                import matplotlib.pyplot as plt
+            import_optional(
+                "matplotlib",
+                err_suffix="should be installed to show profiling plots",
+            )
+            import matplotlib.pyplot as plt
 
-                fig, ax = plt.subplots(1, figsize=figsize)
+            fig, ax = plt.subplots(1, figsize=figsize)
 
-                max_val = timings["end"][-1]
-                timings_ = timings.reverse()
+            max_val = timings["end"][-1]
+            timings_ = timings.reverse()
 
-                if max_val > 1e9:
-                    unit = "s"
-                    timings_ = timings_.with_columns(
-                        F.col(["start", "end"]) / 1_000_000
-                    )
-                elif max_val > 1e6:
-                    unit = "ms"
-                    timings_ = timings_.with_columns(F.col(["start", "end"]) / 1000)
-                else:
-                    unit = "us"
-                if truncate_nodes > 0:
-                    timings_ = timings_.with_columns(
-                        F.col("node").str.slice(0, truncate_nodes) + "..."
-                    )
-
-                max_in_unit = timings_["end"][0]
-                ax.barh(
-                    timings_["node"],
-                    width=timings_["end"] - timings_["start"],
-                    left=timings_["start"],
+            if max_val > 1e9:
+                unit = "s"
+                timings_ = timings_.with_columns(F.col(["start", "end"]) / 1_000_000)
+            elif max_val > 1e6:
+                unit = "ms"
+                timings_ = timings_.with_columns(F.col(["start", "end"]) / 1000)
+            else:
+                unit = "us"
+            if truncate_nodes > 0:
+                timings_ = timings_.with_columns(
+                    F.col("node").str.slice(0, truncate_nodes) + "..."
                 )
 
-                plt.title("Profiling result")
-                ax.set_xlabel(f"node duration in [{unit}], total {max_in_unit}{unit}")
-                ax.set_ylabel("nodes")
-                plt.show()
+            max_in_unit = timings_["end"][0]
+            ax.barh(
+                timings_["node"],
+                width=timings_["end"] - timings_["start"],
+                left=timings_["start"],
+            )
 
-            except ImportError:
-                msg = "matplotlib should be installed to show profiling plot"
-                raise ModuleNotFoundError(msg) from None
+            plt.title("Profiling result")
+            ax.set_xlabel(f"node duration in [{unit}], total {max_in_unit}{unit}")
+            ax.set_ylabel("nodes")
+            plt.show()
 
         return df, timings
 
