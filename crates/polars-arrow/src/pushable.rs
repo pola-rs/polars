@@ -1,4 +1,4 @@
-use crate::array::{MutableBinaryViewArray, MutablePrimitiveArray, ViewType};
+use crate::array::{MutableBinaryViewArray, MutableBooleanArray, MutablePrimitiveArray, ViewType};
 use crate::bitmap::MutableBitmap;
 use crate::offset::{Offset, Offsets};
 use crate::types::NativeType;
@@ -141,14 +141,22 @@ impl<T: NativeType> Pushable<Option<T>> for MutablePrimitiveArray<T> {
     }
 }
 
-impl<T: ViewType + ?Sized> Pushable<&T> for MutableBinaryViewArray<T> {
+pub trait NoOption {}
+impl NoOption for &str {}
+impl NoOption for &[u8] {}
+
+impl<T, K> Pushable<T> for MutableBinaryViewArray<K>
+where
+    T: AsRef<K> + NoOption,
+    K: ViewType + ?Sized,
+{
     #[inline]
     fn reserve(&mut self, additional: usize) {
         MutableBinaryViewArray::reserve(self, additional)
     }
 
     #[inline]
-    fn push(&mut self, value: &T) {
+    fn push(&mut self, value: T) {
         MutableBinaryViewArray::push_value(self, value)
     }
 
@@ -161,7 +169,8 @@ impl<T: ViewType + ?Sized> Pushable<&T> for MutableBinaryViewArray<T> {
         MutableBinaryViewArray::push_null(self)
     }
 
-    fn extend_constant(&mut self, additional: usize, value: &T) {
+    fn extend_constant(&mut self, additional: usize, value: T) {
+        let value = value.as_ref();
         // First push a value to get the View
         MutableBinaryViewArray::push_value(self, value);
 
@@ -182,5 +191,118 @@ impl<T: ViewType + ?Sized> Pushable<&T> for MutableBinaryViewArray<T> {
     #[inline]
     fn extend_null_constant(&mut self, additional: usize) {
         self.extend_null(additional);
+    }
+}
+
+impl<T, K> Pushable<Option<T>> for MutableBinaryViewArray<K>
+where
+    T: AsRef<K>,
+    K: ViewType + ?Sized,
+{
+    #[inline]
+    fn reserve(&mut self, additional: usize) {
+        MutableBinaryViewArray::reserve(self, additional)
+    }
+
+    #[inline]
+    fn push(&mut self, value: Option<T>) {
+        MutableBinaryViewArray::push(self, value.as_ref())
+    }
+
+    #[inline]
+    fn len(&self) -> usize {
+        MutableBinaryViewArray::len(self)
+    }
+
+    fn push_null(&mut self) {
+        MutableBinaryViewArray::push_null(self)
+    }
+
+    fn extend_constant(&mut self, additional: usize, value: Option<T>) {
+        let value = value.as_ref();
+        // First push a value to get the View
+        MutableBinaryViewArray::push(self, value);
+
+        // And then use that new view to extend
+        let views = self.views_mut();
+        let view = *views.last().unwrap();
+
+        let remaining = additional - 1;
+        for _ in 0..remaining {
+            views.push(view);
+        }
+
+        if let Some(bitmap) = self.validity() {
+            bitmap.extend_constant(remaining, true)
+        }
+    }
+
+    #[inline]
+    fn extend_null_constant(&mut self, additional: usize) {
+        self.extend_null(additional);
+    }
+}
+
+impl Pushable<bool> for MutableBooleanArray {
+    #[inline]
+    fn reserve(&mut self, additional: usize) {
+        MutableBooleanArray::reserve(self, additional)
+    }
+
+    #[inline]
+    fn push(&mut self, value: bool) {
+        MutableBooleanArray::push_value(self, value)
+    }
+
+    #[inline]
+    fn len(&self) -> usize {
+        self.values().len()
+    }
+
+    #[inline]
+    fn push_null(&mut self) {
+        unreachable!()
+    }
+
+    #[inline]
+    fn extend_constant(&mut self, additional: usize, value: bool) {
+        MutableBooleanArray::extend_constant(self, additional, Some(value))
+    }
+
+    #[inline]
+    fn extend_null_constant(&mut self, _additional: usize) {
+        unreachable!()
+    }
+}
+
+impl Pushable<Option<bool>> for MutableBooleanArray {
+    #[inline]
+    fn reserve(&mut self, additional: usize) {
+        MutableBooleanArray::reserve(self, additional)
+    }
+
+    #[inline]
+    fn push(&mut self, value: Option<bool>) {
+        MutableBooleanArray::push(self, value)
+    }
+
+    #[inline]
+    fn len(&self) -> usize {
+        self.values().len()
+    }
+
+    #[inline]
+    fn push_null(&mut self) {
+        MutableBooleanArray::push_null(self)
+    }
+
+    #[inline]
+    fn extend_constant(&mut self, additional: usize, value: Option<bool>) {
+        MutableBooleanArray::extend_constant(self, additional, value)
+    }
+
+    #[inline]
+    fn extend_null_constant(&mut self, additional: usize) {
+        MutableBooleanArray::extend_constant(self, additional, None)
     }
 }
