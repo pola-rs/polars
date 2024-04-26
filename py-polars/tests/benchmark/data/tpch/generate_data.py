@@ -22,7 +22,7 @@ DBGEN_DIR = CURRENT_DIR / "dbgen"
 __all__ = ["load_tpch_table"]
 
 
-def load_tpch_table(table_name: str, scale_factor: float = 0.01) -> pl.LazyFrame:
+def load_tpch_table(table_name: str, scale_factor: float = 0.01) -> pl.DataFrame:
     """
     Load a TPC-H table from disk.
 
