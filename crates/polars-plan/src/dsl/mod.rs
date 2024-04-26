@@ -966,7 +966,7 @@ impl Expr {
         // we take the not branch so that self is truthy value of `when -> then -> otherwise`
         // and that ensure we keep the name of `self`
 
-        when(self.clone().is_not_nan())
+        when(self.clone().is_not_nan().or(self.clone().is_null()))
             .then(self)
             .otherwise(fill_value.into())
     }
