@@ -3033,19 +3033,10 @@ class DataFrame:
             return catalog, schema, tbl  # type: ignore[return-value]
 
         if engine == "adbc":
-            try:
-                import adbc_driver_manager
-
-                adbc_version = parse_version(
-                    getattr(adbc_driver_manager, "__version__", "0.0")
-                )
-            except ModuleNotFoundError as exc:
-                msg = (
-                    "adbc_driver_manager not found"
-                    "\n\nInstall Polars with: pip install adbc_driver_manager"
-                )
-                raise ModuleNotFoundError(msg) from exc
-
+            adbc_driver_manager = import_optional("adbc_driver_manager")
+            adbc_version = parse_version(
+                getattr(adbc_driver_manager, "__version__", "0.0")
+            )
             from polars.io.database._utils import _open_adbc_connection
 
             if if_table_exists == "fail":
@@ -3110,7 +3101,7 @@ class DataFrame:
             try:
                 from sqlalchemy import create_engine
             except ModuleNotFoundError as exc:
-                msg = "sqlalchemy not found\n\nInstall with: pip install polars[sqlalchemy]"
+                msg = "'sqlalchemy' not found\n\nInstall with: pip install polars[sqlalchemy]"
                 raise ModuleNotFoundError(msg) from exc
 
             # note: the catalog (database) should be a part of the connection string

@@ -13,7 +13,7 @@ from polars._utils.various import (
 )
 from polars._utils.wrap import wrap_df, wrap_ldf
 from polars.convert import from_arrow
-from polars.dependencies import _PYARROW_AVAILABLE
+from polars.dependencies import import_optional
 from polars.io._utils import (
     is_local_file,
     is_supported_cloud,
@@ -209,13 +209,11 @@ def _read_parquet_with_pyarrow(
     pyarrow_options: dict[str, Any] | None = None,
     memory_map: bool = True,
 ) -> DataFrame:
-    if not _PYARROW_AVAILABLE:
-        msg = "'pyarrow' is required when using `read_parquet(..., use_pyarrow=True)`"
-        raise ModuleNotFoundError(msg)
-
-    import pyarrow as pa
-    import pyarrow.parquet
-
+    pyarrow_parquet = import_optional(
+        "pyarrow.parquet",
+        err_prefix="",
+        err_suffix="is required when using `read_parquet(..., use_pyarrow=True)`",
+    )
     pyarrow_options = pyarrow_options or {}
 
     with prepare_file_arg(
@@ -223,7 +221,7 @@ def _read_parquet_with_pyarrow(
         use_pyarrow=True,
         storage_options=storage_options,
     ) as source_prep:
-        pa_table = pa.parquet.read_table(
+        pa_table = pyarrow_parquet.read_table(
             source_prep,
             memory_map=memory_map,
             columns=columns,
