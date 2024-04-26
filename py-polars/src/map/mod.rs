@@ -11,6 +11,7 @@ use polars_core::export::rayon::prelude::*;
 use polars_core::utils::CustomIterTools;
 use polars_core::POOL;
 use pyo3::prelude::*;
+use pyo3::pybacked::PyBackedStr;
 use pyo3::types::PyDict;
 use smartstring::{LazyCompact, SmartString};
 
@@ -87,7 +88,8 @@ fn iterator_to_struct<'a>(
                 // We ignore the keys of the rest of the dicts,
                 // the first item determines the output name.
                 for (key, val) in dict.iter() {
-                    let key: SmartString<LazyCompact> = key.str().unwrap().to_cow().unwrap().into();
+                    let key = key.str().unwrap().extract::<PyBackedStr>().unwrap();
+                    let key: SmartString<LazyCompact> = (&*key).into();
                     let item = val.extract::<Wrap<AnyValue>>()?;
                     if let Some(buf) = struct_fields.get_mut(&key) {
                         buf.push(item.0);
