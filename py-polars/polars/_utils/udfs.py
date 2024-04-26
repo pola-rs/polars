@@ -23,8 +23,6 @@ from typing import (
     Iterator,
     Literal,
     NamedTuple,
-    Protocol,
-    TypeVar,
     Union,
 )
 

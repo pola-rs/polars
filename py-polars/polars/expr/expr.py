@@ -78,7 +78,6 @@ if TYPE_CHECKING:
     from io import IOBase
 
     from polars import DataFrame, LazyFrame, Series
-    from polars._utils.udfs import UfuncProtocol
     from polars._utils.various import (
         NoDefault,
     )
