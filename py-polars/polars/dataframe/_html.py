@@ -100,6 +100,8 @@ class HTMLFormatter:
 
         self.overall_align_lower = overall_alignment.lower()
         self.numeric_align_lower = numeric_alignment.lower()
+        self.attribute_nested_dict = {
+            self.get_attributes(col_idx=col_idx) for col_idx in self.col_idx}
 
     def write_header(self) -> None:
         """Write the header of an HTML table."""
@@ -108,7 +110,7 @@ class HTMLFormatter:
                 with Tag(self.elements, "tr"):
                     columns = self.df.columns
                     for c in self.col_idx:
-                        _dict = {"attributes": self.get_attributes(col_idx=c)}
+                        _dict = self.attribute_nested_dict[c]
                         with Tag(self.elements, "th", **_dict):
                             if c == -1:
                                 self.elements.append("&hellip;")
@@ -120,7 +122,7 @@ class HTMLFormatter:
                 with Tag(self.elements, "tr"):
                     dtypes = self.df._df.dtype_strings()
                     for c in self.col_idx:
-                        _dict = {"attributes": self.get_attributes(col_idx=c)}
+                        _dict = self.attribute_nested_dict[c]
                         with Tag(self.elements, "td", **_dict):
                             if c == -1:
                                 self.elements.append("&hellip;")
@@ -134,7 +136,7 @@ class HTMLFormatter:
             for r in self.row_idx:
                 with Tag(self.elements, "tr"):
                     for c in self.col_idx:
-                        _dict = {"attributes": self.get_attributes(col_idx=c)}
+                        _dict = self.attribute_nested_dict[c]
                         with Tag(self.elements, "td", **_dict):
                             if r == -1 or c == -1:
                                 self.elements.append("&hellip;")
