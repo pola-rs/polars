@@ -199,13 +199,13 @@ class NotebookFormatter(HTMLFormatter):
 
     def write_style(self) -> None:
         """Write <style> tag."""
-        style = """\
+        style = """
             <style>
             .dataframe > thead > tr,
-            .dataframe > tbody > tr {
+            .dataframe > tbody > tr {{
               text-align: {};
               white-space: pre-wrap;
-            }
+            }}
             </style>
         """
         style_formatted = dedent(
