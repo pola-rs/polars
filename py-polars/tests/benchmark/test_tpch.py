@@ -175,8 +175,6 @@ def test_tpch_q5(
     lineitem: pl.LazyFrame,
     nation: pl.LazyFrame,
     orders: pl.LazyFrame,
-    part: pl.LazyFrame,
-    partsupp: pl.LazyFrame,
     region: pl.LazyFrame,
     supplier: pl.LazyFrame,
 ) -> None:
@@ -207,16 +205,7 @@ def test_tpch_q5(
     q_final.collect()
 
 
-def test_tpch_q6(
-    customer: pl.LazyFrame,
-    lineitem: pl.LazyFrame,
-    nation: pl.LazyFrame,
-    orders: pl.LazyFrame,
-    part: pl.LazyFrame,
-    partsupp: pl.LazyFrame,
-    region: pl.LazyFrame,
-    supplier: pl.LazyFrame,
-) -> None:
+def test_tpch_q6(lineitem: pl.LazyFrame) -> None:
     var1 = date(1994, 1, 1)
     var2 = date(1995, 1, 1)
     var3 = 0.05
@@ -241,9 +230,6 @@ def test_tpch_q7(
     lineitem: pl.LazyFrame,
     nation: pl.LazyFrame,
     orders: pl.LazyFrame,
-    part: pl.LazyFrame,
-    partsupp: pl.LazyFrame,
-    region: pl.LazyFrame,
     supplier: pl.LazyFrame,
 ) -> None:
     var1 = "FRANCE"
@@ -294,7 +280,6 @@ def test_tpch_q8(
     nation: pl.LazyFrame,
     orders: pl.LazyFrame,
     part: pl.LazyFrame,
-    partsupp: pl.LazyFrame,
     region: pl.LazyFrame,
     supplier: pl.LazyFrame,
 ) -> None:
@@ -338,13 +323,11 @@ def test_tpch_q8(
 
 
 def test_tpch_q9(
-    customer: pl.LazyFrame,
     lineitem: pl.LazyFrame,
     nation: pl.LazyFrame,
     orders: pl.LazyFrame,
     part: pl.LazyFrame,
     partsupp: pl.LazyFrame,
-    region: pl.LazyFrame,
     supplier: pl.LazyFrame,
 ) -> None:
     q_final = (
@@ -379,10 +362,6 @@ def test_tpch_q10(
     lineitem: pl.LazyFrame,
     nation: pl.LazyFrame,
     orders: pl.LazyFrame,
-    part: pl.LazyFrame,
-    partsupp: pl.LazyFrame,
-    region: pl.LazyFrame,
-    supplier: pl.LazyFrame,
 ) -> None:
     var1 = date(1993, 10, 1)
     var2 = date(1994, 1, 1)
@@ -426,14 +405,7 @@ def test_tpch_q10(
 
 
 def test_tpch_q11(
-    customer: pl.LazyFrame,
-    lineitem: pl.LazyFrame,
-    nation: pl.LazyFrame,
-    orders: pl.LazyFrame,
-    part: pl.LazyFrame,
-    partsupp: pl.LazyFrame,
-    region: pl.LazyFrame,
-    supplier: pl.LazyFrame,
+    nation: pl.LazyFrame, partsupp: pl.LazyFrame, supplier: pl.LazyFrame
 ) -> None:
     var1 = "GERMANY"
     var2 = 0.0001
@@ -466,16 +438,7 @@ def test_tpch_q11(
     q_final.collect()
 
 
-def test_tpch_q12(
-    customer: pl.LazyFrame,
-    lineitem: pl.LazyFrame,
-    nation: pl.LazyFrame,
-    orders: pl.LazyFrame,
-    part: pl.LazyFrame,
-    partsupp: pl.LazyFrame,
-    region: pl.LazyFrame,
-    supplier: pl.LazyFrame,
-) -> None:
+def test_tpch_q12(lineitem: pl.LazyFrame, orders: pl.LazyFrame) -> None:
     var1 = "MAIL"
     var2 = "SHIP"
     var3 = date(1994, 1, 1)
@@ -504,16 +467,7 @@ def test_tpch_q12(
     q_final.collect()
 
 
-def test_tpch_q13(
-    customer: pl.LazyFrame,
-    lineitem: pl.LazyFrame,
-    nation: pl.LazyFrame,
-    orders: pl.LazyFrame,
-    part: pl.LazyFrame,
-    partsupp: pl.LazyFrame,
-    region: pl.LazyFrame,
-    supplier: pl.LazyFrame,
-) -> None:
+def test_tpch_q13(customer: pl.LazyFrame, orders: pl.LazyFrame) -> None:
     var1 = "special"
     var2 = "requests"
 
@@ -530,16 +484,7 @@ def test_tpch_q13(
     q_final.collect()
 
 
-def test_tpch_q14(
-    customer: pl.LazyFrame,
-    lineitem: pl.LazyFrame,
-    nation: pl.LazyFrame,
-    orders: pl.LazyFrame,
-    part: pl.LazyFrame,
-    partsupp: pl.LazyFrame,
-    region: pl.LazyFrame,
-    supplier: pl.LazyFrame,
-) -> None:
+def test_tpch_q14(lineitem: pl.LazyFrame, part: pl.LazyFrame) -> None:
     var1 = date(1995, 9, 1)
     var2 = date(1995, 10, 1)
 
@@ -562,16 +507,7 @@ def test_tpch_q14(
     q_final.collect()
 
 
-def test_tpch_q15(
-    customer: pl.LazyFrame,
-    lineitem: pl.LazyFrame,
-    nation: pl.LazyFrame,
-    orders: pl.LazyFrame,
-    part: pl.LazyFrame,
-    partsupp: pl.LazyFrame,
-    region: pl.LazyFrame,
-    supplier: pl.LazyFrame,
-) -> None:
+def test_tpch_q15(lineitem: pl.LazyFrame, supplier: pl.LazyFrame) -> None:
     var1 = date(1996, 1, 1)
     var2 = date(1996, 4, 1)
 
@@ -597,14 +533,7 @@ def test_tpch_q15(
 
 
 def test_tpch_q16(
-    customer: pl.LazyFrame,
-    lineitem: pl.LazyFrame,
-    nation: pl.LazyFrame,
-    orders: pl.LazyFrame,
-    part: pl.LazyFrame,
-    partsupp: pl.LazyFrame,
-    region: pl.LazyFrame,
-    supplier: pl.LazyFrame,
+    part: pl.LazyFrame, partsupp: pl.LazyFrame, supplier: pl.LazyFrame
 ) -> None:
     var1 = "Brand#45"
 
@@ -629,16 +558,7 @@ def test_tpch_q16(
     q_final.collect()
 
 
-def test_tpch_q17(
-    customer: pl.LazyFrame,
-    lineitem: pl.LazyFrame,
-    nation: pl.LazyFrame,
-    orders: pl.LazyFrame,
-    part: pl.LazyFrame,
-    partsupp: pl.LazyFrame,
-    region: pl.LazyFrame,
-    supplier: pl.LazyFrame,
-) -> None:
+def test_tpch_q17(lineitem: pl.LazyFrame, part: pl.LazyFrame) -> None:
     var1 = "Brand#23"
     var2 = "MED BOX"
 
@@ -660,14 +580,7 @@ def test_tpch_q17(
 
 
 def test_tpch_q18(
-    customer: pl.LazyFrame,
-    lineitem: pl.LazyFrame,
-    nation: pl.LazyFrame,
-    orders: pl.LazyFrame,
-    part: pl.LazyFrame,
-    partsupp: pl.LazyFrame,
-    region: pl.LazyFrame,
-    supplier: pl.LazyFrame,
+    customer: pl.LazyFrame, lineitem: pl.LazyFrame, orders: pl.LazyFrame
 ) -> None:
     var1 = 300
 
@@ -695,16 +608,7 @@ def test_tpch_q18(
     q_final.collect()
 
 
-def test_tpch_q19(
-    customer: pl.LazyFrame,
-    lineitem: pl.LazyFrame,
-    nation: pl.LazyFrame,
-    orders: pl.LazyFrame,
-    part: pl.LazyFrame,
-    partsupp: pl.LazyFrame,
-    region: pl.LazyFrame,
-    supplier: pl.LazyFrame,
-) -> None:
+def test_tpch_q19(lineitem: pl.LazyFrame, part: pl.LazyFrame) -> None:
     q_final = (
         part.join(lineitem, left_on="p_partkey", right_on="l_partkey")
         .filter(pl.col("l_shipmode").is_in(["AIR", "AIR REG"]))
@@ -746,13 +650,10 @@ def test_tpch_q19(
 
 
 def test_tpch_q20(
-    customer: pl.LazyFrame,
     lineitem: pl.LazyFrame,
     nation: pl.LazyFrame,
-    orders: pl.LazyFrame,
     part: pl.LazyFrame,
     partsupp: pl.LazyFrame,
-    region: pl.LazyFrame,
     supplier: pl.LazyFrame,
 ) -> None:
     var1 = date(1994, 1, 1)
@@ -787,13 +688,9 @@ def test_tpch_q20(
 
 
 def test_tpch_q21(
-    customer: pl.LazyFrame,
     lineitem: pl.LazyFrame,
     nation: pl.LazyFrame,
     orders: pl.LazyFrame,
-    part: pl.LazyFrame,
-    partsupp: pl.LazyFrame,
-    region: pl.LazyFrame,
     supplier: pl.LazyFrame,
 ) -> None:
     var1 = "SAUDI ARABIA"
@@ -826,16 +723,7 @@ def test_tpch_q21(
     q_final.collect()
 
 
-def test_tpch_q22(
-    customer: pl.LazyFrame,
-    lineitem: pl.LazyFrame,
-    nation: pl.LazyFrame,
-    orders: pl.LazyFrame,
-    part: pl.LazyFrame,
-    partsupp: pl.LazyFrame,
-    region: pl.LazyFrame,
-    supplier: pl.LazyFrame,
-) -> None:
+def test_tpch_q22(customer: pl.LazyFrame, orders: pl.LazyFrame) -> None:
     q1 = (
         customer.with_columns(pl.col("c_phone").str.slice(0, 2).alias("cntrycode"))
         .filter(pl.col("cntrycode").str.contains("13|31|23|29|30|18|17"))
