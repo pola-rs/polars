@@ -106,6 +106,22 @@ Series: 'foo' [str]
 
 
 @pytest.mark.parametrize(
+    "dtype", [pl.String, pl.Categorical, pl.Enum(["abc", "abcd", "abcde"])]
+)
+def test_fmt_series_string_truncate_cat(
+    dtype: pl.PolarsDataType, capfd: pytest.CaptureFixture[str]
+) -> None:
+    s = pl.Series(name="foo", values=["abc", "abcd", "abcde"], dtype=dtype)
+    with pl.Config(fmt_str_lengths=4):
+        print(s)
+    out, _ = capfd.readouterr()
+    result = [s.strip() for s in out.split("\n")[3:6]]
+    expected = ['"abc"', '"abcd"', '"abcd…']
+    print(result)
+    assert result == expected
+
+
+@pytest.mark.parametrize(
     ("values", "dtype", "expected"),
     [
         (
