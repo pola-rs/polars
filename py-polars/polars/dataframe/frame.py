@@ -7033,9 +7033,7 @@ class DataFrame:
         Parameters
         ----------
         values
-            Column values to aggregate. Can be multiple columns if the *columns*
-            arguments contains multiple columns as well. If None, all remaining columns
-            will be used.
+            Column values to aggregate. If None, all remaining columns will be used.
         index
             One or multiple keys to group by.
         columns
@@ -7053,7 +7051,7 @@ class DataFrame:
         sort_columns
             Sort the transposed columns by name. Default is by order of discovery.
         separator
-            Used as separator/delimiter in generated column names.
+            Used as separator/delimiter in generated column names in case of multiple value columns.
 
         Returns
         -------
@@ -7150,6 +7148,31 @@ class DataFrame:
         │ a    ┆ 0.998347 ┆ null     │
         │ b    ┆ 0.964028 ┆ 0.999954 │
         └──────┴──────────┴──────────┘
+
+        Using a custom `separator` in generated column names:
+
+        >>> df = pl.DataFrame({
+        ...     'ix': [1, 1, 2, 2, 1, 2],
+        ...     'col': ['a', 'a', 'a', 'a', 'b', 'b'],
+        ...     'foo': [0, 1, 2, 2, 7, 1],
+        ...     'bar': [0, 2, 0, 0, 9, 4]
+        ... })
+        >>> df.pivot(
+        ...     index='ix',
+        ...     columns='col',
+        ...     values=['foo', 'bar'],
+        ...     aggregate_function='sum',
+        ...     separator='/'
+        ... )
+        shape: (2, 5)
+        ┌─────┬───────────┬───────────┬───────────┬───────────┐
+        │ ix  ┆ foo/col/a ┆ foo/col/b ┆ bar/col/a ┆ bar/col/b │
+        │ --- ┆ ---       ┆ ---       ┆ ---       ┆ ---       │
+        │ i64 ┆ i64       ┆ i64       ┆ i64       ┆ i64       │
+        ╞═════╪═══════════╪═══════════╪═══════════╪═══════════╡
+        │ 1   ┆ 1         ┆ 7         ┆ 2         ┆ 9         │
+        │ 2   ┆ 4         ┆ 1         ┆ 0         ┆ 4         │
+        └─────┴───────────┴───────────┴───────────┴───────────┘
         """  # noqa: W505
         index = _expand_selectors(self, index)
         columns = _expand_selectors(self, columns)
