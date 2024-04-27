@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import gzip
 import io
+import os
 import sys
 import textwrap
 import zlib
