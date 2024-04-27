@@ -855,3 +855,14 @@ def test_max_statistic_parquet_writer(tmp_path: Path) -> None:
     result = pl.scan_parquet(f).filter(pl.col("int") > n - 3).collect()
     expected = pl.DataFrame({"int": [149998, 149999]})
     assert_frame_equal(result, expected)
+
+
+@pytest.mark.write_disk()
+def test_no_glob(tmpdir: Path) -> None:
+    df = pl.DataFrame({"foo": 1})
+    p = tmpdir / "*.parquet"
+    df.write_parquet(str(p))
+    p = tmpdir / "*1.parquet"
+    df.write_parquet(str(p))
+    p = tmpdir / "*.parquet"
+    assert_frame_equal(pl.scan_parquet(str(p), glob=False).collect(), df)

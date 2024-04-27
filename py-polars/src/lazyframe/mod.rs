@@ -245,7 +245,7 @@ impl PyLazyFrame {
     #[cfg(feature = "parquet")]
     #[staticmethod]
     #[pyo3(signature = (path, paths, n_rows, cache, parallel, rechunk, row_index,
-        low_memory, cloud_options, use_statistics, hive_partitioning, hive_schema, retries)
+        low_memory, cloud_options, use_statistics, hive_partitioning, hive_schema, retries, glob)
     )]
     fn new_from_parquet(
         path: Option<PathBuf>,
@@ -261,6 +261,7 @@ impl PyLazyFrame {
         hive_partitioning: bool,
         hive_schema: Option<Wrap<Schema>>,
         retries: usize,
+        glob: bool,
     ) -> PyResult<Self> {
         let parallel = parallel.0;
         let hive_schema = hive_schema.map(|s| Arc::new(s.0));
@@ -302,6 +303,7 @@ impl PyLazyFrame {
             cloud_options,
             use_statistics,
             hive_options,
+            glob,
         };
 
         let lf = if path.is_some() {
