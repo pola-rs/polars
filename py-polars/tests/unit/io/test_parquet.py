@@ -859,7 +859,7 @@ def test_max_statistic_parquet_writer(tmp_path: Path) -> None:
 
 
 @pytest.mark.write_disk()
-@pytest.mark.skipif(os.environ.get("POLARS_FORCE_ASYNC") == "1")
+@pytest.mark.skipif(os.environ.get("POLARS_FORCE_ASYNC") == "1", reason="only local")
 def test_no_glob(tmpdir: Path) -> None:
     df = pl.DataFrame({"foo": 1})
     p = tmpdir / "*.parquet"
