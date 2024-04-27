@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import string
 from decimal import Decimal as D
 from typing import TYPE_CHECKING, Any, Iterator
 
@@ -26,7 +27,7 @@ def _environ() -> Iterator[None]:
             """shape: (1,)
 Series: 'foo' [str]
 [
-	"Somelongstring…
+	"Somelongstringt…
 ]
 """,
             ["Somelongstringto eeat wit me oundaf"],
@@ -36,7 +37,7 @@ Series: 'foo' [str]
             """shape: (1,)
 Series: 'foo' [str]
 [
-	"😀😁😂😃😄😅😆😇😈😉😊😋😌😎…
+	"😀😁😂😃😄😅😆😇😈😉😊😋😌😎😏…
 ]
 """,
             ["😀😁😂😃😄😅😆😇😈😉😊😋😌😎😏😐😑😒😓"],
@@ -78,8 +79,29 @@ def test_fmt_series(
     capfd: pytest.CaptureFixture[str], expected: str, values: list[Any]
 ) -> None:
     s = pl.Series(name="foo", values=values)
-    print(s)
+    with pl.Config(fmt_str_lengths=15):
+        print(s)
     out, err = capfd.readouterr()
+    assert out == expected
+
+
+def test_fmt_series_string_truncate_default(capfd: pytest.CaptureFixture[str]) -> None:
+    values = [
+        string.ascii_lowercase + "123",
+        string.ascii_lowercase + "1234",
+        string.ascii_lowercase + "12345",
+    ]
+    s = pl.Series(name="foo", values=values)
+    print(s)
+    out, _ = capfd.readouterr()
+    expected = """shape: (3,)
+Series: 'foo' [str]
+[
+	"abcdefghijklmnopqrstuvwxyz123"
+	"abcdefghijklmnopqrstuvwxyz1234"
+	"abcdefghijklmnopqrstuvwxyz1234…
+]
+"""
     assert out == expected
 
 

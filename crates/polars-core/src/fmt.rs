@@ -28,7 +28,8 @@ use crate::prelude::*;
 
 // Note: see https://github.com/pola-rs/polars/pull/13699 for the rationale
 // behind choosing 10 as the default value for default number of rows displayed
-const ROW_LIMIT: usize = 10;
+const DEFAULT_ROW_LIMIT: usize = 10;
+const DEFAULT_STR_LEN_LIMIT: usize = 30;
 
 #[derive(Copy, Clone)]
 #[repr(u8)]
@@ -86,6 +87,14 @@ pub fn set_trim_decimal_zeros(trim: Option<bool>) {
     TRIM_DECIMAL_ZEROS.store(trim.unwrap_or(false), Ordering::Relaxed)
 }
 
+fn get_str_len_limit() -> usize {
+    std::env::var(FMT_STR_LEN)
+        .as_deref()
+        .unwrap_or("")
+        .parse()
+        .unwrap_or(DEFAULT_STR_LEN_LIMIT)
+}
+
 macro_rules! format_array {
     ($f:ident, $a:expr, $dtype:expr, $name:expr, $array_type:expr) => {{
         write!(
@@ -96,37 +105,35 @@ macro_rules! format_array {
             $name,
             $dtype
         )?;
+
         let truncate = matches!($a.dtype(), DataType::String);
-        let truncate_len = if truncate {
-            std::env::var(FMT_STR_LEN)
-                .as_deref()
-                .unwrap_or("")
-                .parse()
-                .unwrap_or(15)
-        } else {
-            15
-        };
+        let truncate_len = if truncate { get_str_len_limit() } else { 0 };
+
         let limit: usize = {
             let limit = std::env::var(FMT_MAX_ROWS)
                 .as_deref()
                 .unwrap_or("")
                 .parse()
-                .map_or(LIMIT, |n: i64| if n < 0 { $a.len() } else { n as usize });
+                .map_or(
+                    DEFAULT_ROW_LIMIT,
+                    |n: i64| if n < 0 { $a.len() } else { n as usize },
+                );
             std::cmp::min(limit, $a.len())
         };
         let write_fn = |v, f: &mut Formatter| -> fmt::Result {
             if truncate {
                 let v = format!("{}", v);
-                let v_trunc = &v[..v
+                let v_no_quotes = &v[1..v.len() - 1];
+                let v_trunc = &v_no_quotes[..v_no_quotes
                     .char_indices()
                     .take(truncate_len)
                     .last()
                     .map(|(i, c)| i + c.len_utf8())
                     .unwrap_or(0)];
-                if v == v_trunc {
+                if v_no_quotes == v_trunc {
                     write!(f, "\t{}\n", v)?;
                 } else {
-                    write!(f, "\t{}…\n", v_trunc)?;
+                    write!(f, "\t\"{}…\n", v_trunc)?;
                 }
             } else {
                 write!(f, "\t{}\n", v)?;
@@ -166,7 +173,7 @@ fn format_object_array(
 ) -> fmt::Result {
     match object.dtype() {
         DataType::Object(inner_type, _) => {
-            let limit = std::cmp::min(ROW_LIMIT, object.len());
+            let limit = std::cmp::min(DEFAULT_ROW_LIMIT, object.len());
             write!(
                 f,
                 "shape: ({},)\n{}: '{}' [o][{}]\n[\n",
@@ -232,7 +239,7 @@ where
     T: PolarsObject,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let limit = std::cmp::min(ROW_LIMIT, self.len());
+        let limit = std::cmp::min(DEFAULT_ROW_LIMIT, self.len());
         let inner_type = T::type_name();
         write!(
             f,
@@ -497,14 +504,6 @@ fn fmt_df_shape((shape0, shape1): &(usize, usize)) -> String {
     )
 }
 
-fn get_str_width() -> usize {
-    std::env::var(FMT_STR_LEN)
-        .as_deref()
-        .unwrap_or("")
-        .parse()
-        .unwrap_or(32)
-}
-
 impl Display for DataFrame {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
@@ -514,7 +513,7 @@ impl Display for DataFrame {
                 self.columns.iter().all(|s| s.len() == height),
                 "The column lengths in the DataFrame are not equal."
             );
-            let str_truncate = get_str_width();
+            let str_truncate = get_str_len_limit();
 
             let max_n_cols = std::env::var(FMT_MAX_COLS)
                 .as_deref()
@@ -526,7 +525,10 @@ impl Display for DataFrame {
                 .as_deref()
                 .unwrap_or("")
                 .parse()
-                .map_or(ROW_LIMIT, |n: i64| if n < 0 { height } else { n as usize });
+                .map_or(
+                    DEFAULT_ROW_LIMIT,
+                    |n: i64| if n < 0 { height } else { n as usize },
+                );
 
             let (n_first, n_last) = if self.width() > max_n_cols {
                 ((max_n_cols + 1) / 2, max_n_cols / 2)
@@ -965,7 +967,7 @@ fn format_duration(f: &mut Formatter, v: i64, sizes: &[i64], names: &[&str]) -> 
 }
 
 fn format_blob(f: &mut Formatter<'_>, bytes: &[u8]) -> fmt::Result {
-    let width = get_str_width() * 2;
+    let width = get_str_len_limit() * 2;
     write!(f, "b\"")?;
 
     for b in bytes.iter().take(width) {
