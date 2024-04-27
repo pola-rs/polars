@@ -4265,11 +4265,13 @@ class Expr:
             This method is much slower than the native expressions API.
             Only use it if you cannot implement your logic otherwise.
 
+            For concreteness, suppose that the function is: `x ↦ sqrt(x)`.
+
             For mapping elements of columns, consider:
-            `pl.col("colname").native_method()`.
+            `pl.col("colname").sqrt()`.
 
             For mapping elements of inner lists, consider:
-            `pl.col("colname").list.eval(pl.element().native_method())`.
+            `pl.col("colname").list.eval(pl.element().sqrt())`.
 
         The UDF is applied to each element of a column. Note that, in a GroupBy
         context, the column will have been pre-aggregated and so each element

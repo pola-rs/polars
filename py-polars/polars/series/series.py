@@ -5264,11 +5264,13 @@ class Series:
             This method is much slower than the native expressions API.
             Only use it if you cannot implement your logic otherwise.
 
+            For concreteness, suppose that the function is: `x ↦ sqrt(x)`.
+
             For mapping elements of columns, consider:
-            `pl.col("colname").native_method()`.
+            `pl.col("colname").sqrt()`.
 
             For mapping elements of inner lists, consider:
-            `pl.col("colname").list.eval(pl.element().native_method())`.
+            `pl.col("colname").list.eval(pl.element().sqrt())`.
 
         If the function returns a different datatype, the return_dtype arg should
         be set, otherwise the method will fail.
