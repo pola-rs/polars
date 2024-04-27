@@ -41,6 +41,7 @@ def read_parquet(
     parallel: ParallelStrategy = "auto",
     use_statistics: bool = True,
     hive_partitioning: bool = True,
+    glob: bool = True,
     hive_schema: SchemaDict | None = None,
     rechunk: bool = True,
     low_memory: bool = False,
@@ -81,6 +82,8 @@ def read_parquet(
     hive_partitioning
         Infer statistics and schema from Hive partitioned URL and use them
         to prune reads.
+    glob
+        Expand path given via globbing rules.
     hive_schema
         The column names and data types of the columns by which the data is partitioned.
         If set to `None` (default), the schema of the Hive partitions is inferred.
@@ -188,6 +191,7 @@ def read_parquet(
         cache=False,
         storage_options=storage_options,
         retries=retries,
+        glob=glob,
     )
 
     if columns is not None:
@@ -290,6 +294,7 @@ def scan_parquet(
     parallel: ParallelStrategy = "auto",
     use_statistics: bool = True,
     hive_partitioning: bool = True,
+    glob: bool = True,
     hive_schema: SchemaDict | None = None,
     rechunk: bool = False,
     low_memory: bool = False,
@@ -324,6 +329,8 @@ def scan_parquet(
     hive_partitioning
         Infer statistics and schema from hive partitioned URL and use them
         to prune reads.
+    glob
+        Expand path given via globbing rules.
     hive_schema
         The column names and data types of the columns by which the data is partitioned.
         If set to `None` (default), the schema of the Hive partitions is inferred.
@@ -398,6 +405,7 @@ def scan_parquet(
         hive_partitioning=hive_partitioning,
         hive_schema=hive_schema,
         retries=retries,
+        glob=glob,
     )
 
 
@@ -414,6 +422,7 @@ def _scan_parquet_impl(
     low_memory: bool = False,
     use_statistics: bool = True,
     hive_partitioning: bool = True,
+    glob: bool = True,
     hive_schema: SchemaDict | None = None,
     retries: int = 0,
 ) -> LazyFrame:
@@ -443,5 +452,6 @@ def _scan_parquet_impl(
         hive_partitioning=hive_partitioning,
         hive_schema=hive_schema,
         retries=retries,
+        glob=glob,
     )
     return wrap_ldf(pylf)
