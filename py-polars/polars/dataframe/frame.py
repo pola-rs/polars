@@ -132,6 +132,7 @@ if TYPE_CHECKING:
 
     from polars import DataType, Expr, LazyFrame, Series
     from polars.interchange.dataframe import PolarsDataFrame
+    from polars.io.torch import PolarsDataset
     from polars.polars import PyDataFrame
     from polars.type_aliases import (
         AsofJoinStrategy,
@@ -170,7 +171,6 @@ if TYPE_CHECKING:
         UniqueKeepStrategy,
         UnstackDirection,
     )
-    from polars.io.torch import PolarsDataset
 
     if sys.version_info >= (3, 10):
         from typing import Concatenate, ParamSpec, TypeAlias
@@ -1659,8 +1659,8 @@ class DataFrame:
         Parameters
         ----------
         return_type : {"tensor", "dataset", "dict"}
-            Set return type; a 2D PyTorch tensor, PolarsDataset (which is a drop-in
-            compatible frame-specialized TensorDataset), or dict of Tensors.
+            Set return type; a 2D PyTorch tensor, PolarsDataset (a frame-specialized
+            TensorDataset), or dict of Tensors.
         label
             One or more column names or expressions that label the feature data; when
             `return_type` is "dataset", the PolarsDataset returns `(features, label)`
@@ -1672,13 +1672,6 @@ class DataFrame:
             that are not of the required dtype before converting to tensor. This
             includes the label column *unless* the label is an expression (such
             as `pl.col("label_column").cast(pl.Int16)`).
-
-        Notes
-        -----
-        The convenience :class:`PolarsDataset` class returned by `return_type="dataset"`
-        implements flexible row retrieval as `(features, label)` tensors, for easy
-        integration with PyTorch `DataLoader` objects, and is drop-in compatible
-        with `TensorDataset` (from which it inherits).
 
         Examples
         --------

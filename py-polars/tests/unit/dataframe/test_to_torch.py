@@ -37,6 +37,10 @@ def test_to_torch_series() -> None:
     t = s.to_torch()
     assert_tensor(t, torch.tensor([1, 2, 3, 4], dtype=torch.int32))
 
+    for dtype in (pl.UInt32, pl.UInt64):
+        t = s.cast(dtype).to_torch()
+        assert_tensor(t, torch.tensor([1, 2, 3, 4], dtype=torch.int64))
+
 
 def test_to_torch_tensor(df: pl.DataFrame) -> None:
     t1 = df.to_torch()
@@ -118,7 +122,7 @@ def test_to_dataset_half_precision(df: pl.DataFrame) -> None:
 
     # half precision across all data
     ts = dsf16[:3:2]
-    expected = (
+    expected: tuple[Tensor, ...] = (
         torch.tensor([[1.0000, 1.5000], [1.0000, 0.0000]], dtype=torch.float16),
         torch.tensor([1.0, 2.0], dtype=torch.float16),
     )
@@ -132,6 +136,30 @@ def test_to_dataset_half_precision(df: pl.DataFrame) -> None:
     expected = (
         torch.tensor([[1.0000, 1.5000], [1.0000, 0.0000]], dtype=torch.float16),
         torch.tensor([1, 2], dtype=torch.int8),
+    )
+    assert_tensor(expected, ts)
+
+    # only apply half precision to the label data
+    dsf16 = ds.half(features=False)
+    assert dsf16.schema == {"features": torch.float32, "labels": torch.float16}
+
+    ts = dsf16[:3:2]
+    expected = (
+        torch.tensor([[1.0000, 1.5000], [1.0000, 0.0000]], dtype=torch.float32),
+        torch.tensor([1.0, 2.0], dtype=torch.float16),
+    )
+    assert_tensor(expected, ts)
+
+    # no labels
+    dsf16 = df.to_torch("dataset").half()
+    assert dsf16.schema == {"features": torch.float16, "labels": None}
+
+    ts = dsf16[:3:2]
+    expected = (
+        torch.tensor(
+            data=[[1.0000, 1.0000, 1.5000], [2.0000, 1.0000, 0.0000]],
+            dtype=torch.float16,
+        ),
     )
     assert_tensor(expected, ts)
 

@@ -27,7 +27,7 @@ except ImportError:
 
 
 class PolarsDataset(TensorDataset):
-    """Specialized TensorDataset for Polars DataFrames; drop-in compatible."""
+    """Specialized TensorDataset for Polars DataFrames."""
 
     tensors: tuple[Tensor, ...]
     labels: Tensor | None
