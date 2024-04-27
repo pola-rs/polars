@@ -95,8 +95,8 @@ def read_csv(
     separator
         Single byte character to use as separator in the file.
     comment_prefix
-        A string, which can be up to 5 symbols in length, used to indicate
-        the start of a comment line. For instance, it can be set to `#` or `//`.
+        A string used to indicate the start of a comment line. Comment lines are skipped
+        during parsing. Common examples of comment prefixes are `#` and `//`.
     quote_char
         Single byte character used for csv quoting, default = `"`.
         Set to None to turn off special handling and escaping of quotes.
@@ -654,8 +654,8 @@ def read_csv_batched(
     separator
         Single byte character to use as separator in the file.
     comment_prefix
-        A string, which can be up to 5 symbols in length, used to indicate
-        the start of a comment line. For instance, it can be set to `#` or `//`.
+        A string used to indicate the start of a comment line. Comment lines are skipped
+        during parsing. Common examples of comment prefixes are `#` and `//`.
     quote_char
         Single byte character used for csv quoting, default = `"`.
         Set to None to turn off special handling and escaping of quotes.
@@ -944,8 +944,8 @@ def scan_csv(
     separator
         Single byte character to use as separator in the file.
     comment_prefix
-        A string, which can be up to 5 symbols in length, used to indicate
-        the start of a comment line. For instance, it can be set to `#` or `//`.
+        A string used to indicate the start of a comment line. Comment lines are skipped
+        during parsing. Common examples of comment prefixes are `#` and `//`.
     quote_char
         Single byte character used for csv quoting, default = `"`.
         Set to None to turn off special handling and escaping of quotes.

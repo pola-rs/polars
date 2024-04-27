@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use polars_core::export::arrow::Either;
 use polars_core::POOL;
 use polars_io::csv::read::{
-    BatchedCsvReaderMmap, BatchedCsvReaderRead, CsvEncoding, CsvParserOptions, CsvReader,
+    BatchedCsvReaderMmap, BatchedCsvReaderRead, CsvEncoding, CsvReader, CsvReaderOptions,
 };
 use polars_plan::global::_set_n_rows_for_scan;
 use polars_plan::prelude::FileScanOptions;
@@ -22,7 +22,7 @@ pub(crate) struct CsvSource {
         Option<Either<*mut BatchedCsvReaderMmap<'static>, *mut BatchedCsvReaderRead<'static>>>,
     n_threads: usize,
     path: Option<PathBuf>,
-    options: Option<CsvParserOptions>,
+    options: Option<CsvReaderOptions>,
     file_options: Option<FileScanOptions>,
     verbose: bool,
 }
@@ -106,7 +106,7 @@ impl CsvSource {
     pub(crate) fn new(
         path: PathBuf,
         schema: SchemaRef,
-        options: CsvParserOptions,
+        options: CsvReaderOptions,
         file_options: FileScanOptions,
         verbose: bool,
     ) -> PolarsResult<Self> {

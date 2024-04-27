@@ -5,11 +5,11 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct CsvParserOptions {
+pub struct CsvReaderOptions {
     pub has_header: bool,
     pub separator: u8,
-    pub comment_prefix: Option<CommentPrefix>,
     pub quote_char: Option<u8>,
+    pub comment_prefix: Option<CommentPrefix>,
     pub eol_char: u8,
     pub encoding: CsvEncoding,
     pub skip_rows: usize,
@@ -27,13 +27,13 @@ pub struct CsvParserOptions {
     pub low_memory: bool,
 }
 
-impl Default for CsvParserOptions {
+impl Default for CsvReaderOptions {
     fn default() -> Self {
         Self {
             has_header: true,
             separator: b',',
-            comment_prefix: None,
             quote_char: Some(b'"'),
+            comment_prefix: None,
             eol_char: b'\n',
             encoding: CsvEncoding::default(),
             skip_rows: 0,
@@ -75,17 +75,22 @@ pub enum CommentPrefix {
 
 impl CommentPrefix {
     /// Creates a new `CommentPrefix` for the `Single` variant.
-    pub fn new_single(c: u8) -> Self {
-        CommentPrefix::Single(c)
+    pub fn new_single(prefix: u8) -> Self {
+        CommentPrefix::Single(prefix)
     }
 
-    /// Creates a new `CommentPrefix`. If `Multi` variant is used and the string is longer
-    /// than 5 characters, it will return `None`.
-    pub fn new_multi(s: String) -> Option<Self> {
-        if s.len() <= 5 {
-            Some(CommentPrefix::Multi(s))
+    /// Creates a new `CommentPrefix` for the `Multi` variant.
+    pub fn new_multi(prefix: String) -> Self {
+        CommentPrefix::Multi(prefix)
+    }
+
+    /// Creates a new `CommentPrefix` from a `&str`.
+    pub fn new_from_str(prefix: &str) -> Self {
+        if prefix.len() == 1 && prefix.chars().next().unwrap().is_ascii() {
+            let c = prefix.as_bytes()[0];
+            CommentPrefix::Single(c)
         } else {
-            None
+            CommentPrefix::Multi(prefix.to_string())
         }
     }
 }
