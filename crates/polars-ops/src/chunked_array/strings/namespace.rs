@@ -472,11 +472,8 @@ pub trait StringNameSpaceImpl: AsString {
         let ca = self.as_string();
 
         split_to_struct(ca, by, n, |s, by| {
-            if by.is_empty() {
-                Box::new(s.splitn(n + 1, by).filter(|x| !x.is_empty()))
-            } else {
-                Box::new(s.splitn(n, by))
-            }
+            s.splitn(if by.is_empty() { n + 1 } else { n }, by)
+                .filter(|x| if by.is_empty() { !x.is_empty() } else { true })
         })
     }
 
