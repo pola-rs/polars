@@ -106,10 +106,8 @@ macro_rules! format_array {
             $dtype
         )?;
 
-        let truncate = matches!(
-            $a.dtype(),
-            DataType::String | DataType::Categorical(_, _) | DataType::Enum(_, _)
-        );
+        let dtype = $a.dtype();
+        let truncate = dtype.is_string() | dtype.is_categorical() | dtype.is_enum();
         let truncate_len = if truncate { get_str_len_limit() } else { 0 };
 
         let limit: usize = {
