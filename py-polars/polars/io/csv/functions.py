@@ -70,6 +70,7 @@ def read_csv(
     raise_if_empty: bool = True,
     truncate_ragged_lines: bool = False,
     decimal_comma: bool = False,
+    glob: bool = True,
 ) -> DataFrame:
     r"""
     Read a CSV file into a DataFrame.
@@ -188,6 +189,8 @@ def read_csv(
         Truncate lines that are longer than the schema.
     decimal_comma
         Parse floats with decimal signs
+    glob
+        Expand path given via globbing rules.
 
     Returns
     -------
@@ -442,6 +445,7 @@ def read_csv(
             raise_if_empty=raise_if_empty,
             truncate_ragged_lines=truncate_ragged_lines,
             decimal_comma=decimal_comma,
+            glob=glob,
         )
 
     if new_columns:
@@ -479,6 +483,7 @@ def _read_csv_impl(
     raise_if_empty: bool = True,
     truncate_ragged_lines: bool = False,
     decimal_comma: bool = False,
+    glob: bool = True,
 ) -> DataFrame:
     path: str | None
     if isinstance(source, (str, Path)):
@@ -542,6 +547,7 @@ def _read_csv_impl(
             raise_if_empty=raise_if_empty,
             truncate_ragged_lines=truncate_ragged_lines,
             decimal_comma=decimal_comma,
+            glob=glob,
         )
         if columns is None:
             return scan.collect()
@@ -925,6 +931,7 @@ def scan_csv(
     raise_if_empty: bool = True,
     truncate_ragged_lines: bool = False,
     decimal_comma: bool = False,
+    glob: bool = True,
 ) -> LazyFrame:
     r"""
     Lazily read from a CSV file or multiple files via glob patterns.
@@ -1019,6 +1026,8 @@ def scan_csv(
         Truncate lines that are longer than the schema.
     decimal_comma
         Parse floats with decimal signs
+    glob
+        Expand path given via globbing rules.
 
     Returns
     -------
@@ -1138,6 +1147,7 @@ def scan_csv(
         raise_if_empty=raise_if_empty,
         truncate_ragged_lines=truncate_ragged_lines,
         decimal_comma=decimal_comma,
+        glob=glob,
     )
 
 
@@ -1169,6 +1179,7 @@ def _scan_csv_impl(
     raise_if_empty: bool = True,
     truncate_ragged_lines: bool = True,
     decimal_comma: bool = False,
+    glob: bool = True,
 ) -> LazyFrame:
     dtype_list: list[tuple[str, PolarsDataType]] | None = None
     if dtypes is not None:
@@ -1210,5 +1221,6 @@ def _scan_csv_impl(
         truncate_ragged_lines=truncate_ragged_lines,
         decimal_comma=decimal_comma,
         schema=schema,
+        glob=glob,
     )
     return wrap_ldf(pylf)

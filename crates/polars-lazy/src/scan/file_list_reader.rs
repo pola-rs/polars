@@ -36,6 +36,9 @@ fn polars_glob(pattern: &str, cloud_options: Option<&CloudOptions>) -> PolarsRes
 pub trait LazyFileListReader: Clone {
     /// Get the final [LazyFrame].
     fn finish(self) -> PolarsResult<LazyFrame> {
+        if !self.glob() {
+            return self.finish_no_glob();
+        }
         if let Some(paths) = self.iter_paths()? {
             let lfs = paths
                 .map(|r| {
@@ -88,6 +91,10 @@ pub trait LazyFileListReader: Clone {
     ///
     /// It is recommended to always use [LazyFileListReader::finish] method.
     fn finish_no_glob(self) -> PolarsResult<LazyFrame>;
+
+    fn glob(&self) -> bool {
+        true
+    }
 
     /// Path of the scanned file.
     /// It can be potentially a glob pattern.
