@@ -22,6 +22,7 @@ from polars._utils.construction.utils import (
     get_first_non_none,
     is_namedtuple,
     is_pydantic_model,
+    is_simple_numpy_backed_pandas_series,
 )
 from polars._utils.various import (
     find_stacklevel,
@@ -56,6 +57,7 @@ from polars.datatypes.constructor import (
     py_type_to_constructor,
 )
 from polars.dependencies import (
+    _PYARROW_AVAILABLE,
     _check_for_numpy,
     dataclasses,
 )
@@ -408,6 +410,15 @@ def pandas_to_pyseries(
     """Construct a PySeries from a pandas Series or DatetimeIndex."""
     if not name and values.name is not None:
         name = str(values.name)
+    if is_simple_numpy_backed_pandas_series(values):
+        return pl.Series(name, values.to_numpy(), nan_to_null=nan_to_null)._s
+    if not _PYARROW_AVAILABLE:
+        msg = (
+            "pyarrow is required for converting a pandas series to Polars, "
+            "unless it is a simple numpy-backed one "
+            "(e.g. 'int64', 'bool', 'float32' - not 'Int64')"
+        )
+        raise ImportError(msg)
     return arrow_to_pyseries(
         name, plc.pandas_series_to_arrow(values, nan_to_null=nan_to_null)
     )
