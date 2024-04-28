@@ -76,8 +76,6 @@ Ouch.. we clearly get the wrong results here. Group `"b"` even got a value from 
 
 This went horribly wrong because `map_batches` applied the function before aggregation, due to the `is_elementwise=True` parameter being provided. So that means the whole column `[10, 7, 1]` got shifted to `[null, 10, 7]` and was then aggregated.
 
-However, the good news is that the default value for `is_elementwise` is `False`. The trade-off is that it won't run in the streaming engine anymore.
-
 So my advice is to never use `map_batches` in the `group_by` context unless you know you need it and know what you are doing.
 
 ## To `map_elements`
