@@ -1,7 +1,6 @@
 use arrow::array::{Array, BinaryViewArray, DictionaryArray, DictionaryKey, Utf8ViewArray};
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::datatypes::{ArrowDataType, IntegerType};
-use num_traits::ToPrimitive;
 use polars_error::{polars_bail, PolarsResult};
 
 use super::binary::{
@@ -47,30 +46,6 @@ pub(crate) fn encode_as_dictionary_optional(
 
     if (array.values().len() as f64) / (len_before as f64) > 0.75 {
         return None;
-    }
-    if array.values().len().to_u16().is_some() {
-        let array = arrow::compute::cast::cast(
-            array,
-            &ArrowDataType::Dictionary(
-                IntegerType::UInt16,
-                Box::new(array.values().data_type().clone()),
-                false,
-            ),
-            Default::default(),
-        )
-        .unwrap();
-
-        let array = array
-            .as_any()
-            .downcast_ref::<DictionaryArray<u16>>()
-            .unwrap();
-        return Some(array_to_pages(
-            array,
-            type_,
-            nested,
-            options,
-            Encoding::RleDictionary,
-        ));
     }
 
     Some(array_to_pages(
