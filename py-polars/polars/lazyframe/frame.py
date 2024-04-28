@@ -1223,6 +1223,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Execute a SQL query against the LazyFrame.
 
+        .. versionadded:: 0.20.23
+
         .. warning::
             This functionality is considered **unstable**, although it is close to
             being considered stable. It may be changed at any point without it being

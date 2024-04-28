@@ -132,7 +132,7 @@ if TYPE_CHECKING:
 
     from polars import DataType, Expr, LazyFrame, Series
     from polars.interchange.dataframe import PolarsDataFrame
-    from polars.io.torch import PolarsDataset
+    from polars.ml.torch import PolarsDataset
     from polars.polars import PyDataFrame
     from polars.type_aliases import (
         AsofJoinStrategy,
@@ -1656,6 +1656,8 @@ class DataFrame:
         """
         Convert DataFrame to a 2D PyTorch tensor, Dataset, or dict of Tensors.
 
+        .. versionadded:: 0.20.23
+
         Parameters
         ----------
         return_type : {"tensor", "dataset", "dict"}
@@ -1772,7 +1774,7 @@ class DataFrame:
         elif return_type == "dict":
             return {srs.name: srs.to_torch() for srs in frame}
         elif return_type == "dataset":
-            from polars.io.torch import PolarsDataset
+            from polars.ml.torch import PolarsDataset
 
             return PolarsDataset(frame, label=label)
         else:
@@ -4284,6 +4286,8 @@ class DataFrame:
     def sql(self, query: str, *, table_name: str | None = None) -> Self:
         """
         Execute a SQL query against the DataFrame.
+
+        .. versionadded:: 0.20.24
 
         .. warning::
             This functionality is considered **unstable**, although it is close to
