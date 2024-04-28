@@ -30,7 +30,9 @@ use crate::prelude::*;
 // Note: see https://github.com/pola-rs/polars/pull/13699 for the rationale
 // behind choosing 10 as the default value for default number of rows displayed
 const DEFAULT_ROW_LIMIT: usize = 10;
+const DEFAULT_COL_LIMIT: usize = 8;
 const DEFAULT_STR_LEN_LIMIT: usize = 30;
+const DEFAULT_LIST_LEN_LIMIT: usize = 3;
 
 #[derive(Copy, Clone)]
 #[repr(u8)]
@@ -92,19 +94,33 @@ pub fn set_trim_decimal_zeros(trim: Option<bool>) {
 fn parse_env_var<T: FromStr>(name: &str) -> Option<T> {
     std::env::var(name).ok().and_then(|v| v.parse().ok())
 }
-
-fn get_str_len_limit() -> usize {
-    parse_env_var(FMT_STR_LEN).unwrap_or(DEFAULT_STR_LEN_LIMIT)
+/// Parses an environment variable value as a limit or set a default.
+///
+/// Negative values (e.g. -1) are parsed as 'no limit' or [`usize::MAX`].
+fn parse_env_var_limit(name: &str, default: usize) -> usize {
+    parse_env_var(name).map_or(
+        default,
+        |n: i64| {
+            if n < 0 {
+                usize::MAX
+            } else {
+                n as usize
+            }
+        },
+    )
 }
 
 fn get_row_limit() -> usize {
-    parse_env_var(FMT_MAX_ROWS).map_or(DEFAULT_ROW_LIMIT, |n: i64| {
-        if n < 0 {
-            usize::MAX
-        } else {
-            n as usize
-        }
-    })
+    parse_env_var_limit(FMT_MAX_ROWS, DEFAULT_ROW_LIMIT)
+}
+fn get_col_limit() -> usize {
+    parse_env_var_limit(FMT_MAX_COLS, DEFAULT_COL_LIMIT)
+}
+fn get_str_len_limit() -> usize {
+    parse_env_var_limit(FMT_STR_LEN, DEFAULT_STR_LEN_LIMIT)
+}
+fn get_list_len_limit() -> usize {
+    parse_env_var_limit(FMT_TABLE_CELL_LIST_LEN, DEFAULT_LIST_LEN_LIMIT)
 }
 
 macro_rules! format_array {
@@ -522,15 +538,10 @@ impl Display for DataFrame {
                 self.columns.iter().all(|s| s.len() == height),
                 "The column lengths in the DataFrame are not equal."
             );
-            let str_truncate = get_str_len_limit();
 
-            let max_n_cols = std::env::var(FMT_MAX_COLS)
-                .as_deref()
-                .unwrap_or("")
-                .parse()
-                .map_or(8, |n: i64| if n < 0 { self.width() } else { n as usize });
-
+            let max_n_cols = get_col_limit();
             let max_n_rows = get_row_limit();
+            let str_truncate = get_str_len_limit();
 
             let (n_first, n_last) = if self.width() > max_n_cols {
                 ((max_n_cols + 1) / 2, max_n_cols / 2)
@@ -1113,11 +1124,7 @@ impl Series {
             return "[]".to_owned();
         }
 
-        let max_items = std::env::var(FMT_TABLE_CELL_LIST_LEN)
-            .as_deref()
-            .unwrap_or("")
-            .parse()
-            .map_or(3, |n: i64| if n < 0 { self.len() } else { n as usize });
+        let max_items = get_list_len_limit();
 
         match max_items {
             0 => "[…]".to_owned(),
