@@ -106,21 +106,14 @@ macro_rules! format_array {
             $dtype
         )?;
 
-        let dtype = $a.dtype();
-        let truncate = dtype.is_string() | dtype.is_categorical() | dtype.is_enum();
+        let truncate = match $a.dtype() {
+            DataType::String => true,
+            #[cfg(feature = "dtype-categorical")]
+            DataType::Categorical(_, _) | DataType::Enum(_, _) => true,
+            _ => false,
+        };
         let truncate_len = if truncate { get_str_len_limit() } else { 0 };
 
-        let limit: usize = {
-            let limit = std::env::var(FMT_MAX_ROWS)
-                .as_deref()
-                .unwrap_or("")
-                .parse()
-                .map_or(
-                    DEFAULT_ROW_LIMIT,
-                    |n: i64| if n < 0 { $a.len() } else { n as usize },
-                );
-            std::cmp::min(limit, $a.len())
-        };
         let write_fn = |v, f: &mut Formatter| -> fmt::Result {
             if truncate {
                 let v = format!("{}", v);
@@ -141,6 +134,19 @@ macro_rules! format_array {
             };
             Ok(())
         };
+
+        let limit: usize = {
+            let limit = std::env::var(FMT_MAX_ROWS)
+                .as_deref()
+                .unwrap_or("")
+                .parse()
+                .map_or(
+                    DEFAULT_ROW_LIMIT,
+                    |n: i64| if n < 0 { $a.len() } else { n as usize },
+                );
+            std::cmp::min(limit, $a.len())
+        };
+
         if $a.len() > limit {
             let half = limit / 2;
             let rest = limit % 2;
