@@ -188,7 +188,7 @@ def read_csv(
     truncate_ragged_lines
         Truncate lines that are longer than the schema.
     decimal_comma
-        Parse floats with decimal signs
+        Parse floats using a comma as the decimal separator instead of a period.
     glob
         Expand path given via globbing rules.
 
@@ -630,6 +630,7 @@ def read_csv_batched(
     sample_size: int = 1024,
     eol_char: str = "\n",
     raise_if_empty: bool = True,
+    truncate_ragged_lines: bool = False,
     decimal_comma: bool = False,
 ) -> BatchedCsvReader:
     r"""
@@ -731,8 +732,10 @@ def read_csv_batched(
     raise_if_empty
         When there is no data in the source,`NoDataError` is raised. If this parameter
         is set to False, `None` will be returned from `next_batches(n)` instead.
+    truncate_ragged_lines
+        Truncate lines that are longer than the schema.
     decimal_comma
-        Parse floats with decimal signs
+        Parse floats using a comma as the decimal separator instead of a period.
 
     Returns
     -------
@@ -893,6 +896,7 @@ def read_csv_batched(
         eol_char=eol_char,
         new_columns=new_columns,
         raise_if_empty=raise_if_empty,
+        truncate_ragged_lines=truncate_ragged_lines,
         decimal_comma=decimal_comma,
     )
 
@@ -1025,7 +1029,7 @@ def scan_csv(
     truncate_ragged_lines
         Truncate lines that are longer than the schema.
     decimal_comma
-        Parse floats with decimal signs
+        Parse floats using a comma as the decimal separator instead of a period.
     glob
         Expand path given via globbing rules.
 
