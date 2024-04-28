@@ -30,6 +30,7 @@ use crate::prelude::*;
 // Note: see https://github.com/pola-rs/polars/pull/13699 for the rationale
 // behind choosing 10 as the default value for default number of rows displayed
 const DEFAULT_ROW_LIMIT: usize = 10;
+#[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 const DEFAULT_COL_LIMIT: usize = 8;
 const DEFAULT_STR_LEN_LIMIT: usize = 30;
 const DEFAULT_LIST_LEN_LIMIT: usize = 3;
@@ -113,6 +114,7 @@ fn parse_env_var_limit(name: &str, default: usize) -> usize {
 fn get_row_limit() -> usize {
     parse_env_var_limit(FMT_MAX_ROWS, DEFAULT_ROW_LIMIT)
 }
+#[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 fn get_col_limit() -> usize {
     parse_env_var_limit(FMT_MAX_COLS, DEFAULT_COL_LIMIT)
 }
