@@ -293,7 +293,8 @@ class Expr:
         if method != "__call__":
             msg = f"Only call is implemented not {method}"
             raise NotImplementedError(msg)
-        is_custom_ufunc = ufunc.__class__ != np.ufunc
+        # Numpy/Scipy ufuncs have signature None but numba signatures always exists.
+        is_custom_ufunc = getattr(ufunc, "signature") is not None  # noqa: B009
         num_expr = sum(isinstance(inp, Expr) for inp in inputs)
         exprs = [
             (inp, Expr, i) if isinstance(inp, Expr) else (inp, None, i)
