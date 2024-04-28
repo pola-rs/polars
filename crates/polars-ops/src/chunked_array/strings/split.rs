@@ -11,6 +11,7 @@ pub fn split_to_struct<'a, F, I>(
     by: &'a StringChunked,
     n: usize,
     op: F,
+    split_exact: bool,
 ) -> PolarsResult<StructChunked>
 where
     F: Fn(&'a str, &'a str) -> I,
@@ -22,6 +23,8 @@ where
 
     if by.len() == 1 {
         if let Some(by) = by.get(0) {
+            let is_empty_pattern = by.is_empty();
+
             ca.for_each(|opt_s| match opt_s {
                 None => {
                     for arr in &mut arrs {
@@ -30,10 +33,16 @@ where
                 },
                 Some(s) => {
                     let mut arr_iter = arrs.iter_mut();
-                    let split_iter = op(s, by);
-                    (split_iter)
-                        .zip(&mut arr_iter)
-                        .for_each(|(splitted, arr)| arr.push(Some(splitted)));
+                    if is_empty_pattern && split_exact {
+                        s.split_terminator(by)
+                            .skip(1)
+                            .zip(&mut arr_iter)
+                            .for_each(|(splitted, arr)| arr.push(Some(splitted)));
+                    } else {
+                        op(s, by)
+                            .zip(&mut arr_iter)
+                            .for_each(|(splitted, arr)| arr.push(Some(splitted)));
+                    };
                     // fill the remaining with null
                     for arr in arr_iter {
                         arr.push_null()
@@ -49,10 +58,16 @@ where
         binary_elementwise_for_each(ca, by, |opt_s, opt_by| match (opt_s, opt_by) {
             (Some(s), Some(by)) => {
                 let mut arr_iter = arrs.iter_mut();
-                let split_iter = op(s, by);
-                (split_iter)
-                    .zip(&mut arr_iter)
-                    .for_each(|(splitted, arr)| arr.push(Some(splitted)));
+                if by.is_empty() && split_exact {
+                    s.split_terminator(by)
+                        .skip(1)
+                        .zip(&mut arr_iter)
+                        .for_each(|(splitted, arr)| arr.push(Some(splitted)));
+                } else {
+                    op(s, by)
+                        .zip(&mut arr_iter)
+                        .for_each(|(splitted, arr)| arr.push(Some(splitted)));
+                };
                 // fill the remaining with null
                 for arr in arr_iter {
                     arr.push_null()
@@ -86,11 +101,15 @@ where
         if let Some(by) = by.get(0) {
             let mut builder =
                 ListStringChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
+            let is_empty_pattern = by.is_empty();
 
             ca.for_each(|opt_s| match opt_s {
                 Some(s) => {
-                    let iter = op(s, by);
-                    builder.append_values_iter(iter)
+                    if is_empty_pattern {
+                        builder.append_values_iter(s.split_terminator(by).skip(1))
+                    } else {
+                        builder.append_values_iter(op(s, by))
+                    }
                 },
                 _ => builder.append_null(),
             });
@@ -103,22 +122,15 @@ where
 
         binary_elementwise_for_each(ca, by, |opt_s, opt_by| match (opt_s, opt_by) {
             (Some(s), Some(by)) => {
-                let iter = op(s, by);
-                builder.append_values_iter(iter);
+                if by.is_empty() {
+                    builder.append_values_iter(s.split_terminator(by).skip(1))
+                } else {
+                    builder.append_values_iter(op(s, by))
+                }
             },
             _ => builder.append_null(),
         });
 
         builder.finish()
     }
-}
-
-pub fn split<'a>(s: &'a str, by: &'a str) -> impl Iterator<Item = &'a str> {
-    s.split(by)
-        .filter(|x| if by.is_empty() { !x.is_empty() } else { true })
-}
-
-pub fn split_inclusive<'a>(s: &'a str, by: &'a str) -> impl Iterator<Item = &'a str> {
-    s.split_inclusive(by)
-        .skip(if by.is_empty() { 1 } else { 0 })
 }
