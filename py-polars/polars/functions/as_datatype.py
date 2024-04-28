@@ -572,10 +572,10 @@ def concat_str(
     separator
         String that will be used to separate the values of each column.
     ignore_nulls
-        Ignore null values (default).
+        Ignore null values (default is ``False``).
 
         If set to ``False``, null values will be propagated.
-        if the row contains any null values, the output is ``None``.
+        if the row contains any null values, the output is null.
 
     Examples
     --------
