@@ -75,15 +75,24 @@ use crate::sql::PySQLContext;
 // linking breaks on Windows if we use tracemalloc C APIs. So we only use this
 // on Windows for now.
 #[global_allocator]
-#[cfg(all(target_family = "unix", debug_assertions))]
+#[cfg(all(target_family = "unix", debug_assertions, not(default_allocator)))]
 static ALLOC: TracemallocAllocator<Jemalloc> = TracemallocAllocator::new(Jemalloc);
 
 #[global_allocator]
-#[cfg(all(target_family = "unix", not(use_mimalloc), not(debug_assertions)))]
+#[cfg(all(
+    target_family = "unix",
+    not(use_mimalloc),
+    not(debug_assertions),
+    not(default_allocator)
+))]
 static ALLOC: Jemalloc = Jemalloc;
 
 #[global_allocator]
-#[cfg(all(any(not(target_family = "unix"), use_mimalloc), not(debug_assertions)))]
+#[cfg(all(
+    any(not(target_family = "unix"), use_mimalloc),
+    not(debug_assertions),
+    not(default_allocator)
+))]
 static ALLOC: MiMalloc = MiMalloc;
 
 #[pymodule]

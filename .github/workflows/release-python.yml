@@ -144,7 +144,7 @@ jobs:
         if: matrix.architecture == 'x86-64'
         env:
           FEATURES: ${{ steps.features.outputs.features }}
-          CFG: ${{ matrix.package == 'polars-lts-cpu' && '--cfg use_mimalloc' || '' }}
+          CFG: ${{ matrix.package == 'polars-lts-cpu' && '--cfg default_allocator' || '' }}
         run: echo "RUSTFLAGS=-C target-feature=${{ steps.features.outputs.features }} $CFG" >> $GITHUB_ENV
 
       - name: Set variables in CPU check module
