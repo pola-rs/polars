@@ -42,12 +42,7 @@ mod sql;
 mod to_numpy;
 mod utils;
 
-#[cfg(all(
-    target_family = "unix",
-    not(use_mimalloc),
-    not(debug_assertions),
-    not(default_allocator)
-))]
+#[cfg(all(target_family = "unix", not(use_mimalloc), not(default_allocator)))]
 use jemallocator::Jemalloc;
 #[cfg(any(not(target_family = "unix"), use_mimalloc))]
 use mimalloc::MiMalloc;
