@@ -1,6 +1,7 @@
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 use std::borrow::Cow;
 use std::fmt::{Debug, Display, Formatter, Write};
+use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::RwLock;
 use std::{fmt, str};
@@ -87,12 +88,23 @@ pub fn set_trim_decimal_zeros(trim: Option<bool>) {
     TRIM_DECIMAL_ZEROS.store(trim.unwrap_or(false), Ordering::Relaxed)
 }
 
+/// Parses an environment variable value.
+fn parse_env_var<T: FromStr>(name: &str) -> Option<T> {
+    std::env::var(name).ok().and_then(|v| v.parse().ok())
+}
+
 fn get_str_len_limit() -> usize {
-    std::env::var(FMT_STR_LEN)
-        .as_deref()
-        .unwrap_or("")
-        .parse()
-        .unwrap_or(DEFAULT_STR_LEN_LIMIT)
+    parse_env_var(FMT_STR_LEN).unwrap_or(DEFAULT_STR_LEN_LIMIT)
+}
+
+fn get_row_limit() -> usize {
+    parse_env_var(FMT_MAX_ROWS).map_or(DEFAULT_ROW_LIMIT, |n: i64| {
+        if n < 0 {
+            usize::MAX
+        } else {
+            n as usize
+        }
+    })
 }
 
 macro_rules! format_array {
@@ -135,17 +147,7 @@ macro_rules! format_array {
             Ok(())
         };
 
-        let limit: usize = {
-            let limit = std::env::var(FMT_MAX_ROWS)
-                .as_deref()
-                .unwrap_or("")
-                .parse()
-                .map_or(
-                    DEFAULT_ROW_LIMIT,
-                    |n: i64| if n < 0 { $a.len() } else { n as usize },
-                );
-            std::cmp::min(limit, $a.len())
-        };
+        let limit = get_row_limit();
 
         if $a.len() > limit {
             let half = limit / 2;
@@ -528,14 +530,7 @@ impl Display for DataFrame {
                 .parse()
                 .map_or(8, |n: i64| if n < 0 { self.width() } else { n as usize });
 
-            let max_n_rows = std::env::var(FMT_MAX_ROWS)
-                .as_deref()
-                .unwrap_or("")
-                .parse()
-                .map_or(
-                    DEFAULT_ROW_LIMIT,
-                    |n: i64| if n < 0 { height } else { n as usize },
-                );
+            let max_n_rows = get_row_limit();
 
             let (n_first, n_last) = if self.width() > max_n_cols {
                 ((max_n_cols + 1) / 2, max_n_cols / 2)
