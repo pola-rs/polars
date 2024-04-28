@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import os
+import sys
 from datetime import datetime, time, timezone
 from decimal import Decimal
 from typing import TYPE_CHECKING, cast
@@ -862,6 +863,9 @@ def test_max_statistic_parquet_writer(tmp_path: Path) -> None:
 
 @pytest.mark.write_disk()
 @pytest.mark.skipif(os.environ.get("POLARS_FORCE_ASYNC") == "1", reason="only local")
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="Windows filenames cannot contain an asterisk"
+)
 def test_no_glob(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
@@ -870,6 +874,21 @@ def test_no_glob(tmp_path: Path) -> None:
     p1 = tmp_path / "*.parquet"
     df.write_parquet(str(p1))
     p2 = tmp_path / "*1.parquet"
+    df.write_parquet(str(p2))
+
+    assert_frame_equal(pl.scan_parquet(str(p1), glob=False).collect(), df)
+
+
+@pytest.mark.write_disk()
+@pytest.mark.skipif(os.environ.get("POLARS_FORCE_ASYNC") == "1", reason="only local")
+def test_no_glob_windows(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    df = pl.DataFrame({"foo": 1})
+
+    p1 = tmp_path / "hello[.parquet"
+    df.write_parquet(str(p1))
+    p2 = tmp_path / "hello[2.parquet"
     df.write_parquet(str(p2))
 
     assert_frame_equal(pl.scan_parquet(str(p1), glob=False).collect(), df)
