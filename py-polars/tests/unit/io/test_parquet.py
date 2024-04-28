@@ -43,10 +43,12 @@ COMPRESSIONS = [
 
 
 @pytest.mark.write_disk()
-def test_write_parquet_using_pyarrow_9753(tmpdir: Path) -> None:
+def test_write_parquet_using_pyarrow_9753(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
     df = pl.DataFrame({"a": [1, 2, 3]})
     df.write_parquet(
-        tmpdir / "test.parquet",
+        tmp_path / "test.parquet",
         compression="zstd",
         statistics=True,
         use_pyarrow=True,
