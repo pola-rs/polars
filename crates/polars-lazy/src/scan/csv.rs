@@ -13,29 +13,30 @@ pub struct LazyCsvReader {
     path: PathBuf,
     paths: Arc<[PathBuf]>,
     separator: u8,
-    has_header: bool,
-    ignore_errors: bool,
     skip_rows: usize,
     n_rows: Option<usize>,
-    cache: bool,
     schema: Option<SchemaRef>,
     schema_overwrite: Option<SchemaRef>,
-    low_memory: bool,
     comment_prefix: Option<CommentPrefix>,
     quote_char: Option<u8>,
     eol_char: u8,
     null_values: Option<NullValues>,
-    missing_is_null: bool,
-    truncate_ragged_lines: bool,
     infer_schema_length: Option<usize>,
     rechunk: bool,
     skip_rows_after_header: usize,
     encoding: CsvEncoding,
     row_index: Option<RowIndex>,
+    n_threads: Option<usize>,
+    cache: bool,
+    has_header: bool,
+    ignore_errors: bool,
+    low_memory: bool,
+    missing_is_null: bool,
+    truncate_ragged_lines: bool,
+    decimal_comma: bool,
     try_parse_dates: bool,
     raise_if_empty: bool,
-    n_threads: Option<usize>,
-    decimal_comma: bool,
+    glob: bool,
 }
 
 #[cfg(feature = "csv")]
@@ -72,6 +73,7 @@ impl LazyCsvReader {
             truncate_ragged_lines: false,
             n_threads: None,
             decimal_comma: false,
+            glob: true,
         }
     }
 
@@ -238,6 +240,13 @@ impl LazyCsvReader {
         self
     }
 
+    #[must_use]
+    /// Expand path given via globbing rules.
+    pub fn with_glob(mut self, toggle: bool) -> Self {
+        self.glob = toggle;
+        self
+    }
+
     /// Modify a schema before we run the lazy scanning.
     ///
     /// Important! Run this function latest in the builder!
@@ -320,6 +329,10 @@ impl LazyFileListReader for LazyCsvReader {
         .into();
         lf.opt_state.file_caching = true;
         Ok(lf)
+    }
+
+    fn glob(&self) -> bool {
+        self.glob
     }
 
     fn path(&self) -> &Path {
