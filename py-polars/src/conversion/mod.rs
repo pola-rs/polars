@@ -453,6 +453,16 @@ impl FromPyObject<'_> for Wrap<Schema> {
     }
 }
 
+impl IntoPy<PyObject> for Wrap<&Schema> {
+    fn into_py(self, py: Python<'_>) -> PyObject {
+        let dict = PyDict::new(py);
+        for (k, v) in self.0.iter() {
+            dict.set_item(k.as_str(), Wrap(v.clone())).unwrap();
+        }
+        dict.into_py(py)
+    }
+}
+
 #[derive(Clone, Debug)]
 #[repr(transparent)]
 pub struct ObjectValue {
