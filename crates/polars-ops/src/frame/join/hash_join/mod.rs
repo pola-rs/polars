@@ -271,9 +271,7 @@ pub trait JoinDispatch: IntoDf {
             || unsafe { other.take_unchecked(&idx_ca_r) },
         );
 
-        let JoinType::Outer { coalesce } = args.how else {
-            unreachable!()
-        };
+        let coalesce = args.coalesce.coalesce(&JoinType::Outer);
         let out = _finish_join(df_left, df_right, args.suffix.as_deref());
         if coalesce {
             Ok(_coalesce_outer_join(

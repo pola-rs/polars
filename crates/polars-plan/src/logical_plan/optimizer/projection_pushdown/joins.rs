@@ -258,7 +258,8 @@ pub(super) fn process_join(
             already_added_local_to_local_projected.insert(local_name);
         }
         // In outer joins both columns remain. So `add_local=true` also for the right table
-        let add_local = matches!(options.args.how, JoinType::Outer { coalesce: false });
+        let add_local = matches!(options.args.how, JoinType::Outer)
+            && !options.args.coalesce.coalesce(&options.args.how);
         for e in &right_on {
             // In case of outer joins we also add the columns.
             // But before we do that we must check if the column wasn't already added by the lhs.

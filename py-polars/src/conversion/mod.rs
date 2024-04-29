@@ -701,8 +701,11 @@ impl FromPyObject<'_> for Wrap<JoinType> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "inner" => JoinType::Inner,
             "left" => JoinType::Left,
-            "outer" => JoinType::Outer{coalesce: false},
-            "outer_coalesce" => JoinType::Outer{coalesce: true},
+            "outer" => JoinType::Outer,
+            "outer_coalesce" => {
+                // TODO! deprecate
+                JoinType::Outer
+            },
             "semi" => JoinType::Semi,
             "anti" => JoinType::Anti,
             #[cfg(feature = "cross_join")]

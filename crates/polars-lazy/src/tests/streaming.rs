@@ -1,3 +1,5 @@
+use polars_ops::frame::JoinCoalesce;
+
 use super::*;
 
 fn get_csv_file() -> LazyFrame {
@@ -295,7 +297,8 @@ fn test_streaming_partial() -> PolarsResult<()> {
         .left_on([col("a")])
         .right_on([col("a")])
         .suffix("_foo")
-        .how(JoinType::Outer { coalesce: true })
+        .how(JoinType::Outer)
+        .coalesce(JoinCoalesce::CoalesceColumns)
         .finish();
 
     let q = q.left_join(
