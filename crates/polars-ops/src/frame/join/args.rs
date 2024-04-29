@@ -139,6 +139,19 @@ impl Debug for JoinType {
     }
 }
 
+impl JoinType {
+    pub fn is_asof(&self) -> bool {
+        #[cfg(feature = "asof_join")]
+        {
+            matches!(self, JoinType::AsOf(_))
+        }
+        #[cfg(not(feature = "asof_join"))]
+        {
+            false
+        }
+    }
+}
+
 #[derive(Copy, Clone, PartialEq, Eq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum JoinValidation {

@@ -1874,7 +1874,7 @@ impl JoinBuilder {
             suffix: self.suffix,
             slice: None,
             join_nulls: self.join_nulls,
-            ..Default::default()
+            coalesce: self.coalesce,
         };
 
         let lp = self

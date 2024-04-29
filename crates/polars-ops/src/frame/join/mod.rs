@@ -209,9 +209,7 @@ pub trait DataFrameJoinOps: IntoDf {
                 JoinType::Left => {
                     left_df._left_join_from_series(other, s_left, s_right, args, _verbose, None)
                 },
-                JoinType::Outer { .. } => {
-                    left_df._outer_join_from_series(other, s_left, s_right, args)
-                },
+                JoinType::Outer => left_df._outer_join_from_series(other, s_left, s_right, args),
                 #[cfg(feature = "semi_anti_join")]
                 JoinType::Anti => left_df._semi_anti_join_from_series(
                     s_left,
@@ -278,14 +276,14 @@ pub trait DataFrameJoinOps: IntoDf {
             JoinType::Cross => {
                 unreachable!()
             },
-            JoinType::Outer  => {
+            JoinType::Outer => {
                 let names_left = selected_left.iter().map(|s| s.name()).collect::<Vec<_>>();
                 let coalesce = args.coalesce;
                 args.coalesce = JoinCoalesce::KeepColumns;
                 let suffix = args.suffix.clone();
                 let out = left_df._outer_join_from_series(other, &lhs_keys, &rhs_keys, args);
 
-                if matches!(coalesce, JoinCoalesce::CoalesceColumns) {
+                if coalesce.coalesce(&JoinType::Outer) {
                     Ok(_coalesce_outer_join(
                         out?,
                         &names_left,
