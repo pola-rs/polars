@@ -2031,7 +2031,16 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.sort_with(descending, nulls_last))
 
-    def top_k(self, k: int | IntoExprColumn = 5) -> Self:
+    def top_k(
+        self,
+        k: int | IntoExprColumn = 5,
+        *,
+        by: IntoExpr | Iterable[IntoExpr] | None = None,
+        descending: bool | Sequence[bool] = False,
+        nulls_last: bool = False,
+        maintain_order: bool = False,
+        multithreaded: bool = True,
+    ) -> Self:
         r"""
         Return the `k` largest elements.
 
@@ -2043,6 +2052,19 @@ class Expr:
         ----------
         k
             Number of elements to return.
+        by
+            Column(s) included in sort order. Accepts expression input.
+            Strings are parsed as column names.
+            If not provided, each column will be treated induvidually.
+        descending
+            Return the k smallest. Top-k by multiple columns can be specified per
+            column by passing a sequence of booleans.
+        nulls_last
+            Place null values last.
+        maintain_order
+            Whether the order should be maintained if elements are equal.
+        multithreaded
+            Sort using multiple threads.
 
         See Also
         --------
@@ -2050,6 +2072,8 @@ class Expr:
 
         Examples
         --------
+        Get the 5 largest values in series.
+
         >>> df = pl.DataFrame(
         ...     {
         ...         "value": [1, 98, 2, 3, 99, 4],
@@ -2073,11 +2097,116 @@ class Expr:
         │ 3     ┆ 4        │
         │ 2     ┆ 98       │
         └───────┴──────────┘
+
+        >>> df2 = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, 3, 4, 5, 6],
+        ...         "b": [6, 5, 4, 3, 2, 1],
+        ...         "c": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
+        ...     }
+        ... )
+        >>> df2
+        shape: (6, 3)
+        ┌─────┬─────┬────────┐
+        │ a   ┆ b   ┆ c      │
+        │ --- ┆ --- ┆ ---    │
+        │ i64 ┆ i64 ┆ str    │
+        ╞═════╪═════╪════════╡
+        │ 1   ┆ 6   ┆ Apple  │
+        │ 2   ┆ 5   ┆ Orange │
+        │ 3   ┆ 4   ┆ Apple  │
+        │ 4   ┆ 3   ┆ Apple  │
+        │ 5   ┆ 2   ┆ Banana │
+        │ 6   ┆ 1   ┆ Banana │
+        └─────┴─────┴────────┘
+
+        Get the top 2 rows by column `a` or `b`.
+
+        >>> df2.select(
+        ...     pl.all().top_k(2, by="a").name.suffix("_top_by_a"),
+        ...     pl.all().top_k(2, by="b").name.suffix("_top_by_b"),
+        ... )
+        shape: (2, 6)
+        ┌────────────┬────────────┬────────────┬────────────┬────────────┬────────────┐
+        │ a_top_by_a ┆ b_top_by_a ┆ c_top_by_a ┆ a_top_by_b ┆ b_top_by_b ┆ c_top_by_b │
+        │ ---        ┆ ---        ┆ ---        ┆ ---        ┆ ---        ┆ ---        │
+        │ i64        ┆ i64        ┆ str        ┆ i64        ┆ i64        ┆ str        │
+        ╞════════════╪════════════╪════════════╪════════════╪════════════╪════════════╡
+        │ 6          ┆ 1          ┆ Banana     ┆ 1          ┆ 6          ┆ Apple      │
+        │ 5          ┆ 2          ┆ Banana     ┆ 2          ┆ 5          ┆ Orange     │
+        └────────────┴────────────┴────────────┴────────────┴────────────┴────────────┘
+
+        Get the top 2 rows by multiple columns with given order.
+
+        >>> df2.select(
+        ...     pl.all()
+        ...     .top_k(2, by=["c", "a"], descending=[False, True])
+        ...     .name.suffix("_by_ca"),
+        ...     pl.all()
+        ...     .top_k(2, by=["c", "b"], descending=[False, True])
+        ...     .name.suffix("_by_cb"),
+        ... )
+        shape: (2, 6)
+        ┌─────────┬─────────┬─────────┬─────────┬─────────┬─────────┐
+        │ a_by_ca ┆ b_by_ca ┆ c_by_ca ┆ a_by_cb ┆ b_by_cb ┆ c_by_cb │
+        │ ---     ┆ ---     ┆ ---     ┆ ---     ┆ ---     ┆ ---     │
+        │ i64     ┆ i64     ┆ str     ┆ i64     ┆ i64     ┆ str     │
+        ╞═════════╪═════════╪═════════╪═════════╪═════════╪═════════╡
+        │ 2       ┆ 5       ┆ Orange  ┆ 2       ┆ 5       ┆ Orange  │
+        │ 5       ┆ 2       ┆ Banana  ┆ 6       ┆ 1       ┆ Banana  │
+        └─────────┴─────────┴─────────┴─────────┴─────────┴─────────┘
+
+        Get the top 2 rows by column `a` in each group.
+
+        >>> (
+        ...     df2.group_by("c", maintain_order=True)
+        ...     .agg(pl.all().top_k(2, by="a"))
+        ...     .explode(pl.all().exclude("c"))
+        ... )
+        shape: (5, 3)
+        ┌────────┬─────┬─────┐
+        │ c      ┆ a   ┆ b   │
+        │ ---    ┆ --- ┆ --- │
+        │ str    ┆ i64 ┆ i64 │
+        ╞════════╪═════╪═════╡
+        │ Apple  ┆ 4   ┆ 3   │
+        │ Apple  ┆ 3   ┆ 4   │
+        │ Orange ┆ 2   ┆ 5   │
+        │ Banana ┆ 6   ┆ 1   │
+        │ Banana ┆ 5   ┆ 2   │
+        └────────┴─────┴─────┘
         """
         k = parse_as_expression(k)
-        return self._from_pyexpr(self._pyexpr.top_k(k))
+        if by is not None:
+            by = parse_as_list_of_expressions(by)
+            if isinstance(descending, bool):
+                descending = [descending]
+            elif len(by) != len(descending):
+                msg = f"the length of `descending` ({len(descending)}) does not match the length of `by` ({len(by)})"
+                raise ValueError(msg)
+            return self._from_pyexpr(
+                self._pyexpr.top_k_by(
+                    k, by, descending, nulls_last, maintain_order, multithreaded
+                )
+            )
+        else:
+            if not isinstance(descending, bool):
+                msg = "`descending` should be a boolean if no `by` is provided"
+                raise ValueError(msg)
+            return self._from_pyexpr(
+                self._pyexpr.top_k(k, descending, nulls_last, multithreaded)
+            )
 
-    def bottom_k(self, k: int | IntoExprColumn = 5) -> Self:
+    def bottom_k(
+        self,
+        k: int | IntoExprColumn = 5,
+        *,
+        by: IntoExpr | Iterable[IntoExpr] | None = None,
+        descending: bool | Sequence[bool] = False,
+        nulls_last: bool = False,
+        maintain_order: bool = False,
+        multithreaded: bool = True,
+    ) -> Self:
         r"""
         Return the `k` smallest elements.
 
@@ -2089,6 +2218,19 @@ class Expr:
         ----------
         k
             Number of elements to return.
+        by
+            Column(s) included in sort order.
+            Accepts expression input. Strings are parsed as column names.
+            If not provided, each column will be treated induvidually.
+        descending
+            Return the k largest. Bottom-k by multiple columns can be specified per
+            column by passing a sequence of booleans.
+        nulls_last
+            Place null values last.
+        maintain_order
+            Whether the order should be maintained if elements are equal.
+        multithreaded
+            Sort using multiple threads.
 
         See Also
         --------
@@ -2119,9 +2261,105 @@ class Expr:
         │ 3     ┆ 4        │
         │ 2     ┆ 98       │
         └───────┴──────────┘
+
+        >>> df2 = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, 3, 4, 5, 6],
+        ...         "b": [6, 5, 4, 3, 2, 1],
+        ...         "c": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
+        ...     }
+        ... )
+        >>> df2
+        shape: (6, 3)
+        ┌─────┬─────┬────────┐
+        │ a   ┆ b   ┆ c      │
+        │ --- ┆ --- ┆ ---    │
+        │ i64 ┆ i64 ┆ str    │
+        ╞═════╪═════╪════════╡
+        │ 1   ┆ 6   ┆ Apple  │
+        │ 2   ┆ 5   ┆ Orange │
+        │ 3   ┆ 4   ┆ Apple  │
+        │ 4   ┆ 3   ┆ Apple  │
+        │ 5   ┆ 2   ┆ Banana │
+        │ 6   ┆ 1   ┆ Banana │
+        └─────┴─────┴────────┘
+
+        Get the bottom 2 rows by column `a` or `b`.
+
+        >>> df2.select(
+        ...     pl.all().bottom_k(2, by="a").name.suffix("_btm_by_a"),
+        ...     pl.all().bottom_k(2, by="b").name.suffix("_btm_by_b"),
+        ... )
+        shape: (2, 6)
+        ┌────────────┬────────────┬────────────┬────────────┬────────────┬────────────┐
+        │ a_btm_by_a ┆ b_btm_by_a ┆ c_btm_by_a ┆ a_btm_by_b ┆ b_btm_by_b ┆ c_btm_by_b │
+        │ ---        ┆ ---        ┆ ---        ┆ ---        ┆ ---        ┆ ---        │
+        │ i64        ┆ i64        ┆ str        ┆ i64        ┆ i64        ┆ str        │
+        ╞════════════╪════════════╪════════════╪════════════╪════════════╪════════════╡
+        │ 1          ┆ 6          ┆ Apple      ┆ 6          ┆ 1          ┆ Banana     │
+        │ 2          ┆ 5          ┆ Orange     ┆ 5          ┆ 2          ┆ Banana     │
+        └────────────┴────────────┴────────────┴────────────┴────────────┴────────────┘
+
+        Get the bottom 2 rows by multiple columns with given order.
+
+        >>> df2.select(
+        ...     pl.all()
+        ...     .bottom_k(2, by=["c", "a"], descending=[False, True])
+        ...     .name.suffix("_by_ca"),
+        ...     pl.all()
+        ...     .bottom_k(2, by=["c", "b"], descending=[False, True])
+        ...     .name.suffix("_by_cb"),
+        ... )
+        shape: (2, 6)
+        ┌─────────┬─────────┬─────────┬─────────┬─────────┬─────────┐
+        │ a_by_ca ┆ b_by_ca ┆ c_by_ca ┆ a_by_cb ┆ b_by_cb ┆ c_by_cb │
+        │ ---     ┆ ---     ┆ ---     ┆ ---     ┆ ---     ┆ ---     │
+        │ i64     ┆ i64     ┆ str     ┆ i64     ┆ i64     ┆ str     │
+        ╞═════════╪═════════╪═════════╪═════════╪═════════╪═════════╡
+        │ 4       ┆ 3       ┆ Apple   ┆ 1       ┆ 6       ┆ Apple   │
+        │ 3       ┆ 4       ┆ Apple   ┆ 3       ┆ 4       ┆ Apple   │
+        └─────────┴─────────┴─────────┴─────────┴─────────┴─────────┘
+
+        Get the bottom 2 rows by column `a` in each group.
+
+        >>> (
+        ...     df2.group_by("c", maintain_order=True)
+        ...     .agg(pl.all().bottom_k(2, by="a"))
+        ...     .explode(pl.all().exclude("c"))
+        ... )
+        shape: (5, 3)
+        ┌────────┬─────┬─────┐
+        │ c      ┆ a   ┆ b   │
+        │ ---    ┆ --- ┆ --- │
+        │ str    ┆ i64 ┆ i64 │
+        ╞════════╪═════╪═════╡
+        │ Apple  ┆ 1   ┆ 6   │
+        │ Apple  ┆ 3   ┆ 4   │
+        │ Orange ┆ 2   ┆ 5   │
+        │ Banana ┆ 5   ┆ 2   │
+        │ Banana ┆ 6   ┆ 1   │
+        └────────┴─────┴─────┘
         """
         k = parse_as_expression(k)
-        return self._from_pyexpr(self._pyexpr.bottom_k(k))
+        if by is not None:
+            by = parse_as_list_of_expressions(by)
+            if isinstance(descending, bool):
+                descending = [descending]
+            elif len(by) != len(descending):
+                msg = f"the length of `descending` ({len(descending)}) does not match the length of `by` ({len(by)})"
+                raise ValueError(msg)
+            return self._from_pyexpr(
+                self._pyexpr.bottom_k_by(
+                    k, by, descending, nulls_last, maintain_order, multithreaded
+                )
+            )
+        else:
+            if not isinstance(descending, bool):
+                msg = "`descending` should be a boolean if no `by` is provided"
+                raise ValueError(msg)
+            return self._from_pyexpr(
+                self._pyexpr.bottom_k(k, descending, nulls_last, multithreaded)
+            )
 
     def arg_sort(self, *, descending: bool = False, nulls_last: bool = False) -> Self:
         """
