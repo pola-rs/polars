@@ -2337,3 +2337,7 @@ def test_search_sorted(
 
     multiple_s = s.search_sorted(multiple)
     assert_series_equal(multiple_s, pl.Series(multiple_expected, dtype=pl.UInt32))
+
+def test_series_from_pandas_with_dtype()->None:
+    s = pl.Series('foo', pd.Series([1,2,3]), pl.Float32)
+    assert_series_equal(s, pl.Series('foo', [1,2,3], dtype=pl.Float32))
