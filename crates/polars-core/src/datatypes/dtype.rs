@@ -273,21 +273,6 @@ impl DataType {
         matches!(self, DataType::Binary)
     }
 
-    pub fn is_string(&self) -> bool {
-        matches!(self, DataType::String)
-    }
-
-    pub fn is_categorical(&self) -> bool {
-        #[cfg(feature = "dtype-categorical")]
-        {
-            matches!(self, DataType::Categorical(_, _) | DataType::Enum(_, _))
-        }
-        #[cfg(not(feature = "dtype-categorical"))]
-        {
-            false
-        }
-    }
-
     pub fn is_object(&self) -> bool {
         #[cfg(feature = "object")]
         {
