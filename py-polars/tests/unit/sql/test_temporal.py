@@ -148,6 +148,58 @@ def test_extract_century_millennium(dt: date, expected: list[int]) -> None:
 
 
 @pytest.mark.parametrize(
+    ("constraint", "expected"),
+    [
+        ("dtm >= '2020-12-30T10:30:45.987'", [0, 2]),
+        ("dtm::date > '2006-01-01'", [0, 2]),
+        ("dtm > '2006-01-01'", [0, 1, 2]),  # << implies '2006-01-01 00:00:00'
+        ("dtm <= '2006-01-01'", []),  # << implies '2006-01-01 00:00:00'
+        ("dt != '1960-01-07'", [0, 1]),
+        ("dt IN ('1960-01-07','2077-01-01','2222-02-22')", [1, 2]),
+        (
+            "dtm = '2024-01-07 01:02:03.123456000' OR dtm = '2020-12-30 10:30:45.987654'",
+            [0, 2],
+        ),
+    ],
+)
+def test_implicit_temporal_strings(constraint: str, expected: list[int]) -> None:
+    df = pl.DataFrame(
+        {
+            "idx": [0, 1, 2],
+            "dtm": [
+                datetime(2024, 1, 7, 1, 2, 3, 123456),
+                datetime(2006, 1, 1, 23, 59, 59, 555555),
+                datetime(2020, 12, 30, 10, 30, 45, 987654),
+            ],
+            "dt": [
+                date(2020, 12, 30),
+                date(2077, 1, 1),
+                date(1960, 1, 7),
+            ],
+        }
+    )
+    res = df.sql(f"SELECT idx FROM self WHERE {constraint}")
+    actual = sorted(res["idx"])
+    assert actual == expected
+
+
+@pytest.mark.parametrize(
+    "dtval",
+    [
+        "2020-12-30T10:30:45",
+        "yyyy-mm-dd",
+        "2222-22-22",
+        "10:30:45",
+    ],
+)
+def test_implicit_temporal_string_errors(dtval: str) -> None:
+    df = pl.DataFrame({"dt": [date(2020, 12, 30)]})
+
+    with pytest.raises(ComputeError, match="conversion from `str` to `date` failed"):
+        df.sql(f"SELECT * FROM self WHERE dt = '{dtval}'")
+
+
+@pytest.mark.parametrize(
     ("unit", "expected"),
     [
         ("ms", [1704589323123, 1609324245987, 1136159999555]),
@@ -182,6 +234,6 @@ def test_timestamp_time_unit_errors() -> None:
         for prec in (0, 15):
             with pytest.raises(
                 ComputeError,
-                match=f"unsupported `timestamp` precision; expected a value between 1 and 9, found {prec}",
+                match=f"invalid temporal type precision; expected 1-9, found {prec}",
             ):
                 ctx.execute(f"SELECT ts::timestamp({prec}) FROM frame_data")

@@ -370,8 +370,9 @@ impl SQLContext {
         let mut contains_wildcard_exclude = false;
 
         // Filter expression.
+        let schema = Some(lf.schema()?);
         if let Some(expr) = select_stmt.selection.as_ref() {
-            let mut filter_expression = parse_sql_expr(expr, self)?;
+            let mut filter_expression = parse_sql_expr(expr, self, schema.clone())?;
             lf = self.process_subqueries(lf, vec![&mut filter_expression]);
             lf = lf.filter(filter_expression);
         }
@@ -382,9 +383,9 @@ impl SQLContext {
             .iter()
             .map(|select_item| {
                 Ok(match select_item {
-                    SelectItem::UnnamedExpr(expr) => parse_sql_expr(expr, self)?,
+                    SelectItem::UnnamedExpr(expr) => parse_sql_expr(expr, self, schema.clone())?,
                     SelectItem::ExprWithAlias { expr, alias } => {
-                        let expr = parse_sql_expr(expr, self)?;
+                        let expr = parse_sql_expr(expr, self, schema.clone())?;
                         expr.alias(&alias.value)
                     },
                     SelectItem::QualifiedWildcard(oname, wildcard_options) => self
@@ -427,7 +428,7 @@ impl SQLContext {
                         ComputeError:
                         "group_by error: a positive number or an expression expected",
                     )),
-                    _ => parse_sql_expr(e, self),
+                    _ => parse_sql_expr(e, self, schema.clone()),
                 })
                 .collect::<PolarsResult<_>>()?
         } else {
@@ -506,8 +507,9 @@ impl SQLContext {
             lf = self.process_order_by(lf, &query.order_by)?;
 
             // Apply optional 'having' clause, post-aggregation.
+            let schema = Some(lf.schema()?);
             match select_stmt.having.as_ref() {
-                Some(expr) => lf.filter(parse_sql_expr(expr, self)?),
+                Some(expr) => lf.filter(parse_sql_expr(expr, self, schema.clone())?),
                 None => lf,
             }
         };
@@ -517,10 +519,11 @@ impl SQLContext {
             Some(Distinct::Distinct) => lf.unique_stable(None, UniqueKeepStrategy::Any),
             Some(Distinct::On(exprs)) => {
                 // TODO: support exprs in `unique` see https://github.com/pola-rs/polars/issues/5760
+                let schema = Some(lf.schema()?);
                 let cols = exprs
                     .iter()
                     .map(|e| {
-                        let expr = parse_sql_expr(e, self)?;
+                        let expr = parse_sql_expr(e, self, schema.clone())?;
                         if let Expr::Column(name) = expr {
                             Ok(name.to_string())
                         } else {
@@ -664,8 +667,9 @@ impl SQLContext {
         let mut by = Vec::with_capacity(ob.len());
         let mut descending = Vec::with_capacity(ob.len());
 
+        let schema = Some(lf.schema()?);
         for ob in ob {
-            by.push(parse_sql_expr(&ob.expr, self)?);
+            by.push(parse_sql_expr(&ob.expr, self, schema.clone())?);
             descending.push(!ob.asc.unwrap_or(true));
             polars_ensure!(
                 ob.nulls_first.is_none(),
