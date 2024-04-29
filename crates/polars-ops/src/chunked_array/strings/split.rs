@@ -5,13 +5,42 @@ use polars_core::chunked_array::ops::arity::binary_elementwise_for_each;
 
 use super::*;
 
+pub struct SplitNChars<'a> {
+    s: &'a str,
+    n: usize,
+    keep_remainder: bool,
+}
+
+impl<'a> Iterator for SplitNChars<'a> {
+    type Item = &'a str;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.n >= 2 {
+            self.n -= 1;
+            let ch = self.s.chars().next()?;
+            let first;
+            (first, self.s) = self.s.split_at(ch.len_utf8());
+            Some(first)
+        } else if self.n == 1 && !self.s.is_empty() {
+            self.n -= 1;
+            if self.keep_remainder {
+                Some(self.s)
+            } else {
+                Some(self.s.split_at(self.s.chars().next()?.len_utf8()).0)
+            }
+        } else {
+            None
+        }
+    }
+}
+
 #[cfg(feature = "dtype-struct")]
 pub fn split_to_struct<'a, F, I>(
     ca: &'a StringChunked,
     by: &'a StringChunked,
     n: usize,
     op: F,
-    split_exact: bool,
+    keep_remainder: bool,
 ) -> PolarsResult<StructChunked>
 where
     F: Fn(&'a str, &'a str) -> I,
@@ -23,32 +52,47 @@ where
 
     if by.len() == 1 {
         if let Some(by) = by.get(0) {
-            let is_empty_pattern = by.is_empty();
-
-            ca.for_each(|opt_s| match opt_s {
-                None => {
-                    for arr in &mut arrs {
-                        arr.push_null()
-                    }
-                },
-                Some(s) => {
-                    let mut arr_iter = arrs.iter_mut();
-                    if is_empty_pattern && split_exact {
-                        s.split_terminator(by)
-                            .skip(1)
-                            .zip(&mut arr_iter)
-                            .for_each(|(splitted, arr)| arr.push(Some(splitted)));
-                    } else {
+            if by.is_empty() {
+                ca.for_each(|opt_s| match opt_s {
+                    None => {
+                        for arr in &mut arrs {
+                            arr.push_null()
+                        }
+                    },
+                    Some(s) => {
+                        let mut arr_iter = arrs.iter_mut();
+                        SplitNChars {
+                            s,
+                            n,
+                            keep_remainder,
+                        }
+                        .zip(&mut arr_iter)
+                        .for_each(|(splitted, arr)| arr.push(Some(splitted)));
+                        // fill the remaining with null
+                        for arr in arr_iter {
+                            arr.push_null()
+                        }
+                    },
+                });
+            } else {
+                ca.for_each(|opt_s| match opt_s {
+                    None => {
+                        for arr in &mut arrs {
+                            arr.push_null()
+                        }
+                    },
+                    Some(s) => {
+                        let mut arr_iter = arrs.iter_mut();
                         op(s, by)
                             .zip(&mut arr_iter)
                             .for_each(|(splitted, arr)| arr.push(Some(splitted)));
-                    };
-                    // fill the remaining with null
-                    for arr in arr_iter {
-                        arr.push_null()
-                    }
-                },
-            });
+                        // fill the remaining with null
+                        for arr in arr_iter {
+                            arr.push_null()
+                        }
+                    },
+                });
+            }
         } else {
             for arr in &mut arrs {
                 arr.push_null()
@@ -58,11 +102,14 @@ where
         binary_elementwise_for_each(ca, by, |opt_s, opt_by| match (opt_s, opt_by) {
             (Some(s), Some(by)) => {
                 let mut arr_iter = arrs.iter_mut();
-                if by.is_empty() && split_exact {
-                    s.split_terminator(by)
-                        .skip(1)
-                        .zip(&mut arr_iter)
-                        .for_each(|(splitted, arr)| arr.push(Some(splitted)));
+                if by.is_empty() {
+                    SplitNChars {
+                        s,
+                        n,
+                        keep_remainder,
+                    }
+                    .zip(&mut arr_iter)
+                    .for_each(|(splitted, arr)| arr.push(Some(splitted)));
                 } else {
                     op(s, by)
                         .zip(&mut arr_iter)
@@ -101,18 +148,18 @@ where
         if let Some(by) = by.get(0) {
             let mut builder =
                 ListStringChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
-            let is_empty_pattern = by.is_empty();
 
-            ca.for_each(|opt_s| match opt_s {
-                Some(s) => {
-                    if is_empty_pattern {
-                        builder.append_values_iter(s.split_terminator(by).skip(1))
-                    } else {
-                        builder.append_values_iter(op(s, by))
-                    }
-                },
-                _ => builder.append_null(),
-            });
+            if by.is_empty() {
+                ca.for_each(|opt_s| match opt_s {
+                    Some(s) => builder.append_values_iter(s.split_terminator(by).skip(1)),
+                    _ => builder.append_null(),
+                });
+            } else {
+                ca.for_each(|opt_s| match opt_s {
+                    Some(s) => builder.append_values_iter(op(s, by)),
+                    _ => builder.append_null(),
+                });
+            }
             builder.finish()
         } else {
             ListChunked::full_null_with_dtype(ca.name(), ca.len(), &DataType::String)
