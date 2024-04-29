@@ -9,6 +9,7 @@ from torch.testing import assert_close as assert_tensor
 from torch.utils.data import DataLoader, Dataset
 
 import polars as pl
+import polars.selectors as cs
 from polars.ml.torch import PolarsDataset
 
 
@@ -195,8 +196,16 @@ class TestTorchIntegration:
         )
         assert_tensor(expected, ts)
 
-    def test_to_torch_labelled_dataset(self, df: pl.DataFrame) -> None:
-        ds = df.to_torch("dataset", label="x")
+    @pytest.mark.parametrize(
+        "features",
+        [
+            None,
+            ("y", "z"),
+            ~cs.by_dtype(pl.INTEGER_DTYPES),
+        ],
+    )
+    def test_to_torch_labelled_dataset(self, features: Any, df: pl.DataFrame) -> None:
+        ds = df.to_torch("dataset", label="x", features=features)
         ts = next(iter(DataLoader(ds, batch_size=2, shuffle=False)))
 
         expected = [
@@ -265,13 +274,7 @@ class TestTorchIntegration:
             _res1 = df.to_torch(dtype=pl.UInt16)
 
         with pytest.raises(
-            ValueError,
-            match="label expression must have a single output",
-        ):
-            _res2 = df.to_torch("dataset", label=pl.col("^x|y|z$"))
-
-        with pytest.raises(
             IndexError,
             match="tensors used as indices must be long, int",
         ):
-            _res3 = ds[torch.tensor([0, 3], dtype=torch.complex64)]
+            _res2 = ds[torch.tensor([0, 3], dtype=torch.complex64)]

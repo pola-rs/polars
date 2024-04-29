@@ -113,21 +113,8 @@ class PolarsDataset(TensorDataset):
         (tensor([[ 1.0000,  1.5000],
                  [ 0.0000, -0.5000]]), tensor([0, 8], dtype=torch.int16))
         """
-        if label is None:
-            label_colnames = None
-        else:
-            label_colnames = []
-            if isinstance(label, (str, Expr)):
-                label = [label]
-
-            for lbl in label:
-                if isinstance(lbl, Expr):
-                    if lbl.meta.has_multiple_outputs():
-                        msg = f"label expression must have a single output; found {lbl}"
-                        raise ValueError(msg)
-                    label_colnames.append(lbl.meta.output_name())
-                else:
-                    label_colnames.append(lbl)
+        if isinstance(label, (str, Expr)):
+            label = [label]
 
         label_frame: DataFrame | None = None
         if not label:
@@ -144,7 +131,7 @@ class PolarsDataset(TensorDataset):
             feature_frame = frame.select(
                 features
                 if (isinstance(features, Expr) or features)
-                else exclude(label_colnames)
+                else exclude(label_frame.columns)
             )
             self.features = feature_frame.to_torch()
             self.tensors = (self.features, self.labels)  # type: ignore[assignment]
