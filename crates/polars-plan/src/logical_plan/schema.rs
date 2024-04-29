@@ -313,12 +313,11 @@ pub(crate) fn det_join_schema(
                 new_schema.with_column(field.name, field.dtype);
                 arena.clear();
             }
-            let coalesces_join_keys = options.args.coalesce.coalesce(&options.args.how);
             // Except in asof joins. Asof joins are not equi-joins
             // so the columns that are joined on, may have different
             // values so if the right has a different name, it is added to the schema
             #[cfg(feature = "asof_join")]
-            if !coalesces_join_keys {
+            if !options.args.coalesce.coalesce(&options.args.how) {
                 for (left_on, right_on) in left_on.iter().zip(right_on) {
                     let field_left =
                         left_on.to_field_amortized(schema_left, Context::Default, &mut arena)?;
