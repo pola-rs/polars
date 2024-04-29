@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import typing
 from datetime import date, datetime
 from typing import TYPE_CHECKING, Literal
 
@@ -754,6 +755,58 @@ def test_join_validation() -> None:
 
             # right longer
             test_each_join_validation(short_unique, long_duplicate, join_col, how)
+
+
+@typing.no_type_check
+def test_join_validation_many_keys() -> None:
+    # unique in both
+    df1 = pl.DataFrame(
+        {
+            "val1": [11, 12, 13, 14],
+            "val2": [1, 2, 3, 4],
+        }
+    )
+    df2 = pl.DataFrame(
+        {
+            "val1": [11, 12, 13, 14],
+            "val2": [1, 2, 3, 4],
+        }
+    )
+    for join_type in ["inner", "left", "outer"]:
+        for val in ["m:m", "m:1", "1:1", "1:m"]:
+            df1.join(df2, on=["val1", "val2"], how=join_type, validate=val)
+
+    # many in lhs
+    df1 = pl.DataFrame(
+        {
+            "val1": [11, 11, 12, 13, 14],
+            "val2": [1, 1, 2, 3, 4],
+        }
+    )
+
+    for join_type in ["inner", "left", "outer"]:
+        for val in ["1:1", "1:m"]:
+            with pytest.raises(pl.ComputeError):
+                df1.join(df2, on=["val1", "val2"], how=join_type, validate=val)
+
+    # many in rhs
+    df1 = pl.DataFrame(
+        {
+            "val1": [11, 12, 13, 14],
+            "val2": [1, 2, 3, 4],
+        }
+    )
+    df2 = pl.DataFrame(
+        {
+            "val1": [11, 11, 12, 13, 14],
+            "val2": [1, 1, 2, 3, 4],
+        }
+    )
+
+    for join_type in ["inner", "left", "outer"]:
+        for val in ["m:1", "1:1"]:
+            with pytest.raises(pl.ComputeError):
+                df1.join(df2, on=["val1", "val2"], how=join_type, validate=val)
 
 
 def test_outer_join_bool() -> None:
