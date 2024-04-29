@@ -404,6 +404,7 @@ def iterable_to_pyseries(
 def pandas_to_pyseries(
     name: str,
     values: pd.Series[Any] | pd.Index[Any] | pd.DatetimeIndex,
+    dtype: PolarsDataType | None = None,
     *,
     nan_to_null: bool = True,
 ) -> PySeries:
@@ -411,7 +412,9 @@ def pandas_to_pyseries(
     if not name and values.name is not None:
         name = str(values.name)
     if is_simple_numpy_backed_pandas_series(values):
-        return pl.Series(name, values.to_numpy(), nan_to_null=nan_to_null)._s
+        return pl.Series(
+            name, values.to_numpy(), dtype=dtype, nan_to_null=nan_to_null
+        )._s
     if not _PYARROW_AVAILABLE:
         msg = (
             "pyarrow is required for converting a pandas series to Polars, "
