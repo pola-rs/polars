@@ -197,15 +197,17 @@ class TestTorchIntegration:
         assert_tensor(expected, ts)
 
     @pytest.mark.parametrize(
-        "features",
+        ("label", "features"),
         [
-            None,
-            ("y", "z"),
-            ~cs.by_dtype(pl.INTEGER_DTYPES),
+            ("x", None),
+            ("x", ["y", "z"]),
+            (cs.by_dtype(pl.INTEGER_DTYPES), ~cs.by_dtype(pl.INTEGER_DTYPES)),
         ],
     )
-    def test_to_torch_labelled_dataset(self, features: Any, df: pl.DataFrame) -> None:
-        ds = df.to_torch("dataset", label="x", features=features)
+    def test_to_torch_labelled_dataset(
+        self, label: Any, features: Any, df: pl.DataFrame
+    ) -> None:
+        ds = df.to_torch("dataset", label=label, features=features)
         ts = next(iter(DataLoader(ds, batch_size=2, shuffle=False)))
 
         expected = [
