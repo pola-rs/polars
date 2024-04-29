@@ -26,6 +26,9 @@ impl PartialOrd for CompareRow<'_> {
     }
 }
 
+/// Return the indices of the bottom k elements.
+///
+/// Similar to .argsort() then .slice(0, k) but with a more efficient implementation.
 pub fn _arg_bottom_k(
     k: usize,
     by_column: &[Series],

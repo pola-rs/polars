@@ -1669,15 +1669,15 @@ class ExprStringNameSpace:
         ...     ).with_columns(name=pl.col("captures").struct["1"].str.to_uppercase())
         ... )
         shape: (3, 3)
-        ┌───────────────────────────────────┬───────────────────────┬──────────┐
-        │ url                               ┆ captures              ┆ name     │
-        │ ---                               ┆ ---                   ┆ ---      │
-        │ str                               ┆ struct[2]             ┆ str      │
-        ╞═══════════════════════════════════╪═══════════════════════╪══════════╡
-        │ http://vote.com/ballon_dor?candi… ┆ {"messi","python"}    ┆ MESSI    │
-        │ http://vote.com/ballon_dor?candi… ┆ {"weghorst","polars"} ┆ WEGHORST │
-        │ http://vote.com/ballon_dor?error… ┆ {null,null}           ┆ null     │
-        └───────────────────────────────────┴───────────────────────┴──────────┘
+        ┌─────────────────────────────────┬───────────────────────┬──────────┐
+        │ url                             ┆ captures              ┆ name     │
+        │ ---                             ┆ ---                   ┆ ---      │
+        │ str                             ┆ struct[2]             ┆ str      │
+        ╞═════════════════════════════════╪═══════════════════════╪══════════╡
+        │ http://vote.com/ballon_dor?can… ┆ {"messi","python"}    ┆ MESSI    │
+        │ http://vote.com/ballon_dor?can… ┆ {"weghorst","polars"} ┆ WEGHORST │
+        │ http://vote.com/ballon_dor?err… ┆ {null,null}           ┆ null     │
+        └─────────────────────────────────┴───────────────────────┴──────────┘
         """
         return wrap_expr(self._pyexpr.str_extract_groups(pattern))
 

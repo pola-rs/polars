@@ -23,6 +23,7 @@ from polars._utils.construction.utils import (
     contains_nested,
     is_namedtuple,
     is_pydantic_model,
+    is_simple_numpy_backed_pandas_series,
     nt_unpack,
     try_get_type_hints,
 )
@@ -44,6 +45,7 @@ from polars.datatypes import (
 )
 from polars.dependencies import (
     _NUMPY_AVAILABLE,
+    _PYARROW_AVAILABLE,
     _check_for_numpy,
     _check_for_pandas,
     dataclasses,
@@ -1017,10 +1019,30 @@ def pandas_to_pydf(
     include_index: bool = False,
 ) -> PyDataFrame:
     """Construct a PyDataFrame from a pandas DataFrame."""
+    convert_index = include_index and not _pandas_has_default_index(data)
+    if not convert_index and all(
+        is_simple_numpy_backed_pandas_series(data[col]) for col in data.columns
+    ):
+        # Convert via NumPy directly, no PyArrow needed.
+        return pl.DataFrame(
+            {str(col): data[col].to_numpy() for col in data.columns},
+            schema=schema,
+            strict=strict,
+            schema_overrides=schema_overrides,
+            nan_to_null=nan_to_null,
+        )._df
+
+    if not _PYARROW_AVAILABLE:
+        msg = (
+            "pyarrow is required for converting a pandas dataframe to Polars, "
+            "unless each of its columns is a simple numpy-backed one "
+            "(e.g. 'int64', 'bool', 'float32' - not 'Int64')"
+        )
+        raise ImportError(msg)
     arrow_dict = {}
     length = data.shape[0]
 
-    if include_index and not _pandas_has_default_index(data):
+    if convert_index:
         for idxcol in data.index.names:
             arrow_dict[str(idxcol)] = plc.pandas_series_to_arrow(
                 data.index.get_level_values(idxcol),

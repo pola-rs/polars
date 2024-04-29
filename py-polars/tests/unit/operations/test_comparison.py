@@ -366,3 +366,10 @@ def test_total_ordering_bool_series(lhs: bool | None, rhs: bool | None) -> None:
     )
     with context:
         verify_total_ordering_broadcast(lhs, rhs, False, pl.Boolean)
+
+
+def test_cat_compare_with_bool() -> None:
+    data = pl.DataFrame([pl.Series("col1", ["a", "b"], dtype=pl.Categorical)])
+
+    with pytest.raises(pl.ComputeError, match="cannot compare categorical with bool"):
+        data.filter(pl.col("col1") == True)  # noqa: E712

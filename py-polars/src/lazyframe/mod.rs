@@ -141,7 +141,7 @@ impl PyLazyFrame {
     #[pyo3(signature = (path, paths, separator, has_header, ignore_errors, skip_rows, n_rows, cache, overwrite_dtype,
         low_memory, comment_prefix, quote_char, null_values, missing_utf8_is_empty_string,
         infer_schema_length, with_schema_modify, rechunk, skip_rows_after_header,
-        encoding, row_index, try_parse_dates, eol_char, raise_if_empty, truncate_ragged_lines, decimal_comma, schema
+        encoding, row_index, try_parse_dates, eol_char, raise_if_empty, truncate_ragged_lines, decimal_comma, glob, schema
     )
     )]
     fn new_from_csv(
@@ -170,6 +170,7 @@ impl PyLazyFrame {
         raise_if_empty: bool,
         truncate_ragged_lines: bool,
         decimal_comma: bool,
+        glob: bool,
         schema: Option<Wrap<Schema>>,
     ) -> PyResult<Self> {
         let null_values = null_values.map(|w| w.0);
@@ -214,6 +215,7 @@ impl PyLazyFrame {
             .with_missing_is_null(!missing_utf8_is_empty_string)
             .truncate_ragged_lines(truncate_ragged_lines)
             .with_decimal_comma(decimal_comma)
+            .with_glob(glob)
             .raise_if_empty(raise_if_empty);
 
         if let Some(lambda) = with_schema_modify {
@@ -245,7 +247,7 @@ impl PyLazyFrame {
     #[cfg(feature = "parquet")]
     #[staticmethod]
     #[pyo3(signature = (path, paths, n_rows, cache, parallel, rechunk, row_index,
-        low_memory, cloud_options, use_statistics, hive_partitioning, hive_schema, retries)
+        low_memory, cloud_options, use_statistics, hive_partitioning, hive_schema, retries, glob)
     )]
     fn new_from_parquet(
         path: Option<PathBuf>,
@@ -261,6 +263,7 @@ impl PyLazyFrame {
         hive_partitioning: bool,
         hive_schema: Option<Wrap<Schema>>,
         retries: usize,
+        glob: bool,
     ) -> PyResult<Self> {
         let parallel = parallel.0;
         let hive_schema = hive_schema.map(|s| Arc::new(s.0));
@@ -302,6 +305,7 @@ impl PyLazyFrame {
             cloud_options,
             use_statistics,
             hive_options,
+            glob,
         };
 
         let lf = if path.is_some() {
@@ -874,7 +878,13 @@ impl PyLazyFrame {
         how: Wrap<JoinType>,
         suffix: String,
         validate: Wrap<JoinValidation>,
+        coalesce: Option<bool>,
     ) -> PyResult<Self> {
+        let coalesce = match coalesce {
+            None => JoinCoalesce::JoinSpecific,
+            Some(true) => JoinCoalesce::CoalesceColumns,
+            Some(false) => JoinCoalesce::KeepColumns,
+        };
         let ldf = self.ldf.clone();
         let other = other.ldf;
         let left_on = left_on
@@ -895,6 +905,7 @@ impl PyLazyFrame {
             .force_parallel(force_parallel)
             .join_nulls(join_nulls)
             .how(how.0)
+            .coalesce(coalesce)
             .validate(validate.0)
             .suffix(suffix)
             .finish()

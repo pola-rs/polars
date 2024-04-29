@@ -512,7 +512,7 @@ def test_no_cse_in_with_context() -> None:
         .with_context(df2.lazy())
         .select(
             pl.col("date_start", "label").gather(
-                pl.col("date_start").search_sorted("timestamp") - 1
+                pl.col("date_start").search_sorted(pl.col("timestamp")) - 1
             ),
         )
     ).collect().to_dict(as_series=False) == {

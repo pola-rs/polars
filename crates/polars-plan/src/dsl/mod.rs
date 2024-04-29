@@ -10,6 +10,7 @@ use std::any::Any;
 pub use cat::*;
 #[cfg(feature = "rolling_window")]
 pub(crate) use polars_time::prelude::*;
+
 mod arithmetic;
 mod arity;
 #[cfg(feature = "dtype-array")]
@@ -448,16 +449,61 @@ impl Expr {
     ///
     /// This has time complexity `O(n + k log(n))`.
     #[cfg(feature = "top_k")]
-    pub fn top_k(self, k: Expr) -> Self {
-        self.apply_many_private(FunctionExpr::TopK(false), &[k], false, false)
+    pub fn top_k(self, k: Expr, sort_options: SortOptions) -> Self {
+        self.apply_many_private(FunctionExpr::TopK { sort_options }, &[k], false, false)
+    }
+
+    /// Returns the `k` largest rows by given column.
+    ///
+    /// For single column, use [`Expr::top_k`].
+    #[cfg(feature = "top_k")]
+    pub fn top_k_by<K: Into<Expr>, E: AsRef<[IE]>, IE: Into<Expr> + Clone>(
+        self,
+        k: K,
+        by: E,
+        sort_options: SortMultipleOptions,
+    ) -> Self {
+        let mut args = vec![k.into()];
+        args.extend(by.as_ref().iter().map(|e| -> Expr { e.clone().into() }));
+        self.apply_many_private(FunctionExpr::TopKBy { sort_options }, &args, false, false)
     }
 
     /// Returns the `k` smallest elements.
     ///
     /// This has time complexity `O(n + k log(n))`.
     #[cfg(feature = "top_k")]
-    pub fn bottom_k(self, k: Expr) -> Self {
-        self.apply_many_private(FunctionExpr::TopK(true), &[k], false, false)
+    pub fn bottom_k(self, k: Expr, sort_options: SortOptions) -> Self {
+        self.apply_many_private(
+            FunctionExpr::TopK {
+                sort_options: sort_options.with_order_reversed(),
+            },
+            &[k],
+            false,
+            false,
+        )
+    }
+
+    /// Returns the `k` smallest rows by given column.
+    ///
+    /// For single column, use [`Expr::bottom_k`].
+    // #[cfg(feature = "top_k")]
+    #[cfg(feature = "top_k")]
+    pub fn bottom_k_by<K: Into<Expr>, E: AsRef<[IE]>, IE: Into<Expr> + Clone>(
+        self,
+        k: K,
+        by: E,
+        sort_options: SortMultipleOptions,
+    ) -> Self {
+        let mut args = vec![k.into()];
+        args.extend(by.as_ref().iter().map(|e| -> Expr { e.clone().into() }));
+        self.apply_many_private(
+            FunctionExpr::TopKBy {
+                sort_options: sort_options.with_order_reversed(),
+            },
+            &args,
+            false,
+            false,
+        )
     }
 
     /// Reverse column

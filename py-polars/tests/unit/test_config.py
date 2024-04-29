@@ -339,7 +339,7 @@ def test_set_tbl_width_chars() -> None:
             "this is 10": [4, 5, 6],
         }
     )
-    assert max(len(line) for line in str(df).split("\n")) == 70
+    assert max(len(line) for line in str(df).split("\n")) == 68
 
     pl.Config.set_tbl_width_chars(60)
     assert max(len(line) for line in str(df).split("\n")) == 60

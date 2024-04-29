@@ -2306,3 +2306,39 @@ def test_comp_series_with_str_13123() -> None:
     assert_series_equal(s == "1", pl.Series([True, False, None]))
     assert_series_equal(s.eq_missing("1"), pl.Series([True, False, False]))
     assert_series_equal(s.ne_missing("1"), pl.Series([False, True, True]))
+
+
+@pytest.mark.parametrize(
+    ("data", "single", "multiple", "single_expected", "multiple_expected"),
+    [
+        ([1, 2, 3], 1, [2, 4], 0, [1, 3]),
+        (["a", "b", "c"], "d", ["a", "d"], 3, [0, 3]),
+        ([b"a", b"b", b"c"], b"d", [b"a", b"d"], 3, [0, 3]),
+        (
+            [date(2022, 1, 2), date(2023, 4, 1)],
+            date(2022, 1, 1),
+            [date(1999, 10, 1), date(2024, 1, 1)],
+            0,
+            [0, 2],
+        ),
+        ([1, 2, 3], 1, np.array([2, 4]), 0, [1, 3]),  # test np array.
+    ],
+)
+def test_search_sorted(
+    data: list[Any],
+    single: Any,
+    multiple: list[Any],
+    single_expected: Any,
+    multiple_expected: list[Any],
+) -> None:
+    s = pl.Series(data)
+    single_s = s.search_sorted(single)
+    assert single_s == single_expected
+
+    multiple_s = s.search_sorted(multiple)
+    assert_series_equal(multiple_s, pl.Series(multiple_expected, dtype=pl.UInt32))
+
+
+def test_series_from_pandas_with_dtype() -> None:
+    s = pl.Series("foo", pd.Series([1, 2, 3]), pl.Float32)
+    assert_series_equal(s, pl.Series("foo", [1, 2, 3], dtype=pl.Float32))
