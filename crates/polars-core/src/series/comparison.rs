@@ -92,7 +92,7 @@ fn validate_types(left: &DataType, right: &DataType) -> PolarsResult<()> {
         },
         #[cfg(feature = "dtype-categorical")]
         (Categorical(_, _) | Enum(_, _), dt) | (dt, Categorical(_, _) | Enum(_, _))
-            if !(dt.is_categorical() | dt.is_string()) =>
+            if !(dt.is_categorical() | dt.is_string() | dt.is_enum()) =>
         {
             polars_bail!(ComputeError: "cannot compare categorical with {}", dt);
         },
