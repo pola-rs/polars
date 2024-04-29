@@ -663,14 +663,14 @@ class Config(contextlib.ContextDecorator):
         ... )
         >>> df.with_columns(pl.col("txt").str.len_bytes().alias("len"))
         shape: (2, 2)
-        ┌───────────────────────────────────┬─────┐
-        │ txt                               ┆ len │
-        │ ---                               ┆ --- │
-        │ str                               ┆ u32 │
-        ╞═══════════════════════════════════╪═════╡
-        │ Play it, Sam. Play 'As Time Goes… ┆ 37  │
-        │ This is the beginning of a beaut… ┆ 48  │
-        └───────────────────────────────────┴─────┘
+        ┌─────────────────────────────────┬─────┐
+        │ txt                             ┆ len │
+        │ ---                             ┆ --- │
+        │ str                             ┆ u32 │
+        ╞═════════════════════════════════╪═════╡
+        │ Play it, Sam. Play 'As Time Go… ┆ 37  │
+        │ This is the beginning of a bea… ┆ 48  │
+        └─────────────────────────────────┴─────┘
         >>> with pl.Config(fmt_str_lengths=50):
         ...     print(df)
         shape: (2, 1)

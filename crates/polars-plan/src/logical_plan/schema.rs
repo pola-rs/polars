@@ -313,11 +313,11 @@ pub(crate) fn det_join_schema(
                 new_schema.with_column(field.name, field.dtype);
                 arena.clear();
             }
-            // except in asof joins. Asof joins are not equi-joins
+            // Except in asof joins. Asof joins are not equi-joins
             // so the columns that are joined on, may have different
             // values so if the right has a different name, it is added to the schema
             #[cfg(feature = "asof_join")]
-            if !options.args.how.merges_join_keys() {
+            if !options.args.coalesce.coalesce(&options.args.how) {
                 for (left_on, right_on) in left_on.iter().zip(right_on) {
                     let field_left =
                         left_on.to_field_amortized(schema_left, Context::Default, &mut arena)?;
@@ -342,10 +342,13 @@ pub(crate) fn det_join_schema(
                 join_on_right.insert(field.name);
             }
 
+            let are_coalesced = options.args.coalesce.coalesce(&options.args.how);
+            let is_asof = options.args.how.is_asof();
+
+            // Asof joins are special, if the names are equal they will not be coalesced.
             for (name, dtype) in schema_right.iter() {
-                if !join_on_right.contains(name.as_str())  // The names that are joined on are merged
-                || matches!(&options.args.how, JoinType::Outer{coalesce: false})
-                // The names are not merged
+                if !join_on_right.contains(name.as_str()) || (!are_coalesced && !is_asof)
+                // The names that are joined on are merged
                 {
                     if schema_left.contains(name.as_str()) {
                         #[cfg(feature = "asof_join")]

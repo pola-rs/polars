@@ -285,12 +285,12 @@ where
                     };
 
                     match jt {
-                        join_type @ JoinType::Inner | join_type @ JoinType::Left => {
+                        JoinType::Inner | JoinType::Left => {
                             let (join_columns_left, join_columns_right) = swap_eval();
 
                             Box::new(GenericBuild::<()>::new(
                                 Arc::from(options.args.suffix()),
-                                join_type.clone(),
+                                options.args.clone(),
                                 swapped,
                                 join_columns_left,
                                 join_columns_right,
@@ -317,7 +317,7 @@ where
 
                             Box::new(GenericBuild::<Tracker>::new(
                                 Arc::from(options.args.suffix()),
-                                jt.clone(),
+                                options.args.clone(),
                                 swapped,
                                 join_columns_left,
                                 join_columns_right,

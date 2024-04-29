@@ -119,7 +119,7 @@ fn test_outer_join() -> PolarsResult<()> {
         &rain,
         ["days"],
         ["days"],
-        JoinArgs::new(JoinType::Outer { coalesce: true }),
+        JoinArgs::new(JoinType::Outer).with_coalesce(JoinCoalesce::CoalesceColumns),
     )?;
     assert_eq!(joined.height(), 5);
     assert_eq!(joined.column("days")?.sum::<i32>().unwrap(), 7);
@@ -139,7 +139,7 @@ fn test_outer_join() -> PolarsResult<()> {
         &df_right,
         ["a"],
         ["a"],
-        JoinArgs::new(JoinType::Outer { coalesce: true }),
+        JoinArgs::new(JoinType::Outer).with_coalesce(JoinCoalesce::CoalesceColumns),
     )?;
     assert_eq!(out.column("c_right")?.null_count(), 1);
 
@@ -254,7 +254,7 @@ fn test_join_multiple_columns() {
             &df_b,
             ["a", "b"],
             ["foo", "bar"],
-            JoinType::Outer { coalesce: true }.into(),
+            JoinArgs::new(JoinType::Outer).with_coalesce(JoinCoalesce::CoalesceColumns),
         )
         .unwrap();
     assert!(joined_outer_hack
@@ -300,11 +300,7 @@ fn test_join_categorical() {
     assert_eq!(Vec::from(ca), correct_ham);
 
     // test dispatch
-    for jt in [
-        JoinType::Left,
-        JoinType::Inner,
-        JoinType::Outer { coalesce: true },
-    ] {
+    for jt in [JoinType::Left, JoinType::Inner, JoinType::Outer] {
         let out = df_a.join(&df_b, ["b"], ["bar"], jt.into()).unwrap();
         let out = out.column("b").unwrap();
         assert_eq!(
@@ -471,7 +467,7 @@ fn test_joins_with_duplicates() -> PolarsResult<()> {
             &df_right,
             ["col1"],
             ["join_col1"],
-            JoinArgs::new(JoinType::Outer { coalesce: true }),
+            JoinArgs::new(JoinType::Outer).with_coalesce(JoinCoalesce::CoalesceColumns),
         )
         .unwrap();
 
@@ -543,7 +539,7 @@ fn test_multi_joins_with_duplicates() -> PolarsResult<()> {
             &df_right,
             &["col1", "join_col2"],
             &["join_col1", "col2"],
-            JoinType::Outer { coalesce: true }.into(),
+            JoinArgs::new(JoinType::Outer).with_coalesce(JoinCoalesce::CoalesceColumns),
         )
         .unwrap();
 
@@ -586,7 +582,7 @@ fn test_join_floats() -> PolarsResult<()> {
         &df_b,
         vec!["a", "c"],
         vec!["foo", "bar"],
-        JoinType::Outer { coalesce: true }.into(),
+        JoinArgs::new(JoinType::Outer).with_coalesce(JoinCoalesce::CoalesceColumns),
     )?;
     assert_eq!(
         out.dtypes(),

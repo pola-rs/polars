@@ -2,9 +2,32 @@ from __future__ import annotations
 
 import sys
 from functools import lru_cache
-from typing import Any, Callable, Sequence, get_type_hints
+from typing import TYPE_CHECKING, Any, Callable, Sequence, get_type_hints
 
 from polars.dependencies import _check_for_pydantic, pydantic
+
+if TYPE_CHECKING:
+    import pandas as pd
+
+PANDAS_SIMPLE_NUMPY_DTYPES = {
+    "int64",
+    "int32",
+    "int16",
+    "int8",
+    "uint64",
+    "uint32",
+    "uint16",
+    "uint8",
+    "float64",
+    "float32",
+    "datetime64[ms]",
+    "datetime64[us]",
+    "datetime64[ns]",
+    "timedelta64[ms]",
+    "timedelta64[us]",
+    "timedelta64[ns]",
+    "bool",
+}
 
 
 def _get_annotations(obj: type) -> dict[str, Any]:
@@ -75,3 +98,21 @@ def contains_nested(value: Any, is_nested: Callable[[Any], bool]) -> bool:
     elif isinstance(value, (list, tuple)):
         return any(contains_nested(v, is_nested) for v in value)
     return False
+
+
+def is_simple_numpy_backed_pandas_series(
+    series: pd.Series[Any] | pd.Index[Any] | pd.DatetimeIndex,
+) -> bool:
+    if len(series.shape) > 1:
+        # Pandas Series is actually a Pandas DataFrame when the original DataFrame
+        # contains duplicated columns and a duplicated column is requested with df["a"].
+        msg = "duplicate column names found: "
+        raise ValueError(
+            msg,
+            f"{series.columns.tolist()!s}",  # type: ignore[union-attr]
+        )
+    return (str(series.dtype) in PANDAS_SIMPLE_NUMPY_DTYPES) or (
+        series.dtype == "object"
+        and not series.empty
+        and isinstance(next(iter(series)), str)
+    )

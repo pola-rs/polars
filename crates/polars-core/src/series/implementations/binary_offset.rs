@@ -3,6 +3,7 @@ use crate::chunked_array::comparison::*;
 #[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::*;
 use crate::prelude::*;
+use crate::series::private::PrivateSeries;
 
 impl private::PrivateSeries for SeriesWrap<BinaryOffsetChunked> {
     fn compute_len(&mut self) {
@@ -117,6 +118,12 @@ impl SeriesTrait for SeriesWrap<BinaryOffsetChunked> {
 
     fn len(&self) -> usize {
         self.0.len()
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    fn n_unique(&self) -> PolarsResult<usize> {
+        // Only used by multi-key join validation, doesn't have to be optimal
+        self.group_tuples(true, false).map(|g| g.len())
     }
 
     fn rechunk(&self) -> Series {

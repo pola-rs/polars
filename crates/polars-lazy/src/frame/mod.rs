@@ -31,6 +31,7 @@ pub use ndjson::*;
 pub use parquet::*;
 use polars_core::prelude::*;
 use polars_io::RowIndex;
+use polars_ops::frame::JoinCoalesce;
 pub use polars_plan::frame::{AllowedOptimizations, OptState};
 use polars_plan::global::FETCH_ROWS;
 use smartstring::alias::String as SmartString;
@@ -1124,7 +1125,7 @@ impl LazyFrame {
             other,
             [left_on.into()],
             [right_on.into()],
-            JoinArgs::new(JoinType::Outer { coalesce: false }),
+            JoinArgs::new(JoinType::Outer),
         )
     }
 
@@ -1195,6 +1196,7 @@ impl LazyFrame {
             .right_on(right_on)
             .how(args.how)
             .validate(args.validation)
+            .coalesce(args.coalesce)
             .join_nulls(args.join_nulls);
 
         if let Some(suffix) = args.suffix {
@@ -1764,6 +1766,7 @@ pub struct JoinBuilder {
     force_parallel: bool,
     suffix: Option<String>,
     validation: JoinValidation,
+    coalesce: JoinCoalesce,
     join_nulls: bool,
 }
 impl JoinBuilder {
@@ -1780,6 +1783,7 @@ impl JoinBuilder {
             join_nulls: false,
             suffix: None,
             validation: Default::default(),
+            coalesce: Default::default(),
         }
     }
 
@@ -1851,6 +1855,12 @@ impl JoinBuilder {
         self
     }
 
+    /// Whether to coalesce join columns.
+    pub fn coalesce(mut self, coalesce: JoinCoalesce) -> Self {
+        self.coalesce = coalesce;
+        self
+    }
+
     /// Finish builder
     pub fn finish(self) -> LazyFrame {
         let mut opt_state = self.lf.opt_state;
@@ -1865,6 +1875,7 @@ impl JoinBuilder {
             suffix: self.suffix,
             slice: None,
             join_nulls: self.join_nulls,
+            coalesce: self.coalesce,
         };
 
         let lp = self

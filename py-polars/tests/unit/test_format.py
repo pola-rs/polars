@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import string
 from decimal import Decimal as D
 from typing import TYPE_CHECKING, Any, Iterator
 
@@ -26,7 +27,7 @@ def _environ() -> Iterator[None]:
             """shape: (1,)
 Series: 'foo' [str]
 [
-	"Somelongstring…
+	"Somelongstringt…
 ]
 """,
             ["Somelongstringto eeat wit me oundaf"],
@@ -36,7 +37,7 @@ Series: 'foo' [str]
             """shape: (1,)
 Series: 'foo' [str]
 [
-	"😀😁😂😃😄😅😆😇😈😉😊😋😌😎…
+	"😀😁😂😃😄😅😆😇😈😉😊😋😌😎😏…
 ]
 """,
             ["😀😁😂😃😄😅😆😇😈😉😊😋😌😎😏😐😑😒😓"],
@@ -78,9 +79,46 @@ def test_fmt_series(
     capfd: pytest.CaptureFixture[str], expected: str, values: list[Any]
 ) -> None:
     s = pl.Series(name="foo", values=values)
-    print(s)
+    with pl.Config(fmt_str_lengths=15):
+        print(s)
     out, err = capfd.readouterr()
     assert out == expected
+
+
+def test_fmt_series_string_truncate_default(capfd: pytest.CaptureFixture[str]) -> None:
+    values = [
+        string.ascii_lowercase + "123",
+        string.ascii_lowercase + "1234",
+        string.ascii_lowercase + "12345",
+    ]
+    s = pl.Series(name="foo", values=values)
+    print(s)
+    out, _ = capfd.readouterr()
+    expected = """shape: (3,)
+Series: 'foo' [str]
+[
+	"abcdefghijklmnopqrstuvwxyz123"
+	"abcdefghijklmnopqrstuvwxyz1234"
+	"abcdefghijklmnopqrstuvwxyz1234…
+]
+"""
+    assert out == expected
+
+
+@pytest.mark.parametrize(
+    "dtype", [pl.String, pl.Categorical, pl.Enum(["abc", "abcd", "abcde"])]
+)
+def test_fmt_series_string_truncate_cat(
+    dtype: pl.PolarsDataType, capfd: pytest.CaptureFixture[str]
+) -> None:
+    s = pl.Series(name="foo", values=["abc", "abcd", "abcde"], dtype=dtype)
+    with pl.Config(fmt_str_lengths=4):
+        print(s)
+    out, _ = capfd.readouterr()
+    result = [s.strip() for s in out.split("\n")[3:6]]
+    expected = ['"abc"', '"abcd"', '"abcd…']
+    print(result)
+    assert result == expected
 
 
 @pytest.mark.parametrize(
