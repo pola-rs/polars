@@ -7,6 +7,7 @@ import sys
 import textwrap
 import zlib
 from datetime import date, datetime, time, timedelta, timezone
+from tempfile import NamedTemporaryFile
 from typing import TYPE_CHECKING, TypedDict
 
 import numpy as np
@@ -1452,6 +1453,22 @@ def test_batched_csv_reader(foods_file_path: Path) -> None:
     reader = pl.read_csv_batched(foods_file_path, batch_size=4, low_memory=True)
     batches = reader.next_batches(10)
     assert_frame_equal(pl.concat(batches), pl.read_csv(foods_file_path))  # type: ignore[arg-type]
+
+    # ragged lines
+    with NamedTemporaryFile() as tmp:
+        data = b"A\nB,ragged\nC"
+        tmp.write(data)
+        tmp.seek(0)
+
+        expected = pl.DataFrame({"column_1": ["A", "B", "C"]})
+        batches = pl.read_csv_batched(
+            tmp.name,
+            has_header=False,
+            truncate_ragged_lines=True,
+        ).next_batches(1)
+
+        assert batches is not None
+        assert_frame_equal(pl.concat(batches), expected)
 
 
 def test_batched_csv_reader_empty(io_files_path: Path) -> None:
