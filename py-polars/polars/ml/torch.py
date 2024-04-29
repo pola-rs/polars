@@ -38,6 +38,7 @@ class PolarsDataset(TensorDataset):
         frame: DataFrame,
         *,
         label: str | Expr | Sequence[str | Expr] | None = None,
+        features: str | Expr | Sequence[str | Expr] | None = None,
     ):
         """
         TensorDataset class specialized for use with Polars DataFrames.
@@ -51,14 +52,15 @@ class PolarsDataset(TensorDataset):
             in `(features,label)` tuples, where all non-label columns are considered
             to be features. If no label is designated then each returned item is a
             simple `(features,)` tuple containing all row elements.
+        features
+            One or more column names or expressions that represent the feature data.
+            If not provided, all columns not designated as labels are considered to be
+            features.
 
         Notes
         -----
-        * The PolarsDataset supports indexing with integers, slices, ranges, lists, and
-          integer Tensors.
-        * When indexing with an object that represents multiple items (such as a list of
-          row indexes or a slice) the return value is a sequence of tensor tuples.
-        * Designating multi-element labels is supported.
+        * Integer, slice, range, integer list/Tensor Dataset indexing is all supported.
+        * Designating multi-element labels is also supported.
 
         Examples
         --------
@@ -127,20 +129,28 @@ class PolarsDataset(TensorDataset):
                 else:
                     label_colnames.append(lbl)
 
+        label_frame: DataFrame | None = None
         if not label:
-            self.labels = None
-            self.features = frame.to_torch()
+            feature_frame = frame.select(features) if features else frame
+            self.features = feature_frame.to_torch()
             self.tensors = (self.features,)
+            self.labels = None
         else:
             label_frame = frame.select(*label)
             self.labels = (  # type: ignore[attr-defined]
                 label_frame if len(label) > 1 else label_frame.to_series()
             ).to_torch()
-            self.features = frame.select(exclude(label_colnames)).to_torch()
+
+            feature_frame = frame.select(
+                features
+                if (isinstance(features, Expr) or features)
+                else exclude(label_colnames)
+            )
+            self.features = feature_frame.to_torch()
             self.tensors = (self.features, self.labels)  # type: ignore[assignment]
 
-        self._n_labels = len(label_colnames or [])
-        self._n_features = frame.width - self._n_labels
+        self._n_labels = 0 if (label_frame is None) else label_frame.width
+        self._n_features = feature_frame.width
 
     def __copy__(self) -> Self:
         """Return a shallow copy of this PolarsDataset."""
@@ -171,7 +181,7 @@ class PolarsDataset(TensorDataset):
         *,
         features: bool = True,
         labels: bool = True,
-        memory_format: memory_format | None = None,
+        memory_format: memory_format = torch.preserve_format,
     ) -> Self:
         """
         Return a copy of this PolarsDataset with the numeric data converted to f16.
@@ -183,8 +193,7 @@ class PolarsDataset(TensorDataset):
         labels
             Convert label data to half precision (f16).
         memory_format
-            Desired memory format for the modified tensors; default if unset
-            is `torch.preserve_format`.
+            Desired memory format for the modified tensors.
         """
         ds = self.__copy__()
         if features:

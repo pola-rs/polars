@@ -1625,6 +1625,7 @@ class DataFrame:
         return_type: Literal["tensor"] = ...,
         *,
         label: str | Expr | Sequence[str | Expr] | None = ...,
+        features: str | Expr | Sequence[str | Expr] | None = ...,
         dtype: PolarsDataType | None = ...,
     ) -> torch.Tensor: ...
 
@@ -1634,6 +1635,7 @@ class DataFrame:
         return_type: Literal["dataset"],
         *,
         label: str | Expr | Sequence[str | Expr] | None = ...,
+        features: str | Expr | Sequence[str | Expr] | None = ...,
         dtype: PolarsDataType | None = ...,
     ) -> PolarsDataset: ...
 
@@ -1643,6 +1645,7 @@ class DataFrame:
         return_type: Literal["dict"],
         *,
         label: str | Expr | Sequence[str | Expr] | None = ...,
+        features: str | Expr | Sequence[str | Expr] | None = ...,
         dtype: PolarsDataType | None = ...,
     ) -> dict[str, torch.Tensor]: ...
 
@@ -1651,6 +1654,7 @@ class DataFrame:
         return_type: TorchExportType = "tensor",
         *,
         label: str | Expr | Sequence[str | Expr] | None = None,
+        features: str | Expr | Sequence[str | Expr] | None = None,
         dtype: PolarsDataType | None = None,
     ) -> torch.Tensor | dict[str, torch.Tensor] | PolarsDataset:
         """
@@ -1669,6 +1673,10 @@ class DataFrame:
             tensor tuples for each row. Otherwise, it returns `(features,)` tensor
             tuples where the feature contains all the row data. This parameter is a
             no-op for the other return-types.
+        features
+            One or more column names or expressions that contain the feature data; if
+            omitted, all columns that are not designated as part of the label are used.
+            This parameter is a no-op for return-types other than "dataset".
         dtype
             Unify the dtype of all returned tensors; this casts any frame Series
             that are not of the required dtype before converting to tensor. This
@@ -1712,7 +1720,8 @@ class DataFrame:
         (tensor([[ 0.0000,  1.0000,  1.5000],
                  [ 3.0000,  1.0000, -2.2500]], dtype=torch.float64),)
 
-        As a convenience the PolarsDataset can opt-in to half-precision data:
+        As a convenience the PolarsDataset can opt-in to half-precision data
+        for experimentation (usually this would be set on the model/pipeline):
 
         >>> list(ds.half())
         [(tensor([0.0000, 1.0000, 1.5000], dtype=torch.float16),),
@@ -1720,7 +1729,7 @@ class DataFrame:
          (tensor([2., 0., 0.], dtype=torch.float16),),
          (tensor([ 3.0000,  1.0000, -2.2500], dtype=torch.float16),)]
 
-        Pass PolarsDataset to a DataLoader, designating the labels column:
+        Pass PolarsDataset to a DataLoader, designating the label:
 
         >>> from torch.utils.data import DataLoader
         >>> ds = df.to_torch("dataset", label="lbl")
@@ -1730,8 +1739,8 @@ class DataFrame:
         [tensor([[ 1.0000,  1.5000],
                  [ 0.0000, -0.5000]], dtype=torch.float64), tensor([0, 1])]
 
-        Note that labels can be given as expressions, allowing them to have a
-        dtype independent of the feature columns (multi-column labels are also
+        Note that labels can be given as expressions, allowing them to have
+        a dtype independent of the feature columns (multi-column labels are
         supported).
 
         >>> ds = df.to_torch(
@@ -1776,7 +1785,7 @@ class DataFrame:
         elif return_type == "dataset":
             from polars.ml.torch import PolarsDataset
 
-            return PolarsDataset(frame, label=label)
+            return PolarsDataset(frame, label=label, features=features)
         else:
             valid_torch_types = ", ".join(get_args(TorchExportType))
             msg = f"invalid `return_type`: {return_type!r}\nExpected one of: {valid_torch_types}"

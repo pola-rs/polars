@@ -83,6 +83,29 @@ class TestTorchIntegration:
         assert len(ts) == 1
         assert_tensor(ts[0], torch.tensor([1.0, 1.0, 1.5], dtype=torch.float64))
 
+    def test_to_torch_dataset_feature_reorder(self, df: pl.DataFrame) -> None:
+        ds = df.to_torch("dataset", label="x", features=["z", "y"])
+        assert_tensor(
+            torch.tensor(
+                [
+                    [1.5000, 1.0000],
+                    [-0.5000, 0.0000],
+                    [0.0000, 1.0000],
+                    [-2.0000, 0.0000],
+                ]
+            ),
+            ds.features,
+        )
+        assert_tensor(torch.tensor([1, 2, 2, 3], dtype=torch.int8), ds.labels)
+
+    def test_to_torch_dataset_feature_subset(self, df: pl.DataFrame) -> None:
+        ds = df.to_torch("dataset", label="x", features=["z"])
+        assert_tensor(
+            torch.tensor([[1.5000], [-0.5000], [0.0000], [-2.0000]]),
+            ds.features,
+        )
+        assert_tensor(torch.tensor([1, 2, 2, 3], dtype=torch.int8), ds.labels)
+
     def test_to_torch_dataset_index_slice(self, df: pl.DataFrame) -> None:
         ds = df.to_torch("dataset")
         ts = ds[1:3]
