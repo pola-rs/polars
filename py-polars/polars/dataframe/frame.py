@@ -7164,7 +7164,7 @@ class DataFrame:
         ...     columns="col",
         ...     values=["foo", "bar"],
         ...     aggregate_function="sum",
-        ...     separator="/"
+        ...     separator="/",
         ... )
         shape: (2, 5)
         ┌─────┬───────────┬───────────┬───────────┬───────────┐
