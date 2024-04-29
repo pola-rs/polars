@@ -7,7 +7,7 @@ use pyo3::prelude::*;
 
 use super::super::visit::PyExprIR;
 use super::expr_nodes::PyGroupbyOptions;
-use crate::{PyDataFrame, Wrap};
+use crate::PyDataFrame;
 
 #[pyclass]
 /// Scan a table with an optional predicate from a python function
@@ -97,8 +97,6 @@ pub struct Scan {
     #[pyo3(get)]
     predicate: Option<PyExprIR>,
     #[pyo3(get)]
-    output_schema: PyObject,
-    #[pyo3(get)]
     file_options: PyFileOptions,
     #[pyo3(get)]
     scan_type: PyObject,
@@ -110,10 +108,6 @@ pub struct DataFrameScan {
     #[pyo3(get)]
     df: PyDataFrame,
     #[pyo3(get)]
-    schema: PyObject,
-    #[pyo3(get)]
-    output_schema: PyObject,
-    #[pyo3(get)]
     projection: PyObject,
     #[pyo3(get)]
     selection: Option<PyExprIR>,
@@ -124,8 +118,6 @@ pub struct DataFrameScan {
 pub struct SimpleProjection {
     #[pyo3(get)]
     input: usize,
-    #[pyo3(get)]
-    columns: PyObject,
     #[pyo3(get)]
     duplicate_check: bool,
 }
@@ -140,8 +132,6 @@ pub struct Select {
     #[pyo3(get)]
     cse_expr: Vec<PyExprIR>,
     #[pyo3(get)]
-    schema: PyObject, // SchemaRef,
-    #[pyo3(get)]
     options: (), //ProjectionOptions,
 }
 
@@ -153,7 +143,9 @@ pub struct Sort {
     #[pyo3(get)]
     by_column: Vec<PyExprIR>,
     #[pyo3(get)]
-    args: PyObject,
+    sort_options: (Vec<bool>, bool, bool),
+    #[pyo3(get)]
+    slice: Option<(i64, usize)>,
 }
 
 #[pyclass]
@@ -177,8 +169,6 @@ pub struct GroupBy {
     #[pyo3(get)]
     aggs: Vec<PyExprIR>,
     #[pyo3(get)]
-    schema: PyObject,
-    #[pyo3(get)]
     apply: (),
     #[pyo3(get)]
     maintain_order: bool,
@@ -193,8 +183,6 @@ pub struct Join {
     input_left: usize,
     #[pyo3(get)]
     input_right: usize,
-    #[pyo3(get)]
-    schema: PyObject,
     #[pyo3(get)]
     left_on: Vec<PyExprIR>,
     #[pyo3(get)]
@@ -212,8 +200,6 @@ pub struct HStack {
     exprs: Vec<PyExprIR>,
     #[pyo3(get)]
     cse_exprs: Vec<PyExprIR>,
-    #[pyo3(get)]
-    schema: PyObject, // SchemaRef,
     #[pyo3(get)]
     options: (), // ProjectionOptions,
 }
@@ -239,15 +225,13 @@ pub struct Union {
     #[pyo3(get)]
     inputs: Vec<usize>,
     #[pyo3(get)]
-    options: PyObject,
+    options: Option<(i64, usize)>,
 }
 #[pyclass]
 /// Horizontal concatenation of multiple plans
 pub struct HConcat {
     #[pyo3(get)]
     inputs: Vec<usize>,
-    #[pyo3(get)]
-    schema: PyObject,
     #[pyo3(get)]
     options: (),
 }
@@ -258,8 +242,6 @@ pub struct ExtContext {
     input: usize,
     #[pyo3(get)]
     contexts: Vec<usize>,
-    #[pyo3(get)]
-    schema: PyObject,
 }
 
 #[pyclass]
@@ -278,11 +260,6 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                     .scan_fn
                     .as_ref()
                     .map_or_else(|| py.None(), |s| s.0.clone()),
-                Wrap(options.schema.as_ref()).into_py(py),
-                options
-                    .output_schema
-                    .as_ref()
-                    .map_or_else(|| py.None(), |s| Wrap(s.as_ref()).into_py(py)),
                 options
                     .with_columns
                     .as_ref()
@@ -313,19 +290,16 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
         .into_py(py),
         IR::Scan {
             paths,
-            file_info,
+            file_info: _,
             predicate,
-            output_schema,
+            output_schema: _,
             scan_type,
             file_options,
         } => Scan {
             paths: paths.to_object(py),
-            // TODO: remaining file info
-            file_info: Wrap(file_info.schema.as_ref()).into_py(py),
+            // TODO: file info
+            file_info: py.None(),
             predicate: predicate.as_ref().map(|e| e.into()),
-            output_schema: output_schema
-                .as_ref()
-                .map_or_else(|| py.None(), |s| Wrap(s.as_ref()).into_py(py)),
             file_options: PyFileOptions {
                 inner: file_options.clone(),
             },
@@ -342,16 +316,12 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
         .into_py(py),
         IR::DataFrameScan {
             df,
-            schema,
-            output_schema,
+            schema: _,
+            output_schema: _,
             projection,
             selection,
         } => DataFrameScan {
             df: PyDataFrame::new((**df).clone()),
-            schema: Wrap(schema.as_ref()).into_py(py),
-            output_schema: output_schema
-                .as_ref()
-                .map_or_else(|| py.None(), |s| Wrap(s.as_ref()).into_py(py)),
             projection: projection
                 .as_ref()
                 .map_or_else(|| py.None(), |f| f.to_object(py)),
@@ -360,41 +330,39 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
         .into_py(py),
         IR::SimpleProjection {
             input,
-            columns,
+            columns: _,
             duplicate_check,
         } => SimpleProjection {
             input: input.0,
-            columns: Wrap(columns.as_ref()).into_py(py),
             duplicate_check: *duplicate_check,
         }
         .into_py(py),
         IR::Select {
             input,
             expr,
-            schema,
+            schema: _,
             options: _,
         } => Select {
             expr: expr.default_exprs().iter().map(|e| e.into()).collect(),
             cse_expr: expr.cse_exprs().iter().map(|e| e.into()).collect(),
             input: input.0,
-            schema: Wrap(schema.as_ref()).into_py(py),
             options: (),
         }
         .into_py(py),
         IR::Sort {
             input,
             by_column,
-            args,
+            slice,
+            sort_options,
         } => Sort {
             input: input.0,
             by_column: by_column.iter().map(|e| e.into()).collect(),
-            args: (
-                args.maintain_order,
-                args.nulls_last,
-                &args.descending,
-                args.slice,
-            )
-                .to_object(py),
+            sort_options: (
+                sort_options.descending.clone(),
+                sort_options.nulls_last,
+                sort_options.maintain_order,
+            ),
+            slice: *slice,
         }
         .into_py(py),
         IR::Cache {
@@ -411,7 +379,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             input,
             keys,
             aggs,
-            schema,
+            schema: _,
             apply,
             maintain_order,
             options,
@@ -419,7 +387,6 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             input: input.0,
             keys: keys.iter().map(|e| e.into()).collect(),
             aggs: aggs.iter().map(|e| e.into()).collect(),
-            schema: Wrap(schema.as_ref()).into_py(py),
             apply: apply.as_ref().map_or(Ok(()), |_| {
                 Err(PyNotImplementedError::new_err(format!(
                     "apply inside GroupBy {:?}",
@@ -434,42 +401,29 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
         IR::Join {
             input_left,
             input_right,
-            schema,
+            schema: _,
             left_on,
             right_on,
             options,
         } => Join {
             input_left: input_left.0,
             input_right: input_right.0,
-            schema: Wrap(schema.as_ref()).into_py(py),
             left_on: left_on.iter().map(|e| e.into()).collect(),
             right_on: right_on.iter().map(|e| e.into()).collect(),
             options: (
                 match options.args.how {
                     JoinType::Left => "left",
                     JoinType::Inner => "inner",
-                    JoinType::Outer { coalesce } => {
-                        if coalesce {
-                            "outer_coalesce"
-                        } else {
-                            "outer"
-                        }
-                    },
+                    JoinType::Outer => "outer",
                     JoinType::AsOf(_) => return Err(PyNotImplementedError::new_err("asof join")),
                     JoinType::Cross => "cross",
                     JoinType::Semi => "leftsemi",
                     JoinType::Anti => "leftanti",
                 },
                 options.args.join_nulls,
-                options
-                    .args
-                    .slice
-                    .map_or_else(|| py.None(), |f| f.to_object(py)),
-                options
-                    .args
-                    .suffix
-                    .as_ref()
-                    .map_or_else(|| py.None(), |f| f.to_object(py)),
+                options.args.slice,
+                options.args.suffix.clone(),
+                options.args.coalesce.coalesce(&options.args.how),
             )
                 .to_object(py),
         }
@@ -477,13 +431,12 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
         IR::HStack {
             input,
             exprs,
-            schema,
+            schema: _,
             options: _,
         } => HStack {
             input: input.0,
             exprs: exprs.default_exprs().iter().map(|e| e.into()).collect(),
             cse_exprs: exprs.cse_exprs().iter().map(|e| e.into()).collect(),
-            schema: Wrap(schema.as_ref()).into_py(py),
             options: (),
         }
         .into_py(py),
@@ -502,7 +455,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                     .as_ref()
                     .map_or_else(|| py.None(), |f| f.to_object(py)),
                 options.maintain_order,
-                options.slice.map_or_else(|| py.None(), |f| f.to_object(py)),
+                options.slice,
             )
                 .to_object(py),
         }
@@ -536,11 +489,6 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                     columns.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
                 )
                     .to_object(py),
-                FunctionNode::DropNulls { subset } => (
-                    "drop_nulls",
-                    subset.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
-                )
-                    .to_object(py),
                 FunctionNode::Rechunk => ("rechunk",).to_object(py),
                 FunctionNode::MergeSorted { column } => {
                     ("merge_sorted", column.to_string()).to_object(py)
@@ -549,6 +497,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                     existing,
                     new,
                     swapping,
+                    schema: _,
                 } => (
                     "rename",
                     existing.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
@@ -556,13 +505,12 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                     *swapping,
                 )
                     .to_object(py),
-                FunctionNode::Explode { columns, schema } => (
+                FunctionNode::Explode { columns, schema: _ } => (
                     "explode",
                     columns.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
-                    Wrap(schema.as_ref()).into_py(py),
                 )
                     .to_object(py),
-                FunctionNode::Melt { args, schema } => (
+                FunctionNode::Melt { args, schema: _ } => (
                     "melt",
                     args.id_vars.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
                     args.value_vars
@@ -575,20 +523,13 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                     args.value_name
                         .as_ref()
                         .map_or_else(|| py.None(), |s| s.as_str().to_object(py)),
-                    Wrap(schema.as_ref()).into_py(py),
                 )
                     .to_object(py),
                 FunctionNode::RowIndex {
                     name,
-                    schema,
+                    schema: _,
                     offset,
-                } => (
-                    "row_index",
-                    name.to_string(),
-                    Wrap(schema.as_ref()).into_py(py),
-                    offset.unwrap_or(0),
-                )
-                    .to_object(py),
+                } => ("row_index", name.to_string(), offset.unwrap_or(0)).to_object(py),
                 FunctionNode::Count {
                     paths: _,
                     scan_type: _,
@@ -600,27 +541,25 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
         IR::Union { inputs, options } => Union {
             inputs: inputs.iter().map(|n| n.0).collect(),
             // TODO: rest of options
-            options: options.slice.map_or_else(|| py.None(), |f| f.to_object(py)),
+            options: options.slice,
         }
         .into_py(py),
         IR::HConcat {
             inputs,
-            schema,
+            schema: _,
             options: _,
         } => HConcat {
             inputs: inputs.iter().map(|n| n.0).collect(),
-            schema: Wrap(schema.as_ref()).into_py(py),
             options: (),
         }
         .into_py(py),
         IR::ExtContext {
             input,
             contexts,
-            schema,
+            schema: _,
         } => ExtContext {
             input: input.0,
             contexts: contexts.iter().map(|n| n.0).collect(),
-            schema: Wrap(schema.as_ref()).into_py(py),
         }
         .into_py(py),
         IR::Sink {

@@ -95,7 +95,7 @@ impl NodeTraverser {
         self.scratch_to_list()
     }
 
-    /// Get Schema as python dict<str, pl.DataType>
+    /// Get Schema of current node as python dict<str, pl.DataType>
     fn get_schema(&self, py: Python<'_>) -> PyObject {
         let lp_arena = self.lp_arena.read().unwrap();
         let schema = lp_arena.get(self.root).schema(&lp_arena).into_owned();
@@ -139,12 +139,8 @@ impl NodeTraverser {
     }
 
     fn view_current_node(&self, py: Python<'_>) -> PyResult<PyObject> {
-        self.view_node(py, self.root.0)
-    }
-
-    fn view_node(&self, py: Python<'_>, node: usize) -> PyResult<PyObject> {
         let lp_arena = self.lp_arena.read().unwrap();
-        let lp_node = lp_arena.get(Node(node));
+        let lp_node = lp_arena.get(self.root);
         nodes::into_py(py, lp_node)
     }
 

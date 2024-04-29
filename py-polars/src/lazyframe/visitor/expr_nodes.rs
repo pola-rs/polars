@@ -1,3 +1,4 @@
+use polars_core::series::IsSorted;
 use polars_plan::dsl::function_expr::rolling::RollingFunction;
 use polars_plan::dsl::function_expr::trigonometry::TrigonometricFunction;
 use polars_plan::dsl::BooleanFunction;
@@ -5,7 +6,6 @@ use polars_plan::prelude::{
     AAggExpr, AExpr, FunctionExpr, GroupbyOptions, LiteralValue, Operator, PowFunction,
     WindowMapping, WindowType,
 };
-use polars_rs::series::IsSorted;
 use polars_time::prelude::RollingGroupOptions;
 use pyo3::exceptions::PyNotImplementedError;
 use pyo3::prelude::*;
@@ -168,7 +168,8 @@ pub struct SortBy {
     #[pyo3(get)]
     by: Vec<usize>,
     #[pyo3(get)]
-    descending: Vec<bool>,
+    /// descending, nulls_last, maintain_order
+    sort_options: (Vec<bool>, bool, bool),
 }
 
 #[pyclass]
@@ -334,11 +335,19 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
             use LiteralValue::*;
             let dtype: PyObject = Wrap(lit.get_datatype()).to_object(py);
             match lit {
+                Float(v) => Literal {
+                    value: v.to_object(py),
+                    dtype,
+                },
                 Float32(v) => Literal {
                     value: v.to_object(py),
                     dtype,
                 },
                 Float64(v) => Literal {
+                    value: v.to_object(py),
+                    dtype,
+                },
+                Int(v) => Literal {
                     value: v.to_object(py),
                     dtype,
                 },
@@ -375,6 +384,10 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     dtype,
                 },
                 Boolean(v) => Literal {
+                    value: v.to_object(py),
+                    dtype,
+                },
+                StrCat(v) => Literal {
                     value: v.to_object(py),
                     dtype,
                 },
@@ -442,11 +455,15 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
         AExpr::SortBy {
             expr,
             by,
-            descending,
+            sort_options,
         } => SortBy {
             expr: expr.0,
             by: by.iter().map(|n| n.0).collect(),
-            descending: descending.clone(),
+            sort_options: (
+                sort_options.descending.clone(),
+                sort_options.nulls_last,
+                sort_options.maintain_order,
+            ),
         }
         .into_py(py),
         AExpr::Agg(aggexpr) => match aggexpr {
@@ -606,9 +623,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 .to_object(py),
                 FunctionExpr::Atan2 => ("atan2",).to_object(py),
                 FunctionExpr::Sign => ("sign",).to_object(py),
-                FunctionExpr::FillNull { super_type: _ } => {
-                    return Err(PyNotImplementedError::new_err("fill null"))
-                },
+                FunctionExpr::FillNull => return Err(PyNotImplementedError::new_err("fill null")),
                 FunctionExpr::RollingExpr(rolling) => match rolling {
                     RollingFunction::Min(_) => {
                         return Err(PyNotImplementedError::new_err("rolling min"))
@@ -679,7 +694,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     has_max: _,
                 } => return Err(PyNotImplementedError::new_err("clip")),
                 FunctionExpr::AsStruct => return Err(PyNotImplementedError::new_err("as struct")),
-                FunctionExpr::TopK(_) => return Err(PyNotImplementedError::new_err("top k")),
+                FunctionExpr::TopK { sort_options: _ } => {
+                    return Err(PyNotImplementedError::new_err("top k"))
+                },
                 FunctionExpr::CumCount { reverse } => ("cumcount", reverse).to_object(py),
                 FunctionExpr::CumSum { reverse } => ("cumsum", reverse).to_object(py),
                 FunctionExpr::CumProd { reverse } => ("cumprod", reverse).to_object(py),
@@ -806,6 +823,13 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 FunctionExpr::Business(_) => {
                     return Err(PyNotImplementedError::new_err("business"))
                 },
+                FunctionExpr::TopKBy { sort_options: _ } => {
+                    return Err(PyNotImplementedError::new_err("top_k_by"))
+                },
+                FunctionExpr::EwmMeanBy {
+                    half_life: _,
+                    check_sorted: _,
+                } => return Err(PyNotImplementedError::new_err("ewm_mean_by")),
             },
             options: py.None(),
         }
