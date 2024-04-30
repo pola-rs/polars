@@ -423,13 +423,13 @@ impl SQLExprVisitor<'_> {
                 if let Expr::Column(name) = &**expr {
                     (Some(name.clone()), Some(s), Some(data_type))
                 } else {
-                    (None, None, None)
+                    (None, Some(s), Some(data_type))
                 }
             },
             _ => (None, None, None),
         } {
             if expr_dtype.is_none() && self.active_schema.is_none() {
-                return right.clone();
+                right.clone()
             } else {
                 let left_dtype = expr_dtype
                     .unwrap_or_else(|| self.active_schema.as_ref().unwrap().get(&name).unwrap());
