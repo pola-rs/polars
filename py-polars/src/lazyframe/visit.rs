@@ -1,4 +1,4 @@
-use std::sync::RwLock;
+use std::sync::Mutex;
 
 use polars_plan::logical_plan::{to_aexpr, Context, IR};
 use polars_plan::prelude::expr_ir::ExprIR;
@@ -40,8 +40,8 @@ impl From<&ExprIR> for PyExprIR {
 #[pyclass]
 struct NodeTraverser {
     root: Node,
-    lp_arena: Arc<RwLock<Arena<IR>>>,
-    expr_arena: Arc<RwLock<Arena<AExpr>>>,
+    lp_arena: Arc<Mutex<Arena<IR>>>,
+    expr_arena: Arc<Mutex<Arena<AExpr>>>,
     scratch: Vec<Node>,
     expr_scratch: Vec<ExprIR>,
     expr_mapping: Option<Vec<Node>>,
@@ -49,14 +49,14 @@ struct NodeTraverser {
 
 impl NodeTraverser {
     fn fill_inputs(&mut self) {
-        let lp_arena = self.lp_arena.read().unwrap();
+        let lp_arena = self.lp_arena.lock().unwrap();
         let this_node = lp_arena.get(self.root);
         self.scratch.clear();
         this_node.copy_inputs(&mut self.scratch);
     }
 
     fn fill_expressions(&mut self) {
-        let lp_arena = self.lp_arena.read().unwrap();
+        let lp_arena = self.lp_arena.lock().unwrap();
         let this_node = lp_arena.get(self.root);
         self.expr_scratch.clear();
         this_node.copy_exprs(&mut self.expr_scratch);
@@ -97,7 +97,7 @@ impl NodeTraverser {
 
     /// Get Schema of current node as python dict<str, pl.DataType>
     fn get_schema(&self, py: Python<'_>) -> PyObject {
-        let lp_arena = self.lp_arena.read().unwrap();
+        let lp_arena = self.lp_arena.lock().unwrap();
         let schema = lp_arena.get(self.root).schema(&lp_arena).into_owned();
         Wrap(schema.as_ref()).into_py(py)
     }
@@ -105,9 +105,9 @@ impl NodeTraverser {
     /// Get expression dtype.
     fn get_dtype(&self, expr_node: usize, py: Python<'_>) -> PyResult<PyObject> {
         let expr_node = Node(expr_node);
-        let lp_arena = self.lp_arena.read().unwrap();
+        let lp_arena = self.lp_arena.lock().unwrap();
         let schema = lp_arena.get(self.root).schema(&lp_arena).into_owned();
-        let expr_arena = self.expr_arena.read().unwrap();
+        let expr_arena = self.expr_arena.lock().unwrap();
         let field = expr_arena
             .get(expr_node)
             .to_field(&schema, Context::Default, &expr_arena)
@@ -134,18 +134,18 @@ impl NodeTraverser {
             },
             predicate: None,
         };
-        let mut lp_arena = self.lp_arena.write().unwrap();
+        let mut lp_arena = self.lp_arena.lock().unwrap();
         lp_arena.replace(self.root, ir);
     }
 
     fn view_current_node(&self, py: Python<'_>) -> PyResult<PyObject> {
-        let lp_arena = self.lp_arena.read().unwrap();
+        let lp_arena = self.lp_arena.lock().unwrap();
         let lp_node = lp_arena.get(self.root);
         nodes::into_py(py, lp_node)
     }
 
     fn view_expression(&self, py: Python<'_>, node: usize) -> PyResult<PyObject> {
-        let expr_arena = self.expr_arena.read().unwrap();
+        let expr_arena = self.expr_arena.lock().unwrap();
         let n = match &self.expr_mapping {
             Some(mapping) => *mapping.get(node).unwrap(),
             None => Node(node),
@@ -157,8 +157,7 @@ impl NodeTraverser {
     /// Add some expressions to the arena and return their new node ids as well
     /// as the total number of nodes in the arena.
     fn add_expressions(&mut self, expressions: Vec<PyExpr>) -> PyResult<(Vec<usize>, usize)> {
-        let mut expr_arena: std::sync::RwLockWriteGuard<'_, Arena<AExpr>> =
-            self.expr_arena.write().unwrap();
+        let mut expr_arena = self.expr_arena.lock().unwrap();
         Ok((
             expressions
                 .iter()
@@ -172,7 +171,7 @@ impl NodeTraverser {
     /// With a mapping set, `view_expression_node(i)` produces the node for
     /// `mapping[i]`.
     fn set_expr_mapping(&mut self, mapping: Vec<usize>) -> PyResult<()> {
-        if mapping.len() != self.expr_arena.read().unwrap().len() {
+        if mapping.len() != self.expr_arena.lock().unwrap().len() {
             raise_err!("Invalid mapping length", ComputeError);
         }
         self.expr_mapping = Some(mapping.into_iter().map(Node).collect());
@@ -198,8 +197,8 @@ impl PyLazyFrame {
             .map_err(PyPolarsErr::from)?;
         Ok(NodeTraverser {
             root,
-            lp_arena: Arc::new(RwLock::new(lp_arena)),
-            expr_arena: Arc::new(RwLock::new(expr_arena)),
+            lp_arena: Arc::new(Mutex::new(lp_arena)),
+            expr_arena: Arc::new(Mutex::new(expr_arena)),
             scratch: vec![],
             expr_scratch: vec![],
             expr_mapping: None,
