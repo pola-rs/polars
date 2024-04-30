@@ -408,9 +408,6 @@ impl SQLExprVisitor<'_> {
     ///
     /// eg: "dt >= '2024-04-30'", or "dtm::date = '2077-10-10'"
     fn convert_temporal_strings(&mut self, left: &Expr, right: &Expr) -> Expr {
-        if self.active_schema.is_none() {
-            return right.clone();
-        };
         if let (Some(name), Some(s), expr_dtype) = match (&left, &right) {
             // identify "col <op> string" expressions
             (Expr::Column(name), Expr::Literal(LiteralValue::String(s))) => {
@@ -431,19 +428,25 @@ impl SQLExprVisitor<'_> {
             },
             _ => (None, None, None),
         } {
-            let left_dtype = expr_dtype
-                .unwrap_or_else(|| self.active_schema.as_ref().unwrap().get(&name).unwrap());
-            match left_dtype {
-                DataType::Time | DataType::Date => right.clone().strict_cast(left_dtype.clone()),
-                DataType::Datetime(_, _) if DATE_LITERAL_RE.is_match(s) => {
-                    if s.len() == 10 {
-                        // handle upcast from ISO date string (10 chars) to datetime
-                        lit(format!("{}T00:00:00", s)).strict_cast(left_dtype.clone())
-                    } else {
-                        lit(s.replacen(' ', "T", 1)).strict_cast(left_dtype.clone())
-                    }
-                },
-                _ => right.clone(),
+            if expr_dtype.is_none() && self.active_schema.is_none() {
+                return right.clone();
+            } else {
+                let left_dtype = expr_dtype
+                    .unwrap_or_else(|| self.active_schema.as_ref().unwrap().get(&name).unwrap());
+                match left_dtype {
+                    DataType::Time | DataType::Date => {
+                        right.clone().strict_cast(left_dtype.clone())
+                    },
+                    DataType::Datetime(_, _) if DATE_LITERAL_RE.is_match(s) => {
+                        if s.len() == 10 {
+                            // handle upcast from ISO date string (10 chars) to datetime
+                            lit(format!("{}T00:00:00", s)).strict_cast(left_dtype.clone())
+                        } else {
+                            lit(s.replacen(' ', "T", 1)).strict_cast(left_dtype.clone())
+                        }
+                    },
+                    _ => right.clone(),
+                }
             }
         } else {
             right.clone()
@@ -806,15 +809,19 @@ impl SQLExprVisitor<'_> {
 
         let mut s = Series::from_any_values("", &list, true)?;
 
-        // handle implicit temporal strings, eg: "dt IN ('2024-04-30', '2024-05-01')"
+        // handle implicit temporal strings, eg: "dt IN ('2024-04-30','2024-05-01')".
+        // (not yet as versatile as the temporal string conversions in visit_binary_op)
         if s.dtype() == &DataType::String {
             // handle implicit temporal string comparisons, eg: "dt >= '2024-04-30'"
             if let Expr::Column(name) = &expr {
-                let schema = self.active_schema.clone().unwrap();
-                let left_dtype = schema.get(name);
-                if let Some(DataType::Date | DataType::Time | DataType::Datetime(_, _)) = left_dtype
-                {
-                    s = s.cast(&left_dtype.unwrap().clone())?;
+                if self.active_schema.is_some() {
+                    let schema = self.active_schema.clone().unwrap();
+                    let left_dtype = schema.get(name);
+                    if let Some(DataType::Date | DataType::Time | DataType::Datetime(_, _)) =
+                        left_dtype
+                    {
+                        s = s.strict_cast(&left_dtype.unwrap().clone())?;
+                    }
                 }
             }
         }

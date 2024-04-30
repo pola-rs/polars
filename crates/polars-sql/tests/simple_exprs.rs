@@ -158,7 +158,7 @@ fn test_implicit_date_string() {
 
     let mut context = SQLContext::new();
     context.register("frame", df.clone().lazy());
-    for sql in vec![
+    for sql in [
         "SELECT idx, dt FROM frame WHERE dt >= '2007-07-05'",
         "SELECT idx, dt FROM frame WHERE dt::date >= '2007-07-05'",
         "SELECT idx, dt FROM frame WHERE dt::datetime >= '2007-07-05 00:00:00'",
