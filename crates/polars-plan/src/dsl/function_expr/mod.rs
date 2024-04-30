@@ -10,7 +10,7 @@ mod bounds;
 #[cfg(feature = "business")]
 mod business;
 #[cfg(feature = "dtype-categorical")]
-mod cat;
+pub mod cat;
 #[cfg(feature = "round_series")]
 mod clip;
 #[cfg(feature = "dtype-struct")]
@@ -38,13 +38,13 @@ mod nan;
 mod peaks;
 #[cfg(feature = "ffi_plugin")]
 mod plugin;
-mod pow;
+pub mod pow;
 #[cfg(feature = "random")]
 mod random;
 #[cfg(feature = "range")]
 mod range;
 #[cfg(feature = "rolling_window")]
-mod rolling;
+pub mod rolling;
 #[cfg(feature = "round_series")]
 mod round;
 #[cfg(feature = "row_hash")]
@@ -63,7 +63,7 @@ mod struct_;
 #[cfg(any(feature = "temporal", feature = "date_offset"))]
 mod temporal;
 #[cfg(feature = "trigonometry")]
-mod trigonometry;
+pub mod trigonometry;
 mod unique;
 
 use std::fmt::{Display, Formatter};
@@ -88,10 +88,10 @@ pub use self::boolean::BooleanFunction;
 #[cfg(feature = "business")]
 pub(super) use self::business::BusinessFunction;
 #[cfg(feature = "dtype-categorical")]
-pub(crate) use self::cat::CategoricalFunction;
+pub use self::cat::CategoricalFunction;
 #[cfg(feature = "temporal")]
 pub(super) use self::datetime::TemporalFunction;
-pub(super) use self::pow::PowFunction;
+pub use self::pow::PowFunction;
 #[cfg(feature = "range")]
 pub(super) use self::range::RangeFunction;
 #[cfg(feature = "rolling_window")]
