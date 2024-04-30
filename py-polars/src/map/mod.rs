@@ -13,7 +13,7 @@ use polars_core::POOL;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::types::PyDict;
-use smartstring::{LazyCompact, SmartString};
+use smartstring::alias::String as SmartString;
 
 use crate::prelude::ObjectValue;
 use crate::{PyPolarsErr, PySeries, Wrap};
@@ -54,11 +54,11 @@ fn iterator_to_struct<'a>(
     //      [ a values ]
     //      [ b values ]
     // ]
-    let mut struct_fields: BTreeMap<SmartString<LazyCompact>, Vec<AnyValue>> = BTreeMap::new();
+    let mut struct_fields: BTreeMap<SmartString, Vec<AnyValue>> = BTreeMap::new();
 
     // As a BTreeMap sorts its keys, we also need to track the original
     // order of the field names.
-    let mut field_names_ordered: Vec<SmartString<LazyCompact>> = Vec::with_capacity(flds.len());
+    let mut field_names_ordered: Vec<SmartString> = Vec::with_capacity(flds.len());
 
     // Use the first value and the known null count to initialize the buffers
     // if we find a new key later on, we make a new entry in the BTree.
@@ -96,7 +96,7 @@ fn iterator_to_struct<'a>(
                         let mut buf = Vec::with_capacity(capacity);
                         buf.extend((0..init_null_count + current_len).map(|_| AnyValue::Null));
                         buf.push(item.0);
-                        let key: SmartString<LazyCompact> = (&*key).into();
+                        let key: SmartString = (&*key).into();
                         field_names_ordered.push(key.clone());
                         struct_fields.insert(key, buf);
                     };
