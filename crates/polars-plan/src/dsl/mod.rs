@@ -332,7 +332,7 @@ impl Expr {
             move |s: Series| {
                 Ok(Some(Series::new(
                     s.name(),
-                    &[s.arg_max().map(|idx| idx as u32)],
+                    &[s.arg_max().map(|idx| idx as IdxSize)],
                 )))
             },
             GetOutput::from_type(IDX_DTYPE),

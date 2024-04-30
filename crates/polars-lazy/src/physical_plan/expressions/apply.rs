@@ -181,10 +181,7 @@ impl ApplyExpr {
                 // })?
                 let out: ListChunked = POOL.install(|| iter.collect::<PolarsResult<_>>())?;
 
-                #[cfg(debug_assertions)]
-                {
-                    assert_eq!(out.dtype(), &DataType::List(Box::new(dtype)))
-                }
+                debug_assert_eq!(out.dtype(), &DataType::List(Box::new(dtype)));
 
                 out
             } else {
