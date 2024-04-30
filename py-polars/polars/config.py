@@ -686,10 +686,6 @@ class Config(contextlib.ContextDecorator):
         if n is None:
             os.environ.pop("POLARS_FMT_STR_LEN", None)
         else:
-            if n <= 0:
-                msg = "number of characters must be > 0"
-                raise ValueError(msg)
-
             os.environ["POLARS_FMT_STR_LEN"] = str(n)
         return cls
 

@@ -750,14 +750,6 @@ def test_set_streaming_chunk_size() -> None:
         cfg.set_streaming_chunk_size(0)
 
 
-def test_set_fmt_str_lengths_invalid_length() -> None:
-    with pl.Config() as cfg:
-        with pytest.raises(ValueError):
-            cfg.set_fmt_str_lengths(0)
-        with pytest.raises(ValueError):
-            cfg.set_fmt_str_lengths(-2)
-
-
 def test_warn_unstable(recwarn: pytest.WarningsRecorder) -> None:
     issue_unstable_warning()
     assert len(recwarn) == 0
