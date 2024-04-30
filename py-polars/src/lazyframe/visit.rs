@@ -98,15 +98,15 @@ impl NodeTraverser {
     /// Get Schema of current node as python dict<str, pl.DataType>
     fn get_schema(&self, py: Python<'_>) -> PyObject {
         let lp_arena = self.lp_arena.lock().unwrap();
-        let schema = lp_arena.get(self.root).schema(&lp_arena).into_owned();
-        Wrap(schema.as_ref()).into_py(py)
+        let schema = lp_arena.get(self.root).schema(&lp_arena);
+        Wrap(&**schema).into_py(py)
     }
 
     /// Get expression dtype.
     fn get_dtype(&self, expr_node: usize, py: Python<'_>) -> PyResult<PyObject> {
         let expr_node = Node(expr_node);
         let lp_arena = self.lp_arena.lock().unwrap();
-        let schema = lp_arena.get(self.root).schema(&lp_arena).into_owned();
+        let schema = lp_arena.get(self.root).schema(&lp_arena);
         let expr_arena = self.expr_arena.lock().unwrap();
         let field = expr_arena
             .get(expr_node)
@@ -160,8 +160,8 @@ impl NodeTraverser {
         let mut expr_arena = self.expr_arena.lock().unwrap();
         Ok((
             expressions
-                .iter()
-                .map(|e| to_aexpr(e.inner.clone(), &mut expr_arena).0)
+                .into_iter()
+                .map(|e| to_aexpr(e.inner, &mut expr_arena).0)
                 .collect(),
             expr_arena.len(),
         ))
