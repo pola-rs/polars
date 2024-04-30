@@ -44,6 +44,24 @@ impl Buffer<'_> {
                 }
                 Ok(())
             },
+            #[cfg(feature = "dtype-i8")]
+            Int8(buf) => {
+                let n = deserialize_number::<i8>(value);
+                match n {
+                    Some(v) => buf.append_value(v),
+                    None => buf.append_null(),
+                }
+                Ok(())
+            },
+            #[cfg(feature = "dtype-i16")]
+            Int16(buf) => {
+                let n = deserialize_number::<i16>(value);
+                match n {
+                    Some(v) => buf.append_value(v),
+                    None => buf.append_null(),
+                }
+                Ok(())
+            },
             Int32(buf) => {
                 let n = deserialize_number::<i32>(value);
                 match n {
@@ -54,6 +72,24 @@ impl Buffer<'_> {
             },
             Int64(buf) => {
                 let n = deserialize_number::<i64>(value);
+                match n {
+                    Some(v) => buf.append_value(v),
+                    None => buf.append_null(),
+                }
+                Ok(())
+            },
+            #[cfg(feature = "dtype-u8")]
+            UInt8(buf) => {
+                let n = deserialize_number::<u8>(value);
+                match n {
+                    Some(v) => buf.append_value(v),
+                    None => buf.append_null(),
+                }
+                Ok(())
+            },
+            #[cfg(feature = "dtype-u16")]
+            UInt16(buf) => {
+                let n = deserialize_number::<u16>(value);
                 match n {
                     Some(v) => buf.append_value(v),
                     None => buf.append_null(),
