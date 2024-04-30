@@ -38,7 +38,7 @@ impl From<&ExprIR> for PyExprIR {
 }
 
 #[pyclass]
-struct NodeTraverser {
+pub(crate) struct NodeTraverser {
     root: Node,
     lp_arena: Arc<Mutex<Arena<IR>>>,
     expr_arena: Arc<Mutex<Arena<AExpr>>>,
@@ -48,6 +48,21 @@ struct NodeTraverser {
 }
 
 impl NodeTraverser {
+    pub(crate) fn new(root: Node, lp_arena: Arena<IR>, expr_arena: Arena<AExpr>) -> Self {
+        Self {
+            root,
+            lp_arena: Arc::new(Mutex::new(lp_arena)),
+            expr_arena: Arc::new(Mutex::new(expr_arena)),
+            scratch: vec![],
+            expr_scratch: vec![],
+            expr_mapping: None,
+        }
+    }
+
+    pub(crate) fn get_arenas(&self) -> (Arc<Mutex<Arena<IR>>>, Arc<Mutex<Arena<AExpr>>>) {
+        (self.lp_arena.clone(), self.expr_arena.clone())
+    }
+
     fn fill_inputs(&mut self) {
         let lp_arena = self.lp_arena.lock().unwrap();
         let this_node = lp_arena.get(self.root);
@@ -120,12 +135,19 @@ impl NodeTraverser {
         self.root = Node(node);
     }
 
+    /// Get the current node in the plan.
+    fn get_node(&mut self) -> usize {
+        self.root.0
+    }
+
     /// Set a python UDF that will replace the subtree location with this function src.
-    fn set_udf(&mut self, function: PyObject, schema: Wrap<Schema>) {
+    fn set_udf(&mut self, function: PyObject) {
+        let mut lp_arena = self.lp_arena.lock().unwrap();
+        let schema = lp_arena.get(self.root).schema(&lp_arena).into_owned();
         let ir = IR::PythonScan {
             options: PythonOptions {
                 scan_fn: Some(function.into()),
-                schema: Arc::new(schema.0),
+                schema,
                 output_schema: None,
                 with_columns: None,
                 pyarrow: false,
@@ -134,7 +156,6 @@ impl NodeTraverser {
             },
             predicate: None,
         };
-        let mut lp_arena = self.lp_arena.lock().unwrap();
         lp_arena.replace(self.root, ir);
     }
 

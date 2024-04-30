@@ -96,7 +96,7 @@ static ALLOC: Jemalloc = Jemalloc;
 static ALLOC: MiMalloc = MiMalloc;
 
 #[pymodule]
-fn nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
+fn _ir_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     use crate::lazyframe::visitor::nodes::*;
     m.add_class::<PythonScan>().unwrap();
     m.add_class::<Slice>().unwrap();
@@ -120,7 +120,7 @@ fn nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
 }
 
 #[pymodule]
-fn expr_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
+fn _expr_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     use crate::lazyframe::visitor::expr_nodes::*;
     use crate::lazyframe::PyExprIR;
     // Expressions
@@ -164,9 +164,9 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
 
     // Submodules
     // LogicalPlan objects
-    m.add_wrapped(wrap_pymodule!(nodes))?;
+    m.add_wrapped(wrap_pymodule!(_ir_nodes))?;
     // Expr objects
-    m.add_wrapped(wrap_pymodule!(expr_nodes))?;
+    m.add_wrapped(wrap_pymodule!(_expr_nodes))?;
     // Functions - eager
     m.add_wrapped(wrap_pyfunction!(functions::concat_df))
         .unwrap();
