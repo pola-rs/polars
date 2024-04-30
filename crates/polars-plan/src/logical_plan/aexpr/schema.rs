@@ -11,6 +11,15 @@ fn float_type(field: &mut Field) {
 }
 
 impl AExpr {
+    pub fn to_dtype(
+        &self,
+        schema: &Schema,
+        ctxt: Context,
+        arena: &Arena<AExpr>,
+    ) -> PolarsResult<DataType> {
+        self.to_field(schema, ctxt, arena).map(|f| f.dtype)
+    }
+
     /// Get Field result of the expression. The schema is the input data.
     #[recursive]
     pub fn to_field(

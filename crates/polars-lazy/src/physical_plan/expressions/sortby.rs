@@ -1,3 +1,4 @@
+use polars_core::chunked_array::from_iterator_par::ChunkedCollectParIterExt;
 use polars_core::prelude::*;
 use polars_core::POOL;
 use polars_utils::idx_vec::IdxVec;
@@ -96,6 +97,7 @@ fn sort_by_groups_no_match_single<'a>(
     let mut s_in = s_in.list().unwrap().clone();
     let mut s_by = s_by.list().unwrap().clone();
 
+    let dtype = s_in.dtype().clone();
     let ca: PolarsResult<ListChunked> = POOL.install(|| {
         s_in.par_iter_indexed()
             .zip(s_by.par_iter_indexed())
@@ -112,7 +114,7 @@ fn sort_by_groups_no_match_single<'a>(
                 },
                 _ => Ok(None),
             })
-            .collect()
+            .collect_ca_with_dtype("", dtype)
     });
     let s = ca?.with_name(s_in.name()).into_series();
     ac_in.with_series(s, true, Some(expr))?;

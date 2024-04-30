@@ -529,9 +529,16 @@ fn create_physical_expr_inner(
             output_type: _,
             options,
         } => {
+            let output_dtype = schema.and_then(|schema| {
+                expr_arena
+                    .get(expression)
+                    .to_dtype(schema, Context::Default, expr_arena)
+                    .ok()
+            });
+
             let is_reducing_aggregation =
                 options.returns_scalar && matches!(options.collect_groups, ApplyOptions::GroupWise);
-            // will be reset in the function so get that here
+            // Will be reset in the function so get that here.
             let has_window = state.local.has_window;
             let input = create_physical_expressions_check_state(
                 &input,
@@ -552,6 +559,7 @@ fn create_physical_expr_inner(
                 options,
                 !state.has_cache,
                 schema.cloned(),
+                output_dtype,
             )))
         },
         Function {
@@ -560,9 +568,15 @@ fn create_physical_expr_inner(
             options,
             ..
         } => {
+            let output_dtype = schema.and_then(|schema| {
+                expr_arena
+                    .get(expression)
+                    .to_dtype(schema, Context::Default, expr_arena)
+                    .ok()
+            });
             let is_reducing_aggregation =
                 options.returns_scalar && matches!(options.collect_groups, ApplyOptions::GroupWise);
-            // will be reset in the function so get that here
+            // Will be reset in the function so get that here.
             let has_window = state.local.has_window;
             let input = create_physical_expressions_check_state(
                 &input,
@@ -583,6 +597,7 @@ fn create_physical_expr_inner(
                 options,
                 !state.has_cache,
                 schema.cloned(),
+                output_dtype,
             )))
         },
         Slice {
