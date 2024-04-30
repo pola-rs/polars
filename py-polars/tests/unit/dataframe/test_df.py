@@ -348,6 +348,21 @@ def test_sort_maintain_order() -> None:
     assert l1 == l2 == ["A", "B", "C"]
 
 
+@pytest.mark.xfail(reason="https://github.com/pola-rs/polars/issues/9940")
+@pytest.mark.parametrize("nulls_last", [False, True], ids=["nulls_first", "nulls_last"])
+def test_sort_maintain_order_descending_repeated_nulls(nulls_last: bool) -> None:
+    got = (
+        pl.LazyFrame({"A": [None, -1, 1, 1, None], "B": [1, 2, 3, 4, 5]})
+        .sort("A", descending=True, maintain_order=True, nulls_last=nulls_last)
+        .collect()
+    )
+    if nulls_last:
+        expect = pl.DataFrame({"A": [1, 1, -1, None, None], "B": [3, 4, 2, 1, 5]})
+    else:
+        expect = pl.DataFrame({"A": [None, None, 1, 1, -1], "B": [1, 5, 3, 4, 2]})
+    assert_frame_equal(got, expect)
+
+
 def test_replace() -> None:
     df = pl.DataFrame({"a": [2, 1, 3], "b": [1, 2, 3]})
     s = pl.Series("c", [True, False, True])
