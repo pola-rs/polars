@@ -29,7 +29,7 @@
   -
   <a href="https://pola-rs.github.io/nodejs-polars/index.html">Node.js</a>
   -
-  <a href="https://rpolars.github.io/index.html">R</a>
+  <a href="https://pola-rs.github.io/r-polars/index.html">R</a>
   |
   <b>StackOverflow</b>:
   <a href="https://stackoverflow.com/questions/tagged/python-polars">Python</a>
