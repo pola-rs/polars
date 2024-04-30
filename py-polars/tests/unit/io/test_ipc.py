@@ -316,12 +316,24 @@ def test_ipc_decimal_15920(
 ) -> None:
     monkeypatch.setenv("POLARS_ACTIVATE_DECIMAL", "1")
     tmp_path.mkdir(exist_ok=True)
-    D = Decimal
 
-    df = pl.Series(
-        "x", [D("10.1"), None, D("11.2")], dtype=pl.Decimal(18, 2)
-    ).to_frame()
+    base_df = pl.Series(
+        "x",
+        [
+            *[
+                Decimal(x)
+                for x in [
+                    "10.1", "11.2", "12.3", "13.4", "14.5", "15.6", "16.7", "17.8", "18.9", "19.0",
+                    "20.1", "21.2", "22.3", "23.4", "24.5", "25.6", "26.7", "27.8", "28.9", "29.0",
+                    "30.1", "31.2", "32.3", "33.4", "34.5", "35.6", "36.7", "37.8", "38.9", "39.0"
+                ]
+            ],
+            *(50 * [None])
+        ],
+        dtype=pl.Decimal(18, 2),
+    ).to_frame()  # fmt: skip
 
-    path = f"{tmp_path}/data"
-    df.write_ipc(path)
-    assert_frame_equal(pl.read_ipc(path), df)
+    for df in [base_df, base_df.drop_nulls()]:
+        path = f"{tmp_path}/data"
+        df.write_ipc(path)
+        assert_frame_equal(pl.read_ipc(path), df)

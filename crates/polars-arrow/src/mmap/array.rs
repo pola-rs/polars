@@ -310,7 +310,11 @@ fn mmap_primitive<P: NativeType, T: AsRef<[u8]>>(
         };
         // Now we need to keep the new buffer alive
         struct Two<A, B>(A, B);
-        let owned_data = Arc::new(Two(data, values));
+        let owned_data = Arc::new(Two(
+            // We can drop the original ref if we don't have a validity
+            validity.and(Some(data)),
+            values,
+        ));
         let bytes_ptr = owned_data.1.as_ptr() as *mut u8;
 
         unsafe {
