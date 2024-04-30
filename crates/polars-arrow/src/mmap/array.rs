@@ -309,8 +309,7 @@ fn mmap_primitive<P: NativeType, T: AsRef<[u8]>>(
             )
         };
         // Now we need to keep the new buffer alive
-        struct Two<A, B>(A, B);
-        let owned_data = Arc::new(Two(
+        let owned_data = Arc::new((
             // We can drop the original ref if we don't have a validity
             validity.and(Some(data)),
             values,
