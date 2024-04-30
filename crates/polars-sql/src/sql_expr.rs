@@ -997,11 +997,11 @@ fn parse_extract(expr: Expr, field: &DateTimeField) -> PolarsResult<Expr> {
         DateTimeField::Minute => expr.dt().minute(),
         DateTimeField::Second => expr.dt().second(),
         DateTimeField::Millisecond | DateTimeField::Milliseconds => {
-            (expr.clone().dt().second() * lit(1_000))
+            (expr.clone().dt().second() * typed_lit(1_000f64))
                 + expr.dt().nanosecond().div(typed_lit(1_000_000f64))
         },
         DateTimeField::Microsecond | DateTimeField::Microseconds => {
-            (expr.clone().dt().second() * lit(1_000_000))
+            (expr.clone().dt().second() * typed_lit(1_000_000f64))
                 + expr.dt().nanosecond().div(typed_lit(1_000f64))
         },
         DateTimeField::Nanosecond | DateTimeField::Nanoseconds => {

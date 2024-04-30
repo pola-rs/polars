@@ -86,7 +86,6 @@ def test_datetime_to_time(time_unit: Literal["ns", "us", "ms"]) -> None:
         ),
     ],
 )
-@pytest.mark.skip(reason="don't understand; will ask @alex")
 def test_extract(part: str, dtype: pl.DataType, expected: list[Any]) -> None:
     df = pl.DataFrame(
         {
