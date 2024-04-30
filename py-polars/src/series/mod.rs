@@ -127,21 +127,20 @@ impl PySeries {
 
     /// Returns the string format of a single element of the Series.
     fn get_fmt(&self, index: usize, str_len_limit: usize) -> String {
-        let v = format!("{}", self.series.get(index).unwrap());
+        let v = self.series.str_value(index).unwrap().to_string();
         if let DataType::String | DataType::Categorical(_, _) | DataType::Enum(_, _) =
             self.series.dtype()
         {
-            let v_no_quotes = &v[1..v.len() - 1];
-            let v_trunc = &v_no_quotes[..v_no_quotes
+            let v_trunc = &v[..v
                 .char_indices()
                 .take(str_len_limit)
                 .last()
                 .map(|(i, c)| i + c.len_utf8())
                 .unwrap_or(0)];
-            if v_no_quotes == v_trunc {
+            if v == v_trunc {
                 v
             } else {
-                format!("\"{v_trunc}…")
+                format!("{v_trunc}…")
             }
         } else {
             v
