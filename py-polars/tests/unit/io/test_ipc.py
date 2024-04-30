@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
@@ -306,3 +307,21 @@ def test_read_ipc_only_loads_selected_columns(
     # Only one column's worth of memory should be used; 2 columns would be
     # 32_000_000 at least, but there's some overhead.
     assert 16_000_000 < memory_usage_without_pyarrow.get_peak() < 23_000_000
+
+
+@pytest.mark.write_disk()
+def test_ipc_decimal_15920(
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("POLARS_ACTIVATE_DECIMAL", "1")
+    tmp_path.mkdir(exist_ok=True)
+    D = Decimal
+
+    df = pl.Series(
+        "x", [D("10.1"), None, D("11.2")], dtype=pl.Decimal(18, 2)
+    ).to_frame()
+
+    path = f"{tmp_path}/data"
+    df.write_ipc(path)
+    assert_frame_equal(pl.read_ipc(path), df)
