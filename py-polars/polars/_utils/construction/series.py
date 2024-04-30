@@ -422,9 +422,13 @@ def pandas_to_pyseries(
             "(e.g. 'int64', 'bool', 'float32' - not 'Int64')"
         )
         raise ImportError(msg)
-    return arrow_to_pyseries(
-        name, plc.pandas_series_to_arrow(values, nan_to_null=nan_to_null)
+    s = wrap_s(
+        arrow_to_pyseries(
+            name, plc.pandas_series_to_arrow(values, nan_to_null=nan_to_null)
+        )
     )
+    s = s if dtype is None else s.cast(dtype)
+    return s._s
 
 
 def arrow_to_pyseries(name: str, values: pa.Array, *, rechunk: bool = True) -> PySeries:
