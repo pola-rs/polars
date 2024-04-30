@@ -59,6 +59,7 @@ impl NodeTraverser {
         }
     }
 
+    #[allow(clippy::type_complexity)]
     pub(crate) fn get_arenas(&self) -> (Arc<Mutex<Arena<IR>>>, Arc<Mutex<Arena<AExpr>>>) {
         (self.lp_arena.clone(), self.expr_arena.clone())
     }

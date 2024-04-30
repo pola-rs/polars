@@ -84,7 +84,7 @@ from polars.selectors import _expand_selectors, by_dtype, expand_selector
 from polars.slice import LazyPolarsSlice
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import PyLazyFrame, _expr_nodes, _ir_nodes
+    from polars.polars import PyLazyFrame
 
 if TYPE_CHECKING:
     import sys
@@ -1692,7 +1692,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         streaming: bool = False,
         background: bool = False,
         _eager: bool = False,
-        **_kwargs,
+        **_kwargs: Any,
     ) -> DataFrame | InProcessQuery:
         """
         Materialize this LazyFrame into a DataFrame.

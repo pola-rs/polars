@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any, Callable
 
 import polars as pl
 from polars._utils.wrap import wrap_df
+from polars.polars import _ir_nodes
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -14,6 +15,7 @@ if TYPE_CHECKING:
 @typing.no_type_check
 def test_run_on_pandas() -> None:
     # Simple join example, missing multiple columns, slices, etc.
+    @typing.no_type_check
     def join(inputs: list[Callable], obj: Any, _node_traverer: Any) -> Callable:
         assert len(obj.left_on) == 1
         assert len(obj.right_on) == 1
@@ -30,18 +32,21 @@ def test_run_on_pandas() -> None:
         return partial(run, inputs)
 
     # Simple scan example, missing predicates, columns pruning, slices, etc.
+    @typing.no_type_check
     def df_scan(_inputs: None, obj: Any, _: Any) -> pd.DataFrame:
         assert obj.selection is None
         return lambda: wrap_df(obj.df).to_pandas()
 
     @lru_cache(1)
+    @typing.no_type_check
     def get_node_converters():
         return {
-            pl.lazyframe._ir_nodes.Join: join,
-            pl.lazyframe._ir_nodes.DataFrameScan: df_scan,
+            _ir_nodes.Join: join,
+            _ir_nodes.DataFrameScan: df_scan,
         }
 
     # TODO: rewrite this with a stack.
+    @typing.no_type_check
     def get_input(node_traverser):
         current_node = node_traverser.get_node()
 
@@ -56,11 +61,13 @@ def test_run_on_pandas() -> None:
             inputs_callable, ir_node, node_traverser
         )
 
+    @typing.no_type_check
     def run_on_pandas(node_traverser) -> None:
         current_node = node_traverser.get_node()
 
         callback = get_input(node_traverser)
 
+        @typing.no_type_check
         def run_callback(
             columns: list[str] | None, _: Any, n_rows: int | None
         ) -> pl.DataFrame:

@@ -1,4 +1,4 @@
-from polars.lazyframe.frame import LazyFrame, _expr_nodes, _ir_nodes
+from polars.lazyframe.frame import LazyFrame
 from polars.lazyframe.in_process import InProcessQuery
 
-__all__ = ["LazyFrame", "InProcessQuery", "_ir_nodes", "_expr_nodes"]
+__all__ = ["LazyFrame", "InProcessQuery"]
