@@ -110,6 +110,13 @@ fn parse_env_var_limit(name: &str, default: usize) -> usize {
         },
     )
 }
+/// Parses an environment variable value as a boolean or set it to [`false`].
+fn parse_env_var_bool(name: &str) -> bool {
+    match std::env::var(name) {
+        Ok(s) => s.as_str() == "1",
+        Err(_) => false,
+    }
+}
 
 fn get_row_limit() -> usize {
     parse_env_var_limit(FMT_MAX_ROWS, DEFAULT_ROW_LIMIT)
@@ -423,10 +430,10 @@ impl Debug for DataFrame {
     }
 }
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
-fn make_str_val(v: &str, truncate: usize) -> String {
+fn make_str_val(v: &str, len_limit: usize) -> String {
     let v_trunc = &v[..v
         .char_indices()
-        .take(truncate)
+        .take(len_limit)
         .last()
         .map(|(i, c)| i + c.len_utf8())
         .unwrap_or(0)];
@@ -442,13 +449,13 @@ fn field_to_str(f: &Field, str_truncate: usize) -> (String, usize) {
     let name = make_str_val(f.name(), str_truncate);
     let name_length = name.len();
     let mut column_name = name;
-    if env_is_true(FMT_TABLE_HIDE_COLUMN_NAMES) {
+    if parse_env_var_bool(FMT_TABLE_HIDE_COLUMN_NAMES) {
         column_name = "".to_string();
     }
-    let column_data_type = if env_is_true(FMT_TABLE_HIDE_COLUMN_DATA_TYPES) {
+    let column_data_type = if parse_env_var_bool(FMT_TABLE_HIDE_COLUMN_DATA_TYPES) {
         "".to_string()
-    } else if env_is_true(FMT_TABLE_INLINE_COLUMN_DATA_TYPE)
-        | env_is_true(FMT_TABLE_HIDE_COLUMN_NAMES)
+    } else if parse_env_var_bool(FMT_TABLE_INLINE_COLUMN_DATA_TYPE)
+        | parse_env_var_bool(FMT_TABLE_HIDE_COLUMN_NAMES)
     {
         format!("{}", f.data_type())
     } else {
@@ -456,14 +463,14 @@ fn field_to_str(f: &Field, str_truncate: usize) -> (String, usize) {
     };
     let mut dtype_length = column_data_type.trim_start().len();
     let mut separator = "\n---";
-    if env_is_true(FMT_TABLE_HIDE_COLUMN_SEPARATOR)
-        | env_is_true(FMT_TABLE_HIDE_COLUMN_NAMES)
-        | env_is_true(FMT_TABLE_HIDE_COLUMN_DATA_TYPES)
+    if parse_env_var_bool(FMT_TABLE_HIDE_COLUMN_SEPARATOR)
+        | parse_env_var_bool(FMT_TABLE_HIDE_COLUMN_NAMES)
+        | parse_env_var_bool(FMT_TABLE_HIDE_COLUMN_DATA_TYPES)
     {
         separator = ""
     }
-    let s = if env_is_true(FMT_TABLE_INLINE_COLUMN_DATA_TYPE)
-        & !env_is_true(FMT_TABLE_HIDE_COLUMN_DATA_TYPES)
+    let s = if parse_env_var_bool(FMT_TABLE_INLINE_COLUMN_DATA_TYPE)
+        & !parse_env_var_bool(FMT_TABLE_HIDE_COLUMN_DATA_TYPES)
     {
         let inline_name_dtype = format!("{column_name} ({column_data_type})");
         dtype_length = inline_name_dtype.len();
@@ -514,11 +521,6 @@ fn prepare_row(
         row_strings.push(elem_str);
     }
     row_strings
-}
-
-#[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
-fn env_is_true(varname: &str) -> bool {
-    std::env::var(varname).as_deref().unwrap_or("0") == "1"
 }
 
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
@@ -597,7 +599,7 @@ impl Display for DataFrame {
                 .load_preset(preset)
                 .set_content_arrangement(ContentArrangement::Dynamic);
 
-            if is_utf8 && env_is_true(FMT_TABLE_ROUNDED_CORNERS) {
+            if is_utf8 && parse_env_var_bool(FMT_TABLE_ROUNDED_CORNERS) {
                 table.apply_modifier(UTF8_ROUND_CORNERS);
             }
 
@@ -697,8 +699,8 @@ impl Display for DataFrame {
             }
 
             // insert a header row, unless both column names and dtypes are hidden
-            if !(env_is_true(FMT_TABLE_HIDE_COLUMN_NAMES)
-                && env_is_true(FMT_TABLE_HIDE_COLUMN_DATA_TYPES))
+            if !(parse_env_var_bool(FMT_TABLE_HIDE_COLUMN_NAMES)
+                && parse_env_var_bool(FMT_TABLE_HIDE_COLUMN_DATA_TYPES))
             {
                 table.set_header(names).set_constraints(constraints);
             }
@@ -743,11 +745,11 @@ impl Display for DataFrame {
             }
 
             // establish 'shape' information (above/below/hidden)
-            if env_is_true(FMT_TABLE_HIDE_DATAFRAME_SHAPE_INFORMATION) {
+            if parse_env_var_bool(FMT_TABLE_HIDE_DATAFRAME_SHAPE_INFORMATION) {
                 write!(f, "{table}")?;
             } else {
                 let shape_str = fmt_df_shape(&self.shape());
-                if env_is_true(FMT_TABLE_DATAFRAME_SHAPE_BELOW) {
+                if parse_env_var_bool(FMT_TABLE_DATAFRAME_SHAPE_BELOW) {
                     write!(f, "{table}\nshape: {}", shape_str)?;
                 } else {
                     write!(f, "shape: {}\n{}", shape_str, table)?;
