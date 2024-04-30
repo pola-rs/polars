@@ -96,7 +96,7 @@ static ALLOC: Jemalloc = Jemalloc;
 static ALLOC: MiMalloc = MiMalloc;
 
 #[pymodule]
-fn nodes(_py: Python, m: &PyModule) -> PyResult<()> {
+fn nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     use crate::lazyframe::visitor::nodes::*;
     m.add_class::<PythonScan>().unwrap();
     m.add_class::<Slice>().unwrap();
@@ -120,7 +120,7 @@ fn nodes(_py: Python, m: &PyModule) -> PyResult<()> {
 }
 
 #[pymodule]
-fn expr_nodes(_py: Python, m: &PyModule) -> PyResult<()> {
+fn expr_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     use crate::lazyframe::visitor::expr_nodes::*;
     use crate::lazyframe::PyExprIR;
     // Expressions
@@ -148,7 +148,7 @@ fn expr_nodes(_py: Python, m: &PyModule) -> PyResult<()> {
 }
 
 #[pymodule]
-fn polars(py: Python, m: &PyModule) -> PyResult<()> {
+fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     // Classes
     m.add_class::<PySeries>().unwrap();
     m.add_class::<PyDataFrame>().unwrap();
@@ -340,54 +340,62 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
 
     // Exceptions - Errors
-    m.add("PolarsError", py.get_type::<PolarsBaseError>())
+    m.add("PolarsError", py.get_type_bound::<PolarsBaseError>())
         .unwrap();
-    m.add("ColumnNotFoundError", py.get_type::<ColumnNotFoundError>())
+    m.add(
+        "ColumnNotFoundError",
+        py.get_type_bound::<ColumnNotFoundError>(),
+    )
+    .unwrap();
+    m.add("ComputeError", py.get_type_bound::<ComputeError>())
         .unwrap();
-    m.add("ComputeError", py.get_type::<ComputeError>())
-        .unwrap();
-    m.add("DuplicateError", py.get_type::<DuplicateError>())
+    m.add("DuplicateError", py.get_type_bound::<DuplicateError>())
         .unwrap();
     m.add(
         "InvalidOperationError",
-        py.get_type::<InvalidOperationError>(),
+        py.get_type_bound::<InvalidOperationError>(),
     )
     .unwrap();
-    m.add("NoDataError", py.get_type::<NoDataError>()).unwrap();
-    m.add("OutOfBoundsError", py.get_type::<OutOfBoundsError>())
+    m.add("NoDataError", py.get_type_bound::<NoDataError>())
         .unwrap();
-    m.add("PolarsPanicError", py.get_type::<PanicException>())
+    m.add("OutOfBoundsError", py.get_type_bound::<OutOfBoundsError>())
         .unwrap();
-    m.add("SchemaError", py.get_type::<SchemaError>()).unwrap();
+    m.add("PolarsPanicError", py.get_type_bound::<PanicException>())
+        .unwrap();
+    m.add("SchemaError", py.get_type_bound::<SchemaError>())
+        .unwrap();
     m.add(
         "SchemaFieldNotFoundError",
-        py.get_type::<SchemaFieldNotFoundError>(),
+        py.get_type_bound::<SchemaFieldNotFoundError>(),
     )
     .unwrap();
-    m.add("ShapeError", py.get_type::<crate::error::ShapeError>())
-        .unwrap();
+    m.add(
+        "ShapeError",
+        py.get_type_bound::<crate::error::ShapeError>(),
+    )
+    .unwrap();
     m.add(
         "StringCacheMismatchError",
-        py.get_type::<crate::error::StringCacheMismatchError>(),
+        py.get_type_bound::<crate::error::StringCacheMismatchError>(),
     )
     .unwrap();
     m.add(
         "StructFieldNotFoundError",
-        py.get_type::<StructFieldNotFoundError>(),
+        py.get_type_bound::<StructFieldNotFoundError>(),
     )
     .unwrap();
 
     // Exceptions - Warnings
-    m.add("PolarsWarning", py.get_type::<PolarsBaseWarning>())
+    m.add("PolarsWarning", py.get_type_bound::<PolarsBaseWarning>())
         .unwrap();
     m.add(
         "CategoricalRemappingWarning",
-        py.get_type::<CategoricalRemappingWarning>(),
+        py.get_type_bound::<CategoricalRemappingWarning>(),
     )
     .unwrap();
     m.add(
         "MapWithoutReturnDtypeWarning",
-        py.get_type::<MapWithoutReturnDtypeWarning>(),
+        py.get_type_bound::<MapWithoutReturnDtypeWarning>(),
     )
     .unwrap();
 
