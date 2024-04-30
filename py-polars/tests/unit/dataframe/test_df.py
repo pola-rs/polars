@@ -348,7 +348,6 @@ def test_sort_maintain_order() -> None:
     assert l1 == l2 == ["A", "B", "C"]
 
 
-@pytest.mark.xfail(reason="https://github.com/pola-rs/polars/issues/9940")
 @pytest.mark.parametrize("nulls_last", [False, True], ids=["nulls_first", "nulls_last"])
 def test_sort_maintain_order_descending_repeated_nulls(nulls_last: bool) -> None:
     got = (
