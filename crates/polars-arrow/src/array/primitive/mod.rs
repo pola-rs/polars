@@ -200,7 +200,7 @@ impl<T: NativeType> PrimitiveArray<T> {
     ///
     /// Equivalent to `self.values()[i]`. The value of a null slot is undetermined (it can be anything).
     /// # Panic
-    /// This function panics iff `i >= self.values.len()`.
+    /// This function panics iff `i >= self.len`.
     #[inline]
     pub fn value(&self, i: usize) -> T {
         self.values[i]

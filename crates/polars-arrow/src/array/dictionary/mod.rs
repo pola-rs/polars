@@ -356,7 +356,7 @@ impl<K: DictionaryKey> DictionaryArray<K> {
 
     /// Returns the keys' value of the [`DictionaryArray`] as `usize`
     /// # Panics
-    /// This function panics iff `index >= self.keys.values().len()`
+    /// This function panics iff `index >= self.len()`
     #[inline]
     pub fn key_value(&self, index: usize) -> usize {
         // SAFETY: invariant of the struct
