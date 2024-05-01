@@ -14,6 +14,7 @@ from typing import (
     Sequence,
 )
 
+import hypothesis.strategies as st
 from hypothesis.strategies import (
     SearchStrategy,
     binary,
@@ -22,7 +23,6 @@ from hypothesis.strategies import (
     composite,
     dates,
     datetimes,
-    decimals,
     floats,
     from_type,
     integers,
@@ -116,10 +116,10 @@ strategy_time_unit = sampled_from(["ns", "us", "ms"])
 
 
 @composite
-def strategy_decimal(
+def decimals(
     draw: DrawFn, precision: int | None = None, scale: int | None = None
 ) -> PyDecimal:
-    """Draw a decimal value, varying the number of decimal places."""
+    """Returns a strategy which generates instances of Python `Decimal`."""
     if precision is None:
         precision = draw(integers(min_value=scale or 1, max_value=38))
     if scale is None:
@@ -129,7 +129,7 @@ def strategy_decimal(
     limit = 10 ** (precision - scale) - smallest_increment
 
     return draw(
-        decimals(
+        st.decimals(
             allow_nan=False,
             allow_infinity=False,
             min_value=-limit,
@@ -278,7 +278,7 @@ scalar_strategies: StrategyLookup = StrategyLookup(
         Categorical: strategy_categorical,
         String: strategy_string,
         Binary: strategy_binary,
-        Decimal: strategy_decimal(),
+        Decimal: decimals(),
     }
 )
 nested_strategies: StrategyLookup = StrategyLookup()
