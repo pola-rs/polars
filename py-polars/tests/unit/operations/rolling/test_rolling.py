@@ -1065,3 +1065,5 @@ def test_rolling_duration(time_unit: Literal["ms", "us", "ns"]) -> None:
     assert (
         res_duration["value"].to_list() == res_datetime["value"].to_list()
     ), f"{res_duration['value'].to_list()=}, {res_datetime['value'].to_list()=}"
+
+    assert res_duration["index_column"].dtype == pl.Duration(time_unit=time_unit)
