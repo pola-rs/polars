@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 import pytest
@@ -958,7 +958,7 @@ def test_rolling_invalid() -> None:
 
 
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
-def test_rolling_duration(time_unit):
+def test_rolling_duration(time_unit: Literal["ns", "us", "ms"]) -> None:
     # Note: Both datetime with Unit != ns and Duration have weird behavior.
     # Here we only test for consistency.
     df = pl.DataFrame(
@@ -993,6 +993,6 @@ def test_rolling_duration(time_unit):
 
     assert (
         res_duration["value"].to_list() == res_datetime["value"].to_list()
-    ), f"{res_duration["value"].to_list()=}, {res_datetime["value"].to_list()=}"
+    ), f"{res_duration["value"].to_list()}, {res_datetime["value"].to_list()}"
 
     assert res_duration["index_column"].dtype == pl.Duration(time_unit=time_unit)
