@@ -29,7 +29,9 @@ pub use series_trait::{IsSorted, *};
 use crate::chunked_array::Settings;
 #[cfg(feature = "zip_with")]
 use crate::series::arithmetic::coerce_lhs_rhs;
-use crate::utils::{_split_offsets, handle_casting_failures, split_ca, split_series, Wrap};
+use crate::utils::{
+    _split_offsets, handle_casting_failures, materialize_dyn_int, split_ca, split_series, Wrap,
+};
 use crate::POOL;
 
 /// # Series
@@ -309,9 +311,39 @@ impl Series {
 
     /// Cast `[Series]` to another `[DataType]`.
     pub fn cast(&self, dtype: &DataType) -> PolarsResult<Self> {
-        // Best leave as is.
-        if !dtype.is_known() || (dtype.is_primitive() && dtype == self.dtype()) {
-            return Ok(self.clone());
+        match dtype {
+            DataType::Unknown(kind) => {
+                return match kind {
+                    // Best leave as is.
+                    UnknownKind::Any => Ok(self.clone()),
+                    UnknownKind::Int(v) => {
+                        if self.dtype().is_integer() {
+                            Ok(self.clone())
+                        } else {
+                            self.cast(&materialize_dyn_int(*v).dtype())
+                        }
+                    },
+                    UnknownKind::Float => {
+                        if self.dtype().is_float() {
+                            Ok(self.clone())
+                        } else {
+                            self.cast(&DataType::Float64)
+                        }
+                    },
+                    UnknownKind::Str => {
+                        if self.dtype().is_string() | self.dtype().is_categorical() {
+                            Ok(self.clone())
+                        } else {
+                            self.cast(&DataType::String)
+                        }
+                    },
+                };
+            },
+            // Best leave as is.
+            dt if dt.is_primitive() && dt == self.dtype() => {
+                return Ok(self.clone());
+            },
+            _ => {},
         }
         let ret = self.0.cast(dtype);
         let len = self.len();

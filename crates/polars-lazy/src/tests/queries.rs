@@ -701,7 +701,7 @@ fn test_lazy_group_by_apply() {
         .group_by([col("fruits")])
         .agg([col("cars").apply(
             |s: Series| Ok(Some(Series::new("", &[s.len() as u32]))),
-            GetOutput::same_type(),
+            GetOutput::from_type(DataType::UInt32),
         )])
         .collect()
         .unwrap();
