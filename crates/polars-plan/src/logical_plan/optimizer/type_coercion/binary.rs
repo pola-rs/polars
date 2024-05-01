@@ -240,7 +240,6 @@ pub(super) fn process_binary(
                 right: node_right,
             }));
         },
-        (Unknown(lhs), Unknown(rhs)) if lhs == rhs => return Ok(None),
         _ => {
             unpack!(early_escape(&type_left, &type_right));
         },
