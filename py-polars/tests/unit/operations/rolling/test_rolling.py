@@ -955,3 +955,42 @@ def test_rolling_invalid() -> None:
             .rolling("index", period="3000d")
             .agg(pl.col("values").sum().alias("sum"))
         )
+
+
+@pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
+def test_rolling_duration(time_unit):
+    # Note: Both datetime with Unit != ns and Duration have weird behavior.
+    # Here we only test for consistency.
+    df = pl.DataFrame(
+        {
+            "index_column": [1, 2, 3, 4, 5],
+            "value": [
+                1,
+                10,
+                100,
+                1000,
+                10000,
+            ],
+        }
+    )
+    df_duration = df.select(
+        pl.col("index_column").cast(pl.Duration(time_unit=time_unit)).set_sorted(),
+        "value",
+    )
+
+    df_datetime = df.select(
+        pl.col("index_column").cast(pl.Datetime(time_unit=time_unit)).set_sorted(),
+        "value",
+    )
+
+    res_duration = df_duration.rolling(
+        index_column="index_column", period=f"2{time_unit}"
+    ).agg(pl.col("value").sum())
+
+    res_datetime = df_datetime.rolling(
+        index_column="index_column", period=f"2{time_unit}"
+    ).agg(pl.col("value").sum())
+
+    assert (
+        res_duration["value"].to_list() == res_datetime["value"].to_list()
+    ), f"{res_duration["value"].to_list()=}, {res_datetime["value"].to_list()=}"

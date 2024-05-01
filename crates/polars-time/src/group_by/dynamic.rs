@@ -152,6 +152,14 @@ impl Wrap<&DataFrame> {
                 TimeUnit::Milliseconds,
                 None,
             ),
+            Duration(tu) => {
+                let time_type_dt = Datetime(*tu, None);
+                let dt = time.cast(&time_type_dt).unwrap();
+                let (out, by, gt) =
+                    self.impl_rolling(dt, group_by, options, *tu, None, &time_type_dt)?;
+                let out = out.cast(&Duration(*tu)).unwrap();
+                return Ok((out, by, gt));
+            },
             UInt32 | UInt64 | Int32 => {
                 let time_type_dt = Datetime(TimeUnit::Nanoseconds, None);
                 let dt = time.cast(&Int64).unwrap().cast(&time_type_dt).unwrap();
@@ -182,7 +190,7 @@ impl Wrap<&DataFrame> {
             },
             dt => polars_bail!(
                 ComputeError:
-                "expected any of the following dtypes: {{ Date, Datetime, Int32, Int64, UInt32, UInt64 }}, got {}",
+                "expected any of the following dtypes: {{ Date, Datetime, Duration, Int32, Int64, UInt32, UInt64 }}, got {}",
                 dt
             ),
         };

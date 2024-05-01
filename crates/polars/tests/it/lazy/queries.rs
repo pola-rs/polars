@@ -66,6 +66,68 @@ fn test_special_group_by_schemas() -> PolarsResult<()> {
         &[3, 5, 7, 9, 5]
     );
 
+    // Duration index column - period have different units
+    let out = df
+        .clone()
+        .lazy()
+        .with_column(
+            col("a")
+                .cast(DataType::Duration(TimeUnit::Milliseconds))
+                .set_sorted_flag(IsSorted::Ascending),
+        )
+        .rolling(
+            col("a"),
+            [],
+            RollingGroupOptions {
+                period: Duration::parse("2ms"),
+                offset: Duration::parse("0ms"),
+                closed_window: ClosedWindow::Left,
+                ..Default::default()
+            },
+        )
+        .agg([col("b").sum().alias("sum")])
+        .select([col("a"), col("sum")])
+        .collect()?;
+
+    assert_eq!(
+        out.column("sum")?
+            .i32()?
+            .into_no_null_iter()
+            .collect::<Vec<_>>(),
+        &[3, 5, 7, 9, 5]
+    );
+
+    // Datetime index column - period have same units
+    let out = df
+        .clone()
+        .lazy()
+        .with_column(
+            col("a")
+                .cast(DataType::Datetime(TimeUnit::Milliseconds, None))
+                .set_sorted_flag(IsSorted::Ascending),
+        )
+        .rolling(
+            col("a"),
+            [],
+            RollingGroupOptions {
+                period: Duration::parse("2ms"),
+                offset: Duration::parse("0ms"),
+                closed_window: ClosedWindow::Left,
+                ..Default::default()
+            },
+        )
+        .agg([col("b").sum().alias("sum")])
+        .select([col("a"), col("sum")])
+        .collect()?;
+
+    assert_eq!(
+        out.column("sum")?
+            .i32()?
+            .into_no_null_iter()
+            .collect::<Vec<_>>(),
+        &[3, 5, 7, 9, 5]
+    );
+
     let out = df
         .lazy()
         .with_column(col("a").set_sorted_flag(IsSorted::Ascending))
