@@ -1029,9 +1029,8 @@ def test_temporal_windows_size_without_by_15977() -> None:
 
 
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
-def test_rolling_duration(time_unit: Literal["ms", "us", "ns"]) -> None:
-    # Note: Both datetime with Unit != ns and Duration have weird behavior.
-    # Here we only test for consistency.
+def test_rolling_duration(time_unit: Literal["ns", "us", "ms"]) -> None:
+    # Here we only test for consistency with datetime.
     df = pl.DataFrame(
         {
             "index_column": [1, 2, 3, 4, 5],
