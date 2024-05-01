@@ -242,10 +242,11 @@ git rebase upstream/main
 git push origin main
 ```
 
-For updating the project's dependencies run:
+For updating the project's dependencies and building and installing Python Polars run:
 
 ```bash
 make requirements
+make build
 ```
 
 In order to avoid running out of memory (how often depends on your machine), you should occasionally run:
