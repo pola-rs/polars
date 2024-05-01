@@ -240,15 +240,6 @@ pub(super) fn process_binary(
                 right: node_right,
             }));
         },
-        (Unknown(lhs), Unknown(rhs)) if lhs == rhs => {
-            // Materialize if both are dynamic
-            let left = unpack!(materialize(left));
-            let right = unpack!(materialize(right));
-            let left = expr_arena.add(left);
-            let right = expr_arena.add(right);
-
-            return Ok(Some(AExpr::BinaryExpr { left, op, right }));
-        },
         _ => {
             unpack!(early_escape(&type_left, &type_right));
         },
@@ -328,7 +319,6 @@ pub(super) fn process_binary(
         Ok(None)
     } else {
         // Coerce types:
-
         let st = unpack!(get_supertype(&type_left, &type_right));
         let mut st = modify_supertype(st, left, right, &type_left, &type_right);
 
