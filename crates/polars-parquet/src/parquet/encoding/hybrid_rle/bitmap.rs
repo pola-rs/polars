@@ -24,7 +24,7 @@ impl<'a> BitmapIter<'a> {
     /// This function panics iff `offset / 8 > slice.len()`
     #[inline]
     pub fn new(slice: &'a [u8], offset: usize, len: usize) -> Self {
-        assert!(offset/8 <= slice.len());
+        assert!(offset / 8 <= slice.len());
         let bytes = &slice[offset / 8..];
 
         let mut iter = bytes.iter();

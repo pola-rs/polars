@@ -11,7 +11,6 @@ pub use chunk_iterator::{BitChunk, BitChunkIterExact, BitChunks, BitChunksExact}
 pub use chunks_exact_mut::BitChunksExactMut;
 pub use fmt::fmt;
 pub use iterator::BitmapIter;
-use polars_utils::index::Bounded;
 use polars_utils::slice::{load_padded_le_u64, GetSaferUnchecked};
 pub use slice_iterator::SlicesIterator;
 pub use zip_validity::{ZipValidity, ZipValidityIter};
