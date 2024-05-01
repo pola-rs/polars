@@ -6,10 +6,10 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 import pytest
 from numpy import nan
-
-import polars as pl
 from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
+
+import polars as pl
 
 if TYPE_CHECKING:
     from polars.type_aliases import ClosedInterval, PolarsDataType, TimeUnit
@@ -959,8 +959,7 @@ def test_rolling_invalid() -> None:
 
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
 def test_rolling_duration(time_unit: Literal["ns", "us", "ms"]) -> None:
-    # Note: Both datetime with Unit != ns and Duration have weird behavior.
-    # Here we only test for consistency.
+    # Here we only test for consistency with datetime.
     df = pl.DataFrame(
         {
             "index_column": [1, 2, 3, 4, 5],
