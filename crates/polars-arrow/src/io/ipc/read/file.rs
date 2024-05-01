@@ -300,7 +300,6 @@ pub fn read_batch<R: Read + Seek>(
     message_scratch: &mut Vec<u8>,
     data_scratch: &mut Vec<u8>,
 ) -> PolarsResult<RecordBatch<Box<dyn Array>>> {
-    assert!(index < metadata.blocks.len(), "index is out of bounds");
     let block = metadata.blocks[index];
 
     let offset: u64 = block

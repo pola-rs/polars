@@ -359,7 +359,6 @@ impl<K: DictionaryKey> DictionaryArray<K> {
     /// This function panics iff `index >= self.keys.values().len()`
     #[inline]
     pub fn key_value(&self, index: usize) -> usize {
-        assert!(index < self.keys.values().len(), "index is out of bounds");
         // SAFETY: invariant of the struct
         unsafe { self.keys.values()[index].as_usize() }
     }

@@ -39,7 +39,6 @@ pub fn set(byte: u8, i: usize, value: bool) -> u8 {
 /// This function panics iff `i >= bytes.len() * 8`.
 #[inline]
 pub fn set_bit(bytes: &mut [u8], i: usize, value: bool) {
-    assert!(i < bytes.len() * 8);
     bytes[i / 8] = set(bytes[i / 8], i % 8, value);
 }
 
@@ -57,7 +56,6 @@ pub unsafe fn set_bit_unchecked(bytes: &mut [u8], i: usize, value: bool) {
 /// This function panics iff `i >= bytes.len() * 8`.
 #[inline]
 pub fn get_bit(bytes: &[u8], i: usize) -> bool {
-    assert!(i < bytes.len() * 8);
     let byte = bytes[i / 8];
     let bit = (byte >> (i % 8)) & 1;
     bit != 0

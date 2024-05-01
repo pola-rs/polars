@@ -203,7 +203,6 @@ impl<T: NativeType> PrimitiveArray<T> {
     /// This function panics iff `i >= self.values.len()`.
     #[inline]
     pub fn value(&self, i: usize) -> T {
-        assert!(i < self.values.len(), "i is out of bounds");
         self.values[i]
     }
 
