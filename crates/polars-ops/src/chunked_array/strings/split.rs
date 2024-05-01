@@ -15,7 +15,8 @@ impl<'a> Iterator for SplitNChars<'a> {
     type Item = &'a str;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.n >= 2 {
+        let single_char_limit = if self.keep_remainder { 2 } else { 1 };
+        if self.n >= single_char_limit {
             self.n -= 1;
             let ch = self.s.chars().next()?;
             let first;
@@ -23,11 +24,7 @@ impl<'a> Iterator for SplitNChars<'a> {
             Some(first)
         } else if self.n == 1 && !self.s.is_empty() {
             self.n -= 1;
-            if self.keep_remainder {
-                Some(self.s)
-            } else {
-                Some(self.s.split_at(self.s.chars().next()?.len_utf8()).0)
-            }
+            Some(self.s)
         } else {
             None
         }
