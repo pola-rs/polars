@@ -92,7 +92,6 @@ def datetime_(
     ...         "minute": [15, 30, 45],
     ...     }
     ... )
-
     >>> df.with_columns(
     ...     pl.datetime(
     ...         2024,
@@ -113,6 +112,32 @@ def datetime_(
     │ 2     ┆ 5   ┆ 13   ┆ 30     ┆ 2024-02-05 13:30:00 AEDT       │
     │ 3     ┆ 6   ┆ 14   ┆ 45     ┆ 2024-03-06 14:45:00 AEDT       │
     └───────┴─────┴──────┴────────┴────────────────────────────────┘
+
+    >>> from datetime import datetime
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "start": [
+    ...             datetime(2024, 1, 1, 0, 0, 0),
+    ...             datetime(2024, 1, 1, 0, 0, 0),
+    ...             datetime(2024, 1, 1, 0, 0, 0),
+    ...         ],
+    ...         "end": [
+    ...             datetime(2024, 5, 1, 20, 15, 10),
+    ...             datetime(2024, 7, 1, 21, 25, 20),
+    ...             datetime(2024, 9, 1, 22, 35, 30),
+    ...         ],
+    ...     }
+    ... )
+    >>> df.filter(pl.col("end") > pl.datetime(2024, 6, 1))
+    shape: (2, 2)
+    ┌─────────────────────┬─────────────────────┐
+    │ start               ┆ end                 │
+    │ ---                 ┆ ---                 │
+    │ datetime[μs]        ┆ datetime[μs]        │
+    ╞═════════════════════╪═════════════════════╡
+    │ 2024-01-01 00:00:00 ┆ 2024-07-01 21:25:20 │
+    │ 2024-01-01 00:00:00 ┆ 2024-09-01 22:35:30 │
+    └─────────────────────┴─────────────────────┘
     """
     ambiguous = parse_as_expression(
         rename_use_earliest_to_ambiguous(use_earliest, ambiguous), str_as_lit=True
@@ -176,7 +201,6 @@ def date_(
     ...         "day": [4, 5, 6],
     ...     }
     ... )
-
     >>> df.with_columns(pl.date(2024, pl.col("month"), pl.col("day")))
     shape: (3, 3)
     ┌───────┬─────┬────────────┐
@@ -188,6 +212,24 @@ def date_(
     │ 2     ┆ 5   ┆ 2024-02-05 │
     │ 3     ┆ 6   ┆ 2024-03-06 │
     └───────┴─────┴────────────┘
+
+    >>> from datetime import date
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "start": [date(2024, 1, 1), date(2024, 1, 1), date(2024, 1, 1)],
+    ...         "end": [date(2024, 5, 1), date(2024, 7, 1), date(2024, 9, 1)],
+    ...     }
+    ... )
+    >>> df.filter(pl.col("end") > pl.date(2024, 6, 1))
+    shape: (2, 2)
+    ┌────────────┬────────────┐
+    │ start      ┆ end        │
+    │ ---        ┆ ---        │
+    │ date       ┆ date       │
+    ╞════════════╪════════════╡
+    │ 2024-01-01 ┆ 2024-07-01 │
+    │ 2024-01-01 ┆ 2024-09-01 │
+    └────────────┴────────────┘
     """
     return datetime_(year, month, day).cast(Date).alias("date")
 
