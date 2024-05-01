@@ -45,7 +45,6 @@ def test_run_on_pandas() -> None:
             _ir_nodes.DataFrameScan: df_scan,
         }
 
-    # TODO: rewrite this with a stack.
     @typing.no_type_check
     def get_input(node_traverser):
         current_node = node_traverser.get_node()
