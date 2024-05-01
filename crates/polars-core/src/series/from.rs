@@ -443,11 +443,6 @@ impl Series {
                 Ok(StructChunked::new_unchecked(name, &fields).into_series())
             },
             ArrowDataType::FixedSizeBinary(_) => {
-                if verbose() {
-                    eprintln!(
-                        "Polars does not support decimal types so the 'Series' are read as Float64"
-                    );
-                }
                 let chunks = cast_chunks(&chunks, &DataType::Binary, true)?;
                 Ok(BinaryChunked::from_chunks(name, chunks).into_series())
             },
