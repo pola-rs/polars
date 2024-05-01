@@ -6,10 +6,10 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 import pytest
 from numpy import nan
-
-import polars as pl
 from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
+
+import polars as pl
 
 if TYPE_CHECKING:
     from polars.type_aliases import ClosedInterval, PolarsDataType, TimeUnit
@@ -1026,3 +1026,42 @@ def test_temporal_windows_size_without_by_15977() -> None:
         pl.InvalidOperationError, match="the `by` argument must be passed"
     ):
         df.select(pl.col("a").rolling_mean("3d"))
+
+
+@pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
+def test_rolling_duration(time_unit: Literal["ms", "us", "ns"]) -> None:
+    # Note: Both datetime with Unit != ns and Duration have weird behavior.
+    # Here we only test for consistency.
+    df = pl.DataFrame(
+        {
+            "index_column": [1, 2, 3, 4, 5],
+            "value": [
+                1,
+                10,
+                100,
+                1000,
+                10000,
+            ],
+        }
+    )
+    df_duration = df.select(
+        pl.col("index_column").cast(pl.Duration(time_unit=time_unit)).set_sorted(),
+        "value",
+    )
+
+    df_datetime = df.select(
+        pl.col("index_column").cast(pl.Datetime(time_unit=time_unit)).set_sorted(),
+        "value",
+    )
+
+    res_duration = df_duration.rolling(
+        index_column="index_column", period=f"2{time_unit}"
+    ).agg(pl.col("value").sum())
+
+    res_datetime = df_datetime.rolling(
+        index_column="index_column", period=f"2{time_unit}"
+    ).agg(pl.col("value").sum())
+
+    assert (
+        res_duration["value"].to_list() == res_datetime["value"].to_list()
+    ), f"{res_duration['value'].to_list()=}, {res_datetime['value'].to_list()=}"
