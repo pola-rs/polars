@@ -32,6 +32,7 @@ impl<'a, A, I: Iterator<Item = A>> ProjectionIter<'a, A, I> {
     /// # Panics
     /// iff `projection` is empty
     pub fn new(projection: &'a [usize], iter: I) -> Self {
+        assert!(!projection.is_empty(), "projection cannot be empty");
         Self {
             projection: &projection[1..],
             iter,

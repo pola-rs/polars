@@ -11,6 +11,7 @@ pub use chunk_iterator::{BitChunk, BitChunkIterExact, BitChunks, BitChunksExact}
 pub use chunks_exact_mut::BitChunksExactMut;
 pub use fmt::fmt;
 pub use iterator::BitmapIter;
+use polars_utils::index::Bounded;
 use polars_utils::slice::{load_padded_le_u64, GetSaferUnchecked};
 pub use slice_iterator::SlicesIterator;
 pub use zip_validity::{ZipValidity, ZipValidityIter};
@@ -39,6 +40,7 @@ pub fn set(byte: u8, i: usize, value: bool) -> u8 {
 /// This function panics iff `i >= bytes.len() * 8`.
 #[inline]
 pub fn set_bit(bytes: &mut [u8], i: usize, value: bool) {
+    assert!(i < bytes.len() * 8);
     bytes[i / 8] = set(bytes[i / 8], i % 8, value);
 }
 
@@ -56,6 +58,7 @@ pub unsafe fn set_bit_unchecked(bytes: &mut [u8], i: usize, value: bool) {
 /// This function panics iff `i >= bytes.len() * 8`.
 #[inline]
 pub fn get_bit(bytes: &[u8], i: usize) -> bool {
+    assert!(i < bytes.len() * 8);
     let byte = bytes[i / 8];
     let bit = (byte >> (i % 8)) & 1;
     bit != 0
