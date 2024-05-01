@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from decimal import Decimal as PyDecimal
 from itertools import chain
 from random import choice, randint, shuffle
 from string import ascii_uppercase
@@ -61,7 +62,6 @@ from polars.type_aliases import PolarsDataType
 
 if TYPE_CHECKING:
     import sys
-    from decimal import Decimal as PyDecimal
 
     from hypothesis.strategies import DrawFn
 
@@ -69,6 +69,20 @@ if TYPE_CHECKING:
         from typing import Self
     else:
         from typing_extensions import Self
+
+
+@composite
+def dtype_strategies(draw: DrawFn, dtype: PolarsDataType) -> SearchStrategy[Any]:
+    """Returns a strategy which generates valid values for the given data type."""
+    if dtype == Decimal:
+        return draw(
+            decimal_strategies(
+                precision=getattr(dtype, "precision", None),
+                scale=getattr(dtype, "scale", None),
+            )
+        )
+
+    return all_strategies[dtype if dtype in all_strategies else dtype.base_type()]
 
 
 def between(draw: DrawFn, type_: type, min_: Any, max_: Any) -> Any:
@@ -116,26 +130,28 @@ strategy_time_unit = sampled_from(["ns", "us", "ms"])
 
 
 @composite
-def decimals(
+def decimal_strategies(
     draw: DrawFn, precision: int | None = None, scale: int | None = None
-) -> PyDecimal:
+) -> SearchStrategy[PyDecimal]:
     """Returns a strategy which generates instances of Python `Decimal`."""
     if precision is None:
         precision = draw(integers(min_value=scale or 1, max_value=38))
     if scale is None:
         scale = draw(integers(min_value=0, max_value=precision))
 
-    smallest_increment = 10**-scale
-    limit = 10 ** (precision - scale) - smallest_increment
+    exclusive_limit = PyDecimal(f"1E+{precision - scale}")
+    epsilon = PyDecimal(f"1E-{scale}")
+    limit = exclusive_limit - epsilon
+    if limit == exclusive_limit:  # Limit cannot be set exactly due to precision issues
+        multiplier = PyDecimal("1") - PyDecimal("1E-20")  # 0.999...
+        limit = limit * multiplier
 
-    return draw(
-        st.decimals(
-            allow_nan=False,
-            allow_infinity=False,
-            min_value=-limit,
-            max_value=limit,
-            places=scale,
-        )
+    return st.decimals(
+        allow_nan=False,
+        allow_infinity=False,
+        min_value=-limit,
+        max_value=limit,
+        places=scale,
     )
 
 
@@ -278,7 +294,6 @@ scalar_strategies: StrategyLookup = StrategyLookup(
         Categorical: strategy_categorical,
         String: strategy_string,
         Binary: strategy_binary,
-        Decimal: decimals(),
     }
 )
 nested_strategies: StrategyLookup = StrategyLookup()
