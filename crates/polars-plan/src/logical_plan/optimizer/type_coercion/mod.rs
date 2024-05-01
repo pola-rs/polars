@@ -31,54 +31,6 @@ fn modify_supertype(
     type_left: &DataType,
     type_right: &DataType,
 ) -> DataType {
-    use AExpr::*;
-
-    let dynamic_st_or_unknown = matches!(st, DataType::Unknown(_));
-
-    match (left, right) {
-        (
-            Literal(
-                lv_left @ (LiteralValue::Int(_)
-                | LiteralValue::Float(_)
-                | LiteralValue::StrCat(_)
-                | LiteralValue::Null),
-            ),
-            Literal(
-                lv_right @ (LiteralValue::Int(_)
-                | LiteralValue::Float(_)
-                | LiteralValue::StrCat(_)
-                | LiteralValue::Null),
-            ),
-        ) => {
-            let lhs = lv_left.to_any_value().unwrap().dtype();
-            let rhs = lv_right.to_any_value().unwrap().dtype();
-            st = get_supertype(&lhs, &rhs).unwrap();
-            return st;
-        },
-        // Materialize dynamic types
-        (
-            Literal(
-                lv_left @ (LiteralValue::Int(_) | LiteralValue::Float(_) | LiteralValue::StrCat(_)),
-            ),
-            _,
-        ) if dynamic_st_or_unknown => {
-            st = lv_left.to_any_value().unwrap().dtype();
-            return st;
-        },
-        (
-            _,
-            Literal(
-                lv_right
-                @ (LiteralValue::Int(_) | LiteralValue::Float(_) | LiteralValue::StrCat(_)),
-            ),
-        ) if dynamic_st_or_unknown => {
-            st = lv_right.to_any_value().unwrap().dtype();
-            return st;
-        },
-        // do nothing
-        _ => {},
-    }
-
     // TODO! This must be removed and dealt properly with dynamic str.
     use DataType::*;
     match (type_left, type_right, left, right) {
@@ -185,44 +137,9 @@ impl OptimizationRule for TypeCoercionRule {
                 let (falsy, type_false) =
                     unpack!(get_aexpr_and_type(expr_arena, falsy_node, &input_schema));
 
-                match (&type_true, &type_false) {
-                    (DataType::Unknown(lhs), DataType::Unknown(rhs)) => {
-                        match (lhs, rhs) {
-                            (UnknownKind::Any, _) | (_, UnknownKind::Any) => return Ok(None),
-                            // continue
-                            (UnknownKind::Int(_), UnknownKind::Float)
-                            | (UnknownKind::Float, UnknownKind::Int(_)) => {},
-                            (lhs, rhs) if lhs == rhs => {
-                                let falsy = materialize(falsy);
-                                let truthy = materialize(truthy);
-
-                                if falsy.is_none() && truthy.is_none() {
-                                    return Ok(None);
-                                }
-
-                                let falsy = if let Some(falsy) = falsy {
-                                    expr_arena.add(falsy)
-                                } else {
-                                    falsy_node
-                                };
-                                let truthy = if let Some(truthy) = truthy {
-                                    expr_arena.add(truthy)
-                                } else {
-                                    truthy_node
-                                };
-                                return Ok(Some(AExpr::Ternary {
-                                    truthy,
-                                    falsy,
-                                    predicate,
-                                }));
-                            },
-                            _ => {},
-                        }
-                    },
-                    (lhs, rhs) if lhs == rhs => return Ok(None),
-                    _ => {},
+                if type_true == type_false {
+                    return Ok(None);
                 }
-
                 let st = unpack!(get_supertype(&type_true, &type_false));
                 let st = modify_supertype(st, truthy, falsy, &type_true, &type_false);
 
@@ -612,13 +529,6 @@ fn inline_or_prune_cast(
 
 fn early_escape(type_self: &DataType, type_other: &DataType) -> Option<()> {
     match (type_self, type_other) {
-        (DataType::Unknown(lhs), DataType::Unknown(rhs)) => match (lhs, rhs) {
-            (UnknownKind::Any, _) | (_, UnknownKind::Any) => None,
-            (UnknownKind::Int(_), UnknownKind::Float)
-            | (UnknownKind::Float, UnknownKind::Int(_)) => Some(()),
-            (lhs, rhs) if lhs == rhs => None,
-            _ => Some(()),
-        },
         (lhs, rhs) if lhs == rhs => None,
         _ => Some(()),
     }
