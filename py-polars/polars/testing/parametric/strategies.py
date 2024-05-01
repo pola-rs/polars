@@ -56,7 +56,6 @@ from polars.datatypes import (
     UInt16,
     UInt32,
     UInt64,
-    is_polars_dtype,
 )
 from polars.type_aliases import PolarsDataType
 
@@ -278,28 +277,10 @@ scalar_strategies: StrategyLookup = StrategyLookup(
 nested_strategies: StrategyLookup = StrategyLookup()
 
 
-def _get_strategy_dtypes(
-    *,
-    base_type: bool = False,
-    excluding: tuple[PolarsDataType] | PolarsDataType | None = None,
-) -> list[PolarsDataType]:
-    """
-    Get a list of all the dtypes for which we have a strategy.
-
-    Parameters
-    ----------
-    base_type
-        If True, return the base types for each dtype (eg:`List(String)` → `List`).
-    excluding
-        A dtype or sequence of dtypes to omit from the results.
-    """
-    excluding = (excluding,) if is_polars_dtype(excluding) else (excluding or ())  # type: ignore[assignment]
+def _get_strategy_dtypes() -> list[PolarsDataType]:
+    """Get a list of all the dtypes for which we have a strategy."""
     strategy_dtypes = list(chain(scalar_strategies.keys(), nested_strategies.keys()))
-    return [
-        (tp.base_type() if base_type else tp)
-        for tp in strategy_dtypes
-        if tp not in excluding  # type: ignore[operator]
-    ]
+    return [tp.base_type() for tp in strategy_dtypes]
 
 
 def _flexhash(elem: Any) -> int:
@@ -351,7 +332,7 @@ def create_array_strategy(
         width = randint(a=1, b=8)
 
     if inner_dtype is None:
-        strats = list(_get_strategy_dtypes(base_type=True))
+        strats = list(_get_strategy_dtypes())
         shuffle(strats)
         inner_dtype = choice(strats)
 
@@ -431,7 +412,7 @@ def create_list_strategy(
         raise ValueError(msg)
 
     if inner_dtype is None:
-        strats = list(_get_strategy_dtypes(base_type=True))
+        strats = list(_get_strategy_dtypes())
         shuffle(strats)
         inner_dtype = choice(strats)
     if size:
