@@ -31,6 +31,27 @@ impl<'a> Iterator for SplitNChars<'a> {
     }
 }
 
+/// Splits a string into substrings consisting of single characters.
+///
+/// Returns at most n strings, where the last string is the entire remainder
+/// of the string if keep_remainder is True, and just the nth character otherwise.
+fn splitn_chars(s: &str, n: usize, keep_remainder: bool) -> SplitNChars<'_> {
+    SplitNChars {
+        s,
+        n,
+        keep_remainder,
+    }
+}
+
+/// Splits a string into substrings consisting of single characters.
+fn split_chars(s: &str) -> SplitNChars<'_> {
+    SplitNChars {
+        s,
+        n: usize::MAX,
+        keep_remainder: false,
+    }
+}
+
 #[cfg(feature = "dtype-struct")]
 pub fn split_to_struct<'a, F, I>(
     ca: &'a StringChunked,
@@ -58,13 +79,9 @@ where
                     },
                     Some(s) => {
                         let mut arr_iter = arrs.iter_mut();
-                        SplitNChars {
-                            s,
-                            n,
-                            keep_remainder,
-                        }
-                        .zip(&mut arr_iter)
-                        .for_each(|(splitted, arr)| arr.push(Some(splitted)));
+                        splitn_chars(s, n, keep_remainder)
+                            .zip(&mut arr_iter)
+                            .for_each(|(splitted, arr)| arr.push(Some(splitted)));
                         // fill the remaining with null
                         for arr in arr_iter {
                             arr.push_null()
@@ -100,13 +117,9 @@ where
             (Some(s), Some(by)) => {
                 let mut arr_iter = arrs.iter_mut();
                 if by.is_empty() {
-                    SplitNChars {
-                        s,
-                        n,
-                        keep_remainder,
-                    }
-                    .zip(&mut arr_iter)
-                    .for_each(|(splitted, arr)| arr.push(Some(splitted)));
+                    splitn_chars(s, n, keep_remainder)
+                        .zip(&mut arr_iter)
+                        .for_each(|(splitted, arr)| arr.push(Some(splitted)));
                 } else {
                     op(s, by)
                         .zip(&mut arr_iter)
@@ -148,7 +161,7 @@ where
 
             if by.is_empty() {
                 ca.for_each(|opt_s| match opt_s {
-                    Some(s) => builder.append_values_iter(s.split_terminator(by).skip(1)),
+                    Some(s) => builder.append_values_iter(split_chars(s)),
                     _ => builder.append_null(),
                 });
             } else {
@@ -167,7 +180,7 @@ where
         binary_elementwise_for_each(ca, by, |opt_s, opt_by| match (opt_s, opt_by) {
             (Some(s), Some(by)) => {
                 if by.is_empty() {
-                    builder.append_values_iter(s.split_terminator(by).skip(1))
+                    builder.append_values_iter(split_chars(s))
                 } else {
                     builder.append_values_iter(op(s, by))
                 }
