@@ -326,10 +326,14 @@ class Series:
             )
             if values.dtype.type in [np.datetime64, np.timedelta64]:
                 # cast to appropriate dtype, handling NaT values
+                input_dtype = _resolve_temporal_dtype(None, values.dtype)
                 dtype = _resolve_temporal_dtype(dtype, values.dtype)
                 if dtype is not None:
                     self._s = (
-                        self.cast(dtype)
+                        # `values.dtype` has already been validated in
+                        # `numpy_to_pyseries`, so `input_dtype` can't be `None`
+                        self.cast(input_dtype)  # type: ignore[arg-type]
+                        .cast(dtype)
                         .scatter(np.argwhere(np.isnat(values)).flatten(), None)
                         ._s
                     )
