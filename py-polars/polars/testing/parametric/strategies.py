@@ -116,18 +116,25 @@ strategy_time_unit = sampled_from(["ns", "us", "ms"])
 
 
 @composite
-def strategy_decimal(draw: DrawFn) -> PyDecimal:
+def strategy_decimal(
+    draw: DrawFn, precision: int | None = None, scale: int | None = None
+) -> PyDecimal:
     """Draw a decimal value, varying the number of decimal places."""
-    places = draw(integers(min_value=0, max_value=18))
+    if precision is None:
+        precision = draw(integers(min_value=scale or 1, max_value=38))
+    if scale is None:
+        scale = draw(integers(min_value=0, max_value=precision))
+
+    smallest_increment = 10**-scale
+    limit = 10 ** (precision - scale) - smallest_increment
+
     return draw(
-        # TODO: once fixed, re-enable decimal nan/inf values...
-        #  (see https://github.com/pola-rs/polars/issues/8421)
         decimals(
             allow_nan=False,
             allow_infinity=False,
-            min_value=-(2**66),
-            max_value=(2**66) - 1,
-            places=places,
+            min_value=-limit,
+            max_value=limit,
+            places=scale,
         )
     )
 
