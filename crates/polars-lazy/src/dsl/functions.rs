@@ -75,6 +75,7 @@ pub(crate) fn concat_impl<L: AsRef<[LazyFrame]>>(
         else {
             unreachable!()
         };
+        // TODO! Make this properly lazy.
         let mut schema = inputs[0].compute_schema()?.as_ref().clone();
 
         let mut changed = false;

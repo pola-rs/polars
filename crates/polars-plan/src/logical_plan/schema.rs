@@ -12,6 +12,10 @@ use super::hive::HivePartitions;
 use crate::prelude::*;
 
 impl DslPlan {
+    // Warning! This should not be used on the DSL internally.
+    // All schema resolving should be done during conversion to [`IR`].
+
+    /// Compute the schema. This requires conversion to [`IR`] and type-resolving.
     pub fn compute_schema(&self) -> PolarsResult<SchemaRef> {
         let opt_state = OptState {
             eager: true,
