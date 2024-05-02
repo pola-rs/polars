@@ -78,25 +78,43 @@ def lit(
     time_unit: TimeUnit
 
     if isinstance(value, datetime):
+        if dtype == Date:
+            dt_int = date_to_int(value.date())
+            return lit(dt_int).cast(Date)
+
+        # parse time unit
         if dtype is not None and (tu := getattr(dtype, "time_unit", "us")) is not None:
             time_unit = tu  # type: ignore[assignment]
         else:
             time_unit = "us"
 
-        time_zone: str | None = getattr(dtype, "time_zone", None)
-        if (tzinfo := value.tzinfo) is not None:
-            tzinfo_str = str(tzinfo)
-            if time_zone is not None and time_zone != tzinfo_str:
-                msg = f"time zone of dtype ({time_zone!r}) differs from time zone of value ({tzinfo!r})"
+        # parse time zone
+        dtype_tz = getattr(dtype, "time_zone", None)
+        value_tz = value.tzinfo
+        if value_tz is None:
+            tz = dtype_tz
+        else:
+            if dtype_tz is None:
+                # value has time zone, but dtype does not: keep value time zone
+                tz = str(value_tz)
+            elif str(value_tz) == dtype_tz:
+                # dtype and value both have same time zone
+                tz = str(value_tz)
+            else:
+                # value has time zone that differs from dtype time zone
+                msg = (
+                    f"time zone of dtype ({dtype_tz!r}) differs from time zone of "
+                    f"value ({value_tz!r})"
+                )
                 raise TypeError(msg)
-            time_zone = tzinfo_str
 
         dt_utc = value.replace(tzinfo=timezone.utc)
         dt_int = datetime_to_int(dt_utc, time_unit)
         expr = lit(dt_int).cast(Datetime(time_unit))
-        if time_zone is not None:
+        if tz is not None:
+            print(f"tz is {tz}")
             expr = expr.dt.replace_time_zone(
-                time_zone, ambiguous="earliest" if value.fold == 0 else "latest"
+                tz, ambiguous="earliest" if value.fold == 0 else "latest"
             )
         return expr
 
@@ -114,8 +132,17 @@ def lit(
         return lit(time_int).cast(Time)
 
     elif isinstance(value, date):
-        date_int = date_to_int(value)
-        return lit(date_int).cast(Date)
+        if dtype == Datetime:
+            time_unit = getattr(dtype, "time_unit", "us") or "us"
+            dt_utc = datetime(value.year, value.month, value.day)
+            dt_int = datetime_to_int(dt_utc, time_unit)
+            expr = lit(dt_int).cast(Datetime(time_unit))
+            if (time_zone := getattr(dtype, "time_zone", None)) is not None:
+                expr = expr.dt.replace_time_zone(str(time_zone))
+            return expr
+        else:
+            date_int = date_to_int(value)
+            return lit(date_int).cast(Date)
 
     elif isinstance(value, pl.Series):
         value = value._s
