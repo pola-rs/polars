@@ -81,7 +81,9 @@ impl DslPlan {
                     options.n_rows,
                 )
             },
-            Union { inputs, options } => {
+            Union {
+                inputs, options, ..
+            } => {
                 let mut name = String::new();
                 let name = if let Some(slice) = options.slice {
                     write!(name, "SLICED UNION: {slice:?}")?;
