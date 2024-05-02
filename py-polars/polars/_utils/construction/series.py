@@ -406,6 +406,7 @@ def pandas_to_pyseries(
     values: pd.Series[Any] | pd.Index[Any] | pd.DatetimeIndex,
     dtype: PolarsDataType | None = None,
     *,
+    strict: bool = True,
     nan_to_null: bool = True,
 ) -> PySeries:
     """Construct a PySeries from a pandas Series or DatetimeIndex."""
@@ -425,7 +426,7 @@ def pandas_to_pyseries(
     s = arrow_to_pyseries(
         name, plc.pandas_series_to_arrow(values, nan_to_null=nan_to_null)
     )
-    return s if dtype is None else s.cast(dtype, strict=False)
+    return s if dtype is None else s.cast(dtype, strict=strict)
 
 
 def arrow_to_pyseries(name: str, values: pa.Array, *, rechunk: bool = True) -> PySeries:
