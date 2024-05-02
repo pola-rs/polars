@@ -266,7 +266,7 @@ impl std::fmt::Debug for dyn Array + '_ {
         match self.data_type().to_physical_type() {
             Null => fmt_dyn!(self, NullArray, f),
             Boolean => fmt_dyn!(self, BooleanArray, f),
-            Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
+            Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
                 fmt_dyn!(self, PrimitiveArray<$T>, f)
             }),
             BinaryView => fmt_dyn!(self, BinaryViewArray, f),

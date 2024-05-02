@@ -1036,3 +1036,18 @@ def test_from_pandas_pyarrow_not_available(
         )
     with pytest.raises(ImportError, match="pyarrow is required"):
         pl.from_pandas(pd.DataFrame({"a": [None, "foo"]}))
+
+
+def test_from_numpy_different_resolution_15991() -> None:
+    result = pl.Series(
+        np.array(["2020-01-01"], dtype="datetime64[ns]"), dtype=pl.Datetime("us")
+    )
+    expected = pl.Series([datetime(2020, 1, 1)], dtype=pl.Datetime("us"))
+    assert_series_equal(result, expected)
+
+
+def test_from_numpy_different_resolution_invalid() -> None:
+    with pytest.raises(ValueError, match="Please cast"):
+        pl.Series(
+            np.array(["2020-01-01"], dtype="datetime64[s]"), dtype=pl.Datetime("us")
+        )
