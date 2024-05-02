@@ -28,10 +28,10 @@ from polars.series import Series
 from polars.string_cache import StringCache
 from polars.testing.parametric.strategies import (
     _flexhash,
-    all_strategies,
     between,
     create_array_strategy,
     create_list_strategy,
+    dtype_strategies,
     scalar_strategies,
 )
 
@@ -381,11 +381,7 @@ def series(
             if strategy is None:
                 if series_dtype is Datetime or series_dtype is Duration:
                     series_dtype = series_dtype(random.choice(_time_units))  # type: ignore[operator]
-                dtype_strategy = all_strategies[
-                    series_dtype
-                    if series_dtype in all_strategies
-                    else series_dtype.base_type()
-                ]
+                dtype_strategy = draw(dtype_strategies(series_dtype))
             else:
                 dtype_strategy = strategy
 
