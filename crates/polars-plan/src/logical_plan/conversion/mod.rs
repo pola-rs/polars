@@ -54,15 +54,14 @@ impl IR {
             },
             #[cfg(feature = "python")]
             IR::PythonScan { options, .. } => DslPlan::PythonScan { options },
-            IR::Union { inputs, options } => {
+            IR::Union { inputs, .. } => {
                 let inputs = inputs
                     .into_iter()
                     .map(|node| convert_to_lp(node, lp_arena))
                     .collect();
                 DslPlan::Union {
                     inputs,
-                    options,
-                    convert_supertypes: false,
+                    args: Default::default(),
                 }
             },
             IR::HConcat {

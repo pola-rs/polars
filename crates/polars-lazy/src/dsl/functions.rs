@@ -4,16 +4,14 @@
 //!
 use polars_core::prelude::*;
 pub use polars_plan::dsl::functions::*;
+use polars_plan::prelude::UnionArgs;
 use rayon::prelude::*;
 
 use crate::prelude::*;
 
 pub(crate) fn concat_impl<L: AsRef<[LazyFrame]>>(
     inputs: L,
-    rechunk: bool,
-    parallel: bool,
-    from_partitioned_ds: bool,
-    convert_supertypes: bool,
+    args: UnionArgs,
 ) -> PolarsResult<LazyFrame> {
     let mut inputs = inputs.as_ref().to_vec();
 
@@ -24,12 +22,6 @@ pub(crate) fn concat_impl<L: AsRef<[LazyFrame]>>(
     );
 
     let mut opt_state = lf.opt_state;
-    let options = UnionOptions {
-        parallel,
-        from_partitioned_ds,
-        rechunk,
-        ..Default::default()
-    };
 
     let mut lps = Vec::with_capacity(inputs.len());
     lps.push(lf.logical_plan);
@@ -41,11 +33,7 @@ pub(crate) fn concat_impl<L: AsRef<[LazyFrame]>>(
         lps.push(lp)
     }
 
-    let lp = DslPlan::Union {
-        inputs: lps,
-        options,
-        convert_supertypes,
-    };
+    let lp = DslPlan::Union { inputs: lps, args };
     let mut lf = LazyFrame::from(lp);
     lf.opt_state = opt_state;
     Ok(lf)
@@ -152,32 +140,9 @@ pub fn concat_lf_horizontal<L: AsRef<[LazyFrame]>>(
     Ok(lf)
 }
 
-#[derive(Clone, Copy)]
-pub struct UnionArgs {
-    pub parallel: bool,
-    pub rechunk: bool,
-    pub to_supertypes: bool,
-}
-
-impl Default for UnionArgs {
-    fn default() -> Self {
-        Self {
-            parallel: true,
-            rechunk: true,
-            to_supertypes: false,
-        }
-    }
-}
-
 /// Concat multiple [`LazyFrame`]s vertically.
 pub fn concat<L: AsRef<[LazyFrame]>>(inputs: L, args: UnionArgs) -> PolarsResult<LazyFrame> {
-    concat_impl(
-        inputs,
-        args.rechunk,
-        args.parallel,
-        false,
-        args.to_supertypes,
-    )
+    concat_impl(inputs, args)
 }
 
 /// Collect all [`LazyFrame`] computations.

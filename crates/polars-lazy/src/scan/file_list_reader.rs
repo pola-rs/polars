@@ -5,6 +5,7 @@ use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
 use polars_io::utils::is_cloud_url;
 use polars_io::RowIndex;
+use polars_plan::prelude::UnionArgs;
 
 use crate::prelude::*;
 
@@ -83,7 +84,14 @@ pub trait LazyFileListReader: Clone {
     /// This method should not take into consideration [LazyFileListReader::n_rows]
     /// nor [LazyFileListReader::row_index].
     fn concat_impl(&self, lfs: Vec<LazyFrame>) -> PolarsResult<LazyFrame> {
-        concat_impl(&lfs, self.rechunk(), true, true, false)
+        let args = UnionArgs {
+            rechunk: self.rechunk(),
+            parallel: true,
+            to_supertypes: false,
+            from_partitioned_ds: true,
+            ..Default::default()
+        };
+        concat_impl(&lfs, args)
     }
 
     /// Get the final [LazyFrame].
