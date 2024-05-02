@@ -1066,3 +1066,13 @@ def test_rolling_duration(time_unit: Literal["ns", "us", "ms"]) -> None:
     ), f"{res_duration['value'].to_list()=}, {res_datetime['value'].to_list()=}"
 
     assert res_duration["index_column"].dtype == pl.Duration(time_unit=time_unit)
+
+
+def test_temporal_windows_size_without_by_15977() -> None:
+    df = pl.DataFrame(
+        {"a": [1, 2, 3], "b": [date(2020, 1, 1), date(2020, 1, 2), date(2020, 1, 3)]}
+    )
+    with pytest.raises(
+        pl.InvalidOperationError, match="the `by` argument must be passed"
+    ):
+        df.select(pl.col("a").rolling_mean("3d"))
