@@ -1,4 +1,5 @@
 use std::collections::BTreeSet;
+use std::ops::Add;
 
 use super::*;
 
@@ -350,4 +351,29 @@ fn test_cse_prune_scan_filter_difference() -> PolarsResult<()> {
     assert!(predicate_at_scan(q));
 
     Ok(())
+}
+
+#[test]
+fn test_cse_union_filter() {
+    let q = df![
+        "x" => [0],
+        "y" => [1]
+    ]
+    .unwrap()
+    .lazy();
+
+    let q = concat(
+        [
+            q.clone().with_columns([col("y").add(lit(0))]),
+            q.with_columns([col("y").add(lit(1))]),
+        ],
+        Default::default(),
+    )
+    .unwrap()
+    .filter(col("x").eq(lit(0)));
+
+    println!("{}", q.clone().explain(true).unwrap());
+    let out = q.collect().unwrap();
+
+    dbg!(out);
 }
