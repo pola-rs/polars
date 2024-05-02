@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import pandas as pd
 import pytest
 
-import pandas as pd
 import polars as pl
 
 
