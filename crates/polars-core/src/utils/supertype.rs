@@ -264,28 +264,43 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
             },
             (dt, Unknown(kind)) => {
                 match kind {
+                    // numeric vs float|str -> always float|str
                     UnknownKind::Float | UnknownKind::Int(_) if dt.is_float() | dt.is_string() => Some(dt.clone()),
-                    UnknownKind::Float if dt.is_numeric() => Some(Unknown(UnknownKind::Float)),
+                    UnknownKind::Float if dt.is_integer() => Some(Unknown(UnknownKind::Float)),
+                    // Materialize float
+                    UnknownKind::Float if dt.is_float() => Some(dt.clone()),
+                    // Materialize str
                     UnknownKind::Str if dt.is_string() | dt.is_enum() => Some(dt.clone()),
+                    // Materialize str
                     #[cfg(feature = "dtype-categorical")]
                     UnknownKind::Str if dt.is_categorical()  => {
                         let Categorical(_, ord) = dt else { unreachable!()};
                         Some(Categorical(None, *ord))
                     },
+                    // Keep unknown
                     dynam if dt.is_null() => Some(Unknown(*dynam)),
+                    // Find integers sizes
                     UnknownKind::Int(v) if dt.is_numeric() => {
-                        let smallest_fitting_dtype = if dt.is_unsigned_integer() && v.is_positive() {
-                            materialize_dyn_int_pos(*v).dtype()
-                        } else {
-                            materialize_smallest_dyn_int(*v).dtype()
-                        };
-                        match dt {
-                            UInt64 if smallest_fitting_dtype.is_signed_integer() => {
-                                // Ensure we don't cast to float when dealing with dynamic literals
-                                Some(Int64)
-                            },
-                            _ => {
-                                get_supertype(dt, &smallest_fitting_dtype)
+                        // Both dyn int
+                        if let Unknown(UnknownKind::Int(v_other)) = dt {
+                            // Take the maximum value to ensure we bubble up the required minimal size.
+                            Some(Unknown(UnknownKind::Int(std::cmp::max(*v, *v_other))))
+                        }
+                        // dyn int vs number
+                        else {
+                            let smallest_fitting_dtype = if dt.is_unsigned_integer() && v.is_positive() {
+                                materialize_dyn_int_pos(*v).dtype()
+                            } else {
+                                materialize_smallest_dyn_int(*v).dtype()
+                            };
+                            match dt {
+                                UInt64 if smallest_fitting_dtype.is_signed_integer() => {
+                                    // Ensure we don't cast to float when dealing with dynamic literals
+                                    Some(Int64)
+                                },
+                                _ => {
+                                    get_supertype(dt, &smallest_fitting_dtype)
+                                }
                             }
                         }
                     }
