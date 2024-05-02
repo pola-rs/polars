@@ -350,7 +350,7 @@ class Series:
         elif _check_for_pandas(values) and isinstance(
             values, (pd.Series, pd.Index, pd.DatetimeIndex)
         ):
-            self._s = pandas_to_pyseries(name, values, dtype=dtype)
+            self._s = pandas_to_pyseries(name, values, dtype=dtype, strict=strict)
 
         elif _is_generator(values):
             self._s = iterable_to_pyseries(name, values, dtype=dtype, strict=strict)
