@@ -146,12 +146,21 @@ pub fn to_alp_impl(
             options,
             predicate: None,
         },
-        DslPlan::Union { inputs, options } => {
-            let inputs = inputs
+        DslPlan::Union {
+            inputs,
+            options,
+            convert_supertypes,
+        } => {
+            let mut inputs = inputs
                 .into_iter()
                 .map(|lp| to_alp_impl(lp, expr_arena, lp_arena, convert))
-                .collect::<PolarsResult<_>>()
+                .collect::<PolarsResult<Vec<_>>>()
                 .map_err(|e| e.context(failed_input!(vertical concat)))?;
+
+            if convert_supertypes {
+                convert_utils::convert_st_union(&mut inputs, lp_arena, expr_arena)
+                    .map_err(|e| e.context(failed_input!(vertical concat)))?;
+            }
             IR::Union { inputs, options }
         },
         DslPlan::HConcat {
