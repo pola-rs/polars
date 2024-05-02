@@ -1,3 +1,4 @@
+mod conversion;
 mod dsl_plan_to_ir_plan;
 mod expr_to_expr_ir;
 mod ir_to_dsl;
@@ -58,7 +59,11 @@ impl IR {
                     .into_iter()
                     .map(|node| convert_to_lp(node, lp_arena))
                     .collect();
-                DslPlan::Union { inputs, options }
+                DslPlan::Union {
+                    inputs,
+                    options,
+                    convert_supertypes: false,
+                }
             },
             IR::HConcat {
                 inputs,

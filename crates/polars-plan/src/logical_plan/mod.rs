@@ -156,6 +156,7 @@ pub enum DslPlan {
     Union {
         inputs: Vec<DslPlan>,
         options: UnionOptions,
+        convert_supertypes: bool,
     },
     /// Horizontal concatenation of multiple plans
     HConcat {
@@ -196,7 +197,7 @@ impl Clone for DslPlan {
             Self::Sort {input,by_column, slice, sort_options } => Self::Sort { input: input.clone(), by_column: by_column.clone(), slice: slice.clone(), sort_options: sort_options.clone() },
             Self::Slice { input, offset, len } => Self::Slice { input: input.clone(), offset: offset.clone(), len: len.clone() },
             Self::MapFunction { input, function } => Self::MapFunction { input: input.clone(), function: function.clone() },
-            Self::Union { inputs, options } => Self::Union { inputs: inputs.clone(), options: options.clone() },
+            Self::Union { inputs, options, convert_supertypes } => Self::Union { inputs: inputs.clone(), options: options.clone(), convert_supertypes: *convert_supertypes },
             Self::HConcat { inputs, schema, options } => Self::HConcat { inputs: inputs.clone(), schema: schema.clone(), options: options.clone() },
             Self::ExtContext { input, contexts, } => Self::ExtContext { input: input.clone(), contexts: contexts.clone() },
             Self::Sink { input, payload } => Self::Sink { input: input.clone(), payload: payload.clone() },
