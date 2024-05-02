@@ -13,8 +13,8 @@ use sqlparser::ast::ExactNumberInfo;
 use sqlparser::ast::{
     ArrayAgg, ArrayElemTypeDef, BinaryOperator as SQLBinaryOperator, BinaryOperator, CastFormat,
     DataType as SQLDataType, DateTimeField, Expr as SQLExpr, Function as SQLFunction, Ident,
-    JoinConstraint, OrderByExpr, Query as Subquery, SelectItem, TimezoneInfo, TrimWhereField,
-    UnaryOperator, Value as SQLValue,
+    JoinConstraint, ObjectName, OrderByExpr, Query as Subquery, SelectItem, TimezoneInfo,
+    TrimWhereField, UnaryOperator, Value as SQLValue,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
@@ -24,10 +24,66 @@ use crate::SQLContext;
 
 pub(crate) fn map_sql_polars_datatype(data_type: &SQLDataType) -> PolarsResult<DataType> {
     Ok(match data_type {
+        // ---------------------------------
+        // array/list
+        // ---------------------------------
         SQLDataType::Array(ArrayElemTypeDef::AngleBracket(inner_type))
         | SQLDataType::Array(ArrayElemTypeDef::SquareBracket(inner_type)) => {
             DataType::List(Box::new(map_sql_polars_datatype(inner_type)?))
         },
+
+        // ---------------------------------
+        // binary
+        // ---------------------------------
+        SQLDataType::Bytea
+        | SQLDataType::Bytes(_)
+        | SQLDataType::Binary(_)
+        | SQLDataType::Blob(_)
+        | SQLDataType::Varbinary(_) => DataType::Binary,
+
+        // ---------------------------------
+        // boolean
+        // ---------------------------------
+        SQLDataType::Boolean | SQLDataType::Bool => DataType::Boolean,
+
+        // ---------------------------------
+        // signed integer
+        // ---------------------------------
+        SQLDataType::Int(_) | SQLDataType::Integer(_) => DataType::Int32,
+        SQLDataType::Int2(_) | SQLDataType::SmallInt(_) => DataType::Int16,
+        SQLDataType::Int4(_) | SQLDataType::MediumInt(_) => DataType::Int32,
+        SQLDataType::Int8(_) | SQLDataType::BigInt(_) => DataType::Int64,
+        SQLDataType::TinyInt(_) => DataType::Int8,
+
+        // ---------------------------------
+        // unsigned integer: the following do not map to PostgreSQL types/syntax, but
+        // are enabled for wider compatibility (eg: "CAST(col AS BIGINT UNSIGNED)").
+        // ---------------------------------
+        SQLDataType::UnsignedInt(_) | SQLDataType::UnsignedInteger(_) => DataType::UInt32,
+        SQLDataType::UnsignedInt2(_) | SQLDataType::UnsignedSmallInt(_) => DataType::UInt16,
+        SQLDataType::UnsignedInt4(_) | SQLDataType::UnsignedMediumInt(_) => DataType::UInt32,
+        SQLDataType::UnsignedInt8(_) | SQLDataType::UnsignedBigInt(_) => DataType::UInt64,
+        SQLDataType::UnsignedTinyInt(_) => DataType::UInt8, // see also: "custom" types below
+
+        // ---------------------------------
+        // float
+        // ---------------------------------
+        SQLDataType::Double | SQLDataType::DoublePrecision | SQLDataType::Float8 => {
+            DataType::Float64
+        },
+        SQLDataType::Float(n_bytes) => match n_bytes {
+            Some(n) if (1u64..=24u64).contains(n) => DataType::Float32,
+            Some(n) if (25u64..=53u64).contains(n) => DataType::Float64,
+            Some(n) => {
+                polars_bail!(ComputeError: "unsupported `float` size; expected a value between 1 and 53, found {}", n)
+            },
+            None => DataType::Float64,
+        },
+        SQLDataType::Float4 | SQLDataType::Real => DataType::Float32,
+
+        // ---------------------------------
+        // decimal
+        // ---------------------------------
         #[cfg(feature = "dtype-decimal")]
         SQLDataType::Dec(info) | SQLDataType::Decimal(info) | SQLDataType::Numeric(info) => {
             match *info {
@@ -38,42 +94,12 @@ pub(crate) fn map_sql_polars_datatype(data_type: &SQLDataType) -> PolarsResult<D
                 ExactNumberInfo::None => DataType::Decimal(Some(38), Some(9)),
             }
         },
-        SQLDataType::BigInt(_) => DataType::Int64,
-        SQLDataType::Boolean => DataType::Boolean,
-        SQLDataType::Bytea
-        | SQLDataType::Bytes(_)
-        | SQLDataType::Binary(_)
-        | SQLDataType::Blob(_)
-        | SQLDataType::Varbinary(_) => DataType::Binary,
-        SQLDataType::Char(_)
-        | SQLDataType::CharVarying(_)
-        | SQLDataType::Character(_)
-        | SQLDataType::CharacterVarying(_)
-        | SQLDataType::Clob(_)
-        | SQLDataType::String(_)
-        | SQLDataType::Text
-        | SQLDataType::Uuid
-        | SQLDataType::Varchar(_) => DataType::String,
+
+        // ---------------------------------
+        // temporal
+        // ---------------------------------
         SQLDataType::Date => DataType::Date,
-        SQLDataType::Double
-        | SQLDataType::DoublePrecision
-        | SQLDataType::Float8
-        | SQLDataType::Float64 => DataType::Float64,
-        SQLDataType::Float(n_bytes) => match n_bytes {
-            Some(n) if (1u64..=24u64).contains(n) => DataType::Float32,
-            Some(n) if (25u64..=53u64).contains(n) => DataType::Float64,
-            Some(n) => {
-                polars_bail!(ComputeError: "unsupported `float` size; expected a value between 1 and 53, found {}", n)
-            },
-            None => DataType::Float64,
-        },
-        SQLDataType::Float4 | SQLDataType::Real => DataType::Float32,
-        SQLDataType::Int(_) | SQLDataType::Integer(_) => DataType::Int32,
-        SQLDataType::Int2(_) => DataType::Int16,
-        SQLDataType::Int4(_) => DataType::Int32,
-        SQLDataType::Int8(_) => DataType::Int64,
         SQLDataType::Interval => DataType::Duration(TimeUnit::Microseconds),
-        SQLDataType::SmallInt(_) => DataType::Int16,
         SQLDataType::Time(_, tz) => match tz {
             TimezoneInfo::None => DataType::Time,
             _ => {
@@ -97,16 +123,41 @@ pub(crate) fn map_sql_polars_datatype(data_type: &SQLDataType) -> PolarsResult<D
                 },
             }
         },
-        SQLDataType::TinyInt(_) => DataType::Int8,
-        SQLDataType::UnsignedBigInt(_) => DataType::UInt64,
-        SQLDataType::UnsignedInt(_) | SQLDataType::UnsignedInteger(_) => DataType::UInt32,
-        SQLDataType::UnsignedInt2(_) => DataType::UInt16,
-        SQLDataType::UnsignedInt4(_) => DataType::UInt32,
-        SQLDataType::UnsignedInt8(_) => DataType::UInt64,
-        SQLDataType::UnsignedSmallInt(_) => DataType::UInt16,
-        SQLDataType::UnsignedTinyInt(_) => DataType::UInt8,
 
-        _ => polars_bail!(ComputeError: "SQL datatype {:?} is not yet supported", data_type),
+        // ---------------------------------
+        // string
+        // ---------------------------------
+        SQLDataType::Char(_)
+        | SQLDataType::CharVarying(_)
+        | SQLDataType::Character(_)
+        | SQLDataType::CharacterVarying(_)
+        | SQLDataType::Clob(_)
+        | SQLDataType::String(_)
+        | SQLDataType::Text
+        | SQLDataType::Uuid
+        | SQLDataType::Varchar(_) => DataType::String,
+
+        // ---------------------------------
+        // custom
+        // ---------------------------------
+        SQLDataType::Custom(ObjectName(idents), _) => match idents.as_slice() {
+            [Ident { value, .. }] => match value.to_lowercase().as_str() {
+                // these integer types are not supported by the PostgreSQL core distribution,
+                // but they ARE available via `pguint` (https://github.com/petere/pguint), an
+                // extension maintained by one of the PostgreSQL core developers.
+                "uint1" => DataType::UInt8,
+                "uint2" => DataType::UInt16,
+                "uint4" | "uint" => DataType::UInt32,
+                "uint8" => DataType::UInt64,
+                // `pguint` also provides a 1 byte (8bit) integer type alias
+                "int1" => DataType::Int8,
+                _ => {
+                    polars_bail!(ComputeError: "SQL datatype {:?} is not currently supported", value)
+                },
+            },
+            _ => polars_bail!(ComputeError: "SQL datatype {:?} is not currently supported", idents),
+        },
+        _ => polars_bail!(ComputeError: "SQL datatype {:?} is not currently supported", data_type),
     })
 }
 
@@ -500,7 +551,7 @@ impl SQLExprVisitor<'_> {
             return Ok(expr.str().json_decode(None, None));
         }
         let polars_type = map_sql_polars_datatype(data_type)?;
-        Ok(expr.cast(polars_type))
+        Ok(expr.strict_cast(polars_type))
     }
 
     /// Visit a SQL literal.
