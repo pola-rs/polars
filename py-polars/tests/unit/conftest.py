@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import gc
+import os
 import random
 import string
 import sys
@@ -11,6 +12,11 @@ import numpy as np
 import pytest
 
 import polars as pl
+from polars.testing.parametric.profiles import load_profile
+
+load_profile(
+    profile=os.environ.get("POLARS_HYPOTHESIS_PROFILE", "fast"),  # type: ignore[arg-type]
+)
 
 
 @pytest.fixture()
