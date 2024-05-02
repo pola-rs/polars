@@ -179,6 +179,74 @@ def test_from_pandas_duplicated_columns() -> None:
         pl.from_pandas(df)
 
 
+def test_from_pandas_exclude_index() -> None:
+    data = pd.DataFrame({"a": [1, 2], "b": [3, 4]}, index=pd.Index([5, 6], name="c"))
+    df = pl.from_pandas(data, include_index=False)
+    assert df.columns == ["a", "b"]
+    assert df.rows() == [(1, 3), (2, 4)]
+
+
+def test_from_pandas_include_index() -> None:
+    data = pd.DataFrame({"a": [1, 2], "b": [3, 4]}, index=pd.Index([5, 6], name="c"))
+    df = pl.from_pandas(data, include_index=True)
+    assert df.columns == ["c", "a", "b"]
+    assert df.rows() == [(5, 1, 3), (6, 2, 4)]
+
+
+def test_from_pandas_exclude_dup_index() -> None:
+    data = pd.DataFrame({"a": [1, 2], "b": [3, 4]}, index=pd.Index([5, 6], name="a"))
+    df = pl.from_pandas(data, include_index=False)
+    assert df.columns == ["a", "b"]
+    assert df.rows() == [(1, 3), (2, 4)]
+
+
+def test_from_pandas_include_dup_index() -> None:
+    data = pd.DataFrame({"a": [1, 2], "b": [3, 4]}, index=pd.Index([5, 6], name="a"))
+
+    with pytest.raises(ValueError):
+        pl.from_pandas(data, include_index=True)
+
+
+def test_from_pandas_exclude_multi_index() -> None:
+    data = pd.DataFrame(
+        {"a": [1, 2], "b": [3, 4]},
+        index=pd.MultiIndex.from_arrays([(5, 6), (7, 8)], names=["c", "d"]),
+    )
+    df = pl.from_pandas(data, include_index=False)
+    assert df.columns == ["a", "b"]
+    assert df.rows() == [(1, 3), (2, 4)]
+
+
+def test_from_pandas_include_multi_index() -> None:
+    data = pd.DataFrame(
+        {"a": [1, 2], "b": [3, 4]},
+        index=pd.MultiIndex.from_arrays([(5, 6), (7, 8)], names=["c", "d"]),
+    )
+    df = pl.from_pandas(data, include_index=True)
+    assert df.columns == ["c", "d", "a", "b"]
+    assert df.rows() == [(5, 7, 1, 3), (6, 8, 2, 4)]
+
+
+def test_from_pandas_exclude_dup_multi_index() -> None:
+    data = pd.DataFrame(
+        {"a": [1, 2], "b": [3, 4]},
+        index=pd.MultiIndex.from_arrays([(5, 6), (7, 8)], names=["b", "c"]),
+    )
+    df = pl.from_pandas(data, include_index=False)
+    assert df.columns == ["a", "b"]
+    assert df.rows() == [(1, 3), (2, 4)]
+
+
+def test_from_pandas_include_dup_multi_index() -> None:
+    data = pd.DataFrame(
+        {"a": [1, 2], "b": [3, 4]},
+        index=pd.MultiIndex.from_arrays([(5, 6), (7, 8)], names=["b", "c"]),
+    )
+
+    with pytest.raises(ValueError):
+        pl.from_pandas(data, include_index=True)
+
+
 def test_arrow_list_roundtrip() -> None:
     # https://github.com/pola-rs/polars/issues/1064
     tbl = pa.table({"a": [1], "b": [[1, 2]]})

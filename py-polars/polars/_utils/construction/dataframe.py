@@ -1020,8 +1020,10 @@ def pandas_to_pydf(
 ) -> PyDataFrame:
     """Construct a PyDataFrame from a pandas DataFrame."""
     convert_index = include_index and not _pandas_has_default_index(data)
-    if convert_index and (data.index.name in data.columns):
-        msg = "cannot convert pandas DataFrame when index name duplicates some column name"
+    if convert_index and set(data.index.names).intersection(data.columns):
+        msg = (
+            "cannot create DataFrame with some index name duplicating some column name"
+        )
         raise ValueError(msg)
     if not convert_index and all(
         is_simple_numpy_backed_pandas_series(data[col]) for col in data.columns
