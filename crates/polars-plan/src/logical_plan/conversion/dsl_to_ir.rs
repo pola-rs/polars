@@ -158,7 +158,7 @@ pub fn to_alp_impl(
                 .map_err(|e| e.context(failed_input!(vertical concat)))?;
 
             if convert_supertypes {
-                conversion::convert_st_union(&mut inputs, lp_arena, expr_arena)
+                convert_utils::convert_st_union(&mut inputs, lp_arena, expr_arena)
                     .map_err(|e| e.context(failed_input!(vertical concat)))?;
             }
             IR::Union { inputs, options }

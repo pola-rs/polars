@@ -17,7 +17,7 @@ pub(crate) fn concat_impl<L: AsRef<[LazyFrame]>>(
 ) -> PolarsResult<LazyFrame> {
     let mut inputs = inputs.as_ref().to_vec();
 
-    let mut lf = std::mem::take(
+    let lf = std::mem::take(
         inputs
             .get_mut(0)
             .ok_or_else(|| polars_err!(NoData: "empty container given"))?,
