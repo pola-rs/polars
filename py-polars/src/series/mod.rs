@@ -345,7 +345,7 @@ impl PySeries {
     #[pyo3(signature = (lambda, output_type, skip_nulls))]
     fn apply_lambda(
         &self,
-        lambda: &PyAny,
+        lambda: &Bound<PyAny>,
         output_type: Option<Wrap<DataType>>,
         skip_nulls: bool,
     ) -> PyResult<PySeries> {

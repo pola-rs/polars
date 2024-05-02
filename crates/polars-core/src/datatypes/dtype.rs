@@ -120,6 +120,10 @@ impl PartialEq for DataType {
                 (Array(left_inner, left_width), Array(right_inner, right_width)) => {
                     left_width == right_width && left_inner == right_inner
                 },
+                (Unknown(l), Unknown(r)) => match (l, r) {
+                    (UnknownKind::Int(_), UnknownKind::Int(_)) => true,
+                    _ => l == r,
+                },
                 _ => std::mem::discriminant(self) == std::mem::discriminant(other),
             }
         }

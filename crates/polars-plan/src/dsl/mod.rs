@@ -21,7 +21,7 @@ pub mod dt;
 mod expr;
 mod expr_dyn_fn;
 mod from;
-pub(crate) mod function_expr;
+pub mod function_expr;
 pub mod functions;
 mod list;
 #[cfg(feature = "meta")]
@@ -332,7 +332,7 @@ impl Expr {
             move |s: Series| {
                 Ok(Some(Series::new(
                     s.name(),
-                    &[s.arg_max().map(|idx| idx as u32)],
+                    &[s.arg_max().map(|idx| idx as IdxSize)],
                 )))
             },
             GetOutput::from_type(IDX_DTYPE),

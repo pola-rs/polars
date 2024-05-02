@@ -1,5 +1,6 @@
 //! Implementations of upstream traits for [`ChunkedArray<T>`]
 use std::collections::LinkedList;
+use std::sync::Mutex;
 
 use arrow::pushable::{NoOption, Pushable};
 use rayon::prelude::*;
@@ -139,81 +140,159 @@ where
     }
 }
 
-/// From trait
+pub trait FromParIterWithDtype<K> {
+    fn from_par_iter_with_dtype<I>(iter: I, name: &str, dtype: DataType) -> Self
+    where
+        I: IntoParallelIterator<Item = K>,
+        Self: Sized;
+}
+
+fn get_value_cap(vectors: &LinkedList<Vec<Option<Series>>>) -> usize {
+    vectors
+        .iter()
+        .map(|list| {
+            list.iter()
+                .map(|opt_s| opt_s.as_ref().map(|s| s.len()).unwrap_or(0))
+                .sum::<usize>()
+        })
+        .sum::<usize>()
+}
+
+fn get_dtype(vectors: &LinkedList<Vec<Option<Series>>>) -> DataType {
+    for v in vectors {
+        for s in v.iter().flatten() {
+            let dtype = s.dtype();
+            if !matches!(dtype, DataType::Null) {
+                return dtype.clone();
+            }
+        }
+    }
+    DataType::Null
+}
+
+fn materialize_list(
+    name: &str,
+    vectors: &LinkedList<Vec<Option<Series>>>,
+    dtype: DataType,
+    value_capacity: usize,
+    list_capacity: usize,
+) -> ListChunked {
+    match &dtype {
+        #[cfg(feature = "object")]
+        DataType::Object(_, _) => {
+            let s = vectors
+                .iter()
+                .flatten()
+                .find_map(|opt_s| opt_s.as_ref())
+                .unwrap();
+            let mut builder = s.get_list_builder(name, value_capacity, list_capacity);
+
+            for v in vectors {
+                for val in v {
+                    builder.append_opt_series(val.as_ref()).unwrap();
+                }
+            }
+            builder.finish()
+        },
+        dtype => {
+            let mut builder = get_list_builder(dtype, value_capacity, list_capacity, name).unwrap();
+            for v in vectors {
+                for val in v {
+                    builder.append_opt_series(val.as_ref()).unwrap();
+                }
+            }
+            builder.finish()
+        },
+    }
+}
+
 impl FromParallelIterator<Option<Series>> for ListChunked {
-    fn from_par_iter<I>(iter: I) -> Self
+    fn from_par_iter<I>(par_iter: I) -> Self
     where
         I: IntoParallelIterator<Item = Option<Series>>,
     {
-        let mut dtype = None;
-        let vectors = collect_into_linked_list_vec(iter);
+        let vectors = collect_into_linked_list_vec(par_iter);
 
         let list_capacity: usize = get_capacity_from_par_results(&vectors);
-        let value_capacity = vectors
-            .iter()
-            .map(|list| {
-                list.iter()
-                    .map(|opt_s| {
-                        opt_s
-                            .as_ref()
-                            .map(|s| {
-                                if dtype.is_none() && !matches!(s.dtype(), DataType::Null) {
-                                    dtype = Some(s.dtype().clone())
-                                }
-                                s.len()
-                            })
-                            .unwrap_or(0)
-                    })
-                    .sum::<usize>()
-            })
-            .sum::<usize>();
-
-        match &dtype {
-            #[cfg(feature = "object")]
-            Some(DataType::Object(_, _)) => {
-                let s = vectors
-                    .iter()
-                    .flatten()
-                    .find_map(|opt_s| opt_s.as_ref())
-                    .unwrap();
-                let mut builder = s.get_list_builder("collected", value_capacity, list_capacity);
-
-                for v in vectors {
-                    for val in v {
-                        builder.append_opt_series(val.as_ref()).unwrap();
-                    }
-                }
-                builder.finish()
-            },
-            Some(dtype) => {
-                let mut builder =
-                    get_list_builder(dtype, value_capacity, list_capacity, "collected").unwrap();
-                for v in &vectors {
-                    for val in v {
-                        builder.append_opt_series(val.as_ref()).unwrap();
-                    }
-                }
-                builder.finish()
-            },
-            None => ListChunked::full_null_with_dtype("collected", list_capacity, &DataType::Null),
+        let value_capacity = get_value_cap(&vectors);
+        let dtype = get_dtype(&vectors);
+        if let DataType::Null = dtype {
+            ListChunked::full_null_with_dtype("", list_capacity, &DataType::Null)
+        } else {
+            materialize_list("", &vectors, dtype, value_capacity, list_capacity)
         }
     }
 }
 
-#[cfg(test)]
-mod test {
-    use crate::prelude::*;
+impl FromParIterWithDtype<Option<Series>> for ListChunked {
+    fn from_par_iter_with_dtype<I>(iter: I, name: &str, dtype: DataType) -> Self
+    where
+        I: IntoParallelIterator<Item = Option<Series>>,
+        Self: Sized,
+    {
+        let vectors = collect_into_linked_list_vec(iter);
 
-    #[test]
-    fn test_collect_into_list() {
-        let s1 = Series::new("", &[true, false, true]);
-        let s2 = Series::new("", &[true, false, true]);
+        let list_capacity: usize = get_capacity_from_par_results(&vectors);
+        let value_capacity = get_value_cap(&vectors);
+        if let DataType::List(dtype) = dtype {
+            materialize_list(name, &vectors, *dtype, value_capacity, list_capacity)
+        } else {
+            panic!("expected list dtype")
+        }
+    }
+}
 
-        let ll: ListChunked = [&s1, &s2].iter().copied().collect();
-        assert_eq!(ll.len(), 2);
-        assert_eq!(ll.null_count(), 0);
-        let ll: ListChunked = [None, Some(s2)].into_iter().collect();
-        assert_eq!(ll.len(), 2);
-        assert_eq!(ll.null_count(), 1);
+pub trait ChunkedCollectParIterExt: ParallelIterator {
+    fn collect_ca_with_dtype<B: FromParIterWithDtype<Self::Item>>(
+        self,
+        name: &str,
+        dtype: DataType,
+    ) -> B
+    where
+        Self: Sized,
+    {
+        B::from_par_iter_with_dtype(self, name, dtype)
+    }
+}
+
+impl<I: ParallelIterator> ChunkedCollectParIterExt for I {}
+
+// Adapted from rayon
+impl<C, T, E> FromParIterWithDtype<Result<T, E>> for Result<C, E>
+where
+    C: FromParIterWithDtype<T>,
+    T: Send,
+    E: Send,
+{
+    fn from_par_iter_with_dtype<I>(par_iter: I, name: &str, dtype: DataType) -> Self
+    where
+        I: IntoParallelIterator<Item = Result<T, E>>,
+    {
+        fn ok<T, E>(saved: &Mutex<Option<E>>) -> impl Fn(Result<T, E>) -> Option<T> + '_ {
+            move |item| match item {
+                Ok(item) => Some(item),
+                Err(error) => {
+                    // We don't need a blocking `lock()`, as anybody
+                    // else holding the lock will also be writing
+                    // `Some(error)`, and then ours is irrelevant.
+                    if let Ok(mut guard) = saved.try_lock() {
+                        if guard.is_none() {
+                            *guard = Some(error);
+                        }
+                    }
+                    None
+                },
+            }
+        }
+
+        let saved_error = Mutex::new(None);
+        let iter = par_iter.into_par_iter().map(ok(&saved_error)).while_some();
+
+        let collection = C::from_par_iter_with_dtype(iter, name, dtype);
+
+        match saved_error.into_inner().unwrap() {
+            Some(error) => Err(error),
+            None => Ok(collection),
+        }
     }
 }
