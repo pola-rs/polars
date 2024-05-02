@@ -74,6 +74,11 @@ if TYPE_CHECKING:
 @composite
 def dtype_strategies(draw: DrawFn, dtype: PolarsDataType) -> SearchStrategy[Any]:
     """Returns a strategy which generates valid values for the given data type."""
+    if (strategy := all_strategies.get(dtype)) is not None:
+        return strategy
+    elif (strategy_base := all_strategies.get(dtype.base_type())) is not None:
+        return strategy_base
+
     if dtype == Decimal:
         return draw(
             decimal_strategies(
@@ -81,8 +86,9 @@ def dtype_strategies(draw: DrawFn, dtype: PolarsDataType) -> SearchStrategy[Any]
                 scale=getattr(dtype, "scale", None),
             )
         )
-
-    return all_strategies[dtype if dtype in all_strategies else dtype.base_type()]
+    else:
+        msg = f"unsupported data type: {dtype}"
+        raise TypeError(msg)
 
 
 def between(draw: DrawFn, type_: type, min_: Any, max_: Any) -> Any:
