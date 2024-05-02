@@ -219,8 +219,13 @@ def test_rolling_crossing_dst(
 
 def test_rolling_by_invalid() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]}).sort("a")
-    with pytest.raises(InvalidOperationError, match="`rolling_min` operation"):
+    msg = "in `rolling_min` operation, `by` argument of dtype `i64` is not supported"
+    with pytest.raises(InvalidOperationError, match=msg):
         df.select(pl.col("b").rolling_min(2, by="a"))
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [date(2020, 1, 1)] * 3}).sort("b")
+    msg = "if `by` argument is passed, then `window_size` must be a temporal window"
+    with pytest.raises(InvalidOperationError, match=msg):
+        df.select(pl.col("a").rolling_min(2, by="b"))
 
 
 def test_rolling_infinity() -> None:
@@ -236,8 +241,24 @@ def test_rolling_invalid_closed_option() -> None:
     ).sort("a", "b")
     with pytest.raises(InvalidOperationError, match="consider using DataFrame.rolling"):
         df.with_columns(pl.col("a").rolling_sum(2, closed="left"))
-    with pytest.raises(InvalidOperationError, match="consider using DataFrame.rolling"):
+
+
+def test_rolling_by_non_temporal_window_size() -> None:
+    df = pl.DataFrame(
+        {"a": [4, 5, 6], "b": [date(2020, 1, 1), date(2020, 1, 2), date(2020, 1, 3)]}
+    ).sort("a", "b")
+    msg = "if `by` argument is passed, then `window_size` must be a temporal window"
+    with pytest.raises(InvalidOperationError, match=msg):
         df.with_columns(pl.col("a").rolling_sum(2, by="b", closed="left"))
+
+
+def test_rolling_by_weights() -> None:
+    df = pl.DataFrame(
+        {"a": [4, 5, 6], "b": [date(2020, 1, 1), date(2020, 1, 2), date(2020, 1, 3)]}
+    ).sort("b")
+    msg = r"`weights` is not supported in 'rolling_\*\(..., by=...\)' expression"
+    with pytest.raises(InvalidOperationError, match=msg):
+        df.with_columns(pl.col("a").rolling_sum("2d", by="b", weights=[1, 2]))
 
 
 def test_rolling_extrema() -> None:
@@ -955,3 +976,13 @@ def test_rolling_invalid() -> None:
             .rolling("index", period="3000d")
             .agg(pl.col("values").sum().alias("sum"))
         )
+
+
+def test_temporal_windows_size_without_by_15977() -> None:
+    df = pl.DataFrame(
+        {"a": [1, 2, 3], "b": [date(2020, 1, 1), date(2020, 1, 2), date(2020, 1, 3)]}
+    )
+    with pytest.raises(
+        pl.InvalidOperationError, match="the `by` argument must be passed"
+    ):
+        df.select(pl.col("a").rolling_mean("3d"))
