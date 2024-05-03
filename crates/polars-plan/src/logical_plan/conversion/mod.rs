@@ -1,5 +1,6 @@
-mod dsl_plan_to_ir_plan;
-mod expr_to_expr_ir;
+mod convert_utils;
+mod dsl_to_ir;
+mod expr_to_ir;
 mod ir_to_dsl;
 #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv"))]
 mod scans;
@@ -7,8 +8,8 @@ mod stack_opt;
 
 use std::borrow::Cow;
 
-pub use dsl_plan_to_ir_plan::*;
-pub use expr_to_expr_ir::*;
+pub use dsl_to_ir::*;
+pub use expr_to_ir::*;
 pub use ir_to_dsl::*;
 use polars_core::prelude::*;
 use polars_utils::vec::ConvertVec;
@@ -53,12 +54,15 @@ impl IR {
             },
             #[cfg(feature = "python")]
             IR::PythonScan { options, .. } => DslPlan::PythonScan { options },
-            IR::Union { inputs, options } => {
+            IR::Union { inputs, .. } => {
                 let inputs = inputs
                     .into_iter()
                     .map(|node| convert_to_lp(node, lp_arena))
                     .collect();
-                DslPlan::Union { inputs, options }
+                DslPlan::Union {
+                    inputs,
+                    args: Default::default(),
+                }
             },
             IR::HConcat {
                 inputs,

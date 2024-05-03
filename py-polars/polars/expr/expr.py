@@ -2046,7 +2046,7 @@ class Expr:
 
         This has time complexity:
 
-        .. math:: O(n + k \\log{}n - \frac{k}{2})
+        .. math:: O(n + k \log{}n - \frac{k}{2})
 
         Parameters
         ----------
@@ -2212,7 +2212,7 @@ class Expr:
 
         This has time complexity:
 
-        .. math:: O(n + k \\log{}n - \frac{k}{2})
+        .. math:: O(n + k \log{}n - \frac{k}{2})
 
         Parameters
         ----------
@@ -6238,10 +6238,11 @@ class Expr:
         │ 23    ┆ 2001-01-01 23:00:00 │
         │ 24    ┆ 2001-01-02 00:00:00 │
         └───────┴─────────────────────┘
+
+        Compute the rolling min with the temporal windows closed on the right (default)
+
         >>> df_temporal.with_columns(
-        ...     rolling_row_min=pl.col("index").rolling_min(
-        ...         window_size="2h", by="date", closed="left"
-        ...     )
+        ...     rolling_row_min=pl.col("index").rolling_min(window_size="2h", by="date")
         ... )
         shape: (25, 3)
         ┌───────┬─────────────────────┬─────────────────┐
@@ -6249,17 +6250,17 @@ class Expr:
         │ ---   ┆ ---                 ┆ ---             │
         │ u32   ┆ datetime[μs]        ┆ u32             │
         ╞═══════╪═════════════════════╪═════════════════╡
-        │ 0     ┆ 2001-01-01 00:00:00 ┆ null            │
+        │ 0     ┆ 2001-01-01 00:00:00 ┆ 0               │
         │ 1     ┆ 2001-01-01 01:00:00 ┆ 0               │
-        │ 2     ┆ 2001-01-01 02:00:00 ┆ 0               │
-        │ 3     ┆ 2001-01-01 03:00:00 ┆ 1               │
-        │ 4     ┆ 2001-01-01 04:00:00 ┆ 2               │
+        │ 2     ┆ 2001-01-01 02:00:00 ┆ 1               │
+        │ 3     ┆ 2001-01-01 03:00:00 ┆ 2               │
+        │ 4     ┆ 2001-01-01 04:00:00 ┆ 3               │
         │ …     ┆ …                   ┆ …               │
-        │ 20    ┆ 2001-01-01 20:00:00 ┆ 18              │
-        │ 21    ┆ 2001-01-01 21:00:00 ┆ 19              │
-        │ 22    ┆ 2001-01-01 22:00:00 ┆ 20              │
-        │ 23    ┆ 2001-01-01 23:00:00 ┆ 21              │
-        │ 24    ┆ 2001-01-02 00:00:00 ┆ 22              │
+        │ 20    ┆ 2001-01-01 20:00:00 ┆ 19              │
+        │ 21    ┆ 2001-01-01 21:00:00 ┆ 20              │
+        │ 22    ┆ 2001-01-01 22:00:00 ┆ 21              │
+        │ 23    ┆ 2001-01-01 23:00:00 ┆ 22              │
+        │ 24    ┆ 2001-01-02 00:00:00 ┆ 23              │
         └───────┴─────────────────────┴─────────────────┘
         """
         window_size = deprecate_saturating(window_size)
@@ -6447,12 +6448,10 @@ class Expr:
         │ 24    ┆ 2001-01-02 00:00:00 │
         └───────┴─────────────────────┘
 
-        Compute the rolling max with the default left closure of temporal windows
+        Compute the rolling max with the temporal windows closed on the right (default)
 
         >>> df_temporal.with_columns(
-        ...     rolling_row_max=pl.col("index").rolling_max(
-        ...         window_size="2h", by="date", closed="left"
-        ...     )
+        ...     rolling_row_max=pl.col("index").rolling_max(window_size="2h", by="date")
         ... )
         shape: (25, 3)
         ┌───────┬─────────────────────┬─────────────────┐
@@ -6460,17 +6459,17 @@ class Expr:
         │ ---   ┆ ---                 ┆ ---             │
         │ u32   ┆ datetime[μs]        ┆ u32             │
         ╞═══════╪═════════════════════╪═════════════════╡
-        │ 0     ┆ 2001-01-01 00:00:00 ┆ null            │
-        │ 1     ┆ 2001-01-01 01:00:00 ┆ 0               │
-        │ 2     ┆ 2001-01-01 02:00:00 ┆ 1               │
-        │ 3     ┆ 2001-01-01 03:00:00 ┆ 2               │
-        │ 4     ┆ 2001-01-01 04:00:00 ┆ 3               │
+        │ 0     ┆ 2001-01-01 00:00:00 ┆ 0               │
+        │ 1     ┆ 2001-01-01 01:00:00 ┆ 1               │
+        │ 2     ┆ 2001-01-01 02:00:00 ┆ 2               │
+        │ 3     ┆ 2001-01-01 03:00:00 ┆ 3               │
+        │ 4     ┆ 2001-01-01 04:00:00 ┆ 4               │
         │ …     ┆ …                   ┆ …               │
-        │ 20    ┆ 2001-01-01 20:00:00 ┆ 19              │
-        │ 21    ┆ 2001-01-01 21:00:00 ┆ 20              │
-        │ 22    ┆ 2001-01-01 22:00:00 ┆ 21              │
-        │ 23    ┆ 2001-01-01 23:00:00 ┆ 22              │
-        │ 24    ┆ 2001-01-02 00:00:00 ┆ 23              │
+        │ 20    ┆ 2001-01-01 20:00:00 ┆ 20              │
+        │ 21    ┆ 2001-01-01 21:00:00 ┆ 21              │
+        │ 22    ┆ 2001-01-01 22:00:00 ┆ 22              │
+        │ 23    ┆ 2001-01-01 23:00:00 ┆ 23              │
+        │ 24    ┆ 2001-01-02 00:00:00 ┆ 24              │
         └───────┴─────────────────────┴─────────────────┘
 
         Compute the rolling max with the closure of windows on both sides
@@ -6688,11 +6687,11 @@ class Expr:
         │ 24    ┆ 2001-01-02 00:00:00 │
         └───────┴─────────────────────┘
 
-        Compute the rolling mean with the default left closure of temporal windows
+        Compute the rolling mean with the temporal windows closed on the right (default)
 
         >>> df_temporal.with_columns(
         ...     rolling_row_mean=pl.col("index").rolling_mean(
-        ...         window_size="2h", by="date", closed="left"
+        ...         window_size="2h", by="date"
         ...     )
         ... )
         shape: (25, 3)
@@ -6701,17 +6700,17 @@ class Expr:
         │ ---   ┆ ---                 ┆ ---              │
         │ u32   ┆ datetime[μs]        ┆ f64              │
         ╞═══════╪═════════════════════╪══════════════════╡
-        │ 0     ┆ 2001-01-01 00:00:00 ┆ null             │
-        │ 1     ┆ 2001-01-01 01:00:00 ┆ 0.0              │
-        │ 2     ┆ 2001-01-01 02:00:00 ┆ 0.5              │
-        │ 3     ┆ 2001-01-01 03:00:00 ┆ 1.5              │
-        │ 4     ┆ 2001-01-01 04:00:00 ┆ 2.5              │
+        │ 0     ┆ 2001-01-01 00:00:00 ┆ 0.0              │
+        │ 1     ┆ 2001-01-01 01:00:00 ┆ 0.5              │
+        │ 2     ┆ 2001-01-01 02:00:00 ┆ 1.5              │
+        │ 3     ┆ 2001-01-01 03:00:00 ┆ 2.5              │
+        │ 4     ┆ 2001-01-01 04:00:00 ┆ 3.5              │
         │ …     ┆ …                   ┆ …                │
-        │ 20    ┆ 2001-01-01 20:00:00 ┆ 18.5             │
-        │ 21    ┆ 2001-01-01 21:00:00 ┆ 19.5             │
-        │ 22    ┆ 2001-01-01 22:00:00 ┆ 20.5             │
-        │ 23    ┆ 2001-01-01 23:00:00 ┆ 21.5             │
-        │ 24    ┆ 2001-01-02 00:00:00 ┆ 22.5             │
+        │ 20    ┆ 2001-01-01 20:00:00 ┆ 19.5             │
+        │ 21    ┆ 2001-01-01 21:00:00 ┆ 20.5             │
+        │ 22    ┆ 2001-01-01 22:00:00 ┆ 21.5             │
+        │ 23    ┆ 2001-01-01 23:00:00 ┆ 22.5             │
+        │ 24    ┆ 2001-01-02 00:00:00 ┆ 23.5             │
         └───────┴─────────────────────┴──────────────────┘
 
         Compute the rolling mean with the closure of windows on both sides
@@ -6931,12 +6930,10 @@ class Expr:
         │ 24    ┆ 2001-01-02 00:00:00 │
         └───────┴─────────────────────┘
 
-        Compute the rolling sum with the default left closure of temporal windows
+        Compute the rolling sum with the temporal windows closed on the right (default)
 
         >>> df_temporal.with_columns(
-        ...     rolling_row_sum=pl.col("index").rolling_sum(
-        ...         window_size="2h", by="date", closed="left"
-        ...     )
+        ...     rolling_row_sum=pl.col("index").rolling_sum(window_size="2h", by="date")
         ... )
         shape: (25, 3)
         ┌───────┬─────────────────────┬─────────────────┐
@@ -6944,17 +6941,17 @@ class Expr:
         │ ---   ┆ ---                 ┆ ---             │
         │ u32   ┆ datetime[μs]        ┆ u32             │
         ╞═══════╪═════════════════════╪═════════════════╡
-        │ 0     ┆ 2001-01-01 00:00:00 ┆ null            │
-        │ 1     ┆ 2001-01-01 01:00:00 ┆ 0               │
-        │ 2     ┆ 2001-01-01 02:00:00 ┆ 1               │
-        │ 3     ┆ 2001-01-01 03:00:00 ┆ 3               │
-        │ 4     ┆ 2001-01-01 04:00:00 ┆ 5               │
+        │ 0     ┆ 2001-01-01 00:00:00 ┆ 0               │
+        │ 1     ┆ 2001-01-01 01:00:00 ┆ 1               │
+        │ 2     ┆ 2001-01-01 02:00:00 ┆ 3               │
+        │ 3     ┆ 2001-01-01 03:00:00 ┆ 5               │
+        │ 4     ┆ 2001-01-01 04:00:00 ┆ 7               │
         │ …     ┆ …                   ┆ …               │
-        │ 20    ┆ 2001-01-01 20:00:00 ┆ 37              │
-        │ 21    ┆ 2001-01-01 21:00:00 ┆ 39              │
-        │ 22    ┆ 2001-01-01 22:00:00 ┆ 41              │
-        │ 23    ┆ 2001-01-01 23:00:00 ┆ 43              │
-        │ 24    ┆ 2001-01-02 00:00:00 ┆ 45              │
+        │ 20    ┆ 2001-01-01 20:00:00 ┆ 39              │
+        │ 21    ┆ 2001-01-01 21:00:00 ┆ 41              │
+        │ 22    ┆ 2001-01-01 22:00:00 ┆ 43              │
+        │ 23    ┆ 2001-01-01 23:00:00 ┆ 45              │
+        │ 24    ┆ 2001-01-02 00:00:00 ┆ 47              │
         └───────┴─────────────────────┴─────────────────┘
 
         Compute the rolling sum with the closure of windows on both sides
@@ -7172,12 +7169,10 @@ class Expr:
         │ 24    ┆ 2001-01-02 00:00:00 │
         └───────┴─────────────────────┘
 
-        Compute the rolling std with the default left closure of temporal windows
+        Compute the rolling std with the temporal windows closed on the right (default)
 
         >>> df_temporal.with_columns(
-        ...     rolling_row_std=pl.col("index").rolling_std(
-        ...         window_size="2h", by="date", closed="left"
-        ...     )
+        ...     rolling_row_std=pl.col("index").rolling_std(window_size="2h", by="date")
         ... )
         shape: (25, 3)
         ┌───────┬─────────────────────┬─────────────────┐
@@ -7186,7 +7181,7 @@ class Expr:
         │ u32   ┆ datetime[μs]        ┆ f64             │
         ╞═══════╪═════════════════════╪═════════════════╡
         │ 0     ┆ 2001-01-01 00:00:00 ┆ null            │
-        │ 1     ┆ 2001-01-01 01:00:00 ┆ null            │
+        │ 1     ┆ 2001-01-01 01:00:00 ┆ 0.707107        │
         │ 2     ┆ 2001-01-01 02:00:00 ┆ 0.707107        │
         │ 3     ┆ 2001-01-01 03:00:00 ┆ 0.707107        │
         │ 4     ┆ 2001-01-01 04:00:00 ┆ 0.707107        │
@@ -7419,12 +7414,10 @@ class Expr:
         │ 24    ┆ 2001-01-02 00:00:00 │
         └───────┴─────────────────────┘
 
-        Compute the rolling var with the default left closure of temporal windows
+        Compute the rolling var with the temporal windows closed on the right (default)
 
         >>> df_temporal.with_columns(
-        ...     rolling_row_var=pl.col("index").rolling_var(
-        ...         window_size="2h", by="date", closed="left"
-        ...     )
+        ...     rolling_row_var=pl.col("index").rolling_var(window_size="2h", by="date")
         ... )
         shape: (25, 3)
         ┌───────┬─────────────────────┬─────────────────┐
@@ -7433,7 +7426,7 @@ class Expr:
         │ u32   ┆ datetime[μs]        ┆ f64             │
         ╞═══════╪═════════════════════╪═════════════════╡
         │ 0     ┆ 2001-01-01 00:00:00 ┆ null            │
-        │ 1     ┆ 2001-01-01 01:00:00 ┆ null            │
+        │ 1     ┆ 2001-01-01 01:00:00 ┆ 0.5             │
         │ 2     ┆ 2001-01-01 02:00:00 ┆ 0.5             │
         │ 3     ┆ 2001-01-01 03:00:00 ┆ 0.5             │
         │ 4     ┆ 2001-01-01 04:00:00 ┆ 0.5             │

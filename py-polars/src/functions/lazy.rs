@@ -1,5 +1,6 @@
 use polars::lazy::dsl;
 use polars::prelude::*;
+use polars_plan::prelude::UnionArgs;
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyBytes, PyFloat, PyInt, PyString};
@@ -172,6 +173,7 @@ pub fn concat_lf(
             rechunk,
             parallel,
             to_supertypes,
+            ..Default::default()
         },
     )
     .map_err(PyPolarsErr::from)?;
@@ -288,6 +290,7 @@ pub fn concat_lf_diagonal(
             rechunk,
             parallel,
             to_supertypes,
+            ..Default::default()
         },
     )
     .map_err(PyPolarsErr::from)?;
@@ -309,6 +312,7 @@ pub fn concat_lf_horizontal(lfs: &PyAny, parallel: bool) -> PyResult<PyLazyFrame
         rechunk: false, // No need to rechunk with horizontal concatenation
         parallel,
         to_supertypes: false,
+        ..Default::default()
     };
     let lf = dsl::functions::concat_lf_horizontal(lfs, args).map_err(PyPolarsErr::from)?;
     Ok(lf.into())

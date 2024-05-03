@@ -4,115 +4,39 @@
 //!
 use polars_core::prelude::*;
 pub use polars_plan::dsl::functions::*;
+use polars_plan::prelude::UnionArgs;
 use rayon::prelude::*;
 
 use crate::prelude::*;
 
 pub(crate) fn concat_impl<L: AsRef<[LazyFrame]>>(
     inputs: L,
-    rechunk: bool,
-    parallel: bool,
-    from_partitioned_ds: bool,
-    convert_supertypes: bool,
+    args: UnionArgs,
 ) -> PolarsResult<LazyFrame> {
     let mut inputs = inputs.as_ref().to_vec();
 
-    let mut lf = std::mem::take(
+    let lf = std::mem::take(
         inputs
             .get_mut(0)
             .ok_or_else(|| polars_err!(NoData: "empty container given"))?,
     );
 
     let mut opt_state = lf.opt_state;
-    let options = UnionOptions {
-        parallel,
-        from_partitioned_ds,
-        rechunk,
-        ..Default::default()
-    };
 
-    let lf = match &mut lf.logical_plan {
-        // reuse the same union
-        DslPlan::Union {
-            inputs: existing_inputs,
-            options: opts,
-        } if opts == &options => {
-            for lf in &mut inputs[1..] {
-                // ensure we enable file caching if any lf has it enabled
-                opt_state.file_caching |= lf.opt_state.file_caching;
-                let lp = std::mem::take(&mut lf.logical_plan);
-                existing_inputs.push(lp)
-            }
-            lf
-        },
-        _ => {
-            let mut lps = Vec::with_capacity(inputs.len());
-            lps.push(lf.logical_plan);
+    let mut lps = Vec::with_capacity(inputs.len());
+    lps.push(lf.logical_plan);
 
-            for lf in &mut inputs[1..] {
-                // ensure we enable file caching if any lf has it enabled
-                opt_state.file_caching |= lf.opt_state.file_caching;
-                let lp = std::mem::take(&mut lf.logical_plan);
-                lps.push(lp)
-            }
-
-            let lp = DslPlan::Union {
-                inputs: lps,
-                options,
-            };
-            let mut lf = LazyFrame::from(lp);
-            lf.opt_state = opt_state;
-
-            lf
-        },
-    };
-
-    if convert_supertypes {
-        let DslPlan::Union {
-            mut inputs,
-            options,
-        } = lf.logical_plan
-        else {
-            unreachable!()
-        };
-        let mut schema = inputs[0].compute_schema()?.as_ref().clone();
-
-        let mut changed = false;
-        for input in inputs[1..].iter() {
-            changed |= schema.to_supertype(input.compute_schema()?.as_ref())?;
-        }
-
-        let mut placeholder = DslPlan::default();
-        if changed {
-            let mut exprs = vec![];
-            for input in &mut inputs {
-                std::mem::swap(input, &mut placeholder);
-                let input_schema = placeholder.compute_schema()?;
-
-                exprs.clear();
-                let to_cast = input_schema.iter().zip(schema.iter_dtypes()).flat_map(
-                    |((left_name, left_type), st)| {
-                        if left_type != st {
-                            Some(col(left_name.as_ref()).cast(st.clone()))
-                        } else {
-                            None
-                        }
-                    },
-                );
-                exprs.extend(to_cast);
-                let mut lf = LazyFrame::from(placeholder);
-                if !exprs.is_empty() {
-                    lf = lf.with_columns(exprs.as_slice());
-                }
-
-                placeholder = lf.logical_plan;
-                std::mem::swap(&mut placeholder, input);
-            }
-        }
-        Ok(LazyFrame::from(DslPlan::Union { inputs, options }))
-    } else {
-        Ok(lf)
+    for lf in &mut inputs[1..] {
+        // ensure we enable file caching if any lf has it enabled
+        opt_state.file_caching |= lf.opt_state.file_caching;
+        let lp = std::mem::take(&mut lf.logical_plan);
+        lps.push(lp)
     }
+
+    let lp = DslPlan::Union { inputs: lps, args };
+    let mut lf = LazyFrame::from(lp);
+    lf.opt_state = opt_state;
+    Ok(lf)
 }
 
 #[cfg(feature = "diagonal_concat")]
@@ -216,32 +140,9 @@ pub fn concat_lf_horizontal<L: AsRef<[LazyFrame]>>(
     Ok(lf)
 }
 
-#[derive(Clone, Copy)]
-pub struct UnionArgs {
-    pub parallel: bool,
-    pub rechunk: bool,
-    pub to_supertypes: bool,
-}
-
-impl Default for UnionArgs {
-    fn default() -> Self {
-        Self {
-            parallel: true,
-            rechunk: true,
-            to_supertypes: false,
-        }
-    }
-}
-
 /// Concat multiple [`LazyFrame`]s vertically.
 pub fn concat<L: AsRef<[LazyFrame]>>(inputs: L, args: UnionArgs) -> PolarsResult<LazyFrame> {
-    concat_impl(
-        inputs,
-        args.rechunk,
-        args.parallel,
-        false,
-        args.to_supertypes,
-    )
+    concat_impl(inputs, args)
 }
 
 /// Collect all [`LazyFrame`] computations.

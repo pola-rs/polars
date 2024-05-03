@@ -279,6 +279,10 @@ impl CategoricalChunked {
         self
     }
 
+    pub fn _with_fast_unique(self, toggle: bool) -> Self {
+        self.with_fast_unique(toggle)
+    }
+
     /// Get a reference to the mapping of categorical types to the string values.
     pub fn get_rev_map(&self) -> &Arc<RevMapping> {
         if let DataType::Categorical(Some(rev_map), _) | DataType::Enum(Some(rev_map), _) =

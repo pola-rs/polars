@@ -25,6 +25,9 @@ fn map_cats(
         PartialOrd::gt
     };
 
+    // Ensure fast unique is only set if all labels were seen.
+    let mut label_has_value = vec![false; 1 + sorted_breaks.len()];
+
     if include_breaks {
         // This is to replicate the behavior of the old buggy version that only worked on series and
         // returned a dataframe. That included a column of the right endpoint of the interval. So we
@@ -33,8 +36,11 @@ fn map_cats(
         let mut brk_vals = PrimitiveChunkedBuilder::<Float64Type>::new("brk", s.len());
         s_iter
             .map(|opt| {
-                opt.filter(|x| !x.is_nan())
-                    .map(|x| sorted_breaks.partition_point(|v| op(&x, v)))
+                opt.filter(|x| !x.is_nan()).map(|x| {
+                    let pt = sorted_breaks.partition_point(|v| op(&x, v));
+                    unsafe { *label_has_value.get_unchecked_mut(pt) = true };
+                    pt
+                })
             })
             .for_each(|idx| match idx {
                 None => {
@@ -47,17 +53,23 @@ fn map_cats(
                 },
             });
 
-        let outvals = vec![brk_vals.finish().into_series(), bld.finish().into_series()];
+        let outvals = vec![
+            brk_vals.finish().into_series(),
+            bld.finish()
+                ._with_fast_unique(label_has_value.iter().all(bool::clone))
+                .into_series(),
+        ];
         Ok(StructChunked::new(&out_name, &outvals)?.into_series())
     } else {
         Ok(bld
             .drain_iter_and_finish(s_iter.map(|opt| {
-                opt.filter(|x| !x.is_nan()).map(|x| unsafe {
-                    labels
-                        .get_unchecked(sorted_breaks.partition_point(|v| op(&x, v)))
-                        .as_str()
+                opt.filter(|x| !x.is_nan()).map(|x| {
+                    let pt = sorted_breaks.partition_point(|v| op(&x, v));
+                    unsafe { *label_has_value.get_unchecked_mut(pt) = true };
+                    unsafe { labels.get_unchecked(pt).as_str() }
                 })
             }))
+            ._with_fast_unique(label_has_value.iter().all(bool::clone))
             .into_series())
     }
 }
@@ -144,4 +156,32 @@ pub fn qcut(
     };
 
     map_cats(&s, &cut_labels, &qbreaks, left_closed, include_breaks)
+}
+
+mod test {
+    #[test]
+    fn test_map_cats_fast_unique() {
+        // This test is here to check the fast unique flag is set when it can be
+        // as it is not visible to Python.
+        use polars_core::prelude::*;
+
+        use super::map_cats;
+
+        let s = Series::new("x", &[1, 2, 3, 4, 5]);
+
+        let labels = &["a", "b", "c"].map(str::to_owned);
+        let breaks = &[2.0, 4.0];
+        let left_closed = false;
+
+        let include_breaks = false;
+        let out = map_cats(&s, labels, breaks, left_closed, include_breaks).unwrap();
+        let out = out.categorical().unwrap();
+        assert!(out._can_fast_unique());
+
+        let include_breaks = true;
+        let out = map_cats(&s, labels, breaks, left_closed, include_breaks).unwrap();
+        let out = out.struct_().unwrap().fields()[1].clone();
+        let out = out.categorical().unwrap();
+        assert!(out._can_fast_unique());
+    }
 }
