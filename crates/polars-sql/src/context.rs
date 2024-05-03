@@ -372,7 +372,7 @@ impl SQLContext {
         // Filter expression.
         let schema = Some(lf.schema()?);
         if let Some(expr) = select_stmt.selection.as_ref() {
-            let mut filter_expression = parse_sql_expr(expr, self, schema.clone())?;
+            let mut filter_expression = parse_sql_expr(expr, self, schema.as_deref())?;
             lf = self.process_subqueries(lf, vec![&mut filter_expression]);
             lf = lf.filter(filter_expression);
         }
@@ -383,9 +383,9 @@ impl SQLContext {
             .iter()
             .map(|select_item| {
                 Ok(match select_item {
-                    SelectItem::UnnamedExpr(expr) => parse_sql_expr(expr, self, schema.clone())?,
+                    SelectItem::UnnamedExpr(expr) => parse_sql_expr(expr, self, schema.as_deref())?,
                     SelectItem::ExprWithAlias { expr, alias } => {
-                        let expr = parse_sql_expr(expr, self, schema.clone())?;
+                        let expr = parse_sql_expr(expr, self, schema.as_deref())?;
                         expr.alias(&alias.value)
                     },
                     SelectItem::QualifiedWildcard(oname, wildcard_options) => self
@@ -428,7 +428,7 @@ impl SQLContext {
                         ComputeError:
                         "group_by error: a positive number or an expression expected",
                     )),
-                    _ => parse_sql_expr(e, self, schema.clone()),
+                    _ => parse_sql_expr(e, self, schema.as_deref()),
                 })
                 .collect::<PolarsResult<_>>()?
         } else {
@@ -509,7 +509,7 @@ impl SQLContext {
             // Apply optional 'having' clause, post-aggregation.
             let schema = Some(lf.schema()?);
             match select_stmt.having.as_ref() {
-                Some(expr) => lf.filter(parse_sql_expr(expr, self, schema.clone())?),
+                Some(expr) => lf.filter(parse_sql_expr(expr, self, schema.as_deref())?),
                 None => lf,
             }
         };
@@ -523,7 +523,7 @@ impl SQLContext {
                 let cols = exprs
                     .iter()
                     .map(|e| {
-                        let expr = parse_sql_expr(e, self, schema.clone())?;
+                        let expr = parse_sql_expr(e, self, schema.as_deref())?;
                         if let Expr::Column(name) = expr {
                             Ok(name.to_string())
                         } else {
@@ -669,7 +669,7 @@ impl SQLContext {
 
         let schema = Some(lf.schema()?);
         for ob in ob {
-            by.push(parse_sql_expr(&ob.expr, self, schema.clone())?);
+            by.push(parse_sql_expr(&ob.expr, self, schema.as_deref())?);
             descending.push(!ob.asc.unwrap_or(true));
             polars_ensure!(
                 ob.nulls_first.is_none(),

@@ -180,7 +180,7 @@ pub enum SubqueryRestriction {
 /// Recursively walks a SQL Expr to create a polars Expr
 pub(crate) struct SQLExprVisitor<'a> {
     ctx: &'a mut SQLContext,
-    active_schema: Option<SchemaRef>,
+    active_schema: Option<&'a Schema>,
 }
 
 impl SQLExprVisitor<'_> {
@@ -408,7 +408,7 @@ impl SQLExprVisitor<'_> {
     ///
     /// eg: "dt >= '2024-04-30'", or "dtm::date = '2077-10-10'"
     fn convert_temporal_strings(&mut self, left: &Expr, right: &Expr) -> Expr {
-        if let (Some(name), Some(s), expr_dtype) = match (&left, &right) {
+        if let (Some(name), Some(s), expr_dtype) = match (left, right) {
             // identify "col <op> string" expressions
             (Expr::Column(name), Expr::Literal(LiteralValue::String(s))) => {
                 (Some(name.clone()), Some(s), None)
@@ -815,7 +815,7 @@ impl SQLExprVisitor<'_> {
             // handle implicit temporal string comparisons, eg: "dt >= '2024-04-30'"
             if let Expr::Column(name) = &expr {
                 if self.active_schema.is_some() {
-                    let schema = self.active_schema.clone().unwrap();
+                    let schema = self.active_schema.as_ref().unwrap();
                     let left_dtype = schema.get(name);
                     if let Some(DataType::Date | DataType::Time | DataType::Datetime(_, _)) =
                         left_dtype
@@ -1098,7 +1098,7 @@ pub fn sql_expr<S: AsRef<str>>(s: S) -> PolarsResult<Expr> {
 pub(crate) fn parse_sql_expr(
     expr: &SQLExpr,
     ctx: &mut SQLContext,
-    active_schema: Option<SchemaRef>,
+    active_schema: Option<&Schema>,
 ) -> PolarsResult<Expr> {
     let mut visitor = SQLExprVisitor { ctx, active_schema };
     visitor.visit_expr(expr)
