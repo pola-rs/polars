@@ -130,6 +130,10 @@ impl<'a> IRBuilder<'a> {
         }
     }
 
+    pub fn node(self) -> Node {
+        self.root
+    }
+
     pub fn build(self) -> IR {
         if self.root.0 == self.lp_arena.len() {
             self.lp_arena.pop().unwrap()

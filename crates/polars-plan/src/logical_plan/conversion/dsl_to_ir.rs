@@ -153,6 +153,10 @@ pub fn to_alp_impl(
                 .collect::<PolarsResult<Vec<_>>>()
                 .map_err(|e| e.context(failed_input!(vertical concat)))?;
 
+            if args.diagonal {
+                inputs = convert_utils::convert_diagonal_concat(inputs, lp_arena, expr_arena);
+            }
+
             if args.to_supertypes {
                 convert_utils::convert_st_union(&mut inputs, lp_arena, expr_arena)
                     .map_err(|e| e.context(failed_input!(vertical concat)))?;
