@@ -163,19 +163,16 @@ impl<'a> TreeFmtNode<'a> {
                     vec![]
                 },
             ),
-            NL(
-                h,
-                Union {
-                    inputs, options, ..
-                },
-            ) => ND(
+            NL(h, Union { inputs, .. }) => ND(
                 wh(
                     h,
-                    &(if let Some(slice) = options.slice {
-                        format!("SLICED UNION: {slice:?}")
-                    } else {
-                        "UNION".to_string()
-                    }),
+                    // THis is commented out, but must be restored when we convert to IR's.
+                    // &(if let Some(slice) = options.slice {
+                    //     format!("SLICED UNION: {slice:?}")
+                    // } else {
+                    //     "UNION".to_string()
+                    // }),
+                    "UNION",
                 ),
                 inputs
                     .iter()

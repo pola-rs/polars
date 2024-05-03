@@ -13,6 +13,7 @@ pub use polars_plan::logical_plan::{
     AnonymousScan, AnonymousScanArgs, AnonymousScanOptions, DslPlan, Literal, LiteralValue, Null,
     NULL,
 };
+pub use polars_plan::prelude::UnionArgs;
 pub(crate) use polars_plan::prelude::*;
 #[cfg(feature = "rolling_window")]
 pub use polars_time::{prelude::RollingOptions, Duration};
