@@ -894,6 +894,7 @@ def test_no_glob_windows(tmp_path: Path) -> None:
     assert_frame_equal(pl.scan_parquet(str(p1), glob=False).collect(), df)
 
 
+@pytest.mark.slow()
 def test_hybrid_rle() -> None:
     df = pl.DataFrame(
         {
