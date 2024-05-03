@@ -131,6 +131,7 @@ if TYPE_CHECKING:
         InterpolationMethod,
         IntoExpr,
         IntoExprColumn,
+        NonNestedLiteral,
         NullBehavior,
         NumericLiteral,
         OneOrMoreDataTypes,
@@ -325,10 +326,14 @@ class Series:
             )
             if values.dtype.type in [np.datetime64, np.timedelta64]:
                 # cast to appropriate dtype, handling NaT values
+                input_dtype = _resolve_temporal_dtype(None, values.dtype)
                 dtype = _resolve_temporal_dtype(dtype, values.dtype)
                 if dtype is not None:
                     self._s = (
-                        self.cast(dtype)
+                        # `values.dtype` has already been validated in
+                        # `numpy_to_pyseries`, so `input_dtype` can't be `None`
+                        self.cast(input_dtype)  # type: ignore[arg-type]
+                        .cast(dtype)
                         .scatter(np.argwhere(np.isnat(values)).flatten(), None)
                         ._s
                     )
@@ -345,7 +350,7 @@ class Series:
         elif _check_for_pandas(values) and isinstance(
             values, (pd.Series, pd.Index, pd.DatetimeIndex)
         ):
-            self._s = pandas_to_pyseries(name, values)
+            self._s = pandas_to_pyseries(name, values, dtype=dtype)
 
         elif _is_generator(values):
             self._s = iterable_to_pyseries(name, values, dtype=dtype, strict=strict)
@@ -3397,7 +3402,7 @@ class Series:
 
         This has time complexity:
 
-        .. math:: O(n + k \\log{}n - \frac{k}{2})
+        .. math:: O(n + k \log{}n - \frac{k}{2})
 
         Parameters
         ----------
@@ -3427,7 +3432,7 @@ class Series:
 
         This has time complexity:
 
-        .. math:: O(n + k \\log{}n - \frac{k}{2})
+        .. math:: O(n + k \log{}n - \frac{k}{2})
 
         Parameters
         ----------
@@ -3537,19 +3542,19 @@ class Series:
 
     @overload
     def search_sorted(
-        self, element: int | float, side: SearchSortedSide = ...
+        self, element: NonNestedLiteral, side: SearchSortedSide = ...
     ) -> int: ...
 
     @overload
     def search_sorted(
         self,
-        element: Series | np.ndarray[Any, Any] | list[int] | list[float],
+        element: list[NonNestedLiteral] | np.ndarray[Any, Any] | Expr | Series,
         side: SearchSortedSide = ...,
     ) -> Series: ...
 
     def search_sorted(
         self,
-        element: int | float | Series | np.ndarray[Any, Any] | list[int] | list[float],
+        element: IntoExpr | np.ndarray[Any, Any],
         side: SearchSortedSide = "any",
     ) -> int | Series:
         """
@@ -3600,10 +3605,11 @@ class Series:
                 6
         ]
         """
-        if isinstance(element, (int, float)):
-            return F.select(F.lit(self).search_sorted(element, side)).item()
-        element = Series(element)
-        return F.select(F.lit(self).search_sorted(element, side)).to_series()
+        df = F.select(F.lit(self).search_sorted(element, side))
+        if isinstance(element, (list, Series, pl.Expr, np.ndarray)):
+            return df.to_series()
+        else:
+            return df.item()
 
     def unique(self, *, maintain_order: bool = False) -> Series:
         """

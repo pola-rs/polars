@@ -10,7 +10,7 @@ mod bounds;
 #[cfg(feature = "business")]
 mod business;
 #[cfg(feature = "dtype-categorical")]
-mod cat;
+pub mod cat;
 #[cfg(feature = "round_series")]
 mod clip;
 #[cfg(feature = "dtype-struct")]
@@ -38,13 +38,13 @@ mod nan;
 mod peaks;
 #[cfg(feature = "ffi_plugin")]
 mod plugin;
-mod pow;
+pub mod pow;
 #[cfg(feature = "random")]
 mod random;
 #[cfg(feature = "range")]
 mod range;
 #[cfg(feature = "rolling_window")]
-mod rolling;
+pub mod rolling;
 #[cfg(feature = "round_series")]
 mod round;
 #[cfg(feature = "row_hash")]
@@ -63,7 +63,7 @@ mod struct_;
 #[cfg(any(feature = "temporal", feature = "date_offset"))]
 mod temporal;
 #[cfg(feature = "trigonometry")]
-mod trigonometry;
+pub mod trigonometry;
 mod unique;
 
 use std::fmt::{Display, Formatter};
@@ -88,10 +88,10 @@ pub use self::boolean::BooleanFunction;
 #[cfg(feature = "business")]
 pub(super) use self::business::BusinessFunction;
 #[cfg(feature = "dtype-categorical")]
-pub(crate) use self::cat::CategoricalFunction;
+pub use self::cat::CategoricalFunction;
 #[cfg(feature = "temporal")]
 pub(super) use self::datetime::TemporalFunction;
-pub(super) use self::pow::PowFunction;
+pub use self::pow::PowFunction;
 #[cfg(feature = "range")]
 pub(super) use self::range::RangeFunction;
 #[cfg(feature = "rolling_window")]
@@ -183,7 +183,13 @@ pub enum FunctionExpr {
     #[cfg(feature = "dtype-struct")]
     AsStruct,
     #[cfg(feature = "top_k")]
-    TopK(bool),
+    TopK {
+        sort_options: SortOptions,
+    },
+    #[cfg(feature = "top_k")]
+    TopKBy {
+        sort_options: SortMultipleOptions,
+    },
     #[cfg(feature = "cum_agg")]
     CumCount {
         reverse: bool,
@@ -432,7 +438,7 @@ impl Hash for FunctionExpr {
                 has_max.hash(state);
             },
             #[cfg(feature = "top_k")]
-            TopK(a) => a.hash(state),
+            TopK { sort_options } => sort_options.hash(state),
             #[cfg(feature = "cum_agg")]
             CumCount { reverse } => reverse.hash(state),
             #[cfg(feature = "cum_agg")]
@@ -551,6 +557,8 @@ impl Hash for FunctionExpr {
             #[cfg(feature = "reinterpret")]
             Reinterpret(signed) => signed.hash(state),
             ExtendConstant => {},
+            #[cfg(feature = "top_k")]
+            TopKBy { sort_options } => sort_options.hash(state),
         }
     }
 }
@@ -623,13 +631,17 @@ impl Display for FunctionExpr {
             #[cfg(feature = "dtype-struct")]
             AsStruct => "as_struct",
             #[cfg(feature = "top_k")]
-            TopK(descending) => {
+            TopK {
+                sort_options: SortOptions { descending, .. },
+            } => {
                 if *descending {
                     "bottom_k"
                 } else {
                     "top_k"
                 }
             },
+            #[cfg(feature = "top_k")]
+            TopKBy { .. } => "top_k_by",
             Shift => "shift",
             #[cfg(feature = "cum_agg")]
             CumCount { .. } => "cum_count",
@@ -950,9 +962,11 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                 map_as_slice!(coerce::as_struct)
             },
             #[cfg(feature = "top_k")]
-            TopK(descending) => {
-                map_as_slice!(top_k, descending)
+            TopK { sort_options } => {
+                map_as_slice!(top_k, sort_options)
             },
+            #[cfg(feature = "top_k")]
+            TopKBy { sort_options } => map_as_slice!(top_k_by, sort_options.clone()),
             Shift => map_as_slice!(shift_and_fill::shift),
             #[cfg(feature = "cum_agg")]
             CumCount { reverse } => map!(cum::cum_count, reverse),

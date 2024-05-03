@@ -70,6 +70,7 @@ def read_csv(
     raise_if_empty: bool = True,
     truncate_ragged_lines: bool = False,
     decimal_comma: bool = False,
+    glob: bool = True,
 ) -> DataFrame:
     r"""
     Read a CSV file into a DataFrame.
@@ -95,8 +96,8 @@ def read_csv(
     separator
         Single byte character to use as separator in the file.
     comment_prefix
-        A string, which can be up to 5 symbols in length, used to indicate
-        the start of a comment line. For instance, it can be set to `#` or `//`.
+        A string used to indicate the start of a comment line. Comment lines are skipped
+        during parsing. Common examples of comment prefixes are `#` and `//`.
     quote_char
         Single byte character used for csv quoting, default = `"`.
         Set to None to turn off special handling and escaping of quotes.
@@ -187,7 +188,9 @@ def read_csv(
     truncate_ragged_lines
         Truncate lines that are longer than the schema.
     decimal_comma
-        Parse floats with decimal signs
+        Parse floats using a comma as the decimal separator instead of a period.
+    glob
+        Expand path given via globbing rules.
 
     Returns
     -------
@@ -442,6 +445,7 @@ def read_csv(
             raise_if_empty=raise_if_empty,
             truncate_ragged_lines=truncate_ragged_lines,
             decimal_comma=decimal_comma,
+            glob=glob,
         )
 
     if new_columns:
@@ -479,6 +483,7 @@ def _read_csv_impl(
     raise_if_empty: bool = True,
     truncate_ragged_lines: bool = False,
     decimal_comma: bool = False,
+    glob: bool = True,
 ) -> DataFrame:
     path: str | None
     if isinstance(source, (str, Path)):
@@ -542,6 +547,7 @@ def _read_csv_impl(
             raise_if_empty=raise_if_empty,
             truncate_ragged_lines=truncate_ragged_lines,
             decimal_comma=decimal_comma,
+            glob=glob,
         )
         if columns is None:
             return scan.collect()
@@ -624,6 +630,7 @@ def read_csv_batched(
     sample_size: int = 1024,
     eol_char: str = "\n",
     raise_if_empty: bool = True,
+    truncate_ragged_lines: bool = False,
     decimal_comma: bool = False,
 ) -> BatchedCsvReader:
     r"""
@@ -654,8 +661,8 @@ def read_csv_batched(
     separator
         Single byte character to use as separator in the file.
     comment_prefix
-        A string, which can be up to 5 symbols in length, used to indicate
-        the start of a comment line. For instance, it can be set to `#` or `//`.
+        A string used to indicate the start of a comment line. Comment lines are skipped
+        during parsing. Common examples of comment prefixes are `#` and `//`.
     quote_char
         Single byte character used for csv quoting, default = `"`.
         Set to None to turn off special handling and escaping of quotes.
@@ -725,8 +732,10 @@ def read_csv_batched(
     raise_if_empty
         When there is no data in the source,`NoDataError` is raised. If this parameter
         is set to False, `None` will be returned from `next_batches(n)` instead.
+    truncate_ragged_lines
+        Truncate lines that are longer than the schema.
     decimal_comma
-        Parse floats with decimal signs
+        Parse floats using a comma as the decimal separator instead of a period.
 
     Returns
     -------
@@ -887,6 +896,7 @@ def read_csv_batched(
         eol_char=eol_char,
         new_columns=new_columns,
         raise_if_empty=raise_if_empty,
+        truncate_ragged_lines=truncate_ragged_lines,
         decimal_comma=decimal_comma,
     )
 
@@ -925,6 +935,7 @@ def scan_csv(
     raise_if_empty: bool = True,
     truncate_ragged_lines: bool = False,
     decimal_comma: bool = False,
+    glob: bool = True,
 ) -> LazyFrame:
     r"""
     Lazily read from a CSV file or multiple files via glob patterns.
@@ -944,8 +955,8 @@ def scan_csv(
     separator
         Single byte character to use as separator in the file.
     comment_prefix
-        A string, which can be up to 5 symbols in length, used to indicate
-        the start of a comment line. For instance, it can be set to `#` or `//`.
+        A string used to indicate the start of a comment line. Comment lines are skipped
+        during parsing. Common examples of comment prefixes are `#` and `//`.
     quote_char
         Single byte character used for csv quoting, default = `"`.
         Set to None to turn off special handling and escaping of quotes.
@@ -1018,7 +1029,9 @@ def scan_csv(
     truncate_ragged_lines
         Truncate lines that are longer than the schema.
     decimal_comma
-        Parse floats with decimal signs
+        Parse floats using a comma as the decimal separator instead of a period.
+    glob
+        Expand path given via globbing rules.
 
     Returns
     -------
@@ -1138,6 +1151,7 @@ def scan_csv(
         raise_if_empty=raise_if_empty,
         truncate_ragged_lines=truncate_ragged_lines,
         decimal_comma=decimal_comma,
+        glob=glob,
     )
 
 
@@ -1169,6 +1183,7 @@ def _scan_csv_impl(
     raise_if_empty: bool = True,
     truncate_ragged_lines: bool = True,
     decimal_comma: bool = False,
+    glob: bool = True,
 ) -> LazyFrame:
     dtype_list: list[tuple[str, PolarsDataType]] | None = None
     if dtypes is not None:
@@ -1210,5 +1225,6 @@ def _scan_csv_impl(
         truncate_ragged_lines=truncate_ragged_lines,
         decimal_comma=decimal_comma,
         schema=schema,
+        glob=glob,
     )
     return wrap_ldf(pylf)

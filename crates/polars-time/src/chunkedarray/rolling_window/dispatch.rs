@@ -47,9 +47,8 @@ where
 
     let arr = ca.downcast_iter().next().unwrap();
     // "5i" is a window size of 5, e.g. fixed
-    let arr = if options.window_size.parsed_int {
+    let arr = if options.by.is_none() {
         let options: RollingOptionsFixedWindow = options.try_into()?;
-
         Ok(match ca.null_count() {
             0 => rolling_agg_fn(
                 arr.values().as_slice(),
@@ -69,24 +68,20 @@ where
             ),
         })
     } else {
+        let options: RollingOptionsDynamicWindow = options.try_into()?;
         if arr.null_count() > 0 {
             polars_bail!(InvalidOperation: "'Expr.rolling_*(..., by=...)' not yet supported for series with null values, consider using 'DataFrame.rolling' or 'Expr.rolling'")
         }
         let values = arr.values().as_slice();
-        let duration = options.window_size;
-        polars_ensure!(duration.duration_ns() > 0 && !duration.negative, ComputeError:"window size should be strictly positive");
-        let tu = options.tu.unwrap();
-        let by = options.by.unwrap();
-        let closed_window = options.closed_window.expect("closed window  must be set");
-        let func = rolling_agg_fn_dynamic.expect(
-            "'Expr.rolling_*(..., by=...)' not yet supported for this expression, consider using 'DataFrame.rolling' or 'Expr.rolling'",
-        );
+        let tu = options.tu.expect("time_unit was set in `convert` function");
+        let by = options.by;
+        let func = rolling_agg_fn_dynamic.expect("rolling_agg_fn_dynamic must have been passed");
 
         func(
             values,
-            duration,
+            options.window_size,
             by,
-            closed_window,
+            options.closed_window,
             options.min_periods,
             tu,
             options.tz,

@@ -96,7 +96,9 @@ impl FunctionExpr {
                 DataType::Struct(fields.to_vec()),
             )),
             #[cfg(feature = "top_k")]
-            TopK(_) => mapper.with_same_dtype(),
+            TopK { .. } => mapper.with_same_dtype(),
+            #[cfg(feature = "top_k")]
+            TopKBy { .. } => mapper.with_same_dtype(),
             #[cfg(feature = "dtype-struct")]
             ValueCounts { .. } => mapper.map_dtype(|dt| {
                 DataType::Struct(vec![
@@ -509,12 +511,9 @@ impl<'a> FieldsMapper<'a> {
             Some(dtype) => dtype,
             // Supertype of `new` and `default`
             None => {
-                let default = if let Some(default) = self.fields.get(3) {
-                    default
-                } else {
-                    &self.fields[0]
-                };
-                try_get_supertype(self.fields[2].data_type(), default.data_type())?
+                let column_type = &self.fields[0];
+                let new = &self.fields[2];
+                try_get_supertype(column_type.data_type(), new.data_type())?
             },
         };
         self.with_dtype(dtype)

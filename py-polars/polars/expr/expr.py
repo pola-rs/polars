@@ -293,7 +293,8 @@ class Expr:
         if method != "__call__":
             msg = f"Only call is implemented not {method}"
             raise NotImplementedError(msg)
-        is_custom_ufunc = ufunc.__class__ != np.ufunc
+        # Numpy/Scipy ufuncs have signature None but numba signatures always exists.
+        is_custom_ufunc = getattr(ufunc, "signature") is not None  # noqa: B009
         num_expr = sum(isinstance(inp, Expr) for inp in inputs)
         exprs = [
             (inp, Expr, i) if isinstance(inp, Expr) else (inp, None, i)
@@ -2030,18 +2031,40 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.sort_with(descending, nulls_last))
 
-    def top_k(self, k: int | IntoExprColumn = 5) -> Self:
+    def top_k(
+        self,
+        k: int | IntoExprColumn = 5,
+        *,
+        by: IntoExpr | Iterable[IntoExpr] | None = None,
+        descending: bool | Sequence[bool] = False,
+        nulls_last: bool = False,
+        maintain_order: bool = False,
+        multithreaded: bool = True,
+    ) -> Self:
         r"""
         Return the `k` largest elements.
 
         This has time complexity:
 
-        .. math:: O(n + k \\log{}n - \frac{k}{2})
+        .. math:: O(n + k \log{}n - \frac{k}{2})
 
         Parameters
         ----------
         k
             Number of elements to return.
+        by
+            Column(s) included in sort order. Accepts expression input.
+            Strings are parsed as column names.
+            If not provided, each column will be treated induvidually.
+        descending
+            Return the k smallest. Top-k by multiple columns can be specified per
+            column by passing a sequence of booleans.
+        nulls_last
+            Place null values last.
+        maintain_order
+            Whether the order should be maintained if elements are equal.
+        multithreaded
+            Sort using multiple threads.
 
         See Also
         --------
@@ -2049,6 +2072,8 @@ class Expr:
 
         Examples
         --------
+        Get the 5 largest values in series.
+
         >>> df = pl.DataFrame(
         ...     {
         ...         "value": [1, 98, 2, 3, 99, 4],
@@ -2072,22 +2097,140 @@ class Expr:
         │ 3     ┆ 4        │
         │ 2     ┆ 98       │
         └───────┴──────────┘
+
+        >>> df2 = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, 3, 4, 5, 6],
+        ...         "b": [6, 5, 4, 3, 2, 1],
+        ...         "c": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
+        ...     }
+        ... )
+        >>> df2
+        shape: (6, 3)
+        ┌─────┬─────┬────────┐
+        │ a   ┆ b   ┆ c      │
+        │ --- ┆ --- ┆ ---    │
+        │ i64 ┆ i64 ┆ str    │
+        ╞═════╪═════╪════════╡
+        │ 1   ┆ 6   ┆ Apple  │
+        │ 2   ┆ 5   ┆ Orange │
+        │ 3   ┆ 4   ┆ Apple  │
+        │ 4   ┆ 3   ┆ Apple  │
+        │ 5   ┆ 2   ┆ Banana │
+        │ 6   ┆ 1   ┆ Banana │
+        └─────┴─────┴────────┘
+
+        Get the top 2 rows by column `a` or `b`.
+
+        >>> df2.select(
+        ...     pl.all().top_k(2, by="a").name.suffix("_top_by_a"),
+        ...     pl.all().top_k(2, by="b").name.suffix("_top_by_b"),
+        ... )
+        shape: (2, 6)
+        ┌────────────┬────────────┬────────────┬────────────┬────────────┬────────────┐
+        │ a_top_by_a ┆ b_top_by_a ┆ c_top_by_a ┆ a_top_by_b ┆ b_top_by_b ┆ c_top_by_b │
+        │ ---        ┆ ---        ┆ ---        ┆ ---        ┆ ---        ┆ ---        │
+        │ i64        ┆ i64        ┆ str        ┆ i64        ┆ i64        ┆ str        │
+        ╞════════════╪════════════╪════════════╪════════════╪════════════╪════════════╡
+        │ 6          ┆ 1          ┆ Banana     ┆ 1          ┆ 6          ┆ Apple      │
+        │ 5          ┆ 2          ┆ Banana     ┆ 2          ┆ 5          ┆ Orange     │
+        └────────────┴────────────┴────────────┴────────────┴────────────┴────────────┘
+
+        Get the top 2 rows by multiple columns with given order.
+
+        >>> df2.select(
+        ...     pl.all()
+        ...     .top_k(2, by=["c", "a"], descending=[False, True])
+        ...     .name.suffix("_by_ca"),
+        ...     pl.all()
+        ...     .top_k(2, by=["c", "b"], descending=[False, True])
+        ...     .name.suffix("_by_cb"),
+        ... )
+        shape: (2, 6)
+        ┌─────────┬─────────┬─────────┬─────────┬─────────┬─────────┐
+        │ a_by_ca ┆ b_by_ca ┆ c_by_ca ┆ a_by_cb ┆ b_by_cb ┆ c_by_cb │
+        │ ---     ┆ ---     ┆ ---     ┆ ---     ┆ ---     ┆ ---     │
+        │ i64     ┆ i64     ┆ str     ┆ i64     ┆ i64     ┆ str     │
+        ╞═════════╪═════════╪═════════╪═════════╪═════════╪═════════╡
+        │ 2       ┆ 5       ┆ Orange  ┆ 2       ┆ 5       ┆ Orange  │
+        │ 5       ┆ 2       ┆ Banana  ┆ 6       ┆ 1       ┆ Banana  │
+        └─────────┴─────────┴─────────┴─────────┴─────────┴─────────┘
+
+        Get the top 2 rows by column `a` in each group.
+
+        >>> (
+        ...     df2.group_by("c", maintain_order=True)
+        ...     .agg(pl.all().top_k(2, by="a"))
+        ...     .explode(pl.all().exclude("c"))
+        ... )
+        shape: (5, 3)
+        ┌────────┬─────┬─────┐
+        │ c      ┆ a   ┆ b   │
+        │ ---    ┆ --- ┆ --- │
+        │ str    ┆ i64 ┆ i64 │
+        ╞════════╪═════╪═════╡
+        │ Apple  ┆ 4   ┆ 3   │
+        │ Apple  ┆ 3   ┆ 4   │
+        │ Orange ┆ 2   ┆ 5   │
+        │ Banana ┆ 6   ┆ 1   │
+        │ Banana ┆ 5   ┆ 2   │
+        └────────┴─────┴─────┘
         """
         k = parse_as_expression(k)
-        return self._from_pyexpr(self._pyexpr.top_k(k))
+        if by is not None:
+            by = parse_as_list_of_expressions(by)
+            if isinstance(descending, bool):
+                descending = [descending]
+            elif len(by) != len(descending):
+                msg = f"the length of `descending` ({len(descending)}) does not match the length of `by` ({len(by)})"
+                raise ValueError(msg)
+            return self._from_pyexpr(
+                self._pyexpr.top_k_by(
+                    k, by, descending, nulls_last, maintain_order, multithreaded
+                )
+            )
+        else:
+            if not isinstance(descending, bool):
+                msg = "`descending` should be a boolean if no `by` is provided"
+                raise ValueError(msg)
+            return self._from_pyexpr(
+                self._pyexpr.top_k(k, descending, nulls_last, multithreaded)
+            )
 
-    def bottom_k(self, k: int | IntoExprColumn = 5) -> Self:
+    def bottom_k(
+        self,
+        k: int | IntoExprColumn = 5,
+        *,
+        by: IntoExpr | Iterable[IntoExpr] | None = None,
+        descending: bool | Sequence[bool] = False,
+        nulls_last: bool = False,
+        maintain_order: bool = False,
+        multithreaded: bool = True,
+    ) -> Self:
         r"""
         Return the `k` smallest elements.
 
         This has time complexity:
 
-        .. math:: O(n + k \\log{}n - \frac{k}{2})
+        .. math:: O(n + k \log{}n - \frac{k}{2})
 
         Parameters
         ----------
         k
             Number of elements to return.
+        by
+            Column(s) included in sort order.
+            Accepts expression input. Strings are parsed as column names.
+            If not provided, each column will be treated induvidually.
+        descending
+            Return the k largest. Bottom-k by multiple columns can be specified per
+            column by passing a sequence of booleans.
+        nulls_last
+            Place null values last.
+        maintain_order
+            Whether the order should be maintained if elements are equal.
+        multithreaded
+            Sort using multiple threads.
 
         See Also
         --------
@@ -2118,9 +2261,105 @@ class Expr:
         │ 3     ┆ 4        │
         │ 2     ┆ 98       │
         └───────┴──────────┘
+
+        >>> df2 = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, 3, 4, 5, 6],
+        ...         "b": [6, 5, 4, 3, 2, 1],
+        ...         "c": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
+        ...     }
+        ... )
+        >>> df2
+        shape: (6, 3)
+        ┌─────┬─────┬────────┐
+        │ a   ┆ b   ┆ c      │
+        │ --- ┆ --- ┆ ---    │
+        │ i64 ┆ i64 ┆ str    │
+        ╞═════╪═════╪════════╡
+        │ 1   ┆ 6   ┆ Apple  │
+        │ 2   ┆ 5   ┆ Orange │
+        │ 3   ┆ 4   ┆ Apple  │
+        │ 4   ┆ 3   ┆ Apple  │
+        │ 5   ┆ 2   ┆ Banana │
+        │ 6   ┆ 1   ┆ Banana │
+        └─────┴─────┴────────┘
+
+        Get the bottom 2 rows by column `a` or `b`.
+
+        >>> df2.select(
+        ...     pl.all().bottom_k(2, by="a").name.suffix("_btm_by_a"),
+        ...     pl.all().bottom_k(2, by="b").name.suffix("_btm_by_b"),
+        ... )
+        shape: (2, 6)
+        ┌────────────┬────────────┬────────────┬────────────┬────────────┬────────────┐
+        │ a_btm_by_a ┆ b_btm_by_a ┆ c_btm_by_a ┆ a_btm_by_b ┆ b_btm_by_b ┆ c_btm_by_b │
+        │ ---        ┆ ---        ┆ ---        ┆ ---        ┆ ---        ┆ ---        │
+        │ i64        ┆ i64        ┆ str        ┆ i64        ┆ i64        ┆ str        │
+        ╞════════════╪════════════╪════════════╪════════════╪════════════╪════════════╡
+        │ 1          ┆ 6          ┆ Apple      ┆ 6          ┆ 1          ┆ Banana     │
+        │ 2          ┆ 5          ┆ Orange     ┆ 5          ┆ 2          ┆ Banana     │
+        └────────────┴────────────┴────────────┴────────────┴────────────┴────────────┘
+
+        Get the bottom 2 rows by multiple columns with given order.
+
+        >>> df2.select(
+        ...     pl.all()
+        ...     .bottom_k(2, by=["c", "a"], descending=[False, True])
+        ...     .name.suffix("_by_ca"),
+        ...     pl.all()
+        ...     .bottom_k(2, by=["c", "b"], descending=[False, True])
+        ...     .name.suffix("_by_cb"),
+        ... )
+        shape: (2, 6)
+        ┌─────────┬─────────┬─────────┬─────────┬─────────┬─────────┐
+        │ a_by_ca ┆ b_by_ca ┆ c_by_ca ┆ a_by_cb ┆ b_by_cb ┆ c_by_cb │
+        │ ---     ┆ ---     ┆ ---     ┆ ---     ┆ ---     ┆ ---     │
+        │ i64     ┆ i64     ┆ str     ┆ i64     ┆ i64     ┆ str     │
+        ╞═════════╪═════════╪═════════╪═════════╪═════════╪═════════╡
+        │ 4       ┆ 3       ┆ Apple   ┆ 1       ┆ 6       ┆ Apple   │
+        │ 3       ┆ 4       ┆ Apple   ┆ 3       ┆ 4       ┆ Apple   │
+        └─────────┴─────────┴─────────┴─────────┴─────────┴─────────┘
+
+        Get the bottom 2 rows by column `a` in each group.
+
+        >>> (
+        ...     df2.group_by("c", maintain_order=True)
+        ...     .agg(pl.all().bottom_k(2, by="a"))
+        ...     .explode(pl.all().exclude("c"))
+        ... )
+        shape: (5, 3)
+        ┌────────┬─────┬─────┐
+        │ c      ┆ a   ┆ b   │
+        │ ---    ┆ --- ┆ --- │
+        │ str    ┆ i64 ┆ i64 │
+        ╞════════╪═════╪═════╡
+        │ Apple  ┆ 1   ┆ 6   │
+        │ Apple  ┆ 3   ┆ 4   │
+        │ Orange ┆ 2   ┆ 5   │
+        │ Banana ┆ 5   ┆ 2   │
+        │ Banana ┆ 6   ┆ 1   │
+        └────────┴─────┴─────┘
         """
         k = parse_as_expression(k)
-        return self._from_pyexpr(self._pyexpr.bottom_k(k))
+        if by is not None:
+            by = parse_as_list_of_expressions(by)
+            if isinstance(descending, bool):
+                descending = [descending]
+            elif len(by) != len(descending):
+                msg = f"the length of `descending` ({len(descending)}) does not match the length of `by` ({len(by)})"
+                raise ValueError(msg)
+            return self._from_pyexpr(
+                self._pyexpr.bottom_k_by(
+                    k, by, descending, nulls_last, maintain_order, multithreaded
+                )
+            )
+        else:
+            if not isinstance(descending, bool):
+                msg = "`descending` should be a boolean if no `by` is provided"
+                raise ValueError(msg)
+            return self._from_pyexpr(
+                self._pyexpr.bottom_k(k, descending, nulls_last, multithreaded)
+            )
 
     def arg_sort(self, *, descending: bool = False, nulls_last: bool = False) -> Self:
         """
@@ -2225,7 +2464,9 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.arg_min())
 
-    def search_sorted(self, element: IntoExpr, side: SearchSortedSide = "any") -> Self:
+    def search_sorted(
+        self, element: IntoExpr | np.ndarray[Any, Any], side: SearchSortedSide = "any"
+    ) -> Self:
         """
         Find indices where elements should be inserted to maintain order.
 
@@ -2263,7 +2504,7 @@ class Expr:
         │ 0    ┆ 2     ┆ 4   │
         └──────┴───────┴─────┘
         """
-        element = parse_as_expression(element)
+        element = parse_as_expression(element, list_as_lit=False, str_as_lit=True)  # type: ignore[arg-type]
         return self._from_pyexpr(self._pyexpr.search_sorted(element, side))
 
     def sort_by(
@@ -5997,10 +6238,11 @@ class Expr:
         │ 23    ┆ 2001-01-01 23:00:00 │
         │ 24    ┆ 2001-01-02 00:00:00 │
         └───────┴─────────────────────┘
+
+        Compute the rolling min with the temporal windows closed on the right (default)
+
         >>> df_temporal.with_columns(
-        ...     rolling_row_min=pl.col("index").rolling_min(
-        ...         window_size="2h", by="date", closed="left"
-        ...     )
+        ...     rolling_row_min=pl.col("index").rolling_min(window_size="2h", by="date")
         ... )
         shape: (25, 3)
         ┌───────┬─────────────────────┬─────────────────┐
@@ -6008,17 +6250,17 @@ class Expr:
         │ ---   ┆ ---                 ┆ ---             │
         │ u32   ┆ datetime[μs]        ┆ u32             │
         ╞═══════╪═════════════════════╪═════════════════╡
-        │ 0     ┆ 2001-01-01 00:00:00 ┆ null            │
+        │ 0     ┆ 2001-01-01 00:00:00 ┆ 0               │
         │ 1     ┆ 2001-01-01 01:00:00 ┆ 0               │
-        │ 2     ┆ 2001-01-01 02:00:00 ┆ 0               │
-        │ 3     ┆ 2001-01-01 03:00:00 ┆ 1               │
-        │ 4     ┆ 2001-01-01 04:00:00 ┆ 2               │
+        │ 2     ┆ 2001-01-01 02:00:00 ┆ 1               │
+        │ 3     ┆ 2001-01-01 03:00:00 ┆ 2               │
+        │ 4     ┆ 2001-01-01 04:00:00 ┆ 3               │
         │ …     ┆ …                   ┆ …               │
-        │ 20    ┆ 2001-01-01 20:00:00 ┆ 18              │
-        │ 21    ┆ 2001-01-01 21:00:00 ┆ 19              │
-        │ 22    ┆ 2001-01-01 22:00:00 ┆ 20              │
-        │ 23    ┆ 2001-01-01 23:00:00 ┆ 21              │
-        │ 24    ┆ 2001-01-02 00:00:00 ┆ 22              │
+        │ 20    ┆ 2001-01-01 20:00:00 ┆ 19              │
+        │ 21    ┆ 2001-01-01 21:00:00 ┆ 20              │
+        │ 22    ┆ 2001-01-01 22:00:00 ┆ 21              │
+        │ 23    ┆ 2001-01-01 23:00:00 ┆ 22              │
+        │ 24    ┆ 2001-01-02 00:00:00 ┆ 23              │
         └───────┴─────────────────────┴─────────────────┘
         """
         window_size = deprecate_saturating(window_size)
@@ -6206,12 +6448,10 @@ class Expr:
         │ 24    ┆ 2001-01-02 00:00:00 │
         └───────┴─────────────────────┘
 
-        Compute the rolling max with the default left closure of temporal windows
+        Compute the rolling max with the temporal windows closed on the right (default)
 
         >>> df_temporal.with_columns(
-        ...     rolling_row_max=pl.col("index").rolling_max(
-        ...         window_size="2h", by="date", closed="left"
-        ...     )
+        ...     rolling_row_max=pl.col("index").rolling_max(window_size="2h", by="date")
         ... )
         shape: (25, 3)
         ┌───────┬─────────────────────┬─────────────────┐
@@ -6219,17 +6459,17 @@ class Expr:
         │ ---   ┆ ---                 ┆ ---             │
         │ u32   ┆ datetime[μs]        ┆ u32             │
         ╞═══════╪═════════════════════╪═════════════════╡
-        │ 0     ┆ 2001-01-01 00:00:00 ┆ null            │
-        │ 1     ┆ 2001-01-01 01:00:00 ┆ 0               │
-        │ 2     ┆ 2001-01-01 02:00:00 ┆ 1               │
-        │ 3     ┆ 2001-01-01 03:00:00 ┆ 2               │
-        │ 4     ┆ 2001-01-01 04:00:00 ┆ 3               │
+        │ 0     ┆ 2001-01-01 00:00:00 ┆ 0               │
+        │ 1     ┆ 2001-01-01 01:00:00 ┆ 1               │
+        │ 2     ┆ 2001-01-01 02:00:00 ┆ 2               │
+        │ 3     ┆ 2001-01-01 03:00:00 ┆ 3               │
+        │ 4     ┆ 2001-01-01 04:00:00 ┆ 4               │
         │ …     ┆ …                   ┆ …               │
-        │ 20    ┆ 2001-01-01 20:00:00 ┆ 19              │
-        │ 21    ┆ 2001-01-01 21:00:00 ┆ 20              │
-        │ 22    ┆ 2001-01-01 22:00:00 ┆ 21              │
-        │ 23    ┆ 2001-01-01 23:00:00 ┆ 22              │
-        │ 24    ┆ 2001-01-02 00:00:00 ┆ 23              │
+        │ 20    ┆ 2001-01-01 20:00:00 ┆ 20              │
+        │ 21    ┆ 2001-01-01 21:00:00 ┆ 21              │
+        │ 22    ┆ 2001-01-01 22:00:00 ┆ 22              │
+        │ 23    ┆ 2001-01-01 23:00:00 ┆ 23              │
+        │ 24    ┆ 2001-01-02 00:00:00 ┆ 24              │
         └───────┴─────────────────────┴─────────────────┘
 
         Compute the rolling max with the closure of windows on both sides
@@ -6447,11 +6687,11 @@ class Expr:
         │ 24    ┆ 2001-01-02 00:00:00 │
         └───────┴─────────────────────┘
 
-        Compute the rolling mean with the default left closure of temporal windows
+        Compute the rolling mean with the temporal windows closed on the right (default)
 
         >>> df_temporal.with_columns(
         ...     rolling_row_mean=pl.col("index").rolling_mean(
-        ...         window_size="2h", by="date", closed="left"
+        ...         window_size="2h", by="date"
         ...     )
         ... )
         shape: (25, 3)
@@ -6460,17 +6700,17 @@ class Expr:
         │ ---   ┆ ---                 ┆ ---              │
         │ u32   ┆ datetime[μs]        ┆ f64              │
         ╞═══════╪═════════════════════╪══════════════════╡
-        │ 0     ┆ 2001-01-01 00:00:00 ┆ null             │
-        │ 1     ┆ 2001-01-01 01:00:00 ┆ 0.0              │
-        │ 2     ┆ 2001-01-01 02:00:00 ┆ 0.5              │
-        │ 3     ┆ 2001-01-01 03:00:00 ┆ 1.5              │
-        │ 4     ┆ 2001-01-01 04:00:00 ┆ 2.5              │
+        │ 0     ┆ 2001-01-01 00:00:00 ┆ 0.0              │
+        │ 1     ┆ 2001-01-01 01:00:00 ┆ 0.5              │
+        │ 2     ┆ 2001-01-01 02:00:00 ┆ 1.5              │
+        │ 3     ┆ 2001-01-01 03:00:00 ┆ 2.5              │
+        │ 4     ┆ 2001-01-01 04:00:00 ┆ 3.5              │
         │ …     ┆ …                   ┆ …                │
-        │ 20    ┆ 2001-01-01 20:00:00 ┆ 18.5             │
-        │ 21    ┆ 2001-01-01 21:00:00 ┆ 19.5             │
-        │ 22    ┆ 2001-01-01 22:00:00 ┆ 20.5             │
-        │ 23    ┆ 2001-01-01 23:00:00 ┆ 21.5             │
-        │ 24    ┆ 2001-01-02 00:00:00 ┆ 22.5             │
+        │ 20    ┆ 2001-01-01 20:00:00 ┆ 19.5             │
+        │ 21    ┆ 2001-01-01 21:00:00 ┆ 20.5             │
+        │ 22    ┆ 2001-01-01 22:00:00 ┆ 21.5             │
+        │ 23    ┆ 2001-01-01 23:00:00 ┆ 22.5             │
+        │ 24    ┆ 2001-01-02 00:00:00 ┆ 23.5             │
         └───────┴─────────────────────┴──────────────────┘
 
         Compute the rolling mean with the closure of windows on both sides
@@ -6690,12 +6930,10 @@ class Expr:
         │ 24    ┆ 2001-01-02 00:00:00 │
         └───────┴─────────────────────┘
 
-        Compute the rolling sum with the default left closure of temporal windows
+        Compute the rolling sum with the temporal windows closed on the right (default)
 
         >>> df_temporal.with_columns(
-        ...     rolling_row_sum=pl.col("index").rolling_sum(
-        ...         window_size="2h", by="date", closed="left"
-        ...     )
+        ...     rolling_row_sum=pl.col("index").rolling_sum(window_size="2h", by="date")
         ... )
         shape: (25, 3)
         ┌───────┬─────────────────────┬─────────────────┐
@@ -6703,17 +6941,17 @@ class Expr:
         │ ---   ┆ ---                 ┆ ---             │
         │ u32   ┆ datetime[μs]        ┆ u32             │
         ╞═══════╪═════════════════════╪═════════════════╡
-        │ 0     ┆ 2001-01-01 00:00:00 ┆ null            │
-        │ 1     ┆ 2001-01-01 01:00:00 ┆ 0               │
-        │ 2     ┆ 2001-01-01 02:00:00 ┆ 1               │
-        │ 3     ┆ 2001-01-01 03:00:00 ┆ 3               │
-        │ 4     ┆ 2001-01-01 04:00:00 ┆ 5               │
+        │ 0     ┆ 2001-01-01 00:00:00 ┆ 0               │
+        │ 1     ┆ 2001-01-01 01:00:00 ┆ 1               │
+        │ 2     ┆ 2001-01-01 02:00:00 ┆ 3               │
+        │ 3     ┆ 2001-01-01 03:00:00 ┆ 5               │
+        │ 4     ┆ 2001-01-01 04:00:00 ┆ 7               │
         │ …     ┆ …                   ┆ …               │
-        │ 20    ┆ 2001-01-01 20:00:00 ┆ 37              │
-        │ 21    ┆ 2001-01-01 21:00:00 ┆ 39              │
-        │ 22    ┆ 2001-01-01 22:00:00 ┆ 41              │
-        │ 23    ┆ 2001-01-01 23:00:00 ┆ 43              │
-        │ 24    ┆ 2001-01-02 00:00:00 ┆ 45              │
+        │ 20    ┆ 2001-01-01 20:00:00 ┆ 39              │
+        │ 21    ┆ 2001-01-01 21:00:00 ┆ 41              │
+        │ 22    ┆ 2001-01-01 22:00:00 ┆ 43              │
+        │ 23    ┆ 2001-01-01 23:00:00 ┆ 45              │
+        │ 24    ┆ 2001-01-02 00:00:00 ┆ 47              │
         └───────┴─────────────────────┴─────────────────┘
 
         Compute the rolling sum with the closure of windows on both sides
@@ -6931,12 +7169,10 @@ class Expr:
         │ 24    ┆ 2001-01-02 00:00:00 │
         └───────┴─────────────────────┘
 
-        Compute the rolling std with the default left closure of temporal windows
+        Compute the rolling std with the temporal windows closed on the right (default)
 
         >>> df_temporal.with_columns(
-        ...     rolling_row_std=pl.col("index").rolling_std(
-        ...         window_size="2h", by="date", closed="left"
-        ...     )
+        ...     rolling_row_std=pl.col("index").rolling_std(window_size="2h", by="date")
         ... )
         shape: (25, 3)
         ┌───────┬─────────────────────┬─────────────────┐
@@ -6945,7 +7181,7 @@ class Expr:
         │ u32   ┆ datetime[μs]        ┆ f64             │
         ╞═══════╪═════════════════════╪═════════════════╡
         │ 0     ┆ 2001-01-01 00:00:00 ┆ null            │
-        │ 1     ┆ 2001-01-01 01:00:00 ┆ null            │
+        │ 1     ┆ 2001-01-01 01:00:00 ┆ 0.707107        │
         │ 2     ┆ 2001-01-01 02:00:00 ┆ 0.707107        │
         │ 3     ┆ 2001-01-01 03:00:00 ┆ 0.707107        │
         │ 4     ┆ 2001-01-01 04:00:00 ┆ 0.707107        │
@@ -7178,12 +7414,10 @@ class Expr:
         │ 24    ┆ 2001-01-02 00:00:00 │
         └───────┴─────────────────────┘
 
-        Compute the rolling var with the default left closure of temporal windows
+        Compute the rolling var with the temporal windows closed on the right (default)
 
         >>> df_temporal.with_columns(
-        ...     rolling_row_var=pl.col("index").rolling_var(
-        ...         window_size="2h", by="date", closed="left"
-        ...     )
+        ...     rolling_row_var=pl.col("index").rolling_var(window_size="2h", by="date")
         ... )
         shape: (25, 3)
         ┌───────┬─────────────────────┬─────────────────┐
@@ -7192,7 +7426,7 @@ class Expr:
         │ u32   ┆ datetime[μs]        ┆ f64             │
         ╞═══════╪═════════════════════╪═════════════════╡
         │ 0     ┆ 2001-01-01 00:00:00 ┆ null            │
-        │ 1     ┆ 2001-01-01 01:00:00 ┆ null            │
+        │ 1     ┆ 2001-01-01 01:00:00 ┆ 0.5             │
         │ 2     ┆ 2001-01-01 02:00:00 ┆ 0.5             │
         │ 3     ┆ 2001-01-01 03:00:00 ┆ 0.5             │
         │ 4     ┆ 2001-01-01 04:00:00 ┆ 0.5             │

@@ -1205,7 +1205,7 @@ def test_decode_strict() -> None:
 
 
 def test_split() -> None:
-    df = pl.DataFrame({"x": ["a_a", None, "b", "c_c_c"]})
+    df = pl.DataFrame({"x": ["a_a", None, "b", "c_c_c", ""]})
     out = df.select([pl.col("x").str.split("_")])
 
     expected = pl.DataFrame(
@@ -1214,6 +1214,7 @@ def test_split() -> None:
             {"x": None},
             {"x": ["b"]},
             {"x": ["c", "c", "c"]},
+            {"x": [""]},
         ]
     )
 
@@ -1228,11 +1229,42 @@ def test_split() -> None:
             {"x": None},
             {"x": ["b"]},
             {"x": ["c_", "c_", "c"]},
+            {"x": []},
         ]
     )
 
     assert_frame_equal(out, expected)
     assert_frame_equal(df["x"].str.split("_", inclusive=True).to_frame(), expected)
+
+    out = df.select([pl.col("x").str.split("")])
+
+    expected = pl.DataFrame(
+        [
+            {"x": ["a", "_", "a"]},
+            {"x": None},
+            {"x": ["b"]},
+            {"x": ["c", "_", "c", "_", "c"]},
+            {"x": []},
+        ]
+    )
+
+    assert_frame_equal(out, expected)
+    assert_frame_equal(df["x"].str.split("").to_frame(), expected)
+
+    out = df.select([pl.col("x").str.split("", inclusive=True)])
+
+    expected = pl.DataFrame(
+        [
+            {"x": ["a", "_", "a"]},
+            {"x": None},
+            {"x": ["b"]},
+            {"x": ["c", "_", "c", "_", "c"]},
+            {"x": []},
+        ]
+    )
+
+    assert_frame_equal(out, expected)
+    assert_frame_equal(df["x"].str.split("", inclusive=True).to_frame(), expected)
 
     plan = (
         df.lazy()
@@ -1260,7 +1292,12 @@ def test_split() -> None:
 
 
 def test_split_expr() -> None:
-    df = pl.DataFrame({"x": ["a_a", None, "b", "c*c*c"], "by": ["_", "#", "^", "*"]})
+    df = pl.DataFrame(
+        {
+            "x": ["a_a", None, "b", "c*c*c", "dddd", ""],
+            "by": ["_", "#", "^", "*", "", ""],
+        }
+    )
     out = df.select([pl.col("x").str.split(pl.col("by"))])
     expected = pl.DataFrame(
         [
@@ -1268,6 +1305,8 @@ def test_split_expr() -> None:
             {"x": None},
             {"x": ["b"]},
             {"x": ["c", "c", "c"]},
+            {"x": ["d", "d", "d", "d"]},
+            {"x": []},
         ]
     )
     assert_frame_equal(out, expected)
@@ -1279,20 +1318,22 @@ def test_split_expr() -> None:
             {"x": None},
             {"x": ["b"]},
             {"x": ["c*", "c*", "c"]},
+            {"x": ["d", "d", "d", "d"]},
+            {"x": []},
         ]
     )
     assert_frame_equal(out, expected)
 
 
 def test_split_exact() -> None:
-    df = pl.DataFrame({"x": ["a_a", None, "b", "c_c"]})
+    df = pl.DataFrame({"x": ["a_a", None, "b", "c_c", ""]})
     out = df.select([pl.col("x").str.split_exact("_", 2, inclusive=False)]).unnest("x")
 
     expected = pl.DataFrame(
         {
-            "field_0": ["a", None, "b", "c"],
-            "field_1": ["a", None, None, "c"],
-            "field_2": pl.Series([None, None, None, None], dtype=pl.String),
+            "field_0": ["a", None, "b", "c", ""],
+            "field_1": ["a", None, None, "c", None],
+            "field_2": pl.Series([None, None, None, None, None], dtype=pl.String),
         }
     )
 
@@ -1303,16 +1344,42 @@ def test_split_exact() -> None:
     out = df.select([pl.col("x").str.split_exact("_", 1, inclusive=True)]).unnest("x")
 
     expected = pl.DataFrame(
-        {"field_0": ["a_", None, "b", "c_"], "field_1": ["a", None, None, "c"]}
+        {
+            "field_0": ["a_", None, "b", "c_", None],
+            "field_1": ["a", None, None, "c", None],
+        }
     )
     assert_frame_equal(out, expected)
     assert df["x"].str.split_exact("_", 1).dtype == pl.Struct
     assert df["x"].str.split_exact("_", 1, inclusive=False).dtype == pl.Struct
 
+    out = df.select([pl.col("x").str.split_exact("", 1)]).unnest("x")
+
+    expected = pl.DataFrame(
+        {
+            "field_0": ["a", None, "b", "c", None],
+            "field_1": ["_", None, None, "_", None],
+        }
+    )
+    assert_frame_equal(out, expected)
+
+    out = df.select([pl.col("x").str.split_exact("", 1, inclusive=True)]).unnest("x")
+
+    expected = pl.DataFrame(
+        {
+            "field_0": ["a", None, "b", "c", None],
+            "field_1": ["_", None, None, "_", None],
+        }
+    )
+    assert_frame_equal(out, expected)
+
 
 def test_split_exact_expr() -> None:
     df = pl.DataFrame(
-        {"x": ["a_a", None, "b", "c^c^c", "d#d"], "by": ["_", "&", "$", "^", None]}
+        {
+            "x": ["a_a", None, "b", "c^c^c", "d#d", "eeee", ""],
+            "by": ["_", "&", "$", "^", None, "", ""],
+        }
     )
 
     out = df.select(
@@ -1321,9 +1388,11 @@ def test_split_exact_expr() -> None:
 
     expected = pl.DataFrame(
         {
-            "field_0": ["a", None, "b", "c", None],
-            "field_1": ["a", None, None, "c", None],
-            "field_2": pl.Series([None, None, None, "c", None], dtype=pl.String),
+            "field_0": ["a", None, "b", "c", None, "e", None],
+            "field_1": ["a", None, None, "c", None, "e", None],
+            "field_2": pl.Series(
+                [None, None, None, "c", None, "e", None], dtype=pl.String
+            ),
         }
     )
 
@@ -1335,37 +1404,57 @@ def test_split_exact_expr() -> None:
 
     expected2 = pl.DataFrame(
         {
-            "field_0": ["a_", None, "b", "c^", None],
-            "field_1": ["a", None, None, "c^", None],
-            "field_2": pl.Series([None, None, None, "c", None], dtype=pl.String),
+            "field_0": ["a_", None, "b", "c^", None, "e", None],
+            "field_1": ["a", None, None, "c^", None, "e", None],
+            "field_2": pl.Series(
+                [None, None, None, "c", None, "e", None], dtype=pl.String
+            ),
         }
     )
     assert_frame_equal(out2, expected2)
 
 
 def test_splitn() -> None:
-    df = pl.DataFrame({"x": ["a_a", None, "b", "c_c_c"]})
+    df = pl.DataFrame({"x": ["a_a", None, "b", "c_c_c", ""]})
     out = df.select([pl.col("x").str.splitn("_", 2)]).unnest("x")
 
     expected = pl.DataFrame(
-        {"field_0": ["a", None, "b", "c"], "field_1": ["a", None, None, "c_c"]}
+        {
+            "field_0": ["a", None, "b", "c", ""],
+            "field_1": ["a", None, None, "c_c", None],
+        }
     )
 
     assert_frame_equal(out, expected)
     assert_frame_equal(df["x"].str.splitn("_", 2).to_frame().unnest("x"), expected)
 
+    out = df.select([pl.col("x").str.splitn("", 2)]).unnest("x")
+
+    expected = pl.DataFrame(
+        {
+            "field_0": ["a", None, "b", "c", None],
+            "field_1": ["_a", None, None, "_c_c", None],
+        }
+    )
+
+    assert_frame_equal(out, expected)
+    assert_frame_equal(df["x"].str.splitn("", 2).to_frame().unnest("x"), expected)
+
 
 def test_splitn_expr() -> None:
     df = pl.DataFrame(
-        {"x": ["a_a", None, "b", "c^c^c", "d#d"], "by": ["_", "&", "$", "^", None]}
+        {
+            "x": ["a_a", None, "b", "c^c^c", "d#d", "eeee", ""],
+            "by": ["_", "&", "$", "^", None, "", ""],
+        }
     )
 
     out = df.select(pl.col("x").str.splitn(pl.col("by"), 2)).unnest("x")
 
     expected = pl.DataFrame(
         {
-            "field_0": ["a", None, "b", "c", None],
-            "field_1": ["a", None, None, "c^c", None],
+            "field_0": ["a", None, "b", "c", None, "e", None],
+            "field_1": ["a", None, None, "c^c", None, "eee", None],
         }
     )
 

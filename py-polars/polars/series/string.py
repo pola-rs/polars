@@ -1582,8 +1582,8 @@ class StringNameSpace:
         shape: (2,)
         Series: 'sing' [str]
         [
-            "Welcome To My …
-            "There's No Tur…
+            "Welcome To My World"
+            "There's No Turning Back"
         ]
         """
 

@@ -42,13 +42,13 @@ mod sql;
 mod to_numpy;
 mod utils;
 
-#[cfg(all(target_family = "unix", not(use_mimalloc)))]
+#[cfg(all(target_family = "unix", not(use_mimalloc), not(default_allocator)))]
 use jemallocator::Jemalloc;
 #[cfg(any(not(target_family = "unix"), use_mimalloc))]
 use mimalloc::MiMalloc;
 use pyo3::panic::PanicException;
 use pyo3::prelude::*;
-use pyo3::wrap_pyfunction;
+use pyo3::{wrap_pyfunction, wrap_pymodule};
 
 #[cfg(feature = "csv")]
 use crate::batched_csv::PyBatchedCsv;
@@ -75,19 +75,80 @@ use crate::sql::PySQLContext;
 // linking breaks on Windows if we use tracemalloc C APIs. So we only use this
 // on Windows for now.
 #[global_allocator]
-#[cfg(all(target_family = "unix", debug_assertions))]
+#[cfg(all(target_family = "unix", debug_assertions, not(default_allocator)))]
 static ALLOC: TracemallocAllocator<Jemalloc> = TracemallocAllocator::new(Jemalloc);
 
 #[global_allocator]
-#[cfg(all(target_family = "unix", not(use_mimalloc), not(debug_assertions)))]
+#[cfg(all(
+    target_family = "unix",
+    not(use_mimalloc),
+    not(debug_assertions),
+    not(default_allocator)
+))]
 static ALLOC: Jemalloc = Jemalloc;
 
 #[global_allocator]
-#[cfg(all(any(not(target_family = "unix"), use_mimalloc), not(debug_assertions)))]
+#[cfg(all(
+    any(not(target_family = "unix"), use_mimalloc),
+    not(debug_assertions),
+    not(default_allocator)
+))]
 static ALLOC: MiMalloc = MiMalloc;
 
 #[pymodule]
-fn polars(py: Python, m: &PyModule) -> PyResult<()> {
+fn _ir_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
+    use crate::lazyframe::visitor::nodes::*;
+    m.add_class::<PythonScan>().unwrap();
+    m.add_class::<Slice>().unwrap();
+    m.add_class::<Filter>().unwrap();
+    m.add_class::<Scan>().unwrap();
+    m.add_class::<DataFrameScan>().unwrap();
+    m.add_class::<SimpleProjection>().unwrap();
+    m.add_class::<Select>().unwrap();
+    m.add_class::<Sort>().unwrap();
+    m.add_class::<Cache>().unwrap();
+    m.add_class::<GroupBy>().unwrap();
+    m.add_class::<Join>().unwrap();
+    m.add_class::<HStack>().unwrap();
+    m.add_class::<Distinct>().unwrap();
+    m.add_class::<MapFunction>().unwrap();
+    m.add_class::<Union>().unwrap();
+    m.add_class::<HConcat>().unwrap();
+    m.add_class::<ExtContext>().unwrap();
+    m.add_class::<Sink>().unwrap();
+    Ok(())
+}
+
+#[pymodule]
+fn _expr_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
+    use crate::lazyframe::visitor::expr_nodes::*;
+    use crate::lazyframe::PyExprIR;
+    // Expressions
+    m.add_class::<PyExprIR>().unwrap();
+    m.add_class::<Alias>().unwrap();
+    m.add_class::<Column>().unwrap();
+    m.add_class::<Literal>().unwrap();
+    m.add_class::<BinaryExpr>().unwrap();
+    m.add_class::<Cast>().unwrap();
+    m.add_class::<Sort>().unwrap();
+    m.add_class::<Gather>().unwrap();
+    m.add_class::<Filter>().unwrap();
+    m.add_class::<SortBy>().unwrap();
+    m.add_class::<Agg>().unwrap();
+    m.add_class::<Ternary>().unwrap();
+    m.add_class::<Function>().unwrap();
+    m.add_class::<Len>().unwrap();
+    m.add_class::<Window>().unwrap();
+    m.add_class::<PyOperator>().unwrap();
+    // Options
+    m.add_class::<PyWindowMapping>().unwrap();
+    m.add_class::<PyRollingGroupOptions>().unwrap();
+    m.add_class::<PyGroupbyOptions>().unwrap();
+    Ok(())
+}
+
+#[pymodule]
+fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     // Classes
     m.add_class::<PySeries>().unwrap();
     m.add_class::<PyDataFrame>().unwrap();
@@ -101,6 +162,11 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     #[cfg(feature = "sql")]
     m.add_class::<PySQLContext>().unwrap();
 
+    // Submodules
+    // LogicalPlan objects
+    m.add_wrapped(wrap_pymodule!(_ir_nodes))?;
+    // Expr objects
+    m.add_wrapped(wrap_pymodule!(_expr_nodes))?;
     // Functions - eager
     m.add_wrapped(wrap_pyfunction!(functions::concat_df))
         .unwrap();
@@ -274,54 +340,62 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
 
     // Exceptions - Errors
-    m.add("PolarsError", py.get_type::<PolarsBaseError>())
+    m.add("PolarsError", py.get_type_bound::<PolarsBaseError>())
         .unwrap();
-    m.add("ColumnNotFoundError", py.get_type::<ColumnNotFoundError>())
+    m.add(
+        "ColumnNotFoundError",
+        py.get_type_bound::<ColumnNotFoundError>(),
+    )
+    .unwrap();
+    m.add("ComputeError", py.get_type_bound::<ComputeError>())
         .unwrap();
-    m.add("ComputeError", py.get_type::<ComputeError>())
-        .unwrap();
-    m.add("DuplicateError", py.get_type::<DuplicateError>())
+    m.add("DuplicateError", py.get_type_bound::<DuplicateError>())
         .unwrap();
     m.add(
         "InvalidOperationError",
-        py.get_type::<InvalidOperationError>(),
+        py.get_type_bound::<InvalidOperationError>(),
     )
     .unwrap();
-    m.add("NoDataError", py.get_type::<NoDataError>()).unwrap();
-    m.add("OutOfBoundsError", py.get_type::<OutOfBoundsError>())
+    m.add("NoDataError", py.get_type_bound::<NoDataError>())
         .unwrap();
-    m.add("PolarsPanicError", py.get_type::<PanicException>())
+    m.add("OutOfBoundsError", py.get_type_bound::<OutOfBoundsError>())
         .unwrap();
-    m.add("SchemaError", py.get_type::<SchemaError>()).unwrap();
+    m.add("PolarsPanicError", py.get_type_bound::<PanicException>())
+        .unwrap();
+    m.add("SchemaError", py.get_type_bound::<SchemaError>())
+        .unwrap();
     m.add(
         "SchemaFieldNotFoundError",
-        py.get_type::<SchemaFieldNotFoundError>(),
+        py.get_type_bound::<SchemaFieldNotFoundError>(),
     )
     .unwrap();
-    m.add("ShapeError", py.get_type::<crate::error::ShapeError>())
-        .unwrap();
+    m.add(
+        "ShapeError",
+        py.get_type_bound::<crate::error::ShapeError>(),
+    )
+    .unwrap();
     m.add(
         "StringCacheMismatchError",
-        py.get_type::<crate::error::StringCacheMismatchError>(),
+        py.get_type_bound::<crate::error::StringCacheMismatchError>(),
     )
     .unwrap();
     m.add(
         "StructFieldNotFoundError",
-        py.get_type::<StructFieldNotFoundError>(),
+        py.get_type_bound::<StructFieldNotFoundError>(),
     )
     .unwrap();
 
     // Exceptions - Warnings
-    m.add("PolarsWarning", py.get_type::<PolarsBaseWarning>())
+    m.add("PolarsWarning", py.get_type_bound::<PolarsBaseWarning>())
         .unwrap();
     m.add(
         "CategoricalRemappingWarning",
-        py.get_type::<CategoricalRemappingWarning>(),
+        py.get_type_bound::<CategoricalRemappingWarning>(),
     )
     .unwrap();
     m.add(
         "MapWithoutReturnDtypeWarning",
-        py.get_type::<MapWithoutReturnDtypeWarning>(),
+        py.get_type_bound::<MapWithoutReturnDtypeWarning>(),
     )
     .unwrap();
 

@@ -31,6 +31,7 @@ pub use ndjson::*;
 pub use parquet::*;
 use polars_core::prelude::*;
 use polars_io::RowIndex;
+use polars_ops::frame::JoinCoalesce;
 pub use polars_plan::frame::{AllowedOptimizations, OptState};
 use polars_plan::global::FETCH_ROWS;
 use smartstring::alias::String as SmartString;
@@ -589,16 +590,21 @@ impl LazyFrame {
         Ok(lp_top)
     }
 
-    #[allow(unused_mut)]
-    fn prepare_collect(
-        mut self,
+    fn prepare_collect_post_opt<P>(
+        self,
         check_sink: bool,
-    ) -> PolarsResult<(ExecutionState, Box<dyn Executor>, bool)> {
-        let mut expr_arena = Arena::with_capacity(256);
-        let mut lp_arena = Arena::with_capacity(128);
+        post_opt: P,
+    ) -> PolarsResult<(ExecutionState, Box<dyn Executor>, bool)>
+    where
+        P: Fn(Node, &mut Arena<IR>, &mut Arena<AExpr>) -> PolarsResult<()>,
+    {
+        let mut expr_arena = Arena::with_capacity(16);
+        let mut lp_arena = Arena::with_capacity(16);
         let mut scratch = vec![];
         let lp_top =
             self.optimize_with_scratch(&mut lp_arena, &mut expr_arena, &mut scratch, false)?;
+
+        post_opt(lp_top, &mut lp_arena, &mut expr_arena)?;
 
         // sink should be replaced
         let no_file_sink = if check_sink {
@@ -610,6 +616,23 @@ impl LazyFrame {
 
         let state = ExecutionState::new();
         Ok((state, physical_plan, no_file_sink))
+    }
+
+    // post_opt: A function that is called after optimization. This can be used to modify the IR jit.
+    pub fn _collect_post_opt<P>(self, post_opt: P) -> PolarsResult<DataFrame>
+    where
+        P: Fn(Node, &mut Arena<IR>, &mut Arena<AExpr>) -> PolarsResult<()>,
+    {
+        let (mut state, mut physical_plan, _) = self.prepare_collect_post_opt(false, post_opt)?;
+        physical_plan.execute(&mut state)
+    }
+
+    #[allow(unused_mut)]
+    fn prepare_collect(
+        self,
+        check_sink: bool,
+    ) -> PolarsResult<(ExecutionState, Box<dyn Executor>, bool)> {
+        self.prepare_collect_post_opt(check_sink, |_, _, _| Ok(()))
     }
 
     /// Execute all the lazy operations and collect them into a [`DataFrame`].
@@ -630,8 +653,7 @@ impl LazyFrame {
     /// }
     /// ```
     pub fn collect(self) -> PolarsResult<DataFrame> {
-        let (mut state, mut physical_plan, _) = self.prepare_collect(false)?;
-        physical_plan.execute(&mut state)
+        self._collect_post_opt(|_, _, _| Ok(()))
     }
 
     /// Profile a LazyFrame.
@@ -1124,7 +1146,7 @@ impl LazyFrame {
             other,
             [left_on.into()],
             [right_on.into()],
-            JoinArgs::new(JoinType::Outer { coalesce: false }),
+            JoinArgs::new(JoinType::Outer),
         )
     }
 
@@ -1195,6 +1217,7 @@ impl LazyFrame {
             .right_on(right_on)
             .how(args.how)
             .validate(args.validation)
+            .coalesce(args.coalesce)
             .join_nulls(args.join_nulls);
 
         if let Some(suffix) = args.suffix {
@@ -1764,6 +1787,7 @@ pub struct JoinBuilder {
     force_parallel: bool,
     suffix: Option<String>,
     validation: JoinValidation,
+    coalesce: JoinCoalesce,
     join_nulls: bool,
 }
 impl JoinBuilder {
@@ -1780,6 +1804,7 @@ impl JoinBuilder {
             join_nulls: false,
             suffix: None,
             validation: Default::default(),
+            coalesce: Default::default(),
         }
     }
 
@@ -1851,6 +1876,12 @@ impl JoinBuilder {
         self
     }
 
+    /// Whether to coalesce join columns.
+    pub fn coalesce(mut self, coalesce: JoinCoalesce) -> Self {
+        self.coalesce = coalesce;
+        self
+    }
+
     /// Finish builder
     pub fn finish(self) -> LazyFrame {
         let mut opt_state = self.lf.opt_state;
@@ -1865,6 +1896,7 @@ impl JoinBuilder {
             suffix: self.suffix,
             slice: None,
             join_nulls: self.join_nulls,
+            coalesce: self.coalesce,
         };
 
         let lp = self

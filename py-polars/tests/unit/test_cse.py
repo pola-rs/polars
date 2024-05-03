@@ -512,7 +512,7 @@ def test_no_cse_in_with_context() -> None:
         .with_context(df2.lazy())
         .select(
             pl.col("date_start", "label").gather(
-                pl.col("date_start").search_sorted("timestamp") - 1
+                pl.col("date_start").search_sorted(pl.col("timestamp")) - 1
             ),
         )
     ).collect().to_dict(as_series=False) == {
@@ -723,3 +723,12 @@ def test_cse_drop_nulls_15795() -> None:
     C = A.join(B, on="X").select("X")
     D = B.select("X")
     assert C.join(D, on="X").collect().shape == (1, 1)
+
+
+def test_cse_no_projection_15980() -> None:
+    df = pl.LazyFrame({"x": "a", "y": 1})
+    df = pl.concat(df.with_columns(pl.col("y").add(n)) for n in range(2))
+
+    assert df.filter(pl.col("x").eq("a")).select("x").collect().to_dict(
+        as_series=False
+    ) == {"x": ["a", "a"]}

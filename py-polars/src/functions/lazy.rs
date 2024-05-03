@@ -459,16 +459,6 @@ pub fn repeat(value: PyExpr, n: PyExpr, dtype: Option<Wrap<DataType>>) -> PyResu
         value = value.cast(dtype.0);
     }
 
-    if let Expr::Literal(lv) = &value {
-        let av = lv.to_any_value().unwrap();
-        // Integer inputs that fit in Int32 are parsed as such
-        if let DataType::Int64 = av.dtype() {
-            let int_value = av.try_extract::<i64>().unwrap();
-            if int_value >= i32::MIN as i64 && int_value <= i32::MAX as i64 {
-                value = value.cast(DataType::Int32);
-            }
-        }
-    }
     Ok(dsl::repeat(value, n).into())
 }
 

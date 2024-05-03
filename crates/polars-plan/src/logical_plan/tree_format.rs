@@ -163,7 +163,12 @@ impl<'a> TreeFmtNode<'a> {
                     vec![]
                 },
             ),
-            NL(h, Union { inputs, options }) => ND(
+            NL(
+                h,
+                Union {
+                    inputs, options, ..
+                },
+            ) => ND(
                 wh(
                     h,
                     &(if let Some(slice) = options.slice {

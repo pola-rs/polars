@@ -211,7 +211,13 @@ pub fn apply_lambda_with_string_out_type<'a>(
         ChunkedArray::full_null("map", df.height())
     } else {
         let iter = apply_iter::<Cow<str>>(df, py, lambda, init_null_count, skip);
-        iterator_to_string(iter, init_null_count, first_value, "map", df.height())
+        iterator_to_string(
+            iter,
+            init_null_count,
+            first_value.map(Cow::Borrowed),
+            "map",
+            df.height(),
+        )
     }
 }
 

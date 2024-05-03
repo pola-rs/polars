@@ -998,3 +998,56 @@ def test_from_avro_valid_time_zone_13032() -> None:
     result = cast(pl.Series, pl.from_arrow(arr))
     expected = pl.Series([datetime(2021, 1, 1)], dtype=pl.Datetime("ns", "UTC"))
     assert_series_equal(result, expected)
+
+
+def test_from_pandas_pyarrow_not_available(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "polars._utils.construction.dataframe._PYARROW_AVAILABLE", False
+    )
+    monkeypatch.setattr("polars._utils.construction.series._PYARROW_AVAILABLE", False)
+    data: dict[str, Any] = {
+        "a": [1, 2],
+        "b": ["one", "two"],
+        "c": np.array(["2020-01-01", "2020-01-02"], dtype="datetime64[ns]"),
+        "d": np.array(["2020-01-01", "2020-01-02"], dtype="datetime64[us]"),
+        "e": np.array(["2020-01-01", "2020-01-02"], dtype="datetime64[ms]"),
+        "f": np.array([1, 2], dtype="timedelta64[ns]"),
+        "g": np.array([1, 2], dtype="timedelta64[us]"),
+        "h": np.array([1, 2], dtype="timedelta64[ms]"),
+        "i": [True, False],
+    }
+    result = pl.from_pandas(pd.DataFrame(data))
+    expected = pl.DataFrame(data)
+    assert_frame_equal(result, expected)
+    for col in data:
+        s_pd = pd.Series(data[col])
+        result_s = pl.from_pandas(s_pd)
+        expected_s = pl.Series(data[col])
+        assert_series_equal(result_s, expected_s)
+    with pytest.raises(ImportError, match="pyarrow is required"):
+        pl.from_pandas(pd.DataFrame({"a": [1, 2, 3]}, dtype="Int64"))
+    with pytest.raises(ImportError, match="pyarrow is required"):
+        pl.from_pandas(pd.Series([1, 2, 3], dtype="Int64"))
+    with pytest.raises(ImportError, match="pyarrow is required"):
+        pl.from_pandas(
+            pd.DataFrame({"a": pd.to_datetime(["2020-01-01T00:00+01:00"]).to_series()})
+        )
+    with pytest.raises(ImportError, match="pyarrow is required"):
+        pl.from_pandas(pd.DataFrame({"a": [None, "foo"]}))
+
+
+def test_from_numpy_different_resolution_15991() -> None:
+    result = pl.Series(
+        np.array(["2020-01-01"], dtype="datetime64[ns]"), dtype=pl.Datetime("us")
+    )
+    expected = pl.Series([datetime(2020, 1, 1)], dtype=pl.Datetime("us"))
+    assert_series_equal(result, expected)
+
+
+def test_from_numpy_different_resolution_invalid() -> None:
+    with pytest.raises(ValueError, match="Please cast"):
+        pl.Series(
+            np.array(["2020-01-01"], dtype="datetime64[s]"), dtype=pl.Datetime("us")
+        )

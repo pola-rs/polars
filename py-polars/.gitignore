@@ -1,7 +1,0 @@
-wheels/
-target/
-venv/
-.venv/
-.hypothesis
-.DS_Store
-.ruff_cache/

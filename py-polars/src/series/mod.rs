@@ -125,24 +125,26 @@ impl PySeries {
         })
     }
 
-    fn get_fmt(&self, index: usize, str_lengths: usize) -> String {
-        let val = format!("{}", self.series.get(index).unwrap());
+    /// Returns the string format of a single element of the Series.
+    fn get_fmt(&self, index: usize, str_len_limit: usize) -> String {
+        let v = format!("{}", self.series.get(index).unwrap());
         if let DataType::String | DataType::Categorical(_, _) | DataType::Enum(_, _) =
             self.series.dtype()
         {
-            let v_trunc = &val[..val
+            let v_no_quotes = &v[1..v.len() - 1];
+            let v_trunc = &v_no_quotes[..v_no_quotes
                 .char_indices()
-                .take(str_lengths)
+                .take(str_len_limit)
                 .last()
                 .map(|(i, c)| i + c.len_utf8())
                 .unwrap_or(0)];
-            if val == v_trunc {
-                val
+            if v_no_quotes == v_trunc {
+                v
             } else {
-                format!("{v_trunc}…")
+                format!("\"{v_trunc}…")
             }
         } else {
-            val
+            v
         }
     }
 
@@ -343,7 +345,7 @@ impl PySeries {
     #[pyo3(signature = (lambda, output_type, skip_nulls))]
     fn apply_lambda(
         &self,
-        lambda: &PyAny,
+        lambda: &Bound<PyAny>,
         output_type: Option<Wrap<DataType>>,
         skip_nulls: bool,
     ) -> PyResult<PySeries> {

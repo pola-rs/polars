@@ -453,6 +453,16 @@ impl FromPyObject<'_> for Wrap<Schema> {
     }
 }
 
+impl IntoPy<PyObject> for Wrap<&Schema> {
+    fn into_py(self, py: Python<'_>) -> PyObject {
+        let dict = PyDict::new(py);
+        for (k, v) in self.0.iter() {
+            dict.set_item(k.as_str(), Wrap(v.clone())).unwrap();
+        }
+        dict.into_py(py)
+    }
+}
+
 #[derive(Clone, Debug)]
 #[repr(transparent)]
 pub struct ObjectValue {
@@ -701,8 +711,11 @@ impl FromPyObject<'_> for Wrap<JoinType> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "inner" => JoinType::Inner,
             "left" => JoinType::Left,
-            "outer" => JoinType::Outer{coalesce: false},
-            "outer_coalesce" => JoinType::Outer{coalesce: true},
+            "outer" => JoinType::Outer,
+            "outer_coalesce" => {
+                // TODO! deprecate
+                JoinType::Outer
+            },
             "semi" => JoinType::Semi,
             "anti" => JoinType::Anti,
             #[cfg(feature = "cross_join")]

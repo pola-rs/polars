@@ -1,7 +1,7 @@
 import pytest
 
 import polars as pl
-from tests.benchmark.datagen_groupby import generate_group_by_data
+from tests.benchmark.data import generate_group_by_data
 
 
 @pytest.fixture(scope="session")

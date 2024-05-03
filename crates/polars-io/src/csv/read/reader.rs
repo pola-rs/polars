@@ -8,7 +8,7 @@ use polars_time::prelude::*;
 use rayon::prelude::*;
 
 use super::infer_file_schema;
-use super::options::{CommentPrefix, CsvEncoding, NullValues};
+use super::options::{CommentPrefix, CsvEncoding, CsvReaderOptions, NullValues};
 use super::read_impl::batched_mmap::{
     to_batched_owned_mmap, BatchedCsvReaderMmap, OwnedBatchedCsvReaderMmap,
 };
@@ -42,43 +42,25 @@ pub struct CsvReader<'a, R>
 where
     R: MmapBytesReader,
 {
-    /// File or Stream object
+    /// File or Stream object.
     reader: R,
+    /// Options for the CSV reader.
+    options: CsvReaderOptions,
     /// Stop reading from the csv after this number of rows is reached
     n_rows: Option<usize>,
-    // used by error ignore logic
-    max_records: Option<usize>,
-    skip_rows_before_header: usize,
     /// Optional indexes of the columns to project
     projection: Option<Vec<usize>>,
     /// Optional column names to project/ select.
     columns: Option<Vec<String>>,
-    separator: Option<u8>,
-    pub(crate) schema: Option<SchemaRef>,
-    encoding: CsvEncoding,
-    n_threads: Option<usize>,
     path: Option<PathBuf>,
-    schema_overwrite: Option<SchemaRef>,
     dtype_overwrite: Option<&'a [DataType]>,
     sample_size: usize,
     chunk_size: usize,
-    comment_prefix: Option<CommentPrefix>,
-    null_values: Option<NullValues>,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
-    quote_char: Option<u8>,
-    skip_rows_after_header: usize,
-    try_parse_dates: bool,
     row_index: Option<RowIndex>,
     /// Aggregates chunk afterwards to a single chunk.
     rechunk: bool,
-    raise_if_empty: bool,
-    truncate_ragged_lines: bool,
     missing_is_null: bool,
-    low_memory: bool,
-    has_header: bool,
-    ignore_errors: bool,
-    eol_char: u8,
-    decimal_comma: bool,
 }
 
 impl<'a, R> CsvReader<'a, R>
@@ -86,8 +68,144 @@ where
     R: 'a + MmapBytesReader,
 {
     /// Skip these rows after the header
-    pub fn with_skip_rows_after_header(mut self, offset: usize) -> Self {
-        self.skip_rows_after_header = offset;
+    pub fn with_options(mut self, options: CsvReaderOptions) -> Self {
+        self.options = options;
+        self
+    }
+
+    /// Sets whether the CSV file has headers
+    pub fn has_header(mut self, has_header: bool) -> Self {
+        self.options.has_header = has_header;
+        self
+    }
+
+    /// Sets the CSV file's column separator as a byte character
+    pub fn with_separator(mut self, separator: u8) -> Self {
+        self.options.separator = separator;
+        self
+    }
+
+    /// Sets the `char` used as quote char. The default is `b'"'`. If set to [`None`], quoting is disabled.
+    pub fn with_quote_char(mut self, quote_char: Option<u8>) -> Self {
+        self.options.quote_char = quote_char;
+        self
+    }
+
+    /// Sets the comment prefix for this instance. Lines starting with this prefix will be ignored.
+    pub fn with_comment_prefix(mut self, comment_prefix: Option<&str>) -> Self {
+        self.options.comment_prefix = comment_prefix.map(CommentPrefix::new_from_str);
+        self
+    }
+
+    /// Sets the comment prefix from `CsvParserOptions` for internal initialization.
+    pub fn _with_comment_prefix(mut self, comment_prefix: Option<CommentPrefix>) -> Self {
+        self.options.comment_prefix = comment_prefix;
+        self
+    }
+
+    /// Set the `char` used as end-of-line char. The default is `b'\n'`.
+    pub fn with_end_of_line_char(mut self, eol_char: u8) -> Self {
+        self.options.eol_char = eol_char;
+        self
+    }
+
+    /// Set [`CsvEncoding`].
+    pub fn with_encoding(mut self, encoding: CsvEncoding) -> Self {
+        self.options.encoding = encoding;
+        self
+    }
+
+    /// Skip the first `n` rows during parsing. The header will be parsed at `n` lines.
+    pub fn with_skip_rows(mut self, n: usize) -> Self {
+        self.options.skip_rows = n;
+        self
+    }
+
+    /// Skip these rows after the header
+    pub fn with_skip_rows_after_header(mut self, n: usize) -> Self {
+        self.options.skip_rows_after_header = n;
+        self
+    }
+
+    /// Set the CSV file's schema. This only accepts datatypes that are implemented
+    /// in the csv parser and expects a complete Schema.
+    ///
+    /// It is recommended to use [with_dtypes](Self::with_dtypes) instead.
+    pub fn with_schema(mut self, schema: Option<SchemaRef>) -> Self {
+        self.options.schema = schema;
+        self
+    }
+
+    /// Overwrite the schema with the dtypes in this given Schema. The given schema may be a subset
+    /// of the total schema.
+    pub fn with_dtypes(mut self, schema: Option<SchemaRef>) -> Self {
+        self.options.schema_overwrite = schema;
+        self
+    }
+
+    /// Set the CSV reader to infer the schema of the file
+    ///
+    /// # Arguments
+    /// * `n` - Maximum number of rows read for schema inference.
+    ///         Setting this to `None` will do a full table scan (slow).
+    pub fn infer_schema(mut self, n: Option<usize>) -> Self {
+        // used by error ignore logic
+        self.options.infer_schema_length = n;
+        self
+    }
+
+    /// Automatically try to parse dates/ datetimes and time. If parsing fails, columns remain of dtype `[DataType::String]`.
+    pub fn with_try_parse_dates(mut self, toggle: bool) -> Self {
+        self.options.try_parse_dates = toggle;
+        self
+    }
+
+    /// Set values that will be interpreted as missing/null.
+    ///
+    /// Note: any value you set as null value will not be escaped, so if quotation marks
+    /// are part of the null value you should include them.
+    pub fn with_null_values(mut self, null_values: Option<NullValues>) -> Self {
+        self.options.null_values = null_values;
+        self
+    }
+
+    /// Continue with next batch when a ParserError is encountered.
+    pub fn with_ignore_errors(mut self, toggle: bool) -> Self {
+        self.options.ignore_errors = toggle;
+        self
+    }
+
+    /// Raise an error if CSV is empty (otherwise return an empty frame)
+    pub fn raise_if_empty(mut self, toggle: bool) -> Self {
+        self.options.raise_if_empty = toggle;
+        self
+    }
+
+    /// Truncate lines that are longer than the schema.
+    pub fn truncate_ragged_lines(mut self, toggle: bool) -> Self {
+        self.options.truncate_ragged_lines = toggle;
+        self
+    }
+
+    /// Parse floats with a comma as decimal separator.
+    pub fn with_decimal_comma(mut self, toggle: bool) -> Self {
+        self.options.decimal_comma = toggle;
+        self
+    }
+
+    /// Set the number of threads used in CSV reading. The default uses the number of cores of
+    /// your cpu.
+    ///
+    /// Note that this only works if this is initialized with `CsvReader::from_path`.
+    /// Note that the number of cores is the maximum allowed number of threads.
+    pub fn with_n_threads(mut self, n: Option<usize>) -> Self {
+        self.options.n_threads = n;
+        self
+    }
+
+    /// Reduce memory consumption at the expense of performance
+    pub fn low_memory(mut self, toggle: bool) -> Self {
+        self.options.low_memory = toggle;
         self
     }
 
@@ -103,37 +221,10 @@ where
         self
     }
 
-    /// Set  [`CsvEncoding`]
-    pub fn with_encoding(mut self, enc: CsvEncoding) -> Self {
-        self.encoding = enc;
-        self
-    }
-
     /// Try to stop parsing when `n` rows are parsed. During multithreaded parsing the upper bound `n` cannot
     /// be guaranteed.
     pub fn with_n_rows(mut self, num_rows: Option<usize>) -> Self {
         self.n_rows = num_rows;
-        self
-    }
-
-    /// Continue with next batch when a ParserError is encountered.
-    pub fn with_ignore_errors(mut self, ignore: bool) -> Self {
-        self.ignore_errors = ignore;
-        self
-    }
-
-    /// Set the CSV file's schema. This only accepts datatypes that are implemented
-    /// in the csv parser and expects a complete Schema.
-    ///
-    /// It is recommended to use [with_dtypes](Self::with_dtypes) instead.
-    pub fn with_schema(mut self, schema: Option<SchemaRef>) -> Self {
-        self.schema = schema;
-        self
-    }
-
-    /// Skip the first `n` rows during parsing. The header will be parsed at `n` lines.
-    pub fn with_skip_rows(mut self, skip_rows: usize) -> Self {
-        self.skip_rows_before_header = skip_rows;
         self
     }
 
@@ -143,58 +234,9 @@ where
         self
     }
 
-    /// Set whether the CSV file has headers
-    pub fn has_header(mut self, has_header: bool) -> Self {
-        self.has_header = has_header;
-        self
-    }
-
-    /// Set the CSV file's column separator as a byte character
-    pub fn with_separator(mut self, separator: u8) -> Self {
-        self.separator = Some(separator);
-        self
-    }
-
-    /// Set the comment prefix for this instance. Lines starting with this prefix will be ignored.
-    pub fn with_comment_prefix(mut self, comment_prefix: Option<&str>) -> Self {
-        self.comment_prefix = comment_prefix.map(|s| {
-            if s.len() == 1 && s.chars().next().unwrap().is_ascii() {
-                CommentPrefix::Single(s.as_bytes()[0])
-            } else {
-                CommentPrefix::Multi(s.to_string())
-            }
-        });
-        self
-    }
-
-    /// Sets the comment prefix from `CsvParserOptions` for internal initialization.
-    pub fn _with_comment_prefix(mut self, comment_prefix: Option<CommentPrefix>) -> Self {
-        self.comment_prefix = comment_prefix;
-        self
-    }
-
-    pub fn with_end_of_line_char(mut self, eol_char: u8) -> Self {
-        self.eol_char = eol_char;
-        self
-    }
-
-    /// Set values that will be interpreted as missing/ null. Note that any value you set as null value
-    /// will not be escaped, so if quotation marks are part of the null value you should include them.
-    pub fn with_null_values(mut self, null_values: Option<NullValues>) -> Self {
-        self.null_values = null_values;
-        self
-    }
-
     /// Treat missing fields as null.
     pub fn with_missing_is_null(mut self, missing_is_null: bool) -> Self {
         self.missing_is_null = missing_is_null;
-        self
-    }
-
-    /// Overwrite the schema with the dtypes in this given Schema. The given schema may be a subset
-    /// of the total schema.
-    pub fn with_dtypes(mut self, schema: Option<SchemaRef>) -> Self {
-        self.schema_overwrite = schema;
         self
     }
 
@@ -202,17 +244,6 @@ where
     /// This is useful if you don't know the column names beforehand
     pub fn with_dtypes_slice(mut self, dtypes: Option<&'a [DataType]>) -> Self {
         self.dtype_overwrite = dtypes;
-        self
-    }
-
-    /// Set the CSV reader to infer the schema of the file
-    ///
-    /// # Arguments
-    /// * `max_records` - Maximum number of rows read for schema inference.
-    ///                   Setting this to `None` will do a full table scan (slow).
-    pub fn infer_schema(mut self, max_records: Option<usize>) -> Self {
-        // used by error ignore logic
-        self.max_records = max_records;
         self
     }
 
@@ -226,16 +257,6 @@ where
     /// Columns to select/ project
     pub fn with_columns(mut self, columns: Option<Vec<String>>) -> Self {
         self.columns = columns;
-        self
-    }
-
-    /// Set the number of threads used in CSV reading. The default uses the number of cores of
-    /// your cpu.
-    ///
-    /// Note that this only works if this is initialized with `CsvReader::from_path`.
-    /// Note that the number of cores is the maximum allowed number of threads.
-    pub fn with_n_threads(mut self, n: Option<usize>) -> Self {
-        self.n_threads = n;
         self
     }
 
@@ -254,44 +275,8 @@ where
         self
     }
 
-    /// Raise an error if CSV is empty (otherwise return an empty frame)
-    pub fn raise_if_empty(mut self, toggle: bool) -> Self {
-        self.raise_if_empty = toggle;
-        self
-    }
-
-    /// Reduce memory consumption at the expense of performance
-    pub fn low_memory(mut self, toggle: bool) -> Self {
-        self.low_memory = toggle;
-        self
-    }
-
-    /// Set the `char` used as quote char. The default is `b'"'`. If set to `[None]` quoting is disabled.
-    pub fn with_quote_char(mut self, quote_char: Option<u8>) -> Self {
-        self.quote_char = quote_char;
-        self
-    }
-
-    /// Automatically try to parse dates/ datetimes and time. If parsing fails, columns remain of dtype `[DataType::String]`.
-    pub fn with_try_parse_dates(mut self, toggle: bool) -> Self {
-        self.try_parse_dates = toggle;
-        self
-    }
-
     pub fn with_predicate(mut self, predicate: Option<Arc<dyn PhysicalIoExpr>>) -> Self {
         self.predicate = predicate;
-        self
-    }
-
-    /// Truncate lines that are longer than the schema.
-    pub fn truncate_ragged_lines(mut self, toggle: bool) -> Self {
-        self.truncate_ragged_lines = toggle;
-        self
-    }
-
-    /// Parse floats with decimals.
-    pub fn with_decimal_comma(mut self, toggle: bool) -> Self {
-        self.decimal_comma = toggle;
         self
     }
 }
@@ -318,34 +303,34 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
         CoreReader::new(
             reader_bytes,
             self.n_rows,
-            self.skip_rows_before_header,
+            self.options.skip_rows,
             std::mem::take(&mut self.projection),
-            self.max_records,
-            self.separator,
-            self.has_header,
-            self.ignore_errors,
-            self.schema.clone(),
+            self.options.infer_schema_length,
+            Some(self.options.separator),
+            self.options.has_header,
+            self.options.ignore_errors,
+            self.options.schema.clone(),
             std::mem::take(&mut self.columns),
-            self.encoding,
-            self.n_threads,
+            self.options.encoding,
+            self.options.n_threads,
             schema,
             self.dtype_overwrite,
             self.sample_size,
             self.chunk_size,
-            self.low_memory,
-            std::mem::take(&mut self.comment_prefix),
-            self.quote_char,
-            self.eol_char,
-            std::mem::take(&mut self.null_values),
+            self.options.low_memory,
+            std::mem::take(&mut self.options.comment_prefix),
+            self.options.quote_char,
+            self.options.eol_char,
+            std::mem::take(&mut self.options.null_values),
             self.missing_is_null,
             std::mem::take(&mut self.predicate),
             to_cast,
-            self.skip_rows_after_header,
+            self.options.skip_rows_after_header,
             std::mem::take(&mut self.row_index),
-            self.try_parse_dates,
-            self.raise_if_empty,
-            self.truncate_ragged_lines,
-            self.decimal_comma,
+            self.options.try_parse_dates,
+            self.options.raise_if_empty,
+            self.options.truncate_ragged_lines,
+            self.options.decimal_comma,
         )
     }
 
@@ -403,26 +388,26 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
     }
 
     pub fn batched_borrowed_mmap(&'a mut self) -> PolarsResult<BatchedCsvReaderMmap<'a>> {
-        if let Some(schema) = self.schema_overwrite.as_deref() {
+        if let Some(schema) = self.options.schema_overwrite.as_deref() {
             let (schema, to_cast, has_cat) = self.prepare_schema_overwrite(schema)?;
             let schema = Arc::new(schema);
 
             let csv_reader = self.core_reader(Some(schema), to_cast)?;
             csv_reader.batched_mmap(has_cat)
         } else {
-            let csv_reader = self.core_reader(self.schema.clone(), vec![])?;
+            let csv_reader = self.core_reader(self.options.schema.clone(), vec![])?;
             csv_reader.batched_mmap(false)
         }
     }
     pub fn batched_borrowed_read(&'a mut self) -> PolarsResult<BatchedCsvReaderRead<'a>> {
-        if let Some(schema) = self.schema_overwrite.as_deref() {
+        if let Some(schema) = self.options.schema_overwrite.as_deref() {
             let (schema, to_cast, has_cat) = self.prepare_schema_overwrite(schema)?;
             let schema = Arc::new(schema);
 
             let csv_reader = self.core_reader(Some(schema), to_cast)?;
             csv_reader.batched_read(has_cat)
         } else {
-            let csv_reader = self.core_reader(self.schema.clone(), vec![])?;
+            let csv_reader = self.core_reader(self.options.schema.clone(), vec![])?;
             csv_reader.batched_read(false)
         }
     }
@@ -440,20 +425,20 @@ impl<'a> CsvReader<'a, Box<dyn MmapBytesReader>> {
 
                 let (inferred_schema, _, _) = infer_file_schema(
                     &reader_bytes,
-                    self.separator.unwrap_or(b','),
-                    self.max_records,
-                    self.has_header,
+                    self.options.separator,
+                    self.options.infer_schema_length,
+                    self.options.has_header,
                     None,
-                    &mut self.skip_rows_before_header,
-                    self.skip_rows_after_header,
-                    self.comment_prefix.as_ref(),
-                    self.quote_char,
-                    self.eol_char,
-                    self.null_values.as_ref(),
-                    self.try_parse_dates,
-                    self.raise_if_empty,
-                    &mut self.n_threads,
-                    self.decimal_comma,
+                    &mut self.options.skip_rows,
+                    self.options.skip_rows_after_header,
+                    self.options.comment_prefix.as_ref(),
+                    self.options.quote_char,
+                    self.options.eol_char,
+                    self.options.null_values.as_ref(),
+                    self.options.try_parse_dates,
+                    self.options.raise_if_empty,
+                    &mut self.options.n_threads,
+                    self.options.decimal_comma,
                 )?;
                 let schema = Arc::new(inferred_schema);
                 Ok(to_batched_owned_mmap(self, schema))
@@ -471,20 +456,20 @@ impl<'a> CsvReader<'a, Box<dyn MmapBytesReader>> {
 
                 let (inferred_schema, _, _) = infer_file_schema(
                     &reader_bytes,
-                    self.separator.unwrap_or(b','),
-                    self.max_records,
-                    self.has_header,
+                    self.options.separator,
+                    self.options.infer_schema_length,
+                    self.options.has_header,
                     None,
-                    &mut self.skip_rows_before_header,
-                    self.skip_rows_after_header,
-                    self.comment_prefix.as_ref(),
-                    self.quote_char,
-                    self.eol_char,
-                    self.null_values.as_ref(),
-                    self.try_parse_dates,
-                    self.raise_if_empty,
-                    &mut self.n_threads,
-                    self.decimal_comma,
+                    &mut self.options.skip_rows,
+                    self.options.skip_rows_after_header,
+                    self.options.comment_prefix.as_ref(),
+                    self.options.quote_char,
+                    self.options.eol_char,
+                    self.options.null_values.as_ref(),
+                    self.options.try_parse_dates,
+                    self.options.raise_if_empty,
+                    &mut self.options.n_threads,
+                    self.options.decimal_comma,
                 )?;
                 let schema = Arc::new(inferred_schema);
                 Ok(to_batched_owned_read(self, schema))
@@ -501,44 +486,26 @@ where
     fn new(reader: R) -> Self {
         CsvReader {
             reader,
+            options: CsvReaderOptions::default(),
             rechunk: true,
             n_rows: None,
-            max_records: Some(128),
-            skip_rows_before_header: 0,
             projection: None,
-            separator: None,
-            has_header: true,
-            ignore_errors: false,
-            schema: None,
             columns: None,
-            encoding: CsvEncoding::Utf8,
-            n_threads: None,
             path: None,
-            schema_overwrite: None,
             dtype_overwrite: None,
             sample_size: 1024,
             chunk_size: 1 << 18,
-            low_memory: false,
-            comment_prefix: None,
-            eol_char: b'\n',
-            null_values: None,
             missing_is_null: true,
             predicate: None,
-            quote_char: Some(b'"'),
-            skip_rows_after_header: 0,
-            try_parse_dates: false,
             row_index: None,
-            raise_if_empty: true,
-            truncate_ragged_lines: false,
-            decimal_comma: false,
         }
     }
 
     /// Read the file and create the DataFrame.
     fn finish(mut self) -> PolarsResult<DataFrame> {
         let rechunk = self.rechunk;
-        let schema_overwrite = self.schema_overwrite.clone();
-        let low_memory = self.low_memory;
+        let schema_overwrite = self.options.schema_overwrite.clone();
+        let low_memory = self.options.low_memory;
 
         #[cfg(feature = "dtype-categorical")]
         let mut _cat_lock = None;
@@ -557,6 +524,7 @@ where
             #[cfg(feature = "dtype-categorical")]
             {
                 let has_cat = self
+                    .options
                     .schema
                     .clone()
                     .map(|schema| {
@@ -569,7 +537,7 @@ where
                     _cat_lock = Some(polars_core::StringCacheHolder::hold())
                 }
             }
-            let mut csv_reader = self.core_reader(self.schema.clone(), vec![])?;
+            let mut csv_reader = self.core_reader(self.options.schema.clone(), vec![])?;
             csv_reader.as_df()?
         };
 
@@ -585,7 +553,7 @@ where
 
         #[cfg(feature = "temporal")]
         // only needed until we also can parse time columns in place
-        if self.try_parse_dates {
+        if self.options.try_parse_dates {
             // determine the schema that's given by the user. That should not be changed
             let fixed_schema = match (schema_overwrite, self.dtype_overwrite) {
                 (Some(schema), _) => schema,

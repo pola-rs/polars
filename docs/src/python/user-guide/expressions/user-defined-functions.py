@@ -16,7 +16,9 @@ print(df)
 
 # --8<-- [start:shift_map_batches]
 out = df.group_by("keys", maintain_order=True).agg(
-    pl.col("values").map_batches(lambda s: s.shift()).alias("shift_map_batches"),
+    pl.col("values")
+    .map_batches(lambda s: s.shift(), is_elementwise=True)
+    .alias("shift_map_batches"),
     pl.col("values").shift().alias("shift_expression"),
 )
 print(out)
@@ -25,7 +27,9 @@ print(out)
 
 # --8<-- [start:map_elements]
 out = df.group_by("keys", maintain_order=True).agg(
-    pl.col("values").map_elements(lambda s: s.shift()).alias("shift_map_elements"),
+    pl.col("values")
+    .map_elements(lambda s: s.shift(), return_dtype=pl.List(int))
+    .alias("shift_map_elements"),
     pl.col("values").shift().alias("shift_expression"),
 )
 print(out)

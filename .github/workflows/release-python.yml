@@ -86,14 +86,14 @@ jobs:
       fail-fast: false
       matrix:
         package: [polars, polars-lts-cpu, polars-u64-idx]
-        os: [ubuntu-latest, macos-latest, windows-32gb-ram]
+        os: [ubuntu-latest, macos-13, windows-32gb-ram]
         architecture: [x86-64, aarch64]
         exclude:
           - os: windows-32gb-ram
             architecture: aarch64
 
     env:
-      SED_INPLACE: ${{ matrix.os == 'macos-latest' && '-i ''''' || '-i'}}
+      SED_INPLACE: ${{ matrix.os == 'macos-13' && '-i ''''' || '-i'}}
       CPU_CHECK_MODULE: py-polars/polars/_cpu_check.py
 
     steps:
@@ -128,7 +128,7 @@ jobs:
         if: matrix.architecture == 'x86-64'
         env:
           IS_LTS_CPU: ${{ matrix.package == 'polars-lts-cpu' }}
-          IS_MACOS: ${{ matrix.os == 'macos-latest' }}
+          IS_MACOS: ${{ matrix.os == 'macos-13' }}
         # IMPORTANT: All features enabled here should also be included in py-polars/polars/_cpu_check.py
         run: |
           if [[ "$IS_LTS_CPU" = true ]]; then
@@ -144,6 +144,7 @@ jobs:
         if: matrix.architecture == 'x86-64'
         env:
           FEATURES: ${{ steps.features.outputs.features }}
+          CFG: ${{ matrix.package == 'polars-lts-cpu' && '--cfg default_allocator' || '' }}
         run: echo "RUSTFLAGS=-C target-feature=${{ steps.features.outputs.features }} $CFG" >> $GITHUB_ENV
 
       - name: Set variables in CPU check module
@@ -159,7 +160,7 @@ jobs:
         if: matrix.architecture == 'aarch64'
         id: target
         run: |
-          TARGET=${{ matrix.os == 'macos-latest' && 'aarch64-apple-darwin' || 'aarch64-unknown-linux-gnu'}}
+          TARGET=${{ matrix.os == 'macos-13' && 'aarch64-apple-darwin' || 'aarch64-unknown-linux-gnu'}}
           echo "target=$TARGET" >> $GITHUB_OUTPUT
 
       - name: Set jemalloc for aarch64 Linux

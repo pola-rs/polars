@@ -319,14 +319,9 @@ impl SQLContext {
                 let (r_name, rf) = self.get_table(&tbl.relation)?;
                 lf = match &tbl.join_operator {
                     JoinOperator::CrossJoin => lf.cross_join(rf),
-                    JoinOperator::FullOuter(constraint) => process_join(
-                        lf,
-                        rf,
-                        constraint,
-                        &l_name,
-                        &r_name,
-                        JoinType::Outer { coalesce: false },
-                    )?,
+                    JoinOperator::FullOuter(constraint) => {
+                        process_join(lf, rf, constraint, &l_name, &r_name, JoinType::Outer)?
+                    },
                     JoinOperator::Inner(constraint) => {
                         process_join(lf, rf, constraint, &l_name, &r_name, JoinType::Inner)?
                     },

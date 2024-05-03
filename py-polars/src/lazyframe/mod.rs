@@ -1,5 +1,6 @@
 mod exitable;
-
+mod visit;
+pub(crate) mod visitor;
 use std::collections::HashMap;
 use std::io::BufWriter;
 use std::num::NonZeroUsize;
@@ -13,11 +14,13 @@ use polars_core::prelude::*;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyList};
+pub(crate) use visit::PyExprIR;
 
 use crate::arrow_interop::to_rust::pyarrow_schema_to_rust;
 use crate::error::PyPolarsErr;
 use crate::expr::ToExprs;
 use crate::file::get_file_like;
+use crate::lazyframe::visit::NodeTraverser;
 use crate::prelude::*;
 use crate::{PyDataFrame, PyExpr, PyLazyGroupBy};
 
@@ -141,7 +144,7 @@ impl PyLazyFrame {
     #[pyo3(signature = (path, paths, separator, has_header, ignore_errors, skip_rows, n_rows, cache, overwrite_dtype,
         low_memory, comment_prefix, quote_char, null_values, missing_utf8_is_empty_string,
         infer_schema_length, with_schema_modify, rechunk, skip_rows_after_header,
-        encoding, row_index, try_parse_dates, eol_char, raise_if_empty, truncate_ragged_lines, decimal_comma, schema
+        encoding, row_index, try_parse_dates, eol_char, raise_if_empty, truncate_ragged_lines, decimal_comma, glob, schema
     )
     )]
     fn new_from_csv(
@@ -170,6 +173,7 @@ impl PyLazyFrame {
         raise_if_empty: bool,
         truncate_ragged_lines: bool,
         decimal_comma: bool,
+        glob: bool,
         schema: Option<Wrap<Schema>>,
     ) -> PyResult<Self> {
         let null_values = null_values.map(|w| w.0);
@@ -214,6 +218,7 @@ impl PyLazyFrame {
             .with_missing_is_null(!missing_utf8_is_empty_string)
             .truncate_ragged_lines(truncate_ragged_lines)
             .with_decimal_comma(decimal_comma)
+            .with_glob(glob)
             .raise_if_empty(raise_if_empty);
 
         if let Some(lambda) = with_schema_modify {
@@ -245,7 +250,7 @@ impl PyLazyFrame {
     #[cfg(feature = "parquet")]
     #[staticmethod]
     #[pyo3(signature = (path, paths, n_rows, cache, parallel, rechunk, row_index,
-        low_memory, cloud_options, use_statistics, hive_partitioning, hive_schema, retries)
+        low_memory, cloud_options, use_statistics, hive_partitioning, hive_schema, retries, glob)
     )]
     fn new_from_parquet(
         path: Option<PathBuf>,
@@ -261,6 +266,7 @@ impl PyLazyFrame {
         hive_partitioning: bool,
         hive_schema: Option<Wrap<Schema>>,
         retries: usize,
+        glob: bool,
     ) -> PyResult<Self> {
         let parallel = parallel.0;
         let hive_schema = hive_schema.map(|s| Arc::new(s.0));
@@ -302,6 +308,7 @@ impl PyLazyFrame {
             cloud_options,
             use_statistics,
             hive_options,
+            glob,
         };
 
         let lf = if path.is_some() {
@@ -560,12 +567,42 @@ impl PyLazyFrame {
         Ok((df.into(), time_df.into()))
     }
 
-    fn collect(&self, py: Python) -> PyResult<PyDataFrame> {
+    fn collect(&self, py: Python, lamdba_post_opt: Option<PyObject>) -> PyResult<PyDataFrame> {
         // if we don't allow threads and we have udfs trying to acquire the gil from different
         // threads we deadlock.
         let df = py.allow_threads(|| {
             let ldf = self.ldf.clone();
-            ldf.collect().map_err(PyPolarsErr::from)
+            if let Some(lambda) = lamdba_post_opt {
+                ldf._collect_post_opt(|root, lp_arena, expr_arena| {
+                    Python::with_gil(|py| {
+                        let nt = NodeTraverser::new(
+                            root,
+                            std::mem::take(lp_arena),
+                            std::mem::take(expr_arena),
+                        );
+
+                        // Get a copy of the arena's.
+                        let arenas = nt.get_arenas();
+
+                        // Pass the node visitor which allows the python callback to replace parts of the query plan.
+                        // Remove "cuda" or specify better once we have multiple post-opt callbacks.
+                        lambda.call1(py, (nt,)).map_err(
+                            |e| polars_err!(ComputeError: "'cuda' conversion failed: {}", e),
+                        )?;
+
+                        // Unpack the arena's.
+                        // At this point the `nt` is useless.
+
+                        std::mem::swap(lp_arena, &mut *arenas.0.lock().unwrap());
+                        std::mem::swap(expr_arena, &mut *arenas.1.lock().unwrap());
+
+                        Ok(())
+                    })
+                })
+            } else {
+                ldf.collect()
+            }
+            .map_err(PyPolarsErr::from)
         })?;
         Ok(df.into())
     }
@@ -874,7 +911,13 @@ impl PyLazyFrame {
         how: Wrap<JoinType>,
         suffix: String,
         validate: Wrap<JoinValidation>,
+        coalesce: Option<bool>,
     ) -> PyResult<Self> {
+        let coalesce = match coalesce {
+            None => JoinCoalesce::JoinSpecific,
+            Some(true) => JoinCoalesce::CoalesceColumns,
+            Some(false) => JoinCoalesce::KeepColumns,
+        };
         let ldf = self.ldf.clone();
         let other = other.ldf;
         let left_on = left_on
@@ -895,6 +938,7 @@ impl PyLazyFrame {
             .force_parallel(force_parallel)
             .join_nulls(join_nulls)
             .how(how.0)
+            .coalesce(coalesce)
             .validate(validate.0)
             .suffix(suffix)
             .finish()

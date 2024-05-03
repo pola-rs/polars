@@ -11,7 +11,7 @@ use crate::io::ipc::read::{Dictionaries, IpcBuffer, Node, OutOfSpecKind};
 use crate::io::ipc::IpcField;
 use crate::offset::Offset;
 use crate::types::NativeType;
-use crate::{match_integer_type, with_match_primitive_type};
+use crate::{match_integer_type, with_match_primitive_type_full};
 
 fn get_buffer_bounds(buffers: &mut VecDeque<IpcBuffer>) -> PolarsResult<(usize, usize)> {
     let buffer = buffers.pop_front().ok_or_else(
@@ -29,6 +29,19 @@ fn get_buffer_bounds(buffers: &mut VecDeque<IpcBuffer>) -> PolarsResult<(usize, 
     Ok((offset, length))
 }
 
+/// Checks that the length of `bytes` is at least `size_of::<T>() * expected_len`, and
+/// returns a boolean indicating whether it is aligned.
+fn check_bytes_len_and_is_aligned<T: NativeType>(
+    bytes: &[u8],
+    expected_len: usize,
+) -> PolarsResult<bool> {
+    if bytes.len() < std::mem::size_of::<T>() * expected_len {
+        polars_bail!(ComputeError: "buffer's length is too small in mmap")
+    };
+
+    Ok(bytemuck::try_cast_slice::<_, T>(bytes).is_ok())
+}
+
 fn get_buffer<'a, T: NativeType>(
     data: &'a [u8],
     block_offset: usize,
@@ -42,13 +55,8 @@ fn get_buffer<'a, T: NativeType>(
         .get(block_offset + offset..block_offset + offset + length)
         .ok_or_else(|| polars_err!(ComputeError: "buffer out of bounds"))?;
 
-    // validate alignment
-    let v: &[T] = bytemuck::try_cast_slice(values)
-        .map_err(|_| polars_err!(ComputeError: "buffer not aligned for mmap"))?;
-
-    if v.len() < num_rows {
-        polars_bail!(ComputeError: "buffer's length is too small in mmap",
-        )
+    if !check_bytes_len_and_is_aligned::<T>(values, num_rows)? {
+        polars_bail!(ComputeError: "buffer not aligned for mmap");
     }
 
     Ok(values)
@@ -270,19 +278,58 @@ fn mmap_primitive<P: NativeType, T: AsRef<[u8]>>(
 
     let validity = get_validity(data_ref, block_offset, buffers, null_count)?.map(|x| x.as_ptr());
 
-    let values = get_buffer::<P>(data_ref, block_offset, buffers, num_rows)?.as_ptr();
+    let bytes = get_bytes(data_ref, block_offset, buffers)?;
+    let is_aligned = check_bytes_len_and_is_aligned::<P>(bytes, num_rows)?;
 
-    Ok(unsafe {
-        create_array(
-            data,
-            num_rows,
-            null_count,
-            [validity, Some(values)].into_iter(),
-            [].into_iter(),
-            None,
-            None,
-        )
-    })
+    let out = if is_aligned || std::mem::size_of::<T>() <= 8 {
+        assert!(
+            is_aligned,
+            "primitive type with size <= 8 bytes should have been aligned"
+        );
+        let bytes_ptr = bytes.as_ptr();
+
+        unsafe {
+            create_array(
+                data,
+                num_rows,
+                null_count,
+                [validity, Some(bytes_ptr)].into_iter(),
+                [].into_iter(),
+                None,
+                None,
+            )
+        }
+    } else {
+        let mut values = vec![P::default(); num_rows];
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                bytes.as_ptr(),
+                values.as_mut_ptr() as *mut u8,
+                bytes.len(),
+            )
+        };
+        // Now we need to keep the new buffer alive
+        let owned_data = Arc::new((
+            // We can drop the original ref if we don't have a validity
+            validity.and(Some(data)),
+            values,
+        ));
+        let bytes_ptr = owned_data.1.as_ptr() as *mut u8;
+
+        unsafe {
+            create_array(
+                owned_data,
+                num_rows,
+                null_count,
+                [validity, Some(bytes_ptr)].into_iter(),
+                [].into_iter(),
+                None,
+                None,
+            )
+        }
+    };
+
+    Ok(out)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -482,7 +529,7 @@ fn get_array<T: AsRef<[u8]>>(
     match data_type.to_physical_type() {
         Null => mmap_null(data, &node, block_offset, buffers),
         Boolean => mmap_boolean(data, &node, block_offset, buffers),
-        Primitive(p) => with_match_primitive_type!(p, |$T| {
+        Primitive(p) => with_match_primitive_type_full!(p, |$T| {
             mmap_primitive::<$T, _>(data, &node, block_offset, buffers)
         }),
         Utf8 | Binary => mmap_binary::<i32, _>(data, &node, block_offset, buffers),
