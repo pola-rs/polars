@@ -74,7 +74,6 @@ data2 = pl.DataFrame({"field3": [3, 4], "field4": ["C", "D"]})
 def test_concat_diagonal(
     a: pl.DataFrame, b: pl.DataFrame, c: pl.DataFrame, strategy: ConcatMethod
 ) -> None:
-    print(a, b, c);
     for out in [
         pl.concat([a, b, c], how=strategy),
         pl.concat([a.lazy(), b.lazy(), c.lazy()], how=strategy).collect(),

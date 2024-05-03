@@ -118,8 +118,6 @@ pub struct DataFrameScan {
 pub struct SimpleProjection {
     #[pyo3(get)]
     input: usize,
-    #[pyo3(get)]
-    duplicate_check: bool,
 }
 
 #[pyclass]
@@ -328,15 +326,9 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             selection: selection.as_ref().map(|e| e.into()),
         }
         .into_py(py),
-        IR::SimpleProjection {
-            input,
-            columns: _,
-            duplicate_check,
-        } => SimpleProjection {
-            input: input.0,
-            duplicate_check: *duplicate_check,
-        }
-        .into_py(py),
+        IR::SimpleProjection { input, columns: _ } => {
+            SimpleProjection { input: input.0 }.into_py(py)
+        },
         IR::Select {
             input,
             expr,
