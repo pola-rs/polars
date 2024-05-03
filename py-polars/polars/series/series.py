@@ -345,7 +345,7 @@ class Series:
         elif _check_for_pyarrow(values) and isinstance(
             values, (pa.Array, pa.ChunkedArray)
         ):
-            self._s = arrow_to_pyseries(name, values)
+            self._s = arrow_to_pyseries(name, values, dtype=dtype, strict=strict)
 
         elif _check_for_pandas(values) and isinstance(
             values, (pd.Series, pd.Index, pd.DatetimeIndex)

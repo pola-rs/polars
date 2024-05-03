@@ -423,13 +423,22 @@ def pandas_to_pyseries(
             "(e.g. 'int64', 'bool', 'float32' - not 'Int64')"
         )
         raise ImportError(msg)
-    s = arrow_to_pyseries(
-        name, plc.pandas_series_to_arrow(values, nan_to_null=nan_to_null)
+    return arrow_to_pyseries(
+        name,
+        plc.pandas_series_to_arrow(values, nan_to_null=nan_to_null),
+        dtype=dtype,
+        strict=strict,
     )
-    return s if dtype is None else s.cast(dtype, strict=strict)
 
 
-def arrow_to_pyseries(name: str, values: pa.Array, *, rechunk: bool = True) -> PySeries:
+def arrow_to_pyseries(
+    name: str,
+    values: pa.Array,
+    dtype: PolarsDataType | None = None,
+    *,
+    strict: bool = True,
+    rechunk: bool = True,
+) -> PySeries:
     """Construct a PySeries from an Arrow array."""
     array = plc.coerce_arrow(values)
 
@@ -466,7 +475,7 @@ def arrow_to_pyseries(name: str, values: pa.Array, *, rechunk: bool = True) -> P
         if rechunk:
             pys.rechunk(in_place=True)
 
-    return pys
+    return pys.cast(dtype, strict=strict) if dtype is not None else pys
 
 
 def numpy_to_pyseries(

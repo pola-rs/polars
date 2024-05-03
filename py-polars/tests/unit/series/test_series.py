@@ -2344,3 +2344,8 @@ def test_series_from_pandas_with_dtype() -> None:
     assert_series_equal(s, pl.Series("foo", [1, 2, 3], dtype=pl.Float32))
     s = pl.Series("foo", pd.Series([1, 2, 3], dtype="Int64"), pl.Float32)
     assert_series_equal(s, pl.Series("foo", [1, 2, 3], dtype=pl.Float32))
+
+
+def test_series_from_pyarrow_with_dtype() -> None:
+    s = pl.Series("foo", pa.array([1, 2, 3]), pl.Float32)
+    assert_series_equal(s, pl.Series("foo", [1, 2, 3], dtype=pl.Float32))
