@@ -66,18 +66,14 @@ impl IR {
             },
             IR::HConcat {
                 inputs,
-                schema,
+                schema: _,
                 options,
             } => {
                 let inputs = inputs
                     .into_iter()
                     .map(|node| convert_to_lp(node, lp_arena))
                     .collect();
-                DslPlan::HConcat {
-                    inputs,
-                    schema: schema.clone(),
-                    options,
-                }
+                DslPlan::HConcat { inputs, options }
             },
             IR::Slice { input, offset, len } => {
                 let lp = convert_to_lp(input, lp_arena);

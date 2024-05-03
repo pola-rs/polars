@@ -65,25 +65,11 @@ pub fn concat_lf_horizontal<L: AsRef<[LazyFrame]>>(
         opt_state.file_caching |= lf.opt_state.file_caching;
     }
 
-    let mut lps = Vec::with_capacity(lfs.len());
-    let mut schemas = Vec::with_capacity(lfs.len());
-
-    for lf in lfs.iter() {
-        let mut lf = lf.clone();
-        let schema = lf.schema()?;
-        schemas.push(schema);
-        let lp = std::mem::take(&mut lf.logical_plan);
-        lps.push(lp);
-    }
-
-    let combined_schema = merge_schemas(&schemas)?;
-
     let options = HConcatOptions {
         parallel: args.parallel,
     };
     let lp = DslPlan::HConcat {
-        inputs: lps,
-        schema: Arc::new(combined_schema),
+        inputs: lfs.iter().map(|lf| lf.logical_plan.clone()).collect(),
         options,
     };
     let mut lf = LazyFrame::from(lp);

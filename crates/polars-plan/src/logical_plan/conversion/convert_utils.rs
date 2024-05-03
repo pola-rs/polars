@@ -43,15 +43,19 @@ pub(super) fn convert_st_union(
     Ok(())
 }
 
+fn nodes_to_schemas(inputs: &[Node], lp_arena: &mut Arena<IR>) -> Vec<SchemaRef> {
+    inputs
+        .iter()
+        .map(|n| lp_arena.get(*n).schema(lp_arena).into_owned())
+        .collect()
+}
+
 pub(super) fn convert_diagonal_concat(
     mut inputs: Vec<Node>,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
 ) -> Vec<Node> {
-    let schemas = inputs
-        .iter()
-        .map(|n| lp_arena.get(*n).schema(lp_arena).into_owned())
-        .collect::<Vec<_>>();
+    let schemas = nodes_to_schemas(&inputs, lp_arena);
 
     let upper_bound_width = schemas.iter().map(|sch| sch.len()).sum();
 
@@ -102,4 +106,13 @@ pub(super) fn convert_diagonal_concat(
     } else {
         inputs
     }
+}
+
+pub(super) fn h_concat_schema(
+    inputs: &[Node],
+    lp_arena: &mut Arena<IR>,
+) -> PolarsResult<SchemaRef> {
+    let schemas = nodes_to_schemas(inputs, lp_arena);
+    let combined_schema = merge_schemas(&schemas)?;
+    Ok(Arc::new(combined_schema))
 }

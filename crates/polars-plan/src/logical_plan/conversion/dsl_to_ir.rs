@@ -164,16 +164,15 @@ pub fn to_alp_impl(
             let options = args.into();
             IR::Union { inputs, options }
         },
-        DslPlan::HConcat {
-            inputs,
-            schema,
-            options,
-        } => {
+        DslPlan::HConcat { inputs, options } => {
             let inputs = inputs
                 .into_iter()
                 .map(|lp| to_alp_impl(lp, expr_arena, lp_arena, convert))
-                .collect::<PolarsResult<_>>()
+                .collect::<PolarsResult<Vec<_>>>()
                 .map_err(|e| e.context(failed_input!(horizontal concat)))?;
+
+            let schema = convert_utils::h_concat_schema(&inputs, lp_arena)?;
+
             IR::HConcat {
                 inputs,
                 schema,
