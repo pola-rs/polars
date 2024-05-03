@@ -122,7 +122,7 @@ impl IR {
                     options,
                 }
             },
-            IR::SimpleProjection { input, columns, .. } => {
+            IR::SimpleProjection { input, columns } => {
                 let input = convert_to_lp(input, lp_arena);
                 let expr = columns
                     .iter_names()

@@ -52,7 +52,6 @@ pub enum IR {
     SimpleProjection {
         input: Node,
         columns: SchemaRef,
-        duplicate_check: bool,
     },
     // Polars' `select` operation. This may access full materialized data.
     Select {

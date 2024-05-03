@@ -428,7 +428,6 @@ pub fn to_alp_impl(
                     IR::SimpleProjection {
                         input,
                         columns: Arc::new(output_schema),
-                        duplicate_check: false,
                     }
                 },
                 DslFunction::Stats(sf) => {
