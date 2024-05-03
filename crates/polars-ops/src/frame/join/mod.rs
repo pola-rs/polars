@@ -117,6 +117,8 @@ pub trait DataFrameJoinOps: IntoDf {
         let left_df = self.to_df();
         args.validation.is_valid_join(&args.how)?;
 
+        let should_coalesce = args.coalesce.coalesce(&args.how);
+
         #[cfg(feature = "cross_join")]
         if let JoinType::Cross = args.how {
             return left_df.cross_join(other, args.suffix.as_deref(), args.slice);
@@ -202,13 +204,12 @@ pub trait DataFrameJoinOps: IntoDf {
         if selected_left.len() == 1 {
             let s_left = &selected_left[0];
             let s_right = &selected_right[0];
+            let drop_names: Option<&[&str]> = if should_coalesce { None } else { Some(&[]) };
             return match args.how {
-                JoinType::Inner => {
-                    left_df._inner_join_from_series(other, s_left, s_right, args, _verbose, None)
-                },
-                JoinType::Left => {
-                    left_df._left_join_from_series(other, s_left, s_right, args, _verbose, None)
-                },
+                JoinType::Inner => left_df
+                    ._inner_join_from_series(other, s_left, s_right, args, _verbose, drop_names),
+                JoinType::Left => left_df
+                    ._left_join_from_series(other, s_left, s_right, args, _verbose, drop_names),
                 JoinType::Outer => left_df._outer_join_from_series(other, s_left, s_right, args),
                 #[cfg(feature = "semi_anti_join")]
                 JoinType::Anti => left_df._semi_anti_join_from_series(
@@ -265,7 +266,12 @@ pub trait DataFrameJoinOps: IntoDf {
 
         let lhs_keys = prepare_keys_multiple(&selected_left, args.join_nulls)?.into_series();
         let rhs_keys = prepare_keys_multiple(&selected_right, args.join_nulls)?.into_series();
-        let names_right = selected_right.iter().map(|s| s.name()).collect::<Vec<_>>();
+
+        let drop_names = if should_coalesce {
+            Some(selected_right.iter().map(|s| s.name()).collect::<Vec<_>>())
+        } else {
+            Some(vec![])
+        };
 
         // Multiple keys.
         match args.how {
@@ -278,16 +284,15 @@ pub trait DataFrameJoinOps: IntoDf {
             },
             JoinType::Outer => {
                 let names_left = selected_left.iter().map(|s| s.name()).collect::<Vec<_>>();
-                let coalesce = args.coalesce;
                 args.coalesce = JoinCoalesce::KeepColumns;
                 let suffix = args.suffix.clone();
                 let out = left_df._outer_join_from_series(other, &lhs_keys, &rhs_keys, args);
 
-                if coalesce.coalesce(&JoinType::Outer) {
+                if should_coalesce {
                     Ok(_coalesce_outer_join(
                         out?,
                         &names_left,
-                        &names_right,
+                        drop_names.as_ref().unwrap(),
                         suffix.as_deref(),
                         left_df,
                     ))
@@ -301,7 +306,7 @@ pub trait DataFrameJoinOps: IntoDf {
                 &rhs_keys,
                 args,
                 _verbose,
-                Some(&names_right),
+                drop_names.as_deref(),
             ),
             JoinType::Left => left_df._left_join_from_series(
                 other,
@@ -309,7 +314,7 @@ pub trait DataFrameJoinOps: IntoDf {
                 &rhs_keys,
                 args,
                 _verbose,
-                Some(&names_right),
+                drop_names.as_deref(),
             ),
             #[cfg(feature = "semi_anti_join")]
             JoinType::Anti | JoinType::Semi => self._join_impl(

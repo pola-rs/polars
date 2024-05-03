@@ -960,3 +960,33 @@ def test_cross_join_slice_pushdown() -> None:
         },
         schema={"x": pl.UInt16, "x_": pl.UInt16},
     )
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("how", ["left", "inner"])
+@typing.no_type_check
+def test_join_coalesce(how: str) -> None:
+    a = pl.LazyFrame({"a": [1, 2], "b": [1, 2]})
+    b = pl.LazyFrame(
+        {
+            "a": [1, 2, 1, 2],
+            "b": [5, 7, 8, 9],
+            "c": [1, 2, 1, 2],
+        }
+    )
+
+    how = "inner"
+    q = a.join(b, on="a", coalesce=False, how=how)
+    out = q.collect()
+    assert q.schema == out.schema
+    assert out.columns == ["a", "b", "a_right", "b_right", "c"]
+
+    q = a.join(b, on=["a", "b"], coalesce=False, how=how)
+    out = q.collect()
+    assert q.schema == out.schema
+    assert out.columns == ["a", "b", "a_right", "b_right", "c"]
+
+    q = a.join(b, on=["a", "b"], coalesce=True, how=how)
+    out = q.collect()
+    assert q.schema == out.schema
+    assert out.columns == ["a", "b", "c"]
