@@ -150,14 +150,9 @@ impl IR {
                 input: inputs.pop().unwrap(),
                 payload: payload.clone(),
             },
-            SimpleProjection {
-                columns,
-                duplicate_check,
-                ..
-            } => SimpleProjection {
+            SimpleProjection { columns, .. } => SimpleProjection {
                 input: inputs.pop().unwrap(),
                 columns: columns.clone(),
-                duplicate_check: *duplicate_check,
             },
             Invalid => unreachable!(),
         }

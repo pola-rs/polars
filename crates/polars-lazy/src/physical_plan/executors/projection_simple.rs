@@ -5,16 +5,12 @@ use super::*;
 pub struct ProjectionSimple {
     pub(crate) input: Box<dyn Executor>,
     pub(crate) columns: SchemaRef,
-    pub(crate) duplicate_check: bool,
 }
 
 impl ProjectionSimple {
     fn execute_impl(&mut self, df: DataFrame, columns: &[SmartString]) -> PolarsResult<DataFrame> {
-        if self.duplicate_check {
-            df._select_impl(columns.as_ref())
-        } else {
-            df._select_impl_unchecked(columns.as_ref())
-        }
+        // No duplicate check as that an invariant of this node.
+        df._select_impl_unchecked(columns.as_ref())
     }
 }
 
