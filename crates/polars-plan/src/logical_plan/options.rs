@@ -274,3 +274,40 @@ impl Default for ProjectionOptions {
         }
     }
 }
+
+// Arguments given to `concat`. Differs from `UnionOptions` as the latter is IR state.
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct UnionArgs {
+    pub parallel: bool,
+    pub rechunk: bool,
+    pub to_supertypes: bool,
+    pub diagonal: bool,
+    // If it is a union from a scan over multiple files.
+    pub from_partitioned_ds: bool,
+}
+
+impl Default for UnionArgs {
+    fn default() -> Self {
+        Self {
+            parallel: true,
+            rechunk: true,
+            to_supertypes: false,
+            diagonal: false,
+            from_partitioned_ds: false,
+        }
+    }
+}
+
+impl From<UnionArgs> for UnionOptions {
+    fn from(args: UnionArgs) -> Self {
+        UnionOptions {
+            slice: None,
+            parallel: args.parallel,
+            rows: (None, 0),
+            from_partitioned_ds: args.from_partitioned_ds,
+            flattened_by_opt: false,
+            rechunk: args.rechunk,
+        }
+    }
+}
