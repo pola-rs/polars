@@ -6199,10 +6199,10 @@ class DataFrame:
 
         Notes
         -----
-        * The frame-level `apply` cannot track column names (as the UDF is a black-box
-          that may arbitrarily drop, rearrange, transform, or add new columns); if you
-          want to apply a UDF such that column names are preserved, you should use the
-          expression-level `apply` syntax instead.
+        * The frame-level `map_rows` cannot track column names (as the UDF is a
+          black-box that may arbitrarily drop, rearrange, transform, or add new
+          columns); if you want to apply a UDF such that column names are preserved,
+          you should use the expression-level `map_elements` syntax instead.
 
         * If your function is expensive and you don't want it to be called more than
           once for a given input, consider applying an `@lru_cache` decorator to it.
