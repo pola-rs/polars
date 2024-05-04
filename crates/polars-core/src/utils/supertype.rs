@@ -304,6 +304,7 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
                             }
                         }
                     }
+                    UnknownKind::Int(_) if dt.is_decimal() => Some(dt.clone()),
                     _ => Some(Unknown(UnknownKind::Any))
                 }
             },

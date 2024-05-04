@@ -461,3 +461,13 @@ def test_decimal_streaming() -> None:
             D("161102921617598.363263936811563000"),
         ],
     }
+
+
+def test_decimal_supertype() -> None:
+    with pl.Config() as cfg:
+        cfg.activate_decimals()
+        pl.Config.activate_decimals()
+        q = pl.LazyFrame([0.12345678]).select(
+            pl.col("column_0").cast(pl.Decimal(scale=6)) * 1
+        )
+        assert q.collect().dtypes[0].is_decimal()
