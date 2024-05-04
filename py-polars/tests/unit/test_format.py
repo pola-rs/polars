@@ -404,3 +404,16 @@ def test_format_numeric_locale_options() -> None:
 │ yy  ┆ -234567.89    ┆ 44444444444 ┆ -9999999.9900 │
 └─────┴───────────────┴─────────────┴───────────────┘"""
     )
+
+
+def test_fmt_decimal_max_scale() -> None:
+    values = [D("0.14282911023321884847623576259639164703")]
+    dtype = pl.Decimal(precision=38, scale=38)
+    s = pl.Series(values, dtype=dtype)
+    result = str(s)
+    expected = """shape: (1,)
+Series: '' [decimal[38,38]]
+[
+	0.14282911023321884847623576259639164703
+]"""
+    assert result == expected
