@@ -102,7 +102,7 @@ where
         WriteOptions {
             write_statistics: self.statistics,
             compression: self.compression,
-            version: Version::V2,
+            version: Version::V1,
             data_pagesize_limit: self.data_page_size,
         }
     }

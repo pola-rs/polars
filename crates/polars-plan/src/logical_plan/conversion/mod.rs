@@ -54,31 +54,26 @@ impl IR {
             },
             #[cfg(feature = "python")]
             IR::PythonScan { options, .. } => DslPlan::PythonScan { options },
-            IR::Union { inputs, options } => {
+            IR::Union { inputs, .. } => {
                 let inputs = inputs
                     .into_iter()
                     .map(|node| convert_to_lp(node, lp_arena))
                     .collect();
                 DslPlan::Union {
                     inputs,
-                    options,
-                    convert_supertypes: false,
+                    args: Default::default(),
                 }
             },
             IR::HConcat {
                 inputs,
-                schema,
+                schema: _,
                 options,
             } => {
                 let inputs = inputs
                     .into_iter()
                     .map(|node| convert_to_lp(node, lp_arena))
                     .collect();
-                DslPlan::HConcat {
-                    inputs,
-                    schema: schema.clone(),
-                    options,
-                }
+                DslPlan::HConcat { inputs, options }
             },
             IR::Slice { input, offset, len } => {
                 let lp = convert_to_lp(input, lp_arena);
@@ -123,7 +118,7 @@ impl IR {
                     options,
                 }
             },
-            IR::SimpleProjection { input, columns, .. } => {
+            IR::SimpleProjection { input, columns } => {
                 let input = convert_to_lp(input, lp_arena);
                 let expr = columns
                     .iter_names()

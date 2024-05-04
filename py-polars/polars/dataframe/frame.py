@@ -73,8 +73,13 @@ from polars.datatypes import (
     N_INFER_DEFAULT,
     Boolean,
     Float64,
+    Int32,
+    Int64,
     Object,
     String,
+    UInt16,
+    UInt32,
+    UInt64,
 )
 from polars.dependencies import (
     _HVPLOT_AVAILABLE,
@@ -108,7 +113,7 @@ from polars.io.spreadsheet._write_utils import (
 )
 from polars.selectors import _expand_selector_dicts, _expand_selectors
 from polars.slice import PolarsSlice
-from polars.type_aliases import DbWriteMode
+from polars.type_aliases import DbWriteMode, TorchExportType
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import dtype_str_repr as _dtype_str_repr
@@ -121,11 +126,13 @@ if TYPE_CHECKING:
     from typing import Literal
 
     import deltalake
+    import torch
     from hvplot.plotting.core import hvPlotTabularPolars
     from xlsxwriter import Workbook
 
     from polars import DataType, Expr, LazyFrame, Series
     from polars.interchange.dataframe import PolarsDataFrame
+    from polars.ml.torch import PolarsDataset
     from polars.polars import PyDataFrame
     from polars.type_aliases import (
         AsofJoinStrategy,
@@ -1638,6 +1645,178 @@ class DataFrame:
             ).T
 
         return out
+
+    @overload
+    def to_torch(
+        self,
+        return_type: Literal["tensor"] = ...,
+        *,
+        label: str | Expr | Sequence[str | Expr] | None = ...,
+        features: str | Expr | Sequence[str | Expr] | None = ...,
+        dtype: PolarsDataType | None = ...,
+    ) -> torch.Tensor: ...
+
+    @overload
+    def to_torch(
+        self,
+        return_type: Literal["dataset"],
+        *,
+        label: str | Expr | Sequence[str | Expr] | None = ...,
+        features: str | Expr | Sequence[str | Expr] | None = ...,
+        dtype: PolarsDataType | None = ...,
+    ) -> PolarsDataset: ...
+
+    @overload
+    def to_torch(
+        self,
+        return_type: Literal["dict"],
+        *,
+        label: str | Expr | Sequence[str | Expr] | None = ...,
+        features: str | Expr | Sequence[str | Expr] | None = ...,
+        dtype: PolarsDataType | None = ...,
+    ) -> dict[str, torch.Tensor]: ...
+
+    def to_torch(
+        self,
+        return_type: TorchExportType = "tensor",
+        *,
+        label: str | Expr | Sequence[str | Expr] | None = None,
+        features: str | Expr | Sequence[str | Expr] | None = None,
+        dtype: PolarsDataType | None = None,
+    ) -> torch.Tensor | dict[str, torch.Tensor] | PolarsDataset:
+        """
+        Convert DataFrame to a 2D PyTorch tensor, Dataset, or dict of Tensors.
+
+        .. versionadded:: 0.20.23
+
+        Parameters
+        ----------
+        return_type : {"tensor", "dataset", "dict"}
+            Set return type; a 2D PyTorch tensor, PolarsDataset (a frame-specialized
+            TensorDataset), or dict of Tensors.
+        label
+            One or more column names or expressions that label the feature data; when
+            `return_type` is "dataset", the PolarsDataset returns `(features, label)`
+            tensor tuples for each row. Otherwise, it returns `(features,)` tensor
+            tuples where the feature contains all the row data. This parameter is a
+            no-op for the other return-types.
+        features
+            One or more column names or expressions that contain the feature data; if
+            omitted, all columns that are not designated as part of the label are used.
+            This parameter is a no-op for return-types other than "dataset".
+        dtype
+            Unify the dtype of all returned tensors; this casts any frame Series
+            that are not of the required dtype before converting to tensor. This
+            includes the label column *unless* the label is an expression (such
+            as `pl.col("label_column").cast(pl.Int16)`).
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "lbl": [0, 1, 2, 3],
+        ...         "feat1": [1, 0, 0, 1],
+        ...         "feat2": [1.5, -0.5, 0.0, -2.25],
+        ...     }
+        ... )
+
+        Standard return type (Tensor), with f32 supertype:
+
+        >>> df.to_torch(dtype=pl.Float32)
+        tensor([[ 0.0000,  1.0000,  1.5000],
+                [ 1.0000,  0.0000, -0.5000],
+                [ 2.0000,  0.0000,  0.0000],
+                [ 3.0000,  1.0000, -2.2500]])
+
+        As a dictionary of individual Tensors:
+
+        >>> df.to_torch("dict")
+        {'lbl': tensor([0, 1, 2, 3]),
+         'feat1': tensor([1, 0, 0, 1]),
+         'feat2': tensor([ 1.5000, -0.5000,  0.0000, -2.2500], dtype=torch.float64)}
+
+        As a PolarsDataset, with f64 supertype:
+
+        >>> ds = df.to_torch("dataset", dtype=pl.Float64)
+        >>> ds[3]
+        (tensor([ 3.0000,  1.0000, -2.2500], dtype=torch.float64),)
+        >>> ds[:2]
+        (tensor([[ 0.0000,  1.0000,  1.5000],
+                 [ 1.0000,  0.0000, -0.5000]], dtype=torch.float64),)
+        >>> ds[[0, 3]]
+        (tensor([[ 0.0000,  1.0000,  1.5000],
+                 [ 3.0000,  1.0000, -2.2500]], dtype=torch.float64),)
+
+        As a convenience the PolarsDataset can opt-in to half-precision data
+        for experimentation (usually this would be set on the model/pipeline):
+
+        >>> list(ds.half())
+        [(tensor([0.0000, 1.0000, 1.5000], dtype=torch.float16),),
+         (tensor([ 1.0000,  0.0000, -0.5000], dtype=torch.float16),),
+         (tensor([2., 0., 0.], dtype=torch.float16),),
+         (tensor([ 3.0000,  1.0000, -2.2500], dtype=torch.float16),)]
+
+        Pass PolarsDataset to a DataLoader, designating the label:
+
+        >>> from torch.utils.data import DataLoader
+        >>> ds = df.to_torch("dataset", label="lbl")
+        >>> dl = DataLoader(ds, batch_size=2)
+        >>> batches = list(dl)
+        >>> batches[0]
+        [tensor([[ 1.0000,  1.5000],
+                 [ 0.0000, -0.5000]], dtype=torch.float64), tensor([0, 1])]
+
+        Note that labels can be given as expressions, allowing them to have
+        a dtype independent of the feature columns (multi-column labels are
+        supported).
+
+        >>> ds = df.to_torch(
+        ...     "dataset",
+        ...     dtype=pl.Float32,
+        ...     label=pl.col("lbl").cast(pl.Int16),
+        ... )
+        >>> ds[:2]
+        (tensor([[ 1.0000,  1.5000],
+                 [ 0.0000, -0.5000]]), tensor([0, 1], dtype=torch.int16))
+
+        Easily integrate with (for example) scikit-learn and other datasets:
+
+        >>> from sklearn.datasets import fetch_california_housing  # doctest: +SKIP
+        >>> housing = fetch_california_housing()  # doctest: +SKIP
+        >>> df = pl.DataFrame(
+        ...     data=housing.data,
+        ...     schema=housing.feature_names,
+        ... ).with_columns(
+        ...     Target=housing.target,
+        ... )  # doctest: +SKIP
+        >>> train = df.to_torch("dataset", label="Target")  # doctest: +SKIP
+        >>> loader = DataLoader(
+        ...     train,
+        ...     shuffle=True,
+        ...     batch_size=64,
+        ... )  # doctest: +SKIP
+        """
+        torch = import_optional("torch")
+
+        if dtype in (UInt16, UInt32, UInt64):
+            msg = f"PyTorch does not support u16, u32, or u64 dtypes; given {dtype}"
+            raise ValueError(msg)
+        else:
+            to_dtype = dtype or {UInt16: Int32, UInt32: Int64, UInt64: Int64}
+            frame = self.cast(to_dtype)  # type: ignore[arg-type]
+
+        if return_type == "tensor":
+            return torch.from_numpy(frame.to_numpy(writable=True, use_pyarrow=False))
+        elif return_type == "dict":
+            return {srs.name: srs.to_torch() for srs in frame}
+        elif return_type == "dataset":
+            from polars.ml.torch import PolarsDataset
+
+            return PolarsDataset(frame, label=label, features=features)
+        else:
+            valid_torch_types = ", ".join(get_args(TorchExportType))
+            msg = f"invalid `return_type`: {return_type!r}\nExpected one of: {valid_torch_types}"
+            raise ValueError(msg)
 
     def to_pandas(
         self,
@@ -4144,6 +4323,8 @@ class DataFrame:
         """
         Execute a SQL query against the DataFrame.
 
+        .. versionadded:: 0.20.24
+
         .. warning::
             This functionality is considered **unstable**, although it is close to
             being considered stable. It may be changed at any point without it being
@@ -6028,6 +6209,7 @@ class DataFrame:
         suffix: str = "_right",
         validate: JoinValidation = "m:m",
         join_nulls: bool = False,
+        coalesce: bool | None = None,
     ) -> DataFrame:
         """
         Join in SQL-like fashion.
@@ -6082,6 +6264,11 @@ class DataFrame:
                 - This is currently not supported the streaming engine.
         join_nulls
             Join on null values. By default null values will never produce matches.
+        coalesce
+            Coalescing behavior (merging of join columns).
+            - None: -> join specific.
+            - True: -> Always coalesce join columns.
+            - False: -> Never coalesce join columns.
 
         Returns
         -------
@@ -6182,6 +6369,7 @@ class DataFrame:
                 suffix=suffix,
                 validate=validate,
                 join_nulls=join_nulls,
+                coalesce=coalesce,
             )
             .collect(_eager=True)
         )
@@ -6226,10 +6414,10 @@ class DataFrame:
 
         Notes
         -----
-        * The frame-level `apply` cannot track column names (as the UDF is a black-box
-          that may arbitrarily drop, rearrange, transform, or add new columns); if you
-          want to apply a UDF such that column names are preserved, you should use the
-          expression-level `apply` syntax instead.
+        * The frame-level `map_rows` cannot track column names (as the UDF is a
+          black-box that may arbitrarily drop, rearrange, transform, or add new
+          columns); if you want to apply a UDF such that column names are preserved,
+          you should use the expression-level `map_elements` syntax instead.
 
         * If your function is expensive and you don't want it to be called more than
           once for a given input, consider applying an `@lru_cache` decorator to it.

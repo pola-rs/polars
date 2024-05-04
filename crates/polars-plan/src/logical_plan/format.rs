@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 use std::fmt;
-use std::fmt::{Debug, Display, Formatter, Write};
+use std::fmt::{Debug, Display, Formatter};
 use std::path::PathBuf;
 
 use polars_core::prelude::AnyValue;
@@ -81,16 +81,16 @@ impl DslPlan {
                     options.n_rows,
                 )
             },
-            Union {
-                inputs, options, ..
-            } => {
-                let mut name = String::new();
-                let name = if let Some(slice) = options.slice {
-                    write!(name, "SLICED UNION: {slice:?}")?;
-                    name.as_str()
-                } else {
-                    "UNION"
-                };
+            Union { inputs, .. } => {
+                // let mut name = String::new();
+                // THIS is commented out, but must be restored once we format IR's
+                // let name = if let Some(slice) = options.slice {
+                //     write!(name, "SLICED UNION: {slice:?}")?;
+                //     name.as_str()
+                // } else {
+                //     "UNION"
+                // };
+                let name = "UNION";
                 // 3 levels of indentation
                 // - 0 => UNION ... END UNION
                 // - 1 => PLAN 0, PLAN 1, ... PLAN N

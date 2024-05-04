@@ -146,33 +146,33 @@ pub fn to_alp_impl(
             options,
             predicate: None,
         },
-        DslPlan::Union {
-            inputs,
-            options,
-            convert_supertypes,
-        } => {
+        DslPlan::Union { inputs, args } => {
             let mut inputs = inputs
                 .into_iter()
                 .map(|lp| to_alp_impl(lp, expr_arena, lp_arena, convert))
                 .collect::<PolarsResult<Vec<_>>>()
                 .map_err(|e| e.context(failed_input!(vertical concat)))?;
 
-            if convert_supertypes {
+            if args.diagonal {
+                inputs = convert_utils::convert_diagonal_concat(inputs, lp_arena, expr_arena);
+            }
+
+            if args.to_supertypes {
                 convert_utils::convert_st_union(&mut inputs, lp_arena, expr_arena)
                     .map_err(|e| e.context(failed_input!(vertical concat)))?;
             }
+            let options = args.into();
             IR::Union { inputs, options }
         },
-        DslPlan::HConcat {
-            inputs,
-            schema,
-            options,
-        } => {
+        DslPlan::HConcat { inputs, options } => {
             let inputs = inputs
                 .into_iter()
                 .map(|lp| to_alp_impl(lp, expr_arena, lp_arena, convert))
-                .collect::<PolarsResult<_>>()
+                .collect::<PolarsResult<Vec<_>>>()
                 .map_err(|e| e.context(failed_input!(horizontal concat)))?;
+
+            let schema = convert_utils::h_concat_schema(&inputs, lp_arena)?;
+
             IR::HConcat {
                 inputs,
                 schema,
@@ -427,7 +427,6 @@ pub fn to_alp_impl(
                     IR::SimpleProjection {
                         input,
                         columns: Arc::new(output_schema),
-                        duplicate_check: false,
                     }
                 },
                 DslFunction::Stats(sf) => {
