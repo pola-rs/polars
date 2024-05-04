@@ -88,3 +88,12 @@ def test_large_timedelta(dtype: pl.DataType | None) -> None:
     # Microsecond precision is lost
     expected = [timedelta.min, timedelta.max - timedelta(microseconds=999)]
     assert s.to_list() == expected
+
+
+def test_array_large_u64() -> None:
+    u64_max = 2**64 - 1
+    values = [[u64_max]]
+    dtype = pl.Array(pl.UInt64, 1)
+    s = pl.Series(values, dtype=dtype)
+    assert s.dtype == dtype
+    assert s.to_list() == values
