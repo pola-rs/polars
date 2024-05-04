@@ -3405,7 +3405,7 @@ class Series:
 
         This has time complexity:
 
-        .. math:: O(n + k \log{}n - \frac{k}{2})
+        .. math:: O(n + k \log{n} - \frac{k}{2})
 
         Parameters
         ----------
@@ -3435,7 +3435,7 @@ class Series:
 
         This has time complexity:
 
-        .. math:: O(n + k \log{}n - \frac{k}{2})
+        .. math:: O(n + k \log{n} - \frac{k}{2})
 
         Parameters
         ----------

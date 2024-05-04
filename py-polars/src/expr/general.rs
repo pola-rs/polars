@@ -290,13 +290,12 @@ impl PyExpr {
     }
 
     #[cfg(feature = "top_k")]
-    fn top_k(&self, k: Self, descending: bool, nulls_last: bool, multithreaded: bool) -> Self {
+    fn top_k(&self, k: Self, nulls_last: bool, multithreaded: bool) -> Self {
         self.inner
             .clone()
             .top_k(
                 k.inner,
                 SortOptions::default()
-                    .with_order_descending(descending)
                     .with_nulls_last(nulls_last)
                     .with_maintain_order(multithreaded),
             )
@@ -330,13 +329,12 @@ impl PyExpr {
     }
 
     #[cfg(feature = "top_k")]
-    fn bottom_k(&self, k: Self, descending: bool, nulls_last: bool, multithreaded: bool) -> Self {
+    fn bottom_k(&self, k: Self, nulls_last: bool, multithreaded: bool) -> Self {
         self.inner
             .clone()
             .bottom_k(
                 k.inner,
                 SortOptions::default()
-                    .with_order_descending(descending)
                     .with_nulls_last(nulls_last)
                     .with_maintain_order(multithreaded),
             )
