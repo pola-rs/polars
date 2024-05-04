@@ -107,7 +107,7 @@ def _map_py_type_to_dtype(
     if issubclass(python_dtype, date):
         return Date
     if python_dtype is timedelta:
-        return Duration("us")
+        return Duration
     if python_dtype is time:
         return Time
     if python_dtype is list:

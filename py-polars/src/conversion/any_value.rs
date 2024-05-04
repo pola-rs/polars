@@ -119,6 +119,7 @@ type InitFn = for<'py> fn(&Bound<'py, PyAny>, bool) -> PyResult<AnyValue<'py>>;
 pub(crate) static LUT: crate::gil_once_cell::GILOnceCell<PlHashMap<TypeObjectPtr, InitFn>> =
     crate::gil_once_cell::GILOnceCell::new();
 
+/// Convert a Python object to an [`AnyValue`].
 pub(crate) fn py_object_to_any_value<'py>(
     ob: &Bound<'py, PyAny>,
     strict: bool,
@@ -202,14 +203,21 @@ pub(crate) fn py_object_to_any_value<'py>(
 
     fn get_timedelta(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
         Python::with_gil(|py| {
-            let td = UTILS
+            let f = UTILS
                 .bind(py)
                 .getattr(intern!(py, "timedelta_to_int"))
-                .unwrap()
-                .call1((ob, intern!(py, "us")))
                 .unwrap();
-            let v = td.extract::<i64>().unwrap();
-            Ok(AnyValue::Duration(v, TimeUnit::Microseconds))
+            let py_int = f.call1((ob, intern!(py, "us"))).unwrap();
+
+            let av = if let Ok(v) = py_int.extract::<i64>() {
+                AnyValue::Duration(v, TimeUnit::Microseconds)
+            } else {
+                // This should be faster than calling `timedelta_to_int` again with `"ms"` input.
+                let v_us = py_int.extract::<i128>().unwrap();
+                let v = (v_us / 1000) as i64;
+                AnyValue::Duration(v, TimeUnit::Milliseconds)
+            };
+            Ok(av)
         })
     }
 
