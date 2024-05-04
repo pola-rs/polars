@@ -2340,12 +2340,30 @@ def test_search_sorted(
 
 
 def test_series_from_pandas_with_dtype() -> None:
+    expected = pl.Series("foo", [1, 2, 3], dtype=pl.Float32)
     s = pl.Series("foo", pd.Series([1, 2, 3]), pl.Float32)
-    assert_series_equal(s, pl.Series("foo", [1, 2, 3], dtype=pl.Float32))
+    assert_series_equal(s, expected)
+    s = pl.Series("foo", pd.Series([1, 2, 3]), pl.Float32, strict=False)
+    assert_series_equal(s, expected)
     s = pl.Series("foo", pd.Series([1, 2, 3], dtype="Int64"), pl.Float32)
-    assert_series_equal(s, pl.Series("foo", [1, 2, 3], dtype=pl.Float32))
+    assert_series_equal(s, expected)
+    s = pl.Series("foo", pd.Series([1, 2, 3], dtype="Int64"), pl.Float32, strict=False)
+    assert_series_equal(s, expected)
 
 
 def test_series_from_pyarrow_with_dtype() -> None:
+    expected = pl.Series("foo", [1, 2, 3], dtype=pl.Float32)
     s = pl.Series("foo", pa.array([1, 2, 3]), pl.Float32)
-    assert_series_equal(s, pl.Series("foo", [1, 2, 3], dtype=pl.Float32))
+    assert_series_equal(s, expected)
+    s = pl.Series("foo", pa.array([1, 2, 3]), dtype=pl.Float32, strict=False)
+    assert_series_equal(s, expected)
+
+
+def test_series_from_pandas_with_strict() -> None:
+    s = pl.Series(pd.Series([1, 2.5, 3]), strict=False)
+    assert_series_equal(s, pl.Series([1.0, 2.5, 3.0], dtype=pl.Float64))
+
+
+def test_series_from_pyarrow_with_strict() -> None:
+    s = pl.Series(pa.array([1, 2.5, 3]), strict=False)
+    assert_series_equal(s, pl.Series([1.0, 2.5, 3.0], dtype=pl.Float64))
