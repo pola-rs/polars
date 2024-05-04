@@ -196,8 +196,6 @@ class ConnectionExecutor:
                 if re.match(f"^{driver}$", self.driver_name):
                     if ver := driver_properties["minimum_version"]:
                         self._check_module_version(self.driver_name, ver)
-                    fetch_batches = driver_properties["fetch_batches"]
-                    self.can_close_cursor = fetch_batches is None or not iter_batches
                     frames = (
                         self._apply_overrides(batch, (schema_overrides or {}))
                         if isinstance(batch, DataFrame)

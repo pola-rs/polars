@@ -44,58 +44,10 @@ pub(crate) fn concat_impl<L: AsRef<[LazyFrame]>>(
 /// Calls [`concat`][concat()] internally.
 pub fn concat_lf_diagonal<L: AsRef<[LazyFrame]>>(
     inputs: L,
-    args: UnionArgs,
+    mut args: UnionArgs,
 ) -> PolarsResult<LazyFrame> {
-    let lfs = inputs.as_ref();
-    let schemas = lfs
-        .iter()
-        .map(|lf| lf.schema())
-        .collect::<PolarsResult<Vec<_>>>()?;
-
-    let upper_bound_width = schemas.iter().map(|sch| sch.len()).sum();
-
-    // Use Vec to preserve order
-    let mut column_names = Vec::with_capacity(upper_bound_width);
-    let mut total_schema = Vec::with_capacity(upper_bound_width);
-
-    for sch in schemas.iter() {
-        sch.iter().for_each(|(name, dtype)| {
-            if !column_names.contains(name) {
-                column_names.push(name.clone());
-                total_schema.push((name.clone(), dtype.clone()));
-            }
-        });
-    }
-    let lfs_with_all_columns = lfs
-        .iter()
-        // Zip Frames with their Schemas
-        .zip(schemas)
-        .filter_map(|(lf, lf_schema)| {
-            if lf_schema.is_empty() {
-                // if the frame is empty we discard
-                return None;
-            };
-
-            let mut lf = lf.clone();
-            for (name, dtype) in total_schema.iter() {
-                // If a name from Total Schema is not present - append
-                if lf_schema.get_field(name).is_none() {
-                    lf = lf.with_column(NULL.lit().cast(dtype.clone()).alias(name))
-                }
-            }
-
-            // Now, reorder to match schema
-            let reordered_lf = lf.select(
-                column_names
-                    .iter()
-                    .map(|col_name| col(col_name))
-                    .collect::<Vec<Expr>>(),
-            );
-            Some(Ok(reordered_lf))
-        })
-        .collect::<PolarsResult<Vec<_>>>()?;
-
-    concat(lfs_with_all_columns, args)
+    args.diagonal = true;
+    concat_impl(inputs, args)
 }
 
 /// Concat [LazyFrame]s horizontally.
@@ -113,25 +65,11 @@ pub fn concat_lf_horizontal<L: AsRef<[LazyFrame]>>(
         opt_state.file_caching |= lf.opt_state.file_caching;
     }
 
-    let mut lps = Vec::with_capacity(lfs.len());
-    let mut schemas = Vec::with_capacity(lfs.len());
-
-    for lf in lfs.iter() {
-        let mut lf = lf.clone();
-        let schema = lf.schema()?;
-        schemas.push(schema);
-        let lp = std::mem::take(&mut lf.logical_plan);
-        lps.push(lp);
-    }
-
-    let combined_schema = merge_schemas(&schemas)?;
-
     let options = HConcatOptions {
         parallel: args.parallel,
     };
     let lp = DslPlan::HConcat {
-        inputs: lps,
-        schema: Arc::new(combined_schema),
+        inputs: lfs.iter().map(|lf| lf.logical_plan.clone()).collect(),
         options,
     };
     let mut lf = LazyFrame::from(lp);

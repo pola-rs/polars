@@ -16,3 +16,4 @@ Export DataFrame data to other formats:
     DataFrame.to_numpy
     DataFrame.to_pandas
     DataFrame.to_struct
+    DataFrame.to_torch

@@ -98,13 +98,8 @@ impl Hash for HashableEqLP<'_> {
                 projection.hash(state);
                 hash_option_expr(selection, self.expr_arena, state);
             },
-            IR::SimpleProjection {
-                columns,
-                duplicate_check,
-                input: _,
-            } => {
+            IR::SimpleProjection { columns, input: _ } => {
                 columns.hash(state);
-                duplicate_check.hash(state);
             },
             IR::Select {
                 input: _,
@@ -297,14 +292,12 @@ impl HashableEqLP<'_> {
                 IR::SimpleProjection {
                     input: _,
                     columns: cl,
-                    duplicate_check: dl,
                 },
                 IR::SimpleProjection {
                     input: _,
                     columns: cr,
-                    duplicate_check: dr,
                 },
-            ) => dl == dr && cl == cr,
+            ) => cl == cr,
             (
                 IR::Select {
                     input: _,

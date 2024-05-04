@@ -1223,6 +1223,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Execute a SQL query against the LazyFrame.
 
+        .. versionadded:: 0.20.23
+
         .. warning::
             This functionality is considered **unstable**, although it is close to
             being considered stable. It may be changed at any point without it being
@@ -3709,6 +3711,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Force the physical plan to evaluate the computation of both DataFrames up to
             the join in parallel.
 
+
         Examples
         --------
         >>> from datetime import datetime
@@ -3812,6 +3815,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         suffix: str = "_right",
         validate: JoinValidation = "m:m",
         join_nulls: bool = False,
+        coalesce: bool | None = None,
         allow_parallel: bool = True,
         force_parallel: bool = False,
     ) -> Self:
@@ -3835,8 +3839,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 right table
             * *outer*
                  Returns all rows when there is a match in either left or right table
-            * *outer_coalesce*
-                 Same as 'outer', but coalesces the key columns
             * *cross*
                  Returns the Cartesian product of rows from both tables
             * *semi*
@@ -3869,6 +3871,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 - This is currently not supported the streaming engine.
         join_nulls
             Join on null values. By default null values will never produce matches.
+        coalesce
+            Coalescing behavior (merging of join columns).
+            - None: -> join specific.
+            - True: -> Always coalesce join columns.
+            - False: -> Never coalesce join columns.
         allow_parallel
             Allow the physical plan to optionally evaluate the computation of both
             DataFrames up to the join in parallel.
@@ -3978,7 +3985,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             msg = "must specify `on` OR `left_on` and `right_on`"
             raise ValueError(msg)
 
-        coalesce = None
         if how == "outer_coalesce":
             coalesce = True
 

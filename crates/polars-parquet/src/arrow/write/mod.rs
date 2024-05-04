@@ -219,7 +219,7 @@ pub fn array_to_pages(
         // Only take this path for primitive columns
         if matches!(nested.first(), Some(Nested::Primitive(_, _, _))) {
             if let Some(result) =
-                encode_as_dictionary_optional(primitive_array, type_.clone(), options)
+                encode_as_dictionary_optional(primitive_array, nested, type_.clone(), options)
             {
                 return result;
             }

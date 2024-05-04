@@ -2148,26 +2148,6 @@ def test_getitem() -> None:
     assert_frame_equal(df[4, [5]], pl.DataFrame({"foo5": [1024]}))
 
 
-@pytest.mark.parametrize(
-    ("as_series", "inner_dtype"), [(True, pl.Series), (False, list)]
-)
-def test_to_dict(as_series: bool, inner_dtype: Any) -> None:
-    df = pl.DataFrame(
-        {
-            "A": [1, 2, 3, 4, 5],
-            "fruits": ["banana", "banana", "apple", "apple", "banana"],
-            "B": [5, 4, 3, 2, 1],
-            "cars": ["beetle", "audi", "beetle", "beetle", "beetle"],
-            "optional": [28, 300, None, 2, -30],
-        }
-    )
-    s = df.to_dict(as_series=as_series)
-    assert isinstance(s, dict)
-    for v in s.values():
-        assert isinstance(v, inner_dtype)
-        assert len(v) == len(df)
-
-
 def test_df_broadcast() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]}, schema_overrides={"a": pl.UInt8})
     out = df.with_columns(pl.Series("s", [[1, 2]]))
