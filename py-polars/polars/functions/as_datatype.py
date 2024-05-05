@@ -113,35 +113,33 @@ def datetime_(
     │ 3     ┆ 6   ┆ 14   ┆ 45     ┆ 2024-03-06 14:45:00 AEDT       │
     └───────┴─────┴──────┴────────┴────────────────────────────────┘
 
-    We can also use `pl.datetime` for filtering. Notice that `pl.datetime` allows you
-    to overcome The Python Standard Library's limitation of not supporting nanoseconds
-    for `datetime.datetime`.
+    We can also use `pl.datetime` for filtering:
 
+    >>> from datetime import datetime
     >>> df = pl.DataFrame(
     ...     {
-    ...         'start': [
-    ...             '2024-01-01T01:04:07.123456789',
-    ...             '2024-01-01T02:05:08.234567890',
-    ...             '2024-01-01T03:06:09.345678901',
+    ...         "start": [
+    ...             datetime(2024, 1, 1, 0, 0, 0),
+    ...             datetime(2024, 1, 1, 0, 0, 0),
+    ...             datetime(2024, 1, 1, 0, 0, 0),
     ...         ],
     ...         "end": [
-    ...             '2024-05-01T04:07:00.456789012',
-    ...             '2024-06-01T05:08:01.567890123',
-    ...             '2024-07-01T06:09:02.678901234',
+    ...             datetime(2024, 5, 1, 20, 15, 10),
+    ...             datetime(2024, 7, 1, 21, 25, 20),
+    ...             datetime(2024, 9, 1, 22, 35, 30),
     ...         ],
-    ...     })
-    >>> df = df.with_columns(pl.col('start').str.to_datetime(time_unit='ns'))
-    >>> df = df.with_columns(pl.col('end').str.to_datetime(time_unit='ns'))
-    >>> df.filter(pl.col("end") > pl.datetime(2024, 6, 1, time_unit="ns"))
-    shape: (2, 2)
-    ┌───────────────────────────────┬───────────────────────────────┐
-    │ start                         ┆ end                           │
-    │ ---                           ┆ ---                           │
-    │ datetime[ns]                  ┆ datetime[ns]                  │
-    ╞═══════════════════════════════╪═══════════════════════════════╡
-    │ 2024-01-01 02:05:08.234567890 ┆ 2024-06-01 05:08:01.567890123 │
-    │ 2024-01-01 03:06:09.345678901 ┆ 2024-07-01 06:09:02.678901234 │
-    └───────────────────────────────┴───────────────────────────────┘
+    ...     }
+    ... )
+    >>> df.filter(pl.col("end") > pl.datetime(2024, 6, 1))
+        shape: (2, 2)
+    ┌─────────────────────┬─────────────────────┐
+    │ start               ┆ end                 │
+    │ ---                 ┆ ---                 │
+    │ datetime[μs]        ┆ datetime[μs]        │
+    ╞═════════════════════╪═════════════════════╡
+    │ 2024-01-01 00:00:00 ┆ 2024-07-01 21:25:20 │
+    │ 2024-01-01 00:00:00 ┆ 2024-09-01 22:35:30 │
+    └─────────────────────┴─────────────────────┘
     """
     ambiguous = parse_as_expression(
         rename_use_earliest_to_ambiguous(use_earliest, ambiguous), str_as_lit=True
