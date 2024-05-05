@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+import decimal
 from datetime import datetime, timedelta
-from decimal import Decimal as PyDecimal
 from itertools import chain
 from random import choice, randint, shuffle
 from string import ascii_uppercase
@@ -138,25 +138,22 @@ strategy_time_unit = sampled_from(["ns", "us", "ms"])
 @composite
 def decimal_strategies(
     draw: DrawFn, precision: int | None = None, scale: int | None = None
-) -> SearchStrategy[PyDecimal]:
+) -> SearchStrategy[decimal.Decimal]:
     """Returns a strategy which generates instances of Python `Decimal`."""
     if precision is None:
         precision = draw(integers(min_value=scale or 1, max_value=38))
     if scale is None:
         scale = draw(integers(min_value=0, max_value=precision))
 
-    exclusive_limit = PyDecimal(f"1E+{precision - scale}")
-    epsilon = PyDecimal(f"1E-{scale}")
-    limit = exclusive_limit - epsilon
-    if limit == exclusive_limit:  # Limit cannot be set exactly due to precision issues
-        multiplier = PyDecimal("1") - PyDecimal("1E-20")  # 0.999...
-        limit = limit * multiplier
+    c = decimal.Context(prec=precision)
+    exclusive_limit = c.create_decimal(f"1E+{precision - scale}")
+    inclusive_limit = c.next_minus(exclusive_limit)
 
     return st.decimals(
         allow_nan=False,
         allow_infinity=False,
-        min_value=-limit,
-        max_value=limit,
+        min_value=-inclusive_limit,
+        max_value=inclusive_limit,
         places=scale,
     )
 
