@@ -2965,7 +2965,7 @@ def test_rolling_duplicates() -> None:
             "value": [0, 1],
         }
     )
-    assert df.sort("ts").with_columns(pl.col("value").rolling_max("1d", by="ts"))[
+    assert df.sort("ts").with_columns(pl.col("value").rolling_max_by("ts", "1d"))[
         "value"
     ].to_list() == [1, 1]
 

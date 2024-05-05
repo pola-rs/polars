@@ -46,12 +46,12 @@ def test_rolling_kernels_and_rolling(
             # null here
             # where the sum aggregation of an empty set is 0
             pl.col("values")
-            .rolling_sum(period, by="dt", closed=closed)
+            .rolling_sum_by("dt", period, closed=closed)
             .fill_null(0)
             .alias("sum"),
-            pl.col("values").rolling_var(period, by="dt", closed=closed).alias("var"),
-            pl.col("values").rolling_mean(period, by="dt", closed=closed).alias("mean"),
-            pl.col("values").rolling_std(period, by="dt", closed=closed).alias("std"),
+            pl.col("values").rolling_var_by("dt", period, closed=closed).alias("var"),
+            pl.col("values").rolling_mean_by("dt", period, closed=closed).alias("mean"),
+            pl.col("values").rolling_std_by("dt", period, closed=closed).alias("std"),
         ]
     )
     out2 = (
@@ -208,9 +208,10 @@ def test_rolling_crossing_dst(
         datetime(2021, 11, 5), datetime(2021, 11, 10), "1d", time_zone="UTC", eager=True
     ).dt.replace_time_zone(time_zone)
     df = pl.DataFrame({"ts": ts, "value": [1, 2, 3, 4, 5, 6]})
-    result = df.with_columns(
-        getattr(pl.col("value"), rolling_fn)("1d", by="ts", closed="left")
-    )
+    with pytest.deprecated_call(match=f"{rolling_fn}_by"):
+        result = df.with_columns(
+            getattr(pl.col("value"), rolling_fn)("1d", by="ts", closed="left")
+        )
     expected = pl.DataFrame(
         {"ts": ts, "value": expected_values}, schema_overrides={"value": expected_dtype}
     )
@@ -221,11 +222,11 @@ def test_rolling_by_invalid() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]}).sort("a")
     msg = "in `rolling_min` operation, `by` argument of dtype `i64` is not supported"
     with pytest.raises(InvalidOperationError, match=msg):
-        df.select(pl.col("b").rolling_min(2, by="a"))
+        df.select(pl.col("b").rolling_min_by("a", 2))  # type: ignore[arg-type]
     df = pl.DataFrame({"a": [1, 2, 3], "b": [date(2020, 1, 1)] * 3}).sort("b")
     msg = "if `by` argument is passed, then `window_size` must be a temporal window"
     with pytest.raises(InvalidOperationError, match=msg):
-        df.select(pl.col("a").rolling_min(2, by="b"))
+        df.select(pl.col("a").rolling_min_by("b", 2))  # type: ignore[arg-type]
 
 
 def test_rolling_infinity() -> None:
@@ -249,7 +250,7 @@ def test_rolling_by_non_temporal_window_size() -> None:
     ).sort("a", "b")
     msg = "if `by` argument is passed, then `window_size` must be a temporal window"
     with pytest.raises(InvalidOperationError, match=msg):
-        df.with_columns(pl.col("a").rolling_sum(2, by="b", closed="left"))
+        df.with_columns(pl.col("a").rolling_sum_by("b", 2, closed="left"))  # type: ignore[arg-type]
 
 
 def test_rolling_by_weights() -> None:
@@ -257,8 +258,9 @@ def test_rolling_by_weights() -> None:
         {"a": [4, 5, 6], "b": [date(2020, 1, 1), date(2020, 1, 2), date(2020, 1, 3)]}
     ).sort("b")
     msg = r"`weights` is not supported in 'rolling_\*\(..., by=...\)' expression"
-    with pytest.raises(InvalidOperationError, match=msg):
-        df.with_columns(pl.col("a").rolling_sum("2d", by="b", weights=[1, 2]))
+    with pytest.raises(InvalidOperationError, match=msg):  # noqa: SIM117
+        with pytest.deprecated_call(match="rolling_sum_by"):
+            df.with_columns(pl.col("a").rolling_sum("2d", by="b", weights=[1, 2]))
 
 
 def test_rolling_extrema() -> None:
@@ -566,11 +568,11 @@ def test_rolling_negative_period() -> None:
         ).collect()
     with pytest.raises(ComputeError, match="window size should be strictly positive"):
         df.select(
-            pl.col("value").rolling_min(by="ts", window_size="-1d", closed="left")
+            pl.col("value").rolling_min_by("ts", window_size="-1d", closed="left")
         )
     with pytest.raises(ComputeError, match="window size should be strictly positive"):
         df.lazy().select(
-            pl.col("value").rolling_min(by="ts", window_size="-1d", closed="left")
+            pl.col("value").rolling_min_by("ts", window_size="-1d", closed="left")
         ).collect()
 
 
@@ -612,7 +614,7 @@ def test_rolling_empty_window_9406(time_unit: TimeUnit) -> None:
         df.select(
             [
                 pl.col("d"),
-                pl.col("x").rolling_max(by="d", window_size="3d", closed="left"),
+                pl.col("x").rolling_max_by("d", window_size="3d", closed="left"),
             ]
         ),
     )
@@ -621,7 +623,7 @@ def test_rolling_empty_window_9406(time_unit: TimeUnit) -> None:
         df.select(
             [
                 pl.col("d"),
-                pl.col("x").rolling_min(by="d", window_size="3d", closed="left"),
+                pl.col("x").rolling_min_by("d", window_size="3d", closed="left"),
             ]
         ),
     )
@@ -660,7 +662,7 @@ def test_rolling_aggregations_unsorted_raise_10991() -> None:
     with pytest.warns(
         UserWarning, match="Series is not known to be sorted by `by` column."
     ):
-        df.with_columns(roll=pl.col("val").rolling_sum("2d", by="dt"))
+        df.with_columns(roll=pl.col("val").rolling_sum_by("dt", "2d"))
 
 
 def test_rolling_aggregations_with_over_11225() -> None:
@@ -677,9 +679,9 @@ def test_rolling_aggregations_with_over_11225() -> None:
 
     result = df_temporal.with_columns(
         rolling_row_mean=pl.col("index")
-        .rolling_mean(
-            window_size="2d",
+        .rolling_mean_by(
             by="date",
+            window_size="2d",
             closed="left",
             warn_if_unsorted=False,
         )
@@ -773,7 +775,7 @@ def test_rolling_by_date() -> None:
         }
     ).sort("dt")
 
-    result = df.with_columns(roll=pl.col("val").rolling_sum("2d", by="dt"))
+    result = df.with_columns(roll=pl.col("val").rolling_sum_by("dt", "2d"))
     expected = df.with_columns(roll=pl.Series([1, 3, 5]))
     assert_frame_equal(result, expected)
 
@@ -790,7 +792,7 @@ def test_rolling_nanoseconds_11003() -> None:
         }
     )
     df = df.with_columns(pl.col("dt").str.to_datetime(time_unit="ns")).set_sorted("dt")
-    result = df.with_columns(pl.col("val").rolling_sum("500ns", by="dt"))
+    result = df.with_columns(pl.col("val").rolling_sum_by("dt", "500ns"))
     expected = df.with_columns(val=pl.Series([1, 3, 6]))
     assert_frame_equal(result, expected)
 
@@ -933,8 +935,8 @@ def test_rolling_min_periods(
 ) -> None:
     df = pl.DataFrame({"date": dates, "value": [1, 2, 3]}).sort("date")
     result = df.select(
-        pl.col("value").rolling_sum(
-            window_size="2d", by="date", min_periods=2, closed=closed
+        pl.col("value").rolling_sum_by(
+            "date", window_size="2d", min_periods=2, closed=closed
         )
     )["value"]
     assert_series_equal(result, pl.Series("value", expected, pl.Int64))
@@ -948,7 +950,7 @@ def test_rolling_returns_scalar_15656() -> None:
             "c": [1, 2, 3],
         }
     )
-    result = df.group_by("c").agg(pl.col("b").rolling_mean("2d", by="a")).sort("c")
+    result = df.group_by("c").agg(pl.col("b").rolling_mean_by("a", "2d")).sort("c")
     expected = pl.DataFrame({"c": [1, 2, 3], "b": [[4.0], [5.0], [6.0]]})
     assert_frame_equal(result, expected)
 

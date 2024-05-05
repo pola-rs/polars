@@ -6123,6 +6123,1239 @@ class Expr:
         return self._from_pyexpr(self._pyexpr.interpolate(method))
 
     @unstable()
+    def rolling_min_by(
+        self,
+        by: str,
+        window_size: timedelta | str,
+        *,
+        min_periods: int = 1,
+        closed: ClosedInterval = "right",
+        warn_if_unsorted: bool = True,
+    ) -> Self:
+        """
+        Apply a rolling min based on another column.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Given a `by` column `<t_0, t_1, ..., t_n>`, then `closed="right"`
+        (the default) means the windows will be:
+
+            - (t_0 - window_size, t_0]
+            - (t_1 - window_size, t_1]
+            - ...
+            - (t_n - window_size, t_n]
+
+        Parameters
+        ----------
+        by
+            This column must be of dtype Datetime or Date.
+
+            .. warning::
+                The column must be sorted in ascending order. Otherwise,
+                results will not be correct.
+        window_size
+            The length of the window. Can be a dynamic temporal
+            size indicated by a timedelta or the following string language:
+
+            - 1ns   (1 nanosecond)
+            - 1us   (1 microsecond)
+            - 1ms   (1 millisecond)
+            - 1s    (1 second)
+            - 1m    (1 minute)
+            - 1h    (1 hour)
+            - 1d    (1 calendar day)
+            - 1w    (1 calendar week)
+            - 1mo   (1 calendar month)
+            - 1q    (1 calendar quarter)
+            - 1y    (1 calendar year)
+
+            By "calendar day", we mean the corresponding time on the next day
+            (which may not be 24 hours, due to daylight savings). Similarly for
+            "calendar week", "calendar month", "calendar quarter", and
+            "calendar year".
+        min_periods
+            The number of values in the window that should be non-null before computing
+            a result.
+        closed : {'left', 'right', 'both', 'none'}
+            Define which sides of the temporal interval are closed (inclusive),
+            defaults to `'right'`.
+        warn_if_unsorted
+            Warn if data is not known to be sorted by `by` column.
+
+        Notes
+        -----
+        If you want to compute multiple aggregation statistics over the same dynamic
+        window, consider using `rolling` - this method can cache the window size
+        computation.
+
+        Examples
+        --------
+        Create a DataFrame with a datetime column and a row number column
+
+        >>> from datetime import timedelta, datetime
+        >>> start = datetime(2001, 1, 1)
+        >>> stop = datetime(2001, 1, 2)
+        >>> df_temporal = pl.DataFrame(
+        ...     {"date": pl.datetime_range(start, stop, "1h", eager=True)}
+        ... ).with_row_index()
+        >>> df_temporal
+        shape: (25, 2)
+        ┌───────┬─────────────────────┐
+        │ index ┆ date                │
+        │ ---   ┆ ---                 │
+        │ u32   ┆ datetime[μs]        │
+        ╞═══════╪═════════════════════╡
+        │ 0     ┆ 2001-01-01 00:00:00 │
+        │ 1     ┆ 2001-01-01 01:00:00 │
+        │ 2     ┆ 2001-01-01 02:00:00 │
+        │ 3     ┆ 2001-01-01 03:00:00 │
+        │ 4     ┆ 2001-01-01 04:00:00 │
+        │ …     ┆ …                   │
+        │ 20    ┆ 2001-01-01 20:00:00 │
+        │ 21    ┆ 2001-01-01 21:00:00 │
+        │ 22    ┆ 2001-01-01 22:00:00 │
+        │ 23    ┆ 2001-01-01 23:00:00 │
+        │ 24    ┆ 2001-01-02 00:00:00 │
+        └───────┴─────────────────────┘
+
+        Compute the rolling min with the temporal windows closed on the right (default)
+
+        >>> df_temporal.with_columns(
+        ...     rolling_row_min=pl.col("index").rolling_min_by("date", window_size="2h")
+        ... )
+        shape: (25, 3)
+        ┌───────┬─────────────────────┬─────────────────┐
+        │ index ┆ date                ┆ rolling_row_min │
+        │ ---   ┆ ---                 ┆ ---             │
+        │ u32   ┆ datetime[μs]        ┆ u32             │
+        ╞═══════╪═════════════════════╪═════════════════╡
+        │ 0     ┆ 2001-01-01 00:00:00 ┆ 0               │
+        │ 1     ┆ 2001-01-01 01:00:00 ┆ 0               │
+        │ 2     ┆ 2001-01-01 02:00:00 ┆ 1               │
+        │ 3     ┆ 2001-01-01 03:00:00 ┆ 2               │
+        │ 4     ┆ 2001-01-01 04:00:00 ┆ 3               │
+        │ …     ┆ …                   ┆ …               │
+        │ 20    ┆ 2001-01-01 20:00:00 ┆ 19              │
+        │ 21    ┆ 2001-01-01 21:00:00 ┆ 20              │
+        │ 22    ┆ 2001-01-01 22:00:00 ┆ 21              │
+        │ 23    ┆ 2001-01-01 23:00:00 ┆ 22              │
+        │ 24    ┆ 2001-01-02 00:00:00 ┆ 23              │
+        └───────┴─────────────────────┴─────────────────┘
+        """
+        window_size = deprecate_saturating(window_size)
+        window_size, min_periods = _prepare_rolling_window_args(
+            window_size, min_periods
+        )
+        return self._from_pyexpr(
+            self._pyexpr.rolling_min(
+                window_size, None, min_periods, False, by, closed, warn_if_unsorted
+            )
+        )
+
+    @unstable()
+    def rolling_max_by(
+        self,
+        by: str,
+        window_size: timedelta | str,
+        *,
+        min_periods: int = 1,
+        closed: ClosedInterval = "right",
+        warn_if_unsorted: bool = True,
+    ) -> Self:
+        """
+        Apply a rolling max based on another column.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Given a `by` column `<t_0, t_1, ..., t_n>`, then `closed="right"`
+        (the default) means the windows will be:
+
+            - (t_0 - window_size, t_0]
+            - (t_1 - window_size, t_1]
+            - ...
+            - (t_n - window_size, t_n]
+
+        Parameters
+        ----------
+        by
+            This column must be of dtype Datetime or Date.
+
+            .. warning::
+                The column must be sorted in ascending order. Otherwise,
+                results will not be correct.
+        window_size
+            The length of the window. Can be a dynamic temporal
+            size indicated by a timedelta or the following string language:
+
+            - 1ns   (1 nanosecond)
+            - 1us   (1 microsecond)
+            - 1ms   (1 millisecond)
+            - 1s    (1 second)
+            - 1m    (1 minute)
+            - 1h    (1 hour)
+            - 1d    (1 calendar day)
+            - 1w    (1 calendar week)
+            - 1mo   (1 calendar month)
+            - 1q    (1 calendar quarter)
+            - 1y    (1 calendar year)
+
+            By "calendar day", we mean the corresponding time on the next day
+            (which may not be 24 hours, due to daylight savings). Similarly for
+            "calendar week", "calendar month", "calendar quarter", and
+            "calendar year".
+        min_periods
+            The number of values in the window that should be non-null before computing
+            a result.
+        closed : {'left', 'right', 'both', 'none'}
+            Define which sides of the temporal interval are closed (inclusive),
+            defaults to `'right'`.
+        warn_if_unsorted
+            Warn if data is not known to be sorted by `by` column.
+
+        Notes
+        -----
+        If you want to compute multiple aggregation statistics over the same dynamic
+        window, consider using `rolling` - this method can cache the window size
+        computation.
+
+        Examples
+        --------
+        Create a DataFrame with a datetime column and a row number column
+
+        >>> from datetime import timedelta, datetime
+        >>> start = datetime(2001, 1, 1)
+        >>> stop = datetime(2001, 1, 2)
+        >>> df_temporal = pl.DataFrame(
+        ...     {"date": pl.datetime_range(start, stop, "1h", eager=True)}
+        ... ).with_row_index()
+        >>> df_temporal
+        shape: (25, 2)
+        ┌───────┬─────────────────────┐
+        │ index ┆ date                │
+        │ ---   ┆ ---                 │
+        │ u32   ┆ datetime[μs]        │
+        ╞═══════╪═════════════════════╡
+        │ 0     ┆ 2001-01-01 00:00:00 │
+        │ 1     ┆ 2001-01-01 01:00:00 │
+        │ 2     ┆ 2001-01-01 02:00:00 │
+        │ 3     ┆ 2001-01-01 03:00:00 │
+        │ 4     ┆ 2001-01-01 04:00:00 │
+        │ …     ┆ …                   │
+        │ 20    ┆ 2001-01-01 20:00:00 │
+        │ 21    ┆ 2001-01-01 21:00:00 │
+        │ 22    ┆ 2001-01-01 22:00:00 │
+        │ 23    ┆ 2001-01-01 23:00:00 │
+        │ 24    ┆ 2001-01-02 00:00:00 │
+        └───────┴─────────────────────┘
+
+        Compute the rolling max with the temporal windows closed on the right (default)
+
+        >>> df_temporal.with_columns(
+        ...     rolling_row_max=pl.col("index").rolling_max_by("date", window_size="2h")
+        ... )
+        shape: (25, 3)
+        ┌───────┬─────────────────────┬─────────────────┐
+        │ index ┆ date                ┆ rolling_row_max │
+        │ ---   ┆ ---                 ┆ ---             │
+        │ u32   ┆ datetime[μs]        ┆ u32             │
+        ╞═══════╪═════════════════════╪═════════════════╡
+        │ 0     ┆ 2001-01-01 00:00:00 ┆ 0               │
+        │ 1     ┆ 2001-01-01 01:00:00 ┆ 1               │
+        │ 2     ┆ 2001-01-01 02:00:00 ┆ 2               │
+        │ 3     ┆ 2001-01-01 03:00:00 ┆ 3               │
+        │ 4     ┆ 2001-01-01 04:00:00 ┆ 4               │
+        │ …     ┆ …                   ┆ …               │
+        │ 20    ┆ 2001-01-01 20:00:00 ┆ 20              │
+        │ 21    ┆ 2001-01-01 21:00:00 ┆ 21              │
+        │ 22    ┆ 2001-01-01 22:00:00 ┆ 22              │
+        │ 23    ┆ 2001-01-01 23:00:00 ┆ 23              │
+        │ 24    ┆ 2001-01-02 00:00:00 ┆ 24              │
+        └───────┴─────────────────────┴─────────────────┘
+
+        Compute the rolling max with the closure of windows on both sides
+
+        >>> df_temporal.with_columns(
+        ...     rolling_row_max=pl.col("index").rolling_max_by(
+        ...         "date", window_size="2h", closed="both"
+        ...     )
+        ... )
+        shape: (25, 3)
+        ┌───────┬─────────────────────┬─────────────────┐
+        │ index ┆ date                ┆ rolling_row_max │
+        │ ---   ┆ ---                 ┆ ---             │
+        │ u32   ┆ datetime[μs]        ┆ u32             │
+        ╞═══════╪═════════════════════╪═════════════════╡
+        │ 0     ┆ 2001-01-01 00:00:00 ┆ 0               │
+        │ 1     ┆ 2001-01-01 01:00:00 ┆ 1               │
+        │ 2     ┆ 2001-01-01 02:00:00 ┆ 2               │
+        │ 3     ┆ 2001-01-01 03:00:00 ┆ 3               │
+        │ 4     ┆ 2001-01-01 04:00:00 ┆ 4               │
+        │ …     ┆ …                   ┆ …               │
+        │ 20    ┆ 2001-01-01 20:00:00 ┆ 20              │
+        │ 21    ┆ 2001-01-01 21:00:00 ┆ 21              │
+        │ 22    ┆ 2001-01-01 22:00:00 ┆ 22              │
+        │ 23    ┆ 2001-01-01 23:00:00 ┆ 23              │
+        │ 24    ┆ 2001-01-02 00:00:00 ┆ 24              │
+        └───────┴─────────────────────┴─────────────────┘
+        """
+        window_size = deprecate_saturating(window_size)
+        window_size, min_periods = _prepare_rolling_window_args(
+            window_size, min_periods
+        )
+        return self._from_pyexpr(
+            self._pyexpr.rolling_max(
+                window_size, None, min_periods, False, by, closed, warn_if_unsorted
+            )
+        )
+
+    @unstable()
+    def rolling_mean_by(
+        self,
+        by: str,
+        window_size: timedelta | str,
+        *,
+        min_periods: int = 1,
+        closed: ClosedInterval = "right",
+        warn_if_unsorted: bool = True,
+    ) -> Self:
+        """
+        Apply a rolling mean based on another column.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Given a `by` column `<t_0, t_1, ..., t_n>`, then `closed="right"`
+        (the default) means the windows will be:
+
+            - (t_0 - window_size, t_0]
+            - (t_1 - window_size, t_1]
+            - ...
+            - (t_n - window_size, t_n]
+
+        Parameters
+        ----------
+        by
+            This column must be of dtype Datetime or Date.
+
+            .. warning::
+                The column must be sorted in ascending order. Otherwise,
+                results will not be correct.
+        window_size
+            The length of the window. Can be a dynamic temporal
+            size indicated by a timedelta or the following string language:
+
+            - 1ns   (1 nanosecond)
+            - 1us   (1 microsecond)
+            - 1ms   (1 millisecond)
+            - 1s    (1 second)
+            - 1m    (1 minute)
+            - 1h    (1 hour)
+            - 1d    (1 calendar day)
+            - 1w    (1 calendar week)
+            - 1mo   (1 calendar month)
+            - 1q    (1 calendar quarter)
+            - 1y    (1 calendar year)
+
+            By "calendar day", we mean the corresponding time on the next day
+            (which may not be 24 hours, due to daylight savings). Similarly for
+            "calendar week", "calendar month", "calendar quarter", and
+            "calendar year".
+        min_periods
+            The number of values in the window that should be non-null before computing
+            a result.
+        closed : {'left', 'right', 'both', 'none'}
+            Define which sides of the temporal interval are closed (inclusive),
+            defaults to `'right'`.
+        warn_if_unsorted
+            Warn if data is not known to be sorted by `by` column.
+
+        Notes
+        -----
+        If you want to compute multiple aggregation statistics over the same dynamic
+        window, consider using `rolling` - this method can cache the window size
+        computation.
+
+        Examples
+        --------
+        Create a DataFrame with a datetime column and a row number column
+
+        >>> from datetime import timedelta, datetime
+        >>> start = datetime(2001, 1, 1)
+        >>> stop = datetime(2001, 1, 2)
+        >>> df_temporal = pl.DataFrame(
+        ...     {"date": pl.datetime_range(start, stop, "1h", eager=True)}
+        ... ).with_row_index()
+        >>> df_temporal
+        shape: (25, 2)
+        ┌───────┬─────────────────────┐
+        │ index ┆ date                │
+        │ ---   ┆ ---                 │
+        │ u32   ┆ datetime[μs]        │
+        ╞═══════╪═════════════════════╡
+        │ 0     ┆ 2001-01-01 00:00:00 │
+        │ 1     ┆ 2001-01-01 01:00:00 │
+        │ 2     ┆ 2001-01-01 02:00:00 │
+        │ 3     ┆ 2001-01-01 03:00:00 │
+        │ 4     ┆ 2001-01-01 04:00:00 │
+        │ …     ┆ …                   │
+        │ 20    ┆ 2001-01-01 20:00:00 │
+        │ 21    ┆ 2001-01-01 21:00:00 │
+        │ 22    ┆ 2001-01-01 22:00:00 │
+        │ 23    ┆ 2001-01-01 23:00:00 │
+        │ 24    ┆ 2001-01-02 00:00:00 │
+        └───────┴─────────────────────┘
+
+        Compute the rolling mean with the temporal windows closed on the right (default)
+
+        >>> df_temporal.with_columns(
+        ...     rolling_row_mean=pl.col("index").rolling_mean_by(
+        ...         "date", window_size="2h"
+        ...     )
+        ... )
+        shape: (25, 3)
+        ┌───────┬─────────────────────┬──────────────────┐
+        │ index ┆ date                ┆ rolling_row_mean │
+        │ ---   ┆ ---                 ┆ ---              │
+        │ u32   ┆ datetime[μs]        ┆ f64              │
+        ╞═══════╪═════════════════════╪══════════════════╡
+        │ 0     ┆ 2001-01-01 00:00:00 ┆ 0.0              │
+        │ 1     ┆ 2001-01-01 01:00:00 ┆ 0.5              │
+        │ 2     ┆ 2001-01-01 02:00:00 ┆ 1.5              │
+        │ 3     ┆ 2001-01-01 03:00:00 ┆ 2.5              │
+        │ 4     ┆ 2001-01-01 04:00:00 ┆ 3.5              │
+        │ …     ┆ …                   ┆ …                │
+        │ 20    ┆ 2001-01-01 20:00:00 ┆ 19.5             │
+        │ 21    ┆ 2001-01-01 21:00:00 ┆ 20.5             │
+        │ 22    ┆ 2001-01-01 22:00:00 ┆ 21.5             │
+        │ 23    ┆ 2001-01-01 23:00:00 ┆ 22.5             │
+        │ 24    ┆ 2001-01-02 00:00:00 ┆ 23.5             │
+        └───────┴─────────────────────┴──────────────────┘
+
+        Compute the rolling mean with the closure of windows on both sides
+
+        >>> df_temporal.with_columns(
+        ...     rolling_row_mean=pl.col("index").rolling_mean_by(
+        ...         "date", window_size="2h", closed="both"
+        ...     )
+        ... )
+        shape: (25, 3)
+        ┌───────┬─────────────────────┬──────────────────┐
+        │ index ┆ date                ┆ rolling_row_mean │
+        │ ---   ┆ ---                 ┆ ---              │
+        │ u32   ┆ datetime[μs]        ┆ f64              │
+        ╞═══════╪═════════════════════╪══════════════════╡
+        │ 0     ┆ 2001-01-01 00:00:00 ┆ 0.0              │
+        │ 1     ┆ 2001-01-01 01:00:00 ┆ 0.5              │
+        │ 2     ┆ 2001-01-01 02:00:00 ┆ 1.0              │
+        │ 3     ┆ 2001-01-01 03:00:00 ┆ 2.0              │
+        │ 4     ┆ 2001-01-01 04:00:00 ┆ 3.0              │
+        │ …     ┆ …                   ┆ …                │
+        │ 20    ┆ 2001-01-01 20:00:00 ┆ 19.0             │
+        │ 21    ┆ 2001-01-01 21:00:00 ┆ 20.0             │
+        │ 22    ┆ 2001-01-01 22:00:00 ┆ 21.0             │
+        │ 23    ┆ 2001-01-01 23:00:00 ┆ 22.0             │
+        │ 24    ┆ 2001-01-02 00:00:00 ┆ 23.0             │
+        └───────┴─────────────────────┴──────────────────┘
+        """
+        window_size = deprecate_saturating(window_size)
+        window_size, min_periods = _prepare_rolling_window_args(
+            window_size, min_periods
+        )
+        return self._from_pyexpr(
+            self._pyexpr.rolling_mean(
+                window_size,
+                None,
+                min_periods,
+                False,
+                by,
+                closed,
+                warn_if_unsorted,
+            )
+        )
+
+    @unstable()
+    def rolling_sum_by(
+        self,
+        by: str,
+        window_size: timedelta | str,
+        *,
+        min_periods: int = 1,
+        closed: ClosedInterval = "right",
+        warn_if_unsorted: bool = True,
+    ) -> Self:
+        """
+        Apply a rolling sum based on another column.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Given a `by` column `<t_0, t_1, ..., t_n>`, then `closed="right"`
+        (the default) means the windows will be:
+
+            - (t_0 - window_size, t_0]
+            - (t_1 - window_size, t_1]
+            - ...
+            - (t_n - window_size, t_n]
+
+        Parameters
+        ----------
+        window_size
+            The length of the window. Can be a dynamic temporal
+            size indicated by a timedelta or the following string language:
+
+            - 1ns   (1 nanosecond)
+            - 1us   (1 microsecond)
+            - 1ms   (1 millisecond)
+            - 1s    (1 second)
+            - 1m    (1 minute)
+            - 1h    (1 hour)
+            - 1d    (1 calendar day)
+            - 1w    (1 calendar week)
+            - 1mo   (1 calendar month)
+            - 1q    (1 calendar quarter)
+            - 1y    (1 calendar year)
+
+            By "calendar day", we mean the corresponding time on the next day
+            (which may not be 24 hours, due to daylight savings). Similarly for
+            "calendar week", "calendar month", "calendar quarter", and
+            "calendar year".
+        min_periods
+            The number of values in the window that should be non-null before computing
+            a result.
+        by
+            This column must of dtype `{Date, Datetime}`
+
+            .. warning::
+                If passed, the column must be sorted in ascending order. Otherwise,
+                results will not be correct.
+        closed : {'left', 'right', 'both', 'none'}
+            Define which sides of the temporal interval are closed (inclusive),
+            defaults to `'right'`.
+        warn_if_unsorted
+            Warn if data is not known to be sorted by `by` column.
+
+        Notes
+        -----
+        If you want to compute multiple aggregation statistics over the same dynamic
+        window, consider using `rolling` - this method can cache the window size
+        computation.
+
+        Examples
+        --------
+        Create a DataFrame with a datetime column and a row number column
+
+        >>> from datetime import timedelta, datetime
+        >>> start = datetime(2001, 1, 1)
+        >>> stop = datetime(2001, 1, 2)
+        >>> df_temporal = pl.DataFrame(
+        ...     {"date": pl.datetime_range(start, stop, "1h", eager=True)}
+        ... ).with_row_index()
+        >>> df_temporal
+        shape: (25, 2)
+        ┌───────┬─────────────────────┐
+        │ index ┆ date                │
+        │ ---   ┆ ---                 │
+        │ u32   ┆ datetime[μs]        │
+        ╞═══════╪═════════════════════╡
+        │ 0     ┆ 2001-01-01 00:00:00 │
+        │ 1     ┆ 2001-01-01 01:00:00 │
+        │ 2     ┆ 2001-01-01 02:00:00 │
+        │ 3     ┆ 2001-01-01 03:00:00 │
+        │ 4     ┆ 2001-01-01 04:00:00 │
+        │ …     ┆ …                   │
+        │ 20    ┆ 2001-01-01 20:00:00 │
+        │ 21    ┆ 2001-01-01 21:00:00 │
+        │ 22    ┆ 2001-01-01 22:00:00 │
+        │ 23    ┆ 2001-01-01 23:00:00 │
+        │ 24    ┆ 2001-01-02 00:00:00 │
+        └───────┴─────────────────────┘
+
+        Compute the rolling sum with the temporal windows closed on the right (default)
+
+        >>> df_temporal.with_columns(
+        ...     rolling_row_sum=pl.col("index").rolling_sum_by("date", window_size="2h")
+        ... )
+        shape: (25, 3)
+        ┌───────┬─────────────────────┬─────────────────┐
+        │ index ┆ date                ┆ rolling_row_sum │
+        │ ---   ┆ ---                 ┆ ---             │
+        │ u32   ┆ datetime[μs]        ┆ u32             │
+        ╞═══════╪═════════════════════╪═════════════════╡
+        │ 0     ┆ 2001-01-01 00:00:00 ┆ 0               │
+        │ 1     ┆ 2001-01-01 01:00:00 ┆ 1               │
+        │ 2     ┆ 2001-01-01 02:00:00 ┆ 3               │
+        │ 3     ┆ 2001-01-01 03:00:00 ┆ 5               │
+        │ 4     ┆ 2001-01-01 04:00:00 ┆ 7               │
+        │ …     ┆ …                   ┆ …               │
+        │ 20    ┆ 2001-01-01 20:00:00 ┆ 39              │
+        │ 21    ┆ 2001-01-01 21:00:00 ┆ 41              │
+        │ 22    ┆ 2001-01-01 22:00:00 ┆ 43              │
+        │ 23    ┆ 2001-01-01 23:00:00 ┆ 45              │
+        │ 24    ┆ 2001-01-02 00:00:00 ┆ 47              │
+        └───────┴─────────────────────┴─────────────────┘
+
+        Compute the rolling sum with the closure of windows on both sides
+
+        >>> df_temporal.with_columns(
+        ...     rolling_row_sum=pl.col("index").rolling_sum_by(
+        ...         "date", window_size="2h", closed="both"
+        ...     )
+        ... )
+        shape: (25, 3)
+        ┌───────┬─────────────────────┬─────────────────┐
+        │ index ┆ date                ┆ rolling_row_sum │
+        │ ---   ┆ ---                 ┆ ---             │
+        │ u32   ┆ datetime[μs]        ┆ u32             │
+        ╞═══════╪═════════════════════╪═════════════════╡
+        │ 0     ┆ 2001-01-01 00:00:00 ┆ 0               │
+        │ 1     ┆ 2001-01-01 01:00:00 ┆ 1               │
+        │ 2     ┆ 2001-01-01 02:00:00 ┆ 3               │
+        │ 3     ┆ 2001-01-01 03:00:00 ┆ 6               │
+        │ 4     ┆ 2001-01-01 04:00:00 ┆ 9               │
+        │ …     ┆ …                   ┆ …               │
+        │ 20    ┆ 2001-01-01 20:00:00 ┆ 57              │
+        │ 21    ┆ 2001-01-01 21:00:00 ┆ 60              │
+        │ 22    ┆ 2001-01-01 22:00:00 ┆ 63              │
+        │ 23    ┆ 2001-01-01 23:00:00 ┆ 66              │
+        │ 24    ┆ 2001-01-02 00:00:00 ┆ 69              │
+        └───────┴─────────────────────┴─────────────────┘
+        """
+        window_size = deprecate_saturating(window_size)
+        window_size, min_periods = _prepare_rolling_window_args(
+            window_size, min_periods
+        )
+        return self._from_pyexpr(
+            self._pyexpr.rolling_sum(
+                window_size, None, min_periods, False, by, closed, warn_if_unsorted
+            )
+        )
+
+    @unstable()
+    def rolling_std_by(
+        self,
+        by: str,
+        window_size: timedelta | str,
+        *,
+        min_periods: int = 1,
+        closed: ClosedInterval = "right",
+        ddof: int = 1,
+        warn_if_unsorted: bool = True,
+    ) -> Self:
+        """
+        Compute a rolling standard deviation based on another column.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Given a `by` column `<t_0, t_1, ..., t_n>`, then `closed="left"` means
+        the windows will be:
+
+            - [t_0 - window_size, t_0)
+            - [t_1 - window_size, t_1)
+            - ...
+            - [t_n - window_size, t_n)
+
+
+        Parameters
+        ----------
+        by
+            This column must be of dtype Datetime or Date.
+
+            .. warning::
+                The column must be sorted in ascending order. Otherwise,
+                results will not be correct.
+        window_size
+            The length of the window. Can be a dynamic temporal
+            size indicated by a timedelta or the following string language:
+
+            - 1ns   (1 nanosecond)
+            - 1us   (1 microsecond)
+            - 1ms   (1 millisecond)
+            - 1s    (1 second)
+            - 1m    (1 minute)
+            - 1h    (1 hour)
+            - 1d    (1 calendar day)
+            - 1w    (1 calendar week)
+            - 1mo   (1 calendar month)
+            - 1q    (1 calendar quarter)
+            - 1y    (1 calendar year)
+
+            By "calendar day", we mean the corresponding time on the next day
+            (which may not be 24 hours, due to daylight savings). Similarly for
+            "calendar week", "calendar month", "calendar quarter", and
+            "calendar year".
+        min_periods
+            The number of values in the window that should be non-null before computing
+            a result.
+        closed : {'left', 'right', 'both', 'none'}
+            Define which sides of the temporal interval are closed (inclusive),
+            defaults to `'right'`.
+        ddof
+            "Delta Degrees of Freedom": The divisor for a length N window is N - ddof
+        warn_if_unsorted
+            Warn if data is not known to be sorted by `by` column.
+
+        Notes
+        -----
+        If you want to compute multiple aggregation statistics over the same dynamic
+        window, consider using `rolling` - this method can cache the window size
+        computation.
+
+        Examples
+        --------
+        Create a DataFrame with a datetime column and a row number column
+
+        >>> from datetime import timedelta, datetime
+        >>> start = datetime(2001, 1, 1)
+        >>> stop = datetime(2001, 1, 2)
+        >>> df_temporal = pl.DataFrame(
+        ...     {"date": pl.datetime_range(start, stop, "1h", eager=True)}
+        ... ).with_row_index()
+        >>> df_temporal
+        shape: (25, 2)
+        ┌───────┬─────────────────────┐
+        │ index ┆ date                │
+        │ ---   ┆ ---                 │
+        │ u32   ┆ datetime[μs]        │
+        ╞═══════╪═════════════════════╡
+        │ 0     ┆ 2001-01-01 00:00:00 │
+        │ 1     ┆ 2001-01-01 01:00:00 │
+        │ 2     ┆ 2001-01-01 02:00:00 │
+        │ 3     ┆ 2001-01-01 03:00:00 │
+        │ 4     ┆ 2001-01-01 04:00:00 │
+        │ …     ┆ …                   │
+        │ 20    ┆ 2001-01-01 20:00:00 │
+        │ 21    ┆ 2001-01-01 21:00:00 │
+        │ 22    ┆ 2001-01-01 22:00:00 │
+        │ 23    ┆ 2001-01-01 23:00:00 │
+        │ 24    ┆ 2001-01-02 00:00:00 │
+        └───────┴─────────────────────┘
+
+        Compute the rolling std with the temporal windows closed on the right (default)
+
+        >>> df_temporal.with_columns(
+        ...     rolling_row_std=pl.col("index").rolling_std_by("date", window_size="2h")
+        ... )
+        shape: (25, 3)
+        ┌───────┬─────────────────────┬─────────────────┐
+        │ index ┆ date                ┆ rolling_row_std │
+        │ ---   ┆ ---                 ┆ ---             │
+        │ u32   ┆ datetime[μs]        ┆ f64             │
+        ╞═══════╪═════════════════════╪═════════════════╡
+        │ 0     ┆ 2001-01-01 00:00:00 ┆ null            │
+        │ 1     ┆ 2001-01-01 01:00:00 ┆ 0.707107        │
+        │ 2     ┆ 2001-01-01 02:00:00 ┆ 0.707107        │
+        │ 3     ┆ 2001-01-01 03:00:00 ┆ 0.707107        │
+        │ 4     ┆ 2001-01-01 04:00:00 ┆ 0.707107        │
+        │ …     ┆ …                   ┆ …               │
+        │ 20    ┆ 2001-01-01 20:00:00 ┆ 0.707107        │
+        │ 21    ┆ 2001-01-01 21:00:00 ┆ 0.707107        │
+        │ 22    ┆ 2001-01-01 22:00:00 ┆ 0.707107        │
+        │ 23    ┆ 2001-01-01 23:00:00 ┆ 0.707107        │
+        │ 24    ┆ 2001-01-02 00:00:00 ┆ 0.707107        │
+        └───────┴─────────────────────┴─────────────────┘
+
+        Compute the rolling std with the closure of windows on both sides
+
+        >>> df_temporal.with_columns(
+        ...     rolling_row_std=pl.col("index").rolling_std_by(
+        ...         "date", window_size="2h", closed="both"
+        ...     )
+        ... )
+        shape: (25, 3)
+        ┌───────┬─────────────────────┬─────────────────┐
+        │ index ┆ date                ┆ rolling_row_std │
+        │ ---   ┆ ---                 ┆ ---             │
+        │ u32   ┆ datetime[μs]        ┆ f64             │
+        ╞═══════╪═════════════════════╪═════════════════╡
+        │ 0     ┆ 2001-01-01 00:00:00 ┆ null            │
+        │ 1     ┆ 2001-01-01 01:00:00 ┆ 0.707107        │
+        │ 2     ┆ 2001-01-01 02:00:00 ┆ 1.0             │
+        │ 3     ┆ 2001-01-01 03:00:00 ┆ 1.0             │
+        │ 4     ┆ 2001-01-01 04:00:00 ┆ 1.0             │
+        │ …     ┆ …                   ┆ …               │
+        │ 20    ┆ 2001-01-01 20:00:00 ┆ 1.0             │
+        │ 21    ┆ 2001-01-01 21:00:00 ┆ 1.0             │
+        │ 22    ┆ 2001-01-01 22:00:00 ┆ 1.0             │
+        │ 23    ┆ 2001-01-01 23:00:00 ┆ 1.0             │
+        │ 24    ┆ 2001-01-02 00:00:00 ┆ 1.0             │
+        └───────┴─────────────────────┴─────────────────┘
+        """
+        window_size = deprecate_saturating(window_size)
+        window_size, min_periods = _prepare_rolling_window_args(
+            window_size, min_periods
+        )
+        return self._from_pyexpr(
+            self._pyexpr.rolling_std(
+                window_size,
+                None,
+                min_periods,
+                False,
+                by,
+                closed,
+                ddof,
+                warn_if_unsorted,
+            )
+        )
+
+    @unstable()
+    def rolling_var_by(
+        self,
+        by: str,
+        window_size: timedelta | str,
+        *,
+        min_periods: int = 1,
+        closed: ClosedInterval = "right",
+        ddof: int = 1,
+        warn_if_unsorted: bool = True,
+    ) -> Self:
+        """
+        Compute a rolling variance based on another column.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Given a `by` column `<t_0, t_1, ..., t_n>`, then `closed="right"`
+        (the default) means the windows will be:
+
+            - (t_0 - window_size, t_0]
+            - (t_1 - window_size, t_1]
+            - ...
+            - (t_n - window_size, t_n]
+
+        Parameters
+        ----------
+        by
+            This column must be of dtype Datetime or Date.
+
+            .. warning::
+                The column must be sorted in ascending order. Otherwise,
+                results will not be correct.
+        window_size
+            The length of the window. Can be a dynamic temporal
+            size indicated by a timedelta or the following string language:
+
+            - 1ns   (1 nanosecond)
+            - 1us   (1 microsecond)
+            - 1ms   (1 millisecond)
+            - 1s    (1 second)
+            - 1m    (1 minute)
+            - 1h    (1 hour)
+            - 1d    (1 calendar day)
+            - 1w    (1 calendar week)
+            - 1mo   (1 calendar month)
+            - 1q    (1 calendar quarter)
+            - 1y    (1 calendar year)
+
+            By "calendar day", we mean the corresponding time on the next day
+            (which may not be 24 hours, due to daylight savings). Similarly for
+            "calendar week", "calendar month", "calendar quarter", and
+            "calendar year".
+        min_periods
+            The number of values in the window that should be non-null before computing
+            a result.
+        closed : {'left', 'right', 'both', 'none'}
+            Define which sides of the temporal interval are closed (inclusive),
+            defaults to `'right'`.
+        ddof
+            "Delta Degrees of Freedom": The divisor for a length N window is N - ddof
+        warn_if_unsorted
+            Warn if data is not known to be sorted by `by` column.
+
+        Notes
+        -----
+        If you want to compute multiple aggregation statistics over the same dynamic
+        window, consider using `rolling` - this method can cache the window size
+        computation.
+
+        Examples
+        --------
+        Create a DataFrame with a datetime column and a row number column
+
+        >>> from datetime import timedelta, datetime
+        >>> start = datetime(2001, 1, 1)
+        >>> stop = datetime(2001, 1, 2)
+        >>> df_temporal = pl.DataFrame(
+        ...     {"date": pl.datetime_range(start, stop, "1h", eager=True)}
+        ... ).with_row_index()
+        >>> df_temporal
+        shape: (25, 2)
+        ┌───────┬─────────────────────┐
+        │ index ┆ date                │
+        │ ---   ┆ ---                 │
+        │ u32   ┆ datetime[μs]        │
+        ╞═══════╪═════════════════════╡
+        │ 0     ┆ 2001-01-01 00:00:00 │
+        │ 1     ┆ 2001-01-01 01:00:00 │
+        │ 2     ┆ 2001-01-01 02:00:00 │
+        │ 3     ┆ 2001-01-01 03:00:00 │
+        │ 4     ┆ 2001-01-01 04:00:00 │
+        │ …     ┆ …                   │
+        │ 20    ┆ 2001-01-01 20:00:00 │
+        │ 21    ┆ 2001-01-01 21:00:00 │
+        │ 22    ┆ 2001-01-01 22:00:00 │
+        │ 23    ┆ 2001-01-01 23:00:00 │
+        │ 24    ┆ 2001-01-02 00:00:00 │
+        └───────┴─────────────────────┘
+
+        Compute the rolling var with the temporal windows closed on the right (default)
+
+        >>> df_temporal.with_columns(
+        ...     rolling_row_var=pl.col("index").rolling_var_by("date", window_size="2h")
+        ... )
+        shape: (25, 3)
+        ┌───────┬─────────────────────┬─────────────────┐
+        │ index ┆ date                ┆ rolling_row_var │
+        │ ---   ┆ ---                 ┆ ---             │
+        │ u32   ┆ datetime[μs]        ┆ f64             │
+        ╞═══════╪═════════════════════╪═════════════════╡
+        │ 0     ┆ 2001-01-01 00:00:00 ┆ null            │
+        │ 1     ┆ 2001-01-01 01:00:00 ┆ 0.5             │
+        │ 2     ┆ 2001-01-01 02:00:00 ┆ 0.5             │
+        │ 3     ┆ 2001-01-01 03:00:00 ┆ 0.5             │
+        │ 4     ┆ 2001-01-01 04:00:00 ┆ 0.5             │
+        │ …     ┆ …                   ┆ …               │
+        │ 20    ┆ 2001-01-01 20:00:00 ┆ 0.5             │
+        │ 21    ┆ 2001-01-01 21:00:00 ┆ 0.5             │
+        │ 22    ┆ 2001-01-01 22:00:00 ┆ 0.5             │
+        │ 23    ┆ 2001-01-01 23:00:00 ┆ 0.5             │
+        │ 24    ┆ 2001-01-02 00:00:00 ┆ 0.5             │
+        └───────┴─────────────────────┴─────────────────┘
+
+        Compute the rolling var with the closure of windows on both sides
+
+        >>> df_temporal.with_columns(
+        ...     rolling_row_var=pl.col("index").rolling_var_by(
+        ...         "date", window_size="2h", closed="both"
+        ...     )
+        ... )
+        shape: (25, 3)
+        ┌───────┬─────────────────────┬─────────────────┐
+        │ index ┆ date                ┆ rolling_row_var │
+        │ ---   ┆ ---                 ┆ ---             │
+        │ u32   ┆ datetime[μs]        ┆ f64             │
+        ╞═══════╪═════════════════════╪═════════════════╡
+        │ 0     ┆ 2001-01-01 00:00:00 ┆ null            │
+        │ 1     ┆ 2001-01-01 01:00:00 ┆ 0.5             │
+        │ 2     ┆ 2001-01-01 02:00:00 ┆ 1.0             │
+        │ 3     ┆ 2001-01-01 03:00:00 ┆ 1.0             │
+        │ 4     ┆ 2001-01-01 04:00:00 ┆ 1.0             │
+        │ …     ┆ …                   ┆ …               │
+        │ 20    ┆ 2001-01-01 20:00:00 ┆ 1.0             │
+        │ 21    ┆ 2001-01-01 21:00:00 ┆ 1.0             │
+        │ 22    ┆ 2001-01-01 22:00:00 ┆ 1.0             │
+        │ 23    ┆ 2001-01-01 23:00:00 ┆ 1.0             │
+        │ 24    ┆ 2001-01-02 00:00:00 ┆ 1.0             │
+        └───────┴─────────────────────┴─────────────────┘
+        """
+        window_size = deprecate_saturating(window_size)
+        window_size, min_periods = _prepare_rolling_window_args(
+            window_size, min_periods
+        )
+        return self._from_pyexpr(
+            self._pyexpr.rolling_var(
+                window_size,
+                None,
+                min_periods,
+                False,
+                by,
+                closed,
+                ddof,
+                warn_if_unsorted,
+            )
+        )
+
+    @unstable()
+    def rolling_median_by(
+        self,
+        by: str,
+        window_size: timedelta | str,
+        *,
+        min_periods: int = 1,
+        closed: ClosedInterval = "right",
+        warn_if_unsorted: bool = True,
+    ) -> Self:
+        """
+        Compute a rolling median based on another column.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Given a `by` column `<t_0, t_1, ..., t_n>`, then `closed="left"` means
+        the windows will be:
+
+            - [t_0 - window_size, t_0)
+            - [t_1 - window_size, t_1)
+            - ...
+            - [t_n - window_size, t_n)
+
+        Parameters
+        ----------
+        by
+            This column must be of dtype Datetime or Date.
+
+            .. warning::
+                The column must be sorted in ascending order. Otherwise,
+                results will not be correct.
+        window_size
+            The length of the window. Can be a dynamic temporal
+            size indicated by a timedelta or the following string language:
+
+            - 1ns   (1 nanosecond)
+            - 1us   (1 microsecond)
+            - 1ms   (1 millisecond)
+            - 1s    (1 second)
+            - 1m    (1 minute)
+            - 1h    (1 hour)
+            - 1d    (1 calendar day)
+            - 1w    (1 calendar week)
+            - 1mo   (1 calendar month)
+            - 1q    (1 calendar quarter)
+            - 1y    (1 calendar year)
+
+            By "calendar day", we mean the corresponding time on the next day
+            (which may not be 24 hours, due to daylight savings). Similarly for
+            "calendar week", "calendar month", "calendar quarter", and
+            "calendar year".
+        min_periods
+            The number of values in the window that should be non-null before computing
+            a result.
+        closed : {'left', 'right', 'both', 'none'}
+            Define which sides of the temporal interval are closed (inclusive),
+            defaults to `'right'`.
+        warn_if_unsorted
+            Warn if data is not known to be sorted by `by` column.
+
+        Notes
+        -----
+        If you want to compute multiple aggregation statistics over the same dynamic
+        window, consider using `rolling` - this method can cache the window size
+        computation.
+
+        Examples
+        --------
+        Create a DataFrame with a datetime column and a row number column
+
+        >>> from datetime import timedelta, datetime
+        >>> start = datetime(2001, 1, 1)
+        >>> stop = datetime(2001, 1, 2)
+        >>> df_temporal = pl.DataFrame(
+        ...     {"date": pl.datetime_range(start, stop, "1h", eager=True)}
+        ... ).with_row_index()
+        >>> df_temporal
+        shape: (25, 2)
+        ┌───────┬─────────────────────┐
+        │ index ┆ date                │
+        │ ---   ┆ ---                 │
+        │ u32   ┆ datetime[μs]        │
+        ╞═══════╪═════════════════════╡
+        │ 0     ┆ 2001-01-01 00:00:00 │
+        │ 1     ┆ 2001-01-01 01:00:00 │
+        │ 2     ┆ 2001-01-01 02:00:00 │
+        │ 3     ┆ 2001-01-01 03:00:00 │
+        │ 4     ┆ 2001-01-01 04:00:00 │
+        │ …     ┆ …                   │
+        │ 20    ┆ 2001-01-01 20:00:00 │
+        │ 21    ┆ 2001-01-01 21:00:00 │
+        │ 22    ┆ 2001-01-01 22:00:00 │
+        │ 23    ┆ 2001-01-01 23:00:00 │
+        │ 24    ┆ 2001-01-02 00:00:00 │
+        └───────┴─────────────────────┘
+
+        Compute the rolling median with the temporal windows closed on the right:
+
+        >>> df_temporal.with_columns(
+        ...     rolling_row_median=pl.col("index").rolling_median_by(
+        ...         "date", window_size="2h"
+        ...     )
+        ... )
+        shape: (25, 3)
+        ┌───────┬─────────────────────┬────────────────────┐
+        │ index ┆ date                ┆ rolling_row_median │
+        │ ---   ┆ ---                 ┆ ---                │
+        │ u32   ┆ datetime[μs]        ┆ f64                │
+        ╞═══════╪═════════════════════╪════════════════════╡
+        │ 0     ┆ 2001-01-01 00:00:00 ┆ 0.0                │
+        │ 1     ┆ 2001-01-01 01:00:00 ┆ 0.5                │
+        │ 2     ┆ 2001-01-01 02:00:00 ┆ 1.5                │
+        │ 3     ┆ 2001-01-01 03:00:00 ┆ 2.5                │
+        │ 4     ┆ 2001-01-01 04:00:00 ┆ 3.5                │
+        │ …     ┆ …                   ┆ …                  │
+        │ 20    ┆ 2001-01-01 20:00:00 ┆ 19.5               │
+        │ 21    ┆ 2001-01-01 21:00:00 ┆ 20.5               │
+        │ 22    ┆ 2001-01-01 22:00:00 ┆ 21.5               │
+        │ 23    ┆ 2001-01-01 23:00:00 ┆ 22.5               │
+        │ 24    ┆ 2001-01-02 00:00:00 ┆ 23.5               │
+        └───────┴─────────────────────┴────────────────────┘
+        """
+        window_size = deprecate_saturating(window_size)
+        window_size, min_periods = _prepare_rolling_window_args(
+            window_size, min_periods
+        )
+        return self._from_pyexpr(
+            self._pyexpr.rolling_median(
+                window_size, None, min_periods, False, by, closed, warn_if_unsorted
+            )
+        )
+
+    @unstable()
+    def rolling_quantile_by(
+        self,
+        by: str,
+        window_size: timedelta | str,
+        *,
+        quantile: float,
+        interpolation: RollingInterpolationMethod = "nearest",
+        min_periods: int = 1,
+        closed: ClosedInterval = "right",
+        warn_if_unsorted: bool = True,
+    ) -> Self:
+        """
+        Compute a rolling quantile based on another column.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Given a `by` column `<t_0, t_1, ..., t_n>`, then `closed="right"`
+        (the default) means the windows will be:
+
+            - (t_0 - window_size, t_0]
+            - (t_1 - window_size, t_1]
+            - ...
+            - (t_n - window_size, t_n]
+
+        Parameters
+        ----------
+        by
+            This column must be of dtype Datetime or Date.
+
+            .. warning::
+                The column must be sorted in ascending order. Otherwise,
+                results will not be correct.
+        quantile
+            Quantile between 0.0 and 1.0.
+        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
+            Interpolation method.
+        window_size
+            The length of the window. Can be a dynamic
+            temporal size indicated by a timedelta or the following string language:
+
+            - 1ns   (1 nanosecond)
+            - 1us   (1 microsecond)
+            - 1ms   (1 millisecond)
+            - 1s    (1 second)
+            - 1m    (1 minute)
+            - 1h    (1 hour)
+            - 1d    (1 calendar day)
+            - 1w    (1 calendar week)
+            - 1mo   (1 calendar month)
+            - 1q    (1 calendar quarter)
+            - 1y    (1 calendar year)
+
+            By "calendar day", we mean the corresponding time on the next day
+            (which may not be 24 hours, due to daylight savings). Similarly for
+            "calendar week", "calendar month", "calendar quarter", and
+            "calendar year".
+        min_periods
+            The number of values in the window that should be non-null before computing
+            a result.
+        closed : {'left', 'right', 'both', 'none'}
+            Define which sides of the temporal interval are closed (inclusive),
+            defaults to `'right'`.
+        warn_if_unsorted
+            Warn if data is not known to be sorted by `by` column.
+
+        Notes
+        -----
+        If you want to compute multiple aggregation statistics over the same dynamic
+        window, consider using `rolling` - this method can cache the window size
+        computation.
+
+        Examples
+        --------
+        Create a DataFrame with a datetime column and a row number column
+
+        >>> from datetime import timedelta, datetime
+        >>> start = datetime(2001, 1, 1)
+        >>> stop = datetime(2001, 1, 2)
+        >>> df_temporal = pl.DataFrame(
+        ...     {"date": pl.datetime_range(start, stop, "1h", eager=True)}
+        ... ).with_row_index()
+        >>> df_temporal
+        shape: (25, 2)
+        ┌───────┬─────────────────────┐
+        │ index ┆ date                │
+        │ ---   ┆ ---                 │
+        │ u32   ┆ datetime[μs]        │
+        ╞═══════╪═════════════════════╡
+        │ 0     ┆ 2001-01-01 00:00:00 │
+        │ 1     ┆ 2001-01-01 01:00:00 │
+        │ 2     ┆ 2001-01-01 02:00:00 │
+        │ 3     ┆ 2001-01-01 03:00:00 │
+        │ 4     ┆ 2001-01-01 04:00:00 │
+        │ …     ┆ …                   │
+        │ 20    ┆ 2001-01-01 20:00:00 │
+        │ 21    ┆ 2001-01-01 21:00:00 │
+        │ 22    ┆ 2001-01-01 22:00:00 │
+        │ 23    ┆ 2001-01-01 23:00:00 │
+        │ 24    ┆ 2001-01-02 00:00:00 │
+        └───────┴─────────────────────┘
+
+        Compute the rolling quantile with the temporal windows closed on the right:
+
+        >>> df_temporal.with_columns(
+        ...     rolling_row_quantile=pl.col("index").rolling_quantile_by(
+        ...         "date", window_size="2h", quantile=0.3
+        ...     )
+        ... )
+        shape: (25, 3)
+        ┌───────┬─────────────────────┬──────────────────────┐
+        │ index ┆ date                ┆ rolling_row_quantile │
+        │ ---   ┆ ---                 ┆ ---                  │
+        │ u32   ┆ datetime[μs]        ┆ f64                  │
+        ╞═══════╪═════════════════════╪══════════════════════╡
+        │ 0     ┆ 2001-01-01 00:00:00 ┆ 0.0                  │
+        │ 1     ┆ 2001-01-01 01:00:00 ┆ 0.0                  │
+        │ 2     ┆ 2001-01-01 02:00:00 ┆ 1.0                  │
+        │ 3     ┆ 2001-01-01 03:00:00 ┆ 2.0                  │
+        │ 4     ┆ 2001-01-01 04:00:00 ┆ 3.0                  │
+        │ …     ┆ …                   ┆ …                    │
+        │ 20    ┆ 2001-01-01 20:00:00 ┆ 19.0                 │
+        │ 21    ┆ 2001-01-01 21:00:00 ┆ 20.0                 │
+        │ 22    ┆ 2001-01-01 22:00:00 ┆ 21.0                 │
+        │ 23    ┆ 2001-01-01 23:00:00 ┆ 22.0                 │
+        │ 24    ┆ 2001-01-02 00:00:00 ┆ 23.0                 │
+        └───────┴─────────────────────┴──────────────────────┘
+        """
+        window_size = deprecate_saturating(window_size)
+        window_size, min_periods = _prepare_rolling_window_args(
+            window_size, min_periods
+        )
+        return self._from_pyexpr(
+            self._pyexpr.rolling_quantile(
+                quantile,
+                interpolation,
+                window_size,
+                None,
+                min_periods,
+                False,
+                by,
+                closed,
+                warn_if_unsorted,
+            )
+        )
+
+    @unstable()
     def rolling_min(
         self,
         window_size: int | timedelta | str,
@@ -6201,6 +7434,10 @@ class Expr:
             .. warning::
                 If passed, the column must be sorted in ascending order. Otherwise,
                 results will not be correct.
+
+            .. deprecated:: 0.20.24
+                Passing `by` to `rolling_min` is deprecated - please use
+                :meth:`.rolling_min_by` instead.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive); only
             applicable if `by` has been set (in which case, it defaults to `'right'`).
@@ -6305,7 +7542,7 @@ class Expr:
 
         >>> df_temporal.with_columns(
         ...     rolling_row_min=pl.col("index").rolling_min(window_size="2h", by="date")
-        ... )
+        ... )  # doctest:+SKIP
         shape: (25, 3)
         ┌───────┬─────────────────────┬─────────────────┐
         │ index ┆ date                ┆ rolling_row_min │
@@ -6329,6 +7566,12 @@ class Expr:
         window_size, min_periods = _prepare_rolling_window_args(
             window_size, min_periods
         )
+        if by is not None:
+            issue_deprecation_warning(
+                "Passing `by` to `rolling_min` is deprecated. Instead of "
+                "`rolling_min(..., by='foo')`, please use `rolling_min_by('foo', ...)`.",
+                version="0.20.24",
+            )
         return self._from_pyexpr(
             self._pyexpr.rolling_min(
                 window_size, weights, min_periods, center, by, closed, warn_if_unsorted
@@ -6410,6 +7653,14 @@ class Expr:
             If the `window_size` is temporal, for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
             be of dtype Datetime or Date.
+
+            .. warning::
+                If passed, the column must be sorted in ascending order. Otherwise,
+                results will not be correct.
+
+            .. deprecated:: 0.20.24
+                Passing `by` to `rolling_max` is deprecated - please use
+                :meth:`.rolling_max_by` instead.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive); only
             applicable if `by` has been set (in which case, it defaults to `'right'`).
@@ -6514,7 +7765,7 @@ class Expr:
 
         >>> df_temporal.with_columns(
         ...     rolling_row_max=pl.col("index").rolling_max(window_size="2h", by="date")
-        ... )
+        ... )  # doctest:+SKIP
         shape: (25, 3)
         ┌───────┬─────────────────────┬─────────────────┐
         │ index ┆ date                ┆ rolling_row_max │
@@ -6540,7 +7791,7 @@ class Expr:
         ...     rolling_row_max=pl.col("index").rolling_max(
         ...         window_size="2h", by="date", closed="both"
         ...     )
-        ... )
+        ... )  # doctest:+SKIP
         shape: (25, 3)
         ┌───────┬─────────────────────┬─────────────────┐
         │ index ┆ date                ┆ rolling_row_max │
@@ -6564,6 +7815,12 @@ class Expr:
         window_size, min_periods = _prepare_rolling_window_args(
             window_size, min_periods
         )
+        if by is not None:
+            issue_deprecation_warning(
+                "Passing `by` to `rolling_max` is deprecated. Instead of "
+                "`rolling_max(..., by='foo')`, please use `rolling_max_by('foo', ...)`.",
+                version="0.20.24",
+            )
         return self._from_pyexpr(
             self._pyexpr.rolling_max(
                 window_size, weights, min_periods, center, by, closed, warn_if_unsorted
@@ -6649,6 +7906,10 @@ class Expr:
             .. warning::
                 If passed, the column must be sorted in ascending order. Otherwise,
                 results will not be correct.
+
+            .. deprecated:: 0.20.24
+                Passing `by` to `rolling_mean` is deprecated - please use
+                :meth:`.rolling_max_by` instead.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive); only
             applicable if `by` has been set (in which case, it defaults to `'right'`).
@@ -6755,7 +8016,7 @@ class Expr:
         ...     rolling_row_mean=pl.col("index").rolling_mean(
         ...         window_size="2h", by="date"
         ...     )
-        ... )
+        ... )  # doctest:+SKIP
         shape: (25, 3)
         ┌───────┬─────────────────────┬──────────────────┐
         │ index ┆ date                ┆ rolling_row_mean │
@@ -6781,7 +8042,7 @@ class Expr:
         ...     rolling_row_mean=pl.col("index").rolling_mean(
         ...         window_size="2h", by="date", closed="both"
         ...     )
-        ... )
+        ... )  # doctest:+SKIP
         shape: (25, 3)
         ┌───────┬─────────────────────┬──────────────────┐
         │ index ┆ date                ┆ rolling_row_mean │
@@ -6805,6 +8066,12 @@ class Expr:
         window_size, min_periods = _prepare_rolling_window_args(
             window_size, min_periods
         )
+        if by is not None:
+            issue_deprecation_warning(
+                "Passing `by` to `rolling_mean` is deprecated. Instead of "
+                "`rolling_mean(..., by='foo')`, please use `rolling_mean_by('foo', ...)`.",
+                version="0.20.24",
+            )
         return self._from_pyexpr(
             self._pyexpr.rolling_mean(
                 window_size,
@@ -6892,6 +8159,14 @@ class Expr:
             If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
             of dtype `{Date, Datetime}`
+
+            .. warning::
+                If passed, the column must be sorted in ascending order. Otherwise,
+                results will not be correct.
+
+            .. deprecated:: 0.20.24
+                Passing `by` to `rolling_sum` is deprecated - please use
+                :meth:`.rolling_sum_by` instead.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive); only
             applicable if `by` has been set (in which case, it defaults to `'right'`).
@@ -6996,7 +8271,7 @@ class Expr:
 
         >>> df_temporal.with_columns(
         ...     rolling_row_sum=pl.col("index").rolling_sum(window_size="2h", by="date")
-        ... )
+        ... )  # doctest:+SKIP
         shape: (25, 3)
         ┌───────┬─────────────────────┬─────────────────┐
         │ index ┆ date                ┆ rolling_row_sum │
@@ -7022,7 +8297,7 @@ class Expr:
         ...     rolling_row_sum=pl.col("index").rolling_sum(
         ...         window_size="2h", by="date", closed="both"
         ...     )
-        ... )
+        ... )  # doctest:+SKIP
         shape: (25, 3)
         ┌───────┬─────────────────────┬─────────────────┐
         │ index ┆ date                ┆ rolling_row_sum │
@@ -7046,6 +8321,12 @@ class Expr:
         window_size, min_periods = _prepare_rolling_window_args(
             window_size, min_periods
         )
+        if by is not None:
+            issue_deprecation_warning(
+                "Passing `by` to `rolling_sum` is deprecated. Instead of "
+                "`rolling_sum(..., by='foo')`, please use `rolling_sum_by('foo', ...)`.",
+                version="0.20.24",
+            )
         return self._from_pyexpr(
             self._pyexpr.rolling_sum(
                 window_size, weights, min_periods, center, by, closed, warn_if_unsorted
@@ -7129,6 +8410,10 @@ class Expr:
             .. warning::
                 If passed, the column must be sorted in ascending order. Otherwise,
                 results will not be correct.
+
+            .. deprecated:: 0.20.24
+                Passing `by` to `rolling_std` is deprecated - please use
+                :meth:`.rolling_std_by` instead.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive); only
             applicable if `by` has been set (in which case, it defaults to `'right'`).
@@ -7235,7 +8520,7 @@ class Expr:
 
         >>> df_temporal.with_columns(
         ...     rolling_row_std=pl.col("index").rolling_std(window_size="2h", by="date")
-        ... )
+        ... )  # doctest:+SKIP
         shape: (25, 3)
         ┌───────┬─────────────────────┬─────────────────┐
         │ index ┆ date                ┆ rolling_row_std │
@@ -7261,7 +8546,7 @@ class Expr:
         ...     rolling_row_std=pl.col("index").rolling_std(
         ...         window_size="2h", by="date", closed="both"
         ...     )
-        ... )
+        ... )  # doctest:+SKIP
         shape: (25, 3)
         ┌───────┬─────────────────────┬─────────────────┐
         │ index ┆ date                ┆ rolling_row_std │
@@ -7285,6 +8570,12 @@ class Expr:
         window_size, min_periods = _prepare_rolling_window_args(
             window_size, min_periods
         )
+        if by is not None:
+            issue_deprecation_warning(
+                "Passing `by` to `rolling_std` is deprecated. Instead of "
+                "`rolling_std(..., by='foo')`, please use `rolling_std_by('foo', ...)`.",
+                version="0.20.24",
+            )
         return self._from_pyexpr(
             self._pyexpr.rolling_std(
                 window_size,
@@ -7374,6 +8665,10 @@ class Expr:
             .. warning::
                 If passed, the column must be sorted in ascending order. Otherwise,
                 results will not be correct.
+
+            .. deprecated:: 0.20.24
+                Passing `by` to `rolling_var` is deprecated - please use
+                :meth:`.rolling_var_by` instead.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive); only
             applicable if `by` has been set (in which case, it defaults to `'right'`).
@@ -7480,7 +8775,7 @@ class Expr:
 
         >>> df_temporal.with_columns(
         ...     rolling_row_var=pl.col("index").rolling_var(window_size="2h", by="date")
-        ... )
+        ... )  # doctest:+SKIP
         shape: (25, 3)
         ┌───────┬─────────────────────┬─────────────────┐
         │ index ┆ date                ┆ rolling_row_var │
@@ -7506,7 +8801,7 @@ class Expr:
         ...     rolling_row_var=pl.col("index").rolling_var(
         ...         window_size="2h", by="date", closed="both"
         ...     )
-        ... )
+        ... )  # doctest:+SKIP
         shape: (25, 3)
         ┌───────┬─────────────────────┬─────────────────┐
         │ index ┆ date                ┆ rolling_row_var │
@@ -7530,6 +8825,12 @@ class Expr:
         window_size, min_periods = _prepare_rolling_window_args(
             window_size, min_periods
         )
+        if by is not None:
+            issue_deprecation_warning(
+                "Passing `by` to `rolling_var` is deprecated. Instead of "
+                "`rolling_var(..., by='foo')`, please use `rolling_var_by('foo', ...)`.",
+                version="0.20.24",
+            )
         return self._from_pyexpr(
             self._pyexpr.rolling_var(
                 window_size,
@@ -7619,6 +8920,10 @@ class Expr:
             .. warning::
                 If passed, the column must be sorted in ascending order. Otherwise,
                 results will not be correct.
+
+            .. deprecated:: 0.20.24
+                Passing `by` to `rolling_median` is deprecated - please use
+                :meth:`.rolling_median_by` instead.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive); only
             applicable if `by` has been set (in which case, it defaults to `'right'`).
@@ -7695,6 +9000,12 @@ class Expr:
         window_size, min_periods = _prepare_rolling_window_args(
             window_size, min_periods
         )
+        if by is not None:
+            issue_deprecation_warning(
+                "Passing `by` to `rolling_median` is deprecated. Instead of "
+                "`rolling_median(..., by='foo')`, please use `rolling_median_by('foo', ...)`.",
+                version="0.20.24",
+            )
         return self._from_pyexpr(
             self._pyexpr.rolling_median(
                 window_size, weights, min_periods, center, by, closed, warn_if_unsorted
@@ -7782,6 +9093,10 @@ class Expr:
             .. warning::
                 If passed, the column must be sorted in ascending order. Otherwise,
                 results will not be correct.
+
+            .. deprecated:: 0.20.24
+                Passing `by` to `rolling_quantile` is deprecated - please use
+                :meth:`.rolling_quantile_by` instead.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive); only
             applicable if `by` has been set (in which case, it defaults to `'right'`).
@@ -7886,6 +9201,12 @@ class Expr:
         window_size, min_periods = _prepare_rolling_window_args(
             window_size, min_periods
         )
+        if by is not None:
+            issue_deprecation_warning(
+                "Passing `by` to `rolling_quantile` is deprecated. Instead of "
+                "`rolling_quantile(..., by='foo')`, please use `rolling_quantile_by('foo', ...)`.",
+                version="0.20.24",
+            )
         return self._from_pyexpr(
             self._pyexpr.rolling_quantile(
                 quantile,
