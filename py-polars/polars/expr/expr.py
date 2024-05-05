@@ -4568,6 +4568,13 @@ class Expr:
             This method is much slower than the native expressions API.
             Only use it if you cannot implement your logic otherwise.
 
+            Suppose that the function is: `x ↦ sqrt(x)`:
+
+            - For mapping elements of a series, consider:
+              `pl.col("col_name").sqrt()`.
+            - For mapping inner elements of lists, consider:
+              `pl.col("col_name").list.eval(pl.element().sqrt())`.
+
         The UDF is applied to each element of a column. Note that, in a GroupBy
         context, the column will have been pre-aggregated and so each element
         will itself be a Series. Therefore, depending on the context,
