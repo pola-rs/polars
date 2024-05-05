@@ -215,7 +215,7 @@ def date_(
     │ 3     ┆ 6   ┆ 2024-03-06 │
     └───────┴─────┴────────────┘
 
-    We can also use `pl.date` for filtering: 
+    We can also use `pl.date` for filtering:
 
     >>> from datetime import date
     >>> df = pl.DataFrame(
