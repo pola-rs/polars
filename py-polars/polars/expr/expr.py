@@ -2832,6 +2832,11 @@ class Expr:
         This method is similar to the `LAG` operation in SQL when the value for `n`
         is positive. With a negative value for `n`, it is similar to `LEAD`.
 
+        See Also
+        --------
+        backward_fill
+        forward_fill
+
         Examples
         --------
         By default, values are shifted forward by one index.
@@ -2887,7 +2892,7 @@ class Expr:
 
     def fill_null(
         self,
-        value: Any | None = None,
+        value: Any | Expr | None = None,
         strategy: FillNullStrategy | None = None,
         limit: int | None = None,
     ) -> Self:
@@ -2906,6 +2911,10 @@ class Expr:
         limit
             Number of consecutive null values to fill when using the 'forward' or
             'backward' strategy.
+
+        See Also
+        --------
+        fill_nan
 
         Examples
         --------
@@ -2993,6 +3002,20 @@ class Expr:
         """
         Fill floating point NaN value with a fill value.
 
+        Parameters
+        ----------
+        value
+            Value used to fill NaN values.
+
+        Warnings
+        --------
+        Note that floating point NaNs (Not a Number) are not missing values.
+        To replace missing values, use :func:`fill_null`.
+
+        See Also
+        --------
+        fill_null
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -3025,6 +3048,11 @@ class Expr:
         limit
             The number of consecutive null values to forward fill.
 
+        See Also
+        --------
+        backward_fill
+        shift
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -3055,6 +3083,11 @@ class Expr:
         ----------
         limit
             The number of consecutive null values to backward fill.
+
+        See Also
+        --------
+        forward_fill
+        shift
 
         Examples
         --------
