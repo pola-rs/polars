@@ -132,7 +132,7 @@ def datetime_(
     ...     })
     >>> df = df.with_columns(pl.col('start').str.to_datetime(time_unit='ns'))
     >>> df = df.with_columns(pl.col('end').str.to_datetime(time_unit='ns'))
-    >>> df.filter(pl.col("end") > pl.datetime(2024, 6, 1))
+    >>> df.filter(pl.col("end") > pl.datetime(2024, 6, 1, time_unit="ns"))
     shape: (2, 2)
     ┌───────────────────────────────┬───────────────────────────────┐
     │ start                         ┆ end                           │
