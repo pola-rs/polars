@@ -2,7 +2,6 @@ use std::collections::VecDeque;
 use std::io::Write;
 use std::sync::Mutex;
 
-use arrow::array::Array;
 use arrow::record_batch::RecordBatch;
 use polars_core::prelude::*;
 use polars_core::POOL;
@@ -110,7 +109,7 @@ fn prepare_rg_iter<'a>(
 }
 
 fn create_serializer(
-    batch: RecordBatch<Box<dyn Array>>,
+    batch: RecordBatch,
     fields: &[ParquetType],
     encodings: &[Vec<Encoding>],
     options: WriteOptions,
@@ -199,7 +198,7 @@ impl FallibleStreamingIterator for CompressedPages {
 /// This serializer encodes and compresses all eagerly in memory.
 /// Used for separating compute from IO.
 fn create_eager_serializer(
-    batch: RecordBatch<Box<dyn Array>>,
+    batch: RecordBatch,
     fields: &[ParquetType],
     encodings: &[Vec<Encoding>],
     options: WriteOptions,

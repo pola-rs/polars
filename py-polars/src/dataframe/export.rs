@@ -1,4 +1,4 @@
-use polars::frame::ArrowChunk;
+use polars::frame::RecordBatch;
 use polars_core::export::arrow::datatypes::IntegerType;
 use polars_core::utils::arrow::compute::cast::CastOptions;
 use pyo3::prelude::*;
@@ -121,7 +121,7 @@ impl PyDataFrame {
                         .unwrap();
                         *arr = out;
                     }
-                    let rb = ArrowChunk::new(rb);
+                    let rb = RecordBatch::new(rb);
 
                     arrow_interop::to_py::to_py_rb(&rb, &names, py, &pyarrow)
                 })

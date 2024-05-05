@@ -3,7 +3,6 @@ use arrow::io::ipc::read::{Dictionaries, FileMetadata};
 use arrow::mmap::{mmap_dictionaries_unchecked, mmap_unchecked};
 use arrow::record_batch::RecordBatch;
 use memmap::Mmap;
-use polars_core::frame::ArrowChunk;
 use polars_core::prelude::*;
 
 use super::ipc_file::IpcReader;
@@ -84,7 +83,7 @@ impl<'a> MMapChunkIter<'a> {
 }
 
 impl ArrowReader for MMapChunkIter<'_> {
-    fn next_record_batch(&mut self) -> PolarsResult<Option<ArrowChunk>> {
+    fn next_record_batch(&mut self) -> PolarsResult<Option<RecordBatch>> {
         if self.idx < self.end {
             let chunk = unsafe {
                 mmap_unchecked(

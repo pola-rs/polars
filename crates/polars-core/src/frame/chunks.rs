@@ -5,12 +5,10 @@ use crate::prelude::*;
 use crate::utils::_split_offsets;
 use crate::POOL;
 
-pub type ArrowChunk = RecordBatch<ArrayRef>;
-
-impl std::convert::TryFrom<(ArrowChunk, &[ArrowField])> for DataFrame {
+impl TryFrom<(RecordBatch, &[ArrowField])> for DataFrame {
     type Error = PolarsError;
 
-    fn try_from(arg: (ArrowChunk, &[ArrowField])) -> PolarsResult<DataFrame> {
+    fn try_from(arg: (RecordBatch, &[ArrowField])) -> PolarsResult<DataFrame> {
         let columns: PolarsResult<Vec<Series>> = arg
             .0
             .columns()

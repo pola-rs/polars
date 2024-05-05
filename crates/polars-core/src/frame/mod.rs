@@ -23,7 +23,7 @@ pub mod row;
 mod top_k;
 mod upstream_traits;
 
-pub use chunks::*;
+use arrow::record_batch::RecordBatch;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use smartstring::alias::String as SmartString;
@@ -3002,7 +3002,7 @@ pub struct RecordBatchIter<'a> {
 }
 
 impl<'a> Iterator for RecordBatchIter<'a> {
-    type Item = ArrowChunk;
+    type Item = RecordBatch;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.idx >= self.n_chunks {
@@ -3016,7 +3016,7 @@ impl<'a> Iterator for RecordBatchIter<'a> {
                 .collect();
             self.idx += 1;
 
-            Some(ArrowChunk::new(batch_cols))
+            Some(RecordBatch::new(batch_cols))
         }
     }
 
@@ -3031,14 +3031,14 @@ pub struct PhysRecordBatchIter<'a> {
 }
 
 impl Iterator for PhysRecordBatchIter<'_> {
-    type Item = ArrowChunk;
+    type Item = RecordBatch;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.iters
             .iter_mut()
             .map(|phys_iter| phys_iter.next().cloned())
             .collect::<Option<Vec<_>>>()
-            .map(ArrowChunk::new)
+            .map(RecordBatch::new)
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {

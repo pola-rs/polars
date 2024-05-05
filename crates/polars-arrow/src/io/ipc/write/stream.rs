@@ -13,7 +13,7 @@ use super::common_sync::{write_continuation, write_message};
 use super::{default_ipc_fields, schema_to_bytes};
 use crate::array::Array;
 use crate::datatypes::*;
-use crate::record_batch::RecordBatch;
+use crate::record_batch::RecordBatchT;
 
 /// Arrow stream writer
 ///
@@ -70,10 +70,10 @@ impl<W: Write> StreamWriter<W> {
         Ok(())
     }
 
-    /// Writes [`RecordBatch`] to the stream
+    /// Writes [`RecordBatchT`] to the stream
     pub fn write(
         &mut self,
-        columns: &RecordBatch<Box<dyn Array>>,
+        columns: &RecordBatchT<Box<dyn Array>>,
         ipc_fields: Option<&[IpcField]>,
     ) -> PolarsResult<()> {
         if self.finished {

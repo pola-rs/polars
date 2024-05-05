@@ -1,8 +1,8 @@
 use std::io::{Read, Seek};
 
 use arrow::io::avro::{self, read};
+use arrow::record_batch::RecordBatch;
 use polars_core::error::to_compute_err;
-use polars_core::frame::ArrowChunk;
 use polars_core::prelude::*;
 
 use crate::prelude::*;
@@ -74,7 +74,7 @@ impl<R> ArrowReader for read::Reader<R>
 where
     R: Read + Seek,
 {
-    fn next_record_batch(&mut self) -> PolarsResult<Option<ArrowChunk>> {
+    fn next_record_batch(&mut self) -> PolarsResult<Option<RecordBatch>> {
         self.next().map_or(Ok(None), |v| v.map(Some))
     }
 }

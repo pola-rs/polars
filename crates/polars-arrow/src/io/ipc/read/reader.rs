@@ -7,9 +7,9 @@ use super::common::*;
 use super::{read_batch, read_file_dictionaries, Dictionaries, FileMetadata};
 use crate::array::Array;
 use crate::datatypes::ArrowSchema;
-use crate::record_batch::RecordBatch;
+use crate::record_batch::RecordBatchT;
 
-/// An iterator of [`RecordBatch`]s from an Arrow IPC file.
+/// An iterator of [`RecordBatchT`]s from an Arrow IPC file.
 pub struct FileReader<R: Read + Seek> {
     reader: R,
     metadata: FileMetadata,
@@ -98,7 +98,7 @@ impl<R: Read + Seek> FileReader<R> {
 }
 
 impl<R: Read + Seek> Iterator for FileReader<R> {
-    type Item = PolarsResult<RecordBatch<Box<dyn Array>>>;
+    type Item = PolarsResult<RecordBatchT<Box<dyn Array>>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         // get current block

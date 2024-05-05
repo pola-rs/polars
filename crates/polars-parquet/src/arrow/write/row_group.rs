@@ -1,6 +1,6 @@
 use arrow::array::Array;
 use arrow::datatypes::ArrowSchema;
-use arrow::record_batch::RecordBatch;
+use arrow::record_batch::RecordBatchT;
 use polars_error::{polars_bail, to_compute_err, PolarsError, PolarsResult};
 
 use super::{
@@ -12,14 +12,14 @@ use crate::parquet::schema::types::ParquetType;
 use crate::parquet::write::Compressor;
 use crate::parquet::FallibleStreamingIterator;
 
-/// Maps a [`RecordBatch`] and parquet-specific options to an [`RowGroupIter`] used to
+/// Maps a [`RecordBatchT`] and parquet-specific options to an [`RowGroupIter`] used to
 /// write to parquet
 /// # Panics
 /// Iff
 /// * `encodings.len() != fields.len()` or
 /// * `encodings.len() != chunk.arrays().len()`
 pub fn row_group_iter<A: AsRef<dyn Array> + 'static + Send + Sync>(
-    chunk: RecordBatch<A>,
+    chunk: RecordBatchT<A>,
     encodings: Vec<Vec<Encoding>>,
     fields: Vec<ParquetType>,
     options: WriteOptions,
@@ -54,12 +54,12 @@ pub fn row_group_iter<A: AsRef<dyn Array> + 'static + Send + Sync>(
     )
 }
 
-/// An iterator adapter that converts an iterator over [`RecordBatch`] into an iterator
+/// An iterator adapter that converts an iterator over [`RecordBatchT`] into an iterator
 /// of row groups.
 /// Use it to create an iterator consumable by the parquet's API.
 pub struct RowGroupIterator<
     A: AsRef<dyn Array> + 'static,
-    I: Iterator<Item = PolarsResult<RecordBatch<A>>>,
+    I: Iterator<Item = PolarsResult<RecordBatchT<A>>>,
 > {
     iter: I,
     options: WriteOptions,
@@ -67,10 +67,10 @@ pub struct RowGroupIterator<
     encodings: Vec<Vec<Encoding>>,
 }
 
-impl<A: AsRef<dyn Array> + 'static, I: Iterator<Item = PolarsResult<RecordBatch<A>>>>
+impl<A: AsRef<dyn Array> + 'static, I: Iterator<Item = PolarsResult<RecordBatchT<A>>>>
     RowGroupIterator<A, I>
 {
-    /// Creates a new [`RowGroupIterator`] from an iterator over [`RecordBatch`].
+    /// Creates a new [`RowGroupIterator`] from an iterator over [`RecordBatchT`].
     ///
     /// # Errors
     /// Iff
@@ -105,7 +105,7 @@ impl<A: AsRef<dyn Array> + 'static, I: Iterator<Item = PolarsResult<RecordBatch<
 
 impl<
         A: AsRef<dyn Array> + 'static + Send + Sync,
-        I: Iterator<Item = PolarsResult<RecordBatch<A>>>,
+        I: Iterator<Item = PolarsResult<RecordBatchT<A>>>,
     > Iterator for RowGroupIterator<A, I>
 {
     type Item = PolarsResult<RowGroupIter<'static, PolarsError>>;

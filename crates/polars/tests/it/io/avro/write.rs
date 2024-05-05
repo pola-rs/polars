@@ -5,7 +5,7 @@ use arrow::datatypes::*;
 use arrow::io::avro::avro_schema::file::{Block, CompressedBlock, Compression};
 use arrow::io::avro::avro_schema::write::{compress, write_block, write_metadata};
 use arrow::io::avro::write;
-use arrow::record_batch::RecordBatch;
+use arrow::record_batch::RecordBatchT;
 use avro_schema::schema::{Field as AvroField, Record, Schema as AvroSchema};
 use polars::io::avro::{AvroReader, AvroWriter};
 use polars::io::{SerReader, SerWriter};
@@ -45,7 +45,7 @@ pub(super) fn schema() -> ArrowSchema {
     ])
 }
 
-pub(super) fn data() -> RecordBatch<Box<dyn Array>> {
+pub(super) fn data() -> RecordBatchT<Box<dyn Array>> {
     let list_dt = ArrowDataType::List(Box::new(Field::new("item", ArrowDataType::Int32, true)));
     let list_dt1 = ArrowDataType::List(Box::new(Field::new("item", ArrowDataType::Int32, true)));
 
@@ -86,11 +86,11 @@ pub(super) fn data() -> RecordBatch<Box<dyn Array>> {
         )),
     ];
 
-    RecordBatch::new(columns)
+    RecordBatchT::new(columns)
 }
 
 pub(super) fn serialize_to_block<R: AsRef<dyn Array>>(
-    columns: &RecordBatch<R>,
+    columns: &RecordBatchT<R>,
     schema: &ArrowSchema,
     compression: Option<Compression>,
 ) -> PolarsResult<CompressedBlock> {
@@ -115,7 +115,7 @@ pub(super) fn serialize_to_block<R: AsRef<dyn Array>>(
 }
 
 fn write_avro<R: AsRef<dyn Array>>(
-    columns: &RecordBatch<R>,
+    columns: &RecordBatchT<R>,
     schema: &ArrowSchema,
     compression: Option<Compression>,
 ) -> PolarsResult<Vec<u8>> {
@@ -172,14 +172,14 @@ fn large_format_schema() -> ArrowSchema {
     ])
 }
 
-fn large_format_data() -> RecordBatch<Box<dyn Array>> {
+fn large_format_data() -> RecordBatchT<Box<dyn Array>> {
     let columns = vec![
         Box::new(Utf8Array::<i64>::from_slice(["a", "b"])) as Box<dyn Array>,
         Box::new(Utf8Array::<i64>::from([Some("a"), None])),
         Box::new(BinaryArray::<i64>::from_slice([b"foo", b"bar"])),
         Box::new(BinaryArray::<i64>::from([Some(b"foo"), None])),
     ];
-    RecordBatch::new(columns)
+    RecordBatchT::new(columns)
 }
 
 fn large_format_expected_schema() -> ArrowSchema {
@@ -191,14 +191,14 @@ fn large_format_expected_schema() -> ArrowSchema {
     ])
 }
 
-fn large_format_expected_data() -> RecordBatch<Box<dyn Array>> {
+fn large_format_expected_data() -> RecordBatchT<Box<dyn Array>> {
     let columns = vec![
         Box::new(Utf8Array::<i32>::from_slice(["a", "b"])) as Box<dyn Array>,
         Box::new(Utf8Array::<i32>::from([Some("a"), None])),
         Box::new(BinaryArray::<i32>::from_slice([b"foo", b"bar"])),
         Box::new(BinaryArray::<i32>::from([Some(b"foo"), None])),
     ];
-    RecordBatch::new(columns)
+    RecordBatchT::new(columns)
 }
 
 #[test]
@@ -241,13 +241,13 @@ fn struct_schema() -> ArrowSchema {
     ])
 }
 
-fn struct_data() -> RecordBatch<Box<dyn Array>> {
+fn struct_data() -> RecordBatchT<Box<dyn Array>> {
     let struct_dt = ArrowDataType::Struct(vec![
         Field::new("item1", ArrowDataType::Int32, false),
         Field::new("item2", ArrowDataType::Int32, true),
     ]);
 
-    RecordBatch::new(vec![
+    RecordBatchT::new(vec![
         Box::new(StructArray::new(
             struct_dt.clone(),
             vec![
