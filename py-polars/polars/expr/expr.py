@@ -5485,12 +5485,12 @@ class Expr:
         >>> 6.0 // 0.1
         59.0
 
-        because 0.1 is not represented internally as that exact value, 
+        because 0.1 is not represented internally as that exact value,
         but a slightly larger value.
-        So the result of the division is slightly less than 60, 
+        So the result of the division is slightly less than 60,
         meaning the flooring operation returns 59.0.
 
-        Polars instead first does the floating-point division, 
+        Polars instead first does the floating-point division,
         resulting in a floating-point value of 60.0,
         and then performs the flooring operation using :any:`floor`:
 
@@ -5511,7 +5511,7 @@ class Expr:
 
         yielding the more intuitive result 60.0.
 
-        `floordiv` transparently combines those two steps 
+        `floordiv` transparently combines those two steps
         to give the same result with one expression:
 
         >>> df.with_columns(
