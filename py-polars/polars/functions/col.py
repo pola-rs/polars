@@ -29,7 +29,7 @@ def _create_col(
             return wrap_expr(plr.cols(names_str))
         elif is_polars_dtype(name):
             dtypes = [name]
-            dtypes.extend(more_names)
+            dtypes.extend(more_names)  # type: ignore[arg-type]
             return wrap_expr(plr.dtype_cols(dtypes))
         else:
             msg = (
