@@ -133,6 +133,26 @@ def test_to_date_non_exact_strptime() -> None:
 
 
 @pytest.mark.parametrize(
+    ("time_string", "expected"),
+    [
+        ("01-02-2024", date(2024, 2, 1)),
+        ("01.02.2024", date(2024, 2, 1)),
+        ("01/02/2024", date(2024, 2, 1)),
+        ("2024-02-01", date(2024, 2, 1)),
+        ("2024/02/01", date(2024, 2, 1)),
+        ("31-12-2024", date(2024, 12, 31)),
+        ("31.12.2024", date(2024, 12, 31)),
+        ("31/12/2024", date(2024, 12, 31)),
+        ("2024-12-31", date(2024, 12, 31)),
+        ("2024/12/31", date(2024, 12, 31)),
+    ],
+)
+def test_to_date_all_inferred_date_patterns(time_string: str, expected: date) -> None:
+    result = pl.Series([time_string]).str.to_date()
+    assert result[0] == expected
+
+
+@pytest.mark.parametrize(
     ("value", "attr"),
     [
         ("a", "to_date"),
