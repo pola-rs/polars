@@ -65,7 +65,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           pip install uv
-          uv pip install --compile-bytecode -r requirements-dev.txt
+          uv pip install --compile-bytecode -r requirements-dev.txt -r requirements-ci.txt
 
       - name: Set up Rust
         run: rustup show
