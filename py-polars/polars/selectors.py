@@ -223,7 +223,7 @@ def _combine_as_selector(
     if names:
         selected.append(by_name(*names))
     if dtypes:
-        selected.append(by_dtype(*dtypes))  # type: ignore[arg-type]
+        selected.append(by_dtype(*dtypes))
     if regexes:
         selected.append(
             matches(
@@ -579,7 +579,7 @@ def by_dtype(
     all_dtypes: list[PolarsDataType] = []
     for tp in dtypes:
         if is_polars_dtype(tp):
-            all_dtypes.append(tp)  # type: ignore[arg-type]
+            all_dtypes.append(tp)
         elif isinstance(tp, Collection):
             for t in tp:
                 if not is_polars_dtype(t):
