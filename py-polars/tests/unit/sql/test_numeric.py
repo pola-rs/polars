@@ -50,7 +50,7 @@ def test_modulo() -> None:
     ("value", "sqltype", "prec_scale", "expected_value", "expected_dtype"),
     [
         (64.5, "numeric", "(3,1)", D("64.5"), pl.Decimal(3, 1)),
-        (512.5, "decimal", "(3,1)", D("512.5"), pl.Decimal(3, 1)),
+        (512.5, "decimal", "(4,1)", D("512.5"), pl.Decimal(4, 1)),
         (512.5, "numeric", "(4,0)", D("512"), pl.Decimal(4, 0)),
         (-1024.75, "decimal", "(10,0)", D("-1024"), pl.Decimal(10, 0)),
         (-1024.75, "numeric", "(10)", D("-1024"), pl.Decimal(10, 0)),
@@ -67,18 +67,16 @@ def test_numeric_decimal_type(
     with pl.Config(activate_decimals=True):
         df = pl.DataFrame({"n": [value]})
         with pl.SQLContext(df=df) as ctx:
-            out = ctx.execute(
+            result = ctx.execute(
                 f"""
                 SELECT n::{sqltype}{prec_scale} AS "dec" FROM df
                 """
             )
-            assert_frame_equal(
-                out.collect(),
-                pl.DataFrame(
-                    data={"dec": [expected_value]},
-                    schema={"dec": expected_dtype},
-                ),
-            )
+        expected = pl.LazyFrame(
+            data={"dec": [expected_value]},
+            schema={"dec": expected_dtype},
+        )
+        assert_frame_equal(result, expected)
 
 
 @pytest.mark.parametrize(
