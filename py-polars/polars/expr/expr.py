@@ -5479,13 +5479,13 @@ class Expr:
         └─────┴─────┴──────┘
 
         Note that Polars' `floordiv` is subtly different from Python's floor division.
-        For example, consider 6.0 // 0.1.
+        For example, consider 6.0 floor-divided by 0.1.
         Python gives:
 
         >>> 6.0 // 0.1
         59.0
 
-        because 0.1 is not represented internally as that exact value,
+        because `0.1` is not represented internally as that exact value,
         but a slightly larger value.
         So the result of the division is slightly less than 60,
         meaning the flooring operation returns 59.0.
@@ -5494,38 +5494,42 @@ class Expr:
         resulting in a floating-point value of 60.0,
         and then performs the flooring operation using :any:`floor`:
 
-        >>> df = pl.DataFrame({"x": [6.0]})
+        >>> df = pl.DataFrame({"x": [6.0, 6.03]})
         >>> df.with_columns(
         ...     pl.col("x").truediv(0.1).alias("x/0.1"),
         ... ).with_columns(
         ...     pl.col("x/0.1").floor().alias("x/0.1 floor"),
         ... )
-        shape: (1, 3)
-        ┌─────┬───────┬─────────────┐
-        │ x   ┆ x/0.1 ┆ x/0.1 floor │
-        │ --- ┆ ---   ┆ ---         │
-        │ f64 ┆ f64   ┆ f64         │
-        ╞═════╪═══════╪═════════════╡
-        │ 6.0 ┆ 60.0  ┆ 60.0        │
-        └─────┴───────┴─────────────┘
+		shape: (2, 3)
+		┌──────┬───────┬─────────────┐
+		│ x    ┆ x/0.1 ┆ x/0.1 floor │
+		│ ---  ┆ ---   ┆ ---         │
+		│ f64  ┆ f64   ┆ f64         │
+		╞══════╪═══════╪═════════════╡
+		│ 6.0  ┆ 60.0  ┆ 60.0        │
+		│ 6.03 ┆ 60.3  ┆ 60.0        │
+		└──────┴───────┴─────────────┘
 
         yielding the more intuitive result 60.0.
+        The row with x = 6.03 is included to demonstrate
+        the effect of the flooring operation.
 
-        `floordiv` transparently combines those two steps
+        `floordiv` combines those two steps
         to give the same result with one expression:
 
         >>> df.with_columns(
         ...     pl.col("x").floordiv(0.1).alias("x//0.1"),
         ... )
-        shape: (1, 2)
-        ┌─────┬────────┐
-        │ x   ┆ x//0.1 │
-        │ --- ┆ ---    │
-        │ f64 ┆ f64    │
-        ╞═════╪════════╡
-        │ 6.0 ┆ 60.0   │
-        └─────┴────────┘
-        """
+		shape: (2, 2)
+		┌──────┬────────┐
+		│ x    ┆ x//0.1 │
+		│ ---  ┆ ---    │
+		│ f64  ┆ f64    │
+		╞══════╪════════╡
+		│ 6.0  ┆ 60.0   │
+		│ 6.03 ┆ 60.0   │
+		└──────┴────────┘        
+		"""
         return self.__floordiv__(other)
 
     def mod(self, other: Any) -> Self:
