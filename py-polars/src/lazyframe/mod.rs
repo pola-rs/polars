@@ -186,7 +186,7 @@ impl PyLazyFrame {
         let overwrite_dtype = overwrite_dtype.map(|overwrite_dtype| {
             overwrite_dtype
                 .into_iter()
-                .map(|(name, dtype)| Field::new(&*name, dtype.0))
+                .map(|(name, dtype)| Field::new(&name, dtype.0))
                 .collect::<Schema>()
         });
 
@@ -398,11 +398,8 @@ impl PyLazyFrame {
         scan_fn: PyObject,
         pyarrow: bool,
     ) -> PyResult<Self> {
-        let schema = Schema::from_iter(
-            schema
-                .into_iter()
-                .map(|(name, dt)| Field::new(&*name, dt.0)),
-        );
+        let schema =
+            Schema::from_iter(schema.into_iter().map(|(name, dt)| Field::new(&name, dt.0)));
         Ok(LazyFrame::scan_from_python_function(schema, scan_fn, pyarrow).into())
     }
 
