@@ -169,7 +169,7 @@ def test_generalized_ufunc_missing_data():
 @guvectorize([(float64[:], float64[:], float64[:])], "(n),(m)->(m)")
 def divide_by_sum(arr, arr2, result):
     total = arr.sum()
-    for i in range(len(arr)):
+    for i in range(len(arr2)):
         result[i] = arr2[i] / total
 
 
