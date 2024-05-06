@@ -60,7 +60,7 @@ jobs:
           save-if: ${{ github.ref_name == 'main' }}
 
       - name: Run sccache-cache
-        uses: mozilla-actions/sccache-action@v0.0.3
+        uses: mozilla-actions/sccache-action@v0.0.4
 
       - name: Install Polars release build
         env:
