@@ -1,4 +1,4 @@
-use polars::frame::RecordBatch;
+use polars::export::arrow::record_batch::RecordBatch;
 use polars_core::export::arrow::datatypes::IntegerType;
 use polars_core::utils::arrow::compute::cast::CastOptions;
 use pyo3::prelude::*;

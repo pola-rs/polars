@@ -1,6 +1,6 @@
 use arrow::ffi;
+use arrow::record_batch::RecordBatch;
 use polars::prelude::{ArrayRef, ArrowField};
-use polars_core::frame::RecordBatch;
 use polars_core::utils::arrow;
 use pyo3::ffi::Py_uintptr_t;
 use pyo3::prelude::*;
