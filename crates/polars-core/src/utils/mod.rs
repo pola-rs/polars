@@ -137,14 +137,10 @@ pub fn split_series(s: &Series, n: usize) -> PolarsResult<Vec<Series>> {
     split_array!(s, n, i64)
 }
 
-pub fn split_df_as_ref(
-    df: &DataFrame,
-    n: usize,
-    extend_sub_chunks: bool,
-) -> PolarsResult<Vec<DataFrame>> {
+pub fn split_df_as_ref(df: &DataFrame, n: usize, extend_sub_chunks: bool) -> Vec<DataFrame> {
     let total_len = df.height();
     if total_len == 0 {
-        return Ok(vec![df.clone()]);
+        return vec![df.clone()];
     }
 
     let chunk_size = std::cmp::max(total_len / n, 1);
@@ -154,7 +150,7 @@ pub fn split_df_as_ref(
             .chunk_lengths()
             .all(|len| len.abs_diff(chunk_size) < 100)
     {
-        return Ok(flatten_df_iter(df).collect());
+        return flatten_df_iter(df).collect();
     }
 
     let mut out = Vec::with_capacity(n);
@@ -176,14 +172,15 @@ pub fn split_df_as_ref(
         }
     }
 
-    Ok(out)
+    out
 }
 
 #[doc(hidden)]
 /// Split a [`DataFrame`] into `n` parts. We take a `&mut` to be able to repartition/align chunks.
-pub fn split_df(df: &mut DataFrame, n: usize) -> PolarsResult<Vec<DataFrame>> {
+/// `strict` in that it respects `n` even if the chunks are suboptimal.
+pub fn split_df(df: &mut DataFrame, n: usize) -> Vec<DataFrame> {
     if n == 0 || df.height() == 0 {
-        return Ok(vec![df.clone()]);
+        return vec![df.clone()];
     }
     // make sure that chunks are aligned.
     df.align_chunks();

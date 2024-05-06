@@ -8,8 +8,8 @@ use polars_core::POOL;
 use polars_parquet::read::ParquetError;
 use polars_parquet::write::{
     array_to_columns, compress, CompressedPage, Compressor, DynIter, DynStreamingIterator,
-    Encoding, FallibleStreamingIterator, FileWriter, ParquetType, RowGroupIter, SchemaDescriptor,
-    WriteOptions,
+    Encoding, FallibleStreamingIterator, FileWriter, ParquetType, RowGroupIterColumns,
+    SchemaDescriptor, WriteOptions,
 };
 use rayon::prelude::*;
 
@@ -27,7 +27,7 @@ impl<W: Write> BatchedWriter<W> {
     pub fn encode_and_compress<'a>(
         &'a self,
         df: &'a DataFrame,
-    ) -> impl Iterator<Item = PolarsResult<RowGroupIter<'static, PolarsError>>> + 'a {
+    ) -> impl Iterator<Item = PolarsResult<RowGroupIterColumns<'static, PolarsError>>> + 'a {
         let rb_iter = df.iter_chunks(true);
         rb_iter.filter_map(move |batch| match batch.len() {
             0 => None,
@@ -70,7 +70,7 @@ impl<W: Write> BatchedWriter<W> {
 
     pub fn write_row_groups(
         &self,
-        rgs: Vec<RowGroupIter<'static, PolarsError>>,
+        rgs: Vec<RowGroupIterColumns<'static, PolarsError>>,
     ) -> PolarsResult<()> {
         // Lock before looping so that order is maintained.
         let mut writer = self.writer.lock().unwrap();
@@ -95,7 +95,7 @@ fn prepare_rg_iter<'a>(
     encodings: &'a [Vec<Encoding>],
     options: WriteOptions,
     parallel: bool,
-) -> impl Iterator<Item = PolarsResult<RowGroupIter<'static, PolarsError>>> + 'a {
+) -> impl Iterator<Item = PolarsResult<RowGroupIterColumns<'static, PolarsError>>> + 'a {
     let rb_iter = df.iter_chunks(true);
     rb_iter.filter_map(move |batch| match batch.len() {
         0 => None,
@@ -114,7 +114,7 @@ fn create_serializer(
     encodings: &[Vec<Encoding>],
     options: WriteOptions,
     parallel: bool,
-) -> PolarsResult<RowGroupIter<'static, PolarsError>> {
+) -> PolarsResult<RowGroupIterColumns<'static, PolarsError>> {
     let func = move |((array, type_), encoding): ((&ArrayRef, &ParquetType), &Vec<Encoding>)| {
         let encoded_columns = array_to_columns(array, type_.clone(), options, encoding).unwrap();
 
@@ -202,7 +202,7 @@ fn create_eager_serializer(
     fields: &[ParquetType],
     encodings: &[Vec<Encoding>],
     options: WriteOptions,
-) -> PolarsResult<RowGroupIter<'static, PolarsError>> {
+) -> PolarsResult<RowGroupIterColumns<'static, PolarsError>> {
     let func = move |((array, type_), encoding): ((&ArrayRef, &ParquetType), &Vec<Encoding>)| {
         let encoded_columns = array_to_columns(array, type_.clone(), options, encoding).unwrap();
 

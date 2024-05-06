@@ -98,6 +98,7 @@ where
     let bytes_written = offset - initial;
 
     let num_rows = compute_num_rows(&columns)?;
+    dbg!(num_rows);
 
     // compute row group stats
     let file_offset = columns

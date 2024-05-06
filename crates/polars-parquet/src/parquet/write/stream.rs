@@ -5,7 +5,7 @@ use parquet_format_safe::thrift::protocol::TCompactOutputStreamProtocol;
 use parquet_format_safe::{FileMetaData, RowGroup};
 
 use super::row_group::write_row_group_async;
-use super::{RowGroupIter, WriteOptions};
+use super::{RowGroupIterColumns, WriteOptions};
 use crate::parquet::error::{Error, Result};
 use crate::parquet::metadata::{KeyValue, SchemaDescriptor};
 use crate::parquet::write::indexes::{write_column_index_async, write_offset_index_async};
@@ -107,7 +107,7 @@ impl<W: AsyncWrite + Unpin + Send> FileStreamer<W> {
     }
 
     /// Writes a row group to the file.
-    pub async fn write<E>(&mut self, row_group: RowGroupIter<'_, E>) -> Result<()>
+    pub async fn write<E>(&mut self, row_group: RowGroupIterColumns<'_, E>) -> Result<()>
     where
         Error: From<E>,
         E: std::error::Error,

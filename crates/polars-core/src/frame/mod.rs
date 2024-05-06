@@ -1636,7 +1636,7 @@ impl DataFrame {
         let n_threads = POOL.current_num_threads();
 
         let masks = split_ca(mask, n_threads).unwrap();
-        let dfs = split_df(self, n_threads).unwrap();
+        let dfs = split_df(self, n_threads);
         let dfs: PolarsResult<Vec<_>> = POOL.install(|| {
             masks
                 .par_iter()
@@ -2832,7 +2832,7 @@ impl DataFrame {
         &mut self,
         hasher_builder: Option<ahash::RandomState>,
     ) -> PolarsResult<UInt64Chunked> {
-        let dfs = split_df(self, POOL.current_num_threads())?;
+        let dfs = split_df(self, POOL.current_num_threads());
         let (cas, _) = _df_rows_to_hashes_threaded_vertical(&dfs, hasher_builder)?;
 
         let mut iter = cas.into_iter();
