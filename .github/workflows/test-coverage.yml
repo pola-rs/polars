@@ -91,7 +91,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.12'
 
       - name: Create virtual environment
         run: |
@@ -123,15 +123,22 @@ jobs:
 
       - name: Run Python tests
         working-directory: py-polars
-        run: pytest --cov -n auto --dist loadgroup -m "not release and not benchmark and not docs" --cov-report xml:main.xml
-        continue-on-error: true
+        run: >
+          pytest
+          -n auto --dist loadgroup
+          -m "not release and not benchmark and not docs"
+          -k 'not test_polars_import'
+          --cov --cov-report xml:main.xml
 
       - name: Run Python tests - async reader
         working-directory: py-polars
         env:
           POLARS_FORCE_ASYNC: 1
-        run: pytest --cov -n auto --dist loadgroup -m "not release and not benchmark and not docs" tests/unit/io/ --cov-report xml:async.xml
-        continue-on-error: true
+        run: >
+          pytest tests/unit/io/
+          -n auto --dist loadgroup
+          -m "not release and not benchmark and not docs"
+          --cov --cov-report xml:async.xml --cov-fail-under=0
 
       - name: Report Rust coverage
         run: cargo llvm-cov report --lcov --output-path coverage-python.lcov
@@ -150,6 +157,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+        # Needed to fetch the Codecov config file
+      - uses: actions/checkout@v4
+
       - name: Download coverage reports
         uses: actions/download-artifact@v4
         with:

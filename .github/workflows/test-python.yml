@@ -85,14 +85,9 @@ jobs:
           python tests/docs/run_doctest.py
           pytest tests/docs/test_user_guide.py -m docs
 
-      - name: Run tests and report coverage
+      - name: Run tests
         if: github.ref_name != 'main'
-        env:
-          # TODO: Re-enable coverage for for Ubuntu + Python 3.12 tests
-          # Currently skipped due to performance issues in coverage:
-          # https://github.com/nedbat/coveragepy/issues/1665
-          COV: ${{ !(matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12') && '--cov' || '--no-cov' }}
-        run: pytest $COV -n auto --dist loadgroup -m "not release and not benchmark and not docs"
+        run: pytest -n auto --dist loadgroup -m "not release and not benchmark and not docs"
 
       - name: Run tests async reader tests
         if: github.ref_name != 'main' && matrix.os != 'windows-latest'
