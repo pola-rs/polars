@@ -511,7 +511,7 @@ pub(super) fn parse_lines(
 
                             // SAFETY:
                             // process fields is in bounds
-                            add_null = unsafe { null_values.is_null(field, processed_fields) }
+                            add_null = unsafe { null_values.is_null(field, idx as usize) }
                         }
                         if add_null {
                             buf.add_null(!missing_is_null && field.is_empty())

@@ -224,8 +224,8 @@ impl<'a> CoreReader<'a> {
             }
         }
 
-        // create a null value for every column
-        let mut null_values = null_values.map(|nv| nv.compile(&schema)).transpose()?;
+        // Create a null value for every column
+        let null_values = null_values.map(|nv| nv.compile(&schema)).transpose()?;
 
         if let Some(cols) = columns {
             let mut prj = Vec::with_capacity(cols.len());
@@ -233,12 +233,6 @@ impl<'a> CoreReader<'a> {
                 let i = schema.try_index_of(&col)?;
                 prj.push(i);
             }
-
-            // update null values with projection
-            if let Some(nv) = null_values.as_mut() {
-                nv.apply_projection(&prj);
-            }
-
             projection = Some(prj);
         }
 
