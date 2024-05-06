@@ -113,7 +113,7 @@ impl ParquetSource {
             file_options,
             projection,
             chunk_size,
-            reader_schema.map(|eith| eith.unwrap_left()),
+            reader_schema.map(|either| either.unwrap_left()),
             hive_partitions,
         ))
     }
