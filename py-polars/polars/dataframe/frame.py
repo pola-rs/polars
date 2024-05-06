@@ -6992,7 +6992,7 @@ class DataFrame:
 
     def fill_null(
         self,
-        value: Any | None = None,
+        value: Any | Expr | None = None,
         strategy: FillNullStrategy | None = None,
         limit: int | None = None,
         *,
@@ -7103,7 +7103,7 @@ class DataFrame:
 
         Warnings
         --------
-        Note that floating point NaNs (Not a Number) are not missing values!
+        Note that floating point NaNs (Not a Number) are not missing values.
         To replace missing values, use :func:`fill_null`.
 
         See Also
