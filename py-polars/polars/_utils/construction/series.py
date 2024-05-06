@@ -410,7 +410,7 @@ def pandas_to_pyseries(
         name = str(values.name)
     if is_simple_numpy_backed_pandas_series(values):
         return pl.Series(
-            name, values.to_numpy(), dtype=dtype, nan_to_null=nan_to_null
+            name, values.to_numpy(), dtype=dtype, nan_to_null=nan_to_null, strict=strict
         )._s
     if not _PYARROW_AVAILABLE:
         msg = (

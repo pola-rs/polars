@@ -343,7 +343,7 @@ class Series:
                     return
 
             if dtype is not None:
-                self._s = self.cast(dtype, strict=True)._s
+                self._s = self.cast(dtype, strict=strict)._s
 
         elif _check_for_pyarrow(values) and isinstance(
             values, (pa.Array, pa.ChunkedArray)
