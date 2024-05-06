@@ -1443,6 +1443,14 @@ class Series:
                 else dtype_char_minimum
             )
 
+            if ufunc.signature:
+                # Only generalized ufuncs have a signature set, and they're the
+                # ones that have problems with missing data.
+                if self.null_count() > 0:
+                    raise ValueError(
+                        "Can't pass a Series with missing data to a generalized ufunc, as it might give unexpected results. See https://docs.pola.rs/user-guide/expressions/missing-data/ for suggestions on how to remove or fill in missing data."
+                    )
+
             f = get_ffi_func("apply_ufunc_<>", numpy_char_code_to_dtype(dtype_char), s)
 
             if f is None:
