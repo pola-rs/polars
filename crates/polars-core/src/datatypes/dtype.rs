@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use super::*;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::registry::ObjectRegistry;
+use crate::utils::materialize_dyn_int;
 
 pub type TimeZone = String;
 
@@ -544,7 +545,17 @@ impl DataType {
                 Ok(ArrowDataType::Struct(fields))
             },
             BinaryOffset => Ok(ArrowDataType::LargeBinary),
-            Unknown(_) => Ok(ArrowDataType::Unknown),
+            Unknown(kind) => {
+                let dt = match kind {
+                    UnknownKind::Any => ArrowDataType::Unknown,
+                    UnknownKind::Float => ArrowDataType::Float64,
+                    UnknownKind::Str => ArrowDataType::Utf8View,
+                    UnknownKind::Int(v) => {
+                        return materialize_dyn_int(*v).dtype().try_to_arrow(pl_flavor)
+                    },
+                };
+                Ok(dt)
+            },
         }
     }
 
