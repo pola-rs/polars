@@ -66,7 +66,7 @@ pub struct WriteOptions {
 use arrow::compute::aggregate::estimated_bytes_size;
 use arrow::match_integer_type;
 pub use file::FileWriter;
-pub use pages::{array_to_columns, Nested};
+pub use pages::{array_to_columns, arrays_to_columns, Nested};
 use polars_error::{polars_bail, PolarsResult};
 pub use row_group::{row_group_iter, RowGroupIterator};
 pub use schema::to_parquet_type;
