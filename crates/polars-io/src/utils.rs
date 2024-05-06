@@ -275,26 +275,12 @@ pub(crate) fn chunk_df_for_writing(
 ) -> PolarsResult<Cow<DataFrame>> {
     // ensures all chunks are aligned.
     df.align_chunks();
-    dbg!("PREPARE");
 
     let n_splits = df.height() / row_group_size;
     let result = if n_splits > 0 {
-        Cow::Owned(accumulate_dataframes_vertical_unchecked(
-            split_df_as_ref(df, n_splits, false)
-                .into_iter()
-                .map(|mut df| {
-                    // If the chunks are small enough, writing many small chunks
-                    // leads to slow writing performance, so in that case we
-                    // merge them.
-                    let n_chunks = df.n_chunks();
-                    if n_chunks > 1 && (df.estimated_size() / n_chunks < 128 * 1024) {
-                        dbg!(df.height(), "rechunk");
-                        df.as_single_chunk_par();
-                    }
-                    dbg!(df.height(), df.n_chunks());
-                    df
-                }),
-        ))
+        Cow::Owned(accumulate_dataframes_vertical_unchecked(split_df_as_ref(
+            df, n_splits, false,
+        )))
     } else {
         Cow::Borrowed(df)
     };
