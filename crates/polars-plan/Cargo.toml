@@ -122,7 +122,11 @@ rolling_window = [
   "polars-core/rolling_window",
   "polars-time/rolling_window",
   "polars-ops/rolling_window",
-  "polars-time/rolling_window",
+]
+rolling_window_by = [
+  "polars-core/rolling_window_by",
+  "polars-time/rolling_window_by",
+  "polars-ops/rolling_window_by",
 ]
 rank = ["polars-ops/rank"]
 diff = ["polars-ops/diff"]
@@ -180,6 +184,7 @@ features = [
   "temporal",
   "serde",
   "rolling_window",
+  "rolling_window_by",
   "timezones",
   "dtype-date",
   "extract_groups",

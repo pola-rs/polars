@@ -45,6 +45,8 @@ mod random;
 mod range;
 #[cfg(feature = "rolling_window")]
 pub mod rolling;
+#[cfg(feature = "rolling_window_by")]
+pub mod rolling_by;
 #[cfg(feature = "round_series")]
 mod round;
 #[cfg(feature = "row_hash")]
@@ -96,6 +98,8 @@ pub use self::pow::PowFunction;
 pub(super) use self::range::RangeFunction;
 #[cfg(feature = "rolling_window")]
 pub(super) use self::rolling::RollingFunction;
+#[cfg(feature = "rolling_window_by")]
+pub(super) use self::rolling_by::RollingFunctionBy;
 #[cfg(feature = "strings")]
 pub(crate) use self::strings::StringFunction;
 #[cfg(feature = "dtype-struct")]
@@ -156,6 +160,8 @@ pub enum FunctionExpr {
     FillNullWithStrategy(FillNullStrategy),
     #[cfg(feature = "rolling_window")]
     RollingExpr(RollingFunction),
+    #[cfg(feature = "rolling_window_by")]
+    RollingExprBy(RollingFunctionBy),
     ShiftAndFill,
     Shift,
     DropNans,
@@ -420,6 +426,10 @@ impl Hash for FunctionExpr {
             RollingExpr(f) => {
                 f.hash(state);
             },
+            #[cfg(feature = "rolling_window_by")]
+            RollingExprBy(f) => {
+                f.hash(state);
+            },
             #[cfg(feature = "moment")]
             Skew(a) => a.hash(state),
             #[cfg(feature = "moment")]
@@ -609,6 +619,8 @@ impl Display for FunctionExpr {
             FillNull { .. } => "fill_null",
             #[cfg(feature = "rolling_window")]
             RollingExpr(func, ..) => return write!(f, "{func}"),
+            #[cfg(feature = "rolling_window_by")]
+            RollingExprBy(func, ..) => return write!(f, "{func}"),
             ShiftAndFill => "shift_and_fill",
             DropNans => "drop_nans",
             DropNulls => "drop_nulls",
@@ -907,23 +919,29 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                 use RollingFunction::*;
                 match f {
                     Min(options) => map!(rolling::rolling_min, options.clone()),
-                    MinBy(options) => map_as_slice!(rolling::rolling_min_by, options.clone()),
                     Max(options) => map!(rolling::rolling_max, options.clone()),
-                    MaxBy(options) => map_as_slice!(rolling::rolling_max_by, options.clone()),
                     Mean(options) => map!(rolling::rolling_mean, options.clone()),
-                    MeanBy(options) => map_as_slice!(rolling::rolling_mean_by, options.clone()),
                     Sum(options) => map!(rolling::rolling_sum, options.clone()),
-                    SumBy(options) => map_as_slice!(rolling::rolling_sum_by, options.clone()),
                     Quantile(options) => map!(rolling::rolling_quantile, options.clone()),
-                    QuantileBy(options) => {
-                        map_as_slice!(rolling::rolling_quantile_by, options.clone())
-                    },
                     Var(options) => map!(rolling::rolling_var, options.clone()),
-                    VarBy(options) => map_as_slice!(rolling::rolling_var_by, options.clone()),
                     Std(options) => map!(rolling::rolling_std, options.clone()),
-                    StdBy(options) => map_as_slice!(rolling::rolling_std_by, options.clone()),
                     #[cfg(feature = "moment")]
                     Skew(window_size, bias) => map!(rolling::rolling_skew, window_size, bias),
+                }
+            },
+            #[cfg(feature = "rolling_window_by")]
+            RollingExprBy(f) => {
+                use RollingFunctionBy::*;
+                match f {
+                    MinBy(options) => map_as_slice!(rolling_by::rolling_min_by, options.clone()),
+                    MaxBy(options) => map_as_slice!(rolling_by::rolling_max_by, options.clone()),
+                    MeanBy(options) => map_as_slice!(rolling_by::rolling_mean_by, options.clone()),
+                    SumBy(options) => map_as_slice!(rolling_by::rolling_sum_by, options.clone()),
+                    QuantileBy(options) => {
+                        map_as_slice!(rolling_by::rolling_quantile_by, options.clone())
+                    },
+                    VarBy(options) => map_as_slice!(rolling_by::rolling_var_by, options.clone()),
+                    StdBy(options) => map_as_slice!(rolling_by::rolling_std_by, options.clone()),
                 }
             },
             #[cfg(feature = "hist")]

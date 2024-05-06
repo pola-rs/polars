@@ -1,5 +1,6 @@
 use polars_core::series::IsSorted;
 use polars_plan::dsl::function_expr::rolling::RollingFunction;
+use polars_plan::dsl::function_expr::rolling_by::RollingFunctionBy;
 use polars_plan::dsl::function_expr::trigonometry::TrigonometricFunction;
 use polars_plan::dsl::BooleanFunction;
 use polars_plan::prelude::{
@@ -628,47 +629,49 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     RollingFunction::Min(_) => {
                         return Err(PyNotImplementedError::new_err("rolling min"))
                     },
-                    RollingFunction::MinBy(_) => {
-                        return Err(PyNotImplementedError::new_err("rolling min by"))
-                    },
                     RollingFunction::Max(_) => {
                         return Err(PyNotImplementedError::new_err("rolling max"))
-                    },
-                    RollingFunction::MaxBy(_) => {
-                        return Err(PyNotImplementedError::new_err("rolling max by"))
                     },
                     RollingFunction::Mean(_) => {
                         return Err(PyNotImplementedError::new_err("rolling mean"))
                     },
-                    RollingFunction::MeanBy(_) => {
-                        return Err(PyNotImplementedError::new_err("rolling mean by"))
-                    },
                     RollingFunction::Sum(_) => {
                         return Err(PyNotImplementedError::new_err("rolling sum"))
-                    },
-                    RollingFunction::SumBy(_) => {
-                        return Err(PyNotImplementedError::new_err("rolling sum by"))
                     },
                     RollingFunction::Quantile(_) => {
                         return Err(PyNotImplementedError::new_err("rolling quantile"))
                     },
-                    RollingFunction::QuantileBy(_) => {
-                        return Err(PyNotImplementedError::new_err("rolling quantile by"))
-                    },
                     RollingFunction::Var(_) => {
                         return Err(PyNotImplementedError::new_err("rolling var"))
-                    },
-                    RollingFunction::VarBy(_) => {
-                        return Err(PyNotImplementedError::new_err("rolling var by"))
                     },
                     RollingFunction::Std(_) => {
                         return Err(PyNotImplementedError::new_err("rolling std"))
                     },
-                    RollingFunction::StdBy(_) => {
-                        return Err(PyNotImplementedError::new_err("rolling std by"))
-                    },
                     RollingFunction::Skew(_, _) => {
                         return Err(PyNotImplementedError::new_err("rolling skew"))
+                    },
+                },
+                FunctionExpr::RollingExprBy(rolling) => match rolling {
+                    RollingFunctionBy::MinBy(_) => {
+                        return Err(PyNotImplementedError::new_err("rolling min by"))
+                    },
+                    RollingFunctionBy::MaxBy(_) => {
+                        return Err(PyNotImplementedError::new_err("rolling max by"))
+                    },
+                    RollingFunctionBy::MeanBy(_) => {
+                        return Err(PyNotImplementedError::new_err("rolling mean by"))
+                    },
+                    RollingFunctionBy::SumBy(_) => {
+                        return Err(PyNotImplementedError::new_err("rolling sum by"))
+                    },
+                    RollingFunctionBy::QuantileBy(_) => {
+                        return Err(PyNotImplementedError::new_err("rolling quantile by"))
+                    },
+                    RollingFunctionBy::VarBy(_) => {
+                        return Err(PyNotImplementedError::new_err("rolling var by"))
+                    },
+                    RollingFunctionBy::StdBy(_) => {
+                        return Err(PyNotImplementedError::new_err("rolling std by"))
                     },
                 },
                 FunctionExpr::ShiftAndFill => {

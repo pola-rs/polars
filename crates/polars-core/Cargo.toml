@@ -88,6 +88,7 @@ take_opt_iter = []
 group_by_list = []
 # rolling window functions
 rolling_window = []
+rolling_window_by = []
 diagonal_concat = []
 dataframe_arithmetic = []
 product = []
@@ -135,6 +136,7 @@ docs-selection = [
   "dot_product",
   "row_hash",
   "rolling_window",
+  "rolling_window_by",
   "dtype-categorical",
   "dtype-decimal",
   "diagonal_concat",
