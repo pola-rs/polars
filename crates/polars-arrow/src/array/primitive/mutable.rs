@@ -330,7 +330,7 @@ impl<T: NativeType> MutablePrimitiveArray<T> {
     /// Note that if it is the first time a null appears in this array,
     /// this initializes the validity bitmap (`O(N)`).
     /// # Panic
-    /// Panics iff `index >= self.len()`.
+    /// Panics iff index is larger than or equal to `self.len()`.
     pub fn set(&mut self, index: usize, value: Option<T>) {
         assert!(index < self.len());
         // SAFETY:
