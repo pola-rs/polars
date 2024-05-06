@@ -1,3 +1,4 @@
+# mypy: disable-error-code="unused-ignore"
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Sequence
@@ -26,7 +27,7 @@ except ImportError:
     raise ImportError(msg) from None
 
 
-class PolarsDataset(TensorDataset):
+class PolarsDataset(TensorDataset):  # type: ignore[misc]
     """Specialized TensorDataset for Polars DataFrames."""
 
     tensors: tuple[Tensor, ...]

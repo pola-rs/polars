@@ -305,7 +305,6 @@ __all__ = [
     "_check_for_pandas",
     "_check_for_pyarrow",
     "_check_for_pydantic",
-    "_LazyModule",
     # exported flags/guards
     "_DELTALAKE_AVAILABLE",
     "_PYICEBERG_AVAILABLE",

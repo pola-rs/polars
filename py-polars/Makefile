@@ -15,7 +15,11 @@ endif
 	@$(MAKE) -s -C .. $@
 
 .PHONY: requirements
-requirements: .venv  ## Install/refresh all project requirements
+requirements: .venv  ## Install/refresh Python project requirements
+	@$(MAKE) -s -C .. $@
+
+.PHONY: requirements-all
+requirements-all: .venv  ## Install/refresh all Python requirements (including those needed for CI tests)
 	@$(MAKE) -s -C .. $@
 
 .PHONY: build
@@ -79,6 +83,11 @@ pre-commit: fmt clippy  ## Run all code formatting and lint/quality checks
 test: .venv build  ## Run fast unittests
 	$(VENV_BIN)/pytest -n auto --dist loadgroup $(PYTEST_ARGS)
 
+.PHONY: test-all
+test-all: .venv build  ## Run all tests
+	$(VENV_BIN)/pytest -n auto --dist loadgroup -m "slow or not slow"
+	$(VENV_BIN)/python tests/docs/run_doctest.py
+
 .PHONY: doctest
 doctest: .venv build  ## Run doctests
 	$(VENV_BIN)/python tests/docs/run_doctest.py
@@ -92,11 +101,6 @@ docs: .venv  ## Build Python docs (incremental)
 docs-clean: .venv  ## Build Python docs (full rebuild)
 	@$(MAKE) -s -C docs clean
 	@$(MAKE) docs
-
-.PHONY: test-all
-test-all: .venv build  ## Run all tests
-	$(VENV_BIN)/pytest -n auto --dist loadgroup -m "slow or not slow"
-	$(VENV_BIN)/python tests/docs/run_doctest.py
 
 .PHONY: coverage
 coverage: .venv build  ## Run tests and report coverage
