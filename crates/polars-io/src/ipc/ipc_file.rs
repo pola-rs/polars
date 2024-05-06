@@ -36,7 +36,7 @@ use std::io::{Read, Seek};
 
 use arrow::datatypes::ArrowSchemaRef;
 use arrow::io::ipc::read;
-use polars_core::frame::ArrowChunk;
+use arrow::record_batch::RecordBatch;
 use polars_core::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -185,7 +185,7 @@ impl<R: MmapBytesReader> ArrowReader for read::FileReader<R>
 where
     R: Read + Seek,
 {
-    fn next_record_batch(&mut self) -> PolarsResult<Option<ArrowChunk>> {
+    fn next_record_batch(&mut self) -> PolarsResult<Option<RecordBatch>> {
         self.next().map_or(Ok(None), |v| v.map(Some))
     }
 }

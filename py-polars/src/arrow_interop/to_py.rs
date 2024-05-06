@@ -1,6 +1,6 @@
 use arrow::ffi;
+use arrow::record_batch::RecordBatch;
 use polars::prelude::{ArrayRef, ArrowField};
-use polars_core::frame::ArrowChunk;
 use polars_core::utils::arrow;
 use pyo3::ffi::Py_uintptr_t;
 use pyo3::prelude::*;
@@ -31,7 +31,7 @@ pub(crate) fn to_py_array(
 
 /// RecordBatch to Python.
 pub(crate) fn to_py_rb(
-    rb: &ArrowChunk,
+    rb: &RecordBatch,
     names: &[&str],
     py: Python,
     pyarrow: &Bound<PyModule>,
