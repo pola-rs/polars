@@ -123,12 +123,12 @@ impl IntoPy<PyObject> for Wrap<PolarsWarning> {
     fn into_py(self, py: Python<'_>) -> PyObject {
         match self.0 {
             PolarsWarning::CategoricalRemappingWarning => {
-                CategoricalRemappingWarning::type_object(py).to_object(py)
+                CategoricalRemappingWarning::type_object_bound(py).to_object(py)
             },
             PolarsWarning::MapWithoutReturnDtypeWarning => {
-                MapWithoutReturnDtypeWarning::type_object(py).to_object(py)
+                MapWithoutReturnDtypeWarning::type_object_bound(py).to_object(py)
             },
-            PolarsWarning::UserWarning => PyUserWarning::type_object(py).to_object(py),
+            PolarsWarning::UserWarning => PyUserWarning::type_object_bound(py).to_object(py),
         }
     }
 }
