@@ -134,9 +134,9 @@ def test_rolling_aggs(
         )
     )
     df = dataframe.sort("ts")
-    func = f"rolling_{aggregation}"
+    func = f"rolling_{aggregation}_by"
     result = df.with_columns(
-        getattr(pl.col("value"), func)(window_size=window_size, by="ts", closed=closed)
+        getattr(pl.col("value"), func)("ts", window_size=window_size, closed=closed)
     )
 
     expected_dict: dict[str, list[object]] = {"ts": [], "value": []}
