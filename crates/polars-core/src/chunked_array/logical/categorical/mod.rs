@@ -15,6 +15,7 @@ pub use revmap::*;
 use super::*;
 use crate::chunked_array::Settings;
 use crate::prelude::*;
+use crate::series::IsSorted;
 use crate::using_string_cache;
 
 bitflags! {
@@ -29,7 +30,6 @@ pub struct CategoricalChunked {
     physical: Logical<CategoricalType, UInt32Type>,
     /// 1st bit: original local categorical
     ///             meaning that n_unique is the same as the cat map length
-    /// 2nd bit: use lexical sorting
     bit_settings: BitSettings,
 }
 
@@ -178,7 +178,11 @@ impl CategoricalChunked {
     }
 
     /// Set flags for the Chunked Array
-    pub(crate) fn set_flags(&mut self, flags: Settings) {
+    pub(crate) fn set_flags(&mut self, mut flags: Settings) {
+        // We should not set the sorted flag if we are sorting in lexical order
+        if self.uses_lexical_ordering() {
+            flags.set_sorted_flag(IsSorted::Not)
+        }
         self.physical_mut().set_flags(flags)
     }
 

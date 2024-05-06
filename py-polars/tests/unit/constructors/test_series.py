@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Any
 
 import pytest
@@ -76,3 +77,23 @@ def test_preserve_decimal_precision() -> None:
     dtype = pl.Decimal(None, 1)
     s = pl.Series(dtype=dtype)
     assert s.dtype == dtype
+
+
+@pytest.mark.parametrize("dtype", [None, pl.Duration("ms")])
+def test_large_timedelta(dtype: pl.DataType | None) -> None:
+    values = [timedelta.min, timedelta.max]
+    s = pl.Series(values, dtype=dtype)
+    assert s.dtype == pl.Duration("ms")
+
+    # Microsecond precision is lost
+    expected = [timedelta.min, timedelta.max - timedelta(microseconds=999)]
+    assert s.to_list() == expected
+
+
+def test_array_large_u64() -> None:
+    u64_max = 2**64 - 1
+    values = [[u64_max]]
+    dtype = pl.Array(pl.UInt64, 1)
+    s = pl.Series(values, dtype=dtype)
+    assert s.dtype == dtype
+    assert s.to_list() == values

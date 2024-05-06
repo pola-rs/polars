@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use arrow::array::new_empty_array;
-use polars_core::frame::ArrowChunk;
+use arrow::record_batch::RecordBatch;
 use polars_core::prelude::{ArrowSchema, DataFrame, IdxSize, Series};
 use polars_error::PolarsResult;
 
@@ -48,7 +48,7 @@ pub trait WriterFactory {
 }
 
 pub trait ArrowReader {
-    fn next_record_batch(&mut self) -> PolarsResult<Option<ArrowChunk>>;
+    fn next_record_batch(&mut self) -> PolarsResult<Option<RecordBatch>>;
 }
 
 #[cfg(any(feature = "ipc", feature = "avro", feature = "ipc_streaming",))]

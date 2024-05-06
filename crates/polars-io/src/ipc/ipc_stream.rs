@@ -124,7 +124,7 @@ impl<R> ArrowReader for read::StreamReader<R>
 where
     R: Read,
 {
-    fn next_record_batch(&mut self) -> PolarsResult<Option<ArrowChunk>> {
+    fn next_record_batch(&mut self) -> PolarsResult<Option<RecordBatch>> {
         self.next().map_or(Ok(None), |v| match v {
             Ok(stream_state) => match stream_state {
                 StreamState::Waiting => Ok(None),
@@ -210,7 +210,7 @@ pub struct IpcStreamWriter<W> {
     pl_flavor: bool,
 }
 
-use polars_core::frame::ArrowChunk;
+use arrow::record_batch::RecordBatch;
 
 use crate::RowIndex;
 

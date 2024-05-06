@@ -640,3 +640,15 @@ def test_cast_array_to_different_width() -> None:
         pl.InvalidOperationError, match="cannot cast Array to a different width"
     ):
         s.cast(pl.Array(pl.Int16, 3))
+
+
+def test_cast_decimal_to_decimal_high_precision() -> None:
+    precision = 22
+    values = [Decimal("9" * precision)]
+    s = pl.Series(values, dtype=pl.Decimal(None, 0))
+
+    target_dtype = pl.Decimal(precision, 0)
+    result = s.cast(target_dtype)
+
+    assert result.dtype == target_dtype
+    assert result.to_list() == values

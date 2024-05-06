@@ -4,7 +4,7 @@ use arrow::array::*;
 use arrow::datatypes::*;
 use arrow::io::avro::avro_schema::read::read_metadata;
 use arrow::io::avro::read;
-use arrow::record_batch::RecordBatch;
+use arrow::record_batch::RecordBatchT;
 use polars_error::PolarsResult;
 
 pub(super) fn schema() -> (AvroSchema, ArrowSchema) {
@@ -83,7 +83,7 @@ pub(super) fn schema() -> (AvroSchema, ArrowSchema) {
     (AvroSchema::parse_str(raw_schema).unwrap(), schema)
 }
 
-pub(super) fn data() -> RecordBatch<Box<dyn Array>> {
+pub(super) fn data() -> RecordBatchT<Box<dyn Array>> {
     let data = vec![
         Some(vec![Some(1i32), None, Some(3)]),
         Some(vec![Some(1i32), None, Some(3)]),
@@ -118,7 +118,7 @@ pub(super) fn data() -> RecordBatch<Box<dyn Array>> {
         .boxed(),
     ];
 
-    RecordBatch::try_new(columns).unwrap()
+    RecordBatchT::try_new(columns).unwrap()
 }
 
 pub(super) fn write_avro(codec: Codec) -> Result<Vec<u8>, apache_avro::Error> {
@@ -193,7 +193,7 @@ pub(super) fn write_avro(codec: Codec) -> Result<Vec<u8>, apache_avro::Error> {
 pub(super) fn read_avro(
     mut avro: &[u8],
     projection: Option<Vec<bool>>,
-) -> PolarsResult<(RecordBatch<Box<dyn Array>>, ArrowSchema)> {
+) -> PolarsResult<(RecordBatchT<Box<dyn Array>>, ArrowSchema)> {
     let file = &mut avro;
 
     let metadata = read_metadata(file)?;
@@ -263,7 +263,7 @@ fn test_projected() -> PolarsResult<()> {
             .zip(projection.iter())
             .filter_map(|x| if *x.1 { Some(x.0) } else { None })
             .collect();
-        let expected = RecordBatch::new(expected);
+        let expected = RecordBatchT::new(expected);
 
         let expected_fields = expected_schema
             .clone()
@@ -308,7 +308,7 @@ fn schema_list() -> (AvroSchema, ArrowSchema) {
     (AvroSchema::parse_str(raw_schema).unwrap(), schema)
 }
 
-pub(super) fn data_list() -> RecordBatch<Box<dyn Array>> {
+pub(super) fn data_list() -> RecordBatchT<Box<dyn Array>> {
     let data = [Some(vec![Some(1i32), Some(2), Some(3)]), Some(vec![])];
 
     let mut array = MutableListArray::<i32, MutablePrimitiveArray<i32>>::new_from(
@@ -320,7 +320,7 @@ pub(super) fn data_list() -> RecordBatch<Box<dyn Array>> {
 
     let columns = vec![array.into_box()];
 
-    RecordBatch::try_new(columns).unwrap()
+    RecordBatchT::try_new(columns).unwrap()
 }
 
 pub(super) fn write_list(codec: Codec) -> Result<Vec<u8>, apache_avro::Error> {

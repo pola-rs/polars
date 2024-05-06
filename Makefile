@@ -26,6 +26,11 @@ requirements: .venv  ## Install/refresh Python project requirements
 	&& $(VENV_BIN)/uv pip install --upgrade -r py-polars/docs/requirements-docs.txt \
 	&& $(VENV_BIN)/uv pip install --upgrade -r docs/requirements.txt
 
+.PHONY: requirements-all
+requirements-all: .venv  ## Install/refresh all Python requirements (including those needed for CI tests)
+	$(MAKE) requirements
+	$(VENV_BIN)/uv pip install --upgrade --compile-bytecode -r py-polars/requirements-ci.txt
+
 .PHONY: build
 build: .venv  ## Compile and install Python Polars for development
 	@unset CONDA_PREFIX \
@@ -80,7 +85,6 @@ build-release-native: .venv  ## Same as build-release, except with native CPU op
 	$(VENV_BIN)/maturin develop -m py-polars/Cargo.toml --release \
 	$(FILTER_PIP_WARNINGS)
 
-
 .PHONY: check
 check:  ## Run cargo check with all features
 	cargo check --workspace --all-targets --all-features
@@ -108,6 +112,7 @@ pre-commit: fmt clippy clippy-default  ## Run all code quality checks
 clean:  ## Clean up caches and build artifacts
 	@$(MAKE) -s -C py-polars/ $@
 	@rm -rf .ruff_cache/
+	@rm -rf .hypothesis/
 	@rm -rf .venv/
 	@cargo clean
 

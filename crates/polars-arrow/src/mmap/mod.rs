@@ -15,7 +15,7 @@ use crate::io::ipc::read::{
     first_dict_field, Dictionaries, FileMetadata, IpcBuffer, Node, OutOfSpecKind,
 };
 use crate::io::ipc::{IpcField, CONTINUATION_MARKER};
-use crate::record_batch::RecordBatch;
+use crate::record_batch::RecordBatchT;
 
 fn read_message(
     mut bytes: &[u8],
@@ -77,7 +77,7 @@ unsafe fn _mmap_record<T: AsRef<[u8]>>(
     batch: RecordBatchRef,
     offset: usize,
     dictionaries: &Dictionaries,
-) -> PolarsResult<RecordBatch<Box<dyn Array>>> {
+) -> PolarsResult<RecordBatchT<Box<dyn Array>>> {
     let (mut buffers, mut field_nodes) = get_buffers_nodes(batch)?;
     let mut variadic_buffer_counts = batch
         .variadic_buffer_counts()
@@ -103,7 +103,7 @@ unsafe fn _mmap_record<T: AsRef<[u8]>>(
             )
         })
         .collect::<PolarsResult<_>>()
-        .and_then(RecordBatch::try_new)
+        .and_then(RecordBatchT::try_new)
 }
 
 unsafe fn _mmap_unchecked<T: AsRef<[u8]>>(
@@ -112,7 +112,7 @@ unsafe fn _mmap_unchecked<T: AsRef<[u8]>>(
     data: Arc<T>,
     block: Block,
     dictionaries: &Dictionaries,
-) -> PolarsResult<RecordBatch<Box<dyn Array>>> {
+) -> PolarsResult<RecordBatchT<Box<dyn Array>>> {
     let (message, offset) = read_message(data.as_ref().as_ref(), block)?;
     let batch = get_record_batch(message)?;
     _mmap_record(
@@ -125,7 +125,7 @@ unsafe fn _mmap_unchecked<T: AsRef<[u8]>>(
     )
 }
 
-/// Memory maps an record batch from an IPC file into a [`RecordBatch`].
+/// Memory maps an record batch from an IPC file into a [`RecordBatchT`].
 /// # Errors
 /// This function errors when:
 /// * The IPC file is not valid
@@ -141,7 +141,7 @@ pub unsafe fn mmap_unchecked<T: AsRef<[u8]>>(
     dictionaries: &Dictionaries,
     data: Arc<T>,
     chunk: usize,
-) -> PolarsResult<RecordBatch<Box<dyn Array>>> {
+) -> PolarsResult<RecordBatchT<Box<dyn Array>>> {
     let block = metadata.blocks[chunk];
 
     let (message, offset) = read_message(data.as_ref().as_ref(), block)?;

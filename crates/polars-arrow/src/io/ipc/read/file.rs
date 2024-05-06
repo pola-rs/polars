@@ -13,7 +13,7 @@ use super::{Dictionaries, OutOfSpecKind};
 use crate::array::Array;
 use crate::datatypes::ArrowSchemaRef;
 use crate::io::ipc::IpcSchema;
-use crate::record_batch::RecordBatch;
+use crate::record_batch::RecordBatchT;
 
 /// Metadata of an Arrow IPC file, written in the footer of the file.
 #[derive(Debug, Clone)]
@@ -299,7 +299,7 @@ pub fn read_batch<R: Read + Seek>(
     index: usize,
     message_scratch: &mut Vec<u8>,
     data_scratch: &mut Vec<u8>,
-) -> PolarsResult<RecordBatch<Box<dyn Array>>> {
+) -> PolarsResult<RecordBatchT<Box<dyn Array>>> {
     let block = metadata.blocks[index];
 
     let offset: u64 = block

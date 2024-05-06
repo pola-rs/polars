@@ -3405,7 +3405,7 @@ class Series:
 
         This has time complexity:
 
-        .. math:: O(n + k \log{}n - \frac{k}{2})
+        .. math:: O(n + k \log{n} - \frac{k}{2})
 
         Parameters
         ----------
@@ -3435,7 +3435,7 @@ class Series:
 
         This has time complexity:
 
-        .. math:: O(n + k \log{}n - \frac{k}{2})
+        .. math:: O(n + k \log{n} - \frac{k}{2})
 
         Parameters
         ----------
@@ -5301,6 +5301,12 @@ class Series:
         .. warning::
             This method is much slower than the native expressions API.
             Only use it if you cannot implement your logic otherwise.
+
+            Suppose that the function is: `x ↦ sqrt(x)`:
+
+            - For mapping elements of a series, consider: `s.sqrt()`.
+            - For mapping inner elements of lists, consider:
+              `s.list.eval(pl.element().sqrt())`.
 
         If the function returns a different datatype, the return_dtype arg should
         be set, otherwise the method will fail.
