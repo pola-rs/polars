@@ -105,7 +105,7 @@ jobs:
 
       - name: Install Python dependencies
         working-directory: py-polars
-        run: uv pip install --compile-bytecode -r requirements-dev.txt
+        run: uv pip install --compile-bytecode -r requirements-dev.txt -r requirements-ci.txt
 
       - name: Set up Rust
         run: rustup component add llvm-tools-preview

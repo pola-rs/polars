@@ -59,8 +59,7 @@ jobs:
       - name: Install Python dependencies
         working-directory: py-polars
         run: |
-          uv pip install -r requirements-dev.txt
-          uv pip install -r requirements-lint.txt
+          uv pip install -r requirements-dev.txt -r requirements-lint.txt
 
       # Allow untyped calls for older Python versions
       - name: Run mypy
