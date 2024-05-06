@@ -1,7 +1,24 @@
 from typing import cast
 
+import pytest
+
 import numpy as np
 from numpy.testing import assert_array_equal
+
+try:
+    from numba import guvectorize, float64
+except ImportError:
+    float64 = []
+
+    def guvectorize(_a, _b):
+        def decorator(_):
+            def skip(*_args, **_kwargs):
+                pytest.skip("Numba not available")
+
+            return skip
+
+        return decorator
+
 
 import polars as pl
 from polars.testing import assert_series_equal
@@ -118,4 +135,51 @@ def test_numpy_string_array() -> None:
     assert_array_equal(
         np.char.capitalize(s_str),
         np.array(["Aa", "Bb", "Cc", "Dd"], dtype="<U2"),
+    )
+
+
+@guvectorize([(float64[:], float64[:])], "(n)->(n)")
+def add_one(arr, result):
+    for i in range(len(arr)):
+        result[i] = arr[i] + 1.0
+
+
+def test_generalized_ufunc():
+    """A generalized ufunc can be called on a pl.Series."""
+    s_float = pl.Series("f", [1.0, 2.0, 3.0])
+    result = add_one(s_float)
+    assert_series_equal(result, pl.Series("f", [2.0, 3.0, 4.0]))
+
+
+def test_generalized_ufunc_missing_data():
+    """
+    If a pl.Series is missing data, using a generalized ufunc is not allowed.
+
+    While this particular example isn't necessarily a semantic issue, consider
+    a mean() function running on integers: it will give wrong results if the
+    input is missing data, since NumPy has no way to model missing slots.  In
+    the general case, we can't assume the function will handle missing data
+    correctly.
+    """
+    s_float = pl.Series("f", [1.0, 2.0, 3.0, None], dtype=pl.Float64)
+    with pytest.raises(ValueError):
+        add_one(s_float)
+
+
+@guvectorize([(float64[:], float64[:], float64[:])], "(n),(m)->(m)")
+def divide_by_sum(arr, arr2, result):
+    total = arr.sum()
+    for i in range(len(arr)):
+        result[i] = arr2[i] / total
+
+
+def test_generalized_ufunc_different_output_size():
+    """
+    A generalized ufunc that returns a different output size than the input
+    returns a pl.Series of the correct size.
+    """
+    series = pl.Series("s", [1.0, 3.0], dtype=pl.Float64)
+    series2 = pl.Series("s2", [8.0, 16.0, 32.0], dtype=pl.Float64)
+    assert_series_equal(
+        divide_by_sum(series, series2), pl.Series([2.0, 4.0, 8.0], dtype=pl.Float64)
     )
