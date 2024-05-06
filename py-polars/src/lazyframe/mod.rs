@@ -14,6 +14,7 @@ use polars_core::prelude::*;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyList};
+use pyo3::pybacked::PyBackedStr;
 pub(crate) use visit::PyExprIR;
 
 use crate::arrow_interop::to_rust::pyarrow_schema_to_rust;
@@ -156,7 +157,7 @@ impl PyLazyFrame {
         skip_rows: usize,
         n_rows: Option<usize>,
         cache: bool,
-        overwrite_dtype: Option<Vec<(&str, Wrap<DataType>)>>,
+        overwrite_dtype: Option<Vec<(PyBackedStr, Wrap<DataType>)>>,
         low_memory: bool,
         comment_prefix: Option<&str>,
         quote_char: Option<&str>,
@@ -185,7 +186,7 @@ impl PyLazyFrame {
         let overwrite_dtype = overwrite_dtype.map(|overwrite_dtype| {
             overwrite_dtype
                 .into_iter()
-                .map(|(name, dtype)| Field::new(name, dtype.0))
+                .map(|(name, dtype)| Field::new(&*name, dtype.0))
                 .collect::<Schema>()
         });
 
@@ -393,11 +394,11 @@ impl PyLazyFrame {
 
     #[staticmethod]
     fn scan_from_python_function_pl_schema(
-        schema: Vec<(&str, Wrap<DataType>)>,
+        schema: Vec<(PyBackedStr, Wrap<DataType>)>,
         scan_fn: PyObject,
         pyarrow: bool,
     ) -> PyResult<Self> {
-        let schema = Schema::from_iter(schema.into_iter().map(|(name, dt)| Field::new(name, dt.0)));
+        let schema = Schema::from_iter(schema.into_iter().map(|(name, dt)| Field::new(&*name, dt.0)));
         Ok(LazyFrame::scan_from_python_function(schema, scan_fn, pyarrow).into())
     }
 
@@ -868,8 +869,8 @@ impl PyLazyFrame {
         other: Self,
         left_on: PyExpr,
         right_on: PyExpr,
-        left_by: Option<Vec<&str>>,
-        right_by: Option<Vec<&str>>,
+        left_by: Option<Vec<PyBackedStr>>,
+        right_by: Option<Vec<PyBackedStr>>,
         allow_parallel: bool,
         force_parallel: bool,
         suffix: String,
@@ -1135,9 +1136,9 @@ impl PyLazyFrame {
         ldf.drop(columns).into()
     }
 
-    fn cast(&self, dtypes: HashMap<&str, Wrap<DataType>>, strict: bool) -> Self {
+    fn cast(&self, dtypes: HashMap<PyBackedStr, Wrap<DataType>>, strict: bool) -> Self {
         let mut cast_map = PlHashMap::with_capacity(dtypes.len());
-        cast_map.extend(dtypes.iter().map(|(k, v)| (*k, v.0.clone())));
+        cast_map.extend(dtypes.iter().map(|(k, v)| (k.as_ref(), v.0.clone())));
         self.ldf.clone().cast(cast_map, strict).into()
     }
 

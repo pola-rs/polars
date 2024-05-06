@@ -153,7 +153,7 @@ pub fn cols(names: Vec<String>) -> PyExpr {
 
 #[pyfunction]
 pub fn concat_lf(
-    seq: &PyAny,
+    seq: &Bound<'_, PyAny>,
     rechunk: bool,
     parallel: bool,
     to_supertypes: bool,
@@ -270,7 +270,7 @@ pub fn datetime(
 
 #[pyfunction]
 pub fn concat_lf_diagonal(
-    lfs: &PyAny,
+    lfs: &Bound<'_, PyAny>,
     rechunk: bool,
     parallel: bool,
     to_supertypes: bool,
@@ -298,7 +298,7 @@ pub fn concat_lf_diagonal(
 }
 
 #[pyfunction]
-pub fn concat_lf_horizontal(lfs: &PyAny, parallel: bool) -> PyResult<PyLazyFrame> {
+pub fn concat_lf_horizontal(lfs: &Bound<'_, PyAny>, parallel: bool) -> PyResult<PyLazyFrame> {
     let iter = lfs.iter()?;
 
     let lfs = iter
@@ -387,7 +387,7 @@ pub fn last() -> PyExpr {
 }
 
 #[pyfunction]
-pub fn lit(value: &PyAny, allow_object: bool) -> PyResult<PyExpr> {
+pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool) -> PyResult<PyExpr> {
     if value.is_instance_of::<PyBool>() {
         let val = value.extract::<bool>().unwrap();
         Ok(dsl::lit(val).into())
