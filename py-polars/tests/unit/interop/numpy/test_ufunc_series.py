@@ -181,5 +181,6 @@ def test_generalized_ufunc_different_output_size():
     series = pl.Series("s", [1.0, 3.0], dtype=pl.Float64)
     series2 = pl.Series("s2", [8.0, 16.0, 32.0], dtype=pl.Float64)
     assert_series_equal(
-        divide_by_sum(series, series2), pl.Series([2.0, 4.0, 8.0], dtype=pl.Float64)
+        divide_by_sum(series, series2),
+        pl.Series("s", [2.0, 4.0, 8.0], dtype=pl.Float64),
     )

@@ -747,10 +747,12 @@ class Series:
         return self._from_pyseries(f(other))
 
     @overload  # type: ignore[override]
-    def __eq__(self, other: Expr) -> Expr: ...  # type: ignore[overload-overlap]
+    def __eq__(self, other: Expr) -> Expr:
+        ...  # type: ignore[overload-overlap]
 
     @overload
-    def __eq__(self, other: Any) -> Series: ...
+    def __eq__(self, other: Any) -> Series:
+        ...
 
     def __eq__(self, other: Any) -> Series | Expr:
         warn_null_comparison(other)
@@ -763,7 +765,8 @@ class Series:
         ...
 
     @overload
-    def __ne__(self, other: Any) -> Series: ...
+    def __ne__(self, other: Any) -> Series:
+        ...
 
     def __ne__(self, other: Any) -> Series | Expr:
         warn_null_comparison(other)
@@ -776,7 +779,8 @@ class Series:
         ...
 
     @overload
-    def __gt__(self, other: Any) -> Series: ...
+    def __gt__(self, other: Any) -> Series:
+        ...
 
     def __gt__(self, other: Any) -> Series | Expr:
         warn_null_comparison(other)
@@ -789,7 +793,8 @@ class Series:
         ...
 
     @overload
-    def __lt__(self, other: Any) -> Series: ...
+    def __lt__(self, other: Any) -> Series:
+        ...
 
     def __lt__(self, other: Any) -> Series | Expr:
         warn_null_comparison(other)
@@ -802,7 +807,8 @@ class Series:
         ...
 
     @overload
-    def __ge__(self, other: Any) -> Series: ...
+    def __ge__(self, other: Any) -> Series:
+        ...
 
     def __ge__(self, other: Any) -> Series | Expr:
         warn_null_comparison(other)
@@ -815,7 +821,8 @@ class Series:
         ...
 
     @overload
-    def __le__(self, other: Any) -> Series: ...
+    def __le__(self, other: Any) -> Series:
+        ...
 
     def __le__(self, other: Any) -> Series | Expr:
         warn_null_comparison(other)
@@ -828,7 +835,8 @@ class Series:
         ...
 
     @overload
-    def le(self, other: Any) -> Series: ...
+    def le(self, other: Any) -> Series:
+        ...
 
     def le(self, other: Any) -> Series | Expr:
         """Method equivalent of operator expression `series <= other`."""
@@ -839,7 +847,8 @@ class Series:
         ...
 
     @overload
-    def lt(self, other: Any) -> Series: ...
+    def lt(self, other: Any) -> Series:
+        ...
 
     def lt(self, other: Any) -> Series | Expr:
         """Method equivalent of operator expression `series < other`."""
@@ -850,7 +859,8 @@ class Series:
         ...
 
     @overload
-    def eq(self, other: Any) -> Series: ...
+    def eq(self, other: Any) -> Series:
+        ...
 
     def eq(self, other: Any) -> Series | Expr:
         """Method equivalent of operator expression `series == other`."""
@@ -861,7 +871,8 @@ class Series:
         ...
 
     @overload
-    def eq_missing(self, other: Any) -> Series: ...
+    def eq_missing(self, other: Any) -> Series:
+        ...
 
     def eq_missing(self, other: Any) -> Series | Expr:
         """
@@ -909,7 +920,8 @@ class Series:
         ...
 
     @overload
-    def ne(self, other: Any) -> Series: ...
+    def ne(self, other: Any) -> Series:
+        ...
 
     def ne(self, other: Any) -> Series | Expr:
         """Method equivalent of operator expression `series != other`."""
@@ -920,7 +932,8 @@ class Series:
         ...
 
     @overload
-    def ne_missing(self, other: Any) -> Series: ...
+    def ne_missing(self, other: Any) -> Series:
+        ...
 
     def ne_missing(self, other: Any) -> Series | Expr:
         """
@@ -968,7 +981,8 @@ class Series:
         ...
 
     @overload
-    def ge(self, other: Any) -> Series: ...
+    def ge(self, other: Any) -> Series:
+        ...
 
     def ge(self, other: Any) -> Series | Expr:
         """Method equivalent of operator expression `series >= other`."""
@@ -979,7 +993,8 @@ class Series:
         ...
 
     @overload
-    def gt(self, other: Any) -> Series: ...
+    def gt(self, other: Any) -> Series:
+        ...
 
     def gt(self, other: Any) -> Series | Expr:
         """Method equivalent of operator expression `series > other`."""
@@ -1033,7 +1048,8 @@ class Series:
         ...
 
     @overload
-    def __add__(self, other: Any) -> Self: ...
+    def __add__(self, other: Any) -> Self:
+        ...
 
     def __add__(self, other: Any) -> Self | DataFrame | Expr:
         if isinstance(other, str):
@@ -1049,7 +1065,8 @@ class Series:
         ...
 
     @overload
-    def __sub__(self, other: Any) -> Self: ...
+    def __sub__(self, other: Any) -> Self:
+        ...
 
     def __sub__(self, other: Any) -> Self | Expr:
         if isinstance(other, pl.Expr):
@@ -1061,7 +1078,8 @@ class Series:
         ...
 
     @overload
-    def __truediv__(self, other: Any) -> Series: ...
+    def __truediv__(self, other: Any) -> Series:
+        ...
 
     def __truediv__(self, other: Any) -> Series | Expr:
         if isinstance(other, pl.Expr):
@@ -1081,7 +1099,8 @@ class Series:
         ...
 
     @overload
-    def __floordiv__(self, other: Any) -> Series: ...
+    def __floordiv__(self, other: Any) -> Series:
+        ...
 
     def __floordiv__(self, other: Any) -> Series | Expr:
         if isinstance(other, pl.Expr):
@@ -1106,7 +1125,8 @@ class Series:
         ...
 
     @overload
-    def __mul__(self, other: Any) -> Series: ...
+    def __mul__(self, other: Any) -> Series:
+        ...
 
     def __mul__(self, other: Any) -> Series | DataFrame | Expr:
         if isinstance(other, pl.Expr):
@@ -1124,7 +1144,8 @@ class Series:
         ...
 
     @overload
-    def __mod__(self, other: Any) -> Series: ...
+    def __mod__(self, other: Any) -> Series:
+        ...
 
     def __mod__(self, other: Any) -> Series | Expr:
         if isinstance(other, pl.Expr):
@@ -1285,13 +1306,15 @@ class Series:
         return self._from_pyseries(self._s.take_with_series(s._s))
 
     @overload
-    def __getitem__(self, item: int) -> Any: ...
+    def __getitem__(self, item: int) -> Any:
+        ...
 
     @overload
     def __getitem__(
         self,
         item: Series | range | slice | np.ndarray[Any, Any] | list[int],
-    ) -> Series: ...
+    ) -> Series:
+        ...
 
     def __getitem__(
         self,
@@ -1404,13 +1427,10 @@ class Series:
                 raise NotImplementedError(msg)
 
             args: list[int | float | np.ndarray[Any, Any]] = []
-
-            validity_mask = self.is_not_null()
             for arg in inputs:
                 if isinstance(arg, (int, float, np.ndarray)):
                     args.append(arg)
                 elif isinstance(arg, Series):
-                    validity_mask &= arg.is_not_null()
                     args.append(arg.to_physical()._s.to_numpy_view())
                 else:
                     msg = f"unsupported type {type(arg).__name__!r} for {arg!r}"
@@ -1450,7 +1470,14 @@ class Series:
                     raise ValueError(
                         "Can't pass a Series with missing data to a generalized ufunc, as it might give unexpected results. See https://docs.pola.rs/user-guide/expressions/missing-data/ for suggestions on how to remove or fill in missing data."
                     )
-
+                # If the input and output are the same size, e.g. "(n)->(n)" we
+                # can allocate ourselves and save a copy. If they're different,
+                # we let the ufunc do the allocation, since only it knows the
+                # output size.
+                ufunc_input, ufunc_output = ufunc.signature.split("->")
+                allocate_output = ufunc_input == ufunc_output
+            else:
+                allocate_output = True
             f = get_ffi_func("apply_ufunc_<>", numpy_char_code_to_dtype(dtype_char), s)
 
             if f is None:
@@ -1460,13 +1487,28 @@ class Series:
                 )
                 raise NotImplementedError(msg)
 
-            series = f(lambda out: ufunc(*args, out=out, dtype=dtype_char, **kwargs))
-            return (
-                self._from_pyseries(series)
-                .to_frame()
-                .select(F.when(validity_mask).then(F.col(self.name)))
-                .to_series(0)
+            series = f(
+                lambda out: ufunc(*args, out=out, dtype=dtype_char, **kwargs),
+                allocate_output,
             )
+            result = self._from_pyseries(series)
+            if not ufunc.signature:
+                # Missing data is allowed, so filter it out:
+                validity_mask = self.is_not_null()
+                for arg in inputs:
+                    if isinstance(arg, Series):
+                        validity_mask &= arg.is_not_null()
+                        args.append(arg.to_physical()._s.to_numpy_view())
+                    else:
+                        msg = f"unsupported type {type(arg).__name__!r} for {arg!r}"
+                        raise TypeError(msg)
+
+                result = (
+                    result.to_frame()
+                    .select(F.when(validity_mask).then(F.col(self.name)))
+                    .to_series(0)
+                )
+            return result
         else:
             msg = (
                 "only `__call__` is implemented for numpy ufuncs on a Series, got "
@@ -1594,10 +1636,12 @@ class Series:
         """
 
     @overload
-    def any(self, *, ignore_nulls: Literal[True] = ...) -> bool: ...
+    def any(self, *, ignore_nulls: Literal[True] = ...) -> bool:
+        ...
 
     @overload
-    def any(self, *, ignore_nulls: bool) -> bool | None: ...
+    def any(self, *, ignore_nulls: bool) -> bool | None:
+        ...
 
     @deprecate_renamed_parameter("drop_nulls", "ignore_nulls", version="0.19.0")
     def any(self, *, ignore_nulls: bool = True) -> bool | None:
@@ -1637,10 +1681,12 @@ class Series:
         return self._s.any(ignore_nulls=ignore_nulls)
 
     @overload
-    def all(self, *, ignore_nulls: Literal[True] = ...) -> bool: ...
+    def all(self, *, ignore_nulls: Literal[True] = ...) -> bool:
+        ...
 
     @overload
-    def all(self, *, ignore_nulls: bool) -> bool | None: ...
+    def all(self, *, ignore_nulls: bool) -> bool | None:
+        ...
 
     @deprecate_renamed_parameter("drop_nulls", "ignore_nulls", version="0.19.0")
     def all(self, *, ignore_nulls: bool = True) -> bool | None:
@@ -2168,7 +2214,8 @@ class Series:
         left_closed: bool = ...,
         include_breaks: bool = ...,
         as_series: Literal[True] = ...,
-    ) -> Series: ...
+    ) -> Series:
+        ...
 
     @overload
     def cut(
@@ -2181,7 +2228,8 @@ class Series:
         left_closed: bool = ...,
         include_breaks: bool = ...,
         as_series: Literal[False],
-    ) -> DataFrame: ...
+    ) -> DataFrame:
+        ...
 
     @overload
     def cut(
@@ -2194,7 +2242,8 @@ class Series:
         left_closed: bool = ...,
         include_breaks: bool = ...,
         as_series: bool,
-    ) -> Series | DataFrame: ...
+    ) -> Series | DataFrame:
+        ...
 
     @deprecate_nonkeyword_arguments(["self", "breaks"], version="0.19.0")
     @deprecate_renamed_parameter("series", "as_series", version="0.19.0")
@@ -2363,7 +2412,8 @@ class Series:
         break_point_label: str = ...,
         category_label: str = ...,
         as_series: Literal[True] = ...,
-    ) -> Series: ...
+    ) -> Series:
+        ...
 
     @overload
     def qcut(
@@ -2377,7 +2427,8 @@ class Series:
         break_point_label: str = ...,
         category_label: str = ...,
         as_series: Literal[False],
-    ) -> DataFrame: ...
+    ) -> DataFrame:
+        ...
 
     @overload
     def qcut(
@@ -2391,7 +2442,8 @@ class Series:
         break_point_label: str = ...,
         category_label: str = ...,
         as_series: bool,
-    ) -> Series | DataFrame: ...
+    ) -> Series | DataFrame:
+        ...
 
     @unstable()
     def qcut(
@@ -3554,14 +3606,16 @@ class Series:
     @overload
     def search_sorted(
         self, element: NonNestedLiteral, side: SearchSortedSide = ...
-    ) -> int: ...
+    ) -> int:
+        ...
 
     @overload
     def search_sorted(
         self,
         element: list[NonNestedLiteral] | np.ndarray[Any, Any] | Expr | Series,
         side: SearchSortedSide = ...,
-    ) -> Series: ...
+    ) -> Series:
+        ...
 
     def search_sorted(
         self,
