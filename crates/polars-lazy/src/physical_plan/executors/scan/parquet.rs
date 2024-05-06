@@ -95,7 +95,7 @@ impl ParquetExec {
                             self.file_info
                                 .reader_schema
                                 .clone()
-                                .map(|eith| eith.unwrap_left()),
+                                .map(|either| either.unwrap_left()),
                         )
                         .read_parallel(parallel)
                         .set_low_memory(self.options.low_memory)
