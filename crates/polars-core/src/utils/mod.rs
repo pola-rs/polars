@@ -202,13 +202,13 @@ pub fn split_df_as_ref(df: &DataFrame, target: usize, strict: bool) -> Vec<DataF
 #[doc(hidden)]
 /// Split a [`DataFrame`] into `n` parts. We take a `&mut` to be able to repartition/align chunks.
 /// `strict` in that it respects `n` even if the chunks are suboptimal.
-pub fn split_df(df: &mut DataFrame, n: usize) -> Vec<DataFrame> {
-    if n == 0 || df.height() == 0 {
+pub fn split_df(df: &mut DataFrame, target: usize) -> Vec<DataFrame> {
+    if target == 0 || df.height() == 0 {
         return vec![df.clone()];
     }
     // make sure that chunks are aligned.
     df.align_chunks();
-    split_df_as_ref(df, n, true)
+    split_df_as_ref(df, target, false)
 }
 
 pub fn slice_slice<T>(vals: &[T], offset: i64, len: usize) -> &[T] {
