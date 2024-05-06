@@ -1444,9 +1444,8 @@ class Series:
                 # Only generalized ufuncs have a signature set, and they're the
                 # ones that have problems with missing data.
                 if self.null_count() > 0:
-                    raise ValueError(
-                        "Can't pass a Series with missing data to a generalized ufunc, as it might give unexpected results. See https://docs.pola.rs/user-guide/expressions/missing-data/ for suggestions on how to remove or fill in missing data."
-                    )
+                    msg = "Can't pass a Series with missing data to a generalized ufunc, as it might give unexpected results. See https://docs.pola.rs/user-guide/expressions/missing-data/ for suggestions on how to remove or fill in missing data."
+                    raise ValueError(msg)
                 # If the input and output are the same size, e.g. "(n)->(n)" we
                 # can allocate ourselves and save a copy. If they're different,
                 # we let the ufunc do the allocation, since only it knows the

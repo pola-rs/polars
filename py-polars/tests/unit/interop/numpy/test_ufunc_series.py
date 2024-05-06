@@ -5,13 +5,15 @@ import pytest
 from numpy.testing import assert_array_equal
 
 try:
-    from numba import float64, guvectorize
+    from numba import float64, guvectorize  # type: ignore[import-untyped]
 except ImportError:
     float64 = []
 
-    def guvectorize(_a, _b):
-        def decorator(_):
-            def skip(*_args, **_kwargs):
+    def guvectorize(_a, _b):  # type: ignore[no-untyped-def]
+        """When Numba is unavailable, skip tests using the decorated function."""
+
+        def decorator(_):  # type: ignore[no-untyped-def]
+            def skip(*_args, **_kwargs):  # type: ignore[no-untyped-def]
                 pytest.skip("Numba not available")
 
             return skip
@@ -138,19 +140,19 @@ def test_numpy_string_array() -> None:
 
 
 @guvectorize([(float64[:], float64[:])], "(n)->(n)")
-def add_one(arr, result):
+def add_one(arr, result):  # type: ignore[no-untyped-def]
     for i in range(len(arr)):
         result[i] = arr[i] + 1.0
 
 
-def test_generalized_ufunc():
+def test_generalized_ufunc() -> None:
     """A generalized ufunc can be called on a pl.Series."""
     s_float = pl.Series("f", [1.0, 2.0, 3.0])
     result = add_one(s_float)
     assert_series_equal(result, pl.Series("f", [2.0, 3.0, 4.0]))
 
 
-def test_generalized_ufunc_missing_data():
+def test_generalized_ufunc_missing_data() -> None:
     """
     If a pl.Series is missing data, using a generalized ufunc is not allowed.
 
@@ -166,13 +168,13 @@ def test_generalized_ufunc_missing_data():
 
 
 @guvectorize([(float64[:], float64[:], float64[:])], "(n),(m)->(m)")
-def divide_by_sum(arr, arr2, result):
+def divide_by_sum(arr, arr2, result):  # type: ignore[no-untyped-def]
     total = arr.sum()
     for i in range(len(arr2)):
         result[i] = arr2[i] / total
 
 
-def test_generalized_ufunc_different_output_size():
+def test_generalized_ufunc_different_output_size() -> None:
     """
     A generalized ufunc that takes pl.Series of different sizes.
 
