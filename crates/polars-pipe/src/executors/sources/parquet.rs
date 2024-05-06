@@ -113,7 +113,7 @@ impl ParquetSource {
             file_options,
             projection,
             chunk_size,
-            reader_schema,
+            reader_schema.map(|eith| eith.unwrap_left()),
             hive_partitions,
         ))
     }
@@ -151,7 +151,12 @@ impl ParquetSource {
                 .map(|v| v.as_slice());
             check_projected_arrow_schema(
                 batched_reader.schema().as_ref(),
-                self.file_info.reader_schema.as_ref().unwrap(),
+                self.file_info
+                    .reader_schema
+                    .as_ref()
+                    .unwrap()
+                    .as_ref()
+                    .unwrap_left(),
                 with_columns,
                 "schema of all files in a single scan_parquet must be equal",
             )?;

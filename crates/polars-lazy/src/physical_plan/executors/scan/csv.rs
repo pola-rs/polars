@@ -4,7 +4,7 @@ use super::*;
 
 pub struct CsvExec {
     pub path: PathBuf,
-    pub schema: SchemaRef,
+    pub file_info: FileInfo,
     pub options: CsvReaderOptions,
     pub file_options: FileScanOptions,
     pub predicate: Option<Arc<dyn PhysicalExpr>>,
@@ -26,7 +26,9 @@ impl CsvExec {
         CsvReader::from_path(&self.path)
             .unwrap()
             .has_header(self.options.has_header)
-            .with_dtypes(Some(self.schema.clone()))
+            .with_schema(Some(
+                self.file_info.reader_schema.clone().unwrap().unwrap_right(),
+            ))
             .with_separator(self.options.separator)
             .with_ignore_errors(self.options.ignore_errors)
             .with_skip_rows(self.options.skip_rows)

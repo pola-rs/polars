@@ -308,3 +308,28 @@ ID00316,.,19940315,
             "SireKey": [None],
             "BirthDate": [19940315],
         }
+
+
+@pytest.mark.write_disk()
+def test_csv_respect_user_schema_ragged_lines_15254() -> None:
+    with tempfile.NamedTemporaryFile() as f:
+        f.write(
+            b"""
+A,B,C
+1,2,3
+4,5,6,7,8
+9,10,11
+""".strip()
+        )
+        f.seek(0)
+
+        df = pl.scan_csv(
+            f.name, schema=dict.fromkeys("ABCDE", pl.String), truncate_ragged_lines=True
+        ).collect()
+        assert df.to_dict(as_series=False) == {
+            "A": ["1", "4", "9"],
+            "B": ["2", "5", "10"],
+            "C": ["3", "6", "11"],
+            "D": [None, "7", None],
+            "E": [None, "8", None],
+        }
