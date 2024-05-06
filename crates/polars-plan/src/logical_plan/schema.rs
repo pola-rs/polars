@@ -3,6 +3,7 @@ use std::path::Path;
 use std::sync::Mutex;
 
 use arrow::datatypes::ArrowSchemaRef;
+use either::Either;
 use polars_core::prelude::*;
 use polars_utils::format_smartstring;
 #[cfg(feature = "serde")]
@@ -43,7 +44,7 @@ pub struct FileInfo {
     pub schema: SchemaRef,
     /// Stores the schema used for the reader, as the main schema can contain
     /// extra hive columns.
-    pub reader_schema: Option<ArrowSchemaRef>,
+    pub reader_schema: Option<Either<ArrowSchemaRef, SchemaRef>>,
     /// - known size
     /// - estimated size
     pub row_estimation: (Option<usize>, usize),
@@ -54,7 +55,7 @@ impl FileInfo {
     /// Constructs a new [`FileInfo`].
     pub fn new(
         schema: SchemaRef,
-        reader_schema: Option<ArrowSchemaRef>,
+        reader_schema: Option<Either<ArrowSchemaRef, SchemaRef>>,
         row_estimation: (Option<usize>, usize),
     ) -> Self {
         Self {
