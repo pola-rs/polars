@@ -133,17 +133,6 @@ pub(super) enum NullValuesCompiled {
 }
 
 impl NullValuesCompiled {
-    pub(super) fn apply_projection(&mut self, projections: &[usize]) {
-        if let Self::Columns(nv) = self {
-            let nv = projections
-                .iter()
-                .map(|i| std::mem::take(&mut nv[*i]))
-                .collect::<Vec<_>>();
-
-            *self = NullValuesCompiled::Columns(nv);
-        }
-    }
-
     /// # Safety
     ///
     /// The caller must ensure that `index` is in bounds
