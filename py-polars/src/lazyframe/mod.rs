@@ -13,8 +13,8 @@ use polars::time::*;
 use polars_core::prelude::*;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyDict, PyList};
 use pyo3::pybacked::PyBackedStr;
+use pyo3::types::{PyBytes, PyDict, PyList};
 pub(crate) use visit::PyExprIR;
 
 use crate::arrow_interop::to_rust::pyarrow_schema_to_rust;
@@ -54,7 +54,7 @@ impl PyLazyFrame {
         ciborium::ser::into_writer(&self.ldf.logical_plan, &mut writer)
             .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
 
-        Ok(PyBytes::new(py, &writer).to_object(py))
+        Ok(PyBytes::new_bound(py, &writer).to_object(py))
     }
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
@@ -226,7 +226,7 @@ impl PyLazyFrame {
             let f = |schema: Schema| {
                 let iter = schema.iter_names().map(|s| s.as_str());
                 Python::with_gil(|py| {
-                    let names = PyList::new(py, iter);
+                    let names = PyList::new_bound(py, iter);
 
                     let out = lambda.call1(py, (names,)).expect("python function failed");
                     let new_names = out
@@ -384,7 +384,7 @@ impl PyLazyFrame {
 
     #[staticmethod]
     fn scan_from_python_function_arrow_schema(
-        schema: &PyList,
+        schema: &Bound<'_, PyList>,
         scan_fn: PyObject,
         pyarrow: bool,
     ) -> PyResult<Self> {
@@ -398,7 +398,11 @@ impl PyLazyFrame {
         scan_fn: PyObject,
         pyarrow: bool,
     ) -> PyResult<Self> {
-        let schema = Schema::from_iter(schema.into_iter().map(|(name, dt)| Field::new(&*name, dt.0)));
+        let schema = Schema::from_iter(
+            schema
+                .into_iter()
+                .map(|(name, dt)| Field::new(&*name, dt.0)),
+        );
         Ok(LazyFrame::scan_from_python_function(schema, scan_fn, pyarrow).into())
     }
 
@@ -1153,7 +1157,7 @@ impl PyLazyFrame {
     fn columns(&self, py: Python) -> PyResult<PyObject> {
         let schema = self.get_schema()?;
         let iter = schema.iter_names().map(|s| s.as_str());
-        Ok(PyList::new(py, iter).to_object(py))
+        Ok(PyList::new_bound(py, iter).to_object(py))
     }
 
     fn dtypes(&self, py: Python) -> PyResult<PyObject> {
@@ -1161,12 +1165,12 @@ impl PyLazyFrame {
         let iter = schema
             .iter_dtypes()
             .map(|dt| Wrap(dt.clone()).to_object(py));
-        Ok(PyList::new(py, iter).to_object(py))
+        Ok(PyList::new_bound(py, iter).to_object(py))
     }
 
     fn schema(&self, py: Python) -> PyResult<PyObject> {
         let schema = self.get_schema()?;
-        let schema_dict = PyDict::new(py);
+        let schema_dict = PyDict::new_bound(py);
 
         schema.iter_fields().for_each(|fld| {
             schema_dict

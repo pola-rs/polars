@@ -61,12 +61,12 @@ impl<T> From<T> for Wrap<T> {
 }
 
 // extract a Rust DataFrame from a python DataFrame, that is DataFrame<PyDataFrame<RustDataFrame>>
-pub(crate) fn get_df(obj: &PyAny) -> PyResult<DataFrame> {
+pub(crate) fn get_df(obj: &Bound<'_, PyAny>) -> PyResult<DataFrame> {
     let pydf = obj.getattr(intern!(obj.py(), "_df"))?;
     Ok(pydf.extract::<PyDataFrame>()?.df)
 }
 
-pub(crate) fn get_lf(obj: &PyAny) -> PyResult<LazyFrame> {
+pub(crate) fn get_lf(obj: &Bound<'_, PyAny>) -> PyResult<LazyFrame> {
     let pydf = obj.getattr(intern!(obj.py(), "_ldf"))?;
     Ok(pydf.extract::<PyLazyFrame>()?.ldf)
 }

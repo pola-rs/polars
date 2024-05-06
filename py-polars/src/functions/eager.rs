@@ -14,13 +14,13 @@ pub fn concat_df(dfs: &Bound<'_, PyAny>, py: Python) -> PyResult<PyDataFrame> {
     let mut iter = dfs.iter()?;
     let first = iter.next().unwrap()?;
 
-    let first_rdf = get_df(first)?;
+    let first_rdf = get_df(&first)?;
     let identity_df = first_rdf.clear();
 
     let mut rdfs: Vec<PolarsResult<DataFrame>> = vec![Ok(first_rdf)];
 
     for item in iter {
-        let rdf = get_df(item?)?;
+        let rdf = get_df(&item?)?;
         rdfs.push(Ok(rdf));
     }
 
@@ -69,7 +69,7 @@ pub fn concat_df_diagonal(dfs: &Bound<'_, PyAny>) -> PyResult<PyDataFrame> {
     let dfs = iter
         .map(|item| {
             let item = item?;
-            get_df(item)
+            get_df(&item)
         })
         .collect::<PyResult<Vec<_>>>()?;
 
@@ -84,7 +84,7 @@ pub fn concat_df_horizontal(dfs: &Bound<'_, PyAny>) -> PyResult<PyDataFrame> {
     let dfs = iter
         .map(|item| {
             let item = item?;
-            get_df(item)
+            get_df(&item)
         })
         .collect::<PyResult<Vec<_>>>()?;
 
