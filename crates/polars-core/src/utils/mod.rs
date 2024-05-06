@@ -137,57 +137,78 @@ pub fn split_series(s: &Series, n: usize) -> PolarsResult<Vec<Series>> {
     split_array!(s, n, i64)
 }
 
-pub fn split_df_as_ref(
-    df: &DataFrame,
-    n: usize,
-    extend_sub_chunks: bool,
-) -> PolarsResult<Vec<DataFrame>> {
+/// Split a [`DataFrame`] in `target` elements. The target doesn't have to be respected if not
+/// strict. Deviation of the target might be done to create more equal size chunks.
+///
+/// # Panics
+/// if chunks are not aligned
+pub fn split_df_as_ref(df: &DataFrame, target: usize, strict: bool) -> Vec<DataFrame> {
     let total_len = df.height();
     if total_len == 0 {
-        return Ok(vec![df.clone()]);
+        return vec![df.clone()];
     }
 
-    let chunk_size = std::cmp::max(total_len / n, 1);
+    let chunk_size = std::cmp::max(total_len / target, 1);
 
-    if df.n_chunks() == n
+    if df.n_chunks() == target
         && df.get_columns()[0]
             .chunk_lengths()
             .all(|len| len.abs_diff(chunk_size) < 100)
     {
-        return Ok(flatten_df_iter(df).collect());
+        return flatten_df_iter(df).collect();
     }
 
-    let mut out = Vec::with_capacity(n);
+    let mut out = Vec::with_capacity(target);
 
-    for i in 0..n {
-        let offset = i * chunk_size;
-        let len = if i == (n - 1) {
-            total_len.saturating_sub(offset)
-        } else {
-            chunk_size
-        };
-        let df = df.slice((i * chunk_size) as i64, len);
-        if extend_sub_chunks && df.n_chunks() > 1 {
-            // we add every chunk as separate dataframe. This make sure that every partition
-            // deals with it.
-            out.extend(flatten_df_iter(&df))
-        } else {
-            out.push(df)
+    if df.n_chunks() == 1 || strict {
+        for i in 0..target {
+            let offset = i * chunk_size;
+            let len = if i == (target - 1) {
+                total_len.saturating_sub(offset)
+            } else {
+                chunk_size
+            };
+            let df = df.slice((i * chunk_size) as i64, len);
+            out.push(df);
+        }
+    } else {
+        let chunks = flatten_df_iter(df);
+
+        'new_chunk: for mut chunk in chunks {
+            loop {
+                let h = chunk.height();
+                if h < chunk_size {
+                    // TODO if the chunk is much smaller than chunk size, we should try to merge it with the next one.
+                    out.push(chunk);
+                    continue 'new_chunk;
+                }
+
+                // If a split leads to the next chunk being smaller than 30% take the whole chunk
+                if ((h - chunk_size) as f64 / chunk_size as f64) < 0.3 {
+                    out.push(chunk);
+                    continue 'new_chunk;
+                }
+
+                // This would be faster if we had a `split` operation.
+                out.push(chunk.slice(0, chunk_size));
+                chunk = chunk.slice(chunk_size as i64, h - chunk_size);
+            }
         }
     }
 
-    Ok(out)
+    out
 }
 
 #[doc(hidden)]
 /// Split a [`DataFrame`] into `n` parts. We take a `&mut` to be able to repartition/align chunks.
-pub fn split_df(df: &mut DataFrame, n: usize) -> PolarsResult<Vec<DataFrame>> {
-    if n == 0 || df.height() == 0 {
-        return Ok(vec![df.clone()]);
+/// `strict` in that it respects `n` even if the chunks are suboptimal.
+pub fn split_df(df: &mut DataFrame, target: usize) -> Vec<DataFrame> {
+    if target == 0 || df.height() == 0 {
+        return vec![df.clone()];
     }
     // make sure that chunks are aligned.
     df.align_chunks();
-    split_df_as_ref(df, n, true)
+    split_df_as_ref(df, target, false)
 }
 
 pub fn slice_slice<T>(vals: &[T], offset: i64, len: usize) -> &[T] {

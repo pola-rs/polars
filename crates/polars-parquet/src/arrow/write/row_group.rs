@@ -4,15 +4,15 @@ use arrow::record_batch::RecordBatchT;
 use polars_error::{polars_bail, to_compute_err, PolarsError, PolarsResult};
 
 use super::{
-    array_to_columns, to_parquet_schema, DynIter, DynStreamingIterator, Encoding, RowGroupIter,
-    SchemaDescriptor, WriteOptions,
+    array_to_columns, to_parquet_schema, DynIter, DynStreamingIterator, Encoding,
+    RowGroupIterColumns, SchemaDescriptor, WriteOptions,
 };
 use crate::parquet::error::Error as ParquetError;
 use crate::parquet::schema::types::ParquetType;
 use crate::parquet::write::Compressor;
 use crate::parquet::FallibleStreamingIterator;
 
-/// Maps a [`RecordBatchT`] and parquet-specific options to an [`RowGroupIter`] used to
+/// Maps a [`RecordBatchT`] and parquet-specific options to an [`RowGroupIterColumns`] used to
 /// write to parquet
 /// # Panics
 /// Iff
@@ -23,7 +23,7 @@ pub fn row_group_iter<A: AsRef<dyn Array> + 'static + Send + Sync>(
     encodings: Vec<Vec<Encoding>>,
     fields: Vec<ParquetType>,
     options: WriteOptions,
-) -> RowGroupIter<'static, PolarsError> {
+) -> RowGroupIterColumns<'static, PolarsError> {
     assert_eq!(encodings.len(), fields.len());
     assert_eq!(encodings.len(), chunk.arrays().len());
     DynIter::new(
@@ -108,7 +108,7 @@ impl<
         I: Iterator<Item = PolarsResult<RecordBatchT<A>>>,
     > Iterator for RowGroupIterator<A, I>
 {
-    type Item = PolarsResult<RowGroupIter<'static, PolarsError>>;
+    type Item = PolarsResult<RowGroupIterColumns<'static, PolarsError>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let options = self.options;

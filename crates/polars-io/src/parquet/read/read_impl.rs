@@ -729,7 +729,7 @@ impl BatchedParquetReader {
                 // make sure that the chunks are not too large
                 let n = df.shape().0 / self.chunk_size;
                 if n > 1 {
-                    for df in split_df(&mut df, n)? {
+                    for df in split_df(&mut df, n) {
                         self.chunks_fifo.push_back(df)
                     }
                 } else {
