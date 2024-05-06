@@ -1,12 +1,11 @@
 from typing import cast
 
-import pytest
-
 import numpy as np
+import pytest
 from numpy.testing import assert_array_equal
 
 try:
-    from numba import guvectorize, float64
+    from numba import float64, guvectorize
 except ImportError:
     float64 = []
 
@@ -175,12 +174,17 @@ def divide_by_sum(arr, arr2, result):
 
 def test_generalized_ufunc_different_output_size():
     """
-    A generalized ufunc that returns a different output size than the input
-    returns a pl.Series of the correct size.
+    A generalized ufunc that takes pl.Series of different sizes.
+
+    The result has the correct size.
     """
     series = pl.Series("s", [1.0, 3.0], dtype=pl.Float64)
     series2 = pl.Series("s2", [8.0, 16.0, 32.0], dtype=pl.Float64)
     assert_series_equal(
         divide_by_sum(series, series2),
         pl.Series("s", [2.0, 4.0, 8.0], dtype=pl.Float64),
+    )
+    assert_series_equal(
+        divide_by_sum(series2, series),
+        pl.Series("s2", [1.0 / 56, 3.0 / 56], dtype=pl.Float64),
     )
