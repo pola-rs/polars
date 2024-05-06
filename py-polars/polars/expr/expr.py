@@ -4609,6 +4609,8 @@ class Expr:
               `pl.col("col_name").sqrt()`.
             - For mapping inner elements of lists, consider:
               `pl.col("col_name").list.eval(pl.element().sqrt())`.
+            - For mapping inner elements of structs, consider:
+              `pl.col("col_name").struct.field("field_name").sqrt()`.
 
         The UDF is applied to each element of a column. Note that, in a GroupBy
         context, the column will have been pre-aggregated and so each element
