@@ -76,13 +76,10 @@ jobs:
         run: cargo llvm-cov report --lcov --output-path coverage-rust.lcov
 
       - name: Upload coverage report
-        uses: codecov/codecov-action@v4
+        uses: actions/upload-artifact@v4
         with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: coverage-rust.lcov
-          root_dir: ${{ github.workspace }}
-          flags: rust
-          fail_ci_if_error: true
+          name: coverage-rust
+          path: coverage-rust.lcov
 
   coverage-python:
     # Running under ubuntu doesn't seem to work:
@@ -139,20 +136,28 @@ jobs:
       - name: Report Rust coverage
         run: cargo llvm-cov report --lcov --output-path coverage-python.lcov
 
-      - name: Upload coverage reports - Python
-        uses: codecov/codecov-action@v4
+      - name: Upload coverage reports
+        uses: actions/upload-artifact@v4
         with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: py-polars/main.xml,py-polars/async.xml
-          root_dir: ${{ github.workspace }}
-          flags: python
-          fail_ci_if_error: true
+          name: coverage-python
+          path: |
+            coverage-python.lcov
+            py-polars/main.xml
+            py-polars/async.xml
 
-      - name: Upload coverage report - Rust
+  upload-coverage:
+    needs: [coverage-rust, coverage-python]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download coverage reports
+        uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - name: Upload coverage reports
         uses: codecov/codecov-action@v4
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          files: coverage-python.lcov
+          files: coverage-rust.lcov,coverage-python.lcov,py-polars/main.xml,py-polars/async.xml
           root_dir: ${{ github.workspace }}
-          flags: rust
-          fail_ci_if_error: true

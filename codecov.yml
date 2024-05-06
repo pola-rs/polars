@@ -4,7 +4,6 @@ coverage:
     patch: off
 comment:
   require_changes: true
-  after_n_builds: 3
 ignore:
   - crates/polars-arrow/src/io/flight/*.rs
   - crates/polars-arrow/src/io/ipc/append/*.rs
