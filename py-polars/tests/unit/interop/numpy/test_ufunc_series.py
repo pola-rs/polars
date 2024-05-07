@@ -163,7 +163,7 @@ def test_generalized_ufunc_missing_data() -> None:
     correctly.
     """
     s_float = pl.Series("f", [1.0, 2.0, 3.0, None], dtype=pl.Float64)
-    with pytest.raises(ValueError):
+    with pytest.raises(pl.ComputeError):
         add_one(s_float)
 
 

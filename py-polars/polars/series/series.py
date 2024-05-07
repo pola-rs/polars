@@ -100,7 +100,7 @@ from polars.dependencies import (
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
-from polars.exceptions import ModuleUpgradeRequired, ShapeError
+from polars.exceptions import ComputeError, ModuleUpgradeRequired, ShapeError
 from polars.meta import get_index_type
 from polars.series.array import ArrayNameSpace
 from polars.series.binary import BinaryNameSpace
@@ -1295,7 +1295,7 @@ class Series:
 
     def __getitem__(
         self,
-        item: (int | Series | range | slice | np.ndarray[Any, Any] | list[int]),
+        item: int | Series | range | slice | np.ndarray[Any, Any] | list[int],
     ) -> Any:
         if isinstance(item, Series) and item.dtype.is_integer():
             return self._take_with_series(item._pos_idxs(self.len()))
@@ -1445,7 +1445,7 @@ class Series:
                 # ones that have problems with missing data.
                 if self.null_count() > 0:
                     msg = "Can't pass a Series with missing data to a generalized ufunc, as it might give unexpected results. See https://docs.pola.rs/user-guide/expressions/missing-data/ for suggestions on how to remove or fill in missing data."
-                    raise ValueError(msg)
+                    raise ComputeError(msg)
                 # If the input and output are the same size, e.g. "(n)->(n)" we
                 # can allocate ourselves and save a copy. If they're different,
                 # we let the ufunc do the allocation, since only it knows the
@@ -4122,7 +4122,7 @@ class Series:
 
     def cast(
         self,
-        dtype: (PolarsDataType | type[int] | type[float] | type[str] | type[bool]),
+        dtype: PolarsDataType | type[int] | type[float] | type[str] | type[bool],
         *,
         strict: bool = True,
     ) -> Self:
