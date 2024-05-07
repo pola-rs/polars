@@ -87,7 +87,8 @@ macro_rules! impl_ufuncs {
                         let series_factory =
                             PyModule::import_bound(py, "polars")?.getattr("Series")?;
                         return series_factory
-                            .call((self.name(), result), None)?.getattr("_s")?
+                            .call((self.name(), result), None)?
+                            .getattr("_s")?
                             .extract::<PySeries>();
                     }
 
