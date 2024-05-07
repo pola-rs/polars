@@ -61,6 +61,18 @@ def test_bit_hex_errors() -> None:
         ):
             ctx.execute("SELECT x'00F' FROM test", eager=True)
 
+        with pytest.raises(
+            ComputeError,
+            match="hex string literal must have an even number of digits",
+        ):
+            pl.sql_expr("colx IN (x'FF',x'123')")
+
+        with pytest.raises(
+            ComputeError,
+            match=r'NationalStringLiteral\("hmmm"\) is not yet supported',
+        ):
+            pl.sql_expr("N'hmmm'")
+
 
 def test_bit_hex_membership() -> None:
     df = pl.DataFrame(
