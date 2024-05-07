@@ -7,6 +7,7 @@ import pytest
 from sqlalchemy import create_engine
 
 import polars as pl
+from polars.io.database._utils import _open_adbc_connection
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
@@ -44,21 +45,32 @@ class TestWriteDatabase:
         tmp_path.mkdir(exist_ok=True)
         test_db = str(tmp_path / f"test_{engine}.db")
         test_db_uri = f"sqlite:///{test_db}"
-        table_name = "test_create"
+        table_name_stub = "test_create"
 
-        assert (
-            df.write_database(
-                table_name=table_name,
-                connection=test_db_uri,
-                engine=engine,
+        for idx, conn in enumerate(
+            (
+                test_db_uri,
+                create_engine(test_db_uri),
+                _open_adbc_connection(test_db_uri),
             )
-            == 2
-        )
-        result = pl.read_database(
-            query=f"SELECT * FROM {table_name}",
-            connection=create_engine(test_db_uri),
-        )
-        assert_frame_equal(result, df)
+        ):
+            table_name = f"{table_name_stub}{idx}"
+            assert (
+                df.write_database(
+                    table_name=table_name,
+                    connection=test_db_uri,
+                    engine=engine,
+                )
+                == 2
+            )
+            result = pl.read_database(
+                query=f"SELECT * FROM {table_name}",
+                connection=create_engine(test_db_uri),
+            )
+            assert_frame_equal(result, df)
+
+            if hasattr(conn, "close"):
+                conn.close()
 
     def test_write_database_append_replace(
         self, engine: DbWriteEngine, tmp_path: Path
@@ -75,53 +87,64 @@ class TestWriteDatabase:
         tmp_path.mkdir(exist_ok=True)
         test_db = str(tmp_path / f"test_{engine}.db")
         test_db_uri = f"sqlite:///{test_db}"
-        table_name = f"test_append_{engine}"
+        table_name_stub = "test_create"
 
-        assert (
-            df.write_database(
-                table_name=table_name,
-                connection=test_db_uri,
-                engine=engine,
+        for idx, conn in enumerate(
+            (
+                test_db_uri,
+                create_engine(test_db_uri),
+                _open_adbc_connection(test_db_uri),
             )
-            == 3
-        )
-        with pytest.raises(Exception):  # noqa: B017
-            df.write_database(
-                table_name=table_name,
-                connection=test_db_uri,
-                if_table_exists="fail",
-                engine=engine,
+        ):
+            table_name = f"{table_name_stub}{idx}"
+            assert (
+                df.write_database(
+                    table_name=table_name,
+                    connection=test_db_uri,
+                    engine=engine,
+                )
+                == 3
             )
+            with pytest.raises(Exception):  # noqa: B017
+                df.write_database(
+                    table_name=table_name,
+                    connection=test_db_uri,
+                    if_table_exists="fail",
+                    engine=engine,
+                )
 
-        assert (
-            df.write_database(
-                table_name=table_name,
-                connection=test_db_uri,
-                if_table_exists="replace",
-                engine=engine,
+            assert (
+                df.write_database(
+                    table_name=table_name,
+                    connection=test_db_uri,
+                    if_table_exists="replace",
+                    engine=engine,
+                )
+                == 3
             )
-            == 3
-        )
-        result = pl.read_database(
-            query=f"SELECT * FROM {table_name}",
-            connection=create_engine(test_db_uri),
-        )
-        assert_frame_equal(result, df)
+            result = pl.read_database(
+                query=f"SELECT * FROM {table_name}",
+                connection=create_engine(test_db_uri),
+            )
+            assert_frame_equal(result, df)
 
-        assert (
-            df[:2].write_database(
-                table_name=table_name,
-                connection=test_db_uri,
-                if_table_exists="append",
-                engine=engine,
+            assert (
+                df[:2].write_database(
+                    table_name=table_name,
+                    connection=test_db_uri,
+                    if_table_exists="append",
+                    engine=engine,
+                )
+                == 2
             )
-            == 2
-        )
-        result = pl.read_database(
-            query=f"SELECT * FROM {table_name}",
-            connection=create_engine(test_db_uri),
-        )
-        assert_frame_equal(result, pl.concat([df, df[:2]]))
+            result = pl.read_database(
+                query=f"SELECT * FROM {table_name}",
+                connection=create_engine(test_db_uri),
+            )
+            assert_frame_equal(result, pl.concat([df, df[:2]]))
+
+            if hasattr(conn, "close"):
+                conn.close()
 
     def test_write_database_create_quoted_tablename(
         self, engine: DbWriteEngine, tmp_path: Path
@@ -133,31 +156,41 @@ class TestWriteDatabase:
         test_db = str(tmp_path / f"test_{engine}.db")
         test_db_uri = f"sqlite:///{test_db}"
 
-        # table name requires quoting, and is qualified with the implicit 'main' schema
-        qualified_table_name = f'main."test-append-{engine}"'
+        for idx, conn in enumerate(
+            (
+                test_db_uri,
+                create_engine(test_db_uri),
+                _open_adbc_connection(test_db_uri),
+            )
+        ):
+            # table name has some special chars, so requires quoting, and
+            # is expliocitly qualified with the sqlite 'main' schema
+            qualified_table_name = f'main."test-append-{engine}{idx}"'
+            assert (
+                df.write_database(
+                    table_name=qualified_table_name,
+                    connection=test_db_uri,
+                    engine=engine,
+                )
+                == 3
+            )
+            assert (
+                df.write_database(
+                    table_name=qualified_table_name,
+                    connection=test_db_uri,
+                    if_table_exists="replace",
+                    engine=engine,
+                )
+                == 3
+            )
+            result = pl.read_database(
+                query=f"SELECT * FROM {qualified_table_name}",
+                connection=create_engine(test_db_uri),
+            )
+            assert_frame_equal(result, df)
 
-        assert (
-            df.write_database(
-                table_name=qualified_table_name,
-                connection=test_db_uri,
-                engine=engine,
-            )
-            == 3
-        )
-        assert (
-            df.write_database(
-                table_name=qualified_table_name,
-                connection=test_db_uri,
-                if_table_exists="replace",
-                engine=engine,
-            )
-            == 3
-        )
-        result = pl.read_database(
-            query=f"SELECT * FROM {qualified_table_name}",
-            connection=create_engine(test_db_uri),
-        )
-        assert_frame_equal(result, df)
+            if hasattr(conn, "close"):
+                conn.close()
 
     def test_write_database_errors(self, engine: DbWriteEngine, tmp_path: Path) -> None:
         """Confirm that expected errors are raised."""
@@ -182,3 +215,9 @@ class TestWriteDatabase:
                 if_table_exists="do_something",  # type: ignore[arg-type]
                 engine=engine,
             )
+
+        with pytest.raises(
+            TypeError,
+            match="unrecognised connection type",
+        ):
+            df.write_database(connection=True, table_name="misc")  # type: ignore[arg-type]
