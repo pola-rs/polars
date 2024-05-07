@@ -1,6 +1,5 @@
 use std::ops::Div;
 
-use once_cell::sync::Lazy;
 use polars_core::export::regex;
 use polars_core::prelude::*;
 use polars_error::to_compute_err;
@@ -24,8 +23,8 @@ use sqlparser::parser::{Parser, ParserOptions};
 use crate::functions::SQLFunctionVisitor;
 use crate::SQLContext;
 
-pub static DATE_LITERAL_RE: Lazy<Regex> =
-    Lazy::new(|| RegexBuilder::new(r"^\d{4}-\d{2}-\d{2}").build().unwrap());
+static DATE_LITERAL_RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
+static TIME_LITERAL_RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
 
 fn timeunit_from_precision(prec: &Option<u64>) -> PolarsResult<TimeUnit> {
     Ok(match prec {
@@ -433,11 +432,23 @@ impl SQLExprVisitor<'_> {
             } else {
                 let left_dtype = expr_dtype
                     .unwrap_or_else(|| self.active_schema.as_ref().unwrap().get(&name).unwrap());
+
+                let dt_regex = DATE_LITERAL_RE
+                    .get_or_init(|| RegexBuilder::new(r"^\d{4}-[01]\d-[0-3]\d").build().unwrap());
+                let tm_regex = TIME_LITERAL_RE.get_or_init(|| {
+                    RegexBuilder::new(r"^[012]\d:[0-5]\d:[0-5]\d")
+                        .build()
+                        .unwrap()
+                });
+
                 match left_dtype {
-                    DataType::Time | DataType::Date => {
+                    DataType::Time if tm_regex.is_match(s) => {
                         right.clone().strict_cast(left_dtype.clone())
                     },
-                    DataType::Datetime(_, _) if DATE_LITERAL_RE.is_match(s) => {
+                    DataType::Date if dt_regex.is_match(s) => {
+                        right.clone().strict_cast(left_dtype.clone())
+                    },
+                    DataType::Datetime(_, _) if dt_regex.is_match(s) => {
                         if s.len() == 10 {
                             // handle upcast from ISO date string (10 chars) to datetime
                             lit(format!("{}T00:00:00", s)).strict_cast(left_dtype.clone())

@@ -197,7 +197,10 @@ def test_implicit_temporal_strings(constraint: str, expected: list[int]) -> None
 def test_implicit_temporal_string_errors(dtval: str) -> None:
     df = pl.DataFrame({"dt": [date(2020, 12, 30)]})
 
-    with pytest.raises(ComputeError, match="conversion from `str` to `date` failed"):
+    with pytest.raises(
+        ComputeError,
+        match="(conversion.*failed)|(cannot compare.*string.*temporal)",
+    ):
         df.sql(f"SELECT * FROM self WHERE dt = '{dtval}'")
 
 
