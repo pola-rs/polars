@@ -4,25 +4,9 @@ import numpy as np
 import pytest
 from numpy.testing import assert_array_equal
 
-try:
-    from numba import float64, guvectorize  # type: ignore[import-untyped]
-except ImportError:
-    float64 = []
-
-    def guvectorize(_a, _b):  # type: ignore[no-untyped-def]
-        """When Numba is unavailable, skip tests using the decorated function."""
-
-        def decorator(_):  # type: ignore[no-untyped-def]
-            def skip(*_args, **_kwargs):  # type: ignore[no-untyped-def]
-                pytest.skip("Numba not available")
-
-            return skip
-
-        return decorator
-
-
 import polars as pl
 from polars.testing import assert_series_equal
+from tests.unit.interop.numpy._numba import float64, guvectorize
 
 
 def test_ufunc() -> None:
