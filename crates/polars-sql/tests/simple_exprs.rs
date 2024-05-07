@@ -62,27 +62,70 @@ fn test_group_by_simple() -> PolarsResult<()> {
     let df_sql = context
         .execute(
             r#"
-        SELECT a, sum(b) as b , sum(a + b) as c, count(a) as total_count
+        SELECT
+          a          AS "aa",
+          SUM(b)     AS "bb",
+          SUM(a + b) AS "cc",
+          COUNT(a)   AS "total_count"
         FROM df
         GROUP BY a
         LIMIT 100
     "#,
         )?
-        .sort(["a"], Default::default())
+        .sort(["aa"], Default::default())
         .collect()?;
 
     let df_pl = df
         .lazy()
-        .group_by(&[col("a")])
+        .group_by(&[col("a").alias("aa")])
         .agg(&[
-            col("b").sum().alias("b"),
-            (col("a") + col("b")).sum().alias("c"),
+            col("b").sum().alias("bb"),
+            (col("a") + col("b")).sum().alias("cc"),
             col("a").count().alias("total_count"),
         ])
         .limit(100)
-        .sort(["a"], Default::default())
+        .sort(["aa"], Default::default())
         .collect()?;
     assert_eq!(df_sql, df_pl);
+    Ok(())
+}
+
+#[test]
+fn test_group_by_expression_key() -> PolarsResult<()> {
+    let df = df! {
+        "a" => &["xx", "yy", "xx", "yy", "xx", "zz"],
+        "b" => &[1, 2, 3, 4, 5, 6],
+        "c" => &[99, 99, 66, 66, 66, 66],
+    }
+    .unwrap();
+
+    let mut context = SQLContext::new();
+    context.register("df", df.clone().lazy());
+
+    // check how we handle grouping by a key that gets used in select transform
+    let df_sql = context
+        .execute(
+            r#"
+            SELECT
+                CASE WHEN a = 'zz' THEN 'xx' ELSE a END AS grp,
+                SUM(b) AS sum_b,
+                SUM(c) AS sum_c,
+            FROM df
+            GROUP BY a
+            ORDER BY sum_c
+        "#,
+        )?
+        .sort(["sum_c"], Default::default())
+        .collect()?;
+
+    let df_expected = df! {
+        "grp" => ["xx", "yy", "xx"],
+        "sum_b" => [6, 6, 9],
+        "sum_c" => [66, 165, 231],
+    }
+    .unwrap();
+
+    assert_eq!(df_sql, df_expected);
     Ok(())
 }
 

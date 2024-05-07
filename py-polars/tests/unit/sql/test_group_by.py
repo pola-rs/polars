@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -63,6 +64,105 @@ def test_group_by(foods_ipc_path: Path) -> None:
         """
     )
     assert out.to_dict(as_series=False) == {"grp": ["c"], "n_dist_attr": [2]}
+
+
+def test_group_by_all() -> None:
+    df = pl.DataFrame(
+        {
+            "a": ["xx", "yy", "xx", "yy", "xx", "zz"],
+            "b": [1, 2, 3, 4, 5, 6],
+            "c": [99, 99, 66, 66, 66, 66],
+        }
+    )
+
+    # basic group/agg
+    res = df.sql(
+        """
+        SELECT
+            a,
+            SUM(b),
+            SUM(c)
+        FROM self
+        GROUP BY ALL
+        ORDER BY a
+        """
+    )
+    expected = pl.DataFrame(
+        {
+            "a": ["xx", "yy", "zz"],
+            "b": [9, 6, 6],
+            "c": [231, 165, 66],
+        }
+    )
+    assert_frame_equal(expected, res)
+
+    # more involved determination of agg/group columns
+    res = df.sql(
+        """
+        SELECT
+            SUM(b) AS sum_b,
+            SUM(c) AS sum_c,
+            (SUM(b) + SUM(c)) / 2.0 AS sum_bc_over_2,  -- nested agg
+            a as grp, --aliased group key
+        FROM self
+        GROUP BY ALL
+        ORDER BY grp
+        """
+    )
+    expected = pl.DataFrame(
+        {
+            "sum_b": [9, 6, 6],
+            "sum_c": [231, 165, 66],
+            "sum_bc_over_2": [120.0, 85.5, 36.0],
+            "grp": ["xx", "yy", "zz"],
+        }
+    )
+    assert_frame_equal(expected, res.sort(by="grp"))
+
+
+def test_group_by_all_multi() -> None:
+    dt1 = date(1999, 12, 31)
+    dt2 = date(2028, 7, 5)
+
+    df = pl.DataFrame(
+        {
+            "key": ["xx", "yy", "xx", "yy", "xx", "xx"],
+            "dt": [dt1, dt1, dt1, dt2, dt2, dt2],
+            "value": [10.5, -5.5, 20.5, 8.0, -3.0, 5.0],
+        }
+    )
+    expected = pl.DataFrame(
+        {
+            "dt": [dt1, dt1, dt2, dt2],
+            "key": ["xx", "yy", "xx", "yy"],
+            "sum_value": [31.0, -5.5, 2.0, 8.0],
+            "ninety_nine": [99, 99, 99, 99],
+        },
+        schema_overrides={"ninety_nine": pl.Int16},
+    )
+
+    # the following groupings should all be equivalent
+    for group in (
+        "ALL",
+        "1, 2",
+        "dt, key",
+    ):
+        res = df.sql(
+            f"""
+            SELECT dt, key, sum_value, ninety_nine::int2 FROM
+            (
+                SELECT
+                  dt,
+                  key,
+                  SUM(value) AS sum_value,
+                  99 AS ninety_nine
+                FROM self
+                GROUP BY {group}
+                ORDER BY dt, key
+            ) AS grp
+            """
+        )
+        assert_frame_equal(expected, res)
 
 
 def test_group_by_ordinal_position() -> None:
