@@ -96,16 +96,16 @@ impl Buffer<'_> {
                 }
                 Ok(())
             },
-            UInt64(buf) => {
-                let n = deserialize_number::<u64>(value);
+            UInt32(buf) => {
+                let n = deserialize_number::<u32>(value);
                 match n {
                     Some(v) => buf.append_value(v),
                     None => buf.append_null(),
                 }
                 Ok(())
             },
-            UInt32(buf) => {
-                let n = deserialize_number::<u32>(value);
+            UInt64(buf) => {
+                let n = deserialize_number::<u64>(value);
                 match n {
                     Some(v) => buf.append_value(v),
                     None => buf.append_null(),
@@ -128,7 +128,6 @@ impl Buffer<'_> {
                 }
                 Ok(())
             },
-
             String(buf) => {
                 match value {
                     Value::String(v) => buf.append_value(v),
