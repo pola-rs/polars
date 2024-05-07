@@ -229,7 +229,7 @@ def import_optional(
     err_prefix: str = "required package",
     err_suffix: str = "not found",
     min_version: str | tuple[int, ...] | None = None,
-    min_prefix: str = "requires",
+    min_err_prefix: str = "requires",
     install_message: str | None = None,
 ) -> Any:
     """
@@ -245,7 +245,7 @@ def import_optional(
         Error suffix to use in the raised exception (follows the module name).
     min_version : {str, tuple[int]}, optional
         If a minimum module version is required, specify it here.
-    min_prefix : str, optional
+    min_err_prefix : str, optional
         Override the standard "requires" prefix for the minimum version error message.
     install_message : str, optional
         Override the standard "Please install it using..." exception message fragment.
@@ -280,7 +280,7 @@ def import_optional(
         mod_version = parse_version(module.__version__)
         if mod_version < min_version:
             msg = (
-                f"{min_prefix} {module_root} "
+                f"{min_err_prefix} {module_root} "
                 f"{'.'.join(str(v) for v in min_version)} or higher"
                 f" (found {'.'.join(str(v) for v in mod_version)})"
             )

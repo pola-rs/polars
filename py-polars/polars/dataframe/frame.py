@@ -3332,8 +3332,8 @@ class DataFrame:
 
             import_optional(
                 module_name="sqlalchemy",
-                min_prefix="pandas >= 2.2 requires",
                 min_version=("2.0" if pd_version >= parse_version("2.2") else "1.4"),
+                min_err_prefix="pandas >= 2.2 requires",
             )
             # note: the catalog (database) should be a part of the connection string
             from sqlalchemy.engine import create_engine
