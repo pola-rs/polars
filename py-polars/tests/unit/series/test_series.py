@@ -2371,11 +2371,13 @@ def test_series_from_pyarrow_with_dtype() -> None:
     assert s.dtype == pl.UInt8
 
 
-def test_series_from_pandas_with_strict() -> None:
-    s = pl.Series(pd.Series([1, 2.5, 3]), strict=False)
-    assert_series_equal(s, pl.Series([1.0, 2.5, 3.0], dtype=pl.Float64))
+def test_series_from_numpy_with_dtye() -> None:
+    s = pl.Series("foo", np.array([-1, 2, 3]), pl.Int8)
+    assert_series_equal(s, pl.Series("foo", [-1, 2, 3], dtype=pl.Int8))
 
+    with pytest.raises(pl.ComputeError, match="conversion from"):
+        pl.Series("foo", np.array([-1, 2, 3]), pl.UInt8)
 
-def test_series_from_pyarrow_with_strict() -> None:
-    s = pl.Series(pa.array([1, 2.5, 3]), strict=False)
-    assert_series_equal(s, pl.Series([1.0, 2.5, 3.0], dtype=pl.Float64))
+    s = pl.Series("foo", np.array([-1, 2, 3]), dtype=pl.UInt8, strict=False)
+    assert s.to_list() == [None, 2, 3]
+    assert s.dtype == pl.UInt8
