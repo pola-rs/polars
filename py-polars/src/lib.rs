@@ -45,6 +45,7 @@ mod utils;
 #[cfg(all(target_family = "unix", not(use_mimalloc), not(default_allocator)))]
 use jemallocator::Jemalloc;
 #[cfg(any(not(target_family = "unix"), use_mimalloc))]
+#[allow(unused_imports)]
 use mimalloc::MiMalloc;
 use pyo3::panic::PanicException;
 use pyo3::prelude::*;
@@ -65,6 +66,7 @@ use crate::functions::PyStringCacheHolder;
 use crate::lazyframe::{PyInProcessQuery, PyLazyFrame};
 use crate::lazygroupby::PyLazyGroupBy;
 #[cfg(debug_assertions)]
+#[allow(unused_imports)]
 use crate::memory::TracemallocAllocator;
 use crate::series::PySeries;
 #[cfg(feature = "sql")]
