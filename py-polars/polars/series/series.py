@@ -552,10 +552,11 @@ class Series:
         """
         Get flags that are set on the Series.
 
-        Returns
-        -------
-        dict
-            Dictionary containing the flag name and the value
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.flags
+        {'SORTED_ASC': False, 'SORTED_DESC': False}
         """
         out = {
             "SORTED_ASC": self._s.is_sorted_ascending_flag(),
