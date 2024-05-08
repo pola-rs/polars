@@ -71,6 +71,7 @@ These functions are available from the Polars module root and can be used as exp
    min
    min_horizontal
    n_unique
+   nth
    ones
    quantile
    reduce
