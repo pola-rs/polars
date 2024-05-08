@@ -4,7 +4,7 @@ mod decoder;
 mod encoder;
 pub use bitmap::{encode_bool as bitpacked_encode, BitmapIter};
 pub use decoder::Decoder;
-pub use encoder::encode;
+pub use encoder::{encode_bool, encode_u32};
 use polars_utils::iter::FallibleIterator;
 
 use super::bitpacked;
@@ -137,7 +137,7 @@ mod tests {
 
         let data = (0..1000).collect::<Vec<_>>();
 
-        encode::<u32, _, _>(&mut buffer, data.iter().cloned(), num_bits).unwrap();
+        encode_u32(&mut buffer, data.iter().cloned(), num_bits).unwrap();
 
         let decoder = HybridRleDecoder::try_new(&buffer, num_bits, data.len())?;
 

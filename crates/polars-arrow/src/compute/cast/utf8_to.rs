@@ -27,7 +27,6 @@ pub fn utf8_to_dictionary<O: Offset, K: DictionaryKey>(
     from: &Utf8Array<O>,
 ) -> PolarsResult<DictionaryArray<K>> {
     let mut array = MutableDictionaryArray::<K, MutableUtf8Array<O>>::new();
-    array.reserve(from.len());
     array.try_extend(from.iter())?;
 
     Ok(array.into())

@@ -6,7 +6,7 @@ use polars_error::PolarsResult;
 pub use rep::num_values;
 
 use super::Nested;
-use crate::parquet::encoding::hybrid_rle::encode;
+use crate::parquet::encoding::hybrid_rle::encode_u32;
 use crate::parquet::read::levels::get_bit_width;
 use crate::parquet::write::Version;
 
@@ -41,12 +41,12 @@ fn write_rep_levels(buffer: &mut Vec<u8>, nested: &[Nested], version: Version) -
     match version {
         Version::V1 => {
             write_levels_v1(buffer, |buffer: &mut Vec<u8>| {
-                encode::<u32, _, _>(buffer, levels, num_bits)?;
+                encode_u32(buffer, levels, num_bits)?;
                 Ok(())
             })?;
         },
         Version::V2 => {
-            encode::<u32, _, _>(buffer, levels, num_bits)?;
+            encode_u32(buffer, levels, num_bits)?;
         },
     }
 
@@ -65,10 +65,10 @@ fn write_def_levels(buffer: &mut Vec<u8>, nested: &[Nested], version: Version) -
 
     match version {
         Version::V1 => write_levels_v1(buffer, move |buffer: &mut Vec<u8>| {
-            encode::<u32, _, _>(buffer, levels, num_bits)?;
+            encode_u32(buffer, levels, num_bits)?;
             Ok(())
         }),
-        Version::V2 => Ok(encode::<u32, _, _>(buffer, levels, num_bits)?),
+        Version::V2 => Ok(encode_u32(buffer, levels, num_bits)?),
     }
 }
 
