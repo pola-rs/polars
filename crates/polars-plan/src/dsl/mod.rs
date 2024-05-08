@@ -1885,12 +1885,17 @@ pub fn len() -> Expr {
     Expr::Len
 }
 
-/// First column in DataFrame.
+/// First column in a DataFrame.
 pub fn first() -> Expr {
     Expr::Nth(0)
 }
 
-/// Last column in DataFrame.
+/// Last column in a DataFrame.
 pub fn last() -> Expr {
     Expr::Nth(-1)
+}
+
+/// Nth column in a DataFrame.
+pub fn nth(n: i64) -> Expr {
+    Expr::Nth(n)
 }

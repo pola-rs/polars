@@ -387,6 +387,11 @@ pub fn last() -> PyExpr {
 }
 
 #[pyfunction]
+pub fn nth(n: i64) -> PyExpr {
+    dsl::nth(n).into()
+}
+
+#[pyfunction]
 pub fn lit(value: &PyAny, allow_object: bool) -> PyResult<PyExpr> {
     if value.is_instance_of::<PyBool>() {
         let val = value.extract::<bool>().unwrap();
