@@ -239,7 +239,7 @@ pub fn create_physical_plan(
                     let path = paths[0].clone();
                     Ok(Box::new(executors::CsvExec {
                         path,
-                        schema: file_info.schema,
+                        file_info,
                         options: csv_options,
                         predicate,
                         file_options,

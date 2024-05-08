@@ -581,24 +581,10 @@ impl SQLExprVisitor<'_> {
                 .map_err(|_| polars_err!(ComputeError: "cannot parse literal: {:?}", s))?
             },
             SQLValue::SingleQuotedByteStringLiteral(b) => {
-                // note: for PostgreSQL this syntax represents a BIT string literal (eg: b'10101') not a BYTE
-                // string literal (see https://www.postgresql.org/docs/current/datatype-bit.html), but sqlparser
+                // note: for PostgreSQL this represents a BIT string literal (eg: b'10101') not a BYTE string
+                // literal (see https://www.postgresql.org/docs/current/datatype-bit.html), but sqlparser
                 // patterned the token name after BigQuery (where b'str' really IS a byte string)
-                if !b.chars().all(|c| c == '0' || c == '1') {
-                    polars_bail!(ComputeError: "bit string literal should contain only 0s and 1s; found '{}'", b)
-                }
-                let n_bits = b.len();
-                let s = b.as_str();
-                lit(match n_bits {
-                    0 => b"".to_vec(),
-                    1..=8 => u8::from_str_radix(s, 2).unwrap().to_be_bytes().to_vec(),
-                    9..=16 => u16::from_str_radix(s, 2).unwrap().to_be_bytes().to_vec(),
-                    17..=32 => u32::from_str_radix(s, 2).unwrap().to_be_bytes().to_vec(),
-                    33..=64 => u64::from_str_radix(s, 2).unwrap().to_be_bytes().to_vec(),
-                    _ => {
-                        polars_bail!(ComputeError: "cannot parse bit string literal with len > 64 (len={:?})", n_bits)
-                    },
-                })
+                bitstring_to_bytes_literal(b)?
             },
             SQLValue::SingleQuotedString(s) => lit(s.clone()),
             other => polars_bail!(ComputeError: "SQL value {:?} is not yet supported", other),
@@ -635,10 +621,24 @@ impl SQLExprVisitor<'_> {
                 }
                 .map_err(|_| polars_err!(ComputeError: "cannot parse literal: {s:?}"))?
             },
-            SQLValue::SingleQuotedString(s)
-            | SQLValue::NationalStringLiteral(s)
-            | SQLValue::HexStringLiteral(s)
-            | SQLValue::DoubleQuotedString(s) => AnyValue::StringOwned(s.into()),
+            #[cfg(feature = "binary_encoding")]
+            SQLValue::HexStringLiteral(x) => {
+                if x.len() % 2 != 0 {
+                    polars_bail!(ComputeError: "hex string literal must have an even number of digits; found '{}'", x)
+                };
+                AnyValue::BinaryOwned(hex::decode(x.clone()).unwrap())
+            },
+            SQLValue::SingleQuotedByteStringLiteral(b) => {
+                // note: for PostgreSQL this represents a BIT literal (eg: b'10101') not BYTE
+                let bytes_literal = bitstring_to_bytes_literal(b)?;
+                match bytes_literal {
+                    Expr::Literal(LiteralValue::Binary(v)) => AnyValue::BinaryOwned(v.to_vec()),
+                    _ => polars_bail!(ComputeError: "failed to parse bitstring literal: {:?}", b),
+                }
+            },
+            SQLValue::SingleQuotedString(s) | SQLValue::DoubleQuotedString(s) => {
+                AnyValue::StringOwned(s.into())
+            },
             other => polars_bail!(ComputeError: "SQL value {:?} is not yet supported", other),
         })
     }
@@ -1106,4 +1106,19 @@ pub(crate) fn parse_date_part(expr: Expr, part: &str) -> PolarsResult<Expr> {
             },
         },
     )
+}
+
+fn bitstring_to_bytes_literal(b: &String) -> PolarsResult<Expr> {
+    let n_bits = b.len();
+    if !b.chars().all(|c| c == '0' || c == '1') || n_bits > 64 {
+        polars_bail!(ComputeError: "bit string literal should contain only 0s and 1s and have length <= 64; found '{}' with length {}", b, n_bits)
+    }
+    let s = b.as_str();
+    Ok(lit(match n_bits {
+        0 => b"".to_vec(),
+        1..=8 => u8::from_str_radix(s, 2).unwrap().to_be_bytes().to_vec(),
+        9..=16 => u16::from_str_radix(s, 2).unwrap().to_be_bytes().to_vec(),
+        17..=32 => u32::from_str_radix(s, 2).unwrap().to_be_bytes().to_vec(),
+        _ => u64::from_str_radix(s, 2).unwrap().to_be_bytes().to_vec(),
+    }))
 }

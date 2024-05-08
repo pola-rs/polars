@@ -91,7 +91,12 @@ impl ParquetExec {
                     );
 
                     let mut reader = ParquetReader::new(file)
-                        .with_schema(self.file_info.reader_schema.clone())
+                        .with_schema(
+                            self.file_info
+                                .reader_schema
+                                .clone()
+                                .map(|either| either.unwrap_left()),
+                        )
                         .read_parallel(parallel)
                         .set_low_memory(self.options.low_memory)
                         .use_statistics(self.options.use_statistics)
@@ -163,7 +168,9 @@ impl ParquetExec {
             .file_info
             .reader_schema
             .as_ref()
-            .expect("should be set");
+            .expect("should be set")
+            .as_ref()
+            .unwrap_left();
         let first_metadata = &self.metadata;
         let cloud_options = self.cloud_options.as_ref();
         let with_columns = self
@@ -343,7 +350,12 @@ impl ParquetExec {
                 );
                 return Ok(materialize_empty_df(
                     projection.as_deref(),
-                    self.file_info.reader_schema.as_ref().unwrap(),
+                    self.file_info
+                        .reader_schema
+                        .as_ref()
+                        .unwrap()
+                        .as_ref()
+                        .unwrap_left(),
                     hive_partitions.as_deref(),
                     self.file_options.row_index.as_ref(),
                 ));

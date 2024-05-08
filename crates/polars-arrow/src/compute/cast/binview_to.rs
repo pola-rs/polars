@@ -21,7 +21,6 @@ pub(super) fn binview_to_dictionary<K: DictionaryKey>(
     from: &BinaryViewArray,
 ) -> PolarsResult<DictionaryArray<K>> {
     let mut array = MutableDictionaryArray::<K, MutableBinaryViewArray<[u8]>>::new();
-    array.reserve(from.len());
     array.try_extend(from.iter())?;
 
     Ok(array.into())
@@ -31,7 +30,6 @@ pub(super) fn utf8view_to_dictionary<K: DictionaryKey>(
     from: &Utf8ViewArray,
 ) -> PolarsResult<DictionaryArray<K>> {
     let mut array = MutableDictionaryArray::<K, MutableBinaryViewArray<str>>::new();
-    array.reserve(from.len());
     array.try_extend(from.iter())?;
 
     Ok(array.into())

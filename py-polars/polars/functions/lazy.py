@@ -22,7 +22,6 @@ from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Datetime, Int64, UInt32
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
 
-
 if TYPE_CHECKING:
     from typing import Awaitable, Collection, Literal
 
@@ -518,18 +517,16 @@ def approx_n_unique(*columns: str) -> Expr:
 @deprecate_parameter_as_positional("column", version="0.20.4")
 def first(*columns: str) -> Expr:
     """
-    Get the first value.
+    Get the first column or value.
 
-    This function has different behavior depending on the input type:
-
-    - `None` -> Takes first column of a context (equivalent to `cs.first()`).
-    - `str` or `[str,]` -> Syntactic sugar for `pl.col(columns).first()`.
+    This function has different behavior depending on the presence of `columns`
+    values. If none given (the default), returns an expression that takes the first
+    column of the context; otherwise, takes the first value of the given column(s).
 
     Parameters
     ----------
     *columns
-        One or more column names. If not provided (default), returns an expression
-        to take the first column of the context instead.
+        One or more column names.
 
     Examples
     --------
@@ -540,6 +537,9 @@ def first(*columns: str) -> Expr:
     ...         "c": ["foo", "bar", "baz"],
     ...     }
     ... )
+
+    Return the first column:
+
     >>> df.select(pl.first())
     shape: (3, 1)
     ┌─────┐
@@ -551,6 +551,9 @@ def first(*columns: str) -> Expr:
     │ 8   │
     │ 3   │
     └─────┘
+
+    Return the first value for the given column(s):
+
     >>> df.select(pl.first("b"))
     shape: (1, 1)
     ┌─────┐
@@ -580,18 +583,16 @@ def first(*columns: str) -> Expr:
 @deprecate_parameter_as_positional("column", version="0.20.4")
 def last(*columns: str) -> Expr:
     """
-    Get the last value.
+    Get the last column or value.
 
-    This function has different behavior depending on the input type:
-
-    - `None` -> Takes last column of a context (equivalent to `cs.last()`).
-    - `str` or `[str,]` -> Syntactic sugar for `pl.col(columns).last()`.
+    This function has different behavior depending on the presence of `columns`
+    values. If none given (the default), returns an expression that takes the last
+    column of the context; otherwise, takes the last value of the given column(s).
 
     Parameters
     ----------
     *columns
-        One or more column names. If set to `None` (default), returns an expression
-        to take the last column of the context instead.
+        One or more column names.
 
     Examples
     --------
@@ -602,6 +603,9 @@ def last(*columns: str) -> Expr:
     ...         "c": ["foo", "bar", "baz"],
     ...     }
     ... )
+
+    Return the last column:
+
     >>> df.select(pl.last())
     shape: (3, 1)
     ┌─────┐
@@ -613,6 +617,9 @@ def last(*columns: str) -> Expr:
     │ bar │
     │ baz │
     └─────┘
+
+    Return the last value for the given column(s):
+
     >>> df.select(pl.last("a"))
     shape: (1, 1)
     ┌─────┐
@@ -637,6 +644,65 @@ def last(*columns: str) -> Expr:
         return wrap_expr(plr.last())
 
     return F.col(*columns).last()
+
+
+def nth(n: int, *columns: str) -> Expr:
+    """
+    Get the nth column or value.
+
+    This function has different behavior depending on the presence of `columns`
+    values. If none given (the default), returns an expression that takes the nth
+    column of the context; otherwise, takes the nth value of the given column(s).
+
+    Parameters
+    ----------
+    n
+        Index of the column (or value) to get.
+    *columns
+        One or more column names. If omitted (the default), returns an
+        expression that takes the nth column of the context. Otherwise,
+        returns takes the nth value of the given column(s).
+
+    Examples
+    --------
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "a": [1, 8, 3],
+    ...         "b": [4, 5, 2],
+    ...         "c": ["foo", "bar", "baz"],
+    ...     }
+    ... )
+
+    Return the "nth" column:
+
+    >>> df.select(pl.nth(1))
+    shape: (3, 1)
+    ┌─────┐
+    │ b   │
+    │ --- │
+    │ i64 │
+    ╞═════╡
+    │ 4   │
+    │ 5   │
+    │ 2   │
+    └─────┘
+
+    Return the "nth" value for the given columns:
+
+    >>> df.select(pl.nth(-2, "b", "c"))
+    shape: (1, 2)
+    ┌─────┬─────┐
+    │ b   ┆ c   │
+    │ --- ┆ --- │
+    │ i64 ┆ str │
+    ╞═════╪═════╡
+    │ 5   ┆ bar │
+    └─────┴─────┘
+    """
+    if not columns:
+        return wrap_expr(plr.nth(n))
+
+    return F.col(*columns).get(n)
 
 
 def head(column: str, n: int = 10) -> Expr:

@@ -76,13 +76,10 @@ jobs:
         run: cargo llvm-cov report --lcov --output-path coverage-rust.lcov
 
       - name: Upload coverage report
-        uses: codecov/codecov-action@v4
+        uses: actions/upload-artifact@v4
         with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: coverage-rust.lcov
-          root_dir: ${{ github.workspace }}
-          flags: rust
-          fail_ci_if_error: true
+          name: coverage-rust
+          path: coverage-rust.lcov
 
   coverage-python:
     # Running under ubuntu doesn't seem to work:
@@ -94,7 +91,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.12'
 
       - name: Create virtual environment
         run: |
@@ -126,33 +123,51 @@ jobs:
 
       - name: Run Python tests
         working-directory: py-polars
-        run: pytest --cov -n auto --dist loadgroup -m "not release and not benchmark and not docs" --cov-report xml:main.xml
-        continue-on-error: true
+        run: >
+          pytest
+          -n auto --dist loadgroup
+          -m "not release and not benchmark and not docs"
+          -k 'not test_polars_import'
+          --cov --cov-report xml:main.xml
 
       - name: Run Python tests - async reader
         working-directory: py-polars
         env:
           POLARS_FORCE_ASYNC: 1
-        run: pytest --cov -n auto --dist loadgroup -m "not release and not benchmark and not docs" tests/unit/io/ --cov-report xml:async.xml
-        continue-on-error: true
+        run: >
+          pytest tests/unit/io/
+          -n auto --dist loadgroup
+          -m "not release and not benchmark and not docs"
+          --cov --cov-report xml:async.xml --cov-fail-under=0
 
       - name: Report Rust coverage
         run: cargo llvm-cov report --lcov --output-path coverage-python.lcov
 
-      - name: Upload coverage reports - Python
-        uses: codecov/codecov-action@v4
+      - name: Upload coverage reports
+        uses: actions/upload-artifact@v4
         with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: py-polars/main.xml,py-polars/async.xml
-          root_dir: ${{ github.workspace }}
-          flags: python
-          fail_ci_if_error: true
+          name: coverage-python
+          path: |
+            coverage-python.lcov
+            py-polars/main.xml
+            py-polars/async.xml
 
-      - name: Upload coverage report - Rust
+  upload-coverage:
+    needs: [coverage-rust, coverage-python]
+    runs-on: ubuntu-latest
+
+    steps:
+        # Needed to fetch the Codecov config file
+      - uses: actions/checkout@v4
+
+      - name: Download coverage reports
+        uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - name: Upload coverage reports
         uses: codecov/codecov-action@v4
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          files: coverage-python.lcov
+          files: coverage-rust.lcov,coverage-python.lcov,py-polars/main.xml,py-polars/async.xml
           root_dir: ${{ github.workspace }}
-          flags: rust
-          fail_ci_if_error: true

@@ -2178,13 +2178,22 @@ def test_product() -> None:
     assert_frame_equal(out, expected, check_dtype=False)
 
 
-def test_first_last_expression(fruits_cars: pl.DataFrame) -> None:
+def test_first_last_nth_expressions(fruits_cars: pl.DataFrame) -> None:
     df = fruits_cars
     out = df.select(pl.first())
     assert out.columns == ["A"]
 
     out = df.select(pl.last())
     assert out.columns == ["cars"]
+
+    out = df.select(pl.nth(0))
+    assert out.columns == ["A"]
+
+    out = df.select(pl.nth(1))
+    assert out.columns == ["fruits"]
+
+    out = df.select(pl.nth(-2))
+    assert out.columns == ["B"]
 
 
 def test_is_between(fruits_cars: pl.DataFrame) -> None:
