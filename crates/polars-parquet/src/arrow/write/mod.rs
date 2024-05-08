@@ -45,8 +45,8 @@ pub use crate::parquet::schema::types::{
     FieldInfo, ParquetType, PhysicalType as ParquetPhysicalType,
 };
 pub use crate::parquet::write::{
-    compress, write_metadata_sidecar, Compressor, DynIter, DynStreamingIterator, RowGroupIter,
-    Version,
+    compress, write_metadata_sidecar, Compressor, DynIter, DynStreamingIterator,
+    RowGroupIterColumns, Version,
 };
 pub use crate::parquet::{fallible_streaming_iterator, FallibleStreamingIterator};
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import tempfile
 from collections import OrderedDict
 from typing import TYPE_CHECKING
 
@@ -285,3 +286,50 @@ def test_scan_empty_csv_with_row_index(tmp_path: Path) -> None:
 
     read = pl.scan_csv(file_path).with_row_index("idx")
     assert read.collect().schema == OrderedDict([("idx", pl.UInt32), ("a", pl.String)])
+
+
+@pytest.mark.write_disk()
+def test_csv_null_values_with_projection_15515() -> None:
+    data = """IndCode,SireCode,BirthDate,Flag
+ID00316,.,19940315,
+"""
+
+    with tempfile.NamedTemporaryFile() as f:
+        f.write(data.encode())
+        f.seek(0)
+
+        q = (
+            pl.scan_csv(f.name, null_values={"SireCode": "."})
+            .with_columns(pl.col("SireCode").alias("SireKey"))
+            .select("SireKey", "BirthDate")
+        )
+
+        assert q.collect().to_dict(as_series=False) == {
+            "SireKey": [None],
+            "BirthDate": [19940315],
+        }
+
+
+@pytest.mark.write_disk()
+def test_csv_respect_user_schema_ragged_lines_15254() -> None:
+    with tempfile.NamedTemporaryFile() as f:
+        f.write(
+            b"""
+A,B,C
+1,2,3
+4,5,6,7,8
+9,10,11
+""".strip()
+        )
+        f.seek(0)
+
+        df = pl.scan_csv(
+            f.name, schema=dict.fromkeys("ABCDE", pl.String), truncate_ragged_lines=True
+        ).collect()
+        assert df.to_dict(as_series=False) == {
+            "A": ["1", "4", "9"],
+            "B": ["2", "5", "10"],
+            "C": ["3", "6", "11"],
+            "D": [None, "7", None],
+            "E": [None, "8", None],
+        }

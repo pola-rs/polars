@@ -503,13 +503,17 @@ def _read_spreadsheet(
 
     # normalise some top-level parameters to 'read_options' entries
     if engine == "calamine":
-        if "schema_sample_rows" in read_options:
+        if ("schema_sample_rows" in read_options) and (
+            infer_schema_length != N_INFER_DEFAULT
+        ):
             msg = 'cannot specify both `infer_schema_length` and `read_options["schema_sample_rows"]`'
             raise ParameterCollisionError(msg)
         read_options["schema_sample_rows"] = infer_schema_length
 
     elif engine == "xlsx2csv":
-        if "infer_schema_length" in read_options:
+        if ("infer_schema_length" in read_options) and (
+            infer_schema_length != N_INFER_DEFAULT
+        ):
             msg = 'cannot specify both `infer_schema_length` and `read_options["infer_schema_length"]`'
             raise ParameterCollisionError(msg)
         read_options["infer_schema_length"] = infer_schema_length

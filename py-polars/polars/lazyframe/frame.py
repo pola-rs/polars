@@ -4909,7 +4909,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def fill_null(
         self,
-        value: Any | None = None,
+        value: Any | Expr | None = None,
         strategy: FillNullStrategy | None = None,
         limit: int | None = None,
         *,
@@ -4929,6 +4929,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             'backward' strategy.
         matches_supertype
             Fill all matching supertypes of the fill `value` literal.
+
+        See Also
+        --------
+        fill_nan
 
         Examples
         --------
@@ -5046,8 +5050,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Warnings
         --------
-        Note that floating point NaN (Not a Number) are not missing values!
-        To replace missing values, use :func:`fill_null` instead.
+        Note that floating point NaNs (Not a Number) are not missing values.
+        To replace missing values, use :func:`fill_null`.
+
+        See Also
+        --------
+        fill_null
 
         Examples
         --------

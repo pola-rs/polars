@@ -4843,6 +4843,15 @@ class Series:
         value
             Value used to fill NaN values.
 
+        Warnings
+        --------
+        Note that floating point NaNs (Not a Number) are not missing values.
+        To replace missing values, use :func:`fill_null`.
+
+        See Also
+        --------
+        fill_null
+
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3, float("nan")])
@@ -4859,7 +4868,7 @@ class Series:
 
     def fill_null(
         self,
-        value: Any | None = None,
+        value: Any | Expr | None = None,
         strategy: FillNullStrategy | None = None,
         limit: int | None = None,
     ) -> Series:
@@ -4875,6 +4884,10 @@ class Series:
         limit
             Number of consecutive null values to fill when using the 'forward' or
             'backward' strategy.
+
+        See Also
+        --------
+        fill_nan
 
         Examples
         --------

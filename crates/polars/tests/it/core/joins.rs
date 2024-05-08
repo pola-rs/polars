@@ -16,8 +16,8 @@ fn test_chunked_left_join() -> PolarsResult<()> {
         "plays" => ["guitar", "bass", "guitar"]
     ]?;
 
-    let band_instruments = accumulate_dataframes_vertical(split_df(&mut band_instruments, 2)?)?;
-    let band_members = accumulate_dataframes_vertical(split_df(&mut band_members, 2)?)?;
+    let band_instruments = accumulate_dataframes_vertical(split_df(&mut band_instruments, 2))?;
+    let band_members = accumulate_dataframes_vertical(split_df(&mut band_members, 2))?;
     assert_eq!(band_instruments.n_chunks(), 2);
     assert_eq!(band_members.n_chunks(), 2);
 

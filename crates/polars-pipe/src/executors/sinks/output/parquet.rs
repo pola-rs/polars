@@ -4,13 +4,15 @@ use std::thread::JoinHandle;
 
 use crossbeam_channel::{bounded, Receiver, Sender};
 use polars_core::prelude::*;
-use polars_io::parquet::write::{BatchedWriter, ParquetWriteOptions, ParquetWriter, RowGroupIter};
+use polars_io::parquet::write::{
+    BatchedWriter, ParquetWriteOptions, ParquetWriter, RowGroupIterColumns,
+};
 
 use crate::executors::sinks::output::file_sink::{init_writer_thread, FilesSink, SinkWriter};
 use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult};
 use crate::pipeline::morsels_per_sink;
 
-type RowGroups = Vec<RowGroupIter<'static, PolarsError>>;
+type RowGroups = Vec<RowGroupIterColumns<'static, PolarsError>>;
 
 pub(super) fn init_row_group_writer_thread(
     receiver: Receiver<Option<(IdxSize, RowGroups)>>,

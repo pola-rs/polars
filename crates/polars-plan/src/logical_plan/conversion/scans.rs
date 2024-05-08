@@ -1,6 +1,7 @@
 use std::io::Read;
 use std::path::PathBuf;
 
+use either::Either;
 #[cfg(feature = "cloud")]
 use polars_io::pl_async::get_runtime;
 use polars_io::prelude::*;
@@ -66,7 +67,7 @@ pub(super) fn parquet_file_info(
 
     let mut file_info = FileInfo::new(
         schema,
-        Some(reader_schema),
+        Some(Either::Left(reader_schema)),
         (num_rows, num_rows.unwrap_or(0)),
     );
 
@@ -110,7 +111,7 @@ pub(super) fn ipc_file_info(
             metadata.schema.as_ref().into(),
             file_options.row_index.as_ref(),
         ),
-        Some(Arc::clone(&metadata.schema)),
+        Some(Either::Left(Arc::clone(&metadata.schema))),
         (None, 0),
     );
 
@@ -171,14 +172,23 @@ pub(super) fn csv_file_info(
         .clone()
         .unwrap_or_else(|| Arc::new(inferred_schema));
 
-    if let Some(rc) = &file_options.row_index {
-        let schema = Arc::make_mut(&mut schema);
-        schema.insert_at_index(0, rc.name.as_str().into(), IDX_DTYPE)?;
-    }
+    let reader_schema = if let Some(rc) = &file_options.row_index {
+        let reader_schema = schema.clone();
+        let mut output_schema = (*reader_schema).clone();
+        output_schema.insert_at_index(0, rc.name.as_str().into(), IDX_DTYPE)?;
+        schema = Arc::new(output_schema);
+        reader_schema
+    } else {
+        schema.clone()
+    };
 
     let n_bytes = reader_bytes.len();
     let estimated_n_rows = (rows_read as f64 / bytes_read as f64 * n_bytes as f64) as usize;
 
     csv_options.skip_rows += csv_options.skip_rows_after_header;
-    Ok(FileInfo::new(schema, None, (None, estimated_n_rows)))
+    Ok(FileInfo::new(
+        schema,
+        Some(Either::Right(reader_schema)),
+        (None, estimated_n_rows),
+    ))
 }

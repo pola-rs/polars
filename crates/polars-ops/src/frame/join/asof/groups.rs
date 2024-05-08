@@ -317,8 +317,8 @@ where
     let right_val_arr = right_asof.downcast_iter().next().unwrap();
 
     let n_threads = POOL.current_num_threads();
-    let split_by_left = split_df(by_left, n_threads).unwrap();
-    let split_by_right = split_df(by_right, n_threads).unwrap();
+    let split_by_left = split_df(by_left, n_threads);
+    let split_by_right = split_df(by_right, n_threads);
 
     let (build_hashes, random_state) =
         _df_rows_to_hashes_threaded_vertical(&split_by_right, None).unwrap();

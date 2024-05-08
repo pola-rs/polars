@@ -16,13 +16,13 @@ jobs:
   markdown-link-check:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-      with:
-        ref: ${{ github.event.client_payload.sha }}
-    - uses: gaurav-nelson/github-action-markdown-link-check@v1
-      with:
-        config-file: docs/mlc-config.json
-        folder-path: docs
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.client_payload.sha }}
+      - uses: gaurav-nelson/github-action-markdown-link-check@v1
+        with:
+          config-file: docs/mlc-config.json
+          folder-path: docs
 
   lint:
     runs-on: ubuntu-latest
@@ -70,8 +70,7 @@ jobs:
 
       - name: Install Python dependencies
         run: |
-          uv pip install -r py-polars/requirements-dev.txt
-          uv pip install -r docs/requirements.txt
+          uv pip install -r py-polars/requirements-dev.txt -r docs/requirements.txt
 
       - name: Set up Rust
         run: rustup show
