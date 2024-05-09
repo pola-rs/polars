@@ -588,10 +588,10 @@ def test_multiple_columns_drop() -> None:
 
 def test_concat() -> None:
     df1 = pl.DataFrame({"a": [2, 1, 3], "b": [1, 2, 3], "c": [1, 2, 3]})
-    df2 = pl.concat([df1, df1])
+    df2 = pl.concat([df1, df1], rechunk=True)
 
     assert df2.shape == (6, 3)
-    assert df2.n_chunks() == 1  # the default is to rechunk
+    assert df2.n_chunks() == 1
     assert df2.rows() == df1.rows() + df1.rows()
     assert pl.concat([df1, df1], rechunk=False).n_chunks() == 2
 
