@@ -2340,5 +2340,44 @@ def test_search_sorted(
 
 
 def test_series_from_pandas_with_dtype() -> None:
-    s = pl.Series("foo", pd.Series([1, 2, 3]), pl.Float32)
-    assert_series_equal(s, pl.Series("foo", [1, 2, 3], dtype=pl.Float32))
+    expected = pl.Series("foo", [1, 2, 3], dtype=pl.Int8)
+    s = pl.Series("foo", pd.Series([1, 2, 3]), pl.Int8)
+    assert_series_equal(s, expected)
+    s = pl.Series("foo", pd.Series([1, 2, 3], dtype="Int16"), pl.Int8)
+    assert_series_equal(s, expected)
+
+    with pytest.raises(pl.ComputeError, match="conversion from"):
+        pl.Series("foo", pd.Series([-1, 2, 3]), pl.UInt8)
+    s = pl.Series("foo", pd.Series([-1, 2, 3]), pl.UInt8, strict=False)
+    assert s.to_list() == [None, 2, 3]
+    assert s.dtype == pl.UInt8
+
+    with pytest.raises(pl.ComputeError, match="conversion from"):
+        pl.Series("foo", pd.Series([-1, 2, 3], dtype="Int8"), pl.UInt8)
+    s = pl.Series("foo", pd.Series([-1, 2, 3], dtype="Int8"), pl.UInt8, strict=False)
+    assert s.to_list() == [None, 2, 3]
+    assert s.dtype == pl.UInt8
+
+
+def test_series_from_pyarrow_with_dtype() -> None:
+    s = pl.Series("foo", pa.array([-1, 2, 3]), pl.Int8)
+    assert_series_equal(s, pl.Series("foo", [-1, 2, 3], dtype=pl.Int8))
+
+    with pytest.raises(pl.ComputeError, match="conversion from"):
+        pl.Series("foo", pa.array([-1, 2, 3]), pl.UInt8)
+
+    s = pl.Series("foo", pa.array([-1, 2, 3]), dtype=pl.UInt8, strict=False)
+    assert s.to_list() == [None, 2, 3]
+    assert s.dtype == pl.UInt8
+
+
+def test_series_from_numpy_with_dtye() -> None:
+    s = pl.Series("foo", np.array([-1, 2, 3]), pl.Int8)
+    assert_series_equal(s, pl.Series("foo", [-1, 2, 3], dtype=pl.Int8))
+
+    with pytest.raises(pl.ComputeError, match="conversion from"):
+        pl.Series("foo", np.array([-1, 2, 3]), pl.UInt8)
+
+    s = pl.Series("foo", np.array([-1, 2, 3]), dtype=pl.UInt8, strict=False)
+    assert s.to_list() == [None, 2, 3]
+    assert s.dtype == pl.UInt8

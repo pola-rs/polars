@@ -402,6 +402,7 @@ def pandas_to_pyseries(
     values: pd.Series[Any] | pd.Index[Any] | pd.DatetimeIndex,
     dtype: PolarsDataType | None = None,
     *,
+    strict: bool = True,
     nan_to_null: bool = True,
 ) -> PySeries:
     """Construct a PySeries from a pandas Series or DatetimeIndex."""
@@ -409,7 +410,7 @@ def pandas_to_pyseries(
         name = str(values.name)
     if is_simple_numpy_backed_pandas_series(values):
         return pl.Series(
-            name, values.to_numpy(), dtype=dtype, nan_to_null=nan_to_null
+            name, values.to_numpy(), dtype=dtype, nan_to_null=nan_to_null, strict=strict
         )._s
     if not _PYARROW_AVAILABLE:
         msg = (
@@ -419,11 +420,21 @@ def pandas_to_pyseries(
         )
         raise ImportError(msg)
     return arrow_to_pyseries(
-        name, plc.pandas_series_to_arrow(values, nan_to_null=nan_to_null)
+        name,
+        plc.pandas_series_to_arrow(values, nan_to_null=nan_to_null),
+        dtype=dtype,
+        strict=strict,
     )
 
 
-def arrow_to_pyseries(name: str, values: pa.Array, *, rechunk: bool = True) -> PySeries:
+def arrow_to_pyseries(
+    name: str,
+    values: pa.Array,
+    dtype: PolarsDataType | None = None,
+    *,
+    strict: bool = True,
+    rechunk: bool = True,
+) -> PySeries:
     """Construct a PySeries from an Arrow array."""
     array = plc.coerce_arrow(values)
 
@@ -460,7 +471,7 @@ def arrow_to_pyseries(name: str, values: pa.Array, *, rechunk: bool = True) -> P
         if rechunk:
             pys.rechunk(in_place=True)
 
-    return pys
+    return pys.cast(dtype, strict=strict) if dtype is not None else pys
 
 
 def numpy_to_pyseries(
