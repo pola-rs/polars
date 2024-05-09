@@ -128,8 +128,8 @@ fn write_dates() {
 #[test]
 fn test_read_csv_file() {
     let file = std::fs::File::open(FOODS_CSV).unwrap();
-    let df = CsvReader::new(file)
-        .with_path(Some(FOODS_CSV.to_string()))
+    let df = CsvReadOptions::default()
+        .into_reader_with_file_handle(file)
         .finish()
         .unwrap();
 
@@ -138,7 +138,9 @@ fn test_read_csv_file() {
 
 #[test]
 fn test_read_csv_filter() -> PolarsResult<()> {
-    let df = CsvReader::from_path(FOODS_CSV)?.finish()?;
+    let df = CsvReadOptions::default()
+        .try_into_reader_with_file_path(Some(FOODS_CSV.into()))?
+        .finish()?;
 
     let out = df.filter(&df.column("fats_g")?.gt(4)?)?;
 
@@ -162,10 +164,11 @@ fn test_parser() -> PolarsResult<()> {
 "#;
 
     let file = Cursor::new(s);
-    CsvReader::new(file)
-        .infer_schema(Some(100))
-        .has_header(true)
+    CsvReadOptions::default()
+        .with_infer_schema_length(Some(100))
+        .with_has_header(true)
         .with_ignore_errors(true)
+        .into_reader_with_file_handle(file)
         .finish()
         .unwrap();
 
@@ -178,11 +181,12 @@ fn test_parser() -> PolarsResult<()> {
     let file = Cursor::new(s);
 
     // just checks if unwrap doesn't panic
-    CsvReader::new(file)
+    CsvReadOptions::default()
         // we also check if infer schema ignores errors
-        .infer_schema(Some(10))
-        .has_header(true)
+        .with_infer_schema_length(Some(10))
+        .with_has_header(true)
         .with_ignore_errors(true)
+        .into_reader_with_file_handle(file)
         .finish()
         .unwrap();
 
@@ -197,9 +201,10 @@ fn test_parser() -> PolarsResult<()> {
 "#;
 
     let file = Cursor::new(s);
-    let df = CsvReader::new(file)
-        .infer_schema(Some(100))
-        .has_header(true)
+    let df = CsvReadOptions::default()
+        .with_infer_schema_length(Some(100))
+        .with_has_header(true)
+        .into_reader_with_file_handle(file)
         .finish()
         .unwrap();
 
@@ -215,9 +220,10 @@ fn test_parser() -> PolarsResult<()> {
     let s = "head_1,head_2\r\n1,2\r\n1,2\r\n1,2\r\n";
 
     let file = Cursor::new(s);
-    let df = CsvReader::new(file)
-        .infer_schema(Some(100))
-        .has_header(true)
+    let df = CsvReadOptions::default()
+        .with_infer_schema_length(Some(100))
+        .with_has_header(true)
+        .into_reader_with_file_handle(file)
         .finish()
         .unwrap();
 
@@ -228,9 +234,10 @@ fn test_parser() -> PolarsResult<()> {
     let s = "head_1\r\n1\r\n2\r\n3";
 
     let file = Cursor::new(s);
-    let df = CsvReader::new(file)
-        .infer_schema(Some(100))
-        .has_header(true)
+    let df = CsvReadOptions::default()
+        .with_infer_schema_length(Some(100))
+        .with_has_header(true)
+        .into_reader_with_file_handle(file)
         .finish()
         .unwrap();
 
@@ -252,11 +259,12 @@ fn test_tab_sep() {
 "#.as_ref();
 
     let file = Cursor::new(csv);
-    let df = CsvReader::new(file)
-        .infer_schema(Some(100))
-        .with_separator(b'\t')
-        .has_header(false)
+    let df = CsvReadOptions::default()
+        .with_infer_schema_length(Some(100))
+        .with_has_header(false)
         .with_ignore_errors(true)
+        .with_parse_options(CsvParseOptions::default().with_separator(b'\t'))
+        .into_reader_with_file_handle(file)
         .finish()
         .unwrap();
     assert_eq!(df.shape(), (8, 26))
@@ -348,8 +356,9 @@ fn test_newline_in_custom_quote_char() {
 "#;
 
     let file = Cursor::new(csv);
-    let df = CsvReader::new(file)
-        .with_quote_char(Some(b'\''))
+    let df = CsvReadOptions::default()
+        .with_parse_options(CsvParseOptions::default().with_quote_char(Some(b'\'')))
+        .into_reader_with_file_handle(file)
         .finish()
         .unwrap();
     assert_eq!(df.shape(), (2, 2));
@@ -370,9 +379,10 @@ hello,","," ",world,"!"
 hello,","," ",world,"!"
 "#;
     let file = Cursor::new(csv);
-    let df = CsvReader::new(file)
-        .has_header(false)
+    let df = CsvReadOptions::default()
+        .with_has_header(false)
         .with_n_threads(Some(1))
+        .into_reader_with_file_handle(file)
         .finish()
         .unwrap();
 
@@ -403,7 +413,10 @@ and more recently with desktop publishing software like Aldus PageMaker includin
 versions of Lorem Ipsum.",11
 "#;
     let file = Cursor::new(csv);
-    let df = CsvReader::new(file).finish().unwrap();
+    let df = CsvReadOptions::default()
+        .into_reader_with_file_handle(file)
+        .finish()
+        .unwrap();
 
     assert!(df.column("column_2").unwrap().equals(&Series::new(
         "column_2",
@@ -447,7 +460,11 @@ fn test_new_line_escape() {
  "#;
 
     let file = Cursor::new(s);
-    let _df = CsvReader::new(file).has_header(true).finish().unwrap();
+    CsvReadOptions::default()
+        .with_has_header(true)
+        .into_reader_with_file_handle(file)
+        .finish()
+        .unwrap();
 }
 
 #[test]
@@ -457,7 +474,11 @@ new line character","width"
 5.1,3.5,1.4
 "#;
     let file: Cursor<&str> = Cursor::new(s);
-    let df: DataFrame = CsvReader::new(file).has_header(true).finish().unwrap();
+    let df = CsvReadOptions::default()
+        .with_has_header(true)
+        .into_reader_with_file_handle(file)
+        .finish()
+        .unwrap();
     assert_eq!(df.shape(), (1, 3));
     assert_eq!(
         df.get_column_names(),
@@ -474,7 +495,11 @@ fn test_quoted_numeric() {
 "#;
 
     let file = Cursor::new(s);
-    let df = CsvReader::new(file).has_header(true).finish().unwrap();
+    let df = CsvReadOptions::default()
+        .with_has_header(true)
+        .into_reader_with_file_handle(file)
+        .finish()
+        .unwrap();
     assert_eq!(df.column("bar").unwrap().dtype(), &DataType::Int64);
     assert_eq!(df.column("foo").unwrap().dtype(), &DataType::Float64);
 }
@@ -485,11 +510,15 @@ fn test_empty_bytes_to_dataframe() {
     let schema = Schema::from_iter(fields);
     let file = Cursor::new(vec![]);
 
-    let result = CsvReader::new(file)
-        .has_header(false)
-        .with_columns(Some(schema.iter_names().map(|s| s.to_string()).collect()))
+    let result = CsvReadOptions::default()
+        .with_has_header(false)
+        .with_columns(Some(Arc::new(
+            schema.iter_names().map(|s| s.to_string()).collect(),
+        )))
         .with_schema(Some(Arc::new(schema)))
+        .into_reader_with_file_handle(file)
         .finish();
+
     assert!(result.is_ok())
 }
 
@@ -498,9 +527,10 @@ fn test_carriage_return() {
     let csv = "\"foo\",\"bar\"\r\n\"158252579.00\",\"7.5800\"\r\n\"158252579.00\",\"7.5800\"\r\n";
 
     let file = Cursor::new(csv);
-    let df = CsvReader::new(file)
-        .has_header(true)
+    let df = CsvReadOptions::default()
+        .with_has_header(true)
         .with_n_threads(Some(1))
+        .into_reader_with_file_handle(file)
         .finish()
         .unwrap();
     assert_eq!(df.shape(), (2, 2));
@@ -515,13 +545,14 @@ fn test_missing_value() {
 "#;
 
     let file = Cursor::new(csv);
-    let df = CsvReader::new(file)
-        .has_header(true)
+    let df = CsvReadOptions::default()
+        .with_has_header(true)
         .with_schema(Some(Arc::new(Schema::from_iter([
             Field::new("foo", DataType::UInt32),
             Field::new("bar", DataType::UInt32),
             Field::new("ham", DataType::UInt32),
         ]))))
+        .into_reader_with_file_handle(file)
         .finish()
         .unwrap();
     assert_eq!(df.column("ham").unwrap().len(), 3)
@@ -537,13 +568,14 @@ AUDCAD,1616455920,0.92212,0.95556,1
 AUDCAD,1616455921,0.96212,0.95666,1
 "#;
     let file = Cursor::new(csv);
-    let df = CsvReader::new(file)
-        .has_header(true)
-        .with_dtypes(Some(Arc::new(Schema::from_iter([Field::new(
+    let df = CsvReadOptions::default()
+        .with_has_header(true)
+        .with_schema_overwrite(Some(Arc::new(Schema::from_iter([Field::new(
             "b",
             DataType::Datetime(TimeUnit::Nanoseconds, None),
         )]))))
         .with_ignore_errors(true)
+        .into_reader_with_file_handle(file)
         .finish()?;
 
     assert_eq!(
@@ -570,10 +602,11 @@ fn test_skip_rows() -> PolarsResult<()> {
 ";
 
     let file = Cursor::new(csv);
-    let df = CsvReader::new(file)
-        .has_header(false)
+    let df = CsvReadOptions::default()
+        .with_has_header(false)
         .with_skip_rows(3)
-        .with_separator(b' ')
+        .with_parse_options(CsvParseOptions::default().with_separator(b' '))
+        .into_reader_with_file_handle(file)
         .finish()?;
 
     assert_eq!(df.height(), 3);
@@ -588,20 +621,22 @@ fn test_projection_idx() -> PolarsResult<()> {
 ";
 
     let file = Cursor::new(csv);
-    let df = CsvReader::new(file)
-        .has_header(false)
-        .with_projection(Some(vec![4, 5]))
-        .with_separator(b' ')
+    let df = CsvReadOptions::default()
+        .with_has_header(false)
+        .with_projection(Some(Arc::new(vec![4, 5])))
+        .with_parse_options(CsvParseOptions::default().with_separator(b' '))
+        .into_reader_with_file_handle(file)
         .finish()?;
 
     assert_eq!(df.width(), 2);
 
     // this should give out of bounds error
     let file = Cursor::new(csv);
-    let out = CsvReader::new(file)
-        .has_header(false)
-        .with_projection(Some(vec![4, 6]))
-        .with_separator(b' ')
+    let out = CsvReadOptions::default()
+        .with_has_header(false)
+        .with_projection(Some(Arc::new(vec![4, 6])))
+        .with_parse_options(CsvParseOptions::default().with_separator(b' '))
+        .into_reader_with_file_handle(file)
         .finish();
 
     assert!(out.is_err());
@@ -617,7 +652,10 @@ fn test_missing_fields() -> PolarsResult<()> {
 ";
 
     let file = Cursor::new(csv);
-    let df = CsvReader::new(file).has_header(false).finish()?;
+    let df = CsvReadOptions::default()
+        .with_has_header(false)
+        .into_reader_with_file_handle(file)
+        .finish()?;
 
     use polars_core::df;
     let expect = df![
@@ -641,9 +679,10 @@ fn test_comment_lines() -> PolarsResult<()> {
 ";
 
     let file = Cursor::new(csv);
-    let df = CsvReader::new(file)
-        .has_header(false)
-        .with_comment_prefix(Some("#"))
+    let df = CsvReadOptions::default()
+        .with_has_header(false)
+        .with_parse_options(CsvParseOptions::default().with_comment_prefix(Some("#")))
+        .into_reader_with_file_handle(file)
         .finish()?;
     assert_eq!(df.shape(), (3, 5));
 
