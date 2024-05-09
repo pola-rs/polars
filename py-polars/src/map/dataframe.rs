@@ -89,7 +89,7 @@ pub fn apply_lambda_unknown<'a>(
                         py,
                         lambda,
                         null_count,
-                        first_value.as_deref(),
+                        first_value,
                     )
                     .into_series(),
                 )
@@ -204,17 +204,17 @@ pub fn apply_lambda_with_string_out_type<'a>(
     py: Python,
     lambda: Bound<'a, PyAny>,
     init_null_count: usize,
-    first_value: Option<&str>,
+    first_value: Option<PyBackedStr>,
 ) -> StringChunked {
     let skip = usize::from(first_value.is_some());
     if init_null_count == df.height() {
         ChunkedArray::full_null("map", df.height())
     } else {
-        let iter = apply_iter::<Cow<str>>(df, py, lambda, init_null_count, skip);
+        let iter = apply_iter::<PyBackedStr>(df, py, lambda, init_null_count, skip);
         iterator_to_string(
             iter,
             init_null_count,
-            first_value.map(Cow::Borrowed),
+            first_value,
             "map",
             df.height(),
         )
