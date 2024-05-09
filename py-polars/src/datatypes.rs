@@ -1,6 +1,6 @@
 use polars::prelude::*;
 use polars_core::utils::arrow::array::Utf8ViewArray;
-use pyo3::{FromPyObject, PyAny, PyResult};
+use pyo3::prelude::*;
 
 #[cfg(feature = "object")]
 use crate::object::OBJECT_NAME;
@@ -111,8 +111,8 @@ impl From<PyDataType> for DataType {
     }
 }
 
-impl FromPyObject<'_> for PyDataType {
-    fn extract(ob: &PyAny) -> PyResult<Self> {
+impl<'py> FromPyObject<'py> for PyDataType {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let dt = ob.extract::<Wrap<DataType>>()?;
         Ok(dt.0.into())
     }
