@@ -20,7 +20,7 @@ fn get_path(paths: &[PathBuf]) -> PolarsResult<&PathBuf> {
 #[cfg(any(feature = "parquet", feature = "parquet_async",))]
 fn prepare_schema(mut schema: Schema, row_index: Option<&RowIndex>) -> SchemaRef {
     if let Some(rc) = row_index {
-        let _ = schema.insert_at_index(0, rc.name.as_str().into(), IDX_DTYPE);
+        let _ = schema.insert_at_index(0, rc.name.as_ref().into(), IDX_DTYPE);
     }
     Arc::new(schema)
 }
@@ -122,7 +122,7 @@ pub(super) fn ipc_file_info(
 pub(super) fn csv_file_info(
     paths: &[PathBuf],
     file_options: &FileScanOptions,
-    csv_options: &mut CsvReaderOptions,
+    csv_options: &mut CsvReadOptions,
 ) -> PolarsResult<FileInfo> {
     use std::io::Seek;
 
@@ -148,23 +148,25 @@ pub(super) fn csv_file_info(
     file.rewind()?;
     let reader_bytes = get_reader_bytes(&mut file).expect("could not mmap file");
 
+    let parse_options = csv_options.get_parse_options();
+
     // this needs a way to estimated bytes/rows.
     let (inferred_schema, rows_read, bytes_read) = infer_file_schema(
         &reader_bytes,
-        csv_options.separator,
+        parse_options.separator,
         csv_options.infer_schema_length,
         csv_options.has_header,
         csv_options.schema_overwrite.as_deref(),
         &mut csv_options.skip_rows,
         csv_options.skip_rows_after_header,
-        csv_options.comment_prefix.as_ref(),
-        csv_options.quote_char,
-        csv_options.eol_char,
-        csv_options.null_values.as_ref(),
-        csv_options.try_parse_dates,
+        parse_options.comment_prefix.as_ref(),
+        parse_options.quote_char,
+        parse_options.eol_char,
+        parse_options.null_values.as_ref(),
+        parse_options.try_parse_dates,
         csv_options.raise_if_empty,
         &mut csv_options.n_threads,
-        csv_options.decimal_comma,
+        parse_options.decimal_comma,
     )?;
 
     let mut schema = csv_options
@@ -175,7 +177,7 @@ pub(super) fn csv_file_info(
     let reader_schema = if let Some(rc) = &file_options.row_index {
         let reader_schema = schema.clone();
         let mut output_schema = (*reader_schema).clone();
-        output_schema.insert_at_index(0, rc.name.as_str().into(), IDX_DTYPE)?;
+        output_schema.insert_at_index(0, rc.name.as_ref().into(), IDX_DTYPE)?;
         schema = Arc::new(output_schema);
         reader_schema
     } else {

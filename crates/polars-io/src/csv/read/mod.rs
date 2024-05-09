@@ -13,7 +13,7 @@
 //! fn example() -> PolarsResult<DataFrame> {
 //!     // Prefer `from_path` over `new` as it is faster.
 //!     CsvReader::from_path("example.csv")?
-//!         .has_header(true)
+//!         .with_has_header(true)
 //!         .finish()
 //! }
 //! ```
@@ -26,7 +26,7 @@ mod reader;
 mod splitfields;
 mod utils;
 
-pub use options::{CommentPrefix, CsvEncoding, CsvReaderOptions, NullValues};
+pub use options::{CommentPrefix, CsvEncoding, CsvParseOptions, CsvReadOptions, NullValues};
 pub use parser::count_rows;
 pub use read_impl::batched_mmap::{BatchedCsvReaderMmap, OwnedBatchedCsvReaderMmap};
 pub use read_impl::batched_read::{BatchedCsvReaderRead, OwnedBatchedCsvReader};

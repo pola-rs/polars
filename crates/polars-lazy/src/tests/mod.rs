@@ -82,7 +82,11 @@ fn init_files() {
             let out_path = path.replace(".csv", ext);
 
             if std::fs::metadata(&out_path).is_err() {
-                let mut df = CsvReader::from_path(path).unwrap().finish().unwrap();
+                let mut df = CsvReadOptions::default()
+                    .try_into_reader_with_file_path(Some(path.into()))
+                    .unwrap()
+                    .finish()
+                    .unwrap();
                 let f = std::fs::File::create(&out_path).unwrap();
 
                 match ext {
@@ -175,10 +179,10 @@ pub(crate) fn get_df() -> DataFrame {
 
     let file = Cursor::new(s);
 
-    let df = CsvReader::new(file)
-        // we also check if infer schema ignores errors
-        .infer_schema(Some(3))
-        .has_header(true)
+    let df = CsvReadOptions::default()
+        .with_infer_schema_length(Some(3))
+        .with_has_header(true)
+        .into_reader_with_file_handle(file)
         .finish()
         .unwrap();
     df

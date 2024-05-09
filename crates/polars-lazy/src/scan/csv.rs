@@ -10,6 +10,7 @@ use crate::prelude::*;
 #[derive(Clone)]
 #[cfg(feature = "csv")]
 pub struct LazyCsvReader {
+    // TODO: Use CsvReadOptions here.
     path: PathBuf,
     paths: Arc<[PathBuf]>,
     separator: u8,
@@ -139,7 +140,7 @@ impl LazyCsvReader {
 
     /// Set whether the CSV file has headers
     #[must_use]
-    pub fn has_header(mut self, has_header: bool) -> Self {
+    pub fn with_has_header(mut self, has_header: bool) -> Self {
         self.has_header = has_header;
         self
     }
@@ -158,7 +159,7 @@ impl LazyCsvReader {
             if s.len() == 1 && s.chars().next().unwrap().is_ascii() {
                 CommentPrefix::Single(s.as_bytes()[0])
             } else {
-                CommentPrefix::Multi(s.to_string())
+                CommentPrefix::Multi(Arc::from(s))
             }
         });
         self
@@ -173,7 +174,7 @@ impl LazyCsvReader {
 
     /// Set the `char` used as end of line. The default is `b'\n'`.
     #[must_use]
-    pub fn with_end_of_line_char(mut self, eol_char: u8) -> Self {
+    pub fn with_eol_char(mut self, eol_char: u8) -> Self {
         self.eol_char = eol_char;
         self
     }
@@ -200,7 +201,7 @@ impl LazyCsvReader {
 
     /// Reduce memory usage at the expense of performance
     #[must_use]
-    pub fn low_memory(mut self, toggle: bool) -> Self {
+    pub fn with_low_memory(mut self, toggle: bool) -> Self {
         self.low_memory = toggle;
         self
     }
@@ -222,14 +223,14 @@ impl LazyCsvReader {
 
     /// Raise an error if CSV is empty (otherwise return an empty frame)
     #[must_use]
-    pub fn raise_if_empty(mut self, toggle: bool) -> Self {
+    pub fn with_raise_if_empty(mut self, toggle: bool) -> Self {
         self.raise_if_empty = toggle;
         self
     }
 
     /// Truncate lines that are longer than the schema.
     #[must_use]
-    pub fn truncate_ragged_lines(mut self, toggle: bool) -> Self {
+    pub fn with_truncate_ragged_lines(mut self, toggle: bool) -> Self {
         self.truncate_ragged_lines = toggle;
         self
     }

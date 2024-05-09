@@ -1,10 +1,11 @@
 use std::fs::File;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use polars_core::export::arrow::Either;
 use polars_core::POOL;
 use polars_io::csv::read::{
-    BatchedCsvReaderMmap, BatchedCsvReaderRead, CsvEncoding, CsvReader, CsvReaderOptions,
+    BatchedCsvReaderMmap, BatchedCsvReaderRead, CsvEncoding, CsvReadOptions, CsvReader,
 };
 use polars_plan::global::_set_n_rows_for_scan;
 use polars_plan::prelude::FileScanOptions;
@@ -17,12 +18,12 @@ pub(crate) struct CsvSource {
     #[allow(dead_code)]
     // this exist because we need to keep ownership
     schema: SchemaRef,
-    reader: Option<*mut CsvReader<'static, File>>,
+    reader: Option<*mut CsvReader<File>>,
     batched_reader:
         Option<Either<*mut BatchedCsvReaderMmap<'static>, *mut BatchedCsvReaderRead<'static>>>,
     n_threads: usize,
     path: Option<PathBuf>,
-    options: Option<CsvReaderOptions>,
+    options: Option<CsvReadOptions>,
     file_options: Option<FileScanOptions>,
     verbose: bool,
 }
@@ -60,36 +61,26 @@ impl CsvSource {
             eprintln!("STREAMING CHUNK SIZE: {chunk_size} rows")
         }
 
-        let reader = CsvReader::from_path(&path)
-            .unwrap()
-            .has_header(options.has_header)
-            .with_dtypes(Some(self.schema.clone()))
-            .with_separator(options.separator)
-            .with_ignore_errors(options.ignore_errors)
-            .with_skip_rows(options.skip_rows)
+        let low_memory = options.low_memory;
+        let parse_options = Arc::unwrap_or_clone(options.clone().parse_options);
+
+        let reader: CsvReader<File> = options
+            .with_schema_overwrite(Some(self.schema.clone()))
             .with_n_rows(n_rows)
-            .with_columns(with_columns.map(|mut cols| std::mem::take(Arc::make_mut(&mut cols))))
-            .low_memory(options.low_memory)
-            .with_null_values(options.null_values)
-            .with_encoding(CsvEncoding::LossyUtf8)
-            ._with_comment_prefix(options.comment_prefix)
-            .with_quote_char(options.quote_char)
-            .with_end_of_line_char(options.eol_char)
-            .with_encoding(options.encoding)
-            // never rechunk in streaming
+            .with_columns(with_columns)
             .with_rechunk(false)
-            .with_chunk_size(chunk_size)
             .with_row_index(file_options.row_index)
-            .with_n_threads(options.n_threads)
-            .with_try_parse_dates(options.try_parse_dates)
-            .truncate_ragged_lines(options.truncate_ragged_lines)
-            .with_decimal_comma(options.decimal_comma)
-            .raise_if_empty(options.raise_if_empty);
+            .with_parse_options(parse_options.with_encoding(
+                // TODO: Confirm why we set lossy utf8 here.
+                CsvEncoding::LossyUtf8,
+            ))
+            .with_path(Some(path))
+            .try_into_reader_with_file_path(None)?;
 
         let reader = Box::new(reader);
-        let reader = Box::leak(reader) as *mut CsvReader<'static, File>;
+        let reader = Box::leak(reader) as *mut CsvReader<File>;
 
-        let batched_reader = if options.low_memory {
+        let batched_reader = if low_memory {
             let batched_reader = unsafe { Box::new((*reader).batched_borrowed_read()?) };
             let batched_reader = Box::leak(batched_reader) as *mut BatchedCsvReaderRead;
             Either::Right(batched_reader)
@@ -106,7 +97,7 @@ impl CsvSource {
     pub(crate) fn new(
         path: PathBuf,
         schema: SchemaRef,
-        options: CsvReaderOptions,
+        options: CsvReadOptions,
         file_options: FileScanOptions,
         verbose: bool,
     ) -> PolarsResult<Self> {

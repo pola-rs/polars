@@ -128,7 +128,7 @@ pub fn to_alp_impl(
             if let Some(row_index) = &file_options.row_index {
                 let schema = Arc::make_mut(&mut file_info.schema);
                 *schema = schema
-                    .new_inserting_at_index(0, row_index.name.as_str().into(), IDX_DTYPE)
+                    .new_inserting_at_index(0, row_index.name.as_ref().into(), IDX_DTYPE)
                     .unwrap();
             }
 

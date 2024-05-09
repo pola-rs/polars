@@ -47,7 +47,7 @@ fn get_scan_columns(
             // we shouldn't project the row-count column, as that is generated
             // in the scan
             let push = match row_index {
-                Some(rc) if name.as_ref() != rc.name.as_str() => true,
+                Some(rc) if name != rc.name => true,
                 None => true,
                 _ => false,
             };
