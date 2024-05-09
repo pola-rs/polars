@@ -290,15 +290,18 @@ impl<'py> FromPyObject<'py> for Wrap<Field> {
 }
 
 impl<'py> FromPyObject<'py> for Wrap<DataType> {
-    fn extract(ob: &PyAny) -> PyResult<Self> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let py = ob.py();
         let type_name = ob.get_type().qualname()?;
 
         let dtype = match &*type_name {
             "DataTypeClass" => {
                 // just the class, not an object
-                let name = ob.getattr(intern!(py, "__name__"))?.str()?.to_str()?;
-                match name {
+                let name = ob
+                    .getattr(intern!(py, "__name__"))?
+                    .str()?
+                    .extract::<PyBackedStr>()?;
+                match &*name {
                     "UInt8" => DataType::UInt8,
                     "UInt16" => DataType::UInt16,
                     "UInt32" => DataType::UInt32,

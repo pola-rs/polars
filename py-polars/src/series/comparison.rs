@@ -189,7 +189,7 @@ impl_lt_eq_num!(lt_eq_str, &str);
 struct PyDecimal(i128, usize);
 
 impl<'source> FromPyObject<'source> for PyDecimal {
-    fn extract(obj: &'source PyAny) -> PyResult<Self> {
+    fn extract_bound(obj: &Bound<'source, PyAny>) -> PyResult<Self> {
         if let Ok(val) = obj.extract() {
             return Ok(PyDecimal(val, 0));
         }
