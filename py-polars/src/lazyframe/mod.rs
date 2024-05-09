@@ -13,7 +13,7 @@ use polars::time::*;
 use polars_core::prelude::*;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3::pybacked::PyBackedStr;
+use pyo3::pybacked::{PyBackedBytes, PyBackedStr};
 use pyo3::types::{PyBytes, PyDict, PyList};
 pub(crate) use visit::PyExprIR;
 
@@ -59,9 +59,9 @@ impl PyLazyFrame {
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
         // Used in pickle/pickling
-        match state.extract::<&PyBytes>(py) {
+        match state.extract::<PyBackedBytes>(py) {
             Ok(s) => {
-                let lp: DslPlan = ciborium::de::from_reader(s.as_bytes())
+                let lp: DslPlan = ciborium::de::from_reader(&*s)
                     .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
                 self.ldf = LazyFrame::from(lp);
                 Ok(())

@@ -444,7 +444,7 @@ impl<'s> FromPyObject<'s> for Wrap<Row<'s>> {
 
 impl<'py> FromPyObject<'py> for Wrap<Schema> {
     fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
-        let dict = ob.extract::<&PyDict>()?;
+        let dict = ob.downcast::<PyDict>()?;
 
         Ok(Wrap(
             dict.iter()

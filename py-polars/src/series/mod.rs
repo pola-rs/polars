@@ -653,9 +653,11 @@ impl PySeries {
     #[cfg(feature = "ipc_streaming")]
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
         // Used in pickle/pickling
-        match state.extract::<&PyBytes>(py) {
+
+        use pyo3::pybacked::PyBackedBytes;
+        match state.extract::<PyBackedBytes>(py) {
             Ok(s) => {
-                let c = Cursor::new(s.as_bytes());
+                let c = Cursor::new(&s);
                 let reader = IpcStreamReader::new(c);
                 let mut df = reader.finish().map_err(PyPolarsErr::from)?;
 
