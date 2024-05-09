@@ -29,7 +29,7 @@ impl CsvExec {
                 // If we don't set it to 0 here, it will skip double the amount of rows.
                 // But if we set it to 0, it will still skip the requested amount of rows.
                 // The reason I currently cannot fathom.
-                // TODO: Find out why
+                // TODO: Find out why. Maybe has something to do with schema inference.
                 0,
             )
             .with_schema(Some(
@@ -40,7 +40,8 @@ impl CsvExec {
             .with_rechunk(self.file_options.rechunk)
             .with_row_index(self.file_options.row_index.clone())
             .with_parse_options(
-                // TODO: Confirm why we set lossy utf8 here.
+                // TODO: We don't know why LossyUtf8 is set here, so remove it
+                // to see if it breaks anything.
                 Arc::unwrap_or_clone(self.options.parse_options.clone())
                     .with_encoding(CsvEncoding::LossyUtf8),
             )

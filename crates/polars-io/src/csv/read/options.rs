@@ -35,8 +35,6 @@ pub struct CsvReadOptions {
     pub skip_rows_after_header: usize,
     pub infer_schema_length: Option<usize>,
     pub raise_if_empty: bool,
-    // TODO: Ask if we should rename this to `ignore_parse_errors` to make it
-    // clear this targets parsing errors.
     pub ignore_errors: bool,
 }
 
