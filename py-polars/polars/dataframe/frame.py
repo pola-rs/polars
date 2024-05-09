@@ -144,6 +144,7 @@ if TYPE_CHECKING:
         ColumnWidthsDefinition,
         ComparisonOperator,
         ConditionalFormatDict,
+        ConnectionOrCursor,
         CsvQuoteStyle,
         DbWriteEngine,
         FillNullStrategy,
@@ -3161,13 +3162,14 @@ class DataFrame:
     def write_database(
         self,
         table_name: str,
-        connection: str,
+        connection: ConnectionOrCursor | str,
         *,
         if_table_exists: DbWriteMode = "fail",
-        engine: DbWriteEngine = "sqlalchemy",
+        engine: DbWriteEngine | None = None,
+        engine_options: dict[str, Any] | None = None,
     ) -> int:
         """
-        Write a polars frame to a database.
+        Write the data in a Polars DataFrame to a database.
 
         Parameters
         ----------
@@ -3176,7 +3178,8 @@ class DataFrame:
             SQL database. If your table name contains special characters, it should
             be quoted.
         connection
-            Connection URI string, for example:
+            An existing SQLAlchemy or ADBC connection against the target database, or
+            a URI string that will be used to instantiate such a connection, such as:
 
             * "postgresql://user:pass@server:port/database"
             * "sqlite:////path/to/database.db"
@@ -3187,7 +3190,38 @@ class DataFrame:
             * 'append' will append to an existing table.
             * 'fail' will fail if table already exists.
         engine : {'sqlalchemy', 'adbc'}
-            Select the engine to use for writing frame data.
+            Select the engine to use for writing frame data; only necessary when
+            supplying a URI string (defaults to 'sqlalchemy' if unset)
+        engine_options
+            Additional options to pass to the engine's associated insert method:
+
+            * "sqlalchemy" - currently inserts using Pandas' `to_sql` method, though
+              this will eventually be phased out in favour of a native solution.
+            * "adbc" - inserts using the ADBC cursor's `adbc_ingest` method.
+
+        Examples
+        --------
+        Insert into a temporary table using a PostgreSQL URI and the ADBC engine:
+
+        >>> df.write_database(
+        ...     table_name="target_table",
+        ...     connection="postgresql://user:pass@server:port/database",
+        ...     engine="adbc",
+        ...     engine_options={"temporary": True},
+        ... )  # doctest: +SKIP
+
+        Insert into a table using a `pyodbc` SQLAlchemy connection to SQL Server
+        that was instantiated with "fast_executemany=True" to improve performance:
+
+        >>> pyodbc_uri = (
+        ...     "mssql+pyodbc://user:pass@server:1433/test?"
+        ...     "driver=ODBC+Driver+18+for+SQL+Server"
+        ... )
+        >>> engine = create_engine(pyodbc_uri, fast_executemany=True)  # doctest: +SKIP
+        >>> df.write_database(
+        ...     table_name="target_table",
+        ...     connection=engine,
+        ... )  # doctest: +SKIP
 
         Returns
         -------
@@ -3199,6 +3233,16 @@ class DataFrame:
             allowed = ", ".join(repr(m) for m in valid_write_modes)
             msg = f"write_database `if_table_exists` must be one of {{{allowed}}}, got {if_table_exists!r}"
             raise ValueError(msg)
+
+        if engine is None:
+            if (
+                isinstance(connection, str)
+                or (module_root := type(connection).__module__.split(".", 1)[0])
+                == "sqlalchemy"
+            ):
+                engine = "sqlalchemy"
+            elif module_root.startswith("adbc"):
+                engine = "adbc"
 
         def unpack_table_name(name: str) -> tuple[str | None, str | None, str]:
             """Unpack optionally qualified table name to catalog/schema/table tuple."""
@@ -3237,7 +3281,12 @@ class DataFrame:
                 )
                 raise ValueError(msg)
 
-            with _open_adbc_connection(connection) as conn, conn.cursor() as cursor:
+            conn = (
+                _open_adbc_connection(connection)
+                if isinstance(connection, str)
+                else connection
+            )
+            with conn, conn.cursor() as cursor:
                 catalog, db_schema, unpacked_table_name = unpack_table_name(table_name)
                 n_rows: int
                 if adbc_version >= (0, 7):
@@ -3265,26 +3314,35 @@ class DataFrame:
                     )
                 else:
                     n_rows = cursor.adbc_ingest(
-                        unpacked_table_name, self.to_arrow(), mode
+                        table_name=unpacked_table_name,
+                        data=self.to_arrow(),
+                        mode=mode,
+                        **(engine_options or {}),
                     )
                 conn.commit()
             return n_rows
 
         elif engine == "sqlalchemy":
             if not _PANDAS_AVAILABLE:
-                msg = "writing with engine 'sqlalchemy' currently requires pandas.\n\nInstall with: pip install pandas"
+                msg = "writing with 'sqlalchemy' engine currently requires pandas.\n\nInstall with: pip install pandas"
                 raise ModuleNotFoundError(msg)
-            elif parse_version(pd.__version__) < (1, 5):
-                msg = f"writing with engine 'sqlalchemy' requires pandas 1.5.x or higher, found {pd.__version__!r}"
+            elif (pd_version := parse_version(pd.__version__)) < (1, 5):
+                msg = f"writing with 'sqlalchemy' engine requires pandas >= 1.5; found {pd.__version__!r}"
                 raise ModuleUpgradeRequired(msg)
-            try:
-                from sqlalchemy import create_engine
-            except ModuleNotFoundError as exc:
-                msg = "'sqlalchemy' not found\n\nInstall with: pip install polars[sqlalchemy]"
-                raise ModuleNotFoundError(msg) from exc
 
+            import_optional(
+                module_name="sqlalchemy",
+                min_version=("2.0" if pd_version >= parse_version("2.2") else "1.4"),
+                min_err_prefix="pandas >= 2.2 requires",
+            )
             # note: the catalog (database) should be a part of the connection string
-            engine_sa = create_engine(connection)
+            from sqlalchemy.engine import create_engine
+
+            engine_sa = (
+                create_engine(connection)
+                if isinstance(connection, str)
+                else connection.engine  # type: ignore[union-attr]
+            )
             catalog, db_schema, unpacked_table_name = unpack_table_name(table_name)
             if catalog:
                 msg = f"Unexpected three-part table name; provide the database/catalog ({catalog!r}) on the connection URI"
@@ -3300,11 +3358,16 @@ class DataFrame:
                 con=engine_sa,
                 if_exists=if_table_exists,
                 index=False,
+                **(engine_options or {}),
             )
             return -1 if res is None else res
-        else:
+
+        elif isinstance(engine, str):
             msg = f"engine {engine!r} is not supported"
             raise ValueError(msg)
+        else:
+            msg = f"unrecognised connection type {connection!r}"
+            raise TypeError(msg)
 
     @overload
     def write_delta(

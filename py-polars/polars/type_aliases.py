@@ -22,7 +22,7 @@ from typing import (
 if TYPE_CHECKING:
     import sys
 
-    from sqlalchemy import Engine
+    from sqlalchemy.engine import Connection, Engine
     from sqlalchemy.orm import Session
 
     from polars import DataFrame, Expr, LazyFrame, Series
@@ -247,4 +247,5 @@ class Cursor(BasicCursor):  # noqa: D101
         """Fetch results in batches."""
 
 
-ConnectionOrCursor = Union[BasicConnection, BasicCursor, Cursor, "Engine", "Session"]
+AlchemyConnection = Union["Connection", "Engine", "Session"]
+ConnectionOrCursor = Union[BasicConnection, BasicCursor, Cursor, AlchemyConnection]
