@@ -2902,7 +2902,7 @@ class Series:
 
         Concatenate Series with rechunk = True
 
-        >>> pl.concat([s, s2]).chunk_lengths()
+        >>> pl.concat([s, s2], rechunk=True).chunk_lengths()
         [6]
 
         Concatenate Series with rechunk = False
