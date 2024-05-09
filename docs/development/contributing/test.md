@@ -25,10 +25,13 @@ This will compile the Rust bindings and then run the unit tests.
 
 If you're working in the Python code only, you can avoid recompiling every time by simply running `pytest` instead from your virtual environment.
 
-By default, slow tests are skipped.
-Slow tests are marked as such using a [custom pytest marker](https://docs.pytest.org/en/latest/example/markers.html).
-If you wish to run slow tests, run `pytest -m slow`.
-Or run `pytest -m ""` to run _all_ tests, regardless of marker.
+By default, "slow" tests and "ci-only" tests are skipped for local test runs.
+Such tests are marked using a [custom pytest marker](https://docs.pytest.org/en/latest/example/markers.html).
+To run these tests specifically, you can run `pytest -m slow`, `pytest -m ci_only`, `pytest -m slow ci_only`
+or run `pytest -m ""` to run _all_ tests, regardless of marker.
+
+Note that the "ci-only" tests may require you to run `make requirements-all` to get additional dependencies
+(such as `torch`) that are otherwise not installed as part of the default Polars development environment.
 
 Tests can be run in parallel by running `pytest -n auto`.
 The parallelization is handled by [`pytest-xdist`](https://pytest-xdist.readthedocs.io/en/latest/).
