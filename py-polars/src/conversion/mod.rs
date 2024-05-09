@@ -61,12 +61,12 @@ impl<T> From<T> for Wrap<T> {
 }
 
 // extract a Rust DataFrame from a python DataFrame, that is DataFrame<PyDataFrame<RustDataFrame>>
-pub(crate) fn get_df(obj: &PyAny) -> PyResult<DataFrame> {
+pub(crate) fn get_df(obj: &Bound<'_, PyAny>) -> PyResult<DataFrame> {
     let pydf = obj.getattr(intern!(obj.py(), "_df"))?;
     Ok(pydf.extract::<PyDataFrame>()?.df)
 }
 
-pub(crate) fn get_lf(obj: &PyAny) -> PyResult<LazyFrame> {
+pub(crate) fn get_lf(obj: &Bound<'_, PyAny>) -> PyResult<LazyFrame> {
     let pydf = obj.getattr(intern!(obj.py(), "_ldf"))?;
     Ok(pydf.extract::<PyLazyFrame>()?.ldf)
 }
@@ -455,7 +455,7 @@ impl FromPyObject<'_> for Wrap<Schema> {
 
 impl IntoPy<PyObject> for Wrap<&Schema> {
     fn into_py(self, py: Python<'_>) -> PyObject {
-        let dict = PyDict::new(py);
+        let dict = PyDict::new_bound(py);
         for (k, v) in self.0.iter() {
             dict.set_item(k.as_str(), Wrap(v.clone())).unwrap();
         }

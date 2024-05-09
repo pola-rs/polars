@@ -1,3 +1,4 @@
+use std::io::Cursor;
 use std::ops::Neg;
 
 use polars::lazy::dsl;
@@ -6,6 +7,7 @@ use polars::series::ops::NullBehavior;
 use polars_core::series::IsSorted;
 use pyo3::class::basic::CompareOp;
 use pyo3::prelude::*;
+use pyo3::pybacked::PyBackedBytes;
 use pyo3::types::PyBytes;
 
 use crate::conversion::{parse_fill_null_strategy, vec_extract_wrapped, Wrap};
@@ -83,14 +85,15 @@ impl PyExpr {
         ciborium::ser::into_writer(&self.inner, &mut writer)
             .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
 
-        Ok(PyBytes::new(py, &writer).to_object(py))
+        Ok(PyBytes::new_bound(py, &writer).to_object(py))
     }
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
         // Used in pickle/pickling
-        match state.extract::<&PyBytes>(py) {
+        match state.extract::<PyBackedBytes>(py) {
             Ok(s) => {
-                self.inner = ciborium::de::from_reader(s.as_bytes())
+                let cursor = Cursor::new(&*s);
+                self.inner = ciborium::de::from_reader(cursor)
                     .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
                 Ok(())
             },

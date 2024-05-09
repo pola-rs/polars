@@ -9,7 +9,7 @@ use pyo3::types::PyList;
 
 use crate::error::PyPolarsErr;
 
-pub fn field_to_rust(obj: &PyAny) -> PyResult<Field> {
+pub fn field_to_rust(obj: Bound<'_, PyAny>) -> PyResult<Field> {
     let schema = Box::new(ffi::ArrowSchema::empty());
     let schema_ptr = &*schema as *const ffi::ArrowSchema;
 
@@ -20,7 +20,7 @@ pub fn field_to_rust(obj: &PyAny) -> PyResult<Field> {
 }
 
 // PyList<Field> which you get by calling `list(schema)`
-pub fn pyarrow_schema_to_rust(obj: &PyList) -> PyResult<Schema> {
+pub fn pyarrow_schema_to_rust(obj: &Bound<'_, PyList>) -> PyResult<Schema> {
     obj.into_iter().map(field_to_rust).collect()
 }
 

@@ -153,7 +153,7 @@ pub fn cols(names: Vec<String>) -> PyExpr {
 
 #[pyfunction]
 pub fn concat_lf(
-    seq: &PyAny,
+    seq: &Bound<'_, PyAny>,
     rechunk: bool,
     parallel: bool,
     to_supertypes: bool,
@@ -163,7 +163,7 @@ pub fn concat_lf(
 
     for res in seq.iter()? {
         let item = res?;
-        let lf = get_lf(item)?;
+        let lf = get_lf(&item)?;
         lfs.push(lf);
     }
 
@@ -270,7 +270,7 @@ pub fn datetime(
 
 #[pyfunction]
 pub fn concat_lf_diagonal(
-    lfs: &PyAny,
+    lfs: &Bound<'_, PyAny>,
     rechunk: bool,
     parallel: bool,
     to_supertypes: bool,
@@ -280,7 +280,7 @@ pub fn concat_lf_diagonal(
     let lfs = iter
         .map(|item| {
             let item = item?;
-            get_lf(item)
+            get_lf(&item)
         })
         .collect::<PyResult<Vec<_>>>()?;
 
@@ -298,13 +298,13 @@ pub fn concat_lf_diagonal(
 }
 
 #[pyfunction]
-pub fn concat_lf_horizontal(lfs: &PyAny, parallel: bool) -> PyResult<PyLazyFrame> {
+pub fn concat_lf_horizontal(lfs: &Bound<'_, PyAny>, parallel: bool) -> PyResult<PyLazyFrame> {
     let iter = lfs.iter()?;
 
     let lfs = iter
         .map(|item| {
             let item = item?;
-            get_lf(item)
+            get_lf(&item)
         })
         .collect::<PyResult<Vec<_>>>()?;
 
@@ -392,7 +392,7 @@ pub fn nth(n: i64) -> PyExpr {
 }
 
 #[pyfunction]
-pub fn lit(value: &PyAny, allow_object: bool) -> PyResult<PyExpr> {
+pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool) -> PyResult<PyExpr> {
     if value.is_instance_of::<PyBool>() {
         let val = value.extract::<bool>().unwrap();
         Ok(dsl::lit(val).into())
@@ -406,12 +406,7 @@ pub fn lit(value: &PyAny, allow_object: bool) -> PyResult<PyExpr> {
         let val = float.extract::<f64>().unwrap();
         Ok(Expr::Literal(LiteralValue::Float(val)).into())
     } else if let Ok(pystr) = value.downcast::<PyString>() {
-        Ok(dsl::lit(
-            pystr
-                .to_str()
-                .expect("could not transform Python string to Rust Unicode"),
-        )
-        .into())
+        Ok(dsl::lit(pystr.to_string()).into())
     } else if let Ok(series) = value.extract::<PySeries>() {
         Ok(dsl::lit(series.series).into())
     } else if value.is_none() {
