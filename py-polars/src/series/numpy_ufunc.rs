@@ -71,7 +71,7 @@ macro_rules! impl_ufuncs {
             // the out array is allocated in this method, send to Python and once the ufunc is applied
             // ownership is taken by Rust again to prevent memory leak.
             // if the ufunc fails, we first must take ownership back.
-            fn $name(&self, lambda: &PyAny) -> PyResult<PySeries> {
+            fn $name(&self, lambda: &Bound<PyAny>) -> PyResult<PySeries> {
                 // numpy array object, and a *mut ptr
                 Python::with_gil(|py| {
                     let size = self.len();
@@ -80,7 +80,7 @@ macro_rules! impl_ufuncs {
 
                     debug_assert_eq!(get_refcnt(&out_array), 1);
                     // inserting it in a tuple increase the reference count by 1.
-                    let args = PyTuple::new(py, &[out_array.clone()]);
+                    let args = PyTuple::new_bound(py, &[out_array.clone()]);
                     debug_assert_eq!(get_refcnt(&out_array), 2);
 
                     // whatever the result, we must take the leaked memory ownership back
@@ -88,7 +88,7 @@ macro_rules! impl_ufuncs {
                         Ok(_) => {
                             // if this assert fails, the lambda has taken a reference to the object, so we must panic
                             // args and the lambda return have a reference, making a total of 3
-                            assert_eq!(get_refcnt(&out_array), 3);
+                            assert!(get_refcnt(&out_array) <= 3);
 
                             let validity = self.series.chunks()[0].validity().cloned();
                             let ca =

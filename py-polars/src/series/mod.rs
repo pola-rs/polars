@@ -647,7 +647,7 @@ impl PySeries {
             .with_pl_flavor(true)
             .finish(&mut df)
             .expect("ipc writer");
-        Ok(PyBytes::new(py, &buf).to_object(py))
+        Ok(PyBytes::new_bound(py, &buf).to_object(py))
     }
 
     #[cfg(feature = "ipc_streaming")]

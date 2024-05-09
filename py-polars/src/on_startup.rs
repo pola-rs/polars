@@ -39,7 +39,7 @@ fn python_function_caller_df(df: DataFrame, lambda: &PyObject) -> PolarsResult<D
         })?;
         // unpack the wrapper in a PyDataFrame
         let py_pydf = result_df_wrapper.getattr(py, "_df").map_err(|_| {
-            let pytype = result_df_wrapper.as_ref(py).get_type();
+            let pytype = result_df_wrapper.bind(py).get_type();
             PolarsError::ComputeError(
                 format!("Expected 'LazyFrame.map' to return a 'DataFrame', got a '{pytype}'",)
                     .into(),
@@ -58,7 +58,7 @@ fn python_function_caller_df(df: DataFrame, lambda: &PyObject) -> PolarsResult<D
 fn warning_function(msg: &str, warning: PolarsWarning) {
     Python::with_gil(|py| {
         let warn_fn = UTILS
-            .as_ref(py)
+            .bind(py)
             .getattr(intern!(py, "_polars_warn"))
             .unwrap();
 

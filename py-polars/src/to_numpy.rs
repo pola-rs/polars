@@ -43,8 +43,7 @@ where
     std::mem::forget(owner);
     PY_ARRAY_API.PyArray_SetBaseObject(py, array as *mut PyArrayObject, owner_ptr);
 
-    let any: &PyAny = py.from_owned_ptr(array);
-    any.into_py(py)
+    Py::from_owned_ptr(py, array)
 }
 
 #[pymethods]
