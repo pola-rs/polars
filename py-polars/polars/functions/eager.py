@@ -24,7 +24,7 @@ def concat(
     items: Iterable[PolarsType],
     *,
     how: ConcatMethod = "vertical",
-    rechunk: bool = True,
+    rechunk: bool = False,
     parallel: bool = True,
 ) -> PolarsType:
     """
