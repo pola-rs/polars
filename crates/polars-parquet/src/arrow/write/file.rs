@@ -53,7 +53,7 @@ impl<W: Write> FileWriter<W> {
     pub fn try_new(writer: W, schema: ArrowSchema, options: WriteOptions) -> PolarsResult<Self> {
         let parquet_schema = to_parquet_schema(&schema)?;
 
-        let created_by = Some("Polars".to_string());
+        let created_by = Some(format!("Polars (build {})", env!("POLARS_GIT_HASH")));
 
         Ok(Self {
             writer: crate::parquet::write::FileWriter::new(
