@@ -57,10 +57,7 @@ fn python_function_caller_df(df: DataFrame, lambda: &PyObject) -> PolarsResult<D
 
 fn warning_function(msg: &str, warning: PolarsWarning) {
     Python::with_gil(|py| {
-        let warn_fn = UTILS
-            .bind(py)
-            .getattr(intern!(py, "_polars_warn"))
-            .unwrap();
+        let warn_fn = UTILS.bind(py).getattr(intern!(py, "_polars_warn")).unwrap();
 
         if let Err(e) = warn_fn.call1((msg, Wrap(warning))) {
             eprintln!("{e}")
