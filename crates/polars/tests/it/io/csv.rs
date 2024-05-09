@@ -694,9 +694,10 @@ fn test_comment_lines() -> PolarsResult<()> {
 ";
 
     let file = Cursor::new(csv);
-    let df = CsvReader::new(file)
-        .has_header(false)
-        .with_comment_prefix(Some("!#&"))
+    let df = CsvReadOptions::default()
+        .with_has_header(false)
+        .with_parse_options(CsvParseOptions::default().with_comment_prefix(Some("#")))
+        .into_reader_with_file_handle(file)
         .finish()?;
     assert_eq!(df.shape(), (3, 5));
 
@@ -709,9 +710,10 @@ fn test_comment_lines() -> PolarsResult<()> {
 ";
 
     let file = Cursor::new(csv);
-    let df = CsvReader::new(file)
-        .has_header(true)
-        .with_comment_prefix(Some("%"))
+    let df = CsvReadOptions::default()
+        .with_has_header(true)
+        .with_parse_options(CsvParseOptions::default().with_comment_prefix(Some("%")))
+        .into_reader_with_file_handle(file)
         .finish()?;
     assert_eq!(df.shape(), (3, 5));
 
