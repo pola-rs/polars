@@ -233,6 +233,16 @@ impl CsvReadOptions {
         self.ignore_errors = ignore_errors;
         self
     }
+
+    /// Apply a function to the parse options.
+    pub fn map_parse_options<F: Fn(CsvParseOptions) -> CsvParseOptions>(
+        mut self,
+        map_func: F,
+    ) -> Self {
+        let parse_options = Arc::unwrap_or_clone(self.parse_options);
+        self.parse_options = Arc::new(map_func(parse_options));
+        self
+    }
 }
 
 impl CsvParseOptions {

@@ -728,9 +728,12 @@ null-value,b,bar
 ";
 
     let file = Cursor::new(csv);
-    let df = CsvReader::new(file)
-        .has_header(false)
-        .with_null_values(NullValues::AllColumnsSingle("null-value".to_string()).into())
+    let df = CsvReadOptions::default()
+        .with_parse_options(
+            CsvParseOptions::default()
+                .with_null_values(Some(NullValues::AllColumnsSingle("null-value".to_string()))),
+        )
+        .into_reader_with_file_handle(file)
         .finish()?;
     assert!(df.get_columns()[0].null_count() > 0);
     Ok(())
@@ -981,9 +984,13 @@ fn test_scientific_floats() -> PolarsResult<()> {
 fn test_tsv_header_offset() -> PolarsResult<()> {
     let csv = "foo\tbar\n\t1000011\t1\n\t1000026\t2\n\t1000949\t2";
     let file = Cursor::new(csv);
-    let df = CsvReader::new(file)
-        .truncate_ragged_lines(true)
-        .with_separator(b'\t')
+    let df = CsvReadOptions::default()
+        .with_parse_options(
+            CsvParseOptions::default()
+                .with_truncate_ragged_lines(true)
+                .with_separator(b'\t'),
+        )
+        .into_reader_with_file_handle(file)
         .finish()?;
 
     assert_eq!(df.shape(), (3, 2));
@@ -1002,8 +1009,12 @@ fn test_null_values_infer_schema() -> PolarsResult<()> {
 3,NA
 5,6"#;
     let file = Cursor::new(csv);
-    let df = CsvReader::new(file)
-        .with_null_values(Some(NullValues::AllColumnsSingle("NA".into())))
+    let df = CsvReadOptions::default()
+        .with_parse_options(
+            CsvParseOptions::default()
+                .with_null_values(Some(NullValues::AllColumnsSingle("NA".into()))),
+        )
+        .into_reader_with_file_handle(file)
         .finish()?;
     let expected = &[DataType::Int64, DataType::Int64];
     assert_eq!(df.dtypes(), expected);
@@ -1014,7 +1025,10 @@ fn test_null_values_infer_schema() -> PolarsResult<()> {
 fn test_comma_separated_field_in_tsv() -> PolarsResult<()> {
     let csv = "first\tsecond\n1\t2.3,2.4\n3\t4.5,4.6\n";
     let file = Cursor::new(csv);
-    let df = CsvReader::new(file).with_separator(b'\t').finish()?;
+    let df = CsvReadOptions::default()
+        .map_parse_options(|parse_options| parse_options.with_separator(b'\t'))
+        .into_reader_with_file_handle(file)
+        .finish()?;
     assert_eq!(df.dtypes(), &[DataType::Int64, DataType::String]);
     Ok(())
 }
@@ -1026,8 +1040,9 @@ a,"b",c,d,1
 a,"b",c,d,1
 a,b,c,d,1"#;
     let file = Cursor::new(csv);
-    let df = CsvReader::new(file)
-        .with_projection(Some(vec![1, 4]))
+    let df = CsvReadOptions::default()
+        .with_projection(Some(Arc::new(vec![1, 4])))
+        .into_reader_with_file_handle(file)
         .finish()?;
     assert_eq!(df.shape(), (3, 2));
 

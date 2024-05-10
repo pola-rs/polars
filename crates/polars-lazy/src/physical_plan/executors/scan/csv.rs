@@ -39,12 +39,13 @@ impl CsvExec {
             .with_columns(with_columns)
             .with_rechunk(self.file_options.rechunk)
             .with_row_index(self.file_options.row_index.clone())
-            .with_parse_options(
-                // TODO: We don't know why LossyUtf8 is set here, so remove it
-                // to see if it breaks anything.
-                Arc::unwrap_or_clone(self.options.parse_options.clone())
-                    .with_encoding(CsvEncoding::LossyUtf8),
-            )
+            .map_parse_options(|parse_options| {
+                parse_options.with_encoding(
+                    // TODO: We don't know why LossyUtf8 is set here, so remove it
+                    // to see if it breaks anything.
+                    CsvEncoding::LossyUtf8,
+                )
+            })
             .with_path(Some(self.path.clone()))
             .try_into_reader_with_file_path(None)?
             ._with_predicate(predicate)

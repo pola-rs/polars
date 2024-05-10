@@ -31,8 +31,9 @@ use crate::utils::{get_reader_bytes, resolve_homedir};
 /// use std::fs::File;
 ///
 /// fn example() -> PolarsResult<DataFrame> {
-///     CsvReader::from_path("iris.csv")?
+///     CsvReadOptions::default()
 ///             .with_has_header(true)
+///             .try_into_reader_with_path("iris.csv")?
 ///             .finish()
 /// }
 /// ```
@@ -315,7 +316,6 @@ impl<R> SerReader<R> for CsvReader<R>
 where
     R: MmapBytesReader,
 {
-    /// Create a new CsvReader from a file/stream.
     fn new(reader: R) -> Self {
         CsvReader {
             reader,
