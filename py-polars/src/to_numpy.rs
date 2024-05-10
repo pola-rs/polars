@@ -8,7 +8,6 @@ use numpy::{
 use polars_core::prelude::*;
 use polars_core::utils::try_get_supertype;
 use polars_core::with_match_physical_numeric_polars_type;
-use pyo3::intern;
 use pyo3::prelude::*;
 
 use crate::conversion::Wrap;
@@ -68,8 +67,7 @@ impl PySeries {
         match self.series.dtype() {
             dt if dt.is_numeric() => {
                 let dims = [self.series.len()].into_dimension();
-                // Object to the series keep the memory alive.
-                let owner = self.clone().into_py(py);
+                let owner = self.clone().into_py(py); // Keep the Series memory alive.
                 with_match_physical_numeric_polars_type!(dt, |$T| {
                     let np_dtype = <$T as PolarsNumericType>::Native::get_dtype_bound(py);
                     let ca: &ChunkedArray<$T> = self.series.unpack::<$T>().unwrap();
@@ -89,16 +87,7 @@ impl PySeries {
                 })
             },
             dt @ (DataType::Datetime(_, _) | DataType::Duration(_)) => {
-                let np_dtype_str = match dt {
-                    DataType::Datetime(TimeUnit::Milliseconds, _) => intern!(py, "<M8[ms]"),
-                    DataType::Datetime(TimeUnit::Microseconds, _) => intern!(py, "<M8[us]"),
-                    DataType::Datetime(TimeUnit::Nanoseconds, _) => intern!(py, "<M8[ns]"),
-                    DataType::Duration(TimeUnit::Milliseconds) => intern!(py, "<m8[ms]"),
-                    DataType::Duration(TimeUnit::Microseconds) => intern!(py, "<m8[us]"),
-                    DataType::Duration(TimeUnit::Nanoseconds) => intern!(py, "<m8[ns]"),
-                    _ => unreachable!(),
-                };
-                let np_dtype = PyArrayDescr::new_bound(py, np_dtype_str).unwrap();
+                let np_dtype = polars_dtype_to_np_temporal_dtype(py, dt);
 
                 let phys = self.series.to_physical_repr();
                 let ca = phys.i64().unwrap();
@@ -123,6 +112,35 @@ impl PySeries {
     }
 }
 
+/// Get the NumPy temporal data type associated with the given Polars [`DataType`].
+fn polars_dtype_to_np_temporal_dtype<'a>(
+    py: Python<'a>,
+    dtype: &DataType,
+) -> Bound<'a, PyArrayDescr> {
+    use numpy::datetime::{units, Datetime, Timedelta};
+    match dtype {
+        DataType::Datetime(TimeUnit::Milliseconds, _) => {
+            Datetime::<units::Milliseconds>::get_dtype_bound(py)
+        },
+        DataType::Datetime(TimeUnit::Microseconds, _) => {
+            Datetime::<units::Microseconds>::get_dtype_bound(py)
+        },
+        DataType::Datetime(TimeUnit::Nanoseconds, _) => {
+            Datetime::<units::Nanoseconds>::get_dtype_bound(py)
+        },
+        DataType::Duration(TimeUnit::Milliseconds) => {
+            Timedelta::<units::Milliseconds>::get_dtype_bound(py)
+        },
+        DataType::Duration(TimeUnit::Microseconds) => {
+            Timedelta::<units::Microseconds>::get_dtype_bound(py)
+        },
+        DataType::Duration(TimeUnit::Nanoseconds) => {
+            Timedelta::<units::Nanoseconds>::get_dtype_bound(py)
+        },
+        _ => panic!("only Datetime/Duration inputs supported, got {}", dtype),
+    }
+}
+
 #[pymethods]
 #[allow(clippy::wrong_self_convention)]
 impl PyDataFrame {
@@ -143,8 +161,7 @@ impl PyDataFrame {
             return None;
         }
 
-        // Object to the dataframe keep the memory alive.
-        let owner = self.clone().into_py(py);
+        let owner = self.clone().into_py(py); // Keep the DataFrame memory alive.
 
         fn get_ptr<T>(py: Python, columns: &[Series], owner: PyObject) -> Option<PyObject>
         where
@@ -207,7 +224,7 @@ impl PyDataFrame {
         let st = st?;
 
         #[rustfmt::skip]
-            let pyarray = match st {
+        let pyarray = match st {
             DataType::UInt8 => self.df.to_ndarray::<UInt8Type>(order.0).ok()?.into_pyarray_bound(py).into_py(py),
             DataType::Int8 => self.df.to_ndarray::<Int8Type>(order.0).ok()?.into_pyarray_bound(py).into_py(py),
             DataType::UInt16 => self.df.to_ndarray::<UInt16Type>(order.0).ok()?.into_pyarray_bound(py).into_py(py),
