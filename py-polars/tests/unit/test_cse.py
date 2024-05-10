@@ -734,6 +734,7 @@ def test_cse_no_projection_15980() -> None:
     ) == {"x": ["a", "a"]}
 
 
+@pytest.mark.debug()
 def test_cse_series_collision_16138(capfd: Any, monkeypatch: Any) -> None:
     monkeypatch.setenv("POLARS_VERBOSE", "1")
     holdings = pl.DataFrame(
