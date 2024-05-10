@@ -195,7 +195,8 @@ reinterpret = ["polars-core/reinterpret", "polars-lazy?/reinterpret", "polars-op
 repeat_by = ["polars-ops/repeat_by", "polars-lazy?/repeat_by"]
 replace = ["polars-ops/replace", "polars-lazy?/replace"]
 rle = ["polars-lazy?/rle"]
-rolling_window = ["polars-core/rolling_window", "polars-lazy?/rolling_window", "polars-time/rolling_window"]
+rolling_window = ["polars-core/rolling_window", "polars-lazy?/rolling_window"]
+rolling_window_by = ["polars-core/rolling_window_by", "polars-lazy?/rolling_window_by", "polars-time/rolling_window_by"]
 round_series = ["polars-ops/round_series", "polars-lazy?/round_series"]
 row_hash = ["polars-core/row_hash", "polars-lazy?/row_hash"]
 search_sorted = ["polars-lazy?/search_sorted"]
@@ -366,6 +367,7 @@ docs-selection = [
   "take_opt_iter",
   "cum_agg",
   "rolling_window",
+  "rolling_window_by",
   "interpolate",
   "diff",
   "rank",

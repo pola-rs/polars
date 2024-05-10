@@ -443,7 +443,7 @@ pub(crate) fn group_by_values_iter_lookahead(
     })
 }
 
-#[cfg(feature = "rolling_window")]
+#[cfg(feature = "rolling_window_by")]
 #[inline]
 pub(crate) fn group_by_values_iter(
     period: Duration,

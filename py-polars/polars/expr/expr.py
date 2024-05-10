@@ -33,6 +33,8 @@ from polars._utils.deprecation import (
     deprecate_renamed_parameter,
     deprecate_saturating,
     issue_deprecation_warning,
+    validate_rolling_aggs_arguments,
+    validate_rolling_by_aggs_arguments,
 )
 from polars._utils.parse_expr_input import (
     parse_as_expression,
@@ -6165,7 +6167,7 @@ class Expr:
     @unstable()
     def rolling_min_by(
         self,
-        by: str,
+        by: IntoExpr,
         window_size: timedelta | str,
         *,
         min_periods: int = 1,
@@ -6285,12 +6287,11 @@ class Expr:
         └───────┴─────────────────────┴─────────────────┘
         """
         window_size = deprecate_saturating(window_size)
-        window_size, min_periods = _prepare_rolling_window_args(
-            window_size, min_periods
-        )
+        window_size = _prepare_rolling_by_window_args(window_size)
+        by = parse_as_expression(by)
         return self._from_pyexpr(
-            self._pyexpr.rolling_min(
-                window_size, None, min_periods, False, by, closed, warn_if_unsorted
+            self._pyexpr.rolling_min_by(
+                by, window_size, min_periods, closed, warn_if_unsorted
             )
         )
 
@@ -6443,12 +6444,11 @@ class Expr:
         └───────┴─────────────────────┴─────────────────┘
         """
         window_size = deprecate_saturating(window_size)
-        window_size, min_periods = _prepare_rolling_window_args(
-            window_size, min_periods
-        )
+        window_size = _prepare_rolling_by_window_args(window_size)
+        by = parse_as_expression(by)
         return self._from_pyexpr(
-            self._pyexpr.rolling_max(
-                window_size, None, min_periods, False, by, closed, warn_if_unsorted
+            self._pyexpr.rolling_max_by(
+                by, window_size, min_periods, closed, warn_if_unsorted
             )
         )
 
@@ -6603,16 +6603,13 @@ class Expr:
         └───────┴─────────────────────┴──────────────────┘
         """
         window_size = deprecate_saturating(window_size)
-        window_size, min_periods = _prepare_rolling_window_args(
-            window_size, min_periods
-        )
+        window_size = _prepare_rolling_by_window_args(window_size)
+        by = parse_as_expression(by)
         return self._from_pyexpr(
-            self._pyexpr.rolling_mean(
-                window_size,
-                None,
-                min_periods,
-                False,
+            self._pyexpr.rolling_mean_by(
                 by,
+                window_size,
+                min_periods,
                 closed,
                 warn_if_unsorted,
             )
@@ -6767,12 +6764,11 @@ class Expr:
         └───────┴─────────────────────┴─────────────────┘
         """
         window_size = deprecate_saturating(window_size)
-        window_size, min_periods = _prepare_rolling_window_args(
-            window_size, min_periods
-        )
+        window_size = _prepare_rolling_by_window_args(window_size)
+        by = parse_as_expression(by)
         return self._from_pyexpr(
-            self._pyexpr.rolling_sum(
-                window_size, None, min_periods, False, by, closed, warn_if_unsorted
+            self._pyexpr.rolling_sum_by(
+                by, window_size, min_periods, closed, warn_if_unsorted
             )
         )
 
@@ -6929,16 +6925,13 @@ class Expr:
         └───────┴─────────────────────┴─────────────────┘
         """
         window_size = deprecate_saturating(window_size)
-        window_size, min_periods = _prepare_rolling_window_args(
-            window_size, min_periods
-        )
+        window_size = _prepare_rolling_by_window_args(window_size)
+        by = parse_as_expression(by)
         return self._from_pyexpr(
-            self._pyexpr.rolling_std(
-                window_size,
-                None,
-                min_periods,
-                False,
+            self._pyexpr.rolling_std_by(
                 by,
+                window_size,
+                min_periods,
                 closed,
                 ddof,
                 warn_if_unsorted,
@@ -7097,16 +7090,13 @@ class Expr:
         └───────┴─────────────────────┴─────────────────┘
         """
         window_size = deprecate_saturating(window_size)
-        window_size, min_periods = _prepare_rolling_window_args(
-            window_size, min_periods
-        )
+        window_size = _prepare_rolling_by_window_args(window_size)
+        by = parse_as_expression(by)
         return self._from_pyexpr(
-            self._pyexpr.rolling_var(
-                window_size,
-                None,
-                min_periods,
-                False,
+            self._pyexpr.rolling_var_by(
                 by,
+                window_size,
+                min_periods,
                 closed,
                 ddof,
                 warn_if_unsorted,
@@ -7238,12 +7228,11 @@ class Expr:
         └───────┴─────────────────────┴────────────────────┘
         """
         window_size = deprecate_saturating(window_size)
-        window_size, min_periods = _prepare_rolling_window_args(
-            window_size, min_periods
-        )
+        window_size = _prepare_rolling_by_window_args(window_size)
+        by = parse_as_expression(by)
         return self._from_pyexpr(
-            self._pyexpr.rolling_median(
-                window_size, None, min_periods, False, by, closed, warn_if_unsorted
+            self._pyexpr.rolling_median_by(
+                by, window_size, min_periods, closed, warn_if_unsorted
             )
         )
 
@@ -7378,18 +7367,15 @@ class Expr:
         └───────┴─────────────────────┴──────────────────────┘
         """
         window_size = deprecate_saturating(window_size)
-        window_size, min_periods = _prepare_rolling_window_args(
-            window_size, min_periods
-        )
+        window_size = _prepare_rolling_by_window_args(window_size)
+        by = parse_as_expression(by)
         return self._from_pyexpr(
-            self._pyexpr.rolling_quantile(
+            self._pyexpr.rolling_quantile_by(
+                by,
                 quantile,
                 interpolation,
                 window_size,
-                None,
                 min_periods,
-                False,
-                by,
                 closed,
                 warn_if_unsorted,
             )
@@ -7612,9 +7598,22 @@ class Expr:
                 "`rolling_min(..., by='foo')`, please use `rolling_min_by('foo', ...)`.",
                 version="0.20.24",
             )
+            validate_rolling_by_aggs_arguments(weights, center=center)
+            return self.rolling_min_by(
+                by=by,
+                # integer `window_size` was already not supported when `by` was passed
+                window_size=window_size,  # type: ignore[arg-type]
+                min_periods=min_periods,
+                closed=closed or "right",
+                warn_if_unsorted=warn_if_unsorted,
+            )
+        window_size = validate_rolling_aggs_arguments(window_size, closed)
         return self._from_pyexpr(
             self._pyexpr.rolling_min(
-                window_size, weights, min_periods, center, by, closed, warn_if_unsorted
+                window_size,
+                weights,
+                min_periods,
+                center,
             )
         )
 
@@ -7861,9 +7860,22 @@ class Expr:
                 "`rolling_max(..., by='foo')`, please use `rolling_max_by('foo', ...)`.",
                 version="0.20.24",
             )
+            validate_rolling_by_aggs_arguments(weights, center=center)
+            return self.rolling_max_by(
+                by=by,
+                # integer `window_size` was already not supported when `by` was passed
+                window_size=window_size,  # type: ignore[arg-type]
+                min_periods=min_periods,
+                closed=closed or "right",
+                warn_if_unsorted=warn_if_unsorted,
+            )
+        window_size = validate_rolling_aggs_arguments(window_size, closed)
         return self._from_pyexpr(
             self._pyexpr.rolling_max(
-                window_size, weights, min_periods, center, by, closed, warn_if_unsorted
+                window_size,
+                weights,
+                min_periods,
+                center,
             )
         )
 
@@ -8112,15 +8124,22 @@ class Expr:
                 "`rolling_mean(..., by='foo')`, please use `rolling_mean_by('foo', ...)`.",
                 version="0.20.24",
             )
+            validate_rolling_by_aggs_arguments(weights, center=center)
+            return self.rolling_mean_by(
+                by=by,
+                # integer `window_size` was already not supported when `by` was passed
+                window_size=window_size,  # type: ignore[arg-type]
+                min_periods=min_periods,
+                closed=closed or "right",
+                warn_if_unsorted=warn_if_unsorted,
+            )
+        window_size = validate_rolling_aggs_arguments(window_size, closed)
         return self._from_pyexpr(
             self._pyexpr.rolling_mean(
                 window_size,
                 weights,
                 min_periods,
                 center,
-                by,
-                closed,
-                warn_if_unsorted,
             )
         )
 
@@ -8367,9 +8386,22 @@ class Expr:
                 "`rolling_sum(..., by='foo')`, please use `rolling_sum_by('foo', ...)`.",
                 version="0.20.24",
             )
+            validate_rolling_by_aggs_arguments(weights, center=center)
+            return self.rolling_sum_by(
+                by=by,
+                # integer `window_size` was already not supported when `by` was passed
+                window_size=window_size,  # type: ignore[arg-type]
+                min_periods=min_periods,
+                closed=closed or "right",
+                warn_if_unsorted=warn_if_unsorted,
+            )
+        window_size = validate_rolling_aggs_arguments(window_size, closed)
         return self._from_pyexpr(
             self._pyexpr.rolling_sum(
-                window_size, weights, min_periods, center, by, closed, warn_if_unsorted
+                window_size,
+                weights,
+                min_periods,
+                center,
             )
         )
 
@@ -8616,16 +8648,24 @@ class Expr:
                 "`rolling_std(..., by='foo')`, please use `rolling_std_by('foo', ...)`.",
                 version="0.20.24",
             )
+            validate_rolling_by_aggs_arguments(weights, center=center)
+            return self.rolling_std_by(
+                by=by,
+                # integer `window_size` was already not supported when `by` was passed
+                window_size=window_size,  # type: ignore[arg-type]
+                min_periods=min_periods,
+                closed=closed or "right",
+                ddof=ddof,
+                warn_if_unsorted=warn_if_unsorted,
+            )
+        window_size = validate_rolling_aggs_arguments(window_size, closed)
         return self._from_pyexpr(
             self._pyexpr.rolling_std(
                 window_size,
                 weights,
                 min_periods,
                 center,
-                by,
-                closed,
                 ddof,
-                warn_if_unsorted,
             )
         )
 
@@ -8871,16 +8911,24 @@ class Expr:
                 "`rolling_var(..., by='foo')`, please use `rolling_var_by('foo', ...)`.",
                 version="0.20.24",
             )
+            validate_rolling_by_aggs_arguments(weights, center=center)
+            return self.rolling_var_by(
+                by=by,
+                # integer `window_size` was already not supported when `by` was passed
+                window_size=window_size,  # type: ignore[arg-type]
+                min_periods=min_periods,
+                closed=closed or "right",
+                ddof=ddof,
+                warn_if_unsorted=warn_if_unsorted,
+            )
+        window_size = validate_rolling_aggs_arguments(window_size, closed)
         return self._from_pyexpr(
             self._pyexpr.rolling_var(
                 window_size,
                 weights,
                 min_periods,
                 center,
-                by,
-                closed,
                 ddof,
-                warn_if_unsorted,
             )
         )
 
@@ -9046,9 +9094,22 @@ class Expr:
                 "`rolling_median(..., by='foo')`, please use `rolling_median_by('foo', ...)`.",
                 version="0.20.24",
             )
+            validate_rolling_by_aggs_arguments(weights, center=center)
+            return self.rolling_median_by(
+                by=by,
+                # integer `window_size` was already not supported when `by` was passed
+                window_size=window_size,  # type: ignore[arg-type]
+                min_periods=min_periods,
+                closed=closed or "right",
+                warn_if_unsorted=warn_if_unsorted,
+            )
+        window_size = validate_rolling_aggs_arguments(window_size, closed)
         return self._from_pyexpr(
             self._pyexpr.rolling_median(
-                window_size, weights, min_periods, center, by, closed, warn_if_unsorted
+                window_size,
+                weights,
+                min_periods,
+                center,
             )
         )
 
@@ -9247,6 +9308,17 @@ class Expr:
                 "`rolling_quantile(..., by='foo')`, please use `rolling_quantile_by('foo', ...)`.",
                 version="0.20.24",
             )
+            validate_rolling_by_aggs_arguments(weights, center=center)
+            return self.rolling_quantile_by(
+                by=by,
+                # integer `window_size` was already not supported when `by` was passed
+                window_size=window_size,  # type: ignore[arg-type]
+                min_periods=min_periods,
+                closed=closed or "right",
+                warn_if_unsorted=warn_if_unsorted,
+                quantile=quantile,
+            )
+        window_size = validate_rolling_aggs_arguments(window_size, closed)
         return self._from_pyexpr(
             self._pyexpr.rolling_quantile(
                 quantile,
@@ -9255,9 +9327,6 @@ class Expr:
                 weights,
                 min_periods,
                 center,
-                by,
-                closed,
-                warn_if_unsorted,
             )
         )
 
@@ -11940,7 +12009,7 @@ def _prepare_alpha(
 def _prepare_rolling_window_args(
     window_size: int | timedelta | str,
     min_periods: int | None = None,
-) -> tuple[str, int]:
+) -> tuple[int | str, int]:
     if isinstance(window_size, int):
         if window_size < 1:
             msg = "`window_size` must be positive"
@@ -11948,9 +12017,16 @@ def _prepare_rolling_window_args(
 
         if min_periods is None:
             min_periods = window_size
-        window_size = f"{window_size}i"
     elif isinstance(window_size, timedelta):
         window_size = parse_as_duration_string(window_size)
     if min_periods is None:
         min_periods = 1
     return window_size, min_periods
+
+
+def _prepare_rolling_by_window_args(
+    window_size: timedelta | str,
+) -> str:
+    if isinstance(window_size, timedelta):
+        window_size = parse_as_duration_string(window_size)
+    return window_size
