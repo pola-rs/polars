@@ -1055,7 +1055,10 @@ fn test_last_line_incomplete() -> PolarsResult<()> {
     let csv = "b5bbf310dffe3372fd5d37a18339fea5,6a2752ffad059badb5f1f3c7b9e4905d,-2,0.033191,811.619 0.487341,16,GGTGTGAAATTTCACACC,TTTAATTATAATTAAG,+
 b5bbf310dffe3372fd5d37a18339fea5,e3fd7b95be3453a34361da84f815687d,-2,0.0335936,821.465 0.490834,1";
     let file = Cursor::new(csv);
-    let df = CsvReader::new(file).has_header(false).finish()?;
+    let df = CsvReadOptions::default()
+        .with_has_header(false)
+        .into_reader_with_file_handle(file)
+        .finish()?;
     assert_eq!(df.shape(), (2, 9));
     Ok(())
 }
@@ -1089,16 +1092,23 @@ foo,bar
 5,6
 "#;
     let file = Cursor::new(csv);
-    let df = CsvReader::new(file.clone()).with_skip_rows(2).finish()?;
+    let df = CsvReadOptions::default()
+        .with_skip_rows(2)
+        .into_reader_with_file_handle(file.clone())
+        .finish()?;
     assert_eq!(df.get_column_names(), &["foo", "bar"]);
     assert_eq!(df.shape(), (3, 2));
-    let df = CsvReader::new(file.clone())
+    let df = CsvReadOptions::default()
         .with_skip_rows(2)
         .with_skip_rows_after_header(2)
+        .into_reader_with_file_handle(file.clone())
         .finish()?;
     assert_eq!(df.get_column_names(), &["foo", "bar"]);
     assert_eq!(df.shape(), (1, 2));
-    let df = CsvReader::new(file).truncate_ragged_lines(true).finish()?;
+    let df = CsvReadOptions::default()
+        .map_parse_options(|parse_options| parse_options.with_truncate_ragged_lines(true))
+        .into_reader_with_file_handle(file)
+        .finish()?;
     assert_eq!(df.shape(), (5, 1));
 
     Ok(())
@@ -1106,22 +1116,24 @@ foo,bar
 
 #[test]
 fn test_with_row_index() -> PolarsResult<()> {
-    let df = CsvReader::from_path(FOODS_CSV)?
+    let df = CsvReadOptions::default()
         .with_row_index(Some(RowIndex {
             name: "rc".into(),
             offset: 0,
         }))
+        .try_into_reader_with_file_path(Some(FOODS_CSV.into()))?
         .finish()?;
     let rc = df.column("rc")?;
     assert_eq!(
         rc.idx()?.into_no_null_iter().collect::<Vec<_>>(),
         (0 as IdxSize..27).collect::<Vec<_>>()
     );
-    let df = CsvReader::from_path(FOODS_CSV)?
+    let df = CsvReadOptions::default()
         .with_row_index(Some(RowIndex {
             name: "rc_2".into(),
             offset: 10,
         }))
+        .try_into_reader_with_file_path(Some(FOODS_CSV.into()))?
         .finish()?;
     let rc = df.column("rc_2")?;
     assert_eq!(
@@ -1135,7 +1147,10 @@ fn test_with_row_index() -> PolarsResult<()> {
 fn test_empty_string_cols() -> PolarsResult<()> {
     let csv = "\nabc\n\nxyz\n";
     let file = Cursor::new(csv);
-    let df = CsvReader::new(file).has_header(false).finish()?;
+    let df = CsvReadOptions::default()
+        .with_has_header(false)
+        .into_reader_with_file_handle(file)
+        .finish()?;
     let s = df.column("column_1")?;
     let ca = s.str()?;
     assert_eq!(
@@ -1145,7 +1160,10 @@ fn test_empty_string_cols() -> PolarsResult<()> {
 
     let csv = ",\nabc,333\n,666\nxyz,999";
     let file = Cursor::new(csv);
-    let df = CsvReader::new(file).has_header(false).finish()?;
+    let df = CsvReadOptions::default()
+        .with_has_header(false)
+        .into_reader_with_file_handle(file)
+        .finish()?;
     let expected = df![
         "column_1" => [None, Some("abc"), None, Some("xyz")],
         "column_2" => [None, Some(333i64), Some(666), Some(999)]
