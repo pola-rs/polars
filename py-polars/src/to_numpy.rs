@@ -149,6 +149,7 @@ impl PyDataFrame {
             return None;
         }
         let first = self.df.get_columns().first().unwrap().dtype();
+        // TODO: Support Datetime/Duration types
         if !first.is_numeric() {
             return None;
         }
