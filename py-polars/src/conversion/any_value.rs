@@ -4,7 +4,9 @@ use std::borrow::Cow;
 use polars::chunked_array::object::PolarsObjectSafe;
 use polars::datatypes::{DataType, Field, OwnedObject, PlHashMap, TimeUnit};
 use polars::prelude::{AnyValue, Series};
+use polars_core::export::chrono::{NaiveDateTime, NaiveTime, TimeDelta};
 use polars_core::utils::any_values_to_supertype_and_n_dtypes;
+use polars_core::utils::arrow::temporal_conversions::date32_to_date;
 use pyo3::exceptions::{PyOverflowError, PyTypeError};
 use pyo3::intern;
 use pyo3::prelude::*;
@@ -33,6 +35,17 @@ impl<'py> FromPyObject<'py> for Wrap<AnyValue<'py>> {
     }
 }
 
+fn elapsed_offset_to_timedelta(elapsed: i64, time_unit: TimeUnit) -> TimeDelta {
+    let (in_second, nano_multiplier) = match time_unit {
+        TimeUnit::Nanoseconds => (1_000_000_000, 1),
+        TimeUnit::Microseconds => (1_000_000, 1_000),
+        TimeUnit::Milliseconds => (1_000, 1_000_000),
+    };
+    let elapsed_sec = elapsed / in_second;
+    let elapsed_nanos = nano_multiplier * (elapsed % in_second);
+    TimeDelta::new(elapsed_sec, elapsed_nanos as u32).unwrap()
+}
+
 pub(crate) fn any_value_into_py_object(av: AnyValue, py: Python) -> PyObject {
     let utils = UTILS.bind(py);
     match av {
@@ -59,25 +72,38 @@ pub(crate) fn any_value_into_py_object(av: AnyValue, py: Python) -> PyObject {
             s.into_py(py)
         },
         AnyValue::Date(v) => {
-            let convert = utils.getattr(intern!(py, "to_py_date")).unwrap();
-            convert.call1((v,)).unwrap().into_py(py)
+            let date = date32_to_date(v);
+            date.into_py(py)
         },
         AnyValue::Datetime(v, time_unit, time_zone) => {
-            let convert = utils.getattr(intern!(py, "to_py_datetime")).unwrap();
-            let time_unit = time_unit.to_ascii();
-            convert
-                .call1((v, time_unit, time_zone.as_ref().map(|s| s.as_str())))
-                .unwrap()
-                .into_py(py)
+            if let Some(time_zone) = time_zone {
+                // https://github.com/PyO3/pyo3/issues/3266 means timezone
+                // conversions are lossy, so we can't just rely on PyO3, but
+                // once that's fixed we can use the following code instead:
+                //
+                // let tz: chrono_tz::Tz = time_zone.parse().unwrap();
+                // let datetime = tz.from_local_datetime(&naive_datetime).earliest().unwrap();
+                // datetime.into_py(py)
+                let convert = utils.getattr(intern!(py, "to_py_datetime")).unwrap();
+                let time_unit = time_unit.to_ascii();
+                convert
+                    .call1((v, time_unit, time_zone.as_str()))
+                    .unwrap()
+                    .into_py(py)
+            } else {
+                let naive_datetime =
+                    NaiveDateTime::UNIX_EPOCH + elapsed_offset_to_timedelta(v, time_unit);
+                return naive_datetime.into_py(py);
+            }
         },
         AnyValue::Duration(v, time_unit) => {
-            let convert = utils.getattr(intern!(py, "to_py_timedelta")).unwrap();
-            let time_unit = time_unit.to_ascii();
-            convert.call1((v, time_unit)).unwrap().into_py(py)
+            let time_delta = elapsed_offset_to_timedelta(v, time_unit);
+            time_delta.into_py(py)
         },
         AnyValue::Time(v) => {
-            let convert = utils.getattr(intern!(py, "to_py_time")).unwrap();
-            convert.call1((v,)).unwrap().into_py(py)
+            let time = NaiveTime::from_hms_opt(0, 0, 0).unwrap()
+                + elapsed_offset_to_timedelta(v, TimeUnit::Nanoseconds);
+            time.into_py(py)
         },
         AnyValue::Array(v, _) | AnyValue::List(v) => PySeries::new(v).to_list(),
         ref av @ AnyValue::Struct(_, _, flds) => struct_dict(py, av._iter_struct_av(), flds),
