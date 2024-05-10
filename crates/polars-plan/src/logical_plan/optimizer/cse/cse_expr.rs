@@ -6,6 +6,8 @@ use crate::constants::CSE_REPLACED;
 use crate::logical_plan::projection_expr::ProjectionExprs;
 use crate::prelude::visitor::AexprNode;
 
+const SERIES_LIMIT: usize = 1000;
+
 // We use hashes to get an Identifier
 // but this is very hard to debug, so we also have a version that
 // uses a string trail.
@@ -51,7 +53,7 @@ mod identifier_impl {
             !self.inner.is_empty()
         }
 
-        pub fn materialize(&self) -> String {
+        pub fn materialize(&self, _arena: &Arena<AExpr>) -> String {
             format!("{}{}", CSE_REPLACED, self.inner)
         }
 
@@ -115,8 +117,19 @@ mod identifier_impl {
             self.inner.is_some()
         }
 
-        pub fn materialize(&self) -> String {
-            format!("{}{}", CSE_REPLACED, self.inner.unwrap_or(0))
+        pub fn materialize(&self, arena: &Arena<AExpr>) -> String {
+            // This can collide, so we must use strong hashes
+            // The hash of `Series` is very poor, so we traverse it again visit all elements.
+            let last = self.last_node.unwrap();
+            let mut h = self.inner.unwrap_or(0);
+            for (_, ae) in arena.iter(last.node()) {
+                if let AExpr::Literal(LiteralValue::Series(s)) = ae {
+                    debug_assert!(s.len() < SERIES_LIMIT);
+                    // Relatively cheap because of Series limit.
+                    h = _boost_hash_combine(h, s.hash(self.hb.clone()).sum().unwrap());
+                }
+            }
+            format!("{}{:#x}", CSE_REPLACED, h)
         }
 
         pub fn combine(&mut self, other: &Identifier) {
@@ -333,7 +346,24 @@ impl ExprIdentifierVisitor<'_> {
             // Don't allow this for now, as we can get `null().cast()` in ternary expressions.
             // TODO! Add a typed null
             AExpr::Literal(LiteralValue::Null) => REFUSE_NO_MEMBER,
-            AExpr::Column(_) | AExpr::Literal(_) | AExpr::Alias(_, _) => REFUSE_ALLOW_MEMBER,
+            AExpr::Literal(s) => {
+                match s {
+                    LiteralValue::Series(s) => {
+                        let dtype = s.dtype();
+
+                        // Object and nested types are harder to hash and compare.
+                        let allow = !(dtype.is_nested() | dtype.is_object());
+
+                        if s.len() < SERIES_LIMIT && allow {
+                            REFUSE_ALLOW_MEMBER
+                        } else {
+                            REFUSE_NO_MEMBER
+                        }
+                    },
+                    _ => REFUSE_ALLOW_MEMBER,
+                }
+            },
+            AExpr::Column(_) | AExpr::Alias(_, _) => REFUSE_ALLOW_MEMBER,
             AExpr::Len => {
                 if self.is_group_by {
                     REFUSE_NO_MEMBER
@@ -600,7 +630,7 @@ impl RewritingVisitor for CommonSubExprRewriter<'_> {
             id.ae_node().hashable_and_cmp(arena)
         );
 
-        let name = id.materialize();
+        let name = id.materialize(arena);
         node.assign(AExpr::col(name.as_ref()), arena);
         self.rewritten = true;
 
@@ -722,7 +752,7 @@ impl CommonSubExprOptimizer {
             // Add the tmp columns
             for id in self.replaced_identifiers.inner.keys() {
                 let (node, _count) = self.se_count.get(id, expr_arena).unwrap();
-                let name = id.materialize();
+                let name = id.materialize(expr_arena);
                 let out_e = ExprIR::new(*node, OutputName::Alias(ColumnName::from(name)));
                 new_expr.push(out_e)
             }

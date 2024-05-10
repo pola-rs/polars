@@ -732,3 +732,38 @@ def test_cse_no_projection_15980() -> None:
     assert df.filter(pl.col("x").eq("a")).select("x").collect().to_dict(
         as_series=False
     ) == {"x": ["a", "a"]}
+
+
+def test_cse_series_collision_16138(capfd: Any, monkeypatch: Any) -> None:
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    holdings = pl.DataFrame(
+        {
+            "fund_currency": ["CLP", "CLP"],
+            "asset_currency": ["EUR", "USA"],
+        }
+    )
+
+    usd = ["USD"]
+    eur = ["EUR"]
+    clp = ["CLP"]
+
+    currency_factor_query_dict = [
+        pl.col("asset_currency").is_in(eur) & pl.col("fund_currency").is_in(clp),
+        pl.col("asset_currency").is_in(eur) & pl.col("fund_currency").is_in(usd),
+        pl.col("asset_currency").is_in(clp) & pl.col("fund_currency").is_in(clp),
+        pl.col("asset_currency").is_in(usd) & pl.col("fund_currency").is_in(usd),
+    ]
+
+    factor_holdings = holdings.lazy().with_columns(
+        [
+            pl.coalesce(currency_factor_query_dict).alias("currency_factor"),
+        ]
+    )
+
+    assert factor_holdings.collect(comm_subexpr_elim=True).to_dict(as_series=False) == {
+        "fund_currency": ["CLP", "CLP"],
+        "asset_currency": ["EUR", "USA"],
+        "currency_factor": [True, False],
+    }
+    captured = capfd.readouterr().err
+    assert "3 CSE" in captured
