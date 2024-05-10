@@ -87,37 +87,36 @@ where
                     #[allow(unused_assignments)]
                     let mut out = IsSorted::Not;
 
+                    // This can be relatively expensive because of chunks, so delay as much as possible.
                     let l_val = unsafe { ca.value_unchecked(l_idx) };
                     let r_val = unsafe { other.value_unchecked(r_idx) };
 
-                    #[allow(clippy::never_loop)]
-                    loop {
-                        match (
-                            ca.len() - ca.null_count() == 1,
-                            other.len() - other.null_count() == 1,
-                        ) {
-                            (true, true) => {
-                                out = [IsSorted::Descending, IsSorted::Ascending]
-                                    [l_val.tot_le(&r_val) as usize];
-                                break;
-                            },
-                            (true, false) => out = other.is_sorted_flag(),
-                            _ => out = ca.is_sorted_flag(),
-                        }
+                    match (
+                        ca.len() - ca.null_count() == 1,
+                        other.len() - other.null_count() == 1,
+                    ) {
+                        (true, true) => {
+                            out = [IsSorted::Descending, IsSorted::Ascending]
+                                [l_val.tot_le(&r_val) as usize];
+                            drop(l_val);
+                            drop(r_val);
+                            ca.set_sorted_flag(out);
+                            return;
+                        },
+                        (true, false) => out = other.is_sorted_flag(),
+                        _ => out = ca.is_sorted_flag(),
+                    }
 
-                        debug_assert!(!matches!(out, IsSorted::Not));
+                    debug_assert!(!matches!(out, IsSorted::Not));
 
-                        let check = if matches!(out, IsSorted::Ascending) {
-                            l_val.tot_le(&r_val)
-                        } else {
-                            l_val.tot_ge(&r_val)
-                        };
+                    let check = if matches!(out, IsSorted::Ascending) {
+                        l_val.tot_le(&r_val)
+                    } else {
+                        l_val.tot_ge(&r_val)
+                    };
 
-                        if !check {
-                            out = IsSorted::Not
-                        }
-
-                        break;
+                    if !check {
+                        out = IsSorted::Not
                     }
 
                     out
