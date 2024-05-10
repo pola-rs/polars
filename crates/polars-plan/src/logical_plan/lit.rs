@@ -448,8 +448,15 @@ impl Hash for LiteralValue {
         std::mem::discriminant(self).hash(state);
         match self {
             LiteralValue::Series(s) => {
+                // Free stats
                 s.dtype().hash(state);
-                s.len().hash(state);
+                let len = s.len();
+                len.hash(state);
+                s.null_count().hash(state);
+                // Hash 5 first values. Still a poor hash, but it removes the pathological clashes.
+                for i in 0..std::cmp::min(5, len) {
+                    s.get(i).unwrap().hash(state);
+                }
             },
             LiteralValue::Range {
                 low,
