@@ -263,7 +263,7 @@ fn test_tab_sep() {
         .with_infer_schema_length(Some(100))
         .with_has_header(false)
         .with_ignore_errors(true)
-        .with_parse_options(CsvParseOptions::default().with_separator(b'\t'))
+        .map_parse_options(|parse_options| parse_options.with_separator(b'\t'))
         .into_reader_with_file_handle(file)
         .finish()
         .unwrap();
@@ -356,7 +356,7 @@ fn test_newline_in_custom_quote_char() {
 
     let file = Cursor::new(csv);
     let df = CsvReadOptions::default()
-        .with_parse_options(CsvParseOptions::default().with_quote_char(Some(b'\'')))
+        .map_parse_options(|parse_options| parse_options.with_quote_char(Some(b'\'')))
         .into_reader_with_file_handle(file)
         .finish()
         .unwrap();
@@ -605,7 +605,7 @@ fn test_skip_rows() -> PolarsResult<()> {
     let df = CsvReadOptions::default()
         .with_has_header(false)
         .with_skip_rows(3)
-        .with_parse_options(CsvParseOptions::default().with_separator(b' '))
+        .map_parse_options(|parse_options| parse_options.with_separator(b' '))
         .into_reader_with_file_handle(file)
         .finish()?;
 
@@ -624,7 +624,7 @@ fn test_projection_idx() -> PolarsResult<()> {
     let df = CsvReadOptions::default()
         .with_has_header(false)
         .with_projection(Some(Arc::new(vec![4, 5])))
-        .with_parse_options(CsvParseOptions::default().with_separator(b' '))
+        .map_parse_options(|parse_options| parse_options.with_separator(b' '))
         .into_reader_with_file_handle(file)
         .finish()?;
 
@@ -635,7 +635,7 @@ fn test_projection_idx() -> PolarsResult<()> {
     let out = CsvReadOptions::default()
         .with_has_header(false)
         .with_projection(Some(Arc::new(vec![4, 6])))
-        .with_parse_options(CsvParseOptions::default().with_separator(b' '))
+        .map_parse_options(|parse_options| parse_options.with_separator(b' '))
         .into_reader_with_file_handle(file)
         .finish();
 
@@ -681,7 +681,7 @@ fn test_comment_lines() -> PolarsResult<()> {
     let file = Cursor::new(csv);
     let df = CsvReadOptions::default()
         .with_has_header(false)
-        .with_parse_options(CsvParseOptions::default().with_comment_prefix(Some("#")))
+        .map_parse_options(|parse_options| parse_options.with_comment_prefix(Some("#")))
         .into_reader_with_file_handle(file)
         .finish()?;
     assert_eq!(df.shape(), (3, 5));
@@ -696,7 +696,7 @@ fn test_comment_lines() -> PolarsResult<()> {
     let file = Cursor::new(csv);
     let df = CsvReadOptions::default()
         .with_has_header(false)
-        .with_parse_options(CsvParseOptions::default().with_comment_prefix(Some("#")))
+        .map_parse_options(|parse_options| parse_options.with_comment_prefix(Some("!#&")))
         .into_reader_with_file_handle(file)
         .finish()?;
     assert_eq!(df.shape(), (3, 5));
@@ -712,7 +712,7 @@ fn test_comment_lines() -> PolarsResult<()> {
     let file = Cursor::new(csv);
     let df = CsvReadOptions::default()
         .with_has_header(true)
-        .with_parse_options(CsvParseOptions::default().with_comment_prefix(Some("%")))
+        .map_parse_options(|parse_options| parse_options.with_comment_prefix(Some("%")))
         .into_reader_with_file_handle(file)
         .finish()?;
     assert_eq!(df.shape(), (3, 5));
@@ -729,10 +729,10 @@ null-value,b,bar
 
     let file = Cursor::new(csv);
     let df = CsvReadOptions::default()
-        .with_parse_options(
-            CsvParseOptions::default()
-                .with_null_values(Some(NullValues::AllColumnsSingle("null-value".to_string()))),
-        )
+        .map_parse_options(|parse_options| {
+            parse_options
+                .with_null_values(Some(NullValues::AllColumnsSingle("null-value".to_string())))
+        })
         .into_reader_with_file_handle(file)
         .finish()?;
     assert!(df.get_columns()[0].null_count() > 0);
@@ -976,7 +976,10 @@ fn test_whitespace_separators() -> PolarsResult<()> {
 
     for (content, sep) in contents {
         let file = Cursor::new(&content);
-        let df = CsvReader::new(file).with_separator(sep).finish()?;
+        let df = CsvReadOptions::default()
+            .map_parse_options(|parse_options| parse_options.with_separator(sep))
+            .into_reader_with_file_handle(file)
+            .finish()?;
 
         assert_eq!(df.shape(), (2, 4));
         assert_eq!(df.get_column_names(), &["", "a", "b", "c"]);
@@ -1004,11 +1007,11 @@ fn test_tsv_header_offset() -> PolarsResult<()> {
     let csv = "foo\tbar\n\t1000011\t1\n\t1000026\t2\n\t1000949\t2";
     let file = Cursor::new(csv);
     let df = CsvReadOptions::default()
-        .with_parse_options(
-            CsvParseOptions::default()
+        .map_parse_options(|parse_options| {
+            parse_options
                 .with_truncate_ragged_lines(true)
-                .with_separator(b'\t'),
-        )
+                .with_separator(b'\t')
+        })
         .into_reader_with_file_handle(file)
         .finish()?;
 
@@ -1029,10 +1032,9 @@ fn test_null_values_infer_schema() -> PolarsResult<()> {
 5,6"#;
     let file = Cursor::new(csv);
     let df = CsvReadOptions::default()
-        .with_parse_options(
-            CsvParseOptions::default()
-                .with_null_values(Some(NullValues::AllColumnsSingle("NA".into()))),
-        )
+        .map_parse_options(|parse_options| {
+            parse_options.with_null_values(Some(NullValues::AllColumnsSingle("NA".into())))
+        })
         .into_reader_with_file_handle(file)
         .finish()?;
     let expected = &[DataType::Int64, DataType::Int64];
@@ -1277,13 +1279,19 @@ fn test_header_only() -> PolarsResult<()> {
     let file = Cursor::new(csv);
 
     // no header
-    let df = CsvReader::new(file).has_header(false).finish()?;
+    let df = CsvReadOptions::default()
+        .with_has_header(false)
+        .into_reader_with_file_handle(file)
+        .finish()?;
     assert_eq!(df.shape(), (1, 3));
 
     // has header
     for csv in &["x,y,z", "x,y,z\n"] {
         let file = Cursor::new(csv);
-        let df = CsvReader::new(file).has_header(true).finish()?;
+        let df = CsvReadOptions::default()
+            .with_has_header(true)
+            .into_reader_with_file_handle(file)
+            .finish()?;
 
         assert_eq!(df.shape(), (0, 3));
         assert_eq!(
@@ -1301,7 +1309,10 @@ fn test_empty_csv() {
     let file = Cursor::new(csv);
     for h in [true, false] {
         assert!(matches!(
-            CsvReader::new(file.clone()).has_header(h).finish(),
+            CsvReadOptions::default()
+                .with_has_header(h)
+                .into_reader_with_file_handle(file.clone())
+                .finish(),
             Err(PolarsError::NoData(_))
         ))
     }
@@ -1319,9 +1330,13 @@ fn test_try_parse_dates() -> PolarsResult<()> {
 ";
     let file = Cursor::new(csv);
 
-    let out = CsvReader::new(file).with_try_parse_dates(true).finish()?;
-    assert_eq!(out.dtypes(), &[DataType::Date]);
-    assert_eq!(out.column("date")?.null_count(), 1);
+    let df = CsvReadOptions::default()
+        .map_parse_options(|parse_options| parse_options.with_try_parse_dates(true))
+        .into_reader_with_file_handle(file)
+        .finish()?;
+
+    assert_eq!(df.dtypes(), &[DataType::Date]);
+    assert_eq!(df.column("date")?.null_count(), 1);
     Ok(())
 }
 
@@ -1331,10 +1346,15 @@ fn test_try_parse_dates_3380() -> PolarsResult<()> {
 46.685;7.953;2022-05-10T07:07:12Z;6.1;0.00
 46.685;7.953;2022-05-10T08:07:12Z;8.8;0.00";
     let file = Cursor::new(csv);
-    let df = CsvReader::new(file)
-        .with_separator(b';')
-        .with_try_parse_dates(true)
+    let df = CsvReadOptions::default()
+        .map_parse_options(|parse_options| {
+            parse_options
+                .with_separator(b';')
+                .with_try_parse_dates(true)
+        })
+        .into_reader_with_file_handle(file)
         .finish()?;
+
     assert_eq!(df.column("validdate")?.null_count(), 0);
     Ok(())
 }
@@ -1358,7 +1378,10 @@ fn test_leading_whitespace_with_quote() -> PolarsResult<()> {
 fn test_read_io_reader() {
     let path = "../../examples/datasets/foods1.csv";
     let file = std::fs::File::open(path).unwrap();
-    let mut reader = CsvReader::from_path(path).unwrap().with_chunk_size(5);
+    let mut reader = CsvReadOptions::default()
+        .with_chunk_size(5)
+        .try_into_reader_with_file_path(Some(path.into()))
+        .unwrap();
 
     let mut reader = reader.batched_borrowed_read().unwrap();
     let batches = reader.next_batches(5).unwrap().unwrap();
