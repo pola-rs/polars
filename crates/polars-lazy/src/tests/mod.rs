@@ -179,11 +179,10 @@ pub(crate) fn get_df() -> DataFrame {
 
     let file = Cursor::new(s);
 
-    let df = CsvReadOptions::default()
+    CsvReadOptions::default()
         .with_infer_schema_length(Some(3))
         .with_has_header(true)
         .into_reader_with_file_handle(file)
         .finish()
-        .unwrap();
-    df
+        .unwrap()
 }

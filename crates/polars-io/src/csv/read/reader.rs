@@ -317,7 +317,7 @@ where
     R: MmapBytesReader,
 {
     /// Create a new CsvReader from a file/stream using default read options. To
-    /// use non-default read options, first contruct [CsvReadOptions] and then use
+    /// use non-default read options, first construct [CsvReadOptions] and then use
     /// any of the `(try)_into_` methods.
     fn new(reader: R) -> Self {
         CsvReader {

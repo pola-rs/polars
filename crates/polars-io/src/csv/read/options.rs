@@ -178,7 +178,8 @@ impl CsvReadOptions {
         self
     }
 
-    /// Sets the CSV parsing options.
+    /// Sets the CSV parsing options. See [map_parse_options][Self::map_parse_options]
+    /// for an easier way to mutate them in-place.
     pub fn with_parse_options(mut self, parse_options: CsvParseOptions) -> Self {
         self.parse_options = Arc::new(parse_options);
         self

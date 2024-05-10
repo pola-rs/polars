@@ -25,9 +25,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .include_header(true)
         .with_separator(b',')
         .finish(&mut df)?;
-    let df_csv = CsvReader::from_path("docs/data/output.csv")?
-        .infer_schema(None)
-        .has_header(true)
+    let df_csv = CsvReadOptions::default()
+        .with_infer_schema_length(None)
+        .with_has_header(true)
+        .try_into_reader_with_file_path(Some("docs/data/output.csv".into()))?
         .finish()?;
     println!("{}", df_csv);
     // --8<-- [end:csv]
@@ -38,11 +39,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .include_header(true)
         .with_separator(b',')
         .finish(&mut df)?;
-    let df_csv = CsvReader::from_path("docs/data/output.csv")?
-        .infer_schema(None)
-        .has_header(true)
-        .with_try_parse_dates(true)
+    let df_csv = CsvReadOptions::default()
+        .with_infer_schema_length(None)
+        .with_has_header(true)
+        .map_parse_options(|parse_options| parse_options.with_try_parse_dates(true))
+        .try_into_reader_with_file_path(Some("docs/data/output.csv".into()))?
         .finish()?;
+
     println!("{}", df_csv);
     // --8<-- [end:csv2]
 
