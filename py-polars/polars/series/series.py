@@ -4413,16 +4413,12 @@ class Series:
             )
 
         if self.null_count() == 0:
-            if dtype.is_integer() or dtype.is_float():
+            if dtype.is_integer() or dtype.is_float() or dtype in (Datetime, Duration):
                 np_array = self._s.to_numpy_view()
             elif dtype == Boolean:
                 raise_on_copy()
                 s_u8 = self.cast(UInt8)
                 np_array = s_u8._s.to_numpy_view().view(bool)
-            elif dtype in (Datetime, Duration):
-                np_dtype = temporal_dtype_to_numpy(dtype)
-                s_i64 = self.to_physical()
-                np_array = s_i64._s.to_numpy_view().view(np_dtype)
             elif dtype == Date:
                 raise_on_copy()
                 np_dtype = temporal_dtype_to_numpy(dtype)

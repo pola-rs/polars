@@ -2,7 +2,9 @@ use std::ffi::{c_int, c_void};
 
 use ndarray::{Dim, Dimension, IntoDimension};
 use numpy::npyffi::{flags, PyArrayObject};
-use numpy::{npyffi, Element, IntoPyArray, PyArrayDescrMethods, ToNpyDims, PY_ARRAY_API};
+use numpy::{
+    npyffi, Element, IntoPyArray, PyArrayDescr, PyArrayDescrMethods, ToNpyDims, PY_ARRAY_API,
+};
 use polars_core::prelude::*;
 use polars_core::utils::try_get_supertype;
 use polars_core::with_match_physical_numeric_polars_type;
@@ -12,8 +14,9 @@ use crate::conversion::Wrap;
 use crate::dataframe::PyDataFrame;
 use crate::series::PySeries;
 
-pub(crate) unsafe fn create_borrowed_np_array<T: NumericNative + Element, I>(
+pub(crate) unsafe fn create_borrowed_np_array<I>(
     py: Python,
+    dtype: Bound<PyArrayDescr>,
     mut shape: Dim<I>,
     flags: c_int,
     data: *mut c_void,
@@ -26,7 +29,7 @@ where
     let array = PY_ARRAY_API.PyArray_NewFromDescr(
         py,
         PY_ARRAY_API.get_type_object(py, npyffi::NpyTypes::PyArray_Type),
-        T::get_dtype_bound(py).into_dtype_ptr(),
+        dtype.into_dtype_ptr(),
         shape.ndim_cint(),
         shape.as_dims_ptr(),
         // We don't provide strides, but provide flags that tell c/f-order
@@ -64,14 +67,16 @@ impl PySeries {
         match self.series.dtype() {
             dt if dt.is_numeric() => {
                 let dims = [self.series.len()].into_dimension();
-                // Object to the series keep the memory alive.
-                let owner = self.clone().into_py(py);
-                with_match_physical_numeric_polars_type!(self.series.dtype(), |$T| {
+                let owner = self.clone().into_py(py); // Keep the Series memory alive.
+                with_match_physical_numeric_polars_type!(dt, |$T| {
+                    let np_dtype = <$T as PolarsNumericType>::Native::get_dtype_bound(py);
                     let ca: &ChunkedArray<$T> = self.series.unpack::<$T>().unwrap();
                     let slice = ca.data_views().next().unwrap();
+
                     let view = unsafe {
-                        create_borrowed_np_array::<<$T as PolarsNumericType>::Native, _>(
+                        create_borrowed_np_array::<_>(
                             py,
+                            np_dtype,
                             dims,
                             flags::NPY_ARRAY_FARRAY_RO,
                             slice.as_ptr() as _,
@@ -81,8 +86,58 @@ impl PySeries {
                     Some(view)
                 })
             },
+            dt @ (DataType::Datetime(_, _) | DataType::Duration(_)) => {
+                let np_dtype = polars_dtype_to_np_temporal_dtype(py, dt);
+
+                let phys = self.series.to_physical_repr();
+                let ca = phys.i64().unwrap();
+                let slice = ca.data_views().next().unwrap();
+                let dims = [self.series.len()].into_dimension();
+                let owner = self.clone().into_py(py);
+
+                let view = unsafe {
+                    create_borrowed_np_array::<_>(
+                        py,
+                        np_dtype,
+                        dims,
+                        flags::NPY_ARRAY_FARRAY_RO,
+                        slice.as_ptr() as _,
+                        owner,
+                    )
+                };
+                Some(view)
+            },
             _ => None,
         }
+    }
+}
+
+/// Get the NumPy temporal data type associated with the given Polars [`DataType`].
+fn polars_dtype_to_np_temporal_dtype<'a>(
+    py: Python<'a>,
+    dtype: &DataType,
+) -> Bound<'a, PyArrayDescr> {
+    use numpy::datetime::{units, Datetime, Timedelta};
+    match dtype {
+        DataType::Datetime(TimeUnit::Milliseconds, _) => {
+            Datetime::<units::Milliseconds>::get_dtype_bound(py)
+        },
+        DataType::Datetime(TimeUnit::Microseconds, _) => {
+            Datetime::<units::Microseconds>::get_dtype_bound(py)
+        },
+        DataType::Datetime(TimeUnit::Nanoseconds, _) => {
+            Datetime::<units::Nanoseconds>::get_dtype_bound(py)
+        },
+        DataType::Duration(TimeUnit::Milliseconds) => {
+            Timedelta::<units::Milliseconds>::get_dtype_bound(py)
+        },
+        DataType::Duration(TimeUnit::Microseconds) => {
+            Timedelta::<units::Microseconds>::get_dtype_bound(py)
+        },
+        DataType::Duration(TimeUnit::Nanoseconds) => {
+            Timedelta::<units::Nanoseconds>::get_dtype_bound(py)
+        },
+        _ => panic!("only Datetime/Duration inputs supported, got {}", dtype),
     }
 }
 
@@ -94,6 +149,7 @@ impl PyDataFrame {
             return None;
         }
         let first = self.df.get_columns().first().unwrap().dtype();
+        // TODO: Support Datetime/Duration types
         if !first.is_numeric() {
             return None;
         }
@@ -106,15 +162,11 @@ impl PyDataFrame {
             return None;
         }
 
-        // Object to the dataframe keep the memory alive.
-        let owner = self.clone().into_py(py);
+        let owner = self.clone().into_py(py); // Keep the DataFrame memory alive.
 
-        fn get_ptr<T: PolarsNumericType>(
-            py: Python,
-            columns: &[Series],
-            owner: PyObject,
-        ) -> Option<PyObject>
+        fn get_ptr<T>(py: Python, columns: &[Series], owner: PyObject) -> Option<PyObject>
         where
+            T: PolarsNumericType,
             T::Native: Element,
         {
             let slices = columns
@@ -139,9 +191,11 @@ impl PyDataFrame {
 
                 if all_contiguous {
                     let start_ptr = first.as_ptr();
+                    let dtype = T::Native::get_dtype_bound(py);
                     let dims = [first.len(), columns.len()].into_dimension();
-                    Some(create_borrowed_np_array::<T::Native, _>(
+                    Some(create_borrowed_np_array::<_>(
                         py,
+                        dtype,
                         dims,
                         flags::NPY_ARRAY_FARRAY_RO,
                         start_ptr as _,
@@ -171,7 +225,7 @@ impl PyDataFrame {
         let st = st?;
 
         #[rustfmt::skip]
-            let pyarray = match st {
+        let pyarray = match st {
             DataType::UInt8 => self.df.to_ndarray::<UInt8Type>(order.0).ok()?.into_pyarray_bound(py).into_py(py),
             DataType::Int8 => self.df.to_ndarray::<Int8Type>(order.0).ok()?.into_pyarray_bound(py).into_py(py),
             DataType::UInt16 => self.df.to_ndarray::<UInt16Type>(order.0).ok()?.into_pyarray_bound(py).into_py(py),
