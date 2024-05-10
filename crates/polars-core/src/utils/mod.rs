@@ -899,6 +899,41 @@ pub(crate) fn index_to_chunked_index<
     (current_chunk_idx, index_remainder)
 }
 
+pub(crate) fn index_to_chunked_index_rev<
+    I: Iterator<Item = Idx>,
+    Idx: PartialOrd
+        + std::ops::AddAssign
+        + std::ops::SubAssign
+        + std::ops::Sub<Output = Idx>
+        + Zero
+        + One
+        + Copy
+        + std::fmt::Debug,
+>(
+    chunk_lens_rev: I,
+    index_from_back: Idx,
+    total_chunks: Idx,
+) -> (Idx, Idx) {
+    debug_assert!(index_from_back > Zero::zero(), "at least -1");
+    let mut index_remainder = index_from_back;
+    let mut current_chunk_idx = One::one();
+    let mut current_chunk_len = Zero::zero();
+
+    for chunk_len in chunk_lens_rev {
+        current_chunk_len = chunk_len;
+        if chunk_len >= index_remainder {
+            break;
+        } else {
+            index_remainder -= chunk_len;
+            current_chunk_idx += One::one();
+        }
+    }
+    (
+        total_chunks - current_chunk_idx,
+        current_chunk_len - index_remainder,
+    )
+}
+
 pub(crate) fn first_non_null<'a, I>(iter: I) -> Option<usize>
 where
     I: Iterator<Item = Option<&'a Bitmap>>,

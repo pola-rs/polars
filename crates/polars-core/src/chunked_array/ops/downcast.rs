@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use arrow::array::*;
 
 use crate::prelude::*;
-use crate::utils::index_to_chunked_index;
+use crate::utils::{index_to_chunked_index, index_to_chunked_index_rev};
 
 pub struct Chunks<'a, T> {
     chunks: &'a [ArrayRef],
@@ -119,6 +119,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     /// Get the index of the chunk and the index of the value in that chunk.
     #[inline]
     pub(crate) fn index_to_chunked_index(&self, index: usize) -> (usize, usize) {
+        // Fast path.
         if self.chunks.len() == 1 {
             // SAFETY: chunks.len() == 1 guarantees this is correct.
             let len = unsafe { self.chunks.get_unchecked(0).len() };
@@ -128,6 +129,15 @@ impl<T: PolarsDataType> ChunkedArray<T> {
                 (1, index - len)
             };
         }
-        index_to_chunked_index(self.downcast_iter().map(|arr| arr.len()), index)
+        let chunk_lens = self.downcast_iter().map(|arr| arr.len());
+        let len = self.len();
+        if index <= len / 2 {
+            // Access from lhs.
+            index_to_chunked_index(chunk_lens, index)
+        } else {
+            // Access from rhs.
+            let index_from_back = len - index;
+            index_to_chunked_index_rev(chunk_lens.rev(), index_from_back, self.chunks.len())
+        }
     }
 }
