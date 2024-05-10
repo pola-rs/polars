@@ -76,7 +76,6 @@ from polars.datatypes import (
     Object,
     String,
     Time,
-    UInt8,
     UInt16,
     UInt32,
     UInt64,
@@ -4401,30 +4400,7 @@ class Series:
                 zero_copy_only=not allow_copy, writable=writable
             )
 
-        if self.null_count() == 0:
-            if dtype.is_integer() or dtype.is_float() or dtype in (Datetime, Duration):
-                np_array = self._s.to_numpy_view()
-            elif dtype == Boolean:
-                raise_on_copy()
-                s_u8 = self.cast(UInt8)
-                np_array = s_u8._s.to_numpy_view().view(bool)
-            elif dtype == Date:
-                raise_on_copy()
-                s_i32 = self.to_physical()
-                np_array = s_i32._s.to_numpy_view().astype("<M8[D]")
-            else:
-                raise_on_copy()
-                np_array = self._s.to_numpy()
-
-        else:
-            raise_on_copy()
-            np_array = self._s.to_numpy()
-
-        if writable and not np_array.flags.writeable:
-            raise_on_copy()
-            np_array = np_array.copy()
-
-        return np_array
+        return self._s.to_numpy(allow_copy=allow_copy, writable=writable)
 
     def to_torch(self) -> torch.Tensor:
         """
