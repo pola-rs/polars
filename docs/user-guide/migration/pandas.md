@@ -23,9 +23,9 @@ more explicit, more readable and less error-prone.
 
 Note that an 'index' data structure as known in databases will be used by Polars as an optimization technique.
 
-### Polars uses Apache Arrow arrays to represent data in memory while pandas uses NumPy arrays
+### Polars adheres to the Apache Arrow memory format to represent data in memory while pandas uses NumPy arrays
 
-Polars represents data in memory with Arrow arrays while pandas represents data in
+Polars represents data in memory according to the Arrow memory spec while pandas represents data in
 memory with NumPy arrays. Apache Arrow is an emerging standard for in-memory columnar
 analytics that can accelerate data load times, reduce memory usage and accelerate
 calculations.

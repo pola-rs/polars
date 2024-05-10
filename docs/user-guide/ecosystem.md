@@ -2,7 +2,7 @@
 
 ## Introduction
 
-On this page you can find a non-exhaustive list of libraries and tools that support Polars. As the data ecosystem is evolving fast, more libraries will likely support Polars in the future. One of the main drivers is that Polars makes use of `Apache Arrow` in it's backend.
+On this page you can find a non-exhaustive list of libraries and tools that support Polars. As the data ecosystem is evolving fast, more libraries will likely support Polars in the future. One of the main drivers is that Polars makes adheres its memory layout to the `Apache Arrow` spec.
 
 ### Table of contents:
 
