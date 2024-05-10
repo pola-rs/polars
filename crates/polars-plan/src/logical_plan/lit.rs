@@ -448,6 +448,7 @@ impl Hash for LiteralValue {
         std::mem::discriminant(self).hash(state);
         match self {
             LiteralValue::Series(s) => {
+                // Free stats
                 s.dtype().hash(state);
                 let len = s.len();
                 len.hash(state);

@@ -8,155 +8,79 @@ use crate::prelude::visitor::AexprNode;
 
 const SERIES_LIMIT: usize = 1000;
 
-// We use hashes to get an Identifier
-// but this is very hard to debug, so we also have a version that
-// uses a string trail.
-#[cfg(test)]
-mod identifier_impl {
-    use ahash::RandomState;
+use ahash::RandomState;
+use polars_core::hashing::_boost_hash_combine;
 
-    use super::*;
-    /// Identifier that shows the sub-expression path.
-    /// Must implement hash and equality and ideally
-    /// have little collisions
-    /// We will do a full expression comparison to check if the
-    /// expressions with equal identifiers are truly equal
-    #[derive(Clone, Debug)]
-    pub(super) struct Identifier {
-        inner: String,
-        last_node: Option<AexprNode>,
+/// Identifier that shows the sub-expression path.
+/// Must implement hash and equality and ideally
+/// have little collisions
+/// We will do a full expression comparison to check if the
+/// expressions with equal identifiers are truly equal
+#[derive(Clone, Debug)]
+pub(super) struct Identifier {
+    inner: Option<u64>,
+    last_node: Option<AexprNode>,
+    hb: RandomState,
+}
+
+impl Identifier {
+    fn new() -> Self {
+        Self {
+            inner: None,
+            last_node: None,
+            hb: RandomState::with_seed(0),
+        }
     }
 
-    impl Identifier {
-        pub fn hash(&self) -> u64 {
-            RandomState::with_seed(0).hash_one(&self.inner)
-        }
+    fn hash(&self) -> u64 {
+        self.inner.unwrap_or(0)
+    }
 
-        pub fn is_equal(&self, other: &Self, arena: &Arena<AExpr>) -> bool {
-            self.inner == other.inner
-                && self.last_node.map(|v| v.hashable_and_cmp(arena))
-                    == other.last_node.map(|v| v.hashable_and_cmp(arena))
-        }
+    fn ae_node(&self) -> AexprNode {
+        self.last_node.unwrap()
+    }
 
-        pub fn new() -> Self {
-            Self {
-                inner: String::new(),
-                last_node: None,
-            }
-        }
+    fn is_equal(&self, other: &Self, arena: &Arena<AExpr>) -> bool {
+        self.inner == other.inner
+            && self.last_node.map(|v| v.hashable_and_cmp(arena))
+                == other.last_node.map(|v| v.hashable_and_cmp(arena))
+    }
 
-        pub fn ae_node(&self) -> AexprNode {
-            self.last_node.unwrap()
-        }
+    fn is_valid(&self) -> bool {
+        self.inner.is_some()
+    }
 
-        pub fn is_valid(&self) -> bool {
-            !self.inner.is_empty()
-        }
+    fn materialize(&self) -> String {
+        format!("{}{:#x}", CSE_REPLACED, self.materialized_hash())
+    }
 
-        pub fn materialize(&self, _arena: &Arena<AExpr>) -> String {
-            format!("{}{}", CSE_REPLACED, self.inner)
-        }
+    fn materialized_hash(&self) -> u64 {
+        self.inner.unwrap_or(0)
+    }
 
-        pub fn combine(&mut self, other: &Identifier) {
-            self.inner.push('!');
-            self.inner.push_str(&other.inner);
-        }
+    fn combine(&mut self, other: &Identifier) {
+        let inner = match (self.inner, other.inner) {
+            (Some(l), Some(r)) => _boost_hash_combine(l, r),
+            (None, Some(r)) => r,
+            (Some(l), None) => l,
+            _ => return,
+        };
+        self.inner = Some(inner);
+    }
 
-        pub fn add_ae_node(&self, ae: &AexprNode, arena: &Arena<AExpr>) -> Self {
-            let inner = format!("{:E}{}", ae.to_aexpr(arena), self.inner);
-            Self {
-                inner,
-                last_node: Some(*ae),
-            }
+    fn add_ae_node(&self, ae: &AexprNode, arena: &Arena<AExpr>) -> Self {
+        let hashed = self.hb.hash_one(ae.to_aexpr(arena));
+        let inner = Some(
+            self.inner
+                .map_or(hashed, |l| _boost_hash_combine(l, hashed)),
+        );
+        Self {
+            inner,
+            last_node: Some(*ae),
+            hb: self.hb.clone(),
         }
     }
 }
-
-#[cfg(not(test))]
-mod identifier_impl {
-    use ahash::RandomState;
-    use polars_core::hashing::_boost_hash_combine;
-
-    use super::*;
-    /// Identifier that shows the sub-expression path.
-    /// Must implement hash and equality and ideally
-    /// have little collisions
-    /// We will do a full expression comparison to check if the
-    /// expressions with equal identifiers are truly equal
-    #[derive(Clone, Debug)]
-    pub(super) struct Identifier {
-        inner: Option<u64>,
-        last_node: Option<AexprNode>,
-        hb: RandomState,
-    }
-
-    impl Identifier {
-        pub fn new() -> Self {
-            Self {
-                inner: None,
-                last_node: None,
-                hb: RandomState::with_seed(0),
-            }
-        }
-
-        pub fn hash(&self) -> u64 {
-            self.inner.unwrap_or(0)
-        }
-
-        pub fn ae_node(&self) -> AexprNode {
-            self.last_node.unwrap()
-        }
-
-        pub fn is_equal(&self, other: &Self, arena: &Arena<AExpr>) -> bool {
-            self.inner == other.inner
-                && self.last_node.map(|v| v.hashable_and_cmp(arena))
-                    == other.last_node.map(|v| v.hashable_and_cmp(arena))
-        }
-
-        pub fn is_valid(&self) -> bool {
-            self.inner.is_some()
-        }
-
-        pub fn materialize(&self, arena: &Arena<AExpr>) -> String {
-            // This can collide, so we must use strong hashes
-            // The hash of `Series` is very poor, so we traverse it again visit all elements.
-            let last = self.last_node.unwrap();
-            let mut h = self.inner.unwrap_or(0);
-            for (_, ae) in arena.iter(last.node()) {
-                if let AExpr::Literal(LiteralValue::Series(s)) = ae {
-                    debug_assert!(s.len() < SERIES_LIMIT);
-                    // Relatively cheap because of Series limit.
-                    h = _boost_hash_combine(h, s.hash(self.hb.clone()).sum().unwrap());
-                }
-            }
-            format!("{}{:#x}", CSE_REPLACED, h)
-        }
-
-        pub fn combine(&mut self, other: &Identifier) {
-            let inner = match (self.inner, other.inner) {
-                (Some(l), Some(r)) => _boost_hash_combine(l, r),
-                (None, Some(r)) => r,
-                (Some(l), None) => l,
-                _ => return,
-            };
-            self.inner = Some(inner);
-        }
-
-        pub fn add_ae_node(&self, ae: &AexprNode, arena: &Arena<AExpr>) -> Self {
-            let hashed = self.hb.hash_one(ae.to_aexpr(arena));
-            let inner = Some(
-                self.inner
-                    .map_or(hashed, |l| _boost_hash_combine(l, hashed)),
-            );
-            Self {
-                inner,
-                last_node: Some(*ae),
-                hb: self.hb.clone(),
-            }
-        }
-    }
-}
-use identifier_impl::*;
 
 #[derive(Default)]
 struct IdentifierMap<V> {
@@ -193,10 +117,14 @@ impl<V> IdentifierMap<V> {
     fn insert(&mut self, id: Identifier, v: V, arena: &Arena<AExpr>) {
         self.entry(id, || v, arena);
     }
+
+    fn iter(&self) -> impl Iterator<Item = (&Identifier, &V)> {
+        self.inner.iter()
+    }
 }
 
 /// Identifier maps to Expr Node and count.
-type SubExprCount = IdentifierMap<(Node, usize)>;
+type SubExprCount = IdentifierMap<(Node, u32)>;
 /// (post_visit_idx, identifier);
 type IdentifierArray = Vec<(usize, Identifier)>;
 
@@ -279,6 +207,9 @@ fn skip_pre_visit(ae: &AExpr, is_groupby: bool) -> bool {
 // post-visit: sum               EI                       I                            id: sum!binary: *!min!col(f00)!col(bar)
 struct ExprIdentifierVisitor<'a> {
     se_count: &'a mut SubExprCount,
+    /// Materialized `CSE` materialized (name) hashes can collide. So we validate that all CSE counts
+    /// match name hash counts.
+    name_validation: &'a mut PlHashMap<u64, u32>,
     identifier_array: &'a mut IdentifierArray,
     // Index in pre-visit traversal order.
     pre_visit_idx: usize,
@@ -299,10 +230,12 @@ impl ExprIdentifierVisitor<'_> {
         identifier_array: &'a mut IdentifierArray,
         visit_stack: &'a mut Vec<VisitRecord>,
         is_group_by: bool,
+        name_validation: &'a mut PlHashMap<u64, u32>,
     ) -> ExprIdentifierVisitor<'a> {
         let id_array_offset = identifier_array.len();
         ExprIdentifierVisitor {
             se_count,
+            name_validation,
             identifier_array,
             pre_visit_idx: 0,
             post_visit_idx: 0,
@@ -467,9 +400,11 @@ impl Visitor for ExprIdentifierVisitor<'_> {
         self.visit_stack
             .push(VisitRecord::SubExprId(id.clone(), true));
 
+        let mat_h = id.materialized_hash();
         let (_, se_count) = self.se_count.entry(id, || (node.node(), 0), arena);
 
         *se_count += 1;
+        *self.name_validation.entry(mat_h).or_insert(0) += 1;
         self.has_sub_expr |= *se_count > 1;
 
         Ok(VisitRecursion::Continue)
@@ -630,7 +565,7 @@ impl RewritingVisitor for CommonSubExprRewriter<'_> {
             id.ae_node().hashable_and_cmp(arena)
         );
 
-        let name = id.materialize(arena);
+        let name = id.materialize();
         node.assign(AExpr::col(name.as_ref()), arena);
         self.rewritten = true;
 
@@ -647,6 +582,7 @@ pub(crate) struct CommonSubExprOptimizer {
     replaced_identifiers: IdentifierMap<()>,
     // these are cleared per expr node
     visit_stack: Vec<VisitRecord>,
+    name_validation: PlHashMap<u64, u32>,
 }
 
 impl CommonSubExprOptimizer {
@@ -657,6 +593,7 @@ impl CommonSubExprOptimizer {
             visit_stack: Default::default(),
             id_array_offsets: Default::default(),
             replaced_identifiers: Default::default(),
+            name_validation: Default::default(),
         }
     }
 
@@ -671,6 +608,7 @@ impl CommonSubExprOptimizer {
             &mut self.id_array,
             &mut self.visit_stack,
             is_group_by,
+            &mut self.name_validation,
         );
         ae_node.visit(&mut visitor, expr_arena).map(|_| ())?;
         Ok((visitor.id_array_offset, visitor.has_sub_expr))
@@ -721,6 +659,24 @@ impl CommonSubExprOptimizer {
             has_sub_expr |= this_expr_has_se;
         }
 
+        // Ensure that the `materialized hashes` count matches that of the CSE count.
+        // It can happen that CSE collide and in that case we fallback and skip CSE.
+        for (id, (_, count)) in self.se_count.iter() {
+            let mat_h = id.materialized_hash();
+            let valid = if let Some(name_count) = self.name_validation.get(&mat_h) {
+                *name_count == *count
+            } else {
+                false
+            };
+
+            if !valid {
+                if verbose() {
+                    eprintln!("materialized names collided in common subexpression elimination.\n backtrace and run without CSE")
+                }
+                return Ok(None);
+            }
+        }
+
         if has_sub_expr {
             let mut new_expr = Vec::with_capacity_by_factor(expr.len(), 1.3);
 
@@ -752,7 +708,7 @@ impl CommonSubExprOptimizer {
             // Add the tmp columns
             for id in self.replaced_identifiers.inner.keys() {
                 let (node, _count) = self.se_count.get(id, expr_arena).unwrap();
-                let name = id.materialize(expr_arena);
+                let name = id.materialize();
                 let out_e = ExprIR::new(*node, OutputName::Alias(ColumnName::from(name)));
                 new_expr.push(out_e)
             }
@@ -785,6 +741,7 @@ impl RewritingVisitor for CommonSubExprOptimizer {
         let mut id_array_offsets = std::mem::take(&mut self.id_array_offsets);
 
         self.se_count.inner.clear();
+        self.name_validation.clear();
         self.id_array.clear();
         id_array_offsets.clear();
         self.replaced_identifiers.inner.clear();
@@ -885,109 +842,5 @@ impl RewritingVisitor for CommonSubExprOptimizer {
 
         self.id_array_offsets = id_array_offsets;
         Ok(node)
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    #[test]
-    fn test_cse_replacer() {
-        let e = (col("foo").sum() * col("bar")).sum() + col("foo").sum();
-
-        let mut arena = Arena::new();
-        let node = to_aexpr(e, &mut arena);
-
-        let mut se_count = Default::default();
-
-        // Pre-fill `id_array` with a value to also check if we deal with the offset correct;
-        let mut id_array = vec![(0, Identifier::new()); 1];
-        let id_array_offset = id_array.len();
-        let mut visit_stack = vec![];
-        let mut visitor =
-            ExprIdentifierVisitor::new(&mut se_count, &mut id_array, &mut visit_stack, false);
-
-        let ae_node = AexprNode::new(node);
-        ae_node.visit(&mut visitor, &arena).unwrap();
-
-        let mut replaced_ids = Default::default();
-        let mut rewriter = CommonSubExprRewriter::new(
-            &se_count,
-            &id_array,
-            &mut replaced_ids,
-            id_array_offset,
-            false,
-        );
-        let ae_node = ae_node.rewrite(&mut rewriter, &mut arena).unwrap();
-
-        let e = node_to_expr(ae_node.node(), &arena);
-        assert_eq!(
-            format!("{}", e),
-            r#"[([(col("__POLARS_CSER_sum!col(foo)")) * (col("bar"))].sum()) + (col("__POLARS_CSER_sum!col(foo)"))]"#
-        );
-    }
-
-    #[test]
-    fn test_lp_cse_replacer() {
-        let df = df![
-            "a" => [1, 2, 3],
-            "b" => [4, 5, 6],
-        ]
-        .unwrap();
-
-        let e = col("a").sum();
-
-        let lp = DslBuilder::from_existing_df(df)
-            .project(
-                vec![e.clone() * col("b"), e.clone() * col("b") + e, col("b")],
-                Default::default(),
-            )
-            .build();
-
-        let (node, mut lp_arena, mut expr_arena) = lp.to_alp().unwrap();
-        let mut optimizer = CommonSubExprOptimizer::new();
-
-        let alp_node = IRNode::new(node);
-        let out = with_ir_arena(&mut lp_arena, &mut expr_arena, |arena| {
-            alp_node.rewrite(&mut optimizer, arena).unwrap()
-        });
-
-        let IR::Select { expr, .. } = out.to_alp(&lp_arena) else {
-            unreachable!()
-        };
-
-        let default = expr.default_exprs();
-        assert_eq!(default.len(), 3);
-        assert_eq!(
-            format!("{}", default[0].to_expr(&expr_arena)),
-            r#"col("__POLARS_CSER_binary: *!sum!col(a)!col(b)").alias("a")"#
-        );
-        assert_eq!(
-            format!("{}", default[1].to_expr(&expr_arena)),
-            r#"[(col("__POLARS_CSER_binary: *!sum!col(a)!col(b)")) + (col("__POLARS_CSER_sum!col(a)"))].alias("a")"#
-        );
-        assert_eq!(
-            format!("{}", default[2].to_expr(&expr_arena)),
-            r#"col("b")"#
-        );
-
-        let cse = expr.cse_exprs();
-        assert_eq!(cse.len(), 2);
-
-        // Hashmap can change the order of the cse's.
-        let mut cse = cse
-            .iter()
-            .map(|e| format!("{}", e.to_expr(&expr_arena)))
-            .collect::<Vec<_>>();
-        cse.sort();
-        assert_eq!(
-            cse[0],
-            r#"[(col("a").sum()) * (col("b"))].alias("__POLARS_CSER_binary: *!sum!col(a)!col(b)")"#
-        );
-        assert_eq!(
-            cse[1],
-            r#"col("a").sum().alias("__POLARS_CSER_sum!col(a)")"#
-        );
     }
 }
