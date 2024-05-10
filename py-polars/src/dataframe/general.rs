@@ -148,7 +148,9 @@ impl PyDataFrame {
     }
 
     pub fn rechunk(&self) -> Self {
-        self.df.agg_chunks().into()
+        let mut df = self.df.clone();
+        df.as_single_chunk_par();
+        df.into()
     }
 
     /// Format `DataFrame` as String

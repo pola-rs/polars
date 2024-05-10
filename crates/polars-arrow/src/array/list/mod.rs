@@ -104,7 +104,7 @@ impl<O: Offset> ListArray<O> {
 impl<O: Offset> ListArray<O> {
     /// Slices this [`ListArray`].
     /// # Panics
-    /// panics iff `offset + length >= self.len()`
+    /// panics iff `offset + length > self.len()`
     pub fn slice(&mut self, offset: usize, length: usize) {
         assert!(
             offset + length <= self.len(),

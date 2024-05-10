@@ -432,15 +432,6 @@ impl DataFrame {
         Ok(DataFrame { columns })
     }
 
-    /// Aggregate all chunks to contiguous memory.
-    #[must_use]
-    pub fn agg_chunks(&self) -> Self {
-        // Don't parallelize this. Memory overhead
-        let f = |s: &Series| s.rechunk();
-        let cols = self.columns.iter().map(f).collect();
-        unsafe { DataFrame::new_no_checks(cols) }
-    }
-
     /// Shrink the capacity of this DataFrame to fit its length.
     pub fn shrink_to_fit(&mut self) {
         // Don't parallelize this. Memory overhead

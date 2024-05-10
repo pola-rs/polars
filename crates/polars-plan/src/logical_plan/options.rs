@@ -291,7 +291,7 @@ impl Default for UnionArgs {
     fn default() -> Self {
         Self {
             parallel: true,
-            rechunk: true,
+            rechunk: false,
             to_supertypes: false,
             diagonal: false,
             from_partitioned_ds: false,

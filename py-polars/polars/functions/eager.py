@@ -24,7 +24,7 @@ def concat(
     items: Iterable[PolarsType],
     *,
     how: ConcatMethod = "vertical",
-    rechunk: bool = True,
+    rechunk: bool = False,
     parallel: bool = True,
 ) -> PolarsType:
     """
@@ -269,15 +269,13 @@ def _alignment_join(
     # note: can stackoverflow if the join becomes too large, so we
     # collect eagerly when hitting a large enough number of frames
     post_align_collect = len(idx_frames) >= 250
-    if how == "outer":
-        how = "outer_coalesce"
 
     def join_func(
         idx_x: tuple[int, LazyFrame],
         idx_y: tuple[int, LazyFrame],
     ) -> tuple[int, LazyFrame]:
         (_, x), (y_idx, y) = idx_x, idx_y
-        return y_idx, x.join(y, how=how, on=align_on, suffix=f":{y_idx}")
+        return y_idx, x.join(y, how=how, on=align_on, suffix=f":{y_idx}", coalesce=True)
 
     joined = reduce(join_func, idx_frames)[1].sort(by=align_on, descending=descending)
     if post_align_collect:

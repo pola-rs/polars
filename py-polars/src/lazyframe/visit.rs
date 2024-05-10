@@ -80,13 +80,13 @@ impl NodeTraverser {
 
     fn scratch_to_list(&mut self) -> PyObject {
         Python::with_gil(|py| {
-            PyList::new(py, self.scratch.drain(..).map(|node| node.0)).to_object(py)
+            PyList::new_bound(py, self.scratch.drain(..).map(|node| node.0)).to_object(py)
         })
     }
 
     fn expr_to_list(&mut self) -> PyObject {
         Python::with_gil(|py| {
-            PyList::new(
+            PyList::new_bound(
                 py,
                 self.expr_scratch
                     .drain(..)

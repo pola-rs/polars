@@ -104,6 +104,18 @@ We use the Makefile to conveniently run the following formatting and linting too
 
 If this all runs correctly, you're ready to start contributing to the Polars codebase!
 
+(Note: there are a very small number of specialized dependencies that are not installed by default.
+If you still encounter an error message about a missing dependency after having run `make requirements`,
+try running `make requirements-all` to install _all_ known dependencies).
+
+### Keeping your local environment up to date
+
+Note that dependencies are inevitably updated over time; this includes both the packages that we depend on
+in the code, and the formatting and linting tools we use. In order to simplify keeping your local environment
+current, there is the `make requirements` command. This command will update all Python dependencies and tools
+to their latest specified versions. Running this command in case of an unexpected error after updating the
+Polars codebase is often a good idea.
+
 ### Working on your issue
 
 Create a new git branch from the `main` branch in your local repository, and start coding!

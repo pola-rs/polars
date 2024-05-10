@@ -193,7 +193,8 @@ else:
 @lru_cache(maxsize=None)
 def _might_be(cls: type, type_: str) -> bool:
     # infer whether the given class "might" be associated with the given
-    # module (in which case it's reasonable to do a real isinstance check)
+    # module (in which case it's reasonable to do a real isinstance check;
+    # we defer that so as not to unnecessarily trigger module import)
     try:
         return any(f"{type_}." in str(o) for o in cls.mro())
     except TypeError:
@@ -229,6 +230,7 @@ def import_optional(
     err_prefix: str = "required package",
     err_suffix: str = "not found",
     min_version: str | tuple[int, ...] | None = None,
+    min_err_prefix: str = "requires",
     install_message: str | None = None,
 ) -> Any:
     """
@@ -244,6 +246,8 @@ def import_optional(
         Error suffix to use in the raised exception (follows the module name).
     min_version : {str, tuple[int]}, optional
         If a minimum module version is required, specify it here.
+    min_err_prefix : str, optional
+        Override the standard "requires" prefix for the minimum version error message.
     install_message : str, optional
         Override the standard "Please install it using..." exception message fragment.
 
@@ -268,7 +272,7 @@ def import_optional(
         suffix = f" {err_suffix.strip(' ')}" if err_suffix else ""
         err_message = f"{prefix}'{module_name}'{suffix}.\n" + (
             install_message
-            or f"Please install it using the command `pip install {module_root}`."
+            or f"Please install using the command `pip install {module_root}`."
         )
         raise ModuleNotFoundError(err_message) from None
 
@@ -276,7 +280,11 @@ def import_optional(
         min_version = parse_version(min_version)
         mod_version = parse_version(module.__version__)
         if mod_version < min_version:
-            msg = f"requires {module_root} {min_version} or higher; found {mod_version}"
+            msg = (
+                f"{min_err_prefix} {module_root} "
+                f"{'.'.join(str(v) for v in min_version)} or higher"
+                f" (found {'.'.join(str(v) for v in mod_version)})"
+            )
             raise ModuleUpgradeRequired(msg)
 
     return module

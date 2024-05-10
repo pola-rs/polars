@@ -343,17 +343,17 @@ class Series:
                     return
 
             if dtype is not None:
-                self._s = self.cast(dtype, strict=True)._s
+                self._s = self.cast(dtype, strict=strict)._s
 
         elif _check_for_pyarrow(values) and isinstance(
             values, (pa.Array, pa.ChunkedArray)
         ):
-            self._s = arrow_to_pyseries(name, values)
+            self._s = arrow_to_pyseries(name, values, dtype=dtype, strict=strict)
 
         elif _check_for_pandas(values) and isinstance(
             values, (pd.Series, pd.Index, pd.DatetimeIndex)
         ):
-            self._s = pandas_to_pyseries(name, values, dtype=dtype)
+            self._s = pandas_to_pyseries(name, values, dtype=dtype, strict=strict)
 
         elif _is_generator(values):
             self._s = iterable_to_pyseries(name, values, dtype=dtype, strict=strict)
@@ -2902,7 +2902,7 @@ class Series:
 
         Concatenate Series with rechunk = True
 
-        >>> pl.concat([s, s2]).chunk_lengths()
+        >>> pl.concat([s, s2], rechunk=True).chunk_lengths()
         [6]
 
         Concatenate Series with rechunk = False
@@ -2925,7 +2925,7 @@ class Series:
 
         Concatenate Series with rechunk = True
 
-        >>> pl.concat([s, s2]).n_chunks()
+        >>> pl.concat([s, s2], rechunk=True).n_chunks()
         1
 
         Concatenate Series with rechunk = False

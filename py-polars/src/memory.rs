@@ -44,6 +44,7 @@ pub struct TracemallocAllocator<A: GlobalAlloc> {
 impl<A: GlobalAlloc> TracemallocAllocator<A> {
     /// Wrap the allocator such that allocations are registered with
     /// tracemalloc.
+    #[allow(dead_code)]
     pub const fn new(wrapped_alloc: A) -> Self {
         Self { wrapped_alloc }
     }
