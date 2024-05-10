@@ -1602,7 +1602,7 @@ impl LazyFrame {
                 ..
             } if !matches!(scan_type, FileScan::Anonymous { .. }) => {
                 options.row_index = Some(RowIndex {
-                    name: name.to_string(),
+                    name: Arc::from(name),
                     offset: offset.unwrap_or(0),
                 });
                 false

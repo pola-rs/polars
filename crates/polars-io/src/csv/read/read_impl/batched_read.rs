@@ -391,54 +391,31 @@ pub struct OwnedBatchedCsvReader {
     #[allow(dead_code)]
     // this exist because we need to keep ownership
     schema: SchemaRef,
-    reader: *mut CsvReader<'static, Box<dyn MmapBytesReader>>,
-    batched_reader: *mut BatchedCsvReaderRead<'static>,
+    batched_reader: BatchedCsvReaderRead<'static>,
+    // keep ownership
+    _reader: CsvReader<Box<dyn MmapBytesReader>>,
 }
-
-unsafe impl Send for OwnedBatchedCsvReader {}
-unsafe impl Sync for OwnedBatchedCsvReader {}
 
 impl OwnedBatchedCsvReader {
     pub fn next_batches(&mut self, n: usize) -> PolarsResult<Option<Vec<DataFrame>>> {
-        let reader = unsafe { &mut *self.batched_reader };
-        reader.next_batches(n)
-    }
-}
-
-impl Drop for OwnedBatchedCsvReader {
-    fn drop(&mut self) {
-        // release heap allocated
-        unsafe {
-            let _to_drop = Box::from_raw(self.batched_reader);
-            let _to_drop = Box::from_raw(self.reader);
-        };
+        self.batched_reader.next_batches(n)
     }
 }
 
 pub fn to_batched_owned_read(
-    reader: CsvReader<'_, Box<dyn MmapBytesReader>>,
-    schema: SchemaRef,
+    mut reader: CsvReader<Box<dyn MmapBytesReader>>,
 ) -> OwnedBatchedCsvReader {
-    // make sure that the schema is bound to the schema we have
-    // we will keep ownership of the schema so that the lifetime remains bound to ourselves
-    let reader = reader.with_schema(Some(schema.clone()));
-    // extend the lifetime
-    // the lifetime was bound to schema, which we own and will store on the heap
-    let reader = unsafe {
-        std::mem::transmute::<
-            CsvReader<'_, Box<dyn MmapBytesReader>>,
-            CsvReader<'static, Box<dyn MmapBytesReader>>,
-        >(reader)
-    };
-    let reader = Box::new(reader);
-
-    let reader = Box::leak(reader) as *mut CsvReader<'static, Box<dyn MmapBytesReader>>;
-    let batched_reader = unsafe { Box::new((*reader).batched_borrowed_read().unwrap()) };
-    let batched_reader = Box::leak(batched_reader) as *mut BatchedCsvReaderRead;
+    let schema = reader.get_schema().unwrap();
+    let batched_reader = reader.batched_borrowed_read().unwrap();
+    // If you put a drop(reader) here, rust will complain that reader is borrowed,
+    // so we presumably have to keep ownership of it to maintain the safety of the
+    // 'static transmute.
+    let batched_reader: BatchedCsvReaderRead<'static> =
+        unsafe { std::mem::transmute(batched_reader) };
 
     OwnedBatchedCsvReader {
         schema,
-        reader,
         batched_reader,
+        _reader: reader,
     }
 }

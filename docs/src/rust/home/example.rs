@@ -3,7 +3,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     use polars::prelude::*;
 
     let q = LazyCsvReader::new("docs/data/iris.csv")
-        .has_header(true)
+        .with_has_header(true)
         .finish()?
         .filter(col("sepal_length").gt(lit(5)))
         .group_by(vec![col("species")])

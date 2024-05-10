@@ -143,7 +143,7 @@ impl IpcReaderAsync {
             Some(projection) => {
                 fn prepare_schema(mut schema: Schema, row_index: Option<&RowIndex>) -> Schema {
                     if let Some(rc) = row_index {
-                        let _ = schema.insert_at_index(0, rc.name.as_str().into(), IDX_DTYPE);
+                        let _ = schema.insert_at_index(0, rc.name.as_ref().into(), IDX_DTYPE);
                     }
                     schema
                 }

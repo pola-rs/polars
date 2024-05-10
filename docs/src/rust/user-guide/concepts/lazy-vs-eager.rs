@@ -2,7 +2,8 @@ use polars::prelude::*;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:eager]
-    let df = CsvReader::from_path("docs/data/iris.csv")
+    let df = CsvReadOptions::default()
+        .try_into_reader_with_file_path(Some("docs/data/iris.csv".into()))
         .unwrap()
         .finish()
         .unwrap();
@@ -18,7 +19,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --8<-- [start:lazy]
     let q = LazyCsvReader::new("docs/data/iris.csv")
-        .has_header(true)
+        .with_has_header(true)
         .finish()?
         .filter(col("sepal_length").gt(lit(5)))
         .group_by(vec![col("species")])

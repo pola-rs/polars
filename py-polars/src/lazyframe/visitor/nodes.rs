@@ -71,7 +71,7 @@ impl PyFileOptions {
             .inner
             .row_index
             .as_ref()
-            .map_or_else(|| py.None(), |n| (&n.name, n.offset).to_object(py)))
+            .map_or_else(|| py.None(), |n| (n.name.as_ref(), n.offset).to_object(py)))
     }
     #[getter]
     fn rechunk(&self, _py: Python<'_>) -> PyResult<bool> {

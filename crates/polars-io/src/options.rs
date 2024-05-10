@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use polars_core::schema::SchemaRef;
 use polars_utils::IdxSize;
 #[cfg(feature = "serde")]
@@ -6,7 +8,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct RowIndex {
-    pub name: String,
+    pub name: Arc<str>,
     pub offset: IdxSize,
 }
 

@@ -55,8 +55,7 @@ impl<R: MmapBytesReader> ParquetReader<R> {
         self
     }
 
-    /// Stop parsing when `n` rows are parsed. By settings this parameter the csv will be parsed
-    /// sequentially.
+    /// Stop reading at `num_rows` rows.
     pub fn with_n_rows(mut self, num_rows: Option<usize>) -> Self {
         self.n_rows = num_rows;
         self

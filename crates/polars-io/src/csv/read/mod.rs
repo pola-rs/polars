@@ -1,8 +1,5 @@
 //! Functionality for reading CSV files.
 //!
-//! Note: currently, `CsvReader::new` has an extra copy. If you want optimal performance,
-//! it is advised to use [`CsvReader::from_path`] instead.
-//!
 //! # Examples
 //!
 //! ```
@@ -12,8 +9,9 @@
 //!
 //! fn example() -> PolarsResult<DataFrame> {
 //!     // Prefer `from_path` over `new` as it is faster.
-//!     CsvReader::from_path("example.csv")?
-//!         .has_header(true)
+//!     CsvReadOptions::default()
+//!         .with_has_header(true)
+//!         .try_into_reader_with_file_path(Some("example.csv".into()))?
 //!         .finish()
 //! }
 //! ```
@@ -26,7 +24,7 @@ mod reader;
 mod splitfields;
 mod utils;
 
-pub use options::{CommentPrefix, CsvEncoding, CsvReaderOptions, NullValues};
+pub use options::{CommentPrefix, CsvEncoding, CsvParseOptions, CsvReadOptions, NullValues};
 pub use parser::count_rows;
 pub use read_impl::batched_mmap::{BatchedCsvReaderMmap, OwnedBatchedCsvReaderMmap};
 pub use read_impl::batched_read::{BatchedCsvReaderRead, OwnedBatchedCsvReader};

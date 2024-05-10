@@ -586,7 +586,7 @@ fn test_row_index_on_files() -> PolarsResult<()> {
     for offset in [0 as IdxSize, 10] {
         let lf = LazyCsvReader::new(FOODS_CSV)
             .with_row_index(Some(RowIndex {
-                name: "index".into(),
+                name: Arc::from("index"),
                 offset,
             }))
             .finish()?;
@@ -671,7 +671,7 @@ fn scan_small_dtypes() -> PolarsResult<()> {
     ];
     for dt in small_dt {
         let df = LazyCsvReader::new(FOODS_CSV)
-            .has_header(true)
+            .with_has_header(true)
             .with_dtype_overwrite(Some(Arc::new(Schema::from_iter([Field::new(
                 "sugars_g",
                 dt.clone(),
