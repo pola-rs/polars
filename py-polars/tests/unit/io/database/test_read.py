@@ -157,10 +157,6 @@ class ExceptionTestParams(NamedTuple):
                 schema_overrides={"id": pl.UInt8},
             ),
             id="uri: connectorx",
-            marks=pytest.mark.skipif(
-                sys.version_info > (3, 11),
-                reason="connectorx cannot be installed on Python 3.12 yet.",
-            ),
         ),
         pytest.param(
             *DatabaseReadTestParams(
@@ -644,10 +640,6 @@ def test_read_database_exceptions(
         read_database(**params)
 
 
-@pytest.mark.skipif(
-    sys.version_info > (3, 11),
-    reason="connectorx cannot be installed on Python 3.12 yet.",
-)
 @pytest.mark.parametrize(
     "uri",
     [
@@ -656,11 +648,16 @@ def test_read_database_exceptions(
     ],
 )
 def test_read_database_cx_credentials(uri: str) -> None:
-    # check that we masked the potential credentials leak; this isn't really
-    # our responsibility (ideally would be handled by connectorx), but we
-    # can reasonably mitigate the issue.
-    with pytest.raises(BaseException, match=r"fakedb://\*\*\*:\*\*\*@\w+"):
-        pl.read_database_uri("SELECT * FROM data", uri=uri)
+    if sys.version_info > (3, 11):
+        # slightly different error on more recent Python versions
+        with pytest.raises(RuntimeError, match=r"Source.*not supported"):
+            pl.read_database_uri("SELECT * FROM data", uri=uri, engine="connectorx")
+    else:
+        # check that we masked the potential credentials leak; this isn't really
+        # our responsibility (ideally would be handled by connectorx), but we
+        # can reasonably mitigate the issue.
+        with pytest.raises(BaseException, match=r"fakedb://\*\*\*:\*\*\*@\w+"):
+            pl.read_database_uri("SELECT * FROM data", uri=uri, engine="connectorx")
 
 
 @pytest.mark.write_disk()
