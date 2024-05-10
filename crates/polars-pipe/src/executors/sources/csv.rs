@@ -3,9 +3,7 @@ use std::path::PathBuf;
 
 use polars_core::export::arrow::Either;
 use polars_core::POOL;
-use polars_io::csv::read::{
-    BatchedCsvReaderMmap, BatchedCsvReaderRead, CsvEncoding, CsvReadOptions, CsvReader,
-};
+use polars_io::csv::read::{BatchedCsvReaderMmap, BatchedCsvReaderRead, CsvReadOptions, CsvReader};
 use polars_plan::global::_set_n_rows_for_scan;
 use polars_plan::prelude::FileScanOptions;
 use polars_utils::iter::EnumerateIdxTrait;
