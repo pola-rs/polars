@@ -285,43 +285,31 @@ pub struct OwnedBatchedCsvReaderMmap {
     #[allow(dead_code)]
     // this exist because we need to keep ownership
     schema: SchemaRef,
-    reader: *mut CsvReader<Box<dyn MmapBytesReader>>,
-    batched_reader: *mut BatchedCsvReaderMmap<'static>,
+    batched_reader: BatchedCsvReaderMmap<'static>,
+    // keep ownership
+    _reader: CsvReader<Box<dyn MmapBytesReader>>,
 }
-
-unsafe impl Send for OwnedBatchedCsvReaderMmap {}
-unsafe impl Sync for OwnedBatchedCsvReaderMmap {}
 
 impl OwnedBatchedCsvReaderMmap {
     pub fn next_batches(&mut self, n: usize) -> PolarsResult<Option<Vec<DataFrame>>> {
-        let reader = unsafe { &mut *self.batched_reader };
-        reader.next_batches(n)
-    }
-}
-
-impl Drop for OwnedBatchedCsvReaderMmap {
-    fn drop(&mut self) {
-        // release heap allocated
-        unsafe {
-            let _to_drop = Box::from_raw(self.batched_reader);
-            let _to_drop = Box::from_raw(self.reader);
-        };
+        self.batched_reader.next_batches(n)
     }
 }
 
 pub fn to_batched_owned_mmap(
-    reader: CsvReader<Box<dyn MmapBytesReader>>,
+    mut reader: CsvReader<Box<dyn MmapBytesReader>>,
 ) -> OwnedBatchedCsvReaderMmap {
     let schema = reader.get_schema().unwrap();
-
-    let reader = Box::new(reader);
-    let reader = Box::leak(reader) as *mut CsvReader<Box<dyn MmapBytesReader>>;
-    let batched_reader = unsafe { Box::new((*reader).batched_borrowed_mmap().unwrap()) };
-    let batched_reader = Box::leak(batched_reader) as *mut BatchedCsvReaderMmap;
+    let batched_reader = reader.batched_borrowed_mmap().unwrap();
+    // If you put a drop(reader) here, rust will complain that reader is borrowed,
+    // so we presumably have to keep ownership of it to maintain the safety of the
+    // 'static transmute.
+    let batched_reader: BatchedCsvReaderMmap<'static> =
+        unsafe { std::mem::transmute(batched_reader) };
 
     OwnedBatchedCsvReaderMmap {
         schema,
-        reader,
         batched_reader,
+        _reader: reader,
     }
 }

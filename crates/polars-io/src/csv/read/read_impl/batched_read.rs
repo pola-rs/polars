@@ -392,10 +392,9 @@ pub struct OwnedBatchedCsvReader {
     // this exist because we need to keep ownership
     schema: SchemaRef,
     batched_reader: BatchedCsvReaderRead<'static>,
+    // keep ownership
+    _reader: CsvReader<Box<dyn MmapBytesReader>>,
 }
-
-unsafe impl Send for OwnedBatchedCsvReader {}
-unsafe impl Sync for OwnedBatchedCsvReader {}
 
 impl OwnedBatchedCsvReader {
     pub fn next_batches(&mut self, n: usize) -> PolarsResult<Option<Vec<DataFrame>>> {
@@ -408,11 +407,15 @@ pub fn to_batched_owned_read(
 ) -> OwnedBatchedCsvReader {
     let schema = reader.get_schema().unwrap();
     let batched_reader = reader.batched_borrowed_read().unwrap();
+    // If you put a drop(reader) here, rust will complain that reader is borrowed,
+    // so we presumably have to keep ownership of it to maintain the safety of the
+    // 'static transmute.
     let batched_reader: BatchedCsvReaderRead<'static> =
         unsafe { std::mem::transmute(batched_reader) };
 
     OwnedBatchedCsvReader {
         schema,
         batched_reader,
+        _reader: reader,
     }
 }
