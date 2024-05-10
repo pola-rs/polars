@@ -33,7 +33,7 @@ use crate::utils::{get_reader_bytes, resolve_homedir};
 /// fn example() -> PolarsResult<DataFrame> {
 ///     CsvReadOptions::default()
 ///             .with_has_header(true)
-///             .try_into_reader_with_path("iris.csv")?
+///             .try_into_reader_with_file_path(Some("iris.csv".into()))?
 ///             .finish()
 /// }
 /// ```
