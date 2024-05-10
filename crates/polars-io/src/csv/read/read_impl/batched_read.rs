@@ -391,8 +391,7 @@ pub struct OwnedBatchedCsvReader {
     #[allow(dead_code)]
     // this exist because we need to keep ownership
     schema: SchemaRef,
-    reader: *mut CsvReader<Box<dyn MmapBytesReader>>,
-    batched_reader: *mut BatchedCsvReaderRead<'static>,
+    batched_reader: BatchedCsvReaderRead<'static>,
 }
 
 unsafe impl Send for OwnedBatchedCsvReader {}
@@ -400,32 +399,20 @@ unsafe impl Sync for OwnedBatchedCsvReader {}
 
 impl OwnedBatchedCsvReader {
     pub fn next_batches(&mut self, n: usize) -> PolarsResult<Option<Vec<DataFrame>>> {
-        let reader = unsafe { &mut *self.batched_reader };
-        reader.next_batches(n)
+        self.batched_reader.next_batches(n)
     }
 }
 
-impl Drop for OwnedBatchedCsvReader {
-    fn drop(&mut self) {
-        // release heap allocated
-        unsafe {
-            let _to_drop = Box::from_raw(self.batched_reader);
-            let _to_drop = Box::from_raw(self.reader);
-        };
-    }
-}
-
-pub fn to_batched_owned_read(reader: CsvReader<Box<dyn MmapBytesReader>>) -> OwnedBatchedCsvReader {
+pub fn to_batched_owned_read(
+    mut reader: CsvReader<Box<dyn MmapBytesReader>>,
+) -> OwnedBatchedCsvReader {
     let schema = reader.get_schema().unwrap();
-
-    let reader = Box::new(reader);
-    let reader = Box::leak(reader) as *mut CsvReader<Box<dyn MmapBytesReader>>;
-    let batched_reader = unsafe { Box::new((*reader).batched_borrowed_read().unwrap()) };
-    let batched_reader = Box::leak(batched_reader) as *mut BatchedCsvReaderRead;
+    let batched_reader = reader.batched_borrowed_read().unwrap();
+    let batched_reader: BatchedCsvReaderRead<'static> =
+        unsafe { std::mem::transmute(batched_reader) };
 
     OwnedBatchedCsvReader {
         schema,
-        reader,
         batched_reader,
     }
 }
