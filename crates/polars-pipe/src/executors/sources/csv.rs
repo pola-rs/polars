@@ -68,13 +68,6 @@ impl CsvSource {
             .with_columns(with_columns)
             .with_rechunk(false)
             .with_row_index(file_options.row_index)
-            .map_parse_options(|parse_options| {
-                parse_options.with_encoding(
-                    // TODO: We don't know why LossyUtf8 is set here, so remove it
-                    // to see if it breaks anything.
-                    CsvEncoding::LossyUtf8,
-                )
-            })
             .with_path(Some(path))
             .try_into_reader_with_file_path(None)?;
 
