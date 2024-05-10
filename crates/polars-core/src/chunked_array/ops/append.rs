@@ -72,9 +72,6 @@ where
                 let l_idx = ca.last_non_null().unwrap();
                 let r_idx = other.first_non_null().unwrap();
 
-                let l_val = unsafe { ca.value_unchecked(l_idx) };
-                let r_val = unsafe { other.value_unchecked(r_idx) };
-
                 let null_pos_check =
                     // check null positions
                     // lhs does not end in nulls
@@ -89,6 +86,9 @@ where
                 } else {
                     #[allow(unused_assignments)]
                     let mut out = IsSorted::Not;
+
+                    let l_val = unsafe { ca.value_unchecked(l_idx) };
+                    let r_val = unsafe { other.value_unchecked(r_idx) };
 
                     #[allow(clippy::never_loop)]
                     loop {
