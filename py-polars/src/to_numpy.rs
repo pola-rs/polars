@@ -8,6 +8,7 @@ use numpy::{
 use polars_core::prelude::*;
 use polars_core::utils::try_get_supertype;
 use polars_core::with_match_physical_numeric_polars_type;
+use pyo3::intern;
 use pyo3::prelude::*;
 
 use crate::conversion::Wrap;
@@ -69,15 +70,15 @@ impl PySeries {
                 let dims = [self.series.len()].into_dimension();
                 // Object to the series keep the memory alive.
                 let owner = self.clone().into_py(py);
-                with_match_physical_numeric_polars_type!(self.series.dtype(), |$T| {
+                with_match_physical_numeric_polars_type!(dt, |$T| {
+                    let np_dtype = <$T as PolarsNumericType>::Native::get_dtype_bound(py);
                     let ca: &ChunkedArray<$T> = self.series.unpack::<$T>().unwrap();
-                    let dtype = <$T as PolarsNumericType>::Native::get_dtype_bound(py);
-                    // let dtype = PyArrayDescr::new_bound(py, intern!(py, "datetime64[us]")).unwrap();
                     let slice = ca.data_views().next().unwrap();
+
                     let view = unsafe {
                         create_borrowed_np_array::<_>(
                             py,
-                            dtype,
+                            np_dtype,
                             dims,
                             flags::NPY_ARRAY_FARRAY_RO,
                             slice.as_ptr() as _,
@@ -86,6 +87,36 @@ impl PySeries {
                     };
                     Some(view)
                 })
+            },
+            dt @ (DataType::Datetime(_, _) | DataType::Duration(_)) => {
+                let np_dtype_str = match dt {
+                    DataType::Datetime(TimeUnit::Milliseconds, _) => intern!(py, "<M8[ms]"),
+                    DataType::Datetime(TimeUnit::Microseconds, _) => intern!(py, "<M8[us]"),
+                    DataType::Datetime(TimeUnit::Nanoseconds, _) => intern!(py, "<M8[ns]"),
+                    DataType::Duration(TimeUnit::Milliseconds) => intern!(py, "<m8[ms]"),
+                    DataType::Duration(TimeUnit::Microseconds) => intern!(py, "<m8[us]"),
+                    DataType::Duration(TimeUnit::Nanoseconds) => intern!(py, "<m8[ns]"),
+                    _ => unreachable!(),
+                };
+                let np_dtype = PyArrayDescr::new_bound(py, np_dtype_str).unwrap();
+
+                let phys = self.series.to_physical_repr();
+                let ca = phys.i64().unwrap();
+                let slice = ca.data_views().next().unwrap();
+                let dims = [self.series.len()].into_dimension();
+                let owner = self.clone().into_py(py);
+
+                let view = unsafe {
+                    create_borrowed_np_array::<_>(
+                        py,
+                        np_dtype,
+                        dims,
+                        flags::NPY_ARRAY_FARRAY_RO,
+                        slice.as_ptr() as _,
+                        owner,
+                    )
+                };
+                Some(view)
             },
             _ => None,
         }
