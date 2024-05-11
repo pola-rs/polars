@@ -177,7 +177,6 @@ impl PySeries {
                             "cannot return a zero-copy writable array",
                         ));
                     }
-                    // TODO: Is there a Rust-native way to do this?
                     arr = arr.call_method0(py, intern!(py, "copy"))?;
                 }
                 return Ok(arr);
@@ -246,12 +245,12 @@ fn series_to_numpy_with_copy(py: Python, s: &Series) -> PyResult<PyObject> {
         },
         String => {
             let ca = s.str().unwrap();
-            let np_arr = PyArray1::from_iter_bound(py, ca.into_iter().map(|s| s.into_py(py)));
+            let np_arr = PyArray1::from_iter_bound(py, ca.iter().map(|s| s.into_py(py)));
             np_arr.into_py(py)
         },
         Binary => {
             let ca = s.binary().unwrap();
-            let np_arr = PyArray1::from_iter_bound(py, ca.into_iter().map(|s| s.into_py(py)));
+            let np_arr = PyArray1::from_iter_bound(py, ca.iter().map(|s| s.into_py(py)));
             np_arr.into_py(py)
         },
         Categorical(_, _) | Enum(_, _) => {
@@ -311,7 +310,7 @@ fn boolean_series_to_numpy(py: Python, s: &Series) -> PyObject {
         let values = ca.into_no_null_iter();
         PyArray1::<bool>::from_iter_bound(py, values).into_py(py)
     } else {
-        let values = ca.into_iter().map(|opt_v| opt_v.into_py(py));
+        let values = ca.iter().map(|opt_v| opt_v.into_py(py));
         PyArray1::from_iter_bound(py, values).into_py(py)
     }
 }
