@@ -2,6 +2,7 @@ use std::fmt::Write;
 
 use arrow::array::ValueSize;
 use arrow::legacy::kernels::list::{index_is_oob, sublist_get};
+use namespace::product::product_with_nulls;
 use polars_core::chunked_array::builder::get_list_builder;
 #[cfg(feature = "list_gather")]
 use polars_core::export::num::ToPrimitive;
@@ -202,6 +203,11 @@ pub trait ListNameSpaceImpl: AsList {
             dt if dt.is_numeric() => Ok(sum_list_numerical(ca, &dt)),
             dt => sum_with_nulls(ca, &dt),
         }
+    }
+
+    fn lst_product(&self) -> PolarsResult<Series> {
+        let ca = self.as_list();
+        product_with_nulls(ca, &ca.inner_dtype())
     }
 
     fn lst_mean(&self) -> Series {
