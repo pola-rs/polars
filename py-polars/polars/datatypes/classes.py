@@ -487,17 +487,14 @@ class Datetime(TemporalType):
         elif isinstance(time_zone, timezone):
             time_zone = time_zone
         else:
-            from polars._utils.convert import (
-                string_to_zoneinfo,
-            )
             from polars.dependencies import _ZONEINFO_AVAILABLE, zoneinfo
 
             if _ZONEINFO_AVAILABLE:
-                try:
-                    time_zone = string_to_zoneinfo(time_zone)
-                except (zoneinfo.ZoneInfoNotFoundError, TypeError):
+                if time_zone in zoneinfo.available_timezones():
+                    time_zone = time_zone
+                else:
                     msg = f"invalid time zone: {time_zone!r}, to see valid strings run `import zoneinfo; zoneinfo.available_timezones()`"
-                    raise ValueError(msg) from None
+                    raise ValueError(msg)
             else:
                 msg = "install polars[timezone] to handle datetimes with time zone information"
                 raise ImportError(msg)
