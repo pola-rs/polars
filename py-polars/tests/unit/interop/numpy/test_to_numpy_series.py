@@ -209,6 +209,7 @@ def test_series_to_numpy_bool() -> None:
 
     assert s.to_list() == result.tolist()
     assert result.dtype == np.bool_
+    assert result.flags.writeable is True
     assert_allow_copy_false_raises(s)
 
 
@@ -267,7 +268,14 @@ def test_to_numpy_empty() -> None:
     result = s.to_numpy(use_pyarrow=False, allow_copy=False)
     assert result.dtype == np.object_
     assert result.shape == (0,)
-    assert result.size == 0
+
+
+def test_to_numpy_empty_writable() -> None:
+    s = pl.Series(dtype=pl.Int64)
+    result = s.to_numpy(use_pyarrow=False, allow_copy=False, writable=True)
+    assert result.dtype == np.int64
+    assert result.shape == (0,)
+    assert result.flags.writeable is True
 
 
 def test_to_numpy_chunked() -> None:
