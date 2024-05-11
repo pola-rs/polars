@@ -482,7 +482,9 @@ class Datetime(TemporalType):
         )
 
     def _validate_timezone(self, time_zone: str | timezone | None) -> str | None:
-        if time_zone is None or time_zone == "*" or isinstance(time_zone, timezone):
+        if time_zone is None or time_zone == "*":
+            return time_zone
+        elif isinstance(time_zone, timezone):
             time_zone = time_zone
         else:
             from polars._utils.convert import (
