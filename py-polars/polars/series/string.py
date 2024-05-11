@@ -1216,7 +1216,7 @@ class StringNameSpace:
 
     def replace_all(self, pattern: str, value: str, *, literal: bool = False) -> Series:
         r"""
-        Replace first matching regex/literal substring with a new string value.
+        Replace all matching regex/literal substrings with a new string value.
 
         Parameters
         ----------
@@ -1227,12 +1227,10 @@ class StringNameSpace:
             String that will replace the matched substring.
         literal
             Treat `pattern` as a literal string.
-        n
-            Number of matches to replace.
 
         See Also
         --------
-        replace_all
+        replace
 
         Notes
         -----
