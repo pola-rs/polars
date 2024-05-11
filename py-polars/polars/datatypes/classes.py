@@ -458,11 +458,8 @@ class Datetime(TemporalType):
             )
             raise ValueError(msg)
 
-        if isinstance(time_zone, timezone):
-            time_zone = str(time_zone)
-
         self.time_unit = time_unit
-        self.time_zone = time_zone
+        self.time_zone = self._validate_timezone(time_zone)
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
         # allow comparing object instances to class
@@ -483,6 +480,26 @@ class Datetime(TemporalType):
         return (
             f"{class_name}(time_unit={self.time_unit!r}, time_zone={self.time_zone!r})"
         )
+
+    def _validate_timezone(self, time_zone: str | timezone | None) -> str | None:
+        if time_zone is None or time_zone == "*" or isinstance(time_zone, timezone):
+            time_zone = time_zone
+        else:
+            from polars._utils.convert import (
+                string_to_zoneinfo,
+            )
+            from polars.dependencies import _ZONEINFO_AVAILABLE, zoneinfo
+
+            if _ZONEINFO_AVAILABLE:
+                try:
+                    time_zone = string_to_zoneinfo(time_zone)
+                except (zoneinfo.ZoneInfoNotFoundError, TypeError):
+                    msg = f"invalid time zone: {time_zone!r}, to see valid strings run `import zoneinfo; zoneinfo.available_timezones()`"
+                    raise ValueError(msg) from None
+            else:
+                msg = "install polars[timezone] to handle datetimes with time zone information"
+                raise ImportError(msg)
+        return str(time_zone)
 
 
 class Duration(TemporalType):
