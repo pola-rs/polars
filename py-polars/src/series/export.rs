@@ -241,30 +241,28 @@ fn series_to_numpy_with_copy(py: Python, s: &Series) -> PyResult<PyObject> {
         },
         Time => {
             let ca = s.time().unwrap();
-            let iter = time_to_pyobject_iter(py, ca);
-            let np_arr = PyArray1::from_iter_bound(py, iter.map(|v| v.into_py(py)));
-            np_arr.into_py(py)
+            let values = time_to_pyobject_iter(py, ca).map(|v| v.into_py(py));
+            PyArray1::from_iter_bound(py, values).into_py(py)
         },
         String => {
             let ca = s.str().unwrap();
-            let np_arr = PyArray1::from_iter_bound(py, ca.iter().map(|s| s.into_py(py)));
-            np_arr.into_py(py)
+            let values = ca.iter().map(|s| s.into_py(py));
+            PyArray1::from_iter_bound(py, values).into_py(py)
         },
         Binary => {
             let ca = s.binary().unwrap();
-            let np_arr = PyArray1::from_iter_bound(py, ca.iter().map(|s| s.into_py(py)));
-            np_arr.into_py(py)
+            let values = ca.iter().map(|s| s.into_py(py));
+            PyArray1::from_iter_bound(py, values).into_py(py)
         },
         Categorical(_, _) | Enum(_, _) => {
             let ca = s.categorical().unwrap();
-            let np_arr = PyArray1::from_iter_bound(py, ca.iter_str().map(|s| s.into_py(py)));
-            np_arr.into_py(py)
+            let values = ca.iter_str().map(|s| s.into_py(py));
+            PyArray1::from_iter_bound(py, values).into_py(py)
         },
         Decimal(_, _) => {
             let ca = s.decimal().unwrap();
-            let iter = decimal_to_pyobject_iter(py, ca);
-            let np_arr = PyArray1::from_iter_bound(py, iter.map(|v| v.into_py(py)));
-            np_arr.into_py(py)
+            let values = decimal_to_pyobject_iter(py, ca).map(|v| v.into_py(py));
+            PyArray1::from_iter_bound(py, values).into_py(py)
         },
         #[cfg(feature = "object")]
         Object(_, _) => {
@@ -272,14 +270,13 @@ fn series_to_numpy_with_copy(py: Python, s: &Series) -> PyResult<PyObject> {
                 .as_any()
                 .downcast_ref::<ObjectChunked<ObjectValue>>()
                 .unwrap();
-            let np_arr =
-                PyArray1::from_iter_bound(py, ca.into_iter().map(|opt_v| opt_v.to_object(py)));
-            np_arr.into_py(py)
+            let values = ca.into_iter().map(|v| v.to_object(py));
+            PyArray1::from_iter_bound(py, values).into_py(py)
         },
         Null => {
             let n = s.len();
-            let np_arr = PyArray1::from_iter_bound(py, std::iter::repeat(f32::NAN).take(n));
-            np_arr.into_py(py)
+            let values = std::iter::repeat(f32::NAN).take(n);
+            PyArray1::from_iter_bound(py, values).into_py(py)
         },
         dt => {
             raise_err!(
@@ -352,6 +349,6 @@ where
 {
     let s_phys = s.to_physical_repr();
     let ca = s_phys.i64().unwrap();
-    let iter = ca.iter().map(|v| v.unwrap_or(i64::MIN).into());
-    PyArray1::<T>::from_iter_bound(py, iter).into_py(py)
+    let values = ca.iter().map(|v| v.unwrap_or(i64::MIN).into());
+    PyArray1::<T>::from_iter_bound(py, values).into_py(py)
 }
