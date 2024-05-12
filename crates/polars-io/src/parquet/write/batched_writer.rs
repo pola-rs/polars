@@ -1,4 +1,3 @@
-use std::collections::VecDeque;
 use std::io::Write;
 use std::sync::Mutex;
 
@@ -7,8 +6,8 @@ use polars_core::prelude::*;
 use polars_core::POOL;
 use polars_parquet::read::ParquetError;
 use polars_parquet::write::{
-    array_to_columns, arrays_to_columns, CompressedPage, Compressor, DynIter, DynStreamingIterator,
-    Encoding, FallibleStreamingIterator, FileWriter, Page, ParquetType, RowGroupIterColumns,
+    array_to_columns, CompressedPage, Compressor, DynIter, DynStreamingIterator, Encoding,
+    FallibleStreamingIterator, FileWriter, Page, ParquetType, RowGroupIterColumns,
     SchemaDescriptor, WriteOptions,
 };
 use rayon::prelude::*;
@@ -42,13 +41,6 @@ impl<W: Write> BatchedWriter<W> {
                 Some(row_group)
             },
         })
-    }
-
-    pub fn encode_and_compress_multiple<'a>(
-        &'a self,
-        // A DataFrame with multiple chunks
-        chunked_df: &'a DataFrame,
-    ) {
     }
 
     /// Write a batch to the parquet writer.
@@ -187,34 +179,6 @@ fn create_serializer(
     Ok(row_group)
 }
 
-struct CompressedPages {
-    pages: VecDeque<PolarsResult<CompressedPage>>,
-    current: Option<CompressedPage>,
-}
-
-impl CompressedPages {
-    fn new(pages: VecDeque<PolarsResult<CompressedPage>>) -> Self {
-        Self {
-            pages,
-            current: None,
-        }
-    }
-}
-
-impl FallibleStreamingIterator for CompressedPages {
-    type Item = CompressedPage;
-    type Error = PolarsError;
-
-    fn advance(&mut self) -> Result<(), Self::Error> {
-        self.current = self.pages.pop_front().transpose()?;
-        Ok(())
-    }
-
-    fn get(&self) -> Option<&Self::Item> {
-        self.current.as_ref()
-    }
-}
-
 /// This serializer encodes and compresses all eagerly in memory.
 /// Used for separating compute from IO.
 fn create_eager_serializer(
@@ -229,37 +193,6 @@ fn create_eager_serializer(
 
     let columns = batch
         .columns()
-        .iter()
-        .zip(fields)
-        .zip(encodings)
-        .flat_map(func)
-        .collect::<Vec<_>>();
-
-    let row_group = DynIter::new(columns.into_iter());
-
-    Ok(row_group)
-}
-
-fn create_eager_serializer_batches(
-    // DataFrame with multiple chunks
-    chunked_df: DataFrame,
-    fields: &[ParquetType],
-    encodings: &[Vec<Encoding>],
-    options: WriteOptions,
-) -> PolarsResult<RowGroupIterColumns<'static, PolarsError>> {
-    let func = move |((s, type_), encoding): ((&Series, &ParquetType), &Vec<Encoding>)| {
-        let n_chunks = s.chunks().len();
-        let mut chunks = Vec::with_capacity(n_chunks);
-        for i in 0..n_chunks {
-            chunks.push(s.to_arrow(i, true))
-        }
-
-        let encoded_columns = arrays_to_columns(&chunks, type_.clone(), options, encoding).unwrap();
-        pages_iter_to_compressor(encoded_columns, options)
-    };
-
-    let columns = chunked_df
-        .get_columns()
         .iter()
         .zip(fields)
         .zip(encodings)
