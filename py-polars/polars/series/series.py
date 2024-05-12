@@ -4342,9 +4342,10 @@ class Series:
             if the array was created without copy, as the underlying Arrow data is
             immutable.
         use_pyarrow
-            Use `pyarrow.Array.to_numpy
+            First convert to PyArrow, then call `pyarrow.Array.to_numpy
             <https://arrow.apache.org/docs/python/generated/pyarrow.Array.html#pyarrow.Array.to_numpy>`_
-            for the conversion to NumPy.
+            to convert to NumPy. If set to `False`, Polars' own conversion logic is
+            used.
         zero_copy_only
             Raise an exception if the conversion to a NumPy would require copying
             the underlying data. Data copy occurs, for example, when the Series contains
@@ -4371,18 +4372,20 @@ class Series:
             )
             allow_copy = not zero_copy_only
 
-        def raise_on_copy() -> None:
-            if not allow_copy and not self.is_empty():
+        if (
+            use_pyarrow
+            and _PYARROW_AVAILABLE
+            and self.dtype not in (Object, Datetime, Duration, Date, Array)
+        ):
+            if not allow_copy and self.n_chunks() > 1 and not self.is_empty():
                 msg = "cannot return a zero-copy array"
                 raise ValueError(msg)
 
-        if self.n_chunks() > 1:
-            raise_on_copy()
-            self = self.rechunk()
+            return self.to_arrow().to_numpy(
+                zero_copy_only=not allow_copy, writable=writable
+            )
 
-        dtype = self.dtype
-
-        if dtype == Array:
+        if self.dtype == Array:
             np_array = self.explode().to_numpy(
                 allow_copy=allow_copy,
                 writable=writable,
@@ -4390,15 +4393,6 @@ class Series:
             )
             np_array.shape = (self.len(), self.dtype.width)  # type: ignore[attr-defined]
             return np_array
-
-        if (
-            use_pyarrow
-            and _PYARROW_AVAILABLE
-            and dtype not in (Object, Datetime, Duration, Date)
-        ):
-            return self.to_arrow().to_numpy(
-                zero_copy_only=not allow_copy, writable=writable
-            )
 
         return self._s.to_numpy(allow_copy=allow_copy, writable=writable)
 
