@@ -3315,7 +3315,7 @@ class Series:
         See Also
         --------
         head
-        
+
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3, 4, 5])
@@ -3327,9 +3327,9 @@ class Series:
             2
             3
         ]
-        
+
         Pass a negative value to get all rows `except` the last `abs(n)`.
-        
+
         >>> s.limit(-3)
         shape: (2,)
         Series: 'a' [i64]
@@ -4090,7 +4090,7 @@ class Series:
 
         Examples
         --------
-        >>> s = pl.Series("a", [[1, 2, 3], [4,5,6]])
+        >>> s = pl.Series("a", [[1, 2, 3], [4, 5, 6]])
         >>> s
         shape: (2,)
         Series: 'a' [list[i64]]
@@ -7340,7 +7340,7 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3, 4, 5])
-        >>> s.new_from_index(1,3)
+        >>> s.new_from_index(1, 3)
         shape: (3,)
         Series: 'a' [i64]
         [
@@ -7393,7 +7393,7 @@ class Series:
         --------
         >>> s1 = pl.Series("a", [1, 2, 3])
         >>> s2 = pl.Series("a", [4, 5, 6])
-        >>> s = pl.concat([s1, s2], rechunk = False)
+        >>> s = pl.concat([s1, s2], rechunk=False)
         >>> s.get_chunks()
         [shape: (3,)
         Series: 'a' [i64]
