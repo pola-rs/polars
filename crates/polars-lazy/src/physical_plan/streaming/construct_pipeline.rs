@@ -68,10 +68,12 @@ fn jit_insert_slice(
     sink_nodes: &mut Vec<(usize, Node, Rc<RefCell<u32>>)>,
     operator_offset: usize,
 ) {
-    // if the join/union has a slice, we add a new slice node
+    // if the join has a slice, we add a new slice node
     // note that we take the offset + 1, because we want to
     // slice AFTER the join has happened and the join will be an
     // operator
+    // NOTE: Don't do this for union, that doesn't work.
+    // TODO! Deal with this in the optimizer.
     use IR::*;
     let (offset, len) = match lp_arena.get(node) {
         Join { options, .. } if options.args.slice.is_some() => {
@@ -80,14 +82,6 @@ fn jit_insert_slice(
             };
             (offset, len)
         },
-        Union {
-            options:
-                UnionOptions {
-                    slice: Some((offset, len)),
-                    ..
-                },
-            ..
-        } => (*offset, *len),
         _ => return,
     };
 
@@ -178,7 +172,6 @@ pub(super) fn construct(
                 },
                 PipelineNode::Union(node) => {
                     operator_nodes.push(node);
-                    jit_insert_slice(node, lp_arena, &mut sink_nodes, operator_offset);
                     let op = get_operator(node, lp_arena, expr_arena, &to_physical_piped_expr)?;
                     operators.push(op);
                 },

@@ -81,26 +81,6 @@ fn insert_file_sink(mut root: Node, lp_arena: &mut Arena<IR>) -> Node {
     root
 }
 
-fn insert_slice(
-    root: Node,
-    offset: i64,
-    len: IdxSize,
-    lp_arena: &mut Arena<IR>,
-    state: &mut Branch,
-) -> Node {
-    let new_loc_child = lp_arena.duplicate(root);
-    lp_arena.replace(
-        root,
-        IR::Slice {
-            input: new_loc_child,
-            offset,
-            len: len as IdxSize,
-        },
-    );
-    state.operators_sinks.push(PipelineNode::Sink(root));
-    new_loc_child
-}
-
 pub(crate) fn insert_streaming_nodes(
     root: Node,
     lp_arena: &mut Arena<IR>,
@@ -249,20 +229,8 @@ pub(crate) fn insert_streaming_nodes(
                     )
                 }
             },
-            Scan {
-                file_options: options,
-                scan_type,
-                ..
-            } if scan_type.streamable() => {
+            Scan { scan_type, .. } if scan_type.streamable() => {
                 if state.streamable {
-                    #[cfg(feature = "csv")]
-                    if matches!(scan_type, FileScan::Csv { .. }) {
-                        // the batched csv reader doesn't stop exactly at n_rows
-                        if let Some(n_rows) = options.n_rows {
-                            root = insert_slice(root, 0, n_rows as IdxSize, lp_arena, &mut state);
-                        }
-                    }
-
                     state.sources.push(root);
                     pipeline_trees[current_idx].push(state)
                 }
