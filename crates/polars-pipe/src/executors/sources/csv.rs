@@ -61,6 +61,12 @@ impl CsvSource {
         let low_memory = options.low_memory;
 
         let reader: CsvReader<File> = options
+            .with_skip_rows_after_header(
+                // If we don't set it to 0 here, it will skip double the amount of rows.
+                // But if we set it to 0, it will still skip the requested amount of rows.
+                // TODO: Find out why. Maybe has something to do with schema inference.
+                0,
+            )
             .with_schema_overwrite(Some(self.schema.clone()))
             .with_n_rows(n_rows)
             .with_columns(with_columns)
