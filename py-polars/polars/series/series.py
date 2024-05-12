@@ -6349,21 +6349,21 @@ class Series:
 
         Examples
         --------
-        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s = pl.Series("a", [-2**60, -2, 3])
         >>> s
         shape: (3,)
         Series: 'a' [i64]
         [
-                1
-                2
+                -1152921504606846976
+                -2
                 3
         ]
         >>> s.reinterpret(signed=False)
         shape: (3,)
         Series: 'a' [u64]
         [
-                1
-                2
+                17293822569102704640
+                18446744073709551614
                 3
         ]
         """
