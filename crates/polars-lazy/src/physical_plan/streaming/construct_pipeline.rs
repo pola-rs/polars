@@ -92,7 +92,7 @@ fn jit_insert_slice(
     };
 
     let slice_node = lp_arena.add(Slice {
-        input: Node::default(),
+        input: node,
         offset,
         len: len as IdxSize,
     });

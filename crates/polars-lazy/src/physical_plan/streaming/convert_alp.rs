@@ -87,13 +87,18 @@ fn insert_slice(
     len: IdxSize,
     lp_arena: &mut Arena<IR>,
     state: &mut Branch,
-) {
-    let node = lp_arena.add(IR::Slice {
-        input: root,
-        offset,
-        len: len as IdxSize,
-    });
-    state.operators_sinks.push(PipelineNode::Sink(node));
+) -> Node {
+    let new_loc_child = lp_arena.duplicate(root);
+    lp_arena.replace(
+        root,
+        IR::Slice {
+            input: new_loc_child,
+            offset,
+            len: len as IdxSize,
+        },
+    );
+    state.operators_sinks.push(PipelineNode::Sink(root));
+    new_loc_child
 }
 
 pub(crate) fn insert_streaming_nodes(
@@ -254,7 +259,7 @@ pub(crate) fn insert_streaming_nodes(
                     if matches!(scan_type, FileScan::Csv { .. }) {
                         // the batched csv reader doesn't stop exactly at n_rows
                         if let Some(n_rows) = options.n_rows {
-                            insert_slice(root, 0, n_rows as IdxSize, lp_arena, &mut state);
+                            root = insert_slice(root, 0, n_rows as IdxSize, lp_arena, &mut state);
                         }
                     }
 
@@ -320,38 +325,7 @@ pub(crate) fn insert_streaming_nodes(
                 state.sources.push(root);
                 pipeline_trees[current_idx].push(state);
             },
-            Union {
-                options:
-                    UnionOptions {
-                        slice: Some((offset, len)),
-                        ..
-                    },
-                ..
-            } if *offset >= 0 => {
-                insert_slice(root, *offset, *len as IdxSize, lp_arena, &mut state);
-                state.streamable = true;
-                let Union { inputs, .. } = lp_arena.get(root) else {
-                    unreachable!()
-                };
-                for (i, input) in inputs.iter().enumerate() {
-                    let mut state = if i == 0 {
-                        // Note the clone!
-                        let mut state = state.clone();
-                        state.join_count += inputs.len() as u32 - 1;
-                        state
-                    } else {
-                        let mut state = state.split_from_sink();
-                        state.join_count = 0;
-                        state
-                    };
-                    state.operators_sinks.push(PipelineNode::Union(root));
-                    stack.push(StackFrame::new(*input, state, current_idx));
-                }
-            },
-            Union {
-                inputs,
-                options: UnionOptions { slice: None, .. },
-            } => {
+            Union { inputs, .. } => {
                 {
                     state.streamable = true;
                     for (i, input) in inputs.iter().enumerate() {
