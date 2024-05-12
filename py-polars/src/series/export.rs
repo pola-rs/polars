@@ -293,15 +293,21 @@ fn series_to_numpy_with_copy(py: Python, s: &Series) -> PyResult<PyObject> {
 fn numeric_series_to_numpy<T, U>(py: Python, s: &Series) -> PyObject
 where
     T: PolarsNumericType,
+    T::Native: numpy::Element,
     U: Float + numpy::Element,
 {
     let ca: &ChunkedArray<T> = s.as_ref().as_ref();
-    let mapper = |opt_v: Option<T::Native>| match opt_v {
-        Some(v) => NumCast::from(v).unwrap(),
-        None => U::nan(),
-    };
-    let np_arr = PyArray1::from_iter_bound(py, ca.iter().map(mapper));
-    np_arr.into_py(py)
+    if s.null_count() == 0 {
+        let values = ca.into_no_null_iter();
+        PyArray1::<T::Native>::from_iter_bound(py, values).into_py(py)
+    } else {
+        let mapper = |opt_v: Option<T::Native>| match opt_v {
+            Some(v) => NumCast::from(v).unwrap(),
+            None => U::nan(),
+        };
+        let values = ca.iter().map(mapper);
+        PyArray1::from_iter_bound(py, values).into_py(py)
+    }
 }
 /// Convert booleans to u8 if no nulls are present, otherwise convert to objects.
 fn boolean_series_to_numpy(py: Python, s: &Series) -> PyObject {
