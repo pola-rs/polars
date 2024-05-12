@@ -170,7 +170,7 @@ impl<'a> CoreReader<'a> {
             to_cast: self.to_cast,
             ignore_errors: self.ignore_errors,
             truncate_ragged_lines: self.truncate_ragged_lines,
-            n_rows: self.n_rows,
+            remaining: self.n_rows.unwrap_or(usize::MAX),
             encoding: self.encoding,
             separator: self.separator,
             schema: self.schema,
@@ -197,7 +197,7 @@ pub struct BatchedCsvReaderMmap<'a> {
     truncate_ragged_lines: bool,
     to_cast: Vec<Field>,
     ignore_errors: bool,
-    n_rows: Option<usize>,
+    remaining: usize,
     encoding: CsvEncoding,
     separator: u8,
     schema: SchemaRef,
@@ -211,13 +211,8 @@ pub struct BatchedCsvReaderMmap<'a> {
 
 impl<'a> BatchedCsvReaderMmap<'a> {
     pub fn next_batches(&mut self, n: usize) -> PolarsResult<Option<Vec<DataFrame>>> {
-        if n == 0 {
+        if n == 0 || self.remaining == 0 {
             return Ok(None);
-        }
-        if let Some(n_rows) = self.n_rows {
-            if self.rows_read >= n_rows as IdxSize {
-                return Ok(None);
-            }
         }
 
         // get next `n` offset positions.
@@ -274,8 +269,15 @@ impl<'a> BatchedCsvReaderMmap<'a> {
         if self.row_index.is_some() {
             update_row_counts2(&mut chunks, self.rows_read)
         }
-        for df in &chunks {
-            self.rows_read += df.height() as IdxSize;
+        for df in &mut chunks {
+            let h = df.height();
+
+            if self.remaining < h {
+                *df = df.slice(0, self.remaining)
+            };
+            self.remaining = self.remaining.saturating_sub(h);
+
+            self.rows_read += h as IdxSize;
         }
         Ok(Some(chunks))
     }

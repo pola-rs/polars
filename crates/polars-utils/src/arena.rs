@@ -104,6 +104,13 @@ impl<T> Arena<T> {
     }
 }
 
+impl<T: Clone> Arena<T> {
+    pub fn duplicate(&mut self, node: Node) -> Node {
+        let item = self.items[node.0].clone();
+        self.add(item)
+    }
+}
+
 impl<T: Default> Arena<T> {
     #[inline]
     pub fn take(&mut self, idx: Node) -> T {

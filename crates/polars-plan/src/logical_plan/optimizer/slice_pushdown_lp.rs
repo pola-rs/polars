@@ -209,7 +209,6 @@ impl SlicePushDown {
                 Ok(lp)
             }
             (Union {mut inputs, mut options }, Some(state)) => {
-                options.slice = Some((state.offset, state.len as usize));
                 if state.offset == 0 {
                     for input in &mut inputs {
                         let input_lp = lp_arena.take(*input);
@@ -217,7 +216,17 @@ impl SlicePushDown {
                         lp_arena.replace(*input, input_lp);
                     }
                 }
-                Ok(Union {inputs, options})
+                // The in-memory union node is slice aware.
+                // We still set this information, but the streaming engine will ignore it.
+                options.slice = Some((state.offset, state.len as usize));
+                let lp = Union {inputs, options};
+
+                if self.streaming {
+                    // Ensure the slice node remains.
+                    self.no_pushdown_finish_opt(lp, Some(state), lp_arena)
+                } else {
+                    Ok(lp)
+                }
             },
             (Join {
                 input_left,
