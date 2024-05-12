@@ -270,7 +270,7 @@ fn series_to_numpy_with_copy(py: Python, s: &Series) -> PyResult<PyObject> {
                 .as_any()
                 .downcast_ref::<ObjectChunked<ObjectValue>>()
                 .unwrap();
-            let values = ca.into_iter().map(|v| v.to_object(py));
+            let values = ca.iter().map(|v| v.to_object(py));
             PyArray1::from_iter_bound(py, values).into_py(py)
         },
         Null => {
