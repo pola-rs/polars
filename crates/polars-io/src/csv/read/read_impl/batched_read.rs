@@ -266,6 +266,7 @@ impl<'a> CoreReader<'a> {
             rows_read: 0,
             _cat_lock,
             decimal_comma: self.decimal_comma,
+            finished: false,
         })
     }
 }
@@ -295,12 +296,13 @@ pub struct BatchedCsvReaderRead<'a> {
     #[cfg(not(feature = "dtype-categorical"))]
     _cat_lock: Option<u8>,
     decimal_comma: bool,
+    finished: bool,
 }
 //
 impl<'a> BatchedCsvReaderRead<'a> {
     /// `n` number of batches.
     pub fn next_batches(&mut self, n: usize) -> PolarsResult<Option<Vec<DataFrame>>> {
-        if n == 0 || self.remaining == 0 {
+        if n == 0 || self.remaining == 0 || self.finished {
             return Ok(None);
         }
 
@@ -324,7 +326,7 @@ impl<'a> BatchedCsvReaderRead<'a> {
             // get the final slice
             self.file_chunks
                 .push(self.file_chunk_reader.get_buf_remaining());
-            self.remaining = 0
+            self.finished = true;
         }
 
         // depleted the offsets iterator, we are done as well.

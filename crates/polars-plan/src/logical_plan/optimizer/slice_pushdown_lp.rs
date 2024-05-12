@@ -216,11 +216,10 @@ impl SlicePushDown {
                         lp_arena.replace(*input, input_lp);
                     }
                 }
-
-                let lp = Union {inputs, options};
                 // The in-memory union node is slice aware.
                 // We still set this information, but the streaming engine will ignore it.
                 options.slice = Some((state.offset, state.len as usize));
+                let lp = Union {inputs, options};
 
                 if self.streaming {
                     // Ensure the slice node remains.
