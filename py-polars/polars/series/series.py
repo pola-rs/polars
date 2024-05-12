@@ -6349,7 +6349,7 @@ class Series:
 
         Examples
         --------
-        >>> s = pl.Series("a", [-2**60, -2, 3])
+        >>> s = pl.Series("a", [-(2**60), -2, 3])
         >>> s
         shape: (3,)
         Series: 'a' [i64]
