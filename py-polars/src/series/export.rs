@@ -167,12 +167,14 @@ impl PySeries {
     /// is required. Set `writable` to make sure the resulting array is writable, possibly requiring
     /// copying the data.
     fn to_numpy(&self, py: Python, allow_copy: bool, writable: bool) -> PyResult<PyObject> {
-        let is_empty = self.series.is_empty();
-
-        if self.series.null_count() == 0 {
+        if self.series.is_empty() {
+            // Take this path to ensure a writable array.
+            // This does not actually copy for empty Series.
+            return series_to_numpy_with_copy(py, &self.series);
+        } else if self.series.null_count() == 0 {
             if let Some(mut arr) = self.to_numpy_view(py) {
-                if writable || is_empty {
-                    if !allow_copy && !is_empty {
+                if writable {
+                    if !allow_copy {
                         return Err(PyValueError::new_err(
                             "cannot return a zero-copy writable array",
                         ));
@@ -183,7 +185,7 @@ impl PySeries {
             }
         }
 
-        if !allow_copy & !is_empty {
+        if !allow_copy {
             return Err(PyValueError::new_err("cannot return a zero-copy array"));
         }
 
