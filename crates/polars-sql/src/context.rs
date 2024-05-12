@@ -8,8 +8,8 @@ use polars_plan::prelude::*;
 use sqlparser::ast::{
     Distinct, ExcludeSelectItem, Expr as SQLExpr, FunctionArg, GroupByExpr, JoinOperator,
     ObjectName, ObjectType, Offset, OrderByExpr, Query, Select, SelectItem, SetExpr, SetOperator,
-    SetQuantifier, Statement, TableAlias, TableFactor, TableWithJoins, Value as SQLValue,
-    WildcardAdditionalOptions,
+    SetQuantifier, Statement, TableAlias, TableFactor, TableWithJoins, UnaryOperator,
+    Value as SQLValue, WildcardAdditionalOptions,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
@@ -412,23 +412,31 @@ impl SQLContext {
         match &select_stmt.group_by {
             // Standard "GROUP BY x, y, z" syntax
             GroupByExpr::Expressions(group_by_exprs) => {
-                group_by_keys = group_by_exprs.iter()
+                group_by_keys = group_by_exprs
+                    .iter()
                     .map(|e| match e {
+                        SQLExpr::UnaryOp {
+                            op: UnaryOperator::Minus,
+                            expr,
+                        } if matches!(**expr, SQLExpr::Value(SQLValue::Number(_, _))) => {
+                            if let SQLExpr::Value(SQLValue::Number(ref idx, _)) = **expr {
+                                Err(polars_err!(
+                                ComputeError:
+                                "group_by error: expected a positive integer or valid expression; got -{}",
+                                idx
+                                ))
+                            } else {
+                                unreachable!()
+                            }
+                        },
                         SQLExpr::Value(SQLValue::Number(idx, _)) => {
-                            let idx = match idx.parse::<usize>() {
-                                Ok(0) | Err(_) => Err(polars_err!(
-                                    ComputeError:
-                                    "group_by error: a positive number or an expression expected, got {}",
-                                    idx
-                                )),
-                                Ok(idx) => Ok(idx),
-                            }?;
                             // note: sql queries are 1-indexed
+                            let idx = idx.parse::<usize>().unwrap();
                             Ok(projections[idx - 1].clone())
                         },
-                        SQLExpr::Value(_) => Err(polars_err!(
+                        SQLExpr::Value(v) => Err(polars_err!(
                             ComputeError:
-                            "group_by error: a positive number or an expression expected",
+                            "group_by error: expected a positive integer or valid expression; got {}", v,
                         )),
                         _ => parse_sql_expr(e, self, schema.as_deref()),
                     })

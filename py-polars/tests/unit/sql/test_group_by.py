@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
 
 
@@ -196,3 +197,31 @@ def test_group_by_ordinal_position() -> None:
             SELECT c, total_b FROM grp ORDER BY c"""
         )
         assert_frame_equal(res2, expected)
+
+
+def test_group_by_errors() -> None:
+    df = pl.DataFrame(
+        {
+            "a": ["xx", "yy", "xx"],
+            "b": [10, 20, 30],
+            "c": [99, 99, 66],
+        }
+    )
+
+    with pytest.raises(
+        ComputeError,
+        match=r"expected a positive integer or valid expression; got -99",
+    ):
+        df.sql("SELECT a, SUM(b) FROM self GROUP BY -99, a")
+
+    with pytest.raises(
+        ComputeError,
+        match=r"expected a positive integer or valid expression; got '!!!'",
+    ):
+        df.sql("SELECT a, SUM(b) FROM self GROUP BY a, '!!!'")
+
+    with pytest.raises(
+        ComputeError,
+        match=r"'a' should participate in the GROUP BY clause or an aggregate function",
+    ):
+        df.sql("SELECT a, SUM(b) FROM self GROUP BY b")
