@@ -68,6 +68,12 @@ def test_series_allow_null_allowed_dtypes(s: pl.Series) -> None:
     assert s.dtype == pl.Null
 
 
+@given(s=series(allowed_dtypes=[pl.List(pl.Int8)], allow_null=False))
+def test_series_allow_null_nested(s: pl.Series) -> None:
+    for v in s:
+        assert v.null_count() == 0
+
+
 @given(df=dataframes())
 @settings(max_examples=5)
 def test_dataframes_defaults(df: pl.DataFrame) -> None:
