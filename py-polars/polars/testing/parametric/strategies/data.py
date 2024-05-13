@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import decimal
 from datetime import timedelta
-from typing import TYPE_CHECKING, Any, Literal, Sequence
+from typing import TYPE_CHECKING, Any, Literal, Mapping, Sequence
 
 import hypothesis.strategies as st
 from hypothesis.errors import InvalidArgument
@@ -34,6 +34,7 @@ from polars.datatypes import (
     Decimal,
     Duration,
     Enum,
+    Field,
     Float32,
     Float64,
     Int8,
@@ -43,6 +44,7 @@ from polars.datatypes import (
     List,
     Null,
     String,
+    Struct,
     Time,
     UInt8,
     UInt16,
@@ -58,10 +60,10 @@ from polars.testing.parametric.strategies.dtype import (
 if TYPE_CHECKING:
     from datetime import date, datetime, time
 
-    from hypothesis.strategies import SearchStrategy
+    from hypothesis.strategies import DrawFn, SearchStrategy
 
     from polars.datatypes import DataType, DataTypeClass
-    from polars.type_aliases import PolarsDataType, TimeUnit
+    from polars.type_aliases import PolarsDataType, SchemaDict, TimeUnit
 
 _DEFAULT_LIST_LEN_LIMIT = 3
 _DEFAULT_N_CATEGORIES = 10
@@ -278,6 +280,28 @@ def lists(
     )
 
 
+@st.composite
+def structs(  # noqa: D417
+    draw: DrawFn, /, fields: Sequence[Field] | SchemaDict, **kwargs: Any
+) -> dict[str, Any]:
+    """
+    Create a strategy for generating structs with the given fields.
+
+    Parameters
+    ----------
+    fields
+        The fields that make up the struct. Can be either a sequence of Field
+        objects or a mapping of column names to data types.
+    **kwargs
+        Additional arguments that are passed to nested data generation strategies.
+    """
+    if isinstance(fields, Mapping):
+        fields = [Field(name, dtype) for name, dtype in fields.items()]
+
+    strats = {f.name: data(f.dtype, **kwargs) for f in fields}
+    return {col: draw(strat) for col, strat in strats.items()}
+
+
 def nulls() -> SearchStrategy[None]:
     """Create a strategy for generating null values."""
     return st.none()
@@ -360,6 +384,9 @@ def data(
             allow_null=allow_null,
             **kwargs,
         )
+    elif dtype == Struct:
+        fields = getattr(dtype, "fields", None) or [Field("f0", Null())]
+        strategy = structs(fields, **kwargs)
     else:
         msg = f"unsupported data type: {dtype}"
         raise InvalidArgument(msg)
