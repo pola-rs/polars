@@ -3,14 +3,13 @@
 # ------------------------------------------------
 from __future__ import annotations
 
-import warnings
 from datetime import datetime
 from typing import Any
 
 import hypothesis.strategies as st
 import pytest
 from hypothesis import given, settings
-from hypothesis.errors import InvalidArgument, NonInteractiveExampleWarning
+from hypothesis.errors import InvalidArgument
 
 import polars as pl
 from polars.testing.parametric import column, dataframes, lists, series
@@ -113,23 +112,23 @@ def test_strategy_dtypes(
 
 
 @given(s=series())
-def test_series_null_probability_default(s: pl.Series) -> None:
+def test_series_allow_null_default(s: pl.Series) -> None:
     assert s.null_count() == 0
 
 
-@given(s=series(null_probability=0.1))
-def test_series_null_probability(s: pl.Series) -> None:
+@given(s=series(allow_null=True))
+def test_series_allow_null(s: pl.Series) -> None:
     assert 0 <= s.null_count() <= s.len()
 
 
-@given(df=dataframes(cols=1, null_probability=0.3))
-def test_dataframes_null_probability_global(df: pl.DataFrame) -> None:
+@given(df=dataframes(cols=1, allow_null=True))
+def test_dataframes_allow_null_global(df: pl.DataFrame) -> None:
     null_count = sum(df.null_count().row(0))
     assert 0 <= null_count <= df.height * df.width
 
 
-@given(df=dataframes(cols=2, null_probability={"col0": 0.7}))
-def test_dataframes_null_probability_column(df: pl.DataFrame) -> None:
+@given(df=dataframes(cols=2, allow_null={"col0": True}))
+def test_dataframes_allow_null_column(df: pl.DataFrame) -> None:
     null_count = sum(df.null_count().row(0))
     assert 0 <= null_count <= df.height * df.width
 
@@ -137,13 +136,13 @@ def test_dataframes_null_probability_column(df: pl.DataFrame) -> None:
 @given(
     df=dataframes(
         cols=1,
-        null_probability=1.0,
-        include_cols=[column(name="colx", null_probability=0.2)],
+        allow_null=False,
+        include_cols=[column(name="colx", allow_null=True)],
     )
 )
-def test_dataframes_null_probability_override(df: pl.DataFrame) -> None:
-    assert df.get_column("col0").null_count() == df.height
-    assert 0 <= df.get_column("col0").null_count() <= df.height
+def test_dataframes_allow_null_override(df: pl.DataFrame) -> None:
+    assert df.get_column("col0").null_count() == 0
+    assert 0 <= df.get_column("colx").null_count() <= df.height
 
 
 @given(
@@ -170,11 +169,9 @@ def test_chunking(
 
 @given(
     df=dataframes(
-        allowed_dtypes=[pl.Float32, pl.Float64],
-        allow_infinities=False,
-        max_cols=4,
+        allowed_dtypes=[pl.Float32, pl.Float64], max_cols=4, allow_infinity=False
     ),
-    s=series(dtype=pl.Float64, allow_infinities=False),
+    s=series(dtype=pl.Float64, allow_infinity=False),
 )
 def test_infinities(
     df: pl.DataFrame,
@@ -224,23 +221,23 @@ def test_sequence_strategies(df: pl.DataFrame) -> None:
 
 
 @pytest.mark.hypothesis()
-@pytest.mark.parametrize("invalid_probability", [-1.0, +2.0])
-def test_invalid_argument_null_probability(invalid_probability: float) -> None:
-    with pytest.raises(InvalidArgument, match="between 0.0 and 1.0"):
-        column("colx", dtype=pl.Boolean, null_probability=invalid_probability)
-
-    with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", category=NonInteractiveExampleWarning)
-        with pytest.raises(InvalidArgument, match="between 0.0 and 1.0"):
-            series(name="colx", null_probability=invalid_probability).example()
-        with pytest.raises(InvalidArgument, match="between 0.0 and 1.0"):
-            dataframes(
-                cols=column(None),
-                null_probability=invalid_probability,
-            ).example()
+def test_column_invalid_probability() -> None:
+    with pytest.deprecated_call(), pytest.raises(InvalidArgument):
+        column("col", null_probability=2.0)
 
 
 @pytest.mark.hypothesis()
-def test_column_invalid_probability() -> None:
-    with pytest.raises(InvalidArgument):
-        column("col", null_probability=2.0)
+def test_column_null_probability_deprecated() -> None:
+    with pytest.deprecated_call():
+        col = column("col", allow_null=False, null_probability=0.5)
+    assert col.null_probability == 0.5
+    assert col.allow_null is True  # null_probability takes precedence
+
+
+@given(st.data())
+def test_allow_infinities_deprecated(data: st.DataObject) -> None:
+    with pytest.deprecated_call():
+        strategy = series(dtype=pl.Float64, allow_infinities=False)
+        s = data.draw(strategy)
+
+    assert all(v not in (float("inf"), float("-inf")) for v in s)

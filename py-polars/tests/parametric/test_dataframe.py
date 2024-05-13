@@ -40,7 +40,7 @@ def test_dtype_integer_cols(df: pl.DataFrame) -> None:
     df=dataframes(
         min_size=1,
         min_cols=1,
-        null_probability=0.25,
+        allow_null=True,
         excluded_dtypes=[pl.String, pl.List],
     )
 )
@@ -64,19 +64,19 @@ def test_null_count(df: pl.DataFrame) -> None:
             column(
                 "start",
                 dtype=pl.Int8,
-                null_probability=0.15,
+                allow_null=True,
                 strategy=st.integers(min_value=-8, max_value=8),
             ),
             column(
                 "stop",
                 dtype=pl.Int8,
-                null_probability=0.15,
+                allow_null=True,
                 strategy=st.integers(min_value=-6, max_value=6),
             ),
             column(
                 "step",
                 dtype=pl.Int8,
-                null_probability=0.15,
+                allow_null=True,
                 strategy=st.integers(min_value=-4, max_value=4).filter(
                     lambda x: x != 0
                 ),

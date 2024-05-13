@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import decimal
-import string
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any, Literal, Sequence
 
@@ -61,6 +60,7 @@ if TYPE_CHECKING:
     from polars.type_aliases import PolarsDataType, TimeUnit
 
 _DEFAULT_LIST_LEN_LIMIT = 3
+_DEFAULT_N_CATEGORIES = 10
 
 _INTEGER_STRATEGIES: dict[bool, dict[int, SearchStrategy[int]]] = {
     True: {
@@ -108,9 +108,17 @@ def binary() -> SearchStrategy[bytes]:
     return st.binary()
 
 
-def categories() -> SearchStrategy[str]:
-    """Create a strategy for generating category strings."""
-    return st.text(alphabet=string.ascii_uppercase, min_size=1, max_size=2)
+def categories(n_categories: int = _DEFAULT_N_CATEGORIES) -> SearchStrategy[str]:
+    """
+    Create a strategy for generating category strings.
+
+    Parameters
+    ----------
+    n_categories
+        The number of categories.
+    """
+    categories = [f"c{i}" for i in range(n_categories)]
+    return st.sampled_from(categories)
 
 
 def times() -> SearchStrategy[time]:
@@ -284,14 +292,15 @@ _STATIC_STRATEGIES: dict[DataTypeClass, SearchStrategy[Any]] = {
     UInt64: integers(64, signed=False),
     Time: times(),
     Date: dates(),
-    Categorical: categories(),
     String: strings(),
     Binary: binary(),
     Null: nulls(),
 }
 
 
-def data(dtype: PolarsDataType, **kwargs: Any) -> SearchStrategy[Any]:
+def data(
+    dtype: PolarsDataType, *, allow_null: bool = False, **kwargs: Any
+) -> SearchStrategy[Any]:
     """
     Create a strategy for generating data for the given data type.
 
@@ -300,30 +309,37 @@ def data(dtype: PolarsDataType, **kwargs: Any) -> SearchStrategy[Any]:
     dtype
         A Polars data type. If the data type is not fully instantiated, defaults will
         be used, e.g. `Datetime` will become `Datetime('us')`.
+    allow_null
+        Allow nulls as possible values.
     **kwargs
         Additional parameters for the strategy associated with the given `dtype`.
     """
     if (strategy := _STATIC_STRATEGIES.get(dtype.base_type())) is not None:
-        return strategy
-
-    if dtype == Float32:
-        return floats(32, allow_infinity=kwargs.pop("allow_infinity", True))
+        strategy = strategy
+    elif dtype == Float32:
+        strategy = floats(32, allow_infinity=kwargs.pop("allow_infinity", True))
     elif dtype == Float64:
-        return floats(64, allow_infinity=kwargs.pop("allow_infinity", True))
+        strategy = floats(64, allow_infinity=kwargs.pop("allow_infinity", True))
     elif dtype == Datetime:
         # TODO: Handle time zones
-        return datetimes(time_unit=getattr(dtype, "time_unit", None) or "us")
+        strategy = datetimes(time_unit=getattr(dtype, "time_unit", None) or "us")
     elif dtype == Duration:
-        return durations(time_unit=getattr(dtype, "time_unit", None) or "us")
+        strategy = durations(time_unit=getattr(dtype, "time_unit", None) or "us")
+    elif dtype == Categorical:
+        strategy = categories(
+            n_categories=kwargs.pop("n_categories", _DEFAULT_N_CATEGORIES)
+        )
     elif dtype == Decimal:
-        return decimals(getattr(dtype, "precision", None), getattr(dtype, "scale", 0))
+        strategy = decimals(
+            getattr(dtype, "precision", None), getattr(dtype, "scale", 0)
+        )
     elif dtype == List:
         inner = getattr(dtype, "inner", None) or Null()
-        return lists(inner, **kwargs)
+        strategy = lists(inner, **kwargs)
     elif dtype == Array:
         inner = getattr(dtype, "inner", None) or Null()
         width = getattr(dtype, "width", _DEFAULT_ARRAY_WIDTH_LIMIT)
-        return lists(
+        strategy = lists(
             inner,
             min_len=width,
             max_len=width,
@@ -332,3 +348,8 @@ def data(dtype: PolarsDataType, **kwargs: Any) -> SearchStrategy[Any]:
     else:
         msg = f"unsupported data type: {dtype}"
         raise InvalidArgument(msg)
+
+    if allow_null:
+        strategy = nulls() | strategy
+
+    return strategy

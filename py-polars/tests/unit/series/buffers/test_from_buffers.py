@@ -37,7 +37,7 @@ def test_series_from_buffers_numeric_with_validity(s: pl.Series) -> None:
     s=series(
         allowed_dtypes=(pl.INTEGER_DTYPES | pl.FLOAT_DTYPES | {pl.Boolean}),
         chunked=False,
-        null_probability=0.0,
+        allow_null=False,
     )
 )
 def test_series_from_buffers_numeric(s: pl.Series) -> None:

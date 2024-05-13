@@ -223,7 +223,7 @@ def alpha_guard(**decay_param: float) -> bool:
     s=series(
         min_size=4,
         dtype=pl.Float64,
-        null_probability=0.05,
+        allow_null=True,
         strategy=st.floats(min_value=-1e8, max_value=1e8),
     ),
     half_life=st.floats(min_value=0, max_value=4, exclude_min=True).filter(

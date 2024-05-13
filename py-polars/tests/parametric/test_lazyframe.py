@@ -16,19 +16,19 @@ from polars.testing.parametric import column, dataframes
             column(
                 "start",
                 dtype=pl.Int8,
-                null_probability=0.3,
+                allow_null=True,
                 strategy=st.integers(min_value=-3, max_value=4),
             ),
             column(
                 "stop",
                 dtype=pl.Int8,
-                null_probability=0.3,
+                allow_null=True,
                 strategy=st.integers(min_value=-2, max_value=6),
             ),
             column(
                 "step",
                 dtype=pl.Int8,
-                null_probability=0.3,
+                allow_null=True,
                 strategy=st.integers(min_value=-3, max_value=3).filter(
                     lambda x: x != 0
                 ),
