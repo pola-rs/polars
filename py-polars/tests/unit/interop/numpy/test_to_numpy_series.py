@@ -326,11 +326,19 @@ def test_series_to_numpy_temporal() -> None:
 
 @given(
     s=series(
-        min_size=1, max_size=10, excluded_dtypes=[pl.Categorical, pl.List, pl.Struct]
+        min_size=1,
+        max_size=10,
+        excluded_dtypes=[
+            pl.Categorical,
+            pl.List,
+            pl.Struct,
+            pl.Datetime("ms"),
+            pl.Duration("ms"),
+        ],
+        allow_null=False,
     ).filter(
         lambda s: (
-            getattr(s.dtype, "time_unit", None) != "ms"
-            and not (s.dtype == pl.String and s.str.contains("\x00").any())
+            not (s.dtype == pl.String and s.str.contains("\x00").any())
             and not (s.dtype == pl.Binary and s.bin.contains(b"\x00").any())
         )
     ),
@@ -345,6 +353,7 @@ def test_series_to_numpy(s: pl.Series) -> None:
         pl.Datetime("us"): "datetime64[us]",
         pl.Duration("ns"): "timedelta64[ns]",
         pl.Duration("us"): "timedelta64[us]",
+        pl.Null(): np.float32,
     }
     np_dtype = dtype_map.get(s.dtype)  # type: ignore[call-overload]
     expected = np.array(values, dtype=np_dtype)

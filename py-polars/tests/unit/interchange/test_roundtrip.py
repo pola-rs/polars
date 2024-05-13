@@ -36,7 +36,12 @@ protocol_dtypes: list[pl.PolarsDataType] = integer_dtypes + [
 ]
 
 
-@given(dataframes(allowed_dtypes=protocol_dtypes))
+@given(
+    dataframes(
+        allowed_dtypes=protocol_dtypes,
+        allow_null=False,  # Bug: https://github.com/pola-rs/polars/issues/16190
+    )
+)
 def test_to_dataframe_pyarrow_parametric(df: pl.DataFrame) -> None:
     dfi = df.__dataframe__()
     df_pa = pa.interchange.from_dataframe(dfi)
@@ -71,7 +76,12 @@ def test_to_dataframe_pyarrow_zero_copy_parametric(df: pl.DataFrame) -> None:
 @pytest.mark.filterwarnings(
     "ignore:.*PEP3118 format string that does not match its itemsize:RuntimeWarning"
 )
-@given(dataframes(allowed_dtypes=protocol_dtypes))
+@given(
+    dataframes(
+        allowed_dtypes=protocol_dtypes,
+        allow_null=False,  # Bug: https://github.com/pola-rs/polars/issues/16190
+    )
+)
 def test_to_dataframe_pandas_parametric(df: pl.DataFrame) -> None:
     dfi = df.__dataframe__()
     df_pd = pd.api.interchange.from_dataframe(dfi)
@@ -94,6 +104,7 @@ def test_to_dataframe_pandas_parametric(df: pl.DataFrame) -> None:
             pl.Categorical,
         ],
         chunked=False,
+        allow_null=False,  # Bug: https://github.com/pola-rs/polars/issues/16190
     )
 )
 def test_to_dataframe_pandas_zero_copy_parametric(df: pl.DataFrame) -> None:
@@ -193,6 +204,7 @@ def test_from_dataframe_pandas_zero_copy_parametric(df: pl.DataFrame) -> None:
         # Empty string columns cause an error due to a bug in pandas.
         # https://github.com/pandas-dev/pandas/issues/56703
         min_size=1,
+        allow_null=False,  # Bug: https://github.com/pola-rs/polars/issues/16190
     )
 )
 def test_from_dataframe_pandas_native_parametric(df: pl.DataFrame) -> None:
@@ -217,6 +229,7 @@ def test_from_dataframe_pandas_native_parametric(df: pl.DataFrame) -> None:
         # https://github.com/pandas-dev/pandas/issues/56700
         min_size=1,
         chunked=False,
+        allow_null=False,  # Bug: https://github.com/pola-rs/polars/issues/16190
     )
 )
 def test_from_dataframe_pandas_native_zero_copy_parametric(df: pl.DataFrame) -> None:

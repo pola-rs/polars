@@ -1350,7 +1350,7 @@ def test_series_duration_timeunits(
 
 
 @given(
-    s=series(min_size=1, max_size=10, dtype=pl.Datetime),
+    s=series(min_size=1, max_size=10, dtype=pl.Datetime, allow_null=False),
 )
 def test_series_datetime_timeunits(
     s: pl.Series,
