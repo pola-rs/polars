@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import decimal
-import string
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any, Literal, Sequence
 
@@ -61,6 +60,7 @@ if TYPE_CHECKING:
     from polars.type_aliases import PolarsDataType, TimeUnit
 
 _DEFAULT_LIST_LEN_LIMIT = 3
+_DEFAULT_N_CATEGORIES = 10
 
 _INTEGER_STRATEGIES: dict[bool, dict[int, SearchStrategy[int]]] = {
     True: {
@@ -108,9 +108,17 @@ def binary() -> SearchStrategy[bytes]:
     return st.binary()
 
 
-def categories() -> SearchStrategy[str]:
-    """Create a strategy for generating category strings."""
-    return st.text(alphabet=string.ascii_uppercase, min_size=1, max_size=2)
+def categories(n_categories: int = _DEFAULT_N_CATEGORIES) -> SearchStrategy[str]:
+    """
+    Create a strategy for generating category strings.
+
+    Parameters
+    ----------
+    n_categories
+        The number of categories.
+    """
+    categories = [f"c{i}" for i in range(n_categories)]
+    return st.sampled_from(categories)
 
 
 def times() -> SearchStrategy[time]:
@@ -284,7 +292,6 @@ _STATIC_STRATEGIES: dict[DataTypeClass, SearchStrategy[Any]] = {
     UInt64: integers(64, signed=False),
     Time: times(),
     Date: dates(),
-    Categorical: categories(),
     String: strings(),
     Binary: binary(),
     Null: nulls(),
@@ -315,6 +322,10 @@ def data(dtype: PolarsDataType, **kwargs: Any) -> SearchStrategy[Any]:
         return datetimes(time_unit=getattr(dtype, "time_unit", None) or "us")
     elif dtype == Duration:
         return durations(time_unit=getattr(dtype, "time_unit", None) or "us")
+    elif dtype == Categorical:
+        return categories(
+            n_categories=kwargs.pop("n_categories", _DEFAULT_N_CATEGORIES)
+        )
     elif dtype == Decimal:
         return decimals(getattr(dtype, "precision", None), getattr(dtype, "scale", 0))
     elif dtype == List:
