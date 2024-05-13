@@ -83,7 +83,7 @@ where
     }
     let ca = ca.rechunk();
     ensure_duration_matches_data_type(options.window_size, by.dtype(), "window_size")?;
-    polars_ensure!(options.window_size.duration_ns()>0 && !options.window_size.negative, InvalidOperation: "`window_size` must be strictly positive");
+    polars_ensure!(!options.window_size.is_zero() && !options.window_size.negative, InvalidOperation: "`window_size` must be strictly positive");
     if by.is_sorted_flag() != IsSorted::Ascending && options.warn_if_unsorted {
         polars_warn!(format!(
             "Series is not known to be sorted by `by` column in `rolling_*_by` operation.\n\
