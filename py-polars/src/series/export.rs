@@ -167,12 +167,14 @@ impl PySeries {
     /// is required. Set `writable` to make sure the resulting array is writable, possibly requiring
     /// copying the data.
     fn to_numpy(&self, py: Python, allow_copy: bool, writable: bool) -> PyResult<PyObject> {
-        let is_empty = self.series.is_empty();
-
-        if self.series.null_count() == 0 {
+        if self.series.is_empty() {
+            // Take this path to ensure a writable array.
+            // This does not actually copy for empty Series.
+            return series_to_numpy_with_copy(py, &self.series);
+        } else if self.series.null_count() == 0 {
             if let Some(mut arr) = self.to_numpy_view(py) {
-                if writable || is_empty {
-                    if !allow_copy && !is_empty {
+                if writable {
+                    if !allow_copy {
                         return Err(PyValueError::new_err(
                             "cannot return a zero-copy writable array",
                         ));
@@ -183,7 +185,7 @@ impl PySeries {
             }
         }
 
-        if !allow_copy & !is_empty {
+        if !allow_copy {
             return Err(PyValueError::new_err("cannot return a zero-copy array"));
         }
 
@@ -239,30 +241,28 @@ fn series_to_numpy_with_copy(py: Python, s: &Series) -> PyResult<PyObject> {
         },
         Time => {
             let ca = s.time().unwrap();
-            let iter = time_to_pyobject_iter(py, ca);
-            let np_arr = PyArray1::from_iter_bound(py, iter.map(|v| v.into_py(py)));
-            np_arr.into_py(py)
+            let values = time_to_pyobject_iter(py, ca).map(|v| v.into_py(py));
+            PyArray1::from_iter_bound(py, values).into_py(py)
         },
         String => {
             let ca = s.str().unwrap();
-            let np_arr = PyArray1::from_iter_bound(py, ca.iter().map(|s| s.into_py(py)));
-            np_arr.into_py(py)
+            let values = ca.iter().map(|s| s.into_py(py));
+            PyArray1::from_iter_bound(py, values).into_py(py)
         },
         Binary => {
             let ca = s.binary().unwrap();
-            let np_arr = PyArray1::from_iter_bound(py, ca.iter().map(|s| s.into_py(py)));
-            np_arr.into_py(py)
+            let values = ca.iter().map(|s| s.into_py(py));
+            PyArray1::from_iter_bound(py, values).into_py(py)
         },
         Categorical(_, _) | Enum(_, _) => {
             let ca = s.categorical().unwrap();
-            let np_arr = PyArray1::from_iter_bound(py, ca.iter_str().map(|s| s.into_py(py)));
-            np_arr.into_py(py)
+            let values = ca.iter_str().map(|s| s.into_py(py));
+            PyArray1::from_iter_bound(py, values).into_py(py)
         },
         Decimal(_, _) => {
             let ca = s.decimal().unwrap();
-            let iter = decimal_to_pyobject_iter(py, ca);
-            let np_arr = PyArray1::from_iter_bound(py, iter.map(|v| v.into_py(py)));
-            np_arr.into_py(py)
+            let values = decimal_to_pyobject_iter(py, ca).map(|v| v.into_py(py));
+            PyArray1::from_iter_bound(py, values).into_py(py)
         },
         #[cfg(feature = "object")]
         Object(_, _) => {
@@ -270,14 +270,13 @@ fn series_to_numpy_with_copy(py: Python, s: &Series) -> PyResult<PyObject> {
                 .as_any()
                 .downcast_ref::<ObjectChunked<ObjectValue>>()
                 .unwrap();
-            let np_arr =
-                PyArray1::from_iter_bound(py, ca.into_iter().map(|opt_v| opt_v.to_object(py)));
-            np_arr.into_py(py)
+            let values = ca.iter().map(|v| v.to_object(py));
+            PyArray1::from_iter_bound(py, values).into_py(py)
         },
         Null => {
             let n = s.len();
-            let np_arr = PyArray1::from_iter_bound(py, std::iter::repeat(f32::NAN).take(n));
-            np_arr.into_py(py)
+            let values = std::iter::repeat(f32::NAN).take(n);
+            PyArray1::from_iter_bound(py, values).into_py(py)
         },
         dt => {
             raise_err!(
@@ -293,15 +292,21 @@ fn series_to_numpy_with_copy(py: Python, s: &Series) -> PyResult<PyObject> {
 fn numeric_series_to_numpy<T, U>(py: Python, s: &Series) -> PyObject
 where
     T: PolarsNumericType,
+    T::Native: numpy::Element,
     U: Float + numpy::Element,
 {
     let ca: &ChunkedArray<T> = s.as_ref().as_ref();
-    let mapper = |opt_v: Option<T::Native>| match opt_v {
-        Some(v) => NumCast::from(v).unwrap(),
-        None => U::nan(),
-    };
-    let np_arr = PyArray1::from_iter_bound(py, ca.iter().map(mapper));
-    np_arr.into_py(py)
+    if s.null_count() == 0 {
+        let values = ca.into_no_null_iter();
+        PyArray1::<T::Native>::from_iter_bound(py, values).into_py(py)
+    } else {
+        let mapper = |opt_v: Option<T::Native>| match opt_v {
+            Some(v) => NumCast::from(v).unwrap(),
+            None => U::nan(),
+        };
+        let values = ca.iter().map(mapper);
+        PyArray1::from_iter_bound(py, values).into_py(py)
+    }
 }
 /// Convert booleans to u8 if no nulls are present, otherwise convert to objects.
 fn boolean_series_to_numpy(py: Python, s: &Series) -> PyObject {
@@ -344,6 +349,6 @@ where
 {
     let s_phys = s.to_physical_repr();
     let ca = s_phys.i64().unwrap();
-    let iter = ca.iter().map(|v| v.unwrap_or(i64::MIN).into());
-    PyArray1::<T>::from_iter_bound(py, iter).into_py(py)
+    let values = ca.iter().map(|v| v.unwrap_or(i64::MIN).into());
+    PyArray1::<T>::from_iter_bound(py, values).into_py(py)
 }
