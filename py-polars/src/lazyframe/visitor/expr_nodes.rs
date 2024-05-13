@@ -646,7 +646,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                         ascii_case_insensitive,
                     } => ("replacemany", ascii_case_insensitive).to_object(py),
                 },
-
                 FunctionExpr::StructExpr(_) => {
                     return Err(PyNotImplementedError::new_err("struct expr"))
                 },
