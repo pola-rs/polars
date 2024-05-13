@@ -60,21 +60,6 @@ pub(crate) enum AggState {
 }
 
 impl AggState {
-    // Literal series are not safe to aggregate
-    fn safe_to_agg(&self, groups: &GroupsProxy) -> bool {
-        match self {
-            AggState::NotAggregated(s) => {
-                !(s.len() == 1
-                    // or more then one group
-                    && (groups.len() > 1
-                    // or single groups with more than one index
-                    || !groups.is_empty()
-                    && groups.get(0).len() > 1))
-            },
-            _ => true,
-        }
-    }
-
     fn try_map<F>(&self, func: F) -> PolarsResult<Self>
     where
         F: FnOnce(&Series) -> PolarsResult<Series>,
