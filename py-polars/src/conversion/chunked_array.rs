@@ -1,4 +1,5 @@
 use polars_core::export::chrono::NaiveTime;
+use polars_core::utils::arrow::temporal_conversions::date32_to_date;
 use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList, PyTuple};
@@ -98,12 +99,10 @@ pub(crate) fn time_to_pyobject_iter<'a>(
 
 impl ToPyObject for Wrap<&DateChunked> {
     fn to_object(&self, py: Python) -> PyObject {
-        let utils = UTILS.bind(py);
-        let convert = utils.getattr(intern!(py, "to_py_date")).unwrap();
         let iter = self
             .0
             .into_iter()
-            .map(|opt_v| opt_v.map(|v| convert.call1((v,)).unwrap()));
+            .map(|opt_v| opt_v.map(|v| date32_to_date(v)));
         PyList::new_bound(py, iter).into_py(py)
     }
 }
