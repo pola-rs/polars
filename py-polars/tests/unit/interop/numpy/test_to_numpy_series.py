@@ -353,9 +353,9 @@ def test_series_to_numpy(s: pl.Series) -> None:
         pl.Datetime("us"): "datetime64[us]",
         pl.Duration("ns"): "timedelta64[ns]",
         pl.Duration("us"): "timedelta64[us]",
-        pl.Null(): np.float32,
+        pl.Null(): "float32",
     }
-    np_dtype = dtype_map.get(s.dtype)  # type: ignore[call-overload]
+    np_dtype = dtype_map.get(s.dtype)
     expected = np.array(values, dtype=np_dtype)
 
     assert_array_equal(result, expected)

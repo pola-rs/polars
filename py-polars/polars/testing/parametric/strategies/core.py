@@ -145,7 +145,7 @@ def series(  # noqa: D417
     if isinstance(excluded_dtypes, (DataType, DataTypeClass)):
         excluded_dtypes = [excluded_dtypes]
     elif excluded_dtypes is not None:
-        if not isinstance(excluded_dtypes, Sequence):
+        if not isinstance(excluded_dtypes, list):
             excluded_dtypes = list(excluded_dtypes)
 
     if not allow_null and not (allowed_dtypes is not None and Null in allowed_dtypes):
