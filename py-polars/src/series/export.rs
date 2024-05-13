@@ -188,7 +188,7 @@ impl PySeries {
             Datetime(_, _) | Duration(_) => temporal_series_to_numpy(py, s),
             Time => {
                 let ca = s.time().unwrap();
-                let iter = time_to_pyobject_iter(py, ca);
+                let iter = time_to_pyobject_iter(ca);
                 let np_arr = PyArray1::from_iter_bound(py, iter.map(|v| v.into_py(py)));
                 np_arr.into_py(py)
             },

@@ -1,5 +1,6 @@
 pub(crate) mod any_value;
 pub(crate) mod chunked_array;
+mod datetime;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 
