@@ -11,7 +11,11 @@ from polars.testing.parametric import dataframes
         min_size=1,
         min_cols=1,
         allow_null=True,
-        excluded_dtypes=[pl.String, pl.List],
+        excluded_dtypes=[
+            pl.String,
+            pl.List,
+            pl.Struct,  # See: https://github.com/pola-rs/polars/issues/3462
+        ],
     )
 )
 @example(df=pl.DataFrame(schema=["x", "y", "z"]))

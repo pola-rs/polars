@@ -10,7 +10,13 @@ from polars.testing import assert_frame_equal
 from polars.testing.parametric import dataframes
 
 
-@given(df=dataframes())
+@given(
+    df=dataframes(
+        excluded_dtypes=[
+            pl.Categorical,  # Bug: https://github.com/pola-rs/polars/issues/16196
+        ]
+    )
+)
 def test_to_dict(df: pl.DataFrame) -> None:
     d = df.to_dict(as_series=False)
     result = pl.from_dict(d, schema=df.schema)

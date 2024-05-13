@@ -29,3 +29,9 @@ def test_data_enum(cat: str) -> None:
 @given(cat=data(pl.Enum(["hello", "world"])))
 def test_data_enum_instantiated(cat: str) -> None:
     assert cat in ("hello", "world")
+
+
+@given(struct=data(pl.Struct({"a": pl.Int8, "b": pl.String})))
+def test_data_struct(struct: dict[str, int | str]) -> None:
+    assert isinstance(struct["a"], int)
+    assert isinstance(struct["b"], str)
