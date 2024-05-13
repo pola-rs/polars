@@ -704,3 +704,11 @@ def test_invalid_product_type() -> None:
         match="`product` operation not supported for dtype",
     ):
         pl.Series([[1, 2, 3]]).product()
+
+
+def test_fill_null_invalid_supertype() -> None:
+    df = pl.DataFrame({"date": [date(2022, 1, 1), None]})
+    with pytest.raises(
+        pl.InvalidOperationError, match="could not determine supertype of"
+    ):
+        df.select(pl.col("date").fill_null(1.0))

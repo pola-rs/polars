@@ -20,7 +20,6 @@ mod simplify_functions;
 mod slice_pushdown_expr;
 mod slice_pushdown_lp;
 mod stack_opt;
-mod type_coercion;
 
 use collapse_and_project::SimpleProjectionAndCollapse;
 use delay_rechunk::DelayRechunk;
@@ -31,10 +30,10 @@ pub use projection_pushdown::ProjectionPushDown;
 pub use simplify_expr::{SimplifyBooleanRule, SimplifyExprRule};
 use slice_pushdown_lp::SlicePushDown;
 pub use stack_opt::{OptimizationRule, StackOptimizer};
-pub use type_coercion::TypeCoercionRule;
 
 use self::flatten_union::FlattenUnionRule;
 pub use crate::frame::{AllowedOptimizations, OptState};
+pub use crate::logical_plan::conversion::type_coercion::TypeCoercionRule;
 use crate::logical_plan::optimizer::count_star::CountStar;
 #[cfg(feature = "cse")]
 use crate::logical_plan::optimizer::cse::prune_unused_caches;

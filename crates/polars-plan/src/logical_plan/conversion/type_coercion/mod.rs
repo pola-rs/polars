@@ -3,13 +3,13 @@ mod binary;
 use std::borrow::Cow;
 
 use arrow::legacy::utils::CustomIterTools;
+use binary::process_binary;
 use polars_core::prelude::*;
 use polars_core::utils::{get_supertype, materialize_dyn_int};
 use polars_utils::idx_vec::UnitVec;
-use polars_utils::unitvec;
+use polars_utils::{format_list, unitvec};
 
 use super::*;
-use crate::logical_plan::optimizer::type_coercion::binary::process_binary;
 
 pub struct TypeCoercionRule {}
 
@@ -345,6 +345,8 @@ impl OptimizationRule for TypeCoercionRule {
                 for e in input {
                     let (_, dtype) =
                         unpack!(get_aexpr_and_type(expr_arena, e.node(), &input_schema));
+                    // Ignore Unknown in the inputs.
+                    // We will raise if we cannot find the supertype later.
                     match dtype {
                         DataType::Unknown(UnknownKind::Any) => {
                             options.cast_to_supertypes = false;
@@ -369,11 +371,9 @@ impl OptimizationRule for TypeCoercionRule {
                     let (other, type_other) =
                         unpack!(get_aexpr_and_type(expr_arena, other.node(), &input_schema));
 
-                    // early return until Unknown is set
-                    if matches!(type_other, DataType::Unknown(UnknownKind::Any)) {
-                        return Ok(None);
-                    }
-                    let new_st = unpack!(get_supertype(&super_type, &type_other));
+                    let Some(new_st) = get_supertype(&super_type, &type_other) else {
+                        polars_bail!(InvalidOperation: "could not determine supertype of: {}", format_list!(dtypes));
+                    };
                     if input.len() == 2 {
                         // modify_supertype is a bit more conservative of casting columns
                         // to literals
@@ -383,6 +383,10 @@ impl OptimizationRule for TypeCoercionRule {
                         // when dealing with more than 1 argument, we simply find the supertypes
                         super_type = new_st
                     }
+                }
+
+                if matches!(super_type, DataType::Unknown(UnknownKind::Any)) {
+                    polars_bail!(InvalidOperation: "could not determine supertype of: {}", format_list!(dtypes));
                 }
 
                 let function = function.clone();
