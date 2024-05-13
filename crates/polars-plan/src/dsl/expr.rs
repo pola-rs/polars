@@ -67,9 +67,9 @@ impl AsRef<Expr> for AggExpr {
 #[must_use]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum Expr {
-    Alias(Arc<Expr>, Arc<str>),
-    Column(Arc<str>),
-    Columns(Vec<String>),
+    Alias(Arc<Expr>, ColumnName),
+    Column(ColumnName),
+    Columns(Arc<[ColumnName]>),
     DtypeColumn(Vec<DataType>),
     Literal(LiteralValue),
     BinaryExpr {
@@ -291,7 +291,7 @@ impl Default for Expr {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 
 pub enum Excluded {
-    Name(Arc<str>),
+    Name(ColumnName),
     Dtype(DataType),
 }
 

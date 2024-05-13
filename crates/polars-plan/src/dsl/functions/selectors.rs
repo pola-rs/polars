@@ -39,6 +39,10 @@ pub fn all() -> Expr {
 /// Select multiple columns by name.
 pub fn cols<I: IntoVec<String>>(names: I) -> Expr {
     let names = names.into_vec();
+    let names = names
+        .into_iter()
+        .map(|v| ColumnName::from(v.as_str()))
+        .collect();
     Expr::Columns(names)
 }
 

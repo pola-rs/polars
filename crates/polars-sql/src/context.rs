@@ -473,27 +473,27 @@ impl SQLContext {
             } else if !contains_wildcard {
                 let schema = lf.schema()?;
                 let mut column_names = schema.get_names();
-                let mut retained_names: BTreeSet<String> = BTreeSet::new();
+                let mut retained_names = PlHashSet::new();
 
                 projections.iter().for_each(|expr| match expr {
                     Expr::Alias(_, name) => {
-                        retained_names.insert(name.to_string());
+                        retained_names.insert(name.clone());
                     },
                     Expr::Column(name) => {
-                        retained_names.insert(name.to_string());
+                        retained_names.insert(name.clone());
                     },
                     Expr::Columns(names) => names.iter().for_each(|name| {
-                        retained_names.insert(name.to_string());
+                        retained_names.insert(name.clone());
                     }),
                     Expr::Exclude(inner_expr, excludes) => {
                         if let Expr::Columns(names) = (*inner_expr).as_ref() {
                             names.iter().for_each(|name| {
-                                retained_names.insert(name.to_string());
+                                retained_names.insert(name.clone());
                             })
                         }
                         excludes.iter().for_each(|excluded| {
                             if let Excluded::Name(name) = excluded {
-                                retained_names.remove(&(name.to_string()));
+                                retained_names.remove(&(name.clone()));
                             }
                         });
                     },
