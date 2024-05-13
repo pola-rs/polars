@@ -72,7 +72,7 @@ _NESTED_DTYPES: list[DataTypeClass] = [
     # TODO: Enable nested types by default when various issues are solved.
     # List,
     # Array,
-    # Struct,
+    Struct,
 ]
 # Supported data type classes that do not contain other data types
 _FLAT_DTYPES = _SIMPLE_DTYPES + _COMPLEX_DTYPES
