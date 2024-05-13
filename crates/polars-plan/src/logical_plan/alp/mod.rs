@@ -1,7 +1,9 @@
+mod format;
 mod inputs;
 mod schema;
 
 use std::borrow::Cow;
+use std::fmt;
 use std::path::PathBuf;
 
 use polars_core::prelude::*;
@@ -10,6 +12,12 @@ use polars_utils::unitvec;
 
 use super::projection_expr::*;
 use crate::prelude::*;
+
+pub struct IRPlan {
+    pub lp_top: Node,
+    pub lp_arena: Arena<IR>,
+    pub expr_arena: Arena<AExpr>,
+}
 
 /// [`IR`] is a representation of [`DslPlan`] with [`Node`]s which are allocated in an [`Arena`]
 /// In this IR the logical plan has access to the full dataset.
@@ -124,6 +132,34 @@ pub enum IR {
     },
     #[default]
     Invalid,
+}
+
+impl IRPlan {
+    pub fn new(top: Node, ir_arena: Arena<IR>, expr_arena: Arena<AExpr>) -> Self {
+        Self {
+            lp_top: top,
+            lp_arena: ir_arena,
+            expr_arena,
+        }
+    }
+
+    pub fn describe(&self) -> String {
+        self.display().to_string()
+    }
+
+    fn display(&self) -> format::IRDisplay {
+        format::IRDisplay {
+            root: self.lp_top,
+            ir_arena: &self.lp_arena,
+            expr_arena: &self.expr_arena,
+        }
+    }
+}
+
+impl fmt::Debug for IRPlan {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        <format::IRDisplay as fmt::Display>::fmt(&self.display(), f)
+    }
 }
 
 #[cfg(test)]
