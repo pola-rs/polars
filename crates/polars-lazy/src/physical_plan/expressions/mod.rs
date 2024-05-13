@@ -331,30 +331,6 @@ impl<'a> AggregationContext<'a> {
         self.update_groups = UpdateGroups::No;
     }
 
-    /// In a binary expression one state can be aggregated and the other not.
-    /// If both would be flattened naively one would be sorted and the other not.
-    /// Calling this function will ensure both are sorted. This will be a no-op
-    /// if already aggregated.
-    pub(crate) fn sort_by_groups(&mut self) {
-        // make sure that the groups are updated before we use them to sort.
-        self.groups();
-        match &self.state {
-            AggState::NotAggregated(s) => {
-                // We should not aggregate literals!!
-                if self.state.safe_to_agg(&self.groups) {
-                    // SAFETY:
-                    // groups are in bounds
-                    let agg = unsafe { s.agg_list(&self.groups) };
-                    self.update_groups = UpdateGroups::WithGroupsLen;
-                    self.state = AggState::AggregatedList(agg);
-                }
-            },
-            AggState::AggregatedScalar(_) => {},
-            AggState::AggregatedList(_) => {},
-            AggState::Literal(_) => {},
-        }
-    }
-
     /// # Arguments
     /// - `aggregated` sets if the Series is a list due to aggregation (could also be a list because its
     /// the columns dtype)

@@ -7,14 +7,14 @@ use polars_ops::prelude::{convert_to_unsigned_index, is_positive_idx_uncertain};
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 
-pub struct TakeExpr {
+pub struct GatherExpr {
     pub(crate) phys_expr: Arc<dyn PhysicalExpr>,
     pub(crate) idx: Arc<dyn PhysicalExpr>,
     pub(crate) expr: Expr,
     pub(crate) returns_scalar: bool,
 }
 
-impl PhysicalExpr for TakeExpr {
+impl PhysicalExpr for GatherExpr {
     fn as_expression(&self) -> Option<&Expr> {
         Some(&self.expr)
     }
@@ -93,7 +93,7 @@ impl PhysicalExpr for TakeExpr {
     }
 }
 
-impl TakeExpr {
+impl GatherExpr {
     fn finish(
         &self,
         df: &DataFrame,
@@ -114,13 +114,6 @@ impl TakeExpr {
         mut ac: AggregationContext<'b>,
         idx: &IdxCa,
     ) -> PolarsResult<AggregationContext<'b>> {
-        // The indexes are AggregatedScalar, meaning they are a single values pointing into
-        // a group. If we zip this with the first of each group -> `idx + first` then we can
-        // simply use a take operation on the whole array instead of per group.
-
-        // The groups maybe scattered all over the place, so we sort by group.
-        ac.sort_by_groups();
-
         // A previous aggregation may have updated the groups.
         let groups = ac.groups();
 
@@ -174,11 +167,6 @@ impl TakeExpr {
             match idx.get(0) {
                 None => polars_bail!(ComputeError: "cannot take by a null"),
                 Some(idx) => {
-                    if idx != 0 {
-                        // We must make sure that the column we take from is sorted by
-                        // groups otherwise we might point into the wrong group.
-                        ac.sort_by_groups()
-                    }
                     // Make sure that we look at the updated groups.
                     let groups = ac.groups();
 
