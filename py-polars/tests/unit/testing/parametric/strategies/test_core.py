@@ -264,3 +264,18 @@ def test_infinities(
     assert all(finite_float(val) for val in s.to_list())
     for col in df.columns:
         assert all(finite_float(val) for val in df[col].to_list())
+
+
+@given(
+    df=dataframes(
+        cols=10,
+        max_size=1,
+        allowed_dtypes=[pl.Int8, pl.UInt16, pl.List(pl.Int32)],
+    )
+)
+@settings(max_examples=3)
+def test_dataframes_allowed_dtypes_integer_cols(df: pl.DataFrame) -> None:
+    # ensure dtype constraint works in conjunction with 'n' cols
+    assert all(
+        tp in (pl.Int8, pl.UInt16, pl.List(pl.Int32)) for tp in df.schema.values()
+    )

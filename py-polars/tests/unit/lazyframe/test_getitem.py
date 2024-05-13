@@ -47,7 +47,7 @@ from polars.testing.parametric import column, dataframes
         }
     )
 )
-def test_lazyframe_slice(ldf: pl.LazyFrame) -> None:
+def test_lazyframe_getitem(ldf: pl.LazyFrame) -> None:
     py_data = ldf.collect().rows()
 
     for start, stop, step, _ in py_data:
