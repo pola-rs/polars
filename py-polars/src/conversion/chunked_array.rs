@@ -99,10 +99,7 @@ pub(crate) fn time_to_pyobject_iter(
 
 impl ToPyObject for Wrap<&DateChunked> {
     fn to_object(&self, py: Python) -> PyObject {
-        let iter = self
-            .0
-            .into_iter()
-            .map(|opt_v| opt_v.map(date32_to_date));
+        let iter = self.0.into_iter().map(|opt_v| opt_v.map(date32_to_date));
         PyList::new_bound(py, iter).into_py(py)
     }
 }
