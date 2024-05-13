@@ -8,7 +8,6 @@ use polars_core::utils::any_values_to_supertype_and_n_dtypes;
 use pyo3::exceptions::{PyOverflowError, PyTypeError};
 use pyo3::intern;
 use pyo3::prelude::*;
-use pyo3::pybacked::PyBackedBytes;
 use pyo3::types::{PyBool, PyBytes, PyDict, PyFloat, PyInt, PyList, PySequence, PyString, PyTuple};
 
 use super::{decimal_to_digits, struct_dict, ObjectValue, Wrap};
@@ -172,8 +171,8 @@ pub(crate) fn py_object_to_any_value<'py>(
     }
 
     fn get_bytes<'py>(ob: &Bound<'py, PyAny>, _strict: bool) -> PyResult<AnyValue<'py>> {
-        let value = ob.extract::<PyBackedBytes>().unwrap();
-        Ok(AnyValue::BinaryOwned(value.to_vec()))
+        let value = ob.extract::<Vec<u8>>().unwrap();
+        Ok(AnyValue::BinaryOwned(value))
     }
 
     fn get_date(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
