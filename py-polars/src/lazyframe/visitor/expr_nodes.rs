@@ -2,7 +2,7 @@ use polars_core::series::IsSorted;
 use polars_plan::dsl::function_expr::rolling::RollingFunction;
 use polars_plan::dsl::function_expr::rolling_by::RollingFunctionBy;
 use polars_plan::dsl::function_expr::trigonometry::TrigonometricFunction;
-use polars_plan::dsl::BooleanFunction;
+use polars_plan::dsl::{BooleanFunction, StringFunction};
 use polars_plan::prelude::{
     AAggExpr, AExpr, FunctionExpr, GroupbyOptions, LiteralValue, Operator, PowFunction,
     WindowMapping, WindowType,
@@ -571,9 +571,82 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 FunctionExpr::ListExpr(_) => {
                     return Err(PyNotImplementedError::new_err("list expr"))
                 },
-                FunctionExpr::StringExpr(_) => {
-                    return Err(PyNotImplementedError::new_err("string expr"))
+                FunctionExpr::StringExpr(strfun) => match strfun {
+                    StringFunction::ConcatHorizontal {
+                        delimiter,
+                        ignore_nulls,
+                    } => ("concathorizontal", delimiter, ignore_nulls).to_object(py),
+                    StringFunction::ConcatVertical {
+                        delimiter,
+                        ignore_nulls,
+                    } => ("concatvertical", delimiter, ignore_nulls).to_object(py),
+                    StringFunction::Contains { literal, strict } => {
+                        ("contains", literal, strict).to_object(py)
+                    },
+                    StringFunction::CountMatches(_) => ("countmatches",).to_object(py),
+                    StringFunction::EndsWith => ("endswith",).to_object(py),
+                    StringFunction::Explode => ("explode",).to_object(py),
+                    StringFunction::Extract(_) => ("extract",).to_object(py),
+                    StringFunction::ExtractAll => ("extractall",).to_object(py),
+                    StringFunction::ExtractGroups { dtype, pat } => {
+                        ("extractgroups", Wrap(dtype.clone()).to_object(py), pat).to_object(py)
+                    },
+                    StringFunction::Find { literal, strict } => {
+                        ("find", literal, strict).to_object(py)
+                    },
+                    StringFunction::ToInteger(_) => ("tointeger",).to_object(py),
+                    StringFunction::LenBytes => ("lenbytes",).to_object(py),
+                    StringFunction::LenChars => ("lenchars",).to_object(py),
+                    StringFunction::Lowercase => ("lowercase",).to_object(py),
+                    StringFunction::JsonDecode {
+                        dtype,
+                        infer_schema_len,
+                    } => (
+                        "jsondecode",
+                        Wrap(dtype.as_ref().unwrap().clone()).to_object(py),
+                        infer_schema_len,
+                    )
+                        .to_object(py),
+                    StringFunction::JsonPathMatch => ("jsonpathmatch",).to_object(py),
+                    StringFunction::Replace { n, literal } => ("replace", n, literal).to_object(py),
+                    StringFunction::Reverse => ("reverse",).to_object(py),
+                    StringFunction::PadStart { length, fill_char } => {
+                        ("padstart", length, fill_char).to_object(py)
+                    },
+                    StringFunction::PadEnd { length, fill_char } => {
+                        ("padend", length, fill_char).to_object(py)
+                    },
+                    StringFunction::Slice => ("slice",).to_object(py),
+                    StringFunction::Head => ("head",).to_object(py),
+                    StringFunction::Tail => ("tail",).to_object(py),
+                    StringFunction::HexEncode => ("hexencode",).to_object(py),
+                    StringFunction::HexDecode(_) => ("hexdecode",).to_object(py),
+                    StringFunction::Base64Encode => ("base64encode",).to_object(py),
+                    StringFunction::Base64Decode(_) => ("base64decode",).to_object(py),
+                    StringFunction::StartsWith => ("startswith",).to_object(py),
+                    StringFunction::StripChars => ("stripchars",).to_object(py),
+                    StringFunction::StripCharsStart => ("stripcharsstart",).to_object(py),
+                    StringFunction::StripCharsEnd => ("stripcharsend",).to_object(py),
+                    StringFunction::StripPrefix => ("stripprefix",).to_object(py),
+                    StringFunction::StripSuffix => ("stripsuffix",).to_object(py),
+                    StringFunction::SplitExact { n, inclusive } => {
+                        ("splitexact", n, inclusive).to_object(py)
+                    },
+                    StringFunction::SplitN(_) => ("splitn",).to_object(py),
+                    StringFunction::Strptime(_, _) => ("strptime",).to_object(py),
+                    StringFunction::Split(_) => ("split",).to_object(py),
+                    StringFunction::ToDecimal(_) => ("todecimal",).to_object(py),
+                    StringFunction::Titlecase => ("titlecase",).to_object(py),
+                    StringFunction::Uppercase => ("uppercase",).to_object(py),
+                    StringFunction::ZFill => ("zfill",).to_object(py),
+                    StringFunction::ContainsMany {
+                        ascii_case_insensitive,
+                    } => ("containsmany", ascii_case_insensitive).to_object(py),
+                    StringFunction::ReplaceMany {
+                        ascii_case_insensitive,
+                    } => ("replacemany", ascii_case_insensitive).to_object(py),
                 },
+
                 FunctionExpr::StructExpr(_) => {
                     return Err(PyNotImplementedError::new_err("struct expr"))
                 },
