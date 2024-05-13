@@ -99,7 +99,7 @@ from polars.dependencies import (
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
-from polars.exceptions import ModuleUpgradeRequired, ShapeError
+from polars.exceptions import ComputeError, ModuleUpgradeRequired, ShapeError
 from polars.meta import get_index_type
 from polars.series.array import ArrayNameSpace
 from polars.series.binary import BinaryNameSpace
@@ -1295,7 +1295,7 @@ class Series:
 
     def __getitem__(
         self,
-        item: (int | Series | range | slice | np.ndarray[Any, Any] | list[int]),
+        item: int | Series | range | slice | np.ndarray[Any, Any] | list[int],
     ) -> Any:
         if isinstance(item, Series) and item.dtype.is_integer():
             return self._take_with_series(item._pos_idxs(self.len()))
@@ -1404,13 +1404,10 @@ class Series:
                 raise NotImplementedError(msg)
 
             args: list[int | float | np.ndarray[Any, Any]] = []
-
-            validity_mask = self.is_not_null()
             for arg in inputs:
                 if isinstance(arg, (int, float, np.ndarray)):
                     args.append(arg)
                 elif isinstance(arg, Series):
-                    validity_mask &= arg.is_not_null()
                     args.append(arg.to_physical()._s.to_numpy_view())
                 else:
                     msg = f"unsupported type {type(arg).__name__!r} for {arg!r}"
@@ -1443,6 +1440,13 @@ class Series:
                 else dtype_char_minimum
             )
 
+            if ufunc.signature:
+                # Only generalized ufuncs have a signature set, and they're the
+                # ones that have problems with missing data.
+                if self.null_count() > 0:
+                    msg = "Can't pass a Series with missing data to a generalized ufunc, as it might give unexpected results. See https://docs.pola.rs/user-guide/expressions/missing-data/ for suggestions on how to remove or fill in missing data."
+                    raise ComputeError(msg)
+
             f = get_ffi_func("apply_ufunc_<>", numpy_char_code_to_dtype(dtype_char), s)
 
             if f is None:
@@ -1453,12 +1457,20 @@ class Series:
                 raise NotImplementedError(msg)
 
             series = f(lambda out: ufunc(*args, out=out, dtype=dtype_char, **kwargs))
-            return (
-                self._from_pyseries(series)
-                .to_frame()
-                .select(F.when(validity_mask).then(F.col(self.name)))
-                .to_series(0)
-            )
+            result = self._from_pyseries(series)
+            if not ufunc.signature:
+                # Missing data is allowed, so filter it out:
+                validity_mask = self.is_not_null()
+                for arg in inputs:
+                    if isinstance(arg, Series):
+                        validity_mask &= arg.is_not_null()
+
+                result = (
+                    result.to_frame()
+                    .select(F.when(validity_mask).then(F.col(self.name)))
+                    .to_series(0)
+                )
+            return result
         else:
             msg = (
                 "only `__call__` is implemented for numpy ufuncs on a Series, got "
@@ -4143,7 +4155,7 @@ class Series:
 
     def cast(
         self,
-        dtype: (PolarsDataType | type[int] | type[float] | type[str] | type[bool]),
+        dtype: PolarsDataType | type[int] | type[float] | type[str] | type[bool],
         *,
         strict: bool = True,
     ) -> Self:

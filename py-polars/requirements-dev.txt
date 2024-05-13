@@ -17,6 +17,7 @@ pip
 
 # Interoperability
 numpy
+numba; python_version < '3.13'  # Numba can lag Python releases
 pandas
 pyarrow
 pydantic>=2.0.0
