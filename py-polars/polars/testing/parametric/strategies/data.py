@@ -298,7 +298,9 @@ _STATIC_STRATEGIES: dict[DataTypeClass, SearchStrategy[Any]] = {
 }
 
 
-def data(dtype: PolarsDataType, **kwargs: Any) -> SearchStrategy[Any]:
+def data(
+    dtype: PolarsDataType, *, allow_null: bool = False, **kwargs: Any
+) -> SearchStrategy[Any]:
     """
     Create a strategy for generating data for the given data type.
 
@@ -307,34 +309,37 @@ def data(dtype: PolarsDataType, **kwargs: Any) -> SearchStrategy[Any]:
     dtype
         A Polars data type. If the data type is not fully instantiated, defaults will
         be used, e.g. `Datetime` will become `Datetime('us')`.
+    allow_null
+        Allow nulls as possible values.
     **kwargs
         Additional parameters for the strategy associated with the given `dtype`.
     """
     if (strategy := _STATIC_STRATEGIES.get(dtype.base_type())) is not None:
-        return strategy
-
-    if dtype == Float32:
-        return floats(32, allow_infinity=kwargs.pop("allow_infinity", True))
+        strategy = strategy
+    elif dtype == Float32:
+        strategy = floats(32, allow_infinity=kwargs.pop("allow_infinity", True))
     elif dtype == Float64:
-        return floats(64, allow_infinity=kwargs.pop("allow_infinity", True))
+        strategy = floats(64, allow_infinity=kwargs.pop("allow_infinity", True))
     elif dtype == Datetime:
         # TODO: Handle time zones
-        return datetimes(time_unit=getattr(dtype, "time_unit", None) or "us")
+        strategy = datetimes(time_unit=getattr(dtype, "time_unit", None) or "us")
     elif dtype == Duration:
-        return durations(time_unit=getattr(dtype, "time_unit", None) or "us")
+        strategy = durations(time_unit=getattr(dtype, "time_unit", None) or "us")
     elif dtype == Categorical:
-        return categories(
+        strategy = categories(
             n_categories=kwargs.pop("n_categories", _DEFAULT_N_CATEGORIES)
         )
     elif dtype == Decimal:
-        return decimals(getattr(dtype, "precision", None), getattr(dtype, "scale", 0))
+        strategy = decimals(
+            getattr(dtype, "precision", None), getattr(dtype, "scale", 0)
+        )
     elif dtype == List:
         inner = getattr(dtype, "inner", None) or Null()
-        return lists(inner, **kwargs)
+        strategy = lists(inner, **kwargs)
     elif dtype == Array:
         inner = getattr(dtype, "inner", None) or Null()
         width = getattr(dtype, "width", _DEFAULT_ARRAY_WIDTH_LIMIT)
-        return lists(
+        strategy = lists(
             inner,
             min_len=width,
             max_len=width,
@@ -343,3 +348,8 @@ def data(dtype: PolarsDataType, **kwargs: Any) -> SearchStrategy[Any]:
     else:
         msg = f"unsupported data type: {dtype}"
         raise InvalidArgument(msg)
+
+    if allow_null:
+        strategy = nulls() | strategy
+
+    return strategy

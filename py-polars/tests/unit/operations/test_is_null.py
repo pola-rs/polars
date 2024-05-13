@@ -7,7 +7,7 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import series
 
 
-@given(s=series(null_probability=0.5))
+@given(s=series(allow_null=True))
 def test_is_null_parametric(s: pl.Series) -> None:
     is_null = s.is_null()
     is_not_null = s.is_not_null()

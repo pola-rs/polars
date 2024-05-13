@@ -7,7 +7,7 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import series
 
 
-@given(s=series(null_probability=0.5))
+@given(s=series(allow_null=True))
 def test_drop_nulls_parametric(s: pl.Series) -> None:
     result = s.drop_nulls()
     assert result.len() == s.len() - s.null_count()

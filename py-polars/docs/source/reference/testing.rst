@@ -122,7 +122,7 @@ of any generated value being ``null`` (this is distinct from ``NaN``).
     @given(
         dataframes(
             cols=5,
-            null_probability=0.1,
+            allow_null=True,
             allowed_dtypes=NUMERIC_DTYPES,
         )
     )
