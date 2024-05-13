@@ -990,3 +990,13 @@ def test_join_coalesce(how: str) -> None:
     out = q.collect()
     assert q.schema == out.schema
     assert out.columns == ["a", "b", "c"]
+
+
+@pytest.mark.parametrize("how", ["left", "inner", "outer"])
+@typing.no_type_check
+def test_join_empties(how: str) -> None:
+    df1 = pl.DataFrame({"col1": [], "col2": [], "col3": []})
+    df2 = pl.DataFrame({"col2": [], "col4": [], "col5": []})
+
+    df = df1.join(df2, on="col2", how=how)
+    assert df.height == 0
