@@ -1,5 +1,4 @@
 use std::cell::RefCell;
-use std::collections::BTreeSet;
 
 use polars_core::prelude::*;
 use polars_error::to_compute_err;
@@ -493,7 +492,7 @@ impl SQLContext {
                         }
                         excludes.iter().for_each(|excluded| {
                             if let Excluded::Name(name) = excluded {
-                                retained_names.remove(&(name.clone()));
+                                retained_names.remove(name);
                             }
                         });
                     },
@@ -731,32 +730,31 @@ impl SQLContext {
 
         // Remove the group_by keys as polars adds those implicitly.
         let mut aggregation_projection = Vec::with_capacity(projections.len());
-        let mut projection_aliases: BTreeSet<&str> = BTreeSet::new();
-        let mut group_key_aliases: BTreeSet<&str> = BTreeSet::new();
+        let mut projection_aliases = PlHashSet::new();
+        let mut group_key_aliases = PlHashSet::new();
 
         for mut e in projections {
             // If simple aliased expression we defer aliasing until after the group_by.
             let is_agg_or_window = has_expr(e, |e| matches!(e, Expr::Agg(_) | Expr::Window { .. }));
             if let Expr::Alias(expr, alias) = e {
                 if e.clone().meta().is_simple_projection() {
-                    group_key_aliases.insert(alias);
+                    group_key_aliases.insert(alias.as_ref());
                     e = expr
                 } else if !is_agg_or_window && !group_by_keys_schema.contains(alias) {
-                    projection_aliases.insert(alias);
+                    projection_aliases.insert(alias.as_ref());
                 }
             }
             let field = e.to_field(&schema_before, Context::Default)?;
             if group_by_keys_schema.get(&field.name).is_none() && is_agg_or_window {
-                if let Expr::Agg(AggExpr::Implode(expr)) = e {
-                    e = expr;
+                let mut e = e.clone();
+                if let Expr::Agg(AggExpr::Implode(expr)) = &e {
+                    e = (**expr).clone();
+                } else if let Expr::Alias(expr, name) = &e {
+                    if let Expr::Agg(AggExpr::Implode(expr)) = expr.as_ref() {
+                        e = (**expr).clone().alias(name.as_ref());
+                    }
                 }
-                // TODO: @ritchie - "help" :)
-                // else if let Expr::Alias(expr, name) = e {
-                //     if let Expr::Agg(AggExpr::Implode(expr)) = expr.as_ref() {
-                //         e = &expr.alias(name);
-                //     }
-                // }
-                aggregation_projection.push(e.clone());
+                aggregation_projection.push(e);
             } else if let Expr::Column(_) = e {
                 // Non-aggregated columns must be part of the GROUP BY clause
                 if !group_by_keys_schema.contains(&field.name) {
