@@ -157,16 +157,15 @@ fn replace_regex(
 fn expand_columns(
     expr: &Expr,
     result: &mut Vec<Expr>,
-    names: &[String],
+    names: &[ColumnName],
     schema: &Schema,
-    exclude: &PlHashSet<Arc<str>>,
+    exclude: &PlHashSet<ColumnName>,
 ) -> PolarsResult<()> {
     let mut is_valid = true;
     for name in names {
-        if !exclude.contains(name.as_str()) {
+        if !exclude.contains(name) {
             let new_expr = expr.clone();
-            let (new_expr, new_expr_valid) =
-                replace_columns_with_column(new_expr, names, name.as_str());
+            let (new_expr, new_expr_valid) = replace_columns_with_column(new_expr, names, name);
             is_valid &= new_expr_valid;
             // we may have regex col in columns.
             #[allow(clippy::collapsible_else_if)]
@@ -233,15 +232,15 @@ fn struct_index_to_field(expr: Expr, schema: &Schema) -> PolarsResult<Expr> {
 /// expression chain.
 pub(super) fn replace_columns_with_column(
     mut expr: Expr,
-    names: &[String],
-    column_name: &str,
+    names: &[ColumnName],
+    column_name: &ColumnName,
 ) -> (Expr, bool) {
     let mut is_valid = true;
     expr = expr.map_expr(|e| match e {
         Expr::Columns(members) => {
             // `col([a, b]) + col([c, d])`
-            if members == names {
-                Expr::Column(ColumnName::from(column_name))
+            if members.as_ref() == names {
+                Expr::Column(column_name.clone())
             } else {
                 is_valid = false;
                 Expr::Columns(members)
@@ -586,7 +585,7 @@ fn replace_selector(expr: Expr, schema: &Schema, keys: &[Expr]) -> PolarsResult<
                         let Expr::Column(name) = e else {
                             unreachable!()
                         };
-                        name.to_string()
+                        name
                     })
                     .collect(),
             ))
