@@ -321,3 +321,15 @@ def test_multiple_rolling_in_single_expression() -> None:
         front_count.alias("front"),
         (back_count - front_count).alias("back - front"),
     )["back - front"].to_list() == [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5]
+
+
+def test_negative_zero_offset_16168() -> None:
+    df = pl.DataFrame({"foo": [1] * 3}).sort("foo").with_row_index()
+    result = df.rolling(index_column="foo", period="1i", offset="0i").agg("index")
+    expected = pl.DataFrame(
+        {"foo": [1, 1, 1], "index": [[], [], []]},
+        schema_overrides={"index": pl.List(pl.UInt32)},
+    )
+    assert_frame_equal(result, expected)
+    result = df.rolling(index_column="foo", period="1i", offset="-0i").agg("index")
+    assert_frame_equal(result, expected)

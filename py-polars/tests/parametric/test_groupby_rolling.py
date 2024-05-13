@@ -29,7 +29,7 @@ def interval_defs() -> SearchStrategy[ClosedInterval]:
         min_value=timedelta(microseconds=0), max_value=timedelta(days=1000)
     ).map(parse_as_duration_string),
     offset=st.timedeltas(
-        min_value=timedelta(microseconds=0), max_value=timedelta(days=1000)
+        min_value=timedelta(days=-1000), max_value=timedelta(days=1000)
     ).map(parse_as_duration_string),
     closed=interval_defs(),
     data=st.data(),
