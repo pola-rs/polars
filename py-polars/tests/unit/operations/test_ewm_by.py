@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 import polars as pl
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from polars.type_aliases import PolarsIntegerType, TimeUnit
@@ -223,3 +223,18 @@ def test_ewma_by_warn_two_chunks() -> None:
         pl.col("values").ewm_mean_by("by", half_life="2i"),
     )
     assert_frame_equal(result, expected.sort("by"))
+
+
+def test_ewma_by_multiple_chunks() -> None:
+    # times contains null
+    times = pl.Series([1, 2]).append(pl.Series([None], dtype=pl.Int64))
+    values = pl.Series([1, 2]).append(pl.Series([3]))
+    result = values.ewm_mean_by(times, half_life="2i")
+    expected = pl.Series([1.0, 1.292893, None])
+    assert_series_equal(result, expected)
+
+    # values contains null
+    times = pl.Series([1, 2]).append(pl.Series([3]))
+    values = pl.Series([1, 2]).append(pl.Series([None], dtype=pl.Int64))
+    result = values.ewm_mean_by(times, half_life="2i")
+    assert_series_equal(result, expected)

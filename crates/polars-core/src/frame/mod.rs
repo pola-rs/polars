@@ -2249,6 +2249,9 @@ impl DataFrame {
         if offset == 0 && length == self.height() {
             return self.clone();
         }
+        if length == 0 {
+            return self.clear();
+        }
         let col = self
             .columns
             .iter()

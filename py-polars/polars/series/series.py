@@ -3314,6 +3314,28 @@ class Series:
         See Also
         --------
         head
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3, 4, 5])
+        >>> s.limit(3)
+        shape: (3,)
+        Series: 'a' [i64]
+        [
+            1
+            2
+            3
+        ]
+
+        Pass a negative value to get all rows `except` the last `abs(n)`.
+
+        >>> s.limit(-3)
+        shape: (2,)
+        Series: 'a' [i64]
+        [
+                1
+                2
+        ]
         """
         return self.head(n)
 
@@ -4064,6 +4086,28 @@ class Series:
         --------
         Series.list.explode : Explode a list column.
         Series.str.explode : Explode a string column.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [[1, 2, 3], [4, 5, 6]])
+        >>> s
+        shape: (2,)
+        Series: 'a' [list[i64]]
+        [
+                [1, 2, 3]
+                [4, 5, 6]
+        ]
+        >>> s.explode()
+        shape: (6,)
+        Series: 'a' [i64]
+        [
+                1
+                2
+                3
+                4
+                5
+                6
+        ]
         """
 
     def equals(
@@ -4212,6 +4256,29 @@ class Series:
         ----------
         in_place
             In place or not.
+
+        Examples
+        --------
+        >>> s1 = pl.Series("a", [1, 2, 3])
+        >>> s1.n_chunks()
+        1
+        >>> s2 = pl.Series("a", [4, 5, 6])
+        >>> s = pl.concat([s1, s2], rechunk=False)
+        >>> s.n_chunks()
+        2
+        >>> s.rechunk(in_place=True)
+        shape: (6,)
+        Series: 'a' [i64]
+        [
+                1
+                2
+                3
+                4
+                5
+                6
+        ]
+        >>> s.n_chunks()
+        1
         """
         opt_s = self._s.rechunk(in_place)
         return self if in_place else self._from_pyseries(opt_s)
@@ -6236,6 +6303,26 @@ class Series:
         ----------
         signed
             If True, reinterpret as `pl.Int64`. Otherwise, reinterpret as `pl.UInt64`.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [-(2**60), -2, 3])
+        >>> s
+        shape: (3,)
+        Series: 'a' [i64]
+        [
+                -1152921504606846976
+                -2
+                3
+        ]
+        >>> s.reinterpret(signed=False)
+        shape: (3,)
+        Series: 'a' [u64]
+        [
+                17293822569102704640
+                18446744073709551614
+                3
+        ]
         """
 
     def interpolate(self, method: InterpolationMethod = "linear") -> Series:
@@ -7204,7 +7291,21 @@ class Series:
         return self._from_pyseries(self._s.set_sorted_flag(descending))
 
     def new_from_index(self, index: int, length: int) -> Self:
-        """Create a new Series filled with values from the given index."""
+        """
+        Create a new Series filled with values from the given index.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3, 4, 5])
+        >>> s.new_from_index(1, 3)
+        shape: (3,)
+        Series: 'a' [i64]
+        [
+            2
+            2
+            2
+        ]
+        """
         return self._from_pyseries(self._s.new_from_index(index, length))
 
     def shrink_dtype(self) -> Series:
@@ -7213,10 +7314,58 @@ class Series:
 
         Shrink to the dtype needed to fit the extrema of this [`Series`].
         This can be used to reduce memory pressure.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3, 4, 5, 6])
+        >>> s
+        shape: (6,)
+        Series: 'a' [i64]
+        [
+                1
+                2
+                3
+                4
+                5
+                6
+        ]
+        >>> s.shrink_dtype()
+        shape: (6,)
+        Series: 'a' [i8]
+        [
+                1
+                2
+                3
+                4
+                5
+                6
+        ]
         """
 
     def get_chunks(self) -> list[Series]:
-        """Get the chunks of this Series as a list of Series."""
+        """
+        Get the chunks of this Series as a list of Series.
+
+        Examples
+        --------
+        >>> s1 = pl.Series("a", [1, 2, 3])
+        >>> s2 = pl.Series("a", [4, 5, 6])
+        >>> s = pl.concat([s1, s2], rechunk=False)
+        >>> s.get_chunks()
+        [shape: (3,)
+        Series: 'a' [i64]
+        [
+                1
+                2
+                3
+        ], shape: (3,)
+        Series: 'a' [i64]
+        [
+                4
+                5
+                6
+        ]]
+        """
         return self._s.get_chunks()
 
     def implode(self) -> Self:
