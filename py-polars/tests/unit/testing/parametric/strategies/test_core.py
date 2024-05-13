@@ -23,7 +23,6 @@ TEMPORAL_DTYPES = {pl.Date, pl.Time, pl.Datetime, pl.Duration}
 def test_series_defaults(s: pl.Series) -> None:
     assert isinstance(s, pl.Series)
     assert s.name == ""
-    assert s.null_count() == 0
 
 
 @given(s=series(name="hello"))
@@ -39,7 +38,7 @@ def test_series_dtype(data: st.DataObject) -> None:
     assert s.dtype == dtype
 
 
-@given(s=series(dtype=pl.Enum))
+@given(s=series(dtype=pl.Enum, allow_null=False))
 @settings(max_examples=5)
 def test_series_dtype_enum(s: pl.Series) -> None:
     assert isinstance(s.dtype, pl.Enum)
@@ -58,9 +57,21 @@ def test_series_size_range(s: pl.Series) -> None:
     assert 3 <= s.len() <= 8
 
 
-@given(s=series(allow_null=True))
-def test_series_allow_null(s: pl.Series) -> None:
-    assert 0 <= s.null_count() <= s.len()
+@given(s=series(allow_null=False))
+def test_series_allow_null_false(s: pl.Series) -> None:
+    assert s.null_count() == 0
+    assert s.dtype != pl.Null
+
+
+@given(s=series(allowed_dtypes=[pl.Null], allow_null=False))
+def test_series_allow_null_allowed_dtypes(s: pl.Series) -> None:
+    assert s.dtype == pl.Null
+
+
+@given(s=series(allowed_dtypes=[pl.List(pl.Int8)], allow_null=False))
+def test_series_allow_null_nested(s: pl.Series) -> None:
+    for v in s:
+        assert v.null_count() == 0
 
 
 @given(df=dataframes())
@@ -121,6 +132,7 @@ def test_dataframes_allow_null_override(df: pl.DataFrame) -> None:
         # generate lazyframes with at least one row
         lazy=True,
         min_size=1,
+        allow_null=False,
         # test mix & match of bulk-assigned cols with custom cols
         cols=[column(n, dtype=pl.UInt8, unique=True) for n in ["a", "b"]],
         include_cols=[
@@ -190,7 +202,8 @@ def test_allow_infinities_deprecated(data: st.DataObject) -> None:
                     min_len=1,
                 ),
             ),
-        ]
+        ],
+        allow_null=False,
     ),
 )
 def test_dataframes_nested_strategies(df: pl.DataFrame) -> None:
@@ -255,9 +268,12 @@ def test_chunking(
 
 @given(
     df=dataframes(
-        allowed_dtypes=[pl.Float32, pl.Float64], max_cols=4, allow_infinity=False
+        allowed_dtypes=[pl.Float32, pl.Float64],
+        max_cols=4,
+        allow_null=False,
+        allow_infinity=False,
     ),
-    s=series(dtype=pl.Float64, allow_infinity=False),
+    s=series(dtype=pl.Float64, allow_null=False, allow_infinity=False),
 )
 def test_infinities(
     df: pl.DataFrame,

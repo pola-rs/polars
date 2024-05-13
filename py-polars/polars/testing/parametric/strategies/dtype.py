@@ -57,6 +57,7 @@ _SIMPLE_DTYPES: list[DataTypeClass] = [
     Binary,
     Date,
     Time,
+    Null,
 ]
 # Supported data type classes with arguments
 _COMPLEX_DTYPES: list[DataTypeClass] = [

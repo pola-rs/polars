@@ -349,7 +349,7 @@ def data(
         )
     elif dtype == List:
         inner = getattr(dtype, "inner", None) or Null()
-        strategy = lists(inner, **kwargs)
+        strategy = lists(inner, allow_null=allow_null, **kwargs)
     elif dtype == Array:
         inner = getattr(dtype, "inner", None) or Null()
         width = getattr(dtype, "width", _DEFAULT_ARRAY_WIDTH_LIMIT)
@@ -357,6 +357,7 @@ def data(
             inner,
             min_len=width,
             max_len=width,
+            allow_null=allow_null,
             **kwargs,
         )
     else:
