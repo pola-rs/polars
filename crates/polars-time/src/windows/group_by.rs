@@ -576,7 +576,7 @@ pub fn group_by_values(
     let run_parallel = !POOL.current_thread_has_pending_tasks().unwrap_or(false);
 
     // we have a (partial) lookbehind window
-    if offset.negative && offset.duration_ns() > 0 {
+    if offset.negative && !offset.is_zero() {
         // lookbehind
         if offset.duration_ns() == period.duration_ns() {
             // t is right at the end of the window
@@ -647,7 +647,7 @@ pub fn group_by_values(
             iter.map(|result| result.map(|(offset, len)| [offset, len]))
                 .collect::<PolarsResult<_>>()
         }
-    } else if offset.duration_ns() != 0
+    } else if !offset.is_zero()
         || closed_window == ClosedWindow::Right
         || closed_window == ClosedWindow::None
     {
