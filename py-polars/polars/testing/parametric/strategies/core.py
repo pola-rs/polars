@@ -8,7 +8,7 @@ from hypothesis.errors import InvalidArgument
 
 from polars._utils.deprecation import issue_deprecation_warning
 from polars.dataframe import DataFrame
-from polars.datatypes import DataType, DataTypeClass
+from polars.datatypes import DataType, DataTypeClass, Null
 from polars.series import Series
 from polars.string_cache import StringCache
 from polars.testing.parametric.strategies._utils import flexhash
@@ -39,7 +39,7 @@ def series(  # noqa: D417
     min_size: int = 0,
     max_size: int = _ROW_LIMIT,
     strategy: SearchStrategy[Any] | None = None,
-    allow_null: bool = False,
+    allow_null: bool = True,
     unique: bool = False,
     chunked: bool | None = None,
     allowed_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
@@ -68,7 +68,7 @@ def series(  # noqa: D417
     strategy : strategy, optional
         supports overriding the default strategy for the given dtype.
     allow_null : bool
-        Allow nulls as possible values.
+        Allow nulls as possible values and allow the `Null` data type by default.
     unique : bool, optional
         indicate whether Series values should all be distinct.
     chunked : bool, optional
@@ -144,22 +144,28 @@ def series(  # noqa: D417
         allowed_dtypes = list(allowed_dtypes)
     if isinstance(excluded_dtypes, (DataType, DataTypeClass)):
         excluded_dtypes = [excluded_dtypes]
-    elif excluded_dtypes is not None and not isinstance(excluded_dtypes, Sequence):
-        excluded_dtypes = list(excluded_dtypes)
+    elif excluded_dtypes is not None:
+        if not isinstance(excluded_dtypes, Sequence):
+            excluded_dtypes = list(excluded_dtypes)
+
+    if not allow_null and not (allowed_dtypes is not None and Null in allowed_dtypes):
+        if excluded_dtypes is None:
+            excluded_dtypes = [Null]
+        else:
+            excluded_dtypes.append(Null)
 
     if strategy is None:
         if dtype is None:
-            dtype = draw(
-                dtypes(allowed_dtypes=allowed_dtypes, excluded_dtypes=excluded_dtypes)
+            dtype_strat = dtypes(
+                allowed_dtypes=allowed_dtypes, excluded_dtypes=excluded_dtypes
             )
         else:
-            dtype = draw(
-                _instantiate_dtype(
-                    dtype,
-                    allowed_dtypes=allowed_dtypes,
-                    excluded_dtypes=excluded_dtypes,
-                )
+            dtype_strat = _instantiate_dtype(
+                dtype,
+                allowed_dtypes=allowed_dtypes,
+                excluded_dtypes=excluded_dtypes,
             )
+        dtype = draw(dtype_strat)
 
     if size is None:
         size = draw(st.integers(min_value=min_size, max_value=max_size))
@@ -213,7 +219,7 @@ def dataframes(
     max_size: int = _ROW_LIMIT,
     chunked: bool | None = None,
     include_cols: Sequence[column] | column | None = None,
-    allow_null: bool | Mapping[str, bool] = False,
+    allow_null: bool | Mapping[str, bool] = True,
     allowed_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
     excluded_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
     **kwargs: Any,
@@ -232,7 +238,7 @@ def dataframes(
     max_size: int = _ROW_LIMIT,
     chunked: bool | None = None,
     include_cols: Sequence[column] | column | None = None,
-    allow_null: bool | Mapping[str, bool] = False,
+    allow_null: bool | Mapping[str, bool] = True,
     allowed_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
     excluded_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
     **kwargs: Any,
@@ -253,7 +259,7 @@ def dataframes(  # noqa: D417
     max_size: int = _ROW_LIMIT,
     chunked: bool | None = None,
     include_cols: Sequence[column] | column | None = None,
-    allow_null: bool | Mapping[str, bool] = False,
+    allow_null: bool | Mapping[str, bool] = True,
     allowed_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
     excluded_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
     **kwargs: Any,
@@ -290,7 +296,8 @@ def dataframes(  # noqa: D417
         explicitly provided columns are appended onto the list of existing columns
         (if any present).
     allow_null : bool or Mapping[str, bool]
-        Allow nulls as possible values.
+        Allow nulls as possible values and allow the `Null` data type by default.
+        Accepts either a boolean or a mapping of column names to booleans.
     allowed_dtypes : {list,set}, optional
         when automatically generating data, allow only these dtypes.
     excluded_dtypes : {list,set}, optional
@@ -404,12 +411,10 @@ def dataframes(  # noqa: D417
             c.name = f"col{idx}"
         if c.allow_null is None:
             if isinstance(allow_null, Mapping):
-                c.allow_null = allow_null.get(c.name, False)
+                c.allow_null = allow_null.get(c.name, True)
             else:
                 c.allow_null = allow_null
 
-    # init dataframe from generated series data; series data is
-    # given as a python-native sequence.
     with StringCache():
         data = {
             c.name: draw(
@@ -456,7 +461,7 @@ class column:
     strategy : strategy, optional
         supports overriding the default strategy for the given dtype.
     allow_null : bool, optional
-        Allow nulls as possible values.
+        Allow nulls as possible values and allow the `Null` data type by default.
     unique : bool, optional
         flag indicating that all values generated for the column should be unique.
 
