@@ -20,7 +20,6 @@ polars-utils = { workspace = true }
 ahash = { workspace = true }
 arboard = { workspace = true, optional = true }
 ciborium = { workspace = true }
-chrono-tz = { workspace = true }
 either = { workspace = true }
 itoa = { workspace = true }
 libc = "0.2"
@@ -28,7 +27,7 @@ ndarray = { workspace = true }
 num-traits = { workspace = true }
 numpy = { version = "0.21", default-features = false }
 once_cell = { workspace = true }
-pyo3 = { workspace = true, features = ["abi3-py38", "chrono", "chrono-tz", "extension-module", "multiple-pymethods", "gil-refs"] }
+pyo3 = { workspace = true, features = ["abi3-py38", "chrono", "extension-module", "multiple-pymethods", "gil-refs"] }
 pyo3-built = { version = "0.5", optional = true }
 recursive = { workspace = true }
 serde_json = { workspace = true, optional = true }
