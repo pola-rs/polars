@@ -179,7 +179,7 @@ pub fn expr_output_name(expr: &Expr) -> PolarsResult<Arc<str>> {
                 ComputeError:
                 "cannot determine output column without a context for this expression"
             ),
-            Expr::Columns(_) | Expr::DtypeColumn(_) => polars_bail!(
+            Expr::Columns(_) | Expr::DtypeColumn(_) | Expr::IndexColumn(_) => polars_bail!(
                 ComputeError:
                 "this expression may produce multiple output names"
             ),

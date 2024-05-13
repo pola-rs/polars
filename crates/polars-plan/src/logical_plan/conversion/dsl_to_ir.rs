@@ -560,6 +560,7 @@ fn expand_filter(predicate: Expr, input: Node, lp_arena: &Arena<IR>) -> PolarsRe
         | Expr::RenameAlias { .. }
         | Expr::Columns(_)
         | Expr::DtypeColumn(_)
+        | Expr::IndexColumn(_)
         | Expr::Nth(_) => true,
         _ => false,
     }) {

@@ -71,6 +71,7 @@ pub enum Expr {
     Column(ColumnName),
     Columns(Arc<[ColumnName]>),
     DtypeColumn(Vec<DataType>),
+    IndexColumn(Vec<i32>),
     Literal(LiteralValue),
     BinaryExpr {
         left: Arc<Expr>,
@@ -172,6 +173,7 @@ impl Hash for Expr {
             Expr::Column(name) => name.hash(state),
             Expr::Columns(names) => names.hash(state),
             Expr::DtypeColumn(dtypes) => dtypes.hash(state),
+            Expr::IndexColumn(dtypes) => dtypes.hash(state),
             Expr::Literal(lv) => std::mem::discriminant(lv).hash(state),
             Expr::Selector(s) => s.hash(state),
             Expr::Nth(v) => v.hash(state),

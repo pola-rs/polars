@@ -259,6 +259,8 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::dtype_cols))
         .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::index_cols))
+        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::duration))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::first)).unwrap();

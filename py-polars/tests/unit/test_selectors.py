@@ -7,6 +7,7 @@ import pytest
 import polars as pl
 import polars.selectors as cs
 from polars.dependencies import _ZONEINFO_AVAILABLE
+from polars.exceptions import ColumnNotFoundError
 from polars.selectors import expand_selector, is_selector
 from polars.testing import assert_frame_equal
 
@@ -71,15 +72,44 @@ def test_selector_by_dtype(df: pl.DataFrame) -> None:
     assert df.select(cs.by_dtype([])).schema == {}
 
 
+def test_selector_by_index(df: pl.DataFrame) -> None:
+    # one or more +ve indexes
+    assert df.select(cs.by_index(0)).columns == ["abc"]
+    assert df.select(cs.by_index(0, 1, 2)).columns == ["abc", "bbb", "cde"]
+
+    # one or more -ve indexes
+    assert df.select(cs.by_index(-1)).columns == ["qqR"]
+    assert df.select(cs.by_index(-3, -2, -1)).columns == ["Lmn", "opp", "qqR"]
+
+    # range objects
+    assert df.select(cs.by_index(range(3))).columns == ["abc", "bbb", "cde"]
+    assert df.select(cs.by_index(0, range(-3, 0))).columns == [
+        "abc",
+        "Lmn",
+        "opp",
+        "qqR",
+    ]
+
+    # exclude by index
+    assert df.select(~cs.by_index(range(0, df.width, 2))).columns == [
+        "bbb",
+        "def",
+        "fgg",
+        "JJK",
+        "opp",
+    ]
+
+    with pytest.raises(ColumnNotFoundError):
+        df.select(cs.by_index(999))
+
+
 def test_selector_by_name(df: pl.DataFrame) -> None:
     for selector in (
         cs.by_name("abc", "cde"),
         cs.by_name("abc") | pl.col("cde"),
     ):
-        assert df.select(selector).columns == [
-            "abc",
-            "cde",
-        ]
+        assert df.select(selector).columns == ["abc", "cde"]
+
     assert df.select(~cs.by_name("abc", "cde", "ghi", "Lmn", "opp", "eee")).columns == [
         "bbb",
         "def",
@@ -89,6 +119,9 @@ def test_selector_by_name(df: pl.DataFrame) -> None:
     ]
     assert df.select(cs.by_name()).columns == []
     assert df.select(cs.by_name([])).columns == []
+
+    with pytest.raises(ColumnNotFoundError):
+        df.select(cs.by_name("stroopwafel"))
 
 
 def test_selector_contains(df: pl.DataFrame) -> None:
