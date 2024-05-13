@@ -631,7 +631,13 @@ fn update_subgroups_slice(sub_groups: &[[IdxSize; 2]], base_g: [IdxSize; 2]) -> 
     sub_groups
         .iter()
         .map(|&[first, len]| {
-            let new_first = base_g[0] + first;
+            let new_first = if len == 0 {
+                // In case the group is empty, keep the original first so that the
+                // group_by keys still point to the original group.
+                base_g[0]
+            } else {
+                base_g[0] + first
+            };
             [new_first, len]
         })
         .collect_trusted::<Vec<_>>()
