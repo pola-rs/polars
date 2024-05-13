@@ -22,7 +22,7 @@ if TYPE_CHECKING:
         min_value=timedelta(microseconds=0), max_value=timedelta(days=1000)
     ).map(parse_as_duration_string),
     offset=st.timedeltas(
-        min_value=timedelta(microseconds=0), max_value=timedelta(days=1000)
+        min_value=timedelta(days=-1000), max_value=timedelta(days=1000)
     ).map(parse_as_duration_string),
     closed=strategy_closed,
     data=st.data(),
