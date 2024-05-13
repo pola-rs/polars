@@ -4,11 +4,13 @@ from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING
 
 import pytest
+from hypothesis import given
 
 import polars as pl
 from polars.datatypes import DTYPE_TEMPORAL_UNITS
 from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
+from polars.testing.parametric import series
 
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
@@ -1310,3 +1312,51 @@ def test_agg_median_expr() -> None:
     )
 
     assert_frame_equal(df.select(pl.all().median()), expected)
+
+
+@given(
+    s=series(min_size=1, max_size=10, dtype=pl.Duration),
+)
+@pytest.mark.skip(
+    "These functions are currently bugged for large values: "
+    "https://github.com/pola-rs/polars/issues/16057"
+)
+def test_series_duration_timeunits(
+    s: pl.Series,
+) -> None:
+    nanos = s.dt.total_nanoseconds().to_list()
+    micros = s.dt.total_microseconds().to_list()
+    millis = s.dt.total_milliseconds().to_list()
+
+    scale = {
+        "ns": 1,
+        "us": 1_000,
+        "ms": 1_000_000,
+    }
+    assert nanos == [v * scale[s.dtype.time_unit] for v in s.to_physical()]  # type: ignore[attr-defined]
+    assert micros == [int(v / 1_000) for v in nanos]
+    assert millis == [int(v / 1_000) for v in micros]
+
+    # special handling for ns timeunit (as we may generate a microsecs-based
+    # timedelta that results in 64bit overflow on conversion to nanosecs)
+    lower_bound, upper_bound = -(2**63), (2**63) - 1
+    if all(
+        (lower_bound <= (us * 1000) <= upper_bound)
+        for us in micros
+        if isinstance(us, int)
+    ):
+        for ns, us in zip(s.dt.total_nanoseconds(), micros):
+            assert ns == (us * 1000)
+
+
+@given(
+    s=series(min_size=1, max_size=10, dtype=pl.Datetime, allow_null=False),
+)
+def test_series_datetime_timeunits(
+    s: pl.Series,
+) -> None:
+    # datetime
+    assert s.to_list() == list(s)
+    assert list(s.dt.millisecond()) == [v.microsecond // 1000 for v in s]
+    assert list(s.dt.nanosecond()) == [v.microsecond * 1000 for v in s]
+    assert list(s.dt.microsecond()) == [v.microsecond for v in s]

@@ -3,15 +3,22 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
 
+import hypothesis.strategies as st
 import numpy as np
 import pytest
+from hypothesis import assume, given
 from numpy import nan
 
 import polars as pl
+from polars._utils.convert import parse_as_duration_string
 from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
+from polars.testing.parametric import column, dataframes
+from polars.testing.parametric.strategies.dtype import _time_units
 
 if TYPE_CHECKING:
+    from hypothesis.strategies import SearchStrategy
+
     from polars.type_aliases import ClosedInterval, PolarsDataType, TimeUnit
 
 
@@ -52,6 +59,9 @@ def test_rolling_kernels_and_rolling(
             pl.col("values").rolling_var_by("dt", period, closed=closed).alias("var"),
             pl.col("values").rolling_mean_by("dt", period, closed=closed).alias("mean"),
             pl.col("values").rolling_std_by("dt", period, closed=closed).alias("std"),
+            pl.col("values")
+            .rolling_quantile_by("dt", period, quantile=0.2, closed=closed)
+            .alias("quantile"),
         ]
     )
     out2 = (
@@ -63,6 +73,7 @@ def test_rolling_kernels_and_rolling(
                 pl.col("values").var().alias("var"),
                 pl.col("values").mean().alias("mean"),
                 pl.col("values").std().alias("std"),
+                pl.col("values").quantile(quantile=0.2).alias("quantile"),
             ]
         )
     )
@@ -220,13 +231,13 @@ def test_rolling_crossing_dst(
 
 def test_rolling_by_invalid() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]}).sort("a")
-    msg = "in `rolling_min` operation, `by` argument of dtype `i64` is not supported"
+    msg = r"in `rolling_\*_by` operation, `by` argument of dtype `i64` is not supported"
     with pytest.raises(InvalidOperationError, match=msg):
-        df.select(pl.col("b").rolling_min_by("a", 2))  # type: ignore[arg-type]
+        df.select(pl.col("b").rolling_min_by("a", "2i"))
     df = pl.DataFrame({"a": [1, 2, 3], "b": [date(2020, 1, 1)] * 3}).sort("b")
-    msg = "if `by` argument is passed, then `window_size` must be a temporal window"
+    msg = "`window_size` duration may not be a parsed integer"
     with pytest.raises(InvalidOperationError, match=msg):
-        df.select(pl.col("a").rolling_min_by("b", 2))  # type: ignore[arg-type]
+        df.select(pl.col("a").rolling_min_by("b", "2i"))
 
 
 def test_rolling_infinity() -> None:
@@ -240,7 +251,10 @@ def test_rolling_invalid_closed_option() -> None:
     df = pl.DataFrame(
         {"a": [4, 5, 6], "b": [date(2020, 1, 1), date(2020, 1, 2), date(2020, 1, 3)]}
     ).sort("a", "b")
-    with pytest.raises(InvalidOperationError, match="consider using DataFrame.rolling"):
+    with pytest.raises(
+        InvalidOperationError,
+        match=r"`closed` is not supported in `rolling_\*\(...\)` expression",
+    ):
         df.with_columns(pl.col("a").rolling_sum(2, closed="left"))
 
 
@@ -248,19 +262,29 @@ def test_rolling_by_non_temporal_window_size() -> None:
     df = pl.DataFrame(
         {"a": [4, 5, 6], "b": [date(2020, 1, 1), date(2020, 1, 2), date(2020, 1, 3)]}
     ).sort("a", "b")
-    msg = "if `by` argument is passed, then `window_size` must be a temporal window"
+    msg = "`window_size` duration may not be a parsed integer"
     with pytest.raises(InvalidOperationError, match=msg):
-        df.with_columns(pl.col("a").rolling_sum_by("b", 2, closed="left"))  # type: ignore[arg-type]
+        df.with_columns(pl.col("a").rolling_sum_by("b", "2i", closed="left"))
 
 
 def test_rolling_by_weights() -> None:
     df = pl.DataFrame(
         {"a": [4, 5, 6], "b": [date(2020, 1, 1), date(2020, 1, 2), date(2020, 1, 3)]}
     ).sort("b")
-    msg = r"`weights` is not supported in 'rolling_\*\(..., by=...\)' expression"
+    msg = r"`weights` is not supported in `rolling_\*\(..., by=...\)` expression"
     with pytest.raises(InvalidOperationError, match=msg):  # noqa: SIM117
         with pytest.deprecated_call(match="rolling_sum_by"):
             df.with_columns(pl.col("a").rolling_sum("2d", by="b", weights=[1, 2]))
+
+
+def test_rolling_by_center() -> None:
+    df = pl.DataFrame(
+        {"a": [4, 5, 6], "b": [date(2020, 1, 1), date(2020, 1, 2), date(2020, 1, 3)]}
+    ).sort("b")
+    msg = r"`center=True` is not supported in `rolling_\*\(..., by=...\)` expression"
+    with pytest.raises(InvalidOperationError, match=msg):  # noqa: SIM117
+        with pytest.deprecated_call(match="rolling_sum_by"):
+            df.with_columns(pl.col("a").rolling_sum("2d", by="b", center=True))
 
 
 def test_rolling_extrema() -> None:
@@ -566,11 +590,15 @@ def test_rolling_negative_period() -> None:
         df.lazy().rolling("ts", period="-1d", offset="-1d").agg(
             pl.col("value")
         ).collect()
-    with pytest.raises(ComputeError, match="window size should be strictly positive"):
+    with pytest.raises(
+        InvalidOperationError, match="`window_size` must be strictly positive"
+    ):
         df.select(
             pl.col("value").rolling_min_by("ts", window_size="-1d", closed="left")
         )
-    with pytest.raises(ComputeError, match="window size should be strictly positive"):
+    with pytest.raises(
+        InvalidOperationError, match="`window_size` must be strictly positive"
+    ):
         df.lazy().select(
             pl.col("value").rolling_min_by("ts", window_size="-1d", closed="left")
         ).collect()
@@ -984,7 +1012,161 @@ def test_temporal_windows_size_without_by_15977() -> None:
     df = pl.DataFrame(
         {"a": [1, 2, 3], "b": [date(2020, 1, 1), date(2020, 1, 2), date(2020, 1, 3)]}
     )
-    with pytest.raises(
-        pl.InvalidOperationError, match="the `by` argument must be passed"
+    with pytest.raises(  # noqa: SIM117
+        InvalidOperationError, match="Expected a string of the form 'ni'"
     ):
-        df.select(pl.col("a").rolling_mean("3d"))
+        with pytest.deprecated_call(
+            match=r"Passing a str to `rolling_\*` is deprecated"
+        ):
+            df.select(pl.col("a").rolling_mean("3d"))
+
+
+def interval_defs() -> SearchStrategy[ClosedInterval]:
+    closed: list[ClosedInterval] = ["left", "right", "both", "none"]
+    return st.sampled_from(closed)
+
+
+@given(
+    period=st.timedeltas(
+        min_value=timedelta(microseconds=0), max_value=timedelta(days=1000)
+    ).map(parse_as_duration_string),
+    offset=st.timedeltas(
+        min_value=timedelta(days=-1000), max_value=timedelta(days=1000)
+    ).map(parse_as_duration_string),
+    closed=interval_defs(),
+    data=st.data(),
+    time_unit=_time_units(),
+)
+def test_rolling_parametric(
+    period: str,
+    offset: str,
+    closed: ClosedInterval,
+    data: st.DataObject,
+    time_unit: TimeUnit,
+) -> None:
+    assume(period != "")
+    dataframe = data.draw(
+        dataframes(
+            [
+                column(
+                    "ts",
+                    strategy=st.datetimes(
+                        min_value=datetime(2000, 1, 1),
+                        max_value=datetime(2001, 1, 1),
+                    ),
+                    dtype=pl.Datetime(time_unit),
+                ),
+                column(
+                    "value",
+                    strategy=st.integers(min_value=-100, max_value=100),
+                    dtype=pl.Int64,
+                ),
+            ],
+            min_size=1,
+        )
+    )
+    df = dataframe.sort("ts")
+    result = df.rolling("ts", period=period, offset=offset, closed=closed).agg(
+        pl.col("value")
+    )
+
+    expected_dict: dict[str, list[object]] = {"ts": [], "value": []}
+    for ts, _ in df.iter_rows():
+        window = df.filter(
+            pl.col("ts").is_between(
+                pl.lit(ts, dtype=pl.Datetime(time_unit)).dt.offset_by(offset),
+                pl.lit(ts, dtype=pl.Datetime(time_unit))
+                .dt.offset_by(offset)
+                .dt.offset_by(period),
+                closed=closed,
+            )
+        )
+        value = window["value"].to_list()
+        expected_dict["ts"].append(ts)
+        expected_dict["value"].append(value)
+    expected = pl.DataFrame(expected_dict).select(
+        pl.col("ts").cast(pl.Datetime(time_unit)),
+        pl.col("value").cast(pl.List(pl.Int64)),
+    )
+    assert_frame_equal(result, expected)
+
+
+@given(
+    window_size=st.timedeltas(
+        min_value=timedelta(microseconds=0), max_value=timedelta(days=2)
+    ).map(parse_as_duration_string),
+    closed=interval_defs(),
+    data=st.data(),
+    time_unit=_time_units(),
+    aggregation=st.sampled_from(
+        [
+            "min",
+            "max",
+            "mean",
+            "sum",
+            "std",
+            "var",
+            "median",
+        ]
+    ),
+)
+def test_rolling_aggs(
+    window_size: str,
+    closed: ClosedInterval,
+    data: st.DataObject,
+    time_unit: TimeUnit,
+    aggregation: str,
+) -> None:
+    assume(window_size != "")
+
+    # Testing logic can be faulty when window is more precise than time unit
+    # https://github.com/pola-rs/polars/issues/11754
+    assume(not (time_unit == "ms" and "us" in window_size))
+
+    dataframe = data.draw(
+        dataframes(
+            [
+                column(
+                    "ts",
+                    strategy=st.datetimes(
+                        min_value=datetime(2000, 1, 1),
+                        max_value=datetime(2001, 1, 1),
+                    ),
+                    dtype=pl.Datetime(time_unit),
+                ),
+                column(
+                    "value",
+                    strategy=st.integers(min_value=-100, max_value=100),
+                    dtype=pl.Int64,
+                ),
+            ],
+        )
+    )
+    df = dataframe.sort("ts")
+    func = f"rolling_{aggregation}_by"
+    result = df.with_columns(
+        getattr(pl.col("value"), func)("ts", window_size=window_size, closed=closed)
+    )
+
+    expected_dict: dict[str, list[object]] = {"ts": [], "value": []}
+    for ts, _ in df.iter_rows():
+        window = df.filter(
+            pl.col("ts").is_between(
+                pl.lit(ts, dtype=pl.Datetime(time_unit)).dt.offset_by(
+                    f"-{window_size}"
+                ),
+                pl.lit(ts, dtype=pl.Datetime(time_unit)),
+                closed=closed,
+            )
+        )
+        expected_dict["ts"].append(ts)
+        if window.is_empty():
+            expected_dict["value"].append(None)
+        else:
+            value = getattr(window["value"], aggregation)()
+            expected_dict["value"].append(value)
+    expected = pl.DataFrame(expected_dict).select(
+        pl.col("ts").cast(pl.Datetime(time_unit)),
+        pl.col("value").cast(result["value"].dtype),
+    )
+    assert_frame_equal(result, expected)

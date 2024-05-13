@@ -5,7 +5,7 @@ from hypothesis import given
 
 import polars as pl
 from polars.testing import assert_frame_equal
-from polars.testing.parametric.primitives import column, dataframes
+from polars.testing.parametric import column, dataframes
 
 
 @given(

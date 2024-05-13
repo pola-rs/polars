@@ -4,7 +4,7 @@ use polars_error::*;
 
 use super::{Version, WriteOptions};
 use crate::parquet::compression::CompressionOptions;
-use crate::parquet::encoding::hybrid_rle::encode_bool;
+use crate::parquet::encoding::hybrid_rle::encode;
 use crate::parquet::encoding::Encoding;
 use crate::parquet::metadata::Descriptor;
 use crate::parquet::page::{DataPage, DataPageHeader, DataPageHeaderV1, DataPageHeaderV2};
@@ -14,7 +14,7 @@ use crate::parquet::statistics::ParquetStatistics;
 fn encode_iter_v1<I: Iterator<Item = bool>>(buffer: &mut Vec<u8>, iter: I) -> PolarsResult<()> {
     buffer.extend_from_slice(&[0; 4]);
     let start = buffer.len();
-    encode_bool(buffer, iter)?;
+    encode::<bool, _, _>(buffer, iter, 1)?;
     let end = buffer.len();
     let length = end - start;
 
@@ -25,7 +25,7 @@ fn encode_iter_v1<I: Iterator<Item = bool>>(buffer: &mut Vec<u8>, iter: I) -> Po
 }
 
 fn encode_iter_v2<I: Iterator<Item = bool>>(writer: &mut Vec<u8>, iter: I) -> PolarsResult<()> {
-    Ok(encode_bool(writer, iter)?)
+    Ok(encode::<bool, _, _>(writer, iter, 1)?)
 }
 
 fn encode_iter<I: Iterator<Item = bool>>(

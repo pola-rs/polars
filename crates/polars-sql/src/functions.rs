@@ -1074,7 +1074,7 @@ impl SQLFunctionVisitor<'_> {
             .into_iter()
             .map(|arg| {
                 if let FunctionArgExpr::Expr(e) = arg {
-                    parse_sql_expr(e, self.ctx)
+                    parse_sql_expr(e, self.ctx, None)
                 } else {
                     polars_bail!(ComputeError: "Only expressions are supported in UDFs")
                 }
@@ -1130,7 +1130,7 @@ impl SQLFunctionVisitor<'_> {
             let (order_by, desc): (Vec<Expr>, Vec<bool>) = order_by
                 .iter()
                 .map(|o| {
-                    let expr = parse_sql_expr(&o.expr, self.ctx)?;
+                    let expr = parse_sql_expr(&o.expr, self.ctx, None)?;
                     Ok(match o.asc {
                         Some(b) => (expr, !b),
                         None => (expr, false),
@@ -1157,7 +1157,7 @@ impl SQLFunctionVisitor<'_> {
         let args = extract_args(self.func);
         match args.as_slice() {
             [FunctionArgExpr::Expr(sql_expr)] => {
-                let expr = parse_sql_expr(sql_expr, self.ctx)?;
+                let expr = parse_sql_expr(sql_expr, self.ctx, None)?;
                 // apply the function on the inner expr -- e.g. SUM(a) -> SUM
                 Ok(f(expr))
             },
@@ -1179,7 +1179,7 @@ impl SQLFunctionVisitor<'_> {
         let args = extract_args(self.func);
         match args.as_slice() {
             [FunctionArgExpr::Expr(sql_expr1), FunctionArgExpr::Expr(sql_expr2)] => {
-                let expr1 = parse_sql_expr(sql_expr1, self.ctx)?;
+                let expr1 = parse_sql_expr(sql_expr1, self.ctx, None)?;
                 let expr2 = Arg::from_sql_expr(sql_expr2, self.ctx)?;
                 f(expr1, expr2)
             },
@@ -1199,7 +1199,7 @@ impl SQLFunctionVisitor<'_> {
         let mut expr_args = vec![];
         for arg in args {
             if let FunctionArgExpr::Expr(sql_expr) = arg {
-                expr_args.push(parse_sql_expr(sql_expr, self.ctx)?);
+                expr_args.push(parse_sql_expr(sql_expr, self.ctx, None)?);
             } else {
                 return self.not_supported_error();
             };
@@ -1215,7 +1215,7 @@ impl SQLFunctionVisitor<'_> {
         match args.as_slice() {
             [FunctionArgExpr::Expr(sql_expr1), FunctionArgExpr::Expr(sql_expr2), FunctionArgExpr::Expr(sql_expr3)] =>
             {
-                let expr1 = parse_sql_expr(sql_expr1, self.ctx)?;
+                let expr1 = parse_sql_expr(sql_expr1, self.ctx, None)?;
                 let expr2 = Arg::from_sql_expr(sql_expr2, self.ctx)?;
                 let expr3 = Arg::from_sql_expr(sql_expr3, self.ctx)?;
                 f(expr1, expr2, expr3)
@@ -1239,7 +1239,7 @@ impl SQLFunctionVisitor<'_> {
             (false, []) => Ok(len()),
             // count(column_name)
             (false, [FunctionArgExpr::Expr(sql_expr)]) => {
-                let expr = parse_sql_expr(sql_expr, self.ctx)?;
+                let expr = parse_sql_expr(sql_expr, self.ctx, None)?;
                 let expr = self.apply_window_spec(expr, &self.func.over)?;
                 Ok(expr.count())
             },
@@ -1247,7 +1247,7 @@ impl SQLFunctionVisitor<'_> {
             (false, [FunctionArgExpr::Wildcard]) => Ok(len()),
             // count(distinct column_name)
             (true, [FunctionArgExpr::Expr(sql_expr)]) => {
-                let expr = parse_sql_expr(sql_expr, self.ctx)?;
+                let expr = parse_sql_expr(sql_expr, self.ctx, None)?;
                 let expr = self.apply_window_spec(expr, &self.func.over)?;
                 Ok(expr.n_unique())
             },
@@ -1267,7 +1267,7 @@ impl SQLFunctionVisitor<'_> {
                         .order_by
                         .iter()
                         .map(|o| {
-                            let e = parse_sql_expr(&o.expr, self.ctx)?;
+                            let e = parse_sql_expr(&o.expr, self.ctx, None)?;
                             Ok(o.asc.map_or(e.clone(), |b| {
                                 e.sort(SortOptions::default().with_order_descending(!b))
                             }))
@@ -1279,7 +1279,7 @@ impl SQLFunctionVisitor<'_> {
                     let partition_by = window_spec
                         .partition_by
                         .iter()
-                        .map(|p| parse_sql_expr(p, self.ctx))
+                        .map(|p| parse_sql_expr(p, self.ctx, None))
                         .collect::<PolarsResult<Vec<_>>>()?;
                     expr.over(partition_by)
                 }
@@ -1388,6 +1388,6 @@ impl FromSQLExpr for Expr {
     where
         Self: Sized,
     {
-        parse_sql_expr(expr, ctx)
+        parse_sql_expr(expr, ctx, None)
     }
 }

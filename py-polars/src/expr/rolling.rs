@@ -10,206 +10,323 @@ use crate::{PyExpr, PySeries};
 
 #[pymethods]
 impl PyExpr {
-    #[pyo3(signature = (window_size, weights, min_periods, center, by, closed, warn_if_unsorted))]
+    #[pyo3(signature = (window_size, weights, min_periods, center))]
     fn rolling_sum(
         &self,
-        window_size: &str,
+        window_size: usize,
         weights: Option<Vec<f64>>,
         min_periods: usize,
         center: bool,
-        by: Option<String>,
-        closed: Option<Wrap<ClosedWindow>>,
-        warn_if_unsorted: bool,
     ) -> Self {
-        let options = RollingOptions {
-            window_size: Duration::parse(window_size),
+        let options = RollingOptionsFixedWindow {
+            window_size,
             weights,
             min_periods,
             center,
-            by,
-            closed_window: closed.map(|c| c.0),
-            warn_if_unsorted,
             ..Default::default()
         };
         self.inner.clone().rolling_sum(options).into()
     }
 
-    #[pyo3(signature = (window_size, weights, min_periods, center, by, closed, warn_if_unsorted))]
+    #[pyo3(signature = (by, window_size, min_periods, closed, warn_if_unsorted))]
+    fn rolling_sum_by(
+        &self,
+        by: PyExpr,
+        window_size: &str,
+        min_periods: usize,
+        closed: Wrap<ClosedWindow>,
+        warn_if_unsorted: bool,
+    ) -> Self {
+        let options = RollingOptionsDynamicWindow {
+            window_size: Duration::parse(window_size),
+            min_periods,
+            closed_window: closed.0,
+            warn_if_unsorted,
+            fn_params: None,
+        };
+        self.inner.clone().rolling_sum_by(by.inner, options).into()
+    }
+
+    #[pyo3(signature = (window_size, weights, min_periods, center))]
     fn rolling_min(
         &self,
-        window_size: &str,
+        window_size: usize,
         weights: Option<Vec<f64>>,
         min_periods: usize,
         center: bool,
-        by: Option<String>,
-        closed: Option<Wrap<ClosedWindow>>,
-        warn_if_unsorted: bool,
     ) -> Self {
-        let options = RollingOptions {
-            window_size: Duration::parse(window_size),
+        let options = RollingOptionsFixedWindow {
+            window_size,
             weights,
             min_periods,
             center,
-            by,
-            closed_window: closed.map(|c| c.0),
-            warn_if_unsorted,
             ..Default::default()
         };
         self.inner.clone().rolling_min(options).into()
     }
 
-    #[pyo3(signature = (window_size, weights, min_periods, center, by, closed, warn_if_unsorted))]
+    #[pyo3(signature = (by, window_size, min_periods, closed, warn_if_unsorted))]
+    fn rolling_min_by(
+        &self,
+        by: PyExpr,
+        window_size: &str,
+        min_periods: usize,
+        closed: Wrap<ClosedWindow>,
+        warn_if_unsorted: bool,
+    ) -> Self {
+        let options = RollingOptionsDynamicWindow {
+            window_size: Duration::parse(window_size),
+            min_periods,
+            closed_window: closed.0,
+            warn_if_unsorted,
+            fn_params: None,
+        };
+        self.inner.clone().rolling_min_by(by.inner, options).into()
+    }
+
+    #[pyo3(signature = (window_size, weights, min_periods, center))]
     fn rolling_max(
         &self,
-        window_size: &str,
+        window_size: usize,
         weights: Option<Vec<f64>>,
         min_periods: usize,
         center: bool,
-        by: Option<String>,
-        closed: Option<Wrap<ClosedWindow>>,
-        warn_if_unsorted: bool,
     ) -> Self {
-        let options = RollingOptions {
-            window_size: Duration::parse(window_size),
+        let options = RollingOptionsFixedWindow {
+            window_size,
             weights,
             min_periods,
             center,
-            by,
-            closed_window: closed.map(|c| c.0),
-            warn_if_unsorted,
             ..Default::default()
         };
         self.inner.clone().rolling_max(options).into()
     }
+    #[pyo3(signature = (by, window_size, min_periods, closed, warn_if_unsorted))]
+    fn rolling_max_by(
+        &self,
+        by: PyExpr,
+        window_size: &str,
+        min_periods: usize,
+        closed: Wrap<ClosedWindow>,
+        warn_if_unsorted: bool,
+    ) -> Self {
+        let options = RollingOptionsDynamicWindow {
+            window_size: Duration::parse(window_size),
+            min_periods,
+            closed_window: closed.0,
+            warn_if_unsorted,
+            fn_params: None,
+        };
+        self.inner.clone().rolling_max_by(by.inner, options).into()
+    }
 
-    #[pyo3(signature = (window_size, weights, min_periods, center, by, closed, warn_if_unsorted))]
+    #[pyo3(signature = (window_size, weights, min_periods, center))]
     fn rolling_mean(
         &self,
-        window_size: &str,
+        window_size: usize,
         weights: Option<Vec<f64>>,
         min_periods: usize,
         center: bool,
-        by: Option<String>,
-        closed: Option<Wrap<ClosedWindow>>,
-        warn_if_unsorted: bool,
     ) -> Self {
-        let options = RollingOptions {
-            window_size: Duration::parse(window_size),
+        let options = RollingOptionsFixedWindow {
+            window_size,
             weights,
             min_periods,
             center,
-            by,
-            closed_window: closed.map(|c| c.0),
-            warn_if_unsorted,
             ..Default::default()
         };
 
         self.inner.clone().rolling_mean(options).into()
     }
 
-    #[pyo3(signature = (window_size, weights, min_periods, center, by, closed, ddof, warn_if_unsorted))]
+    #[pyo3(signature = (by, window_size, min_periods, closed, warn_if_unsorted))]
+    fn rolling_mean_by(
+        &self,
+        by: PyExpr,
+        window_size: &str,
+        min_periods: usize,
+        closed: Wrap<ClosedWindow>,
+        warn_if_unsorted: bool,
+    ) -> Self {
+        let options = RollingOptionsDynamicWindow {
+            window_size: Duration::parse(window_size),
+            min_periods,
+            closed_window: closed.0,
+            warn_if_unsorted,
+            fn_params: None,
+        };
+
+        self.inner.clone().rolling_mean_by(by.inner, options).into()
+    }
+
+    #[pyo3(signature = (window_size, weights, min_periods, center, ddof))]
     fn rolling_std(
         &self,
-        window_size: &str,
+        window_size: usize,
         weights: Option<Vec<f64>>,
         min_periods: usize,
         center: bool,
-        by: Option<String>,
-        closed: Option<Wrap<ClosedWindow>>,
         ddof: u8,
-        warn_if_unsorted: bool,
     ) -> Self {
-        let options = RollingOptions {
-            window_size: Duration::parse(window_size),
+        let options = RollingOptionsFixedWindow {
+            window_size,
             weights,
             min_periods,
             center,
-            by,
-            closed_window: closed.map(|c| c.0),
             fn_params: Some(Arc::new(RollingVarParams { ddof }) as Arc<dyn Any + Send + Sync>),
-            warn_if_unsorted,
         };
 
         self.inner.clone().rolling_std(options).into()
     }
 
-    #[pyo3(signature = (window_size, weights, min_periods, center, by, closed, ddof, warn_if_unsorted))]
-    fn rolling_var(
+    #[pyo3(signature = (by, window_size, min_periods, closed, ddof, warn_if_unsorted))]
+    fn rolling_std_by(
         &self,
+        by: PyExpr,
         window_size: &str,
-        weights: Option<Vec<f64>>,
         min_periods: usize,
-        center: bool,
-        by: Option<String>,
-        closed: Option<Wrap<ClosedWindow>>,
+        closed: Wrap<ClosedWindow>,
         ddof: u8,
         warn_if_unsorted: bool,
     ) -> Self {
-        let options = RollingOptions {
+        let options = RollingOptionsDynamicWindow {
             window_size: Duration::parse(window_size),
+            min_periods,
+            closed_window: closed.0,
+            fn_params: Some(Arc::new(RollingVarParams { ddof }) as Arc<dyn Any + Send + Sync>),
+            warn_if_unsorted,
+        };
+
+        self.inner.clone().rolling_std_by(by.inner, options).into()
+    }
+
+    #[pyo3(signature = (window_size, weights, min_periods, center, ddof))]
+    fn rolling_var(
+        &self,
+        window_size: usize,
+        weights: Option<Vec<f64>>,
+        min_periods: usize,
+        center: bool,
+        ddof: u8,
+    ) -> Self {
+        let options = RollingOptionsFixedWindow {
+            window_size,
             weights,
             min_periods,
             center,
-            by,
-            closed_window: closed.map(|c| c.0),
             fn_params: Some(Arc::new(RollingVarParams { ddof }) as Arc<dyn Any + Send + Sync>),
-            warn_if_unsorted,
         };
 
         self.inner.clone().rolling_var(options).into()
     }
 
-    #[pyo3(signature = (window_size, weights, min_periods, center, by, closed, warn_if_unsorted))]
+    #[pyo3(signature = (by, window_size, min_periods, closed, ddof, warn_if_unsorted))]
+    fn rolling_var_by(
+        &self,
+        by: PyExpr,
+        window_size: &str,
+        min_periods: usize,
+        closed: Wrap<ClosedWindow>,
+        ddof: u8,
+        warn_if_unsorted: bool,
+    ) -> Self {
+        let options = RollingOptionsDynamicWindow {
+            window_size: Duration::parse(window_size),
+            min_periods,
+            closed_window: closed.0,
+            fn_params: Some(Arc::new(RollingVarParams { ddof }) as Arc<dyn Any + Send + Sync>),
+            warn_if_unsorted,
+        };
+
+        self.inner.clone().rolling_var_by(by.inner, options).into()
+    }
+
+    #[pyo3(signature = (window_size, weights, min_periods, center))]
     fn rolling_median(
         &self,
-        window_size: &str,
+        window_size: usize,
         weights: Option<Vec<f64>>,
         min_periods: usize,
         center: bool,
-        by: Option<String>,
-        closed: Option<Wrap<ClosedWindow>>,
-        warn_if_unsorted: bool,
     ) -> Self {
-        let options = RollingOptions {
-            window_size: Duration::parse(window_size),
-            weights,
+        let options = RollingOptionsFixedWindow {
+            window_size,
             min_periods,
+            weights,
             center,
-            by,
-            closed_window: closed.map(|c| c.0),
             fn_params: None,
-            warn_if_unsorted,
         };
         self.inner.clone().rolling_median(options).into()
     }
 
-    #[pyo3(signature = (quantile, interpolation, window_size, weights, min_periods, center, by, closed, warn_if_unsorted))]
+    #[pyo3(signature = (by, window_size, min_periods, closed, warn_if_unsorted))]
+    fn rolling_median_by(
+        &self,
+        by: PyExpr,
+        window_size: &str,
+        min_periods: usize,
+        closed: Wrap<ClosedWindow>,
+        warn_if_unsorted: bool,
+    ) -> Self {
+        let options = RollingOptionsDynamicWindow {
+            window_size: Duration::parse(window_size),
+            min_periods,
+            closed_window: closed.0,
+            fn_params: None,
+            warn_if_unsorted,
+        };
+        self.inner
+            .clone()
+            .rolling_median_by(by.inner, options)
+            .into()
+    }
+
+    #[pyo3(signature = (quantile, interpolation, window_size, weights, min_periods, center))]
     fn rolling_quantile(
         &self,
         quantile: f64,
         interpolation: Wrap<QuantileInterpolOptions>,
-        window_size: &str,
+        window_size: usize,
         weights: Option<Vec<f64>>,
         min_periods: usize,
         center: bool,
-        by: Option<String>,
-        closed: Option<Wrap<ClosedWindow>>,
-        warn_if_unsorted: bool,
     ) -> Self {
-        let options = RollingOptions {
-            window_size: Duration::parse(window_size),
+        let options = RollingOptionsFixedWindow {
+            window_size,
             weights,
             min_periods,
             center,
-            by,
-            closed_window: closed.map(|c| c.0),
+            fn_params: None,
+        };
+
+        self.inner
+            .clone()
+            .rolling_quantile(interpolation.0, quantile, options)
+            .into()
+    }
+
+    #[pyo3(signature = (by, quantile, interpolation, window_size, min_periods, closed, warn_if_unsorted))]
+    fn rolling_quantile_by(
+        &self,
+        by: PyExpr,
+        quantile: f64,
+        interpolation: Wrap<QuantileInterpolOptions>,
+        window_size: &str,
+        min_periods: usize,
+        closed: Wrap<ClosedWindow>,
+        warn_if_unsorted: bool,
+    ) -> Self {
+        let options = RollingOptionsDynamicWindow {
+            window_size: Duration::parse(window_size),
+            min_periods,
+            closed_window: closed.0,
             fn_params: None,
             warn_if_unsorted,
         };
 
         self.inner
             .clone()
-            .rolling_quantile(interpolation.0, quantile, options)
+            .rolling_quantile_by(by.inner, interpolation.0, quantile, options)
             .into()
     }
 

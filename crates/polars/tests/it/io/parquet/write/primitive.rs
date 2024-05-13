@@ -1,4 +1,4 @@
-use polars_parquet::parquet::encoding::hybrid_rle::encode_bool;
+use polars_parquet::parquet::encoding::hybrid_rle::encode;
 use polars_parquet::parquet::encoding::Encoding;
 use polars_parquet::parquet::error::Result;
 use polars_parquet::parquet::metadata::Descriptor;
@@ -24,7 +24,7 @@ fn unzip_option<T: NativeType>(array: &[Option<T>]) -> Result<(Vec<u8>, Vec<u8>)
             false
         }
     });
-    encode_bool(&mut validity, iter)?;
+    encode::<bool, _, _>(&mut validity, iter, 1)?;
 
     // write the length, now that it is known
     let mut validity = validity.into_inner();

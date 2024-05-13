@@ -7,11 +7,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 import polars as pl
-from polars._utils.convert import (
-    MS_PER_SECOND,
-    NS_PER_SECOND,
-    US_PER_SECOND,
-)
+from polars._utils.constants import MS_PER_SECOND, NS_PER_SECOND, US_PER_SECOND
 from polars.testing import assert_frame_equal
 from polars.testing.asserts.series import assert_series_equal
 

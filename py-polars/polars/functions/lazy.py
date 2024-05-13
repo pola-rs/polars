@@ -2312,6 +2312,9 @@ def cumfold(
 
     Every cumulative result is added as a separate field in a Struct column.
 
+    .. deprecated:: 0.19.14
+        This function has been renamed to :func:`cum_fold`.
+
     Parameters
     ----------
     acc
@@ -2343,6 +2346,9 @@ def cumreduce(
     Cumulatively accumulate over multiple columns horizontally/ row wise with a left fold.
 
     Every cumulative result is added as a separate field in a Struct column.
+
+    .. deprecated:: 0.19.14
+        This function has been renamed to :func:`cum_reduce`.
 
     Parameters
     ----------

@@ -1,21 +1,31 @@
 from __future__ import annotations
 
+import hypothesis.strategies as st
 import pytest
 from hypothesis import given
-from hypothesis.strategies import integers
 
 import polars as pl
 from polars.testing.parametric import series
 
 
-@given(s=series(), n=integers(min_value=0, max_value=10))
-def test_clear_series_parametric(s: pl.Series, n: int) -> None:
+@given(s=series())
+def test_clear_series_parametric(s: pl.Series) -> None:
     result = s.clear()
 
     assert result.dtype == s.dtype
     assert result.name == s.name
     assert result.is_empty()
 
+
+@given(
+    s=series(
+        excluded_dtypes=[
+            pl.Struct,  # See: https://github.com/pola-rs/polars/issues/3462
+        ]
+    ),
+    n=st.integers(min_value=0, max_value=10),
+)
+def test_clear_series_n_parametric(s: pl.Series, n: int) -> None:
     result = s.clear(n)
 
     assert result.dtype == s.dtype

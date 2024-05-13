@@ -1,4 +1,3 @@
-use std::collections::VecDeque;
 use std::io::Write;
 use std::sync::Mutex;
 
@@ -7,8 +6,8 @@ use polars_core::prelude::*;
 use polars_core::POOL;
 use polars_parquet::read::ParquetError;
 use polars_parquet::write::{
-    array_to_columns, compress, CompressedPage, Compressor, DynIter, DynStreamingIterator,
-    Encoding, FallibleStreamingIterator, FileWriter, ParquetType, RowGroupIterColumns,
+    array_to_columns, CompressedPage, Compressor, DynIter, DynStreamingIterator, Encoding,
+    FallibleStreamingIterator, FileWriter, Page, ParquetType, RowGroupIterColumns,
     SchemaDescriptor, WriteOptions,
 };
 use rayon::prelude::*;
@@ -108,6 +107,42 @@ fn prepare_rg_iter<'a>(
     })
 }
 
+fn pages_iter_to_compressor(
+    encoded_columns: Vec<DynIter<'static, PolarsResult<Page>>>,
+    options: WriteOptions,
+) -> Vec<PolarsResult<DynStreamingIterator<'static, CompressedPage, PolarsError>>> {
+    encoded_columns
+        .into_iter()
+        .map(|encoded_pages| {
+            // iterator over pages
+            let pages = DynStreamingIterator::new(
+                Compressor::new_from_vec(
+                    encoded_pages.map(|result| {
+                        result.map_err(|e| {
+                            ParquetError::FeatureNotSupported(format!("reraised in polars: {e}",))
+                        })
+                    }),
+                    options.compression,
+                    vec![],
+                )
+                .map_err(PolarsError::from),
+            );
+
+            Ok(pages)
+        })
+        .collect::<Vec<_>>()
+}
+
+fn array_to_pages_iter(
+    array: &ArrayRef,
+    type_: &ParquetType,
+    encoding: &[Encoding],
+    options: WriteOptions,
+) -> Vec<PolarsResult<DynStreamingIterator<'static, CompressedPage, PolarsError>>> {
+    let encoded_columns = array_to_columns(array, type_.clone(), options, encoding).unwrap();
+    pages_iter_to_compressor(encoded_columns, options)
+}
+
 fn create_serializer(
     batch: RecordBatch,
     fields: &[ParquetType],
@@ -116,30 +151,7 @@ fn create_serializer(
     parallel: bool,
 ) -> PolarsResult<RowGroupIterColumns<'static, PolarsError>> {
     let func = move |((array, type_), encoding): ((&ArrayRef, &ParquetType), &Vec<Encoding>)| {
-        let encoded_columns = array_to_columns(array, type_.clone(), options, encoding).unwrap();
-
-        encoded_columns
-            .into_iter()
-            .map(|encoded_pages| {
-                // iterator over pages
-                let pages = DynStreamingIterator::new(
-                    Compressor::new_from_vec(
-                        encoded_pages.map(|result| {
-                            result.map_err(|e| {
-                                ParquetError::FeatureNotSupported(format!(
-                                    "reraised in polars: {e}",
-                                ))
-                            })
-                        }),
-                        options.compression,
-                        vec![],
-                    )
-                    .map_err(PolarsError::from),
-                );
-
-                Ok(pages)
-            })
-            .collect::<Vec<_>>()
+        array_to_pages_iter(array, type_, encoding, options)
     };
 
     let columns = if parallel {
@@ -167,34 +179,6 @@ fn create_serializer(
     Ok(row_group)
 }
 
-struct CompressedPages {
-    pages: VecDeque<PolarsResult<CompressedPage>>,
-    current: Option<CompressedPage>,
-}
-
-impl CompressedPages {
-    fn new(pages: VecDeque<PolarsResult<CompressedPage>>) -> Self {
-        Self {
-            pages,
-            current: None,
-        }
-    }
-}
-
-impl FallibleStreamingIterator for CompressedPages {
-    type Item = CompressedPage;
-    type Error = PolarsError;
-
-    fn advance(&mut self) -> Result<(), Self::Error> {
-        self.current = self.pages.pop_front().transpose()?;
-        Ok(())
-    }
-
-    fn get(&self) -> Option<&Self::Item> {
-        self.current.as_ref()
-    }
-}
-
 /// This serializer encodes and compresses all eagerly in memory.
 /// Used for separating compute from IO.
 fn create_eager_serializer(
@@ -204,25 +188,7 @@ fn create_eager_serializer(
     options: WriteOptions,
 ) -> PolarsResult<RowGroupIterColumns<'static, PolarsError>> {
     let func = move |((array, type_), encoding): ((&ArrayRef, &ParquetType), &Vec<Encoding>)| {
-        let encoded_columns = array_to_columns(array, type_.clone(), options, encoding).unwrap();
-
-        encoded_columns
-            .into_iter()
-            .map(|encoded_pages| {
-                let compressed_pages = encoded_pages
-                    .into_iter()
-                    .map(|page| {
-                        let page = page?;
-                        let page = compress(page, vec![], options.compression)?;
-                        Ok(Ok(page))
-                    })
-                    .collect::<PolarsResult<VecDeque<_>>>()?;
-
-                Ok(DynStreamingIterator::new(CompressedPages::new(
-                    compressed_pages,
-                )))
-            })
-            .collect::<Vec<_>>()
+        array_to_pages_iter(array, type_, encoding, options)
     };
 
     let columns = batch

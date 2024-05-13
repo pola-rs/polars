@@ -4,19 +4,7 @@ pub(super) fn fill_null(s: &[Series]) -> PolarsResult<Series> {
     let series = s[0].clone();
     let fill_value = s[1].clone();
 
-    // let (series, fill_value) = if matches!(super_type, DataType::Unknown(_)) {
-    //     let fill_value = fill_value.cast(series.dtype()).map_err(|_| {
-    //         polars_err!(
-    //             SchemaMismatch:
-    //             "`fill_null` supertype could not be determined; set correct literal value or \
-    //             ensure the type of the expression is known"
-    //         )
-    //     })?;
-    //     (series.clone(), fill_value)
-    // } else {
-    //     (series.cast(super_type)?, fill_value.cast(super_type)?)
-    // };
-    // nothing to fill, so return early
+    // Nothing to fill, so return early
     // this is done after casting as the output type must be correct
     if series.null_count() == 0 {
         return Ok(series);

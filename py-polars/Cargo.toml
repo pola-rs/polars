@@ -78,6 +78,7 @@ features = [
   "reinterpret",
   "replace",
   "rolling_window",
+  "rolling_window_by",
   "round_series",
   "row_hash",
   "rows",

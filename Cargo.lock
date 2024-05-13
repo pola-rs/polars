@@ -3122,6 +3122,7 @@ name = "polars-sql"
 version = "0.39.2"
 dependencies = [
  "hex",
+ "once_cell",
  "polars-arrow",
  "polars-core",
  "polars-error",

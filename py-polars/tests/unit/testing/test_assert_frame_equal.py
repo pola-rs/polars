@@ -4,13 +4,20 @@ import math
 from typing import Any
 
 import pytest
+from hypothesis import given
 
 import polars as pl
 from polars.exceptions import InvalidAssert
 from polars.testing import assert_frame_equal, assert_frame_not_equal
+from polars.testing.parametric import dataframes
 
 nan = float("nan")
 pytest_plugins = ["pytester"]
+
+
+@given(df=dataframes())
+def test_equal(df: pl.DataFrame) -> None:
+    assert_frame_equal(df, df.clone(), check_exact=True)
 
 
 @pytest.mark.parametrize(

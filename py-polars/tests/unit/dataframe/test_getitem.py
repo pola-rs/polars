@@ -1,60 +1,10 @@
-# ----------------------------------------------------
-# Validate DataFrame behaviour with parametric tests
-# ----------------------------------------------------
 from __future__ import annotations
 
-from hypothesis import example, given, settings
-from hypothesis.strategies import integers
+import hypothesis.strategies as st
+from hypothesis import given
 
 import polars as pl
-from polars.testing import assert_frame_equal
 from polars.testing.parametric import column, dataframes
-
-
-@given(df=dataframes())
-def test_repr(df: pl.DataFrame) -> None:
-    assert isinstance(repr(df), str)
-
-
-@given(df=dataframes())
-def test_equal(df: pl.DataFrame) -> None:
-    assert_frame_equal(df, df.clone(), check_exact=True)
-
-
-@given(
-    df=dataframes(
-        cols=10,
-        max_size=1,
-        allowed_dtypes=[pl.Int8, pl.UInt16, pl.List(pl.Int32)],
-    )
-)
-@settings(max_examples=3)
-def test_dtype_integer_cols(df: pl.DataFrame) -> None:
-    # ensure dtype constraint works in conjunction with 'n' cols
-    assert all(
-        tp in (pl.Int8, pl.UInt16, pl.List(pl.Int32)) for tp in df.schema.values()
-    )
-
-
-@given(
-    df=dataframes(
-        min_size=1,
-        min_cols=1,
-        null_probability=0.25,
-        excluded_dtypes=[pl.String, pl.List],
-    )
-)
-@example(df=pl.DataFrame(schema=["x", "y", "z"]))
-@example(df=pl.DataFrame())
-def test_null_count(df: pl.DataFrame) -> None:
-    # note: the zero-row and zero-col cases are always passed as explicit examples
-    null_count, ncols = df.null_count(), len(df.columns)
-    if ncols == 0:
-        assert null_count.shape == (0, 0)
-    else:
-        assert null_count.shape == (1, ncols)
-        for idx, count in enumerate(null_count.rows()[0]):
-            assert count == sum(v is None for v in df.to_series(idx).to_list())
 
 
 @given(
@@ -64,20 +14,22 @@ def test_null_count(df: pl.DataFrame) -> None:
             column(
                 "start",
                 dtype=pl.Int8,
-                null_probability=0.15,
-                strategy=integers(min_value=-8, max_value=8),
+                allow_null=True,
+                strategy=st.integers(min_value=-8, max_value=8),
             ),
             column(
                 "stop",
                 dtype=pl.Int8,
-                null_probability=0.15,
-                strategy=integers(min_value=-6, max_value=6),
+                allow_null=True,
+                strategy=st.integers(min_value=-6, max_value=6),
             ),
             column(
                 "step",
                 dtype=pl.Int8,
-                null_probability=0.15,
-                strategy=integers(min_value=-4, max_value=4).filter(lambda x: x != 0),
+                allow_null=True,
+                strategy=st.integers(min_value=-4, max_value=4).filter(
+                    lambda x: x != 0
+                ),
             ),
             column("misc", dtype=pl.Int32),
         ],

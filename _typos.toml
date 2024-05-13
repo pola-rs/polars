@@ -4,7 +4,6 @@ extend-ignore-identifiers-re = [
 ]
 
 [default.extend-identifiers]
-arange = "arange"
 bck = "bck"
 Fo = "Fo"
 ND = "ND"
@@ -12,11 +11,10 @@ ba = "ba"
 nd = "nd"
 opt_nd = "opt_nd"
 ser = "ser"
-strat = "strat"
-width_strat = "width_strat"
 
 [default.extend-words]
-iif = "iif"
+arange = "arange"
+strat = "strat"
 '"r0ot"' = "r0ot"
 wee = "wee"
 

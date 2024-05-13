@@ -15,8 +15,8 @@ pub use polars_plan::logical_plan::{
 };
 pub use polars_plan::prelude::UnionArgs;
 pub(crate) use polars_plan::prelude::*;
-#[cfg(feature = "rolling_window")]
-pub use polars_time::{prelude::RollingOptions, Duration};
+#[cfg(feature = "rolling_window_by")]
+pub use polars_time::Duration;
 #[cfg(feature = "dynamic_group_by")]
 pub use polars_time::{DynamicGroupOptions, PolarsTemporalGroupby, RollingGroupOptions};
 pub(crate) use polars_utils::arena::{Arena, Node};

@@ -2062,6 +2062,22 @@ def test_csv_escape_cf_15349() -> None:
     assert f.read() == b'test\nnormal\n"with\rcr"\n'
 
 
+@pytest.mark.write_disk()
+@pytest.mark.parametrize("streaming", [True, False])
+def test_skip_rows_after_header(tmp_path: Path, streaming: bool) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    path = tmp_path / "data.csv"
+
+    df = pl.Series("a", [1, 2, 3, 4, 5], dtype=pl.Int64).to_frame()
+    df.write_csv(path)
+
+    skip = 2
+    expect = df.slice(skip)
+    out = pl.scan_csv(path, skip_rows_after_header=skip).collect(streaming=streaming)
+
+    assert_frame_equal(out, expect)
+
+
 @pytest.mark.parametrize("use_pyarrow", [True, False])
 def test_skip_rows_after_header_pyarrow(use_pyarrow: bool) -> None:
     csv = textwrap.dedent(

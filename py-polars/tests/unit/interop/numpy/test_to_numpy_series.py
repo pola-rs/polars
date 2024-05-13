@@ -130,6 +130,7 @@ def test_series_to_numpy_date() -> None:
 
     assert s.to_list() == result.tolist()
     assert result.dtype == np.dtype("datetime64[D]")
+    assert result.flags.writeable is True
     assert_allow_copy_false_raises(s)
 
 
@@ -208,6 +209,7 @@ def test_series_to_numpy_bool() -> None:
 
     assert s.to_list() == result.tolist()
     assert result.dtype == np.bool_
+    assert result.flags.writeable is True
     assert_allow_copy_false_raises(s)
 
 
@@ -266,7 +268,14 @@ def test_to_numpy_empty() -> None:
     result = s.to_numpy(use_pyarrow=False, allow_copy=False)
     assert result.dtype == np.object_
     assert result.shape == (0,)
-    assert result.size == 0
+
+
+def test_to_numpy_empty_writable() -> None:
+    s = pl.Series(dtype=pl.Int64)
+    result = s.to_numpy(use_pyarrow=False, allow_copy=False, writable=True)
+    assert result.dtype == np.int64
+    assert result.shape == (0,)
+    assert result.flags.writeable is True
 
 
 def test_to_numpy_chunked() -> None:
@@ -317,11 +326,19 @@ def test_series_to_numpy_temporal() -> None:
 
 @given(
     s=series(
-        min_size=1, max_size=10, excluded_dtypes=[pl.Categorical, pl.List, pl.Struct]
+        min_size=1,
+        max_size=10,
+        excluded_dtypes=[
+            pl.Categorical,
+            pl.List,
+            pl.Struct,
+            pl.Datetime("ms"),
+            pl.Duration("ms"),
+        ],
+        allow_null=False,
     ).filter(
         lambda s: (
-            getattr(s.dtype, "time_unit", None) != "ms"
-            and not (s.dtype == pl.String and s.str.contains("\x00").any())
+            not (s.dtype == pl.String and s.str.contains("\x00").any())
             and not (s.dtype == pl.Binary and s.bin.contains(b"\x00").any())
         )
     ),
@@ -336,8 +353,9 @@ def test_series_to_numpy(s: pl.Series) -> None:
         pl.Datetime("us"): "datetime64[us]",
         pl.Duration("ns"): "timedelta64[ns]",
         pl.Duration("us"): "timedelta64[us]",
+        pl.Null(): "float32",
     }
-    np_dtype = dtype_map.get(s.dtype)  # type: ignore[call-overload]
+    np_dtype = dtype_map.get(s.dtype)
     expected = np.array(values, dtype=np_dtype)
 
     assert_array_equal(result, expected)

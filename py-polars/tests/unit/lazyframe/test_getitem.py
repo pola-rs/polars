@@ -1,8 +1,8 @@
 # ----------------------------------------------------
 # Validate LazyFrame behaviour with parametric tests
 # ----------------------------------------------------
+import hypothesis.strategies as st
 from hypothesis import example, given
-from hypothesis.strategies import integers
 
 import polars as pl
 from polars.testing.parametric import column, dataframes
@@ -16,20 +16,22 @@ from polars.testing.parametric import column, dataframes
             column(
                 "start",
                 dtype=pl.Int8,
-                null_probability=0.3,
-                strategy=integers(min_value=-3, max_value=4),
+                allow_null=True,
+                strategy=st.integers(min_value=-3, max_value=4),
             ),
             column(
                 "stop",
                 dtype=pl.Int8,
-                null_probability=0.3,
-                strategy=integers(min_value=-2, max_value=6),
+                allow_null=True,
+                strategy=st.integers(min_value=-2, max_value=6),
             ),
             column(
                 "step",
                 dtype=pl.Int8,
-                null_probability=0.3,
-                strategy=integers(min_value=-3, max_value=3).filter(lambda x: x != 0),
+                allow_null=True,
+                strategy=st.integers(min_value=-3, max_value=3).filter(
+                    lambda x: x != 0
+                ),
             ),
             column("misc", dtype=pl.Int32),
         ],
@@ -45,7 +47,7 @@ from polars.testing.parametric import column, dataframes
         }
     )
 )
-def test_lazyframe_slice(ldf: pl.LazyFrame) -> None:
+def test_lazyframe_getitem(ldf: pl.LazyFrame) -> None:
     py_data = ldf.collect().rows()
 
     for start, stop, step, _ in py_data:

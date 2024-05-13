@@ -76,7 +76,6 @@ from polars.datatypes import (
     Object,
     String,
     Time,
-    UInt8,
     UInt16,
     UInt32,
     UInt64,
@@ -3315,6 +3314,28 @@ class Series:
         See Also
         --------
         head
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3, 4, 5])
+        >>> s.limit(3)
+        shape: (3,)
+        Series: 'a' [i64]
+        [
+            1
+            2
+            3
+        ]
+
+        Pass a negative value to get all rows `except` the last `abs(n)`.
+
+        >>> s.limit(-3)
+        shape: (2,)
+        Series: 'a' [i64]
+        [
+                1
+                2
+        ]
         """
         return self.head(n)
 
@@ -4065,6 +4086,28 @@ class Series:
         --------
         Series.list.explode : Explode a list column.
         Series.str.explode : Explode a string column.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [[1, 2, 3], [4, 5, 6]])
+        >>> s
+        shape: (2,)
+        Series: 'a' [list[i64]]
+        [
+                [1, 2, 3]
+                [4, 5, 6]
+        ]
+        >>> s.explode()
+        shape: (6,)
+        Series: 'a' [i64]
+        [
+                1
+                2
+                3
+                4
+                5
+                6
+        ]
         """
 
     def equals(
@@ -4213,6 +4256,29 @@ class Series:
         ----------
         in_place
             In place or not.
+
+        Examples
+        --------
+        >>> s1 = pl.Series("a", [1, 2, 3])
+        >>> s1.n_chunks()
+        1
+        >>> s2 = pl.Series("a", [4, 5, 6])
+        >>> s = pl.concat([s1, s2], rechunk=False)
+        >>> s.n_chunks()
+        2
+        >>> s.rechunk(in_place=True)
+        shape: (6,)
+        Series: 'a' [i64]
+        [
+                1
+                2
+                3
+                4
+                5
+                6
+        ]
+        >>> s.n_chunks()
+        1
         """
         opt_s = self._s.rechunk(in_place)
         return self if in_place else self._from_pyseries(opt_s)
@@ -4343,9 +4409,10 @@ class Series:
             if the array was created without copy, as the underlying Arrow data is
             immutable.
         use_pyarrow
-            Use `pyarrow.Array.to_numpy
+            First convert to PyArrow, then call `pyarrow.Array.to_numpy
             <https://arrow.apache.org/docs/python/generated/pyarrow.Array.html#pyarrow.Array.to_numpy>`_
-            for the conversion to NumPy.
+            to convert to NumPy. If set to `False`, Polars' own conversion logic is
+            used.
         zero_copy_only
             Raise an exception if the conversion to a NumPy would require copying
             the underlying data. Data copy occurs, for example, when the Series contains
@@ -4372,29 +4439,20 @@ class Series:
             )
             allow_copy = not zero_copy_only
 
-        def raise_on_copy() -> None:
-            if not allow_copy and not self.is_empty():
+        if (
+            use_pyarrow
+            and _PYARROW_AVAILABLE
+            and self.dtype not in (Object, Datetime, Duration, Date, Array)
+        ):
+            if not allow_copy and self.n_chunks() > 1 and not self.is_empty():
                 msg = "cannot return a zero-copy array"
                 raise ValueError(msg)
 
-        def temporal_dtype_to_numpy(dtype: PolarsDataType) -> Any:
-            if dtype == Date:
-                return np.dtype("datetime64[D]")
-            elif dtype == Duration:
-                return np.dtype(f"timedelta64[{dtype.time_unit}]")  # type: ignore[union-attr]
-            elif dtype == Datetime:
-                return np.dtype(f"datetime64[{dtype.time_unit}]")  # type: ignore[union-attr]
-            else:
-                msg = f"invalid temporal type: {dtype}"
-                raise TypeError(msg)
+            return self.to_arrow().to_numpy(
+                zero_copy_only=not allow_copy, writable=writable
+            )
 
-        if self.n_chunks() > 1:
-            raise_on_copy()
-            self = self.rechunk()
-
-        dtype = self.dtype
-
-        if dtype == Array:
+        if self.dtype == Array:
             np_array = self.explode().to_numpy(
                 allow_copy=allow_copy,
                 writable=writable,
@@ -4403,43 +4461,7 @@ class Series:
             np_array.shape = (self.len(), self.dtype.width)  # type: ignore[attr-defined]
             return np_array
 
-        if (
-            use_pyarrow
-            and _PYARROW_AVAILABLE
-            and dtype not in (Object, Datetime, Duration, Date)
-        ):
-            return self.to_arrow().to_numpy(
-                zero_copy_only=not allow_copy, writable=writable
-            )
-
-        if self.null_count() == 0:
-            if dtype.is_integer() or dtype.is_float() or dtype in (Datetime, Duration):
-                np_array = self._s.to_numpy_view()
-            elif dtype == Boolean:
-                raise_on_copy()
-                s_u8 = self.cast(UInt8)
-                np_array = s_u8._s.to_numpy_view().view(bool)
-            elif dtype == Date:
-                raise_on_copy()
-                np_dtype = temporal_dtype_to_numpy(dtype)
-                s_i32 = self.to_physical()
-                np_array = s_i32._s.to_numpy_view().astype(np_dtype)
-            else:
-                raise_on_copy()
-                np_array = self._s.to_numpy()
-
-        else:
-            raise_on_copy()
-            np_array = self._s.to_numpy()
-            if dtype in (Datetime, Duration, Date):
-                np_dtype = temporal_dtype_to_numpy(dtype)
-                np_array = np_array.view(np_dtype)
-
-        if writable and not np_array.flags.writeable:
-            raise_on_copy()
-            np_array = np_array.copy()
-
-        return np_array
+        return self._s.to_numpy(allow_copy=allow_copy, writable=writable)
 
     def to_torch(self) -> torch.Tensor:
         """
@@ -6275,6 +6297,26 @@ class Series:
         ----------
         signed
             If True, reinterpret as `pl.Int64`. Otherwise, reinterpret as `pl.UInt64`.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [-(2**60), -2, 3])
+        >>> s
+        shape: (3,)
+        Series: 'a' [i64]
+        [
+                -1152921504606846976
+                -2
+                3
+        ]
+        >>> s.reinterpret(signed=False)
+        shape: (3,)
+        Series: 'a' [u64]
+        [
+                17293822569102704640
+                18446744073709551614
+                3
+        ]
         """
 
     def interpolate(self, method: InterpolationMethod = "linear") -> Series:
@@ -7243,7 +7285,21 @@ class Series:
         return self._from_pyseries(self._s.set_sorted_flag(descending))
 
     def new_from_index(self, index: int, length: int) -> Self:
-        """Create a new Series filled with values from the given index."""
+        """
+        Create a new Series filled with values from the given index.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3, 4, 5])
+        >>> s.new_from_index(1, 3)
+        shape: (3,)
+        Series: 'a' [i64]
+        [
+            2
+            2
+            2
+        ]
+        """
         return self._from_pyseries(self._s.new_from_index(index, length))
 
     def shrink_dtype(self) -> Series:
@@ -7252,10 +7308,58 @@ class Series:
 
         Shrink to the dtype needed to fit the extrema of this [`Series`].
         This can be used to reduce memory pressure.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3, 4, 5, 6])
+        >>> s
+        shape: (6,)
+        Series: 'a' [i64]
+        [
+                1
+                2
+                3
+                4
+                5
+                6
+        ]
+        >>> s.shrink_dtype()
+        shape: (6,)
+        Series: 'a' [i8]
+        [
+                1
+                2
+                3
+                4
+                5
+                6
+        ]
         """
 
     def get_chunks(self) -> list[Series]:
-        """Get the chunks of this Series as a list of Series."""
+        """
+        Get the chunks of this Series as a list of Series.
+
+        Examples
+        --------
+        >>> s1 = pl.Series("a", [1, 2, 3])
+        >>> s2 = pl.Series("a", [4, 5, 6])
+        >>> s = pl.concat([s1, s2], rechunk=False)
+        >>> s.get_chunks()
+        [shape: (3,)
+        Series: 'a' [i64]
+        [
+                1
+                2
+                3
+        ], shape: (3,)
+        Series: 'a' [i64]
+        [
+                4
+                5
+                6
+        ]]
+        """
         return self._s.get_chunks()
 
     def implode(self) -> Self:

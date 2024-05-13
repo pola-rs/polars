@@ -64,13 +64,18 @@ impl FunctionExpr {
             RollingExpr(rolling_func, ..) => {
                 use RollingFunction::*;
                 match rolling_func {
-                    Min(_) | MinBy(_) | Max(_) | MaxBy(_) | Sum(_) | SumBy(_) => {
-                        mapper.with_same_dtype()
-                    },
-                    Mean(_) | MeanBy(_) | Quantile(_) | QuantileBy(_) | Var(_) | VarBy(_)
-                    | Std(_) | StdBy(_) => mapper.map_to_float_dtype(),
+                    Min(_) | Max(_) | Sum(_) => mapper.with_same_dtype(),
+                    Mean(_) | Quantile(_) | Var(_) | Std(_) => mapper.map_to_float_dtype(),
                     #[cfg(feature = "moment")]
                     Skew(..) => mapper.map_to_float_dtype(),
+                }
+            },
+            #[cfg(feature = "rolling_window_by")]
+            RollingExprBy(rolling_func, ..) => {
+                use RollingFunctionBy::*;
+                match rolling_func {
+                    MinBy(_) | MaxBy(_) | SumBy(_) => mapper.with_same_dtype(),
+                    MeanBy(_) | QuantileBy(_) | VarBy(_) | StdBy(_) => mapper.map_to_float_dtype(),
                 }
             },
             ShiftAndFill => mapper.with_same_dtype(),

@@ -13,7 +13,7 @@ use crate::py_modules::UTILS;
 
 impl ToPyObject for Wrap<&StringChunked> {
     fn to_object(&self, py: Python) -> PyObject {
-        let iter = self.0.into_iter();
+        let iter = self.0.iter();
         PyList::new_bound(py, iter).into_py(py)
     }
 }
@@ -22,7 +22,7 @@ impl ToPyObject for Wrap<&BinaryChunked> {
     fn to_object(&self, py: Python) -> PyObject {
         let iter = self
             .0
-            .into_iter()
+            .iter()
             .map(|opt_bytes| opt_bytes.map(|bytes| PyBytes::new_bound(py, bytes)));
         PyList::new_bound(py, iter).into_py(py)
     }
@@ -51,7 +51,7 @@ impl ToPyObject for Wrap<&DurationChunked> {
         let time_unit = self.0.time_unit();
         let iter = self
             .0
-            .into_iter()
+            .iter()
             .map(|opt_v| opt_v.map(|v| elapsed_offset_to_timedelta(v, time_unit)));
         PyList::new_bound(py, iter).into_py(py)
     }
@@ -69,14 +69,14 @@ impl ToPyObject for Wrap<&DatetimeChunked> {
             let time_zone = time_zone.to_object(py);
             let iter = self
                 .0
-                .into_iter()
+                .iter()
                 .map(|opt_v| opt_v.map(|v| convert.call1((v, time_unit, &time_zone)).unwrap()));
             PyList::new_bound(py, iter).into_py(py)
         } else {
             let time_unit = self.0.time_unit();
             let iter = self
                 .0
-                .into_iter()
+                .iter()
                 .map(|opt_v| opt_v.map(|v| timestamp_to_naive_datetime(v, time_unit)));
             PyList::new_bound(py, iter).into_py(py)
         }
@@ -93,7 +93,7 @@ impl ToPyObject for Wrap<&TimeChunked> {
 pub(crate) fn time_to_pyobject_iter(
     ca: &TimeChunked,
 ) -> impl '_ + ExactSizeIterator<Item = Option<NaiveTime>> {
-    ca.0.into_iter()
+    ca.0.iter()
         .map(move |opt_v| opt_v.map(nanos_since_midnight_to_naivetime))
 }
 
@@ -123,7 +123,7 @@ pub(crate) fn decimal_to_pyobject_iter<'a>(
     let py_scale = (-(ca.scale() as i32)).to_object(py);
     // if we don't know precision, the only safe bet is to set it to 39
     let py_precision = ca.precision().unwrap_or(39).to_object(py);
-    ca.into_iter().map(move |opt_v| {
+    ca.iter().map(move |opt_v| {
         opt_v.map(|v| {
             // TODO! use AnyValue so that we have a single impl.
             const N: usize = 3;

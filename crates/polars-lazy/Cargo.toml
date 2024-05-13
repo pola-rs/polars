@@ -104,7 +104,10 @@ cum_agg = ["polars-plan/cum_agg"]
 interpolate = ["polars-plan/interpolate"]
 rolling_window = [
   "polars-plan/rolling_window",
-  "polars-time/rolling_window",
+]
+rolling_window_by = [
+  "polars-plan/rolling_window_by",
+  "polars-time/rolling_window_by",
 ]
 rank = ["polars-plan/rank"]
 diff = ["polars-plan/diff", "polars-plan/diff"]
@@ -292,6 +295,7 @@ features = [
   "replace",
   "rle",
   "rolling_window",
+  "rolling_window_by",
   "round_series",
   "row_hash",
   "search_sorted",

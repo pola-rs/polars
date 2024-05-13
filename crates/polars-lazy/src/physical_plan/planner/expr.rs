@@ -262,7 +262,7 @@ fn create_physical_expr_inner(
         } => {
             let phys_expr = create_physical_expr_inner(expr, ctxt, expr_arena, schema, state)?;
             let phys_idx = create_physical_expr_inner(idx, ctxt, expr_arena, schema, state)?;
-            Ok(Arc::new(TakeExpr {
+            Ok(Arc::new(GatherExpr {
                 phys_expr,
                 idx: phys_idx,
                 expr: node_to_expr(expression, expr_arena),

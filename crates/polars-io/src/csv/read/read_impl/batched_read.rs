@@ -246,7 +246,6 @@ impl<'a> CoreReader<'a> {
 
         Ok(BatchedCsvReaderRead {
             chunk_size: self.chunk_size,
-            finished: false,
             file_chunk_reader: chunk_iter,
             file_chunks: vec![],
             projection,
@@ -260,20 +259,20 @@ impl<'a> CoreReader<'a> {
             to_cast: self.to_cast,
             ignore_errors: self.ignore_errors,
             truncate_ragged_lines: self.truncate_ragged_lines,
-            n_rows: self.n_rows,
+            remaining: self.n_rows.unwrap_or(usize::MAX),
             encoding: self.encoding,
             separator: self.separator,
             schema: self.schema,
             rows_read: 0,
             _cat_lock,
             decimal_comma: self.decimal_comma,
+            finished: false,
         })
     }
 }
 
 pub struct BatchedCsvReaderRead<'a> {
     chunk_size: usize,
-    finished: bool,
     file_chunk_reader: ChunkReader<'a>,
     file_chunks: Vec<(SyncPtr<u8>, usize)>,
     projection: Vec<usize>,
@@ -287,7 +286,7 @@ pub struct BatchedCsvReaderRead<'a> {
     to_cast: Vec<Field>,
     ignore_errors: bool,
     truncate_ragged_lines: bool,
-    n_rows: Option<usize>,
+    remaining: usize,
     encoding: CsvEncoding,
     separator: u8,
     schema: SchemaRef,
@@ -297,18 +296,14 @@ pub struct BatchedCsvReaderRead<'a> {
     #[cfg(not(feature = "dtype-categorical"))]
     _cat_lock: Option<u8>,
     decimal_comma: bool,
+    finished: bool,
 }
 //
 impl<'a> BatchedCsvReaderRead<'a> {
     /// `n` number of batches.
     pub fn next_batches(&mut self, n: usize) -> PolarsResult<Option<Vec<DataFrame>>> {
-        if n == 0 || self.finished {
+        if n == 0 || self.remaining == 0 || self.finished {
             return Ok(None);
-        }
-        if let Some(n_rows) = self.n_rows {
-            if self.rows_read >= n_rows as IdxSize {
-                return Ok(None);
-            }
         }
 
         // get next `n` offset positions.
@@ -331,7 +326,7 @@ impl<'a> BatchedCsvReaderRead<'a> {
             // get the final slice
             self.file_chunks
                 .push(self.file_chunk_reader.get_buf_remaining());
-            self.finished = true
+            self.finished = true;
         }
 
         // depleted the offsets iterator, we are done as well.
@@ -380,8 +375,15 @@ impl<'a> BatchedCsvReaderRead<'a> {
         if self.row_index.is_some() {
             update_row_counts2(&mut chunks, self.rows_read)
         }
-        for df in &chunks {
-            self.rows_read += df.height() as IdxSize;
+        for df in &mut chunks {
+            let h = df.height();
+
+            if self.remaining < h {
+                *df = df.slice(0, self.remaining)
+            };
+            self.remaining = self.remaining.saturating_sub(h);
+
+            self.rows_read += h as IdxSize;
         }
         Ok(Some(chunks))
     }
