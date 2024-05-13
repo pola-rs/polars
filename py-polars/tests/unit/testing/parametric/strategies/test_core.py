@@ -39,6 +39,13 @@ def test_series_dtype(data: st.DataObject) -> None:
     assert s.dtype == dtype
 
 
+@given(s=series(dtype=pl.Enum))
+@settings(max_examples=5)
+def test_series_dtype_enum(s: pl.Series) -> None:
+    assert isinstance(s.dtype, pl.Enum)
+    assert all(v in s.dtype.categories for v in s)
+
+
 @given(s=series(dtype=pl.Boolean, size=5))
 @settings(max_examples=5)
 def test_series_size(s: pl.Series) -> None:

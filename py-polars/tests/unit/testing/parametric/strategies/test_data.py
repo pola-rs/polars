@@ -19,3 +19,13 @@ def test_data_kwargs(cat: str) -> None:
 @given(categories=data(pl.List(pl.Categorical), n_categories=3))
 def test_data_nested_kwargs(categories: list[str]) -> None:
     assert all(c in ("c0", "c1", "c2") for c in categories)
+
+
+@given(cat=data(pl.Enum))
+def test_data_enum(cat: str) -> None:
+    assert cat in ("c0", "c1", "c2")
+
+
+@given(cat=data(pl.Enum(["hello", "world"])))
+def test_data_enum_instantiated(cat: str) -> None:
+    assert cat in ("hello", "world")
