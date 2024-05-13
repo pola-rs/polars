@@ -24,7 +24,6 @@ from polars.testing import (
     assert_frame_not_equal,
     assert_series_equal,
 )
-from polars.testing.parametric import columns
 
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
@@ -61,13 +60,12 @@ def test_init_empty() -> None:
 def test_special_char_colname_init() -> None:
     from string import punctuation
 
-    with pl.StringCache():
-        cols = [(c.name, c.dtype) for c in columns(punctuation)]
-        df = pl.DataFrame(schema=cols)
+    cols = [(c, pl.Int8) for c in punctuation]
+    df = pl.DataFrame(schema=cols)
 
-        assert len(cols) == len(df.columns)
-        assert len(df.rows()) == 0
-        assert df.is_empty()
+    assert len(cols) == len(df.columns)
+    assert len(df.rows()) == 0
+    assert df.is_empty()
 
 
 def test_comparisons() -> None:

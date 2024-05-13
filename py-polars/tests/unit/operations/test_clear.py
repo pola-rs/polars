@@ -1,14 +1,14 @@
 from __future__ import annotations
 
+import hypothesis.strategies as st
 import pytest
 from hypothesis import given
-from hypothesis.strategies import integers
 
 import polars as pl
 from polars.testing.parametric import series
 
 
-@given(s=series(), n=integers(min_value=0, max_value=10))
+@given(s=series(), n=st.integers(min_value=0, max_value=10))
 def test_clear_series_parametric(s: pl.Series, n: int) -> None:
     result = s.clear()
 

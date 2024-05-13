@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
+import hypothesis.strategies as st
 import numpy as np
 import pytest
 from hypothesis import given
-from hypothesis.strategies import booleans, floats
 
 import polars as pl
 from polars.expr.expr import _prepare_alpha
@@ -224,16 +224,16 @@ def alpha_guard(**decay_param: float) -> bool:
         min_size=4,
         dtype=pl.Float64,
         null_probability=0.05,
-        strategy=floats(min_value=-1e8, max_value=1e8),
+        strategy=st.floats(min_value=-1e8, max_value=1e8),
     ),
-    half_life=floats(min_value=0, max_value=4, exclude_min=True).filter(
+    half_life=st.floats(min_value=0, max_value=4, exclude_min=True).filter(
         lambda x: alpha_guard(half_life=x)
     ),
-    com=floats(min_value=0, max_value=99).filter(lambda x: alpha_guard(com=x)),
-    span=floats(min_value=1, max_value=10).filter(lambda x: alpha_guard(span=x)),
-    ignore_nulls=booleans(),
-    adjust=booleans(),
-    bias=booleans(),
+    com=st.floats(min_value=0, max_value=99).filter(lambda x: alpha_guard(com=x)),
+    span=st.floats(min_value=1, max_value=10).filter(lambda x: alpha_guard(span=x)),
+    ignore_nulls=st.booleans(),
+    adjust=st.booleans(),
+    bias=st.booleans(),
 )
 def test_ewm_methods(
     s: pl.Series,

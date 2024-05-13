@@ -13,7 +13,7 @@ import polars as pl
 from polars.testing import assert_frame_equal
 from polars.testing.parametric import dataframes
 
-protocol_dtypes = [
+integer_dtypes: list[pl.PolarsDataType] = [
     pl.Int8,
     pl.Int16,
     pl.Int32,
@@ -22,12 +22,15 @@ protocol_dtypes = [
     pl.UInt16,
     pl.UInt32,
     pl.UInt64,
+]
+protocol_dtypes: list[pl.PolarsDataType] = integer_dtypes + [
     pl.Float32,
     pl.Float64,
     pl.Boolean,
     pl.String,
     pl.Datetime,
-    pl.Categorical,
+    # TODO: Enable lexically ordered categoricals
+    pl.Categorical("physical"),
     # TODO: Add Enum
     # pl.Enum,
 ]
@@ -153,7 +156,9 @@ def test_from_dataframe_pandas_parametric(df: pl.DataFrame) -> None:
 
 @given(
     dataframes(
-        allowed_dtypes=protocol_dtypes,
+        allowed_dtypes=(
+            integer_dtypes + [pl.Datetime]  # Smaller selection to improve performance
+        ),
         excluded_dtypes=[
             pl.String,  # Polars String type does not match protocol spec
             pl.Categorical,  # Categoricals come back as Enums
@@ -198,7 +203,9 @@ def test_from_dataframe_pandas_native_parametric(df: pl.DataFrame) -> None:
 
 @given(
     dataframes(
-        allowed_dtypes=protocol_dtypes,
+        allowed_dtypes=(
+            integer_dtypes + [pl.Datetime]  # Smaller selection to improve performance
+        ),
         excluded_dtypes=[
             pl.String,  # Polars String type does not match protocol spec
             pl.Categorical,  # Categoricals come back as Enums

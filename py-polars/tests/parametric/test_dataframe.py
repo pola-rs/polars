@@ -3,8 +3,8 @@
 # ----------------------------------------------------
 from __future__ import annotations
 
+import hypothesis.strategies as st
 from hypothesis import example, given, settings
-from hypothesis.strategies import integers
 
 import polars as pl
 from polars.testing import assert_frame_equal
@@ -65,19 +65,21 @@ def test_null_count(df: pl.DataFrame) -> None:
                 "start",
                 dtype=pl.Int8,
                 null_probability=0.15,
-                strategy=integers(min_value=-8, max_value=8),
+                strategy=st.integers(min_value=-8, max_value=8),
             ),
             column(
                 "stop",
                 dtype=pl.Int8,
                 null_probability=0.15,
-                strategy=integers(min_value=-6, max_value=6),
+                strategy=st.integers(min_value=-6, max_value=6),
             ),
             column(
                 "step",
                 dtype=pl.Int8,
                 null_probability=0.15,
-                strategy=integers(min_value=-4, max_value=4).filter(lambda x: x != 0),
+                strategy=st.integers(min_value=-4, max_value=4).filter(
+                    lambda x: x != 0
+                ),
             ),
             column("misc", dtype=pl.Int32),
         ],
