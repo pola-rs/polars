@@ -14,6 +14,7 @@ pub use ir_to_dsl::*;
 use polars_core::prelude::*;
 use polars_utils::vec::ConvertVec;
 use recursive::recursive;
+pub(crate) mod type_coercion;
 
 use crate::constants::get_len_name;
 use crate::prelude::*;
