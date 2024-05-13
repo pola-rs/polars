@@ -4,9 +4,9 @@ use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList, PyTuple};
 
-use super::datetime::elapsed_offset_to_timedelta;
-use super::datetime::nanos_since_midnight_to_naivetime;
-use super::datetime::timestamp_to_naive_datetime;
+use super::datetime::{
+    elapsed_offset_to_timedelta, nanos_since_midnight_to_naivetime, timestamp_to_naive_datetime,
+};
 use super::{decimal_to_digits, struct_dict};
 use crate::prelude::*;
 use crate::py_modules::UTILS;
@@ -90,11 +90,11 @@ impl ToPyObject for Wrap<&TimeChunked> {
     }
 }
 
-pub(crate) fn time_to_pyobject_iter<'a>(
-    ca: &'a TimeChunked,
-) -> impl 'a + ExactSizeIterator<Item = Option<NaiveTime>> {
+pub(crate) fn time_to_pyobject_iter(
+    ca: &TimeChunked,
+) -> impl '_ + ExactSizeIterator<Item = Option<NaiveTime>> {
     ca.0.into_iter()
-        .map(move |opt_v| opt_v.map(|v| nanos_since_midnight_to_naivetime(v)))
+        .map(move |opt_v| opt_v.map(nanos_since_midnight_to_naivetime))
 }
 
 impl ToPyObject for Wrap<&DateChunked> {
@@ -102,7 +102,7 @@ impl ToPyObject for Wrap<&DateChunked> {
         let iter = self
             .0
             .into_iter()
-            .map(|opt_v| opt_v.map(|v| date32_to_date(v)));
+            .map(|opt_v| opt_v.map(date32_to_date));
         PyList::new_bound(py, iter).into_py(py)
     }
 }
