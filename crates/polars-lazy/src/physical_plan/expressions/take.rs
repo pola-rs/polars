@@ -3,18 +3,19 @@ use polars_core::chunked_array::builder::get_list_builder;
 use polars_core::prelude::*;
 use polars_core::utils::NoNull;
 use polars_ops::prelude::{convert_to_unsigned_index, is_positive_idx_uncertain};
+use polars_utils::slice::GetSaferUnchecked;
 
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 
-pub struct TakeExpr {
+pub struct GatherExpr {
     pub(crate) phys_expr: Arc<dyn PhysicalExpr>,
     pub(crate) idx: Arc<dyn PhysicalExpr>,
     pub(crate) expr: Expr,
     pub(crate) returns_scalar: bool,
 }
 
-impl PhysicalExpr for TakeExpr {
+impl PhysicalExpr for GatherExpr {
     fn as_expression(&self) -> Option<&Expr> {
         Some(&self.expr)
     }
@@ -93,7 +94,7 @@ impl PhysicalExpr for TakeExpr {
     }
 }
 
-impl TakeExpr {
+impl GatherExpr {
     fn finish(
         &self,
         df: &DataFrame,
@@ -114,54 +115,75 @@ impl TakeExpr {
         mut ac: AggregationContext<'b>,
         idx: &IdxCa,
     ) -> PolarsResult<AggregationContext<'b>> {
-        // The indexes are AggregatedScalar, meaning they are a single values pointing into
-        // a group. If we zip this with the first of each group -> `idx + first` then we can
-        // simply use a take operation on the whole array instead of per group.
+        if ac.is_not_aggregated() {
+            // A previous aggregation may have updated the groups.
+            let groups = ac.groups();
 
-        // The groups maybe scattered all over the place, so we sort by group.
-        ac.sort_by_groups();
+            // Determine the gather indices.
+            let idx: IdxCa = match groups.as_ref() {
+                GroupsProxy::Idx(groups) => {
+                    if groups.all().iter().zip(idx).any(|(g, idx)| match idx {
+                        None => true,
+                        Some(idx) => idx >= g.len() as IdxSize,
+                    }) {
+                        self.oob_err()?;
+                    }
 
-        // A previous aggregation may have updated the groups.
-        let groups = ac.groups();
+                    idx.into_iter()
+                        .zip(groups.iter())
+                        .map(|(idx, (_first, groups))| {
+                            idx.map(|idx| {
+                                // SAFETY:
+                                // we checked bounds
+                                unsafe {
+                                    *groups.get_unchecked_release(usize::try_from(idx).unwrap())
+                                }
+                            })
+                        })
+                        .collect_trusted()
+                },
+                GroupsProxy::Slice { groups, .. } => {
+                    if groups.iter().zip(idx).any(|(g, idx)| match idx {
+                        None => true,
+                        Some(idx) => idx >= g[1],
+                    }) {
+                        self.oob_err()?;
+                    }
 
-        // Determine the gather indices.
-        let idx: IdxCa = match groups.as_ref() {
-            GroupsProxy::Idx(groups) => {
-                if groups.all().iter().zip(idx).any(|(g, idx)| match idx {
-                    None => true,
-                    Some(idx) => idx >= g.len() as IdxSize,
-                }) {
-                    self.oob_err()?;
-                }
+                    idx.into_iter()
+                        .zip(groups.iter())
+                        .map(|(idx, g)| idx.map(|idx| idx + g[0]))
+                        .collect_trusted()
+                },
+            };
 
-                idx.into_iter()
-                    .zip(groups.first().iter())
-                    .map(|(idx, first)| idx.map(|idx| idx + first))
-                    .collect_trusted()
-            },
-            GroupsProxy::Slice { groups, .. } => {
-                if groups.iter().zip(idx).any(|(g, idx)| match idx {
-                    None => true,
-                    Some(idx) => idx >= g[1],
-                }) {
-                    self.oob_err()?;
-                }
+            let taken = ac.flat_naive().take(&idx)?;
+            let taken = if self.returns_scalar {
+                taken
+            } else {
+                taken.as_list().into_series()
+            };
 
-                idx.into_iter()
-                    .zip(groups.iter())
-                    .map(|(idx, g)| idx.map(|idx| idx + g[0]))
-                    .collect_trusted()
-            },
-        };
-
-        let taken = ac.flat_naive().take(&idx)?;
-        let taken = if self.returns_scalar {
-            taken
+            ac.with_series(taken, true, Some(&self.expr))?;
+            Ok(ac)
         } else {
-            taken.as_list().into_series()
-        };
+            self.gather_aggregated_expensive(ac, idx)
+        }
+    }
 
-        ac.with_series(taken, true, Some(&self.expr))?;
+    fn gather_aggregated_expensive<'b>(
+        &self,
+        mut ac: AggregationContext<'b>,
+        idx: &IdxCa,
+    ) -> PolarsResult<AggregationContext<'b>> {
+        let out = ac
+            .aggregated()
+            .list()
+            .unwrap()
+            .try_apply_amortized(|s| s.as_ref().take(idx))?;
+
+        ac.with_series(out.into_series(), true, Some(&self.expr))?;
+        ac.with_update_groups(UpdateGroups::WithGroupsLen);
         Ok(ac)
     }
 
@@ -174,11 +196,6 @@ impl TakeExpr {
             match idx.get(0) {
                 None => polars_bail!(ComputeError: "cannot take by a null"),
                 Some(idx) => {
-                    if idx != 0 {
-                        // We must make sure that the column we take from is sorted by
-                        // groups otherwise we might point into the wrong group.
-                        ac.sort_by_groups()
-                    }
                     // Make sure that we look at the updated groups.
                     let groups = ac.groups();
 
@@ -213,15 +230,7 @@ impl TakeExpr {
                 },
             }
         } else {
-            let out = ac
-                .aggregated()
-                .list()
-                .unwrap()
-                .try_apply_amortized(|s| s.as_ref().take(idx))?;
-
-            ac.with_series(out.into_series(), true, Some(&self.expr))?;
-            ac.with_update_groups(UpdateGroups::WithGroupsLen);
-            Ok(ac)
+            self.gather_aggregated_expensive(ac, idx)
         }
     }
 

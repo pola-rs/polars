@@ -1038,3 +1038,29 @@ def test_group_by_dynamic_invalid() -> None:
             .group_by_dynamic("index", every="3000d")
             .agg(pl.col("values").sum().alias("sum"))
         )
+
+
+def test_group_by_dynamic_get() -> None:
+    df = pl.DataFrame(
+        {
+            "time": pl.date_range(pl.date(2021, 1, 1), pl.date(2021, 1, 8), eager=True),
+            "data": pl.arange(8, eager=True),
+        }
+    )
+
+    assert df.group_by_dynamic(
+        index_column="time",
+        every="2d",
+        period="3d",
+        start_by="datapoint",
+    ).agg(
+        get=pl.col("data").get(1),
+    ).to_dict(as_series=False) == {
+        "time": [
+            date(2021, 1, 1),
+            date(2021, 1, 3),
+            date(2021, 1, 5),
+            date(2021, 1, 7),
+        ],
+        "get": [1, 3, 5, 7],
+    }

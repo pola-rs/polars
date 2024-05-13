@@ -60,21 +60,6 @@ pub(crate) enum AggState {
 }
 
 impl AggState {
-    // Literal series are not safe to aggregate
-    fn safe_to_agg(&self, groups: &GroupsProxy) -> bool {
-        match self {
-            AggState::NotAggregated(s) => {
-                !(s.len() == 1
-                    // or more then one group
-                    && (groups.len() > 1
-                    // or single groups with more than one index
-                    || !groups.is_empty()
-                    && groups.get(0).len() > 1))
-            },
-            _ => true,
-        }
-    }
-
     fn try_map<F>(&self, func: F) -> PolarsResult<Self>
     where
         F: FnOnce(&Series) -> PolarsResult<Series>,
@@ -329,30 +314,6 @@ impl<'a> AggregationContext<'a> {
             },
         }
         self.update_groups = UpdateGroups::No;
-    }
-
-    /// In a binary expression one state can be aggregated and the other not.
-    /// If both would be flattened naively one would be sorted and the other not.
-    /// Calling this function will ensure both are sorted. This will be a no-op
-    /// if already aggregated.
-    pub(crate) fn sort_by_groups(&mut self) {
-        // make sure that the groups are updated before we use them to sort.
-        self.groups();
-        match &self.state {
-            AggState::NotAggregated(s) => {
-                // We should not aggregate literals!!
-                if self.state.safe_to_agg(&self.groups) {
-                    // SAFETY:
-                    // groups are in bounds
-                    let agg = unsafe { s.agg_list(&self.groups) };
-                    self.update_groups = UpdateGroups::WithGroupsLen;
-                    self.state = AggState::AggregatedList(agg);
-                }
-            },
-            AggState::AggregatedScalar(_) => {},
-            AggState::AggregatedList(_) => {},
-            AggState::Literal(_) => {},
-        }
     }
 
     /// # Arguments
