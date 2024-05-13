@@ -15,6 +15,7 @@ from polars.datatypes import (
     Datetime,
     Decimal,
     Duration,
+    Enum,
     Float32,
     Float64,
     Int8,
@@ -63,6 +64,7 @@ _COMPLEX_DTYPES: list[DataTypeClass] = [
     Duration,
     Categorical,
     Decimal,
+    Enum,
 ]
 # Supported data type classes that contain other data types
 _NESTED_DTYPES: list[DataTypeClass] = [
@@ -76,6 +78,7 @@ _FLAT_DTYPES = _SIMPLE_DTYPES + _COMPLEX_DTYPES
 
 _DEFAULT_ARRAY_WIDTH_LIMIT = 3
 _DEFAULT_STRUCT_FIELDS_LIMIT = 3
+_DEFAULT_ENUM_CATEGORIES_LIMIT = 3
 
 
 def dtypes(
@@ -174,6 +177,12 @@ def _instantiate_flat_dtype(draw: DrawFn, dtype: PolarsDataType) -> DataType:
     elif dtype == Categorical:
         ordering = draw(_categorical_orderings())
         return Categorical(ordering)
+    elif dtype == Enum:
+        n_categories = draw(
+            st.integers(min_value=1, max_value=_DEFAULT_ENUM_CATEGORIES_LIMIT)
+        )
+        categories = [f"c{i}" for i in range(n_categories)]
+        return Enum(categories)
     elif dtype == Decimal:
         precision = draw(st.integers(min_value=1, max_value=38) | st.none())
         scale = draw(st.integers(min_value=0, max_value=precision or 38))

@@ -33,6 +33,7 @@ from polars.datatypes import (
     Datetime,
     Decimal,
     Duration,
+    Enum,
     Float32,
     Float64,
     Int8,
@@ -49,7 +50,10 @@ from polars.datatypes import (
     UInt64,
 )
 from polars.testing.parametric.strategies._utils import flexhash
-from polars.testing.parametric.strategies.dtype import _DEFAULT_ARRAY_WIDTH_LIMIT
+from polars.testing.parametric.strategies.dtype import (
+    _DEFAULT_ARRAY_WIDTH_LIMIT,
+    _DEFAULT_ENUM_CATEGORIES_LIMIT,
+)
 
 if TYPE_CHECKING:
     from datetime import date, datetime, time
@@ -329,6 +333,16 @@ def data(
         strategy = categories(
             n_categories=kwargs.pop("n_categories", _DEFAULT_N_CATEGORIES)
         )
+    elif dtype == Enum:
+        if isinstance(dtype, Enum):
+            if (cats := dtype.categories).is_empty():
+                strategy = nulls()
+            else:
+                strategy = st.sampled_from(cats.to_list())
+        else:
+            strategy = categories(
+                n_categories=kwargs.pop("n_categories", _DEFAULT_ENUM_CATEGORIES_LIMIT)
+            )
     elif dtype == Decimal:
         strategy = decimals(
             getattr(dtype, "precision", None), getattr(dtype, "scale", 0)
