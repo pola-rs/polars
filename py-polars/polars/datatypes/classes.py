@@ -482,21 +482,21 @@ class Datetime(TemporalType):
         )
 
     def _validate_timezone(self, time_zone: str | timezone | None) -> str | None:
-        if time_zone is None or time_zone == "*":
+        if isinstance(time_zone, timezone):
+            return str(time_zone)
+        elif time_zone is None or time_zone == "*":
             return time_zone
-        elif isinstance(time_zone, timezone):
-            time_zone = str(time_zone)
         else:
             from polars.dependencies import _ZONEINFO_AVAILABLE, zoneinfo
 
             if _ZONEINFO_AVAILABLE:
                 if time_zone in zoneinfo.available_timezones():
-                    time_zone = str(time_zone)
+                    return str(time_zone)
                 else:
                     msg = f"invalid time zone: {time_zone!r}, to see valid strings run `import zoneinfo; zoneinfo.available_timezones()`"
                     raise ValueError(msg)
-
-        return time_zone
+            else:
+                return time_zone
 
 
 class Duration(TemporalType):
