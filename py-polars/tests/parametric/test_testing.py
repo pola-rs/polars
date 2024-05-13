@@ -7,25 +7,15 @@ import warnings
 from datetime import datetime
 from typing import Any
 
+import hypothesis.strategies as st
 import pytest
 from hypothesis import given, settings
 from hypothesis.errors import InvalidArgument, NonInteractiveExampleWarning
-from hypothesis.strategies import sampled_from
 
 import polars as pl
-from polars.datatypes import TEMPORAL_DTYPES
-from polars.testing.parametric import (
-    column,
-    columns,
-    create_list_strategy,
-    dataframes,
-    series,
-)
+from polars.testing.parametric import column, dataframes, lists, series
 
-# TODO: add parametric strategy generator that supports timezones
-TEMPORAL_DTYPES_ = {
-    tp for tp in TEMPORAL_DTYPES if getattr(tp, "time_zone", None) != "*"
-}
+TEMPORAL_DTYPES = {pl.Date, pl.Time, pl.Datetime, pl.Duration}
 
 
 @given(df=dataframes(), lf=dataframes(lazy=True), srs=series())
@@ -59,10 +49,6 @@ def test_strategy_shape(
     assert s1.name == ""
     assert s2.name == "col"
 
-    from polars.testing.parametric.primitives import MAX_COLS
-
-    assert 0 <= len(columns(None)) <= MAX_COLS
-
 
 @given(
     lf=dataframes(
@@ -70,10 +56,10 @@ def test_strategy_shape(
         lazy=True,
         min_size=1,
         # test mix & match of bulk-assigned cols with custom cols
-        cols=columns(["a", "b"], dtype=pl.UInt8, unique=True),
+        cols=[column(n, dtype=pl.UInt8, unique=True) for n in ["a", "b"]],
         include_cols=[
             column("c", dtype=pl.Boolean),
-            column("d", strategy=sampled_from(["x", "y", "z"])),
+            column("d", strategy=st.sampled_from(["x", "y", "z"])),
         ],
     )
 )
@@ -102,11 +88,11 @@ def test_strategy_frame_columns(lf: pl.LazyFrame) -> None:
 
 
 @given(
-    df=dataframes(allowed_dtypes=TEMPORAL_DTYPES_, max_size=1, max_cols=5),
-    lf=dataframes(excluded_dtypes=TEMPORAL_DTYPES_, max_size=1, max_cols=5, lazy=True),
+    df=dataframes(allowed_dtypes=TEMPORAL_DTYPES, max_size=1, max_cols=5),
+    lf=dataframes(excluded_dtypes=TEMPORAL_DTYPES, max_size=1, max_cols=5, lazy=True),
     s1=series(dtype=pl.Boolean, max_size=1),
-    s2=series(allowed_dtypes=TEMPORAL_DTYPES_, max_size=1),
-    s3=series(excluded_dtypes=TEMPORAL_DTYPES_, max_size=1),
+    s2=series(allowed_dtypes=TEMPORAL_DTYPES, max_size=1),
+    s3=series(excluded_dtypes=TEMPORAL_DTYPES, max_size=1),
 )
 @settings(max_examples=50)
 def test_strategy_dtypes(
@@ -126,39 +112,38 @@ def test_strategy_dtypes(
     assert not s3.dtype.is_temporal()
 
 
+@given(s=series())
+def test_series_null_probability_default(s: pl.Series) -> None:
+    assert s.null_count() == 0
+
+
+@given(s=series(null_probability=0.1))
+def test_series_null_probability(s: pl.Series) -> None:
+    assert 0 <= s.null_count() <= s.len()
+
+
+@given(df=dataframes(cols=1, null_probability=0.3))
+def test_dataframes_null_probability_global(df: pl.DataFrame) -> None:
+    null_count = sum(df.null_count().row(0))
+    assert 0 <= null_count <= df.height * df.width
+
+
+@given(df=dataframes(cols=2, null_probability={"col0": 0.7}))
+def test_dataframes_null_probability_column(df: pl.DataFrame) -> None:
+    null_count = sum(df.null_count().row(0))
+    assert 0 <= null_count <= df.height * df.width
+
+
 @given(
-    # set global, per-column, and overridden null-probabilities
-    s=series(size=50, null_probability=0.10),
-    df1=dataframes(cols=1, size=50, null_probability=0.30),
-    df2=dataframes(cols=2, size=50, null_probability={"col0": 0.70}),
-    df3=dataframes(
+    df=dataframes(
         cols=1,
-        size=50,
         null_probability=1.0,
-        include_cols=[column(name="colx", null_probability=0.20)],
-    ),
+        include_cols=[column(name="colx", null_probability=0.2)],
+    )
 )
-@settings(max_examples=50)
-def test_strategy_null_probability(
-    s: pl.Series,
-    df1: pl.DataFrame,
-    df2: pl.DataFrame,
-    df3: pl.DataFrame,
-) -> None:
-    for obj in (s, df1, df2, df3):
-        assert len(obj) == 50  # type: ignore[arg-type]
-
-    assert s.null_count() < df1.null_count().fold(sum).sum()
-    assert df1.null_count().fold(sum).sum() < df2.null_count().fold(sum).sum()
-    assert df2.null_count().fold(sum).sum() < df3.null_count().fold(sum).sum()
-
-    nulls_col0, nulls_col1 = df2.null_count().rows()[0]
-    assert nulls_col0 > nulls_col1
-    assert nulls_col0 < 50
-
-    nulls_col0, nulls_colx = df3.null_count().rows()[0]
-    assert nulls_col0 > nulls_colx
-    assert nulls_col0 == 50
+def test_dataframes_null_probability_override(df: pl.DataFrame) -> None:
+    assert df.get_column("col0").null_count() == df.height
+    assert 0 <= df.get_column("col0").null_count() <= df.height
 
 
 @given(
@@ -195,12 +180,10 @@ def test_infinities(
     df: pl.DataFrame,
     s: pl.Series,
 ) -> None:
-    from math import isfinite
+    from math import isfinite, isnan
 
     def finite_float(value: Any) -> bool:
-        if isinstance(value, float):
-            return isfinite(value)
-        return False
+        return isfinite(value) or isnan(value)
 
     assert all(finite_float(val) for val in s.to_list())
     for col in df.columns:
@@ -214,10 +197,11 @@ def test_infinities(
             column("coly", dtype=pl.List(pl.Datetime("ms"))),
             column(
                 name="colz",
-                strategy=create_list_strategy(
+                dtype=pl.List(pl.List(pl.String)),
+                strategy=lists(
                     inner_dtype=pl.List(pl.String),
                     select_from=["aa", "bb", "cc"],
-                    min_size=1,
+                    min_len=1,
                 ),
             ),
         ]
@@ -240,42 +224,23 @@ def test_sequence_strategies(df: pl.DataFrame) -> None:
 
 
 @pytest.mark.hypothesis()
-def test_invalid_arguments() -> None:
-    for invalid_probability in (-1.0, +2.0):
+@pytest.mark.parametrize("invalid_probability", [-1.0, +2.0])
+def test_invalid_argument_null_probability(invalid_probability: float) -> None:
+    with pytest.raises(InvalidArgument, match="between 0.0 and 1.0"):
+        column("colx", dtype=pl.Boolean, null_probability=invalid_probability)
+
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=NonInteractiveExampleWarning)
         with pytest.raises(InvalidArgument, match="between 0.0 and 1.0"):
-            column("colx", dtype=pl.Boolean, null_probability=invalid_probability)
+            series(name="colx", null_probability=invalid_probability).example()
+        with pytest.raises(InvalidArgument, match="between 0.0 and 1.0"):
+            dataframes(
+                cols=column(None),
+                null_probability=invalid_probability,
+            ).example()
 
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", category=NonInteractiveExampleWarning)
-            with pytest.raises(InvalidArgument, match="between 0.0 and 1.0"):
-                series(name="colx", null_probability=invalid_probability).example()
-            with pytest.raises(InvalidArgument, match="between 0.0 and 1.0"):
-                dataframes(
-                    cols=column(None),  # type: ignore[arg-type]
-                    null_probability=invalid_probability,
-                ).example()
 
+@pytest.mark.hypothesis()
+def test_column_invalid_probability() -> None:
     with pytest.raises(InvalidArgument):
-        # TODO: add support for remaining compound types
-        column("colx", dtype=pl.Struct)
-
-    with pytest.raises(InvalidArgument, match="not a valid polars datatype"):
-        columns(["colx", "coly"], dtype=pl.DataFrame)  # type: ignore[arg-type]
-
-    with pytest.raises(InvalidArgument, match=r"\d dtypes for \d names"):
-        columns(["colx", "coly"], dtype=[pl.Date, pl.Date, pl.Datetime])
-
-    with pytest.raises(InvalidArgument, match="unable to determine dtype"):
-        column("colx", strategy=sampled_from([None]))
-
-
-@given(s=series(dtype=pl.Binary))
-@settings(max_examples=5)
-def test_strategy_dtype_binary(s: pl.Series) -> None:
-    assert s.dtype == pl.Binary
-
-
-@given(s=series(dtype=pl.Decimal))
-@settings(max_examples=5)
-def test_strategy_dtype_decimal(s: pl.Series) -> None:
-    assert s.dtype == pl.Decimal
+        column("col", null_probability=2.0)

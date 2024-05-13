@@ -1,12 +1,44 @@
+from __future__ import annotations
+
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 import hypothesis.strategies as st
 from hypothesis import given
 
 import polars as pl
 from polars.exceptions import ComputeError
-from polars.testing.parametric.strategies import strategy_datetime_format
-from polars.type_aliases import TimeUnit
+
+if TYPE_CHECKING:
+    from hypothesis.strategies import DrawFn
+
+    from polars.type_aliases import TimeUnit
+
+
+@st.composite
+def datetime_formats(draw: DrawFn) -> str:
+    """Returns a strategy which generates datetime format strings."""
+    parts = [
+        "%m",
+        "%b",
+        "%B",
+        "%d",
+        "%j",
+        "%a",
+        "%A",
+        "%w",
+        "%H",
+        "%I",
+        "%p",
+        "%M",
+        "%S",
+        "%U",
+        "%W",
+        "%%",
+    ]
+    fmt = draw(st.sets(st.sampled_from(parts)))
+    fmt.add("%Y")  # Make sure year is always present
+    return " ".join(fmt)
 
 
 @given(
@@ -14,7 +46,7 @@ from polars.type_aliases import TimeUnit
         min_value=datetime(1699, 1, 1),
         max_value=datetime(9999, 12, 31),
     ),
-    fmt=strategy_datetime_format(),
+    fmt=datetime_formats(),
 )
 def test_to_datetime(datetimes: datetime, fmt: str) -> None:
     input = datetimes.strftime(fmt)

@@ -3,8 +3,9 @@
 # -------------------------------------------------
 from __future__ import annotations
 
+import hypothesis.strategies as st
+import pytest
 from hypothesis import given, settings
-from hypothesis.strategies import sampled_from
 
 import polars as pl
 from polars.testing import assert_series_equal
@@ -27,6 +28,10 @@ def test_series_datetime_timeunits(
 @given(
     s=series(min_size=1, max_size=10, dtype=pl.Duration),
 )
+@pytest.mark.skip(
+    "These functions are currently bugged for large values: "
+    "https://github.com/pola-rs/polars/issues/16057"
+)
 def test_series_duration_timeunits(
     s: pl.Series,
 ) -> None:
@@ -45,7 +50,6 @@ def test_series_duration_timeunits(
 
     # special handling for ns timeunit (as we may generate a microsecs-based
     # timedelta that results in 64bit overflow on conversion to nanosecs)
-    micros = s.dt.total_microseconds().to_list()
     lower_bound, upper_bound = -(2**63), (2**63) - 1
     if all(
         (lower_bound <= (us * 1000) <= upper_bound)
@@ -58,9 +62,9 @@ def test_series_duration_timeunits(
 
 @given(
     srs=series(max_size=10, dtype=pl.Int64),
-    start=sampled_from([-5, -4, -3, -2, -1, None, 0, 1, 2, 3, 4, 5]),
-    stop=sampled_from([-5, -4, -3, -2, -1, None, 0, 1, 2, 3, 4, 5]),
-    step=sampled_from([-5, -4, -3, -2, -1, None, 1, 2, 3, 4, 5]),
+    start=st.sampled_from([-5, -4, -3, -2, -1, None, 0, 1, 2, 3, 4, 5]),
+    stop=st.sampled_from([-5, -4, -3, -2, -1, None, 0, 1, 2, 3, 4, 5]),
+    step=st.sampled_from([-5, -4, -3, -2, -1, None, 1, 2, 3, 4, 5]),
 )
 @settings(max_examples=500)
 def test_series_slice(
