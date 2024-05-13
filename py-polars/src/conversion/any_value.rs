@@ -4,6 +4,7 @@ use std::borrow::Cow;
 use polars::chunked_array::object::PolarsObjectSafe;
 use polars::datatypes::{DataType, Field, OwnedObject, PlHashMap, TimeUnit};
 use polars::prelude::{AnyValue, Series};
+use polars_core::export::chrono::{NaiveDate, NaiveTime, TimeDelta, Timelike};
 use polars_core::utils::any_values_to_supertype_and_n_dtypes;
 use polars_core::utils::arrow::temporal_conversions::date32_to_date;
 use pyo3::exceptions::{PyOverflowError, PyTypeError};
@@ -11,7 +12,9 @@ use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyBytes, PyDict, PyFloat, PyInt, PyList, PySequence, PyString, PyTuple};
 
-use super::datetime::{elapsed_offset_to_timedelta, nanos_since_midnight_to_naivetime, timestamp_to_naive_datetime};
+use super::datetime::{
+    elapsed_offset_to_timedelta, nanos_since_midnight_to_naivetime, timestamp_to_naive_datetime,
+};
 use super::{decimal_to_digits, struct_dict, ObjectValue, Wrap};
 use crate::error::PyPolarsErr;
 use crate::py_modules::{SERIES, UTILS};
@@ -86,9 +89,7 @@ pub(crate) fn any_value_into_py_object(av: AnyValue, py: Python) -> PyObject {
             let time_delta = elapsed_offset_to_timedelta(v, time_unit);
             time_delta.into_py(py)
         },
-        AnyValue::Time(v) => {
-            nanos_since_midnight_to_naivetime(v).into_py(py)
-        },
+        AnyValue::Time(v) => nanos_since_midnight_to_naivetime(v).into_py(py),
         AnyValue::Array(v, _) | AnyValue::List(v) => PySeries::new(v).to_list(),
         ref av @ AnyValue::Struct(_, _, flds) => struct_dict(py, av._iter_struct_av(), flds),
         AnyValue::StructOwned(payload) => struct_dict(py, payload.0.into_iter(), &payload.1),
@@ -186,19 +187,16 @@ pub(crate) fn py_object_to_any_value<'py>(
     }
 
     fn get_date(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
-        Python::with_gil(|py| {
-            let date = UTILS
-                .bind(py)
-                .getattr(intern!(py, "date_to_int"))
-                .unwrap()
-                .call1((ob,))
-                .unwrap();
-            let v = date.extract::<i32>().unwrap();
-            Ok(AnyValue::Date(v))
-        })
+        // unwrap() isn't yet const safe.
+        const UNIX_EPOCH: Option<NaiveDate> = NaiveDate::from_ymd_opt(1970, 1, 1);
+        let date = ob.extract::<NaiveDate>()?;
+        let elapsed = date.signed_duration_since(UNIX_EPOCH.unwrap());
+        Ok(AnyValue::Date(elapsed.num_days() as i32))
     }
 
     fn get_datetime(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
+        // Probably needs to wait for
+        // https://github.com/pola-rs/polars/issues/16199 to do it a faster way.
         Python::with_gil(|py| {
             let date = UTILS
                 .bind(py)
@@ -212,36 +210,23 @@ pub(crate) fn py_object_to_any_value<'py>(
     }
 
     fn get_timedelta(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
-        Python::with_gil(|py| {
-            let f = UTILS
-                .bind(py)
-                .getattr(intern!(py, "timedelta_to_int"))
-                .unwrap();
-            let py_int = f.call1((ob, intern!(py, "us"))).unwrap();
-
-            let av = if let Ok(v) = py_int.extract::<i64>() {
-                AnyValue::Duration(v, TimeUnit::Microseconds)
-            } else {
-                // This should be faster than calling `timedelta_to_int` again with `"ms"` input.
-                let v_us = py_int.extract::<i128>().unwrap();
-                let v = (v_us / 1000) as i64;
-                AnyValue::Duration(v, TimeUnit::Milliseconds)
-            };
-            Ok(av)
-        })
+        let timedelta = ob.extract::<TimeDelta>()?;
+        if let Some(micros) = timedelta.num_microseconds() {
+            Ok(AnyValue::Duration(micros, TimeUnit::Microseconds))
+        } else {
+            Ok(AnyValue::Duration(
+                timedelta.num_milliseconds(),
+                TimeUnit::Milliseconds,
+            ))
+        }
     }
 
     fn get_time(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
-        Python::with_gil(|py| {
-            let time = UTILS
-                .bind(py)
-                .getattr(intern!(py, "time_to_int"))
-                .unwrap()
-                .call1((ob,))
-                .unwrap();
-            let v = time.extract::<i64>().unwrap();
-            Ok(AnyValue::Time(v))
-        })
+        let time = ob.extract::<NaiveTime>()?;
+
+        Ok(AnyValue::Time(
+            (time.num_seconds_from_midnight() as i64) * 1_000_000_000 + time.nanosecond() as i64,
+        ))
     }
 
     fn get_decimal(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
