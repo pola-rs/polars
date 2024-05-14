@@ -5,6 +5,8 @@ use std::path::PathBuf;
 
 use crate::prelude::*;
 
+use recursive::recursive;
+
 pub struct IRDisplay<'a>(pub(crate) IRPlanRef<'a>);
 
 pub struct ExprIRDisplay<'a> {
@@ -86,6 +88,7 @@ fn write_scan(
 }
 
 impl<'a> IRDisplay<'a> {
+    #[recursive]
     fn _format(&self, f: &mut Formatter, indent: usize) -> fmt::Result {
         if indent != 0 {
             writeln!(f)?;
@@ -391,6 +394,7 @@ impl<'a, T: AsExpr> Display for ExprIRSliceDisplay<'a, T> {
 }
 
 impl<'a> Display for ExprIRDisplay<'a> {
+    #[recursive]
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let root = self.expr_arena.get(self.node);
 
