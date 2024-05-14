@@ -20,6 +20,12 @@ load_profile(
 
 
 @pytest.fixture()
+def partition_limit() -> int:
+    """The limit at which Polars will start partitioning in debug builds."""
+    return 15
+
+
+@pytest.fixture()
 def df() -> pl.DataFrame:
     df = pl.DataFrame(
         {
