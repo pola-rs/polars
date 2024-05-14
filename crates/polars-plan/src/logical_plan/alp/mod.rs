@@ -13,10 +13,19 @@ use polars_utils::unitvec;
 use super::projection_expr::*;
 use crate::prelude::*;
 
+pub use format::{ExprIRDisplay, IRDisplay};
+
 pub struct IRPlan {
     pub lp_top: Node,
     pub lp_arena: Arena<IR>,
     pub expr_arena: Arena<AExpr>,
+}
+
+#[derive(Clone, Copy)]
+pub struct IRPlanRef<'a> {
+    pub lp_top: Node,
+    pub lp_arena: &'a Arena<IR>,
+    pub expr_arena: &'a Arena<AExpr>,
 }
 
 /// [`IR`] is a representation of [`DslPlan`] with [`Node`]s which are allocated in an [`Arena`]
@@ -143,20 +152,56 @@ impl IRPlan {
         }
     }
 
+    pub fn root(&self) -> &IR {
+        self.lp_arena.get(self.lp_top)
+    }
+
+    fn as_ref(&self) -> IRPlanRef {
+        IRPlanRef {
+            lp_top: self.lp_top,
+            lp_arena: &self.lp_arena,
+            expr_arena: &self.expr_arena,
+        }
+    }
+
     pub fn describe(&self) -> String {
-        self.display().to_string()
+        self.as_ref().describe()
     }
 
     fn display(&self) -> format::IRDisplay {
-        format::IRDisplay {
-            root: self.lp_top,
-            ir_arena: &self.lp_arena,
-            expr_arena: &self.expr_arena,
+        format::IRDisplay(self.as_ref())
+    }
+}
+
+impl<'a> IRPlanRef<'a> {
+    pub fn root(&self) -> &'a IR {
+        self.lp_arena.get(self.lp_top)
+    }
+
+    pub fn with_root(&self, root: Node) -> Self {
+        Self {
+            lp_top: root,
+            lp_arena: self.lp_arena,
+            expr_arena: self.expr_arena,
         }
+    }
+
+    fn display(&self) -> format::IRDisplay {
+        format::IRDisplay(*self)
+    }
+
+    fn describe(&self) -> String {
+        self.display().to_string()
     }
 }
 
 impl fmt::Debug for IRPlan {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        <format::IRDisplay as fmt::Display>::fmt(&self.display(), f)
+    }
+}
+
+impl fmt::Debug for IRPlanRef<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         <format::IRDisplay as fmt::Display>::fmt(&self.display(), f)
     }

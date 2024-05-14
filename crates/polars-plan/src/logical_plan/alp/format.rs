@@ -5,21 +5,18 @@ use std::path::PathBuf;
 
 use crate::prelude::*;
 
-struct ExprDisplay<'a> {
-    node: Node,
-    output_name: &'a OutputName,
-    expr_arena: &'a Arena<AExpr>,
+pub struct IRDisplay<'a>(pub(crate) IRPlanRef<'a>);
+
+pub struct ExprIRDisplay<'a> {
+    pub(crate) node: Node,
+    pub(crate) output_name: &'a OutputName,
+    pub(crate) expr_arena: &'a Arena<AExpr>,
 }
 
-struct ExprVecDisplay<'a, T: AsExpr> {
+/// Utility structure to display several [`ExprIR`]'s in a nice way
+struct ExprIRSliceDisplay<'a, T: AsExpr> {
     exprs: &'a [T],
     expr_arena: &'a Arena<AExpr>,
-}
-
-pub struct IRDisplay<'a> {
-    pub root: Node,
-    pub ir_arena: &'a Arena<IR>,
-    pub expr_arena: &'a Arena<AExpr>,
 }
 
 trait AsExpr {
@@ -53,7 +50,7 @@ fn write_scan(
     indent: usize,
     n_columns: i64,
     total_columns: usize,
-    predicate: &Option<ExprDisplay<'_>>,
+    predicate: &Option<ExprIRDisplay<'_>>,
     n_rows: Option<usize>,
 ) -> fmt::Result {
     if indent != 0 {
@@ -219,8 +216,8 @@ impl<'a> IRDisplay<'a> {
             },
             Select { expr, input, .. } => {
                 // @NOTE: Maybe there should be a clear delimiter here?
-                let default_exprs = self.display_expr_vec(expr.default_exprs());
-                let cse_exprs = self.display_expr_vec(expr.cse_exprs());
+                let default_exprs = self.display_expr_slice(expr.default_exprs());
+                let cse_exprs = self.display_expr_slice(expr.cse_exprs());
 
                 write!(f, "{:indent$} SELECT {default_exprs}, {cse_exprs} FROM", "")?;
                 self.with_root(*input)._format(f, sub_indent)
@@ -228,15 +225,15 @@ impl<'a> IRDisplay<'a> {
             Sort {
                 input, by_column, ..
             } => {
-                let by_column = self.display_expr_vec(by_column);
+                let by_column = self.display_expr_slice(by_column);
                 write!(f, "{:indent$}SORT BY {by_column}", "")?;
                 self.with_root(*input)._format(f, sub_indent)
             },
             GroupBy {
                 input, keys, aggs, ..
             } => {
-                let aggs = self.display_expr_vec(aggs);
-                let keys = self.display_expr_vec(keys);
+                let aggs = self.display_expr_slice(aggs);
+                let keys = self.display_expr_slice(keys);
 
                 write!(f, "{:indent$}AGGREGATE", "")?;
                 write!(f, "\n{:indent$}\t{aggs} BY {keys} FROM", "")?;
@@ -250,8 +247,8 @@ impl<'a> IRDisplay<'a> {
                 options,
                 ..
             } => {
-                let left_on = self.display_expr_vec(left_on);
-                let right_on = self.display_expr_vec(right_on);
+                let left_on = self.display_expr_slice(left_on);
+                let right_on = self.display_expr_slice(right_on);
 
                 let how = &options.args.how;
                 write!(f, "{:indent$}{how} JOIN:", "")?;
@@ -263,8 +260,8 @@ impl<'a> IRDisplay<'a> {
             },
             HStack { input, exprs, .. } => {
                 // @NOTE: Maybe there should be a clear delimiter here?
-                let default_exprs = self.display_expr_vec(exprs.default_exprs());
-                let cse_exprs = self.display_expr_vec(exprs.cse_exprs());
+                let default_exprs = self.display_expr_slice(exprs.default_exprs());
+                let cse_exprs = self.display_expr_slice(exprs.cse_exprs());
 
                 write!(f, "{:indent$} WITH_COLUMNS:", "",)?;
                 write!(f, "\n{:indent$} {default_exprs}, {cse_exprs} ", "")?;
@@ -313,43 +310,39 @@ impl<'a> IRDisplay<'a> {
 }
 
 impl<'a> IRDisplay<'a> {
-    fn display_expr(&self, root: &'a ExprIR) -> ExprDisplay<'a> {
-        ExprDisplay {
-            node: root.node(),
-            output_name: root.output_name_inner(),
-            expr_arena: self.expr_arena,
-        }
-    }
-
-    fn display_expr_vec(&self, exprs: &'a [ExprIR]) -> ExprVecDisplay<'a, ExprIR> {
-        ExprVecDisplay {
-            exprs,
-            expr_arena: self.expr_arena,
-        }
-    }
-
     fn root(&self) -> &IR {
-        self.ir_arena.get(self.root)
+        self.0.root()
     }
 
     fn with_root(&self, root: Node) -> Self {
-        Self {
-            root,
-            ir_arena: self.ir_arena,
-            expr_arena: self.expr_arena,
+        Self(self.0.with_root(root))
+    }
+
+    fn display_expr(&self, root: &'a ExprIR) -> ExprIRDisplay<'a> {
+        ExprIRDisplay {
+            node: root.node(),
+            output_name: root.output_name_inner(),
+            expr_arena: self.0.expr_arena,
+        }
+    }
+
+    fn display_expr_slice(&self, exprs: &'a [ExprIR]) -> ExprIRSliceDisplay<'a, ExprIR> {
+        ExprIRSliceDisplay {
+            exprs,
+            expr_arena: self.0.expr_arena,
         }
     }
 }
 
-impl<'a> ExprDisplay<'a> {
-    pub(crate) fn with_vec<T: AsExpr>(&self, exprs: &'a [T]) -> ExprVecDisplay<'a, T> {
-        ExprVecDisplay {
+impl<'a> ExprIRDisplay<'a> {
+    fn with_slice<T: AsExpr>(&self, exprs: &'a [T]) -> ExprIRSliceDisplay<'a, T> {
+        ExprIRSliceDisplay {
             exprs,
             expr_arena: self.expr_arena,
         }
     }
 
-    pub(crate) fn with_root<T: AsExpr>(&self, root: &'a T) -> Self {
+    fn with_root<T: AsExpr>(&self, root: &'a T) -> Self {
         Self {
             node: root.node(),
             output_name: root.output_name(),
@@ -364,7 +357,7 @@ impl<'a> Display for IRDisplay<'a> {
     }
 }
 
-impl<'a, T: AsExpr> Display for ExprVecDisplay<'a, T> {
+impl<'a, T: AsExpr> Display for ExprIRSliceDisplay<'a, T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         // Display items in slice delimited by a comma
 
@@ -374,7 +367,7 @@ impl<'a, T: AsExpr> Display for ExprVecDisplay<'a, T> {
 
         f.write_char('[')?;
         if let Some(fst) = iter.next() {
-            let fst = ExprDisplay {
+            let fst = ExprIRDisplay {
                 node: fst.node(),
                 output_name: fst.output_name(),
                 expr_arena: self.expr_arena,
@@ -383,7 +376,7 @@ impl<'a, T: AsExpr> Display for ExprVecDisplay<'a, T> {
         }
 
         for expr in iter {
-            let expr = ExprDisplay {
+            let expr = ExprIRDisplay {
                 node: expr.node(),
                 output_name: expr.output_name(),
                 expr_arena: self.expr_arena,
@@ -397,7 +390,7 @@ impl<'a, T: AsExpr> Display for ExprVecDisplay<'a, T> {
     }
 }
 
-impl<'a> Display for ExprDisplay<'a> {
+impl<'a> Display for ExprIRDisplay<'a> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let root = self.expr_arena.get(self.node);
 
@@ -409,7 +402,7 @@ impl<'a> Display for ExprDisplay<'a> {
                 options,
             } => {
                 let function = self.with_root(function);
-                let partition_by = self.with_vec(partition_by);
+                let partition_by = self.with_slice(partition_by);
                 match options {
                     #[cfg(feature = "dynamic_group_by")]
                     WindowType::Rolling(options) => {
@@ -465,7 +458,7 @@ impl<'a> Display for ExprDisplay<'a> {
                 sort_options,
             } => {
                 let expr = self.with_root(expr);
-                let by = self.with_vec(by);
+                let by = self.with_slice(by);
                 write!(f, "{expr}.sort_by(by={by}, sort_option={sort_options:?})",)
             },
             Filter { input, by } => {
@@ -556,7 +549,7 @@ impl<'a> Display for ExprDisplay<'a> {
                 let fst = self.with_root(&input[0]);
                 fst.fmt(f)?;
                 if input.len() >= 2 {
-                    write!(f, ".{function}({})", self.with_vec(&input[1..]))
+                    write!(f, ".{function}({})", self.with_slice(&input[1..]))
                 } else {
                     write!(f, ".{function}()")
                 }
@@ -565,7 +558,7 @@ impl<'a> Display for ExprDisplay<'a> {
                 let fst = self.with_root(&input[0]);
                 fst.fmt(f)?;
                 if input.len() >= 2 {
-                    write!(f, ".{}({})", options.fmt_str, self.with_vec(&input[1..]))
+                    write!(f, ".{}({})", options.fmt_str, self.with_slice(&input[1..]))
                 } else {
                     write!(f, ".{}()", options.fmt_str)
                 }
