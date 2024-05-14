@@ -33,6 +33,7 @@ if TYPE_CHECKING:
 
     from polars import DataFrame
     from polars.type_aliases import PolarsDataType, SizeUnit
+    from polars.functions.col import ColumnFactory
 
     if sys.version_info >= (3, 10):
         from typing import ParamSpec, TypeGuard
@@ -275,11 +276,11 @@ def _cast_repr_strings_with_schema(
             )
         )
 
-    def int_cast_(data: str):
+    def int_cast_(data: ColumnFactory):
         int_string = data.str.replace_all(r"[^\d+-]", "")
         return pl.when(int_string.str.len_bytes() > 0).then(int_string)
 
-    def float_cast_(data: F.col | List):
+    def float_cast_(data: ColumnFactory):
         # identify integer/fractional parts
         integer_part = data.str.replace(r"^(.*)\D(\d*)$", "$1")
         fractional_part = data.str.replace(r"^(.*)\D(\d*)$", "$2")
