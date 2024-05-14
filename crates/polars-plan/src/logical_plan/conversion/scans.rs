@@ -17,7 +17,7 @@ fn get_path(paths: &[PathBuf]) -> PolarsResult<&PathBuf> {
         .ok_or_else(|| polars_err!(ComputeError: "expected at least 1 path"))
 }
 
-#[cfg(any(feature = "parquet", feature = "parquet_async",))]
+#[cfg(feature = "parquet")]
 fn prepare_schema(mut schema: Schema, row_index: Option<&RowIndex>) -> SchemaRef {
     if let Some(rc) = row_index {
         let _ = schema.insert_at_index(0, rc.name.as_ref().into(), IDX_DTYPE);

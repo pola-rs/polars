@@ -12,7 +12,6 @@ use polars_io::parquet::read::ParquetOptions;
 use polars_io::HiveOptions;
 #[cfg(any(
     feature = "parquet",
-    feature = "parquet_async",
     feature = "csv",
     feature = "ipc"
 ))]
@@ -86,7 +85,7 @@ impl DslBuilder {
         .into())
     }
 
-    #[cfg(any(feature = "parquet", feature = "parquet_async"))]
+    #[cfg(feature = "parquet")]
     #[allow(clippy::too_many_arguments)]
     pub fn scan_parquet<P: Into<Arc<[std::path::PathBuf]>>>(
         paths: P,
