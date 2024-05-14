@@ -1,0 +1,4 @@
+
+trait Reduction {
+
+}
