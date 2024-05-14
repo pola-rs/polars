@@ -60,5 +60,5 @@ pub fn dtype_cols<DT: AsRef<[DataType]>>(dtype: DT) -> Expr {
 /// Select multiple columns by index.
 pub fn index_cols<N: AsRef<[i32]>>(indices: N) -> Expr {
     let indices = indices.as_ref().to_vec();
-    Expr::IndexColumn(indices)
+    Expr::IndexColumn(Arc::from(indices))
 }

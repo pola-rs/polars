@@ -292,7 +292,7 @@ fn expand_dtypes(
         let name = field.name();
         let new_expr = expr.clone();
         let new_expr =
-            replace_dtype_or_index_with_column(new_expr, ColumnName::from(name.as_str()), true);
+            replace_dtype_or_index_with_column(new_expr, &ColumnName::from(name.as_str()), true);
         let new_expr = rewrite_special_aliases(new_expr)?;
         result.push(new_expr)
     }
@@ -321,7 +321,7 @@ fn expand_indices(
                 let new_expr = expr.clone();
                 let new_expr = replace_dtype_or_index_with_column(
                     new_expr,
-                    ColumnName::from(name.as_str()),
+                    &ColumnName::from(name.as_str()),
                     false,
                 );
                 let new_expr = rewrite_special_aliases(new_expr)?;
