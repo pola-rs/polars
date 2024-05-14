@@ -32,8 +32,8 @@ if TYPE_CHECKING:
     from collections.abc import Reversible
 
     from polars import DataFrame
-    from polars.type_aliases import PolarsDataType, SizeUnit
     from polars.functions.col import ColumnFactory
+    from polars.type_aliases import PolarsDataType, SizeUnit
 
     if sys.version_info >= (3, 10):
         from typing import ParamSpec, TypeGuard
