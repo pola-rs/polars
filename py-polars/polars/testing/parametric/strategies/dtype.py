@@ -16,6 +16,7 @@ from polars.datatypes import (
     Decimal,
     Duration,
     Enum,
+    Field,
     Float32,
     Float64,
     Int8,
@@ -70,7 +71,7 @@ _COMPLEX_DTYPES: list[DataTypeClass] = [
 # Supported data type classes that contain other data types
 _NESTED_DTYPES: list[DataTypeClass] = [
     # TODO: Enable nested types by default when various issues are solved.
-    # List,
+    List,
     # Array,
     Struct,
 ]
@@ -222,8 +223,7 @@ def _instantiate_nested_dtype(
 ) -> DataType:
     """Take a nested data type and instantiate it."""
 
-    def instantiate_inner(dtype: PolarsDataType) -> DataType:
-        inner_dtype = getattr(dtype, "inner", None)
+    def instantiate_inner(inner_dtype: PolarsDataType | None) -> DataType:
         if inner_dtype is None:
             return draw(inner)
         elif inner_dtype.is_nested():
@@ -232,10 +232,10 @@ def _instantiate_nested_dtype(
             return draw(_instantiate_flat_dtype(inner_dtype))
 
     if dtype == List:
-        inner_dtype = instantiate_inner(dtype)
+        inner_dtype = instantiate_inner(getattr(dtype, "inner", None))
         return List(inner_dtype)
     elif dtype == Array:
-        inner_dtype = instantiate_inner(dtype)
+        inner_dtype = instantiate_inner(getattr(dtype, "inner", None))
         width = getattr(
             dtype,
             "width",
@@ -243,13 +243,14 @@ def _instantiate_nested_dtype(
         )
         return Array(inner_dtype, width)
     elif dtype == Struct:
-        # TODO: Recursively instantiate struct field dtypes
         if isinstance(dtype, DataType):
-            return dtype
-        n_fields = draw(
-            st.integers(min_value=1, max_value=_DEFAULT_STRUCT_FIELDS_LIMIT)
-        )
-        return Struct({f"f{i}": draw(inner) for i in range(n_fields)})
+            fields = [Field(f.name, instantiate_inner(f.dtype)) for f in dtype.fields]
+        else:
+            n_fields = draw(
+                st.integers(min_value=1, max_value=_DEFAULT_STRUCT_FIELDS_LIMIT)
+            )
+            fields = [Field(f"f{i}", draw(inner)) for i in range(n_fields)]
+        return Struct(fields)
     else:
         msg = f"unsupported data type: {dtype}"
         raise InvalidArgument(msg)
@@ -276,25 +277,21 @@ def _instantiate_dtype(
 ) -> DataType:
     """Take a data type and instantiate it."""
     if not dtype.is_nested():
+        if isinstance(dtype, DataType):
+            return dtype
+
         if allowed_dtypes is None:
             allowed_dtypes = [dtype]
         else:
-            allowed_dtypes = [dt for dt in allowed_dtypes if dt == dtype]
+            same_dtypes = [dt for dt in allowed_dtypes if dt == dtype]
+            allowed_dtypes = same_dtypes if same_dtypes else [dtype]
+
         return draw(
             _flat_dtypes(allowed_dtypes=allowed_dtypes, excluded_dtypes=excluded_dtypes)
         )
 
-    def draw_inner(dtype: PolarsDataType) -> DataType:
-        if isinstance(dtype, DataType):
-            return draw(
-                _instantiate_dtype(
-                    dtype.inner,  # type: ignore[attr-defined]
-                    allowed_dtypes=allowed_dtypes,
-                    excluded_dtypes=excluded_dtypes,
-                    nesting_level=nesting_level - 1,
-                )
-            )
-        else:
+    def draw_inner(dtype: PolarsDataType | None) -> DataType:
+        if dtype is None:
             return draw(
                 dtypes(
                     allowed_dtypes=allowed_dtypes,
@@ -302,12 +299,21 @@ def _instantiate_dtype(
                     nesting_level=nesting_level - 1,
                 )
             )
+        else:
+            return draw(
+                _instantiate_dtype(
+                    dtype,
+                    allowed_dtypes=allowed_dtypes,
+                    excluded_dtypes=excluded_dtypes,
+                    nesting_level=nesting_level - 1,
+                )
+            )
 
     if dtype == List:
-        inner = draw_inner(dtype)
+        inner = draw_inner(getattr(dtype, "inner", None))
         return List(inner)
     elif dtype == Array:
-        inner = draw_inner(dtype)
+        inner = draw_inner(getattr(dtype, "inner", None))
         width = getattr(
             dtype,
             "width",
@@ -316,16 +322,31 @@ def _instantiate_dtype(
         return Array(inner, width)
     elif dtype == Struct:
         if isinstance(dtype, DataType):
-            return dtype
-        n_fields = draw(
-            st.integers(min_value=1, max_value=_DEFAULT_STRUCT_FIELDS_LIMIT)
-        )
-        inner_strategy = dtypes(
-            allowed_dtypes=allowed_dtypes,
-            excluded_dtypes=excluded_dtypes,
-            nesting_level=nesting_level - 1,
-        )
-        return Struct({f"f{i}": draw(inner_strategy) for i in range(n_fields)})
+            fields = [
+                Field(
+                    name=f.name,
+                    dtype=draw(
+                        _instantiate_dtype(
+                            f.dtype,
+                            allowed_dtypes=allowed_dtypes,
+                            excluded_dtypes=excluded_dtypes,
+                            nesting_level=nesting_level - 1,
+                        )
+                    ),
+                )
+                for f in dtype.fields
+            ]
+        else:
+            n_fields = draw(
+                st.integers(min_value=1, max_value=_DEFAULT_STRUCT_FIELDS_LIMIT)
+            )
+            inner_strategy = dtypes(
+                allowed_dtypes=allowed_dtypes,
+                excluded_dtypes=excluded_dtypes,
+                nesting_level=nesting_level - 1,
+            )
+            fields = [Field(f"f{i}", draw(inner_strategy)) for i in range(n_fields)]
+        return Struct(fields)
     else:
         msg = f"unsupported data type: {dtype}"
         raise InvalidArgument(msg)
