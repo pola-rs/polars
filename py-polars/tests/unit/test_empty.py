@@ -135,5 +135,6 @@ def test_empty_is_in() -> None:
     )
 
 
-def test_empty_to_empty() -> None:
-    assert pl.DataFrame().drop_nulls().shape == (0, 0)
+@pytest.mark.parametrize("method", ["drop_nulls", "unique"])
+def test_empty_to_empty(method: str) -> None:
+    assert getattr(pl.DataFrame(), method)().shape == (0, 0)
