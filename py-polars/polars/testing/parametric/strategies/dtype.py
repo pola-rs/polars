@@ -243,7 +243,7 @@ def _instantiate_nested_dtype(
         )
         return Array(inner_dtype, width)
     elif dtype == Struct:
-        if isinstance(dtype, DataType):
+        if isinstance(dtype, Struct):
             fields = [Field(f.name, instantiate_inner(f.dtype)) for f in dtype.fields]
         else:
             n_fields = draw(
@@ -321,7 +321,7 @@ def _instantiate_dtype(
         )
         return Array(inner, width)
     elif dtype == Struct:
-        if isinstance(dtype, DataType):
+        if isinstance(dtype, Struct):
             fields = [
                 Field(
                     name=f.name,
