@@ -33,7 +33,7 @@ rand = { workspace = true, optional = true, features = ["small_rng", "std"] }
 rand_distr = { workspace = true, optional = true }
 rayon = { workspace = true }
 regex = { workspace = true }
-serde = { workspace = true, features = ["derive"], optional = true }
+serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 smartstring = { workspace = true }
 unicode-reverse = { workspace = true, optional = true }

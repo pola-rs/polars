@@ -21,7 +21,7 @@ chrono-tz = { workspace = true, optional = true }
 now = { version = "0.1" }
 once_cell = { workspace = true }
 regex = { workspace = true }
-serde = { workspace = true, features = ["derive"], optional = true }
+serde = { workspace = true, optional = true }
 smartstring = { workspace = true }
 
 [dev-dependencies]

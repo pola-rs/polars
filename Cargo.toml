@@ -66,7 +66,7 @@ regex = "1.9"
 reqwest = { version = "0.11", default-features = false }
 ryu = "1.0.13"
 recursive = "0.1"
-serde = "1.0.188"
+serde = { version = "1.0.188", features = ["derive"] }
 serde_json = "1"
 simd-json = { version = "0.13", features = ["known-key"] }
 simdutf8 = "0.1.4"

@@ -37,7 +37,7 @@ rayon = { workspace = true }
 regex = { workspace = true }
 reqwest = { workspace = true, optional = true }
 ryu = { workspace = true, optional = true }
-serde = { workspace = true, features = ["derive", "rc"], optional = true }
+serde = { workspace = true, features = ["rc"], optional = true }
 serde_json = { version = "1", default-features = false, features = ["alloc", "raw_value"], optional = true }
 simd-json = { workspace = true, optional = true }
 simdutf8 = { workspace = true, optional = true }

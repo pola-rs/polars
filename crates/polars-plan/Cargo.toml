@@ -37,7 +37,7 @@ pyo3 = { workspace = true, optional = true }
 rayon = { workspace = true }
 recursive = { workspace = true }
 regex = { workspace = true, optional = true }
-serde = { workspace = true, features = ["derive", "rc"], optional = true }
+serde = { workspace = true, features = ["rc"], optional = true }
 smartstring = { workspace = true }
 strum_macros = { workspace = true }
 

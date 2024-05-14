@@ -34,7 +34,7 @@ brotli = { version = "^5.0", optional = true }
 flate2 = { workspace = true, optional = true }
 lz4 = { version = "1.24", optional = true }
 lz4_flex = { version = "0.11", optional = true }
-serde = { workspace = true, optional = true, features = ["derive"] }
+serde = { workspace = true, optional = true }
 snap = { version = "^1.1", optional = true }
 zstd = { version = "^0.13", optional = true, default-features = false }
 

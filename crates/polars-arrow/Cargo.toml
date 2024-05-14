@@ -25,7 +25,7 @@ hashbrown = { workspace = true }
 num-traits = { workspace = true }
 polars-error = { workspace = true }
 polars-utils = { workspace = true }
-serde = { workspace = true, features = ["derive"], optional = true }
+serde = { workspace = true, optional = true }
 simdutf8 = { workspace = true }
 
 ethnum = { workspace = true }
