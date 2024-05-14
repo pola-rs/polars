@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import Any, cast, Callable
 
+import pytest
 import numpy as np
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
-from tests.unit.interop.numpy._numba import float64, guvectorize
 
 
 def test_ufunc() -> None:
@@ -133,14 +133,20 @@ def test_grouped_ufunc() -> None:
     df.group_by("id").agg(pl.col("values").log1p().sum().pipe(np.expm1))
 
 
-@guvectorize([(float64[:], float64[:])], "(n)->(n)")
-def gufunc_mean(arr, result):  # type: ignore[no-untyped-def]
-    mean = arr.mean()
-    for i in range(len(arr)):
-        result[i] = mean + i
+def make_gufunc_mean() -> Callable[[pl.Series], pl.Series]:
+    numba = pytest.importorskip("numba")
+
+    @numba.guvectorize([(numba.float64[:], numba.float64[:])], "(n)->(n)")
+    def gufunc_mean(arr, result):  # type: ignore[no-untyped-def]
+        mean = arr.mean()
+        for i in range(len(arr)):
+            result[i] = mean + i
+
+    return gufunc_mean
 
 
 def test_generalized_ufunc() -> None:
+    gufunc_mean = make_gufunc_mean()
     df = pl.DataFrame({"s": [1.0, 2.0, 3.0]})
     result = df.select([pl.col("s").map_batches(gufunc_mean).alias("result")])
     expected = pl.DataFrame({"result": [2.0, 3.0, 4.0]})
@@ -148,6 +154,7 @@ def test_generalized_ufunc() -> None:
 
 
 def test_grouped_generalized_ufunc() -> None:
+    gufunc_mean = make_gufunc_mean()
     df = pl.DataFrame({"id": ["a", "a", "b", "b"], "values": [1.0, 2.0, 3.0, 4.0]})
     result = df.group_by("id").agg(pl.col("values").map_batches(gufunc_mean)).sort("id")
     expected = pl.DataFrame({"id": ["a", "b"], "values": [[1.5, 2.5], [3.5, 4.5]]})
