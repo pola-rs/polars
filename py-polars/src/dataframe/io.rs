@@ -4,7 +4,7 @@ use std::ops::Deref;
 
 #[cfg(feature = "avro")]
 use polars::io::avro::AvroCompression;
-use polars::io::mmap::ReaderBytes;
+use polars::io::mmap::{try_create_file, ReaderBytes};
 use polars::io::RowIndex;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
@@ -14,7 +14,8 @@ use super::*;
 use crate::conversion::parse_parquet_compression;
 use crate::conversion::Wrap;
 use crate::file::{
-    get_either_file, get_file_like, get_mmap_bytes_reader, read_if_bytesio, EitherRustPythonFile,
+    get_either_file, get_file_like, get_mmap_bytes_reader, get_mmap_bytes_reader_and_path,
+    read_if_bytesio, EitherRustPythonFile,
 };
 
 #[pymethods]
@@ -279,14 +280,16 @@ impl PyDataFrame {
             offset,
         });
         py_f = read_if_bytesio(py_f);
-        let mmap_bytes_r = get_mmap_bytes_reader(&py_f)?;
+        let (mmap_bytes_r, mmap_path) = get_mmap_bytes_reader_and_path(&py_f)?;
+
+        let mmap_path = if memory_map { mmap_path } else { None };
         let df = py.allow_threads(move || {
             IpcReader::new(mmap_bytes_r)
                 .with_projection(projection)
                 .with_columns(columns)
                 .with_n_rows(n_rows)
                 .with_row_index(row_index)
-                .memory_mapped(memory_map)
+                .memory_mapped(mmap_path)
                 .finish()
                 .map_err(PyPolarsErr::from)
         })?;
@@ -488,7 +491,9 @@ impl PyDataFrame {
         future: bool,
     ) -> PyResult<()> {
         if let Ok(s) = py_f.extract::<PyBackedStr>(py) {
-            let f = std::fs::File::create(&*s)?;
+            let s: &str = s.as_ref();
+            let path = std::path::Path::new(s);
+            let f = try_create_file(path).map_err(PyPolarsErr::from)?;
             py.allow_threads(|| {
                 IpcWriter::new(f)
                     .with_compression(compression.0)

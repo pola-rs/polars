@@ -1,5 +1,63 @@
+use std::collections::btree_map::Entry;
+use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::{BufReader, Cursor, Read, Seek};
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+
+use memmap::Mmap;
+use once_cell::sync::Lazy;
+use polars_error::{polars_bail, PolarsResult};
+use polars_utils::create_file;
+
+// Keep track of memory mapped files so we don't write to them while reading
+// Use a btree as it uses less memory than a hashmap and this thing never shrinks.
+static MEMORY_MAPPED_FILES: Lazy<Mutex<BTreeMap<PathBuf, u32>>> =
+    Lazy::new(|| Mutex::new(Default::default()));
+
+pub(crate) struct MMapSemaphore {
+    path: PathBuf,
+    mmap: Mmap,
+}
+
+impl MMapSemaphore {
+    pub(super) fn new(path: PathBuf, mmap: Mmap) -> Self {
+        let mut guard = MEMORY_MAPPED_FILES.lock().unwrap();
+        guard.insert(path.clone(), 1);
+        Self { path, mmap }
+    }
+}
+
+impl AsRef<[u8]> for MMapSemaphore {
+    #[inline]
+    fn as_ref(&self) -> &[u8] {
+        self.mmap.as_ref()
+    }
+}
+
+impl Drop for MMapSemaphore {
+    fn drop(&mut self) {
+        let mut guard = MEMORY_MAPPED_FILES.lock().unwrap();
+        if let Entry::Occupied(mut e) = guard.entry(std::mem::take(&mut self.path)) {
+            let v = e.get_mut();
+            *v -= 1;
+
+            if *v == 0 {
+                e.remove_entry();
+            }
+        }
+    }
+}
+
+/// Open a file to get write access. This will check if the file is currently registered as memory mapped.
+pub fn try_create_file(path: &Path) -> PolarsResult<File> {
+    let guard = MEMORY_MAPPED_FILES.lock().unwrap();
+    if guard.contains_key(path) {
+        polars_bail!(ComputeError: "cannot write to file: already memory mapped")
+    }
+    drop(guard);
+    create_file(path)
+}
 
 /// Trait used to get a hold to file handler or to the underlying bytes
 /// without performing a Read.

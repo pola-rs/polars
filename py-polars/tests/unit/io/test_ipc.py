@@ -337,3 +337,19 @@ def test_ipc_decimal_15920(
         path = f"{tmp_path}/data"
         df.write_ipc(path)
         assert_frame_equal(pl.read_ipc(path), df)
+
+
+@pytest.mark.write_disk()
+def test_ipc_raise_on_writing_mmap(tmp_path: Path) -> None:
+    p = tmp_path / "foo.ipc"
+    df = pl.DataFrame({"foo": [1, 2, 3]})
+    # first write is allowed
+    df.write_ipc(p)
+
+    # now open as memory mapped
+    df = pl.read_ipc(p, memory_map=True)
+
+    with pytest.raises(
+        pl.ComputeError, match="cannot write to file: already memory mapped"
+    ):
+        df.write_ipc(p)
