@@ -226,7 +226,7 @@ fn struct_index_to_field(expr: Expr, schema: &Schema) -> PolarsResult<Expr> {
 /// ()It also removes the Exclude Expr from the expression chain).
 fn replace_dtype_or_index_with_column(
     expr: Expr,
-    column_name: Arc<str>,
+    column_name: &ColumnName,
     replace_dtype: bool,
 ) -> Expr {
     expr.map_expr(|e| match e {
