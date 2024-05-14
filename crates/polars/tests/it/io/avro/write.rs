@@ -151,13 +151,11 @@ fn no_compression() -> PolarsResult<()> {
     roundtrip(None)
 }
 
-#[cfg(feature = "io_avro_compression")]
 #[test]
 fn snappy() -> PolarsResult<()> {
     roundtrip(Some(Compression::Snappy))
 }
 
-#[cfg(feature = "io_avro_compression")]
 #[test]
 fn deflate() -> PolarsResult<()> {
     roundtrip(Some(Compression::Deflate))

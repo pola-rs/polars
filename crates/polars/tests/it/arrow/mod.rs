@@ -1,5 +1,5 @@
 mod ffi;
-#[cfg(feature = "io_ipc_compression")]
+#[cfg(feature = "ipc")]
 mod io;
 
 mod scalar;
