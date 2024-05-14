@@ -33,6 +33,7 @@ async-stream = { version = "0.3.3", optional = true }
 brotli = { version = "^5.0", optional = true }
 flate2 = { version = "^1.0", optional = true, default-features = false }
 lz4 = { version = "1.24", optional = true }
+lz4_flex = { version = "0.11", optional = true }
 serde = { version = "^1.0", optional = true, features = ["derive"] }
 snap = { version = "^1.1", optional = true }
 zstd = { version = "^0.13", optional = true, default-features = false }
@@ -52,6 +53,8 @@ compression = [
 snappy = ["snap"]
 gzip = ["flate2/rust_backend"]
 gzip_zlib_ng = ["flate2/zlib-ng"]
+lz4 = ["dep:lz4"]
+lz4_flex = ["dep:lz4_flex"]
 
 async = ["async-stream", "futures", "parquet-format-safe/async"]
 bloom_filter = ["xxhash-rust"]
