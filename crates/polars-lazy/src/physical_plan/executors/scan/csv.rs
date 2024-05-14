@@ -2,7 +2,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use polars_core::config::verbose;
-use polars_core::utils::accumulate_dataframes_vertical;
+use polars_core::utils::{
+    accumulate_dataframes_vertical, accumulate_dataframes_vertical_unchecked,
+};
 
 use super::*;
 
@@ -85,7 +87,9 @@ impl CsvExec {
 
                     // We should have a chunked df since we read with rechunk false,
                     // so we parallelize over row-wise batches.
-                    accumulate_dataframes_vertical(
+                    // Safety: We can accumulate unchecked here as these DataFrames
+                    // all come from the same file.
+                    accumulate_dataframes_vertical_unchecked(
                         POOL.install(|| {
                             df.split_chunks()
                                 .collect::<Vec<_>>()
@@ -100,7 +104,7 @@ impl CsvExec {
                                 .collect::<PolarsResult<Vec<_>>>()
                         })?
                         .into_iter(),
-                    )?
+                    )
                 } else {
                     df
                 };

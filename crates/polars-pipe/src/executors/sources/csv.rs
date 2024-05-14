@@ -151,10 +151,11 @@ impl Source for CsvSource {
             };
 
             if first_read_from_file {
+                let first_df = batches.first().unwrap();
                 if self.schema_check_df.width() == 0 {
-                    self.schema_check_df = batches[0].clear();
+                    self.schema_check_df = first_df.clear();
                 }
-                self.schema_check_df.vstack(batches.get(0).unwrap())?;
+                self.schema_check_df.vstack(first_df)?;
             }
 
             let index = get_source_index(0);
