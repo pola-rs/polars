@@ -21,6 +21,7 @@ from polars.datatypes import (
     Decimal,
     Duration,
     Int64,
+    List,
     String,
     Time,
 )
@@ -274,6 +275,33 @@ def _cast_repr_strings_with_schema(
             )
         )
 
+    def int_cast_(data: str):
+        int_string = data.str.replace_all(r"[^\d+-]", "")
+        print(int_string)
+        return pl.when(int_string.str.len_bytes() > 0).then(int_string)
+
+    def float_cast_(data: F.col | List):
+        # identify integer/fractional parts
+        integer_part = data.str.replace(r"^(.*)\D(\d*)$", "$1")
+        fractional_part = data.str.replace(r"^(.*)\D(\d*)$", "$2")
+        return (
+            # check for empty string and/or integer format
+            pl.when(data.str.contains(r"^[+-]?\d*$"))
+            .then(pl.when(data.str.len_bytes() > 0).then(data))
+            # check for scientific notation
+            .when(data.str.contains("[eE]"))
+            .then(data.str.replace(r"[^eE\d]", "."))
+            .otherwise(
+                # recombine sanitised integer/fractional components
+                pl.concat_str(
+                    integer_part.str.replace_all(r"[^\d+-]", ""),
+                    fractional_part,
+                    separator=".",
+                )
+            )
+            .cast(String)
+        )
+
     cast_cols = {}
     for c, tp in schema.items():
         if tp is not None:
@@ -312,30 +340,21 @@ def _cast_repr_strings_with_schema(
                     default=None,
                 )
             elif tp in INTEGER_DTYPES:
-                int_string = F.col(c).str.replace_all(r"[^\d+-]", "")
-                cast_cols[c] = (
-                    pl.when(int_string.str.len_bytes() > 0).then(int_string).cast(tp)
-                )
+                cast_cols[c] = int_cast_(F.col(c)).cast(tp)
             elif tp in FLOAT_DTYPES or tp.base_type() == Decimal:
-                # identify integer/fractional parts
-                integer_part = F.col(c).str.replace(r"^(.*)\D(\d*)$", "$1")
-                fractional_part = F.col(c).str.replace(r"^(.*)\D(\d*)$", "$2")
+                cast_cols[c] = float_cast_(F.col(c)).cast(tp)
+            elif tp.base_type() == List:
                 cast_cols[c] = (
-                    # check for empty string and/or integer format
-                    pl.when(F.col(c).str.contains(r"^[+-]?\d*$"))
-                    .then(pl.when(F.col(c).str.len_bytes() > 0).then(F.col(c)))
-                    # check for scientific notation
-                    .when(F.col(c).str.contains("[eE]"))
-                    .then(F.col(c).str.replace(r"[^eE\d]", "."))
-                    .otherwise(
-                        # recombine sanitised integer/fractional components
-                        pl.concat_str(
-                            integer_part.str.replace_all(r"[^\d+-]", ""),
-                            fractional_part,
-                            separator=".",
-                        )
+                    F.col(c)
+                    .map_elements(
+                        lambda row: row[1:-1].split(","),
+                        return_dtype=tp.base_type()(String),
                     )
-                    .cast(String)
+                    .list.eval(
+                        int_cast_(pl.element())
+                        if tp.inner in INTEGER_DTYPES
+                        else float_cast_(pl.element())
+                    )
                     .cast(tp)
                 )
             elif tp != df.schema[c]:

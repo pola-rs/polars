@@ -18,7 +18,7 @@ from polars._utils.construction.series import arrow_to_pyseries, pandas_to_pyser
 from polars._utils.deprecation import deprecate_renamed_parameter
 from polars._utils.various import _cast_repr_strings_with_schema
 from polars._utils.wrap import wrap_df, wrap_s
-from polars.datatypes import N_INFER_DEFAULT, Categorical, List, Object, String, Struct
+from polars.datatypes import N_INFER_DEFAULT, Categorical, Object, String, Struct
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.exceptions import NoDataError
@@ -723,7 +723,7 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
         empty_data = [None] * len(data[0])
         data.extend((pl.Series(empty_data, dtype=String)) for _ in range(n_extend_cols))
     for dtype in set(schema.values()):
-        if dtype in (List, Struct, Object):
+        if dtype in (Struct, Object):
             msg = (
                 f"`from_repr` does not support data type {dtype.base_type().__name__!r}"
             )
