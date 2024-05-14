@@ -133,3 +133,7 @@ def test_empty_is_in() -> None:
     assert_series_equal(
         pl.Series("a", [1, 2, 3]).is_in([]), pl.Series("a", [False] * 3)
     )
+
+
+def test_empty_to_empty() -> None:
+    assert pl.DataFrame().drop_nulls().shape == (0, 0)
