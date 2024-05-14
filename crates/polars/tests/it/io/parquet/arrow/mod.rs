@@ -12,14 +12,9 @@ use polars_parquet::read as p_read;
 use polars_parquet::read::statistics::*;
 use polars_parquet::write::*;
 
-#[cfg(feature = "io_json_integration")]
-mod integration;
 mod read;
 mod read_indexes;
 mod write;
-
-#[cfg(feature = "io_parquet_sample_test")]
-mod sample_tests;
 
 type ArrayStats = (Box<dyn Array>, Statistics);
 
