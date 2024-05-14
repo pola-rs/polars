@@ -75,6 +75,7 @@ def test_selector_by_dtype(df: pl.DataFrame) -> None:
 def test_selector_by_index(df: pl.DataFrame) -> None:
     # one or more +ve indexes
     assert df.select(cs.by_index(0)).columns == ["abc"]
+    assert df.select(pl.nth([0, 1, 2])).columns == ["abc", "bbb", "cde"]
     assert df.select(cs.by_index(0, 1, 2)).columns == ["abc", "bbb", "cde"]
 
     # one or more -ve indexes
@@ -99,8 +100,13 @@ def test_selector_by_index(df: pl.DataFrame) -> None:
         "opp",
     ]
 
+    # expected errors
     with pytest.raises(ColumnNotFoundError):
         df.select(cs.by_index(999))
+
+    for invalid in ("one", ["two", "three"]):
+        with pytest.raises(TypeError):
+            df.select(cs.by_index(invalid))  # type: ignore[arg-type]
 
 
 def test_selector_by_name(df: pl.DataFrame) -> None:

@@ -18,27 +18,19 @@ __all__ = ["col"]
 
 
 def _create_col(
-    name: (
-        str
-        | int
-        | PolarsDataType
-        | Iterable[int]
-        | Iterable[str]
-        | Iterable[PolarsDataType]
-    ),
-    *more_names: str | int | PolarsDataType,
+    name: str | PolarsDataType | Iterable[str] | Iterable[PolarsDataType],
+    *more_names: str | PolarsDataType,
 ) -> Expr:
     """Create one or more column expressions representing column(s) in a DataFrame."""
     if more_names:
         if isinstance(name, str):
-            names_str = [name, *more_names]
+            names_str = [name]
+            names_str.extend(more_names)  # type: ignore[arg-type]
             return wrap_expr(plr.cols(names_str))
         elif is_polars_dtype(name):
-            dtypes = [name, *more_names]
+            dtypes = [name]
+            dtypes.extend(more_names)  # type: ignore[arg-type]
             return wrap_expr(plr.dtype_cols(dtypes))
-        elif isinstance(name, int):
-            indexes = [name, *more_names]
-            return wrap_expr(plr.index_cols(indexes))
         else:
             msg = (
                 "invalid input for `col`"
@@ -50,8 +42,6 @@ def _create_col(
         return wrap_expr(plr.col(name))
     elif is_polars_dtype(name):
         return wrap_expr(plr.dtype_cols([name]))
-    elif isinstance(name, int):
-        return wrap_expr(plr.index_cols([name]))
     elif isinstance(name, Iterable):
         names = list(name)
         if not names:
@@ -62,8 +52,6 @@ def _create_col(
             return wrap_expr(plr.cols(names))
         elif is_polars_dtype(item):
             return wrap_expr(plr.dtype_cols(names))
-        if isinstance(item, int):
-            return wrap_expr(plr.index_cols(names))
         else:
             msg = (
                 "invalid input for `col`"
@@ -83,15 +71,8 @@ def _create_col(
 class Column(Protocol):
     def __call__(
         self,
-        name: (
-            str
-            | int
-            | PolarsDataType
-            | Iterable[int]
-            | Iterable[str]
-            | Iterable[PolarsDataType]
-        ),
-        *more_names: str | int | PolarsDataType,
+        name: str | PolarsDataType | Iterable[str] | Iterable[PolarsDataType],
+        *more_names: str | PolarsDataType,
     ) -> Expr: ...
 
     def __getattr__(self, name: str) -> Expr: ...
@@ -163,15 +144,8 @@ class ColumnFactory(metaclass=ColumnFactoryMeta):
 
     def __new__(  # type: ignore[misc]
         cls,
-        name: (
-            str
-            | int
-            | PolarsDataType
-            | Iterable[str]
-            | Iterable[int]
-            | Iterable[PolarsDataType]
-        ),
-        *more_names: str | int | PolarsDataType,
+        name: str | PolarsDataType | Iterable[str] | Iterable[PolarsDataType],
+        *more_names: str | PolarsDataType,
     ) -> Expr:
         """
         Create one or more column expressions representing column(s) in a DataFrame.
@@ -179,11 +153,18 @@ class ColumnFactory(metaclass=ColumnFactoryMeta):
         Parameters
         ----------
         name
-            The name, datatype, or index of the column(s) to represent. Also accepts
-            regular expression input; regexes should start with `^` and end with `$`.
+            The name or datatype of the column(s) to represent.
+            Accepts regular expression input.
+            Regular expressions should start with `^` and end with `$`.
         *more_names
-            Additional names or datatypes of columns to represent,cspecified as
-            positional arguments.
+            Additional names or datatypes of columns to represent,
+            specified as positional arguments.
+
+        See Also
+        --------
+        first
+        last
+        nth
 
         Examples
         --------
@@ -313,15 +294,8 @@ class ColumnFactory(metaclass=ColumnFactoryMeta):
     # appease sphinx; we actually use '__new__'
     def __call__(
         self,
-        name: (
-            str
-            | int
-            | PolarsDataType
-            | Iterable[int]
-            | Iterable[str]
-            | Iterable[PolarsDataType]
-        ),
-        *more_names: str | int | PolarsDataType,
+        name: str | PolarsDataType | Iterable[str] | Iterable[PolarsDataType],
+        *more_names: str | PolarsDataType,
     ) -> Expr:
         return _create_col(name, *more_names)
 

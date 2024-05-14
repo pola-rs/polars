@@ -695,7 +695,7 @@ def by_index(*indices: int | range | Collection[int | range]) -> SelectorType:
             raise TypeError(msg)
 
     return _selector_proxy_(
-        F.col(all_indices), name="by_index", parameters={"*indices": indices}
+        F.nth(all_indices), name="by_index", parameters={"*indices": indices}
     )
 
 
