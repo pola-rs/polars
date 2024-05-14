@@ -95,6 +95,12 @@ impl IpcExec {
 
                 let file = std::fs::File::open(path)?;
 
+                let memory_mapped = if self.options.memory_map {
+                    Some(path.clone())
+                } else {
+                    None
+                };
+
                 let df = IpcReader::new(file)
                     .with_n_rows(
                         // NOTE: If there is any file that by itself exceeds the
@@ -108,7 +114,7 @@ impl IpcExec {
                     )
                     .with_row_index(self.file_options.row_index.clone())
                     .with_projection(projection.clone())
-                    .memory_mapped(self.options.memory_map)
+                    .memory_mapped(memory_mapped)
                     .finish()?;
 
                 row_counter
