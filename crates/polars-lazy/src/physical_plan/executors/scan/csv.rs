@@ -85,6 +85,8 @@ impl CsvExec {
                     let df = if predicate.is_some() && predicate_during_read.is_none() {
                         let predicate = predicate.clone().unwrap();
 
+                        // We should have a chunked df since we read with rechunk false,
+                        // so we parallelize over row-wise batches.
                         concat_df(
                             POOL.install(|| {
                                 df.split_chunks()
