@@ -79,7 +79,7 @@ arrow-schema = { workspace = true, optional = true }
 criterion = "0.5"
 crossbeam-channel = { workspace = true }
 doc-comment = "0.3"
-flate2 = "1"
+flate2 = { workspace = true, default-features = true }
 # used to run formal property testing
 proptest = { version = "1", default-features = false, features = ["std"] }
 # use for flaky testing
@@ -112,6 +112,7 @@ full = [
   "io_avro_async",
   "regex-syntax",
   "compute",
+  "serde",
   # parses timezones used in timestamp conversions
   "chrono-tz",
 ]
@@ -152,6 +153,7 @@ compute = [
   "compute_take",
   "compute_temporal",
 ]
+serde = ["dep:serde"]
 simd = []
 
 # polars-arrow

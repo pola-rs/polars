@@ -310,7 +310,7 @@ impl From<arrow_schema::DataType> for ArrowDataType {
 
 /// Mode of [`ArrowDataType::Union`]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde_types", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum UnionMode {
     /// Dense union
     Dense,
