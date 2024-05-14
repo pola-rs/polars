@@ -150,7 +150,7 @@ def create_list_strategy(
     return lists(
         inner_dtype,
         select_from=select_from,
-        min_len=min_size,
-        max_len=max_size,
+        min_size=min_size,
+        max_size=max_size,
         unique=unique,
     )

@@ -226,8 +226,8 @@ def lists(
     inner_dtype: DataType,
     *,
     select_from: Sequence[Any] | None = None,
-    min_len: int = 0,
-    max_len: int | None = None,
+    min_size: int = 0,
+    max_size: int | None = None,
     unique: bool = False,
     **kwargs: Any,
 ) -> SearchStrategy[list[Any]]:
@@ -242,9 +242,9 @@ def lists(
     select_from
         The values to use for the innermost lists. If set to `None` (default),
         the default strategy associated with the innermost data type is used.
-    min_len
+    min_size
         The minimum length of the generated lists.
-    max_len
+    max_size
         The maximum length of the generated lists. If set to `None` (default), the
         maximum is set based on `min_size`: `3` if `min_len` is zero,
         otherwise `2 * min_len`.
@@ -257,8 +257,8 @@ def lists(
     --------
     ...
     """
-    if max_len is None:
-        max_len = _DEFAULT_LIST_LEN_LIMIT if min_len == 0 else min_len * 2
+    if max_size is None:
+        max_size = _DEFAULT_LIST_LEN_LIMIT if min_size == 0 else min_size * 2
 
     if select_from is not None and not inner_dtype.is_nested():
         inner_strategy = st.sampled_from(select_from)
@@ -266,16 +266,16 @@ def lists(
         inner_strategy = data(
             inner_dtype,
             select_from=select_from,
-            min_size=min_len,
-            max_size=max_len,
+            min_size=min_size,
+            max_size=max_size,
             unique=unique,
             **kwargs,
         )
 
     return st.lists(
         elements=inner_strategy,
-        min_size=min_len,
-        max_size=max_len,
+        min_size=min_size,
+        max_size=max_size,
         unique_by=(flexhash if unique else None),
     )
 
@@ -379,8 +379,8 @@ def data(
         width = getattr(dtype, "width", _DEFAULT_ARRAY_WIDTH_LIMIT)
         strategy = lists(
             inner,
-            min_len=width,
-            max_len=width,
+            min_size=width,
+            max_size=width,
             allow_null=allow_null,
             **kwargs,
         )
