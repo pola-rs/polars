@@ -280,6 +280,12 @@ fn to_aexpr_impl(expr: Expr, arena: &mut Arena<AExpr>, state: &mut ConversionSta
             options,
         } => {
             match function {
+                // This can be created by col(*).is_null() on empty dataframes.
+                FunctionExpr::Boolean(
+                    BooleanFunction::AllHorizontal | BooleanFunction::AnyHorizontal,
+                ) if input.is_empty() => {
+                    return to_aexpr_impl(lit(true), arena, state);
+                },
                 // Convert to binary expression as the optimizer understands those.
                 FunctionExpr::Boolean(BooleanFunction::AllHorizontal) => {
                     let expr = input
