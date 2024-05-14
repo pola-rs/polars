@@ -620,6 +620,7 @@ def by_index(*indices: int | range | Collection[int | range]) -> SelectorType:
     ...         **{f"c{i:02}": [0.5 * i] for i in range(100)},
     ...     },
     ... )
+    >>> print(df)
     shape: (1, 101)
     ┌─────┬─────┬─────┬─────┬───┬──────┬──────┬──────┬──────┐
     │ key ┆ c00 ┆ c01 ┆ c02 ┆ … ┆ c96  ┆ c97  ┆ c98  ┆ c99  │
