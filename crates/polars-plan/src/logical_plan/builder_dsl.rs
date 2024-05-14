@@ -10,11 +10,7 @@ use polars_io::ipc::IpcScanOptions;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::read::ParquetOptions;
 use polars_io::HiveOptions;
-#[cfg(any(
-    feature = "parquet",
-    feature = "csv",
-    feature = "ipc"
-))]
+#[cfg(any(feature = "parquet", feature = "csv", feature = "ipc"))]
 use polars_io::RowIndex;
 
 use crate::constants::UNLIMITED_CACHE;

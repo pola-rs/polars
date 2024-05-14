@@ -61,7 +61,6 @@ use crate::expr::PyExpr;
 use crate::functions::PyStringCacheHolder;
 use crate::lazyframe::{PyInProcessQuery, PyLazyFrame};
 use crate::lazygroupby::PyLazyGroupBy;
-
 use crate::series::PySeries;
 #[cfg(feature = "sql")]
 use crate::sql::PySQLContext;
