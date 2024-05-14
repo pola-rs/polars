@@ -116,7 +116,7 @@ impl ExprIR {
         ExprIRDisplay {
             node: self.node(),
             output_name: self.output_name_inner(),
-            expr_arena
+            expr_arena,
         }
     }
 

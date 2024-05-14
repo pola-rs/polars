@@ -1,19 +1,19 @@
 mod format;
 mod inputs;
 mod schema;
+mod tree_format;
 
 use std::borrow::Cow;
 use std::fmt;
 use std::path::PathBuf;
 
+pub use format::{ExprIRDisplay, IRDisplay};
 use polars_core::prelude::*;
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::unitvec;
 
 use super::projection_expr::*;
 use crate::prelude::*;
-
-pub use format::{ExprIRDisplay, IRDisplay};
 
 pub struct IRPlan {
     pub lp_top: Node,
@@ -168,6 +168,10 @@ impl IRPlan {
         self.as_ref().describe()
     }
 
+    pub fn describe_tree_format(&self) -> String {
+        self.as_ref().describe_tree_format()
+    }
+
     fn display(&self) -> format::IRDisplay {
         format::IRDisplay(self.as_ref())
     }
@@ -192,6 +196,12 @@ impl<'a> IRPlanRef<'a> {
 
     fn describe(&self) -> String {
         self.display().to_string()
+    }
+
+    fn describe_tree_format(self) -> String {
+        let mut visitor = tree_format::TreeFmtVisitor::default();
+        tree_format::TreeFmtNode::root_logical_plan(self).traverse(&mut visitor);
+        format!("{visitor:#?}")
     }
 }
 

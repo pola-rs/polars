@@ -217,7 +217,7 @@ impl LazyFrame {
         self.logical_plan.describe_tree_format()
     }
 
-    fn optimized_plan_ir(&self) -> PolarsResult<IRPlan> {
+    fn optimized_plan(&self) -> PolarsResult<IRPlan> {
         let mut expr_arena = Arena::with_capacity(64);
         let mut lp_arena = Arena::with_capacity(64);
         let lp_top = self.clone().optimize_with_scratch(
@@ -230,20 +230,11 @@ impl LazyFrame {
         Ok(IRPlan::new(lp_top, lp_arena, expr_arena))
     }
 
-    fn optimized_plan(&self) -> PolarsResult<DslPlan> {
-        let IRPlan {
-            lp_top,
-            mut lp_arena,
-            expr_arena,
-        } = self.optimized_plan_ir()?;
-        Ok(node_to_lp(lp_top, &expr_arena, &mut lp_arena))
-    }
-
     /// Return a String describing the optimized logical plan.
     ///
     /// Returns `Err` if optimizing the logical plan fails.
     pub fn describe_optimized_plan(&self) -> PolarsResult<String> {
-        Ok(self.optimized_plan_ir()?.describe())
+        Ok(self.optimized_plan()?.describe())
     }
 
     /// Return a String describing the optimized logical plan in tree format.
