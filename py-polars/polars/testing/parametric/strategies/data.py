@@ -151,7 +151,7 @@ def datetimes(time_unit: TimeUnit = "us") -> SearchStrategy[datetime]:
         return st.datetimes()
     elif time_unit == "ns":
         return st.datetimes(
-            min_value=EPOCH + timedelta(microseconds=I64_MIN // 1000),
+            min_value=EPOCH + timedelta(microseconds=I64_MIN // 1000 + 1),
             max_value=EPOCH + timedelta(microseconds=I64_MAX // 1000),
         )
     else:

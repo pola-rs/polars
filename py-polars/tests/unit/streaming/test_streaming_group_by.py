@@ -8,7 +8,6 @@ import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
-from polars.testing._constants import PARTITION_LIMIT
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -483,16 +482,20 @@ def test_streaming_groupby_binary_15116() -> None:
     }
 
 
-def test_streaming_group_by_convert_15380() -> None:
+def test_streaming_group_by_convert_15380(partition_limit: int) -> None:
     assert (
-        pl.DataFrame({"a": [1] * PARTITION_LIMIT}).group_by(b="a").len()["len"].item()
-        == PARTITION_LIMIT
+        pl.DataFrame({"a": [1] * partition_limit}).group_by(b="a").len()["len"].item()
+        == partition_limit
     )
 
 
 @pytest.mark.parametrize("streaming", [True, False])
-@pytest.mark.parametrize("n_rows", [PARTITION_LIMIT - 1, PARTITION_LIMIT + 3])
-def test_streaming_group_by_boolean_mean_15610(n_rows: int, streaming: bool) -> None:
+@pytest.mark.parametrize("n_rows_limit_offset", [-1, +3])
+def test_streaming_group_by_boolean_mean_15610(
+    n_rows_limit_offset: int, streaming: bool, partition_limit: int
+) -> None:
+    n_rows = partition_limit + n_rows_limit_offset
+
     # Also test non-streaming because it sometimes dispatched to streaming agg.
     expect = pl.DataFrame({"a": [False, True], "c": [0.0, 0.5]})
 
