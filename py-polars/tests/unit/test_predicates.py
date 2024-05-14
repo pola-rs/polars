@@ -201,7 +201,7 @@ def test_predicate_pushdown_group_by_keys() -> None:
         {"str": ["A", "B", "A", "B", "C"], "group": [1, 1, 2, 1, 2]}
     ).lazy()
     assert (
-        'SELECTION: "None"'
+        "SELECTION: None"
         not in df.group_by("group")
         .agg([pl.len().alias("str_list")])
         .filter(pl.col("group") == 1)
@@ -217,7 +217,7 @@ def test_no_predicate_push_down_with_cast_and_alias_11883() -> None:
         .filter(pl.col("b") == 1)
         .filter((pl.col("b") >= 1) & (pl.col("b") < 1))
     )
-    assert 'SELECTION: "None"' in out.explain(predicate_pushdown=True)
+    assert "SELECTION: None" in out.explain(predicate_pushdown=True)
 
 
 @pytest.mark.parametrize(
@@ -302,7 +302,7 @@ def test_multi_alias_pushdown() -> None:
     plan = actual.explain()
 
     assert "FILTER" not in plan
-    assert r'SELECTION: "[([(col(\"a\")) + (col(\"b\"))]) < (2)]' in plan
+    assert r'SELECTION: [([(col("a")) + (col("b"))]) < (2)]' in plan
 
     with pytest.warns(UserWarning, match="Comparisons with None always result in null"):
         # confirm we aren't using `eq_missing` in the query plan (denoted as " ==v ")
@@ -328,7 +328,7 @@ def test_predicate_pushdown_with_window_projections_12637() -> None:
 
     plan = actual.explain()
     assert "FILTER" not in plan
-    assert r'SELECTION: "[(col(\"key\")) == (5)]"' in plan
+    assert r'SELECTION: [(col("key")) == (5)]' in plan
 
     actual = (
         lf.with_columns(
@@ -343,10 +343,8 @@ def test_predicate_pushdown_with_window_projections_12637() -> None:
     assert "FILTER" not in plan
     assert (
         # hashbrown::HashMap is unordered.
-        r'SELECTION: "[([(col(\"key\")) == (5)]) & ([(col(\"key_2\")) == (5)])]"'
-        in plan
-        or r'SELECTION: "[([(col(\"key_2\")) == (5)]) & ([(col(\"key\")) == (5)])]"'
-        in plan
+        r'SELECTION: [([(col("key")) == (5)]) & ([(col("key_2")) == (5)])]' in plan
+        or r'SELECTION: [([(col("key_2")) == (5)]) & ([(col("key")) == (5)])]' in plan
     )
 
     actual = (
@@ -360,7 +358,7 @@ def test_predicate_pushdown_with_window_projections_12637() -> None:
 
     plan = actual.explain()
     assert "FILTER" in plan
-    assert r'SELECTION: "[(col(\"key\")) == (5)]"' in plan
+    assert r'SELECTION: [(col("key")) == (5)]' in plan
 
     actual = (
         lf.with_columns(
@@ -372,7 +370,7 @@ def test_predicate_pushdown_with_window_projections_12637() -> None:
     )
     plan = actual.explain()
     assert "FILTER" in plan
-    assert r'SELECTION: "[(col(\"key\")) == (5)]"' in plan
+    assert r'SELECTION: [(col("key")) == (5)]' in plan
 
     # Should block when .over() contains groups-sensitive expr
     actual = (
@@ -386,7 +384,7 @@ def test_predicate_pushdown_with_window_projections_12637() -> None:
 
     plan = actual.explain()
     assert "FILTER" in plan
-    assert 'SELECTION: "None"' in plan
+    assert "SELECTION: None" in plan
 
     # Ensure the implementation doesn't accidentally push a window expression
     # that only refers to the common window keys.
@@ -396,13 +394,13 @@ def test_predicate_pushdown_with_window_projections_12637() -> None:
 
     plan = actual.explain()
     assert r'FILTER [(len().over([col("key")])) == (1)]' in plan
-    assert 'SELECTION: "None"' in plan
+    assert "SELECTION: None" in plan
 
     # Test window in filter
     actual = lf.filter(pl.len().over("key") == 1).filter(pl.col("key") == 1)
     plan = actual.explain()
     assert r'FILTER [(len().over([col("key")])) == (1)]' in plan
-    assert r'SELECTION: "[(col(\"key\")) == (1)]"' in plan
+    assert r'SELECTION: [(col("key")) == (1)]' in plan
 
 
 def test_predicate_reduction() -> None:

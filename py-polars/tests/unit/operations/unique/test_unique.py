@@ -44,7 +44,7 @@ def test_unique_predicate_pd() -> None:
             plan = q.explain()
             assert r'FILTER col("z")' in plan
             # We can push filters if they only depend on the subset columns of unique()
-            assert r'SELECTION: "[(col(\"x\")) == (String(abc))]"' in plan
+            assert r'SELECTION: [(col("x")) == (String(abc))]' in plan
             assert_frame_equal(q.collect(predicate_pushdown=False), q.collect())
 
 

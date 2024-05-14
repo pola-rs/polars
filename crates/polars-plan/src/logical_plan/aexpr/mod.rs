@@ -121,7 +121,7 @@ impl From<AAggExpr> for GroupByMethod {
     }
 }
 
-// AExpr representation of Nodes which are allocated in an Arena
+/// IR expression node that is allocated in an [`Arena`][polars_utils::arena::Arena].
 #[derive(Clone, Debug, Default)]
 pub enum AExpr {
     Explode(Node),
