@@ -1669,15 +1669,16 @@ class DataFrame:
             Set return type; a 2D PyTorch tensor, PolarsDataset (a frame-specialized
             TensorDataset), or dict of Tensors.
         label
-            One or more column names or expressions that label the feature data; when
-            `return_type` is "dataset", the PolarsDataset returns `(features, label)`
-            tensor tuples for each row. Otherwise, it returns `(features,)` tensor
-            tuples where the feature contains all the row data. This parameter is a
-            no-op for the other return-types.
+            One or more column names, expressions, or selectors that label the feature
+            data; when `return_type` is "dataset", the PolarsDataset will return
+            `(features, label)` tensor tuples for each row. Otherwise, it returns
+            `(features,)` tensor tuples where the feature contains all the row data;
+            note that setting this parameter with any other result type will raise an
+            informative error.
         features
-            One or more column names or expressions that contain the feature data; if
-            omitted, all columns that are not designated as part of the label are used.
-            This parameter is a no-op for return-types other than "dataset".
+            One or more column names, expressions, or selectors that contain the feature
+            data; if omitted, all columns that are not designated as part of the label
+            are used. This parameter is a no-op for return-types other than "dataset".
         dtype
             Unify the dtype of all returned tensors; this casts any frame Series
             that are not of the required dtype before converting to tensor. This
@@ -1770,6 +1771,10 @@ class DataFrame:
         ...     batch_size=64,
         ... )  # doctest: +SKIP
         """
+        if return_type != "dataset" and (label is not None or features is not None):
+            msg = "the `label` and `features` parameters can only be set when `return_type='dataset'`"
+            raise ValueError(msg)
+
         torch = import_optional("torch")
 
         if dtype in (UInt16, UInt32, UInt64):

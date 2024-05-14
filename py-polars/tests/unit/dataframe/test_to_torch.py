@@ -276,3 +276,15 @@ class TestTorchIntegration:
             match="tensors used as indices must be long, int",
         ):
             _res2 = ds[torch.tensor([0, 3], dtype=torch.complex64)]
+
+        with pytest.raises(
+            ValueError,
+            match="`label` and `features` parameters .* when `return_type='dataset'`",
+        ):
+            _res3 = df.to_torch(label="stroopwafel")
+
+        with pytest.raises(
+            ValueError,
+            match="`label` and `features` parameters .* when `return_type='dataset'`",
+        ):
+            _res4 = df.to_torch("dict", features=cs.float())
