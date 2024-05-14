@@ -1,3 +1,7 @@
+mod read;
+mod read_indexes;
+mod write;
+
 use std::io::{Cursor, Read, Seek};
 
 use arrow::array::*;
@@ -11,10 +15,6 @@ use polars_error::PolarsResult;
 use polars_parquet::read as p_read;
 use polars_parquet::read::statistics::*;
 use polars_parquet::write::*;
-
-mod read;
-mod read_indexes;
-mod write;
 
 type ArrayStats = (Box<dyn Array>, Statistics);
 
