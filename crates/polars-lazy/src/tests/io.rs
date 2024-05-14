@@ -449,13 +449,13 @@ fn test_csv_globbing() -> PolarsResult<()> {
     assert_eq!(cal.get(0)?, AnyValue::Int64(45));
     assert_eq!(cal.get(53)?, AnyValue::Int64(194));
 
-    let glob = "../../examples/datasets/*.csv";
+    let glob = "../../examples/datasets/foods*.csv";
     let lf = LazyCsvReader::new(glob).finish()?.slice(0, 100);
 
     let df = lf.clone().collect()?;
-    assert_eq!(df.shape(), (100, 4));
+    assert_eq!(df, full_df.slice(0, 100));
     let df = LazyCsvReader::new(glob).finish()?.slice(20, 60).collect()?;
-    assert!(full_df.slice(20, 60).equals(&df));
+    assert_eq!(df, full_df.slice(20, 60));
 
     let mut expr_arena = Arena::with_capacity(16);
     let mut lp_arena = Arena::with_capacity(8);

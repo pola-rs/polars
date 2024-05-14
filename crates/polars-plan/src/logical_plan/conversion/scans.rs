@@ -187,7 +187,6 @@ pub(super) fn csv_file_info(
     let n_bytes = reader_bytes.len();
     let estimated_n_rows = (rows_read as f64 / bytes_read as f64 * n_bytes as f64) as usize;
 
-    csv_options.skip_rows += csv_options.skip_rows_after_header;
     Ok(FileInfo::new(
         schema,
         Some(Either::Right(reader_schema)),
