@@ -4442,7 +4442,7 @@ class Series:
         if (
             use_pyarrow
             and _PYARROW_AVAILABLE
-            and self.dtype not in (Object, Datetime, Duration, Date, Array)
+            and self.dtype not in (Date, Datetime, Duration, Array, Object)
         ):
             if not allow_copy and self.n_chunks() > 1 and not self.is_empty():
                 msg = "cannot return a zero-copy array"
@@ -4451,15 +4451,6 @@ class Series:
             return self.to_arrow().to_numpy(
                 zero_copy_only=not allow_copy, writable=writable
             )
-
-        if self.dtype == Array:
-            np_array = self.explode().to_numpy(
-                allow_copy=allow_copy,
-                writable=writable,
-                use_pyarrow=use_pyarrow,
-            )
-            np_array.shape = (self.len(), self.dtype.width)  # type: ignore[attr-defined]
-            return np_array
 
         return self._s.to_numpy(allow_copy=allow_copy, writable=writable)
 
