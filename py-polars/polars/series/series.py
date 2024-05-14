@@ -1440,9 +1440,11 @@ class Series:
                 else dtype_char_minimum
             )
 
-            if ufunc.signature:
-                # Only generalized ufuncs have a signature set, and they're the
-                # ones that have problems with missing data.
+            # Only generalized ufuncs have a signature set:
+            is_generalized_ufunc = bool(ufunc.signature)
+            if is_generalized_ufunc:
+                # Generalized ufuncs will operate on the whole array, so
+                # missing data can corrupt the results.
                 if self.null_count() > 0:
                     msg = "Can't pass a Series with missing data to a generalized ufunc, as it might give unexpected results. See https://docs.pola.rs/user-guide/expressions/missing-data/ for suggestions on how to remove or fill in missing data."
                     raise ComputeError(msg)
@@ -1458,19 +1460,23 @@ class Series:
 
             series = f(lambda out: ufunc(*args, out=out, dtype=dtype_char, **kwargs))
             result = self._from_pyseries(series)
-            if not ufunc.signature:
-                # Missing data is allowed, so filter it out:
-                validity_mask = self.is_not_null()
-                for arg in inputs:
-                    if isinstance(arg, Series):
-                        validity_mask &= arg.is_not_null()
+            if is_generalized_ufunc:
+                # In this case we've disallowed passing in missing data, so no
+                # further processing is needed.
+                return result
 
-                result = (
-                    result.to_frame()
-                    .select(F.when(validity_mask).then(F.col(self.name)))
-                    .to_series(0)
-                )
-            return result
+            # We're using a regular ufunc, that operates value by value. That
+            # means we allowed missing data in the input, so filter it out:
+            validity_mask = self.is_not_null()
+            for arg in inputs:
+                if isinstance(arg, Series):
+                    validity_mask &= arg.is_not_null()
+            return (
+                result.to_frame()
+                .select(F.when(validity_mask).then(F.col(self.name)))
+                .to_series(0)
+            )
+
         else:
             msg = (
                 "only `__call__` is implemented for numpy ufuncs on a Series, got "
