@@ -277,7 +277,6 @@ def _cast_repr_strings_with_schema(
 
     def int_cast_(data: str):
         int_string = data.str.replace_all(r"[^\d+-]", "")
-        print(int_string)
         return pl.when(int_string.str.len_bytes() > 0).then(int_string)
 
     def float_cast_(data: F.col | List):
