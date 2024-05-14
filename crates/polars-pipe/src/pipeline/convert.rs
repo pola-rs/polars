@@ -102,9 +102,8 @@ where
                 FileScan::Csv {
                     options: csv_options,
                 } => {
-                    assert_eq!(paths.len(), 1);
                     let src = sources::CsvSource::new(
-                        paths[0].clone(),
+                        paths,
                         file_info.schema,
                         csv_options,
                         file_options,

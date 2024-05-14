@@ -172,10 +172,9 @@ impl SlicePushDown {
                 output_schema,
                 file_options: mut options,
                 predicate,
-                scan_type: FileScan::Csv {options: mut csv_options}
+                scan_type: FileScan::Csv {options: csv_options}
             }, Some(state)) if predicate.is_none() && state.offset >= 0 =>  {
-                options.n_rows = Some(state.len as usize);
-                csv_options.skip_rows += state.offset as usize;
+                options.n_rows = Some(state.offset as usize + state.len as usize);
 
                 let lp = Scan {
                     paths,
@@ -185,7 +184,8 @@ impl SlicePushDown {
                     file_options: options,
                     predicate,
                 };
-                Ok(lp)
+
+                self.no_pushdown_finish_opt(lp, Some(state), lp_arena)
             },
             // TODO! we currently skip slice pushdown if there is a predicate.
             (Scan {

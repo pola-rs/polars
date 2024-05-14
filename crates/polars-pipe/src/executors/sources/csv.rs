@@ -15,24 +15,36 @@ pub(crate) struct CsvSource {
     #[allow(dead_code)]
     // this exist because we need to keep ownership
     schema: SchemaRef,
-    reader: Option<*mut CsvReader<File>>,
-    batched_reader:
-        Option<Either<*mut BatchedCsvReaderMmap<'static>, *mut BatchedCsvReaderRead<'static>>>,
+    // Safety: `reader` outlives `batched_reader`
+    // (so we have to order the `batched_reader` first in the struct fields)
+    batched_reader: Option<Either<BatchedCsvReaderMmap<'static>, BatchedCsvReaderRead<'static>>>,
+    reader: Option<CsvReader<File>>,
     n_threads: usize,
-    path: Option<PathBuf>,
+    paths: Arc<[PathBuf]>,
     options: Option<CsvReadOptions>,
     file_options: Option<FileScanOptions>,
     verbose: bool,
+    // state for multi-file reads
+    current_path_idx: usize,
+    n_rows_read: usize,
 }
 
 impl CsvSource {
     // Delay initializing the reader
     // otherwise all files would be opened during construction of the pipeline
     // leading to Too many Open files error
-    fn init_reader(&mut self) -> PolarsResult<()> {
-        let options = self.options.take().unwrap();
-        let file_options = self.file_options.take().unwrap();
-        let path = self.path.take().unwrap();
+    fn init_next_reader(&mut self) -> PolarsResult<()> {
+        let file_options = self.file_options.clone().unwrap();
+
+        if self.current_path_idx == self.paths.len()
+            || (file_options.n_rows.is_some() && file_options.n_rows.unwrap() <= self.n_rows_read)
+        {
+            return Ok(());
+        }
+        let path = &self.paths[self.current_path_idx];
+        self.current_path_idx += 1;
+
+        let options = self.options.clone().unwrap();
         let mut with_columns = file_options.with_columns;
         let mut projected_len = 0;
         with_columns.as_ref().map(|columns| {
@@ -49,7 +61,15 @@ impl CsvSource {
         } else {
             self.schema.len()
         };
-        let n_rows = _set_n_rows_for_scan(file_options.n_rows);
+        let n_rows = _set_n_rows_for_scan(
+            file_options
+                .n_rows
+                .map(|n| n.saturating_sub(self.n_rows_read)),
+        );
+        let row_index = file_options.row_index.map(|mut ri| {
+            ri.offset += self.n_rows_read as IdxSize;
+            ri
+        });
         // inversely scale the chunk size by the number of threads so that we reduce memory pressure
         // in streaming
         let chunk_size = determine_chunk_size(n_cols, POOL.current_num_threads())?;
@@ -71,29 +91,26 @@ impl CsvSource {
             .with_n_rows(n_rows)
             .with_columns(with_columns)
             .with_rechunk(false)
-            .with_row_index(file_options.row_index)
+            .with_row_index(row_index)
             .with_path(Some(path))
             .try_into_reader_with_file_path(None)?;
 
-        let reader = Box::new(reader);
-        let reader = Box::leak(reader) as *mut CsvReader<File>;
-
-        let batched_reader = if low_memory {
-            let batched_reader = unsafe { Box::new((*reader).batched_borrowed_read()?) };
-            let batched_reader = Box::leak(batched_reader) as *mut BatchedCsvReaderRead;
-            Either::Right(batched_reader)
-        } else {
-            let batched_reader = unsafe { Box::new((*reader).batched_borrowed_mmap()?) };
-            let batched_reader = Box::leak(batched_reader) as *mut BatchedCsvReaderMmap;
-            Either::Left(batched_reader)
-        };
         self.reader = Some(reader);
+        let reader = self.reader.as_mut().unwrap();
+
+        // Safety: `reader` outlives `batched_reader`
+        let reader: &'static mut CsvReader<File> = unsafe { std::mem::transmute(reader) };
+        let batched_reader = if low_memory {
+            Either::Right(reader.batched_borrowed_read()?)
+        } else {
+            Either::Left(reader.batched_borrowed_mmap()?)
+        };
         self.batched_reader = Some(batched_reader);
         Ok(())
     }
 
     pub(crate) fn new(
-        path: PathBuf,
+        paths: Arc<[PathBuf]>,
         schema: SchemaRef,
         options: CsvReadOptions,
         file_options: FileScanOptions,
@@ -104,71 +121,54 @@ impl CsvSource {
             reader: None,
             batched_reader: None,
             n_threads: POOL.current_num_threads(),
-            path: Some(path),
+            paths,
             options: Some(options),
             file_options: Some(file_options),
             verbose,
+            current_path_idx: 0,
+            n_rows_read: 0,
         })
     }
 }
-
-impl Drop for CsvSource {
-    fn drop(&mut self) {
-        unsafe {
-            match self.batched_reader {
-                Some(Either::Left(ptr)) => {
-                    let _to_drop = Box::from_raw(ptr);
-                },
-                Some(Either::Right(ptr)) => {
-                    let _to_drop = Box::from_raw(ptr);
-                },
-                // nothing initialized, nothing to drop
-                _ => {},
-            }
-            if let Some(ptr) = self.reader {
-                let _to_drop = Box::from_raw(ptr);
-            }
-        };
-    }
-}
-
-unsafe impl Send for CsvSource {}
-unsafe impl Sync for CsvSource {}
 
 impl Source for CsvSource {
     fn get_batches(&mut self, _context: &PExecutionContext) -> PolarsResult<SourceResult> {
-        if self.reader.is_none() {
-            self.init_reader()?
-        }
+        loop {
+            if self.reader.is_none() {
+                self.init_next_reader()?;
+            }
 
-        let batches = match self.batched_reader.unwrap() {
-            Either::Left(batched_reader) => {
-                let reader = unsafe { &mut *batched_reader };
+            if self.reader.is_none() {
+                // No more readers
+                return Ok(SourceResult::Finished);
+            }
 
-                reader.next_batches(self.n_threads)?
-            },
-            Either::Right(batched_reader) => {
-                let reader = unsafe { &mut *batched_reader };
+            let Some(batches) = (match self.batched_reader.as_mut().unwrap() {
+                Either::Left(batched_reader) => batched_reader.next_batches(self.n_threads)?,
+                Either::Right(batched_reader) => batched_reader.next_batches(self.n_threads)?,
+            }) else {
+                self.reader = None;
+                continue;
+            };
 
-                reader.next_batches(self.n_threads)?
-            },
-        };
-        Ok(match batches {
-            None => SourceResult::Finished,
-            Some(batches) => {
-                let index = get_source_index(0);
-                let out = batches
-                    .into_iter()
-                    .enumerate_u32()
-                    .map(|(i, data)| DataChunk {
+            let index = get_source_index(0);
+            let mut n_rows_read = 0;
+            let out = batches
+                .into_iter()
+                .enumerate_u32()
+                .map(|(i, data)| {
+                    n_rows_read += data.height();
+                    DataChunk {
                         chunk_index: (index + i) as IdxSize,
                         data,
-                    })
-                    .collect::<Vec<_>>();
-                get_source_index(out.len() as u32);
-                SourceResult::GotMoreData(out)
-            },
-        })
+                    }
+                })
+                .collect::<Vec<_>>();
+            self.n_rows_read = self.n_rows_read.saturating_add(n_rows_read);
+            get_source_index(out.len() as u32);
+
+            return Ok(SourceResult::GotMoreData(out));
+        }
     }
     fn fmt(&self) -> &str {
         "csv"
