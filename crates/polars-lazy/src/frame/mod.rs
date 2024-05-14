@@ -208,40 +208,27 @@ impl LazyFrame {
     }
 
     /// Return a String describing the naive (un-optimized) logical plan.
-    pub fn describe_plan(&self) -> String {
-        self.logical_plan.describe()
+    pub fn describe_plan(&self) -> PolarsResult<String> {
+        Ok(self.clone().to_alp()?.describe())
     }
 
     /// Return a String describing the naive (un-optimized) logical plan in tree format.
-    pub fn describe_plan_tree(&self) -> String {
-        self.logical_plan.describe_tree_format()
-    }
-
-    fn optimized_plan(&self) -> PolarsResult<IRPlan> {
-        let mut expr_arena = Arena::with_capacity(64);
-        let mut lp_arena = Arena::with_capacity(64);
-        let lp_top = self.clone().optimize_with_scratch(
-            &mut lp_arena,
-            &mut expr_arena,
-            &mut vec![],
-            true,
-        )?;
-
-        Ok(IRPlan::new(lp_top, lp_arena, expr_arena))
+    pub fn describe_plan_tree(&self) -> PolarsResult<String> {
+        Ok(self.clone().to_alp()?.describe_tree_format())
     }
 
     /// Return a String describing the optimized logical plan.
     ///
     /// Returns `Err` if optimizing the logical plan fails.
     pub fn describe_optimized_plan(&self) -> PolarsResult<String> {
-        Ok(self.optimized_plan()?.describe())
+        Ok(self.clone().to_alp_optimized()?.describe())
     }
 
     /// Return a String describing the optimized logical plan in tree format.
     ///
     /// Returns `Err` if optimizing the logical plan fails.
     pub fn describe_optimized_plan_tree(&self) -> PolarsResult<String> {
-        Ok(self.optimized_plan()?.describe_tree_format())
+        Ok(self.clone().to_alp_optimized()?.describe_tree_format())
     }
 
     /// Return a String describing the logical plan.
@@ -252,7 +239,7 @@ impl LazyFrame {
         if optimized {
             self.describe_optimized_plan()
         } else {
-            Ok(self.describe_plan())
+            self.describe_plan()
         }
     }
 
@@ -523,16 +510,18 @@ impl LazyFrame {
         self.optimize_with_scratch(lp_arena, expr_arena, &mut vec![], false)
     }
 
-    pub fn to_alp_optimized(self) -> PolarsResult<(Node, Arena<IR>, Arena<AExpr>)> {
+    pub fn to_alp_optimized(self) -> PolarsResult<IRPlan> {
         let mut lp_arena = Arena::with_capacity(16);
         let mut expr_arena = Arena::with_capacity(16);
         let node =
             self.optimize_with_scratch(&mut lp_arena, &mut expr_arena, &mut vec![], false)?;
-        Ok((node, lp_arena, expr_arena))
+
+        Ok(IRPlan::new(node, lp_arena, expr_arena))
     }
 
-    pub fn to_alp(self) -> PolarsResult<(Node, Arena<IR>, Arena<AExpr>)> {
-        self.logical_plan.to_alp()
+    pub fn to_alp(self) -> PolarsResult<IRPlan> {
+        let (node, lp_arena, expr_arena) = self.logical_plan.to_alp()?;
+        Ok(IRPlan::new(node, lp_arena, expr_arena))
     }
 
     pub(crate) fn optimize_with_scratch(

@@ -52,7 +52,7 @@ fn test_duration() -> PolarsResult<()> {
 }
 
 fn print_plans(lf: &LazyFrame) {
-    println!("LOGICAL PLAN\n\n{}\n", lf.describe_plan());
+    println!("LOGICAL PLAN\n\n{}\n", lf.describe_plan().unwrap());
     println!(
         "OPTIMIZED LOGICAL PLAN\n\n{}\n",
         lf.describe_optimized_plan().unwrap()
