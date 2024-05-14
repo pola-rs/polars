@@ -44,7 +44,6 @@ fn debug() {
 }
 
 #[test]
-#[cfg(feature = "arrow")]
 fn from_arrow() {
     use arrow_buffer::buffer::{BooleanBuffer, NullBuffer};
     let buffer = arrow_buffer::Buffer::from_iter(vec![true, true, true, false, false, false, true]);
