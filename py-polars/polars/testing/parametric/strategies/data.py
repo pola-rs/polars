@@ -246,8 +246,8 @@ def lists(
         The minimum length of the generated lists.
     max_size
         The maximum length of the generated lists. If set to `None` (default), the
-        maximum is set based on `min_size`: `3` if `min_len` is zero,
-        otherwise `2 * min_len`.
+        maximum is set based on `min_size`: `3` if `min_size` is zero,
+        otherwise `2 * min_size`.
     unique
         Ensure that the generated lists contain unique values.
     **kwargs
@@ -377,6 +377,7 @@ def data(
     elif dtype == Array:
         inner = getattr(dtype, "inner", None) or Null()
         width = getattr(dtype, "width", _DEFAULT_ARRAY_WIDTH_LIMIT)
+        kwargs = {k: v for k, v in kwargs.items() if k not in ("min_size", "max_size")}
         strategy = lists(
             inner,
             min_size=width,
