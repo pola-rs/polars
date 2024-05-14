@@ -199,7 +199,7 @@ def test_allow_infinities_deprecated(data: st.DataObject) -> None:
                 strategy=lists(
                     inner_dtype=pl.List(pl.String),
                     select_from=["aa", "bb", "cc"],
-                    min_len=1,
+                    min_size=1,
                 ),
             ),
         ],
