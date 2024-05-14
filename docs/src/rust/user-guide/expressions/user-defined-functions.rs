@@ -18,12 +18,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:diff_from_mean_numba]
     // --8<-- [end:diff_from_mean_numba]
 
-    // --8<-- [start:dataframe2]
-    // --8<-- [end:dataframe2]
-
-    // --8<-- [start:missing_data]
-    // --8<-- [end:missing_data]
-
     // --8<-- [start:combine]
     // --8<-- [end:combine]
     Ok(())

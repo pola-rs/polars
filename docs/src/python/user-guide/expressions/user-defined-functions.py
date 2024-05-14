@@ -71,28 +71,6 @@ print("== group_by() with UDF ==")
 print(out)
 # --8<-- [end:diff_from_mean_numba]
 
-# --8<-- [start:dataframe2]
-df2 = pl.DataFrame(
-    {
-        "values": [1, 2, 3, None, 4],
-    }
-)
-print(df2)
-# --8<-- [end:dataframe2]
-
-
-# --8<-- [start:missing_data]
-# Implement equivalent of diff_from_mean_numba() using Polars APIs:
-out = df2.select(pl.col("values") - pl.col("values").mean())
-print("== built-in mean() knows to skip empty values ==")
-print(out)
-
-out = df2.select(pl.col("values").map_batches(diff_from_mean_numba))
-print("== custom mean gets the wrong answer because of missing data ==")
-print(out)
-
-# --8<-- [end:missing_data]
-
 
 # --8<-- [start:combine]
 # Add two arrays together:
@@ -113,8 +91,7 @@ out = df3.select(
         lambda combined: add(
             combined.struct.field("values1"), combined.struct.field("values2")
         )
-    )
-    .alias("add_columns")
+    ).alias("add_columns")
 )
 print(out)
 # --8<-- [end:combine]

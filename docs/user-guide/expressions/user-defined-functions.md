@@ -53,7 +53,8 @@ The pre-written functions are helpful, but our goal is to write our own function
 For example, let's say we want a fast version of our `diff_from_mean()` example above.
 The easiest way to write this in Python is to use [Numba](https://numba.readthedocs.io/en/stable/), which allows you to write custom functions in (a subset) of Python while still getting the benefit of compiled code.
 
-In particular, Numba provides a decorator called [`@guvectorize`](https://numba.readthedocs.io/en/stable/user/vectorize.html#the-guvectorize-decorator) that compiles a Python function to fast machine code, in a way that allows it to be used by Polars.
+In particular, Numba provides a decorator called [`@guvectorize`](https://numba.readthedocs.io/en/stable/user/vectorize.html#the-guvectorize-decorator).
+This creates a generalized ufunc by compiling a Python function to fast machine code, in a way that allows it to be used by Polars.
 
 In the following example the `diff_from_mean_numba()` will be compiled to fast machine code at import time, which will take a little time.
 After that all calls to the function will run quickly.
@@ -65,7 +66,7 @@ The `Series` will be converted to a NumPy array before being passed to the funct
 --8<-- "python/user-guide/expressions/user-defined-functions.py:diff_from_mean_numba"
 ```
 
-## Missing data can break your calculation
+## Missing data is not allowed when calling generalized ufuncs
 
 Before being passed to a user-defined function like `diff_from_mean_numba()`, a `Series` will be converted to a NumPy array.
 Unfortunately, NumPy arrays don't have a concept of missing data.
@@ -73,21 +74,10 @@ If there is missing data in the original `Series`, this means the resulting arra
 
 If you're calculating results item by item, this doesn't matter.
 For example, `numpy.log()` gets called on each individual value separately, so those missing values don't change the calculation.
-But if the result of a user-defined function depend on multiple values in the `Series`, the result may be wrong:
+But if the result of a user-defined function depend on multiple values in the `Series`, it's not clear what exactly should happen with the missing values.
 
-{{code_block('user-guide/expressions/user-defined-functions','dataframe2',[])}}
-
-```python exec="on" result="text" session="user-guide/udf"
---8<-- "python/user-guide/expressions/user-defined-functions.py:dataframe2"
-```
-
-{{code_block('user-guide/expressions/user-defined-functions','missing_data',[])}}
-
-```python exec="on" result="text" session="user-guide/udf"
---8<-- "python/user-guide/expressions/user-defined-functions.py:missing_data"
-```
-
-How do you deal with missing data?
+Therefore, when calling generalized ufuncs such as Numba functions decorated with `@guvectorize`, Polars will raise an error if you try to pass in a `Series` with missing data.
+How do you get rid of missing data?
 Either [fill it in](missing-data.md) or [drop it](https://docs.pola.rs/py-polars/html/reference/dataframe/api/polars.DataFrame.drop_nulls.html) before calling your custom function.
 
 ## Combining multiple column values
