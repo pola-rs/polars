@@ -461,7 +461,6 @@ def dtype_short_repr_to_dtype(dtype_string: str | None) -> PolarsDataType | None
             return dtype(*subtype)  # type: ignore[operator]
         except ValueError:
             pass
-    print(dtype, subtype)
     return dtype
 
 

@@ -31,8 +31,7 @@ from polars.dependencies import numpy as np
 if TYPE_CHECKING:
     from collections.abc import Reversible
 
-    from polars import DataFrame
-    from polars.functions.col import ColumnFactory
+    from polars import DataFrame, Expr
     from polars.type_aliases import PolarsDataType, SizeUnit
 
     if sys.version_info >= (3, 10):
@@ -276,11 +275,11 @@ def _cast_repr_strings_with_schema(
             )
         )
 
-    def int_cast_(data: ColumnFactory):
+    def int_cast_(data: Expr) -> Expr:
         int_string = data.str.replace_all(r"[^\d+-]", "")
         return pl.when(int_string.str.len_bytes() > 0).then(int_string)
 
-    def float_cast_(data: ColumnFactory):
+    def float_cast_(data: Expr) -> Expr:
         # identify integer/fractional parts
         integer_part = data.str.replace(r"^(.*)\D(\d*)$", "$1")
         fractional_part = data.str.replace(r"^(.*)\D(\d*)$", "$2")
@@ -352,7 +351,7 @@ def _cast_repr_strings_with_schema(
                     )
                     .list.eval(
                         int_cast_(pl.element())
-                        if tp.inner in INTEGER_DTYPES
+                        if tp.inner in INTEGER_DTYPES  # type: ignore[union-attr]
                         else float_cast_(pl.element())
                     )
                     .cast(tp)
