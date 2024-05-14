@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from typing import Any, cast, Callable
+from typing import Any, Callable, cast
 
-import pytest
 import numpy as np
+import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
@@ -142,7 +142,7 @@ def make_gufunc_mean() -> Callable[[pl.Series], pl.Series]:
         for i in range(len(arr)):
             result[i] = mean + i
 
-    return gufunc_mean
+    return gufunc_mean  # type: ignore[no-any-return]
 
 
 def test_generalized_ufunc() -> None:

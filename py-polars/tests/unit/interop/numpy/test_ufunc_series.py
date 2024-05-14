@@ -1,4 +1,4 @@
-from typing import cast, Callable
+from typing import Callable, cast
 
 import numpy as np
 import pytest
@@ -130,7 +130,7 @@ def make_add_one() -> Callable[[pl.Series], pl.Series]:
         for i in range(len(arr)):
             result[i] = arr[i] + 1.0
 
-    return add_one
+    return add_one  # type: ignore[no-any-return]
 
 
 def test_generalized_ufunc() -> None:
