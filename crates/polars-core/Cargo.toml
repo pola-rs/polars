@@ -21,7 +21,7 @@ bitflags = { workspace = true }
 bytemuck = { workspace = true }
 chrono = { workspace = true, optional = true }
 chrono-tz = { workspace = true, optional = true }
-comfy-table = { version = "7.0.1", default_features = false, optional = true }
+comfy-table = { version = "7.0.1", default-features = false, optional = true }
 either = { workspace = true }
 hashbrown = { workspace = true }
 indexmap = { workspace = true }

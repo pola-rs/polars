@@ -31,7 +31,7 @@ either = { workspace = true }
 ethnum = "1"
 futures = { workspace = true }
 # used to run formal property testing
-proptest = { version = "1", default_features = false, features = ["std"] }
+proptest = { version = "1", default-features = false, features = ["std"] }
 rand = { workspace = true }
 # used to test async readers
 tokio = { workspace = true, features = ["macros", "rt", "fs", "io-util"] }

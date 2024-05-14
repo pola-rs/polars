@@ -81,7 +81,7 @@ crossbeam-channel = { workspace = true }
 doc-comment = "0.3"
 flate2 = "1"
 # used to run formal property testing
-proptest = { version = "1", default_features = false, features = ["std"] }
+proptest = { version = "1", default-features = false, features = ["std"] }
 # use for flaky testing
 rand = { workspace = true }
 # use for generating and testing random data samples
