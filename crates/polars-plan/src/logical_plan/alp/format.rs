@@ -3,12 +3,14 @@ use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
 
-use crate::prelude::*;
-
+use polars_core::datatypes::AnyValue;
 use recursive::recursive;
+
+use crate::prelude::*;
 
 pub struct IRDisplay<'a>(pub(crate) IRPlanRef<'a>);
 
+#[derive(Clone, Copy)]
 pub struct ExprIRDisplay<'a> {
     pub(crate) node: Node,
     pub(crate) output_name: &'a OutputName,
@@ -16,9 +18,9 @@ pub struct ExprIRDisplay<'a> {
 }
 
 /// Utility structure to display several [`ExprIR`]'s in a nice way
-struct ExprIRSliceDisplay<'a, T: AsExpr> {
-    exprs: &'a [T],
-    expr_arena: &'a Arena<AExpr>,
+pub(crate) struct ExprIRSliceDisplay<'a, T: AsExpr> {
+    pub(crate) exprs: &'a [T],
+    pub(crate) expr_arena: &'a Arena<AExpr>,
 }
 
 trait AsExpr {
@@ -591,3 +593,37 @@ impl<'a> Display for ExprIRDisplay<'a> {
         Ok(())
     }
 }
+
+// impl fmt::Debug for Operator {
+//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+//         Display::fmt(self, f)
+//     }
+// }
+//
+// impl fmt::Debug for LiteralValue {
+//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+//         use LiteralValue::*;
+//
+//         match self {
+//             Binary(_) => write!(f, "[binary value]"),
+//             Range { low, high, .. } => write!(f, "range({low}, {high})"),
+//             Series(s) => {
+//                 let name = s.name();
+//                 if name.is_empty() {
+//                     write!(f, "Series")
+//                 } else {
+//                     write!(f, "Series[{name}]")
+//                 }
+//             },
+//             Float(v) => {
+//                 let av = AnyValue::Float64(*v);
+//                 write!(f, "dyn float: {}", av)
+//             },
+//             Int(v) => write!(f, "dyn int: {}", v),
+//             _ => {
+//                 let av = self.to_any_value().unwrap();
+//                 write!(f, "{av}")
+//             },
+//         }
+//     }
+// }

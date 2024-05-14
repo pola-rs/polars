@@ -1,3 +1,4 @@
+mod dot;
 mod format;
 mod inputs;
 mod schema;
@@ -7,6 +8,7 @@ use std::borrow::Cow;
 use std::fmt;
 use std::path::PathBuf;
 
+pub use dot::IRDotDisplay;
 pub use format::{ExprIRDisplay, IRDisplay};
 use polars_core::prelude::*;
 use polars_utils::idx_vec::UnitVec;
@@ -172,17 +174,21 @@ impl IRPlan {
         self.as_ref().describe_tree_format()
     }
 
-    fn display(&self) -> format::IRDisplay {
+    pub fn display(&self) -> format::IRDisplay {
         format::IRDisplay(self.as_ref())
+    }
+
+    pub fn display_dot(&self) -> dot::IRDotDisplay {
+        dot::IRDotDisplay(self.as_ref())
     }
 }
 
 impl<'a> IRPlanRef<'a> {
-    pub fn root(&self) -> &'a IR {
+    pub fn root(self) -> &'a IR {
         self.lp_arena.get(self.lp_top)
     }
 
-    pub fn with_root(&self, root: Node) -> Self {
+    pub fn with_root(self, root: Node) -> Self {
         Self {
             lp_top: root,
             lp_arena: self.lp_arena,
@@ -190,15 +196,19 @@ impl<'a> IRPlanRef<'a> {
         }
     }
 
-    fn display(&self) -> format::IRDisplay {
-        format::IRDisplay(*self)
+    pub fn display(self) -> format::IRDisplay<'a> {
+        format::IRDisplay(self)
     }
 
-    fn describe(&self) -> String {
+    pub fn display_dot(self) -> dot::IRDotDisplay<'a> {
+        dot::IRDotDisplay(self)
+    }
+
+    pub fn describe(self) -> String {
         self.display().to_string()
     }
 
-    fn describe_tree_format(self) -> String {
+    pub fn describe_tree_format(self) -> String {
         let mut visitor = tree_format::TreeFmtVisitor::default();
         tree_format::TreeFmtNode::root_logical_plan(self).traverse(&mut visitor);
         format!("{visitor:#?}")
