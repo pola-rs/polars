@@ -241,7 +241,7 @@ fn series_to_numpy_with_copy(py: Python, s: &Series) -> PyResult<PyObject> {
         },
         Time => {
             let ca = s.time().unwrap();
-            let values = time_to_pyobject_iter(py, ca).map(|v| v.into_py(py));
+            let values = time_to_pyobject_iter(ca).map(|v| v.into_py(py));
             PyArray1::from_iter_bound(py, values).into_py(py)
         },
         String => {

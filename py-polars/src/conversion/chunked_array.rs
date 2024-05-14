@@ -1,7 +1,12 @@
+use polars_core::export::chrono::NaiveTime;
+use polars_core::utils::arrow::temporal_conversions::date32_to_date;
 use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList, PyTuple};
 
+use super::datetime::{
+    elapsed_offset_to_timedelta, nanos_since_midnight_to_naivetime, timestamp_to_naive_datetime,
+};
 use super::{decimal_to_digits, struct_dict};
 use crate::prelude::*;
 use crate::py_modules::UTILS;
@@ -43,56 +48,58 @@ impl ToPyObject for Wrap<&StructChunked> {
 
 impl ToPyObject for Wrap<&DurationChunked> {
     fn to_object(&self, py: Python) -> PyObject {
-        let utils = UTILS.bind(py);
-        let convert = utils.getattr(intern!(py, "to_py_timedelta")).unwrap();
-        let time_unit = self.0.time_unit().to_ascii();
+        let time_unit = self.0.time_unit();
         let iter = self
             .0
             .iter()
-            .map(|opt_v| opt_v.map(|v| convert.call1((v, time_unit)).unwrap()));
+            .map(|opt_v| opt_v.map(|v| elapsed_offset_to_timedelta(v, time_unit)));
         PyList::new_bound(py, iter).into_py(py)
     }
 }
 
 impl ToPyObject for Wrap<&DatetimeChunked> {
     fn to_object(&self, py: Python) -> PyObject {
-        let utils = UTILS.bind(py);
-        let convert = utils.getattr(intern!(py, "to_py_datetime")).unwrap();
-        let time_unit = self.0.time_unit().to_ascii();
-        let time_zone = self.0.time_zone().to_object(py);
-        let iter = self
-            .0
-            .iter()
-            .map(|opt_v| opt_v.map(|v| convert.call1((v, time_unit, &time_zone)).unwrap()));
-        PyList::new_bound(py, iter).into_py(py)
+        let time_zone = self.0.time_zone();
+        if time_zone.is_some() {
+            // Switch to more efficient code path in
+            // https://github.com/pola-rs/polars/issues/16199
+            let utils = UTILS.bind(py);
+            let convert = utils.getattr(intern!(py, "to_py_datetime")).unwrap();
+            let time_unit = self.0.time_unit().to_ascii();
+            let time_zone = time_zone.to_object(py);
+            let iter = self
+                .0
+                .iter()
+                .map(|opt_v| opt_v.map(|v| convert.call1((v, time_unit, &time_zone)).unwrap()));
+            PyList::new_bound(py, iter).into_py(py)
+        } else {
+            let time_unit = self.0.time_unit();
+            let iter = self
+                .0
+                .iter()
+                .map(|opt_v| opt_v.map(|v| timestamp_to_naive_datetime(v, time_unit)));
+            PyList::new_bound(py, iter).into_py(py)
+        }
     }
 }
 
 impl ToPyObject for Wrap<&TimeChunked> {
     fn to_object(&self, py: Python) -> PyObject {
-        let iter = time_to_pyobject_iter(py, self.0);
+        let iter = time_to_pyobject_iter(self.0);
         PyList::new_bound(py, iter).into_py(py)
     }
 }
 
-pub(crate) fn time_to_pyobject_iter<'a>(
-    py: Python<'a>,
-    ca: &'a TimeChunked,
-) -> impl ExactSizeIterator<Item = Option<Bound<'a, PyAny>>> {
-    let utils = UTILS.bind(py);
-    let convert = utils.getattr(intern!(py, "to_py_time")).unwrap().clone();
+pub(crate) fn time_to_pyobject_iter(
+    ca: &TimeChunked,
+) -> impl '_ + ExactSizeIterator<Item = Option<NaiveTime>> {
     ca.0.iter()
-        .map(move |opt_v| opt_v.map(|v| convert.call1((v,)).unwrap()))
+        .map(move |opt_v| opt_v.map(nanos_since_midnight_to_naivetime))
 }
 
 impl ToPyObject for Wrap<&DateChunked> {
     fn to_object(&self, py: Python) -> PyObject {
-        let utils = UTILS.bind(py);
-        let convert = utils.getattr(intern!(py, "to_py_date")).unwrap();
-        let iter = self
-            .0
-            .into_iter()
-            .map(|opt_v| opt_v.map(|v| convert.call1((v,)).unwrap()));
+        let iter = self.0.into_iter().map(|opt_v| opt_v.map(date32_to_date));
         PyList::new_bound(py, iter).into_py(py)
     }
 }
