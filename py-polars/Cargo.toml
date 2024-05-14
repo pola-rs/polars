@@ -107,11 +107,6 @@ jemallocator = { version = "0.5", features = ["disable_initial_exec_tls"] }
 
 # features are only there to enable building a slim binary for the benchmark in CI
 [features]
-# needed for macro
-dtype-i8 = []
-dtype-i16 = []
-dtype-u8 = []
-dtype-u16 = []
 avro = ["polars/avro"]
 parquet = ["polars/parquet", "polars-parquet"]
 ipc = ["polars/ipc"]
@@ -133,7 +128,6 @@ decompress = ["polars/decompress-fast"]
 regex = ["polars/regex"]
 csv = ["polars/csv"]
 clipboard = ["arboard"]
-object = ["polars/object"]
 extract_jsonpath = ["polars/extract_jsonpath"]
 pivot = ["polars/pivot"]
 top_k = ["polars/top_k"]
@@ -162,11 +156,19 @@ peaks = ["polars/peaks"]
 hist = ["polars/hist"]
 find_many = ["polars/find_many"]
 
+dtype-i8 = []
+dtype-i16 = []
+dtype-u8 = []
+dtype-u16 = []
+dtype-array = []
+object = ["polars/object"]
+
 dtypes = [
-  "dtype-i8",
+  "dtype-array",
   "dtype-i16",
-  "dtype-u8",
+  "dtype-i8",
   "dtype-u16",
+  "dtype-u8",
   "object",
 ]
 
