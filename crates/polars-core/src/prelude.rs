@@ -4,8 +4,6 @@ pub use std::sync::Arc;
 pub use arrow::array::ArrayRef;
 pub(crate) use arrow::array::*;
 pub use arrow::datatypes::{ArrowSchema, Field as ArrowField};
-#[cfg(feature = "ewma")]
-pub use arrow::legacy::kernels::ewm::EWMOptions;
 pub use arrow::legacy::prelude::*;
 pub(crate) use arrow::trusted_len::TrustedLen;
 pub use polars_utils::index::{ChunkId, IdxSize, NullableChunkId, NullableIdxSize};
