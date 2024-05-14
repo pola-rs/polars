@@ -14,6 +14,7 @@ mod build {
     include!(concat!(env!("OUT_DIR"), "/built.rs"));
 }
 
+mod allocator;
 mod arrow_interop;
 #[cfg(feature = "csv")]
 mod batched_csv;
@@ -42,11 +43,6 @@ mod sql;
 mod to_numpy;
 mod utils;
 
-#[cfg(all(target_family = "unix", not(use_mimalloc), not(default_allocator)))]
-use jemallocator::Jemalloc;
-#[cfg(any(not(target_family = "unix"), use_mimalloc))]
-#[allow(unused_imports)]
-use mimalloc::MiMalloc;
 use pyo3::panic::PanicException;
 use pyo3::prelude::*;
 use pyo3::{wrap_pyfunction, wrap_pymodule};
@@ -65,37 +61,10 @@ use crate::expr::PyExpr;
 use crate::functions::PyStringCacheHolder;
 use crate::lazyframe::{PyInProcessQuery, PyLazyFrame};
 use crate::lazygroupby::PyLazyGroupBy;
-#[cfg(debug_assertions)]
-#[allow(unused_imports)]
-use crate::memory::TracemallocAllocator;
+
 use crate::series::PySeries;
 #[cfg(feature = "sql")]
 use crate::sql::PySQLContext;
-
-// On Windows tracemalloc does work. However, we build abi3 wheels, and the
-// relevant C APIs are not part of the limited stable CPython API. As a result,
-// linking breaks on Windows if we use tracemalloc C APIs. So we only use this
-// on Windows for now.
-#[global_allocator]
-#[cfg(all(target_family = "unix", debug_assertions, not(default_allocator)))]
-static ALLOC: TracemallocAllocator<Jemalloc> = TracemallocAllocator::new(Jemalloc);
-
-#[global_allocator]
-#[cfg(all(
-    target_family = "unix",
-    not(use_mimalloc),
-    not(debug_assertions),
-    not(default_allocator)
-))]
-static ALLOC: Jemalloc = Jemalloc;
-
-#[global_allocator]
-#[cfg(all(
-    any(not(target_family = "unix"), use_mimalloc),
-    not(debug_assertions),
-    not(default_allocator)
-))]
-static ALLOC: MiMalloc = MiMalloc;
 
 #[pymodule]
 fn _ir_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
