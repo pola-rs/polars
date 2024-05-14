@@ -220,6 +220,13 @@ impl<'a> IRDisplay<'a> {
                     selection,
                 )
             },
+            Reduce { input, exprs, .. } => {
+                // @NOTE: Maybe there should be a clear delimiter here?
+                let default_exprs = self.display_expr_vec(exprs);
+
+                write!(f, "{:indent$} REDUCE {default_exprs} FROM", "")?;
+                self.with_root(*input)._format(f, sub_indent)
+            },
             Select { expr, input, .. } => {
                 // @NOTE: Maybe there should be a clear delimiter here?
                 let default_exprs = self.display_expr_slice(expr.default_exprs());

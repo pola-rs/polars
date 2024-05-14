@@ -325,6 +325,8 @@ impl ProjectionPushDown {
         use IR::*;
 
         match logical_plan {
+            // Should not yet be here
+            Reduce { .. } => unreachable!(),
             Select { expr, input, .. } => process_projection(
                 self,
                 input,

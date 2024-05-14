@@ -348,6 +348,7 @@ fn create_physical_plan_impl(
                 streamable,
             }))
         },
+        Reduce { .. } => todo!(),
         DataFrameScan {
             df,
             projection,

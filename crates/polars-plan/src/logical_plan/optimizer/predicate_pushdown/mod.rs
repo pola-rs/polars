@@ -622,6 +622,7 @@ impl<'a> PredicatePushDown<'a> {
             },
             lp @ HStack { .. }
             | lp @ Select { .. }
+            | lp @ Reduce { .. }
             | lp @ SimpleProjection { .. }
             | lp @ ExtContext { .. } => {
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, true)
