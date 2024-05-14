@@ -27,6 +27,9 @@ pub(crate) struct CsvSource {
     // state for multi-file reads
     current_path_idx: usize,
     n_rows_read: usize,
+    // Used to check schema in a way that throws the same error messages as the default engine.
+    // TODO: Refactor the checking code so that we can just use the schema to do this.
+    schema_check_df: DataFrame,
 }
 
 impl CsvSource {
@@ -81,7 +84,6 @@ impl CsvSource {
         let low_memory = options.low_memory;
 
         let reader: CsvReader<File> = options
-            .with_schema_overwrite(Some(self.schema.clone()))
             .with_n_rows(n_rows)
             .with_columns(with_columns)
             .with_rechunk(false)
@@ -121,6 +123,7 @@ impl CsvSource {
             verbose,
             current_path_idx: 0,
             n_rows_read: 0,
+            schema_check_df: Default::default(),
         })
     }
 }
@@ -128,7 +131,9 @@ impl CsvSource {
 impl Source for CsvSource {
     fn get_batches(&mut self, _context: &PExecutionContext) -> PolarsResult<SourceResult> {
         loop {
-            if self.reader.is_none() {
+            let first_read_from_file = self.reader.is_none();
+
+            if first_read_from_file {
                 self.init_next_reader()?;
             }
 
@@ -144,6 +149,13 @@ impl Source for CsvSource {
                 self.reader = None;
                 continue;
             };
+
+            if first_read_from_file {
+                if self.schema_check_df.width() == 0 {
+                    self.schema_check_df = batches[0].clear();
+                }
+                self.schema_check_df.vstack(batches.get(0).unwrap())?;
+            }
 
             let index = get_source_index(0);
             let mut n_rows_read = 0;

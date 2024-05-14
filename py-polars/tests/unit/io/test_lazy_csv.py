@@ -333,3 +333,35 @@ A,B,C
             "D": [None, "7", None],
             "E": [None, "8", None],
         }
+
+
+@pytest.mark.parametrize("streaming", [True, False])
+@pytest.mark.parametrize(
+    "dfs",
+    [
+        [pl.DataFrame({"a": [1, 2, 3]}), pl.DataFrame({"b": [4, 5, 6]})],
+        [
+            pl.DataFrame({"a": [1, 2, 3]}),
+            pl.DataFrame({"b": [4, 5, 6], "c": [7, 8, 9]}),
+        ],
+    ],
+)
+def test_file_list_schema(
+    tmp_path: Path, dfs: list[pl.DataFrame], streaming: bool
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    paths = [f"{tmp_path}/{i}.csv" for i in range(len(dfs))]
+
+    for df, path in zip(dfs, paths):
+        df.write_csv(path)
+
+    lf = pl.scan_csv(paths)
+    with pytest.raises(pl.ShapeError):
+        print(f"{lf.collect(streaming=streaming) = !s}")
+
+    if len({df.width for df in dfs}) == 1:
+        expect = pl.concat(df.select(x=pl.first().cast(pl.Int8)) for df in dfs)
+        out = pl.scan_csv(paths, schema={"x": pl.Int8}).collect(streaming=streaming)
+
+        assert_frame_equal(out, expect)
