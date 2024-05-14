@@ -12,6 +12,7 @@ pub enum OutputName {
     None,
     LiteralLhs(ColumnName),
     ColumnLhs(ColumnName),
+    /// Rename the output as `ColumnName`
     Alias(ColumnName),
 }
 

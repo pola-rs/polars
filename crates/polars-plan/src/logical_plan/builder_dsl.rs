@@ -169,8 +169,8 @@ impl DslBuilder {
 
     #[allow(clippy::too_many_arguments)]
     #[cfg(feature = "csv")]
-    pub fn scan_csv<P: Into<std::path::PathBuf>>(
-        path: P,
+    pub fn scan_csv<P: Into<Arc<[std::path::PathBuf]>>>(
+        paths: P,
         separator: u8,
         has_header: bool,
         ignore_errors: bool,
@@ -195,9 +195,7 @@ impl DslBuilder {
         n_threads: Option<usize>,
         decimal_comma: bool,
     ) -> PolarsResult<Self> {
-        let path = path.into();
-
-        let paths = Arc::new([path]);
+        let paths = paths.into();
 
         let options = FileScanOptions {
             with_columns: None,

@@ -2,7 +2,6 @@ pub mod dataframe;
 pub mod lazy;
 pub mod series;
 
-use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 use polars::chunked_array::builder::get_list_builder;

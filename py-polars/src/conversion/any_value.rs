@@ -182,8 +182,8 @@ pub(crate) fn py_object_to_any_value<'py>(
     }
 
     fn get_bytes<'py>(ob: &Bound<'py, PyAny>, _strict: bool) -> PyResult<AnyValue<'py>> {
-        let value = ob.extract::<&'py [u8]>().unwrap();
-        Ok(AnyValue::Binary(value))
+        let value = ob.extract::<Vec<u8>>().unwrap();
+        Ok(AnyValue::BinaryOwned(value))
     }
 
     fn get_date(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {

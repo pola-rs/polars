@@ -6,6 +6,7 @@ use polars_core::error::*;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::Series;
 use pyo3::prelude::*;
+use pyo3::pybacked::PyBackedBytes;
 use pyo3::types::PyBytes;
 #[cfg(feature = "serde")]
 use serde::ser::Error;
@@ -67,9 +68,9 @@ impl Serialize for PythonFunction {
             let dumped = pickle
                 .call1((python_function,))
                 .map_err(|s| S::Error::custom(format!("cannot pickle {s}")))?;
-            let dumped = dumped.extract::<&PyBytes>().unwrap();
+            let dumped = dumped.extract::<PyBackedBytes>().unwrap();
 
-            serializer.serialize_bytes(dumped.as_bytes())
+            serializer.serialize_bytes(&dumped)
         })
     }
 }
@@ -192,8 +193,8 @@ impl SeriesUdf for PythonUdfExpression {
             let dumped = pickle
                 .call1((self.python_function.clone(),))
                 .map_err(from_pyerr)?;
-            let dumped = dumped.extract::<&PyBytes>().unwrap();
-            buf.extend_from_slice(dumped.as_bytes());
+            let dumped = dumped.extract::<PyBackedBytes>().unwrap();
+            buf.extend_from_slice(&dumped);
             Ok(())
         })
     }
