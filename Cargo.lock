@@ -3150,6 +3150,7 @@ name = "polars-time"
 version = "0.39.2"
 dependencies = [
  "atoi",
+ "bytemuck",
  "chrono",
  "chrono-tz",
  "now",

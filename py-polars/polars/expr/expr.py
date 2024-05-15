@@ -6224,7 +6224,7 @@ class Expr:
         *,
         min_periods: int = 1,
         closed: ClosedInterval = "right",
-        warn_if_unsorted: bool = True,
+        warn_if_unsorted: bool | None = None,
     ) -> Self:
         """
         Apply a rolling min based on another column.
@@ -6245,10 +6245,6 @@ class Expr:
         ----------
         by
             This column must be of dtype Datetime or Date.
-
-            .. warning::
-                The column must be sorted in ascending order. Otherwise,
-                results will not be correct.
         window_size
             The length of the window. Can be a dynamic temporal
             size indicated by a timedelta or the following string language:
@@ -6277,6 +6273,10 @@ class Expr:
             defaults to `'right'`.
         warn_if_unsorted
             Warn if data is not known to be sorted by `by` column.
+
+            .. deprecated:: 0.20.27
+                This operation no longer requires sorted data, you can safely remove
+                the `warn_if_unsorted` argument.
 
         Notes
         -----
@@ -6340,22 +6340,26 @@ class Expr:
         """
         window_size = deprecate_saturating(window_size)
         window_size = _prepare_rolling_by_window_args(window_size)
+        if warn_if_unsorted is not None:
+            issue_deprecation_warning(
+                "`warn_if_unsorted` is deprecated in `rolling_min_by` because it "
+                "no longer requires sorted data - you can safely remove this argument.",
+                version="0.20.27",
+            )
         by = parse_as_expression(by)
         return self._from_pyexpr(
-            self._pyexpr.rolling_min_by(
-                by, window_size, min_periods, closed, warn_if_unsorted
-            )
+            self._pyexpr.rolling_min_by(by, window_size, min_periods, closed)
         )
 
     @unstable()
     def rolling_max_by(
         self,
-        by: str,
+        by: IntoExpr,
         window_size: timedelta | str,
         *,
         min_periods: int = 1,
         closed: ClosedInterval = "right",
-        warn_if_unsorted: bool = True,
+        warn_if_unsorted: bool | None = None,
     ) -> Self:
         """
         Apply a rolling max based on another column.
@@ -6376,10 +6380,6 @@ class Expr:
         ----------
         by
             This column must be of dtype Datetime or Date.
-
-            .. warning::
-                The column must be sorted in ascending order. Otherwise,
-                results will not be correct.
         window_size
             The length of the window. Can be a dynamic temporal
             size indicated by a timedelta or the following string language:
@@ -6408,6 +6408,10 @@ class Expr:
             defaults to `'right'`.
         warn_if_unsorted
             Warn if data is not known to be sorted by `by` column.
+
+            .. deprecated:: 0.20.27
+                This operation no longer requires sorted data, you can safely remove
+                the `warn_if_unsorted` argument.
 
         Notes
         -----
@@ -6497,22 +6501,26 @@ class Expr:
         """
         window_size = deprecate_saturating(window_size)
         window_size = _prepare_rolling_by_window_args(window_size)
+        if warn_if_unsorted is not None:
+            issue_deprecation_warning(
+                "`warn_if_unsorted` is deprecated in `rolling_max_by` because it "
+                "no longer requires sorted data - you can safely remove this argument.",
+                version="0.20.27",
+            )
         by = parse_as_expression(by)
         return self._from_pyexpr(
-            self._pyexpr.rolling_max_by(
-                by, window_size, min_periods, closed, warn_if_unsorted
-            )
+            self._pyexpr.rolling_max_by(by, window_size, min_periods, closed)
         )
 
     @unstable()
     def rolling_mean_by(
         self,
-        by: str,
+        by: IntoExpr,
         window_size: timedelta | str,
         *,
         min_periods: int = 1,
         closed: ClosedInterval = "right",
-        warn_if_unsorted: bool = True,
+        warn_if_unsorted: bool | None = None,
     ) -> Self:
         """
         Apply a rolling mean based on another column.
@@ -6533,10 +6541,6 @@ class Expr:
         ----------
         by
             This column must be of dtype Datetime or Date.
-
-            .. warning::
-                The column must be sorted in ascending order. Otherwise,
-                results will not be correct.
         window_size
             The length of the window. Can be a dynamic temporal
             size indicated by a timedelta or the following string language:
@@ -6565,6 +6569,10 @@ class Expr:
             defaults to `'right'`.
         warn_if_unsorted
             Warn if data is not known to be sorted by `by` column.
+
+            .. deprecated:: 0.20.27
+                This operation no longer requires sorted data, you can safely remove
+                the `warn_if_unsorted` argument.
 
         Notes
         -----
@@ -6656,6 +6664,12 @@ class Expr:
         """
         window_size = deprecate_saturating(window_size)
         window_size = _prepare_rolling_by_window_args(window_size)
+        if warn_if_unsorted is not None:
+            issue_deprecation_warning(
+                "`warn_if_unsorted` is deprecated in `rolling_mean_by` because it "
+                "no longer requires sorted data - you can safely remove this argument.",
+                version="0.20.27",
+            )
         by = parse_as_expression(by)
         return self._from_pyexpr(
             self._pyexpr.rolling_mean_by(
@@ -6663,19 +6677,18 @@ class Expr:
                 window_size,
                 min_periods,
                 closed,
-                warn_if_unsorted,
             )
         )
 
     @unstable()
     def rolling_sum_by(
         self,
-        by: str,
+        by: IntoExpr,
         window_size: timedelta | str,
         *,
         min_periods: int = 1,
         closed: ClosedInterval = "right",
-        warn_if_unsorted: bool = True,
+        warn_if_unsorted: bool | None = None,
     ) -> Self:
         """
         Apply a rolling sum based on another column.
@@ -6719,15 +6732,15 @@ class Expr:
             a result.
         by
             This column must of dtype `{Date, Datetime}`
-
-            .. warning::
-                If passed, the column must be sorted in ascending order. Otherwise,
-                results will not be correct.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive),
             defaults to `'right'`.
         warn_if_unsorted
             Warn if data is not known to be sorted by `by` column.
+
+            .. deprecated:: 0.20.27
+                This operation no longer requires sorted data, you can safely remove
+                the `warn_if_unsorted` argument.
 
         Notes
         -----
@@ -6817,23 +6830,27 @@ class Expr:
         """
         window_size = deprecate_saturating(window_size)
         window_size = _prepare_rolling_by_window_args(window_size)
+        if warn_if_unsorted is not None:
+            issue_deprecation_warning(
+                "`warn_if_unsorted` is deprecated in `rolling_sum_by` because it "
+                "no longer requires sorted data - you can safely remove this argument.",
+                version="0.20.27",
+            )
         by = parse_as_expression(by)
         return self._from_pyexpr(
-            self._pyexpr.rolling_sum_by(
-                by, window_size, min_periods, closed, warn_if_unsorted
-            )
+            self._pyexpr.rolling_sum_by(by, window_size, min_periods, closed)
         )
 
     @unstable()
     def rolling_std_by(
         self,
-        by: str,
+        by: IntoExpr,
         window_size: timedelta | str,
         *,
         min_periods: int = 1,
         closed: ClosedInterval = "right",
         ddof: int = 1,
-        warn_if_unsorted: bool = True,
+        warn_if_unsorted: bool | None = None,
     ) -> Self:
         """
         Compute a rolling standard deviation based on another column.
@@ -6842,23 +6859,18 @@ class Expr:
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
 
-        Given a `by` column `<t_0, t_1, ..., t_n>`, then `closed="left"` means
-        the windows will be:
+        Given a `by` column `<t_0, t_1, ..., t_n>`, then `closed="right"`
+        (the default) means the windows will be:
 
-            - [t_0 - window_size, t_0)
-            - [t_1 - window_size, t_1)
+            - (t_0 - window_size, t_0]
+            - (t_1 - window_size, t_1]
             - ...
-            - [t_n - window_size, t_n)
-
+            - (t_n - window_size, t_n]
 
         Parameters
         ----------
         by
             This column must be of dtype Datetime or Date.
-
-            .. warning::
-                The column must be sorted in ascending order. Otherwise,
-                results will not be correct.
         window_size
             The length of the window. Can be a dynamic temporal
             size indicated by a timedelta or the following string language:
@@ -6889,6 +6901,10 @@ class Expr:
             "Delta Degrees of Freedom": The divisor for a length N window is N - ddof
         warn_if_unsorted
             Warn if data is not known to be sorted by `by` column.
+
+            .. deprecated:: 0.20.27
+                This operation no longer requires sorted data, you can safely remove
+                the `warn_if_unsorted` argument.
 
         Notes
         -----
@@ -6978,6 +6994,12 @@ class Expr:
         """
         window_size = deprecate_saturating(window_size)
         window_size = _prepare_rolling_by_window_args(window_size)
+        if warn_if_unsorted is not None:
+            issue_deprecation_warning(
+                "`warn_if_unsorted` is deprecated in `rolling_std_by` because it "
+                "no longer requires sorted data - you can safely remove this argument.",
+                version="0.20.27",
+            )
         by = parse_as_expression(by)
         return self._from_pyexpr(
             self._pyexpr.rolling_std_by(
@@ -6986,20 +7008,19 @@ class Expr:
                 min_periods,
                 closed,
                 ddof,
-                warn_if_unsorted,
             )
         )
 
     @unstable()
     def rolling_var_by(
         self,
-        by: str,
+        by: IntoExpr,
         window_size: timedelta | str,
         *,
         min_periods: int = 1,
         closed: ClosedInterval = "right",
         ddof: int = 1,
-        warn_if_unsorted: bool = True,
+        warn_if_unsorted: bool | None = None,
     ) -> Self:
         """
         Compute a rolling variance based on another column.
@@ -7020,10 +7041,6 @@ class Expr:
         ----------
         by
             This column must be of dtype Datetime or Date.
-
-            .. warning::
-                The column must be sorted in ascending order. Otherwise,
-                results will not be correct.
         window_size
             The length of the window. Can be a dynamic temporal
             size indicated by a timedelta or the following string language:
@@ -7054,6 +7071,10 @@ class Expr:
             "Delta Degrees of Freedom": The divisor for a length N window is N - ddof
         warn_if_unsorted
             Warn if data is not known to be sorted by `by` column.
+
+            .. deprecated:: 0.20.27
+                This operation no longer requires sorted data, you can safely remove
+                the `warn_if_unsorted` argument.
 
         Notes
         -----
@@ -7143,6 +7164,12 @@ class Expr:
         """
         window_size = deprecate_saturating(window_size)
         window_size = _prepare_rolling_by_window_args(window_size)
+        if warn_if_unsorted is not None:
+            issue_deprecation_warning(
+                "`warn_if_unsorted` is deprecated in `rolling_var_by` because it "
+                "no longer requires sorted data - you can safely remove this argument.",
+                version="0.20.27",
+            )
         by = parse_as_expression(by)
         return self._from_pyexpr(
             self._pyexpr.rolling_var_by(
@@ -7151,19 +7178,18 @@ class Expr:
                 min_periods,
                 closed,
                 ddof,
-                warn_if_unsorted,
             )
         )
 
     @unstable()
     def rolling_median_by(
         self,
-        by: str,
+        by: IntoExpr,
         window_size: timedelta | str,
         *,
         min_periods: int = 1,
         closed: ClosedInterval = "right",
-        warn_if_unsorted: bool = True,
+        warn_if_unsorted: bool | None = None,
     ) -> Self:
         """
         Compute a rolling median based on another column.
@@ -7172,22 +7198,18 @@ class Expr:
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
 
-        Given a `by` column `<t_0, t_1, ..., t_n>`, then `closed="left"` means
-        the windows will be:
+        Given a `by` column `<t_0, t_1, ..., t_n>`, then `closed="right"`
+        (the default) means the windows will be:
 
-            - [t_0 - window_size, t_0)
-            - [t_1 - window_size, t_1)
+            - (t_0 - window_size, t_0]
+            - (t_1 - window_size, t_1]
             - ...
-            - [t_n - window_size, t_n)
+            - (t_n - window_size, t_n]
 
         Parameters
         ----------
         by
             This column must be of dtype Datetime or Date.
-
-            .. warning::
-                The column must be sorted in ascending order. Otherwise,
-                results will not be correct.
         window_size
             The length of the window. Can be a dynamic temporal
             size indicated by a timedelta or the following string language:
@@ -7216,6 +7238,10 @@ class Expr:
             defaults to `'right'`.
         warn_if_unsorted
             Warn if data is not known to be sorted by `by` column.
+
+            .. deprecated:: 0.20.27
+                This operation no longer requires sorted data, you can safely remove
+                the `warn_if_unsorted` argument.
 
         Notes
         -----
@@ -7281,24 +7307,28 @@ class Expr:
         """
         window_size = deprecate_saturating(window_size)
         window_size = _prepare_rolling_by_window_args(window_size)
+        if warn_if_unsorted is not None:
+            issue_deprecation_warning(
+                "`warn_if_unsorted` is deprecated in `rolling_median_by` because it "
+                "no longer requires sorted data - you can safely remove this argument.",
+                version="0.20.27",
+            )
         by = parse_as_expression(by)
         return self._from_pyexpr(
-            self._pyexpr.rolling_median_by(
-                by, window_size, min_periods, closed, warn_if_unsorted
-            )
+            self._pyexpr.rolling_median_by(by, window_size, min_periods, closed)
         )
 
     @unstable()
     def rolling_quantile_by(
         self,
-        by: str,
+        by: IntoExpr,
         window_size: timedelta | str,
         *,
         quantile: float,
         interpolation: RollingInterpolationMethod = "nearest",
         min_periods: int = 1,
         closed: ClosedInterval = "right",
-        warn_if_unsorted: bool = True,
+        warn_if_unsorted: bool | None = None,
     ) -> Self:
         """
         Compute a rolling quantile based on another column.
@@ -7319,10 +7349,6 @@ class Expr:
         ----------
         by
             This column must be of dtype Datetime or Date.
-
-            .. warning::
-                The column must be sorted in ascending order. Otherwise,
-                results will not be correct.
         quantile
             Quantile between 0.0 and 1.0.
         interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
@@ -7355,6 +7381,10 @@ class Expr:
             defaults to `'right'`.
         warn_if_unsorted
             Warn if data is not known to be sorted by `by` column.
+
+            .. deprecated:: 0.20.27
+                This operation no longer requires sorted data, you can safely remove
+                the `warn_if_unsorted` argument.
 
         Notes
         -----
@@ -7420,6 +7450,12 @@ class Expr:
         """
         window_size = deprecate_saturating(window_size)
         window_size = _prepare_rolling_by_window_args(window_size)
+        if warn_if_unsorted is not None:
+            issue_deprecation_warning(
+                "`warn_if_unsorted` is deprecated in `rolling_quantile_by` because it "
+                "no longer requires sorted data - you can safely remove this argument.",
+                version="0.20.27",
+            )
         by = parse_as_expression(by)
         return self._from_pyexpr(
             self._pyexpr.rolling_quantile_by(
@@ -7429,7 +7465,6 @@ class Expr:
                 window_size,
                 min_periods,
                 closed,
-                warn_if_unsorted,
             )
         )
 
@@ -7443,7 +7478,7 @@ class Expr:
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval | None = None,
-        warn_if_unsorted: bool = True,
+        warn_if_unsorted: bool | None = None,
     ) -> Self:
         """
         Apply a rolling min (moving min) over the values in this array.
@@ -7508,10 +7543,6 @@ class Expr:
             If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
             be of dtype Datetime or Date.
-
-            .. warning::
-                If passed, the column must be sorted in ascending order. Otherwise,
-                results will not be correct.
 
             .. deprecated:: 0.20.24
                 Passing `by` to `rolling_min` is deprecated - please use
@@ -7679,7 +7710,7 @@ class Expr:
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval | None = None,
-        warn_if_unsorted: bool = True,
+        warn_if_unsorted: bool | None = None,
     ) -> Self:
         """
         Apply a rolling max (moving max) over the values in this array.
@@ -7744,10 +7775,6 @@ class Expr:
             If the `window_size` is temporal, for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
             be of dtype Datetime or Date.
-
-            .. warning::
-                If passed, the column must be sorted in ascending order. Otherwise,
-                results will not be correct.
 
             .. deprecated:: 0.20.24
                 Passing `by` to `rolling_max` is deprecated - please use
@@ -7941,7 +7968,7 @@ class Expr:
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval | None = None,
-        warn_if_unsorted: bool = True,
+        warn_if_unsorted: bool | None = None,
     ) -> Self:
         """
         Apply a rolling mean (moving mean) over the values in this array.
@@ -8007,13 +8034,9 @@ class Expr:
             set the column that will be used to determine the windows. This column must
             be of dtype Datetime or Date.
 
-            .. warning::
-                If passed, the column must be sorted in ascending order. Otherwise,
-                results will not be correct.
-
             .. deprecated:: 0.20.24
                 Passing `by` to `rolling_mean` is deprecated - please use
-                :meth:`.rolling_max_by` instead.
+                :meth:`.rolling_mean_by` instead.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive); only
             applicable if `by` has been set (in which case, it defaults to `'right'`).
@@ -8205,7 +8228,7 @@ class Expr:
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval | None = None,
-        warn_if_unsorted: bool = True,
+        warn_if_unsorted: bool | None = None,
     ) -> Self:
         """
         Apply a rolling sum (moving sum) over the values in this array.
@@ -8270,10 +8293,6 @@ class Expr:
             If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
             of dtype `{Date, Datetime}`
-
-            .. warning::
-                If passed, the column must be sorted in ascending order. Otherwise,
-                results will not be correct.
 
             .. deprecated:: 0.20.24
                 Passing `by` to `rolling_sum` is deprecated - please use
@@ -8468,7 +8487,7 @@ class Expr:
         by: str | None = None,
         closed: ClosedInterval | None = None,
         ddof: int = 1,
-        warn_if_unsorted: bool = True,
+        warn_if_unsorted: bool | None = None,
     ) -> Self:
         """
         Compute a rolling standard deviation.
@@ -8480,14 +8499,13 @@ class Expr:
         If `by` has not been specified (the default), the window at a given row will
         include the row itself, and the `window_size - 1` elements before it.
 
-        If you pass a `by` column `<t_0, t_1, ..., t_n>`, then `closed="left"` means
-        the windows will be:
+        If you pass a `by` column `<t_0, t_1, ..., t_n>`, then `closed="right"`
+        (the default) means the windows will be:
 
-            - [t_0 - window_size, t_0)
-            - [t_1 - window_size, t_1)
+            - (t_0 - window_size, t_0]
+            - (t_1 - window_size, t_1]
             - ...
-            - [t_n - window_size, t_n)
-
+            - (t_n - window_size, t_n]
 
         Parameters
         ----------
@@ -8530,10 +8548,6 @@ class Expr:
             If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
             be of dtype Datetime or Date.
-
-            .. warning::
-                If passed, the column must be sorted in ascending order. Otherwise,
-                results will not be correct.
 
             .. deprecated:: 0.20.24
                 Passing `by` to `rolling_std` is deprecated - please use
@@ -8732,7 +8746,7 @@ class Expr:
         by: str | None = None,
         closed: ClosedInterval | None = None,
         ddof: int = 1,
-        warn_if_unsorted: bool = True,
+        warn_if_unsorted: bool | None = None,
     ) -> Self:
         """
         Compute a rolling variance.
@@ -8793,10 +8807,6 @@ class Expr:
             If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
             be of dtype Datetime or Date.
-
-            .. warning::
-                If passed, the column must be sorted in ascending order. Otherwise,
-                results will not be correct.
 
             .. deprecated:: 0.20.24
                 Passing `by` to `rolling_var` is deprecated - please use
@@ -8994,7 +9004,7 @@ class Expr:
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval | None = None,
-        warn_if_unsorted: bool = True,
+        warn_if_unsorted: bool | None = None,
     ) -> Self:
         """
         Compute a rolling median.
@@ -9006,14 +9016,13 @@ class Expr:
         If `by` has not been specified (the default), the window at a given row will
         include the row itself, and the `window_size - 1` elements before it.
 
-        If you pass a `by` column `<t_0, t_1, ..., t_n>`, then `closed="left"` means
-        the windows will be:
+        If you pass a `by` column `<t_0, t_1, ..., t_n>`, then `closed="right"`
+        (the default) means the windows will be:
 
-            - [t_0 - window_size, t_0)
-            - [t_1 - window_size, t_1)
+            - (t_0 - window_size, t_0]
+            - (t_1 - window_size, t_1]
             - ...
-            - [t_n - window_size, t_n)
-
+            - (t_n - window_size, t_n]
 
         Parameters
         ----------
@@ -9056,10 +9065,6 @@ class Expr:
             If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
             be of dtype Datetime or Date.
-
-            .. warning::
-                If passed, the column must be sorted in ascending order. Otherwise,
-                results will not be correct.
 
             .. deprecated:: 0.20.24
                 Passing `by` to `rolling_median` is deprecated - please use
@@ -9177,7 +9182,7 @@ class Expr:
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval | None = None,
-        warn_if_unsorted: bool = True,
+        warn_if_unsorted: bool | None = None,
     ) -> Self:
         """
         Compute a rolling quantile.
@@ -9242,10 +9247,6 @@ class Expr:
             If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
             be of dtype Datetime or Date.
-
-            .. warning::
-                If passed, the column must be sorted in ascending order. Otherwise,
-                results will not be correct.
 
             .. deprecated:: 0.20.24
                 Passing `by` to `rolling_quantile` is deprecated - please use
