@@ -9,7 +9,7 @@ use pyo3::types::PyList;
 use crate::conversion::chunked_array::{decimal_to_pyobject_iter, time_to_pyobject_iter};
 use crate::error::PyPolarsErr;
 use crate::prelude::*;
-use crate::to_numpy::series_to_numpy_view;
+use crate::to_numpy::{reshape_numpy_array, series_to_numpy_view};
 use crate::{arrow_interop, raise_err, PySeries};
 
 #[pymethods]
@@ -357,14 +357,13 @@ where
 fn array_series_to_numpy(py: Python, s: &Series) -> PyObject {
     let ca = s.array().unwrap();
     let s_inner = ca.get_inner(); // TODO: This rechunks - is there a way to avoid this?
+
+    // TODO: Do we try to zero copy here again?
     let np_array_flat = series_to_numpy_with_copy(py, &s_inner).unwrap();
 
     // Reshape to the original shape.
     let DataType::Array(_, width) = s.dtype() else {
         unreachable!()
     };
-    let shape = (ca.len(), *width);
-    np_array_flat
-        .call_method1(py, intern!(py, "reshape"), shape)
-        .unwrap()
+    reshape_numpy_array(py, np_array_flat, ca.len(), *width)
 }

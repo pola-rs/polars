@@ -10,6 +10,7 @@ use polars_core::utils::try_get_supertype;
 use polars_core::with_match_physical_numeric_polars_type;
 use pyo3::intern;
 use pyo3::prelude::*;
+use pyo3::types::PyTuple;
 
 use crate::conversion::Wrap;
 use crate::dataframe::PyDataFrame;
@@ -156,11 +157,36 @@ fn array_series_to_numpy_view(py: Python, s: &Series, allow_nulls: bool) -> Opti
     let DataType::Array(_, width) = s.dtype() else {
         unreachable!()
     };
-    let shape = (ca.len(), *width);
-    let view = np_array_flat
-        .call_method1(py, intern!(py, "reshape"), shape)
-        .unwrap();
+    let view = reshape_numpy_array(py, np_array_flat, ca.len(), *width);
     Some(view)
+}
+/// Reshape the first dimension of a NumPy array to the given height and width.
+pub(crate) fn reshape_numpy_array(
+    py: Python,
+    arr: PyObject,
+    height: usize,
+    width: usize,
+) -> PyObject {
+    let shape = arr
+        .getattr(py, intern!(py, "shape"))
+        .unwrap()
+        .extract::<Vec<usize>>(py)
+        .unwrap();
+
+    if shape.len() == 1 {
+        // In this case we can avoid allocating a Vec.
+        let new_shape = (height, width);
+        arr.call_method1(py, intern!(py, "reshape"), new_shape)
+            .unwrap()
+    } else {
+        let mut new_shape_vec = vec![height, width];
+        for v in &shape[1..] {
+            new_shape_vec.push(*v)
+        }
+        let new_shape = PyTuple::new_bound(py, new_shape_vec);
+        arr.call_method1(py, intern!(py, "reshape"), new_shape)
+            .unwrap()
+    }
 }
 
 #[pymethods]
