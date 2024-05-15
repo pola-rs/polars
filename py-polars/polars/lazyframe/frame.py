@@ -2800,7 +2800,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             elif p is True:
                 continue  # no-op; matches all rows
             if _is_generator(p):
-                p: Iterable[IntoExprColumn] = tuple(p)
+                p = tuple(p)  # type: ignore[arg-type]
             if is_bool_sequence(p, include_series=True):
                 boolean_masks.append(pl.Series(p, dtype=Boolean))
             elif (
