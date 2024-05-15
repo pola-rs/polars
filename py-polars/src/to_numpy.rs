@@ -8,6 +8,7 @@ use numpy::{
 use polars_core::prelude::*;
 use polars_core::utils::try_get_supertype;
 use polars_core::with_match_physical_numeric_polars_type;
+use pyo3::intern;
 use pyo3::prelude::*;
 
 use crate::conversion::Wrap;
@@ -105,6 +106,18 @@ impl PySeries {
                     )
                 };
                 Some(view)
+            },
+            DataType::Array(_, width) => {
+                let ca = self.series.array().unwrap();
+                let s_inner: PySeries = ca.get_inner().into();
+                let np_array_flat = s_inner.to_numpy_view(py)?;
+
+                // Reshape to the original shape.
+                let shape = (ca.len(), *width);
+                let np_array = np_array_flat
+                    .call_method1(py, intern!(py, "reshape"), shape)
+                    .unwrap();
+                Some(np_array)
             },
             _ => None,
         }

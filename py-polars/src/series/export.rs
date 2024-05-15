@@ -169,7 +169,7 @@ impl PySeries {
     fn to_numpy(&self, py: Python, allow_copy: bool, writable: bool) -> PyResult<PyObject> {
         if self.series.is_empty() {
             // Take this path to ensure a writable array.
-            // This does not actually copy for empty Series.
+            // This does not actually copy data for empty Series.
             return series_to_numpy_with_copy(py, &self.series);
         } else if self.series.null_count() == 0 {
             if let Some(mut arr) = self.to_numpy_view(py) {
@@ -264,6 +264,7 @@ fn series_to_numpy_with_copy(py: Python, s: &Series) -> PyResult<PyObject> {
             let values = decimal_to_pyobject_iter(py, ca).map(|v| v.into_py(py));
             PyArray1::from_iter_bound(py, values).into_py(py)
         },
+        Array(_, _) => array_series_to_numpy(py, s),
         #[cfg(feature = "object")]
         Object(_, _) => {
             let ca = s
@@ -351,4 +352,19 @@ where
     let ca = s_phys.i64().unwrap();
     let values = ca.iter().map(|v| v.unwrap_or(i64::MIN).into());
     PyArray1::<T>::from_iter_bound(py, values).into_py(py)
+}
+/// Convert arrays by flattening first, converting the flat Series, and then reshaping.
+fn array_series_to_numpy(py: Python, s: &Series) -> PyObject {
+    let ca = s.array().unwrap();
+    let s_inner = ca.get_inner(); // TODO: This rechunks - is there a way to avoid this?
+    let np_array_flat = series_to_numpy_with_copy(py, &s_inner).unwrap();
+
+    // Reshape to the original shape.
+    let DataType::Array(_, width) = s.dtype() else {
+        unreachable!()
+    };
+    let shape = (ca.len(), *width);
+    np_array_flat
+        .call_method1(py, intern!(py, "reshape"), shape)
+        .unwrap()
 }
