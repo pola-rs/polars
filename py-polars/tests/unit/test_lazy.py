@@ -211,6 +211,20 @@ def test_filter_multiple_predicates() -> None:
     assert ldf.filter(predicate="==").select("description").collect().item() == "eq"
 
 
+def test_filter_seq_iterable() -> None:
+    ldf = pl.LazyFrame(
+        {
+            "a": [1, 1, 1],
+            "b": [1, 1, 2],
+            "c": [3, 1, 2],
+        }
+    )
+    predicate = [pl.lit(True)]
+    assert_frame_equal(
+        ldf.filter(predicate).collect(), ldf.filter(iter(predicate)).collect()
+    )
+
+
 def test_apply_custom_function() -> None:
     ldf = pl.LazyFrame(
         {
