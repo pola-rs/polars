@@ -134,6 +134,10 @@ impl<R: MmapBytesReader + 'static> ParquetReader<R> {
         let metadata = self.get_metadata()?.clone();
         let schema = self.schema()?;
 
+        if let Some(cols) = &self.columns {
+            self.projection = Some(columns_to_projection(cols, schema.as_ref())?);
+        }
+
         let row_group_fetcher = FetchRowGroupsFromMmapReader::new(Box::new(self.reader))?.into();
         BatchedParquetReader::new(
             row_group_fetcher,
