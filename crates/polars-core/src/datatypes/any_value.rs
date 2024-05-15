@@ -9,6 +9,20 @@ use polars_utils::sync::SyncPtr;
 use polars_utils::total_ord::ToTotalOrd;
 use polars_utils::unwrap::UnwrapUncheckedRelease;
 
+pub struct Scalar {
+    dtype: DataType,
+    value: AnyValue<'static>
+}
+
+impl Scalar {
+    pub fn new(dtype: DataType, value: AnyValue) -> Self {
+        Self {
+            dtype,
+            value
+        }
+    }
+}
+
 use super::*;
 #[cfg(feature = "dtype-struct")]
 use crate::prelude::any_value::arr_to_any_value;
@@ -338,7 +352,22 @@ impl<'a> Deserialize<'a> for AnyValue<'static> {
     }
 }
 
+impl AnyValue<'static> {
+    pub fn zero(dtype: &DataType) -> Self {
+        match dtype {
+            DataType::String => AnyValue::StringOwned("".into()),
+            DataType::Boolean => AnyValue::Boolean(false),
+            // SAFETY:
+            // Numeric values are static, inform the compiler of this.
+            d if d.is_numeric() => unsafe { std::mem::transmute::<AnyValue<'_>, AnyValue<'static>>(AnyValue::UInt8(0).cast(dtype)) },
+            _ => AnyValue::Null
+        }
+    }
+}
+
 impl<'a> AnyValue<'a> {
+
+
     /// Get the matching [`DataType`] for this [`AnyValue`]`.
     ///
     /// Note: For `Categorical` and `Enum` values, the exact mapping information

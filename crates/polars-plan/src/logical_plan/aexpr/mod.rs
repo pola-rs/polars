@@ -2,7 +2,6 @@
 mod hash;
 mod schema;
 mod utils;
-mod reduce;
 
 use std::hash::{Hash, Hasher};
 
