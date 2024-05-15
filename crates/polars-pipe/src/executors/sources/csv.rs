@@ -81,8 +81,6 @@ impl CsvSource {
             eprintln!("STREAMING CHUNK SIZE: {chunk_size} rows")
         }
 
-        let low_memory = options.low_memory;
-
         let reader: CsvReader<File> = options
             .with_n_rows(n_rows)
             .with_columns(with_columns)
@@ -96,11 +94,7 @@ impl CsvSource {
 
         // Safety: `reader` outlives `batched_reader`
         let reader: &'static mut CsvReader<File> = unsafe { std::mem::transmute(reader) };
-        let batched_reader = if low_memory {
-            Either::Right(reader.batched_borrowed_read()?)
-        } else {
-            Either::Left(reader.batched_borrowed_mmap()?)
-        };
+        let batched_reader = Either::Left(reader.batched_borrowed_mmap()?);
         self.batched_reader = Some(batched_reader);
         Ok(())
     }

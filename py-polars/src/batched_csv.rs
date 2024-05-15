@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use polars::io::csv::read::{OwnedBatchedCsvReader, OwnedBatchedCsvReaderMmap};
+use polars::io::csv::read::OwnedBatchedCsvReaderMmap;
 use polars::io::mmap::MmapBytesReader;
 use polars::io::RowIndex;
 use polars::prelude::*;
@@ -12,7 +12,6 @@ use crate::{PyDataFrame, PyPolarsErr, Wrap};
 
 enum BatchedReader {
     MMap(OwnedBatchedCsvReaderMmap),
-    Read(OwnedBatchedCsvReader),
 }
 
 #[pyclass]
@@ -129,17 +128,10 @@ impl PyBatchedCsv {
             )
             .into_reader_with_file_handle(reader);
 
-        let reader = if low_memory {
-            let reader = reader
-                .batched_read(overwrite_dtype.map(Arc::new))
-                .map_err(PyPolarsErr::from)?;
-            BatchedReader::Read(reader)
-        } else {
-            let reader = reader
-                .batched_mmap(overwrite_dtype.map(Arc::new))
-                .map_err(PyPolarsErr::from)?;
-            BatchedReader::MMap(reader)
-        };
+        let reader = reader
+            .batched_mmap(overwrite_dtype.map(Arc::new))
+            .map_err(PyPolarsErr::from)?;
+        let reader = BatchedReader::MMap(reader);
 
         Ok(PyBatchedCsv {
             reader: Mutex::new(reader),
@@ -154,7 +146,6 @@ impl PyBatchedCsv {
                 .map_err(|e| PyPolarsErr::Other(e.to_string()))?;
             match reader {
                 BatchedReader::MMap(reader) => reader.next_batches(n),
-                BatchedReader::Read(reader) => reader.next_batches(n),
             }
             .map_err(PyPolarsErr::from)
         })?;
