@@ -60,7 +60,7 @@ pub enum PyOperator {
 }
 
 #[pyclass(name = "StringFunction")]
-enum PyStringFunction {
+pub enum PyStringFunction {
     ConcatHorizontal,
     ConcatVertical,
     Contains,
