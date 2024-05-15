@@ -248,10 +248,6 @@ impl SeriesTrait for SeriesWrap<StringChunked> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }
 
-    #[cfg(feature = "concat_str")]
-    fn str_concat(&self, delimiter: &str) -> StringChunked {
-        self.0.str_concat(delimiter)
-    }
     fn as_any(&self) -> &dyn Any {
         &self.0
     }

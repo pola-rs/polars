@@ -233,13 +233,11 @@ fn read_without_codec() -> PolarsResult<()> {
     test(Codec::Null)
 }
 
-#[cfg(feature = "io_avro_compression")]
 #[test]
 fn read_deflate() -> PolarsResult<()> {
     test(Codec::Deflate)
 }
 
-#[cfg(feature = "io_avro_compression")]
 #[test]
 fn read_snappy() -> PolarsResult<()> {
     test(Codec::Snappy)

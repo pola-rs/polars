@@ -26,12 +26,14 @@ polars-utils = { workspace = true }
 [dev-dependencies]
 ahash = { workspace = true }
 apache-avro = { version = "0.16", features = ["snappy"] }
+arrow = { workspace = true, features = ["arrow_rs"] }
+arrow-buffer = { workspace = true }
 avro-schema = { workspace = true, features = ["async"] }
 either = { workspace = true }
 ethnum = "1"
 futures = { workspace = true }
 # used to run formal property testing
-proptest = { version = "1", default_features = false, features = ["std"] }
+proptest = { version = "1", default-features = false, features = ["std"] }
 rand = { workspace = true }
 # used to test async readers
 tokio = { workspace = true, features = ["macros", "rt", "fs", "io-util"] }

@@ -9,6 +9,8 @@ use polars_plan::prelude::LiteralValue::Null;
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
 use regex::{Regex, RegexBuilder};
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 #[cfg(feature = "dtype-decimal")]
 use sqlparser::ast::ExactNumberInfo;
 use sqlparser::ast::{

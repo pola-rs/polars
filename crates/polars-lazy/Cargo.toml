@@ -62,18 +62,34 @@ temporal = [
 fmt = ["polars-core/fmt", "polars-plan/fmt"]
 strings = ["polars-plan/strings"]
 future = []
-dtype-u8 = ["polars-plan/dtype-u8", "polars-pipe?/dtype-u8"]
-dtype-u16 = ["polars-plan/dtype-u16", "polars-pipe?/dtype-u16"]
-dtype-i8 = ["polars-plan/dtype-i8", "polars-pipe?/dtype-i8"]
-dtype-i16 = ["polars-plan/dtype-i16", "polars-pipe?/dtype-i16"]
-dtype-decimal = ["polars-plan/dtype-decimal", "polars-pipe?/dtype-decimal"]
-dtype-date = ["polars-plan/dtype-date", "polars-time/dtype-date", "temporal"]
-dtype-datetime = ["polars-plan/dtype-datetime", "polars-time/dtype-datetime", "temporal"]
-dtype-duration = ["polars-plan/dtype-duration", "polars-time/dtype-duration", "temporal"]
-dtype-time = ["polars-plan/dtype-time", "polars-time/dtype-time", "temporal"]
+
+dtype-full = [
+  "dtype-array",
+  "dtype-categorical",
+  "dtype-date",
+  "dtype-datetime",
+  "dtype-decimal",
+  "dtype-duration",
+  "dtype-i16",
+  "dtype-i8",
+  "dtype-struct",
+  "dtype-time",
+  "dtype-u16",
+  "dtype-u8",
+]
 dtype-array = ["polars-plan/dtype-array", "polars-pipe?/dtype-array", "polars-ops/dtype-array"]
 dtype-categorical = ["polars-plan/dtype-categorical", "polars-pipe?/dtype-categorical"]
+dtype-date = ["polars-plan/dtype-date", "polars-time/dtype-date", "temporal"]
+dtype-datetime = ["polars-plan/dtype-datetime", "polars-time/dtype-datetime", "temporal"]
+dtype-decimal = ["polars-plan/dtype-decimal", "polars-pipe?/dtype-decimal"]
+dtype-duration = ["polars-plan/dtype-duration", "polars-time/dtype-duration", "temporal"]
+dtype-i16 = ["polars-plan/dtype-i16", "polars-pipe?/dtype-i16"]
+dtype-i8 = ["polars-plan/dtype-i8", "polars-pipe?/dtype-i8"]
 dtype-struct = ["polars-plan/dtype-struct", "polars-ops/dtype-struct"]
+dtype-time = ["polars-plan/dtype-time", "polars-time/dtype-time", "temporal"]
+dtype-u16 = ["polars-plan/dtype-u16", "polars-pipe?/dtype-u16"]
+dtype-u8 = ["polars-plan/dtype-u8", "polars-pipe?/dtype-u8"]
+
 object = ["polars-plan/object"]
 date_offset = ["polars-plan/date_offset"]
 trigonometry = ["polars-plan/trigonometry"]
@@ -238,18 +254,7 @@ features = [
   "diagonal_concat",
   "diff",
   "dot_diagram",
-  "dtype-array",
-  "dtype-categorical",
-  "dtype-date",
-  "dtype-datetime",
-  "dtype-decimal",
-  "dtype-duration",
-  "dtype-i16",
-  "dtype-i8",
-  "dtype-struct",
-  "dtype-time",
-  "dtype-u16",
-  "dtype-u8",
+  "dtype-full",
   "dynamic_group_by",
   "ewma",
   "extract_groups",

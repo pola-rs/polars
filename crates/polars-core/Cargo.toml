@@ -21,7 +21,7 @@ bitflags = { workspace = true }
 bytemuck = { workspace = true }
 chrono = { workspace = true, optional = true }
 chrono-tz = { workspace = true, optional = true }
-comfy-table = { version = "7.0.1", default_features = false, optional = true }
+comfy-table = { version = "7.0.1", default-features = false, optional = true }
 either = { workspace = true }
 hashbrown = { workspace = true }
 indexmap = { workspace = true }
@@ -33,7 +33,7 @@ rand_distr = { workspace = true, optional = true }
 rayon = { workspace = true }
 regex = { workspace = true, optional = true }
 # activate if you want serde support for Series and DataFrames
-serde = { workspace = true, features = ["derive"], optional = true }
+serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 smartstring = { workspace = true }
 thiserror = { workspace = true }

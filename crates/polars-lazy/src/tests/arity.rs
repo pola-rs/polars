@@ -39,27 +39,26 @@ fn test_pearson_corr() -> PolarsResult<()> {
 // TODO! fix this we must get a token that prevents resetting the string cache until the plan has
 // finished running. We cannot store a mutexguard in the executionstate because they don't implement
 // send.
-#[test]
-#[cfg(feature = "ignore")]
-fn test_single_thread_when_then_otherwise_categorical() -> PolarsResult<()> {
-    let df = df!["col1"=> ["a", "b", "a", "b"],
-        "col2"=> ["a", "a", "b", "b"],
-        "col3"=> ["same", "same", "same", "same"]
-    ]?;
+// #[test]
+// fn test_single_thread_when_then_otherwise_categorical() -> PolarsResult<()> {
+//     let df = df!["col1"=> ["a", "b", "a", "b"],
+//         "col2"=> ["a", "a", "b", "b"],
+//         "col3"=> ["same", "same", "same", "same"]
+//     ]?;
 
-    let out = df
-        .lazy()
-        .with_column(col("*").cast(DataType::Categorical))
-        .select([when(col("col1").eq(col("col2")))
-            .then(col("col3"))
-            .otherwise(col("col1"))])
-        .collect()?;
-    let col = out.column("col3")?;
-    assert_eq!(col.dtype(), &DataType::Categorical);
-    let s = format!("{}", col);
-    assert!(s.contains("same"));
-    Ok(())
-}
+//     let out = df
+//         .lazy()
+//         .with_column(col("*").cast(DataType::Categorical))
+//         .select([when(col("col1").eq(col("col2")))
+//             .then(col("col3"))
+//             .otherwise(col("col1"))])
+//         .collect()?;
+//     let col = out.column("col3")?;
+//     assert_eq!(col.dtype(), &DataType::Categorical);
+//     let s = format!("{}", col);
+//     assert!(s.contains("same"));
+//     Ok(())
+// }
 
 #[test]
 fn test_lazy_ternary() {

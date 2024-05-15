@@ -9,8 +9,6 @@ use crate::chunked_array::{AsSinglePtr, Settings};
 use crate::frame::group_by::*;
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
-#[cfg(feature = "chunked_ids")]
-use crate::series::IsSorted;
 
 impl private::PrivateSeries for SeriesWrap<ArrayChunked> {
     fn compute_len(&mut self) {
