@@ -41,6 +41,7 @@ from polars._utils.parse_expr_input import (
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
     _in_notebook,
+    _is_generator,
     is_bool_sequence,
     is_sequence,
     normalize_filepath,
@@ -2798,7 +2799,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 return self.clear()  # type: ignore[return-value]
             elif p is True:
                 continue  # no-op; matches all rows
-            elif is_bool_sequence(p, include_series=True):
+            if _is_generator(p):
+                p = tuple(p)
+            if is_bool_sequence(p, include_series=True):
                 boolean_masks.append(pl.Series(p, dtype=Boolean))
             elif (
                 (is_seq := is_sequence(p))
