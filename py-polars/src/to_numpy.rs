@@ -59,19 +59,22 @@ impl PySeries {
     /// appropriately.
     #[allow(clippy::wrong_self_convention)]
     pub fn to_numpy_view(&self, py: Python) -> Option<PyObject> {
-        series_to_numpy_view(py, &self.series)
+        series_to_numpy_view(py, &self.series, true)
     }
 }
 
-fn series_to_numpy_view(py: Python, s: &Series) -> Option<PyObject> {
+pub(crate) fn series_to_numpy_view(py: Python, s: &Series, allow_nulls: bool) -> Option<PyObject> {
     // NumPy arrays are always contiguous
     if s.n_chunks() > 1 {
+        return None;
+    }
+    if !allow_nulls && s.null_count() > 0 {
         return None;
     }
     let view = match s.dtype() {
         dt if dt.is_numeric() => numeric_series_to_numpy_view(py, s),
         DataType::Datetime(_, _) | DataType::Duration(_) => temporal_series_to_numpy_view(py, s),
-        DataType::Array(_, _) => array_series_to_numpy_view(py, s)?,
+        DataType::Array(_, _) => array_series_to_numpy_view(py, s, allow_nulls)?,
         _ => return None,
     };
     Some(view)
@@ -144,10 +147,10 @@ fn polars_dtype_to_np_temporal_dtype<'a>(
         _ => panic!("only Datetime/Duration inputs supported, got {}", dtype),
     }
 }
-fn array_series_to_numpy_view(py: Python, s: &Series) -> Option<PyObject> {
+fn array_series_to_numpy_view(py: Python, s: &Series, allow_nulls: bool) -> Option<PyObject> {
     let ca = s.array().unwrap();
-    let s_inner: PySeries = ca.get_inner().into();
-    let np_array_flat = s_inner.to_numpy_view(py)?;
+    let s_inner = ca.get_inner();
+    let np_array_flat = series_to_numpy_view(py, &s_inner, allow_nulls)?;
 
     // Reshape to the original shape.
     let DataType::Array(_, width) = s.dtype() else {
