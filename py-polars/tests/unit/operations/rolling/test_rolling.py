@@ -1021,6 +1021,19 @@ def test_temporal_windows_size_without_by_15977() -> None:
             df.select(pl.col("a").rolling_mean("3d"))
 
 
+def test_incorrect_nulls_16246() -> None:
+    df = pl.concat(
+        [
+            pl.DataFrame({"a": [datetime(2020, 1, 1)], "b": [1]}),
+            pl.DataFrame({"a": [datetime(2021, 1, 1)], "b": [1]}),
+        ],
+        rechunk=False,
+    )
+    result = df.select(pl.col("b").rolling_max_by("a", "1d"))
+    expected = pl.DataFrame({"b": [1, 1]})
+    assert_frame_equal(result, expected)
+
+
 def interval_defs() -> SearchStrategy[ClosedInterval]:
     closed: list[ClosedInterval] = ["left", "right", "both", "none"]
     return st.sampled_from(closed)
