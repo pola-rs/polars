@@ -37,7 +37,9 @@ use polars_plan::global::FETCH_ROWS;
 use smartstring::alias::String as SmartString;
 
 use crate::physical_plan::executors::Executor;
-use crate::physical_plan::planner::{create_physical_expr, create_physical_plan};
+use crate::physical_plan::planner::{
+    create_physical_expr, create_physical_plan, ExpressionConversionState,
+};
 use crate::physical_plan::state::ExecutionState;
 #[cfg(feature = "streaming")]
 use crate::physical_plan::streaming::insert_streaming_nodes;
@@ -571,7 +573,7 @@ impl LazyFrame {
                     Context::Default,
                     expr_arena,
                     None,
-                    &mut Default::default(),
+                    &mut ExpressionConversionState::new(true, 0),
                 )
                 .ok()?;
                 let io_expr = phys_expr_to_io_expr(phys_expr);
