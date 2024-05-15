@@ -4,6 +4,7 @@ use polars_core::error::*;
 #[cfg(feature = "regex")]
 use regex::Regex;
 
+use crate::constants;
 use crate::logical_plan::alp::IRPlanRef;
 use crate::logical_plan::visitor::{VisitRecursion, Visitor};
 use crate::prelude::alp::format::ColumnsDisplay;
@@ -15,6 +16,68 @@ pub struct TreeFmtNode<'a> {
     content: TreeFmtNodeContent<'a>,
 
     lp: IRPlanRef<'a>,
+}
+
+pub struct TreeFmtAExpr<'a>(&'a AExpr);
+
+/// Hack UpperExpr trait to get a kind of formatting that doesn't traverse the nodes.
+/// So we can format with {foo:E}
+impl fmt::Display for TreeFmtAExpr<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self.0 {
+            AExpr::Explode(_) => "explode",
+            AExpr::Alias(_, name) => return write!(f, "alias({})", name.as_ref()),
+            AExpr::Column(name) => return write!(f, "col({})", name.as_ref()),
+            AExpr::Literal(lv) => return write!(f, "lit({lv:?})"),
+            AExpr::BinaryExpr { op, .. } => return write!(f, "binary: {}", op),
+            AExpr::Cast {
+                data_type, strict, ..
+            } => {
+                return if *strict {
+                    write!(f, "strict cast({})", data_type)
+                } else {
+                    write!(f, "cast({})", data_type)
+                }
+            },
+            AExpr::Sort { options, .. } => {
+                return write!(
+                    f,
+                    "sort: {}{}{}",
+                    options.descending as u8, options.nulls_last as u8, options.multithreaded as u8
+                )
+            },
+            AExpr::Gather { .. } => "gather",
+            AExpr::SortBy { sort_options, .. } => {
+                write!(f, "sort_by:")?;
+                for i in &sort_options.descending {
+                    write!(f, "{}", *i as u8)?;
+                }
+                write!(
+                    f,
+                    "{}{}",
+                    sort_options.nulls_last as u8, sort_options.multithreaded as u8
+                )?;
+                return Ok(());
+            },
+            AExpr::Filter { .. } => "filter",
+            AExpr::Agg(a) => {
+                let s: &str = a.into();
+                return write!(f, "{}", s.to_lowercase());
+            },
+            AExpr::Ternary { .. } => "ternary",
+            AExpr::AnonymousFunction { options, .. } => {
+                return write!(f, "anonymous_function: {}", options.fmt_str)
+            },
+            AExpr::Function { function, .. } => return write!(f, "function: {function}"),
+            AExpr::Window { .. } => "window",
+            AExpr::Wildcard => "*",
+            AExpr::Slice { .. } => "slice",
+            AExpr::Len => constants::LEN,
+            AExpr::Nth(v) => return write!(f, "nth({})", v),
+        };
+
+        write!(f, "{s}")
+    }
 }
 
 pub enum TreeFmtNodeContent<'a> {
@@ -312,12 +375,8 @@ impl Visitor for TreeFmtVisitor {
         node: &Self::Node,
         arena: &Self::Arena,
     ) -> PolarsResult<VisitRecursion> {
-        let expr = ExprIRDisplay {
-            node: node.node(),
-            output_name: &OutputName::None,
-            expr_arena: arena,
-        };
-        let repr = expr.to_string();
+        let repr = TreeFmtAExpr(arena.get(node.node()));
+        let repr = repr.to_string();
 
         if self.levels.len() <= self.depth {
             self.levels.push(vec![])
