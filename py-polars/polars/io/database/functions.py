@@ -55,6 +55,20 @@ def read_database(
 ) -> Iterable[DataFrame]: ...
 
 
+@overload
+def read_database(
+    query: str | Selectable,
+    connection: ConnectionOrCursor | str,
+    *,
+    iter_batches: bool,
+    batch_size: int | None = ...,
+    schema_overrides: SchemaDict | None = ...,
+    infer_schema_length: int | None = ...,
+    execute_options: dict[str, Any] | None = ...,
+    **kwargs: Any,
+) -> DataFrame | Iterable[DataFrame]: ...
+
+
 def read_database(  # noqa: D417
     query: str | Selectable,
     connection: ConnectionOrCursor | str,
