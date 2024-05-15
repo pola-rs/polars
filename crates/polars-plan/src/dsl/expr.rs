@@ -71,7 +71,7 @@ pub enum Expr {
     Column(ColumnName),
     Columns(Arc<[ColumnName]>),
     DtypeColumn(Vec<DataType>),
-    IndexColumn(Arc<[i32]>),
+    IndexColumn(Arc<[i64]>),
     Literal(LiteralValue),
     BinaryExpr {
         left: Arc<Expr>,

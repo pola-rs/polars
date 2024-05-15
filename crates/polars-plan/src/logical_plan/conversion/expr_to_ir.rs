@@ -349,7 +349,7 @@ fn to_aexpr_impl(expr: Expr, arena: &mut Arena<AExpr>, state: &mut ConversionSta
         Expr::Nth(i) => AExpr::Nth(i),
         Expr::IndexColumn(idx) => {
             if idx.len() == 1 {
-                AExpr::Nth(idx[0].into())
+                AExpr::Nth(idx[0])
             } else {
                 panic!("no multi-value `index-columns` expected at this point")
             }

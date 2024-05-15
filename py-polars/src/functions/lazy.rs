@@ -332,13 +332,13 @@ pub fn dtype_cols(dtypes: Vec<Wrap<DataType>>) -> PyResult<PyExpr> {
 }
 
 #[pyfunction]
-pub fn index_cols(indices: Vec<i32>) -> PyResult<PyExpr> {
-    Ok(if indices.len() == 1 {
-        dsl::nth(indices[0].into())
+pub fn index_cols(indices: Vec<i64>) -> PyExpr {
+    if indices.len() == 1 {
+        dsl::nth(indices[0])
     } else {
         dsl::index_cols(indices)
     }
-    .into())
+    .into()
 }
 
 #[pyfunction]

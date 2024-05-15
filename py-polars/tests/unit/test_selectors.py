@@ -71,6 +71,10 @@ def test_selector_by_dtype(df: pl.DataFrame) -> None:
     assert df.select(cs.by_dtype()).schema == {}
     assert df.select(cs.by_dtype([])).schema == {}
 
+    # expected errors
+    with pytest.raises(TypeError):
+        df.select(cs.by_dtype(999))  # type: ignore[arg-type]
+
 
 def test_selector_by_index(df: pl.DataFrame) -> None:
     # one or more +ve indexes
@@ -126,8 +130,12 @@ def test_selector_by_name(df: pl.DataFrame) -> None:
     assert df.select(cs.by_name()).columns == []
     assert df.select(cs.by_name([])).columns == []
 
+    # expected errors
     with pytest.raises(ColumnNotFoundError):
         df.select(cs.by_name("stroopwafel"))
+
+    with pytest.raises(TypeError):
+        df.select(cs.by_name(999))  # type: ignore[arg-type]
 
 
 def test_selector_contains(df: pl.DataFrame) -> None:
@@ -146,6 +154,10 @@ def test_selector_contains(df: pl.DataFrame) -> None:
         "qqR",
     ]
     assert df.select(cs.contains(("ee", "x"))).columns == ["eee"]
+
+    # expected errors
+    with pytest.raises(TypeError):
+        df.select(cs.contains(999))  # type: ignore[arg-type]
 
 
 def test_selector_datetime(df: pl.DataFrame) -> None:
@@ -233,6 +245,10 @@ def test_selector_datetime(df: pl.DataFrame) -> None:
         == df.select(~cs.datetime(["ms", "ns"], time_zone="*")).columns
     )
 
+    # expected errors
+    with pytest.raises(TypeError):
+        df.select(cs.datetime(999))  # type: ignore[arg-type]
+
 
 def test_select_decimal(df: pl.DataFrame) -> None:
     assert df.select(cs.decimal()).columns == []
@@ -287,6 +303,10 @@ def test_selector_ends_with(df: pl.DataFrame) -> None:
         "JJK",
         "qqR",
     ]
+
+    # expected errors
+    with pytest.raises(TypeError):
+        df.select(cs.ends_with(999))  # type: ignore[arg-type]
 
 
 def test_selector_first_last(df: pl.DataFrame) -> None:
@@ -388,6 +408,9 @@ def test_selector_startswith(df: pl.DataFrame) -> None:
         "opp",
         "qqR",
     ]
+    # expected errors
+    with pytest.raises(TypeError):
+        df.select(cs.starts_with(999))  # type: ignore[arg-type]
 
 
 def test_selector_temporal(df: pl.DataFrame) -> None:

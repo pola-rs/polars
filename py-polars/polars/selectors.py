@@ -4,7 +4,7 @@ import re
 from datetime import timezone
 from functools import reduce
 from operator import or_
-from typing import TYPE_CHECKING, Any, Collection, Literal, Mapping, overload
+from typing import TYPE_CHECKING, Any, Collection, Literal, Mapping, Sequence, overload
 
 from polars import functions as F
 from polars._utils.deprecation import deprecate_nonkeyword_arguments
@@ -596,7 +596,7 @@ def by_dtype(
     )
 
 
-def by_index(*indices: int | range | Collection[int | range]) -> SelectorType:
+def by_index(*indices: int | range | Sequence[int | range]) -> SelectorType:
     """
     Select all columns matching the given indices (or range objects).
 
@@ -677,22 +677,12 @@ def by_index(*indices: int | range | Collection[int | range]) -> SelectorType:
     │ abc ┆ 0.5 ┆ 1.5 ┆ 2.5 ┆ … ┆ 46.5 ┆ 47.5 ┆ 48.5 ┆ 49.5 │
     └─────┴─────┴─────┴─────┴───┴──────┴──────┴──────┴──────┘
     """
-    all_indices = []
+    all_indices: list[int] = []
     for idx in indices:
-        if isinstance(idx, int):
-            all_indices.append(idx)
-        elif isinstance(idx, range):
-            all_indices.extend(idx)
-        elif isinstance(idx, Collection):
-            for i in idx:
-                if isinstance(i, int):
-                    all_indices.append(i)
-                else:
-                    msg = f"invalid index: {i!r}"
-                    raise TypeError(msg)
+        if isinstance(idx, (range, Sequence)):
+            all_indices.extend(idx)  # type: ignore[arg-type]
         else:
-            msg = f"invalid index: {idx!r}"
-            raise TypeError(msg)
+            all_indices.append(idx)
 
     return _selector_proxy_(
         F.nth(all_indices), name="by_index", parameters={"*indices": indices}
@@ -762,7 +752,8 @@ def by_name(*names: str | Collection[str]) -> SelectorType:
                     raise TypeError(msg)
                 all_names.append(n)
         else:
-            TypeError(f"Invalid name: {nm!r}")
+            msg = f"invalid name: {nm!r}"
+            raise TypeError(msg)
 
     return _selector_proxy_(
         F.col(all_names), name="by_name", parameters={"*names": all_names}

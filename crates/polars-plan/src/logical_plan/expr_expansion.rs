@@ -304,10 +304,10 @@ fn expand_indices(
     expr: &Expr,
     result: &mut Vec<Expr>,
     schema: &Schema,
-    indices: &[i32],
+    indices: &[i64],
     exclude: &PlHashSet<Arc<str>>,
 ) -> PolarsResult<()> {
-    let n_fields = schema.len() as i32;
+    let n_fields = schema.len() as i64;
     for idx in indices {
         let mut idx = *idx;
         if idx < 0 {
