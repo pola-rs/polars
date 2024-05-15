@@ -7,7 +7,7 @@ from contextlib import suppress
 from datetime import date
 from pathlib import Path
 from types import GeneratorType
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple, cast
 
 import pyarrow as pa
 import pytest
@@ -469,7 +469,7 @@ def test_read_database_mocked(
             "repeat_batch_calls", False
         ),
     )
-    res = pl.read_database(  # type: ignore[call-overload]
+    res = pl.read_database(
         query="SELECT * FROM test_data",
         connection=mc,
         iter_batches=iter_batches,
@@ -479,6 +479,7 @@ def test_read_database_mocked(
         assert isinstance(res, GeneratorType)
         res = pl.concat(res)
 
+    res = cast(pl.DataFrame, res)
     assert expected_call in mc.cursor().called
     assert res.rows() == [(1, "aa"), (2, "bb"), (3, "cc")]
 
