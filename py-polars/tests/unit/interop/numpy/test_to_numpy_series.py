@@ -224,12 +224,13 @@ def test_series_to_numpy_bool_with_nulls() -> None:
 
 def test_series_to_numpy_array_of_int() -> None:
     values = [[[1, 2, 3], [4, 5, 6]], [[7, 8, 9], [10, 11, 12]]]
-    s = pl.Series(values, dtype=pl.Array(pl.Array(pl.Int64, 3), 2))
+    s = pl.Series(values, dtype=pl.Array(pl.Array(pl.Int8, 3), 2))
     result = s.to_numpy(use_pyarrow=False, allow_copy=False)
 
     expected = np.array(values)
     assert_array_equal(result, expected)
-    assert result.dtype == np.int64
+    assert result.dtype == np.int8
+    assert result.shape == (2, 2, 3)
 
 
 def test_series_to_numpy_array_of_str() -> None:
@@ -270,6 +271,7 @@ def test_series_to_numpy_array_of_arrays() -> None:
     expected = np.array([[[np.nan, 2], [3, 4]], [[np.nan, np.nan], [7, 8]]])
     assert_array_equal(result, expected)
     assert result.dtype == np.float64
+    assert result.shape == (2, 2, 2)
     assert_allow_copy_false_raises(s)
 
 
