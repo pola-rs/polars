@@ -2130,3 +2130,25 @@ def test_no_glob(tmpdir: Path) -> None:
     df.write_csv(str(p))
     p = tmpdir / "*.csv"
     assert_frame_equal(pl.read_csv(str(p), glob=False), df)
+
+
+def test_csv_low_memory_read_no_data_16010(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    path = tmp_path / "data.csv"
+    df = pl.select(a=pl.repeat(1, 2049, dtype=pl.Int64))
+    df.write_csv(path)
+
+    reader = pl.read_csv_batched(path, low_memory=True)
+
+    batches = []
+    while batch := reader.next_batches(1):
+        batches.extend(batch)
+
+    assert batches
+    out = pl.concat(batches)
+    assert_frame_equal(out, df)
+
+    for streaming in [True, False]:
+        out = pl.scan_csv(path, low_memory=True).collect(streaming=streaming)
+        assert_frame_equal(out, df)
