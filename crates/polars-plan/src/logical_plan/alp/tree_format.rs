@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::fmt;
 
 use polars_core::error::*;
@@ -34,7 +33,7 @@ fn with_header(header: &Option<String>, text: &str) -> String {
 }
 
 #[cfg(feature = "regex")]
-fn multiline_expression(expr: &str) -> Cow<'_, str> {
+fn multiline_expression(expr: &str) -> std::borrow::Cow<'_, str> {
     let re = Regex::new(r"([\)\]])(\.[a-z0-9]+\()").unwrap();
     re.replace_all(expr, "$1\n  $2")
 }
@@ -313,8 +312,12 @@ impl Visitor for TreeFmtVisitor {
         node: &Self::Node,
         arena: &Self::Arena,
     ) -> PolarsResult<VisitRecursion> {
-        let ae = node.to_aexpr(arena);
-        let repr = format!("{:E}", ae);
+        let expr = ExprIRDisplay {
+            node: node.node(),
+            output_name: &OutputName::None,
+            expr_arena: arena,
+        };
+        let repr = expr.to_string();
 
         if self.levels.len() <= self.depth {
             self.levels.push(vec![])

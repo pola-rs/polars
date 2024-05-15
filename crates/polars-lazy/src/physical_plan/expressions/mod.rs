@@ -341,7 +341,7 @@ impl<'a> AggregationContext<'a> {
             (true, &DataType::List(_)) => {
                 if series.len() != self.groups.len() {
                     let fmt_expr = if let Some(e) = expr {
-                        format!("'{e}' ")
+                        format!("'{e:?}' ")
                     } else {
                         String::new()
                     };
@@ -589,7 +589,7 @@ impl Display for &dyn PhysicalExpr {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self.as_expression() {
             None => Ok(()),
-            Some(e) => write!(f, "{e}"),
+            Some(e) => write!(f, "{e:?}"),
         }
     }
 }

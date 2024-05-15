@@ -5,7 +5,6 @@
 extern crate core;
 
 pub mod constants;
-pub mod dot;
 pub mod dsl;
 pub mod frame;
 pub mod global;

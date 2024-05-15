@@ -3,6 +3,7 @@ use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
 
+use polars_core::datatypes::AnyValue;
 use polars_core::schema::Schema;
 use recursive::recursive;
 
@@ -310,7 +311,11 @@ impl<'a> IRDisplay<'a> {
                 let total_columns = self.0.lp_arena.get(*input).schema(self.0.lp_arena).len();
 
                 let columns = ColumnsDisplay(columns.as_ref());
-                write!(f, "{:indent$}simple π {num_columns}/{total_columns} [{columns}]", "")?;
+                write!(
+                    f,
+                    "{:indent$}simple π {num_columns}/{total_columns} [{columns}]",
+                    ""
+                )?;
 
                 self.with_root(*input)._format(f, sub_indent)
             },
@@ -345,6 +350,14 @@ impl<'a> IRDisplay<'a> {
 }
 
 impl<'a> ExprIRDisplay<'a> {
+    pub(crate) fn new(expr_ir: &'a ExprIR, expr_arena: &'a Arena<AExpr>) -> Self {
+        Self {
+            node: expr_ir.node(),
+            output_name: expr_ir.output_name_inner(),
+            expr_arena,
+        }
+    }
+
     fn with_slice<T: AsExpr>(&self, exprs: &'a [T]) -> ExprIRSliceDisplay<'a, T> {
         ExprIRSliceDisplay {
             exprs,
@@ -608,7 +621,7 @@ impl fmt::Display for ColumnsDisplay<'_> {
 
         if let Some(fst) = iter_names.next() {
             write!(f, "\"{fst}\"")?;
-            
+
             if len > 0 {
                 write!(f, ", ... {len} other columns")?;
             }
@@ -618,37 +631,36 @@ impl fmt::Display for ColumnsDisplay<'_> {
     }
 }
 
+impl fmt::Debug for Operator {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        Display::fmt(self, f)
+    }
+}
 
-// impl fmt::Debug for Operator {
-//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-//         Display::fmt(self, f)
-//     }
-// }
-//
-// impl fmt::Debug for LiteralValue {
-//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-//         use LiteralValue::*;
-//
-//         match self {
-//             Binary(_) => write!(f, "[binary value]"),
-//             Range { low, high, .. } => write!(f, "range({low}, {high})"),
-//             Series(s) => {
-//                 let name = s.name();
-//                 if name.is_empty() {
-//                     write!(f, "Series")
-//                 } else {
-//                     write!(f, "Series[{name}]")
-//                 }
-//             },
-//             Float(v) => {
-//                 let av = AnyValue::Float64(*v);
-//                 write!(f, "dyn float: {}", av)
-//             },
-//             Int(v) => write!(f, "dyn int: {}", v),
-//             _ => {
-//                 let av = self.to_any_value().unwrap();
-//                 write!(f, "{av}")
-//             },
-//         }
-//     }
-// }
+impl fmt::Debug for LiteralValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use LiteralValue::*;
+
+        match self {
+            Binary(_) => write!(f, "[binary value]"),
+            Range { low, high, .. } => write!(f, "range({low}, {high})"),
+            Series(s) => {
+                let name = s.name();
+                if name.is_empty() {
+                    write!(f, "Series")
+                } else {
+                    write!(f, "Series[{name}]")
+                }
+            },
+            Float(v) => {
+                let av = AnyValue::Float64(*v);
+                write!(f, "dyn float: {}", av)
+            },
+            Int(v) => write!(f, "dyn int: {}", v),
+            _ => {
+                let av = self.to_any_value().unwrap();
+                write!(f, "{av}")
+            },
+        }
+    }
+}

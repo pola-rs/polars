@@ -2,7 +2,7 @@ mod dot;
 mod format;
 mod inputs;
 mod schema;
-mod tree_format;
+pub(crate) mod tree_format;
 
 use std::borrow::Cow;
 use std::fmt;
@@ -158,7 +158,7 @@ impl IRPlan {
         self.lp_arena.get(self.lp_top)
     }
 
-    fn as_ref(&self) -> IRPlanRef {
+    pub fn as_ref(&self) -> IRPlanRef {
         IRPlanRef {
             lp_top: self.lp_top,
             lp_arena: &self.lp_arena,

@@ -520,8 +520,7 @@ impl LazyFrame {
     }
 
     pub fn to_alp(self) -> PolarsResult<IRPlan> {
-        let (node, lp_arena, expr_arena) = self.logical_plan.to_alp()?;
-        Ok(IRPlan::new(node, lp_arena, expr_arena))
+        self.logical_plan.to_alp()
     }
 
     pub(crate) fn optimize_with_scratch(

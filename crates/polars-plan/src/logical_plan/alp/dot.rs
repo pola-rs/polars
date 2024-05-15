@@ -138,20 +138,20 @@ impl<'a> IRDotDisplay<'a> {
             Sort {
                 input, by_column, ..
             } => {
-                let by_column = self.display_exprs(&by_column);
+                let by_column = self.display_exprs(by_column);
                 self.with_root(*input)._format(f, Some(id), last)?;
                 write_label(f, id, |f| write!(f, "SORT BY {by_column}"))?;
             },
             GroupBy {
                 input, keys, aggs, ..
             } => {
-                let keys = self.display_exprs(&keys);
-                let aggs = self.display_exprs(&aggs);
+                let keys = self.display_exprs(keys);
+                let aggs = self.display_exprs(aggs);
                 self.with_root(*input)._format(f, Some(id), last)?;
                 write_label(f, id, |f| write!(f, "AGG {aggs}\nBY\n{keys}"))?;
             },
             HStack { input, exprs, .. } => {
-                let exprs = self.display_exprs(&exprs);
+                let exprs = self.display_exprs(exprs);
                 self.with_root(*input)._format(f, Some(id), last)?;
                 write_label(f, id, |f| write!(f, "WITH COLUMNS {exprs}"))?;
             },
@@ -231,8 +231,8 @@ impl<'a> IRDotDisplay<'a> {
                 self.with_root(*input_left)._format(f, Some(id), last)?;
                 self.with_root(*input_right)._format(f, Some(id), last)?;
 
-                let left_on = self.display_exprs(&left_on);
-                let right_on = self.display_exprs(&right_on);
+                let left_on = self.display_exprs(left_on);
+                let right_on = self.display_exprs(right_on);
 
                 write_label(f, id, |f| {
                     write!(
@@ -270,7 +270,9 @@ impl<'a> IRDotDisplay<'a> {
 
                 let columns = ColumnsDisplay(columns.as_ref());
                 self.with_root(*input)._format(f, Some(id), last)?;
-                write_label(f, id, |f| write!(f, "simple π {num_columns}/{total_columns}\n[{columns}]"))?;
+                write_label(f, id, |f| {
+                    write!(f, "simple π {num_columns}/{total_columns}\n[{columns}]")
+                })?;
             },
             Invalid => write_label(f, id, |f| f.write_str("INVALID"))?,
         }
