@@ -8,7 +8,15 @@ import warnings
 from collections.abc import MappingView, Sized
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Generator, Iterable, Literal, Sequence, TypeVar
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Generator,
+    Iterable,
+    Literal,
+    Sequence,
+    TypeVar,
+)
 
 import polars as pl
 from polars import functions as F
@@ -275,74 +283,74 @@ def _cast_repr_strings_with_schema(
             )
         )
 
-    def int_cast_(data: Expr) -> Expr:
-        int_string = data.str.replace_all(r"[^\d+-]", "")
-        return pl.when(int_string.str.len_bytes() > 0).then(int_string)
-
-    def float_cast_(data: Expr) -> Expr:
-        # identify integer/fractional parts
-        integer_part = data.str.replace(r"^(.*)\D(\d*)$", "$1")
-        fractional_part = data.str.replace(r"^(.*)\D(\d*)$", "$2")
-        return (
-            # check for empty string and/or integer format
-            pl.when(data.str.contains(r"^[+-]?\d*$"))
-            .then(pl.when(data.str.len_bytes() > 0).then(data))
-            # check for scientific notation
-            .when(data.str.contains("[eE]"))
-            .then(data.str.replace(r"[^eE\d]", "."))
-            .otherwise(
-                # recombine sanitised integer/fractional components
-                pl.concat_str(
-                    integer_part.str.replace_all(r"[^\d+-]", ""),
-                    fractional_part,
-                    separator=".",
-                )
+    def cast_cols_expr_(c: str, tp: PolarsDataType) -> Expr:
+        if tp.base_type() == Datetime:
+            tp_base = Datetime(tp.time_unit)  # type: ignore[union-attr]
+            d = F.col(c).str.replace(r"[A-Z ]+$", "")
+            expr = (
+                F.when(d.str.len_bytes() == 19)
+                .then(d + ".000000000")
+                .otherwise(d + "000000000")
+                .str.slice(0, 29)
+                .str.strptime(tp_base, "%Y-%m-%d %H:%M:%S.%9f")
             )
-            .cast(String)
-        )
+            if getattr(tp, "time_zone", None) is not None:
+                expr = expr.dt.replace_time_zone(tp.time_zone)  # type: ignore[union-attr]
+            return expr
+        elif tp == Date:
+            return F.col(c).str.strptime(tp, "%Y-%m-%d")  # type: ignore[arg-type]
+        elif tp == Time:
+            return (
+                F.when(F.col(c).str.len_bytes() == 8)
+                .then(F.col(c) + ".000000000")
+                .otherwise(F.col(c) + "000000000")
+                .str.slice(0, 18)
+                .str.strptime(tp, "%H:%M:%S.%9f")  # type: ignore[arg-type]
+            )
+        elif tp == Duration:
+            return (
+                F.col(c)
+                .apply(str_duration_, return_dtype=Int64)
+                .cast(Duration("ns"))
+                .cast(tp)
+            )
+        elif tp == Boolean:
+            return F.col(c).replace(
+                {"true": True, "false": False},
+                default=None,
+            )
+        elif tp in INTEGER_DTYPES:
+            int_string = F.col(c).str.replace_all(r"[^\d+-]", "")
+            return (pl.when(int_string.str.len_bytes() > 0).then(int_string)).cast(tp)
+        elif tp in FLOAT_DTYPES or tp.base_type() == Decimal:
+            # identify integer/fractional parts
+            integer_part = F.col(c).str.replace(r"^(.*)\D(\d*)$", "$1")
+            fractional_part = F.col(c).str.replace(r"^(.*)\D(\d*)$", "$2")
+            return (
+                # check for empty string and/or integer format
+                pl.when(F.col(c).str.contains(r"^[+-]?\d*$"))
+                .then(pl.when(F.col(c).str.len_bytes() > 0).then(F.col(c)))
+                # check for scientific notation
+                .when(F.col(c).str.contains("[eE]"))
+                .then(F.col(c).str.replace(r"[^eE\d]", "."))
+                .otherwise(
+                    # recombine sanitised integer/fractional components
+                    pl.concat_str(
+                        integer_part.str.replace_all(r"[^\d+-]", ""),
+                        fractional_part,
+                        separator=".",
+                    )
+                )
+                .cast(String)
+                .cast(tp)
+            )
+        else:  # tp != df.schema[c]:
+            return F.col(c).cast(tp)
 
     cast_cols = {}
     for c, tp in schema.items():
         if tp is not None:
-            if tp.base_type() == Datetime:
-                tp_base = Datetime(tp.time_unit)  # type: ignore[union-attr]
-                d = F.col(c).str.replace(r"[A-Z ]+$", "")
-                cast_cols[c] = (
-                    F.when(d.str.len_bytes() == 19)
-                    .then(d + ".000000000")
-                    .otherwise(d + "000000000")
-                    .str.slice(0, 29)
-                    .str.strptime(tp_base, "%Y-%m-%d %H:%M:%S.%9f")
-                )
-                if getattr(tp, "time_zone", None) is not None:
-                    cast_cols[c] = cast_cols[c].dt.replace_time_zone(tp.time_zone)  # type: ignore[union-attr]
-            elif tp == Date:
-                cast_cols[c] = F.col(c).str.strptime(tp, "%Y-%m-%d")  # type: ignore[arg-type]
-            elif tp == Time:
-                cast_cols[c] = (
-                    F.when(F.col(c).str.len_bytes() == 8)
-                    .then(F.col(c) + ".000000000")
-                    .otherwise(F.col(c) + "000000000")
-                    .str.slice(0, 18)
-                    .str.strptime(tp, "%H:%M:%S.%9f")  # type: ignore[arg-type]
-                )
-            elif tp == Duration:
-                cast_cols[c] = (
-                    F.col(c)
-                    .apply(str_duration_, return_dtype=Int64)
-                    .cast(Duration("ns"))
-                    .cast(tp)
-                )
-            elif tp == Boolean:
-                cast_cols[c] = F.col(c).replace(
-                    {"true": True, "false": False},
-                    default=None,
-                )
-            elif tp in INTEGER_DTYPES:
-                cast_cols[c] = int_cast_(F.col(c)).cast(tp)
-            elif tp in FLOAT_DTYPES or tp.base_type() == Decimal:
-                cast_cols[c] = float_cast_(F.col(c)).cast(tp)
-            elif tp.base_type() == List:
+            if tp.base_type() == List:
                 cast_cols[c] = (
                     F.col(c)
                     .map_elements(
@@ -350,14 +358,12 @@ def _cast_repr_strings_with_schema(
                         return_dtype=tp.base_type()(String),
                     )
                     .list.eval(
-                        int_cast_(pl.element())
-                        if tp.inner in INTEGER_DTYPES  # type: ignore[union-attr]
-                        else float_cast_(pl.element())
+                        cast_cols_expr_("", tp.inner)  # type: ignore[union-attr]
                     )
                     .cast(tp)
                 )
-            elif tp != df.schema[c]:
-                cast_cols[c] = F.col(c).cast(tp)
+            else:
+                cast_cols[c] = cast_cols_expr_(c, tp)
 
     return df.with_columns(**cast_cols) if cast_cols else df
 
