@@ -78,6 +78,7 @@ from polars.datatypes import (
     UInt32,
     UInt64,
     Unknown,
+    dtype_to_init_repr,
     is_polars_dtype,
     maybe_cast,
     numpy_char_code_to_dtype,
@@ -4438,9 +4439,8 @@ class Series:
             4
         ]
         """
-        return (
-            f'pl.Series("{self.name}", {self.head(n).to_list()}, dtype=pl.{self.dtype})'
-        )
+        dtype_init_repr = dtype_to_init_repr(self.dtype, prefix="pl.")
+        return f'pl.Series("{self.name}", {self.head(n).to_list()}, dtype={dtype_init_repr})'
 
     def count(self) -> int:
         """

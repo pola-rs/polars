@@ -54,6 +54,7 @@ from polars.datatypes.constructor import (
 )
 from polars.datatypes.convert import (
     dtype_to_ffiname,
+    dtype_to_init_repr,
     dtype_to_py_type,
     is_polars_dtype,
     maybe_cast,
@@ -127,6 +128,7 @@ __all__ = [
     # convert
     "dtype_to_ffiname",
     "dtype_to_py_type",
+    "dtype_to_init_repr",
     "is_polars_dtype",
     "maybe_cast",
     "numpy_char_code_to_dtype",

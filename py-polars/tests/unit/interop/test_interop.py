@@ -909,16 +909,51 @@ def test_to_init_repr() -> None:
                         datetime(2023, 10, 12, 20, 3, 8, 11),
                         None,
                     ],
+                    "null": [None, None, None],
+                    "enum": ["a", "b", "c"],
+                    "duration": [timedelta(days=1), timedelta(days=2), None],
+                    "binary": [bytes([0]), bytes([0, 1]), bytes([0, 1, 2])],
+                    "object": [timezone.utc, timezone.utc, timezone.utc],
                 },
             )
             .with_columns(
                 pl.col("c").cast(pl.Categorical),
                 pl.col("h").cast(pl.Datetime("ns")),
+                pl.col("enum").cast(pl.Enum(["a", "b", "c"])),
             )
             .collect()
         )
 
-        assert_frame_equal(eval(df.to_init_repr().replace("datetime.", "")), df)
+        result = eval(df.to_init_repr().replace("datetime.", ""))
+        expected = df
+        # drop "object" because it can not be compared by assert_frame_equal
+        assert_frame_equal(result.drop("object"), expected.drop("object"))
+
+
+def test_to_init_repr_nested_dtype() -> None:
+    # round-trip nested types
+    df = pl.LazyFrame(
+        {
+            "list": pl.Series(values=[[1], [2], [3]], dtype=pl.List(pl.Int32)),
+            "list_list": pl.Series(
+                values=[[[1]], [[2]], [[3]]], dtype=pl.List(pl.List(pl.Int8))
+            ),
+            "array": pl.Series(
+                values=[[1.0], [2.0], [3.0]],
+                dtype=pl.Array(pl.Float32, width=1),
+            ),
+            "struct": pl.Series(
+                values=[
+                    {"x": "foo", "y": [1, 2]},
+                    {"x": "bar", "y": [3, 4, 5]},
+                    {"x": "foobar", "y": []},
+                ],
+                dtype=pl.Struct({"x": pl.String, "y": pl.List(pl.Int8)}),
+            ),
+        },
+    ).collect()
+
+    assert_frame_equal(eval(df.to_init_repr()), df)
 
 
 def test_untrusted_categorical_input() -> None:
