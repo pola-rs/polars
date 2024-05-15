@@ -350,14 +350,6 @@ impl<'a> IRDisplay<'a> {
 }
 
 impl<'a> ExprIRDisplay<'a> {
-    pub(crate) fn new(expr_ir: &'a ExprIR, expr_arena: &'a Arena<AExpr>) -> Self {
-        Self {
-            node: expr_ir.node(),
-            output_name: expr_ir.output_name_inner(),
-            expr_arena,
-        }
-    }
-
     fn with_slice<T: AsExpr>(&self, exprs: &'a [T]) -> ExprIRSliceDisplay<'a, T> {
         ExprIRSliceDisplay {
             exprs,
