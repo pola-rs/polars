@@ -1,20 +1,30 @@
-use std::borrow::Cow;
-use std::fmt::{Debug, Display, Formatter, UpperExp};
+use std::fmt;
 
 use polars_core::error::*;
 #[cfg(feature = "regex")]
 use regex::Regex;
 
-use crate::constants::LEN;
+use crate::constants;
+use crate::logical_plan::alp::IRPlanRef;
 use crate::logical_plan::visitor::{VisitRecursion, Visitor};
+use crate::prelude::alp::format::ColumnsDisplay;
 use crate::prelude::visitor::AexprNode;
 use crate::prelude::*;
 
+pub struct TreeFmtNode<'a> {
+    h: Option<String>,
+    content: TreeFmtNodeContent<'a>,
+
+    lp: IRPlanRef<'a>,
+}
+
+pub struct TreeFmtAExpr<'a>(&'a AExpr);
+
 /// Hack UpperExpr trait to get a kind of formatting that doesn't traverse the nodes.
 /// So we can format with {foo:E}
-impl UpperExp for AExpr {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let s = match self {
+impl fmt::Display for TreeFmtAExpr<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self.0 {
             AExpr::Explode(_) => "explode",
             AExpr::Alias(_, name) => return write!(f, "alias({})", name.as_ref()),
             AExpr::Column(name) => return write!(f, "col({})", name.as_ref()),
@@ -62,7 +72,7 @@ impl UpperExp for AExpr {
             AExpr::Window { .. } => "window",
             AExpr::Wildcard => "*",
             AExpr::Slice { .. } => "slice",
-            AExpr::Len => LEN,
+            AExpr::Len => constants::LEN,
             AExpr::Nth(v) => return write!(f, "nth({})", v),
         };
 
@@ -70,9 +80,9 @@ impl UpperExp for AExpr {
     }
 }
 
-pub enum TreeFmtNode<'a> {
-    Expression(Option<String>, &'a Expr),
-    LogicalPlan(Option<String>, &'a DslPlan),
+pub enum TreeFmtNodeContent<'a> {
+    Expression(&'a ExprIR),
+    LogicalPlan(Node),
 }
 
 struct TreeFmtNodeData<'a>(String, Vec<TreeFmtNode<'a>>);
@@ -86,14 +96,37 @@ fn with_header(header: &Option<String>, text: &str) -> String {
 }
 
 #[cfg(feature = "regex")]
-fn multiline_expression(expr: &str) -> Cow<'_, str> {
+fn multiline_expression(expr: &str) -> std::borrow::Cow<'_, str> {
     let re = Regex::new(r"([\)\]])(\.[a-z0-9]+\()").unwrap();
     re.replace_all(expr, "$1\n  $2")
 }
 
 impl<'a> TreeFmtNode<'a> {
-    pub fn root_logical_plan(lp: &'a DslPlan) -> Self {
-        Self::LogicalPlan(None, lp)
+    pub fn root_logical_plan(lp: IRPlanRef<'a>) -> Self {
+        Self {
+            h: None,
+            content: TreeFmtNodeContent::LogicalPlan(lp.lp_top),
+
+            lp,
+        }
+    }
+
+    pub fn lp_node(&self, h: Option<String>, root: Node) -> Self {
+        Self {
+            h,
+            content: TreeFmtNodeContent::LogicalPlan(root),
+
+            lp: self.lp,
+        }
+    }
+
+    pub fn expr_node(&self, h: Option<String>, expr: &'a ExprIR) -> Self {
+        Self {
+            h,
+            content: TreeFmtNodeContent::Expression(expr),
+
+            lp: self.lp,
+        }
     }
 
     pub fn traverse(&self, visitor: &mut TreeFmtVisitor) {
@@ -123,190 +156,203 @@ impl<'a> TreeFmtNode<'a> {
     }
 
     fn node_data(&self) -> TreeFmtNodeData<'_> {
-        use DslPlan::*;
-        use TreeFmtNode::{Expression as NE, LogicalPlan as NL};
-        use {with_header as wh, TreeFmtNodeData as ND};
+        use {with_header as wh, TreeFmtNodeContent as C, TreeFmtNodeData as ND};
 
-        match self {
+        let lp = &self.lp;
+        let h = &self.h;
+
+        use IR::*;
+        match self.content {
             #[cfg(feature = "regex")]
-            NE(h, expr) => ND(wh(h, &multiline_expression(&format!("{expr:?}"))), vec![]),
+            C::Expression(expr) => ND(
+                wh(
+                    h,
+                    &multiline_expression(&expr.display(self.lp.expr_arena).to_string()),
+                ),
+                vec![],
+            ),
             #[cfg(not(feature = "regex"))]
-            NE(h, expr) => ND(wh(h, &format!("{expr:?}")), vec![]),
-            #[cfg(feature = "python")]
-            NL(h, lp @ PythonScan { .. }) => ND(wh(h, &format!("{lp:?}",)), vec![]),
-            NL(h, lp @ Scan { .. }) => ND(wh(h, &format!("{lp:?}",)), vec![]),
-            NL(
-                h,
-                DataFrameScan {
-                    schema,
-                    projection,
-                    selection,
-                    ..
-                },
-            ) => ND(
-                wh(
-                    h,
-                    &format!(
-                        "DF {:?}\nPROJECT {}/{} COLUMNS",
-                        schema.iter_names().take(4).collect::<Vec<_>>(),
-                        if let Some(columns) = projection {
-                            format!("{}", columns.len())
+            C::Expression(expr) => ND(wh(h, &expr.display(self.lp.expr_arena).to_string()), vec![]),
+            C::LogicalPlan(lp_top) => {
+                match self.lp.with_root(lp_top).root() {
+                    #[cfg(feature = "python")]
+                    PythonScan { .. } => ND(wh(h, &lp.describe()), vec![]),
+                    Scan { .. } => ND(wh(h, &lp.describe()), vec![]),
+                    DataFrameScan {
+                        schema,
+                        projection,
+                        selection,
+                        ..
+                    } => ND(
+                        wh(
+                            h,
+                            &format!(
+                                "DF {:?}\nPROJECT {}/{} COLUMNS",
+                                schema.iter_names().take(4).collect::<Vec<_>>(),
+                                if let Some(columns) = projection {
+                                    format!("{}", columns.len())
+                                } else {
+                                    "*".to_string()
+                                },
+                                schema.len()
+                            ),
+                        ),
+                        if let Some(expr) = selection {
+                            vec![self.expr_node(Some("SELECTION:".to_string()), expr)]
                         } else {
-                            "*".to_string()
+                            vec![]
                         },
-                        schema.len()
                     ),
-                ),
-                if let Some(expr) = selection {
-                    vec![NE(Some("SELECTION:".to_string()), expr)]
-                } else {
-                    vec![]
-                },
-            ),
-            NL(h, Union { inputs, .. }) => ND(
-                wh(
-                    h,
-                    // THis is commented out, but must be restored when we convert to IR's.
-                    // &(if let Some(slice) = options.slice {
-                    //     format!("SLICED UNION: {slice:?}")
-                    // } else {
-                    //     "UNION".to_string()
-                    // }),
-                    "UNION",
-                ),
-                inputs
-                    .iter()
-                    .enumerate()
-                    .map(|(i, lp)| NL(Some(format!("PLAN {i}:")), lp))
-                    .collect(),
-            ),
-            NL(h, HConcat { inputs, .. }) => ND(
-                wh(h, "HCONCAT"),
-                inputs
-                    .iter()
-                    .enumerate()
-                    .map(|(i, lp)| NL(Some(format!("PLAN {i}:")), lp))
-                    .collect(),
-            ),
-            NL(
-                h,
-                Cache {
-                    input,
-                    id,
-                    cache_hits,
-                },
-            ) => ND(
-                wh(
-                    h,
-                    &format!("CACHE[id: {:x}, cache_hits: {}]", *id, *cache_hits),
-                ),
-                vec![NL(None, input)],
-            ),
-            NL(h, Filter { input, predicate }) => ND(
-                wh(h, "FILTER"),
-                vec![
-                    NE(Some("predicate:".to_string()), predicate),
-                    NL(Some("FROM:".to_string()), input),
-                ],
-            ),
-            NL(h, Select { expr, input, .. }) => ND(
-                wh(h, "SELECT"),
-                expr.iter()
-                    .map(|expr| NE(Some("expression:".to_string()), expr))
-                    .chain([NL(Some("FROM:".to_string()), input)])
-                    .collect(),
-            ),
-            NL(
-                h,
-                DslPlan::Sort {
-                    input, by_column, ..
-                },
-            ) => ND(
-                wh(h, "SORT BY"),
-                by_column
-                    .iter()
-                    .map(|expr| NE(Some("expression:".to_string()), expr))
-                    .chain([NL(None, input)])
-                    .collect(),
-            ),
-            NL(
-                h,
-                GroupBy {
-                    input, keys, aggs, ..
-                },
-            ) => ND(
-                wh(h, "AGGREGATE"),
-                aggs.iter()
-                    .map(|expr| NE(Some("expression:".to_string()), expr))
-                    .chain(
-                        keys.iter()
-                            .map(|expr| NE(Some("aggregate by:".to_string()), expr)),
-                    )
-                    .chain([NL(Some("FROM:".to_string()), input)])
-                    .collect(),
-            ),
-            NL(
-                h,
-                Join {
-                    input_left,
-                    input_right,
-                    left_on,
-                    right_on,
-                    options,
-                    ..
-                },
-            ) => ND(
-                wh(h, &format!("{} JOIN", options.args.how)),
-                left_on
-                    .iter()
-                    .map(|expr| NE(Some("left on:".to_string()), expr))
-                    .chain([NL(Some("LEFT PLAN:".to_string()), input_left)])
-                    .chain(
-                        right_on
+                    Union { inputs, .. } => ND(
+                        wh(
+                            h,
+                            // THis is commented out, but must be restored when we convert to IR's.
+                            // &(if let Some(slice) = options.slice {
+                            //     format!("SLICED UNION: {slice:?}")
+                            // } else {
+                            //     "UNION".to_string()
+                            // }),
+                            "UNION",
+                        ),
+                        inputs
                             .iter()
-                            .map(|expr| NE(Some("right on:".to_string()), expr)),
-                    )
-                    .chain([NL(Some("RIGHT PLAN:".to_string()), input_right)])
-                    .collect(),
-            ),
-            NL(h, HStack { input, exprs, .. }) => ND(
-                wh(h, "WITH_COLUMNS"),
-                exprs
-                    .iter()
-                    .map(|expr| NE(Some("expression:".to_string()), expr))
-                    .chain([NL(None, input)])
-                    .collect(),
-            ),
-            NL(h, Distinct { input, options }) => ND(
-                wh(
-                    h,
-                    &format!(
-                        "UNIQUE[maintain_order: {:?}, keep_strategy: {:?}] BY {:?}",
-                        options.maintain_order, options.keep_strategy, options.subset
+                            .enumerate()
+                            .map(|(i, lp_root)| self.lp_node(Some(format!("PLAN {i}:")), *lp_root))
+                            .collect(),
                     ),
-                ),
-                vec![NL(None, input)],
-            ),
-            NL(h, DslPlan::Slice { input, offset, len }) => ND(
-                wh(h, &format!("SLICE[offset: {offset}, len: {len}]")),
-                vec![NL(None, input)],
-            ),
-            NL(h, MapFunction { input, function }) => {
-                ND(wh(h, &format!("{function}")), vec![NL(None, input)])
-            },
-            NL(h, ExtContext { input, .. }) => ND(wh(h, "EXTERNAL_CONTEXT"), vec![NL(None, input)]),
-            NL(h, Sink { input, payload }) => ND(
-                wh(
-                    h,
-                    match payload {
-                        SinkType::Memory => "SINK (memory)",
-                        SinkType::File { .. } => "SINK (file)",
-                        #[cfg(feature = "cloud")]
-                        SinkType::Cloud { .. } => "SINK (cloud)",
+                    HConcat { inputs, .. } => ND(
+                        wh(h, "HCONCAT"),
+                        inputs
+                            .iter()
+                            .enumerate()
+                            .map(|(i, lp_root)| self.lp_node(Some(format!("PLAN {i}:")), *lp_root))
+                            .collect(),
+                    ),
+                    Cache {
+                        input,
+                        id,
+                        cache_hits,
+                    } => ND(
+                        wh(
+                            h,
+                            &format!("CACHE[id: {:x}, cache_hits: {}]", *id, *cache_hits),
+                        ),
+                        vec![self.lp_node(None, *input)],
+                    ),
+                    Filter { input, predicate } => ND(
+                        wh(h, "FILTER"),
+                        vec![
+                            self.expr_node(Some("predicate:".to_string()), predicate),
+                            self.lp_node(Some("FROM:".to_string()), *input),
+                        ],
+                    ),
+                    Select { expr, input, .. } => ND(
+                        wh(h, "SELECT"),
+                        expr.iter()
+                            .map(|expr| self.expr_node(Some("expression:".to_string()), expr))
+                            .chain([self.lp_node(Some("FROM:".to_string()), *input)])
+                            .collect(),
+                    ),
+                    Sort {
+                        input, by_column, ..
+                    } => ND(
+                        wh(h, "SORT BY"),
+                        by_column
+                            .iter()
+                            .map(|expr| self.expr_node(Some("expression:".to_string()), expr))
+                            .chain([self.lp_node(None, *input)])
+                            .collect(),
+                    ),
+                    GroupBy {
+                        input, keys, aggs, ..
+                    } => ND(
+                        wh(h, "AGGREGATE"),
+                        aggs.iter()
+                            .map(|expr| self.expr_node(Some("expression:".to_string()), expr))
+                            .chain(keys.iter().map(|expr| {
+                                self.expr_node(Some("aggregate by:".to_string()), expr)
+                            }))
+                            .chain([self.lp_node(Some("FROM:".to_string()), *input)])
+                            .collect(),
+                    ),
+                    Join {
+                        input_left,
+                        input_right,
+                        left_on,
+                        right_on,
+                        options,
+                        ..
+                    } => ND(
+                        wh(h, &format!("{} JOIN", options.args.how)),
+                        left_on
+                            .iter()
+                            .map(|expr| self.expr_node(Some("left on:".to_string()), expr))
+                            .chain([self.lp_node(Some("LEFT PLAN:".to_string()), *input_left)])
+                            .chain(
+                                right_on.iter().map(|expr| {
+                                    self.expr_node(Some("right on:".to_string()), expr)
+                                }),
+                            )
+                            .chain([self.lp_node(Some("RIGHT PLAN:".to_string()), *input_right)])
+                            .collect(),
+                    ),
+                    HStack { input, exprs, .. } => ND(
+                        wh(h, "WITH_COLUMNS"),
+                        exprs
+                            .iter()
+                            .map(|expr| self.expr_node(Some("expression:".to_string()), expr))
+                            .chain([self.lp_node(None, *input)])
+                            .collect(),
+                    ),
+                    Distinct { input, options } => ND(
+                        wh(
+                            h,
+                            &format!(
+                                "UNIQUE[maintain_order: {:?}, keep_strategy: {:?}] BY {:?}",
+                                options.maintain_order, options.keep_strategy, options.subset
+                            ),
+                        ),
+                        vec![self.lp_node(None, *input)],
+                    ),
+                    Slice { input, offset, len } => ND(
+                        wh(h, &format!("SLICE[offset: {offset}, len: {len}]")),
+                        vec![self.lp_node(None, *input)],
+                    ),
+                    MapFunction { input, function } => ND(
+                        wh(h, &format!("{function}")),
+                        vec![self.lp_node(None, *input)],
+                    ),
+                    ExtContext { input, .. } => {
+                        ND(wh(h, "EXTERNAL_CONTEXT"), vec![self.lp_node(None, *input)])
                     },
-                ),
-                vec![NL(None, input)],
-            ),
+                    Sink { input, payload } => ND(
+                        wh(
+                            h,
+                            match payload {
+                                SinkType::Memory => "SINK (memory)",
+                                SinkType::File { .. } => "SINK (file)",
+                                #[cfg(feature = "cloud")]
+                                SinkType::Cloud { .. } => "SINK (cloud)",
+                            },
+                        ),
+                        vec![self.lp_node(None, *input)],
+                    ),
+                    SimpleProjection { input, columns } => {
+                        let num_columns = columns.as_ref().len();
+                        let total_columns = lp.lp_arena.get(*input).schema(lp.lp_arena).len();
+
+                        let columns = ColumnsDisplay(columns.as_ref());
+                        ND(
+                            wh(
+                                h,
+                                &format!("simple π {num_columns}/{total_columns} [{columns}]"),
+                            ),
+                            vec![self.lp_node(None, *input)],
+                        )
+                    },
+                    Invalid => ND(wh(h, "INVALID"), vec![]),
+                }
+            },
         }
     }
 }
@@ -329,8 +375,8 @@ impl Visitor for TreeFmtVisitor {
         node: &Self::Node,
         arena: &Self::Arena,
     ) -> PolarsResult<VisitRecursion> {
-        let ae = node.to_aexpr(arena);
-        let repr = format!("{:E}", ae);
+        let repr = TreeFmtAExpr(arena.get(node.node()));
+        let repr = repr.to_string();
 
         if self.levels.len() <= self.depth {
             self.levels.push(vec![])
@@ -787,8 +833,8 @@ impl From<TreeView<'_>> for Canvas {
     }
 }
 
-impl Display for Canvas {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for Canvas {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {
         for row in &self.canvas {
             writeln!(f, "{}", row.iter().collect::<String>().trim_end())?;
         }
@@ -797,14 +843,14 @@ impl Display for Canvas {
     }
 }
 
-impl Display for TreeFmtVisitor {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        Debug::fmt(self, f)
+impl fmt::Display for TreeFmtVisitor {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {
+        fmt::Debug::fmt(self, f)
     }
 }
 
-impl Debug for TreeFmtVisitor {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+impl fmt::Debug for TreeFmtVisitor {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {
         let tree_view: TreeView<'_> = self.levels.as_slice().into();
         let canvas: Canvas = tree_view.into();
         write!(f, "{canvas}")?;

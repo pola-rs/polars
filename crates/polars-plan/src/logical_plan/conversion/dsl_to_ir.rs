@@ -579,7 +579,7 @@ fn expand_filter(predicate: Expr, input: Node, lp_arena: &Arena<IR>) -> PolarsRe
             _ => {
                 let mut expanded = String::new();
                 for e in rewritten.iter().take(5) {
-                    expanded.push_str(&format!("\t{e},\n"))
+                    expanded.push_str(&format!("\t{e:?},\n"))
                 }
                 // pop latest comma
                 expanded.pop();

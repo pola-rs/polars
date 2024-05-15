@@ -391,8 +391,10 @@ fn test_scan_parquet_limit_9001() {
         ..Default::default()
     };
     let q = LazyFrame::scan_parquet(path, args).unwrap().limit(3);
-    let (node, lp_arena, _) = q.to_alp_optimized().unwrap();
-    (&lp_arena).iter(node).all(|(_, lp)| match lp {
+    let IRPlan {
+        lp_top, lp_arena, ..
+    } = q.to_alp_optimized().unwrap();
+    (&lp_arena).iter(lp_top).all(|(_, lp)| match lp {
         IR::Union { options, .. } => {
             let sliced = options.slice.unwrap();
             sliced.1 == 3

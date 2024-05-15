@@ -2,8 +2,8 @@ use std::fmt::Display;
 use std::ops::BitAnd;
 
 use super::*;
+use crate::logical_plan::alp::tree_format::TreeFmtVisitor;
 use crate::logical_plan::expr_expansion::is_regex_projection;
-use crate::logical_plan::tree_format::TreeFmtVisitor;
 use crate::logical_plan::visitor::{AexprNode, TreeWalker};
 
 /// Specialized expressions for Categorical dtypes.
@@ -85,7 +85,7 @@ impl MetaNameSpace {
             }
             Ok(Expr::Selector(s))
         } else {
-            polars_bail!(ComputeError: "expected selector, got {}", self.0)
+            polars_bail!(ComputeError: "expected selector, got {:?}", self.0)
         }
     }
 
@@ -98,7 +98,7 @@ impl MetaNameSpace {
             }
             Ok(Expr::Selector(s))
         } else {
-            polars_bail!(ComputeError: "expected selector, got {}", self.0)
+            polars_bail!(ComputeError: "expected selector, got {:?}", self.0)
         }
     }
 
@@ -111,7 +111,7 @@ impl MetaNameSpace {
             }
             Ok(Expr::Selector(s))
         } else {
-            polars_bail!(ComputeError: "expected selector, got {}", self.0)
+            polars_bail!(ComputeError: "expected selector, got {:?}", self.0)
         }
     }
 

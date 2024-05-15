@@ -1,11 +1,15 @@
+mod dot;
 mod format;
 mod inputs;
 mod schema;
+pub(crate) mod tree_format;
 
 use std::borrow::Cow;
 use std::fmt;
 use std::path::PathBuf;
 
+pub use dot::IRDotDisplay;
+pub use format::{ExprIRDisplay, IRDisplay};
 use polars_core::prelude::*;
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::unitvec;
@@ -17,6 +21,13 @@ pub struct IRPlan {
     pub lp_top: Node,
     pub lp_arena: Arena<IR>,
     pub expr_arena: Arena<AExpr>,
+}
+
+#[derive(Clone, Copy)]
+pub struct IRPlanRef<'a> {
+    pub lp_top: Node,
+    pub lp_arena: &'a Arena<IR>,
+    pub expr_arena: &'a Arena<AExpr>,
 }
 
 /// [`IR`] is a representation of [`DslPlan`] with [`Node`]s which are allocated in an [`Arena`]
@@ -143,20 +154,74 @@ impl IRPlan {
         }
     }
 
+    pub fn root(&self) -> &IR {
+        self.lp_arena.get(self.lp_top)
+    }
+
+    pub fn as_ref(&self) -> IRPlanRef {
+        IRPlanRef {
+            lp_top: self.lp_top,
+            lp_arena: &self.lp_arena,
+            expr_arena: &self.expr_arena,
+        }
+    }
+
     pub fn describe(&self) -> String {
+        self.as_ref().describe()
+    }
+
+    pub fn describe_tree_format(&self) -> String {
+        self.as_ref().describe_tree_format()
+    }
+
+    pub fn display(&self) -> format::IRDisplay {
+        format::IRDisplay(self.as_ref())
+    }
+
+    pub fn display_dot(&self) -> dot::IRDotDisplay {
+        dot::IRDotDisplay(self.as_ref())
+    }
+}
+
+impl<'a> IRPlanRef<'a> {
+    pub fn root(self) -> &'a IR {
+        self.lp_arena.get(self.lp_top)
+    }
+
+    pub fn with_root(self, root: Node) -> Self {
+        Self {
+            lp_top: root,
+            lp_arena: self.lp_arena,
+            expr_arena: self.expr_arena,
+        }
+    }
+
+    pub fn display(self) -> format::IRDisplay<'a> {
+        format::IRDisplay(self)
+    }
+
+    pub fn display_dot(self) -> dot::IRDotDisplay<'a> {
+        dot::IRDotDisplay(self)
+    }
+
+    pub fn describe(self) -> String {
         self.display().to_string()
     }
 
-    fn display(&self) -> format::IRDisplay {
-        format::IRDisplay {
-            root: self.lp_top,
-            ir_arena: &self.lp_arena,
-            expr_arena: &self.expr_arena,
-        }
+    pub fn describe_tree_format(self) -> String {
+        let mut visitor = tree_format::TreeFmtVisitor::default();
+        tree_format::TreeFmtNode::root_logical_plan(self).traverse(&mut visitor);
+        format!("{visitor:#?}")
     }
 }
 
 impl fmt::Debug for IRPlan {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        <format::IRDisplay as fmt::Display>::fmt(&self.display(), f)
+    }
+}
+
+impl fmt::Debug for IRPlanRef<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         <format::IRDisplay as fmt::Display>::fmt(&self.display(), f)
     }

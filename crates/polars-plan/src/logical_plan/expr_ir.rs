@@ -111,6 +111,15 @@ impl ExprIR {
         self.node
     }
 
+    /// Create a `ExprIR` structure that implements display
+    pub fn display<'a>(&'a self, expr_arena: &'a Arena<AExpr>) -> ExprIRDisplay<'a> {
+        ExprIRDisplay {
+            node: self.node(),
+            output_name: self.output_name_inner(),
+            expr_arena,
+        }
+    }
+
     pub(crate) fn set_node(&mut self, node: Node) {
         self.node = node;
     }

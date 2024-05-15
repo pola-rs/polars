@@ -11,9 +11,11 @@ fn cached_before_root(q: LazyFrame) {
 }
 
 fn count_caches(q: LazyFrame) -> usize {
-    let (node, lp_arena, _) = q.to_alp_optimized().unwrap();
+    let IRPlan {
+        lp_top, lp_arena, ..
+    } = q.to_alp_optimized().unwrap();
     (&lp_arena)
-        .iter(node)
+        .iter(lp_top)
         .filter(|(_node, lp)| matches!(lp, IR::Cache { .. }))
         .count()
 }

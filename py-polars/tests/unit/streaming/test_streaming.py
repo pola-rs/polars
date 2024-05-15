@@ -138,7 +138,7 @@ def test_streaming_ternary() -> None:
             pl.when(pl.col("a") >= 2).then(pl.col("a")).otherwise(None).alias("b"),
         )
         .explain(streaming=True)
-        .startswith("--- STREAMING")
+        .startswith("STREAMING")
     )
 
 
@@ -357,7 +357,7 @@ def test_streaming_with_hconcat(tmp_path: Path) -> None:
     for i, line in enumerate(plan_lines):
         if line.startswith("PLAN"):
             assert plan_lines[i + 1].startswith(
-                "--- STREAMING"
+                "STREAMING"
             ), f"{line} does not contain a streaming section"
 
     result = query.collect(streaming=True)
