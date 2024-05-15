@@ -347,8 +347,15 @@ fn to_aexpr_impl(expr: Expr, arena: &mut Arena<AExpr>, state: &mut ConversionSta
             AExpr::Len
         },
         Expr::Nth(i) => AExpr::Nth(i),
+        Expr::IndexColumn(idx) => {
+            if idx.len() == 1 {
+                AExpr::Nth(idx[0])
+            } else {
+                panic!("no multi-value `index-columns` expected at this point")
+            }
+        },
         Expr::Wildcard => AExpr::Wildcard,
-        Expr::SubPlan { .. } => panic!("no SQLSubquery expected at this point"),
+        Expr::SubPlan { .. } => panic!("no SQL subquery expected at this point"),
         Expr::KeepName(_) => panic!("no `name.keep` expected at this point"),
         Expr::Exclude(_, _) => panic!("no `exclude` expected at this point"),
         Expr::RenameAlias { .. } => panic!("no `rename_alias` expected at this point"),

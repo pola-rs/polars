@@ -230,8 +230,8 @@ impl AExpr {
             Wildcard => {
                 polars_bail!(ComputeError: "wildcard column selection not supported at this point")
             },
-            Nth(_) => {
-                polars_bail!(ComputeError: "nth column selection not supported at this point")
+            Nth(n) => {
+                polars_bail!(ComputeError: "nth column selection not supported at this point (n={})", n)
             },
         }
     }

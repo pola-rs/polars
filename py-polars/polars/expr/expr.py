@@ -2716,7 +2716,7 @@ class Expr:
         )
 
     def gather(
-        self, indices: int | list[int] | Expr | Series | np.ndarray[Any, Any]
+        self, indices: int | Sequence[int] | Expr | Series | np.ndarray[Any, Any]
     ) -> Self:
         """
         Take values by index.

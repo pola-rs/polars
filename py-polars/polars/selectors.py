@@ -4,7 +4,7 @@ import re
 from datetime import timezone
 from functools import reduce
 from operator import or_
-from typing import TYPE_CHECKING, Any, Collection, Literal, Mapping, overload
+from typing import TYPE_CHECKING, Any, Collection, Literal, Mapping, Sequence, overload
 
 from polars import functions as F
 from polars._utils.deprecation import deprecate_nonkeyword_arguments
@@ -282,12 +282,12 @@ class _selector_proxy_(Expr):
             set_ops = {"and": "&", "or": "|", "sub": "-"}
             if selector_name in set_ops:
                 op = set_ops[selector_name]
-                return "(%s)" % f" {op} ".join(repr(p) for p in params.values())
+                return "({})".format(f" {op} ".join(repr(p) for p in params.values()))
             else:
                 str_params = ",".join(
                     (repr(v)[1:-1] if k.startswith("*") else f"{k}={v!r}")
                     for k, v in (params or {}).items()
-                )
+                ).rstrip(",")
                 return f"cs.{selector_name}({str_params})"
 
     def __sub__(self, other: Any) -> SelectorType | Expr:  # type: ignore[override]
@@ -522,6 +522,7 @@ def by_dtype(
     See Also
     --------
     by_name : Select all columns matching the given names.
+    by_index : Select all columns matching the given indices.
 
     Examples
     --------
@@ -595,6 +596,99 @@ def by_dtype(
     )
 
 
+def by_index(*indices: int | range | Sequence[int | range]) -> SelectorType:
+    """
+    Select all columns matching the given indices (or range objects).
+
+    Parameters
+    ----------
+    *indices
+        One or more column indices (or range objects).
+        Negative indexing is supported.
+
+    See Also
+    --------
+    by_dtype : Select all columns matching the given dtypes.
+    by_name : Select all columns matching the given names.
+
+    Examples
+    --------
+    >>> import polars.selectors as cs
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "key": ["abc"],
+    ...         **{f"c{i:02}": [0.5 * i] for i in range(100)},
+    ...     },
+    ... )
+    >>> print(df)
+    shape: (1, 101)
+    ┌─────┬─────┬─────┬─────┬───┬──────┬──────┬──────┬──────┐
+    │ key ┆ c00 ┆ c01 ┆ c02 ┆ … ┆ c96  ┆ c97  ┆ c98  ┆ c99  │
+    │ --- ┆ --- ┆ --- ┆ --- ┆   ┆ ---  ┆ ---  ┆ ---  ┆ ---  │
+    │ str ┆ f64 ┆ f64 ┆ f64 ┆   ┆ f64  ┆ f64  ┆ f64  ┆ f64  │
+    ╞═════╪═════╪═════╪═════╪═══╪══════╪══════╪══════╪══════╡
+    │ abc ┆ 0.0 ┆ 0.5 ┆ 1.0 ┆ … ┆ 48.0 ┆ 48.5 ┆ 49.0 ┆ 49.5 │
+    └─────┴─────┴─────┴─────┴───┴──────┴──────┴──────┴──────┘
+
+    Select columns by index ("key" column and the two first/last columns):
+
+    >>> df.select(cs.by_index(0, 1, 2, -2, -1))
+    shape: (1, 5)
+    ┌─────┬─────┬─────┬──────┬──────┐
+    │ key ┆ c00 ┆ c01 ┆ c98  ┆ c99  │
+    │ --- ┆ --- ┆ --- ┆ ---  ┆ ---  │
+    │ str ┆ f64 ┆ f64 ┆ f64  ┆ f64  │
+    ╞═════╪═════╪═════╪══════╪══════╡
+    │ abc ┆ 0.0 ┆ 0.5 ┆ 49.0 ┆ 49.5 │
+    └─────┴─────┴─────┴──────┴──────┘
+
+    Select the "key" column and use a `range` object to select various columns.
+    Note that you can freely mix and match integer indices and `range` objects:
+
+    >>> df.select(cs.by_index(0, range(1, 101, 20)))
+    shape: (1, 6)
+    ┌─────┬─────┬──────┬──────┬──────┬──────┐
+    │ key ┆ c00 ┆ c20  ┆ c40  ┆ c60  ┆ c80  │
+    │ --- ┆ --- ┆ ---  ┆ ---  ┆ ---  ┆ ---  │
+    │ str ┆ f64 ┆ f64  ┆ f64  ┆ f64  ┆ f64  │
+    ╞═════╪═════╪══════╪══════╪══════╪══════╡
+    │ abc ┆ 0.0 ┆ 10.0 ┆ 20.0 ┆ 30.0 ┆ 40.0 │
+    └─────┴─────┴──────┴──────┴──────┴──────┘
+
+    >>> df.select(cs.by_index(0, range(101, 0, -25)))
+    shape: (1, 5)
+    ┌─────┬──────┬──────┬──────┬─────┐
+    │ key ┆ c75  ┆ c50  ┆ c25  ┆ c00 │
+    │ --- ┆ ---  ┆ ---  ┆ ---  ┆ --- │
+    │ str ┆ f64  ┆ f64  ┆ f64  ┆ f64 │
+    ╞═════╪══════╪══════╪══════╪═════╡
+    │ abc ┆ 37.5 ┆ 25.0 ┆ 12.5 ┆ 0.0 │
+    └─────┴──────┴──────┴──────┴─────┘
+
+    Select all columns *except* for the even-indexed ones:
+
+    >>> df.select(~cs.by_index(range(1, 100, 2)))
+    shape: (1, 51)
+    ┌─────┬─────┬─────┬─────┬───┬──────┬──────┬──────┬──────┐
+    │ key ┆ c01 ┆ c03 ┆ c05 ┆ … ┆ c93  ┆ c95  ┆ c97  ┆ c99  │
+    │ --- ┆ --- ┆ --- ┆ --- ┆   ┆ ---  ┆ ---  ┆ ---  ┆ ---  │
+    │ str ┆ f64 ┆ f64 ┆ f64 ┆   ┆ f64  ┆ f64  ┆ f64  ┆ f64  │
+    ╞═════╪═════╪═════╪═════╪═══╪══════╪══════╪══════╪══════╡
+    │ abc ┆ 0.5 ┆ 1.5 ┆ 2.5 ┆ … ┆ 46.5 ┆ 47.5 ┆ 48.5 ┆ 49.5 │
+    └─────┴─────┴─────┴─────┴───┴──────┴──────┴──────┴──────┘
+    """
+    all_indices: list[int] = []
+    for idx in indices:
+        if isinstance(idx, (range, Sequence)):
+            all_indices.extend(idx)  # type: ignore[arg-type]
+        else:
+            all_indices.append(idx)
+
+    return _selector_proxy_(
+        F.nth(all_indices), name="by_index", parameters={"*indices": indices}
+    )
+
+
 def by_name(*names: str | Collection[str]) -> SelectorType:
     """
     Select all columns matching the given names.
@@ -607,6 +701,7 @@ def by_name(*names: str | Collection[str]) -> SelectorType:
     See Also
     --------
     by_dtype : Select all columns matching the given dtypes.
+    by_index : Select all columns matching the given indices.
 
     Examples
     --------
@@ -657,7 +752,8 @@ def by_name(*names: str | Collection[str]) -> SelectorType:
                     raise TypeError(msg)
                 all_names.append(n)
         else:
-            TypeError(f"Invalid name: {nm!r}")
+            msg = f"invalid name: {nm!r}"
+            raise TypeError(msg)
 
     return _selector_proxy_(
         F.col(all_names), name="by_name", parameters={"*names": all_names}

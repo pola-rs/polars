@@ -332,6 +332,16 @@ pub fn dtype_cols(dtypes: Vec<Wrap<DataType>>) -> PyResult<PyExpr> {
 }
 
 #[pyfunction]
+pub fn index_cols(indices: Vec<i64>) -> PyExpr {
+    if indices.len() == 1 {
+        dsl::nth(indices[0])
+    } else {
+        dsl::index_cols(indices)
+    }
+    .into()
+}
+
+#[pyfunction]
 #[pyo3(signature = (weeks, days, hours, minutes, seconds, milliseconds, microseconds, nanoseconds, time_unit))]
 pub fn duration(
     weeks: Option<PyExpr>,

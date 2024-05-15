@@ -420,6 +420,7 @@ impl Debug for Expr {
             RenameAlias { expr, .. } => write!(f, ".rename_alias({expr:?})"),
             Columns(names) => write!(f, "cols({names:?})"),
             DtypeColumn(dt) => write!(f, "dtype_columns({dt:?})"),
+            IndexColumn(idxs) => write!(f, "index_columns({idxs:?})"),
             Selector(_) => write!(f, "SELECTOR"),
         }
     }

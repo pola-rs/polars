@@ -56,3 +56,9 @@ pub fn dtype_cols<DT: AsRef<[DataType]>>(dtype: DT) -> Expr {
     let dtypes = dtype.as_ref().to_vec();
     Expr::DtypeColumn(dtypes)
 }
+
+/// Select multiple columns by index.
+pub fn index_cols<N: AsRef<[i64]>>(indices: N) -> Expr {
+    let indices = indices.as_ref().to_vec();
+    Expr::IndexColumn(Arc::from(indices))
+}

@@ -160,6 +160,12 @@ class ColumnFactory(metaclass=ColumnFactoryMeta):
             Additional names or datatypes of columns to represent,
             specified as positional arguments.
 
+        See Also
+        --------
+        first
+        last
+        nth
+
         Examples
         --------
         Pass a single column name to represent that column.

@@ -94,9 +94,9 @@ fn test_array_to_string() {
     context.register("df", df.clone().lazy());
 
     let sql = r#"
-        SELECT b, ARRAY_TO_STRING(a,', ') AS a2s,
+        SELECT b, ARRAY_TO_STRING("a",', ') AS a2s,
         FROM (
-            SELECT b, ARRAY_AGG(a)
+            SELECT b, ARRAY_AGG(a) AS "a"
             FROM df
             GROUP BY b
         ) tbl

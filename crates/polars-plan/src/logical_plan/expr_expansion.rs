@@ -69,7 +69,11 @@ fn replace_nth(expr: Expr, schema: &Schema) -> Expr {
         if let Expr::Nth(i) = e {
             match i.negative_to_usize(schema.len()) {
                 None => {
-                    let name = if i == 0 { "first" } else { "last" };
+                    let name = match i {
+                        0 => "first",
+                        -1 => "last",
+                        _ => "nth",
+                    };
                     Expr::Column(ColumnName::from(name))
                 },
                 Some(idx) => {
@@ -184,16 +188,6 @@ fn expand_columns(
     Ok(())
 }
 
-/// This replaces the dtypes Expr with a Column Expr. It also removes the Exclude Expr from the
-/// expression chain.
-fn replace_dtype_with_column(expr: Expr, column_name: Arc<str>) -> Expr {
-    expr.map_expr(|e| match e {
-        Expr::DtypeColumn(_) => Expr::Column(column_name.clone()),
-        Expr::Exclude(input, _) => Arc::unwrap_or_clone(input),
-        e => e,
-    })
-}
-
 #[cfg(feature = "dtype-struct")]
 fn struct_index_to_field(expr: Expr, schema: &Schema) -> PolarsResult<Expr> {
     expr.try_map_expr(|e| match e {
@@ -225,6 +219,21 @@ fn struct_index_to_field(expr: Expr, schema: &Schema) -> PolarsResult<Expr> {
             }
         },
         e => Ok(e),
+    })
+}
+
+/// This replaces the dtype or index expanded Expr with a Column Expr.
+/// ()It also removes the Exclude Expr from the expression chain).
+fn replace_dtype_or_index_with_column(
+    expr: Expr,
+    column_name: &ColumnName,
+    replace_dtype: bool,
+) -> Expr {
+    expr.map_expr(|e| match e {
+        Expr::DtypeColumn(_) if replace_dtype => Expr::Column(column_name.clone()),
+        Expr::IndexColumn(_) if !replace_dtype => Expr::Column(column_name.clone()),
+        Expr::Exclude(input, _) => Arc::unwrap_or_clone(input),
+        e => e,
     })
 }
 
@@ -282,9 +291,43 @@ fn expand_dtypes(
     }) {
         let name = field.name();
         let new_expr = expr.clone();
-        let new_expr = replace_dtype_with_column(new_expr, ColumnName::from(name.as_str()));
+        let new_expr =
+            replace_dtype_or_index_with_column(new_expr, &ColumnName::from(name.as_str()), true);
         let new_expr = rewrite_special_aliases(new_expr)?;
         result.push(new_expr)
+    }
+    Ok(())
+}
+
+/// replace `IndexColumn` with `col("foo")..col("bar")`
+fn expand_indices(
+    expr: &Expr,
+    result: &mut Vec<Expr>,
+    schema: &Schema,
+    indices: &[i64],
+    exclude: &PlHashSet<Arc<str>>,
+) -> PolarsResult<()> {
+    let n_fields = schema.len() as i64;
+    for idx in indices {
+        let mut idx = *idx;
+        if idx < 0 {
+            idx += n_fields;
+            if idx < 0 {
+                polars_bail!(ComputeError: "invalid column index {}", idx)
+            }
+        }
+        if let Some((name, _)) = schema.get_at_index(idx as usize) {
+            if !exclude.contains(name.as_str()) {
+                let new_expr = expr.clone();
+                let new_expr = replace_dtype_or_index_with_column(
+                    new_expr,
+                    &ColumnName::from(name.as_str()),
+                    false,
+                );
+                let new_expr = rewrite_special_aliases(new_expr)?;
+                result.push(new_expr);
+            }
+        }
     }
     Ok(())
 }
@@ -400,6 +443,7 @@ fn find_flags(expr: &Expr) -> ExpansionFlags {
     for expr in expr {
         match expr {
             Expr::Columns(_) | Expr::DtypeColumn(_) => multiple_columns = true,
+            Expr::IndexColumn(idx) => multiple_columns = idx.len() > 1,
             Expr::Nth(_) => has_nth = true,
             Expr::Wildcard => has_wildcard = true,
             Expr::Selector(_) => has_selector = true,
@@ -474,19 +518,24 @@ fn replace_and_add_to_results(
     // has multiple column names
     // the expanded columns are added to the result
     if flags.multiple_columns {
-        if let Some(e) = expr
-            .into_iter()
-            .find(|e| matches!(e, Expr::Columns(_) | Expr::DtypeColumn(_)))
-        {
+        if let Some(e) = expr.into_iter().find(|e| {
+            matches!(
+                e,
+                Expr::Columns(_) | Expr::DtypeColumn(_) | Expr::IndexColumn(_)
+            )
+        }) {
             match &e {
                 Expr::Columns(names) => {
                     let exclude = prepare_excluded(&expr, schema, keys, flags.has_exclude)?;
                     expand_columns(&expr, result, names, schema, &exclude)?;
                 },
                 Expr::DtypeColumn(dtypes) => {
-                    // keep track of column excluded from the dtypes
                     let exclude = prepare_excluded(&expr, schema, keys, flags.has_exclude)?;
                     expand_dtypes(&expr, result, schema, dtypes, &exclude)?
+                },
+                Expr::IndexColumn(indices) => {
+                    let exclude = prepare_excluded(&expr, schema, keys, flags.has_exclude)?;
+                    expand_indices(&expr, result, schema, indices, &exclude)?
                 },
                 _ => {},
             }

@@ -44,6 +44,7 @@ impl TreeWalker for Expr {
             Column(_) => self,
             Columns(_) => self,
             DtypeColumn(_) => self,
+            IndexColumn(_) => self,
             Literal(_) => self,
             BinaryExpr { left, op, right } => {
                 BinaryExpr { left: am(left, &mut f)? , op, right: am(right, f)?}
