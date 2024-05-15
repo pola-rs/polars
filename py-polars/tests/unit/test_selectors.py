@@ -55,6 +55,21 @@ def test_selector_all(df: pl.DataFrame) -> None:
     assert df.select(cs.all() & pl.col("abc")).schema == {"abc": pl.UInt16}
 
 
+def test_selector_alpha() -> None:
+    df = pl.DataFrame(
+        schema=["Hello123", "こんにちは (^_^)", "مرحبا", "你好!", "World"],
+    )
+    # alphabetical-only (across all languages)
+    assert expand_selector(df, cs.alpha()) == ("مرحبا", "World")
+    assert expand_selector(df, cs.alpha(ascii_only=True)) == ("World",)
+    assert expand_selector(df, ~cs.alpha()) == ("Hello123", "こんにちは (^_^)", "你好!")
+
+    # alphanumeric-only (across all languages)
+    assert expand_selector(df, cs.alphanumeric()) == ("Hello123", "مرحبا", "World")
+    assert expand_selector(df, cs.alphanumeric(True)) == ("Hello123", "World")
+    assert expand_selector(df, ~cs.alphanumeric()) == ("こんにちは (^_^)", "你好!")
+
+
 def test_selector_by_dtype(df: pl.DataFrame) -> None:
     assert df.select(cs.by_dtype(pl.UInt16) | cs.boolean()).schema == {
         "abc": pl.UInt16,
@@ -269,6 +284,12 @@ def test_select_decimal(df: pl.DataFrame) -> None:
     assert df.select(cs.numeric()).columns == ["zz0", "zz1", "zz2"]
     assert df.select(cs.decimal()).columns == ["zz1", "zz2"]
     assert df.select(~cs.decimal()).columns == ["zz0"]
+
+
+def test_selector_digit() -> None:
+    df = pl.DataFrame(schema=["Portfolio", "Year", "2000", "2010", "2020", "✌️"])
+    assert expand_selector(df, cs.digit()) == ("2000", "2010", "2020")
+    assert expand_selector(df, ~cs.digit()) == ("Portfolio", "Year", "✌️")
 
 
 def test_selector_drop(df: pl.DataFrame) -> None:
