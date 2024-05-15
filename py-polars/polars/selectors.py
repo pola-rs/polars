@@ -67,11 +67,12 @@ def is_selector(obj: Any) -> bool:
     True
     """
     # note: don't want to expose the "_selector_proxy_" object
-    return isinstance(obj, _selector_proxy_)
+    return isinstance(obj, _selector_proxy_) and hasattr(obj, "_attrs")
 
 
 def expand_selector(
-    target: DataFrame | LazyFrame | Mapping[str, PolarsDataType], selector: SelectorType
+    target: DataFrame | LazyFrame | Mapping[str, PolarsDataType],
+    selector: SelectorType,
 ) -> tuple[str, ...]:
     """
     Expand a selector to column names with respect to a specific frame or schema target.
@@ -116,6 +117,10 @@ def expand_selector(
     >>> cs.expand_selector(schema, cs.float())
     ('colx', 'coly')
     """
+    if not is_selector(selector):
+        msg = f"expected a selector; found {selector!r} instead."
+        raise TypeError(msg)
+
     if isinstance(target, Mapping):
         from polars.dataframe import DataFrame
 
@@ -272,9 +277,7 @@ class _selector_proxy_(Expr):
 
     def __repr__(self) -> str:
         if not hasattr(self, "_attrs"):
-            return re.sub(
-                r"<[\w.]+_selector_proxy_[\w ]+>", "<selector>", super().__repr__()
-            )
+            return repr(self.as_expr())
         elif hasattr(self, "_repr_override"):
             return self._repr_override
         else:
@@ -291,9 +294,7 @@ class _selector_proxy_(Expr):
                 return f"cs.{selector_name}({str_params})"
 
     def __sub__(self, other: Any) -> SelectorType | Expr:  # type: ignore[override]
-        if is_column(other):
-            other = by_name(other.meta.output_name())
-        if isinstance(other, _selector_proxy_) and hasattr(other, "_attrs"):
+        if is_selector(other):
             return _selector_proxy_(
                 self.meta._as_selector().meta._selector_sub(other),
                 parameters={"self": self, "other": other},
@@ -302,10 +303,17 @@ class _selector_proxy_(Expr):
         else:
             return self.as_expr().__sub__(other)
 
+    def __rsub__(self, other: Any) -> SelectorType | Expr:  # type: ignore[override]
+        msg = "unsupported operand type(s) for op: ('Expr' - 'Selector')"
+        raise TypeError(msg)
+
     def __and__(self, other: Any) -> SelectorType | Expr:  # type: ignore[override]
         if is_column(other):
-            other = by_name(other.meta.output_name())
-        if isinstance(other, _selector_proxy_) and hasattr(other, "_attrs"):
+            colname = other.meta.output_name()
+            if self._attrs["name"] == "by_name":
+                return by_name(*self._attrs["params"]["*names"], colname)
+            other = by_name(colname)
+        if is_selector(other):
             return _selector_proxy_(
                 self.meta._as_selector().meta._selector_and(other),
                 parameters={"self": self, "other": other},
@@ -317,7 +325,7 @@ class _selector_proxy_(Expr):
     def __or__(self, other: Any) -> SelectorType | Expr:  # type: ignore[override]
         if is_column(other):
             other = by_name(other.meta.output_name())
-        if isinstance(other, _selector_proxy_) and hasattr(other, "_attrs"):
+        if is_selector(other):
             return _selector_proxy_(
                 self.meta._as_selector().meta._selector_add(other),
                 parameters={"self": self, "other": other},
@@ -327,29 +335,70 @@ class _selector_proxy_(Expr):
             return self.as_expr().__or__(other)
 
     def __rand__(self, other: Any) -> SelectorType | Expr:  # type: ignore[override]
-        # order of operation doesn't matter
         if is_column(other):
-            other = by_name(other.meta.output_name())
-        if isinstance(other, _selector_proxy_) and hasattr(other, "_attrs"):
+            colname = other.meta.output_name()
+            if self._attrs["name"] == "by_name":
+                return by_name(colname, *self._attrs["params"]["*names"])
+            other = by_name(colname)
+        if is_selector(other):
             return self.__and__(other)
         else:
             return self.as_expr().__rand__(other)
 
     def __ror__(self, other: Any) -> SelectorType | Expr:  # type: ignore[override]
-        # order of operation doesn't matter
         if is_column(other):
             other = by_name(other.meta.output_name())
-        if isinstance(other, _selector_proxy_) and hasattr(other, "_attrs"):
+        if is_selector(other):
             return self.__or__(other)
         else:
             return self.as_expr().__ror__(other)
 
     def as_expr(self) -> Expr:
         """
-        Materialize the `selector` into a normal expression.
+        Materialize the `selector` as a normal expression.
 
         This ensures that the operators `|`, `&`, `~` and `-`
         are applied on the data and not on the selector sets.
+
+        Examples
+        --------
+        >>> import polars.selectors as cs
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "colx": ["aa", "bb", "cc"],
+        ...         "coly": [True, False, True],
+        ...         "colz": [1, 2, 3],
+        ...     }
+        ... )
+
+        Inverting the boolean selector will choose the non-boolean columns:
+
+        >>> df.select(~cs.boolean())
+        shape: (3, 2)
+        ┌──────┬──────┐
+        │ colx ┆ colz │
+        │ ---  ┆ ---  │
+        │ str  ┆ i64  │
+        ╞══════╪══════╡
+        │ aa   ┆ 1    │
+        │ bb   ┆ 2    │
+        │ cc   ┆ 3    │
+        └──────┴──────┘
+
+        To invert the *values* in the selected boolean columns, we need to
+        materialize the selector as a standard expression instead:
+
+        >>> df.select(~cs.boolean().as_expr())
+        shape: (3, 1)
+        ┌───────┐
+        │ coly  │
+        │ ---   │
+        │ bool  │
+        ╞═══════╡
+        │ false │
+        │ true  │
+        │ false │
+        └───────┘
         """
         return Expr._from_pyexpr(self._pyexpr)
 
@@ -2180,24 +2229,31 @@ def time() -> SelectorType:
 
 __all__ = [
     "all",
+    "binary",
+    "boolean",
     "by_dtype",
+    "by_index",
     "by_name",
     "categorical",
     "contains",
     "date",
     "datetime",
+    "decimal",
     "duration",
     "ends_with",
+    "exclude",
+    "expand_selector",
     "first",
     "float",
     "integer",
+    "is_selector",
     "last",
     "matches",
     "numeric",
+    "signed_integer",
     "starts_with",
+    "string",
     "temporal",
     "time",
-    "string",
-    "is_selector",
-    "expand_selector",
+    "unsigned_integer",
 ]
