@@ -21,7 +21,7 @@ fn detect_fast_bmi2() -> bool {
         // Hardcoded blacklist of known-bad AMD families.
         // We'll assume any future releases that support BMI2 have a
         // proper implementation.
-        !(family_id >= 0x15 && family_id <= 0x18)
+        !(0x15..=0x18).contains(&family_id)
     } else {
         true
     }
