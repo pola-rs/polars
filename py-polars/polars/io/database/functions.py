@@ -32,7 +32,7 @@ def read_database(
     query: str | Selectable,
     connection: ConnectionOrCursor | str,
     *,
-    iter_batches: Literal[False] = False,
+    iter_batches: Literal[False] = ...,
     batch_size: int | None = ...,
     schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
