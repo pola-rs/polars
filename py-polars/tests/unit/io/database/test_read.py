@@ -469,7 +469,7 @@ def test_read_database_mocked(
             "repeat_batch_calls", False
         ),
     )
-    res = pl.read_database(  # type: ignore[call-overload]
+    res = pl.read_database(
         query="SELECT * FROM test_data",
         connection=mc,
         iter_batches=iter_batches,
