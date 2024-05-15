@@ -8,6 +8,18 @@ use rayon::prelude::*;
 use super::super::expressions as phys_expr;
 use crate::prelude::*;
 
+pub(super) fn get_expr_depth_limit() -> PolarsResult<u16> {
+    let depth = if let Ok(d) = std::env::var("POLARS_MAX_EXPR_DEPTH") {
+        let v = d
+            .parse::<u64>()
+            .map_err(|_| polars_err!(ComputeError: "could not parse 'max_expr_depth': {}", d))?;
+        u16::try_from(v).unwrap_or(0)
+    } else {
+        512
+    };
+    Ok(depth)
+}
+
 fn ok_checker(_state: &ExpressionConversionState) -> PolarsResult<()> {
     Ok(())
 }
@@ -78,7 +90,7 @@ where
         .collect()
 }
 
-#[derive(Copy, Clone, Default)]
+#[derive(Copy, Clone)]
 pub(crate) struct ExpressionConversionState {
     // settings per context
     // they remain activate between
@@ -89,24 +101,48 @@ pub(crate) struct ExpressionConversionState {
     // settings per expression
     // those are reset every expression
     local: LocalConversionState,
+    depth_limit: u16,
 }
 
-#[derive(Copy, Clone, Default)]
+#[derive(Copy, Clone)]
 struct LocalConversionState {
     has_implode: bool,
     has_window: bool,
     has_lit: bool,
+    // Max depth an expression may have.
+    // 0 is unlimited.
+    depth_limit: u16,
+}
+
+impl Default for LocalConversionState {
+    fn default() -> Self {
+        Self {
+            has_lit: false,
+            has_implode: false,
+            has_window: false,
+            depth_limit: 500,
+        }
+    }
 }
 
 impl ExpressionConversionState {
-    pub(crate) fn new(allow_threading: bool) -> Self {
+    pub(crate) fn new(allow_threading: bool, depth_limit: u16) -> Self {
         Self {
+            depth_limit,
+            has_cache: false,
             allow_threading,
-            ..Default::default()
+            has_windows: false,
+            local: LocalConversionState {
+                depth_limit,
+                ..Default::default()
+            },
         }
     }
     fn reset(&mut self) {
-        self.local = Default::default()
+        self.local = LocalConversionState {
+            depth_limit: self.depth_limit,
+            ..Default::default()
+        }
     }
 
     fn has_implode(&self) -> bool {
@@ -116,6 +152,17 @@ impl ExpressionConversionState {
     fn set_window(&mut self) {
         self.has_windows = true;
         self.local.has_window = true;
+    }
+
+    fn check_depth(&mut self) {
+        if self.local.depth_limit > 0 {
+            self.local.depth_limit -= 1;
+
+            if self.local.depth_limit == 0 {
+                let depth = get_expr_depth_limit().unwrap();
+                polars_warn!(format!("encountered expression deeper than {depth} elements; this may overflow the stack, consider refactoring"))
+            }
+        }
     }
 }
 
@@ -148,7 +195,9 @@ fn create_physical_expr_inner(
 ) -> PolarsResult<Arc<dyn PhysicalExpr>> {
     use AExpr::*;
 
-    match expr_arena.get(expression).clone() {
+    state.check_depth();
+
+    match expr_arena.get(expression) {
         Len => Ok(Arc::new(phys_expr::CountExpr::new())),
         Window {
             mut function,
@@ -178,7 +227,7 @@ fn create_physical_expr_inner(
                 WindowType::Over(mapping) => {
                     // TODO! Order by
                     let group_by = create_physical_expressions_from_nodes(
-                        &partition_by,
+                        partition_by,
                         Context::Default,
                         expr_arena,
                         schema,
@@ -210,7 +259,7 @@ fn create_physical_expr_inner(
                         out_name,
                         function: function_expr,
                         phys_function,
-                        mapping,
+                        mapping: *mapping,
                         expr,
                     }))
                 },
@@ -219,7 +268,7 @@ fn create_physical_expr_inner(
                     function: function_expr,
                     phys_function,
                     out_name,
-                    options,
+                    options: options.clone(),
                     expr,
                 })),
             }
@@ -227,31 +276,31 @@ fn create_physical_expr_inner(
         Literal(value) => {
             state.local.has_lit = true;
             Ok(Arc::new(LiteralExpr::new(
-                value,
+                value.clone(),
                 node_to_expr(expression, expr_arena),
             )))
         },
         BinaryExpr { left, op, right } => {
-            let lhs = create_physical_expr_inner(left, ctxt, expr_arena, schema, state)?;
-            let rhs = create_physical_expr_inner(right, ctxt, expr_arena, schema, state)?;
+            let lhs = create_physical_expr_inner(*left, ctxt, expr_arena, schema, state)?;
+            let rhs = create_physical_expr_inner(*right, ctxt, expr_arena, schema, state)?;
             Ok(Arc::new(phys_expr::BinaryExpr::new(
                 lhs,
-                op,
+                *op,
                 rhs,
                 node_to_expr(expression, expr_arena),
                 state.local.has_lit,
             )))
         },
         Column(column) => Ok(Arc::new(ColumnExpr::new(
-            column,
+            column.clone(),
             node_to_expr(expression, expr_arena),
             schema.cloned(),
         ))),
         Sort { expr, options } => {
-            let phys_expr = create_physical_expr_inner(expr, ctxt, expr_arena, schema, state)?;
+            let phys_expr = create_physical_expr_inner(*expr, ctxt, expr_arena, schema, state)?;
             Ok(Arc::new(SortExpr::new(
                 phys_expr,
-                options,
+                *options,
                 node_to_expr(expression, expr_arena),
             )))
         },
@@ -260,13 +309,13 @@ fn create_physical_expr_inner(
             idx,
             returns_scalar,
         } => {
-            let phys_expr = create_physical_expr_inner(expr, ctxt, expr_arena, schema, state)?;
-            let phys_idx = create_physical_expr_inner(idx, ctxt, expr_arena, schema, state)?;
+            let phys_expr = create_physical_expr_inner(*expr, ctxt, expr_arena, schema, state)?;
+            let phys_idx = create_physical_expr_inner(*idx, ctxt, expr_arena, schema, state)?;
             Ok(Arc::new(GatherExpr {
                 phys_expr,
                 idx: phys_idx,
                 expr: node_to_expr(expression, expr_arena),
-                returns_scalar,
+                returns_scalar: *returns_scalar,
             }))
         },
         SortBy {
@@ -275,19 +324,19 @@ fn create_physical_expr_inner(
             sort_options,
         } => {
             polars_ensure!(!by.is_empty(), InvalidOperation: "'sort_by' got an empty set");
-            let phys_expr = create_physical_expr_inner(expr, ctxt, expr_arena, schema, state)?;
+            let phys_expr = create_physical_expr_inner(*expr, ctxt, expr_arena, schema, state)?;
             let phys_by =
-                create_physical_expressions_from_nodes(&by, ctxt, expr_arena, schema, state)?;
+                create_physical_expressions_from_nodes(by, ctxt, expr_arena, schema, state)?;
             Ok(Arc::new(SortByExpr::new(
                 phys_expr,
                 phys_by,
                 node_to_expr(expression, expr_arena),
-                sort_options,
+                sort_options.clone(),
             )))
         },
         Filter { input, by } => {
-            let phys_input = create_physical_expr_inner(input, ctxt, expr_arena, schema, state)?;
-            let phys_by = create_physical_expr_inner(by, ctxt, expr_arena, schema, state)?;
+            let phys_input = create_physical_expr_inner(*input, ctxt, expr_arena, schema, state)?;
+            let phys_by = create_physical_expr_inner(*by, ctxt, expr_arena, schema, state)?;
             Ok(Arc::new(FilterExpr::new(
                 phys_input,
                 phys_by,
@@ -306,6 +355,7 @@ fn create_physical_expr_inner(
                 Context::Default if !matches!(agg, AAggExpr::Quantile { .. }) => {
                     let function = match agg {
                         AAggExpr::Min { propagate_nans, .. } => {
+                            let propagate_nans = *propagate_nans;
                             let state = *state;
                             SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                 let s = std::mem::take(&mut s[0]);
@@ -339,6 +389,7 @@ fn create_physical_expr_inner(
                             }) as Arc<dyn SeriesUdf>)
                         },
                         AAggExpr::Max { propagate_nans, .. } => {
+                            let propagate_nans = *propagate_nans;
                             let state = *state;
                             SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                 let s = std::mem::take(&mut s[0]);
@@ -429,6 +480,7 @@ fn create_physical_expr_inner(
                             }) as Arc<dyn SeriesUdf>)
                         },
                         AAggExpr::Count(_, include_nulls) => {
+                            let include_nulls = *include_nulls;
                             SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                 let s = std::mem::take(&mut s[0]);
                                 let count = s.len() - s.null_count() * !include_nulls as usize;
@@ -438,12 +490,14 @@ fn create_physical_expr_inner(
                             }) as Arc<dyn SeriesUdf>)
                         },
                         AAggExpr::Std(_, ddof) => {
+                            let ddof = *ddof;
                             SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                 let s = std::mem::take(&mut s[0]);
                                 s.std_as_series(ddof).map(Some)
                             }) as Arc<dyn SeriesUdf>)
                         },
                         AAggExpr::Var(_, ddof) => {
+                            let ddof = *ddof;
                             SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                 let s = std::mem::take(&mut s[0]);
                                 s.var_as_series(ddof).map(Some)
@@ -468,10 +522,10 @@ fn create_physical_expr_inner(
                     } = agg
                     {
                         let input =
-                            create_physical_expr_inner(expr, ctxt, expr_arena, schema, state)?;
+                            create_physical_expr_inner(*expr, ctxt, expr_arena, schema, state)?;
                         let quantile =
-                            create_physical_expr_inner(quantile, ctxt, expr_arena, schema, state)?;
-                        return Ok(Arc::new(AggQuantileExpr::new(input, quantile, interpol)));
+                            create_physical_expr_inner(*quantile, ctxt, expr_arena, schema, state)?;
+                        return Ok(Arc::new(AggQuantileExpr::new(input, quantile, *interpol)));
                     }
                     let field = schema
                         .map(|schema| {
@@ -482,7 +536,7 @@ fn create_physical_expr_inner(
                             )
                         })
                         .transpose()?;
-                    let agg_method: GroupByMethod = agg.into();
+                    let agg_method: GroupByMethod = agg.clone().into();
                     Ok(Arc::new(AggregationExpr::new(input, agg_method, field)))
                 },
             }
@@ -492,12 +546,12 @@ fn create_physical_expr_inner(
             data_type,
             strict,
         } => {
-            let phys_expr = create_physical_expr_inner(expr, ctxt, expr_arena, schema, state)?;
+            let phys_expr = create_physical_expr_inner(*expr, ctxt, expr_arena, schema, state)?;
             Ok(Arc::new(CastExpr {
                 input: phys_expr,
-                data_type,
+                data_type: data_type.clone(),
                 expr: node_to_expr(expression, expr_arena),
-                strict,
+                strict: *strict,
             }))
         },
         Ternary {
@@ -507,13 +561,14 @@ fn create_physical_expr_inner(
         } => {
             let mut lit_count = 0u8;
             state.reset();
-            let predicate = create_physical_expr_inner(predicate, ctxt, expr_arena, schema, state)?;
+            let predicate =
+                create_physical_expr_inner(*predicate, ctxt, expr_arena, schema, state)?;
             lit_count += state.local.has_lit as u8;
             state.reset();
-            let truthy = create_physical_expr_inner(truthy, ctxt, expr_arena, schema, state)?;
+            let truthy = create_physical_expr_inner(*truthy, ctxt, expr_arena, schema, state)?;
             lit_count += state.local.has_lit as u8;
             state.reset();
-            let falsy = create_physical_expr_inner(falsy, ctxt, expr_arena, schema, state)?;
+            let falsy = create_physical_expr_inner(*falsy, ctxt, expr_arena, schema, state)?;
             lit_count += state.local.has_lit as u8;
             Ok(Arc::new(TernaryExpr::new(
                 predicate,
@@ -541,7 +596,7 @@ fn create_physical_expr_inner(
             // Will be reset in the function so get that here.
             let has_window = state.local.has_window;
             let input = create_physical_expressions_check_state(
-                &input,
+                input,
                 ctxt,
                 expr_arena,
                 schema,
@@ -554,9 +609,9 @@ fn create_physical_expr_inner(
 
             Ok(Arc::new(ApplyExpr::new(
                 input,
-                function,
+                function.clone(),
                 node_to_expr(expression, expr_arena),
-                options,
+                *options,
                 !state.has_cache,
                 schema.cloned(),
                 output_dtype,
@@ -579,7 +634,7 @@ fn create_physical_expr_inner(
             // Will be reset in the function so get that here.
             let has_window = state.local.has_window;
             let input = create_physical_expressions_check_state(
-                &input,
+                input,
                 ctxt,
                 expr_arena,
                 schema,
@@ -592,9 +647,9 @@ fn create_physical_expr_inner(
 
             Ok(Arc::new(ApplyExpr::new(
                 input,
-                function.into(),
+                function.clone().into(),
                 node_to_expr(expression, expr_arena),
-                options,
+                *options,
                 !state.has_cache,
                 schema.cloned(),
                 output_dtype,
@@ -605,9 +660,9 @@ fn create_physical_expr_inner(
             offset,
             length,
         } => {
-            let input = create_physical_expr_inner(input, ctxt, expr_arena, schema, state)?;
-            let offset = create_physical_expr_inner(offset, ctxt, expr_arena, schema, state)?;
-            let length = create_physical_expr_inner(length, ctxt, expr_arena, schema, state)?;
+            let input = create_physical_expr_inner(*input, ctxt, expr_arena, schema, state)?;
+            let offset = create_physical_expr_inner(*offset, ctxt, expr_arena, schema, state)?;
+            let length = create_physical_expr_inner(*length, ctxt, expr_arena, schema, state)?;
             polars_ensure!(!(state.has_implode() && matches!(ctxt, Context::Aggregation)), InvalidOperation: "'implode' followed by a slice during aggregation is not allowed");
             Ok(Arc::new(SliceExpr {
                 input,
@@ -617,7 +672,7 @@ fn create_physical_expr_inner(
             }))
         },
         Explode(expr) => {
-            let input = create_physical_expr_inner(expr, ctxt, expr_arena, schema, state)?;
+            let input = create_physical_expr_inner(*expr, ctxt, expr_arena, schema, state)?;
             let function =
                 SpecialEq::new(Arc::new(move |s: &mut [Series]| s[0].explode().map(Some))
                     as Arc<dyn SeriesUdf>);
@@ -629,11 +684,11 @@ fn create_physical_expr_inner(
             )))
         },
         Alias(input, name) => {
-            let phys_expr = create_physical_expr_inner(input, ctxt, expr_arena, schema, state)?;
+            let phys_expr = create_physical_expr_inner(*input, ctxt, expr_arena, schema, state)?;
             Ok(Arc::new(AliasExpr::new(
                 phys_expr,
-                name,
-                node_to_expr(input, expr_arena),
+                name.clone(),
+                node_to_expr(*input, expr_arena),
             )))
         },
         Wildcard => {

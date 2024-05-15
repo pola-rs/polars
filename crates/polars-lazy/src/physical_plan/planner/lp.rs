@@ -126,10 +126,32 @@ fn partitionable_gb(
     partitionable
 }
 
+struct ConversionState {
+    expr_depth: u16,
+}
+
+impl ConversionState {
+    fn new() -> PolarsResult<Self> {
+        Ok(ConversionState {
+            expr_depth: get_expr_depth_limit()?,
+        })
+    }
+}
+
 pub fn create_physical_plan(
     root: Node,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
+) -> PolarsResult<Box<dyn Executor>> {
+    let state = ConversionState::new()?;
+    create_physical_plan_impl(root, lp_arena, expr_arena, &state)
+}
+
+fn create_physical_plan_impl(
+    root: Node,
+    lp_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+    state: &ConversionState,
 ) -> PolarsResult<Box<dyn Executor>> {
     use IR::*;
 
@@ -154,7 +176,7 @@ pub fn create_physical_plan(
         Union { inputs, options } => {
             let inputs = inputs
                 .into_iter()
-                .map(|node| create_physical_plan(node, lp_arena, expr_arena))
+                .map(|node| create_physical_plan_impl(node, lp_arena, expr_arena, state))
                 .collect::<PolarsResult<Vec<_>>>()?;
             Ok(Box::new(executors::UnionExec { inputs, options }))
         },
@@ -163,12 +185,12 @@ pub fn create_physical_plan(
         } => {
             let inputs = inputs
                 .into_iter()
-                .map(|node| create_physical_plan(node, lp_arena, expr_arena))
+                .map(|node| create_physical_plan_impl(node, lp_arena, expr_arena, state))
                 .collect::<PolarsResult<Vec<_>>>()?;
             Ok(Box::new(executors::HConcatExec { inputs, options }))
         },
         Slice { input, offset, len } => {
-            let input = create_physical_plan(input, lp_arena, expr_arena)?;
+            let input = create_physical_plan_impl(input, lp_arena, expr_arena, state)?;
             Ok(Box::new(executors::SliceExec { input, offset, len }))
         },
         Filter { input, predicate } => {
@@ -191,8 +213,8 @@ pub fn create_physical_plan(
                         }
                     }
             }
-            let input = create_physical_plan(input, lp_arena, expr_arena)?;
-            let mut state = ExpressionConversionState::default();
+            let input = create_physical_plan_impl(input, lp_arena, expr_arena, state)?;
+            let mut state = ExpressionConversionState::new(true, state.expr_depth);
             let predicate = create_physical_expr(
                 &predicate,
                 Context::Default,
@@ -217,7 +239,7 @@ pub fn create_physical_plan(
             mut file_options,
         } => {
             file_options.n_rows = _set_n_rows_for_scan(file_options.n_rows);
-            let mut state = ExpressionConversionState::default();
+            let mut state = ExpressionConversionState::new(true, state.expr_depth);
             let predicate = predicate
                 .map(|pred| {
                     create_physical_expr(
@@ -289,8 +311,11 @@ pub fn create_physical_plan(
             ..
         } => {
             let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
-            let input = create_physical_plan(input, lp_arena, expr_arena)?;
-            let mut state = ExpressionConversionState::new(POOL.current_num_threads() > expr.len());
+            let input = create_physical_plan_impl(input, lp_arena, expr_arena, state)?;
+            let mut state = ExpressionConversionState::new(
+                POOL.current_num_threads() > expr.len(),
+                state.expr_depth,
+            );
 
             let streamable = if expr.has_sub_exprs() {
                 false
@@ -330,7 +355,7 @@ pub fn create_physical_plan(
             schema,
             ..
         } => {
-            let mut state = ExpressionConversionState::default();
+            let mut state = ExpressionConversionState::new(true, state.expr_depth);
             let selection = predicate
                 .map(|pred| {
                     create_physical_expr(
@@ -361,9 +386,9 @@ pub fn create_physical_plan(
                 Context::Default,
                 expr_arena,
                 Some(input_schema.as_ref()),
-                &mut Default::default(),
+                &mut ExpressionConversionState::new(true, state.expr_depth),
             )?;
-            let input = create_physical_plan(input, lp_arena, expr_arena)?;
+            let input = create_physical_plan_impl(input, lp_arena, expr_arena, state)?;
             Ok(Box::new(executors::SortExec {
                 input,
                 by_column,
@@ -376,7 +401,7 @@ pub fn create_physical_plan(
             id,
             cache_hits,
         } => {
-            let input = create_physical_plan(input, lp_arena, expr_arena)?;
+            let input = create_physical_plan_impl(input, lp_arena, expr_arena, state)?;
             Ok(Box::new(executors::CacheExec {
                 id,
                 input,
@@ -384,7 +409,7 @@ pub fn create_physical_plan(
             }))
         },
         Distinct { input, options } => {
-            let input = create_physical_plan(input, lp_arena, expr_arena)?;
+            let input = create_physical_plan_impl(input, lp_arena, expr_arena, state)?;
             Ok(Box::new(executors::UniqueExec { input, options }))
         },
         GroupBy {
@@ -403,20 +428,20 @@ pub fn create_physical_plan(
                 Context::Default,
                 expr_arena,
                 Some(&input_schema),
-                &mut Default::default(),
+                &mut ExpressionConversionState::new(true, state.expr_depth),
             )?;
             let phys_aggs = create_physical_expressions_from_irs(
                 &aggs,
                 Context::Aggregation,
                 expr_arena,
                 Some(&input_schema),
-                &mut Default::default(),
+                &mut ExpressionConversionState::new(true, state.expr_depth),
             )?;
 
             let _slice = options.slice;
             #[cfg(feature = "dynamic_group_by")]
             if let Some(options) = options.dynamic {
-                let input = create_physical_plan(input, lp_arena, expr_arena)?;
+                let input = create_physical_plan_impl(input, lp_arena, expr_arena, state)?;
                 return Ok(Box::new(executors::GroupByDynamicExec {
                     input,
                     keys: phys_keys,
@@ -430,7 +455,7 @@ pub fn create_physical_plan(
 
             #[cfg(feature = "dynamic_group_by")]
             if let Some(options) = options.rolling {
-                let input = create_physical_plan(input, lp_arena, expr_arena)?;
+                let input = create_physical_plan_impl(input, lp_arena, expr_arena, state)?;
                 return Ok(Box::new(executors::GroupByRollingExec {
                     input,
                     keys: phys_keys,
@@ -452,7 +477,7 @@ pub fn create_physical_plan(
                         false
                     }
                 });
-                let input = create_physical_plan(input, lp_arena, expr_arena)?;
+                let input = create_physical_plan_impl(input, lp_arena, expr_arena, state)?;
                 let keys = keys
                     .iter()
                     .map(|e| e.to_expr(expr_arena))
@@ -474,7 +499,7 @@ pub fn create_physical_plan(
                     aggs,
                 )))
             } else {
-                let input = create_physical_plan(input, lp_arena, expr_arena)?;
+                let input = create_physical_plan_impl(input, lp_arena, expr_arena, state)?;
                 Ok(Box::new(executors::GroupByExec::new(
                     input,
                     phys_keys,
@@ -509,21 +534,21 @@ pub fn create_physical_plan(
                 false
             };
 
-            let input_left = create_physical_plan(input_left, lp_arena, expr_arena)?;
-            let input_right = create_physical_plan(input_right, lp_arena, expr_arena)?;
+            let input_left = create_physical_plan_impl(input_left, lp_arena, expr_arena, state)?;
+            let input_right = create_physical_plan_impl(input_right, lp_arena, expr_arena, state)?;
             let left_on = create_physical_expressions_from_irs(
                 &left_on,
                 Context::Default,
                 expr_arena,
                 None,
-                &mut Default::default(),
+                &mut ExpressionConversionState::new(true, state.expr_depth),
             )?;
             let right_on = create_physical_expressions_from_irs(
                 &right_on,
                 Context::Default,
                 expr_arena,
                 None,
-                &mut Default::default(),
+                &mut ExpressionConversionState::new(true, state.expr_depth),
             )?;
             let options = Arc::try_unwrap(options).unwrap_or_else(|options| (*options).clone());
             Ok(Box::new(executors::JoinExec::new(
@@ -542,7 +567,7 @@ pub fn create_physical_plan(
             options,
         } => {
             let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
-            let input = create_physical_plan(input, lp_arena, expr_arena)?;
+            let input = create_physical_plan_impl(input, lp_arena, expr_arena, state)?;
 
             let streamable = if exprs.has_sub_exprs() {
                 false
@@ -550,8 +575,10 @@ pub fn create_physical_plan(
                 all_streamable(&exprs, expr_arena, Context::Default)
             };
 
-            let mut state =
-                ExpressionConversionState::new(POOL.current_num_threads() > exprs.len());
+            let mut state = ExpressionConversionState::new(
+                POOL.current_num_threads() > exprs.len(),
+                state.expr_depth,
+            );
 
             let cse_exprs = create_physical_expressions_from_irs(
                 exprs.cse_exprs(),
@@ -581,21 +608,21 @@ pub fn create_physical_plan(
         MapFunction {
             input, function, ..
         } => {
-            let input = create_physical_plan(input, lp_arena, expr_arena)?;
+            let input = create_physical_plan_impl(input, lp_arena, expr_arena, state)?;
             Ok(Box::new(executors::UdfExec { input, function }))
         },
         ExtContext {
             input, contexts, ..
         } => {
-            let input = create_physical_plan(input, lp_arena, expr_arena)?;
+            let input = create_physical_plan_impl(input, lp_arena, expr_arena, state)?;
             let contexts = contexts
                 .into_iter()
-                .map(|node| create_physical_plan(node, lp_arena, expr_arena))
+                .map(|node| create_physical_plan_impl(node, lp_arena, expr_arena, state))
                 .collect::<PolarsResult<_>>()?;
             Ok(Box::new(executors::ExternalContext { input, contexts }))
         },
         SimpleProjection { input, columns } => {
-            let input = create_physical_plan(input, lp_arena, expr_arena)?;
+            let input = create_physical_plan_impl(input, lp_arena, expr_arena, state)?;
             let exec = executors::ProjectionSimple { input, columns };
             Ok(Box::new(exec))
         },
