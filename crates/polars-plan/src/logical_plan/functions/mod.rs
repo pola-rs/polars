@@ -333,9 +333,9 @@ impl Display for FunctionNode {
                     writeln!(f, "--- STREAMING")?;
                     write!(f, "{ir_display}")?;
                     let indent = 2;
-                    writeln!(f, "{:indent$}--- END STREAMING", "")
+                    write!(f, "{:indent$}--- END STREAMING", "")
                 } else {
-                    writeln!(f, "STREAMING")
+                    write!(f, "STREAMING")
                 }
             },
             Rename { .. } => write!(f, "RENAME"),

@@ -315,16 +315,6 @@ impl Expr {
     }
 }
 
-impl fmt::Debug for Expr {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // @NOTE: It is maybe not that nice to convert to IR in the Debug impl, but since this
-        // debug impl is used a lot. It it nice to have well formatted information.
-        let mut expr_arena = Arena::with_capacity(16);
-        let ir = to_expr_ir(self.clone(), &mut expr_arena);
-        ExprIRDisplay::new(&ir, &expr_arena).fmt(f)
-    }
-}
-
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum Operator {

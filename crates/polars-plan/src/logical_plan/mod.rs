@@ -23,6 +23,7 @@ pub(crate) mod debug;
 pub(crate) mod expr_expansion;
 pub mod expr_ir;
 mod file_scan;
+mod format;
 mod functions;
 pub(super) mod hive;
 pub(crate) mod iterator;
