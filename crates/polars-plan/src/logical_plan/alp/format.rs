@@ -3,7 +3,7 @@ use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
 
-use polars_core::datatypes::AnyValue;
+use polars_core::schema::Schema;
 use recursive::recursive;
 
 use crate::prelude::*;
@@ -23,7 +23,7 @@ pub(crate) struct ExprIRSliceDisplay<'a, T: AsExpr> {
     pub(crate) expr_arena: &'a Arena<AExpr>,
 }
 
-trait AsExpr {
+pub(crate) trait AsExpr {
     fn node(&self) -> Node;
     fn output_name(&self) -> &OutputName;
 }
@@ -305,8 +305,13 @@ impl<'a> IRDisplay<'a> {
                 write!(f, "{:indent$}{name}", "")?;
                 self.with_root(*input)._format(f, sub_indent)
             },
-            SimpleProjection { input, .. } => {
-                write!(f, "{:indent$}SIMPLE_PROJECTION ", "")?;
+            SimpleProjection { input, columns } => {
+                let num_columns = columns.as_ref().len();
+                let total_columns = self.0.lp_arena.get(*input).schema(self.0.lp_arena).len();
+
+                let columns = ColumnsDisplay(columns.as_ref());
+                write!(f, "{:indent$}simple π {num_columns}/{total_columns} [{columns}]", "")?;
+
                 self.with_root(*input)._format(f, sub_indent)
             },
             Invalid => write!(f, "{:indent$}INVALID", ""),
@@ -593,6 +598,26 @@ impl<'a> Display for ExprIRDisplay<'a> {
         Ok(())
     }
 }
+
+pub(crate) struct ColumnsDisplay<'a>(pub(crate) &'a Schema);
+
+impl fmt::Display for ColumnsDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let len = self.0.len();
+        let mut iter_names = self.0.iter_names();
+
+        if let Some(fst) = iter_names.next() {
+            write!(f, "\"{fst}\"")?;
+            
+            if len > 0 {
+                write!(f, ", ... {len} other columns")?;
+            }
+        }
+
+        Ok(())
+    }
+}
+
 
 // impl fmt::Debug for Operator {
 //     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

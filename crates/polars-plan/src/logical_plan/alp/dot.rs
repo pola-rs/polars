@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use super::format::ExprIRSliceDisplay;
 use crate::constants::UNLIMITED_CACHE;
+use crate::prelude::alp::format::ColumnsDisplay;
 use crate::prelude::*;
 
 pub struct IRDotDisplay<'a>(pub(crate) IRPlanRef<'a>);
@@ -263,10 +264,13 @@ impl<'a> IRDotDisplay<'a> {
                     })
                 })?;
             },
-            SimpleProjection { input, columns: _ } => {
-                self.with_root(*input)._format(f, Some(id), last)?;
+            SimpleProjection { input, columns } => {
+                let num_columns = columns.as_ref().len();
+                let total_columns = self.0.lp_arena.get(*input).schema(self.0.lp_arena).len();
 
-                write_label(f, id, |f| f.write_str("SIMPLE_PROJECTION"))?;
+                let columns = ColumnsDisplay(columns.as_ref());
+                self.with_root(*input)._format(f, Some(id), last)?;
+                write_label(f, id, |f| write!(f, "simple π {num_columns}/{total_columns}\n[{columns}]"))?;
             },
             Invalid => write_label(f, id, |f| f.write_str("INVALID"))?,
         }
@@ -322,6 +326,8 @@ impl<'a, 'b> fmt::Write for EscapeLabel<'a, 'b> {
             let mut char_indices = s.char_indices();
 
             // This escapes quotes and new lines
+            // @NOTE: I am aware this does not work for \" and such. I am ignoring that fact as we
+            // are not really using such strings.
             let f = char_indices
                 .find_map(|(i, c)| {
                     (|| match c {

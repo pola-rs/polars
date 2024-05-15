@@ -7,6 +7,7 @@ use regex::Regex;
 
 use crate::logical_plan::alp::IRPlanRef;
 use crate::logical_plan::visitor::{VisitRecursion, Visitor};
+use crate::prelude::alp::format::ColumnsDisplay;
 use crate::prelude::visitor::AexprNode;
 use crate::prelude::*;
 
@@ -274,8 +275,18 @@ impl<'a> TreeFmtNode<'a> {
                         ),
                         vec![self.lp_node(None, *input)],
                     ),
-                    SimpleProjection { input, columns: _ } => {
-                        ND(wh(h, "SIMPLE_PROJECTION"), vec![self.lp_node(None, *input)])
+                    SimpleProjection { input, columns } => {
+                        let num_columns = columns.as_ref().len();
+                        let total_columns = lp.lp_arena.get(*input).schema(lp.lp_arena).len();
+
+                        let columns = ColumnsDisplay(columns.as_ref());
+                        ND(
+                            wh(
+                                h,
+                                &format!("simple π {num_columns}/{total_columns} [{columns}]"),
+                            ),
+                            vec![self.lp_node(None, *input)],
+                        )
                     },
                     Invalid => ND(wh(h, "INVALID"), vec![]),
                 }
