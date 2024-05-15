@@ -59,71 +59,63 @@ impl PySeries {
     /// appropriately.
     #[allow(clippy::wrong_self_convention)]
     pub fn to_numpy_view(&self, py: Python) -> Option<PyObject> {
-        // NumPy arrays are always contiguous
-        if self.series.n_chunks() > 1 {
-            return None;
-        }
-
-        match self.series.dtype() {
-            dt if dt.is_numeric() => {
-                let dims = [self.series.len()].into_dimension();
-                let owner = self.clone().into_py(py); // Keep the Series memory alive.
-                with_match_physical_numeric_polars_type!(dt, |$T| {
-                    let np_dtype = <$T as PolarsNumericType>::Native::get_dtype_bound(py);
-                    let ca: &ChunkedArray<$T> = self.series.unpack::<$T>().unwrap();
-                    let slice = ca.data_views().next().unwrap();
-
-                    let view = unsafe {
-                        create_borrowed_np_array::<_>(
-                            py,
-                            np_dtype,
-                            dims,
-                            flags::NPY_ARRAY_FARRAY_RO,
-                            slice.as_ptr() as _,
-                            owner,
-                        )
-                    };
-                    Some(view)
-                })
-            },
-            dt @ (DataType::Datetime(_, _) | DataType::Duration(_)) => {
-                let np_dtype = polars_dtype_to_np_temporal_dtype(py, dt);
-
-                let phys = self.series.to_physical_repr();
-                let ca = phys.i64().unwrap();
-                let slice = ca.data_views().next().unwrap();
-                let dims = [self.series.len()].into_dimension();
-                let owner = self.clone().into_py(py);
-
-                let view = unsafe {
-                    create_borrowed_np_array::<_>(
-                        py,
-                        np_dtype,
-                        dims,
-                        flags::NPY_ARRAY_FARRAY_RO,
-                        slice.as_ptr() as _,
-                        owner,
-                    )
-                };
-                Some(view)
-            },
-            DataType::Array(_, width) => {
-                let ca = self.series.array().unwrap();
-                let s_inner: PySeries = ca.get_inner().into();
-                let np_array_flat = s_inner.to_numpy_view(py)?;
-
-                // Reshape to the original shape.
-                let shape = (ca.len(), *width);
-                let np_array = np_array_flat
-                    .call_method1(py, intern!(py, "reshape"), shape)
-                    .unwrap();
-                Some(np_array)
-            },
-            _ => None,
-        }
+        series_to_numpy_view(py, &self.series)
     }
 }
 
+fn series_to_numpy_view(py: Python, s: &Series) -> Option<PyObject> {
+    // NumPy arrays are always contiguous
+    if s.n_chunks() > 1 {
+        return None;
+    }
+    let view = match s.dtype() {
+        dt if dt.is_numeric() => numeric_series_to_numpy_view(py, s),
+        DataType::Datetime(_, _) | DataType::Duration(_) => temporal_series_to_numpy_view(py, s),
+        DataType::Array(_, _) => array_series_to_numpy_view(py, s)?,
+        _ => return None,
+    };
+    Some(view)
+}
+fn numeric_series_to_numpy_view(py: Python, s: &Series) -> PyObject {
+    let dims = [s.len()].into_dimension();
+    let owner = PySeries::from(s.clone()).into_py(py); // Keep the Series memory alive.
+    with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
+        let np_dtype = <$T as PolarsNumericType>::Native::get_dtype_bound(py);
+        let ca: &ChunkedArray<$T> = s.unpack::<$T>().unwrap();
+        let slice = ca.data_views().next().unwrap();
+
+        unsafe {
+            create_borrowed_np_array::<_>(
+                py,
+                np_dtype,
+                dims,
+                flags::NPY_ARRAY_FARRAY_RO,
+                slice.as_ptr() as _,
+                owner,
+            )
+        }
+    })
+}
+fn temporal_series_to_numpy_view(py: Python, s: &Series) -> PyObject {
+    let np_dtype = polars_dtype_to_np_temporal_dtype(py, s.dtype());
+
+    let phys = s.to_physical_repr();
+    let ca = phys.i64().unwrap();
+    let slice = ca.data_views().next().unwrap();
+    let dims = [s.len()].into_dimension();
+    let owner = PySeries::from(s.clone()).into_py(py); // Keep the Series memory alive.
+
+    unsafe {
+        create_borrowed_np_array::<_>(
+            py,
+            np_dtype,
+            dims,
+            flags::NPY_ARRAY_FARRAY_RO,
+            slice.as_ptr() as _,
+            owner,
+        )
+    }
+}
 /// Get the NumPy temporal data type associated with the given Polars [`DataType`].
 fn polars_dtype_to_np_temporal_dtype<'a>(
     py: Python<'a>,
@@ -151,6 +143,21 @@ fn polars_dtype_to_np_temporal_dtype<'a>(
         },
         _ => panic!("only Datetime/Duration inputs supported, got {}", dtype),
     }
+}
+fn array_series_to_numpy_view(py: Python, s: &Series) -> Option<PyObject> {
+    let ca = s.array().unwrap();
+    let s_inner: PySeries = ca.get_inner().into();
+    let np_array_flat = s_inner.to_numpy_view(py)?;
+
+    // Reshape to the original shape.
+    let DataType::Array(_, width) = s.dtype() else {
+        unreachable!()
+    };
+    let shape = (ca.len(), *width);
+    let view = np_array_flat
+        .call_method1(py, intern!(py, "reshape"), shape)
+        .unwrap();
+    Some(view)
 }
 
 #[pymethods]
