@@ -225,7 +225,7 @@ def test_series_to_numpy_bool_with_nulls() -> None:
 def test_series_to_numpy_array_of_int() -> None:
     values = [[1, 2], [3, 4], [5, 6]]
     s = pl.Series(values, dtype=pl.Array(pl.Int64, 2))
-    result = s.to_numpy(use_pyarrow=False)
+    result = s.to_numpy(use_pyarrow=False, allow_copy=False)
 
     expected = np.array(values)
     assert_array_equal(result, expected)
@@ -240,15 +240,23 @@ def test_series_to_numpy_array_of_str() -> None:
     assert result.dtype == np.object_
 
 
-@pytest.mark.skip(
-    reason="Currently bugged, see: https://github.com/pola-rs/polars/issues/14268"
-)
 def test_series_to_numpy_array_with_nulls() -> None:
     values = [[1, 2], [3, 4], None]
     s = pl.Series(values, dtype=pl.Array(pl.Int64, 2))
     result = s.to_numpy(use_pyarrow=False)
 
     expected = np.array([[1.0, 2.0], [3.0, 4.0], [np.nan, np.nan]])
+    assert_array_equal(result, expected)
+    assert result.dtype == np.float64
+    assert_allow_copy_false_raises(s)
+
+
+def test_series_to_numpy_array_with_nested_nulls() -> None:
+    values = [[None, 2], [3, 4], [5, None]]
+    s = pl.Series(values, dtype=pl.Array(pl.Int64, 2))
+    result = s.to_numpy(use_pyarrow=False)
+
+    expected = np.array([[np.nan, 2.0], [3.0, 4.0], [5.0, np.nan]])
     assert_array_equal(result, expected)
     assert result.dtype == np.float64
     assert_allow_copy_false_raises(s)
