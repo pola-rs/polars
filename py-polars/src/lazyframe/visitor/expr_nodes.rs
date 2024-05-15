@@ -59,6 +59,53 @@ pub enum PyOperator {
     LogicalOr,
 }
 
+#[pyclass(name = "StringFunction")]
+enum PyStringFunction {
+    ConcatHorizontal,
+    ConcatVertical,
+    Contains,
+    CountMatches,
+    EndsWith,
+    Explode,
+    Extract,
+    ExtractAll,
+    ExtractGroups,
+    Find,
+    ToInteger,
+    LenBytes,
+    LenChars,
+    Lowercase,
+    JsonDecode,
+    JsonPathMatch,
+    Replace,
+    Reverse,
+    PadStart,
+    PadEnd,
+    Slice,
+    Head,
+    Tail,
+    HexEncode,
+    HexDecode,
+    Base64Encode,
+    Base64Decode,
+    StartsWith,
+    StripChars,
+    StripCharsStart,
+    StripCharsEnd,
+    StripPrefix,
+    StripSuffix,
+    SplitExact,
+    SplitN,
+    Strptime,
+    Split,
+    ToDecimal,
+    Titlecase,
+    Uppercase,
+    ZFill,
+    ContainsMany,
+    ReplaceMany,
+}
+
 #[pymethods]
 impl PyOperator {
     fn __hash__(&self) -> u64 {
@@ -575,76 +622,153 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     StringFunction::ConcatHorizontal {
                         delimiter,
                         ignore_nulls,
-                    } => ("concathorizontal", delimiter, ignore_nulls).to_object(py),
+                    } => (
+                        PyStringFunction::ConcatHorizontal.into_py(py),
+                        delimiter,
+                        ignore_nulls,
+                    )
+                        .to_object(py),
                     StringFunction::ConcatVertical {
                         delimiter,
                         ignore_nulls,
-                    } => ("concatvertical", delimiter, ignore_nulls).to_object(py),
+                    } => (
+                        PyStringFunction::ConcatVertical.into_py(py),
+                        delimiter,
+                        ignore_nulls,
+                    )
+                        .to_object(py),
                     StringFunction::Contains { literal, strict } => {
-                        ("contains", literal, strict).to_object(py)
+                        (PyStringFunction::Contains.into_py(py), literal, strict).to_object(py)
                     },
-                    StringFunction::CountMatches(_) => ("countmatches",).to_object(py),
-                    StringFunction::EndsWith => ("endswith",).to_object(py),
-                    StringFunction::Explode => ("explode",).to_object(py),
-                    StringFunction::Extract(_) => ("extract",).to_object(py),
-                    StringFunction::ExtractAll => ("extractall",).to_object(py),
-                    StringFunction::ExtractGroups { dtype, pat } => {
-                        ("extractgroups", Wrap(dtype.clone()).to_object(py), pat).to_object(py)
+                    StringFunction::CountMatches(_) => {
+                        (PyStringFunction::CountMatches.into_py(py),).to_object(py)
                     },
+                    StringFunction::EndsWith => {
+                        (PyStringFunction::EndsWith.into_py(py),).to_object(py)
+                    },
+                    StringFunction::Explode => {
+                        (PyStringFunction::Explode.into_py(py),).to_object(py)
+                    },
+                    StringFunction::Extract(_) => {
+                        (PyStringFunction::Extract.into_py(py),).to_object(py)
+                    },
+                    StringFunction::ExtractAll => {
+                        (PyStringFunction::ExtractAll.into_py(py),).to_object(py)
+                    },
+                    StringFunction::ExtractGroups { dtype, pat } => (
+                        PyStringFunction::ExtractGroups.into_py(py),
+                        Wrap(dtype.clone()).to_object(py),
+                        pat,
+                    )
+                        .to_object(py),
                     StringFunction::Find { literal, strict } => {
-                        ("find", literal, strict).to_object(py)
+                        (PyStringFunction::Find.into_py(py), literal, strict).to_object(py)
                     },
-                    StringFunction::ToInteger(_) => ("tointeger",).to_object(py),
-                    StringFunction::LenBytes => ("lenbytes",).to_object(py),
-                    StringFunction::LenChars => ("lenchars",).to_object(py),
-                    StringFunction::Lowercase => ("lowercase",).to_object(py),
+                    StringFunction::ToInteger(_) => {
+                        (PyStringFunction::ToInteger.into_py(py),).to_object(py)
+                    },
+                    StringFunction::LenBytes => {
+                        (PyStringFunction::LenBytes.into_py(py),).to_object(py)
+                    },
+                    StringFunction::LenChars => {
+                        (PyStringFunction::LenChars.into_py(py),).to_object(py)
+                    },
+                    StringFunction::Lowercase => {
+                        (PyStringFunction::Lowercase.into_py(py),).to_object(py)
+                    },
                     StringFunction::JsonDecode {
                         dtype,
                         infer_schema_len,
                     } => (
-                        "jsondecode",
+                        PyStringFunction::JsonDecode.into_py(py),
                         Wrap(dtype.as_ref().unwrap().clone()).to_object(py),
                         infer_schema_len,
                     )
                         .to_object(py),
-                    StringFunction::JsonPathMatch => ("jsonpathmatch",).to_object(py),
-                    StringFunction::Replace { n, literal } => ("replace", n, literal).to_object(py),
-                    StringFunction::Reverse => ("reverse",).to_object(py),
+                    StringFunction::JsonPathMatch => {
+                        (PyStringFunction::JsonPathMatch.into_py(py),).to_object(py)
+                    },
+                    StringFunction::Replace { n, literal } => {
+                        (PyStringFunction::Replace.into_py(py), n, literal).to_object(py)
+                    },
+                    StringFunction::Reverse => {
+                        (PyStringFunction::Reverse.into_py(py),).to_object(py)
+                    },
                     StringFunction::PadStart { length, fill_char } => {
-                        ("padstart", length, fill_char).to_object(py)
+                        (PyStringFunction::PadStart.into_py(py), length, fill_char).to_object(py)
                     },
                     StringFunction::PadEnd { length, fill_char } => {
-                        ("padend", length, fill_char).to_object(py)
+                        (PyStringFunction::PadEnd.into_py(py), length, fill_char).to_object(py)
                     },
-                    StringFunction::Slice => ("slice",).to_object(py),
-                    StringFunction::Head => ("head",).to_object(py),
-                    StringFunction::Tail => ("tail",).to_object(py),
-                    StringFunction::HexEncode => ("hexencode",).to_object(py),
-                    StringFunction::HexDecode(_) => ("hexdecode",).to_object(py),
-                    StringFunction::Base64Encode => ("base64encode",).to_object(py),
-                    StringFunction::Base64Decode(_) => ("base64decode",).to_object(py),
-                    StringFunction::StartsWith => ("startswith",).to_object(py),
-                    StringFunction::StripChars => ("stripchars",).to_object(py),
-                    StringFunction::StripCharsStart => ("stripcharsstart",).to_object(py),
-                    StringFunction::StripCharsEnd => ("stripcharsend",).to_object(py),
-                    StringFunction::StripPrefix => ("stripprefix",).to_object(py),
-                    StringFunction::StripSuffix => ("stripsuffix",).to_object(py),
+                    StringFunction::Slice => (PyStringFunction::Slice.into_py(py),).to_object(py),
+                    StringFunction::Head => (PyStringFunction::Head.into_py(py),).to_object(py),
+                    StringFunction::Tail => (PyStringFunction::Tail.into_py(py),).to_object(py),
+                    StringFunction::HexEncode => {
+                        (PyStringFunction::HexEncode.into_py(py),).to_object(py)
+                    },
+                    StringFunction::HexDecode(_) => {
+                        (PyStringFunction::HexDecode.into_py(py),).to_object(py)
+                    },
+                    StringFunction::Base64Encode => {
+                        (PyStringFunction::Base64Encode.into_py(py),).to_object(py)
+                    },
+                    StringFunction::Base64Decode(_) => {
+                        (PyStringFunction::Base64Decode.into_py(py),).to_object(py)
+                    },
+                    StringFunction::StartsWith => {
+                        (PyStringFunction::StartsWith.into_py(py),).to_object(py)
+                    },
+                    StringFunction::StripChars => {
+                        (PyStringFunction::StripChars.into_py(py),).to_object(py)
+                    },
+                    StringFunction::StripCharsStart => {
+                        (PyStringFunction::StripCharsStart.into_py(py),).to_object(py)
+                    },
+                    StringFunction::StripCharsEnd => {
+                        (PyStringFunction::StripCharsEnd.into_py(py),).to_object(py)
+                    },
+                    StringFunction::StripPrefix => {
+                        (PyStringFunction::StripPrefix.into_py(py),).to_object(py)
+                    },
+                    StringFunction::StripSuffix => {
+                        (PyStringFunction::StripSuffix.into_py(py),).to_object(py)
+                    },
                     StringFunction::SplitExact { n, inclusive } => {
-                        ("splitexact", n, inclusive).to_object(py)
+                        (PyStringFunction::SplitExact.into_py(py), n, inclusive).to_object(py)
                     },
-                    StringFunction::SplitN(_) => ("splitn",).to_object(py),
-                    StringFunction::Strptime(_, _) => ("strptime",).to_object(py),
-                    StringFunction::Split(_) => ("split",).to_object(py),
-                    StringFunction::ToDecimal(_) => ("todecimal",).to_object(py),
-                    StringFunction::Titlecase => ("titlecase",).to_object(py),
-                    StringFunction::Uppercase => ("uppercase",).to_object(py),
-                    StringFunction::ZFill => ("zfill",).to_object(py),
+                    StringFunction::SplitN(_) => {
+                        (PyStringFunction::SplitN.into_py(py),).to_object(py)
+                    },
+                    StringFunction::Strptime(_, _) => {
+                        (PyStringFunction::Strptime.into_py(py),).to_object(py)
+                    },
+                    StringFunction::Split(_) => {
+                        (PyStringFunction::Split.into_py(py),).to_object(py)
+                    },
+                    StringFunction::ToDecimal(_) => {
+                        (PyStringFunction::ToDecimal.into_py(py),).to_object(py)
+                    },
+                    StringFunction::Titlecase => {
+                        (PyStringFunction::Titlecase.into_py(py),).to_object(py)
+                    },
+                    StringFunction::Uppercase => {
+                        (PyStringFunction::Uppercase.into_py(py),).to_object(py)
+                    },
+                    StringFunction::ZFill => (PyStringFunction::ZFill.into_py(py),).to_object(py),
                     StringFunction::ContainsMany {
                         ascii_case_insensitive,
-                    } => ("containsmany", ascii_case_insensitive).to_object(py),
+                    } => (
+                        PyStringFunction::ContainsMany.into_py(py),
+                        ascii_case_insensitive,
+                    )
+                        .to_object(py),
                     StringFunction::ReplaceMany {
                         ascii_case_insensitive,
-                    } => ("replacemany", ascii_case_insensitive).to_object(py),
+                    } => (
+                        PyStringFunction::ReplaceMany.into_py(py),
+                        ascii_case_insensitive,
+                    )
+                        .to_object(py),
                 },
                 FunctionExpr::StructExpr(_) => {
                     return Err(PyNotImplementedError::new_err("struct expr"))
