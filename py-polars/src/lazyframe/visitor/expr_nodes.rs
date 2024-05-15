@@ -677,14 +677,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                         (PyStringFunction::Lowercase.into_py(py),).to_object(py)
                     },
                     StringFunction::JsonDecode {
-                        dtype,
+                        dtype: _,
                         infer_schema_len,
-                    } => (
-                        PyStringFunction::JsonDecode.into_py(py),
-                        Wrap(dtype.as_ref().unwrap().clone()).to_object(py),
-                        infer_schema_len,
-                    )
-                        .to_object(py),
+                    } => (PyStringFunction::JsonDecode.into_py(py), infer_schema_len).to_object(py),
                     StringFunction::JsonPathMatch => {
                         (PyStringFunction::JsonPathMatch.into_py(py),).to_object(py)
                     },
