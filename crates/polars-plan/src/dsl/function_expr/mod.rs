@@ -101,7 +101,7 @@ pub(super) use self::rolling::RollingFunction;
 #[cfg(feature = "rolling_window_by")]
 pub(super) use self::rolling_by::RollingFunctionBy;
 #[cfg(feature = "strings")]
-pub(crate) use self::strings::StringFunction;
+pub use self::strings::StringFunction;
 #[cfg(feature = "dtype-struct")]
 pub(crate) use self::struct_::StructFunction;
 #[cfg(feature = "trigonometry")]
