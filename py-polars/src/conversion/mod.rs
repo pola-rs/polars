@@ -303,32 +303,32 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
                     .str()?
                     .extract::<PyBackedStr>()?;
                 match &*name {
-                    "UInt8" => DataType::UInt8,
-                    "UInt16" => DataType::UInt16,
-                    "UInt32" => DataType::UInt32,
-                    "UInt64" => DataType::UInt64,
                     "Int8" => DataType::Int8,
                     "Int16" => DataType::Int16,
                     "Int32" => DataType::Int32,
                     "Int64" => DataType::Int64,
+                    "UInt8" => DataType::UInt8,
+                    "UInt16" => DataType::UInt16,
+                    "UInt32" => DataType::UInt32,
+                    "UInt64" => DataType::UInt64,
+                    "Float32" => DataType::Float32,
+                    "Float64" => DataType::Float64,
+                    "Boolean" => DataType::Boolean,
                     "String" => DataType::String,
                     "Binary" => DataType::Binary,
-                    "Boolean" => DataType::Boolean,
                     "Categorical" => DataType::Categorical(None, Default::default()),
                     "Enum" => DataType::Enum(None, Default::default()),
                     "Date" => DataType::Date,
-                    "Datetime" => DataType::Datetime(TimeUnit::Microseconds, None),
                     "Time" => DataType::Time,
+                    "Datetime" => DataType::Datetime(TimeUnit::Microseconds, None),
                     "Duration" => DataType::Duration(TimeUnit::Microseconds),
                     "Decimal" => DataType::Decimal(None, None), // "none" scale => "infer"
-                    "Float32" => DataType::Float32,
-                    "Float64" => DataType::Float64,
-                    #[cfg(feature = "object")]
-                    "Object" => DataType::Object(OBJECT_NAME, None),
-                    "Array" => DataType::Array(Box::new(DataType::Null), 0),
                     "List" => DataType::List(Box::new(DataType::Null)),
+                    "Array" => DataType::Array(Box::new(DataType::Null), 0),
                     "Struct" => DataType::Struct(vec![]),
                     "Null" => DataType::Null,
+                    #[cfg(feature = "object")]
+                    "Object" => DataType::Object(OBJECT_NAME, None),
                     "Unknown" => DataType::Unknown(Default::default()),
                     dt => {
                         return Err(PyTypeError::new_err(format!(
@@ -345,9 +345,11 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
             "UInt16" => DataType::UInt16,
             "UInt32" => DataType::UInt32,
             "UInt64" => DataType::UInt64,
+            "Float32" => DataType::Float32,
+            "Float64" => DataType::Float64,
+            "Boolean" => DataType::Boolean,
             "String" => DataType::String,
             "Binary" => DataType::Binary,
-            "Boolean" => DataType::Boolean,
             "Categorical" => {
                 let ordering = ob.getattr(intern!(py, "ordering")).unwrap();
                 let ordering = ordering.extract::<Wrap<CategoricalOrdering>>()?.0;
@@ -362,21 +364,17 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
             },
             "Date" => DataType::Date,
             "Time" => DataType::Time,
-            "Float32" => DataType::Float32,
-            "Float64" => DataType::Float64,
-            "Null" => DataType::Null,
-            "Unknown" => DataType::Unknown(Default::default()),
-            "Duration" => {
-                let time_unit = ob.getattr(intern!(py, "time_unit")).unwrap();
-                let time_unit = time_unit.extract::<Wrap<TimeUnit>>()?.0;
-                DataType::Duration(time_unit)
-            },
             "Datetime" => {
                 let time_unit = ob.getattr(intern!(py, "time_unit")).unwrap();
                 let time_unit = time_unit.extract::<Wrap<TimeUnit>>()?.0;
                 let time_zone = ob.getattr(intern!(py, "time_zone")).unwrap();
                 let time_zone = time_zone.extract()?;
                 DataType::Datetime(time_unit, time_zone)
+            },
+            "Duration" => {
+                let time_unit = ob.getattr(intern!(py, "time_unit")).unwrap();
+                let time_unit = time_unit.extract::<Wrap<TimeUnit>>()?.0;
+                DataType::Duration(time_unit)
             },
             "Decimal" => {
                 let precision = ob.getattr(intern!(py, "precision"))?.extract()?;
@@ -404,6 +402,10 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
                     .collect::<Vec<Field>>();
                 DataType::Struct(fields)
             },
+            "Null" => DataType::Null,
+            #[cfg(feature = "object")]
+            "Object" => DataType::Object(OBJECT_NAME, None),
+            "Unknown" => DataType::Unknown(Default::default()),
             dt => {
                 return Err(PyTypeError::new_err(format!(
                     "'{dt}' is not a Polars data type",

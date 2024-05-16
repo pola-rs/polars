@@ -198,8 +198,7 @@ def series(  # noqa: D417
     # Apply chunking
     if size > 1:
         if chunked is None:
-            chunk_probability = 0.5
-            chunked = draw(st.floats(0.0, 1.0)) < chunk_probability
+            chunked = draw(st.booleans())
         if chunked:
             split_at = size // 2
             s = s[:split_at].append(s[split_at:])

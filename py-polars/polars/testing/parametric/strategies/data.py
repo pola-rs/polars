@@ -43,6 +43,7 @@ from polars.datatypes import (
     Int64,
     List,
     Null,
+    Object,
     String,
     Struct,
     Time,
@@ -307,6 +308,11 @@ def nulls() -> SearchStrategy[None]:
     return st.none()
 
 
+def objects() -> SearchStrategy[object]:
+    """Create a strategy for generating arbitrary objects."""
+    return st.builds(object)
+
+
 # Strategies that are not customizable through parameters
 _STATIC_STRATEGIES: dict[DataTypeClass, SearchStrategy[Any]] = {
     Boolean: booleans(),
@@ -323,6 +329,7 @@ _STATIC_STRATEGIES: dict[DataTypeClass, SearchStrategy[Any]] = {
     String: strings(),
     Binary: binary(),
     Null: nulls(),
+    Object: objects(),
 }
 
 
