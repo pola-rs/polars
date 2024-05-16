@@ -477,7 +477,7 @@ fn create_physical_expr_inner(
                             SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                 let s = std::mem::take(&mut s[0]);
                                 parallel_op_series(
-                                    |s| s.sum_as_series().map(|sc| sc.into_series(s.name())),
+                                    |s| s.sum_reduce().map(|sc| sc.into_series(s.name())),
                                     s,
                                     None,
                                     state,

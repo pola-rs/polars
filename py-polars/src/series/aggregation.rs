@@ -150,7 +150,7 @@ impl PySeries {
     fn sum(&self, py: Python) -> PyResult<PyObject> {
         Ok(Wrap(
             self.series
-                .sum_as_series()
+                .sum_reduce()
                 .map(|sc| sc.into_series(""))
                 .map_err(PyPolarsErr::from)?
                 .get(0)

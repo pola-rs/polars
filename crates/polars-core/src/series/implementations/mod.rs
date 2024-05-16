@@ -387,8 +387,8 @@ macro_rules! impl_dyn_series {
                 ChunkShift::shift(&self.0, periods).into_series()
             }
 
-            fn _sum_as_series(&self) -> PolarsResult<Scalar> {
-                Ok(ChunkAggSeries::sum_as_series(&self.0))
+            fn sum_as_reduce(&self) -> PolarsResult<Scalar> {
+                Ok(ChunkAggSeries::sum_reduce(&self.0))
             }
             fn max_as_series(&self) -> PolarsResult<Series> {
                 Ok(ChunkAggSeries::max_as_series(&self.0))

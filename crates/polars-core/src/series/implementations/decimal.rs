@@ -316,7 +316,7 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }
 
-    fn _sum_as_series(&self) -> PolarsResult<Scalar> {
+    fn sum_as_reduce(&self) -> PolarsResult<Scalar> {
         Ok(self.apply_physical(|ca| {
             let sum = ca.sum();
             let DataType::Decimal(_, Some(scale)) = self.dtype() else {

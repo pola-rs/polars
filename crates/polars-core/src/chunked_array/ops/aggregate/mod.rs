@@ -26,7 +26,7 @@ use crate::series::IsSorted;
 /// Aggregations that return [`Series`] of unit length. Those can be used in broadcasting operations.
 pub trait ChunkAggSeries {
     /// Get the sum of the [`ChunkedArray`] as a new [`Series`] of length 1.
-    fn sum_as_series(&self) -> Scalar {
+    fn sum_reduce(&self) -> Scalar {
         unimplemented!()
     }
     /// Get the max of the [`ChunkedArray`] as a new [`Series`] of length 1.
@@ -263,7 +263,7 @@ where
         Add<Output = <T::Native as Simd>::Simd> + compute::aggregate::Sum<T::Native>,
     ChunkedArray<T>: IntoSeries,
 {
-    fn sum_as_series(&self) -> Scalar {
+    fn sum_reduce(&self) -> Scalar {
         let v: Option<T::Native> = self.sum();
         Scalar::new(T::get_dtype().clone(), v.into())
     }
@@ -393,7 +393,7 @@ impl QuantileAggSeries for Float64Chunked {
 }
 
 impl ChunkAggSeries for BooleanChunked {
-    fn sum_as_series(&self) -> Scalar {
+    fn sum_reduce(&self) -> Scalar {
         let v = self.sum();
         Scalar::new(IDX_DTYPE, v.into())
     }
@@ -457,7 +457,7 @@ impl StringChunked {
 }
 
 impl ChunkAggSeries for StringChunked {
-    fn sum_as_series(&self) -> Scalar {
+    fn sum_reduce(&self) -> Scalar {
         Scalar::new(DataType::String, AnyValue::Null)
     }
     fn max_as_series(&self) -> Series {
@@ -588,7 +588,7 @@ impl BinaryChunked {
 }
 
 impl ChunkAggSeries for BinaryChunked {
-    fn sum_as_series(&self) -> Scalar {
+    fn sum_reduce(&self) -> Scalar {
         unimplemented!()
     }
     fn max_as_series(&self) -> Series {

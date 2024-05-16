@@ -393,8 +393,8 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
             .into_series()
     }
 
-    fn _sum_as_series(&self) -> PolarsResult<Scalar> {
-        let sc = self.0.sum_as_series();
+    fn sum_as_reduce(&self) -> PolarsResult<Scalar> {
+        let sc = self.0.sum_reduce();
         let v = sc.value().as_duration(self.0.time_unit());
         Ok(Scalar::new(self.dtype().clone(), v))
     }
