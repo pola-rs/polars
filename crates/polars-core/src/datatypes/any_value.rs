@@ -771,7 +771,7 @@ where
 
 impl<'a> AnyValue<'a> {
     #[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
-    pub(crate) fn into_date(&self) -> AnyValue<'static> {
+    pub(crate) fn as_date(&self) -> AnyValue<'static> {
         match self {
             #[cfg(feature = "dtype-date")]
             AnyValue::Int32(v) => AnyValue::Date(*v),
@@ -780,7 +780,7 @@ impl<'a> AnyValue<'a> {
         }
     }
     #[cfg(feature = "dtype-datetime")]
-    pub(crate) fn into_datetime(&self, tu: TimeUnit, tz: &'a Option<TimeZone>) -> AnyValue<'a> {
+    pub(crate) fn as_datetime(&self, tu: TimeUnit, tz: &'a Option<TimeZone>) -> AnyValue<'a> {
         match self {
             AnyValue::Int64(v) => AnyValue::Datetime(*v, tu, tz),
             AnyValue::Null => AnyValue::Null,
@@ -789,7 +789,7 @@ impl<'a> AnyValue<'a> {
     }
 
     #[cfg(feature = "dtype-duration")]
-    pub(crate) fn into_duration(&self, tu: TimeUnit) -> AnyValue<'static> {
+    pub(crate) fn as_duration(&self, tu: TimeUnit) -> AnyValue<'static> {
         match self {
             AnyValue::Int64(v) => AnyValue::Duration(*v, tu),
             AnyValue::Null => AnyValue::Null,
@@ -798,7 +798,7 @@ impl<'a> AnyValue<'a> {
     }
 
     #[cfg(feature = "dtype-time")]
-    pub(crate) fn into_time(&self) -> AnyValue<'static> {
+    pub(crate) fn as_time(&self) -> AnyValue<'static> {
         match self {
             AnyValue::Int64(v) => AnyValue::Time(*v),
             AnyValue::Null => AnyValue::Null,
