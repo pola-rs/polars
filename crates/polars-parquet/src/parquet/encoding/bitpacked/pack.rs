@@ -76,6 +76,9 @@ pack!(pack64, u64, 8, 64);
 
 #[cfg(test)]
 mod tests {
+    use rand::distributions::{Distribution, Uniform};
+    use test::Bencher;
+
     use super::super::unpack::*;
     use super::*;
 
@@ -104,5 +107,20 @@ mod tests {
             unpack32(&output, &mut other, num_bits);
             assert_eq!(other, input);
         }
+    }
+
+    #[bench]
+    fn bench_u32_17_bit(b: &mut Bencher) {
+        let mut rng = rand::thread_rng();
+        let mut random_array = [0u32; 32];
+        let between = Uniform::from(0..131_072);
+        for i in 0..32 {
+            random_array[i] = between.sample(&mut rng);
+        }
+        let mut output = [0u8; 32 * 4];
+        b.iter(|| pack32(&random_array, &mut output, 17));
+        let mut other = [0u32; 32];
+        unpack32(&output, &mut other, 17);
+        assert_eq!(other, random_array);
     }
 }

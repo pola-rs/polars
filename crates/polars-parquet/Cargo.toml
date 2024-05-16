@@ -27,6 +27,7 @@ simdutf8 = { workspace = true }
 parquet-format-safe = "0.2"
 seq-macro = { version = "0.3", default-features = false }
 streaming-decompression = "0.1"
+rand = "0.8"
 
 async-stream = { version = "0.3.3", optional = true }
 
