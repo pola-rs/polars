@@ -316,29 +316,36 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }
 
-    fn sum_as_reduce(&self) -> PolarsResult<Scalar> {
+    fn sum_reduce(&self) -> PolarsResult<Scalar> {
         Ok(self.apply_physical(|ca| {
             let sum = ca.sum();
-            let DataType::Decimal(_, Some(scale)) = self.dtype() else {
-                unreachable!()
-            };
-            let av = match sum {
-                None => AnyValue::Null,
-                Some(v) => AnyValue::Decimal(v, *scale),
+            let DataType::Decimal(_, Some(scale)) = self.dtype() else { unreachable!() };
+            let av = AnyValue::Decimal(sum.unwrap(), *scale);
+            Scalar::new(self.dtype().clone(), av)
+        }))
+    }
+    fn min_reduce(&self) -> PolarsResult<Scalar> {
+        Ok(self.apply_physical(|ca| {
+            let min = ca.min();
+            let DataType::Decimal(_, Some(scale)) = self.dtype() else { unreachable!() };
+            let av = if let Some(min) = min {
+                AnyValue::Decimal(min, *scale)
+            } else {
+                AnyValue::Null
             };
             Scalar::new(self.dtype().clone(), av)
         }))
     }
-    fn min_as_series(&self) -> PolarsResult<Series> {
-        Ok(self.apply_physical_to_s(|ca| {
-            let min = ca.min();
-            Int128Chunked::from_slice_options(self.name(), &[min])
-        }))
-    }
-    fn max_as_series(&self) -> PolarsResult<Series> {
-        Ok(self.apply_physical_to_s(|ca| {
+    fn max_reduce(&self) -> PolarsResult<Scalar> {
+        Ok(self.apply_physical(|ca| {
             let max = ca.max();
-            Int128Chunked::from_slice_options(self.name(), &[max])
+            let DataType::Decimal(_, Some(scale)) = self.dtype() else { unreachable!() };
+            let av = if let Some(m) = max {
+                AnyValue::Decimal(m, *scale)
+            } else {
+                AnyValue::Null
+            };
+            Scalar::new(self.dtype().clone(), av)
         }))
     }
     fn as_any(&self) -> &dyn Any {

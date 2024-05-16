@@ -321,14 +321,19 @@ macro_rules! impl_dyn_series {
                 self.0.shift(periods).$into_logical().into_series()
             }
 
-            fn max_as_series(&self) -> PolarsResult<Series> {
-                Ok(self.0.max_as_series().$into_logical())
+            fn max_reduce(&self) -> PolarsResult<Scalar> {
+                let sc = self.0.max_reduce();
+                let av = sc.value().cast(self.dtype()).into_static().unwrap();
+                Ok(Scalar::new(self.dtype().clone(), av))
             }
-            fn min_as_series(&self) -> PolarsResult<Series> {
-                Ok(self.0.min_as_series().$into_logical())
+            fn min_reduce(&self) -> PolarsResult<Scalar> {
+                let sc = self.0.min_reduce();
+                let av = sc.value().cast(self.dtype()).into_static().unwrap();
+                Ok(Scalar::new(self.dtype().clone(), av))
             }
-            fn median_as_series(&self) -> PolarsResult<Series> {
-                Series::new(self.name(), &[self.median().map(|v| v as i64)]).cast(self.dtype())
+            fn median_reduce(&self) -> PolarsResult<Scalar> {
+                let av = AnyValue::from(self.median().map(|v| v as i64)).cast(self.dtype()).into_static().unwrap();
+                Ok(Scalar::new(self.dtype().clone(), av))
             }
 
             fn clone_inner(&self) -> Arc<dyn SeriesTrait> {

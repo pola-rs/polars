@@ -284,30 +284,30 @@ macro_rules! impl_dyn_series {
                 ChunkShift::shift(&self.0, periods).into_series()
             }
 
-            fn sum_as_reduce(&self) -> PolarsResult<Scalar> {
+            fn sum_reduce(&self) -> PolarsResult<Scalar> {
                 Ok(ChunkAggSeries::sum_reduce(&self.0))
             }
-            fn max_as_series(&self) -> PolarsResult<Series> {
-                Ok(ChunkAggSeries::max_as_series(&self.0))
+            fn max_reduce(&self) -> PolarsResult<Scalar> {
+                Ok(ChunkAggSeries::max_reduce(&self.0))
             }
-            fn min_as_series(&self) -> PolarsResult<Series> {
-                Ok(ChunkAggSeries::min_as_series(&self.0))
+            fn min_reduce(&self) -> PolarsResult<Scalar> {
+                Ok(ChunkAggSeries::min_reduce(&self.0))
             }
-            fn median_as_series(&self) -> PolarsResult<Series> {
-                Ok(QuantileAggSeries::median_as_series(&self.0))
+            fn median_reduce(&self) -> PolarsResult<Scalar> {
+                Ok(QuantileAggSeries::median_reduce(&self.0))
             }
-            fn var_as_series(&self, ddof: u8) -> PolarsResult<Series> {
-                Ok(VarAggSeries::var_as_series(&self.0, ddof))
+            fn var_reduce(&self, ddof: u8) -> PolarsResult<Scalar> {
+                Ok(VarAggSeries::var_reduce(&self.0, ddof))
             }
-            fn std_as_series(&self, ddof: u8) -> PolarsResult<Series> {
-                Ok(VarAggSeries::std_as_series(&self.0, ddof))
+            fn std_reduce(&self, ddof: u8) -> PolarsResult<Scalar> {
+                Ok(VarAggSeries::std_reduce(&self.0, ddof))
             }
-            fn quantile_as_series(
+            fn quantile_reduce(
                 &self,
                 quantile: f64,
                 interpol: QuantileInterpolOptions,
-            ) -> PolarsResult<Series> {
-                QuantileAggSeries::quantile_as_series(&self.0, quantile, interpol)
+            ) -> PolarsResult<Scalar> {
+                QuantileAggSeries::quantile_reduce(&self.0, quantile, interpol)
             }
 
             fn clone_inner(&self) -> Arc<dyn SeriesTrait> {

@@ -95,7 +95,10 @@ pub(super) fn list_min_function(ca: &ListChunked) -> PolarsResult<Series> {
                 })
             },
             _ => Ok(ca
-                .try_apply_amortized(|s| s.as_ref().min_as_series())?
+                .try_apply_amortized(|s| {
+                    let sc = s.as_ref().min_reduce()?;
+                    Ok(sc.into_series(s.name()))
+                }) ?
                 .explode()
                 .unwrap()
                 .into_series()),

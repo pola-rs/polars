@@ -402,8 +402,9 @@ impl Series {
     where
         T: NumCast,
     {
-        let min = self.min_as_series()?.cast(&DataType::Float64)?;
-        Ok(min.f64().unwrap().get(0).and_then(T::from))
+        let min = self.min_reduce()?;
+        let min = min.value().extract::<T>();
+        Ok(min)
     }
 
     /// Returns the maximum value in the array, according to the natural order.
@@ -412,8 +413,9 @@ impl Series {
     where
         T: NumCast,
     {
-        let max = self.max_as_series()?.cast(&DataType::Float64)?;
-        Ok(max.f64().unwrap().get(0).and_then(T::from))
+        let max = self.max_reduce()?;
+        let max = max.value().extract::<T>();
+        Ok(max)
     }
 
     /// Explode a list Series. This expands every item to a new row..
@@ -633,7 +635,7 @@ impl Series {
         use DataType::*;
         match self.dtype() {
             Int8 | UInt8 | Int16 | UInt16 => self.cast(&Int64).unwrap().sum_reduce(),
-            _ => self.sum_as_reduce(),
+            _ => self.sum_reduce(),
         }
     }
 
@@ -641,7 +643,7 @@ impl Series {
     ///
     /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
     /// first cast to `Int64` to prevent overflow issues.
-    pub fn product(&self) -> PolarsResult<Series> {
+    pub fn product(&self) -> PolarsResult<Scalar> {
         #[cfg(feature = "product")]
         {
             use DataType::*;
@@ -651,10 +653,10 @@ impl Series {
                     let s = self.cast(&Int64).unwrap();
                     s.product()
                 },
-                Int64 => Ok(self.i64().unwrap().prod_as_series()),
-                UInt64 => Ok(self.u64().unwrap().prod_as_series()),
-                Float32 => Ok(self.f32().unwrap().prod_as_series()),
-                Float64 => Ok(self.f64().unwrap().prod_as_series()),
+                Int64 => Ok(self.i64().unwrap().prod_reduce()),
+                UInt64 => Ok(self.u64().unwrap().prod_reduce()),
+                Float32 => Ok(self.f32().unwrap().prod_reduce()),
+                Float64 => Ok(self.f64().unwrap().prod_reduce()),
                 dt => {
                     polars_bail!(InvalidOperation: "`product` operation not supported for dtype `{dt}`")
                 },

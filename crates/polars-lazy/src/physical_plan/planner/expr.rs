@@ -380,7 +380,7 @@ fn create_physical_expr_inner(
 
                                 match s.is_sorted_flag() {
                                     IsSorted::Ascending | IsSorted::Descending => {
-                                        s.min_as_series().map(Some)
+                                        s.min_reduce().map(|sc| Some(sc.into_series(s.name())))
                                     },
                                     IsSorted::Not => {
                                         parallel_op_series(|s| s.min_as_series(), s, None, state)
