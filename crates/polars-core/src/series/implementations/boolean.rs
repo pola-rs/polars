@@ -263,27 +263,21 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
         Ok(ChunkAggSeries::min_reduce(&self.0))
     }
     fn median_reduce(&self) -> PolarsResult<Scalar> {
-        let ca = self
-            .0
-            .cast(&DataType::Int8).unwrap();
+        let ca = self.0.cast(&DataType::Int8).unwrap();
         let sc = ca.median_reduce()?;
         let v = sc.value().cast(&DataType::Float64);
         Ok(Scalar::new(DataType::Float64, v))
     }
     /// Get the variance of the Series as a new Series of length 1.
     fn var_reduce(&self, _ddof: u8) -> PolarsResult<Scalar> {
-        let ca = self
-            .0
-            .cast(&DataType::Int8).unwrap();
+        let ca = self.0.cast(&DataType::Int8).unwrap();
         let sc = ca.var_reduce(_ddof)?;
         let v = sc.value().cast(&DataType::Float64);
         Ok(Scalar::new(DataType::Float64, v))
     }
     /// Get the standard deviation of the Series as a new Series of length 1.
     fn std_reduce(&self, _ddof: u8) -> PolarsResult<Scalar> {
-        let ca = self
-            .0
-            .cast(&DataType::Int8).unwrap();
+        let ca = self.0.cast(&DataType::Int8).unwrap();
         let sc = ca.std_reduce(_ddof)?;
         let v = sc.value().cast(&DataType::Float64);
         Ok(Scalar::new(DataType::Float64, v))

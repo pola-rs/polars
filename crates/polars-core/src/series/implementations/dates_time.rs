@@ -332,7 +332,10 @@ macro_rules! impl_dyn_series {
                 Ok(Scalar::new(self.dtype().clone(), av))
             }
             fn median_reduce(&self) -> PolarsResult<Scalar> {
-                let av = AnyValue::from(self.median().map(|v| v as i64)).cast(self.dtype()).into_static().unwrap();
+                let av = AnyValue::from(self.median().map(|v| v as i64))
+                    .cast(self.dtype())
+                    .into_static()
+                    .unwrap();
                 Ok(Scalar::new(self.dtype().clone(), av))
             }
 

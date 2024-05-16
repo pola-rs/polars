@@ -319,7 +319,9 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
     fn sum_reduce(&self) -> PolarsResult<Scalar> {
         Ok(self.apply_physical(|ca| {
             let sum = ca.sum();
-            let DataType::Decimal(_, Some(scale)) = self.dtype() else { unreachable!() };
+            let DataType::Decimal(_, Some(scale)) = self.dtype() else {
+                unreachable!()
+            };
             let av = AnyValue::Decimal(sum.unwrap(), *scale);
             Scalar::new(self.dtype().clone(), av)
         }))
@@ -327,7 +329,9 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
     fn min_reduce(&self) -> PolarsResult<Scalar> {
         Ok(self.apply_physical(|ca| {
             let min = ca.min();
-            let DataType::Decimal(_, Some(scale)) = self.dtype() else { unreachable!() };
+            let DataType::Decimal(_, Some(scale)) = self.dtype() else {
+                unreachable!()
+            };
             let av = if let Some(min) = min {
                 AnyValue::Decimal(min, *scale)
             } else {
@@ -339,7 +343,9 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
     fn max_reduce(&self) -> PolarsResult<Scalar> {
         Ok(self.apply_physical(|ca| {
             let max = ca.max();
-            let DataType::Decimal(_, Some(scale)) = self.dtype() else { unreachable!() };
+            let DataType::Decimal(_, Some(scale)) = self.dtype() else {
+                unreachable!()
+            };
             let av = if let Some(m) = max {
                 AnyValue::Decimal(m, *scale)
             } else {

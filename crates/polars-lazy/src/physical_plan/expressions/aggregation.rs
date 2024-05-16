@@ -573,7 +573,9 @@ impl PhysicalExpr for AggQuantileExpr {
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
         let input = self.input.evaluate(df, state)?;
         let quantile = self.get_quantile(df, state)?;
-        input.quantile_as_series(quantile, self.interpol)
+        input
+            .quantile_reduce(quantile, self.interpol)
+            .map(|sc| sc.into_series(input.name()))
     }
     #[allow(clippy::ptr_arg)]
     fn evaluate_on_groups<'a>(

@@ -635,7 +635,7 @@ impl Series {
         use DataType::*;
         match self.dtype() {
             Int8 | UInt8 | Int16 | UInt16 => self.cast(&Int64).unwrap().sum_reduce(),
-            _ => self.sum_reduce(),
+            _ => self.0.sum_reduce(),
         }
     }
 
@@ -800,33 +800,22 @@ impl Series {
         self.slice(-(len as i64), len)
     }
 
-    pub fn mean_as_series(&self) -> Series {
+    pub fn mean_reduce(&self) -> Scalar {
         match self.dtype() {
             DataType::Float32 => {
-                let val = &[self.mean().map(|m| m as f32)];
-                Series::new(self.name(), val)
+                let val = self.mean().map(|m| m as f32);
+                Scalar::new(self.dtype().clone(), val.into())
             },
             dt if dt.is_numeric() || matches!(dt, DataType::Boolean) => {
-                let val = &[self.mean()];
-                Series::new(self.name(), val)
+                let val = self.mean().map(|m| m as f32);
+                Scalar::new(DataType::Float64, val.into())
             },
-            #[cfg(feature = "dtype-datetime")]
-            dt @ DataType::Datetime(_, _) => {
-                Series::new(self.name(), &[self.mean().map(|v| v as i64)])
-                    .cast(dt)
-                    .unwrap()
+            dt if dt.is_temporal() => {
+                let val = self.mean().map(|v| v as i64);
+                let av: AnyValue = val.into();
+                Scalar::new(dt.clone(), av)
             },
-            #[cfg(feature = "dtype-duration")]
-            dt @ DataType::Duration(_) => {
-                Series::new(self.name(), &[self.mean().map(|v| v as i64)])
-                    .cast(dt)
-                    .unwrap()
-            },
-            #[cfg(feature = "dtype-time")]
-            dt @ DataType::Time => Series::new(self.name(), &[self.mean().map(|v| v as i64)])
-                .cast(dt)
-                .unwrap(),
-            _ => return Series::full_null(self.name(), 1, self.dtype()),
+            dt => Scalar::new(dt.clone(), AnyValue::Null),
         }
     }
 

@@ -335,17 +335,13 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
     }
 
     fn max_reduce(&self) -> PolarsResult<Scalar> {
-        let sc = self
-            .0
-            .max_reduce();
+        let sc = self.0.max_reduce();
 
         Ok(Scalar::new(self.dtype().clone(), sc.value().clone()))
     }
 
     fn min_reduce(&self) -> PolarsResult<Scalar> {
-        let sc = self
-            .0
-            .min_reduce();
+        let sc = self.0.min_reduce();
 
         Ok(Scalar::new(self.dtype().clone(), sc.value().clone()))
     }

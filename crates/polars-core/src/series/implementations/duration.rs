@@ -407,26 +407,38 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
     fn min_reduce(&self) -> PolarsResult<Scalar> {
         let sc = self.0.min_reduce();
         let v = sc.value().as_duration(self.0.time_unit());
-        Ok(Scalar::new(self.dtype().clone(), v.as_duration(self.0.time_unit())))
+        Ok(Scalar::new(
+            self.dtype().clone(),
+            v.as_duration(self.0.time_unit()),
+        ))
     }
     fn std_reduce(&self, ddof: u8) -> PolarsResult<Scalar> {
         let sc = self.0.std_reduce(ddof);
         let to = self.dtype().to_physical();
         let v = sc.value().cast(&to);
-        Ok(Scalar::new(self.dtype().clone(), v.as_duration(self.0.time_unit())))
+        Ok(Scalar::new(
+            self.dtype().clone(),
+            v.as_duration(self.0.time_unit()),
+        ))
     }
 
     fn var_reduce(&self, ddof: u8) -> PolarsResult<Scalar> {
         let sc = self.0.var_reduce(ddof);
         let to = self.dtype().to_physical();
         let v = sc.value().cast(&to);
-        Ok(Scalar::new(self.dtype().clone(), v.as_duration(self.0.time_unit())))
+        Ok(Scalar::new(
+            self.dtype().clone(),
+            v.as_duration(self.0.time_unit()),
+        ))
     }
     fn median_reduce(&self) -> PolarsResult<Scalar> {
         let v: AnyValue = self.median().map(|v| v as i64).into();
         let to = self.dtype().to_physical();
         let v = v.cast(&to);
-        Ok(Scalar::new(self.dtype().clone(), v.as_duration(self.0.time_unit())))
+        Ok(Scalar::new(
+            self.dtype().clone(),
+            v.as_duration(self.0.time_unit()),
+        ))
     }
     fn quantile_reduce(
         &self,
@@ -436,7 +448,10 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
         let v = self.0.quantile_reduce(quantile, interpol)?;
         let to = self.dtype().to_physical();
         let v = v.value().cast(&to);
-        Ok(Scalar::new(self.dtype().clone(), v.as_duration(self.0.time_unit())))
+        Ok(Scalar::new(
+            self.dtype().clone(),
+            v.as_duration(self.0.time_unit()),
+        ))
     }
 
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {

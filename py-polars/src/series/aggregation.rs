@@ -35,7 +35,7 @@ impl PySeries {
     fn max(&self, py: Python) -> PyResult<PyObject> {
         Ok(Wrap(
             self.series
-                .max_as_series()
+                .max_reduce()
                 .map_err(PyPolarsErr::from)?
                 .get(0)
                 .map_err(PyPolarsErr::from)?,
@@ -49,14 +49,14 @@ impl PySeries {
                 self.series
                     .cast(&DataType::UInt8)
                     .unwrap()
-                    .mean_as_series()
+                    .mean_reduce()
                     .get(0)
                     .map_err(PyPolarsErr::from)?,
             )
             .into_py(py)),
             DataType::Datetime(_, _) | DataType::Duration(_) | DataType::Time => Ok(Wrap(
                 self.series
-                    .mean_as_series()
+                    .mean_reduce()
                     .get(0)
                     .map_err(PyPolarsErr::from)?,
             )

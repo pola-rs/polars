@@ -24,7 +24,9 @@ impl Scalar {
     }
 
     pub fn as_any_value(&self) -> AnyValue {
-        self.value.strict_cast(&self.dtype).unwrap_or_else(|| self.value.clone())
+        self.value
+            .strict_cast(&self.dtype)
+            .unwrap_or_else(|| self.value.clone())
     }
 
     pub fn into_series(self, name: &str) -> Series {

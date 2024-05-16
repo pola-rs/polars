@@ -20,7 +20,6 @@ use super::float_sorted_arg_max::{
 use crate::chunked_array::ChunkedArray;
 use crate::datatypes::{BooleanChunked, PolarsNumericType};
 use crate::prelude::*;
-use crate::series::implementations::SeriesWrap;
 use crate::series::IsSorted;
 
 /// Aggregations that return [`Series`] of unit length. Those can be used in broadcasting operations.
@@ -524,10 +523,12 @@ impl CategoricalChunked {
 #[cfg(feature = "dtype-categorical")]
 impl ChunkAggSeries for CategoricalChunked {
     fn min_reduce(&self) -> Scalar {
-        Scalar::new(DataType::String, self.min_categorical().into())
+        let av: AnyValue = self.min_categorical().into();
+        Scalar::new(DataType::String, av.into_static().unwrap())
     }
     fn max_reduce(&self) -> Scalar {
-        Scalar::new(DataType::String, self.max_categorical().into())
+        let av: AnyValue = self.max_categorical().into();
+        Scalar::new(DataType::String, av.into_static().unwrap())
     }
 }
 
@@ -682,10 +683,9 @@ mod test {
         assert_eq!(ca.mean().unwrap(), 1.5);
         assert_eq!(
             ca.into_series()
-                .mean_as_series()
-                .f32()
-                .unwrap()
-                .get(0)
+                .mean_reduce()
+                .value()
+                .extract::<f32>()
                 .unwrap(),
             1.5
         );
@@ -693,7 +693,7 @@ mod test {
         let ca = Float32Chunked::full_null("", 3);
         assert_eq!(ca.mean(), None);
         assert_eq!(
-            ca.into_series().mean_as_series().f32().unwrap().get(0),
+            ca.into_series().mean_reduce().value().extract::<f32>(),
             None
         );
     }
