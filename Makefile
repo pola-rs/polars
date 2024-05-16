@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 
 PYTHONPATH=
-SHELL=/bin/bash
+SHELL=bash
 VENV=.venv
 
 ifeq ($(OS),Windows_NT)
