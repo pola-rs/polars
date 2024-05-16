@@ -151,6 +151,7 @@ impl PySeries {
         Ok(Wrap(
             self.series
                 .sum_as_series()
+                .map(|sc| sc.into_series(""))
                 .map_err(PyPolarsErr::from)?
                 .get(0)
                 .map_err(PyPolarsErr::from)?,

@@ -235,7 +235,7 @@ impl SeriesTrait for SeriesWrap<StringChunked> {
         ChunkShift::shift(&self.0, periods).into_series()
     }
 
-    fn _sum_as_series(&self) -> PolarsResult<Series> {
+    fn _sum_as_series(&self) -> PolarsResult<Scalar> {
         Ok(ChunkAggSeries::sum_as_series(&self.0))
     }
     fn max_as_series(&self) -> PolarsResult<Series> {

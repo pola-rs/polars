@@ -417,7 +417,7 @@ pub trait SeriesTrait:
     ///
     /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
     /// first cast to `Int64` to prevent overflow issues.
-    fn _sum_as_series(&self) -> PolarsResult<Series> {
+    fn _sum_as_series(&self) -> PolarsResult<Scalar> {
         polars_bail!(opq = sum, self._dtype());
     }
     /// Get the max of the Series as a new Series of length 1.

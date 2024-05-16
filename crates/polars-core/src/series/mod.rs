@@ -391,8 +391,9 @@ impl Series {
     where
         T: NumCast,
     {
-        let sum = self.sum_as_series()?.cast(&DataType::Float64)?;
-        Ok(T::from(sum.f64().unwrap().get(0).unwrap()).unwrap())
+        let sum = self.sum_as_series()?;
+        let sum = sum.value().cast(&DataType::Float64);
+        Ok(T::from(sum.extract::<f64>().unwrap()).unwrap())
     }
 
     /// Returns the minimum value in the array, according to the natural order.
@@ -628,7 +629,7 @@ impl Series {
     ///
     /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
     /// first cast to `Int64` to prevent overflow issues.
-    pub fn sum_as_series(&self) -> PolarsResult<Series> {
+    pub fn sum_as_series(&self) -> PolarsResult<Scalar> {
         use DataType::*;
         match self.dtype() {
             Int8 | UInt8 | Int16 | UInt16 => self.cast(&Int64).unwrap().sum_as_series(),
