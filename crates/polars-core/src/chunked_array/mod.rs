@@ -359,7 +359,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         Ok(unsafe { self.unpack_series_matching_physical_type(series) })
     }
 
-    /// Unique id representing the number of chunks
+    /// Returns an iterator over the length of each chunk of the array.
     pub fn chunk_id(&self) -> ChunkIdIter {
         self.chunks.iter().map(|chunk| chunk.len())
     }
