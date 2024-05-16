@@ -48,6 +48,7 @@ from polars.datatypes import (
     UInt64,
     Unknown,
 )
+from polars.datatypes.constants import DATETIME_DTYPES
 from polars.dependencies import numpy as np
 from polars.dependencies import pyarrow as pa
 
@@ -446,6 +447,7 @@ def dtype_short_repr_to_dtype(dtype_string: str | None) -> PolarsDataType | None
 
     dtype_base, subtype = m.groups()
     dtype = DataTypeMappings.REPR_TO_DTYPE.get(dtype_base)
+    # print(dtype, dtype_base, subtype)
 
     if dtype and subtype:
         # TODO: further-improve handling for nested types (such as List,Struct)
@@ -453,7 +455,16 @@ def dtype_short_repr_to_dtype(dtype_string: str | None) -> PolarsDataType | None
             if dtype == Decimal:
                 subtype = (None, int(subtype))
             elif dtype == List:
-                subtype = (DataTypeMappings.REPR_TO_DTYPE.get(subtype),)
+                if DataTypeMappings.REPR_TO_DTYPE.get(subtype) is not None:
+                    subtype = (DataTypeMappings.REPR_TO_DTYPE.get(subtype),)
+                else:
+                    m = re.match(r"^(\w+)(?:\[(.+)\])?$", subtype)
+                    subtype_base, timesubtype = m.groups()
+                    subtype = DataTypeMappings.REPR_TO_DTYPE.get(subtype_base)
+                    timesubtype = (
+                        s.strip("'\" ") for s in timesubtype.replace("μs", "us").split(",")
+                    )
+                    subtype = (subtype(*timesubtype),)
             else:
                 subtype = (
                     s.strip("'\" ") for s in subtype.replace("μs", "us").split(",")

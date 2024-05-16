@@ -283,7 +283,8 @@ def _cast_repr_strings_with_schema(
             )
         )
 
-    def cast_cols_expr_(c: str, tp: PolarsDataType) -> Expr:
+    def cast_cols_expr_(c: str, tp: PolarsDataType):
+        nonlocal df
         if tp.base_type() == Datetime:
             tp_base = Datetime(tp.time_unit)  # type: ignore[union-attr]
             d = F.col(c).str.replace(r"[A-Z ]+$", "")
@@ -344,26 +345,40 @@ def _cast_repr_strings_with_schema(
                 .cast(String)
                 .cast(tp)
             )
-        else:  # tp != df.schema[c]:
+        elif c == "" or tp != df.schema[c]:
             return F.col(c).cast(tp)
+        return None
 
     cast_cols = {}
     for c, tp in schema.items():
         if tp is not None:
             if tp.base_type() == List:
-                cast_cols[c] = (
-                    F.col(c)
-                    .map_elements(
-                        lambda row: row[1:-1].split(","),
-                        return_dtype=tp.base_type()(String),
-                    )
-                    .list.eval(
-                        cast_cols_expr_("", tp.inner)  # type: ignore[union-attr]
-                    )
-                    .cast(tp)
+                expr = (
+                    F.col(c).str.strip_chars("[]")
+                    .str.replace_all(", ", ",")
+                    .str.split(",")
+                    # .map_elements(
+                    #         lambda row: (
+                    #             row.strip("][")
+                    #             .replace(", ", ",")
+                    #             .split(",")
+                    #         ),
+                    #         return_dtype=tp.base_type()(String),
+                    # )
                 )
+                subtype = tp.inner  # type: ignore[union-attr]
+                if subtype is not None and subtype != pl.Categorical:
+                    expr = (
+                        expr.list.eval(
+                            cast_cols_expr_("", subtype)
+                        )
+                        .cast(tp)
+                    )
             else:
-                cast_cols[c] = cast_cols_expr_(c, tp)
+                expr = cast_cols_expr_(c, tp)
+            
+            if expr is not None:
+                cast_cols[c] = expr
 
     return df.with_columns(**cast_cols) if cast_cols else df
 
