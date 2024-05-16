@@ -9,6 +9,7 @@ use pyo3::types::PyList;
 use crate::conversion::chunked_array::{decimal_to_pyobject_iter, time_to_pyobject_iter};
 use crate::error::PyPolarsErr;
 use crate::prelude::*;
+use crate::to_numpy::{reshape_numpy_array, series_to_numpy_view};
 use crate::{arrow_interop, raise_err, PySeries};
 
 #[pymethods]
@@ -169,20 +170,20 @@ impl PySeries {
     fn to_numpy(&self, py: Python, allow_copy: bool, writable: bool) -> PyResult<PyObject> {
         if self.series.is_empty() {
             // Take this path to ensure a writable array.
-            // This does not actually copy for empty Series.
+            // This does not actually copy data for empty Series.
             return series_to_numpy_with_copy(py, &self.series);
-        } else if self.series.null_count() == 0 {
-            if let Some(mut arr) = self.to_numpy_view(py) {
-                if writable {
-                    if !allow_copy {
-                        return Err(PyValueError::new_err(
-                            "cannot return a zero-copy writable array",
-                        ));
-                    }
-                    arr = arr.call_method0(py, intern!(py, "copy"))?;
+        }
+
+        if let Some(mut arr) = series_to_numpy_view(py, &self.series, false) {
+            if writable {
+                if !allow_copy {
+                    return Err(PyValueError::new_err(
+                        "cannot return a zero-copy writable array",
+                    ));
                 }
-                return Ok(arr);
+                arr = arr.call_method0(py, intern!(py, "copy"))?;
             }
+            return Ok(arr);
         }
 
         if !allow_copy {
@@ -264,6 +265,7 @@ fn series_to_numpy_with_copy(py: Python, s: &Series) -> PyResult<PyObject> {
             let values = decimal_to_pyobject_iter(py, ca).map(|v| v.into_py(py));
             PyArray1::from_iter_bound(py, values).into_py(py)
         },
+        Array(_, _) => array_series_to_numpy(py, s),
         #[cfg(feature = "object")]
         Object(_, _) => {
             let ca = s
@@ -351,4 +353,16 @@ where
     let ca = s_phys.i64().unwrap();
     let values = ca.iter().map(|v| v.unwrap_or(i64::MIN).into());
     PyArray1::<T>::from_iter_bound(py, values).into_py(py)
+}
+/// Convert arrays by flattening first, converting the flat Series, and then reshaping.
+fn array_series_to_numpy(py: Python, s: &Series) -> PyObject {
+    let ca = s.array().unwrap();
+    let s_inner = ca.get_inner();
+    let np_array_flat = series_to_numpy_with_copy(py, &s_inner).unwrap();
+
+    // Reshape to the original shape.
+    let DataType::Array(_, width) = s.dtype() else {
+        unreachable!()
+    };
+    reshape_numpy_array(py, np_array_flat, ca.len(), *width)
 }

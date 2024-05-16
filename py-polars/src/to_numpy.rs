@@ -8,7 +8,9 @@ use numpy::{
 use polars_core::prelude::*;
 use polars_core::utils::try_get_supertype;
 use polars_core::with_match_physical_numeric_polars_type;
+use pyo3::intern;
 use pyo3::prelude::*;
+use pyo3::types::PyTuple;
 
 use crate::conversion::Wrap;
 use crate::dataframe::PyDataFrame;
@@ -58,59 +60,66 @@ impl PySeries {
     /// appropriately.
     #[allow(clippy::wrong_self_convention)]
     pub fn to_numpy_view(&self, py: Python) -> Option<PyObject> {
-        // NumPy arrays are always contiguous
-        if self.series.n_chunks() > 1 {
-            return None;
-        }
-
-        match self.series.dtype() {
-            dt if dt.is_numeric() => {
-                let dims = [self.series.len()].into_dimension();
-                let owner = self.clone().into_py(py); // Keep the Series memory alive.
-                with_match_physical_numeric_polars_type!(dt, |$T| {
-                    let np_dtype = <$T as PolarsNumericType>::Native::get_dtype_bound(py);
-                    let ca: &ChunkedArray<$T> = self.series.unpack::<$T>().unwrap();
-                    let slice = ca.data_views().next().unwrap();
-
-                    let view = unsafe {
-                        create_borrowed_np_array::<_>(
-                            py,
-                            np_dtype,
-                            dims,
-                            flags::NPY_ARRAY_FARRAY_RO,
-                            slice.as_ptr() as _,
-                            owner,
-                        )
-                    };
-                    Some(view)
-                })
-            },
-            dt @ (DataType::Datetime(_, _) | DataType::Duration(_)) => {
-                let np_dtype = polars_dtype_to_np_temporal_dtype(py, dt);
-
-                let phys = self.series.to_physical_repr();
-                let ca = phys.i64().unwrap();
-                let slice = ca.data_views().next().unwrap();
-                let dims = [self.series.len()].into_dimension();
-                let owner = self.clone().into_py(py);
-
-                let view = unsafe {
-                    create_borrowed_np_array::<_>(
-                        py,
-                        np_dtype,
-                        dims,
-                        flags::NPY_ARRAY_FARRAY_RO,
-                        slice.as_ptr() as _,
-                        owner,
-                    )
-                };
-                Some(view)
-            },
-            _ => None,
-        }
+        series_to_numpy_view(py, &self.series, true)
     }
 }
 
+pub(crate) fn series_to_numpy_view(py: Python, s: &Series, allow_nulls: bool) -> Option<PyObject> {
+    // NumPy arrays are always contiguous
+    if s.n_chunks() > 1 {
+        return None;
+    }
+    if !allow_nulls && s.null_count() > 0 {
+        return None;
+    }
+    let view = match s.dtype() {
+        dt if dt.is_numeric() => numeric_series_to_numpy_view(py, s),
+        DataType::Datetime(_, _) | DataType::Duration(_) => temporal_series_to_numpy_view(py, s),
+        DataType::Array(_, _) => array_series_to_numpy_view(py, s, allow_nulls)?,
+        _ => return None,
+    };
+    Some(view)
+}
+fn numeric_series_to_numpy_view(py: Python, s: &Series) -> PyObject {
+    let dims = [s.len()].into_dimension();
+    let owner = PySeries::from(s.clone()).into_py(py); // Keep the Series memory alive.
+    with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
+        let np_dtype = <$T as PolarsNumericType>::Native::get_dtype_bound(py);
+        let ca: &ChunkedArray<$T> = s.unpack::<$T>().unwrap();
+        let slice = ca.data_views().next().unwrap();
+
+        unsafe {
+            create_borrowed_np_array::<_>(
+                py,
+                np_dtype,
+                dims,
+                flags::NPY_ARRAY_FARRAY_RO,
+                slice.as_ptr() as _,
+                owner,
+            )
+        }
+    })
+}
+fn temporal_series_to_numpy_view(py: Python, s: &Series) -> PyObject {
+    let np_dtype = polars_dtype_to_np_temporal_dtype(py, s.dtype());
+
+    let phys = s.to_physical_repr();
+    let ca = phys.i64().unwrap();
+    let slice = ca.data_views().next().unwrap();
+    let dims = [s.len()].into_dimension();
+    let owner = PySeries::from(s.clone()).into_py(py); // Keep the Series memory alive.
+
+    unsafe {
+        create_borrowed_np_array::<_>(
+            py,
+            np_dtype,
+            dims,
+            flags::NPY_ARRAY_FARRAY_RO,
+            slice.as_ptr() as _,
+            owner,
+        )
+    }
+}
 /// Get the NumPy temporal data type associated with the given Polars [`DataType`].
 fn polars_dtype_to_np_temporal_dtype<'a>(
     py: Python<'a>,
@@ -137,6 +146,46 @@ fn polars_dtype_to_np_temporal_dtype<'a>(
             Timedelta::<units::Nanoseconds>::get_dtype_bound(py)
         },
         _ => panic!("only Datetime/Duration inputs supported, got {}", dtype),
+    }
+}
+fn array_series_to_numpy_view(py: Python, s: &Series, allow_nulls: bool) -> Option<PyObject> {
+    let ca = s.array().unwrap();
+    let s_inner = ca.get_inner();
+    let np_array_flat = series_to_numpy_view(py, &s_inner, allow_nulls)?;
+
+    // Reshape to the original shape.
+    let DataType::Array(_, width) = s.dtype() else {
+        unreachable!()
+    };
+    let view = reshape_numpy_array(py, np_array_flat, ca.len(), *width);
+    Some(view)
+}
+/// Reshape the first dimension of a NumPy array to the given height and width.
+pub(crate) fn reshape_numpy_array(
+    py: Python,
+    arr: PyObject,
+    height: usize,
+    width: usize,
+) -> PyObject {
+    let shape = arr
+        .getattr(py, intern!(py, "shape"))
+        .unwrap()
+        .extract::<Vec<usize>>(py)
+        .unwrap();
+
+    if shape.len() == 1 {
+        // In this case we can avoid allocating a Vec.
+        let new_shape = (height, width);
+        arr.call_method1(py, intern!(py, "reshape"), new_shape)
+            .unwrap()
+    } else {
+        let mut new_shape_vec = vec![height, width];
+        for v in &shape[1..] {
+            new_shape_vec.push(*v)
+        }
+        let new_shape = PyTuple::new_bound(py, new_shape_vec);
+        arr.call_method1(py, intern!(py, "reshape"), new_shape)
+            .unwrap()
     }
 }
 
