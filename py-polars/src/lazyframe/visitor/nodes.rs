@@ -432,6 +432,17 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             options: (),
         }
         .into_py(py),
+        IR::Reduce {
+            input,
+            exprs,
+            schema: _,
+        } => Select {
+            input: input.0,
+            expr: exprs.iter().map(|e| e.into()).collect(),
+            cse_expr: vec![],
+            options: (),
+        }
+        .into_py(py),
         IR::Distinct { input, options } => Distinct {
             input: input.0,
             // TODO, rest of options
