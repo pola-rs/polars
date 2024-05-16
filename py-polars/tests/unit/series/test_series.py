@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import re
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any, Iterator, cast
 
@@ -1772,6 +1773,18 @@ def test_reshape() -> None:
     out = s.reshape((-1, 1))
     expected = pl.Series("a", [[1], [2], [3], [4]])
     assert_series_equal(out, expected)
+    out = s.reshape((4, -1))
+    assert_series_equal(out, expected)
+    out = s.reshape((-1, -1))
+    assert_series_equal(out, expected)
+    out = s.reshape((4, 1))
+    assert_series_equal(out, expected)
+
+    # single dimension
+    out = s.reshape((4,))
+    assert_series_equal(out, s)
+    out = s.reshape((-1,))
+    assert_series_equal(out, s)
 
     # test lazy_dispatch
     out = pl.select(pl.lit(s).reshape((-1, 1))).to_series()
@@ -1780,6 +1793,63 @@ def test_reshape() -> None:
     # invalid (empty) dimensions
     with pytest.raises(ComputeError, match="reshape `dimensions` cannot be empty"):
         s.reshape(())
+
+
+@pytest.mark.parametrize(
+    "shape",
+    [(1, 3), (5, 1), (-1, 5), (3, -1), (-1, 0), (0, 0), (0, -1), (-2, -2), (3,)],
+)
+def test_reshape_invalid(shape: tuple[int]) -> None:
+    s = pl.Series("a", [1, 2, 3, 4])
+    with pytest.raises(
+        ComputeError, match=re.escape(f"cannot reshape len 4 into shape {list(shape)}")
+    ):
+        s.reshape(shape)
+
+
+@pytest.mark.parametrize(
+    "shape",
+    [(0, 0), (-1, 0), (0, -1), (-1, -1)],
+)
+def test_reshape_empty_valid_2d(shape: tuple[int]) -> None:
+    s = pl.Series("a", [], dtype=pl.Int64)
+    out = s.reshape(shape)
+    expected = pl.Series("a", [], dtype=pl.List(pl.Int64))
+    assert_series_equal(out, expected)
+
+
+@pytest.mark.parametrize(
+    "shape",
+    [(0,), (-1,)],
+)
+def test_reshape_empty_valid_1d(shape: tuple[int]) -> None:
+    s = pl.Series("a", [], dtype=pl.Int64)
+    out = s.reshape(shape)
+    assert_series_equal(out, s)
+
+
+@pytest.mark.parametrize(
+    "shape",
+    [(0, 1), (1, 0), (1, -1), (-1, 1), (-2, -2)],
+)
+def test_reshape_empty_invalid_2d(shape: tuple[int]) -> None:
+    s = pl.Series("a", [], dtype=pl.Int64)
+    with pytest.raises(
+        ComputeError, match=re.escape(f"cannot reshape len 0 into shape {list(shape)}")
+    ):
+        s.reshape(shape)
+
+
+@pytest.mark.parametrize(
+    "shape",
+    [(1,), (2,), (-2,)],
+)
+def test_reshape_empty_invalid_1d(shape: tuple[int]) -> None:
+    s = pl.Series("a", [], dtype=pl.Int64)
+    with pytest.raises(
+        ComputeError, match=re.escape(f"cannot reshape len 0 into shape {list(shape)}")
+    ):
+        s.reshape(shape)
 
 
 def test_init_categorical() -> None:
