@@ -129,7 +129,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
                 (1, index - len)
             };
         }
-        let chunk_lens = self.downcast_iter().map(|arr| arr.len());
+        let chunk_lens = self.chunk_lengths();
         let len = self.len();
         if index <= len / 2 {
             // Access from lhs.
