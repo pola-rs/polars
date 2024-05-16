@@ -14,7 +14,7 @@ macro_rules! pack_impl {
             let input_ptr = input.as_ptr();
             let mut output_ptr = output.as_mut_ptr() as *mut $t;
             let mut out_register: $t = read_unaligned(input_ptr);
-            
+
             seq_macro::seq!(i in 1..$bits_minus_one {
                 let bits_filled: usize = i * NUM_BITS;
                 let inner_cursor: usize = bits_filled % $bits;
@@ -81,7 +81,6 @@ pack!(pack64, u64, 8, 64, 63);
 #[cfg(test)]
 mod tests {
     use rand::distributions::{Distribution, Uniform};
-    use test::Bencher;
 
     use super::super::unpack::*;
     use super::*;
@@ -119,8 +118,8 @@ mod tests {
         let mut random_array = [0u8; 8];
         let between = Uniform::from(0..6);
         for num_bits in 3..8 {
-            for i in 0..8 {
-                random_array[i] = between.sample(&mut rng);
+            for i in &mut random_array {
+                *i = between.sample(&mut rng);
             }
             let mut output = [0u8; 8];
             pack8(&random_array, &mut output, num_bits);
@@ -136,8 +135,8 @@ mod tests {
         let mut random_array = [0u16; 16];
         let between = Uniform::from(0..128);
         for num_bits in 7..16 {
-            for i in 0..16 {
-                random_array[i] = between.sample(&mut rng);
+            for i in &mut random_array {
+                *i = between.sample(&mut rng);
             }
             let mut output = [0u8; 16 * 2];
             pack16(&random_array, &mut output, num_bits);
@@ -153,8 +152,8 @@ mod tests {
         let mut random_array = [0u32; 32];
         let between = Uniform::from(0..131_072);
         for num_bits in 17..32 {
-            for i in 0..32 {
-                random_array[i] = between.sample(&mut rng);
+            for i in &mut random_array {
+                *i = between.sample(&mut rng);
             }
             let mut output = [0u8; 32 * 4];
             pack32(&random_array, &mut output, num_bits);
@@ -170,8 +169,8 @@ mod tests {
         let mut random_array = [0u64; 64];
         let between = Uniform::from(0..131_072);
         for num_bits in 17..64 {
-            for i in 0..64 {
-                random_array[i] = between.sample(&mut rng);
+            for i in &mut random_array {
+                *i = between.sample(&mut rng);
             }
             let mut output = [0u8; 64 * 8];
             pack64(&random_array, &mut output, num_bits);
@@ -179,20 +178,5 @@ mod tests {
             unpack64(&output, &mut other, num_bits);
             assert_eq!(other, random_array);
         }
-    }
-
-    #[bench]
-    fn bench_u32_17_bit(b: &mut Bencher) {
-        let mut rng = rand::thread_rng();
-        let mut random_array = [0u32; 32];
-        let between = Uniform::from(0..131_072);
-        for i in 0..32 {
-            random_array[i] = between.sample(&mut rng);
-        }
-        let mut output = [0u8; 32 * 4];
-        b.iter(|| pack32(&random_array, &mut output, 17));
-        let mut other = [0u32; 32];
-        unpack32(&output, &mut other, 17);
-        assert_eq!(other, random_array);
     }
 }
