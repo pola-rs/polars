@@ -104,7 +104,9 @@ def dtypes(
         The complexity of nested data types. If set to 0, nested data types are
         disabled.
     """
-    flat_dtypes, nested_dtypes = _parse_allowed_dtypes(allowed_dtypes)
+    flat_dtypes, nested_dtypes, excluded_dtypes = _parse_dtype_restrictions(
+        allowed_dtypes, excluded_dtypes
+    )
 
     if nesting_level > 0 and nested_dtypes:
         if not flat_dtypes:
@@ -126,22 +128,47 @@ def dtypes(
         return _flat_dtypes(allowed_dtypes=flat_dtypes, excluded_dtypes=excluded_dtypes)
 
 
-def _parse_allowed_dtypes(
+def _parse_dtype_restrictions(
     allowed_dtypes: Collection[PolarsDataType] | None = None,
+    excluded_dtypes: Sequence[PolarsDataType] | None = None,
 ) -> tuple[Sequence[PolarsDataType], Sequence[PolarsDataType]]:
-    """Split allowed dtypes into flat and nested data types."""
+    """
+    Parse data type restrictions.
+
+    Splits allowed data types into flat and nested data types.
+    Filters the allowed data types by excluded data type classes.
+    Excluded instantiated data types are returned to be filtered later.
+    """
+    # Split excluded dtypes into instances and classes
+    excluded_dtypes_instance = []
+    excluded_dtypes_class = []
+    if excluded_dtypes:
+        for dt in excluded_dtypes:
+            if isinstance(dt, DataType):
+                excluded_dtypes_instance.append(dt)
+            else:
+                excluded_dtypes_class.append(dt)
+
+    # Split allowed dtypes into flat and nested, excluding certain dtype classes
     if allowed_dtypes is None:
-        return _FLAT_DTYPES, _NESTED_DTYPES
+        allowed_dtypes_flat = [
+            dt for dt in _FLAT_DTYPES if dt not in excluded_dtypes_class
+        ]
+        allowed_dtypes_nested = [
+            dt for dt in _NESTED_DTYPES if dt not in excluded_dtypes_class
+        ]
+    else:
+        allowed_dtypes_flat = []
+        allowed_dtypes_nested = []
+        for dt in allowed_dtypes:
+            if dt in excluded_dtypes_class:
+                continue
+            elif dt.is_nested():
+                allowed_dtypes_nested.append(dt)
+            else:
+                allowed_dtypes_flat.append(dt)
 
-    allowed_dtypes_flat = []
-    allowed_dtypes_nested = []
-    for dt in allowed_dtypes:
-        if dt.is_nested():
-            allowed_dtypes_nested.append(dt)
-        else:
-            allowed_dtypes_flat.append(dt)
-
-    return allowed_dtypes_flat, allowed_dtypes_nested
+    return allowed_dtypes_flat, allowed_dtypes_nested, excluded_dtypes_instance
 
 
 @st.composite
