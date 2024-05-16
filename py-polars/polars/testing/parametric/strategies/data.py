@@ -61,7 +61,7 @@ from polars.testing.parametric.strategies.dtype import (
 if TYPE_CHECKING:
     from datetime import date, datetime, time
 
-    from hypothesis.strategies import DrawFn, SearchStrategy
+    from hypothesis.strategies import SearchStrategy
 
     from polars.datatypes import DataType, DataTypeClass
     from polars.type_aliases import PolarsDataType, SchemaDict, TimeUnit
@@ -281,10 +281,12 @@ def lists(
     )
 
 
-@st.composite
-def structs(  # noqa: D417
-    draw: DrawFn, /, fields: Sequence[Field] | SchemaDict, **kwargs: Any
-) -> dict[str, Any]:
+def structs(
+    fields: Sequence[Field] | SchemaDict,
+    *,
+    allow_null: bool = True,
+    **kwargs: Any,
+) -> SearchStrategy[dict[str, Any]]:
     """
     Create a strategy for generating structs with the given fields.
 
@@ -293,14 +295,21 @@ def structs(  # noqa: D417
     fields
         The fields that make up the struct. Can be either a sequence of Field
         objects or a mapping of column names to data types.
+    allow_null
+        Allow nulls as possible values. If set to True, the returned dictionaries
+        may miss certain fields and are in random order.
     **kwargs
         Additional arguments that are passed to nested data generation strategies.
     """
     if isinstance(fields, Mapping):
         fields = [Field(name, dtype) for name, dtype in fields.items()]
 
-    strats = {f.name: data(f.dtype, **kwargs) for f in fields}
-    return {col: draw(strat) for col, strat in strats.items()}
+    strats = {f.name: data(f.dtype, allow_null=allow_null, **kwargs) for f in fields}
+
+    if allow_null:
+        return st.fixed_dictionaries({}, optional=strats)
+    else:
+        return st.fixed_dictionaries(strats)
 
 
 def nulls() -> SearchStrategy[None]:
@@ -394,7 +403,7 @@ def data(
         )
     elif dtype == Struct:
         fields = getattr(dtype, "fields", None) or [Field("f0", Null())]
-        strategy = structs(fields, **kwargs)
+        strategy = structs(fields, allow_null=allow_null, **kwargs)
     else:
         msg = f"unsupported data type: {dtype}"
         raise InvalidArgument(msg)
