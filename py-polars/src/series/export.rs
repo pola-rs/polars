@@ -357,7 +357,7 @@ where
 /// Convert arrays by flattening first, converting the flat Series, and then reshaping.
 fn array_series_to_numpy(py: Python, s: &Series) -> PyObject {
     let ca = s.array().unwrap();
-    let s_inner = ca.get_inner(); // TODO: This rechunks - is there a way to avoid this?
+    let s_inner = ca.get_inner();
     let np_array_flat = series_to_numpy_with_copy(py, &s_inner).unwrap();
 
     // Reshape to the original shape.
