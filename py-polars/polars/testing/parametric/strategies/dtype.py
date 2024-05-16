@@ -59,6 +59,8 @@ _SIMPLE_DTYPES: list[DataTypeClass] = [
     Date,
     Time,
     Null,
+    # TODO: Enable Object types by default when various issues are solved.
+    # Object,
 ]
 # Supported data type classes with arguments
 _COMPLEX_DTYPES: list[DataTypeClass] = [
