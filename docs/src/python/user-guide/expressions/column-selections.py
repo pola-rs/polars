@@ -78,13 +78,22 @@ print(out)
 # --8<-- [start:selectors_is_selector_utility]
 from polars.selectors import is_selector
 
-out = cs.temporal()
+out = cs.numeric()
+print(is_selector(out))
+
+out = cs.boolean() | cs.numeric()
+print(is_selector(out))
+
+out = cs.numeric() + pl.lit(123)
 print(is_selector(out))
 # --8<-- [end:selectors_is_selector_utility]
 
 # --8<-- [start:selectors_colnames_utility]
 from polars.selectors import expand_selector
 
-out = cs.temporal().as_expr().dt.to_string("%Y-%h-%d")
+out = cs.temporal()
+print(expand_selector(df, out))
+
+out = ~(cs.temporal() | cs.numeric())
 print(expand_selector(df, out))
 # --8<-- [end:selectors_colnames_utility]

@@ -130,6 +130,13 @@ def test_selector_by_name(df: pl.DataFrame) -> None:
     assert df.select(cs.by_name()).columns == []
     assert df.select(cs.by_name([])).columns == []
 
+    # check "by_name & col"
+    for selector_expr in (
+        cs.by_name("abc", "cde") & pl.col("ghi"),
+        pl.col("abc") & cs.by_name("cde", "ghi"),
+    ):
+        assert df.select(selector_expr).columns == ["abc", "cde", "ghi"]
+
     # expected errors
     with pytest.raises(ColumnNotFoundError):
         df.select(cs.by_name("stroopwafel"))
@@ -524,6 +531,13 @@ def test_selector_sets(df: pl.DataFrame) -> None:
         "Lmn": pl.Duration,
     }
 
+    frame = pl.DataFrame({"colx": [0, 1, 2], "coly": [3, 4, 5], "colz": [6, 7, 8]})
+    sub_expr = cs.matches("[yz]$") - pl.col("colx")  # << shouldn't behave as set
+    assert frame.select(sub_expr).rows() == [(3, 6), (3, 6), (3, 6)]
+
+    with pytest.raises(TypeError, match=r"unsupported .* \('Expr' - 'Selector'\)"):
+        df.select(pl.col("colx") - cs.matches("[yz]$"))
+
     # COMPLEMENT SET
     assert df.select(~cs.by_dtype([pl.Duration, pl.Time])).schema == {
         "abc": pl.UInt16,
@@ -615,10 +629,23 @@ def test_regex_expansion_exclude_10002() -> None:
 
 
 def test_is_selector() -> None:
+    # only actual/compound selectors should pass this check
     assert is_selector(cs.numeric())
     assert is_selector(cs.by_dtype(pl.UInt32) | pl.col("xyz"))
-    assert not is_selector(pl.col("cde"))
+
+    # expressions (and literals, etc) should fail
+    assert not is_selector(pl.col("xyz"))
+    assert not is_selector(cs.numeric().name.suffix(":num"))
+    assert not is_selector(cs.date() + pl.col("time"))
     assert not is_selector(None)
+    assert not is_selector("x")
+
+    schema = {"x": pl.Int64, "y": pl.Float64}
+    with pytest.raises(TypeError):
+        expand_selector(schema, 999)
+
+    with pytest.raises(TypeError):
+        expand_selector(schema, "colname")
 
 
 def test_selector_or() -> None:
