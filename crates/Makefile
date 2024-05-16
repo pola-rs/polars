@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-SHELL=/bin/bash
+SHELL=bash
 BASE ?= main
 
 .PHONY: fmt
