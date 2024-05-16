@@ -56,7 +56,7 @@ def test_to_dataframe_pyarrow_parametric(df: pl.DataFrame) -> None:
             pl.String,  # Polars String type does not match protocol spec
             pl.Categorical,
         ],
-        chunked=False,
+        allow_chunks=False,
     )
 )
 def test_to_dataframe_pyarrow_zero_copy_parametric(df: pl.DataFrame) -> None:
@@ -101,7 +101,7 @@ def test_to_dataframe_pandas_parametric(df: pl.DataFrame) -> None:
             pl.String,  # Polars String type does not match protocol spec
             pl.Categorical,
         ],
-        chunked=False,
+        allow_chunks=False,
         allow_null=False,  # Bug: https://github.com/pola-rs/polars/issues/16190
     )
 )
@@ -134,7 +134,7 @@ def test_from_dataframe_pyarrow_parametric(df: pl.DataFrame) -> None:
             pl.Categorical,  # Polars copies the categories to construct a mapping
             pl.Boolean,  # pyarrow exports boolean buffers as byte-packed: https://github.com/apache/arrow/issues/37991
         ],
-        chunked=False,
+        allow_chunks=False,
     )
 )
 def test_from_dataframe_pyarrow_zero_copy_parametric(df: pl.DataFrame) -> None:
@@ -176,7 +176,7 @@ def test_from_dataframe_pandas_parametric(df: pl.DataFrame) -> None:
         # Empty dataframes cause an error due to a bug in pandas.
         # https://github.com/pandas-dev/pandas/issues/56700
         min_size=1,
-        chunked=False,
+        allow_chunks=False,
     )
 )
 @pytest.mark.skipif(
@@ -222,7 +222,7 @@ def test_from_dataframe_pandas_native_parametric(df: pl.DataFrame) -> None:
         # Empty dataframes cause an error due to a bug in pandas.
         # https://github.com/pandas-dev/pandas/issues/56700
         min_size=1,
-        chunked=False,
+        allow_chunks=False,
         allow_null=False,  # Bug: https://github.com/pola-rs/polars/issues/16190
     )
 )

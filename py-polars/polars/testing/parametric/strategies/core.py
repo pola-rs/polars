@@ -6,10 +6,7 @@ from typing import TYPE_CHECKING, Any, Collection, Mapping, Sequence, overload
 import hypothesis.strategies as st
 from hypothesis.errors import InvalidArgument
 
-from polars._utils.deprecation import (
-    deprecate_renamed_parameter,
-    issue_deprecation_warning,
-)
+from polars._utils.deprecation import issue_deprecation_warning
 from polars.dataframe import DataFrame
 from polars.datatypes import DataType, DataTypeClass, Null
 from polars.series import Series
@@ -32,7 +29,6 @@ _COL_LIMIT = 5  # max number of generated cols
 
 
 @st.composite
-@deprecate_renamed_parameter("chunked", "allow_chunks", version="0.20.27")
 def series(  # noqa: D417
     draw: DrawFn,
     /,
@@ -73,7 +69,7 @@ def series(  # noqa: D417
         supports overriding the default strategy for the given dtype.
     allow_null : bool
         Allow nulls as possible values and allow the `Null` data type by default.
-    allow_chunks
+    allow_chunks : bool
         Allow the Series to contain multiple chunks.
     unique : bool, optional
         indicate whether Series values should all be distinct.
@@ -140,6 +136,12 @@ def series(  # noqa: D417
             version="0.20.26",
         )
         kwargs["allow_infinity"] = allow_inf
+    if (chunked := kwargs.pop("chunked", None)) is not None:
+        issue_deprecation_warning(
+            "`chunked` is deprecated. Use `allow_chunks` instead.",
+            version="0.20.26",
+        )
+        allow_chunks = chunked
 
     if isinstance(allowed_dtypes, (DataType, DataTypeClass)):
         allowed_dtypes = [allowed_dtypes]
@@ -199,12 +201,9 @@ def series(  # noqa: D417
     s = Series(name=name, values=values, dtype=dtype)
 
     # Apply chunking
-    if allow_chunks and size > 1:
-        if chunked is None:
-            chunked = draw(st.booleans())
-        if chunked:
-            split_at = size // 2
-            s = s[:split_at].append(s[split_at:])
+    if allow_chunks and size > 1 and draw(st.booleans()):
+        split_at = size // 2
+        s = s[:split_at].append(s[split_at:])
 
     return s
 
@@ -219,9 +218,9 @@ def dataframes(
     size: int | None = None,
     min_size: int = 0,
     max_size: int = _ROW_LIMIT,
-    chunked: bool | None = None,
     include_cols: Sequence[column] | column | None = None,
     allow_null: bool | Mapping[str, bool] = True,
+    allow_chunks: bool = True,
     allowed_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
     excluded_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
     **kwargs: Any,
@@ -238,9 +237,9 @@ def dataframes(
     size: int | None = None,
     min_size: int = 0,
     max_size: int = _ROW_LIMIT,
-    chunked: bool | None = None,
     include_cols: Sequence[column] | column | None = None,
     allow_null: bool | Mapping[str, bool] = True,
+    allow_chunks: bool = True,
     allowed_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
     excluded_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
     **kwargs: Any,
@@ -259,9 +258,9 @@ def dataframes(  # noqa: D417
     size: int | None = None,
     min_size: int = 0,
     max_size: int = _ROW_LIMIT,
-    chunked: bool | None = None,
     include_cols: Sequence[column] | column | None = None,
     allow_null: bool | Mapping[str, bool] = True,
+    allow_chunks: bool = True,
     allowed_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
     excluded_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
     **kwargs: Any,
@@ -290,9 +289,6 @@ def dataframes(  # noqa: D417
     max_size : int, optional
         if not passing an exact size, set the maximum number of rows in the
         DataFrame.
-    chunked : bool, optional
-        ensure that DataFrames with more than row have `n_chunks` > 1. if
-        omitted, chunking will be randomised at the level of individual Series.
     include_cols : [column], optional
         a list of `column` objects to include in the generated DataFrame. note that
         explicitly provided columns are appended onto the list of existing columns
@@ -300,6 +296,8 @@ def dataframes(  # noqa: D417
     allow_null : bool or Mapping[str, bool]
         Allow nulls as possible values and allow the `Null` data type by default.
         Accepts either a boolean or a mapping of column names to booleans.
+    allow_chunks : bool
+        Allow the DataFrame to contain multiple chunks.
     allowed_dtypes : {list,set}, optional
         when automatically generating data, allow only these dtypes.
     excluded_dtypes : {list,set}, optional
@@ -387,6 +385,12 @@ def dataframes(  # noqa: D417
             version="0.20.26",
         )
         kwargs["allow_infinity"] = allow_inf
+    if (chunked := kwargs.pop("chunked", None)) is not None:
+        issue_deprecation_warning(
+            "`chunked` is deprecated. Use `allow_chunks` instead.",
+            version="0.20.26",
+        )
+        allow_chunks = chunked
 
     if isinstance(include_cols, column):
         include_cols = [include_cols]
@@ -417,6 +421,8 @@ def dataframes(  # noqa: D417
             else:
                 c.allow_null = allow_null
 
+    allow_series_chunks = draw(st.booleans()) if allow_chunks else False
+
     with StringCache():
         data = {
             c.name: draw(
@@ -424,10 +430,10 @@ def dataframes(  # noqa: D417
                     name=c.name,
                     dtype=c.dtype,
                     size=size,
-                    allow_null=c.allow_null,  # type: ignore[arg-type]
                     strategy=c.strategy,
+                    allow_null=c.allow_null,  # type: ignore[arg-type].strategy,
+                    allow_chunks=allow_series_chunks,
                     unique=c.unique,
-                    chunked=None if chunked is None else False,
                     allowed_dtypes=allowed_dtypes,
                     excluded_dtypes=excluded_dtypes,
                     **kwargs,
@@ -438,8 +444,8 @@ def dataframes(  # noqa: D417
 
     df = DataFrame(data)
 
-    # Optionally generate chunked frames
-    if size > 1 and chunked:
+    # Apply chunking
+    if allow_chunks and size > 1 and not allow_series_chunks and draw(st.booleans()):
         split_at = size // 2
         df = df[:split_at].vstack(df[split_at:])
 

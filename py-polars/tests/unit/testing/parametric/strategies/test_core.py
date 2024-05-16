@@ -244,26 +244,17 @@ def test_strategy_dtypes(
     assert not s2.dtype.is_temporal()
 
 
-@given(
-    df1=dataframes(chunked=False, min_size=1),
-    df2=dataframes(chunked=True, min_size=1),
-    s1=series(chunked=False, min_size=1),
-    s2=series(chunked=True, min_size=1),
-)
+@given(s=series(allow_chunks=False))
 @settings(max_examples=10)
-def test_chunking(
-    df1: pl.DataFrame,
-    df2: pl.DataFrame,
-    s1: pl.Series,
-    s2: pl.Series,
-) -> None:
-    assert df1.n_chunks() == 1
-    if len(df2) > 1:
-        assert df2.n_chunks("all") == [2] * len(df2.columns)
+def test_series_allow_chunks(s: pl.Series) -> None:
+    assert s.n_chunks() == 1
 
-    assert s1.n_chunks() == 1
-    if len(s2) > 1:
-        assert s2.n_chunks() > 1
+
+@given(df=dataframes(allow_chunks=False))
+@settings(max_examples=10)
+def test_dataframes_allow_chunks(df: pl.DataFrame) -> None:
+    assert df.n_chunks("first") == 1
+    assert df.n_chunks("all") == [1] * df.width
 
 
 @given(
@@ -302,3 +293,11 @@ def test_dataframes_allowed_dtypes_integer_cols(df: pl.DataFrame) -> None:
     assert all(
         tp in (pl.Int8, pl.UInt16, pl.List(pl.Int32)) for tp in df.schema.values()
     )
+
+
+@given(st.data())
+def test_series_chunked_deprecated(data: st.DataObject) -> None:
+    with pytest.deprecated_call():
+        data.draw(series(chunked=True))
+    with pytest.deprecated_call():
+        data.draw(dataframes(chunked=True))

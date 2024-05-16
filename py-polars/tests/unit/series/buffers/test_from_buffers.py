@@ -24,7 +24,7 @@ TEMPORAL_DTYPES: set[pl.PolarsDataType] = (
 @given(
     s=series(
         allowed_dtypes=(pl.INTEGER_DTYPES | pl.FLOAT_DTYPES | {pl.Boolean}),
-        chunked=False,
+        allow_chunks=False,
     )
 )
 def test_series_from_buffers_numeric_with_validity(s: pl.Series) -> None:
@@ -36,7 +36,7 @@ def test_series_from_buffers_numeric_with_validity(s: pl.Series) -> None:
 @given(
     s=series(
         allowed_dtypes=(pl.INTEGER_DTYPES | pl.FLOAT_DTYPES | {pl.Boolean}),
-        chunked=False,
+        allow_chunks=False,
         allow_null=False,
     )
 )
@@ -45,7 +45,7 @@ def test_series_from_buffers_numeric(s: pl.Series) -> None:
     assert_series_equal(s, result)
 
 
-@given(s=series(allowed_dtypes=TEMPORAL_DTYPES, chunked=False))
+@given(s=series(allowed_dtypes=TEMPORAL_DTYPES, allow_chunks=False))
 def test_series_from_buffers_temporal_with_validity(s: pl.Series) -> None:
     validity = s.is_not_null()
     physical = pl.Int32 if s.dtype == pl.Date else pl.Int64
