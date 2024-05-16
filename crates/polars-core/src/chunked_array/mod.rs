@@ -59,7 +59,7 @@ use crate::utils::{first_non_null, last_non_null};
 #[cfg(not(feature = "dtype-categorical"))]
 pub struct RevMapping {}
 
-pub type ChunkIdIter<'a> = std::iter::Map<std::slice::Iter<'a, ArrayRef>, fn(&ArrayRef) -> usize>;
+pub type ChunkLenIter<'a> = std::iter::Map<std::slice::Iter<'a, ArrayRef>, fn(&ArrayRef) -> usize>;
 
 /// # ChunkedArray
 ///
@@ -360,7 +360,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     }
 
     /// Returns an iterator over the length of each chunk of the array.
-    pub fn chunk_lengths(&self) -> ChunkIdIter {
+    pub fn chunk_lengths(&self) -> ChunkLenIter {
         self.chunks.iter().map(|chunk| chunk.len())
     }
 

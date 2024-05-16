@@ -29,7 +29,7 @@ pub use crate::chunked_array::ops::rolling_window::RollingOptionsFixedWindow;
 pub use crate::chunked_array::ops::*;
 #[cfg(feature = "temporal")]
 pub use crate::chunked_array::temporal::conversion::*;
-pub(crate) use crate::chunked_array::ChunkIdIter;
+pub(crate) use crate::chunked_array::ChunkLenIter;
 pub use crate::chunked_array::ChunkedArray;
 #[cfg(feature = "dtype-categorical")]
 pub use crate::datatypes::string_cache::StringCacheHolder;

@@ -175,7 +175,7 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
         self.0.rename(name)
     }
 
-    fn chunk_lengths(&self) -> ChunkIdIter {
+    fn chunk_lengths(&self) -> ChunkLenIter {
         self.0.chunk_lengths()
     }
 

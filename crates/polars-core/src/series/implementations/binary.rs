@@ -98,7 +98,7 @@ impl SeriesTrait for SeriesWrap<BinaryChunked> {
         self.0.rename(name);
     }
 
-    fn chunk_lengths(&self) -> ChunkIdIter {
+    fn chunk_lengths(&self) -> ChunkLenIter {
         self.0.chunk_lengths()
     }
     fn name(&self) -> &str {
