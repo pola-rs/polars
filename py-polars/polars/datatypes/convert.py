@@ -342,46 +342,6 @@ def dtype_to_py_type(dtype: PolarsDataType) -> PythonDataType:
         raise NotImplementedError(msg) from None
 
 
-def _dtype_to_init_repr_list(dtype: List, prefix: str) -> str:
-    class_name = dtype.__class__.__name__
-    inner_repr = dtype_to_init_repr(dtype.inner, prefix)
-    init_repr = f"{prefix}{class_name}({inner_repr})"
-    return init_repr
-
-
-def _dtype_to_init_repr_array(dtype: Array, prefix: str) -> str:
-    class_name = dtype.__class__.__name__
-    inner_repr = dtype_to_init_repr(dtype.inner, prefix)
-    init_repr = f"{prefix}{class_name}({inner_repr}, width={dtype.width})"
-    return init_repr
-
-
-def _dtype_to_init_repr_struct(dtype: Struct, prefix: str) -> str:
-    class_name = dtype.__class__.__name__
-    inner_list = [
-        f'"{field_name}": {dtype_to_init_repr(inner_dtype, prefix)}'
-        for field_name, inner_dtype in dict(dtype).items()
-    ]
-    inner_repr = "{" + ", ".join(inner_list) + "}"
-    init_repr = f"{prefix}{class_name}({inner_repr})"
-    return init_repr
-
-
-def dtype_to_init_repr(dtype: PolarsDataType | None, prefix: str) -> str:
-    """Convert a Polars dtype to a prefixed string representation."""
-    if isinstance(dtype, List):
-        init_repr = _dtype_to_init_repr_list(dtype, prefix)
-    elif isinstance(dtype, Array):
-        init_repr = _dtype_to_init_repr_array(dtype, prefix)
-    elif isinstance(dtype, Struct):
-        init_repr = _dtype_to_init_repr_struct(dtype, prefix)
-    elif dtype is not None:
-        init_repr = f"{prefix}{dtype!r}"
-    else:
-        init_repr = "None"
-    return init_repr
-
-
 @overload
 def py_type_to_dtype(
     data_type: Any, *, raise_unmatched: Literal[True] = ...

@@ -78,13 +78,13 @@ from polars.datatypes import (
     UInt32,
     UInt64,
     Unknown,
-    dtype_to_init_repr,
     is_polars_dtype,
     maybe_cast,
     numpy_char_code_to_dtype,
     py_type_to_dtype,
     supported_numpy_char_code,
 )
+from polars.datatypes._utils import dtype_to_init_repr
 from polars.dependencies import (
     _HVPLOT_AVAILABLE,
     _PYARROW_AVAILABLE,
