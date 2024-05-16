@@ -1,4 +1,6 @@
 mod any_value;
+use arrow::compute::concatenate::concatenate_validities;
+use arrow::compute::utils::combine_validities_and;
 pub mod flatten;
 pub(crate) mod series;
 mod supertype;
@@ -832,6 +834,22 @@ where
             )
         },
     }
+}
+
+pub fn binary_concatenate_validities<'a, T, B>(
+    left: &'a ChunkedArray<T>,
+    right: &'a ChunkedArray<B>,
+) -> Option<Bitmap>
+where
+    B: PolarsDataType,
+    T: PolarsDataType,
+{
+    let (left, right) = align_chunks_binary(left, right);
+    let left_chunk_refs: Vec<_> = left.chunks().iter().map(|c| &**c).collect();
+    let left_validity = concatenate_validities(&left_chunk_refs);
+    let right_chunk_refs: Vec<_> = right.chunks().iter().map(|c| &**c).collect();
+    let right_validity = concatenate_validities(&right_chunk_refs);
+    combine_validities_and(left_validity.as_ref(), right_validity.as_ref())
 }
 
 pub trait IntoVec<T> {
