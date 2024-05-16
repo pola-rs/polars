@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import date, datetime, time, timedelta, timezone
 from typing import TYPE_CHECKING, Any, cast
 
@@ -954,6 +955,46 @@ def test_to_init_repr_nested_dtype() -> None:
     ).collect()
 
     assert_frame_equal(eval(df.to_init_repr()), df)
+
+
+def _assert_dtype_repr(df: pl.DataFrame, col: str, expected_dtype_repr: str) -> None:
+    col_init_repr = df.get_column(col).to_init_repr()
+    dtype_match = re.search(r"dtype=(.*)\)", col_init_repr)
+    assert dtype_match
+    assert dtype_match.group(1) == expected_dtype_repr
+
+
+def test_to_init_repr_nested_dtype_roundtrip() -> None:
+    # round-trip nested types
+    df = pl.LazyFrame(
+        {
+            "list": pl.Series(values=[[1], [2], [3]], dtype=pl.List(pl.Int32)),
+            "list_list": pl.Series(
+                values=[[[1]], [[2]], [[3]]], dtype=pl.List(pl.List(pl.Int8))
+            ),
+            "array": pl.Series(
+                values=[[1.0], [2.0], [3.0]],
+                dtype=pl.Array(pl.Float32, width=1),
+            ),
+            "struct": pl.Series(
+                values=[
+                    {"x": "foo", "y": [1, 2]},
+                    {"x": "bar", "y": [3, 4, 5]},
+                    {"x": "foobar", "y": []},
+                ],
+                dtype=pl.Struct({"x": pl.String, "y": pl.List(pl.Int8)}),
+            ),
+        },
+    ).collect()
+
+    assert_frame_equal(eval(df.to_init_repr()), df)
+
+    _assert_dtype_repr(df, "list", "pl.List(pl.Int32)")
+    _assert_dtype_repr(df, "list_list", "pl.List(pl.List(pl.Int8))")
+    _assert_dtype_repr(df, "array", "pl.Array(pl.Float32, width=1)")
+    _assert_dtype_repr(
+        df, "struct", 'pl.Struct({"x": pl.String, "y": pl.List(pl.Int8)})'
+    )
 
 
 def test_untrusted_categorical_input() -> None:
