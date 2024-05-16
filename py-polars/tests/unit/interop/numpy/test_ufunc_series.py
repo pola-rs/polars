@@ -1,6 +1,7 @@
-from typing import cast
+from typing import Callable, cast
 
 import numpy as np
+import pytest
 from numpy.testing import assert_array_equal
 
 import polars as pl
@@ -119,3 +120,41 @@ def test_numpy_string_array() -> None:
         np.char.capitalize(s_str),
         np.array(["Aa", "Bb", "Cc", "Dd"], dtype="<U2"),
     )
+
+
+def make_add_one() -> Callable[[pl.Series], pl.Series]:
+    numba = pytest.importorskip("numba")
+
+    @numba.guvectorize([(numba.float64[:], numba.float64[:])], "(n)->(n)")
+    def add_one(arr, result):  # type: ignore[no-untyped-def]
+        for i in range(len(arr)):
+            result[i] = arr[i] + 1.0
+
+    return add_one  # type: ignore[no-any-return]
+
+
+def test_generalized_ufunc() -> None:
+    """A generalized ufunc can be called on a pl.Series."""
+    add_one = make_add_one()
+    s_float = pl.Series("f", [1.0, 2.0, 3.0])
+    result = add_one(s_float)
+    assert_series_equal(result, pl.Series("f", [2.0, 3.0, 4.0]))
+
+
+def test_generalized_ufunc_missing_data() -> None:
+    """
+    If a pl.Series is missing data, using a generalized ufunc is not allowed.
+
+    While this particular example isn't necessarily a semantic issue, consider
+    a mean() function running on integers: it will give wrong results if the
+    input is missing data, since NumPy has no way to model missing slots.  In
+    the general case, we can't assume the function will handle missing data
+    correctly.
+    """
+    add_one = make_add_one()
+    s_float = pl.Series("f", [1.0, 2.0, 3.0, None], dtype=pl.Float64)
+    with pytest.raises(
+        pl.ComputeError,
+        match="Can't pass a Series with missing data to a generalized ufunc",
+    ):
+        add_one(s_float)
