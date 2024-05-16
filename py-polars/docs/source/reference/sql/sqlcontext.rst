@@ -1,5 +1,5 @@
 =============
-SQL Interface
+SQL Context
 =============
 .. currentmodule:: polars
 
