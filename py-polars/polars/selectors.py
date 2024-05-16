@@ -340,18 +340,12 @@ class _selector_proxy_(Expr):
             if self._attrs["name"] == "by_name":
                 return by_name(colname, *self._attrs["params"]["*names"])
             other = by_name(colname)
-        if is_selector(other):
-            return self.__and__(other)
-        else:
-            return self.as_expr().__rand__(other)
+        return self.as_expr().__rand__(other)
 
     def __ror__(self, other: Any) -> SelectorType | Expr:  # type: ignore[override]
         if is_column(other):
             other = by_name(other.meta.output_name())
-        if is_selector(other):
-            return self.__or__(other)
-        else:
-            return self.as_expr().__ror__(other)
+        return self.as_expr().__ror__(other)
 
     def as_expr(self) -> Expr:
         """
