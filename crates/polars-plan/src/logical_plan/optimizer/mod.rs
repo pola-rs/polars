@@ -1,10 +1,12 @@
 use polars_core::prelude::*;
 
+use crate::prelude::optimizer::cluster_with_columns::ClusterWithColumns;
 use crate::prelude::*;
 
 mod cache_states;
 mod delay_rechunk;
 
+mod cluster_with_columns;
 mod collapse_and_project;
 mod collect_members;
 mod count_star;
@@ -66,6 +68,7 @@ pub fn optimize(
     #[allow(dead_code)]
     let verbose = verbose();
     // get toggle values
+    let cluster_with_columns = opt_state.predicate_pushdown;
     let predicate_pushdown = opt_state.predicate_pushdown;
     let projection_pushdown = opt_state.projection_pushdown;
     let type_coercion = opt_state.type_coercion;
@@ -153,6 +156,10 @@ pub fn optimize(
         let alp = lp_arena.take(lp_top);
         let alp = predicate_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
         lp_arena.replace(lp_top, alp);
+    }
+
+    if cluster_with_columns {
+        ClusterWithColumns::new(lp_arena, expr_arena).optimize(lp_top);
     }
 
     // Make sure its before slice pushdown.

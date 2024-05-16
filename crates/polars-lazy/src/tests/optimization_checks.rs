@@ -548,3 +548,28 @@ fn test_flatten_unions() -> PolarsResult<()> {
     }
     Ok(())
 }
+
+#[test]
+fn test_cluster_with_columns() -> Result<(), Box<dyn std::error::Error>> {
+    use polars_core::prelude::*;
+
+    let df = df!("foo" => &[0.5, 1.7, 3.2],
+                 "bar" => &[4.1, 1.5, 9.2])?;
+    
+    let df = df.lazy()
+        .with_columns([col("foo") * lit(2.0)])
+        .with_columns([col("bar") / lit(1.5)]);
+
+    let unoptimized = df.describe_plan().unwrap();
+    let optimized = df.describe_optimized_plan().unwrap();
+
+    println!("\n---\n");
+
+    println!("Unoptimized:\n{unoptimized}");
+    println!("\n---\n");
+    println!("Optimized:\n{optimized}");
+
+    assert!(false);
+
+    Ok(())
+}

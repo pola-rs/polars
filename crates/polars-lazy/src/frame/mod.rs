@@ -128,6 +128,7 @@ impl LazyFrame {
         self.with_optimizations(OptState {
             projection_pushdown: false,
             predicate_pushdown: false,
+            cluster_with_columns: false,
             type_coercion: true,
             simplify_expr: false,
             slice_pushdown: false,
