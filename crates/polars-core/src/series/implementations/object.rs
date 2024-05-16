@@ -81,7 +81,7 @@ where
     }
 
     fn chunk_lengths(&self) -> ChunkIdIter {
-        ObjectChunked::chunk_id(&self.0)
+        ObjectChunked::chunk_lengths(&self.0)
     }
 
     fn name(&self) -> &str {

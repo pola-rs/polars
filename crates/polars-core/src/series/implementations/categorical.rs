@@ -134,7 +134,7 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     }
 
     fn chunk_lengths(&self) -> ChunkIdIter {
-        self.0.physical().chunk_id()
+        self.0.physical().chunk_lengths()
     }
     fn name(&self) -> &str {
         self.0.physical().name()
