@@ -37,8 +37,7 @@ impl PySeries {
             self.series
                 .max_reduce()
                 .map_err(PyPolarsErr::from)?
-                .get(0)
-                .map_err(PyPolarsErr::from)?,
+                .as_any_value(),
         )
         .into_py(py))
     }
@@ -50,17 +49,12 @@ impl PySeries {
                     .cast(&DataType::UInt8)
                     .unwrap()
                     .mean_reduce()
-                    .get(0)
-                    .map_err(PyPolarsErr::from)?,
+                    .as_any_value(),
             )
             .into_py(py)),
-            DataType::Datetime(_, _) | DataType::Duration(_) | DataType::Time => Ok(Wrap(
-                self.series
-                    .mean_reduce()
-                    .get(0)
-                    .map_err(PyPolarsErr::from)?,
-            )
-            .into_py(py)),
+            DataType::Datetime(_, _) | DataType::Duration(_) | DataType::Time => {
+                Ok(Wrap(self.series.mean_reduce().as_any_value()).into_py(py))
+            },
             _ => Ok(self.series.mean().into_py(py)),
         }
     }
@@ -71,18 +65,16 @@ impl PySeries {
                 self.series
                     .cast(&DataType::UInt8)
                     .unwrap()
-                    .median_as_series()
+                    .median_reduce()
                     .map_err(PyPolarsErr::from)?
-                    .get(0)
-                    .map_err(PyPolarsErr::from)?,
+                    .as_any_value(),
             )
             .into_py(py)),
             DataType::Datetime(_, _) | DataType::Duration(_) | DataType::Time => Ok(Wrap(
                 self.series
-                    .median_as_series()
+                    .median_reduce()
                     .map_err(PyPolarsErr::from)?
-                    .get(0)
-                    .map_err(PyPolarsErr::from)?,
+                    .as_any_value(),
             )
             .into_py(py)),
             _ => Ok(self.series.median().into_py(py)),
@@ -92,10 +84,9 @@ impl PySeries {
     fn min(&self, py: Python) -> PyResult<PyObject> {
         Ok(Wrap(
             self.series
-                .min_as_series()
+                .min_reduce()
                 .map_err(PyPolarsErr::from)?
-                .get(0)
-                .map_err(PyPolarsErr::from)?,
+                .as_any_value(),
         )
         .into_py(py))
     }
@@ -105,8 +96,7 @@ impl PySeries {
             self.series
                 .product()
                 .map_err(PyPolarsErr::from)?
-                .get(0)
-                .map_err(PyPolarsErr::from)?,
+                .as_any_value(),
         )
         .into_py(py))
     }
@@ -116,22 +106,18 @@ impl PySeries {
         quantile: f64,
         interpolation: Wrap<QuantileInterpolOptions>,
     ) -> PyResult<PyObject> {
-        let tmp = self
-            .series
-            .quantile_as_series(quantile, interpolation.0)
-            .map_err(PyPolarsErr::from)?;
-        let out = tmp.get(0).unwrap_or(AnyValue::Null);
+        let bind = self.series.quantile_reduce(quantile, interpolation.0);
+        let sc = bind.map_err(PyPolarsErr::from)?;
 
-        Ok(Python::with_gil(|py| Wrap(out).into_py(py)))
+        Ok(Python::with_gil(|py| Wrap(sc.as_any_value()).into_py(py)))
     }
 
     fn std(&self, py: Python, ddof: u8) -> PyResult<PyObject> {
         Ok(Wrap(
             self.series
-                .std_as_series(ddof)
+                .std_reduce(ddof)
                 .map_err(PyPolarsErr::from)?
-                .get(0)
-                .map_err(PyPolarsErr::from)?,
+                .as_any_value(),
         )
         .into_py(py))
     }
@@ -139,10 +125,9 @@ impl PySeries {
     fn var(&self, py: Python, ddof: u8) -> PyResult<PyObject> {
         Ok(Wrap(
             self.series
-                .var_as_series(ddof)
+                .var_reduce(ddof)
                 .map_err(PyPolarsErr::from)?
-                .get(0)
-                .map_err(PyPolarsErr::from)?,
+                .as_any_value(),
         )
         .into_py(py))
     }
@@ -151,10 +136,8 @@ impl PySeries {
         Ok(Wrap(
             self.series
                 .sum_reduce()
-                .map(|sc| sc.into_series(""))
                 .map_err(PyPolarsErr::from)?
-                .get(0)
-                .map_err(PyPolarsErr::from)?,
+                .as_any_value(),
         )
         .into_py(py))
     }

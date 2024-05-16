@@ -423,12 +423,17 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
     }
 
     fn var_reduce(&self, ddof: u8) -> PolarsResult<Scalar> {
-        let sc = self.0.var_reduce(ddof);
+        // Why do we go via MilliSeconds here? Seems wrong to me.
+        // I think we should fix/inspect the tests that fail if we remain on the time-unit here.
+        let sc = self
+            .0
+            .cast_time_unit(TimeUnit::Milliseconds)
+            .var_reduce(ddof);
         let to = self.dtype().to_physical();
         let v = sc.value().cast(&to);
         Ok(Scalar::new(
-            self.dtype().clone(),
-            v.as_duration(self.0.time_unit()),
+            DataType::Duration(TimeUnit::Milliseconds),
+            v.as_duration(TimeUnit::Milliseconds),
         ))
     }
     fn median_reduce(&self) -> PolarsResult<Scalar> {

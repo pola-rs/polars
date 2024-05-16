@@ -807,7 +807,7 @@ impl Series {
                 Scalar::new(self.dtype().clone(), val.into())
             },
             dt if dt.is_numeric() || matches!(dt, DataType::Boolean) => {
-                let val = self.mean().map(|m| m as f32);
+                let val = self.mean();
                 Scalar::new(DataType::Float64, val.into())
             },
             dt if dt.is_temporal() => {

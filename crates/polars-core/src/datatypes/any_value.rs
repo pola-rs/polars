@@ -30,7 +30,7 @@ impl Scalar {
     }
 
     pub fn into_series(self, name: &str) -> Series {
-        Series::from_any_values_and_dtype(name, &[self.value], &self.dtype, true).unwrap()
+        Series::from_any_values_and_dtype(name, &[self.as_any_value()], &self.dtype, true).unwrap()
     }
 }
 
