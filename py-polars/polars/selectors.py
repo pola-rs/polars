@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from datetime import timezone
 from functools import reduce
 from operator import or_
@@ -310,8 +309,10 @@ class _selector_proxy_(Expr):
     def __and__(self, other: Any) -> SelectorType | Expr:  # type: ignore[override]
         if is_column(other):
             colname = other.meta.output_name()
-            if self._attrs["name"] == "by_name":
-                return by_name(*self._attrs["params"]["*names"], colname)
+            if self._attrs["name"] == "by_name" and (
+                params := self._attrs["params"]
+            ).get("require_all", True):
+                return by_name(*params["*names"], colname)
             other = by_name(colname)
         if is_selector(other):
             return _selector_proxy_(
@@ -337,8 +338,10 @@ class _selector_proxy_(Expr):
     def __rand__(self, other: Any) -> SelectorType | Expr:  # type: ignore[override]
         if is_column(other):
             colname = other.meta.output_name()
-            if self._attrs["name"] == "by_name":
-                return by_name(colname, *self._attrs["params"]["*names"])
+            if self._attrs["name"] == "by_name" and (
+                params := self._attrs["params"]
+            ).get("require_all", True):
+                return by_name(colname, *params["*names"])
             other = by_name(colname)
         return self.as_expr().__rand__(other)
 
@@ -732,7 +735,7 @@ def by_index(*indices: int | range | Sequence[int | range]) -> SelectorType:
     )
 
 
-def by_name(*names: str | Collection[str], match_any: bool = False) -> SelectorType:
+def by_name(*names: str | Collection[str], require_all: bool = True) -> SelectorType:
     """
     Select all columns matching the given names.
 
@@ -740,13 +743,13 @@ def by_name(*names: str | Collection[str], match_any: bool = False) -> SelectorT
     ----------
     *names
         One or more names of columns to select.
-    match_any
+    require_all
         Whether to match *all* names (the default) or *any* of the names.
 
     Notes
     -----
     Matching columns are returned in the order in which they are declared in
-    the selector, not the original schema order.
+    the selector, not the underlying schema order.
 
     See Also
     --------
@@ -780,7 +783,7 @@ def by_name(*names: str | Collection[str], match_any: bool = False) -> SelectorT
 
     Match *any* of the given columns by name:
 
-    >>> df.select(cs.by_name("baz", "moose", "foo", "bear", match_any=True))
+    >>> df.select(cs.by_name("baz", "moose", "foo", "bear", require_all=False))
     shape: (2, 2)
     ┌─────┬─────┐
     │ foo ┆ baz │
@@ -820,9 +823,9 @@ def by_name(*names: str | Collection[str], match_any: bool = False) -> SelectorT
 
     selector_params: dict[str, Any] = {"*names": all_names}
     match_cols: list[str] | str = all_names
-    if match_any:
+    if not require_all:
         match_cols = f"^({'|'.join(re_escape(nm) for nm in all_names)})$"
-        selector_params["match_any"] = match_any
+        selector_params["require_all"] = require_all
 
     return _selector_proxy_(
         F.col(match_cols),
