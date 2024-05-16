@@ -308,7 +308,7 @@ def nulls() -> SearchStrategy[None]:
     return st.none()
 
 
-def objects() -> None:
+def objects() -> SearchStrategy[object]:
     """Create a strategy for generating arbitrary objects."""
     return st.builds(object)
 
