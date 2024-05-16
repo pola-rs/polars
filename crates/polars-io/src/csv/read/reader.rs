@@ -7,15 +7,10 @@ use polars_time::prelude::*;
 #[cfg(feature = "temporal")]
 use rayon::prelude::*;
 
-use super::infer_file_schema;
 use super::options::CsvReadOptions;
-use super::read_impl::batched_mmap::{
-    to_batched_owned_mmap, BatchedCsvReaderMmap, OwnedBatchedCsvReaderMmap,
-};
-use super::read_impl::batched_read::{
-    to_batched_owned_read, BatchedCsvReaderRead, OwnedBatchedCsvReader,
-};
+use super::read_impl::batched::to_batched_owned;
 use super::read_impl::CoreReader;
+use super::{infer_file_schema, BatchedCsvReader, OwnedBatchedCsvReader};
 use crate::mmap::MmapBytesReader;
 use crate::predicates::PhysicalIoExpr;
 use crate::shared::SerReader;
@@ -218,39 +213,24 @@ impl<R: MmapBytesReader> CsvReader<R> {
         }
     }
 
-    pub fn batched_borrowed_mmap(&mut self) -> PolarsResult<BatchedCsvReaderMmap> {
+    pub fn batched_borrowed(&mut self) -> PolarsResult<BatchedCsvReader> {
         if let Some(schema) = self.options.schema_overwrite.as_deref() {
             let (schema, to_cast, has_cat) = self.prepare_schema_overwrite(schema)?;
             let schema = Arc::new(schema);
 
             let csv_reader = self.core_reader(Some(schema), to_cast)?;
-            csv_reader.batched_mmap(has_cat)
+            csv_reader.batched(has_cat)
         } else {
             let csv_reader = self.core_reader(self.options.schema.clone(), vec![])?;
-            csv_reader.batched_mmap(false)
-        }
-    }
-    pub fn batched_borrowed_read(&mut self) -> PolarsResult<BatchedCsvReaderRead> {
-        if let Some(schema) = self.options.schema_overwrite.as_deref() {
-            let (schema, to_cast, has_cat) = self.prepare_schema_overwrite(schema)?;
-            let schema = Arc::new(schema);
-
-            let csv_reader = self.core_reader(Some(schema), to_cast)?;
-            csv_reader.batched_read(has_cat)
-        } else {
-            let csv_reader = self.core_reader(self.options.schema.clone(), vec![])?;
-            csv_reader.batched_read(false)
+            csv_reader.batched(false)
         }
     }
 }
 
 impl CsvReader<Box<dyn MmapBytesReader>> {
-    pub fn batched_mmap(
-        mut self,
-        schema: Option<SchemaRef>,
-    ) -> PolarsResult<OwnedBatchedCsvReaderMmap> {
+    pub fn batched(mut self, schema: Option<SchemaRef>) -> PolarsResult<OwnedBatchedCsvReader> {
         match schema {
-            Some(schema) => Ok(to_batched_owned_mmap(self.with_schema(schema))),
+            Some(schema) => Ok(to_batched_owned(self.with_schema(schema))),
             None => {
                 let parse_options = self.options.get_parse_options();
                 let reader_bytes = get_reader_bytes(&mut self.reader)?;
@@ -273,40 +253,7 @@ impl CsvReader<Box<dyn MmapBytesReader>> {
                     parse_options.decimal_comma,
                 )?;
                 let schema = Arc::new(inferred_schema);
-                Ok(to_batched_owned_mmap(self.with_schema(schema)))
-            },
-        }
-    }
-    pub fn batched_read(
-        mut self,
-        schema: Option<SchemaRef>,
-    ) -> PolarsResult<OwnedBatchedCsvReader> {
-        match schema {
-            Some(schema) => Ok(to_batched_owned_read(self.with_schema(schema))),
-            None => {
-                let reader_bytes = get_reader_bytes(&mut self.reader)?;
-
-                let parse_options = self.options.get_parse_options();
-
-                let (inferred_schema, _, _) = infer_file_schema(
-                    &reader_bytes,
-                    parse_options.separator,
-                    self.options.infer_schema_length,
-                    self.options.has_header,
-                    None,
-                    &mut self.options.skip_rows,
-                    self.options.skip_rows_after_header,
-                    parse_options.comment_prefix.as_ref(),
-                    parse_options.quote_char,
-                    parse_options.eol_char,
-                    parse_options.null_values.as_ref(),
-                    parse_options.try_parse_dates,
-                    self.options.raise_if_empty,
-                    &mut self.options.n_threads,
-                    parse_options.decimal_comma,
-                )?;
-                let schema = Arc::new(inferred_schema);
-                Ok(to_batched_owned_read(self.with_schema(schema)))
+                Ok(to_batched_owned(self.with_schema(schema)))
             },
         }
     }

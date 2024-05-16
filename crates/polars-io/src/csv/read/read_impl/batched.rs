@@ -116,7 +116,7 @@ impl<'a> Iterator for ChunkOffsetIter<'a> {
 
 impl<'a> CoreReader<'a> {
     /// Create a batched csv reader that uses mmap to load data.
-    pub fn batched_mmap(mut self, _has_cat: bool) -> PolarsResult<BatchedCsvReaderMmap<'a>> {
+    pub fn batched(mut self, _has_cat: bool) -> PolarsResult<BatchedCsvReader<'a>> {
         let reader_bytes = self.reader_bytes.take().unwrap();
         let bytes = reader_bytes.as_ref();
         let (bytes, starting_point_offset) =
@@ -154,7 +154,7 @@ impl<'a> CoreReader<'a> {
         #[cfg(not(feature = "dtype-categorical"))]
         let _cat_lock = None;
 
-        Ok(BatchedCsvReaderMmap {
+        Ok(BatchedCsvReader {
             reader_bytes,
             chunk_size: self.chunk_size,
             file_chunks_iter: file_chunks,
@@ -181,7 +181,7 @@ impl<'a> CoreReader<'a> {
     }
 }
 
-pub struct BatchedCsvReaderMmap<'a> {
+pub struct BatchedCsvReader<'a> {
     reader_bytes: ReaderBytes<'a>,
     chunk_size: usize,
     file_chunks_iter: ChunkOffsetIter<'a>,
@@ -209,7 +209,7 @@ pub struct BatchedCsvReaderMmap<'a> {
     decimal_comma: bool,
 }
 
-impl<'a> BatchedCsvReaderMmap<'a> {
+impl<'a> BatchedCsvReader<'a> {
     pub fn next_batches(&mut self, n: usize) -> PolarsResult<Option<Vec<DataFrame>>> {
         if n == 0 || self.remaining == 0 {
             return Ok(None);
@@ -283,33 +283,30 @@ impl<'a> BatchedCsvReaderMmap<'a> {
     }
 }
 
-pub struct OwnedBatchedCsvReaderMmap {
+pub struct OwnedBatchedCsvReader {
     #[allow(dead_code)]
     // this exist because we need to keep ownership
     schema: SchemaRef,
-    batched_reader: BatchedCsvReaderMmap<'static>,
+    batched_reader: BatchedCsvReader<'static>,
     // keep ownership
     _reader: CsvReader<Box<dyn MmapBytesReader>>,
 }
 
-impl OwnedBatchedCsvReaderMmap {
+impl OwnedBatchedCsvReader {
     pub fn next_batches(&mut self, n: usize) -> PolarsResult<Option<Vec<DataFrame>>> {
         self.batched_reader.next_batches(n)
     }
 }
 
-pub fn to_batched_owned_mmap(
-    mut reader: CsvReader<Box<dyn MmapBytesReader>>,
-) -> OwnedBatchedCsvReaderMmap {
+pub fn to_batched_owned(mut reader: CsvReader<Box<dyn MmapBytesReader>>) -> OwnedBatchedCsvReader {
     let schema = reader.get_schema().unwrap();
-    let batched_reader = reader.batched_borrowed_mmap().unwrap();
+    let batched_reader = reader.batched_borrowed().unwrap();
     // If you put a drop(reader) here, rust will complain that reader is borrowed,
     // so we presumably have to keep ownership of it to maintain the safety of the
     // 'static transmute.
-    let batched_reader: BatchedCsvReaderMmap<'static> =
-        unsafe { std::mem::transmute(batched_reader) };
+    let batched_reader: BatchedCsvReader<'static> = unsafe { std::mem::transmute(batched_reader) };
 
-    OwnedBatchedCsvReaderMmap {
+    OwnedBatchedCsvReader {
         schema,
         batched_reader,
         _reader: reader,
