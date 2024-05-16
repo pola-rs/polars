@@ -28,10 +28,15 @@ from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
 
 if TYPE_CHECKING:
-    from collections.abc import Reversible
+    from collections.abc import Iterator, Reversible
 
     from polars import DataFrame
     from polars.type_aliases import PolarsDataType, SizeUnit
+
+    if sys.version_info >= (3, 13):
+        from typing import TypeIs
+    else:
+        from typing_extensions import TypeIs
 
     if sys.version_info >= (3, 10):
         from typing import ParamSpec, TypeGuard
@@ -56,7 +61,7 @@ def _process_null_values(
         return null_values
 
 
-def _is_generator(val: object) -> bool:
+def _is_generator(val: object | Iterator[T]) -> TypeIs[Iterator[T]]:
     return (
         (isinstance(val, (Generator, Iterable)) and not isinstance(val, Sized))
         or isinstance(val, MappingView)
