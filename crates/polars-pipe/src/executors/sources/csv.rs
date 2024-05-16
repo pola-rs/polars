@@ -1,9 +1,8 @@
 use std::fs::File;
 use std::path::PathBuf;
 
-use polars_core::export::arrow::Either;
 use polars_core::POOL;
-use polars_io::csv::read::{BatchedCsvReaderMmap, BatchedCsvReaderRead, CsvReadOptions, CsvReader};
+use polars_io::csv::read::{BatchedCsvReader, CsvReadOptions, CsvReader};
 use polars_plan::global::_set_n_rows_for_scan;
 use polars_plan::prelude::FileScanOptions;
 use polars_utils::iter::EnumerateIdxTrait;
@@ -17,7 +16,7 @@ pub(crate) struct CsvSource {
     schema: SchemaRef,
     // Safety: `reader` outlives `batched_reader`
     // (so we have to order the `batched_reader` first in the struct fields)
-    batched_reader: Option<Either<BatchedCsvReaderMmap<'static>, BatchedCsvReaderRead<'static>>>,
+    batched_reader: Option<BatchedCsvReader<'static>>,
     reader: Option<CsvReader<File>>,
     n_threads: usize,
     paths: Arc<[PathBuf]>,
@@ -94,7 +93,7 @@ impl CsvSource {
 
         // Safety: `reader` outlives `batched_reader`
         let reader: &'static mut CsvReader<File> = unsafe { std::mem::transmute(reader) };
-        let batched_reader = Either::Left(reader.batched_borrowed_mmap()?);
+        let batched_reader = reader.batched_borrowed()?;
         self.batched_reader = Some(batched_reader);
         Ok(())
     }
@@ -136,10 +135,12 @@ impl Source for CsvSource {
                 return Ok(SourceResult::Finished);
             }
 
-            let Some(batches) = (match self.batched_reader.as_mut().unwrap() {
-                Either::Left(batched_reader) => batched_reader.next_batches(self.n_threads)?,
-                Either::Right(batched_reader) => batched_reader.next_batches(self.n_threads)?,
-            }) else {
+            let Some(batches) = self
+                .batched_reader
+                .as_mut()
+                .unwrap()
+                .next_batches(self.n_threads)?
+            else {
                 self.reader = None;
                 continue;
             };

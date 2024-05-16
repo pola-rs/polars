@@ -1,5 +1,4 @@
-pub(super) mod batched_mmap;
-pub(super) mod batched_read;
+pub(super) mod batched;
 
 use std::fmt;
 

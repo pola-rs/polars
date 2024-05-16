@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use polars::io::csv::read::OwnedBatchedCsvReaderMmap;
+use polars::io::csv::read::OwnedBatchedCsvReader;
 use polars::io::mmap::MmapBytesReader;
 use polars::io::RowIndex;
 use polars::prelude::*;
@@ -10,14 +10,10 @@ use pyo3::pybacked::PyBackedStr;
 
 use crate::{PyDataFrame, PyPolarsErr, Wrap};
 
-enum BatchedReader {
-    MMap(OwnedBatchedCsvReaderMmap),
-}
-
 #[pyclass]
 #[repr(transparent)]
 pub struct PyBatchedCsv {
-    reader: Mutex<BatchedReader>,
+    reader: Mutex<OwnedBatchedCsvReader>,
 }
 
 #[pymethods]
@@ -129,9 +125,8 @@ impl PyBatchedCsv {
             .into_reader_with_file_handle(reader);
 
         let reader = reader
-            .batched_mmap(overwrite_dtype.map(Arc::new))
+            .batched(overwrite_dtype.map(Arc::new))
             .map_err(PyPolarsErr::from)?;
-        let reader = BatchedReader::MMap(reader);
 
         Ok(PyBatchedCsv {
             reader: Mutex::new(reader),
@@ -141,13 +136,11 @@ impl PyBatchedCsv {
     fn next_batches(&self, py: Python, n: usize) -> PyResult<Option<Vec<PyDataFrame>>> {
         let reader = &self.reader;
         let batches = py.allow_threads(move || {
-            let reader = &mut *reader
+            reader
                 .lock()
-                .map_err(|e| PyPolarsErr::Other(e.to_string()))?;
-            match reader {
-                BatchedReader::MMap(reader) => reader.next_batches(n),
-            }
-            .map_err(PyPolarsErr::from)
+                .map_err(|e| PyPolarsErr::Other(e.to_string()))?
+                .next_batches(n)
+                .map_err(PyPolarsErr::from)
         })?;
 
         // SAFETY: same memory layout
