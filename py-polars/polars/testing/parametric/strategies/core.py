@@ -431,7 +431,7 @@ def dataframes(  # noqa: D417
                     dtype=c.dtype,
                     size=size,
                     strategy=c.strategy,
-                    allow_null=c.allow_null,  # type: ignore[arg-type].strategy,
+                    allow_null=c.allow_null,  # type: ignore[arg-type]
                     allow_chunks=allow_series_chunks,
                     unique=c.unique,
                     allowed_dtypes=allowed_dtypes,

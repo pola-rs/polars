@@ -133,7 +133,7 @@ def dtypes(
 def _parse_dtype_restrictions(
     allowed_dtypes: Collection[PolarsDataType] | None = None,
     excluded_dtypes: Sequence[PolarsDataType] | None = None,
-) -> tuple[Sequence[PolarsDataType], Sequence[PolarsDataType]]:
+) -> tuple[list[PolarsDataType], list[PolarsDataType], list[DataType]]:
     """
     Parse data type restrictions.
 
@@ -152,6 +152,8 @@ def _parse_dtype_restrictions(
                 excluded_dtypes_class.append(dt)
 
     # Split allowed dtypes into flat and nested, excluding certain dtype classes
+    allowed_dtypes_flat: list[PolarsDataType]
+    allowed_dtypes_nested: list[PolarsDataType]
     if allowed_dtypes is None:
         allowed_dtypes_flat = [
             dt for dt in _FLAT_DTYPES if dt not in excluded_dtypes_class
