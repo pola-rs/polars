@@ -1,9 +1,7 @@
-mod extrema;
+use polars_core::datatypes::Scalar;
+use polars_core::prelude::Series;
 
-use polars_core::prelude::{AnyValue, DataType, Series};
-
-type Scalar = AnyValue<'static>;
-
+#[allow(dead_code)]
 trait Reduction {
     fn init(&mut self);
 

@@ -348,18 +348,19 @@ fn create_physical_plan_impl(
                 streamable,
             }))
         },
-        Reduce { exprs, input, schema } => {
+        Reduce {
+            exprs,
+            input,
+            schema,
+        } => {
             let select = Select {
                 input,
                 expr: exprs.into(),
                 schema,
-                options: Default::default()
+                options: Default::default(),
             };
             let node = lp_arena.add(select);
-            create_physical_plan(node,
-                                 lp_arena,
-                                 expr_arena
-            )
+            create_physical_plan(node, lp_arena, expr_arena)
         },
         DataFrameScan {
             df,

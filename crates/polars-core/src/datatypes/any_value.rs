@@ -11,15 +11,20 @@ use polars_utils::unwrap::UnwrapUncheckedRelease;
 
 pub struct Scalar {
     dtype: DataType,
-    value: AnyValue<'static>
+    value: AnyValue<'static>,
 }
 
 impl Scalar {
-    pub fn new(dtype: DataType, value: AnyValue) -> Self {
-        Self {
-            dtype,
-            value
-        }
+    pub fn new(dtype: DataType, value: AnyValue<'static>) -> Self {
+        Self { dtype, value }
+    }
+
+    pub fn value(&self) -> &AnyValue {
+        &self.value
+    }
+
+    pub fn into_series(self, name: &str) -> Series {
+        Series::from_any_values_and_dtype(name, &[self.value], &self.dtype, true).unwrap()
     }
 }
 
@@ -359,15 +364,17 @@ impl AnyValue<'static> {
             DataType::Boolean => AnyValue::Boolean(false),
             // SAFETY:
             // Numeric values are static, inform the compiler of this.
-            d if d.is_numeric() => unsafe { std::mem::transmute::<AnyValue<'_>, AnyValue<'static>>(AnyValue::UInt8(0).cast(dtype)) },
-            _ => AnyValue::Null
+            d if d.is_numeric() => unsafe {
+                std::mem::transmute::<AnyValue<'_>, AnyValue<'static>>(
+                    AnyValue::UInt8(0).cast(dtype),
+                )
+            },
+            _ => AnyValue::Null,
         }
     }
 }
 
 impl<'a> AnyValue<'a> {
-
-
     /// Get the matching [`DataType`] for this [`AnyValue`]`.
     ///
     /// Note: For `Categorical` and `Enum` values, the exact mapping information
@@ -764,43 +771,43 @@ where
 
 impl<'a> AnyValue<'a> {
     #[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
-    pub(crate) fn into_date(self) -> Self {
+    pub(crate) fn into_date(&self) -> AnyValue<'static> {
         match self {
             #[cfg(feature = "dtype-date")]
-            AnyValue::Int32(v) => AnyValue::Date(v),
+            AnyValue::Int32(v) => AnyValue::Date(*v),
             AnyValue::Null => AnyValue::Null,
             dt => panic!("cannot create date from other type. dtype: {dt}"),
         }
     }
     #[cfg(feature = "dtype-datetime")]
-    pub(crate) fn into_datetime(self, tu: TimeUnit, tz: &'a Option<TimeZone>) -> Self {
+    pub(crate) fn into_datetime(&self, tu: TimeUnit, tz: &'a Option<TimeZone>) -> AnyValue<'a> {
         match self {
-            AnyValue::Int64(v) => AnyValue::Datetime(v, tu, tz),
+            AnyValue::Int64(v) => AnyValue::Datetime(*v, tu, tz),
             AnyValue::Null => AnyValue::Null,
             dt => panic!("cannot create date from other type. dtype: {dt}"),
         }
     }
 
     #[cfg(feature = "dtype-duration")]
-    pub(crate) fn into_duration(self, tu: TimeUnit) -> Self {
+    pub(crate) fn into_duration(&self, tu: TimeUnit) -> AnyValue<'static> {
         match self {
-            AnyValue::Int64(v) => AnyValue::Duration(v, tu),
+            AnyValue::Int64(v) => AnyValue::Duration(*v, tu),
             AnyValue::Null => AnyValue::Null,
             dt => panic!("cannot create date from other type. dtype: {dt}"),
         }
     }
 
     #[cfg(feature = "dtype-time")]
-    pub(crate) fn into_time(self) -> Self {
+    pub(crate) fn into_time(&self) -> AnyValue<'static> {
         match self {
-            AnyValue::Int64(v) => AnyValue::Time(v),
+            AnyValue::Int64(v) => AnyValue::Time(*v),
             AnyValue::Null => AnyValue::Null,
             dt => panic!("cannot create date from other type. dtype: {dt}"),
         }
     }
 
     #[must_use]
-    pub fn add(&self, rhs: &AnyValue) -> Self {
+    pub fn add(&self, rhs: &AnyValue) -> AnyValue<'static> {
         use AnyValue::*;
         match (self, rhs) {
             (Null, _) => Null,

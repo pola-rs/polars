@@ -222,7 +222,7 @@ impl<'a> IRDisplay<'a> {
             },
             Reduce { input, exprs, .. } => {
                 // @NOTE: Maybe there should be a clear delimiter here?
-                let default_exprs = self.display_expr_vec(exprs);
+                let default_exprs = self.display_expr_slice(exprs);
 
                 write!(f, "{:indent$} REDUCE {default_exprs} FROM", "")?;
                 self.with_root(*input)._format(f, sub_indent)

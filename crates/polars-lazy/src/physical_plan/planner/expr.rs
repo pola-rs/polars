@@ -476,7 +476,12 @@ fn create_physical_expr_inner(
                             let state = *state;
                             SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                 let s = std::mem::take(&mut s[0]);
-                                parallel_op_series(|s| s.sum_as_series(), s, None, state)
+                                parallel_op_series(
+                                    |s| s.sum_as_series().map(|sc| sc.into_series(s.name())),
+                                    s,
+                                    None,
+                                    state,
+                                )
                             }) as Arc<dyn SeriesUdf>)
                         },
                         AAggExpr::Count(_, include_nulls) => {
