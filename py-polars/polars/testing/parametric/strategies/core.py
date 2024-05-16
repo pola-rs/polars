@@ -6,7 +6,10 @@ from typing import TYPE_CHECKING, Any, Collection, Mapping, Sequence, overload
 import hypothesis.strategies as st
 from hypothesis.errors import InvalidArgument
 
-from polars._utils.deprecation import issue_deprecation_warning
+from polars._utils.deprecation import (
+    deprecate_renamed_parameter,
+    issue_deprecation_warning,
+)
 from polars.dataframe import DataFrame
 from polars.datatypes import DataType, DataTypeClass, Null
 from polars.series import Series
@@ -29,6 +32,7 @@ _COL_LIMIT = 5  # max number of generated cols
 
 
 @st.composite
+@deprecate_renamed_parameter("chunked", "allow_chunks", version="0.20.27")
 def series(  # noqa: D417
     draw: DrawFn,
     /,
@@ -40,8 +44,8 @@ def series(  # noqa: D417
     max_size: int = _ROW_LIMIT,
     strategy: SearchStrategy[Any] | None = None,
     allow_null: bool = True,
+    allow_chunks: bool = True,
     unique: bool = False,
-    chunked: bool | None = None,
     allowed_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
     excluded_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
     **kwargs: Any,
@@ -69,11 +73,10 @@ def series(  # noqa: D417
         supports overriding the default strategy for the given dtype.
     allow_null : bool
         Allow nulls as possible values and allow the `Null` data type by default.
+    allow_chunks
+        Allow the Series to contain multiple chunks.
     unique : bool, optional
         indicate whether Series values should all be distinct.
-    chunked : bool, optional
-        ensure that Series with more than one element have `n_chunks` > 1.
-        if omitted, chunking is applied at random.
     allowed_dtypes : {list,set}, optional
         when automatically generating Series data, allow only these dtypes.
     excluded_dtypes : {list,set}, optional
@@ -196,7 +199,7 @@ def series(  # noqa: D417
     s = Series(name=name, values=values, dtype=dtype)
 
     # Apply chunking
-    if size > 1:
+    if allow_chunks and size > 1:
         if chunked is None:
             chunked = draw(st.booleans())
         if chunked:
