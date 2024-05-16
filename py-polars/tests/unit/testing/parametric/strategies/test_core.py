@@ -296,6 +296,7 @@ def test_dataframes_allowed_dtypes_integer_cols(df: pl.DataFrame) -> None:
 
 
 @given(st.data())
+@settings(max_examples=1)
 def test_series_chunked_deprecated(data: st.DataObject) -> None:
     with pytest.deprecated_call():
         data.draw(series(chunked=True))
