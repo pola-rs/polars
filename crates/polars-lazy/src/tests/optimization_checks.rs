@@ -549,27 +549,146 @@ fn test_flatten_unions() -> PolarsResult<()> {
     Ok(())
 }
 
+fn num_occurrences(s: &str, needle: &str) -> usize {
+    let mut i = 0;
+    let mut num = 0;
+
+    while let Some(n) = s[i..].find(needle) {
+        i += n + 1;
+        num += 1;
+    }
+
+    num
+}
+
 #[test]
 fn test_cluster_with_columns() -> Result<(), Box<dyn std::error::Error>> {
     use polars_core::prelude::*;
 
     let df = df!("foo" => &[0.5, 1.7, 3.2],
                  "bar" => &[4.1, 1.5, 9.2])?;
-    
-    let df = df.lazy()
+
+    let df = df
+        .lazy()
+        .without_optimizations()
+        .with_cluster_with_columns(true)
         .with_columns([col("foo") * lit(2.0)])
         .with_columns([col("bar") / lit(1.5)]);
 
-    let unoptimized = df.describe_plan().unwrap();
-    let optimized = df.describe_optimized_plan().unwrap();
+    let unoptimized = df.clone().to_alp().unwrap();
+    let optimized = df.clone().to_alp_optimized().unwrap();
+
+    let unoptimized = unoptimized.describe();
+    let optimized = optimized.describe();
 
     println!("\n---\n");
 
-    println!("Unoptimized:\n{unoptimized}");
+    println!("Unoptimized:\n{unoptimized}",);
     println!("\n---\n");
     println!("Optimized:\n{optimized}");
 
-    assert!(false);
+    assert_eq!(num_occurrences(&unoptimized, "WITH_COLUMNS"), 2);
+    assert_eq!(num_occurrences(&optimized, "WITH_COLUMNS"), 1);
+
+    Ok(())
+}
+
+#[test]
+fn test_cluster_with_columns_dependency() -> Result<(), Box<dyn std::error::Error>> {
+    use polars_core::prelude::*;
+
+    let df = df!("foo" => &[0.5, 1.7, 3.2],
+                 "bar" => &[4.1, 1.5, 9.2])?;
+
+    let df = df
+        .lazy()
+        .without_optimizations()
+        .with_cluster_with_columns(true)
+        .with_columns([col("foo").alias("buzz")])
+        .with_columns([col("buzz")]);
+
+    let unoptimized = df.clone().to_alp().unwrap();
+    let optimized = df.clone().to_alp_optimized().unwrap();
+
+    let unoptimized = unoptimized.describe();
+    let optimized = optimized.describe();
+
+    println!("\n---\n");
+
+    println!("Unoptimized:\n{unoptimized}",);
+    println!("\n---\n");
+    println!("Optimized:\n{optimized}");
+
+    assert_eq!(num_occurrences(&unoptimized, "WITH_COLUMNS"), 2);
+    assert_eq!(num_occurrences(&optimized, "WITH_COLUMNS"), 2);
+
+    Ok(())
+}
+
+#[test]
+fn test_cluster_with_columns_partial() -> Result<(), Box<dyn std::error::Error>> {
+    use polars_core::prelude::*;
+
+    let df = df!("foo" => &[0.5, 1.7, 3.2],
+                 "bar" => &[4.1, 1.5, 9.2])?;
+
+    let df = df
+        .lazy()
+        .without_optimizations()
+        .with_cluster_with_columns(true)
+        .with_columns([col("foo").alias("buzz")])
+        .with_columns([col("buzz"), col("foo") * lit(2.0)]);
+
+    let unoptimized = df.clone().to_alp().unwrap();
+    let optimized = df.clone().to_alp_optimized().unwrap();
+
+    let unoptimized = unoptimized.describe();
+    let optimized = optimized.describe();
+
+    println!("\n---\n");
+
+    println!("Unoptimized:\n{unoptimized}",);
+    println!("\n---\n");
+    println!("Optimized:\n{optimized}");
+
+    assert!(unoptimized.contains(r#"[col("buzz"), [(col("foo")) * (2.0)]]"#));
+    assert!(unoptimized.contains(r#"[col("foo").alias("buzz")]"#));
+    assert!(optimized.contains(r#"[col("buzz")]"#));
+    assert!(optimized.contains(r#"[col("foo").alias("buzz"), [(col("foo")) * (2.0)]]"#));
+
+    Ok(())
+}
+
+#[test]
+fn test_cluster_with_columns_chain() -> Result<(), Box<dyn std::error::Error>> {
+    use polars_core::prelude::*;
+
+    let df = df!("foo" => &[0.5, 1.7, 3.2],
+                 "bar" => &[4.1, 1.5, 9.2])?;
+
+    let df = df
+        .lazy()
+        .without_optimizations()
+        .with_cluster_with_columns(true)
+        .with_columns([col("foo").alias("foo1")])
+        .with_columns([col("foo").alias("foo2")])
+        .with_columns([col("foo").alias("foo3")])
+        .with_columns([col("foo").alias("foo4")]);
+
+    let unoptimized = df.clone().to_alp().unwrap();
+    let optimized = df.clone().to_alp_optimized().unwrap();
+
+    let unoptimized = unoptimized.describe();
+    let optimized = optimized.describe();
+
+    println!("\n---\n");
+
+    println!("Unoptimized:\n{unoptimized}",);
+    println!("\n---\n");
+    println!("Optimized:\n{optimized}");
+
+    assert_eq!(num_occurrences(&unoptimized, "WITH_COLUMNS"), 3);
+    assert_eq!(num_occurrences(&optimized, "WITH_COLUMNS"), 1);
 
     Ok(())
 }

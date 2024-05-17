@@ -68,7 +68,7 @@ pub fn optimize(
     #[allow(dead_code)]
     let verbose = verbose();
     // get toggle values
-    let cluster_with_columns = opt_state.predicate_pushdown;
+    let cluster_with_columns = opt_state.cluster_with_columns;
     let predicate_pushdown = opt_state.predicate_pushdown;
     let projection_pushdown = opt_state.projection_pushdown;
     let type_coercion = opt_state.type_coercion;

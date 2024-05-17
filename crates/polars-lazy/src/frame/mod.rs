@@ -151,6 +151,12 @@ impl LazyFrame {
         self
     }
 
+    /// Toggle cluster with columns optimization.
+    pub fn with_cluster_with_columns(mut self, toggle: bool) -> Self {
+        self.opt_state.cluster_with_columns = toggle;
+        self
+    }
+
     /// Toggle predicate pushdown optimization.
     pub fn with_predicate_pushdown(mut self, toggle: bool) -> Self {
         self.opt_state.predicate_pushdown = toggle;

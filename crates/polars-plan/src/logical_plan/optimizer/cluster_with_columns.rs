@@ -8,18 +8,10 @@ use super::alp::IR;
 use super::expr_ir::{ExprIR, OutputName};
 use super::ProjectionOptions;
 use crate::logical_plan::projection_expr::ProjectionExprs;
-use crate::prelude::AnonymousScan;
 
 pub struct ClusterWithColumns<'a> {
     lp_arena: &'a mut Arena<IR>,
     expr_arena: &'a mut Arena<AExpr>,
-}
-
-struct WithColumnsRef<'a> {
-    input: Node,
-    exprs: &'a ProjectionExprs,
-    schema: &'a SchemaRef,
-    options: &'a ProjectionOptions,
 }
 
 struct WithColumnsMut<'a> {
@@ -169,15 +161,24 @@ impl ColumnStatus {
         name_map: &mut PlHashMap<&'a str, usize>,
         name: &'a str,
     ) -> usize {
-        let next = self.live.len();
+        let size = name_map.len();
+        let idx = *name_map.entry(name).or_insert_with(|| size);
 
-        self.live.push(false);
-        self.assign.push(false);
+        let size = name_map.len();
+        if self.live.len() < size {
+            self.live.extend_constant(size - self.live.len(), false);
+            self.assign.extend_constant(size - self.assign.len(), false);
+        }
 
-        *name_map.entry(name).or_insert_with(|| next)
+        idx
     }
 
-    fn freeze(self) -> ColumnStatusFrozen {
+    fn freeze_with_size(mut self, size: usize) -> ColumnStatusFrozen {
+        if self.live.len() < size {
+            self.live.extend_constant(size - self.live.len(), false);
+            self.assign.extend_constant(size - self.assign.len(), false);
+        }
+
         ColumnStatusFrozen {
             live: self.live.freeze(),
             assign: self.assign.freeze(),
@@ -194,9 +195,13 @@ impl ColumnStatus {
 
         match expr {
             AExpr::Explode(expr) => self.append_expr_node(name_map, *expr, expr_arena),
-            AExpr::Alias(expr, _) => self.append_expr_node(name_map, *expr, expr_arena),
+            AExpr::Alias(expr, alias) => {
+                let idx = self.name_to_idx(name_map, alias);
+                self.assign.set(idx, true);
+                self.append_expr_node(name_map, *expr, expr_arena)
+            },
             AExpr::Column(col) => {
-                let idx = self.name_to_idx(name_map, &col);
+                let idx = self.name_to_idx(name_map, col);
                 self.live.set(idx, true);
             },
             AExpr::Literal(_) => {},
@@ -332,7 +337,12 @@ impl ColumnStatus {
     ) {
         match expr_ir.output_name_inner() {
             OutputName::None => {},
-            OutputName::LiteralLhs(s) | OutputName::ColumnLhs(s) | OutputName::Alias(s) => {
+            OutputName::LiteralLhs(s) | OutputName::ColumnLhs(s) => {
+                let idx = self.name_to_idx(name_map, s);
+                self.live.set(idx, true);
+                self.assign.set(idx, true);
+            },
+            OutputName::Alias(s) => {
                 let idx = self.name_to_idx(name_map, s);
                 self.assign.set(idx, true);
             },
@@ -350,29 +360,6 @@ impl ColumnStatus {
         let mut column_status = Self::new();
         column_status.append_expr_ir(name_map, expr, expr_arena);
         column_status
-    }
-}
-
-impl<'a> WithColumnsRef<'a> {
-    fn from_ir(ir: &'a IR) -> Option<Self> {
-        let IR::HStack {
-            input,
-            exprs,
-            schema,
-            options,
-        } = ir
-        else {
-            return None;
-        };
-
-        let input = *input;
-
-        Some(Self {
-            input,
-            exprs,
-            schema,
-            options,
-        })
     }
 }
 
@@ -398,8 +385,8 @@ impl<'a> WithColumnsMut<'a> {
 }
 
 enum CWCOptimization {
-    PullUpAll,
-    PullUpSubset(Bitmap),
+    PushdownAll,
+    PushdownSubset(Bitmap),
 }
 
 impl<'a> ClusterWithColumns<'a> {
@@ -414,126 +401,133 @@ impl<'a> ClusterWithColumns<'a> {
         self._optimize(root);
     }
 
-    fn has_optimization(&self, root: Node) -> Option<CWCOptimization> {
-        let ir = self.lp_arena.get(root);
-        let with_columns = WithColumnsRef::from_ir(ir)?;
-
-        let child = ir.get_input()?;
-        let child = self.lp_arena.get(child);
-        let child_with_columns = WithColumnsRef::from_ir(child)?;
-
-        // @NOTE
-        // There are dependencies i.f.f.
-        // - `child` assigns to a column that is used by `parent`
-
-        let mut name_map = PlHashMap::default();
-
-        let child_statuses: Vec<ColumnStatusFrozen> = child_with_columns
-            .exprs
-            .as_exprs()
-            .iter()
-            .map(|expr| ColumnStatus::from_expr_ir(&mut name_map, expr, self.expr_arena).freeze())
-            .collect();
-        let current_statuses: Vec<ColumnStatusFrozen> = with_columns
-            .exprs
-            .as_exprs()
-            .iter()
-            .map(|expr| ColumnStatus::from_expr_ir(&mut name_map, expr, self.expr_arena).freeze())
-            .collect();
-
-        let mut pullable = MutableBitmap::new();
-
-        pullable.reserve(child_with_columns.exprs.len());
-        for _ in 0..child_with_columns.exprs.len() {
-            pullable.push(false);
-        }
-
-        let mut all_pullable = true;
-        for (i, current_status) in current_statuses.iter().enumerate() {
-            let mut can_be_merged = true;
-
-            for child_status in child_statuses.iter() {
-                use std::ops::BitAnd;
-                if (current_status.assign.bitand(&child_status.live)).is_empty() {
-                    can_be_merged = false;
-                }
-            }
-
-            all_pullable |= can_be_merged;
-            if can_be_merged {
-                pullable.set(i, true);
-            }
-        }
-
-        if all_pullable {
-            Some(CWCOptimization::PullUpAll)
-        } else if pullable.is_empty() {
-            None
-        } else {
-            Some(CWCOptimization::PullUpSubset(pullable.freeze()))
-        }
-    }
-
-    fn apply_optimization(&mut self, root: Node, optimization: CWCOptimization) {
-        let ir = self.lp_arena.get(root);
-        let child_node = ir.get_input().unwrap();
-
-        match optimization {
-            CWCOptimization::PullUpAll => {
-                let child = self.lp_arena.take(child_node);
-                let IR::HStack {
-                    input,
-                    exprs,
-                    schema,
-                    options,
-                } = child
-                else {
-                    panic!("Specified node is not a HStack. Instead found: {child:?}");
-                };
-
-                let ir = self.lp_arena.get_mut(root);
-                let with_columns = WithColumnsMut::from_ir(ir).unwrap();
-                with_columns.exprs.exprs_mut().extend(exprs);
-                *with_columns.input = input;
-                *with_columns.schema = schema;
-                *with_columns.options = options;
-            },
-            CWCOptimization::PullUpSubset(exprs) => {
-                let child = self.lp_arena.get_mut(child_node);
-                let child_with_columns = WithColumnsMut::from_ir(child).unwrap();
-                let child_exprs = std::mem::take(child_with_columns.exprs.exprs_mut());
-
-                let ir = self.lp_arena.get_mut(root);
-                let with_columns = WithColumnsMut::from_ir(ir).unwrap();
-
-                let mut child_exprs = child_exprs
-                    .into_iter()
-                    .zip(exprs)
-                    .filter_map(|(expr, do_pullup)| {
-                        if do_pullup {
-                            with_columns.exprs.exprs_mut().push(expr);
-                            None
-                        } else {
-                            Some(expr)
-                        }
-                    })
-                    .collect();
-
-                let child = self.lp_arena.get_mut(child_node);
-                let child_with_columns = WithColumnsMut::from_ir(child).unwrap();
-                std::mem::swap(&mut child_exprs, child_with_columns.exprs.exprs_mut());
-            },
-        }
-    }
-
     fn _optimize(&mut self, root: Node) {
-        let ir = self.lp_arena.get(root);
-        if let Some(child) = ir.get_input() {
-            self._optimize(child);
+        loop {
+            let ir = self.lp_arena.get(root);
+            let IR::HStack { input, .. } = ir else {
+                break;
+            };
+            let input = *input;
 
-            if let Some(optimization) = self.has_optimization(root) {
-                self.apply_optimization(root, optimization);
+            let [current, child] = self.lp_arena.get_many_mut([root, input]);
+
+            let Some(with_columns) = WithColumnsMut::from_ir(current) else {
+                unreachable!();
+            };
+            let Some(child_with_columns) = WithColumnsMut::from_ir(child) else {
+                break;
+            };
+
+            // @NOTE
+            // There are dependencies i.f.f. `child` assigns to a column that is used by `parent`
+
+            let mut name_map = PlHashMap::default();
+
+            let child_statuses: Vec<ColumnStatus> = child_with_columns
+                .exprs
+                .as_exprs()
+                .iter()
+                .map(|expr| ColumnStatus::from_expr_ir(&mut name_map, expr, self.expr_arena))
+                .collect();
+            let current_statuses: Vec<ColumnStatus> = with_columns
+                .exprs
+                .as_exprs()
+                .iter()
+                .map(|expr| ColumnStatus::from_expr_ir(&mut name_map, expr, self.expr_arena))
+                .collect();
+
+            let child_statuses: Vec<ColumnStatusFrozen> = child_statuses
+                .into_iter()
+                .map(|s| s.freeze_with_size(name_map.len()))
+                .collect();
+            let current_statuses: Vec<ColumnStatusFrozen> = current_statuses
+                .into_iter()
+                .map(|s| s.freeze_with_size(name_map.len()))
+                .collect();
+
+            // @NOTE: This satisfies the borrow checker
+            let num_names = name_map.len();
+            drop(name_map);
+
+            let mut pushable = MutableBitmap::with_capacity(child_with_columns.exprs.len());
+
+            let mut child_assign = Bitmap::new_zeroed(num_names);
+            for child_status in &child_statuses {
+                use std::ops::BitOr;
+                child_assign = child_assign.bitor(&child_status.assign);
             }
+
+            for current_status in &current_statuses {
+                use std::ops::BitAnd;
+
+                let has_intersection = child_assign.bitand(&current_status.live).set_bits() > 0;
+                let is_pushable = !has_intersection;
+
+                pushable.push(is_pushable);
+            }
+
+            let pushable = pushable.freeze();
+
+            let optimization = match pushable.set_bits() {
+                0 => break,
+                x if x == pushable.len() => CWCOptimization::PushdownAll,
+                _ => CWCOptimization::PushdownSubset(pushable),
+            };
+
+            match optimization {
+                CWCOptimization::PushdownAll => {
+                    // @NOTE: To keep the schema correct, we reverse the order here. As a
+                    // `WITH_COLUMNS` higher up produces later columns.
+                    child_with_columns
+                        .exprs
+                        .exprs_mut()
+                        .extend(std::mem::take(with_columns.exprs.exprs_mut()));
+                    std::mem::swap(
+                        with_columns.exprs.exprs_mut(),
+                        child_with_columns.exprs.exprs_mut(),
+                    );
+
+                    *with_columns.input = *child_with_columns.input;
+                    *with_columns.options = *child_with_columns.options;
+
+                    self.lp_arena.take(input);
+                },
+                CWCOptimization::PushdownSubset(exprs) => {
+                    let mut current_exprs = std::mem::take(with_columns.exprs.exprs_mut())
+                        .into_iter()
+                        .zip(exprs)
+                        .filter_map(|(expr, do_pushdown)| {
+                            if do_pushdown {
+                                child_with_columns.exprs.exprs_mut().push(expr);
+                                None
+                            } else {
+                                Some(expr)
+                            }
+                        })
+                        .collect();
+
+                    std::mem::swap(&mut current_exprs, with_columns.exprs.exprs_mut());
+
+                    // @NOTE: Here we add a simple projection to make sure that the output still
+                    // has the right schema.
+                    // @TODO: I don't think we always have to add a simple projection, maybe we can
+                    // filter out some of the cases where we don't have to add it.
+                    // @TODO: Do we need to adjust the schema of current?
+                    let schema = with_columns.schema.clone();
+                    let new = self.lp_arena.add(IR::Invalid);
+                    let projection = IR::SimpleProjection {
+                        input: new,
+                        columns: schema,
+                    };
+                    let current = self.lp_arena.replace(root, projection);
+                    self.lp_arena.replace(new, current);
+                },
+            }
+        }
+
+        let ir = self.lp_arena.get(root);
+        for child in ir.get_inputs().iter() {
+            self._optimize(*child);
         }
     }
 }
