@@ -354,20 +354,17 @@ def _cast_repr_strings_with_schema(
         if tp is not None:
             if tp.base_type() == List:
                 expr = (
-                    F.col(c)  # .json_decode(dtype=List(tp.inner))
-                    .str.strip_chars("[]")
+                    F.col(c)
+                    .str.replace_all(r"[\[\]\r\n\"\']", "")
                     .str.replace_all(r"\s*,\s*", ",")
-                    .str.replace_all(r"[\r\n\"\']", "")
                     .str.split(",")
                     .list.eval(
                         pl.when(
                             pl.element().str.count_matches(r"(\.\.\.|…)") == 0
                         ).then(
-                            pl.when(pl.element().str.len_bytes() > 0).then(
-                                pl.when(pl.element() == "null")
-                                .then(None)
-                                .otherwise(pl.element())
-                            )
+                            pl.when(pl.element() == "null")
+                            .then(None)
+                            .otherwise(pl.element())
                         )
                     )
                 )
@@ -375,7 +372,7 @@ def _cast_repr_strings_with_schema(
                 if subtype is not None and subtype != pl.Categorical:
                     if subtype == Datetime:
                         expr = expr.list.eval(
-                            pl.when(pl.element().str.contains(r"\s")).then(pl.element())
+                            pl.element().str.replace(r"^(\d{4}-\d{2}-\d{2})(\d+)", "$1 $2")
                         )
                     expr = expr.list.eval(cast_cols_expr_("", subtype)).cast(tp)  # type: ignore[arg-type]
             else:

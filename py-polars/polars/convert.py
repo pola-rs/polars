@@ -714,7 +714,7 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
             if coldata:
                 coldata.pop(idx)
 
-    # print(dtypes)
+    print(coldata)
     data = []
     for i, d in enumerate(dtypes):
         if i < len(coldata):
