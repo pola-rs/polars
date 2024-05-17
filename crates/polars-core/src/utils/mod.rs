@@ -709,13 +709,13 @@ where
             assert();
             (
                 Cow::Borrowed(left),
-                Cow::Owned(right.match_chunks(left.chunk_id())),
+                Cow::Owned(right.match_chunks(left.chunk_lengths())),
             )
         },
         (1, _) => {
             assert();
             (
-                Cow::Owned(left.match_chunks(right.chunk_id())),
+                Cow::Owned(left.match_chunks(right.chunk_lengths())),
                 Cow::Borrowed(right),
             )
         },
@@ -724,7 +724,7 @@ where
             // could optimize to choose to rechunk a primitive and not a string or list type
             let left = left.rechunk();
             (
-                Cow::Owned(left.match_chunks(right.chunk_id())),
+                Cow::Owned(left.match_chunks(right.chunk_lengths())),
                 Cow::Borrowed(right),
             )
         },
@@ -786,32 +786,32 @@ where
     match (a.chunks.len(), b.chunks.len(), c.chunks.len()) {
         (_, 1, 1) => (
             Cow::Borrowed(a),
-            Cow::Owned(b.match_chunks(a.chunk_id())),
-            Cow::Owned(c.match_chunks(a.chunk_id())),
+            Cow::Owned(b.match_chunks(a.chunk_lengths())),
+            Cow::Owned(c.match_chunks(a.chunk_lengths())),
         ),
         (1, 1, _) => (
-            Cow::Owned(a.match_chunks(c.chunk_id())),
-            Cow::Owned(b.match_chunks(c.chunk_id())),
+            Cow::Owned(a.match_chunks(c.chunk_lengths())),
+            Cow::Owned(b.match_chunks(c.chunk_lengths())),
             Cow::Borrowed(c),
         ),
         (1, _, 1) => (
-            Cow::Owned(a.match_chunks(b.chunk_id())),
+            Cow::Owned(a.match_chunks(b.chunk_lengths())),
             Cow::Borrowed(b),
-            Cow::Owned(c.match_chunks(b.chunk_id())),
+            Cow::Owned(c.match_chunks(b.chunk_lengths())),
         ),
         (1, _, _) => {
             let b = b.rechunk();
             (
-                Cow::Owned(a.match_chunks(c.chunk_id())),
-                Cow::Owned(b.match_chunks(c.chunk_id())),
+                Cow::Owned(a.match_chunks(c.chunk_lengths())),
+                Cow::Owned(b.match_chunks(c.chunk_lengths())),
                 Cow::Borrowed(c),
             )
         },
         (_, 1, _) => {
             let a = a.rechunk();
             (
-                Cow::Owned(a.match_chunks(c.chunk_id())),
-                Cow::Owned(b.match_chunks(c.chunk_id())),
+                Cow::Owned(a.match_chunks(c.chunk_lengths())),
+                Cow::Owned(b.match_chunks(c.chunk_lengths())),
                 Cow::Borrowed(c),
             )
         },
@@ -819,8 +819,8 @@ where
             let b = b.rechunk();
             (
                 Cow::Borrowed(a),
-                Cow::Owned(b.match_chunks(a.chunk_id())),
-                Cow::Owned(c.match_chunks(a.chunk_id())),
+                Cow::Owned(b.match_chunks(a.chunk_lengths())),
+                Cow::Owned(c.match_chunks(a.chunk_lengths())),
             )
         },
         _ => {
@@ -828,8 +828,8 @@ where
             let a = a.rechunk();
             let b = b.rechunk();
             (
-                Cow::Owned(a.match_chunks(c.chunk_id())),
-                Cow::Owned(b.match_chunks(c.chunk_id())),
+                Cow::Owned(a.match_chunks(c.chunk_lengths())),
+                Cow::Owned(b.match_chunks(c.chunk_lengths())),
                 Cow::Borrowed(c),
             )
         },
@@ -1051,8 +1051,8 @@ mod test {
         b.append(&b2);
         let (a, b) = align_chunks_binary(&a, &b);
         assert_eq!(
-            a.chunk_id().collect::<Vec<_>>(),
-            b.chunk_id().collect::<Vec<_>>()
+            a.chunk_lengths().collect::<Vec<_>>(),
+            b.chunk_lengths().collect::<Vec<_>>()
         );
 
         let a = Int32Chunked::new("", &[1, 2, 3, 4]);
@@ -1063,8 +1063,8 @@ mod test {
         b.append(&b1);
         let (a, b) = align_chunks_binary(&a, &b);
         assert_eq!(
-            a.chunk_id().collect::<Vec<_>>(),
-            b.chunk_id().collect::<Vec<_>>()
+            a.chunk_lengths().collect::<Vec<_>>(),
+            b.chunk_lengths().collect::<Vec<_>>()
         );
     }
 }

@@ -80,8 +80,8 @@ where
         ObjectChunked::rename(&mut self.0, name)
     }
 
-    fn chunk_lengths(&self) -> ChunkIdIter {
-        ObjectChunked::chunk_id(&self.0)
+    fn chunk_lengths(&self) -> ChunkLenIter {
+        ObjectChunked::chunk_lengths(&self.0)
     }
 
     fn name(&self) -> &str {

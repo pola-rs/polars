@@ -193,7 +193,7 @@ pub trait SeriesTrait:
     }
 
     /// Get the lengths of the underlying chunks
-    fn chunk_lengths(&self) -> ChunkIdIter;
+    fn chunk_lengths(&self) -> ChunkLenIter;
 
     /// Name of series.
     fn name(&self) -> &str;

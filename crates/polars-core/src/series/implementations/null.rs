@@ -160,7 +160,7 @@ impl SeriesTrait for NullChunked {
         &mut self.chunks
     }
 
-    fn chunk_lengths(&self) -> ChunkIdIter {
+    fn chunk_lengths(&self) -> ChunkLenIter {
         self.chunks.iter().map(|chunk| chunk.len())
     }
 
