@@ -189,7 +189,7 @@ impl PySeries {
                         "cannot return a zero-copy writable array",
                     ));
                 }
-                arr = arr.call_method0(py, intern!(py, "copy")).unwrap();
+                arr = arr.call_method0(py, intern!(py, "copy"))?;
             }
             return Ok(arr);
         }
