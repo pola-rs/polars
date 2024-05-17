@@ -1648,6 +1648,8 @@ class DataFrame:
         """
         Convert DataFrame to a 2D Jax Array, or dict of Jax Arrays.
 
+        .. versionadded:: 0.20.27
+
         Parameters
         ----------
         return_type : {"array", "dict"}
