@@ -1,9 +1,9 @@
 use polars_core::prelude::AnyValue;
+
 use super::*;
 
-
 struct MinReduce {
-    value: Scalar
+    value: Scalar,
 }
 
 impl MinReduce {
@@ -26,7 +26,7 @@ impl Reduction for MinReduce {
         Ok(())
     }
 
-    fn combine(&mut self, other: &dyn Reduction) -> PolarsResult<()>{
+    fn combine(&mut self, other: &dyn Reduction) -> PolarsResult<()> {
         let other = other.as_any().downcast_ref::<Self>().unwrap();
         self.update_impl(&other.value.value());
         Ok(())
@@ -37,11 +37,11 @@ impl Reduction for MinReduce {
     }
 
     fn as_any(&self) -> &dyn Any {
-       self
+        self
     }
 }
 struct MaxReduce {
-    value: Scalar
+    value: Scalar,
 }
 
 impl MaxReduce {
@@ -64,7 +64,7 @@ impl Reduction for MaxReduce {
         Ok(())
     }
 
-    fn combine(&mut self, other: &dyn Reduction) -> PolarsResult<()>{
+    fn combine(&mut self, other: &dyn Reduction) -> PolarsResult<()> {
         let other = other.as_any().downcast_ref::<Self>().unwrap();
         self.update_impl(&other.value.value());
         Ok(())

@@ -1,8 +1,9 @@
+mod convert;
 mod extrema;
 mod sum;
-mod convert;
 
 use std::any::Any;
+
 use arrow::legacy::error::PolarsResult;
 use polars_core::datatypes::Scalar;
 use polars_core::prelude::Series;

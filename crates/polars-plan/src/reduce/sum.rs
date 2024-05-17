@@ -1,17 +1,15 @@
 use polars_core::prelude::{AnyValue, DataType};
+
 use super::*;
 
-
 pub struct SumReduce {
-    value: Scalar
+    value: Scalar,
 }
 
 impl SumReduce {
-    fn new(dtype: DataType) -> Self {
+    pub(crate) fn new(dtype: DataType) -> Self {
         let value = Scalar::new(dtype, AnyValue::Null);
-        Self {
-            value
-        }
+        Self { value }
     }
 
     fn update_impl(&mut self, value: &AnyValue<'static>) {
@@ -31,7 +29,7 @@ impl Reduction for SumReduce {
         Ok(())
     }
 
-    fn combine(&mut self, other: &dyn Reduction) -> PolarsResult<()>{
+    fn combine(&mut self, other: &dyn Reduction) -> PolarsResult<()> {
         let other = other.as_any().downcast_ref::<Self>().unwrap();
         self.update_impl(&other.value.value());
         Ok(())
