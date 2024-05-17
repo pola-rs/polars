@@ -447,6 +447,9 @@ def dtype_short_repr_to_dtype(dtype_string: str | None) -> PolarsDataType | None
     dtype_base, subtype = m.groups()
     dtype = DataTypeMappings.REPR_TO_DTYPE.get(dtype_base)
 
+    def _time_subtype(time_subtype: str) -> tuple[Any]:
+        return (s.strip("'\" ") for s in time_subtype.replace("μs", "us").split(","))  # type: ignore[return-value]
+
     if dtype and subtype:
         # TODO: further-improve handling for nested types (such as Struct)
         try:
@@ -458,18 +461,13 @@ def dtype_short_repr_to_dtype(dtype_string: str | None) -> PolarsDataType | None
                 else:
                     m = re.match(r"^(\w+)(?:\[(.+)\])?$", subtype)
                     if m is not None:
-                        subtype_base, timesubtype = m.groups()
+                        subtype_base, time_subtype = m.groups()
                         subtype = DataTypeMappings.REPR_TO_DTYPE.get(subtype_base)
-                        if subtype and timesubtype:
-                            timesubtype = (
-                                s.strip("'\" ")
-                                for s in timesubtype.replace("μs", "us").split(",")
-                            )
-                            subtype = (subtype(*timesubtype),)  # type: ignore[operator]
+                        if subtype and time_subtype:
+                            time_subtype = _time_subtype(time_subtype)
+                            subtype = (subtype(*time_subtype),)  # type: ignore[operator]
             else:
-                subtype = (
-                    s.strip("'\" ") for s in subtype.replace("μs", "us").split(",")
-                )
+                subtype = _time_subtype(subtype)
             return dtype(*subtype)  # type: ignore[operator, misc]
         except ValueError:
             pass
