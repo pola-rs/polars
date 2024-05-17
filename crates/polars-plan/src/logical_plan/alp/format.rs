@@ -230,9 +230,16 @@ impl<'a> IRDisplay<'a> {
             Select { expr, input, .. } => {
                 // @NOTE: Maybe there should be a clear delimiter here?
                 let default_exprs = self.display_expr_slice(expr.default_exprs());
-                let cse_exprs = self.display_expr_slice(expr.cse_exprs());
 
-                write!(f, "{:indent$} SELECT {default_exprs}, {cse_exprs} FROM", "")?;
+                write!(f, "{:indent$} SELECT {default_exprs}", "")?;
+
+                if !expr.cse_exprs().is_empty() {
+                    let cse_exprs = self.display_expr_slice(expr.cse_exprs());
+                    write!(f, ", CSE = {cse_exprs}")?;
+                }
+
+                f.write_str(" FROM")?;
+
                 self.with_root(*input)._format(f, sub_indent)
             },
             Sort {
