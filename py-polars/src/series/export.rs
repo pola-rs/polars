@@ -174,14 +174,22 @@ impl PySeries {
             return series_to_numpy_with_copy(py, &self.series);
         }
 
-        if let Some(mut arr) = series_to_numpy_view(py, &self.series, false) {
-            if writable {
+        if let Some(mut arr) = series_to_numpy_view(py, &self.series, false, allow_copy) {
+            if writable
+                && !arr
+                    .getattr(py, intern!(py, "flags"))
+                    .unwrap()
+                    .getattr(py, intern!(py, "writeable"))
+                    .unwrap()
+                    .extract::<bool>(py)
+                    .unwrap()
+            {
                 if !allow_copy {
                     return Err(PyValueError::new_err(
                         "cannot return a zero-copy writable array",
                     ));
                 }
-                arr = arr.call_method0(py, intern!(py, "copy"))?;
+                arr = arr.call_method0(py, intern!(py, "copy")).unwrap();
             }
             return Ok(arr);
         }
