@@ -48,7 +48,6 @@ from polars.datatypes import (
     UInt64,
     Unknown,
 )
-from polars.datatypes.constants import DATETIME_DTYPES
 from polars.dependencies import numpy as np
 from polars.dependencies import pyarrow as pa
 
@@ -459,17 +458,21 @@ def dtype_short_repr_to_dtype(dtype_string: str | None) -> PolarsDataType | None
                     subtype = (DataTypeMappings.REPR_TO_DTYPE.get(subtype),)
                 else:
                     m = re.match(r"^(\w+)(?:\[(.+)\])?$", subtype)
+                    if m is None:
+                        return None
                     subtype_base, timesubtype = m.groups()
                     subtype = DataTypeMappings.REPR_TO_DTYPE.get(subtype_base)
-                    timesubtype = (
-                        s.strip("'\" ") for s in timesubtype.replace("μs", "us").split(",")
-                    )
-                    subtype = (subtype(*timesubtype),)
+                    if subtype and timesubtype:
+                        timesubtype = (
+                            s.strip("'\" ")
+                            for s in timesubtype.replace("μs", "us").split(",")
+                        )
+                        subtype = (subtype(*timesubtype),)  # type: ignore[operator]
             else:
                 subtype = (
                     s.strip("'\" ") for s in subtype.replace("μs", "us").split(",")
                 )
-            return dtype(*subtype)  # type: ignore[operator]
+            return dtype(*subtype)  # type: ignore[operator, misc]
         except ValueError:
             pass
     return dtype

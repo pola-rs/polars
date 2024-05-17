@@ -283,7 +283,7 @@ def _cast_repr_strings_with_schema(
             )
         )
 
-    def cast_cols_expr_(c: str, tp: PolarsDataType):
+    def cast_cols_expr_(c: str, tp: PolarsDataType) -> Expr | None:
         nonlocal df
         if tp.base_type() == Datetime:
             tp_base = Datetime(tp.time_unit)  # type: ignore[union-attr]
@@ -354,29 +354,33 @@ def _cast_repr_strings_with_schema(
         if tp is not None:
             if tp.base_type() == List:
                 expr = (
-                    F.col(c).str.strip_chars("[]")
-                    .str.replace_all(", ", ",")
+                    F.col(c)  # .json_decode(dtype=List(tp.inner))
+                    .str.strip_chars("[]")
+                    .str.replace_all(r"\s*,\s*", ",")
+                    .str.replace_all(r"[\r\n\"\']", "")
+                    # .str.replace_all(r"\s+", "\s")
                     .str.split(",")
-                    # .map_elements(
-                    #         lambda row: (
-                    #             row.strip("][")
-                    #             .replace(", ", ",")
-                    #             .split(",")
-                    #         ),
-                    #         return_dtype=tp.base_type()(String),
-                    # )
+                    .list.eval(
+                        pl.when(
+                            pl.element().str.count_matches(r"(\.\.\.|…)") == 0
+                        ).then(
+                            pl.when(
+                                (pl.element().str.len_bytes() > 0)
+                                & (pl.element().is_not_null())
+                            ).then(pl.element())
+                        )  # pl.element().str.replace_all(r"[\r\n\"\']", "")
+                    )
                 )
                 subtype = tp.inner  # type: ignore[union-attr]
                 if subtype is not None and subtype != pl.Categorical:
-                    expr = (
-                        expr.list.eval(
-                            cast_cols_expr_("", subtype)
+                    if subtype == Datetime:
+                        expr = expr.list.eval(
+                            pl.when(pl.element().str.contains(r"\s")).then(pl.element())
                         )
-                        .cast(tp)
-                    )
+                    expr = expr.list.eval(cast_cols_expr_("", subtype)).cast(tp)  # type: ignore[arg-type]
             else:
-                expr = cast_cols_expr_(c, tp)
-            
+                expr = cast_cols_expr_(c, tp)  # type: ignore[assignment]
+
             if expr is not None:
                 cast_cols[c] = expr
 

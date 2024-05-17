@@ -703,6 +703,7 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
     body = rows[table_body_start + 1 :]
     no_dtypes = all(d is None for d in dtypes)
 
+    # print(body)
     # transpose rows into columns, detect/omit truncated columns
     coldata = list(zip(*(row for row in body if not all((e == "…") for e in row))))
     for el in ("…", "..."):
@@ -713,11 +714,13 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
             if coldata:
                 coldata.pop(idx)
 
+    # print(coldata)
     # init cols as String Series, handle "null" -> None, create schema from repr dtype
     data = [
         pl.Series([(None if v == "null" else v) for v in cd], dtype=String)
         for cd in coldata
     ]
+    print(data)
     schema = dict(zip(headers, (dtype_short_repr_to_dtype(d) for d in dtypes)))
     if schema and data and (n_extend_cols := (len(schema) - len(data))) > 0:
         empty_data = [None] * len(data[0])
@@ -731,6 +734,7 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
 
     # construct DataFrame from string series and cast from repr to native dtype
     df = pl.DataFrame(data=data, orient="col", schema=list(schema))
+    # print(data)
     if no_dtypes:
         if df.is_empty():
             # if no dtypes *and* empty, default to string
