@@ -271,7 +271,7 @@ impl LazyFileListReader for LazyCsvReader {
 
     fn finish_no_glob(self) -> PolarsResult<LazyFrame> {
         let paths = if self.paths.is_empty() {
-            Arc::new([self.path]) as Arc<[PathBuf]>
+            Arc::new([self.path])
         } else {
             self.paths
         };
