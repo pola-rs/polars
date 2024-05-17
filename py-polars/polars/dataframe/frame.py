@@ -6278,7 +6278,7 @@ class DataFrame:
             * *semi*
                  Filter rows that have a match in the right table.
             * *anti*
-                 Filter rows that not have a match in the right table.
+                 Filter rows that do not have a match in the right table.
 
             .. note::
                 A left join preserves the row order of the left DataFrame.
