@@ -355,8 +355,7 @@ def _cast_repr_strings_with_schema(
             if tp.base_type() == List:
                 expr = (
                     F.col(c)
-                    .str.replace_all(r"[\[\]\r\n\"\']", "")
-                    .str.replace_all(r"\s*,\s*", ",")
+                    .str.replace_all(r"[\[\]\r\n\"\'\s]", "")
                     .str.split(",")
                     .list.eval(
                         pl.when(
