@@ -270,10 +270,15 @@ impl LazyFileListReader for LazyCsvReader {
     }
 
     fn finish_no_glob(self) -> PolarsResult<LazyFrame> {
-        let mut lf: LazyFrame =
-            DslBuilder::scan_csv(Arc::from([self.path.into()]), self.read_options, self.cache)?
-                .build()
-                .into();
+        let paths = if self.paths.is_empty() {
+            Arc::new([self.path]) as Arc<[PathBuf]>
+        } else {
+            self.paths
+        };
+
+        let mut lf: LazyFrame = DslBuilder::scan_csv(paths, self.read_options, self.cache)?
+            .build()
+            .into();
         lf.opt_state.file_caching = true;
         Ok(lf)
     }
