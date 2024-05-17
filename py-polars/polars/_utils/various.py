@@ -358,7 +358,6 @@ def _cast_repr_strings_with_schema(
                     .str.strip_chars("[]")
                     .str.replace_all(r"\s*,\s*", ",")
                     .str.replace_all(r"[\r\n\"\']", "")
-                    # .str.replace_all(r"\s+", "\s")
                     .str.split(",")
                     .list.eval(
                         pl.when(

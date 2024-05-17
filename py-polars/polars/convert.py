@@ -714,7 +714,7 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
             if coldata:
                 coldata.pop(idx)
 
-    print(dtypes)
+    # print(dtypes)
     data = []
     for i, d in enumerate(dtypes):
         if i < len(coldata):
@@ -735,8 +735,6 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
                         [(None if v == "null" else v) for v in coldata[i]], dtype=String
                     )
                 )
-        # else:
-        #     data.append(pl.Series([], dtype=String))
 
     # print(data)
     # init cols as String Series, handle "null" -> None, create schema from repr dtype
