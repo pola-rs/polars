@@ -2222,6 +2222,8 @@ class ExprDateTimeNameSpace:
         """
         Roll backward to the first day of the month.
 
+        For datetimes, the time-of-day is preserved.
+
         Returns
         -------
         Expr
@@ -2270,6 +2272,8 @@ class ExprDateTimeNameSpace:
     def month_end(self) -> Expr:
         """
         Roll forward to the last day of the month.
+
+        For datetimes, the time-of-day is preserved.
 
         Returns
         -------
