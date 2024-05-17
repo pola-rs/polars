@@ -357,6 +357,7 @@ def test_series_to_numpy_temporal() -> None:
             pl.Duration("ms"),
         ],
         allow_null=False,
+        allow_time_zones=False,  # NumPy does not support parsing time zone aware data
     ).filter(
         lambda s: (
             not (s.dtype == pl.String and s.str.contains("\x00").any())
