@@ -210,7 +210,7 @@ def sequence_to_pyseries(
 
         if (dtype == Datetime) and (value.tzinfo is not None or time_zone is not None):
             values_tz = str(value.tzinfo) if value.tzinfo is not None else None
-            dtype_tz = dtype.time_zone  # type: ignore[union-attr]
+            dtype_tz = time_zone
             if values_tz is not None and (dtype_tz is not None and dtype_tz != "UTC"):
                 msg = (
                     "time-zone-aware datetimes are converted to UTC"
