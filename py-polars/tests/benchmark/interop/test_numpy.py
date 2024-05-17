@@ -1,5 +1,7 @@
 """Benchmark tests for conversions from/to NumPy."""
 
+from __future__ import annotations
+
 from typing import Any
 
 import numpy as np
