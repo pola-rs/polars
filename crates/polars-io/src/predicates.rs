@@ -19,7 +19,7 @@ pub trait StatsEvaluator {
     fn should_read(&self, stats: &BatchStats) -> PolarsResult<bool>;
 }
 
-#[cfg(feature = "parquet")]
+#[cfg(any(feature = "parquet", feature = "ipc"))]
 pub fn apply_predicate(
     df: &mut DataFrame,
     predicate: Option<&dyn PhysicalIoExpr>,

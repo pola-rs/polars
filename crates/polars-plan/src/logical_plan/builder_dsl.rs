@@ -1,5 +1,5 @@
 use polars_core::prelude::*;
-#[cfg(feature = "parquet")]
+#[cfg(any(feature = "parquet", feature = "ipc"))]
 use polars_io::cloud::CloudOptions;
 #[cfg(feature = "csv")]
 use polars_io::csv::read::CsvReadOptions;
