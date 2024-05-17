@@ -1,4 +1,4 @@
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::bitmap::MutableBitmap;
 use arrow::legacy::kernels::rolling::no_nulls::{self, RollingAggWindowNoNulls};
 use bytemuck::allocation::zeroed_vec;
 #[cfg(feature = "timezones")]
@@ -80,7 +80,7 @@ where
     let mut agg_window = Agg::new(values, 0, 0, params);
 
     let mut out = zeroed_vec(values.len());
-    let mut null_positions = Vec::with_capacity(values.len());
+    let mut validity: Option<MutableBitmap> = None;
     offsets.enumerate().try_for_each(|(idx, result)| {
         let (start, len) = result?;
         let end = start + len;
@@ -99,25 +99,29 @@ where
                 // `by`, which has already been checked to be the same length as the values.
                 unsafe { *out.get_unchecked_mut(*out_idx as usize) = res };
             } else {
-                null_positions.push(*out_idx as usize)
+                if validity.is_none() {
+                    let mut bitmap = MutableBitmap::with_capacity(values.len());
+                    bitmap.extend_constant(values.len(), true);
+                    validity = Some(bitmap);
+                }
+                if let Some(x) = validity.as_mut() {
+                    x.set(*out_idx as usize, false)
+                }
             }
         } else {
-            null_positions.push(*out_idx as usize)
+            if validity.is_none() {
+                let mut bitmap = MutableBitmap::with_capacity(values.len());
+                bitmap.extend_constant(values.len(), true);
+                validity = Some(bitmap);
+            }
+            if let Some(x) = validity.as_mut() {
+                x.set(*out_idx as usize, false)
+            }
         }
         Ok::<(), PolarsError>(())
     })?;
 
-    let validity: Option<Bitmap> = if null_positions.is_empty() {
-        None
-    } else {
-        let mut validity = MutableBitmap::with_capacity(values.len());
-        validity.extend_constant(values.len(), true);
-        for idx in null_positions {
-            validity.set(idx, false)
-        }
-        Some(validity.into())
-    };
-    let out = PrimitiveArray::<T>::from_vec(out).with_validity(validity);
+    let out = PrimitiveArray::<T>::from_vec(out).with_validity(validity.map(|x| x.into()));
 
     Ok(Box::new(out))
 }
