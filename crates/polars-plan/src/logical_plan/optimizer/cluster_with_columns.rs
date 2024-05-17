@@ -312,8 +312,8 @@ impl ColumnStatus {
             AExpr::Wildcard => {
                 // @TODO: I am not really sure if we need to account for this in some way. Does
                 // this mean all of the columns?
-
-                todo!()
+                //
+                // I don't think so.
             },
             AExpr::Slice {
                 input,
