@@ -687,7 +687,7 @@ fn test_cluster_with_columns_chain() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n---\n");
     println!("Optimized:\n{optimized}");
 
-    assert_eq!(num_occurrences(&unoptimized, "WITH_COLUMNS"), 3);
+    assert_eq!(num_occurrences(&unoptimized, "WITH_COLUMNS"), 4);
     assert_eq!(num_occurrences(&optimized, "WITH_COLUMNS"), 1);
 
     Ok(())
