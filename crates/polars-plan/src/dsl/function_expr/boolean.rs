@@ -1,3 +1,8 @@
+use std::ops::{BitAnd, BitOr};
+
+use polars_core::POOL;
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+
 use super::*;
 use crate::map;
 #[cfg(feature = "is_between")]
@@ -115,7 +120,8 @@ impl From<BooleanFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "is_in")]
             IsIn => wrap!(is_in),
             Not => map!(not),
-            AllHorizontal | AnyHorizontal => unreachable!(),
+            AllHorizontal => map_as_slice!(all_horizontal),
+            AnyHorizontal => map_as_slice!(any_horizontal),
         }
     }
 }
@@ -205,4 +211,42 @@ fn is_in(s: &mut [Series]) -> PolarsResult<Option<Series>> {
 
 fn not(s: &Series) -> PolarsResult<Series> {
     polars_ops::series::negate_bitwise(s)
+}
+
+// We shouldn't hit these often only on very wide dataframes where we don't reduce to & expressions.
+fn any_horizontal(s: &[Series]) -> PolarsResult<Series> {
+    let out = POOL
+        .install(|| {
+            s.par_iter()
+                .try_fold(
+                    || BooleanChunked::new("", &[false]),
+                    |acc, b| {
+                        let b = b.cast(&DataType::Boolean)?;
+                        let b = b.bool()?;
+                        PolarsResult::Ok((&acc).bitor(b))
+                    },
+                )
+                .try_reduce(|| BooleanChunked::new("", [false]), |a, b| Ok(a.bitor(b)))
+        })?
+        .with_name(s[0].name());
+    Ok(out.into_series())
+}
+
+// We shouldn't hit these often only on very wide dataframes where we don't reduce to & expressions.
+fn all_horizontal(s: &[Series]) -> PolarsResult<Series> {
+    let out = POOL
+        .install(|| {
+            s.par_iter()
+                .try_fold(
+                    || BooleanChunked::new("", &[true]),
+                    |acc, b| {
+                        let b = b.cast(&DataType::Boolean)?;
+                        let b = b.bool()?;
+                        PolarsResult::Ok((&acc).bitand(b))
+                    },
+                )
+                .try_reduce(|| BooleanChunked::new("", [true]), |a, b| Ok(a.bitand(b)))
+        })?
+        .with_name(s[0].name());
+    Ok(out.into_series())
 }
