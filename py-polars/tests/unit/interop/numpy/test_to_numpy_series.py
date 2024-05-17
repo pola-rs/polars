@@ -308,7 +308,13 @@ def test_to_numpy_chunked() -> None:
 
     assert result.tolist() == s.to_list()
     assert result.dtype == np.int64
+    assert result.flags.writeable is True
     assert_allow_copy_false_raises(s)
+
+    # Check that writing to the array doesn't change the original data
+    result[0] = 10
+    assert result.tolist() == [10, 2, 3, 4]
+    assert s.to_list() == [1, 2, 3, 4]
 
 
 def test_zero_copy_only_deprecated() -> None:
