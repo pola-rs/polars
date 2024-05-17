@@ -716,6 +716,8 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
     data = []
     for i, d in enumerate(dtypes):
         if i < len(coldata):
+            # init cols as String Series with list data with multiline wrap
+            # around to single cell data
             if d is not None and "list" in d:
                 row_element = "" if len(coldata[i]) == 0 else coldata[i][0]
                 col_row = []
@@ -728,17 +730,14 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
                 col_row.append(row_element)
                 data.append(pl.Series(col_row, dtype=String))
             else:
+                # init cols as String Series, handle "null" -> None,
+                # create schema from repr dtype
                 data.append(
                     pl.Series(
                         [(None if v == "null" else v) for v in coldata[i]], dtype=String
                     )
                 )
 
-    # init cols as String Series, handle "null" -> None, create schema from repr dtype
-    # data = [
-    #     pl.Series([(None if v == "null" else v) for v in cd], dtype=String)
-    #     for cd in coldata
-    # ]
     schema = dict(zip(headers, (dtype_short_repr_to_dtype(d) for d in dtypes)))
     if schema and data and (n_extend_cols := (len(schema) - len(data))) > 0:
         empty_data = [None] * len(data[0])
@@ -752,7 +751,6 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
 
     # construct DataFrame from string series and cast from repr to native dtype
     df = pl.DataFrame(data=data, orient="col", schema=list(schema))
-    # print(data)
     if no_dtypes:
         if df.is_empty():
             # if no dtypes *and* empty, default to string

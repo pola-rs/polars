@@ -446,10 +446,9 @@ def dtype_short_repr_to_dtype(dtype_string: str | None) -> PolarsDataType | None
 
     dtype_base, subtype = m.groups()
     dtype = DataTypeMappings.REPR_TO_DTYPE.get(dtype_base)
-    # print(dtype, dtype_base, subtype)
 
     if dtype and subtype:
-        # TODO: further-improve handling for nested types (such as List,Struct)
+        # TODO: further-improve handling for nested types (such as Struct)
         try:
             if dtype == Decimal:
                 subtype = (None, int(subtype))
@@ -458,16 +457,15 @@ def dtype_short_repr_to_dtype(dtype_string: str | None) -> PolarsDataType | None
                     subtype = (DataTypeMappings.REPR_TO_DTYPE.get(subtype),)
                 else:
                     m = re.match(r"^(\w+)(?:\[(.+)\])?$", subtype)
-                    if m is None:
-                        return None
-                    subtype_base, timesubtype = m.groups()
-                    subtype = DataTypeMappings.REPR_TO_DTYPE.get(subtype_base)
-                    if subtype and timesubtype:
-                        timesubtype = (
-                            s.strip("'\" ")
-                            for s in timesubtype.replace("μs", "us").split(",")
-                        )
-                        subtype = (subtype(*timesubtype),)  # type: ignore[operator]
+                    if m is not None:
+                        subtype_base, timesubtype = m.groups()
+                        subtype = DataTypeMappings.REPR_TO_DTYPE.get(subtype_base)
+                        if subtype and timesubtype:
+                            timesubtype = (
+                                s.strip("'\" ")
+                                for s in timesubtype.replace("μs", "us").split(",")
+                            )
+                            subtype = (subtype(*timesubtype),)  # type: ignore[operator]
             else:
                 subtype = (
                     s.strip("'\" ") for s in subtype.replace("μs", "us").split(",")

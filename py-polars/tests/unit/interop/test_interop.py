@@ -5,14 +5,13 @@ from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import pandas as pd
-from polars.datatypes.classes import Decimal
-from polars.testing.asserts.frame import _assert_frame_schema_equal
 import pyarrow as pa
 import pytest
 
 import polars as pl
 from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
+from polars.testing.asserts.frame import _assert_frame_schema_equal
 
 if TYPE_CHECKING:
     from polars.type_aliases import PolarsDataType
@@ -859,12 +858,10 @@ def test_dataframe_from_repr_for_list() -> None:
     }
     df = cast(pl.DataFrame, pl.from_repr(repr(frame)))
     # print(df)
-    _assert_frame_schema_equal(frame,
-                               df,
-                               check_dtype=True,
-                               check_column_order=True,
-                               objects="DataFrames")
-    
+    _assert_frame_schema_equal(
+        frame, df, check_dtype=True, check_column_order=True, objects="DataFrames"
+    )
+
     # empty frame; confirm List schema is inferred
     df = cast(
         pl.DataFrame,
@@ -907,8 +904,10 @@ def test_dataframe_from_repr_for_list() -> None:
     )
     assert_frame_equal(
         df,
-        pl.DataFrame(data=[([None], [None])],
-                     schema={"c1": pl.List(pl.Int32), "c2": pl.List(pl.Float64)}),
+        pl.DataFrame(
+            data=[([None], [None])],
+            schema={"c1": pl.List(pl.Int32), "c2": pl.List(pl.Float64)},
+        ),
     )
 
 
