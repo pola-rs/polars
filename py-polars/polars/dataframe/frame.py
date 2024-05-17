@@ -1673,7 +1673,8 @@ class DataFrame:
             directs otherwise (eg: "jax_enable_x64" was set True in the config object
             at startup, or "JAX_ENABLE_X64" is set to "1" in the environment).
         order : {"c", "fortran"}
-            The index order of the returned Jax array, either C-like or Fortran-like.
+            The index order of the returned Jax array, either C-like (row-major) or
+            Fortran-like (column-major).
 
         See Also
         --------

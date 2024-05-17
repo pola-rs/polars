@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from typing import Any
 
 import pytest
@@ -19,7 +20,7 @@ def df() -> pl.DataFrame:
     return pl.DataFrame(
         {
             "x": [1, 2, 2, 3],
-            "y": [True, False, True, False],
+            "y": [1, 0, 1, 0],
             "z": [1.5, -0.5, 0.0, -2.0],
         },
         schema_overrides={"x": pl.Int8, "z": pl.Float32},
@@ -71,13 +72,15 @@ class TestJaxIntegration:
         assert list(arr_dict.keys()) == ["x", "y", "z"]
 
         self.assert_array_equal(arr_dict["x"], jxn.array([1, 2, 2, 3], dtype=jxn.int8))
-        self.assert_array_equal(
-            arr_dict["y"], jxn.array([True, False, True, False], dtype=jxn.bool)
-        )
+        self.assert_array_equal(arr_dict["y"], jxn.array([1, 0, 1, 0], dtype=jxn.int32))
         self.assert_array_equal(
             arr_dict["z"], jxn.array([1.5, -0.5, 0.0, -2.0], dtype=jxn.float32)
         )
 
+    @pytest.mark.skipif(
+        sys.version_info < (3, 9),
+        reason="jax.numpy.bool requires Python >= 3.9",
+    )
     def test_to_jax_feature_label_dict(self, df: pl.DataFrame) -> None:
         df = pl.DataFrame(
             {
