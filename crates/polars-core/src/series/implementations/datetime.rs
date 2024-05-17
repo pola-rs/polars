@@ -334,32 +334,29 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
             .into_series()
     }
 
-    fn max_as_series(&self) -> PolarsResult<Series> {
-        Ok(self
-            .0
-            .max_as_series()
-            .into_datetime(self.0.time_unit(), self.0.time_zone().clone()))
+    fn max_reduce(&self) -> PolarsResult<Scalar> {
+        let sc = self.0.max_reduce();
+
+        Ok(Scalar::new(self.dtype().clone(), sc.value().clone()))
     }
 
-    fn min_as_series(&self) -> PolarsResult<Series> {
-        Ok(self
-            .0
-            .min_as_series()
-            .into_datetime(self.0.time_unit(), self.0.time_zone().clone()))
+    fn min_reduce(&self) -> PolarsResult<Scalar> {
+        let sc = self.0.min_reduce();
+
+        Ok(Scalar::new(self.dtype().clone(), sc.value().clone()))
     }
 
-    fn median_as_series(&self) -> PolarsResult<Series> {
-        Series::new(self.name(), &[self.median().map(|v| v as i64)]).cast(self.dtype())
+    fn median_reduce(&self) -> PolarsResult<Scalar> {
+        let av: AnyValue = self.median().map(|v| v as i64).into();
+        Ok(Scalar::new(self.dtype().clone(), av))
     }
 
-    fn quantile_as_series(
+    fn quantile_reduce(
         &self,
         _quantile: f64,
         _interpol: QuantileInterpolOptions,
-    ) -> PolarsResult<Series> {
-        Ok(Int32Chunked::full_null(self.name(), 1)
-            .cast(self.dtype())
-            .unwrap())
+    ) -> PolarsResult<Scalar> {
+        Ok(Scalar::new(self.dtype().clone(), AnyValue::Null))
     }
 
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {

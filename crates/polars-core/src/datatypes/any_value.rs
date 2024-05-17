@@ -19,12 +19,18 @@ impl Scalar {
         Self { dtype, value }
     }
 
-    pub fn value(&self) -> &AnyValue {
+    pub fn value(&self) -> &AnyValue<'static> {
         &self.value
     }
 
+    pub fn as_any_value(&self) -> AnyValue {
+        self.value
+            .strict_cast(&self.dtype)
+            .unwrap_or_else(|| self.value.clone())
+    }
+
     pub fn into_series(self, name: &str) -> Series {
-        Series::from_any_values_and_dtype(name, &[self.value], &self.dtype, true).unwrap()
+        Series::from_any_values_and_dtype(name, &[self.as_any_value()], &self.dtype, true).unwrap()
     }
 }
 
@@ -1178,7 +1184,7 @@ impl GetAnyValue for ArrayRef {
     }
 }
 
-impl<K: NumericNative> From<K> for AnyValue<'_> {
+impl<K: NumericNative> From<K> for AnyValue<'static> {
     fn from(value: K) -> Self {
         unsafe {
             match K::PRIMITIVE {
@@ -1216,6 +1222,24 @@ impl<K: NumericNative> From<K> for AnyValue<'_> {
                 _ => unreachable!(),
             }
         }
+    }
+}
+
+impl<'a> From<&'a [u8]> for AnyValue<'a> {
+    fn from(value: &'a [u8]) -> Self {
+        AnyValue::Binary(value)
+    }
+}
+
+impl<'a> From<&'a str> for AnyValue<'a> {
+    fn from(value: &'a str) -> Self {
+        AnyValue::String(value)
+    }
+}
+
+impl From<bool> for AnyValue<'static> {
+    fn from(value: bool) -> Self {
+        AnyValue::Boolean(value)
     }
 }
 

@@ -380,11 +380,14 @@ fn create_physical_expr_inner(
 
                                 match s.is_sorted_flag() {
                                     IsSorted::Ascending | IsSorted::Descending => {
-                                        s.min_as_series().map(Some)
+                                        s.min_reduce().map(|sc| Some(sc.into_series(s.name())))
                                     },
-                                    IsSorted::Not => {
-                                        parallel_op_series(|s| s.min_as_series(), s, None, state)
-                                    },
+                                    IsSorted::Not => parallel_op_series(
+                                        |s| s.min_reduce().map(|sc| sc.into_series(s.name())),
+                                        s,
+                                        None,
+                                        state,
+                                    ),
                                 }
                             }) as Arc<dyn SeriesUdf>)
                         },
@@ -414,17 +417,20 @@ fn create_physical_expr_inner(
 
                                 match s.is_sorted_flag() {
                                     IsSorted::Ascending | IsSorted::Descending => {
-                                        s.max_as_series().map(Some)
+                                        s.max_reduce().map(|sc| Some(sc.into_series(s.name())))
                                     },
-                                    IsSorted::Not => {
-                                        parallel_op_series(|s| s.max_as_series(), s, None, state)
-                                    },
+                                    IsSorted::Not => parallel_op_series(
+                                        |s| s.max_reduce().map(|sc| sc.into_series(s.name())),
+                                        s,
+                                        None,
+                                        state,
+                                    ),
                                 }
                             }) as Arc<dyn SeriesUdf>)
                         },
                         AAggExpr::Median(_) => SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                             let s = std::mem::take(&mut s[0]);
-                            s.median_as_series().map(Some)
+                            s.median_reduce().map(|sc| Some(sc.into_series(s.name())))
                         })
                             as Arc<dyn SeriesUdf>),
                         AAggExpr::NUnique(_) => {
@@ -460,7 +466,7 @@ fn create_physical_expr_inner(
                             as Arc<dyn SeriesUdf>),
                         AAggExpr::Mean(_) => SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                             let s = std::mem::take(&mut s[0]);
-                            Ok(Some(s.mean_as_series()))
+                            Ok(Some(s.mean_reduce().into_series(s.name())))
                         })
                             as Arc<dyn SeriesUdf>),
                         AAggExpr::Implode(_) => {
@@ -477,7 +483,7 @@ fn create_physical_expr_inner(
                             SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                 let s = std::mem::take(&mut s[0]);
                                 parallel_op_series(
-                                    |s| s.sum_as_series().map(|sc| sc.into_series(s.name())),
+                                    |s| s.sum_reduce().map(|sc| sc.into_series(s.name())),
                                     s,
                                     None,
                                     state,
@@ -498,14 +504,14 @@ fn create_physical_expr_inner(
                             let ddof = *ddof;
                             SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                 let s = std::mem::take(&mut s[0]);
-                                s.std_as_series(ddof).map(Some)
+                                s.std_reduce(ddof).map(|sc| Some(sc.into_series(s.name())))
                             }) as Arc<dyn SeriesUdf>)
                         },
                         AAggExpr::Var(_, ddof) => {
                             let ddof = *ddof;
                             SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                 let s = std::mem::take(&mut s[0]);
-                                s.var_as_series(ddof).map(Some)
+                                s.var_reduce(ddof).map(|sc| Some(sc.into_series(s.name())))
                             }) as Arc<dyn SeriesUdf>)
                         },
                         AAggExpr::AggGroups(_) => {

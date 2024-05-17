@@ -235,14 +235,14 @@ impl SeriesTrait for SeriesWrap<StringChunked> {
         ChunkShift::shift(&self.0, periods).into_series()
     }
 
-    fn _sum_as_series(&self) -> PolarsResult<Scalar> {
-        Ok(ChunkAggSeries::sum_as_series(&self.0))
+    fn sum_reduce(&self) -> PolarsResult<Scalar> {
+        Ok(ChunkAggSeries::sum_reduce(&self.0))
     }
-    fn max_as_series(&self) -> PolarsResult<Series> {
-        Ok(ChunkAggSeries::max_as_series(&self.0))
+    fn max_reduce(&self) -> PolarsResult<Scalar> {
+        Ok(ChunkAggSeries::max_reduce(&self.0))
     }
-    fn min_as_series(&self) -> PolarsResult<Series> {
-        Ok(ChunkAggSeries::min_as_series(&self.0))
+    fn min_reduce(&self) -> PolarsResult<Scalar> {
+        Ok(ChunkAggSeries::min_reduce(&self.0))
     }
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
