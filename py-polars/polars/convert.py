@@ -714,13 +714,37 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
             if coldata:
                 coldata.pop(idx)
 
-    # print(coldata)
+    print(dtypes)
+    data = []
+    for i, d in enumerate(dtypes):
+        if i < len(coldata):
+            if d is not None and "list" in d:
+                row_element = "" if len(coldata[i]) == 0 else coldata[i][0]
+                col_row = []
+                for row in coldata[i][1:]:
+                    if row.startswith("["):
+                        col_row.append(row_element)
+                        row_element = row
+                    else:
+                        row_element += row
+                col_row.append(row_element)
+                data.append(pl.Series(col_row, dtype=String))
+            else:
+                data.append(
+                    pl.Series(
+                        [(None if v == "null" else v) for v in coldata[i]], dtype=String
+                    )
+                )
+        # else:
+        #     data.append(pl.Series([], dtype=String))
+
+    # print(data)
     # init cols as String Series, handle "null" -> None, create schema from repr dtype
-    data = [
-        pl.Series([(None if v == "null" else v) for v in cd], dtype=String)
-        for cd in coldata
-    ]
-    print(data)
+    # data = [
+    #     pl.Series([(None if v == "null" else v) for v in cd], dtype=String)
+    #     for cd in coldata
+    # ]
+    # print(data)
     schema = dict(zip(headers, (dtype_short_repr_to_dtype(d) for d in dtypes)))
     if schema and data and (n_extend_cols := (len(schema) - len(data))) > 0:
         empty_data = [None] * len(data[0])

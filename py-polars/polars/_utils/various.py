@@ -364,11 +364,12 @@ def _cast_repr_strings_with_schema(
                         pl.when(
                             pl.element().str.count_matches(r"(\.\.\.|…)") == 0
                         ).then(
-                            pl.when(
-                                (pl.element().str.len_bytes() > 0)
-                                & (pl.element().is_not_null())
-                            ).then(pl.element())
-                        )  # pl.element().str.replace_all(r"[\r\n\"\']", "")
+                            pl.when(pl.element().str.len_bytes() > 0).then(
+                                pl.when(pl.element() == "null")
+                                .then(None)
+                                .otherwise(pl.element())
+                            )
+                        )
                     )
                 )
                 subtype = tp.inner  # type: ignore[union-attr]

@@ -799,6 +799,68 @@ def test_dataframe_from_repr() -> None:
         "timestamp": pl.Datetime("us", "Asia/Tokyo"),
     }
 
+    # frame with list dtype
+    with pl.StringCache():
+        frame = (
+            pl.LazyFrame(
+                {
+                    "a": [[1, 2, None], [1, 2, None]],
+                    "b": [[4.5, 5.5, 6.5], [4.5, 5.5, 6.5]],
+                    "c": [["x", "y", "z"], ["x", "y", "z"]],
+                    "d": [[True, False, True], [True, False, True]],
+                    "e": [[None, "", None], [None, "", None]],
+                    "f": [
+                        [date(2022, 7, 5), date(2023, 2, 5), date(2023, 8, 5)],
+                        [date(2022, 7, 5), date(2023, 2, 5), date(2023, 8, 5)],
+                    ],
+                    "g": [
+                        [time(0, 0, 0, 1), time(12, 30, 45), time(23, 59, 59, 999000)],
+                        [time(0, 0, 0, 1), time(12, 30, 45), time(23, 59, 59, 999000)],
+                    ],
+                    "h": [
+                        [
+                            datetime(2022, 7, 5, 10, 30, 45, 4560),
+                            datetime(2023, 10, 12, 20, 3, 8, 11),
+                            None,
+                        ],
+                        [
+                            datetime(2022, 7, 5, 10, 30, 45, 4560),
+                            datetime(2023, 10, 12, 20, 3, 8, 11),
+                            None,
+                        ],
+                    ],
+                },
+            )
+            .with_columns(
+                # pl.col("c").cast(pl.List(pl.Categorical)),
+                pl.col("h").cast(pl.List(pl.Datetime("ns"))),
+            )
+            .collect()
+        )
+
+        assert frame.schema == {
+            "a": pl.List(pl.Int64),
+            "b": pl.List(pl.Float64),
+            "c": pl.List(pl.String),
+            "d": pl.List(pl.Boolean),
+            "e": pl.List(pl.String),
+            "g": pl.List(pl.Time),
+            "f": pl.List(pl.Date),
+            "h": pl.List(pl.Datetime("ns")),
+        }
+        df = cast(pl.DataFrame, pl.from_repr(repr(frame)))
+        assert df.schema == {
+            "a": pl.List(pl.Int64),
+            "b": pl.List(pl.Float64),
+            "c": pl.List(pl.String),
+            "d": pl.List(pl.Boolean),
+            "e": pl.List(pl.String),
+            "g": pl.List(pl.Time),
+            "f": pl.List(pl.Date),
+            "h": pl.List(pl.Datetime("ns")),
+        }
+        # assert_frame_equal(frame, df)
+
 
 def test_series_from_repr() -> None:
     with pl.StringCache():
