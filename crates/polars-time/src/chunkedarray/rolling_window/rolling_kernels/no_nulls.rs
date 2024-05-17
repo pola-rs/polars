@@ -53,6 +53,21 @@ where
     Ok(Box::new(out))
 }
 
+// Instantiate a bitmap when the first null value is encountered.
+// Set the validity at index `idx` to `false`.
+fn instantiate_bitmap_if_null_and_set_false_at_idx(
+    validity: &mut Option<MutableBitmap>,
+    len: usize,
+    idx: usize,
+) {
+    let bitmap = validity.get_or_insert_with(|| {
+        let mut bitmap = MutableBitmap::with_capacity(len);
+        bitmap.extend_constant(len, true);
+        bitmap
+    });
+    bitmap.set(idx, false);
+}
+
 // Use an aggregation window that maintains the state
 pub(crate) fn rolling_apply_agg_window<'a, Agg, T, O>(
     values: &'a [T],
@@ -99,24 +114,18 @@ where
                 // `by`, which has already been checked to be the same length as the values.
                 unsafe { *out.get_unchecked_mut(*out_idx as usize) = res };
             } else {
-                if validity.is_none() {
-                    let mut bitmap = MutableBitmap::with_capacity(values.len());
-                    bitmap.extend_constant(values.len(), true);
-                    validity = Some(bitmap);
-                }
-                if let Some(x) = validity.as_mut() {
-                    x.set(*out_idx as usize, false)
-                }
+                instantiate_bitmap_if_null_and_set_false_at_idx(
+                    &mut validity,
+                    values.len(),
+                    *out_idx as usize,
+                )
             }
         } else {
-            if validity.is_none() {
-                let mut bitmap = MutableBitmap::with_capacity(values.len());
-                bitmap.extend_constant(values.len(), true);
-                validity = Some(bitmap);
-            }
-            if let Some(x) = validity.as_mut() {
-                x.set(*out_idx as usize, false)
-            }
+            instantiate_bitmap_if_null_and_set_false_at_idx(
+                &mut validity,
+                values.len(),
+                *out_idx as usize,
+            )
         }
         Ok::<(), PolarsError>(())
     })?;
