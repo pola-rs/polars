@@ -482,10 +482,10 @@ impl<'a> FieldsMapper<'a> {
             .cloned()
             .unwrap_or_else(|| Unknown(Default::default()));
 
-        if matches!(dt, UInt8 | Int8 | Int16 | UInt16) {
-            first.coerce(Int64);
-        } else {
-            first.coerce(dt);
+        match dt {
+            Boolean => first.coerce(IDX_DTYPE),
+            UInt8 | Int8 | Int16 | UInt16 => first.coerce(Int64),
+            _ => {},
         }
         Ok(first)
     }

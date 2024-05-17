@@ -690,3 +690,8 @@ def test_resolved_names_15442() -> None:
     right = 1000
     in_x = (left < center.struct.field("x")) & (center.struct.field("x") <= right)
     assert df.lazy().filter(in_x).collect().shape == (1, 2)
+
+
+def test_list_sum_bool_schema() -> None:
+    q = pl.LazyFrame({"x": [[True, True, False]]})
+    assert q.select(pl.col("x").list.sum()).schema["x"] == pl.UInt32
