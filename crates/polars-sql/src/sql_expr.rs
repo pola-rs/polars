@@ -728,6 +728,8 @@ impl SQLExprVisitor<'_> {
         let low = self.visit_expr(low)?;
         let high = self.visit_expr(high)?;
 
+        let low = self.convert_temporal_strings(&expr, &low);
+        let high = self.convert_temporal_strings(&expr, &high);
         if negated {
             Ok(expr.clone().lt(low).or(expr.gt(high)))
         } else {
