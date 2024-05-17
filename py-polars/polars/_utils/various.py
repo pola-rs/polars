@@ -372,7 +372,9 @@ def _cast_repr_strings_with_schema(
                 if subtype is not None and subtype != pl.Categorical:
                     if subtype == Datetime:
                         expr = expr.list.eval(
-                            pl.element().str.replace(r"^(\d{4}-\d{2}-\d{2})(\d+)", "$1 $2")
+                            pl.element().str.replace(
+                                r"^(\d{4}-\d{2}-\d{2})(\d+)", "$1 $2"
+                            )
                         )
                     expr = expr.list.eval(cast_cols_expr_("", subtype)).cast(tp)  # type: ignore[arg-type]
             else:
