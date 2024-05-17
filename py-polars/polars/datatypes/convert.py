@@ -447,7 +447,7 @@ def dtype_short_repr_to_dtype(dtype_string: str | None) -> PolarsDataType | None
     dtype_base, subtype = m.groups()
     dtype = DataTypeMappings.REPR_TO_DTYPE.get(dtype_base)
 
-    def _time_subtype(time_subtype: str) -> tuple[Any]:
+    def _time_subtype(time_subtype: str) -> tuple[str]:
         return (s.strip("'\" ") for s in time_subtype.replace("μs", "us").split(","))  # type: ignore[return-value]
 
     if dtype and subtype:
