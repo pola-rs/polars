@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import decimal
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any, Literal, Mapping, Sequence
 
 import hypothesis.strategies as st
@@ -24,6 +24,7 @@ from polars._utils.constants import (
     U32_MAX,
     U64_MAX,
 )
+from polars._utils.convert import string_to_zoneinfo
 from polars.datatypes import (
     Array,
     Binary,
@@ -59,7 +60,7 @@ from polars.testing.parametric.strategies.dtype import (
 )
 
 if TYPE_CHECKING:
-    from datetime import date, datetime, time
+    from datetime import date, time
 
     from hypothesis.strategies import SearchStrategy
 
@@ -138,7 +139,9 @@ def dates() -> SearchStrategy[date]:
     return st.dates()
 
 
-def datetimes(time_unit: TimeUnit = "us") -> SearchStrategy[datetime]:
+def datetimes(
+    time_unit: TimeUnit = "us", time_zone: str | None = None
+) -> SearchStrategy[datetime]:
     """
     Create a strategy for generating `datetime` objects in the time unit's range.
 
@@ -146,18 +149,36 @@ def datetimes(time_unit: TimeUnit = "us") -> SearchStrategy[datetime]:
     ----------
     time_unit
         Time unit for which the datetime objects are valid.
+    time_zone
+        Time zone for which the datetime objects are valid.
     """
     if time_unit in ("us", "ms"):
-        # datetime.min/max fall within the range
-        return st.datetimes()
+        min_value = datetime.min
+        max_value = datetime.max
     elif time_unit == "ns":
-        return st.datetimes(
-            min_value=EPOCH + timedelta(microseconds=I64_MIN // 1000 + 1),
-            max_value=EPOCH + timedelta(microseconds=I64_MAX // 1000),
-        )
+        min_value = EPOCH + timedelta(microseconds=I64_MIN // 1000 + 1)
+        max_value = EPOCH + timedelta(microseconds=I64_MAX // 1000)
     else:
-        msg = f"invalid time unit: {time_unit}"
+        msg = f"invalid time unit: {time_unit!r}"
         raise InvalidArgument(msg)
+
+    if time_zone is None:
+        return st.datetimes(min_value, max_value)
+
+    time_zone_info = string_to_zoneinfo(time_zone)
+
+    # Make sure time zone offsets do not cause out-of-bound datetimes
+    if time_unit == "ns":
+        min_value += timedelta(days=1)
+        max_value -= timedelta(days=1)
+
+    # Return naive datetimes, but make sure they are valid for the given time zone
+    return st.datetimes(
+        min_value=min_value,
+        max_value=max_value,
+        timezones=st.just(time_zone_info),
+        allow_imaginary=False,
+    ).map(lambda dt: dt.astimezone(timezone.utc).replace(tzinfo=None))
 
 
 def durations(time_unit: TimeUnit = "us") -> SearchStrategy[timedelta]:
@@ -188,7 +209,7 @@ def durations(time_unit: TimeUnit = "us") -> SearchStrategy[timedelta]:
             max_value=timedelta(microseconds=I64_MAX),
         )
     else:
-        msg = f"invalid time unit: {time_unit}"
+        msg = f"invalid time unit: {time_unit!r}"
         raise InvalidArgument(msg)
 
 
@@ -365,8 +386,10 @@ def data(
     elif dtype == Float64:
         strategy = floats(64, allow_infinity=kwargs.pop("allow_infinity", True))
     elif dtype == Datetime:
-        # TODO: Handle time zones
-        strategy = datetimes(time_unit=getattr(dtype, "time_unit", None) or "us")
+        strategy = datetimes(
+            time_unit=getattr(dtype, "time_unit", None) or "us",
+            time_zone=getattr(dtype, "time_zone", None),
+        )
     elif dtype == Duration:
         strategy = durations(time_unit=getattr(dtype, "time_unit", None) or "us")
     elif dtype == Categorical:
