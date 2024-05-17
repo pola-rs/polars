@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_core::schema::SchemaRef;
 use polars_utils::aliases::PlHashMap;
@@ -14,11 +16,30 @@ pub struct ClusterWithColumns<'a> {
     expr_arena: &'a mut Arena<AExpr>,
 }
 
+/// Utility structure to contain all the information of a [`IR::HStack`] i.e. a `WITH_COLUMNS` node
 struct WithColumnsMut<'a> {
     input: &'a mut Node,
     exprs: &'a mut ProjectionExprs,
     schema: &'a mut SchemaRef,
     options: &'a mut ProjectionOptions,
+}
+
+/// Status of the columns in an IR expression, which contains which [`ColumnName`]'s are written to
+/// and which are read from.
+struct ExprColumnStatus {
+    /// Columns that are "live" in a expression i.e. columns that fetched or read from
+    live: MutableBitmap,
+    /// Columns that are "generated" by a expression i.e. columns that assigned or written to
+    generate: MutableBitmap,
+}
+
+/// Status of the columns in an IR expression, which contains which [`ColumnName`]'s are written to
+/// and which are read from.
+struct ExprColumnStatusFrozen {
+    /// Columns that are "live" in a expression i.e. columns that fetched or read from
+    live: Bitmap,
+    /// Columns that are "generated" by a expression i.e. columns that assigned or written to
+    generate: Bitmap,
 }
 
 // // @NOTE: We use a u128 here, because the space would otherwise be used by the fat-pointer of the
@@ -138,231 +159,6 @@ struct WithColumnsMut<'a> {
 //     }
 // }
 
-struct ColumnStatus {
-    live: MutableBitmap,
-    assign: MutableBitmap,
-}
-
-struct ColumnStatusFrozen {
-    live: Bitmap,
-    assign: Bitmap,
-}
-
-impl ColumnStatus {
-    fn new() -> Self {
-        Self {
-            live: MutableBitmap::new(),
-            assign: MutableBitmap::new(),
-        }
-    }
-
-    fn name_to_idx<'a>(
-        &mut self,
-        name_map: &mut PlHashMap<&'a str, usize>,
-        name: &'a str,
-    ) -> usize {
-        let size = name_map.len();
-        let idx = *name_map.entry(name).or_insert_with(|| size);
-
-        let size = name_map.len();
-        if self.live.len() < size {
-            self.live.extend_constant(size - self.live.len(), false);
-            self.assign.extend_constant(size - self.assign.len(), false);
-        }
-
-        idx
-    }
-
-    fn freeze_with_size(mut self, size: usize) -> ColumnStatusFrozen {
-        if self.live.len() < size {
-            self.live.extend_constant(size - self.live.len(), false);
-            self.assign.extend_constant(size - self.assign.len(), false);
-        }
-
-        ColumnStatusFrozen {
-            live: self.live.freeze(),
-            assign: self.assign.freeze(),
-        }
-    }
-
-    fn append_expr_node<'a>(
-        &mut self,
-        name_map: &mut PlHashMap<&'a str, usize>,
-        node: Node,
-        expr_arena: &'a Arena<AExpr>,
-    ) {
-        let expr = expr_arena.get(node);
-
-        match expr {
-            AExpr::Explode(expr) => self.append_expr_node(name_map, *expr, expr_arena),
-            AExpr::Alias(expr, alias) => {
-                let idx = self.name_to_idx(name_map, alias);
-                self.assign.set(idx, true);
-                self.append_expr_node(name_map, *expr, expr_arena)
-            },
-            AExpr::Column(col) => {
-                let idx = self.name_to_idx(name_map, col);
-                self.live.set(idx, true);
-            },
-            AExpr::Literal(_) => {},
-            AExpr::BinaryExpr { left, op: _, right } => {
-                self.append_expr_node(name_map, *left, expr_arena);
-                self.append_expr_node(name_map, *right, expr_arena);
-            },
-            AExpr::Cast {
-                expr,
-                data_type: _,
-                strict: _,
-            } => self.append_expr_node(name_map, *expr, expr_arena),
-            AExpr::Sort { expr, options: _ } => self.append_expr_node(name_map, *expr, expr_arena),
-            AExpr::Gather {
-                expr,
-                idx,
-                returns_scalar: _,
-            } => {
-                self.append_expr_node(name_map, *expr, expr_arena);
-                self.append_expr_node(name_map, *idx, expr_arena);
-            },
-            AExpr::SortBy {
-                expr,
-                by,
-                sort_options: _,
-            } => {
-                self.append_expr_node(name_map, *expr, expr_arena);
-                for i in by.iter() {
-                    self.append_expr_node(name_map, *i, expr_arena);
-                }
-            },
-            AExpr::Filter { input, by } => {
-                self.append_expr_node(name_map, *input, expr_arena);
-                self.append_expr_node(name_map, *by, expr_arena);
-            },
-            AExpr::Agg(aagg_expr) => match aagg_expr {
-                AAggExpr::Min {
-                    input,
-                    propagate_nans: _,
-                }
-                | AAggExpr::Max {
-                    input,
-                    propagate_nans: _,
-                }
-                | AAggExpr::Median(input)
-                | AAggExpr::NUnique(input)
-                | AAggExpr::First(input)
-                | AAggExpr::Last(input)
-                | AAggExpr::Mean(input)
-                | AAggExpr::Implode(input)
-                | AAggExpr::Sum(input)
-                | AAggExpr::Count(input, _)
-                | AAggExpr::Std(input, _)
-                | AAggExpr::Var(input, _)
-                | AAggExpr::AggGroups(input) => self.append_expr_node(name_map, *input, expr_arena),
-                AAggExpr::Quantile {
-                    expr,
-                    quantile,
-                    interpol: _,
-                } => {
-                    self.append_expr_node(name_map, *expr, expr_arena);
-                    self.append_expr_node(name_map, *quantile, expr_arena);
-                },
-            },
-            AExpr::Ternary {
-                predicate,
-                truthy,
-                falsy,
-            } => {
-                self.append_expr_node(name_map, *predicate, expr_arena);
-                self.append_expr_node(name_map, *truthy, expr_arena);
-                self.append_expr_node(name_map, *falsy, expr_arena);
-            },
-            AExpr::AnonymousFunction {
-                input,
-                function: _,
-                output_type: _,
-                options: _,
-            } => {
-                for i in input.iter() {
-                    self.append_expr_ir(name_map, i, expr_arena);
-                }
-            },
-            AExpr::Function {
-                input,
-                function: _,
-                options: _,
-            } => {
-                for i in input.iter() {
-                    self.append_expr_ir(name_map, i, expr_arena);
-                }
-
-                // @TODO: Do we also have to do something with the `function`?
-                //
-                // From my first impression, the answer is no, but probably someone else should
-                // look at this for a second.
-            },
-            AExpr::Window {
-                function,
-                partition_by,
-                options: _,
-            } => {
-                self.append_expr_node(name_map, *function, expr_arena);
-                for i in partition_by.iter() {
-                    self.append_expr_node(name_map, *i, expr_arena);
-                }
-            },
-            AExpr::Wildcard => {
-                // @TODO: I am not really sure if we need to account for this in some way. Does
-                // this mean all of the columns?
-                //
-                // I don't think so.
-            },
-            AExpr::Slice {
-                input,
-                offset,
-                length,
-            } => {
-                self.append_expr_node(name_map, *input, expr_arena);
-                self.append_expr_node(name_map, *offset, expr_arena);
-                self.append_expr_node(name_map, *length, expr_arena);
-            },
-            AExpr::Len => {},
-            AExpr::Nth(_) => {},
-        }
-    }
-
-    fn append_expr_ir<'a>(
-        &mut self,
-        name_map: &mut PlHashMap<&'a str, usize>,
-        expr_ir: &'a ExprIR,
-        expr_arena: &'a Arena<AExpr>,
-    ) {
-        match expr_ir.output_name_inner() {
-            OutputName::None => {},
-            OutputName::LiteralLhs(s) | OutputName::ColumnLhs(s) => {
-                let idx = self.name_to_idx(name_map, s);
-                self.live.set(idx, true);
-                self.assign.set(idx, true);
-            },
-            OutputName::Alias(s) => {
-                let idx = self.name_to_idx(name_map, s);
-                self.assign.set(idx, true);
-            },
-        }
-
-        self.append_expr_node(name_map, expr_ir.node(), expr_arena);
-    }
-
-    fn from_expr_ir<'a>(
-        name_map: &mut PlHashMap<&'a str, usize>,
-        expr: &'a ExprIR,
-        expr_arena: &'a Arena<AExpr>,
-    ) -> Self {
-        // @TODO: This should not be hardcoded
-        let mut column_status = Self::new();
-        column_status.append_expr_ir(name_map, expr, expr_arena);
-        column_status
-    }
-}
-
 impl<'a> WithColumnsMut<'a> {
     fn from_ir(ir: &'a mut IR) -> Option<Self> {
         let IR::HStack {
@@ -384,9 +180,226 @@ impl<'a> WithColumnsMut<'a> {
     }
 }
 
-enum CWCOptimization {
-    PushdownAll,
-    PushdownSubset(Bitmap),
+impl ExprColumnStatus {
+    fn new() -> Self {
+        Self {
+            live: MutableBitmap::with_capacity(8),
+            generate: MutableBitmap::with_capacity(8),
+        }
+    }
+
+    fn name_to_idx<'a>(
+        &mut self,
+        column_map: &mut PlHashMap<&'a str, usize>,
+        name: &'a str,
+    ) -> usize {
+        let size = column_map.len();
+        let idx = *column_map.entry(name).or_insert_with(|| size);
+
+        // @NOTE: We need to account for new names here, but also defined in other instances using
+        // the same `column_map`.
+        let size = column_map.len();
+        if self.live.len() < size {
+            self.live.extend_constant(size - self.live.len(), false);
+            self.generate
+                .extend_constant(size - self.generate.len(), false);
+        }
+
+        idx
+    }
+
+    fn freeze_with_size(mut self, size: usize) -> ExprColumnStatusFrozen {
+        if self.live.len() < size {
+            self.live.extend_constant(size - self.live.len(), false);
+            self.generate
+                .extend_constant(size - self.generate.len(), false);
+        }
+
+        ExprColumnStatusFrozen {
+            live: self.live.freeze(),
+            generate: self.generate.freeze(),
+        }
+    }
+
+    fn append_expr_node<'a>(
+        &mut self,
+        column_map: &mut PlHashMap<&'a str, usize>,
+        node: Node,
+        expr_arena: &'a Arena<AExpr>,
+    ) {
+        let expr = expr_arena.get(node);
+
+        match expr {
+            AExpr::Explode(expr) => self.append_expr_node(column_map, *expr, expr_arena),
+            AExpr::Alias(expr, alias) => {
+                let idx = self.name_to_idx(column_map, alias);
+                self.generate.set(idx, true);
+                self.append_expr_node(column_map, *expr, expr_arena)
+            },
+            AExpr::Column(col) => {
+                let idx = self.name_to_idx(column_map, col);
+                self.live.set(idx, true);
+            },
+            AExpr::Literal(_) => {},
+            AExpr::BinaryExpr { left, op: _, right } => {
+                self.append_expr_node(column_map, *left, expr_arena);
+                self.append_expr_node(column_map, *right, expr_arena);
+            },
+            AExpr::Cast {
+                expr,
+                data_type: _,
+                strict: _,
+            } => self.append_expr_node(column_map, *expr, expr_arena),
+            AExpr::Sort { expr, options: _ } => {
+                self.append_expr_node(column_map, *expr, expr_arena)
+            },
+            AExpr::Gather {
+                expr,
+                idx,
+                returns_scalar: _,
+            } => {
+                self.append_expr_node(column_map, *expr, expr_arena);
+                self.append_expr_node(column_map, *idx, expr_arena);
+            },
+            AExpr::SortBy {
+                expr,
+                by,
+                sort_options: _,
+            } => {
+                self.append_expr_node(column_map, *expr, expr_arena);
+                for i in by.iter() {
+                    self.append_expr_node(column_map, *i, expr_arena);
+                }
+            },
+            AExpr::Filter { input, by } => {
+                self.append_expr_node(column_map, *input, expr_arena);
+                self.append_expr_node(column_map, *by, expr_arena);
+            },
+            AExpr::Agg(aagg_expr) => match aagg_expr {
+                AAggExpr::Min {
+                    input,
+                    propagate_nans: _,
+                }
+                | AAggExpr::Max {
+                    input,
+                    propagate_nans: _,
+                }
+                | AAggExpr::Median(input)
+                | AAggExpr::NUnique(input)
+                | AAggExpr::First(input)
+                | AAggExpr::Last(input)
+                | AAggExpr::Mean(input)
+                | AAggExpr::Implode(input)
+                | AAggExpr::Sum(input)
+                | AAggExpr::Count(input, _)
+                | AAggExpr::Std(input, _)
+                | AAggExpr::Var(input, _)
+                | AAggExpr::AggGroups(input) => {
+                    self.append_expr_node(column_map, *input, expr_arena)
+                },
+                AAggExpr::Quantile {
+                    expr,
+                    quantile,
+                    interpol: _,
+                } => {
+                    self.append_expr_node(column_map, *expr, expr_arena);
+                    self.append_expr_node(column_map, *quantile, expr_arena);
+                },
+            },
+            AExpr::Ternary {
+                predicate,
+                truthy,
+                falsy,
+            } => {
+                self.append_expr_node(column_map, *predicate, expr_arena);
+                self.append_expr_node(column_map, *truthy, expr_arena);
+                self.append_expr_node(column_map, *falsy, expr_arena);
+            },
+            AExpr::AnonymousFunction {
+                input,
+                function: _,
+                output_type: _,
+                options: _,
+            } => {
+                for i in input.iter() {
+                    self.append_expr_ir(column_map, i, expr_arena);
+                }
+            },
+            AExpr::Function {
+                input,
+                function: _,
+                options: _,
+            } => {
+                for i in input.iter() {
+                    self.append_expr_ir(column_map, i, expr_arena);
+                }
+
+                // @TODO: Do we also have to do something with the `function`?
+                //
+                // From my first impression, the answer is no, but probably someone else should
+                // look at this for a second.
+            },
+            AExpr::Window {
+                function,
+                partition_by,
+                options: _,
+            } => {
+                self.append_expr_node(column_map, *function, expr_arena);
+                for i in partition_by.iter() {
+                    self.append_expr_node(column_map, *i, expr_arena);
+                }
+            },
+            AExpr::Wildcard => {
+                // @TODO: I am not really sure if we need to account for this in some way. Does
+                // this mean all of the columns?
+                //
+                // I don't think so.
+            },
+            AExpr::Slice {
+                input,
+                offset,
+                length,
+            } => {
+                self.append_expr_node(column_map, *input, expr_arena);
+                self.append_expr_node(column_map, *offset, expr_arena);
+                self.append_expr_node(column_map, *length, expr_arena);
+            },
+            AExpr::Len => {},
+            AExpr::Nth(_) => {},
+        }
+    }
+
+    fn append_expr_ir<'a>(
+        &mut self,
+        column_map: &mut PlHashMap<&'a str, usize>,
+        expr_ir: &'a ExprIR,
+        expr_arena: &'a Arena<AExpr>,
+    ) {
+        match expr_ir.output_name_inner() {
+            OutputName::None => {},
+            OutputName::LiteralLhs(s) | OutputName::ColumnLhs(s) => {
+                let idx = self.name_to_idx(column_map, s);
+                self.live.set(idx, true);
+                self.generate.set(idx, true);
+            },
+            OutputName::Alias(s) => {
+                let idx = self.name_to_idx(column_map, s);
+                self.generate.set(idx, true);
+            },
+        }
+
+        self.append_expr_node(column_map, expr_ir.node(), expr_arena);
+    }
+
+    fn from_expr_ir<'a>(
+        column_map: &mut PlHashMap<&'a str, usize>,
+        expr: &'a ExprIR,
+        expr_arena: &'a Arena<AExpr>,
+    ) -> Self {
+        let mut column_status = Self::new();
+        column_status.append_expr_ir(column_map, expr, expr_arena);
+        column_status
+    }
 }
 
 impl<'a> ClusterWithColumns<'a> {
@@ -397,70 +410,64 @@ impl<'a> ClusterWithColumns<'a> {
         }
     }
 
-    pub fn optimize(&mut self, root: Node) {
-        self._optimize(root);
-    }
-
-    fn _optimize(&mut self, root: Node) {
-        loop {
-            let ir = self.lp_arena.get(root);
-            let IR::HStack { input, .. } = ir else {
-                break;
-            };
+    pub fn optimize(&mut self, current: Node) {
+        while let IR::HStack { input, .. } = self.lp_arena.get(current) {
             let input = *input;
 
-            let [current, child] = self.lp_arena.get_many_mut([root, input]);
+            let [current_ir, input_ir] = self.lp_arena.get_many_mut([current, input]);
 
-            let Some(with_columns) = WithColumnsMut::from_ir(current) else {
+            let Some(current_wc) = WithColumnsMut::from_ir(current_ir) else {
                 unreachable!();
             };
-            let Some(child_with_columns) = WithColumnsMut::from_ir(child) else {
+            let Some(input_wc) = WithColumnsMut::from_ir(input_ir) else {
                 break;
             };
 
             // @NOTE
-            // There are dependencies i.f.f. `child` assigns to a column that is used by `parent`
+            // We can pushdown any column that utilizes no live columns that are generated in the
+            // input.
 
-            let mut name_map = PlHashMap::default();
+            let mut column_map = PlHashMap::default();
 
-            let child_statuses: Vec<ColumnStatus> = child_with_columns
+            let input_colstat: Vec<ExprColumnStatus> = input_wc
                 .exprs
                 .as_exprs()
                 .iter()
-                .map(|expr| ColumnStatus::from_expr_ir(&mut name_map, expr, self.expr_arena))
+                .map(|expr| ExprColumnStatus::from_expr_ir(&mut column_map, expr, self.expr_arena))
                 .collect();
-            let current_statuses: Vec<ColumnStatus> = with_columns
+            let current_colstat: Vec<ExprColumnStatus> = current_wc
                 .exprs
                 .as_exprs()
                 .iter()
-                .map(|expr| ColumnStatus::from_expr_ir(&mut name_map, expr, self.expr_arena))
+                .map(|expr| ExprColumnStatus::from_expr_ir(&mut column_map, expr, self.expr_arena))
                 .collect();
 
-            let child_statuses: Vec<ColumnStatusFrozen> = child_statuses
+            let child_colstat: Vec<ExprColumnStatusFrozen> = input_colstat
                 .into_iter()
-                .map(|s| s.freeze_with_size(name_map.len()))
+                .map(|s| s.freeze_with_size(column_map.len()))
                 .collect();
-            let current_statuses: Vec<ColumnStatusFrozen> = current_statuses
+            let current_colstat: Vec<ExprColumnStatusFrozen> = current_colstat
                 .into_iter()
-                .map(|s| s.freeze_with_size(name_map.len()))
+                .map(|s| s.freeze_with_size(column_map.len()))
                 .collect();
 
             // @NOTE: This satisfies the borrow checker
-            let num_names = name_map.len();
-            drop(name_map);
+            let num_names = column_map.len();
+            drop(column_map);
 
-            let mut pushable = MutableBitmap::with_capacity(child_with_columns.exprs.len());
+            let mut pushable = MutableBitmap::with_capacity(input_wc.exprs.len());
 
-            let mut child_assign = Bitmap::new_zeroed(num_names);
-            for child_status in &child_statuses {
+            let mut input_generate = Bitmap::new_zeroed(num_names);
+            for colstat in &child_colstat {
                 use std::ops::BitOr;
-                child_assign = child_assign.bitor(&child_status.assign);
+                input_generate = input_generate.bitor(&colstat.generate);
             }
 
-            for current_status in &current_statuses {
+            // Check for every expression in the current WITH_COLUMNS node whether
+            for colstat in &current_colstat {
                 use std::ops::BitAnd;
 
-                let has_intersection = child_assign.bitand(&current_status.live).set_bits() > 0;
+                let has_intersection = input_generate.bitand(&colstat.live).set_bits() > 0;
                 let is_pushable = !has_intersection;
 
                 pushable.push(is_pushable);
@@ -468,66 +475,87 @@ impl<'a> ClusterWithColumns<'a> {
 
             let pushable = pushable.freeze();
 
-            let optimization = match pushable.set_bits() {
-                0 => break,
-                x if x == pushable.len() => CWCOptimization::PushdownAll,
-                _ => CWCOptimization::PushdownSubset(pushable),
-            };
-
-            match optimization {
-                CWCOptimization::PushdownAll => {
-                    // @NOTE: To keep the schema correct, we reverse the order here. As a
-                    // `WITH_COLUMNS` higher up produces later columns.
-                    child_with_columns
-                        .exprs
-                        .exprs_mut()
-                        .extend(std::mem::take(with_columns.exprs.exprs_mut()));
-                    std::mem::swap(
-                        with_columns.exprs.exprs_mut(),
-                        child_with_columns.exprs.exprs_mut(),
-                    );
-
-                    *with_columns.input = *child_with_columns.input;
-                    *with_columns.options = *child_with_columns.options;
-
-                    self.lp_arena.take(input);
-                },
-                CWCOptimization::PushdownSubset(exprs) => {
-                    let mut current_exprs = std::mem::take(with_columns.exprs.exprs_mut())
-                        .into_iter()
-                        .zip(exprs)
-                        .filter_map(|(expr, do_pushdown)| {
-                            if do_pushdown {
-                                child_with_columns.exprs.exprs_mut().push(expr);
-                                None
-                            } else {
-                                Some(expr)
-                            }
-                        })
-                        .collect();
-
-                    std::mem::swap(&mut current_exprs, with_columns.exprs.exprs_mut());
-
-                    // @NOTE: Here we add a simple projection to make sure that the output still
-                    // has the right schema.
-                    // @TODO: I don't think we always have to add a simple projection, maybe we can
-                    // filter out some of the cases where we don't have to add it.
-                    // @TODO: Do we need to adjust the schema of current?
-                    let schema = with_columns.schema.clone();
-                    let new = self.lp_arena.add(IR::Invalid);
-                    let projection = IR::SimpleProjection {
-                        input: new,
-                        columns: schema,
-                    };
-                    let current = self.lp_arena.replace(root, projection);
-                    self.lp_arena.replace(new, current);
-                },
+            // There is nothing to push down. Move on.
+            if pushable.set_bits() == 0 {
+                break;
             }
+
+            // If all columns are pushable, we can merge the input into the current. This should be
+            // a relatively common case.
+            if pushable.set_bits() == pushable.len() {
+                // @NOTE: To keep the schema correct, we reverse the order here. As a
+                // `WITH_COLUMNS` higher up produces later columns. This also allows us not to
+                // have to deal with schemas.
+                input_wc
+                    .exprs
+                    .exprs_mut()
+                    .extend(std::mem::take(current_wc.exprs.exprs_mut()));
+                std::mem::swap(current_wc.exprs.exprs_mut(), input_wc.exprs.exprs_mut());
+
+                *current_wc.input = *input_wc.input;
+                // @TODO: Is this allowed?
+                *current_wc.options = *input_wc.options;
+
+                self.lp_arena.take(input);
+
+                // Since we merged the current and input nodes and the input node might have
+                // optimizations with their input, we loop again on this node.
+                continue;
+            }
+
+            let mut current_schema = current_wc.schema.as_ref().clone();
+            let mut input_schema = input_wc.schema.as_ref().clone();
+
+            // @NOTE: We don't have to insert a SimpleProjection or redo the `current_schema` if
+            // `pushable` contains only 0..N for some N.
+            let mut current_exprs = std::mem::take(current_wc.exprs.exprs_mut())
+                .into_iter()
+                .zip(pushable)
+                .enumerate()
+                .filter_map(|(i, (expr, do_pushdown))| {
+                    if do_pushdown {
+                        // @NOTE: It would be nice to have a `remove_at_index` here.
+                        let (column, _) = current_wc.schema.get_at_index(i).unwrap();
+
+                        input_wc.exprs.exprs_mut().push(expr);
+                        let datatype = current_schema.remove(column).unwrap();
+                        input_schema.with_column(column.clone(), datatype);
+
+                        None
+                    } else {
+                        Some(expr)
+                    }
+                })
+                .collect();
+
+            std::mem::swap(&mut current_exprs, current_wc.exprs.exprs_mut());
+
+            current_schema.merge(input_schema.clone());
+
+            let proj_schema = current_wc.schema.clone();
+
+            *current_wc.schema = Arc::new(current_schema);
+            *input_wc.schema = Arc::new(input_schema);
+
+            // @NOTE: Here we add a simple projection to make sure that the output still
+            // has the right schema.
+            // @TODO: I don't think we always have to add a simple projection, maybe we can
+            // filter out some of the cases where we don't have to add it.
+            let moved_current = self.lp_arena.add(IR::Invalid);
+            let projection = IR::SimpleProjection {
+                input: moved_current,
+                columns: proj_schema,
+            };
+            let current = self.lp_arena.replace(current, projection);
+            self.lp_arena.replace(moved_current, current);
+
+            // We know that this node is done optimizing
+            break;
         }
 
-        let ir = self.lp_arena.get(root);
+        let ir = self.lp_arena.get(current);
         for child in ir.get_inputs().iter() {
-            self._optimize(*child);
+            self.optimize(*child);
         }
     }
 }
