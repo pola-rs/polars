@@ -201,9 +201,9 @@ def _instantiate_flat_dtype(draw: DrawFn, dtype: PolarsDataType) -> DataType:
     elif dtype in _SIMPLE_DTYPES:
         return dtype()
     elif dtype == Datetime:
-        # TODO: Add time zones
         time_unit = draw(_time_units())
-        return Datetime(time_unit)
+        time_zone = draw(st.none() | _time_zones())
+        return Datetime(time_unit, time_zone)
     elif dtype == Duration:
         time_unit = draw(_time_units())
         return Duration(time_unit)
@@ -290,6 +290,13 @@ def _instantiate_nested_dtype(
 def _time_units() -> SearchStrategy[TimeUnit]:
     """Create a strategy for generating valid units of time."""
     return st.sampled_from(["us", "ns", "ms"])
+
+
+def _time_zones() -> SearchStrategy[str]:
+    """Create a strategy for generating valid time zones."""
+    return st.timezone_keys(allow_prefix=False).filter(
+        lambda tz: tz not in {"Factory", "localtime"}
+    )
 
 
 def _categorical_orderings() -> SearchStrategy[CategoricalOrdering]:
