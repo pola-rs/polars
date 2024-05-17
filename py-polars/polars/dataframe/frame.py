@@ -7281,131 +7281,170 @@ class DataFrame:
         separator: str = "_",
     ) -> Self:
         """
-        Create a spreadsheet-style pivot table as a DataFrame.
+        Pivot this `DataFrame` from long to wide format. The inverse of :func:`melt`.
 
-        Only available in eager mode. See "Examples" section below for how to do a
-        "lazy pivot" if you know the unique column values in advance.
+        `pivot` transforms a "long-format" `DataFrame`, where each row represents an
+        observation, into a "wide-format" one, where each element represents an
+        observation.
+
+        `pivot` is only available in eager mode, since the schema of the output
+        `DataFrame` depends on the number of unique values in `columns`. However, if you
+        know these unique values in advance, you can perform a "lazy pivot", as shown in
+        the "Examples" section below.
 
         Parameters
         ----------
         values
-            Column values to aggregate. Can be multiple columns if the *columns*
-            arguments contains multiple columns as well. If None, all remaining columns
-            will be used.
+            The column(s) whose values will become the values of the output `DataFrame`.
+            If None, all columns not specified in the index and columns arguments will
+            be used.
         index
-            One or multiple keys to group by.
+            The column(s) whose values will act like row labels in the output `DataFrame`.
         columns
-            Name of the column(s) whose values will be used as the header of the output
-            DataFrame.
+            The column(s) whose values will become the columns of the output
+            `DataFrame`. If these columns are not :class:`String` columns, their values
+            will be coerced to strings, since Polars column names must be strings.
         aggregate_function
-            Choose from:
+            A function to aggregate multiple `values` with the same `index` and
+            `columns` prior to pivoting, equivalent to using :func:`group_by` as a
+            preprocessing step. Choose from:
 
-            - None: no aggregation takes place, will raise error if multiple values are in group.
-            - A predefined aggregate function string, one of
-              {'min', 'max', 'first', 'last', 'sum', 'mean', 'median', 'len'}
-            - An expression to do the aggregation.
+            - `None`: no aggregation takes place; will raise an error if multiple values
+              are in a group.
+            - One of the strings {`'first'`, `'last'`, `'sum'`, `'max'`,
+              `'min'`, `'mean'`, `'median'`, `'len'`}, to perform predefined
+              types of aggregation.
+            - An expression that performs a custom aggregation, where
+              :func:`polars.element()` represents the multiple `values` in each "group"
+              with the same `index` and `columns`. For example, `aggregate_function='mean'`
+              is short for `aggregate_function=pl.element().mean()`.
         maintain_order
-            Sort the grouped keys so that the output order is predictable.
+            Whether to ensure that the row names of the output `DataFrame` are in the
+            same order they first appeared in the `index` of the input `DataFrame`.
+            `maintain_order=False` is not currently implemented.
         sort_columns
-            Sort the transposed columns by name. Default is by order of discovery.
+            Whether to order the non-index columns of the output `DataFrame` in
+            alphabetical order (if `sort_columns=True`).
         separator
-            Used as separator/delimiter in generated column names.
+            A string used as the separator/delimiter in generated column names. Only
+            used when there are multiple `values` columns.
 
         Returns
         -------
         DataFrame
+            The pivoted `DataFrame`.
+
+        See Also
+        --------
+        melt : the inverse of `pivot`; "unpivots" from wide to long format.
+
+        Notes
+        -----
+        This will introduce `null` values in the output `DataFrame` if not every
+        combination of the values in `index` and `columns` appears in the input
+        `DataFrame`.
 
         Examples
         --------
-        >>> df = pl.DataFrame(
+        >>> df_long = pl.DataFrame(
         ...     {
-        ...         "foo": ["one", "one", "two", "two", "one", "two"],
-        ...         "bar": ["y", "y", "y", "x", "x", "x"],
-        ...         "baz": [1, 2, 3, 4, 5, 6],
+        ...         "First": ["Amy", "Bo", "Cam", "Amy", "Bo"],
+        ...         "Last": ["Wu", "Xi", "Yu", "Wu", "Xi"],
+        ...         "Subject": ["Math", "Math", "Math", "Art", "Art"],
+        ...         "Grade": [90, 85, 78, 88, 92],
         ...     }
         ... )
-        >>> df.pivot(index="foo", columns="bar", values="baz", aggregate_function="sum")
-        shape: (2, 3)
-        ┌─────┬─────┬─────┐
-        │ foo ┆ y   ┆ x   │
-        │ --- ┆ --- ┆ --- │
-        │ str ┆ i64 ┆ i64 │
-        ╞═════╪═════╪═════╡
-        │ one ┆ 3   ┆ 5   │
-        │ two ┆ 3   ┆ 10  │
-        └─────┴─────┴─────┘
 
-        Pivot using selectors to determine the index/values/columns:
+        >>> df_long.pivot(index=["First", "Last"], columns="Subject", values="Grade")
+        shape: (3, 4)
+        ┌───────┬──────┬──────┬──────┐
+        │ First ┆ Last ┆ Math ┆ Art  │
+        │ ---   ┆ ---  ┆ ---  ┆ ---  │
+        │ str   ┆ str  ┆ i64  ┆ i64  │
+        ╞═══════╪══════╪══════╪══════╡
+        │ Amy   ┆ Wu   ┆ 90   ┆ 88   │
+        │ Bo    ┆ Xi   ┆ 85   ┆ 92   │
+        │ Cam   ┆ Yu   ┆ 78   ┆ null │
+        └───────┴──────┴──────┴──────┘
+
+        Pivot using an expression as the `aggregate_function` (this particular example
+        can be expressed more simply with `aggregate_function='mean'`):
+
+        >>> (
+        ...     df_long.vstack(df_long.with_columns(pl.col.Grade + 10)).pivot(
+        ...         index=["First", "Last"],
+        ...         columns="Subject",
+        ...         values="Grade",
+        ...         aggregate_function=pl.element().mean(),
+        ...     )
+        ... )
+        shape: (3, 4)
+        ┌───────┬──────┬──────┬──────┐
+        │ First ┆ Last ┆ Math ┆ Art  │
+        │ ---   ┆ ---  ┆ ---  ┆ ---  │
+        │ str   ┆ str  ┆ f64  ┆ f64  │
+        ╞═══════╪══════╪══════╪══════╡
+        │ Amy   ┆ Wu   ┆ 95.0 ┆ 93.0 │
+        │ Bo    ┆ Xi   ┆ 90.0 ┆ 97.0 │
+        │ Cam   ┆ Yu   ┆ 83.0 ┆ null │
+        └───────┴──────┴──────┴──────┘
+
+        Use a selector to determine the `values` columns, and
+        `sort_columns=True` to alphabetically order the non-index columns (`'Art'` and
+        `'Math'`):
 
         >>> import polars.selectors as cs
-        >>> df.pivot(
-        ...     index=cs.string(),
-        ...     columns=cs.string(),
-        ...     values=cs.numeric(),
-        ...     aggregate_function="sum",
+        >>> df_long.pivot(
+        ...     index=["First", "Last"],
+        ...     columns="Subject",
+        ...     values=cs.integer(),
         ...     sort_columns=True,
-        ... ).sort(
-        ...     by=cs.string(),
         ... )
-        shape: (4, 6)
-        ┌─────┬─────┬─────────────┬─────────────┬─────────────┬─────────────┐
-        │ foo ┆ bar ┆ {"one","x"} ┆ {"one","y"} ┆ {"two","x"} ┆ {"two","y"} │
-        │ --- ┆ --- ┆ ---         ┆ ---         ┆ ---         ┆ ---         │
-        │ str ┆ str ┆ i64         ┆ i64         ┆ i64         ┆ i64         │
-        ╞═════╪═════╪═════════════╪═════════════╪═════════════╪═════════════╡
-        │ one ┆ x   ┆ 5           ┆ null        ┆ null        ┆ null        │
-        │ one ┆ y   ┆ null        ┆ 3           ┆ null        ┆ null        │
-        │ two ┆ x   ┆ null        ┆ null        ┆ 10          ┆ null        │
-        │ two ┆ y   ┆ null        ┆ null        ┆ null        ┆ 3           │
-        └─────┴─────┴─────────────┴─────────────┴─────────────┴─────────────┘
+        shape: (3, 4)
+        ┌───────┬──────┬──────┬──────┐
+        │ First ┆ Last ┆ Art  ┆ Math │
+        │ ---   ┆ ---  ┆ ---  ┆ ---  │
+        │ str   ┆ str  ┆ i64  ┆ i64  │
+        ╞═══════╪══════╪══════╪══════╡
+        │ Amy   ┆ Wu   ┆ 88   ┆ 90   │
+        │ Bo    ┆ Xi   ┆ 92   ┆ 85   │
+        │ Cam   ┆ Yu   ┆ null ┆ 78   │
+        └───────┴──────┴──────┴──────┘
 
-        Run an expression as aggregation function
+        Note that `pivot`, unlike :func:`melt`, is only available in eager mode.
+        However, if you know the unique values of the `columns` in advance, you can
+        perform a "lazy pivot" using :func:`LazyFrame.groupby` to get the same result as
+        above (except for the order not being stable) in lazy mode:
 
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "col1": ["a", "a", "a", "b", "b", "b"],
-        ...         "col2": ["x", "x", "x", "x", "y", "y"],
-        ...         "col3": [6, 7, 3, 2, 5, 7],
-        ...     }
-        ... )
-        >>> df.pivot(
-        ...     index="col1",
-        ...     columns="col2",
-        ...     values="col3",
-        ...     aggregate_function=pl.element().tanh().mean(),
-        ... )
-        shape: (2, 3)
-        ┌──────┬──────────┬──────────┐
-        │ col1 ┆ x        ┆ y        │
-        │ ---  ┆ ---      ┆ ---      │
-        │ str  ┆ f64      ┆ f64      │
-        ╞══════╪══════════╪══════════╡
-        │ a    ┆ 0.998347 ┆ null     │
-        │ b    ┆ 0.964028 ┆ 0.999954 │
-        └──────┴──────────┴──────────┘
+        >>> index = "First", "Last"
+        >>> columns = "Subject"
+        >>> values = "Grade"
+        >>> unique_columns = df_long[columns].unique()
+        >>> (
+        ...     df_long.lazy()
+        ...     .group_by(index)
+        ...     .agg(
+        ...         pl.col(values)
+        ...         .filter(pl.col(columns) == column)
+        ...         .first()
+        ...         .alias(column)
+        ...         for column in unique_columns
+        ...     )
+        ...     .collect()
+        ... )  # doctest: +IGNORE_RESULT
+        shape: (3, 4)
+        ┌───────┬──────┬──────┬──────┐
+        │ First ┆ Last ┆ Art  ┆ Math │
+        │ ---   ┆ ---  ┆ ---  ┆ ---  │
+        │ str   ┆ str  ┆ i64  ┆ i64  │
+        ╞═══════╪══════╪══════╪══════╡
+        │ Cam   ┆ Yu   ┆ null ┆ 78   │
+        │ Amy   ┆ Wu   ┆ 88   ┆ 90   │
+        │ Bo    ┆ Xi   ┆ 92   ┆ 85   │
+        └───────┴──────┴──────┴──────┘
 
-        Note that `pivot` is only available in eager mode. If you know the unique
-        column values in advance, you can use :meth:`polars.LazyFrame.groupby` to
-        get the same result as above in lazy mode:
-
-        >>> index = pl.col("col1")
-        >>> columns = pl.col("col2")
-        >>> values = pl.col("col3")
-        >>> unique_column_values = ["x", "y"]
-        >>> aggregate_function = lambda col: col.tanh().mean()
-        >>> df.lazy().group_by(index).agg(
-        ...     aggregate_function(values.filter(columns == value)).alias(value)
-        ...     for value in unique_column_values
-        ... ).collect()  # doctest: +IGNORE_RESULT
-        shape: (2, 3)
-        ┌──────┬──────────┬──────────┐
-        │ col1 ┆ x        ┆ y        │
-        │ ---  ┆ ---      ┆ ---      │
-        │ str  ┆ f64      ┆ f64      │
-        ╞══════╪══════════╪══════════╡
-        │ a    ┆ 0.998347 ┆ null     │
-        │ b    ┆ 0.964028 ┆ 0.999954 │
-        └──────┴──────────┴──────────┘
+        To emulate e.g. `aggregate_function=pl.element().mean()`, replace `.first()`
+        with `.mean()` above.
         """  # noqa: W505
         index = _expand_selectors(self, index)
         columns = _expand_selectors(self, columns)
@@ -7464,51 +7503,80 @@ class DataFrame:
         value_name: str | None = None,
     ) -> Self:
         """
-        Unpivot a DataFrame from wide to long format.
+        Unpivot `DataFrame` from wide to long format. The inverse of :func:`pivot`.
 
-        Optionally leaves identifiers set.
-
-        This function is useful to massage a DataFrame into a format where one or more
-        columns are identifier variables (id_vars) while all other columns, considered
-        measured variables (value_vars), are "unpivoted" to the row axis leaving just
-        two non-identifier columns, 'variable' and 'value'.
+        Transforms a "wide-format" `DataFrame`, where each element represents an
+        observation, into a "long-format" one, where each row represents an observation.
 
         Parameters
         ----------
         id_vars
             Column(s) or selector(s) to use as identifier variables.
         value_vars
-            Column(s) or selector(s) to use as values variables; if `value_vars`
-            is empty all columns that are not in `id_vars` will be used.
+            Column(s) or selector(s) to use as measured variables; if `value_vars`
+            is empty, all columns that are not in `id_vars` will be used.
         variable_name
-            Name to give to the `variable` column. Defaults to "variable"
+            The name to give to the identifier variables column; defaults to
+            `"variable"`.
         value_name
-            Name to give to the `value` column. Defaults to "value"
+            The name to give to the measured variables column; defaults to `"value"`.
+
+        See Also
+        --------
+        pivot : the inverse of `melt`; pivots from long to wide format.
 
         Examples
         --------
-        >>> df = pl.DataFrame(
+        >>> import polars.selectors as cs
+        >>> df_wide = pl.DataFrame(
         ...     {
-        ...         "a": ["x", "y", "z"],
-        ...         "b": [1, 3, 5],
-        ...         "c": [2, 4, 6],
+        ...         "First": ["Amy", "Bo", "Cam"],
+        ...         "Last": ["Wu", "Xi", "Yu"],
+        ...         "Math": [90, 85, 78],
+        ...         "Art": [88, 92, None],
         ...     }
         ... )
-        >>> import polars.selectors as cs
-        >>> df.melt(id_vars="a", value_vars=cs.numeric())
-        shape: (6, 3)
-        ┌─────┬──────────┬───────┐
-        │ a   ┆ variable ┆ value │
-        │ --- ┆ ---      ┆ ---   │
-        │ str ┆ str      ┆ i64   │
-        ╞═════╪══════════╪═══════╡
-        │ x   ┆ b        ┆ 1     │
-        │ y   ┆ b        ┆ 3     │
-        │ z   ┆ b        ┆ 5     │
-        │ x   ┆ c        ┆ 2     │
-        │ y   ┆ c        ┆ 4     │
-        │ z   ┆ c        ┆ 6     │
-        └─────┴──────────┴───────┘
+        >>> df_wide.melt(id_vars=cs.string())
+        shape: (6, 4)
+        ┌───────┬──────┬──────────┬───────┐
+        │ First ┆ Last ┆ variable ┆ value │
+        │ ---   ┆ ---  ┆ ---      ┆ ---   │
+        │ str   ┆ str  ┆ str      ┆ i64   │
+        ╞═══════╪══════╪══════════╪═══════╡
+        │ Amy   ┆ Wu   ┆ Math     ┆ 90    │
+        │ Bo    ┆ Xi   ┆ Math     ┆ 85    │
+        │ Cam   ┆ Yu   ┆ Math     ┆ 78    │
+        │ Amy   ┆ Wu   ┆ Art      ┆ 88    │
+        │ Bo    ┆ Xi   ┆ Art      ┆ 92    │
+        │ Cam   ┆ Yu   ┆ Art      ┆ null  │
+        └───────┴──────┴──────────┴───────┘
+        >>> df_wide.melt(id_vars=["First", "Last"], value_vars="Math")
+        shape: (3, 4)
+        ┌───────┬──────┬──────────┬───────┐
+        │ First ┆ Last ┆ variable ┆ value │
+        │ ---   ┆ ---  ┆ ---      ┆ ---   │
+        │ str   ┆ str  ┆ str      ┆ i64   │
+        ╞═══════╪══════╪══════════╪═══════╡
+        │ Amy   ┆ Wu   ┆ Math     ┆ 90    │
+        │ Bo    ┆ Xi   ┆ Math     ┆ 85    │
+        │ Cam   ┆ Yu   ┆ Math     ┆ 78    │
+        └───────┴──────┴──────────┴───────┘
+        >>> df_wide.melt(
+        ...     id_vars=["First", "Last"], variable_name="Subject", value_name="Grade"
+        ... )
+        shape: (6, 4)
+        ┌───────┬──────┬─────────┬───────┐
+        │ First ┆ Last ┆ Subject ┆ Grade │
+        │ ---   ┆ ---  ┆ ---     ┆ ---   │
+        │ str   ┆ str  ┆ str     ┆ i64   │
+        ╞═══════╪══════╪═════════╪═══════╡
+        │ Amy   ┆ Wu   ┆ Math    ┆ 90    │
+        │ Bo    ┆ Xi   ┆ Math    ┆ 85    │
+        │ Cam   ┆ Yu   ┆ Math    ┆ 78    │
+        │ Amy   ┆ Wu   ┆ Art     ┆ 88    │
+        │ Bo    ┆ Xi   ┆ Art     ┆ 92    │
+        │ Cam   ┆ Yu   ┆ Art     ┆ null  │
+        └───────┴──────┴─────────┴───────┘
         """
         value_vars = [] if value_vars is None else _expand_selectors(self, value_vars)
         id_vars = [] if id_vars is None else _expand_selectors(self, id_vars)
