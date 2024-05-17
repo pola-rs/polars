@@ -137,10 +137,11 @@ impl<T> Arena<T> {
     }
 
     #[inline]
-    pub fn replace(&mut self, idx: Node, val: T) {
+    pub fn replace(&mut self, idx: Node, val: T) -> T {
         let x = self.get_mut(idx);
-        *x = val;
+        std::mem::replace(x, val)
     }
+
     pub fn clear(&mut self) {
         self.items.clear()
     }
