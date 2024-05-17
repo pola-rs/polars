@@ -79,7 +79,7 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             }
         },
         AExpr::Agg(agg) => match agg {
-            AAggExpr::Min {
+            IRAggExpr::Min {
                 input,
                 propagate_nans,
             } => {
@@ -90,7 +90,7 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 }
                 .into()
             },
-            AAggExpr::Max {
+            IRAggExpr::Max {
                 input,
                 propagate_nans,
             } => {
@@ -102,31 +102,31 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 .into()
             },
 
-            AAggExpr::Median(expr) => {
+            IRAggExpr::Median(expr) => {
                 let exp = node_to_expr(expr, expr_arena);
                 AggExpr::Median(Arc::new(exp)).into()
             },
-            AAggExpr::NUnique(expr) => {
+            IRAggExpr::NUnique(expr) => {
                 let exp = node_to_expr(expr, expr_arena);
                 AggExpr::NUnique(Arc::new(exp)).into()
             },
-            AAggExpr::First(expr) => {
+            IRAggExpr::First(expr) => {
                 let exp = node_to_expr(expr, expr_arena);
                 AggExpr::First(Arc::new(exp)).into()
             },
-            AAggExpr::Last(expr) => {
+            IRAggExpr::Last(expr) => {
                 let exp = node_to_expr(expr, expr_arena);
                 AggExpr::Last(Arc::new(exp)).into()
             },
-            AAggExpr::Mean(expr) => {
+            IRAggExpr::Mean(expr) => {
                 let exp = node_to_expr(expr, expr_arena);
                 AggExpr::Mean(Arc::new(exp)).into()
             },
-            AAggExpr::Implode(expr) => {
+            IRAggExpr::Implode(expr) => {
                 let exp = node_to_expr(expr, expr_arena);
                 AggExpr::Implode(Arc::new(exp)).into()
             },
-            AAggExpr::Quantile {
+            IRAggExpr::Quantile {
                 expr,
                 quantile,
                 interpol,
@@ -140,23 +140,23 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 }
                 .into()
             },
-            AAggExpr::Sum(expr) => {
+            IRAggExpr::Sum(expr) => {
                 let exp = node_to_expr(expr, expr_arena);
                 AggExpr::Sum(Arc::new(exp)).into()
             },
-            AAggExpr::Std(expr, ddof) => {
+            IRAggExpr::Std(expr, ddof) => {
                 let exp = node_to_expr(expr, expr_arena);
                 AggExpr::Std(Arc::new(exp), ddof).into()
             },
-            AAggExpr::Var(expr, ddof) => {
+            IRAggExpr::Var(expr, ddof) => {
                 let exp = node_to_expr(expr, expr_arena);
                 AggExpr::Var(Arc::new(exp), ddof).into()
             },
-            AAggExpr::AggGroups(expr) => {
+            IRAggExpr::AggGroups(expr) => {
                 let exp = node_to_expr(expr, expr_arena);
                 AggExpr::AggGroups(Arc::new(exp)).into()
             },
-            AAggExpr::Count(expr, include_nulls) => {
+            IRAggExpr::Count(expr, include_nulls) => {
                 let expr = node_to_expr(expr, expr_arena);
                 AggExpr::Count(Arc::new(expr), include_nulls).into()
             },

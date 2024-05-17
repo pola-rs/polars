@@ -61,7 +61,7 @@ fn partitionable_gb(
                     match ae {
                         // struct is needed to keep both states
                         #[cfg(feature = "dtype-struct")]
-                        Agg(AAggExpr::Mean(_)) => {
+                        Agg(IRAggExpr::Mean(_)) => {
                             // only numeric means for now.
                             // logical types seem to break because of casts to float.
                             matches!(expr_arena.get(agg).get_type(_input_schema, Context::Default, expr_arena).map(|dt| {
@@ -71,12 +71,12 @@ fn partitionable_gb(
                         Agg(agg_e) => {
                             matches!(
                                             agg_e,
-                                            AAggExpr::Min{..}
-                                                | AAggExpr::Max{..}
-                                                | AAggExpr::Sum(_)
-                                                | AAggExpr::Last(_)
-                                                | AAggExpr::First(_)
-                                                | AAggExpr::Count(_, true)
+                                            IRAggExpr::Min{..}
+                                                | IRAggExpr::Max{..}
+                                                | IRAggExpr::Sum(_)
+                                                | IRAggExpr::Last(_)
+                                                | IRAggExpr::First(_)
+                                                | IRAggExpr::Count(_, true)
                                         )
                         },
                         Function {input, options, ..} => {

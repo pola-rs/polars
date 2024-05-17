@@ -347,14 +347,14 @@ fn create_physical_expr_inner(
             let expr = agg.get_input().first();
             let input = create_physical_expr_inner(expr, ctxt, expr_arena, schema, state)?;
             polars_ensure!(!(state.has_implode() && matches!(ctxt, Context::Aggregation)), InvalidOperation: "'implode' followed by an aggregation is not allowed");
-            state.local.has_implode |= matches!(agg, AAggExpr::Implode(_));
+            state.local.has_implode |= matches!(agg, IRAggExpr::Implode(_));
 
             match ctxt {
                 // TODO!: implement these functions somewhere else
                 // this should not be in the planner.
-                Context::Default if !matches!(agg, AAggExpr::Quantile { .. }) => {
+                Context::Default if !matches!(agg, IRAggExpr::Quantile { .. }) => {
                     let function = match agg {
-                        AAggExpr::Min { propagate_nans, .. } => {
+                        IRAggExpr::Min { propagate_nans, .. } => {
                             let propagate_nans = *propagate_nans;
                             let state = *state;
                             SpecialEq::new(Arc::new(move |s: &mut [Series]| {
@@ -391,7 +391,7 @@ fn create_physical_expr_inner(
                                 }
                             }) as Arc<dyn SeriesUdf>)
                         },
-                        AAggExpr::Max { propagate_nans, .. } => {
+                        IRAggExpr::Max { propagate_nans, .. } => {
                             let propagate_nans = *propagate_nans;
                             let state = *state;
                             SpecialEq::new(Arc::new(move |s: &mut [Series]| {
@@ -428,12 +428,13 @@ fn create_physical_expr_inner(
                                 }
                             }) as Arc<dyn SeriesUdf>)
                         },
-                        AAggExpr::Median(_) => SpecialEq::new(Arc::new(move |s: &mut [Series]| {
-                            let s = std::mem::take(&mut s[0]);
-                            s.median_reduce().map(|sc| Some(sc.into_series(s.name())))
-                        })
-                            as Arc<dyn SeriesUdf>),
-                        AAggExpr::NUnique(_) => {
+                        IRAggExpr::Median(_) => {
+                            SpecialEq::new(Arc::new(move |s: &mut [Series]| {
+                                let s = std::mem::take(&mut s[0]);
+                                s.median_reduce().map(|sc| Some(sc.into_series(s.name())))
+                            }) as Arc<dyn SeriesUdf>)
+                        },
+                        IRAggExpr::NUnique(_) => {
                             SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                 let s = std::mem::take(&mut s[0]);
                                 s.n_unique().map(|count| {
@@ -444,7 +445,7 @@ fn create_physical_expr_inner(
                                 })
                             }) as Arc<dyn SeriesUdf>)
                         },
-                        AAggExpr::First(_) => SpecialEq::new(Arc::new(move |s: &mut [Series]| {
+                        IRAggExpr::First(_) => SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                             let s = std::mem::take(&mut s[0]);
                             let out = if s.is_empty() {
                                 Series::full_null(s.name(), 1, s.dtype())
@@ -454,7 +455,7 @@ fn create_physical_expr_inner(
                             Ok(Some(out))
                         })
                             as Arc<dyn SeriesUdf>),
-                        AAggExpr::Last(_) => SpecialEq::new(Arc::new(move |s: &mut [Series]| {
+                        IRAggExpr::Last(_) => SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                             let s = std::mem::take(&mut s[0]);
                             let out = if s.is_empty() {
                                 Series::full_null(s.name(), 1, s.dtype())
@@ -464,21 +465,21 @@ fn create_physical_expr_inner(
                             Ok(Some(out))
                         })
                             as Arc<dyn SeriesUdf>),
-                        AAggExpr::Mean(_) => SpecialEq::new(Arc::new(move |s: &mut [Series]| {
+                        IRAggExpr::Mean(_) => SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                             let s = std::mem::take(&mut s[0]);
                             Ok(Some(s.mean_reduce().into_series(s.name())))
                         })
                             as Arc<dyn SeriesUdf>),
-                        AAggExpr::Implode(_) => {
+                        IRAggExpr::Implode(_) => {
                             SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                 let s = &s[0];
                                 s.implode().map(|ca| Some(ca.into_series()))
                             }) as Arc<dyn SeriesUdf>)
                         },
-                        AAggExpr::Quantile { .. } => {
+                        IRAggExpr::Quantile { .. } => {
                             unreachable!()
                         },
-                        AAggExpr::Sum(_) => {
+                        IRAggExpr::Sum(_) => {
                             let state = *state;
                             SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                 let s = std::mem::take(&mut s[0]);
@@ -490,7 +491,7 @@ fn create_physical_expr_inner(
                                 )
                             }) as Arc<dyn SeriesUdf>)
                         },
-                        AAggExpr::Count(_, include_nulls) => {
+                        IRAggExpr::Count(_, include_nulls) => {
                             let include_nulls = *include_nulls;
                             SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                 let s = std::mem::take(&mut s[0]);
@@ -500,21 +501,21 @@ fn create_physical_expr_inner(
                                 ))
                             }) as Arc<dyn SeriesUdf>)
                         },
-                        AAggExpr::Std(_, ddof) => {
+                        IRAggExpr::Std(_, ddof) => {
                             let ddof = *ddof;
                             SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                 let s = std::mem::take(&mut s[0]);
                                 s.std_reduce(ddof).map(|sc| Some(sc.into_series(s.name())))
                             }) as Arc<dyn SeriesUdf>)
                         },
-                        AAggExpr::Var(_, ddof) => {
+                        IRAggExpr::Var(_, ddof) => {
                             let ddof = *ddof;
                             SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                 let s = std::mem::take(&mut s[0]);
                                 s.var_reduce(ddof).map(|sc| Some(sc.into_series(s.name())))
                             }) as Arc<dyn SeriesUdf>)
                         },
-                        AAggExpr::AggGroups(_) => {
+                        IRAggExpr::AggGroups(_) => {
                             panic!("agg groups expression only supported in aggregation context")
                         },
                     };
@@ -526,7 +527,7 @@ fn create_physical_expr_inner(
                     )))
                 },
                 _ => {
-                    if let AAggExpr::Quantile {
+                    if let IRAggExpr::Quantile {
                         expr,
                         quantile,
                         interpol,

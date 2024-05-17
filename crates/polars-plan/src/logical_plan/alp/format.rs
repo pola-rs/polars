@@ -513,7 +513,7 @@ impl<'a> Display for ExprIRDisplay<'a> {
                 }
             },
             Agg(agg) => {
-                use AAggExpr::*;
+                use IRAggExpr::*;
                 match agg {
                     Min {
                         input,

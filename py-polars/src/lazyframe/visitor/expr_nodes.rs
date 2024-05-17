@@ -4,7 +4,7 @@ use polars_plan::dsl::function_expr::rolling_by::RollingFunctionBy;
 use polars_plan::dsl::function_expr::trigonometry::TrigonometricFunction;
 use polars_plan::dsl::{BooleanFunction, StringFunction};
 use polars_plan::prelude::{
-    AAggExpr, AExpr, FunctionExpr, GroupbyOptions, LiteralValue, Operator, PowFunction,
+    AExpr, FunctionExpr, GroupbyOptions, IRAggExpr, LiteralValue, Operator, PowFunction,
     WindowMapping, WindowType,
 };
 use polars_time::prelude::RollingGroupOptions;
@@ -515,7 +515,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
         }
         .into_py(py),
         AExpr::Agg(aggexpr) => match aggexpr {
-            AAggExpr::Min {
+            IRAggExpr::Min {
                 input,
                 propagate_nans,
             } => Agg {
@@ -523,7 +523,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 arguments: input.0,
                 options: propagate_nans.to_object(py),
             },
-            AAggExpr::Max {
+            IRAggExpr::Max {
                 input,
                 propagate_nans,
             } => Agg {
@@ -531,54 +531,54 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 arguments: input.0,
                 options: propagate_nans.to_object(py),
             },
-            AAggExpr::Median(n) => Agg {
+            IRAggExpr::Median(n) => Agg {
                 name: "median".to_object(py),
                 arguments: n.0,
                 options: py.None(),
             },
-            AAggExpr::NUnique(n) => Agg {
+            IRAggExpr::NUnique(n) => Agg {
                 name: "nunique".to_object(py),
                 arguments: n.0,
                 options: py.None(),
             },
-            AAggExpr::First(n) => Agg {
+            IRAggExpr::First(n) => Agg {
                 name: "first".to_object(py),
                 arguments: n.0,
                 options: py.None(),
             },
-            AAggExpr::Last(n) => Agg {
+            IRAggExpr::Last(n) => Agg {
                 name: "last".to_object(py),
                 arguments: n.0,
                 options: py.None(),
             },
-            AAggExpr::Mean(n) => Agg {
+            IRAggExpr::Mean(n) => Agg {
                 name: "mean".to_object(py),
                 arguments: n.0,
                 options: py.None(),
             },
-            AAggExpr::Implode(_) => return Err(PyNotImplementedError::new_err("implode")),
-            AAggExpr::Quantile { .. } => return Err(PyNotImplementedError::new_err("quantile")),
-            AAggExpr::Sum(n) => Agg {
+            IRAggExpr::Implode(_) => return Err(PyNotImplementedError::new_err("implode")),
+            IRAggExpr::Quantile { .. } => return Err(PyNotImplementedError::new_err("quantile")),
+            IRAggExpr::Sum(n) => Agg {
                 name: "sum".to_object(py),
                 arguments: n.0,
                 options: py.None(),
             },
-            AAggExpr::Count(n, include_null) => Agg {
+            IRAggExpr::Count(n, include_null) => Agg {
                 name: "count".to_object(py),
                 arguments: n.0,
                 options: include_null.to_object(py),
             },
-            AAggExpr::Std(n, ddof) => Agg {
+            IRAggExpr::Std(n, ddof) => Agg {
                 name: "std".to_object(py),
                 arguments: n.0,
                 options: ddof.to_object(py),
             },
-            AAggExpr::Var(n, ddof) => Agg {
+            IRAggExpr::Var(n, ddof) => Agg {
                 name: "var".to_object(py),
                 arguments: n.0,
                 options: ddof.to_object(py),
             },
-            AAggExpr::AggGroups(n) => Agg {
+            IRAggExpr::AggGroups(n) => Agg {
                 name: "agg_groups".to_object(py),
                 arguments: n.0,
                 options: py.None(),
