@@ -1733,8 +1733,8 @@ class DataFrame:
                 [ 1.  , -2.25]], dtype=float32)}
 
         As a "label" and "features" dictionary where each is designated using
-        a selector expression (which can also be used to cast the data if the
-        label and features are better-represented with different dtypes):
+        a col or selector expression (which can also be used to cast the data
+        if the label and features are better-represented with different dtypes):
 
         >>> import polars.selectors as cs
         >>> df.to_jax(
