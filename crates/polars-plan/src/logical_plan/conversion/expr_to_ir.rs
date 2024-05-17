@@ -287,21 +287,26 @@ fn to_aexpr_impl(expr: Expr, arena: &mut Arena<AExpr>, state: &mut ConversionSta
                     return to_aexpr_impl(lit(true), arena, state);
                 },
                 // Convert to binary expression as the optimizer understands those.
+                // Don't exceed 128 expressions as we might stackoverflow.
                 FunctionExpr::Boolean(BooleanFunction::AllHorizontal) => {
-                    let expr = input
-                        .into_iter()
-                        .reduce(|l, r| l.logical_and(r))
-                        .unwrap()
-                        .cast(DataType::Boolean);
-                    return to_aexpr_impl(expr, arena, state);
+                    if input.len() < 128 {
+                        let expr = input
+                            .into_iter()
+                            .reduce(|l, r| l.logical_and(r))
+                            .unwrap()
+                            .cast(DataType::Boolean);
+                        return to_aexpr_impl(expr, arena, state);
+                    }
                 },
                 FunctionExpr::Boolean(BooleanFunction::AnyHorizontal) => {
-                    let expr = input
-                        .into_iter()
-                        .reduce(|l, r| l.logical_or(r))
-                        .unwrap()
-                        .cast(DataType::Boolean);
-                    return to_aexpr_impl(expr, arena, state);
+                    if input.len() < 128 {
+                        let expr = input
+                            .into_iter()
+                            .reduce(|l, r| l.logical_or(r))
+                            .unwrap()
+                            .cast(DataType::Boolean);
+                        return to_aexpr_impl(expr, arena, state);
+                    }
                 },
                 _ => {},
             }
