@@ -4,11 +4,9 @@ use polars_core::POOL;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
 use super::*;
-use crate::map;
-#[cfg(feature = "is_between")]
-use crate::map_as_slice;
 #[cfg(feature = "is_in")]
 use crate::wrap;
+use crate::{map, map_as_slice};
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
