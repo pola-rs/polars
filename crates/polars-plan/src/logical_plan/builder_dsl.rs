@@ -2,9 +2,7 @@ use polars_core::prelude::*;
 #[cfg(feature = "parquet")]
 use polars_io::cloud::CloudOptions;
 #[cfg(feature = "csv")]
-use polars_io::csv::read::{
-    CommentPrefix, CsvEncoding, CsvParseOptions, CsvReadOptions, NullValues,
-};
+use polars_io::csv::read::CsvReadOptions;
 #[cfg(feature = "ipc")]
 use polars_io::ipc::IpcScanOptions;
 #[cfg(feature = "parquet")]
@@ -164,40 +162,22 @@ impl DslBuilder {
 
     #[allow(clippy::too_many_arguments)]
     #[cfg(feature = "csv")]
-    pub fn scan_csv<P: Into<Arc<[std::path::PathBuf]>>>(
-        paths: P,
-        separator: u8,
-        has_header: bool,
-        ignore_errors: bool,
-        skip_rows: usize,
-        n_rows: Option<usize>,
+    pub fn scan_csv<P: Into<std::path::PathBuf>>(
+        path: P,
+        read_options: CsvReadOptions,
         cache: bool,
-        schema: Option<SchemaRef>,
-        schema_overwrite: Option<SchemaRef>,
-        low_memory: bool,
-        comment_prefix: Option<CommentPrefix>,
-        quote_char: Option<u8>,
-        eol_char: u8,
-        null_values: Option<NullValues>,
-        infer_schema_length: Option<usize>,
-        rechunk: bool,
-        skip_rows_after_header: usize,
-        encoding: CsvEncoding,
-        row_index: Option<RowIndex>,
-        try_parse_dates: bool,
-        raise_if_empty: bool,
-        truncate_ragged_lines: bool,
-        n_threads: Option<usize>,
-        decimal_comma: bool,
     ) -> PolarsResult<Self> {
         let paths = paths.into();
+
+        // This gets partially moved by FileScanOptions
+        let read_options_clone = read_options.clone();
 
         let options = FileScanOptions {
             with_columns: None,
             cache,
-            n_rows,
-            rechunk,
-            row_index,
+            n_rows: read_options_clone.n_rows,
+            rechunk: read_options_clone.rechunk,
+            row_index: read_options_clone.row_index,
             file_counter: Default::default(),
             // TODO: Support Hive partitioning.
             hive_options: HiveOptions {
@@ -211,29 +191,7 @@ impl DslBuilder {
             file_options: options,
             predicate: None,
             scan_type: FileScan::Csv {
-                options: CsvReadOptions::default()
-                    .with_has_header(has_header)
-                    .with_ignore_errors(ignore_errors)
-                    .with_skip_rows(skip_rows)
-                    .with_low_memory(low_memory)
-                    .with_raise_if_empty(raise_if_empty)
-                    .with_n_threads(n_threads)
-                    .with_schema(schema)
-                    .with_schema_overwrite(schema_overwrite)
-                    .with_skip_rows_after_header(skip_rows_after_header)
-                    .with_infer_schema_length(infer_schema_length)
-                    .with_parse_options(
-                        CsvParseOptions::default()
-                            .with_separator(separator)
-                            .with_comment_prefix(comment_prefix)
-                            .with_quote_char(quote_char)
-                            .with_eol_char(eol_char)
-                            .with_null_values(null_values)
-                            .with_encoding(encoding)
-                            .with_try_parse_dates(try_parse_dates)
-                            .with_truncate_ragged_lines(truncate_ragged_lines)
-                            .with_decimal_comma(decimal_comma),
-                    ),
+                options: read_options,
             },
         }
         .into())
