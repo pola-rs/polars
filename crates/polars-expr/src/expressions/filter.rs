@@ -5,8 +5,8 @@ use polars_utils::idx_vec::IdxVec;
 use rayon::prelude::*;
 
 use super::*;
-use crate::expressions::{AggregationContext, PhysicalExpr};
 use crate::expressions::UpdateGroups::WithSeriesLen;
+use crate::expressions::{AggregationContext, PhysicalExpr};
 
 pub struct FilterExpr {
     pub(crate) input: Arc<dyn PhysicalExpr>,

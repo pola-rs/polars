@@ -6,4 +6,5 @@ pub mod planner;
 pub(crate) mod streaming;
 
 use polars_core::prelude::*;
+
 use crate::prelude::*;

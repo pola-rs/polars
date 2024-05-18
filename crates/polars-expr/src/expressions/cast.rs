@@ -1,7 +1,7 @@
 use polars_core::prelude::*;
 
 use super::*;
-use crate::expressions::{AggregationContext, AggState, PartitionedAggregation, PhysicalExpr};
+use crate::expressions::{AggState, AggregationContext, PartitionedAggregation, PhysicalExpr};
 
 pub struct CastExpr {
     pub(crate) input: Arc<dyn PhysicalExpr>,

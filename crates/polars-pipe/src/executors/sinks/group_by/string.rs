@@ -225,9 +225,7 @@ impl StringGroupbySink {
         context: &PExecutionContext,
         chunk: &DataChunk,
     ) -> PolarsResult<Series> {
-        let s = self
-            .key_column
-            .evaluate(chunk, &context.execution_state)?;
+        let s = self.key_column.evaluate(chunk, &context.execution_state)?;
         let s = s.to_physical_repr();
         let s = prepare_key(&s, chunk);
 

@@ -5,7 +5,10 @@ use polars_utils::idx_vec::IdxVec;
 use rayon::prelude::*;
 
 use super::*;
-use crate::expressions::{AggregationContext, map_sorted_indices_to_group_idx, map_sorted_indices_to_group_slice, PhysicalExpr, UpdateGroups};
+use crate::expressions::{
+    map_sorted_indices_to_group_idx, map_sorted_indices_to_group_slice, AggregationContext,
+    PhysicalExpr, UpdateGroups,
+};
 
 pub struct SortByExpr {
     pub(crate) input: Arc<dyn PhysicalExpr>,

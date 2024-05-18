@@ -181,6 +181,7 @@ panic_on_schema = []
 
 [package.metadata.docs.rs]
 features = [
+  "approx_n_unique",
   "temporal",
   "serde",
   "rolling_window",

@@ -3,9 +3,9 @@ use polars_core::utils::{slice_offsets, CustomIterTools};
 use polars_core::POOL;
 use rayon::prelude::*;
 use AnyValue::Null;
-use crate::expressions::{AggregationContext, PhysicalExpr};
-use super::*;
 
+use super::*;
+use crate::expressions::{AggregationContext, PhysicalExpr};
 
 pub struct SliceExpr {
     pub(crate) input: Arc<dyn PhysicalExpr>,

@@ -7,8 +7,11 @@ use polars_io::predicates::{BatchStats, StatsEvaluator};
 #[cfg(feature = "is_between")]
 use polars_ops::prelude::ClosedInterval;
 use rayon::prelude::*;
+
 use super::*;
-use crate::expressions::{AggregationContext, AggState, PartitionedAggregation, PhysicalExpr, UpdateGroups};
+use crate::expressions::{
+    AggState, AggregationContext, PartitionedAggregation, PhysicalExpr, UpdateGroups,
+};
 
 pub struct ApplyExpr {
     inputs: Vec<Arc<dyn PhysicalExpr>>,

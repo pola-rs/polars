@@ -12,6 +12,7 @@ description = "Lazy query engine for the Polars DataFrame library"
 arrow = { workspace = true }
 futures = { workspace = true, optional = true }
 polars-core = { workspace = true, features = ["lazy", "zip_with", "random"] }
+polars-expr = { workspace = true }
 polars-io = { workspace = true, features = ["lazy"] }
 polars-json = { workspace = true, optional = true }
 polars-ops = { workspace = true, features = ["chunked_ids"] }
@@ -19,7 +20,6 @@ polars-pipe = { workspace = true, optional = true }
 polars-plan = { workspace = true }
 polars-time = { workspace = true, optional = true }
 polars-utils = { workspace = true }
-polars-expr = { workspace = true }
 
 ahash = { workspace = true }
 bitflags = { workspace = true }
@@ -39,7 +39,7 @@ version_check = { workspace = true }
 [features]
 nightly = ["polars-core/nightly", "polars-pipe?/nightly", "polars-plan/nightly"]
 streaming = ["polars-pipe", "polars-plan/streaming", "polars-ops/chunked_ids", "polars-expr/streaming"]
-parquet = ["polars-io/parquet", "polars-plan/parquet", "polars-pipe?/parquet"]
+parquet = ["polars-io/parquet", "polars-plan/parquet", "polars-pipe?/parquet", "polars-expr/parquet"]
 async = [
   "polars-plan/async",
   "polars-io/cloud",
@@ -58,6 +58,7 @@ temporal = [
   "dtype-i16",
   "dtype-duration",
   "polars-plan/temporal",
+  "polars-expr/temporal",
 ]
 # debugging purposes
 fmt = ["polars-core/fmt", "polars-plan/fmt"]
@@ -78,16 +79,21 @@ dtype-full = [
   "dtype-u16",
   "dtype-u8",
 ]
-dtype-array = ["polars-plan/dtype-array", "polars-pipe?/dtype-array", "polars-ops/dtype-array"]
-dtype-categorical = ["polars-plan/dtype-categorical", "polars-pipe?/dtype-categorical"]
-dtype-date = ["polars-plan/dtype-date", "polars-time/dtype-date", "temporal"]
-dtype-datetime = ["polars-plan/dtype-datetime", "polars-time/dtype-datetime", "temporal"]
-dtype-decimal = ["polars-plan/dtype-decimal", "polars-pipe?/dtype-decimal"]
-dtype-duration = ["polars-plan/dtype-duration", "polars-time/dtype-duration", "temporal"]
-dtype-i16 = ["polars-plan/dtype-i16", "polars-pipe?/dtype-i16"]
-dtype-i8 = ["polars-plan/dtype-i8", "polars-pipe?/dtype-i8"]
-dtype-struct = ["polars-plan/dtype-struct", "polars-ops/dtype-struct"]
-dtype-time = ["polars-plan/dtype-time", "polars-time/dtype-time", "temporal"]
+dtype-array = [
+  "polars-plan/dtype-array",
+  "polars-pipe?/dtype-array",
+  "polars-ops/dtype-array",
+  "polars-expr/dtype-array",
+]
+dtype-categorical = ["polars-plan/dtype-categorical", "polars-pipe?/dtype-categorical", "polars-expr/dtype-categorical"]
+dtype-date = ["polars-plan/dtype-date", "polars-time/dtype-date", "temporal", "polars-expr/dtype-date"]
+dtype-datetime = ["polars-plan/dtype-datetime", "polars-time/dtype-datetime", "temporal", "polars-expr/dtype-datetime"]
+dtype-decimal = ["polars-plan/dtype-decimal", "polars-pipe?/dtype-decimal", "polars-expr/dtype-decimal"]
+dtype-duration = ["polars-plan/dtype-duration", "polars-time/dtype-duration", "temporal", "polars-expr/dtype-duration"]
+dtype-i16 = ["polars-plan/dtype-i16", "polars-pipe?/dtype-i16", "polars-expr/dtype-i16"]
+dtype-i8 = ["polars-plan/dtype-i8", "polars-pipe?/dtype-i8", "polars-expr/dtype-i8"]
+dtype-struct = ["polars-plan/dtype-struct", "polars-ops/dtype-struct", "polars-expr/dtype-struct"]
+dtype-time = ["polars-plan/dtype-time", "polars-time/dtype-time", "temporal", "polars-expr/dtype-time"]
 dtype-u16 = ["polars-plan/dtype-u16", "polars-pipe?/dtype-u16", "polars-expr/dtype-u16"]
 dtype-u8 = ["polars-plan/dtype-u8", "polars-pipe?/dtype-u8", "polars-expr/dtype-u8"]
 
@@ -106,10 +112,10 @@ extract_jsonpath = ["polars-plan/extract_jsonpath", "polars-ops/extract_jsonpath
 approx_unique = ["polars-plan/approx_unique"]
 is_in = ["polars-plan/is_in", "polars-ops/is_in"]
 repeat_by = ["polars-plan/repeat_by"]
-round_series = ["polars-plan/round_series", "polars-ops/round_series"]
+round_series = ["polars-plan/round_series", "polars-ops/round_series", "polars-expr/round_series"]
 is_first_distinct = ["polars-plan/is_first_distinct"]
 is_last_distinct = ["polars-plan/is_last_distinct"]
-is_between = ["polars-plan/is_between"]
+is_between = ["polars-plan/is_between", "polars-expr/is_between"]
 is_unique = ["polars-plan/is_unique"]
 cross_join = ["polars-plan/cross_join", "polars-pipe?/cross_join", "polars-ops/cross_join"]
 asof_join = ["polars-plan/asof_join", "polars-time", "polars-ops/asof_join"]
@@ -121,12 +127,10 @@ cum_agg = ["polars-plan/cum_agg"]
 interpolate = ["polars-plan/interpolate"]
 rolling_window = [
   "polars-plan/rolling_window",
-  "polars-expr/rolling_window",
 ]
 rolling_window_by = [
   "polars-plan/rolling_window_by",
   "polars-time/rolling_window_by",
-  "polars-expr/rolling_window_by",
 ]
 rank = ["polars-plan/rank"]
 diff = ["polars-plan/diff", "polars-plan/diff"]
@@ -159,7 +163,7 @@ pivot = ["polars-core/rows", "polars-ops/pivot"]
 top_k = ["polars-plan/top_k"]
 semi_anti_join = ["polars-plan/semi_anti_join"]
 cse = ["polars-plan/cse"]
-propagate_nans = ["polars-plan/propagate_nans"]
+propagate_nans = ["polars-plan/propagate_nans", "polars-expr/propagate_nans"]
 coalesce = ["polars-plan/coalesce"]
 regex = ["polars-plan/regex"]
 serde = [
@@ -189,7 +193,7 @@ string_encoding = ["polars-plan/string_encoding"]
 
 bigidx = ["polars-plan/bigidx"]
 
-panic_on_schema = ["polars-plan/panic_on_schema"]
+panic_on_schema = ["polars-plan/panic_on_schema", "polars-expr/panic_on_schema"]
 
 test = [
   "polars-plan/debugging",

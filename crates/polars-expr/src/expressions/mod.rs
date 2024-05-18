@@ -33,6 +33,7 @@ pub(crate) use filter::*;
 pub(crate) use literal::*;
 use polars_core::prelude::*;
 use polars_io::predicates::PhysicalIoExpr;
+use polars_plan::prelude::*;
 #[cfg(feature = "dynamic_group_by")]
 pub(crate) use rolling::RollingExpr;
 pub(crate) use slice::*;
@@ -41,7 +42,7 @@ pub(crate) use sortby::*;
 pub(crate) use take::*;
 pub(crate) use ternary::*;
 pub(crate) use window::*;
-use polars_plan::prelude::*;
+
 use crate::state::ExecutionState;
 
 #[derive(Clone, Debug)]

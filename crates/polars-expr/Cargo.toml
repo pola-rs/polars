@@ -4,10 +4,14 @@ version.workspace = true
 authors.workspace = true
 edition.workspace = true
 homepage.workspace = true
-repository.workspace = true
 license.workspace = true
+repository.workspace = true
 
 [dependencies]
+ahash = { workspace = true }
+arrow = { workspace = true }
+bitflags = { workspace = true }
+once_cell = { workspace = true }
 polars-core = { workspace = true, features = ["lazy", "zip_with", "random"] }
 polars-io = { workspace = true, features = ["lazy"] }
 polars-json = { workspace = true, optional = true }
@@ -15,10 +19,6 @@ polars-ops = { workspace = true, features = ["chunked_ids"] }
 polars-plan = { workspace = true }
 polars-time = { workspace = true, optional = true }
 polars-utils = { workspace = true }
-arrow = { workspace = true }
-ahash = { workspace = true }
-bitflags = { workspace = true }
-once_cell = { workspace = true }
 rayon = { workspace = true }
 smartstring = { workspace = true }
 
@@ -26,36 +26,29 @@ smartstring = { workspace = true }
 nightly = ["polars-core/nightly", "polars-plan/nightly"]
 streaming = ["polars-plan/streaming", "polars-ops/chunked_ids"]
 parquet = ["polars-io/parquet", "polars-plan/parquet"]
-ipc = ["polars-io/ipc", "polars-plan/ipc"]
-json = ["polars-io/json", "polars-plan/json", "polars-json"]
-csv = ["polars-plan/csv", "polars-io/csv"]
 temporal = [
-    "dtype-datetime",
-    "dtype-date",
-    "dtype-time",
-    "dtype-i8",
-    "dtype-i16",
-    "dtype-duration",
-    "polars-plan/temporal",
+  "dtype-datetime",
+  "dtype-date",
+  "dtype-time",
+  "dtype-i8",
+  "dtype-i16",
+  "dtype-duration",
+  "polars-plan/temporal",
 ]
-# debugging purposes
-fmt = ["polars-core/fmt", "polars-plan/fmt"]
-strings = ["polars-plan/strings"]
-future = []
 
 dtype-full = [
-    "dtype-array",
-    "dtype-categorical",
-    "dtype-date",
-    "dtype-datetime",
-    "dtype-decimal",
-    "dtype-duration",
-    "dtype-i16",
-    "dtype-i8",
-    "dtype-struct",
-    "dtype-time",
-    "dtype-u16",
-    "dtype-u8",
+  "dtype-array",
+  "dtype-categorical",
+  "dtype-date",
+  "dtype-datetime",
+  "dtype-decimal",
+  "dtype-duration",
+  "dtype-i16",
+  "dtype-i8",
+  "dtype-struct",
+  "dtype-time",
+  "dtype-u16",
+  "dtype-u8",
 ]
 dtype-array = ["polars-plan/dtype-array", "polars-ops/dtype-array"]
 dtype-categorical = ["polars-plan/dtype-categorical"]
@@ -70,234 +63,12 @@ dtype-time = ["polars-plan/dtype-time", "polars-time/dtype-time", "temporal"]
 dtype-u16 = ["polars-plan/dtype-u16"]
 dtype-u8 = ["polars-plan/dtype-u8"]
 
-object = ["polars-plan/object"]
-date_offset = ["polars-plan/date_offset"]
-trigonometry = ["polars-plan/trigonometry"]
-sign = ["polars-plan/sign"]
-timezones = ["polars-plan/timezones"]
-list_gather = ["polars-ops/list_gather", "polars-plan/list_gather"]
-list_count = ["polars-ops/list_count", "polars-plan/list_count"]
-array_count = ["polars-ops/array_count", "polars-plan/array_count", "dtype-array"]
-true_div = ["polars-plan/true_div"]
-extract_jsonpath = ["polars-plan/extract_jsonpath", "polars-ops/extract_jsonpath"]
-
 # operations
 approx_unique = ["polars-plan/approx_unique"]
 is_in = ["polars-plan/is_in", "polars-ops/is_in"]
-repeat_by = ["polars-plan/repeat_by"]
+
 round_series = ["polars-plan/round_series", "polars-ops/round_series"]
-is_first_distinct = ["polars-plan/is_first_distinct"]
-is_last_distinct = ["polars-plan/is_last_distinct"]
 is_between = ["polars-plan/is_between"]
-is_unique = ["polars-plan/is_unique"]
-cross_join = ["polars-plan/cross_join", "polars-ops/cross_join"]
-asof_join = ["polars-plan/asof_join", "polars-time", "polars-ops/asof_join"]
-business = ["polars-plan/business"]
-concat_str = ["polars-plan/concat_str"]
-range = ["polars-plan/range"]
-mode = ["polars-plan/mode"]
-cum_agg = ["polars-plan/cum_agg"]
-interpolate = ["polars-plan/interpolate"]
-rolling_window = [
-    "polars-plan/rolling_window",
-]
-rolling_window_by = [
-    "polars-plan/rolling_window_by",
-    "polars-time/rolling_window_by",
-]
-rank = ["polars-plan/rank"]
-diff = ["polars-plan/diff", "polars-plan/diff"]
-pct_change = ["polars-plan/pct_change"]
-moment = ["polars-plan/moment", "polars-ops/moment"]
-abs = ["polars-plan/abs"]
-random = ["polars-plan/random"]
 dynamic_group_by = ["polars-plan/dynamic_group_by", "polars-time", "temporal"]
-ewma = ["polars-plan/ewma"]
-ewma_by = ["polars-plan/ewma_by"]
-dot_diagram = ["polars-plan/dot_diagram"]
-diagonal_concat = []
-unique_counts = ["polars-plan/unique_counts"]
-log = ["polars-plan/log"]
-list_eval = []
-cumulative_eval = []
-list_to_struct = ["polars-plan/list_to_struct"]
-array_to_struct = ["polars-plan/array_to_struct"]
-python = ["polars-plan/python", "polars-core/python"]
-row_hash = ["polars-plan/row_hash"]
-reinterpret = ["polars-plan/reinterpret", "polars-ops/reinterpret"]
-string_pad = ["polars-plan/string_pad"]
-string_reverse = ["polars-plan/string_reverse"]
-string_to_integer = ["polars-plan/string_to_integer"]
-arg_where = ["polars-plan/arg_where"]
-search_sorted = ["polars-plan/search_sorted"]
-merge_sorted = ["polars-plan/merge_sorted"]
-meta = ["polars-plan/meta"]
-pivot = ["polars-core/rows", "polars-ops/pivot"]
-top_k = ["polars-plan/top_k"]
-semi_anti_join = ["polars-plan/semi_anti_join"]
-cse = ["polars-plan/cse"]
 propagate_nans = ["polars-plan/propagate_nans"]
-coalesce = ["polars-plan/coalesce"]
-regex = ["polars-plan/regex"]
-serde = [
-    "polars-plan/serde",
-    "arrow/serde",
-    "polars-core/serde-lazy",
-    "polars-time?/serde",
-    "polars-io/serde",
-    "polars-ops/serde",
-]
-fused = ["polars-plan/fused", "polars-ops/fused"]
-list_sets = ["polars-plan/list_sets", "polars-ops/list_sets"]
-list_any_all = ["polars-ops/list_any_all", "polars-plan/list_any_all"]
-array_any_all = ["polars-ops/array_any_all", "polars-plan/array_any_all", "dtype-array"]
-list_drop_nulls = ["polars-ops/list_drop_nulls", "polars-plan/list_drop_nulls"]
-list_sample = ["polars-ops/list_sample", "polars-plan/list_sample"]
-cutqcut = ["polars-plan/cutqcut", "polars-ops/cutqcut"]
-rle = ["polars-plan/rle", "polars-ops/rle"]
-extract_groups = ["polars-plan/extract_groups"]
-peaks = ["polars-plan/peaks"]
-cov = ["polars-ops/cov", "polars-plan/cov"]
-hist = ["polars-plan/hist"]
-replace = ["polars-plan/replace"]
-
-binary_encoding = ["polars-plan/binary_encoding"]
-string_encoding = ["polars-plan/string_encoding"]
-
-bigidx = ["polars-plan/bigidx"]
-
 panic_on_schema = ["polars-plan/panic_on_schema"]
-
-test = [
-    "polars-plan/debugging",
-    "panic_on_schema",
-    "rolling_window",
-    "rank",
-    "round_series",
-    "csv",
-    "dtype-categorical",
-    "cum_agg",
-    "regex",
-    "polars-core/fmt",
-    "diff",
-    "abs",
-    "parquet",
-    "ipc",
-    "dtype-date",
-]
-
-test_all = [
-    "test",
-    "strings",
-    "regex",
-    "ipc",
-    "row_hash",
-    "string_pad",
-    "string_to_integer",
-    "search_sorted",
-    "top_k",
-    "pivot",
-    "semi_anti_join",
-    "cse",
-    "dtype-struct",
-    "peaks",
-    "cov",
-    "hist",
-    "extract_groups",
-    "rle",
-    "cutqcut",
-    "replace",
-    "list_sample",
-]
-
-[package.metadata.docs.rs]
-features = [
-    "abs",
-    "approx_unique",
-    "arg_where",
-    "asof_join",
-    "async",
-    "bigidx",
-    "binary_encoding",
-    "cloud",
-    "cloud_write",
-    "coalesce",
-    "concat_str",
-    "cov",
-    "cross_join",
-    "cse",
-    "csv",
-    "cum_agg",
-    "cumulative_eval",
-    "cutqcut",
-    "date_offset",
-    "diagonal_concat",
-    "diff",
-    "dot_diagram",
-    "dtype-full",
-    "dynamic_group_by",
-    "ewma",
-    "extract_groups",
-    "fmt",
-    "fused",
-    "futures",
-    "hist",
-    "interpolate",
-    "ipc",
-    "is_first_distinct",
-    "is_in",
-    "is_last_distinct",
-    "is_unique",
-    "json",
-    "list_any_all",
-    "list_count",
-    "list_drop_nulls",
-    "list_eval",
-    "list_gather",
-    "list_sample",
-    "list_sets",
-    "list_to_struct",
-    "log",
-    "merge_sorted",
-    "meta",
-    "mode",
-    "moment",
-    "nightly",
-    "object",
-    "panic_on_schema",
-    "parquet",
-    "pct_change",
-    "peaks",
-    "pivot",
-    "polars-json",
-    "polars-time",
-    "propagate_nans",
-    "random",
-    "range",
-    "rank",
-    "regex",
-    "repeat_by",
-    "replace",
-    "rle",
-    "rolling_window",
-    "rolling_window_by",
-    "round_series",
-    "row_hash",
-    "search_sorted",
-    "semi_anti_join",
-    "serde",
-    "sign",
-    "streaming",
-    "string_encoding",
-    "string_pad",
-    "string_reverse",
-    "string_to_integer",
-    "strings",
-    "temporal",
-    "timezones",
-    "tokio",
-    "top_k",
-    "trigonometry",
-    "true_div",
-    "unique_counts",
-]

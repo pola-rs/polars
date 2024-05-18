@@ -5,7 +5,7 @@ use polars_utils::idx_vec::IdxVec;
 use rayon::prelude::*;
 
 use super::*;
-use crate::expressions::{AggregationContext, AggState, PhysicalExpr};
+use crate::expressions::{AggState, AggregationContext, PhysicalExpr};
 
 pub struct SortExpr {
     pub(crate) physical_expr: Arc<dyn PhysicalExpr>,

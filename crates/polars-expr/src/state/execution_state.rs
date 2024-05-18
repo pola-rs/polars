@@ -145,21 +145,6 @@ impl ExecutionState {
         }
     }
 
-    /// clones, but clears no state.
-    pub fn clone(&self) -> Self {
-        Self {
-            df_cache: self.df_cache.clone(),
-            schema_cache: self.schema_cache.read().unwrap().clone().into(),
-            group_tuples: self.group_tuples.clone(),
-            join_tuples: self.join_tuples.clone(),
-            branch_idx: self.branch_idx,
-            flags: AtomicU8::new(self.flags.load(Ordering::Relaxed)),
-            ext_contexts: self.ext_contexts.clone(),
-            node_timer: self.node_timer.clone(),
-            stop: self.stop.clone(),
-        }
-    }
-
     pub fn set_schema(&self, schema: SchemaRef) {
         let mut lock = self.schema_cache.write().unwrap();
         *lock = Some(schema);
@@ -263,5 +248,22 @@ impl ExecutionState {
 impl Default for ExecutionState {
     fn default() -> Self {
         ExecutionState::new()
+    }
+}
+
+impl Clone for ExecutionState {
+    /// clones, but clears no state.
+    fn clone(&self) -> Self {
+        Self {
+            df_cache: self.df_cache.clone(),
+            schema_cache: self.schema_cache.read().unwrap().clone().into(),
+            group_tuples: self.group_tuples.clone(),
+            join_tuples: self.join_tuples.clone(),
+            branch_idx: self.branch_idx,
+            flags: AtomicU8::new(self.flags.load(Ordering::Relaxed)),
+            ext_contexts: self.ext_contexts.clone(),
+            node_timer: self.node_timer.clone(),
+            stop: self.stop.clone(),
+        }
     }
 }

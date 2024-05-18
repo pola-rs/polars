@@ -4,7 +4,9 @@ use polars_core::POOL;
 use polars_ops::prelude::floor_div_series;
 
 use super::*;
-use crate::expressions::{AggregationContext, AggState, PartitionedAggregation, PhysicalExpr, UpdateGroups};
+use crate::expressions::{
+    AggState, AggregationContext, PartitionedAggregation, PhysicalExpr, UpdateGroups,
+};
 
 pub struct BinaryExpr {
     left: Arc<dyn PhysicalExpr>,

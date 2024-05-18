@@ -5,6 +5,7 @@ use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{DataType, SchemaRef, Series, IDX_DTYPE};
 use polars_core::schema::Schema;
+use polars_expr::state::ExecutionState;
 use polars_io::predicates::PhysicalIoExpr;
 use polars_plan::dsl::Expr;
 use polars_plan::logical_plan::expr_ir::ExprIR;
@@ -22,7 +23,6 @@ use crate::executors::sinks::group_by::aggregates::null::NullAgg;
 use crate::executors::sinks::group_by::aggregates::{AggregateFunction, SumAgg};
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::DataChunk;
-use polars_expr::state::ExecutionState;
 
 struct Len {}
 

@@ -10,9 +10,12 @@ use polars_core::utils::NoNull;
 use polars_core::POOL;
 #[cfg(feature = "propagate_nans")]
 use polars_ops::prelude::nan_propagating_aggregate;
+
 use super::*;
-use crate::expressions::{AggregationContext, AggState, PartitionedAggregation, PhysicalExpr, UpdateGroups};
 use crate::expressions::AggState::{AggregatedList, AggregatedScalar};
+use crate::expressions::{
+    AggState, AggregationContext, PartitionedAggregation, PhysicalExpr, UpdateGroups,
+};
 
 pub(crate) struct AggregationExpr {
     pub(crate) input: Arc<dyn PhysicalExpr>,

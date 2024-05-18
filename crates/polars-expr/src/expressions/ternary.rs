@@ -1,9 +1,9 @@
 use polars_core::prelude::*;
 use polars_core::POOL;
-
 use polars_plan::prelude::*;
-use crate::expressions::{AggregationContext, PhysicalExpr};
+
 use super::*;
+use crate::expressions::{AggregationContext, PhysicalExpr};
 
 pub struct TernaryExpr {
     predicate: Arc<dyn PhysicalExpr>,

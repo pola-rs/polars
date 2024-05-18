@@ -1,3 +1,4 @@
+pub(crate) use polars_expr::prelude::*;
 #[cfg(feature = "csv")]
 pub use polars_io::csv::write::CsvWriterOptions;
 #[cfg(feature = "ipc")]
@@ -24,4 +25,3 @@ pub(crate) use polars_utils::arena::{Arena, Node};
 pub use crate::dsl::*;
 pub use crate::frame::*;
 pub(crate) use crate::scan::*;
-pub(crate) use polars_expr::prelude::*;

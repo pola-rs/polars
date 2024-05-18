@@ -3,10 +3,10 @@ use polars_core::series::IsSorted;
 use polars_core::utils::_split_offsets;
 use polars_core::POOL;
 use polars_plan::prelude::expr_ir::ExprIR;
+use polars_plan::prelude::*;
 use rayon::prelude::*;
 
 use crate::expressions as phys_expr;
-use polars_plan::prelude::*;
 use crate::expressions::*;
 
 pub fn get_expr_depth_limit() -> PolarsResult<u16> {
