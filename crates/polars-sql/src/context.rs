@@ -15,7 +15,7 @@ use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
 
 use crate::function_registry::{DefaultFunctionRegistry, FunctionRegistry};
-use crate::sql_expr::{parse_sql_expr, process_join_constraint};
+use crate::sql_expr::{parse_sql_array, parse_sql_expr, process_join_constraint};
 use crate::table_functions::PolarsTableFunctions;
 
 /// The SQLContext is the main entry point for executing SQL queries.
@@ -748,6 +748,7 @@ impl SQLContext {
                 alias,
             } => {
                 polars_ensure!(!(*lateral), ComputeError: "LATERAL not supported");
+
                 if let Some(alias) = alias {
                     let lf = self.execute_query_no_ctes(subquery)?;
                     self.table_map.insert(alias.name.value.clone(), lf.clone());
@@ -756,6 +757,69 @@ impl SQLContext {
                     polars_bail!(ComputeError: "derived tables must have aliases");
                 }
             },
+            TableFactor::UNNEST {
+                alias,
+                array_exprs,
+                with_offset,
+                with_offset_alias: _,
+            } => {
+                if let Some(alias) = alias {
+                    let table_name = alias.name.value.clone();
+                    let column_names: Vec<Option<String>> = alias
+                        .columns
+                        .iter()
+                        .map(|c| {
+                            if c.value.is_empty() {
+                                None
+                            } else {
+                                Some(c.value.clone())
+                            }
+                        })
+                        .collect();
+
+                    let column_values: Vec<Series> = array_exprs
+                        .iter()
+                        .map(|arr| parse_sql_array(arr, self))
+                        .collect::<Result<_, _>>()?;
+
+                    if column_names.is_empty() {
+                        polars_bail!(
+                            ComputeError:
+                            "UNNEST table alias must also declare column names, eg: {} (a,b,c)", alias.name.to_string()
+                        );
+                    } else if column_names.len() != column_values.len() {
+                        let plural = if column_values.len() > 1 { "s" } else { "" };
+                        polars_bail!(
+                            ComputeError:
+                            "UNNEST table alias requires {} column name{}, found {}", column_values.len(), plural, column_names.len()
+                        );
+                    }
+                    let column_series: Vec<Series> = column_values
+                        .iter()
+                        .zip(column_names.iter())
+                        .map(|(s, name)| {
+                            if let Some(name) = name {
+                                s.clone().with_name(name)
+                            } else {
+                                s.clone()
+                            }
+                        })
+                        .collect();
+
+                    let columns: Vec<_> = column_series.into_iter().map(|s| s.0.clone()).collect();
+                    let lf = DataFrame::new(columns)?.lazy();
+                    if *with_offset {
+                        // TODO: make a PR to `sqlparser-rs` to support 'ORDINALITY'
+                        //  (as 'OFFSET' is BigQuery-specific syntax, not PostgreSQL)
+                        polars_bail!(ComputeError: "UNNEST tables do not (yet) support WITH OFFSET/ORDINALITY");
+                    }
+                    self.table_map.insert(table_name.clone(), lf.clone());
+                    Ok((table_name.clone(), lf))
+                } else {
+                    polars_bail!(ComputeError: "UNNEST table must have an alias");
+                }
+            },
+
             // Support bare table, optional with alias for now
             _ => polars_bail!(ComputeError: "not yet implemented: {}", relation),
         }
