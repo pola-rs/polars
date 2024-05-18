@@ -382,7 +382,7 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
 }
 
 #[cfg(feature = "build_info")]
-fn add_build_info<'a>(py: Python, m: &'a Bound<PyModule>) -> PyResult<()> {
+fn add_build_info(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     use pyo3::types::{PyDict, PyString};
     let info = PyDict::new_bound(py);
 
