@@ -4,8 +4,7 @@ use polars_core::POOL;
 use polars_utils::idx_vec::IdxVec;
 use rayon::prelude::*;
 
-use polars_plan::prelude::*;
-use crate::execution_state::ExecutionState;
+use super::*;
 use crate::expressions::{AggregationContext, PhysicalExpr};
 use crate::expressions::UpdateGroups::WithSeriesLen;
 

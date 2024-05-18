@@ -8,7 +8,7 @@ use polars_core::config::verbose;
 use polars_core::prelude::*;
 use polars_ops::prelude::ChunkJoinOptIds;
 
-use crate::node_timer::NodeTimer;
+use super::NodeTimer;
 
 pub type JoinTuplesCache = Arc<Mutex<PlHashMap<String, ChunkJoinOptIds>>>;
 pub type GroupsProxyCache = Arc<RwLock<PlHashMap<String, GroupsProxy>>>;
@@ -61,15 +61,15 @@ type CachedValue = Arc<(AtomicI64, OnceCell<DataFrame>)>;
 pub struct ExecutionState {
     // cached by a `.cache` call and kept in memory for the duration of the plan.
     df_cache: Arc<Mutex<PlHashMap<usize, CachedValue>>>,
-    pub(super) schema_cache: RwLock<Option<SchemaRef>>,
+    pub(crate) schema_cache: RwLock<Option<SchemaRef>>,
     /// Used by Window Expression to prevent redundant grouping
-    pub(super) group_tuples: GroupsProxyCache,
+    pub(crate) group_tuples: GroupsProxyCache,
     /// Used by Window Expression to prevent redundant joins
-    pub(super) join_tuples: JoinTuplesCache,
+    pub(crate) join_tuples: JoinTuplesCache,
     // every join/union split gets an increment to distinguish between schema state
-    pub(super) branch_idx: usize,
-    pub(super) flags: AtomicU8,
-    pub(super) ext_contexts: Arc<Vec<DataFrame>>,
+    pub branch_idx: usize,
+    pub(crate) flags: AtomicU8,
+    pub(crate) ext_contexts: Arc<Vec<DataFrame>>,
     node_timer: Option<NodeTimer>,
     stop: Arc<AtomicBool>,
 }

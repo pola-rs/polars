@@ -5,8 +5,7 @@ use polars_core::utils::NoNull;
 use polars_ops::prelude::{convert_to_unsigned_index, is_positive_idx_uncertain};
 use polars_utils::slice::GetSaferUnchecked;
 
-use polars_plan::prelude::*;
-use crate::execution_state::ExecutionState;
+use super::*;
 use crate::expressions::{AggregationContext, AggState, PhysicalExpr, UpdateGroups};
 
 pub struct GatherExpr {

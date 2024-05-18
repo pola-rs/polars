@@ -92,7 +92,7 @@ where
 }
 
 #[derive(Copy, Clone)]
-pub(crate) struct ExpressionConversionState {
+pub struct ExpressionConversionState {
     // settings per context
     // they remain activate between
     // expressions
@@ -127,7 +127,7 @@ impl Default for LocalConversionState {
 }
 
 impl ExpressionConversionState {
-    pub(crate) fn new(allow_threading: bool, depth_limit: u16) -> Self {
+    pub fn new(allow_threading: bool, depth_limit: u16) -> Self {
         Self {
             depth_limit,
             has_cache: false,
@@ -167,7 +167,7 @@ impl ExpressionConversionState {
     }
 }
 
-pub(crate) fn create_physical_expr(
+pub fn create_physical_expr(
     expr_ir: &ExprIR,
     ctxt: Context,
     expr_arena: &Arena<AExpr>,

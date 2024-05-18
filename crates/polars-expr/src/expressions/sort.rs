@@ -4,8 +4,7 @@ use polars_ops::chunked_array::ListNameSpaceImpl;
 use polars_utils::idx_vec::IdxVec;
 use rayon::prelude::*;
 
-use polars_plan::prelude::*;
-use crate::execution_state::ExecutionState;
+use super::*;
 use crate::expressions::{AggregationContext, AggState, PhysicalExpr};
 
 pub struct SortExpr {

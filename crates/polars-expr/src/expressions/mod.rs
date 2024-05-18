@@ -42,7 +42,7 @@ pub(crate) use take::*;
 pub(crate) use ternary::*;
 pub(crate) use window::*;
 use polars_plan::prelude::*;
-use crate::execution_state::ExecutionState;
+use crate::state::ExecutionState;
 
 #[derive(Clone, Debug)]
 pub(crate) enum AggState {
@@ -173,7 +173,7 @@ impl<'a> AggregationContext<'a> {
         }
     }
 
-    pub(crate) fn agg_state(&self) -> &AggState {
+    pub fn agg_state(&self) -> &AggState {
         &self.state
     }
 
@@ -387,7 +387,7 @@ impl<'a> AggregationContext<'a> {
     }
 
     /// Get the aggregated version of the series.
-    pub(crate) fn aggregated(&mut self) -> Series {
+    pub fn aggregated(&mut self) -> Series {
         // we clone, because we only want to call `self.groups()` if needed.
         // self groups may instantiate new groups and thus can be expensive.
         match self.state.clone() {
@@ -616,7 +616,7 @@ impl PhysicalIoExpr for PhysicalIoHelper {
     }
 }
 
-pub(crate) fn phys_expr_to_io_expr(expr: Arc<dyn PhysicalExpr>) -> Arc<dyn PhysicalIoExpr> {
+pub fn phys_expr_to_io_expr(expr: Arc<dyn PhysicalExpr>) -> Arc<dyn PhysicalIoExpr> {
     let has_window_function = if let Some(expr) = expr.as_expression() {
         expr.into_iter()
             .any(|expr| matches!(expr, Expr::Window { .. }))

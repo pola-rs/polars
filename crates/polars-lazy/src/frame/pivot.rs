@@ -11,7 +11,6 @@ use polars_core::prelude::*;
 use polars_ops::pivot::PivotAgg;
 
 use crate::physical_plan::exotic::{prepare_eval_expr, prepare_expression_for_context};
-use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 
 struct PivotExpr(Expr);

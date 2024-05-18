@@ -3,7 +3,6 @@ use rayon::prelude::*;
 
 use super::*;
 use crate::physical_plan::planner::{create_physical_expr, ExpressionConversionState};
-use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 
 pub(crate) fn eval_field_to_dtype(f: &Field, expr: &Expr, list: bool) -> Field {

@@ -10,8 +10,7 @@ use polars_core::utils::NoNull;
 use polars_core::POOL;
 #[cfg(feature = "propagate_nans")]
 use polars_ops::prelude::nan_propagating_aggregate;
-use polars_plan::prelude::Expr;
-use crate::execution_state::ExecutionState;
+use super::*;
 use crate::expressions::{AggregationContext, AggState, PartitionedAggregation, PhysicalExpr, UpdateGroups};
 use crate::expressions::AggState::{AggregatedList, AggregatedScalar};
 

@@ -6,8 +6,6 @@ use AnyValue::Null;
 use crate::expressions::{AggregationContext, PhysicalExpr};
 use super::*;
 
-use polars_plan::prelude::*;
-use crate::execution_state::ExecutionState;
 
 pub struct SliceExpr {
     pub(crate) input: Arc<dyn PhysicalExpr>,

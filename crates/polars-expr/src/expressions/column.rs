@@ -3,8 +3,7 @@ use std::borrow::Cow;
 use polars_core::prelude::*;
 use polars_plan::constants::CSE_REPLACED;
 
-use polars_plan::prelude::*;
-use crate::execution_state::ExecutionState;
+use super::*;
 use crate::expressions::{AggregationContext, PartitionedAggregation, PhysicalExpr};
 
 pub struct ColumnExpr {

@@ -16,7 +16,6 @@ use polars_ops::prelude::*;
 
 use super::*;
 use polars_plan::prelude::*;
-use crate::execution_state::ExecutionState;
 
 pub struct WindowExpr {
     /// the root column that the Function will be applied on.
