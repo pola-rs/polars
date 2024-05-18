@@ -268,6 +268,7 @@ _MODULE_FUNC_TO_EXPR_NAME = {
     "json.loads": "str.json_decode",
 }
 _RE_IMPLICIT_BOOL = re.compile(r'pl\.col\("([^"]*)"\) & pl\.col\("\1"\)\.(.+)')
+_RE_STRIP_BOOL = re.compile(r"^bool\((.+)\)$")
 
 
 def _get_all_caller_variables() -> dict[str, Any]:
@@ -613,7 +614,7 @@ class InstructionTranslator:
     def _expr(self, value: StackEntry, col: str, param_name: str, depth: int) -> str:
         """Take stack entry value and convert to polars expression string."""
         if isinstance(value, StackValue):
-            op = value.operator
+            op = _RE_STRIP_BOOL.sub(r"\1", value.operator)
             e1 = self._expr(value.left_operand, col, param_name, depth + 1)
             if value.operator_arity == 1:
                 if op not in OpNames.UNARY_VALUES:
@@ -735,6 +736,7 @@ class RewrittenInstructions:
             "PUSH_NULL",
             "RESUME",
             "RETURN_VALUE",
+            "TO_BOOL",
         ]
     )
 
