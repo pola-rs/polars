@@ -1767,7 +1767,7 @@ class DataFrame:
             "for specific installation recommendations for the Jax package",
         )
         enabled_double_precision = jx.config.jax_enable_x64 or bool(
-            int(os.environ.get("JAX_ENABLE_X64", "1"))
+            int(os.environ.get("JAX_ENABLE_X64", "0"))
         )
         if dtype:
             frame = self.cast(dtype)
