@@ -4,7 +4,7 @@ use polars_core::prelude::*;
 use pyo3::exceptions::PyValueError;
 use pyo3::intern;
 use pyo3::prelude::*;
-use pyo3::types::PyList;
+use pyo3::types::{PyList, PySlice};
 
 use crate::conversion::chunked_array::{decimal_to_pyobject_iter, time_to_pyobject_iter};
 use crate::error::PyPolarsErr;
@@ -267,6 +267,7 @@ fn series_to_numpy_with_copy(py: Python, s: &Series) -> PyResult<PyObject> {
             let values = decimal_to_pyobject_iter(py, ca).map(|v| v.into_py(py));
             PyArray1::from_iter_bound(py, values).into_py(py)
         },
+        List(_) => list_series_to_numpy(py, s),
         Array(_, _) => array_series_to_numpy(py, s),
         #[cfg(feature = "object")]
         Object(_, _) => {
@@ -367,4 +368,30 @@ fn array_series_to_numpy(py: Python, s: &Series) -> PyObject {
         unreachable!()
     };
     reshape_numpy_array(py, np_array_flat, ca.len(), *width)
+}
+/// Convert lists by flattening first, converting the flat Series, and then splitting.
+fn list_series_to_numpy(py: Python, s: &Series) -> PyObject {
+    let ca = s.list().unwrap();
+    let s_inner = ca.get_inner();
+
+    // TODO: Use regular series_to_numpy here again - try zero copy
+    let np_array_flat = series_to_numpy_with_copy(py, &s_inner).unwrap();
+
+    // Reshape to the original shape.
+    split_numpy_array(py, np_array_flat, ca)
+}
+fn split_numpy_array(py: Python, arr: PyObject, ca: &ListChunked) -> PyObject {
+    // TODO: Get an offsets iterator without rechunking
+    let offsets_buffer = ca.offsets().unwrap();
+    let mut offsets = offsets_buffer.iter().map(|o| *o as isize);
+
+    // Create slices of the array according to the offsets.
+    let mut prev_offset = offsets.next().unwrap();
+    let values = offsets.map(|current_offset| {
+        let slice = PySlice::new_bound(py, prev_offset, current_offset, 1);
+        prev_offset = current_offset;
+        arr.call_method1(py, "__getitem__", (slice,)).unwrap()
+    });
+
+    PyArray1::from_iter_bound(py, values).into_py(py)
 }
