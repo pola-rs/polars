@@ -3,7 +3,7 @@ use smartstring::alias::String as SmartString;
 use super::*;
 
 /// Characterizes the name and the [`DataType`] of a column.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(
     any(feature = "serde", feature = "serde-lazy"),
     derive(Serialize, Deserialize)

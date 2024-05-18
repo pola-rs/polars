@@ -336,6 +336,10 @@ impl<'a> FieldsMapper<'a> {
         Self { fields }
     }
 
+    pub fn args(&self) -> &[Field] {
+        self.fields
+    }
+
     /// Field with the same dtype.
     pub fn with_same_dtype(&self) -> PolarsResult<Field> {
         self.map_dtype(|dtype| dtype.clone())

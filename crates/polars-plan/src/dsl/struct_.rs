@@ -40,4 +40,16 @@ impl StructNameSpace {
         self.0
             .map_private(FunctionExpr::StructExpr(StructFunction::JsonEncode))
     }
+
+    pub fn with_fields(self, mut fields: Vec<Expr>) -> Expr {
+        fields.insert(0, self.0);
+        Expr::Function {
+            input: fields,
+            function: FunctionExpr::StructExpr(StructFunction::WithFields),
+            options: FunctionOptions {
+                collect_groups: ApplyOptions::ElementWise,
+                ..Default::default()
+            },
+        }
+    }
 }

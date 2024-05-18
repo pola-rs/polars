@@ -1,5 +1,6 @@
 use pyo3::prelude::*;
 
+use crate::expr::ToExprs;
 use crate::PyExpr;
 
 #[pymethods]
@@ -18,5 +19,10 @@ impl PyExpr {
 
     fn struct_json_encode(&self) -> Self {
         self.inner.clone().struct_().json_encode().into()
+    }
+
+    fn struct_with_fields(&self, fields: Vec<PyExpr>) -> Self {
+        let fields = fields.to_exprs();
+        self.inner.clone().struct_().with_fields(fields).into()
     }
 }
