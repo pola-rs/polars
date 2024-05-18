@@ -16,6 +16,8 @@ macro_rules! pack_impl {
             let mut output_ptr = output.as_mut_ptr() as *mut $t;
             let mut out_register: $t = read_unaligned(input_ptr);
 
+            // Using microbenchmark (79d1fff), unrolling this loop is over 10x
+            // faster than not (>20x faster than old algorithm)
             seq_macro::seq!(i in 1..$bits_minus_one {
                 let bits_filled: usize = i * NUM_BITS;
                 let inner_cursor: usize = bits_filled % $bits;
