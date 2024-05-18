@@ -227,13 +227,13 @@ impl StringGroupbySink {
     ) -> PolarsResult<Series> {
         let s = self
             .key_column
-            .evaluate(chunk, context.execution_state.as_any())?;
+            .evaluate(chunk, &context.execution_state)?;
         let s = s.to_physical_repr();
         let s = prepare_key(&s, chunk);
 
         // todo! ammortize allocation
         for phys_e in self.aggregation_columns.iter() {
-            let s = phys_e.evaluate(chunk, context.execution_state.as_any())?;
+            let s = phys_e.evaluate(chunk, &context.execution_state)?;
             let s = s.to_physical_repr();
             self.aggregation_series.push(s.rechunk());
         }

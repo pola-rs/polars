@@ -139,7 +139,7 @@ impl<K: ExtraPayload> GenericBuild<K> {
     ) -> PolarsResult<&BinaryArray<i64>> {
         debug_assert!(self.join_columns.is_empty());
         for phys_e in self.join_columns_left.iter() {
-            let s = phys_e.evaluate(chunk, context.execution_state.as_any())?;
+            let s = phys_e.evaluate(chunk, &context.execution_state)?;
             let arr = s.to_physical_repr().rechunk().array_ref(0).clone();
             self.join_columns.push(arr);
         }

@@ -19,7 +19,7 @@ impl Operator for FilterOperator {
     ) -> PolarsResult<OperatorResult> {
         let s = self
             .predicate
-            .evaluate(chunk, context.execution_state.as_any())?;
+            .evaluate(chunk, &context.execution_state)?;
         let mask = s.bool().map_err(|_| {
             polars_err!(
                 ComputeError: "filter predicate must be of type `Boolean`, got `{}`", s.dtype()

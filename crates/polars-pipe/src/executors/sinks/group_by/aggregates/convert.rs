@@ -1,4 +1,3 @@
-use std::any::Any;
 use std::sync::Arc;
 
 use polars_core::datatypes::Field;
@@ -23,6 +22,7 @@ use crate::executors::sinks::group_by::aggregates::null::NullAgg;
 use crate::executors::sinks::group_by::aggregates::{AggregateFunction, SumAgg};
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::DataChunk;
+use polars_expr::state::ExecutionState;
 
 struct Len {}
 
@@ -32,7 +32,7 @@ impl PhysicalIoExpr for Len {
     }
 }
 impl PhysicalPipedExpr for Len {
-    fn evaluate(&self, chunk: &DataChunk, _lazy_state: &dyn Any) -> PolarsResult<Series> {
+    fn evaluate(&self, chunk: &DataChunk, _lazy_state: &ExecutionState) -> PolarsResult<Series> {
         // the length must match the chunks as the operators expect that
         // so we fill a null series.
         Ok(Series::new_null("", chunk.data.height()))

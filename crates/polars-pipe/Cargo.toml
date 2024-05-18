@@ -18,6 +18,7 @@ polars-ops = { workspace = true, features = ["search_sorted", "chunked_ids"] }
 polars-plan = { workspace = true }
 polars-row = { workspace = true }
 polars-utils = { workspace = true, features = ["sysinfo"] }
+polars-expr = { workspace = true }
 tokio = { workspace = true, optional = true }
 uuid = { workspace = true }
 
