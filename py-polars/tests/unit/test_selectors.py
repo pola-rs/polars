@@ -130,14 +130,22 @@ def test_selector_by_name(df: pl.DataFrame) -> None:
     assert df.select(cs.by_name()).columns == []
     assert df.select(cs.by_name([])).columns == []
 
+    selected_cols = df.select(
+        cs.by_name("???", "fgg", "!!!", require_all=False)
+    ).columns
+    assert selected_cols == ["fgg"]
+
     # check "by_name & col"
-    for selector_expr in (
-        cs.by_name("abc", "cde") & pl.col("ghi"),
-        pl.col("abc") & cs.by_name("cde", "ghi"),
+    for selector_expr, expected in (
+        (cs.by_name("abc", "cde") & pl.col("ghi"), ["abc", "cde", "ghi"]),
+        (pl.col("ghi") & cs.by_name("cde", "abc"), ["ghi", "cde", "abc"]),
     ):
-        assert df.select(selector_expr).columns == ["abc", "cde", "ghi"]
+        assert df.select(selector_expr).columns == expected
 
     # expected errors
+    with pytest.raises(ColumnNotFoundError, match="xxx"):
+        df.select(cs.by_name("xxx", "fgg", "!!!"))
+
     with pytest.raises(ColumnNotFoundError):
         df.select(cs.by_name("stroopwafel"))
 
@@ -494,7 +502,16 @@ def test_selector_repr() -> None:
     assert_repr_equals(~cs.starts_with("a", "b"), "~cs.starts_with('a', 'b')")
     assert_repr_equals(cs.float() | cs.by_name("x"), "(cs.float() | cs.by_name('x'))")
     assert_repr_equals(
-        cs.integer() & cs.matches("z"), "(cs.integer() & cs.matches(pattern='z'))"
+        cs.integer() & cs.matches("z"),
+        "(cs.integer() & cs.matches(pattern='z'))",
+    )
+    assert_repr_equals(
+        cs.by_name("baz", "moose", "foo", "bear"),
+        "cs.by_name('baz', 'moose', 'foo', 'bear')",
+    )
+    assert_repr_equals(
+        cs.by_name("baz", "moose", "foo", "bear", require_all=False),
+        "cs.by_name('baz', 'moose', 'foo', 'bear', require_all=False)",
     )
     assert_repr_equals(
         cs.temporal() | cs.by_dtype(pl.String) & cs.string(include_categorical=False),
