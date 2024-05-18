@@ -236,17 +236,17 @@ impl DataType {
         self.is_float() || self.is_integer()
     }
 
-    /// Check if this [`DataType`] is a boolean
+    /// Check if this [`DataType`] is a boolean.
     pub fn is_bool(&self) -> bool {
         matches!(self, DataType::Boolean)
     }
 
-    /// Check if this [`DataType`] is a list
+    /// Check if this [`DataType`] is a list.
     pub fn is_list(&self) -> bool {
         matches!(self, DataType::List(_))
     }
 
-    /// Check if this [`DataType`] is a array
+    /// Check if this [`DataType`] is an array.
     pub fn is_array(&self) -> bool {
         #[cfg(feature = "dtype-array")]
         {

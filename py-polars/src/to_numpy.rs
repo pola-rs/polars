@@ -69,34 +69,67 @@ pub(crate) fn series_to_numpy_view(
     allow_nulls: bool,
     allow_rechunk: bool,
 ) -> Option<PyObject> {
-    if !allow_nulls && s.null_count() > 0 {
+    if !supports_view(s.dtype()) {
         return None;
     }
+    if !allow_nulls && has_nulls(s) {
+        return None;
+    }
+    let (s_owned, writable) = handle_chunks(s, allow_rechunk)?;
 
-    let is_chunked = s.n_chunks() > 1;
-    let s_owned = if is_chunked {
-        // NumPy arrays are always contiguous
-        if !allow_rechunk {
-            return None;
-        } else {
-            s.rechunk()
-        }
-    } else {
-        s.clone()
-    };
-
-    let view = match s.dtype() {
-        dt if dt.is_numeric() => numeric_series_to_numpy_view(py, s_owned, is_chunked),
-        DataType::Datetime(_, _) | DataType::Duration(_) => {
-            temporal_series_to_numpy_view(py, s_owned, is_chunked)
-        },
-        DataType::Array(_, _) => {
-            array_series_to_numpy_view(py, &s_owned, allow_nulls, allow_rechunk)?
-        },
-        _ => return None,
-    };
-    Some(view)
+    Some(series_to_numpy_view_recursive(py, s_owned, writable))
 }
+/// Returns whether the data type supports creating a NumPy view.
+fn supports_view(dtype: &DataType) -> bool {
+    match dtype {
+        dt if dt.is_numeric() => true,
+        DataType::Datetime(_, _) | DataType::Duration(_) => true,
+        DataType::Array(inner, _) => supports_view(inner.as_ref()),
+        _ => false,
+    }
+}
+/// Returns whether the Series contains nulls at any level of nesting.
+///
+/// Of the nested types, only Array types are handled since only those are relevant for NumPy views.
+fn has_nulls(s: &Series) -> bool {
+    if s.null_count() > 0 {
+        true
+    } else if s.dtype().is_array() {
+        let ca = s.array().unwrap();
+        let s_inner = ca.get_inner();
+        has_nulls(&s_inner)
+    } else {
+        false
+    }
+}
+/// Rechunk the Series if required.
+///
+/// NumPy arrays are always contiguous, so we may have to rechunk before creating a view.
+/// If we do so, we can flag the resulting array as writable.
+fn handle_chunks(s: &Series, allow_rechunk: bool) -> Option<(Series, bool)> {
+    let is_chunked = s.n_chunks() > 1;
+    match (is_chunked, allow_rechunk) {
+        (true, false) => None,
+        (true, true) => Some((s.rechunk(), true)),
+        (false, _) => Some((s.clone(), false)),
+    }
+}
+
+/// Create a NumPy view of the given Series.
+///
+/// This function is called after verifying that the Series consists of a single chunk.
+fn series_to_numpy_view_recursive(py: Python, s: Series, writable: bool) -> PyObject {
+    debug_assert!(s.n_chunks() == 1);
+    match s.dtype() {
+        dt if dt.is_numeric() => numeric_series_to_numpy_view(py, s, writable),
+        DataType::Datetime(_, _) | DataType::Duration(_) => {
+            temporal_series_to_numpy_view(py, s, writable)
+        },
+        DataType::Array(_, _) => array_series_to_numpy_view(py, &s, writable),
+        _ => panic!("invalid data type"),
+    }
+}
+/// Create a NumPy view of a numeric Series.
 fn numeric_series_to_numpy_view(py: Python, s: Series, writable: bool) -> PyObject {
     let dims = [s.len()].into_dimension();
     with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
@@ -122,6 +155,7 @@ fn numeric_series_to_numpy_view(py: Python, s: Series, writable: bool) -> PyObje
         }
     })
 }
+/// Create a NumPy view of a Datetime or Duration Series.
 fn temporal_series_to_numpy_view(py: Python, s: Series, writable: bool) -> PyObject {
     let np_dtype = polars_dtype_to_np_temporal_dtype(py, s.dtype());
 
@@ -174,22 +208,17 @@ fn polars_dtype_to_np_temporal_dtype<'a>(
         _ => panic!("only Datetime/Duration inputs supported, got {}", dtype),
     }
 }
-fn array_series_to_numpy_view(
-    py: Python,
-    s: &Series,
-    allow_nulls: bool,
-    allow_rechunk: bool,
-) -> Option<PyObject> {
+/// Create a NumPy view of an Array Series.
+fn array_series_to_numpy_view(py: Python, s: &Series, writable: bool) -> PyObject {
     let ca = s.array().unwrap();
     let s_inner = ca.get_inner();
-    let np_array_flat = series_to_numpy_view(py, &s_inner, allow_nulls, allow_rechunk)?;
+    let np_array_flat = series_to_numpy_view_recursive(py, s_inner, writable);
 
     // Reshape to the original shape.
     let DataType::Array(_, width) = s.dtype() else {
         unreachable!()
     };
-    let view = reshape_numpy_array(py, np_array_flat, ca.len(), *width);
-    Some(view)
+    reshape_numpy_array(py, np_array_flat, ca.len(), *width)
 }
 /// Reshape the first dimension of a NumPy array to the given height and width.
 pub(crate) fn reshape_numpy_array(
@@ -205,7 +234,7 @@ pub(crate) fn reshape_numpy_array(
         .unwrap();
 
     if shape.len() == 1 {
-        // In this case we can avoid allocating a Vec.
+        // In this case, we can avoid allocating a Vec.
         let new_shape = (height, width);
         arr.call_method1(py, intern!(py, "reshape"), new_shape)
             .unwrap()

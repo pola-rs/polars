@@ -317,15 +317,17 @@ def test_to_numpy_chunked() -> None:
     assert s.to_list() == [1, 2, 3, 4]
 
 
-def test_to_numpy_chunked_temporal() -> None:
-    s1 = pl.Series([datetime(2020, 1, 1), datetime(2021, 1, 1)])
-    s2 = pl.Series([datetime(2022, 1, 1), datetime(2023, 1, 1)])
+def test_to_numpy_chunked_temporal_nested() -> None:
+    dtype = pl.Array(pl.Datetime("us"), 1)
+    s1 = pl.Series([[datetime(2020, 1, 1)], [datetime(2021, 1, 1)]], dtype=dtype)
+    s2 = pl.Series([[datetime(2022, 1, 1)], [datetime(2023, 1, 1)]], dtype=dtype)
     s = pl.concat([s1, s2], rechunk=False)
 
     result = s.to_numpy(use_pyarrow=False)
 
     assert result.tolist() == s.to_list()
     assert result.dtype == np.dtype("datetime64[us]")
+    assert result.shape == (4, 1)
     assert result.flags.writeable is True
     assert_allow_copy_false_raises(s)
 
