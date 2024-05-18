@@ -1,6 +1,7 @@
 /// Macro that generates a packing function taking the number of bits as a const generic
 macro_rules! pack_impl {
     ($t:ty, $bytes:literal, $bits:tt, $bits_minus_one:tt) => {
+        // Adapted from https://github.com/quickwit-oss/bitpacking
         pub unsafe fn pack<const NUM_BITS: usize>(input: &[$t; $bits], output: &mut [u8]) {
             if NUM_BITS == 0 {
                 for out in output {
