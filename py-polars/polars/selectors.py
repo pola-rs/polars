@@ -581,8 +581,8 @@ def alphanumeric(ascii_only: bool = False) -> SelectorType:  # noqa: FBT001
     │ bool    ┆ str      │
     ╞═════════╪══════════╡
     │ true    ┆ 01:aa    │
-    │ false   ┆ 01:bb    │
-    │ true    ┆ 01:cc    │
+    │ false   ┆ 02:bb    │
+    │ true    ┆ 03:cc    │
     └─────────┴──────────┘
 
     Select all columns *except* for those with alphanumeric names:
