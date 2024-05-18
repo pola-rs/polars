@@ -40,6 +40,9 @@ zstd = { version = "^0.13", optional = true, default-features = false }
 
 xxhash-rust = { version = "0.8", optional = true, features = ["xxh64"] }
 
+[dev-dependencies]
+rand = "0.8"
+
 [features]
 compression = [
   "zstd",

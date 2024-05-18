@@ -3050,6 +3050,7 @@ dependencies = [
  "polars-arrow",
  "polars-error",
  "polars-utils",
+ "rand",
  "seq-macro",
  "serde",
  "simdutf8",
