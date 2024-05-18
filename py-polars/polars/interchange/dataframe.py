@@ -28,7 +28,10 @@ class PolarsDataFrame(InterchangeDataFrame):
         a RuntimeError is raised if data would be copied.
     """
 
-    version = 0
+    @property
+    def version(self) -> int:
+        """Version of the protocol."""
+        return 0
 
     def __init__(self, df: DataFrame, *, allow_copy: bool = True):
         self._df = df
