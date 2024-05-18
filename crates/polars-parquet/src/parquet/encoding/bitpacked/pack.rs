@@ -16,6 +16,11 @@ macro_rules! pack_impl {
             let mut output_ptr = output.as_mut_ptr() as *mut $t;
             let mut out_register: $t = read_unaligned(input_ptr);
 
+            if $bits == NUM_BITS {
+                write_unaligned(output_ptr, out_register);
+                output_ptr = output_ptr.offset(1);
+            }
+
             // Using microbenchmark (79d1fff), unrolling this loop is over 10x
             // faster than not (>20x faster than old algorithm)
             seq_macro::seq!(i in 1..$bits_minus_one {
@@ -46,7 +51,7 @@ macro_rules! pack_impl {
             out_register = if $bits - NUM_BITS > 0 {
                 out_register | (in_register << ($bits - NUM_BITS))
             } else {
-                out_register | in_register
+                in_register
             };
             write_unaligned(output_ptr, out_register)
         }
@@ -120,7 +125,7 @@ mod tests {
         let mut rng = rand::thread_rng();
         let mut random_array = [0u8; 8];
         let between = Uniform::from(0..6);
-        for num_bits in 3..8 {
+        for num_bits in 3..=8 {
             for i in &mut random_array {
                 *i = between.sample(&mut rng);
             }
@@ -137,7 +142,7 @@ mod tests {
         let mut rng = rand::thread_rng();
         let mut random_array = [0u16; 16];
         let between = Uniform::from(0..128);
-        for num_bits in 7..16 {
+        for num_bits in 7..=16 {
             for i in &mut random_array {
                 *i = between.sample(&mut rng);
             }
@@ -154,7 +159,7 @@ mod tests {
         let mut rng = rand::thread_rng();
         let mut random_array = [0u32; 32];
         let between = Uniform::from(0..131_072);
-        for num_bits in 17..32 {
+        for num_bits in 17..=32 {
             for i in &mut random_array {
                 *i = between.sample(&mut rng);
             }
@@ -171,7 +176,7 @@ mod tests {
         let mut rng = rand::thread_rng();
         let mut random_array = [0u64; 64];
         let between = Uniform::from(0..131_072);
-        for num_bits in 17..64 {
+        for num_bits in 17..=64 {
             for i in &mut random_array {
                 *i = between.sample(&mut rng);
             }
