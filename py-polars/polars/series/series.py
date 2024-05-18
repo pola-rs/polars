@@ -450,7 +450,7 @@ class Series:
 
     @classmethod
     def _from_buffer(
-        self, dtype: PolarsDataType, buffer_info: BufferInfo, owner: Any
+        cls, dtype: PolarsDataType, buffer_info: BufferInfo, owner: Any
     ) -> Self:
         """
         Construct a Series from information about its underlying buffer.
@@ -478,11 +478,11 @@ class Series:
         -----
         This method is mainly intended for use with the dataframe interchange protocol.
         """
-        return self._from_pyseries(PySeries._from_buffer(dtype, buffer_info, owner))
+        return cls._from_pyseries(PySeries._from_buffer(dtype, buffer_info, owner))
 
     @classmethod
     def _from_buffers(
-        self,
+        cls,
         dtype: PolarsDataType,
         data: Series | Sequence[Series],
         validity: Series | None = None,
@@ -531,7 +531,7 @@ class Series:
             data = [s._s for s in data]
         if validity is not None:
             validity = validity._s
-        return self._from_pyseries(PySeries._from_buffers(dtype, data, validity))
+        return cls._from_pyseries(PySeries._from_buffers(dtype, data, validity))
 
     @property
     def dtype(self) -> DataType:

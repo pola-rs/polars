@@ -84,7 +84,7 @@ class DataTypeClass(type):
         ...
 
     @classmethod
-    def is_nested(self) -> bool:  # noqa: D102
+    def is_nested(cls) -> bool:  # noqa: D102
         ...
 
 
