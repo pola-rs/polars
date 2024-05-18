@@ -336,9 +336,9 @@ where
             Box::new(slice) as Box<dyn SinkTrait>
         },
         Reduce {
-            input,
-            exprs,
-            schema,
+            input: _,
+            exprs: _,
+            schema: _,
         } => {
             todo!()
         },
