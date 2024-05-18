@@ -59,25 +59,28 @@ impl PySeries {
     /// which may be any value. The caller is responsible for handling nulls
     /// appropriately.
     pub fn to_numpy_view(&self, py: Python) -> Option<PyObject> {
-        series_to_numpy_view(py, &self.series, true, false)
+        let (view, _) = try_series_to_numpy_view(py, &self.series, true, false)?;
+        Some(view)
     }
 }
 
-pub(crate) fn series_to_numpy_view(
+/// Create a NumPy view of the given Series.
+pub(crate) fn try_series_to_numpy_view(
     py: Python,
     s: &Series,
     allow_nulls: bool,
     allow_rechunk: bool,
-) -> Option<PyObject> {
+) -> Option<(PyObject, bool)> {
     if !supports_view(s.dtype()) {
         return None;
     }
     if !allow_nulls && has_nulls(s) {
         return None;
     }
-    let (s_owned, writable) = handle_chunks(s, allow_rechunk)?;
+    let (s_owned, writable_flag) = handle_chunks(s, allow_rechunk)?;
 
-    Some(series_to_numpy_view_recursive(py, s_owned, writable))
+    let array = series_to_numpy_view_recursive(py, s_owned, writable_flag);
+    Some((array, writable_flag))
 }
 /// Returns whether the data type supports creating a NumPy view.
 fn supports_view(dtype: &DataType) -> bool {
@@ -115,9 +118,7 @@ fn handle_chunks(s: &Series, allow_rechunk: bool) -> Option<(Series, bool)> {
     }
 }
 
-/// Create a NumPy view of the given Series.
-///
-/// This function is called after verifying that the Series consists of a single chunk.
+/// Create a NumPy view of the given Series without checking for data types, chunks, or nulls.
 fn series_to_numpy_view_recursive(py: Python, s: Series, writable: bool) -> PyObject {
     debug_assert!(s.n_chunks() == 1);
     match s.dtype() {

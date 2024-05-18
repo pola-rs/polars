@@ -9,7 +9,7 @@ use pyo3::types::PyList;
 use crate::conversion::chunked_array::{decimal_to_pyobject_iter, time_to_pyobject_iter};
 use crate::error::PyPolarsErr;
 use crate::prelude::*;
-use crate::to_numpy::{reshape_numpy_array, series_to_numpy_view};
+use crate::to_numpy::{reshape_numpy_array, try_series_to_numpy_view};
 use crate::{arrow_interop, raise_err, PySeries};
 
 #[pymethods]
@@ -174,16 +174,10 @@ impl PySeries {
             return series_to_numpy_with_copy(py, &self.series);
         }
 
-        if let Some(mut arr) = series_to_numpy_view(py, &self.series, false, allow_copy) {
-            if writable
-                && !arr
-                    .getattr(py, intern!(py, "flags"))
-                    .unwrap()
-                    .getattr(py, intern!(py, "writeable"))
-                    .unwrap()
-                    .extract::<bool>(py)
-                    .unwrap()
-            {
+        if let Some((mut arr, writable_flag)) =
+            try_series_to_numpy_view(py, &self.series, false, allow_copy)
+        {
+            if writable && !writable_flag {
                 if !allow_copy {
                     return Err(PyValueError::new_err(
                         "cannot return a zero-copy writable array",
