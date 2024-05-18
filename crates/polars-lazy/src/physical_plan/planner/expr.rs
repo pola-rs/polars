@@ -34,7 +34,7 @@ pub(crate) fn create_physical_expressions_from_irs(
     create_physical_expressions_check_state(exprs, context, expr_arena, schema, state, ok_checker)
 }
 
-pub(crate) fn create_physical_expressions_check_state<F>(
+fn create_physical_expressions_check_state<F>(
     exprs: &[ExprIR],
     context: Context,
     expr_arena: &Arena<AExpr>,
@@ -56,7 +56,7 @@ where
         .collect()
 }
 
-pub(crate) fn create_physical_expressions_from_nodes(
+fn create_physical_expressions_from_nodes(
     exprs: &[Node],
     context: Context,
     expr_arena: &Arena<AExpr>,
@@ -68,7 +68,7 @@ pub(crate) fn create_physical_expressions_from_nodes(
     )
 }
 
-pub(crate) fn create_physical_expressions_from_nodes_check_state<F>(
+fn create_physical_expressions_from_nodes_check_state<F>(
     exprs: &[Node],
     context: Context,
     expr_arena: &Arena<AExpr>,

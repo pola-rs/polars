@@ -25,7 +25,7 @@ fn ok_checker(_state: &ExpressionConversionState) -> PolarsResult<()> {
     Ok(())
 }
 
-pub(crate) fn create_physical_expressions_from_irs(
+pub fn create_physical_expressions_from_irs(
     exprs: &[ExprIR],
     context: Context,
     expr_arena: &Arena<AExpr>,
