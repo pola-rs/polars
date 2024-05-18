@@ -5,10 +5,6 @@
 #![allow(clippy::too_many_arguments)] // Python functions can have many arguments due to default arguments
 
 #[cfg(feature = "build_info")]
-#[macro_use]
-extern crate pyo3_built;
-
-#[cfg(feature = "build_info")]
 #[allow(dead_code)]
 mod build {
     include!(concat!(env!("OUT_DIR"), "/built.rs"));
@@ -376,14 +372,63 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     // Build info
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     #[cfg(feature = "build_info")]
-    m.add(
-        "__build__",
-        pyo3_built!(py, build, "build", "time", "deps", "features", "host", "target", "git"),
-    )?;
+    add_build_info(py, m)?;
 
     // Plugins
     m.add_wrapped(wrap_pyfunction!(functions::register_plugin_function))
         .unwrap();
 
+    Ok(())
+}
+
+#[cfg(feature = "build_info")]
+fn add_build_info<'a>(py: Python, m: &'a Bound<PyModule>) -> PyResult<()> {
+    use pyo3::types::{PyDict, PyString};
+    let info = PyDict::new_bound(py);
+
+    let build = PyDict::new_bound(py);
+    build.set_item("rustc", build::RUSTC)?;
+    build.set_item("rustc-version", build::RUSTC_VERSION)?;
+    build.set_item("opt-level", build::OPT_LEVEL)?;
+    build.set_item("debug", build::DEBUG)?;
+    build.set_item("jobs", build::NUM_JOBS)?;
+    info.set_item("compiler", build)?;
+
+    info.set_item("time", build::BUILT_TIME_UTC)?;
+
+    let deps = PyDict::new_bound(py);
+    for (name, version) in build::DEPENDENCIES.iter() {
+        deps.set_item(name, version)?;
+    }
+    info.set_item("dependencies", deps)?;
+
+    let features = build::FEATURES
+        .iter()
+        .map(|feat| PyString::new_bound(py, feat))
+        .collect::<Vec<_>>();
+    info.set_item("features", features)?;
+
+    let host = PyDict::new_bound(py);
+    host.set_item("triple", build::HOST)?;
+    info.set_item("host", host)?;
+
+    let target = PyDict::new_bound(py);
+    target.set_item("arch", build::CFG_TARGET_ARCH)?;
+    target.set_item("os", build::CFG_OS)?;
+    target.set_item("family", build::CFG_FAMILY)?;
+    target.set_item("env", build::CFG_ENV)?;
+    target.set_item("triple", build::TARGET)?;
+    target.set_item("endianness", build::CFG_ENDIAN)?;
+    target.set_item("pointer-width", build::CFG_POINTER_WIDTH)?;
+    target.set_item("profile", build::PROFILE)?;
+    info.set_item("target", target)?;
+
+    let git = PyDict::new_bound(py);
+    git.set_item("version", build::GIT_VERSION)?;
+    git.set_item("dirty", build::GIT_DIRTY)?;
+    git.set_item("hash", build::GIT_COMMIT_HASH)?;
+    git.set_item("head", build::GIT_HEAD_REF)?;
+    info.set_item("git", git)?;
+    m.add("__build__", info)?;
     Ok(())
 }

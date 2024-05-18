@@ -28,7 +28,6 @@ num-traits = { workspace = true }
 numpy = { version = "0.21", default-features = false }
 once_cell = { workspace = true }
 pyo3 = { workspace = true, features = ["abi3-py38", "chrono", "extension-module", "multiple-pymethods"] }
-pyo3-built = { version = "0.5", optional = true }
 recursive = { workspace = true }
 serde_json = { workspace = true, optional = true }
 smartstring = { workspace = true }
@@ -136,7 +135,7 @@ pivot = ["polars/pivot"]
 top_k = ["polars/top_k"]
 propagate_nans = ["polars/propagate_nans"]
 sql = ["polars/sql"]
-build_info = ["dep:pyo3-built", "dep:built"]
+build_info = ["dep:built"]
 performant = ["polars/performant"]
 timezones = ["polars/timezones"]
 cse = ["polars/cse"]
