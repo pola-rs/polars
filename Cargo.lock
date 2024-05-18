@@ -2900,6 +2900,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "polars-expr"
+version = "0.39.2"
+dependencies = [
+ "ahash",
+ "bitflags 2.5.0",
+ "once_cell",
+ "polars-arrow",
+ "polars-core",
+ "polars-io",
+ "polars-json",
+ "polars-ops",
+ "polars-plan",
+ "polars-time",
+ "polars-utils",
+ "rayon",
+ "smartstring",
+]
+
+[[package]]
 name = "polars-ffi"
 version = "0.39.2"
 dependencies = [
@@ -2981,6 +3000,7 @@ dependencies = [
  "once_cell",
  "polars-arrow",
  "polars-core",
+ "polars-expr",
  "polars-io",
  "polars-json",
  "polars-ops",

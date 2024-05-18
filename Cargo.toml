@@ -103,6 +103,7 @@ polars-row = { version = "0.39.2", path = "crates/polars-row", default-features 
 polars-sql = { version = "0.39.2", path = "crates/polars-sql", default-features = false }
 polars-time = { version = "0.39.2", path = "crates/polars-time", default-features = false }
 polars-utils = { version = "0.39.2", path = "crates/polars-utils", default-features = false }
+polars-expr = { version = "0.39.2", path = "crates/polars-expr", default-features = false }
 
 [workspace.dependencies.arrow-format]
 package = "polars-arrow-format"

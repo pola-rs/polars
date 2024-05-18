@@ -19,6 +19,7 @@ polars-pipe = { workspace = true, optional = true }
 polars-plan = { workspace = true }
 polars-time = { workspace = true, optional = true }
 polars-utils = { workspace = true }
+polars-expr = { workspace = true }
 
 ahash = { workspace = true }
 bitflags = { workspace = true }
@@ -87,8 +88,8 @@ dtype-i16 = ["polars-plan/dtype-i16", "polars-pipe?/dtype-i16"]
 dtype-i8 = ["polars-plan/dtype-i8", "polars-pipe?/dtype-i8"]
 dtype-struct = ["polars-plan/dtype-struct", "polars-ops/dtype-struct"]
 dtype-time = ["polars-plan/dtype-time", "polars-time/dtype-time", "temporal"]
-dtype-u16 = ["polars-plan/dtype-u16", "polars-pipe?/dtype-u16"]
-dtype-u8 = ["polars-plan/dtype-u8", "polars-pipe?/dtype-u8"]
+dtype-u16 = ["polars-plan/dtype-u16", "polars-pipe?/dtype-u16", "polars-expr/dtype-u16"]
+dtype-u8 = ["polars-plan/dtype-u8", "polars-pipe?/dtype-u8", "polars-expr/dtype-u8"]
 
 object = ["polars-plan/object"]
 date_offset = ["polars-plan/date_offset"]
@@ -120,10 +121,12 @@ cum_agg = ["polars-plan/cum_agg"]
 interpolate = ["polars-plan/interpolate"]
 rolling_window = [
   "polars-plan/rolling_window",
+  "polars-expr/rolling_window",
 ]
 rolling_window_by = [
   "polars-plan/rolling_window_by",
   "polars-time/rolling_window_by",
+  "polars-expr/rolling_window_by",
 ]
 rank = ["polars-plan/rank"]
 diff = ["polars-plan/diff", "polars-plan/diff"]
@@ -131,7 +134,7 @@ pct_change = ["polars-plan/pct_change"]
 moment = ["polars-plan/moment", "polars-ops/moment"]
 abs = ["polars-plan/abs"]
 random = ["polars-plan/random"]
-dynamic_group_by = ["polars-plan/dynamic_group_by", "polars-time", "temporal"]
+dynamic_group_by = ["polars-plan/dynamic_group_by", "polars-time", "temporal", "polars-expr/dynamic_group_by"]
 ewma = ["polars-plan/ewma"]
 ewma_by = ["polars-plan/ewma_by"]
 dot_diagram = ["polars-plan/dot_diagram"]
