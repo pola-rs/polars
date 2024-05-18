@@ -9,7 +9,7 @@ use crate::expressions as phys_expr;
 use polars_plan::prelude::*;
 use crate::expressions::*;
 
-pub(super) fn get_expr_depth_limit() -> PolarsResult<u16> {
+pub fn get_expr_depth_limit() -> PolarsResult<u16> {
     let depth = if let Ok(d) = std::env::var("POLARS_MAX_EXPR_DEPTH") {
         let v = d
             .parse::<u64>()

@@ -45,7 +45,7 @@ use polars_plan::prelude::*;
 use crate::state::ExecutionState;
 
 #[derive(Clone, Debug)]
-pub(crate) enum AggState {
+pub enum AggState {
     /// Already aggregated: `.agg_list(group_tuples`) is called
     /// and produced a `Series` of dtype `List`
     AggregatedList(Series),
@@ -424,7 +424,7 @@ impl<'a> AggregationContext<'a> {
     }
 
     /// Get the final aggregated version of the series.
-    pub(crate) fn finalize(&mut self) -> Series {
+    pub fn finalize(&mut self) -> Series {
         // we clone, because we only want to call `self.groups()` if needed.
         // self groups may instantiate new groups and thus can be expensive.
         match &self.state {
@@ -449,7 +449,7 @@ impl<'a> AggregationContext<'a> {
         }
     }
 
-    pub(crate) fn get_final_aggregation(mut self) -> (Series, Cow<'a, GroupsProxy>) {
+    pub fn get_final_aggregation(mut self) -> (Series, Cow<'a, GroupsProxy>) {
         let _ = self.groups();
         let groups = self.groups;
         match self.state {

@@ -61,15 +61,15 @@ type CachedValue = Arc<(AtomicI64, OnceCell<DataFrame>)>;
 pub struct ExecutionState {
     // cached by a `.cache` call and kept in memory for the duration of the plan.
     df_cache: Arc<Mutex<PlHashMap<usize, CachedValue>>>,
-    pub(crate) schema_cache: RwLock<Option<SchemaRef>>,
+    pub schema_cache: RwLock<Option<SchemaRef>>,
     /// Used by Window Expression to prevent redundant grouping
-    pub(crate) group_tuples: GroupsProxyCache,
+    pub group_tuples: GroupsProxyCache,
     /// Used by Window Expression to prevent redundant joins
-    pub(crate) join_tuples: JoinTuplesCache,
+    pub join_tuples: JoinTuplesCache,
     // every join/union split gets an increment to distinguish between schema state
     pub branch_idx: usize,
-    pub(crate) flags: AtomicU8,
-    pub(crate) ext_contexts: Arc<Vec<DataFrame>>,
+    pub flags: AtomicU8,
+    pub ext_contexts: Arc<Vec<DataFrame>>,
     node_timer: Option<NodeTimer>,
     stop: Arc<AtomicBool>,
 }
