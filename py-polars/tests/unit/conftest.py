@@ -198,7 +198,7 @@ def memory_usage_without_pyarrow() -> Generator[MemoryUsage, Any, Any]:
 
     Memory usage from PyArrow is not tracked.
     """
-    if not pl.build_info()["build"]["debug"]:
+    if not pl.build_info()["compiler"]["debug"]:
         pytest.skip("Memory usage only available in debug/dev builds.")
 
     if sys.platform == "win32":
