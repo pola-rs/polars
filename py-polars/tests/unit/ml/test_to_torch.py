@@ -69,6 +69,38 @@ class TestTorchIntegration:
             td["z"], torch.tensor([1.5, -0.5, 0.0, -2.0], dtype=torch.float32)
         )
 
+    def test_to_torch_feature_label_dict(self, df: pl.DataFrame) -> None:
+        df = pl.DataFrame(
+            {
+                "age": [25, 32, 45, 22, 34],
+                "income": [50000, 75000, 60000, 58000, 120000],
+                "education": ["bachelor", "master", "phd", "bachelor", "phd"],
+                "purchased": [False, True, True, False, True],
+            },
+            schema_overrides={"age": pl.Int32, "income": pl.Int32},
+        ).to_dummies("education", separator=":")
+
+        lbl_feat_dict = df.to_torch(return_type="dict", label="purchased")
+        assert list(lbl_feat_dict.keys()) == ["label", "features"]
+
+        self.assert_tensor_equal(
+            lbl_feat_dict["label"],
+            torch.tensor([[False], [True], [True], [False], [True]], dtype=torch.bool),
+        )
+        self.assert_tensor_equal(
+            lbl_feat_dict["features"],
+            torch.tensor(
+                [
+                    [25, 50000, 1, 0, 0],
+                    [32, 75000, 0, 1, 0],
+                    [45, 60000, 0, 0, 1],
+                    [22, 58000, 1, 0, 0],
+                    [34, 120000, 0, 0, 1],
+                ],
+                dtype=torch.int32,
+            ),
+        )
+
     def test_to_torch_dataset(self, df: pl.DataFrame) -> None:
         ds = df.to_torch("dataset", dtype=pl.Float64)
 

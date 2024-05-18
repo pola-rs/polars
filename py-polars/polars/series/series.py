@@ -4504,7 +4504,7 @@ class Series:
             device = jx.devices(device)[0]
         if (
             jx.config.jax_enable_x64
-            or bool(int(os.environ.get("JAX_ENABLE_X64", "1")))
+            or bool(int(os.environ.get("JAX_ENABLE_X64", "0")))
             or self.dtype not in {Float64, Int64, UInt64}
         ):
             srs = self

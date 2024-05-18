@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sys
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -13,6 +13,9 @@ from polars.dependencies import _lazy_import
 # ensures the tests aren't run locally; this avoids premature local import)
 jx, _ = _lazy_import("jax")
 jxn, _ = _lazy_import("jax.numpy")
+
+if TYPE_CHECKING:
+    from polars.datatypes import PolarsDataType
 
 
 @pytest.fixture()
@@ -37,16 +40,30 @@ class TestJaxIntegration:
         assert isinstance(actual, jx.Array)
         jxn.array_equal(actual, expected, equal_nan=nans_equal)
 
-    def test_to_jax_from_series(self) -> None:
-        s = pl.Series("x", [1, 2, 3, 4], dtype=pl.Int8)
-        a = s.to_jax()
-
-        assert list(a.shape) == [4]
-        self.assert_array_equal(a, jxn.array([1, 2, 3, 4], dtype=jxn.int8))
-
-        for dtype in (pl.Int32, pl.Int64, pl.UInt32, pl.UInt64):
-            a = s.cast(dtype).to_jax()
-            self.assert_array_equal(a, jxn.array([1, 2, 3, 4], dtype=jxn.int32))
+    @pytest.mark.parametrize(
+        ("dtype", "expected_jax_dtype"),
+        [
+            (pl.Int8, "int8"),
+            (pl.Int16, "int16"),
+            (pl.Int32, "int32"),
+            (pl.Int64, "int32"),
+            (pl.UInt8, "uint8"),
+            (pl.UInt16, "uint16"),
+            (pl.UInt32, "uint32"),
+            (pl.UInt64, "uint32"),
+        ],
+    )
+    def test_to_jax_from_series(
+        self,
+        dtype: PolarsDataType,
+        expected_jax_dtype: str,
+    ) -> None:
+        s = pl.Series("x", [1, 2, 3, 4], dtype=dtype)
+        for dvc in (None, "cpu", jx.devices("cpu")[0]):
+            self.assert_array_equal(
+                s.to_jax(device=dvc),
+                jxn.array([1, 2, 3, 4], dtype=getattr(jxn, expected_jax_dtype)),
+            )
 
     def test_to_jax_array(self, df: pl.DataFrame) -> None:
         a1 = df.to_jax()
@@ -68,14 +85,21 @@ class TestJaxIntegration:
 
     def test_to_jax_dict(self, df: pl.DataFrame) -> None:
         arr_dict = df.to_jax("dict")
-
         assert list(arr_dict.keys()) == ["x", "y", "z"]
 
         self.assert_array_equal(arr_dict["x"], jxn.array([1, 2, 2, 3], dtype=jxn.int8))
         self.assert_array_equal(arr_dict["y"], jxn.array([1, 0, 1, 0], dtype=jxn.int32))
         self.assert_array_equal(
-            arr_dict["z"], jxn.array([1.5, -0.5, 0.0, -2.0], dtype=jxn.float32)
+            arr_dict["z"],
+            jxn.array([1.5, -0.5, 0.0, -2.0], dtype=jxn.float32),
         )
+
+        arr_dict = df.to_jax("dict", dtype=pl.Float32)
+        for a, expected_data in zip(
+            arr_dict.values(),
+            ([1.0, 2.0, 2.0, 3.0], [1.0, 0.0, 1.0, 0.0], [1.5, -0.5, 0.0, -2.0]),
+        ):
+            self.assert_array_equal(a, jxn.array(expected_data, dtype=jxn.float32))
 
     @pytest.mark.skipif(
         sys.version_info < (3, 9),
