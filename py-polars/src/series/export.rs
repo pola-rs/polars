@@ -167,39 +167,43 @@ impl PySeries {
     /// This method copies data only when necessary. Set `allow_copy` to raise an error if copy
     /// is required. Set `writable` to make sure the resulting array is writable, possibly requiring
     /// copying the data.
-    fn to_numpy(&self, py: Python, allow_copy: bool, writable: bool) -> PyResult<PyObject> {
-        if self.series.is_empty() {
-            // Take this path to ensure a writable array.
-            // This does not actually copy data for empty Series.
-            return series_to_numpy_with_copy(py, &self.series);
-        }
-
-        if let Some((mut arr, writable_flag)) =
-            try_series_to_numpy_view(py, &self.series, false, allow_copy)
-        {
-            if writable && !writable_flag {
-                if !allow_copy {
-                    return Err(PyValueError::new_err(
-                        "cannot return a zero-copy writable array",
-                    ));
-                }
-                arr = arr.call_method0(py, intern!(py, "copy"))?;
-            }
-            return Ok(arr);
-        }
-
-        if !allow_copy {
-            return Err(PyValueError::new_err("cannot return a zero-copy array"));
-        }
-
-        series_to_numpy_with_copy(py, &self.series)
+    fn to_numpy(&self, py: Python, writable: bool, allow_copy: bool) -> PyResult<PyObject> {
+        series_to_numpy(py, &self.series, writable, allow_copy)
     }
+}
+
+/// Convert a Series to a NumPy ndarray.
+fn series_to_numpy(py: Python, s: &Series, writable: bool, allow_copy: bool) -> PyResult<PyObject> {
+    if s.is_empty() {
+        // Take this path to ensure a writable array.
+        // This does not actually copy data for empty Series.
+        return series_to_numpy_with_copy(py, s, true);
+    }
+    if let Some((mut arr, writable_flag)) =
+        try_series_to_numpy_view(py, &self.series, false, allow_copy)
+    {
+        if writable && !writable_flag {
+            if !allow_copy {
+                return Err(PyValueError::new_err(
+                    "cannot return a zero-copy writable array",
+                ));
+            }
+            arr = arr.call_method0(py, intern!(py, "copy"))?;
+        }
+        return Ok(arr);
+    }
+
+    if !allow_copy {
+        return Err(PyValueError::new_err("cannot return a zero-copy array"));
+    }
+
+    series_to_numpy_with_copy(py, s, writable)
 }
 
 /// Convert a Series to a NumPy ndarray, copying data in the process.
 ///
 /// This method will cast integers to floats so that `null = np.nan`.
-fn series_to_numpy_with_copy(py: Python, s: &Series) -> PyResult<PyObject> {
+fn series_to_numpy_with_copy(py: Python, s: &Series, writable: bool) -> PyResult<PyObject> {
     use DataType::*;
     let out = match s.dtype() {
         Int8 => numeric_series_to_numpy::<Int8Type, f32>(py, s),
@@ -267,8 +271,8 @@ fn series_to_numpy_with_copy(py: Python, s: &Series) -> PyResult<PyObject> {
             let values = decimal_to_pyobject_iter(py, ca).map(|v| v.into_py(py));
             PyArray1::from_iter_bound(py, values).into_py(py)
         },
-        List(_) => list_series_to_numpy(py, s),
-        Array(_, _) => array_series_to_numpy(py, s),
+        List(_) => list_series_to_numpy(py, s, writable),
+        Array(_, _) => array_series_to_numpy(py, s, writable),
         #[cfg(feature = "object")]
         Object(_, _) => {
             let ca = s
@@ -358,10 +362,10 @@ where
     PyArray1::<T>::from_iter_bound(py, values).into_py(py)
 }
 /// Convert arrays by flattening first, converting the flat Series, and then reshaping.
-fn array_series_to_numpy(py: Python, s: &Series) -> PyObject {
+fn array_series_to_numpy(py: Python, s: &Series, writable: bool) -> PyObject {
     let ca = s.array().unwrap();
     let s_inner = ca.get_inner();
-    let np_array_flat = series_to_numpy_with_copy(py, &s_inner).unwrap();
+    let np_array_flat = series_to_numpy_with_copy(py, &s_inner, writable).unwrap();
 
     // Reshape to the original shape.
     let DataType::Array(_, width) = s.dtype() else {
@@ -369,15 +373,13 @@ fn array_series_to_numpy(py: Python, s: &Series) -> PyObject {
     };
     reshape_numpy_array(py, np_array_flat, ca.len(), *width)
 }
-/// Convert lists by flattening first, converting the flat Series, and then splitting.
-fn list_series_to_numpy(py: Python, s: &Series) -> PyObject {
+/// Convert lists by flattening first, converting the flat Series, and then splitting by offsets.
+fn list_series_to_numpy(py: Python, s: &Series, writable: bool) -> PyObject {
     let ca = s.list().unwrap();
     let s_inner = ca.get_inner();
 
-    // TODO: Use regular series_to_numpy here again - try zero copy
-    let np_array_flat = series_to_numpy_with_copy(py, &s_inner).unwrap();
+    let np_array_flat = series_to_numpy(py, &s_inner, writable, true).unwrap();
 
-    // Reshape to the original shape.
     split_numpy_array(py, np_array_flat, ca)
 }
 fn split_numpy_array(py: Python, arr: PyObject, ca: &ListChunked) -> PyObject {
