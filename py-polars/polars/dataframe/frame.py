@@ -100,17 +100,6 @@ from polars.exceptions import (
     TooManyRowsReturnedError,
 )
 from polars.functions import col, lit
-from polars.io.csv._utils import _check_arg_is_1byte
-from polars.io.spreadsheet._write_utils import (
-    _unpack_multi_column_dict,
-    _xl_apply_conditional_formats,
-    _xl_inject_sparklines,
-    _xl_setup_table_columns,
-    _xl_setup_table_options,
-    _xl_setup_workbook,
-    _xl_unique_table_name,
-    _XLFormatCache,
-)
 from polars.selectors import _expand_selector_dicts, _expand_selectors
 from polars.slice import PolarsSlice
 from polars.type_aliases import DbWriteMode, TorchExportType
@@ -2295,6 +2284,8 @@ class DataFrame:
         >>> path: pathlib.Path = dirpath / "new_file.csv"
         >>> df.write_csv(path, separator=",")
         """
+        from polars.io.csv._utils import _check_arg_is_1byte
+
         _check_arg_is_1byte("separator", separator, can_be_empty=False)
         _check_arg_is_1byte("quote_char", quote_char, can_be_empty=True)
         if not null_value:
@@ -2750,6 +2741,17 @@ class DataFrame:
         ...     sheet_zoom=125,
         ... )
         """  # noqa: W505
+        from polars.io.spreadsheet._write_utils import (
+            _unpack_multi_column_dict,
+            _xl_apply_conditional_formats,
+            _xl_inject_sparklines,
+            _xl_setup_table_columns,
+            _xl_setup_table_options,
+            _xl_setup_workbook,
+            _xl_unique_table_name,
+            _XLFormatCache,
+        )
+
         xlsxwriter = import_optional("xlsxwriter", err_prefix="Excel export requires")
         from xlsxwriter.utility import xl_cell_to_rowcol
 
