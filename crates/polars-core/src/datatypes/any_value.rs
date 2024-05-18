@@ -9,6 +9,7 @@ use polars_utils::sync::SyncPtr;
 use polars_utils::total_ord::ToTotalOrd;
 use polars_utils::unwrap::UnwrapUncheckedRelease;
 
+#[derive(Clone)]
 pub struct Scalar {
     dtype: DataType,
     value: AnyValue<'static>,
@@ -31,6 +32,14 @@ impl Scalar {
 
     pub fn into_series(self, name: &str) -> Series {
         Series::from_any_values_and_dtype(name, &[self.as_any_value()], &self.dtype, true).unwrap()
+    }
+
+    pub fn dtype(&self) -> &DataType {
+        &self.dtype
+    }
+
+    pub fn update(&mut self, value: AnyValue<'static>) {
+        self.value = value;
     }
 }
 
@@ -1014,7 +1023,7 @@ impl PartialOrd for AnyValue<'_> {
     /// Only implemented for the same types and physical types!
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         use AnyValue::*;
-        match (self.as_borrowed(), &other.as_borrowed()) {
+        match (self, &other) {
             (UInt8(l), UInt8(r)) => l.partial_cmp(r),
             (UInt16(l), UInt16(r)) => l.partial_cmp(r),
             (UInt32(l), UInt32(r)) => l.partial_cmp(r),
@@ -1025,10 +1034,19 @@ impl PartialOrd for AnyValue<'_> {
             (Int64(l), Int64(r)) => l.partial_cmp(r),
             (Float32(l), Float32(r)) => l.to_total_ord().partial_cmp(&r.to_total_ord()),
             (Float64(l), Float64(r)) => l.to_total_ord().partial_cmp(&r.to_total_ord()),
-            (String(l), String(r)) => l.partial_cmp(*r),
-            (Binary(l), Binary(r)) => l.partial_cmp(*r),
-            _ => None,
+            _ => match (self.as_borrowed(), other.as_borrowed()) {
+                (String(l), String(r)) => l.partial_cmp(r),
+                (Binary(l), Binary(r)) => l.partial_cmp(r),
+                _ => None,
+            },
         }
+    }
+}
+
+impl TotalEq for AnyValue<'_> {
+    #[inline]
+    fn tot_eq(&self, other: &Self) -> bool {
+        self.eq_missing(other, true)
     }
 }
 

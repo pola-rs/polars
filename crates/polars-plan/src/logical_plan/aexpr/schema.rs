@@ -110,7 +110,7 @@ impl AExpr {
             SortBy { expr, .. } => arena.get(*expr).to_field(schema, ctxt, arena),
             Filter { input, .. } => arena.get(*input).to_field(schema, ctxt, arena),
             Agg(agg) => {
-                use AAggExpr::*;
+                use IRAggExpr::*;
                 match agg {
                     Max { input: expr, .. }
                     | Min { input: expr, .. }

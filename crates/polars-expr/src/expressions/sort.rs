@@ -4,8 +4,8 @@ use polars_ops::chunked_array::ListNameSpaceImpl;
 use polars_utils::idx_vec::IdxVec;
 use rayon::prelude::*;
 
-use crate::physical_plan::state::ExecutionState;
-use crate::prelude::*;
+use super::*;
+use crate::expressions::{AggState, AggregationContext, PhysicalExpr};
 
 pub struct SortExpr {
     pub(crate) physical_expr: Arc<dyn PhysicalExpr>,

@@ -10,5 +10,6 @@ pub mod frame;
 pub mod global;
 pub mod logical_plan;
 pub mod prelude;
-mod reduce;
+// Activate later
+// mod reduce;
 pub mod utils;

@@ -5,8 +5,8 @@ use polars_core::prelude::*;
 use polars_core::utils::NoNull;
 use polars_plan::constants::LITERAL_NAME;
 
-use crate::physical_plan::state::ExecutionState;
-use crate::prelude::*;
+use super::*;
+use crate::expressions::{AggregationContext, PartitionedAggregation, PhysicalExpr};
 
 pub struct LiteralExpr(pub LiteralValue, Expr);
 

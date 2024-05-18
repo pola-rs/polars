@@ -8,8 +8,10 @@ use polars_io::predicates::{BatchStats, StatsEvaluator};
 use polars_ops::prelude::ClosedInterval;
 use rayon::prelude::*;
 
-use crate::physical_plan::state::ExecutionState;
-use crate::prelude::*;
+use super::*;
+use crate::expressions::{
+    AggState, AggregationContext, PartitionedAggregation, PhysicalExpr, UpdateGroups,
+};
 
 pub struct ApplyExpr {
     inputs: Vec<Arc<dyn PhysicalExpr>>,

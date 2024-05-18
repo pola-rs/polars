@@ -28,8 +28,6 @@ use polars_plan::global::_set_n_rows_for_scan;
 pub(crate) use support::ConsecutiveCountState;
 
 use super::*;
-#[cfg(any(feature = "ipc", feature = "parquet"))]
-use crate::physical_plan::expressions::phys_expr_to_io_expr;
 use crate::prelude::*;
 
 #[cfg(any(feature = "ipc", feature = "parquet"))]

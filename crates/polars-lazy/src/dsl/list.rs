@@ -9,7 +9,6 @@ use polars_plan::dsl::*;
 use rayon::prelude::*;
 
 use crate::physical_plan::exotic::prepare_expression_for_context;
-use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 
 pub trait IntoListNameSpace {

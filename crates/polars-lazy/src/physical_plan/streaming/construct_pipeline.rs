@@ -1,4 +1,3 @@
-use std::any::Any;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -10,11 +9,9 @@ use polars_pipe::operators::chunks::DataChunk;
 use polars_pipe::pipeline::{
     create_pipeline, execute_pipeline, get_dummy_operator, get_operator, CallBacks, PipeLine,
 };
-use polars_pipe::SExecutionContext;
 use polars_plan::prelude::expr_ir::ExprIR;
 
 use crate::physical_plan::planner::{create_physical_expr, ExpressionConversionState};
-use crate::physical_plan::state::ExecutionState;
 use crate::physical_plan::streaming::tree::{PipelineNode, Tree};
 use crate::prelude::*;
 
@@ -33,8 +30,7 @@ impl PhysicalIoExpr for Wrap {
     }
 }
 impl PhysicalPipedExpr for Wrap {
-    fn evaluate(&self, chunk: &DataChunk, state: &dyn Any) -> PolarsResult<Series> {
-        let state = state.downcast_ref::<ExecutionState>().unwrap();
+    fn evaluate(&self, chunk: &DataChunk, state: &ExecutionState) -> PolarsResult<Series> {
         self.0.evaluate(&chunk.data, state)
     }
     fn field(&self, input_schema: &Schema) -> PolarsResult<Field> {
@@ -233,16 +229,6 @@ pub(super) fn construct(
     Ok(Some(final_sink))
 }
 
-impl SExecutionContext for ExecutionState {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn should_stop(&self) -> PolarsResult<()> {
-        ExecutionState::should_stop(self)
-    }
-}
-
 fn get_pipeline_node(
     lp_arena: &mut Arena<IR>,
     mut pipelines: Vec<PipeLine>,
@@ -268,7 +254,6 @@ fn get_pipeline_node(
                     eprintln!("{:?}", &pipelines)
                 }
                 state.set_in_streaming_engine();
-                let state = Box::new(state) as Box<dyn SExecutionContext>;
                 execute_pipeline(state, std::mem::take(&mut pipelines))
             }),
             schema,

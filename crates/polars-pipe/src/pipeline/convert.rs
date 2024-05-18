@@ -335,6 +335,13 @@ where
             let slice = SliceSink::new(*offset as u64, *len as usize, input_schema.into_owned());
             Box::new(slice) as Box<dyn SinkTrait>
         },
+        Reduce {
+            input: _,
+            exprs: _,
+            schema: _,
+        } => {
+            todo!()
+        },
         Sort {
             input,
             by_column,
@@ -412,10 +419,10 @@ where
                                 let col = expr_arena.add(AExpr::Column(name.clone()));
                                 let node = match options.keep_strategy {
                                     UniqueKeepStrategy::First | UniqueKeepStrategy::Any => {
-                                        expr_arena.add(AExpr::Agg(AAggExpr::First(col)))
+                                        expr_arena.add(AExpr::Agg(IRAggExpr::First(col)))
                                     },
                                     UniqueKeepStrategy::Last => {
-                                        expr_arena.add(AExpr::Agg(AAggExpr::Last(col)))
+                                        expr_arena.add(AExpr::Agg(IRAggExpr::Last(col)))
                                     },
                                     UniqueKeepStrategy::None => {
                                         unreachable!()

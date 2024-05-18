@@ -40,7 +40,6 @@ use crate::physical_plan::executors::Executor;
 use crate::physical_plan::planner::{
     create_physical_expr, create_physical_plan, ExpressionConversionState,
 };
-use crate::physical_plan::state::ExecutionState;
 #[cfg(feature = "streaming")]
 use crate::physical_plan::streaming::insert_streaming_nodes;
 use crate::prelude::*;

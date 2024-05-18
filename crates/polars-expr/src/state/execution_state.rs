@@ -8,7 +8,7 @@ use polars_core::config::verbose;
 use polars_core::prelude::*;
 use polars_ops::prelude::ChunkJoinOptIds;
 
-use crate::physical_plan::node_timer::NodeTimer;
+use super::NodeTimer;
 
 pub type JoinTuplesCache = Arc<Mutex<PlHashMap<String, ChunkJoinOptIds>>>;
 pub type GroupsProxyCache = Arc<RwLock<PlHashMap<String, GroupsProxy>>>;
@@ -61,15 +61,15 @@ type CachedValue = Arc<(AtomicI64, OnceCell<DataFrame>)>;
 pub struct ExecutionState {
     // cached by a `.cache` call and kept in memory for the duration of the plan.
     df_cache: Arc<Mutex<PlHashMap<usize, CachedValue>>>,
-    pub(super) schema_cache: RwLock<Option<SchemaRef>>,
+    pub schema_cache: RwLock<Option<SchemaRef>>,
     /// Used by Window Expression to prevent redundant grouping
-    pub(super) group_tuples: GroupsProxyCache,
+    pub group_tuples: GroupsProxyCache,
     /// Used by Window Expression to prevent redundant joins
-    pub(super) join_tuples: JoinTuplesCache,
+    pub join_tuples: JoinTuplesCache,
     // every join/union split gets an increment to distinguish between schema state
-    pub(super) branch_idx: usize,
-    pub(super) flags: AtomicU8,
-    pub(super) ext_contexts: Arc<Vec<DataFrame>>,
+    pub branch_idx: usize,
+    pub flags: AtomicU8,
+    pub ext_contexts: Arc<Vec<DataFrame>>,
     node_timer: Option<NodeTimer>,
     stop: Arc<AtomicBool>,
 }
@@ -94,28 +94,28 @@ impl ExecutionState {
     }
 
     /// Toggle this to measure execution times.
-    pub(crate) fn time_nodes(&mut self) {
+    pub fn time_nodes(&mut self) {
         self.node_timer = Some(NodeTimer::new())
     }
-    pub(super) fn has_node_timer(&self) -> bool {
+    pub fn has_node_timer(&self) -> bool {
         self.node_timer.is_some()
     }
 
-    pub(crate) fn finish_timer(self) -> PolarsResult<DataFrame> {
+    pub fn finish_timer(self) -> PolarsResult<DataFrame> {
         self.node_timer.unwrap().finish()
     }
 
     // This is wrong when the U64 overflows which will never happen.
-    pub(super) fn should_stop(&self) -> PolarsResult<()> {
+    pub fn should_stop(&self) -> PolarsResult<()> {
         polars_ensure!(!self.stop.load(Ordering::Relaxed), ComputeError: "query interrupted");
         Ok(())
     }
 
-    pub(crate) fn cancel_token(&self) -> Arc<AtomicBool> {
+    pub fn cancel_token(&self) -> Arc<AtomicBool> {
         self.stop.clone()
     }
 
-    pub(super) fn record<T, F: FnOnce() -> T>(&self, func: F, name: Cow<'static, str>) -> T {
+    pub fn record<T, F: FnOnce() -> T>(&self, func: F, name: Cow<'static, str>) -> T {
         match &self.node_timer {
             None => func(),
             Some(timer) => {
@@ -131,7 +131,7 @@ impl ExecutionState {
 
     /// Partially clones and partially clears state
     /// This should be used when splitting a node, like a join or union
-    pub(super) fn split(&self) -> Self {
+    pub fn split(&self) -> Self {
         Self {
             df_cache: self.df_cache.clone(),
             schema_cache: Default::default(),
@@ -145,39 +145,24 @@ impl ExecutionState {
         }
     }
 
-    /// clones, but clears no state.
-    pub(super) fn clone(&self) -> Self {
-        Self {
-            df_cache: self.df_cache.clone(),
-            schema_cache: self.schema_cache.read().unwrap().clone().into(),
-            group_tuples: self.group_tuples.clone(),
-            join_tuples: self.join_tuples.clone(),
-            branch_idx: self.branch_idx,
-            flags: AtomicU8::new(self.flags.load(Ordering::Relaxed)),
-            ext_contexts: self.ext_contexts.clone(),
-            node_timer: self.node_timer.clone(),
-            stop: self.stop.clone(),
-        }
-    }
-
-    pub(crate) fn set_schema(&self, schema: SchemaRef) {
+    pub fn set_schema(&self, schema: SchemaRef) {
         let mut lock = self.schema_cache.write().unwrap();
         *lock = Some(schema);
     }
 
     /// Clear the schema. Typically at the end of a projection.
-    pub(crate) fn clear_schema_cache(&self) {
+    pub fn clear_schema_cache(&self) {
         let mut lock = self.schema_cache.write().unwrap();
         *lock = None;
     }
 
     /// Get the schema.
-    pub(crate) fn get_schema(&self) -> Option<SchemaRef> {
+    pub fn get_schema(&self) -> Option<SchemaRef> {
         let lock = self.schema_cache.read().unwrap();
         lock.clone()
     }
 
-    pub(crate) fn get_df_cache(&self, key: usize, cache_hits: u32) -> CachedValue {
+    pub fn get_df_cache(&self, key: usize, cache_hits: u32) -> CachedValue {
         let mut guard = self.df_cache.lock().unwrap();
         guard
             .entry(key)
@@ -185,13 +170,13 @@ impl ExecutionState {
             .clone()
     }
 
-    pub(crate) fn remove_df_cache(&self, key: usize) {
+    pub fn remove_df_cache(&self, key: usize) {
         let mut guard = self.df_cache.lock().unwrap();
         let _ = guard.remove(&key).unwrap();
     }
 
     /// Clear the cache used by the Window expressions
-    pub(crate) fn clear_window_expr_cache(&self) {
+    pub fn clear_window_expr_cache(&self) {
         {
             let mut lock = self.group_tuples.write().unwrap();
             lock.clear();
@@ -207,38 +192,38 @@ impl ExecutionState {
     }
 
     /// Indicates that window expression's [`GroupTuples`] may be cached.
-    pub(super) fn cache_window(&self) -> bool {
+    pub fn cache_window(&self) -> bool {
         let flags: StateFlags = self.flags.load(Ordering::Relaxed).into();
         flags.contains(StateFlags::CACHE_WINDOW_EXPR)
     }
 
     /// Indicates that window expression's [`GroupTuples`] may be cached.
-    pub(super) fn has_window(&self) -> bool {
+    pub fn has_window(&self) -> bool {
         let flags: StateFlags = self.flags.load(Ordering::Relaxed).into();
         flags.contains(StateFlags::HAS_WINDOW)
     }
 
     /// More verbose logging
-    pub(super) fn verbose(&self) -> bool {
+    pub fn verbose(&self) -> bool {
         let flags: StateFlags = self.flags.load(Ordering::Relaxed).into();
         flags.contains(StateFlags::VERBOSE)
     }
 
-    pub(super) fn remove_cache_window_flag(&mut self) {
+    pub fn remove_cache_window_flag(&mut self) {
         self.set_flags(&|mut flags| {
             flags.remove(StateFlags::CACHE_WINDOW_EXPR);
             flags
         });
     }
 
-    pub(super) fn insert_cache_window_flag(&mut self) {
+    pub fn insert_cache_window_flag(&mut self) {
         self.set_flags(&|mut flags| {
             flags.insert(StateFlags::CACHE_WINDOW_EXPR);
             flags
         });
     }
     // this will trigger some conservative
-    pub(super) fn insert_has_window_function_flag(&mut self) {
+    pub fn insert_has_window_function_flag(&mut self) {
         self.set_flags(&|mut flags| {
             flags.insert(StateFlags::HAS_WINDOW);
             flags
@@ -246,7 +231,7 @@ impl ExecutionState {
     }
 
     #[cfg(feature = "streaming")]
-    pub(super) fn set_in_streaming_engine(&mut self) {
+    pub fn set_in_streaming_engine(&mut self) {
         self.set_flags(&|mut flags| {
             flags.insert(StateFlags::IN_STREAMING);
             flags
@@ -254,7 +239,7 @@ impl ExecutionState {
     }
 
     #[cfg(feature = "streaming")]
-    pub(super) fn in_streaming_engine(&self) -> bool {
+    pub fn in_streaming_engine(&self) -> bool {
         let flags: StateFlags = self.flags.load(Ordering::Relaxed).into();
         flags.contains(StateFlags::IN_STREAMING)
     }
@@ -263,5 +248,22 @@ impl ExecutionState {
 impl Default for ExecutionState {
     fn default() -> Self {
         ExecutionState::new()
+    }
+}
+
+impl Clone for ExecutionState {
+    /// clones, but clears no state.
+    fn clone(&self) -> Self {
+        Self {
+            df_cache: self.df_cache.clone(),
+            schema_cache: self.schema_cache.read().unwrap().clone().into(),
+            group_tuples: self.group_tuples.clone(),
+            join_tuples: self.join_tuples.clone(),
+            branch_idx: self.branch_idx,
+            flags: AtomicU8::new(self.flags.load(Ordering::Relaxed)),
+            ext_contexts: self.ext_contexts.clone(),
+            node_timer: self.node_timer.clone(),
+            stop: self.stop.clone(),
+        }
     }
 }

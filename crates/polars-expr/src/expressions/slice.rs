@@ -4,8 +4,8 @@ use polars_core::POOL;
 use rayon::prelude::*;
 use AnyValue::Null;
 
-use crate::physical_plan::state::ExecutionState;
-use crate::prelude::*;
+use super::*;
+use crate::expressions::{AggregationContext, PhysicalExpr};
 
 pub struct SliceExpr {
     pub(crate) input: Arc<dyn PhysicalExpr>,

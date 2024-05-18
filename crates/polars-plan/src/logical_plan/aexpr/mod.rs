@@ -18,7 +18,7 @@ use crate::logical_plan::Context;
 use crate::prelude::*;
 
 #[derive(Clone, Debug, IntoStaticStr)]
-pub enum AAggExpr {
+pub enum IRAggExpr {
     Min {
         input: Node,
         propagate_nans: bool,
@@ -45,7 +45,7 @@ pub enum AAggExpr {
     AggGroups(Node),
 }
 
-impl Hash for AAggExpr {
+impl Hash for IRAggExpr {
     fn hash<H: Hasher>(&self, state: &mut H) {
         std::mem::discriminant(self).hash(state);
         match self {
@@ -59,9 +59,9 @@ impl Hash for AAggExpr {
     }
 }
 
-impl AAggExpr {
-    pub(super) fn equal_nodes(&self, other: &AAggExpr) -> bool {
-        use AAggExpr::*;
+impl IRAggExpr {
+    pub(super) fn equal_nodes(&self, other: &IRAggExpr) -> bool {
+        use IRAggExpr::*;
         match (self, other) {
             (
                 Min {
@@ -87,9 +87,9 @@ impl AAggExpr {
     }
 }
 
-impl From<AAggExpr> for GroupByMethod {
-    fn from(value: AAggExpr) -> Self {
-        use AAggExpr::*;
+impl From<IRAggExpr> for GroupByMethod {
+    fn from(value: IRAggExpr) -> Self {
+        use IRAggExpr::*;
         match value {
             Min { propagate_nans, .. } => {
                 if propagate_nans {
@@ -156,7 +156,7 @@ pub enum AExpr {
         input: Node,
         by: Node,
     },
-    Agg(AAggExpr),
+    Agg(IRAggExpr),
     Ternary {
         predicate: Node,
         truthy: Node,
@@ -355,7 +355,7 @@ impl AExpr {
             },
             Agg(a) => {
                 match a {
-                    AAggExpr::Quantile { expr, quantile, .. } => {
+                    IRAggExpr::Quantile { expr, quantile, .. } => {
                         *expr = inputs[0];
                         *quantile = inputs[1];
                     },
@@ -418,9 +418,9 @@ impl AExpr {
     }
 }
 
-impl AAggExpr {
+impl IRAggExpr {
     pub fn get_input(&self) -> NodeInputs {
-        use AAggExpr::*;
+        use IRAggExpr::*;
         use NodeInputs::*;
         match self {
             Min { input, .. } => Single(*input),
@@ -440,7 +440,7 @@ impl AAggExpr {
         }
     }
     pub fn set_input(&mut self, input: Node) {
-        use AAggExpr::*;
+        use IRAggExpr::*;
         let node = match self {
             Min { input, .. } => input,
             Max { input, .. } => input,

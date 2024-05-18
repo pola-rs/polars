@@ -4,9 +4,9 @@ use polars_core::POOL;
 use polars_utils::idx_vec::IdxVec;
 use rayon::prelude::*;
 
-use crate::physical_plan::state::ExecutionState;
-use crate::prelude::UpdateGroups::WithSeriesLen;
-use crate::prelude::*;
+use super::*;
+use crate::expressions::UpdateGroups::WithSeriesLen;
+use crate::expressions::{AggregationContext, PhysicalExpr};
 
 pub struct FilterExpr {
     pub(crate) input: Arc<dyn PhysicalExpr>,

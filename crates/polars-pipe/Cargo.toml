@@ -13,6 +13,7 @@ arrow = { workspace = true }
 futures = { workspace = true, optional = true }
 polars-compute = { workspace = true }
 polars-core = { workspace = true, features = ["lazy", "zip_with", "random", "rows"] }
+polars-expr = { workspace = true }
 polars-io = { workspace = true, features = ["ipc"] }
 polars-ops = { workspace = true, features = ["search_sorted", "chunked_ids"] }
 polars-plan = { workspace = true }

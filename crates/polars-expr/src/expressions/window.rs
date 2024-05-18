@@ -8,13 +8,14 @@ use polars_core::utils::_split_offsets;
 use polars_core::{downcast_as_macro_arg_physical, POOL};
 use polars_ops::frame::join::{default_join_ids, private_left_join_multiple_keys, ChunkJoinOptIds};
 use polars_ops::frame::SeriesJoin;
+use polars_ops::prelude::*;
+use polars_plan::prelude::*;
 use polars_utils::format_smartstring;
 use polars_utils::sort::perfect_sort;
 use polars_utils::sync::SyncPtr;
 use rayon::prelude::*;
 
 use super::*;
-use crate::prelude::*;
 
 pub struct WindowExpr {
     /// the root column that the Function will be applied on.

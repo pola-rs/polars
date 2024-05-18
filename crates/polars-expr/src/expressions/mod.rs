@@ -33,6 +33,7 @@ pub(crate) use filter::*;
 pub(crate) use literal::*;
 use polars_core::prelude::*;
 use polars_io::predicates::PhysicalIoExpr;
+use polars_plan::prelude::*;
 #[cfg(feature = "dynamic_group_by")]
 pub(crate) use rolling::RollingExpr;
 pub(crate) use slice::*;
@@ -42,11 +43,10 @@ pub(crate) use take::*;
 pub(crate) use ternary::*;
 pub(crate) use window::*;
 
-use crate::physical_plan::state::ExecutionState;
-use crate::prelude::*;
+use crate::state::ExecutionState;
 
 #[derive(Clone, Debug)]
-pub(crate) enum AggState {
+pub enum AggState {
     /// Already aggregated: `.agg_list(group_tuples`) is called
     /// and produced a `Series` of dtype `List`
     AggregatedList(Series),
@@ -174,7 +174,7 @@ impl<'a> AggregationContext<'a> {
         }
     }
 
-    pub(crate) fn agg_state(&self) -> &AggState {
+    pub fn agg_state(&self) -> &AggState {
         &self.state
     }
 
@@ -388,7 +388,7 @@ impl<'a> AggregationContext<'a> {
     }
 
     /// Get the aggregated version of the series.
-    pub(crate) fn aggregated(&mut self) -> Series {
+    pub fn aggregated(&mut self) -> Series {
         // we clone, because we only want to call `self.groups()` if needed.
         // self groups may instantiate new groups and thus can be expensive.
         match self.state.clone() {
@@ -425,7 +425,7 @@ impl<'a> AggregationContext<'a> {
     }
 
     /// Get the final aggregated version of the series.
-    pub(crate) fn finalize(&mut self) -> Series {
+    pub fn finalize(&mut self) -> Series {
         // we clone, because we only want to call `self.groups()` if needed.
         // self groups may instantiate new groups and thus can be expensive.
         match &self.state {
@@ -450,7 +450,7 @@ impl<'a> AggregationContext<'a> {
         }
     }
 
-    pub(crate) fn get_final_aggregation(mut self) -> (Series, Cow<'a, GroupsProxy>) {
+    pub fn get_final_aggregation(mut self) -> (Series, Cow<'a, GroupsProxy>) {
         let _ = self.groups();
         let groups = self.groups;
         match self.state {
@@ -617,7 +617,7 @@ impl PhysicalIoExpr for PhysicalIoHelper {
     }
 }
 
-pub(crate) fn phys_expr_to_io_expr(expr: Arc<dyn PhysicalExpr>) -> Arc<dyn PhysicalIoExpr> {
+pub fn phys_expr_to_io_expr(expr: Arc<dyn PhysicalExpr>) -> Arc<dyn PhysicalIoExpr> {
     let has_window_function = if let Some(expr) = expr.as_expression() {
         expr.into_iter()
             .any(|expr| matches!(expr, Expr::Window { .. }))
