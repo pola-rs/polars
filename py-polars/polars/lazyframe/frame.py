@@ -47,7 +47,6 @@ from polars._utils.various import (
     parse_percentiles,
 )
 from polars._utils.wrap import wrap_df, wrap_expr
-from polars.convert import from_dict
 from polars.datatypes import (
     DTYPE_TEMPORAL_UNITS,
     N_INFER_DEFAULT,
@@ -77,7 +76,6 @@ from polars.datatypes import (
     py_type_to_dtype,
 )
 from polars.dependencies import import_optional, subprocess
-from polars.io.csv._utils import _check_arg_is_1byte
 from polars.lazyframe.group_by import LazyGroupBy
 from polars.lazyframe.in_process import InProcessQuery
 from polars.selectors import _expand_selectors, by_dtype, expand_selector
@@ -772,6 +770,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ max        ┆ 3.0      ┆ 50.0     ┆ 1.0      ┆ zz   ┆ 2022-12-31 ┆ 23:15:10 │
         └────────────┴──────────┴──────────┴──────────┴──────┴────────────┴──────────┘
         """
+        from polars.convert import from_dict
+
         if not self.columns:
             msg = "cannot describe a LazyFrame that has no columns"
             raise TypeError(msg)
@@ -2260,6 +2260,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf = pl.scan_csv("/path/to/my_larger_than_ram_file.csv")  # doctest: +SKIP
         >>> lf.sink_csv("out.csv")  # doctest: +SKIP
         """
+        from polars.io.csv._utils import _check_arg_is_1byte
+
         _check_arg_is_1byte("separator", separator, can_be_empty=False)
         _check_arg_is_1byte("quote_char", quote_char, can_be_empty=False)
         if not null_value:
