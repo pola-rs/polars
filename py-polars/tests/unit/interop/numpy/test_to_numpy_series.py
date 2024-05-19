@@ -183,9 +183,6 @@ def test_series_to_numpy_datetime_with_tz_with_nulls() -> None:
         (pl.Binary, [b"a", b"bc", b"def"]),
         (pl.Decimal, [D("1.234"), D("2.345"), D("-3.456")]),
         (pl.Object, [Path(), Path("abc")]),
-        # TODO: Implement for List types
-        # (pl.List, [[1], [2, 3]]),
-        # (pl.List, [["a"], ["b", "c"], []]),
     ],
 )
 @pytest.mark.parametrize("with_nulls", [False, True])
@@ -272,6 +269,19 @@ def test_series_to_numpy_array_of_arrays() -> None:
     assert_array_equal(result, expected)
     assert result.dtype == np.float64
     assert result.shape == (2, 2, 2)
+    assert_allow_copy_false_raises(s)
+
+
+def test_series_to_numpy_list() -> None:
+    values = [[1, 2], [3, 4, 5], [6], []]
+    s = pl.Series(values)
+    result = s.to_numpy(use_pyarrow=False)
+
+    expected = np.array([np.array(v, dtype=np.int64) for v in values], dtype=np.object_)
+    for res, exp in zip(result, expected, strict=True):
+        assert_array_equal(res, exp)
+        assert res.flags.writeable is False  # Inner is created with zero copy path
+    assert result.dtype == expected.dtype
     assert_allow_copy_false_raises(s)
 
 
