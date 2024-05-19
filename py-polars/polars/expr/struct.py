@@ -28,7 +28,7 @@ class ExprStructNameSpace:
             msg = f"expected type 'int | str', got {type(item).__name__!r} ({item!r})"
             raise TypeError(msg)
 
-    def field(self, name: str | list[str]) -> Expr:
+    def field(self, name: str | list[str], *more_names: str) -> Expr:
         """
         Retrieve one or multiple `Struct` field(s) as a new Series.
 
@@ -36,6 +36,8 @@ class ExprStructNameSpace:
         ----------
         name
             Name of the struct field to retrieve.
+        *more_names
+            Additional struct field names.
 
         Examples
         --------
@@ -100,7 +102,7 @@ class ExprStructNameSpace:
 
         Retrieve multiple fields by name:
 
-        >>> df.select(pl.col("struct_col").struct.field(["aaa", "bbb"]))
+        >>> df.select(pl.col("struct_col").struct.field("aaa", "bbb"))
         shape: (2, 2)
         ┌─────┬─────┐
         │ aaa ┆ bbb │
@@ -125,6 +127,8 @@ class ExprStructNameSpace:
         └─────┴─────┘
 
         """
+        if more_names:
+            name = [*([name] if isinstance(name, str) else name), *more_names]
         if isinstance(name, list):
             return wrap_expr(self._pyexpr.struct_multiple_fields(name))
 
