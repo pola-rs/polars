@@ -147,7 +147,7 @@ impl Hash for Wrap<Series> {
         let rs = RandomState::with_seeds(0, 0, 0, 0);
         let mut h = vec![];
         self.0.vec_hash(rs, &mut h).unwrap();
-        let h = UInt64Chunked::from_vec("", h).sum();
+        let h = h.into_iter().fold(0, |a: u64, b| a.wrapping_add(b));
         h.hash(state)
     }
 }
