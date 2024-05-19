@@ -15,13 +15,11 @@ impl ChunkExplode for ListChunked {
         Ok(offsets)
     }
 
-    /// Returns the underlying values buffer and the corresponding offsets.
-    ///
-    /// A list array's memory layout is actually already 'exploded', so we can just take the values
-    /// array of the list. And we also return a slice of the offsets. This slice can be used to find
-    /// the old list layout or indexes to expand a DataFrame in the same manner as the `explode`
-    /// operation.
     fn explode_and_offsets(&self) -> PolarsResult<(Series, OffsetsBuffer<i64>)> {
+        // A list array's memory layout is actually already 'exploded', so we can just take the
+        // values array of the list. And we also return a slice of the offsets. This slice can be
+        // used to find the old list layout or indexes to expand a DataFrame in the same manner as
+        // the `explode` operation.
         let ca = self.rechunk();
         let listarr: &LargeListArray = ca.downcast_iter().next().unwrap();
         let offsets_buf = listarr.offsets().clone();
