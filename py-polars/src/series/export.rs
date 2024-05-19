@@ -179,9 +179,7 @@ fn series_to_numpy(py: Python, s: &Series, writable: bool, allow_copy: bool) -> 
         // This does not actually copy data for empty Series.
         return series_to_numpy_with_copy(py, s, true);
     }
-    if let Some((mut arr, writable_flag)) =
-        try_series_to_numpy_view(py, &self.series, false, allow_copy)
-    {
+    if let Some((mut arr, writable_flag)) = try_series_to_numpy_view(py, s, false, allow_copy) {
         if writable && !writable_flag {
             if !allow_copy {
                 return Err(PyValueError::new_err(
@@ -383,9 +381,7 @@ fn list_series_to_numpy(py: Python, s: &Series, writable: bool) -> PyObject {
     split_numpy_array(py, np_array_flat, ca)
 }
 fn split_numpy_array(py: Python, arr: PyObject, ca: &ListChunked) -> PyObject {
-    // TODO: Get an offsets iterator without rechunking
-    let offsets_buffer = ca.offsets().unwrap();
-    let mut offsets = offsets_buffer.iter().map(|o| *o as isize);
+    let mut offsets = ca.iter_offsets().map(|o| o as isize);
 
     // Create slices of the array according to the offsets.
     let mut prev_offset = offsets.next().unwrap();
