@@ -4476,9 +4476,16 @@ class Series:
 
         return self._s.to_numpy(allow_copy=allow_copy, writable=writable)
 
+    @unstable()
     def to_jax(self, device: jax.Device | str | None = None) -> jax.Array:
         """
         Convert this Series to a Jax Array.
+
+        .. versionadded:: 0.20.27
+
+        .. warning::
+            This functionality is currently considered **unstable**. It may be
+            changed at any point without it being considered a breaking change.
 
         Parameters
         ----------
@@ -4519,9 +4526,16 @@ class Series:
                 order="K",
             )
 
+    @unstable()
     def to_torch(self) -> torch.Tensor:
         """
         Convert this Series to a PyTorch Tensor.
+
+        .. versionadded:: 0.20.23
+
+        .. warning::
+            This functionality is currently considered **unstable**. It may be
+            changed at any point without it being considered a breaking change.
 
         Examples
         --------
