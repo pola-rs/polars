@@ -44,10 +44,11 @@ def series(  # noqa: D417
     unique: bool = False,
     allowed_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
     excluded_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
+    allow_time_zones: bool = True,
     **kwargs: Any,
 ) -> Series:
     """
-    Hypothesis strategy for producing polars Series.
+    Hypothesis strategy for producing Polars Series.
 
     Parameters
     ----------
@@ -77,6 +78,8 @@ def series(  # noqa: D417
         when automatically generating Series data, allow only these dtypes.
     excluded_dtypes : {list,set}, optional
         when automatically generating Series data, exclude these dtypes.
+    allow_time_zones
+        Allow generating `Datetime` Series with a time zone.
     **kwargs
         Additional keyword arguments that are passed to the underlying data generation
         strategies.
@@ -162,13 +165,16 @@ def series(  # noqa: D417
     if strategy is None:
         if dtype is None:
             dtype_strat = dtypes(
-                allowed_dtypes=allowed_dtypes, excluded_dtypes=excluded_dtypes
+                allowed_dtypes=allowed_dtypes,
+                excluded_dtypes=excluded_dtypes,
+                allow_time_zones=allow_time_zones,
             )
         else:
             dtype_strat = _instantiate_dtype(
                 dtype,
                 allowed_dtypes=allowed_dtypes,
                 excluded_dtypes=excluded_dtypes,
+                allow_time_zones=allow_time_zones,
             )
         dtype = draw(dtype_strat)
 
@@ -223,6 +229,7 @@ def dataframes(
     allow_chunks: bool = True,
     allowed_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
     excluded_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
+    allow_time_zones: bool = True,
     **kwargs: Any,
 ) -> SearchStrategy[DataFrame]: ...
 
@@ -242,6 +249,7 @@ def dataframes(
     allow_chunks: bool = True,
     allowed_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
     excluded_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
+    allow_time_zones: bool = True,
     **kwargs: Any,
 ) -> SearchStrategy[LazyFrame]: ...
 
@@ -263,10 +271,11 @@ def dataframes(  # noqa: D417
     allow_chunks: bool = True,
     allowed_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
     excluded_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
+    allow_time_zones: bool = True,
     **kwargs: Any,
 ) -> DataFrame | LazyFrame:
     """
-    Hypothesis strategy for producing polars DataFrames or LazyFrames.
+    Hypothesis strategy for producing Polars DataFrames or LazyFrames.
 
     Parameters
     ----------
@@ -302,6 +311,8 @@ def dataframes(  # noqa: D417
         when automatically generating data, allow only these dtypes.
     excluded_dtypes : {list,set}, optional
         when automatically generating data, exclude these dtypes.
+    allow_time_zones
+        Allow generating `Datetime` columns with a time zone.
     **kwargs
         Additional keyword arguments that are passed to the underlying data generation
         strategies.
@@ -436,6 +447,7 @@ def dataframes(  # noqa: D417
                     unique=c.unique,
                     allowed_dtypes=allowed_dtypes,
                     excluded_dtypes=excluded_dtypes,
+                    allow_time_zones=allow_time_zones,
                     **kwargs,
                 )
             )

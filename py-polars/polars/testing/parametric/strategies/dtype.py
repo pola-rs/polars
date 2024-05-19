@@ -89,6 +89,7 @@ def dtypes(
     *,
     allowed_dtypes: Collection[PolarsDataType] | None = None,
     excluded_dtypes: Sequence[PolarsDataType] | None = None,
+    allow_time_zones: bool = True,
     nesting_level: int = 3,
 ) -> SearchStrategy[DataType]:
     """
@@ -102,6 +103,8 @@ def dtypes(
     excluded_dtypes
         Data types the strategy will *not* pick from. This takes priority over
         data types specified in `allowed_dtypes`.
+    allow_time_zones
+        Allow generating `Datetime` data types with a time zone.
     nesting_level
         The complexity of nested data types. If set to 0, nested data types are
         disabled.
@@ -116,18 +119,28 @@ def dtypes(
                 inner=st.just(Null()),
                 allowed_dtypes=nested_dtypes,
                 excluded_dtypes=excluded_dtypes,
+                allow_time_zones=allow_time_zones,
             )
         return st.recursive(
             base=_flat_dtypes(
-                allowed_dtypes=flat_dtypes, excluded_dtypes=excluded_dtypes
+                allowed_dtypes=flat_dtypes,
+                excluded_dtypes=excluded_dtypes,
+                allow_time_zones=allow_time_zones,
             ),
             extend=lambda s: _nested_dtypes(
-                s, allowed_dtypes=nested_dtypes, excluded_dtypes=excluded_dtypes
+                s,
+                allowed_dtypes=nested_dtypes,
+                excluded_dtypes=excluded_dtypes,
+                allow_time_zones=allow_time_zones,
             ),
             max_leaves=nesting_level,
         )
     else:
-        return _flat_dtypes(allowed_dtypes=flat_dtypes, excluded_dtypes=excluded_dtypes)
+        return _flat_dtypes(
+            allowed_dtypes=flat_dtypes,
+            excluded_dtypes=excluded_dtypes,
+            allow_time_zones=allow_time_zones,
+        )
 
 
 def _parse_dtype_restrictions(
@@ -180,6 +193,8 @@ def _flat_dtypes(
     draw: DrawFn,
     allowed_dtypes: Sequence[PolarsDataType] | None = None,
     excluded_dtypes: Sequence[PolarsDataType] | None = None,
+    *,
+    allow_time_zones: bool = True,
 ) -> DataType:
     """Create a strategy for generating non-nested Polars :class:`DataType` objects."""
     if allowed_dtypes is None:
@@ -189,21 +204,25 @@ def _flat_dtypes(
 
     dtype = draw(st.sampled_from(allowed_dtypes))
     return draw(
-        _instantiate_flat_dtype(dtype).filter(lambda x: x not in excluded_dtypes)
+        _instantiate_flat_dtype(dtype, allow_time_zones=allow_time_zones).filter(
+            lambda x: x not in excluded_dtypes
+        )
     )
 
 
 @st.composite
-def _instantiate_flat_dtype(draw: DrawFn, dtype: PolarsDataType) -> DataType:
+def _instantiate_flat_dtype(
+    draw: DrawFn, dtype: PolarsDataType, *, allow_time_zones: bool = True
+) -> DataType:
     """Take a flat data type and instantiate it."""
     if isinstance(dtype, DataType):
         return dtype
     elif dtype in _SIMPLE_DTYPES:
         return dtype()
     elif dtype == Datetime:
-        # TODO: Add time zones
         time_unit = draw(_time_units())
-        return Datetime(time_unit)
+        time_zone = draw(st.none() | _time_zones()) if allow_time_zones else None
+        return Datetime(time_unit, time_zone)
     elif dtype == Duration:
         time_unit = draw(_time_units())
         return Duration(time_unit)
@@ -231,6 +250,8 @@ def _nested_dtypes(
     inner: SearchStrategy[DataType],
     allowed_dtypes: Sequence[PolarsDataType] | None = None,
     excluded_dtypes: Sequence[PolarsDataType] | None = None,
+    *,
+    allow_time_zones: bool = True,
 ) -> DataType:
     """Create a strategy for generating nested Polars :class:`DataType` objects."""
     if allowed_dtypes is None:
@@ -240,9 +261,9 @@ def _nested_dtypes(
 
     dtype = draw(st.sampled_from(allowed_dtypes))
     return draw(
-        _instantiate_nested_dtype(dtype, inner).filter(
-            lambda x: x not in excluded_dtypes
-        )
+        _instantiate_nested_dtype(
+            dtype, inner, allow_time_zones=allow_time_zones
+        ).filter(lambda x: x not in excluded_dtypes)
     )
 
 
@@ -251,6 +272,8 @@ def _instantiate_nested_dtype(
     draw: DrawFn,
     dtype: PolarsDataType,
     inner: SearchStrategy[DataType],
+    *,
+    allow_time_zones: bool = True,
 ) -> DataType:
     """Take a nested data type and instantiate it."""
 
@@ -258,9 +281,15 @@ def _instantiate_nested_dtype(
         if inner_dtype is None:
             return draw(inner)
         elif inner_dtype.is_nested():
-            return draw(_instantiate_nested_dtype(inner_dtype, inner))
+            return draw(
+                _instantiate_nested_dtype(
+                    inner_dtype, inner, allow_time_zones=allow_time_zones
+                )
+            )
         else:
-            return draw(_instantiate_flat_dtype(inner_dtype))
+            return draw(
+                _instantiate_flat_dtype(inner_dtype, allow_time_zones=allow_time_zones)
+            )
 
     if dtype == List:
         inner_dtype = instantiate_inner(getattr(dtype, "inner", None))
@@ -292,6 +321,13 @@ def _time_units() -> SearchStrategy[TimeUnit]:
     return st.sampled_from(["us", "ns", "ms"])
 
 
+def _time_zones() -> SearchStrategy[str]:
+    """Create a strategy for generating valid time zones."""
+    return st.timezone_keys(allow_prefix=False).filter(
+        lambda tz: tz not in {"Factory", "localtime"}
+    )
+
+
 def _categorical_orderings() -> SearchStrategy[CategoricalOrdering]:
     """Create a strategy for generating valid ordering types for categorical data."""
     return st.sampled_from(["physical", "lexical"])
@@ -305,6 +341,7 @@ def _instantiate_dtype(
     allowed_dtypes: Collection[PolarsDataType] | None = None,
     excluded_dtypes: Sequence[PolarsDataType] | None = None,
     nesting_level: int = 3,
+    allow_time_zones: bool = True,
 ) -> DataType:
     """Take a data type and instantiate it."""
     if not dtype.is_nested():
@@ -318,7 +355,11 @@ def _instantiate_dtype(
             allowed_dtypes = same_dtypes if same_dtypes else [dtype]
 
         return draw(
-            _flat_dtypes(allowed_dtypes=allowed_dtypes, excluded_dtypes=excluded_dtypes)
+            _flat_dtypes(
+                allowed_dtypes=allowed_dtypes,
+                excluded_dtypes=excluded_dtypes,
+                allow_time_zones=allow_time_zones,
+            )
         )
 
     def draw_inner(dtype: PolarsDataType | None) -> DataType:
@@ -328,6 +369,7 @@ def _instantiate_dtype(
                     allowed_dtypes=allowed_dtypes,
                     excluded_dtypes=excluded_dtypes,
                     nesting_level=nesting_level - 1,
+                    allow_time_zones=allow_time_zones,
                 )
             )
         else:
@@ -337,6 +379,7 @@ def _instantiate_dtype(
                     allowed_dtypes=allowed_dtypes,
                     excluded_dtypes=excluded_dtypes,
                     nesting_level=nesting_level - 1,
+                    allow_time_zones=allow_time_zones,
                 )
             )
 
@@ -362,6 +405,7 @@ def _instantiate_dtype(
                             allowed_dtypes=allowed_dtypes,
                             excluded_dtypes=excluded_dtypes,
                             nesting_level=nesting_level - 1,
+                            allow_time_zones=allow_time_zones,
                         )
                     ),
                 )
@@ -375,6 +419,7 @@ def _instantiate_dtype(
                 allowed_dtypes=allowed_dtypes,
                 excluded_dtypes=excluded_dtypes,
                 nesting_level=nesting_level - 1,
+                allow_time_zones=allow_time_zones,
             )
             fields = [Field(f"f{i}", draw(inner_strategy)) for i in range(n_fields)]
         return Struct(fields)
