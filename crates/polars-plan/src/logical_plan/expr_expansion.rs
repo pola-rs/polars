@@ -37,7 +37,9 @@ fn rewrite_special_aliases(expr: Expr) -> PolarsResult<Expr> {
                 let name = function.call(&name)?;
                 Ok(Expr::Alias(expr, ColumnName::from(name)))
             },
-            _ => panic!("`keep`, `suffix`, `prefix` should be last expression"),
+            _ => {
+                polars_bail!(InvalidOperation: "`keep`, `suffix`, `prefix` should be last expression")
+            },
         }
     } else {
         Ok(expr)
@@ -526,7 +528,8 @@ fn replace_and_add_to_results(
         }) {
             match &e {
                 Expr::Columns(names) => {
-                    let exclude = prepare_excluded(&expr, schema, keys, flags.has_exclude)?;
+                    // Don't exclude grouping keys if columns are explicitly specified.
+                    let exclude = prepare_excluded(&expr, schema, &[], flags.has_exclude)?;
                     expand_columns(&expr, result, names, schema, &exclude)?;
                 },
                 Expr::DtypeColumn(dtypes) => {

@@ -70,3 +70,23 @@ def test_struct_name_resolving_15430() -> None:
     assert b["b"].item() == "c"
     assert a.columns == ["b"]
     assert b.columns == ["b"]
+
+
+def test_exclude_keys_in_aggregation_16170() -> None:
+    df = pl.DataFrame({"A": [4, 4, 3], "B": [1, 2, 3], "C": [5, 6, 7]})
+
+    # wildcard excludes aggregation column
+    assert df.lazy().group_by("A").agg(pl.all().name.prefix("agg_")).columns == [
+        "A",
+        "agg_B",
+        "agg_C",
+    ]
+
+    # specifically named columns are not excluded
+    assert df.lazy().group_by("A").agg(
+        pl.col("B", "C").name.prefix("agg_")
+    ).columns == ["A", "agg_B", "agg_C"]
+
+    assert df.lazy().group_by("A").agg(
+        pl.col("A", "C").name.prefix("agg_")
+    ).columns == ["A", "agg_A", "agg_C"]
