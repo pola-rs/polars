@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import contextlib
 import math
+import os
+from contextlib import nullcontext
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal as PyDecimal
 from typing import (
@@ -66,6 +68,7 @@ from polars.datatypes import (
     Decimal,
     Duration,
     Enum,
+    Float32,
     Float64,
     Int8,
     Int16,
@@ -117,6 +120,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 if TYPE_CHECKING:
     import sys
 
+    import jax
     import torch
     from hvplot.plotting.core import hvPlotTabularPolars
 
@@ -4472,15 +4476,80 @@ class Series:
 
         return self._s.to_numpy(allow_copy=allow_copy, writable=writable)
 
+    @unstable()
+    def to_jax(self, device: jax.Device | str | None = None) -> jax.Array:
+        """
+        Convert this Series to a Jax Array.
+
+        .. versionadded:: 0.20.27
+
+        .. warning::
+            This functionality is currently considered **unstable**. It may be
+            changed at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        device
+            Specify the jax `Device` on which the array will be created; can provide
+            a string (such as "cpu", "gpu", or "tpu") in which case the device is
+            retrieved as `jax.devices(string)[0]`. For more specific control you
+            can supply the instantiated `Device` directly. If None, arrays are
+            created on the default device.
+
+        Examples
+        --------
+        >>> s = pl.Series("x", [10.5, 0.0, -10.0, 5.5])
+        >>> s.to_jax()
+        Array([ 10.5,   0. , -10. ,   5.5], dtype=float32)
+        """
+        jx = import_optional(
+            "jax",
+            install_message="Please see `https://jax.readthedocs.io/en/latest/installation.html` "
+            "for specific installation recommendations for the Jax package",
+        )
+        if isinstance(device, str):
+            device = jx.devices(device)[0]
+        if (
+            jx.config.jax_enable_x64
+            or bool(int(os.environ.get("JAX_ENABLE_X64", "0")))
+            or self.dtype not in {Float64, Int64, UInt64}
+        ):
+            srs = self
+        else:
+            single_precision = {Float64: Float32, Int64: Int32, UInt64: UInt32}
+            srs = self.cast(single_precision[self.dtype])  # type: ignore[index]
+
+        with nullcontext() if device is None else jx.default_device(device):
+            return jx.numpy.asarray(
+                # note: jax arrays are immutable, so can avoid a copy (vs torch)
+                a=srs.to_numpy(writable=False, use_pyarrow=False),
+                order="K",
+            )
+
+    @unstable()
     def to_torch(self) -> torch.Tensor:
         """
-        Convert this Series to a PyTorch tensor.
+        Convert this Series to a PyTorch Tensor.
+
+        .. versionadded:: 0.20.23
+
+        .. warning::
+            This functionality is currently considered **unstable**. It may be
+            changed at any point without it being considered a breaking change.
+
+        Notes
+        -----
+        PyTorch tensors do not support UInt16, UInt32, or UInt64; these dtypes
+        will be automatically cast to Int32, Int64, and Int64, respectively.
 
         Examples
         --------
         >>> s = pl.Series("x", [1, 0, 1, 2, 0], dtype=pl.UInt8)
         >>> s.to_torch()
         tensor([1, 0, 1, 2, 0], dtype=torch.uint8)
+        >>> s = pl.Series("x", [5.5, -10.0, 2.5], dtype=pl.Float32)
+        >>> s.to_torch()
+        tensor([  5.5000, -10.0000,   2.5000])
         """
         torch = import_optional("torch")
 

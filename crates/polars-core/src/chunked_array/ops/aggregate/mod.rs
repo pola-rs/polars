@@ -195,7 +195,7 @@ where
     }
 }
 
-/// Booleans are casted to 1 or 0.
+/// Booleans are cast to 1 or 0.
 impl BooleanChunked {
     pub fn sum(&self) -> Option<IdxSize> {
         Some(if self.is_empty() {
