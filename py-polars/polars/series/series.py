@@ -4537,11 +4537,19 @@ class Series:
             This functionality is currently considered **unstable**. It may be
             changed at any point without it being considered a breaking change.
 
+        Notes
+        -----
+        PyTorch tensors do not support UInt16, UInt32, or UInt64; these dtypes
+        will be automatically cast to Int32, Int64, and Int64, respectively.
+
         Examples
         --------
         >>> s = pl.Series("x", [1, 0, 1, 2, 0], dtype=pl.UInt8)
         >>> s.to_torch()
         tensor([1, 0, 1, 2, 0], dtype=torch.uint8)
+        >>> s = pl.Series("x", [5.5, -10.0, 2.5], dtype=pl.Float32)
+        >>> s.to_torch()
+        tensor([  5.5000, -10.0000,   2.5000])
         """
         torch = import_optional("torch")
 
