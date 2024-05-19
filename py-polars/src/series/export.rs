@@ -378,12 +378,21 @@ fn list_series_to_numpy(py: Python, s: &Series, writable: bool) -> PyObject {
 
     let np_array_flat = series_to_numpy(py, &s_inner, writable, true).unwrap();
 
-    split_numpy_array(py, np_array_flat, ca)
+    let offsets = ca.iter_offsets().map(|o| o as isize);
+    split_numpy_array(py, np_array_flat, offsets)
 }
-fn split_numpy_array(py: Python, arr: PyObject, ca: &ListChunked) -> PyObject {
-    let mut offsets = ca.iter_offsets().map(|o| o as isize);
-
-    // Create slices of the array according to the offsets.
+/// Slices the NumPy array according to the given offsets.
+///
+/// Returns a new NumPy array of type object containing the arrays.
+///
+/// # Panics
+///
+/// This function will panic if the offsets contain indices that are not valid for the given array,
+/// or offsets iterator is empty.
+fn split_numpy_array<I>(py: Python, arr: PyObject, mut offsets: I) -> PyObject
+where
+    I: Iterator<Item = isize>,
+{
     let mut prev_offset = offsets.next().unwrap();
     let values = offsets.map(|current_offset| {
         let slice = PySlice::new_bound(py, prev_offset, current_offset, 1);
