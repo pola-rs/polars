@@ -272,15 +272,18 @@ def test_series_to_numpy_array_of_arrays() -> None:
     assert_allow_copy_false_raises(s)
 
 
-def test_series_to_numpy_list() -> None:
+@pytest.mark.parametrize("chunked", [True, False])
+def test_series_to_numpy_list(chunked: bool) -> None:
     values = [[1, 2], [3, 4, 5], [6], []]
     s = pl.Series(values)
+    if chunked:
+        s = pl.concat([s[:2], s[2:]])
     result = s.to_numpy(use_pyarrow=False)
 
     expected = np.array([np.array(v, dtype=np.int64) for v in values], dtype=np.object_)
-    for res, exp in zip(result, expected, strict=True):
+    for res, exp in zip(result, expected):
         assert_array_equal(res, exp)
-        assert res.flags.writeable is False  # Inner is created with zero copy path
+        assert res.flags.writeable == chunked
     assert result.dtype == expected.dtype
     assert_allow_copy_false_raises(s)
 
