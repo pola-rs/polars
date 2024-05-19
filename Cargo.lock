@@ -3308,7 +3308,6 @@ dependencies = [
  "polars-time",
  "polars-utils",
  "pyo3",
- "pyo3-built",
  "recursive",
  "serde_json",
  "smartstring",
@@ -3344,12 +3343,6 @@ dependencies = [
  "once_cell",
  "target-lexicon",
 ]
-
-[[package]]
-name = "pyo3-built"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "35ee655adc94166665a1d714b439e27857dd199b947076891d6a17d32d396cde"
 
 [[package]]
 name = "pyo3-ffi"

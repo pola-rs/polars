@@ -9,8 +9,8 @@ def test_build_info_version() -> None:
 def test_build_info_keys() -> None:
     build_info = pl.build_info()
     expected_keys = [
-        "build",
-        "info-time",
+        "compiler",
+        "time",
         "dependencies",
         "features",
         "host",
