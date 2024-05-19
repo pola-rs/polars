@@ -465,6 +465,151 @@ def all() -> SelectorType:
     return _selector_proxy_(F.all(), name="all")
 
 
+def alpha(ascii_only: bool = False) -> SelectorType:  # noqa: FBT001
+    """
+    Select all columns with alphabetic names (eg: only letters).
+
+    Parameters
+    ----------
+    ascii_only
+        Indicate whether to consider only ASCII alphabetic characters, or the full
+        Unicode range of valid letters (accented, idiographic, etc).
+
+    Notes
+    -----
+    Matching column names cannot contain *any* non-alphabetic characters. Note
+    that the definition of "alphabetic" consists of all valid Unicode alphabetic
+    characters by default; this can be changed by setting `ascii_only=True`.
+
+    Examples
+    --------
+    >>> import polars as pl
+    >>> import polars.selectors as cs
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "no1": [100, 200, 300],
+    ...         "café": ["espresso", "latte", "mocha"],
+    ...         "t/f": [True, False, None],
+    ...         "hmm": ["aaa", "bbb", "ccc"],
+    ...         "都市": ["東京", "大阪", "京都"],
+    ...     }
+    ... )
+
+    Select columns with alphabetic names; note that accented
+    characters and kanji are recognised as alphabetic here:
+
+    >>> df.select(cs.alpha())
+    shape: (3, 3)
+    ┌──────────┬─────┬──────┐
+    │ café     ┆ hmm ┆ 都市 │
+    │ ---      ┆ --- ┆ ---  │
+    │ str      ┆ str ┆ str  │
+    ╞══════════╪═════╪══════╡
+    │ espresso ┆ aaa ┆ 東京 │
+    │ latte    ┆ bbb ┆ 大阪 │
+    │ mocha    ┆ ccc ┆ 京都 │
+    └──────────┴─────┴──────┘
+
+    Constrain the definition of "alphabetic" to ASCII characters only:
+
+    >>> df.select(cs.alpha(ascii_only=True))
+    shape: (3, 1)
+    ┌─────┐
+    │ hmm │
+    │ --- │
+    │ str │
+    ╞═════╡
+    │ aaa │
+    │ bbb │
+    │ ccc │
+    └─────┘
+
+    Select all columns *except* for those with alphabetic names:
+
+    >>> df.select(~cs.alpha())
+    shape: (3, 2)
+    ┌─────┬───────┐
+    │ no1 ┆ t/f   │
+    │ --- ┆ ---   │
+    │ i64 ┆ bool  │
+    ╞═════╪═══════╡
+    │ 100 ┆ true  │
+    │ 200 ┆ false │
+    │ 300 ┆ null  │
+    └─────┴───────┘
+    """
+    re_alpha = r"a-zA-Z" if ascii_only else r"\p{Alphabetic}"
+    return _selector_proxy_(
+        F.col(f"^[{re_alpha}]+$"),
+        name="alpha",
+        parameters={"ascii_only": ascii_only},
+    )
+
+
+def alphanumeric(ascii_only: bool = False) -> SelectorType:  # noqa: FBT001
+    """
+    Select all columns with alphanumeric names (eg: only letters and the digits 0-9).
+
+    Parameters
+    ----------
+    ascii_only
+        Indicate whether to consider only ASCII alphabetic characters, or the full
+        Unicode range of valid letters (accented, idiographic, etc).
+
+    Notes
+    -----
+    Matching column names cannot contain *any* non-alphabetic or integer characters.
+    Note that the definition of "alphabetic" consists of all valid Unicode alphabetic
+    characters by default; this can be changed by setting `ascii_only=True`.
+
+    Examples
+    --------
+    >>> import polars as pl
+    >>> import polars.selectors as cs
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "1st_value": [100, 200, 300],
+    ...         "flagged": [True, False, True],
+    ...         "00prefix": ["01:aa", "02:bb", "03:cc"],
+    ...     }
+    ... )
+
+    Select columns with alphanumeric names:
+
+    >>> df.select(cs.alphanumeric())
+    shape: (3, 2)
+    ┌─────────┬──────────┐
+    │ flagged ┆ 00prefix │
+    │ ---     ┆ ---      │
+    │ bool    ┆ str      │
+    ╞═════════╪══════════╡
+    │ true    ┆ 01:aa    │
+    │ false   ┆ 02:bb    │
+    │ true    ┆ 03:cc    │
+    └─────────┴──────────┘
+
+    Select all columns *except* for those with alphanumeric names:
+
+    >>> df.select(~cs.alphanumeric())
+    shape: (3, 1)
+    ┌───────────┐
+    │ 1st_value │
+    │ ---       │
+    │ i64       │
+    ╞═══════════╡
+    │ 100       │
+    │ 200       │
+    │ 300       │
+    └───────────┘
+    """
+    re_alpha = r"a-zA-Z" if ascii_only else r"\p{Alphabetic}"
+    return _selector_proxy_(
+        F.col(f"^[{re_alpha}0-9]+$"),
+        name="alphanumeric",
+        parameters={"ascii_only": ascii_only},
+    )
+
+
 def binary() -> SelectorType:
     """
     Select all binary columns.
@@ -1216,6 +1361,66 @@ def decimal() -> SelectorType:
     """
     # TODO: allow explicit selection by scale/precision?
     return _selector_proxy_(F.col(Decimal), name="decimal")
+
+
+def digit() -> SelectorType:
+    """
+    Select all columns having names consisting only of digits (eg: integer 0-9).
+
+    Examples
+    --------
+    >>> import polars as pl
+    >>> import polars.selectors as cs
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "key": ["aaa", "bbb", "aaa", "bbb", "bbb"],
+    ...         "year": [2001, 2001, 2025, 2025, 2001],
+    ...         "value": [-25, 100, 75, -15, -5],
+    ...     }
+    ... ).pivot(
+    ...     values="value",
+    ...     index="key",
+    ...     columns="year",
+    ...     aggregate_function="sum",
+    ... )
+    >>> print(df)
+    shape: (2, 3)
+    ┌─────┬──────┬──────┐
+    │ key ┆ 2001 ┆ 2025 │
+    │ --- ┆ ---  ┆ ---  │
+    │ str ┆ i64  ┆ i64  │
+    ╞═════╪══════╪══════╡
+    │ aaa ┆ -25  ┆ 75   │
+    │ bbb ┆ 95   ┆ -15  │
+    └─────┴──────┴──────┘
+
+    Select columns with digit names:
+
+    >>> df.select(cs.digit())
+    shape: (2, 2)
+    ┌──────┬──────┐
+    │ 2001 ┆ 2025 │
+    │ ---  ┆ ---  │
+    │ i64  ┆ i64  │
+    ╞══════╪══════╡
+    │ -25  ┆ 75   │
+    │ 95   ┆ -15  │
+    └──────┴──────┘
+
+    Select all columns *except* for those with digit names:
+
+    >>> df.select(~cs.digit())
+    shape: (2, 1)
+    ┌─────┐
+    │ key │
+    │ --- │
+    │ str │
+    ╞═════╡
+    │ aaa │
+    │ bbb │
+    └─────┘
+    """
+    return _selector_proxy_(F.col(r"^\d+$"), name="digit")
 
 
 def duration(
@@ -2254,6 +2459,8 @@ def time() -> SelectorType:
 
 __all__ = [
     "all",
+    "alpha",
+    "alphanumeric",
     "binary",
     "boolean",
     "by_dtype",
@@ -2264,6 +2471,7 @@ __all__ = [
     "date",
     "datetime",
     "decimal",
+    "digit",
     "duration",
     "ends_with",
     "exclude",
