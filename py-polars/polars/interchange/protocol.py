@@ -189,7 +189,7 @@ class Column(Protocol):
 class DataFrame(Protocol):
     """Interchange dataframe object."""
 
-    version: ClassVar[int]
+    version: ClassVar[int]  # Version of the protocol
 
     def __dataframe__(
         self,
