@@ -1635,6 +1635,7 @@ class DataFrame:
         order: IndexOrder = ...,
     ) -> dict[str, jax.Array]: ...
 
+    @unstable()
     def to_jax(
         self,
         return_type: JaxExportType = "array",
@@ -1649,6 +1650,10 @@ class DataFrame:
         Convert DataFrame to a 2D Jax Array, or dict of Jax Arrays.
 
         .. versionadded:: 0.20.27
+
+        .. warning::
+            This functionality is currently considered **unstable**. It may be
+            changed at any point without it being considered a breaking change.
 
         Parameters
         ----------
@@ -1838,6 +1843,7 @@ class DataFrame:
         dtype: PolarsDataType | None = ...,
     ) -> dict[str, torch.Tensor]: ...
 
+    @unstable()
     def to_torch(
         self,
         return_type: TorchExportType = "tensor",
@@ -1850,6 +1856,10 @@ class DataFrame:
         Convert DataFrame to a 2D PyTorch Tensor, Dataset, or dict of Tensors.
 
         .. versionadded:: 0.20.23
+
+        .. warning::
+            This functionality is currently considered **unstable**. It may be
+            changed at any point without it being considered a breaking change.
 
         Parameters
         ----------
