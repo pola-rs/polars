@@ -1,7 +1,7 @@
 //! this contains code used for rewriting projections, expanding wildcards, regex selection etc.
 use super::*;
 
-/// This replace the wildcard Expr with a Column Expr. It also removes the Exclude Expr from the
+/// This replaces the wildcard Expr with a Column Expr. It also removes the Exclude Expr from the
 /// expression chain.
 pub(super) fn replace_wildcard_with_column(expr: Expr, column_name: Arc<str>) -> Expr {
     expr.map_expr(|e| match e {
@@ -301,6 +301,112 @@ fn expand_dtypes(
     Ok(())
 }
 
+#[cfg(feature = "dtype-struct")]
+fn replace_struct_multiple_fields_with_field(expr: Expr, column_name: &ColumnName) -> Expr {
+    expr.map_expr(|e| match e {
+        Expr::Function {
+            function,
+            input,
+            options,
+        } => {
+            if matches!(
+                function,
+                FunctionExpr::StructExpr(StructFunction::MultipleFields(_))
+            ) {
+                Expr::Function {
+                    input,
+                    function: FunctionExpr::StructExpr(StructFunction::FieldByName(
+                        column_name.clone(),
+                    )),
+                    options,
+                }
+            } else {
+                Expr::Function {
+                    input,
+                    function,
+                    options,
+                }
+            }
+        },
+        e => e,
+    })
+}
+
+#[cfg(feature = "dtype-struct")]
+fn expand_struct_fields(
+    struct_expr: &Expr,
+    full_expr: &Expr,
+    result: &mut Vec<Expr>,
+    schema: &Schema,
+    names: &[ColumnName],
+    exclude: &PlHashSet<Arc<str>>,
+) -> PolarsResult<()> {
+    let first_name = names[0].as_ref();
+    if names.len() == 1 && first_name == "*" || is_regex_projection(first_name) {
+        let Expr::Function { input, .. } = struct_expr else {
+            unreachable!()
+        };
+        let field = input[0].to_field(schema, Context::Default)?;
+        let DataType::Struct(fields) = field.data_type() else {
+            polars_bail!(InvalidOperation: "expected 'struct'")
+        };
+
+        // Wildcard.
+        let names = if first_name == "*" {
+            fields
+                .iter()
+                .flat_map(|field| {
+                    let name = field.name().as_str();
+
+                    if exclude.contains(name) {
+                        None
+                    } else {
+                        Some(Arc::from(field.name().as_str()))
+                    }
+                })
+                .collect::<Vec<_>>()
+        }
+        // Regex
+        else {
+            #[cfg(feature = "regex")]
+            {
+                let re = regex::Regex::new(first_name)
+                    .map_err(|e| polars_err!(ComputeError: "invalid regex {}", e))?;
+
+                fields
+                    .iter()
+                    .flat_map(|field| {
+                        let name = field.name().as_str();
+                        if exclude.contains(name) || !re.is_match(name) {
+                            None
+                        } else {
+                            Some(Arc::from(field.name().as_str()))
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            }
+            #[cfg(not(feature = "regex"))]
+            {
+                panic!("activate 'regex' feature")
+            }
+        };
+
+        return expand_struct_fields(struct_expr, full_expr, result, schema, &names, exclude);
+    }
+
+    for name in names {
+        polars_ensure!(name.as_ref() != "*", InvalidOperation: "cannot combine wildcards and column names");
+
+        if !exclude.contains(name) {
+            result.push(replace_struct_multiple_fields_with_field(
+                full_expr.clone(),
+                name,
+            ))
+        }
+    }
+    Ok(())
+}
+
 /// replace `IndexColumn` with `col("foo")..col("bar")`
 fn expand_indices(
     expr: &Expr,
@@ -456,6 +562,13 @@ fn find_flags(expr: &Expr) -> ExpansionFlags {
             } => {
                 has_struct_field_by_index = true;
             },
+            #[cfg(feature = "dtype-struct")]
+            Expr::Function {
+                function: FunctionExpr::StructExpr(StructFunction::MultipleFields(_)),
+                ..
+            } => {
+                multiple_columns = true;
+            },
             Expr::Exclude(_, _) => has_exclude = true,
             _ => {},
         }
@@ -520,11 +633,14 @@ fn replace_and_add_to_results(
     // has multiple column names
     // the expanded columns are added to the result
     if flags.multiple_columns {
-        if let Some(e) = expr.into_iter().find(|e| {
-            matches!(
-                e,
-                Expr::Columns(_) | Expr::DtypeColumn(_) | Expr::IndexColumn(_)
-            )
+        if let Some(e) = expr.into_iter().find(|e| match e {
+            Expr::Columns(_) | Expr::DtypeColumn(_) | Expr::IndexColumn(_) => true,
+            #[cfg(feature = "dtype-struct")]
+            Expr::Function {
+                function: FunctionExpr::StructExpr(StructFunction::MultipleFields(_)),
+                ..
+            } => true,
+            _ => false,
         }) {
             match &e {
                 Expr::Columns(names) => {
@@ -539,6 +655,20 @@ fn replace_and_add_to_results(
                 Expr::IndexColumn(indices) => {
                     let exclude = prepare_excluded(&expr, schema, keys, flags.has_exclude)?;
                     expand_indices(&expr, result, schema, indices, &exclude)?
+                },
+                #[cfg(feature = "dtype-struct")]
+                Expr::Function { function, .. }
+                    if matches!(
+                        function,
+                        FunctionExpr::StructExpr(StructFunction::MultipleFields(_))
+                    ) =>
+                {
+                    let FunctionExpr::StructExpr(StructFunction::MultipleFields(names)) = function
+                    else {
+                        unreachable!()
+                    };
+                    let exclude = prepare_excluded(&expr, schema, keys, flags.has_exclude)?;
+                    expand_struct_fields(e, &expr, result, schema, names, &exclude)?
                 },
                 _ => {},
             }

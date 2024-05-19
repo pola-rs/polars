@@ -14,6 +14,7 @@ pub enum StructFunction {
     #[cfg(feature = "json")]
     JsonEncode,
     WithFields,
+    MultipleFields(Arc<[ColumnName]>),
 }
 
 impl StructFunction {
@@ -109,6 +110,7 @@ impl StructFunction {
                     polars_bail!(op = "with_fields", got = dt, expected = "Struct")
                 }
             },
+            MultipleFields(_) => panic!("should be expanded"),
         }
     }
 }
@@ -125,6 +127,7 @@ impl Display for StructFunction {
             #[cfg(feature = "json")]
             JsonEncode => write!(f, "struct.to_json"),
             WithFields => write!(f, "with_fields"),
+            MultipleFields(_) => write!(f, "multiple_fields"),
         }
     }
 }
@@ -141,6 +144,7 @@ impl From<StructFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "json")]
             JsonEncode => map!(to_json),
             WithFields => map_as_slice!(with_fields),
+            MultipleFields(_) => unimplemented!(),
         }
     }
 }

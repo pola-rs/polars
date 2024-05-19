@@ -1,5 +1,10 @@
+from typing import Any
+
+import pytest
+
 import polars as pl
 from polars import NUMERIC_DTYPES
+from polars.testing import assert_frame_equal
 
 
 def test_regex_exclude() -> None:
@@ -90,3 +95,39 @@ def test_exclude_keys_in_aggregation_16170() -> None:
     assert df.lazy().group_by("A").agg(
         pl.col("A", "C").name.prefix("agg_")
     ).columns == ["A", "agg_A", "agg_C"]
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        ["aaa", "ccc"],
+        [["aaa", "ccc"]],
+        [["aaa"], "ccc"],
+        [["^aa.+|cc.+$"]],
+    ],
+)
+def test_struct_field_expand(field: Any) -> None:
+    df = pl.DataFrame(
+        {
+            "aaa": [1, 2],
+            "bbb": ["ab", "cd"],
+            "ccc": [True, None],
+            "ddd": [[1, 2], [3]],
+        }
+    )
+    struct_df = df.select(pl.struct(["aaa", "bbb", "ccc", "ddd"]).alias("struct_col"))
+    res_df = struct_df.select(pl.col("struct_col").struct.field(*field))
+    assert_frame_equal(res_df, df.select("aaa", "ccc"))
+
+
+def test_struct_field_expand_star() -> None:
+    df = pl.DataFrame(
+        {
+            "aaa": [1, 2],
+            "bbb": ["ab", "cd"],
+            "ccc": [True, None],
+            "ddd": [[1, 2], [3]],
+        }
+    )
+    struct_df = df.select(pl.struct(["aaa", "bbb", "ccc", "ddd"]).alias("struct_col"))
+    assert_frame_equal(struct_df.select(pl.col("struct_col").struct.field("*")), df)
