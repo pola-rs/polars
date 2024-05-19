@@ -378,26 +378,16 @@ fn list_series_to_numpy(py: Python, s: &Series, writable: bool) -> PyObject {
 
     let np_array_flat = series_to_numpy(py, &s_inner, writable, true).unwrap();
 
-    let offsets = ca.iter_offsets().map(|o| o as isize);
-    split_numpy_array(py, np_array_flat, offsets)
-}
-/// Slices the NumPy array according to the given offsets.
-///
-/// Returns a new NumPy array of type object containing the arrays.
-///
-/// # Panics
-///
-/// This function will panic if the offsets contain indices that are not valid for the given array,
-/// or offsets iterator is empty.
-fn split_numpy_array<I>(py: Python, arr: PyObject, mut offsets: I) -> PyObject
-where
-    I: Iterator<Item = isize>,
-{
+    // Split the NumPy array into subarrays by offset.
+    // TODO: Downcast the NumPy array to Rust and split without calling into Python.
+    let mut offsets = ca.iter_offsets().map(|o| isize::try_from(o).unwrap());
     let mut prev_offset = offsets.next().unwrap();
     let values = offsets.map(|current_offset| {
         let slice = PySlice::new_bound(py, prev_offset, current_offset, 1);
         prev_offset = current_offset;
-        arr.call_method1(py, "__getitem__", (slice,)).unwrap()
+        np_array_flat
+            .call_method1(py, "__getitem__", (slice,))
+            .unwrap()
     });
 
     PyArray1::from_iter_bound(py, values).into_py(py)
