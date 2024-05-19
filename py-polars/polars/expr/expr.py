@@ -4589,7 +4589,7 @@ class Expr:
 
     def map_elements(
         self,
-        function: Callable[[Series], Series] | Callable[[Any], Any],
+        function: Callable[[Any], Any],
         return_dtype: PolarsDataType | None = None,
         *,
         skip_nulls: bool = True,
@@ -11435,7 +11435,7 @@ class Expr:
     @deprecate_renamed_function("map_elements", version="0.19.0")
     def apply(
         self,
-        function: Callable[[Series], Series] | Callable[[Any], Any],
+        function: Callable[[Any], Any],
         return_dtype: PolarsDataType | None = None,
         *,
         skip_nulls: bool = True,
