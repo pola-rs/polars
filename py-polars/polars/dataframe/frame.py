@@ -1647,7 +1647,7 @@ class DataFrame:
         order: IndexOrder = "fortran",
     ) -> jax.Array | dict[str, jax.Array]:
         """
-        Convert DataFrame to a 2D Jax Array, or dict of Jax Arrays.
+        Convert DataFrame to a Jax Array, or dict of Jax Arrays.
 
         .. versionadded:: 0.20.27
 
@@ -1658,7 +1658,7 @@ class DataFrame:
         Parameters
         ----------
         return_type : {"array", "dict"}
-            Set return type; a 2D Jax Array, or dict of Jax Arrays.
+            Set return type; a Jax Array, or dict of Jax Arrays.
         device
             Specify the jax `Device` on which the array will be created; can provide
             a string (such as "cpu", "gpu", or "tpu") in which case the device is
@@ -1853,7 +1853,7 @@ class DataFrame:
         dtype: PolarsDataType | None = None,
     ) -> torch.Tensor | dict[str, torch.Tensor] | PolarsDataset:
         """
-        Convert DataFrame to a 2D PyTorch Tensor, Dataset, or dict of Tensors.
+        Convert DataFrame to a PyTorch Tensor, Dataset, or dict of Tensors.
 
         .. versionadded:: 0.20.23
 
@@ -1864,7 +1864,7 @@ class DataFrame:
         Parameters
         ----------
         return_type : {"tensor", "dataset", "dict"}
-            Set return type; a 2D PyTorch Tensor, PolarsDataset (a frame-specialized
+            Set return type; a PyTorch Tensor, PolarsDataset (a frame-specialized
             TensorDataset), or dict of Tensors.
         label
             One or more column names, expressions, or selectors that label the feature
