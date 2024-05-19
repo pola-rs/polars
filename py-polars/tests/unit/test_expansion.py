@@ -1,5 +1,6 @@
 import polars as pl
 from polars import NUMERIC_DTYPES
+from polars.testing import assert_frame_equal
 
 
 def test_regex_exclude() -> None:
@@ -90,3 +91,26 @@ def test_exclude_keys_in_aggregation_16170() -> None:
     assert df.lazy().group_by("A").agg(
         pl.col("A", "C").name.prefix("agg_")
     ).columns == ["A", "agg_A", "agg_C"]
+
+
+def test_struct_field_expansion() -> None:
+    df = pl.DataFrame(
+        {
+            "aaa": [1, 2],
+            "bbb": ["ab", "cd"],
+            "ccc": [True, None],
+            "ddd": [[1, 2], [3]],
+        }
+    )
+
+    struct_df = df.select(pl.struct(["aaa", "bbb", "ccc", "ddd"]).alias("struct_col"))
+
+    assert_frame_equal(struct_df.select(pl.col("struct_col").struct.field("*")), df)
+    assert struct_df.select(
+        pl.col("struct_col").struct.field(["aaa", "ccc"])
+    ).columns == ["aaa", "ccc"]
+
+    assert struct_df.select(pl.col("struct_col").struct.field("^a.+|b.+$")).columns == [
+        "aaa",
+        "bbb",
+    ]
