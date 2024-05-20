@@ -2,7 +2,6 @@ use polars_core::prelude::*;
 use pyo3::prelude::*;
 use pyo3::types::PyList;
 
-use crate::interop::numpy::{series_to_numpy, try_series_to_numpy_view};
 use crate::prelude::*;
 use crate::{interop, PySeries};
 
@@ -154,24 +153,5 @@ impl PySeries {
 
             interop::arrow::to_py::to_py_array(self.series.to_arrow(0, false), py, &pyarrow)
         })
-    }
-
-    /// Convert this Series to a NumPy ndarray.
-    ///
-    /// This method copies data only when necessary. Set `allow_copy` to raise an error if copy
-    /// is required. Set `writable` to make sure the resulting array is writable, possibly requiring
-    /// copying the data.
-    fn to_numpy(&self, py: Python, writable: bool, allow_copy: bool) -> PyResult<PyObject> {
-        series_to_numpy(py, &self.series, writable, allow_copy)
-    }
-
-    /// Create a view of the data as a NumPy ndarray.
-    ///
-    /// WARNING: The resulting view will show the underlying value for nulls,
-    /// which may be any value. The caller is responsible for handling nulls
-    /// appropriately.
-    pub fn to_numpy_view(&self, py: Python) -> Option<PyObject> {
-        let (view, _) = try_series_to_numpy_view(py, &self.series, true, false)?;
-        Some(view)
     }
 }

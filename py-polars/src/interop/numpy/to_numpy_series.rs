@@ -18,13 +18,30 @@ use crate::error::PyPolarsErr;
 use crate::raise_err;
 use crate::series::PySeries;
 
+#[pymethods]
+impl PySeries {
+    /// Convert this Series to a NumPy ndarray.
+    ///
+    /// This method copies data only when necessary. Set `allow_copy` to raise an error if copy
+    /// is required. Set `writable` to make sure the resulting array is writable, possibly requiring
+    /// copying the data.
+    fn to_numpy(&self, py: Python, writable: bool, allow_copy: bool) -> PyResult<PyObject> {
+        series_to_numpy(py, &self.series, writable, allow_copy)
+    }
+
+    /// Create a view of the data as a NumPy ndarray.
+    ///
+    /// WARNING: The resulting view will show the underlying value for nulls,
+    /// which may be any value. The caller is responsible for handling nulls
+    /// appropriately.
+    pub fn to_numpy_view(&self, py: Python) -> Option<PyObject> {
+        let (view, _) = try_series_to_numpy_view(py, &self.series, true, false)?;
+        Some(view)
+    }
+}
+
 /// Convert a Series to a NumPy ndarray.
-pub(crate) fn series_to_numpy(
-    py: Python,
-    s: &Series,
-    writable: bool,
-    allow_copy: bool,
-) -> PyResult<PyObject> {
+fn series_to_numpy(py: Python, s: &Series, writable: bool, allow_copy: bool) -> PyResult<PyObject> {
     if s.is_empty() {
         // Take this path to ensure a writable array.
         // This does not actually copy data for empty Series.
@@ -50,7 +67,7 @@ pub(crate) fn series_to_numpy(
 }
 
 /// Create a NumPy view of the given Series.
-pub(crate) fn try_series_to_numpy_view(
+fn try_series_to_numpy_view(
     py: Python,
     s: &Series,
     allow_nulls: bool,
