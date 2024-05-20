@@ -203,6 +203,10 @@ def test_from_dataframe_pandas_zero_copy_parametric(df: pl.DataFrame) -> None:
         allow_null=False,  # Bug: https://github.com/pola-rs/polars/issues/16190
     )
 )
+@pytest.mark.skipif(
+    sys.version_info < (3, 9),
+    reason="Older versions of pandas do not implement the required conversions",
+)
 def test_from_dataframe_pandas_native_parametric(df: pl.DataFrame) -> None:
     df_pd = df.to_pandas()
     result = pl.from_dataframe(df_pd)
@@ -225,6 +229,10 @@ def test_from_dataframe_pandas_native_parametric(df: pl.DataFrame) -> None:
         allow_chunks=False,
         allow_null=False,  # Bug: https://github.com/pola-rs/polars/issues/16190
     )
+)
+@pytest.mark.skipif(
+    sys.version_info < (3, 9),
+    reason="Older versions of pandas do not implement the required conversions",
 )
 def test_from_dataframe_pandas_native_zero_copy_parametric(df: pl.DataFrame) -> None:
     df_pd = df.to_pandas()

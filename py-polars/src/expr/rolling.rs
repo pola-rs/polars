@@ -28,20 +28,18 @@ impl PyExpr {
         self.inner.clone().rolling_sum(options).into()
     }
 
-    #[pyo3(signature = (by, window_size, min_periods, closed, warn_if_unsorted))]
+    #[pyo3(signature = (by, window_size, min_periods, closed))]
     fn rolling_sum_by(
         &self,
         by: PyExpr,
         window_size: &str,
         min_periods: usize,
         closed: Wrap<ClosedWindow>,
-        warn_if_unsorted: bool,
     ) -> Self {
         let options = RollingOptionsDynamicWindow {
             window_size: Duration::parse(window_size),
             min_periods,
             closed_window: closed.0,
-            warn_if_unsorted,
             fn_params: None,
         };
         self.inner.clone().rolling_sum_by(by.inner, options).into()
@@ -65,20 +63,18 @@ impl PyExpr {
         self.inner.clone().rolling_min(options).into()
     }
 
-    #[pyo3(signature = (by, window_size, min_periods, closed, warn_if_unsorted))]
+    #[pyo3(signature = (by, window_size, min_periods, closed))]
     fn rolling_min_by(
         &self,
         by: PyExpr,
         window_size: &str,
         min_periods: usize,
         closed: Wrap<ClosedWindow>,
-        warn_if_unsorted: bool,
     ) -> Self {
         let options = RollingOptionsDynamicWindow {
             window_size: Duration::parse(window_size),
             min_periods,
             closed_window: closed.0,
-            warn_if_unsorted,
             fn_params: None,
         };
         self.inner.clone().rolling_min_by(by.inner, options).into()
@@ -101,20 +97,18 @@ impl PyExpr {
         };
         self.inner.clone().rolling_max(options).into()
     }
-    #[pyo3(signature = (by, window_size, min_periods, closed, warn_if_unsorted))]
+    #[pyo3(signature = (by, window_size, min_periods, closed))]
     fn rolling_max_by(
         &self,
         by: PyExpr,
         window_size: &str,
         min_periods: usize,
         closed: Wrap<ClosedWindow>,
-        warn_if_unsorted: bool,
     ) -> Self {
         let options = RollingOptionsDynamicWindow {
             window_size: Duration::parse(window_size),
             min_periods,
             closed_window: closed.0,
-            warn_if_unsorted,
             fn_params: None,
         };
         self.inner.clone().rolling_max_by(by.inner, options).into()
@@ -139,20 +133,18 @@ impl PyExpr {
         self.inner.clone().rolling_mean(options).into()
     }
 
-    #[pyo3(signature = (by, window_size, min_periods, closed, warn_if_unsorted))]
+    #[pyo3(signature = (by, window_size, min_periods, closed))]
     fn rolling_mean_by(
         &self,
         by: PyExpr,
         window_size: &str,
         min_periods: usize,
         closed: Wrap<ClosedWindow>,
-        warn_if_unsorted: bool,
     ) -> Self {
         let options = RollingOptionsDynamicWindow {
             window_size: Duration::parse(window_size),
             min_periods,
             closed_window: closed.0,
-            warn_if_unsorted,
             fn_params: None,
         };
 
@@ -179,7 +171,7 @@ impl PyExpr {
         self.inner.clone().rolling_std(options).into()
     }
 
-    #[pyo3(signature = (by, window_size, min_periods, closed, ddof, warn_if_unsorted))]
+    #[pyo3(signature = (by, window_size, min_periods, closed, ddof))]
     fn rolling_std_by(
         &self,
         by: PyExpr,
@@ -187,14 +179,12 @@ impl PyExpr {
         min_periods: usize,
         closed: Wrap<ClosedWindow>,
         ddof: u8,
-        warn_if_unsorted: bool,
     ) -> Self {
         let options = RollingOptionsDynamicWindow {
             window_size: Duration::parse(window_size),
             min_periods,
             closed_window: closed.0,
             fn_params: Some(Arc::new(RollingVarParams { ddof }) as Arc<dyn Any + Send + Sync>),
-            warn_if_unsorted,
         };
 
         self.inner.clone().rolling_std_by(by.inner, options).into()
@@ -220,7 +210,7 @@ impl PyExpr {
         self.inner.clone().rolling_var(options).into()
     }
 
-    #[pyo3(signature = (by, window_size, min_periods, closed, ddof, warn_if_unsorted))]
+    #[pyo3(signature = (by, window_size, min_periods, closed, ddof))]
     fn rolling_var_by(
         &self,
         by: PyExpr,
@@ -228,14 +218,12 @@ impl PyExpr {
         min_periods: usize,
         closed: Wrap<ClosedWindow>,
         ddof: u8,
-        warn_if_unsorted: bool,
     ) -> Self {
         let options = RollingOptionsDynamicWindow {
             window_size: Duration::parse(window_size),
             min_periods,
             closed_window: closed.0,
             fn_params: Some(Arc::new(RollingVarParams { ddof }) as Arc<dyn Any + Send + Sync>),
-            warn_if_unsorted,
         };
 
         self.inner.clone().rolling_var_by(by.inner, options).into()
@@ -259,21 +247,19 @@ impl PyExpr {
         self.inner.clone().rolling_median(options).into()
     }
 
-    #[pyo3(signature = (by, window_size, min_periods, closed, warn_if_unsorted))]
+    #[pyo3(signature = (by, window_size, min_periods, closed))]
     fn rolling_median_by(
         &self,
         by: PyExpr,
         window_size: &str,
         min_periods: usize,
         closed: Wrap<ClosedWindow>,
-        warn_if_unsorted: bool,
     ) -> Self {
         let options = RollingOptionsDynamicWindow {
             window_size: Duration::parse(window_size),
             min_periods,
             closed_window: closed.0,
             fn_params: None,
-            warn_if_unsorted,
         };
         self.inner
             .clone()
@@ -305,7 +291,7 @@ impl PyExpr {
             .into()
     }
 
-    #[pyo3(signature = (by, quantile, interpolation, window_size, min_periods, closed, warn_if_unsorted))]
+    #[pyo3(signature = (by, quantile, interpolation, window_size, min_periods, closed))]
     fn rolling_quantile_by(
         &self,
         by: PyExpr,
@@ -314,14 +300,12 @@ impl PyExpr {
         window_size: &str,
         min_periods: usize,
         closed: Wrap<ClosedWindow>,
-        warn_if_unsorted: bool,
     ) -> Self {
         let options = RollingOptionsDynamicWindow {
             window_size: Duration::parse(window_size),
             min_periods,
             closed_window: closed.0,
             fn_params: None,
-            warn_if_unsorted,
         };
 
         self.inner

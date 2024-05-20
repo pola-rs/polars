@@ -14,7 +14,10 @@ from polars.testing.parametric import dataframes
     df=dataframes(
         excluded_dtypes=[
             pl.Categorical,  # Bug: https://github.com/pola-rs/polars/issues/16196
-        ]
+        ],
+        # Roundtrip doesn't work with time zones:
+        # https://github.com/pola-rs/polars/issues/16297
+        allow_time_zones=False,
     )
 )
 def test_to_dict(df: pl.DataFrame) -> None:

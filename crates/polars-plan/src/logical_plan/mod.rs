@@ -6,9 +6,7 @@ use std::sync::Arc;
 use polars_core::prelude::*;
 use recursive::recursive;
 
-use crate::logical_plan::DslPlan::DataFrameScan;
 use crate::prelude::*;
-use crate::utils::{expr_to_leaf_column_names, get_single_leaf};
 
 pub(crate) mod aexpr;
 pub(crate) mod alp;
@@ -20,7 +18,6 @@ mod builder_ir;
 pub(crate) mod conversion;
 #[cfg(feature = "debugging")]
 pub(crate) mod debug;
-pub(crate) mod expr_expansion;
 pub mod expr_ir;
 mod file_scan;
 mod format;
@@ -206,7 +203,7 @@ impl Default for DslPlan {
     fn default() -> Self {
         let df = DataFrame::new::<Series>(vec![]).unwrap();
         let schema = df.schema();
-        DataFrameScan {
+        DslPlan::DataFrameScan {
             df: Arc::new(df),
             schema: Arc::new(schema),
             output_schema: None,

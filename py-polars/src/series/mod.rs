@@ -710,10 +710,10 @@ impl PySeries {
         })
     }
 
-    fn is_sorted(&self, descending: bool) -> PyResult<bool> {
+    fn is_sorted(&self, descending: bool, nulls_last: bool) -> PyResult<bool> {
         let options = SortOptions {
             descending,
-            nulls_last: descending,
+            nulls_last,
             multithreaded: true,
             maintain_order: false,
         };

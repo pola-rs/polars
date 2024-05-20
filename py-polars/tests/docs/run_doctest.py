@@ -58,6 +58,7 @@ if sys.version_info < (3, 12):
 # if the module is found in the environment those doctests will
 # run; if the module is not found, their doctests are skipped.
 OPTIONAL_MODULES_AND_METHODS: dict[str, set[str]] = {
+    "jax": {"to_jax"},
     "torch": {"to_torch"},
 }
 OPTIONAL_MODULES: set[str] = set()

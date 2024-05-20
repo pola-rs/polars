@@ -4,6 +4,7 @@ from enum import IntEnum
 from typing import (
     TYPE_CHECKING,
     Any,
+    ClassVar,
     Iterable,
     Literal,
     Protocol,
@@ -188,9 +189,7 @@ class Column(Protocol):
 class DataFrame(Protocol):
     """Interchange dataframe object."""
 
-    @property
-    def version(self) -> int:
-        """Version of the protocol."""
+    version: ClassVar[int]  # Version of the protocol
 
     def __dataframe__(
         self,

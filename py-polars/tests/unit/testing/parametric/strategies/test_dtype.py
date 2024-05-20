@@ -15,6 +15,11 @@ def test_dtypes_nesting_level(dtype: pl.DataType) -> None:
     assert not dtype.is_nested()
 
 
+@given(dtype=dtypes(allowed_dtypes=[pl.Datetime], allow_time_zones=False))
+def test_dtypes_allow_time_zones(dtype: pl.DataType) -> None:
+    assert getattr(dtype, "time_zone", None) is None
+
+
 @given(st.data())
 def test_dtypes_allowed(data: st.DataObject) -> None:
     allowed_dtype = data.draw(dtypes())

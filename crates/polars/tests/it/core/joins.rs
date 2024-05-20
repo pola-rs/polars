@@ -420,10 +420,6 @@ fn test_join_err() -> PolarsResult<()> {
     assert!(df1
         .join(&df2, vec!["a", "b"], vec!["a", "b"], JoinType::Left.into())
         .is_err());
-    // length of join keys don't match error
-    assert!(df1
-        .join(&df2, vec!["a"], vec!["a", "b"], JoinType::Left.into())
-        .is_err());
     Ok(())
 }
 

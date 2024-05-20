@@ -16,6 +16,7 @@ polars-ops = { workspace = true }
 polars-utils = { workspace = true }
 
 atoi = { workspace = true }
+bytemuck = { workspace = true }
 chrono = { workspace = true }
 chrono-tz = { workspace = true, optional = true }
 now = { version = "0.1" }

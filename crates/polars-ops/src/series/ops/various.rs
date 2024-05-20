@@ -1,7 +1,10 @@
+use num_traits::Bounded;
 #[cfg(feature = "dtype-struct")]
 use polars_core::prelude::sort::arg_sort_multiple::_get_rows_encoded_ca;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
+use polars_core::with_match_physical_numeric_polars_type;
+use polars_utils::total_ord::TotalOrd;
 
 use crate::series::ops::SeriesSealed;
 
@@ -48,8 +51,21 @@ pub trait SeriesMethods: SeriesSealed {
         }
     }
 
+    /// Checks if a [`Series`] is sorted. Tries to fail fast.
     fn is_sorted(&self, options: SortOptions) -> PolarsResult<bool> {
         let s = self.as_series();
+        let null_count = s.null_count();
+
+        // fast paths
+        if (options.descending
+            && (options.nulls_last || null_count == 0)
+            && matches!(s.is_sorted_flag(), IsSorted::Descending))
+            || (!options.descending
+                && (!options.nulls_last || null_count == 0)
+                && matches!(s.is_sorted_flag(), IsSorted::Ascending))
+        {
+            return Ok(true);
+        }
 
         // for struct types we row-encode and recurse
         #[cfg(feature = "dtype-struct")]
@@ -59,40 +75,110 @@ pub trait SeriesMethods: SeriesSealed {
             return encoded.into_series().is_sorted(options);
         }
 
-        // fast paths
-        if (options.descending
-            && options.nulls_last
-            && matches!(s.is_sorted_flag(), IsSorted::Descending))
-            || (!options.descending
-                && !options.nulls_last
-                && matches!(s.is_sorted_flag(), IsSorted::Ascending))
-        {
-            return Ok(true);
-        }
-        let nc = s.null_count();
-        let slen = s.len() - nc - 1; // Number of comparisons we might have to do
-        if nc == s.len() {
+        let s_len = s.len();
+        if null_count == s_len {
             // All nulls is all equal
             return Ok(true);
         }
-        if nc > 0 {
-            let nulls = s.chunks().iter().flat_map(|c| c.validity().unwrap());
-            let mut npairs = nulls.clone().zip(nulls.skip(1));
-            // A null never precedes (follows) a non-null iff all nulls are at the end (beginning)
-            if (options.nulls_last && npairs.any(|(a, b)| !a && b)) || npairs.any(|(a, b)| a && !b)
-            {
+        // Check if nulls are in the right location.
+        if null_count > 0 {
+            // The slice triggers a fast null count
+            if options.nulls_last {
+                if s.slice((s_len - null_count) as i64, null_count)
+                    .null_count()
+                    != null_count
+                {
+                    return Ok(false);
+                }
+            } else if s.slice(0, null_count).null_count() != null_count {
                 return Ok(false);
             }
         }
-        // Compare adjacent elements with no-copy slices that don't include any nulls
-        let offset = !options.nulls_last as i64 * nc as i64;
-        let (s1, s2) = (s.slice(offset, slen), s.slice(offset + 1, slen));
+
+        if s.dtype().is_numeric() {
+            with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
+                let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
+                return Ok(is_sorted_ca_num::<$T>(ca, options))
+            })
+        }
+
+        let cmp_len = s_len - null_count - 1; // Number of comparisons we might have to do
+                                              // TODO! Change this, allocation of a full boolean series is too expensive and doesn't fail fast.
+                                              // Compare adjacent elements with no-copy slices that don't include any nulls
+        let offset = !options.nulls_last as i64 * null_count as i64;
+        let (s1, s2) = (s.slice(offset, cmp_len), s.slice(offset + 1, cmp_len));
         let cmp_op = if options.descending {
             Series::gt_eq
         } else {
             Series::lt_eq
         };
         Ok(cmp_op(&s1, &s2)?.all())
+    }
+}
+
+fn check_cmp<T: NumericNative, Cmp: Fn(&T, &T) -> bool>(
+    vals: &[T],
+    f: Cmp,
+    previous: &mut T,
+) -> bool {
+    let mut sorted = true;
+
+    // Outer loop so we can fail fast
+    // Inner loop will auto vectorize
+    for c in vals.chunks(1024) {
+        // don't early stop or branch
+        // so it autovectorizes
+        for v in c {
+            sorted &= f(previous, v);
+            *previous = *v;
+        }
+        if !sorted {
+            return false;
+        }
+    }
+    sorted
+}
+
+// Assumes nulls last/first is already checked.
+fn is_sorted_ca_num<T: PolarsNumericType>(ca: &ChunkedArray<T>, options: SortOptions) -> bool {
+    if let Ok(vals) = ca.cont_slice() {
+        let mut previous = vals[0];
+        return if options.descending {
+            check_cmp(vals, |prev, c| prev.tot_ge(c), &mut previous)
+        } else {
+            check_cmp(vals, |prev, c| prev.tot_le(c), &mut previous)
+        };
+    };
+
+    if ca.null_count() == 0 {
+        let mut previous = if options.descending {
+            T::Native::max_value()
+        } else {
+            T::Native::min_value()
+        };
+        for arr in ca.downcast_iter() {
+            let vals = arr.values();
+
+            let sorted = if options.descending {
+                check_cmp(vals, |prev, c| prev.tot_ge(c), &mut previous)
+            } else {
+                check_cmp(vals, |prev, c| prev.tot_le(c), &mut previous)
+            };
+            if !sorted {
+                return false;
+            }
+        }
+        return true;
+    };
+
+    // Slice off nulls and recurse.
+    let null_count = ca.null_count();
+    if options.nulls_last {
+        let ca = ca.slice(0, ca.len() - null_count);
+        is_sorted_ca_num(&ca, options)
+    } else {
+        let ca = ca.slice(null_count as i64, ca.len() - null_count);
+        is_sorted_ca_num(&ca, options)
     }
 }
 
