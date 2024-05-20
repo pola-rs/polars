@@ -1,5 +1,5 @@
-use polars_core::series::IsSorted;
 use polars_core::{with_match_physical_float_polars_type, with_match_physical_numeric_polars_type};
+use polars_ops::series::SeriesMethods;
 
 use super::*;
 use crate::prelude::*;
@@ -82,8 +82,9 @@ where
     if ca.is_empty() {
         return Ok(Series::new_empty(ca.name(), ca.dtype()));
     }
-    let ca = ca.rechunk();
-    let by = by.rechunk();
+    if by.null_count() > 0 {
+        polars_bail!(InvalidOperation: "'Expr.rolling_*_by(...)' not yet supported for series with null values, consider using 'DataFrame.rolling' or 'Expr.rolling'")
+    }
     polars_ensure!(ca.len() == by.len(), InvalidOperation: "`by` column in `rolling_*_by` must be the same length as values column");
     ensure_duration_matches_data_type(options.window_size, by.dtype(), "window_size")?;
     polars_ensure!(!options.window_size.is_zero() && !options.window_size.negative, InvalidOperation: "`window_size` must be strictly positive");
@@ -98,15 +99,18 @@ where
             dt,
             "date/datetime"),
     };
+    let ca = ca.rechunk();
+    let by = by.rechunk();
+    let by_is_sorted = by.is_sorted(SortOptions {
+        descending: false,
+        ..Default::default()
+    })?;
     let by = by.datetime().unwrap();
     let tu = by.time_unit();
 
     let func = rolling_agg_fn_dynamic;
-    let out: ArrayRef = if matches!(by.is_sorted_flag(), IsSorted::Ascending) {
+    let out: ArrayRef = if by_is_sorted {
         let arr = ca.downcast_iter().next().unwrap();
-        if arr.null_count() > 0 {
-            polars_bail!(InvalidOperation: "'Expr.rolling_*_by(...)' not yet supported for series with null values, consider using 'DataFrame.rolling' or 'Expr.rolling'")
-        }
         let by_values = by.cont_slice().map_err(|_| {
             polars_err!(
                 ComputeError:
@@ -130,9 +134,6 @@ where
         let ca = unsafe { ca.take_unchecked(&sorting_indices) };
         let by = unsafe { by.take_unchecked(&sorting_indices) };
         let arr = ca.downcast_iter().next().unwrap();
-        if arr.null_count() > 0 {
-            polars_bail!(InvalidOperation: "'Expr.rolling_*_by(...)' not yet supported for series with null values, consider using 'DataFrame.rolling' or 'Expr.rolling'")
-        }
         let by_values = by.cont_slice().map_err(|_| {
             polars_err!(
                 ComputeError:
