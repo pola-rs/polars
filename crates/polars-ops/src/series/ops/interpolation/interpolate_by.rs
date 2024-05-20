@@ -5,6 +5,7 @@ use arrow::bitmap::MutableBitmap;
 use bytemuck::allocation::zeroed_vec;
 use polars_core::export::num::{NumCast, Zero};
 use polars_core::prelude::*;
+use polars_utils::slice::SliceAble;
 
 use super::linear_itp;
 
@@ -92,44 +93,32 @@ where
 
     // Fill out with first.
     let mut out = Vec::with_capacity(chunked_arr.len());
-    let mut iter = chunked_arr.into_iter().enumerate().skip(first);
+    let mut iter = chunked_arr.iter().enumerate().skip(first);
     for _ in 0..first {
         out.push(Zero::zero())
     }
 
-    let mut low_val = None;
-    let mut low_idx = None;
-    loop {
-        let next = iter.next();
-        match next {
-            Some((idx, Some(v))) => {
-                out.push(v);
-                low_val = Some(v);
-                low_idx = Some(idx);
-            },
-            Some((_idx, None)) => {
-                loop {
-                    match iter.next() {
-                        None => break,         // End of iterator, break.
-                        Some((_, None)) => {}, // Another null.
-                        Some((high_idx, Some(high))) => {
-                            interpolation_branch(
-                                low_val.expect("We started iterating at `first`"),
-                                high,
-                                &by_values[low_idx.unwrap()..=high_idx],
-                                &mut out,
-                            );
-                            out.push(high);
-                            low_val = Some(high);
-                            low_idx = Some(high_idx);
-                            break;
-                        },
-                    }
+    // The next element of `iter` is definitely `Some(Some(v))`, because we skipped the first
+    // elements `first` and if all values were missing we'd have done an early return.
+    let (mut low_idx, opt_low) = iter.next().unwrap();
+    let mut low = opt_low.unwrap();
+    out.push(low);
+    while let Some((idx, next)) = iter.next() {
+        if let Some(v) = next {
+            out.push(v);
+            low = v;
+            low_idx = idx;
+        } else {
+            for (high_idx, next) in iter.by_ref() {
+                if let Some(high) = next {
+                    let x = unsafe { &by_values.slice_unchecked(low_idx..high_idx + 1) };
+                    interpolation_branch(low, high, x, &mut out);
+                    out.push(high);
+                    low = high;
+                    low_idx = high_idx;
+                    break;
                 }
-            },
-            None => {
-                break;
-            },
+            }
         }
     }
     if first != 0 || last != chunked_arr.len() {
@@ -194,47 +183,38 @@ where
     let last = ca_sorted.last_non_null().unwrap() + 1;
 
     let mut out = zeroed_vec(ca_sorted.len());
-    let mut iter = ca_sorted.into_iter().enumerate().skip(first);
+    let mut iter = ca_sorted.iter().enumerate().skip(first);
 
-    let mut low_val = None;
-    let mut low_idx = None;
-    loop {
-        let next = iter.next();
-        match next {
-            Some((idx, Some(v))) => {
-                let out_idx = unsafe { sorting_indices.get_unchecked(idx) };
-                unsafe { *out.get_unchecked_mut(*out_idx as usize) = v };
-                low_val = Some(v);
-                low_idx = Some(idx);
-            },
-            Some((_idx, None)) => {
-                loop {
-                    match iter.next() {
-                        None => break,         // End of iterator, break.
-                        Some((_, None)) => {}, // Another null.
-                        Some((high_idx, Some(high))) => {
-                            interpolation_branch(
-                                low_val.expect("We started iterating at `first`."),
-                                high,
-                                &by_sorted_values[low_idx.unwrap()..=high_idx],
-                                &mut out,
-                                sorting_indices,
-                                low_idx.unwrap(),
-                            );
-                            unsafe {
-                                let out_idx = sorting_indices.get_unchecked(high_idx);
-                                *out.get_unchecked_mut(*out_idx as usize) = high;
-                            }
-                            low_val = Some(high);
-                            low_idx = Some(high_idx);
-                            break;
-                        },
+    // The next element of `iter` is definitely `Some(Some(v))`, because we skipped the first
+    // elements `first` and if all values were missing we'd have done an early return.
+    let (mut low_idx, opt_low) = iter.next().unwrap();
+    let mut low = opt_low.unwrap();
+    unsafe {
+        let out_idx = sorting_indices.get_unchecked(low_idx);
+        *out.get_unchecked_mut(*out_idx as usize) = low;
+    }
+    while let Some((idx, next)) = iter.next() {
+        if let Some(v) = next {
+            unsafe {
+                let out_idx = sorting_indices.get_unchecked(idx);
+                *out.get_unchecked_mut(*out_idx as usize) = v;
+            }
+            low = v;
+            low_idx = idx;
+        } else {
+            for (high_idx, next) in iter.by_ref() {
+                if let Some(high) = next {
+                    let x = unsafe { &by_sorted_values.slice_unchecked(low_idx..high_idx + 1) };
+                    interpolation_branch(low, high, x, &mut out, sorting_indices, low_idx);
+                    unsafe {
+                        let out_idx = sorting_indices.get_unchecked(high_idx);
+                        *out.get_unchecked_mut(*out_idx as usize) = high;
                     }
+                    low = high;
+                    low_idx = high_idx;
+                    break;
                 }
-            },
-            None => {
-                break;
-            },
+            }
         }
     }
     if first != 0 || last != ca_sorted.len() {
@@ -262,20 +242,20 @@ where
     }
 }
 
-pub fn interpolate_by(s: &Series, by: &Series, assume_sorted: bool) -> PolarsResult<Series> {
+pub fn interpolate_by(s: &Series, by: &Series, by_is_sorted: bool) -> PolarsResult<Series> {
     polars_ensure!(s.len() == by.len(), InvalidOperation: "`by` column must be the same length as Series ({}), got {}", s.len(), by.len());
 
     fn func<T, F>(
         ca: &ChunkedArray<T>,
         by: &ChunkedArray<F>,
-        assume_sorted: bool,
+        is_sorted: bool,
     ) -> PolarsResult<Series>
     where
         T: PolarsNumericType,
         F: PolarsIntegerType,
         ChunkedArray<T>: IntoSeries,
     {
-        if assume_sorted {
+        if is_sorted {
             interpolate_impl_by_sorted(ca, by, signed_interp_by_sorted).map(|x| x.into_series())
         } else {
             interpolate_impl_by(ca, by, signed_interp_by).map(|x| x.into_series())
@@ -284,39 +264,37 @@ pub fn interpolate_by(s: &Series, by: &Series, assume_sorted: bool) -> PolarsRes
 
     match (s.dtype(), by.dtype()) {
         (DataType::Float64, DataType::Int64) => {
-            func(s.f64().unwrap(), by.i64().unwrap(), assume_sorted)
+            func(s.f64().unwrap(), by.i64().unwrap(), by_is_sorted)
         },
         (DataType::Float64, DataType::Int32) => {
-            func(s.f64().unwrap(), by.i32().unwrap(), assume_sorted)
+            func(s.f64().unwrap(), by.i32().unwrap(), by_is_sorted)
         },
         (DataType::Float64, DataType::UInt64) => {
-            func(s.f64().unwrap(), by.u64().unwrap(), assume_sorted)
+            func(s.f64().unwrap(), by.u64().unwrap(), by_is_sorted)
         },
         (DataType::Float64, DataType::UInt32) => {
-            func(s.f64().unwrap(), by.u32().unwrap(), assume_sorted)
+            func(s.f64().unwrap(), by.u32().unwrap(), by_is_sorted)
         },
         (DataType::Float32, DataType::Int64) => {
-            func(s.f32().unwrap(), by.i64().unwrap(), assume_sorted)
+            func(s.f32().unwrap(), by.i64().unwrap(), by_is_sorted)
         },
         (DataType::Float32, DataType::Int32) => {
-            func(s.f32().unwrap(), by.i32().unwrap(), assume_sorted)
+            func(s.f32().unwrap(), by.i32().unwrap(), by_is_sorted)
         },
         (DataType::Float32, DataType::UInt64) => {
-            func(s.f32().unwrap(), by.u64().unwrap(), assume_sorted)
+            func(s.f32().unwrap(), by.u64().unwrap(), by_is_sorted)
         },
         (DataType::Float32, DataType::UInt32) => {
-            func(s.f32().unwrap(), by.u32().unwrap(), assume_sorted)
+            func(s.f32().unwrap(), by.u32().unwrap(), by_is_sorted)
         },
         #[cfg(feature = "dtype-date")]
-        (_, DataType::Date) => {
-            interpolate_by(s, &by.cast(&DataType::Int32).unwrap(), assume_sorted)
-        },
+        (_, DataType::Date) => interpolate_by(s, &by.cast(&DataType::Int32).unwrap(), by_is_sorted),
         #[cfg(feature = "dtype-datetime")]
         (_, DataType::Datetime(_, _)) => {
-            interpolate_by(s, &by.cast(&DataType::Int64).unwrap(), assume_sorted)
+            interpolate_by(s, &by.cast(&DataType::Int64).unwrap(), by_is_sorted)
         },
         (DataType::UInt64 | DataType::UInt32 | DataType::Int64 | DataType::Int32, _) => {
-            interpolate_by(&s.cast(&DataType::Float64).unwrap(), by, assume_sorted)
+            interpolate_by(&s.cast(&DataType::Float64).unwrap(), by, by_is_sorted)
         },
         _ => {
             polars_bail!(InvalidOperation: "expected series to be Float64, Float32, \
