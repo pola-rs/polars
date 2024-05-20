@@ -185,7 +185,7 @@ impl JoinValidation {
         }
     }
 
-    pub(super) fn is_valid_join(&self, join_type: &JoinType) -> PolarsResult<()> {
+    pub fn is_valid_join(&self, join_type: &JoinType) -> PolarsResult<()> {
         if !self.needs_checks() {
             return Ok(());
         }
