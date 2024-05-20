@@ -858,11 +858,11 @@ impl PyExpr {
         };
         self.inner.clone().ewm_mean(options).into()
     }
-    fn ewm_mean_by(&self, times: PyExpr, half_life: &str, check_sorted: bool) -> Self {
+    fn ewm_mean_by(&self, times: PyExpr, half_life: &str) -> Self {
         let half_life = Duration::parse(half_life);
         self.inner
             .clone()
-            .ewm_mean_by(times.inner, half_life, check_sorted)
+            .ewm_mean_by(times.inner, half_life)
             .into()
     }
 

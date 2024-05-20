@@ -27,9 +27,7 @@ def test_ewm_by(data: st.DataObject, half_life: int) -> None:
         )
     )
     result = df.with_row_index().select(
-        pl.col("values").ewm_mean_by(
-            by="index", half_life=f"{half_life}i", check_sorted=False
-        )
+        pl.col("values").ewm_mean_by(by="index", half_life=f"{half_life}i")
     )
     expected = df.select(
         pl.col("values").ewm_mean(half_life=half_life, ignore_nulls=False, adjust=False)

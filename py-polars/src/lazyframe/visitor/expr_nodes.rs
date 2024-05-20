@@ -1020,10 +1020,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 FunctionExpr::TopKBy { sort_options: _ } => {
                     return Err(PyNotImplementedError::new_err("top_k_by"))
                 },
-                FunctionExpr::EwmMeanBy {
-                    half_life: _,
-                    check_sorted: _,
-                } => return Err(PyNotImplementedError::new_err("ewm_mean_by")),
+                FunctionExpr::EwmMeanBy { half_life: _ } => {
+                    return Err(PyNotImplementedError::new_err("ewm_mean_by"))
+                },
             },
             options: py.None(),
         }
