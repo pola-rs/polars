@@ -253,6 +253,11 @@ pub(crate) fn reshape_numpy_array(
 #[pymethods]
 #[allow(clippy::wrong_self_convention)]
 impl PyDataFrame {
+    /// Create a view of the data as a NumPy ndarray.
+    ///
+    /// WARNING: The resulting view will show the underlying value for nulls,
+    /// which may be any value. The caller is responsible for handling nulls
+    /// appropriately.
     pub fn to_numpy_view(&self, py: Python) -> Option<PyObject> {
         if self.df.is_empty() {
             return None;
@@ -320,6 +325,7 @@ impl PyDataFrame {
         })
     }
 
+    /// Convert this DataFrame to a NumPy ndarray.
     pub fn to_numpy(&self, py: Python, order: Wrap<IndexOrder>) -> Option<PyObject> {
         let st = dtypes_to_supertype(self.df.iter().map(|s| s.dtype())).ok()?;
 
