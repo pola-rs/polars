@@ -1,6 +1,7 @@
+use expr_expansion::{is_regex_projection, rewrite_projections};
+
 use super::stack_opt::ConversionOpt;
 use super::*;
-use crate::logical_plan::expr_expansion::{is_regex_projection, rewrite_projections};
 use crate::logical_plan::projection_expr::ProjectionExprs;
 
 fn expand_expressions(

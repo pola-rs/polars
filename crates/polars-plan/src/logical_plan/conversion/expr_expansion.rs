@@ -1,6 +1,15 @@
 //! this contains code used for rewriting projections, expanding wildcards, regex selection etc.
 use super::*;
 
+pub(crate) fn prepare_projection(
+    exprs: Vec<Expr>,
+    schema: &Schema,
+) -> PolarsResult<(Vec<Expr>, Schema)> {
+    let exprs = rewrite_projections(exprs, schema, &[])?;
+    let schema = expressions_to_schema(&exprs, schema, Context::Default)?;
+    Ok((exprs, schema))
+}
+
 /// This replaces the wildcard Expr with a Column Expr. It also removes the Exclude Expr from the
 /// expression chain.
 pub(super) fn replace_wildcard_with_column(expr: Expr, column_name: Arc<str>) -> Expr {
