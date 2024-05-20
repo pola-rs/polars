@@ -87,7 +87,7 @@ where
     let first = chunked_arr.first_non_null().unwrap();
     let last = chunked_arr.last_non_null().unwrap() + 1;
 
-    // Fill out with first.
+    // Fill out with `first` nulls.
     let mut out = Vec::with_capacity(chunked_arr.len());
     let mut iter = chunked_arr.iter().enumerate().skip(first);
     for _ in 0..first {
@@ -95,7 +95,7 @@ where
     }
 
     // The next element of `iter` is definitely `Some(idx, Some(v))`, because we skipped the first
-    // elements `first` and if all values were missing we'd have done an early return.
+    // `first` elements and if all values were missing we'd have done an early return.
     let (mut low_idx, opt_low) = iter.next().unwrap();
     let mut low = opt_low.unwrap();
     out.push(low);
@@ -177,7 +177,7 @@ where
     let mut iter = ca_sorted.iter().enumerate().skip(first);
 
     // The next element of `iter` is definitely `Some(idx, Some(v))`, because we skipped the first
-    // elements `first` and if all values were missing we'd have done an early return.
+    // `first` elements and if all values were missing we'd have done an early return.
     let (mut low_idx, opt_low) = iter.next().unwrap();
     let mut low = opt_low.unwrap();
     unsafe {

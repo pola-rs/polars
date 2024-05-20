@@ -57,7 +57,7 @@ where
     let first = chunked_arr.first_non_null().unwrap();
     let last = chunked_arr.last_non_null().unwrap() + 1;
 
-    // Fill out with first.
+    // Fill out with `first` nulls.
     let mut out = Vec::with_capacity(chunked_arr.len());
     let mut iter = chunked_arr.iter().skip(first);
     for _ in 0..first {
