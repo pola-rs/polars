@@ -164,6 +164,7 @@ pub enum FunctionExpr {
     RollingExprBy(RollingFunctionBy),
     ShiftAndFill,
     Shift,
+    CircShift,
     DropNans,
     DropNulls,
     #[cfg(feature = "mode")]
@@ -402,7 +403,7 @@ impl Hash for FunctionExpr {
                 symbol.hash(state);
             },
             MaxHorizontal | MinHorizontal | SumHorizontal | MeanHorizontal | DropNans
-            | DropNulls | Reverse | ArgUnique | Shift | ShiftAndFill => {},
+            | DropNulls | Reverse | ArgUnique | Shift | ShiftAndFill | CircShift => {},
             #[cfg(feature = "mode")]
             Mode => {},
             #[cfg(feature = "abs")]
@@ -655,6 +656,7 @@ impl Display for FunctionExpr {
             #[cfg(feature = "top_k")]
             TopKBy { .. } => "top_k_by",
             Shift => "shift",
+            CircShift => "circshift",
             #[cfg(feature = "cum_agg")]
             CumCount { .. } => "cum_count",
             #[cfg(feature = "cum_agg")]
@@ -986,6 +988,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "top_k")]
             TopKBy { sort_options } => map_as_slice!(top_k_by, sort_options.clone()),
             Shift => map_as_slice!(shift_and_fill::shift),
+            CircShift => map_as_slice!(shift_and_fill::circshift),
             #[cfg(feature = "cum_agg")]
             CumCount { reverse } => map!(cum::cum_count, reverse),
             #[cfg(feature = "cum_agg")]

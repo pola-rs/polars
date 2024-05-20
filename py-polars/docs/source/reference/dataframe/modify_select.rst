@@ -8,6 +8,7 @@ Manipulation/selection
 
     DataFrame.bottom_k
     DataFrame.cast
+    DataFrame.circshift
     DataFrame.clear
     DataFrame.clone
     DataFrame.drop

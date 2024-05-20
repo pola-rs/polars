@@ -30,6 +30,7 @@ pub enum ArrayFunction {
     #[cfg(feature = "array_count")]
     CountMatches,
     Shift,
+    CircShift,
 }
 
 impl ArrayFunction {
@@ -55,7 +56,7 @@ impl ArrayFunction {
             Contains => mapper.with_dtype(DataType::Boolean),
             #[cfg(feature = "array_count")]
             CountMatches => mapper.with_dtype(IDX_DTYPE),
-            Shift => mapper.with_same_dtype(),
+            Shift | CircShift => mapper.with_same_dtype(),
         }
     }
 }
@@ -96,6 +97,7 @@ impl Display for ArrayFunction {
             #[cfg(feature = "array_count")]
             CountMatches => "count_matches",
             Shift => "shift",
+            CircShift => "circshift",
         };
         write!(f, "arr.{name}")
     }
@@ -129,6 +131,7 @@ impl From<ArrayFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "array_count")]
             CountMatches => map_as_slice!(count_matches),
             Shift => map_as_slice!(shift),
+            CircShift => map_as_slice!(circshift),
         }
     }
 }
@@ -242,4 +245,11 @@ pub(super) fn shift(s: &[Series]) -> PolarsResult<Series> {
     let n = &s[1];
 
     ca.array_shift(n)
+}
+
+pub(super) fn circshift(s: &[Series]) -> PolarsResult<Series> {
+    let ca = s[0].array()?;
+    let n = &s[1];
+
+    ca.array_circshift(n)
 }

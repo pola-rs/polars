@@ -21,6 +21,7 @@ pub enum ListFunction {
     },
     Slice,
     Shift,
+    CircShift,
     Get(bool),
     #[cfg(feature = "list_gather")]
     Gather(bool),
@@ -70,7 +71,7 @@ impl ListFunction {
             #[cfg(feature = "list_sample")]
             Sample { .. } => mapper.with_same_dtype(),
             Slice => mapper.with_same_dtype(),
-            Shift => mapper.with_same_dtype(),
+            Shift | CircShift => mapper.with_same_dtype(),
             Get(_) => mapper.map_to_list_and_array_inner_dtype(),
             #[cfg(feature = "list_gather")]
             Gather(_) => mapper.with_same_dtype(),
@@ -136,6 +137,7 @@ impl Display for ListFunction {
             },
             Slice => "slice",
             Shift => "shift",
+            CircShift => "circshift",
             Get(_) => "get",
             #[cfg(feature = "list_gather")]
             Gather(_) => "gather",
@@ -203,6 +205,7 @@ impl From<ListFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             },
             Slice => wrap!(slice),
             Shift => map_as_slice!(shift),
+            CircShift => map_as_slice!(circshift),
             Get(null_on_oob) => wrap!(get, null_on_oob),
             #[cfg(feature = "list_gather")]
             Gather(null_on_oob) => map_as_slice!(gather, null_on_oob),
@@ -300,6 +303,13 @@ pub(super) fn shift(s: &[Series]) -> PolarsResult<Series> {
     let periods = &s[1];
 
     list.lst_shift(periods).map(|ok| ok.into_series())
+}
+
+pub(super) fn circshift(s: &[Series]) -> PolarsResult<Series> {
+    let list = s[0].list()?;
+    let periods = &s[1];
+
+    list.lst_circshift(periods).map(|ok| ok.into_series())
 }
 
 pub(super) fn slice(args: &mut [Series]) -> PolarsResult<Option<Series>> {

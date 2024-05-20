@@ -31,6 +31,38 @@ macro_rules! impl_shift_fill {
     }};
 }
 
+macro_rules! impl_circshift {
+    ($self:ident, $periods:expr) => {{
+        let length = $self.len() as i64;
+        let periods = length - $periods.rem_euclid(length); // modulo
+
+        if periods == 0 {
+            $self.clone()
+        } else {
+            let mut slice1 = $self.slice(periods, (length - periods) as usize);
+            let slice2 = $self.slice(0, periods as usize);
+            slice1.append(&slice2);
+            slice1
+        }
+    }};
+}
+
+macro_rules! impl_arr_circshift {
+    ($self:ident, $periods:expr) => {{
+        let length = $self.len() as i64;
+        let periods = length - $periods.rem_euclid(length); // modulo
+
+        if periods == 0 {
+            $self.clone()
+        } else {
+            let mut slice1 = $self.slice(periods, (length - periods) as usize);
+            let slice2 = $self.slice(0, periods as usize);
+            slice1.append(&slice2).unwrap();
+            slice1
+        }
+    }};
+}
+
 impl<T> ChunkShiftFill<T, Option<T::Native>> for ChunkedArray<T>
 where
     T: PolarsNumericType,
@@ -39,12 +71,17 @@ where
         impl_shift_fill!(self, periods, fill_value)
     }
 }
+
 impl<T> ChunkShift<T> for ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
     fn shift(&self, periods: i64) -> ChunkedArray<T> {
         self.shift_and_fill(periods, None)
+    }
+
+    fn circshift(&self, periods: i64) -> ChunkedArray<T> {
+        impl_circshift!(self, periods)
     }
 }
 
@@ -58,6 +95,9 @@ impl ChunkShift<BooleanType> for BooleanChunked {
     fn shift(&self, periods: i64) -> Self {
         self.shift_and_fill(periods, None)
     }
+    fn circshift(&self, periods: i64) -> Self {
+        impl_circshift!(self, periods)
+    }
 }
 
 impl ChunkShiftFill<StringType, Option<&str>> for StringChunked {
@@ -70,9 +110,26 @@ impl ChunkShiftFill<StringType, Option<&str>> for StringChunked {
     }
 }
 
+impl ChunkShift<StringType> for StringChunked {
+    fn shift(&self, periods: i64) -> Self {
+        self.shift_and_fill(periods, None)
+    }
+    fn circshift(&self, periods: i64) -> Self {
+        impl_circshift!(self, periods)
+    }
+}
+
 impl ChunkShiftFill<BinaryType, Option<&[u8]>> for BinaryChunked {
     fn shift_and_fill(&self, periods: i64, fill_value: Option<&[u8]>) -> BinaryChunked {
         impl_shift_fill!(self, periods, fill_value)
+    }
+}
+impl ChunkShift<BinaryType> for BinaryChunked {
+    fn shift(&self, periods: i64) -> Self {
+        self.shift_and_fill(periods, None)
+    }
+    fn circshift(&self, periods: i64) -> Self {
+        impl_circshift!(self, periods)
     }
 }
 
@@ -82,21 +139,12 @@ impl ChunkShiftFill<BinaryOffsetType, Option<&[u8]>> for BinaryOffsetChunked {
     }
 }
 
-impl ChunkShift<StringType> for StringChunked {
-    fn shift(&self, periods: i64) -> Self {
-        self.shift_and_fill(periods, None)
-    }
-}
-
-impl ChunkShift<BinaryType> for BinaryChunked {
-    fn shift(&self, periods: i64) -> Self {
-        self.shift_and_fill(periods, None)
-    }
-}
-
 impl ChunkShift<BinaryOffsetType> for BinaryOffsetChunked {
     fn shift(&self, periods: i64) -> Self {
         self.shift_and_fill(periods, None)
+    }
+    fn circshift(&self, periods: i64) -> Self {
+        impl_circshift!(self, periods)
     }
 }
 
@@ -130,6 +178,19 @@ impl ChunkShiftFill<ListType, Option<&Series>> for ListChunked {
 impl ChunkShift<ListType> for ListChunked {
     fn shift(&self, periods: i64) -> Self {
         self.shift_and_fill(periods, None)
+    }
+    fn circshift(&self, periods: i64) -> Self {
+        let length = self.len() as i64;
+        let periods = length - periods.rem_euclid(length); // modulo
+
+        if periods == 0 {
+            self.clone()
+        } else {
+            let mut slice1 = self.slice(periods, (length - periods) as usize);
+            let slice2 = self.slice(0, periods as usize);
+            slice1.append(&slice2).unwrap();
+            slice1
+        }
     }
 }
 
@@ -166,6 +227,9 @@ impl ChunkShift<FixedSizeListType> for ArrayChunked {
     fn shift(&self, periods: i64) -> Self {
         self.shift_and_fill(periods, None)
     }
+    fn circshift(&self, periods: i64) -> Self {
+        impl_arr_circshift!(self, periods)
+    }
 }
 
 #[cfg(feature = "object")]
@@ -182,6 +246,9 @@ impl<T: PolarsObject> ChunkShiftFill<ObjectType<T>, Option<ObjectType<T>>> for O
 impl<T: PolarsObject> ChunkShift<ObjectType<T>> for ObjectChunked<T> {
     fn shift(&self, periods: i64) -> Self {
         self.shift_and_fill(periods, None)
+    }
+    fn circshift(&self, periods: i64) -> Self {
+        impl_circshift!(self, periods)
     }
 }
 

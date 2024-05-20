@@ -712,6 +712,40 @@ class ListNameSpace:
         ]
         """
 
+    def circshift(self, n: int | IntoExprColumn = 1) -> Series:
+        """
+        Circularly shift list values by the given number of indices.
+
+        Parameters
+        ----------
+        n
+            Number of indices to shift forward. If a negative value is passed, values
+            are shifted in the opposite direction instead.
+
+        Examples
+        --------
+        By default, list values are shifted forward by one index.
+
+        >>> s = pl.Series([[1, 2, 3], [4, 5]])
+        >>> s.list.circshift()
+        shape: (2,)
+        Series: '' [list[i64]]
+        [
+                [3, 1, 2]
+                [5, 4]
+        ]
+
+        Pass a negative value to shift in the opposite direction instead.
+
+        >>> s.list.circshift(-2)
+        shape: (2,)
+        Series: '' [list[i64]]
+        [
+                [3, 1, 2]
+                [4, 5]
+        ]
+        """
+
     def slice(self, offset: int | Expr, length: int | Expr | None = None) -> Series:
         """
         Slice every sublist.

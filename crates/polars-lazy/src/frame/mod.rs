@@ -428,6 +428,13 @@ impl LazyFrame {
         self.select(vec![col("*").shift(n.into())])
     }
 
+    /// Shift values circularly by a given period.
+    ///
+    /// See the method on [Series](polars_core::series::SeriesTrait::circshift) for more info on the `circshift` operation.
+    pub fn circshift<E: Into<Expr>>(self, n: E) -> Self {
+        self.select(vec![col("*").circshift(n.into())])
+    }
+
     /// Shift the values by a given period and fill the parts that will be empty due to this operation
     /// with the result of the `fill_value` expression.
     ///

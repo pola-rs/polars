@@ -16,6 +16,7 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
+from polars import StringCache
 from polars._utils.construction import iterable_to_pydf
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, INTEGER_DTYPES
 from polars.exceptions import ComputeError, TimeZoneAwareConstructorWarning
@@ -564,6 +565,46 @@ def test_shift() -> None:
         {"A": [None, "a", "b"], "B": [None, 1, 3]},
     )
     assert_frame_equal(a, b)
+
+
+@StringCache()
+def test_circshift() -> None:
+    df = pl.DataFrame(
+        {
+            "int": [1, 2, 3],
+            "float": [1.0, 2.0, 3.0],
+            "str": ["a", "b", "c"],
+            "cat": pl.Series(["a", "b", "c"], dtype=pl.Categorical),
+            "date": [date(2024, 1, 1), date(2024, 1, 2), date(2024, 1, 3)],
+            "datetime": [
+                datetime(2024, 1, 1),
+                datetime(2024, 1, 2),
+                datetime(2024, 1, 3),
+            ],
+            "list": [[1], [2, 2], [3, 3, 3]],
+            "array": pl.Series([[1, 1], [2, 2], [3, 3]], dtype=pl.Array(pl.Int32, 2)),
+            "binary": [b"0", b"1", b"2"],
+        }
+    )
+    out = df.circshift(1)
+    expected = pl.DataFrame(
+        {
+            "int": [3, 1, 2],
+            "float": [3.0, 1.0, 2.0],
+            "str": ["c", "a", "b"],
+            "cat": pl.Series(["c", "a", "b"], dtype=pl.Categorical),
+            "date": [date(2024, 1, 3), date(2024, 1, 1), date(2024, 1, 2)],
+            "datetime": [
+                datetime(2024, 1, 3),
+                datetime(2024, 1, 1),
+                datetime(2024, 1, 2),
+            ],
+            "list": [[3, 3, 3], [1], [2, 2]],
+            "array": pl.Series([[3, 3], [1, 1], [2, 2]], dtype=pl.Array(pl.Int32, 2)),
+            "binary": [b"2", b"0", b"1"],
+        }
+    )
+    assert_frame_equal(out, expected)
 
 
 def test_custom_group_by() -> None:

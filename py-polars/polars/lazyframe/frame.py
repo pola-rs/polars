@@ -4483,6 +4483,57 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         n = parse_as_expression(n)
         return self._from_pyldf(self._ldf.shift(n, fill_value))
 
+    def circshift(self, n: int | IntoExprColumn = 1) -> Self:
+        """
+        Circularly shift values by the given number of indices.
+
+        Parameters
+        ----------
+        n
+            Number of indices to shift forward. If a negative value is passed, values
+            are shifted in the opposite direction instead.
+
+        Examples
+        --------
+        By default, values are shifted forward by one index.
+
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "a": [1, 2, 3, 4],
+        ...         "b": [5, 6, 7, 8],
+        ...     }
+        ... )
+        >>> lf.circshift().collect()
+        shape: (4, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 4   ┆ 8   │
+        │ 1   ┆ 5   │
+        │ 2   ┆ 6   │
+        │ 3   ┆ 7   │
+        └─────┴─────┘
+
+        Pass a negative value to shift in the opposite direction instead.
+
+        >>> lf.circshift(-2).collect()
+        shape: (4, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 3   ┆ 7   │
+        │ 4   ┆ 8   │
+        │ 1   ┆ 5   │
+        │ 2   ┆ 6   │
+        └─────┴─────┘
+        """
+        n = parse_as_expression(n)
+        return self._from_pyldf(self._ldf.circshift(n))
+
     def slice(self, offset: int, length: int | None = None) -> Self:
         """
         Get a slice of this DataFrame.

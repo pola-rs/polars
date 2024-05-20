@@ -260,6 +260,10 @@ impl SeriesTrait for NullChunked {
         self.clone().into_series()
     }
 
+    fn circshift(&self, _periods: i64) -> Series {
+        self.clone().into_series()
+    }
+
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
         polars_ensure!(other.dtype() == &DataType::Null, ComputeError: "expected null dtype");
         // we don't create a new null array to keep probability of aligned chunks higher

@@ -14,6 +14,7 @@ Manipulation/selection
     Expr.bottom_k_by
     Expr.cast
     Expr.ceil
+    Expr.circshift
     Expr.clip
     Expr.clip_max
     Expr.clip_min

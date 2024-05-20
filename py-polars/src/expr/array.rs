@@ -126,4 +126,8 @@ impl PyExpr {
     fn arr_shift(&self, n: PyExpr) -> Self {
         self.inner.clone().arr().shift(n.inner).into()
     }
+
+    fn arr_circshift(&self, n: PyExpr) -> Self {
+        self.inner.clone().arr().circshift(n.inner).into()
+    }
 }

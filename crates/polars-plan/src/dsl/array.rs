@@ -192,4 +192,14 @@ impl ArrayNameSpace {
             false,
         )
     }
+
+    /// Circshift every sub-array.
+    pub fn circshift(self, n: Expr) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::ArrayExpr(ArrayFunction::CircShift),
+            &[n],
+            false,
+            false,
+        )
+    }
 }

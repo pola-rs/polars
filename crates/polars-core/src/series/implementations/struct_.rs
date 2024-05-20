@@ -304,6 +304,10 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         self.0._apply_fields(|s| s.shift(periods)).into_series()
     }
 
+    fn circshift(&self, periods: i64) -> Series {
+        self.0._apply_fields(|s| s.circshift(periods)).into_series()
+    }
+
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }

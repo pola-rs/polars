@@ -2421,6 +2421,13 @@ impl DataFrame {
         unsafe { DataFrame::new_no_checks(col) }
     }
 
+    /// Shift values circularly by a given period.
+    pub fn circshift(&self, periods: i64) -> Self {
+        let col = self._apply_columns_par(&|s| s.circshift(periods));
+
+        unsafe { DataFrame::new_no_checks(col) }
+    }
+
     /// Replace None values with one of the following strategies:
     /// * Forward fill (replace None with the previous value)
     /// * Backward fill (replace None with the next value)

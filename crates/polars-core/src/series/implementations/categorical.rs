@@ -281,6 +281,11 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         self.with_state(false, |ca| ca.shift(periods)).into_series()
     }
 
+    fn circshift(&self, periods: i64) -> Series {
+        self.with_state(false, |ca| ca.circshift(periods))
+            .into_series()
+    }
+
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }

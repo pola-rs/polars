@@ -12,6 +12,7 @@ Manipulation/selection
     Series.bottom_k
     Series.cast
     Series.ceil
+    Series.circshift
     Series.clear
     Series.clip
     Series.clip_max

@@ -312,6 +312,10 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
         self.apply_physical_to_s(|ca| ca.shift(periods))
     }
 
+    fn circshift(&self, periods: i64) -> Series {
+        self.apply_physical_to_s(|ca| ca.circshift(periods))
+    }
+
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }

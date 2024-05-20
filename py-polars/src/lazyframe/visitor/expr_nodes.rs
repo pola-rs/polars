@@ -869,6 +869,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     return Err(PyNotImplementedError::new_err("shift and fill"))
                 },
                 FunctionExpr::Shift => ("shift",).to_object(py),
+                FunctionExpr::CircShift => ("circshift",).to_object(py),
                 FunctionExpr::DropNans => ("dropnan",).to_object(py),
                 FunctionExpr::DropNulls => ("dropnull",).to_object(py),
                 FunctionExpr::Mode => ("mode",).to_object(py),

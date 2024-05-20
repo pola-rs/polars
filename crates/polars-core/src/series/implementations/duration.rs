@@ -393,6 +393,13 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
             .into_series()
     }
 
+    fn circshift(&self, periods: i64) -> Series {
+        self.0
+            .circshift(periods)
+            .into_duration(self.0.time_unit())
+            .into_series()
+    }
+
     fn sum_reduce(&self) -> PolarsResult<Scalar> {
         let sc = self.0.sum_reduce();
         let v = sc.value().as_duration(self.0.time_unit());

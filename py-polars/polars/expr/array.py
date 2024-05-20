@@ -779,3 +779,47 @@ class ExprArrayNameSpace:
         """
         n = parse_as_expression(n)
         return wrap_expr(self._pyexpr.arr_shift(n))
+
+    def circshift(self, n: int | IntoExprColumn = 1) -> Expr:
+        """
+        Circularly shift array values by the given number of indices.
+
+        Parameters
+        ----------
+        n
+            Number of indices to shift forward. If a negative value is passed, values
+            are shifted in the opposite direction instead.
+
+        Examples
+        --------
+        By default, array values are shifted forward by one index.
+
+        >>> df = pl.DataFrame(
+        ...     {"a": [[1, 2, 3], [4, 5, 6]]}, schema={"a": pl.Array(pl.Int64, 3)}
+        ... )
+        >>> df.with_columns(shift=pl.col("a").arr.circshift())
+        shape: (2, 2)
+        ┌───────────────┬───────────────┐
+        │ a             ┆ shift         │
+        │ ---           ┆ ---           │
+        │ array[i64, 3] ┆ array[i64, 3] │
+        ╞═══════════════╪═══════════════╡
+        │ [1, 2, 3]     ┆ [3, 1, 2]     │
+        │ [4, 5, 6]     ┆ [6, 4, 5]     │
+        └───────────────┴───────────────┘
+
+        Pass a negative value to shift in the opposite direction instead.
+
+        >>> df.with_columns(shift=pl.col("a").arr.circshift(-2))
+        shape: (2, 2)
+        ┌───────────────┬───────────────┐
+        │ a             ┆ shift         │
+        │ ---           ┆ ---           │
+        │ array[i64, 3] ┆ array[i64, 3] │
+        ╞═══════════════╪═══════════════╡
+        │ [1, 2, 3]     ┆ [3, 1, 2]     │
+        │ [4, 5, 6]     ┆ [6, 4, 5]     │
+        └───────────────┴───────────────┘
+        """
+        n = parse_as_expression(n)
+        return wrap_expr(self._pyexpr.arr_circshift(n))

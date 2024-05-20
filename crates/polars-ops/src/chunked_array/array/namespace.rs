@@ -170,6 +170,39 @@ pub trait ArrayNameSpace: AsArray {
         };
         Ok(out.into_series())
     }
+
+    fn array_circshift(&self, n: &Series) -> PolarsResult<Series> {
+        let ca = self.as_array();
+        let n_s = n.cast(&DataType::Int64)?;
+        let n = n_s.i64()?;
+        let out = match n.len() {
+            1 => {
+                if let Some(n) = n.get(0) {
+                    // SAFETY: Circshift does not change the dtype and number of elements of sub-array.
+                    unsafe { ca.apply_amortized_same_type(|s| s.as_ref().circshift(n)) }
+                } else {
+                    ArrayChunked::full_null_with_dtype(
+                        ca.name(),
+                        ca.len(),
+                        &ca.inner_dtype(),
+                        ca.width(),
+                    )
+                }
+            },
+            _ => {
+                // SAFETY: Circhift does not change the dtype and number of elements of sub-array.
+                unsafe {
+                    ca.zip_and_apply_amortized_same_type(n, |opt_s, opt_periods| {
+                        match (opt_s, opt_periods) {
+                            (Some(s), Some(n)) => Some(s.as_ref().circshift(n)),
+                            _ => None,
+                        }
+                    })
+                }
+            },
+        };
+        Ok(out.into_series())
+    }
 }
 
 impl ArrayNameSpace for ArrayChunked {}

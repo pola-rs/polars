@@ -556,7 +556,12 @@ pub trait ChunkShiftFill<T: PolarsDataType, V> {
 }
 
 pub trait ChunkShift<T: PolarsDataType> {
+    /// Shift the values by a given period and fill the parts that will be empty due to this operation
+    /// with null.
     fn shift(&self, periods: i64) -> ChunkedArray<T>;
+
+    /// Shift values circularly by a given period.
+    fn circshift(&self, periods: i64) -> ChunkedArray<T>;
 }
 
 /// Combine two [`ChunkedArray`] based on some predicate.

@@ -118,6 +118,10 @@ impl PyExpr {
         self.inner.clone().list().shift(periods.inner).into()
     }
 
+    fn list_circshift(&self, periods: PyExpr) -> Self {
+        self.inner.clone().list().circshift(periods.inner).into()
+    }
+
     fn list_slice(&self, offset: PyExpr, length: Option<PyExpr>) -> Self {
         let length = match length {
             Some(i) => i.inner,

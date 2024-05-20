@@ -9,6 +9,7 @@ Manipulation/selection
     LazyFrame.approx_n_unique
     LazyFrame.bottom_k
     LazyFrame.cast
+    LazyFrame.circshift
     LazyFrame.clear
     LazyFrame.clone
     LazyFrame.drop

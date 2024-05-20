@@ -126,3 +126,20 @@ pub fn shift(args: &[Series]) -> PolarsResult<Series> {
         None => Ok(Series::full_null(s.name(), s.len(), s.dtype())),
     }
 }
+
+pub fn circshift(args: &[Series]) -> PolarsResult<Series> {
+    let s = &args[0];
+    let n_s = &args[1];
+    polars_ensure!(
+        n_s.len() == 1,
+        ComputeError: "n must be a single value."
+    );
+
+    let n_s = n_s.cast(&DataType::Int64)?;
+    let n = n_s.i64()?;
+
+    match n.get(0) {
+        Some(n) => Ok(s.circshift(n)),
+        None => Ok(Series::full_null(s.name(), s.len(), s.dtype())),
+    }
+}

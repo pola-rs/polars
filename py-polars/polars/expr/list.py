@@ -916,6 +916,48 @@ class ExprListNameSpace:
         n = parse_as_expression(n)
         return wrap_expr(self._pyexpr.list_shift(n))
 
+    def circshift(self, n: int | IntoExprColumn = 1) -> Expr:
+        """
+        Circularly shift list values by the given number of indices.
+
+        Parameters
+        ----------
+        n
+            Number of indices to shift forward. If a negative value is passed, values
+            are shifted in the opposite direction instead.
+
+        Examples
+        --------
+        By default, list values are shifted forward by one index.
+
+        >>> df = pl.DataFrame({"a": [[1, 2, 3], [4, 5]]})
+        >>> df.with_columns(shift=pl.col("a").list.circshift())
+        shape: (2, 2)
+        ┌───────────┬───────────┐
+        │ a         ┆ shift     │
+        │ ---       ┆ ---       │
+        │ list[i64] ┆ list[i64] │
+        ╞═══════════╪═══════════╡
+        │ [1, 2, 3] ┆ [3, 1, 2] │
+        │ [4, 5]    ┆ [5, 4]    │
+        └───────────┴───────────┘
+
+        Pass a negative value to shift in the opposite direction instead.
+
+        >>> df.with_columns(shift=pl.col("a").list.circshift(-2))
+        shape: (2, 2)
+        ┌───────────┬───────────┐
+        │ a         ┆ shift     │
+        │ ---       ┆ ---       │
+        │ list[i64] ┆ list[i64] │
+        ╞═══════════╪═══════════╡
+        │ [1, 2, 3] ┆ [3, 1, 2] │
+        │ [4, 5]    ┆ [4, 5]    │
+        └───────────┴───────────┘
+        """
+        n = parse_as_expression(n)
+        return wrap_expr(self._pyexpr.list_circshift(n))
+
     def slice(
         self, offset: int | str | Expr, length: int | str | Expr | None = None
     ) -> Expr:

@@ -759,6 +759,11 @@ impl Expr {
         )
     }
 
+    /// Shift the values in the array circularly by some period. See [the eager implementation](polars_core::series::SeriesTrait::circshift).
+    pub fn circshift(self, n: Expr) -> Self {
+        self.apply_many_private(FunctionExpr::CircShift, &[n], false, false)
+    }
+
     /// Cumulatively count values from 0 to len.
     #[cfg(feature = "cum_agg")]
     pub fn cum_count(self, reverse: bool) -> Self {

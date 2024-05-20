@@ -113,7 +113,7 @@ impl FunctionExpr {
             }),
             #[cfg(feature = "unique_counts")]
             UniqueCounts => mapper.with_dtype(IDX_DTYPE),
-            Shift | Reverse => mapper.with_same_dtype(),
+            Shift | CircShift | Reverse => mapper.with_same_dtype(),
             #[cfg(feature = "cum_agg")]
             CumCount { .. } => mapper.with_dtype(IDX_DTYPE),
             #[cfg(feature = "cum_agg")]

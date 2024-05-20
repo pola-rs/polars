@@ -413,6 +413,9 @@ pub trait SeriesTrait:
     /// ```
     fn shift(&self, _periods: i64) -> Series;
 
+    /// Shift the values circularly by a given period.
+    fn circshift(&self, _periods: i64) -> Series;
+
     /// Get the sum of the Series as a new Scalar.
     ///
     /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is

@@ -2892,6 +2892,57 @@ class Expr:
         n = parse_as_expression(n)
         return self._from_pyexpr(self._pyexpr.shift(n, fill_value))
 
+    def circshift(self, n: int | IntoExprColumn = 1) -> Self:
+        """
+        Circularly shift values by the given number of indices.
+
+        Parameters
+        ----------
+        n
+            Number of indices to shift forward. If a negative value is passed, values
+            are shifted in the opposite direction instead.
+
+        See Also
+        --------
+        shift
+        shift_and_fill
+
+        Examples
+        --------
+        By default, values are shifted forward by one index.
+
+        >>> df = pl.DataFrame({"a": [1, 2, 3, 4]})
+        >>> df.with_columns(shift=pl.col("a").circshift())
+        shape: (4, 2)
+        ┌─────┬───────┐
+        │ a   ┆ shift │
+        │ --- ┆ ---   │
+        │ i64 ┆ i64   │
+        ╞═════╪═══════╡
+        │ 1   ┆ 4     │
+        │ 2   ┆ 1     │
+        │ 3   ┆ 2     │
+        │ 4   ┆ 3     │
+        └─────┴───────┘
+
+        Pass a negative value to shift in the opposite direction instead.
+
+        >>> df.with_columns(shift=pl.col("a").circshift(-2))
+        shape: (4, 2)
+        ┌─────┬───────┐
+        │ a   ┆ shift │
+        │ --- ┆ ---   │
+        │ i64 ┆ i64   │
+        ╞═════╪═══════╡
+        │ 1   ┆ 3     │
+        │ 2   ┆ 4     │
+        │ 3   ┆ 1     │
+        │ 4   ┆ 2     │
+        └─────┴───────┘
+        """
+        n = parse_as_expression(n)
+        return self._from_pyexpr(self._pyexpr.circshift(n))
+
     def fill_null(
         self,
         value: Any | Expr | None = None,

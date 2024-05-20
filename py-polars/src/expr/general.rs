@@ -443,6 +443,12 @@ impl PyExpr {
         out.into()
     }
 
+    fn circshift(&self, n: Self) -> Self {
+        let expr = self.inner.clone();
+        let out = expr.circshift(n.inner);
+        out.into()
+    }
+
     fn fill_null(&self, expr: Self) -> Self {
         self.inner.clone().fill_null(expr.inner).into()
     }

@@ -769,6 +769,21 @@ def test_shift_over_13041() -> None:
     }
 
 
+def test_circshift_over() -> None:
+    df = pl.DataFrame(
+        {
+            "id": [0, 0, 0, 1, 1, 1],
+            "cat_col": pl.Series(["a", "b", "c", "d", "e", "f"], dtype=pl.Categorical),
+        }
+    )
+    result = df.with_columns(pl.col("cat_col").circshift(2).over("id"))
+
+    assert result.to_dict(as_series=False) == {
+        "id": [0, 0, 0, 1, 1, 1],
+        "cat_col": ["b", "c", "a", "e", "f", "d"],
+    }
+
+
 @pytest.mark.parametrize("context", [pl.StringCache(), contextlib.nullcontext()])
 @pytest.mark.parametrize("ordering", ["physical", "lexical"])
 def test_sort_categorical_retain_none(

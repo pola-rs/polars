@@ -8197,6 +8197,56 @@ class DataFrame:
         """
         return self.lazy().shift(n, fill_value=fill_value).collect(_eager=True)
 
+    def circshift(self, n: int = 1) -> DataFrame:
+        """
+        Circularly shift values by the given number of indices.
+
+        Parameters
+        ----------
+        n
+            Number of indices to shift forward. If a negative value is passed, values
+            are shifted in the opposite direction instead.
+
+        Examples
+        --------
+        By default, values are shifted forward by one index.
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, 3, 4],
+        ...         "b": [5, 6, 7, 8],
+        ...     }
+        ... )
+        >>> df.circshift()
+        shape: (4, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 4   ┆ 8   │
+        │ 1   ┆ 5   │
+        │ 2   ┆ 6   │
+        │ 3   ┆ 7   │
+        └─────┴─────┘
+
+        Pass a negative value to shift in the opposite direction instead.
+
+        >>> df.circshift(-2)
+        shape: (4, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 3   ┆ 7   │
+        │ 4   ┆ 8   │
+        │ 1   ┆ 5   │
+        │ 2   ┆ 6   │
+        └─────┴─────┘
+        """
+        return self.lazy().circshift(n).collect(_eager=True)
+
     def is_duplicated(self) -> Series:
         """
         Get a mask of all duplicated rows in this DataFrame.

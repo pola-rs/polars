@@ -317,6 +317,28 @@ pub trait ListNameSpaceImpl: AsList {
         Ok(self.same_type(out))
     }
 
+    fn lst_circshift(&self, periods: &Series) -> PolarsResult<ListChunked> {
+        let ca = self.as_list();
+        let periods_s = periods.cast(&DataType::Int64)?;
+        let periods = periods_s.i64()?;
+        let out = match periods.len() {
+            1 => {
+                if let Some(periods) = periods.get(0) {
+                    ca.apply_amortized(|s| s.as_ref().circshift(periods))
+                } else {
+                    ListChunked::full_null_with_dtype(ca.name(), ca.len(), &ca.inner_dtype())
+                }
+            },
+            _ => ca.zip_and_apply_amortized(periods, |opt_s, opt_periods| {
+                match (opt_s, opt_periods) {
+                    (Some(s), Some(periods)) => Some(s.as_ref().circshift(periods)),
+                    _ => None,
+                }
+            }),
+        };
+        Ok(self.same_type(out))
+    }
+
     fn lst_slice(&self, offset: i64, length: usize) -> ListChunked {
         let ca = self.as_list();
         let out = ca.apply_amortized(|s| s.as_ref().slice(offset, length));

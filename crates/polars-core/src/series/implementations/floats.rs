@@ -284,6 +284,10 @@ macro_rules! impl_dyn_series {
                 ChunkShift::shift(&self.0, periods).into_series()
             }
 
+            fn circshift(&self, periods: i64) -> Series {
+                ChunkShift::circshift(&self.0, periods).into_series()
+            }
+
             fn sum_reduce(&self) -> PolarsResult<Scalar> {
                 Ok(ChunkAggSeries::sum_reduce(&self.0))
             }

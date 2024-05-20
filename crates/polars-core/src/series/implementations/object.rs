@@ -200,6 +200,10 @@ where
         ChunkShift::shift(&self.0, periods).into_series()
     }
 
+    fn circshift(&self, periods: i64) -> Series {
+        ChunkShift::circshift(&self.0, periods).into_series()
+    }
+
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }

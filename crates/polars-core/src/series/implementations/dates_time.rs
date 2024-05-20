@@ -321,6 +321,10 @@ macro_rules! impl_dyn_series {
                 self.0.shift(periods).$into_logical().into_series()
             }
 
+            fn circshift(&self, periods: i64) -> Series {
+                self.0.circshift(periods).$into_logical().into_series()
+            }
+
             fn max_reduce(&self) -> PolarsResult<Scalar> {
                 let sc = self.0.max_reduce();
                 let av = sc.value().cast(self.dtype()).into_static().unwrap();

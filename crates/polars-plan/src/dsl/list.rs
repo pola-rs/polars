@@ -239,6 +239,16 @@ impl ListNameSpace {
         )
     }
 
+    /// Circshift every sublist.
+    pub fn circshift(self, periods: Expr) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::ListExpr(ListFunction::CircShift),
+            &[periods],
+            false,
+            false,
+        )
+    }
+
     /// Slice every sublist.
     pub fn slice(self, offset: Expr, length: Expr) -> Expr {
         self.0.map_many_private(

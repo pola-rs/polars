@@ -997,6 +997,12 @@ impl PyLazyFrame {
         out.into()
     }
 
+    fn circshift(&self, n: PyExpr) -> Self {
+        let lf = self.ldf.clone();
+        let out = lf.circshift(n.inner);
+        out.into()
+    }
+
     fn fill_nan(&self, fill_value: PyExpr) -> Self {
         let ldf = self.ldf.clone();
         ldf.fill_nan(fill_value.inner).into()

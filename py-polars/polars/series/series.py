@@ -5546,6 +5546,45 @@ class Series:
         ]
         """
 
+    def circshift(self, n: int = 1) -> Series:
+        """
+        Circularly shift values by the given number of indices.
+
+        Parameters
+        ----------
+        n
+            Number of indices to shift forward. If a negative value is passed, values
+            are shifted in the opposite direction instead.
+
+        Examples
+        --------
+        By default, values are shifted forward by one index, and the last value is
+        moved to the first index.
+
+        >>> s = pl.Series([1, 2, 3, 4])
+        >>> s.circshift()
+        shape: (4,)
+        Series: '' [i64]
+        [
+                4
+                1
+                2
+                3
+        ]
+
+        Pass a negative value to shift in the opposite direction instead.
+
+        >>> s.circshift(-2)
+        shape: (4,)
+        Series: '' [i64]
+        [
+                3
+                4
+                1
+                2
+        ]
+        """
+
     def zip_with(self, mask: Series, other: Series) -> Self:
         """
         Take values from self or other based on the given mask.

@@ -334,6 +334,13 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
             .into_series()
     }
 
+    fn circshift(&self, periods: i64) -> Series {
+        self.0
+            .circshift(periods)
+            .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+            .into_series()
+    }
+
     fn max_reduce(&self) -> PolarsResult<Scalar> {
         let sc = self.0.max_reduce();
 
