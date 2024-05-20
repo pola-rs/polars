@@ -1002,3 +1002,10 @@ def test_join_empties(how: str) -> None:
 
     df = df1.join(df2, on="col2", how=how)
     assert df.height == 0
+
+
+def test_join_raise_on_redundant_keys() -> None:
+    left = pl.DataFrame({"a": [1, 2, 3], "b": [3, 4, 5], "c": [5, 6, 7]})
+    right = pl.DataFrame({"a": [2, 3, 4], "c": [4, 5, 6]})
+    with pytest.raises(pl.InvalidOperationError, match="already joined on"):
+        left.join(right, on=["a", "a"], how="outer_coalesce")
