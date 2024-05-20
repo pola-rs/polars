@@ -7,42 +7,68 @@ pub fn ewm_mean_by(
     s: &Series,
     times: &Series,
     half_life: i64,
-    assume_sorted: bool,
+    times_is_sorted: bool,
 ) -> PolarsResult<Series> {
+    fn func<T>(
+        values: &ChunkedArray<T>,
+        times: &Int64Chunked,
+        half_life: i64,
+        times_is_sorted: bool,
+    ) -> PolarsResult<Series>
+    where
+        T: PolarsFloatType,
+        T::Native: Float + Zero + One,
+        ChunkedArray<T>: IntoSeries,
+    {
+        if times_is_sorted {
+            Ok(ewm_mean_by_impl_sorted(values, times, half_life).into_series())
+        } else {
+            Ok(ewm_mean_by_impl(values, times, half_life).into_series())
+        }
+    }
+
     match (s.dtype(), times.dtype()) {
-        (DataType::Float64, DataType::Int64) => Ok((if assume_sorted {
-            ewm_mean_by_impl_sorted(s.f64().unwrap(), times.i64().unwrap(), half_life)
-        } else {
-            ewm_mean_by_impl(s.f64().unwrap(), times.i64().unwrap(), half_life)
-        })
-        .into_series()),
-        (DataType::Float32, DataType::Int64) => Ok((if assume_sorted {
-            ewm_mean_by_impl_sorted(s.f32().unwrap(), times.i64().unwrap(), half_life)
-        } else {
-            ewm_mean_by_impl(s.f32().unwrap(), times.i64().unwrap(), half_life)
-        })
-        .into_series()),
+        (DataType::Float64, DataType::Int64) => func(
+            s.f64().unwrap(),
+            times.i64().unwrap(),
+            half_life,
+            times_is_sorted,
+        ),
+        (DataType::Float32, DataType::Int64) => func(
+            s.f32().unwrap(),
+            times.i64().unwrap(),
+            half_life,
+            times_is_sorted,
+        ),
         #[cfg(feature = "dtype-datetime")]
         (_, DataType::Datetime(time_unit, _)) => {
             let half_life = adjust_half_life_to_time_unit(half_life, time_unit);
-            ewm_mean_by(s, &times.cast(&DataType::Int64)?, half_life, assume_sorted)
+            ewm_mean_by(
+                s,
+                &times.cast(&DataType::Int64)?,
+                half_life,
+                times_is_sorted,
+            )
         },
         #[cfg(feature = "dtype-date")]
         (_, DataType::Date) => ewm_mean_by(
             s,
             &times.cast(&DataType::Datetime(TimeUnit::Milliseconds, None))?,
             half_life,
-            assume_sorted,
+            times_is_sorted,
         ),
-        (_, DataType::UInt64 | DataType::UInt32 | DataType::Int32) => {
-            ewm_mean_by(s, &times.cast(&DataType::Int64)?, half_life, assume_sorted)
-        },
+        (_, DataType::UInt64 | DataType::UInt32 | DataType::Int32) => ewm_mean_by(
+            s,
+            &times.cast(&DataType::Int64)?,
+            half_life,
+            times_is_sorted,
+        ),
         (DataType::UInt64 | DataType::UInt32 | DataType::Int64 | DataType::Int32, _) => {
             ewm_mean_by(
                 &s.cast(&DataType::Float64)?,
                 times,
                 half_life,
-                assume_sorted,
+                times_is_sorted,
             )
         },
         _ => {

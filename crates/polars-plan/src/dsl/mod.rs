@@ -1647,12 +1647,9 @@ impl Expr {
 
     #[cfg(feature = "ewma_by")]
     /// Calculate the exponentially-weighted moving average by a time column.
-    pub fn ewm_mean_by(self, times: Expr, half_life: Duration, check_sorted: bool) -> Self {
+    pub fn ewm_mean_by(self, times: Expr, half_life: Duration) -> Self {
         self.apply_many_private(
-            FunctionExpr::EwmMeanBy {
-                half_life,
-                check_sorted,
-            },
+            FunctionExpr::EwmMeanBy { half_life },
             &[times],
             false,
             false,

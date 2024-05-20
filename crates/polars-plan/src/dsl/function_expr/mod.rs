@@ -328,7 +328,6 @@ pub enum FunctionExpr {
     #[cfg(feature = "ewma_by")]
     EwmMeanBy {
         half_life: Duration,
-        check_sorted: bool,
     },
     #[cfg(feature = "ewma")]
     EwmStd {
@@ -542,10 +541,7 @@ impl Hash for FunctionExpr {
             #[cfg(feature = "ewma")]
             EwmMean { options } => options.hash(state),
             #[cfg(feature = "ewma_by")]
-            EwmMeanBy {
-                half_life,
-                check_sorted,
-            } => (half_life, check_sorted).hash(state),
+            EwmMeanBy { half_life } => (half_life).hash(state),
             #[cfg(feature = "ewma")]
             EwmStd { options } => options.hash(state),
             #[cfg(feature = "ewma")]
@@ -1118,10 +1114,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "ewma")]
             EwmMean { options } => map!(ewm::ewm_mean, options),
             #[cfg(feature = "ewma_by")]
-            EwmMeanBy {
-                half_life,
-                check_sorted,
-            } => map_as_slice!(ewm_by::ewm_mean_by, half_life, check_sorted),
+            EwmMeanBy { half_life } => map_as_slice!(ewm_by::ewm_mean_by, half_life),
             #[cfg(feature = "ewma")]
             EwmStd { options } => map!(ewm::ewm_std, options),
             #[cfg(feature = "ewma")]

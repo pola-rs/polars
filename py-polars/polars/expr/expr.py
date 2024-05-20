@@ -10537,7 +10537,7 @@ class Expr:
         by: str | IntoExpr,
         *,
         half_life: str | timedelta,
-        check_sorted: bool = True,
+        check_sorted: bool | None = None,
     ) -> Self:
         r"""
         Calculate time-based exponentially weighted moving average.
@@ -10587,6 +10587,10 @@ class Expr:
             Check whether `by` column is sorted.
             Incorrectly setting this to `False` will lead to incorrect output.
 
+            .. deprecated:: 0.20.27
+                Sortedness is now verified in a quick manner, you can safely remove
+                this argument.
+
         Returns
         -------
         Expr
@@ -10625,7 +10629,12 @@ class Expr:
         """
         by = parse_as_expression(by)
         half_life = parse_as_duration_string(half_life)
-        return self._from_pyexpr(self._pyexpr.ewm_mean_by(by, half_life, check_sorted))
+        if check_sorted is not None:
+            issue_deprecation_warning(
+                "`check_sorted` is now deprecated in `ewm_mean_by`, you can safely remove this argument.",
+                version="0.20.27",
+            )
+        return self._from_pyexpr(self._pyexpr.ewm_mean_by(by, half_life))
 
     @deprecate_nonkeyword_arguments(version="0.19.10")
     def ewm_std(
