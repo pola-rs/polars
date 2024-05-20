@@ -34,7 +34,7 @@ impl PySeries {
     /// WARNING: The resulting view will show the underlying value for nulls,
     /// which may be any value. The caller is responsible for handling nulls
     /// appropriately.
-    pub fn to_numpy_view(&self, py: Python) -> Option<PyObject> {
+    fn to_numpy_view(&self, py: Python) -> Option<PyObject> {
         let (view, _) = try_series_to_numpy_view(py, &self.series, true, false)?;
         Some(view)
     }

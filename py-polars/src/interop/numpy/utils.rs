@@ -45,7 +45,7 @@ where
 }
 
 /// Reshape the first dimension of a NumPy array to the given height and width.
-pub(crate) fn reshape_numpy_array(
+pub(super) fn reshape_numpy_array(
     py: Python,
     arr: PyObject,
     height: usize,
