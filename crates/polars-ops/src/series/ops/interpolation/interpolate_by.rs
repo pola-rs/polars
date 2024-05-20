@@ -38,7 +38,7 @@ fn signed_interp_by<T, F>(
     x: &[F],
     out: &mut [T],
     sorting_indices: &[IdxSize],
-    idx: usize,
+    low_idx: usize,
 ) where
     T: Sub<Output = T>
         + Mul<Output = T>
@@ -56,7 +56,7 @@ fn signed_interp_by<T, F>(
     for (offset, x_i) in (x[1..x.len() - 1]).iter().enumerate() {
         let x_delta = NumCast::from(*x_i - x_start).unwrap();
         let v = linear_itp(y_start, x_delta, slope);
-        let out_idx = unsafe { sorting_indices.get_unchecked(idx + offset + 1) };
+        let out_idx = unsafe { sorting_indices.get_unchecked(low_idx + offset + 1) };
         unsafe { *out.get_unchecked_mut(*out_idx as usize) = v };
     }
 }
@@ -90,11 +90,11 @@ where
     let first = chunked_arr.first_non_null().unwrap();
     let last = chunked_arr.last_non_null().unwrap() + 1;
 
-    // Fill av with first.
-    let mut av = Vec::with_capacity(chunked_arr.len());
+    // Fill out with first.
+    let mut out = Vec::with_capacity(chunked_arr.len());
     let mut iter = chunked_arr.into_iter().enumerate().skip(first);
     for _ in 0..first {
-        av.push(Zero::zero())
+        out.push(Zero::zero())
     }
 
     let mut low_val = None;
@@ -103,7 +103,7 @@ where
         let next = iter.next();
         match next {
             Some((idx, Some(v))) => {
-                av.push(v);
+                out.push(v);
                 low_val = Some(v);
                 low_idx = Some(idx);
             },
@@ -117,9 +117,9 @@ where
                                 low_val.expect("We started iterating at `first`"),
                                 high,
                                 &by_values[low_idx.unwrap()..=high_idx],
-                                &mut av,
+                                &mut out,
                             );
-                            av.push(high);
+                            out.push(high);
                             low_val = Some(high);
                             low_idx = Some(high_idx);
                             break;
@@ -142,17 +142,17 @@ where
 
         for i in last..chunked_arr.len() {
             validity.set(i, false);
-            av.push(Zero::zero())
+            out.push(Zero::zero())
         }
 
         let array = PrimitiveArray::new(
             T::get_dtype().to_arrow(true),
-            av.into(),
+            out.into(),
             Some(validity.into()),
         );
         Ok(ChunkedArray::with_chunk(chunked_arr.name(), array))
     } else {
-        Ok(ChunkedArray::from_vec(chunked_arr.name(), av))
+        Ok(ChunkedArray::from_vec(chunked_arr.name(), out))
     }
 }
 
