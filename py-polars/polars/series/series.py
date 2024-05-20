@@ -4405,8 +4405,8 @@ class Series:
     def to_numpy(
         self,
         *,
-        allow_copy: bool = True,
         writable: bool = False,
+        allow_copy: bool = True,
         use_pyarrow: bool = True,
         zero_copy_only: bool | None = None,
     ) -> np.ndarray[Any, Any]:
@@ -4423,13 +4423,13 @@ class Series:
 
         Parameters
         ----------
+        writable
+            Ensure the resulting array is writable. This will force a copy of the data
+            if the array was created without copy as the underlying Arrow data is
+            immutable.
         allow_copy
             Allow memory to be copied to perform the conversion. If set to `False`,
             causes conversions that are not zero-copy to fail.
-        writable
-            Ensure the resulting array is writable. This will force a copy of the data
-            if the array was created without copy, as the underlying Arrow data is
-            immutable.
         use_pyarrow
             First convert to PyArrow, then call `pyarrow.Array.to_numpy
             <https://arrow.apache.org/docs/python/generated/pyarrow.Array.html#pyarrow.Array.to_numpy>`_
@@ -4474,7 +4474,7 @@ class Series:
                 zero_copy_only=not allow_copy, writable=writable
             )
 
-        return self._s.to_numpy(allow_copy=allow_copy, writable=writable)
+        return self._s.to_numpy(writable=writable, allow_copy=allow_copy)
 
     @unstable()
     def to_jax(self, device: jax.Device | str | None = None) -> jax.Array:
