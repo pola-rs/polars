@@ -1,5 +1,6 @@
 mod convert_utils;
 mod dsl_to_ir;
+mod expr_expansion;
 mod expr_to_ir;
 mod ir_to_dsl;
 #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv"))]
@@ -15,6 +16,8 @@ use polars_core::prelude::*;
 use polars_utils::vec::ConvertVec;
 use recursive::recursive;
 pub(crate) mod type_coercion;
+
+pub(crate) use expr_expansion::{is_regex_projection, prepare_projection, rewrite_projections};
 
 use crate::constants::get_len_name;
 use crate::prelude::*;

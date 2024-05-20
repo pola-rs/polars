@@ -12,19 +12,9 @@ use polars_io::HiveOptions;
 use polars_io::RowIndex;
 
 use crate::constants::UNLIMITED_CACHE;
-use crate::logical_plan::expr_expansion::rewrite_projections;
 #[cfg(feature = "python")]
 use crate::prelude::python_udf::PythonFunction;
 use crate::prelude::*;
-
-pub(crate) fn prepare_projection(
-    exprs: Vec<Expr>,
-    schema: &Schema,
-) -> PolarsResult<(Vec<Expr>, Schema)> {
-    let exprs = rewrite_projections(exprs, schema, &[])?;
-    let schema = expressions_to_schema(&exprs, schema, Context::Default)?;
-    Ok((exprs, schema))
-}
 
 pub struct DslBuilder(pub DslPlan);
 
