@@ -687,10 +687,23 @@ def test_rolling_aggregations_unsorted_raise_10991() -> None:
             "val": [1, 2, 3],
         }
     )
-    with pytest.warns(
-        UserWarning, match="Series is not known to be sorted by `by` column."
-    ):
-        df.with_columns(roll=pl.col("val").rolling_sum_by("dt", "2d"))
+    result = df.with_columns(roll=pl.col("val").rolling_sum_by("dt", "2d"))
+    expected = pl.DataFrame(
+        {
+            "dt": [datetime(2020, 1, 3), datetime(2020, 1, 1), datetime(2020, 1, 2)],
+            "val": [1, 2, 3],
+            "roll": [4, 2, 5],
+        }
+    )
+    assert_frame_equal(result, expected)
+    result = (
+        df.with_row_index()
+        .sort("dt")
+        .with_columns(roll=pl.col("val").rolling_sum_by("dt", "2d"))
+        .sort("index")
+        .drop("index")
+    )
+    assert_frame_equal(result, expected)
 
 
 def test_rolling_aggregations_with_over_11225() -> None:
@@ -705,16 +718,17 @@ def test_rolling_aggregations_with_over_11225() -> None:
 
     df_temporal = df_temporal.sort("group", "date")
 
-    result = df_temporal.with_columns(
-        rolling_row_mean=pl.col("index")
-        .rolling_mean_by(
-            by="date",
-            window_size="2d",
-            closed="left",
-            warn_if_unsorted=False,
+    with pytest.deprecated_call(match="you can safely remove this argument"):
+        result = df_temporal.with_columns(
+            rolling_row_mean=pl.col("index")
+            .rolling_mean_by(
+                by="date",
+                window_size="2d",
+                closed="left",
+                warn_if_unsorted=False,
+            )
+            .over("group")
         )
-        .over("group")
-    )
     expected = pl.DataFrame(
         {
             "index": [0, 1, 2, 3, 4],
@@ -969,6 +983,18 @@ def test_rolling_min_periods(
     )["value"]
     assert_series_equal(result, pl.Series("value", expected, pl.Int64))
 
+    # Startig with unsorted data
+    result = (
+        df.sort("date", descending=True)
+        .with_columns(
+            pl.col("value").rolling_sum_by(
+                "date", window_size="2d", min_periods=2, closed=closed
+            )
+        )
+        .sort("date")["value"]
+    )
+    assert_series_equal(result, pl.Series("value", expected, pl.Int64))
+
 
 def test_rolling_returns_scalar_15656() -> None:
     df = pl.DataFrame(
@@ -1021,6 +1047,14 @@ def test_temporal_windows_size_without_by_15977() -> None:
             df.select(pl.col("a").rolling_mean("3d"))
 
 
+def test_by_different_length() -> None:
+    df = pl.DataFrame({"b": [1]})
+    with pytest.raises(InvalidOperationError, match="must be the same length"):
+        df.select(
+            pl.col("b").rolling_max_by(pl.Series([datetime(2020, 1, 1)] * 2), "1d")
+        )
+
+
 def test_incorrect_nulls_16246() -> None:
     df = pl.concat(
         [
@@ -1032,6 +1066,16 @@ def test_incorrect_nulls_16246() -> None:
     result = df.select(pl.col("b").rolling_max_by("a", "1d"))
     expected = pl.DataFrame({"b": [1, 1]})
     assert_frame_equal(result, expected)
+
+
+def test_rolling_with_dst() -> None:
+    df = pl.DataFrame(
+        {"a": [datetime(2020, 10, 26, 1), datetime(2020, 10, 26)], "b": [1, 2]}
+    ).with_columns(pl.col("a").dt.replace_time_zone("Europe/London"))
+    with pytest.raises(ComputeError, match="is ambiguous"):
+        df.select(pl.col("b").rolling_sum_by("a", "1d"))
+    with pytest.raises(ComputeError, match="is ambiguous"):
+        df.sort("a").select(pl.col("b").rolling_sum_by("a", "1d"))
 
 
 def interval_defs() -> SearchStrategy[ClosedInterval]:
@@ -1160,6 +1204,9 @@ def test_rolling_aggs(
     result = df.with_columns(
         getattr(pl.col("value"), func)("ts", window_size=window_size, closed=closed)
     )
+    result_from_unsorted = dataframe.with_columns(
+        getattr(pl.col("value"), func)("ts", window_size=window_size, closed=closed)
+    ).sort("ts")
 
     expected_dict: dict[str, list[object]] = {"ts": [], "value": []}
     for ts, _ in df.iter_rows():
@@ -1183,3 +1230,4 @@ def test_rolling_aggs(
         pl.col("value").cast(result["value"].dtype),
     )
     assert_frame_equal(result, expected)
+    assert_frame_equal(result_from_unsorted, expected)

@@ -23,8 +23,6 @@ pub struct RollingOptionsDynamicWindow {
     /// Optional parameters for the rolling function
     #[cfg_attr(feature = "serde", serde(skip))]
     pub fn_params: DynArgs,
-    /// Warn if data is not known to be sorted by `by` column (if passed)
-    pub warn_if_unsorted: bool,
 }
 
 #[cfg(feature = "rolling_window_by")]
@@ -33,7 +31,6 @@ impl PartialEq for RollingOptionsDynamicWindow {
         self.window_size == other.window_size
             && self.min_periods == other.min_periods
             && self.closed_window == other.closed_window
-            && self.warn_if_unsorted == other.warn_if_unsorted
             && self.fn_params.is_none()
             && other.fn_params.is_none()
     }
