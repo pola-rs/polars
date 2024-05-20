@@ -54,13 +54,14 @@ pub trait SeriesMethods: SeriesSealed {
     /// Checks if a [`Series`] is sorted. Tries to fail fast.
     fn is_sorted(&self, options: SortOptions) -> PolarsResult<bool> {
         let s = self.as_series();
+        let null_count = s.null_count();
 
         // fast paths
         if (options.descending
-            && options.nulls_last
+            && (options.nulls_last || null_count == 0)
             && matches!(s.is_sorted_flag(), IsSorted::Descending))
             || (!options.descending
-                && !options.nulls_last
+                && (!options.nulls_last || null_count == 0)
                 && matches!(s.is_sorted_flag(), IsSorted::Ascending))
         {
             return Ok(true);
@@ -74,7 +75,6 @@ pub trait SeriesMethods: SeriesSealed {
             return encoded.into_series().is_sorted(options);
         }
 
-        let null_count = s.null_count();
         let s_len = s.len();
         if null_count == s_len {
             // All nulls is all equal
