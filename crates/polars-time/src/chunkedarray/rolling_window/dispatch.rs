@@ -82,7 +82,7 @@ where
     if ca.is_empty() {
         return Ok(Series::new_empty(ca.name(), ca.dtype()));
     }
-    polars_ensure!( by.null_count() == 0 && ca.null_count() == 0, InvalidOperation: "'Expr.rolling_*_by(...)' not yet supported for series with null values, consider using 'DataFrame.rolling' or 'Expr.rolling'");
+    polars_ensure!(by.null_count() == 0 && ca.null_count() == 0, InvalidOperation: "'Expr.rolling_*_by(...)' not yet supported for series with null values, consider using 'DataFrame.rolling' or 'Expr.rolling'");
     polars_ensure!(ca.len() == by.len(), InvalidOperation: "`by` column in `rolling_*_by` must be the same length as values column");
     ensure_duration_matches_data_type(options.window_size, by.dtype(), "window_size")?;
     polars_ensure!(!options.window_size.is_zero() && !options.window_size.negative, InvalidOperation: "`window_size` must be strictly positive");
@@ -109,12 +109,7 @@ where
     let func = rolling_agg_fn_dynamic;
     let out: ArrayRef = if by_is_sorted {
         let arr = ca.downcast_iter().next().unwrap();
-        let by_values = by.cont_slice().map_err(|_| {
-            polars_err!(
-                ComputeError:
-                "`by` column should not have null values in 'rolling by' expression"
-            )
-        })?;
+        let by_values = by.cont_slice().unwrap();
         let values = arr.values().as_slice();
         func(
             values,
@@ -132,7 +127,7 @@ where
         let ca = unsafe { ca.take_unchecked(&sorting_indices) };
         let by = unsafe { by.take_unchecked(&sorting_indices) };
         let arr = ca.downcast_iter().next().unwrap();
-        let by_values = by.cont_slice().expect("checked already");
+        let by_values = by.cont_slice().unwrap();
         let values = arr.values().as_slice();
         func(
             values,
