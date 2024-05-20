@@ -6,7 +6,7 @@ use numpy::{
     npyffi, Element, IntoPyArray, PyArrayDescr, PyArrayDescrMethods, ToNpyDims, PY_ARRAY_API,
 };
 use polars_core::prelude::*;
-use polars_core::utils::try_get_supertype;
+use polars_core::utils::dtypes_to_supertype;
 use polars_core::with_match_physical_numeric_polars_type;
 use pyo3::intern;
 use pyo3::prelude::*;
@@ -321,17 +321,7 @@ impl PyDataFrame {
     }
 
     pub fn to_numpy(&self, py: Python, order: Wrap<IndexOrder>) -> Option<PyObject> {
-        let mut st = None;
-        for s in self.df.iter() {
-            let dt_i = s.dtype();
-            match st {
-                None => st = Some(dt_i.clone()),
-                Some(ref mut st) => {
-                    *st = try_get_supertype(st, dt_i).ok()?;
-                },
-            }
-        }
-        let st = st?;
+        let st = dtypes_to_supertype(self.df.iter().map(|s| s.dtype())).ok()?;
 
         let pyarray = match st {
             dt if dt.is_numeric() => with_match_physical_numeric_polars_type!(dt, |$T| {
