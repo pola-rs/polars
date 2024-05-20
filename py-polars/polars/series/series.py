@@ -3744,7 +3744,7 @@ class Series:
         """
         return self.len() == 0
 
-    def is_sorted(self, *, descending: bool = False) -> bool:
+    def is_sorted(self, *, descending: bool = False, nulls_last: bool = False) -> bool:
         """
         Check if the Series is sorted.
 
@@ -3752,6 +3752,8 @@ class Series:
         ----------
         descending
             Check if the Series is sorted in descending order
+        nulls_last
+            Set nulls at the end of the Series in sorted check.
 
         Examples
         --------
@@ -3763,7 +3765,7 @@ class Series:
         >>> s.is_sorted(descending=True)
         True
         """
-        return self._s.is_sorted(descending)
+        return self._s.is_sorted(descending, nulls_last)
 
     def not_(self) -> Series:
         """
