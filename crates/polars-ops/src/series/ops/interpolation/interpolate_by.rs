@@ -122,11 +122,11 @@ where
         validity.extend_constant(chunked_arr.len(), true);
 
         for i in 0..first {
-            validity.set(i, false);
+            unsafe { validity.set_unchecked(i, false) };
         }
 
         for i in last..chunked_arr.len() {
-            validity.set(i, false);
+            unsafe { validity.set_unchecked(i, false) };
             out.push(Zero::zero())
         }
 
@@ -213,13 +213,17 @@ where
         validity.extend_constant(ca_sorted.len(), true);
 
         for i in 0..first {
-            let out_idx = unsafe { sorting_indices.get_unchecked(i) };
-            validity.set(*out_idx as usize, false);
+            unsafe {
+                let out_idx = sorting_indices.get_unchecked(i);
+                validity.set_unchecked(*out_idx as usize, false);
+            }
         }
 
         for i in last..ca_sorted.len() {
-            let out_idx = unsafe { sorting_indices.get_unchecked(i) };
-            validity.set(*out_idx as usize, false);
+            unsafe {
+                let out_idx = sorting_indices.get_unchecked(i);
+                validity.set_unchecked(*out_idx as usize, false);
+            }
         }
 
         let array = PrimitiveArray::new(
