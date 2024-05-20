@@ -2,6 +2,7 @@ use std::ops::{Add, Div, Mul, Sub};
 
 use arrow::array::PrimitiveArray;
 use arrow::bitmap::MutableBitmap;
+use arrow::legacy::trusted_len::TrustedLenPush;
 use bytemuck::allocation::zeroed_vec;
 use polars_core::export::num::{NumCast, Zero};
 use polars_core::prelude::*;
@@ -95,10 +96,10 @@ where
     let mut out = Vec::with_capacity(chunked_arr.len());
     let mut iter = chunked_arr.iter().enumerate().skip(first);
     for _ in 0..first {
-        out.push(Zero::zero())
+        unsafe { out.push_unchecked(Zero::zero()) }
     }
 
-    // The next element of `iter` is definitely `Some(Some(v))`, because we skipped the first
+    // The next element of `iter` is definitely `Some(idx, Some(v))`, because we skipped the first
     // elements `first` and if all values were missing we'd have done an early return.
     let (mut low_idx, opt_low) = iter.next().unwrap();
     let mut low = opt_low.unwrap();
@@ -185,7 +186,7 @@ where
     let mut out = zeroed_vec(ca_sorted.len());
     let mut iter = ca_sorted.iter().enumerate().skip(first);
 
-    // The next element of `iter` is definitely `Some(Some(v))`, because we skipped the first
+    // The next element of `iter` is definitely `Some(idx, Some(v))`, because we skipped the first
     // elements `first` and if all values were missing we'd have done an early return.
     let (mut low_idx, opt_low) = iter.next().unwrap();
     let mut low = opt_low.unwrap();
