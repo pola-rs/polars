@@ -11,7 +11,6 @@ use crate::conversion::Wrap;
 use crate::dataframe::PyDataFrame;
 
 #[pymethods]
-#[allow(clippy::wrong_self_convention)]
 impl PyDataFrame {
     /// Convert this DataFrame to a NumPy ndarray.
     fn to_numpy(&self, py: Python, order: Wrap<IndexOrder>) -> Option<PyObject> {
