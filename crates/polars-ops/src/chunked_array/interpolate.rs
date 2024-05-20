@@ -29,7 +29,7 @@ where
     }
 }
 
-fn near_interp<T>(low: T, high: T, steps: IdxSize, steps_n: T, av: &mut Vec<T>)
+fn near_interp<T>(low: T, high: T, steps: IdxSize, steps_n: T, out: &mut Vec<T>)
 where
     T: Sub<Output = T>
         + Mul<Output = T>
@@ -43,12 +43,12 @@ where
     for step_i in 1..steps {
         let step_i: T = NumCast::from(step_i).unwrap();
         let v = nearest_itp(low, step_i, diff, steps_n);
-        av.push(v)
+        out.push(v)
     }
 }
 
 #[inline]
-fn signed_interp<T>(low: T, high: T, steps: IdxSize, steps_n: T, av: &mut Vec<T>)
+fn signed_interp<T>(low: T, high: T, steps: IdxSize, steps_n: T, out: &mut Vec<T>)
 where
     T: Sub<Output = T> + Mul<Output = T> + Add<Output = T> + Div<Output = T> + NumCast + Copy,
 {
@@ -56,7 +56,7 @@ where
     for step_i in 1..steps {
         let step_i: T = NumCast::from(step_i).unwrap();
         let v = linear_itp(low, step_i, slope);
-        av.push(v)
+        out.push(v)
     }
 }
 
@@ -75,46 +75,33 @@ where
     let first = chunked_arr.first_non_null().unwrap();
     let last = chunked_arr.last_non_null().unwrap() + 1;
 
-    // Fill av with first.
-    let mut av = Vec::with_capacity(chunked_arr.len());
+    // Fill out with first.
+    let mut out = Vec::with_capacity(chunked_arr.len());
     let mut iter = chunked_arr.iter().skip(first);
     for _ in 0..first {
-        av.push(Zero::zero())
+        out.push(Zero::zero())
     }
 
-    let mut low_val = None;
-    loop {
-        let next = iter.next();
-        match next {
-            Some(Some(v)) => {
-                av.push(v);
-                low_val = Some(v);
-            },
-            Some(None) => {
-                match low_val {
-                    Some(low) => {
-                        let mut steps = 1 as IdxSize;
-                        loop {
-                            steps += 1;
-                            match iter.next() {
-                                None => break,    // End of iterator, break.
-                                Some(None) => {}, // Another null.
-                                Some(Some(high)) => {
-                                    let steps_n: T::Native = NumCast::from(steps).unwrap();
-                                    interpolation_branch(low, high, steps, steps_n, &mut av);
-                                    av.push(high);
-                                    low_val = Some(high);
-                                    break;
-                                },
-                            }
-                        }
-                    },
-                    _ => unreachable!(), // we start iterating at `first`
+    // The next element of `iter` is definitely `Some(Some(v))`, because we skipped the first
+    // elements `first` and if all values were missing we'd have done an early return.
+    let mut low = iter.next().unwrap().unwrap();
+    out.push(low);
+    while let Some(next) = iter.next() {
+        if let Some(v) = next {
+            out.push(v);
+            low = v;
+        } else {
+            let mut steps = 1 as IdxSize;
+            for next in iter.by_ref() {
+                steps += 1;
+                if let Some(high) = next {
+                    let steps_n: T::Native = NumCast::from(steps).unwrap();
+                    interpolation_branch(low, high, steps, steps_n, &mut out);
+                    out.push(high);
+                    low = high;
+                    break;
                 }
-            },
-            None => {
-                break;
-            },
+            }
         }
     }
     if first != 0 || last != chunked_arr.len() {
@@ -127,17 +114,17 @@ where
 
         for i in last..chunked_arr.len() {
             validity.set(i, false);
-            av.push(Zero::zero())
+            out.push(Zero::zero())
         }
 
         let array = PrimitiveArray::new(
             T::get_dtype().to_arrow(true),
-            av.into(),
+            out.into(),
             Some(validity.into()),
         );
         ChunkedArray::with_chunk(chunked_arr.name(), array)
     } else {
-        ChunkedArray::from_vec(chunked_arr.name(), av)
+        ChunkedArray::from_vec(chunked_arr.name(), out)
     }
 }
 
