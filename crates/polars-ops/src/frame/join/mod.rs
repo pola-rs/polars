@@ -116,6 +116,7 @@ pub trait DataFrameJoinOps: IntoDf {
     ) -> PolarsResult<DataFrame> {
         let left_df = self.to_df();
         let should_coalesce = args.coalesce.coalesce(&args.how);
+        assert_eq!(selected_left.len(), selected_right.len());
 
         #[cfg(feature = "cross_join")]
         if let JoinType::Cross = args.how {
