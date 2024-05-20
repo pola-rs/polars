@@ -8,8 +8,8 @@ use pyo3::types::{PyList, PySlice};
 
 use crate::conversion::chunked_array::{decimal_to_pyobject_iter, time_to_pyobject_iter};
 use crate::error::PyPolarsErr;
+use crate::interop::numpy::to_py::{reshape_numpy_array, try_series_to_numpy_view};
 use crate::prelude::*;
-use crate::to_numpy::{reshape_numpy_array, try_series_to_numpy_view};
 use crate::{interop, raise_err, PySeries};
 
 #[pymethods]
