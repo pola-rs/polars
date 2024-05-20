@@ -324,6 +324,23 @@ pub fn to_alp_impl(
                 }
             }
 
+            let mut joined_on = PlHashSet::new();
+            for (l, r) in left_on.iter().zip(right_on.iter()) {
+                polars_ensure!(joined_on.insert((l, r)), InvalidOperation: "joins on same keys twice; already joined on {} and {}", l, r)
+            }
+            drop(joined_on);
+            options.args.validation.is_valid_join(&options.args.how)?;
+
+            polars_ensure!(
+                left_on.len() == right_on.len(),
+                ComputeError:
+                    format!(
+                        "the number of columns given as join key (left: {}, right:{}) should be equal",
+                        left_on.len(),
+                        right_on.len()
+                    )
+            );
+
             let input_left = to_alp_impl(owned(input_left), expr_arena, lp_arena, convert)
                 .map_err(|e| e.context(failed_input!(join left)))?;
             let input_right = to_alp_impl(owned(input_right), expr_arena, lp_arena, convert)

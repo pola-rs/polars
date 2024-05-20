@@ -185,22 +185,12 @@ impl JoinValidation {
         }
     }
 
-    pub(super) fn is_valid_join<'a, L: Iterator<Item = &'a str>, R: Iterator<Item = &'a str>>(
-        &'a self,
-        join_type: &JoinType,
-        names_left: L,
-        names_right: R,
-    ) -> PolarsResult<()> {
-        if self.needs_checks() {
-            polars_ensure!(matches!(join_type, JoinType::Inner | JoinType::Outer{..} | JoinType::Left),
+    pub fn is_valid_join(&self, join_type: &JoinType) -> PolarsResult<()> {
+        if !self.needs_checks() {
+            return Ok(());
+        }
+        polars_ensure!(matches!(join_type, JoinType::Inner | JoinType::Outer{..} | JoinType::Left),
                       ComputeError: "{self} validation on a {join_type} join is not supported");
-        }
-
-        let mut joined_on = PlHashSet::new();
-        for (l, r) in names_left.zip(names_right) {
-            polars_ensure!(joined_on.insert((l, r)), InvalidOperation: "already joined on {} and {}", l, r)
-        }
-
         Ok(())
     }
 

@@ -115,12 +115,6 @@ pub trait DataFrameJoinOps: IntoDf {
         _verbose: bool,
     ) -> PolarsResult<DataFrame> {
         let left_df = self.to_df();
-        args.validation.is_valid_join(
-            &args.how,
-            selected_left.iter().map(|s| s.name()),
-            selected_right.iter().map(|s| s.name()),
-        )?;
-
         let should_coalesce = args.coalesce.coalesce(&args.how);
 
         #[cfg(feature = "cross_join")]
@@ -166,16 +160,6 @@ pub trait DataFrameJoinOps: IntoDf {
                 );
             }
         }
-
-        polars_ensure!(
-            selected_left.len() == selected_right.len(),
-            ComputeError:
-                format!(
-                    "the number of columns given as join key (left: {}, right:{}) should be equal",
-                    selected_left.len(),
-                    selected_right.len()
-                )
-        );
 
         if let Some((l, r)) = selected_left
             .iter()
