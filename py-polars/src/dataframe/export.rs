@@ -5,8 +5,8 @@ use pyo3::prelude::*;
 use pyo3::types::{PyList, PyTuple};
 
 use super::*;
-use crate::arrow_interop;
 use crate::conversion::{ObjectValue, Wrap};
+use crate::interop;
 
 #[pymethods]
 impl PyDataFrame {
@@ -72,7 +72,7 @@ impl PyDataFrame {
             let rbs = self
                 .df
                 .iter_chunks(false)
-                .map(|rb| arrow_interop::to_py::to_py_rb(&rb, &names, py, &pyarrow))
+                .map(|rb| interop::arrow::to_py::to_py_rb(&rb, &names, py, &pyarrow))
                 .collect::<PyResult<_>>()?;
             Ok(rbs)
         })
@@ -123,7 +123,7 @@ impl PyDataFrame {
                     }
                     let rb = RecordBatch::new(rb);
 
-                    arrow_interop::to_py::to_py_rb(&rb, &names, py, &pyarrow)
+                    interop::arrow::to_py::to_py_rb(&rb, &names, py, &pyarrow)
                 })
                 .collect::<PyResult<_>>()?;
             Ok(rbs)

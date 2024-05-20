@@ -10,7 +10,7 @@ use crate::conversion::chunked_array::{decimal_to_pyobject_iter, time_to_pyobjec
 use crate::error::PyPolarsErr;
 use crate::prelude::*;
 use crate::to_numpy::{reshape_numpy_array, try_series_to_numpy_view};
-use crate::{arrow_interop, raise_err, PySeries};
+use crate::{interop, raise_err, PySeries};
 
 #[pymethods]
 impl PySeries {
@@ -158,7 +158,7 @@ impl PySeries {
         Python::with_gil(|py| {
             let pyarrow = py.import_bound("pyarrow")?;
 
-            arrow_interop::to_py::to_py_array(self.series.to_arrow(0, false), py, &pyarrow)
+            interop::arrow::to_py::to_py_array(self.series.to_arrow(0, false), py, &pyarrow)
         })
     }
 
