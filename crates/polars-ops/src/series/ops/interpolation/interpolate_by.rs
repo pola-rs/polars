@@ -79,14 +79,9 @@ where
         return Ok(chunked_arr.clone());
     }
 
-    // At the moment, the algorithm assumes no missing values in the `by` column.
+    polars_ensure!(by.null_count() == 0, InvalidOperation: "null values in `by` column are not yet supported in 'interpolate_by' expression");
     let by = by.rechunk();
-    let by_values = by.cont_slice().map_err(|_| {
-        polars_err!(
-            InvalidOperation:
-            "null values in `by` column are not yet supported in 'interpolate_by' expression"
-        )
-    })?;
+    let by_values = by.cont_slice().unwrap();
 
     // We first find the first and last so that we can set the null buffer.
     let first = chunked_arr.first_non_null().unwrap();
@@ -163,21 +158,16 @@ where
         return Ok(ca.clone());
     }
 
+    polars_ensure!(by.null_count() == 0, InvalidOperation: "null values in `by` column are not yet supported in 'interpolate_by' expression");
     let sorting_indices = by.arg_sort(Default::default());
     let sorting_indices = sorting_indices
         .cont_slice()
         .expect("arg sort produces single chunk");
     let by_sorted = unsafe { by.take_unchecked(sorting_indices) };
     let ca_sorted = unsafe { ca.take_unchecked(sorting_indices) };
-
-    // At the moment, the algorithm assumes no missing values in the `by` column.
-    let by_sorted = by_sorted.rechunk();
-    let by_sorted_values = by_sorted.cont_slice().map_err(|_| {
-        polars_err!(
-            InvalidOperation:
-            "null values in `by` column are not yet supported in 'interpolate_by' expression"
-        )
-    })?;
+    let by_sorted_values = by_sorted
+        .cont_slice()
+        .expect("We already checked for nulls, and `take_unchecked` produces single chunk");
 
     // We first find the first and last so that we can set the null buffer.
     let first = ca_sorted.first_non_null().unwrap();

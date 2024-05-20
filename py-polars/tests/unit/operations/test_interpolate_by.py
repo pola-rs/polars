@@ -77,6 +77,13 @@ def test_interpolate_by(
     if values_dtype == pl.Float32:
         expected = expected.select(pl.col("values").cast(pl.Float32))
     assert_frame_equal(result, expected)
+    result = (
+        df.sort("times", descending=True)
+        .with_columns(pl.col("values").interpolate_by("times"))
+        .sort("times")
+        .drop("times")
+    )
+    assert_frame_equal(result, expected)
 
 
 def test_interpolate_by_leading_nulls() -> None:
@@ -99,6 +106,13 @@ def test_interpolate_by_leading_nulls() -> None:
         {"values": [None, None, None, 1.0, 1.7999999999999998, 4.6, 5.0]}
     )
     assert_frame_equal(result, expected)
+    result = (
+        df.sort("times", descending=True)
+        .with_columns(pl.col("values").interpolate_by("times"))
+        .sort("times")
+        .drop("times")
+    )
+    assert_frame_equal(result, expected)
 
 
 def test_interpolate_by_trailing_nulls() -> None:
@@ -117,6 +131,13 @@ def test_interpolate_by_trailing_nulls() -> None:
     )
     result = df.select(pl.col("values").interpolate_by("times"))
     expected = pl.DataFrame({"values": [1.0, 1.7999999999999998, 4.6, 5.0, None, None]})
+    assert_frame_equal(result, expected)
+    result = (
+        df.sort("times", descending=True)
+        .with_columns(pl.col("values").interpolate_by("times"))
+        .sort("times")
+        .drop("times")
+    )
     assert_frame_equal(result, expected)
 
 
