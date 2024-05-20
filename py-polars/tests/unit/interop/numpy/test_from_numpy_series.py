@@ -12,6 +12,21 @@ if TYPE_CHECKING:
     from polars.type_aliases import TimeUnit
 
 
+@pytest.mark.parametrize("time_unit", ["ns", "ms", "us"])
+def test_from_list_numpy_timedelta(time_unit: TimeUnit) -> None:
+    s = pl.Series(
+        "name",
+        [
+            np.timedelta64(timedelta(days=1), time_unit),
+            np.timedelta64(timedelta(seconds=1), time_unit),
+        ],
+    )
+    assert s.dtype == pl.Duration(time_unit)
+    assert s.name == "name"
+    assert s.dt[0] == timedelta(days=1)
+    assert s.dt[1] == timedelta(seconds=1)
+
+
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
 def test_from_numpy_timedelta(time_unit: TimeUnit) -> None:
     s = pl.Series(
