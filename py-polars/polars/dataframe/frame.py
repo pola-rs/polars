@@ -1601,6 +1601,7 @@ class DataFrame:
         )
 
         out = self._df.to_numpy(order)
+
         if out is None:
             return np.vstack(
                 [
