@@ -53,7 +53,6 @@ impl ProjectionExprs {
         debug_assert!(!self.has_sub_exprs(), "should not have sub-expressions yet");
     }
 
-    // @TODO: I don't think we can assume this
     pub(crate) fn exprs_mut(&mut self) -> &mut Vec<ExprIR> {
         self.dbg_assert_no_sub_exprs();
         &mut self.expr
