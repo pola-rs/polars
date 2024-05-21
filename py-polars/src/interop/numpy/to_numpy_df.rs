@@ -44,9 +44,7 @@ fn df_to_numpy(
     writable: bool,
     allow_copy: bool,
 ) -> PyResult<PyObject> {
-    // TODO: Use `is_empty` when fixed:
-    // https://github.com/pola-rs/polars/pull/16351
-    if df.height() == 0 {
+    if df.is_empty() {
         // Take this path to ensure a writable array.
         // This does not actually copy data for an empty DataFrame.
         return df_to_numpy_with_copy(py, df, order, true);
@@ -76,10 +74,7 @@ fn df_to_numpy(
 }
 
 fn try_df_to_numpy_view(py: Python, df: &DataFrame) -> Option<PyObject> {
-    if df.is_empty() {
-        return None;
-    }
-    let first = df.get_columns().first().unwrap().dtype();
+    let first = df.get_columns().first()?.dtype();
     // TODO: Support Datetime/Duration/Array types
     if !first.is_numeric() {
         return None;

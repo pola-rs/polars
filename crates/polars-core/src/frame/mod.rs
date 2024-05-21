@@ -1147,7 +1147,7 @@ impl DataFrame {
                 series = series.new_from_index(0, height);
             }
 
-            if series.len() == height || df.is_empty() {
+            if series.len() == height || df.get_columns().is_empty() {
                 df.add_column_by_search(series)?;
                 Ok(df)
             }
@@ -1220,7 +1220,7 @@ impl DataFrame {
             series = series.new_from_index(0, height);
         }
 
-        if series.len() == height || self.is_empty() {
+        if series.len() == height || self.columns.is_empty() {
             self.add_column_by_schema(series, schema)?;
             Ok(self)
         }
