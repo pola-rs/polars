@@ -9,13 +9,12 @@ use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::PySlice;
 
+use super::to_numpy_df::df_to_numpy;
 use super::utils::{
     create_borrowed_np_array, polars_dtype_to_np_temporal_dtype, reshape_numpy_array,
 };
 use crate::conversion::chunked_array::{decimal_to_pyobject_iter, time_to_pyobject_iter};
 use crate::conversion::ObjectValue;
-use crate::error::PyPolarsErr;
-use crate::raise_err;
 use crate::series::PySeries;
 
 #[pymethods]
@@ -276,6 +275,12 @@ fn series_to_numpy_with_copy(py: Python, s: &Series, writable: bool) -> PyResult
         },
         List(_) => list_series_to_numpy(py, s, writable),
         Array(_, _) => array_series_to_numpy(py, s, writable),
+        Struct(_) => {
+            let ca = s.struct_().unwrap();
+            let df = ca.clone().unnest();
+            // TODO: How should we determine the IndexOrder here?
+            df_to_numpy(py, &df, IndexOrder::Fortran, writable, true)?
+        },
         #[cfg(feature = "object")]
         Object(_, _) => {
             let ca = s
@@ -290,12 +295,7 @@ fn series_to_numpy_with_copy(py: Python, s: &Series, writable: bool) -> PyResult
             let values = std::iter::repeat(f32::NAN).take(n);
             PyArray1::from_iter_bound(py, values).into_py(py)
         },
-        dt => {
-            raise_err!(
-                format!("`to_numpy` not supported for dtype {dt:?}"),
-                ComputeError
-            );
-        },
+        Unknown(_) | BinaryOffset => unreachable!(),
     };
     Ok(out)
 }

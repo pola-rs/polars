@@ -37,7 +37,7 @@ impl PyDataFrame {
     }
 }
 
-fn df_to_numpy(
+pub(super) fn df_to_numpy(
     py: Python,
     df: &DataFrame,
     order: IndexOrder,
