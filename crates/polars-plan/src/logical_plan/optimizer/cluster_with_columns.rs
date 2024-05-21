@@ -186,13 +186,19 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
             let mut input_schema = input_wc.schema.as_ref().clone();
 
             // @NOTE: We don't have to insert a SimpleProjection or redo the `current_schema` if
-            // `pushable` contains only 0..N for some N.
-            let mut current_exprs = std::mem::take(current_wc.exprs.exprs_mut())
+            // `pushable` contains only 0..N for some N. We use these two variables to keep track
+            // of this.
+            let mut has_seen_unpushable = false;
+            let mut needs_simple_projection = false;
+
+            let current_exprs = std::mem::take(current_wc.exprs.exprs_mut())
                 .into_iter()
                 .zip(pushable)
                 .enumerate()
                 .filter_map(|(i, (expr, do_pushdown))| {
                     if do_pushdown {
+                        needs_simple_projection = has_seen_unpushable;
+
                         // @NOTE: It would be nice to have a `remove_at_index` here.
                         let (column, _) = current_wc.schema.get_at_index(i).unwrap();
 
@@ -202,31 +208,32 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
 
                         None
                     } else {
+                        has_seen_unpushable = true;
                         Some(expr)
                     }
                 })
                 .collect();
 
-            std::mem::swap(&mut current_exprs, current_wc.exprs.exprs_mut());
-
-            current_schema.merge(input_schema.clone());
-
-            let proj_schema = current_wc.schema.clone();
-
-            *current_wc.schema = Arc::new(current_schema);
-            *input_wc.schema = Arc::new(input_schema);
+            *current_wc.exprs.exprs_mut() = current_exprs;
 
             // @NOTE: Here we add a simple projection to make sure that the output still
             // has the right schema.
-            // @TODO: I don't think we always have to add a simple projection, maybe we can
-            // filter out some of the cases where we don't have to add it.
-            let moved_current = lp_arena.add(IR::Invalid);
-            let projection = IR::SimpleProjection {
-                input: moved_current,
-                columns: proj_schema,
-            };
-            let current = lp_arena.replace(current, projection);
-            lp_arena.replace(moved_current, current);
+            if needs_simple_projection {
+                current_schema.merge(input_schema.clone());
+                *input_wc.schema = Arc::new(input_schema);
+                let proj_schema = current_wc.schema.clone();
+                *current_wc.schema = Arc::new(current_schema);
+
+                let moved_current = lp_arena.add(IR::Invalid);
+                let projection = IR::SimpleProjection {
+                    input: moved_current,
+                    columns: proj_schema,
+                };
+                let current = lp_arena.replace(current, projection);
+                lp_arena.replace(moved_current, current);
+            } else {
+                *input_wc.schema = Arc::new(input_schema);
+            }
 
             // We know that this node is done optimizing
             break;
