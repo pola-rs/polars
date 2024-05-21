@@ -288,6 +288,17 @@ def test_series_to_numpy_list(chunked: bool) -> None:
     assert_allow_copy_false_raises(s)
 
 
+def test_series_to_numpy_struct_numeric_supertype() -> None:
+    values = [{"a": 1, "b": 2.0}, {"a": 3, "b": 4.0}, {"a": 5, "b": None}]
+    s = pl.Series(values)
+    result = s.to_numpy(use_pyarrow=False)
+
+    expected = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, np.nan]])
+    assert_array_equal(result, expected)
+    assert result.dtype == np.float64
+    assert_allow_copy_false_raises(s)
+
+
 def test_to_numpy_null() -> None:
     s = pl.Series([None, None], dtype=pl.Null)
     result = s.to_numpy(use_pyarrow=False)
