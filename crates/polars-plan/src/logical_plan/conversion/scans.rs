@@ -132,6 +132,10 @@ pub(super) fn csv_file_info(
     use polars_io::utils::get_reader_bytes;
     use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
+    // TODO:
+    // * See if we can do better than scanning all files if there is a row limit
+    // * See if we can do this without downloading the entire file
+
     // prints the error message if paths is empty.
     get_path(paths)?;
 
