@@ -205,3 +205,17 @@ def test_df_to_numpy_structured_nested() -> None:
         ],
     )
     assert_array_equal(result, expected)
+
+
+def test_df_to_numpy_stacking_array() -> None:
+    df = pl.DataFrame(
+        {"A": [[1, 2]], "B": 1},
+        schema={"A": pl.Array(pl.Int64, 2), "B": pl.Int32},
+    )
+    result = df.to_numpy(use_pyarrow=False)
+
+    expected = np.array([[np.array([1, 2]), 1]], dtype=np.object_)
+
+    assert result.shape == (1, 2)
+    assert result[0].shape == (2,)
+    assert_array_equal(result[0][0], expected[0][0])
