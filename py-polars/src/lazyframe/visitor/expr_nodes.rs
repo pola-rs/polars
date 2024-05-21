@@ -36,22 +36,13 @@ pub struct Literal {
     dtype: PyObject,
 }
 
-#[pyclass(name = "ClosedInterval")]
-#[derive(Copy, Clone)]
-pub enum PyClosedInterval {
-    Both,
-    Left,
-    Right,
-    None,
-}
-
 impl IntoPy<PyObject> for Wrap<ClosedInterval> {
     fn into_py(self, py: Python<'_>) -> PyObject {
         match self.0 {
-            ClosedInterval::Both => PyClosedInterval::Both,
-            ClosedInterval::Left => PyClosedInterval::Left,
-            ClosedInterval::Right => PyClosedInterval::Right,
-            ClosedInterval::None => PyClosedInterval::None,
+            ClosedInterval::Both => "both",
+            ClosedInterval::Left => "left",
+            ClosedInterval::Right => "right",
+            ClosedInterval::None => "none",
         }
         .into_py(py)
     }
