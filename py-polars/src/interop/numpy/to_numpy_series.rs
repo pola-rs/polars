@@ -41,7 +41,12 @@ impl PySeries {
 }
 
 /// Convert a Series to a NumPy ndarray.
-fn series_to_numpy(py: Python, s: &Series, writable: bool, allow_copy: bool) -> PyResult<PyObject> {
+pub(super) fn series_to_numpy(
+    py: Python,
+    s: &Series,
+    writable: bool,
+    allow_copy: bool,
+) -> PyResult<PyObject> {
     if s.is_empty() {
         // Take this path to ensure a writable array.
         // This does not actually copy data for an empty Series.

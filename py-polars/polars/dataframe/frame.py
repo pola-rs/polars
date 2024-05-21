@@ -1584,17 +1584,7 @@ class DataFrame:
                 out[c] = arrays[idx]
             return out
 
-        out = self._df.to_numpy(order, writable=writable, allow_copy=allow_copy)
-
-        if out is None:
-            return np.vstack(
-                [
-                    self.to_series(i).to_numpy(use_pyarrow=use_pyarrow)
-                    for i in range(self.width)
-                ]
-            ).T
-
-        return out
+        return self._df.to_numpy(order, writable=writable, allow_copy=allow_copy)
 
     @overload
     def to_jax(

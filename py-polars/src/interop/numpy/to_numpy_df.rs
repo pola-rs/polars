@@ -7,7 +7,9 @@ use polars_core::with_match_physical_numeric_polars_type;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::intern;
 use pyo3::prelude::*;
+use pyo3::types::PyList;
 
+use super::to_numpy_series::series_to_numpy;
 use super::utils::create_borrowed_np_array;
 use crate::conversion::Wrap;
 use crate::dataframe::PyDataFrame;
@@ -21,7 +23,7 @@ impl PyDataFrame {
         order: Wrap<IndexOrder>,
         writable: bool,
         allow_copy: bool,
-    ) -> PyResult<Option<PyObject>> {
+    ) -> PyResult<PyObject> {
         df_to_numpy(py, &self.df, order.0, writable, allow_copy)
     }
 
@@ -41,11 +43,11 @@ fn df_to_numpy(
     order: IndexOrder,
     writable: bool,
     allow_copy: bool,
-) -> PyResult<Option<PyObject>> {
+) -> PyResult<PyObject> {
     if df.is_empty() {
         // Take this path to ensure a writable array.
         // This does not actually copy data for an empty DataFrame.
-        return Ok(df_to_numpy_with_copy(py, df, order));
+        return df_to_numpy_with_copy(py, df, order, true);
     }
 
     if matches!(order, IndexOrder::Fortran) {
@@ -58,7 +60,7 @@ fn df_to_numpy(
                 }
                 arr = arr.call_method0(py, intern!(py, "copy"))?;
             }
-            return Ok(Some(arr));
+            return Ok(arr);
         }
     }
 
@@ -68,19 +70,11 @@ fn df_to_numpy(
         ));
     }
 
-    Ok(df_to_numpy_with_copy(py, df, order))
-}
+    if let Some(arr) = try_df_to_numpy_numeric_supertype(py, df, order) {
+        return Ok(arr);
+    }
 
-fn df_to_numpy_with_copy(py: Python, df: &DataFrame, order: IndexOrder) -> Option<PyObject> {
-    let st = dtypes_to_supertype(df.iter().map(|s| s.dtype())).ok()?;
-
-    let np_array = match st {
-        dt if dt.is_numeric() => with_match_physical_numeric_polars_type!(dt, |$T| {
-            df.to_ndarray::<$T>(order).ok()?.into_pyarray_bound(py).into_py(py)
-        }),
-        _ => return None,
-    };
-    Some(np_array)
+    df_to_numpy_with_copy(py, df, order, writable)
 }
 
 fn try_df_to_numpy_view(py: Python, df: &DataFrame) -> Option<PyObject> {
@@ -88,7 +82,7 @@ fn try_df_to_numpy_view(py: Python, df: &DataFrame) -> Option<PyObject> {
         return None;
     }
     let first = df.get_columns().first().unwrap().dtype();
-    // TODO: Support Datetime/Duration types
+    // TODO: Support Datetime/Duration/Array types
     if !first.is_numeric() {
         return None;
     }
@@ -147,4 +141,40 @@ where
             None
         }
     }
+}
+
+fn try_df_to_numpy_numeric_supertype(
+    py: Python,
+    df: &DataFrame,
+    order: IndexOrder,
+) -> Option<PyObject> {
+    let st = dtypes_to_supertype(df.iter().map(|s| s.dtype())).ok()?;
+
+    let np_array = match st {
+        dt if dt.is_numeric() => with_match_physical_numeric_polars_type!(dt, |$T| {
+            df.to_ndarray::<$T>(order).ok()?.into_pyarray_bound(py).into_py(py)
+        }),
+        _ => return None,
+    };
+    Some(np_array)
+}
+
+fn df_to_numpy_with_copy(
+    py: Python,
+    df: &DataFrame,
+    _order: IndexOrder,
+    writable: bool,
+) -> PyResult<PyObject> {
+    let series = df
+        .iter()
+        .map(|s| series_to_numpy(py, s, writable, true).unwrap());
+
+    let list = PyList::new_bound(py, series);
+    let numpy = PyModule::import_bound(py, "numpy")?;
+    let arr = numpy
+        .getattr("vstack")
+        .unwrap()
+        .call1((list,))?
+        .getattr("T")?;
+    Ok(arr.into())
 }
