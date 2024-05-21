@@ -126,53 +126,90 @@ pub(super) fn csv_file_info(
 ) -> PolarsResult<FileInfo> {
     use std::io::Seek;
 
-    use polars_io::csv::read::{infer_file_schema, is_compressed};
+    use polars_core::POOL;
+    use polars_io::csv::read::is_compressed;
+    use polars_io::csv::read::schema_inference::SchemaInferenceResult;
     use polars_io::utils::get_reader_bytes;
+    use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
-    let path = get_path(paths)?;
-    let mut file = polars_utils::open_file(path)?;
+    // TODO:
+    // * See if we can do better than scanning all files if there is a row limit
+    // * See if we can do this without downloading the entire file
 
-    let mut magic_nr = [0u8; 4];
-    let res_len = file.read(&mut magic_nr)?;
-    if res_len < 2 {
-        if csv_options.raise_if_empty {
-            polars_bail!(NoData: "empty CSV")
+    // prints the error message if paths is empty.
+    get_path(paths)?;
+
+    let infer_schema_func = |path| {
+        let mut file = polars_utils::open_file(path)?;
+
+        let mut magic_nr = [0u8; 4];
+        let res_len = file.read(&mut magic_nr)?;
+        if res_len < 2 {
+            if csv_options.raise_if_empty {
+                polars_bail!(NoData: "empty CSV")
+            }
+        } else {
+            polars_ensure!(
+            !is_compressed(&magic_nr),
+            ComputeError: "cannot scan compressed csv; use `read_csv` for compressed data",
+            );
         }
-    } else {
-        polars_ensure!(
-        !is_compressed(&magic_nr),
-        ComputeError: "cannot scan compressed csv; use `read_csv` for compressed data",
-        );
-    }
 
-    file.rewind()?;
-    let reader_bytes = get_reader_bytes(&mut file).expect("could not mmap file");
+        file.rewind()?;
+        let reader_bytes = get_reader_bytes(&mut file).expect("could not mmap file");
 
-    let parse_options = csv_options.get_parse_options();
+        // this needs a way to estimated bytes/rows.
+        let si_result =
+            SchemaInferenceResult::try_from_reader_bytes_and_options(&reader_bytes, csv_options)?;
 
-    // this needs a way to estimated bytes/rows.
-    let (inferred_schema, rows_read, bytes_read) = infer_file_schema(
-        &reader_bytes,
-        parse_options.separator,
-        csv_options.infer_schema_length,
-        csv_options.has_header,
-        csv_options.schema_overwrite.as_deref(),
-        &mut csv_options.skip_rows,
-        csv_options.skip_rows_after_header,
-        parse_options.comment_prefix.as_ref(),
-        parse_options.quote_char,
-        parse_options.eol_char,
-        parse_options.null_values.as_ref(),
-        parse_options.try_parse_dates,
-        csv_options.raise_if_empty,
-        &mut csv_options.n_threads,
-        parse_options.decimal_comma,
-    )?;
+        Ok(si_result)
+    };
+
+    let merge_func = |a: PolarsResult<SchemaInferenceResult>,
+                      b: PolarsResult<SchemaInferenceResult>| match (a, b) {
+        (Err(e), _) | (_, Err(e)) => Err(e),
+        (Ok(a), Ok(b)) => {
+            let merged_schema = if csv_options.schema.is_some() {
+                csv_options.schema.clone().unwrap()
+            } else {
+                let schema_a = a.get_inferred_schema();
+                let schema_b = b.get_inferred_schema();
+
+                match (schema_a.is_empty(), schema_b.is_empty()) {
+                    (true, _) => schema_b,
+                    (_, true) => schema_a,
+                    _ => {
+                        let mut s = Arc::unwrap_or_clone(schema_a);
+                        s.to_supertype(&schema_b)?;
+                        Arc::new(s)
+                    },
+                }
+            };
+
+            Ok(a.with_inferred_schema(merged_schema))
+        },
+    };
+
+    let si_results = POOL.join(
+        || infer_schema_func(paths.first().unwrap()),
+        || {
+            paths
+                .get(1..)
+                .unwrap()
+                .into_par_iter()
+                .map(infer_schema_func)
+                .reduce(|| Ok(Default::default()), merge_func)
+        },
+    );
+
+    let si_result = merge_func(si_results.0, si_results.1)?;
+
+    csv_options.update_with_inference_result(&si_result);
 
     let mut schema = csv_options
         .schema
         .clone()
-        .unwrap_or_else(|| Arc::new(inferred_schema));
+        .unwrap_or_else(|| si_result.get_inferred_schema());
 
     let reader_schema = if let Some(rc) = &file_options.row_index {
         let reader_schema = schema.clone();
@@ -184,8 +221,7 @@ pub(super) fn csv_file_info(
         schema.clone()
     };
 
-    let n_bytes = reader_bytes.len();
-    let estimated_n_rows = (rows_read as f64 / bytes_read as f64 * n_bytes as f64) as usize;
+    let estimated_n_rows = si_result.get_estimated_n_rows();
 
     Ok(FileInfo::new(
         schema,

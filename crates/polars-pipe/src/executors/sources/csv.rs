@@ -81,6 +81,7 @@ impl CsvSource {
         }
 
         let reader: CsvReader<File> = options
+            .with_schema(Some(self.schema.clone()))
             .with_n_rows(n_rows)
             .with_columns(with_columns)
             .with_rechunk(false)

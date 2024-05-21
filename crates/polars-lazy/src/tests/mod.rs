@@ -48,7 +48,7 @@ use crate::prelude::*;
 #[cfg(feature = "parquet")]
 static GLOB_PARQUET: &str = "../../examples/datasets/*.parquet";
 #[cfg(feature = "csv")]
-static GLOB_CSV: &str = "../../examples/datasets/*.csv";
+static GLOB_CSV: &str = "../../examples/datasets/foods*.csv";
 #[cfg(feature = "ipc")]
 static GLOB_IPC: &str = "../../examples/datasets/*.ipc";
 #[cfg(feature = "parquet")]

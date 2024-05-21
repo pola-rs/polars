@@ -21,6 +21,7 @@ mod options;
 mod parser;
 mod read_impl;
 mod reader;
+pub mod schema_inference;
 mod splitfields;
 mod utils;
 
@@ -28,4 +29,5 @@ pub use options::{CommentPrefix, CsvEncoding, CsvParseOptions, CsvReadOptions, N
 pub use parser::count_rows;
 pub use read_impl::batched::{BatchedCsvReader, OwnedBatchedCsvReader};
 pub use reader::CsvReader;
-pub use utils::{infer_file_schema, is_compressed};
+pub use schema_inference::infer_file_schema;
+pub use utils::is_compressed;
