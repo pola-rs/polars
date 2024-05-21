@@ -1,4 +1,34 @@
+// Reads an uleb128 encoded integer with at most 56 bits (8 bytes with 7 bits worth of payload each).
+/// Returns the integer and the number of bytes that made up this integer.
+/// If the returned length is bigger than 8 this means the integer required more than 8 bytes and the remaining bytes need to be read sequentially and combined with the return value.
+/// Safety: `data` needs to contain at least 8 bytes.
+#[target_feature(enable = "bmi2")]
+#[cfg(target_feature = "bmi2")]
+pub unsafe fn decode_uleb_bmi2(data: &[u8]) -> (u64, usize) {
+    const CONT_MARKER: u64 = 0x80808080_80808080;
+    debug_assert!(data.len() >= 8);
+
+    unsafe {
+        let word = data.as_ptr().cast::<u64>().read_unaligned();
+        // mask indicating continuation bytes
+        let mask = std::arch::x86_64::_pext_u64(word, CONT_MARKER);
+        let len = (!mask).trailing_zeros() + 1;
+        // which payload bits to extract
+        let ext = std::arch::x86_64::_bzhi_u64(!CONT_MARKER, 8 * len);
+        let payload = std::arch::x86_64::_pext_u64(word, ext);
+
+        (payload, len as _)
+    }
+}
+
 pub fn decode(values: &[u8]) -> (u64, usize) {
+    #[cfg(target_feature = "bmi2")]
+    {
+        if polars_utils::cpuid::has_fast_bmi2() && values.len() >= 8 {
+            return unsafe { decode_uleb_bmi2(values) };
+        }
+    }
+
     let mut result = 0;
     let mut shift = 0;
 
