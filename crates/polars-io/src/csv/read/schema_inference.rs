@@ -97,7 +97,7 @@ impl SchemaInferenceResult {
 impl CsvReadOptions {
     /// Note: This does not update the schema from the inference result.
     pub fn update_with_inference_result(&mut self, si_result: &SchemaInferenceResult) {
-        self.skip_rows += si_result.skip_rows;
+        self.skip_rows = si_result.skip_rows;
         self.n_threads = si_result.n_threads;
     }
 }

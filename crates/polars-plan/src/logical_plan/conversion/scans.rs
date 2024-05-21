@@ -171,6 +171,9 @@ pub(super) fn csv_file_info(
                 let schema_a = a.get_inferred_schema();
                 let schema_b = b.get_inferred_schema();
 
+                dbg!(schema_a.clone());
+                dbg!(schema_b.clone());
+
                 match (schema_a.is_empty(), schema_b.is_empty()) {
                     (true, _) => schema_b,
                     (_, true) => schema_a,
