@@ -205,7 +205,7 @@ pub fn split_df_as_ref(df: &DataFrame, target: usize, strict: bool) -> Vec<DataF
 /// Split a [`DataFrame`] into `n` parts. We take a `&mut` to be able to repartition/align chunks.
 /// `strict` in that it respects `n` even if the chunks are suboptimal.
 pub fn split_df(df: &mut DataFrame, target: usize) -> Vec<DataFrame> {
-    if target == 0 || df.height() == 0 {
+    if target == 0 || df.is_empty() {
         return vec![df.clone()];
     }
     // make sure that chunks are aligned.

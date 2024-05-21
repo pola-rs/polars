@@ -20,7 +20,7 @@ impl Executor for UniqueExec {
 
         state.record(
             || {
-                if df.height() == 0 {
+                if df.is_empty() {
                     return Ok(df);
                 }
 

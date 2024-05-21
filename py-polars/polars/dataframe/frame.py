@@ -10379,7 +10379,7 @@ class DataFrame:
 
     def is_empty(self) -> bool:
         """
-        Check if the dataframe is empty.
+        Returns `True` if the DataFrame contains no rows.
 
         Examples
         --------

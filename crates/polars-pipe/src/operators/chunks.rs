@@ -23,7 +23,7 @@ impl DataChunk {
         Self::new(self.chunk_index, data)
     }
     pub(crate) fn is_empty(&self) -> bool {
-        self.data.height() == 0
+        self.data.is_empty()
     }
 }
 

@@ -729,19 +729,22 @@ impl DataFrame {
         self.shape().0
     }
 
-    /// Check if the [`DataFrame`] is empty.
+    /// Returns `true` if the [`DataFrame`] contains no rows.
     ///
     /// # Example
     ///
     /// ```rust
     /// # use polars_core::prelude::*;
-    /// let df1: DataFrame = df!("First name" => &[],
-    ///                          "Last name" => &[])?;
+    /// let df1: DataFrame = DataFrame::default();
     /// assert!(df1.is_empty());
     ///
-    /// let df2: DataFrame = df!("First name" => &["Forever"],
+    /// let df2: DataFrame = df!("First name" => &[],
+    ///                          "Last name" => &[])?;
+    /// assert!(df2.is_empty());
+    ///
+    /// let df3: DataFrame = df!("First name" => &["Forever"],
     ///                          "Last name" => &["Alone"])?;
-    /// assert!(!df2.is_empty());
+    /// assert!(!df3.is_empty());
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn is_empty(&self) -> bool {
@@ -780,7 +783,7 @@ impl DataFrame {
         // this DataFrame is already modified when an error occurs.
         for col in columns {
             polars_ensure!(
-                col.len() == self.height() || self.height() == 0,
+                col.len() == self.height() || self.is_empty(),
                 ShapeMismatch: "unable to hstack Series of length {} and DataFrame of height {}",
                 col.len(), self.height(),
             );
@@ -1796,7 +1799,7 @@ impl DataFrame {
             });
         };
 
-        if self.height() == 0 {
+        if self.is_empty() {
             let mut out = self.clone();
             set_sorted(&mut out);
 
