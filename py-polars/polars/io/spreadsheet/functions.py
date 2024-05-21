@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import re
-from contextlib import nullcontext
 from datetime import time
-from io import BufferedReader, BytesIO, StringIO
+from io import BufferedReader, BytesIO, StringIO, TextIOWrapper
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any, Callable, NoReturn, Sequence, overload
 
@@ -35,7 +34,6 @@ from polars.exceptions import (
 )
 from polars.io._utils import looks_like_url, process_file_url
 from polars.io.csv.functions import read_csv
-from polars.io.spreadsheet._utils import PortableTemporaryFile
 
 if TYPE_CHECKING:
     from typing import Literal
@@ -444,9 +442,11 @@ def _identify_from_magic_bytes(data: IO[bytes] | bytes) -> str | None:
             return "xls"
         elif magic_bytes[:4] == xlsx_bytes:
             return "xlsx"
-        return None
+    except UnicodeDecodeError:
+        pass
     finally:
         data.seek(initial_position)
+    return None
 
 
 def _identify_workbook(wb: str | Path | IO[bytes] | bytes) -> str | None:
@@ -630,25 +630,33 @@ def _initialise_spreadsheet_parser(
         return _read_spreadsheet_openpyxl, parser, sheets
 
     elif engine == "calamine":
-        # note: can't read directly from bytes (yet) so
-        read_buffered = False
-        if read_bytesio := isinstance(source, BytesIO) or (
-            read_buffered := isinstance(source, BufferedReader)
-        ):
-            temp_data = PortableTemporaryFile(delete=True)
+        fastexcel = import_optional("fastexcel", min_version="0.7.0")
+        reading_bytesio, reading_bytes = (
+            isinstance(source, BytesIO),
+            isinstance(source, bytes),
+        )
+        if (reading_bytesio or reading_bytes) and parse_version(
+            module_version := fastexcel.__version__
+        ) < (0, 10):
+            msg = f"`fastexcel` >= 0.10 is required to read bytes; found {module_version})"
+            raise ModuleUpgradeRequired(msg)
 
-        with temp_data if (read_bytesio or read_buffered) else nullcontext() as tmp:
-            if read_bytesio and tmp is not None:
-                tmp.write(source.read() if read_buffered else source.getvalue())  # type: ignore[union-attr]
-                source = tmp.name
-                tmp.close()
+        if reading_bytesio:
+            source = source.getbuffer().tobytes()  # type: ignore[union-attr]
+        elif isinstance(source, (BufferedReader, TextIOWrapper)):
+            if "b" not in source.mode:
+                msg = f"file {source.name!r} must be opened in binary mode"
+                raise OSError(msg)
+            elif (filename := source.name) and Path(filename).exists():
+                source = filename
+            else:
+                source = source.read()
 
-            fxl = import_optional("fastexcel", min_version="0.7.0")
-            parser = fxl.read_excel(source, **engine_options)
-            sheets = [
-                {"index": i + 1, "name": nm} for i, nm in enumerate(parser.sheet_names)
-            ]
-            return _read_spreadsheet_calamine, parser, sheets
+        parser = fastexcel.read_excel(source, **engine_options)
+        sheets = [
+            {"index": i + 1, "name": nm} for i, nm in enumerate(parser.sheet_names)
+        ]
+        return _read_spreadsheet_calamine, parser, sheets
 
     elif engine == "pyxlsb":
         issue_deprecation_warning(

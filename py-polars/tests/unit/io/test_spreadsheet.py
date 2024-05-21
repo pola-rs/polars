@@ -911,11 +911,16 @@ def test_identify_workbook(
     # identify from IO[bytes]
     with Path.open(spreadsheet_path, "rb") as f:
         assert _identify_workbook(f) == file_type
+        assert isinstance(pl.read_excel(f, engine="calamine"), pl.DataFrame)
 
     # identify from bytes
     with Path.open(spreadsheet_path, "rb") as f:
-        assert _identify_workbook(f.read()) == file_type
+        raw_data = f.read()
+        assert _identify_workbook(raw_data) == file_type
+        assert isinstance(pl.read_excel(raw_data, engine="calamine"), pl.DataFrame)
 
     # identify from BytesIO
     with Path.open(spreadsheet_path, "rb") as f:
-        assert _identify_workbook(BytesIO(f.read())) == file_type
+        bytesio_data = BytesIO(f.read())
+        assert _identify_workbook(bytesio_data) == file_type
+        assert isinstance(pl.read_excel(bytesio_data, engine="calamine"), pl.DataFrame)
