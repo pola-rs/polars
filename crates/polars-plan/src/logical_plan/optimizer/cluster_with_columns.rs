@@ -147,9 +147,8 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
             // down.
             let mut pushable = MutableBitmap::with_capacity(input_wc.exprs.len());
             for expr_liveset in &current_livesets {
-                let has_intersection = input_generate.intersect_with(&expr_liveset);
+                let has_intersection = input_generate.intersect_with(expr_liveset);
                 let is_pushable = !has_intersection;
-
                 pushable.push(is_pushable);
             }
             let pushable = pushable.freeze();
