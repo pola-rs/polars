@@ -1,29 +1,29 @@
 #[cfg(all(
     target_family = "unix",
-    not(feature = "default_allocator"),
-    not(feature = "use_mimalloc"),
+    not(allocator = "default"),
+    not(allocator = "mimalloc"),
 ))]
 use jemallocator::Jemalloc;
 #[cfg(all(
     not(debug_assertions),
-    not(feature = "default_allocator"),
-    any(not(target_family = "unix"), feature = "use_mimalloc"),
+    not(allocator = "default"),
+    any(not(target_family = "unix"), allocator = "mimalloc"),
 ))]
 use mimalloc::MiMalloc;
 
 #[cfg(all(
     debug_assertions,
     target_family = "unix",
-    not(feature = "default_allocator"),
-    not(feature = "use_mimalloc"),
+    not(allocator = "default"),
+    not(allocator = "mimalloc"),
 ))]
 use crate::memory::TracemallocAllocator;
 
 #[global_allocator]
 #[cfg(all(
     not(debug_assertions),
-    not(feature = "use_mimalloc"),
-    not(feature = "default_allocator"),
+    not(allocator = "mimalloc"),
+    not(allocator = "default"),
     target_family = "unix",
 ))]
 static ALLOC: Jemalloc = Jemalloc;
@@ -31,8 +31,8 @@ static ALLOC: Jemalloc = Jemalloc;
 #[global_allocator]
 #[cfg(all(
     not(debug_assertions),
-    not(feature = "default_allocator"),
-    any(not(target_family = "unix"), feature = "use_mimalloc"),
+    not(allocator = "default"),
+    any(not(target_family = "unix"), allocator = "mimalloc"),
 ))]
 static ALLOC: MiMalloc = MiMalloc;
 
@@ -41,9 +41,5 @@ static ALLOC: MiMalloc = MiMalloc;
 // linking breaks on Windows if we use tracemalloc C APIs. So we only use this
 // on Unix for now.
 #[global_allocator]
-#[cfg(all(
-    debug_assertions,
-    not(feature = "default_allocator"),
-    target_family = "unix",
-))]
+#[cfg(all(debug_assertions, not(allocator = "default"), target_family = "unix",))]
 static ALLOC: TracemallocAllocator<Jemalloc> = TracemallocAllocator::new(Jemalloc);
