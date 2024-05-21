@@ -3,7 +3,7 @@
 import polars as pl
 
 
-def test_basic_cwc():
+def test_basic_cwc() -> None:
     df = (
         pl.LazyFrame({"a": [1, 2]})
         .with_columns(pl.col("a").alias("b") * 2)
@@ -17,7 +17,7 @@ def test_basic_cwc():
     )
 
 
-def test_refuse_with_deps():
+def test_refuse_with_deps() -> None:
     df = (
         pl.LazyFrame({"a": [1, 2]})
         .with_columns(pl.col("a").alias("b") * 2)
@@ -32,7 +32,7 @@ def test_refuse_with_deps():
     assert """[[(col("c")) * (4)].alias("d")]""" in explain
 
 
-def test_partial_deps():
+def test_partial_deps() -> None:
     df = (
         pl.LazyFrame({"a": [1, 2]})
         .with_columns(pl.col("a").alias("b") * 2)
@@ -46,8 +46,6 @@ def test_partial_deps():
 
     explain = df.explain()
 
-    print(explain)
-
     assert (
         """[[(col("b")) * (4)].alias("d"), [(col("b")) * (6)].alias("f")]""" in explain
     )
@@ -57,7 +55,7 @@ def test_partial_deps():
     )
 
 
-def test_try_remove_simple_project():
+def test_try_remove_simple_project() -> None:
     df = (
         pl.LazyFrame({"a": [1, 2]})
         .with_columns(pl.col("a").alias("b") * 2)
@@ -87,7 +85,7 @@ def test_try_remove_simple_project():
     assert """simple π""" in explain
 
 
-def test_cwc_with_internal_aliases():
+def test_cwc_with_internal_aliases() -> None:
     df = (
         pl.LazyFrame({"a": [1, 2], "b": [3, 4]})
         .with_columns(pl.any_horizontal((pl.col("a") == 2).alias("b")).alias("c"))
