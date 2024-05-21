@@ -44,7 +44,9 @@ fn df_to_numpy(
     writable: bool,
     allow_copy: bool,
 ) -> PyResult<PyObject> {
-    if df.is_empty() {
+    // TODO: Use `is_empty` when fixed:
+    // https://github.com/pola-rs/polars/pull/16351
+    if df.height() == 0 {
         // Take this path to ensure a writable array.
         // This does not actually copy data for an empty DataFrame.
         return df_to_numpy_with_copy(py, df, order, true);
@@ -68,10 +70,6 @@ fn df_to_numpy(
         return Err(PyRuntimeError::new_err(
             "copy not allowed: cannot convert to a NumPy array without copying data",
         ));
-    }
-
-    if let Some(arr) = try_df_to_numpy_numeric_supertype(py, df, order) {
-        return Ok(arr);
     }
 
     df_to_numpy_with_copy(py, df, order, writable)
@@ -143,6 +141,18 @@ where
     }
 }
 
+fn df_to_numpy_with_copy(
+    py: Python,
+    df: &DataFrame,
+    order: IndexOrder,
+    writable: bool,
+) -> PyResult<PyObject> {
+    if let Some(arr) = try_df_to_numpy_numeric_supertype(py, df, order) {
+        Ok(arr)
+    } else {
+        df_columns_to_numpy(py, df, writable)
+    }
+}
 fn try_df_to_numpy_numeric_supertype(
     py: Python,
     df: &DataFrame,
@@ -158,13 +168,7 @@ fn try_df_to_numpy_numeric_supertype(
     };
     Some(np_array)
 }
-
-fn df_to_numpy_with_copy(
-    py: Python,
-    df: &DataFrame,
-    _order: IndexOrder,
-    writable: bool,
-) -> PyResult<PyObject> {
+fn df_columns_to_numpy(py: Python, df: &DataFrame, writable: bool) -> PyResult<PyObject> {
     let series = df
         .iter()
         .map(|s| series_to_numpy(py, s, writable, true).unwrap());
