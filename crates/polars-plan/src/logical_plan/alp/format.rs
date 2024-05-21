@@ -191,8 +191,8 @@ impl<'a> IRDisplay<'a> {
             Filter { predicate, input } => {
                 let predicate = self.display_expr(predicate);
                 // this one is writeln because we don't increase indent (which inserts a line)
-                writeln!(f, "{:indent$}FILTER {predicate} FROM", "")?;
-                self.with_root(*input)._format(f, indent)
+                write!(f, "{:indent$}FILTER {predicate} FROM", "")?;
+                self.with_root(*input)._format(f, sub_indent)
             },
             DataFrameScan {
                 schema,
