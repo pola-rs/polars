@@ -1,7 +1,9 @@
 // Reads an uleb128 encoded integer with at most 56 bits (8 bytes with 7 bits worth of payload each).
 /// Returns the integer and the number of bytes that made up this integer.
 /// If the returned length is bigger than 8 this means the integer required more than 8 bytes and the remaining bytes need to be read sequentially and combined with the return value.
-/// Safety: `data` needs to contain at least 8 bytes.
+///
+/// # Safety
+/// `data` needs to contain at least 8 bytes.
 #[target_feature(enable = "bmi2")]
 #[cfg(target_feature = "bmi2")]
 pub unsafe fn decode_uleb_bmi2(data: &[u8]) -> (u64, usize) {
