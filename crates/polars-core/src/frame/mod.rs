@@ -735,7 +735,8 @@ impl DataFrame {
     ///
     /// ```rust
     /// # use polars_core::prelude::*;
-    /// let df1: DataFrame = DataFrame::default();
+    /// let df1: DataFrame = df!("First name" => &[],
+    ///                          "Last name" => &[])?;
     /// assert!(df1.is_empty());
     ///
     /// let df2: DataFrame = df!("First name" => &["Forever"],
@@ -744,7 +745,7 @@ impl DataFrame {
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn is_empty(&self) -> bool {
-        self.columns.is_empty()
+        self.height() == 0
     }
 
     /// Add columns horizontally.

@@ -10389,7 +10389,7 @@ class DataFrame:
         >>> df.filter(pl.col("foo") > 99).is_empty()
         True
         """
-        return self.height == 0
+        return self._df.is_empty()
 
     def to_struct(self, name: str = "") -> Series:
         """
