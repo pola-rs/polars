@@ -1,7 +1,4 @@
-use polars_utils::iter::FallibleIterator;
-
 use crate::parquet::encoding::hybrid_rle::{self, BitmapIter};
-use crate::parquet::error::Error;
 
 /// The decoding state of the hybrid-RLE decoder with a maximum definition level of 1
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -141,7 +138,6 @@ where
 {
     iter: I,
     current_run: Option<HybridBooleanState<'a>>,
-    result: Result<(), Error>,
 }
 
 impl<'a, I> HybridRleBooleanIter<'a, I>
@@ -152,7 +148,6 @@ where
         Self {
             iter,
             current_run: None,
-            result: Ok(()),
         }
     }
 
@@ -206,15 +201,6 @@ where
     fn size_hint(&self) -> (usize, Option<usize>) {
         let exact = self.iter.number_of_elements();
         (exact, Some(exact))
-    }
-}
-
-impl<'a, I> FallibleIterator<Error> for HybridRleBooleanIter<'a, I>
-where
-    I: HybridRleRunsIterator<'a>,
-{
-    fn get_result(&mut self) -> Result<(), Error> {
-        self.result.clone()
     }
 }
 
