@@ -75,12 +75,12 @@ impl AExpr {
                     | Operator::Gt
                     | Operator::Eq
                     | Operator::NotEq
-                    | Operator::And
+                    | Operator::LogicalAnd
                     | Operator::LtEq
                     | Operator::GtEq
                     | Operator::NotEqValidity
                     | Operator::EqValidity
-                    | Operator::Or => {
+                    | Operator::LogicalOr => {
                         let out_field;
                         let out_name = {
                             out_field = arena.get(*left).to_field(schema, ctxt, arena)?;
