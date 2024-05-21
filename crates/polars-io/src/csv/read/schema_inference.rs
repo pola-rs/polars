@@ -212,14 +212,35 @@ fn infer_file_schema_inner(
     // get or create header names
     // when has_header is false, creates default column names with column_ prefix
 
-    // skip lines that are comments
     let mut first_line = None;
+    let mut max_column_count = 0;
 
-    for (i, line) in (&mut lines).enumerate() {
+    for mut line in &mut lines {
+        // Skip lines that are comments.
         if !is_comment_line(line, comment_prefix) {
-            first_line = Some(line);
-            *skip_rows += i;
-            break;
+            // If the lines were separated by CRLF, we need to remove the CR part.
+            let line_len = line.len();
+            if line_len > 1 {
+                let trailing_byte = line[line_len - 1];
+                if trailing_byte == b'\r' {
+                    line = &line[..line_len - 1];
+                }
+            }
+
+            // When `has_header` is true, we can exit the loop early once we find the first non-comment line.
+            if has_header && first_line.is_none() {
+                first_line = Some(line);
+                break;
+            } else {
+                // When `had_header` is false, we need to figure out how many columns the schema should have.
+                let byterecord = SplitFields::new(line, separator, quote_char, eol_char);
+                max_column_count = usize::max(max_column_count, byterecord.count());
+            }
+        } else {
+            // Only increment `skip_rows` while we are still parsing comments from the beginning of the file.
+            if first_line.is_none() && max_column_count == 0 {
+                *skip_rows += 1;
+            }
         }
     }
 
@@ -228,50 +249,39 @@ fn infer_file_schema_inner(
     }
 
     // now that we've found the first non-comment line we parse the headers, or we create a header
-    let headers: Vec<String> = if let Some(mut header_line) = first_line {
-        let len = header_line.len();
-        if len > 1 {
-            // remove carriage return
-            let trailing_byte = header_line[len - 1];
-            if trailing_byte == b'\r' {
-                header_line = &header_line[..len - 1];
-            }
-        }
-
+    let headers: Vec<String> = if let Some(header_line) = first_line {
         let byterecord = SplitFields::new(header_line, separator, quote_char, eol_char);
-        if has_header {
-            let headers = byterecord
-                .map(|(slice, needs_escaping)| {
-                    let slice_escaped = if needs_escaping && (slice.len() >= 2) {
-                        &slice[1..(slice.len() - 1)]
-                    } else {
-                        slice
-                    };
-                    let s = parse_bytes_with_encoding(slice_escaped, encoding)?;
-                    Ok(s)
-                })
-                .collect::<PolarsResult<Vec<_>>>()?;
 
-            let mut final_headers = Vec::with_capacity(headers.len());
-
-            let mut header_names = PlHashMap::with_capacity(headers.len());
-
-            for name in &headers {
-                let count = header_names.entry(name.as_ref()).or_insert(0usize);
-                if *count != 0 {
-                    final_headers.push(format!("{}_duplicated_{}", name, *count - 1))
+        let headers = byterecord
+            .map(|(slice, needs_escaping)| {
+                let slice_escaped = if needs_escaping && (slice.len() >= 2) {
+                    &slice[1..(slice.len() - 1)]
                 } else {
-                    final_headers.push(name.to_string())
-                }
-                *count += 1;
+                    slice
+                };
+                let s = parse_bytes_with_encoding(slice_escaped, encoding)?;
+                Ok(s)
+            })
+            .collect::<PolarsResult<Vec<_>>>()?;
+
+        let mut final_headers = Vec::with_capacity(headers.len());
+
+        let mut header_names = PlHashMap::with_capacity(headers.len());
+
+        for name in &headers {
+            let count = header_names.entry(name.as_ref()).or_insert(0usize);
+            if *count != 0 {
+                final_headers.push(format!("{}_duplicated_{}", name, *count - 1))
+            } else {
+                final_headers.push(name.to_string())
             }
-            final_headers
-        } else {
-            byterecord
-                .enumerate()
-                .map(|(i, _s)| format!("column_{}", i + 1))
-                .collect::<Vec<String>>()
+            *count += 1;
         }
+        final_headers
+    } else if !has_header && max_column_count > 0 {
+        (0..max_column_count)
+            .map(|i| format!("column_{}", i + 1))
+            .collect()
     } else if has_header && !bytes.is_empty() && recursion_count == 0 {
         // there was no new line char. So we copy the whole buf and add one
         // this is likely to be cheap as there are no rows.
@@ -561,4 +571,85 @@ pub fn infer_file_schema(
         n_threads,
         decimal_comma,
     )
+}
+
+#[cfg(test)]
+mod test {
+    use polars_core::schema::Schema;
+
+    use super::infer_file_schema_inner;
+    use crate::csv::read::CommentPrefix;
+    use crate::mmap::ReaderBytes;
+
+    #[test]
+    fn test_rows_with_variable_column_count() {
+        let input = "preamble\n1,foo\n2,bar";
+        let mut skip_rows = 0;
+
+        let (schema, _, _) = infer_file_schema_inner(
+            &ReaderBytes::Borrowed(input.as_bytes()),
+            b',',
+            None,
+            false, // no header
+            None,
+            &mut skip_rows,
+            0,
+            None,
+            None,
+            b'\n',
+            None,
+            false,
+            0,
+            false,
+            &mut None,
+            false,
+        )
+        .unwrap();
+
+        fn field_name(schema: &Schema, index: usize) -> &str {
+            let (field_name, _) = schema.get_at_index(index).unwrap();
+            field_name.as_str()
+        }
+
+        assert_eq!(schema.iter_fields().len(), 2);
+        assert_eq!(field_name(&schema, 0), "column_1");
+        assert_eq!(field_name(&schema, 1), "column_2");
+        assert_eq!(skip_rows, 0);
+    }
+
+    #[test]
+    fn test_rows_with_variable_column_count_and_leading_comment() {
+        let input = "# some comment\npreamble\n1,foo\n2,bar";
+        let mut skip_rows = 0;
+
+        let (schema, _, _) = infer_file_schema_inner(
+            &ReaderBytes::Borrowed(input.as_bytes()),
+            b',',
+            None,
+            false, // no header
+            None,
+            &mut skip_rows,
+            0,
+            Some(&CommentPrefix::Single(b'#')),
+            None,
+            b'\n',
+            None,
+            false,
+            0,
+            false,
+            &mut None,
+            false,
+        )
+        .unwrap();
+
+        fn field_name(schema: &Schema, index: usize) -> &str {
+            let (field_name, _) = schema.get_at_index(index).unwrap();
+            field_name.as_str()
+        }
+
+        assert_eq!(schema.iter_fields().len(), 2);
+        assert_eq!(field_name(&schema, 0), "column_1");
+        assert_eq!(field_name(&schema, 1), "column_2");
+        assert_eq!(skip_rows, 1);
+    }
 }
