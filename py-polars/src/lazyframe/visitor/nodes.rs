@@ -141,7 +141,7 @@ pub struct Sort {
     #[pyo3(get)]
     by_column: Vec<PyExprIR>,
     #[pyo3(get)]
-    sort_options: (Vec<bool>, bool, bool),
+    sort_options: (bool, bool, Vec<bool>),
     #[pyo3(get)]
     slice: Option<(i64, usize)>,
 }
@@ -350,9 +350,9 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             input: input.0,
             by_column: by_column.iter().map(|e| e.into()).collect(),
             sort_options: (
-                sort_options.descending.clone(),
-                sort_options.nulls_last,
                 sort_options.maintain_order,
+                sort_options.nulls_last,
+                sort_options.descending.clone(),
             ),
             slice: *slice,
         }
@@ -445,7 +445,6 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
         .into_py(py),
         IR::Distinct { input, options } => Distinct {
             input: input.0,
-            // TODO, rest of options
             options: (
                 match options.keep_strategy {
                     UniqueKeepStrategy::First => "first",

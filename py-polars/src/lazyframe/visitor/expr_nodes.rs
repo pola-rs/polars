@@ -188,7 +188,8 @@ pub struct Sort {
     #[pyo3(get)]
     expr: usize,
     #[pyo3(get)]
-    options: PyObject,
+    /// maintain_order, nulls_last, descending
+    options: (bool, bool, bool),
 }
 
 #[pyclass]
@@ -216,8 +217,8 @@ pub struct SortBy {
     #[pyo3(get)]
     by: Vec<usize>,
     #[pyo3(get)]
-    /// descending, nulls_last, maintain_order
-    sort_options: (Vec<bool>, bool, bool),
+    /// maintain_order, nulls_last, descending
+    sort_options: (bool, bool, Vec<bool>),
 }
 
 #[pyclass]
@@ -481,8 +482,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 options.maintain_order,
                 options.nulls_last,
                 options.descending,
-            )
-                .to_object(py),
+            ),
         }
         .into_py(py),
         AExpr::Gather {
@@ -508,9 +508,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
             expr: expr.0,
             by: by.iter().map(|n| n.0).collect(),
             sort_options: (
-                sort_options.descending.clone(),
-                sort_options.nulls_last,
                 sort_options.maintain_order,
+                sort_options.nulls_last,
+                sort_options.descending.clone(),
             ),
         }
         .into_py(py),
