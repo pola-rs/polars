@@ -738,13 +738,9 @@ impl DataFrame {
     /// let df1: DataFrame = DataFrame::default();
     /// assert!(df1.is_empty());
     ///
-    /// let df2: DataFrame = df!("First name" => &[],
-    ///                          "Last name" => &[])?;
-    /// assert!(df2.is_empty());
-    ///
-    /// let df3: DataFrame = df!("First name" => &["Forever"],
+    /// let df2: DataFrame = df!("First name" => &["Forever"],
     ///                          "Last name" => &["Alone"])?;
-    /// assert!(!df3.is_empty());
+    /// assert!(!df2.is_empty());
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn is_empty(&self) -> bool {
