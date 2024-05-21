@@ -6,6 +6,7 @@ edition.workspace = true
 homepage.workspace = true
 license.workspace = true
 repository.workspace = true
+description = "Physical expression implementation of the Polars project."
 
 [dependencies]
 ahash = { workspace = true }
