@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 import pytest
 
 import polars as pl
+from polars.testing.asserts.series import assert_series_equal
 
 
 def test_series_mixed_dtypes_list() -> None:
@@ -97,3 +98,27 @@ def test_array_large_u64() -> None:
     s = pl.Series(values, dtype=dtype)
     assert s.dtype == dtype
     assert s.to_list() == values
+
+
+def test_series_init_ambiguous_datetime() -> None:
+    value = datetime(2001, 10, 28, 2)
+    dtype = pl.Datetime(time_zone="Europe/Belgrade")
+
+    with pytest.raises(pl.ComputeError, match="ambiguous"):
+        pl.Series([value], dtype=dtype, strict=True)
+
+    result = pl.Series([value], dtype=dtype, strict=False)
+    expected = pl.Series([None], dtype=dtype)
+    assert_series_equal(result, expected)
+
+
+def test_series_init_nonexistent_datetime() -> None:
+    value = datetime(2024, 3, 31, 2, 30)
+    dtype = pl.Datetime(time_zone="Europe/Amsterdam")
+
+    with pytest.raises(pl.ComputeError, match="non-existent"):
+        pl.Series([value], dtype=dtype, strict=True)
+
+    result = pl.Series([value], dtype=dtype, strict=False)
+    expected = pl.Series([None], dtype=dtype)
+    assert_series_equal(result, expected)
