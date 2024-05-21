@@ -17,11 +17,12 @@ use super::parser::{
     get_line_stats, is_comment_line, next_line_position, next_line_position_naive, parse_lines,
     skip_bom, skip_line_ending, skip_this_line, skip_whitespace_exclude,
 };
+use super::schema_inference::{check_decimal_comma, infer_file_schema};
 #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
 use super::utils::decompress;
+use super::utils::get_file_chunks;
 #[cfg(not(any(feature = "decompress", feature = "decompress-fast")))]
 use super::utils::is_compressed;
-use super::utils::{check_decimal_comma, get_file_chunks, infer_file_schema};
 use crate::mmap::ReaderBytes;
 use crate::predicates::PhysicalIoExpr;
 use crate::utils::update_row_counts;
