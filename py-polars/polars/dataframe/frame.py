@@ -78,6 +78,7 @@ from polars.datatypes import (
     Int64,
     Object,
     String,
+    Struct,
     UInt16,
     UInt32,
     UInt64,
@@ -1573,7 +1574,15 @@ class DataFrame:
             arrays = []
             struct_dtype = []
             for s in self.iter_columns():
-                arr = s.to_numpy(use_pyarrow=use_pyarrow)
+                if s.dtype == Struct:
+                    arr = s.struct.unnest().to_numpy(
+                        structured=True,
+                        allow_copy=True,
+                        use_pyarrow=use_pyarrow,
+                    )
+                else:
+                    arr = s.to_numpy(use_pyarrow=use_pyarrow)
+
                 if s.dtype == String and s.null_count() == 0:
                     arr = arr.astype(str, copy=False)
                 arrays.append(arr)

@@ -181,3 +181,27 @@ def test_df_to_numpy_empty_dtype_viewable(
     assert result.shape == (0, 2)
     assert result.dtype == expected_dtype
     assert result.flags.writeable is True
+
+
+def test_df_to_numpy_structured_nested() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2],
+            "b": [3.0, 4.0],
+            "c": [{"x": "a", "y": 1.0}, {"x": "b", "y": 2.0}],
+        }
+    )
+    result = df.to_numpy(structured=True, use_pyarrow=False)
+
+    expected = np.array(
+        [
+            (1, 3.0, ("a", 1.0)),
+            (2, 4.0, ("b", 2.0)),
+        ],
+        dtype=[
+            ("a", "<i8"),
+            ("b", "<f8"),
+            ("c", [("x", "<U1"), ("y", "<f8")]),
+        ],
+    )
+    assert_array_equal(result, expected)
