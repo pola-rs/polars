@@ -49,7 +49,7 @@ pub(super) fn series_to_numpy(
     if s.is_empty() {
         // Take this path to ensure a writable array.
         // This does not actually copy data for an empty Series.
-        return series_to_numpy_with_copy(py, s, true);
+        return Ok(series_to_numpy_with_copy(py, s, true));
     }
     if let Some((mut arr, writable_flag)) = try_series_to_numpy_view(py, s, false, allow_copy) {
         if writable && !writable_flag {
@@ -69,7 +69,7 @@ pub(super) fn series_to_numpy(
         ));
     }
 
-    series_to_numpy_with_copy(py, s, writable)
+    Ok(series_to_numpy_with_copy(py, s, writable))
 }
 
 /// Create a NumPy view of the given Series.
@@ -205,9 +205,9 @@ fn array_series_to_numpy_view(py: Python, s: &Series, writable: bool) -> PyObjec
 /// Convert a Series to a NumPy ndarray, copying data in the process.
 ///
 /// This method will cast integers to floats so that `null = np.nan`.
-fn series_to_numpy_with_copy(py: Python, s: &Series, writable: bool) -> PyResult<PyObject> {
+fn series_to_numpy_with_copy(py: Python, s: &Series, writable: bool) -> PyObject {
     use DataType::*;
-    let out = match s.dtype() {
+    match s.dtype() {
         Int8 => numeric_series_to_numpy::<Int8Type, f32>(py, s),
         Int16 => numeric_series_to_numpy::<Int16Type, f32>(py, s),
         Int32 => numeric_series_to_numpy::<Int32Type, f64>(py, s),
@@ -279,7 +279,7 @@ fn series_to_numpy_with_copy(py: Python, s: &Series, writable: bool) -> PyResult
             let ca = s.struct_().unwrap();
             let df = ca.clone().unnest();
             // TODO: How should we determine the IndexOrder here?
-            df_to_numpy(py, &df, IndexOrder::Fortran, writable, true)?
+            df_to_numpy(py, &df, IndexOrder::Fortran, writable, true).unwrap()
         },
         #[cfg(feature = "object")]
         Object(_, _) => {
@@ -296,8 +296,7 @@ fn series_to_numpy_with_copy(py: Python, s: &Series, writable: bool) -> PyResult
             PyArray1::from_iter_bound(py, values).into_py(py)
         },
         Unknown(_) | BinaryOffset => unreachable!(),
-    };
-    Ok(out)
+    }
 }
 
 /// Convert numeric types to f32 or f64 with NaN representing a null value.
@@ -389,7 +388,7 @@ fn list_series_to_numpy(py: Python, s: &Series, writable: bool) -> PyObject {
 fn array_series_to_numpy(py: Python, s: &Series, writable: bool) -> PyObject {
     let ca = s.array().unwrap();
     let s_inner = ca.get_inner();
-    let np_array_flat = series_to_numpy_with_copy(py, &s_inner, writable).unwrap();
+    let np_array_flat = series_to_numpy_with_copy(py, &s_inner, writable);
 
     // Reshape to the original shape.
     let DataType::Array(_, width) = s.dtype() else {
