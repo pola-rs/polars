@@ -6,10 +6,10 @@ use polars_parquet::parquet::indexes::Interval;
 #[test]
 fn bitmap_incomplete() {
     let mut iter = FilteredHybridBitmapIter::new(
-        vec![Ok(HybridEncoded::Bitmap(&[0b01000011], 7))].into_iter(),
+        vec![HybridEncoded::Bitmap(&[0b01000011], 7)].into_iter(),
         vec![Interval::new(1, 2)].into(),
     );
-    let a = iter.by_ref().collect::<Result<Vec<_>, _>>().unwrap();
+    let a = iter.by_ref().collect::<Vec<_>>();
     assert_eq!(iter.len(), 0);
     assert_eq!(
         a,
@@ -27,10 +27,10 @@ fn bitmap_incomplete() {
 #[test]
 fn bitmap_complete() {
     let mut iter = FilteredHybridBitmapIter::new(
-        vec![Ok(HybridEncoded::Bitmap(&[0b01000011], 8))].into_iter(),
+        vec![HybridEncoded::Bitmap(&[0b01000011], 8)].into_iter(),
         vec![Interval::new(0, 8)].into(),
     );
-    let a = iter.by_ref().collect::<Result<Vec<_>, _>>().unwrap();
+    let a = iter.by_ref().collect::<Vec<_>>();
     assert_eq!(iter.len(), 0);
     assert_eq!(
         a,
@@ -46,13 +46,13 @@ fn bitmap_complete() {
 fn bitmap_interval_incomplete() {
     let mut iter = FilteredHybridBitmapIter::new(
         vec![
-            Ok(HybridEncoded::Bitmap(&[0b01000011], 8)),
-            Ok(HybridEncoded::Bitmap(&[0b11111111], 8)),
+            HybridEncoded::Bitmap(&[0b01000011], 8),
+            HybridEncoded::Bitmap(&[0b11111111], 8),
         ]
         .into_iter(),
         vec![Interval::new(0, 10)].into(),
     );
-    let a = iter.by_ref().collect::<Result<Vec<_>, _>>().unwrap();
+    let a = iter.by_ref().collect::<Vec<_>>();
     assert_eq!(iter.len(), 0);
     assert_eq!(
         a,
@@ -75,13 +75,13 @@ fn bitmap_interval_incomplete() {
 fn bitmap_interval_run_incomplete() {
     let mut iter = FilteredHybridBitmapIter::new(
         vec![
-            Ok(HybridEncoded::Bitmap(&[0b01100011], 8)),
-            Ok(HybridEncoded::Bitmap(&[0b11111111], 8)),
+            HybridEncoded::Bitmap(&[0b01100011], 8),
+            HybridEncoded::Bitmap(&[0b11111111], 8),
         ]
         .into_iter(),
         vec![Interval::new(0, 5), Interval::new(7, 4)].into(),
     );
-    let a = iter.by_ref().collect::<Result<Vec<_>, _>>().unwrap();
+    let a = iter.by_ref().collect::<Vec<_>>();
     assert_eq!(iter.len(), 0);
     assert_eq!(
         a,
@@ -110,13 +110,13 @@ fn bitmap_interval_run_incomplete() {
 fn bitmap_interval_run_skipped() {
     let mut iter = FilteredHybridBitmapIter::new(
         vec![
-            Ok(HybridEncoded::Bitmap(&[0b01100011], 8)),
-            Ok(HybridEncoded::Bitmap(&[0b11111111], 8)),
+            HybridEncoded::Bitmap(&[0b01100011], 8),
+            HybridEncoded::Bitmap(&[0b11111111], 8),
         ]
         .into_iter(),
         vec![Interval::new(9, 2)].into(),
     );
-    let a = iter.by_ref().collect::<Result<Vec<_>, _>>().unwrap();
+    let a = iter.by_ref().collect::<Vec<_>>();
     assert_eq!(iter.len(), 0);
     assert_eq!(
         a,
@@ -136,13 +136,13 @@ fn bitmap_interval_run_skipped() {
 fn bitmap_interval_run_offset_skipped() {
     let mut iter = FilteredHybridBitmapIter::new(
         vec![
-            Ok(HybridEncoded::Bitmap(&[0b01100011], 8)),
-            Ok(HybridEncoded::Bitmap(&[0b11111111], 8)),
+            HybridEncoded::Bitmap(&[0b01100011], 8),
+            HybridEncoded::Bitmap(&[0b11111111], 8),
         ]
         .into_iter(),
         vec![Interval::new(0, 1), Interval::new(9, 2)].into(),
     );
-    let a = iter.by_ref().collect::<Result<Vec<_>, _>>().unwrap();
+    let a = iter.by_ref().collect::<Vec<_>>();
     assert_eq!(iter.len(), 0);
     assert_eq!(
         a,
@@ -166,10 +166,10 @@ fn bitmap_interval_run_offset_skipped() {
 #[test]
 fn repeated_incomplete() {
     let mut iter = FilteredHybridBitmapIter::new(
-        vec![Ok(HybridEncoded::Repeated(true, 7))].into_iter(),
+        vec![HybridEncoded::Repeated(true, 7)].into_iter(),
         vec![Interval::new(1, 2)].into(),
     );
-    let a = iter.by_ref().collect::<Result<Vec<_>, _>>().unwrap();
+    let a = iter.by_ref().collect::<Vec<_>>();
     assert_eq!(iter.len(), 0);
     assert_eq!(
         a,
@@ -186,10 +186,10 @@ fn repeated_incomplete() {
 #[test]
 fn repeated_complete() {
     let mut iter = FilteredHybridBitmapIter::new(
-        vec![Ok(HybridEncoded::Repeated(true, 8))].into_iter(),
+        vec![HybridEncoded::Repeated(true, 8)].into_iter(),
         vec![Interval::new(0, 8)].into(),
     );
-    let a = iter.by_ref().collect::<Result<Vec<_>, _>>().unwrap();
+    let a = iter.by_ref().collect::<Vec<_>>();
     assert_eq!(iter.len(), 0);
     assert_eq!(
         a,
@@ -204,13 +204,13 @@ fn repeated_complete() {
 fn repeated_interval_incomplete() {
     let mut iter = FilteredHybridBitmapIter::new(
         vec![
-            Ok(HybridEncoded::Repeated(true, 8)),
-            Ok(HybridEncoded::Repeated(false, 8)),
+            HybridEncoded::Repeated(true, 8),
+            HybridEncoded::Repeated(false, 8),
         ]
         .into_iter(),
         vec![Interval::new(0, 10)].into(),
     );
-    let a = iter.by_ref().collect::<Result<Vec<_>, _>>().unwrap();
+    let a = iter.by_ref().collect::<Vec<_>>();
     assert_eq!(iter.len(), 0);
     assert_eq!(
         a,
@@ -231,13 +231,13 @@ fn repeated_interval_incomplete() {
 fn repeated_interval_run_incomplete() {
     let mut iter = FilteredHybridBitmapIter::new(
         vec![
-            Ok(HybridEncoded::Repeated(true, 8)),
-            Ok(HybridEncoded::Repeated(false, 8)),
+            HybridEncoded::Repeated(true, 8),
+            HybridEncoded::Repeated(false, 8),
         ]
         .into_iter(),
         vec![Interval::new(0, 5), Interval::new(7, 4)].into(),
     );
-    let a = iter.by_ref().collect::<Result<Vec<_>, _>>().unwrap();
+    let a = iter.by_ref().collect::<Vec<_>>();
     assert_eq!(iter.len(), 0);
     assert_eq!(
         a,
@@ -263,13 +263,13 @@ fn repeated_interval_run_incomplete() {
 fn repeated_interval_run_skipped() {
     let mut iter = FilteredHybridBitmapIter::new(
         vec![
-            Ok(HybridEncoded::Repeated(true, 8)),
-            Ok(HybridEncoded::Repeated(false, 8)),
+            HybridEncoded::Repeated(true, 8),
+            HybridEncoded::Repeated(false, 8),
         ]
         .into_iter(),
         vec![Interval::new(9, 2)].into(),
     );
-    let a = iter.by_ref().collect::<Result<Vec<_>, _>>().unwrap();
+    let a = iter.by_ref().collect::<Vec<_>>();
     assert_eq!(iter.len(), 0);
     assert_eq!(
         a,
@@ -288,13 +288,13 @@ fn repeated_interval_run_skipped() {
 fn repeated_interval_run_offset_skipped() {
     let mut iter = FilteredHybridBitmapIter::new(
         vec![
-            Ok(HybridEncoded::Repeated(true, 8)),
-            Ok(HybridEncoded::Repeated(false, 8)),
+            HybridEncoded::Repeated(true, 8),
+            HybridEncoded::Repeated(false, 8),
         ]
         .into_iter(),
         vec![Interval::new(0, 1), Interval::new(9, 2)].into(),
     );
-    let a = iter.by_ref().collect::<Result<Vec<_>, _>>().unwrap();
+    let a = iter.by_ref().collect::<Vec<_>>();
     assert_eq!(iter.len(), 0);
     assert_eq!(
         a,

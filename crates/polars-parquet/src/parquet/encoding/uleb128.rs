@@ -1,15 +1,35 @@
-use crate::parquet::error::Error;
+// Reads an uleb128 encoded integer with at most 56 bits (8 bytes with 7 bits worth of payload each).
+/// Returns the integer and the number of bytes that made up this integer.
+/// If the returned length is bigger than 8 this means the integer required more than 8 bytes and the remaining bytes need to be read sequentially and combined with the return value.
+/// Safety: `data` needs to contain at least 8 bytes.
+#[target_feature(enable = "bmi2")]
+pub unsafe fn decode_uleb_bmi2(data: &[u8]) -> (u64, usize) {
+    const CONT_MARKER: u64 = 0x80808080_80808080;
+    debug_assert!(data.len() >= 8);
 
-pub fn decode(values: &[u8]) -> Result<(u64, usize), Error> {
+    unsafe {
+        let word = data.as_ptr().cast::<u64>().read_unaligned();
+        // mask indicating continuation bytes
+        let mask = std::arch::x86_64::_pext_u64(word, CONT_MARKER);
+        let len = (!mask).trailing_zeros() + 1;
+        // which payload bits to extract
+        let ext = std::arch::x86_64::_bzhi_u64(!CONT_MARKER, 8 * len);
+        let payload = std::arch::x86_64::_pext_u64(word, ext);
+
+        (payload, len as _)
+    }
+}
+
+pub fn decode(values: &[u8]) -> (u64, usize) {
     let mut result = 0;
     let mut shift = 0;
 
     let mut consumed = 0;
     for byte in values {
         consumed += 1;
-        if shift == 63 && *byte > 1 {
-            panic!()
-        };
+
+        #[cfg(debug_assertions)]
+        debug_assert!(!(shift == 63 && *byte > 1));
 
         result |= u64::from(byte & 0b01111111) << shift;
 
@@ -19,7 +39,7 @@ pub fn decode(values: &[u8]) -> Result<(u64, usize), Error> {
 
         shift += 7;
     }
-    Ok((result, consumed))
+    (result, consumed)
 }
 
 /// Encodes `value` in ULEB128 into `container`. The exact number of bytes written
@@ -52,7 +72,7 @@ mod tests {
     #[test]
     fn decode_1() {
         let data = vec![0xe5, 0x8e, 0x26, 0xDE, 0xAD, 0xBE, 0xEF];
-        let (value, len) = decode(&data).unwrap();
+        let (value, len) = decode(&data);
         assert_eq!(value, 624_485);
         assert_eq!(len, 3);
     }
@@ -60,7 +80,7 @@ mod tests {
     #[test]
     fn decode_2() {
         let data = vec![0b00010000, 0b00000001, 0b00000011, 0b00000011];
-        let (value, len) = decode(&data).unwrap();
+        let (value, len) = decode(&data);
         assert_eq!(value, 16);
         assert_eq!(len, 1);
     }
@@ -70,7 +90,7 @@ mod tests {
         let original = 123124234u64;
         let mut container = [0u8; 10];
         let encoded_len = encode(original, &mut container);
-        let (value, len) = decode(&container).unwrap();
+        let (value, len) = decode(&container);
         assert_eq!(value, original);
         assert_eq!(len, encoded_len);
     }
@@ -80,7 +100,7 @@ mod tests {
         let original = u64::MIN;
         let mut container = [0u8; 10];
         let encoded_len = encode(original, &mut container);
-        let (value, len) = decode(&container).unwrap();
+        let (value, len) = decode(&container);
         assert_eq!(value, original);
         assert_eq!(len, encoded_len);
     }
@@ -90,7 +110,7 @@ mod tests {
         let original = u64::MAX;
         let mut container = [0u8; 10];
         let encoded_len = encode(original, &mut container);
-        let (value, len) = decode(&container).unwrap();
+        let (value, len) = decode(&container);
         assert_eq!(value, original);
         assert_eq!(len, encoded_len);
     }

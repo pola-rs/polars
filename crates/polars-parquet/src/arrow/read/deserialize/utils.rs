@@ -73,7 +73,7 @@ impl<'a> PageValidity<'a> for FilteredOptionalPageValidity<'a> {
             (run, offset)
         } else {
             // a new run
-            let run = self.iter.next()?.unwrap(); // no run -> None
+            let run = self.iter.next()?; // no run -> None
             self.current = Some((run, 0));
             return self.next_limited(limit);
         };
@@ -181,7 +181,7 @@ impl<'a> OptionalPageValidity<'a> {
             (run, offset)
         } else {
             // a new run
-            let run = self.iter.next()?.unwrap(); // no run -> None
+            let run = self.iter.next()?; // no run -> None
             self.current = Some((run, 0));
             return self.next_limited(limit);
         };

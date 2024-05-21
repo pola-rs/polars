@@ -41,7 +41,7 @@ pub struct HybridRleDecoder<'a> {
 
 #[inline]
 fn read_next<'a>(decoder: &mut Decoder<'a>, remaining: usize) -> Result<State<'a>, Error> {
-    Ok(match decoder.next().transpose()? {
+    Ok(match decoder.next() {
         Some(HybridEncoded::Bitpacked(packed)) => {
             let num_bits = decoder.num_bits();
             let length = std::cmp::min(packed.len() * 8 / num_bits, remaining);

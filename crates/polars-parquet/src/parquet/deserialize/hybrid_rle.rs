@@ -29,7 +29,7 @@ impl<'a> HybridEncoded<'a> {
     }
 }
 
-pub trait HybridRleRunsIterator<'a>: Iterator<Item = Result<HybridEncoded<'a>, Error>> {
+pub trait HybridRleRunsIterator<'a>: Iterator<Item = HybridEncoded<'a>> {
     /// Number of elements remaining. This may not be the items of the iterator - an item
     /// of the iterator may contain more than one element.
     fn number_of_elements(&self) -> usize;
@@ -39,7 +39,7 @@ pub trait HybridRleRunsIterator<'a>: Iterator<Item = Result<HybridEncoded<'a>, E
 #[derive(Debug, Clone)]
 pub struct HybridRleIter<'a, I>
 where
-    I: Iterator<Item = Result<hybrid_rle::HybridEncoded<'a>, Error>>,
+    I: Iterator<Item = hybrid_rle::HybridEncoded<'a>>,
 {
     iter: I,
     length: usize,
@@ -48,7 +48,7 @@ where
 
 impl<'a, I> HybridRleIter<'a, I>
 where
-    I: Iterator<Item = Result<hybrid_rle::HybridEncoded<'a>, Error>>,
+    I: Iterator<Item = hybrid_rle::HybridEncoded<'a>>,
 {
     /// Returns a new [`HybridRleIter`]
     #[inline]
@@ -74,7 +74,7 @@ where
 
 impl<'a, I> HybridRleRunsIterator<'a> for HybridRleIter<'a, I>
 where
-    I: Iterator<Item = Result<hybrid_rle::HybridEncoded<'a>, Error>>,
+    I: Iterator<Item = hybrid_rle::HybridEncoded<'a>>,
 {
     fn number_of_elements(&self) -> usize {
         self.len()
@@ -83,18 +83,18 @@ where
 
 impl<'a, I> Iterator for HybridRleIter<'a, I>
 where
-    I: Iterator<Item = Result<hybrid_rle::HybridEncoded<'a>, Error>>,
+    I: Iterator<Item = hybrid_rle::HybridEncoded<'a>>,
 {
-    type Item = Result<HybridEncoded<'a>, Error>;
+    type Item = HybridEncoded<'a>;
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         if self.consumed == self.length {
             return None;
         };
-        let run = self.iter.next()?;
+        let run = self.iter.next();
 
-        Some(run.map(|run| match run {
+        run.map(|run| match run {
             hybrid_rle::HybridEncoded::Bitpacked(pack) => {
                 // a pack has at most `pack.len() * 8` bits
                 let pack_size = pack.len() * 8;
@@ -112,7 +112,7 @@ where
                 self.consumed += additional;
                 HybridEncoded::Repeated(is_set, additional)
             },
-        }))
+        })
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -137,7 +137,7 @@ enum HybridBooleanState<'a> {
 #[derive(Debug)]
 pub struct HybridRleBooleanIter<'a, I>
 where
-    I: Iterator<Item = Result<HybridEncoded<'a>, Error>>,
+    I: Iterator<Item = HybridEncoded<'a>>,
 {
     iter: I,
     current_run: Option<HybridBooleanState<'a>>,
@@ -156,15 +156,7 @@ where
         }
     }
 
-    fn set_new_run(&mut self, run: Result<HybridEncoded<'a>, Error>) -> Option<bool> {
-        let run = match run {
-            Err(e) => {
-                self.result = Err(e);
-                return None;
-            },
-            Ok(r) => r,
-        };
-
+    fn set_new_run(&mut self, run: HybridEncoded<'a>) -> Option<bool> {
         let run = match run {
             HybridEncoded::Bitmap(bitmap, length) => {
                 HybridBooleanState::Bitmap(BitmapIter::new(bitmap, 0, length))
