@@ -152,7 +152,7 @@ def test_df_to_numpy_structured_not_zero_copy() -> None:
 
 def test_df_to_numpy_writable_not_zero_copy() -> None:
     df = pl.DataFrame({"a": [1, 2]})
-    msg = "cannot create writable array without copying data"
+    msg = "copy not allowed: cannot create a writable array without copying data"
     with pytest.raises(RuntimeError, match=msg):
         df.to_numpy(allow_copy=False, writable=True)
 

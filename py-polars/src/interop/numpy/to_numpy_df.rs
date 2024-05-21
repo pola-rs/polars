@@ -4,6 +4,8 @@ use numpy::{Element, IntoPyArray};
 use polars_core::prelude::*;
 use polars_core::utils::dtypes_to_supertype;
 use polars_core::with_match_physical_numeric_polars_type;
+use pyo3::exceptions::PyRuntimeError;
+use pyo3::intern;
 use pyo3::prelude::*;
 
 use super::utils::create_borrowed_np_array;
@@ -13,8 +15,14 @@ use crate::dataframe::PyDataFrame;
 #[pymethods]
 impl PyDataFrame {
     /// Convert this DataFrame to a NumPy ndarray.
-    fn to_numpy(&self, py: Python, order: Wrap<IndexOrder>) -> Option<PyObject> {
-        df_to_numpy(py, &self.df, order.0)
+    fn to_numpy(
+        &self,
+        py: Python,
+        order: Wrap<IndexOrder>,
+        writable: bool,
+        allow_copy: bool,
+    ) -> PyResult<Option<PyObject>> {
+        df_to_numpy(py, &self.df, order.0, writable, allow_copy)
     }
 
     /// Create a view of the data as a NumPy ndarray.
@@ -27,7 +35,43 @@ impl PyDataFrame {
     }
 }
 
-fn df_to_numpy(py: Python, df: &DataFrame, order: IndexOrder) -> Option<PyObject> {
+fn df_to_numpy(
+    py: Python,
+    df: &DataFrame,
+    order: IndexOrder,
+    writable: bool,
+    allow_copy: bool,
+) -> PyResult<Option<PyObject>> {
+    if df.is_empty() {
+        // Take this path to ensure a writable array.
+        // This does not actually copy data for an empty DataFrame.
+        return Ok(df_to_numpy_with_copy(py, df, order));
+    }
+
+    if matches!(order, IndexOrder::Fortran) {
+        if let Some(mut arr) = try_df_to_numpy_view(py, df) {
+            if writable {
+                if !allow_copy {
+                    return Err(PyRuntimeError::new_err(
+                        "copy not allowed: cannot create a writable array without copying data",
+                    ));
+                }
+                arr = arr.call_method0(py, intern!(py, "copy"))?;
+            }
+            return Ok(Some(arr));
+        }
+    }
+
+    if !allow_copy {
+        return Err(PyRuntimeError::new_err(
+            "copy not allowed: cannot convert to a NumPy array without copying data",
+        ));
+    }
+
+    Ok(df_to_numpy_with_copy(py, df, order))
+}
+
+fn df_to_numpy_with_copy(py: Python, df: &DataFrame, order: IndexOrder) -> Option<PyObject> {
     let st = dtypes_to_supertype(df.iter().map(|s| s.dtype())).ok()?;
 
     let np_array = match st {

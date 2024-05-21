@@ -4,7 +4,7 @@ use numpy::npyffi::flags;
 use numpy::{Element, PyArray1};
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
-use pyo3::exceptions::PyValueError;
+use pyo3::exceptions::PyRuntimeError;
 use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::PySlice;
@@ -44,14 +44,14 @@ impl PySeries {
 fn series_to_numpy(py: Python, s: &Series, writable: bool, allow_copy: bool) -> PyResult<PyObject> {
     if s.is_empty() {
         // Take this path to ensure a writable array.
-        // This does not actually copy data for empty Series.
+        // This does not actually copy data for an empty Series.
         return series_to_numpy_with_copy(py, s, true);
     }
     if let Some((mut arr, writable_flag)) = try_series_to_numpy_view(py, s, false, allow_copy) {
         if writable && !writable_flag {
             if !allow_copy {
-                return Err(PyValueError::new_err(
-                    "cannot return a zero-copy writable array",
+                return Err(PyRuntimeError::new_err(
+                    "copy not allowed: cannot create a writable array without copying data",
                 ));
             }
             arr = arr.call_method0(py, intern!(py, "copy"))?;
@@ -60,7 +60,9 @@ fn series_to_numpy(py: Python, s: &Series, writable: bool, allow_copy: bool) -> 
     }
 
     if !allow_copy {
-        return Err(PyValueError::new_err("cannot return a zero-copy array"));
+        return Err(PyRuntimeError::new_err(
+            "copy not allowed: cannot convert to a NumPy array without copying data",
+        ));
     }
 
     series_to_numpy_with_copy(py, s, writable)
