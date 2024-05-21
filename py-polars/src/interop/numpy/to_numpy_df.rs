@@ -169,16 +169,17 @@ fn try_df_to_numpy_numeric_supertype(
     Some(np_array)
 }
 fn df_columns_to_numpy(py: Python, df: &DataFrame, writable: bool) -> PyResult<PyObject> {
-    let series = df
+    let np_arrays = df
         .iter()
         .map(|s| series_to_numpy(py, s, writable, true).unwrap());
 
-    let list = PyList::new_bound(py, series);
+    // TODO: Handle multidimensional column arrays
+
     let numpy = PyModule::import_bound(py, "numpy")?;
     let arr = numpy
-        .getattr("vstack")
+        .getattr(intern!(py, "vstack"))
         .unwrap()
-        .call1((list,))?
-        .getattr("T")?;
+        .call1((PyList::new_bound(py, np_arrays),))?
+        .getattr(intern!(py, "T"))?;
     Ok(arr.into())
 }
