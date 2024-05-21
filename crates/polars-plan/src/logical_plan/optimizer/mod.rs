@@ -1,6 +1,5 @@
 use polars_core::prelude::*;
 
-use crate::prelude::optimizer::cluster_with_columns::ClusterWithColumns;
 use crate::prelude::*;
 
 mod cache_states;
@@ -159,7 +158,7 @@ pub fn optimize(
     }
 
     if cluster_with_columns {
-        ClusterWithColumns::new(lp_arena, expr_arena).optimize(lp_top);
+        cluster_with_columns::optimize(lp_top, lp_arena, expr_arena)
     }
 
     // Make sure its before slice pushdown.

@@ -6,7 +6,7 @@ use either::Either;
 use polars_error::{polars_bail, PolarsResult};
 
 use super::utils::{count_zeros, fmt, get_bit, get_bit_unchecked, BitChunk, BitChunks, BitmapIter};
-use super::{chunk_iter_to_vec, IntoIter, MutableBitmap};
+use super::{chunk_iter_to_vec, intersect_with, IntoIter, MutableBitmap};
 use crate::bitmap::aligned::AlignedBitmapSlice;
 use crate::bitmap::iterator::{
     FastU32BitmapIter, FastU56BitmapIter, FastU64BitmapIter, TrueIdxIter,
@@ -473,6 +473,13 @@ impl Bitmap {
             length,
             unset_bit_count_cache,
         }
+    }
+
+    /// Checks whether two [`Bitmap`]s have shared set bits.
+    ///
+    /// This is an optimized version of `(self & other) != 0000..`.
+    pub fn intersect_with(&self, other: &Self) -> bool {
+        intersect_with(self, other)
     }
 }
 

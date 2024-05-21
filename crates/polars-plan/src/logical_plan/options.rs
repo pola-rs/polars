@@ -275,6 +275,16 @@ impl Default for ProjectionOptions {
     }
 }
 
+impl ProjectionOptions {
+    /// Conservatively merge the options of two [`ProjectionOptions`]
+    pub fn merge_options(&self, other: &Self) -> Self {
+        Self {
+            run_parallel: self.run_parallel & other.run_parallel,
+            duplicate_check: self.duplicate_check & other.duplicate_check,
+        }
+    }
+}
+
 // Arguments given to `concat`. Differs from `UnionOptions` as the latter is IR state.
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

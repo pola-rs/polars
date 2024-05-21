@@ -111,6 +111,25 @@ where
     Bitmap::from_u8_vec(buffer, length)
 }
 
+/// Apply a bitwise operation `op` to two inputs and return the result as a [`Bitmap`].
+pub fn binary_fold<B, F, R>(lhs: &Bitmap, rhs: &Bitmap, op: F, init: B, fold: R) -> B
+where
+    F: Fn(u64, u64) -> B,
+    R: Fn(B, B) -> B,
+{
+    assert_eq!(lhs.len(), rhs.len());
+    let lhs_chunks = lhs.chunks();
+    let rhs_chunks = rhs.chunks();
+    let rem_lhs = lhs_chunks.remainder();
+    let rem_rhs = rhs_chunks.remainder();
+
+    let result = lhs_chunks
+        .zip(rhs_chunks)
+        .fold(init, |prev, (left, right)| fold(prev, op(left, right)));
+
+    fold(result, op(rem_lhs, rem_rhs))
+}
+
 fn unary_impl<F, I>(iter: I, op: F, length: usize) -> Bitmap
 where
     I: BitChunkIterExact<u64>,
@@ -224,6 +243,16 @@ fn eq(lhs: &Bitmap, rhs: &Bitmap) -> bool {
     let lhs_remainder = lhs_chunks.remainder_iter();
     let rhs_remainder = rhs_chunks.remainder_iter();
     lhs_remainder.zip(rhs_remainder).all(|(x, y)| x == y)
+}
+
+pub fn intersect_with(lhs: &Bitmap, rhs: &Bitmap) -> bool {
+    binary_fold(
+        lhs,
+        rhs,
+        |lhs, rhs| lhs & rhs != 0,
+        false,
+        |lhs, rhs| lhs || rhs,
+    )
 }
 
 impl PartialEq for Bitmap {
