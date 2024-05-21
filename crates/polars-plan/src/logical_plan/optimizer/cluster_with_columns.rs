@@ -172,9 +172,10 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
                 std::mem::swap(current_wc.exprs.exprs_mut(), input_wc.exprs.exprs_mut());
 
                 *current_wc.input = *input_wc.input;
-                // @TODO: Is this allowed?
-                *current_wc.options = *input_wc.options;
+                *current_wc.options = current_wc.options.merge_options(input_wc.options);
 
+                // Let us just make this node invalid so we can detect when someone tries to
+                // mention it later.
                 lp_arena.take(input);
 
                 // Since we merged the current and input nodes and the input node might have
