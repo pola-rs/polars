@@ -130,7 +130,6 @@ pub(super) fn csv_file_info(
     use polars_io::csv::read::is_compressed;
     use polars_io::csv::read::schema_inference::SchemaInferenceResult;
     use polars_io::utils::get_reader_bytes;
-    use polars_utils::try_arc_map;
     use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
     // prints the error message if paths is empty.
@@ -175,13 +174,11 @@ pub(super) fn csv_file_info(
                 match (schema_a.is_empty(), schema_b.is_empty()) {
                     (true, _) => schema_b,
                     (_, true) => schema_a,
-                    _ => try_arc_map(schema_a, |mut s| {
-                        if let Err(e) = s.to_supertype(&schema_b) {
-                            Err(e)
-                        } else {
-                            Ok(s)
-                        }
-                    })?,
+                    _ => {
+                        let mut s = Arc::unwrap_or_clone(schema_a);
+                        s.to_supertype(&schema_b)?;
+                        Arc::new(s)
+                    },
                 }
             };
 
