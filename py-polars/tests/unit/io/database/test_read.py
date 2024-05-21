@@ -344,11 +344,24 @@ def test_read_database_alchemy_selectable(tmp_sqlite_db: Path) -> None:
         t.c.value,
     ).where(t.c.value < 0)
 
+    expected = pl.DataFrame({"year": [2021], "name": ["other"], "value": [-99.5]})
+
     for conn in (alchemy_session, alchemy_engine, alchemy_conn):
         assert_frame_equal(
             pl.read_database(selectable_query, connection=conn),
-            pl.DataFrame({"year": [2021], "name": ["other"], "value": [-99.5]}),
+            expected,
         )
+
+    batches = list(
+        pl.read_database(
+            selectable_query,
+            connection=conn,
+            iter_batches=True,
+            batch_size=1,
+        )
+    )
+    assert len(batches) == 1
+    assert_frame_equal(batches[0], expected)
 
 
 def test_read_database_parameterised(tmp_sqlite_db: Path) -> None:
