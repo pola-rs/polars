@@ -98,16 +98,13 @@ features = [
 [build-dependencies]
 built = { version = "0.7", features = ["chrono", "git2", "cargo-lock"], optional = true }
 
-[target.'cfg(all(any(not(target_family = "unix"), use_mimalloc), not(default_allocator)))'.dependencies]
+[target.'cfg(all(any(not(target_family = "unix"), allocator = "mimalloc"), not(allocator = "default")))'.dependencies]
 mimalloc = { version = "0.1", default-features = false }
 
-[target.'cfg(all(target_family = "unix", not(use_mimalloc), not(default_allocator)))'.dependencies]
+[target.'cfg(all(target_family = "unix", not(allocator = "mimalloc"), not(allocator = "default")))'.dependencies]
 jemallocator = { version = "0.5", features = ["disable_initial_exec_tls"] }
 
 [features]
-default_allocator = []
-use_mimalloc = []
-
 # Features below are only there to enable building a slim binary during development.
 avro = ["polars/avro"]
 parquet = ["polars/parquet", "polars-parquet"]
