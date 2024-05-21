@@ -33,8 +33,10 @@ where
     }
 }
 
+/// # Safety
+/// `x` must be non-empty.
 #[inline]
-fn signed_interp_by<T, F>(
+unsafe fn signed_interp_by<T, F>(
     y_start: T,
     y_end: T,
     x: &[F],
@@ -52,14 +54,22 @@ fn signed_interp_by<T, F>(
     F: Sub<Output = F> + NumCast + Copy,
 {
     let range_y = y_end - y_start;
-    let range_x = NumCast::from(x[x.len() - 1] - x[0]).unwrap();
+    let x_start;
+    let range_x;
+    let iter;
+    unsafe {
+        x_start = x.get_unchecked(0);
+        range_x = NumCast::from(*x.get_unchecked(x.len() - 1) - *x_start).unwrap();
+        iter = x.slice_unchecked(1..x.len() - 1).iter();
+    }
     let slope = range_y / range_x;
-    let x_start = x[0];
-    for (offset, x_i) in (x[1..x.len() - 1]).iter().enumerate() {
-        let x_delta = NumCast::from(*x_i - x_start).unwrap();
+    for (offset, x_i) in iter.enumerate() {
+        let x_delta = NumCast::from(*x_i - *x_start).unwrap();
         let v = linear_itp(y_start, x_delta, slope);
-        let out_idx = unsafe { sorting_indices.get_unchecked(low_idx + offset + 1) };
-        unsafe { *out.get_unchecked_mut(*out_idx as usize) = v };
+        unsafe {
+            let out_idx = sorting_indices.get_unchecked(low_idx + offset + 1);
+            *out.get_unchecked_mut(*out_idx as usize) = v;
+        }
     }
 }
 
@@ -253,7 +263,7 @@ pub fn interpolate_by(s: &Series, by: &Series, by_is_sorted: bool) -> PolarsResu
         if is_sorted {
             interpolate_impl_by_sorted(ca, by, signed_interp_by_sorted).map(|x| x.into_series())
         } else {
-            interpolate_impl_by(ca, by, signed_interp_by).map(|x| x.into_series())
+            interpolate_impl_by(ca, by, safe{signed_interp_by}).map(|x| x.into_series())
         }
     }
 
