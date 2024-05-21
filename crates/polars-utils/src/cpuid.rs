@@ -27,7 +27,7 @@ fn detect_fast_bmi2() -> bool {
     }
 }
 
-#[inline]
+#[inline(always)]
 pub fn has_fast_bmi2() -> bool {
     #[cfg(target_feature = "bmi2")]
     {
