@@ -2,16 +2,13 @@ from __future__ import annotations
 
 import tempfile
 from collections import OrderedDict
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 import numpy as np
 import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 @pytest.fixture()
@@ -346,7 +343,7 @@ A,B,C
         ],
     ],
 )
-def test_file_list_schema(
+def test_file_list_schema_mismatch(
     tmp_path: Path, dfs: list[pl.DataFrame], streaming: bool
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
@@ -357,11 +354,40 @@ def test_file_list_schema(
         df.write_csv(path)
 
     lf = pl.scan_csv(paths)
-    with pytest.raises(pl.ShapeError):
-        print(f"{lf.collect(streaming=streaming) = !s}")
+    with pytest.raises(pl.ComputeError):
+        lf.collect(streaming=streaming)
 
     if len({df.width for df in dfs}) == 1:
         expect = pl.concat(df.select(x=pl.first().cast(pl.Int8)) for df in dfs)
         out = pl.scan_csv(paths, schema={"x": pl.Int8}).collect(streaming=streaming)
 
         assert_frame_equal(out, expect)
+
+
+@pytest.mark.parametrize("streaming", [True, False])
+def test_file_list_schema_supertype(tmp_path: Path, streaming: bool) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    data_lst = [
+        """\
+a
+1
+2
+""",
+        """\
+a
+b
+c
+""",
+    ]
+
+    paths = [f"{tmp_path}/{i}.csv" for i in range(len(data_lst))]
+
+    for data, path in zip(data_lst, paths):
+        with Path(path).open("w") as f:
+            f.write(data)
+
+    expect = pl.Series("a", ["1", "2", "b", "c"]).to_frame()
+    out = pl.scan_csv(paths).collect(streaming=streaming)
+
+    assert_frame_equal(out, expect)

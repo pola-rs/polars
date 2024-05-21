@@ -21,7 +21,7 @@ mod options;
 mod parser;
 mod read_impl;
 mod reader;
-mod schema_inference;
+pub mod schema_inference;
 mod splitfields;
 mod utils;
 

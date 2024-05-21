@@ -11,8 +11,96 @@ use polars_utils::slice::GetSaferUnchecked;
 use super::options::{CommentPrefix, CsvEncoding, NullValues};
 use super::parser::{is_comment_line, skip_bom, skip_line_ending, SplitLines};
 use super::splitfields::SplitFields;
+use super::CsvReadOptions;
 use crate::mmap::ReaderBytes;
 use crate::utils::{BOOLEAN_RE, FLOAT_RE, FLOAT_RE_DECIMAL, INTEGER_RE};
+
+#[derive(Clone, Debug, Default)]
+pub struct SchemaInferenceResult {
+    inferred_schema: SchemaRef,
+    rows_read: usize,
+    bytes_read: usize,
+    bytes_total: usize,
+    skip_rows: usize,
+    n_threads: Option<usize>,
+}
+
+impl SchemaInferenceResult {
+    pub fn try_from_reader_bytes_and_options(
+        reader_bytes: &ReaderBytes,
+        options: &CsvReadOptions,
+    ) -> PolarsResult<Self> {
+        let parse_options = options.get_parse_options();
+
+        let separator = parse_options.separator;
+        let infer_schema_length = options.infer_schema_length;
+        let has_header = options.has_header;
+        let schema_overwrite_arc = options.schema_overwrite.clone();
+        let schema_overwrite = schema_overwrite_arc.as_ref().map(|x| x.as_ref());
+        let mut skip_rows = options.skip_rows;
+        let skip_rows_after_header = options.skip_rows_after_header;
+        let comment_prefix = parse_options.comment_prefix.as_ref();
+        let quote_char = parse_options.quote_char;
+        let eol_char = parse_options.eol_char;
+        let null_values = parse_options.null_values.clone();
+        let try_parse_dates = parse_options.try_parse_dates;
+        let raise_if_empty = options.raise_if_empty;
+        let mut n_threads = options.n_threads;
+        let decimal_comma = parse_options.decimal_comma;
+
+        let bytes_total = reader_bytes.len();
+
+        let (inferred_schema, rows_read, bytes_read) = infer_file_schema(
+            reader_bytes,
+            separator,
+            infer_schema_length,
+            has_header,
+            schema_overwrite,
+            &mut skip_rows,
+            skip_rows_after_header,
+            comment_prefix,
+            quote_char,
+            eol_char,
+            null_values.as_ref(),
+            try_parse_dates,
+            raise_if_empty,
+            &mut n_threads,
+            decimal_comma,
+        )?;
+
+        let this = Self {
+            inferred_schema: Arc::new(inferred_schema),
+            rows_read,
+            bytes_read,
+            bytes_total,
+            skip_rows,
+            n_threads,
+        };
+
+        Ok(this)
+    }
+
+    pub fn with_inferred_schema(mut self, inferred_schema: SchemaRef) -> Self {
+        self.inferred_schema = inferred_schema;
+        self
+    }
+
+    pub fn get_inferred_schema(&self) -> SchemaRef {
+        self.inferred_schema.clone()
+    }
+
+    pub fn get_estimated_n_rows(&self) -> usize {
+        (self.rows_read as f64 / self.bytes_read as f64 * self.bytes_total as f64) as usize
+    }
+}
+
+impl CsvReadOptions {
+    /// Note: This does not update the schema from the inference result.
+    pub fn update_with_inference_result(&mut self, si_result: &SchemaInferenceResult) {
+        self.skip_rows = si_result.skip_rows;
+        self.n_threads = si_result.n_threads;
+    }
+}
 
 /// Infer the data type of a record
 fn infer_field_schema(string: &str, try_parse_dates: bool, decimal_comma: bool) -> DataType {
