@@ -57,17 +57,43 @@ def test_selector_all(df: pl.DataFrame) -> None:
 
 def test_selector_alpha() -> None:
     df = pl.DataFrame(
-        schema=["Hello123", "こんにちは (^_^)", "مرحبا", "你好!", "World"],
+        schema=["Hello 123", "こんにちは (^_^)", "مرحبا", "你好!", "World"],
     )
     # alphabetical-only (across all languages)
     assert expand_selector(df, cs.alpha()) == ("مرحبا", "World")
     assert expand_selector(df, cs.alpha(ascii_only=True)) == ("World",)
-    assert expand_selector(df, ~cs.alpha()) == ("Hello123", "こんにちは (^_^)", "你好!")
+    assert expand_selector(df, ~cs.alpha()) == (
+        "Hello 123",
+        "こんにちは (^_^)",
+        "你好!",
+    )
+    assert expand_selector(df, ~cs.alpha(ignore_spaces=True)) == (
+        "Hello 123",
+        "こんにちは (^_^)",
+        "你好!",
+    )
 
     # alphanumeric-only (across all languages)
-    assert expand_selector(df, cs.alphanumeric()) == ("Hello123", "مرحبا", "World")
-    assert expand_selector(df, cs.alphanumeric(True)) == ("Hello123", "World")
-    assert expand_selector(df, ~cs.alphanumeric()) == ("こんにちは (^_^)", "你好!")
+    assert expand_selector(df, cs.alphanumeric(True)) == ("World",)
+    assert expand_selector(df, ~cs.alphanumeric()) == (
+        "Hello 123",
+        "こんにちは (^_^)",
+        "你好!",
+    )
+    assert expand_selector(df, ~cs.alphanumeric(True, ignore_spaces=True)) == (
+        "こんにちは (^_^)",
+        "مرحبا",
+        "你好!",
+    )
+    assert expand_selector(df, cs.alphanumeric(ignore_spaces=True)) == (
+        "Hello 123",
+        "مرحبا",
+        "World",
+    )
+    assert expand_selector(df, ~cs.alphanumeric(ignore_spaces=True)) == (
+        "こんにちは (^_^)",
+        "你好!",
+    )
 
 
 def test_selector_by_dtype(df: pl.DataFrame) -> None:
@@ -298,6 +324,10 @@ def test_selector_digit() -> None:
     df = pl.DataFrame(schema=["Portfolio", "Year", "2000", "2010", "2020", "✌️"])
     assert expand_selector(df, cs.digit()) == ("2000", "2010", "2020")
     assert expand_selector(df, ~cs.digit()) == ("Portfolio", "Year", "✌️")
+
+    df = pl.DataFrame({"১৯৯৯": [1999], "২০৭৭": [2077], "3000": [3000]})
+    assert expand_selector(df, cs.digit()) == tuple(df.columns)
+    assert expand_selector(df, cs.digit(ascii_only=True)) == ("3000",)
 
 
 def test_selector_drop(df: pl.DataFrame) -> None:

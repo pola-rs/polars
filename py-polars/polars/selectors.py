@@ -465,8 +465,8 @@ def all() -> SelectorType:
     return _selector_proxy_(F.all(), name="all")
 
 
-def alpha(ascii_only: bool = False) -> SelectorType:  # noqa: FBT001
-    """
+def alpha(ascii_only: bool = False, *, ignore_spaces: bool = False) -> SelectorType:  # noqa: FBT001
+    r"""
     Select all columns with alphabetic names (eg: only letters).
 
     Parameters
@@ -474,12 +474,16 @@ def alpha(ascii_only: bool = False) -> SelectorType:  # noqa: FBT001
     ascii_only
         Indicate whether to consider only ASCII alphabetic characters, or the full
         Unicode range of valid letters (accented, idiographic, etc).
+    ignore_spaces
+        Indicate whether to ignore the presence of spaces in column names; if so,
+        only the other (non-space) characters are considered.
 
     Notes
     -----
     Matching column names cannot contain *any* non-alphabetic characters. Note
     that the definition of "alphabetic" consists of all valid Unicode alphabetic
-    characters by default; this can be changed by setting `ascii_only=True`.
+    characters (`\p{Alphabetic}`) by default; this can be changed by setting
+    `ascii_only=True`.
 
     Examples
     --------
@@ -489,7 +493,7 @@ def alpha(ascii_only: bool = False) -> SelectorType:  # noqa: FBT001
     ...     {
     ...         "no1": [100, 200, 300],
     ...         "café": ["espresso", "latte", "mocha"],
-    ...         "t/f": [True, False, None],
+    ...         "t or f": [True, False, None],
     ...         "hmm": ["aaa", "bbb", "ccc"],
     ...         "都市": ["東京", "大阪", "京都"],
     ...     }
@@ -524,30 +528,60 @@ def alpha(ascii_only: bool = False) -> SelectorType:  # noqa: FBT001
     │ ccc │
     └─────┘
 
+    >>> df.select(cs.alpha(ascii_only=True, ignore_spaces=True))
+    shape: (3, 2)
+    ┌────────┬─────┐
+    │ t or f ┆ hmm │
+    │ ---    ┆ --- │
+    │ bool   ┆ str │
+    ╞════════╪═════╡
+    │ true   ┆ aaa │
+    │ false  ┆ bbb │
+    │ null   ┆ ccc │
+    └────────┴─────┘
+
     Select all columns *except* for those with alphabetic names:
 
     >>> df.select(~cs.alpha())
     shape: (3, 2)
-    ┌─────┬───────┐
-    │ no1 ┆ t/f   │
-    │ --- ┆ ---   │
-    │ i64 ┆ bool  │
-    ╞═════╪═══════╡
-    │ 100 ┆ true  │
-    │ 200 ┆ false │
-    │ 300 ┆ null  │
-    └─────┴───────┘
+    ┌─────┬────────┐
+    │ no1 ┆ t or f │
+    │ --- ┆ ---    │
+    │ i64 ┆ bool   │
+    ╞═════╪════════╡
+    │ 100 ┆ true   │
+    │ 200 ┆ false  │
+    │ 300 ┆ null   │
+    └─────┴────────┘
+
+    >>> df.select(~cs.alpha(ignore_spaces=True))
+    shape: (3, 1)
+    ┌─────┐
+    │ no1 │
+    │ --- │
+    │ i64 │
+    ╞═════╡
+    │ 100 │
+    │ 200 │
+    │ 300 │
+    └─────┘
     """
+    # note that we need to supply a pattern compatible with the *rust* regex crate
     re_alpha = r"a-zA-Z" if ascii_only else r"\p{Alphabetic}"
+    re_space = " " if ignore_spaces else ""
     return _selector_proxy_(
-        F.col(f"^[{re_alpha}]+$"),
+        F.col(f"^[{re_alpha}{re_space}]+$"),
         name="alpha",
-        parameters={"ascii_only": ascii_only},
+        parameters={"ascii_only": ascii_only, "ignore_spaces": ignore_spaces},
     )
 
 
-def alphanumeric(ascii_only: bool = False) -> SelectorType:  # noqa: FBT001
-    """
+def alphanumeric(
+    ascii_only: bool = False,  # noqa: FBT001
+    *,
+    ignore_spaces: bool = False,
+) -> SelectorType:
+    r"""
     Select all columns with alphanumeric names (eg: only letters and the digits 0-9).
 
     Parameters
@@ -555,12 +589,16 @@ def alphanumeric(ascii_only: bool = False) -> SelectorType:  # noqa: FBT001
     ascii_only
         Indicate whether to consider only ASCII alphabetic characters, or the full
         Unicode range of valid letters (accented, idiographic, etc).
+    ignore_spaces
+        Indicate whether to ignore the presence of spaces in column names; if so,
+        only the other (non-space) characters are considered.
 
     Notes
     -----
     Matching column names cannot contain *any* non-alphabetic or integer characters.
     Note that the definition of "alphabetic" consists of all valid Unicode alphabetic
-    characters by default; this can be changed by setting `ascii_only=True`.
+    characters (`\p{Alphabetic}`) and digit characters (`\d`) by default; this
+    can be changed by setting `ascii_only=True`.
 
     Examples
     --------
@@ -568,9 +606,10 @@ def alphanumeric(ascii_only: bool = False) -> SelectorType:  # noqa: FBT001
     >>> import polars.selectors as cs
     >>> df = pl.DataFrame(
     ...     {
-    ...         "1st_value": [100, 200, 300],
+    ...         "1st_col": [100, 200, 300],
     ...         "flagged": [True, False, True],
     ...         "00prefix": ["01:aa", "02:bb", "03:cc"],
+    ...         "last col": ["x", "y", "z"],
     ...     }
     ... )
 
@@ -588,25 +627,52 @@ def alphanumeric(ascii_only: bool = False) -> SelectorType:  # noqa: FBT001
     │ true    ┆ 03:cc    │
     └─────────┴──────────┘
 
+    >>> df.select(cs.alphanumeric(ignore_spaces=True))
+    shape: (3, 3)
+    ┌─────────┬──────────┬──────────┐
+    │ flagged ┆ 00prefix ┆ last col │
+    │ ---     ┆ ---      ┆ ---      │
+    │ bool    ┆ str      ┆ str      │
+    ╞═════════╪══════════╪══════════╡
+    │ true    ┆ 01:aa    ┆ x        │
+    │ false   ┆ 02:bb    ┆ y        │
+    │ true    ┆ 03:cc    ┆ z        │
+    └─────────┴──────────┴──────────┘
+
     Select all columns *except* for those with alphanumeric names:
 
     >>> df.select(~cs.alphanumeric())
+    shape: (3, 2)
+    ┌─────────┬──────────┐
+    │ 1st_col ┆ last col │
+    │ ---     ┆ ---      │
+    │ i64     ┆ str      │
+    ╞═════════╪══════════╡
+    │ 100     ┆ x        │
+    │ 200     ┆ y        │
+    │ 300     ┆ z        │
+    └─────────┴──────────┘
+
+    >>> df.select(~cs.alphanumeric(ignore_spaces=True))
     shape: (3, 1)
-    ┌───────────┐
-    │ 1st_value │
-    │ ---       │
-    │ i64       │
-    ╞═══════════╡
-    │ 100       │
-    │ 200       │
-    │ 300       │
-    └───────────┘
+    ┌─────────┐
+    │ 1st_col │
+    │ ---     │
+    │ i64     │
+    ╞═════════╡
+    │ 100     │
+    │ 200     │
+    │ 300     │
+    └─────────┘
     """
+    # note that we need to supply patterns compatible with the *rust* regex crate
     re_alpha = r"a-zA-Z" if ascii_only else r"\p{Alphabetic}"
+    re_digit = "0-9" if ascii_only else r"\d"
+    re_space = " " if ignore_spaces else ""
     return _selector_proxy_(
-        F.col(f"^[{re_alpha}0-9]+$"),
+        F.col(f"^[{re_alpha}{re_digit}{re_space}]+$"),
         name="alphanumeric",
-        parameters={"ascii_only": ascii_only},
+        parameters={"ascii_only": ascii_only, "ignore_spaces": ignore_spaces},
     )
 
 
@@ -1363,9 +1429,15 @@ def decimal() -> SelectorType:
     return _selector_proxy_(F.col(Decimal), name="decimal")
 
 
-def digit() -> SelectorType:
-    """
-    Select all columns having names consisting only of digits (eg: integer 0-9).
+def digit(*, ascii_only: bool = False) -> SelectorType:
+    r"""
+    Select all columns having names consisting only of digits.
+
+    Notes
+    -----
+    Matching column names cannot contain *any* non-digit characters. Note that the
+    definition of "digit" consists of all valid Unicode digit characters (`\d`)
+    by default; this can be changed by setting `ascii_only=True`.
 
     Examples
     --------
@@ -1419,8 +1491,33 @@ def digit() -> SelectorType:
     │ aaa │
     │ bbb │
     └─────┘
+
+    Demonstrate use of `ascii_only` flag (by default all valid unicode digits
+    are considered, but this can be constrained to ascii 0-9):
+
+    >>> df = pl.DataFrame({"१९९९": [1999], "२०७७": [2077], "3000": [3000]})
+    >>> df.select(cs.digit())
+    shape: (1, 3)
+    ┌──────┬──────┬──────┐
+    │ १९९९ ┆ २०७७ ┆ 3000 │
+    │ ---  ┆ ---  ┆ ---  │
+    │ i64  ┆ i64  ┆ i64  │
+    ╞══════╪══════╪══════╡
+    │ 1999 ┆ 2077 ┆ 3000 │
+    └──────┴──────┴──────┘
+
+    >>> df.select(cs.digit(ascii_only=True))
+    shape: (1, 1)
+    ┌──────┐
+    │ 3000 │
+    │ ---  │
+    │ i64  │
+    ╞══════╡
+    │ 3000 │
+    └──────┘
     """
-    return _selector_proxy_(F.col(r"^\d+$"), name="digit")
+    re_digit = r"[0-9]" if ascii_only else r"\d"
+    return _selector_proxy_(F.col(rf"^{re_digit}+$"), name="digit")
 
 
 def duration(
