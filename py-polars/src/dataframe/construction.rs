@@ -2,9 +2,9 @@ use polars::frame::row::{rows_to_schema_supertypes, rows_to_supertypes, Row};
 use pyo3::prelude::*;
 
 use super::*;
-use crate::arrow_interop;
 use crate::conversion::any_value::py_object_to_any_value;
 use crate::conversion::{vec_extract_wrapped, Wrap};
+use crate::interop;
 
 #[pymethods]
 impl PyDataFrame {
@@ -49,7 +49,7 @@ impl PyDataFrame {
 
     #[staticmethod]
     pub fn from_arrow_record_batches(rb: Vec<Bound<PyAny>>) -> PyResult<Self> {
-        let df = arrow_interop::to_rust::to_rust_df(&rb)?;
+        let df = interop::arrow::to_rust::to_rust_df(&rb)?;
         Ok(Self::from(df))
     }
 }

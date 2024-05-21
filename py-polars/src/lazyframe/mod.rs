@@ -17,10 +17,10 @@ use pyo3::pybacked::{PyBackedBytes, PyBackedStr};
 use pyo3::types::{PyBytes, PyDict, PyList};
 pub(crate) use visit::PyExprIR;
 
-use crate::arrow_interop::to_rust::pyarrow_schema_to_rust;
 use crate::error::PyPolarsErr;
 use crate::expr::ToExprs;
 use crate::file::get_file_like;
+use crate::interop::arrow::to_rust::pyarrow_schema_to_rust;
 use crate::lazyframe::visit::NodeTraverser;
 use crate::prelude::*;
 use crate::{PyDataFrame, PyExpr, PyLazyGroupBy};

@@ -11,7 +11,6 @@ mod build {
 }
 
 mod allocator;
-mod arrow_interop;
 #[cfg(feature = "csv")]
 mod batched_csv;
 mod conversion;
@@ -22,6 +21,7 @@ mod expr;
 mod file;
 mod functions;
 mod gil_once_cell;
+mod interop;
 mod lazyframe;
 mod lazygroupby;
 mod map;
@@ -36,7 +36,6 @@ mod py_modules;
 mod series;
 #[cfg(feature = "sql")]
 mod sql;
-mod to_numpy;
 mod utils;
 
 use pyo3::panic::PanicException;
