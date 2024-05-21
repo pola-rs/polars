@@ -217,6 +217,10 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
 
             *current_wc.exprs.exprs_mut() = current_exprs;
 
+            let options = current_wc.options.merge_options(input_wc.options);
+            *current_wc.options = options;
+            *input_wc.options = options;
+
             // @NOTE: Here we add a simple projection to make sure that the output still
             // has the right schema.
             if needs_simple_projection {
