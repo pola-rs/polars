@@ -695,3 +695,10 @@ def test_resolved_names_15442() -> None:
 def test_list_sum_bool_schema() -> None:
     q = pl.LazyFrame({"x": [[True, True, False]]})
     assert q.select(pl.col("x").list.sum()).schema["x"] == pl.UInt32
+
+
+@pytest.mark.parametrize("op", ["and_", "or_"])
+def test_bitwise_integral_schema(op: str) -> None:
+    df = pl.LazyFrame({"a": [1, 2], "b": [3, 4]})
+    q = df.select(getattr(pl.col("a"), op)(pl.col("b")))
+    assert q.schema["a"] == df.schema["a"]
