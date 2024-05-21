@@ -10,6 +10,8 @@ from numpy.testing import assert_array_equal, assert_equal
 import polars as pl
 
 if TYPE_CHECKING:
+    import numpy.typing as npt
+
     from polars.type_aliases import IndexOrder
 
 
@@ -152,7 +154,7 @@ def test_df_to_numpy_structured_not_zero_copy() -> None:
 
 def test_df_to_numpy_writable_not_zero_copy() -> None:
     df = pl.DataFrame({"a": [1, 2]})
-    msg = "cannot create writable array without copying data"
+    msg = "copy not allowed: cannot create a writable array without copying data"
     with pytest.raises(RuntimeError, match=msg):
         df.to_numpy(allow_copy=False, writable=True)
 
@@ -161,3 +163,21 @@ def test_df_to_numpy_not_zero_copy() -> None:
     df = pl.DataFrame({"a": [1, 2, None]})
     with pytest.raises(RuntimeError):
         df.to_numpy(allow_copy=False)
+
+
+@pytest.mark.parametrize(
+    ("schema", "expected_dtype"),
+    [
+        ({"a": pl.Int8, "b": pl.Int8}, np.int8),
+        ({"a": pl.Int8, "b": pl.UInt16}, np.int32),
+        ({"a": pl.Int8, "b": pl.String}, np.object_),
+    ],
+)
+def test_df_to_numpy_empty_dtype_viewable(
+    schema: dict[str, pl.PolarsDataType], expected_dtype: npt.DTypeLike
+) -> None:
+    df = pl.DataFrame(schema=schema)
+    result = df.to_numpy(allow_copy=False)
+    assert result.shape == (0, 2)
+    assert result.dtype == expected_dtype
+    assert result.flags.writeable is True

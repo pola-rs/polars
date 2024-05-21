@@ -1565,14 +1565,10 @@ class DataFrame:
         rec.array([(1, 6.5, 'a'), (2, 7. , 'b'), (3, 8.5, 'c')],
                   dtype=[('foo', 'u1'), ('bar', '<f4'), ('ham', '<U1')])
         """
-
-        def raise_on_copy(msg: str) -> None:
-            if not allow_copy and not self.is_empty():
-                msg = f"copy not allowed: {msg}"
-                raise RuntimeError(msg)
-
         if structured:
-            raise_on_copy("cannot create structured array without copying data")
+            if not allow_copy and not self.is_empty():
+                msg = "copy not allowed: cannot create structured array without copying data"
+                raise RuntimeError(msg)
 
             arrays = []
             struct_dtype = []
@@ -1588,28 +1584,7 @@ class DataFrame:
                 out[c] = arrays[idx]
             return out
 
-        if order == "fortran":
-            array = self._df.to_numpy_view()
-            if array is not None:
-                if writable and not array.flags.writeable:
-                    raise_on_copy("cannot create writable array without copying data")
-                    array = array.copy()
-                return array
-
-        raise_on_copy(
-            "only numeric data without nulls in Fortran-like order can be converted without copy"
-        )
-
-        out = self._df.to_numpy(order)
-        if out is None:
-            return np.vstack(
-                [
-                    self.to_series(i).to_numpy(use_pyarrow=use_pyarrow)
-                    for i in range(self.width)
-                ]
-            ).T
-
-        return out
+        return self._df.to_numpy(order, writable=writable, allow_copy=allow_copy)
 
     @overload
     def to_jax(

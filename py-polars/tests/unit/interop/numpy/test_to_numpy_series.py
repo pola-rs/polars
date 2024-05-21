@@ -26,7 +26,7 @@ def assert_zero_copy(s: pl.Series, arr: np.ndarray[Any, Any]) -> None:
 
 
 def assert_allow_copy_false_raises(s: pl.Series) -> None:
-    with pytest.raises(ValueError, match="cannot return a zero-copy array"):
+    with pytest.raises(RuntimeError, match="copy not allowed"):
         s.to_numpy(use_pyarrow=False, allow_copy=False)
 
 
