@@ -3,7 +3,16 @@ from __future__ import annotations
 from datetime import timezone
 from functools import reduce
 from operator import or_
-from typing import TYPE_CHECKING, Any, Collection, Literal, Mapping, Sequence, overload
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Collection,
+    Literal,
+    Mapping,
+    NoReturn,
+    Sequence,
+    overload,
+)
 
 from polars import functions as F
 from polars._utils.deprecation import deprecate_nonkeyword_arguments
@@ -71,7 +80,7 @@ def is_selector(obj: Any) -> bool:
 
 def expand_selector(
     target: DataFrame | LazyFrame | Mapping[str, PolarsDataType],
-    selector: SelectorType,
+    selector: SelectorType | Expr,
 ) -> tuple[str, ...]:
     """
     Expand a selector to column names with respect to a specific frame or schema target.
@@ -267,9 +276,9 @@ class _selector_proxy_(Expr):
 
     def __invert__(self) -> Self:
         """Invert the selector."""
-        if hasattr(self, "_attrs"):
+        if is_selector(self):
             inverted = all() - self
-            inverted._repr_override = f"~{self!r}"  # type: ignore[attr-defined]
+            inverted._repr_override = f"~{self!r}"
         else:
             inverted = ~self.as_expr()
         return inverted  # type: ignore[return-value]
@@ -292,7 +301,13 @@ class _selector_proxy_(Expr):
                 ).rstrip(",")
                 return f"cs.{selector_name}({str_params})"
 
-    def __sub__(self, other: Any) -> SelectorType | Expr:  # type: ignore[override]
+    @overload  # type: ignore[override]
+    def __sub__(self, other: SelectorType) -> SelectorType: ...
+
+    @overload
+    def __sub__(self, other: Any) -> SelectorType | Expr: ...
+
+    def __sub__(self, other: Any) -> Expr:
         if is_selector(other):
             return _selector_proxy_(
                 self.meta._as_selector().meta._selector_sub(other),
@@ -302,11 +317,17 @@ class _selector_proxy_(Expr):
         else:
             return self.as_expr().__sub__(other)
 
-    def __rsub__(self, other: Any) -> SelectorType | Expr:  # type: ignore[override]
+    def __rsub__(self, other: Any) -> NoReturn:
         msg = "unsupported operand type(s) for op: ('Expr' - 'Selector')"
         raise TypeError(msg)
 
-    def __and__(self, other: Any) -> SelectorType | Expr:  # type: ignore[override]
+    @overload  # type: ignore[override]
+    def __and__(self, other: SelectorType) -> SelectorType: ...
+
+    @overload
+    def __and__(self, other: Any) -> Expr: ...
+
+    def __and__(self, other: Any) -> SelectorType | Expr:
         if is_column(other):
             colname = other.meta.output_name()
             if self._attrs["name"] == "by_name" and (
@@ -323,7 +344,13 @@ class _selector_proxy_(Expr):
         else:
             return self.as_expr().__and__(other)
 
-    def __or__(self, other: Any) -> SelectorType | Expr:  # type: ignore[override]
+    @overload  # type: ignore[override]
+    def __or__(self, other: SelectorType) -> SelectorType: ...
+
+    @overload
+    def __or__(self, other: Any) -> Expr: ...
+
+    def __or__(self, other: Any) -> SelectorType | Expr:
         if is_column(other):
             other = by_name(other.meta.output_name())
         if is_selector(other):
@@ -335,7 +362,7 @@ class _selector_proxy_(Expr):
         else:
             return self.as_expr().__or__(other)
 
-    def __rand__(self, other: Any) -> SelectorType | Expr:  # type: ignore[override]
+    def __rand__(self, other: Any) -> Expr:  # type: ignore[override]
         if is_column(other):
             colname = other.meta.output_name()
             if self._attrs["name"] == "by_name" and (
@@ -345,7 +372,7 @@ class _selector_proxy_(Expr):
             other = by_name(colname)
         return self.as_expr().__rand__(other)
 
-    def __ror__(self, other: Any) -> SelectorType | Expr:  # type: ignore[override]
+    def __ror__(self, other: Any) -> Expr:  # type: ignore[override]
         if is_column(other):
             other = by_name(other.meta.output_name())
         return self.as_expr().__ror__(other)
@@ -1429,7 +1456,7 @@ def decimal() -> SelectorType:
     return _selector_proxy_(F.col(Decimal), name="decimal")
 
 
-def digit(*, ascii_only: bool = False) -> SelectorType:
+def digit(ascii_only: bool = False) -> SelectorType:  # noqa: FBT001
     r"""
     Select all columns having names consisting only of digits.
 

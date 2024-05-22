@@ -328,6 +328,7 @@ def test_selector_digit() -> None:
     df = pl.DataFrame({"১৯৯৯": [1999], "২০৭৭": [2077], "3000": [3000]})
     assert expand_selector(df, cs.digit()) == tuple(df.columns)
     assert expand_selector(df, cs.digit(ascii_only=True)) == ("3000",)
+    assert expand_selector(df, (cs.digit() - cs.digit(True))) == ("১৯৯৯", "২০৭৭")
 
 
 def test_selector_drop(df: pl.DataFrame) -> None:
