@@ -61,6 +61,20 @@ _INVALID_QUERY_TYPES = {
 }
 
 
+class CloseAfterFrameIter:
+    """Allows cursor close to be deferred until the last batch is returned."""
+
+    def __init__(self, frames: Any, *, cursor: Cursor) -> None:
+        self._iter_frames = frames
+        self._cursor = cursor
+
+    def __iter__(self) -> Iterable[DataFrame]:
+        yield from self._iter_frames
+
+        if hasattr(self._cursor, "close"):
+            self._cursor.close()
+
+
 class ConnectionExecutor:
     """Abstraction for querying databases with user-supplied connection objects."""
 
@@ -453,6 +467,11 @@ class ConnectionExecutor:
             )
             raise ValueError(msg)
 
+        can_close = self.can_close_cursor
+
+        if defer_cursor_close := (iter_batches and can_close):
+            self.can_close_cursor = False
+
         for frame_init in (
             self._from_arrow,  # init from arrow-native data (where support exists)
             self._from_rows,  # row-wise fallback (sqlalchemy, dbapi2, pyodbc, etc)
@@ -464,6 +483,14 @@ class ConnectionExecutor:
                 infer_schema_length=infer_schema_length,
             )
             if frame is not None:
+                if defer_cursor_close:
+                    frame = (
+                        df
+                        for df in CloseAfterFrameIter(  # type: ignore[attr-defined]
+                            frame,
+                            cursor=self.result,
+                        )
+                    )
                 return frame
 
         msg = (
