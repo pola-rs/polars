@@ -156,12 +156,12 @@ def concat(
             msg = "'align' strategy requires at least one common column"
             raise InvalidOperationError(msg)
 
-        # align the frame data using an outer join with no suffix-resolution
+        # align the frame data using a full outer join with no suffix-resolution
         # (so we raise an error in case of column collision, like "horizontal")
         lf: LazyFrame = reduce(
             lambda x, y: (
-                x.join(y, how="outer", on=common_cols, suffix="_PL_CONCAT_RIGHT")
-                # Coalesce outer join columns
+                x.join(y, how="full", on=common_cols, suffix="_PL_CONCAT_RIGHT")
+                # Coalesce full outer join columns
                 .with_columns(
                     [
                         F.coalesce([name, f"{name}_PL_CONCAT_RIGHT"])
@@ -262,7 +262,7 @@ def concat(
 def _alignment_join(
     *idx_frames: tuple[int, LazyFrame],
     align_on: list[str],
-    how: JoinStrategy = "outer",
+    how: JoinStrategy = "full",
     descending: bool | Sequence[bool] = False,
 ) -> LazyFrame:
     """Create a single master frame with all rows aligned on the common key values."""
@@ -286,7 +286,7 @@ def _alignment_join(
 def align_frames(
     *frames: FrameType,
     on: str | Expr | Sequence[str] | Sequence[Expr] | Sequence[str | Expr],
-    how: JoinStrategy = "outer",
+    how: JoinStrategy = "full",
     select: str | Expr | Sequence[str | Expr] | None = None,
     descending: bool | Sequence[bool] = False,
 ) -> list[FrameType]:

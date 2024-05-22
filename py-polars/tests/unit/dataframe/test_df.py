@@ -2294,7 +2294,7 @@ def test_join_suffixes() -> None:
     df_a = pl.DataFrame({"A": [1], "B": [1]})
     df_b = pl.DataFrame({"A": [1], "B": [1]})
 
-    join_strategies: list[JoinStrategy] = ["left", "inner", "outer", "cross"]
+    join_strategies: list[JoinStrategy] = ["left", "inner", "full", "cross"]
     for how in join_strategies:
         # no need for an assert, we error if wrong
         df_a.join(df_b, on="A", suffix="_y", how=how)["B_y"]

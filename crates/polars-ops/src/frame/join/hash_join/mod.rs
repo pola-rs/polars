@@ -242,7 +242,7 @@ pub trait JoinDispatch: IntoDf {
         // indices are in bounds
         Ok(unsafe { ca_self._finish_anti_semi_join(&idx, slice) })
     }
-    fn _outer_join_from_series(
+    fn _full_join_from_series(
         &self,
         other: &DataFrame,
         s_left: &Series,
@@ -271,10 +271,10 @@ pub trait JoinDispatch: IntoDf {
             || unsafe { other.take_unchecked(&idx_ca_r) },
         );
 
-        let coalesce = args.coalesce.coalesce(&JoinType::Outer);
+        let coalesce = args.coalesce.coalesce(&JoinType::Full);
         let out = _finish_join(df_left, df_right, args.suffix.as_deref());
         if coalesce {
-            Ok(_coalesce_outer_join(
+            Ok(_coalesce_full_join(
                 out?,
                 &[s_left.name()],
                 &[s_right.name()],

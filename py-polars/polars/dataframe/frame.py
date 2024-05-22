@@ -6547,7 +6547,7 @@ class DataFrame:
             DataFrame to join with.
         on
             Name(s) of the join columns in both DataFrames.
-        how : {'inner', 'left', 'outer', 'semi', 'anti', 'cross', 'outer_coalesce'}
+        how : {'inner', 'left', 'full', 'semi', 'anti', 'cross'}
             Join strategy.
 
             * *inner*
@@ -6555,10 +6555,8 @@ class DataFrame:
             * *left*
                 Returns all rows from the left table, and the matched rows from the
                 right table
-            * *outer*
+            * *full*
                  Returns all rows when there is a match in either left or right table
-            * *outer_coalesce*
-                 Same as 'outer', but coalesces the key columns
             * *cross*
                  Returns the Cartesian product of rows from both tables
             * *semi*
@@ -6631,7 +6629,7 @@ class DataFrame:
         │ 2   ┆ 7.0 ┆ b   ┆ y     │
         └─────┴─────┴─────┴───────┘
 
-        >>> df.join(other_df, on="ham", how="outer")
+        >>> df.join(other_df, on="ham", how="full")
         shape: (4, 5)
         ┌──────┬──────┬──────┬───────┬───────────┐
         │ foo  ┆ bar  ┆ ham  ┆ apple ┆ ham_right │
@@ -10666,7 +10664,7 @@ class DataFrame:
         self,
         other: DataFrame,
         on: str | Sequence[str] | None = None,
-        how: Literal["left", "inner", "outer"] = "left",
+        how: Literal["left", "inner", "full"] = "left",
         *,
         left_on: str | Sequence[str] | None = None,
         right_on: str | Sequence[str] | None = None,
@@ -10690,11 +10688,11 @@ class DataFrame:
         on
             Column names that will be joined on. If set to `None` (default),
             the implicit row index of each frame is used as a join key.
-        how : {'left', 'inner', 'outer'}
+        how : {'left', 'inner', 'full'}
             * 'left' will keep all rows from the left table; rows may be duplicated
               if multiple rows in the right frame match the left row's key.
             * 'inner' keeps only those rows where the key exists in both frames.
-            * 'outer' will update existing rows where the key matches while also
+            * 'full' will update existing rows where the key matches while also
               adding any new rows contained in the given frame.
         left_on
            Join column(s) of the left DataFrame.
@@ -10766,10 +10764,10 @@ class DataFrame:
         │ 3   ┆ -99 │
         └─────┴─────┘
 
-        Update `df` values with the non-null values in `new_df`, using an outer join
-        strategy that defines explicit join columns in each frame:
+        Update `df` values with the non-null values in `new_df`, using a full
+        outer join strategy that defines explicit join columns in each frame:
 
-        >>> df.update(new_df, left_on=["A"], right_on=["C"], how="outer")
+        >>> df.update(new_df, left_on=["A"], right_on=["C"], how="full")
         shape: (5, 2)
         ┌─────┬─────┐
         │ A   ┆ B   │
@@ -10783,12 +10781,10 @@ class DataFrame:
         │ 5   ┆ -66 │
         └─────┴─────┘
 
-        Update `df` values including null values in `new_df`, using an outer join
-        strategy that defines explicit join columns in each frame:
+        Update `df` values including null values in `new_df`, using a full outer
+        join strategy that defines explicit join columns in each frame:
 
-        >>> df.update(
-        ...     new_df, left_on="A", right_on="C", how="outer", include_nulls=True
-        ... )
+        >>> df.update(new_df, left_on="A", right_on="C", how="full", include_nulls=True)
         shape: (5, 2)
         ┌─────┬──────┐
         │ A   ┆ B    │

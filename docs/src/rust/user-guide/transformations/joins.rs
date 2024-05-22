@@ -50,33 +50,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("{}", &df_left_join);
     // --8<-- [end:left]
 
-    // --8<-- [start:outer]
-    let df_outer_join = df_customers
+    // --8<-- [start:full]
+    let df_full_join = df_customers
         .clone()
         .lazy()
         .join(
             df_orders.clone().lazy(),
             [col("customer_id")],
             [col("customer_id")],
-            JoinArgs::new(JoinType::Outer),
+            JoinArgs::new(JoinType::Full),
         )
         .collect()?;
-    println!("{}", &df_outer_join);
-    // --8<-- [end:outer]
+    println!("{}", &df_full_join);
+    // --8<-- [end:full]
 
-    // --8<-- [start:outer_coalesce]
-    let df_outer_join = df_customers
+    // --8<-- [start:full_coalesce]
+    let df_full_join = df_customers
         .clone()
         .lazy()
         .join(
             df_orders.clone().lazy(),
             [col("customer_id")],
             [col("customer_id")],
-            JoinArgs::new(JoinType::Outer),
+            JoinArgs::new(JoinType::Full),
         )
         .collect()?;
-    println!("{}", &df_outer_join);
-    // --8<-- [end:outer_coalesce]
+    println!("{}", &df_full_join);
+    // --8<-- [end:full_coalesce]
 
     // --8<-- [start:df3]
     let df_colors = df!(

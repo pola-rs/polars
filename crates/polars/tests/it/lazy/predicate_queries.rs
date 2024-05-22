@@ -164,7 +164,7 @@ fn test_predicate_pushdown_blocked_by_outer_join() -> PolarsResult<()> {
         "b" => ["b2", "b3"],
         "c" => ["c2", "c3"]
     }?;
-    let df = df1.lazy().outer_join(df2.lazy(), col("b"), col("b"));
+    let df = df1.lazy().full_join(df2.lazy(), col("b"), col("b"));
     let out = df.filter(col("a").eq(lit("a1"))).collect()?;
     let null: Option<&str> = None;
     let expected = df![
