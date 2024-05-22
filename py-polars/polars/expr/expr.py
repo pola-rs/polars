@@ -4616,12 +4616,6 @@ class Expr:
             consider :meth:`.with_columns <polars.DataFrame.with_columns>`
             and :meth:`.with_fields <polars.Expr.struct.with_fields>`.
 
-            >>> new_expr = pl.col("col_name").sqrt()
-            >>> df.with_columns(new_expr)
-
-            >>> new_expr = pl.col("col_name").struct.field("field_name").sqrt()
-            >>> df.with_columns(pl.col("col_name").struct.with_fields(new_expr))
-
         The UDF is applied to each element of a column. Note that, in a GroupBy
         context, the column will have been pre-aggregated and so each element
         will itself be a Series. Therefore, depending on the context,
