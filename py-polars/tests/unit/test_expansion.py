@@ -131,3 +131,10 @@ def test_struct_field_expand_star() -> None:
     )
     struct_df = df.select(pl.struct(["aaa", "bbb", "ccc", "ddd"]).alias("struct_col"))
     assert_frame_equal(struct_df.select(pl.col("struct_col").struct.field("*")), df)
+
+
+def test_struct_field_expand_rewrite() -> None:
+    df = pl.DataFrame({"A": [1], "B": [2]})
+    assert df.select(
+        pl.struct(["A", "B"]).struct.field("*").name.prefix("foo_")
+    ).to_dict(as_series=False) == {"foo_A": [1], "foo_B": [2]}
