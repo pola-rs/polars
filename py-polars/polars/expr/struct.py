@@ -126,6 +126,22 @@ class ExprStructNameSpace:
         │ 2   ┆ cd  │
         └─────┴─────┘
 
+        Notes
+        -----
+        The `struct` namespace has implemented `__getitem__`
+        so you can also access fields by index:
+
+        >>> df.select(pl.col("struct_col").struct[1])
+        shape: (2, 1)
+        ┌─────┐
+        │ bbb │
+        │ --- │
+        │ str │
+        ╞═════╡
+        │ ab  │
+        │ cd  │
+        └─────┘
+
         """
         if more_names:
             name = [*([name] if isinstance(name, str) else name), *more_names]
