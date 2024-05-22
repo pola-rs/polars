@@ -4427,13 +4427,13 @@ class Series:
         """
         Convert this Series to a NumPy ndarray.
 
-        This operation may copy data, but is completely safe. Note that:
+        This operation copies data only when necessary. The conversion is zero copy when
+        all of the following hold:
 
-        - Data which is purely numeric AND without null values is not cloned
-        - Floating point `nan` values can be zero-copied
-        - Booleans cannot be zero-copied
-
-        To ensure that no data is copied, set `allow_copy=False`.
+        - The data type is an integer, float, `Datetime`, `Duration`, or `Array`.
+        - The Series contains no null values.
+        - The Series consists of a single chunk.
+        - The `writable` parameter is set to `False` (default).
 
         Parameters
         ----------
@@ -4466,13 +4466,43 @@ class Series:
 
         Examples
         --------
-        >>> s = pl.Series("a", [1, 2, 3])
+        Numeric data without nulls can be converted without copying data.
+        The resulting array will not be writable.
+
+        >>> s = pl.Series([1, 2, 3], dtype=pl.Int8)
         >>> arr = s.to_numpy()
-        >>> arr  # doctest: +IGNORE_RESULT
-        array([1, 2, 3], dtype=int64)
-        >>> type(arr)
-        <class 'numpy.ndarray'>
-        """
+        >>> arr
+        array([1, 2, 3], dtype=int8)
+        >>> arr.flags.writeable
+        False
+
+        Set `writable=True` to force data copy to make the array writable.
+
+        >>> s.to_numpy(writable=True).flags.writeable
+        True
+
+        Integer Series containing nulls will be cast to a float type with `nan`
+        representing a null value. This requires data to be copied.
+
+        >>> s = pl.Series([1, 2, None], dtype=pl.UInt16)
+        >>> s.to_numpy()
+        array([ 1.,  2., nan], dtype=float32)
+
+        Set `allow_copy=False` to raise an error if data would be copied.
+
+        >>> s.to_numpy(allow_copy=False)  # doctest: +SKIP
+        Traceback (most recent call last):
+        ...
+        RuntimeError: copy not allowed: cannot convert to a NumPy array without copying data
+
+        Series of data type `Array` and `Struct` will result in an array with more than
+        one dimension.
+
+        >>> s = pl.Series([[1, 2, 3], [4, 5, 6]], dtype=pl.Array(pl.Int64, 3))
+        >>> s.to_numpy()
+        array([[1, 2, 3],
+               [4, 5, 6]])
+        """  # noqa: W505
         if zero_copy_only is not None:
             issue_deprecation_warning(
                 "The `zero_copy_only` parameter for `Series.to_numpy` is deprecated."
