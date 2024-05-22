@@ -251,6 +251,7 @@ impl CsvReader<Box<dyn MmapBytesReader>> {
                     self.options.raise_if_empty,
                     &mut self.options.n_threads,
                     parse_options.decimal_comma,
+                    parse_options.truncate_ragged_lines,
                 )?;
                 let schema = Arc::new(inferred_schema);
                 Ok(to_batched_owned(self.with_schema(schema)))

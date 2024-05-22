@@ -211,6 +211,7 @@ impl<'a> CoreReader<'a> {
                     raise_if_empty,
                     &mut n_threads,
                     decimal_comma,
+                    truncate_ragged_lines,
                 )?;
                 Arc::new(inferred_schema)
             },

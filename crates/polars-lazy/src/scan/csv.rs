@@ -240,6 +240,7 @@ impl LazyCsvReader {
             self.read_options.raise_if_empty,
             &mut self.read_options.n_threads,
             parse_options.decimal_comma,
+            parse_options.truncate_ragged_lines,
         )?;
         let mut schema = f(schema)?;
 

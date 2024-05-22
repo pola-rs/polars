@@ -47,6 +47,7 @@ impl SchemaInferenceResult {
         let raise_if_empty = options.raise_if_empty;
         let mut n_threads = options.n_threads;
         let decimal_comma = parse_options.decimal_comma;
+        let truncate_ragged_lines = parse_options.truncate_ragged_lines;
 
         let bytes_total = reader_bytes.len();
 
@@ -66,6 +67,7 @@ impl SchemaInferenceResult {
             raise_if_empty,
             &mut n_threads,
             decimal_comma,
+            truncate_ragged_lines,
         )?;
 
         let this = Self {
@@ -195,6 +197,7 @@ fn infer_file_schema_inner(
     raise_if_empty: bool,
     n_threads: &mut Option<usize>,
     decimal_comma: bool,
+    truncate_ragged_lines: bool,
 ) -> PolarsResult<(Schema, usize, usize)> {
     // keep track so that we can determine the amount of bytes read
     let start_ptr = reader_bytes.as_ptr() as usize;
@@ -204,21 +207,23 @@ fn infer_file_schema_inner(
     let encoding = CsvEncoding::LossyUtf8;
 
     let bytes = skip_line_ending(skip_bom(reader_bytes), eol_char);
+
     if raise_if_empty {
         polars_ensure!(!bytes.is_empty(), NoData: "empty CSV");
     };
-    let mut lines = SplitLines::new(bytes, quote_char.unwrap_or(b'"'), eol_char).skip(*skip_rows);
 
+    let mut lines = SplitLines::new(bytes, quote_char.unwrap_or(b'"'), eol_char).skip(*skip_rows);
     // get or create header names
     // when has_header is false, creates default column names with column_ prefix
 
     let mut first_line = None;
-    let mut max_column_count = 0;
+    let mut longest_row_found = 0;
+    let stop_at_first_line_found = has_header || truncate_ragged_lines;
 
-    for mut line in &mut lines {
+    for (i, mut line) in (&mut lines).enumerate() {
         // Skip lines that are comments.
         if !is_comment_line(line, comment_prefix) {
-            // If the lines were separated by CRLF, we need to remove the CR part.
+            // If the lines were separated by CRLF, we need to remove the trailing CR part.
             let line_len = line.len();
             if line_len > 1 {
                 let trailing_byte = line[line_len - 1];
@@ -227,19 +232,16 @@ fn infer_file_schema_inner(
                 }
             }
 
-            // When `has_header` is true, we can exit the loop early once we find the first non-comment line.
-            if has_header && first_line.is_none() {
+            if first_line.is_none() {
                 first_line = Some(line);
-                break;
-            } else {
-                // When `had_header` is false, we need to figure out how many columns the schema should have.
-                let byterecord = SplitFields::new(line, separator, quote_char, eol_char);
-                max_column_count = usize::max(max_column_count, byterecord.count());
+                *skip_rows += i;
             }
-        } else {
-            // Only increment `skip_rows` while we are still parsing comments from the beginning of the file.
-            if first_line.is_none() && max_column_count == 0 {
-                *skip_rows += 1;
+
+            let byterecord = SplitFields::new(line, separator, quote_char, eol_char);
+            longest_row_found = usize::max(longest_row_found, byterecord.count());
+
+            if stop_at_first_line_found {
+                break;
             }
         }
     }
@@ -252,36 +254,38 @@ fn infer_file_schema_inner(
     let headers: Vec<String> = if let Some(header_line) = first_line {
         let byterecord = SplitFields::new(header_line, separator, quote_char, eol_char);
 
-        let headers = byterecord
-            .map(|(slice, needs_escaping)| {
-                let slice_escaped = if needs_escaping && (slice.len() >= 2) {
-                    &slice[1..(slice.len() - 1)]
+        if has_header {
+            let headers = byterecord
+                .map(|(slice, needs_escaping)| {
+                    let slice_escaped = if needs_escaping && (slice.len() >= 2) {
+                        &slice[1..(slice.len() - 1)]
+                    } else {
+                        slice
+                    };
+                    let s = parse_bytes_with_encoding(slice_escaped, encoding)?;
+                    Ok(s)
+                })
+                .collect::<PolarsResult<Vec<_>>>()?;
+
+            let mut final_headers = Vec::with_capacity(headers.len());
+
+            let mut header_names = PlHashMap::with_capacity(headers.len());
+
+            for name in &headers {
+                let count = header_names.entry(name.as_ref()).or_insert(0usize);
+                if *count != 0 {
+                    final_headers.push(format!("{}_duplicated_{}", name, *count - 1))
                 } else {
-                    slice
-                };
-                let s = parse_bytes_with_encoding(slice_escaped, encoding)?;
-                Ok(s)
-            })
-            .collect::<PolarsResult<Vec<_>>>()?;
-
-        let mut final_headers = Vec::with_capacity(headers.len());
-
-        let mut header_names = PlHashMap::with_capacity(headers.len());
-
-        for name in &headers {
-            let count = header_names.entry(name.as_ref()).or_insert(0usize);
-            if *count != 0 {
-                final_headers.push(format!("{}_duplicated_{}", name, *count - 1))
-            } else {
-                final_headers.push(name.to_string())
+                    final_headers.push(name.to_string())
+                }
+                *count += 1;
             }
-            *count += 1;
+            final_headers
+        } else {
+            (0..longest_row_found)
+                .map(|i| format!("column_{}", i + 1))
+                .collect()
         }
-        final_headers
-    } else if !has_header && max_column_count > 0 {
-        (0..max_column_count)
-            .map(|i| format!("column_{}", i + 1))
-            .collect()
     } else if has_header && !bytes.is_empty() && recursion_count == 0 {
         // there was no new line char. So we copy the whole buf and add one
         // this is likely to be cheap as there are no rows.
@@ -306,6 +310,7 @@ fn infer_file_schema_inner(
             raise_if_empty,
             n_threads,
             decimal_comma,
+            truncate_ragged_lines,
         );
     } else if !raise_if_empty {
         return Ok((Schema::new(), 0, 0));
@@ -510,6 +515,7 @@ fn infer_file_schema_inner(
             raise_if_empty,
             n_threads,
             decimal_comma,
+            truncate_ragged_lines,
         );
     }
 
@@ -551,6 +557,7 @@ pub fn infer_file_schema(
     raise_if_empty: bool,
     n_threads: &mut Option<usize>,
     decimal_comma: bool,
+    truncate_ragged_lines: bool,
 ) -> PolarsResult<(Schema, usize, usize)> {
     check_decimal_comma(decimal_comma, separator)?;
     infer_file_schema_inner(
@@ -570,6 +577,7 @@ pub fn infer_file_schema(
         raise_if_empty,
         n_threads,
         decimal_comma,
+        truncate_ragged_lines,
     )
 }
 
@@ -602,6 +610,7 @@ mod test {
             0,
             false,
             &mut None,
+            false,
             false,
         )
         .unwrap();
@@ -638,6 +647,7 @@ mod test {
             0,
             false,
             &mut None,
+            false,
             false,
         )
         .unwrap();
