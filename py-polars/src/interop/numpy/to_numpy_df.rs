@@ -145,7 +145,7 @@ fn df_to_numpy_with_copy(
     if let Some(arr) = try_df_to_numpy_numeric_supertype(py, df, order) {
         Ok(arr)
     } else {
-        df_columns_to_numpy(py, df, writable)
+        df_columns_to_numpy(py, df, order, writable)
     }
 }
 fn try_df_to_numpy_numeric_supertype(
@@ -163,7 +163,12 @@ fn try_df_to_numpy_numeric_supertype(
     };
     Some(np_array)
 }
-fn df_columns_to_numpy(py: Python, df: &DataFrame, writable: bool) -> PyResult<PyObject> {
+fn df_columns_to_numpy(
+    py: Python,
+    df: &DataFrame,
+    order: IndexOrder,
+    writable: bool,
+) -> PyResult<PyObject> {
     let np_arrays = df.iter().map(|s| {
         let mut arr = series_to_numpy(py, s, writable, true).unwrap();
 
@@ -184,10 +189,17 @@ fn df_columns_to_numpy(py: Python, df: &DataFrame, writable: bool) -> PyResult<P
     });
 
     let numpy = PyModule::import_bound(py, "numpy")?;
-    let arr = numpy
-        .getattr(intern!(py, "vstack"))
-        .unwrap()
-        .call1((PyList::new_bound(py, np_arrays),))?
-        .getattr(intern!(py, "T"))?;
-    Ok(arr.into())
+    let np_array = match order {
+        IndexOrder::C => numpy
+            .getattr(intern!(py, "column_stack"))
+            .unwrap()
+            .call1((PyList::new_bound(py, np_arrays),))?,
+        IndexOrder::Fortran => numpy
+            .getattr(intern!(py, "vstack"))
+            .unwrap()
+            .call1((PyList::new_bound(py, np_arrays),))?
+            .getattr(intern!(py, "T"))?,
+    };
+
+    Ok(np_array.into())
 }

@@ -1518,9 +1518,7 @@ class DataFrame:
             Fortran-like. In general, using the Fortran-like index order is faster.
             However, the C-like order might be more appropriate to use for downstream
             applications to prevent cloning data, e.g. when reshaping into a
-            one-dimensional array. Note that this option only takes effect if
-            `structured` is set to `False` and the DataFrame dtypes allow a
-            global dtype for all columns.
+            one-dimensional array.
         allow_copy
             Allow memory to be copied to perform the conversion. If set to `False`,
             causes conversions that are not zero-copy to fail.
