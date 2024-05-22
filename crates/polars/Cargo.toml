@@ -164,6 +164,7 @@ extract_jsonpath = [
 find_many = ["polars-plan/find_many"]
 fused = ["polars-ops/fused", "polars-lazy?/fused"]
 interpolate = ["polars-ops/interpolate", "polars-lazy?/interpolate"]
+interpolate_by = ["polars-ops/interpolate_by", "polars-lazy?/interpolate_by"]
 is_between = ["polars-lazy?/is_between", "polars-ops/is_between"]
 is_first_distinct = ["polars-lazy?/is_first_distinct", "polars-ops/is_first_distinct"]
 is_in = ["polars-lazy?/is_in"]
@@ -371,6 +372,7 @@ docs-selection = [
   "rolling_window",
   "rolling_window_by",
   "interpolate",
+  "interpolate_by",
   "diff",
   "rank",
   "range",

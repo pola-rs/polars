@@ -245,7 +245,7 @@
 //!     - `mode` - [Return the most occurring value(s)](polars_ops::chunked_array::mode)
 //!     - `cum_agg` - [`cum_sum`], [`cum_min`], [`cum_max`] aggregation.
 //!     - `rolling_window` - rolling window functions, like [`rolling_mean`]
-//!     - `interpolate` [interpolate None values](polars_ops::chunked_array::interpolate)
+//!     - `interpolate` [interpolate None values](polars_ops::series::interpolate())
 //!     - `extract_jsonpath` - [Run jsonpath queries on StringChunked](https://goessner.net/articles/JsonPath/)
 //!     - `list` - List utils.
 //!         - `list_gather` take sublist by multiple indices

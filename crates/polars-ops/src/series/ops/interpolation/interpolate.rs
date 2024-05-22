@@ -8,26 +8,7 @@ use polars_core::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-fn linear_itp<T>(low: T, step: T, slope: T) -> T
-where
-    T: Sub<Output = T> + Mul<Output = T> + Add<Output = T> + Div<Output = T>,
-{
-    low + step * slope
-}
-
-fn nearest_itp<T>(low: T, step: T, diff: T, steps_n: T) -> T
-where
-    T: Sub<Output = T> + Mul<Output = T> + Add<Output = T> + Div<Output = T> + PartialOrd + Copy,
-{
-    // 5 - 1 = 5 -> low
-    // 5 - 2 = 3 -> low
-    // 5 - 3 = 2 -> high
-    if (steps_n - step) > step {
-        low
-    } else {
-        low + diff
-    }
-}
+use super::{linear_itp, nearest_itp};
 
 fn near_interp<T>(low: T, high: T, steps: IdxSize, steps_n: T, out: &mut Vec<T>)
 where
@@ -75,11 +56,11 @@ where
     let first = chunked_arr.first_non_null().unwrap();
     let last = chunked_arr.last_non_null().unwrap() + 1;
 
-    // Fill out with first.
+    // Fill out with `first` nulls.
     let mut out = Vec::with_capacity(chunked_arr.len());
     let mut iter = chunked_arr.iter().skip(first);
     for _ in 0..first {
-        out.push(Zero::zero())
+        out.push(Zero::zero());
     }
 
     // The next element of `iter` is definitely `Some(Some(v))`, because we skipped the first
@@ -109,11 +90,11 @@ where
         validity.extend_constant(chunked_arr.len(), true);
 
         for i in 0..first {
-            validity.set(i, false);
+            unsafe { validity.set_unchecked(i, false) };
         }
 
         for i in last..chunked_arr.len() {
-            validity.set(i, false);
+            unsafe { validity.set_unchecked(i, false) };
             out.push(Zero::zero())
         }
 

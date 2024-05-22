@@ -1253,6 +1253,12 @@ impl Expr {
         )
     }
 
+    #[cfg(feature = "interpolate_by")]
+    /// Fill null values using interpolation.
+    pub fn interpolate_by(self, by: Expr) -> Expr {
+        self.apply_many_private(FunctionExpr::InterpolateBy, &[by], false, false)
+    }
+
     #[cfg(feature = "rolling_window")]
     #[allow(clippy::type_complexity)]
     fn finish_rolling(
