@@ -5,7 +5,6 @@ use arrow::bitmap::MutableBitmap;
 use polars_core::downcast_as_macro_arg_physical;
 use polars_core::export::num::{NumCast, Zero};
 use polars_core::prelude::*;
-use polars_utils::vec::PushUnchecked;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -61,7 +60,7 @@ where
     let mut out = Vec::with_capacity(chunked_arr.len());
     let mut iter = chunked_arr.iter().skip(first);
     for _ in 0..first {
-        unsafe { out.push_unchecked(Zero::zero()) }
+        out.push(Zero::zero());
     }
 
     // The next element of `iter` is definitely `Some(Some(v))`, because we skipped the first

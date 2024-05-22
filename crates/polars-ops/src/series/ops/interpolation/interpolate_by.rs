@@ -2,7 +2,6 @@ use std::ops::{Add, Div, Mul, Sub};
 
 use arrow::array::PrimitiveArray;
 use arrow::bitmap::MutableBitmap;
-use arrow::legacy::trusted_len::TrustedLenPush;
 use bytemuck::allocation::zeroed_vec;
 use polars_core::export::num::{NumCast, Zero};
 use polars_core::prelude::*;
@@ -34,7 +33,8 @@ where
 }
 
 /// # Safety
-/// `x` must be non-empty.
+/// - `x` must be non-empty.
+/// - `sorting_indices` must be the same size as `x`
 #[inline]
 unsafe fn signed_interp_by<T, F>(
     y_start: T,
@@ -42,7 +42,6 @@ unsafe fn signed_interp_by<T, F>(
     x: &[F],
     out: &mut [T],
     sorting_indices: &[IdxSize],
-    low_idx: usize,
 ) where
     T: Sub<Output = T>
         + Mul<Output = T>
@@ -63,11 +62,11 @@ unsafe fn signed_interp_by<T, F>(
         iter = x.slice_unchecked(1..x.len() - 1).iter();
     }
     let slope = range_y / range_x;
-    for (offset, x_i) in iter.enumerate() {
+    for (idx, x_i) in iter.enumerate() {
         let x_delta = NumCast::from(*x_i - *x_start).unwrap();
         let v = linear_itp(y_start, x_delta, slope);
         unsafe {
-            let out_idx = sorting_indices.get_unchecked(low_idx + offset + 1);
+            let out_idx = sorting_indices.get_unchecked(idx + 1);
             *out.get_unchecked_mut(*out_idx as usize) = v;
         }
     }
@@ -101,7 +100,7 @@ where
     let mut out = Vec::with_capacity(chunked_arr.len());
     let mut iter = chunked_arr.iter().enumerate().skip(first);
     for _ in 0..first {
-        unsafe { out.push_unchecked(Zero::zero()) }
+        out.push(Zero::zero());
     }
 
     // The next element of `iter` is definitely `Some(idx, Some(v))`, because we skipped the first
@@ -136,8 +135,8 @@ where
         }
 
         for i in last..chunked_arr.len() {
-            unsafe { validity.set_unchecked(i, false) };
-            out.push(Zero::zero())
+            unsafe { validity.set_unchecked(i, false) }
+            out.push(Zero::zero());
         }
 
         let array = PrimitiveArray::new(
@@ -160,7 +159,7 @@ fn interpolate_impl_by<T, F, I>(
 where
     T: PolarsNumericType,
     F: PolarsIntegerType,
-    I: Fn(T::Native, T::Native, &[F::Native], &mut [T::Native], &[IdxSize], usize),
+    I: Fn(T::Native, T::Native, &[F::Native], &mut [T::Native], &[IdxSize]),
 {
     // This implementation differs from pandas as that boundary None's are not removed.
     // This prevents a lot of errors due to expressions leading to different lengths.
@@ -205,9 +204,15 @@ where
         } else {
             for (high_idx, next) in iter.by_ref() {
                 if let Some(high) = next {
-                    let x = unsafe { &by_sorted_values.slice_unchecked(low_idx..high_idx + 1) };
-                    interpolation_branch(low, high, x, &mut out, sorting_indices, low_idx);
+                    // SAFETY: we are in bounds, and the slices are the same length (and non-empty)
                     unsafe {
+                        interpolation_branch(
+                            low,
+                            high,
+                            by_sorted_values.slice_unchecked(low_idx..high_idx + 1),
+                            &mut out,
+                            sorting_indices.slice_unchecked(low_idx..high_idx + 1),
+                        );
                         let out_idx = sorting_indices.get_unchecked(high_idx);
                         *out.get_unchecked_mut(*out_idx as usize) = high;
                     }
@@ -263,7 +268,10 @@ pub fn interpolate_by(s: &Series, by: &Series, by_is_sorted: bool) -> PolarsResu
         if is_sorted {
             interpolate_impl_by_sorted(ca, by, signed_interp_by_sorted).map(|x| x.into_series())
         } else {
-            interpolate_impl_by(ca, by, safe{signed_interp_by}).map(|x| x.into_series())
+            interpolate_impl_by(ca, by, |y_start, y_end, x, out, sorting_indices| unsafe {
+                signed_interp_by(y_start, y_end, x, out, sorting_indices)
+            })
+            .map(|x| x.into_series())
         }
     }
 
