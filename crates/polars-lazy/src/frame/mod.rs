@@ -128,6 +128,7 @@ impl LazyFrame {
         self.with_optimizations(OptState {
             projection_pushdown: false,
             predicate_pushdown: false,
+            cluster_with_columns: false,
             type_coercion: true,
             simplify_expr: false,
             slice_pushdown: false,
@@ -147,6 +148,12 @@ impl LazyFrame {
     /// Toggle projection pushdown optimization.
     pub fn with_projection_pushdown(mut self, toggle: bool) -> Self {
         self.opt_state.projection_pushdown = toggle;
+        self
+    }
+
+    /// Toggle cluster with columns optimization.
+    pub fn with_cluster_with_columns(mut self, toggle: bool) -> Self {
+        self.opt_state.cluster_with_columns = toggle;
         self
     }
 
