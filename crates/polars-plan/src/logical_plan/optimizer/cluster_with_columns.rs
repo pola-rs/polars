@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use arrow::bitmap::MutableBitmap;
-use polars_utils::aliases::PlHashMap;
+use polars_utils::aliases::{InitHashMaps, PlHashMap};
 use polars_utils::arena::{Arena, Node};
 
 use super::aexpr::AExpr;
@@ -9,6 +9,13 @@ use super::alp::IR;
 use super::{aexpr_to_leaf_names_iter, ColumnName};
 
 type ColumnMap = PlHashMap<ColumnName, usize>;
+
+fn column_map_finalize_bitset(bitset: &mut MutableBitmap, column_map: &ColumnMap) {
+    assert!(bitset.len() <= column_map.len());
+
+    let size = bitset.len();
+    bitset.extend_constant(column_map.len() - size, false);
+}
 
 fn column_map_set(bitset: &mut MutableBitmap, column_map: &mut ColumnMap, column: ColumnName) {
     let size = column_map.len();
@@ -24,6 +31,11 @@ fn column_map_set(bitset: &mut MutableBitmap, column_map: &mut ColumnMap, column
 pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>) {
     let mut ir_stack = Vec::with_capacity(16);
     ir_stack.push(root);
+
+    let mut column_map = ColumnMap::with_capacity(8);
+    let mut input_genset = MutableBitmap::with_capacity(16);
+    let mut current_livesets = Vec::with_capacity(16);
+    let mut pushable = MutableBitmap::with_capacity(16);
 
     loop {
         let Some(current) = ir_stack.pop() else {
@@ -53,63 +65,60 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
             else {
                 break;
             };
+            
+            let column_map = &mut column_map;
+
+            // Reuse the allocations of the previous loop
+            column_map.clear();
+            input_genset.clear();
+            current_livesets.clear();
+            pushable.clear();
 
             // @NOTE
             // We can pushdown any column that utilizes no live columns that are generated in the
             // input.
 
-            let mut column_map = ColumnMap::default();
-
-            let mut input_genset = MutableBitmap::new();
             for input_expr in input_exprs.as_exprs() {
                 column_map_set(
                     &mut input_genset,
-                    &mut column_map,
+                    column_map,
                     input_expr.output_name_arc().clone(),
                 );
             }
 
-            let mut current_livesets: Vec<MutableBitmap> = current_exprs
-                .as_exprs()
-                .iter()
-                .map(|expr| {
-                    let mut liveset = MutableBitmap::from_len_zeroed(column_map.len());
+            for expr in current_exprs.as_exprs() {
+                let mut liveset = MutableBitmap::from_len_zeroed(column_map.len());
 
-                    for live in aexpr_to_leaf_names_iter(expr.node(), expr_arena) {
-                        column_map_set(&mut liveset, &mut column_map, live.clone());
-                    }
+                for live in aexpr_to_leaf_names_iter(expr.node(), expr_arena) {
+                    column_map_set(&mut liveset, column_map, live.clone());
+                }
 
-                    liveset
-                })
-                .collect();
+                current_livesets.push(liveset);
+            }
 
-            // @NOTE: This satisfies the borrow checker
-            let num_names = column_map.len();
-            drop(column_map);
-
-            let size = input_genset.len();
-            input_genset.extend_constant(num_names - size, false);
+            column_map_finalize_bitset(&mut input_genset, column_map);
 
             // Check for every expression in the current WITH_COLUMNS node whether it can be pushed
             // down.
-            let mut pushable = MutableBitmap::with_capacity(input_exprs.len());
             for expr_liveset in &mut current_livesets {
-                let size = expr_liveset.len();
-                expr_liveset.extend_constant(num_names - size, false);
+                column_map_finalize_bitset(expr_liveset, column_map);
+
                 let has_intersection = input_genset.intersects_with(&expr_liveset);
                 let is_pushable = !has_intersection;
+
                 pushable.push(is_pushable);
             }
-            let pushable = pushable.freeze();
+
+            let pushable_set_bits = pushable.set_bits();
 
             // There is nothing to push down. Move on.
-            if pushable.set_bits() == 0 {
+            if pushable_set_bits == 0 {
                 break;
             }
 
             // If all columns are pushable, we can merge the input into the current. This should be
             // a relatively common case.
-            if pushable.set_bits() == pushable.len() {
+            if pushable_set_bits == pushable.len() {
                 // @NOTE: To keep the schema correct, we reverse the order here. As a
                 // `WITH_COLUMNS` higher up produces later columns. This also allows us not to
                 // have to deal with schemas.
@@ -141,7 +150,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
 
             let new_current_exprs = std::mem::take(current_exprs.exprs_mut())
                 .into_iter()
-                .zip(pushable)
+                .zip(pushable.iter())
                 .enumerate()
                 .filter_map(|(i, (expr, do_pushdown))| {
                     if do_pushdown {

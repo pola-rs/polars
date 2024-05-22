@@ -246,6 +246,15 @@ impl MutableBitmap {
         count_zeros(&self.buffer, 0, self.length)
     }
 
+    /// Returns the number of set bits on this [`MutableBitmap`].
+    ///
+    /// Guaranteed to be `<= self.len()`.
+    /// # Implementation
+    /// This function is `O(N)`
+    pub fn set_bits(&self) -> usize {
+        self.length - self.unset_bits()
+    }
+
     /// Returns the number of unset bits on this [`MutableBitmap`].
     #[deprecated(since = "0.13.0", note = "use `unset_bits` instead")]
     pub fn null_count(&self) -> usize {
