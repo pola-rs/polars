@@ -858,6 +858,15 @@ def test_excel_hidden_columns(
     assert_frame_equal(df, read_df)
 
 
+def test_excel_mixed_calamine_float_data(io_files_path: Path) -> None:
+    df = pl.read_excel(io_files_path / "nan_test.xlsx", engine="calamine")
+    nan = float("nan")
+    assert_frame_equal(
+        pl.DataFrame({"float_col": [nan, nan, nan, 100.0, 200.0, 300.0]}),
+        df,
+    )
+
+
 @pytest.mark.parametrize("engine", ["xlsx2csv", "openpyxl", "calamine"])
 def test_excel_type_inference_with_nulls(engine: ExcelSpreadsheetEngine) -> None:
     df = pl.DataFrame(

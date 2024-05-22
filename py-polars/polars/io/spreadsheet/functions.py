@@ -856,7 +856,10 @@ def _read_spreadsheet_calamine(
         if c not in schema_overrides:
             # may read integer data as float; cast back to int where possible.
             if dtype in FLOAT_DTYPES:
-                check_cast = [F.col(c).floor().eq(F.col(c)), F.col(c).cast(Int64)]
+                check_cast = [
+                    F.col(c).floor().eq_missing(F.col(c)) & F.col(c).is_not_nan(),
+                    F.col(c).cast(Int64),
+                ]
                 type_checks.append(check_cast)
             # do a similar check for datetime columns that have only 00:00:00 times.
             elif dtype == Datetime:
