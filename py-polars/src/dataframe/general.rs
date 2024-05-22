@@ -201,6 +201,10 @@ impl PyDataFrame {
         self.df.width()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.df.is_empty()
+    }
+
     pub fn hstack(&self, columns: Vec<PySeries>) -> PyResult<Self> {
         let columns = columns.to_series();
         let df = self.df.hstack(&columns).map_err(PyPolarsErr::from)?;

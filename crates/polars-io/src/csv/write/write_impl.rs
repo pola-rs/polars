@@ -143,8 +143,7 @@ pub(crate) fn write<W: Write>(
             let cols = unsafe { std::mem::transmute::<&[Series], &[Series]>(cols) };
             let mut write_buffer = write_buffer_pool.get();
 
-            // don't use df.empty, won't work if there are columns.
-            if df.height() == 0 {
+            if df.is_empty() {
                 return Ok(write_buffer);
             }
 
