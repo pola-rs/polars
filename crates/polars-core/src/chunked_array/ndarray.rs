@@ -108,11 +108,6 @@ impl DataFrame {
         let columns = self.get_columns();
         POOL.install(|| {
             columns.par_iter().enumerate().try_for_each(|(col_idx, s)| {
-                polars_ensure!(
-                    s.null_count() == 0,
-                    ComputeError: "creation of ndarray with null values is not supported"
-                );
-
                 let s = s.cast(&N::get_dtype())?;
                 let s = match s.dtype() {
                     DataType::Float32 => {
@@ -125,6 +120,10 @@ impl DataFrame {
                     },
                     _ => s,
                 };
+                polars_ensure!(
+                    s.null_count() == 0,
+                    ComputeError: "creation of ndarray with null values is not supported"
+                );
                 let ca = s.unpack::<N>()?;
 
                 let mut chunk_offset = 0;
