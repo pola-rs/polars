@@ -1500,7 +1500,7 @@ class DataFrame:
         order: IndexOrder = "fortran",
         allow_copy: bool = True,
         writable: bool = False,
-        use_pyarrow: bool = True,
+        use_pyarrow: bool | None = None,
     ) -> np.ndarray[Any, Any]:
         """
         Convert this DataFrame to a NumPy ndarray.
@@ -1528,11 +1528,15 @@ class DataFrame:
             Ensure the resulting array is writable. This will force a copy of the data
             if the array was created without copy, as the underlying Arrow data is
             immutable.
+
         use_pyarrow
             Use `pyarrow.Array.to_numpy
             <https://arrow.apache.org/docs/python/generated/pyarrow.Array.html#pyarrow.Array.to_numpy>`_
 
-            function for the conversion to numpy if necessary.
+            function for the conversion to NumPy if necessary.
+
+            .. deprecated:: 0.20.28
+                Polars now uses its native engine by default for conversion to NumPy.
 
         Examples
         --------
@@ -1566,6 +1570,13 @@ class DataFrame:
         rec.array([(1, 6.5, 'a'), (2, 7. , 'b'), (3, 8.5, 'c')],
                   dtype=[('foo', 'u1'), ('bar', '<f4'), ('ham', '<U1')])
         """
+        if use_pyarrow is not None:
+            issue_deprecation_warning(
+                "The `use_pyarrow` parameter for `DataFrame.to_numpy` is deprecated."
+                " Polars now uses its native engine by default for conversion to NumPy.",
+                version="0.20.28",
+            )
+
         if structured:
             if not allow_copy and not self.is_empty():
                 msg = "copy not allowed: cannot create structured array without copying data"
@@ -1773,7 +1784,7 @@ class DataFrame:
             if return_type == "array":
                 return jx.numpy.asarray(
                     # note: jax arrays are immutable, so can avoid a copy (vs torch)
-                    a=frame.to_numpy(writable=False, use_pyarrow=False, order=order),
+                    a=frame.to_numpy(writable=False, order=order),
                     order="K",
                 )
             elif return_type == "dict":
@@ -1990,7 +2001,7 @@ class DataFrame:
 
         if return_type == "tensor":
             # note: torch tensors are not immutable, so we must consider them writable
-            return torch.from_numpy(frame.to_numpy(writable=True, use_pyarrow=False))
+            return torch.from_numpy(frame.to_numpy(writable=True))
 
         elif return_type == "dict":
             if label is not None:

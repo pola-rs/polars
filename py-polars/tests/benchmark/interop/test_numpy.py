@@ -42,12 +42,12 @@ def floats_chunked(floats_array: np.ndarray[Any, Any]) -> pl.Series:
 
 
 def test_to_numpy_series_zero_copy(floats: pl.Series) -> None:
-    floats.to_numpy(use_pyarrow=False)
+    floats.to_numpy()
 
 
 def test_to_numpy_series_with_nulls(floats_with_nulls: pl.Series) -> None:
-    floats_with_nulls.to_numpy(use_pyarrow=False)
+    floats_with_nulls.to_numpy()
 
 
 def test_to_numpy_series_chunked(floats_chunked: pl.Series) -> None:
-    floats_chunked.to_numpy(use_pyarrow=False)
+    floats_chunked.to_numpy()

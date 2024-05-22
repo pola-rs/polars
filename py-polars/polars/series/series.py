@@ -4421,7 +4421,7 @@ class Series:
         *,
         writable: bool = False,
         allow_copy: bool = True,
-        use_pyarrow: bool = True,
+        use_pyarrow: bool | None = None,
         zero_copy_only: bool | None = None,
     ) -> np.ndarray[Any, Any]:
         """
@@ -4444,11 +4444,17 @@ class Series:
         allow_copy
             Allow memory to be copied to perform the conversion. If set to `False`,
             causes conversions that are not zero-copy to fail.
+
         use_pyarrow
             First convert to PyArrow, then call `pyarrow.Array.to_numpy
             <https://arrow.apache.org/docs/python/generated/pyarrow.Array.html#pyarrow.Array.to_numpy>`_
             to convert to NumPy. If set to `False`, Polars' own conversion logic is
             used.
+
+            .. deprecated:: 0.20.28
+                Polars now uses its native engine by default for conversion to NumPy.
+                To use PyArrow's engine, call `.to_arrow().to_numpy()` instead.
+
         zero_copy_only
             Raise an exception if the conversion to a NumPy would require copying
             the underlying data. Data copy occurs, for example, when the Series contains
@@ -4474,6 +4480,16 @@ class Series:
                 version="0.20.10",
             )
             allow_copy = not zero_copy_only
+
+        if use_pyarrow is not None:
+            issue_deprecation_warning(
+                "The `use_pyarrow` parameter for `Series.to_numpy` is deprecated."
+                " Polars now uses its native engine for conversion to NumPy by default."
+                " To use PyArrow's engine, call `.to_arrow().to_numpy()` instead.",
+                version="0.20.28",
+            )
+        else:
+            use_pyarrow = False
 
         if (
             use_pyarrow
@@ -4536,7 +4552,7 @@ class Series:
         with nullcontext() if device is None else jx.default_device(device):
             return jx.numpy.asarray(
                 # note: jax arrays are immutable, so can avoid a copy (vs torch)
-                a=srs.to_numpy(writable=False, use_pyarrow=False),
+                a=srs.to_numpy(writable=False),
                 order="K",
             )
 
@@ -4577,7 +4593,7 @@ class Series:
 
         # we have to build the tensor from a writable array or PyTorch will complain
         # about it (as writing to readonly array results in undefined behavior)
-        numpy_array = srs.to_numpy(writable=True, use_pyarrow=False)
+        numpy_array = srs.to_numpy(writable=True)
         tensor = torch.from_numpy(numpy_array)
 
         # note: named tensors are currently experimental
