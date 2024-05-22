@@ -151,7 +151,7 @@ impl DataFrame {
                             // SAFETY:
                             // this is uninitialized memory, so we must never read from this data
                             // copy_from_slice does not read
-                            let buf = std::slice::from_raw_parts_mut(offset_ptr, height);
+                            let buf = std::slice::from_raw_parts_mut(offset_ptr, vals.len());
                             buf.copy_from_slice(vals)
                         },
                     }
