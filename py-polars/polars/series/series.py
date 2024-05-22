@@ -4427,7 +4427,7 @@ class Series:
         """
         Convert this Series to a NumPy ndarray.
 
-        This method copies data only when necessary. The conversion is zero copy when
+        This operation copies data only when necessary. The conversion is zero copy when
         all of the following hold:
 
         - The data type is an integer, float, `Datetime`, `Duration`, or `Array`.

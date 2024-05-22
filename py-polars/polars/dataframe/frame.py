@@ -1505,7 +1505,7 @@ class DataFrame:
         """
         Convert this DataFrame to a NumPy ndarray.
 
-        This method copies data only when necessary. The conversion is zero copy when
+        This operation copies data only when necessary. The conversion is zero copy when
         all of the following hold:
 
         - The DataFrame is fully contiguous in memory, with all Series back-to-back and
