@@ -315,13 +315,17 @@
 //! * `dtype-full` - all opt-in dtypes.
 //! * `dtype-slim` - slim preset of opt-in dtypes.
 //!
-//! ## Performance and string data
-//! Large string data can really slow down your queries.
-//! Read more in the [performance section](crate::docs::performance)
+//! ## Performance
+//! To gains most performance out of Polars we recommend compiling on a nightly compiler
+//! with the features `simd` and `performant` activated. The activated cpu features also influence
+//! the amount of simd acceleration we can use.
+//!
+//! See this the features we activate for our python builds, or if you just run locally and want to
+//! use all available features on your cpu, set `RUSTFLAGS='-C target-cpu=native'`.
 //!
 //! ### Custom allocator
-//! A DataFrame library naturally does a lot of heap allocations. It is recommended to use a custom
-//! allocator.
+//! An OLAP query engine does a lot of heap allocations. It is recommended to use a custom
+//! allocator, (we have found this to have up to ~25% runtime influence).
 //! [JeMalloc](https://crates.io/crates/jemallocator) and
 //! [Mimalloc](https://crates.io/crates/mimalloc) for instance, show a significant
 //! performance gain in runtime as well as memory usage.
