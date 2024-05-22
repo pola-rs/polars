@@ -1576,8 +1576,6 @@ class DataFrame:
                 " Polars now uses its native engine by default for conversion to NumPy.",
                 version="0.20.28",
             )
-        else:
-            use_pyarrow = False
 
         if structured:
             if not allow_copy and not self.is_empty():
