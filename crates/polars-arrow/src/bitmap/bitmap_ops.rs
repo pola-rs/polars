@@ -131,7 +131,13 @@ where
 }
 
 /// Apply a bitwise operation `op` to two inputs and fold the result.
-pub fn binary_fold_mut<B, F, R>(lhs: &MutableBitmap, rhs: &MutableBitmap, op: F, init: B, fold: R) -> B 
+pub fn binary_fold_mut<B, F, R>(
+    lhs: &MutableBitmap,
+    rhs: &MutableBitmap,
+    op: F,
+    init: B,
+    fold: R,
+) -> B
 where
     F: Fn(u64, u64) -> B,
     R: Fn(B, B) -> B,
@@ -148,7 +154,6 @@ where
 
     fold(result, op(rem_lhs, rem_rhs))
 }
-
 
 fn unary_impl<F, I>(iter: I, op: F, length: usize) -> Bitmap
 where

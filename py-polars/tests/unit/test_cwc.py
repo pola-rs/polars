@@ -55,6 +55,42 @@ def test_partial_deps() -> None:
     )
 
 
+def test_swap_remove() -> None:
+    df = (
+        pl.LazyFrame({"a": [1, 2]})
+        .with_columns(pl.col("a").alias("b") * 2)
+        .with_columns(
+            pl.col("b").alias("f") * 6,
+            pl.col("a").alias("c") * 3,
+            pl.col("b").alias("d") * 4,
+            pl.col("b").alias("e") * 5,
+        )
+    )
+
+    explain = df.explain()
+    assert df.collect().equals(
+        pl.DataFrame(
+            {
+                "a": [1, 2],
+                "b": [2, 4],
+                "f": [12, 24],
+                "c": [3, 6],
+                "d": [8, 16],
+                "e": [10, 20],
+            }
+        )
+    )
+
+    assert (
+        """[[(col("b")) * (6)].alias("f"), [(col("b")) * (4)].alias("d"), [(col("b")) * (5)].alias("e")]"""
+        in explain
+    )
+    assert (
+        """[[(col("a")) * (2)].alias("b"), [(col("a")) * (3)].alias("c")]""" in explain
+    )
+    assert """simple π""" in explain
+
+
 def test_try_remove_simple_project() -> None:
     df = (
         pl.LazyFrame({"a": [1, 2]})

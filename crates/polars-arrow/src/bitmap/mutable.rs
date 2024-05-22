@@ -4,7 +4,7 @@ use std::sync::Arc;
 use polars_error::{polars_bail, PolarsResult};
 
 use super::utils::{
-    count_zeros, fmt, get_bit, set, set_bit, BitChunk, BitChunks, BitChunksExactMut, BitmapIter
+    count_zeros, fmt, get_bit, set, set_bit, BitChunk, BitChunks, BitChunksExactMut, BitmapIter,
 };
 use super::{intersects_with_mut, Bitmap};
 use crate::bitmap::utils::{get_bit_unchecked, merge_reversed, set_bit_unchecked};
