@@ -307,7 +307,7 @@ def _cast_repr_strings_with_schema(
             elif tp == Duration:
                 cast_cols[c] = (
                     F.col(c)
-                    .apply(str_duration_, return_dtype=Int64)
+                    .map_elements(str_duration_, return_dtype=Int64)
                     .cast(Duration("ns"))
                     .cast(tp)
                 )
