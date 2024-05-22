@@ -413,7 +413,7 @@ fn expand_struct_fields(
                     new_expr = Expr::Alias(expr, name.clone());
                 },
                 Expr::RenameAlias { expr, function } => {
-                    let name = function.call(&name)?;
+                    let name = function.call(name)?;
                     new_expr = Expr::Alias(expr, ColumnName::from(name));
                 },
                 _ => {},
