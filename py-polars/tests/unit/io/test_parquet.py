@@ -104,6 +104,23 @@ def test_to_from_buffer(
     assert_frame_equal(df, read_df, categorical_as_str=True)
 
 
+@pytest.mark.parametrize("use_pyarrow", [True, False])
+@pytest.mark.parametrize("rechunk_and_expected_chunks", [(True, 1), (False, 3)])
+def test_read_parquet_respects_rechunk_16416(
+    use_pyarrow: bool, rechunk_and_expected_chunks: tuple[bool, int]
+) -> None:
+    # Create a dataframe with 3 chunks:
+    df = pl.DataFrame({"a": [1]})
+    df = pl.concat([df, df, df])
+    buf = io.BytesIO()
+    df.write_parquet(buf)
+    buf.seek(0)
+
+    rechunk, expected_chunks = rechunk_and_expected_chunks
+    result = pl.read_parquet(buf, use_pyarrow=use_pyarrow, rechunk=rechunk)
+    assert result.n_chunks() == expected_chunks
+
+
 def test_to_from_buffer_lzo(df: pl.DataFrame) -> None:
     buf = io.BytesIO()
     # Writing lzo compressed parquet files is not supported for now.
