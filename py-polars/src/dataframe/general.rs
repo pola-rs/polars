@@ -147,9 +147,9 @@ impl PyDataFrame {
         Ok(df.into())
     }
 
-    pub fn rechunk(&self) -> Self {
+    pub fn rechunk(&self, py: Python) -> Self {
         let mut df = self.df.clone();
-        df.as_single_chunk_par();
+        py.allow_threads(|| df.as_single_chunk_par());
         df.into()
     }
 
