@@ -9,8 +9,10 @@ use polars_utils::slice::SliceAble;
 
 use super::linear_itp;
 
+/// # Safety
+/// - `x` must be non-empty.
 #[inline]
-fn signed_interp_by_sorted<T, F>(y_start: T, y_end: T, x: &[F], out: &mut Vec<T>)
+unsafe fn signed_interp_by_sorted<T, F>(y_start: T, y_end: T, x: &[F], out: &mut Vec<T>)
 where
     T: Sub<Output = T>
         + Mul<Output = T>
@@ -22,11 +24,17 @@ where
     F: Sub<Output = F> + NumCast + Copy,
 {
     let range_y = y_end - y_start;
-    let range_x = NumCast::from(x[x.len() - 1] - x[0]).unwrap();
+    let x_start;
+    let range_x;
+    let iter;
+    unsafe {
+        x_start = x.get_unchecked(0);
+        range_x = NumCast::from(*x.get_unchecked(x.len() - 1) - *x_start).unwrap();
+        iter = x.slice_unchecked(1..x.len() - 1).iter();
+    }
     let slope = range_y / range_x;
-    let x_start = x[0];
-    for x_i in &x[1..x.len() - 1] {
-        let x_delta = NumCast::from(*x_i - x_start).unwrap();
+    for x_i in iter {
+        let x_delta = NumCast::from(*x_i - *x_start).unwrap();
         let v = linear_itp(y_start, x_delta, slope);
         out.push(v)
     }
@@ -116,8 +124,11 @@ where
         } else {
             for (high_idx, next) in iter.by_ref() {
                 if let Some(high) = next {
-                    let x = unsafe { &by_values.slice_unchecked(low_idx..high_idx + 1) };
-                    interpolation_branch(low, high, x, &mut out);
+                    // SAFETY: we are in bounds, and `x` is non-empty.
+                    unsafe {
+                        let x = &by_values.slice_unchecked(low_idx..high_idx + 1);
+                        interpolation_branch(low, high, x, &mut out);
+                    }
                     out.push(high);
                     low = high;
                     low_idx = high_idx;
@@ -204,7 +215,7 @@ where
         } else {
             for (high_idx, next) in iter.by_ref() {
                 if let Some(high) = next {
-                    // SAFETY: we are in bounds, and the slices are the same length (and non-empty)
+                    // SAFETY: we are in bounds, and the slices are the same length (and non-empty).
                     unsafe {
                         interpolation_branch(
                             low,
@@ -266,7 +277,10 @@ pub fn interpolate_by(s: &Series, by: &Series, by_is_sorted: bool) -> PolarsResu
         ChunkedArray<T>: IntoSeries,
     {
         if is_sorted {
-            interpolate_impl_by_sorted(ca, by, signed_interp_by_sorted).map(|x| x.into_series())
+            interpolate_impl_by_sorted(ca, by, |y_start, y_end, x, out| unsafe {
+                signed_interp_by_sorted(y_start, y_end, x, out)
+            })
+            .map(|x| x.into_series())
         } else {
             interpolate_impl_by(ca, by, |y_start, y_end, x, out, sorting_indices| unsafe {
                 signed_interp_by(y_start, y_end, x, out, sorting_indices)
