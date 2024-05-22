@@ -1,6 +1,6 @@
 use ndarray::IntoDimension;
 use numpy::npyffi::flags;
-use numpy::{Element, IntoPyArray};
+use numpy::{Element, IntoPyArray, PyArray1};
 use polars_core::prelude::*;
 use polars_core::utils::dtypes_to_supertype;
 use polars_core::with_match_physical_numeric_polars_type;
@@ -169,11 +169,24 @@ fn try_df_to_numpy_numeric_supertype(
     Some(np_array)
 }
 fn df_columns_to_numpy(py: Python, df: &DataFrame, writable: bool) -> PyResult<PyObject> {
-    let np_arrays = df
-        .iter()
-        .map(|s| series_to_numpy(py, s, writable, true).unwrap());
+    let np_arrays = df.iter().map(|s| {
+        let mut arr = series_to_numpy(py, s, writable, true).unwrap();
 
-    // TODO: Handle multidimensional column arrays
+        // Convert multidimensional arrays to 1D object arrays.
+        let shape: Vec<usize> = arr
+            .getattr(py, intern!(py, "shape"))
+            .unwrap()
+            .extract(py)
+            .unwrap();
+        if shape.len() > 1 {
+            let subarrays = (0..shape[0]).map(|idx| {
+                arr.call_method1(py, intern!(py, "__getitem__"), (idx,))
+                    .unwrap()
+            });
+            arr = PyArray1::from_iter_bound(py, subarrays).into_py(py);
+        }
+        arr
+    });
 
     let numpy = PyModule::import_bound(py, "numpy")?;
     let arr = numpy
