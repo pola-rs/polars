@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::bitmap::MutableBitmap;
 use polars_core::schema::SchemaRef;
 use polars_utils::aliases::PlHashMap;
 use polars_utils::arena::{Arena, Node};
@@ -20,9 +20,6 @@ struct WithColumnsMut<'a> {
     schema: &'a mut SchemaRef,
     options: &'a mut ProjectionOptions,
 }
-
-/// A bitset that contains which columns where read from i.e. are live
-struct LiveSet(MutableBitmap);
 
 impl<'a> WithColumnsMut<'a> {
     fn from_ir(ir: &'a mut IR) -> Option<Self> {
@@ -48,38 +45,6 @@ impl<'a> WithColumnsMut<'a> {
 fn column_map_idx(column_map: &mut ColumnMap, column: ColumnName) -> usize {
     let size = column_map.len();
     *column_map.entry(column).or_insert_with(|| size)
-}
-
-impl LiveSet {
-    fn new(expr: Node, expr_arena: &Arena<AExpr>, column_map: &mut ColumnMap) -> Self {
-        let mut liveset = MutableBitmap::from_len_zeroed(column_map.len());
-
-        for live in aexpr_to_leaf_names_iter(expr, expr_arena) {
-            let size = column_map.len();
-            column_map
-                .entry(live)
-                .and_modify(|idx| {
-                    liveset.set(*idx, true);
-                })
-                .or_insert_with(|| {
-                    liveset.push(true);
-                    size
-                });
-        }
-
-        Self(liveset)
-    }
-
-    /// Finalize the the [`LiveSet`] into a [`Bitmap`] which has a status bit-flag for each column
-    fn freeze(self, column_map: &ColumnMap) -> Bitmap {
-        let Self(mut liveset) = self;
-
-        assert!(liveset.len() <= column_map.len());
-
-        let additional = column_map.len() - liveset.len();
-        liveset.extend_constant(additional, false);
-        liveset.freeze()
-    }
 }
 
 pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>) {
@@ -122,15 +87,28 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
                 })
                 .collect();
 
-            let current_livesets: Vec<LiveSet> = current_wc
+            let mut current_livesets: Vec<MutableBitmap> = current_wc
                 .exprs
                 .as_exprs()
                 .iter()
-                .map(|expr| LiveSet::new(expr.node(), expr_arena, &mut column_map))
-                .collect();
-            let current_livesets: Vec<Bitmap> = current_livesets
-                .into_iter()
-                .map(|s| s.freeze(&column_map))
+                .map(|expr| {
+                    let mut liveset = MutableBitmap::from_len_zeroed(column_map.len());
+
+                    for live in aexpr_to_leaf_names_iter(expr.node(), expr_arena) {
+                        let size = column_map.len();
+                        column_map
+                            .entry(live)
+                            .and_modify(|idx| {
+                                liveset.set(*idx, true);
+                            })
+                            .or_insert_with(|| {
+                                liveset.push(true);
+                                size
+                            });
+                    }
+
+                    liveset
+                })
                 .collect();
 
             // @NOTE: This satisfies the borrow checker
@@ -141,13 +119,14 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
             for idx in &input_gen_columns {
                 input_generate.set(*idx, true);
             }
-            let input_generate = input_generate.freeze();
 
             // Check for every expression in the current WITH_COLUMNS node whether it can be pushed
             // down.
             let mut pushable = MutableBitmap::with_capacity(input_wc.exprs.len());
-            for expr_liveset in &current_livesets {
-                let has_intersection = input_generate.intersect_with(expr_liveset);
+            for expr_liveset in &mut current_livesets {
+                let size = expr_liveset.len();
+                expr_liveset.extend_constant(num_names - size, false);
+                let has_intersection = input_generate.intersects_with(&expr_liveset);
                 let is_pushable = !has_intersection;
                 pushable.push(is_pushable);
             }
