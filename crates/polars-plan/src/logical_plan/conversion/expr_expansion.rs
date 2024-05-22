@@ -311,8 +311,12 @@ fn expand_dtypes(
 }
 
 #[cfg(feature = "dtype-struct")]
-fn replace_struct_multiple_fields_with_field(expr: Expr, column_name: &ColumnName) -> Expr {
-    expr.map_expr(|e| match e {
+fn replace_struct_multiple_fields_with_field(
+    expr: Expr,
+    column_name: &ColumnName,
+) -> PolarsResult<Expr> {
+    let mut count = 0;
+    let out = expr.map_expr(|e| match e {
         Expr::Function {
             function,
             input,
@@ -322,6 +326,7 @@ fn replace_struct_multiple_fields_with_field(expr: Expr, column_name: &ColumnNam
                 function,
                 FunctionExpr::StructExpr(StructFunction::MultipleFields(_))
             ) {
+                count += 1;
                 Expr::Function {
                     input,
                     function: FunctionExpr::StructExpr(StructFunction::FieldByName(
@@ -338,7 +343,9 @@ fn replace_struct_multiple_fields_with_field(expr: Expr, column_name: &ColumnNam
             }
         },
         e => e,
-    })
+    });
+    polars_ensure!(count == 1, InvalidOperation: "multiple expanding fields in a single struct not yet supported");
+    Ok(out)
 }
 
 #[cfg(feature = "dtype-struct")]
@@ -407,7 +414,7 @@ fn expand_struct_fields(
         polars_ensure!(name.as_ref() != "*", InvalidOperation: "cannot combine wildcards and column names");
 
         if !exclude.contains(name) {
-            let mut new_expr = replace_struct_multiple_fields_with_field(full_expr.clone(), name);
+            let mut new_expr = replace_struct_multiple_fields_with_field(full_expr.clone(), name)?;
             match new_expr {
                 Expr::KeepName(expr) => {
                     new_expr = Expr::Alias(expr, name.clone());
@@ -555,7 +562,7 @@ struct ExpansionFlags {
     has_struct_field_by_index: bool,
 }
 
-fn find_flags(expr: &Expr) -> ExpansionFlags {
+fn find_flags(expr: &Expr) -> PolarsResult<ExpansionFlags> {
     let mut multiple_columns = false;
     let mut has_nth = false;
     let mut has_wildcard = false;
@@ -588,10 +595,14 @@ fn find_flags(expr: &Expr) -> ExpansionFlags {
                 multiple_columns = true;
             },
             Expr::Exclude(_, _) => has_exclude = true,
+            #[cfg(feature = "dtype-struct")]
+            Expr::Field(_) => {
+                polars_bail!(InvalidOperation: "field expression not allowed at location/context")
+            },
             _ => {},
         }
     }
-    ExpansionFlags {
+    Ok(ExpansionFlags {
         multiple_columns,
         has_nth,
         has_wildcard,
@@ -599,7 +610,7 @@ fn find_flags(expr: &Expr) -> ExpansionFlags {
         has_exclude,
         #[cfg(feature = "dtype-struct")]
         has_struct_field_by_index,
-    }
+    })
 }
 
 /// In case of single col(*) -> do nothing, no selection is the same as select all
@@ -618,7 +629,7 @@ pub(crate) fn rewrite_projections(
         // Functions can have col(["a", "b"]) or col(String) as inputs.
         expr = expand_function_inputs(expr, schema);
 
-        let mut flags = find_flags(&expr);
+        let mut flags = find_flags(&expr)?;
         if flags.has_selector {
             expr = replace_selector(expr, schema, keys)?;
             // the selector is replaced with Expr::Columns
@@ -726,7 +737,7 @@ fn replace_selector_inner(
 ) -> PolarsResult<()> {
     match s {
         Selector::Root(expr) => {
-            let local_flags = find_flags(&expr);
+            let local_flags = find_flags(&expr)?;
             replace_and_add_to_results(*expr, local_flags, scratch, schema, keys)?;
             members.extend(scratch.drain(..))
         },

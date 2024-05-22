@@ -144,6 +144,8 @@ pub enum Expr {
         function: SpecialEq<Arc<dyn RenameAliasFn>>,
         expr: Arc<Expr>,
     },
+    #[cfg(feature = "dtype-struct")]
+    Field(Arc<[ColumnName]>),
     AnonymousFunction {
         /// function arguments
         input: Vec<Expr>,
@@ -277,6 +279,8 @@ impl Hash for Expr {
                 options.hash(state);
             },
             Expr::SubPlan(_, names) => names.hash(state),
+            #[cfg(feature = "dtype-struct")]
+            Expr::Field(names) => names.hash(state),
         }
     }
 }
