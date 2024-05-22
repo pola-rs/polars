@@ -278,7 +278,6 @@ fn series_to_numpy_with_copy(py: Python, s: &Series, writable: bool) -> PyObject
         Struct(_) => {
             let ca = s.struct_().unwrap();
             let df = ca.clone().unnest();
-            // TODO: How should we determine the IndexOrder here?
             df_to_numpy(py, &df, IndexOrder::Fortran, writable, true).unwrap()
         },
         #[cfg(feature = "object")]
