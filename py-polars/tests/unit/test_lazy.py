@@ -211,6 +211,28 @@ def test_filter_multiple_predicates() -> None:
     assert ldf.filter(predicate="==").select("description").collect().item() == "eq"
 
 
+@pytest.mark.parametrize(
+    "predicate",
+    [
+        [pl.lit(True)],
+        iter([pl.lit(True)]),
+        [True, True, True],
+        iter([True, True, True]),
+        (p for p in (pl.col("c") < 9,)),
+        (p for p in (pl.col("a") > 0, pl.col("b") > 0)),
+    ],
+)
+def test_filter_seq_iterable_all_true(predicate: Any) -> None:
+    ldf = pl.LazyFrame(
+        {
+            "a": [1, 1, 1],
+            "b": [1, 1, 2],
+            "c": [3, 1, 2],
+        }
+    )
+    assert_frame_equal(ldf, ldf.filter(predicate))
+
+
 def test_apply_custom_function() -> None:
     ldf = pl.LazyFrame(
         {
