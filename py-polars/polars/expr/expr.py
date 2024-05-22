@@ -4609,8 +4609,17 @@ class Expr:
               `pl.col("col_name").sqrt()`.
             - For mapping inner elements of lists, consider:
               `pl.col("col_name").list.eval(pl.element().sqrt())`.
-            - For mapping inner elements of structs, consider:
+            - For mapping elements of struct fields, consider:
               `pl.col("col_name").struct.field("field_name").sqrt()`.
+
+            If you want to replace the original column or field,
+            consider `.with_columns` and `.with_fields`.
+
+            >>> new_expr = pl.col("col_name").sqrt()
+            >>> df.with_columns(new_expr)
+
+            >>> new_expr = pl.col("col_name").struct.field("field_name").sqrt()
+            >>> df.with_columns(pl.col("col_name").struct.with_fields(new_expr))
 
         The UDF is applied to each element of a column. Note that, in a GroupBy
         context, the column will have been pre-aggregated and so each element
