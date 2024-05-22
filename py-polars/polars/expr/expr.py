@@ -4613,7 +4613,8 @@ class Expr:
               `pl.col("col_name").struct.field("field_name").sqrt()`.
 
             If you want to replace the original column or field,
-            consider `.with_columns` and `.with_fields`.
+            consider :meth:`.with_columns <polars.DataFrame.with_columns>`
+            and :meth:`.with_fields <polars.Expr.struct.with_fields>`.
 
             >>> new_expr = pl.col("col_name").sqrt()
             >>> df.with_columns(new_expr)
