@@ -4552,7 +4552,7 @@ class Series:
         with nullcontext() if device is None else jx.default_device(device):
             return jx.numpy.asarray(
                 # note: jax arrays are immutable, so can avoid a copy (vs torch)
-                a=srs.to_numpy(writable=False, use_pyarrow=False),
+                a=srs.to_numpy(writable=False),
                 order="K",
             )
 
@@ -4593,7 +4593,7 @@ class Series:
 
         # we have to build the tensor from a writable array or PyTorch will complain
         # about it (as writing to readonly array results in undefined behavior)
-        numpy_array = srs.to_numpy(writable=True, use_pyarrow=False)
+        numpy_array = srs.to_numpy(writable=True)
         tensor = torch.from_numpy(numpy_array)
 
         # note: named tensors are currently experimental

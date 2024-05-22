@@ -1784,7 +1784,7 @@ class DataFrame:
             if return_type == "array":
                 return jx.numpy.asarray(
                     # note: jax arrays are immutable, so can avoid a copy (vs torch)
-                    a=frame.to_numpy(writable=False, use_pyarrow=False, order=order),
+                    a=frame.to_numpy(writable=False, order=order),
                     order="K",
                 )
             elif return_type == "dict":
@@ -2001,7 +2001,7 @@ class DataFrame:
 
         if return_type == "tensor":
             # note: torch tensors are not immutable, so we must consider them writable
-            return torch.from_numpy(frame.to_numpy(writable=True, use_pyarrow=False))
+            return torch.from_numpy(frame.to_numpy(writable=True))
 
         elif return_type == "dict":
             if label is not None:
