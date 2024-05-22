@@ -876,3 +876,25 @@ def test_struct_arithmetic_schema() -> None:
     assert q.select(pl.struct("A") - pl.struct("B")).schema["A"] == pl.Struct(
         {"A": pl.Int64}
     )
+
+
+def test_struct_field() -> None:
+    df = pl.DataFrame(
+        {
+            "item": [
+                {"name": "John", "age": 30, "car": None},
+                {"name": "Alice", "age": 65, "car": "Volvo"},
+            ]
+        }
+    )
+
+    assert df.select(
+        pl.col("item").struct.with_fields(
+            pl.field("name").str.to_uppercase(), pl.field("car").fill_null("Mazda")
+        )
+    ).to_dict(as_series=False) == {
+        "item": [
+            {"name": "JOHN", "age": 30, "car": "Mazda"},
+            {"name": "ALICE", "age": 65, "car": "Volvo"},
+        ]
+    }

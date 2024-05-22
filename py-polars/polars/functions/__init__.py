@@ -48,6 +48,7 @@ from polars.functions.lazy import (
     cumreduce,
     element,
     exclude,
+    field,
     first,
     fold,
     from_epoch,
@@ -145,6 +146,7 @@ __all__ = [
     "datetime",  # named datetime_, see import above
     "duration",
     "exclude",
+    "field",
     "first",
     "fold",
     "format",

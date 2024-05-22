@@ -89,6 +89,17 @@ pub fn as_struct(exprs: Vec<PyExpr>) -> PyExpr {
 }
 
 #[pyfunction]
+pub fn field(names: Vec<String>) -> PyExpr {
+    dsl::Expr::Field(
+        names
+            .into_iter()
+            .map(|name| Arc::from(name.as_str()))
+            .collect(),
+    )
+    .into()
+}
+
+#[pyfunction]
 pub fn coalesce(exprs: Vec<PyExpr>) -> PyExpr {
     let exprs = exprs.to_exprs();
     dsl::coalesce(&exprs).into()

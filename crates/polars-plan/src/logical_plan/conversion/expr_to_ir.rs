@@ -360,6 +360,8 @@ fn to_aexpr_impl(expr: Expr, arena: &mut Arena<AExpr>, state: &mut ConversionSta
             }
         },
         Expr::Wildcard => AExpr::Wildcard,
+        #[cfg(feature = "dtype-struct")]
+        Expr::Field(_) => unreachable!(), // replaced during expansion
         Expr::SubPlan { .. } => panic!("no SQL subquery expected at this point"),
         Expr::KeepName(_) => panic!("no `name.keep` expected at this point"),
         Expr::Exclude(_, _) => panic!("no `exclude` expected at this point"),
