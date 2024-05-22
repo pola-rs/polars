@@ -407,10 +407,19 @@ fn expand_struct_fields(
         polars_ensure!(name.as_ref() != "*", InvalidOperation: "cannot combine wildcards and column names");
 
         if !exclude.contains(name) {
-            result.push(replace_struct_multiple_fields_with_field(
-                full_expr.clone(),
-                name,
-            ))
+            let mut new_expr = replace_struct_multiple_fields_with_field(full_expr.clone(), name);
+            match new_expr {
+                Expr::KeepName(expr) => {
+                    new_expr = Expr::Alias(expr, name.clone());
+                },
+                Expr::RenameAlias { expr, function } => {
+                    let name = function.call(&name)?;
+                    new_expr = Expr::Alias(expr, ColumnName::from(name));
+                },
+                _ => {},
+            }
+
+            result.push(new_expr)
         }
     }
     Ok(())
