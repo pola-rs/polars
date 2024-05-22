@@ -72,7 +72,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             df_orders.clone().lazy(),
             [col("customer_id")],
             [col("customer_id")],
-            JoinArgs::new(JoinType::Full),
+            JoinArgs::new(JoinType::Full).with_coalesce(JoinCoalesce::CoalesceColumns),
         )
         .collect()?;
     println!("{}", &df_full_join);
