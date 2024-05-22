@@ -306,7 +306,13 @@ impl BinaryChunked {
             .map(|arr| arr.to_utf8view_unchecked().boxed())
             .collect();
         let field = Arc::new(Field::new(self.name(), DataType::String));
-        StringChunked::from_chunks_and_metadata(chunks, field, self.bit_settings, true, true)
+        StringChunked::from_chunks_and_metadata(
+            chunks,
+            field,
+            Arc::new(self.effective_metadata().cast()),
+            true,
+            true,
+        )
     }
 }
 
@@ -318,7 +324,13 @@ impl StringChunked {
             .collect();
         let field = Arc::new(Field::new(self.name(), DataType::Binary));
         unsafe {
-            BinaryChunked::from_chunks_and_metadata(chunks, field, self.bit_settings, true, true)
+            BinaryChunked::from_chunks_and_metadata(
+                chunks,
+                field,
+                Arc::new(self.effective_metadata().cast()),
+                true,
+                true,
+            )
         }
     }
 }

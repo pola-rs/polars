@@ -17,10 +17,10 @@ macro_rules! impl_dyn_series {
                 self.0.ref_field().data_type()
             }
 
-            fn _set_flags(&mut self, flags: Settings) {
+            fn _set_flags(&mut self, flags: MetadataFlags) {
                 self.0.set_flags(flags)
             }
-            fn _get_flags(&self) -> Settings {
+            fn _get_flags(&self) -> MetadataFlags {
                 self.0.get_flags()
             }
             fn explode_by_offsets(&self, offsets: &[i64]) -> Series {

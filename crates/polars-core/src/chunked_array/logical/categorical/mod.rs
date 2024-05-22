@@ -13,7 +13,7 @@ use polars_utils::sync::SyncPtr;
 pub use revmap::*;
 
 use super::*;
-use crate::chunked_array::Settings;
+use crate::chunked_array::metadata::MetadataFlags;
 use crate::prelude::*;
 use crate::series::IsSorted;
 use crate::using_string_cache;
@@ -173,12 +173,12 @@ impl CategoricalChunked {
         }
     }
 
-    pub(crate) fn get_flags(&self) -> Settings {
+    pub(crate) fn get_flags(&self) -> MetadataFlags {
         self.physical().get_flags()
     }
 
     /// Set flags for the Chunked Array
-    pub(crate) fn set_flags(&mut self, mut flags: Settings) {
+    pub(crate) fn set_flags(&mut self, mut flags: MetadataFlags) {
         // We should not set the sorted flag if we are sorting in lexical order
         if self.uses_lexical_ordering() {
             flags.set_sorted_flag(IsSorted::Not)
