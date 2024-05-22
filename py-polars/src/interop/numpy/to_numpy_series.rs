@@ -378,7 +378,7 @@ fn list_series_to_numpy(py: Python, s: &Series, writable: bool) -> PyObject {
         let slice = PySlice::new_bound(py, prev_offset, current_offset, 1);
         prev_offset = current_offset;
         np_array_flat
-            .call_method1(py, "__getitem__", (slice,))
+            .call_method1(py, intern!(py, "__getitem__"), (slice,))
             .unwrap()
     });
 
