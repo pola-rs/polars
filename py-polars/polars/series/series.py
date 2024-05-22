@@ -4421,7 +4421,7 @@ class Series:
         *,
         writable: bool = False,
         allow_copy: bool = True,
-        use_pyarrow: bool = True,
+        use_pyarrow: bool | None = None,
         zero_copy_only: bool | None = None,
     ) -> np.ndarray[Any, Any]:
         """
@@ -4444,11 +4444,17 @@ class Series:
         allow_copy
             Allow memory to be copied to perform the conversion. If set to `False`,
             causes conversions that are not zero-copy to fail.
+
         use_pyarrow
             First convert to PyArrow, then call `pyarrow.Array.to_numpy
             <https://arrow.apache.org/docs/python/generated/pyarrow.Array.html#pyarrow.Array.to_numpy>`_
             to convert to NumPy. If set to `False`, Polars' own conversion logic is
             used.
+
+            .. deprecated:: 0.20.28
+                Polars now uses its native engine by default for conversion to NumPy.
+                To use PyArrow's engine, call `.to_arrow().to_numpy()` instead.
+
         zero_copy_only
             Raise an exception if the conversion to a NumPy would require copying
             the underlying data. Data copy occurs, for example, when the Series contains
@@ -4474,6 +4480,16 @@ class Series:
                 version="0.20.10",
             )
             allow_copy = not zero_copy_only
+
+        if use_pyarrow is not None:
+            issue_deprecation_warning(
+                "The `use_pyarrow` parameter for `Series.to_numpy` is deprecated."
+                " Polars now uses its native engine for conversion to NumPy by default."
+                " To use PyArrow's engine, call `.to_arrow().to_numpy()` instead.",
+                version="0.20.28",
+            )
+        else:
+            use_pyarrow = False
 
         if (
             use_pyarrow
