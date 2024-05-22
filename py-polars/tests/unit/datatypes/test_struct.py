@@ -868,3 +868,18 @@ def test_struct_null_count_10130() -> None:
 
     s = pl.Series([{"a": None}])
     assert s.null_count() == 1
+
+
+def test_struct_rename_mismatch_9052() -> None:
+    df = pl.DataFrame({"A": [{"p": 1, "q": 2}]})
+
+    with pytest.raises(pl.ComputeError, match=r"expected 2 names, got 1"):
+        df.select(pl.col("A").struct.rename_fields(["x"]))
+
+    # Additional cases
+    # too many fields
+    with pytest.raises(pl.ComputeError, match=r"expected 2 names, got 3"):
+        df.select(pl.col("A").struct.rename_fields(["too", "many", "fields"]))
+    # during schema evaluation
+    with pytest.raises(pl.ComputeError, match=r"expected 2 names, got 1"):
+        df.lazy().select(pl.col("A").struct.rename_fields(["x"])).schema
