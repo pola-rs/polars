@@ -27,7 +27,7 @@ def assert_zero_copy(s: pl.Series, arr: np.ndarray[Any, Any]) -> None:
 
 def assert_allow_copy_false_raises(s: pl.Series) -> None:
     with pytest.raises(RuntimeError, match="copy not allowed"):
-        s.to_numpy(use_pyarrow=False, allow_copy=False)
+        s.to_numpy(allow_copy=False)
 
 
 @pytest.mark.parametrize(
@@ -49,7 +49,7 @@ def test_series_to_numpy_numeric_zero_copy(
     dtype: pl.PolarsDataType, expected_dtype: npt.DTypeLike
 ) -> None:
     s = pl.Series([1, 2, 3]).cast(dtype)
-    result = s.to_numpy(use_pyarrow=False, allow_copy=False)
+    result = s.to_numpy(allow_copy=False)
 
     assert_zero_copy(s, result)
     assert result.tolist() == s.to_list()
@@ -75,7 +75,7 @@ def test_series_to_numpy_numeric_with_nulls(
     dtype: pl.PolarsDataType, expected_dtype: npt.DTypeLike
 ) -> None:
     s = pl.Series([1, 2, None], dtype=dtype, strict=False)
-    result = s.to_numpy(use_pyarrow=False)
+    result = s.to_numpy()
 
     assert result.tolist()[:-1] == s.to_list()[:-1]
     assert np.isnan(result[-1])
@@ -101,7 +101,7 @@ def test_series_to_numpy_temporal_zero_copy(
 ) -> None:
     values = [0, 2_000, 1_000_000]
     s = pl.Series(values, dtype=dtype, strict=False)
-    result = s.to_numpy(use_pyarrow=False, allow_copy=False)
+    result = s.to_numpy(allow_copy=False)
 
     assert_zero_copy(s, result)
     # NumPy tolist returns integers for ns precision
@@ -115,7 +115,7 @@ def test_series_to_numpy_temporal_zero_copy(
 def test_series_to_numpy_datetime_with_tz_zero_copy() -> None:
     values = [datetime(1970, 1, 1), datetime(2024, 2, 28)]
     s = pl.Series(values).dt.convert_time_zone("Europe/Amsterdam")
-    result = s.to_numpy(use_pyarrow=False, allow_copy=False)
+    result = s.to_numpy(allow_copy=False)
 
     assert_zero_copy(s, result)
     assert result.tolist() == values
@@ -126,7 +126,7 @@ def test_series_to_numpy_date() -> None:
     values = [date(1970, 1, 1), date(2024, 2, 28)]
     s = pl.Series(values)
 
-    result = s.to_numpy(use_pyarrow=False)
+    result = s.to_numpy()
 
     assert s.to_list() == result.tolist()
     assert result.dtype == np.dtype("datetime64[D]")
@@ -152,7 +152,7 @@ def test_series_to_numpy_temporal_with_nulls(
 ) -> None:
     values = [0, 2_000, 1_000_000, None]
     s = pl.Series(values, dtype=dtype, strict=False)
-    result = s.to_numpy(use_pyarrow=False)
+    result = s.to_numpy()
 
     # NumPy tolist returns integers for ns precision
     if getattr(s.dtype, "time_unit", None) == "ns":
@@ -166,7 +166,7 @@ def test_series_to_numpy_temporal_with_nulls(
 def test_series_to_numpy_datetime_with_tz_with_nulls() -> None:
     values = [datetime(1970, 1, 1), datetime(2024, 2, 28), None]
     s = pl.Series(values).dt.convert_time_zone("Europe/Amsterdam")
-    result = s.to_numpy(use_pyarrow=False)
+    result = s.to_numpy()
 
     assert result.tolist() == values
     assert result.dtype == np.dtype("datetime64[us]")
@@ -193,7 +193,7 @@ def test_to_numpy_object_dtypes(
         values.append(None)
 
     s = pl.Series(values, dtype=dtype)
-    result = s.to_numpy(use_pyarrow=False)
+    result = s.to_numpy()
 
     assert result.tolist() == values
     assert result.dtype == np.object_
@@ -202,7 +202,7 @@ def test_to_numpy_object_dtypes(
 
 def test_series_to_numpy_bool() -> None:
     s = pl.Series([True, False])
-    result = s.to_numpy(use_pyarrow=False)
+    result = s.to_numpy()
 
     assert s.to_list() == result.tolist()
     assert result.dtype == np.bool_
@@ -212,7 +212,7 @@ def test_series_to_numpy_bool() -> None:
 
 def test_series_to_numpy_bool_with_nulls() -> None:
     s = pl.Series([True, False, None])
-    result = s.to_numpy(use_pyarrow=False)
+    result = s.to_numpy()
 
     assert s.to_list() == result.tolist()
     assert result.dtype == np.object_
@@ -222,7 +222,7 @@ def test_series_to_numpy_bool_with_nulls() -> None:
 def test_series_to_numpy_array_of_int() -> None:
     values = [[[1, 2, 3], [4, 5, 6]], [[7, 8, 9], [10, 11, 12]]]
     s = pl.Series(values, dtype=pl.Array(pl.Array(pl.Int8, 3), 2))
-    result = s.to_numpy(use_pyarrow=False, allow_copy=False)
+    result = s.to_numpy(allow_copy=False)
 
     expected = np.array(values)
     assert_array_equal(result, expected)
@@ -233,7 +233,7 @@ def test_series_to_numpy_array_of_int() -> None:
 def test_series_to_numpy_array_of_str() -> None:
     values = [["1", "2", "3"], ["4", "5", "10000"]]
     s = pl.Series(values, dtype=pl.Array(pl.String, 3))
-    result = s.to_numpy(use_pyarrow=False)
+    result = s.to_numpy()
     assert result.tolist() == values
     assert result.dtype == np.object_
 
@@ -241,7 +241,7 @@ def test_series_to_numpy_array_of_str() -> None:
 def test_series_to_numpy_array_with_nulls() -> None:
     values = [[1, 2], [3, 4], None]
     s = pl.Series(values, dtype=pl.Array(pl.Int64, 2))
-    result = s.to_numpy(use_pyarrow=False)
+    result = s.to_numpy()
 
     expected = np.array([[1.0, 2.0], [3.0, 4.0], [np.nan, np.nan]])
     assert_array_equal(result, expected)
@@ -252,7 +252,7 @@ def test_series_to_numpy_array_with_nulls() -> None:
 def test_series_to_numpy_array_with_nested_nulls() -> None:
     values = [[None, 2], [3, 4], [5, None]]
     s = pl.Series(values, dtype=pl.Array(pl.Int64, 2))
-    result = s.to_numpy(use_pyarrow=False)
+    result = s.to_numpy()
 
     expected = np.array([[np.nan, 2.0], [3.0, 4.0], [5.0, np.nan]])
     assert_array_equal(result, expected)
@@ -263,7 +263,7 @@ def test_series_to_numpy_array_with_nested_nulls() -> None:
 def test_series_to_numpy_array_of_arrays() -> None:
     values = [[[None, 2], [3, 4]], [None, [7, 8]]]
     s = pl.Series(values, dtype=pl.Array(pl.Array(pl.Int64, 2), 2))
-    result = s.to_numpy(use_pyarrow=False)
+    result = s.to_numpy()
 
     expected = np.array([[[np.nan, 2], [3, 4]], [[np.nan, np.nan], [7, 8]]])
     assert_array_equal(result, expected)
@@ -278,7 +278,7 @@ def test_series_to_numpy_list(chunked: bool) -> None:
     s = pl.Series(values)
     if chunked:
         s = pl.concat([s[:2], s[2:]])
-    result = s.to_numpy(use_pyarrow=False)
+    result = s.to_numpy()
 
     expected = np.array([np.array(v, dtype=np.int64) for v in values], dtype=np.object_)
     for res, exp in zip(result, expected):
@@ -291,7 +291,7 @@ def test_series_to_numpy_list(chunked: bool) -> None:
 def test_series_to_numpy_struct_numeric_supertype() -> None:
     values = [{"a": 1, "b": 2.0}, {"a": 3, "b": 4.0}, {"a": 5, "b": None}]
     s = pl.Series(values)
-    result = s.to_numpy(use_pyarrow=False)
+    result = s.to_numpy()
 
     expected = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, np.nan]])
     assert_array_equal(result, expected)
@@ -301,7 +301,7 @@ def test_series_to_numpy_struct_numeric_supertype() -> None:
 
 def test_to_numpy_null() -> None:
     s = pl.Series([None, None], dtype=pl.Null)
-    result = s.to_numpy(use_pyarrow=False)
+    result = s.to_numpy()
     expected = np.array([np.nan, np.nan], dtype=np.float32)
     assert_array_equal(result, expected)
     assert result.dtype == np.float32
@@ -310,14 +310,14 @@ def test_to_numpy_null() -> None:
 
 def test_to_numpy_empty() -> None:
     s = pl.Series(dtype=pl.String)
-    result = s.to_numpy(use_pyarrow=False, allow_copy=False)
+    result = s.to_numpy(allow_copy=False)
     assert result.dtype == np.object_
     assert result.shape == (0,)
 
 
 def test_to_numpy_empty_writable() -> None:
     s = pl.Series(dtype=pl.Int64)
-    result = s.to_numpy(use_pyarrow=False, allow_copy=False, writable=True)
+    result = s.to_numpy(allow_copy=False, writable=True)
     assert result.dtype == np.int64
     assert result.shape == (0,)
     assert result.flags.writeable is True
@@ -328,7 +328,7 @@ def test_to_numpy_chunked() -> None:
     s2 = pl.Series([3, 4])
     s = pl.concat([s1, s2], rechunk=False)
 
-    result = s.to_numpy(use_pyarrow=False)
+    result = s.to_numpy()
 
     assert result.tolist() == s.to_list()
     assert result.dtype == np.int64
@@ -347,7 +347,7 @@ def test_to_numpy_chunked_temporal_nested() -> None:
     s2 = pl.Series([[datetime(2022, 1, 1)], [datetime(2023, 1, 1)]], dtype=dtype)
     s = pl.concat([s1, s2], rechunk=False)
 
-    result = s.to_numpy(use_pyarrow=False)
+    result = s.to_numpy()
 
     assert result.tolist() == s.to_list()
     assert result.dtype == np.dtype("datetime64[us]")
@@ -412,7 +412,7 @@ def test_series_to_numpy_temporal() -> None:
 )
 @settings(max_examples=250)
 def test_series_to_numpy(s: pl.Series) -> None:
-    result = s.to_numpy(use_pyarrow=False)
+    result = s.to_numpy()
 
     values = s.to_list()
     dtype_map = {

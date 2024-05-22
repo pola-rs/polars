@@ -112,12 +112,11 @@ def test_numpy_preserve_uint64_4112() -> None:
     assert df.to_numpy(structured=True).dtype == np.dtype([("a", "uint64")])
 
 
-@pytest.mark.parametrize("use_pyarrow", [True, False])
-def test_df_to_numpy_decimal(use_pyarrow: bool) -> None:
+def test_df_to_numpy_decimal() -> None:
     decimal_data = [D("1.234"), D("2.345"), D("-3.456")]
     df = pl.Series("n", decimal_data).to_frame()
 
-    result = df.to_numpy(use_pyarrow=use_pyarrow)
+    result = df.to_numpy()
 
     expected = np.array(decimal_data).reshape((-1, 1))
     assert_array_equal(result, expected)
@@ -191,7 +190,7 @@ def test_df_to_numpy_structured_nested() -> None:
             "c": [{"x": "a", "y": 1.0}, {"x": "b", "y": 2.0}],
         }
     )
-    result = df.to_numpy(structured=True, use_pyarrow=False)
+    result = df.to_numpy(structured=True)
 
     expected = np.array(
         [
@@ -212,7 +211,7 @@ def test_df_to_numpy_stacking_array() -> None:
         {"a": [[1, 2]], "b": 1},
         schema={"a": pl.Array(pl.Int64, 2), "b": pl.Int32},
     )
-    result = df.to_numpy(use_pyarrow=False)
+    result = df.to_numpy()
 
     expected = np.array([[np.array([1, 2]), 1]], dtype=np.object_)
 
@@ -223,7 +222,7 @@ def test_df_to_numpy_stacking_array() -> None:
 
 def test_df_to_numpy_stacking_string() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]})
-    result = df.to_numpy(use_pyarrow=False)
+    result = df.to_numpy()
 
     expected = np.array([[1, "x"], [2, "y"], [3, "z"]], dtype=np.object_)
 
