@@ -227,3 +227,16 @@ def test_df_to_numpy_stacking_string() -> None:
     expected = np.array([[1, "x"], [2, "y"], [3, "z"]], dtype=np.object_)
 
     assert_array_equal(result, expected)
+
+
+def test_to_numpy_chunked_16375() -> None:
+    assert (
+        pl.concat(
+            [
+                pl.DataFrame({"a": [1, 1, 2], "b": [2, 3, 4]}),
+                pl.DataFrame({"a": [1, 1, 2], "b": [2, 3, 4]}),
+            ],
+            rechunk=False,
+        ).to_numpy()
+        == np.array([[1, 2], [1, 3], [2, 4], [1, 2], [1, 3], [2, 4]])
+    ).all()
