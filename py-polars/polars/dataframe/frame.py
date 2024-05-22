@@ -1498,8 +1498,8 @@ class DataFrame:
         structured: bool = False,  # noqa: FBT001
         *,
         order: IndexOrder = "fortran",
-        allow_copy: bool = True,
         writable: bool = False,
+        allow_copy: bool = True,
         use_pyarrow: bool | None = None,
     ) -> np.ndarray[Any, Any]:
         """
@@ -1529,13 +1529,13 @@ class DataFrame:
             However, the C-like order might be more appropriate to use for downstream
             applications to prevent cloning data, e.g. when reshaping into a
             one-dimensional array.
-        allow_copy
-            Allow memory to be copied to perform the conversion. If set to `False`,
-            causes conversions that are not zero-copy to fail.
         writable
             Ensure the resulting array is writable. This will force a copy of the data
             if the array was created without copy, as the underlying Arrow data is
             immutable.
+        allow_copy
+            Allow memory to be copied to perform the conversion. If set to `False`,
+            causes conversions that are not zero-copy to fail.
 
         use_pyarrow
             Use `pyarrow.Array.to_numpy
