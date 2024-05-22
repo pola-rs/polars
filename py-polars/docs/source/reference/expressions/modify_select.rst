@@ -34,6 +34,7 @@ Manipulation/selection
     Expr.head
     Expr.inspect
     Expr.interpolate
+    Expr.interpolate_by
     Expr.limit
     Expr.lower_bound
     Expr.map_dict
