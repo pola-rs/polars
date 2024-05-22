@@ -1,45 +1,14 @@
 use std::sync::Arc;
 
 use arrow::bitmap::MutableBitmap;
-use polars_core::schema::SchemaRef;
 use polars_utils::aliases::PlHashMap;
 use polars_utils::arena::{Arena, Node};
 
 use super::aexpr::AExpr;
 use super::alp::IR;
-use super::{aexpr_to_leaf_names_iter, ColumnName, ProjectionOptions};
-use crate::logical_plan::projection_expr::ProjectionExprs;
+use super::{aexpr_to_leaf_names_iter, ColumnName};
 
 type ColumnMap = PlHashMap<ColumnName, usize>;
-
-/// Utility structure to contain all the information of a [`IR::HStack`] i.e. a `WITH_COLUMNS` node
-struct WithColumnsMut<'a> {
-    input: &'a mut Node,
-    exprs: &'a mut ProjectionExprs,
-    schema: &'a mut SchemaRef,
-    options: &'a mut ProjectionOptions,
-}
-
-impl<'a> WithColumnsMut<'a> {
-    fn from_ir(ir: &'a mut IR) -> Option<Self> {
-        let IR::HStack {
-            input,
-            exprs,
-            schema,
-            options,
-        } = ir
-        else {
-            return None;
-        };
-
-        Some(Self {
-            input,
-            exprs,
-            schema,
-            options,
-        })
-    }
-}
 
 fn column_map_set(bitset: &mut MutableBitmap, column_map: &mut ColumnMap, column: ColumnName) {
     let size = column_map.len();
@@ -66,10 +35,22 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
 
             let [current_ir, input_ir] = lp_arena.get_many_mut([current, input]);
 
-            let Some(current_wc) = WithColumnsMut::from_ir(current_ir) else {
+            let IR::HStack {
+                input: ref mut current_input,
+                exprs: ref mut current_exprs,
+                schema: ref mut current_schema,
+                options: ref mut current_options,
+            } = current_ir
+            else {
                 unreachable!();
             };
-            let Some(input_wc) = WithColumnsMut::from_ir(input_ir) else {
+            let IR::HStack {
+                input: ref mut input_input,
+                exprs: ref mut input_exprs,
+                schema: ref mut input_schema,
+                options: ref mut input_options,
+            } = input_ir
+            else {
                 break;
             };
 
@@ -80,7 +61,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
             let mut column_map = ColumnMap::default();
 
             let mut input_genset = MutableBitmap::new();
-            for input_expr in input_wc.exprs.as_exprs() {
+            for input_expr in input_exprs.as_exprs() {
                 column_map_set(
                     &mut input_genset,
                     &mut column_map,
@@ -88,8 +69,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
                 );
             }
 
-            let mut current_livesets: Vec<MutableBitmap> = current_wc
-                .exprs
+            let mut current_livesets: Vec<MutableBitmap> = current_exprs
                 .as_exprs()
                 .iter()
                 .map(|expr| {
@@ -112,7 +92,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
 
             // Check for every expression in the current WITH_COLUMNS node whether it can be pushed
             // down.
-            let mut pushable = MutableBitmap::with_capacity(input_wc.exprs.len());
+            let mut pushable = MutableBitmap::with_capacity(input_exprs.len());
             for expr_liveset in &mut current_livesets {
                 let size = expr_liveset.len();
                 expr_liveset.extend_constant(num_names - size, false);
@@ -133,14 +113,13 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
                 // @NOTE: To keep the schema correct, we reverse the order here. As a
                 // `WITH_COLUMNS` higher up produces later columns. This also allows us not to
                 // have to deal with schemas.
-                input_wc
-                    .exprs
+                input_exprs
                     .exprs_mut()
-                    .extend(std::mem::take(current_wc.exprs.exprs_mut()));
-                std::mem::swap(current_wc.exprs.exprs_mut(), input_wc.exprs.exprs_mut());
+                    .extend(std::mem::take(current_exprs.exprs_mut()));
+                std::mem::swap(current_exprs.exprs_mut(), input_exprs.exprs_mut());
 
-                *current_wc.input = *input_wc.input;
-                *current_wc.options = current_wc.options.merge_options(input_wc.options);
+                *current_input = *input_input;
+                *current_options = current_options.merge_options(input_options);
 
                 // Let us just make this node invalid so we can detect when someone tries to
                 // mention it later.
@@ -151,8 +130,8 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
                 continue;
             }
 
-            let mut current_schema = current_wc.schema.as_ref().clone();
-            let mut input_schema = input_wc.schema.as_ref().clone();
+            let mut new_current_schema = current_schema.as_ref().clone();
+            let mut new_input_schema = input_schema.as_ref().clone();
 
             // @NOTE: We don't have to insert a SimpleProjection or redo the `current_schema` if
             // `pushable` contains only 0..N for some N. We use these two variables to keep track
@@ -160,7 +139,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
             let mut has_seen_unpushable = false;
             let mut needs_simple_projection = false;
 
-            let current_exprs = std::mem::take(current_wc.exprs.exprs_mut())
+            let new_current_exprs = std::mem::take(current_exprs.exprs_mut())
                 .into_iter()
                 .zip(pushable)
                 .enumerate()
@@ -169,11 +148,11 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
                         needs_simple_projection = has_seen_unpushable;
 
                         // @NOTE: It would be nice to have a `remove_at_index` here.
-                        let (column, _) = current_wc.schema.get_at_index(i).unwrap();
+                        let (column, _) = current_schema.get_at_index(i).unwrap();
 
-                        input_wc.exprs.exprs_mut().push(expr);
-                        let datatype = current_schema.remove(column).unwrap();
-                        input_schema.with_column(column.clone(), datatype);
+                        input_exprs.exprs_mut().push(expr);
+                        let datatype = new_current_schema.remove(column).unwrap();
+                        new_input_schema.with_column(column.clone(), datatype);
 
                         None
                     } else {
@@ -183,19 +162,19 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
                 })
                 .collect();
 
-            *current_wc.exprs.exprs_mut() = current_exprs;
+            *current_exprs.exprs_mut() = new_current_exprs;
 
-            let options = current_wc.options.merge_options(input_wc.options);
-            *current_wc.options = options;
-            *input_wc.options = options;
+            let options = current_options.merge_options(input_options);
+            *current_options = options;
+            *input_options = options;
 
             // @NOTE: Here we add a simple projection to make sure that the output still
             // has the right schema.
             if needs_simple_projection {
-                current_schema.merge(input_schema.clone());
-                *input_wc.schema = Arc::new(input_schema);
-                let proj_schema = current_wc.schema.clone();
-                *current_wc.schema = Arc::new(current_schema);
+                new_current_schema.merge(new_input_schema.clone());
+                *input_schema = Arc::new(new_input_schema);
+                let proj_schema = current_schema.clone();
+                *current_schema = Arc::new(new_current_schema);
 
                 let moved_current = lp_arena.add(IR::Invalid);
                 let projection = IR::SimpleProjection {
@@ -205,7 +184,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
                 let current = lp_arena.replace(current, projection);
                 lp_arena.replace(moved_current, current);
             } else {
-                *input_wc.schema = Arc::new(input_schema);
+                *input_schema = Arc::new(new_input_schema);
             }
 
             // We know that this node is done optimizing
