@@ -1505,6 +1505,16 @@ class DataFrame:
         """
         Convert this DataFrame to a NumPy ndarray.
 
+        This method copies data only when necessary. The conversion is zero copy when
+        all of the following hold:
+
+        - The DataFrame is fully contiguous in memory, with all Series back-to-back and
+          all Series consisting of a single chunk.
+        - The data type is an integer or float.
+        - The DataFrame contains no null values.
+        - The `order` parameter is set to `fortran` (default).
+        - The `writable` parameter is set to `False` (default).
+
         Parameters
         ----------
         structured
@@ -1538,6 +1548,48 @@ class DataFrame:
 
         Examples
         --------
+        Numeric data without nulls can be converted without copying data in some cases.
+        The resulting array will not be writable.
+
+        >>> df = pl.DataFrame({"a": [1, 2, 3]})
+        >>> arr = df.to_numpy()
+        >>> arr
+        array([[1],
+               [2],
+               [3]])
+        >>> arr.flags.writeable
+        False
+
+        Set `writable=True` to force data copy to make the array writable.
+
+        >>> df.to_numpy(writable=True).flags.writeable
+        True
+
+        If the DataFrame contains different numeric data types, the resulting data type
+        will be the supertype. This requires data to be copied. Integer types with
+        nulls are cast to a float type with `nan` representing a null value.
+
+        >>> df = pl.DataFrame({"a": [1, 2, None], "b": [4.0, 5.0, 6.0]})
+        >>> df.to_numpy()
+        array([[ 1.,  4.],
+               [ 2.,  5.],
+               [nan,  6.]])
+
+        Set `allow_copy=False` to raise an error if data would be copied.
+
+        >>> s.to_numpy(allow_copy=False)  # doctest: +SKIP
+        Traceback (most recent call last):
+        ...
+        RuntimeError: copy not allowed: cannot convert to a NumPy array without copying data
+
+        Polars defaults to F-contiguous order. Use `order="c"` to force the resulting
+        array to be C-contiguous.
+
+        >>> df.to_numpy(order="c").flags.c_contiguous
+        True
+
+        DataFrames with mixed types will result in an array with an object dtype.
+
         >>> df = pl.DataFrame(
         ...     {
         ...         "foo": [1, 2, 3],
@@ -1546,28 +1598,18 @@ class DataFrame:
         ...     },
         ...     schema_overrides={"foo": pl.UInt8, "bar": pl.Float32},
         ... )
-
-        Export to a standard 2D numpy array.
-
         >>> df.to_numpy()
         array([[1, 6.5, 'a'],
                [2, 7.0, 'b'],
                [3, 8.5, 'c']], dtype=object)
 
-        Export to a structured array, which can better-preserve individual
-        column data, such as name and dtype...
+        Set `structured=True` to convert to a structured array, which can better
+        preserve individual column data such as name and data type.
 
         >>> df.to_numpy(structured=True)
         array([(1, 6.5, 'a'), (2, 7. , 'b'), (3, 8.5, 'c')],
               dtype=[('foo', 'u1'), ('bar', '<f4'), ('ham', '<U1')])
-
-        ...optionally going on to view as a record array:
-
-        >>> import numpy as np
-        >>> df.to_numpy(structured=True).view(np.recarray)
-        rec.array([(1, 6.5, 'a'), (2, 7. , 'b'), (3, 8.5, 'c')],
-                  dtype=[('foo', 'u1'), ('bar', '<f4'), ('ham', '<U1')])
-        """
+        """  # noqa: W505
         if use_pyarrow is not None:
             issue_deprecation_warning(
                 "The `use_pyarrow` parameter for `DataFrame.to_numpy` is deprecated."
