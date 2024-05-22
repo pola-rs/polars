@@ -7,7 +7,7 @@ use numpy::{Element, PyArray1, PyArrayDescrMethods, ToNpyDims, PY_ARRAY_API};
 use polars_core::prelude::*;
 use polars_core::utils::arrow::types::NativeType;
 use pyo3::prelude::*;
-use pyo3::types::PyTuple;
+use pyo3::types::{PyNone, PyTuple};
 
 use crate::series::PySeries;
 
@@ -67,13 +67,31 @@ macro_rules! impl_ufuncs {
     ($name:ident, $type:ident, $unsafe_from_ptr_method:ident) => {
         #[pymethods]
         impl PySeries {
-            // applies a ufunc by accepting a lambda out: ufunc(*args, out=out)
-            // the out array is allocated in this method, send to Python and once the ufunc is applied
-            // ownership is taken by Rust again to prevent memory leak.
-            // if the ufunc fails, we first must take ownership back.
-            fn $name(&self, lambda: &Bound<PyAny>) -> PyResult<PySeries> {
+            // Applies a ufunc by accepting a lambda out: ufunc(*args, out=out).
+            //
+            // If allocate_out is true, the out array is allocated in this
+            // method, send to Python and once the ufunc is applied ownership is
+            // taken by Rust again to prevent memory leak. if the ufunc fails,
+            // we first must take ownership back.
+            //
+            // If allocate_out is false, the out parameter to the lambda will be
+            // None, meaning the ufunc will allocate memory itself. We will then
+            // have to convert that NumPy array into a pl.Series.
+            fn $name(&self, lambda: &Bound<PyAny>, allocate_out: bool) -> PyResult<PySeries> {
                 // numpy array object, and a *mut ptr
                 Python::with_gil(|py| {
+                    if !allocate_out {
+                        // We're not going to allocate the output array.
+                        // Instead, we'll let the ufunc do it.
+                        let result = lambda.call1((PyNone::get_bound(py),))?;
+                        let series_factory =
+                            PyModule::import_bound(py, "polars")?.getattr("Series")?;
+                        return series_factory
+                            .call((self.name(), result), None)?
+                            .getattr("_s")?
+                            .extract::<PySeries>();
+                    }
+
                     let size = self.len();
                     let (out_array, av) =
                         unsafe { aligned_array::<<$type as PolarsNumericType>::Native>(py, size) };

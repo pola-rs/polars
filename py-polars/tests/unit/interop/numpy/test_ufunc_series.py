@@ -158,3 +158,36 @@ def test_generalized_ufunc_missing_data() -> None:
         match="Can't pass a Series with missing data to a generalized ufunc",
     ):
         add_one(s_float)
+
+
+def make_divide_by_sum() -> Callable[[pl.Series, pl.Series], pl.Series]:
+    numba = pytest.importorskip("numba")
+    float64 = numba.float64
+
+    @numba.guvectorize([(float64[:], float64[:], float64[:])], "(n),(m)->(m)")
+    def divide_by_sum(arr, arr2, result):  # type: ignore[no-untyped-def]
+        total = arr.sum()
+        for i in range(len(arr2)):
+            result[i] = arr2[i] / total
+
+    return divide_by_sum  # type: ignore[no-any-return]
+
+
+def test_generalized_ufunc_different_output_size() -> None:
+    """
+    It's possible to call a generalized ufunc that takes pl.Series of different sizes.
+
+    The result has the correct size.
+    """
+    divide_by_sum = make_divide_by_sum()
+
+    series = pl.Series("s", [1.0, 3.0], dtype=pl.Float64)
+    series2 = pl.Series("s2", [8.0, 16.0, 32.0], dtype=pl.Float64)
+    assert_series_equal(
+        divide_by_sum(series, series2),
+        pl.Series("s", [2.0, 4.0, 8.0], dtype=pl.Float64),
+    )
+    assert_series_equal(
+        divide_by_sum(series2, series),
+        pl.Series("s2", [1.0 / 56, 3.0 / 56], dtype=pl.Float64),
+    )

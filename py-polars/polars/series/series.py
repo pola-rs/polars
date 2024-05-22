@@ -1452,6 +1452,15 @@ class Series:
                 if self.null_count() > 0:
                     msg = "Can't pass a Series with missing data to a generalized ufunc, as it might give unexpected results. See https://docs.pola.rs/user-guide/expressions/missing-data/ for suggestions on how to remove or fill in missing data."
                     raise ComputeError(msg)
+                # If the input and output are the same size, e.g. "(n)->(n)" we
+                # can allocate ourselves and save a copy. If they're different,
+                # we let the ufunc do the allocation, since only it knows the
+                # output size.
+                assert ufunc.signature is not None  # pacify MyPy
+                ufunc_input, ufunc_output = ufunc.signature.split("->")
+                allocate_output = ufunc_input == ufunc_output
+            else:
+                allocate_output = True
 
             f = get_ffi_func("apply_ufunc_<>", numpy_char_code_to_dtype(dtype_char), s)
 
@@ -1462,7 +1471,10 @@ class Series:
                 )
                 raise NotImplementedError(msg)
 
-            series = f(lambda out: ufunc(*args, out=out, dtype=dtype_char, **kwargs))
+            series = f(
+                lambda out: ufunc(*args, out=out, dtype=dtype_char, **kwargs),
+                allocate_output,
+            )
             result = self._from_pyseries(series)
             if is_generalized_ufunc:
                 # In this case we've disallowed passing in missing data, so no
