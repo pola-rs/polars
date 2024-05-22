@@ -7,7 +7,6 @@ use polars_utils::arena::{Arena, Node};
 
 use super::aexpr::AExpr;
 use super::alp::IR;
-use super::expr_ir::OutputName;
 use super::{aexpr_to_leaf_names_iter, ColumnName, ProjectionOptions};
 use crate::logical_plan::projection_expr::ProjectionExprs;
 
@@ -42,9 +41,15 @@ impl<'a> WithColumnsMut<'a> {
     }
 }
 
-fn column_map_idx(column_map: &mut ColumnMap, column: ColumnName) -> usize {
+fn column_map_set(bitset: &mut MutableBitmap, column_map: &mut ColumnMap, column: ColumnName) {
     let size = column_map.len();
-    *column_map.entry(column).or_insert_with(|| size)
+    column_map
+        .entry(column)
+        .and_modify(|idx| bitset.set(*idx, true))
+        .or_insert_with(|| {
+            bitset.push(true);
+            size
+        });
 }
 
 pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>) {
@@ -74,18 +79,14 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
 
             let mut column_map = ColumnMap::default();
 
-            let input_gen_columns: Vec<usize> = input_wc
-                .exprs
-                .as_exprs()
-                .iter()
-                .filter_map(|expr| match expr.output_name_inner() {
-                    OutputName::None => None,
-                    OutputName::LiteralLhs(s) | OutputName::ColumnLhs(s) => {
-                        Some(column_map_idx(&mut column_map, s.clone()))
-                    },
-                    OutputName::Alias(s) => Some(column_map_idx(&mut column_map, s.clone())),
-                })
-                .collect();
+            let mut input_genset = MutableBitmap::new();
+            for input_expr in input_wc.exprs.as_exprs() {
+                column_map_set(
+                    &mut input_genset,
+                    &mut column_map,
+                    input_expr.output_name_arc().clone(),
+                );
+            }
 
             let mut current_livesets: Vec<MutableBitmap> = current_wc
                 .exprs
@@ -95,16 +96,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
                     let mut liveset = MutableBitmap::from_len_zeroed(column_map.len());
 
                     for live in aexpr_to_leaf_names_iter(expr.node(), expr_arena) {
-                        let size = column_map.len();
-                        column_map
-                            .entry(live)
-                            .and_modify(|idx| {
-                                liveset.set(*idx, true);
-                            })
-                            .or_insert_with(|| {
-                                liveset.push(true);
-                                size
-                            });
+                        column_map_set(&mut liveset, &mut column_map, live.clone());
                     }
 
                     liveset
@@ -115,10 +107,8 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
             let num_names = column_map.len();
             drop(column_map);
 
-            let mut input_generate = MutableBitmap::from_len_zeroed(num_names);
-            for idx in &input_gen_columns {
-                input_generate.set(*idx, true);
-            }
+            let size = input_genset.len();
+            input_genset.extend_constant(num_names - size, false);
 
             // Check for every expression in the current WITH_COLUMNS node whether it can be pushed
             // down.
@@ -126,7 +116,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
             for expr_liveset in &mut current_livesets {
                 let size = expr_liveset.len();
                 expr_liveset.extend_constant(num_names - size, false);
-                let has_intersection = input_generate.intersects_with(&expr_liveset);
+                let has_intersection = input_genset.intersects_with(&expr_liveset);
                 let is_pushable = !has_intersection;
                 pushable.push(is_pushable);
             }
