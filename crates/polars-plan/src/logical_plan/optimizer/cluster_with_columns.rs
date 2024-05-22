@@ -34,7 +34,10 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
 
     let mut column_map = ColumnMap::with_capacity(8);
     let mut input_genset = MutableBitmap::with_capacity(16);
-    let mut current_livesets = Vec::with_capacity(16);
+    let mut current_livesets: Vec<MutableBitmap> = Vec::with_capacity(16);
+    // This keeps track of previous allocations for the current livesets. I am not sure this is
+    // worth it.
+    let mut current_livesets_pops: Vec<MutableBitmap> = Vec::with_capacity(16);
     let mut pushable = MutableBitmap::with_capacity(16);
 
     loop {
@@ -65,13 +68,13 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
             else {
                 break;
             };
-            
+
             let column_map = &mut column_map;
 
             // Reuse the allocations of the previous loop
             column_map.clear();
             input_genset.clear();
-            current_livesets.clear();
+            current_livesets_pops.extend(std::mem::take(&mut current_livesets));
             pushable.clear();
 
             // @NOTE
@@ -87,7 +90,15 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
             }
 
             for expr in current_exprs.as_exprs() {
-                let mut liveset = MutableBitmap::from_len_zeroed(column_map.len());
+                // Reuse an old allocation if it is available.
+                let mut liveset = current_livesets_pops.pop().map_or_else(
+                    || MutableBitmap::from_len_zeroed(column_map.len()),
+                    |mut p| {
+                        p.clear();
+                        p.extend_constant(column_map.len(), false);
+                        p
+                    },
+                );
 
                 for live in aexpr_to_leaf_names_iter(expr.node(), expr_arena) {
                     column_map_set(&mut liveset, column_map, live.clone());
@@ -148,7 +159,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
             let mut has_seen_unpushable = false;
             let mut needs_simple_projection = false;
 
-            let new_current_exprs = std::mem::take(current_exprs.exprs_mut())
+            *current_exprs.exprs_mut() = std::mem::take(current_exprs.exprs_mut())
                 .into_iter()
                 .zip(pushable.iter())
                 .enumerate()
@@ -170,8 +181,6 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
                     }
                 })
                 .collect();
-
-            *current_exprs.exprs_mut() = new_current_exprs;
 
             let options = current_options.merge_options(input_options);
             *current_options = options;
