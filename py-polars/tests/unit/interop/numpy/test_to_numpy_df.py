@@ -220,13 +220,18 @@ def test_df_to_numpy_stacking_array() -> None:
     assert_array_equal(result[0][0], expected[0][0])
 
 
-def test_df_to_numpy_stacking_string() -> None:
+@pytest.mark.parametrize("order", ["c", "fortran"])
+def test_df_to_numpy_stacking_string(order: IndexOrder) -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]})
-    result = df.to_numpy()
+    result = df.to_numpy(order=order)
 
     expected = np.array([[1, "x"], [2, "y"], [3, "z"]], dtype=np.object_)
 
     assert_array_equal(result, expected)
+    if order == "c":
+        assert result.flags.c_contiguous is True
+    else:
+        assert result.flags.f_contiguous is True
 
 
 def test_to_numpy_chunked_16375() -> None:
