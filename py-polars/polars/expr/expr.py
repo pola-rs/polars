@@ -10909,7 +10909,9 @@ class Expr:
         return self._from_pyexpr(self._pyexpr.extend_constant(value, n))
 
     @deprecate_renamed_parameter("multithreaded", "parallel", version="0.19.0")
-    def value_counts(self, *, sort: bool = False, parallel: bool = False) -> Self:
+    def value_counts(
+        self, *, sort: bool = False, parallel: bool = False, name: str = "count"
+    ) -> Self:
         """
         Count the occurrences of unique values.
 
@@ -10924,6 +10926,8 @@ class Expr:
             .. note::
                 This option should likely not be enabled in a group by context,
                 as the computation is already parallelized per group.
+        name
+            Give the resulting count field a specific name; defaults to "count".
 
         Returns
         -------
@@ -10948,9 +10952,10 @@ class Expr:
         │ {"blue",3}  │
         └─────────────┘
 
-        Sort the output by count.
+        Sort the output by (descending) count and customize the count field name.
 
-        >>> df.select(pl.col("color").value_counts(sort=True))
+        >>> df = df.select(pl.col("color").value_counts(sort=True, name="n"))
+        >>> df
         shape: (3, 1)
         ┌─────────────┐
         │ color       │
@@ -10961,8 +10966,20 @@ class Expr:
         │ {"red",2}   │
         │ {"green",1} │
         └─────────────┘
+
+        >>> df.unnest("color")
+        shape: (3, 2)
+        ┌───────┬─────┐
+        │ color ┆ n   │
+        │ ---   ┆ --- │
+        │ str   ┆ u32 │
+        ╞═══════╪═════╡
+        │ blue  ┆ 3   │
+        │ red   ┆ 2   │
+        │ green ┆ 1   │
+        └───────┴─────┘
         """
-        return self._from_pyexpr(self._pyexpr.value_counts(sort, parallel))
+        return self._from_pyexpr(self._pyexpr.value_counts(sort, parallel, name))
 
     def unique_counts(self) -> Self:
         """

@@ -221,6 +221,7 @@ pub enum FunctionExpr {
     ValueCounts {
         sort: bool,
         parallel: bool,
+        name: String,
     },
     #[cfg(feature = "unique_counts")]
     UniqueCounts,
@@ -463,9 +464,14 @@ impl Hash for FunctionExpr {
             #[cfg(feature = "cum_agg")]
             CumMax { reverse } => reverse.hash(state),
             #[cfg(feature = "dtype-struct")]
-            ValueCounts { sort, parallel } => {
+            ValueCounts {
+                sort,
+                parallel,
+                name,
+            } => {
                 sort.hash(state);
                 parallel.hash(state);
+                name.hash(state);
             },
             #[cfg(feature = "unique_counts")]
             UniqueCounts => {},
@@ -999,7 +1005,11 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "cum_agg")]
             CumMax { reverse } => map!(cum::cum_max, reverse),
             #[cfg(feature = "dtype-struct")]
-            ValueCounts { sort, parallel } => map!(dispatch::value_counts, sort, parallel),
+            ValueCounts {
+                sort,
+                parallel,
+                name,
+            } => map!(dispatch::value_counts, sort, parallel, name.clone()),
             #[cfg(feature = "unique_counts")]
             UniqueCounts => map!(dispatch::unique_counts),
             Reverse => map!(dispatch::reverse),

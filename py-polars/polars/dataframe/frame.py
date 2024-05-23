@@ -2975,7 +2975,7 @@ class DataFrame:
         ...     ws.write(len(df) + 6, 1, "Customised conditional formatting", fmt_title)
 
         Export a table containing two different types of sparklines. Use default
-        options for the "trend" sparkline and customised options (and positioning)
+        options for the "trend" sparkline and customized options (and positioning)
         for the "+/-" win_loss sparkline, with non-default integer dtype formatting,
         column totals, a subtle two-tone heatmap and hidden worksheet gridlines:
 
@@ -2995,7 +2995,7 @@ class DataFrame:
         ...     sparklines={
         ...         # default options; just provide source cols
         ...         "trend": ["q1", "q2", "q3", "q4"],
-        ...         # customised sparkline type, with positioning directive
+        ...         # customized sparkline type, with positioning directive
         ...         "+/-": {
         ...             "columns": ["q1", "q2", "q3", "q4"],
         ...             "insert_after": "id",

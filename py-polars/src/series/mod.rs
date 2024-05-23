@@ -732,10 +732,10 @@ impl PySeries {
         self.series.tail(Some(n)).into()
     }
 
-    fn value_counts(&self, sort: bool, parallel: bool) -> PyResult<PyDataFrame> {
+    fn value_counts(&self, sort: bool, parallel: bool, name: String) -> PyResult<PyDataFrame> {
         let out = self
             .series
-            .value_counts(sort, parallel)
+            .value_counts(sort, parallel, name)
             .map_err(PyPolarsErr::from)?;
         Ok(out.into())
     }

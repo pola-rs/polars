@@ -526,7 +526,7 @@ def test_read_excel_all_sheets_with_sheet_name(path_xlsx: Path, engine: str) -> 
             "column_totals": True,
             "float_precision": 0,
         },
-        # slightly customised formatting, with some formulas
+        # slightly customized formatting, with some formulas
         {
             "position": (0, 0),
             "table_style": {
@@ -555,7 +555,7 @@ def test_read_excel_all_sheets_with_sheet_name(path_xlsx: Path, engine: str) -> 
             "column_totals": True,
             "row_totals": True,
         },
-        # heavily customised formatting/definition
+        # heavily customized formatting/definition
         {
             "position": "A1",
             "table_name": "PolarsFrameData",
