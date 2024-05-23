@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 
 
 @StringCache()
-def test_categorical_outer_join() -> None:
+def test_categorical_full_outer_join() -> None:
     df1 = pl.DataFrame(
         [
             pl.Series("key1", [42]),
@@ -49,7 +49,7 @@ def test_categorical_outer_join() -> None:
         schema_overrides={"key2": pl.Categorical, "key2_right": pl.Categorical},
     )
 
-    out = df1.join(df2, on=["key1", "key2"], how="outer").collect()
+    out = df1.join(df2, on=["key1", "key2"], how="full").collect()
     assert_frame_equal(out, expected)
 
     dfa = pl.DataFrame(
@@ -65,7 +65,7 @@ def test_categorical_outer_join() -> None:
         ]
     )
 
-    df = dfa.join(dfb, on="key", how="outer")
+    df = dfa.join(dfb, on="key", how="full")
     # the cast is important to test the rev map
     assert df["key"].cast(pl.String).to_list() == ["bar", None, "foo"]
     assert df["key_right"].cast(pl.String).to_list() == ["bar", "baz", None]

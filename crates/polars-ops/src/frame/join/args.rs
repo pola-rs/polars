@@ -46,7 +46,7 @@ impl JoinCoalesce {
             Left | Inner => {
                 matches!(self, JoinSpecific | CoalesceColumns)
             },
-            Outer { .. } => {
+            Full { .. } => {
                 matches!(self, CoalesceColumns)
             },
             #[cfg(feature = "asof_join")]
@@ -96,9 +96,9 @@ impl JoinArgs {
 #[derive(Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum JoinType {
-    Left,
     Inner,
-    Outer,
+    Left,
+    Full,
     #[cfg(feature = "asof_join")]
     AsOf(AsOfOptions),
     Cross,
@@ -120,7 +120,7 @@ impl Display for JoinType {
         let val = match self {
             Left => "LEFT",
             Inner => "INNER",
-            Outer { .. } => "OUTER",
+            Full { .. } => "FULL",
             #[cfg(feature = "asof_join")]
             AsOf(_) => "ASOF",
             Cross => "CROSS",
@@ -189,7 +189,7 @@ impl JoinValidation {
         if !self.needs_checks() {
             return Ok(());
         }
-        polars_ensure!(matches!(join_type, JoinType::Inner | JoinType::Outer{..} | JoinType::Left),
+        polars_ensure!(matches!(join_type, JoinType::Inner | JoinType::Full{..} | JoinType::Left),
                       ComputeError: "{self} validation on a {join_type} join is not supported");
         Ok(())
     }

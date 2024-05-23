@@ -720,10 +720,10 @@ impl<'py> FromPyObject<'py> for Wrap<JoinType> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "inner" => JoinType::Inner,
             "left" => JoinType::Left,
-            "outer" => JoinType::Outer,
+            "full" => JoinType::Full,
             "outer_coalesce" => {
                 // TODO! deprecate
-                JoinType::Outer
+                JoinType::Full
             },
             "semi" => JoinType::Semi,
             "anti" => JoinType::Anti,
@@ -731,7 +731,7 @@ impl<'py> FromPyObject<'py> for Wrap<JoinType> {
             "cross" => JoinType::Cross,
             v => {
                 return Err(PyValueError::new_err(format!(
-                "`how` must be one of {{'inner', 'left', 'outer', 'semi', 'anti', 'cross'}}, got {v}",
+                "`how` must be one of {{'inner', 'left', 'full', 'semi', 'anti', 'cross'}}, got {v}",
             )))
             },
         };

@@ -6,7 +6,7 @@ use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_ops::chunked_array::DfTake;
 use polars_ops::frame::join::_finish_join;
-use polars_ops::prelude::_coalesce_outer_join;
+use polars_ops::prelude::_coalesce_full_join;
 use smartstring::alias::String as SmartString;
 
 use crate::executors::sinks::joins::generic_build::*;
@@ -18,7 +18,7 @@ use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{DataChunk, Operator, OperatorResult, PExecutionContext};
 
 #[derive(Clone)]
-pub struct GenericOuterJoinProbe<K: ExtraPayload> {
+pub struct GenericFullOuterJoinProbe<K: ExtraPayload> {
     /// all chunks are stacked into a single dataframe
     /// the dataframe is not rechunked.
     df_a: Arc<DataFrame>,
@@ -58,7 +58,7 @@ pub struct GenericOuterJoinProbe<K: ExtraPayload> {
     key_names_right: Arc<[SmartString]>,
 }
 
-impl<K: ExtraPayload> GenericOuterJoinProbe<K> {
+impl<K: ExtraPayload> GenericFullOuterJoinProbe<K> {
     #[allow(clippy::too_many_arguments)]
     pub(super) fn new(
         df_a: DataFrame,
@@ -75,7 +75,7 @@ impl<K: ExtraPayload> GenericOuterJoinProbe<K> {
         key_names_left: Arc<[SmartString]>,
         key_names_right: Arc<[SmartString]>,
     ) -> Self {
-        GenericOuterJoinProbe {
+        GenericFullOuterJoinProbe {
             df_a: Arc::new(df_a),
             df_b_dummy: None,
             materialized_join_cols,
@@ -152,7 +152,7 @@ impl<K: ExtraPayload> GenericOuterJoinProbe<K> {
                 .iter()
                 .map(|s| s.as_str())
                 .collect::<Vec<_>>();
-            Ok(_coalesce_outer_join(
+            Ok(_coalesce_full_join(
                 out,
                 &l,
                 &r,
@@ -287,7 +287,7 @@ impl<K: ExtraPayload> GenericOuterJoinProbe<K> {
     }
 }
 
-impl<K: ExtraPayload> Operator for GenericOuterJoinProbe<K> {
+impl<K: ExtraPayload> Operator for GenericFullOuterJoinProbe<K> {
     fn execute(
         &mut self,
         context: &PExecutionContext,
@@ -310,6 +310,6 @@ impl<K: ExtraPayload> Operator for GenericOuterJoinProbe<K> {
         Box::new(new)
     }
     fn fmt(&self) -> &str {
-        "generic_outer_join_probe"
+        "generic_full_join_probe"
     }
 }

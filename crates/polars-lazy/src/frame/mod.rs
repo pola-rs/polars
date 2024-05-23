@@ -1072,7 +1072,7 @@ impl LazyFrame {
         self.join(other, vec![], vec![], JoinArgs::new(JoinType::Cross))
     }
 
-    /// Left join this query with another lazy query.
+    /// Left outer join this query with another lazy query.
     ///
     /// Matches on the values of the expressions `left_on` and `right_on`. For more
     /// flexible join logic, see [`join`](LazyFrame::join) or
@@ -1122,7 +1122,7 @@ impl LazyFrame {
         )
     }
 
-    /// Outer join this query with another lazy query.
+    /// Full outer join this query with another lazy query.
     ///
     /// Matches on the values of the expressions `left_on` and `right_on`. For more
     /// flexible join logic, see [`join`](LazyFrame::join) or
@@ -1133,17 +1133,17 @@ impl LazyFrame {
     /// ```rust
     /// use polars_core::prelude::*;
     /// use polars_lazy::prelude::*;
-    /// fn outer_join_dataframes(ldf: LazyFrame, other: LazyFrame) -> LazyFrame {
+    /// fn full_join_dataframes(ldf: LazyFrame, other: LazyFrame) -> LazyFrame {
     ///         ldf
-    ///         .outer_join(other, col("foo"), col("bar"))
+    ///         .full_join(other, col("foo"), col("bar"))
     /// }
     /// ```
-    pub fn outer_join<E: Into<Expr>>(self, other: LazyFrame, left_on: E, right_on: E) -> LazyFrame {
+    pub fn full_join<E: Into<Expr>>(self, other: LazyFrame, left_on: E, right_on: E) -> LazyFrame {
         self.join(
             other,
             [left_on.into()],
             [right_on.into()],
-            JoinArgs::new(JoinType::Outer),
+            JoinArgs::new(JoinType::Full),
         )
     }
 

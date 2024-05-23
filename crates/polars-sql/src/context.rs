@@ -319,7 +319,7 @@ impl SQLContext {
                 lf = match &tbl.join_operator {
                     JoinOperator::CrossJoin => lf.cross_join(rf),
                     JoinOperator::FullOuter(constraint) => {
-                        process_join(lf, rf, constraint, &l_name, &r_name, JoinType::Outer)?
+                        process_join(lf, rf, constraint, &l_name, &r_name, JoinType::Full)?
                     },
                     JoinOperator::Inner(constraint) => {
                         process_join(lf, rf, constraint, &l_name, &r_name, JoinType::Inner)?

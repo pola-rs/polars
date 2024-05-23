@@ -232,7 +232,7 @@ def test_joins() -> None:
         )
         assert_series_equal(expect, out)
 
-        how = "outer"
+        how = "full"
         expect = pl.Series("rhs", [True, True, True, True, None, None, True])
         out = (
             df.join(rhs, on=join_on, how=how)  # type: ignore[arg-type]

@@ -34,7 +34,7 @@ fn test_swap_rename() -> PolarsResult<()> {
 }
 
 #[test]
-fn test_outer_join_with_column_2988() -> PolarsResult<()> {
+fn test_full_outer_join_with_column_2988() -> PolarsResult<()> {
     let ldf1 = df![
         "key1" => ["foo", "bar"],
         "key2" => ["foo", "bar"],
@@ -54,7 +54,7 @@ fn test_outer_join_with_column_2988() -> PolarsResult<()> {
             ldf2,
             [col("key1"), col("key2")],
             [col("key1"), col("key2")],
-            JoinArgs::new(JoinType::Outer).with_coalesce(JoinCoalesce::CoalesceColumns),
+            JoinArgs::new(JoinType::Full).with_coalesce(JoinCoalesce::CoalesceColumns),
         )
         .with_columns([col("key1")])
         .collect()?;
