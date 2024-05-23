@@ -18,6 +18,21 @@ def test_basic_cwc() -> None:
     )
 
 
+def test_disable_cwc() -> None:
+    df = (
+        pl.LazyFrame({"a": [1, 2]})
+        .with_columns(pl.col("a").alias("b") * 2)
+        .with_columns(pl.col("a").alias("c") * 3)
+        .with_columns(pl.col("a").alias("d") * 4)
+    )
+
+    explain = df.explain(cluster_with_columns=False)
+
+    assert """[[(col("a")) * (2)].alias("b")]""" in explain
+    assert """[[(col("a")) * (3)].alias("c")]""" in explain
+    assert """[[(col("a")) * (4)].alias("d")]""" in explain
+
+
 def test_refuse_with_deps() -> None:
     df = (
         pl.LazyFrame({"a": [1, 2]})

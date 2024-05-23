@@ -1747,6 +1747,7 @@ def collect_all(
     slice_pushdown: bool = True,
     comm_subplan_elim: bool = True,
     comm_subexpr_elim: bool = True,
+    cluster_with_columns: bool = True,
     streaming: bool = False,
 ) -> list[DataFrame]:
     """
@@ -1774,6 +1775,8 @@ def collect_all(
         Will try to cache branching subplans that occur on self-joins or unions.
     comm_subexpr_elim
         Common subexpressions will be cached and reused.
+    cluster_with_columns
+        Combine sequential independent calls to with_columns
     streaming
         Process the query in batches to handle larger-than-memory data.
         If set to `False` (default), the entire query is processed in a single
@@ -1798,6 +1801,7 @@ def collect_all(
         slice_pushdown = False
         comm_subplan_elim = False
         comm_subexpr_elim = False
+        cluster_with_columns = False
 
     if streaming:
         issue_unstable_warning("Streaming mode is considered unstable.")
@@ -1814,6 +1818,7 @@ def collect_all(
             slice_pushdown,
             comm_subplan_elim,
             comm_subexpr_elim,
+            cluster_with_columns,
             streaming,
             _eager=False,
         )
@@ -1840,6 +1845,7 @@ def collect_all_async(
     slice_pushdown: bool = True,
     comm_subplan_elim: bool = True,
     comm_subexpr_elim: bool = True,
+    cluster_with_columns: bool = True,
     streaming: bool = True,
 ) -> _GeventDataFrameResult[list[DataFrame]]: ...
 
@@ -1857,6 +1863,7 @@ def collect_all_async(
     slice_pushdown: bool = True,
     comm_subplan_elim: bool = True,
     comm_subexpr_elim: bool = True,
+    cluster_with_columns: bool = True,
     streaming: bool = False,
 ) -> Awaitable[list[DataFrame]]: ...
 
@@ -1874,6 +1881,7 @@ def collect_all_async(
     slice_pushdown: bool = True,
     comm_subplan_elim: bool = True,
     comm_subexpr_elim: bool = True,
+    cluster_with_columns: bool = True,
     streaming: bool = False,
 ) -> Awaitable[list[DataFrame]] | _GeventDataFrameResult[list[DataFrame]]:
     """
@@ -1912,6 +1920,8 @@ def collect_all_async(
         Will try to cache branching subplans that occur on self-joins or unions.
     comm_subexpr_elim
         Common subexpressions will be cached and reused.
+    cluster_with_columns
+        Combine sequential independent calls to with_columns
     streaming
         Process the query in batches to handle larger-than-memory data.
         If set to `False` (default), the entire query is processed in a single
@@ -1948,6 +1958,7 @@ def collect_all_async(
         slice_pushdown = False
         comm_subplan_elim = False
         comm_subexpr_elim = False
+        cluster_with_columns = False
 
     if streaming:
         issue_unstable_warning("Streaming mode is considered unstable.")
@@ -1964,6 +1975,7 @@ def collect_all_async(
             slice_pushdown,
             comm_subplan_elim,
             comm_subexpr_elim,
+            cluster_with_columns,
             streaming,
             _eager=False,
         )
