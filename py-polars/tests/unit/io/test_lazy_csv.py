@@ -391,3 +391,33 @@ c
     out = pl.scan_csv(paths).collect(streaming=streaming)
 
     assert_frame_equal(out, expect)
+
+
+@pytest.mark.parametrize("streaming", [True, False])
+def test_file_list_comment_skip_rows_16327(tmp_path: Path, streaming: bool) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    data_lst = [
+        """\
+# comment
+a
+b
+c
+""",
+        """\
+a
+b
+c
+""",
+    ]
+
+    paths = [f"{tmp_path}/{i}.csv" for i in range(len(data_lst))]
+
+    for data, path in zip(data_lst, paths):
+        with Path(path).open("w") as f:
+            f.write(data)
+
+    expect = pl.Series("a", ["b", "c", "b", "c"]).to_frame()
+    out = pl.scan_csv(paths, comment_prefix="#").collect(streaming=streaming)
+
+    assert_frame_equal(out, expect)
