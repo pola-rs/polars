@@ -457,6 +457,7 @@ impl PyLazyFrame {
         slice_pushdown: bool,
         comm_subplan_elim: bool,
         comm_subexpr_elim: bool,
+        cluster_with_columns: bool,
         streaming: bool,
         _eager: bool,
     ) -> Self {
@@ -466,6 +467,7 @@ impl PyLazyFrame {
             .with_predicate_pushdown(predicate_pushdown)
             .with_simplify_expr(simplify_expr)
             .with_slice_pushdown(slice_pushdown)
+            .with_cluster_with_columns(cluster_with_columns)
             .with_streaming(streaming)
             ._with_eager(_eager)
             .with_projection_pushdown(projection_pushdown);

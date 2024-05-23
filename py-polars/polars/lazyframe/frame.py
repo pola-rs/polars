@@ -889,6 +889,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         slice_pushdown: bool = True,
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
+        cluster_with_columns: bool = True,
         streaming: bool = False,
         tree_format: bool = False,
     ) -> str:
@@ -918,6 +919,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Will try to cache branching subplans that occur on self-joins or unions.
         comm_subexpr_elim
             Common subexpressions will be cached and reused.
+        cluster_with_columns
+            Combine sequential independent calls to with_columns
         streaming
             Run parts of the query in a streaming fashion (this is in an alpha state)
         tree_format
@@ -945,6 +948,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 slice_pushdown,
                 comm_subplan_elim,
                 comm_subexpr_elim,
+                cluster_with_columns,
                 streaming,
                 _eager=False,
             )
@@ -971,6 +975,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         slice_pushdown: bool = True,
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
+        cluster_with_columns: bool = True,
         streaming: bool = False,
     ) -> str | None:
         """
@@ -1005,6 +1010,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Will try to cache branching subplans that occur on self-joins or unions.
         comm_subexpr_elim
             Common subexpressions will be cached and reused.
+        cluster_with_columns
+            Combine sequential independent calls to with_columns
         streaming
             Run parts of the query in a streaming fashion (this is in an alpha state)
 
@@ -1029,6 +1036,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             slice_pushdown,
             comm_subplan_elim,
             comm_subexpr_elim,
+            cluster_with_columns,
             streaming,
             _eager=False,
         )
@@ -1513,6 +1521,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         slice_pushdown: bool = True,
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
+        cluster_with_columns: bool = True,
         show_plot: bool = False,
         truncate_nodes: int = 0,
         figsize: tuple[int, int] = (18, 8),
@@ -1545,6 +1554,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Will try to cache branching subplans that occur on self-joins or unions.
         comm_subexpr_elim
             Common subexpressions will be cached and reused.
+        cluster_with_columns
+            Combine sequential independent calls to with_columns
         show_plot
             Show a gantt chart of the profiling result
         truncate_nodes
@@ -1593,6 +1604,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             projection_pushdown = False
             comm_subplan_elim = False
             comm_subexpr_elim = False
+            cluster_with_columns = False
 
         ldf = self._ldf.optimization_toggle(
             type_coercion,
@@ -1602,6 +1614,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             slice_pushdown,
             comm_subplan_elim,
             comm_subexpr_elim,
+            cluster_with_columns,
             streaming,
             _eager=False,
         )
@@ -1658,6 +1671,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         slice_pushdown: bool = True,
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
+        cluster_with_columns: bool = True,
         no_optimization: bool = False,
         streaming: bool = False,
         background: Literal[True],
@@ -1675,6 +1689,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         slice_pushdown: bool = True,
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
+        cluster_with_columns: bool = True,
         no_optimization: bool = False,
         streaming: bool = False,
         background: Literal[False] = False,
@@ -1691,6 +1706,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         slice_pushdown: bool = True,
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
+        cluster_with_columns: bool = True,
         no_optimization: bool = False,
         streaming: bool = False,
         background: bool = False,
@@ -1719,6 +1735,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Will try to cache branching subplans that occur on self-joins or unions.
         comm_subexpr_elim
             Common subexpressions will be cached and reused.
+        cluster_with_columns
+            Combine sequential independent calls to with_columns
         no_optimization
             Turn off (certain) optimizations.
         streaming
@@ -1792,6 +1810,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             slice_pushdown = False
             comm_subplan_elim = False
             comm_subexpr_elim = False
+            cluster_with_columns = False
 
         if streaming:
             issue_unstable_warning("Streaming mode is considered unstable.")
@@ -1805,6 +1824,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             slice_pushdown,
             comm_subplan_elim,
             comm_subexpr_elim,
+            cluster_with_columns,
             streaming,
             _eager,
         )
@@ -1829,6 +1849,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         slice_pushdown: bool = True,
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
+        cluster_with_columns: bool = True,
         streaming: bool = True,
     ) -> _GeventDataFrameResult[DataFrame]: ...
 
@@ -1845,6 +1866,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         slice_pushdown: bool = True,
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
+        cluster_with_columns: bool = True,
         streaming: bool = True,
     ) -> Awaitable[DataFrame]: ...
 
@@ -1860,6 +1882,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         slice_pushdown: bool = True,
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
+        cluster_with_columns: bool = True,
         streaming: bool = False,
     ) -> Awaitable[DataFrame] | _GeventDataFrameResult[DataFrame]:
         """
@@ -1896,6 +1919,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Will try to cache branching subplans that occur on self-joins or unions.
         comm_subexpr_elim
             Common subexpressions will be cached and reused.
+        cluster_with_columns
+            Combine sequential independent calls to with_columns
         streaming
             Process the query in batches to handle larger-than-memory data.
             If set to `False` (default), the entire query is processed in a single
@@ -1960,6 +1985,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             slice_pushdown = False
             comm_subplan_elim = False
             comm_subexpr_elim = False
+            cluster_with_columns = False
 
         if streaming:
             issue_unstable_warning("Streaming mode is considered unstable.")
@@ -1973,6 +1999,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             slice_pushdown,
             comm_subplan_elim,
             comm_subexpr_elim,
+            cluster_with_columns,
             streaming,
             _eager=False,
         )
@@ -2379,6 +2406,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             slice_pushdown,
             comm_subplan_elim=False,
             comm_subexpr_elim=False,
+            cluster_with_columns=False,
             streaming=True,
             _eager=False,
         )
@@ -2395,6 +2423,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         slice_pushdown: bool = True,
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
+        cluster_with_columns: bool = True,
         streaming: bool = False,
     ) -> DataFrame:
         """
@@ -2420,6 +2449,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Will try to cache branching subplans that occur on self-joins or unions.
         comm_subexpr_elim
             Common subexpressions will be cached and reused.
+        cluster_with_columns
+            Combine sequential independent calls to with_columns
         streaming
             Run parts of the query in a streaming fashion (this is in an alpha state)
 
@@ -2467,6 +2498,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             slice_pushdown = False
             comm_subplan_elim = False
             comm_subexpr_elim = False
+            cluster_with_columns = False
 
         lf = self._ldf.optimization_toggle(
             type_coercion,
@@ -2476,6 +2508,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             slice_pushdown,
             comm_subplan_elim,
             comm_subexpr_elim,
+            cluster_with_columns,
             streaming,
             _eager=False,
         )
