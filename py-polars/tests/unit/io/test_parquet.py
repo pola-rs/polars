@@ -93,14 +93,11 @@ def small_parquet_path(io_files_path: Path) -> Path:
 def test_to_from_buffer(
     df: pl.DataFrame, compression: ParquetCompression, use_pyarrow: bool
 ) -> None:
-    print(df)
     df = df[["list_str"]]
-    print(df)
     buf = io.BytesIO()
     df.write_parquet(buf, compression=compression, use_pyarrow=use_pyarrow)
     buf.seek(0)
     read_df = pl.read_parquet(buf, use_pyarrow=use_pyarrow)
-    print(read_df)
     assert_frame_equal(df, read_df, categorical_as_str=True)
 
 
@@ -113,7 +110,7 @@ def test_read_parquet_respects_rechunk_16416(
     df = pl.DataFrame({"a": [1]})
     df = pl.concat([df, df, df])
     buf = io.BytesIO()
-    df.write_parquet(buf)
+    df.write_parquet(buf, row_group_size=1)
     buf.seek(0)
 
     rechunk, expected_chunks = rechunk_and_expected_chunks

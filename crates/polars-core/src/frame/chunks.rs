@@ -22,7 +22,7 @@ impl TryFrom<(RecordBatch, &[ArrowField])> for DataFrame {
 }
 
 impl DataFrame {
-    pub fn split_chunks(mut self) -> impl Iterator<Item = DataFrame> {
+    pub fn split_chunks(&mut self) -> impl Iterator<Item = DataFrame> + '_ {
         self.align_chunks();
 
         (0..self.n_chunks()).map(move |i| unsafe {
