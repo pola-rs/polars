@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from decimal import Decimal as D
 from typing import TYPE_CHECKING
 
@@ -115,9 +116,20 @@ def test_df_to_numpy_zero_copy_path() -> None:
     x[:, 1] = 2.0
     df = pl.DataFrame(x)
     x = df.to_numpy(allow_copy=False)
-    assert x.flags["F_CONTIGUOUS"]
-    assert not x.flags["WRITEABLE"]
+    assert x.flags.f_contiguous is True
+    assert x.flags.writeable is False
     assert str(x[0, :]) == "[1. 2. 1. 1. 1.]"
+
+
+def test_df_to_numpy_zero_copy_path_temporal() -> None:
+    values = [datetime(1970 + i, 1, 1) for i in range(12)]
+    s = pl.Series(values)
+    df = pl.DataFrame({"a": s[:4], "b": s[4:8], "c": s[8:]})
+
+    result = df.to_numpy(allow_copy=False)
+    assert result.flags.f_contiguous is True
+    assert result.flags.writeable is False
+    assert result.tolist() == [list(row) for row in df.iter_rows()]
 
 
 def test_to_numpy_zero_copy_path_writable() -> None:
