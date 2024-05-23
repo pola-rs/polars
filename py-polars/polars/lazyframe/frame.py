@@ -5925,6 +5925,26 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
 
     @unstable()
+    def assert_schema(self, schema: SchemaDict) -> LazyFrame:
+        """
+        Assert that the schema conforms to expectations.
+
+        Return the original frame on success, raise AssertionError on failure.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+        """
+        if self.schema != schema:
+            msg = (
+                "Wrong dataframe schema:\n"
+                f"• expected: '{schema}',\n"
+                f"• observed: '{dict(self.schema)}'."
+            )
+            raise AssertionError(msg)
+        return self
+
+    @unstable()
     def update(
         self,
         other: LazyFrame,
