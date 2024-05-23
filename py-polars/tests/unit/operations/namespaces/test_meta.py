@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 import polars as pl
+import polars.selectors as cs
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -65,7 +66,7 @@ def test_undo_aliases() -> None:
 
 
 def test_meta_has_multiple_outputs() -> None:
-    e = pl.col(["a", "b"]).alias("bar")
+    e = pl.col(["a", "b"]).name.suffix("_foo")
     assert e.meta.has_multiple_outputs()
 
 
@@ -80,8 +81,30 @@ def test_is_column() -> None:
     assert not e.meta.is_column()
 
 
+def test_is_column_selection() -> None:
+    e = pl.col("foo")
+    assert e.meta.is_column_selection()
+
+    e = pl.col("foo").alias("bar")
+    assert not e.meta.is_column_selection()
+    assert e.meta.is_column_selection(allow_aliasing=True)
+
+    e = pl.col(pl.String)
+    assert e.meta.is_column_selection()
+
+    e = pl.col(pl.String).name.prefix("str_")
+    assert e.meta.is_column_selection(allow_aliasing=True)
+
+    e = cs.numeric().exclude("value")
+    assert e.meta.is_column_selection()
+    assert not (e + 100).meta.is_column_selection()
+
+    e = cs.numeric() - cs.integer()
+    assert e.meta.is_column_selection()
+
+
 def test_meta_is_regex_projection() -> None:
-    e = pl.col("^.*$").alias("bar")
+    e = pl.col("^.*$").name.suffix("_foo")
     assert e.meta.is_regex_projection()
     assert e.meta.has_multiple_outputs()
 
