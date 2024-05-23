@@ -337,7 +337,7 @@ def _check_if_delta_available() -> None:
 
 def _check_for_unsupported_types(dtypes: list[DataType]) -> None:
     schema_dtypes = unpack_dtypes(*dtypes)
-    unsupported_types = {Time, Categorical, Null}
+    unsupported_types = {Time, Null}
     overlap = schema_dtypes & unsupported_types
 
     if overlap:
