@@ -157,6 +157,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
         let mut has_seen_unpushable = false;
         let mut needs_simple_projection = false;
 
+        let mut already_removed = 0;
         *current_exprs.exprs_mut() = std::mem::take(current_exprs.exprs_mut())
             .into_iter()
             .zip(pushable.iter())
@@ -166,8 +167,11 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
                     needs_simple_projection = has_seen_unpushable;
 
                     input_exprs.exprs_mut().push(expr);
-                    let (column, datatype) = new_current_schema.shift_remove_index(i).unwrap();
+                    let (column, datatype) = new_current_schema
+                        .shift_remove_index(i - already_removed)
+                        .unwrap();
                     new_input_schema.with_column(column, datatype);
+                    already_removed += 1;
 
                     None
                 } else {
