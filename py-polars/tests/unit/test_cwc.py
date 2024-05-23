@@ -1,5 +1,6 @@
 # Tests for the optimization pass cluster WITH_COLUMNS
 
+
 import polars as pl
 
 
@@ -133,4 +134,23 @@ def test_cwc_with_internal_aliases() -> None:
     assert (
         """[[(col("a")) == (2)].cast(Boolean).alias("c"), [(col("b")) * (3)].alias("d")]"""
         in explain
+    )
+
+
+def test_issue_16436() -> None:
+    df = pl.DataFrame(
+        {
+            "x": [1.12, 2.21, 4.2, 3.21],
+            "y": [2.11, 3.32, 2.1, 6.12],
+        }
+    )
+
+    df = (
+        df.lazy()
+        .with_columns((pl.col("y") / pl.col("x")).alias("z"))
+        .with_columns(
+            pl.when(pl.col("z").is_infinite()).then(0).otherwise(pl.col("z")).alias("z")
+        )
+        .fill_nan(0)
+        .collect()
     )
