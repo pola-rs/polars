@@ -2,18 +2,46 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal as D
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
+from hypothesis import given
 from numpy.testing import assert_array_equal, assert_equal
 
 import polars as pl
+from polars.testing.parametric import series
 
 if TYPE_CHECKING:
     import numpy.typing as npt
 
     from polars.type_aliases import IndexOrder
+
+
+def assert_zero_copy(s: pl.Series, arr: np.ndarray[Any, Any]) -> None:
+    if s.len() == 0:
+        return
+    s_ptr = s._get_buffers()["values"]._get_buffer_info()[0]
+    arr_ptr = arr.__array_interface__["data"][0]
+    assert s_ptr == arr_ptr
+
+
+@given(
+    s=series(
+        min_size=6,
+        max_size=6,
+        allowed_dtypes=[pl.Datetime, pl.Duration],
+        allow_null=False,
+        allow_chunks=False,
+    )
+)
+def test_df_to_numpy_zero_copy(s: pl.Series) -> None:
+    df = pl.DataFrame({"a": s[:3], "b": s[3:]})
+
+    result = df.to_numpy(allow_copy=False)
+
+    assert_zero_copy(s, result)
+    assert result.flags.writeable is False
 
 
 @pytest.mark.parametrize(
