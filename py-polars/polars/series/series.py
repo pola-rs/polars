@@ -2762,7 +2762,9 @@ class Series:
         else:
             return out.struct.unnest()
 
-    def value_counts(self, *, sort: bool = False, parallel: bool = False) -> DataFrame:
+    def value_counts(
+        self, *, sort: bool = False, parallel: bool = False, name: str = "count"
+    ) -> DataFrame:
         """
         Count the occurrences of unique values.
 
@@ -2777,6 +2779,8 @@ class Series:
             .. note::
                 This option should likely not be enabled in a group by context,
                 as the computation is already parallelized per group.
+        name
+            Give the resulting count column a specific name; defaults to "count".
 
         Returns
         -------
@@ -2798,22 +2802,22 @@ class Series:
         │ blue  ┆ 3     │
         └───────┴───────┘
 
-        Sort the output by count.
+        Sort the output by count and customize the count column name.
 
-        >>> s.value_counts(sort=True)
+        >>> s.value_counts(sort=True, name="n")
         shape: (3, 2)
-        ┌───────┬───────┐
-        │ color ┆ count │
-        │ ---   ┆ ---   │
-        │ str   ┆ u32   │
-        ╞═══════╪═══════╡
-        │ blue  ┆ 3     │
-        │ red   ┆ 2     │
-        │ green ┆ 1     │
-        └───────┴───────┘
+        ┌───────┬─────┐
+        │ color ┆ n   │
+        │ ---   ┆ --- │
+        │ str   ┆ u32 │
+        ╞═══════╪═════╡
+        │ blue  ┆ 3   │
+        │ red   ┆ 2   │
+        │ green ┆ 1   │
+        └───────┴─────┘
         """
         return pl.DataFrame._from_pydf(
-            self._s.value_counts(sort=sort, parallel=parallel)
+            self._s.value_counts(sort=sort, parallel=parallel, name=name)
         )
 
     def unique_counts(self) -> Series:

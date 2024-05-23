@@ -54,8 +54,13 @@ pub(super) fn replace_time_zone(
 }
 
 #[cfg(feature = "dtype-struct")]
-pub(super) fn value_counts(s: &Series, sort: bool, parallel: bool) -> PolarsResult<Series> {
-    s.value_counts(sort, parallel)
+pub(super) fn value_counts(
+    s: &Series,
+    sort: bool,
+    parallel: bool,
+    name: Option<String>,
+) -> PolarsResult<Series> {
+    s.value_counts(sort, parallel, name)
         .map(|df| df.into_struct(s.name()).into_series())
 }
 

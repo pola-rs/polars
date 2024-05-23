@@ -1714,12 +1714,16 @@ impl Expr {
     #[cfg(feature = "dtype-struct")]
     /// Count all unique values and create a struct mapping value to count.
     /// (Note that it is better to turn parallel off in the aggregation context).
-    pub fn value_counts(self, sort: bool, parallel: bool) -> Self {
-        self.apply_private(FunctionExpr::ValueCounts { sort, parallel })
-            .with_function_options(|mut opts| {
-                opts.pass_name_to_apply = true;
-                opts
-            })
+    pub fn value_counts(self, sort: bool, parallel: bool, name: Option<String>) -> Self {
+        self.apply_private(FunctionExpr::ValueCounts {
+            sort,
+            parallel,
+            name,
+        })
+        .with_function_options(|mut opts| {
+            opts.pass_name_to_apply = true;
+            opts
+        })
     }
 
     #[cfg(feature = "unique_counts")]

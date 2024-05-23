@@ -957,6 +957,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 FunctionExpr::ValueCounts {
                     sort: _,
                     parallel: _,
+                    name: _,
                 } => return Err(PyNotImplementedError::new_err("value counts")),
                 FunctionExpr::UniqueCounts => {
                     return Err(PyNotImplementedError::new_err("unique counts"))
