@@ -114,7 +114,7 @@ fn check_df_columns_contiguous(df: &DataFrame) -> bool {
                     .iter()
                     .map(|s| {
                         let ca: &ChunkedArray<$T> = s.unpack().unwrap();
-                        ca.cont_slice().unwrap()
+                        ca.data_views().next().unwrap()
                     })
                     .collect::<Vec<_>>();
 
@@ -127,7 +127,7 @@ fn check_df_columns_contiguous(df: &DataFrame) -> bool {
                 .iter()
                 .map(|s| {
                     let ca = s.i64().unwrap();
-                    ca.cont_slice().unwrap()
+                    ca.data_views().next().unwrap()
                 })
                 .collect::<Vec<_>>();
 
@@ -162,7 +162,7 @@ where
     T::Native: Element,
 {
     let ca: &ChunkedArray<T> = df.get_columns().first().unwrap().unpack().unwrap();
-    let first_slice = ca.cont_slice().unwrap();
+    let first_slice = ca.data_views().next().unwrap();
 
     let start_ptr = first_slice.as_ptr();
     let np_dtype = T::Native::get_dtype_bound(py);
@@ -184,7 +184,7 @@ fn temporal_df_to_numpy_view(py: Python, df: &DataFrame, owner: PyObject) -> PyO
     let s = df.get_columns().first().unwrap();
     let phys = s.to_physical_repr();
     let ca = phys.i64().unwrap();
-    let first_slice = ca.cont_slice().unwrap();
+    let first_slice = ca.data_views().next().unwrap();
 
     let start_ptr = first_slice.as_ptr();
     let np_dtype = polars_dtype_to_np_temporal_dtype(py, s.dtype());
