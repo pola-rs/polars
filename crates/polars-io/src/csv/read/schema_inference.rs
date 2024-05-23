@@ -21,7 +21,6 @@ pub struct SchemaInferenceResult {
     rows_read: usize,
     bytes_read: usize,
     bytes_total: usize,
-    skip_rows: usize,
     n_threads: Option<usize>,
 }
 
@@ -37,7 +36,7 @@ impl SchemaInferenceResult {
         let has_header = options.has_header;
         let schema_overwrite_arc = options.schema_overwrite.clone();
         let schema_overwrite = schema_overwrite_arc.as_ref().map(|x| x.as_ref());
-        let mut skip_rows = options.skip_rows;
+        let skip_rows = options.skip_rows;
         let skip_rows_after_header = options.skip_rows_after_header;
         let comment_prefix = parse_options.comment_prefix.as_ref();
         let quote_char = parse_options.quote_char;
@@ -56,7 +55,7 @@ impl SchemaInferenceResult {
             infer_schema_length,
             has_header,
             schema_overwrite,
-            &mut skip_rows,
+            skip_rows,
             skip_rows_after_header,
             comment_prefix,
             quote_char,
@@ -73,7 +72,6 @@ impl SchemaInferenceResult {
             rows_read,
             bytes_read,
             bytes_total,
-            skip_rows,
             n_threads,
         };
 
@@ -97,7 +95,6 @@ impl SchemaInferenceResult {
 impl CsvReadOptions {
     /// Note: This does not update the schema from the inference result.
     pub fn update_with_inference_result(&mut self, si_result: &SchemaInferenceResult) {
-        self.skip_rows = si_result.skip_rows;
         self.n_threads = si_result.n_threads;
     }
 }
@@ -184,7 +181,7 @@ fn infer_file_schema_inner(
     schema_overwrite: Option<&Schema>,
     // we take &mut because we maybe need to skip more rows dependent
     // on the schema inference
-    skip_rows: &mut usize,
+    mut skip_rows: usize,
     skip_rows_after_header: usize,
     comment_prefix: Option<&CommentPrefix>,
     quote_char: Option<u8>,
@@ -207,7 +204,7 @@ fn infer_file_schema_inner(
     if raise_if_empty {
         polars_ensure!(!bytes.is_empty(), NoData: "empty CSV");
     };
-    let mut lines = SplitLines::new(bytes, quote_char.unwrap_or(b'"'), eol_char).skip(*skip_rows);
+    let mut lines = SplitLines::new(bytes, quote_char.unwrap_or(b'"'), eol_char).skip(skip_rows);
 
     // get or create header names
     // when has_header is false, creates default column names with column_ prefix
@@ -218,7 +215,7 @@ fn infer_file_schema_inner(
     for (i, line) in (&mut lines).enumerate() {
         if !is_comment_line(line, comment_prefix) {
             first_line = Some(line);
-            *skip_rows += i;
+            skip_rows += i;
             break;
         }
     }
@@ -304,7 +301,7 @@ fn infer_file_schema_inner(
     };
     if !has_header {
         // re-init lines so that the header is included in type inference.
-        lines = SplitLines::new(bytes, quote_char.unwrap_or(b'"'), eol_char).skip(*skip_rows);
+        lines = SplitLines::new(bytes, quote_char.unwrap_or(b'"'), eol_char).skip(skip_rows);
     }
 
     let header_length = headers.len();
@@ -531,7 +528,7 @@ pub fn infer_file_schema(
     schema_overwrite: Option<&Schema>,
     // we take &mut because we maybe need to skip more rows dependent
     // on the schema inference
-    skip_rows: &mut usize,
+    skip_rows: usize,
     skip_rows_after_header: usize,
     comment_prefix: Option<&CommentPrefix>,
     quote_char: Option<u8>,

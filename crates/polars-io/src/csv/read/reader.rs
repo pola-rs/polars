@@ -241,7 +241,7 @@ impl CsvReader<Box<dyn MmapBytesReader>> {
                     self.options.infer_schema_length,
                     self.options.has_header,
                     None,
-                    &mut self.options.skip_rows,
+                    self.options.skip_rows,
                     self.options.skip_rows_after_header,
                     parse_options.comment_prefix.as_ref(),
                     parse_options.quote_char,

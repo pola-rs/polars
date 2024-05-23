@@ -136,7 +136,7 @@ impl<'a> CoreReader<'a> {
     pub(crate) fn new(
         reader_bytes: ReaderBytes<'a>,
         n_rows: Option<usize>,
-        mut skip_rows: usize,
+        skip_rows: usize,
         mut projection: Option<Vec<usize>>,
         max_records: Option<usize>,
         separator: Option<u8>,
@@ -201,7 +201,7 @@ impl<'a> CoreReader<'a> {
                     max_records,
                     has_header,
                     schema_overwrite.as_deref(),
-                    &mut skip_rows,
+                    skip_rows,
                     skip_rows_after_header,
                     comment_prefix.as_ref(),
                     quote_char,
