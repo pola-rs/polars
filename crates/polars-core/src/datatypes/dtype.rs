@@ -174,6 +174,25 @@ impl DataType {
         }
     }
 
+    #[cfg(feature = "dtype-array")]
+    /// Get the full shape of a multidimensional array.
+    pub fn get_shape(&self) -> Option<Vec<usize>> {
+        fn get_shape_impl(dt: &DataType, shape: &mut Vec<usize>) {
+            if let DataType::Array(inner, size) = dt {
+                shape.push(*size);
+                get_shape_impl(inner, shape);
+            }
+        }
+
+        if let DataType::Array(inner, size) = self {
+            let mut shape = vec![*size];
+            get_shape_impl(inner, &mut shape);
+            Some(shape)
+        } else {
+            None
+        }
+    }
+
     /// Get the inner data type of a nested type.
     pub fn inner_dtype(&self) -> Option<&DataType> {
         match self {
@@ -646,7 +665,17 @@ impl Display for DataType {
             DataType::Duration(tu) => return write!(f, "duration[{tu}]"),
             DataType::Time => "time",
             #[cfg(feature = "dtype-array")]
-            DataType::Array(tp, size) => return write!(f, "array[{tp}, {size}]"),
+            DataType::Array(_, _) => {
+                let tp = self.inner_dtype().unwrap();
+
+                write!(f, "array[{tp}, shape: (")?;
+                let dims = self.get_shape().unwrap();
+                let n = dims.len() - 1;
+                for v in dims.iter().take(n) {
+                    write!(f, "{v}, ")?
+                }
+                return write!(f, "{})", dims[n]);
+            },
             DataType::List(tp) => return write!(f, "list[{tp}]"),
             #[cfg(feature = "object")]
             DataType::Object(s, _) => s,
