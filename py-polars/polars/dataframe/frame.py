@@ -3763,9 +3763,10 @@ class DataFrame:
 
         Notes
         -----
-        The Polars data types :class:`Null`, :class:`Categorical` and :class:`Time`
-        are not supported by the delta protocol specification and will raise a
-        TypeError.
+        The Polars data types :class:`Null` and :class:`Time` are not supported
+        by the delta protocol specification and will raise a TypeError. Columns
+        using The :class:`Categorical` data type will be converted to
+        normal (non-categorical) strings when written.
 
         Polars columns are always nullable. To write data to a delta table with
         non-nullable columns, a custom pyarrow schema has to be passed to the
