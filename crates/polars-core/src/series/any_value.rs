@@ -430,7 +430,7 @@ fn any_values_to_decimal(
             continue;
         } else {
             polars_bail!(
-                ComputeError: "unable to convert any-value of dtype {} to decimal", av.dtype(),
+                SchemaMismatch: "unable to convert any-value of dtype {} to decimal", av.dtype(),
             );
         };
         scale_range = match scale_range {
@@ -448,7 +448,7 @@ fn any_values_to_decimal(
         // Scale is provided but is lower than actual.
         // TODO: Do we want lossy conversions here or not?
         polars_bail!(
-            ComputeError:
+            SchemaMismatch:
             "unable to losslessly convert any-value of scale {s_max} to scale {}", scale,
         );
     }
@@ -473,7 +473,7 @@ fn any_values_to_decimal(
         } else {
             let factor = 10_i128.pow((scale - s_av) as _); // this cast is safe
             builder.append_value(v.checked_mul(factor).ok_or_else(|| {
-                polars_err!(ComputeError: "overflow while converting to decimal scale {}", scale)
+                polars_err!(SchemaMismatch: "overflow while converting to decimal scale {}", scale)
             })?);
         }
     }
@@ -723,7 +723,7 @@ fn any_values_to_object(
                     AnyValue::Object(val) => builder.append_value(val.as_any()),
                     AnyValue::Null => builder.append_null(),
                     _ => {
-                        polars_bail!(ComputeError: "expected object");
+                        polars_bail!(SchemaMismatch: "expected object");
                     },
                 }
             }
