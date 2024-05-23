@@ -97,11 +97,20 @@ impl StructFunction {
                 let struct_ = &args[0];
 
                 if let DataType::Struct(fields) = struct_.data_type() {
-                    let mut fields = fields.iter().cloned().collect::<PlIndexSet<Field>>();
-                    for arg in &args[1..] {
-                        fields.insert(arg.clone());
+                    let mut name_2_dtype = PlIndexMap::with_capacity(fields.len() * 2);
+
+                    for field in fields {
+                        name_2_dtype.insert(field.name(), field.data_type());
                     }
-                    let dtype = DataType::Struct(fields.into_iter().collect());
+                    for arg in &args[1..] {
+                        name_2_dtype.insert(arg.name(), arg.data_type());
+                    }
+                    let dtype = DataType::Struct(
+                        name_2_dtype
+                            .iter()
+                            .map(|(name, dtype)| Field::new(name, (*dtype).clone()))
+                            .collect(),
+                    );
                     let mut out = struct_.clone();
                     out.coerce(dtype);
                     Ok(out)
