@@ -140,7 +140,8 @@ First ensure that your local `main` branch is in sync with the remote `main` bra
 
 ```bash
 git checkout main
-git pull upstream main
+git fetch upstream
+git rebase upstream/main
 ```
 
 Next, create a new git branch (feature branch) from the `main` branch in your local repository with
