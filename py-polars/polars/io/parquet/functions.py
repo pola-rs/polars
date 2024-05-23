@@ -160,6 +160,7 @@ def read_parquet(
             storage_options=storage_options,
             pyarrow_options=pyarrow_options,
             memory_map=memory_map,
+            rechunk=rechunk,
         )
 
     # Read file and bytes inputs using `read_parquet`
@@ -209,6 +210,7 @@ def _read_parquet_with_pyarrow(
     storage_options: dict[str, Any] | None = None,
     pyarrow_options: dict[str, Any] | None = None,
     memory_map: bool = True,
+    rechunk: bool = True,
 ) -> DataFrame:
     pyarrow_parquet = import_optional(
         "pyarrow.parquet",
@@ -228,7 +230,7 @@ def _read_parquet_with_pyarrow(
             columns=columns,
             **pyarrow_options,
         )
-    return from_arrow(pa_table)  # type: ignore[return-value]
+    return from_arrow(pa_table, rechunk=rechunk)  # type: ignore[return-value]
 
 
 def _read_parquet_binary(
