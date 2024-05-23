@@ -82,7 +82,8 @@ def test_group_by_all() -> None:
         SELECT
             a,
             SUM(b),
-            SUM(c)
+            SUM(c),
+            COUNT(*) AS n
         FROM self
         GROUP BY ALL
         ORDER BY a
@@ -93,9 +94,10 @@ def test_group_by_all() -> None:
             "a": ["xx", "yy", "zz"],
             "b": [9, 6, 6],
             "c": [231, 165, 66],
+            "n": [3, 2, 1],
         }
     )
-    assert_frame_equal(expected, res)
+    assert_frame_equal(expected, res, check_dtype=False)
 
     # more involved determination of agg/group columns
     res = df.sql(
@@ -170,22 +172,33 @@ def test_group_by_ordinal_position() -> None:
     df = pl.DataFrame(
         {
             "a": ["xx", "yy", "xx", "yy", "xx", "zz"],
-            "b": [1, 2, 3, 4, 5, 6],
+            "b": [1, None, 3, 4, 5, 6],
             "c": [99, 99, 66, 66, 66, 66],
         }
     )
-    expected = pl.LazyFrame({"c": [66, 99], "total_b": [18, 3]})
+    expected = pl.LazyFrame(
+        {
+            "c": [66, 99],
+            "total_b": [18, 1],
+            "count_b": [4, 1],
+            "count_star": [4, 2],
+        }
+    )
 
     with pl.SQLContext(frame=df) as ctx:
         res1 = ctx.execute(
             """
-            SELECT c, SUM(b) AS total_b
+            SELECT
+              c,
+              SUM(b) AS total_b,
+              COUNT(b) AS count_b,
+              COUNT(*) AS count_star
             FROM frame
             GROUP BY 1
             ORDER BY c
             """
         )
-        assert_frame_equal(res1, expected)
+        assert_frame_equal(res1, expected, check_dtype=False)
 
         res2 = ctx.execute(
             """
@@ -196,7 +209,7 @@ def test_group_by_ordinal_position() -> None:
             )
             SELECT c, total_b FROM grp ORDER BY c"""
         )
-        assert_frame_equal(res2, expected)
+        assert_frame_equal(res2, expected.select(expected.columns[:2]))
 
 
 def test_group_by_errors() -> None:

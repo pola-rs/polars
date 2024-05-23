@@ -445,10 +445,11 @@ impl SQLContext {
             // nested agg/window funcs to the group key (also ignores literals).
             GroupByExpr::All => {
                 projections.iter().for_each(|expr| match expr {
-                    // immediately match the most common cases (col|agg|lit, optionally aliased).
-                    Expr::Agg(_) | Expr::Literal(_) => (),
+                    // immediately match the most common cases (col|agg|len|lit, optionally aliased).
+                    Expr::Agg(_) | Expr::Len | Expr::Literal(_) => (),
                     Expr::Column(_) => group_by_keys.push(expr.clone()),
-                    Expr::Alias(e, _) if matches!(&**e, Expr::Agg(_) | Expr::Literal(_)) => (),
+                    Expr::Alias(e, _)
+                        if matches!(&**e, Expr::Agg(_) | Expr::Len | Expr::Literal(_)) => {},
                     Expr::Alias(e, _) if matches!(&**e, Expr::Column(_)) => {
                         if let Expr::Column(name) = &**e {
                             group_by_keys.push(col(name));
@@ -457,7 +458,9 @@ impl SQLContext {
                     _ => {
                         // If not quick-matched, add if no nested agg/window expressions
                         if !has_expr(expr, |e| {
-                            matches!(e, Expr::Agg(_)) || matches!(e, Expr::Window { .. })
+                            matches!(e, Expr::Agg(_))
+                                || matches!(e, Expr::Len)
+                                || matches!(e, Expr::Window { .. })
                         }) {
                             group_by_keys.push(expr.clone())
                         }
@@ -734,8 +737,12 @@ impl SQLContext {
         let mut group_key_aliases = PlHashSet::new();
 
         for mut e in projections {
-            // If simple aliased expression we defer aliasing until after the group_by.
-            let is_agg_or_window = has_expr(e, |e| matches!(e, Expr::Agg(_) | Expr::Window { .. }));
+            // `Len` represents COUNT(*) so we treat as an aggregation here.
+            let is_agg_or_window = has_expr(e, |e| {
+                matches!(e, Expr::Agg(_) | Expr::Len | Expr::Window { .. })
+            });
+
+            // Note: if simple aliased expression we defer aliasing until after the group_by.
             if let Expr::Alias(expr, alias) = e {
                 if e.clone().meta().is_simple_projection() {
                     group_key_aliases.insert(alias.as_ref());

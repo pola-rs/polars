@@ -66,7 +66,8 @@ fn test_group_by_simple() -> PolarsResult<()> {
           a          AS "aa",
           SUM(b)     AS "bb",
           SUM(a + b) AS "cc",
-          COUNT(a)   AS "total_count"
+          COUNT(a)   AS "count_a",
+          COUNT(*)   AS "count_star"
         FROM df
         GROUP BY a
         LIMIT 100
@@ -81,7 +82,8 @@ fn test_group_by_simple() -> PolarsResult<()> {
         .agg(&[
             col("b").sum().alias("bb"),
             (col("a") + col("b")).sum().alias("cc"),
-            col("a").count().alias("total_count"),
+            col("a").count().alias("count_a"),
+            col("a").len().alias("count_star"),
         ])
         .limit(100)
         .sort(["aa"], Default::default())

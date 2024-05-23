@@ -890,6 +890,11 @@ def by_index(*indices: int | range | Sequence[int | range]) -> SelectorType:
         One or more column indices (or range objects).
         Negative indexing is supported.
 
+    Notes
+    -----
+    Matching columns are returned in the order in which their indexes
+    appear in the selector, not the underlying schema order.
+
     See Also
     --------
     by_dtype : Select all columns matching the given dtypes.
