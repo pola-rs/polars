@@ -26,7 +26,7 @@ use num_traits::NumCast;
 use rayon::prelude::*;
 pub use series_trait::{IsSorted, *};
 
-use crate::chunked_array::metadata::MetadataFlags;
+use crate::chunked_array::metadata::{Metadata, MetadataFlags};
 #[cfg(feature = "zip_with")]
 use crate::series::arithmetic::coerce_lhs_rhs;
 use crate::utils::{
@@ -262,6 +262,24 @@ impl Series {
     pub fn with_name(mut self, name: &str) -> Series {
         self.rename(name);
         self
+    }
+
+    /// Try to set the [`Metadata`] for the underlying [`ChunkedArray`]
+    ///
+    /// This does not guarantee that the [`Metadata`] is always set. It returns whether it was
+    /// successful.
+    pub fn try_set_metadata<T: PolarsDataType + 'static>(&mut self, metadata: Metadata<T>) -> bool {
+        let inner = self._get_inner_mut();
+
+        // @NOTE: These types are not the same if they are logical for example. For now, we just
+        // say: do not set the metadata when you get into this situation. This can be a @TODO for
+        // later.
+        if &T::get_dtype() != inner.dtype() {
+            return false;
+        }
+
+        inner.as_mut().md = Some(Arc::new(metadata));
+        true
     }
 
     pub fn from_arrow(name: &str, array: ArrayRef) -> PolarsResult<Series> {
