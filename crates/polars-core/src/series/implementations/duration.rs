@@ -407,10 +407,7 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
     fn min_reduce(&self) -> PolarsResult<Scalar> {
         let sc = self.0.min_reduce();
         let v = sc.value().as_duration(self.0.time_unit());
-        Ok(Scalar::new(
-            self.dtype().clone(),
-            v.as_duration(self.0.time_unit()),
-        ))
+        Ok(Scalar::new(self.dtype().clone(), v))
     }
     fn std_reduce(&self, ddof: u8) -> PolarsResult<Scalar> {
         let sc = self.0.std_reduce(ddof);
