@@ -10,7 +10,9 @@ use pyo3::prelude::*;
 use pyo3::types::PyList;
 
 use super::to_numpy_series::series_to_numpy;
-use super::utils::create_borrowed_np_array;
+use super::utils::{
+    create_borrowed_np_array, dtype_supports_view, polars_dtype_to_np_temporal_dtype,
+};
 use crate::conversion::Wrap;
 use crate::dataframe::PyDataFrame;
 
@@ -25,15 +27,6 @@ impl PyDataFrame {
         allow_copy: bool,
     ) -> PyResult<PyObject> {
         df_to_numpy(py, &self.df, order.0, writable, allow_copy)
-    }
-
-    /// Create a view of the data as a NumPy ndarray.
-    ///
-    /// WARNING: The resulting view will show the underlying value for nulls,
-    /// which may be any value. The caller is responsible for handling nulls
-    /// appropriately.
-    fn to_numpy_view(&self, py: Python) -> Option<PyObject> {
-        try_df_to_numpy_view(py, &self.df)
     }
 }
 
@@ -51,7 +44,7 @@ pub(super) fn df_to_numpy(
     }
 
     if matches!(order, IndexOrder::Fortran) {
-        if let Some(mut arr) = try_df_to_numpy_view(py, df) {
+        if let Some(mut arr) = try_df_to_numpy_view(py, df, false) {
             if writable {
                 if !allow_copy {
                     return Err(PyRuntimeError::new_err(
@@ -73,66 +66,152 @@ pub(super) fn df_to_numpy(
     df_to_numpy_with_copy(py, df, order, writable)
 }
 
-fn try_df_to_numpy_view(py: Python, df: &DataFrame) -> Option<PyObject> {
-    let first = df.get_columns().first()?.dtype();
-    // TODO: Support Datetime/Duration/Array types
-    if !first.is_numeric() {
+/// Create a NumPy view of the given DataFrame.
+fn try_df_to_numpy_view(py: Python, df: &DataFrame, allow_nulls: bool) -> Option<PyObject> {
+    let first_dtype = check_df_dtypes_support_view(df)?;
+
+    // TODO: Check for nested nulls using `series_contains_null` util when we support Array types.
+    if !allow_nulls && df.get_columns().iter().any(|s| s.null_count() > 0) {
         return None;
     }
-    if !df
-        .get_columns()
-        .iter()
-        .all(|s| s.null_count() == 0 && s.dtype() == first && s.chunks().len() == 1)
-    {
+    if !check_df_columns_contiguous(df) {
         return None;
     }
 
     let owner = PyDataFrame::from(df.clone()).into_py(py); // Keep the DataFrame memory alive.
 
-    with_match_physical_numeric_polars_type!(first, |$T| {
-        get_ptr::<$T>(py, df.get_columns(), owner)
+    let arr = match first_dtype {
+        dt if dt.is_numeric() => {
+            with_match_physical_numeric_polars_type!(first_dtype, |$T| {
+                numeric_df_to_numpy_view::<$T>(py, df, owner)
+            })
+        },
+        DataType::Datetime(_, _) | DataType::Duration(_) => {
+            temporal_df_to_numpy_view(py, df, owner)
+        },
+        _ => unreachable!(),
+    };
+    Some(arr)
+}
+/// Check whether the data types of the DataFrame allow for creating a NumPy view.
+///
+/// Returns the common data type if it is supported, otherwise returns `None`.
+fn check_df_dtypes_support_view(df: &DataFrame) -> Option<&DataType> {
+    let columns = df.get_columns();
+    let first_dtype = columns.first()?.dtype();
+
+    // TODO: Support viewing Array types
+    if first_dtype.is_array() || !dtype_supports_view(first_dtype) {
+        return None;
+    }
+    if columns.iter().any(|s| s.dtype() != first_dtype) {
+        return None;
+    }
+    Some(first_dtype)
+}
+/// Returns whether all columns of the dataframe are contiguous in memory.
+fn check_df_columns_contiguous(df: &DataFrame) -> bool {
+    let columns = df.get_columns();
+
+    if columns.iter().any(|s| s.n_chunks() > 1) {
+        return false;
+    }
+    if columns.len() <= 1 {
+        return true;
+    }
+
+    match columns.first().unwrap().dtype() {
+        dt if dt.is_numeric() => {
+            with_match_physical_numeric_polars_type!(dt, |$T| {
+                let slices = columns
+                    .iter()
+                    .map(|s| {
+                        let ca: &ChunkedArray<$T> = s.unpack().unwrap();
+                        ca.data_views().next().unwrap()
+                    })
+                    .collect::<Vec<_>>();
+
+                check_slices_contiguous::<$T>(slices)
+            })
+        },
+        DataType::Datetime(_, _) | DataType::Duration(_) => {
+            let phys: Vec<_> = columns.iter().map(|s| s.to_physical_repr()).collect();
+            let slices = phys
+                .iter()
+                .map(|s| {
+                    let ca = s.i64().unwrap();
+                    ca.data_views().next().unwrap()
+                })
+                .collect::<Vec<_>>();
+
+            check_slices_contiguous::<Int64Type>(slices)
+        },
+        _ => panic!("invalid data type"),
+    }
+}
+/// Returns whether the end and start pointers of all consecutive slices match.
+fn check_slices_contiguous<T>(slices: Vec<&[T::Native]>) -> bool
+where
+    T: PolarsNumericType,
+{
+    let first_slice = slices.first().unwrap();
+
+    // Check whether all arrays are from the same buffer.
+    let mut end_ptr = unsafe { first_slice.as_ptr().add(first_slice.len()) };
+    slices[1..].iter().all(|slice| {
+        let slice_ptr = slice.as_ptr();
+        let valid = slice_ptr == end_ptr;
+
+        end_ptr = unsafe { slice_ptr.add(slice.len()) };
+
+        valid
     })
 }
-fn get_ptr<T>(py: Python, columns: &[Series], owner: PyObject) -> Option<PyObject>
+
+/// Create a NumPy view of a numeric DataFrame.
+fn numeric_df_to_numpy_view<T>(py: Python, df: &DataFrame, owner: PyObject) -> PyObject
 where
     T: PolarsNumericType,
     T::Native: Element,
 {
-    let slices = columns
-        .iter()
-        .map(|s| {
-            let ca: &ChunkedArray<T> = s.unpack().unwrap();
-            ca.cont_slice().unwrap()
-        })
-        .collect::<Vec<_>>();
+    let ca: &ChunkedArray<T> = df.get_columns().first().unwrap().unpack().unwrap();
+    let first_slice = ca.data_views().next().unwrap();
 
-    let first = slices.first().unwrap();
+    let start_ptr = first_slice.as_ptr();
+    let np_dtype = T::Native::get_dtype_bound(py);
+    let dims = [first_slice.len(), df.width()].into_dimension();
+
     unsafe {
-        let mut end_ptr = first.as_ptr().add(first.len());
-        // Check if all arrays are from the same buffer
-        let all_contiguous = slices[1..].iter().all(|slice| {
-            let valid = slice.as_ptr() == end_ptr;
+        create_borrowed_np_array::<_>(
+            py,
+            np_dtype,
+            dims,
+            flags::NPY_ARRAY_FARRAY_RO,
+            start_ptr as _,
+            owner,
+        )
+    }
+}
+/// Create a NumPy view of a Datetime or Duration DataFrame.
+fn temporal_df_to_numpy_view(py: Python, df: &DataFrame, owner: PyObject) -> PyObject {
+    let s = df.get_columns().first().unwrap();
+    let phys = s.to_physical_repr();
+    let ca = phys.i64().unwrap();
+    let first_slice = ca.data_views().next().unwrap();
 
-            end_ptr = slice.as_ptr().add(slice.len());
+    let start_ptr = first_slice.as_ptr();
+    let np_dtype = polars_dtype_to_np_temporal_dtype(py, s.dtype());
+    let dims = [first_slice.len(), df.width()].into_dimension();
 
-            valid
-        });
-
-        if all_contiguous {
-            let start_ptr = first.as_ptr();
-            let dtype = T::Native::get_dtype_bound(py);
-            let dims = [first.len(), columns.len()].into_dimension();
-            Some(create_borrowed_np_array::<_>(
-                py,
-                dtype,
-                dims,
-                flags::NPY_ARRAY_FARRAY_RO,
-                start_ptr as _,
-                owner,
-            ))
-        } else {
-            None
-        }
+    unsafe {
+        create_borrowed_np_array::<_>(
+            py,
+            np_dtype,
+            dims,
+            flags::NPY_ARRAY_FARRAY_RO,
+            start_ptr as _,
+            owner,
+        )
     }
 }
 
@@ -179,6 +258,7 @@ fn df_columns_to_numpy(
             .extract(py)
             .unwrap();
         if shape.len() > 1 {
+            // TODO: Downcast the NumPy array to Rust and split without calling into Python.
             let subarrays = (0..shape[0]).map(|idx| {
                 arr.call_method1(py, intern!(py, "__getitem__"), (idx,))
                     .unwrap()
@@ -188,7 +268,7 @@ fn df_columns_to_numpy(
         arr
     });
 
-    let numpy = PyModule::import_bound(py, "numpy")?;
+    let numpy = PyModule::import_bound(py, intern!(py, "numpy"))?;
     let np_array = match order {
         IndexOrder::C => numpy
             .getattr(intern!(py, "column_stack"))

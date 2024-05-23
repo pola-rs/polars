@@ -641,7 +641,7 @@ impl<T> ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
-    /// Contiguous slice
+    /// Returns the values of the array as a contiguous slice.
     pub fn cont_slice(&self) -> PolarsResult<&[T::Native]> {
         polars_ensure!(
             self.chunks.len() == 1 && self.chunks[0].null_count() == 0,
@@ -650,7 +650,7 @@ where
         Ok(self.downcast_iter().next().map(|arr| arr.values()).unwrap())
     }
 
-    /// Contiguous mutable slice
+    /// Returns the values of the array as a contiguous mutable slice.
     pub(crate) fn cont_slice_mut(&mut self) -> Option<&mut [T::Native]> {
         if self.chunks.len() == 1 && self.chunks[0].null_count() == 0 {
             // SAFETY, we will not swap the PrimitiveArray.

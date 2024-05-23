@@ -44,6 +44,30 @@ where
     Py::from_owned_ptr(py, array)
 }
 
+/// Returns whether the data type supports creating a NumPy view.
+pub(super) fn dtype_supports_view(dtype: &DataType) -> bool {
+    match dtype {
+        dt if dt.is_numeric() => true,
+        DataType::Datetime(_, _) | DataType::Duration(_) => true,
+        DataType::Array(inner, _) => dtype_supports_view(inner.as_ref()),
+        _ => false,
+    }
+}
+
+/// Returns whether the Series contains nulls at any level of nesting.
+///
+/// Of the nested types, only Array types are handled since only those are relevant for NumPy views.
+pub(super) fn series_contains_null(s: &Series) -> bool {
+    if s.null_count() > 0 {
+        true
+    } else if let Ok(ca) = s.array() {
+        let s_inner = ca.get_inner();
+        series_contains_null(&s_inner)
+    } else {
+        false
+    }
+}
+
 /// Reshape the first dimension of a NumPy array to the given height and width.
 pub(super) fn reshape_numpy_array(
     py: Python,

@@ -11,7 +11,8 @@ use pyo3::types::PySlice;
 
 use super::to_numpy_df::df_to_numpy;
 use super::utils::{
-    create_borrowed_np_array, polars_dtype_to_np_temporal_dtype, reshape_numpy_array,
+    create_borrowed_np_array, dtype_supports_view, polars_dtype_to_np_temporal_dtype,
+    reshape_numpy_array, series_contains_null,
 };
 use crate::conversion::chunked_array::{decimal_to_pyobject_iter, time_to_pyobject_iter};
 use crate::conversion::ObjectValue;
@@ -79,39 +80,16 @@ fn try_series_to_numpy_view(
     allow_nulls: bool,
     allow_rechunk: bool,
 ) -> Option<(PyObject, bool)> {
-    if !supports_view(s.dtype()) {
+    if !dtype_supports_view(s.dtype()) {
         return None;
     }
-    if !allow_nulls && has_nulls(s) {
+    if !allow_nulls && series_contains_null(s) {
         return None;
     }
     let (s_owned, writable_flag) = handle_chunks(s, allow_rechunk)?;
 
     let array = series_to_numpy_view_recursive(py, s_owned, writable_flag);
     Some((array, writable_flag))
-}
-/// Returns whether the data type supports creating a NumPy view.
-fn supports_view(dtype: &DataType) -> bool {
-    match dtype {
-        dt if dt.is_numeric() => true,
-        DataType::Datetime(_, _) | DataType::Duration(_) => true,
-        DataType::Array(inner, _) => supports_view(inner.as_ref()),
-        _ => false,
-    }
-}
-/// Returns whether the Series contains nulls at any level of nesting.
-///
-/// Of the nested types, only Array types are handled since only those are relevant for NumPy views.
-fn has_nulls(s: &Series) -> bool {
-    if s.null_count() > 0 {
-        true
-    } else if s.dtype().is_array() {
-        let ca = s.array().unwrap();
-        let s_inner = ca.get_inner();
-        has_nulls(&s_inner)
-    } else {
-        false
-    }
 }
 /// Rechunk the Series if required.
 ///
@@ -278,7 +256,6 @@ fn series_to_numpy_with_copy(py: Python, s: &Series, writable: bool) -> PyObject
         Struct(_) => {
             let ca = s.struct_().unwrap();
             let df = ca.clone().unnest();
-            // TODO: How should we determine the IndexOrder here?
             df_to_numpy(py, &df, IndexOrder::Fortran, writable, true).unwrap()
         },
         #[cfg(feature = "object")]
@@ -378,7 +355,7 @@ fn list_series_to_numpy(py: Python, s: &Series, writable: bool) -> PyObject {
         let slice = PySlice::new_bound(py, prev_offset, current_offset, 1);
         prev_offset = current_offset;
         np_array_flat
-            .call_method1(py, "__getitem__", (slice,))
+            .call_method1(py, intern!(py, "__getitem__"), (slice,))
             .unwrap()
     });
 

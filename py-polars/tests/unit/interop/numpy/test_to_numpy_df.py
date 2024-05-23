@@ -1,18 +1,47 @@
 from __future__ import annotations
 
+from datetime import datetime
 from decimal import Decimal as D
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
+from hypothesis import given
 from numpy.testing import assert_array_equal, assert_equal
 
 import polars as pl
+from polars.testing.parametric import series
 
 if TYPE_CHECKING:
     import numpy.typing as npt
 
     from polars.type_aliases import IndexOrder
+
+
+def assert_zero_copy(s: pl.Series, arr: np.ndarray[Any, Any]) -> None:
+    if s.len() == 0:
+        return
+    s_ptr = s._get_buffers()["values"]._get_buffer_info()[0]
+    arr_ptr = arr.__array_interface__["data"][0]
+    assert s_ptr == arr_ptr
+
+
+@given(
+    s=series(
+        min_size=6,
+        max_size=6,
+        allowed_dtypes=[pl.Datetime, pl.Duration],
+        allow_null=False,
+        allow_chunks=False,
+    )
+)
+def test_df_to_numpy_zero_copy(s: pl.Series) -> None:
+    df = pl.DataFrame({"a": s[:3], "b": s[3:]})
+
+    result = df.to_numpy(allow_copy=False)
+
+    assert_zero_copy(s, result)
+    assert result.flags.writeable is False
 
 
 @pytest.mark.parametrize(
@@ -115,9 +144,20 @@ def test_df_to_numpy_zero_copy_path() -> None:
     x[:, 1] = 2.0
     df = pl.DataFrame(x)
     x = df.to_numpy(allow_copy=False)
-    assert x.flags["F_CONTIGUOUS"]
-    assert not x.flags["WRITEABLE"]
+    assert x.flags.f_contiguous is True
+    assert x.flags.writeable is False
     assert str(x[0, :]) == "[1. 2. 1. 1. 1.]"
+
+
+def test_df_to_numpy_zero_copy_path_temporal() -> None:
+    values = [datetime(1970 + i, 1, 1) for i in range(12)]
+    s = pl.Series(values)
+    df = pl.DataFrame({"a": s[:4], "b": s[4:8], "c": s[8:]})
+
+    result = df.to_numpy(allow_copy=False)
+    assert result.flags.f_contiguous is True
+    assert result.flags.writeable is False
+    assert result.tolist() == [list(row) for row in df.iter_rows()]
 
 
 def test_to_numpy_zero_copy_path_writable() -> None:
