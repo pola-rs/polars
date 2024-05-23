@@ -220,7 +220,7 @@ impl LazyCsvReader {
             polars_utils::open_file(&self.path)
         }?;
         let reader_bytes = get_reader_bytes(&mut file).expect("could not mmap file");
-        let mut skip_rows = self.read_options.skip_rows;
+        let skip_rows = self.read_options.skip_rows;
         let parse_options = self.read_options.get_parse_options();
 
         let (schema, _, _) = infer_file_schema(
@@ -230,7 +230,7 @@ impl LazyCsvReader {
             self.read_options.has_header,
             // we set it to None and modify them after the schema is updated
             None,
-            &mut skip_rows,
+            skip_rows,
             self.read_options.skip_rows_after_header,
             parse_options.comment_prefix.as_ref(),
             parse_options.quote_char,
