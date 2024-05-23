@@ -70,6 +70,7 @@ pub(super) fn df_to_numpy(
 fn try_df_to_numpy_view(py: Python, df: &DataFrame) -> Option<PyObject> {
     let first_dtype = df.get_columns().first()?.dtype();
 
+    // TODO: Support viewing Array types
     if first_dtype.is_array() || !dtype_supports_view(first_dtype) {
         return None;
     }
