@@ -251,7 +251,7 @@ def test_parquet_statistics(monkeypatch: Any, capfd: Any, tmp_path: Path) -> Non
     assert df.n_chunks("all") == [4, 4]
 
     file_path = tmp_path / "stats.parquet"
-    df.write_parquet(file_path, statistics=True, use_pyarrow=False)
+    df.write_parquet(file_path, statistics=True, use_pyarrow=False, row_group_size=50)
 
     for pred in [
         pl.col("idx") < 50,
