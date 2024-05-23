@@ -1,9 +1,6 @@
-//! Implementations of the ChunkAgg trait.
 use num_traits::Float;
 
-use self::search_sorted::{
-    binary_search_array, slice_sorted_non_null_and_offset, SearchSortedSide,
-};
+use self::search_sorted::{binary_search_ca, SearchSortedSide};
 use crate::prelude::*;
 
 impl<T> ChunkedArray<T>
@@ -14,31 +11,21 @@ where
     fn float_arg_max_sorted_ascending(&self) -> usize {
         let ca = self;
         debug_assert!(ca.is_sorted_ascending_flag());
-        let is_descending = false;
-        let side = SearchSortedSide::Left;
 
         let maybe_max_idx = ca.last_non_null().unwrap();
-
         let maybe_max = unsafe { ca.value_unchecked(maybe_max_idx) };
         if !maybe_max.is_nan() {
             return maybe_max_idx;
         }
 
-        let (offset, ca) = unsafe { slice_sorted_non_null_and_offset(ca) };
-        let arr = unsafe { ca.downcast_get_unchecked(0) };
-        let search_val = T::Native::nan();
-        let idx = binary_search_array(side, arr, search_val, is_descending) as usize;
-
-        let idx = idx.saturating_sub(1);
-
-        offset + idx
+        let search_val = std::iter::once(Some(T::Native::nan()));
+        let idx = binary_search_ca(ca, search_val, SearchSortedSide::Left, false)[0] as usize;
+        idx.saturating_sub(1)
     }
 
     fn float_arg_max_sorted_descending(&self) -> usize {
         let ca = self;
         debug_assert!(ca.is_sorted_descending_flag());
-        let is_descending = true;
-        let side = SearchSortedSide::Right;
 
         let maybe_max_idx = ca.first_non_null().unwrap();
 
@@ -47,14 +34,13 @@ where
             return maybe_max_idx;
         }
 
-        let (offset, ca) = unsafe { slice_sorted_non_null_and_offset(ca) };
-        let arr = unsafe { ca.downcast_get_unchecked(0) };
-        let search_val = T::Native::nan();
-        let idx = binary_search_array(side, arr, search_val, is_descending) as usize;
-
-        let idx = if idx == arr.len() { idx - 1 } else { idx };
-
-        offset + idx
+        let search_val = std::iter::once(Some(T::Native::nan()));
+        let idx = binary_search_ca(ca, search_val, SearchSortedSide::Right, true)[0] as usize;
+        if idx == ca.len() {
+            idx - 1
+        } else {
+            idx
+        }
     }
 }
 

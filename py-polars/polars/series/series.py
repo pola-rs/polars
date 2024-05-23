@@ -3635,19 +3635,19 @@ class Series:
 
     @overload
     def search_sorted(
-        self, element: NonNestedLiteral, side: SearchSortedSide = ...
+        self, element: NonNestedLiteral | None, side: SearchSortedSide = ...
     ) -> int: ...
 
     @overload
     def search_sorted(
         self,
-        element: list[NonNestedLiteral] | np.ndarray[Any, Any] | Expr | Series,
+        element: list[NonNestedLiteral | None] | np.ndarray[Any, Any] | Expr | Series,
         side: SearchSortedSide = ...,
     ) -> Series: ...
 
     def search_sorted(
         self,
-        element: IntoExpr | np.ndarray[Any, Any],
+        element: IntoExpr | np.ndarray[Any, Any] | None,
         side: SearchSortedSide = "any",
     ) -> int | Series:
         """
