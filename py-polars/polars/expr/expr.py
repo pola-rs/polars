@@ -1654,22 +1654,22 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [1, 2, 3, 4]})
+        >>> df = pl.DataFrame({"a": [3, 1, 2]})
         >>> df.with_columns(
         ...     pl.col("a").cum_min().alias("cum_min"),
         ...     pl.col("a").cum_min(reverse=True).alias("cum_min_reverse"),
         ... )
-        shape: (4, 3)
+        shape: (3, 3)
         ┌─────┬─────────┬─────────────────┐
         │ a   ┆ cum_min ┆ cum_min_reverse │
         │ --- ┆ ---     ┆ ---             │
         │ i64 ┆ i64     ┆ i64             │
         ╞═════╪═════════╪═════════════════╡
+        │ 3   ┆ 3       ┆ 1               │
         │ 1   ┆ 1       ┆ 1               │
         │ 2   ┆ 1       ┆ 2               │
-        │ 3   ┆ 1       ┆ 3               │
-        │ 4   ┆ 1       ┆ 4               │
         └─────┴─────────┴─────────────────┘
+
         """
         return self._from_pyexpr(self._pyexpr.cum_min(reverse))
 
@@ -1684,22 +1684,22 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [1, 2, 3, 4]})
+        >>> df = pl.DataFrame({"a": [1, 3, 2]})
         >>> df.with_columns(
         ...     pl.col("a").cum_max().alias("cum_max"),
         ...     pl.col("a").cum_max(reverse=True).alias("cum_max_reverse"),
         ... )
-        shape: (4, 3)
+        shape: (3, 3)
         ┌─────┬─────────┬─────────────────┐
         │ a   ┆ cum_max ┆ cum_max_reverse │
         │ --- ┆ ---     ┆ ---             │
         │ i64 ┆ i64     ┆ i64             │
         ╞═════╪═════════╪═════════════════╡
-        │ 1   ┆ 1       ┆ 4               │
-        │ 2   ┆ 2       ┆ 4               │
-        │ 3   ┆ 3       ┆ 4               │
-        │ 4   ┆ 4       ┆ 4               │
+        │ 1   ┆ 1       ┆ 3               │
+        │ 3   ┆ 3       ┆ 3               │
+        │ 2   ┆ 3       ┆ 2               │
         └─────┴─────────┴─────────────────┘
+
 
         Null values are excluded, but can also be filled by calling `forward_fill`.
 
