@@ -10952,7 +10952,7 @@ class Expr:
         │ {"blue",3}  │
         └─────────────┘
 
-        Sort the output by (descending) count and customise the count field name.
+        Sort the output by (descending) count and customize the count field name.
 
         >>> df = df.select(pl.col("color").value_counts(sort=True, name="n"))
         >>> df

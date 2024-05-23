@@ -221,7 +221,7 @@ pub enum FunctionExpr {
     ValueCounts {
         sort: bool,
         parallel: bool,
-        name: Option<String>,
+        name: String,
     },
     #[cfg(feature = "unique_counts")]
     UniqueCounts,

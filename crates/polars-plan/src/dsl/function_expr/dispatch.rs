@@ -58,7 +58,7 @@ pub(super) fn value_counts(
     s: &Series,
     sort: bool,
     parallel: bool,
-    name: Option<String>,
+    name: String,
 ) -> PolarsResult<Series> {
     s.value_counts(sort, parallel, name)
         .map(|df| df.into_struct(s.name()).into_series())

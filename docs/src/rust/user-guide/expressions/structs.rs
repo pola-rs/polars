@@ -17,7 +17,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out = ratings
         .clone()
         .lazy()
-        .select([col("Theatre").value_counts(true, true, None)])
+        .select([col("Theatre").value_counts(true, true, "count".to_string())])
         .collect()?;
     println!("{}", &out);
     // --8<-- [end:state_value_counts]
@@ -26,7 +26,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out = ratings
         .clone()
         .lazy()
-        .select([col("Theatre").value_counts(true, true, None)])
+        .select([col("Theatre").value_counts(true, true, "count".to_string())])
         .unnest(["Theatre"])
         .collect()?;
     println!("{}", &out);

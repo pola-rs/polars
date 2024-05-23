@@ -732,12 +732,7 @@ impl PySeries {
         self.series.tail(Some(n)).into()
     }
 
-    fn value_counts(
-        &self,
-        sort: bool,
-        parallel: bool,
-        name: Option<String>,
-    ) -> PyResult<PyDataFrame> {
+    fn value_counts(&self, sort: bool, parallel: bool, name: String) -> PyResult<PyDataFrame> {
         let out = self
             .series
             .value_counts(sort, parallel, name)

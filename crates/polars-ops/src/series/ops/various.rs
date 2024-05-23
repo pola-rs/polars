@@ -11,13 +11,7 @@ use crate::series::ops::SeriesSealed;
 pub trait SeriesMethods: SeriesSealed {
     /// Create a [`DataFrame`] with the unique `values` of this [`Series`] and a column `"counts"`
     /// with dtype [`IdxType`]
-    fn value_counts(
-        &self,
-        sort: bool,
-        parallel: bool,
-        name: Option<String>,
-    ) -> PolarsResult<DataFrame> {
-        let name = name.unwrap_or("count".to_string());
+    fn value_counts(&self, sort: bool, parallel: bool, name: String) -> PolarsResult<DataFrame> {
         let s = self.as_series();
         polars_ensure!(
             s.name() != name,

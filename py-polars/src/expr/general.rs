@@ -250,7 +250,7 @@ impl PyExpr {
     fn len(&self) -> Self {
         self.inner.clone().len().into()
     }
-    fn value_counts(&self, sort: bool, parallel: bool, name: Option<String>) -> Self {
+    fn value_counts(&self, sort: bool, parallel: bool, name: String) -> Self {
         self.inner.clone().value_counts(sort, parallel, name).into()
     }
     fn unique_counts(&self) -> Self {
