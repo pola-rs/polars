@@ -39,7 +39,7 @@ where
 
 /// Search through a series of chunks for the first position where f(x) is true,
 /// assuming it is first always false and then always true. It repeats this for
-/// each value in search_values. If search_values[i] is null null_idx is returned.
+/// each value in search_values. If the search value is null null_idx is returned.
 ///
 /// Assumes the chunks are non-empty.
 pub fn lower_bound_chunks<'a, T, F>(
