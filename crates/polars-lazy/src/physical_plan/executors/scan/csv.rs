@@ -64,7 +64,7 @@ impl CsvExec {
             for i in 0..self.paths.len() {
                 let path = &self.paths[i];
 
-                let df = options_base
+                let mut df = options_base
                     .clone()
                     .with_row_index(self.file_options.row_index.clone().map(|mut ri| {
                         ri.offset += n_rows_read as IdxSize;
