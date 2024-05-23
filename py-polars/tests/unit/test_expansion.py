@@ -138,3 +138,15 @@ def test_struct_field_expand_rewrite() -> None:
     assert df.select(
         pl.struct(["A", "B"]).struct.field("*").name.prefix("foo_")
     ).to_dict(as_series=False) == {"foo_A": [1], "foo_B": [2]}
+
+
+def test_struct_field_expansion_16410() -> None:
+    q = pl.LazyFrame({"coords": [{"x": 4, "y": 4}]})
+
+    assert q.with_columns(
+        pl.col("coords").struct.with_fields(pl.field("x").sqrt()).struct.field("*")
+    ).collect().to_dict(as_series=False) == {
+        "coords": [{"x": 4, "y": 4}],
+        "x": [2.0],
+        "y": [4],
+    }
