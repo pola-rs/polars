@@ -44,7 +44,7 @@ pub(super) fn df_to_numpy(
     }
 
     if matches!(order, IndexOrder::Fortran) {
-        if let Some(mut arr) = try_df_to_numpy_view(py, df) {
+        if let Some(mut arr) = try_df_to_numpy_view(py, df, false) {
             if writable {
                 if !allow_copy {
                     return Err(PyRuntimeError::new_err(
@@ -67,18 +67,11 @@ pub(super) fn df_to_numpy(
 }
 
 /// Create a NumPy view of the given DataFrame.
-fn try_df_to_numpy_view(py: Python, df: &DataFrame) -> Option<PyObject> {
-    let first_dtype = df.get_columns().first()?.dtype();
+fn try_df_to_numpy_view(py: Python, df: &DataFrame, allow_nulls: bool) -> Option<PyObject> {
+    let first_dtype = check_df_dtypes_support_view(df)?;
 
-    // TODO: Support viewing Array types
-    if first_dtype.is_array() || !dtype_supports_view(first_dtype) {
-        return None;
-    }
-    if !df
-        .get_columns()
-        .iter()
-        .all(|s| s.null_count() == 0 && s.dtype() == first_dtype && s.n_chunks() == 1)
-    {
+    // TODO: Check for nested nulls using `series_contains_null` util when we support Array types.
+    if !allow_nulls && df.get_columns().iter().any(|s| s.null_count() > 0) {
         return None;
     }
     if !check_df_columns_contiguous(df) {
@@ -100,13 +93,33 @@ fn try_df_to_numpy_view(py: Python, df: &DataFrame) -> Option<PyObject> {
     };
     Some(arr)
 }
+/// Check whether the data types of the DataFrame allow for creating a NumPy view.
+///
+/// Returns the common data type if it is supported, otherwise returns `None`.
+fn check_df_dtypes_support_view(df: &DataFrame) -> Option<&DataType> {
+    let columns = df.get_columns();
+    let first_dtype = columns.first()?.dtype();
+
+    // TODO: Support viewing Array types
+    if first_dtype.is_array() || !dtype_supports_view(first_dtype) {
+        return None;
+    }
+    if columns.iter().any(|s| s.dtype() != first_dtype) {
+        return None;
+    }
+    Some(first_dtype)
+}
 /// Returns whether all columns of the dataframe are contiguous in memory.
 fn check_df_columns_contiguous(df: &DataFrame) -> bool {
-    if df.width() <= 1 {
+    let columns = df.get_columns();
+
+    if columns.iter().any(|s| s.n_chunks() > 1) {
+        return false;
+    }
+    if columns.len() <= 1 {
         return true;
     }
 
-    let columns = df.get_columns();
     match columns.first().unwrap().dtype() {
         dt if dt.is_numeric() => {
             with_match_physical_numeric_polars_type!(dt, |$T| {
