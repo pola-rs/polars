@@ -5,6 +5,7 @@ use polars::prelude::*;
 use polars_core::frame::*;
 #[cfg(feature = "pivot")]
 use polars_lazy::frame::pivot::{pivot, pivot_stable};
+use pyo3::exceptions::PyIndexError;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::types::{PyBytes, PyList};
@@ -237,8 +238,22 @@ impl PyDataFrame {
         Ok(PySeries { series: s })
     }
 
-    pub fn select_at_idx(&self, idx: usize) -> Option<PySeries> {
-        self.df.select_at_idx(idx).map(|s| PySeries::new(s.clone()))
+    pub fn to_series(&self, index: isize) -> PyResult<PySeries> {
+        let df = &self.df;
+
+        let index_adjusted = if index < 0 {
+            df.width().checked_sub(index.unsigned_abs())
+        } else {
+            Some(usize::try_from(index).unwrap())
+        };
+
+        let s = index_adjusted.and_then(|i| df.select_at_idx(i));
+        match s {
+            Some(s) => Ok(PySeries::new(s.clone())),
+            None => Err(PyIndexError::new_err(
+                polars_err!(oob = index, df.width()).to_string(),
+            )),
+        }
     }
 
     pub fn get_column_index(&self, name: &str) -> Option<usize> {

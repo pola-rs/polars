@@ -413,6 +413,16 @@ def test_to_series() -> None:
     assert_series_equal(df.to_series(2), df["z"])
     assert_series_equal(df.to_series(-1), df["z"])
 
+
+def test_to_series_bad_inputs() -> None:
+    df = pl.DataFrame({"x": [1, 2, 3], "y": [2, 3, 4], "z": [3, 4, 5]})
+
+    with pytest.raises(IndexError, match="index 5 is out of bounds"):
+        df.to_series(5)
+
+    with pytest.raises(IndexError, match="index -100 is out of bounds"):
+        df.to_series(-100)
+
     with pytest.raises(TypeError, match="should be an int"):
         df.to_series("x")  # type: ignore[arg-type]
 

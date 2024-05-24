@@ -169,6 +169,7 @@ impl PySeries {
         }
     }
 
+    /// Get a value by index.
     fn get_index(&self, py: Python, index: usize) -> PyResult<PyObject> {
         let av = match self.series.get(index) {
             Ok(v) => v,
@@ -194,10 +195,10 @@ impl PySeries {
         Ok(out)
     }
 
-    /// Get index but allow negative indices
-    fn get_index_signed(&self, py: Python, index: i64) -> PyResult<PyObject> {
+    /// Get a value by index, allowing negative indices.
+    fn get_index_signed(&self, py: Python, index: isize) -> PyResult<PyObject> {
         let index = if index < 0 {
-            match self.len().checked_sub(index.unsigned_abs() as usize) {
+            match self.len().checked_sub(index.unsigned_abs()) {
                 Some(v) => v,
                 None => {
                     return Err(PyIndexError::new_err(
@@ -206,7 +207,7 @@ impl PySeries {
                 },
             }
         } else {
-            index as usize
+            usize::try_from(index).unwrap()
         };
         self.get_index(py, index)
     }

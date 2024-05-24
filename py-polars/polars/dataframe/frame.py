@@ -1119,11 +1119,6 @@ class DataFrame:
 
             # df[:, 1]
             if isinstance(col_selection, int):
-                if (col_selection >= 0 and col_selection >= self.width) or (
-                    col_selection < 0 and col_selection < -self.width
-                ):
-                    msg = f"column index {col_selection!r} is out of bounds"
-                    raise IndexError(msg)
                 series = self.to_series(col_selection)
                 return series[row_selection]
 
@@ -1352,16 +1347,16 @@ class DataFrame:
                     f" frame has shape {self.shape!r}"
                 )
                 raise ValueError(msg)
-            return self._df.select_at_idx(0).get_index(0)
+            return self.to_series().get_index(0)
 
         elif row is None or column is None:
             msg = "cannot call `.item()` with only one of `row` or `column`"
             raise ValueError(msg)
 
         s = (
-            self._df.select_at_idx(column)
+            self.to_series(column)
             if isinstance(column, int)
-            else self._df.get_column(column)
+            else self.get_column(column)
         )
         if s is None:
             msg = f"column index {column!r} is out of bounds"
@@ -2287,13 +2282,7 @@ class DataFrame:
                 8
         ]
         """
-        if not isinstance(index, int):
-            msg = f"index value {index!r} should be an int, but is {type(index).__name__!r}"
-            raise TypeError(msg)
-
-        if index < 0:
-            index = len(self.columns) + index
-        return wrap_s(self._df.select_at_idx(index))
+        return wrap_s(self._df.to_series(index))
 
     def to_init_repr(self, n: int = 1000) -> str:
         """
