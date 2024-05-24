@@ -102,6 +102,9 @@ def test_is_column_selection() -> None:
     e = cs.numeric() - cs.integer()
     assert e.meta.is_column_selection()
 
+    e = pl.nth(2)
+    assert e.meta.is_column_selection()
+
 
 def test_meta_is_regex_projection() -> None:
     e = pl.col("^.*$").name.suffix("_foo")

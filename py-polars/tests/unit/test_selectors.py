@@ -376,6 +376,24 @@ def test_selector_ends_with(df: pl.DataFrame) -> None:
         df.select(cs.ends_with(999))  # type: ignore[arg-type]
 
 
+def test_selector_expand() -> None:
+    schema = {
+        "id": pl.Int64,
+        "desc": pl.String,
+        "count": pl.UInt32,
+        "value": pl.Float64,
+    }
+
+    expanded = cs.expand_selector(schema, cs.numeric() - cs.unsigned_integer())
+    assert expanded == ("id", "value")
+
+    with pytest.raises(TypeError, match="expected a selector"):
+        cs.expand_selector(schema, pl.exclude("id", "count"))
+
+    expanded = cs.expand_selector(schema, pl.exclude("id", "count"), strict=False)
+    assert expanded == ("desc", "value")
+
+
 def test_selector_first_last(df: pl.DataFrame) -> None:
     assert df.select(cs.first()).columns == ["abc"]
     assert df.select(cs.last()).columns == ["qqR"]

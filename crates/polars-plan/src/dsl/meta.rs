@@ -77,6 +77,7 @@ impl MetaNameSpace {
             | Expr::Columns(_)
             | Expr::DtypeColumn(_)
             | Expr::Exclude(_, _)
+            | Expr::Nth(_)
             | Expr::IndexColumn(_)
             | Expr::Selector(_)
             | Expr::Wildcard => true,
